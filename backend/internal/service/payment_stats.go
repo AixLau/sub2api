@@ -53,13 +53,16 @@ func (s *PaymentService) GetDashboardStats(ctx context.Context, days int) (*Dash
 	return st, nil
 }
 
+// computeBasicStats aggregates revenue figures using PaymentOrder.Amount, the
+// recharge amount before payment-channel fees, so dashboard totals represent
+// platform income instead of gross customer outflow.
 func computeBasicStats(st *DashboardStats, orders []*dbent.PaymentOrder, todayStart time.Time) {
 	var totalAmount, todayAmount float64
 	var todayCount int
 	for _, o := range orders {
-		totalAmount += o.PayAmount
+		totalAmount += o.Amount
 		if o.PaidAt != nil && !o.PaidAt.Before(todayStart) {
-			todayAmount += o.PayAmount
+			todayAmount += o.Amount
 			todayCount++
 		}
 	}
@@ -84,7 +87,7 @@ func buildDailySeries(orders []*dbent.PaymentOrder, since time.Time, days int) [
 			ds = &DailyStats{Date: date}
 			dailyMap[date] = ds
 		}
-		ds.Amount += o.PayAmount
+		ds.Amount += o.Amount
 		ds.Count++
 	}
 	series := make([]DailyStats, 0, days)
@@ -108,7 +111,7 @@ func buildMethodDistribution(orders []*dbent.PaymentOrder) []PaymentMethodStat {
 			ms = &PaymentMethodStat{Type: o.PaymentType}
 			methodMap[o.PaymentType] = ms
 		}
-		ms.Amount += o.PayAmount
+		ms.Amount += o.Amount
 		ms.Count++
 	}
 	methods := make([]PaymentMethodStat, 0, len(methodMap))
@@ -127,7 +130,7 @@ func buildTopUsers(orders []*dbent.PaymentOrder) []TopUserStat {
 			us = &TopUserStat{UserID: o.UserID, Email: o.UserEmail}
 			userMap[o.UserID] = us
 		}
-		us.Amount += o.PayAmount
+		us.Amount += o.Amount
 	}
 	userList := make([]*TopUserStat, 0, len(userMap))
 	for _, us := range userMap {
