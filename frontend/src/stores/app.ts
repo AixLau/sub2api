@@ -14,6 +14,13 @@ import {
 } from '@/api/admin/system'
 import { getPublicSettings as fetchPublicSettingsAPI } from '@/api/auth'
 
+/**
+ * Canonical documentation entry point. Used as the fallback for the "文档" link
+ * (AppHeader nav + HomeView button) whenever the admin-configured doc_url is empty,
+ * so the docs entry always resolves to the external guide.
+ */
+export const DEFAULT_DOC_URL = 'https://aixlau.me/docs/ccswitch/'
+
 export const useAppStore = defineStore('app', () => {
   // ==================== State ====================
 
@@ -30,7 +37,7 @@ export const useAppStore = defineStore('app', () => {
   const siteVersion = ref<string>('')
   const contactInfo = ref<string>('')
   const apiBaseUrl = ref<string>('')
-  const docUrl = ref<string>('')
+  const docUrl = ref<string>(DEFAULT_DOC_URL)
   const cachedPublicSettings = ref<PublicSettings | null>(null)
 
   // Version cache state
@@ -297,7 +304,7 @@ export const useAppStore = defineStore('app', () => {
     siteVersion.value = config.version || ''
     contactInfo.value = config.contact_info || ''
     apiBaseUrl.value = config.api_base_url || ''
-    docUrl.value = config.doc_url || ''
+    docUrl.value = config.doc_url || DEFAULT_DOC_URL
     publicSettingsLoaded.value = true
   }
 
