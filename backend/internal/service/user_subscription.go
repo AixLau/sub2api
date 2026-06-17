@@ -69,21 +69,29 @@ func (s *UserSubscription) NeedsDailyResetAt(now time.Time) bool {
 	if s.HasOneTimeDailyQuota() {
 		return false
 	}
-	return !now.Before(s.DailyWindowStart.Add(24 * time.Hour))
+	return subscriptionWindowCanReset(s.ExpiresAt, *s.DailyWindowStart, 24*time.Hour, now)
 }
 
 func (s *UserSubscription) NeedsWeeklyReset() bool {
+	return s.NeedsWeeklyResetAt(time.Now())
+}
+
+func (s *UserSubscription) NeedsWeeklyResetAt(now time.Time) bool {
 	if s.WeeklyWindowStart == nil {
 		return false
 	}
-	return time.Since(*s.WeeklyWindowStart) >= 7*24*time.Hour
+	return subscriptionWindowCanReset(s.ExpiresAt, *s.WeeklyWindowStart, 7*24*time.Hour, now)
 }
 
 func (s *UserSubscription) NeedsMonthlyReset() bool {
+	return s.NeedsMonthlyResetAt(time.Now())
+}
+
+func (s *UserSubscription) NeedsMonthlyResetAt(now time.Time) bool {
 	if s.MonthlyWindowStart == nil {
 		return false
 	}
-	return time.Since(*s.MonthlyWindowStart) >= 30*24*time.Hour
+	return subscriptionWindowCanReset(s.ExpiresAt, *s.MonthlyWindowStart, 30*24*time.Hour, now)
 }
 
 func (s *UserSubscription) DailyResetTime() *time.Time {
@@ -94,7 +102,7 @@ func (s *UserSubscription) DailyResetTime() *time.Time {
 		t := s.ExpiresAt
 		return &t
 	}
-	t := s.DailyWindowStart.Add(24 * time.Hour)
+	t := subscriptionWindowBoundary(s.ExpiresAt, *s.DailyWindowStart, 24*time.Hour)
 	return &t
 }
 
@@ -102,7 +110,7 @@ func (s *UserSubscription) WeeklyResetTime() *time.Time {
 	if s.WeeklyWindowStart == nil {
 		return nil
 	}
-	t := s.WeeklyWindowStart.Add(7 * 24 * time.Hour)
+	t := subscriptionWindowBoundary(s.ExpiresAt, *s.WeeklyWindowStart, 7*24*time.Hour)
 	return &t
 }
 
@@ -110,8 +118,25 @@ func (s *UserSubscription) MonthlyResetTime() *time.Time {
 	if s.MonthlyWindowStart == nil {
 		return nil
 	}
-	t := s.MonthlyWindowStart.Add(30 * 24 * time.Hour)
+	t := subscriptionWindowBoundary(s.ExpiresAt, *s.MonthlyWindowStart, 30*24*time.Hour)
 	return &t
+}
+
+func subscriptionWindowCanReset(expiresAt, windowStart time.Time, period time.Duration, now time.Time) bool {
+	resetAt := windowStart.Add(period)
+	if now.Before(resetAt) {
+		return false
+	}
+	nextResetAt := resetAt.Add(period)
+	return !nextResetAt.After(expiresAt)
+}
+
+func subscriptionWindowBoundary(expiresAt, windowStart time.Time, period time.Duration) time.Time {
+	resetAt := windowStart.Add(period)
+	if resetAt.Add(period).After(expiresAt) {
+		return expiresAt
+	}
+	return resetAt
 }
 
 func (s *UserSubscription) CheckDailyLimit(group *Group, additionalCost float64) bool {

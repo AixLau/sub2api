@@ -1,11 +1,20 @@
 import type { UserSubscription } from '@/types'
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000
+const ONE_WEEK_MS = 7 * ONE_DAY_MS
+const THIRTY_DAYS_MS = 30 * ONE_DAY_MS
 
 export interface RemainingDurationParts {
   days: number
   hours: number
   minutes: number
+}
+
+export type SubscriptionQuotaWindow = 'daily' | 'weekly' | 'monthly'
+
+export interface SubscriptionQuotaBoundary {
+  at: Date
+  kind: 'reset' | 'expiry'
 }
 
 export function isOneTimeDailyQuota(
@@ -39,4 +48,40 @@ export function getRemainingDurationParts(
   const minutes = totalMinutes % 60
 
   return { days, hours, minutes }
+}
+
+export function getSubscriptionQuotaBoundary(
+  windowStart: string | null | undefined,
+  period: SubscriptionQuotaWindow,
+  expiresAt?: string | null
+): SubscriptionQuotaBoundary | null {
+  if (!windowStart) return null
+
+  const startTime = new Date(windowStart).getTime()
+  if (!Number.isFinite(startTime)) return null
+
+  const periodMs = quotaWindowPeriodMs(period)
+  const resetTime = startTime + periodMs
+  const expiryTime = expiresAt ? new Date(expiresAt).getTime() : Number.POSITIVE_INFINITY
+
+  if (!Number.isFinite(expiryTime)) {
+    return { at: new Date(resetTime), kind: 'reset' }
+  }
+
+  if (resetTime + periodMs > expiryTime) {
+    return { at: new Date(expiryTime), kind: 'expiry' }
+  }
+
+  return { at: new Date(resetTime), kind: 'reset' }
+}
+
+function quotaWindowPeriodMs(period: SubscriptionQuotaWindow): number {
+  switch (period) {
+    case 'daily':
+      return ONE_DAY_MS
+    case 'weekly':
+      return ONE_WEEK_MS
+    case 'monthly':
+      return THIRTY_DAYS_MS
+  }
 }

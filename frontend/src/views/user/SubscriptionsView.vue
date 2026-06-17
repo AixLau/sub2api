@@ -164,11 +164,7 @@
                 v-if="subscription.weekly_window_start"
                 class="text-xs text-gray-500 dark:text-dark-400"
               >
-                {{
-                  t('userSubscriptions.resetIn', {
-                    time: formatResetTime(subscription.weekly_window_start, 168)
-                  })
-                }}
+                {{ formatUsageWindow(subscription, 'weekly') }}
               </p>
             </div>
 
@@ -205,11 +201,7 @@
                 v-if="subscription.monthly_window_start"
                 class="text-xs text-gray-500 dark:text-dark-400"
               >
-                {{
-                  t('userSubscriptions.resetIn', {
-                    time: formatResetTime(subscription.monthly_window_start, 720)
-                  })
-                }}
+                {{ formatUsageWindow(subscription, 'monthly') }}
               </p>
             </div>
 
@@ -252,7 +244,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { formatDateOnly } from '@/utils/format'
 import { platformBorderClass, platformBadgeClass, platformButtonClass, platformLabel } from '@/utils/platformColors'
-import { getRemainingDurationParts, isOneTimeDailyQuota, type RemainingDurationParts } from '@/utils/subscriptionQuota'
+import { getRemainingDurationParts, getSubscriptionQuotaBoundary, isOneTimeDailyQuota, type RemainingDurationParts, type SubscriptionQuotaWindow } from '@/utils/subscriptionQuota'
 
 function platformAccentDotClass(p: string): string {
   switch (p) {
@@ -354,19 +346,27 @@ function formatDailyUsageWindow(subscription: UserSubscription): string {
     return t('userSubscriptions.quotaEndsIn', { time: formatDurationParts(parts) })
   }
 
-  return t('userSubscriptions.resetIn', {
-    time: formatResetTime(subscription.daily_window_start, 24)
-  })
+  return formatUsageWindow(subscription, 'daily')
 }
 
-function formatResetTime(windowStart: string | null, windowHours: number): string {
-  if (!windowStart) return t('userSubscriptions.windowNotActive')
+function formatUsageWindow(subscription: UserSubscription, period: SubscriptionQuotaWindow): string {
+  const windowStart =
+    period === 'daily'
+      ? subscription.daily_window_start
+      : period === 'weekly'
+        ? subscription.weekly_window_start
+        : subscription.monthly_window_start
+  const boundary = getSubscriptionQuotaBoundary(windowStart, period, subscription.expires_at)
+  if (!boundary) return t('userSubscriptions.windowNotActive')
 
-  const start = new Date(windowStart)
-  const end = new Date(start.getTime() + windowHours * 60 * 60 * 1000)
-  const parts = getRemainingDurationParts(end)
+  const parts = getRemainingDurationParts(boundary.at)
+  if (!parts) return t('userSubscriptions.windowNotActive')
 
-  return parts ? formatDurationParts(parts) : t('userSubscriptions.windowNotActive')
+  if (boundary.kind === 'expiry') {
+    return t('userSubscriptions.quotaEndsIn', { time: formatDurationParts(parts) })
+  }
+
+  return t('userSubscriptions.resetIn', { time: formatDurationParts(parts) })
 }
 
 onMounted(() => {

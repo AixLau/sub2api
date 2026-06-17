@@ -12,11 +12,17 @@ import (
 type dailyResetTrackingUserSubRepo struct {
 	userSubRepoNoop
 
-	resetDailyCalled bool
+	resetDailyCalled   bool
+	resetMonthlyCalled bool
 }
 
 func (r *dailyResetTrackingUserSubRepo) ResetDailyUsage(context.Context, int64, time.Time) error {
 	r.resetDailyCalled = true
+	return nil
+}
+
+func (r *dailyResetTrackingUserSubRepo) ResetMonthlyUsage(context.Context, int64, time.Time) error {
+	r.resetMonthlyCalled = true
 	return nil
 }
 
@@ -84,7 +90,7 @@ func TestUserSubscriptionNeedsDailyReset_MultiDaySubscriptionStillRefreshes(t *t
 	dailyWindowStart := time.Date(2026, 5, 18, 0, 0, 0, 0, time.UTC)
 	sub := &UserSubscription{
 		StartsAt:         start,
-		ExpiresAt:        start.AddDate(0, 0, 2),
+		ExpiresAt:        start.AddDate(0, 0, 3),
 		DailyWindowStart: &dailyWindowStart,
 	}
 
@@ -105,6 +111,22 @@ func TestUserSubscriptionDailyResetTime_DailyCardReturnsExpiry(t *testing.T) {
 	resetAt := sub.DailyResetTime()
 	require.NotNil(t, resetAt)
 	require.Equal(t, expiresAt, *resetAt, "日卡展示的日额度结束时间应为订阅过期时间")
+}
+
+func TestUserSubscriptionMonthlyResetTime_CapsAtExpiry(t *testing.T) {
+	startsAt := time.Date(2026, 5, 29, 16, 10, 55, 0, time.FixedZone("CST", 8*60*60))
+	monthlyWindowStart := time.Date(2026, 5, 29, 0, 0, 0, 0, startsAt.Location())
+	expiresAt := startsAt.AddDate(0, 0, 30)
+	sub := &UserSubscription{
+		StartsAt:           startsAt,
+		ExpiresAt:          expiresAt,
+		MonthlyWindowStart: &monthlyWindowStart,
+	}
+
+	resetAt := sub.MonthlyResetTime()
+
+	require.NotNil(t, resetAt)
+	require.Equal(t, expiresAt, *resetAt, "月包临近到期时展示的月额度结束时间应为订阅过期时间，而不是当天零点后提前重置")
 }
 
 func TestCheckAndResetWindows_DailyCardDoesNotResetDailyUsage(t *testing.T) {
@@ -141,7 +163,7 @@ func TestCheckAndResetWindows_MultiDaySubscriptionStillResetsDailyUsage(t *testi
 		UserID:           10,
 		GroupID:          20,
 		StartsAt:         startsAt,
-		ExpiresAt:        startsAt.AddDate(0, 0, 2),
+		ExpiresAt:        startsAt.AddDate(0, 0, 5),
 		DailyUsageUSD:    10,
 		DailyWindowStart: &dailyWindowStart,
 	}
@@ -151,6 +173,31 @@ func TestCheckAndResetWindows_MultiDaySubscriptionStillResetsDailyUsage(t *testi
 	require.NoError(t, err)
 	require.True(t, repo.resetDailyCalled, "多日订阅仍应重置过期 daily window")
 	require.Equal(t, 0.0, sub.DailyUsageUSD)
+}
+
+func TestCheckAndResetWindows_DoesNotResetMonthlyUsageWhenNextWindowWouldOutliveSubscription(t *testing.T) {
+	loc := time.FixedZone("CST", 8*60*60)
+	now := time.Now().In(loc)
+	monthlyWindowStart := now.Add(-30*24*time.Hour - time.Hour)
+	startsAt := monthlyWindowStart.Add(16 * time.Hour)
+	repo := &dailyResetTrackingUserSubRepo{}
+	svc := NewSubscriptionService(groupRepoNoop{}, repo, nil, nil, nil)
+	sub := &UserSubscription{
+		ID:                 1,
+		UserID:             10,
+		GroupID:            20,
+		Status:             SubscriptionStatusActive,
+		StartsAt:           startsAt,
+		ExpiresAt:          startsAt.AddDate(0, 0, 30),
+		MonthlyUsageUSD:    400.01,
+		MonthlyWindowStart: &monthlyWindowStart,
+	}
+
+	err := svc.CheckAndResetWindows(context.Background(), sub)
+
+	require.NoError(t, err)
+	require.False(t, repo.resetMonthlyCalled, "月包到期前不应因为当天零点窗口到期而刷新出下一整月额度")
+	require.Equal(t, 400.01, sub.MonthlyUsageUSD)
 }
 
 func TestValidateAndCheckLimits_DailyCardDoesNotAllowSecondQuotaAfterMidnight(t *testing.T) {
@@ -177,12 +224,38 @@ func TestValidateAndCheckLimits_DailyCardDoesNotAllowSecondQuotaAfterMidnight(t 
 	require.Equal(t, dailyLimit+0.01, sub.DailyUsageUSD, "热路径不应清零日卡已用额度")
 }
 
+func TestValidateAndCheckLimits_DoesNotClearMonthlyUsageWhenNextWindowWouldOutliveSubscription(t *testing.T) {
+	loc := time.FixedZone("CST", 8*60*60)
+	now := time.Now().In(loc)
+	monthlyWindowStart := now.Add(-30*24*time.Hour - time.Hour)
+	startsAt := monthlyWindowStart.Add(16 * time.Hour)
+	monthlyLimit := 400.0
+	sub := &UserSubscription{
+		Status:             SubscriptionStatusActive,
+		StartsAt:           startsAt,
+		ExpiresAt:          startsAt.AddDate(0, 0, 30),
+		MonthlyWindowStart: &monthlyWindowStart,
+		MonthlyUsageUSD:    monthlyLimit + 0.01,
+	}
+	group := &Group{
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  &monthlyLimit,
+	}
+	svc := NewSubscriptionService(groupRepoNoop{}, userSubRepoNoop{}, nil, nil, nil)
+
+	needsMaintenance, err := svc.ValidateAndCheckLimits(sub, group)
+
+	require.False(t, needsMaintenance, "月包到期前不应触发月窗口重置维护")
+	require.True(t, errors.Is(err, ErrMonthlyLimitExceeded))
+	require.Equal(t, monthlyLimit+0.01, sub.MonthlyUsageUSD, "热路径不应清零临近到期月包的已用额度")
+}
+
 func TestValidateAndCheckLimits_ExpiredMonthlyWindowClearsBonusInMemory(t *testing.T) {
 	monthlyWindowStart := time.Now().Add(-31 * 24 * time.Hour)
 	monthlyLimit := 100.0
 	sub := &UserSubscription{
 		Status:             SubscriptionStatusActive,
-		ExpiresAt:          time.Now().Add(24 * time.Hour),
+		ExpiresAt:          time.Now().Add(45 * 24 * time.Hour),
 		MonthlyWindowStart: &monthlyWindowStart,
 		MonthlyUsageUSD:    150,
 		MonthlyBonusUSD:    100,
