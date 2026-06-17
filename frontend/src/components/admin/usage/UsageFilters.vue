@@ -79,17 +79,39 @@
         </div>
 
         <!-- Excluded Users Filter -->
-        <div v-if="showExcludeUsers" class="w-full sm:w-auto sm:min-w-[240px]">
+        <div
+          v-if="showExcludeUsers"
+          ref="excludeUserSearchRef"
+          class="usage-filter-dropdown relative w-full sm:w-auto sm:min-w-[240px]"
+        >
           <label class="input-label">{{ t('admin.usage.excludeUsers') }}</label>
           <input
             v-model="excludeUserIDsInput"
             data-testid="exclude-user-ids-input"
             type="text"
-            class="input"
+            class="input pr-8"
             :placeholder="t('admin.usage.excludeUsersPlaceholder')"
+            @input="debounceExcludeUserSearch"
+            @focus="onExcludeUserFocus"
             @change="applyExcludeUserIDs"
             @blur="applyExcludeUserIDs"
           />
+          <div
+            v-if="showExcludeUserDropdown && (excludeUserResults.length > 0 || excludeUserIDsInput)"
+            class="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border bg-white shadow-lg dark:bg-gray-800"
+          >
+            <button
+              v-for="u in excludeUserResults"
+              :key="u.id"
+              :data-testid="`exclude-user-option-${u.id}`"
+              type="button"
+              @click="selectExcludeUser(u)"
+              class="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
+              <span>{{ u.email }}<span v-if="u.deleted" class="ml-1 text-xs text-gray-400">（{{ t('admin.usage.userDeletedBadge') }}）</span></span>
+              <span class="ml-2 text-xs text-gray-400">#{{ u.id }}</span>
+            </button>
+          </div>
         </div>
 
         <!-- Model Filter -->
@@ -218,6 +240,7 @@ const filters = toRef(props, 'modelValue')
 
 const userSearchRef = ref<HTMLElement | null>(null)
 const apiKeySearchRef = ref<HTMLElement | null>(null)
+const excludeUserSearchRef = ref<HTMLElement | null>(null)
 const accountSearchRef = ref<HTMLElement | null>(null)
 
 const userKeyword = ref('')
@@ -231,6 +254,9 @@ const showApiKeyDropdown = ref(false)
 let apiKeySearchTimeout: ReturnType<typeof setTimeout> | null = null
 
 const excludeUserIDsInput = ref('')
+const excludeUserResults = ref<SimpleUser[]>([])
+const showExcludeUserDropdown = ref(false)
+let excludeUserSearchTimeout: ReturnType<typeof setTimeout> | null = null
 
 interface SimpleAccount {
   id: number
@@ -282,21 +308,68 @@ const parseExcludeUserIDs = (value: string): number[] => {
   return [...seen]
 }
 
-const formatExcludeUserIDs = (value: unknown): string => {
+const normalizeExcludeUserIDs = (value: unknown): number[] => {
   if (Array.isArray(value)) {
-    return value.filter((id): id is number => Number.isInteger(id) && id > 0).join(', ')
+    const seen = new Set<number>()
+    for (const id of value) {
+      if (Number.isInteger(id) && id > 0) seen.add(id)
+    }
+    return [...seen]
   }
   if (typeof value === 'string') {
-    return parseExcludeUserIDs(value).join(', ')
+    return parseExcludeUserIDs(value)
   }
-  return ''
+  return []
+}
+
+const formatExcludeUserIDs = (value: unknown): string => {
+  return normalizeExcludeUserIDs(value).join(', ')
 }
 
 const applyExcludeUserIDs = () => {
+  const rawValue = excludeUserIDsInput.value.trim()
   const userIDs = parseExcludeUserIDs(excludeUserIDsInput.value)
+  if (rawValue && userIDs.length === 0) return
   filters.value.exclude_user_ids = userIDs.length > 0 ? userIDs : undefined
   excludeUserIDsInput.value = userIDs.join(', ')
   emitChange()
+}
+
+const debounceExcludeUserSearch = () => {
+  if (excludeUserSearchTimeout) clearTimeout(excludeUserSearchTimeout)
+  showExcludeUserDropdown.value = true
+  excludeUserSearchTimeout = setTimeout(async () => {
+    const keyword = excludeUserIDsInput.value.trim()
+    if (!keyword) {
+      excludeUserResults.value = []
+      return
+    }
+    try {
+      const results = await adminAPI.usage.searchUsers(keyword)
+      excludeUserResults.value = results.sort((a, b) => Number(a.deleted) - Number(b.deleted))
+    } catch {
+      excludeUserResults.value = []
+    }
+  }, 300)
+}
+
+const selectExcludeUser = (u: SimpleUser) => {
+  const userIDs = normalizeExcludeUserIDs(filters.value.exclude_user_ids)
+  const seen = new Set(userIDs)
+  seen.add(u.id)
+  const nextUserIDs = [...seen]
+  filters.value.exclude_user_ids = nextUserIDs
+  excludeUserIDsInput.value = nextUserIDs.join(', ')
+  excludeUserResults.value = []
+  showExcludeUserDropdown.value = false
+  emitChange()
+}
+
+const onExcludeUserFocus = () => {
+  showExcludeUserDropdown.value = true
+  if (excludeUserIDsInput.value.trim() && excludeUserResults.value.length === 0) {
+    debounceExcludeUserSearch()
+  }
 }
 
 const debounceUserSearch = () => {
@@ -418,10 +491,12 @@ const onDocumentClick = (e: MouseEvent) => {
 
   const clickedInsideUser = userSearchRef.value?.contains(target) ?? false
   const clickedInsideApiKey = apiKeySearchRef.value?.contains(target) ?? false
+  const clickedInsideExcludeUser = excludeUserSearchRef.value?.contains(target) ?? false
   const clickedInsideAccount = accountSearchRef.value?.contains(target) ?? false
 
   if (!clickedInsideUser) showUserDropdown.value = false
   if (!clickedInsideApiKey) showApiKeyDropdown.value = false
+  if (!clickedInsideExcludeUser) showExcludeUserDropdown.value = false
   if (!clickedInsideAccount) showAccountDropdown.value = false
 }
 

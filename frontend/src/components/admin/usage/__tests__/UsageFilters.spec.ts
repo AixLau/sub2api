@@ -168,6 +168,15 @@ describe('UsageFilters — user search dropdown', () => {
 })
 
 describe('UsageFilters — exclude users filter', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    mockSearchUsers.mockReset()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('parses comma and whitespace separated excluded user ids and emits change', async () => {
     const wrapper = mountFilters()
 
@@ -199,6 +208,30 @@ describe('UsageFilters — exclude users filter', () => {
     })
 
     expect(wrapper.find('[data-testid="exclude-user-ids-input"]').exists()).toBe(false)
+  })
+
+  it('searches users by keyword and adds the selected user id to exclusions', async () => {
+    mockSearchUsers.mockResolvedValue([
+      { id: 9, email: 'admin@example.com', deleted: false },
+    ])
+
+    const wrapper = mountFilters()
+
+    const input = wrapper.get('[data-testid="exclude-user-ids-input"]')
+    await input.trigger('focus')
+    ;(input.element as HTMLInputElement).value = 'admin'
+    await input.trigger('input')
+
+    await vi.runAllTimersAsync()
+    await flushPromises()
+
+    expect(mockSearchUsers).toHaveBeenCalledWith('admin')
+
+    const option = wrapper.get('[data-testid="exclude-user-option-9"]')
+    await option.trigger('click')
+
+    expect(wrapper.props('modelValue').exclude_user_ids).toEqual([9])
+    expect(wrapper.emitted('change')).toBeTruthy()
   })
 })
 
