@@ -28,6 +28,21 @@ func (m *mockTempUnscheduler) TempUnscheduleRetryableError(_ context.Context, ac
 	m.calls = append(m.calls, tempUnscheduleCall{accountID: accountID, failoverErr: failoverErr})
 }
 
+type mockFailoverCooldownService struct {
+	mockTempUnscheduler
+	cooldownCalls []userAccountCooldownCall
+}
+
+type userAccountCooldownCall struct {
+	userID    int64
+	accountID int64
+	ttl       time.Duration
+}
+
+func (m *mockFailoverCooldownService) CooldownUserAccount(_ context.Context, userID, accountID int64, ttl time.Duration) {
+	m.cooldownCalls = append(m.cooldownCalls, userAccountCooldownCall{userID: userID, accountID: accountID, ttl: ttl})
+}
+
 // ---------------------------------------------------------------------------
 // Helper
 // ---------------------------------------------------------------------------
@@ -217,6 +232,22 @@ func TestHandleFailoverError_BasicSwitch(t *testing.T) {
 		require.Equal(t, 0, fs.SwitchCount)
 		require.Contains(t, fs.FailedAccountIDs, int64(100))
 	})
+}
+
+func TestHandleFailoverErrorForUser_RecordsPerUserCooldown(t *testing.T) {
+	mock := &mockFailoverCooldownService{}
+	fs := NewFailoverState(3, false)
+	err := newTestFailoverErr(500, false, false)
+
+	action := fs.HandleFailoverErrorForUser(context.Background(), mock, 42, 100, "openai", err)
+
+	require.Equal(t, FailoverContinue, action)
+	require.Len(t, mock.cooldownCalls, 1)
+	require.Equal(t, userAccountCooldownCall{
+		userID:    42,
+		accountID: 100,
+		ttl:       service.UserAccountCooldownTTL(),
+	}, mock.cooldownCalls[0])
 }
 
 // ---------------------------------------------------------------------------

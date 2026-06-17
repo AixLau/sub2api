@@ -1831,7 +1831,12 @@ func (s *OpenAIGatewayService) isBetterAccount(candidate, current *Account) bool
 }
 
 // SelectAccountWithLoadAwareness selects an account with load-awareness and wait plan.
-func (s *OpenAIGatewayService) SelectAccountWithLoadAwareness(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*AccountSelectionResult, error) {
+func (s *OpenAIGatewayService) SelectAccountWithLoadAwareness(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, userID ...int64) (*AccountSelectionResult, error) {
+	effectiveUserID := int64(0)
+	if len(userID) > 0 {
+		effectiveUserID = userID[0]
+	}
+	excludedIDs = s.mergeUserAccountCooldowns(ctx, excludedIDs, effectiveUserID)
 	return s.selectAccountWithLoadAwareness(s.withOpenAIQuotaAutoPauseContext(ctx), groupID, sessionHash, requestedModel, excludedIDs, false, "")
 }
 
@@ -2213,6 +2218,38 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDB(ctx context.Co
 		return nil
 	}
 	return latest
+}
+
+func (s *OpenAIGatewayService) RefreshSelectedAccountBeforeUse(ctx context.Context, account *Account, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability, requiredImageCapability OpenAIImagesCapability) (*Account, error) {
+	if account == nil {
+		return nil, ErrNoAvailableAccounts
+	}
+
+	latest := account
+	if s.accountRepo != nil {
+		current, err := s.accountRepo.GetByID(ctx, account.ID)
+		if err != nil || current == nil {
+			return nil, ErrNoAvailableAccounts
+		}
+		latest = current
+	} else if s.schedulerSnapshot != nil {
+		current, err := s.schedulerSnapshot.GetAccount(ctx, account.ID)
+		if err != nil || current == nil {
+			return nil, ErrNoAvailableAccounts
+		}
+		latest = current
+	}
+
+	if !isOpenAIAccountEligibleForRequest(ctx, latest, requestedModel, requireCompact, requiredCapability) {
+		return nil, ErrNoAvailableAccounts
+	}
+	if s.isOpenAIAccountRuntimeBlocked(latest) {
+		return nil, ErrNoAvailableAccounts
+	}
+	if !latest.SupportsOpenAIImageCapability(requiredImageCapability) {
+		return nil, ErrNoAvailableAccounts
+	}
+	return latest, nil
 }
 
 func (s *OpenAIGatewayService) getSchedulableAccount(ctx context.Context, accountID int64) (*Account, error) {

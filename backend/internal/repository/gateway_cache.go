@@ -9,7 +9,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const stickySessionPrefix = "sticky_session:"
+const (
+	stickySessionPrefix       = "sticky_session:"
+	userAccountCooldownPrefix = "user_account_cooldown:"
+)
 
 type gatewayCache struct {
 	rdb *redis.Client
@@ -23,6 +26,14 @@ func NewGatewayCache(rdb *redis.Client) service.GatewayCache {
 // 格式: sticky_session:{groupID}:{sessionHash}
 func buildSessionKey(groupID int64, sessionHash string) string {
 	return fmt.Sprintf("%s%d:%s", stickySessionPrefix, groupID, sessionHash)
+}
+
+func buildUserAccountCooldownSetKey(userID int64) string {
+	return fmt.Sprintf("%s%d", userAccountCooldownPrefix, userID)
+}
+
+func buildUserAccountCooldownKey(userID, accountID int64) string {
+	return fmt.Sprintf("%s%d:%d", userAccountCooldownPrefix, userID, accountID)
 }
 
 func (c *gatewayCache) GetSessionAccountID(ctx context.Context, groupID int64, sessionHash string) (int64, error) {
@@ -50,6 +61,43 @@ func (c *gatewayCache) RefreshSessionTTL(ctx context.Context, groupID int64, ses
 func (c *gatewayCache) DeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string) error {
 	key := buildSessionKey(groupID, sessionHash)
 	return c.rdb.Del(ctx, key).Err()
+}
+
+func (c *gatewayCache) SetUserAccountCooldown(ctx context.Context, userID, accountID int64, ttl time.Duration) error {
+	setKey := buildUserAccountCooldownSetKey(userID)
+	itemKey := buildUserAccountCooldownKey(userID, accountID)
+	pipe := c.rdb.Pipeline()
+	pipe.SAdd(ctx, setKey, accountID)
+	pipe.Expire(ctx, setKey, ttl)
+	pipe.Set(ctx, itemKey, "1", ttl)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+func (c *gatewayCache) GetUserAccountCooldowns(ctx context.Context, userID int64) (map[int64]struct{}, error) {
+	setKey := buildUserAccountCooldownSetKey(userID)
+	ids, err := c.rdb.SMembers(ctx, setKey).Result()
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[int64]struct{}, len(ids))
+	for _, rawID := range ids {
+		var accountID int64
+		if _, scanErr := fmt.Sscanf(rawID, "%d", &accountID); scanErr != nil || accountID <= 0 {
+			_ = c.rdb.SRem(ctx, setKey, rawID).Err()
+			continue
+		}
+		exists, existsErr := c.rdb.Exists(ctx, buildUserAccountCooldownKey(userID, accountID)).Result()
+		if existsErr != nil {
+			return nil, existsErr
+		}
+		if exists == 0 {
+			_ = c.rdb.SRem(ctx, setKey, rawID).Err()
+			continue
+		}
+		result[accountID] = struct{}{}
+	}
+	return result, nil
 }
 
 // Compile-time assertion: gatewayCache must implement CyberSessionBlockStore.

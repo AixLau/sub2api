@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"go.uber.org/zap"
 )
 
 func TestOpenAIHandleStreamingAwareError_JSONEscaping(t *testing.T) {
@@ -217,6 +218,70 @@ func TestOpenAIEnsureForwardErrorResponse_ResponsesRouteAfterWrittenEmitsRespons
 	assert.Contains(t, body, `"type":"response.failed"`)
 	assert.Contains(t, body, `"code":"upstream_error"`)
 	assert.Contains(t, body, "Upstream request failed")
+}
+
+type openAITestAccountRepo struct {
+	service.AccountRepository
+	accounts map[int64]service.Account
+}
+
+func (r openAITestAccountRepo) GetByID(ctx context.Context, id int64) (*service.Account, error) {
+	account, ok := r.accounts[id]
+	if !ok {
+		return nil, service.ErrAccountNotFound
+	}
+	return &account, nil
+}
+
+func TestOpenAIAcquireResponsesAccountSlotRefreshesAlreadyAcquiredSelection(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, EndpointResponses, nil)
+
+	selected := service.Account{
+		ID:          88,
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+	}
+	latest := selected
+	latest.Schedulable = false
+	released := false
+	h := &OpenAIGatewayHandler{
+		gatewayService: service.NewOpenAIGatewayService(
+			openAITestAccountRepo{accounts: map[int64]service.Account{latest.ID: latest}},
+			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		),
+	}
+	streamStarted := false
+	selection := &service.AccountSelectionResult{
+		Account:     &selected,
+		Acquired:    true,
+		ReleaseFunc: func() { released = true },
+	}
+
+	release, account, acquired := h.acquireResponsesAccountSlot(
+		c,
+		nil,
+		"",
+		selection,
+		"gpt-5.2",
+		false,
+		service.OpenAIEndpointCapabilityChatCompletions,
+		"",
+		false,
+		&streamStarted,
+		zap.NewNop(),
+	)
+
+	require.False(t, acquired)
+	require.Nil(t, release)
+	require.Nil(t, account)
+	require.True(t, released)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 }
 
 func TestShouldLogOpenAIForwardFailureAsWarn(t *testing.T) {

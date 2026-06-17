@@ -461,7 +461,13 @@ type GatewayCache interface {
 	// DeleteSessionAccountID 删除粘性会话绑定，用于账号不可用时主动清理
 	// Delete sticky session binding, used to proactively clean up when account becomes unavailable
 	DeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string) error
+	// SetUserAccountCooldown marks an account unavailable for a single user for a short TTL.
+	SetUserAccountCooldown(ctx context.Context, userID, accountID int64, ttl time.Duration) error
+	// GetUserAccountCooldowns returns accounts temporarily avoided for a single user.
+	GetUserAccountCooldowns(ctx context.Context, userID int64) (map[int64]struct{}, error)
 }
+
+const userAccountCooldownTTL = 3 * time.Minute
 
 // derefGroupID safely dereferences *int64 to int64, returning 0 if nil
 func derefGroupID(groupID *int64) int64 {
@@ -1619,6 +1625,8 @@ func (s *GatewayService) SelectAccountForModelWithExclusions(ctx context.Context
 // metadataUserID: 用于客户端亲和调度，从中提取客户端 ID
 // sub2apiUserID: 系统用户 ID，用于二维亲和调度
 func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, metadataUserID string, sub2apiUserID int64) (*AccountSelectionResult, error) {
+	excludedIDs = s.mergeUserAccountCooldowns(ctx, excludedIDs, sub2apiUserID)
+
 	// 调试日志：记录调度入口参数
 	excludedIDsList := make([]int64, 0, len(excludedIDs))
 	for id := range excludedIDs {
@@ -2603,6 +2611,50 @@ func (s *GatewayService) tryAcquireAccountSlot(ctx context.Context, accountID in
 		return &AcquireResult{Acquired: true, ReleaseFunc: func() {}}, nil
 	}
 	return s.concurrencyService.AcquireAccountSlot(ctx, accountID, maxConcurrency)
+}
+
+func (s *GatewayService) RefreshSelectedAccountBeforeUse(ctx context.Context, account *Account, requestedModel string) (*Account, error) {
+	if account == nil {
+		return nil, ErrNoAvailableAccounts
+	}
+
+	latest := account
+	if s.accountRepo != nil {
+		current, err := s.accountRepo.GetByID(ctx, account.ID)
+		if err != nil || current == nil {
+			return nil, ErrNoAvailableAccounts
+		}
+		latest = current
+	} else if s.schedulerSnapshot != nil {
+		current, err := s.schedulerSnapshot.GetAccount(ctx, account.ID)
+		if err != nil || current == nil {
+			return nil, ErrNoAvailableAccounts
+		}
+		latest = current
+	}
+
+	if latest.Platform != account.Platform {
+		return nil, ErrNoAvailableAccounts
+	}
+	if !s.isAccountSchedulableForSelection(latest) {
+		return nil, ErrNoAvailableAccounts
+	}
+	if requestedModel != "" && !s.isModelSupportedByAccountWithContext(ctx, latest, requestedModel) {
+		return nil, ErrNoAvailableAccounts
+	}
+	if !s.isAccountSchedulableForModelSelection(ctx, latest, requestedModel) {
+		return nil, ErrNoAvailableAccounts
+	}
+	if !s.isAccountSchedulableForQuota(latest) {
+		return nil, ErrNoAvailableAccounts
+	}
+	if !s.isAccountSchedulableForWindowCost(ctx, latest, false) {
+		return nil, ErrNoAvailableAccounts
+	}
+	if !s.isAccountSchedulableForRPM(ctx, latest, false) {
+		return nil, ErrNoAvailableAccounts
+	}
+	return latest, nil
 }
 
 type usageLogWindowStatsBatchProvider interface {

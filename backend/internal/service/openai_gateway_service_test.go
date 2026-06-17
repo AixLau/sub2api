@@ -394,6 +394,7 @@ func (c stubConcurrencyCache) GetAccountWaitingCount(ctx context.Context, accoun
 type stubGatewayCache struct {
 	sessionBindings map[string]int64
 	deletedSessions map[string]int
+	userCooldowns   map[int64]map[int64]struct{}
 }
 
 func (c *stubGatewayCache) GetSessionAccountID(ctx context.Context, groupID int64, sessionHash string) (int64, error) {
@@ -425,6 +426,88 @@ func (c *stubGatewayCache) DeleteSessionAccountID(ctx context.Context, groupID i
 	c.deletedSessions[sessionHash]++
 	delete(c.sessionBindings, sessionHash)
 	return nil
+}
+
+func (c *stubGatewayCache) SetUserAccountCooldown(ctx context.Context, userID, accountID int64, ttl time.Duration) error {
+	if c.userCooldowns == nil {
+		c.userCooldowns = make(map[int64]map[int64]struct{})
+	}
+	if c.userCooldowns[userID] == nil {
+		c.userCooldowns[userID] = make(map[int64]struct{})
+	}
+	c.userCooldowns[userID][accountID] = struct{}{}
+	return nil
+}
+
+func (c *stubGatewayCache) GetUserAccountCooldowns(ctx context.Context, userID int64) (map[int64]struct{}, error) {
+	if c.userCooldowns == nil || len(c.userCooldowns[userID]) == 0 {
+		return nil, nil
+	}
+	out := make(map[int64]struct{}, len(c.userCooldowns[userID]))
+	for id := range c.userCooldowns[userID] {
+		out[id] = struct{}{}
+	}
+	return out, nil
+}
+
+func TestOpenAISelectAccountWithLoadAwareness_UsesPerUserCooldowns(t *testing.T) {
+	groupID := int64(1)
+	cooled := Account{
+		ID:          1,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Priority:    0,
+	}
+	available := Account{
+		ID:          2,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Priority:    1,
+	}
+	cache := &stubGatewayCache{
+		userCooldowns: map[int64]map[int64]struct{}{
+			42: {1: {}},
+		},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo:        stubOpenAIAccountRepo{accounts: []Account{cooled, available}},
+		cache:              cache,
+		concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
+	}
+
+	user42Selection, err := svc.SelectAccountWithLoadAwareness(context.Background(), &groupID, "", "gpt-5.2", nil, 42)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), user42Selection.Account.ID)
+
+	otherUserSelection, err := svc.SelectAccountWithLoadAwareness(context.Background(), &groupID, "", "gpt-5.2", nil, 99)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), otherUserSelection.Account.ID)
+}
+
+func TestOpenAIGatewayService_RefreshSelectedAccountBeforeUseRejectsDisabledLatest(t *testing.T) {
+	selected := &Account{
+		ID:          1,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+	}
+	latest := *selected
+	latest.Schedulable = false
+	repo := stubOpenAIAccountRepo{accounts: []Account{latest}}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+
+	refreshed, err := svc.RefreshSelectedAccountBeforeUse(context.Background(), selected, "gpt-5.2", false, "", "")
+
+	require.ErrorIs(t, err, ErrNoAvailableAccounts)
+	require.Nil(t, refreshed)
 }
 
 func TestOpenAISelectAccountWithLoadAwareness_FiltersUnschedulable(t *testing.T) {

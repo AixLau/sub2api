@@ -298,7 +298,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		}
 
 		for {
-			selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, reqModel, fs.FailedAccountIDs, "", int64(0)) // Gemini 不使用会话限制
+			selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, reqModel, fs.FailedAccountIDs, "", subject.UserID) // Gemini 不使用会话限制
 			if err != nil {
 				if len(fs.FailedAccountIDs) == 0 {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
@@ -398,6 +398,18 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 				// Slot acquired: no longer waiting in queue.
 				releaseWait()
+				refreshed, refreshErr := h.gatewayService.RefreshSelectedAccountBeforeUse(c.Request.Context(), account, reqModel)
+				if refreshErr != nil {
+					if accountReleaseFunc != nil {
+						accountReleaseFunc()
+					}
+					markOpsRoutingCapacityLimited(c)
+					reqLog.Info("gateway.selected_account_unavailable_before_use", zap.Int64("account_id", account.ID), zap.Error(refreshErr))
+					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", streamStarted)
+					return
+				}
+				account = refreshed
+				selection.Account = refreshed
 				if err := h.gatewayService.BindStickySession(c.Request.Context(), apiKey.GroupID, sessionKey, account.ID); err != nil {
 					reqLog.Warn("gateway.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 				}
@@ -439,7 +451,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, service.PlatformGemini, true)
 						return
 					}
-					action := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, failoverErr)
+					action := fs.HandleFailoverErrorForUser(c.Request.Context(), h.gatewayService, subject.UserID, account.ID, account.Platform, failoverErr)
 					switch action {
 					case FailoverContinue:
 						continue
@@ -686,6 +698,18 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 				// Slot acquired: no longer waiting in queue.
 				releaseWait()
+				refreshed, refreshErr := h.gatewayService.RefreshSelectedAccountBeforeUse(c.Request.Context(), account, reqModel)
+				if refreshErr != nil {
+					if accountReleaseFunc != nil {
+						accountReleaseFunc()
+					}
+					markOpsRoutingCapacityLimited(c)
+					reqLog.Info("gateway.selected_account_unavailable_before_use", zap.Int64("account_id", account.ID), zap.Error(refreshErr))
+					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", streamStarted)
+					return
+				}
+				account = refreshed
+				selection.Account = refreshed
 				reqLog.Info("sticky.bind_after_wait",
 					zap.String("session_key", sessionKey),
 					zap.Int64("account_id", account.ID),
@@ -851,7 +875,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, account.Platform, true)
 						return
 					}
-					action := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, failoverErr)
+					action := fs.HandleFailoverErrorForUser(c.Request.Context(), h.gatewayService, subject.UserID, account.ID, account.Platform, failoverErr)
 					switch action {
 					case FailoverContinue:
 						continue

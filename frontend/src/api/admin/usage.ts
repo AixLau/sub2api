@@ -121,6 +121,7 @@ export async function getStats(params: {
   start_date?: string
   end_date?: string
   timezone?: string
+  exclude_user_ids?: number[] | string
   nocache?: number
 }): Promise<AdminUsageStatsResponse> {
   const { data } = await apiClient.get<AdminUsageStatsResponse>('/admin/usage/stats', {

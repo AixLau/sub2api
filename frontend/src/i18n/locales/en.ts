@@ -4601,6 +4601,8 @@ export default {
       description: 'View and manage all user usage records',
       userFilter: 'User',
       searchUserPlaceholder: 'Search user by email...',
+      excludeUsers: 'Exclude Users',
+      excludeUsersPlaceholder: 'User IDs, comma or space separated',
       searchApiKeyPlaceholder: 'Search API key by name...',
       searchAccountPlaceholder: 'Search account by name...',
       selectedUser: 'Selected',

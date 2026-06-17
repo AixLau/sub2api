@@ -8,6 +8,8 @@ const messages: Record<string, string> = {
   'admin.usage.userDeletedBadge': 'deleted',
   'admin.usage.userFilter': 'User',
   'admin.usage.searchUserPlaceholder': 'Search user...',
+  'admin.usage.excludeUsers': 'Exclude Users',
+  'admin.usage.excludeUsersPlaceholder': 'User IDs to exclude...',
   'usage.apiKeyFilter': 'API Key',
   'admin.usage.searchApiKeyPlaceholder': 'Search API key...',
   'usage.model': 'Model',
@@ -162,6 +164,41 @@ describe('UsageFilters — user search dropdown', () => {
     // Also confirm user_id was set by checking the emitted change came through
     // (the component uses toRef so modelValue is mutated in place and 'change' is emitted)
     expect(wrapper.props('modelValue').user_id).toBe(1)
+  })
+})
+
+describe('UsageFilters — exclude users filter', () => {
+  it('parses comma and whitespace separated excluded user ids and emits change', async () => {
+    const wrapper = mountFilters()
+
+    const input = wrapper.get('[data-testid="exclude-user-ids-input"]')
+    await input.setValue('1, 2 3')
+    await input.trigger('change')
+
+    expect(wrapper.props('modelValue').exclude_user_ids).toEqual([1, 2, 3])
+    expect(wrapper.emitted('change')).toBeTruthy()
+  })
+
+  it('can hide the excluded users filter', () => {
+    const wrapper = mount(UsageFilters, {
+      props: {
+        modelValue: defaultFilters(),
+        exporting: false,
+        startDate: '2026-05-01',
+        endDate: '2026-05-28',
+        showActions: false,
+        showExcludeUsers: false,
+        modelOptions: [],
+      },
+      global: {
+        stubs: {
+          Select: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    expect(wrapper.find('[data-testid="exclude-user-ids-input"]').exists()).toBe(false)
   })
 })
 

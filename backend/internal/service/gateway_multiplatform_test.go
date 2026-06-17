@@ -242,6 +242,14 @@ func (m *mockGatewayCacheForPlatform) DeleteSessionAccountID(ctx context.Context
 	return nil
 }
 
+func (m *mockGatewayCacheForPlatform) SetUserAccountCooldown(ctx context.Context, userID, accountID int64, ttl time.Duration) error {
+	return nil
+}
+
+func (m *mockGatewayCacheForPlatform) GetUserAccountCooldowns(ctx context.Context, userID int64) (map[int64]struct{}, error) {
+	return nil, nil
+}
+
 type mockGroupRepoForGateway struct {
 	groups           map[int64]*Group
 	getByIDCalls     int

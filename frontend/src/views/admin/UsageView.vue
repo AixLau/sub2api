@@ -212,6 +212,8 @@ const breakdownFilters = computed(() => {
   if (filters.value.group_id) f.group_id = filters.value.group_id
   if (filters.value.request_type != null) f.request_type = filters.value.request_type
   if (filters.value.billing_type != null) f.billing_type = filters.value.billing_type
+  const excludedUserIDs = serializeExcludeUserIDs(filters.value.exclude_user_ids)
+  if (excludedUserIDs) f.exclude_user_ids = excludedUserIDs
   return f
 })
 
@@ -272,6 +274,32 @@ const getNumericQueryValue = (value: string | null | Array<string | null> | unde
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+const normalizeExcludeUserIDs = (value: AdminUsageQueryParams['exclude_user_ids']): number[] => {
+  const rawValues = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(/[,\s]+/)
+      : []
+  const seen = new Set<number>()
+  for (const raw of rawValues) {
+    const parsed = Number(raw)
+    if (Number.isInteger(parsed) && parsed > 0) {
+      seen.add(parsed)
+    }
+  }
+  return [...seen]
+}
+
+const serializeExcludeUserIDs = (value: AdminUsageQueryParams['exclude_user_ids']): string | undefined => {
+  const userIDs = normalizeExcludeUserIDs(value)
+  return userIDs.length > 0 ? userIDs.join(',') : undefined
+}
+
+const buildUsageFilterParams = (): AdminUsageQueryParams => ({
+  ...filters.value,
+  exclude_user_ids: serializeExcludeUserIDs(filters.value.exclude_user_ids)
+})
+
 const applyRouteQueryFilters = () => {
   const queryStartDate = getSingleQueryValue(route.query.start_date)
   const queryEndDate = getSingleQueryValue(route.query.end_date)
@@ -286,6 +314,7 @@ const applyRouteQueryFilters = () => {
 
   filters.value = {
     ...filters.value,
+    exclude_user_ids: serializeExcludeUserIDs(filters.value.exclude_user_ids),
     user_id: queryUserId,
     start_date: startDate.value,
     end_date: endDate.value
@@ -312,11 +341,12 @@ const buildUsageListParams = (
 ): AdminUsageQueryParams => {
   const requestType = filters.value.request_type
   const legacyStream = requestType ? requestTypeToLegacyStream(requestType) : filters.value.stream
+  const filterParams = buildUsageFilterParams()
   return {
     page,
     page_size: pageSize,
     exact_total: exactTotal,
-    ...filters.value,
+    ...filterParams,
     stream: legacyStream === null ? undefined : legacyStream,
     sort_by: sortState.sort_by,
     sort_order: sortState.sort_order
@@ -340,7 +370,7 @@ const loadStats = async (force = false) => {
     const requestType = filters.value.request_type
     const legacyStream = requestType ? requestTypeToLegacyStream(requestType) : filters.value.stream
     const s = await adminAPI.usage.getStats({
-      ...filters.value,
+      ...buildUsageFilterParams(),
       stream: legacyStream === null ? undefined : legacyStream,
       ...(force ? { nocache: 1 } : {}),
     })
@@ -388,6 +418,7 @@ const loadModelStats = async (source: ModelDistributionSource, force = false) =>
       request_type: requestType,
       stream: legacyStream === null ? undefined : legacyStream,
       billing_type: filters.value.billing_type,
+      exclude_user_ids: serializeExcludeUserIDs(filters.value.exclude_user_ids),
     }
 
     const response = await adminAPI.dashboard.getModelStats({ ...baseParams, model_source: source })
@@ -437,6 +468,7 @@ const loadChartData = async () => {
       request_type: requestType,
       stream: legacyStream === null ? undefined : legacyStream,
       billing_type: filters.value.billing_type,
+      exclude_user_ids: serializeExcludeUserIDs(filters.value.exclude_user_ids),
       include_stats: false,
       include_trend: true,
       include_model_stats: false,

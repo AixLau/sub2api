@@ -15,13 +15,16 @@ import (
 
 type dashboardUsageRepoCapture struct {
 	service.UsageLogRepository
-	trendRequestType *int16
-	trendStream      *bool
-	modelRequestType *int16
-	modelStream      *bool
-	rankingLimit     int
-	ranking          []usagestats.UserSpendingRankingItem
-	rankingTotal     float64
+	trendRequestType      *int16
+	trendStream           *bool
+	modelRequestType      *int16
+	modelStream           *bool
+	userBreakdownDim      usagestats.UserBreakdownDimension
+	userBreakdownLimit    int
+	userBreakdownCaptured bool
+	rankingLimit          int
+	ranking               []usagestats.UserSpendingRankingItem
+	rankingTotal          float64
 }
 
 func (s *dashboardUsageRepoCapture) GetUsageTrendWithFilters(
@@ -33,6 +36,7 @@ func (s *dashboardUsageRepoCapture) GetUsageTrendWithFilters(
 	requestType *int16,
 	stream *bool,
 	billingType *int8,
+	excludeUserIDs ...int64,
 ) ([]usagestats.TrendDataPoint, error) {
 	s.trendRequestType = requestType
 	s.trendStream = stream
@@ -46,6 +50,7 @@ func (s *dashboardUsageRepoCapture) GetModelStatsWithFilters(
 	requestType *int16,
 	stream *bool,
 	billingType *int8,
+	excludeUserIDs ...int64,
 ) ([]usagestats.ModelStat, error) {
 	s.modelRequestType = requestType
 	s.modelStream = stream
@@ -66,6 +71,18 @@ func (s *dashboardUsageRepoCapture) GetUserSpendingRanking(
 	}, nil
 }
 
+func (s *dashboardUsageRepoCapture) GetUserBreakdownStats(
+	ctx context.Context,
+	startTime, endTime time.Time,
+	dim usagestats.UserBreakdownDimension,
+	limit int,
+) ([]usagestats.UserBreakdownItem, error) {
+	s.userBreakdownDim = dim
+	s.userBreakdownLimit = limit
+	s.userBreakdownCaptured = true
+	return []usagestats.UserBreakdownItem{}, nil
+}
+
 func newDashboardRequestTypeTestRouter(repo *dashboardUsageRepoCapture) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	dashboardSvc := service.NewDashboardService(repo, nil, nil, nil)
@@ -73,6 +90,7 @@ func newDashboardRequestTypeTestRouter(repo *dashboardUsageRepoCapture) *gin.Eng
 	router := gin.New()
 	router.GET("/admin/dashboard/trend", handler.GetUsageTrend)
 	router.GET("/admin/dashboard/models", handler.GetModelStats)
+	router.GET("/admin/dashboard/user-breakdown", handler.GetUserBreakdown)
 	router.GET("/admin/dashboard/users-ranking", handler.GetUserSpendingRanking)
 	return router
 }
@@ -136,6 +154,20 @@ func TestDashboardModelStatsInvalidRequestType(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestDashboardUserBreakdownExcludeUserIDs(t *testing.T) {
+	repo := &dashboardUsageRepoCapture{}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard/user-breakdown?exclude_user_ids=10,20%203", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.True(t, repo.userBreakdownCaptured)
+	require.Equal(t, []int64{10, 20, 3}, repo.userBreakdownDim.ExcludeUserIDs)
+	require.Equal(t, 50, repo.userBreakdownLimit)
 }
 
 func TestDashboardModelStatsInvalidStream(t *testing.T) {

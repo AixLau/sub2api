@@ -133,6 +133,12 @@ func (c *comboCacheAndStore) RefreshSessionTTL(_ context.Context, _ int64, _ str
 func (c *comboCacheAndStore) DeleteSessionAccountID(_ context.Context, _ int64, _ string) error {
 	return nil
 }
+func (c *comboCacheAndStore) SetUserAccountCooldown(_ context.Context, _ int64, _ int64, _ time.Duration) error {
+	return nil
+}
+func (c *comboCacheAndStore) GetUserAccountCooldowns(_ context.Context, _ int64) (map[int64]struct{}, error) {
+	return nil, nil
+}
 func (c *comboCacheAndStore) SetCyberSessionBlocked(ctx context.Context, key string, ttl time.Duration) error {
 	return c.store.SetCyberSessionBlocked(ctx, key, ttl)
 }

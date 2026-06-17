@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -314,6 +315,23 @@ func anySliceToDriverValues(values []any) []driver.Value {
 	return out
 }
 
+type pqInt64ArrayMatcher struct {
+	values []int64
+}
+
+func (m pqInt64ArrayMatcher) Match(v driver.Value) bool {
+	got := strings.TrimSpace(fmt.Sprint(v))
+	if got == "" {
+		return false
+	}
+	wantParts := make([]string, 0, len(m.values))
+	for _, value := range m.values {
+		wantParts = append(wantParts, fmt.Sprint(value))
+	}
+	want := "{" + strings.Join(wantParts, ",") + "}"
+	return got == want
+}
+
 func TestUsageLogRepositoryListWithFiltersRequestTypePriority(t *testing.T) {
 	db, mock := newSQLMock(t)
 	repo := &usageLogRepository{sql: db}
@@ -418,6 +436,42 @@ func TestUsageLogRepositoryGetStatsWithFiltersRequestTypePriority(t *testing.T) 
 	require.Equal(t, int64(9), stats.TotalTokens)
 	require.NotNil(t, stats.TotalAccountCost, "TotalAccountCost should always be returned")
 	require.Equal(t, 1.2, *stats.TotalAccountCost)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUsageLogRepositoryGetStatsWithFiltersExcludeUserIDs(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+
+	filters := usagestats.UsageLogFilters{
+		ExcludeUserIDs: []int64{101, 202},
+	}
+
+	mock.ExpectQuery("FROM usage_logs\\s+WHERE user_id <> ALL\\(\\$1\\)").
+		WithArgs(pqInt64ArrayMatcher{values: []int64{101, 202}}).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"total_requests",
+			"total_input_tokens",
+			"total_output_tokens",
+			"total_cache_tokens",
+			"total_cost",
+			"total_actual_cost",
+			"total_account_cost",
+			"avg_duration_ms",
+		}).AddRow(int64(0), int64(0), int64(0), int64(0), 0.0, 0.0, 0.0, 0.0))
+	mock.ExpectQuery("SELECT COALESCE\\(NULLIF\\(TRIM\\(inbound_endpoint\\), ''\\), 'unknown'\\) AS endpoint").
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), pqInt64ArrayMatcher{values: []int64{101, 202}}).
+		WillReturnRows(sqlmock.NewRows([]string{"endpoint", "requests", "total_tokens", "cost", "actual_cost"}))
+	mock.ExpectQuery("SELECT COALESCE\\(NULLIF\\(TRIM\\(upstream_endpoint\\), ''\\), 'unknown'\\) AS endpoint").
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), pqInt64ArrayMatcher{values: []int64{101, 202}}).
+		WillReturnRows(sqlmock.NewRows([]string{"endpoint", "requests", "total_tokens", "cost", "actual_cost"}))
+	mock.ExpectQuery("SELECT CONCAT\\(").
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), pqInt64ArrayMatcher{values: []int64{101, 202}}).
+		WillReturnRows(sqlmock.NewRows([]string{"endpoint", "requests", "total_tokens", "cost", "actual_cost"}))
+
+	stats, err := repo.GetStatsWithFilters(context.Background(), filters)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), stats.TotalRequests)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

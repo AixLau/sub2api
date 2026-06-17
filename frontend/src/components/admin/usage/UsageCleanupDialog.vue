@@ -7,6 +7,7 @@
         v-model:endDate="localEndDate"
         :exporting="false"
         :show-actions="false"
+        :show-exclude-users="false"
         @change="noop"
       />
 

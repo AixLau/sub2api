@@ -16,6 +16,10 @@ type TempUnscheduler interface {
 	TempUnscheduleRetryableError(ctx context.Context, accountID int64, failoverErr *service.UpstreamFailoverError)
 }
 
+type UserAccountCooldowner interface {
+	CooldownUserAccount(ctx context.Context, userID, accountID int64, ttl time.Duration)
+}
+
 // FailoverAction 表示 failover 错误处理后的下一步动作
 type FailoverAction int
 
@@ -69,6 +73,17 @@ func (s *FailoverState) HandleFailoverError(
 	platform string,
 	failoverErr *service.UpstreamFailoverError,
 ) FailoverAction {
+	return s.HandleFailoverErrorForUser(ctx, gatewayService, 0, accountID, platform, failoverErr)
+}
+
+func (s *FailoverState) HandleFailoverErrorForUser(
+	ctx context.Context,
+	gatewayService TempUnscheduler,
+	userID int64,
+	accountID int64,
+	platform string,
+	failoverErr *service.UpstreamFailoverError,
+) FailoverAction {
 	s.LastFailoverErr = failoverErr
 
 	// 缓存计费判断
@@ -98,6 +113,11 @@ func (s *FailoverState) HandleFailoverError(
 
 	// 加入失败列表
 	s.FailedAccountIDs[accountID] = struct{}{}
+	if userID > 0 {
+		if cooldowner, ok := gatewayService.(UserAccountCooldowner); ok {
+			cooldowner.CooldownUserAccount(ctx, userID, accountID, service.UserAccountCooldownTTL())
+		}
+	}
 
 	// 检查是否耗尽
 	if s.SwitchCount >= s.MaxSwitches {

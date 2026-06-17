@@ -173,6 +173,14 @@ func (c *schedulerTestGatewayCache) DeleteSessionAccountID(ctx context.Context, 
 	return nil
 }
 
+func (c *schedulerTestGatewayCache) SetUserAccountCooldown(ctx context.Context, userID, accountID int64, ttl time.Duration) error {
+	return nil
+}
+
+func (c *schedulerTestGatewayCache) GetUserAccountCooldowns(ctx context.Context, userID int64) (map[int64]struct{}, error) {
+	return nil, nil
+}
+
 func newSchedulerTestOpenAIWSV2Config() *config.Config {
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIWS.Enabled = true

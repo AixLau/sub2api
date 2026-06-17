@@ -1189,7 +1189,13 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForCapability(
 	requiredTransport OpenAIUpstreamTransport,
 	requiredCapability OpenAIEndpointCapability,
 	requireCompact bool,
+	userID ...int64,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	effectiveUserID := int64(0)
+	if len(userID) > 0 {
+		effectiveUserID = userID[0]
+	}
+	excludedIDs = s.mergeUserAccountCooldowns(ctx, excludedIDs, effectiveUserID)
 	return s.selectAccountWithScheduler(ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, requiredCapability, "", requireCompact)
 }
 
@@ -1200,7 +1206,13 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	requestedModel string,
 	excludedIDs map[int64]struct{},
 	requiredCapability OpenAIImagesCapability,
+	userID ...int64,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	effectiveUserID := int64(0)
+	if len(userID) > 0 {
+		effectiveUserID = userID[0]
+	}
+	excludedIDs = s.mergeUserAccountCooldowns(ctx, excludedIDs, effectiveUserID)
 	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", requiredCapability, false)
 	if err == nil && selection != nil && selection.Account != nil {
 		return selection, decision, nil

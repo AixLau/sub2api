@@ -78,6 +78,20 @@
           </div>
         </div>
 
+        <!-- Excluded Users Filter -->
+        <div v-if="showExcludeUsers" class="w-full sm:w-auto sm:min-w-[240px]">
+          <label class="input-label">{{ t('admin.usage.excludeUsers') }}</label>
+          <input
+            v-model="excludeUserIDsInput"
+            data-testid="exclude-user-ids-input"
+            type="text"
+            class="input"
+            :placeholder="t('admin.usage.excludeUsersPlaceholder')"
+            @change="applyExcludeUserIDs"
+            @blur="applyExcludeUserIDs"
+          />
+        </div>
+
         <!-- Model Filter -->
         <div class="w-full sm:w-auto sm:min-w-[220px]">
           <label class="input-label">{{ t('usage.model') }}</label>
@@ -182,11 +196,13 @@ interface Props {
   startDate: string
   endDate: string
   showActions?: boolean
+  showExcludeUsers?: boolean
   modelOptions?: string[]
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  showActions: true
+  showActions: true,
+  showExcludeUsers: true
 })
 const emit = defineEmits([
   'update:modelValue',
@@ -213,6 +229,8 @@ const apiKeyKeyword = ref('')
 const apiKeyResults = ref<SimpleApiKey[]>([])
 const showApiKeyDropdown = ref(false)
 let apiKeySearchTimeout: ReturnType<typeof setTimeout> | null = null
+
+const excludeUserIDsInput = ref('')
 
 interface SimpleAccount {
   id: number
@@ -251,6 +269,35 @@ const billingModeOptions = ref<SelectOption[]>([
 ])
 
 const emitChange = () => emit('change')
+
+const parseExcludeUserIDs = (value: string): number[] => {
+  const seen = new Set<number>()
+  for (const part of value.split(/[,\s]+/)) {
+    if (!part) continue
+    const parsed = Number(part)
+    if (Number.isInteger(parsed) && parsed > 0) {
+      seen.add(parsed)
+    }
+  }
+  return [...seen]
+}
+
+const formatExcludeUserIDs = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return value.filter((id): id is number => Number.isInteger(id) && id > 0).join(', ')
+  }
+  if (typeof value === 'string') {
+    return parseExcludeUserIDs(value).join(', ')
+  }
+  return ''
+}
+
+const applyExcludeUserIDs = () => {
+  const userIDs = parseExcludeUserIDs(excludeUserIDsInput.value)
+  filters.value.exclude_user_ids = userIDs.length > 0 ? userIDs : undefined
+  excludeUserIDsInput.value = userIDs.join(', ')
+  emitChange()
+}
 
 const debounceUserSearch = () => {
   if (userSearchTimeout) clearTimeout(userSearchTimeout)
@@ -412,6 +459,14 @@ watch(
       apiKeyResults.value = []
     }
   }
+)
+
+watch(
+  () => filters.value.exclude_user_ids,
+  (excludeUserIDs) => {
+    excludeUserIDsInput.value = formatExcludeUserIDs(excludeUserIDs)
+  },
+  { immediate: true, deep: true }
 )
 
 watch(

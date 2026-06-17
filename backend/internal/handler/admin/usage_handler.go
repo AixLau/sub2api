@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -42,6 +43,35 @@ func NewUsageHandler(
 	}
 }
 
+func parseAdminUsageExcludeUserIDs(c *gin.Context) ([]int64, error) {
+	rawValues, ok := c.Request.URL.Query()["exclude_user_ids"]
+	if !ok {
+		return nil, nil
+	}
+	seen := make(map[int64]struct{})
+	ids := make([]int64, 0, len(rawValues))
+	for _, raw := range rawValues {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		for _, part := range strings.FieldsFunc(raw, func(r rune) bool {
+			return r == ',' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
+		}) {
+			part = strings.TrimSpace(part)
+			id, err := strconv.ParseInt(part, 10, 64)
+			if err != nil || id <= 0 {
+				return nil, fmt.Errorf("Invalid exclude_user_ids: %q is not a positive integer", part)
+			}
+			if _, exists := seen[id]; exists {
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
+
 // CreateUsageCleanupTaskRequest represents cleanup task creation request
 type CreateUsageCleanupTaskRequest struct {
 	StartDate   string  `json:"start_date"`
@@ -80,6 +110,11 @@ func (h *UsageHandler) List(c *gin.Context) {
 			return
 		}
 		userID = id
+	}
+	excludeUserIDs, err := parseAdminUsageExcludeUserIDs(c)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
 	}
 
 	if apiKeyIDStr := c.Query("api_key_id"); apiKeyIDStr != "" {
@@ -172,18 +207,19 @@ func (h *UsageHandler) List(c *gin.Context) {
 		SortOrder: c.DefaultQuery("sort_order", "desc"),
 	}
 	filters := usagestats.UsageLogFilters{
-		UserID:      userID,
-		APIKeyID:    apiKeyID,
-		AccountID:   accountID,
-		GroupID:     groupID,
-		Model:       model,
-		RequestType: requestType,
-		Stream:      stream,
-		BillingType: billingType,
-		BillingMode: billingMode,
-		StartTime:   startTime,
-		EndTime:     endTime,
-		ExactTotal:  exactTotal,
+		UserID:         userID,
+		ExcludeUserIDs: excludeUserIDs,
+		APIKeyID:       apiKeyID,
+		AccountID:      accountID,
+		GroupID:        groupID,
+		Model:          model,
+		RequestType:    requestType,
+		Stream:         stream,
+		BillingType:    billingType,
+		BillingMode:    billingMode,
+		StartTime:      startTime,
+		EndTime:        endTime,
+		ExactTotal:     exactTotal,
 	}
 
 	records, result, err := h.usageService.ListWithFilters(c.Request.Context(), params, filters)
@@ -211,6 +247,11 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 			return
 		}
 		userID = id
+	}
+	excludeUserIDs, err := parseAdminUsageExcludeUserIDs(c)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
 	}
 
 	if apiKeyIDStr := c.Query("api_key_id"); apiKeyIDStr != "" {
@@ -312,17 +353,18 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 
 	// Build filters and call GetStatsWithFilters
 	filters := usagestats.UsageLogFilters{
-		UserID:      userID,
-		APIKeyID:    apiKeyID,
-		AccountID:   accountID,
-		GroupID:     groupID,
-		Model:       model,
-		RequestType: requestType,
-		Stream:      stream,
-		BillingType: billingType,
-		BillingMode: billingMode,
-		StartTime:   &startTime,
-		EndTime:     &endTime,
+		UserID:         userID,
+		ExcludeUserIDs: excludeUserIDs,
+		APIKeyID:       apiKeyID,
+		AccountID:      accountID,
+		GroupID:        groupID,
+		Model:          model,
+		RequestType:    requestType,
+		Stream:         stream,
+		BillingType:    billingType,
+		BillingMode:    billingMode,
+		StartTime:      &startTime,
+		EndTime:        &endTime,
 	}
 
 	var stats *usagestats.UsageStats

@@ -4754,6 +4754,8 @@ export default {
       description: '查看和管理所有用户的使用记录',
       userFilter: '用户',
       searchUserPlaceholder: '按邮箱搜索用户...',
+      excludeUsers: '排除用户',
+      excludeUsersPlaceholder: '用户ID，逗号或空格分隔',
       searchApiKeyPlaceholder: '按名称搜索 API 密钥...',
       searchAccountPlaceholder: '按名称搜索账号...',
       selectedUser: '已选择',

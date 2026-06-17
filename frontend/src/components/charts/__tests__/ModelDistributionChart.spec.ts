@@ -3,6 +3,10 @@ import { mount } from '@vue/test-utils'
 
 import ModelDistributionChart from '../ModelDistributionChart.vue'
 
+const { getUserBreakdown } = vi.hoisted(() => ({
+  getUserBreakdown: vi.fn(),
+}))
+
 const messages: Record<string, string> = {
   'admin.dashboard.modelDistribution': 'Model Distribution',
   'admin.dashboard.spendingRankingTitle': 'User Spending Ranking',
@@ -41,6 +45,10 @@ vi.mock('vue-chartjs', () => ({
   },
 }))
 
+vi.mock('@/api/admin/dashboard', () => ({
+  getUserBreakdown,
+}))
+
 describe('ModelDistributionChart', () => {
   const modelStats = [
     {
@@ -53,6 +61,7 @@ describe('ModelDistributionChart', () => {
       total_tokens: 1000,
       cost: 1.5,
       actual_cost: 0.2,
+      account_cost: 0.3,
     },
     {
       model: 'model-b',
@@ -64,6 +73,7 @@ describe('ModelDistributionChart', () => {
       total_tokens: 500,
       cost: 0.5,
       actual_cost: 1.4,
+      account_cost: 0.6,
     },
   ]
 
@@ -167,5 +177,34 @@ describe('ModelDistributionChart', () => {
     expect(rows[2].text()).toContain('4')
     expect(rows[2].text()).toContain('400')
     expect(rows[2].text()).toContain('$10.00')
+  })
+
+  it('passes exclude_user_ids to user breakdown requests', async () => {
+    getUserBreakdown.mockResolvedValue({ users: [] })
+    const wrapper = mount(ModelDistributionChart, {
+      props: {
+        modelStats,
+        startDate: '2026-05-31',
+        endDate: '2026-06-01',
+        filters: {
+          exclude_user_ids: '101,202',
+        },
+      },
+      global: {
+        stubs: {
+          LoadingSpinner: true,
+          UserBreakdownSubTable: true,
+        },
+      },
+    })
+
+    await wrapper.find('tbody tr').trigger('click')
+
+    expect(getUserBreakdown).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exclude_user_ids: '101,202',
+        model: 'model-a',
+      })
+    )
   })
 })

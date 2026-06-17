@@ -3,6 +3,10 @@ import { mount } from '@vue/test-utils'
 
 import GroupDistributionChart from '../GroupDistributionChart.vue'
 
+const { getUserBreakdown } = vi.hoisted(() => ({
+  getUserBreakdown: vi.fn(),
+}))
+
 const messages: Record<string, string> = {
   'admin.dashboard.groupDistribution': 'Group Distribution',
   'admin.dashboard.group': 'Group',
@@ -33,6 +37,10 @@ vi.mock('vue-chartjs', () => ({
   },
 }))
 
+vi.mock('@/api/admin/dashboard', () => ({
+  getUserBreakdown,
+}))
+
 describe('GroupDistributionChart', () => {
   const groupStats = [
     {
@@ -42,6 +50,7 @@ describe('GroupDistributionChart', () => {
       total_tokens: 1200,
       cost: 1.8,
       actual_cost: 0.1,
+      account_cost: 0.2,
     },
     {
       group_id: 2,
@@ -50,6 +59,7 @@ describe('GroupDistributionChart', () => {
       total_tokens: 600,
       cost: 0.7,
       actual_cost: 0.9,
+      account_cost: 0.3,
     },
   ]
 
@@ -110,5 +120,34 @@ describe('GroupDistributionChart', () => {
       dataset: { data: [0.9, 0.1] },
     })
     expect(label).toBe('group-b: $0.900 (90.0%)')
+  })
+
+  it('passes exclude_user_ids to user breakdown requests', async () => {
+    getUserBreakdown.mockResolvedValue({ users: [] })
+    const wrapper = mount(GroupDistributionChart, {
+      props: {
+        groupStats,
+        startDate: '2026-05-31',
+        endDate: '2026-06-01',
+        filters: {
+          exclude_user_ids: '101,202',
+        },
+      },
+      global: {
+        stubs: {
+          LoadingSpinner: true,
+          UserBreakdownSubTable: true,
+        },
+      },
+    })
+
+    await wrapper.find('tbody tr').trigger('click')
+
+    expect(getUserBreakdown).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exclude_user_ids: '101,202',
+        group_id: 1,
+      })
+    )
   })
 })

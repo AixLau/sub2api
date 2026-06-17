@@ -295,6 +295,14 @@ func (m *mockGatewayCacheForGemini) DeleteSessionAccountID(ctx context.Context, 
 	return nil
 }
 
+func (m *mockGatewayCacheForGemini) SetUserAccountCooldown(ctx context.Context, userID, accountID int64, ttl time.Duration) error {
+	return nil
+}
+
+func (m *mockGatewayCacheForGemini) GetUserAccountCooldowns(ctx context.Context, userID int64) (map[int64]struct{}, error) {
+	return nil, nil
+}
+
 // TestGeminiMessagesCompatService_SelectAccountForModelWithExclusions_GeminiPlatform 测试 Gemini 单平台选择
 func TestGeminiMessagesCompatService_SelectAccountForModelWithExclusions_GeminiPlatform(t *testing.T) {
 	ctx := context.Background()

@@ -37,34 +37,36 @@ type dashboardSnapshotV2Response struct {
 }
 
 type dashboardSnapshotV2Filters struct {
-	UserID      int64
-	APIKeyID    int64
-	AccountID   int64
-	GroupID     int64
-	Model       string
-	RequestType *int16
-	Stream      *bool
-	BillingType *int8
+	UserID         int64
+	ExcludeUserIDs []int64
+	APIKeyID       int64
+	AccountID      int64
+	GroupID        int64
+	Model          string
+	RequestType    *int16
+	Stream         *bool
+	BillingType    *int8
 }
 
 type dashboardSnapshotV2CacheKey struct {
-	StartTime         string `json:"start_time"`
-	EndTime           string `json:"end_time"`
-	Granularity       string `json:"granularity"`
-	UserID            int64  `json:"user_id"`
-	APIKeyID          int64  `json:"api_key_id"`
-	AccountID         int64  `json:"account_id"`
-	GroupID           int64  `json:"group_id"`
-	Model             string `json:"model"`
-	RequestType       *int16 `json:"request_type"`
-	Stream            *bool  `json:"stream"`
-	BillingType       *int8  `json:"billing_type"`
-	IncludeStats      bool   `json:"include_stats"`
-	IncludeTrend      bool   `json:"include_trend"`
-	IncludeModels     bool   `json:"include_models"`
-	IncludeGroups     bool   `json:"include_groups"`
-	IncludeUsersTrend bool   `json:"include_users_trend"`
-	UsersTrendLimit   int    `json:"users_trend_limit"`
+	StartTime         string  `json:"start_time"`
+	EndTime           string  `json:"end_time"`
+	Granularity       string  `json:"granularity"`
+	UserID            int64   `json:"user_id"`
+	ExcludeUserIDs    []int64 `json:"exclude_user_ids"`
+	APIKeyID          int64   `json:"api_key_id"`
+	AccountID         int64   `json:"account_id"`
+	GroupID           int64   `json:"group_id"`
+	Model             string  `json:"model"`
+	RequestType       *int16  `json:"request_type"`
+	Stream            *bool   `json:"stream"`
+	BillingType       *int8   `json:"billing_type"`
+	IncludeStats      bool    `json:"include_stats"`
+	IncludeTrend      bool    `json:"include_trend"`
+	IncludeModels     bool    `json:"include_models"`
+	IncludeGroups     bool    `json:"include_groups"`
+	IncludeUsersTrend bool    `json:"include_users_trend"`
+	UsersTrendLimit   int     `json:"users_trend_limit"`
 }
 
 func (h *DashboardHandler) GetSnapshotV2(c *gin.Context) {
@@ -97,6 +99,7 @@ func (h *DashboardHandler) GetSnapshotV2(c *gin.Context) {
 		EndTime:           endTime.UTC().Format(time.RFC3339),
 		Granularity:       granularity,
 		UserID:            filters.UserID,
+		ExcludeUserIDs:    filters.ExcludeUserIDs,
 		APIKeyID:          filters.APIKeyID,
 		AccountID:         filters.AccountID,
 		GroupID:           filters.GroupID,
@@ -184,6 +187,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 			filters.RequestType,
 			filters.Stream,
 			filters.BillingType,
+			filters.ExcludeUserIDs,
 		)
 		if err != nil {
 			return nil, errors.New("failed to get usage trend")
@@ -204,6 +208,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 			filters.RequestType,
 			filters.Stream,
 			filters.BillingType,
+			filters.ExcludeUserIDs,
 		)
 		if err != nil {
 			return nil, errors.New("failed to get model statistics")
@@ -223,6 +228,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 			filters.RequestType,
 			filters.Stream,
 			filters.BillingType,
+			filters.ExcludeUserIDs,
 		)
 		if err != nil {
 			return nil, errors.New("failed to get group statistics")
@@ -253,6 +259,11 @@ func parseDashboardSnapshotV2Filters(c *gin.Context) (*dashboardSnapshotV2Filter
 		}
 		filters.UserID = id
 	}
+	excludeUserIDs, err := parseAdminUsageExcludeUserIDs(c)
+	if err != nil {
+		return nil, err
+	}
+	filters.ExcludeUserIDs = excludeUserIDs
 	if apiKeyIDStr := strings.TrimSpace(c.Query("api_key_id")); apiKeyIDStr != "" {
 		id, err := strconv.ParseInt(apiKeyIDStr, 10, 64)
 		if err != nil {
