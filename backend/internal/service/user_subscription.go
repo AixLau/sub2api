@@ -18,6 +18,7 @@ type UserSubscription struct {
 	DailyUsageUSD   float64
 	WeeklyUsageUSD  float64
 	MonthlyUsageUSD float64
+	MonthlyBonusUSD float64
 
 	AssignedBy *int64
 	AssignedAt time.Time
@@ -131,7 +132,7 @@ func (s *UserSubscription) CheckMonthlyLimit(group *Group, additionalCost float6
 	if !group.HasMonthlyLimit() {
 		return true
 	}
-	return s.MonthlyUsageUSD+additionalCost <= *group.MonthlyLimitUSD
+	return s.MonthlyUsageUSD+additionalCost <= effectiveMonthlyLimit(group, s)
 }
 
 func (s *UserSubscription) CheckAllLimits(group *Group, additionalCost float64) (daily, weekly, monthly bool) {

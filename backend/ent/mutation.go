@@ -45220,6 +45220,8 @@ type UserSubscriptionMutation struct {
 	addweekly_usage_usd     *float64
 	monthly_usage_usd       *float64
 	addmonthly_usage_usd    *float64
+	monthly_bonus_usd       *float64
+	addmonthly_bonus_usd    *float64
 	assigned_at             *time.Time
 	notes                   *string
 	clearedFields           map[string]struct{}
@@ -45951,6 +45953,62 @@ func (m *UserSubscriptionMutation) ResetMonthlyUsageUsd() {
 	m.addmonthly_usage_usd = nil
 }
 
+// SetMonthlyBonusUsd sets the "monthly_bonus_usd" field.
+func (m *UserSubscriptionMutation) SetMonthlyBonusUsd(f float64) {
+	m.monthly_bonus_usd = &f
+	m.addmonthly_bonus_usd = nil
+}
+
+// MonthlyBonusUsd returns the value of the "monthly_bonus_usd" field in the mutation.
+func (m *UserSubscriptionMutation) MonthlyBonusUsd() (r float64, exists bool) {
+	v := m.monthly_bonus_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMonthlyBonusUsd returns the old "monthly_bonus_usd" field's value of the UserSubscription entity.
+// If the UserSubscription object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserSubscriptionMutation) OldMonthlyBonusUsd(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMonthlyBonusUsd is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMonthlyBonusUsd requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMonthlyBonusUsd: %w", err)
+	}
+	return oldValue.MonthlyBonusUsd, nil
+}
+
+// AddMonthlyBonusUsd adds f to the "monthly_bonus_usd" field.
+func (m *UserSubscriptionMutation) AddMonthlyBonusUsd(f float64) {
+	if m.addmonthly_bonus_usd != nil {
+		*m.addmonthly_bonus_usd += f
+	} else {
+		m.addmonthly_bonus_usd = &f
+	}
+}
+
+// AddedMonthlyBonusUsd returns the value that was added to the "monthly_bonus_usd" field in this mutation.
+func (m *UserSubscriptionMutation) AddedMonthlyBonusUsd() (r float64, exists bool) {
+	v := m.addmonthly_bonus_usd
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetMonthlyBonusUsd resets all changes to the "monthly_bonus_usd" field.
+func (m *UserSubscriptionMutation) ResetMonthlyBonusUsd() {
+	m.monthly_bonus_usd = nil
+	m.addmonthly_bonus_usd = nil
+}
+
 // SetAssignedBy sets the "assigned_by" field.
 func (m *UserSubscriptionMutation) SetAssignedBy(i int64) {
 	m.assigned_by_user = &i
@@ -46267,7 +46325,7 @@ func (m *UserSubscriptionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserSubscriptionMutation) Fields() []string {
-	fields := make([]string, 0, 17)
+	fields := make([]string, 0, 18)
 	if m.created_at != nil {
 		fields = append(fields, usersubscription.FieldCreatedAt)
 	}
@@ -46309,6 +46367,9 @@ func (m *UserSubscriptionMutation) Fields() []string {
 	}
 	if m.monthly_usage_usd != nil {
 		fields = append(fields, usersubscription.FieldMonthlyUsageUsd)
+	}
+	if m.monthly_bonus_usd != nil {
+		fields = append(fields, usersubscription.FieldMonthlyBonusUsd)
 	}
 	if m.assigned_by_user != nil {
 		fields = append(fields, usersubscription.FieldAssignedBy)
@@ -46355,6 +46416,8 @@ func (m *UserSubscriptionMutation) Field(name string) (ent.Value, bool) {
 		return m.WeeklyUsageUsd()
 	case usersubscription.FieldMonthlyUsageUsd:
 		return m.MonthlyUsageUsd()
+	case usersubscription.FieldMonthlyBonusUsd:
+		return m.MonthlyBonusUsd()
 	case usersubscription.FieldAssignedBy:
 		return m.AssignedBy()
 	case usersubscription.FieldAssignedAt:
@@ -46398,6 +46461,8 @@ func (m *UserSubscriptionMutation) OldField(ctx context.Context, name string) (e
 		return m.OldWeeklyUsageUsd(ctx)
 	case usersubscription.FieldMonthlyUsageUsd:
 		return m.OldMonthlyUsageUsd(ctx)
+	case usersubscription.FieldMonthlyBonusUsd:
+		return m.OldMonthlyBonusUsd(ctx)
 	case usersubscription.FieldAssignedBy:
 		return m.OldAssignedBy(ctx)
 	case usersubscription.FieldAssignedAt:
@@ -46511,6 +46576,13 @@ func (m *UserSubscriptionMutation) SetField(name string, value ent.Value) error 
 		}
 		m.SetMonthlyUsageUsd(v)
 		return nil
+	case usersubscription.FieldMonthlyBonusUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMonthlyBonusUsd(v)
+		return nil
 	case usersubscription.FieldAssignedBy:
 		v, ok := value.(int64)
 		if !ok {
@@ -46549,6 +46621,9 @@ func (m *UserSubscriptionMutation) AddedFields() []string {
 	if m.addmonthly_usage_usd != nil {
 		fields = append(fields, usersubscription.FieldMonthlyUsageUsd)
 	}
+	if m.addmonthly_bonus_usd != nil {
+		fields = append(fields, usersubscription.FieldMonthlyBonusUsd)
+	}
 	return fields
 }
 
@@ -46563,6 +46638,8 @@ func (m *UserSubscriptionMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedWeeklyUsageUsd()
 	case usersubscription.FieldMonthlyUsageUsd:
 		return m.AddedMonthlyUsageUsd()
+	case usersubscription.FieldMonthlyBonusUsd:
+		return m.AddedMonthlyBonusUsd()
 	}
 	return nil, false
 }
@@ -46592,6 +46669,13 @@ func (m *UserSubscriptionMutation) AddField(name string, value ent.Value) error 
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddMonthlyUsageUsd(v)
+		return nil
+	case usersubscription.FieldMonthlyBonusUsd:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMonthlyBonusUsd(v)
 		return nil
 	}
 	return fmt.Errorf("unknown UserSubscription numeric field %s", name)
@@ -46700,6 +46784,9 @@ func (m *UserSubscriptionMutation) ResetField(name string) error {
 		return nil
 	case usersubscription.FieldMonthlyUsageUsd:
 		m.ResetMonthlyUsageUsd()
+		return nil
+	case usersubscription.FieldMonthlyBonusUsd:
+		m.ResetMonthlyBonusUsd()
 		return nil
 	case usersubscription.FieldAssignedBy:
 		m.ResetAssignedBy()

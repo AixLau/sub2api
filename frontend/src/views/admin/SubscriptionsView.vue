@@ -294,17 +294,21 @@
                   <div class="h-1.5 flex-1 rounded-full bg-gray-200 dark:bg-dark-600">
                     <div
                       class="h-1.5 rounded-full transition-all"
-                      :class="getProgressClass(row.monthly_usage_usd, row.group?.monthly_limit_usd)"
+                      :class="getProgressClass(row.monthly_usage_usd, getEffectiveMonthlyLimit(row))"
                       :style="{
-                        width: getProgressWidth(row.monthly_usage_usd, row.group?.monthly_limit_usd)
+                        width: getProgressWidth(row.monthly_usage_usd, getEffectiveMonthlyLimit(row))
                       }"
                     ></div>
                   </div>
                   <span class="usage-amount">
                     ${{ row.monthly_usage_usd?.toFixed(2) || '0.00' }}
                     <span class="text-gray-400">/</span>
-                    ${{ row.group?.monthly_limit_usd?.toFixed(2) }}
+                    ${{ getEffectiveMonthlyLimit(row).toFixed(2) }}
                   </span>
+                </div>
+                <div v-if="(row.monthly_bonus_usd || 0) > 0" class="reset-info">
+                  <Icon name="plus" size="xs" />
+                  <span>{{ t('admin.subscriptions.monthlyBonusApplied', { amount: (row.monthly_bonus_usd || 0).toFixed(2) }) }}</span>
                 </div>
                 <div class="reset-info" v-if="row.monthly_window_start">
                   <svg
@@ -601,6 +605,12 @@
               {{ getDaysRemaining(extendingSubscription.expires_at) ?? 0 }}
             </span>
           </p>
+          <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+            {{ t('admin.subscriptions.currentMonthlyBonus') }}:
+            <span class="font-medium text-gray-900 dark:text-white">
+              ${{ (extendingSubscription.monthly_bonus_usd || 0).toFixed(2) }}
+            </span>
+          </p>
         </div>
         <div>
           <label class="input-label">{{ t('admin.subscriptions.form.adjustDays') }}</label>
@@ -608,12 +618,23 @@
             <input
               v-model.number="extendForm.days"
               type="number"
-              required
               class="input text-center"
               :placeholder="t('admin.subscriptions.adjustDaysPlaceholder')"
             />
           </div>
           <p class="input-hint">{{ t('admin.subscriptions.adjustHint') }}</p>
+        </div>
+        <div>
+          <label class="input-label">{{ t('admin.subscriptions.form.addMonthlyBonus') }}</label>
+          <input
+            v-model.number="extendForm.monthly_bonus_usd"
+            type="number"
+            min="0"
+            step="0.01"
+            class="input text-center"
+            :placeholder="t('admin.subscriptions.monthlyBonusPlaceholder')"
+          />
+          <p class="input-hint">{{ t('admin.subscriptions.monthlyBonusHint') }}</p>
         </div>
       </form>
       <template #footer>
@@ -954,7 +975,8 @@ const assignForm = reactive({
 })
 
 const extendForm = reactive({
-  days: 30
+  days: 0,
+  monthly_bonus_usd: 0
 })
 
 // Group options for filter (all groups)
@@ -1203,22 +1225,32 @@ const handleAssignSubscription = async () => {
 
 const handleExtend = (subscription: UserSubscription) => {
   extendingSubscription.value = subscription
-  extendForm.days = 30
+  extendForm.days = 0
+  extendForm.monthly_bonus_usd = 0
   showExtendModal.value = true
 }
 
 const closeExtendModal = () => {
   showExtendModal.value = false
   extendingSubscription.value = null
+  extendForm.days = 0
+  extendForm.monthly_bonus_usd = 0
 }
 
 const handleExtendSubscription = async () => {
   if (!extendingSubscription.value) return
+  const days = Number(extendForm.days || 0)
+  const monthlyBonus = Number(extendForm.monthly_bonus_usd || 0)
+
+  if (days === 0 && monthlyBonus <= 0) {
+    appStore.showError(t('admin.subscriptions.adjustNoop'))
+    return
+  }
 
   // 前端验证：调整后的过期时间必须在未来
-  if (extendingSubscription.value.expires_at) {
+  if (days !== 0 && extendingSubscription.value.expires_at) {
     const expiresAt = new Date(extendingSubscription.value.expires_at)
-    const newExpiresAt = new Date(expiresAt.getTime() + extendForm.days * 24 * 60 * 60 * 1000)
+    const newExpiresAt = new Date(expiresAt.getTime() + days * 24 * 60 * 60 * 1000)
     if (newExpiresAt <= new Date()) {
       appStore.showError(t('admin.subscriptions.adjustWouldExpire'))
       return
@@ -1227,9 +1259,12 @@ const handleExtendSubscription = async () => {
 
   submitting.value = true
   try {
-    await adminAPI.subscriptions.extend(extendingSubscription.value.id, {
-      days: extendForm.days
-    })
+    if (days !== 0) {
+      await adminAPI.subscriptions.extend(extendingSubscription.value.id, { days })
+    }
+    if (monthlyBonus > 0) {
+      await adminAPI.subscriptions.addMonthlyBonus(extendingSubscription.value.id, monthlyBonus)
+    }
     appStore.showSuccess(t('admin.subscriptions.subscriptionAdjusted'))
     closeExtendModal()
     loadSubscriptions()
@@ -1239,6 +1274,10 @@ const handleExtendSubscription = async () => {
   } finally {
     submitting.value = false
   }
+}
+
+const getEffectiveMonthlyLimit = (subscription: UserSubscription): number => {
+  return (subscription.group?.monthly_limit_usd || 0) + (subscription.monthly_bonus_usd || 0)
 }
 
 const handleRevoke = (subscription: UserSubscription) => {

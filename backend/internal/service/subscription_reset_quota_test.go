@@ -21,6 +21,7 @@ type resetQuotaUserSubRepoStub struct {
 	resetDailyCalled   bool
 	resetWeeklyCalled  bool
 	resetMonthlyCalled bool
+	clearMonthlyBonus  bool
 	resetDailyErr      error
 	resetWeeklyErr     error
 	resetMonthlyErr    error
@@ -50,6 +51,12 @@ func (r *resetQuotaUserSubRepoStub) ResetWeeklyUsage(_ context.Context, _ int64,
 
 func (r *resetQuotaUserSubRepoStub) ResetMonthlyUsage(_ context.Context, _ int64, _ time.Time) error {
 	r.resetMonthlyCalled = true
+	if r.resetMonthlyErr == nil && r.sub != nil {
+		r.sub.MonthlyUsageUSD = 0
+		if r.clearMonthlyBonus {
+			r.sub.MonthlyBonusUSD = 0
+		}
+	}
 	return r.resetMonthlyErr
 }
 
@@ -170,6 +177,20 @@ func TestAdminResetQuota_ResetMonthlyOnly(t *testing.T) {
 	require.False(t, stub.resetDailyCalled, "不应调用 ResetDailyUsage")
 	require.False(t, stub.resetWeeklyCalled, "不应调用 ResetWeeklyUsage")
 	require.True(t, stub.resetMonthlyCalled, "应调用 ResetMonthlyUsage")
+}
+
+func TestAdminResetQuota_ResetMonthlyClearsMonthlyBonus(t *testing.T) {
+	stub := &resetQuotaUserSubRepoStub{
+		sub:               &UserSubscription{ID: 10, UserID: 10, GroupID: 20, MonthlyUsageUSD: 40, MonthlyBonusUSD: 100},
+		clearMonthlyBonus: true,
+	}
+	svc := newResetQuotaSvc(stub)
+
+	result, err := svc.AdminResetQuota(context.Background(), 10, false, false, true)
+
+	require.NoError(t, err)
+	require.Equal(t, 0.0, result.MonthlyUsageUSD)
+	require.Equal(t, 0.0, result.MonthlyBonusUSD, "月窗口重置后本月临时额外额度应清零")
 }
 
 func TestAdminResetQuota_ResetMonthlyUsageError(t *testing.T) {

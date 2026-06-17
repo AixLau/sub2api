@@ -180,7 +180,7 @@
                 </span>
                 <span class="text-sm text-gray-500 dark:text-dark-400">
                   ${{ (subscription.monthly_usage_usd || 0).toFixed(2) }} / ${{
-                    subscription.group.monthly_limit_usd.toFixed(2)
+                    getEffectiveMonthlyLimit(subscription).toFixed(2)
                   }}
                 </span>
               </div>
@@ -190,13 +190,13 @@
                   :class="
                     getProgressBarClass(
                       subscription.monthly_usage_usd,
-                      subscription.group.monthly_limit_usd
+                      getEffectiveMonthlyLimit(subscription)
                     )
                   "
                   :style="{
                     width: getProgressWidth(
                       subscription.monthly_usage_usd,
-                      subscription.group.monthly_limit_usd
+                      getEffectiveMonthlyLimit(subscription)
                     )
                   }"
                 ></div>
@@ -295,6 +295,10 @@ function getProgressBarClass(used: number | undefined, limit: number | null | un
   if (percentage >= 90) return 'bg-red-500'
   if (percentage >= 70) return 'bg-orange-500'
   return 'bg-green-500'
+}
+
+function getEffectiveMonthlyLimit(subscription: UserSubscription): number {
+  return (subscription.group?.monthly_limit_usd || 0) + (subscription.monthly_bonus_usd || 0)
 }
 
 function formatExpirationDate(expiresAt: string): string {

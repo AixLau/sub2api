@@ -1,0 +1,2 @@
+ALTER TABLE user_subscriptions
+ADD COLUMN IF NOT EXISTS monthly_bonus_usd DECIMAL(20, 10) NOT NULL DEFAULT 0;

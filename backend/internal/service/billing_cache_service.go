@@ -45,6 +45,7 @@ type subscriptionCacheData struct {
 	DailyUsage   float64
 	WeeklyUsage  float64
 	MonthlyUsage float64
+	MonthlyBonus float64
 	Version      int64
 }
 
@@ -442,6 +443,7 @@ func (s *BillingCacheService) convertFromPortsData(data *SubscriptionCacheData) 
 		DailyUsage:   data.DailyUsage,
 		WeeklyUsage:  data.WeeklyUsage,
 		MonthlyUsage: data.MonthlyUsage,
+		MonthlyBonus: data.MonthlyBonus,
 		Version:      data.Version,
 	}
 }
@@ -453,6 +455,7 @@ func (s *BillingCacheService) convertToPortsData(data *subscriptionCacheData) *S
 		DailyUsage:   data.DailyUsage,
 		WeeklyUsage:  data.WeeklyUsage,
 		MonthlyUsage: data.MonthlyUsage,
+		MonthlyBonus: data.MonthlyBonus,
 		Version:      data.Version,
 	}
 }
@@ -470,6 +473,7 @@ func (s *BillingCacheService) getSubscriptionFromDB(ctx context.Context, userID,
 		DailyUsage:   sub.DailyUsageUSD,
 		WeeklyUsage:  sub.WeeklyUsageUSD,
 		MonthlyUsage: sub.MonthlyUsageUSD,
+		MonthlyBonus: sub.MonthlyBonusUSD,
 		Version:      sub.UpdatedAt.Unix(),
 	}, nil
 }
@@ -888,7 +892,7 @@ func (s *BillingCacheService) checkSubscriptionEligibility(ctx context.Context, 
 		return ErrWeeklyLimitExceeded
 	}
 
-	if group.HasMonthlyLimit() && subData.MonthlyUsage >= *group.MonthlyLimitUSD {
+	if group.HasMonthlyLimit() && subData.MonthlyUsage >= *group.MonthlyLimitUSD+subData.MonthlyBonus {
 		return ErrMonthlyLimitExceeded
 	}
 

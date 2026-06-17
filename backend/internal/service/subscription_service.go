@@ -324,6 +324,7 @@ func renewedSubscriptionTerm(existingSub *UserSubscription, notes string, starts
 	renewed.DailyUsageUSD = 0
 	renewed.WeeklyUsageUSD = 0
 	renewed.MonthlyUsageUSD = 0
+	renewed.MonthlyBonusUSD = 0
 	renewed.Notes = appendSubscriptionNotes(existingSub.Notes, notes)
 	return &renewed
 }
@@ -609,6 +610,33 @@ func (s *SubscriptionService) ExtendSubscription(ctx context.Context, subscripti
 	return s.userSubRepo.GetByID(ctx, subscriptionID)
 }
 
+// AdminAddMonthlyBonus adds temporary bonus quota for the subscription's current monthly window.
+// The bonus is cleared when the monthly usage window is reset.
+func (s *SubscriptionService) AdminAddMonthlyBonus(ctx context.Context, subscriptionID int64, amountUSD float64) (*UserSubscription, error) {
+	if amountUSD <= 0 {
+		return nil, ErrInvalidInput
+	}
+
+	sub, err := s.userSubRepo.GetByID(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.userSubRepo.AddMonthlyBonus(ctx, subscriptionID, amountUSD); err != nil {
+		return nil, err
+	}
+
+	s.InvalidateSubCache(sub.UserID, sub.GroupID)
+	if s.subCacheL1 != nil {
+		s.subCacheL1.Wait()
+	}
+	if s.billingCacheService != nil {
+		_ = s.billingCacheService.InvalidateSubscription(ctx, sub.UserID, sub.GroupID)
+	}
+
+	return s.userSubRepo.GetByID(ctx, subscriptionID)
+}
+
 // GetByID 根据ID获取订阅
 func (s *SubscriptionService) GetByID(ctx context.Context, id int64) (*UserSubscription, error) {
 	return s.userSubRepo.GetByID(ctx, id)
@@ -823,6 +851,7 @@ func (s *SubscriptionService) CheckAndResetWindows(ctx context.Context, sub *Use
 		}
 		sub.MonthlyWindowStart = &windowStart
 		sub.MonthlyUsageUSD = 0
+		sub.MonthlyBonusUSD = 0
 		needsInvalidateCache = true
 	}
 
@@ -879,6 +908,7 @@ func (s *SubscriptionService) ValidateAndCheckLimits(sub *UserSubscription, grou
 	}
 	if sub.NeedsMonthlyReset() {
 		sub.MonthlyUsageUSD = 0
+		sub.MonthlyBonusUSD = 0
 		needsMaintenance = true
 	}
 	if !sub.IsWindowActivated() {
@@ -1048,7 +1078,7 @@ func (s *SubscriptionService) calculateProgress(sub *UserSubscription, group *Gr
 
 	// 月进度
 	if group.HasMonthlyLimit() && sub.MonthlyWindowStart != nil {
-		limit := *group.MonthlyLimitUSD
+		limit := effectiveMonthlyLimit(group, sub)
 		resetsAt := sub.MonthlyWindowStart.Add(30 * 24 * time.Hour)
 		progress.Monthly = &UsageWindowProgress{
 			LimitUSD:        limit,
@@ -1071,6 +1101,17 @@ func (s *SubscriptionService) calculateProgress(sub *UserSubscription, group *Gr
 	}
 
 	return progress
+}
+
+func effectiveMonthlyLimit(group *Group, sub *UserSubscription) float64 {
+	if group == nil || group.MonthlyLimitUSD == nil {
+		return 0
+	}
+	limit := *group.MonthlyLimitUSD
+	if sub != nil && sub.MonthlyBonusUSD > 0 {
+		limit += sub.MonthlyBonusUSD
+	}
+	return limit
 }
 
 // GetUserSubscriptionsWithProgress 获取用户所有订阅及进度

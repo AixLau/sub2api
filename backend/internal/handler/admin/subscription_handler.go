@@ -59,6 +59,11 @@ type AdjustSubscriptionRequest struct {
 	Days int `json:"days" binding:"required,min=-36500,max=36500"` // negative to shorten, positive to extend
 }
 
+// AddMonthlyBonusRequest represents adding temporary quota to the current monthly window.
+type AddMonthlyBonusRequest struct {
+	AmountUSD float64 `json:"amount_usd" binding:"required,gt=0"`
+}
+
 // List handles listing all subscriptions with pagination and filters
 // GET /api/v1/admin/subscriptions
 func (h *SubscriptionHandler) List(c *gin.Context) {
@@ -247,6 +252,36 @@ func (h *SubscriptionHandler) ResetQuota(c *gin.Context) {
 		return
 	}
 	response.Success(c, dto.UserSubscriptionFromServiceAdmin(sub))
+}
+
+// AddMonthlyBonus adds temporary bonus quota for the current monthly window.
+// POST /api/v1/admin/subscriptions/:id/add-monthly-bonus
+func (h *SubscriptionHandler) AddMonthlyBonus(c *gin.Context) {
+	subscriptionID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid subscription ID")
+		return
+	}
+	var req AddMonthlyBonusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	idempotencyPayload := struct {
+		SubscriptionID int64                  `json:"subscription_id"`
+		Body           AddMonthlyBonusRequest `json:"body"`
+	}{
+		SubscriptionID: subscriptionID,
+		Body:           req,
+	}
+	executeAdminIdempotentJSON(c, "admin.subscriptions.add-monthly-bonus", idempotencyPayload, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
+		subscription, execErr := h.subscriptionService.AdminAddMonthlyBonus(ctx, subscriptionID, req.AmountUSD)
+		if execErr != nil {
+			return nil, execErr
+		}
+		return dto.UserSubscriptionFromServiceAdmin(subscription), nil
+	})
 }
 
 // Revoke handles revoking a subscription

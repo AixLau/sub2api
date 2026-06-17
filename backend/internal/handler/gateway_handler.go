@@ -1476,7 +1476,7 @@ func (h *GatewayHandler) calculateSubscriptionRemaining(group *service.Group, su
 
 	// 检查月限额
 	if group.HasMonthlyLimit() {
-		remaining := *group.MonthlyLimitUSD - sub.MonthlyUsageUSD
+		remaining := *group.MonthlyLimitUSD + sub.MonthlyBonusUSD - sub.MonthlyUsageUSD
 		if remaining <= 0 {
 			return 0
 		}

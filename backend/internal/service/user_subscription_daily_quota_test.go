@@ -176,3 +176,27 @@ func TestValidateAndCheckLimits_DailyCardDoesNotAllowSecondQuotaAfterMidnight(t 
 	require.True(t, errors.Is(err, ErrDailyLimitExceeded))
 	require.Equal(t, dailyLimit+0.01, sub.DailyUsageUSD, "热路径不应清零日卡已用额度")
 }
+
+func TestValidateAndCheckLimits_ExpiredMonthlyWindowClearsBonusInMemory(t *testing.T) {
+	monthlyWindowStart := time.Now().Add(-31 * 24 * time.Hour)
+	monthlyLimit := 100.0
+	sub := &UserSubscription{
+		Status:             SubscriptionStatusActive,
+		ExpiresAt:          time.Now().Add(24 * time.Hour),
+		MonthlyWindowStart: &monthlyWindowStart,
+		MonthlyUsageUSD:    150,
+		MonthlyBonusUSD:    100,
+	}
+	group := &Group{
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  &monthlyLimit,
+	}
+	svc := NewSubscriptionService(groupRepoNoop{}, userSubRepoNoop{}, nil, nil, nil)
+
+	needsMaintenance, err := svc.ValidateAndCheckLimits(sub, group)
+
+	require.NoError(t, err)
+	require.True(t, needsMaintenance)
+	require.Equal(t, 0.0, sub.MonthlyUsageUSD)
+	require.Equal(t, 0.0, sub.MonthlyBonusUSD, "月窗口过期后本月临时额外额度不应继续参与热路径判断")
+}

@@ -140,6 +140,32 @@ func TestCalculateProgress_MonthlyUsage(t *testing.T) {
 	assert.Equal(t, 80.0, progress.Monthly.Percentage)
 }
 
+func TestCalculateProgress_MonthlyBonusExtendsCurrentWindowLimit(t *testing.T) {
+	svc := newTestSubscriptionService()
+	now := time.Now()
+	monthlyStart := now.Add(-15 * 24 * time.Hour)
+
+	sub := &UserSubscription{
+		ID:                 1,
+		ExpiresAt:          now.Add(10 * 24 * time.Hour),
+		MonthlyUsageUSD:    50.0,
+		MonthlyBonusUSD:    100.0,
+		MonthlyWindowStart: ptrTime(monthlyStart),
+	}
+	group := &Group{
+		Name:            "Enterprise",
+		MonthlyLimitUSD: ptrFloat64(100.0),
+	}
+
+	progress := svc.calculateProgress(sub, group)
+
+	require.NotNil(t, progress.Monthly, "有月限额和窗口时 Monthly 不应为 nil")
+	assert.Equal(t, 200.0, progress.Monthly.LimitUSD)
+	assert.Equal(t, 50.0, progress.Monthly.UsedUSD)
+	assert.Equal(t, 150.0, progress.Monthly.RemainingUSD)
+	assert.Equal(t, 25.0, progress.Monthly.Percentage)
+}
+
 func TestCalculateProgress_OverLimit_ClampedTo100Percent(t *testing.T) {
 	svc := newTestSubscriptionService()
 	now := time.Now()

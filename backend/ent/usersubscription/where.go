@@ -125,6 +125,11 @@ func MonthlyUsageUsd(v float64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldEQ(FieldMonthlyUsageUsd, v))
 }
 
+// MonthlyBonusUsd applies equality check predicate on the "monthly_bonus_usd" field. It's identical to MonthlyBonusUsdEQ.
+func MonthlyBonusUsd(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldMonthlyBonusUsd, v))
+}
+
 // AssignedBy applies equality check predicate on the "assigned_by" field. It's identical to AssignedByEQ.
 func AssignedBy(v int64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldEQ(FieldAssignedBy, v))
@@ -723,6 +728,46 @@ func MonthlyUsageUsdLT(v float64) predicate.UserSubscription {
 // MonthlyUsageUsdLTE applies the LTE predicate on the "monthly_usage_usd" field.
 func MonthlyUsageUsdLTE(v float64) predicate.UserSubscription {
 	return predicate.UserSubscription(sql.FieldLTE(FieldMonthlyUsageUsd, v))
+}
+
+// MonthlyBonusUsdEQ applies the EQ predicate on the "monthly_bonus_usd" field.
+func MonthlyBonusUsdEQ(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldEQ(FieldMonthlyBonusUsd, v))
+}
+
+// MonthlyBonusUsdNEQ applies the NEQ predicate on the "monthly_bonus_usd" field.
+func MonthlyBonusUsdNEQ(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNEQ(FieldMonthlyBonusUsd, v))
+}
+
+// MonthlyBonusUsdIn applies the In predicate on the "monthly_bonus_usd" field.
+func MonthlyBonusUsdIn(vs ...float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldIn(FieldMonthlyBonusUsd, vs...))
+}
+
+// MonthlyBonusUsdNotIn applies the NotIn predicate on the "monthly_bonus_usd" field.
+func MonthlyBonusUsdNotIn(vs ...float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldNotIn(FieldMonthlyBonusUsd, vs...))
+}
+
+// MonthlyBonusUsdGT applies the GT predicate on the "monthly_bonus_usd" field.
+func MonthlyBonusUsdGT(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGT(FieldMonthlyBonusUsd, v))
+}
+
+// MonthlyBonusUsdGTE applies the GTE predicate on the "monthly_bonus_usd" field.
+func MonthlyBonusUsdGTE(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldGTE(FieldMonthlyBonusUsd, v))
+}
+
+// MonthlyBonusUsdLT applies the LT predicate on the "monthly_bonus_usd" field.
+func MonthlyBonusUsdLT(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLT(FieldMonthlyBonusUsd, v))
+}
+
+// MonthlyBonusUsdLTE applies the LTE predicate on the "monthly_bonus_usd" field.
+func MonthlyBonusUsdLTE(v float64) predicate.UserSubscription {
+	return predicate.UserSubscription(sql.FieldLTE(FieldMonthlyBonusUsd, v))
 }
 
 // AssignedByEQ applies the EQ predicate on the "assigned_by" field.
