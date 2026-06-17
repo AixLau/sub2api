@@ -593,7 +593,7 @@
           <div class="flex items-center justify-between gap-6 border-t border-gray-700 pt-1.5">
             <span class="text-gray-400">{{ t('usage.billed') }}</span>
             <span class="font-semibold text-green-400"
-              >${{ tooltipData?.actual_cost.toFixed(6) }}</span
+              >${{ (tooltipData?.actual_cost ?? 0).toFixed(6) }}</span
             >
           </div>
         </div>
