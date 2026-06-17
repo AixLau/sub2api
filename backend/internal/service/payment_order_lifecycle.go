@@ -337,6 +337,37 @@ func (s *PaymentService) ReconcilePendingWxpayOrders(ctx context.Context) (int, 
 	return recovered, nil
 }
 
+// ReconcilePendingNinePlusOrders actively checks recent pending 9.plus orders so
+// paid orders can be fulfilled even when the buyer result page was not opened.
+func (s *PaymentService) ReconcilePendingNinePlusOrders(ctx context.Context) (int, error) {
+	now := time.Now()
+	orders, err := s.entClient.PaymentOrder.Query().
+		Where(
+			paymentorder.StatusEQ(OrderStatusPending),
+			paymentorder.ExpiresAtGT(now),
+			paymentorder.Or(
+				paymentorder.PaymentTypeEQ(payment.TypeNinePlus),
+				paymentorder.PaymentTypeHasPrefix(payment.TypeNinePlus+"_"),
+				paymentorder.ProviderKeyEQ(payment.TypeNinePlus),
+				paymentorder.ProviderKeyHasPrefix(payment.TypeNinePlus+"_"),
+			),
+		).
+		Order(dbent.Asc(paymentorder.FieldCreatedAt)).
+		Limit(pendingWxpayReconcileLimit).
+		All(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("query pending nineplus orders: %w", err)
+	}
+
+	recovered := 0
+	for _, order := range orders {
+		if s.reconcilePaid(ctx, order) == checkPaidResultAlreadyPaid {
+			recovered++
+		}
+	}
+	return recovered, nil
+}
+
 func (s *PaymentService) ReconcileNinePlusFulfillment(ctx context.Context) (int, error) {
 	orders, err := s.entClient.PaymentOrder.Query().
 		Where(

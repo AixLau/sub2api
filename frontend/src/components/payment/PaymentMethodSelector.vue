@@ -1,6 +1,6 @@
 <template>
   <div>
-    <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+    <label class="mb-2 block text-xs font-semibold uppercase tracking-[1px] text-gray-400 dark:text-gray-500">
       {{ t('payment.paymentMethod') }}
     </label>
     <div class="grid grid-cols-2 gap-3 sm:flex">
@@ -10,12 +10,12 @@
         type="button"
         :disabled="!method.available"
         :class="[
-          'relative flex h-[60px] flex-col items-center justify-center rounded-lg border px-3 transition-all sm:flex-1',
+          'relative flex h-[64px] flex-col items-center justify-center rounded-xl px-3 transition-all sm:flex-1',
           !method.available
-            ? 'cursor-not-allowed border-gray-200 bg-gray-50 opacity-50 dark:border-dark-700 dark:bg-dark-800/50'
+            ? 'cursor-not-allowed bg-gray-50 opacity-50 shadow-[0_0_0_1px_#E5EAFF] dark:bg-dark-800/50 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.06)]'
             : selected === method.type
               ? methodSelectedClass(method.type)
-              : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-200 dark:hover:border-dark-500',
+              : 'bg-white text-gray-700 shadow-[0_0_0_1px_#E5EAFF] hover:shadow-[0_0_0_1px_#0033FF] dark:bg-dark-800 dark:text-gray-200 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.1)]',
         ]"
         @click="method.available && emit('select', method.type)"
       >
@@ -25,7 +25,7 @@
             <span class="text-base font-semibold">{{ t(`payment.methods.${method.type}`) }}</span>
             <span
               v-if="method.fee_rate > 0"
-              class="text-[10px] tracking-wide text-gray-500 dark:text-dark-400"
+              class="mt-0.5 text-[10px] tracking-wide text-gray-500 dark:text-dark-400"
             >
               {{ t('payment.fee') }} {{ method.fee_rate }}%
             </span>
@@ -86,10 +86,10 @@ function methodIcon(type: string): string {
 }
 
 function methodSelectedClass(type: string): string {
-  if (type.includes('alipay')) return 'border-[#02A9F1] bg-blue-50 text-gray-900 shadow-sm dark:bg-blue-950 dark:text-gray-100'
-  if (type.includes('wxpay')) return 'border-[#09BB07] bg-green-50 text-gray-900 shadow-sm dark:bg-green-950 dark:text-gray-100'
-  if (type === 'stripe') return 'border-[#676BE5] bg-indigo-50 text-gray-900 shadow-sm dark:bg-indigo-950 dark:text-gray-100'
-  if (type === 'airwallex') return 'border-[#FF6B3D] bg-orange-50 text-gray-900 shadow-sm dark:border-[#FF8E3C] dark:bg-orange-950 dark:text-gray-100'
-  return 'border-primary-500 bg-primary-50 text-gray-900 shadow-sm dark:bg-primary-950 dark:text-gray-100'
+  if (type.includes('alipay')) return 'bg-blue-50 text-gray-900 shadow-[0_0_0_1.5px_#02A9F1] dark:bg-blue-950 dark:text-gray-100'
+  if (type.includes('wxpay')) return 'bg-green-50 text-gray-900 shadow-[0_0_0_1.5px_#09BB07] dark:bg-green-950 dark:text-gray-100'
+  if (type === 'stripe') return 'bg-indigo-50 text-gray-900 shadow-[0_0_0_1.5px_#676BE5] dark:bg-indigo-950 dark:text-gray-100'
+  if (type === 'airwallex') return 'bg-orange-50 text-gray-900 shadow-[0_0_0_1.5px_#FF6B3D] dark:bg-orange-950 dark:text-gray-100'
+  return 'bg-[#E5EAFF] text-gray-900 shadow-[0_0_0_1.5px_#0033FF] dark:bg-primary-950 dark:text-gray-100'
 }
 </script>

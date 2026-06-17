@@ -155,12 +155,24 @@ func (n *NinePlus) CreatePayment(ctx context.Context, req payment.CreatePaymentR
 }
 
 func (n *NinePlus) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOrderResponse, error) {
-	payload := map[string]any{
-		"trade_no": strings.TrimSpace(tradeNo),
-		"dump":     1,
+	tradeNo = strings.TrimSpace(tradeNo)
+	paid, err := n.checkPaymentPageStatus(ctx, tradeNo)
+	if err != nil {
+		return nil, fmt.Errorf("nineplus query order status: %w", err)
 	}
-	if queryPassword := strings.TrimSpace(n.config["defaultContact"]); queryPassword != "" {
-		payload["query_password"] = queryPassword
+	if !paid {
+		return &payment.QueryOrderResponse{
+			TradeNo: tradeNo,
+			Status:  payment.ProviderStatusPending,
+			Metadata: map[string]string{
+				"provider": "nineplus",
+			},
+		}, nil
+	}
+
+	payload := map[string]any{
+		"trade_no": tradeNo,
+		"dump":     1,
 	}
 	var resp ninePlusProviderOrderInfoResponse
 	if err := n.postJSON(ctx, "/shopApi/Order/info", payload, &resp); err != nil {
@@ -168,7 +180,7 @@ func (n *NinePlus) QueryOrder(ctx context.Context, tradeNo string) (*payment.Que
 	}
 
 	status := payment.ProviderStatusPending
-	if resp.SuccessTime != nil && *resp.SuccessTime > 0 {
+	if resp.Status == 1 && resp.SuccessTime != nil && *resp.SuccessTime > 0 {
 		status = payment.ProviderStatusPaid
 	}
 	if resp.Status < 0 {
@@ -183,6 +195,14 @@ func (n *NinePlus) QueryOrder(ctx context.Context, tradeNo string) (*payment.Que
 			"sendout":  strconv.Itoa(resp.Sendout),
 		},
 	}, nil
+}
+
+func (n *NinePlus) checkPaymentPageStatus(ctx context.Context, tradeNo string) (bool, error) {
+	var envelope ninePlusProviderEnvelope[json.RawMessage]
+	if err := n.postFormEnvelope(ctx, "/payApi/common/checkOrderStatus.html", url.Values{"trade_no": []string{tradeNo}}, &envelope); err != nil {
+		return false, err
+	}
+	return envelope.Code == 1, nil
 }
 
 func (n *NinePlus) VerifyNotification(context.Context, string, map[string]string) (*payment.PaymentNotification, error) {
@@ -298,6 +318,33 @@ func (n *NinePlus) postJSON(ctx context.Context, path string, payload map[string
 		return nil
 	}
 	return json.Unmarshal(envelope.Data, out)
+}
+
+func (n *NinePlus) postFormEnvelope(ctx context.Context, path string, values url.Values, out any) error {
+	body := values.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, n.baseURL+path, strings.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+	req.Header.Set("Referer", fmt.Sprintf("%s/shop/%s", n.baseURL, n.shopToken))
+	req.Header.Set("User-Agent", "sub2api-nineplus/1.0")
+	resp, err := n.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("nineplus upstream error: status=%d body=%s", resp.StatusCode, summarizeNinePlusResponse(raw))
+	}
+	if out == nil {
+		return nil
+	}
+	return json.Unmarshal(raw, out)
 }
 
 func summarizeNinePlusResponse(raw []byte) string {
