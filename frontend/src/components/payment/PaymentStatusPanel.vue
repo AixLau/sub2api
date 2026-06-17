@@ -77,7 +77,7 @@
           <div :class="['relative rounded-lg border-2 p-4', qrBorderClass]">
             <canvas ref="qrCanvas" class="mx-auto"></canvas>
             <!-- Brand logo overlay -->
-            <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div v-if="isAlipay || isWxpay" class="pointer-events-none absolute inset-0 flex items-center justify-center">
               <span :class="['rounded-full p-2 shadow ring-2 ring-white', qrLogoBgClass]">
                 <img :src="isAlipay ? alipayIcon : wxpayIcon" alt="" class="h-5 w-5 brightness-0 invert" />
               </span>

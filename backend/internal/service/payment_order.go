@@ -89,6 +89,7 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if err := s.validateSelectedCreateOrderInstance(ctx, req, sel); err != nil {
 		return nil, err
 	}
+	req = buildNinePlusCreateOrderRequest(req, user)
 	if req.PaymentType == payment.TypeNinePlus {
 		intent, prepareErr := s.prepareNinePlusCreateOrder(ctx, req, sel)
 		if prepareErr != nil {
@@ -136,6 +137,18 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 		return nil, err
 	}
 	return resp, nil
+}
+
+func buildNinePlusCreateOrderRequest(req CreateOrderRequest, user *User) CreateOrderRequest {
+	if req.PaymentType != payment.TypeNinePlus || user == nil {
+		return req
+	}
+	email := strings.TrimSpace(user.Email)
+	if email == "" {
+		return req
+	}
+	req.Contact = email
+	return req
 }
 
 func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrderRequest, cfg *PaymentConfig) (*dbent.SubscriptionPlan, error) {
@@ -510,13 +523,17 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 		}
 		return nil, classifyCreatePaymentError(req, sel.ProviderKey, err)
 	}
-	_, err = s.entClient.PaymentOrder.UpdateOneID(order.ID).
+	update := s.entClient.PaymentOrder.UpdateOneID(order.ID).
 		SetNillablePaymentTradeNo(psNilIfEmpty(pr.TradeNo)).
 		SetNillablePayURL(psNilIfEmpty(pr.PayURL)).
 		SetNillableQrCode(psNilIfEmpty(pr.QRCode)).
 		SetNillableProviderInstanceID(psNilIfEmpty(sel.InstanceID)).
-		SetNillableProviderKey(psNilIfEmpty(sel.ProviderKey)).
-		Save(ctx)
+		SetNillableProviderKey(psNilIfEmpty(sel.ProviderKey))
+	if pr.ExpiresAt != nil && !pr.ExpiresAt.IsZero() {
+		update.SetExpiresAt(pr.ExpiresAt.UTC())
+		order.ExpiresAt = pr.ExpiresAt.UTC()
+	}
+	_, err = update.Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("update order with payment details: %w", err)
 	}
@@ -754,6 +771,10 @@ func classifyCreatePaymentError(req CreateOrderRequest, providerKey string, err 
 }
 
 func buildCreateOrderResponse(order *dbent.PaymentOrder, req CreateOrderRequest, payAmount float64, sel *payment.InstanceSelection, pr *payment.CreatePaymentResponse, resultType payment.CreatePaymentResultType) *CreateOrderResponse {
+	expiresAt := order.ExpiresAt
+	if pr != nil && pr.ExpiresAt != nil && !pr.ExpiresAt.IsZero() {
+		expiresAt = pr.ExpiresAt.UTC()
+	}
 	return &CreateOrderResponse{
 		OrderID:      order.ID,
 		Amount:       order.Amount,
@@ -773,7 +794,7 @@ func buildCreateOrderResponse(order *dbent.PaymentOrder, req CreateOrderRequest,
 		OAuth:        pr.OAuth,
 		JSAPI:        pr.JSAPI,
 		JSAPIPayload: pr.JSAPI,
-		ExpiresAt:    order.ExpiresAt,
+		ExpiresAt:    expiresAt,
 		PaymentMode:  sel.PaymentMode,
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -21,7 +22,10 @@ const (
 	defaultNinePlusChannelID   = 10
 	defaultNinePlusCurrency    = "CNY"
 	maxNinePlusResponseSummary = 512
+	maxNinePlusPaymentPageSize = 256 << 10
 )
+
+var ninePlusPaymentPageElapsedPattern = regexp.MustCompile(`maxtime\s*=\s*600\s*-\s*\(\s*parseInt\(\s*['"](\d+)['"]\s*\)\s*\)`)
 
 type NinePlus struct {
 	instanceID string
@@ -137,10 +141,16 @@ func (n *NinePlus) CreatePayment(ctx context.Context, req payment.CreatePaymentR
 	if err := n.postJSON(ctx, "/shopApi/Pay/order", payload, &resp); err != nil {
 		return nil, fmt.Errorf("nineplus create payment: %w", err)
 	}
+	payURL := n.absoluteURL(resp.PayURL)
+	var expiresAt *time.Time
+	if payURL != "" {
+		expiresAt = n.paymentPageExpiresAt(ctx, payURL)
+	}
 	return &payment.CreatePaymentResponse{
-		TradeNo:  resp.TradeNo,
-		PayURL:   n.absoluteURL(resp.PayURL),
-		Currency: defaultNinePlusCurrency,
+		TradeNo:   resp.TradeNo,
+		PayURL:    payURL,
+		Currency:  defaultNinePlusCurrency,
+		ExpiresAt: expiresAt,
 	}, nil
 }
 
@@ -205,6 +215,49 @@ func (n *NinePlus) absoluteURL(raw string) string {
 		return raw
 	}
 	return base.ResolveReference(ref).String()
+}
+
+func (n *NinePlus) paymentPageExpiresAt(ctx context.Context, payURL string) *time.Time {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, payURL, nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("Referer", fmt.Sprintf("%s/shop/%s", n.baseURL, n.shopToken))
+	req.Header.Set("User-Agent", "sub2api-nineplus/1.0")
+	resp, err := n.httpClient.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxNinePlusPaymentPageSize))
+	if err != nil {
+		return nil
+	}
+	remaining, ok := parseNinePlusPaymentPageRemainingSeconds(raw)
+	if !ok || remaining <= 0 {
+		return nil
+	}
+	expiresAt := time.Now().Add(time.Duration(remaining) * time.Second).UTC()
+	return &expiresAt
+}
+
+func parseNinePlusPaymentPageRemainingSeconds(raw []byte) (int, bool) {
+	match := ninePlusPaymentPageElapsedPattern.FindSubmatch(raw)
+	if len(match) != 2 {
+		return 0, false
+	}
+	elapsed, err := strconv.Atoi(string(match[1]))
+	if err != nil {
+		return 0, false
+	}
+	remaining := 600 - elapsed
+	if remaining < 0 {
+		remaining = 0
+	}
+	return remaining, true
 }
 
 func (n *NinePlus) postJSON(ctx context.Context, path string, payload map[string]any, out any) error {

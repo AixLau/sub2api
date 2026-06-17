@@ -177,6 +177,23 @@ describe('decidePaymentLaunch', () => {
     expect(decision.paymentState.qrCode).toBe('https://pay.example.com/qr/session')
   })
 
+  it('renders nineplus pay_url as QR-only waiting content', () => {
+    const decision = decidePaymentLaunch(createOrderResult({
+      pay_url: 'https://9.plus/payApi/Zhifutong/pay.html?trade_no=9PTEST',
+      payment_mode: 'redirect',
+    }), {
+      visibleMethod: 'nineplus',
+      orderType: 'balance',
+      isMobile: false,
+    })
+
+    expect(decision.kind).toBe('qr_waiting')
+    expect(decision.paymentState.qrCode).toBe('https://9.plus/payApi/Zhifutong/pay.html?trade_no=9PTEST')
+    expect(decision.paymentState.payUrl).toBe('')
+    expect(decision.recovery.qrCode).toBe('https://9.plus/payApi/Zhifutong/pay.html?trade_no=9PTEST')
+    expect(decision.recovery.payUrl).toBe('')
+  })
+
   it('returns wechat oauth launch when backend requires in-app authorization', () => {
     const decision = decidePaymentLaunch(createOrderResult({
       result_type: 'oauth_required',

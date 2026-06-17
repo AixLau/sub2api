@@ -217,6 +217,17 @@ export function decidePaymentLaunch(
   const effectiveMobile = (context.forceQRCode && visibleMethod === 'alipay')
     ? false
     : context.isMobile
+
+  if (visibleMethod === 'nineplus' && (baseState.qrCode || baseState.payUrl)) {
+    const paymentState = {
+      ...baseState,
+      qrCode: baseState.qrCode || baseState.payUrl,
+      payUrl: '',
+      paymentMode: 'qrcode',
+    }
+    return { kind: 'qr_waiting', paymentState, recovery: paymentState }
+  }
+
   const prefersRedirect = normalizedPaymentMode === 'redirect'
     || normalizedPaymentMode === 'popup'
     || (effectiveMobile && !!baseState.payUrl)

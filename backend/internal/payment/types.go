@@ -2,7 +2,10 @@
 // registry, load balancing, and shared utilities for the payment subsystem.
 package payment
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // PaymentType represents a supported payment method.
 type PaymentType = string
@@ -154,6 +157,7 @@ type CreatePaymentResponse struct {
 	ResultType   CreatePaymentResultType // Typed result contract for frontend flows
 	OAuth        *WechatOAuthInfo        // WeChat OAuth bootstrap payload when required
 	JSAPI        *WechatJSAPIPayload     // WeChat JSAPI invocation payload when ready
+	ExpiresAt    *time.Time              // Upstream payment expiry when provided or derivable
 }
 
 // QueryOrderResponse describes the payment status from the upstream provider.

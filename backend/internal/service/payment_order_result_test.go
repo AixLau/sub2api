@@ -91,6 +91,37 @@ func TestBuildCreateOrderResponseCopiesJSAPIPayload(t *testing.T) {
 	}
 }
 
+func TestBuildCreateOrderResponseUsesProviderExpiresAt(t *testing.T) {
+	t.Parallel()
+
+	localExpiresAt := time.Date(2026, 6, 17, 12, 30, 0, 0, time.UTC)
+	providerExpiresAt := time.Date(2026, 6, 17, 12, 9, 15, 0, time.UTC)
+
+	resp := buildCreateOrderResponse(
+		&dbent.PaymentOrder{
+			ID:         99,
+			Amount:     10.2,
+			PayAmount:  10.2,
+			FeeRate:    0,
+			ExpiresAt:  localExpiresAt,
+			OutTradeNo: "sub2_np",
+		},
+		CreateOrderRequest{PaymentType: payment.TypeNinePlus},
+		10.2,
+		&payment.InstanceSelection{ProviderKey: payment.TypeNinePlus, PaymentMode: "redirect"},
+		&payment.CreatePaymentResponse{
+			TradeNo:   "9PTEST",
+			PayURL:    "https://9.plus/payApi/Zhifutong/pay.html?trade_no=9PTEST",
+			ExpiresAt: &providerExpiresAt,
+		},
+		payment.CreatePaymentResultOrderCreated,
+	)
+
+	if !resp.ExpiresAt.Equal(providerExpiresAt) {
+		t.Fatalf("expires_at = %v, want provider expiry %v", resp.ExpiresAt, providerExpiresAt)
+	}
+}
+
 func TestValidateSelectedCreateOrderAmountCurrencyRejectsFractionalZeroDecimal(t *testing.T) {
 	t.Parallel()
 
@@ -194,6 +225,27 @@ func TestBuildProviderCreatePaymentRequestUsesNinePlusMetadata(t *testing.T) {
 	}
 	if req.ClientIP != "contact@example.com" {
 		t.Fatalf("client_ip = %q, want %q", req.ClientIP, "contact@example.com")
+	}
+}
+
+func TestBuildNinePlusCreateOrderRequestUsesUserEmailContact(t *testing.T) {
+	t.Parallel()
+
+	req := buildNinePlusCreateOrderRequest(CreateOrderRequest{
+		UserID:            42,
+		PaymentType:       payment.TypeNinePlus,
+		ClientIP:          "127.0.0.1",
+		ExternalProductID: "np-prod-2",
+		ExternalQuantity:  1,
+		Contact:           "request-contact@example.com",
+	}, &User{
+		ID:       42,
+		Email:    "buyer@example.com",
+		Username: "buyer",
+	})
+
+	if req.Contact != "buyer@example.com" {
+		t.Fatalf("contact = %q, want current user email", req.Contact)
 	}
 }
 
