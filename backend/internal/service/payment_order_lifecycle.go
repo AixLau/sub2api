@@ -294,6 +294,15 @@ func (s *PaymentService) VerifyOrderByOutTradeNo(ctx context.Context, outTradeNo
 			}
 		}
 	}
+	if o.PaymentType == payment.TypeNinePlus && o.Status == OrderStatusRecharging {
+		if fulfillErr := s.executeFulfillment(ctx, o.ID); fulfillErr != nil {
+			slog.Warn("retry nineplus fulfillment failed", "orderID", o.ID, "error", fulfillErr)
+		}
+		o, err = s.entClient.PaymentOrder.Get(ctx, o.ID)
+		if err != nil {
+			return nil, fmt.Errorf("reload nineplus order: %w", err)
+		}
+	}
 	return o, nil
 }
 
@@ -326,6 +335,33 @@ func (s *PaymentService) ReconcilePendingWxpayOrders(ctx context.Context) (int, 
 		}
 	}
 	return recovered, nil
+}
+
+func (s *PaymentService) ReconcileNinePlusFulfillment(ctx context.Context) (int, error) {
+	orders, err := s.entClient.PaymentOrder.Query().
+		Where(
+			paymentorder.PaymentTypeEQ(payment.TypeNinePlus),
+			paymentorder.StatusIn(OrderStatusPaid, OrderStatusRecharging),
+		).
+		Order(dbent.Asc(paymentorder.FieldUpdatedAt)).
+		Limit(pendingWxpayReconcileLimit).
+		All(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("query nineplus fulfillment orders: %w", err)
+	}
+
+	completed := 0
+	for _, order := range orders {
+		if err := s.executeFulfillment(ctx, order.ID); err != nil {
+			slog.Warn("reconcile nineplus fulfillment failed", "orderID", order.ID, "error", err)
+			continue
+		}
+		updated, getErr := s.entClient.PaymentOrder.Get(ctx, order.ID)
+		if getErr == nil && updated.Status == OrderStatusCompleted {
+			completed++
+		}
+	}
+	return completed, nil
 }
 
 // VerifyOrderPublic returns the currently persisted public order state without

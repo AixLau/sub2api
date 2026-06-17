@@ -151,7 +151,7 @@ func TestBuildPaymentSubjectAppliesAffixToSubscriptionPlanProductName(t *testing
 		ProductName: "Claude Pro",
 	}
 
-	got := svc.buildPaymentSubject(plan, 0, cfg, nil)
+	got := svc.buildPaymentSubject(plan, CreateOrderRequest{}, 0, cfg, nil)
 	if got != "PRE Claude Pro SUF" {
 		t.Fatalf("buildPaymentSubject() = %q, want %q", got, "PRE Claude Pro SUF")
 	}
@@ -167,9 +167,33 @@ func TestBuildPaymentSubjectAppliesAffixToSubscriptionPlanDefaultName(t *testing
 	}
 	plan := &dbent.SubscriptionPlan{Name: "Team Monthly"}
 
-	got := svc.buildPaymentSubject(plan, 0, cfg, nil)
+	got := svc.buildPaymentSubject(plan, CreateOrderRequest{}, 0, cfg, nil)
 	if got != "PRE Sub2API Subscription Team Monthly SUF" {
 		t.Fatalf("buildPaymentSubject() = %q, want %q", got, "PRE Sub2API Subscription Team Monthly SUF")
+	}
+}
+
+func TestBuildProviderCreatePaymentRequestUsesNinePlusMetadata(t *testing.T) {
+	t.Parallel()
+
+	req := buildProviderCreatePaymentRequest(CreateOrderRequest{
+		PaymentType:       payment.TypeNinePlus,
+		ClientIP:          "127.0.0.1",
+		ExternalProductID: "np-prod-2",
+		ExternalQuantity:  3,
+		Contact:           "contact@example.com",
+	}, &payment.InstanceSelection{
+		ProviderKey: payment.TypeNinePlus,
+	}, "sub2_np_1", "28.80", "ignored-subject")
+
+	if req.Subject != "np-prod-2" {
+		t.Fatalf("subject = %q, want %q", req.Subject, "np-prod-2")
+	}
+	if req.Amount != "3" {
+		t.Fatalf("amount = %q, want %q", req.Amount, "3")
+	}
+	if req.ClientIP != "contact@example.com" {
+		t.Fatalf("client_ip = %q, want %q", req.ClientIP, "contact@example.com")
 	}
 }
 

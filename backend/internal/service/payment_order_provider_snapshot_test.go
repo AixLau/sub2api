@@ -188,6 +188,31 @@ func TestBuildPaymentOrderProviderSnapshot_IncludesProviderCurrency(t *testing.T
 	require.Equal(t, "acct-78", airwallexSnapshot["merchant_id"])
 }
 
+func TestBuildPaymentOrderProviderSnapshot_IncludesNinePlusOrderMetadata(t *testing.T) {
+	t.Parallel()
+
+	snapshot := buildPaymentOrderProviderSnapshot(&payment.InstanceSelection{
+		InstanceID:  "79",
+		ProviderKey: payment.TypeNinePlus,
+		Config: map[string]string{
+			"shopToken": "shop-token-79",
+			"channelId": "12",
+		},
+		PaymentMode: "redirect",
+	}, CreateOrderRequest{
+		PaymentType:       payment.TypeNinePlus,
+		ExternalProductID: "np-prod-1",
+		ExternalQuantity:  2,
+		Contact:           "buyer@example.com",
+	})
+
+	require.Equal(t, "shop-token-79", snapshot["merchant_id"])
+	require.Equal(t, "np-prod-1", snapshot["external_product_id"])
+	require.Equal(t, 2, snapshot["external_quantity"])
+	require.Equal(t, "buyer@example.com", snapshot["contact"])
+	require.Equal(t, "CNY", snapshot["currency"])
+}
+
 func valueOrEmpty(v *string) string {
 	if v == nil {
 		return ""

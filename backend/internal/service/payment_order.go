@@ -24,6 +24,10 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if req.OrderType == "" {
 		req.OrderType = payment.OrderTypeBalance
 	}
+	req.PaymentType = strings.TrimSpace(req.PaymentType)
+	if req.PaymentType == "" {
+		return nil, infraerrors.BadRequest("PAYMENT_METHOD_REQUIRED", "payment method is required")
+	}
 	if normalized := NormalizeVisibleMethod(req.PaymentType); normalized != "" {
 		req.PaymentType = normalized
 	}
@@ -57,9 +61,16 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 		orderAmount = plan.Price
 		limitAmount = plan.Price
 	} else if req.OrderType == payment.OrderTypeBalance {
-		orderAmount = calculateCreditedBalance(req.Amount, cfg.BalanceRechargeMultiplier)
+		if req.PaymentType == payment.TypeNinePlus {
+			orderAmount = req.Amount
+		} else {
+			orderAmount = calculateCreditedBalance(req.Amount, cfg.BalanceRechargeMultiplier)
+		}
 	}
 	feeRate := cfg.RechargeFeeRate
+	if req.PaymentType == payment.TypeNinePlus {
+		feeRate = 0
+	}
 	methodCurrency := payment.DefaultPaymentCurrency
 	if s.configService != nil {
 		methodCurrency, err = s.configService.ValidateMethodCurrencyConsistency(ctx, req.PaymentType)
@@ -78,11 +89,26 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if err := s.validateSelectedCreateOrderInstance(ctx, req, sel); err != nil {
 		return nil, err
 	}
+	if req.PaymentType == payment.TypeNinePlus {
+		intent, prepareErr := s.prepareNinePlusCreateOrder(ctx, req, sel)
+		if prepareErr != nil {
+			return nil, prepareErr
+		}
+		req.Amount = intent.Amount
+		req.ExternalProductID = intent.ProductID
+		req.ExternalQuantity = intent.Quantity
+		req.Contact = intent.Contact
+		orderAmount = intent.Amount
+		limitAmount = intent.Amount
+		if _, validateErr := s.validateOrderInput(ctx, req, cfg); validateErr != nil {
+			return nil, validateErr
+		}
+	}
 	selectedCurrency := payment.DefaultPaymentCurrency
 	if sel != nil {
 		selectedCurrency = paymentProviderConfigCurrency(sel.ProviderKey, sel.Config)
 	}
-	if selectedCurrency != methodCurrency {
+	if selectedCurrency != methodCurrency || req.PaymentType == payment.TypeNinePlus {
 		payAmountStr, payAmount, err = calculateCreateOrderPayAmount(limitAmount, feeRate, selectedCurrency)
 		if err != nil {
 			return nil, err
@@ -117,7 +143,19 @@ func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrder
 		return nil, infraerrors.Forbidden("BALANCE_PAYMENT_DISABLED", "balance recharge has been disabled")
 	}
 	if req.OrderType == payment.OrderTypeSubscription {
+		if req.PaymentType == payment.TypeNinePlus {
+			if strings.TrimSpace(req.ExternalProductID) == "" {
+				return nil, infraerrors.BadRequest("NINEPLUS_PRODUCT_REQUIRED", "nineplus product id is required")
+			}
+			if math.IsNaN(req.Amount) || math.IsInf(req.Amount, 0) || req.Amount <= 0 {
+				return nil, infraerrors.BadRequest("INVALID_AMOUNT", "amount must be a positive number")
+			}
+			return nil, nil
+		}
 		return s.validateSubOrder(ctx, req)
+	}
+	if req.PaymentType == payment.TypeNinePlus && strings.TrimSpace(req.ExternalProductID) == "" {
+		return nil, infraerrors.BadRequest("NINEPLUS_PRODUCT_REQUIRED", "nineplus product id is required")
 	}
 	if math.IsNaN(req.Amount) || math.IsInf(req.Amount, 0) || req.Amount <= 0 {
 		return nil, infraerrors.BadRequest("INVALID_AMOUNT", "amount must be a positive number")
@@ -303,6 +341,23 @@ func buildPaymentOrderProviderSnapshot(sel *payment.InstanceSelection, req Creat
 		}
 		snapshot["currency"] = paymentProviderConfigCurrency(providerKey, sel.Config)
 	}
+	if providerKey == payment.TypeNinePlus {
+		if shopToken := strings.TrimSpace(sel.Config["shopToken"]); shopToken != "" {
+			snapshot["merchant_id"] = shopToken
+		}
+		if productID := strings.TrimSpace(req.ExternalProductID); productID != "" {
+			snapshot["external_product_id"] = productID
+		}
+		quantity := req.ExternalQuantity
+		if quantity <= 0 {
+			quantity = 1
+		}
+		snapshot["external_quantity"] = quantity
+		if contact := strings.TrimSpace(req.Contact); contact != "" {
+			snapshot["contact"] = contact
+		}
+		snapshot["currency"] = payment.DefaultPaymentCurrency
+	}
 
 	if len(snapshot) == 1 {
 		return nil
@@ -411,7 +466,7 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 		return nil, infraerrors.ServiceUnavailable("PAYMENT_PROVIDER_MISCONFIGURED", "provider_misconfigured").
 			WithMetadata(map[string]string{"provider": sel.ProviderKey, "instance_id": sel.InstanceID})
 	}
-	subject := s.buildPaymentSubject(plan, limitAmount, cfg, sel)
+	subject := s.buildPaymentSubject(plan, req, limitAmount, cfg, sel)
 	outTradeNo := order.OutTradeNo
 	canonicalReturnURL, err := CanonicalizeReturnURL(req.ReturnURL, req.SrcHost, req.SrcURL)
 	if err != nil {
@@ -438,11 +493,14 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 		return nil, err
 	}
 	providerReq := buildProviderCreatePaymentRequest(CreateOrderRequest{
-		PaymentType: req.PaymentType,
-		OpenID:      req.OpenID,
-		ClientIP:    req.ClientIP,
-		IsMobile:    req.IsMobile,
-		ReturnURL:   providerReturnURL,
+		PaymentType:       req.PaymentType,
+		OpenID:            req.OpenID,
+		ClientIP:          req.ClientIP,
+		IsMobile:          req.IsMobile,
+		ReturnURL:         providerReturnURL,
+		ExternalProductID: req.ExternalProductID,
+		ExternalQuantity:  req.ExternalQuantity,
+		Contact:           req.Contact,
 	}, sel, outTradeNo, payAmountStr, subject)
 	pr, err := prov.CreatePayment(ctx, providerReq)
 	if err != nil {
@@ -480,7 +538,7 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 }
 
 func buildProviderCreatePaymentRequest(req CreateOrderRequest, sel *payment.InstanceSelection, orderID, amount, subject string) payment.CreatePaymentRequest {
-	return payment.CreatePaymentRequest{
+	providerReq := payment.CreatePaymentRequest{
 		OrderID:            orderID,
 		Amount:             amount,
 		PaymentType:        req.PaymentType,
@@ -491,6 +549,22 @@ func buildProviderCreatePaymentRequest(req CreateOrderRequest, sel *payment.Inst
 		IsMobile:           req.IsMobile,
 		InstanceSubMethods: selectedInstanceSupportedTypes(sel),
 	}
+	if sel != nil && sel.ProviderKey == payment.TypeNinePlus {
+		quantity := req.ExternalQuantity
+		if quantity <= 0 {
+			quantity = 1
+		}
+		productID := strings.TrimSpace(req.ExternalProductID)
+		if productID != "" {
+			providerReq.Subject = productID
+		}
+		providerReq.Amount = strconv.Itoa(quantity)
+		if contact := strings.TrimSpace(req.Contact); contact != "" {
+			providerReq.ClientIP = contact
+		}
+		providerReq.Metadata = buildNinePlusProviderMetadata(productID, quantity, req.Contact)
+	}
+	return providerReq
 }
 
 func selectedInstanceSupportedTypes(sel *payment.InstanceSelection) string {
@@ -500,13 +574,16 @@ func selectedInstanceSupportedTypes(sel *payment.InstanceSelection) string {
 	return sel.SupportedTypes
 }
 
-func (s *PaymentService) buildPaymentSubject(plan *dbent.SubscriptionPlan, limitAmount float64, cfg *PaymentConfig, sel *payment.InstanceSelection) string {
+func (s *PaymentService) buildPaymentSubject(plan *dbent.SubscriptionPlan, req CreateOrderRequest, limitAmount float64, cfg *PaymentConfig, sel *payment.InstanceSelection) string {
 	if plan != nil {
 		productName := plan.ProductName
 		if productName == "" {
 			productName = "Sub2API Subscription " + plan.Name
 		}
 		return applyPaymentProductNameAffix(productName, cfg)
+	}
+	if strings.TrimSpace(req.ExternalProductID) != "" {
+		return applyPaymentProductNameAffix(strings.TrimSpace(req.ExternalProductID), cfg)
 	}
 	currency := payment.DefaultPaymentCurrency
 	if sel != nil {

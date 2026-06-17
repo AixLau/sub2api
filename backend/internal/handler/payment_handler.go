@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/sync/errgroup"
 )
 
 // PaymentHandler handles user-facing payment requests.
@@ -98,22 +99,36 @@ func (h *PaymentHandler) GetChannels(c *gin.Context) {
 func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	// Fetch limits (methods + global range)
-	limitsResp, err := h.configService.GetAvailableMethodLimits(ctx)
-	if err != nil {
+	var limitsResp *service.MethodLimitsResponse
+	var cfg *service.PaymentConfig
+	var plans []*dbent.SubscriptionPlan
+	var ninePlusProducts []service.ExternalShopProduct
+	g, groupCtx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		var err error
+		limitsResp, err = h.configService.GetAvailableMethodLimits(groupCtx)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		cfg, err = h.configService.GetPaymentConfig(groupCtx)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		plans, err = h.configService.ListPlansForSale(groupCtx)
+		return err
+	})
+	if err := g.Wait(); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-
-	// Fetch payment config
-	cfg, err := h.configService.GetPaymentConfig(ctx)
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
+	if _, enabled := limitsResp.Methods[payment.TypeNinePlus]; enabled && h.paymentService != nil {
+		if products, err := h.paymentService.ListNinePlusProducts(ctx); err == nil {
+			ninePlusProducts = products
+		}
 	}
 
-	// Fetch plans with group info
-	plans, _ := h.configService.ListPlansForSale(ctx)
 	groupInfo := h.configService.GetGroupInfoMap(ctx, plans)
 	planList := make([]checkoutPlan, 0, len(plans))
 	for _, p := range plans {
@@ -135,6 +150,7 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 		GlobalMin:                 limitsResp.GlobalMin,
 		GlobalMax:                 limitsResp.GlobalMax,
 		Plans:                     planList,
+		NinePlusProducts:          buildCheckoutNinePlusProducts(ninePlusProducts),
 		BalanceDisabled:           cfg.BalanceDisabled,
 		BalanceRechargeMultiplier: cfg.BalanceRechargeMultiplier,
 		RechargeFeeRate:           cfg.RechargeFeeRate,
@@ -150,6 +166,7 @@ type checkoutInfoResponse struct {
 	GlobalMin                 float64                         `json:"global_min"`
 	GlobalMax                 float64                         `json:"global_max"`
 	Plans                     []checkoutPlan                  `json:"plans"`
+	NinePlusProducts          []checkoutNinePlusProduct       `json:"nineplus_products"`
 	BalanceDisabled           bool                            `json:"balance_disabled"`
 	BalanceRechargeMultiplier float64                         `json:"balance_recharge_multiplier"`
 	RechargeFeeRate           float64                         `json:"recharge_fee_rate"`
@@ -177,6 +194,55 @@ type checkoutPlan struct {
 	ValidityUnit    string   `json:"validity_unit"`
 	Features        []string `json:"features"`
 	ProductName     string   `json:"product_name"`
+}
+
+type checkoutNinePlusProduct struct {
+	ProductID          string   `json:"product_id"`
+	DisplayName        string   `json:"display_name"`
+	Description        string   `json:"description"`
+	Category           string   `json:"category,omitempty"`
+	Currency           string   `json:"currency"`
+	Price              float64  `json:"price"`
+	Fee                float64  `json:"fee,omitempty"`
+	PaymentAmount      float64  `json:"payment_amount,omitempty"`
+	OriginalPrice      *float64 `json:"original_price,omitempty"`
+	Quota              int      `json:"quota"`
+	QuotaUnit          string   `json:"quota_unit"`
+	Badge              string   `json:"badge,omitempty"`
+	Enabled            bool     `json:"enabled"`
+	StockCount         *int     `json:"stock_count,omitempty"`
+	SortOrder          int      `json:"sort_order"`
+	DeliveryNote       string   `json:"delivery_note,omitempty"`
+	ExternalProductRef string   `json:"external_product_ref,omitempty"`
+}
+
+func buildCheckoutNinePlusProducts(products []service.ExternalShopProduct) []checkoutNinePlusProduct {
+	if len(products) == 0 {
+		return []checkoutNinePlusProduct{}
+	}
+	out := make([]checkoutNinePlusProduct, 0, len(products))
+	for _, product := range products {
+		out = append(out, checkoutNinePlusProduct{
+			ProductID:          product.ProductID,
+			DisplayName:        product.DisplayName,
+			Description:        product.Description,
+			Category:           product.Category,
+			Currency:           product.Currency,
+			Price:              product.Price,
+			Fee:                product.Fee,
+			PaymentAmount:      product.PaymentAmount,
+			OriginalPrice:      product.OriginalPrice,
+			Quota:              product.Quota,
+			QuotaUnit:          product.QuotaUnit,
+			Badge:              product.Badge,
+			Enabled:            product.Enabled,
+			StockCount:         product.StockCount,
+			SortOrder:          product.SortOrder,
+			DeliveryNote:       product.DeliveryNote,
+			ExternalProductRef: product.ExternalProductRef,
+		})
+	}
+	return out
 }
 
 // parseFeatures splits a newline-separated features string into a string slice.
@@ -210,13 +276,16 @@ func (h *PaymentHandler) GetLimits(c *gin.Context) {
 // CreateOrderRequest is the request body for creating a payment order.
 type CreateOrderRequest struct {
 	Amount            float64 `json:"amount"`
-	PaymentType       string  `json:"payment_type" binding:"required"`
+	PaymentType       string  `json:"payment_type"`
 	OpenID            string  `json:"openid"`
 	WechatResumeToken string  `json:"wechat_resume_token"`
 	ReturnURL         string  `json:"return_url"`
 	PaymentSource     string  `json:"payment_source"`
 	OrderType         string  `json:"order_type"`
 	PlanID            int64   `json:"plan_id"`
+	ExternalProductID string  `json:"external_product_id"`
+	ExternalQuantity  int     `json:"external_quantity"`
+	Contact           string  `json:"contact"`
 	// IsMobile lets the frontend declare its mobile status directly. When
 	// nil we fall back to User-Agent heuristics (which miss iPadOS / some
 	// embedded browsers that strip the "Mobile" keyword).
@@ -253,20 +322,23 @@ func (h *PaymentHandler) CreateOrder(c *gin.Context) {
 		mobile = *req.IsMobile
 	}
 	result, err := h.paymentService.CreateOrder(c.Request.Context(), service.CreateOrderRequest{
-		UserID:          subject.UserID,
-		Amount:          req.Amount,
-		PaymentType:     req.PaymentType,
-		OpenID:          req.OpenID,
-		ClientIP:        c.ClientIP(),
-		IsMobile:        mobile,
-		IsWeChatBrowser: isWeChatBrowser(c),
-		SrcHost:         c.Request.Host,
-		SrcURL:          c.Request.Referer(),
-		ReturnURL:       req.ReturnURL,
-		PaymentSource:   req.PaymentSource,
-		OrderType:       req.OrderType,
-		PlanID:          req.PlanID,
-		Locale:          c.GetHeader("Accept-Language"),
+		UserID:            subject.UserID,
+		Amount:            req.Amount,
+		PaymentType:       req.PaymentType,
+		OpenID:            req.OpenID,
+		ClientIP:          c.ClientIP(),
+		IsMobile:          mobile,
+		IsWeChatBrowser:   isWeChatBrowser(c),
+		SrcHost:           c.Request.Host,
+		SrcURL:            c.Request.Referer(),
+		ReturnURL:         req.ReturnURL,
+		PaymentSource:     req.PaymentSource,
+		OrderType:         req.OrderType,
+		PlanID:            req.PlanID,
+		ExternalProductID: req.ExternalProductID,
+		ExternalQuantity:  req.ExternalQuantity,
+		Contact:           req.Contact,
+		Locale:            c.GetHeader("Accept-Language"),
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)

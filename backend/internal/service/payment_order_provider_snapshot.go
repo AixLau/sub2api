@@ -18,6 +18,9 @@ type paymentOrderProviderSnapshot struct {
 	MerchantAppID      string
 	MerchantID         string
 	Currency           string
+	ExternalProductID  string
+	ExternalQuantity   int
+	Contact            string
 }
 
 func psOrderProviderSnapshot(order *dbent.PaymentOrder) *paymentOrderProviderSnapshot {
@@ -33,6 +36,9 @@ func psOrderProviderSnapshot(order *dbent.PaymentOrder) *paymentOrderProviderSna
 		MerchantAppID:      psSnapshotStringValue(order.ProviderSnapshot["merchant_app_id"]),
 		MerchantID:         psSnapshotStringValue(order.ProviderSnapshot["merchant_id"]),
 		Currency:           psSnapshotStringValue(order.ProviderSnapshot["currency"]),
+		ExternalProductID:  psSnapshotStringValue(order.ProviderSnapshot["external_product_id"]),
+		ExternalQuantity:   psSnapshotIntValue(order.ProviderSnapshot["external_quantity"]),
+		Contact:            psSnapshotStringValue(order.ProviderSnapshot["contact"]),
 	}
 	if snapshot.SchemaVersion == 0 &&
 		snapshot.ProviderInstanceID == "" &&
@@ -40,7 +46,10 @@ func psOrderProviderSnapshot(order *dbent.PaymentOrder) *paymentOrderProviderSna
 		snapshot.PaymentMode == "" &&
 		snapshot.MerchantAppID == "" &&
 		snapshot.MerchantID == "" &&
-		snapshot.Currency == "" {
+		snapshot.Currency == "" &&
+		snapshot.ExternalProductID == "" &&
+		snapshot.ExternalQuantity == 0 &&
+		snapshot.Contact == "" {
 		return nil
 	}
 	return snapshot

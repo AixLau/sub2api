@@ -212,6 +212,9 @@ func (s *PaymentService) executeFulfillment(ctx context.Context, oid int64) erro
 	if err != nil {
 		return fmt.Errorf("get order: %w", err)
 	}
+	if o.PaymentType == payment.TypeNinePlus {
+		return s.ExecuteNinePlusFulfillment(ctx, oid)
+	}
 	if o.OrderType == payment.OrderTypeSubscription {
 		return s.ExecuteSubscriptionFulfillment(ctx, oid)
 	}

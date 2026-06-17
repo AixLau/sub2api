@@ -70,20 +70,23 @@ func generateRandomString(n int) string {
 }
 
 type CreateOrderRequest struct {
-	UserID          int64
-	Amount          float64
-	PaymentType     string
-	OpenID          string
-	ClientIP        string
-	IsMobile        bool
-	IsWeChatBrowser bool
-	SrcHost         string
-	SrcURL          string
-	ReturnURL       string
-	PaymentSource   string
-	OrderType       string
-	PlanID          int64
-	Locale          string
+	UserID            int64
+	Amount            float64
+	PaymentType       string
+	OpenID            string
+	ClientIP          string
+	IsMobile          bool
+	IsWeChatBrowser   bool
+	SrcHost           string
+	SrcURL            string
+	ReturnURL         string
+	PaymentSource     string
+	OrderType         string
+	PlanID            int64
+	ExternalProductID string
+	ExternalQuantity  int
+	Contact           string
+	Locale            string
 }
 
 type CreateOrderResponse struct {
@@ -182,6 +185,7 @@ type PaymentService struct {
 	loadBalancer             payment.LoadBalancer
 	redeemService            *RedeemService
 	subscriptionSvc          *SubscriptionService
+	externalShopService      *ExternalShopService
 	configService            *PaymentConfigService
 	userRepo                 UserRepository
 	groupRepo                GroupRepository
@@ -191,7 +195,8 @@ type PaymentService struct {
 }
 
 func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService) *PaymentService {
-	svc := &PaymentService{entClient: entClient, registry: registry, loadBalancer: newVisibleMethodLoadBalancer(loadBalancer, configService), redeemService: redeemService, subscriptionSvc: subscriptionSvc, configService: configService, userRepo: userRepo, groupRepo: groupRepo, affiliateService: affiliateService}
+	externalShop := NewExternalShopService(entClient, redeemService)
+	svc := &PaymentService{entClient: entClient, registry: registry, loadBalancer: newVisibleMethodLoadBalancer(loadBalancer, configService), redeemService: redeemService, subscriptionSvc: subscriptionSvc, externalShopService: externalShop, configService: configService, userRepo: userRepo, groupRepo: groupRepo, affiliateService: affiliateService}
 	svc.resumeService = psNewPaymentResumeService(configService)
 	return svc
 }
