@@ -5,6 +5,10 @@ package service
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -35,6 +39,10 @@ type paymentOrderLifecycleRedeemRepo struct {
 		id     int64
 		userID int64
 	}
+}
+
+type paymentOrderLifecycleLoadBalancer struct {
+	config map[string]string
 }
 
 func (p *paymentOrderLifecycleQueryProvider) Name() string {
@@ -81,6 +89,18 @@ func (p *paymentOrderLifecycleQueryProvider) CancelPayment(_ context.Context, tr
 	p.lastCancelTradeNo = tradeNo
 	p.cancelCalls++
 	return nil
+}
+
+func (lb paymentOrderLifecycleLoadBalancer) GetInstanceConfig(context.Context, int64) (map[string]string, error) {
+	cfg := make(map[string]string, len(lb.config))
+	for key, value := range lb.config {
+		cfg[key] = value
+	}
+	return cfg, nil
+}
+
+func (lb paymentOrderLifecycleLoadBalancer) SelectInstance(context.Context, string, payment.PaymentType, payment.Strategy, float64) (*payment.InstanceSelection, error) {
+	panic("unexpected call")
 }
 
 func (r *paymentOrderLifecycleRedeemRepo) Create(context.Context, *RedeemCode) error {
@@ -667,6 +687,239 @@ func TestReconcilePendingWxpayOrdersBackfillsPaidOrder(t *testing.T) {
 	require.Equal(t, "wxpay-upstream-trade-123", reloaded.PaymentTradeNo)
 	require.Equal(t, 50.0, userRepo.getByIDUser.Balance)
 	require.Len(t, redeemRepo.useCalls, 1)
+}
+
+func TestReconcilePendingNinePlusOrdersQueriesOnlyPendingUnexpiredNinePlusOrders(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("nineplus-reconcile-pending@example.com").
+		SetPasswordHash("hash").
+		SetUsername("nineplus-reconcile-pending-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	now := time.Now()
+	activeOrder, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(35).
+		SetPayAmount(5.1).
+		SetFeeRate(0).
+		SetRechargeCode("NINEPLUS-PENDING-ACTIVE").
+		SetOutTradeNo("sub2_nineplus_pending_active").
+		SetPaymentType(payment.TypeNinePlus).
+		SetPaymentTradeNo("9P_ACTIVE").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(now.Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(35).
+		SetPayAmount(5.1).
+		SetFeeRate(0).
+		SetRechargeCode("NINEPLUS-PENDING-EXPIRED").
+		SetOutTradeNo("sub2_nineplus_pending_expired").
+		SetPaymentType(payment.TypeNinePlus).
+		SetPaymentTradeNo("9P_EXPIRED").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(now.Add(-time.Minute)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(35).
+		SetPayAmount(5.1).
+		SetFeeRate(0).
+		SetRechargeCode("ALIPAY-PENDING-ACTIVE").
+		SetOutTradeNo("sub2_alipay_pending_active").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("ALIPAY_ACTIVE").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(now.Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	provider := &paymentOrderLifecycleQueryProvider{
+		key: payment.TypeNinePlus,
+		resp: &payment.QueryOrderResponse{
+			TradeNo: "9P_ACTIVE",
+			Status:  payment.ProviderStatusPending,
+		},
+	}
+	registry.Register(provider)
+
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		providersLoaded: true,
+	}
+
+	recovered, err := svc.ReconcilePendingNinePlusOrders(ctx)
+	require.NoError(t, err)
+	require.Zero(t, recovered)
+	require.Equal(t, 1, provider.queryCalls)
+	require.Equal(t, activeOrder.PaymentTradeNo, provider.lastQueryTradeNo)
+	require.Zero(t, provider.cancelCalls)
+}
+
+func TestReconcilePendingNinePlusOrdersCompletesPaidDeliveredOrder(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	var orderInfoPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/payApi/common/checkOrderStatus.html":
+			require.Equal(t, http.MethodPost, r.Method)
+			require.NoError(t, r.ParseForm())
+			require.Equal(t, "9P_PAID_DELIVERED", r.Form.Get("trade_no"))
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"code":1,"msg":"success","data":{"url":"/order/result/9P_PAID_DELIVERED"}}`))
+		case "/shopApi/Order/info":
+			require.Equal(t, http.MethodPost, r.Method)
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&orderInfoPayload))
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"code":1,"msg":"success","data":{"trade_no":"9P_PAID_DELIVERED","goods_name":"35刀额度","quantity":1,"total_amount":5.1,"status":1,"success_time":1781724711,"sendout":1,"contact":"buyer@example.com","response":{"cards":["CARD-35-USD"],"export_cards_url":""}}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	user, err := client.User.Create().
+		SetEmail("nineplus-reconcile-paid@example.com").
+		SetPasswordHash("hash").
+		SetUsername("nineplus-reconcile-paid-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	providerConfig := map[string]string{
+		"apiBase":        server.URL,
+		"shopToken":      "shop-token",
+		"defaultContact": "fallback@example.com",
+	}
+	config, err := json.Marshal(providerConfig)
+	require.NoError(t, err)
+	instance, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeNinePlus).
+		SetName("nineplus-test").
+		SetConfig(string(config)).
+		SetSupportedTypes(payment.TypeNinePlus).
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	instanceID := strconv.FormatInt(instance.ID, 10)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(35).
+		SetPayAmount(5.1).
+		SetFeeRate(0).
+		SetRechargeCode("NINEPLUS-PAID-DELIVERED").
+		SetOutTradeNo("sub2_nineplus_paid_delivered").
+		SetPaymentType(payment.TypeNinePlus).
+		SetPaymentTradeNo("9P_PAID_DELIVERED").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPending).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(instanceID).
+		SetProviderKey(payment.TypeNinePlus).
+		SetProviderSnapshot(map[string]any{
+			"schema_version":       2,
+			"provider_instance_id": instanceID,
+			"provider_key":         payment.TypeNinePlus,
+			"external_product_id":  "np-35",
+			"external_quantity":    1,
+			"contact":              "buyer@example.com",
+		}).
+		Save(ctx)
+	require.NoError(t, err)
+
+	userRepo := &mockUserRepo{
+		getByIDUser: &User{
+			ID:       user.ID,
+			Email:    user.Email,
+			Username: user.Username,
+			Balance:  0,
+		},
+	}
+	userRepo.updateBalanceFn = func(ctx context.Context, id int64, amount float64) error {
+		require.Equal(t, user.ID, id)
+		if userRepo.getByIDUser != nil {
+			userRepo.getByIDUser.Balance += amount
+		}
+		return nil
+	}
+	redeemRepo := &paymentOrderLifecycleRedeemRepo{
+		codesByCode: map[string]*RedeemCode{
+			"CARD-35-USD": {
+				ID:     1,
+				Code:   "CARD-35-USD",
+				Type:   RedeemTypeBalance,
+				Value:  35,
+				Status: StatusUnused,
+			},
+		},
+	}
+	redeemService := NewRedeemService(
+		redeemRepo,
+		userRepo,
+		nil,
+		nil,
+		nil,
+		client,
+		nil,
+		nil,
+	)
+	registry := payment.NewRegistry()
+
+	svc := &PaymentService{
+		entClient:           client,
+		registry:            registry,
+		loadBalancer:        paymentOrderLifecycleLoadBalancer{config: providerConfig},
+		redeemService:       redeemService,
+		userRepo:            userRepo,
+		externalShopService: NewExternalShopService(client, redeemService),
+		configService:       &PaymentConfigService{entClient: client},
+		providersLoaded:     true,
+	}
+
+	recovered, err := svc.ReconcilePendingNinePlusOrders(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, recovered)
+	require.Equal(t, "9P_PAID_DELIVERED", orderInfoPayload["trade_no"])
+	require.Equal(t, "buyer@example.com", orderInfoPayload["query_password"])
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Equal(t, "9P_PAID_DELIVERED", reloaded.PaymentTradeNo)
+	require.Equal(t, 35.0, reloaded.Amount)
+	require.Equal(t, 35.0, userRepo.getByIDUser.Balance)
+	require.Len(t, redeemRepo.useCalls, 1)
+	require.Equal(t, user.ID, redeemRepo.useCalls[0].userID)
 }
 
 func TestVerifyOrderByOutTradeNoUsesOutTradeNoWhenPaymentTradeNoAlreadyExistsForAlipay(t *testing.T) {
