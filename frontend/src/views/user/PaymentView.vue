@@ -1,12 +1,12 @@
 <template>
   <AppLayout>
-    <div class="mx-auto max-w-4xl space-y-6">
+    <div class="mx-auto max-w-6xl space-y-5">
       <div v-if="loading" class="flex items-center justify-center py-20">
         <div class="h-8 w-8 animate-spin rounded-full border-4 border-primary-500 border-t-transparent"></div>
       </div>
       <template v-else>
-        <!-- Tab Switcher (hide during payment and subscription confirm) -->
-        <div v-if="tabs.length > 1 && paymentPhase === 'select' && !selectedPlan" class="flex space-x-1 rounded-xl bg-gray-100 p-1 dark:bg-dark-800">
+        <!-- Tab Switcher -->
+        <div v-if="tabs.length > 1 && paymentPhase === 'select'" class="flex space-x-1 rounded-xl bg-gray-100 p-1 dark:bg-dark-800">
           <button v-for="tab in tabs" :key="tab.key"
             class="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-all"
             :class="activeTab === tab.key ? 'bg-white text-gray-900 shadow dark:bg-dark-700 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'"
@@ -31,66 +31,223 @@
         <template v-else>
           <!-- Top-up Tab -->
           <template v-if="activeTab === 'recharge'">
-            <!-- Recharge Account Card -->
-            <div class="card p-5">
-              <p class="text-xs font-medium text-gray-400 dark:text-gray-500">{{ t('payment.rechargeAccount') }}</p>
-              <p class="mt-1 text-base font-semibold text-gray-900 dark:text-white">{{ user?.username || '' }}</p>
-              <p class="mt-0.5 text-sm font-medium text-green-600 dark:text-green-400">{{ t('payment.currentBalance') }}: {{ user?.balance?.toFixed(2) || '0.00' }}</p>
-            </div>
             <div v-if="enabledMethods.length === 0" class="card py-16 text-center">
               <p class="text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
             </div>
-            <template v-else>
-            <div class="card p-6">
-              <AmountInput
-                v-model="amount"
-                :amounts="[10, 20, 50, 100, 200, 500, 1000, 2000, 5000]"
-                :min="globalMinAmount"
-                :max="globalMaxAmount"
-              />
-              <p v-if="amountError" class="mt-2 text-xs text-amber-600 dark:text-amber-300">{{ amountError }}</p>
-            </div>
-            <div v-if="enabledMethods.length >= 1" class="card p-6">
-              <PaymentMethodSelector
-                :methods="methodOptions"
-                :selected="selectedMethod"
-                @select="selectedMethod = $event"
-              />
-            </div>
-            <div v-if="validAmount > 0" class="card p-6">
-              <div class="space-y-2 text-sm">
-                <div class="flex justify-between">
-                  <span class="text-gray-500 dark:text-gray-400">{{ t('payment.paymentAmount') }}</span>
-                  <span class="text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(validAmount) }}</span>
+            <template v-if="enabledMethods.length > 0">
+              <div data-testid="recharge-layout" class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+                <div data-testid="recharge-controls" class="space-y-5">
+                  <div class="card p-5 shadow-[0_0_0_1px_#E5EAFF] dark:shadow-none">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p class="text-xs font-semibold uppercase tracking-[1px] text-gray-400 dark:text-gray-500">{{ t('payment.rechargeAccount') }}</p>
+                        <p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{{ user?.username || '' }}</p>
+                      </div>
+                      <div class="rounded-full bg-primary-50 px-4 py-2 text-sm font-semibold text-primary-700 dark:bg-primary-950/40 dark:text-primary-300">
+                        {{ t('payment.currentBalance') }}: {{ user?.balance?.toFixed(2) || '0.00' }}
+                      </div>
+                    </div>
+                  </div>
+                  <div class="card p-6 shadow-[0_0_0_1px_#E5EAFF] dark:shadow-none">
+                    <AmountInput v-if="!isNinePlusSelected"
+                      v-model="amount"
+                      :amounts="[10, 20, 50, 100, 200, 500, 1000, 2000, 5000]"
+                      :min="globalMinAmount"
+                      :max="globalMaxAmount"
+                    />
+                    <div v-else>
+                      <div class="mb-3">
+                        <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('payment.nineplus.selectProduct') }}</p>
+                      </div>
+                      <div v-if="availableNinePlusProducts.length" class="grid gap-3 sm:grid-cols-2">
+                        <button
+                          v-for="product in availableNinePlusProducts"
+                          :key="product.product_id"
+                          type="button"
+                          :data-testid="`nineplus-product-${product.product_id}`"
+                          class="rounded-lg border px-4 py-3 text-left transition"
+                          :class="selectedNinePlusProductId === product.product_id
+                            ? 'border-teal-500 bg-teal-50 ring-1 ring-teal-500 dark:bg-teal-950/30'
+                            : 'border-gray-200 hover:border-teal-300 dark:border-dark-600'"
+                          @click="selectedNinePlusProductId = product.product_id"
+                        >
+                          <div class="flex items-start justify-between gap-3">
+                            <span class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ product.display_name }}</span>
+                            <span v-if="product.badge" class="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-medium text-teal-700 dark:bg-teal-900/50 dark:text-teal-300">{{ product.badge }}</span>
+                          </div>
+                          <div class="mt-2 flex flex-wrap items-end justify-between gap-2">
+                            <p class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">{{ formatNinePlusCreditedAmount(product) || product.display_name }}</p>
+                            <p class="text-sm font-semibold text-teal-600 dark:text-teal-400">
+                              {{ t('payment.amountLabel') }} {{ formatSelectedPaymentAmount(ninePlusProductPriceAmount(product)) }}
+                            </p>
+                          </div>
+                        </button>
+                      </div>
+                      <p v-else class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('payment.nineplus.noProducts') }}</p>
+                    </div>
+                    <p v-if="amountError" class="mt-2 text-xs text-amber-600 dark:text-amber-300">{{ amountError }}</p>
+                  </div>
+                  <div v-if="rechargeMethodTypes.length >= 1" class="card p-6 shadow-[0_0_0_1px_#E5EAFF] dark:shadow-none">
+                    <PaymentMethodSelector
+                      :methods="methodOptions"
+                      :selected="selectedMethod"
+                      @select="selectedMethod = $event"
+                    />
+                  </div>
                 </div>
-                <div v-if="feeRate > 0" class="flex justify-between">
-                  <span class="text-gray-500 dark:text-gray-400">{{ t('payment.fee') }} ({{ feeRate }}%)</span>
-                  <span class="text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(feeAmount) }}</span>
-                </div>
-                <div v-if="feeRate > 0" class="flex justify-between border-t border-gray-200 pt-2 dark:border-dark-600">
-                  <span class="font-medium text-gray-700 dark:text-gray-300">{{ t('payment.actualPay') }}</span>
-                  <span class="text-lg font-bold text-primary-600 dark:text-primary-400">{{ formatSelectedPaymentAmount(totalAmount) }}</span>
-                </div>
-                <div v-if="balanceRechargeMultiplier !== 1" class="flex justify-between" :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': feeRate <= 0 }">
-                  <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
-                  <span class="text-gray-900 dark:text-white">${{ creditedAmount.toFixed(2) }}</span>
-                </div>
-                <p v-if="balanceRechargeMultiplier !== 1" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
-                  {{ t('payment.rechargeRatePreview', { usd: balanceRechargeMultiplier.toFixed(2) }) }}
-                </p>
+                <aside data-testid="recharge-confirmation" class="card p-6 shadow-[0_0_0_1px_#E5EAFF] dark:shadow-none lg:sticky lg:top-24">
+                  <div class="space-y-4">
+                    <div>
+                      <p class="text-xs font-semibold uppercase tracking-[1px] text-gray-400 dark:text-gray-500">{{ t('payment.payableAmount') }}</p>
+                      <p class="mt-1 text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(totalAmount) }}</p>
+                    </div>
+                    <div v-if="validAmount > 0" class="space-y-2 text-sm">
+                      <div v-if="isNinePlusSelected && selectedNinePlusCreditedAmountLabel" class="flex justify-between">
+                        <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
+                        <span class="font-semibold text-gray-900 dark:text-white">{{ selectedNinePlusCreditedAmountLabel }}</span>
+                      </div>
+                      <div class="flex justify-between">
+                        <span class="text-gray-500 dark:text-gray-400">{{ isNinePlusSelected ? t('payment.amountLabel') : t('payment.paymentAmount') }}</span>
+                        <span class="text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(isNinePlusSelected ? selectedNinePlusProductPriceAmount : validAmount) }}</span>
+                      </div>
+                      <div v-if="isNinePlusSelected && selectedNinePlusProductFeeAmount > 0" class="flex justify-between">
+                        <span class="text-gray-500 dark:text-gray-400">{{ t('payment.fee') }}</span>
+                        <span class="text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(selectedNinePlusProductFeeAmount) }}</span>
+                      </div>
+                      <div v-else-if="feeRate > 0" class="flex justify-between">
+                        <span class="text-gray-500 dark:text-gray-400">{{ t('payment.fee') }} ({{ feeRate }}%)</span>
+                        <span class="text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(feeAmount) }}</span>
+                      </div>
+                      <div v-if="balanceRechargeMultiplier !== 1 && !isNinePlusSelected" class="flex justify-between" :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': feeRate <= 0 }">
+                        <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
+                        <span class="text-gray-900 dark:text-white">${{ creditedAmount.toFixed(2) }}</span>
+                      </div>
+                      <p v-if="balanceRechargeMultiplier !== 1 && !isNinePlusSelected" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
+                        {{ t('payment.rechargeRatePreview', { usd: balanceRechargeMultiplier.toFixed(2) }) }}
+                      </p>
+                    </div>
+                    <button data-testid="submit-recharge" :class="['btn w-full py-3 text-base font-medium', paymentButtonClass]" :disabled="!canSubmit || submitting" @click="handleSubmitRecharge">
+                      <span v-if="submitting" class="flex items-center justify-center gap-2">
+                        <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
+                        {{ t('common.processing') }}
+                      </span>
+                      <span v-else>{{ t('payment.createOrder') }} {{ formatSelectedPaymentAmount(totalAmount) }}</span>
+                    </button>
+                  </div>
+                </aside>
               </div>
-            </div>
-            <button :class="['btn w-full py-3 text-base font-medium', paymentButtonClass]" :disabled="!canSubmit || submitting" @click="handleSubmitRecharge">
-              <span v-if="submitting" class="flex items-center justify-center gap-2">
-                <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
-                {{ t('common.processing') }}
-              </span>
-              <span v-else>{{ t('payment.createOrder') }} {{ formatSelectedPaymentAmount(totalAmount) }}</span>
-            </button>
             </template>
           </template>
           <!-- Subscribe Tab -->
           <template v-else-if="activeTab === 'subscription'">
+            <template v-if="ninePlusSubscriptionProducts.length > 0">
+              <div data-testid="subscription-layout" class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+                <div data-testid="subscription-controls" class="space-y-5">
+                  <div class="card p-5 shadow-[0_0_0_1px_#E5EAFF] dark:shadow-none">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p class="text-xs font-semibold uppercase tracking-[1px] text-gray-400 dark:text-gray-500">{{ t('payment.subscriptionAccount') }}</p>
+                        <p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{{ user?.username || '' }}</p>
+                      </div>
+                      <div class="rounded-full bg-teal-50 px-4 py-2 text-sm font-semibold text-teal-700 dark:bg-teal-950/40 dark:text-teal-300">
+                        {{ t('payment.methods.nineplus') }}
+                      </div>
+                    </div>
+                  </div>
+                  <div class="card p-6 shadow-[0_0_0_1px_#E5EAFF] dark:shadow-none">
+                    <div class="mb-3">
+                      <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('payment.nineplus.selectSubscriptionProduct') }}</p>
+                    </div>
+                    <div class="grid gap-3 sm:grid-cols-2">
+                      <button
+                        v-for="product in ninePlusSubscriptionProducts"
+                        :key="product.product_id"
+                        type="button"
+                        :data-testid="`nineplus-subscription-product-${product.product_id}`"
+                        class="rounded-lg border px-4 py-3 text-left transition"
+                        :class="selectedNinePlusSubscriptionProductId === product.product_id
+                          ? 'border-teal-500 bg-teal-50 ring-1 ring-teal-500 dark:bg-teal-950/30'
+                          : 'border-gray-200 hover:border-teal-300 dark:border-dark-600'"
+                        @click="selectedNinePlusSubscriptionProductId = product.product_id"
+                      >
+                        <div class="flex items-start justify-between gap-3">
+                          <span class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ ninePlusSubscriptionProductTitle(product) }}</span>
+                          <span v-if="ninePlusProductCategory(product)" class="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-medium text-teal-700 dark:bg-teal-900/50 dark:text-teal-300">{{ ninePlusProductCategory(product) }}</span>
+                        </div>
+                        <div class="mt-2 flex flex-wrap items-end justify-between gap-2">
+                          <p class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">{{ formatNinePlusCreditedAmount(product) }}</p>
+                          <p class="text-sm font-semibold text-teal-600 dark:text-teal-400">
+                            {{ t('payment.packagePriceShort') }} {{ formatSelectedPaymentAmount(ninePlusProductPriceAmount(product)) }}
+                          </p>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                  <div v-if="subscriptionNinePlusMethodOptions.length" class="card p-6 shadow-[0_0_0_1px_#E5EAFF] dark:shadow-none">
+                    <PaymentMethodSelector
+                      :methods="subscriptionNinePlusMethodOptions"
+                      :selected="selectedMethod"
+                      @select="selectedMethod = $event"
+                    />
+                  </div>
+                  <div v-if="activeSubscriptions.length > 0">
+                    <p class="mb-2 text-xs font-medium text-gray-400 dark:text-gray-500">{{ t('payment.activeSubscription') }}</p>
+                    <div class="space-y-2">
+                      <div v-for="sub in activeSubscriptions" :key="sub.id"
+                        class="flex items-center gap-3 rounded-xl border border-gray-100 bg-white px-3 py-2 dark:border-dark-700 dark:bg-dark-800">
+                        <div :class="['h-6 w-1 shrink-0 rounded-full', platformAccentBarClass(sub.group?.platform || '')]" />
+                        <div class="min-w-0 flex-1">
+                          <div class="flex items-center gap-1.5">
+                            <span class="truncate text-xs font-semibold text-gray-900 dark:text-white">{{ sub.group?.name || t('payment.groupFallback', { id: sub.group_id }) }}</span>
+                            <span :class="['shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium', platformBadgeLightClass(sub.group?.platform || '')]">{{ platformLabel(sub.group?.platform || '') }}</span>
+                          </div>
+                          <div class="flex flex-wrap gap-x-3 text-[11px] text-gray-400 dark:text-gray-500">
+                            <span>{{ t('payment.planCard.rate') }}: ×{{ sub.group?.rate_multiplier ?? 1 }}</span>
+                            <span v-if="sub.expires_at">{{ t('userSubscriptions.daysRemaining', { days: getDaysRemaining(sub.expires_at) }) }}</span>
+                            <span v-else>{{ t('userSubscriptions.noExpiration') }}</span>
+                          </div>
+                        </div>
+                        <span class="badge badge-success shrink-0 text-[10px]">{{ t('userSubscriptions.status.active') }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <aside data-testid="subscription-confirmation" class="card p-6 shadow-[0_0_0_1px_#E5EAFF] dark:shadow-none lg:sticky lg:top-24">
+                  <div class="space-y-4">
+                    <div>
+                      <p class="text-xs font-semibold uppercase tracking-[1px] text-gray-400 dark:text-gray-500">{{ t('payment.payableAmount') }}</p>
+                      <p class="mt-1 text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(ninePlusSubscriptionAmount) }}</p>
+                    </div>
+                    <div v-if="effectiveNinePlusSubscriptionProduct" class="space-y-2 text-sm">
+                      <div class="flex justify-between">
+                        <span class="text-gray-500 dark:text-gray-400">{{ t('payment.nineplus.selectedSubscription') }}</span>
+                        <span class="max-w-[180px] truncate text-right font-semibold text-gray-900 dark:text-white">{{ ninePlusSubscriptionProductTitle(effectiveNinePlusSubscriptionProduct) }}</span>
+                      </div>
+                      <div v-if="selectedNinePlusSubscriptionQuotaLabel" class="flex justify-between">
+                        <span class="text-gray-500 dark:text-gray-400">{{ t('payment.planCard.quota') }}</span>
+                        <span class="font-semibold text-gray-900 dark:text-white">{{ selectedNinePlusSubscriptionQuotaLabel }}</span>
+                      </div>
+                      <div class="flex justify-between">
+                        <span class="text-gray-500 dark:text-gray-400">{{ t('payment.packagePrice') }}</span>
+                        <span class="text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(selectedNinePlusSubscriptionProductPriceAmount) }}</span>
+                      </div>
+                      <div v-if="selectedNinePlusSubscriptionProductFeeAmount > 0" class="flex justify-between">
+                        <span class="text-gray-500 dark:text-gray-400">{{ t('payment.fee') }}</span>
+                        <span class="text-gray-900 dark:text-white">{{ formatSelectedPaymentAmount(selectedNinePlusSubscriptionProductFeeAmount) }}</span>
+                      </div>
+                    </div>
+                    <button data-testid="submit-subscription" :class="['btn w-full py-3 text-base font-medium', paymentButtonClass]" :disabled="!canSubmitNinePlusSubscription || submitting" @click="handleSubmitNinePlusSubscription">
+                      <span v-if="submitting" class="flex items-center justify-center gap-2">
+                        <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
+                        {{ t('common.processing') }}
+                      </span>
+                      <span v-else>{{ t('payment.createOrder') }} {{ formatSelectedPaymentAmount(ninePlusSubscriptionAmount) }}</span>
+                    </button>
+                  </div>
+                </aside>
+              </div>
+            </template>
+            <template v-else>
             <!-- Subscription confirm (inline, replaces plan list) -->
             <template v-if="selectedPlan">
               <div class="card p-5">
@@ -204,6 +361,7 @@
                 </div>
               </div>
             </template>
+            </template>
           </template>
         </template>
         <div v-if="(checkout.help_text || checkout.help_image_url) && paymentPhase === 'select' && !selectedPlan" class="card p-4">
@@ -255,7 +413,13 @@ import { useAppStore } from '@/stores'
 import { paymentAPI } from '@/api/payment'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
-import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType } from '@/types/payment'
+import type {
+  SubscriptionPlan,
+  CheckoutInfoResponse,
+  CreateOrderResult,
+  NinePlusProduct,
+  OrderType,
+} from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import AmountInput from '@/components/payment/AmountInput.vue'
 import PaymentMethodSelector from '@/components/payment/PaymentMethodSelector.vue'
@@ -304,6 +468,8 @@ const errorHintMessage = ref('')
 const activeTab = ref<'recharge' | 'subscription'>('recharge')
 const amount = ref<number | null>(null)
 const selectedMethod = ref('')
+const selectedNinePlusProductId = ref('')
+const selectedNinePlusSubscriptionProductId = ref('')
 const selectedPlan = ref<SubscriptionPlan | null>(null)
 const previewImage = ref('')
 
@@ -313,6 +479,7 @@ interface CreateOrderOptions {
   openid?: string
   wechatResumeToken?: string
   paymentType?: string
+  externalProduct?: NinePlusProduct | null
   isResume?: boolean
   mobileQrFallbackAttempted?: boolean
 }
@@ -478,7 +645,7 @@ function onPaymentSettled() {
 // All checkout data from single API call
 const checkout = ref<CheckoutInfoResponse>({
   methods: {}, global_min: 0, global_max: 0,
-  plans: [], balance_disabled: false, balance_recharge_multiplier: 1, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
+  plans: [], nineplus_products: [], balance_disabled: false, balance_recharge_multiplier: 1, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
 })
 
 const tabs = computed(() => {
@@ -490,7 +657,104 @@ const tabs = computed(() => {
 
 const visibleMethods = computed(() => getVisibleMethods(checkout.value.methods))
 const enabledMethods = computed(() => Object.keys(visibleMethods.value))
-const validAmount = computed(() => amount.value ?? 0)
+const isNinePlusSelected = computed(() => selectedMethod.value === 'nineplus')
+function ninePlusProductCategory(product: NinePlusProduct): string {
+  return (product.category || product.badge || '').trim()
+}
+function isNinePlusProductInStock(product: NinePlusProduct): boolean {
+  return product.stock_count == null || product.stock_count > 0
+}
+function isNinePlusSubscriptionProduct(product: NinePlusProduct): boolean {
+  const text = `${ninePlusProductCategory(product)} ${product.display_name} ${product.description}`.toLowerCase()
+  return text.includes('套餐')
+    || text.includes('月包')
+    || text.includes('订阅')
+    || text.includes('subscription')
+}
+function ninePlusSubscriptionProductTitle(product: NinePlusProduct): string {
+  return product.display_name
+    .replace(/[：:]\s*\d+(?:\.\d+)?\s*元\/月[，,]?\s*(?:月包)?\s*包含\s*\d+\s*额度.*$/, '')
+    .trim() || product.display_name
+}
+const activeNinePlusProducts = computed(() =>
+  (checkout.value.nineplus_products || [])
+    .filter(product => product.enabled && isNinePlusProductInStock(product))
+    .sort((a, b) => a.sort_order - b.sort_order)
+)
+const availableNinePlusProducts = computed(() =>
+  activeNinePlusProducts.value
+    .filter(product => !isNinePlusSubscriptionProduct(product))
+    .sort((a, b) => ninePlusProductPriceAmount(a) - ninePlusProductPriceAmount(b) || a.sort_order - b.sort_order)
+)
+const ninePlusSubscriptionProducts = computed(() =>
+  activeNinePlusProducts.value
+    .filter(isNinePlusSubscriptionProduct)
+    .sort((a, b) => ninePlusProductPriceAmount(a) - ninePlusProductPriceAmount(b) || a.sort_order - b.sort_order)
+)
+const rechargeMethodTypes = computed(() =>
+  enabledMethods.value.includes('nineplus') ? ['nineplus'] : enabledMethods.value
+)
+const defaultNinePlusProduct = computed(() => availableNinePlusProducts.value[0] ?? null)
+const selectedNinePlusProduct = computed(() =>
+  availableNinePlusProducts.value.find(product => product.product_id === selectedNinePlusProductId.value) ?? null
+)
+const effectiveNinePlusProduct = computed(() => selectedNinePlusProduct.value ?? defaultNinePlusProduct.value)
+const defaultNinePlusSubscriptionProduct = computed(() => ninePlusSubscriptionProducts.value[0] ?? null)
+const selectedNinePlusSubscriptionProduct = computed(() =>
+  ninePlusSubscriptionProducts.value.find(product => product.product_id === selectedNinePlusSubscriptionProductId.value) ?? null
+)
+const effectiveNinePlusSubscriptionProduct = computed(() => selectedNinePlusSubscriptionProduct.value ?? defaultNinePlusSubscriptionProduct.value)
+function roundCurrencyAmount(value: number): number {
+  return Math.round(value * 100) / 100
+}
+function ninePlusProductPriceAmount(product: { price: number }): number {
+  return product.price
+}
+function ninePlusProductFeeAmount(product: { price: number; fee?: number; payment_amount?: number }): number {
+  if ((product.fee ?? 0) > 0) return roundCurrencyAmount(product.fee ?? 0)
+  const paymentAmount = product.payment_amount ?? 0
+  if (paymentAmount > product.price) return roundCurrencyAmount(paymentAmount - product.price)
+  return 0
+}
+function ninePlusProductAmount(product: { price: number; fee?: number; payment_amount?: number }): number {
+  if ((product.payment_amount ?? 0) > 0) return roundCurrencyAmount(product.payment_amount ?? 0)
+  return roundCurrencyAmount(product.price + ninePlusProductFeeAmount(product))
+}
+function formatNinePlusCreditedAmount(product: { quota?: number; quota_unit?: string }): string {
+  const quota = product.quota ?? 0
+  if (quota <= 0) return ''
+  const unit = (product.quota_unit || '').trim()
+  const normalizedUnit = unit.toUpperCase()
+  if (normalizedUnit === 'USD' || unit === '$') return `$${quota.toFixed(2)}`
+  if (normalizedUnit === 'CNY' || unit === '¥') return `¥${quota.toFixed(2)}`
+  return unit ? `${quota} ${unit}` : quota.toFixed(2)
+}
+const selectedNinePlusCreditedAmountLabel = computed(() =>
+  effectiveNinePlusProduct.value ? formatNinePlusCreditedAmount(effectiveNinePlusProduct.value) : ''
+)
+const selectedNinePlusSubscriptionQuotaLabel = computed(() =>
+  effectiveNinePlusSubscriptionProduct.value ? formatNinePlusCreditedAmount(effectiveNinePlusSubscriptionProduct.value) : ''
+)
+const selectedNinePlusProductPriceAmount = computed(() =>
+  effectiveNinePlusProduct.value ? ninePlusProductPriceAmount(effectiveNinePlusProduct.value) : 0
+)
+const selectedNinePlusProductFeeAmount = computed(() =>
+  effectiveNinePlusProduct.value ? ninePlusProductFeeAmount(effectiveNinePlusProduct.value) : 0
+)
+const selectedNinePlusSubscriptionProductPriceAmount = computed(() =>
+  effectiveNinePlusSubscriptionProduct.value ? ninePlusProductPriceAmount(effectiveNinePlusSubscriptionProduct.value) : 0
+)
+const selectedNinePlusSubscriptionProductFeeAmount = computed(() =>
+  effectiveNinePlusSubscriptionProduct.value ? ninePlusProductFeeAmount(effectiveNinePlusSubscriptionProduct.value) : 0
+)
+const ninePlusSubscriptionAmount = computed(() =>
+  effectiveNinePlusSubscriptionProduct.value ? ninePlusProductAmount(effectiveNinePlusSubscriptionProduct.value) : 0
+)
+const validAmount = computed(() =>
+  isNinePlusSelected.value && effectiveNinePlusProduct.value
+    ? ninePlusProductAmount(effectiveNinePlusProduct.value)
+    : amount.value ?? 0
+)
 const balanceRechargeMultiplier = computed(() => {
   const multiplier = checkout.value.balance_recharge_multiplier
   return multiplier > 0 ? multiplier : 1
@@ -545,7 +809,7 @@ function formatSelectedPaymentAmount(value: number): string {
 }
 
 const methodOptions = computed<PaymentMethodOption[]>(() =>
-  enabledMethods.value.map((type) => {
+  rechargeMethodTypes.value.map((type) => {
     const ml = visibleMethods.value[type]
     return {
       type,
@@ -555,7 +819,7 @@ const methodOptions = computed<PaymentMethodOption[]>(() =>
   })
 )
 
-const feeRate = computed(() => checkout.value?.recharge_fee_rate ?? 0)
+const feeRate = computed(() => isNinePlusSelected.value ? 0 : checkout.value?.recharge_fee_rate ?? 0)
 const feeAmount = computed(() =>
   feeRate.value > 0 && validAmount.value > 0
     ? Math.ceil(((validAmount.value * feeRate.value) / 100) * 100) / 100
@@ -570,7 +834,7 @@ const totalAmount = computed(() =>
 const amountError = computed(() => {
   if (validAmount.value <= 0) return ''
   // No method can handle this amount
-  if (!enabledMethods.value.some((m) => amountFitsMethod(validAmount.value, m))) {
+  if (!rechargeMethodTypes.value.some((m) => amountFitsMethod(validAmount.value, m))) {
     return t('payment.amountNoMethod')
   }
   // Selected method can't handle this amount (but others can)
@@ -584,14 +848,33 @@ const amountError = computed(() => {
 
 const canSubmit = computed(() =>
   validAmount.value > 0
+    && (!isNinePlusSelected.value || effectiveNinePlusProduct.value !== null)
     && amountFitsMethod(validAmount.value, selectedMethod.value)
     && selectedLimit.value?.available !== false
+)
+
+const subscriptionNinePlusMethodOptions = computed<PaymentMethodOption[]>(() => {
+  if (!enabledMethods.value.includes('nineplus')) return []
+  const ml = visibleMethods.value.nineplus
+  return [{
+    type: 'nineplus',
+    fee_rate: ml?.fee_rate ?? 0,
+    available: ml?.available !== false && amountFitsMethod(ninePlusSubscriptionAmount.value, 'nineplus'),
+  }]
+})
+
+const canSubmitNinePlusSubscription = computed(() =>
+  effectiveNinePlusSubscriptionProduct.value !== null
+    && selectedMethod.value === 'nineplus'
+    && ninePlusSubscriptionAmount.value > 0
+    && amountFitsMethod(ninePlusSubscriptionAmount.value, 'nineplus')
+    && visibleMethods.value.nineplus?.available !== false
 )
 
 // Subscription-specific: method options based on plan price
 const subMethodOptions = computed<PaymentMethodOption[]>(() => {
   const planPrice = selectedPlan.value?.price ?? 0
-  return enabledMethods.value.map((type) => {
+  return enabledMethods.value.filter(type => type !== 'nineplus').map((type) => {
     const ml = visibleMethods.value[type]
     return {
       type,
@@ -622,15 +905,46 @@ const canSubmitSubscription = computed(() =>
 // Auto-switch to first available method when current selection can't handle the amount
 watch(() => [validAmount.value, selectedMethod.value] as const, ([amt, method]) => {
   if (amt <= 0 || amountFitsMethod(amt, method)) return
-  const available = enabledMethods.value.find((m) => amountFitsMethod(amt, m))
+  const available = rechargeMethodTypes.value.find((m) => amountFitsMethod(amt, m))
   if (available) selectedMethod.value = available
+})
+
+watch(availableNinePlusProducts, (products) => {
+  if (!products.length) {
+    selectedNinePlusProductId.value = ''
+    return
+  }
+  if (!products.some(product => product.product_id === selectedNinePlusProductId.value)) {
+    selectedNinePlusProductId.value = products[0].product_id
+  }
+}, { immediate: true })
+
+watch(ninePlusSubscriptionProducts, (products) => {
+  if (!products.length) {
+    selectedNinePlusSubscriptionProductId.value = ''
+    return
+  }
+  if (!products.some(product => product.product_id === selectedNinePlusSubscriptionProductId.value)) {
+    selectedNinePlusSubscriptionProductId.value = products[0].product_id
+  }
+}, { immediate: true })
+
+watch(isNinePlusSelected, (selected) => {
+  if (!selected || selectedNinePlusProductId.value) return
+  selectedNinePlusProductId.value = availableNinePlusProducts.value[0]?.product_id || ''
+})
+
+watch(() => [activeTab.value, ninePlusSubscriptionProducts.value.length] as const, ([tab, productCount]) => {
+  if (tab === 'subscription' && productCount > 0 && enabledMethods.value.includes('nineplus')) {
+    selectedMethod.value = 'nineplus'
+  }
 })
 
 // Payment button class: follows selected payment method color
 const paymentButtonClass = computed(() => {
   const m = selectedMethod.value
   if (!m) return 'btn-primary'
-  if (m.includes('alipay')) return 'btn-alipay'
+  if (m === 'nineplus' || m.includes('alipay')) return 'btn-alipay'
   if (m.includes('wxpay')) return 'btn-wxpay'
   if (m === 'stripe') return 'btn-stripe'
   if (m === 'airwallex') return 'btn-airwallex'
@@ -659,6 +973,9 @@ const planValiditySuffix = computed(() => {
 
 function selectPlan(plan: SubscriptionPlan) {
   selectedPlan.value = plan
+  if (selectedMethod.value === 'nineplus') {
+    selectedMethod.value = enabledMethods.value.find(method => method !== 'nineplus') || ''
+  }
   errorMessage.value = ''
 }
 
@@ -684,17 +1001,29 @@ async function confirmSubscribe() {
   await createOrder(selectedPlan.value.price, 'subscription', selectedPlan.value.id)
 }
 
+async function handleSubmitNinePlusSubscription() {
+  const product = effectiveNinePlusSubscriptionProduct.value
+  if (!product || !canSubmitNinePlusSubscription.value || submitting.value) return
+  await createOrder(ninePlusProductAmount(product), 'subscription', undefined, { externalProduct: product })
+}
+
 async function createOrder(orderAmount: number, orderType: OrderType, planId?: number, options: CreateOrderOptions = {}) {
   submitting.value = true
   errorMessage.value = ''
   errorHintMessage.value = ''
   const requestType = normalizeVisibleMethod(options.paymentType || selectedMethod.value) || options.paymentType || selectedMethod.value
+  const defaultExternalProduct = orderType === 'subscription'
+    ? effectiveNinePlusSubscriptionProduct.value
+    : effectiveNinePlusProduct.value
+  const ninePlusProduct = requestType === 'nineplus' ? options.externalProduct ?? defaultExternalProduct : null
   try {
     const payload = buildCreateOrderPayload({
       amount: orderAmount,
       paymentType: requestType,
       orderType,
       planId,
+      externalProductId: ninePlusProduct?.product_id,
+      externalQuantity: ninePlusProduct ? 1 : undefined,
       origin: typeof window !== 'undefined' ? window.location.origin : '',
       isMobile: isMobileDevice(),
       isWechatBrowser: typeof window !== 'undefined' && /MicroMessenger/i.test(window.navigator.userAgent),
@@ -799,6 +1128,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
               orderType,
               planId,
               paymentType: visibleMethod,
+              externalProduct: ninePlusProduct,
               attempted: options.mobileQrFallbackAttempted === true,
             },
           )
@@ -817,6 +1147,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
           orderType,
           planId,
           paymentType: visibleMethod,
+          externalProduct: ninePlusProduct,
           attempted: options.mobileQrFallbackAttempted === true,
         })
         if (!fallbackApplied) {
@@ -846,6 +1177,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       orderType,
       planId,
       paymentType: requestType,
+      externalProduct: ninePlusProduct,
       attempted: options.mobileQrFallbackAttempted === true,
     })) {
       return
@@ -873,6 +1205,7 @@ interface MobileQrFallbackContext {
   orderType: OrderType
   planId?: number
   paymentType: string
+  externalProduct?: NinePlusProduct | null
   attempted: boolean
 }
 
@@ -916,11 +1249,14 @@ async function attemptMobileQrFallback(err: unknown, context: MobileQrFallbackCo
 
   try {
     const visibleMethod = normalizeVisibleMethod(context.paymentType) || context.paymentType
+    const ninePlusProduct = visibleMethod === 'nineplus' ? context.externalProduct ?? effectiveNinePlusProduct.value : null
     const payload = buildCreateOrderPayload({
       amount: context.orderAmount,
       paymentType: visibleMethod,
       orderType: context.orderType,
       planId: context.planId,
+      externalProductId: ninePlusProduct?.product_id,
+      externalQuantity: ninePlusProduct ? 1 : undefined,
       origin: typeof window !== 'undefined' ? window.location.origin : '',
       isMobile: false,
       isWechatBrowser: false,
@@ -1018,9 +1354,10 @@ onMounted(async () => {
   try {
     const res = await paymentAPI.getCheckoutInfo()
     checkout.value = res.data
-    if (enabledMethods.value.length) {
+    selectedNinePlusProductId.value = availableNinePlusProducts.value[0]?.product_id || ''
+    if (rechargeMethodTypes.value.length) {
       const order: readonly string[] = METHOD_ORDER
-      const sorted = [...enabledMethods.value].sort((a, b) => {
+      const sorted = [...rechargeMethodTypes.value].sort((a, b) => {
         const ai = order.indexOf(a)
         const bi = order.indexOf(b)
         return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)

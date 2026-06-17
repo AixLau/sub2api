@@ -16,9 +16,10 @@ const VISIBLE_METHOD_ALIASES = {
   wxpay_direct: 'wxpay',
   stripe: 'stripe',
   airwallex: 'airwallex',
+  nineplus: 'nineplus',
 } as const
 
-export type VisiblePaymentMethod = 'alipay' | 'wxpay' | 'stripe' | 'airwallex'
+export type VisiblePaymentMethod = 'alipay' | 'wxpay' | 'stripe' | 'airwallex' | 'nineplus'
 export type StripeVisibleMethod = 'alipay' | 'wechat_pay'
 export type PaymentLaunchKind =
   | 'qr_waiting'
@@ -77,6 +78,9 @@ export interface BuildCreateOrderPayloadInput {
   paymentType: string
   orderType: OrderType
   planId?: number
+  externalProductId?: string
+  externalQuantity?: number
+  contact?: string
   origin?: string
   isMobile: boolean
   isWechatBrowser: boolean
@@ -132,6 +136,15 @@ export function buildCreateOrderPayload(input: BuildCreateOrderPayloadInput): Cr
 
   if (input.planId) {
     payload.plan_id = input.planId
+  }
+  if (input.externalProductId) {
+    payload.external_product_id = input.externalProductId
+  }
+  if (input.externalQuantity && input.externalQuantity > 0) {
+    payload.external_quantity = input.externalQuantity
+  }
+  if (input.contact) {
+    payload.contact = input.contact
   }
   if (normalizedOrigin) {
     payload.return_url = `${normalizedOrigin}/payment/result`

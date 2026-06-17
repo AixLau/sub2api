@@ -19,6 +19,7 @@ const showInfo = vi.hoisted(() => vi.fn())
 const showWarning = vi.hoisted(() => vi.fn())
 const getCheckoutInfo = vi.hoisted(() => vi.fn())
 const bridgeInvoke = vi.hoisted(() => vi.fn())
+const isMobileDeviceMock = vi.hoisted(() => vi.fn(() => true))
 
 vi.mock('vue-router', async () => {
   const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
@@ -35,10 +36,14 @@ vi.mock('vue-router', async () => {
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
+  const translations: Record<string, string> = {
+    'payment.amountLabel': '充值金额',
+    'payment.packagePriceShort': '套餐价',
+  }
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => key,
+      t: (key: string) => translations[key] ?? key,
     }),
   }
 })
@@ -47,6 +52,7 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
     user: {
       username: 'demo-user',
+      email: 'demo@example.com',
       balance: 0,
     },
     refreshUser,
@@ -81,8 +87,12 @@ vi.mock('@/api/payment', () => ({
 }))
 
 vi.mock('@/utils/device', () => ({
-  isMobileDevice: () => true,
+  isMobileDevice: isMobileDeviceMock,
 }))
+
+beforeEach(() => {
+  isMobileDeviceMock.mockReset().mockReturnValue(true)
+})
 
 function checkoutInfoFixture() {
   return {
@@ -138,6 +148,176 @@ function checkoutInfoWithPlansFixture() {
       ],
     },
   }
+}
+
+function checkoutInfoWithNinePlusFixture() {
+  return {
+    data: {
+      ...checkoutInfoFixture().data,
+      methods: {
+        nineplus: {
+          daily_limit: 0,
+          daily_used: 0,
+          daily_remaining: 0,
+          single_min: 0,
+          single_max: 0,
+          fee_rate: 0,
+          available: true,
+        },
+      },
+      nineplus_products: [
+        {
+          product_id: 'np-small',
+          display_name: '支付宝充值 5',
+          description: '5 元自动充值',
+          currency: 'CNY',
+          price: 5,
+          fee: 0.1,
+          payment_amount: 5.1,
+          quota: 35,
+          quota_unit: 'USD',
+          enabled: true,
+          sort_order: 9,
+        },
+        {
+          product_id: 'np-basic',
+          display_name: '支付宝充值 10',
+          description: '10 元自动充值',
+          currency: 'CNY',
+          price: 10,
+          fee: 0.2,
+          payment_amount: 10.2,
+          quota: 75,
+          quota_unit: 'USD',
+          enabled: true,
+          sort_order: 1,
+        },
+      ],
+    },
+  }
+}
+
+function checkoutInfoWithNinePlusAndAlipayFixture() {
+  return {
+    data: {
+      ...checkoutInfoWithNinePlusFixture().data,
+      methods: {
+        alipay: {
+          daily_limit: 0,
+          daily_used: 0,
+          daily_remaining: 0,
+          single_min: 0,
+          single_max: 0,
+          fee_rate: 0,
+          available: true,
+        },
+        nineplus: {
+          daily_limit: 0,
+          daily_used: 0,
+          daily_remaining: 0,
+          single_min: 0,
+          single_max: 0,
+          fee_rate: 0,
+          available: true,
+        },
+      },
+    },
+  }
+}
+
+function checkoutInfoWithNinePlusCatalogFixture() {
+  return {
+    data: {
+      ...checkoutInfoFixture().data,
+      methods: {
+        nineplus: {
+          daily_limit: 0,
+          daily_used: 0,
+          daily_remaining: 0,
+          single_min: 0,
+          single_max: 0,
+          fee_rate: 0,
+          available: true,
+        },
+      },
+      nineplus_products: [
+        {
+          product_id: 'api-35',
+          display_name: '35刀API额度',
+          description: 'API额度充值',
+          category: 'API额度',
+          currency: 'CNY',
+          price: 5,
+          fee: 0.1,
+          payment_amount: 5.1,
+          quota: 35,
+          quota_unit: 'USD',
+          enabled: true,
+          stock_count: 20,
+          sort_order: 1,
+        },
+        {
+          product_id: 'sub-standard',
+          display_name: 'Pro 标准月包：49.9 元/月，包含 400 额度',
+          description: '订阅套餐',
+          category: '套餐',
+          currency: 'CNY',
+          price: 49.9,
+          fee: 1,
+          payment_amount: 50.9,
+          quota: 400,
+          quota_unit: 'USD',
+          enabled: true,
+          stock_count: 5,
+          sort_order: 2,
+        },
+        {
+          product_id: 'sub-starter',
+          display_name: 'Pro 入门月包：29.9 元/月，包含 220 额度',
+          description: '订阅套餐',
+          category: '套餐',
+          currency: 'CNY',
+          price: 29.9,
+          fee: 0.6,
+          payment_amount: 30.5,
+          quota: 220,
+          quota_unit: 'USD',
+          enabled: true,
+          stock_count: 8,
+          sort_order: 9,
+        },
+        {
+          product_id: 'sub-sold-out',
+          display_name: 'Pro 畅用月包：99.9 元/月，月包包含 830 额度',
+          description: '订阅套餐',
+          category: '套餐',
+          currency: 'CNY',
+          price: 99.9,
+          fee: 2,
+          payment_amount: 101.9,
+          quota: 830,
+          quota_unit: 'USD',
+          enabled: true,
+          stock_count: 0,
+          sort_order: 3,
+        },
+      ],
+    },
+  }
+}
+
+function mountPaymentViewForContent() {
+  return shallowMount(PaymentView, {
+    global: {
+      stubs: {
+        AppLayout: {
+          template: '<div class="app-layout-stub"><slot /></div>',
+        },
+        Teleport: true,
+        Transition: false,
+      },
+    },
+  })
 }
 
 function jsapiOrderFixture(resumeToken: string) {
@@ -414,5 +594,90 @@ describe('PaymentView WeChat JSAPI flow', () => {
     expect(showWarning).toHaveBeenCalledWith('payment.errors.mobilePaymentFallbackToQr')
     expect(showError).not.toHaveBeenCalled()
     expect(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)).toContain('weixin://wxpay/bizpayurl?pr=fallback-native')
+  })
+})
+
+describe('PaymentView nineplus unified display', () => {
+  beforeEach(() => {
+    routeState.path = '/purchase'
+    routeState.query = {}
+    routerReplace.mockReset().mockResolvedValue(undefined)
+    routerPush.mockReset().mockResolvedValue(undefined)
+    routerResolve.mockClear()
+    createOrder.mockReset().mockResolvedValue({
+      order_id: 901,
+      amount: 10,
+      pay_amount: 10,
+      fee_rate: 0,
+      expires_at: '2099-01-01T00:10:00.000Z',
+      payment_type: 'nineplus',
+      qr_code: 'https://pay.example.com/nineplus/901/qr',
+      out_trade_no: 'sub2_nineplus_901',
+      payment_mode: 'qrcode',
+    })
+    refreshUser.mockReset()
+    fetchActiveSubscriptions.mockReset().mockResolvedValue(undefined)
+    showError.mockReset()
+    showInfo.mockReset()
+    showWarning.mockReset()
+    getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoWithNinePlusFixture())
+    window.localStorage.clear()
+  })
+
+  it('shows one Alipay option backed by nineplus when both providers are enabled', async () => {
+    getCheckoutInfo.mockResolvedValue(checkoutInfoWithNinePlusAndAlipayFixture())
+    const wrapper = mountPaymentViewForContent()
+
+    await flushPromises()
+
+    expect((wrapper.vm as { selectedMethod: string }).selectedMethod).toBe('nineplus')
+    expect((wrapper.vm as { methodOptions: Array<{ type: string }> }).methodOptions.map((method) => method.type)).toEqual(['nineplus'])
+    expect(wrapper.text()).toContain('payment.creditedBalance')
+  })
+
+  it('keeps nineplus recharge cards focused on credited value and recharge amount', async () => {
+    const wrapper = mountPaymentViewForContent()
+
+    await flushPromises()
+
+    const cards = wrapper.findAll('[data-testid^="nineplus-product-"]')
+    expect(cards.map(card => card.attributes('data-testid'))).toEqual([
+      'nineplus-product-np-small',
+      'nineplus-product-np-basic',
+    ])
+    const cardText = cards[0].text()
+
+    expect(cardText).toContain('支付宝充值 5')
+    expect(cardText).toContain('$35.00')
+    expect(cardText).toContain('充值金额 ¥5.00')
+    expect(cardText).not.toContain('实付 ¥5.10')
+    expect(cardText).not.toContain('0.10')
+  })
+
+  it('separates nineplus recharge and subscription products by catalog category', async () => {
+    getCheckoutInfo.mockResolvedValue(checkoutInfoWithNinePlusCatalogFixture())
+    const wrapper = mountPaymentViewForContent()
+
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="nineplus-product-api-35"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="nineplus-product-sub-standard"]').exists()).toBe(false)
+
+    ;(wrapper.vm as { activeTab: 'recharge' | 'subscription' }).activeTab = 'subscription'
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="subscription-layout"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="nineplus-subscription-product-sub-standard"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="nineplus-subscription-product-sub-starter"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="nineplus-subscription-product-sub-sold-out"]').exists()).toBe(false)
+
+    const cards = wrapper.findAll('[data-testid^="nineplus-subscription-product-"]')
+    expect(cards.map(card => card.attributes('data-testid'))).toEqual([
+      'nineplus-subscription-product-sub-starter',
+      'nineplus-subscription-product-sub-standard',
+    ])
+    expect(cards[0].text()).toContain('$220.00')
+    expect(cards[0].text()).toContain('套餐价 ¥29.90')
+    expect(cards[0].text()).not.toContain('实付 ¥30.50')
   })
 })

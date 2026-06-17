@@ -18,7 +18,7 @@ export type OrderStatus =
   | 'REFUNDED'
   | 'REFUND_FAILED'
 
-export type PaymentType = 'alipay' | 'wxpay' | 'alipay_direct' | 'wxpay_direct' | 'stripe' | 'easypay' | 'airwallex'
+export type PaymentType = 'alipay' | 'wxpay' | 'alipay_direct' | 'wxpay_direct' | 'stripe' | 'easypay' | 'airwallex' | 'nineplus'
 
 export type OrderType = 'balance' | 'subscription'
 
@@ -63,6 +63,7 @@ export interface CheckoutInfoResponse {
   global_min: number
   global_max: number
   plans: SubscriptionPlan[]
+  nineplus_products: NinePlusProduct[]
   balance_disabled: boolean
   balance_recharge_multiplier: number
   recharge_fee_rate: number
@@ -73,6 +74,26 @@ export interface CheckoutInfoResponse {
   alipay_force_qrcode?: boolean
 }
 
+export interface NinePlusProduct {
+  product_id: string
+  display_name: string
+  description: string
+  category?: string
+  currency: string
+  price: number
+  fee?: number
+  payment_amount?: number
+  original_price?: number
+  quota: number
+  quota_unit: string
+  badge?: string
+  enabled: boolean
+  stock_count?: number
+  sort_order: number
+  delivery_note?: string
+  external_product_ref?: string
+}
+
 // ==================== Orders ====================
 
 export interface PaymentOrder {
@@ -80,6 +101,7 @@ export interface PaymentOrder {
   user_id: number
   amount: number
   pay_amount: number
+  revenue_amount?: number
   currency?: string
   fee_rate: number
   payment_type: string
@@ -121,6 +143,29 @@ export interface SubscriptionPlan {
   features: string[]
   for_sale: boolean
   sort_order: number
+  product_name?: string
+}
+
+export interface SubscriptionPlanApiItem {
+  id: number
+  group_id: number
+  group_platform?: string
+  group_name?: string
+  rate_multiplier?: number
+  daily_limit_usd?: number | null
+  weekly_limit_usd?: number | null
+  monthly_limit_usd?: number | null
+  supported_model_scopes?: string[]
+  name: string
+  description: string
+  price: number | string
+  original_price?: number | string | null
+  validity_days: number
+  validity_unit: string
+  features?: string | string[]
+  for_sale?: boolean
+  sort_order?: number
+  product_name?: string
 }
 
 export interface PaymentChannel {
@@ -158,6 +203,9 @@ export interface CreateOrderRequest {
   payment_type: string
   order_type: string
   plan_id?: number
+  external_product_id?: string
+  external_quantity?: number
+  contact?: string
   return_url?: string
   payment_source?: string
   openid?: string

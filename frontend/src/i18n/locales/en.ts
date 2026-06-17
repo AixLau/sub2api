@@ -6840,6 +6840,8 @@ export default {
   payment: {
     title: 'Recharge / Subscription',
     amountLabel: 'Amount',
+    packagePrice: 'Package Price',
+    packagePriceShort: 'Package Price',
     paymentAmount: 'Payment Amount',
     creditedBalance: 'Credited Balance',
     quickAmounts: 'Quick Amounts',
@@ -6848,7 +6850,17 @@ export default {
     paymentMethod: 'Payment Method',
     fee: 'Fee',
     actualPay: 'Actual Payment',
+    payableAmount: 'Amount Due',
     createOrder: 'Confirm Payment',
+    nineplus: {
+      selectProduct: 'Select an Alipay recharge package',
+      selectSubscriptionProduct: 'Select an Alipay subscription package',
+      selectedSubscription: 'Selected package',
+      autoRedeem: 'Automatically credited after payment',
+      payShort: 'Pay',
+      includesFee: 'Includes fee',
+      noProducts: 'No Alipay recharge packages are currently available',
+    },
     methods: {
       easypay: 'EasyPay',
       alipay: 'Alipay',
@@ -6859,6 +6871,7 @@ export default {
       link: 'Link',
       alipay_direct: 'Alipay (Direct)',
       wxpay_direct: 'WeChat Pay (Direct)',
+      nineplus: 'Alipay',
     },
     status: {
       pending: 'Pending',
@@ -6923,6 +6936,7 @@ export default {
     currentBalance: 'Current Balance',
     groupFallback: 'Group #{id}',
     rechargeAccount: 'Recharge Account',
+    subscriptionAccount: 'Subscription Account',
     activeSubscription: 'Active Subscription',
     noActiveSubscription: 'No active subscription',
     tabTopUp: 'Top Up',

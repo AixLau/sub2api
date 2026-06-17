@@ -7020,6 +7020,8 @@ export default {
   payment: {
     title: '充值/订阅',
     amountLabel: '充值金额',
+    packagePrice: '套餐价格',
+    packagePriceShort: '套餐价',
     paymentAmount: '支付金额',
     creditedBalance: '到账余额',
     quickAmounts: '快捷金额',
@@ -7028,7 +7030,17 @@ export default {
     paymentMethod: '支付方式',
     fee: '手续费',
     actualPay: '实付金额',
+    payableAmount: '应付金额',
     createOrder: '确认支付',
+    nineplus: {
+      selectProduct: '选择支付宝充值档位',
+      selectSubscriptionProduct: '选择支付宝订阅套餐',
+      selectedSubscription: '已选套餐',
+      autoRedeem: '支付后自动兑换到账',
+      payShort: '实付',
+      includesFee: '含手续费',
+      noProducts: '暂无可用的支付宝充值档位',
+    },
     methods: {
       easypay: '易支付',
       alipay: '支付宝',
@@ -7039,6 +7051,7 @@ export default {
       link: 'Link',
       alipay_direct: '支付宝（直连）',
       wxpay_direct: '微信支付（直连）',
+      nineplus: '支付宝',
     },
     status: {
       pending: '待支付',
@@ -7103,6 +7116,7 @@ export default {
     currentBalance: '当前余额',
     groupFallback: '分组 #{id}',
     rechargeAccount: '充值账户',
+    subscriptionAccount: '订阅账户',
     activeSubscription: '当前订阅',
     noActiveSubscription: '暂无有效订阅',
     tabTopUp: '充值',
