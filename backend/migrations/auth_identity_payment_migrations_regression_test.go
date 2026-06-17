@@ -168,3 +168,21 @@ func TestMigration151AddsAccountAutoPauseExpiryPartialIndex(t *testing.T) {
 	require.Contains(t, sql, "auto_pause_on_expired = TRUE")
 	require.Contains(t, sql, "expires_at IS NOT NULL")
 }
+
+func TestMigration154CompensatesAffiliateRebateByCreditedAmount(t *testing.T) {
+	content, err := FS.ReadFile("154_affiliate_rebate_amount_basis_compensation.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "AFFILIATE_REBATE_COMPENSATION")
+	require.Contains(t, sql, "po.amount")
+	require.Contains(t, sql, "po.pay_amount")
+	require.Contains(t, sql, "er.rebate_amount / NULLIF(po.pay_amount::numeric, 0)")
+	require.Contains(t, sql, "po.amount::numeric *")
+	require.Contains(t, sql, "NOT EXISTS")
+	require.Contains(t, sql, "aff_frozen_quota")
+	require.Contains(t, sql, "aff_quota")
+	require.Contains(t, sql, "source_order_id")
+	require.NotContains(t, sql, "DELETE")
+	require.NotContains(t, sql, "TRUNCATE")
+}

@@ -442,6 +442,24 @@ func roundTo(v float64, scale int) float64 {
 	return math.Round(v*factor) / factor
 }
 
+func affiliateRebateCompensationDelta(creditedAmount, paidAmount, existingRebate float64) float64 {
+	if creditedAmount <= 0 || paidAmount <= 0 || existingRebate <= 0 ||
+		math.IsNaN(creditedAmount) || math.IsNaN(paidAmount) || math.IsNaN(existingRebate) ||
+		math.IsInf(creditedAmount, 0) || math.IsInf(paidAmount, 0) || math.IsInf(existingRebate, 0) {
+		return 0
+	}
+	historicalRate := existingRebate / paidAmount
+	if historicalRate <= 0 || math.IsNaN(historicalRate) || math.IsInf(historicalRate, 0) {
+		return 0
+	}
+	expectedTotal := roundTo(creditedAmount*historicalRate, 8)
+	delta := roundTo(expectedTotal-existingRebate, 8)
+	if delta <= 0 {
+		return 0
+	}
+	return delta
+}
+
 func maskEmail(email string) string {
 	email = strings.TrimSpace(email)
 	if email == "" {

@@ -129,3 +129,20 @@ func TestIsValidAffiliateCodeFormat(t *testing.T) {
 		})
 	}
 }
+
+func TestAffiliateRebateCompensationDeltaUsesCreditedAmountAndHistoricalRate(t *testing.T) {
+	t.Parallel()
+
+	delta := affiliateRebateCompensationDelta(600, 81.6, 12.24)
+
+	require.InDelta(t, 77.76, delta, 1e-9)
+}
+
+func TestAffiliateRebateCompensationDeltaSkipsNonPositiveDelta(t *testing.T) {
+	t.Parallel()
+
+	require.Zero(t, affiliateRebateCompensationDelta(10.2, 10.2, 1.53))
+	require.Zero(t, affiliateRebateCompensationDelta(0, 10.2, 1.53))
+	require.Zero(t, affiliateRebateCompensationDelta(75, 0, 1.53))
+	require.Zero(t, affiliateRebateCompensationDelta(75, 10.2, 0))
+}
