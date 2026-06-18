@@ -1,0 +1,1051 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>星链 AI Hub 客户端配置教程 · 一键脚本 / CC Switch</title>
+    <meta
+      name="description"
+      content="星链 AI Hub 客户端傻瓜式配置教程：一键脚本（macOS / Windows 双平台）和 CC Switch 两种方式，把 Codex 与 Claude Code 接入 星链 AI Hub。"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        color-scheme: light;
+        --color-bg: #ffffff;
+        --color-bg-subtle: #f8f9fb;
+        --color-text: #212121;
+        --color-text-strong: #000000;
+        --color-text-muted: #333333;
+        --color-accent: #0033ff;
+        --color-accent-tint: #e5eaff;
+        --color-border: #f4f4f4;
+        --color-success: #0a7c3b;
+        --color-success-tint: #e7f6ec;
+        --color-warn: #b54708;
+        --color-warn-tint: #fff4e6;
+
+        --radius-pill: 999px;
+        --radius-card: 12px;
+        --radius-sm: 4px;
+
+        --ring-card: 0 0 0 1px var(--color-accent-tint);
+        --font-sans: "Inter", "Söhne", "Helvetica Neue", Arial, sans-serif;
+        --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+        /* 动画参数 - iOS 风格缓动 */
+        --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+        --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+        --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+        --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+        --duration-fast: 300ms;
+        --duration-normal: 600ms;
+        --duration-slow: 800ms;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--color-bg);
+        color: var(--color-text);
+        font: 400 14px/24px var(--font-sans);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a {
+        color: var(--color-accent);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .page {
+        width: min(1200px, calc(100% - 48px));
+        margin: 0 auto;
+        padding: 64px 0 96px;
+      }
+
+      /* ---------- Hero ---------- */
+      .hero {
+        padding: 8px 0 32px;
+      }
+
+      .eyebrow {
+        display: inline-block;
+        font: 600 13px/1.4 var(--font-sans);
+        letter-spacing: 1.6px;
+        text-transform: uppercase;
+        color: var(--color-text-strong);
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+      }
+
+      h1 {
+        max-width: 820px;
+        margin-top: 16px;
+        font: 400 56px/1.05 var(--font-sans);
+        letter-spacing: -0.02em;
+        color: var(--color-text-muted);
+      }
+
+      .lead {
+        max-width: 760px;
+        margin: 20px 0 0;
+        font: 400 19px/1.5 var(--font-sans);
+        letter-spacing: -0.01em;
+        color: var(--color-text-muted);
+      }
+
+      .lead .accent {
+        color: var(--color-accent);
+      }
+
+      /* ---------- Top tabs ---------- */
+      .tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 6px;
+        margin-top: 32px;
+        background: var(--color-bg-subtle);
+        border-radius: var(--radius-pill);
+        box-shadow: var(--ring-card);
+        width: fit-content;
+        max-width: 100%;
+      }
+
+      .tab {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: var(--color-text);
+        font: 500 14px/1.4 var(--font-sans);
+        padding: 10px 20px;
+        border-radius: var(--radius-pill);
+        cursor: pointer;
+        transition: all var(--duration-fast) var(--ease-out-quart);
+        transform: scale(1);
+      }
+
+      .tab:hover {
+        color: var(--color-accent);
+        transform: scale(1.02);
+      }
+
+      .tab:active {
+        transform: scale(0.98);
+      }
+
+      .tab[aria-selected="true"] {
+        background: var(--color-accent);
+        color: #ffffff;
+      }
+
+      .tab small {
+        display: block;
+        font: 400 11px/1.2 var(--font-sans);
+        opacity: 0.75;
+        margin-top: 2px;
+      }
+
+      .panel {
+        margin-top: 32px;
+        /* 初始加载动画已禁用，改用 JS 控制的交叉淡入淡出 */
+        transition: opacity var(--duration-normal) var(--ease-smooth),
+                    transform var(--duration-normal) var(--ease-out-expo);
+        transform-origin: top center;
+      }
+
+      .panel[hidden] {
+        display: none;
+      }
+
+      /* ---------- Sub tabs (OS) ---------- */
+      .os-panel {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        opacity: 1;
+        transform-style: preserve-3d;
+        backface-visibility: hidden;
+        transition: opacity 700ms cubic-bezier(0.4, 0, 0.2, 1),
+                    transform 700ms cubic-bezier(0.34, 1.2, 0.64, 1);
+      }
+
+      .os-panel[hidden] {
+        display: block !important;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      /* 离场动画 - 向左旋转淡出 */
+      .os-panel.leaving {
+        opacity: 0;
+        transform: translateX(-50px) rotateY(-15deg) scale(0.95);
+      }
+
+      /* 入场动画 - 从右旋转淡入 */
+      .os-panel.entering {
+        opacity: 0;
+        transform: translateX(50px) rotateY(15deg) scale(0.95);
+      }
+
+      /* 激活状态 */
+      .os-panel.active {
+        opacity: 1;
+        transform: translateX(0) rotateY(0) scale(1);
+        position: relative;
+      }
+
+      .subtabs {
+        display: inline-flex;
+        gap: 4px;
+        padding: 4px;
+        background: #ffffff;
+        border-radius: var(--radius-pill);
+        box-shadow: var(--ring-card);
+        margin-bottom: 24px;
+      }
+
+      /* OS 面板容器 - 3D 透视 */
+      .os-panels-container {
+        perspective: 2000px;
+        position: relative;
+        min-height: 600px;
+        overflow: visible;
+      }
+
+      .subtab {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: var(--color-text-muted);
+        font: 500 13px/1.4 var(--font-sans);
+        padding: 8px 16px;
+        border-radius: var(--radius-pill);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition: all var(--duration-fast) var(--ease-out-quart);
+        transform: scale(1);
+      }
+
+      .subtab:hover {
+        background: rgba(0, 51, 255, 0.05);
+        transform: scale(1.03);
+      }
+
+      .subtab:active {
+        transform: scale(0.97);
+      }
+
+      .subtab[aria-selected="true"] {
+        background: var(--color-accent-tint);
+        color: var(--color-accent);
+      }
+
+      /* ---------- Step cards ---------- */
+      .step {
+        background: #ffffff;
+        border-radius: var(--radius-card);
+        box-shadow: var(--ring-card);
+        padding: clamp(20px, 3vw, 32px);
+        margin-bottom: 20px;
+        transition: all var(--duration-normal) var(--ease-out-expo);
+        transform: translateY(0);
+      }
+
+      .step:hover {
+        box-shadow: 0 8px 24px rgba(0, 51, 255, 0.08), var(--ring-card);
+        transform: translateY(-4px);
+      }
+
+      .step-header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 4px;
+      }
+
+      .number {
+        display: inline-flex;
+        flex: 0 0 auto;
+        width: 32px;
+        height: 32px;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-pill);
+        background: var(--color-accent-tint);
+        color: var(--color-accent);
+        font: 600 15px/1 var(--font-sans);
+      }
+
+      .step h2 {
+        font: 500 22px/1.25 var(--font-sans);
+        letter-spacing: -0.01em;
+        color: var(--color-text-strong);
+      }
+
+      .step p {
+        margin: 12px 0 0;
+        color: var(--color-text);
+        line-height: 1.7;
+      }
+
+      .step ul,
+      .step ol {
+        margin: 12px 0 0;
+        padding-left: 22px;
+        color: var(--color-text);
+        line-height: 1.7;
+      }
+
+      .step li + li {
+        margin-top: 6px;
+      }
+
+      /* ---------- Code block with copy ---------- */
+      .code-block {
+        position: relative;
+        margin: 16px 0 0;
+        background: #0c1020;
+        color: #e6e8ef;
+        border-radius: var(--radius-card);
+        font: 400 13px/1.6 var(--font-mono);
+        overflow: hidden;
+      }
+
+      .code-block pre {
+        margin: 0;
+        padding: 18px 64px 18px 20px;
+        white-space: pre-wrap;
+        word-break: break-all;
+        overflow-x: auto;
+      }
+
+      .code-block .copy {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        appearance: none;
+        border: 0;
+        background: rgba(255, 255, 255, 0.1);
+        color: #ffffff;
+        font: 500 12px/1 var(--font-sans);
+        padding: 8px 12px;
+        border-radius: var(--radius-pill);
+        cursor: pointer;
+        transition: all var(--duration-fast) var(--ease-out-quart);
+        transform: scale(1);
+      }
+
+      .code-block .copy:hover {
+        background: rgba(255, 255, 255, 0.2);
+        transform: scale(1.05);
+      }
+
+      .code-block .copy:active {
+        transform: scale(0.95);
+      }
+
+      .code-block .copy.copied {
+        background: var(--color-success);
+        transform: scale(1.1);
+      }
+
+      /* ---------- Screenshots ---------- */
+      .screenshot {
+        margin: 16px 0 0;
+        overflow: hidden;
+        border-radius: var(--radius-card);
+        box-shadow: var(--ring-card);
+        background: var(--color-bg-subtle);
+        transition: all var(--duration-normal) var(--ease-out-expo);
+      }
+
+      .screenshot:hover {
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06), var(--ring-card);
+        transform: translateY(-2px);
+      }
+
+      .screenshot img {
+        display: block;
+        width: 100%;
+        max-width: 900px;
+        height: auto;
+        margin: 0 auto;
+        animation: fadeIn var(--duration-slow) var(--ease-out-quart);
+      }
+
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+
+      .caption {
+        margin-top: 8px;
+        color: var(--color-text-muted);
+        font-size: 13px;
+      }
+
+      /* ---------- Notes ---------- */
+      .note {
+        margin: 16px 0 0;
+        padding: 14px 16px;
+        background: var(--color-bg-subtle);
+        border-radius: var(--radius-card);
+        line-height: 1.7;
+        color: var(--color-text);
+        font-size: 13.5px;
+      }
+
+      .note.warn {
+        background: var(--color-warn-tint);
+        color: var(--color-warn);
+      }
+
+      .note.success {
+        background: var(--color-success-tint);
+        color: var(--color-success);
+      }
+
+      .note strong {
+        color: inherit;
+      }
+
+      code:not(pre code) {
+        border-radius: var(--radius-sm);
+        background: var(--color-accent-tint);
+        color: var(--color-accent);
+        font-family: var(--font-mono);
+        font-size: 0.92em;
+        padding: 2px 6px;
+      }
+
+      kbd {
+        display: inline-block;
+        padding: 2px 8px;
+        font-family: var(--font-mono);
+        font-size: 0.85em;
+        color: var(--color-text-strong);
+        background: #ffffff;
+        border: 1px solid var(--color-border);
+        border-bottom-width: 2px;
+        border-radius: var(--radius-sm);
+      }
+
+      /* ---------- Footer ---------- */
+      footer {
+        margin-top: 48px;
+        padding-top: 24px;
+        border-top: 1px solid var(--color-border);
+        color: var(--color-text-muted);
+        font-size: 13px;
+        text-align: center;
+      }
+
+      footer a {
+        color: var(--color-accent);
+      }
+
+      @media (max-width: 820px) {
+        .page {
+          width: calc(100% - 32px);
+          padding: 40px 0 64px;
+        }
+
+        h1 {
+          font-size: 36px;
+        }
+
+        .tabs {
+          width: 100%;
+        }
+
+        .tab {
+          flex: 1 1 0;
+          padding: 10px 12px;
+          text-align: center;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <span class="eyebrow">星链 AI Hub · 客户端接入指南</span>
+        <h1>把 Codex 和 Claude Code 接到 星链 AI Hub</h1>
+        <p class="lead">
+          两种配置方式任选其一：<span class="accent">一键脚本</span>
+          自动写入本地配置（推荐），<span class="accent">CC Switch</span>
+          可视化管理多份配置。下面分步带你走完，傻瓜式按图操作即可。
+        </p>
+      </section>
+
+      <div class="tabs" role="tablist" aria-label="安装方式">
+        <button
+          class="tab"
+          role="tab"
+          aria-selected="true"
+          aria-controls="panel-script"
+          data-tab="script"
+        >
+          一键脚本
+          <small>推荐 · 自动配置</small>
+        </button>
+        <button
+          class="tab"
+          role="tab"
+          aria-selected="false"
+          aria-controls="panel-ccswitch"
+          data-tab="ccswitch"
+        >
+          CC Switch
+          <small>可视化切换多套配置</small>
+        </button>
+      </div>
+
+      <!-- ============ 一键脚本面板 ============ -->
+      <section
+        class="panel"
+        id="panel-script"
+        role="tabpanel"
+        aria-labelledby="tab-script"
+      >
+        <div class="subtabs" role="tablist" aria-label="操作系统">
+          <button
+            class="subtab"
+            role="tab"
+            aria-selected="true"
+            aria-controls="os-mac"
+            data-os="mac"
+          >
+             macOS / Linux
+          </button>
+          <button
+            class="subtab"
+            role="tab"
+            aria-selected="false"
+            aria-controls="os-win"
+            data-os="win"
+          >
+             Windows
+          </button>
+        </div>
+
+        <div class="os-panels-container">
+        <!-- macOS / Linux -->
+        <div class="os-panel" id="os-mac">
+          <article class="step">
+            <div class="step-header">
+              <span class="number">1</span>
+              <h2>登录 星链 AI Hub 创建 API Key</h2>
+            </div>
+            <p>
+              访问
+              <a href="https://aixlau.me" target="_blank" rel="noopener noreferrer"
+                >https://aixlau.me</a
+              >
+              登录后进入「API 密钥」页面，点击「创建密钥」。命名随意，能识别用途即可（例如
+              <code>mac-codex</code>），并选择「按量计费」或「订阅」分组。
+            </p>
+            <figure class="screenshot">
+              <img
+                src="/docs/install/assets/01-api-keys.webp"
+                alt="星链 AI Hub API 密钥页面"
+                loading="lazy"
+              />
+            </figure>
+            <div class="caption">在「API 密钥」页面创建一个新的密钥。</div>
+            <div class="note">
+              <strong>提示：</strong>密钥创建好后，点击它右侧的复制按钮即可复制完整密钥，下一步会用到。
+            </div>
+          </article>
+
+          <article class="step">
+            <div class="step-header">
+              <span class="number">2</span>
+              <h2>打开终端</h2>
+            </div>
+            <p>
+              在 macOS 上按 <kbd>⌘</kbd> + <kbd>空格</kbd> 调出 Spotlight，输入
+              <code>Terminal</code> 回车即可打开终端。Linux 用户用任意终端模拟器都行。
+            </p>
+          </article>
+
+          <article class="step">
+            <div class="step-header">
+              <span class="number">3</span>
+              <h2>粘贴并运行下面的命令</h2>
+            </div>
+            <p>把整行命令复制到终端按回车。脚本会自动下载安装程序，并在过程中提示你输入第 1 步创建的 API Key。</p>
+            <div class="code-block">
+              <button class="copy" data-copy>复制</button>
+              <pre><code>curl -fsSL https://aixlau.me/install/bootstrap.sh | bash</code></pre>
+            </div>
+            <div class="note">
+              <strong>提示：</strong>粘贴 Key 时终端不会显示出来，是正常的，输入完直接回车即可。
+            </div>
+          </article>
+
+          <article class="step">
+            <div class="step-header">
+              <span class="number">4</span>
+              <h2>选择客户端并粘贴 API Key</h2>
+            </div>
+            <p>按下面两步操作：</p>
+            <ol>
+              <li>用 <kbd>↑</kbd> <kbd>↓</kbd> 选择要配置的客户端（默认已选中 <strong>Codex</strong>），按 <kbd>回车</kbd> 确认；</li>
+              <li>看到「请输入你的 API Key」时，粘贴第 1 步复制的密钥后回车（粘贴时不会显示出来，是正常的）。</li>
+            </ol>
+            <figure class="screenshot">
+              <img
+                src="/docs/install/assets/02-mac-terminal.webp"
+                alt="macOS 终端中选择客户端并输入 API Key"
+                loading="lazy"
+              />
+            </figure>
+            <div class="caption">用上下键选中 Codex，回车后粘贴 API Key。</div>
+            <p>回车后脚本会自动备份原配置并写入新配置，看到写入成功的提示就完成了。整个过程只配置你选中的那一个客户端，不会动其他客户端。</p>
+            <div class="note success">
+              <strong>会写入哪些文件：</strong>选 Codex 写入
+              <code>~/.codex/config.toml</code> 和 <code>~/.codex/auth.json</code>；选 Claude Code 写入
+              <code>~/.claude/settings.json</code>。如果文件已存在会先自动备份，可放心运行。
+            </div>
+          </article>
+
+          <article class="step">
+            <div class="step-header">
+              <span class="number">5</span>
+              <h2>重启客户端开始使用</h2>
+            </div>
+            <p>关闭并重新打开你刚配置的那个客户端，让它读取新配置即可：</p>
+            <ul>
+              <li>Codex APP（桌面客户端）：直接退出后重新打开应用即可；</li>
+              <li>Codex CLI：终端里重新执行 <code>codex</code> 启动；</li>
+              <li>Claude Code：终端里重新执行 <code>claude</code> 启动，会自动走 星链 AI Hub 网关。</li>
+            </ul>
+          </article>
+        </div>
+
+        <!-- Windows -->
+        <div class="os-panel" id="os-win" hidden>
+          <article class="step">
+            <div class="step-header">
+              <span class="number">1</span>
+              <h2>登录 星链 AI Hub 创建 API Key</h2>
+            </div>
+            <p>
+              访问
+              <a href="https://aixlau.me" target="_blank" rel="noopener noreferrer"
+                >https://aixlau.me</a
+              >
+              登录后进入「API 密钥」页面，点击「创建密钥」。命名建议带平台标识，例如
+              <code>win-codex</code>，并选择「按量计费」或「订阅」分组。
+            </p>
+            <figure class="screenshot">
+              <img
+                src="/docs/install/assets/01-api-keys.webp"
+                alt="星链 AI Hub API 密钥页面"
+                loading="lazy"
+              />
+            </figure>
+            <div class="caption">在「API 密钥」页面创建一个新的密钥。</div>
+            <div class="note">
+              <strong>提示：</strong>密钥创建好后，点击它右侧的复制按钮即可复制完整密钥，下一步会用到。
+            </div>
+          </article>
+
+          <article class="step">
+            <div class="step-header">
+              <span class="number">2</span>
+              <h2>打开 PowerShell</h2>
+            </div>
+            <p>
+              按 <kbd>Win</kbd> 键，输入 <code>PowerShell</code>，在搜索结果里点击
+              <strong>Windows PowerShell</strong> 或 <strong>PowerShell 7</strong>。普通用户权限即可，无需用管理员模式打开。
+            </p>
+          </article>
+
+          <article class="step">
+            <div class="step-header">
+              <span class="number">3</span>
+              <h2>粘贴并运行下面的命令</h2>
+            </div>
+            <p>把命令整段复制到 PowerShell 里按回车。脚本会自动下载安装程序，然后先让你选择客户端，再提示输入第 1 步创建的 API Key。</p>
+            <div class="code-block">
+              <button class="copy" data-copy>复制</button>
+              <pre><code>irm "https://aixlau.me/install/bootstrap.ps1?v=20260618-encoding" | iex</code></pre>
+            </div>
+            <div class="note">
+              <strong>提示：</strong>粘贴 Key 时 PowerShell 不会显示出来，是正常的，输入完直接回车即可。
+            </div>
+            <div class="note warn">
+              <strong>如果提示"无法加载脚本 / 执行策略"被拦住：</strong>复制下面这条等效命令再跑一次即可（只对本次有效，不改你电脑的全局设置）。
+            </div>
+            <div class="code-block">
+              <button class="copy" data-copy>复制</button>
+              <pre><code>powershell -ExecutionPolicy Bypass -Command "irm 'https://aixlau.me/install/bootstrap.ps1?v=20260618-encoding' | iex"</code></pre>
+            </div>
+          </article>
+
+          <article class="step">
+            <div class="step-header">
+              <span class="number">4</span>
+              <h2>选择客户端并粘贴 API Key</h2>
+            </div>
+            <p>按下面两步操作：</p>
+            <ol>
+              <li>用 <kbd>↑</kbd> <kbd>↓</kbd> 选择要配置的客户端（默认已选中 <strong>Codex</strong>），按 <kbd>回车</kbd> 确认；</li>
+              <li>看到「请输入你的 API Key」时，粘贴第 1 步复制的密钥后回车（粘贴时不会显示出来，是正常的）。</li>
+            </ol>
+            <figure class="screenshot">
+              <img
+                src="/docs/install/assets/03-win-powershell.webp"
+                alt="PowerShell 中选择客户端并输入 API Key"
+                loading="lazy"
+              />
+            </figure>
+            <div class="caption">用上下键选中 Codex，回车后粘贴 API Key。</div>
+            <p>回车后脚本会自动备份原配置并写入新配置，看到写入成功的提示就完成了。整个过程只配置你选中的那一个客户端，不会动其他客户端。</p>
+            <div class="note success">
+              <strong>会写入哪些文件：</strong>选 Codex 写入
+              <code>%USERPROFILE%\.codex\config.toml</code> 和
+              <code>%USERPROFILE%\.codex\auth.json</code>；选 Claude Code 写入
+              <code>%USERPROFILE%\.claude\settings.json</code>。如果文件已存在会先自动备份，可放心运行。
+            </div>
+          </article>
+
+          <article class="step">
+            <div class="step-header">
+              <span class="number">5</span>
+              <h2>重启客户端开始使用</h2>
+            </div>
+            <p>关闭并重新打开你刚配置的那个客户端，让它读取新配置：</p>
+            <ul>
+              <li>Codex APP（桌面客户端）：需要彻底退出后再重新打开，详见下方提醒；</li>
+              <li>Codex CLI：在 PowerShell 里重新执行 <code>codex</code> 启动；</li>
+              <li>Claude Code：重新执行 <code>claude</code> 启动，会自动走 星链 AI Hub 网关。</li>
+            </ul>
+            <div class="note warn">
+              <strong>Windows 上 Codex APP 要彻底退出才会生效：</strong>直接点右上角的 <kbd>×</kbd>
+              只是最小化到右下角的系统托盘，程序其实还在运行，配置不会重新加载。请在右下角任务栏托盘区（必要时点 <kbd>∧</kbd>
+              展开隐藏图标）找到 Codex 图标，<strong>右键它 →「退出 / Quit」</strong>，再重新打开应用。</div>
+            <figure class="screenshot">
+              <img
+                src="/docs/install/assets/04-win-tray-quit.webp"
+                alt="Windows 右下角托盘右键 Codex 图标选择退出"
+                loading="lazy"
+              />
+            </figure>
+            <div class="caption">在右下角托盘区右键 Codex 图标，点「退出」彻底关闭后再重新打开。</div>
+            <div class="note">
+              <strong>找不到命令？</strong>可能是 Codex / Claude Code 还没装。先去各自官方下载安装客户端，再重新执行本脚本。
+            </div>
+          </article>
+        </div>
+        </div> <!-- .os-panels-container -->
+
+        <!-- 通用 FAQ -->
+        <article class="step">
+          <div class="step-header">
+            <span class="number">?</span>
+            <h2>常见问题</h2>
+          </div>
+          <p><strong>Q：跑脚本前我需要装什么？</strong></p>
+          <p>macOS 自带 <code>curl</code> 和 <code>bash</code>，不需要额外装。Windows 用 PowerShell 5.1 及以上即可（Win10/11 自带）。Codex 和 Claude Code 客户端要自己装好，脚本只负责写配置文件。</p>
+          <p style="margin-top:16px"><strong>Q：脚本会把我原来的配置覆盖掉吗？</strong></p>
+          <p>不会丢。每个被改动的文件都会先备份成 <code>xxx.bak.YYYYMMDD-HHMMSS</code> 留在原目录，需要回退直接把 <code>.bak.*</code> 改回原名即可。</p>
+          <p style="margin-top:16px"><strong>Q：换了新 Key 怎么办？</strong></p>
+          <p>重新跑一遍同样的命令，输入新 Key 即可，旧的会自动覆盖。</p>
+          <p style="margin-top:16px"><strong>Q：想恢复成官方 Codex/Claude？</strong></p>
+          <p>把对应的备份文件 <code>.bak.*</code> 改回原文件名，或直接删掉脚本生成的配置块（<code>config.toml</code> 里有 <code># BEGIN SUB2API MANAGED BLOCK</code> 标记区段）。</p>
+        </article>
+      </section>
+
+      <!-- ============ CC Switch 面板 ============ -->
+      <section
+        class="panel"
+        id="panel-ccswitch"
+        role="tabpanel"
+        aria-labelledby="tab-ccswitch"
+        hidden
+      >
+        <article class="step">
+          <div class="step-header">
+            <span class="number">1</span>
+            <h2>下载并安装 CC Switch</h2>
+          </div>
+          <p>CC Switch 用来在多个服务商和账号之间快速切换，适合同时配多套环境的用户。</p>
+          <ul>
+            <li>官方文档：<a href="https://ccswitch.io/zh/docs?section=getting-started&item=quickstart" target="_blank" rel="noopener noreferrer">ccswitch.io/zh/docs</a></li>
+            <li>Windows：<a href="https://github.com/farion1231/cc-switch/releases/download/v3.15.0/CC-Switch-v3.15.0-Windows.msi" target="_blank" rel="noopener noreferrer">CC-Switch-v3.15.0-Windows.msi</a></li>
+            <li>macOS：<a href="https://github.com/farion1231/cc-switch/releases/download/v3.15.0/CC-Switch-v3.15.0-macOS.dmg" target="_blank" rel="noopener noreferrer">CC-Switch-v3.15.0-macOS.dmg</a></li>
+          </ul>
+        </article>
+
+        <article class="step">
+          <div class="step-header">
+            <span class="number">2</span>
+            <h2>在 星链 AI Hub 创建 API Key</h2>
+          </div>
+          <p>
+            登录 <a href="https://aixlau.me" target="_blank" rel="noopener noreferrer">https://aixlau.me</a>
+            后进入「API 密钥」页面，点击「创建密钥」，名称按用途填即可。
+          </p>
+          <figure class="screenshot">
+            <img src="/docs/ccswitch/assets/01-api-keys.webp" alt="星链 AI Hub API 密钥页面" loading="lazy" />
+          </figure>
+          <div class="caption">API 密钥页面入口。</div>
+        </article>
+
+        <article class="step">
+          <div class="step-header">
+            <span class="number">3</span>
+            <h2>确认计费分组和账号来源</h2>
+          </div>
+          <p>创建密钥时选择需要使用的计费分组。自定义密钥可以按自己的规则填写；不填写时系统会随机生成。</p>
+          <ul>
+            <li>计费分组决定走哪个模型平台、价格倍率和可用账号池。</li>
+            <li>「我的账号」里加了自有账号的话，可以优先用它，通常网络更稳定。</li>
+            <li>自有账号额度不足时，按系统配置回退到平台账号。</li>
+          </ul>
+          <figure class="screenshot">
+            <img src="/docs/ccswitch/assets/02-create-key.webp" alt="创建 API 密钥并选择分组" loading="lazy" />
+          </figure>
+          <div class="caption">创建密钥时选择计费分组和密钥配置。</div>
+        </article>
+
+        <article class="step">
+          <div class="step-header">
+            <span class="number">4</span>
+            <h2>一键导入到 CC Switch</h2>
+          </div>
+          <p>密钥创建完成后，在密钥列表点击「导入到 CCS」。浏览器会调起 <code>ccswitch://</code> 协议，把当前 API Key、服务地址、客户端类型一次写进 CC Switch。</p>
+          <figure class="screenshot">
+            <img src="/docs/ccswitch/assets/03-import-button.webp" alt="导入到 CC Switch 按钮" loading="lazy" />
+          </figure>
+          <div class="caption">在密钥列表点击「导入到 CCS」。</div>
+          <figure class="screenshot">
+            <img src="/docs/ccswitch/assets/04-ccswitch-import.webp" alt="CC Switch 导入确认界面" loading="lazy" />
+          </figure>
+          <div class="caption">CC Switch 收到配置后确认保存。</div>
+        </article>
+
+        <article class="step">
+          <div class="step-header">
+            <span class="number">5</span>
+            <h2>切换配置并重启 Codex / Claude Code</h2>
+          </div>
+          <p>在 CC Switch 中切到刚导入的配置，然后重启对应客户端。重启是为了让客户端读取新写入的配置文件。</p>
+          <figure class="screenshot">
+            <img src="/docs/ccswitch/assets/05-switch-profile.webp" alt="CC Switch 中切换到导入配置" loading="lazy" />
+          </figure>
+          <div class="caption">选择刚导入的配置并应用。</div>
+        </article>
+
+        <article class="step">
+          <div class="step-header">
+            <span class="number">6</span>
+            <h2>验证登录状态</h2>
+          </div>
+          <p>客户端重启后，看到 API Key 登录状态就说明已经接入成功。后续切换服务商，只需要在 CC Switch 里切配置 + 重启客户端。</p>
+          <figure class="screenshot">
+            <img src="/docs/ccswitch/assets/06-codex-login.webp" alt="Codex 使用 API Key 登录成功" loading="lazy" />
+          </figure>
+          <div class="caption">Codex 已通过 API Key 方式登录。</div>
+          <div class="note">
+            <strong>导入按钮没反应？</strong>大概率是 CC Switch 还没装好，或系统没注册
+            <code>ccswitch://</code> 协议处理。重新安装 CC Switch 后再点一次即可。
+          </div>
+        </article>
+      </section>
+
+      <footer>
+        最后更新：2026-06-18 · 文档地址：<a href="https://aixlau.me/docs/install/">https://aixlau.me/docs/install/</a>
+      </footer>
+    </main>
+
+    <script>
+      // ---------- 主 Tab 切换 ----------
+      const tabs = document.querySelectorAll('.tabs .tab');
+      const panels = {
+        script: document.getElementById('panel-script'),
+        ccswitch: document.getElementById('panel-ccswitch'),
+      };
+
+      function activateTab(name) {
+        tabs.forEach((t) => {
+          const on = t.dataset.tab === name;
+          t.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+
+        // 找出当前显示的面板和目标面板
+        const current = Object.values(panels).find(el => el && !el.hidden);
+        const target = panels[name];
+
+        if (current === target || !target) {
+          // 同一个或目标不存在，直接切换
+          Object.entries(panels).forEach(([key, el]) => {
+            if (!el) return;
+            el.hidden = key !== name;
+          });
+        } else {
+          // 交叉淡入淡出
+          if (current) {
+            current.style.opacity = '0';
+            current.style.transform = 'translateY(-10px)';
+          }
+          setTimeout(() => {
+            Object.entries(panels).forEach(([key, el]) => {
+              if (!el) return;
+              el.hidden = key !== name;
+            });
+            if (target) {
+              target.style.opacity = '0';
+              target.style.transform = 'translateY(20px)';
+              target.offsetHeight; // 强制重排
+              target.style.transition = 'opacity 450ms var(--ease-smooth), transform 450ms var(--ease-out-expo)';
+              requestAnimationFrame(() => {
+                target.style.opacity = '1';
+                target.style.transform = 'translateY(0)';
+              });
+            }
+          }, 150);
+        }
+
+        try {
+          history.replaceState(null, '', '#' + name);
+        } catch (_) {}
+      }
+
+      tabs.forEach((t) => {
+        t.addEventListener('click', () => activateTab(t.dataset.tab));
+      });
+
+      // ---------- 子 Tab (OS) 切换 ----------
+      const subtabs = document.querySelectorAll('.subtab');
+      const osPanels = {
+        mac: document.getElementById('os-mac'),
+        win: document.getElementById('os-win'),
+      };
+
+      function activateOs(name) {
+        subtabs.forEach((t) => {
+          const on = t.dataset.os === name;
+          t.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+
+        // 找出当前显示的 OS 面板和目标面板
+        const current = Object.values(osPanels).find(el => {
+          return el && !el.classList.contains('entering') && !el.hidden;
+        });
+        const target = osPanels[name];
+
+        if (current === target || !target) {
+          // 同一个面板，跳过动画
+          return;
+        }
+
+        // 3D 翻转切换动画
+        if (current) {
+          // 当前面板离场
+          current.classList.remove('active');
+          current.classList.add('leaving');
+          setTimeout(() => {
+            current.hidden = true;
+            current.classList.remove('leaving');
+          }, 700);
+        }
+
+        if (target) {
+          // 目标面板入场
+          target.hidden = false;
+          target.classList.add('entering');
+          target.offsetHeight; // 强制重排
+          requestAnimationFrame(() => {
+            target.classList.remove('entering');
+            target.classList.add('active');
+          });
+        }
+
+        try {
+          localStorage.setItem('sub2api-os', name);
+        } catch (_) {}
+      }
+
+      subtabs.forEach((t) => {
+        t.addEventListener('click', () => activateOs(t.dataset.os));
+      });
+
+      // ---------- 复制按钮 ----------
+      document.querySelectorAll('.code-block [data-copy]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const code = btn.parentElement.querySelector('code');
+          if (!code) return;
+          try {
+            await navigator.clipboard.writeText(code.innerText);
+            const old = btn.textContent;
+            btn.textContent = '已复制';
+            btn.classList.add('copied');
+            setTimeout(() => {
+              btn.textContent = old;
+              btn.classList.remove('copied');
+            }, 1500);
+          } catch (_) {
+            btn.textContent = '复制失败';
+          }
+        });
+      });
+
+      // ---------- 初始化：根据 hash / UA / localStorage ----------
+      (function init() {
+        const hash = (location.hash || '').replace('#', '');
+        if (hash === 'ccswitch' || hash === 'script') {
+          activateTab(hash);
+        }
+
+        let os = null;
+        try {
+          os = localStorage.getItem('sub2api-os');
+        } catch (_) {}
+        // 优先用记忆值；首次访问按系统自动判断（Mac/Linux → mac，其余 → win）
+        if (os !== 'mac' && os !== 'win') {
+          os = /mac|linux|x11/i.test(navigator.userAgent) ? 'mac' : 'win';
+        }
+
+        // 初始化时给默认面板加 active 类，避免初次切换动画
+        Object.entries(osPanels).forEach(([key, el]) => {
+          if (!el) return;
+          if (key === os) {
+            el.classList.add('active');
+            el.hidden = false;
+          } else {
+            el.hidden = true;
+          }
+        });
+
+        // 更新 subtab 状态
+        subtabs.forEach((t) => {
+          t.setAttribute('aria-selected', t.dataset.os === os ? 'true' : 'false');
+        });
+      })();
+    </script>
+  </body>
+</html>

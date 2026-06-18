@@ -16,10 +16,19 @@ import { getPublicSettings as fetchPublicSettingsAPI } from '@/api/auth'
 
 /**
  * Canonical documentation entry point. Used as the fallback for the "文档" link
- * (AppHeader nav + HomeView button) whenever the admin-configured doc_url is empty,
- * so the docs entry always resolves to the hosted install documentation.
+ * (AppHeader nav + HomeView button) whenever the admin-configured doc_url is empty
+ * or accidentally points at the site homepage, so the docs entry always resolves
+ * to the hosted install documentation.
  */
 export const DEFAULT_DOC_URL = 'https://aixlau.me/install'
+
+function normalizeDocUrl(docUrl: string | undefined): string {
+  const trimmed = docUrl?.trim() ?? ''
+  if (!trimmed || trimmed.replace(/\/+$/, '') === 'https://aixlau.me') {
+    return DEFAULT_DOC_URL
+  }
+  return trimmed
+}
 
 export const useAppStore = defineStore('app', () => {
   // ==================== State ====================
@@ -295,16 +304,21 @@ export const useAppStore = defineStore('app', () => {
    * Apply settings to store state (internal helper to avoid code duplication)
    */
   function applySettings(config: PublicSettings): void {
-    if (typeof window !== 'undefined') {
-      window.__APP_CONFIG__ = { ...config }
+    const normalizedDocUrl = normalizeDocUrl(config.doc_url)
+    const normalizedConfig = {
+      ...config,
+      doc_url: normalizedDocUrl
     }
-    cachedPublicSettings.value = config
+    if (typeof window !== 'undefined') {
+      window.__APP_CONFIG__ = { ...normalizedConfig }
+    }
+    cachedPublicSettings.value = normalizedConfig
     siteName.value = config.site_name || 'Sub2API'
     siteLogo.value = config.site_logo || ''
     siteVersion.value = config.version || ''
     contactInfo.value = config.contact_info || ''
     apiBaseUrl.value = config.api_base_url || ''
-    docUrl.value = config.doc_url || DEFAULT_DOC_URL
+    docUrl.value = normalizedDocUrl
     publicSettingsLoaded.value = true
   }
 

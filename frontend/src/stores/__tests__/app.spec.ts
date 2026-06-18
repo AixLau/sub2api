@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { useAppStore } from '@/stores/app'
+import { DEFAULT_DOC_URL, useAppStore } from '@/stores/app'
 import { getPublicSettings } from '@/api/auth'
 
 // Mock API 模块
@@ -271,6 +271,22 @@ describe('useAppStore', () => {
       expect(store.siteLogo).toBe('/logo.png')
       expect(store.siteVersion).toBe('1.0.0')
       expect(store.publicSettingsLoaded).toBe(true)
+    })
+
+    it('将误填为站点首页的文档链接归一到默认文档页', () => {
+      const windowAny = window as any
+      windowAny.__APP_CONFIG__ = {
+        site_name: 'TestSite',
+        doc_url: 'https://aixlau.me',
+      }
+
+      const store = useAppStore()
+      const result = store.initFromInjectedConfig()
+
+      expect(result).toBe(true)
+      expect(store.docUrl).toBe(DEFAULT_DOC_URL)
+      expect(store.cachedPublicSettings?.doc_url).toBe(DEFAULT_DOC_URL)
+      expect(windowAny.__APP_CONFIG__.doc_url).toBe(DEFAULT_DOC_URL)
     })
 
     it('无注入配置时返回 false', () => {

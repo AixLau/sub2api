@@ -1,12 +1,12 @@
 <template>
-  <div class="min-h-screen bg-slate-50 text-slate-900 antialiased dark:bg-slate-900 dark:text-white">
+  <div class="registration-console min-h-screen bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-white">
     <nav
-      class="fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white/80 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/80"
+      class="fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-slate-50/90 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/85 lg:border-white/10 lg:bg-transparent lg:dark:bg-transparent"
     >
       <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
         <router-link to="/" class="flex items-center gap-3 no-underline">
           <div
-            class="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-cyan-600"
+            class="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 shadow-lg shadow-blue-900/20 ring-1 ring-white/20"
           >
             <img v-if="siteLogo" :src="siteLogo" :alt="siteName" class="h-5 w-5" />
             <span v-else class="font-bold text-white">AI</span>
@@ -22,14 +22,14 @@
             :href="docUrl"
             target="_blank"
             rel="noopener noreferrer"
-            class="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+            class="rounded-lg p-2 text-slate-500 transition-colors hover:bg-white hover:text-blue-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
             :title="t('home.viewDocs')"
           >
             <Icon name="book" size="md" />
           </a>
 
           <button
-            class="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+            class="rounded-lg p-2 text-slate-500 transition-colors hover:bg-white hover:text-blue-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
             :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
             @click="toggleTheme"
           >
@@ -39,7 +39,7 @@
 
           <router-link
             to="/login"
-            class="rounded-lg bg-gradient-to-r from-blue-600 to-cyan-600 px-5 py-2 text-sm font-semibold text-white no-underline shadow-lg shadow-blue-500/25 transition-colors hover:from-blue-700 hover:to-cyan-700"
+            class="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white no-underline shadow-lg shadow-blue-600/25 transition-colors hover:bg-blue-700"
           >
             {{ t('auth.signIn') }}
           </router-link>
@@ -48,61 +48,99 @@
     </nav>
 
     <main class="pt-16">
-      <section class="relative overflow-hidden bg-white px-6 py-16 dark:bg-slate-900 md:py-20">
+      <section class="relative min-h-[calc(100vh-4rem)] overflow-hidden bg-slate-50 px-4 py-12 dark:bg-slate-950 sm:px-6 md:py-16">
+        <div
+          class="absolute inset-y-0 left-0 hidden w-1/2 bg-gradient-to-br from-blue-950 via-blue-900 to-blue-600 lg:block"
+        ></div>
         <div class="relative mx-auto max-w-7xl">
-          <div class="grid items-start gap-12 lg:grid-cols-[minmax(0,1.1fr)_minmax(420px,520px)]">
-            <div class="pt-4 lg:pt-10">
+          <div class="grid min-h-[calc(100vh-10rem)] items-center gap-12 lg:grid-cols-[minmax(0,0.98fr)_minmax(420px,520px)] lg:gap-14">
+            <div class="order-2 pt-4 lg:order-1 lg:pt-10 lg:text-white">
               <span
-                class="inline-block rounded-full bg-gradient-to-r from-blue-100 to-cyan-100 px-4 py-1.5 text-sm font-medium text-blue-700 ring-1 ring-blue-200 dark:from-blue-900/30 dark:to-cyan-900/30 dark:text-blue-300 dark:ring-blue-800/50"
+                class="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-4 py-1.5 text-sm font-medium text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 lg:border-white/20 lg:bg-white/10 lg:text-blue-100"
               >
-                ⚡ AI API 统一网关
+                <Icon name="terminal" size="sm" />
+                {{ t('auth.registerHeroKicker') }}
               </span>
 
               <h1
-                class="mt-6 max-w-4xl text-5xl font-black leading-[1.1] tracking-tight text-slate-900 dark:text-white md:text-7xl"
+                class="mt-6 max-w-4xl text-4xl font-black leading-[1.08] tracking-tight text-slate-950 dark:text-white lg:text-white md:text-6xl"
               >
-                统一接入<br />
-                <span class="bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent"
-                  >所有 AI 模型</span
-                >
+                {{ t('auth.registerHeroTitle') }}
               </h1>
 
-              <p class="mt-8 max-w-2xl text-lg leading-relaxed text-slate-600 dark:text-slate-400 md:text-xl">
-                注册即可开始使用统一 AI API 服务。一个账户管理 Claude、GPT、Gemini，
-                从试用到正式接入都保持同一套体验。
+              <p class="mt-6 max-w-xl text-base leading-7 text-slate-600 dark:text-slate-400 lg:text-blue-100 md:text-lg">
+                {{ t('auth.registerHeroDescription') }}
               </p>
 
               <div class="mt-10 grid gap-4 sm:grid-cols-3">
-                <div class="rounded-2xl bg-white p-5 shadow-lg ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
-                  <div class="text-sm font-semibold text-slate-900 dark:text-white">统一密钥接入</div>
-                  <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
-                    一个账户即可开始管理多模型 API 调用。
+                <div
+                  class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:border-white/15 lg:bg-white/10 lg:shadow-none"
+                >
+                  <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 lg:bg-white/15 lg:text-blue-100">
+                    <Icon name="key" size="md" />
+                  </div>
+                  <div class="mt-4 text-sm font-semibold text-slate-950 dark:text-white lg:text-white">
+                    {{ t('auth.registerFeatureKeysTitle') }}
+                  </div>
+                  <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400 lg:text-blue-100">
+                    {{ t('auth.registerFeatureKeysDesc') }}
                   </p>
                 </div>
-                <div class="rounded-2xl bg-white p-5 shadow-lg ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
-                  <div class="text-sm font-semibold text-slate-900 dark:text-white">实时用量感知</div>
-                  <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
-                    注册后可直接查看额度、调用与配额能力。
+                <div
+                  class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:border-white/15 lg:bg-white/10 lg:shadow-none"
+                >
+                  <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 lg:bg-white/15 lg:text-indigo-100">
+                    <Icon name="server" size="md" />
+                  </div>
+                  <div class="mt-4 text-sm font-semibold text-slate-950 dark:text-white lg:text-white">
+                    {{ t('auth.registerFeatureRoutingTitle') }}
+                  </div>
+                  <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400 lg:text-blue-100">
+                    {{ t('auth.registerFeatureRoutingDesc') }}
                   </p>
                 </div>
-                <div class="rounded-2xl bg-white p-5 shadow-lg ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
-                  <div class="text-sm font-semibold text-slate-900 dark:text-white">蓝色主路径</div>
-                  <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
-                    首页、登录、注册保持一致的白底蓝色体验。
+                <div
+                  class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:border-white/15 lg:bg-white/10 lg:shadow-none"
+                >
+                  <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 lg:bg-white/15 lg:text-amber-100">
+                    <Icon name="shield" size="md" />
+                  </div>
+                  <div class="mt-4 text-sm font-semibold text-slate-950 dark:text-white lg:text-white">
+                    {{ t('auth.registerFeatureControlTitle') }}
+                  </div>
+                  <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400 lg:text-blue-100">
+                    {{ t('auth.registerFeatureControlDesc') }}
                   </p>
                 </div>
               </div>
+
+              <div
+                class="mt-6 flex flex-wrap gap-2 rounded-2xl border border-blue-100 bg-white p-3 text-xs font-medium text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:border-white/15 lg:bg-slate-950/20 lg:text-blue-100 lg:shadow-none"
+              >
+                <span class="rounded-full bg-blue-50 px-3 py-1 text-blue-700 dark:bg-blue-950 dark:text-blue-300 lg:bg-white/10 lg:text-blue-100">
+                  {{ t('auth.registerSignalGateway') }}
+                </span>
+                <span class="rounded-full bg-indigo-50 px-3 py-1 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 lg:bg-white/10 lg:text-indigo-100">
+                  {{ t('auth.registerSignalRouting') }}
+                </span>
+                <span class="rounded-full bg-slate-100 px-3 py-1 text-slate-700 dark:bg-slate-800 dark:text-slate-200 lg:bg-white/10 lg:text-slate-100">
+                  {{ t('auth.registerSignalUsage') }}
+                </span>
+              </div>
             </div>
 
-            <div class="relative">
+            <div class="relative order-1 lg:order-2">
               <div
-                class="rounded-[28px] bg-white p-6 shadow-2xl shadow-blue-500/10 ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700 md:p-8"
+                class="rounded-2xl bg-white p-5 shadow-2xl shadow-slate-900/10 ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800 sm:p-6 md:p-8"
               >
-                <div class="mb-6 text-center">
-                  <h2 class="text-3xl font-black text-slate-900 dark:text-white">
+                <div class="mb-6">
+                  <p class="text-sm font-semibold text-blue-600 dark:text-blue-400">
+                    {{ t('auth.registerPanelKicker') }}
+                  </p>
+                  <h2 class="mt-2 text-3xl font-black text-slate-950 dark:text-white">
                     {{ t('auth.createAccount') }}
                   </h2>
-                  <p class="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                  <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
                     {{ t('auth.signUpToStart', { siteName }) }}
                   </p>
                 </div>
@@ -121,7 +159,18 @@
                   </div>
                 </div>
 
-                <form v-else @submit.prevent="handleRegister" class="space-y-5">
+                <div
+                  v-if="errorMessage"
+                  class="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300"
+                >
+                  {{ errorMessage }}
+                </div>
+
+                <form
+                  v-if="registrationEnabled || !settingsLoaded"
+                  @submit.prevent="handleRegister"
+                  class="space-y-5"
+                >
         <!-- Email Input -->
         <div>
           <label for="email" class="input-label">
@@ -139,7 +188,7 @@
               autofocus
               autocomplete="email"
               :disabled="registrationActionDisabled"
-              class="input pl-11"
+              class="h-11 w-full rounded-xl border border-slate-300 bg-white pl-11 pr-4 text-sm text-slate-950 transition-colors placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:disabled:bg-slate-900"
               :class="{ 'input-error': errors.email }"
               :placeholder="t('auth.emailPlaceholder')"
             />
@@ -162,7 +211,7 @@
               required
               autocomplete="new-password"
               :disabled="registrationActionDisabled"
-              class="input pl-11 pr-11"
+              class="h-11 w-full rounded-xl border border-slate-300 bg-white pl-11 pr-11 text-sm text-slate-950 transition-colors placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:disabled:bg-slate-900"
               :class="{ 'input-error': errors.password }"
               :placeholder="t('auth.createPasswordPlaceholder')"
             />
@@ -170,7 +219,8 @@
               type="button"
               :disabled="registrationActionDisabled"
               @click="showPassword = !showPassword"
-              class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-dark-300"
+              :aria-label="showPassword ? t('auth.hidePassword') : t('auth.showPassword')"
+              class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 transition-colors hover:text-blue-600 disabled:cursor-not-allowed disabled:hover:text-slate-400 dark:hover:text-blue-300"
             >
               <Icon v-if="showPassword" name="eyeOff" size="md" />
               <Icon v-else name="eye" size="md" />
@@ -195,20 +245,17 @@
               v-model="formData.invitation_code"
               type="text"
               :disabled="registrationActionDisabled"
-              class="input pl-11 pr-10"
+              class="h-11 w-full rounded-xl border border-slate-300 bg-white pl-11 pr-10 text-sm text-slate-950 transition-colors placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:disabled:bg-slate-900"
               :class="{
-                'border-green-500 focus:border-green-500 focus:ring-green-500': invitationValidation.valid,
-                'border-red-500 focus:border-red-500 focus:ring-red-500': invitationValidation.invalid || errors.invitation_code
+                'border-green-500 focus:border-green-500 focus:ring-green-500/20': invitationValidation.valid,
+                'border-red-500 focus:border-red-500 focus:ring-red-500/20': invitationValidation.invalid || errors.invitation_code
               }"
               :placeholder="t('auth.invitationCodePlaceholder')"
               @input="handleInvitationCodeInput"
             />
             <!-- Validation indicator -->
             <div v-if="invitationValidating" class="absolute inset-y-0 right-0 flex items-center pr-3.5">
-              <svg class="h-4 w-4 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
+              <span class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600"></span>
             </div>
             <div v-else-if="invitationValidation.valid" class="absolute inset-y-0 right-0 flex items-center pr-3.5">
               <Icon name="checkCircle" size="md" class="text-green-500" />
@@ -243,20 +290,17 @@
               v-model="formData.promo_code"
               type="text"
               :disabled="registrationActionDisabled"
-              class="input pl-11 pr-10"
+              class="h-11 w-full rounded-xl border border-slate-300 bg-white pl-11 pr-10 text-sm text-slate-950 transition-colors placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:disabled:bg-slate-900"
               :class="{
-                'border-green-500 focus:border-green-500 focus:ring-green-500': promoValidation.valid,
-                'border-red-500 focus:border-red-500 focus:ring-red-500': promoValidation.invalid
+                'border-green-500 focus:border-green-500 focus:ring-green-500/20': promoValidation.valid,
+                'border-red-500 focus:border-red-500 focus:ring-red-500/20': promoValidation.invalid
               }"
               :placeholder="t('auth.promoCodePlaceholder')"
               @input="handlePromoCodeInput"
             />
             <!-- Validation indicator -->
             <div v-if="promoValidating" class="absolute inset-y-0 right-0 flex items-center pr-3.5">
-              <svg class="h-4 w-4 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
+              <span class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600"></span>
             </div>
             <div v-else-if="promoValidation.valid" class="absolute inset-y-0 right-0 flex items-center pr-3.5">
               <Icon name="checkCircle" size="md" class="text-green-500" />
@@ -303,29 +347,13 @@
         <button
           type="submit"
           :disabled="registrationActionDisabled || (turnstileEnabled && !turnstileToken)"
-          class="btn btn-primary w-full"
+          class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-lg shadow-blue-600/25 transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none dark:focus:ring-offset-slate-900 dark:disabled:bg-slate-700"
         >
-          <svg
+          <span
             v-if="isLoading"
-            class="-ml-1 mr-2 h-4 w-4 animate-spin text-white"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              class="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              stroke-width="4"
-            ></circle>
-            <path
-              class="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            ></path>
-          </svg>
-          <Icon v-else name="userPlus" size="md" class="mr-2" />
+            class="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+          ></span>
+          <Icon v-else name="userPlus" size="md" />
           {{
             isLoading
               ? t('auth.processing')
@@ -378,7 +406,7 @@
                   {{ t('auth.alreadyHaveAccount') }}
                   <router-link
                     to="/login"
-                    class="ml-1 font-medium text-primary-600 transition-colors hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
+                    class="ml-1 font-semibold text-blue-600 no-underline transition-colors hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                   >
                     {{ t('auth.signIn') }}
                   </router-link>

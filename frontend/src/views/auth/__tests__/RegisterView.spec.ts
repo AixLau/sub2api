@@ -33,8 +33,23 @@ vi.mock('vue-i18n', async () => {
         const messages: Record<string, string> = {
           'auth.createAccount': '创建账户',
           'auth.signUpToStart': `注册 ${params?.siteName ?? 'Sub2API'} 以开始使用`,
+          'auth.registerHeroKicker': '开发者控制台入口',
+          'auth.registerHeroTitle': '统一 API 网关，连接所有 AI 模型',
+          'auth.registerHeroDescription': '创建账户后即可进入控制台，管理密钥、上游模型、额度与调用记录。',
+          'auth.registerPanelKicker': '开始配置您的网关',
+          'auth.registerFeatureKeysTitle': '统一密钥',
+          'auth.registerFeatureKeysDesc': '一个账户集中管理 API Key、访问权限与调用入口。',
+          'auth.registerFeatureRoutingTitle': '多模型路由',
+          'auth.registerFeatureRoutingDesc': '接入 GPT、Claude、Gemini 等模型。',
+          'auth.registerFeatureControlTitle': '额度可控',
+          'auth.registerFeatureControlDesc': '注册后查看余额、订阅配额和团队使用边界。',
+          'auth.registerSignalGateway': '统一 API 网关',
+          'auth.registerSignalRouting': '多模型路由',
+          'auth.registerSignalUsage': '用量与额度管理',
           'auth.emailLabel': '邮箱',
           'auth.passwordLabel': '密码',
+          'auth.showPassword': '显示密码',
+          'auth.hidePassword': '隐藏密码',
           'auth.signIn': '登录',
           'auth.alreadyHaveAccount': '已经有账户？',
         }
@@ -103,7 +118,7 @@ describe('RegisterView visual baseline', () => {
     })
   })
 
-  it('renders a homepage-like hero with a floating registration card', async () => {
+  it('renders a blue developer-console registration entry', async () => {
     const wrapper = mount(RegisterView, {
       global: {
         stubs: {
@@ -125,9 +140,11 @@ describe('RegisterView visual baseline', () => {
     const html = wrapper.html()
     const text = wrapper.text()
 
-    expect(html).toContain('bg-white')
-    expect(text).toContain('统一接入')
-    expect(text).toContain('所有 AI 模型')
+    expect(html).toContain('from-blue-950')
+    expect(html).toContain('to-blue-600')
+    expect(text).toContain('开发者控制台入口')
+    expect(text).toContain('统一 API 网关')
+    expect(text).toContain('多模型路由')
     expect(text).toContain('创建账户')
   })
 })

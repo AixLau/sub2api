@@ -155,6 +155,48 @@ Nginx drops headers containing underscores by default (e.g. `session_id`), which
 
 ---
 
+## Client Configuration
+
+After deploying the Sub2API server, users need to configure their AI coding clients (Codex / Claude Code) to connect to your service. We provide two configuration methods:
+
+### 📦 One-Click Script (Recommended)
+
+**[View Tutorial →](docs/install/)**
+
+An interactive configuration script for macOS / Windows / Linux that automatically:
+- Backs up existing configurations
+- Lets users select their client (Codex or Claude Code)
+- Writes API endpoint and authentication settings
+- Supports both clients without conflicts
+
+**Quick Start:**
+
+```bash
+# macOS / Linux
+curl -sSL https://aixlau.me/install/bootstrap.sh | bash
+
+# Windows (PowerShell)
+irm https://aixlau.me/install/bootstrap.ps1 | iex
+```
+
+**Features:**
+- ✅ Automatic OS detection and client selection
+- ✅ Safe backup before modification (`.bak.YYYYMMDD-HHMMSS`)
+- ✅ Interactive prompts in Chinese
+- ✅ Works with both Codex and Claude Code
+- ✅ No manual file editing required
+
+### 🔧 CC Switch (Advanced)
+
+**[View Tutorial →](docs/ccswitch/)**
+
+A graphical configuration tool for power users who need:
+- Multi-account switching between different Sub2API services
+- Profile management for different projects
+- Manual control over configuration details
+
+---
+
 ## Deployment
 
 ### Method 1: Script Installation (Recommended)
