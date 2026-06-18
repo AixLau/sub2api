@@ -88,6 +88,132 @@ func TestOpenAIHandleErrorResponse_NoRuleKeepsDefault(t *testing.T) {
 	assert.Equal(t, "Upstream request failed", errField["message"])
 }
 
+func TestOpenAIHandleErrorResponse_CodexUnsupportedChatGPTModelReturnsBadRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	svc := &OpenAIGatewayService{}
+	respBody := []byte(`{"detail":"The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account."}`)
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Body:       io.NopCloser(bytes.NewReader(respBody)),
+		Header:     http.Header{},
+	}
+	account := &Account{ID: 156, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+	_, err := svc.handleErrorResponse(context.Background(), resp, c, account, nil)
+	require.Error(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	errField, ok := payload["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "invalid_request_error", errField["type"])
+	assert.Equal(t, "该模型已被 OpenAI 官方弃用，请切换最新模型", errField["message"])
+}
+
+func TestOpenAIHandleErrorResponse_DeprecatedModelReturnsBadRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	svc := &OpenAIGatewayService{}
+	respBody := []byte(`{"error":{"message":"The model old-codex is deprecated and no longer available."}}`)
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Body:       io.NopCloser(bytes.NewReader(respBody)),
+		Header:     http.Header{},
+	}
+	account := &Account{ID: 157, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+	_, err := svc.handleErrorResponse(context.Background(), resp, c, account, nil)
+	require.Error(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	errField, ok := payload["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "invalid_request_error", errField["type"])
+	assert.Equal(t, "该模型已被 OpenAI 官方弃用，请切换最新模型", errField["message"])
+}
+
+func TestOpenAIHandleErrorResponse_SubscriptionExhausted429ReportsPlanBalance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	monthlyLimit := 20.0
+	group := &Group{
+		ID:               23,
+		Name:             "Pro 畅用月包",
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  &monthlyLimit,
+	}
+	apiKey := &APIKey{
+		ID:    303,
+		User:  &User{ID: 344, Balance: 0},
+		Group: group,
+	}
+	c.Set("api_key", apiKey)
+	c.Set("subscription", &UserSubscription{
+		ID:              99,
+		UserID:          344,
+		GroupID:         23,
+		MonthlyUsageUSD: 20,
+		Group:           group,
+	})
+
+	svc := &OpenAIGatewayService{}
+	respBody := []byte(`{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached"}}`)
+	resp := &http.Response{
+		StatusCode: http.StatusTooManyRequests,
+		Body:       io.NopCloser(bytes.NewReader(respBody)),
+		Header:     http.Header{},
+	}
+	account := &Account{ID: 156, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+	_, err := svc.handleErrorResponse(context.Background(), resp, c, account, nil)
+	require.Error(t, err)
+	assert.Equal(t, http.StatusTooManyRequests, rec.Code)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	errField, ok := payload["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "rate_limit_error", errField["type"])
+	assert.Equal(t, "套餐 Pro 畅用月包 已无可用余额，剩余额度 0.00 USD，请续费或切换账号", errField["message"])
+}
+
+func TestOpenAIHandleErrorResponse_Generic429KeepsRateLimitMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	svc := &OpenAIGatewayService{}
+	respBody := []byte(`{"error":{"type":"rate_limit_error","message":"Too many requests, please slow down"}}`)
+	resp := &http.Response{
+		StatusCode: http.StatusTooManyRequests,
+		Body:       io.NopCloser(bytes.NewReader(respBody)),
+		Header:     http.Header{},
+	}
+	account := &Account{ID: 156, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+	_, err := svc.handleErrorResponse(context.Background(), resp, c, account, nil)
+	require.Error(t, err)
+	assert.Equal(t, http.StatusTooManyRequests, rec.Code)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	errField, ok := payload["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "rate_limit_error", errField["type"])
+	assert.Equal(t, "Upstream rate limit exceeded, please retry later", errField["message"])
+}
+
 func TestGeminiWriteGeminiMappedError_NoRuleKeepsDefault(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

@@ -4462,6 +4462,16 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	var statusCode int
 
 	switch resp.StatusCode {
+	case http.StatusBadRequest:
+		if isOpenAIDeprecatedOrUnsupportedModelError(account, upstreamMsg) {
+			statusCode = http.StatusBadRequest
+			errType = "invalid_request_error"
+			errMsg = "该模型已被 OpenAI 官方弃用，请切换最新模型"
+		} else {
+			statusCode = http.StatusBadGateway
+			errType = "upstream_error"
+			errMsg = "Upstream request failed"
+		}
 	case 401:
 		statusCode = http.StatusBadGateway
 		errType = "upstream_error"
@@ -4477,7 +4487,11 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	case 429:
 		statusCode = http.StatusTooManyRequests
 		errType = "rate_limit_error"
-		errMsg = "Upstream rate limit exceeded, please retry later"
+		if msg, ok := openAISubscriptionExhaustedMessage(c, upstreamMsg); ok {
+			errMsg = msg
+		} else {
+			errMsg = "Upstream rate limit exceeded, please retry later"
+		}
 	default:
 		statusCode = http.StatusBadGateway
 		errType = "upstream_error"
@@ -4495,6 +4509,127 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		return nil, fmt.Errorf("upstream error: %d", resp.StatusCode)
 	}
 	return nil, fmt.Errorf("upstream error: %d message=%s", resp.StatusCode, upstreamMsg)
+}
+
+func isOpenAIDeprecatedOrUnsupportedModelError(account *Account, message string) bool {
+	if account == nil || account.Platform != PlatformOpenAI {
+		return false
+	}
+	msg := strings.ToLower(strings.TrimSpace(message))
+	return (strings.Contains(msg, "model") && strings.Contains(msg, "not supported")) ||
+		strings.Contains(msg, "unsupported model") ||
+		strings.Contains(msg, "deprecated") ||
+		strings.Contains(msg, "decommissioned") ||
+		(strings.Contains(msg, "model") && strings.Contains(msg, "no longer available"))
+}
+
+func openAISubscriptionExhaustedMessage(c *gin.Context, upstreamMsg string) (string, bool) {
+	if !looksLikeOpenAISubscriptionExhausted(upstreamMsg) {
+		return "", false
+	}
+	apiKey, _ := openAIContextAPIKey(c)
+	if apiKey == nil {
+		return "当前套餐已无可用余额，请续费或切换账号", true
+	}
+	if apiKey.Group != nil && apiKey.Group.IsSubscriptionType() {
+		remaining := openAIContextSubscriptionRemaining(c, apiKey.Group)
+		planName := strings.TrimSpace(apiKey.Group.Name)
+		if planName == "" {
+			planName = "当前套餐"
+		} else {
+			planName = "套餐 " + planName
+		}
+		return fmt.Sprintf("%s 已无可用余额，剩余额度 %.2f USD，请续费或切换账号", planName, remaining), true
+	}
+	if apiKey.User != nil {
+		balance := apiKey.User.Balance
+		if balance < 0 {
+			balance = 0
+		}
+		return fmt.Sprintf("当前账户余额不足，剩余额度 %.2f USD，请充值或切换账号", balance), true
+	}
+	return "当前套餐已无可用余额，请续费或切换账号", true
+}
+
+func looksLikeOpenAISubscriptionExhausted(message string) bool {
+	msg := strings.ToLower(strings.TrimSpace(message))
+	if msg == "" {
+		return false
+	}
+	return strings.Contains(msg, "usage limit") ||
+		strings.Contains(msg, "usage_limit") ||
+		strings.Contains(msg, "limit has been reached") ||
+		strings.Contains(msg, "quota") ||
+		strings.Contains(msg, "subscription") ||
+		strings.Contains(msg, "billing") ||
+		strings.Contains(msg, "insufficient") ||
+		strings.Contains(msg, "balance")
+}
+
+func openAIContextAPIKey(c *gin.Context) (*APIKey, bool) {
+	if c == nil {
+		return nil, false
+	}
+	value, exists := c.Get("api_key")
+	if !exists {
+		return nil, false
+	}
+	apiKey, ok := value.(*APIKey)
+	return apiKey, ok
+}
+
+func openAIContextSubscription(c *gin.Context) (*UserSubscription, bool) {
+	if c == nil {
+		return nil, false
+	}
+	value, exists := c.Get("subscription")
+	if !exists {
+		return nil, false
+	}
+	subscription, ok := value.(*UserSubscription)
+	return subscription, ok
+}
+
+func openAIContextSubscriptionRemaining(c *gin.Context, group *Group) float64 {
+	subscription, ok := openAIContextSubscription(c)
+	if !ok || subscription == nil || group == nil {
+		return 0
+	}
+	remainingValues := make([]float64, 0, 3)
+	if group.HasDailyLimit() {
+		remaining := *group.DailyLimitUSD - subscription.DailyUsageUSD
+		if remaining <= 0 {
+			return 0
+		}
+		remainingValues = append(remainingValues, remaining)
+	}
+	if group.HasWeeklyLimit() {
+		remaining := *group.WeeklyLimitUSD - subscription.WeeklyUsageUSD
+		if remaining <= 0 {
+			return 0
+		}
+		remainingValues = append(remainingValues, remaining)
+	}
+	if group.HasMonthlyLimit() {
+		remaining := *group.MonthlyLimitUSD + subscription.MonthlyBonusUSD - subscription.MonthlyUsageUSD
+		if remaining <= 0 {
+			return 0
+		}
+		remainingValues = append(remainingValues, remaining)
+	}
+	if len(remainingValues) == 0 {
+		return 0
+	}
+	minRemaining := remainingValues[0]
+	for _, remaining := range remainingValues[1:] {
+		if remaining < minRemaining {
+			minRemaining = remaining
+		}
+	}
+	if minRemaining < 0 {
+		return 0
+	}
+	return minRemaining
 }
 
 // compatErrorWriter is the signature for format-specific error writers used by
