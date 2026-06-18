@@ -50,7 +50,7 @@
     <main class="pt-16">
       <section class="relative min-h-[calc(100vh-4rem)] overflow-hidden bg-slate-50 px-4 py-12 dark:bg-slate-950 sm:px-6 md:py-16">
         <div
-          class="absolute inset-y-0 left-0 hidden w-1/2 bg-gradient-to-br from-blue-950 via-blue-900 to-blue-600 lg:block"
+          class="absolute inset-y-0 left-0 hidden bg-gradient-to-br from-blue-600 via-cyan-600 to-blue-700 lg:block lg:w-[calc(50%+9rem)]"
         ></div>
         <div class="relative mx-auto max-w-7xl">
           <div class="grid min-h-[calc(100vh-10rem)] items-center gap-12 lg:grid-cols-[minmax(0,0.98fr)_minmax(420px,520px)] lg:gap-14">
