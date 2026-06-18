@@ -1,33 +1,127 @@
 <template>
-  <AuthLayout>
-    <div class="space-y-6">
-      <!-- Title -->
-      <div class="text-center">
-        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
-          {{ t('auth.createAccount') }}
-        </h2>
-        <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
-          {{ t('auth.signUpToStart', { siteName }) }}
-        </p>
-      </div>
-
-      <!-- Registration Disabled Message -->
-      <div
-        v-if="!registrationEnabled && settingsLoaded"
-        class="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-900/20"
-      >
-        <div class="flex items-start gap-3">
-          <div class="flex-shrink-0">
-            <Icon name="exclamationCircle" size="md" class="text-amber-500" />
+  <div class="min-h-screen bg-slate-50 text-slate-900 antialiased dark:bg-slate-900 dark:text-white">
+    <nav
+      class="fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white/80 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/80"
+    >
+      <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+        <router-link to="/" class="flex items-center gap-3 no-underline">
+          <div
+            class="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-cyan-600"
+          >
+            <img v-if="siteLogo" :src="siteLogo" :alt="siteName" class="h-5 w-5" />
+            <span v-else class="font-bold text-white">AI</span>
           </div>
-          <p class="text-sm text-amber-700 dark:text-amber-400">
-            {{ t('auth.registrationDisabled') }}
-          </p>
+          <span class="text-lg font-bold text-slate-900 dark:text-white">{{ siteName }}</span>
+        </router-link>
+
+        <div class="flex items-center gap-3">
+          <LocaleSwitcher />
+
+          <a
+            v-if="docUrl"
+            :href="docUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+            :title="t('home.viewDocs')"
+          >
+            <Icon name="book" size="md" />
+          </a>
+
+          <button
+            class="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+            :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
+            @click="toggleTheme"
+          >
+            <Icon v-if="isDark" name="sun" size="md" />
+            <Icon v-else name="moon" size="md" />
+          </button>
+
+          <router-link
+            to="/login"
+            class="rounded-lg bg-gradient-to-r from-blue-600 to-cyan-600 px-5 py-2 text-sm font-semibold text-white no-underline shadow-lg shadow-blue-500/25 transition-colors hover:from-blue-700 hover:to-cyan-700"
+          >
+            {{ t('auth.signIn') }}
+          </router-link>
         </div>
       </div>
+    </nav>
 
-      <!-- Registration Form -->
-      <form v-else @submit.prevent="handleRegister" class="space-y-5">
+    <main class="pt-16">
+      <section class="relative overflow-hidden bg-white px-6 py-16 dark:bg-slate-900 md:py-20">
+        <div class="relative mx-auto max-w-7xl">
+          <div class="grid items-start gap-12 lg:grid-cols-[minmax(0,1.1fr)_minmax(420px,520px)]">
+            <div class="pt-4 lg:pt-10">
+              <span
+                class="inline-block rounded-full bg-gradient-to-r from-blue-100 to-cyan-100 px-4 py-1.5 text-sm font-medium text-blue-700 ring-1 ring-blue-200 dark:from-blue-900/30 dark:to-cyan-900/30 dark:text-blue-300 dark:ring-blue-800/50"
+              >
+                ⚡ AI API 统一网关
+              </span>
+
+              <h1
+                class="mt-6 max-w-4xl text-5xl font-black leading-[1.1] tracking-tight text-slate-900 dark:text-white md:text-7xl"
+              >
+                统一接入<br />
+                <span class="bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent"
+                  >所有 AI 模型</span
+                >
+              </h1>
+
+              <p class="mt-8 max-w-2xl text-lg leading-relaxed text-slate-600 dark:text-slate-400 md:text-xl">
+                注册即可开始使用统一 AI API 服务。一个账户管理 Claude、GPT、Gemini，
+                从试用到正式接入都保持同一套体验。
+              </p>
+
+              <div class="mt-10 grid gap-4 sm:grid-cols-3">
+                <div class="rounded-2xl bg-white p-5 shadow-lg ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
+                  <div class="text-sm font-semibold text-slate-900 dark:text-white">统一密钥接入</div>
+                  <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
+                    一个账户即可开始管理多模型 API 调用。
+                  </p>
+                </div>
+                <div class="rounded-2xl bg-white p-5 shadow-lg ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
+                  <div class="text-sm font-semibold text-slate-900 dark:text-white">实时用量感知</div>
+                  <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
+                    注册后可直接查看额度、调用与配额能力。
+                  </p>
+                </div>
+                <div class="rounded-2xl bg-white p-5 shadow-lg ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
+                  <div class="text-sm font-semibold text-slate-900 dark:text-white">蓝色主路径</div>
+                  <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
+                    首页、登录、注册保持一致的白底蓝色体验。
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div class="relative">
+              <div
+                class="rounded-[28px] bg-white p-6 shadow-2xl shadow-blue-500/10 ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700 md:p-8"
+              >
+                <div class="mb-6 text-center">
+                  <h2 class="text-3xl font-black text-slate-900 dark:text-white">
+                    {{ t('auth.createAccount') }}
+                  </h2>
+                  <p class="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                    {{ t('auth.signUpToStart', { siteName }) }}
+                  </p>
+                </div>
+
+                <div
+                  v-if="!registrationEnabled && settingsLoaded"
+                  class="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-900/20"
+                >
+                  <div class="flex items-start gap-3">
+                    <div class="flex-shrink-0">
+                      <Icon name="exclamationCircle" size="md" class="text-amber-500" />
+                    </div>
+                    <p class="text-sm text-amber-700 dark:text-amber-400">
+                      {{ t('auth.registrationDisabled') }}
+                    </p>
+                  </div>
+                </div>
+
+                <form v-else @submit.prevent="handleRegister" class="space-y-5">
         <!-- Email Input -->
         <div>
           <label for="email" class="input-label">
@@ -280,28 +374,29 @@
           :show-divider="false"
         />
       </div>
-    </div>
-
-    <!-- Footer -->
-    <template #footer>
-      <p class="text-gray-500 dark:text-dark-400">
-        {{ t('auth.alreadyHaveAccount') }}
-        <router-link
-          to="/login"
-          class="font-medium text-primary-600 transition-colors hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
-        >
-          {{ t('auth.signIn') }}
-        </router-link>
-      </p>
-    </template>
-  </AuthLayout>
+                <div class="mt-8 text-center text-sm text-slate-600 dark:text-slate-400">
+                  {{ t('auth.alreadyHaveAccount') }}
+                  <router-link
+                    to="/login"
+                    class="ml-1 font-medium text-primary-600 transition-colors hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
+                  >
+                    {{ t('auth.signIn') }}
+                  </router-link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { AuthLayout } from '@/components/layout'
+import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import LinuxDoOAuthSection from '@/components/auth/LinuxDoOAuthSection.vue'
 import OidcOAuthSection from '@/components/auth/OidcOAuthSection.vue'
 import WechatOAuthSection from '@/components/auth/WechatOAuthSection.vue'
@@ -345,6 +440,7 @@ const isLoading = ref<boolean>(false)
 const settingsLoaded = ref<boolean>(false)
 const errorMessage = ref<string>('')
 const showPassword = ref<boolean>(false)
+const isDark = ref(document.documentElement.classList.contains('dark'))
 
 // Public settings
 const registrationEnabled = ref<boolean>(true)
@@ -354,6 +450,8 @@ const invitationCodeEnabled = ref<boolean>(false)
 const turnstileEnabled = ref<boolean>(false)
 const turnstileSiteKey = ref<string>('')
 const siteName = ref<string>('Sub2API')
+const siteLogo = ref<string>('')
+const docUrl = ref<string>('')
 const linuxdoOAuthEnabled = ref<boolean>(false)
 const wechatOAuthEnabled = ref<boolean>(false)
 const oidcOAuthEnabled = ref<boolean>(false)
@@ -448,9 +546,27 @@ function syncAffiliateReferralCode(): string {
   return code
 }
 
+function toggleTheme() {
+  isDark.value = !isDark.value
+  document.documentElement.classList.toggle('dark', isDark.value)
+  localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
+}
+
+function initTheme() {
+  const savedTheme = localStorage.getItem('theme')
+  if (
+    savedTheme === 'dark' ||
+    (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)
+  ) {
+    isDark.value = true
+    document.documentElement.classList.add('dark')
+  }
+}
+
 // ==================== Lifecycle ====================
 
 onMounted(async () => {
+  initTheme()
   syncAffiliateReferralCode()
 
   try {
@@ -462,6 +578,8 @@ onMounted(async () => {
     turnstileEnabled.value = settings.turnstile_enabled
     turnstileSiteKey.value = settings.turnstile_site_key || ''
     siteName.value = settings.site_name || 'Sub2API'
+    siteLogo.value = settings.site_logo || ''
+    docUrl.value = settings.doc_url || ''
     linuxdoOAuthEnabled.value = settings.linuxdo_oauth_enabled
     wechatOAuthEnabled.value = isWeChatWebOAuthEnabled(settings)
     oidcOAuthEnabled.value = settings.oidc_oauth_enabled

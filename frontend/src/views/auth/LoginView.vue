@@ -1,192 +1,238 @@
 <template>
-  <AuthLayout>
-    <div class="space-y-6">
-      <!-- Title -->
-      <div class="text-center">
-        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
-          {{ t('auth.welcomeBack') }}
-        </h2>
-        <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
-          {{ t('auth.signInToAccount') }}
+  <div class="flex min-h-screen bg-white dark:bg-slate-950">
+    <div
+      class="relative hidden overflow-hidden bg-gradient-to-br from-blue-600 via-cyan-600 to-blue-700 lg:flex lg:w-1/2"
+    >
+      <div
+        class="absolute left-10 top-20 h-96 w-96 rounded-full bg-white/10 blur-3xl"
+      ></div>
+      <div
+        class="absolute bottom-20 right-10 h-80 w-80 rounded-full bg-cyan-300/20 blur-3xl"
+      ></div>
+
+      <div class="relative z-10 flex flex-col justify-center px-16 text-white">
+        <h1 class="mb-6 text-5xl font-black leading-tight">
+          统一接入<br />
+          <span class="drop-shadow-lg">所有 AI 模型</span>
+        </h1>
+        <p class="mb-12 text-xl text-white/90">
+          一个 API 密钥，调用 Claude、GPT、Gemini。<br />
+          告别多平台订阅，专注构建应用。
         </p>
-      </div>
-      <!-- Login Form -->
-      <form @submit.prevent="handleLogin" class="space-y-5">
-        <!-- Email Input -->
-        <div>
-          <label for="email" class="input-label">
-            {{ t('auth.emailLabel') }}
-          </label>
-          <div class="relative">
-            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
-              <Icon name="mail" size="md" class="text-gray-400 dark:text-dark-500" />
-            </div>
-            <input
-              id="email"
-              v-model="formData.email"
-              type="email"
-              required
-              autofocus
-              autocomplete="email"
-              :disabled="authActionDisabled"
-              class="input pl-11"
-              :class="{ 'input-error': errors.email }"
-              :placeholder="t('auth.emailPlaceholder')"
-            />
-          </div>
-        </div>
 
-        <!-- Password Input -->
-        <div>
-          <label for="password" class="input-label">
-            {{ t('auth.passwordLabel') }}
-          </label>
-          <div class="relative">
-            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
-              <Icon name="lock" size="md" class="text-gray-400 dark:text-dark-500" />
-            </div>
-            <input
-              id="password"
-              v-model="formData.password"
-              :type="showPassword ? 'text' : 'password'"
-              required
-              autocomplete="current-password"
-              :disabled="authActionDisabled"
-              class="input pl-11 pr-11"
-              :class="{ 'input-error': errors.password }"
-              :placeholder="t('auth.passwordPlaceholder')"
-            />
-            <button
-              type="button"
-              @click="showPassword = !showPassword"
-              :disabled="authActionDisabled"
-              class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-dark-300"
-            >
-              <Icon v-if="showPassword" name="eyeOff" size="md" />
-              <Icon v-else name="eye" size="md" />
-            </button>
-          </div>
-          <div class="mt-1 flex items-center justify-between">
-            <span></span>
-            <router-link
-              v-if="passwordResetEnabled && !backendModeEnabled"
-              to="/forgot-password"
-              class="text-sm font-medium text-primary-600 transition-colors hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
-            >
-              {{ t('auth.forgotPassword') }}
-            </router-link>
-          </div>
-        </div>
-
-        <!-- Turnstile Widget -->
-        <div v-if="turnstileEnabled && turnstileSiteKey">
-          <TurnstileWidget
-            ref="turnstileRef"
-            :site-key="turnstileSiteKey"
-            @verify="onTurnstileVerify"
-            @expire="onTurnstileExpire"
-            @error="onTurnstileError"
-          />
-        </div>
-
-        <!-- Submit Button -->
-        <button
-          type="submit"
-          :disabled="authActionDisabled || (turnstileEnabled && !turnstileToken)"
-          class="btn btn-primary w-full"
-        >
-          <svg
-            v-if="isLoading"
-            class="-ml-1 mr-2 h-4 w-4 animate-spin text-white"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              class="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              stroke-width="4"
-            ></circle>
-            <path
-              class="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            ></path>
-          </svg>
-          <Icon v-else name="login" size="md" class="mr-2" />
-          {{ isLoading ? t('auth.signingIn') : t('auth.signIn') }}
-        </button>
-
-        <LoginAgreementPrompt
-          v-if="loginAgreementEnabled"
-          :accepted="agreementAccepted"
-          :documents="loginAgreementDocuments"
-          :mode="loginAgreementMode"
-          :updated-at="loginAgreementUpdatedAt"
-          :visible="showAgreementModal"
-          @accept="acceptLoginAgreement"
-          @reject="rejectLoginAgreement"
-          @open="showAgreementModal = true"
-        />
-
-        <div v-if="showOAuthLogin" class="space-y-3 pt-1">
+        <div class="space-y-4">
           <div class="flex items-center gap-3">
-            <div class="h-px flex-1 bg-gray-200 dark:bg-dark-700"></div>
-            <span class="text-xs text-gray-500 dark:text-dark-400">
-              {{ t('auth.oauthOrContinue') }}
-            </span>
-            <div class="h-px flex-1 bg-gray-200 dark:bg-dark-700"></div>
+            <div
+              class="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm ring-1 ring-white/30"
+            >
+              <Icon name="check" size="md" class="text-white" />
+            </div>
+            <span class="text-lg text-white">统一 API 密钥管理</span>
           </div>
-
-          <EmailOAuthButtons
-            :disabled="authActionDisabled"
-            :github-enabled="githubOAuthEnabled"
-            :google-enabled="googleOAuthEnabled"
-            :show-divider="false"
-          />
-
-          <LinuxDoOAuthSection
-            v-if="linuxdoOAuthEnabled"
-            :disabled="authActionDisabled"
-            :show-divider="false"
-          />
-          <DingTalkOAuthSection
-            v-if="dingtalkOAuthEnabled"
-            :disabled="authActionDisabled"
-            :show-divider="false"
-          />
-          <WechatOAuthSection
-            v-if="wechatOAuthEnabled"
-            :disabled="authActionDisabled"
-            :show-divider="false"
-          />
-          <OidcOAuthSection
-            v-if="oidcOAuthEnabled"
-            :disabled="authActionDisabled"
-            :provider-name="oidcOAuthProviderName"
-            :show-divider="false"
-          />
+          <div class="flex items-center gap-3">
+            <div
+              class="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm ring-1 ring-white/30"
+            >
+              <Icon name="check" size="md" class="text-white" />
+            </div>
+            <span class="text-lg text-white">极速响应 P50 &lt; 50ms</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <div
+              class="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm ring-1 ring-white/30"
+            >
+              <Icon name="check" size="md" class="text-white" />
+            </div>
+            <span class="text-lg text-white">99.9% 可用性保障</span>
+          </div>
         </div>
-      </form>
+      </div>
     </div>
 
-    <!-- Footer -->
-    <template v-if="!backendModeEnabled" #footer>
-      <p class="text-gray-500 dark:text-dark-400">
-        {{ t('auth.dontHaveAccount') }}
-        <router-link
-          to="/register"
-          class="font-medium text-primary-600 transition-colors hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
-        >
-          {{ t('auth.signUp') }}
+    <div class="flex w-full items-center justify-center bg-slate-50 p-6 dark:bg-slate-950 lg:w-1/2">
+      <div class="w-full max-w-md">
+        <router-link to="/" class="mb-8 flex items-center gap-3 no-underline">
+          <div
+            class="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-cyan-600"
+          >
+            <span class="text-xl font-bold text-white">AI</span>
+          </div>
+          <span class="text-xl font-semibold text-slate-900 dark:text-white">{{
+            t('common.siteName', '星链 AI Hub')
+          }}</span>
         </router-link>
-      </p>
-    </template>
-  </AuthLayout>
 
-  <!-- 2FA Modal -->
+        <div class="mb-8">
+          <h2 class="mb-2 text-3xl font-black text-slate-900 dark:text-white">
+            {{ t('auth.welcomeBack', '欢迎回来') }}
+          </h2>
+          <p class="text-slate-600 dark:text-slate-400">
+            {{ t('auth.signInToAccount', '登录您的账户以继续') }}
+          </p>
+        </div>
+
+        <div
+          v-if="errorMessage"
+          class="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400"
+        >
+          {{ errorMessage }}
+        </div>
+
+        <form @submit.prevent="handleLogin" class="space-y-6">
+          <div class="space-y-2">
+            <label for="email" class="text-sm font-medium text-slate-900 dark:text-white">
+              {{ t('auth.emailLabel', '邮箱') }}
+            </label>
+            <div class="relative">
+              <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
+                <Icon name="mail" size="md" class="text-slate-400" />
+              </div>
+              <input
+                id="email"
+                v-model="formData.email"
+                type="email"
+                required
+                autofocus
+                autocomplete="email"
+                :disabled="authActionDisabled"
+                class="h-12 w-full rounded-xl border border-slate-300 bg-white pl-12 pr-4 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                :placeholder="t('auth.emailPlaceholder', '请输入邮箱')"
+              />
+            </div>
+            <p v-if="errors.email" class="text-sm text-red-600 dark:text-red-400">
+              {{ errors.email }}
+            </p>
+          </div>
+
+          <div class="space-y-2">
+            <label for="password" class="text-sm font-medium text-slate-900 dark:text-white">
+              {{ t('auth.passwordLabel', '密码') }}
+            </label>
+            <div class="relative">
+              <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
+                <Icon name="lock" size="md" class="text-slate-400" />
+              </div>
+              <input
+                id="password"
+                v-model="formData.password"
+                :type="showPassword ? 'text' : 'password'"
+                required
+                autocomplete="current-password"
+                :disabled="authActionDisabled"
+                class="h-12 w-full rounded-xl border border-slate-300 bg-white pl-12 pr-12 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                :placeholder="t('auth.passwordPlaceholder', '请输入密码')"
+              />
+              <button
+                type="button"
+                class="absolute inset-y-0 right-0 flex items-center pr-4"
+                :disabled="authActionDisabled"
+                @click="showPassword = !showPassword"
+              >
+                <Icon
+                  :name="showPassword ? 'eyeOff' : 'eye'"
+                  size="md"
+                  class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                />
+              </button>
+            </div>
+            <p v-if="errors.password" class="text-sm text-red-600 dark:text-red-400">
+              {{ errors.password }}
+            </p>
+          </div>
+
+          <div v-if="turnstileEnabled && publicSettingsLoaded">
+            <TurnstileWidget
+              ref="turnstileRef"
+              :site-key="turnstileSiteKey"
+              @verify="onTurnstileVerify"
+              @expire="onTurnstileExpire"
+              @error="onTurnstileError"
+            />
+            <p v-if="errors.turnstile" class="mt-2 text-sm text-red-600 dark:text-red-400">
+              {{ errors.turnstile }}
+            </p>
+          </div>
+
+          <button
+            type="submit"
+            :disabled="authActionDisabled || (turnstileEnabled && !turnstileToken)"
+            class="h-12 w-full rounded-xl border-0 bg-gradient-to-r from-blue-600 to-cyan-600 text-base font-semibold text-white hover:from-blue-700 hover:to-cyan-700"
+          >
+            <span v-if="!isLoading">{{ t('auth.signIn', '登录') }}</span>
+            <span v-else>{{ t('auth.signingIn', '登录中...') }}</span>
+          </button>
+        </form>
+
+        <div v-if="passwordResetEnabled && !backendModeEnabled" class="mt-4 text-center">
+          <router-link
+            to="/forgot-password"
+            class="text-sm text-blue-600 no-underline hover:text-blue-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+          >
+            {{ t('auth.forgotPassword', '忘记密码？') }}
+          </router-link>
+        </div>
+
+        <div v-if="showOAuthLogin" class="my-8 flex items-center gap-4">
+          <div class="h-px flex-1 bg-slate-200 dark:bg-slate-700"></div>
+          <span class="text-sm text-slate-500 dark:text-slate-400">
+            {{ t('auth.orContinueWith', '或使用以下方式登录') }}
+          </span>
+          <div class="h-px flex-1 bg-slate-200 dark:bg-slate-700"></div>
+        </div>
+
+        <div v-if="showOAuthLogin" class="space-y-3">
+          <EmailOAuthButtons
+            v-if="githubOAuthEnabled || googleOAuthEnabled"
+            :github-enabled="githubOAuthEnabled"
+            :google-enabled="googleOAuthEnabled"
+            :disabled="authActionDisabled"
+          />
+
+          <LinuxDoOAuthSection v-if="linuxdoOAuthEnabled" :disabled="authActionDisabled" />
+          <DingTalkOAuthSection v-if="dingtalkOAuthEnabled" :disabled="authActionDisabled" />
+          <WechatOAuthSection v-if="wechatOAuthEnabled" :disabled="authActionDisabled" />
+          <OidcOAuthSection
+            v-if="oidcOAuthEnabled"
+            :provider-name="oidcOAuthProviderName"
+            :disabled="authActionDisabled"
+          />
+        </div>
+
+        <div v-if="!backendModeEnabled" class="mt-8 text-center text-sm text-slate-600 dark:text-slate-400">
+          {{ t('auth.dontHaveAccount') }}
+          <router-link
+            to="/register"
+            class="ml-1 font-semibold text-blue-600 no-underline hover:text-blue-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+          >
+            {{ t('auth.signUp') }}
+          </router-link>
+        </div>
+
+        <div class="mt-6 text-center">
+          <router-link
+            to="/"
+            class="inline-flex items-center gap-2 text-sm text-slate-500 no-underline hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300"
+          >
+            <Icon name="arrowLeft" size="sm" />
+            {{ t('auth.backToHome', '返回首页') }}
+          </router-link>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <LoginAgreementPrompt
+    v-if="loginAgreementEnabled"
+    :accepted="agreementAccepted"
+    :documents="loginAgreementDocuments"
+    :mode="loginAgreementMode"
+    :updated-at="loginAgreementUpdatedAt"
+    :visible="showAgreementModal"
+    @accept="acceptLoginAgreement"
+    @reject="rejectLoginAgreement"
+    @open="showAgreementModal = true"
+  />
+
   <TotpLoginModal
     v-if="show2FAModal"
     ref="totpModalRef"
@@ -201,7 +247,6 @@
 import { computed, ref, reactive, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { AuthLayout } from '@/components/layout'
 import LinuxDoOAuthSection from '@/components/auth/LinuxDoOAuthSection.vue'
 import DingTalkOAuthSection from '@/components/auth/DingTalkOAuthSection.vue'
 import OidcOAuthSection from '@/components/auth/OidcOAuthSection.vue'
