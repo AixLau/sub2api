@@ -17,9 +17,9 @@ import { getPublicSettings as fetchPublicSettingsAPI } from '@/api/auth'
 /**
  * Canonical documentation entry point. Used as the fallback for the "文档" link
  * (AppHeader nav + HomeView button) whenever the admin-configured doc_url is empty,
- * so the docs entry always resolves to the external guide.
+ * so the docs entry always resolves to the hosted install documentation.
  */
-export const DEFAULT_DOC_URL = 'https://aixlau.me/docs/ccswitch/'
+export const DEFAULT_DOC_URL = 'https://aixlau.me/install'
 
 export const useAppStore = defineStore('app', () => {
   // ==================== State ====================
