@@ -216,6 +216,107 @@ describe('user UsageView tooltip', () => {
     expect(text).toContain('$30.0000 / 1M tokens')
   })
 
+  it('does not expose standard cost on the user usage page or CSV export', async () => {
+    const usageLog = {
+      request_id: 'req-user-hidden-standard-cost',
+      actual_cost: 0.25,
+      total_cost: 1,
+      rate_multiplier: 0.25,
+      service_tier: 'standard',
+      input_cost: 0.8,
+      output_cost: 0.2,
+      cache_creation_cost: 0,
+      cache_read_cost: 0,
+      input_tokens: 1000,
+      output_tokens: 1000,
+      cache_creation_tokens: 0,
+      cache_read_tokens: 0,
+      cache_creation_5m_tokens: 0,
+      cache_creation_1h_tokens: 0,
+      image_count: 0,
+      image_size: null,
+      first_token_ms: null,
+      duration_ms: 1,
+      created_at: '2026-03-08T00:00:00Z',
+      model: 'gpt-5.4',
+      reasoning_effort: null,
+      api_key: { name: 'demo-key' },
+    }
+
+    query.mockResolvedValue({
+      items: [usageLog],
+      total: 1,
+      pages: 1,
+    })
+    getStatsByDateRange.mockResolvedValue({
+      total_requests: 1,
+      total_tokens: 2000,
+      total_cost: 1,
+      total_actual_cost: 0.25,
+      avg_duration_ms: 1,
+    })
+    list.mockResolvedValue({ items: [] })
+
+    let exportedBlob: Blob | null = null
+    const originalCreateObjectURL = window.URL.createObjectURL
+    const originalRevokeObjectURL = window.URL.revokeObjectURL
+    window.URL.createObjectURL = vi.fn((blob: Blob | MediaSource) => {
+      exportedBlob = blob as Blob
+      return 'blob:usage-export'
+    }) as typeof window.URL.createObjectURL
+    window.URL.revokeObjectURL = vi.fn(() => {}) as typeof window.URL.revokeObjectURL
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          TablePageLayout: TablePageLayoutStub,
+          Pagination: true,
+          EmptyState: true,
+          Select: true,
+          DateRangePicker: true,
+          DataTable: DataTableStub,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const setupState = (wrapper.vm as any).$?.setupState
+    setupState.tooltipData = usageLog
+    setupState.tooltipVisible = true
+    await nextTick()
+
+    const text = wrapper.text()
+    expect(text).toContain('$0.2500')
+    expect(text).toContain('$0.250000')
+    expect(text).not.toContain('$1.0000')
+    expect(text).not.toContain('$1.000000')
+    expect(text).not.toContain('Original')
+    expect(text).not.toContain('standardCost')
+
+    await setupState.exportToCSV()
+
+    expect(exportedBlob).not.toBeNull()
+    const csv = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error)
+      reader.readAsText(exportedBlob as Blob)
+    })
+    expect(csv).toContain('Billed Cost')
+    expect(csv).toContain('0.25000000')
+    expect(csv).not.toContain('Original Cost')
+    expect(csv).not.toContain('1.00000000')
+
+    window.URL.createObjectURL = originalCreateObjectURL
+    window.URL.revokeObjectURL = originalRevokeObjectURL
+    clickSpy.mockRestore()
+  })
+
   it('exports csv with input and output unit price columns', async () => {
     const exportedLogs = [
       {

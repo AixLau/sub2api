@@ -72,11 +72,7 @@
               <p class="text-xl font-bold text-green-600 dark:text-green-400">
                 ${{ (usageStats?.total_actual_cost || 0).toFixed(4) }}
               </p>
-              <p class="text-xs text-gray-500 dark:text-gray-400">
-                {{ t('usage.actualCost') }} /
-                <span class="line-through">${{ (usageStats?.total_cost || 0).toFixed(4) }}</span>
-                {{ t('usage.standardCost') }}
-              </p>
+              <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('usage.actualCost') }}</p>
             </div>
           </div>
         </div>
@@ -513,7 +509,7 @@
               <span class="font-medium text-pink-300">${{ tooltipData.image_output_cost.toFixed(6) }}</span>
             </div>
             <!-- Token billing: show unit prices per 1M tokens -->
-            <template v-if="!tooltipData?.billing_mode || tooltipData.billing_mode === BILLING_MODE_TOKEN">
+            <template v-if="getDisplayBillingMode(tooltipData) === BILLING_MODE_TOKEN || !getDisplayBillingMode(tooltipData)">
               <div v-if="tooltipData && tooltipData.input_tokens > 0" class="flex items-center justify-between gap-4">
                 <span class="text-gray-400">{{ t('usage.inputTokenPrice') }}</span>
                 <span class="font-medium text-sky-300">{{ formatTokenPricePerMillion(tooltipData.input_cost, tooltipData.input_tokens) }} {{ t('usage.perMillionTokens') }}</span>
@@ -553,19 +549,7 @@
                 <span class="text-gray-400">{{ t('usage.imageSizeBreakdown') }}</span>
                 <span class="font-medium text-white">{{ formatImageSizeBreakdown(tooltipData) }}</span>
               </div>
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-gray-400">{{ t('usage.imageUnitPrice') }}</span>
-                <span class="font-medium text-sky-300">${{ imageUnitPrice(tooltipData).toFixed(6) }}</span>
-              </div>
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-gray-400">{{ t('usage.imageTotalPrice') }}</span>
-                <span class="font-medium text-white">${{ tooltipData.total_cost?.toFixed(6) || '0.000000' }}</span>
-              </div>
             </template>
-            <div v-else class="flex items-center justify-between gap-4">
-              <span class="text-gray-400">{{ t('usage.unitPrice') }}</span>
-              <span class="font-medium text-sky-300">${{ tooltipData?.total_cost?.toFixed(6) || '0.000000' }}</span>
-            </div>
             <div v-if="tooltipData && tooltipData.cache_creation_cost > 0" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('admin.usage.cacheCreationCost') }}</span>
               <span class="font-medium text-white">${{ tooltipData.cache_creation_cost.toFixed(6) }}</span>
@@ -585,10 +569,6 @@
             <span class="font-semibold text-blue-400"
               >{{ formatMultiplier(tooltipData?.rate_multiplier || 1) }}x</span
             >
-          </div>
-          <div class="flex items-center justify-between gap-6">
-            <span class="text-gray-400">{{ t('usage.original') }}</span>
-            <span class="font-medium text-white">${{ tooltipData?.total_cost.toFixed(6) }}</span>
           </div>
           <div class="flex items-center justify-between gap-6 border-t border-gray-700 pt-1.5">
             <span class="text-gray-400">{{ t('usage.billed') }}</span>
@@ -634,7 +614,6 @@ import {
   getBillingModeLabel,
   isImageUsage,
   getDisplayBillingMode,
-  imageUnitPrice,
 } from '@/utils/billingMode'
 import {
   formatImageBillingSize,
@@ -989,7 +968,6 @@ const exportToCSV = async () => {
       'Cache Creation Tokens',
       'Rate Multiplier',
       'Billed Cost',
-      'Original Cost',
       'First Token (ms)',
       'Duration (ms)'
     ]
@@ -1008,7 +986,6 @@ const exportToCSV = async () => {
         log.cache_creation_tokens,
         log.rate_multiplier,
         (log.actual_cost ?? 0).toFixed(8),
-        (log.total_cost ?? 0).toFixed(8),
         log.first_token_ms ?? '',
         log.duration_ms
       ].map(escapeCSVValue)
