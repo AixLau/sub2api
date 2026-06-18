@@ -224,12 +224,14 @@ let verifyAttempts = 0
 let lastVerifyAt = 0
 
 const VERIFY_RETRY_INTERVAL_MS = 15000
+const NINEPLUS_VERIFY_RETRY_INTERVAL_MS = 3000
 const VERIFY_RETRY_MAX_ATTEMPTS = 6
 
 // nineplus is an alipay-based aggregator (payment.methods.nineplus === '支付宝'),
 // so it shares alipay branding on the QR surface.
 const isAlipay = computed(() => props.paymentType.includes('alipay') || props.paymentType === 'nineplus')
 const isWxpay = computed(() => props.paymentType.includes('wxpay'))
+const isNinePlus = computed(() => props.paymentType === 'nineplus')
 
 const brandIcon = computed(() => (isWxpay.value ? wxpayIcon : alipayIcon))
 
@@ -313,13 +315,15 @@ async function renderQR() {
 }
 
 async function tryRecoverPendingOrder(order: PaymentOrder): Promise<PaymentOrder> {
-  if (!isWxpay.value) return order
+  if (!isWxpay.value && !isNinePlus.value) return order
   const outTradeNo = String(order.out_trade_no || '').trim()
   if (!outTradeNo) return order
   const normalizedStatus = String(order.status || '').trim().toUpperCase()
   if (normalizedStatus !== 'PENDING') return order
   const now = Date.now()
-  if (verifyAttempts >= VERIFY_RETRY_MAX_ATTEMPTS || now - lastVerifyAt < VERIFY_RETRY_INTERVAL_MS) {
+  const reachedMaxAttempts = !isNinePlus.value && verifyAttempts >= VERIFY_RETRY_MAX_ATTEMPTS
+  const retryInterval = isNinePlus.value ? NINEPLUS_VERIFY_RETRY_INTERVAL_MS : VERIFY_RETRY_INTERVAL_MS
+  if (reachedMaxAttempts || now - lastVerifyAt < retryInterval) {
     return order
   }
 

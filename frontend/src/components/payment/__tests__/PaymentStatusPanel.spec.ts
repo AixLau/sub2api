@@ -164,4 +164,88 @@ describe('PaymentStatusPanel', () => {
     expect(wrapper.text()).toContain('payment.result.success')
     expect(wrapper.emitted('success')).toHaveLength(1)
   })
+
+  it('actively verifies a stuck nineplus order without waiting for the backend sweep', async () => {
+    pollOrderStatus.mockResolvedValue({
+      ...orderFactory('PENDING'),
+      payment_type: 'nineplus',
+    })
+    verifyOrder.mockResolvedValue({
+      data: {
+        ...orderFactory('COMPLETED'),
+        payment_type: 'nineplus',
+      },
+    })
+
+    const wrapper = mount(PaymentStatusPanel, {
+      props: {
+        orderId: 42,
+        qrCode: 'https://9.plus/payApi/Zhifutong/pay.html?trade_no=9PTEST',
+        expiresAt: '2099-01-01T12:30:00Z',
+        paymentType: 'nineplus',
+        orderType: 'balance',
+      },
+      global: {
+        stubs: {
+          Icon: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+
+    expect(pollOrderStatus).toHaveBeenCalledWith(42)
+    expect(verifyOrder).toHaveBeenCalledWith('sub2_20260420abcd1234')
+    expect(wrapper.text()).toContain('payment.result.success')
+    expect(wrapper.emitted('success')).toHaveLength(1)
+  })
+
+  it('keeps verifying nineplus orders after the initial retry window', async () => {
+    const pendingOrder = {
+      ...orderFactory('PENDING'),
+      payment_type: 'nineplus',
+    }
+    const completedOrder = {
+      ...orderFactory('COMPLETED'),
+      payment_type: 'nineplus',
+    }
+    pollOrderStatus.mockResolvedValue(pendingOrder)
+    for (let i = 0; i < 6; i++) {
+      verifyOrder.mockResolvedValueOnce({ data: pendingOrder })
+    }
+    verifyOrder.mockResolvedValueOnce({ data: completedOrder })
+
+    const wrapper = mount(PaymentStatusPanel, {
+      props: {
+        orderId: 42,
+        qrCode: 'https://9.plus/payApi/Zhifutong/pay.html?trade_no=9PTEST',
+        expiresAt: '2099-01-01T12:30:00Z',
+        paymentType: 'nineplus',
+        orderType: 'balance',
+      },
+      global: {
+        stubs: {
+          Icon: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    for (let i = 0; i < 6; i++) {
+      await vi.advanceTimersByTimeAsync(3000)
+      await flushPromises()
+    }
+
+    expect(verifyOrder).toHaveBeenCalledTimes(6)
+    expect(wrapper.emitted('success')).toBeUndefined()
+
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+
+    expect(verifyOrder).toHaveBeenCalledTimes(7)
+    expect(wrapper.text()).toContain('payment.result.success')
+    expect(wrapper.emitted('success')).toHaveLength(1)
+  })
 })
