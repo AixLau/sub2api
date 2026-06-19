@@ -14,6 +14,16 @@
         <div class="flex items-center gap-2">
           <button
             type="button"
+            @click="emit('syncNinePlus')"
+            :disabled="loading"
+            class="btn btn-secondary btn-sm"
+            :title="t('admin.settings.payment.syncNinePlusProducts')"
+          >
+            <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
+            <span>{{ t('admin.settings.payment.syncNinePlusProductsShort') }}</span>
+          </button>
+          <button
+            type="button"
             @click="emit('refresh')"
             :disabled="loading"
             class="btn btn-secondary btn-sm"
@@ -112,6 +122,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   refresh: []
+  syncNinePlus: []
   create: []
   edit: [provider: ProviderInstance]
   delete: [provider: ProviderInstance]

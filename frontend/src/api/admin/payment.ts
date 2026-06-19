@@ -159,6 +159,11 @@ export const adminPaymentAPI = {
     return apiClient.get<ProviderInstance[]>('/admin/payment/providers')
   },
 
+  /** Refresh cached 9.plus products from upstream */
+  syncNinePlusProducts() {
+    return apiClient.post<{ refreshed: number }>('/admin/payment/providers/nineplus/sync-products')
+  },
+
   /** Create a provider instance */
   createProvider(data: Partial<ProviderInstance>) {
     return apiClient.post<ProviderInstance>('/admin/payment/providers', data)

@@ -100,6 +100,7 @@ func RegisterPaymentRoutes(
 		providers := adminGroup.Group("/providers")
 		{
 			providers.GET("", adminPaymentHandler.ListProviders)
+			providers.POST("/nineplus/sync-products", adminPaymentHandler.SyncNinePlusProducts)
 			providers.POST("", adminPaymentHandler.CreateProvider)
 			providers.PUT("/:id", adminPaymentHandler.UpdateProvider)
 			providers.DELETE("/:id", adminPaymentHandler.DeleteProvider)

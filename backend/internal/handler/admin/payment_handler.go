@@ -251,6 +251,18 @@ func (h *PaymentHandler) ListProviders(c *gin.Context) {
 	response.Success(c, providers)
 }
 
+// SyncNinePlusProducts refreshes locally cached 9.plus products from upstream.
+// POST /api/v1/admin/payment/providers/nineplus/sync-products
+func (h *PaymentHandler) SyncNinePlusProducts(c *gin.Context) {
+	refreshed, err := h.paymentService.RefreshNinePlusProductSnapshots(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	h.paymentService.RefreshProviders(c.Request.Context())
+	response.Success(c, gin.H{"refreshed": refreshed})
+}
+
 // CreateProvider creates a new payment provider instance.
 // POST /api/v1/admin/payment/providers
 func (h *PaymentHandler) CreateProvider(c *gin.Context) {

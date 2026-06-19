@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -173,6 +174,60 @@ func TestRefreshNinePlusProductSnapshotsWritesLatestCatalogToProviderConfig(t *t
 	require.Equal(t, "USD", rawProducts[0]["quota_unit"])
 	require.Equal(t, "充值卡", rawProducts[0]["category"])
 	require.Equal(t, float64(79), rawProducts[0]["stock_count"])
+}
+
+func TestPaymentOrderExpiryRunOnceRefreshesNinePlusProductSnapshots(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	configSvc := &PaymentConfigService{entClient: client}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/shopApi/Shop/goodsList":
+			_, _ = w.Write([]byte(`{"code":1,"msg":"ok","data":{"total":1,"list":[{"goods_key":"np-1700","name":"1700刀额度","price":1700,"description":"1700 USD quota","link":"https://9.plus/item/np-1700","category":{"name":"套餐"},"extend":{"stock_count":8,"limit_count":0}}]}}`))
+		case "/shopApi/Shop/goodsInfo":
+			_, _ = w.Write([]byte(`{"code":1,"msg":"ok","data":{"goods_key":"np-1700","name":"1700刀额度","price":1700,"real_price":1700,"description":"1700 USD quota","contact_format":"","extend":{"send_order":1,"limit_count":0}}}`))
+		case "/shopApi/Shop/getGoodsPrice":
+			_, _ = w.Write([]byte(`{"code":1,"msg":"ok","data":{"original_amount":1700,"total_amount":1700,"fee":0}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	instance, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeNinePlus).
+		SetName("9plus Alipay").
+		SetConfig(`{
+			"apiBase":"` + server.URL + `",
+			"shopToken":"shop-token",
+			"channelId":"10",
+			"defaultContact":"ops@example.com",
+			"products":"[{\"product_id\":\"np-1700\",\"display_name\":\"1700刀额度\",\"price\":1700,\"quota\":1600,\"enabled\":true}]"
+		}`).
+		SetSupportedTypes("nineplus").
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	paymentSvc := &PaymentService{
+		entClient:           client,
+		configService:       configSvc,
+		externalShopService: NewExternalShopService(client, nil),
+	}
+	expirySvc := NewPaymentOrderExpiryService(paymentSvc, time.Minute)
+
+	expirySvc.runOnce()
+
+	updated, err := client.PaymentProviderInstance.Get(ctx, instance.ID)
+	require.NoError(t, err)
+	config, err := configSvc.decryptConfig(updated.Config)
+	require.NoError(t, err)
+	var rawProducts []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(config[ninePlusProductsConfigKey]), &rawProducts))
+	require.Len(t, rawProducts, 1)
+	require.Equal(t, "np-1700", rawProducts[0]["product_id"])
+	require.Equal(t, float64(1700), rawProducts[0]["quota"])
 }
 
 func TestPrepareNinePlusCreateOrderRejectsUnavailableLocalProduct(t *testing.T) {

@@ -6442,6 +6442,7 @@
             :all-payment-types="allPaymentTypes"
             :redirect-label="t('admin.settings.payment.easypayRedirect')"
             @refresh="loadProviders"
+            @sync-nine-plus="syncNinePlusProducts"
             @create="openCreateProvider"
             @edit="openEditProvider"
             @delete="confirmDeleteProvider"
@@ -9778,6 +9779,21 @@ async function loadProviders() {
   try {
     const res = await adminAPI.payment.getProviders();
     providers.value = res.data || [];
+  } catch (err: unknown) {
+    appStore.showError(extractI18nErrorMessage(err, t, "payment.errors", t("common.error")));
+  } finally {
+    providersLoading.value = false;
+  }
+}
+
+async function syncNinePlusProducts() {
+  providersLoading.value = true;
+  try {
+    const res = await adminAPI.payment.syncNinePlusProducts();
+    await loadProviders();
+    appStore.showSuccess(t("admin.settings.payment.syncNinePlusProductsSuccess", {
+      count: res.data?.refreshed ?? 0,
+    }));
   } catch (err: unknown) {
     appStore.showError(extractI18nErrorMessage(err, t, "payment.errors", t("common.error")));
   } finally {

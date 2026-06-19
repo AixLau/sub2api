@@ -12,6 +12,8 @@ import (
 
 const expiryCheckTimeout = 30 * time.Second
 
+const ninePlusProductRefreshInterval = ninePlusProductCatalogCacheTTL
+
 const (
 	// paymentOrderExpiryLeaderLockKey gates the periodic reconcile + expiry sweep so
 	// that only one instance issues the upstream payment-provider calls per cycle.
@@ -32,6 +34,8 @@ type PaymentOrderExpiryService struct {
 	lockCache  LeaderLockCache
 	db         *sql.DB
 	instanceID string
+
+	lastNinePlusProductRefresh time.Time
 }
 
 func NewPaymentOrderExpiryService(paymentSvc *PaymentService, interval time.Duration) *PaymentOrderExpiryService {
@@ -97,6 +101,8 @@ func (s *PaymentOrderExpiryService) runOnce() {
 	}
 	defer release()
 
+	s.refreshNinePlusProductsIfDue()
+
 	reconcileCtx, cancel := context.WithTimeout(context.Background(), expiryCheckTimeout)
 	recovered, err := s.paymentSvc.ReconcilePendingWxpayOrders(reconcileCtx)
 	cancel()
@@ -133,5 +139,25 @@ func (s *PaymentOrderExpiryService) runOnce() {
 	}
 	if expired > 0 {
 		slog.Info("[PaymentOrderExpiry] expired timed-out orders", "count", expired)
+	}
+}
+
+func (s *PaymentOrderExpiryService) refreshNinePlusProductsIfDue() {
+	if s == nil || s.paymentSvc == nil {
+		return
+	}
+	now := time.Now()
+	if !s.lastNinePlusProductRefresh.IsZero() && now.Sub(s.lastNinePlusProductRefresh) < ninePlusProductRefreshInterval {
+		return
+	}
+	s.lastNinePlusProductRefresh = now
+
+	refreshNinePlusCtx, cancel := context.WithTimeout(context.Background(), expiryCheckTimeout)
+	refreshed, err := s.paymentSvc.RefreshNinePlusProductSnapshots(refreshNinePlusCtx)
+	cancel()
+	if err != nil {
+		slog.Warn("[PaymentOrderExpiry] failed to refresh nineplus products", "error", err)
+	} else if refreshed > 0 {
+		slog.Info("[PaymentOrderExpiry] refreshed nineplus products", "count", refreshed)
 	}
 }
