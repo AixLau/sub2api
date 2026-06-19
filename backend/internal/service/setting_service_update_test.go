@@ -338,6 +338,32 @@ func TestSettingService_GetAntigravityUserAgentVersion_Precedence(t *testing.T) 
 	})
 }
 
+func TestSettingService_GetOpenAICodexUserAgent_Precedence(t *testing.T) {
+	const expectedDefault = "codex-tui/0.140.0 (Windows 10.0.19045; x86_64) WindowsTerminal (codex-tui; 0.140.0)"
+
+	t.Run("后台设置优先", func(t *testing.T) {
+		svc := NewSettingService(&settingAntigravityUARepoStub{values: map[string]string{
+			SettingKeyOpenAICodexUserAgent: "custom-codex/1.0",
+		}}, &config.Config{})
+
+		require.Equal(t, "custom-codex/1.0", svc.GetOpenAICodexUserAgent(context.Background()))
+	})
+
+	t.Run("空值回退内置默认值", func(t *testing.T) {
+		svc := NewSettingService(&settingAntigravityUARepoStub{values: map[string]string{
+			SettingKeyOpenAICodexUserAgent: "",
+		}}, &config.Config{})
+
+		require.Equal(t, expectedDefault, svc.GetOpenAICodexUserAgent(context.Background()))
+	})
+
+	t.Run("缺失回退内置默认值", func(t *testing.T) {
+		svc := NewSettingService(&settingAntigravityUARepoStub{values: map[string]string{}}, &config.Config{})
+
+		require.Equal(t, expectedDefault, svc.GetOpenAICodexUserAgent(context.Background()))
+	})
+}
+
 func TestSettingService_UpdateSettings_RejectsInvalidPaymentVisibleMethodSource(t *testing.T) {
 	repo := &settingUpdateRepoStub{}
 	svc := NewSettingService(repo, &config.Config{})
