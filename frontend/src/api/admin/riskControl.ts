@@ -3,10 +3,37 @@ import { apiClient } from '../client'
 export type ModerationMode = 'off' | 'observe' | 'pre_block'
 export type KeywordBlockingMode = 'keyword_only' | 'keyword_and_api' | 'api_only'
 export type ContentModerationModelFilterType = 'all' | 'include' | 'exclude'
+export type ContentModerationKeywordCategory =
+  | 'custom'
+  | 'jailbreak'
+  | 'cyber'
+  | 'minor_safety'
+  | 'self_harm'
+  | 'violence'
+  | 'weapons'
+  | 'privacy'
+  | 'fraud'
+  | 'account_abuse'
+  | 'political'
+  | 'high_impact_decision'
+  | 'regulated_advice'
+  | 'copyright'
+  | 'biometric'
+  | 'other'
+export type ContentModerationKeywordSeverity = 'low' | 'medium' | 'high' | 'critical'
+export type ContentModerationKeywordAction = 'block' | 'observe' | 'warn'
 
 export interface ContentModerationModelFilter {
   type: ContentModerationModelFilterType
   models: string[]
+}
+
+export interface ContentModerationKeywordRule {
+  keyword: string
+  category: ContentModerationKeywordCategory | string
+  severity: ContentModerationKeywordSeverity | string
+  action: ContentModerationKeywordAction | string
+  enabled: boolean
 }
 
 export interface ContentModerationConfig {
@@ -38,6 +65,7 @@ export interface ContentModerationConfig {
   non_hit_retention_days: number
   pre_hash_check_enabled: boolean
   blocked_keywords: string[]
+  keyword_rules: ContentModerationKeywordRule[]
   keyword_blocking_mode: KeywordBlockingMode
   model_filter: ContentModerationModelFilter
   cyber_policy_exclude_from_ban_count: boolean
@@ -74,6 +102,19 @@ export interface TestContentModerationAPIKeysResponse {
   items: ContentModerationAPIKeyStatus[]
   audit_result?: ContentModerationTestAuditResult
   image_count: number
+}
+
+export interface TestContentModerationKeywordsPayload {
+  prompt: string
+}
+
+export interface TestContentModerationKeywordsResponse {
+  matched: boolean
+  matched_keyword: string
+  keyword_category: ContentModerationKeywordCategory | string
+  keyword_severity: ContentModerationKeywordSeverity | string
+  keyword_action: ContentModerationKeywordAction | string
+  normalized_excerpt: string
 }
 
 export interface ContentModerationTestAuditResult {
@@ -114,6 +155,7 @@ export interface UpdateContentModerationConfig {
   non_hit_retention_days?: number
   pre_hash_check_enabled?: boolean
   blocked_keywords?: string[]
+  keyword_rules?: ContentModerationKeywordRule[]
   keyword_blocking_mode?: KeywordBlockingMode
   model_filter?: ContentModerationModelFilter
   cyber_policy_exclude_from_ban_count?: boolean
@@ -192,6 +234,9 @@ export interface ContentModerationLog {
   email_sent: boolean
   user_status: string
   queue_delay_ms: number | null
+  matched_keyword: string
+  keyword_category: string
+  keyword_severity: string
   created_at: string
 }
 
@@ -252,6 +297,16 @@ export async function testAPIKeys(
   return data
 }
 
+export async function testKeywords(
+  payload: TestContentModerationKeywordsPayload
+): Promise<TestContentModerationKeywordsResponse> {
+  const { data } = await apiClient.post<TestContentModerationKeywordsResponse>(
+    '/admin/risk-control/keywords/test',
+    payload
+  )
+  return data
+}
+
 export async function listLogs(
   params: ListContentModerationLogsParams = {}
 ): Promise<ContentModerationLogsResponse> {
@@ -285,6 +340,7 @@ export const riskControlAPI = {
   updateConfig,
   getStatus,
   testAPIKeys,
+  testKeywords,
   listLogs,
   unbanUser,
   deleteFlaggedHash,

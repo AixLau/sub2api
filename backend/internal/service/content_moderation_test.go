@@ -438,6 +438,38 @@ func TestMatchBlockedKeyword_CaseInsensitiveSubstring(t *testing.T) {
 	require.False(t, hit)
 }
 
+func TestMatchBlockedKeyword_UsesStructuredRules(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.BlockedKeywords = []string{"legacy-token"}
+	cfg.KeywordRules = []ContentModerationKeywordRule{
+		{Keyword: "disabled-token", Category: "cyber", Severity: "critical", Action: "block", Enabled: false},
+		{Keyword: "risk phrase", Category: "privacy", Severity: "medium", Action: "observe", Enabled: true},
+	}
+	cfg.normalize()
+
+	match, hit := matchContentModerationKeyword("please include a RISK phrase", cfg.keywordRules())
+
+	require.True(t, hit)
+	require.Equal(t, "risk phrase", match.Keyword)
+	require.Equal(t, "privacy", match.Category)
+	require.Equal(t, "medium", match.Severity)
+	require.Equal(t, "observe", match.Action)
+}
+
+func TestMatchBlockedKeyword_NormalizesObfuscatedText(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.KeywordRules = []ContentModerationKeywordRule{
+		{Keyword: "sell api key", Category: "account_abuse", Severity: "high", Action: "block", Enabled: true},
+	}
+	cfg.normalize()
+
+	match, hit := matchContentModerationKeyword("Please s\u200be\u200cl\u200dl%20API　ＫＥＹ now", cfg.keywordRules())
+
+	require.True(t, hit)
+	require.Equal(t, "sell api key", match.Keyword)
+	require.Equal(t, "account_abuse", match.Category)
+}
+
 func TestContentModerationCheck_PreBlockKeywordHitSkipsUpstreamCall(t *testing.T) {
 	upstreamCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -485,6 +517,89 @@ func TestContentModerationCheck_PreBlockKeywordHitSkipsUpstreamCall(t *testing.T
 	require.True(t, logs[0].Flagged)
 	require.Equal(t, ContentModerationActionKeywordBlock, logs[0].Action)
 	require.Equal(t, contentModerationKeywordCategory, logs[0].HighestCategory)
+	require.Equal(t, "secret-token", logs[0].MatchedKeyword)
+	require.Equal(t, ContentModerationKeywordCategoryCustom, logs[0].KeywordCategory)
+	require.Equal(t, ContentModerationKeywordSeverityHigh, logs[0].KeywordSeverity)
+}
+
+func TestContentModerationCheck_StructuredKeywordRuleMetadataLogged(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordRules = []ContentModerationKeywordRule{
+		{Keyword: "face recognition database", Category: "biometric", Severity: "critical", Action: "block", Enabled: true},
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"build a FACE recognition database"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, "face recognition database", decision.MatchedKeyword)
+	require.Equal(t, "biometric", decision.KeywordCategory)
+	require.Equal(t, "critical", decision.KeywordSeverity)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, "face recognition database", logs[0].MatchedKeyword)
+	require.Equal(t, "biometric", logs[0].KeywordCategory)
+	require.Equal(t, "critical", logs[0].KeywordSeverity)
+}
+
+func TestContentModerationKeywordTest_DoesNotWriteLogs(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.KeywordRules = []ContentModerationKeywordRule{
+		{Keyword: "sell api key", Category: "account_abuse", Severity: "high", Action: "block", Enabled: true},
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	result, err := svc.TestKeywords(context.Background(), "please s e l l api key")
+
+	require.NoError(t, err)
+	require.True(t, result.Matched)
+	require.Equal(t, "sell api key", result.MatchedKeyword)
+	require.Equal(t, "account_abuse", result.KeywordCategory)
+	require.Equal(t, "high", result.KeywordSeverity)
+	require.Equal(t, "block", result.Action)
+	require.Contains(t, result.NormalizedExcerpt, "sell api key")
+	require.Empty(t, repo.snapshotLogs())
+
+	rawResult, err := json.Marshal(result)
+	require.NoError(t, err)
+	var resultPayload map[string]any
+	require.NoError(t, json.Unmarshal(rawResult, &resultPayload))
+	require.Equal(t, "block", resultPayload["keyword_action"])
+	require.NotContains(t, resultPayload, "action")
 }
 
 func TestContentModerationCheck_KeywordsIgnoredInObserveMode(t *testing.T) {

@@ -11,6 +11,7 @@ const {
   updateConfig,
   getStatus,
   listLogs,
+  testKeywords,
   getGroups,
   showError,
   showSuccess,
@@ -19,6 +20,7 @@ const {
   updateConfig: vi.fn(),
   getStatus: vi.fn(),
   listLogs: vi.fn(),
+  testKeywords: vi.fn(),
   getGroups: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
@@ -31,6 +33,7 @@ vi.mock('@/api/admin', () => ({
       updateConfig,
       getStatus,
       listLogs,
+      testKeywords,
       testAPIKeys: vi.fn(),
       deleteFlaggedHash: vi.fn(),
       clearFlaggedHashes: vi.fn(),
@@ -96,6 +99,7 @@ const baseConfig = (): ContentModerationConfig => ({
   non_hit_retention_days: 3,
   pre_hash_check_enabled: false,
   blocked_keywords: [],
+  keyword_rules: [],
   keyword_blocking_mode: 'keyword_and_api',
   thresholds: {
     harassment: 0.98,
@@ -105,6 +109,7 @@ const baseConfig = (): ContentModerationConfig => ({
     type: 'all',
     models: [],
   },
+  cyber_policy_exclude_from_ban_count: false,
 })
 
 const runtimeStatus = () => ({
@@ -190,6 +195,7 @@ describe('admin RiskControlView', () => {
     updateConfig.mockReset()
     getStatus.mockReset()
     listLogs.mockReset()
+    testKeywords.mockReset()
     getGroups.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
@@ -197,6 +203,14 @@ describe('admin RiskControlView', () => {
     getConfig.mockResolvedValue(baseConfig())
     getStatus.mockResolvedValue(runtimeStatus())
     listLogs.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 1 })
+    testKeywords.mockResolvedValue({
+      matched: false,
+      matched_keyword: '',
+      keyword_category: '',
+      keyword_severity: '',
+      keyword_action: '',
+      normalized_excerpt: '',
+    })
     getGroups.mockResolvedValue([])
     updateConfig.mockImplementation(async (payload: UpdateContentModerationConfig) => ({
       ...baseConfig(),
@@ -208,6 +222,119 @@ describe('admin RiskControlView', () => {
       api_key_masks: [],
       api_key_statuses: [],
     }))
+  })
+
+  it('renders keyword metadata in records and input detail', async () => {
+    listLogs.mockResolvedValue({
+      items: [
+        {
+          id: 42,
+          request_id: 'req-keyword',
+          user_id: 7,
+          user_email: 'risk@example.com',
+          api_key_id: 3,
+          api_key_name: 'Team Key',
+          group_id: 2,
+          group_name: 'Default',
+          endpoint: '/v1/responses',
+          provider: 'openai',
+          model: 'gpt-5',
+          mode: 'pre_block',
+          action: 'keyword_block',
+          flagged: true,
+          highest_category: 'keyword',
+          highest_score: 1,
+          category_scores: {},
+          threshold_snapshot: {},
+          input_excerpt: 'please sell api key',
+          matched_keyword: 'sell api key',
+          keyword_category: 'account_abuse',
+          keyword_severity: 'critical',
+          upstream_latency_ms: null,
+          error: '',
+          violation_count: 1,
+          auto_banned: false,
+          email_sent: false,
+          user_status: 'active',
+          queue_delay_ms: null,
+          created_at: '2026-06-19T08:00:00Z',
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.riskControl.matchedKeyword')
+    expect(wrapper.text()).toContain('sell api key')
+    expect(wrapper.text()).toContain('account_abuse')
+    expect(wrapper.text()).toContain('critical')
+
+    await findButtonByText(wrapper, 'please sell api key').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.riskControl.keywordMetadata')
+    expect(wrapper.text()).toContain('admin.riskControl.keywordCategory')
+    expect(wrapper.text()).toContain('admin.riskControl.keywordSeverity')
+  })
+
+  it('runs keyword tests without saving config or writing logs', async () => {
+    testKeywords.mockResolvedValue({
+      matched: true,
+      matched_keyword: 'sell api key',
+      keyword_category: 'account_abuse',
+      keyword_severity: 'critical',
+      keyword_action: 'block',
+      normalized_excerpt: 'please sell api key now',
+    })
+
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.keywords').trigger('click')
+    await wrapper.get('[data-test="keyword-test-prompt"]').setValue('please s e l l api key now')
+    await findButtonByText(wrapper, 'admin.riskControl.runKeywordTest').trigger('click')
+    await flushPromises()
+
+    expect(testKeywords).toHaveBeenCalledWith({ prompt: 'please s e l l api key now' })
+    expect(updateConfig).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('admin.riskControl.keywordTestMatched')
+    expect(wrapper.text()).toContain('sell api key')
+    expect(wrapper.text()).toContain('account_abuse')
+    expect(wrapper.text()).toContain('critical')
+    expect(wrapper.text()).toContain('block')
+    expect(wrapper.text()).toContain('please sell api key now')
   })
 
   it('saves the selected model filter mode and models', async () => {

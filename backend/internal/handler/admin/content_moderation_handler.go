@@ -45,14 +45,15 @@ type contentModerationConfigRequest struct {
 	ViolationWindowHours *int                `json:"violation_window_hours"`
 	// cyber_policy 命中是否排除出自动封号计数；前端 RiskControlView 已发送该字段，
 	// service.UpdateContentModerationConfigInput 已支持，此前 handler 层缺透传导致开关静默失效。
-	CyberPolicyExcludeFromBanCount *bool                                 `json:"cyber_policy_exclude_from_ban_count"`
-	RetryCount                     *int                                  `json:"retry_count"`
-	HitRetentionDays               *int                                  `json:"hit_retention_days"`
-	NonHitRetentionDays            *int                                  `json:"non_hit_retention_days"`
-	PreHashCheckEnabled            *bool                                 `json:"pre_hash_check_enabled"`
-	BlockedKeywords                *[]string                             `json:"blocked_keywords"`
-	KeywordBlockingMode            *string                               `json:"keyword_blocking_mode"`
-	ModelFilter                    *service.ContentModerationModelFilter `json:"model_filter"`
+	CyberPolicyExcludeFromBanCount *bool                                   `json:"cyber_policy_exclude_from_ban_count"`
+	RetryCount                     *int                                    `json:"retry_count"`
+	HitRetentionDays               *int                                    `json:"hit_retention_days"`
+	NonHitRetentionDays            *int                                    `json:"non_hit_retention_days"`
+	PreHashCheckEnabled            *bool                                   `json:"pre_hash_check_enabled"`
+	BlockedKeywords                *[]string                               `json:"blocked_keywords"`
+	KeywordRules                   *[]service.ContentModerationKeywordRule `json:"keyword_rules"`
+	KeywordBlockingMode            *string                                 `json:"keyword_blocking_mode"`
+	ModelFilter                    *service.ContentModerationModelFilter   `json:"model_filter"`
 }
 
 type contentModerationAPIKeyTestRequest struct {
@@ -66,6 +67,10 @@ type contentModerationAPIKeyTestRequest struct {
 
 type contentModerationHashRequest struct {
 	InputHash string `json:"input_hash"`
+}
+
+type contentModerationKeywordTestRequest struct {
+	Prompt string `json:"prompt"`
 }
 
 func (h *ContentModerationHandler) GetConfig(c *gin.Context) {
@@ -113,6 +118,7 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		NonHitRetentionDays:            req.NonHitRetentionDays,
 		PreHashCheckEnabled:            req.PreHashCheckEnabled,
 		BlockedKeywords:                req.BlockedKeywords,
+		KeywordRules:                   req.KeywordRules,
 		KeywordBlockingMode:            req.KeywordBlockingMode,
 		ModelFilter:                    req.ModelFilter,
 	})
@@ -137,6 +143,20 @@ func (h *ContentModerationHandler) TestAPIKeys(c *gin.Context) {
 		Prompt:    req.Prompt,
 		Images:    req.Images,
 	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *ContentModerationHandler) TestKeywords(c *gin.Context) {
+	var req contentModerationKeywordTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	result, err := h.service.TestKeywords(c.Request.Context(), req.Prompt)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
