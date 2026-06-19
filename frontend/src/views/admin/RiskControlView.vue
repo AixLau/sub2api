@@ -324,6 +324,12 @@
                         {{ row.email_sent ? t('admin.riskControl.emailSent') : t('admin.riskControl.emailNotSent') }}
                         <span v-if="row.auto_banned"> / {{ t('admin.riskControl.autoBanned') }}</span>
                       </div>
+                      <div v-if="row.matched_keyword" class="mt-2 max-w-[220px] space-y-1 rounded-md bg-amber-50 px-2 py-1.5 text-xs leading-5 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
+                        <div class="truncate font-medium">{{ t('admin.riskControl.matchedKeyword') }}: {{ row.matched_keyword }}</div>
+                        <div class="truncate text-amber-600/80 dark:text-amber-200/80">
+                          {{ row.keyword_category || '-' }} / {{ row.keyword_severity || '-' }}
+                        </div>
+                      </div>
                       <button
                         v-if="canUnbanRow(row)"
                         type="button"
@@ -1018,6 +1024,67 @@
                 {{ t('admin.riskControl.blockedKeywordsLimit', { max: blockedKeywordMax }) }}
               </p>
             </div>
+
+            <div class="grid grid-cols-1 gap-4 rounded-lg border border-gray-100 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900/30 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+              <div class="space-y-3">
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.keywordTest') }}</p>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.keywordTestHint') }}</p>
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn-secondary inline-flex items-center justify-center gap-2"
+                    :disabled="keywordTesting || keywordTestPrompt.trim() === ''"
+                    @click="runKeywordTest"
+                  >
+                    <Icon name="beaker" size="sm" :class="keywordTesting ? 'animate-pulse' : ''" />
+                    {{ keywordTesting ? t('admin.riskControl.keywordTesting') : t('admin.riskControl.runKeywordTest') }}
+                  </button>
+                </div>
+                <textarea
+                  v-model="keywordTestPrompt"
+                  data-test="keyword-test-prompt"
+                  class="input min-h-28 resize-y text-sm"
+                  :placeholder="t('admin.riskControl.keywordTestPlaceholder')"
+                ></textarea>
+              </div>
+
+              <div class="rounded-lg border border-gray-100 bg-white p-3 dark:border-dark-700 dark:bg-dark-800">
+                <div v-if="keywordTestResult" class="space-y-3">
+                  <div class="flex items-start justify-between gap-3">
+                    <div>
+                      <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.keywordTestResult') }}</p>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ keywordTestResult.normalized_excerpt || '-' }}</p>
+                    </div>
+                    <span class="inline-flex shrink-0 rounded-full px-2 py-1 text-xs font-medium" :class="keywordTestResult.matched ? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'">
+                      {{ keywordTestResult.matched ? t('admin.riskControl.keywordTestMatched') : t('admin.riskControl.keywordTestPassed') }}
+                    </span>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div class="rounded-md bg-gray-50 p-2 dark:bg-dark-700/60">
+                      <p class="text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.matchedKeyword') }}</p>
+                      <p class="mt-1 break-words font-mono font-semibold text-gray-900 dark:text-white">{{ keywordTestResult.matched_keyword || '-' }}</p>
+                    </div>
+                    <div class="rounded-md bg-gray-50 p-2 dark:bg-dark-700/60">
+                      <p class="text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.keywordCategory') }}</p>
+                      <p class="mt-1 break-words font-mono font-semibold text-gray-900 dark:text-white">{{ keywordTestResult.keyword_category || '-' }}</p>
+                    </div>
+                    <div class="rounded-md bg-gray-50 p-2 dark:bg-dark-700/60">
+                      <p class="text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.keywordSeverity') }}</p>
+                      <p class="mt-1 break-words font-mono font-semibold text-gray-900 dark:text-white">{{ keywordTestResult.keyword_severity || '-' }}</p>
+                    </div>
+                    <div class="rounded-md bg-gray-50 p-2 dark:bg-dark-700/60">
+                      <p class="text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.keywordAction') }}</p>
+                      <p class="mt-1 break-words font-mono font-semibold text-gray-900 dark:text-white">{{ keywordTestResult.keyword_action || '-' }}</p>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="flex min-h-32 items-center justify-center rounded-lg border border-dashed border-gray-200 px-4 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400">
+                  {{ t('admin.riskControl.keywordTestEmpty') }}
+                </div>
+              </div>
+            </div>
           </div>
 
           <div v-else class="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -1080,6 +1147,24 @@
             </div>
           </div>
 
+          <div v-if="inputDetailRow.matched_keyword" class="rounded-xl border border-amber-100 bg-amber-50 p-4 shadow-sm dark:border-amber-900/40 dark:bg-amber-900/10">
+            <p class="text-sm font-semibold text-amber-800 dark:text-amber-100">{{ t('admin.riskControl.keywordMetadata') }}</p>
+            <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <p class="text-xs font-medium text-amber-700/80 dark:text-amber-200/80">{{ t('admin.riskControl.matchedKeyword') }}</p>
+                <p class="mt-1 break-words font-mono text-sm font-semibold text-amber-900 dark:text-amber-50">{{ inputDetailRow.matched_keyword }}</p>
+              </div>
+              <div>
+                <p class="text-xs font-medium text-amber-700/80 dark:text-amber-200/80">{{ t('admin.riskControl.keywordCategory') }}</p>
+                <p class="mt-1 break-words font-mono text-sm font-semibold text-amber-900 dark:text-amber-50">{{ inputDetailRow.keyword_category || '-' }}</p>
+              </div>
+              <div>
+                <p class="text-xs font-medium text-amber-700/80 dark:text-amber-200/80">{{ t('admin.riskControl.keywordSeverity') }}</p>
+                <p class="mt-1 break-words font-mono text-sm font-semibold text-amber-900 dark:text-amber-50">{{ inputDetailRow.keyword_severity || '-' }}</p>
+              </div>
+            </div>
+          </div>
+
           <div class="rounded-xl border border-gray-100 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-800">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -1128,6 +1213,7 @@ import type {
   ContentModerationTestAuditResult,
   KeywordBlockingMode,
   ModerationMode,
+  TestContentModerationKeywordsResponse,
   UpdateContentModerationConfig,
 } from '@/api/admin/riskControl'
 import type { AdminGroup, SelectOption } from '@/types'
@@ -1190,6 +1276,7 @@ const saving = ref(false)
 const logsLoading = ref(false)
 const statusLoading = ref(false)
 const apiKeyTesting = ref(false)
+const keywordTesting = ref(false)
 const hashActionLoading = ref(false)
 const unbanningUserID = ref<number | null>(null)
 const settingsOpen = ref(false)
@@ -1205,6 +1292,8 @@ const apiKeyRowsExpanded = ref<boolean>(false)
 const moderationTestPrompt = ref('')
 const moderationTestImages = ref<string[]>([])
 const moderationTestResult = ref<ContentModerationTestAuditResult | null>(null)
+const keywordTestPrompt = ref('')
+const keywordTestResult = ref<TestContentModerationKeywordsResponse | null>(null)
 const inputDetailRow = ref<ContentModerationLog | null>(null)
 let statusTimer: number | null = null
 
@@ -1992,6 +2081,19 @@ async function testApiKeys(useInputKeys: boolean) {
     appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.apiKeyTestFailed')))
   } finally {
     apiKeyTesting.value = false
+  }
+}
+
+async function runKeywordTest() {
+  const prompt = keywordTestPrompt.value.trim()
+  if (!prompt || keywordTesting.value) return
+  keywordTesting.value = true
+  try {
+    keywordTestResult.value = await adminAPI.riskControl.testKeywords({ prompt })
+  } catch (err: unknown) {
+    appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.keywordTestFailed')))
+  } finally {
+    keywordTesting.value = false
   }
 }
 

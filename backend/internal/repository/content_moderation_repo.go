@@ -53,16 +53,19 @@ INSERT INTO content_moderation_logs (
     request_id, user_id, user_email, api_key_id, api_key_name, group_id, group_name,
     endpoint, provider, model, mode, action, flagged, highest_category, highest_score,
     category_scores, threshold_snapshot, input_excerpt, upstream_latency_ms, error,
+    matched_keyword, keyword_category, keyword_severity,
     violation_count, auto_banned, email_sent, queue_delay_ms
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, $12, $13, $14, $15,
     $16::jsonb, $17::jsonb, $18, $19, $20,
-    $21, $22, $23, $24
+    $21, $22, $23,
+    $24, $25, $26, $27
 ) RETURNING id, created_at`,
 		log.RequestID, userID, log.UserEmail, apiKeyID, log.APIKeyName, groupID, log.GroupName,
 		log.Endpoint, log.Provider, log.Model, log.Mode, log.Action, log.Flagged, log.HighestCategory, log.HighestScore,
 		string(categoryScores), string(thresholdSnapshot), log.InputExcerpt, latency, log.Error,
+		log.MatchedKeyword, log.KeywordCategory, log.KeywordSeverity,
 		log.ViolationCount, log.AutoBanned, log.EmailSent, nullableIntPtr(log.QueueDelayMS),
 	).Scan(&log.ID, &log.CreatedAt)
 	if err != nil {
@@ -97,6 +100,7 @@ SELECT
     l.id, l.request_id, l.user_id, l.user_email, l.api_key_id, l.api_key_name, l.group_id, l.group_name,
     l.endpoint, l.provider, l.model, l.mode, l.action, l.flagged, l.highest_category, l.highest_score,
     l.category_scores, l.threshold_snapshot, l.input_excerpt, l.upstream_latency_ms, l.error,
+    COALESCE(l.matched_keyword, ''), COALESCE(l.keyword_category, ''), COALESCE(l.keyword_severity, ''),
     l.violation_count, l.auto_banned, l.email_sent, COALESCE(u.status, ''), l.queue_delay_ms, l.created_at
 FROM content_moderation_logs l
 LEFT JOIN users u ON u.id = l.user_id `+whereSQL+`
@@ -136,6 +140,9 @@ LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 			&item.InputExcerpt,
 			&latency,
 			&item.Error,
+			&item.MatchedKeyword,
+			&item.KeywordCategory,
+			&item.KeywordSeverity,
 			&item.ViolationCount,
 			&item.AutoBanned,
 			&item.EmailSent,
@@ -271,9 +278,9 @@ func buildContentModerationLogWhere(filter service.ContentModerationLogFilter) (
 	}
 	if search := strings.TrimSpace(filter.Search); search != "" {
 		like := "%" + search + "%"
-		args = append(args, like, like, like, like, like)
-		idx := len(args) - 4
-		where = append(where, fmt.Sprintf("(l.request_id ILIKE $%d OR l.user_email ILIKE $%d OR l.api_key_name ILIKE $%d OR l.model ILIKE $%d OR l.input_excerpt ILIKE $%d)", idx, idx+1, idx+2, idx+3, idx+4))
+		args = append(args, like, like, like, like, like, like, like)
+		idx := len(args) - 6
+		where = append(where, fmt.Sprintf("(l.request_id ILIKE $%d OR l.user_email ILIKE $%d OR l.api_key_name ILIKE $%d OR l.model ILIKE $%d OR l.input_excerpt ILIKE $%d OR l.matched_keyword ILIKE $%d OR l.keyword_category ILIKE $%d)", idx, idx+1, idx+2, idx+3, idx+4, idx+5, idx+6))
 	}
 	if filter.From != nil && !filter.From.IsZero() {
 		add("l.created_at >= $%d", *filter.From)

@@ -21,4 +21,15 @@ describe('risk control locale copy', () => {
     expect(zh.admin.riskControl.preBlockAPIKeyLoadHint).not.toContain('Worker 池')
     expect(en.admin.riskControl.preBlockAPIKeyLoadHint).not.toContain('worker pool')
   })
+
+  it('includes keyword metadata and dry-run copy', () => {
+    expect(zh.admin.riskControl.matchedKeyword).toBe('命中关键词')
+    expect(zh.admin.riskControl.keywordCategory).toBe('关键词分类')
+    expect(zh.admin.riskControl.keywordTestMatched).toBe('已命中')
+    expect(zh.admin.riskControl.filters.search).toContain('关键词')
+    expect(en.admin.riskControl.matchedKeyword).toBe('Matched Keyword')
+    expect(en.admin.riskControl.keywordCategory).toBe('Keyword Category')
+    expect(en.admin.riskControl.keywordTestMatched).toBe('Matched')
+    expect(en.admin.riskControl.filters.search).toContain('keyword')
+  })
 })
