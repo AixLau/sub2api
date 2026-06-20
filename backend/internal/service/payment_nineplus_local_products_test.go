@@ -113,6 +113,75 @@ func TestValidateNinePlusSubscriptionOrderUsesExternalProductWithoutPlan(t *test
 	require.Nil(t, plan)
 }
 
+func TestListNinePlusProductsFetchesAPICreditAndSubscriptionCategories(t *testing.T) {
+	ctx := context.Background()
+	requestedCategories := make([]int, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/shopApi/Shop/goodsList":
+			var req struct {
+				CategoryID int `json:"category_id"`
+			}
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			requestedCategories = append(requestedCategories, req.CategoryID)
+			switch req.CategoryID {
+			case 165:
+				_, _ = w.Write([]byte(`{"code":1,"msg":"ok","data":{"total":1,"list":[{"goods_key":"q8kb9h","name":"35刀额度","price":5,"description":"<p>35 USD quota</p>","link":"https://9.plus/item/q8kb9h","category":{"name":"API额度"},"extend":{"stock_count":153,"limit_count":0}}]}}`))
+			case 167:
+				_, _ = w.Write([]byte(`{"code":1,"msg":"ok","data":{"total":1,"list":[{"goods_key":"sub-standard","name":"Pro 标准月包：49.9 元/月，包含 400 额度","price":49.9,"description":"Pro subscription","link":"https://9.plus/item/sub-standard","category":{"name":"套餐"},"extend":{"stock_count":9,"limit_count":0}}]}}`))
+			default:
+				_, _ = w.Write([]byte(`{"code":1,"msg":"ok","data":{"total":0,"list":[]}}`))
+			}
+		case "/shopApi/Shop/goodsInfo":
+			var req struct {
+				GoodsKey string `json:"goods_key"`
+			}
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			switch req.GoodsKey {
+			case "q8kb9h":
+				_, _ = w.Write([]byte(`{"code":1,"msg":"ok","data":{"goods_key":"q8kb9h","name":"35刀额度","price":5,"real_price":5,"description":"<p>35 USD quota</p>","contact_format":"","extend":{"send_order":1,"limit_count":0}}}`))
+			case "sub-standard":
+				_, _ = w.Write([]byte(`{"code":1,"msg":"ok","data":{"goods_key":"sub-standard","name":"Pro 标准月包：49.9 元/月，包含 400 额度","price":49.9,"real_price":49.9,"description":"Pro subscription","contact_format":"","extend":{"send_order":1,"limit_count":0}}}`))
+			default:
+				http.NotFound(w, r)
+			}
+		case "/shopApi/Shop/getGoodsPrice":
+			var req struct {
+				GoodsKey string `json:"goods_key"`
+			}
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			switch req.GoodsKey {
+			case "q8kb9h":
+				_, _ = w.Write([]byte(`{"code":1,"msg":"ok","data":{"original_amount":5,"total_amount":5.1,"fee":0.1}}`))
+			case "sub-standard":
+				_, _ = w.Write([]byte(`{"code":1,"msg":"ok","data":{"original_amount":49.9,"total_amount":50.9,"fee":1}}`))
+			default:
+				http.NotFound(w, r)
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	helper := NewExternalShopService(nil, nil).withProviderConfig(map[string]string{
+		"apiBase":   server.URL,
+		"shopToken": "shop-token",
+		"channelId": "10",
+	})
+
+	products, err := helper.List9PlusProducts(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, []int{165, 167}, requestedCategories)
+	require.Len(t, products, 2)
+	require.Equal(t, "q8kb9h", products[0].ProductID)
+	require.Equal(t, "API额度", products[0].Category)
+	require.Equal(t, "sub-standard", products[1].ProductID)
+	require.Equal(t, "套餐", products[1].Category)
+	require.Equal(t, 400, products[1].Quota)
+}
+
 func TestRefreshNinePlusProductSnapshotsWritesLatestCatalogToProviderConfig(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
@@ -228,6 +297,42 @@ func TestPaymentOrderExpiryRunOnceRefreshesNinePlusProductSnapshots(t *testing.T
 	require.Len(t, rawProducts, 1)
 	require.Equal(t, "np-1700", rawProducts[0]["product_id"])
 	require.Equal(t, float64(1700), rawProducts[0]["quota"])
+}
+
+func TestMergeNinePlusRefreshedProductsPreservesExistingSubscriptionProducts(t *testing.T) {
+	config := map[string]string{
+		"products": `[
+			{"product_id":"q8kb9h","display_name":"old 35","category":"API额度","price":5,"quota":30,"enabled":false,"sort_order":2},
+			{"product_id":"sub-standard","display_name":"Pro 标准月包：49.9 元/月，包含 400 额度","category":"套餐","price":49.9,"payment_amount":50.9,"quota":400,"quota_unit":"USD","enabled":true,"stock_count":9,"sort_order":1}
+		]`,
+	}
+	stockCount := 153
+	refreshed := []ExternalShopProduct{{
+		Provider:      ninePlusProviderName,
+		ProductID:     "q8kb9h",
+		DisplayName:   "35刀额度",
+		Category:      "API额度",
+		Currency:      "CNY",
+		Price:         5,
+		PaymentAmount: 5.1,
+		Quota:         35,
+		QuotaUnit:     "USD",
+		Enabled:       true,
+		StockCount:    &stockCount,
+		SortOrder:     1,
+	}}
+
+	products := mergeNinePlusRefreshedProducts(config, refreshed)
+
+	require.Len(t, products, 2)
+	require.Equal(t, "sub-standard", products[0].ProductID)
+	require.Equal(t, "Pro 标准月包：49.9 元/月，包含 400 额度", products[0].DisplayName)
+	require.Equal(t, "套餐", products[0].Category)
+	require.True(t, products[0].Enabled)
+	require.Equal(t, 400, products[0].Quota)
+	require.Equal(t, "q8kb9h", products[1].ProductID)
+	require.False(t, products[1].Enabled)
+	require.Equal(t, 35, products[1].Quota)
 }
 
 func TestPrepareNinePlusCreateOrderRejectsUnavailableLocalProduct(t *testing.T) {

@@ -20,14 +20,15 @@ import (
 )
 
 const (
-	ninePlusProviderName   = "9plus"
-	default9PlusShopToken  = "X7AR3C01"
-	default9PlusCategoryID = 165
-	default9PlusGoodsType  = "card"
-	default9PlusPage       = 1
-	default9PlusPageSize   = 20
-	default9PlusChannelID  = 10
-	default9PlusBaseURL    = "https://9.plus"
+	ninePlusProviderName               = "9plus"
+	default9PlusShopToken              = "X7AR3C01"
+	default9PlusAPICreditCategoryID    = 165
+	default9PlusSubscriptionCategoryID = 167
+	default9PlusGoodsType              = "card"
+	default9PlusPage                   = 1
+	default9PlusPageSize               = 20
+	default9PlusChannelID              = 10
+	default9PlusBaseURL                = "https://9.plus"
 )
 
 const (
@@ -232,11 +233,34 @@ func (s *ExternalShopService) List9PlusProducts(ctx context.Context) ([]External
 }
 
 func (s *ExternalShopService) list9PlusProductsUncached(ctx context.Context) ([]ExternalShopProduct, error) {
+	var products []ExternalShopProduct
+	seen := make(map[string]struct{})
+	for _, categoryID := range []int{default9PlusAPICreditCategoryID, default9PlusSubscriptionCategoryID} {
+		categoryProducts, err := s.list9PlusProductsByCategory(ctx, categoryID, len(products))
+		if err != nil {
+			return nil, err
+		}
+		for _, product := range categoryProducts {
+			productID := strings.TrimSpace(product.ProductID)
+			if _, ok := seen[productID]; ok {
+				continue
+			}
+			seen[productID] = struct{}{}
+			products = append(products, product)
+		}
+	}
+	sort.Slice(products, func(i, j int) bool {
+		return products[i].SortOrder < products[j].SortOrder
+	})
+	return products, nil
+}
+
+func (s *ExternalShopService) list9PlusProductsByCategory(ctx context.Context, categoryID int, sortOffset int) ([]ExternalShopProduct, error) {
 	var resp ninePlusGoodsListResponse
 	if err := s.post9PlusJSON(ctx, "/shopApi/Shop/goodsList", map[string]any{
 		"token":       s.shopToken,
 		"keywords":    "",
-		"category_id": default9PlusCategoryID,
+		"category_id": categoryID,
 		"goods_type":  default9PlusGoodsType,
 		"current":     default9PlusPage,
 		"pageSize":    default9PlusPageSize,
@@ -266,7 +290,7 @@ func (s *ExternalShopService) list9PlusProductsUncached(ctx context.Context) ([]
 				errCh <- ctx.Err()
 				return
 			}
-			product, err := s.build9PlusProduct(ctx, idx, item)
+			product, err := s.build9PlusProduct(ctx, sortOffset+idx, item)
 			if err != nil {
 				errCh <- err
 				return

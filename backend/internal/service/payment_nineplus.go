@@ -311,9 +311,12 @@ func mergeNinePlusRefreshedProducts(config map[string]string, refreshed []Extern
 	for _, product := range existing {
 		byID[strings.TrimSpace(product.ProductID)] = product
 	}
+	refreshedIDs := make(map[string]struct{}, len(refreshed))
 	for idx := range refreshed {
 		current := &refreshed[idx]
-		previous, ok := byID[strings.TrimSpace(current.ProductID)]
+		productID := strings.TrimSpace(current.ProductID)
+		refreshedIDs[productID] = struct{}{}
+		previous, ok := byID[productID]
 		if !ok {
 			continue
 		}
@@ -329,10 +332,39 @@ func mergeNinePlusRefreshedProducts(config map[string]string, refreshed []Extern
 			current.QuotaUnit = previous.QuotaUnit
 		}
 	}
+	for _, product := range existing {
+		productID := strings.TrimSpace(product.ProductID)
+		if _, ok := refreshedIDs[productID]; ok {
+			continue
+		}
+		if !isNinePlusSubscriptionConfiguredProduct(product) {
+			continue
+		}
+		refreshed = append(refreshed, product)
+	}
 	sort.SliceStable(refreshed, func(i, j int) bool {
 		return refreshed[i].SortOrder < refreshed[j].SortOrder
 	})
 	return refreshed
+}
+
+func isNinePlusSubscriptionConfiguredProduct(product ExternalShopProduct) bool {
+	text := strings.ToLower(strings.Join([]string{
+		product.Category,
+		product.Badge,
+		product.DisplayName,
+		product.Description,
+	}, " "))
+	return strings.Contains(text, "套餐") ||
+		strings.Contains(text, "月包") ||
+		strings.Contains(text, "月卡") ||
+		strings.Contains(text, "年包") ||
+		strings.Contains(text, "年卡") ||
+		strings.Contains(text, "会员") ||
+		strings.Contains(text, "畅用") ||
+		strings.Contains(text, "订阅") ||
+		strings.Contains(text, "subscription") ||
+		strings.Contains(text, "membership")
 }
 
 func cloneStringConfig(config map[string]string) map[string]string {
