@@ -485,6 +485,27 @@ func (h *DashboardHandler) GetUserUsageTrend(c *gin.Context) {
 	})
 }
 
+// GetActiveUsersTrend handles getting active users trend data
+// GET /api/v1/admin/dashboard/active-users-trend
+// Query params: start_date, end_date (YYYY-MM-DD), granularity (day/hour)
+func (h *DashboardHandler) GetActiveUsersTrend(c *gin.Context) {
+	startTime, endTime := parseTimeRange(c)
+	granularity := c.DefaultQuery("granularity", "day")
+
+	trend, err := h.dashboardService.GetActiveUsersTrend(c.Request.Context(), startTime, endTime, granularity)
+	if err != nil {
+		response.Error(c, 500, "Failed to get active users trend")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"trend":       trend,
+		"start_date":  startTime.Format("2006-01-02"),
+		"end_date":    endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+		"granularity": granularity,
+	})
+}
+
 // BatchUsersUsageRequest represents the request body for batch user usage stats
 type BatchUsersUsageRequest struct {
 	UserIDs []int64 `json:"user_ids" binding:"required"`

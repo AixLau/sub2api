@@ -1,0 +1,92 @@
+import { flushPromises, mount } from '@vue/test-utils'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
+import ClientSetupView from '../ClientSetupView.vue'
+
+const routeQuery = vi.hoisted(() => ({
+  setup_id: 'setup-123',
+  device_code: 'ABCD-1234',
+  client: 'codex'
+}))
+
+const getSession = vi.hoisted(() => vi.fn())
+const approveSession = vi.hoisted(() => vi.fn())
+
+vi.mock('vue-router', () => ({
+  useRoute: () => ({
+    query: routeQuery
+  })
+}))
+
+vi.mock('@/api', () => ({
+  clientSetupAPI: {
+    getSession,
+    approveSession
+  }
+}))
+
+describe('ClientSetupView', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    routeQuery.setup_id = 'setup-123'
+    routeQuery.device_code = 'ABCD-1234'
+    routeQuery.client = 'codex'
+    getSession.mockResolvedValue({
+      setup_id: 'setup-123',
+      device_code: 'ABCD-1234',
+      client: 'codex',
+      status: 'pending'
+    })
+    approveSession.mockResolvedValue({
+      setup_id: 'setup-123',
+      client: 'codex',
+      status: 'approved',
+      setup_token: 'setup-token-123',
+      redirect_uri: 'http://127.0.0.1:38173/callback?setup_token=setup-token-123'
+    })
+
+    Object.defineProperty(window, 'location', {
+      value: { href: '' },
+      writable: true,
+      configurable: true
+    })
+  })
+
+  it('automatically approves the setup session without requiring a click', async () => {
+    mount(ClientSetupView)
+
+    await flushPromises()
+
+    expect(getSession).toHaveBeenCalledWith('setup-123')
+    expect(approveSession).toHaveBeenCalledWith('setup-123', {
+      device_code: 'ABCD-1234',
+      client: 'codex'
+    })
+    expect(window.location.href).toBe('http://127.0.0.1:38173/callback?setup_token=setup-token-123')
+  })
+
+  it('shows a notification instead of an approval button while approving', async () => {
+    let resolveApprove: (value: unknown) => void = () => {}
+    approveSession.mockReturnValue(new Promise((resolve) => {
+      resolveApprove = resolve
+    }))
+
+    const wrapper = mount(ClientSetupView)
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('正在自动创建 API Key')
+    expect(wrapper.text()).toContain('无需点击同意')
+    expect(wrapper.find('button').exists()).toBe(false)
+
+    resolveApprove({
+      setup_id: 'setup-123',
+      client: 'codex',
+      status: 'approved',
+      setup_token: 'setup-token-123',
+      redirect_uri: 'http://127.0.0.1:38173/callback?setup_token=setup-token-123'
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已完成授权')
+  })
+})

@@ -162,6 +162,12 @@ type UserSpendingRankingResponse struct {
 	TotalTokens     int64                     `json:"total_tokens"`
 }
 
+// ActiveUsersTrendPoint represents active users count at a specific time point
+type ActiveUsersTrendPoint struct {
+	Date        string `json:"date"`
+	ActiveUsers int64  `json:"active_users"`
+}
+
 // UserBreakdownItem represents per-user usage breakdown within a dimension (group, model, endpoint).
 type UserBreakdownItem struct {
 	UserID      int64   `json:"user_id"`

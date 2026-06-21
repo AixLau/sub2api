@@ -1479,6 +1479,8 @@ export default {
       accountCost: 'Cost',
       noDataAvailable: 'No data available',
       recentUsage: 'Recent Usage',
+      activeUsersTrend: 'Active Users Trend',
+      activeUsers: 'Active Users',
       viewModelDistribution: 'Model Distribution',
       viewSpendingRanking: 'User Spending Ranking',
       spendingRankingTitle: 'User Spending Ranking',

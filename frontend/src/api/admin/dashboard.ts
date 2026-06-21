@@ -256,6 +256,39 @@ export async function getUserUsageTrend(params?: UserTrendParams): Promise<UserT
   return data
 }
 
+export interface ActiveUsersTrendPoint {
+  date: string
+  active_users: number
+}
+
+export interface ActiveUsersTrendParams {
+  start_date?: string
+  end_date?: string
+  granularity?: 'day' | 'hour'
+}
+
+export interface ActiveUsersTrendResponse {
+  trend: ActiveUsersTrendPoint[]
+  start_date: string
+  end_date: string
+  granularity: string
+}
+
+/**
+ * Get active users trend data
+ * @param params - Query parameters for filtering
+ * @returns Active users trend data
+ */
+export async function getActiveUsersTrend(
+  params?: ActiveUsersTrendParams
+): Promise<ActiveUsersTrendResponse> {
+  const { data } = await apiClient.get<ActiveUsersTrendResponse>(
+    '/admin/dashboard/active-users-trend',
+    { params }
+  )
+  return data
+}
+
 /**
  * Get user spending ranking data
  * @param params - Query parameters for filtering

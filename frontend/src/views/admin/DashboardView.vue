@@ -268,24 +268,28 @@
             <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
           </div>
 
-          <!-- User Usage Trend (Full Width) -->
-          <div class="card p-4">
-            <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
-              {{ t('admin.dashboard.recentUsage') }} (Top 12)
-            </h3>
-            <div class="h-64">
-              <div v-if="userTrendLoading" class="flex h-full items-center justify-center">
-                <LoadingSpinner size="md" />
-              </div>
-              <Line v-else-if="userTrendChartData" :data="userTrendChartData" :options="lineOptions" />
-              <div
-                v-else
-                class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400"
-              >
-                {{ t('admin.dashboard.noDataAvailable') }}
+          <!-- Active Users & User Usage Trends -->
+          <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <ActiveUsersTrend :trend-data="activeUsersTrend" :loading="activeUsersTrendLoading" />
+            <div class="card p-4">
+              <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+                {{ t('admin.dashboard.recentUsage') }} (Top 12)
+              </h3>
+              <div class="h-48">
+                <div v-if="userTrendLoading" class="flex h-full items-center justify-center">
+                  <LoadingSpinner size="md" />
+                </div>
+                <Line v-else-if="userTrendChartData" :data="userTrendChartData" :options="lineOptions" />
+                <div
+                  v-else
+                  class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+                >
+                  {{ t('admin.dashboard.noDataAvailable') }}
+                </div>
               </div>
             </div>
           </div>
+
         </div>
       </template>
     </div>
@@ -307,6 +311,7 @@ import type {
   UserUsageTrendPoint,
   UserSpendingRankingItem
 } from '@/types'
+import type { ActiveUsersTrendPoint } from '@/api/admin/dashboard'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -314,6 +319,7 @@ import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import Select from '@/components/common/Select.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
+import ActiveUsersTrend from '@/components/charts/ActiveUsersTrend.vue'
 
 import {
   Chart as ChartJS,
@@ -344,8 +350,24 @@ const stats = ref<DashboardStats | null>(null)
 const loading = ref(false)
 const chartsLoading = ref(false)
 const userTrendLoading = ref(false)
+const activeUsersTrendLoading = ref(false)
 const rankingLoading = ref(false)
 const rankingError = ref(false)
+
+// Chart data
+const trendData = ref<TrendDataPoint[]>([])
+const modelStats = ref<ModelStat[]>([])
+const userTrend = ref<UserUsageTrendPoint[]>([])
+const activeUsersTrend = ref<ActiveUsersTrendPoint[]>([])
+const rankingItems = ref<UserSpendingRankingItem[]>([])
+const rankingTotalActualCost = ref(0)
+const rankingTotalRequests = ref(0)
+const rankingTotalTokens = ref(0)
+let chartLoadSeq = 0
+let usersTrendLoadSeq = 0
+let activeUsersTrendLoadSeq = 0
+let rankingLoadSeq = 0
+const rankingLimit = 12
 
 // Chart data
 const trendData = ref<TrendDataPoint[]>([])
@@ -646,6 +668,28 @@ const loadUsersTrend = async () => {
   }
 }
 
+const loadActiveUsersTrend = async () => {
+  const currentSeq = ++activeUsersTrendLoadSeq
+  activeUsersTrendLoading.value = true
+  try {
+    const response = await adminAPI.dashboard.getActiveUsersTrend({
+      start_date: startDate.value,
+      end_date: endDate.value,
+      granularity: granularity.value
+    })
+    if (currentSeq !== activeUsersTrendLoadSeq) return
+    activeUsersTrend.value = response.trend || []
+  } catch (error) {
+    if (currentSeq !== activeUsersTrendLoadSeq) return
+    console.error('Error loading active users trend:', error)
+    activeUsersTrend.value = []
+  } finally {
+    if (currentSeq === activeUsersTrendLoadSeq) {
+      activeUsersTrendLoading.value = false
+    }
+  }
+}
+
 const loadUserSpendingRanking = async () => {
   const currentSeq = ++rankingLoadSeq
   rankingLoading.value = true
@@ -680,6 +724,7 @@ const loadDashboardStats = async () => {
   await Promise.all([
     loadDashboardSnapshot(true),
     loadUsersTrend(),
+    loadActiveUsersTrend(),
     loadUserSpendingRanking()
   ])
 }
@@ -688,6 +733,7 @@ const loadChartData = async () => {
   await Promise.all([
     loadDashboardSnapshot(false),
     loadUsersTrend(),
+    loadActiveUsersTrend(),
     loadUserSpendingRanking()
   ])
 }

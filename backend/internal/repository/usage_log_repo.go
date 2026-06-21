@@ -2768,6 +2768,45 @@ func (r *usageLogRepository) GetUserUsageTrendByUserID(ctx context.Context, user
 	return results, nil
 }
 
+// GetActiveUsersTrend returns active users count trend data
+func (r *usageLogRepository) GetActiveUsersTrend(ctx context.Context, startTime, endTime time.Time, granularity string) (results []usagestats.ActiveUsersTrendPoint, err error) {
+	dateFormat := safeDateFormat(granularity)
+
+	query := fmt.Sprintf(`
+		SELECT
+			TO_CHAR(created_at, '%s') as date,
+			COUNT(DISTINCT user_id) as active_users
+		FROM usage_logs
+		WHERE created_at >= $1 AND created_at < $2
+		GROUP BY date
+		ORDER BY date ASC
+	`, dateFormat)
+
+	rows, err := r.sql.QueryContext(ctx, query, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			results = nil
+		}
+	}()
+
+	results = make([]usagestats.ActiveUsersTrendPoint, 0)
+	for rows.Next() {
+		var row usagestats.ActiveUsersTrendPoint
+		if err = rows.Scan(&row.Date, &row.ActiveUsers); err != nil {
+			return nil, err
+		}
+		results = append(results, row)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
 // GetUserModelStats 获取指定用户的模型统计
 func (r *usageLogRepository) GetUserModelStats(ctx context.Context, userID int64, startTime, endTime time.Time) (results []ModelStat, err error) {
 	query := `

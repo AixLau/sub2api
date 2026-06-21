@@ -1489,6 +1489,8 @@ export default {
       tokens: 'Token',
       cache: '缓存',
       recentUsage: '最近使用',
+      activeUsersTrend: '活跃用户趋势',
+      activeUsers: '活跃用户',
       viewModelDistribution: '模型分布',
       viewSpendingRanking: '用户消费榜',
       spendingRankingTitle: '用户消费榜',
