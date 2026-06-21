@@ -669,12 +669,18 @@ function isNinePlusSubscriptionProduct(product: NinePlusProduct): boolean {
   const text = `${ninePlusProductCategory(product)} ${product.display_name} ${product.description}`.toLowerCase()
   return text.includes('套餐')
     || text.includes('月包')
+    || text.includes('月卡')
+    || text.includes('年包')
+    || text.includes('年卡')
+    || text.includes('会员')
+    || text.includes('畅用')
     || text.includes('订阅')
     || text.includes('subscription')
+    || text.includes('membership')
 }
 function ninePlusSubscriptionProductTitle(product: NinePlusProduct): string {
   return product.display_name
-    .replace(/[：:]\s*\d+(?:\.\d+)?\s*元\/月[，,]?\s*(?:月包)?\s*包含\s*\d+\s*额度.*$/, '')
+    .replace(/[：:]\s*\d+(?:\.\d+)?\s*元\/月[，,]?\s*(?:月包|月卡)?\s*包含\s*\d+\s*额度.*$/, '')
     .trim() || product.display_name
 }
 const activeNinePlusProducts = computed(() =>

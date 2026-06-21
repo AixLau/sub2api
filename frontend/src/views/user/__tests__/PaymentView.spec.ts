@@ -273,9 +273,9 @@ function checkoutInfoWithNinePlusCatalogFixture() {
         },
         {
           product_id: 'sub-starter',
-          display_name: 'Pro 入门月包：29.9 元/月，包含 220 额度',
-          description: '订阅套餐',
-          category: '套餐',
+          display_name: 'Pro 入门月卡：29.9 元/月，包含 220 额度',
+          description: 'Pro 入门会员',
+          category: '会员',
           currency: 'CNY',
           price: 29.9,
           fee: 0.6,
