@@ -2043,7 +2043,11 @@ func (cfg *ContentModerationConfig) keywordRules() []ContentModerationKeywordRul
 		return []ContentModerationKeywordRule{}
 	}
 	combined := make([]ContentModerationKeywordRule, 0, len(cfg.BlockedKeywords)+len(cfg.KeywordRules))
+	combined = append(combined, cfg.KeywordRules...)
 	for _, keyword := range cfg.BlockedKeywords {
+		if shouldSkipLegacyKeywordRule(keyword) {
+			continue
+		}
 		combined = append(combined, ContentModerationKeywordRule{
 			Keyword:  keyword,
 			Category: ContentModerationKeywordCategoryCustom,
@@ -2052,8 +2056,16 @@ func (cfg *ContentModerationConfig) keywordRules() []ContentModerationKeywordRul
 			Enabled:  true,
 		})
 	}
-	combined = append(combined, cfg.KeywordRules...)
 	return normalizeContentModerationKeywordRules(combined)
+}
+
+func shouldSkipLegacyKeywordRule(keyword string) bool {
+	switch strings.ToLower(strings.TrimSpace(keyword)) {
+	case "csam":
+		return true
+	default:
+		return false
+	}
 }
 
 func (cfg *ContentModerationConfig) includesGroup(groupID *int64) bool {

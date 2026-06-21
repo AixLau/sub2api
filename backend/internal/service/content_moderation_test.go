@@ -470,6 +470,40 @@ func TestMatchBlockedKeyword_NormalizesObfuscatedText(t *testing.T) {
 	require.Equal(t, "account_abuse", match.Category)
 }
 
+func TestContentModerationConfigKeywordRules_SkipsLegacySafetyAcronymFalsePositives(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.BlockedKeywords = []string{"CSAM", "child sexual abuse material", "儿童性虐待材料"}
+	cfg.normalize()
+
+	match, hit := matchContentModerationKeyword("Codex review history mentioned CSAM as a matched keyword in an audit log.", cfg.keywordRules())
+	require.False(t, hit)
+	require.Empty(t, match.Keyword)
+
+	match, hit = matchContentModerationKeyword("This request contains child sexual abuse material", cfg.keywordRules())
+	require.True(t, hit)
+	require.Equal(t, "child sexual abuse material", match.Keyword)
+
+	match, hit = matchContentModerationKeyword("这段输入包含儿童性虐待材料", cfg.keywordRules())
+	require.True(t, hit)
+	require.Equal(t, "儿童性虐待材料", match.Keyword)
+}
+
+func TestContentModerationConfigKeywordRules_AllowsExplicitSafetyAcronymRules(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.BlockedKeywords = []string{"CSAM"}
+	cfg.KeywordRules = []ContentModerationKeywordRule{
+		{Keyword: "CSAM", Category: "minor_safety", Severity: "critical", Action: "block", Enabled: true},
+	}
+	cfg.normalize()
+
+	match, hit := matchContentModerationKeyword("The request explicitly references CSAM.", cfg.keywordRules())
+
+	require.True(t, hit)
+	require.Equal(t, "CSAM", match.Keyword)
+	require.Equal(t, "minor_safety", match.Category)
+	require.Equal(t, "critical", match.Severity)
+}
+
 func TestContentModerationCheck_PreBlockKeywordHitSkipsUpstreamCall(t *testing.T) {
 	upstreamCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

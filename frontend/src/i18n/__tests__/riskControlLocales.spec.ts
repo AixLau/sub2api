@@ -32,4 +32,11 @@ describe('risk control locale copy', () => {
     expect(en.admin.riskControl.keywordTestMatched).toBe('Matched')
     expect(en.admin.riskControl.filters.search).toContain('keyword')
   })
+
+  it('labels stored moderation input as an excerpt instead of full content', () => {
+    expect(zh.admin.riskControl.inputDetailContent).toBe('输入摘要')
+    expect(zh.admin.riskControl.inputDetailContent).not.toContain('完整')
+    expect(en.admin.riskControl.inputDetailContent).toBe('Input Excerpt')
+    expect(en.admin.riskControl.inputDetailContent).not.toContain('Full')
+  })
 })

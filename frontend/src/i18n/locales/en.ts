@@ -2658,7 +2658,7 @@ export default {
       unbanSuccess: 'User has been unbanned',
       unbanFailed: 'Failed to unban user',
       inputDetailTitle: 'Input Summary Detail',
-      inputDetailContent: 'Full Content',
+      inputDetailContent: 'Input Excerpt',
       queueDelay: 'Queued {ms} ms',
       allGroups: 'All Groups',
       allGroupsHint: 'Auditing all groups',
