@@ -337,6 +337,64 @@ describe('admin RiskControlView', () => {
     expect(wrapper.text()).toContain('please sell api key now')
   })
 
+  it('shows structured keyword rules and preserves them when saving config', async () => {
+    const config = baseConfig()
+    config.keyword_rules = [
+      {
+        keyword: 'child sexual abuse material',
+        category: 'minor_safety',
+        severity: 'critical',
+        action: 'block',
+        enabled: true,
+      },
+      {
+        keyword: 'suicide method',
+        category: 'self_harm',
+        severity: 'critical',
+        action: 'block',
+        enabled: false,
+      },
+    ]
+    getConfig.mockResolvedValue(config)
+
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.keywords').trigger('click')
+
+    expect(wrapper.text()).toContain('admin.riskControl.keywordRules')
+    expect(wrapper.text()).toContain('admin.riskControl.keywordRuleCount')
+    expect(wrapper.text()).toContain('child sexual abuse material')
+    expect(wrapper.text()).toContain('minor_safety')
+    expect(wrapper.text()).toContain('critical')
+    expect(wrapper.text()).toContain('block')
+    expect(wrapper.text()).toContain('admin.riskControl.keywordRuleEnabled')
+    expect(wrapper.text()).toContain('suicide method')
+    expect(wrapper.text()).toContain('self_harm')
+    expect(wrapper.text()).toContain('admin.riskControl.keywordRuleDisabled')
+
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+    await flushPromises()
+
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+      keyword_rules: config.keyword_rules,
+    }))
+  })
+
   it('saves the selected model filter mode and models', async () => {
     const wrapper = mount(RiskControlView, {
       global: {

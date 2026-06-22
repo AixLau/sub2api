@@ -1007,6 +1007,58 @@
               </div>
             </div>
 
+            <div class="overflow-hidden rounded-lg border border-gray-100 bg-white dark:border-dark-700 dark:bg-dark-800">
+              <div class="flex flex-col gap-3 border-b border-gray-100 bg-gray-50 px-4 py-3 dark:border-dark-700 dark:bg-dark-800/60 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.keywordRules') }}</p>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.keywordRulesDescription') }}</p>
+                </div>
+                <span class="inline-flex w-fit rounded-md bg-white px-2 py-1 text-xs text-gray-500 shadow-sm dark:bg-dark-700 dark:text-gray-300">
+                  {{ t('admin.riskControl.keywordRuleCount', { enabled: enabledKeywordRuleCount, total: keywordRuleCount }) }}
+                </span>
+              </div>
+              <div v-if="keywordRuleList.length > 0" class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-100 text-sm dark:divide-dark-700">
+                  <thead class="bg-white text-xs uppercase text-gray-500 dark:bg-dark-800 dark:text-gray-400">
+                    <tr>
+                      <th class="px-4 py-3 text-left font-medium">{{ t('admin.riskControl.matchedKeyword') }}</th>
+                      <th class="px-4 py-3 text-left font-medium">{{ t('admin.riskControl.keywordCategory') }}</th>
+                      <th class="px-4 py-3 text-left font-medium">{{ t('admin.riskControl.keywordSeverity') }}</th>
+                      <th class="px-4 py-3 text-left font-medium">{{ t('admin.riskControl.keywordAction') }}</th>
+                      <th class="px-4 py-3 text-left font-medium">{{ t('admin.riskControl.keywordRuleStatus') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-100 bg-white dark:divide-dark-700 dark:bg-dark-800">
+                    <tr v-for="rule in keywordRuleList" :key="`${rule.keyword}:${rule.category}:${rule.severity}:${rule.action}`">
+                      <td class="max-w-[360px] px-4 py-3">
+                        <span class="block break-words font-mono text-xs font-semibold text-gray-900 dark:text-white">{{ rule.keyword }}</span>
+                      </td>
+                      <td class="px-4 py-3">
+                        <span class="inline-flex rounded-md bg-sky-50 px-2 py-1 font-mono text-xs font-medium text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">{{ rule.category || '-' }}</span>
+                      </td>
+                      <td class="px-4 py-3">
+                        <span class="inline-flex rounded-md bg-amber-50 px-2 py-1 font-mono text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{{ rule.severity || '-' }}</span>
+                      </td>
+                      <td class="px-4 py-3">
+                        <span class="font-mono text-xs font-medium text-gray-700 dark:text-gray-200">{{ rule.action || '-' }}</span>
+                      </td>
+                      <td class="px-4 py-3">
+                        <span
+                          class="inline-flex rounded-full px-2 py-1 text-xs font-medium"
+                          :class="rule.enabled ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300' : 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-300'"
+                        >
+                          {{ rule.enabled ? t('admin.riskControl.keywordRuleEnabled') : t('admin.riskControl.keywordRuleDisabled') }}
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div v-else class="px-4 py-6 text-sm text-gray-500 dark:text-gray-400">
+                {{ t('admin.riskControl.keywordRulesEmpty') }}
+              </div>
+            </div>
+
             <div>
               <div class="mb-2 flex items-center justify-between">
                 <label class="input-label mb-0">{{ t('admin.riskControl.blockedKeywords') }}</label>
@@ -1206,6 +1258,7 @@ import type {
   ContentModerationAPIKeyLoad,
   ContentModerationAPIKeyStatus,
   ContentModerationConfig,
+  ContentModerationKeywordRule,
   ContentModerationLog,
   ContentModerationModelFilter,
   ContentModerationModelFilterType,
@@ -1330,6 +1383,7 @@ const configForm = reactive({
   pre_hash_check_enabled: false,
   thresholds: { ...riskThresholdDefaults } as Record<string, number>,
   blocked_keywords_text: '',
+  keyword_rules: [] as ContentModerationKeywordRule[],
   keyword_blocking_mode: 'keyword_and_api' as KeywordBlockingMode,
   model_filter_type: 'all' as ContentModerationModelFilterType,
   model_filter_models: [] as string[],
@@ -1514,6 +1568,12 @@ const inputApiKeyCount = computed(() => parseApiKeys(configForm.api_keys_text).l
 const blockedKeywordList = computed(() => parseBlockedKeywords(configForm.blocked_keywords_text))
 
 const blockedKeywordCount = computed(() => blockedKeywordList.value.length)
+
+const keywordRuleList = computed(() => normalizeKeywordRules(configForm.keyword_rules))
+
+const keywordRuleCount = computed(() => keywordRuleList.value.length)
+
+const enabledKeywordRuleCount = computed(() => keywordRuleList.value.filter((rule) => rule.enabled).length)
 
 const pendingDeletedApiKeyCount = computed(() => pendingDeleteApiKeyHashes.value.length)
 
@@ -1807,6 +1867,7 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.pre_hash_check_enabled = config.pre_hash_check_enabled ?? false
   configForm.thresholds = riskThresholdsFromConfig(config.thresholds)
   configForm.blocked_keywords_text = Array.isArray(config.blocked_keywords) ? config.blocked_keywords.join('\n') : ''
+  configForm.keyword_rules = normalizeKeywordRules(config.keyword_rules)
   configForm.keyword_blocking_mode = normalizeKeywordBlockingMode(config.keyword_blocking_mode)
   const modelFilter = normalizeModelFilter(config.model_filter)
   configForm.model_filter_type = modelFilter.type
@@ -1888,6 +1949,7 @@ async function saveConfig() {
       pre_hash_check_enabled: configForm.pre_hash_check_enabled,
       thresholds: buildRiskThresholdPayload(),
       blocked_keywords: blockedKeywordList.value,
+      keyword_rules: keywordRuleList.value,
       keyword_blocking_mode: configForm.keyword_blocking_mode,
       model_filter: modelFilterPayload,
     }
@@ -2410,6 +2472,25 @@ function parseBlockedKeywords(value: string): string[] {
     if (seen.has(key)) continue
     seen.add(key)
     out.push(kw)
+  }
+  return out
+}
+
+function normalizeKeywordRules(value: unknown): ContentModerationKeywordRule[] {
+  if (!Array.isArray(value)) return []
+  const out: ContentModerationKeywordRule[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const raw = item as Partial<ContentModerationKeywordRule>
+    const keyword = String(raw.keyword ?? '').trim()
+    if (!keyword) continue
+    out.push({
+      keyword,
+      category: String(raw.category ?? 'other').trim() || 'other',
+      severity: String(raw.severity ?? 'high').trim() || 'high',
+      action: String(raw.action ?? 'block').trim() || 'block',
+      enabled: Boolean(raw.enabled),
+    })
   }
   return out
 }
