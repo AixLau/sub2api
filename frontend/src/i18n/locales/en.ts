@@ -4082,6 +4082,7 @@ export default {
       connectingToApi: 'Connecting to API...',
       testCompleted: 'Test completed successfully!',
       testFailed: 'Test failed',
+      testLatency: 'Latency: {latency}ms',
       connectedToApi: 'Connected to API',
       usingModel: 'Using model: {model}',
       sendingTestMessage: 'Sending test message: "hi"',

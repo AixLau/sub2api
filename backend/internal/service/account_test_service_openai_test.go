@@ -137,6 +137,38 @@ func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.
 	require.Contains(t, recorder.Body.String(), "test_complete")
 }
 
+func TestAccountTestService_OpenAISuccessIncludesTimingMetrics(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, recorder := newTestContext()
+
+	resp := newJSONResponse(http.StatusOK, "")
+	resp.Body = io.NopCloser(strings.NewReader(strings.Join([]string{
+		`data: {"type":"response.output_text.delta","delta":"hi"}`,
+		"",
+		`data: {"type":"response.completed"}`,
+		"",
+	}, "\n")))
+
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{httpUpstream: upstream}
+	account := &Account{
+		ID:          95,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{"access_token": "test-token"},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.4", "", "")
+	require.NoError(t, err)
+
+	body := recorder.Body.String()
+	require.Contains(t, body, `"type":"test_complete"`)
+	require.Contains(t, body, `"latency_ms"`)
+	require.Contains(t, body, `"duration_ms"`)
+	require.Contains(t, body, `"first_token_ms"`)
+}
+
 func TestAccountTestService_OpenAIStreamEOFBeforeCompletedFails(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, recorder := newTestContext()

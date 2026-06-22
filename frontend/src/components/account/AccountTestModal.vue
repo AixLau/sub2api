@@ -489,6 +489,8 @@ const handleEvent = (event: {
   error?: string
   image_url?: string
   mime_type?: string
+  latency_ms?: number
+  duration_ms?: number
 }) => {
   switch (event.type) {
     case 'test_start':
@@ -534,6 +536,9 @@ const handleEvent = (event: {
       if (streamingContent.value) {
         addLine(streamingContent.value, 'text-green-300')
         streamingContent.value = ''
+      }
+      if (typeof event.latency_ms === 'number') {
+        addLine(t('admin.accounts.testLatency', { latency: event.latency_ms }), 'text-cyan-300')
       }
       if (event.success) {
         status.value = 'success'

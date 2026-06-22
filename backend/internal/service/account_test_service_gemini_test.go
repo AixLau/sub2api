@@ -46,8 +46,10 @@ func TestProcessGeminiStream_EmitsImageEvent(t *testing.T) {
 	svc := &AccountTestService{}
 
 	stream := strings.NewReader("data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"},{\"inlineData\":{\"mimeType\":\"image/png\",\"data\":\"QUJD\"}}]}}]}\n\ndata: [DONE]\n\n")
+	metrics := newAccountTestMetrics()
+	metrics.markResponse()
 
-	err := svc.processGeminiStream(ctx, stream)
+	err := svc.processGeminiStream(ctx, stream, metrics)
 	require.NoError(t, err)
 
 	body := recorder.Body.String()
@@ -56,4 +58,6 @@ func TestProcessGeminiStream_EmitsImageEvent(t *testing.T) {
 	require.Contains(t, body, "\"type\":\"image\"")
 	require.Contains(t, body, "\"image_url\":\"data:image/png;base64,QUJD\"")
 	require.Contains(t, body, "\"mime_type\":\"image/png\"")
+	require.Contains(t, body, "\"latency_ms\"")
+	require.Contains(t, body, "\"duration_ms\"")
 }
