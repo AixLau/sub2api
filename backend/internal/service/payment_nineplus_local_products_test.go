@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -111,6 +112,59 @@ func TestValidateNinePlusSubscriptionOrderUsesExternalProductWithoutPlan(t *test
 
 	require.NoError(t, err)
 	require.Nil(t, plan)
+}
+
+func TestFulfillNinePlusPaymentOrderReturnsSubscriptionRedeemCode(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(77)
+	userID := int64(42)
+	redeemRepo := &paymentOrderLifecycleRedeemRepo{
+		codesByCode: map[string]*RedeemCode{
+			"CARD-SUB-MONTHLY": {
+				ID:           700,
+				Code:         "CARD-SUB-MONTHLY",
+				Type:         RedeemTypeSubscription,
+				Status:       StatusUnused,
+				GroupID:      &groupID,
+				ValidityDays: 30,
+			},
+		},
+	}
+	userRepo := &mockUserRepo{getByIDUser: &User{ID: userID, Email: "buyer@example.com", Username: "buyer"}}
+	groupRepo := &subscriptionGroupRepoStub{group: &Group{ID: groupID, Name: "Pro 月包", SubscriptionType: SubscriptionTypeSubscription}}
+	subRepo := newSubscriptionUserSubRepoStub()
+	subSvc := NewSubscriptionService(groupRepo, subRepo, nil, nil, nil)
+	redeemService := NewRedeemService(redeemRepo, userRepo, subSvc, nil, nil, newPaymentConfigServiceTestClient(t), nil, nil)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/shopApi/Order/info", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":1,"msg":"success","data":{"trade_no":"9P_SUB","goods_name":"Pro 月包","quantity":1,"total_amount":49.9,"status":1,"success_time":1781724711,"sendout":1,"contact":"buyer@example.com","response":{"cards":["CARD-SUB-MONTHLY"],"export_cards_url":""}}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	helper := NewExternalShopService(nil, redeemService).withProviderConfig(map[string]string{
+		"apiBase":        server.URL,
+		"shopToken":      "shop-token",
+		"defaultContact": "buyer@example.com",
+	})
+
+	result, err := helper.FulfillNinePlusPaymentOrder(ctx, &dbent.PaymentOrder{
+		UserID:         userID,
+		PaymentTradeNo: "9P_SUB",
+		ProviderSnapshot: map[string]any{
+			"schema_version":      2,
+			"external_product_id": "np-sub-monthly",
+			"contact":             "buyer@example.com",
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result.SubscriptionRedeemed)
+	require.Equal(t, "CARD-SUB-MONTHLY", result.SubscriptionRedeemed.Code)
+	require.Equal(t, RedeemTypeSubscription, result.SubscriptionRedeemed.Type)
+	require.Equal(t, 30, result.SubscriptionRedeemed.ValidityDays)
+	require.Len(t, redeemRepo.useCalls, 1)
 }
 
 func TestListNinePlusProductsFetchesAPICreditAndSubscriptionCategories(t *testing.T) {

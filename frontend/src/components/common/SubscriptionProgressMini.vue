@@ -138,13 +138,13 @@
                       :class="
                         getProgressBarClass(
                           subscription.monthly_usage_usd,
-                          subscription.group?.monthly_limit_usd
+                          getEffectiveMonthlyLimit(subscription)
                         )
                       "
                       :style="{
                         width: getProgressWidth(
                           subscription.monthly_usage_usd,
-                          subscription.group?.monthly_limit_usd
+                          getEffectiveMonthlyLimit(subscription)
                         )
                       }"
                     ></div>
@@ -153,7 +153,7 @@
                     {{
                       formatUsage(
                         subscription.monthly_usage_usd,
-                        subscription.group?.monthly_limit_usd
+                        getEffectiveMonthlyLimit(subscription)
                       )
                     }}
                   </span>
@@ -213,9 +213,13 @@ function getMaxUsagePercentage(sub: UserSubscription): number {
     percentages.push(((sub.weekly_usage_usd || 0) / sub.group.weekly_limit_usd) * 100)
   }
   if (sub.group?.monthly_limit_usd) {
-    percentages.push(((sub.monthly_usage_usd || 0) / sub.group.monthly_limit_usd) * 100)
+    percentages.push(((sub.monthly_usage_usd || 0) / getEffectiveMonthlyLimit(sub)) * 100)
   }
   return percentages.length > 0 ? Math.max(...percentages) : 0
+}
+
+function getEffectiveMonthlyLimit(sub: UserSubscription): number {
+  return (sub.group?.monthly_limit_usd || 0) + (sub.monthly_bonus_usd || 0)
 }
 
 function isUnlimited(sub: UserSubscription): boolean {

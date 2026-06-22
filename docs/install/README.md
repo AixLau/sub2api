@@ -6,7 +6,7 @@
 
 - **目标用户**：购买了星链 AI Hub 服务、需要配置客户端的普通用户
 - **覆盖平台**：macOS / Linux / Windows
-- **配置方式**：一键脚本（自动备份 + 交互式选择客户端 + 输入 API Key）
+- **配置方式**：一键脚本（自动备份 + 交互式选择客户端 + 浏览器登录授权 + 自动创建 API Key）
 
 ## 文件结构
 
@@ -14,9 +14,9 @@
 docs/install/
 ├── index.html          # 教程主页（单页应用，响应式设计）
 ├── assets/             # 配图资源
-│   ├── 01-api-keys.webp         # API 密钥页面截图
-│   ├── 02-mac-terminal.webp     # macOS 终端交互流程
-│   ├── 03-win-powershell.webp   # Windows PowerShell 交互流程
+│   ├── 01-api-keys.webp         # 备用：星链 AI Hub 登录/自动授权提示图
+│   ├── 02-mac-terminal.webp     # macOS 终端自动授权流程
+│   ├── 03-win-powershell.webp   # Windows PowerShell 自动授权流程
 │   └── 04-win-tray-quit.webp    # Windows 托盘退出 Codex 示意图
 └── README.md           # 本说明文件
 ```
@@ -24,7 +24,7 @@ docs/install/
 ## 技术栈
 
 - **纯静态 HTML + 内联 CSS/JS**，无外部依赖，部署到任何静态服务器即可
-- **WebP 图片格式**（总计 215KB，相比 PNG 压缩 95%）
+- **WebP 图片格式**，兼顾清晰度和加载速度
 - **iOS 风格动画**：Tab 切换、OS 面板 3D 翻转过渡（700ms 平滑动画）
 - **响应式设计**：支持桌面 / 平板 / 手机
 
@@ -90,9 +90,9 @@ cwebp -q 85 output.png -o 02-mac-terminal.webp
 
 ### 图片尺寸建议
 
-- **01-api-keys.webp**：API 密钥页面真实截图，保持原始分辨率
-- **02-mac-terminal.webp**：1774×887（接近 2K 横屏），背景使用 macOS Sequoia 默认壁纸
-- **03-win-powershell.webp**：约 1600×900，Windows 11 风格
+- **01-api-keys.webp**：备用图片，当前一键脚本主流程不展示登录配图
+- **02-mac-terminal.webp**：1774×887（接近 2K 横屏），展示 macOS 终端选择客户端后自动授权成功
+- **03-win-powershell.webp**：约 1600×900，展示 Windows PowerShell 选择客户端后自动授权成功
 - **04-win-tray-quit.webp**：约 1600×900，托盘特写，使用真实 Codex 图标（蓝紫渐变花瓣 + `>_` 符号）
 
 所有图片 `max-width: 900px` 居中显示，确保大屏不会过大。
@@ -100,7 +100,7 @@ cwebp -q 85 output.png -o 02-mac-terminal.webp
 ## 相关文档
 
 - **CC Switch 配置教程**：`docs/ccswitch/` - 图形化多账号切换工具
-- **一键脚本源码**：`deploy/install.sh` - 服务端部署脚本（不同于客户端配置脚本）
+- **一键脚本源码**：`deploy/client/` - 面向最终用户的客户端配置脚本
 - **主 README**：项目根目录 `README.md`
 
 ## 设计规范
@@ -122,7 +122,7 @@ cwebp -q 85 output.png -o 02-mac-terminal.webp
 
 ### 文案风格
 
-- **标题**：简洁动词式，如"登录创建 API Key"、"运行配置脚本"
+- **标题**：简洁动词式，如"登录 星链 AI Hub"、"运行配置脚本"
 - **正文**：逐步指引 + FAQ，避免技术术语，多用"看到 XX 就成功了"
 - **代码块**：单行命令 + 一键复制按钮
 
@@ -136,3 +136,8 @@ cwebp -q 85 output.png -o 02-mac-terminal.webp
   - 图片全部转 WebP 格式，体积减少 95%
   - 新增 iOS 风格 3D 翻转动画
   - 新增 Codex APP 使用说明
+- **2026-06-20**：更新为自动创建 API Key 流程
+  - 普通用户只需注册并登录 星链 AI Hub
+  - 一键脚本通过浏览器授权自动创建 API Key 并写入配置
+  - 更新 macOS / Windows 终端截图和登录授权示意图
+  - 教程强调 Codex APP 增强模式，保留官方插件、手机远程操作等功能

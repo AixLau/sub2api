@@ -52,6 +52,13 @@ func TestValidateProviderRequest(t *testing.T) {
 			wantErr:        false,
 		},
 		{
+			name:           "valid nineplus provider",
+			providerKey:    payment.TypeNinePlus,
+			providerName:   "9.plus Provider",
+			supportedTypes: payment.TypeNinePlus,
+			wantErr:        false,
+		},
+		{
 			name:           "valid alipay provider",
 			providerKey:    "alipay",
 			providerName:   "Alipay Direct",

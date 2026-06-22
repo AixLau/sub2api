@@ -72,7 +72,6 @@
               <p class="text-xl font-bold text-green-600 dark:text-green-400">
                 ${{ (usageStats?.total_actual_cost || 0).toFixed(4) }}
               </p>
-              <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('usage.actualCost') }}</p>
             </div>
           </div>
         </div>

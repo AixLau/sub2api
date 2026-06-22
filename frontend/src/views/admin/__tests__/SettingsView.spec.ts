@@ -589,6 +589,107 @@ describe("admin SettingsView payment visible method controls", () => {
     }
   });
 
+  it("offers nineplus as a creatable payment provider", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      payment_enabled_types: [
+        "easypay",
+        "alipay",
+        "wxpay",
+        "stripe",
+        "airwallex",
+        "nineplus",
+      ],
+    });
+
+    const PaymentProviderListStub = defineComponent({
+      emits: ["create"],
+      setup(_, { emit }) {
+        return () =>
+          h(
+            "button",
+            {
+              class: "provider-create-stub",
+              onClick: () => emit("create"),
+            },
+            "create provider",
+          );
+      },
+    });
+
+    const PaymentProviderDialogStub = defineComponent({
+      props: {
+        show: Boolean,
+        allKeyOptions: {
+          type: Array,
+          default: () => [],
+        },
+        enabledKeyOptions: {
+          type: Array,
+          default: () => [],
+        },
+        allPaymentTypes: {
+          type: Array,
+          default: () => [],
+        },
+      },
+      setup(props, { expose }) {
+        expose({
+          reset: vi.fn(),
+          loadProvider: vi.fn(),
+        });
+        return () =>
+          h("div", {
+            class: "provider-dialog-stub",
+            "data-show": String(props.show),
+            "data-all-key-options": JSON.stringify(props.allKeyOptions),
+            "data-enabled-key-options": JSON.stringify(props.enabledKeyOptions),
+            "data-all-payment-types": JSON.stringify(props.allPaymentTypes),
+          });
+      },
+    });
+
+    const wrapper = mount(SettingsView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          Select: SelectStub,
+          Toggle: ToggleStub,
+          Icon: true,
+          ConfirmDialog: true,
+          PaymentProviderList: PaymentProviderListStub,
+          PaymentProviderDialog: PaymentProviderDialogStub,
+          GroupBadge: true,
+          GroupOptionItem: true,
+          ProxySelector: true,
+          ImageUpload: ImageUploadStub,
+          BackupSettings: true,
+        },
+      },
+    });
+
+    await flushPromises();
+    await openPaymentTab(wrapper);
+    await wrapper.get(".provider-create-stub").trigger("click");
+    await flushPromises();
+
+    const dialog = wrapper.get(".provider-dialog-stub");
+    const allKeyOptions = JSON.parse(
+      dialog.attributes("data-all-key-options") || "[]",
+    ) as Array<{ value: string }>;
+    const enabledKeyOptions = JSON.parse(
+      dialog.attributes("data-enabled-key-options") || "[]",
+    ) as Array<{ value: string }>;
+    const allPaymentTypes = JSON.parse(
+      dialog.attributes("data-all-payment-types") || "[]",
+    ) as Array<{ value: string }>;
+
+    expect(dialog.attributes("data-show")).toBe("true");
+    expect(allKeyOptions.map((option) => option.value)).toContain("nineplus");
+    expect(enabledKeyOptions.map((option) => option.value)).toContain("nineplus");
+    expect(allPaymentTypes.map((option) => option.value)).toContain("nineplus");
+  });
+
   it("does not submit legacy visible payment method settings", async () => {
     const wrapper = mountView();
 

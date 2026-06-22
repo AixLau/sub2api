@@ -369,19 +369,6 @@ let activeUsersTrendLoadSeq = 0
 let rankingLoadSeq = 0
 const rankingLimit = 12
 
-// Chart data
-const trendData = ref<TrendDataPoint[]>([])
-const modelStats = ref<ModelStat[]>([])
-const userTrend = ref<UserUsageTrendPoint[]>([])
-const rankingItems = ref<UserSpendingRankingItem[]>([])
-const rankingTotalActualCost = ref(0)
-const rankingTotalRequests = ref(0)
-const rankingTotalTokens = ref(0)
-let chartLoadSeq = 0
-let usersTrendLoadSeq = 0
-let rankingLoadSeq = 0
-const rankingLimit = 12
-
 // Helper function to format date in local timezone
 const formatLocalDate = (date: Date): string => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`

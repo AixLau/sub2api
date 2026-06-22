@@ -494,7 +494,7 @@
         <p class="lead">
           两种配置方式任选其一：<span class="accent">一键脚本</span>
           自动写入本地配置（推荐），<span class="accent">CC Switch</span>
-          可视化管理多份配置。下面分步带你走完，傻瓜式按图操作即可。
+          可视化管理多份配置。Codex 支持应用增强模式：接入第三方 API 的同时，保留官方插件、手机远程操作等 Codex APP 能力。
         </p>
       </section>
 
@@ -555,26 +555,17 @@
           <article class="step">
             <div class="step-header">
               <span class="number">1</span>
-              <h2>登录 星链 AI Hub 创建 API Key</h2>
+              <h2>登录 星链 AI Hub</h2>
             </div>
             <p>
               访问
               <a href="https://aixlau.me" target="_blank" rel="noopener noreferrer"
                 >https://aixlau.me</a
               >
-              登录后进入「API 密钥」页面，点击「创建密钥」。命名随意，能识别用途即可（例如
-              <code>mac-codex</code>），并选择「按量计费」或「订阅」分组。
+              注册并登录即可。后续脚本会打开浏览器完成一次性授权，系统会自动创建 API Key 并写入本机配置，不需要你手动创建或复制密钥。
             </p>
-            <figure class="screenshot">
-              <img
-                src="/docs/install/assets/01-api-keys.webp"
-                alt="星链 AI Hub API 密钥页面"
-                loading="lazy"
-              />
-            </figure>
-            <div class="caption">在「API 密钥」页面创建一个新的密钥。</div>
             <div class="note">
-              <strong>提示：</strong>密钥创建好后，点击它右侧的复制按钮即可复制完整密钥，下一步会用到。
+              <strong>提示：</strong>如果浏览器里还没登录，授权页会先引导你登录。
             </div>
           </article>
 
@@ -594,38 +585,38 @@
               <span class="number">3</span>
               <h2>粘贴并运行下面的命令</h2>
             </div>
-            <p>把整行命令复制到终端按回车。脚本会自动下载安装程序，并在过程中提示你输入第 1 步创建的 API Key。</p>
+            <p>把整行命令复制到终端按回车。脚本会自动下载安装程序，然后打开浏览器完成授权；授权完成后会自动创建 API Key 并写入本机配置。</p>
             <div class="code-block">
               <button class="copy" data-copy>复制</button>
               <pre><code>curl -fsSL https://aixlau.me/install/bootstrap.sh | bash</code></pre>
             </div>
             <div class="note">
-              <strong>提示：</strong>粘贴 Key 时终端不会显示出来，是正常的，输入完直接回车即可。
+              <strong>提示：</strong>如果浏览器没有自动打开，终端里会显示一个链接和验证码，手动打开链接并保持登录即可，页面会自动处理。
             </div>
           </article>
 
           <article class="step">
             <div class="step-header">
               <span class="number">4</span>
-              <h2>选择客户端并粘贴 API Key</h2>
+              <h2>选择客户端并等待自动授权</h2>
             </div>
             <p>按下面两步操作：</p>
             <ol>
               <li>用 <kbd>↑</kbd> <kbd>↓</kbd> 选择要配置的客户端（默认已选中 <strong>Codex</strong>），按 <kbd>回车</kbd> 确认；</li>
-              <li>看到「请输入你的 API Key」时，粘贴第 1 步复制的密钥后回车（粘贴时不会显示出来，是正常的）。</li>
+              <li>浏览器打开授权页后，保持当前账号已登录即可。页面会自动创建 API Key 并把结果交回终端；只有自动授权失败时，脚本才会要求你手动输入 API Key。</li>
             </ol>
             <figure class="screenshot">
               <img
                 src="/docs/install/assets/02-mac-terminal.webp"
-                alt="macOS 终端中选择客户端并输入 API Key"
+                alt="macOS 终端中选择客户端并自动获取 API Key"
                 loading="lazy"
               />
             </figure>
-            <div class="caption">用上下键选中 Codex，回车后粘贴 API Key。</div>
+            <div class="caption">用上下键选中 Codex，回车后浏览器会自动完成授权并创建 API Key。</div>
             <p>回车后脚本会自动备份原配置并写入新配置，看到写入成功的提示就完成了。整个过程只配置你选中的那一个客户端，不会动其他客户端。</p>
             <div class="note success">
               <strong>会写入哪些文件：</strong>选 Codex 写入
-              <code>~/.codex/config.toml</code> 和 <code>~/.codex/auth.json</code>；选 Claude Code 写入
+              <code>~/.codex/</code> 下的相关文件；选 Claude Code 写入
               <code>~/.claude/settings.json</code>。如果文件已存在会先自动备份，可放心运行。
             </div>
           </article>
@@ -641,6 +632,9 @@
               <li>Codex CLI：终端里重新执行 <code>codex</code> 启动；</li>
               <li>Claude Code：终端里重新执行 <code>claude</code> 启动，会自动走 星链 AI Hub 网关。</li>
             </ul>
+            <div class="note success">
+              <strong>Codex APP 增强：</strong>选择 Codex 时，脚本会保留 Codex 应用增强能力；使用星链 AI Hub 第三方 API 的同时，仍可继续使用官方插件、手机远程操作等功能。
+            </div>
           </article>
         </div>
 
@@ -649,26 +643,17 @@
           <article class="step">
             <div class="step-header">
               <span class="number">1</span>
-              <h2>登录 星链 AI Hub 创建 API Key</h2>
+              <h2>登录 星链 AI Hub</h2>
             </div>
             <p>
               访问
               <a href="https://aixlau.me" target="_blank" rel="noopener noreferrer"
                 >https://aixlau.me</a
               >
-              登录后进入「API 密钥」页面，点击「创建密钥」。命名建议带平台标识，例如
-              <code>win-codex</code>，并选择「按量计费」或「订阅」分组。
+              注册并登录即可。后续脚本会打开浏览器完成一次性授权，系统会自动创建 API Key 并写入本机配置，不需要你手动创建或复制密钥。
             </p>
-            <figure class="screenshot">
-              <img
-                src="/docs/install/assets/01-api-keys.webp"
-                alt="星链 AI Hub API 密钥页面"
-                loading="lazy"
-              />
-            </figure>
-            <div class="caption">在「API 密钥」页面创建一个新的密钥。</div>
             <div class="note">
-              <strong>提示：</strong>密钥创建好后，点击它右侧的复制按钮即可复制完整密钥，下一步会用到。
+              <strong>提示：</strong>如果浏览器里还没登录，授权页会先引导你登录。
             </div>
           </article>
 
@@ -688,46 +673,45 @@
               <span class="number">3</span>
               <h2>粘贴并运行下面的命令</h2>
             </div>
-            <p>把命令整段复制到 PowerShell 里按回车。脚本会自动下载安装程序，然后先让你选择客户端，再提示输入第 1 步创建的 API Key。</p>
+            <p>把命令整段复制到 PowerShell 里按回车。脚本会自动下载安装程序，然后先让你选择客户端，再打开浏览器自动授权并创建 API Key。</p>
             <div class="code-block">
               <button class="copy" data-copy>复制</button>
-              <pre><code>irm "https://aixlau.me/install/bootstrap.ps1?v=20260618-encoding" | iex</code></pre>
+              <pre><code>irm "https://aixlau.me/install/bootstrap.ps1?v=20260620-auto-key" | iex</code></pre>
             </div>
             <div class="note">
-              <strong>提示：</strong>粘贴 Key 时 PowerShell 不会显示出来，是正常的，输入完直接回车即可。
+              <strong>提示：</strong>如果浏览器没有自动打开，PowerShell 里会显示一个链接和验证码，手动打开链接并保持登录即可，页面会自动处理。
             </div>
             <div class="note warn">
               <strong>如果提示"无法加载脚本 / 执行策略"被拦住：</strong>复制下面这条等效命令再跑一次即可（只对本次有效，不改你电脑的全局设置）。
             </div>
             <div class="code-block">
               <button class="copy" data-copy>复制</button>
-              <pre><code>powershell -ExecutionPolicy Bypass -Command "irm 'https://aixlau.me/install/bootstrap.ps1?v=20260618-encoding' | iex"</code></pre>
+              <pre><code>powershell -ExecutionPolicy Bypass -Command "irm 'https://aixlau.me/install/bootstrap.ps1?v=20260620-auto-key' | iex"</code></pre>
             </div>
           </article>
 
           <article class="step">
             <div class="step-header">
               <span class="number">4</span>
-              <h2>选择客户端并粘贴 API Key</h2>
+              <h2>选择客户端并等待自动授权</h2>
             </div>
             <p>按下面两步操作：</p>
             <ol>
               <li>用 <kbd>↑</kbd> <kbd>↓</kbd> 选择要配置的客户端（默认已选中 <strong>Codex</strong>），按 <kbd>回车</kbd> 确认；</li>
-              <li>看到「请输入你的 API Key」时，粘贴第 1 步复制的密钥后回车（粘贴时不会显示出来，是正常的）。</li>
+              <li>浏览器打开授权页后，保持当前账号已登录即可。页面会自动创建 API Key 并把结果交回 PowerShell；只有自动授权失败时，脚本才会要求你手动输入 API Key。</li>
             </ol>
             <figure class="screenshot">
               <img
                 src="/docs/install/assets/03-win-powershell.webp"
-                alt="PowerShell 中选择客户端并输入 API Key"
+                alt="PowerShell 中选择客户端并自动获取 API Key"
                 loading="lazy"
               />
             </figure>
-            <div class="caption">用上下键选中 Codex，回车后粘贴 API Key。</div>
+            <div class="caption">用上下键选中 Codex，回车后浏览器会自动完成授权并创建 API Key。</div>
             <p>回车后脚本会自动备份原配置并写入新配置，看到写入成功的提示就完成了。整个过程只配置你选中的那一个客户端，不会动其他客户端。</p>
             <div class="note success">
               <strong>会写入哪些文件：</strong>选 Codex 写入
-              <code>%USERPROFILE%\.codex\config.toml</code> 和
-              <code>%USERPROFILE%\.codex\auth.json</code>；选 Claude Code 写入
+              <code>%USERPROFILE%\.codex\</code> 下的相关文件；选 Claude Code 写入
               <code>%USERPROFILE%\.claude\settings.json</code>。如果文件已存在会先自动备份，可放心运行。
             </div>
           </article>
@@ -743,6 +727,9 @@
               <li>Codex CLI：在 PowerShell 里重新执行 <code>codex</code> 启动；</li>
               <li>Claude Code：重新执行 <code>claude</code> 启动，会自动走 星链 AI Hub 网关。</li>
             </ul>
+            <div class="note success">
+              <strong>Codex APP 增强：</strong>选择 Codex 时，脚本会保留 Codex 应用增强能力；使用星链 AI Hub 第三方 API 的同时，仍可继续使用官方插件、手机远程操作等功能。
+            </div>
             <div class="note warn">
               <strong>Windows 上 Codex APP 要彻底退出才会生效：</strong>直接点右上角的 <kbd>×</kbd>
               只是最小化到右下角的系统托盘，程序其实还在运行，配置不会重新加载。请在右下角任务栏托盘区（必要时点 <kbd>∧</kbd>
@@ -772,8 +759,8 @@
           <p>macOS 自带 <code>curl</code> 和 <code>bash</code>，不需要额外装。Windows 用 PowerShell 5.1 及以上即可（Win10/11 自带）。Codex 和 Claude Code 客户端要自己装好，脚本只负责写配置文件。</p>
           <p style="margin-top:16px"><strong>Q：脚本会把我原来的配置覆盖掉吗？</strong></p>
           <p>不会丢。每个被改动的文件都会先备份成 <code>xxx.bak.YYYYMMDD-HHMMSS</code> 留在原目录，需要回退直接把 <code>.bak.*</code> 改回原名即可。</p>
-          <p style="margin-top:16px"><strong>Q：换了新 Key 怎么办？</strong></p>
-          <p>重新跑一遍同样的命令，输入新 Key 即可，旧的会自动覆盖。</p>
+          <p style="margin-top:16px"><strong>Q：我还需要自己创建 API Key 吗？</strong></p>
+          <p>不需要。普通一键脚本流程只要求你注册并登录 星链 AI Hub，脚本会自动创建一个专用 API Key 并写入本机配置。</p>
           <p style="margin-top:16px"><strong>Q：想恢复成官方 Codex/Claude？</strong></p>
           <p>把对应的备份文件 <code>.bak.*</code> 改回原文件名，或直接删掉脚本生成的配置块（<code>config.toml</code> 里有 <code># BEGIN SUB2API MANAGED BLOCK</code> 标记区段）。</p>
         </article>
@@ -878,7 +865,7 @@
       </section>
 
       <footer>
-        最后更新：2026-06-18 · 文档地址：<a href="https://aixlau.me/docs/install/">https://aixlau.me/docs/install/</a>
+        最后更新：2026-06-20 · 文档地址：<a href="https://aixlau.me/docs/install/">https://aixlau.me/docs/install/</a>
       </footer>
     </main>
 

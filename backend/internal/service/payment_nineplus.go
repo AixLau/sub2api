@@ -18,9 +18,10 @@ import (
 const ninePlusProductsConfigKey = "products"
 
 type ninePlusFulfillmentResult struct {
-	CreditedAmount float64
-	RedeemedCodes  []string
-	DeliveredCodes []string
+	CreditedAmount       float64
+	RedeemedCodes        []string
+	DeliveredCodes       []string
+	SubscriptionRedeemed *RedeemCode
 }
 
 type ninePlusConfiguredProduct struct {
@@ -106,7 +107,11 @@ func (s *PaymentService) ExecuteNinePlusFulfillment(ctx context.Context, oid int
 	if o.OrderType == payment.OrderTypeSubscription {
 		auditAction = "SUBSCRIPTION_SUCCESS"
 	}
-	return s.markCompleted(ctx, o, auditAction)
+	var emailCtx *subscriptionPurchaseEmailContext
+	if o.OrderType == payment.OrderTypeSubscription && result != nil {
+		emailCtx = s.subscriptionPurchaseEmailContextFromRedeem(ctx, o, result.SubscriptionRedeemed)
+	}
+	return s.markCompleted(ctx, o, auditAction, emailCtx)
 }
 
 func (s *ExternalShopService) FulfillNinePlusPaymentOrder(ctx context.Context, order *dbent.PaymentOrder) (*ninePlusFulfillmentResult, error) {
@@ -148,6 +153,7 @@ func (s *ExternalShopService) FulfillNinePlusPaymentOrder(ctx context.Context, o
 
 	redeemedCodes := make([]string, 0, len(deliveredCodes))
 	creditedAmount := 0.0
+	var subscriptionRedeemed *RedeemCode
 	for _, code := range deliveredCodes {
 		redeemCode, lookupErr := s.redeemService.GetByCode(ctx, code)
 		if lookupErr == nil && redeemCode != nil && redeemCode.IsUsed() {
@@ -156,6 +162,9 @@ func (s *ExternalShopService) FulfillNinePlusPaymentOrder(ctx context.Context, o
 			}
 			redeemedCodes = append(redeemedCodes, code)
 			creditedAmount += redeemCode.Value
+			if redeemCode.Type == RedeemTypeSubscription {
+				subscriptionRedeemed = redeemCode
+			}
 			continue
 		}
 		redeemedCode, err := s.redeemService.Redeem(ContextSkipRedeemAffiliate(ctx), order.UserID, code)
@@ -165,6 +174,9 @@ func (s *ExternalShopService) FulfillNinePlusPaymentOrder(ctx context.Context, o
 		redeemedCodes = append(redeemedCodes, code)
 		if redeemedCode != nil {
 			creditedAmount += redeemedCode.Value
+			if redeemedCode.Type == RedeemTypeSubscription {
+				subscriptionRedeemed = redeemedCode
+			}
 		}
 	}
 	if creditedAmount <= 0 {
@@ -172,9 +184,10 @@ func (s *ExternalShopService) FulfillNinePlusPaymentOrder(ctx context.Context, o
 	}
 
 	return &ninePlusFulfillmentResult{
-		CreditedAmount: creditedAmount,
-		RedeemedCodes:  redeemedCodes,
-		DeliveredCodes: deliveredCodes,
+		CreditedAmount:       creditedAmount,
+		RedeemedCodes:        redeemedCodes,
+		DeliveredCodes:       deliveredCodes,
+		SubscriptionRedeemed: subscriptionRedeemed,
 	}, nil
 }
 

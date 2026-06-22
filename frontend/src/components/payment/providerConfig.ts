@@ -148,6 +148,12 @@ export const PROVIDER_CONFIG_FIELDS: Record<string, ConfigFieldDef[]> = {
     { key: 'currency', label: '', sensitive: false, defaultValue: 'CNY', hintKey: 'admin.settings.payment.field_paymentCurrencyHint', options: PAYMENT_CURRENCY_OPTIONS },
     { key: 'accountId', label: '', sensitive: false, optional: true, clearable: true, hintKey: 'admin.settings.payment.field_accountIdHint' },
   ],
+  nineplus: [
+    { key: 'shopToken', label: '', sensitive: false, hintKey: 'admin.settings.payment.field_nineplusShopTokenHint' },
+    { key: 'defaultContact', label: '', sensitive: false, hintKey: 'admin.settings.payment.field_nineplusDefaultContactHint' },
+    { key: 'channelId', label: '', sensitive: false, defaultValue: '10', optional: true, hintKey: 'admin.settings.payment.field_nineplusChannelIdHint' },
+    { key: 'apiBase', label: '', sensitive: false, defaultValue: 'https://9.plus', optional: true },
+  ],
 }
 
 // --- Helpers ---

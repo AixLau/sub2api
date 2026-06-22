@@ -166,6 +166,7 @@ After deploying the Sub2API server, users need to configure their AI coding clie
 An interactive configuration script for macOS / Windows / Linux that automatically:
 - Backs up existing configurations
 - Lets users select their client (Codex or Claude Code)
+- Opens the browser for login authorization and creates a dedicated API Key
 - Writes API endpoint and authentication settings
 - Supports both clients without conflicts
 
@@ -183,6 +184,7 @@ irm https://aixlau.me/install/bootstrap.ps1 | iex
 - ✅ Automatic OS detection and client selection
 - ✅ Safe backup before modification (`.bak.YYYYMMDD-HHMMSS`)
 - ✅ Interactive prompts in Chinese
+- ✅ No manual API Key creation for ordinary users
 - ✅ Works with both Codex and Claude Code
 - ✅ No manual file editing required
 
@@ -233,7 +235,7 @@ sudo systemctl start sub2api
 sudo systemctl enable sub2api
 
 # 3. Open Setup Wizard in browser
-# http://YOUR_SERVER_IP:8080
+# http://47.253.153.89:8080
 ```
 
 The Setup Wizard will guide you through:
@@ -379,7 +381,7 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 
 #### Access
 
-Open `http://YOUR_SERVER_IP:8080` in your browser.
+Open `http://47.253.153.89:8080` in your browser.
 
 If admin password was auto-generated, find it in logs:
 ```bash

@@ -16,6 +16,19 @@ const { query, getStatsByDateRange, list, showError, showWarning, showSuccess, s
 
 const messages: Record<string, string> = {
   'usage.costDetails': 'Cost Breakdown',
+  'usage.totalCost': 'Total Cost',
+  'usage.actualCost': 'Actual',
+  'usage.inSelectedRange': 'In selected range',
+  'usage.totalRequests': 'Total Requests',
+  'usage.totalTokens': 'Total Tokens',
+  'usage.in': 'In',
+  'usage.out': 'Out',
+  'usage.cacheHit': 'Cache Hit',
+  'usage.cacheCreate': 'Cache Create',
+  'usage.cacheHitRate': 'Cache Hit Rate',
+  'usage.avgDuration': 'Avg Duration',
+  'usage.perRequest': 'Per Request',
+  'usage.timeRange': 'Time Range',
   'admin.usage.inputCost': 'Input Cost',
   'admin.usage.outputCost': 'Output Cost',
   'admin.usage.cacheCreationCost': 'Cache Creation Cost',
@@ -315,6 +328,49 @@ describe('user UsageView tooltip', () => {
     window.URL.createObjectURL = originalCreateObjectURL
     window.URL.revokeObjectURL = originalRevokeObjectURL
     clickSpy.mockRestore()
+  })
+
+  it('does not show the actual-cost helper label under total cost', async () => {
+    query.mockResolvedValue({
+      items: [],
+      total: 0,
+      pages: 0,
+    })
+    getStatsByDateRange.mockResolvedValue({
+      total_requests: 2,
+      total_input_tokens: 500,
+      total_output_tokens: 600,
+      total_cache_read_tokens: 100,
+      total_cache_creation_tokens: 50,
+      total_tokens: 1250,
+      total_cost: 900,
+      total_actual_cost: 842.7168,
+      average_duration_ms: 12,
+    })
+    list.mockResolvedValue({ items: [] })
+
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          TablePageLayout: TablePageLayoutStub,
+          Pagination: true,
+          EmptyState: true,
+          Select: true,
+          DateRangePicker: true,
+          DataTable: DataTableStub,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('Total Cost')
+    expect(text).toContain('$842.7168')
+    expect(text).not.toContain('Actual')
   })
 
   it('exports csv with input and output unit price columns', async () => {

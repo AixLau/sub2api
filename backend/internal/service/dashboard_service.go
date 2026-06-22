@@ -33,6 +33,10 @@ type dashboardStatsRangeFetcher interface {
 	GetDashboardStatsWithRange(ctx context.Context, start, end time.Time) (*usagestats.DashboardStats, error)
 }
 
+type activeUsersTrendFetcher interface {
+	GetActiveUsersTrend(ctx context.Context, startTime, endTime time.Time, granularity string) ([]usagestats.ActiveUsersTrendPoint, error)
+}
+
 type dashboardStatsCacheEntry struct {
 	Stats     *usagestats.DashboardStats `json:"stats"`
 	UpdatedAt int64                      `json:"updated_at"`
@@ -358,7 +362,11 @@ func (s *DashboardService) GetUserUsageTrend(ctx context.Context, startTime, end
 }
 
 func (s *DashboardService) GetActiveUsersTrend(ctx context.Context, startTime, endTime time.Time, granularity string) ([]usagestats.ActiveUsersTrendPoint, error) {
-	trend, err := s.usageRepo.GetActiveUsersTrend(ctx, startTime, endTime, granularity)
+	fetcher, ok := s.usageRepo.(activeUsersTrendFetcher)
+	if !ok {
+		return nil, fmt.Errorf("usage repository does not support active users trend")
+	}
+	trend, err := fetcher.GetActiveUsersTrend(ctx, startTime, endTime, granularity)
 	if err != nil {
 		return nil, fmt.Errorf("get active users trend: %w", err)
 	}

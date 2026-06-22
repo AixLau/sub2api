@@ -167,6 +167,16 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/client-setup',
+    name: 'ClientSetup',
+    component: () => import('@/views/ClientSetupView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Client Setup'
+    }
+  },
+  {
     path: '/legal/:documentId',
     name: 'LegalDocument',
     component: () => import('@/views/public/LegalDocumentView.vue'),

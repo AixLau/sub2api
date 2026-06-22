@@ -302,7 +302,7 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder) e
 	return s.markCompleted(ctx, o, "RECHARGE_SUCCESS")
 }
 
-func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrder, auditAction string) error {
+func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrder, auditAction string, emailContexts ...*subscriptionPurchaseEmailContext) error {
 	now := time.Now()
 	_, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(o.ID), paymentorder.StatusEQ(OrderStatusRecharging)).SetStatus(OrderStatusCompleted).SetCompletedAt(now).Save(ctx)
 	if err != nil {
@@ -313,11 +313,15 @@ func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrde
 		"creditedAmount": o.Amount,
 		"payAmount":      o.PayAmount,
 	})
-	s.dispatchPaymentFulfillmentNotification(o, auditAction)
+	var emailCtx *subscriptionPurchaseEmailContext
+	if len(emailContexts) > 0 {
+		emailCtx = emailContexts[0]
+	}
+	s.dispatchPaymentFulfillmentNotification(o, auditAction, emailCtx)
 	return nil
 }
 
-func (s *PaymentService) dispatchPaymentFulfillmentNotification(o *dbent.PaymentOrder, auditAction string) {
+func (s *PaymentService) dispatchPaymentFulfillmentNotification(o *dbent.PaymentOrder, auditAction string, emailCtx *subscriptionPurchaseEmailContext) {
 	if s == nil || s.notificationEmailService == nil || o == nil {
 		return
 	}
@@ -329,7 +333,7 @@ func (s *PaymentService) dispatchPaymentFulfillmentNotification(o *dbent.Payment
 		case "RECHARGE_SUCCESS":
 			err = s.sendBalanceRechargeSuccessNotification(ctx, o)
 		case "SUBSCRIPTION_SUCCESS":
-			err = s.sendSubscriptionPurchaseSuccessNotification(ctx, o)
+			err = s.sendSubscriptionPurchaseSuccessNotification(ctx, o, emailCtx)
 		default:
 			return
 		}
@@ -361,24 +365,16 @@ func (s *PaymentService) sendBalanceRechargeSuccessNotification(ctx context.Cont
 	})
 }
 
-func (s *PaymentService) sendSubscriptionPurchaseSuccessNotification(ctx context.Context, o *dbent.PaymentOrder) error {
-	variables := map[string]string{
-		"subscription_group": "Subscription",
-		"subscription_days":  "",
-		"expiry_time":        "",
-		"order_id":           strconv.FormatInt(o.ID, 10),
-	}
-	if o.SubscriptionDays != nil {
-		variables["subscription_days"] = strconv.Itoa(*o.SubscriptionDays)
-	}
+func (s *PaymentService) sendSubscriptionPurchaseSuccessNotification(ctx context.Context, o *dbent.PaymentOrder, emailCtx *subscriptionPurchaseEmailContext) error {
+	variables := subscriptionPurchaseSuccessVariables(o, emailCtx)
 	if o.SubscriptionGroupID != nil {
 		if s.groupRepo != nil {
-			if group, err := s.groupRepo.GetByID(ctx, *o.SubscriptionGroupID); err == nil && group != nil && strings.TrimSpace(group.Name) != "" {
+			if group, err := s.groupRepo.GetByID(ctx, *o.SubscriptionGroupID); err == nil && group != nil && strings.TrimSpace(variables["subscription_group"]) == "Subscription" && strings.TrimSpace(group.Name) != "" {
 				variables["subscription_group"] = group.Name
 			}
 		}
 		if s.subscriptionSvc != nil {
-			if sub, err := s.subscriptionSvc.GetActiveSubscription(ctx, o.UserID, *o.SubscriptionGroupID); err == nil && sub != nil {
+			if sub, err := s.subscriptionSvc.GetActiveSubscription(ctx, o.UserID, *o.SubscriptionGroupID); err == nil && sub != nil && strings.TrimSpace(variables["expiry_time"]) == "" {
 				variables["expiry_time"] = sub.ExpiresAt.Format("2006-01-02 15:04")
 			}
 		}
@@ -392,6 +388,92 @@ func (s *PaymentService) sendSubscriptionPurchaseSuccessNotification(ctx context
 		SourceID:       strconv.FormatInt(o.ID, 10),
 		Variables:      variables,
 	})
+}
+
+type subscriptionPurchaseEmailContext struct {
+	GroupName    string
+	ValidityDays int
+	ExpiresAt    time.Time
+}
+
+func subscriptionPurchaseSuccessVariables(o *dbent.PaymentOrder, emailCtx *subscriptionPurchaseEmailContext) map[string]string {
+	variables := map[string]string{
+		"subscription_group": "Subscription",
+		"subscription_days":  "",
+		"expiry_time":        "",
+		"order_id":           "",
+	}
+	if o == nil {
+		return variables
+	}
+	variables["order_id"] = strconv.FormatInt(o.ID, 10)
+	if o.SubscriptionDays != nil {
+		variables["subscription_days"] = strconv.Itoa(*o.SubscriptionDays)
+	}
+	if emailCtx == nil {
+		return variables
+	}
+	if groupName := strings.TrimSpace(emailCtx.GroupName); groupName != "" {
+		variables["subscription_group"] = groupName
+	}
+	if emailCtx.ValidityDays > 0 {
+		variables["subscription_days"] = strconv.Itoa(emailCtx.ValidityDays)
+	}
+	if !emailCtx.ExpiresAt.IsZero() {
+		variables["expiry_time"] = emailCtx.ExpiresAt.Format("2006-01-02 15:04")
+	}
+	return variables
+}
+
+func (s *PaymentService) subscriptionPurchaseEmailContext(ctx context.Context, o *dbent.PaymentOrder, sub *UserSubscription) *subscriptionPurchaseEmailContext {
+	if o == nil && sub == nil {
+		return nil
+	}
+	emailCtx := &subscriptionPurchaseEmailContext{}
+	if o != nil && o.SubscriptionDays != nil {
+		emailCtx.ValidityDays = *o.SubscriptionDays
+	}
+	if sub != nil {
+		if !sub.ExpiresAt.IsZero() {
+			emailCtx.ExpiresAt = sub.ExpiresAt
+		}
+		if sub.Group != nil && strings.TrimSpace(sub.Group.Name) != "" {
+			emailCtx.GroupName = sub.Group.Name
+		}
+		if emailCtx.GroupName == "" && sub.GroupID > 0 && s != nil && s.groupRepo != nil {
+			if group, err := s.groupRepo.GetByID(ctx, sub.GroupID); err == nil && group != nil {
+				emailCtx.GroupName = strings.TrimSpace(group.Name)
+			}
+		}
+	}
+	return emailCtx
+}
+
+func (s *PaymentService) subscriptionPurchaseEmailContextFromRedeem(ctx context.Context, o *dbent.PaymentOrder, redeemCode *RedeemCode) *subscriptionPurchaseEmailContext {
+	if redeemCode == nil || redeemCode.Type != RedeemTypeSubscription || redeemCode.GroupID == nil {
+		return nil
+	}
+	emailCtx := &subscriptionPurchaseEmailContext{ValidityDays: redeemCode.ValidityDays}
+	if redeemCode.Group != nil && strings.TrimSpace(redeemCode.Group.Name) != "" {
+		emailCtx.GroupName = redeemCode.Group.Name
+	}
+	groupID := *redeemCode.GroupID
+	if emailCtx.GroupName == "" && s != nil && s.groupRepo != nil {
+		if group, err := s.groupRepo.GetByID(ctx, groupID); err == nil && group != nil {
+			emailCtx.GroupName = strings.TrimSpace(group.Name)
+		}
+	}
+	if s != nil && s.subscriptionSvc != nil && o != nil {
+		if sub, err := s.subscriptionSvc.GetActiveSubscription(ctx, o.UserID, groupID); err == nil && sub != nil {
+			if !sub.ExpiresAt.IsZero() {
+				emailCtx.ExpiresAt = sub.ExpiresAt
+			}
+			if emailCtx.GroupName == "" && sub.Group != nil {
+				emailCtx.GroupName = strings.TrimSpace(sub.Group.Name)
+			}
+		}
+	}
+	return emailCtx
 }
 
 func (s *PaymentService) ExecuteSubscriptionFulfillment(ctx context.Context, oid int64) error {
@@ -439,11 +521,11 @@ func (s *PaymentService) doSub(ctx context.Context, o *dbent.PaymentOrder) error
 		return s.markCompleted(ctx, o, "SUBSCRIPTION_SUCCESS")
 	}
 	orderNote := fmt.Sprintf("payment order %d", o.ID)
-	_, _, err = s.subscriptionSvc.AssignOrExtendSubscription(ctx, &AssignSubscriptionInput{UserID: o.UserID, GroupID: gid, ValidityDays: days, AssignedBy: 0, Notes: orderNote})
+	sub, _, err := s.subscriptionSvc.AssignOrExtendSubscription(ctx, &AssignSubscriptionInput{UserID: o.UserID, GroupID: gid, ValidityDays: days, AssignedBy: 0, Notes: orderNote})
 	if err != nil {
 		return fmt.Errorf("assign subscription: %w", err)
 	}
-	return s.markCompleted(ctx, o, "SUBSCRIPTION_SUCCESS")
+	return s.markCompleted(ctx, o, "SUBSCRIPTION_SUCCESS", s.subscriptionPurchaseEmailContext(ctx, o, sub))
 }
 
 func (s *PaymentService) hasAuditLog(ctx context.Context, orderID int64, action string) bool {

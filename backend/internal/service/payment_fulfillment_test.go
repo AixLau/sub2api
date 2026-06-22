@@ -7,10 +7,12 @@ import (
 	"errors"
 	"math"
 	"testing"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type paymentFulfillmentTestProvider struct {
@@ -264,6 +266,66 @@ func TestExpectedNotificationProviderKeyForOrderUsesSnapshotProviderKey(t *testi
 		payment.TypeEasyPay,
 		expectedNotificationProviderKeyForOrder(registry, order, ""),
 	)
+}
+
+func TestSubscriptionPurchaseEmailVariablesPreferFulfillmentContext(t *testing.T) {
+	t.Parallel()
+
+	days := 30
+	expiresAt := time.Date(2026, 7, 21, 9, 30, 0, 0, time.UTC)
+	order := &dbent.PaymentOrder{
+		ID:     189,
+		UserID: 42,
+	}
+
+	variables := subscriptionPurchaseSuccessVariables(order, &subscriptionPurchaseEmailContext{
+		GroupName:    "Pro 畅用月包",
+		ValidityDays: days,
+		ExpiresAt:    expiresAt,
+	})
+
+	require.Equal(t, "Pro 畅用月包", variables["subscription_group"])
+	require.Equal(t, "30", variables["subscription_days"])
+	require.Equal(t, "2026-07-21 09:30", variables["expiry_time"])
+	require.Equal(t, "189", variables["order_id"])
+}
+
+func TestSubscriptionPurchaseEmailContextFromRedeemUsesActiveSubscription(t *testing.T) {
+	t.Parallel()
+
+	groupID := int64(7)
+	expiresAt := time.Date(2026, 8, 1, 14, 45, 0, 0, time.UTC)
+	groupRepo := &subscriptionGroupRepoStub{
+		group: &Group{ID: groupID, Name: "Claude Pro 月包", SubscriptionType: SubscriptionTypeSubscription},
+	}
+	subRepo := newSubscriptionUserSubRepoStub()
+	subRepo.seed(&UserSubscription{
+		ID:        70,
+		UserID:    42,
+		GroupID:   groupID,
+		ExpiresAt: expiresAt,
+		Status:    SubscriptionStatusActive,
+		Group:     groupRepo.group,
+	})
+	subSvc := NewSubscriptionService(groupRepo, subRepo, nil, nil, nil)
+	svc := &PaymentService{
+		groupRepo:       groupRepo,
+		subscriptionSvc: subSvc,
+	}
+
+	emailCtx := svc.subscriptionPurchaseEmailContextFromRedeem(context.Background(), &dbent.PaymentOrder{
+		ID:     189,
+		UserID: 42,
+	}, &RedeemCode{
+		Type:         RedeemTypeSubscription,
+		GroupID:      &groupID,
+		ValidityDays: 30,
+	})
+
+	require.NotNil(t, emailCtx)
+	require.Equal(t, "Claude Pro 月包", emailCtx.GroupName)
+	require.Equal(t, 30, emailCtx.ValidityDays)
+	require.Equal(t, expiresAt, emailCtx.ExpiresAt)
 }
 
 func TestValidateProviderNotificationMetadataRejectsWxpaySnapshotMismatch(t *testing.T) {

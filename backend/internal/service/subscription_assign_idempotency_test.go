@@ -177,6 +177,15 @@ func (s *subscriptionUserSubRepoStub) GetByUserIDAndGroupID(_ context.Context, u
 	return &cp, nil
 }
 
+func (s *subscriptionUserSubRepoStub) GetActiveByUserIDAndGroupID(_ context.Context, userID, groupID int64) (*UserSubscription, error) {
+	sub := s.byUserGroup[s.key(userID, groupID)]
+	if sub == nil || sub.Status != SubscriptionStatusActive || !sub.ExpiresAt.After(time.Now()) {
+		return nil, ErrSubscriptionNotFound
+	}
+	cp := *sub
+	return &cp, nil
+}
+
 func (s *subscriptionUserSubRepoStub) Create(_ context.Context, sub *UserSubscription) error {
 	if sub == nil {
 		return nil
