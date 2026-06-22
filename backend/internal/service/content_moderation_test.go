@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
@@ -77,14 +78,22 @@ func (r *contentModerationTestSettingRepo) Delete(ctx context.Context, key strin
 }
 
 type contentModerationTestRepo struct {
-	mu   sync.Mutex
-	logs []ContentModerationLog
+	mu     sync.Mutex
+	logs   []ContentModerationLog
+	nextID int64
 }
 
 func (r *contentModerationTestRepo) CreateLog(ctx context.Context, log *ContentModerationLog) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if log != nil {
+		r.nextID++
+		if log.ID == 0 {
+			log.ID = r.nextID
+		}
+		if log.CreatedAt.IsZero() {
+			log.CreatedAt = time.Now()
+		}
 		r.logs = append(r.logs, *log)
 	}
 	return nil
@@ -119,6 +128,27 @@ func (r *contentModerationTestRepo) CleanupExpiredLogs(ctx context.Context, hitB
 
 func (r *contentModerationTestRepo) UpdateLogEmailSent(ctx context.Context, id int64, sent bool) error {
 	return nil
+}
+
+func (r *contentModerationTestRepo) ReviewLog(ctx context.Context, id int64, input ContentModerationLogReviewInput) (*ContentModerationLog, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for idx := range r.logs {
+		if r.logs[idx].ID != id {
+			continue
+		}
+		r.logs[idx].ReviewStatus = normalizeContentModerationReviewStatus(input.Status)
+		r.logs[idx].ReviewNote = strings.TrimSpace(input.Note)
+		if input.ReviewedBy > 0 {
+			reviewer := input.ReviewedBy
+			r.logs[idx].ReviewedBy = &reviewer
+		}
+		now := time.Now()
+		r.logs[idx].ReviewedAt = &now
+		out := r.logs[idx]
+		return &out, nil
+	}
+	return nil, infraerrors.NotFound("CONTENT_MODERATION_LOG_NOT_FOUND", "审核记录不存在")
 }
 
 func (r *contentModerationTestRepo) snapshotLogs() []ContentModerationLog {
@@ -594,6 +624,107 @@ func TestContentModerationCheck_StructuredKeywordRuleMetadataLogged(t *testing.T
 	require.Equal(t, "face recognition database", logs[0].MatchedKeyword)
 	require.Equal(t, "biometric", logs[0].KeywordCategory)
 	require.Equal(t, "critical", logs[0].KeywordSeverity)
+}
+
+func TestContentModerationCheck_ObserveKeywordRuleRecordsReviewWithoutBlocking(t *testing.T) {
+	upstreamCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalled = true
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{Results: []moderationAPIResult{{
+			CategoryScores: map[string]float64{
+				"harassment": 0.01,
+			},
+		}}})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.KeywordRules = []ContentModerationKeywordRule{
+		{Keyword: "儿童性虐待材料", Category: "minor_safety", Severity: "critical", Action: "observe", Enabled: true},
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"请把 儿童性虐待材料 这个审计关键词归类到 minor_safety"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionKeywordReview, decision.Action)
+	require.False(t, upstreamCalled, "keyword-only mode should not call upstream after recording a review signal")
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.False(t, logs[0].Flagged)
+	require.Equal(t, ContentModerationActionKeywordReview, logs[0].Action)
+	require.Equal(t, "儿童性虐待材料", logs[0].MatchedKeyword)
+	require.Equal(t, "minor_safety", logs[0].KeywordCategory)
+	require.Equal(t, "critical", logs[0].KeywordSeverity)
+	require.Equal(t, ContentModerationRiskContextMetaDiscussion, logs[0].RiskContextType)
+	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+}
+
+func TestContentModerationCheck_MetaDiscussionDowngradesBlockKeywordToReview(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.KeywordRules = []ContentModerationKeywordRule{
+		{Keyword: "儿童性虐待材料", Category: "minor_safety", Severity: "critical", Action: "block", Enabled: true},
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"根据 OpenAI 违规行为列表，帮我完善 儿童性虐待材料 这个审计关键词"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionKeywordReview, decision.Action)
+	require.Equal(t, ContentModerationKeywordActionBlock, decision.KeywordAction)
+	require.Equal(t, ContentModerationKeywordActionObserve, decision.EffectiveKeywordAction)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, ContentModerationActionKeywordReview, logs[0].Action)
+	require.Equal(t, ContentModerationRiskContextMetaDiscussion, logs[0].RiskContextType)
+	require.Equal(t, ContentModerationKeywordActionBlock, logs[0].KeywordAction)
+	require.Equal(t, ContentModerationKeywordActionObserve, logs[0].EffectiveKeywordAction)
 }
 
 func TestContentModerationKeywordTest_DoesNotWriteLogs(t *testing.T) {

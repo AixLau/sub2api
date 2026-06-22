@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
@@ -53,19 +54,22 @@ INSERT INTO content_moderation_logs (
     request_id, user_id, user_email, api_key_id, api_key_name, group_id, group_name,
     endpoint, provider, model, mode, action, flagged, highest_category, highest_score,
     category_scores, threshold_snapshot, input_excerpt, upstream_latency_ms, error,
-    matched_keyword, keyword_category, keyword_severity,
+    matched_keyword, keyword_category, keyword_severity, keyword_action, effective_keyword_action,
+    risk_context_type, risk_context_reason, review_status, review_note, reviewed_by, reviewed_at,
     violation_count, auto_banned, email_sent, queue_delay_ms
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, $12, $13, $14, $15,
     $16::jsonb, $17::jsonb, $18, $19, $20,
-    $21, $22, $23,
-    $24, $25, $26, $27
+    $21, $22, $23, $24, $25,
+    $26, $27, $28, $29, $30, $31,
+    $32, $33, $34, $35
 ) RETURNING id, created_at`,
 		log.RequestID, userID, log.UserEmail, apiKeyID, log.APIKeyName, groupID, log.GroupName,
 		log.Endpoint, log.Provider, log.Model, log.Mode, log.Action, log.Flagged, log.HighestCategory, log.HighestScore,
 		string(categoryScores), string(thresholdSnapshot), log.InputExcerpt, latency, log.Error,
-		log.MatchedKeyword, log.KeywordCategory, log.KeywordSeverity,
+		log.MatchedKeyword, log.KeywordCategory, log.KeywordSeverity, log.KeywordAction, log.EffectiveKeywordAction,
+		log.RiskContextType, log.RiskContextReason, log.ReviewStatus, log.ReviewNote, nullableInt64Ptr(log.ReviewedBy), log.ReviewedAt,
 		log.ViolationCount, log.AutoBanned, log.EmailSent, nullableIntPtr(log.QueueDelayMS),
 	).Scan(&log.ID, &log.CreatedAt)
 	if err != nil {
@@ -101,6 +105,9 @@ SELECT
     l.endpoint, l.provider, l.model, l.mode, l.action, l.flagged, l.highest_category, l.highest_score,
     l.category_scores, l.threshold_snapshot, l.input_excerpt, l.upstream_latency_ms, l.error,
     COALESCE(l.matched_keyword, ''), COALESCE(l.keyword_category, ''), COALESCE(l.keyword_severity, ''),
+    COALESCE(l.keyword_action, ''), COALESCE(l.effective_keyword_action, ''),
+    COALESCE(l.risk_context_type, ''), COALESCE(l.risk_context_reason, ''),
+    COALESCE(l.review_status, ''), COALESCE(l.review_note, ''), l.reviewed_by, l.reviewed_at,
     l.violation_count, l.auto_banned, l.email_sent, COALESCE(u.status, ''), l.queue_delay_ms, l.created_at
 FROM content_moderation_logs l
 LEFT JOIN users u ON u.id = l.user_id `+whereSQL+`
@@ -116,7 +123,8 @@ LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 	items := make([]service.ContentModerationLog, 0)
 	for rows.Next() {
 		var item service.ContentModerationLog
-		var userID, apiKeyID, groupID, latency, queueDelay sql.NullInt64
+		var userID, apiKeyID, groupID, latency, queueDelay, reviewedBy sql.NullInt64
+		var reviewedAt sql.NullTime
 		var scoresRaw, thresholdsRaw []byte
 		if err := rows.Scan(
 			&item.ID,
@@ -143,6 +151,14 @@ LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 			&item.MatchedKeyword,
 			&item.KeywordCategory,
 			&item.KeywordSeverity,
+			&item.KeywordAction,
+			&item.EffectiveKeywordAction,
+			&item.RiskContextType,
+			&item.RiskContextReason,
+			&item.ReviewStatus,
+			&item.ReviewNote,
+			&reviewedBy,
+			&reviewedAt,
 			&item.ViolationCount,
 			&item.AutoBanned,
 			&item.EmailSent,
@@ -171,6 +187,14 @@ LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 		if queueDelay.Valid {
 			v := int(queueDelay.Int64)
 			item.QueueDelayMS = &v
+		}
+		if reviewedBy.Valid {
+			v := reviewedBy.Int64
+			item.ReviewedBy = &v
+		}
+		if reviewedAt.Valid {
+			t := reviewedAt.Time
+			item.ReviewedAt = &t
 		}
 		item.CategoryScores = map[string]float64{}
 		_ = json.Unmarshal(scoresRaw, &item.CategoryScores)
@@ -201,6 +225,7 @@ FROM content_moderation_logs
 WHERE user_id = $1
   AND flagged = TRUE
   AND action <> 'hash_block'
+  AND action <> 'keyword_review'
   AND ($3::bool IS FALSE OR action <> 'cyber_policy')
   AND created_at >= $2
   AND created_at > COALESCE((SELECT at FROM last_auto_ban), '-infinity'::timestamptz)
@@ -217,6 +242,139 @@ func (r *contentModerationRepository) UpdateLogEmailSent(ctx context.Context, id
 		return fmt.Errorf("update content moderation log email_sent: %w", err)
 	}
 	return nil
+}
+
+func (r *contentModerationRepository) ReviewLog(ctx context.Context, id int64, input service.ContentModerationLogReviewInput) (*service.ContentModerationLog, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("invalid content moderation log id")
+	}
+	var reviewedBy any
+	if input.ReviewedBy > 0 {
+		reviewedBy = input.ReviewedBy
+	}
+	rows, err := r.db.QueryContext(ctx, `
+WITH updated AS (
+    UPDATE content_moderation_logs
+    SET review_status = $2,
+        review_note = $3,
+        reviewed_by = $4,
+        reviewed_at = NOW()
+    WHERE id = $1
+    RETURNING *
+)
+SELECT
+    l.id, l.request_id, l.user_id, l.user_email, l.api_key_id, l.api_key_name, l.group_id, l.group_name,
+    l.endpoint, l.provider, l.model, l.mode, l.action, l.flagged, l.highest_category, l.highest_score,
+    l.category_scores, l.threshold_snapshot, l.input_excerpt, l.upstream_latency_ms, l.error,
+    COALESCE(l.matched_keyword, ''), COALESCE(l.keyword_category, ''), COALESCE(l.keyword_severity, ''),
+    COALESCE(l.keyword_action, ''), COALESCE(l.effective_keyword_action, ''),
+    COALESCE(l.risk_context_type, ''), COALESCE(l.risk_context_reason, ''),
+    COALESCE(l.review_status, ''), COALESCE(l.review_note, ''), l.reviewed_by, l.reviewed_at,
+    l.violation_count, l.auto_banned, l.email_sent, COALESCE(u.status, ''), l.queue_delay_ms, l.created_at
+FROM updated l
+LEFT JOIN users u ON u.id = l.user_id
+`, id, input.Status, input.Note, reviewedBy)
+	if err != nil {
+		return nil, fmt.Errorf("review content moderation log: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	items, err := scanContentModerationLogRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return nil, infraerrors.NotFound("CONTENT_MODERATION_LOG_NOT_FOUND", "审核记录不存在")
+	}
+	return &items[0], nil
+}
+
+func scanContentModerationLogRows(rows *sql.Rows) ([]service.ContentModerationLog, error) {
+	items := make([]service.ContentModerationLog, 0)
+	for rows.Next() {
+		var item service.ContentModerationLog
+		var userID, apiKeyID, groupID, latency, queueDelay, reviewedBy sql.NullInt64
+		var reviewedAt sql.NullTime
+		var scoresRaw, thresholdsRaw []byte
+		if err := rows.Scan(
+			&item.ID,
+			&item.RequestID,
+			&userID,
+			&item.UserEmail,
+			&apiKeyID,
+			&item.APIKeyName,
+			&groupID,
+			&item.GroupName,
+			&item.Endpoint,
+			&item.Provider,
+			&item.Model,
+			&item.Mode,
+			&item.Action,
+			&item.Flagged,
+			&item.HighestCategory,
+			&item.HighestScore,
+			&scoresRaw,
+			&thresholdsRaw,
+			&item.InputExcerpt,
+			&latency,
+			&item.Error,
+			&item.MatchedKeyword,
+			&item.KeywordCategory,
+			&item.KeywordSeverity,
+			&item.KeywordAction,
+			&item.EffectiveKeywordAction,
+			&item.RiskContextType,
+			&item.RiskContextReason,
+			&item.ReviewStatus,
+			&item.ReviewNote,
+			&reviewedBy,
+			&reviewedAt,
+			&item.ViolationCount,
+			&item.AutoBanned,
+			&item.EmailSent,
+			&item.UserStatus,
+			&queueDelay,
+			&item.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan content moderation log: %w", err)
+		}
+		if userID.Valid {
+			v := userID.Int64
+			item.UserID = &v
+		}
+		if apiKeyID.Valid {
+			v := apiKeyID.Int64
+			item.APIKeyID = &v
+		}
+		if groupID.Valid {
+			v := groupID.Int64
+			item.GroupID = &v
+		}
+		if latency.Valid {
+			v := int(latency.Int64)
+			item.UpstreamLatencyMS = &v
+		}
+		if queueDelay.Valid {
+			v := int(queueDelay.Int64)
+			item.QueueDelayMS = &v
+		}
+		if reviewedBy.Valid {
+			v := reviewedBy.Int64
+			item.ReviewedBy = &v
+		}
+		if reviewedAt.Valid {
+			t := reviewedAt.Time
+			item.ReviewedAt = &t
+		}
+		item.CategoryScores = map[string]float64{}
+		_ = json.Unmarshal(scoresRaw, &item.CategoryScores)
+		item.ThresholdSnapshot = map[string]float64{}
+		_ = json.Unmarshal(thresholdsRaw, &item.ThresholdSnapshot)
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate content moderation logs: %w", err)
+	}
+	return items, nil
 }
 
 func (r *contentModerationRepository) CleanupExpiredLogs(ctx context.Context, hitBefore time.Time, nonHitBefore time.Time) (*service.ContentModerationCleanupResult, error) {
@@ -253,6 +411,13 @@ func nullableIntPtr(value *int) any {
 	return *value
 }
 
+func nullableInt64Ptr(value *int64) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
+
 func buildContentModerationLogWhere(filter service.ContentModerationLogFilter) ([]string, []any) {
 	where := []string{"l.id IS NOT NULL"}
 	args := make([]any, 0)
@@ -265,10 +430,15 @@ func buildContentModerationLogWhere(filter service.ContentModerationLogFilter) (
 		where = append(where, "l.flagged = TRUE")
 	case "blocked", "block":
 		where = append(where, "l.action IN ('block', 'keyword_block', 'hash_block')")
+	case "review", "keyword_review":
+		where = append(where, "l.action = 'keyword_review'")
 	case "pass", "allow":
 		where = append(where, "l.flagged = FALSE AND l.error = ''")
 	case "error":
 		where = append(where, "l.error <> ''")
+	}
+	if reviewStatus := strings.TrimSpace(filter.ReviewStatus); reviewStatus != "" {
+		add("l.review_status = $%d", reviewStatus)
 	}
 	if filter.GroupID != nil {
 		add("l.group_id = $%d", *filter.GroupID)
@@ -278,9 +448,9 @@ func buildContentModerationLogWhere(filter service.ContentModerationLogFilter) (
 	}
 	if search := strings.TrimSpace(filter.Search); search != "" {
 		like := "%" + search + "%"
-		args = append(args, like, like, like, like, like, like, like)
-		idx := len(args) - 6
-		where = append(where, fmt.Sprintf("(l.request_id ILIKE $%d OR l.user_email ILIKE $%d OR l.api_key_name ILIKE $%d OR l.model ILIKE $%d OR l.input_excerpt ILIKE $%d OR l.matched_keyword ILIKE $%d OR l.keyword_category ILIKE $%d)", idx, idx+1, idx+2, idx+3, idx+4, idx+5, idx+6))
+		args = append(args, like, like, like, like, like, like, like, like, like, like, like)
+		idx := len(args) - 10
+		where = append(where, fmt.Sprintf("(l.request_id ILIKE $%d OR l.user_email ILIKE $%d OR l.api_key_name ILIKE $%d OR l.model ILIKE $%d OR l.input_excerpt ILIKE $%d OR l.matched_keyword ILIKE $%d OR l.keyword_category ILIKE $%d OR l.keyword_action ILIKE $%d OR l.effective_keyword_action ILIKE $%d OR l.risk_context_type ILIKE $%d OR l.review_status ILIKE $%d)", idx, idx+1, idx+2, idx+3, idx+4, idx+5, idx+6, idx+7, idx+8, idx+9, idx+10))
 	}
 	if filter.From != nil && !filter.From.IsZero() {
 		add("l.created_at >= $%d", *filter.From)

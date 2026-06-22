@@ -263,8 +263,9 @@
               </div>
             </div>
 
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-7">
               <Select v-model="filters.result" :options="resultOptions" @change="reloadLogsFromFirstPage" />
+              <Select v-model="filters.review_status" :options="reviewStatusOptions" @change="reloadLogsFromFirstPage" />
               <Select v-model="filters.group_id" :options="groupFilterOptions" @change="reloadLogsFromFirstPage" />
               <Select v-model="filters.endpoint" :options="endpointOptions" @change="reloadLogsFromFirstPage" />
               <input v-model.trim="filters.search" type="search" class="input" :placeholder="t('admin.riskControl.filters.search')" @keyup.enter="reloadLogsFromFirstPage" />
@@ -329,6 +330,35 @@
                         <div class="truncate text-amber-600/80 dark:text-amber-200/80">
                           {{ row.keyword_category || '-' }} / {{ row.keyword_severity || '-' }}
                         </div>
+                        <div class="truncate text-amber-600/80 dark:text-amber-200/80">
+                          {{ t('admin.riskControl.keywordAction') }}: {{ keywordActionText(row) }}
+                        </div>
+                        <div v-if="row.risk_context_type" class="truncate text-amber-600/80 dark:text-amber-200/80">
+                          {{ t('admin.riskControl.riskContext') }}: {{ riskContextLabel(row.risk_context_type) }}
+                        </div>
+                        <div v-if="row.review_status" class="truncate text-amber-600/80 dark:text-amber-200/80">
+                          {{ t('admin.riskControl.reviewStatusLabel') }}: {{ reviewStatusLabel(row.review_status) }}
+                        </div>
+                      </div>
+                      <div v-if="row.action === 'keyword_review'" class="mt-2 flex flex-wrap gap-1.5">
+                        <button
+                          type="button"
+                          class="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-900/60 dark:bg-emerald-900/20 dark:text-emerald-300"
+                          :disabled="reviewingLogID === row.id"
+                          @click="reviewLog(row, 'false_positive')"
+                        >
+                          <Icon name="checkCircle" size="xs" :class="reviewingLogID === row.id ? 'animate-spin' : ''" />
+                          {{ t('admin.riskControl.markFalsePositive') }}
+                        </button>
+                        <button
+                          type="button"
+                          class="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-900/60 dark:bg-rose-900/20 dark:text-rose-300"
+                          :disabled="reviewingLogID === row.id"
+                          @click="reviewLog(row, 'confirmed_violation')"
+                        >
+                          <Icon name="exclamationTriangle" size="xs" />
+                          {{ t('admin.riskControl.markConfirmedViolation') }}
+                        </button>
                       </div>
                       <button
                         v-if="canUnbanRow(row)"
@@ -1130,6 +1160,14 @@
                       <p class="text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.keywordAction') }}</p>
                       <p class="mt-1 break-words font-mono font-semibold text-gray-900 dark:text-white">{{ keywordTestResult.keyword_action || '-' }}</p>
                     </div>
+                    <div class="rounded-md bg-gray-50 p-2 dark:bg-dark-700/60">
+                      <p class="text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.effectiveKeywordAction') }}</p>
+                      <p class="mt-1 break-words font-mono font-semibold text-gray-900 dark:text-white">{{ keywordTestResult.effective_keyword_action || '-' }}</p>
+                    </div>
+                    <div class="rounded-md bg-gray-50 p-2 dark:bg-dark-700/60">
+                      <p class="text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.riskContext') }}</p>
+                      <p class="mt-1 break-words font-mono font-semibold text-gray-900 dark:text-white">{{ riskContextLabel(keywordTestResult.risk_context_type) }}</p>
+                    </div>
                   </div>
                 </div>
                 <div v-else class="flex min-h-32 items-center justify-center rounded-lg border border-dashed border-gray-200 px-4 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400">
@@ -1213,6 +1251,26 @@
               <div>
                 <p class="text-xs font-medium text-amber-700/80 dark:text-amber-200/80">{{ t('admin.riskControl.keywordSeverity') }}</p>
                 <p class="mt-1 break-words font-mono text-sm font-semibold text-amber-900 dark:text-amber-50">{{ inputDetailRow.keyword_severity || '-' }}</p>
+              </div>
+              <div>
+                <p class="text-xs font-medium text-amber-700/80 dark:text-amber-200/80">{{ t('admin.riskControl.keywordAction') }}</p>
+                <p class="mt-1 break-words font-mono text-sm font-semibold text-amber-900 dark:text-amber-50">{{ keywordActionText(inputDetailRow) }}</p>
+              </div>
+              <div>
+                <p class="text-xs font-medium text-amber-700/80 dark:text-amber-200/80">{{ t('admin.riskControl.riskContext') }}</p>
+                <p class="mt-1 break-words font-mono text-sm font-semibold text-amber-900 dark:text-amber-50">{{ riskContextLabel(inputDetailRow.risk_context_type) }}</p>
+              </div>
+              <div>
+                <p class="text-xs font-medium text-amber-700/80 dark:text-amber-200/80">{{ t('admin.riskControl.reviewStatusLabel') }}</p>
+                <p class="mt-1 break-words font-mono text-sm font-semibold text-amber-900 dark:text-amber-50">{{ reviewStatusLabel(inputDetailRow.review_status) }}</p>
+              </div>
+              <div class="sm:col-span-3">
+                <p class="text-xs font-medium text-amber-700/80 dark:text-amber-200/80">{{ t('admin.riskControl.riskContextReason') }}</p>
+                <p class="mt-1 break-words font-mono text-sm font-semibold text-amber-900 dark:text-amber-50">{{ inputDetailRow.risk_context_reason || '-' }}</p>
+              </div>
+              <div v-if="inputDetailRow.review_note" class="sm:col-span-3">
+                <p class="text-xs font-medium text-amber-700/80 dark:text-amber-200/80">{{ t('admin.riskControl.reviewNote') }}</p>
+                <p class="mt-1 break-words text-sm font-semibold text-amber-900 dark:text-amber-50">{{ inputDetailRow.review_note }}</p>
               </div>
             </div>
           </div>
@@ -1332,6 +1390,7 @@ const apiKeyTesting = ref(false)
 const keywordTesting = ref(false)
 const hashActionLoading = ref(false)
 const unbanningUserID = ref<number | null>(null)
+const reviewingLogID = ref<number | null>(null)
 const settingsOpen = ref(false)
 const activeSettingsTab = ref<SettingsTab>('basic')
 const groupSearch = ref('')
@@ -1398,6 +1457,7 @@ const pagination = reactive({
 
 const filters = reactive({
   result: '',
+  review_status: '',
   group_id: 0,
   endpoint: '',
   search: '',
@@ -1515,8 +1575,16 @@ const resultOptions = computed<SelectOption[]>(() => [
   { value: '', label: t('admin.riskControl.result.all') },
   { value: 'hit', label: t('admin.riskControl.result.hit') },
   { value: 'blocked', label: t('admin.riskControl.result.blocked') },
+  { value: 'review', label: t('admin.riskControl.result.review') },
   { value: 'pass', label: t('admin.riskControl.result.pass') },
   { value: 'error', label: t('admin.riskControl.result.error') },
+])
+
+const reviewStatusOptions = computed<SelectOption[]>(() => [
+  { value: '', label: t('admin.riskControl.reviewStatus.all') },
+  { value: 'pending', label: t('admin.riskControl.reviewStatus.pending') },
+  { value: 'false_positive', label: t('admin.riskControl.reviewStatus.falsePositive') },
+  { value: 'confirmed_violation', label: t('admin.riskControl.reviewStatus.confirmedViolation') },
 ])
 
 const endpointOptions = computed<SelectOption[]>(() => [
@@ -1986,6 +2054,7 @@ async function loadLogs() {
       page: pagination.page,
       page_size: pagination.page_size,
       result: filters.result || undefined,
+      review_status: filters.review_status || undefined,
       group_id: filters.group_id || undefined,
       endpoint: filters.endpoint || undefined,
       search: filters.search || undefined,
@@ -2035,6 +2104,28 @@ async function unbanUser(row: ContentModerationLog) {
     appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.unbanFailed')))
   } finally {
     unbanningUserID.value = null
+  }
+}
+
+async function reviewLog(row: ContentModerationLog, status: 'false_positive' | 'confirmed_violation') {
+  if (reviewingLogID.value !== null) return
+  reviewingLogID.value = row.id
+  try {
+    const reviewed = await adminAPI.riskControl.reviewLog(row.id, {
+      status,
+      note: status === 'false_positive'
+        ? t('admin.riskControl.defaultFalsePositiveNote')
+        : t('admin.riskControl.defaultConfirmedViolationNote'),
+    })
+    logs.value = logs.value.map((item) => (item.id === reviewed.id ? reviewed : item))
+    if (inputDetailRow.value?.id === reviewed.id) {
+      inputDetailRow.value = reviewed
+    }
+    appStore.showSuccess(t('admin.riskControl.reviewSaved'))
+  } catch (err: unknown) {
+    appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.reviewFailed')))
+  } finally {
+    reviewingLogID.value = null
   }
 }
 
@@ -2273,6 +2364,7 @@ function modeDescription(mode: ModerationMode): string {
 function resultLabel(row: ContentModerationLog): string {
   if (row.action === 'cyber_policy') return t('admin.riskControl.action.cyberPolicy')
   if (row.action === 'keyword_block') return t('admin.riskControl.action.keywordBlock')
+  if (row.action === 'keyword_review') return t('admin.riskControl.action.keywordReview')
   if (row.action === 'block') return t('admin.riskControl.action.block')
   if (row.action === 'error' || row.error) return t('admin.riskControl.action.error')
   if (row.flagged) return t('admin.riskControl.result.hit')
@@ -2281,9 +2373,37 @@ function resultLabel(row: ContentModerationLog): string {
 
 function resultBadgeClass(row: ContentModerationLog): string {
   if (row.action === 'block' || row.action === 'keyword_block' || row.action === 'cyber_policy') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+  if (row.action === 'keyword_review') return 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
   if (row.action === 'error' || row.error) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
   if (row.flagged) return 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300'
   return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+}
+
+function keywordActionText(row: Pick<ContentModerationLog, 'keyword_action' | 'effective_keyword_action'>): string {
+  const action = row.keyword_action || '-'
+  const effective = row.effective_keyword_action || action
+  if (!action || action === '-' || effective === action) return action
+  return `${action} -> ${effective}`
+}
+
+function riskContextLabel(value?: string): string {
+  const labels: Record<string, string> = {
+    actual_request: t('admin.riskControl.riskContexts.actualRequest'),
+    meta_discussion: t('admin.riskControl.riskContexts.metaDiscussion'),
+    codex_internal: t('admin.riskControl.riskContexts.codexInternal'),
+    educational: t('admin.riskControl.riskContexts.educational'),
+    unknown: t('admin.riskControl.riskContexts.unknown'),
+  }
+  return labels[value || ''] || value || '-'
+}
+
+function reviewStatusLabel(value?: string): string {
+  const labels: Record<string, string> = {
+    pending: t('admin.riskControl.reviewStatus.pending'),
+    false_positive: t('admin.riskControl.reviewStatus.falsePositive'),
+    confirmed_violation: t('admin.riskControl.reviewStatus.confirmedViolation'),
+  }
+  return labels[value || ''] || value || '-'
 }
 
 function workerSlotClass(state: WorkerSlotState): string {

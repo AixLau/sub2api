@@ -36,6 +36,10 @@ func (r *cyberOrderingTestRepo) UpdateLogEmailSent(ctx context.Context, id int64
 	return nil
 }
 
+func (r *cyberOrderingTestRepo) ReviewLog(ctx context.Context, id int64, input ContentModerationLogReviewInput) (*ContentModerationLog, error) {
+	return &ContentModerationLog{ID: id, ReviewStatus: input.Status, ReviewNote: input.Note}, nil
+}
+
 func (r *cyberOrderingTestRepo) ListLogs(ctx context.Context, filter ContentModerationLogFilter) ([]ContentModerationLog, *pagination.PaginationResult, error) {
 	return nil, nil, nil
 }

@@ -114,6 +114,9 @@ export interface TestContentModerationKeywordsResponse {
   keyword_category: ContentModerationKeywordCategory | string
   keyword_severity: ContentModerationKeywordSeverity | string
   keyword_action: ContentModerationKeywordAction | string
+  effective_keyword_action: ContentModerationKeywordAction | string
+  risk_context_type: string
+  risk_context_reason: string
   normalized_excerpt: string
 }
 
@@ -237,6 +240,14 @@ export interface ContentModerationLog {
   matched_keyword: string
   keyword_category: string
   keyword_severity: string
+  keyword_action: string
+  effective_keyword_action: string
+  risk_context_type: string
+  risk_context_reason: string
+  review_status: string
+  review_note: string
+  reviewed_by: number | null
+  reviewed_at: string | null
   created_at: string
 }
 
@@ -244,6 +255,7 @@ export interface ListContentModerationLogsParams {
   page?: number
   page_size?: number
   result?: string
+  review_status?: string
   group_id?: number
   endpoint?: string
   search?: string
@@ -262,6 +274,11 @@ export interface ContentModerationLogsResponse {
 export interface ContentModerationUnbanUserResponse {
   user_id: number
   status: string
+}
+
+export interface ReviewContentModerationLogPayload {
+  status: 'pending' | 'false_positive' | 'confirmed_violation' | string
+  note?: string
 }
 
 export interface DeleteFlaggedHashResponse {
@@ -323,6 +340,17 @@ export async function unbanUser(userID: number): Promise<ContentModerationUnbanU
   return data
 }
 
+export async function reviewLog(
+  logID: number,
+  payload: ReviewContentModerationLogPayload
+): Promise<ContentModerationLog> {
+  const { data } = await apiClient.patch<ContentModerationLog>(
+    `/admin/risk-control/logs/${logID}/review`,
+    payload
+  )
+  return data
+}
+
 export async function deleteFlaggedHash(inputHash: string): Promise<DeleteFlaggedHashResponse> {
   const { data } = await apiClient.delete<DeleteFlaggedHashResponse>('/admin/risk-control/hashes', {
     data: { input_hash: inputHash },
@@ -343,6 +371,7 @@ export const riskControlAPI = {
   testKeywords,
   listLogs,
   unbanUser,
+  reviewLog,
   deleteFlaggedHash,
   clearFlaggedHashes,
 }

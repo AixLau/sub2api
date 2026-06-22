@@ -7,6 +7,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -71,6 +72,11 @@ type contentModerationHashRequest struct {
 
 type contentModerationKeywordTestRequest struct {
 	Prompt string `json:"prompt"`
+}
+
+type contentModerationLogReviewRequest struct {
+	Status string `json:"status"`
+	Note   string `json:"note"`
 }
 
 func (h *ContentModerationHandler) GetConfig(c *gin.Context) {
@@ -181,9 +187,10 @@ func (h *ContentModerationHandler) ListLogs(c *gin.Context) {
 			PageSize:  pageSize,
 			SortOrder: pagination.SortOrderDesc,
 		},
-		Result:   c.Query("result"),
-		Endpoint: c.Query("endpoint"),
-		Search:   c.Query("search"),
+		Result:       c.Query("result"),
+		ReviewStatus: c.Query("review_status"),
+		Endpoint:     c.Query("endpoint"),
+		Search:       c.Query("search"),
 	}
 	if raw := strings.TrimSpace(c.Query("group_id")); raw != "" {
 		groupID, err := strconv.ParseInt(raw, 10, 64)
@@ -227,6 +234,33 @@ func (h *ContentModerationHandler) UnbanUser(c *gin.Context) {
 		return
 	}
 	result, err := h.service.UnbanUser(c.Request.Context(), userID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *ContentModerationHandler) ReviewLog(c *gin.Context) {
+	logID, err := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
+	if err != nil || logID <= 0 {
+		response.BadRequest(c, "Invalid log id")
+		return
+	}
+	var req contentModerationLogReviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	var reviewerID int64
+	if subject, ok := middleware.GetAuthSubjectFromContext(c); ok {
+		reviewerID = subject.UserID
+	}
+	result, err := h.service.ReviewLog(c.Request.Context(), logID, service.ContentModerationLogReviewInput{
+		Status:     req.Status,
+		Note:       req.Note,
+		ReviewedBy: reviewerID,
+	})
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

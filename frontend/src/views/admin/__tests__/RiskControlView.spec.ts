@@ -12,6 +12,7 @@ const {
   getStatus,
   listLogs,
   testKeywords,
+  reviewLog,
   getGroups,
   showError,
   showSuccess,
@@ -21,6 +22,7 @@ const {
   getStatus: vi.fn(),
   listLogs: vi.fn(),
   testKeywords: vi.fn(),
+  reviewLog: vi.fn(),
   getGroups: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
@@ -34,6 +36,7 @@ vi.mock('@/api/admin', () => ({
       getStatus,
       listLogs,
       testKeywords,
+      reviewLog,
       testAPIKeys: vi.fn(),
       deleteFlaggedHash: vi.fn(),
       clearFlaggedHashes: vi.fn(),
@@ -196,6 +199,7 @@ describe('admin RiskControlView', () => {
     getStatus.mockReset()
     listLogs.mockReset()
     testKeywords.mockReset()
+    reviewLog.mockReset()
     getGroups.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
@@ -209,6 +213,9 @@ describe('admin RiskControlView', () => {
       keyword_category: '',
       keyword_severity: '',
       keyword_action: '',
+      effective_keyword_action: '',
+      risk_context_type: '',
+      risk_context_reason: '',
       normalized_excerpt: '',
     })
     getGroups.mockResolvedValue([])
@@ -221,6 +228,46 @@ describe('admin RiskControlView', () => {
       api_key_count: 0,
       api_key_masks: [],
       api_key_statuses: [],
+    }))
+    reviewLog.mockImplementation(async (id: number, payload: { status: string; note?: string }) => ({
+      id,
+      request_id: 'req-keyword',
+      user_id: 7,
+      user_email: 'risk@example.com',
+      api_key_id: 3,
+      api_key_name: 'Team Key',
+      group_id: 2,
+      group_name: 'Default',
+      endpoint: '/v1/responses',
+      provider: 'openai',
+      model: 'gpt-5',
+      mode: 'pre_block',
+      action: 'keyword_review',
+      flagged: false,
+      highest_category: 'keyword',
+      highest_score: 1,
+      category_scores: {},
+      threshold_snapshot: {},
+      input_excerpt: 'please sell api key',
+      matched_keyword: 'sell api key',
+      keyword_category: 'account_abuse',
+      keyword_severity: 'critical',
+      keyword_action: 'block',
+      effective_keyword_action: 'observe',
+      risk_context_type: 'meta_discussion',
+      risk_context_reason: 'policy_or_keyword_rule_discussion',
+      review_status: payload.status,
+      review_note: payload.note ?? '',
+      reviewed_by: 1,
+      reviewed_at: '2026-06-19T08:01:00Z',
+      upstream_latency_ms: null,
+      error: '',
+      violation_count: 0,
+      auto_banned: false,
+      email_sent: false,
+      user_status: 'active',
+      queue_delay_ms: null,
+      created_at: '2026-06-19T08:00:00Z',
     }))
   })
 
@@ -250,6 +297,14 @@ describe('admin RiskControlView', () => {
           matched_keyword: 'sell api key',
           keyword_category: 'account_abuse',
           keyword_severity: 'critical',
+          keyword_action: 'block',
+          effective_keyword_action: 'block',
+          risk_context_type: 'actual_request',
+          risk_context_reason: 'request_intent_marker',
+          review_status: '',
+          review_note: '',
+          reviewed_by: null,
+          reviewed_at: null,
           upstream_latency_ms: null,
           error: '',
           violation_count: 1,
@@ -302,6 +357,9 @@ describe('admin RiskControlView', () => {
       keyword_category: 'account_abuse',
       keyword_severity: 'critical',
       keyword_action: 'block',
+      effective_keyword_action: 'observe',
+      risk_context_type: 'meta_discussion',
+      risk_context_reason: 'policy_or_keyword_rule_discussion',
       normalized_excerpt: 'please sell api key now',
     })
 
@@ -335,6 +393,84 @@ describe('admin RiskControlView', () => {
     expect(wrapper.text()).toContain('critical')
     expect(wrapper.text()).toContain('block')
     expect(wrapper.text()).toContain('please sell api key now')
+  })
+
+  it('marks keyword review records as false positives', async () => {
+    listLogs.mockResolvedValue({
+      items: [
+        {
+          id: 99,
+          request_id: 'req-review',
+          user_id: 7,
+          user_email: 'risk@example.com',
+          api_key_id: 3,
+          api_key_name: 'Team Key',
+          group_id: 2,
+          group_name: 'Default',
+          endpoint: '/v1/responses',
+          provider: 'openai',
+          model: 'gpt-5',
+          mode: 'pre_block',
+          action: 'keyword_review',
+          flagged: false,
+          highest_category: 'keyword',
+          highest_score: 1,
+          category_scores: {},
+          threshold_snapshot: {},
+          input_excerpt: 'audit keyword discussion',
+          matched_keyword: '儿童性虐待材料',
+          keyword_category: 'minor_safety',
+          keyword_severity: 'critical',
+          keyword_action: 'block',
+          effective_keyword_action: 'observe',
+          risk_context_type: 'meta_discussion',
+          risk_context_reason: 'policy_or_keyword_rule_discussion',
+          review_status: 'pending',
+          review_note: '',
+          reviewed_by: null,
+          reviewed_at: null,
+          upstream_latency_ms: null,
+          error: '',
+          violation_count: 0,
+          auto_banned: false,
+          email_sent: false,
+          user_status: 'active',
+          queue_delay_ms: null,
+          created_at: '2026-06-19T08:00:00Z',
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.riskControl.action.keywordReview')
+    expect(wrapper.text()).toContain('admin.riskControl.reviewStatusLabel')
+    await findButtonByText(wrapper, 'admin.riskControl.markFalsePositive').trigger('click')
+    await flushPromises()
+
+    expect(reviewLog).toHaveBeenCalledWith(99, {
+      status: 'false_positive',
+      note: 'admin.riskControl.defaultFalsePositiveNote',
+    })
+    expect(showSuccess).toHaveBeenCalledWith('admin.riskControl.reviewSaved')
   })
 
   it('shows structured keyword rules and preserves them when saving config', async () => {
