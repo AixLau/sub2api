@@ -53,16 +53,15 @@ func (s *PaymentService) GetDashboardStats(ctx context.Context, days int) (*Dash
 	return st, nil
 }
 
-// computeBasicStats aggregates revenue figures using PaymentOrder.Amount, the
-// recharge amount before payment-channel fees, so dashboard totals represent
-// platform income instead of gross customer outflow.
+// computeBasicStats aggregates user payment principal before gateway fees.
 func computeBasicStats(st *DashboardStats, orders []*dbent.PaymentOrder, todayStart time.Time) {
 	var totalAmount, todayAmount float64
 	var todayCount int
 	for _, o := range orders {
-		totalAmount += o.Amount
+		principal := paymentStatsPrincipalAmount(o)
+		totalAmount += principal
 		if o.PaidAt != nil && !o.PaidAt.Before(todayStart) {
-			todayAmount += o.Amount
+			todayAmount += principal
 			todayCount++
 		}
 	}
@@ -87,7 +86,7 @@ func buildDailySeries(orders []*dbent.PaymentOrder, since time.Time, days int) [
 			ds = &DailyStats{Date: date}
 			dailyMap[date] = ds
 		}
-		ds.Amount += o.Amount
+		ds.Amount += paymentStatsPrincipalAmount(o)
 		ds.Count++
 	}
 	series := make([]DailyStats, 0, days)
@@ -111,7 +110,7 @@ func buildMethodDistribution(orders []*dbent.PaymentOrder) []PaymentMethodStat {
 			ms = &PaymentMethodStat{Type: o.PaymentType}
 			methodMap[o.PaymentType] = ms
 		}
-		ms.Amount += o.Amount
+		ms.Amount += paymentStatsPrincipalAmount(o)
 		ms.Count++
 	}
 	methods := make([]PaymentMethodStat, 0, len(methodMap))
@@ -130,7 +129,7 @@ func buildTopUsers(orders []*dbent.PaymentOrder) []TopUserStat {
 			us = &TopUserStat{UserID: o.UserID, Email: o.UserEmail}
 			userMap[o.UserID] = us
 		}
-		us.Amount += o.Amount
+		us.Amount += paymentStatsPrincipalAmount(o)
 	}
 	userList := make([]*TopUserStat, 0, len(userMap))
 	for _, us := range userMap {
@@ -149,6 +148,13 @@ func buildTopUsers(orders []*dbent.PaymentOrder) []TopUserStat {
 		result = append(result, *userList[i])
 	}
 	return result
+}
+
+func paymentStatsPrincipalAmount(order *dbent.PaymentOrder) float64 {
+	if order == nil {
+		return 0
+	}
+	return calculatePaymentPrincipal(order.PayAmount, order.FeeRate, PaymentOrderCurrency(order))
 }
 
 // --- Audit Logs ---

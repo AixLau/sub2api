@@ -23,6 +23,24 @@ func calculateCreditedBalance(paymentAmount, multiplier float64) float64 {
 		InexactFloat64()
 }
 
+func calculatePaymentPrincipal(payAmount, feeRate float64, currency string) float64 {
+	fractionDigits := int32(payment.CurrencyMaxFractionDigits(currency))
+	if payAmount <= 0 || math.IsNaN(payAmount) || math.IsInf(payAmount, 0) {
+		return 0
+	}
+	if feeRate <= 0 || math.IsNaN(feeRate) || math.IsInf(feeRate, 0) {
+		return decimal.NewFromFloat(payAmount).Round(fractionDigits).InexactFloat64()
+	}
+	multiplier := decimal.NewFromFloat(1).Add(decimal.NewFromFloat(feeRate).Div(decimal.NewFromInt(100)))
+	if multiplier.LessThanOrEqual(decimal.Zero) {
+		return decimal.NewFromFloat(payAmount).Round(fractionDigits).InexactFloat64()
+	}
+	return decimal.NewFromFloat(payAmount).
+		Div(multiplier).
+		Round(fractionDigits).
+		InexactFloat64()
+}
+
 func calculateGatewayRefundAmount(orderAmount, payAmount, refundAmount float64, currency string) float64 {
 	if orderAmount <= 0 || payAmount <= 0 || refundAmount <= 0 {
 		return 0
