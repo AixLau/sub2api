@@ -378,6 +378,9 @@ describe('admin RiskControlView', () => {
 
     expect(wrapper.text()).toContain('admin.riskControl.keywordRules')
     expect(wrapper.text()).toContain('admin.riskControl.keywordRuleCount')
+    expect(wrapper.text()).toContain('admin.riskControl.legacyBlockedKeywords')
+    expect(wrapper.text()).toContain('admin.riskControl.legacyBlockedKeywordCount')
+    expect(wrapper.text()).not.toContain('admin.riskControl.blockedKeywordCount')
     expect(wrapper.text()).toContain('child sexual abuse material')
     expect(wrapper.text()).toContain('minor_safety')
     expect(wrapper.text()).toContain('critical')

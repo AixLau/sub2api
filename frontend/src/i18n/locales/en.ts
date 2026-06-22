@@ -2743,6 +2743,8 @@ export default {
       blockedKeywordsPreBlockHint: 'Keyword blocking only takes effect in "Pre-block" mode.',
       blockedKeywordsModeWarning: 'Current mode is "{mode}". Keyword blocking will not run until you switch to "Pre-block" mode.',
       blockedKeywordCount: '{count} keywords configured',
+      legacyBlockedKeywords: 'Legacy blocked keywords',
+      legacyBlockedKeywordCount: 'Legacy {count}',
       blockedKeywordsLimit: 'Up to {max} keywords, each no longer than 200 characters. Duplicates are removed automatically.',
       keywordRules: 'Structured keyword rules',
       keywordRulesDescription: 'Rules loaded from keyword_rules with category, severity, action, and enabled state.',

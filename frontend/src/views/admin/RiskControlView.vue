@@ -1061,9 +1061,9 @@
 
             <div>
               <div class="mb-2 flex items-center justify-between">
-                <label class="input-label mb-0">{{ t('admin.riskControl.blockedKeywords') }}</label>
+                <label class="input-label mb-0">{{ t('admin.riskControl.legacyBlockedKeywords') }}</label>
                 <span class="inline-flex rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-500 dark:bg-dark-700 dark:text-gray-300">
-                  {{ t('admin.riskControl.blockedKeywordCount', { count: blockedKeywordCount }) }}
+                  {{ t('admin.riskControl.legacyBlockedKeywordCount', { count: legacyBlockedKeywordCount }) }}
                 </span>
               </div>
               <textarea
@@ -1567,7 +1567,7 @@ const inputApiKeyCount = computed(() => parseApiKeys(configForm.api_keys_text).l
 
 const blockedKeywordList = computed(() => parseBlockedKeywords(configForm.blocked_keywords_text))
 
-const blockedKeywordCount = computed(() => blockedKeywordList.value.length)
+const legacyBlockedKeywordCount = computed(() => blockedKeywordList.value.length)
 
 const keywordRuleList = computed(() => normalizeKeywordRules(configForm.keyword_rules))
 

@@ -2820,6 +2820,8 @@ export default {
       blockedKeywordsPreBlockHint: '关键词拦截仅在「前置拦截」模式下生效。',
       blockedKeywordsModeWarning: '当前为「{mode}」模式，关键词拦截不会生效；请切换到「前置拦截」模式后再保存关键词。',
       blockedKeywordCount: '已配置 {count} 个关键词',
+      legacyBlockedKeywords: '旧版拦截关键词',
+      legacyBlockedKeywordCount: '旧版 {count} 个',
       blockedKeywordsLimit: '最多保存 {max} 个关键词，单个长度不超过 200 个字符；重复项会自动去重。',
       keywordRules: '结构化关键词规则',
       keywordRulesDescription: '展示 keyword_rules 中带分类、严重度、动作和启停状态的规则。',
