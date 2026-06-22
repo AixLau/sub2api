@@ -7269,4 +7269,14 @@ export default {
     },
   },
 
+  // Models
+  models: {
+    title: 'Available Models',
+    description: 'Browse all available AI models and their pricing',
+    availableModels: 'Available Models',
+    available: 'available',
+    noModelsAvailable: 'No models available',
+    noModelsDescription: 'There are currently no available models, please try again later',
+  },
+
 }

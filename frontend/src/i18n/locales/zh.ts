@@ -7448,4 +7448,14 @@ export default {
     },
   },
 
+  // Models
+  models: {
+    title: '可用模型',
+    description: '查看所有可用的 AI 模型及其定价信息',
+    availableModels: '可用模型',
+    available: '个可用',
+    noModelsAvailable: '暂无可用模型',
+    noModelsDescription: '当前没有可用的模型，请稍后再试',
+  },
+
 }
