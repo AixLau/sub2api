@@ -185,7 +185,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
 				h.gatewayService.RecordOpenAIAccountSwitch()
 				failedAccountIDs[account.ID] = struct{}{}
-				h.gatewayService.CooldownUserAccount(c.Request.Context(), subject.UserID, account.ID, service.UserAccountCooldownTTL())
+				h.gatewayService.CooldownUserAccount(c.Request.Context(), subject.UserID, account.ID, h.gatewayService.UserAccountCooldownTTL(c.Request.Context()))
 				lastFailoverErr = failoverErr
 				if switchCount >= maxAccountSwitches {
 					h.handleFailoverExhausted(c, failoverErr, false)

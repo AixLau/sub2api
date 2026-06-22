@@ -6,6 +6,11 @@ import (
 	"time"
 )
 
+const (
+	defaultUserAccountCooldownSeconds = 60
+	maxUserAccountCooldownSeconds     = 3600
+)
+
 func recordUserAccountCooldown(ctx context.Context, cache GatewayCache, userID, accountID int64, ttl time.Duration) {
 	if cache == nil || userID <= 0 || accountID <= 0 || ttl <= 0 {
 		return
@@ -16,7 +21,21 @@ func recordUserAccountCooldown(ctx context.Context, cache GatewayCache, userID, 
 }
 
 func UserAccountCooldownTTL() time.Duration {
-	return userAccountCooldownTTL
+	return time.Duration(defaultUserAccountCooldownSeconds) * time.Second
+}
+
+func (s *GatewayService) UserAccountCooldownTTL(ctx context.Context) time.Duration {
+	if s == nil || s.settingService == nil {
+		return UserAccountCooldownTTL()
+	}
+	return s.settingService.GetUserAccountCooldownTTL(ctx)
+}
+
+func (s *OpenAIGatewayService) UserAccountCooldownTTL(ctx context.Context) time.Duration {
+	if s == nil || s.settingService == nil {
+		return UserAccountCooldownTTL()
+	}
+	return s.settingService.GetUserAccountCooldownTTL(ctx)
 }
 
 func mergeUserAccountCooldowns(ctx context.Context, cache GatewayCache, excludedIDs map[int64]struct{}, userID int64) map[int64]struct{} {

@@ -5515,6 +5515,9 @@ export default {
         openaiQuotaAutoPauseDefault5h: '默认 5h 用量阈值 (%)',
         openaiQuotaAutoPauseDefault7d: '默认 7d 用量阈值 (%)',
         openaiQuotaAutoPauseThresholdHint: '取值 0-100，留空或 0 表示不启用全局默认阈值。',
+        userAccountCooldown: '用户账号冷却',
+        userAccountCooldownHint: '可重试上游失败后，临时避免同一用户继续使用同一账号。',
+        userAccountCooldownSeconds: '冷却时长（秒）',
         errorFiltering: '错误过滤',
         ignoreCountTokensErrors: '忽略 count_tokens 错误',
         ignoreCountTokensErrorsHint: '启用后，count_tokens 请求的错误将不会写入错误日志。',
@@ -5547,7 +5550,8 @@ export default {
           ttftP99MaxRange: 'TTFT P99最大值必须大于等于0',
           requestErrorRateMaxRange: '请求错误率最大值必须在0-100之间',
           upstreamErrorRateMaxRange: '上游错误率最大值必须在0-100之间',
-          openaiQuotaAutoPauseRange: 'OpenAI 配额自动暂停阈值必须在 0-100 之间'
+          openaiQuotaAutoPauseRange: 'OpenAI 配额自动暂停阈值必须在 0-100 之间',
+          userAccountCooldownRange: '用户账号冷却必须在 1-3600 秒之间'
         }
       },
       concurrency: {

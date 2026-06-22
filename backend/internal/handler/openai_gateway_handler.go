@@ -446,7 +446,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					}
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}
-					h.gatewayService.CooldownUserAccount(c.Request.Context(), subject.UserID, account.ID, service.UserAccountCooldownTTL())
+					h.gatewayService.CooldownUserAccount(c.Request.Context(), subject.UserID, account.ID, h.gatewayService.UserAccountCooldownTTL(c.Request.Context()))
 					lastFailoverErr = failoverErr
 					if switchCount >= maxAccountSwitches {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
@@ -861,7 +861,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					}
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}
-					h.gatewayService.CooldownUserAccount(c.Request.Context(), subject.UserID, account.ID, service.UserAccountCooldownTTL())
+					h.gatewayService.CooldownUserAccount(c.Request.Context(), subject.UserID, account.ID, h.gatewayService.UserAccountCooldownTTL(c.Request.Context()))
 					lastFailoverErr = failoverErr
 					if switchCount >= maxAccountSwitches {
 						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
@@ -1609,7 +1609,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
 				releaseAccountSlot()
 				failedAccountIDs[account.ID] = struct{}{}
-				h.gatewayService.CooldownUserAccount(ctx, subject.UserID, account.ID, service.UserAccountCooldownTTL())
+				h.gatewayService.CooldownUserAccount(ctx, subject.UserID, account.ID, h.gatewayService.UserAccountCooldownTTL(ctx))
 				lastFailoverErr = failoverErr
 				if switchCount >= maxAccountSwitches {
 					closeOpenAIWSFailoverExhausted(wsConn, failoverErr)

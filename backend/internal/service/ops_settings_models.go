@@ -95,6 +95,7 @@ type OpsAdvancedSettings struct {
 	DataRetention                   OpsDataRetentionSettings               `json:"data_retention"`
 	Aggregation                     OpsAggregationSettings                 `json:"aggregation"`
 	OpenAIAccountQuotaAutoPause     OpsOpenAIAccountQuotaAutoPauseSettings `json:"openai_account_quota_auto_pause"`
+	UserAccountCooldownSeconds      int                                    `json:"user_account_cooldown_seconds"`
 	IgnoreCountTokensErrors         bool                                   `json:"ignore_count_tokens_errors"`
 	IgnoreContextCanceled           bool                                   `json:"ignore_context_canceled"`
 	IgnoreNoAvailableAccounts       bool                                   `json:"ignore_no_available_accounts"`

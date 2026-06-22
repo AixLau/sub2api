@@ -31,6 +31,7 @@ func (m *mockTempUnscheduler) TempUnscheduleRetryableError(_ context.Context, ac
 type mockFailoverCooldownService struct {
 	mockTempUnscheduler
 	cooldownCalls []userAccountCooldownCall
+	cooldownTTL   time.Duration
 }
 
 type userAccountCooldownCall struct {
@@ -41,6 +42,13 @@ type userAccountCooldownCall struct {
 
 func (m *mockFailoverCooldownService) CooldownUserAccount(_ context.Context, userID, accountID int64, ttl time.Duration) {
 	m.cooldownCalls = append(m.cooldownCalls, userAccountCooldownCall{userID: userID, accountID: accountID, ttl: ttl})
+}
+
+func (m *mockFailoverCooldownService) UserAccountCooldownTTL(context.Context) time.Duration {
+	if m.cooldownTTL <= 0 {
+		return service.UserAccountCooldownTTL()
+	}
+	return m.cooldownTTL
 }
 
 // ---------------------------------------------------------------------------
@@ -248,6 +256,18 @@ func TestHandleFailoverErrorForUser_RecordsPerUserCooldown(t *testing.T) {
 		accountID: 100,
 		ttl:       service.UserAccountCooldownTTL(),
 	}, mock.cooldownCalls[0])
+}
+
+func TestHandleFailoverErrorForUser_UsesConfiguredCooldownTTL(t *testing.T) {
+	mock := &mockFailoverCooldownService{cooldownTTL: 17 * time.Second}
+	fs := NewFailoverState(3, false)
+	err := newTestFailoverErr(500, false, false)
+
+	action := fs.HandleFailoverErrorForUser(context.Background(), mock, 42, 100, "openai", err)
+
+	require.Equal(t, FailoverContinue, action)
+	require.Len(t, mock.cooldownCalls, 1)
+	require.Equal(t, 17*time.Second, mock.cooldownCalls[0].ttl)
 }
 
 // ---------------------------------------------------------------------------

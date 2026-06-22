@@ -462,9 +462,11 @@ func ProvideOpsService(
 	)
 	if settingService != nil {
 		svc.SetOpenAIQuotaAutoPauseSettingsSink(settingService.SetOpenAIQuotaAutoPauseSettings)
+		svc.SetUserAccountCooldownSecondsSink(settingService.SetUserAccountCooldownSeconds)
 		// Optional warm-up so the first scheduled request after process start observes
 		// a populated cache rather than zero defaults. Best-effort, sync-bounded.
 		settingService.WarmOpenAIQuotaAutoPauseSettings(context.Background())
+		settingService.WarmUserAccountCooldownTTL(context.Background())
 	}
 	return svc
 }

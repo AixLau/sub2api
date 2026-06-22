@@ -467,8 +467,6 @@ type GatewayCache interface {
 	GetUserAccountCooldowns(ctx context.Context, userID int64) (map[int64]struct{}, error)
 }
 
-const userAccountCooldownTTL = 3 * time.Minute
-
 // derefGroupID safely dereferences *int64 to int64, returning 0 if nil
 func derefGroupID(groupID *int64) int64 {
 	if groupID == nil {

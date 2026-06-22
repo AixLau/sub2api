@@ -145,6 +145,11 @@ type cachedOpenAIQuotaAutoPauseSettings struct {
 	expiresAt int64
 }
 
+type cachedUserAccountCooldownSettings struct {
+	seconds   int
+	expiresAt int64
+}
+
 const openAICodexUserAgentCacheTTL = 60 * time.Second
 const openAICodexUserAgentErrorTTL = 5 * time.Second
 const openAICodexUserAgentDBTimeout = 5 * time.Second
@@ -177,6 +182,12 @@ const openAIQuotaAutoPauseSettingsErrorTTL = 5 * time.Second
 const openAIQuotaAutoPauseSettingsDBTimeout = 5 * time.Second
 
 const openAIQuotaAutoPauseSettingsRefreshKey = "openai_quota_auto_pause_settings"
+
+const userAccountCooldownSettingsCacheTTL = 60 * time.Second
+const userAccountCooldownSettingsErrorTTL = 5 * time.Second
+const userAccountCooldownSettingsDBTimeout = 5 * time.Second
+
+const userAccountCooldownSettingsRefreshKey = "user_account_cooldown_settings"
 
 // DefaultSubscriptionGroupReader validates group references used by default subscriptions.
 type DefaultSubscriptionGroupReader interface {
@@ -214,6 +225,9 @@ type SettingService struct {
 	// instance owns its own cache, no shared package-level state.
 	openAIQuotaAutoPauseSettingsCache atomic.Value // *cachedOpenAIQuotaAutoPauseSettings
 	openAIQuotaAutoPauseSettingsSF    singleflight.Group
+
+	userAccountCooldownSettingsCache atomic.Value // *cachedUserAccountCooldownSettings
+	userAccountCooldownSettingsSF    singleflight.Group
 }
 
 // DefaultPlatformQuotaSetting 单 platform 三档限额（nil = 沿用上层；0 = 显式禁用；>0 = 上限）
@@ -4738,6 +4752,84 @@ func (s *SettingService) SetOpenAIQuotaAutoPauseSettings(settings OpsOpenAIAccou
 	s.openAIQuotaAutoPauseSettingsCache.Store(&cachedOpenAIQuotaAutoPauseSettings{
 		settings:  settings,
 		expiresAt: time.Now().Add(openAIQuotaAutoPauseSettingsCacheTTL).UnixNano(),
+	})
+}
+
+// GetUserAccountCooldownTTL returns the per-user account cooldown TTL used by
+// failover paths. It follows the same stale-while-revalidate pattern as quota
+// auto-pause settings so request handling never blocks on the settings table.
+func (s *SettingService) GetUserAccountCooldownTTL(ctx context.Context) time.Duration {
+	if s == nil {
+		return UserAccountCooldownTTL()
+	}
+	cached, _ := s.userAccountCooldownSettingsCache.Load().(*cachedUserAccountCooldownSettings)
+	now := time.Now().UnixNano()
+	if cached != nil && now < cached.expiresAt {
+		return time.Duration(cached.seconds) * time.Second
+	}
+	s.userAccountCooldownSettingsSF.DoChan(userAccountCooldownSettingsRefreshKey, func() (any, error) {
+		s.refreshUserAccountCooldownSettings(context.Background())
+		return nil, nil
+	})
+	if cached != nil {
+		return time.Duration(cached.seconds) * time.Second
+	}
+	return UserAccountCooldownTTL()
+}
+
+func (s *SettingService) WarmUserAccountCooldownTTL(ctx context.Context) time.Duration {
+	if s == nil {
+		return UserAccountCooldownTTL()
+	}
+	s.refreshUserAccountCooldownSettings(ctx)
+	cached, _ := s.userAccountCooldownSettingsCache.Load().(*cachedUserAccountCooldownSettings)
+	if cached == nil {
+		return UserAccountCooldownTTL()
+	}
+	return time.Duration(cached.seconds) * time.Second
+}
+
+func (s *SettingService) refreshUserAccountCooldownSettings(ctx context.Context) {
+	if s == nil || s.settingRepo == nil {
+		return
+	}
+	dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), userAccountCooldownSettingsDBTimeout)
+	defer cancel()
+
+	seconds := defaultUserAccountCooldownSeconds
+	ttl := userAccountCooldownSettingsCacheTTL
+	raw, err := s.settingRepo.GetValue(dbCtx, SettingKeyOpsAdvancedSettings)
+	if err == nil {
+		cfg := defaultOpsAdvancedSettings()
+		if strings.TrimSpace(raw) != "" {
+			if jsonErr := json.Unmarshal([]byte(raw), cfg); jsonErr == nil {
+				normalizeOpsAdvancedSettings(cfg)
+			}
+		}
+		seconds = cfg.UserAccountCooldownSeconds
+	} else if !errors.Is(err, ErrSettingNotFound) {
+		if prior, _ := s.userAccountCooldownSettingsCache.Load().(*cachedUserAccountCooldownSettings); prior != nil {
+			seconds = prior.seconds
+		}
+		ttl = userAccountCooldownSettingsErrorTTL
+	}
+
+	s.userAccountCooldownSettingsCache.Store(&cachedUserAccountCooldownSettings{
+		seconds:   seconds,
+		expiresAt: time.Now().Add(ttl).UnixNano(),
+	})
+}
+
+func (s *SettingService) SetUserAccountCooldownSeconds(seconds int) {
+	if s == nil {
+		return
+	}
+	if seconds < 1 || seconds > maxUserAccountCooldownSeconds {
+		seconds = defaultUserAccountCooldownSeconds
+	}
+	s.userAccountCooldownSettingsCache.Store(&cachedUserAccountCooldownSettings{
+		seconds:   seconds,
+		expiresAt: time.Now().Add(userAccountCooldownSettingsCacheTTL).UnixNano(),
 	})
 }
 

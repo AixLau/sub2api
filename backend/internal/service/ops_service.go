@@ -45,7 +45,8 @@ type OpsService struct {
 	// quotaAutoPauseSink 由 wire 注入（通常是 SettingService.SetOpenAIQuotaAutoPauseSettings）。
 	// UpdateOpsAdvancedSettings 写入新配置后调用，把最新的 quota auto-pause 全局默认阈值
 	// 立即同步到调度热路径读取的内存缓存，避免下次请求才能感知新值。
-	quotaAutoPauseSink func(OpsOpenAIAccountQuotaAutoPauseSettings)
+	quotaAutoPauseSink      func(OpsOpenAIAccountQuotaAutoPauseSettings)
+	userAccountCooldownSink func(int)
 }
 
 // CleanupReloader 由 OpsCleanupService 实现。
@@ -70,6 +71,13 @@ func (s *OpsService) SetOpenAIQuotaAutoPauseSettingsSink(sink func(OpsOpenAIAcco
 		return
 	}
 	s.quotaAutoPauseSink = sink
+}
+
+func (s *OpsService) SetUserAccountCooldownSecondsSink(sink func(int)) {
+	if s == nil {
+		return
+	}
+	s.userAccountCooldownSink = sink
 }
 
 func NewOpsService(

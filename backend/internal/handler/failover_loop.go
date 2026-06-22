@@ -20,6 +20,10 @@ type UserAccountCooldowner interface {
 	CooldownUserAccount(ctx context.Context, userID, accountID int64, ttl time.Duration)
 }
 
+type UserAccountCooldownTTLProvider interface {
+	UserAccountCooldownTTL(ctx context.Context) time.Duration
+}
+
 // FailoverAction 表示 failover 错误处理后的下一步动作
 type FailoverAction int
 
@@ -115,7 +119,11 @@ func (s *FailoverState) HandleFailoverErrorForUser(
 	s.FailedAccountIDs[accountID] = struct{}{}
 	if userID > 0 {
 		if cooldowner, ok := gatewayService.(UserAccountCooldowner); ok {
-			cooldowner.CooldownUserAccount(ctx, userID, accountID, service.UserAccountCooldownTTL())
+			ttl := service.UserAccountCooldownTTL()
+			if provider, ok := gatewayService.(UserAccountCooldownTTLProvider); ok {
+				ttl = provider.UserAccountCooldownTTL(ctx)
+			}
+			cooldowner.CooldownUserAccount(ctx, userID, accountID, ttl)
 		}
 	}
 

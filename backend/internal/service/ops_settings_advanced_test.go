@@ -97,6 +97,35 @@ func TestGetOpsAdvancedSettings_BackfillsNewDisplayFlagsFromDefaults(t *testing.
 	if !cfg.DisplayAlertEvents {
 		t.Fatalf("DisplayAlertEvents = false, want true default backfill")
 	}
+	if cfg.UserAccountCooldownSeconds != 60 {
+		t.Fatalf("UserAccountCooldownSeconds = %d, want 60 default backfill", cfg.UserAccountCooldownSeconds)
+	}
+}
+
+func TestGetOpsAdvancedSettings_DefaultUserAccountCooldownSeconds(t *testing.T) {
+	repo := newRuntimeSettingRepoStub()
+	svc := &OpsService{settingRepo: repo}
+
+	cfg, err := svc.GetOpsAdvancedSettings(context.Background())
+	if err != nil {
+		t.Fatalf("GetOpsAdvancedSettings() error = %v", err)
+	}
+	if cfg.UserAccountCooldownSeconds != 60 {
+		t.Fatalf("UserAccountCooldownSeconds = %d, want 60", cfg.UserAccountCooldownSeconds)
+	}
+}
+
+func TestUpdateOpsAdvancedSettings_RejectsInvalidUserAccountCooldownSeconds(t *testing.T) {
+	repo := newRuntimeSettingRepoStub()
+	svc := &OpsService{settingRepo: repo}
+
+	for _, seconds := range []int{0, -1, 3601} {
+		cfg := defaultOpsAdvancedSettings()
+		cfg.UserAccountCooldownSeconds = seconds
+		if _, err := svc.UpdateOpsAdvancedSettings(context.Background(), cfg); err == nil {
+			t.Fatalf("UpdateOpsAdvancedSettings(UserAccountCooldownSeconds=%d) error = nil, want error", seconds)
+		}
+	}
 }
 
 func TestGetOpenAIQuotaAutoPauseSettings_ReadsDefaultsFromOpsAdvancedSettings(t *testing.T) {
@@ -157,5 +186,31 @@ func TestSetOpenAIQuotaAutoPauseSettings_VisibleImmediately(t *testing.T) {
 	got := svc.GetOpenAIQuotaAutoPauseSettings(context.Background())
 	if got.DefaultThreshold5h != 0.88 || got.DefaultThreshold7d != 0.77 {
 		t.Fatalf("after Set, Get = %+v, want {0.88, 0.77}", got)
+	}
+}
+
+func TestGetUserAccountCooldownTTL_ReadsAdvancedSettings(t *testing.T) {
+	repo := newRuntimeSettingRepoStub()
+	repo.values[SettingKeyOpsAdvancedSettings] = `{"user_account_cooldown_seconds":45}`
+	svc := NewSettingService(repo, &config.Config{})
+
+	got := svc.WarmUserAccountCooldownTTL(context.Background())
+	if got != 45*time.Second {
+		t.Fatalf("WarmUserAccountCooldownTTL() = %v, want 45s", got)
+	}
+	cached := svc.GetUserAccountCooldownTTL(context.Background())
+	if cached != 45*time.Second {
+		t.Fatalf("GetUserAccountCooldownTTL() = %v, want 45s", cached)
+	}
+}
+
+func TestSetUserAccountCooldownTTL_VisibleImmediately(t *testing.T) {
+	svc := NewSettingService(newRuntimeSettingRepoStub(), &config.Config{})
+
+	svc.SetUserAccountCooldownSeconds(12)
+
+	got := svc.GetUserAccountCooldownTTL(context.Background())
+	if got != 12*time.Second {
+		t.Fatalf("after Set, GetUserAccountCooldownTTL() = %v, want 12s", got)
 	}
 }

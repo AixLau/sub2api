@@ -5356,6 +5356,9 @@ export default {
         openaiQuotaAutoPauseDefault5h: 'Default 5h usage threshold (%)',
         openaiQuotaAutoPauseDefault7d: 'Default 7d usage threshold (%)',
         openaiQuotaAutoPauseThresholdHint: 'Value 0-100; leave blank or 0 to disable the global default threshold.',
+        userAccountCooldown: 'User-account cooldown',
+        userAccountCooldownHint: 'After a retryable upstream failure, temporarily avoid using the same account for the same user.',
+        userAccountCooldownSeconds: 'Cooldown duration (seconds)',
         errorFiltering: 'Error Filtering',
         ignoreCountTokensErrors: 'Ignore count_tokens errors',
         ignoreCountTokensErrorsHint: 'When enabled, errors from count_tokens requests will not be written to the error log.',
@@ -5387,7 +5390,8 @@ export default {
           ttftP99MaxRange: 'TTFT P99 maximum must be a number ≥ 0',
           requestErrorRateMaxRange: 'Request error rate maximum must be between 0 and 100',
           upstreamErrorRateMaxRange: 'Upstream error rate maximum must be between 0 and 100',
-          openaiQuotaAutoPauseRange: 'OpenAI quota auto-pause threshold must be between 0 and 100'
+          openaiQuotaAutoPauseRange: 'OpenAI quota auto-pause threshold must be between 0 and 100',
+          userAccountCooldownRange: 'User-account cooldown must be between 1 and 3600 seconds'
         }
       },
       concurrency: {

@@ -54,6 +54,9 @@ async function loadAllSettings() {
     if (advancedSettings.value && !advancedSettings.value.openai_account_quota_auto_pause) {
       advancedSettings.value.openai_account_quota_auto_pause = { default_threshold_5h: 0, default_threshold_7d: 0 }
     }
+    if (advancedSettings.value && !advancedSettings.value.user_account_cooldown_seconds) {
+      advancedSettings.value.user_account_cooldown_seconds = 60
+    }
     // 如果后端返回了阈值，使用后端的值；否则保持默认值
     if (thresholds && Object.keys(thresholds).length > 0) {
         metricThresholds.value = {
@@ -175,6 +178,13 @@ const validation = computed(() => {
     const { default_threshold_5h, default_threshold_7d } = advancedSettings.value.openai_account_quota_auto_pause
     if (default_threshold_5h < 0 || default_threshold_5h > 1 || default_threshold_7d < 0 || default_threshold_7d > 1) {
       errors.push(t('admin.ops.settings.validation.openaiQuotaAutoPauseRange'))
+    }
+    if (
+      !Number.isFinite(advancedSettings.value.user_account_cooldown_seconds) ||
+      advancedSettings.value.user_account_cooldown_seconds < 1 ||
+      advancedSettings.value.user_account_cooldown_seconds > 3600
+    ) {
+      errors.push(t('admin.ops.settings.validation.userAccountCooldownRange'))
     }
   }
 
@@ -536,6 +546,24 @@ async function saveAllSettings() {
               </div>
             </div>
             <p class="text-xs text-gray-500">{{ t('admin.ops.settings.openaiQuotaAutoPauseThresholdHint') }}</p>
+          </div>
+
+          <!-- 用户账号冷却 -->
+          <div class="space-y-3">
+            <h5 class="text-xs font-semibold text-gray-700 dark:text-gray-300">{{ t('admin.ops.settings.userAccountCooldown') }}</h5>
+            <p class="text-xs text-gray-500">{{ t('admin.ops.settings.userAccountCooldownHint') }}</p>
+            <div class="max-w-xs">
+              <label class="input-label">{{ t('admin.ops.settings.userAccountCooldownSeconds') }}</label>
+              <input
+                v-model.number="advancedSettings.user_account_cooldown_seconds"
+                type="number"
+                min="1"
+                max="3600"
+                step="1"
+                class="input"
+                data-testid="ops-user-account-cooldown-seconds"
+              />
+            </div>
           </div>
 
           <!-- Error Filtering -->

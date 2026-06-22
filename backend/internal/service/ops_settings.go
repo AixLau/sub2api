@@ -370,6 +370,7 @@ func defaultOpsAdvancedSettings() *OpsAdvancedSettings {
 			AggregationEnabled: false,
 		},
 		OpenAIAccountQuotaAutoPause:     OpsOpenAIAccountQuotaAutoPauseSettings{},
+		UserAccountCooldownSeconds:      defaultUserAccountCooldownSeconds,
 		IgnoreCountTokensErrors:         true,  // count_tokens 404 是预期行为，默认忽略
 		IgnoreContextCanceled:           true,  // Default to true - client disconnects are not errors
 		IgnoreNoAvailableAccounts:       false, // Default to false - this is a real routing issue
@@ -387,6 +388,9 @@ func normalizeOpsAdvancedSettings(cfg *OpsAdvancedSettings) {
 	}
 	cfg.OpenAIAccountQuotaAutoPause.DefaultThreshold5h = clampOpsQuotaAutoPauseThreshold(cfg.OpenAIAccountQuotaAutoPause.DefaultThreshold5h)
 	cfg.OpenAIAccountQuotaAutoPause.DefaultThreshold7d = clampOpsQuotaAutoPauseThreshold(cfg.OpenAIAccountQuotaAutoPause.DefaultThreshold7d)
+	if cfg.UserAccountCooldownSeconds == 0 {
+		cfg.UserAccountCooldownSeconds = defaultUserAccountCooldownSeconds
+	}
 	cfg.DataRetention.CleanupSchedule = strings.TrimSpace(cfg.DataRetention.CleanupSchedule)
 	if cfg.DataRetention.CleanupSchedule == "" {
 		cfg.DataRetention.CleanupSchedule = opsCleanupDefaultSchedule
@@ -431,6 +435,9 @@ func validateOpsAdvancedSettings(cfg *OpsAdvancedSettings) error {
 	}
 	if cfg.DataRetention.HourlyMetricsRetentionDays < 0 || cfg.DataRetention.HourlyMetricsRetentionDays > 365 {
 		return errors.New("hourly_metrics_retention_days must be between 0 and 365")
+	}
+	if cfg.UserAccountCooldownSeconds < 1 || cfg.UserAccountCooldownSeconds > maxUserAccountCooldownSeconds {
+		return errors.New("user_account_cooldown_seconds must be between 1 and 3600")
 	}
 	if cfg.AutoRefreshIntervalSec < 15 || cfg.AutoRefreshIntervalSec > 300 {
 		return errors.New("auto_refresh_interval_seconds must be between 15 and 300")
@@ -495,6 +502,9 @@ func (s *OpsService) UpdateOpsAdvancedSettings(ctx context.Context, cfg *OpsAdva
 	// without waiting for the background refresher's TTL.
 	if s.quotaAutoPauseSink != nil {
 		s.quotaAutoPauseSink(cfg.OpenAIAccountQuotaAutoPause)
+	}
+	if s.userAccountCooldownSink != nil {
+		s.userAccountCooldownSink(cfg.UserAccountCooldownSeconds)
 	}
 
 	// notify cleanup service to reload schedule/enabled.

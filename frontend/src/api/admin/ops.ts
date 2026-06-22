@@ -788,6 +788,7 @@ export interface OpsAdvancedSettings {
   data_retention: OpsDataRetentionSettings
   aggregation: OpsAggregationSettings
   openai_account_quota_auto_pause: OpsOpenAIAccountQuotaAutoPauseSettings
+  user_account_cooldown_seconds: number
   ignore_count_tokens_errors: boolean
   ignore_context_canceled: boolean
   ignore_no_available_accounts: boolean
