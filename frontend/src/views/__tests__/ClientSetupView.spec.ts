@@ -51,7 +51,7 @@ describe('ClientSetupView', () => {
     })
   })
 
-  it('automatically approves the setup session without requiring a click', async () => {
+  it('confirms the setup session without requiring a click', async () => {
     mount(ClientSetupView)
 
     await flushPromises()
@@ -64,7 +64,7 @@ describe('ClientSetupView', () => {
     expect(window.location.href).toBe('http://127.0.0.1:38173/callback?setup_token=setup-token-123')
   })
 
-  it('shows a notification instead of an approval button while approving', async () => {
+  it('shows a neutral notification instead of an approval button while confirming', async () => {
     let resolveApprove: (value: unknown) => void = () => {}
     approveSession.mockReturnValue(new Promise((resolve) => {
       resolveApprove = resolve
@@ -74,8 +74,12 @@ describe('ClientSetupView', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('正在自动创建 API Key')
-    expect(wrapper.text()).toContain('无需点击同意')
+    expect(wrapper.text()).toContain('正在处理本次配置')
+    expect(wrapper.text()).not.toContain('API Key')
+    expect(wrapper.text()).not.toContain('无需点击同意')
+    expect(wrapper.text()).not.toContain('浏览器登录状态')
+    expect(wrapper.text()).not.toContain('本机脚本')
+    expect(wrapper.text()).not.toContain('配置会话')
     expect(wrapper.find('button').exists()).toBe(false)
 
     resolveApprove({
@@ -87,6 +91,6 @@ describe('ClientSetupView', () => {
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('已完成授权')
+    expect(wrapper.text()).toContain('配置确认完成')
   })
 })

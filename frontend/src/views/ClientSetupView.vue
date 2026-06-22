@@ -4,9 +4,9 @@
       <section class="w-full rounded-2xl border border-white/10 bg-white/[0.06] p-8 shadow-2xl shadow-black/30 backdrop-blur">
         <div class="mb-8">
           <p class="mb-3 text-sm font-medium text-cyan-300">星链 AI Hub 客户端配置</p>
-          <h1 class="text-3xl font-semibold tracking-tight">正在给本机 {{ clientLabel }} 创建 API Key</h1>
+          <h1 class="text-3xl font-semibold tracking-tight">正在完成本机 {{ clientLabel }} 配置</h1>
           <p class="mt-4 text-sm leading-6 text-slate-300">
-            无需点击同意。页面会自动为当前账号创建一个专用 API Key，并把一次性授权结果交回本机脚本写入配置文件。
+            请保持当前账号已登录，配置将自动继续。
           </p>
         </div>
 
@@ -36,10 +36,6 @@
         <div class="rounded-xl border border-cyan-300/20 bg-cyan-300/10 px-5 py-4 text-sm text-cyan-100">
           {{ actionText }}
         </div>
-
-        <p class="mt-5 text-xs leading-5 text-slate-500">
-          页面不会把浏览器登录令牌交给脚本；脚本只会收到一次性授权结果，并通过服务端兑换本次创建的 API Key。
-        </p>
       </section>
     </div>
   </main>
@@ -63,9 +59,9 @@ const successMessage = ref('')
 
 const clientLabel = computed(() => (client.value === 'claude' ? 'Claude Code' : 'Codex'))
 const statusText = computed(() => {
-  if (approved.value || status.value === 'approved') return '已授权'
+  if (approved.value || status.value === 'approved') return '已确认'
   if (status.value === 'exchanged') return '已完成'
-  return '等待确认'
+  return '处理中'
 })
 const statusClass = computed(() => {
   if (approved.value || status.value === 'approved' || status.value === 'exchanged') {
@@ -77,15 +73,15 @@ const statusClass = computed(() => {
   return 'font-medium text-amber-300'
 })
 const actionText = computed(() => {
-  if (loading.value) return '正在自动创建 API Key，请稍候...'
-  if (approved.value) return '已完成授权，正在回到终端继续。'
-  if (errorMessage.value) return '处理失败，请按页面提示重试或回到终端手动输入 API Key。'
-  return '正在检查配置会话，无需点击同意。'
+  if (loading.value) return '正在处理本次配置，请稍候...'
+  if (approved.value) return '配置确认完成，正在回到终端继续。'
+  if (errorMessage.value) return '处理失败，请按页面提示重试或回到终端继续处理。'
+  return '正在检查配置请求，请稍候。'
 })
 
 onMounted(async () => {
   if (!setupId.value || !deviceCode.value) {
-    errorMessage.value = '缺少配置会话参数，请回到终端重新运行脚本。'
+    errorMessage.value = '缺少配置参数，请回到终端重新运行脚本。'
     return
   }
   try {
@@ -93,7 +89,7 @@ onMounted(async () => {
     status.value = session.status
     await approve()
   } catch (error) {
-    errorMessage.value = readErrorMessage(error, '配置会话不存在或已过期，请回到终端重新运行脚本。')
+    errorMessage.value = readErrorMessage(error, '配置请求不存在或已过期，请回到终端重新运行脚本。')
   }
 })
 
@@ -108,12 +104,12 @@ async function approve() {
     })
     approved.value = true
     status.value = result.status
-    successMessage.value = '授权成功，正在把结果交回本机脚本。'
+    successMessage.value = '配置确认完成，正在回到终端继续。'
     if (result.redirect_uri) {
       window.location.href = result.redirect_uri
     }
   } catch (error) {
-    errorMessage.value = readErrorMessage(error, '授权失败，请稍后重试或回到终端手动输入 API Key。')
+    errorMessage.value = readErrorMessage(error, '处理失败，请稍后重试或回到终端继续处理。')
   } finally {
     loading.value = false
   }
