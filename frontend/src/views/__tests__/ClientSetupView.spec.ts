@@ -61,7 +61,7 @@ describe('ClientSetupView', () => {
       device_code: 'ABCD-1234',
       client: 'codex'
     })
-    expect(window.location.href).toBe('http://127.0.0.1:38173/callback?setup_token=setup-token-123')
+    expect(window.location.href).toBe('')
   })
 
   it('shows a neutral notification instead of an approval button while confirming', async () => {

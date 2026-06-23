@@ -315,7 +315,7 @@ SH
   assert_file "$home_dir/.codex/config.toml"
   assert_contains "$home_dir/output.txt" "正在打开浏览器完成授权"
   assert_contains "$home_dir/output.txt" "页面验证码"
-  assert_contains "$home_dir/output.txt" "已自动获取 API Key"
+  assert_contains "$home_dir/output.txt" "授权完成，正在写入配置"
   assert_not_contains "$home_dir/output.txt" "请输入你的 API Key"
   assert_contains "$home_dir/.codex/config.toml" 'experimental_bearer_token = "sk-auto-envelope-test"'
 }
@@ -336,6 +336,24 @@ test_prompts_for_api_key_in_chinese() {
   assert_not_contains "$home_dir/.codex/auth.json" "$API_KEY"
 }
 
+test_success_output_is_simple_and_does_not_leak_shell_fragments() {
+  local home_dir
+  home_dir="$(mktemp -d)"
+  prepare_codex_official_auth "$home_dir"
+
+  run_setup "$home_dir" "" --client codex
+
+  assert_contains "$home_dir/output.txt" "配置完成"
+  assert_contains "$home_dir/output.txt" "请重启 Codex 后再测试。"
+  assert_not_contains "$home_dir/output.txt" "command substitution"
+  assert_not_contains "$home_dir/output.txt" "will_import)"
+  assert_not_contains "$home_dir/output.txt" "imported)"
+  assert_not_contains "$home_dir/output.txt" "官方登录缓存"
+  assert_not_contains "$home_dir/output.txt" "API Key"
+  assert_not_contains "$home_dir/output.txt" "将写入以下配置文件"
+  assert_not_contains "$home_dir/output.txt" "$API_KEY"
+}
+
 test_codex_without_official_login_cache_does_not_create_auth() {
   local home_dir
   home_dir="$(mktemp -d)"
@@ -345,8 +363,7 @@ test_codex_without_official_login_cache_does_not_create_auth() {
   assert_file "$home_dir/.codex/config.toml"
   [ ! -e "$home_dir/.codex/auth.json" ] || fail "Codex auth should not be created without an existing or explicitly provided auth cache"
   assert_contains "$home_dir/.codex/config.toml" "experimental_bearer_token = \"$API_KEY\""
-  assert_contains "$home_dir/output.txt" "未提供 Codex 官方登录缓存，仅写入第三方 API 配置"
-  assert_contains "$home_dir/output.txt" "Codex 官方登录缓存：未提供，未写入"
+  assert_not_contains "$home_dir/output.txt" "官方登录缓存"
 }
 
 test_codex_keeps_existing_official_login_cache() {
@@ -357,7 +374,7 @@ test_codex_keeps_existing_official_login_cache() {
   run_setup "$home_dir" "" --client codex
 
   assert_json_value "$home_dir/.codex/auth.json" '.tokens.refresh_token' "official-cache"
-  assert_contains "$home_dir/output.txt" "Codex 官方登录缓存已保留"
+  assert_not_contains "$home_dir/output.txt" "官方登录缓存"
 }
 
 test_codex_auth_can_be_imported_from_private_base64_env() {
@@ -373,7 +390,7 @@ test_codex_auth_can_be_imported_from_private_base64_env() {
   assert_contains "$home_dir/.codex/auth.json" '"private-cache"'
   assert_not_contains "$home_dir/.codex/auth.json" "$API_KEY"
   assert_contains "$home_dir/.codex/config.toml" "experimental_bearer_token = \"$API_KEY\""
-  assert_contains "$home_dir/output.txt" "Codex 官方登录缓存已导入"
+  assert_not_contains "$home_dir/output.txt" "官方登录缓存"
 }
 
 test_proxy_direct_rule_can_be_added_to_clash_config() {
@@ -437,6 +454,7 @@ test_tty_empty_key_defaults_to_codex
 test_tty_auto_key_fallback_is_visible_and_timeout_bound
 test_tty_auto_key_accepts_api_envelope
 test_prompts_for_api_key_in_chinese
+test_success_output_is_simple_and_does_not_leak_shell_fragments
 test_codex_without_official_login_cache_does_not_create_auth
 test_codex_keeps_existing_official_login_cache
 test_codex_auth_can_be_imported_from_private_base64_env

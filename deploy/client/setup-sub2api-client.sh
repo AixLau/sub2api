@@ -362,7 +362,7 @@ AUTO
   key="$(json_get_string "$exchange_json" "api_key")"
   [ -n "$key" ] || return 1
   API_KEY="$key"
-  printf '\n已自动获取 API Key，继续写入配置。\n'
+  printf '\n授权完成，正在写入配置...\n'
   return 0
 }
 
@@ -617,27 +617,13 @@ elif [ "$CLIENT" = "claude" ]; then
   need_jq_for_existing_json "$CLAUDE_SETTINGS"
 fi
 
-cat <<SUMMARY
-Sub2API 客户端配置
-
-已选择客户端：
-  $(if [ "$CLIENT" = "codex" ]; then printf 'Codex'; else printf 'Claude Code'; fi)
-
-将写入以下配置文件：
-$(if [ "$CLIENT" = "codex" ]; then
-  printf '  %s\n' "$CODEX_CONFIG"
-  case "$CODEX_AUTH_STATUS" in
-    will_import) printf '  导入 Codex 官方登录缓存：%s\n' "$CODEX_AUTH" ;;
-    present) printf '  保留已有 Codex 官方登录缓存：%s\n' "$CODEX_AUTH" ;;
-    *) printf '  未提供 Codex 官方登录缓存，仅写入第三方 API 配置。\n' ;;
-  esac
+if [ "$CLIENT" = "codex" ]; then
+  CLIENT_LABEL="Codex"
 else
-  printf '  %s\n' "$CLAUDE_SETTINGS"
-fi)
+  CLIENT_LABEL="Claude Code"
+fi
 
-接口地址：
-  $(if [ "$CLIENT" = "codex" ]; then printf '%s' "$GATEWAY_URL"; else printf '%s' "$CLAUDE_BASE_URL"; fi)
-SUMMARY
+printf '\n正在配置 %s，请稍候...\n' "$CLIENT_LABEL"
 
 umask 077
 if [ "$CLIENT" = "codex" ]; then
@@ -659,32 +645,14 @@ fi
 
 add_proxy_direct_rule
 
-cat <<DONE
-
-配置已写入。
-
-已配置：
-$(if [ "$CLIENT" = "codex" ]; then
-  printf '  Codex 配置：%s\n' "$CODEX_CONFIG"
-  case "$CODEX_AUTH_STATUS" in
-    imported) printf '  Codex 官方登录缓存已导入：%s\n' "$CODEX_AUTH" ;;
-    present) printf '  Codex 官方登录缓存已保留：%s\n' "$CODEX_AUTH" ;;
-    *) printf '  Codex 官方登录缓存：未提供，未写入。\n' ;;
-  esac
-else
-  printf '  Claude Code 配置：%s\n' "$CLAUDE_SETTINGS"
-fi)
-
-接口地址：
-  $(if [ "$CLIENT" = "codex" ]; then printf 'Codex:        %s' "$GATEWAY_URL"; else printf 'Claude Code:  %s' "$CLAUDE_BASE_URL"; fi)
-DONE
+printf '\n配置完成。\n'
 
 if [ -n "$BACKUPS" ]; then
   printf '\n备份文件：\n%s' "$BACKUPS"
 fi
 
 if [ "$CLIENT" = "codex" ]; then
-  printf '\n请重启 Codex 后再测试新配置。\n'
+  printf '\n请重启 Codex 后再测试。\n'
 else
-  printf '\n请重启 Claude Code 后再测试新配置。\n'
+  printf '\n请重启 Claude Code 后再测试。\n'
 fi

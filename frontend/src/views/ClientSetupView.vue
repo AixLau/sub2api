@@ -105,9 +105,6 @@ async function approve() {
     approved.value = true
     status.value = result.status
     successMessage.value = '配置确认完成，正在回到终端继续。'
-    if (result.redirect_uri) {
-      window.location.href = result.redirect_uri
-    }
   } catch (error) {
     errorMessage.value = readErrorMessage(error, '处理失败，请稍后重试或回到终端继续处理。')
   } finally {

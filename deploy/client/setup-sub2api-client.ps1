@@ -503,7 +503,7 @@ function Try-AutoApiKey {
         }
         if ($Exchange -and -not [string]::IsNullOrWhiteSpace($Exchange.api_key)) {
             Write-Host ""
-            Write-Host "已自动获取 API Key，继续写入配置。"
+            Write-Host "授权完成，正在写入配置..."
             return $Exchange.api_key
         }
     }
@@ -566,40 +566,14 @@ elseif ($Client -eq "claude") {
     $null = Read-JsonObject -Path $ClaudeSettings
 }
 
-Write-Host "Sub2API 客户端配置"
-Write-Host ""
-Write-Host "已选择客户端："
 if ($Client -eq "codex") {
-    Write-Host "  Codex"
+    $ClientLabel = "Codex"
 }
 else {
-    Write-Host "  Claude Code"
+    $ClientLabel = "Claude Code"
 }
 Write-Host ""
-Write-Host "将写入以下配置文件："
-if ($Client -eq "codex") {
-    Write-Host "  $CodexConfig"
-    if ($CodexAuthStatus -eq "will_import") {
-        Write-Host "  导入 Codex 官方登录缓存：$CodexAuth"
-    }
-    elseif ($CodexAuthStatus -eq "present") {
-        Write-Host "  保留已有 Codex 官方登录缓存：$CodexAuth"
-    }
-    else {
-        Write-Host "  未提供 Codex 官方登录缓存，仅写入第三方 API 配置。"
-    }
-}
-else {
-    Write-Host "  $ClaudeSettings"
-}
-Write-Host ""
-Write-Host "接口地址："
-if ($Client -eq "codex") {
-    Write-Host "  $GatewayUrl"
-}
-else {
-    Write-Host "  $ClaudeBaseUrl"
-}
+Write-Host "正在配置 $ClientLabel，请稍候..."
 
 if ($Client -eq "codex") {
     New-Item -ItemType Directory -Path $CodexDir -Force | Out-Null
@@ -622,32 +596,7 @@ elseif ($Client -eq "claude") {
 }
 
 Write-Host ""
-Write-Host "配置已写入。"
-Write-Host ""
-Write-Host "已配置："
-if ($Client -eq "codex") {
-    Write-Host "  Codex 配置：$CodexConfig"
-    if ($CodexAuthStatus -eq "imported") {
-        Write-Host "  Codex 官方登录缓存已导入：$CodexAuth"
-    }
-    elseif ($CodexAuthStatus -eq "present") {
-        Write-Host "  Codex 官方登录缓存已保留：$CodexAuth"
-    }
-    else {
-        Write-Host "  Codex 官方登录缓存：未提供，未写入。"
-    }
-}
-else {
-    Write-Host "  Claude Code 配置：$ClaudeSettings"
-}
-Write-Host ""
-Write-Host "接口地址："
-if ($Client -eq "codex") {
-    Write-Host "  Codex:        $GatewayUrl"
-}
-else {
-    Write-Host "  Claude Code:  $ClaudeBaseUrl"
-}
+Write-Host "配置完成。"
 
 if ($Backups.Count -gt 0) {
     Write-Host ""
@@ -659,8 +608,8 @@ if ($Backups.Count -gt 0) {
 
 Write-Host ""
 if ($Client -eq "codex") {
-    Write-Host "请重启 Codex 后再测试新配置。"
+    Write-Host "请重启 Codex 后再测试。"
 }
 else {
-    Write-Host "请重启 Claude Code 后再测试新配置。"
+    Write-Host "请重启 Claude Code 后再测试。"
 }
