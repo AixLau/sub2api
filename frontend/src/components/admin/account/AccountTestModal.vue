@@ -470,6 +470,9 @@ const handleEvent = (event: {
   error?: string
   image_url?: string
   mime_type?: string
+  latency_ms?: number
+  first_token_ms?: number
+  duration_ms?: number
 }) => {
   switch (event.type) {
     case 'test_start':
@@ -509,6 +512,15 @@ const handleEvent = (event: {
       if (streamingContent.value) {
         addLine(streamingContent.value, 'text-green-300')
         streamingContent.value = ''
+      }
+      if (typeof event.latency_ms === 'number') {
+        addLine(t('admin.accounts.testLatency', { latency: event.latency_ms }), 'text-cyan-300')
+      }
+      if (typeof event.first_token_ms === 'number') {
+        addLine(t('admin.accounts.testFirstToken', { firstToken: event.first_token_ms }), 'text-cyan-300')
+      }
+      if (typeof event.duration_ms === 'number') {
+        addLine(t('admin.accounts.testDuration', { duration: event.duration_ms }), 'text-cyan-300')
       }
       if (event.success) {
         status.value = 'success'

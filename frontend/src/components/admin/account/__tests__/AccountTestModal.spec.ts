@@ -144,4 +144,28 @@ describe('AccountTestModal', () => {
     expect(preview.exists()).toBe(true)
     expect(preview.attributes('src')).toBe('data:image/png;base64,QUJD')
   })
+
+  it('测试完成时展示响应延迟、首个内容和总耗时', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      createStreamResponse([
+        'data: {"type":"test_complete","success":true,"latency_ms":123,"first_token_ms":456,"duration_ms":789}\n'
+      ])
+    ) as any
+
+    const wrapper = mountModal()
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    const buttons = wrapper.findAll('button')
+    const startButton = buttons.find((button) => button.text().includes('admin.accounts.startTest'))
+    expect(startButton).toBeTruthy()
+
+    await startButton!.trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.accounts.testLatency')
+    expect(wrapper.text()).toContain('admin.accounts.testFirstToken')
+    expect(wrapper.text()).toContain('admin.accounts.testDuration')
+  })
 })
