@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"math/rand/v2"
 	"strconv"
 	"strings"
@@ -147,8 +148,23 @@ type AssignSubscriptionInput struct {
 	UserID       int64
 	GroupID      int64
 	ValidityDays int
+	PlanPrice    float64
 	AssignedBy   int64
 	Notes        string
+}
+
+// AssignSubscriptionResult describes the outcome of a purchase-style assignment.
+type AssignSubscriptionResult struct {
+	Subscription *UserSubscription
+	Reused       bool
+
+	PreservedMonthlyRemainingUSD float64
+	PurchasedMonthlyLimitUSD     float64
+
+	ShouldMigrateAPIKeys       bool
+	MigrateAPIKeysFromGroupID  int64
+	MigrateAPIKeysToGroupID    int64
+	MigrateAPIKeysFromGroupIDs []int64
 }
 
 // AssignSubscription 分配订阅给用户（不允许重复分配）
@@ -250,6 +266,172 @@ func (s *SubscriptionService) AssignOrExtendSubscription(ctx context.Context, in
 	return sub, false, nil // false 表示是新建
 }
 
+// AssignOrMergeSubscriptionPurchase assigns a paid subscription purchase.
+//
+// Product line is the target group's platform + subscription_type. If the user
+// already has an active subscription in the same line, remaining monthly quota
+// and remaining days are merged into the highest tier group instead of creating
+// an independent duplicate subscription.
+func (s *SubscriptionService) AssignOrMergeSubscriptionPurchase(ctx context.Context, input *AssignSubscriptionInput) (*AssignSubscriptionResult, error) {
+	if input == nil {
+		return nil, ErrSubscriptionNilInput
+	}
+
+	targetGroup, err := s.groupRepo.GetByID(ctx, input.GroupID)
+	if err != nil {
+		return nil, fmt.Errorf("group not found: %w", err)
+	}
+	if !targetGroup.IsSubscriptionType() {
+		return nil, ErrGroupNotSubscriptionType
+	}
+
+	validityDays := normalizeAssignValidityDays(input.ValidityDays)
+	existingSubs, err := s.userSubRepo.ListActiveByUserIDPlatformSubscriptionType(ctx, input.UserID, targetGroup.Platform, targetGroup.SubscriptionType)
+	if err != nil {
+		return nil, err
+	}
+	if len(existingSubs) == 0 {
+		sub, err := s.createSubscription(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		s.invalidateSubscriptionCachesAsync(input.UserID, input.GroupID)
+		return &AssignSubscriptionResult{
+			Subscription:                 sub,
+			PurchasedMonthlyLimitUSD:     groupMonthlyLimitUSD(targetGroup),
+			MigrateAPIKeysToGroupID:      input.GroupID,
+			MigrateAPIKeysFromGroupID:    0,
+			ShouldMigrateAPIKeys:         false,
+			PreservedMonthlyRemainingUSD: 0,
+		}, nil
+	}
+
+	now := time.Now()
+	targetTier := subscriptionTier{
+		Group: targetGroup,
+		Price: input.PlanPrice,
+	}
+	var targetSub *UserSubscription
+	totalRemaining := 0.0
+	totalRemainingDays := 0
+	oldGroupIDs := make(map[int64]struct{})
+	for i := range existingSubs {
+		sub := existingSubs[i]
+		if sub.Group == nil {
+			group, getErr := s.groupRepo.GetByID(ctx, sub.GroupID)
+			if getErr != nil {
+				return nil, fmt.Errorf("get existing subscription group: %w", getErr)
+			}
+			sub.Group = group
+		}
+		oldGroupIDs[sub.GroupID] = struct{}{}
+		totalRemaining += subscriptionMonthlyRemainingUSD(&sub)
+		totalRemainingDays += subscriptionRemainingDays(now, &sub)
+		existingTier := subscriptionTier{Group: sub.Group}
+		if subscriptionTierHigher(existingTier, targetTier) {
+			targetTier = existingTier
+			targetSub = &existingSubs[i]
+		}
+	}
+	if targetSub == nil {
+		targetSub = &existingSubs[0]
+		for i := range existingSubs {
+			if existingSubs[i].GroupID == input.GroupID {
+				targetSub = &existingSubs[i]
+				break
+			}
+		}
+	}
+
+	purchasedLimit := groupMonthlyLimitUSD(targetGroup)
+	totalRemaining += purchasedLimit
+	totalRemainingDays += validityDays
+	if totalRemainingDays > MaxValidityDays {
+		totalRemainingDays = MaxValidityDays
+	}
+
+	targetLimit := groupMonthlyLimitUSD(targetTier.Group)
+	targetBonus := totalRemaining - targetLimit
+	if targetBonus < 0 {
+		targetBonus = 0
+	}
+
+	newExpiresAt := now.AddDate(0, 0, totalRemainingDays)
+	if newExpiresAt.After(MaxExpiresAt) {
+		newExpiresAt = MaxExpiresAt
+	}
+
+	finalSub := *targetSub
+	finalSub.UserID = input.UserID
+	finalSub.GroupID = targetTier.Group.ID
+	finalSub.Group = targetTier.Group
+	finalSub.StartsAt = now
+	finalSub.ExpiresAt = newExpiresAt
+	finalSub.Status = SubscriptionStatusActive
+	finalSub.MonthlyUsageUSD = 0
+	finalSub.MonthlyBonusUSD = targetBonus
+	finalSub.Notes = appendSubscriptionNotes(finalSub.Notes, input.Notes)
+	if finalSub.DailyWindowStart == nil {
+		windowStart := startOfDay(now)
+		finalSub.DailyWindowStart = &windowStart
+	}
+	if finalSub.WeeklyWindowStart == nil {
+		windowStart := startOfDay(now)
+		finalSub.WeeklyWindowStart = &windowStart
+	}
+	if finalSub.MonthlyWindowStart == nil {
+		windowStart := startOfDay(now)
+		finalSub.MonthlyWindowStart = &windowStart
+	}
+
+	if err := s.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
+		if err := s.userSubRepo.Update(txCtx, &finalSub); err != nil {
+			return fmt.Errorf("merge subscription purchase: %w", err)
+		}
+		for i := range existingSubs {
+			sub := existingSubs[i]
+			if sub.ID == finalSub.ID {
+				continue
+			}
+			if err := s.userSubRepo.Delete(txCtx, sub.ID); err != nil {
+				return fmt.Errorf("delete merged duplicate subscription: %w", err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	for oldGroupID := range oldGroupIDs {
+		s.invalidateSubscriptionCachesAsync(input.UserID, oldGroupID)
+	}
+	s.invalidateSubscriptionCachesAsync(input.UserID, finalSub.GroupID)
+
+	refreshed, err := s.userSubRepo.GetByID(ctx, finalSub.ID)
+	if err != nil {
+		return nil, err
+	}
+	migrateFromGroupIDs := make([]int64, 0, len(oldGroupIDs))
+	for oldGroupID := range oldGroupIDs {
+		if oldGroupID != finalSub.GroupID {
+			migrateFromGroupIDs = append(migrateFromGroupIDs, oldGroupID)
+		}
+	}
+	result := &AssignSubscriptionResult{
+		Subscription:                 refreshed,
+		Reused:                       true,
+		PreservedMonthlyRemainingUSD: totalRemaining - purchasedLimit,
+		PurchasedMonthlyLimitUSD:     purchasedLimit,
+		MigrateAPIKeysToGroupID:      finalSub.GroupID,
+		MigrateAPIKeysFromGroupIDs:   migrateFromGroupIDs,
+		ShouldMigrateAPIKeys:         len(migrateFromGroupIDs) > 0,
+	}
+	if result.ShouldMigrateAPIKeys {
+		result.MigrateAPIKeysFromGroupID = migrateFromGroupIDs[0]
+	}
+	return result, nil
+}
+
 func (s *SubscriptionService) updateExistingSubscriptionTerm(
 	ctx context.Context,
 	existingSub *UserSubscription,
@@ -310,6 +492,71 @@ func (s *SubscriptionService) withSubscriptionUpdateTx(ctx context.Context, fn f
 		return fmt.Errorf("commit transaction: %w", err)
 	}
 	return nil
+}
+
+type subscriptionTier struct {
+	Group *Group
+	Price float64
+}
+
+func subscriptionTierHigher(a, b subscriptionTier) bool {
+	aLimit := groupMonthlyLimitUSD(a.Group)
+	bLimit := groupMonthlyLimitUSD(b.Group)
+	if aLimit != bLimit {
+		return aLimit > bLimit
+	}
+	if a.Price != b.Price {
+		return a.Price > b.Price
+	}
+	if a.Group == nil || b.Group == nil {
+		return a.Group != nil
+	}
+	return a.Group.ID > b.Group.ID
+}
+
+func groupMonthlyLimitUSD(group *Group) float64 {
+	if group == nil || group.MonthlyLimitUSD == nil || *group.MonthlyLimitUSD <= 0 {
+		return 0
+	}
+	return *group.MonthlyLimitUSD
+}
+
+func subscriptionMonthlyRemainingUSD(sub *UserSubscription) float64 {
+	if sub == nil {
+		return 0
+	}
+	limit := effectiveMonthlyLimit(sub.Group, sub)
+	remaining := limit - sub.MonthlyUsageUSD
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
+}
+
+func subscriptionRemainingDays(now time.Time, sub *UserSubscription) int {
+	if sub == nil || !sub.ExpiresAt.After(now) {
+		return 0
+	}
+	days := int(math.Ceil(sub.ExpiresAt.Sub(now).Hours() / 24))
+	if days < 0 {
+		return 0
+	}
+	if days == 0 {
+		return 1
+	}
+	return days
+}
+
+func (s *SubscriptionService) invalidateSubscriptionCachesAsync(userID, groupID int64) {
+	s.InvalidateSubCache(userID, groupID)
+	if s.billingCacheService == nil {
+		return
+	}
+	go func() {
+		cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.billingCacheService.InvalidateSubscription(cacheCtx, userID, groupID)
+	}()
 }
 
 func renewedSubscriptionTerm(existingSub *UserSubscription, notes string, startsAt, expiresAt time.Time) *UserSubscription {

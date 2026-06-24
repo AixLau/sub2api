@@ -189,6 +189,8 @@ type PaymentService struct {
 	configService            *PaymentConfigService
 	userRepo                 UserRepository
 	groupRepo                GroupRepository
+	apiKeyRepo               APIKeyRepository
+	authCacheInvalidator     APIKeyAuthCacheInvalidator
 	resumeService            *PaymentResumeService
 	affiliateService         *AffiliateService
 	notificationEmailService *NotificationEmailService
@@ -203,6 +205,11 @@ func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, load
 
 func (s *PaymentService) SetNotificationEmailService(notificationEmailService *NotificationEmailService) {
 	s.notificationEmailService = notificationEmailService
+}
+
+func (s *PaymentService) SetAPIKeyMigrationDependencies(apiKeyRepo APIKeyRepository, authCacheInvalidator APIKeyAuthCacheInvalidator) {
+	s.apiKeyRepo = apiKeyRepo
+	s.authCacheInvalidator = authCacheInvalidator
 }
 
 // --- Provider Registry ---

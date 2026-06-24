@@ -520,9 +520,15 @@ func (s *PaymentService) doSub(ctx context.Context, o *dbent.PaymentOrder) error
 	var sub *UserSubscription
 	if !assigned {
 		orderNote := fmt.Sprintf("payment order %d", o.ID)
-		sub, _, err = s.subscriptionSvc.AssignOrExtendSubscription(ctx, &AssignSubscriptionInput{UserID: o.UserID, GroupID: gid, ValidityDays: days, AssignedBy: 0, Notes: orderNote})
+		result, err := s.subscriptionSvc.AssignOrMergeSubscriptionPurchase(ctx, &AssignSubscriptionInput{UserID: o.UserID, GroupID: gid, ValidityDays: days, PlanPrice: o.Amount, AssignedBy: 0, Notes: orderNote})
 		if err != nil {
 			return fmt.Errorf("assign subscription: %w", err)
+		}
+		if result != nil {
+			sub = result.Subscription
+			if err := s.migrateSubscriptionAPIKeys(ctx, o.UserID, result); err != nil {
+				return err
+			}
 		}
 		s.writeAuditLog(ctx, o.ID, "SUBSCRIPTION_ASSIGNED", "system", map[string]any{
 			"groupID":      gid,
@@ -535,6 +541,35 @@ func (s *PaymentService) doSub(ctx context.Context, o *dbent.PaymentOrder) error
 		return err
 	}
 	return s.markCompleted(ctx, o, "SUBSCRIPTION_SUCCESS", s.subscriptionPurchaseEmailContext(ctx, o, sub))
+}
+
+func (s *PaymentService) migrateSubscriptionAPIKeys(ctx context.Context, userID int64, result *AssignSubscriptionResult) error {
+	if result == nil || !result.ShouldMigrateAPIKeys {
+		return nil
+	}
+	if s.apiKeyRepo == nil {
+		return fmt.Errorf("api key repository unavailable for subscription upgrade migration")
+	}
+	for _, oldGroupID := range result.MigrateAPIKeysFromGroupIDs {
+		if oldGroupID == 0 || oldGroupID == result.MigrateAPIKeysToGroupID {
+			continue
+		}
+		if _, err := s.apiKeyRepo.UpdateGroupIDByUserAndGroup(ctx, userID, oldGroupID, result.MigrateAPIKeysToGroupID); err != nil {
+			return fmt.Errorf("migrate api keys from group %d to %d: %w", oldGroupID, result.MigrateAPIKeysToGroupID, err)
+		}
+	}
+	if s.authCacheInvalidator == nil {
+		return nil
+	}
+	keys, err := s.apiKeyRepo.ListKeysByUserID(ctx, userID)
+	if err != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
+		return nil
+	}
+	for _, key := range keys {
+		s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, key)
+	}
+	return nil
 }
 
 func (s *PaymentService) hasAuditLog(ctx context.Context, orderID int64, action string) bool {

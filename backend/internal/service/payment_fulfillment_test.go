@@ -13,6 +13,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -52,6 +53,95 @@ type paymentFulfillmentAffiliateRepoStub struct {
 	inviteeSummary *AffiliateSummary
 	inviterSummary *AffiliateSummary
 	accrueCalls    []paymentFulfillmentAffiliateAccrueCall
+}
+
+type paymentFulfillmentAPIKeyMigrationCall struct {
+	userID     int64
+	oldGroupID int64
+	newGroupID int64
+}
+
+type paymentFulfillmentAPIKeyRepoStub struct {
+	keys           []string
+	migrationCalls []paymentFulfillmentAPIKeyMigrationCall
+}
+
+func (s *paymentFulfillmentAPIKeyRepoStub) Create(context.Context, *APIKey) error {
+	panic("unexpected Create")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) GetByID(context.Context, int64) (*APIKey, error) {
+	panic("unexpected GetByID")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) GetKeyAndOwnerID(context.Context, int64) (string, int64, error) {
+	panic("unexpected GetKeyAndOwnerID")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) GetByKey(context.Context, string) (*APIKey, error) {
+	panic("unexpected GetByKey")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) GetByKeyForAuth(context.Context, string) (*APIKey, error) {
+	panic("unexpected GetByKeyForAuth")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) Update(context.Context, *APIKey) error {
+	panic("unexpected Update")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) Delete(context.Context, int64) error {
+	panic("unexpected Delete")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) DeleteWithAudit(context.Context, int64) error {
+	panic("unexpected DeleteWithAudit")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) ListByUserID(context.Context, int64, pagination.PaginationParams, APIKeyListFilters) ([]APIKey, *pagination.PaginationResult, error) {
+	panic("unexpected ListByUserID")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) VerifyOwnership(context.Context, int64, []int64) ([]int64, error) {
+	panic("unexpected VerifyOwnership")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) CountByUserID(context.Context, int64) (int64, error) {
+	panic("unexpected CountByUserID")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) ExistsByKey(context.Context, string) (bool, error) {
+	panic("unexpected ExistsByKey")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) ListByGroupID(context.Context, int64, pagination.PaginationParams) ([]APIKey, *pagination.PaginationResult, error) {
+	panic("unexpected ListByGroupID")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) SearchAPIKeys(context.Context, int64, string, int) ([]APIKey, error) {
+	panic("unexpected SearchAPIKeys")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) ClearGroupIDByGroupID(context.Context, int64) (int64, error) {
+	panic("unexpected ClearGroupIDByGroupID")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) UpdateGroupIDByUserAndGroup(_ context.Context, userID, oldGroupID, newGroupID int64) (int64, error) {
+	s.migrationCalls = append(s.migrationCalls, paymentFulfillmentAPIKeyMigrationCall{
+		userID:     userID,
+		oldGroupID: oldGroupID,
+		newGroupID: newGroupID,
+	})
+	return 2, nil
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) CountByGroupID(context.Context, int64) (int64, error) {
+	panic("unexpected CountByGroupID")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) ListKeysByUserID(context.Context, int64) ([]string, error) {
+	return append([]string(nil), s.keys...), nil
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) ListKeysByGroupID(context.Context, int64) ([]string, error) {
+	panic("unexpected ListKeysByGroupID")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) IncrementQuotaUsed(context.Context, int64, float64) (float64, error) {
+	panic("unexpected IncrementQuotaUsed")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) UpdateLastUsed(context.Context, int64, time.Time) error {
+	panic("unexpected UpdateLastUsed")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) IncrementRateLimitUsage(context.Context, int64, float64) error {
+	panic("unexpected IncrementRateLimitUsage")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) ResetRateLimitWindows(context.Context, int64) error {
+	panic("unexpected ResetRateLimitWindows")
+}
+func (s *paymentFulfillmentAPIKeyRepoStub) GetRateLimitData(context.Context, int64) (*APIKeyRateLimitData, error) {
+	panic("unexpected GetRateLimitData")
 }
 
 func (r *paymentFulfillmentAffiliateRepoStub) EnsureUserAffiliate(_ context.Context, userID int64) (*AffiliateSummary, error) {
@@ -730,6 +820,99 @@ func TestExecuteSubscriptionFulfillmentAppliesAffiliateRebate(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, applied.Detail, `"baseAmount":120`)
 	require.Contains(t, applied.Detail, `"rebateAmount":24`)
+}
+
+func TestExecuteSubscriptionFulfillmentMergesSubscriptionAndMigratesAPIKeys(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	ensurePaymentAuditOrderActionUniqueIndex(t, ctx, client)
+
+	user, err := client.User.Create().
+		SetEmail("subscription-merge@example.com").
+		SetPasswordHash("hash").
+		SetUsername("subscription-merge-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(300).
+		SetPayAmount(300).
+		SetFeeRate(0).
+		SetRechargeCode("PAY-SUB-MERGE").
+		SetOutTradeNo("sub2_subscription_merge").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("trade-sub-merge").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetPlanID(101).
+		SetSubscriptionGroupID(22).
+		SetSubscriptionDays(30).
+		SetStatus(OrderStatusPaid).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	now := time.Now()
+	monthlyStart := startOfDay(now)
+	basic := &Group{
+		ID:               21,
+		Status:           payment.EntityStatusActive,
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  testFloat64Ptr(100),
+	}
+	pro := &Group{
+		ID:               22,
+		Status:           payment.EntityStatusActive,
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  testFloat64Ptr(300),
+	}
+	groupRepo := &subscriptionGroupRepoMapStub{groups: map[int64]*Group{21: basic, 22: pro}}
+	subRepo := newSubscriptionUserSubRepoStub()
+	subRepo.seed(&UserSubscription{
+		ID:                 201,
+		UserID:             user.ID,
+		GroupID:            21,
+		StartsAt:           now.AddDate(0, 0, -20),
+		ExpiresAt:          now.AddDate(0, 0, 10),
+		Status:             SubscriptionStatusActive,
+		MonthlyWindowStart: &monthlyStart,
+		MonthlyUsageUSD:    40,
+		Group:              basic,
+	})
+	subscriptionSvc := NewSubscriptionService(groupRepo, subRepo, nil, nil, nil)
+	apiKeyRepo := &paymentFulfillmentAPIKeyRepoStub{keys: []string{"sk-low-1", "sk-low-2"}}
+	authInvalidator := &authCacheInvalidatorStub{}
+	svc := &PaymentService{
+		entClient:            client,
+		groupRepo:            groupRepo,
+		subscriptionSvc:      subscriptionSvc,
+		apiKeyRepo:           apiKeyRepo,
+		authCacheInvalidator: authInvalidator,
+	}
+
+	err = svc.ExecuteSubscriptionFulfillment(ctx, order.ID)
+	require.NoError(t, err)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Len(t, apiKeyRepo.migrationCalls, 1)
+	require.Equal(t, user.ID, apiKeyRepo.migrationCalls[0].userID)
+	require.Equal(t, int64(21), apiKeyRepo.migrationCalls[0].oldGroupID)
+	require.Equal(t, int64(22), apiKeyRepo.migrationCalls[0].newGroupID)
+	require.ElementsMatch(t, []string{"sk-low-1", "sk-low-2"}, authInvalidator.keys)
+
+	merged, err := subRepo.GetByID(ctx, 201)
+	require.NoError(t, err)
+	require.Equal(t, int64(22), merged.GroupID)
+	require.InDelta(t, 60, merged.MonthlyBonusUSD, 0.001)
+	require.InDelta(t, 0, merged.MonthlyUsageUSD, 0.001)
 }
 
 func TestExecuteSubscriptionFulfillmentDoesNotDuplicateWorkAfterLegacySuccessAudit(t *testing.T) {

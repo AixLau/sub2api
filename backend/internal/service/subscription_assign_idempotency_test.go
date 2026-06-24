@@ -65,6 +65,23 @@ func (s *subscriptionGroupRepoStub) GetByID(context.Context, int64) (*Group, err
 	return s.group, nil
 }
 
+type subscriptionGroupRepoMapStub struct {
+	groupRepoNoop
+	groups map[int64]*Group
+}
+
+func (s *subscriptionGroupRepoMapStub) GetByID(_ context.Context, id int64) (*Group, error) {
+	if s == nil || s.groups == nil {
+		return nil, ErrGroupNotFound
+	}
+	group := s.groups[id]
+	if group == nil {
+		return nil, ErrGroupNotFound
+	}
+	cp := *group
+	return &cp, nil
+}
+
 type userSubRepoNoop struct{}
 
 func (userSubRepoNoop) Create(context.Context, *UserSubscription) error {
@@ -88,6 +105,9 @@ func (userSubRepoNoop) ListByUserID(context.Context, int64) ([]UserSubscription,
 }
 func (userSubRepoNoop) ListActiveByUserID(context.Context, int64) ([]UserSubscription, error) {
 	panic("unexpected ListActiveByUserID call")
+}
+func (userSubRepoNoop) ListActiveByUserIDPlatformSubscriptionType(context.Context, int64, string, string) ([]UserSubscription, error) {
+	panic("unexpected ListActiveByUserIDPlatformSubscriptionType call")
 }
 func (userSubRepoNoop) ListByGroupID(context.Context, int64, pagination.PaginationParams) ([]UserSubscription, *pagination.PaginationResult, error) {
 	panic("unexpected ListByGroupID call")
@@ -184,6 +204,24 @@ func (s *subscriptionUserSubRepoStub) GetActiveByUserIDAndGroupID(_ context.Cont
 	}
 	cp := *sub
 	return &cp, nil
+}
+
+func (s *subscriptionUserSubRepoStub) ListActiveByUserIDPlatformSubscriptionType(_ context.Context, userID int64, platform, subscriptionType string) ([]UserSubscription, error) {
+	var out []UserSubscription
+	now := time.Now()
+	for _, sub := range s.byID {
+		if sub == nil || sub.UserID != userID || sub.Status != SubscriptionStatusActive || !sub.ExpiresAt.After(now) || sub.Group == nil {
+			continue
+		}
+		if sub.Group.Platform != platform || sub.Group.SubscriptionType != subscriptionType {
+			continue
+		}
+		cp := *sub
+		group := *sub.Group
+		cp.Group = &group
+		out = append(out, cp)
+	}
+	return out, nil
 }
 
 func (s *subscriptionUserSubRepoStub) Create(_ context.Context, sub *UserSubscription) error {
@@ -410,10 +448,163 @@ func TestAssignSubscriptionGroupTypeValidation(t *testing.T) {
 	require.Equal(t, infraerrors.Code(ErrGroupNotSubscriptionType), infraerrors.Code(err))
 }
 
+func TestAssignOrMergeSubscriptionPurchaseSameTierAddsRemainingQuotaAndDays(t *testing.T) {
+	now := time.Now()
+	monthlyStart := startOfDay(now)
+	group := &Group{
+		ID:               11,
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  testFloat64Ptr(100),
+	}
+	groupRepo := &subscriptionGroupRepoMapStub{groups: map[int64]*Group{11: group}}
+	subRepo := newSubscriptionUserSubRepoStub()
+	subRepo.seed(&UserSubscription{
+		ID:                 101,
+		UserID:             9001,
+		GroupID:            11,
+		StartsAt:           now.AddDate(0, 0, -20),
+		ExpiresAt:          now.AddDate(0, 0, 10),
+		Status:             SubscriptionStatusActive,
+		MonthlyWindowStart: &monthlyStart,
+		MonthlyUsageUSD:    40,
+		Group:              group,
+	})
+
+	svc := NewSubscriptionService(groupRepo, subRepo, nil, nil, nil)
+	result, err := svc.AssignOrMergeSubscriptionPurchase(context.Background(), &AssignSubscriptionInput{
+		UserID:       9001,
+		GroupID:      11,
+		ValidityDays: 30,
+		Notes:        "same tier purchase",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Reused)
+	require.Equal(t, int64(101), result.Subscription.ID)
+	require.Equal(t, int64(11), result.Subscription.GroupID)
+	require.False(t, result.ShouldMigrateAPIKeys)
+	require.InDelta(t, 60, result.PreservedMonthlyRemainingUSD, 0.001)
+	require.InDelta(t, 100, result.PurchasedMonthlyLimitUSD, 0.001)
+	require.InDelta(t, 60, result.Subscription.MonthlyBonusUSD, 0.001)
+	require.InDelta(t, 0, result.Subscription.MonthlyUsageUSD, 0.001)
+	require.GreaterOrEqual(t, int(time.Until(result.Subscription.ExpiresAt).Hours()/24), 39)
+	require.Equal(t, 0, subRepo.createCalls)
+}
+
+func TestAssignOrMergeSubscriptionPurchaseUpgradeCarriesQuotaAndRequestsKeyMigration(t *testing.T) {
+	now := time.Now()
+	monthlyStart := startOfDay(now)
+	basic := &Group{
+		ID:               21,
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  testFloat64Ptr(100),
+	}
+	pro := &Group{
+		ID:               22,
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  testFloat64Ptr(300),
+	}
+	groupRepo := &subscriptionGroupRepoMapStub{groups: map[int64]*Group{21: basic, 22: pro}}
+	subRepo := newSubscriptionUserSubRepoStub()
+	subRepo.seed(&UserSubscription{
+		ID:                 201,
+		UserID:             9002,
+		GroupID:            21,
+		StartsAt:           now.AddDate(0, 0, -20),
+		ExpiresAt:          now.AddDate(0, 0, 10),
+		Status:             SubscriptionStatusActive,
+		MonthlyWindowStart: &monthlyStart,
+		MonthlyUsageUSD:    40,
+		Group:              basic,
+	})
+
+	svc := NewSubscriptionService(groupRepo, subRepo, nil, nil, nil)
+	result, err := svc.AssignOrMergeSubscriptionPurchase(context.Background(), &AssignSubscriptionInput{
+		UserID:       9002,
+		GroupID:      22,
+		ValidityDays: 30,
+		Notes:        "upgrade purchase",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Reused)
+	require.Equal(t, int64(201), result.Subscription.ID)
+	require.Equal(t, int64(22), result.Subscription.GroupID)
+	require.True(t, result.ShouldMigrateAPIKeys)
+	require.Equal(t, int64(21), result.MigrateAPIKeysFromGroupID)
+	require.Equal(t, int64(22), result.MigrateAPIKeysToGroupID)
+	require.InDelta(t, 60, result.PreservedMonthlyRemainingUSD, 0.001)
+	require.InDelta(t, 300, result.PurchasedMonthlyLimitUSD, 0.001)
+	require.InDelta(t, 60, result.Subscription.MonthlyBonusUSD, 0.001)
+	require.InDelta(t, 0, result.Subscription.MonthlyUsageUSD, 0.001)
+	require.GreaterOrEqual(t, int(time.Until(result.Subscription.ExpiresAt).Hours()/24), 39)
+	require.Equal(t, 0, subRepo.createCalls)
+
+	_, err = subRepo.GetByUserIDAndGroupID(context.Background(), 9002, 21)
+	require.ErrorIs(t, err, ErrSubscriptionNotFound)
+}
+
+func TestAssignOrMergeSubscriptionPurchaseHigherTierDoesNotDowngrade(t *testing.T) {
+	now := time.Now()
+	monthlyStart := startOfDay(now)
+	basic := &Group{
+		ID:               31,
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  testFloat64Ptr(100),
+	}
+	pro := &Group{
+		ID:               32,
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  testFloat64Ptr(300),
+	}
+	groupRepo := &subscriptionGroupRepoMapStub{groups: map[int64]*Group{31: basic, 32: pro}}
+	subRepo := newSubscriptionUserSubRepoStub()
+	subRepo.seed(&UserSubscription{
+		ID:                 301,
+		UserID:             9003,
+		GroupID:            32,
+		StartsAt:           now.AddDate(0, 0, -20),
+		ExpiresAt:          now.AddDate(0, 0, 10),
+		Status:             SubscriptionStatusActive,
+		MonthlyWindowStart: &monthlyStart,
+		MonthlyUsageUSD:    40,
+		Group:              pro,
+	})
+
+	svc := NewSubscriptionService(groupRepo, subRepo, nil, nil, nil)
+	result, err := svc.AssignOrMergeSubscriptionPurchase(context.Background(), &AssignSubscriptionInput{
+		UserID:       9003,
+		GroupID:      31,
+		ValidityDays: 30,
+		Notes:        "lower tier renewal",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Reused)
+	require.Equal(t, int64(301), result.Subscription.ID)
+	require.Equal(t, int64(32), result.Subscription.GroupID)
+	require.False(t, result.ShouldMigrateAPIKeys)
+	require.InDelta(t, 260, result.PreservedMonthlyRemainingUSD, 0.001)
+	require.InDelta(t, 100, result.PurchasedMonthlyLimitUSD, 0.001)
+	require.InDelta(t, 60, result.Subscription.MonthlyBonusUSD, 0.001)
+	require.InDelta(t, 0, result.Subscription.MonthlyUsageUSD, 0.001)
+	require.GreaterOrEqual(t, int(time.Until(result.Subscription.ExpiresAt).Hours()/24), 39)
+	require.Equal(t, 0, subRepo.createCalls)
+}
+
 func strconvFormatInt(v int64) string {
 	return strconv.FormatInt(v, 10)
 }
 
 func infraerrorsReason(err error) string {
 	return infraerrors.Reason(err)
+}
+
+func testFloat64Ptr(v float64) *float64 {
+	return &v
 }

@@ -140,6 +140,7 @@ type RedeemService struct {
 	billingCacheService  *BillingCacheService
 	entClient            *dbent.Client
 	authCacheInvalidator APIKeyAuthCacheInvalidator
+	apiKeyRepo           APIKeyRepository
 	affiliateService     *AffiliateService
 }
 
@@ -164,6 +165,10 @@ func NewRedeemService(
 		authCacheInvalidator: authCacheInvalidator,
 		affiliateService:     affiliateService,
 	}
+}
+
+func (s *RedeemService) SetAPIKeyRepository(apiKeyRepo APIKeyRepository) {
+	s.apiKeyRepo = apiKeyRepo
 }
 
 // GenerateRandomCode 生成随机兑换码
@@ -470,7 +475,7 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 			if validityDays == 0 {
 				validityDays = 30
 			}
-			_, _, err := s.subscriptionService.AssignOrExtendSubscription(txCtx, &AssignSubscriptionInput{
+			mergeResult, err := s.subscriptionService.AssignOrMergeSubscriptionPurchase(txCtx, &AssignSubscriptionInput{
 				UserID:       userID,
 				GroupID:      *redeemCode.GroupID,
 				ValidityDays: validityDays,
@@ -479,6 +484,9 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 			})
 			if err != nil {
 				return nil, fmt.Errorf("assign or extend subscription: %w", err)
+			}
+			if err := s.migrateSubscriptionAPIKeys(txCtx, userID, mergeResult); err != nil {
+				return nil, err
 			}
 		}
 
@@ -506,6 +514,24 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 	}
 
 	return redeemCode, nil
+}
+
+func (s *RedeemService) migrateSubscriptionAPIKeys(ctx context.Context, userID int64, result *AssignSubscriptionResult) error {
+	if result == nil || !result.ShouldMigrateAPIKeys {
+		return nil
+	}
+	if s.apiKeyRepo == nil {
+		return nil
+	}
+	for _, oldGroupID := range result.MigrateAPIKeysFromGroupIDs {
+		if oldGroupID == 0 || oldGroupID == result.MigrateAPIKeysToGroupID {
+			continue
+		}
+		if _, err := s.apiKeyRepo.UpdateGroupIDByUserAndGroup(ctx, userID, oldGroupID, result.MigrateAPIKeysToGroupID); err != nil {
+			return fmt.Errorf("migrate api keys from group %d to %d: %w", oldGroupID, result.MigrateAPIKeysToGroupID, err)
+		}
+	}
+	return nil
 }
 
 // invalidateRedeemCaches 失效兑换相关的缓存
