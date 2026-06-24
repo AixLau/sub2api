@@ -371,7 +371,7 @@
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
-    <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" />
+    <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @query-upstream-usage="handleQueryUpstreamUsage" @schedule="handleSchedule" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal :show="showImportData" @close="showImportData = false" @imported="handleDataImported" />
     <BulkEditAccountModal
@@ -1561,6 +1561,29 @@ const closeStatsModal = () => { showStats.value = false; statsAcc.value = null }
 const closeReAuthModal = () => { showReAuth.value = false; reAuthAcc.value = null }
 const handleTest = (a: Account) => { testingAcc.value = a; showTest.value = true }
 const handleViewStats = (a: Account) => { statsAcc.value = a; showStats.value = true }
+const formatUpstreamUsageValue = (value: unknown): string | null => {
+  if (value === null || value === undefined || value === '') return null
+  if (typeof value === 'number' && Number.isFinite(value)) return value.toLocaleString(undefined, { maximumFractionDigits: 6 })
+  if (typeof value === 'string') return value
+  return null
+}
+const handleQueryUpstreamUsage = async (a: Account) => {
+  try {
+    const usage = await adminAPI.accounts.queryUpstreamUsage(a.id)
+    const balance = formatUpstreamUsageValue(usage.balance)
+    const remaining = formatUpstreamUsageValue(usage.remaining)
+    const mode = formatUpstreamUsageValue(usage.mode)
+    const parts = [
+      balance ? t('admin.accounts.upstreamUsageBalance', { value: balance }) : '',
+      remaining && remaining !== balance ? t('admin.accounts.upstreamUsageRemaining', { value: remaining }) : '',
+      mode ? t('admin.accounts.upstreamUsageMode', { value: mode }) : ''
+    ].filter(Boolean)
+    appStore.showInfo(parts.length > 0 ? parts.join(' | ') : t('admin.accounts.upstreamUsageQueried'))
+  } catch (error: any) {
+    console.error('Failed to query upstream usage:', error)
+    appStore.showError(error?.message || t('admin.accounts.upstreamUsageFailed'))
+  }
+}
 const handleSchedule = async (a: Account) => {
   scheduleAcc.value = a
   scheduleModelOptions.value = []

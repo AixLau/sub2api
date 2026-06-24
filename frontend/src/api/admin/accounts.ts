@@ -477,6 +477,15 @@ export interface SyncUpstreamModelsResult {
   models: string[]
 }
 
+export interface UpstreamUsageResult {
+  mode?: string
+  balance?: number | string | null
+  remaining?: number | string | null
+  quota?: unknown
+  usage?: unknown
+  [key: string]: unknown
+}
+
 /**
  * Sync live supported models from the account's upstream model-list endpoint
  * @param id - Account ID
@@ -484,6 +493,16 @@ export interface SyncUpstreamModelsResult {
  */
 export async function syncUpstreamModels(id: number): Promise<SyncUpstreamModelsResult> {
   const { data } = await apiClient.post<SyncUpstreamModelsResult>(`/admin/accounts/${id}/models/sync-upstream`)
+  return data
+}
+
+/**
+ * Query a sub2api-compatible upstream /v1/usage endpoint for an OpenAI API-key account.
+ * @param id - Account ID
+ * @returns Raw upstream usage payload
+ */
+export async function queryUpstreamUsage(id: number): Promise<UpstreamUsageResult> {
+  const { data } = await apiClient.get<UpstreamUsageResult>(`/admin/accounts/${id}/upstream-usage`)
   return data
 }
 
@@ -800,6 +819,7 @@ export const accountsAPI = {
   setSchedulable,
   getAvailableModels,
   syncUpstreamModels,
+  queryUpstreamUsage,
   syncUpstreamModelsPreview,
   generateAuthUrl,
   exchangeCode,
