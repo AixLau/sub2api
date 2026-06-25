@@ -97,6 +97,17 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 			cleanPath = "index.html"
 		}
 
+		// For /docs/ paths, try override only (no fallback to embedded)
+		if strings.HasPrefix(path, "/docs/") {
+			if s.tryServeOverride(c, cleanPath) {
+				return
+			}
+			// If override file not found, return 404 instead of index.html
+			c.Status(http.StatusNotFound)
+			c.Abort()
+			return
+		}
+
 		// For index.html or SPA routes, serve with injected settings
 		if cleanPath == "index.html" || !s.fileExists(cleanPath) {
 			s.serveIndexHTML(c)
@@ -264,6 +275,17 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 		cleanPath := strings.TrimPrefix(path, "/")
 		if cleanPath == "" {
 			cleanPath = "index.html"
+		}
+
+		// For /docs/ paths, try override only (no fallback to embedded)
+		if strings.HasPrefix(path, "/docs/") {
+			if tryServeOverrideFile(c, overrideDir, cleanPath) {
+				return
+			}
+			// If override file not found, return 404 instead of index.html
+			c.Status(http.StatusNotFound)
+			c.Abort()
+			return
 		}
 
 		if file, err := distFS.Open(cleanPath); err == nil {
