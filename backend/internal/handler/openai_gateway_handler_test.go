@@ -253,7 +253,7 @@ func TestOpenAIAcquireResponsesAccountSlotRefreshesAlreadyAcquiredSelection(t *t
 	h := &OpenAIGatewayHandler{
 		gatewayService: service.NewOpenAIGatewayService(
 			openAITestAccountRepo{accounts: map[int64]service.Account{latest.ID: latest}},
-			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		),
 	}
 	streamStarted := false
@@ -1406,6 +1406,7 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 
 	cache := &concurrencyCacheMock{
@@ -1586,6 +1587,7 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		billingCacheSvc,
 		nil,
 		&service.DeferredService{},
+		nil,
 		nil,
 		nil,
 		channelSvc,
