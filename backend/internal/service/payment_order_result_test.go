@@ -169,6 +169,18 @@ func TestCalculateCreateOrderPayAmountForSubscriptionAppliesCNYMultiplier(t *tes
 	}
 }
 
+func TestCalculateCreateOrderPayAmountForNinePlusSubscriptionUsesProductPaymentAmount(t *testing.T) {
+	t.Parallel()
+
+	amountStr, amount, err := calculateCreateOrderPayAmountForPaymentType(payment.TypeNinePlus, payment.OrderTypeSubscription, 50.9, 0, 0.14, "CNY")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if amountStr != "50.90" || amount != 50.9 {
+		t.Fatalf("nineplus subscription pay amount = (%q, %v), want (50.90, 50.9)", amountStr, amount)
+	}
+}
+
 func TestCalculateCreateOrderPayAmountForSubscriptionDefaultMultiplierKeepsPrice(t *testing.T) {
 	t.Parallel()
 

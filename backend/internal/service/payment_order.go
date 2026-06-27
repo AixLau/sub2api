@@ -78,7 +78,7 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 			return nil, err
 		}
 	}
-	payAmountStr, payAmount, err := calculateCreateOrderPayAmountForOrder(req.OrderType, limitAmount, feeRate, cfg.BalanceRechargeMultiplier, methodCurrency)
+	payAmountStr, payAmount, err := calculateCreateOrderPayAmountForPaymentType(req.PaymentType, req.OrderType, limitAmount, feeRate, cfg.BalanceRechargeMultiplier, methodCurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 		selectedCurrency = paymentProviderConfigCurrency(sel.ProviderKey, sel.Config)
 	}
 	if selectedCurrency != methodCurrency || req.PaymentType == payment.TypeNinePlus {
-		payAmountStr, payAmount, err = calculateCreateOrderPayAmountForOrder(req.OrderType, limitAmount, feeRate, cfg.BalanceRechargeMultiplier, selectedCurrency)
+		payAmountStr, payAmount, err = calculateCreateOrderPayAmountForPaymentType(req.PaymentType, req.OrderType, limitAmount, feeRate, cfg.BalanceRechargeMultiplier, selectedCurrency)
 		if err != nil {
 			return nil, err
 		}
@@ -709,6 +709,13 @@ func calculateCreateOrderPayAmount(limitAmount, feeRate float64, currency string
 func calculateCreateOrderPayAmountForOrder(orderType string, limitAmount, feeRate, multiplier float64, currency string) (string, float64, error) {
 	paymentAmount := calculateCreateOrderPaymentAmount(orderType, limitAmount, multiplier, currency)
 	return calculateCreateOrderPayAmount(paymentAmount, feeRate, currency)
+}
+
+func calculateCreateOrderPayAmountForPaymentType(paymentType, orderType string, limitAmount, feeRate, multiplier float64, currency string) (string, float64, error) {
+	if paymentType == payment.TypeNinePlus && orderType == payment.OrderTypeSubscription {
+		return calculateCreateOrderPayAmount(limitAmount, feeRate, currency)
+	}
+	return calculateCreateOrderPayAmountForOrder(orderType, limitAmount, feeRate, multiplier, currency)
 }
 
 func calculateCreateOrderPaymentAmount(orderType string, limitAmount, multiplier float64, currency string) float64 {
