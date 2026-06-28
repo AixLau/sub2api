@@ -136,6 +136,7 @@ docs/*
 !docs/legal/*.md
 !docs/risk-control/
 !docs/risk-control/*.md
+!docs/risk-control/*.json
 .serena/
 .codex/
 frontend/coverage/
