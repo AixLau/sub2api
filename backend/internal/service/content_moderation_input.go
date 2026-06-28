@@ -21,9 +21,13 @@ func ExtractContentModerationText(protocol string, body []byte) string {
 	return ExtractContentModerationInput(protocol, body).Text
 }
 
-func ExtractContentModerationInput(protocol string, body []byte) ContentModerationInput {
+func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...string) ContentModerationInput {
 	if len(body) == 0 || !gjson.ValidBytes(body) {
 		return ContentModerationInput{}
+	}
+	auditScope := ContentModerationAuditScopeAllContext
+	if len(auditScopes) > 0 {
+		auditScope = normalizeContentModerationAuditScope(auditScopes[0])
 	}
 	var parts []string
 	var images []string
@@ -31,22 +35,24 @@ func ExtractContentModerationInput(protocol string, body []byte) ContentModerati
 	toolState := &toolResultTextState{}
 	switch protocol {
 	case ContentModerationProtocolAnthropicMessages:
-		collectAnthropicInput(body, &parts, &images, &sources, toolState)
+		collectAnthropicInput(body, &parts, &images, &sources, toolState, auditScope)
 	case ContentModerationProtocolOpenAIChat:
-		collectOpenAIChatMessages(gjson.GetBytes(body, "messages"), &parts, &images, &sources, toolState)
+		collectOpenAIChatMessages(gjson.GetBytes(body, "messages"), &parts, &images, &sources, toolState, auditScope)
 	case ContentModerationProtocolOpenAIResponses:
-		collectResponsesInput(gjson.GetBytes(body, "input"), &parts, &images, &sources, toolState)
+		collectResponsesInput(gjson.GetBytes(body, "input"), &parts, &images, &sources, toolState, auditScope)
 	case ContentModerationProtocolGemini:
-		collectGeminiInput(body, &parts, &images, &sources, toolState)
+		collectGeminiInput(body, &parts, &images, &sources, toolState, auditScope)
 	case ContentModerationProtocolOpenAIImages:
 		before := len(parts)
 		addModerationText(&parts, gjson.GetBytes(body, "prompt").String())
 		appendModerationSources(&sources, "image.prompt", parts, before)
+		before = len(parts)
 		collectContentValue(gjson.GetBytes(body, "images"), &parts, &images)
+		appendModerationSources(&sources, "image.images", parts, before)
 	default:
-		collectResponsesInput(gjson.GetBytes(body, "input"), &parts, &images, &sources, toolState)
-		collectOpenAIChatMessages(gjson.GetBytes(body, "messages"), &parts, &images, &sources, toolState)
-		collectGeminiInput(body, &parts, &images, &sources, toolState)
+		collectResponsesInput(gjson.GetBytes(body, "input"), &parts, &images, &sources, toolState, auditScope)
+		collectOpenAIChatMessages(gjson.GetBytes(body, "messages"), &parts, &images, &sources, toolState, auditScope)
+		collectGeminiInput(body, &parts, &images, &sources, toolState, auditScope)
 	}
 	out := ContentModerationInput{
 		Text:            normalizeContentModerationText(strings.Join(parts, "\n")),
@@ -56,6 +62,7 @@ func ExtractContentModerationInput(protocol string, body []byte) ContentModerati
 		TruncateReasons: append([]string(nil), toolState.truncateReasons...),
 	}
 	out.Normalize()
+	deduplicateContentModerationInput(&out)
 	if protocol == ContentModerationProtocolOpenAIResponses && isCodexInternalScaffoldText(out.Text) {
 		return ContentModerationInput{}
 	}
@@ -75,12 +82,15 @@ func collectRoleMessages(messages gjson.Result, role string, parts *[]string, im
 	})
 }
 
-func collectOpenAIChatMessages(messages gjson.Result, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState) {
+func collectOpenAIChatMessages(messages gjson.Result, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {
 	if !messages.IsArray() {
 		return
 	}
 	messages.ForEach(func(index, item gjson.Result) bool {
 		role := strings.ToLower(strings.TrimSpace(item.Get("role").String()))
+		if !shouldIncludeModerationRole(role, "", auditScope) {
+			return true
+		}
 		before := len(*parts)
 		switch role {
 		case "tool", "function":
@@ -93,19 +103,24 @@ func collectOpenAIChatMessages(messages gjson.Result, parts *[]string, images *[
 	})
 }
 
-func collectAnthropicInput(body []byte, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState) {
+func collectAnthropicInput(body []byte, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {
 	before := len(*parts)
-	collectAnthropicContentValue(gjson.GetBytes(body, "system"), parts, images, toolState)
-	appendModerationSources(sources, "anthropic.system", *parts, before)
-	collectAnthropicMessages(gjson.GetBytes(body, "messages"), parts, images, sources, toolState)
+	if shouldIncludeModerationRole("system", "", auditScope) {
+		collectAnthropicContentValue(gjson.GetBytes(body, "system"), parts, images, toolState)
+		appendModerationSources(sources, "anthropic.system", *parts, before)
+	}
+	collectAnthropicMessages(gjson.GetBytes(body, "messages"), parts, images, sources, toolState, auditScope)
 }
 
-func collectAnthropicMessages(messages gjson.Result, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState) {
+func collectAnthropicMessages(messages gjson.Result, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {
 	if !messages.IsArray() {
 		return
 	}
 	messages.ForEach(func(index, item gjson.Result) bool {
 		role := strings.ToLower(strings.TrimSpace(item.Get("role").String()))
+		if !shouldIncludeModerationRole(role, "", auditScope) {
+			return true
+		}
 		before := len(*parts)
 		collectAnthropicContentValue(item.Get("content"), parts, images, toolState)
 		appendModerationSources(sources, fmt.Sprintf("anthropic.messages[%s].role=%s.content", index.String(), sourceRoleName(role)), *parts, before)
@@ -142,7 +157,7 @@ func collectAnthropicContentValue(value gjson.Result, parts *[]string, images *[
 	}
 }
 
-func collectResponsesInput(input gjson.Result, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState) {
+func collectResponsesInput(input gjson.Result, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {
 	switch {
 	case !input.Exists():
 		return
@@ -153,18 +168,23 @@ func collectResponsesInput(input gjson.Result, parts *[]string, images *[]string
 	case input.IsArray():
 		input.ForEach(func(index, item gjson.Result) bool {
 			before := len(*parts)
-			collectResponsesInputItem(item, parts, images, toolState)
+			collectResponsesInputItem(item, parts, images, toolState, auditScope)
 			appendModerationSources(sources, responsesInputItemSource(index.String(), item), *parts, before)
 			return true
 		})
 	case input.IsObject():
 		before := len(*parts)
-		collectResponsesInputItem(input, parts, images, toolState)
+		collectResponsesInputItem(input, parts, images, toolState, auditScope)
 		appendModerationSources(sources, responsesInputItemSource("0", input), *parts, before)
 	}
 }
 
-func collectResponsesInputItem(item gjson.Result, parts *[]string, images *[]string, toolState *toolResultTextState) {
+func collectResponsesInputItem(item gjson.Result, parts *[]string, images *[]string, toolState *toolResultTextState, auditScope string) {
+	role := strings.ToLower(strings.TrimSpace(item.Get("role").String()))
+	typ := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
+	if !shouldIncludeModerationRole(role, typ, auditScope) {
+		return
+	}
 	if isResponsesClientSuppliedToolOutputItem(item) {
 		collectToolResultTextValue(item.Get("content"), parts, images, 0, toolState)
 		collectToolResultTextValue(item.Get("output"), parts, images, 0, toolState)
@@ -208,12 +228,15 @@ func isResponsesClientSuppliedToolOutputItem(item gjson.Result) bool {
 	return strings.ToLower(strings.TrimSpace(item.Get("role").String())) == "tool"
 }
 
-func collectGeminiContents(contents gjson.Result, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState) {
+func collectGeminiContents(contents gjson.Result, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {
 	if !contents.IsArray() {
 		return
 	}
 	contents.ForEach(func(index, item gjson.Result) bool {
 		role := strings.ToLower(strings.TrimSpace(item.Get("role").String()))
+		if !shouldIncludeModerationRole(role, "", auditScope) {
+			return true
+		}
 		before := len(*parts)
 		if arr := item.Get("parts"); arr.IsArray() {
 			arr.ForEach(func(_, part gjson.Result) bool {
@@ -229,12 +252,14 @@ func collectGeminiContents(contents gjson.Result, parts *[]string, images *[]str
 	})
 }
 
-func collectGeminiInput(body []byte, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState) {
+func collectGeminiInput(body []byte, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {
 	before := len(*parts)
-	collectGeminiSystemInstruction(gjson.GetBytes(body, "system_instruction"), parts, images)
-	collectGeminiSystemInstruction(gjson.GetBytes(body, "systemInstruction"), parts, images)
-	appendModerationSources(sources, "gemini.system_instruction", *parts, before)
-	collectGeminiContents(gjson.GetBytes(body, "contents"), parts, images, sources, toolState)
+	if shouldIncludeModerationRole("system", "", auditScope) {
+		collectGeminiSystemInstruction(gjson.GetBytes(body, "system_instruction"), parts, images)
+		collectGeminiSystemInstruction(gjson.GetBytes(body, "systemInstruction"), parts, images)
+		appendModerationSources(sources, "gemini.system_instruction", *parts, before)
+	}
+	collectGeminiContents(gjson.GetBytes(body, "contents"), parts, images, sources, toolState, auditScope)
 }
 
 func collectGeminiSystemInstruction(value gjson.Result, parts *[]string, images *[]string) {
@@ -458,6 +483,48 @@ func responsesInputItemSource(index string, item gjson.Result) string {
 	default:
 		return fmt.Sprintf("responses.input[%s]", index)
 	}
+}
+
+func shouldIncludeModerationRole(role string, typ string, auditScope string) bool {
+	role = strings.ToLower(strings.TrimSpace(role))
+	typ = strings.ToLower(strings.TrimSpace(typ))
+	auditScope = normalizeContentModerationAuditScope(auditScope)
+	isUser := role == "user" || role == ""
+	isTool := role == "tool" || role == "function" ||
+		strings.Contains(typ, "tool_result") ||
+		strings.Contains(typ, "function_call_output")
+	switch auditScope {
+	case ContentModerationAuditScopeUserOnly:
+		return isUser
+	case ContentModerationAuditScopeUserAndTool:
+		return isUser || isTool
+	default:
+		return true
+	}
+}
+
+func deduplicateContentModerationInput(input *ContentModerationInput) {
+	if input == nil || len(input.Sources) == 0 {
+		return
+	}
+	seen := make(map[string]struct{}, len(input.Sources))
+	out := make([]ContentModerationInputSource, 0, len(input.Sources))
+	parts := make([]string, 0, len(input.Sources))
+	for _, source := range input.Sources {
+		text := normalizeContentModerationText(source.Text)
+		if text == "" {
+			continue
+		}
+		key := normalizeKeywordComparable(text)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, ContentModerationInputSource{Source: source.Source, Text: text})
+		parts = append(parts, text)
+	}
+	input.Sources = out
+	input.Text = normalizeContentModerationText(strings.Join(parts, "\n"))
 }
 
 func addGeminiModerationImage(images *[]string, part gjson.Result) {

@@ -816,6 +816,24 @@
               </div>
               <Toggle v-model="configForm.record_non_hits" />
             </div>
+            <div>
+              <label class="input-label">{{ t('admin.riskControl.auditScope') }}</label>
+              <Select v-model="configForm.audit_scope" :options="auditScopeOptions" />
+            </div>
+            <div class="flex items-center justify-between rounded-lg border border-gray-100 p-4 dark:border-dark-700">
+              <div>
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.storeInputExcerpt') }}</p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.storeInputExcerptHint') }}</p>
+              </div>
+              <Toggle v-model="configForm.store_input_excerpt" />
+            </div>
+            <div class="flex items-center justify-between rounded-lg border border-gray-100 p-4 dark:border-dark-700 lg:col-span-2">
+              <div>
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.searchInputExcerpt') }}</p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.searchInputExcerptHint') }}</p>
+              </div>
+              <Toggle v-model="configForm.search_input_excerpt" />
+            </div>
             <div class="space-y-4 rounded-lg border border-gray-100 p-4 dark:border-dark-700 lg:col-span-2">
               <div class="flex items-center justify-between gap-4">
                 <div>
@@ -1203,6 +1221,7 @@ import Pagination from '@/components/common/Pagination.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import { adminAPI } from '@/api/admin'
 import type {
+  ContentModerationAuditScope,
   ContentModerationAPIKeyLoad,
   ContentModerationAPIKeyStatus,
   ContentModerationConfig,
@@ -1316,6 +1335,9 @@ const configForm = reactive({
   all_groups: true,
   group_ids: [] as number[],
   record_non_hits: false,
+  audit_scope: 'all_context' as ContentModerationAuditScope,
+  store_input_excerpt: true,
+  search_input_excerpt: false,
   worker_count: 4,
   queue_size: 32768,
   block_status: 403,
@@ -1383,6 +1405,12 @@ const keywordBlockingModeOptions = computed<Array<{ value: KeywordBlockingMode; 
     label: t('admin.riskControl.keywordModeApiOnly'),
     description: t('admin.riskControl.keywordModeApiOnlyDesc'),
   },
+])
+
+const auditScopeOptions = computed<SelectOption[]>(() => [
+  { value: 'all_context', label: t('admin.riskControl.auditScopeAllContext') },
+  { value: 'user_and_tool', label: t('admin.riskControl.auditScopeUserAndTool') },
+  { value: 'user_only', label: t('admin.riskControl.auditScopeUserOnly') },
 ])
 
 const modelFilterOptions = computed<Array<{ value: ContentModerationModelFilterType; label: string; description: string }>>(() => [
@@ -1793,6 +1821,9 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.all_groups = config.all_groups
   configForm.group_ids = Array.isArray(config.group_ids) ? [...config.group_ids] : []
   configForm.record_non_hits = config.record_non_hits
+  configForm.audit_scope = normalizeAuditScope(config.audit_scope)
+  configForm.store_input_excerpt = config.store_input_excerpt ?? true
+  configForm.search_input_excerpt = config.search_input_excerpt ?? false
   configForm.worker_count = config.worker_count || 4
   configForm.queue_size = config.queue_size || 32768
   configForm.block_status = config.block_status || 403
@@ -1873,6 +1904,9 @@ async function saveConfig() {
       all_groups: configForm.all_groups,
       group_ids: configForm.all_groups ? [] : [...configForm.group_ids],
       record_non_hits: configForm.record_non_hits,
+      audit_scope: configForm.audit_scope,
+      store_input_excerpt: configForm.store_input_excerpt,
+      search_input_excerpt: configForm.search_input_excerpt,
       clear_api_key: configForm.clear_api_key,
       worker_count: Number(configForm.worker_count) || 4,
       queue_size: Number(configForm.queue_size) || 32768,
@@ -2320,6 +2354,13 @@ function normalizeKeywordBlockingMode(value: unknown): KeywordBlockingMode {
     return value
   }
   return 'keyword_and_api'
+}
+
+function normalizeAuditScope(value: unknown): ContentModerationAuditScope {
+  if (value === 'user_only' || value === 'user_and_tool' || value === 'all_context') {
+    return value
+  }
+  return 'all_context'
 }
 
 function normalizeModelFilter(value: unknown): ContentModerationModelFilter {

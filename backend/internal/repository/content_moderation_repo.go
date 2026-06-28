@@ -278,9 +278,21 @@ func buildContentModerationLogWhere(filter service.ContentModerationLogFilter) (
 	}
 	if search := strings.TrimSpace(filter.Search); search != "" {
 		like := "%" + search + "%"
-		args = append(args, like, like, like, like, like, like, like)
-		idx := len(args) - 6
-		where = append(where, fmt.Sprintf("(l.request_id ILIKE $%d OR l.user_email ILIKE $%d OR l.api_key_name ILIKE $%d OR l.model ILIKE $%d OR l.input_excerpt ILIKE $%d OR l.matched_keyword ILIKE $%d OR l.keyword_category ILIKE $%d)", idx, idx+1, idx+2, idx+3, idx+4, idx+5, idx+6))
+		args = append(args, like, like, like, like, like, like)
+		idx := len(args) - 5
+		clauses := []string{
+			fmt.Sprintf("l.request_id ILIKE $%d", idx),
+			fmt.Sprintf("l.user_email ILIKE $%d", idx+1),
+			fmt.Sprintf("l.api_key_name ILIKE $%d", idx+2),
+			fmt.Sprintf("l.model ILIKE $%d", idx+3),
+			fmt.Sprintf("l.matched_keyword ILIKE $%d", idx+4),
+			fmt.Sprintf("l.keyword_category ILIKE $%d", idx+5),
+		}
+		if filter.SearchInputExcerpt {
+			args = append(args, like)
+			clauses = append(clauses, fmt.Sprintf("l.input_excerpt ILIKE $%d", len(args)))
+		}
+		where = append(where, "("+strings.Join(clauses, " OR ")+")")
 	}
 	if filter.From != nil && !filter.From.IsZero() {
 		add("l.created_at >= $%d", *filter.From)

@@ -15,6 +15,8 @@ var contentModerationSecretPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\b[A-Za-z0-9_-]{48,}\b`),
 	regexp.MustCompile(`\b[A-Za-z0-9+/]{48,}={0,2}\b`),
 	regexp.MustCompile(`\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b`),
+	regexp.MustCompile(`(?i)\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}\b`),
+	regexp.MustCompile(`(?i)\b(\+?86[\s-]?)?1[3-9]\d[\s-]?\d{4}[\s-]?\d{4}\b`),
 }
 
 func redactContentModerationSecrets(text string) string {

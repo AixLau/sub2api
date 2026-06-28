@@ -3,6 +3,7 @@ import { apiClient } from '../client'
 export type ModerationMode = 'off' | 'observe' | 'pre_block'
 export type KeywordBlockingMode = 'keyword_only' | 'keyword_and_api' | 'api_only'
 export type ContentModerationEngineMode = 'rule_only' | 'api_only' | 'hybrid'
+export type ContentModerationAuditScope = 'user_only' | 'user_and_tool' | 'all_context'
 export type ContentModerationModelFilterType = 'all' | 'include' | 'exclude'
 export type ContentModerationKeywordCategory =
   | 'custom'
@@ -52,6 +53,9 @@ export interface ContentModerationConfig {
   all_groups: boolean
   group_ids: number[]
   record_non_hits: boolean
+  audit_scope: ContentModerationAuditScope | string
+  store_input_excerpt: boolean
+  search_input_excerpt: boolean
   thresholds: Record<string, number>
   worker_count: number
   queue_size: number
@@ -150,6 +154,9 @@ export interface UpdateContentModerationConfig {
   all_groups?: boolean
   group_ids?: number[]
   record_non_hits?: boolean
+  audit_scope?: ContentModerationAuditScope | string
+  store_input_excerpt?: boolean
+  search_input_excerpt?: boolean
   thresholds?: Record<string, number>
   worker_count?: number
   queue_size?: number

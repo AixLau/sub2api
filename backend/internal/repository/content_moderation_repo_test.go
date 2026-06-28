@@ -24,10 +24,22 @@ func TestBuildContentModerationLogWhere_BlockedIncludesAllBlockActions(t *testin
 func TestBuildContentModerationLogWhere_SearchIncludesKeywordMetadata(t *testing.T) {
 	where, args := buildContentModerationLogWhere(service.ContentModerationLogFilter{Search: "privacy"})
 
-	require.Len(t, args, 7)
+	require.Len(t, args, 6)
 	sql := strings.Join(where, " AND ")
+	require.NotContains(t, sql, "l.input_excerpt ILIKE")
 	require.Contains(t, sql, "l.matched_keyword ILIKE")
 	require.Contains(t, sql, "l.keyword_category ILIKE")
+}
+
+func TestBuildContentModerationLogWhere_SearchCanIncludeInputExcerpt(t *testing.T) {
+	where, args := buildContentModerationLogWhere(service.ContentModerationLogFilter{
+		Search:             "privacy",
+		SearchInputExcerpt: true,
+	})
+
+	require.Len(t, args, 7)
+	sql := strings.Join(where, " AND ")
+	require.Contains(t, sql, "l.input_excerpt ILIKE")
 }
 
 func TestContentModerationRepositoryCountFlaggedByUserSince_ExcludesHashBlock(t *testing.T) {

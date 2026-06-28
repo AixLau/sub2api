@@ -32,13 +32,24 @@ This document records the safety contract for the content moderation gateway. It
 
 ## Input Extraction
 
+- `audit_scope` controls which client-supplied model-context text is scanned:
+  - `all_context` scans all client-supplied context and is the default.
+  - `user_and_tool` scans user / empty-role input plus tool and function results.
+  - `user_only` scans only user / empty-role input.
 - OpenAI Chat, OpenAI Responses, Anthropic Messages, and Gemini extraction scan all client-supplied model-context text, not only the latest user message.
 - Client-supplied `system`, `developer`, `user`, `assistant`, `model`, `tool`, `function`, `tool_result`, `function_call_output`, and Gemini `functionResponse` content is treated as untrusted input by default.
 - Unknown client-supplied message roles are scanned by default. Only strictly recognized internal scaffolds may be skipped.
 - Tool/function JSON extraction scans string values and object keys, with bounded depth, string count, string length, total rune count, and object key count.
 - Tool/function JSON extraction records truncation metadata such as `max_depth`, `max_strings`, `max_string_runes`, `max_total_runes`, and `max_object_keys`.
 - Hit logs include non-prompt metadata for source attribution, including `engine_mode`, `keyword_blocking_mode`, `matched_source`, and truncation state when applicable. The source metadata must not store the full prompt.
+- Request-local deduplication keeps the first source path for repeated normalized text and scans that text once per request body.
 - Trusted internal scaffolds may be skipped only by strict match. User text mixed with `<system-reminder>` or Codex scaffold markers must still be scanned.
+
+## Privacy
+
+- `store_input_excerpt` defaults to true for backwards compatibility. When false, logs omit `input_excerpt` and keep only hashes and metadata.
+- `search_input_excerpt` defaults to false. Admin log search does not query prompt excerpts unless this setting is explicitly enabled.
+- Prompt excerpts must pass content moderation redaction before storage. Secret, token, URL, long identifier, email, and phone-like patterns are replaced with `[已脱敏]`.
 
 ## Images
 

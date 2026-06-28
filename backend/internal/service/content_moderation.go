@@ -90,6 +90,10 @@ const (
 	ContentModerationProtocolGemini            = "gemini"
 	ContentModerationProtocolOpenAIImages      = "openai_images"
 
+	ContentModerationAuditScopeUserOnly    = "user_only"
+	ContentModerationAuditScopeUserAndTool = "user_and_tool"
+	ContentModerationAuditScopeAllContext  = "all_context"
+
 	defaultContentModerationBaseURL   = "https://api.openai.com"
 	defaultContentModerationModel     = "omni-moderation-latest"
 	defaultContentModerationTimeoutMS = 3000
@@ -180,6 +184,9 @@ type ContentModerationConfig struct {
 	AllGroups            bool                           `json:"all_groups"`
 	GroupIDs             []int64                        `json:"group_ids"`
 	RecordNonHits        bool                           `json:"record_non_hits"`
+	AuditScope           string                         `json:"audit_scope,omitempty"`
+	StoreInputExcerpt    bool                           `json:"store_input_excerpt"`
+	SearchInputExcerpt   bool                           `json:"search_input_excerpt"`
 	Thresholds           map[string]float64             `json:"thresholds"`
 	WorkerCount          int                            `json:"worker_count"`
 	QueueSize            int                            `json:"queue_size"`
@@ -220,6 +227,9 @@ type ContentModerationConfigView struct {
 	AllGroups                      bool                            `json:"all_groups"`
 	GroupIDs                       []int64                         `json:"group_ids"`
 	RecordNonHits                  bool                            `json:"record_non_hits"`
+	AuditScope                     string                          `json:"audit_scope"`
+	StoreInputExcerpt              bool                            `json:"store_input_excerpt"`
+	SearchInputExcerpt             bool                            `json:"search_input_excerpt"`
 	Thresholds                     map[string]float64              `json:"thresholds"`
 	WorkerCount                    int                             `json:"worker_count"`
 	QueueSize                      int                             `json:"queue_size"`
@@ -325,6 +335,9 @@ type UpdateContentModerationConfigInput struct {
 	AllGroups                      *bool                           `json:"all_groups"`
 	GroupIDs                       *[]int64                        `json:"group_ids"`
 	RecordNonHits                  *bool                           `json:"record_non_hits"`
+	AuditScope                     *string                         `json:"audit_scope"`
+	StoreInputExcerpt              *bool                           `json:"store_input_excerpt"`
+	SearchInputExcerpt             *bool                           `json:"search_input_excerpt"`
 	Thresholds                     *map[string]float64             `json:"thresholds"`
 	WorkerCount                    *int                            `json:"worker_count"`
 	QueueSize                      *int                            `json:"queue_size"`
@@ -488,13 +501,14 @@ type ContentModerationLog struct {
 }
 
 type ContentModerationLogFilter struct {
-	Pagination pagination.PaginationParams
-	Result     string
-	GroupID    *int64
-	Endpoint   string
-	Search     string
-	From       *time.Time
-	To         *time.Time
+	Pagination         pagination.PaginationParams
+	Result             string
+	GroupID            *int64
+	Endpoint           string
+	Search             string
+	SearchInputExcerpt bool
+	From               *time.Time
+	To                 *time.Time
 }
 
 type ContentModerationCleanupResult struct {
@@ -758,6 +772,15 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if input.RecordNonHits != nil {
 		cfg.RecordNonHits = *input.RecordNonHits
 	}
+	if input.AuditScope != nil {
+		cfg.AuditScope = strings.TrimSpace(*input.AuditScope)
+	}
+	if input.StoreInputExcerpt != nil {
+		cfg.StoreInputExcerpt = *input.StoreInputExcerpt
+	}
+	if input.SearchInputExcerpt != nil {
+		cfg.SearchInputExcerpt = *input.SearchInputExcerpt
+	}
 	if input.CyberPolicyExcludeFromBanCount != nil {
 		cfg.CyberPolicyExcludeFromBanCount = *input.CyberPolicyExcludeFromBanCount
 	}
@@ -982,7 +1005,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"configured_models", cfg.ModelFilter.Models)
 		return allow, nil
 	}
-	content := ExtractContentModerationInput(input.Protocol, input.Body)
+	content := ExtractContentModerationInput(input.Protocol, input.Body, cfg.AuditScope)
 	if content.IsEmpty() {
 		slog.Info("content_moderation.skip_empty_input",
 			"user_id", input.UserID,
@@ -1408,6 +1431,11 @@ func (s *ContentModerationService) ListLogs(ctx context.Context, filter ContentM
 	if filter.Pagination.SortOrder == "" {
 		filter.Pagination.SortOrder = pagination.SortOrderDesc
 	}
+	if s != nil && s.settingRepo != nil {
+		if cfg, err := s.loadConfig(ctx); err == nil && cfg != nil {
+			filter.SearchInputExcerpt = cfg.SearchInputExcerpt
+		}
+	}
 	return s.repo.ListLogs(ctx, filter)
 }
 
@@ -1773,11 +1801,18 @@ func (s *ContentModerationService) buildLog(input ContentModerationCheckInput, c
 		HighestScore:      highestScore,
 		CategoryScores:    cloneFloatMap(scores),
 		ThresholdSnapshot: cloneFloatMap(cfg.Thresholds),
-		InputExcerpt:      trimRunes(redactContentModerationSecrets(text), maxModerationExcerptRunes),
+		InputExcerpt:      contentModerationInputExcerptForLog(cfg, text),
 		UpstreamLatencyMS: latency,
 		QueueDelayMS:      queueDelay,
 		Error:             errText,
 	}
+}
+
+func contentModerationInputExcerptForLog(cfg *ContentModerationConfig, text string) string {
+	if cfg != nil && !cfg.StoreInputExcerpt {
+		return ""
+	}
+	return trimRunes(redactContentModerationSecrets(text), maxModerationExcerptRunes)
 }
 
 func (s *ContentModerationService) persistContentModerationLog(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog, hashText string, recordHash bool, applySideEffects bool) {
@@ -2080,6 +2115,9 @@ func defaultContentModerationConfig() *ContentModerationConfig {
 		AllGroups:            true,
 		GroupIDs:             []int64{},
 		RecordNonHits:        false,
+		AuditScope:           ContentModerationAuditScopeAllContext,
+		StoreInputExcerpt:    true,
+		SearchInputExcerpt:   false,
 		Thresholds:           ContentModerationDefaultThresholds(),
 		WorkerCount:          defaultContentModerationWorkerCount,
 		QueueSize:            defaultContentModerationQueueSize,
@@ -2202,12 +2240,26 @@ func (cfg *ContentModerationConfig) normalize() {
 		cfg.NonHitRetentionDays = maxContentModerationNonHitRetentionDays
 	}
 	cfg.GroupIDs = normalizeInt64IDs(cfg.GroupIDs)
+	cfg.AuditScope = normalizeContentModerationAuditScope(cfg.AuditScope)
 	cfg.Thresholds = mergeContentModerationThresholds(ContentModerationDefaultThresholds(), cfg.Thresholds)
 	cfg.BlockedKeywords = normalizeBlockedKeywords(cfg.BlockedKeywords)
 	cfg.KeywordRules = normalizeContentModerationKeywordRules(cfg.KeywordRules)
 	cfg.KeywordBlockingMode, cfg.EngineMode = normalizeModerationEngineAndKeywordModes(cfg.EngineMode, cfg.KeywordBlockingMode)
 	cfg.ModelFilter = normalizeContentModerationModelFilter(cfg.ModelFilter)
 	cfg.FailStrategy = normalizeContentModerationFailStrategy(cfg.FailStrategy)
+}
+
+func normalizeContentModerationAuditScope(scope string) string {
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case ContentModerationAuditScopeUserOnly:
+		return ContentModerationAuditScopeUserOnly
+	case ContentModerationAuditScopeUserAndTool:
+		return ContentModerationAuditScopeUserAndTool
+	case ContentModerationAuditScopeAllContext:
+		return ContentModerationAuditScopeAllContext
+	default:
+		return ContentModerationAuditScopeAllContext
+	}
 }
 
 func (cfg *ContentModerationConfig) shouldRunLocalRules() bool {
@@ -2505,6 +2557,9 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		AllGroups:                      cfg.AllGroups,
 		GroupIDs:                       append([]int64(nil), cfg.GroupIDs...),
 		RecordNonHits:                  cfg.RecordNonHits,
+		AuditScope:                     cfg.AuditScope,
+		StoreInputExcerpt:              cfg.StoreInputExcerpt,
+		SearchInputExcerpt:             cfg.SearchInputExcerpt,
 		Thresholds:                     cloneFloatMap(cfg.Thresholds),
 		WorkerCount:                    cfg.WorkerCount,
 		QueueSize:                      cfg.QueueSize,

@@ -34,6 +34,9 @@ type contentModerationConfigRequest struct {
 	AllGroups            *bool               `json:"all_groups"`
 	GroupIDs             *[]int64            `json:"group_ids"`
 	RecordNonHits        *bool               `json:"record_non_hits"`
+	AuditScope           *string             `json:"audit_scope"`
+	StoreInputExcerpt    *bool               `json:"store_input_excerpt"`
+	SearchInputExcerpt   *bool               `json:"search_input_excerpt"`
 	Thresholds           *map[string]float64 `json:"thresholds"`
 	WorkerCount          *int                `json:"worker_count"`
 	QueueSize            *int                `json:"queue_size"`
@@ -105,6 +108,9 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		AllGroups:                      req.AllGroups,
 		GroupIDs:                       req.GroupIDs,
 		RecordNonHits:                  req.RecordNonHits,
+		AuditScope:                     req.AuditScope,
+		StoreInputExcerpt:              req.StoreInputExcerpt,
+		SearchInputExcerpt:             req.SearchInputExcerpt,
 		Thresholds:                     req.Thresholds,
 		WorkerCount:                    req.WorkerCount,
 		QueueSize:                      req.QueueSize,

@@ -79,6 +79,25 @@ func TestExtractContentModerationInput_OpenAIChatAgentToolLoopScansClientToolOut
 	require.Empty(t, input.Images)
 }
 
+func TestExtractContentModerationInput_OpenAIImagesKeepsImageFieldTextAfterDedup(t *testing.T) {
+	body := []byte(`{
+		"prompt": "生成图片",
+		"images": [
+			{"type": "input_text", "text": "参考文件名 risk-image.png"},
+			{"image_url": {"url": "https://example.com/risk-image.png"}}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIImages, body)
+
+	require.Contains(t, input.Text, "生成图片")
+	require.Contains(t, input.Text, "参考文件名 risk-image.png")
+	require.Len(t, input.Sources, 2)
+	require.Equal(t, "image.prompt", input.Sources[0].Source)
+	require.Equal(t, "image.images", input.Sources[1].Source)
+	require.Equal(t, []string{"https://example.com/risk-image.png"}, input.Images)
+}
+
 func TestExtractContentModerationInput_OpenAIChatMultiTurnExtractsAllClientContextText(t *testing.T) {
 	body := []byte(`{
 		"messages": [
@@ -375,6 +394,56 @@ func TestExtractContentModerationInput_GeminiScansUnknownClientRoles(t *testing.
 
 	require.Contains(t, input.Text, "未知角色里的风险短语")
 	require.Contains(t, input.Text, "继续")
+}
+
+func TestExtractContentModerationInput_UserOnlyScopeSkipsAssistantAndToolContext(t *testing.T) {
+	body := []byte(`{
+		"messages":[
+			{"role":"system","content":"系统上下文"},
+			{"role":"assistant","content":"助手历史"},
+			{"role":"tool","content":"工具结果"},
+			{"role":"user","content":"用户新输入"}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body, ContentModerationAuditScopeUserOnly)
+
+	require.Equal(t, "用户新输入", input.Text)
+	require.Len(t, input.Sources, 1)
+	require.Equal(t, "openai_chat.messages[3].role=user.content", input.Sources[0].Source)
+}
+
+func TestExtractContentModerationInput_UserAndToolScopeSkipsSystemAndAssistantContext(t *testing.T) {
+	body := []byte(`{
+		"messages":[
+			{"role":"system","content":"系统上下文"},
+			{"role":"assistant","content":"助手历史"},
+			{"role":"tool","content":"工具结果"},
+			{"role":"user","content":"用户新输入"}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body, ContentModerationAuditScopeUserAndTool)
+
+	require.Contains(t, input.Text, "用户新输入")
+	require.Contains(t, input.Text, "工具结果")
+	require.NotContains(t, input.Text, "系统上下文")
+	require.NotContains(t, input.Text, "助手历史")
+}
+
+func TestExtractContentModerationInput_DeduplicatesRepeatedSourceTextWithinRequest(t *testing.T) {
+	body := []byte(`{
+		"messages":[
+			{"role":"user","content":"重复文本"},
+			{"role":"user","content":"重复文本"},
+			{"role":"user","content":"新的文本"}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
+
+	require.Equal(t, "重复文本 新的文本", input.Text)
+	require.Len(t, input.Sources, 2)
 }
 
 func TestExtractContentModerationInput_ScansJSONToolResultTextValues(t *testing.T) {

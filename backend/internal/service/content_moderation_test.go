@@ -408,6 +408,16 @@ func TestBuildContentModerationLog_RedactsInputExcerpt(t *testing.T) {
 	require.Contains(t, log.InputExcerpt, "[已脱敏]")
 }
 
+func TestBuildContentModerationLog_RespectsStoreInputExcerptDisabled(t *testing.T) {
+	svc := &ContentModerationService{}
+	cfg := defaultContentModerationConfig()
+	cfg.StoreInputExcerpt = false
+
+	log := svc.buildLog(ContentModerationCheckInput{}, cfg, ContentModerationActionAllow, true, "sexual", 0.8, map[string]float64{"sexual": 0.8}, "sensitive prompt", nil, nil, "")
+
+	require.Empty(t, log.InputExcerpt)
+}
+
 func TestRedactContentModerationSecrets_LongHexAndTokens(t *testing.T) {
 	input := "你哈市多大事cf5bbdc4cd508f3aaf0d2070d529d4a4ac29099f8ecc357f696df28e1df91554 token=abc123456789xyz Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signaturepart https://example.com/private/path?token=abc123"
 
@@ -420,6 +430,17 @@ func TestRedactContentModerationSecrets_LongHexAndTokens(t *testing.T) {
 	require.Contains(t, out, "[已脱敏]")
 }
 
+func TestRedactContentModerationSecrets_EmailAndPhone(t *testing.T) {
+	input := "email alice@example.com mobile 13812345678 phone +86 13912345678"
+
+	out := redactContentModerationSecrets(input)
+
+	require.NotContains(t, out, "alice@example.com")
+	require.NotContains(t, out, "13812345678")
+	require.NotContains(t, out, "13912345678")
+	require.Contains(t, out, "[已脱敏]")
+}
+
 func TestContentModerationConfigNormalize_NonHitRetentionMaxThreeDays(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.NonHitRetentionDays = 30
@@ -427,6 +448,17 @@ func TestContentModerationConfigNormalize_NonHitRetentionMaxThreeDays(t *testing
 	cfg.normalize()
 
 	require.Equal(t, 3, cfg.NonHitRetentionDays)
+}
+
+func TestContentModerationConfigNormalize_DefaultsAuditScopeAndPrivacyOptions(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.AuditScope = "unsupported"
+
+	cfg.normalize()
+
+	require.Equal(t, ContentModerationAuditScopeAllContext, cfg.AuditScope)
+	require.True(t, cfg.StoreInputExcerpt)
+	require.False(t, cfg.SearchInputExcerpt)
 }
 
 func TestNormalizeBlockedKeywords_TrimsDedupesAndCaps(t *testing.T) {
