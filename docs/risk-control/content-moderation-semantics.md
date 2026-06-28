@@ -45,6 +45,15 @@ This document records the safety contract for the content moderation gateway. It
 - Request-local deduplication keeps the first source path for repeated normalized text and scans that text once per request body.
 - Trusted internal scaffolds may be skipped only by strict match. User text mixed with `<system-reminder>` or Codex scaffold markers must still be scanned.
 
+## Gateway Coverage
+
+- `docs/risk-control/content-moderation-gateway-coverage.json` is the authoritative inventory of user-callable model request routes that can reach upstream providers.
+- Every upstream route with client-supplied model context must be marked `moderation_required=true`, declare the moderation `protocol`, and have `status=covered` before release.
+- Routes that look model-related but intentionally do not call upstream must use `status=intentional_no_audit` and include a concrete `review_reason`.
+- `/v1/embeddings` and `/embeddings` are moderated with protocol `openai_embeddings`; embeddings input is still upstream-submitted content and must not bypass pre-block checks.
+- `/v1/messages/count_tokens` is moderated with protocol `anthropic_messages` because Anthropic token counting can submit client context to upstream.
+- `TestGatewayModerationCoverageManifestDefinesCriticalUpstreamEntrypoints` is the CI guard for this inventory. When adding a new gateway route or alias, update the coverage manifest in the same change.
+
 ## Privacy
 
 - `store_input_excerpt` defaults to true for backwards compatibility. When false, logs omit `input_excerpt` and keep only hashes and metadata.

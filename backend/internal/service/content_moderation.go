@@ -89,6 +89,7 @@ const (
 	ContentModerationProtocolOpenAIChat        = "openai_chat_completions"
 	ContentModerationProtocolGemini            = "gemini"
 	ContentModerationProtocolOpenAIImages      = "openai_images"
+	ContentModerationProtocolOpenAIEmbeddings  = "openai_embeddings"
 
 	ContentModerationAuditScopeUserOnly    = "user_only"
 	ContentModerationAuditScopeUserAndTool = "user_and_tool"
@@ -1014,6 +1015,17 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"endpoint", input.Endpoint,
 			"protocol", input.Protocol,
 			"body_bytes", len(input.Body))
+		if cfg.Mode == ContentModerationModePreBlock && cfg.shouldFailClosed(input) && isUnexpectedEmptyModerationInput(input.Protocol, input.Body) {
+			s.recordPreBlockSyncMetric(0, ContentModerationActionError)
+			slog.Warn("content_moderation.empty_extraction_fail_closed",
+				"user_id", input.UserID,
+				"api_key_id", input.APIKeyID,
+				"group_id", contentModerationLogGroupID(input.GroupID),
+				"endpoint", input.Endpoint,
+				"protocol", input.Protocol,
+				"body_bytes", len(input.Body))
+			return contentModerationFailureDecision(cfg), nil
+		}
 		return allow, nil
 	}
 	content.Normalize()
@@ -1931,6 +1943,8 @@ func contentModerationPrimarySource(protocol string, content ContentModerationIn
 		return "gemini.contents.parts"
 	case ContentModerationProtocolOpenAIImages:
 		return "image.prompt"
+	case ContentModerationProtocolOpenAIEmbeddings:
+		return "openai_embeddings.input"
 	default:
 		return "client_supplied_model_context"
 	}

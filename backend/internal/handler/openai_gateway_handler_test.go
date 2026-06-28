@@ -882,6 +882,115 @@ func (r *contentModerationHandlerTestRepo) UpdateLogEmailSent(ctx context.Contex
 	return nil
 }
 
+func newBlockingContentModerationServiceForHandlerTest(t *testing.T, keyword string) (*service.ContentModerationService, *contentModerationHandlerTestRepo) {
+	t.Helper()
+	cfg := &service.ContentModerationConfig{
+		Enabled:      true,
+		Mode:         service.ContentModerationModePreBlock,
+		APIKeys:      []string{},
+		AllGroups:    true,
+		EngineMode:   service.ContentModerationEngineModeRuleOnly,
+		BlockStatus:  http.StatusForbidden,
+		BlockMessage: "内容审计测试阻断",
+		KeywordRules: []service.ContentModerationKeywordRule{
+			{Keyword: keyword, Category: service.ContentModerationKeywordCategoryCustom, Severity: service.ContentModerationKeywordSeverityHigh, Action: service.ContentModerationKeywordActionBlock, Enabled: true},
+		},
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationHandlerTestRepo{}
+	settingRepo := &contentModerationHandlerSettingRepo{values: map[string]string{
+		service.SettingKeyRiskControlEnabled:      "true",
+		service.SettingKeyContentModerationConfig: string(rawCfg),
+	}}
+	return service.NewContentModerationService(settingRepo, repo, nil, nil, nil, nil, nil), repo
+}
+
+func newDisabledContentModerationServiceForHandlerTest(t *testing.T) *service.ContentModerationService {
+	t.Helper()
+	repo := &contentModerationHandlerTestRepo{}
+	settingRepo := &contentModerationHandlerSettingRepo{values: map[string]string{
+		service.SettingKeyRiskControlEnabled: "false",
+	}}
+	return service.NewContentModerationService(settingRepo, repo, nil, nil, nil, nil, nil)
+}
+
+func setGatewayAuthContextForModerationTest(c *gin.Context) {
+	groupID := int64(2)
+	apiKey := &service.APIKey{
+		ID:      101,
+		Name:    "test-key",
+		GroupID: &groupID,
+		User:    &service.User{ID: 7, Email: "user@example.com", Concurrency: 1},
+		Group:   &service.Group{ID: groupID, Name: "public", Platform: service.PlatformOpenAI},
+	}
+	c.Set(string(middleware.ContextKeyAPIKey), apiKey)
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 7, Concurrency: 1})
+	c.Set(string(middleware.ContextKeyUserRole), service.RoleUser)
+}
+
+func TestOpenAIEmbeddings_ContentModerationBlocksBeforeScheduling(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	moderationSvc, repo := newBlockingContentModerationServiceForHandlerTest(t, "embedding-risk")
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(`{"model":"text-embedding-3-small","input":"embedding-risk"}`))
+	setGatewayAuthContextForModerationTest(c)
+
+	h := &OpenAIGatewayHandler{
+		contentModerationService: moderationSvc,
+		gatewayService:           &service.OpenAIGatewayService{},
+		billingCacheService:      &service.BillingCacheService{},
+		apiKeyService:            &service.APIKeyService{},
+		concurrencyHelper:        NewConcurrencyHelper(service.NewConcurrencyService(&concurrencyCacheMock{}), SSEPingFormatNone, time.Second),
+	}
+
+	h.Embeddings(c)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Contains(t, w.Body.String(), "内容审计测试阻断")
+	require.Eventually(t, func() bool {
+		return len(repo.logSnapshot()) == 1
+	}, time.Second, 10*time.Millisecond)
+	logs := repo.logSnapshot()
+	require.Equal(t, "/v1/embeddings", logs[0].Endpoint)
+	require.Equal(t, "text-embedding-3-small", logs[0].Model)
+	require.Equal(t, service.ContentModerationActionKeywordBlock, logs[0].Action)
+	require.Equal(t, "embedding-risk", logs[0].MatchedKeyword)
+}
+
+func TestGatewayCountTokens_ContentModerationBlocksBeforeUpstreamSelection(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	moderationSvc, repo := newBlockingContentModerationServiceForHandlerTest(t, "count-token-risk")
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", strings.NewReader(`{
+		"model":"claude-sonnet-4-5",
+		"messages":[{"role":"user","content":[{"type":"text","text":"count-token-risk"}]}]
+	}`))
+	setGatewayAuthContextForModerationTest(c)
+
+	h := &GatewayHandler{
+		contentModerationService: moderationSvc,
+	}
+
+	h.CountTokens(c)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Contains(t, w.Body.String(), "内容审计测试阻断")
+	require.Eventually(t, func() bool {
+		return len(repo.logSnapshot()) == 1
+	}, time.Second, 10*time.Millisecond)
+	logs := repo.logSnapshot()
+	require.Equal(t, EndpointMessages, logs[0].Endpoint)
+	require.Equal(t, "claude-sonnet-4-5", logs[0].Model)
+	require.Equal(t, service.ContentModerationActionKeywordBlock, logs[0].Action)
+	require.Equal(t, "count-token-risk", logs[0].MatchedKeyword)
+}
+
 func TestOpenAIResponsesWebSocket_ContentModerationBlocksFirstFrame(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -892,14 +1001,15 @@ func TestOpenAIResponsesWebSocket_ContentModerationBlocksFirstFrame(t *testing.T
 	defer moderationServer.Close()
 
 	cfg := &service.ContentModerationConfig{
-		Enabled:      true,
-		Mode:         service.ContentModerationModePreBlock,
-		BaseURL:      moderationServer.URL,
-		Model:        "omni-moderation-latest",
-		APIKeys:      []string{"sk-test"},
-		SampleRate:   100,
-		AllGroups:    true,
-		BlockMessage: "内容审计测试阻断",
+		Enabled:           true,
+		Mode:              service.ContentModerationModePreBlock,
+		BaseURL:           moderationServer.URL,
+		Model:             "omni-moderation-latest",
+		APIKeys:           []string{"sk-test"},
+		SampleRate:        100,
+		AllGroups:         true,
+		StoreInputExcerpt: true,
+		BlockMessage:      "内容审计测试阻断",
 	}
 	rawCfg, err := json.Marshal(cfg)
 	require.NoError(t, err)
@@ -1142,10 +1252,11 @@ func newOpenAIHandlerForPreviousResponseIDValidation(t *testing.T, cache *concur
 		}
 	}
 	return &OpenAIGatewayHandler{
-		gatewayService:      &service.OpenAIGatewayService{},
-		billingCacheService: &service.BillingCacheService{},
-		apiKeyService:       &service.APIKeyService{},
-		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
+		gatewayService:           &service.OpenAIGatewayService{},
+		billingCacheService:      &service.BillingCacheService{},
+		apiKeyService:            &service.APIKeyService{},
+		contentModerationService: newDisabledContentModerationServiceForHandlerTest(t),
+		concurrencyHelper:        NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
 	}
 }
 
@@ -1418,11 +1529,12 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 		},
 	}
 	h := &OpenAIGatewayHandler{
-		gatewayService:      gatewaySvc,
-		billingCacheService: billingCacheSvc,
-		apiKeyService:       &service.APIKeyService{},
-		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
-		maxAccountSwitches:  3,
+		gatewayService:           gatewaySvc,
+		billingCacheService:      billingCacheSvc,
+		apiKeyService:            &service.APIKeyService{},
+		contentModerationService: newDisabledContentModerationServiceForHandlerTest(t),
+		concurrencyHelper:        NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
+		maxAccountSwitches:       3,
 	}
 
 	apiKey := &service.APIKey{
@@ -1605,10 +1717,11 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		},
 	}
 	h := &OpenAIGatewayHandler{
-		gatewayService:      gatewaySvc,
-		billingCacheService: billingCacheSvc,
-		apiKeyService:       &service.APIKeyService{},
-		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
+		gatewayService:           gatewaySvc,
+		billingCacheService:      billingCacheSvc,
+		apiKeyService:            &service.APIKeyService{},
+		contentModerationService: newDisabledContentModerationServiceForHandlerTest(t),
+		concurrencyHelper:        NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
 	}
 
 	apiKey := &service.APIKey{

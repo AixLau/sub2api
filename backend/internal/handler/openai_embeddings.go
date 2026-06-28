@@ -74,6 +74,11 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, false)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
 
+	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIEmbeddings, reqModel, body); decision != nil && decision.Blocked {
+		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+		return
+	}
+
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)

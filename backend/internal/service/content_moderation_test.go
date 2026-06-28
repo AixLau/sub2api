@@ -1111,6 +1111,72 @@ func TestContentModerationCheck_APIOnlyEngineModeWithoutAPIKeyFailsClosed(t *tes
 	require.Equal(t, ContentModerationActionError, decision.Action)
 }
 
+func TestContentModerationCheck_PreBlockNonEmptyUnexpectedEmptyExtractionFailsClosed(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.APIKeys = []string{}
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		&contentModerationTestRepo{},
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"unknown_text_field":"risk hidden in unsupported schema"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.Equal(t, ContentModerationActionError, decision.Action)
+}
+
+func TestContentModerationCheck_OpenAIEmbeddingsTokenArrayInputDoesNotFailClosed(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.APIKeys = []string{}
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		&contentModerationTestRepo{},
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIEmbeddings,
+		Body:     []byte(`{"model":"text-embedding-3-small","input":[15339,1917]}`),
+	})
+
+	require.NoError(t, err)
+	require.False(t, decision.Blocked)
+	require.True(t, decision.Allowed)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
+}
+
 func TestContentModerationCheck_KeywordOnlySkipsCodexApprovalAssessmentContinuation(t *testing.T) {
 	upstreamCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -79,6 +79,25 @@ func TestExtractContentModerationInput_OpenAIChatAgentToolLoopScansClientToolOut
 	require.Empty(t, input.Images)
 }
 
+func TestExtractContentModerationInput_OpenAIEmbeddingsScansInputText(t *testing.T) {
+	body := []byte(`{
+		"model": "text-embedding-3-small",
+		"input": [
+			"plain embedding text",
+			{"text": "object text value"},
+			{"metadata": {"filename": "risk-file.txt"}}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIEmbeddings, body)
+
+	require.Contains(t, input.Text, "plain embedding text")
+	require.Contains(t, input.Text, "object text value")
+	require.Contains(t, input.Text, "risk-file.txt")
+	require.NotEmpty(t, input.Sources)
+	require.Equal(t, "openai_embeddings.input", input.Sources[0].Source)
+}
+
 func TestExtractContentModerationInput_OpenAIImagesKeepsImageFieldTextAfterDedup(t *testing.T) {
 	body := []byte(`{
 		"prompt": "生成图片",

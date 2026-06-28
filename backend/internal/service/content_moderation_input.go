@@ -49,6 +49,8 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 		before = len(parts)
 		collectContentValue(gjson.GetBytes(body, "images"), &parts, &images)
 		appendModerationSources(&sources, "image.images", parts, before)
+	case ContentModerationProtocolOpenAIEmbeddings:
+		collectOpenAIEmbeddingsInput(gjson.GetBytes(body, "input"), &parts, &images, &sources, toolState)
 	default:
 		collectResponsesInput(gjson.GetBytes(body, "input"), &parts, &images, &sources, toolState, auditScope)
 		collectOpenAIChatMessages(gjson.GetBytes(body, "messages"), &parts, &images, &sources, toolState, auditScope)
@@ -67,6 +69,76 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 		return ContentModerationInput{}
 	}
 	return out
+}
+
+func isUnexpectedEmptyModerationInput(protocol string, body []byte) bool {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return false
+	}
+	if protocol == ContentModerationProtocolOpenAIEmbeddings && isOpenAIEmbeddingsTokenInput(body) {
+		return false
+	}
+	if protocol == ContentModerationProtocolOpenAIResponses {
+		if input := ExtractContentModerationInput(protocol, body); input.IsEmpty() && isCodexInternalScaffoldPayload(body) {
+			return false
+		}
+	}
+	switch protocol {
+	case ContentModerationProtocolOpenAIChat,
+		ContentModerationProtocolOpenAIResponses,
+		ContentModerationProtocolAnthropicMessages,
+		ContentModerationProtocolGemini,
+		ContentModerationProtocolOpenAIImages,
+		ContentModerationProtocolOpenAIEmbeddings:
+		return true
+	default:
+		return false
+	}
+}
+
+func collectOpenAIEmbeddingsInput(input gjson.Result, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState) {
+	before := len(*parts)
+	collectToolResultTextValue(input, parts, images, 0, toolState)
+	appendModerationSources(sources, "openai_embeddings.input", *parts, before)
+}
+
+func isOpenAIEmbeddingsTokenInput(body []byte) bool {
+	input := gjson.GetBytes(body, "input")
+	return isEmbeddingTokenArray(input) || isEmbeddingTokenBatchArray(input)
+}
+
+func isEmbeddingTokenBatchArray(input gjson.Result) bool {
+	if !input.IsArray() {
+		return false
+	}
+	seen := false
+	allBatches := true
+	input.ForEach(func(_, item gjson.Result) bool {
+		seen = true
+		if !isEmbeddingTokenArray(item) {
+			allBatches = false
+			return false
+		}
+		return true
+	})
+	return seen && allBatches
+}
+
+func isEmbeddingTokenArray(input gjson.Result) bool {
+	if !input.IsArray() {
+		return false
+	}
+	seen := false
+	allNumbers := true
+	input.ForEach(func(_, item gjson.Result) bool {
+		seen = true
+		if item.Type != gjson.Number {
+			allNumbers = false
+			return false
+		}
+		return true
+	})
+	return seen && allNumbers
 }
 
 func collectRoleMessages(messages gjson.Result, role string, parts *[]string, images *[]string) {
@@ -644,4 +716,13 @@ func isCodexInternalScaffoldText(text string) bool {
 	}
 	prefix := normalizeContentModerationText(codexCompactionSummaryPrefix)
 	return strings.EqualFold(normalized, prefix)
+}
+
+func isCodexInternalScaffoldPayload(body []byte) bool {
+	var parts []string
+	var images []string
+	var sources []ContentModerationInputSource
+	toolState := &toolResultTextState{}
+	collectResponsesInput(gjson.GetBytes(body, "input"), &parts, &images, &sources, toolState, ContentModerationAuditScopeAllContext)
+	return len(images) == 0 && isCodexInternalScaffoldText(normalizeContentModerationText(strings.Join(parts, "\n")))
 }

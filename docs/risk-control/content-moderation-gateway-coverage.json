@@ -1,0 +1,215 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "method": "POST",
+      "path": "/v1/messages",
+      "handler": "GatewayHandler.Messages",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "anthropic_messages",
+      "status": "covered",
+      "review_reason": "Anthropic Messages requests are moderated after request parsing and before billing, scheduling, and upstream forwarding."
+    },
+    {
+      "method": "POST",
+      "path": "/antigravity/v1/messages",
+      "handler": "GatewayHandler.Messages",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "anthropic_messages",
+      "status": "covered",
+      "review_reason": "Antigravity Messages uses the same GatewayHandler.Messages moderation hook before upstream forwarding."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/messages/count_tokens",
+      "handler": "GatewayHandler.CountTokens",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "anthropic_messages",
+      "status": "covered",
+      "review_reason": "Anthropic count_tokens can forward client context to upstream, so it is moderated after model validation and before billing, scheduling, and forwarding."
+    },
+    {
+      "method": "POST",
+      "path": "/antigravity/v1/messages/count_tokens",
+      "handler": "GatewayHandler.CountTokens",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "anthropic_messages",
+      "status": "covered",
+      "review_reason": "Antigravity count_tokens uses the shared CountTokens handler and is moderated after model validation and before account selection or upstream forwarding."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "handler": "OpenAIGatewayHandler.ChatCompletions",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_chat_completions",
+      "status": "covered",
+      "review_reason": "OpenAI-compatible chat requests are moderated before image permission checks, scheduling, and upstream forwarding."
+    },
+    {
+      "method": "POST",
+      "path": "/chat/completions",
+      "handler": "OpenAIGatewayHandler.ChatCompletions",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_chat_completions",
+      "status": "covered",
+      "review_reason": "Root chat alias reaches the same OpenAI-compatible chat handler and moderation hook."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/responses",
+      "handler": "OpenAIGatewayHandler.Responses",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "status": "covered",
+      "review_reason": "OpenAI Responses requests are moderated before permission checks, scheduling, and upstream forwarding."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/responses/*subpath",
+      "handler": "OpenAIGatewayHandler.Responses",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "status": "covered",
+      "review_reason": "Versioned Responses subpaths reach the same Responses handler and moderation hook before upstream forwarding."
+    },
+    {
+      "method": "POST",
+      "path": "/responses",
+      "handler": "OpenAIGatewayHandler.Responses",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "status": "covered",
+      "review_reason": "Root Responses alias reaches the same OpenAI-compatible Responses handler and moderation hook."
+    },
+    {
+      "method": "POST",
+      "path": "/responses/*subpath",
+      "handler": "OpenAIGatewayHandler.Responses",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "status": "covered",
+      "review_reason": "Root Responses subpath alias reaches the same OpenAI-compatible Responses handler and moderation hook."
+    },
+    {
+      "method": "GET",
+      "path": "/v1/responses",
+      "handler": "OpenAIGatewayHandler.ResponsesWebSocket",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "status": "covered",
+      "review_reason": "Responses WebSocket audits the first frame and subsequent client turns before upstream writes."
+    },
+    {
+      "method": "GET",
+      "path": "/responses",
+      "handler": "OpenAIGatewayHandler.ResponsesWebSocket",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "status": "covered",
+      "review_reason": "Root Responses WebSocket alias audits the first frame and subsequent client turns before upstream writes."
+    },
+    {
+      "method": "POST",
+      "path": "/backend-api/codex/responses",
+      "handler": "OpenAIGatewayHandler.Responses",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "status": "covered",
+      "review_reason": "Codex direct Responses route reaches the same OpenAI-compatible Responses handler and moderation hook."
+    },
+    {
+      "method": "POST",
+      "path": "/backend-api/codex/responses/*subpath",
+      "handler": "OpenAIGatewayHandler.Responses",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "status": "covered",
+      "review_reason": "Codex direct Responses subpaths reach the same OpenAI-compatible Responses handler and moderation hook."
+    },
+    {
+      "method": "GET",
+      "path": "/backend-api/codex/responses",
+      "handler": "OpenAIGatewayHandler.ResponsesWebSocket",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "status": "covered",
+      "review_reason": "Codex direct Responses WebSocket route audits the first frame and subsequent client turns before upstream writes."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/embeddings",
+      "handler": "OpenAIGatewayHandler.Embeddings",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_embeddings",
+      "status": "covered",
+      "review_reason": "Embeddings input can be submitted to upstream policy systems, so input is moderated before channel mapping, scheduling, and forwarding."
+    },
+    {
+      "method": "POST",
+      "path": "/embeddings",
+      "handler": "OpenAIGatewayHandler.Embeddings",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_embeddings",
+      "status": "covered",
+      "review_reason": "Root embeddings alias reaches the same Embeddings handler and moderation hook."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/images/generations",
+      "handler": "OpenAIGatewayHandler.Images",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_images",
+      "status": "covered",
+      "review_reason": "Image generation prompt and image metadata are moderated before permission checks, scheduling, and upstream forwarding."
+    },
+    {
+      "method": "POST",
+      "path": "/v1/images/edits",
+      "handler": "OpenAIGatewayHandler.Images",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_images",
+      "status": "covered",
+      "review_reason": "Image edit prompt and image metadata are moderated before permission checks, scheduling, and upstream forwarding."
+    },
+    {
+      "method": "POST",
+      "path": "/v1beta/models/*modelAction",
+      "handler": "GatewayHandler.GeminiV1BetaModels",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "gemini",
+      "status": "covered",
+      "review_reason": "Gemini model action requests are moderated before account selection and upstream forwarding."
+    },
+    {
+      "method": "POST",
+      "path": "/antigravity/v1beta/models/*modelAction",
+      "handler": "GatewayHandler.GeminiV1BetaModels",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "gemini",
+      "status": "covered",
+      "review_reason": "Antigravity Gemini-compatible model action requests use the same Gemini handler and moderation hook before upstream forwarding."
+    }
+  ]
+}

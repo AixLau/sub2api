@@ -1750,7 +1750,7 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 		return
 	}
 
-	_, ok = middleware2.GetAuthSubjectFromContext(c)
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok {
 		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
 		return
@@ -1801,6 +1801,11 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 
 	setOpsRequestContext(c, parsedReq.Model, parsedReq.Stream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(parsedReq.Stream, false)))
+
+	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolAnthropicMessages, parsedReq.Model, body); decision != nil && decision.Blocked {
+		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+		return
+	}
 
 	// 获取订阅信息（可能为nil）
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
