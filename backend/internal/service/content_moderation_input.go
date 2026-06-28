@@ -37,8 +37,10 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 	case ContentModerationProtocolAnthropicMessages:
 		collectAnthropicInput(body, &parts, &images, &sources, toolState, auditScope)
 	case ContentModerationProtocolOpenAIChat:
+		collectOpenAIChatTopLevelModelContext(body, &parts, &images, &sources, toolState, auditScope)
 		collectOpenAIChatMessages(gjson.GetBytes(body, "messages"), &parts, &images, &sources, toolState, auditScope)
 	case ContentModerationProtocolOpenAIResponses:
+		collectResponsesTopLevelModelContext(body, &parts, &images, &sources, toolState, auditScope)
 		collectResponsesInput(gjson.GetBytes(body, "input"), &parts, &images, &sources, toolState, auditScope)
 	case ContentModerationProtocolGemini:
 		collectGeminiInput(body, &parts, &images, &sources, toolState, auditScope)
@@ -100,6 +102,39 @@ func collectOpenAIEmbeddingsInput(input gjson.Result, parts *[]string, images *[
 	before := len(*parts)
 	collectToolResultTextValue(input, parts, images, 0, toolState)
 	appendModerationSources(sources, "openai_embeddings.input", *parts, before)
+}
+
+func collectOpenAIChatTopLevelModelContext(body []byte, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {
+	if !shouldIncludeTopLevelModelContext(auditScope) {
+		return
+	}
+	collectModelVisibleField(gjson.GetBytes(body, "instructions"), "openai_chat.instructions", parts, images, sources, toolState)
+	collectModelVisibleField(gjson.GetBytes(body, "tools"), "openai_chat.tools", parts, images, sources, toolState)
+	collectModelVisibleField(gjson.GetBytes(body, "functions"), "openai_chat.functions", parts, images, sources, toolState)
+	collectModelVisibleField(gjson.GetBytes(body, "tool_choice"), "openai_chat.tool_choice", parts, images, sources, toolState)
+	collectModelVisibleField(gjson.GetBytes(body, "response_format"), "openai_chat.response_format", parts, images, sources, toolState)
+}
+
+func collectResponsesTopLevelModelContext(body []byte, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {
+	if !shouldIncludeTopLevelModelContext(auditScope) {
+		return
+	}
+	collectModelVisibleField(gjson.GetBytes(body, "instructions"), "responses.instructions", parts, images, sources, toolState)
+	collectModelVisibleField(gjson.GetBytes(body, "developer"), "responses.developer", parts, images, sources, toolState)
+	collectModelVisibleField(gjson.GetBytes(body, "system"), "responses.system", parts, images, sources, toolState)
+	collectModelVisibleField(gjson.GetBytes(body, "tools"), "responses.tools", parts, images, sources, toolState)
+	collectModelVisibleField(gjson.GetBytes(body, "tool_choice"), "responses.tool_choice", parts, images, sources, toolState)
+	collectModelVisibleField(gjson.GetBytes(body, "text.format"), "responses.text.format", parts, images, sources, toolState)
+	collectModelVisibleField(gjson.GetBytes(body, "response_format"), "responses.response_format", parts, images, sources, toolState)
+}
+
+func collectModelVisibleField(value gjson.Result, source string, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState) {
+	if !value.Exists() {
+		return
+	}
+	before := len(*parts)
+	collectToolResultTextValue(value, parts, images, 0, toolState)
+	appendModerationSources(sources, source, *parts, before)
 }
 
 func isOpenAIEmbeddingsTokenInput(body []byte) bool {
@@ -169,10 +204,46 @@ func collectOpenAIChatMessages(messages gjson.Result, parts *[]string, images *[
 			collectToolResultTextValue(item.Get("content"), parts, images, 0, toolState)
 		default:
 			collectContentValue(item.Get("content"), parts, images)
+			collectOpenAIChatToolCallArguments(item.Get("tool_calls"), parts, images, toolState)
+			collectOpenAIChatFunctionCallArguments(item.Get("function_call"), parts, images, toolState)
 		}
 		appendModerationSources(sources, fmt.Sprintf("openai_chat.messages[%s].role=%s.content", index.String(), sourceRoleName(role)), *parts, before)
 		return true
 	})
+}
+
+func collectOpenAIChatToolCallArguments(value gjson.Result, parts *[]string, images *[]string, toolState *toolResultTextState) {
+	if !value.IsArray() {
+		return
+	}
+	value.ForEach(func(_, item gjson.Result) bool {
+		collectToolCallArgumentsValue(item.Get("function.arguments"), parts, images, toolState)
+		return true
+	})
+}
+
+func collectOpenAIChatFunctionCallArguments(value gjson.Result, parts *[]string, images *[]string, toolState *toolResultTextState) {
+	if !value.IsObject() {
+		return
+	}
+	collectToolCallArgumentsValue(value.Get("arguments"), parts, images, toolState)
+}
+
+func collectToolCallArgumentsValue(value gjson.Result, parts *[]string, images *[]string, toolState *toolResultTextState) {
+	if !value.Exists() {
+		return
+	}
+	if value.Type == gjson.String {
+		text := strings.TrimSpace(value.String())
+		if gjson.Valid(text) {
+			parsed := gjson.Parse(text)
+			if parsed.IsObject() || parsed.IsArray() {
+				collectToolResultTextValue(parsed, parts, images, 0, toolState)
+				return
+			}
+		}
+	}
+	collectToolResultTextValue(value, parts, images, 0, toolState)
 }
 
 func collectAnthropicInput(body []byte, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {
@@ -180,6 +251,11 @@ func collectAnthropicInput(body []byte, parts *[]string, images *[]string, sourc
 	if shouldIncludeModerationRole("system", "", auditScope) {
 		collectAnthropicContentValue(gjson.GetBytes(body, "system"), parts, images, toolState)
 		appendModerationSources(sources, "anthropic.system", *parts, before)
+	}
+	if shouldIncludeTopLevelModelContext(auditScope) {
+		collectModelVisibleField(gjson.GetBytes(body, "tools"), "anthropic.tools", parts, images, sources, toolState)
+		collectModelVisibleField(gjson.GetBytes(body, "tool_choice"), "anthropic.tool_choice", parts, images, sources, toolState)
+		collectModelVisibleField(gjson.GetBytes(body, "output_format"), "anthropic.output_format", parts, images, sources, toolState)
 	}
 	collectAnthropicMessages(gjson.GetBytes(body, "messages"), parts, images, sources, toolState, auditScope)
 }
@@ -225,6 +301,9 @@ func collectAnthropicContentValue(value gjson.Result, parts *[]string, images *[
 			collectContentValue(value, parts, images)
 		case "tool_result":
 			collectToolResultTextValue(value.Get("content"), parts, images, 0, toolState)
+		case "tool_use":
+			collectToolResultTextValue(value.Get("name"), parts, images, 0, toolState)
+			collectToolResultTextValue(value.Get("input"), parts, images, 0, toolState)
 		}
 	}
 }
@@ -260,6 +339,12 @@ func collectResponsesInputItem(item gjson.Result, parts *[]string, images *[]str
 	if isResponsesClientSuppliedToolOutputItem(item) {
 		collectToolResultTextValue(item.Get("content"), parts, images, 0, toolState)
 		collectToolResultTextValue(item.Get("output"), parts, images, 0, toolState)
+		return
+	}
+	if isResponsesFunctionOrToolCallItem(item) {
+		collectToolCallArgumentsValue(item.Get("arguments"), parts, images, toolState)
+		collectToolResultTextValue(item.Get("input"), parts, images, 0, toolState)
+		collectToolResultTextValue(item.Get("parameters"), parts, images, 0, toolState)
 		return
 	}
 	if isResponsesUserTextItem(item) {
@@ -300,6 +385,11 @@ func isResponsesClientSuppliedToolOutputItem(item gjson.Result) bool {
 	return strings.ToLower(strings.TrimSpace(item.Get("role").String())) == "tool"
 }
 
+func isResponsesFunctionOrToolCallItem(item gjson.Result) bool {
+	typ := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
+	return strings.Contains(typ, "function_call") || strings.Contains(typ, "tool_call")
+}
+
 func collectGeminiContents(contents gjson.Result, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {
 	if !contents.IsArray() {
 		return
@@ -315,6 +405,8 @@ func collectGeminiContents(contents gjson.Result, parts *[]string, images *[]str
 				addModerationText(parts, part.Get("text").String())
 				collectGeminiFunctionResponseText(parts, part.Get("functionResponse"), toolState)
 				collectGeminiFunctionResponseText(parts, part.Get("function_response"), toolState)
+				collectGeminiFunctionCallText(parts, part.Get("functionCall"), toolState)
+				collectGeminiFunctionCallText(parts, part.Get("function_call"), toolState)
 				addGeminiModerationImage(images, part)
 				return true
 			})
@@ -332,6 +424,15 @@ func collectGeminiInput(body []byte, parts *[]string, images *[]string, sources 
 		appendModerationSources(sources, "gemini.system_instruction", *parts, before)
 	}
 	collectGeminiContents(gjson.GetBytes(body, "contents"), parts, images, sources, toolState, auditScope)
+	if shouldIncludeTopLevelModelContext(auditScope) {
+		collectModelVisibleField(gjson.GetBytes(body, "tools"), "gemini.tools", parts, images, sources, toolState)
+		collectModelVisibleField(gjson.GetBytes(body, "toolConfig"), "gemini.tool_config", parts, images, sources, toolState)
+		collectModelVisibleField(gjson.GetBytes(body, "tool_config"), "gemini.tool_config", parts, images, sources, toolState)
+		collectModelVisibleField(gjson.GetBytes(body, "generationConfig.responseSchema"), "gemini.response_schema", parts, images, sources, toolState)
+		collectModelVisibleField(gjson.GetBytes(body, "generationConfig.responseJsonSchema"), "gemini.response_json_schema", parts, images, sources, toolState)
+		collectModelVisibleField(gjson.GetBytes(body, "generation_config.response_schema"), "gemini.response_schema", parts, images, sources, toolState)
+		collectModelVisibleField(gjson.GetBytes(body, "generation_config.response_json_schema"), "gemini.response_json_schema", parts, images, sources, toolState)
+	}
 }
 
 func collectGeminiSystemInstruction(value gjson.Result, parts *[]string, images *[]string) {
@@ -394,6 +495,15 @@ func collectGeminiFunctionResponseText(parts *[]string, response gjson.Result, t
 	collectToolResultTextValue(response.Get("response"), parts, &images, 0, toolState)
 }
 
+func collectGeminiFunctionCallText(parts *[]string, call gjson.Result, toolState *toolResultTextState) {
+	if !call.IsObject() {
+		return
+	}
+	var images []string
+	collectToolResultTextValue(call.Get("name"), parts, &images, 0, toolState)
+	collectToolResultTextValue(call.Get("args"), parts, &images, 0, toolState)
+}
+
 type toolResultTextState struct {
 	strings         int
 	totalRunes      int
@@ -450,7 +560,7 @@ func collectToolResultTextValueWithState(value gjson.Result, parts *[]string, im
 		addModerationImage(images, value.Get("base64").String())
 		value.ForEach(func(key, item gjson.Result) bool {
 			keyText := key.String()
-			if shouldSkipToolResultTextField(keyText) {
+			if shouldSkipToolResultTextField(keyText, item, value) {
 				return true
 			}
 			if state.objectKeys < maxToolResultObjectKeys {
@@ -507,13 +617,86 @@ func (state *toolResultTextState) markTruncated(reason string) {
 	state.truncateReasons = append(state.truncateReasons, reason)
 }
 
-func shouldSkipToolResultTextField(key string) bool {
+func shouldSkipToolResultTextField(key string, item gjson.Result, parent gjson.Result) bool {
 	switch strings.ToLower(strings.TrimSpace(key)) {
-	case "image", "images", "image_url", "input_image", "inline_data", "inlinedata", "data", "base64", "bytes", "file", "files":
-		return true
+	case "image", "images", "image_url", "input_image", "inline_data", "inlinedata", "base64", "bytes", "file", "files", "data":
+		return isLikelyBinaryPayloadField(item, parent)
 	default:
 		return false
 	}
+}
+
+func isLikelyBinaryPayloadField(item gjson.Result, parent gjson.Result) bool {
+	if hasAnyGJSONField(parent, "media_type", "mediaType", "mime_type", "mimeType") {
+		return true
+	}
+	switch {
+	case item.Type == gjson.String:
+		text := strings.TrimSpace(item.String())
+		lower := strings.ToLower(text)
+		if strings.HasPrefix(lower, "data:") || strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+			return true
+		}
+		return len(text) >= 512 && isLikelyBase64Text(text)
+	case item.IsArray():
+		seen := false
+		allMedia := true
+		item.ForEach(func(_, child gjson.Result) bool {
+			seen = true
+			if !isLikelyBinaryPayloadField(child, gjson.Result{}) {
+				allMedia = false
+				return false
+			}
+			return true
+		})
+		return seen && allMedia
+	case item.IsObject():
+		return hasAnyGJSONField(item,
+			"url",
+			"image_url",
+			"file_uri",
+			"fileUri",
+			"inline_data",
+			"inlineData",
+			"source",
+			"media_type",
+			"mediaType",
+			"mime_type",
+			"mimeType",
+		)
+	default:
+		return false
+	}
+}
+
+func hasAnyGJSONField(value gjson.Result, names ...string) bool {
+	for _, name := range names {
+		if value.Get(name).Exists() {
+			return true
+		}
+	}
+	return false
+}
+
+func isLikelyBase64Text(text string) bool {
+	if strings.TrimSpace(text) == "" {
+		return false
+	}
+	seenPayload := false
+	for _, r := range text {
+		switch {
+		case r >= 'A' && r <= 'Z':
+			seenPayload = true
+		case r >= 'a' && r <= 'z':
+			seenPayload = true
+		case r >= '0' && r <= '9':
+			seenPayload = true
+		case r == '+' || r == '/' || r == '=' || r == '-' || r == '_' || r == '\r' || r == '\n':
+		default:
+			return false
+		}
+	}
+	return seenPayload
 }
 
 func appendModerationSources(sources *[]ContentModerationInputSource, source string, parts []string, start int) {
@@ -573,6 +756,10 @@ func shouldIncludeModerationRole(role string, typ string, auditScope string) boo
 	default:
 		return true
 	}
+}
+
+func shouldIncludeTopLevelModelContext(auditScope string) bool {
+	return normalizeContentModerationAuditScope(auditScope) == ContentModerationAuditScopeAllContext
 }
 
 func deduplicateContentModerationInput(input *ContentModerationInput) {

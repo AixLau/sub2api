@@ -19,7 +19,7 @@ func TestExtractContentModerationInput_AnthropicAgentToolLoopScansClientToolResu
 
 	input := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, body)
 
-	require.Equal(t, "调用一下天气工具 晴 25 度", input.Text)
+	require.Equal(t, "调用一下天气工具 weather 晴 25 度", input.Text)
 	require.Empty(t, input.Images)
 }
 
@@ -142,7 +142,7 @@ func TestExtractContentModerationInput_GeminiAgentToolLoopScansClientFunctionRes
 
 	input := ExtractContentModerationInput(ContentModerationProtocolGemini, body)
 
-	require.Equal(t, "查询天气 text 晴 25 度", input.Text)
+	require.Equal(t, "查询天气 weather text 晴 25 度", input.Text)
 	require.Empty(t, input.Images)
 }
 
@@ -213,6 +213,196 @@ func TestExtractContentModerationInput_ResponsesLastAssistantKeepsEarlierClientC
 
 	require.Equal(t, "q1 a1", input.Text)
 	require.Empty(t, input.Images)
+}
+
+func TestExtractContentModerationInput_ResponsesScansTopLevelInstructions(t *testing.T) {
+	body := []byte(`{
+		"model":"gpt-test",
+		"instructions":"顶层 instructions 里的风险短语",
+		"input":"普通输入"
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Contains(t, input.Text, "顶层 instructions 里的风险短语")
+	require.Contains(t, input.Text, "普通输入")
+}
+
+func TestExtractContentModerationInput_OpenAIChatScansToolsFunctionsAndCallArguments(t *testing.T) {
+	body := []byte(`{
+		"messages":[
+			{"role":"user","content":"继续"},
+			{"role":"assistant","tool_calls":[{"type":"function","function":{"name":"lookup","arguments":"tool call arguments 里的风险短语"}}]},
+			{"role":"assistant","function_call":{"name":"legacy_lookup","arguments":"function call arguments 里的风险短语"}}
+		],
+		"tools":[{"type":"function","function":{
+			"name":"risk_tool",
+			"description":"tool description 里的风险短语",
+			"parameters":{"type":"object","properties":{"query":{"description":"schema description 里的风险短语"}}}
+		}}],
+		"functions":[{"name":"legacy_tool","description":"legacy function 里的风险短语"}]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
+
+	require.Contains(t, input.Text, "继续")
+	require.Contains(t, input.Text, "tool call arguments 里的风险短语")
+	require.Contains(t, input.Text, "function call arguments 里的风险短语")
+	require.Contains(t, input.Text, "tool description 里的风险短语")
+	require.Contains(t, input.Text, "schema description 里的风险短语")
+	require.Contains(t, input.Text, "legacy function 里的风险短语")
+}
+
+func TestExtractContentModerationInput_OpenAIChatScansTopLevelInstructions(t *testing.T) {
+	body := []byte(`{
+		"instructions":"chat 顶层 instructions 里的风险短语",
+		"messages":[{"role":"user","content":"普通输入"}]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
+
+	require.Contains(t, input.Text, "chat 顶层 instructions 里的风险短语")
+	require.Contains(t, input.Text, "普通输入")
+}
+
+func TestExtractContentModerationInput_OpenAIChatScansResponseFormatSchema(t *testing.T) {
+	body := []byte(`{
+		"messages":[{"role":"user","content":"继续"}],
+		"response_format":{"type":"json_schema","json_schema":{"name":"risk_schema","description":"chat response schema 里的风险短语","schema":{"properties":{"answer":{"description":"chat schema property 里的风险短语"}}}}}
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
+
+	require.Contains(t, input.Text, "chat response schema 里的风险短语")
+	require.Contains(t, input.Text, "chat schema property 里的风险短语")
+}
+
+func TestExtractContentModerationInput_ModelVisibleJSONScansDataFields(t *testing.T) {
+	body := []byte(`{
+		"messages":[
+			{"role":"user","content":"继续"},
+			{"role":"assistant","tool_calls":[{"type":"function","function":{"name":"lookup","arguments":"{\"data\":\"tool arguments data 字段里的风险短语\",\"image\":\"tool arguments image 字段里的风险短语\",\"file\":\"tool arguments file 字段里的风险短语\",\"base64\":\"tool arguments base64 字段里的风险短语\"}"}}]}
+		],
+		"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object","properties":{"data":{"description":"schema data 字段里的风险短语"},"image":{"description":"schema image 字段里的风险短语"},"file":{"description":"schema file 字段里的风险短语"},"base64":{"description":"schema base64 字段里的风险短语"}}}}}]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
+
+	require.Contains(t, input.Text, "tool arguments data 字段里的风险短语")
+	require.Contains(t, input.Text, "tool arguments image 字段里的风险短语")
+	require.Contains(t, input.Text, "tool arguments file 字段里的风险短语")
+	require.Contains(t, input.Text, "tool arguments base64 字段里的风险短语")
+	require.Contains(t, input.Text, "schema data 字段里的风险短语")
+	require.Contains(t, input.Text, "schema image 字段里的风险短语")
+	require.Contains(t, input.Text, "schema file 字段里的风险短语")
+	require.Contains(t, input.Text, "schema base64 字段里的风险短语")
+}
+
+func TestExtractContentModerationInput_ResponsesScansToolsAndFunctionCallArguments(t *testing.T) {
+	body := []byte(`{
+		"input":[
+			{"type":"message","role":"user","content":[{"type":"input_text","text":"继续"}]},
+			{"type":"function_call","name":"lookup","arguments":"responses function call arguments 里的风险短语"}
+		],
+		"tools":[{"type":"function","name":"lookup","description":"responses tool description 里的风险短语","parameters":{"properties":{"query":{"description":"responses schema description 里的风险短语"}}}}]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Contains(t, input.Text, "继续")
+	require.Contains(t, input.Text, "responses function call arguments 里的风险短语")
+	require.Contains(t, input.Text, "responses tool description 里的风险短语")
+	require.Contains(t, input.Text, "responses schema description 里的风险短语")
+}
+
+func TestExtractContentModerationInput_ResponsesScansTextFormatSchema(t *testing.T) {
+	body := []byte(`{
+		"input":"继续",
+		"text":{"format":{"type":"json_schema","name":"risk_schema","description":"responses text format 里的风险短语","schema":{"properties":{"answer":{"description":"responses schema property 里的风险短语"}}}}},
+		"response_format":{"type":"json_schema","json_schema":{"description":"responses compat response_format 里的风险短语"}}
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Contains(t, input.Text, "responses text format 里的风险短语")
+	require.Contains(t, input.Text, "responses schema property 里的风险短语")
+	require.Contains(t, input.Text, "responses compat response_format 里的风险短语")
+}
+
+func TestExtractContentModerationInput_AnthropicScansToolDeclarations(t *testing.T) {
+	body := []byte(`{
+		"messages":[{"role":"user","content":[{"type":"text","text":"继续"}]}],
+		"tools":[{"name":"lookup","description":"anthropic tool description 里的风险短语","input_schema":{"properties":{"query":{"description":"anthropic schema description 里的风险短语"}}}}]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, body)
+
+	require.Contains(t, input.Text, "继续")
+	require.Contains(t, input.Text, "anthropic tool description 里的风险短语")
+	require.Contains(t, input.Text, "anthropic schema description 里的风险短语")
+}
+
+func TestExtractContentModerationInput_AnthropicScansToolUseInput(t *testing.T) {
+	body := []byte(`{
+		"messages":[{"role":"assistant","content":[{"type":"tool_use","name":"lookup","input":{"query":"anthropic tool_use input 里的风险短语"}}]}]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, body)
+
+	require.Contains(t, input.Text, "lookup")
+	require.Contains(t, input.Text, "anthropic tool_use input 里的风险短语")
+}
+
+func TestExtractContentModerationInput_AnthropicScansOutputFormatSchema(t *testing.T) {
+	body := []byte(`{
+		"messages":[{"role":"user","content":[{"type":"text","text":"继续"}]}],
+		"output_format":{"type":"json_schema","schema":{"properties":{"answer":{"description":"anthropic output schema 里的风险短语"}}}}
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, body)
+
+	require.Contains(t, input.Text, "anthropic output schema 里的风险短语")
+}
+
+func TestExtractContentModerationInput_GeminiScansToolDeclarations(t *testing.T) {
+	body := []byte(`{
+		"contents":[{"role":"user","parts":[{"text":"继续"}]}],
+		"tools":[{"functionDeclarations":[{"name":"lookup","description":"gemini tool description 里的风险短语","parameters":{"properties":{"query":{"description":"gemini schema description 里的风险短语"}}}}]}]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolGemini, body)
+
+	require.Contains(t, input.Text, "继续")
+	require.Contains(t, input.Text, "gemini tool description 里的风险短语")
+	require.Contains(t, input.Text, "gemini schema description 里的风险短语")
+}
+
+func TestExtractContentModerationInput_GeminiScansFunctionCallArgs(t *testing.T) {
+	body := []byte(`{
+		"contents":[{"role":"model","parts":[{"functionCall":{"name":"lookup","args":{"query":"gemini functionCall args 里的风险短语"}}},{"function_call":{"name":"legacy_lookup","args":{"query":"gemini function_call args 里的风险短语"}}}]}]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolGemini, body)
+
+	require.Contains(t, input.Text, "lookup")
+	require.Contains(t, input.Text, "gemini functionCall args 里的风险短语")
+	require.Contains(t, input.Text, "legacy_lookup")
+	require.Contains(t, input.Text, "gemini function_call args 里的风险短语")
+}
+
+func TestExtractContentModerationInput_GeminiScansResponseSchema(t *testing.T) {
+	body := []byte(`{
+		"contents":[{"role":"user","parts":[{"text":"继续"}]}],
+		"generationConfig":{"responseSchema":{"properties":{"answer":{"description":"gemini response schema 里的风险短语"}}},"responseJsonSchema":{"properties":{"json":{"description":"gemini response json schema 里的风险短语"}}}},
+		"generation_config":{"response_schema":{"properties":{"legacy":{"description":"gemini legacy response schema 里的风险短语"}}},"response_json_schema":{"properties":{"legacyJson":{"description":"gemini legacy response json schema 里的风险短语"}}}}
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolGemini, body)
+
+	require.Contains(t, input.Text, "gemini response schema 里的风险短语")
+	require.Contains(t, input.Text, "gemini response json schema 里的风险短语")
+	require.Contains(t, input.Text, "gemini legacy response schema 里的风险短语")
+	require.Contains(t, input.Text, "gemini legacy response json schema 里的风险短语")
 }
 
 func TestAddModerationText_StripsPureSystemReminderBlock(t *testing.T) {
@@ -417,6 +607,9 @@ func TestExtractContentModerationInput_GeminiScansUnknownClientRoles(t *testing.
 
 func TestExtractContentModerationInput_UserOnlyScopeSkipsAssistantAndToolContext(t *testing.T) {
 	body := []byte(`{
+		"instructions":"顶层指令",
+		"tools":[{"type":"function","function":{"name":"lookup","description":"工具定义"}}],
+		"response_format":{"type":"json_schema","json_schema":{"description":"结构化输出 schema"}},
 		"messages":[
 			{"role":"system","content":"系统上下文"},
 			{"role":"assistant","content":"助手历史"},
@@ -434,6 +627,9 @@ func TestExtractContentModerationInput_UserOnlyScopeSkipsAssistantAndToolContext
 
 func TestExtractContentModerationInput_UserAndToolScopeSkipsSystemAndAssistantContext(t *testing.T) {
 	body := []byte(`{
+		"instructions":"顶层指令",
+		"tools":[{"type":"function","function":{"name":"lookup","description":"工具定义"}}],
+		"response_format":{"type":"json_schema","json_schema":{"description":"结构化输出 schema"}},
 		"messages":[
 			{"role":"system","content":"系统上下文"},
 			{"role":"assistant","content":"助手历史"},
@@ -448,6 +644,9 @@ func TestExtractContentModerationInput_UserAndToolScopeSkipsSystemAndAssistantCo
 	require.Contains(t, input.Text, "工具结果")
 	require.NotContains(t, input.Text, "系统上下文")
 	require.NotContains(t, input.Text, "助手历史")
+	require.NotContains(t, input.Text, "顶层指令")
+	require.NotContains(t, input.Text, "工具定义")
+	require.NotContains(t, input.Text, "结构化输出 schema")
 }
 
 func TestExtractContentModerationInput_DeduplicatesRepeatedSourceTextWithinRequest(t *testing.T) {

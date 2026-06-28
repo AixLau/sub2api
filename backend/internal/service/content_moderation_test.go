@@ -1744,7 +1744,7 @@ func TestExtractContentModerationInput_OpenAIResponsesCodexPayloadUsesAllUserMes
 
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
 
-	require.Equal(t, "developer permissions sk-proj-1234567890abcdef first user prompt last user prompt", input.Text)
+	require.Equal(t, "instructions..... developer permissions sk-proj-1234567890abcdef first user prompt last user prompt", input.Text)
 	require.Empty(t, input.Images)
 	require.Contains(t, input.Text, "developer permissions")
 }
@@ -1876,8 +1876,8 @@ func TestContentModerationCheck_PreBlockBlocksCodexResponsesLatestUserInput(t *t
 	require.True(t, logs[0].Flagged)
 	require.Equal(t, ContentModerationActionBlock, logs[0].Action)
 	require.Equal(t, ContentModerationModePreBlock, logs[0].Mode)
-	require.Equal(t, "developer instructions should not be audited environment context latest blocked prompt", logs[0].InputExcerpt)
-	require.Equal(t, "developer instructions should not be audited environment context latest blocked prompt", moderationRequest.Input)
+	require.Equal(t, "instructions..... developer instructions should not be audited environment context latest blocked prompt", logs[0].InputExcerpt)
+	require.Equal(t, "instructions..... developer instructions should not be audited environment context latest blocked prompt", moderationRequest.Input)
 }
 
 func TestContentModerationCheck_SampleRateDoesNotSkipAuditScan(t *testing.T) {
