@@ -220,7 +220,7 @@ import Icon from '@/components/icons/Icon.vue'
 import { useAppStore } from '@/stores'
 import { opsAPI, type OpsErrorDetail } from '@/api/admin/ops'
 import { formatDateTime } from '@/utils/format'
-import { resolvePrimaryResponseBody, resolveUpstreamPayload } from '../utils/errorDetailResponse'
+import { resolveEmbeddedUpstreamErrors, resolvePrimaryResponseBody, resolveUpstreamPayload } from '../utils/errorDetailResponse'
 
 interface Props {
   show: boolean
@@ -294,7 +294,25 @@ function displayModel(d: OpsErrorDetail | null): string {
 const correlatedUpstream = ref<OpsErrorDetail[]>([])
 const correlatedUpstreamLoading = ref(false)
 
-const correlatedUpstreamErrors = computed<OpsErrorDetail[]>(() => correlatedUpstream.value)
+const correlatedUpstreamErrors = computed<OpsErrorDetail[]>(() => {
+  const embedded = resolveEmbeddedUpstreamErrors(detail.value)
+  if (!correlatedUpstream.value.length) return embedded
+
+  const seen = new Set<string>()
+  const merged: OpsErrorDetail[] = []
+  for (const ev of [...embedded, ...correlatedUpstream.value]) {
+    const key = [
+      ev.request_id || ev.client_request_id || '',
+      ev.status_code ?? '',
+      ev.message || '',
+      ev.upstream_error_detail || ''
+    ].join('\u0000')
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(ev)
+  }
+  return merged
+})
 
 const expandedUpstreamDetailIds = ref(new Set<number>())
 

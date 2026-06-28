@@ -316,8 +316,16 @@ func sanitizeOpsUpstreamErrors(entry *OpsInsertErrorLogInput) error {
 			out.Detail = ""
 		}
 
+		responseBody := strings.TrimSpace(out.UpstreamResponseBody)
+		if responseBody != "" {
+			sanitizedBody, _ := sanitizeErrorBodyForStorage(responseBody, opsMaxStoredErrorBodyBytes)
+			out.UpstreamResponseBody = sanitizedBody
+		} else {
+			out.UpstreamResponseBody = ""
+		}
+
 		// Drop fully-empty events (can happen if only status code was known).
-		if out.UpstreamStatusCode == 0 && out.Message == "" && out.Detail == "" {
+		if out.UpstreamStatusCode == 0 && out.Message == "" && out.Detail == "" && out.UpstreamResponseBody == "" {
 			continue
 		}
 

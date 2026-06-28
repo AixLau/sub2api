@@ -188,6 +188,45 @@ func TestOpenAIHandleErrorResponse_SubscriptionExhausted429ReportsPlanBalance(t 
 	assert.Equal(t, "套餐 Pro 畅用月包 已无可用余额，剩余额度 0.00 USD，请续费或切换账号", errField["message"])
 }
 
+func TestOpenAIHandleErrorResponse_ForbiddenBillingErrorReportsBalance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	group := &Group{
+		ID:               24,
+		Name:             "Codex高速专线",
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeSubscription,
+	}
+	apiKey := &APIKey{
+		ID:    304,
+		User:  &User{ID: 345, Balance: 0},
+		Group: group,
+	}
+	c.Set("api_key", apiKey)
+
+	svc := &OpenAIGatewayService{}
+	respBody := []byte(`{"error":{"message":"insufficient balance","type":"billing_error"}}`)
+	resp := &http.Response{
+		StatusCode: http.StatusForbidden,
+		Body:       io.NopCloser(bytes.NewReader(respBody)),
+		Header:     http.Header{},
+	}
+	account := &Account{ID: 158, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+	_, err := svc.handleErrorResponse(context.Background(), resp, c, account, nil)
+	require.Error(t, err)
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	errField, ok := payload["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "billing_error", errField["type"])
+	assert.Equal(t, "套餐 Codex高速专线 已无可用余额，剩余额度 0.00 USD，请续费或切换账号", errField["message"])
+}
+
 func TestOpenAIHandleErrorResponse_Generic429KeepsRateLimitMessage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

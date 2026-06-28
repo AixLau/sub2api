@@ -3691,6 +3691,14 @@ func shouldFailoverOpenAIPassthroughResponse(statusCode int) bool {
 	}
 }
 
+func opsUpstreamResponseBodySnippet(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	snippet, _ := sanitizeErrorBodyForStorage(string(body), opsMaxStoredErrorBodyBytes)
+	return snippet
+}
+
 func (s *OpenAIGatewayService) handleFailoverErrorResponsePassthrough(
 	ctx context.Context,
 	resp *http.Response,
@@ -3710,6 +3718,7 @@ func (s *OpenAIGatewayService) handleFailoverErrorResponsePassthrough(
 		}
 		upstreamDetail = truncateString(string(body), maxBytes)
 	}
+	upstreamResponseBody := opsUpstreamResponseBodySnippet(body)
 	setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, upstreamDetail)
 	logOpenAIInstructionsRequiredDebug(ctx, c, account, resp.StatusCode, upstreamMsg, requestBody, body)
 	reqModel, _, _ := extractOpenAIRequestMetaFromBody(requestBody)
@@ -3724,7 +3733,7 @@ func (s *OpenAIGatewayService) handleFailoverErrorResponsePassthrough(
 		Kind:                 "failover",
 		Message:              upstreamMsg,
 		Detail:               upstreamDetail,
-		UpstreamResponseBody: upstreamDetail,
+		UpstreamResponseBody: upstreamResponseBody,
 	})
 	return &UpstreamFailoverError{
 		StatusCode:      resp.StatusCode,
@@ -3766,6 +3775,7 @@ func (s *OpenAIGatewayService) handleErrorResponsePassthrough(
 		}
 		upstreamDetail = truncateString(string(body), maxBytes)
 	}
+	upstreamResponseBody := opsUpstreamResponseBodySnippet(body)
 	setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, upstreamDetail)
 	logOpenAIInstructionsRequiredDebug(ctx, c, account, resp.StatusCode, upstreamMsg, requestBody, body)
 	// 透传模式保留原始上游错误响应，但运行态账号状态仍需更新，
@@ -3784,7 +3794,7 @@ func (s *OpenAIGatewayService) handleErrorResponsePassthrough(
 		Kind:                 "http_error",
 		Message:              upstreamMsg,
 		Detail:               upstreamDetail,
-		UpstreamResponseBody: upstreamDetail,
+		UpstreamResponseBody: upstreamResponseBody,
 	})
 
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -4629,13 +4639,25 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		errType = "upstream_error"
 		errMsg = "Upstream authentication failed, please contact administrator"
 	case 402:
-		statusCode = http.StatusBadGateway
-		errType = "upstream_error"
-		errMsg = "Upstream payment required: insufficient balance or billing issue"
+		if msg, ok := openAISubscriptionExhaustedMessage(c, upstreamMsg); ok {
+			statusCode = http.StatusPaymentRequired
+			errType = "billing_error"
+			errMsg = msg
+		} else {
+			statusCode = http.StatusBadGateway
+			errType = "upstream_error"
+			errMsg = "Upstream payment required: insufficient balance or billing issue"
+		}
 	case 403:
-		statusCode = http.StatusBadGateway
-		errType = "upstream_error"
-		errMsg = "Upstream access forbidden, please contact administrator"
+		if msg, ok := openAISubscriptionExhaustedMessage(c, upstreamMsg); ok {
+			statusCode = http.StatusForbidden
+			errType = "billing_error"
+			errMsg = msg
+		} else {
+			statusCode = http.StatusBadGateway
+			errType = "upstream_error"
+			errMsg = "Upstream access forbidden, please contact administrator"
+		}
 	case 429:
 		statusCode = http.StatusTooManyRequests
 		errType = "rate_limit_error"

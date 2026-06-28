@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { OpsErrorDetail } from '@/api/admin/ops'
-import { resolvePrimaryResponseBody, resolveUpstreamPayload } from '../errorDetailResponse'
+import { resolveEmbeddedUpstreamErrors, resolvePrimaryResponseBody, resolveUpstreamPayload } from '../errorDetailResponse'
 
 function makeDetail(overrides: Partial<OpsErrorDetail>): OpsErrorDetail {
   return {
@@ -130,5 +130,54 @@ describe('errorDetailResponse', () => {
       upstream_errors: '',
       upstream_error_message: 'fallback message'
     }))).toBe('fallback message')
+  })
+
+  it('expands upstream_errors stored on the current request detail', () => {
+    const detail = makeDetail({
+      upstream_errors: JSON.stringify([
+        {
+          at_unix_ms: 1782665127000,
+          platform: 'openai',
+          account_id: 158,
+          account_name: 'openai-oauth',
+          upstream_status_code: 403,
+          upstream_request_id: 'up-rid',
+          kind: 'http_error',
+          message: 'insufficient balance',
+          detail: '{"error":{"message":"insufficient balance","type":"billing_error"}}'
+        }
+      ])
+    })
+
+    expect(resolveEmbeddedUpstreamErrors(detail)).toEqual([
+      expect.objectContaining({
+        id: -1,
+        phase: 'upstream',
+        status_code: 403,
+        platform: 'openai',
+        account_id: 158,
+        account_name: 'openai-oauth',
+        request_id: 'up-rid',
+        message: 'insufficient balance',
+        upstream_error_detail: '{"error":{"message":"insufficient balance","type":"billing_error"}}'
+      })
+    ])
+  })
+
+  it('falls back to upstream message fields when upstream_errors is empty', () => {
+    const detail = makeDetail({
+      upstream_status_code: 403,
+      upstream_error_message: 'insufficient balance',
+      upstream_error_detail: '{"error":{"message":"insufficient balance","type":"billing_error"}}'
+    })
+
+    expect(resolveEmbeddedUpstreamErrors(detail)).toEqual([
+      expect.objectContaining({
+        id: -1,
+        status_code: 403,
+        message: 'insufficient balance',
+        upstream_error_detail: '{"error":{"message":"insufficient balance","type":"billing_error"}}'
+      })
+    ])
   })
 })
