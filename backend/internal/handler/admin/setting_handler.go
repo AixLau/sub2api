@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -2250,12 +2251,146 @@ func (h *SettingHandler) auditSettingsUpdate(c *gin.Context, before *service.Sys
 
 	subject, _ := middleware.GetAuthSubjectFromContext(c)
 	role, _ := middleware.GetUserRoleFromContext(c)
-	slog.Info("settings updated",
-		"audit", true,
-		"user_id", subject.UserID,
-		"role", role,
-		"changed", changed,
-	)
+	beforeDiff, afterDiff := settingsAuditDiffMaps(changed, before, after, beforeAuthSourceDefaults, afterAuthSourceDefaults)
+	service.EmitAdminAudit(c.Request.Context(), service.AdminAuditEvent{
+		Action:          "settings.update",
+		TargetType:      "system_settings",
+		TargetID:        "global",
+		OperatorID:      subject.UserID,
+		OperatorRole:    role,
+		OperatorIP:      c.ClientIP(),
+		UserAgent:       c.Request.UserAgent(),
+		RequestID:       c.GetHeader("X-Request-ID"),
+		ClientRequestID: c.GetHeader("X-Client-Request-ID"),
+		Result:          "success",
+		Before:          beforeDiff,
+		After:           afterDiff,
+	})
+}
+
+func settingsAuditDiffMaps(changed []string, before *service.SystemSettings, after *service.SystemSettings, beforeAuthSourceDefaults *service.AuthSourceDefaultSettings, afterAuthSourceDefaults *service.AuthSourceDefaultSettings) (map[string]any, map[string]any) {
+	beforeValues := systemSettingsAuditValueMap(before)
+	afterValues := systemSettingsAuditValueMap(after)
+	appendAuthSourceAuditValues(beforeValues, beforeAuthSourceDefaults)
+	appendAuthSourceAuditValues(afterValues, afterAuthSourceDefaults)
+
+	beforeDiff := make(map[string]any, len(changed))
+	afterDiff := make(map[string]any, len(changed))
+	for _, field := range changed {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		if value, ok := beforeValues[field]; ok {
+			beforeDiff[field] = value
+		}
+		if value, ok := afterValues[field]; ok {
+			afterDiff[field] = value
+		}
+		if _, ok := beforeDiff[field]; !ok {
+			beforeDiff[field] = "<changed>"
+		}
+		if _, ok := afterDiff[field]; !ok {
+			afterDiff[field] = "<changed>"
+		}
+	}
+	return beforeDiff, afterDiff
+}
+
+func systemSettingsAuditValueMap(settings *service.SystemSettings) map[string]any {
+	if settings == nil {
+		return map[string]any{}
+	}
+	return structAuditValueMap(reflect.ValueOf(settings))
+}
+
+func structAuditValueMap(value reflect.Value) map[string]any {
+	out := map[string]any{}
+	if !value.IsValid() {
+		return out
+	}
+	if value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			return out
+		}
+		value = value.Elem()
+	}
+	if value.Kind() != reflect.Struct {
+		return out
+	}
+	typ := value.Type()
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if field.PkgPath != "" {
+			continue
+		}
+		name := auditFieldName(field)
+		if name == "" {
+			continue
+		}
+		out[name] = value.Field(i).Interface()
+	}
+	return out
+}
+
+func auditFieldName(field reflect.StructField) string {
+	if tag := strings.TrimSpace(field.Tag.Get("json")); tag != "" && tag != "-" {
+		if name := strings.TrimSpace(strings.Split(tag, ",")[0]); name != "" {
+			return name
+		}
+	}
+	return camelToSnake(field.Name)
+}
+
+func camelToSnake(value string) string {
+	runes := []rune(value)
+	out := make([]rune, 0, len(runes)+4)
+	for i, r := range runes {
+		if i > 0 && isUpperASCII(r) {
+			prev := runes[i-1]
+			var next rune
+			if i+1 < len(runes) {
+				next = runes[i+1]
+			}
+			if !isUpperASCII(prev) || (next != 0 && !isUpperASCII(next)) {
+				out = append(out, '_')
+			}
+		}
+		out = append(out, []rune(strings.ToLower(string(r)))...)
+	}
+	return string(out)
+}
+
+func isUpperASCII(r rune) bool {
+	return r >= 'A' && r <= 'Z'
+}
+
+func appendAuthSourceAuditValues(out map[string]any, settings *service.AuthSourceDefaultSettings) {
+	if settings == nil {
+		return
+	}
+	providers := []struct {
+		name  string
+		value service.ProviderDefaultGrantSettings
+	}{
+		{name: "email", value: settings.Email},
+		{name: "linuxdo", value: settings.LinuxDo},
+		{name: "oidc", value: settings.OIDC},
+		{name: "wechat", value: settings.WeChat},
+		{name: "github", value: settings.GitHub},
+		{name: "google", value: settings.Google},
+		{name: "dingtalk", value: settings.DingTalk},
+	}
+	for _, provider := range providers {
+		prefix := "auth_source_default_" + provider.name + "_"
+		out[prefix+"balance"] = provider.value.Balance
+		out[prefix+"concurrency"] = provider.value.Concurrency
+		out[prefix+"subscriptions"] = provider.value.Subscriptions
+		out[prefix+"grant_on_signup"] = provider.value.GrantOnSignup
+		out[prefix+"grant_on_first_bind"] = provider.value.GrantOnFirstBind
+		out[service.SettingKeyAuthSourcePlatformQuotas(provider.name)] = provider.value.PlatformQuotas
+	}
+	out["force_email_on_third_party_signup"] = settings.ForceEmailOnThirdPartySignup
 }
 
 func diffSettings(before *service.SystemSettings, after *service.SystemSettings, beforeAuthSourceDefaults *service.AuthSourceDefaultSettings, afterAuthSourceDefaults *service.AuthSourceDefaultSettings, req UpdateSettingsRequest) []string {

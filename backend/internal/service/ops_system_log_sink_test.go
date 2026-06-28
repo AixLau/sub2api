@@ -60,6 +60,15 @@ func TestOpsSystemLogSink_ShouldIndex(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "audit marker from fields",
+			event: &logger.LogEvent{
+				Level:     "info",
+				Component: "app",
+				Fields:    map[string]any{"audit": true},
+			},
+			want: true,
+		},
+		{
 			name:  "plain info",
 			event: &logger.LogEvent{Level: "info", Component: "app"},
 			want:  false,
