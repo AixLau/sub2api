@@ -1,15 +1,14 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
-// 当数组末尾不是用户消息时（典型场景：Agent 工具循环结束于 tool/assistant），
-// 应直接跳过审计——不再回溯查找历史中的某条用户消息。
-
-func TestExtractContentModerationInput_AnthropicAgentToolLoopSkipsAudit(t *testing.T) {
+func TestExtractContentModerationInput_AnthropicAgentToolLoopScansClientToolResult(t *testing.T) {
 	body := []byte(`{
 		"messages": [
 			{"role":"user","content":"调用一下天气工具"},
@@ -20,7 +19,7 @@ func TestExtractContentModerationInput_AnthropicAgentToolLoopSkipsAudit(t *testi
 
 	input := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, body)
 
-	require.Empty(t, input.Text)
+	require.Equal(t, "调用一下天气工具 晴 25 度", input.Text)
 	require.Empty(t, input.Images)
 }
 
@@ -36,7 +35,7 @@ func TestExtractContentModerationInput_AnthropicFirstTurnExtractsUser(t *testing
 	require.Equal(t, "Q1", input.Text)
 }
 
-func TestExtractContentModerationInput_AnthropicMultiTurnExtractsLatestUser(t *testing.T) {
+func TestExtractContentModerationInput_AnthropicMultiTurnExtractsAllClientContextText(t *testing.T) {
 	body := []byte(`{
 		"messages": [
 			{"role":"user","content":"Q1"},
@@ -47,10 +46,10 @@ func TestExtractContentModerationInput_AnthropicMultiTurnExtractsLatestUser(t *t
 
 	input := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, body)
 
-	require.Equal(t, "Q2", input.Text)
+	require.Equal(t, "Q1 A1 Q2", input.Text)
 }
 
-func TestExtractContentModerationInput_AnthropicStreamResendExtractsResend(t *testing.T) {
+func TestExtractContentModerationInput_AnthropicStreamResendExtractsClientContextText(t *testing.T) {
 	body := []byte(`{
 		"messages": [
 			{"role":"user","content":"原问题"},
@@ -61,10 +60,10 @@ func TestExtractContentModerationInput_AnthropicStreamResendExtractsResend(t *te
 
 	input := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, body)
 
-	require.Equal(t, "重发", input.Text)
+	require.Equal(t, "原问题 部分回答…… 重发", input.Text)
 }
 
-func TestExtractContentModerationInput_OpenAIChatAgentToolLoopSkipsAudit(t *testing.T) {
+func TestExtractContentModerationInput_OpenAIChatAgentToolLoopScansClientToolOutput(t *testing.T) {
 	body := []byte(`{
 		"messages": [
 			{"role":"system","content":"sys"},
@@ -76,11 +75,11 @@ func TestExtractContentModerationInput_OpenAIChatAgentToolLoopSkipsAudit(t *test
 
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
 
-	require.Empty(t, input.Text)
+	require.Equal(t, "sys 列出我的订单 []", input.Text)
 	require.Empty(t, input.Images)
 }
 
-func TestExtractContentModerationInput_OpenAIChatMultiTurnExtractsLatestUser(t *testing.T) {
+func TestExtractContentModerationInput_OpenAIChatMultiTurnExtractsAllClientContextText(t *testing.T) {
 	body := []byte(`{
 		"messages": [
 			{"role":"user","content":"Q1"},
@@ -91,21 +90,21 @@ func TestExtractContentModerationInput_OpenAIChatMultiTurnExtractsLatestUser(t *
 
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
 
-	require.Equal(t, "Q2", input.Text)
+	require.Equal(t, "Q1 A1 Q2", input.Text)
 }
 
-func TestExtractContentModerationInput_GeminiAgentToolLoopSkipsAudit(t *testing.T) {
+func TestExtractContentModerationInput_GeminiAgentToolLoopScansClientFunctionResponse(t *testing.T) {
 	body := []byte(`{
 		"contents": [
 			{"role":"user","parts":[{"text":"查询天气"}]},
 			{"role":"model","parts":[{"functionCall":{"name":"weather","args":{}}}]},
-			{"role":"user","parts":[{"functionResponse":{"name":"weather","response":{"temp":25}}}]}
+			{"role":"user","parts":[{"functionResponse":{"name":"weather","response":{"text":"晴 25 度"}}}]}
 		]
 	}`)
 
 	input := ExtractContentModerationInput(ContentModerationProtocolGemini, body)
 
-	require.Empty(t, input.Text)
+	require.Equal(t, "查询天气 text 晴 25 度", input.Text)
 	require.Empty(t, input.Images)
 }
 
@@ -121,7 +120,7 @@ func TestExtractContentModerationInput_GeminiFirstTurnExtractsUser(t *testing.T)
 	require.Equal(t, "你好", input.Text)
 }
 
-func TestExtractContentModerationInput_GeminiMultiTurnExtractsLatestUser(t *testing.T) {
+func TestExtractContentModerationInput_GeminiMultiTurnExtractsAllClientContextText(t *testing.T) {
 	body := []byte(`{
 		"contents": [
 			{"role":"user","parts":[{"text":"Q1"}]},
@@ -132,10 +131,10 @@ func TestExtractContentModerationInput_GeminiMultiTurnExtractsLatestUser(t *test
 
 	input := ExtractContentModerationInput(ContentModerationProtocolGemini, body)
 
-	require.Equal(t, "Q2", input.Text)
+	require.Equal(t, "Q1 A1 Q2", input.Text)
 }
 
-func TestExtractContentModerationInput_ResponsesAgentToolLoopSkipsAudit(t *testing.T) {
+func TestExtractContentModerationInput_ResponsesAgentToolLoopScansClientToolOutput(t *testing.T) {
 	body := []byte(`{
 		"input":[
 			{"type":"message","role":"user","content":[{"type":"input_text","text":"运行测试"}]},
@@ -146,11 +145,11 @@ func TestExtractContentModerationInput_ResponsesAgentToolLoopSkipsAudit(t *testi
 
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
 
-	require.Empty(t, input.Text)
+	require.Equal(t, "运行测试 all passed", input.Text)
 	require.Empty(t, input.Images)
 }
 
-func TestExtractContentModerationInput_ResponsesLastUserMessageExtracted(t *testing.T) {
+func TestExtractContentModerationInput_ResponsesAllClientContextMessagesExtracted(t *testing.T) {
 	body := []byte(`{
 		"input":[
 			{"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]},
@@ -161,10 +160,10 @@ func TestExtractContentModerationInput_ResponsesLastUserMessageExtracted(t *test
 
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
 
-	require.Equal(t, "latest", input.Text)
+	require.Equal(t, "first answer latest", input.Text)
 }
 
-func TestExtractContentModerationInput_ResponsesLastIsAssistantSkipped(t *testing.T) {
+func TestExtractContentModerationInput_ResponsesLastAssistantKeepsEarlierClientContextText(t *testing.T) {
 	body := []byte(`{
 		"input":[
 			{"type":"message","role":"user","content":[{"type":"input_text","text":"q1"}]},
@@ -174,6 +173,297 @@ func TestExtractContentModerationInput_ResponsesLastIsAssistantSkipped(t *testin
 
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
 
-	require.Empty(t, input.Text)
+	require.Equal(t, "q1 a1", input.Text)
 	require.Empty(t, input.Images)
+}
+
+func TestAddModerationText_StripsPureSystemReminderBlock(t *testing.T) {
+	var parts []string
+
+	addModerationText(&parts, "<system-reminder>工具说明</system-reminder>")
+
+	require.Empty(t, parts)
+}
+
+func TestAddModerationText_KeepsUserTextAroundSystemReminderBlock(t *testing.T) {
+	var parts []string
+
+	addModerationText(&parts, "用户正文 <system-reminder>工具说明</system-reminder> 风险内容")
+
+	require.Equal(t, []string{"用户正文 风险内容"}, parts)
+}
+
+func TestAddModerationText_UnclosedSystemReminderDoesNotDropWholeText(t *testing.T) {
+	var parts []string
+
+	addModerationText(&parts, "用户正文 <system-reminder>未闭合 风险内容")
+
+	require.Equal(t, []string{"用户正文 未闭合 风险内容"}, parts)
+}
+
+func TestAddModerationText_MultipleSystemReminderBlocksOnlyRemoveMarkers(t *testing.T) {
+	var parts []string
+
+	addModerationText(&parts, "A <system-reminder>one</system-reminder> B <system-reminder>two</system-reminder> C")
+
+	require.Equal(t, []string{"A B C"}, parts)
+}
+
+func TestExtractContentModerationInput_OpenAIChatScansClientSuppliedToolAndFunctionMessages(t *testing.T) {
+	body := []byte(`{
+		"messages":[
+			{"role":"user","content":"请根据工具结果继续"},
+			{"role":"tool","tool_call_id":"call_1","content":"工具结果包含风险短语"},
+			{"role":"function","name":"lookup","content":"函数结果包含另一段风险内容"}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
+
+	require.Contains(t, input.Text, "请根据工具结果继续")
+	require.Contains(t, input.Text, "工具结果包含风险短语")
+	require.Contains(t, input.Text, "函数结果包含另一段风险内容")
+}
+
+func TestExtractContentModerationInput_OpenAIChatScansClientSuppliedSystemDeveloperAndAssistantMessages(t *testing.T) {
+	body := []byte(`{
+		"messages":[
+			{"role":"system","content":"系统消息里的风险短语"},
+			{"role":"developer","content":"开发者消息里的风险短语"},
+			{"role":"assistant","content":"助手历史里的风险短语"},
+			{"role":"user","content":"继续"}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
+
+	require.Contains(t, input.Text, "系统消息里的风险短语")
+	require.Contains(t, input.Text, "开发者消息里的风险短语")
+	require.Contains(t, input.Text, "助手历史里的风险短语")
+	require.Contains(t, input.Text, "继续")
+}
+
+func TestExtractContentModerationInput_OpenAIChatScansUnknownClientRoles(t *testing.T) {
+	body := []byte(`{
+		"messages":[
+			{"role":"custom_client_role","content":"未知角色里的风险短语"},
+			{"role":"user","content":"继续"}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
+
+	require.Contains(t, input.Text, "未知角色里的风险短语")
+	require.Contains(t, input.Text, "继续")
+}
+
+func TestExtractContentModerationInput_ResponsesScansClientSuppliedToolOutputs(t *testing.T) {
+	body := []byte(`{
+		"input":[
+			{"type":"message","role":"user","content":[{"type":"input_text","text":"继续"}]},
+			{"type":"function_call_output","call_id":"call_1","output":"工具输出里的风险短语"}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Contains(t, input.Text, "继续")
+	require.Contains(t, input.Text, "工具输出里的风险短语")
+}
+
+func TestExtractContentModerationInput_ResponsesScansClientSuppliedSystemDeveloperAndAssistantMessages(t *testing.T) {
+	body := []byte(`{
+		"input":[
+			{"type":"message","role":"system","content":[{"type":"input_text","text":"系统消息里的风险短语"}]},
+			{"type":"message","role":"developer","content":[{"type":"input_text","text":"开发者消息里的风险短语"}]},
+			{"type":"message","role":"assistant","content":[{"type":"output_text","text":"助手历史里的风险短语"}]},
+			{"type":"message","role":"user","content":[{"type":"input_text","text":"继续"}]}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Contains(t, input.Text, "系统消息里的风险短语")
+	require.Contains(t, input.Text, "开发者消息里的风险短语")
+	require.Contains(t, input.Text, "助手历史里的风险短语")
+	require.Contains(t, input.Text, "继续")
+}
+
+func TestExtractContentModerationInput_ResponsesScansUnknownClientRoles(t *testing.T) {
+	body := []byte(`{
+		"input":[
+			{"type":"message","role":"custom_client_role","content":[{"type":"input_text","text":"未知角色里的风险短语"}]},
+			{"type":"message","role":"user","content":[{"type":"input_text","text":"继续"}]}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Contains(t, input.Text, "未知角色里的风险短语")
+	require.Contains(t, input.Text, "继续")
+}
+
+func TestExtractContentModerationInput_AnthropicScansClientSuppliedToolResults(t *testing.T) {
+	body := []byte(`{
+		"messages":[
+			{"role":"user","content":[{"type":"text","text":"照工具结果做"}]},
+			{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool_1","content":"工具结果里的风险短语"}]}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, body)
+
+	require.Contains(t, input.Text, "照工具结果做")
+	require.Contains(t, input.Text, "工具结果里的风险短语")
+}
+
+func TestExtractContentModerationInput_AnthropicScansClientSuppliedSystemAndAssistantText(t *testing.T) {
+	body := []byte(`{
+		"system":"系统消息里的风险短语",
+		"messages":[
+			{"role":"assistant","content":[{"type":"text","text":"助手历史里的风险短语"}]},
+			{"role":"user","content":[{"type":"text","text":"继续"}]}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, body)
+
+	require.Contains(t, input.Text, "系统消息里的风险短语")
+	require.Contains(t, input.Text, "助手历史里的风险短语")
+	require.Contains(t, input.Text, "继续")
+}
+
+func TestExtractContentModerationInput_GeminiScansClientSuppliedFunctionResponses(t *testing.T) {
+	body := []byte(`{
+		"contents":[
+			{"role":"user","parts":[{"text":"继续"}]},
+			{"role":"user","parts":[{"functionResponse":{"name":"lookup","response":{"text":"函数返回里的风险短语"}}}]}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolGemini, body)
+
+	require.Contains(t, input.Text, "继续")
+	require.Contains(t, input.Text, "函数返回里的风险短语")
+}
+
+func TestExtractContentModerationInput_GeminiScansClientSuppliedSystemAndModelText(t *testing.T) {
+	body := []byte(`{
+		"system_instruction":{"parts":[{"text":"系统指令里的风险短语"}]},
+		"contents":[
+			{"role":"model","parts":[{"text":"模型历史里的风险短语"}]},
+			{"role":"user","parts":[{"text":"继续"}]}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolGemini, body)
+
+	require.Contains(t, input.Text, "系统指令里的风险短语")
+	require.Contains(t, input.Text, "模型历史里的风险短语")
+	require.Contains(t, input.Text, "继续")
+}
+
+func TestExtractContentModerationInput_GeminiScansUnknownClientRoles(t *testing.T) {
+	body := []byte(`{
+		"contents":[
+			{"role":"custom_client_role","parts":[{"text":"未知角色里的风险短语"}]},
+			{"role":"user","parts":[{"text":"继续"}]}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolGemini, body)
+
+	require.Contains(t, input.Text, "未知角色里的风险短语")
+	require.Contains(t, input.Text, "继续")
+}
+
+func TestExtractContentModerationInput_ScansJSONToolResultTextValues(t *testing.T) {
+	body := []byte(`{
+		"input":[
+			{"type":"message","role":"user","content":[{"type":"input_text","text":"继续"}]},
+			{"type":"function_call_output","call_id":"call_1","output":{"risk":"对象字段里的风险短语","score":1}}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Contains(t, input.Text, "继续")
+	require.Contains(t, input.Text, "对象字段里的风险短语")
+}
+
+func TestExtractContentModerationInput_ScansJSONToolResultKeys(t *testing.T) {
+	body := []byte(`{
+		"input":[
+			{"type":"message","role":"user","content":[{"type":"input_text","text":"继续"}]},
+			{"type":"function_call_output","call_id":"call_1","output":{"dangerous_instruction_here":true}}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Contains(t, input.Text, "继续")
+	require.Contains(t, input.Text, "dangerous_instruction_here")
+}
+
+func TestCollectToolResultTextValue_StopsAfterStringLimit(t *testing.T) {
+	var builder strings.Builder
+	builder.WriteString(`{"values":[`)
+	for i := 0; i < maxToolResultTextStrings; i++ {
+		if i > 0 {
+			builder.WriteByte(',')
+		}
+		builder.WriteString(`"safe"`)
+	}
+	builder.WriteString(`,"after-string-limit-marker"]}`)
+
+	var parts []string
+	var images []string
+	collectToolResultTextValue(gjson.Parse(builder.String()), &parts, &images, 0)
+
+	require.NotContains(t, strings.Join(parts, " "), "after-string-limit-marker")
+}
+
+func TestCollectToolResultTextValue_TruncatesLongStringValues(t *testing.T) {
+	longValue := strings.Repeat("a", maxToolResultTextStringRunes) + "tail-marker"
+
+	var parts []string
+	var images []string
+	collectToolResultTextValue(gjson.Parse(`{"value":"`+longValue+`"}`), &parts, &images, 0)
+
+	require.NotContains(t, strings.Join(parts, " "), "tail-marker")
+}
+
+func TestCollectToolResultTextValue_StopsAfterTotalRuneLimit(t *testing.T) {
+	chunk := strings.Repeat("中", maxToolResultTextStringRunes)
+	var builder strings.Builder
+	builder.WriteString(`{"values":[`)
+	for i := 0; i < (maxToolResultTextTotalRunes/maxToolResultTextStringRunes)+2; i++ {
+		if i > 0 {
+			builder.WriteByte(',')
+		}
+		builder.WriteByte('"')
+		builder.WriteString(chunk)
+		builder.WriteByte('"')
+	}
+	builder.WriteString(`,"after-total-limit-marker"]}`)
+
+	var parts []string
+	var images []string
+	collectToolResultTextValue(gjson.Parse(builder.String()), &parts, &images, 0)
+
+	require.NotContains(t, strings.Join(parts, " "), "after-total-limit-marker")
+}
+
+func TestExtractContentModerationInput_RecordsToolJSONTruncationReason(t *testing.T) {
+	nested := `"too deep marker"`
+	for i := 0; i < maxToolResultTextDepth+2; i++ {
+		nested = `{"nested":` + nested + `}`
+	}
+	body := []byte(`{"input":[{"type":"function_call_output","call_id":"call_1","output":` + nested + `}]}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+
+	require.True(t, input.Truncated)
+	require.Contains(t, input.TruncateReasons, "max_depth")
+	require.NotContains(t, input.Text, "too deep marker")
 }

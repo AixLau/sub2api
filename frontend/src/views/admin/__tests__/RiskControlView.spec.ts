@@ -101,6 +101,7 @@ const baseConfig = (): ContentModerationConfig => ({
   blocked_keywords: [],
   keyword_rules: [],
   keyword_blocking_mode: 'keyword_and_api',
+  engine_mode: 'hybrid',
   thresholds: {
     harassment: 0.98,
     sexual: 0.65,

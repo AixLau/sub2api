@@ -134,6 +134,8 @@ docs/*
 !docs/ADMIN_PAYMENT_INTEGRATION_API.md
 !docs/legal/
 !docs/legal/*.md
+!docs/risk-control/
+!docs/risk-control/*.md
 .serena/
 .codex/
 frontend/coverage/

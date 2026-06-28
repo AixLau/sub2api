@@ -30,6 +30,17 @@ func contentModerationErrorCode(decision *service.ContentModerationDecision) str
 	return "content_policy_violation"
 }
 
+func contentModerationCheckErrorDecision() *service.ContentModerationDecision {
+	return &service.ContentModerationDecision{
+		Allowed:    false,
+		Blocked:    true,
+		Flagged:    true,
+		StatusCode: http.StatusServiceUnavailable,
+		Message:    "内容安全模块暂时不可用，请稍后重试",
+		Action:     service.ContentModerationActionError,
+	}
+}
+
 func (h *OpenAIGatewayHandler) checkContentModeration(c *gin.Context, reqLog *zap.Logger, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol string, model string, body []byte) *service.ContentModerationDecision {
 	if h == nil || h.contentModerationService == nil {
 		return nil
@@ -62,7 +73,7 @@ func runContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.Conte
 		if reqLog != nil {
 			reqLog.Warn("content_moderation.check_failed", zap.Error(err))
 		}
-		return nil
+		return contentModerationCheckErrorDecision()
 	}
 	if reqLog != nil && decision != nil {
 		reqLog.Info("content_moderation.gateway_check_done",

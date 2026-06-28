@@ -53,7 +53,9 @@ type contentModerationConfigRequest struct {
 	BlockedKeywords                *[]string                               `json:"blocked_keywords"`
 	KeywordRules                   *[]service.ContentModerationKeywordRule `json:"keyword_rules"`
 	KeywordBlockingMode            *string                                 `json:"keyword_blocking_mode"`
+	EngineMode                     *string                                 `json:"engine_mode"`
 	ModelFilter                    *service.ContentModerationModelFilter   `json:"model_filter"`
+	FailStrategy                   *service.ContentModerationFailStrategy  `json:"fail_strategy"`
 }
 
 type contentModerationAPIKeyTestRequest struct {
@@ -120,7 +122,9 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		BlockedKeywords:                req.BlockedKeywords,
 		KeywordRules:                   req.KeywordRules,
 		KeywordBlockingMode:            req.KeywordBlockingMode,
+		EngineMode:                     req.EngineMode,
 		ModelFilter:                    req.ModelFilter,
+		FailStrategy:                   req.FailStrategy,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)

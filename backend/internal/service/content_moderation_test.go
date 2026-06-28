@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -19,9 +20,13 @@ import (
 
 type contentModerationTestSettingRepo struct {
 	values map[string]string
+	errors map[string]error
 }
 
 func (r *contentModerationTestSettingRepo) Get(ctx context.Context, key string) (*Setting, error) {
+	if err, ok := r.errors[key]; ok {
+		return nil, err
+	}
 	if value, ok := r.values[key]; ok {
 		return &Setting{Key: key, Value: value}, nil
 	}
@@ -29,6 +34,9 @@ func (r *contentModerationTestSettingRepo) Get(ctx context.Context, key string) 
 }
 
 func (r *contentModerationTestSettingRepo) GetValue(ctx context.Context, key string) (string, error) {
+	if err, ok := r.errors[key]; ok {
+		return "", err
+	}
 	if value, ok := r.values[key]; ok {
 		return value, nil
 	}
@@ -680,6 +688,90 @@ func TestContentModerationCheck_KeywordsIgnoredInObserveMode(t *testing.T) {
 	require.Equal(t, ContentModerationActionAllow, decision.Action)
 }
 
+func TestContentModerationCheck_KeywordObserveActionAllowsAndLogsHit(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.KeywordRules = []ContentModerationKeywordRule{
+		{Keyword: "risky phrase", Category: "privacy", Severity: "medium", Action: "observe", Enabled: true},
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"contains RISKY phrase"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.True(t, decision.Flagged)
+	require.Equal(t, ContentModerationKeywordActionObserve, decision.Action)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.True(t, logs[0].Flagged)
+	require.Equal(t, ContentModerationKeywordActionObserve, logs[0].Action)
+	require.Equal(t, "risky phrase", logs[0].MatchedKeyword)
+	require.Zero(t, logs[0].ViolationCount)
+}
+
+func TestContentModerationCheck_KeywordWarnActionAllowsAndLogsHit(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.KeywordRules = []ContentModerationKeywordRule{
+		{Keyword: "warning phrase", Category: "fraud", Severity: "low", Action: "warn", Enabled: true},
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"contains WARNING phrase"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.True(t, decision.Flagged)
+	require.Equal(t, ContentModerationKeywordActionWarn, decision.Action)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.True(t, logs[0].Flagged)
+	require.Equal(t, ContentModerationKeywordActionWarn, logs[0].Action)
+	require.Equal(t, "warning phrase", logs[0].MatchedKeyword)
+	require.Zero(t, logs[0].ViolationCount)
+}
+
 func TestContentModerationCheck_KeywordOnlyStrategySkipsAPIOnMiss(t *testing.T) {
 	upstreamCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -726,6 +818,267 @@ func TestContentModerationCheck_KeywordOnlyStrategySkipsAPIOnMiss(t *testing.T) 
 	require.Len(t, repo.snapshotLogs(), 0)
 }
 
+func TestContentModerationCheck_RuleOnlyEngineModeAllowsMissWithoutAPIKey(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.APIKeys = []string{}
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.BlockedKeywords = []string{"never-matches"}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/chat/completions",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"clean prompt"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
+	require.Len(t, repo.snapshotLogs(), 0)
+}
+
+func TestContentModerationCheck_EngineModeWinsOverConflictingLegacyKeywordMode(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.APIKeys = []string{}
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeAPIOnly
+	cfg.BlockedKeywords = []string{"never-matches"}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"clean prompt"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
+	require.Len(t, repo.snapshotLogs(), 0)
+}
+
+func TestContentModerationCheck_RuleOnlyEngineModeStillBlocksRuleHitForTrustedGroup(t *testing.T) {
+	trustedGroupID := int64(10)
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.APIKeys = []string{}
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.FailStrategy.TrustedGroupIDs = []int64{trustedGroupID}
+	cfg.KeywordRules = []ContentModerationKeywordRule{
+		{Keyword: "trusted risk phrase", Category: "fraud", Severity: "high", Action: "block", Enabled: true},
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		GroupID:  &trustedGroupID,
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"contains trusted risk phrase"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionKeywordBlock, decision.Action)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, "trusted risk phrase", logs[0].MatchedKeyword)
+}
+
+func TestContentModerationCheck_RuleOnlyBlocksRiskInClientSuppliedSystemAssistantAndDeveloperText(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.APIKeys = []string{}
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.KeywordRules = []ContentModerationKeywordRule{
+		{Keyword: "hidden role risk", Category: "jailbreak", Severity: "high", Action: "block", Enabled: true},
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	for _, tc := range []struct {
+		name     string
+		protocol string
+		body     string
+	}{
+		{
+			name:     "openai_chat_system",
+			protocol: ContentModerationProtocolOpenAIChat,
+			body:     `{"messages":[{"role":"system","content":"hidden role risk"},{"role":"user","content":"continue"}]}`,
+		},
+		{
+			name:     "openai_chat_assistant",
+			protocol: ContentModerationProtocolOpenAIChat,
+			body:     `{"messages":[{"role":"assistant","content":"hidden role risk"},{"role":"user","content":"continue"}]}`,
+		},
+		{
+			name:     "responses_developer",
+			protocol: ContentModerationProtocolOpenAIResponses,
+			body:     `{"input":[{"type":"message","role":"developer","content":[{"type":"input_text","text":"hidden role risk"}]},{"type":"message","role":"user","content":[{"type":"input_text","text":"continue"}]}]}`,
+		},
+		{
+			name:     "anthropic_system",
+			protocol: ContentModerationProtocolAnthropicMessages,
+			body:     `{"system":"hidden role risk","messages":[{"role":"user","content":"continue"}]}`,
+		},
+		{
+			name:     "gemini_model",
+			protocol: ContentModerationProtocolGemini,
+			body:     `{"contents":[{"role":"model","parts":[{"text":"hidden role risk"}]},{"role":"user","parts":[{"text":"continue"}]}]}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+				Protocol: tc.protocol,
+				Body:     []byte(tc.body),
+			})
+
+			require.NoError(t, err)
+			require.True(t, decision.Blocked)
+			require.Equal(t, ContentModerationActionKeywordBlock, decision.Action)
+		})
+	}
+	requireContentModerationLogCount(t, repo, 5)
+}
+
+func TestContentModerationCheck_KeywordHitLogIncludesMatchedSourceMetadata(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.APIKeys = []string{}
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.KeywordRules = []ContentModerationKeywordRule{
+		{Keyword: "source metadata risk", Category: "jailbreak", Severity: "high", Action: "block", Enabled: true},
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"assistant","content":"source metadata risk"},{"role":"user","content":"continue"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.JSONEq(t, `{
+		"engine_mode":"rule_only",
+		"keyword_blocking_mode":"keyword_only",
+		"matched_source":"openai_chat.messages[0].role=assistant.content"
+	}`, logs[0].Error)
+}
+
+func TestContentModerationCheck_APIOnlyEngineModeWithoutAPIKeyFailsClosed(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.APIKeys = []string{}
+	cfg.EngineMode = ContentModerationEngineModeAPIOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		&contentModerationTestRepo{},
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.Equal(t, ContentModerationActionError, decision.Action)
+}
+
 func TestContentModerationCheck_KeywordOnlySkipsCodexApprovalAssessmentContinuation(t *testing.T) {
 	upstreamCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -770,6 +1123,55 @@ func TestContentModerationCheck_KeywordOnlySkipsCodexApprovalAssessmentContinuat
 	require.True(t, decision.Allowed, "codex approval continuation scaffold should not be blocked by keyword-only mode")
 	require.False(t, upstreamCalled, "keyword-only must still skip upstream moderation API")
 	require.Len(t, repo.snapshotLogs(), 0)
+}
+
+func TestContentModerationCheck_KeywordOnlyDoesNotSkipCodexCompactionSummaryMixedWithUserText(t *testing.T) {
+	upstreamCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalled = true
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{Results: []moderationAPIResult{{CategoryScores: map[string]float64{"sexual": 0.99}}}})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.KeywordRules = []ContentModerationKeywordRule{
+		{Keyword: "prompt injection", Category: "jailbreak", Severity: "high", Action: "block", Enabled: true},
+	}
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	body := []byte(`{"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"Codex高速分组\nAnother language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done. The previous summary mentioned prompt injection as an audit keyword."}]}]}`)
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     body,
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked, "mixed user text must still be audited even when it contains a Codex compaction summary marker")
+	require.False(t, upstreamCalled, "keyword-only must still skip upstream moderation API")
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, "prompt injection", logs[0].MatchedKeyword)
 }
 
 func TestContentModerationCheck_APIOnlyStrategyIgnoresKeywordList(t *testing.T) {
@@ -823,6 +1225,73 @@ func TestNormalizeKeywordBlockingMode_UnknownFallsBackToDefault(t *testing.T) {
 	require.Equal(t, ContentModerationKeywordModeKeywordAndAPI, normalizeKeywordBlockingMode("bogus"))
 	require.Equal(t, ContentModerationKeywordModeKeywordOnly, normalizeKeywordBlockingMode("keyword_only"))
 	require.Equal(t, ContentModerationKeywordModeAPIOnly, normalizeKeywordBlockingMode("api_only"))
+}
+
+func TestContentModerationUpdateConfig_KeywordModeUpdateWithoutEngineModeKeepsLegacyUICompatible(t *testing.T) {
+	initial := defaultContentModerationConfig()
+	initial.Enabled = true
+	initial.EngineMode = ContentModerationEngineModeHybrid
+	initial.KeywordBlockingMode = ContentModerationKeywordModeKeywordAndAPI
+	rawCfg, err := json.Marshal(initial)
+	require.NoError(t, err)
+
+	settingRepo := &contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyContentModerationConfig: string(rawCfg),
+	}}
+	svc := NewContentModerationService(
+		settingRepo,
+		&contentModerationTestRepo{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	keywordMode := ContentModerationKeywordModeKeywordOnly
+	view, err := svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
+		KeywordBlockingMode: &keywordMode,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationKeywordModeKeywordOnly, view.KeywordBlockingMode)
+	require.Equal(t, ContentModerationEngineModeRuleOnly, view.EngineMode)
+
+	var saved ContentModerationConfig
+	require.NoError(t, json.Unmarshal([]byte(settingRepo.values[SettingKeyContentModerationConfig]), &saved))
+	saved.normalize()
+	require.Equal(t, ContentModerationKeywordModeKeywordOnly, saved.KeywordBlockingMode)
+	require.Equal(t, ContentModerationEngineModeRuleOnly, saved.EngineMode)
+}
+
+func TestContentModerationUpdateConfig_EngineModeUpdateOverridesLegacyKeywordMode(t *testing.T) {
+	initial := defaultContentModerationConfig()
+	initial.Enabled = true
+	initial.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	rawCfg, err := json.Marshal(initial)
+	require.NoError(t, err)
+
+	settingRepo := &contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyContentModerationConfig: string(rawCfg),
+	}}
+	svc := NewContentModerationService(
+		settingRepo,
+		&contentModerationTestRepo{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	engineMode := ContentModerationEngineModeAPIOnly
+	view, err := svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
+		EngineMode: &engineMode,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationEngineModeAPIOnly, view.EngineMode)
+	require.Equal(t, ContentModerationKeywordModeAPIOnly, view.KeywordBlockingMode)
 }
 
 func TestContentModerationCheck_ModelFilterAllAuditsEveryModel(t *testing.T) {
@@ -1065,11 +1534,11 @@ func TestExtractContentModerationInput_AnthropicImageSourceOnlyParticipatesInMem
 	}`)
 
 	input := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, body)
-	require.Equal(t, "检查这张图", input.Text)
+	require.Equal(t, "old ok 检查这张图", input.Text)
 	require.Equal(t, []string{"data:image/png;base64,aGVsbG8="}, input.Images)
 
 	log := (&ContentModerationService{}).buildLog(ContentModerationCheckInput{}, defaultContentModerationConfig(), ContentModerationActionAllow, false, "", 0, nil, input.ExcerptText(), nil, nil, "")
-	require.Equal(t, "检查这张图", log.InputExcerpt)
+	require.Equal(t, "old ok 检查这张图", log.InputExcerpt)
 	require.NotContains(t, log.InputExcerpt, "aGVsbG8=")
 }
 
@@ -1093,7 +1562,7 @@ func TestExtractContentModerationInput_AnthropicKeepsEphemeralUserTextAndSkipsSy
 	require.Empty(t, input.Images)
 }
 
-func TestExtractContentModerationInput_OpenAIChatUsesLastUserMessage(t *testing.T) {
+func TestExtractContentModerationInput_OpenAIChatUsesAllUserMessages(t *testing.T) {
 	body := []byte(`{
 		"model":"gpt-5.5",
 		"messages":[
@@ -1106,10 +1575,10 @@ func TestExtractContentModerationInput_OpenAIChatUsesLastUserMessage(t *testing.
 
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
 
-	require.Equal(t, "latest user", input.Text)
+	require.Equal(t, "system prompt old user ok latest user", input.Text)
 	require.Equal(t, []string{"https://example.com/a.png"}, input.Images)
-	require.NotContains(t, input.Text, "old user")
-	require.NotContains(t, input.Text, "system prompt")
+	require.Contains(t, input.Text, "old user")
+	require.Contains(t, input.Text, "system prompt")
 }
 
 func TestExtractContentModerationInput_OpenAIImagesIncludesPromptAndImages(t *testing.T) {
@@ -1127,7 +1596,7 @@ func TestExtractContentModerationInput_OpenAIImagesIncludesPromptAndImages(t *te
 	require.Equal(t, []string{"https://example.com/source.png", "data:image/png;base64,aGVsbG8="}, input.Images)
 }
 
-func TestContentModerationInput_NormalizeKeepsImagesAndModerationInputSamplesOneImage(t *testing.T) {
+func TestContentModerationInput_NormalizeKeepsImagesAndModerationInputUsesFirstImageDeterministically(t *testing.T) {
 	images := []string{
 		"data:image/png;base64,Zmlyc3Q=",
 		"data:image/png;base64,c2Vjb25k",
@@ -1146,20 +1615,24 @@ func TestContentModerationInput_NormalizeKeepsImagesAndModerationInputSamplesOne
 	require.Equal(t, "text", parts[0].Type)
 	require.Equal(t, "image_url", parts[1].Type)
 	require.NotNil(t, parts[1].ImageURL)
-	require.Contains(t, images, parts[1].ImageURL.URL)
+	require.Equal(t, images[0], parts[1].ImageURL.URL)
 }
 
-func TestBuildModerationTestInputRejectsMultipleImages(t *testing.T) {
-	_, _, err := buildModerationTestInput("check image", []string{
+func TestBuildModerationTestInputUsesFirstImageWhenMultipleImagesProvided(t *testing.T) {
+	input, imageCount, err := buildModerationTestInput("check image", []string{
 		"data:image/png;base64,Zmlyc3Q=",
 		"data:image/png;base64,c2Vjb25k",
 	})
 
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "最多上传 1 张测试图片")
+	require.NoError(t, err)
+	require.Equal(t, 2, imageCount)
+	parts, ok := input.([]moderationAPIInputPart)
+	require.True(t, ok)
+	require.Len(t, parts, 2)
+	require.Equal(t, "data:image/png;base64,Zmlyc3Q=", parts[1].ImageURL.URL)
 }
 
-func TestExtractContentModerationInput_OpenAIResponsesCodexPayloadUsesLastUserMessage(t *testing.T) {
+func TestExtractContentModerationInput_OpenAIResponsesCodexPayloadUsesAllUserMessages(t *testing.T) {
 	body := []byte(`{
 		"model":"gpt-5.5",
 		"instructions":"instructions.....",
@@ -1173,10 +1646,9 @@ func TestExtractContentModerationInput_OpenAIResponsesCodexPayloadUsesLastUserMe
 
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
 
-	require.Equal(t, "last user prompt", input.Text)
+	require.Equal(t, "developer permissions sk-proj-1234567890abcdef first user prompt last user prompt", input.Text)
 	require.Empty(t, input.Images)
-	require.NotContains(t, input.Text, "developer permissions")
-	require.NotContains(t, input.Text, "first user prompt")
+	require.Contains(t, input.Text, "developer permissions")
 }
 
 func TestContentModerationCheck_OpenAIResponsesRecordsNonHitForCodexPayload(t *testing.T) {
@@ -1238,8 +1710,8 @@ func TestContentModerationCheck_OpenAIResponsesRecordsNonHitForCodexPayload(t *t
 	require.False(t, logs[0].Flagged)
 	require.Equal(t, ContentModerationActionAllow, logs[0].Action)
 	require.Equal(t, "/responses", logs[0].Endpoint)
-	require.Equal(t, "last user prompt", logs[0].InputExcerpt)
-	require.Equal(t, "last user prompt", moderationRequest.Input)
+	require.Equal(t, "developer instructions should not be audited first user prompt last user prompt", logs[0].InputExcerpt)
+	require.Equal(t, "developer instructions should not be audited first user prompt last user prompt", moderationRequest.Input)
 }
 
 func TestContentModerationCheck_PreBlockBlocksCodexResponsesLatestUserInput(t *testing.T) {
@@ -1306,8 +1778,224 @@ func TestContentModerationCheck_PreBlockBlocksCodexResponsesLatestUserInput(t *t
 	require.True(t, logs[0].Flagged)
 	require.Equal(t, ContentModerationActionBlock, logs[0].Action)
 	require.Equal(t, ContentModerationModePreBlock, logs[0].Mode)
-	require.Equal(t, "latest blocked prompt", logs[0].InputExcerpt)
-	require.Equal(t, "latest blocked prompt", moderationRequest.Input)
+	require.Equal(t, "developer instructions should not be audited environment context latest blocked prompt", logs[0].InputExcerpt)
+	require.Equal(t, "developer instructions should not be audited environment context latest blocked prompt", moderationRequest.Input)
+}
+
+func TestContentModerationCheck_SampleRateDoesNotSkipAuditScan(t *testing.T) {
+	upstreamCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalled = true
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{
+			Results: []moderationAPIResult{{
+				CategoryScores: map[string]float64{"sexual": 0.9},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.SampleRate = 0
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		&contentModerationTestRepo{},
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"must still scan"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, upstreamCalled)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionBlock, decision.Action)
+}
+
+func TestContentModerationCheck_SampleRateDoesNotSkipHitLog(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{
+			Results: []moderationAPIResult{{
+				CategoryScores: map[string]float64{"sexual": 0.9},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.SampleRate = 0
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"must log hit"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.True(t, logs[0].Flagged)
+	require.Equal(t, ContentModerationActionBlock, logs[0].Action)
+}
+
+func TestContentModerationCheck_ConfigLoadFailureFailsClosedForPublicGroup(t *testing.T) {
+	groupID := int64(1)
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{
+			values: map[string]string{SettingKeyRiskControlEnabled: "true"},
+			errors: map[string]error{SettingKeyContentModerationConfig: errors.New("database unavailable")},
+		},
+		&contentModerationTestRepo{},
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		GroupID:  &groupID,
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.Equal(t, ContentModerationActionError, decision.Action)
+}
+
+func TestContentModerationCheck_UninitializedServiceFailsClosed(t *testing.T) {
+	svc := NewContentModerationService(nil, nil, nil, nil, nil, nil, nil)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.Equal(t, ContentModerationActionError, decision.Action)
+}
+
+func TestContentModerationCheck_AuditAPIFailureFailsClosedForPublicGroup(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"temporary failure"}`))
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.RetryCount = 0
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	groupID := int64(1)
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		&contentModerationTestRepo{},
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		GroupID:  &groupID,
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.Equal(t, ContentModerationActionError, decision.Action)
+}
+
+func TestContentModerationCheck_AuditAPIFailureCanFailOpenForTrustedGroup(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"temporary failure"}`))
+	}))
+	defer server.Close()
+
+	trustedGroupID := int64(10)
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.RetryCount = 0
+	cfg.FailStrategy.TrustedGroupIDs = []int64{trustedGroupID}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		&contentModerationTestRepo{},
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		GroupID:  &trustedGroupID,
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
 }
 
 func TestContentModerationStatusTracksPreBlockSyncMetrics(t *testing.T) {

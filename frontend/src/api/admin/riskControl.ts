@@ -2,6 +2,7 @@ import { apiClient } from '../client'
 
 export type ModerationMode = 'off' | 'observe' | 'pre_block'
 export type KeywordBlockingMode = 'keyword_only' | 'keyword_and_api' | 'api_only'
+export type ContentModerationEngineMode = 'rule_only' | 'api_only' | 'hybrid'
 export type ContentModerationModelFilterType = 'all' | 'include' | 'exclude'
 export type ContentModerationKeywordCategory =
   | 'custom'
@@ -67,8 +68,16 @@ export interface ContentModerationConfig {
   blocked_keywords: string[]
   keyword_rules: ContentModerationKeywordRule[]
   keyword_blocking_mode: KeywordBlockingMode
+  engine_mode: ContentModerationEngineMode | string
   model_filter: ContentModerationModelFilter
+  fail_strategy?: ContentModerationFailStrategy
   cyber_policy_exclude_from_ban_count: boolean
+}
+
+export interface ContentModerationFailStrategy {
+  default: 'open' | 'closed' | string
+  trusted_group_ids: number[]
+  public_group_ids: number[]
 }
 
 export type ContentModerationAPIKeyStatusValue = 'unknown' | 'ok' | 'error' | 'frozen'
@@ -157,7 +166,9 @@ export interface UpdateContentModerationConfig {
   blocked_keywords?: string[]
   keyword_rules?: ContentModerationKeywordRule[]
   keyword_blocking_mode?: KeywordBlockingMode
+  engine_mode?: ContentModerationEngineMode | string
   model_filter?: ContentModerationModelFilter
+  fail_strategy?: ContentModerationFailStrategy
   cyber_policy_exclude_from_ban_count?: boolean
 }
 
