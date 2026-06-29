@@ -28,6 +28,12 @@ func (r *ModeratedRouteRegistrar) GET(relativePath string, meta ModeratedRouteMe
 	return r.routes.GET(relativePath, handlers...)
 }
 
+func (r *ModeratedRouteRegistrar) GETNoAudit(relativePath string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
+	meta.Method = "GET"
+	registerModeratedRoute(meta)
+	return r.routes.GET(relativePath, handlers...)
+}
+
 func (r *ModeratedRouteRegistrar) POST(relativePath string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
 	meta.Method = "POST"
 	registerModeratedRoute(meta)
@@ -54,6 +60,17 @@ func coveredModeratedRoute(path, handlerName, protocol, reviewReason string) Mod
 		ModerationRequired: true,
 		Protocol:           protocol,
 		Status:             moderationcoverage.StatusCovered,
+		ReviewReason:       reviewReason,
+	}
+}
+
+func intentionalNoAuditRoute(path, handlerName, reviewReason string) ModeratedRouteMeta {
+	return ModeratedRouteMeta{
+		Path:               path,
+		Handler:            handlerName,
+		Upstream:           false,
+		ModerationRequired: false,
+		Status:             moderationcoverage.StatusIntentionalNoAudit,
 		ReviewReason:       reviewReason,
 	}
 }

@@ -99,8 +99,16 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.CountTokens(c)
 		})
-		gateway.GET("/models", h.Gateway.Models)
-		gateway.GET("/usage", h.Gateway.Usage)
+		moderatedGateway.GETNoAudit("/models", intentionalNoAuditRoute(
+			"/v1/models",
+			"GatewayHandler.Models",
+			"Model listing does not submit model-visible user content to upstream moderation-sensitive paths.",
+		), h.Gateway.Models)
+		moderatedGateway.GETNoAudit("/usage", intentionalNoAuditRoute(
+			"/v1/usage",
+			"GatewayHandler.Usage",
+			"Usage lookup does not submit model-visible user content to upstream moderation-sensitive paths.",
+		), h.Gateway.Usage)
 		// OpenAI Responses API: auto-route based on group platform
 		moderatedGateway.POST("/responses", coveredModeratedRoute(
 			"/v1/responses",
@@ -221,8 +229,16 @@ func RegisterGatewayRoutes(
 	gemini.Use(middleware.APIKeyAuthWithSubscriptionGoogle(apiKeyService, subscriptionService, cfg))
 	gemini.Use(requireGroupGoogle)
 	{
-		gemini.GET("/models", h.Gateway.GeminiV1BetaListModels)
-		gemini.GET("/models/:model", h.Gateway.GeminiV1BetaGetModel)
+		moderatedGemini.GETNoAudit("/models", intentionalNoAuditRoute(
+			"/v1beta/models",
+			"GatewayHandler.GeminiV1BetaListModels",
+			"Gemini model listing does not submit model-visible user content to upstream moderation-sensitive paths.",
+		), h.Gateway.GeminiV1BetaListModels)
+		moderatedGemini.GETNoAudit("/models/:model", intentionalNoAuditRoute(
+			"/v1beta/models/:model",
+			"GatewayHandler.GeminiV1BetaGetModel",
+			"Gemini model metadata lookup does not submit model-visible user content to upstream moderation-sensitive paths.",
+		), h.Gateway.GeminiV1BetaGetModel)
 		// Gin treats ":" as a param marker, but Gemini uses "{model}:{action}" in the same segment.
 		moderatedGemini.POST("/models/*modelAction", coveredModeratedRoute(
 			"/v1beta/models/*modelAction",
@@ -367,7 +383,11 @@ func RegisterGatewayRoutes(
 	})
 
 	// Antigravity 模型列表
-	r.GET("/antigravity/models", gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.Gateway.AntigravityModels)
+	moderatedRoot.GETNoAudit("/antigravity/models", intentionalNoAuditRoute(
+		"/antigravity/models",
+		"GatewayHandler.AntigravityModels",
+		"Antigravity model listing does not submit model-visible user content to upstream moderation-sensitive paths.",
+	), gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.Gateway.AntigravityModels)
 
 	// Antigravity 专用路由（仅使用 antigravity 账户，不混合调度）
 	antigravityV1 := r.Group("/antigravity/v1")
@@ -392,8 +412,16 @@ func RegisterGatewayRoutes(
 			service.ContentModerationProtocolAnthropicMessages,
 			"Antigravity count_tokens uses the shared CountTokens handler and is moderated after model validation and before account selection or upstream forwarding.",
 		), h.Gateway.CountTokens)
-		antigravityV1.GET("/models", h.Gateway.AntigravityModels)
-		antigravityV1.GET("/usage", h.Gateway.Usage)
+		moderatedAntigravityV1.GETNoAudit("/models", intentionalNoAuditRoute(
+			"/antigravity/v1/models",
+			"GatewayHandler.AntigravityModels",
+			"Antigravity v1 model listing does not submit model-visible user content to upstream moderation-sensitive paths.",
+		), h.Gateway.AntigravityModels)
+		moderatedAntigravityV1.GETNoAudit("/usage", intentionalNoAuditRoute(
+			"/antigravity/v1/usage",
+			"GatewayHandler.Usage",
+			"Antigravity v1 usage lookup does not submit model-visible user content to upstream moderation-sensitive paths.",
+		), h.Gateway.Usage)
 	}
 
 	antigravityV1Beta := r.Group("/antigravity/v1beta")
@@ -406,8 +434,16 @@ func RegisterGatewayRoutes(
 	antigravityV1Beta.Use(middleware.APIKeyAuthWithSubscriptionGoogle(apiKeyService, subscriptionService, cfg))
 	antigravityV1Beta.Use(requireGroupGoogle)
 	{
-		antigravityV1Beta.GET("/models", h.Gateway.GeminiV1BetaListModels)
-		antigravityV1Beta.GET("/models/:model", h.Gateway.GeminiV1BetaGetModel)
+		moderatedAntigravityV1Beta.GETNoAudit("/models", intentionalNoAuditRoute(
+			"/antigravity/v1beta/models",
+			"GatewayHandler.GeminiV1BetaListModels",
+			"Antigravity Gemini model listing does not submit model-visible user content to upstream moderation-sensitive paths.",
+		), h.Gateway.GeminiV1BetaListModels)
+		moderatedAntigravityV1Beta.GETNoAudit("/models/:model", intentionalNoAuditRoute(
+			"/antigravity/v1beta/models/:model",
+			"GatewayHandler.GeminiV1BetaGetModel",
+			"Antigravity Gemini model metadata lookup does not submit model-visible user content to upstream moderation-sensitive paths.",
+		), h.Gateway.GeminiV1BetaGetModel)
 		moderatedAntigravityV1Beta.POST("/models/*modelAction", coveredModeratedRoute(
 			"/antigravity/v1beta/models/*modelAction",
 			"GatewayHandler.GeminiV1BetaModels",

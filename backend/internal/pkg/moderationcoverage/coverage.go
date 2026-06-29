@@ -9,7 +9,8 @@ import (
 )
 
 const (
-	StatusCovered = "covered"
+	StatusCovered            = "covered"
+	StatusIntentionalNoAudit = "intentional_no_audit"
 )
 
 type Entry struct {

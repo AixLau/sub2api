@@ -64,6 +64,41 @@ func TestModeratedRouteRegistrarMatchesManifestAndRegisteredGatewayRoutes(t *tes
 		"moderated route registrar handlers must match the coverage manifest")
 }
 
+func TestGatewayRoutesHaveExplicitModerationClassification(t *testing.T) {
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
+	router := newGatewayRoutesTestRouter()
+
+	actualRoutes := allGatewayRoutesFromRouter(router)
+	classifiedRoutes := classifiedRoutesFromRegistrar(GatewayModeratedRouteCoverageEntries())
+
+	require.NotEmpty(t, actualRoutes, "registered gateway routes should not be empty")
+	require.NotEmpty(t, classifiedRoutes, "route moderation classification entries should not be empty")
+	require.Empty(t, routeSetDifference(actualRoutes, classifiedRoutes),
+		"every registered gateway route must explicitly declare whether moderation is required")
+	require.Empty(t, routeSetDifference(classifiedRoutes, actualRoutes),
+		"route moderation classification entries must correspond to real Gin gateway routes")
+}
+
+func allGatewayRoutesFromRouter(router *gin.Engine) []string {
+	routeSet := make(map[string]struct{})
+	for _, route := range router.Routes() {
+		routeSet[moderatedRouteKey(route.Method, route.Path, "")] = struct{}{}
+	}
+	return sortedRouteSet(routeSet)
+}
+
+func classifiedRoutesFromRegistrar(entries []ModeratedRouteMeta) []string {
+	routeSet := make(map[string]struct{})
+	for _, entry := range entries {
+		if strings.TrimSpace(entry.Status) == "" {
+			continue
+		}
+		routeSet[moderatedRouteKey(entry.Method, entry.Path, "")] = struct{}{}
+	}
+	return sortedRouteSet(routeSet)
+}
+
 func moderatedRoutesRequiringCoverageFromRouter(router *gin.Engine) []string {
 	routeSet := make(map[string]struct{})
 	for _, route := range router.Routes() {
