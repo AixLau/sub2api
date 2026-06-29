@@ -14,6 +14,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
+	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
@@ -29,6 +30,7 @@ type paymentOrderLifecycleQueryProvider struct {
 	lastCancelTradeNo string
 	queryCalls        int
 	cancelCalls       int
+	queryErr          error
 	responses         []*payment.QueryOrderResponse
 	resp              *payment.QueryOrderResponse
 }
@@ -67,6 +69,9 @@ func (p *paymentOrderLifecycleQueryProvider) CreatePayment(context.Context, paym
 func (p *paymentOrderLifecycleQueryProvider) QueryOrder(_ context.Context, tradeNo string) (*payment.QueryOrderResponse, error) {
 	p.lastQueryTradeNo = tradeNo
 	p.queryCalls++
+	if p.queryErr != nil {
+		return nil, p.queryErr
+	}
 	if len(p.responses) > 0 {
 		resp := p.responses[0]
 		if len(p.responses) > 1 {
@@ -920,6 +925,198 @@ func TestReconcilePendingNinePlusOrdersCompletesPaidDeliveredOrder(t *testing.T)
 	require.Equal(t, 35.0, userRepo.getByIDUser.Balance)
 	require.Len(t, redeemRepo.useCalls, 1)
 	require.Equal(t, user.ID, redeemRepo.useCalls[0].userID)
+}
+
+func TestReconcilePendingNinePlusOrdersKeepsPaidOrderRetryableOnTransientFulfillmentError(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/shopApi/Order/info":
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte(`bad gateway`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	user, err := client.User.Create().
+		SetEmail("nineplus-transient@example.com").
+		SetPasswordHash("hash").
+		SetUsername("nineplus-transient-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	providerConfig := map[string]string{
+		"apiBase":        server.URL,
+		"shopToken":      "shop-token",
+		"defaultContact": "fallback@example.com",
+	}
+	config, err := json.Marshal(providerConfig)
+	require.NoError(t, err)
+	instance, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeNinePlus).
+		SetName("nineplus-transient").
+		SetConfig(string(config)).
+		SetSupportedTypes(payment.TypeNinePlus).
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	instanceID := strconv.FormatInt(instance.ID, 10)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(75).
+		SetPayAmount(10.2).
+		SetFeeRate(0).
+		SetRechargeCode("NINEPLUS-TRANSIENT").
+		SetOutTradeNo("sub2_nineplus_transient").
+		SetPaymentType(payment.TypeNinePlus).
+		SetPaymentTradeNo("9P_TRANSIENT").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusPaid).
+		SetPaidAt(time.Now()).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(instanceID).
+		SetProviderKey(payment.TypeNinePlus).
+		SetProviderSnapshot(map[string]any{
+			"schema_version":       2,
+			"provider_instance_id": instanceID,
+			"provider_key":         payment.TypeNinePlus,
+			"external_product_id":  "np-75",
+			"external_quantity":    1,
+			"contact":              "buyer@example.com",
+		}).
+		Save(ctx)
+	require.NoError(t, err)
+
+	redeemService := NewRedeemService(&paymentOrderLifecycleRedeemRepo{codesByCode: map[string]*RedeemCode{}}, &mockUserRepo{}, nil, nil, nil, client, nil, nil)
+	svc := &PaymentService{
+		entClient:           client,
+		loadBalancer:        paymentOrderLifecycleLoadBalancer{config: providerConfig},
+		redeemService:       redeemService,
+		externalShopService: NewExternalShopService(client, redeemService),
+		configService:       &PaymentConfigService{entClient: client},
+		providersLoaded:     true,
+	}
+
+	err = svc.executeFulfillment(ctx, order.ID)
+	require.Error(t, err)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPaid, reloaded.Status)
+	require.Nil(t, reloaded.FailedAt)
+	require.Nil(t, reloaded.FailedReason)
+	failLogs, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("FULFILLMENT_FAILED")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, failLogs)
+}
+
+func TestExecuteNinePlusFulfillmentSkipsAlreadyRechargingOrder(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("nineplus-recharging@example.com").
+		SetPasswordHash("hash").
+		SetUsername("nineplus-recharging-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(75).
+		SetPayAmount(10.2).
+		SetFeeRate(0).
+		SetRechargeCode("NINEPLUS-RECHARGING").
+		SetOutTradeNo("sub2_nineplus_recharging").
+		SetPaymentType(payment.TypeNinePlus).
+		SetPaymentTradeNo("9P_RECHARGING").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusRecharging).
+		SetPaidAt(time.Now()).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID("1").
+		SetProviderKey(payment.TypeNinePlus).
+		SetProviderSnapshot(map[string]any{
+			"schema_version":       2,
+			"provider_instance_id": "1",
+			"provider_key":         payment.TypeNinePlus,
+			"external_product_id":  "np-75",
+			"external_quantity":    1,
+			"contact":              "buyer@example.com",
+		}).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+
+	err = svc.ExecuteNinePlusFulfillment(ctx, order.ID)
+	require.NoError(t, err)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusRecharging, reloaded.Status)
+	successLogs, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("RECHARGE_SUCCESS")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, successLogs)
+}
+
+func TestMarkCompletedDoesNotWriteSuccessAuditWhenStatusWasNotUpdated(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("mark-completed-noop@example.com").
+		SetPasswordHash("hash").
+		SetUsername("mark-completed-noop-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(75).
+		SetPayAmount(10.2).
+		SetFeeRate(0).
+		SetRechargeCode("MARK-COMPLETED-NOOP").
+		SetOutTradeNo("sub2_mark_completed_noop").
+		SetPaymentType(payment.TypeNinePlus).
+		SetPaymentTradeNo("9P_MARK_COMPLETED_NOOP").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusFailed).
+		SetPaidAt(time.Now()).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+	err = svc.markCompleted(ctx, order, "RECHARGE_SUCCESS")
+	require.NoError(t, err)
+
+	successLogs, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("RECHARGE_SUCCESS")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, successLogs)
 }
 
 func TestVerifyOrderByOutTradeNoUsesOutTradeNoWhenPaymentTradeNoAlreadyExistsForAlipay(t *testing.T) {

@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
@@ -16,6 +18,8 @@ import (
 )
 
 const ninePlusProductsConfigKey = "products"
+
+const ninePlusFulfillmentLockTTL = 2 * time.Minute
 
 type ninePlusFulfillmentResult struct {
 	CreditedAmount       float64
@@ -59,6 +63,9 @@ func (s *PaymentService) ExecuteNinePlusFulfillment(ctx context.Context, oid int
 	if o.Status != OrderStatusPaid && o.Status != OrderStatusFailed && o.Status != OrderStatusRecharging {
 		return infraerrors.BadRequest("INVALID_STATUS", "order cannot fulfill in status "+o.Status)
 	}
+	if o.Status == OrderStatusRecharging && time.Since(o.UpdatedAt) < ninePlusFulfillmentLockTTL {
+		return nil
+	}
 	if o.Status != OrderStatusRecharging {
 		c, err := s.entClient.PaymentOrder.Update().
 			Where(paymentorder.IDEQ(oid), paymentorder.StatusIn(OrderStatusPaid, OrderStatusFailed)).
@@ -84,7 +91,12 @@ func (s *PaymentService) ExecuteNinePlusFulfillment(ctx context.Context, oid int
 	result, err := helper.FulfillNinePlusPaymentOrder(ctx, o)
 	if err != nil {
 		if infraerrors.Reason(err) == "NINEPLUS_DELIVERY_PENDING" {
+			s.releaseNinePlusFulfillmentLock(ctx, oid)
 			return nil
+		}
+		if isNinePlusTransientFulfillmentError(err) {
+			s.releaseNinePlusFulfillmentLock(ctx, oid)
+			return err
 		}
 		s.markFailed(ctx, oid, err)
 		return err
@@ -112,6 +124,19 @@ func (s *PaymentService) ExecuteNinePlusFulfillment(ctx context.Context, oid int
 		emailCtx = s.subscriptionPurchaseEmailContextFromRedeem(ctx, o, result.SubscriptionRedeemed)
 	}
 	return s.markCompleted(ctx, o, auditAction, emailCtx)
+}
+
+func isNinePlusTransientFulfillmentError(err error) bool {
+	return infraerrors.Reason(err) == "NINEPLUS_UPSTREAM_ERROR"
+}
+
+func (s *PaymentService) releaseNinePlusFulfillmentLock(ctx context.Context, oid int64) {
+	if _, err := s.entClient.PaymentOrder.Update().
+		Where(paymentorder.IDEQ(oid), paymentorder.StatusEQ(OrderStatusRecharging)).
+		SetStatus(OrderStatusPaid).
+		Save(ctx); err != nil {
+		slog.Warn("release nineplus fulfillment lock failed", "orderID", oid, "error", err)
+	}
 }
 
 func (s *ExternalShopService) FulfillNinePlusPaymentOrder(ctx context.Context, order *dbent.PaymentOrder) (*ninePlusFulfillmentResult, error) {
