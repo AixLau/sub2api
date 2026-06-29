@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -361,6 +362,85 @@ func TestExtractContentModerationInput_ResponsesScansTextFormatSchema(t *testing
 	require.Contains(t, input.Text, "responses text format 里的风险短语")
 	require.Contains(t, input.Text, "responses schema property 里的风险短语")
 	require.Contains(t, input.Text, "responses compat response_format 里的风险短语")
+}
+
+func TestExtractContentModerationInput_ChaosDeepSchemaSeedCorpus(t *testing.T) {
+	body := []byte(`{
+		"model":"gpt-5.5",
+		"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"继续"}]}],
+		"tools":[{
+			"type":"function",
+			"name":"upload",
+			"parameters":` + buildNestedSchemaJSON(4, "deep schema chaos 风险短语") + `
+		}]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Contains(t, input.Text, "deep schema chaos 风险短语")
+	require.False(t, input.Truncated)
+}
+
+func TestExtractContentModerationInput_ChaosMixedEncodingPayloadSeedCorpus(t *testing.T) {
+	plainEncoded := base64.StdEncoding.EncodeToString([]byte("mixed base64 chaos 风险短语"))
+	jsonDataURI := "data:application/problem+json;base64," + base64.StdEncoding.EncodeToString([]byte(`{"detail":"mixed json data uri chaos 风险短语"}`))
+	yamlEscapedDataURI := "data:application/yaml,detail:%20mixed%20yaml%20data%20uri%20chaos%20%E9%A3%8E%E9%99%A9%E7%9F%AD%E8%AF%AD"
+	body := []byte(`{
+		"messages":[{
+			"role":"assistant",
+			"tool_calls":[{
+				"type":"function",
+				"function":{
+					"name":"inspect",
+					"arguments":"{\"payloads\":[{\"base64\":\"` + plainEncoded + `\"},{\"data\":\"` + jsonDataURI + `\"},{\"data\":\"` + yamlEscapedDataURI + `\"}],\"file\":{\"mime_type\":\"text/csv\",\"data\":\"name,notes\\nrow,mixed csv chaos 风险短语\"}}"
+				}
+			}]
+		}]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
+
+	require.Contains(t, input.Text, "mixed base64 chaos 风险短语")
+	require.Contains(t, input.Text, "mixed json data uri chaos 风险短语")
+	require.Contains(t, input.Text, "mixed yaml data uri chaos 风险短语")
+	require.Contains(t, input.Text, "mixed csv chaos 风险短语")
+	require.False(t, input.Truncated)
+}
+
+func TestExtractContentModerationInput_ChaosToolRecursionStressSeedCorpus(t *testing.T) {
+	body := []byte(`{
+		"input":[{
+			"type":"function_call_output",
+			"call_id":"call_1",
+			"output":` + buildNestedObjectJSON(maxToolResultTextDepth+3, "too deep chaos marker") + `
+		}]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+
+	require.True(t, input.Truncated)
+	require.Contains(t, input.TruncateReasons, "max_depth")
+	require.NotContains(t, input.Text, "too deep chaos marker")
+}
+
+func FuzzExtractContentModerationInput_ChaosCorpus(f *testing.F) {
+	f.Add(ContentModerationProtocolOpenAIResponses, `{"tools":[{"type":"function","parameters":`+buildNestedSchemaJSON(4, "fuzz deep schema seed")+`}],"input":"hello"}`)
+	f.Add(ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"assistant","tool_calls":[{"type":"function","function":{"arguments":"{\"data\":\"data:text/plain,%66%75%7a%7a%20data%20uri%20seed\"}"}}]}]}`)
+	f.Add(ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"assistant","content":[{"type":"tool_use","name":"upload","input":{"file":{"mime_type":"text/plain","data":"fuzz text mime seed"}}}]}]}`)
+	f.Add(ContentModerationProtocolGemini, `{"contents":[{"role":"model","parts":[{"functionCall":{"name":"lookup","args":{"query":"fuzz gemini function seed"}}}]}]}`)
+	f.Add(ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"function_call_output","output":`+buildNestedObjectJSON(maxToolResultTextDepth+3, "fuzz too deep marker")+`}]}`)
+
+	f.Fuzz(func(t *testing.T, protocol string, body string) {
+		if len(body) > maxBase64DecodeInputBytes {
+			body = body[:maxBase64DecodeInputBytes]
+		}
+		input := ExtractContentModerationInput(protocol, []byte(body))
+		require.LessOrEqual(t, len([]rune(input.Text)), maxModerationInputRunes)
+		require.LessOrEqual(t, len(input.Images), maxContentModerationInputImages)
+		if len(input.TruncateReasons) > 0 {
+			require.True(t, input.Truncated)
+		}
+	})
 }
 
 func TestExtractContentModerationInput_AnthropicScansToolDeclarations(t *testing.T) {
@@ -787,4 +867,38 @@ func TestExtractContentModerationInput_RecordsToolJSONTruncationReason(t *testin
 	require.True(t, input.Truncated)
 	require.Contains(t, input.TruncateReasons, "max_depth")
 	require.NotContains(t, input.Text, "too deep marker")
+}
+
+func buildNestedSchemaJSON(depth int, marker string) string {
+	node := map[string]any{
+		"type":        "string",
+		"description": marker,
+	}
+	for i := 0; i < depth; i++ {
+		node = map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"level": node,
+			},
+		}
+	}
+	raw, err := json.Marshal(node)
+	if err != nil {
+		panic(err)
+	}
+	return string(raw)
+}
+
+func buildNestedObjectJSON(depth int, marker string) string {
+	var node any = marker
+	for i := 0; i < depth; i++ {
+		node = map[string]any{
+			"nested": node,
+		}
+	}
+	raw, err := json.Marshal(node)
+	if err != nil {
+		panic(err)
+	}
+	return string(raw)
 }
