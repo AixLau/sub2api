@@ -418,6 +418,16 @@ func (in ContentModerationInput) IsEmpty() bool {
 	return strings.TrimSpace(in.Text) == "" && len(in.Images) == 0
 }
 
+func (in ContentModerationInput) hasOversizedEncodedPayloadSkipped() bool {
+	for _, reason := range in.TruncateReasons {
+		switch strings.TrimSpace(reason) {
+		case "oversized_base64_skipped", "oversized_base64_decoded_skipped":
+			return true
+		}
+	}
+	return false
+}
+
 func (in ContentModerationInput) ModerationInput() any {
 	images := limitContentModerationImages(in.Images)
 	if len(images) == 0 {
@@ -1037,6 +1047,17 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		"protocol", input.Protocol,
 		"text_runes", len([]rune(content.Text)),
 		"image_count", len(content.Images))
+	if cfg.Mode == ContentModerationModePreBlock && cfg.shouldFailClosed(input) && content.hasOversizedEncodedPayloadSkipped() {
+		s.recordPreBlockSyncMetric(0, ContentModerationActionError)
+		slog.Warn("content_moderation.oversized_encoded_payload_fail_closed",
+			"user_id", input.UserID,
+			"api_key_id", input.APIKeyID,
+			"group_id", contentModerationLogGroupID(input.GroupID),
+			"endpoint", input.Endpoint,
+			"protocol", input.Protocol,
+			"truncate_reasons", content.TruncateReasons)
+		return contentModerationFailureDecision(cfg), nil
+	}
 	hashText := content.Hash()
 	if cfg.Mode == ContentModerationModePreBlock {
 		if cfg.shouldRunLocalRules() {

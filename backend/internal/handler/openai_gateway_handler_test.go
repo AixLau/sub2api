@@ -961,6 +961,114 @@ func TestOpenAIEmbeddings_ContentModerationBlocksBeforeScheduling(t *testing.T) 
 	require.Equal(t, "embedding-risk", logs[0].MatchedKeyword)
 }
 
+func TestOpenAIResponses_ContentModerationBlocksDeepToolSchemaBeforeForward(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	moderationSvc, repo := newBlockingContentModerationServiceForHandlerTest(t, "deep schema risk")
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{
+		"model":"gpt-5.5",
+		"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"continue"}]}],
+		"tools":[{
+			"type":"function",
+			"name":"upload",
+			"parameters":{
+				"type":"object",
+				"properties":{
+					"file":{
+						"type":"object",
+						"properties":{
+							"metadata":{
+								"type":"object",
+								"properties":{
+									"data":{
+										"type":"string",
+										"description":"deep schema risk"
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}]
+	}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	setGatewayAuthContextForModerationTest(c)
+
+	h := &OpenAIGatewayHandler{
+		contentModerationService: moderationSvc,
+		gatewayService:           &service.OpenAIGatewayService{},
+		billingCacheService:      &service.BillingCacheService{},
+		apiKeyService:            &service.APIKeyService{},
+		concurrencyHelper:        NewConcurrencyHelper(service.NewConcurrencyService(&concurrencyCacheMock{}), SSEPingFormatNone, time.Second),
+	}
+
+	h.Responses(c)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Contains(t, w.Body.String(), "内容审计测试阻断")
+	require.Eventually(t, func() bool {
+		return len(repo.logSnapshot()) == 1
+	}, time.Second, 10*time.Millisecond)
+	logs := repo.logSnapshot()
+	require.Equal(t, "/v1/responses", logs[0].Endpoint)
+	require.Equal(t, "gpt-5.5", logs[0].Model)
+	require.Equal(t, service.ContentModerationActionKeywordBlock, logs[0].Action)
+	require.Equal(t, "deep schema risk", logs[0].MatchedKeyword)
+}
+
+func TestOpenAIAnthropicMessages_ContentModerationBlocksToolUseMediaBeforeForward(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	moderationSvc, repo := newBlockingContentModerationServiceForHandlerTest(t, "tool media risk")
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{
+		"model":"claude-sonnet-4-5",
+		"messages":[{
+			"role":"assistant",
+			"content":[{
+				"type":"tool_use",
+				"name":"upload",
+				"input":{
+					"file":{
+						"mime_type":"text/plain",
+						"data":"tool media risk"
+					}
+				}
+			}]
+		}]
+	}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	setGatewayAuthContextForModerationTest(c)
+	apiKey, ok := middleware.GetAPIKeyFromContext(c)
+	require.True(t, ok)
+	apiKey.Group.AllowMessagesDispatch = true
+
+	h := &OpenAIGatewayHandler{
+		contentModerationService: moderationSvc,
+		gatewayService:           &service.OpenAIGatewayService{},
+		billingCacheService:      &service.BillingCacheService{},
+		apiKeyService:            &service.APIKeyService{},
+		concurrencyHelper:        NewConcurrencyHelper(service.NewConcurrencyService(&concurrencyCacheMock{}), SSEPingFormatNone, time.Second),
+	}
+
+	h.Messages(c)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Contains(t, w.Body.String(), "内容审计测试阻断")
+	require.Eventually(t, func() bool {
+		return len(repo.logSnapshot()) == 1
+	}, time.Second, 10*time.Millisecond)
+	logs := repo.logSnapshot()
+	require.Equal(t, EndpointMessages, logs[0].Endpoint)
+	require.Equal(t, "claude-sonnet-4-5", logs[0].Model)
+	require.Equal(t, service.ContentModerationActionKeywordBlock, logs[0].Action)
+	require.Equal(t, "tool media risk", logs[0].MatchedKeyword)
+}
+
 func TestGatewayCountTokens_ContentModerationBlocksBeforeUpstreamSelection(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	moderationSvc, repo := newBlockingContentModerationServiceForHandlerTest(t, "count-token-risk")

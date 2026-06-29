@@ -1144,6 +1144,83 @@ func TestContentModerationCheck_PreBlockNonEmptyUnexpectedEmptyExtractionFailsCl
 	require.Equal(t, ContentModerationActionError, decision.Action)
 }
 
+func TestContentModerationCheck_PreBlockOversizedEncodedPayloadFailsClosed(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.APIKeys = []string{}
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	groupID := int64(1)
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		&contentModerationTestRepo{},
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		GroupID:  &groupID,
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body: []byte(`{"messages":[
+			{"role":"user","content":"ordinary text"},
+			{"role":"assistant","tool_calls":[{"type":"function","function":{"name":"lookup","arguments":"{\"base64\":\"` + strings.Repeat("A", maxBase64DecodeInputBytes+4) + `\"}"}}]}
+		]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.Equal(t, ContentModerationActionError, decision.Action)
+}
+
+func TestContentModerationCheck_PreBlockOversizedEncodedPayloadCanFailOpenForTrustedGroup(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.APIKeys = []string{}
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	trustedGroupID := int64(99)
+	cfg.FailStrategy.TrustedGroupIDs = []int64{trustedGroupID}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		&contentModerationTestRepo{},
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		GroupID:  &trustedGroupID,
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body: []byte(`{"messages":[
+			{"role":"user","content":"ordinary text"},
+			{"role":"assistant","tool_calls":[{"type":"function","function":{"name":"lookup","arguments":"{\"base64\":\"` + strings.Repeat("A", maxBase64DecodeInputBytes+4) + `\"}"}}]}
+		]}`),
+	})
+
+	require.NoError(t, err)
+	require.False(t, decision.Blocked)
+	require.True(t, decision.Allowed)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
+}
+
 func TestContentModerationCheck_OpenAIEmbeddingsTokenArrayInputDoesNotFailClosed(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
