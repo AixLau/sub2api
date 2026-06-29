@@ -18,6 +18,8 @@ const (
 	maxToolResultTextStringRunes            = 2000
 	maxToolResultTextTotalRunes             = 20000
 	maxToolResultObjectKeys                 = 1024
+	maxBase64DecodeInputBytes               = 256 * 1024
+	maxBase64DecodeOutputBytes              = 128 * 1024
 )
 
 func ExtractContentModerationText(protocol string, body []byte) string {
@@ -543,8 +545,7 @@ func collectToolResultTextValueWithState(value gjson.Result, parts *[]string, im
 	case !value.Exists():
 		return
 	case value.Type == gjson.String:
-		addLimitedToolResultText(parts, value.String(), state)
-		addDecodedBase64Text(parts, value.String(), state)
+		addStringOrDecodedBase64Text(parts, value.String(), state)
 	case value.IsArray():
 		value.ForEach(func(_, item gjson.Result) bool {
 			collectToolResultTextValueWithState(item, parts, images, depth+1, state)
@@ -624,21 +625,27 @@ func (state *toolResultTextState) markTruncated(reason string) {
 func shouldSkipToolResultTextField(key string, item gjson.Result, parent gjson.Result) bool {
 	switch strings.ToLower(strings.TrimSpace(key)) {
 	case "image", "images", "image_url", "input_image", "inline_data", "inlinedata", "base64", "bytes", "file", "files", "data":
-		return isLikelyBinaryPayloadField(item, parent)
+		return shouldSkipLikelyBinaryPayloadField(item, parent)
 	default:
 		return false
 	}
 }
 
-func isLikelyBinaryPayloadField(item gjson.Result, parent gjson.Result) bool {
-	if hasAnyGJSONField(parent, "media_type", "mediaType", "mime_type", "mimeType") {
-		return true
-	}
+func shouldSkipLikelyBinaryPayloadField(item gjson.Result, parent gjson.Result) bool {
 	switch {
 	case item.Type == gjson.String:
+		if _, ok := decodeTextPayload(item.String()); ok {
+			return false
+		}
+		if hasAnyGJSONField(parent, "media_type", "mediaType", "mime_type", "mimeType") {
+			return true
+		}
 		text := strings.TrimSpace(item.String())
 		lower := strings.ToLower(text)
-		if strings.HasPrefix(lower, "data:") || strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		if strings.HasPrefix(lower, "data:") {
+			return !isTextualDataURI(lower)
+		}
+		if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
 			return true
 		}
 		return len(text) >= 512 && isLikelyBase64Text(text)
@@ -647,7 +654,7 @@ func isLikelyBinaryPayloadField(item gjson.Result, parent gjson.Result) bool {
 		allMedia := true
 		item.ForEach(func(_, child gjson.Result) bool {
 			seen = true
-			if !isLikelyBinaryPayloadField(child, gjson.Result{}) {
+			if !shouldSkipLikelyBinaryPayloadField(child, gjson.Result{}) {
 				allMedia = false
 				return false
 			}
@@ -655,39 +662,10 @@ func isLikelyBinaryPayloadField(item gjson.Result, parent gjson.Result) bool {
 		})
 		return seen && allMedia
 	case item.IsObject():
-		return isLikelyPureBinaryPayloadObject(item)
+		return false
 	default:
 		return false
 	}
-}
-
-func isLikelyPureBinaryPayloadObject(value gjson.Result) bool {
-	if hasAnyGJSONField(value, "media_type", "mediaType", "mime_type", "mimeType") &&
-		hasAnyGJSONField(value, "data", "base64", "bytes") {
-		return true
-	}
-	if hasAnyGJSONField(value, "inline_data", "inlineData") {
-		return true
-	}
-	if hasAnyGJSONField(value, "url", "image_url", "file_uri", "fileUri") && !hasLikelyTextMetadataField(value) {
-		return true
-	}
-	return false
-}
-
-func hasLikelyTextMetadataField(value gjson.Result) bool {
-	return hasAnyGJSONField(value,
-		"caption",
-		"description",
-		"query",
-		"prompt",
-		"text",
-		"title",
-		"name",
-		"metadata",
-		"alt",
-		"label",
-	)
 }
 
 func hasAnyGJSONField(value gjson.Result, names ...string) bool {
@@ -720,20 +698,55 @@ func isLikelyBase64Text(text string) bool {
 	return seenPayload
 }
 
-func addDecodedBase64Text(parts *[]string, text string, state *toolResultTextState) {
-	decoded, ok := decodeLikelyBase64Text(text)
-	if !ok {
+func addStringOrDecodedBase64Text(parts *[]string, text string, state *toolResultTextState) {
+	decoded, ok := decodeTextPayload(text)
+	if ok {
+		addLimitedToolResultText(parts, decoded, state)
 		return
 	}
-	addLimitedToolResultText(parts, decoded, state)
+	addLimitedToolResultText(parts, text, state)
+}
+
+func decodeTextPayload(text string) (string, bool) {
+	normalized := strings.TrimSpace(text)
+	if decoded, ok := decodeTextDataURI(normalized); ok {
+		return decoded, true
+	}
+	return decodeLikelyBase64Text(normalized)
+}
+
+func decodeTextDataURI(text string) (string, bool) {
+	if strings.TrimSpace(text) == "" {
+		return "", false
+	}
+	mediatype, payload, ok := strings.Cut(text, ",")
+	if !ok {
+		return "", false
+	}
+	lowerType := strings.ToLower(strings.TrimSpace(mediatype))
+	if !strings.HasPrefix(lowerType, "data:") || !strings.Contains(lowerType, ";base64") || !isTextualDataURI(lowerType) {
+		return "", false
+	}
+	return decodeLikelyBase64Text(payload)
+}
+
+func isTextualDataURI(lowerType string) bool {
+	return strings.HasPrefix(lowerType, "data:text/") ||
+		strings.HasPrefix(lowerType, "data:application/json") ||
+		strings.HasPrefix(lowerType, "data:application/xml") ||
+		strings.HasPrefix(lowerType, "data:application/javascript") ||
+		strings.HasPrefix(lowerType, "data:application/x-javascript")
 }
 
 func decodeLikelyBase64Text(text string) (string, bool) {
 	normalized := strings.TrimSpace(text)
-	if len(normalized) < 16 || !isLikelyBase64Text(normalized) {
+	if len(normalized) < 16 || len(normalized) > maxBase64DecodeInputBytes || !isLikelyBase64Text(normalized) {
 		return "", false
 	}
 	compact := strings.NewReplacer("\r", "", "\n", "", " ", "", "\t", "").Replace(normalized)
+	if len(compact) > maxBase64DecodeInputBytes {
+		return "", false
+	}
 	encodings := []*base64.Encoding{
 		base64.StdEncoding,
 		base64.RawStdEncoding,
@@ -743,6 +756,9 @@ func decodeLikelyBase64Text(text string) (string, bool) {
 	for _, encoding := range encodings {
 		decoded, err := encoding.DecodeString(compact)
 		if err != nil {
+			continue
+		}
+		if len(decoded) > maxBase64DecodeOutputBytes {
 			continue
 		}
 		if text, ok := printableUTF8Text(decoded); ok {

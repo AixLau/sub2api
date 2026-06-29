@@ -280,10 +280,12 @@ func TestExtractContentModerationInput_OpenAIChatScansResponseFormatSchema(t *te
 
 func TestExtractContentModerationInput_ModelVisibleJSONScansDataFields(t *testing.T) {
 	encodedRiskText := base64.StdEncoding.EncodeToString([]byte("base64 解码后的风险短语"))
+	longEncodedRiskText := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("长 base64 字段解码后的风险短语", 30)))
+	textDataURI := "data:text/plain;base64," + base64.StdEncoding.EncodeToString([]byte("text data uri 解码后的风险短语"))
 	body := []byte(`{
 		"messages":[
 			{"role":"user","content":"继续"},
-			{"role":"assistant","tool_calls":[{"type":"function","function":{"name":"lookup","arguments":"{\"data\":\"tool arguments data 字段里的风险短语\",\"image\":\"tool arguments image 字段里的风险短语\",\"file\":\"tool arguments file 字段里的风险短语\",\"base64\":\"tool arguments base64 字段里的风险短语\",\"metadata\":{\"data\":{\"source\":\"form\",\"query\":\"object data source 里的风险短语\"}},\"attachment\":{\"file\":{\"url\":\"https://example.com/a.png\",\"caption\":\"file caption 里的风险短语\"}},\"encoded\":\"` + encodedRiskText + `\"}"}}]}
+			{"role":"assistant","tool_calls":[{"type":"function","function":{"name":"lookup","arguments":"{\"data\":\"tool arguments data 字段里的风险短语\",\"image\":\"tool arguments image 字段里的风险短语\",\"file\":\"tool arguments file 字段里的风险短语\",\"base64\":\"tool arguments base64 字段里的风险短语\",\"metadata\":{\"data\":{\"source\":\"form\",\"query\":\"object data source 里的风险短语\"}},\"attachment\":{\"file\":{\"url\":\"https://example.com/a.png\",\"caption\":\"file caption 里的风险短语\"}},\"encoded\":\"` + encodedRiskText + `\",\"media\":{\"file\":{\"mime_type\":\"image/png\",\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB\",\"caption\":\"mime data caption 里的风险短语\"},\"image\":{\"media_type\":\"image/png\",\"base64\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB\",\"description\":\"mime base64 description 里的风险短语\"},\"files\":[{\"mime_type\":\"application/pdf\",\"bytes\":\"JVBERi0xLjQK\",\"title\":\"bytes title 里的风险短语\"}]},\"encoded_fields\":{\"base64\":\"` + longEncodedRiskText + `\",\"data\":\"` + textDataURI + `\"}}"}}]}
 		],
 		"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object","properties":{"data":{"description":"schema data 字段里的风险短语"},"image":{"description":"schema image 字段里的风险短语"},"file":{"description":"schema file 字段里的风险短语"},"base64":{"description":"schema base64 字段里的风险短语"}}}}}]
 	}`)
@@ -301,6 +303,26 @@ func TestExtractContentModerationInput_ModelVisibleJSONScansDataFields(t *testin
 	require.Contains(t, input.Text, "object data source 里的风险短语")
 	require.Contains(t, input.Text, "file caption 里的风险短语")
 	require.Contains(t, input.Text, "base64 解码后的风险短语")
+	require.Contains(t, input.Text, "mime data caption 里的风险短语")
+	require.Contains(t, input.Text, "mime base64 description 里的风险短语")
+	require.Contains(t, input.Text, "bytes title 里的风险短语")
+	require.Contains(t, input.Text, "长 base64 字段解码后的风险短语")
+	require.Contains(t, input.Text, "text data uri 解码后的风险短语")
+}
+
+func TestExtractContentModerationInput_Base64DecodeSkipsOversizePayload(t *testing.T) {
+	oversizeEncoded := strings.Repeat("A", maxBase64DecodeInputBytes+4)
+	body := []byte(`{
+		"messages":[
+			{"role":"user","content":"继续"},
+			{"role":"assistant","tool_calls":[{"type":"function","function":{"name":"lookup","arguments":"{\"base64\":\"` + oversizeEncoded + `\",\"caption\":\"oversize 同级文本风险短语\"}"}}]}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
+
+	require.Contains(t, input.Text, "oversize 同级文本风险短语")
+	require.NotContains(t, input.Text, oversizeEncoded)
 }
 
 func TestExtractContentModerationInput_ResponsesScansToolsAndFunctionCallArguments(t *testing.T) {
