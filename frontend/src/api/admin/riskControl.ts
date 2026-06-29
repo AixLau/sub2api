@@ -180,6 +180,9 @@ export interface UpdateContentModerationConfig {
 }
 
 export interface ContentModerationRuntimeStatus {
+  build: ContentModerationBuildStatus
+  security_baseline: ContentModerationSecurityBaselineStatus
+  effective_protection: ContentModerationEffectiveProtectionStatus
   enabled: boolean
   risk_control_enabled: boolean
   mode: ModerationMode
@@ -209,6 +212,34 @@ export interface ContentModerationRuntimeStatus {
   last_cleanup_at?: string
   last_cleanup_deleted_hit: number
   last_cleanup_deleted_non_hit: number
+}
+
+export interface ContentModerationBuildStatus {
+  version: string
+  commit: string
+  date: string
+  build_type: string
+}
+
+export interface ContentModerationSecurityBaselineStatus {
+  policy_schema_version: string
+  moderation_extractor_version: string
+  minimum_security_baseline_commit: string
+}
+
+export interface ContentModerationEffectiveProtectionStatus {
+  effective_blocking: boolean
+  risk_control_enabled: boolean
+  moderation_enabled: boolean
+  mode: ModerationMode | string
+  audit_scope: ContentModerationAuditScope | string
+  public_fail_strategy: 'open' | 'closed' | string
+  group_coverage: string
+  model_coverage: string
+  engine_mode: ContentModerationEngineMode | string
+  external_api_configured: boolean
+  high_risk_rules_blocking: boolean
+  unsafe_reasons: string[]
 }
 
 export interface ContentModerationAPIKeyLoad {

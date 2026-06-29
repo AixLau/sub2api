@@ -2230,6 +2230,195 @@ func TestContentModerationStatusTracksPreBlockSyncMetrics(t *testing.T) {
 	require.GreaterOrEqual(t, status.PreBlockAvgLatencyMS, int64(1))
 }
 
+func TestContentModerationStatusIncludesBuildAndSecurityBaseline(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetBuildInfo(BuildInfo{
+		Version:   "v-test",
+		Commit:    "abc1234",
+		Date:      "2026-06-29T00:00:00Z",
+		BuildType: "release",
+	})
+
+	status, err := svc.GetStatus(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "v-test", status.Build.Version)
+	require.Equal(t, "abc1234", status.Build.Commit)
+	require.Equal(t, "2026-06-29T00:00:00Z", status.Build.Date)
+	require.Equal(t, "release", status.Build.BuildType)
+	require.NotEmpty(t, status.SecurityBaseline.PolicySchemaVersion)
+	require.NotEmpty(t, status.SecurityBaseline.ModerationExtractorVersion)
+	require.Equal(t, "9216c848", status.SecurityBaseline.MinimumSecurityBaselineCommit)
+}
+
+func TestContentModerationStatusEffectiveProtection(t *testing.T) {
+	makeStatus := func(t *testing.T, cfg *ContentModerationConfig, riskEnabled bool) *ContentModerationRuntimeStatus {
+		t.Helper()
+		rawCfg, err := json.Marshal(cfg)
+		require.NoError(t, err)
+		svc := NewContentModerationService(
+			&contentModerationTestSettingRepo{values: map[string]string{
+				SettingKeyRiskControlEnabled:      fmt.Sprintf("%t", riskEnabled),
+				SettingKeyContentModerationConfig: string(rawCfg),
+			}},
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+		)
+		status, err := svc.GetStatus(context.Background())
+		require.NoError(t, err)
+		return status
+	}
+	secureConfig := func() *ContentModerationConfig {
+		cfg := defaultContentModerationConfig()
+		cfg.Enabled = true
+		cfg.Mode = ContentModerationModePreBlock
+		cfg.AuditScope = ContentModerationAuditScopeAllContext
+		cfg.AllGroups = true
+		cfg.ModelFilter = ContentModerationModelFilter{Type: ContentModerationModelFilterAll}
+		cfg.FailStrategy = ContentModerationFailStrategy{Default: ContentModerationFailStrategyClosed}
+		cfg.EngineMode = ContentModerationEngineModeHybrid
+		cfg.APIKeys = []string{"sk-test"}
+		cfg.KeywordRules = []ContentModerationKeywordRule{{
+			Keyword:  "critical-risk",
+			Severity: ContentModerationKeywordSeverityHigh,
+			Action:   ContentModerationKeywordActionBlock,
+			Enabled:  true,
+		}}
+		return cfg
+	}
+
+	status := makeStatus(t, secureConfig(), true)
+	require.True(t, status.EffectiveProtection.EffectiveBlocking)
+	require.Empty(t, status.EffectiveProtection.UnsafeReasons)
+	require.True(t, status.EffectiveProtection.RiskControlEnabled)
+	require.True(t, status.EffectiveProtection.ModerationEnabled)
+	require.Equal(t, ContentModerationModePreBlock, status.EffectiveProtection.Mode)
+	require.Equal(t, ContentModerationAuditScopeAllContext, status.EffectiveProtection.AuditScope)
+	require.Equal(t, ContentModerationFailStrategyClosed, status.EffectiveProtection.PublicFailStrategy)
+	require.Equal(t, "all_public_groups", status.EffectiveProtection.GroupCoverage)
+	require.Equal(t, ContentModerationModelFilterAll, status.EffectiveProtection.ModelCoverage)
+	require.Equal(t, ContentModerationEngineModeHybrid, status.EffectiveProtection.EngineMode)
+	require.True(t, status.EffectiveProtection.ExternalAPIConfigured)
+	require.True(t, status.EffectiveProtection.HighRiskRulesBlocking)
+
+	tests := []struct {
+		name   string
+		mutate func(*ContentModerationConfig)
+		risk   bool
+		reason string
+	}{
+		{
+			name:   "risk control disabled",
+			risk:   false,
+			reason: "risk_control_disabled",
+		},
+		{
+			name: "moderation disabled",
+			mutate: func(cfg *ContentModerationConfig) {
+				cfg.Enabled = false
+			},
+			risk:   true,
+			reason: "moderation_disabled",
+		},
+		{
+			name: "mode observe",
+			mutate: func(cfg *ContentModerationConfig) {
+				cfg.Mode = ContentModerationModeObserve
+			},
+			risk:   true,
+			reason: "mode_not_pre_block",
+		},
+		{
+			name: "audit scope user only",
+			mutate: func(cfg *ContentModerationConfig) {
+				cfg.AuditScope = ContentModerationAuditScopeUserOnly
+			},
+			risk:   true,
+			reason: "audit_scope_not_all_context",
+		},
+		{
+			name: "public fail open",
+			mutate: func(cfg *ContentModerationConfig) {
+				cfg.FailStrategy = ContentModerationFailStrategy{Default: ContentModerationFailStrategyOpen}
+			},
+			risk:   true,
+			reason: "public_fail_open",
+		},
+		{
+			name: "group scoped",
+			mutate: func(cfg *ContentModerationConfig) {
+				cfg.AllGroups = false
+				cfg.GroupIDs = []int64{1001}
+			},
+			risk:   true,
+			reason: "group_scope_not_all",
+		},
+		{
+			name: "model scoped",
+			mutate: func(cfg *ContentModerationConfig) {
+				cfg.ModelFilter = ContentModerationModelFilter{
+					Type:   ContentModerationModelFilterInclude,
+					Models: []string{"gpt-4.1"},
+				}
+			},
+			risk:   true,
+			reason: "model_filter_not_all",
+		},
+		{
+			name: "external api missing for hybrid",
+			mutate: func(cfg *ContentModerationConfig) {
+				cfg.APIKeys = nil
+			},
+			risk:   true,
+			reason: "external_api_not_configured",
+		},
+		{
+			name: "high risk rule warn only",
+			mutate: func(cfg *ContentModerationConfig) {
+				cfg.KeywordRules = []ContentModerationKeywordRule{{
+					Keyword:  "critical-risk",
+					Severity: ContentModerationKeywordSeverityCritical,
+					Action:   ContentModerationKeywordActionWarn,
+					Enabled:  true,
+				}}
+			},
+			risk:   true,
+			reason: "high_risk_rules_not_blocking",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := secureConfig()
+			if tt.mutate != nil {
+				tt.mutate(cfg)
+			}
+			status := makeStatus(t, cfg, tt.risk)
+			require.False(t, status.EffectiveProtection.EffectiveBlocking)
+			require.Contains(t, status.EffectiveProtection.UnsafeReasons, tt.reason)
+		})
+	}
+}
+
 func TestContentModerationStatusTracksPreBlockAPIKeyLoad(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(moderationAPIResponse{

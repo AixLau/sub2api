@@ -131,6 +131,10 @@ const (
 	contentModerationCleanupInterval = 24 * time.Hour
 	contentModerationCleanupTimeout  = 30 * time.Minute
 	contentModerationCleanupDelay    = 5 * time.Minute
+
+	contentModerationPolicySchemaVersion           = "2026-06-29.1"
+	contentModerationExtractorVersion              = "v4"
+	contentModerationMinimumSecurityBaselineCommit = "9216c848"
 )
 
 var contentModerationCategoryOrder = []string{
@@ -528,36 +532,67 @@ type ContentModerationCleanupResult struct {
 	FinishedAt    time.Time `json:"finished_at"`
 }
 
+type ContentModerationBuildStatus struct {
+	Version   string `json:"version"`
+	Commit    string `json:"commit"`
+	Date      string `json:"date"`
+	BuildType string `json:"build_type"`
+}
+
+type ContentModerationSecurityBaselineStatus struct {
+	PolicySchemaVersion           string `json:"policy_schema_version"`
+	ModerationExtractorVersion    string `json:"moderation_extractor_version"`
+	MinimumSecurityBaselineCommit string `json:"minimum_security_baseline_commit"`
+}
+
+type ContentModerationEffectiveProtectionStatus struct {
+	EffectiveBlocking     bool     `json:"effective_blocking"`
+	RiskControlEnabled    bool     `json:"risk_control_enabled"`
+	ModerationEnabled     bool     `json:"moderation_enabled"`
+	Mode                  string   `json:"mode"`
+	AuditScope            string   `json:"audit_scope"`
+	PublicFailStrategy    string   `json:"public_fail_strategy"`
+	GroupCoverage         string   `json:"group_coverage"`
+	ModelCoverage         string   `json:"model_coverage"`
+	EngineMode            string   `json:"engine_mode"`
+	ExternalAPIConfigured bool     `json:"external_api_configured"`
+	HighRiskRulesBlocking bool     `json:"high_risk_rules_blocking"`
+	UnsafeReasons         []string `json:"unsafe_reasons"`
+}
+
 type ContentModerationRuntimeStatus struct {
-	Enabled                      bool                            `json:"enabled"`
-	RiskControlEnabled           bool                            `json:"risk_control_enabled"`
-	Mode                         string                          `json:"mode"`
-	WorkerCount                  int                             `json:"worker_count"`
-	MaxWorkers                   int                             `json:"max_workers"`
-	ActiveWorkers                int                             `json:"active_workers"`
-	IdleWorkers                  int                             `json:"idle_workers"`
-	QueueSize                    int                             `json:"queue_size"`
-	QueueLength                  int                             `json:"queue_length"`
-	QueueUsagePercent            float64                         `json:"queue_usage_percent"`
-	Enqueued                     int64                           `json:"enqueued"`
-	Dropped                      int64                           `json:"dropped"`
-	Processed                    int64                           `json:"processed"`
-	Errors                       int64                           `json:"errors"`
-	PreBlockActive               int                             `json:"pre_block_active"`
-	PreBlockChecked              int64                           `json:"pre_block_checked"`
-	PreBlockAllowed              int64                           `json:"pre_block_allowed"`
-	PreBlockBlocked              int64                           `json:"pre_block_blocked"`
-	PreBlockErrors               int64                           `json:"pre_block_errors"`
-	PreBlockAvgLatencyMS         int64                           `json:"pre_block_avg_latency_ms"`
-	PreBlockAPIKeyActive         int64                           `json:"pre_block_api_key_active"`
-	PreBlockAPIKeyAvailableCount int64                           `json:"pre_block_api_key_available_count"`
-	PreBlockAPIKeyTotalCalls     int64                           `json:"pre_block_api_key_total_calls"`
-	PreBlockAPIKeyLoads          []ContentModerationAPIKeyLoad   `json:"pre_block_api_key_loads"`
-	APIKeyStatuses               []ContentModerationAPIKeyStatus `json:"api_key_statuses"`
-	FlaggedHashCount             int64                           `json:"flagged_hash_count"`
-	LastCleanupAt                *time.Time                      `json:"last_cleanup_at,omitempty"`
-	LastCleanupDeletedHit        int64                           `json:"last_cleanup_deleted_hit"`
-	LastCleanupDeletedNonHit     int64                           `json:"last_cleanup_deleted_non_hit"`
+	Build                        ContentModerationBuildStatus               `json:"build"`
+	SecurityBaseline             ContentModerationSecurityBaselineStatus    `json:"security_baseline"`
+	EffectiveProtection          ContentModerationEffectiveProtectionStatus `json:"effective_protection"`
+	Enabled                      bool                                       `json:"enabled"`
+	RiskControlEnabled           bool                                       `json:"risk_control_enabled"`
+	Mode                         string                                     `json:"mode"`
+	WorkerCount                  int                                        `json:"worker_count"`
+	MaxWorkers                   int                                        `json:"max_workers"`
+	ActiveWorkers                int                                        `json:"active_workers"`
+	IdleWorkers                  int                                        `json:"idle_workers"`
+	QueueSize                    int                                        `json:"queue_size"`
+	QueueLength                  int                                        `json:"queue_length"`
+	QueueUsagePercent            float64                                    `json:"queue_usage_percent"`
+	Enqueued                     int64                                      `json:"enqueued"`
+	Dropped                      int64                                      `json:"dropped"`
+	Processed                    int64                                      `json:"processed"`
+	Errors                       int64                                      `json:"errors"`
+	PreBlockActive               int                                        `json:"pre_block_active"`
+	PreBlockChecked              int64                                      `json:"pre_block_checked"`
+	PreBlockAllowed              int64                                      `json:"pre_block_allowed"`
+	PreBlockBlocked              int64                                      `json:"pre_block_blocked"`
+	PreBlockErrors               int64                                      `json:"pre_block_errors"`
+	PreBlockAvgLatencyMS         int64                                      `json:"pre_block_avg_latency_ms"`
+	PreBlockAPIKeyActive         int64                                      `json:"pre_block_api_key_active"`
+	PreBlockAPIKeyAvailableCount int64                                      `json:"pre_block_api_key_available_count"`
+	PreBlockAPIKeyTotalCalls     int64                                      `json:"pre_block_api_key_total_calls"`
+	PreBlockAPIKeyLoads          []ContentModerationAPIKeyLoad              `json:"pre_block_api_key_loads"`
+	APIKeyStatuses               []ContentModerationAPIKeyStatus            `json:"api_key_statuses"`
+	FlaggedHashCount             int64                                      `json:"flagged_hash_count"`
+	LastCleanupAt                *time.Time                                 `json:"last_cleanup_at,omitempty"`
+	LastCleanupDeletedHit        int64                                      `json:"last_cleanup_deleted_hit"`
+	LastCleanupDeletedNonHit     int64                                      `json:"last_cleanup_deleted_non_hit"`
 }
 
 type ContentModerationUnbanUserResult struct {
@@ -601,6 +636,7 @@ type ContentModerationService struct {
 	userRepo                 UserRepository
 	authCacheInvalidator     APIKeyAuthCacheInvalidator
 	emailService             *EmailService
+	buildInfo                BuildInfo
 	httpClient               *http.Client
 	asyncQueue               chan contentModerationTask
 	workerCount              int
@@ -681,6 +717,13 @@ func NewContentModerationService(
 		go svc.cleanupWorker()
 	}
 	return svc
+}
+
+func (s *ContentModerationService) SetBuildInfo(buildInfo BuildInfo) {
+	if s == nil {
+		return
+	}
+	s.buildInfo = buildInfo
 }
 
 func (s *ContentModerationService) GetConfig(ctx context.Context) (*ContentModerationConfigView, error) {
@@ -1577,6 +1620,9 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 		lastCleanupAt = &t
 	}
 	return &ContentModerationRuntimeStatus{
+		Build:                        s.buildStatus(),
+		SecurityBaseline:             contentModerationSecurityBaselineStatus(),
+		EffectiveProtection:          buildContentModerationEffectiveProtectionStatus(cfg, riskEnabled),
 		Enabled:                      cfg.Enabled,
 		RiskControlEnabled:           riskEnabled,
 		Mode:                         cfg.Mode,
@@ -1607,6 +1653,104 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 		LastCleanupDeletedHit:        s.lastCleanupDeletedHit.Load(),
 		LastCleanupDeletedNonHit:     s.lastCleanupDeletedNonHit.Load(),
 	}, nil
+}
+
+func (s *ContentModerationService) buildStatus() ContentModerationBuildStatus {
+	if s == nil {
+		return ContentModerationBuildStatus{}
+	}
+	return ContentModerationBuildStatus{
+		Version:   strings.TrimSpace(s.buildInfo.Version),
+		Commit:    strings.TrimSpace(s.buildInfo.Commit),
+		Date:      strings.TrimSpace(s.buildInfo.Date),
+		BuildType: strings.TrimSpace(s.buildInfo.BuildType),
+	}
+}
+
+func contentModerationSecurityBaselineStatus() ContentModerationSecurityBaselineStatus {
+	return ContentModerationSecurityBaselineStatus{
+		PolicySchemaVersion:           contentModerationPolicySchemaVersion,
+		ModerationExtractorVersion:    contentModerationExtractorVersion,
+		MinimumSecurityBaselineCommit: contentModerationMinimumSecurityBaselineCommit,
+	}
+}
+
+func buildContentModerationEffectiveProtectionStatus(cfg *ContentModerationConfig, riskEnabled bool) ContentModerationEffectiveProtectionStatus {
+	if cfg == nil {
+		cfg = defaultContentModerationConfig()
+	} else {
+		cfg = cloneContentModerationConfig(cfg)
+	}
+	cfg.normalize()
+
+	failStrategy := normalizeContentModerationFailStrategy(cfg.FailStrategy)
+	modelFilter := normalizeContentModerationModelFilter(cfg.ModelFilter)
+	groupCoverage := "all_public_groups"
+	if !cfg.AllGroups {
+		groupCoverage = "scoped_groups"
+	}
+	modelCoverage := modelFilter.Type
+	externalAPIConfigured := !cfg.externalModerationRequired() || len(cfg.apiKeys()) > 0
+	highRiskRulesBlocking := contentModerationHighRiskRulesBlocking(cfg.keywordRules())
+
+	unsafeReasons := make([]string, 0, 8)
+	if !riskEnabled {
+		unsafeReasons = append(unsafeReasons, "risk_control_disabled")
+	}
+	if !cfg.Enabled {
+		unsafeReasons = append(unsafeReasons, "moderation_disabled")
+	}
+	if cfg.Mode != ContentModerationModePreBlock {
+		unsafeReasons = append(unsafeReasons, "mode_not_pre_block")
+	}
+	if cfg.AuditScope != ContentModerationAuditScopeAllContext {
+		unsafeReasons = append(unsafeReasons, "audit_scope_not_all_context")
+	}
+	if failStrategy.Default == ContentModerationFailStrategyOpen {
+		unsafeReasons = append(unsafeReasons, "public_fail_open")
+	}
+	if !cfg.AllGroups {
+		unsafeReasons = append(unsafeReasons, "group_scope_not_all")
+	}
+	if modelFilter.Type != ContentModerationModelFilterAll {
+		unsafeReasons = append(unsafeReasons, "model_filter_not_all")
+	}
+	if !externalAPIConfigured {
+		unsafeReasons = append(unsafeReasons, "external_api_not_configured")
+	}
+	if !highRiskRulesBlocking {
+		unsafeReasons = append(unsafeReasons, "high_risk_rules_not_blocking")
+	}
+
+	return ContentModerationEffectiveProtectionStatus{
+		EffectiveBlocking:     len(unsafeReasons) == 0,
+		RiskControlEnabled:    riskEnabled,
+		ModerationEnabled:     cfg.Enabled,
+		Mode:                  cfg.Mode,
+		AuditScope:            cfg.AuditScope,
+		PublicFailStrategy:    failStrategy.Default,
+		GroupCoverage:         groupCoverage,
+		ModelCoverage:         modelCoverage,
+		EngineMode:            cfg.EngineMode,
+		ExternalAPIConfigured: externalAPIConfigured,
+		HighRiskRulesBlocking: highRiskRulesBlocking,
+		UnsafeReasons:         unsafeReasons,
+	}
+}
+
+func contentModerationHighRiskRulesBlocking(rules []ContentModerationKeywordRule) bool {
+	for _, rule := range normalizeContentModerationKeywordRules(rules) {
+		if !rule.Enabled {
+			continue
+		}
+		switch rule.Severity {
+		case ContentModerationKeywordSeverityHigh, ContentModerationKeywordSeverityCritical:
+			if rule.Action != ContentModerationKeywordActionBlock {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (s *ContentModerationService) cleanupWorker() {

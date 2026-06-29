@@ -145,6 +145,8 @@ func runMainServer() {
 
 	buildInfo := handler.BuildInfo{
 		Version:   Version,
+		Commit:    Commit,
+		Date:      Date,
 		BuildType: BuildType,
 	}
 
