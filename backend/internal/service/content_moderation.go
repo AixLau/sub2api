@@ -24,6 +24,7 @@ import (
 	"unicode"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"golang.org/x/text/unicode/norm"
 )
@@ -141,39 +142,7 @@ const (
 	minContentModerationBuildCommitPrefixLen       = 7
 )
 
-type contentModerationRouteCoverageEntry struct {
-	Method             string
-	Path               string
-	Upstream           bool
-	ModerationRequired bool
-	Status             string
-}
-
-var contentModerationRouteCoverageEntries = []contentModerationRouteCoverageEntry{
-	{Method: "POST", Path: "/v1/messages", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/antigravity/v1/messages", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/v1/messages/count_tokens", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/antigravity/v1/messages/count_tokens", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/v1/chat/completions", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/chat/completions", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/v1/responses", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/v1/responses/*subpath", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/responses", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/responses/*subpath", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "GET", Path: "/v1/responses", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "GET", Path: "/responses", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/backend-api/codex/responses", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/backend-api/codex/responses/*subpath", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "GET", Path: "/backend-api/codex/responses", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/v1/embeddings", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/embeddings", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/v1/images/generations", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/v1/images/edits", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/images/generations", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/images/edits", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/v1beta/models/*modelAction", Upstream: true, ModerationRequired: true, Status: "covered"},
-	{Method: "POST", Path: "/antigravity/v1beta/models/*modelAction", Upstream: true, ModerationRequired: true, Status: "covered"},
-}
+type contentModerationRouteCoverageEntry = moderationcoverage.Entry
 
 var contentModerationCategoryOrder = []string{
 	"harassment",
@@ -605,14 +574,7 @@ type ContentModerationEffectiveProtectionStatus struct {
 	UnsafeReasons              []string `json:"unsafe_reasons"`
 }
 
-type ContentModerationRouteCoverageStatus struct {
-	ManifestVersion string   `json:"manifest_version"`
-	ManifestHash    string   `json:"manifest_hash"`
-	Status          string   `json:"status"`
-	RequiredRoutes  int      `json:"required_routes"`
-	CoveredRoutes   int      `json:"covered_routes"`
-	UncoveredRoutes []string `json:"uncovered_routes"`
-}
+type ContentModerationRouteCoverageStatus = moderationcoverage.Status
 
 type ContentModerationRuntimeStatus struct {
 	Build                        ContentModerationBuildStatus               `json:"build"`
@@ -1848,71 +1810,27 @@ func parseContentModerationBoolEnv(key string) bool {
 }
 
 func contentModerationRouteCoverageStatus() ContentModerationRouteCoverageStatus {
-	return contentModerationRouteCoverageStatusFromEntries(contentModerationRouteCoverageEntries)
+	return moderationcoverage.CoverageStatus(contentModerationRouteManifestVersion)
 }
 
 func contentModerationRouteCoverageStatusFromEntries(entries []contentModerationRouteCoverageEntry) ContentModerationRouteCoverageStatus {
-	required := 0
-	covered := 0
-	uncoveredRoutes := make([]string, 0)
-	for _, entry := range entries {
-		if !entry.Upstream || !entry.ModerationRequired {
-			continue
-		}
-		normalizedMethod := normalizeContentModerationRouteCoverageMethod(entry.Method)
-		normalizedPath := normalizeContentModerationRouteCoveragePath(entry.Path)
-		normalizedStatus := normalizeContentModerationRouteCoverageStatus(entry.Status)
-		required++
-		if normalizedStatus == "covered" {
-			covered++
-			continue
-		}
-		route := strings.TrimSpace(normalizedMethod + " " + normalizedPath)
-		if route == "" {
-			route = "unknown"
-		}
-		uncoveredRoutes = append(uncoveredRoutes, route)
-	}
-
-	status := "covered"
-	if required == 0 {
-		status = "unknown"
-	} else if covered != required || len(uncoveredRoutes) > 0 {
-		status = "mismatch"
-	}
-	return ContentModerationRouteCoverageStatus{
-		ManifestVersion: contentModerationRouteManifestVersion,
-		ManifestHash:    contentModerationRouteCoverageHashFromEntries(entries),
-		Status:          status,
-		RequiredRoutes:  required,
-		CoveredRoutes:   covered,
-		UncoveredRoutes: uncoveredRoutes,
-	}
+	return moderationcoverage.CoverageStatusFromEntries(contentModerationRouteManifestVersion, entries)
 }
 
 func contentModerationRouteCoverageHashFromEntries(entries []contentModerationRouteCoverageEntry) string {
-	routes := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.Upstream || !entry.ModerationRequired {
-			continue
-		}
-		routes = append(routes, normalizeContentModerationRouteCoverageStatus(entry.Status)+" "+normalizeContentModerationRouteCoverageMethod(entry.Method)+" "+normalizeContentModerationRouteCoveragePath(entry.Path))
-	}
-	sort.Strings(routes)
-	sum := sha256.Sum256([]byte(strings.Join(routes, "\n")))
-	return hex.EncodeToString(sum[:])
+	return moderationcoverage.HashFromEntries(entries)
 }
 
 func normalizeContentModerationRouteCoverageMethod(value string) string {
-	return strings.ToUpper(strings.TrimSpace(value))
+	return moderationcoverage.NormalizeMethod(value)
 }
 
 func normalizeContentModerationRouteCoveragePath(value string) string {
-	return strings.TrimSpace(value)
+	return moderationcoverage.NormalizePath(value)
 }
 
 func normalizeContentModerationRouteCoverageStatus(value string) string {
-	return strings.ToLower(strings.TrimSpace(value))
+	return moderationcoverage.NormalizeStatus(value)
 }
 
 func (s *ContentModerationService) buildContentModerationEffectiveProtectionStatus(cfg *ContentModerationConfig, riskEnabled bool, routeCoverage ContentModerationRouteCoverageStatus) ContentModerationEffectiveProtectionStatus {

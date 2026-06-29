@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
@@ -2351,6 +2352,10 @@ func TestContentModerationStatusIncludesBuildAndSecurityBaseline(t *testing.T) {
 }
 
 func TestContentModerationStatusIncludesRouteCoverage(t *testing.T) {
+	expectedCoverage := loadContentModerationGatewayCoverageForStatus(t)
+	restore := moderationcoverage.ReplaceRegistryForTest(expectedCoverage.entries)
+	defer restore()
+
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.EngineMode = ContentModerationEngineModeRuleOnly
@@ -2374,15 +2379,14 @@ func TestContentModerationStatusIncludesRouteCoverage(t *testing.T) {
 
 	status, err := svc.GetStatus(context.Background())
 	require.NoError(t, err)
-	expectedCoverage := loadContentModerationGatewayCoverageForStatus(t)
 	require.Equal(t, "2026-06-29.2", status.RouteCoverage.ManifestVersion)
 	require.Equal(t, expectedCoverage.manifestVersion, status.RouteCoverage.ManifestVersion)
 	require.NotEmpty(t, status.RouteCoverage.ManifestHash)
-	require.Equal(t, contentModerationRouteCoverageHashFromEntries(contentModerationRouteCoverageEntries), status.RouteCoverage.ManifestHash)
+	require.Equal(t, moderationcoverage.HashFromEntries(expectedCoverage.entries), status.RouteCoverage.ManifestHash)
 	require.Equal(t, "covered", status.RouteCoverage.Status)
 	require.Equal(t, expectedCoverage.required, status.RouteCoverage.RequiredRoutes)
 	require.Equal(t, expectedCoverage.covered, status.RouteCoverage.CoveredRoutes)
-	require.Equal(t, expectedCoverage.routes, contentModerationRouteCoverageRoutesForTest(contentModerationRouteCoverageEntries))
+	require.Equal(t, expectedCoverage.routes, contentModerationRouteCoverageRoutesForTest(expectedCoverage.entries))
 	require.Empty(t, status.RouteCoverage.UncoveredRoutes)
 	require.NotContains(t, status.EffectiveProtection.UnsafeReasons, "route_coverage_unknown")
 	require.NotContains(t, status.EffectiveProtection.UnsafeReasons, "uncovered_upstream_routes")
@@ -2420,6 +2424,21 @@ func TestContentModerationRouteCoverageStatusListsUncoveredRoutes(t *testing.T) 
 	require.NotEmpty(t, status.ManifestHash)
 }
 
+func TestContentModerationRouteCoverageStatusUsesRegisteredCoverageEntries(t *testing.T) {
+	restore := moderationcoverage.ReplaceRegistryForTest([]moderationcoverage.Entry{
+		{Method: "POST", Path: "/registered", Upstream: true, ModerationRequired: true, Status: "covered"},
+		{Method: "POST", Path: "/registered-planned", Upstream: true, ModerationRequired: true, Status: "planned"},
+	})
+	defer restore()
+
+	status := contentModerationRouteCoverageStatus()
+
+	require.Equal(t, "mismatch", status.Status)
+	require.Equal(t, 2, status.RequiredRoutes)
+	require.Equal(t, 1, status.CoveredRoutes)
+	require.Equal(t, []string{"POST /registered-planned"}, status.UncoveredRoutes)
+}
+
 type contentModerationGatewayCoverageForStatus struct {
 	SchemaVersion   int    `json:"schema_version"`
 	ManifestVersion string `json:"manifest_version"`
@@ -2437,6 +2456,7 @@ func loadContentModerationGatewayCoverageForStatus(t *testing.T) struct {
 	required        int
 	covered         int
 	routes          []string
+	entries         []moderationcoverage.Entry
 } {
 	t.Helper()
 
@@ -2456,11 +2476,19 @@ func loadContentModerationGatewayCoverageForStatus(t *testing.T) struct {
 		required        int
 		covered         int
 		routes          []string
+		entries         []moderationcoverage.Entry
 	}{manifestVersion: manifest.ManifestVersion}
 	for _, entry := range manifest.Entries {
 		if !entry.Upstream || !entry.ModerationRequired {
 			continue
 		}
+		result.entries = append(result.entries, moderationcoverage.Entry{
+			Method:             entry.Method,
+			Path:               entry.Path,
+			Upstream:           entry.Upstream,
+			ModerationRequired: entry.ModerationRequired,
+			Status:             entry.Status,
+		})
 		result.required++
 		result.routes = append(result.routes, normalizeContentModerationRouteCoverageStatus(entry.Status)+" "+normalizeContentModerationRouteCoverageMethod(entry.Method)+" "+normalizeContentModerationRouteCoveragePath(entry.Path))
 		if normalizeContentModerationRouteCoverageStatus(entry.Status) == "covered" {
@@ -2485,6 +2513,10 @@ func contentModerationRouteCoverageRoutesForTest(entries []contentModerationRout
 }
 
 func TestContentModerationStatusEffectiveProtection(t *testing.T) {
+	coverageFixture := loadContentModerationGatewayCoverageForStatus(t)
+	restoreCoverage := moderationcoverage.ReplaceRegistryForTest(coverageFixture.entries)
+	defer restoreCoverage()
+
 	makeStatus := func(t *testing.T, cfg *ContentModerationConfig, riskEnabled bool, prepare func(*ContentModerationService)) *ContentModerationRuntimeStatus {
 		t.Helper()
 		rawCfg, err := json.Marshal(cfg)

@@ -30,7 +30,8 @@ type moderatedRouteCoverageManifestEntry struct {
 }
 
 func TestModeratedRouteRegistrarMatchesManifestAndRegisteredGatewayRoutes(t *testing.T) {
-	resetModeratedRouteRegistryForTest()
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
 	router := newGatewayRoutesTestRouter()
 
 	actualRoutes := moderatedRoutesRequiringCoverageFromRouter(router)
