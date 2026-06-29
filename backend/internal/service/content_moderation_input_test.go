@@ -282,10 +282,11 @@ func TestExtractContentModerationInput_ModelVisibleJSONScansDataFields(t *testin
 	encodedRiskText := base64.StdEncoding.EncodeToString([]byte("base64 解码后的风险短语"))
 	longEncodedRiskText := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("长 base64 字段解码后的风险短语", 30)))
 	textDataURI := "data:text/plain;base64," + base64.StdEncoding.EncodeToString([]byte("text data uri 解码后的风险短语"))
+	escapedTextDataURI := "data:text/plain,%E9%9D%9Ebase64%20text%20data%20uri%20%E8%A7%A3%E7%A0%81%E5%90%8E%E7%9A%84%E9%A3%8E%E9%99%A9%E7%9F%AD%E8%AF%AD"
 	body := []byte(`{
 		"messages":[
 			{"role":"user","content":"继续"},
-			{"role":"assistant","tool_calls":[{"type":"function","function":{"name":"lookup","arguments":"{\"data\":\"tool arguments data 字段里的风险短语\",\"image\":\"tool arguments image 字段里的风险短语\",\"file\":\"tool arguments file 字段里的风险短语\",\"base64\":\"tool arguments base64 字段里的风险短语\",\"metadata\":{\"data\":{\"source\":\"form\",\"query\":\"object data source 里的风险短语\"}},\"attachment\":{\"file\":{\"url\":\"https://example.com/a.png\",\"caption\":\"file caption 里的风险短语\"}},\"encoded\":\"` + encodedRiskText + `\",\"media\":{\"file\":{\"mime_type\":\"image/png\",\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB\",\"caption\":\"mime data caption 里的风险短语\"},\"image\":{\"media_type\":\"image/png\",\"base64\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB\",\"description\":\"mime base64 description 里的风险短语\"},\"files\":[{\"mime_type\":\"application/pdf\",\"bytes\":\"JVBERi0xLjQK\",\"title\":\"bytes title 里的风险短语\"}]},\"encoded_fields\":{\"base64\":\"` + longEncodedRiskText + `\",\"data\":\"` + textDataURI + `\"}}"}}]}
+			{"role":"assistant","tool_calls":[{"type":"function","function":{"name":"lookup","arguments":"{\"data\":\"tool arguments data 字段里的风险短语\",\"image\":\"tool arguments image 字段里的风险短语\",\"file\":\"tool arguments file 字段里的风险短语\",\"base64\":\"tool arguments base64 字段里的风险短语\",\"metadata\":{\"data\":{\"source\":\"form\",\"query\":\"object data source 里的风险短语\"}},\"attachment\":{\"file\":{\"url\":\"https://example.com/a.png\",\"caption\":\"file caption 里的风险短语\"}},\"encoded\":\"` + encodedRiskText + `\",\"media\":{\"file\":{\"mime_type\":\"image/png\",\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB\",\"caption\":\"mime data caption 里的风险短语\"},\"image\":{\"media_type\":\"image/png\",\"base64\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB\",\"description\":\"mime base64 description 里的风险短语\"},\"files\":[{\"mime_type\":\"application/pdf\",\"bytes\":\"JVBERi0xLjQK\",\"title\":\"bytes title 里的风险短语\"}]},\"text_mime\":{\"plain\":{\"mime_type\":\"text/plain\",\"data\":\"text plain mime data 里的风险短语\"},\"json\":{\"mime_type\":\"application/json\",\"data\":\"{\\\"prompt\\\":\\\"application json data 里的风险短语\\\"}\"},\"problem\":{\"media_type\":\"application/problem+json\",\"data\":\"{\\\"detail\\\":\\\"problem json data 里的风险短语\\\"}\"}},\"encoded_fields\":{\"base64\":\"` + longEncodedRiskText + `\",\"data\":\"` + textDataURI + `\",\"escaped_data\":\"` + escapedTextDataURI + `\"}}"}}]}
 		],
 		"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object","properties":{"data":{"description":"schema data 字段里的风险短语"},"image":{"description":"schema image 字段里的风险短语"},"file":{"description":"schema file 字段里的风险短语"},"base64":{"description":"schema base64 字段里的风险短语"}}}}}]
 	}`)
@@ -308,6 +309,10 @@ func TestExtractContentModerationInput_ModelVisibleJSONScansDataFields(t *testin
 	require.Contains(t, input.Text, "bytes title 里的风险短语")
 	require.Contains(t, input.Text, "长 base64 字段解码后的风险短语")
 	require.Contains(t, input.Text, "text data uri 解码后的风险短语")
+	require.Contains(t, input.Text, "非base64 text data uri 解码后的风险短语")
+	require.Contains(t, input.Text, "text plain mime data 里的风险短语")
+	require.Contains(t, input.Text, "application json data 里的风险短语")
+	require.Contains(t, input.Text, "problem json data 里的风险短语")
 }
 
 func TestExtractContentModerationInput_Base64DecodeSkipsOversizePayload(t *testing.T) {
@@ -323,6 +328,8 @@ func TestExtractContentModerationInput_Base64DecodeSkipsOversizePayload(t *testi
 
 	require.Contains(t, input.Text, "oversize 同级文本风险短语")
 	require.NotContains(t, input.Text, oversizeEncoded)
+	require.True(t, input.Truncated)
+	require.Contains(t, input.TruncateReasons, "oversized_base64_skipped")
 }
 
 func TestExtractContentModerationInput_ResponsesScansToolsAndFunctionCallArguments(t *testing.T) {

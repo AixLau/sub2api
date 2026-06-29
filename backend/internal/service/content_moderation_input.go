@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -565,7 +566,7 @@ func collectToolResultTextValueWithState(value gjson.Result, parts *[]string, im
 		addModerationImage(images, value.Get("base64").String())
 		value.ForEach(func(key, item gjson.Result) bool {
 			keyText := key.String()
-			if shouldSkipToolResultTextField(keyText, item, value) {
+			if shouldSkipToolResultTextField(keyText, item, value, state) {
 				return true
 			}
 			if state.objectKeys < maxToolResultObjectKeys {
@@ -622,23 +623,23 @@ func (state *toolResultTextState) markTruncated(reason string) {
 	state.truncateReasons = append(state.truncateReasons, reason)
 }
 
-func shouldSkipToolResultTextField(key string, item gjson.Result, parent gjson.Result) bool {
+func shouldSkipToolResultTextField(key string, item gjson.Result, parent gjson.Result, state *toolResultTextState) bool {
 	switch strings.ToLower(strings.TrimSpace(key)) {
 	case "image", "images", "image_url", "input_image", "inline_data", "inlinedata", "base64", "bytes", "file", "files", "data":
-		return shouldSkipLikelyBinaryPayloadField(item, parent)
+		return shouldSkipLikelyBinaryPayloadField(item, parent, state)
 	default:
 		return false
 	}
 }
 
-func shouldSkipLikelyBinaryPayloadField(item gjson.Result, parent gjson.Result) bool {
+func shouldSkipLikelyBinaryPayloadField(item gjson.Result, parent gjson.Result, state *toolResultTextState) bool {
 	switch {
 	case item.Type == gjson.String:
-		if _, ok := decodeTextPayload(item.String()); ok {
+		if _, ok := decodeTextPayload(item.String(), state); ok {
 			return false
 		}
 		if hasAnyGJSONField(parent, "media_type", "mediaType", "mime_type", "mimeType") {
-			return true
+			return !isTextualMediaTypeFromValue(parent)
 		}
 		text := strings.TrimSpace(item.String())
 		lower := strings.ToLower(text)
@@ -654,7 +655,7 @@ func shouldSkipLikelyBinaryPayloadField(item gjson.Result, parent gjson.Result) 
 		allMedia := true
 		item.ForEach(func(_, child gjson.Result) bool {
 			seen = true
-			if !shouldSkipLikelyBinaryPayloadField(child, gjson.Result{}) {
+			if !shouldSkipLikelyBinaryPayloadField(child, gjson.Result{}, state) {
 				allMedia = false
 				return false
 			}
@@ -699,7 +700,7 @@ func isLikelyBase64Text(text string) bool {
 }
 
 func addStringOrDecodedBase64Text(parts *[]string, text string, state *toolResultTextState) {
-	decoded, ok := decodeTextPayload(text)
+	decoded, ok := decodeTextPayload(text, state)
 	if ok {
 		addLimitedToolResultText(parts, decoded, state)
 		return
@@ -707,15 +708,15 @@ func addStringOrDecodedBase64Text(parts *[]string, text string, state *toolResul
 	addLimitedToolResultText(parts, text, state)
 }
 
-func decodeTextPayload(text string) (string, bool) {
+func decodeTextPayload(text string, state *toolResultTextState) (string, bool) {
 	normalized := strings.TrimSpace(text)
-	if decoded, ok := decodeTextDataURI(normalized); ok {
+	if decoded, ok := decodeTextDataURI(normalized, state); ok {
 		return decoded, true
 	}
-	return decodeLikelyBase64Text(normalized)
+	return decodeLikelyBase64Text(normalized, state)
 }
 
-func decodeTextDataURI(text string) (string, bool) {
+func decodeTextDataURI(text string, state *toolResultTextState) (string, bool) {
 	if strings.TrimSpace(text) == "" {
 		return "", false
 	}
@@ -724,27 +725,74 @@ func decodeTextDataURI(text string) (string, bool) {
 		return "", false
 	}
 	lowerType := strings.ToLower(strings.TrimSpace(mediatype))
-	if !strings.HasPrefix(lowerType, "data:") || !strings.Contains(lowerType, ";base64") || !isTextualDataURI(lowerType) {
+	if !strings.HasPrefix(lowerType, "data:") || !isTextualDataURI(lowerType) {
 		return "", false
 	}
-	return decodeLikelyBase64Text(payload)
+	if !strings.Contains(lowerType, ";base64") {
+		decoded, err := url.PathUnescape(payload)
+		if err != nil {
+			return "", false
+		}
+		return printableUTF8Text([]byte(decoded))
+	}
+	return decodeLikelyBase64Text(payload, state)
 }
 
 func isTextualDataURI(lowerType string) bool {
-	return strings.HasPrefix(lowerType, "data:text/") ||
-		strings.HasPrefix(lowerType, "data:application/json") ||
-		strings.HasPrefix(lowerType, "data:application/xml") ||
-		strings.HasPrefix(lowerType, "data:application/javascript") ||
-		strings.HasPrefix(lowerType, "data:application/x-javascript")
+	mime := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(lowerType)), "data:")
+	if idx := strings.IndexByte(mime, ';'); idx >= 0 {
+		mime = mime[:idx]
+	}
+	return isTextualMediaType(mime)
 }
 
-func decodeLikelyBase64Text(text string) (string, bool) {
+func isTextualMediaTypeFromValue(value gjson.Result) bool {
+	return isTextualMediaType(firstGJSONString(value, "media_type", "mediaType", "mime_type", "mimeType"))
+}
+
+func firstGJSONString(value gjson.Result, names ...string) string {
+	for _, name := range names {
+		if item := value.Get(name); item.Exists() {
+			return item.String()
+		}
+	}
+	return ""
+}
+
+func isTextualMediaType(mime string) bool {
+	mime = strings.ToLower(strings.TrimSpace(mime))
+	if idx := strings.IndexByte(mime, ';'); idx >= 0 {
+		mime = strings.TrimSpace(mime[:idx])
+	}
+	return strings.HasPrefix(mime, "text/") ||
+		strings.HasPrefix(mime, "application/json") ||
+		strings.HasPrefix(mime, "application/xml") ||
+		strings.HasPrefix(mime, "application/javascript") ||
+		strings.HasPrefix(mime, "application/x-javascript") ||
+		strings.Contains(mime, "+json") ||
+		strings.Contains(mime, "+xml") ||
+		mime == "application/yaml" ||
+		mime == "application/x-yaml" ||
+		mime == "application/graphql" ||
+		mime == "application/csv"
+}
+
+func decodeLikelyBase64Text(text string, state *toolResultTextState) (string, bool) {
 	normalized := strings.TrimSpace(text)
-	if len(normalized) < 16 || len(normalized) > maxBase64DecodeInputBytes || !isLikelyBase64Text(normalized) {
+	if len(normalized) < 16 || !isLikelyBase64Text(normalized) {
+		return "", false
+	}
+	if len(normalized) > maxBase64DecodeInputBytes {
+		if state != nil {
+			state.markTruncated("oversized_base64_skipped")
+		}
 		return "", false
 	}
 	compact := strings.NewReplacer("\r", "", "\n", "", " ", "", "\t", "").Replace(normalized)
 	if len(compact) > maxBase64DecodeInputBytes {
+		if state != nil {
+			state.markTruncated("oversized_base64_skipped")
+		}
 		return "", false
 	}
 	encodings := []*base64.Encoding{
@@ -759,6 +807,9 @@ func decodeLikelyBase64Text(text string) (string, bool) {
 			continue
 		}
 		if len(decoded) > maxBase64DecodeOutputBytes {
+			if state != nil {
+				state.markTruncated("oversized_base64_decoded_skipped")
+			}
 			continue
 		}
 		if text, ok := printableUTF8Text(decoded); ok {
