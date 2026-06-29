@@ -961,6 +961,49 @@ func TestOpenAIEmbeddings_ContentModerationBlocksBeforeScheduling(t *testing.T) 
 	require.Equal(t, "embedding-risk", logs[0].MatchedKeyword)
 }
 
+type moderationGuardSpy struct {
+	decision *service.ContentModerationDecision
+	calls    []moderationGuardInput
+}
+
+func (s *moderationGuardSpy) Check(c *gin.Context, reqLog *zap.Logger, input moderationGuardInput) *service.ContentModerationDecision {
+	s.calls = append(s.calls, input)
+	return s.decision
+}
+
+func TestOpenAIEmbeddings_UsesModerationGuardBeforeScheduling(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	guard := &moderationGuardSpy{decision: &service.ContentModerationDecision{
+		Blocked:    true,
+		StatusCode: http.StatusForbidden,
+		Message:    "guard blocked",
+		Action:     service.ContentModerationActionBlock,
+	}}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	body := `{"model":"text-embedding-3-small","input":"guard-risk"}`
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(body))
+	setGatewayAuthContextForModerationTest(c)
+
+	h := &OpenAIGatewayHandler{
+		moderationGuard:     guard,
+		gatewayService:      &service.OpenAIGatewayService{},
+		billingCacheService: &service.BillingCacheService{},
+		apiKeyService:       &service.APIKeyService{},
+		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(&concurrencyCacheMock{}), SSEPingFormatNone, time.Second),
+	}
+
+	h.Embeddings(c)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Contains(t, w.Body.String(), "guard blocked")
+	require.Len(t, guard.calls, 1)
+	require.Equal(t, service.ContentModerationProtocolOpenAIEmbeddings, guard.calls[0].Protocol)
+	require.Equal(t, "text-embedding-3-small", guard.calls[0].Model)
+	require.JSONEq(t, body, string(guard.calls[0].Body))
+}
+
 func TestOpenAIResponses_ContentModerationBlocksDeepToolSchemaBeforeForward(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	moderationSvc, repo := newBlockingContentModerationServiceForHandlerTest(t, "deep schema risk")

@@ -74,7 +74,17 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, false)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
 
-	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIEmbeddings, reqModel, body); decision != nil && decision.Blocked {
+	guard := h.moderationGuard
+	if guard == nil {
+		guard = newContentModerationGuard(h.contentModerationService)
+	}
+	if decision := guard.Check(c, reqLog, moderationGuardInput{
+		APIKey:   apiKey,
+		Subject:  subject,
+		Protocol: service.ContentModerationProtocolOpenAIEmbeddings,
+		Model:    reqModel,
+		Body:     body,
+	}); decision != nil && decision.Blocked {
 		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
 		return
 	}
