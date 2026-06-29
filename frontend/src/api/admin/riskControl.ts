@@ -252,6 +252,7 @@ export interface ContentModerationEffectiveProtectionStatus {
 
 export interface ContentModerationRouteCoverageStatus {
   manifest_version: string
+  manifest_hash: string
   status: string
   required_routes: number
   covered_routes: number

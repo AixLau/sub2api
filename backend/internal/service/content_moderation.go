@@ -137,7 +137,7 @@ const (
 	contentModerationPolicySchemaVersion           = "2026-06-29.1"
 	contentModerationExtractorVersion              = "v4"
 	contentModerationMinimumSecurityBaselineCommit = "9216c848"
-	contentModerationRouteManifestVersion          = "2026-06-29.1"
+	contentModerationRouteManifestVersion          = "2026-06-29.2"
 	minContentModerationBuildCommitPrefixLen       = 7
 )
 
@@ -607,6 +607,7 @@ type ContentModerationEffectiveProtectionStatus struct {
 
 type ContentModerationRouteCoverageStatus struct {
 	ManifestVersion string   `json:"manifest_version"`
+	ManifestHash    string   `json:"manifest_hash"`
 	Status          string   `json:"status"`
 	RequiredRoutes  int      `json:"required_routes"`
 	CoveredRoutes   int      `json:"covered_routes"`
@@ -1858,12 +1859,15 @@ func contentModerationRouteCoverageStatusFromEntries(entries []contentModeration
 		if !entry.Upstream || !entry.ModerationRequired {
 			continue
 		}
+		normalizedMethod := normalizeContentModerationRouteCoverageMethod(entry.Method)
+		normalizedPath := normalizeContentModerationRouteCoveragePath(entry.Path)
+		normalizedStatus := normalizeContentModerationRouteCoverageStatus(entry.Status)
 		required++
-		if entry.Status == "covered" {
+		if normalizedStatus == "covered" {
 			covered++
 			continue
 		}
-		route := strings.TrimSpace(strings.TrimSpace(entry.Method) + " " + strings.TrimSpace(entry.Path))
+		route := strings.TrimSpace(normalizedMethod + " " + normalizedPath)
 		if route == "" {
 			route = "unknown"
 		}
@@ -1878,11 +1882,37 @@ func contentModerationRouteCoverageStatusFromEntries(entries []contentModeration
 	}
 	return ContentModerationRouteCoverageStatus{
 		ManifestVersion: contentModerationRouteManifestVersion,
+		ManifestHash:    contentModerationRouteCoverageHashFromEntries(entries),
 		Status:          status,
 		RequiredRoutes:  required,
 		CoveredRoutes:   covered,
 		UncoveredRoutes: uncoveredRoutes,
 	}
+}
+
+func contentModerationRouteCoverageHashFromEntries(entries []contentModerationRouteCoverageEntry) string {
+	routes := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.Upstream || !entry.ModerationRequired {
+			continue
+		}
+		routes = append(routes, normalizeContentModerationRouteCoverageStatus(entry.Status)+" "+normalizeContentModerationRouteCoverageMethod(entry.Method)+" "+normalizeContentModerationRouteCoveragePath(entry.Path))
+	}
+	sort.Strings(routes)
+	sum := sha256.Sum256([]byte(strings.Join(routes, "\n")))
+	return hex.EncodeToString(sum[:])
+}
+
+func normalizeContentModerationRouteCoverageMethod(value string) string {
+	return strings.ToUpper(strings.TrimSpace(value))
+}
+
+func normalizeContentModerationRouteCoveragePath(value string) string {
+	return strings.TrimSpace(value)
+}
+
+func normalizeContentModerationRouteCoverageStatus(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func (s *ContentModerationService) buildContentModerationEffectiveProtectionStatus(cfg *ContentModerationConfig, riskEnabled bool, routeCoverage ContentModerationRouteCoverageStatus) ContentModerationEffectiveProtectionStatus {

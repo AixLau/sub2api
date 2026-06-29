@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "manifest_version": "2026-06-29.2",
   "entries": [
     {
       "method": "POST",

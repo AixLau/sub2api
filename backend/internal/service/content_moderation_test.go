@@ -2375,7 +2375,10 @@ func TestContentModerationStatusIncludesRouteCoverage(t *testing.T) {
 	status, err := svc.GetStatus(context.Background())
 	require.NoError(t, err)
 	expectedCoverage := loadContentModerationGatewayCoverageForStatus(t)
-	require.Equal(t, "2026-06-29.1", status.RouteCoverage.ManifestVersion)
+	require.Equal(t, "2026-06-29.2", status.RouteCoverage.ManifestVersion)
+	require.Equal(t, expectedCoverage.manifestVersion, status.RouteCoverage.ManifestVersion)
+	require.NotEmpty(t, status.RouteCoverage.ManifestHash)
+	require.Equal(t, contentModerationRouteCoverageHashFromEntries(contentModerationRouteCoverageEntries), status.RouteCoverage.ManifestHash)
 	require.Equal(t, "covered", status.RouteCoverage.Status)
 	require.Equal(t, expectedCoverage.required, status.RouteCoverage.RequiredRoutes)
 	require.Equal(t, expectedCoverage.covered, status.RouteCoverage.CoveredRoutes)
@@ -2388,18 +2391,18 @@ func TestContentModerationStatusIncludesRouteCoverage(t *testing.T) {
 func TestContentModerationRouteCoverageStatusListsUncoveredRoutes(t *testing.T) {
 	status := contentModerationRouteCoverageStatusFromEntries([]contentModerationRouteCoverageEntry{
 		{
-			Method:             "POST",
-			Path:               "/covered",
+			Method:             " post ",
+			Path:               " /covered ",
 			Upstream:           true,
 			ModerationRequired: true,
-			Status:             "covered",
+			Status:             " COVERED ",
 		},
 		{
-			Method:             "POST",
-			Path:               "/planned",
+			Method:             " post ",
+			Path:               " /planned ",
 			Upstream:           true,
 			ModerationRequired: true,
-			Status:             "planned",
+			Status:             " Planned ",
 		},
 		{
 			Method:             "GET",
@@ -2414,11 +2417,13 @@ func TestContentModerationRouteCoverageStatusListsUncoveredRoutes(t *testing.T) 
 	require.Equal(t, 2, status.RequiredRoutes)
 	require.Equal(t, 1, status.CoveredRoutes)
 	require.Equal(t, []string{"POST /planned"}, status.UncoveredRoutes)
+	require.NotEmpty(t, status.ManifestHash)
 }
 
 type contentModerationGatewayCoverageForStatus struct {
-	SchemaVersion int `json:"schema_version"`
-	Entries       []struct {
+	SchemaVersion   int    `json:"schema_version"`
+	ManifestVersion string `json:"manifest_version"`
+	Entries         []struct {
 		Method             string `json:"method"`
 		Path               string `json:"path"`
 		Upstream           bool   `json:"upstream"`
@@ -2428,9 +2433,10 @@ type contentModerationGatewayCoverageForStatus struct {
 }
 
 func loadContentModerationGatewayCoverageForStatus(t *testing.T) struct {
-	required int
-	covered  int
-	routes   []string
+	manifestVersion string
+	required        int
+	covered         int
+	routes          []string
 } {
 	t.Helper()
 
@@ -2443,19 +2449,21 @@ func loadContentModerationGatewayCoverageForStatus(t *testing.T) struct {
 	var manifest contentModerationGatewayCoverageForStatus
 	require.NoError(t, json.Unmarshal(data, &manifest))
 	require.Equal(t, 1, manifest.SchemaVersion)
+	require.Equal(t, "2026-06-29.2", manifest.ManifestVersion)
 
 	result := struct {
-		required int
-		covered  int
-		routes   []string
-	}{}
+		manifestVersion string
+		required        int
+		covered         int
+		routes          []string
+	}{manifestVersion: manifest.ManifestVersion}
 	for _, entry := range manifest.Entries {
 		if !entry.Upstream || !entry.ModerationRequired {
 			continue
 		}
 		result.required++
-		result.routes = append(result.routes, strings.TrimSpace(entry.Status)+" "+strings.TrimSpace(entry.Method)+" "+strings.TrimSpace(entry.Path))
-		if entry.Status == "covered" {
+		result.routes = append(result.routes, normalizeContentModerationRouteCoverageStatus(entry.Status)+" "+normalizeContentModerationRouteCoverageMethod(entry.Method)+" "+normalizeContentModerationRouteCoveragePath(entry.Path))
+		if normalizeContentModerationRouteCoverageStatus(entry.Status) == "covered" {
 			result.covered++
 		}
 	}
@@ -2470,7 +2478,7 @@ func contentModerationRouteCoverageRoutesForTest(entries []contentModerationRout
 		if !entry.Upstream || !entry.ModerationRequired {
 			continue
 		}
-		routes = append(routes, strings.TrimSpace(entry.Status)+" "+strings.TrimSpace(entry.Method)+" "+strings.TrimSpace(entry.Path))
+		routes = append(routes, normalizeContentModerationRouteCoverageStatus(entry.Status)+" "+normalizeContentModerationRouteCoverageMethod(entry.Method)+" "+normalizeContentModerationRouteCoveragePath(entry.Path))
 	}
 	sort.Strings(routes)
 	return routes
