@@ -225,6 +225,8 @@ export interface ContentModerationSecurityBaselineStatus {
   policy_schema_version: string
   moderation_extractor_version: string
   minimum_security_baseline_commit: string
+  baseline_satisfied: boolean
+  baseline_satisfaction_method: string
 }
 
 export interface ContentModerationEffectiveProtectionStatus {
@@ -238,7 +240,12 @@ export interface ContentModerationEffectiveProtectionStatus {
   model_coverage: string
   engine_mode: ContentModerationEngineMode | string
   external_api_configured: boolean
+  external_api_healthy: boolean
+  external_api_usable_key_count: number
+  external_api_last_error: string
   high_risk_rules_blocking: boolean
+  deterministic_policy_present: boolean
+  high_risk_rules_present: boolean
   unsafe_reasons: string[]
 }
 

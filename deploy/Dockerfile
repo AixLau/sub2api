@@ -44,6 +44,7 @@ FROM ${GOLANG_IMAGE} AS backend-builder
 ARG VERSION=docker
 ARG COMMIT=docker
 ARG DATE
+ARG MODERATION_SECURITY_BASELINE_SATISFIED=false
 ARG GOPROXY
 ARG GOSUMDB
 
@@ -76,6 +77,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # Stage 3: Final Runtime Image
 # -----------------------------------------------------------------------------
 FROM ${ALPINE_IMAGE}
+
+ARG MODERATION_SECURITY_BASELINE_SATISFIED=false
+ENV MODERATION_SECURITY_BASELINE_SATISFIED=${MODERATION_SECURITY_BASELINE_SATISFIED}
 
 # Labels
 LABEL maintainer="Wei-Shaw <github.com/Wei-Shaw>"

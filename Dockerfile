@@ -45,6 +45,7 @@ FROM ${GOLANG_IMAGE} AS backend-builder
 ARG VERSION=
 ARG COMMIT=docker
 ARG DATE
+ARG MODERATION_SECURITY_BASELINE_SATISFIED=false
 ARG GOPROXY
 ARG GOSUMDB
 
@@ -87,6 +88,9 @@ FROM ${POSTGRES_IMAGE} AS pg-client
 # Stage 4: Final Runtime Image
 # -----------------------------------------------------------------------------
 FROM ${ALPINE_IMAGE}
+
+ARG MODERATION_SECURITY_BASELINE_SATISFIED=false
+ENV MODERATION_SECURITY_BASELINE_SATISFIED=${MODERATION_SECURITY_BASELINE_SATISFIED}
 
 # Labels
 LABEL maintainer="Wei-Shaw <github.com/Wei-Shaw>"

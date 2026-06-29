@@ -2264,10 +2264,38 @@ func TestContentModerationStatusIncludesBuildAndSecurityBaseline(t *testing.T) {
 	require.NotEmpty(t, status.SecurityBaseline.PolicySchemaVersion)
 	require.NotEmpty(t, status.SecurityBaseline.ModerationExtractorVersion)
 	require.Equal(t, "9216c848", status.SecurityBaseline.MinimumSecurityBaselineCommit)
+	require.False(t, status.SecurityBaseline.BaselineSatisfied)
+	require.Equal(t, "git_ancestry", status.SecurityBaseline.BaselineSatisfactionMethod)
+	require.Contains(t, status.EffectiveProtection.UnsafeReasons, "build_baseline_unverified")
+	require.Contains(t, status.EffectiveProtection.UnsafeReasons, "build_below_security_baseline")
+
+	svc.SetBuildInfo(BuildInfo{
+		Version:   "v-test",
+		Commit:    "5b056da6",
+		Date:      "2026-06-29T00:00:00Z",
+		BuildType: "release",
+	})
+	status, err = svc.GetStatus(context.Background())
+	require.NoError(t, err)
+	require.True(t, status.SecurityBaseline.BaselineSatisfied)
+	require.NotContains(t, status.EffectiveProtection.UnsafeReasons, "build_below_security_baseline")
+
+	t.Setenv("MODERATION_SECURITY_BASELINE_SATISFIED", "true")
+	svc.SetBuildInfo(BuildInfo{
+		Version:   "v-test",
+		Commit:    "abc1234",
+		Date:      "2026-06-29T00:00:00Z",
+		BuildType: "release",
+	})
+	status, err = svc.GetStatus(context.Background())
+	require.NoError(t, err)
+	require.True(t, status.SecurityBaseline.BaselineSatisfied)
+	require.Equal(t, "ci_attestation", status.SecurityBaseline.BaselineSatisfactionMethod)
+	require.NotContains(t, status.EffectiveProtection.UnsafeReasons, "build_baseline_unverified")
 }
 
 func TestContentModerationStatusEffectiveProtection(t *testing.T) {
-	makeStatus := func(t *testing.T, cfg *ContentModerationConfig, riskEnabled bool) *ContentModerationRuntimeStatus {
+	makeStatus := func(t *testing.T, cfg *ContentModerationConfig, riskEnabled bool, prepare func(*ContentModerationService)) *ContentModerationRuntimeStatus {
 		t.Helper()
 		rawCfg, err := json.Marshal(cfg)
 		require.NoError(t, err)
@@ -2283,6 +2311,10 @@ func TestContentModerationStatusEffectiveProtection(t *testing.T) {
 			nil,
 			nil,
 		)
+		svc.SetBuildInfo(BuildInfo{Commit: "5b056da6"})
+		if prepare != nil {
+			prepare(svc)
+		}
 		status, err := svc.GetStatus(context.Background())
 		require.NoError(t, err)
 		return status
@@ -2306,7 +2338,11 @@ func TestContentModerationStatusEffectiveProtection(t *testing.T) {
 		return cfg
 	}
 
-	status := makeStatus(t, secureConfig(), true)
+	markKeyOK := func(svc *ContentModerationService) {
+		svc.markAPIKeySuccess("sk-test", 12, http.StatusOK)
+	}
+
+	status := makeStatus(t, secureConfig(), true, markKeyOK)
 	require.True(t, status.EffectiveProtection.EffectiveBlocking)
 	require.Empty(t, status.EffectiveProtection.UnsafeReasons)
 	require.True(t, status.EffectiveProtection.RiskControlEnabled)
@@ -2318,13 +2354,16 @@ func TestContentModerationStatusEffectiveProtection(t *testing.T) {
 	require.Equal(t, ContentModerationModelFilterAll, status.EffectiveProtection.ModelCoverage)
 	require.Equal(t, ContentModerationEngineModeHybrid, status.EffectiveProtection.EngineMode)
 	require.True(t, status.EffectiveProtection.ExternalAPIConfigured)
+	require.True(t, status.EffectiveProtection.ExternalAPIHealthy)
+	require.Equal(t, 1, status.EffectiveProtection.ExternalAPIUsableKeyCount)
 	require.True(t, status.EffectiveProtection.HighRiskRulesBlocking)
 
 	tests := []struct {
-		name   string
-		mutate func(*ContentModerationConfig)
-		risk   bool
-		reason string
+		name    string
+		mutate  func(*ContentModerationConfig)
+		prepare func(*ContentModerationService)
+		risk    bool
+		reason  string
 	}{
 		{
 			name:   "risk control disabled",
@@ -2392,6 +2431,38 @@ func TestContentModerationStatusEffectiveProtection(t *testing.T) {
 			reason: "external_api_not_configured",
 		},
 		{
+			name: "external api key frozen for hybrid",
+			prepare: func(svc *ContentModerationService) {
+				svc.markAPIKeyError("sk-test", "unauthorized", 10, http.StatusUnauthorized)
+			},
+			risk:   true,
+			reason: "external_api_all_keys_frozen",
+		},
+		{
+			name:   "external api health unknown for hybrid",
+			risk:   true,
+			reason: "external_api_health_unknown",
+		},
+		{
+			name: "rule only without blocking rules",
+			mutate: func(cfg *ContentModerationConfig) {
+				cfg.EngineMode = ContentModerationEngineModeRuleOnly
+				cfg.APIKeys = nil
+				cfg.KeywordRules = nil
+				cfg.BlockedKeywords = nil
+			},
+			risk:   true,
+			reason: "rule_only_without_blocking_rules",
+		},
+		{
+			name: "api only with unknown external health",
+			mutate: func(cfg *ContentModerationConfig) {
+				cfg.EngineMode = ContentModerationEngineModeAPIOnly
+			},
+			risk:   true,
+			reason: "api_only_without_healthy_external_api",
+		},
+		{
 			name: "high risk rule warn only",
 			mutate: func(cfg *ContentModerationConfig) {
 				cfg.KeywordRules = []ContentModerationKeywordRule{{
@@ -2412,7 +2483,11 @@ func TestContentModerationStatusEffectiveProtection(t *testing.T) {
 			if tt.mutate != nil {
 				tt.mutate(cfg)
 			}
-			status := makeStatus(t, cfg, tt.risk)
+			prepare := tt.prepare
+			if prepare == nil && tt.reason != "external_api_health_unknown" && tt.reason != "api_only_without_healthy_external_api" {
+				prepare = markKeyOK
+			}
+			status := makeStatus(t, cfg, tt.risk, prepare)
 			require.False(t, status.EffectiveProtection.EffectiveBlocking)
 			require.Contains(t, status.EffectiveProtection.UnsafeReasons, tt.reason)
 		})

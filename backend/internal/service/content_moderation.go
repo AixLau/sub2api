@@ -14,6 +14,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
+	"os/exec"
 	"sort"
 	"strings"
 	"sync"
@@ -543,21 +545,28 @@ type ContentModerationSecurityBaselineStatus struct {
 	PolicySchemaVersion           string `json:"policy_schema_version"`
 	ModerationExtractorVersion    string `json:"moderation_extractor_version"`
 	MinimumSecurityBaselineCommit string `json:"minimum_security_baseline_commit"`
+	BaselineSatisfied             bool   `json:"baseline_satisfied"`
+	BaselineSatisfactionMethod    string `json:"baseline_satisfaction_method"`
 }
 
 type ContentModerationEffectiveProtectionStatus struct {
-	EffectiveBlocking     bool     `json:"effective_blocking"`
-	RiskControlEnabled    bool     `json:"risk_control_enabled"`
-	ModerationEnabled     bool     `json:"moderation_enabled"`
-	Mode                  string   `json:"mode"`
-	AuditScope            string   `json:"audit_scope"`
-	PublicFailStrategy    string   `json:"public_fail_strategy"`
-	GroupCoverage         string   `json:"group_coverage"`
-	ModelCoverage         string   `json:"model_coverage"`
-	EngineMode            string   `json:"engine_mode"`
-	ExternalAPIConfigured bool     `json:"external_api_configured"`
-	HighRiskRulesBlocking bool     `json:"high_risk_rules_blocking"`
-	UnsafeReasons         []string `json:"unsafe_reasons"`
+	EffectiveBlocking          bool     `json:"effective_blocking"`
+	RiskControlEnabled         bool     `json:"risk_control_enabled"`
+	ModerationEnabled          bool     `json:"moderation_enabled"`
+	Mode                       string   `json:"mode"`
+	AuditScope                 string   `json:"audit_scope"`
+	PublicFailStrategy         string   `json:"public_fail_strategy"`
+	GroupCoverage              string   `json:"group_coverage"`
+	ModelCoverage              string   `json:"model_coverage"`
+	EngineMode                 string   `json:"engine_mode"`
+	ExternalAPIConfigured      bool     `json:"external_api_configured"`
+	ExternalAPIHealthy         bool     `json:"external_api_healthy"`
+	ExternalAPIUsableKeyCount  int      `json:"external_api_usable_key_count"`
+	ExternalAPILastError       string   `json:"external_api_last_error"`
+	HighRiskRulesBlocking      bool     `json:"high_risk_rules_blocking"`
+	DeterministicPolicyPresent bool     `json:"deterministic_policy_present"`
+	HighRiskRulesPresent       bool     `json:"high_risk_rules_present"`
+	UnsafeReasons              []string `json:"unsafe_reasons"`
 }
 
 type ContentModerationRuntimeStatus struct {
@@ -1621,8 +1630,8 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 	}
 	return &ContentModerationRuntimeStatus{
 		Build:                        s.buildStatus(),
-		SecurityBaseline:             contentModerationSecurityBaselineStatus(),
-		EffectiveProtection:          buildContentModerationEffectiveProtectionStatus(cfg, riskEnabled),
+		SecurityBaseline:             s.contentModerationSecurityBaselineStatus(),
+		EffectiveProtection:          s.buildContentModerationEffectiveProtectionStatus(cfg, riskEnabled),
 		Enabled:                      cfg.Enabled,
 		RiskControlEnabled:           riskEnabled,
 		Mode:                         cfg.Mode,
@@ -1667,15 +1676,52 @@ func (s *ContentModerationService) buildStatus() ContentModerationBuildStatus {
 	}
 }
 
-func contentModerationSecurityBaselineStatus() ContentModerationSecurityBaselineStatus {
+func (s *ContentModerationService) contentModerationSecurityBaselineStatus() ContentModerationSecurityBaselineStatus {
+	satisfied, method := s.contentModerationBaselineSatisfied()
 	return ContentModerationSecurityBaselineStatus{
 		PolicySchemaVersion:           contentModerationPolicySchemaVersion,
 		ModerationExtractorVersion:    contentModerationExtractorVersion,
 		MinimumSecurityBaselineCommit: contentModerationMinimumSecurityBaselineCommit,
+		BaselineSatisfied:             satisfied,
+		BaselineSatisfactionMethod:    method,
 	}
 }
 
-func buildContentModerationEffectiveProtectionStatus(cfg *ContentModerationConfig, riskEnabled bool) ContentModerationEffectiveProtectionStatus {
+func (s *ContentModerationService) contentModerationBaselineSatisfied() (bool, string) {
+	if s == nil {
+		return false, "unknown"
+	}
+	commit := strings.TrimSpace(s.buildInfo.Commit)
+	if commit == "" || strings.EqualFold(commit, "unknown") {
+		return false, "unknown"
+	}
+	if parseContentModerationBoolEnv("MODERATION_SECURITY_BASELINE_SATISFIED") {
+		return true, "ci_attestation"
+	}
+	baseline := strings.TrimSpace(contentModerationMinimumSecurityBaselineCommit)
+	if baseline == "" {
+		return true, "not_required"
+	}
+	if strings.HasPrefix(commit, baseline) || strings.HasPrefix(baseline, commit) {
+		return true, "git_ancestry"
+	}
+	cmd := exec.Command("git", "merge-base", "--is-ancestor", baseline, commit)
+	if err := cmd.Run(); err == nil {
+		return true, "git_ancestry"
+	}
+	return false, "git_ancestry"
+}
+
+func parseContentModerationBoolEnv(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "t", "true", "y", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *ContentModerationService) buildContentModerationEffectiveProtectionStatus(cfg *ContentModerationConfig, riskEnabled bool) ContentModerationEffectiveProtectionStatus {
 	if cfg == nil {
 		cfg = defaultContentModerationConfig()
 	} else {
@@ -1690,10 +1736,21 @@ func buildContentModerationEffectiveProtectionStatus(cfg *ContentModerationConfi
 		groupCoverage = "scoped_groups"
 	}
 	modelCoverage := modelFilter.Type
-	externalAPIConfigured := !cfg.externalModerationRequired() || len(cfg.apiKeys()) > 0
-	highRiskRulesBlocking := contentModerationHighRiskRulesBlocking(cfg.keywordRules())
+	externalAPIRequired := cfg.externalModerationRequired()
+	externalAPIConfigured := !externalAPIRequired || len(cfg.apiKeys()) > 0
+	externalAPIHealth := s.contentModerationExternalAPIHealth(cfg)
+	externalAPIHealthy := !externalAPIRequired || externalAPIHealth.healthy
+	highRiskRulesBlocking, highRiskRulesPresent := contentModerationHighRiskRulesBlocking(cfg.keywordRules())
+	deterministicPolicyPresent := contentModerationDeterministicPolicyPresent(cfg)
+	baselineStatus := s.contentModerationSecurityBaselineStatus()
 
-	unsafeReasons := make([]string, 0, 8)
+	unsafeReasons := make([]string, 0, 12)
+	if strings.TrimSpace(s.buildInfo.Commit) == "" || strings.EqualFold(strings.TrimSpace(s.buildInfo.Commit), "unknown") {
+		unsafeReasons = append(unsafeReasons, "build_commit_unknown")
+	}
+	if !baselineStatus.BaselineSatisfied {
+		unsafeReasons = append(unsafeReasons, "build_baseline_unverified", "build_below_security_baseline")
+	}
 	if !riskEnabled {
 		unsafeReasons = append(unsafeReasons, "risk_control_disabled")
 	}
@@ -1718,39 +1775,129 @@ func buildContentModerationEffectiveProtectionStatus(cfg *ContentModerationConfi
 	if !externalAPIConfigured {
 		unsafeReasons = append(unsafeReasons, "external_api_not_configured")
 	}
+	if externalAPIRequired && externalAPIConfigured {
+		if externalAPIHealth.configuredKeyCount > 0 && externalAPIHealth.frozenKeyCount == externalAPIHealth.configuredKeyCount {
+			unsafeReasons = append(unsafeReasons, "external_api_all_keys_frozen")
+		}
+		if externalAPIHealth.usableKeyCount == 0 {
+			unsafeReasons = append(unsafeReasons, "external_api_no_usable_key")
+		}
+		if externalAPIHealth.unknownKeyCount > 0 {
+			unsafeReasons = append(unsafeReasons, "external_api_health_unknown")
+		}
+		if externalAPIHealth.lastError != "" {
+			unsafeReasons = append(unsafeReasons, "external_api_last_test_failed")
+		}
+	}
 	if !highRiskRulesBlocking {
 		unsafeReasons = append(unsafeReasons, "high_risk_rules_not_blocking")
 	}
+	switch cfg.EngineMode {
+	case ContentModerationEngineModeRuleOnly:
+		if !deterministicPolicyPresent {
+			unsafeReasons = append(unsafeReasons, "rule_only_without_blocking_rules", "no_deterministic_high_risk_policy")
+		}
+	case ContentModerationEngineModeAPIOnly:
+		if !externalAPIHealthy {
+			unsafeReasons = append(unsafeReasons, "api_only_without_healthy_external_api")
+		}
+	case ContentModerationEngineModeHybrid:
+		if !externalAPIHealthy {
+			unsafeReasons = append(unsafeReasons, "hybrid_external_api_unhealthy")
+		}
+	}
 
 	return ContentModerationEffectiveProtectionStatus{
-		EffectiveBlocking:     len(unsafeReasons) == 0,
-		RiskControlEnabled:    riskEnabled,
-		ModerationEnabled:     cfg.Enabled,
-		Mode:                  cfg.Mode,
-		AuditScope:            cfg.AuditScope,
-		PublicFailStrategy:    failStrategy.Default,
-		GroupCoverage:         groupCoverage,
-		ModelCoverage:         modelCoverage,
-		EngineMode:            cfg.EngineMode,
-		ExternalAPIConfigured: externalAPIConfigured,
-		HighRiskRulesBlocking: highRiskRulesBlocking,
-		UnsafeReasons:         unsafeReasons,
+		EffectiveBlocking:          len(unsafeReasons) == 0,
+		RiskControlEnabled:         riskEnabled,
+		ModerationEnabled:          cfg.Enabled,
+		Mode:                       cfg.Mode,
+		AuditScope:                 cfg.AuditScope,
+		PublicFailStrategy:         failStrategy.Default,
+		GroupCoverage:              groupCoverage,
+		ModelCoverage:              modelCoverage,
+		EngineMode:                 cfg.EngineMode,
+		ExternalAPIConfigured:      externalAPIConfigured,
+		ExternalAPIHealthy:         externalAPIHealthy,
+		ExternalAPIUsableKeyCount:  externalAPIHealth.usableKeyCount,
+		ExternalAPILastError:       externalAPIHealth.lastError,
+		HighRiskRulesBlocking:      highRiskRulesBlocking,
+		DeterministicPolicyPresent: deterministicPolicyPresent,
+		HighRiskRulesPresent:       highRiskRulesPresent,
+		UnsafeReasons:              unsafeReasons,
 	}
 }
 
-func contentModerationHighRiskRulesBlocking(rules []ContentModerationKeywordRule) bool {
+type contentModerationExternalAPIHealthStatus struct {
+	configuredKeyCount int
+	usableKeyCount     int
+	frozenKeyCount     int
+	unknownKeyCount    int
+	healthy            bool
+	lastError          string
+}
+
+func (s *ContentModerationService) contentModerationExternalAPIHealth(cfg *ContentModerationConfig) contentModerationExternalAPIHealthStatus {
+	keys := cfg.apiKeys()
+	status := contentModerationExternalAPIHealthStatus{configuredKeyCount: len(keys)}
+	if len(keys) == 0 {
+		return status
+	}
+	for _, item := range s.apiKeyStatuses(keys) {
+		switch item.Status {
+		case "ok":
+			status.usableKeyCount++
+		case "frozen":
+			status.frozenKeyCount++
+			if status.lastError == "" {
+				status.lastError = item.LastError
+			}
+		case "error":
+			if status.lastError == "" {
+				status.lastError = item.LastError
+			}
+		default:
+			status.unknownKeyCount++
+		}
+	}
+	status.healthy = status.usableKeyCount > 0
+	return status
+}
+
+func contentModerationHighRiskRulesBlocking(rules []ContentModerationKeywordRule) (bool, bool) {
+	present := false
 	for _, rule := range normalizeContentModerationKeywordRules(rules) {
 		if !rule.Enabled {
 			continue
 		}
 		switch rule.Severity {
 		case ContentModerationKeywordSeverityHigh, ContentModerationKeywordSeverityCritical:
+			present = true
 			if rule.Action != ContentModerationKeywordActionBlock {
-				return false
+				return false, present
 			}
 		}
 	}
-	return true
+	return true, present
+}
+
+func contentModerationDeterministicPolicyPresent(cfg *ContentModerationConfig) bool {
+	if cfg == nil {
+		return false
+	}
+	if len(cfg.BlockedKeywords) > 0 {
+		return true
+	}
+	for _, rule := range normalizeContentModerationKeywordRules(cfg.KeywordRules) {
+		if !rule.Enabled || rule.Action != ContentModerationKeywordActionBlock {
+			continue
+		}
+		switch rule.Severity {
+		case ContentModerationKeywordSeverityHigh, ContentModerationKeywordSeverityCritical:
+			return true
+		}
+	}
+	return false
 }
 
 func (s *ContentModerationService) cleanupWorker() {
