@@ -1,0 +1,83 @@
+package handler
+
+import (
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+)
+
+func TestOpenAIEntryPointsUseModerationGuardForOpenAIProtocols(t *testing.T) {
+	files, err := filepath.Glob("openai*.go")
+	if err != nil {
+		t.Fatalf("glob OpenAI handler files: %v", err)
+	}
+	sort.Strings(files)
+
+	var violations []string
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+
+		src, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
+
+		fset := token.NewFileSet()
+		parsed, err := parser.ParseFile(fset, file, src, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", file, err)
+		}
+
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || selector.Sel.Name != "checkContentModeration" {
+				return true
+			}
+
+			protocol := contentModerationProtocolArg(call)
+			if strings.HasPrefix(protocol, "ContentModerationProtocolOpenAI") {
+				pos := fset.Position(selector.Pos())
+				violations = append(violations, fmt.Sprintf(
+					"%s:%d calls h.checkContentModeration with service.%s",
+					file,
+					pos.Line,
+					protocol,
+				))
+			}
+
+			return true
+		})
+	}
+
+	if len(violations) > 0 {
+		t.Fatalf(
+			"OpenAI protocol moderation must go through moderationGuard; direct calls are only allowed for non-OpenAI protocols such as ContentModerationProtocolAnthropicMessages:\n%s",
+			strings.Join(violations, "\n"),
+		)
+	}
+}
+
+func contentModerationProtocolArg(call *ast.CallExpr) string {
+	for _, arg := range call.Args {
+		selector, ok := arg.(*ast.SelectorExpr)
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(selector.Sel.Name, "ContentModerationProtocol") {
+			return selector.Sel.Name
+		}
+	}
+	return ""
+}

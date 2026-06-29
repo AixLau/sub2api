@@ -1318,7 +1318,17 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, true)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeWSV2))
 
-	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, reqModel, firstMessage); decision != nil && decision.Blocked {
+	guard := h.moderationGuard
+	if guard == nil {
+		guard = newContentModerationGuard(h.contentModerationService)
+	}
+	if decision := guard.Check(c, reqLog, moderationGuardInput{
+		APIKey:   apiKey,
+		Subject:  subject,
+		Protocol: service.ContentModerationProtocolOpenAIResponses,
+		Model:    reqModel,
+		Body:     firstMessage,
+	}); decision != nil && decision.Blocked {
 		writeContentModerationWSError(ctx, wsConn, decision)
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, decision.Message)
 		return
@@ -1518,7 +1528,17 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if model == "" {
 					model = reqModel
 				}
-				if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, model, payload); decision != nil && decision.Blocked {
+				guard := h.moderationGuard
+				if guard == nil {
+					guard = newContentModerationGuard(h.contentModerationService)
+				}
+				if decision := guard.Check(c, reqLog, moderationGuardInput{
+					APIKey:   apiKey,
+					Subject:  subject,
+					Protocol: service.ContentModerationProtocolOpenAIResponses,
+					Model:    model,
+					Body:     payload,
+				}); decision != nil && decision.Blocked {
 					writeContentModerationWSError(ctx, wsConn, decision)
 					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, decision.Message, nil)
 				}
