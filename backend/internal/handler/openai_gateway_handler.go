@@ -253,7 +253,17 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 
-	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, reqModel, body); decision != nil && decision.Blocked {
+	guard := h.moderationGuard
+	if guard == nil {
+		guard = newContentModerationGuard(h.contentModerationService)
+	}
+	if decision := guard.Check(c, reqLog, moderationGuardInput{
+		APIKey:   apiKey,
+		Subject:  subject,
+		Protocol: service.ContentModerationProtocolOpenAIResponses,
+		Model:    reqModel,
+		Body:     body,
+	}); decision != nil && decision.Blocked {
 		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
 		return
 	}
