@@ -9,6 +9,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -2250,7 +2253,7 @@ func TestContentModerationStatusIncludesBuildAndSecurityBaseline(t *testing.T) {
 	)
 	svc.SetBuildInfo(BuildInfo{
 		Version:   "v-test",
-		Commit:    "abc1234",
+		Commit:    "abcxyz",
 		Date:      "2026-06-29T00:00:00Z",
 		BuildType: "release",
 	})
@@ -2258,29 +2261,81 @@ func TestContentModerationStatusIncludesBuildAndSecurityBaseline(t *testing.T) {
 	status, err := svc.GetStatus(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "v-test", status.Build.Version)
-	require.Equal(t, "abc1234", status.Build.Commit)
+	require.Equal(t, "abcxyz", status.Build.Commit)
 	require.Equal(t, "2026-06-29T00:00:00Z", status.Build.Date)
 	require.Equal(t, "release", status.Build.BuildType)
 	require.NotEmpty(t, status.SecurityBaseline.PolicySchemaVersion)
 	require.NotEmpty(t, status.SecurityBaseline.ModerationExtractorVersion)
 	require.Equal(t, "9216c848", status.SecurityBaseline.MinimumSecurityBaselineCommit)
 	require.False(t, status.SecurityBaseline.BaselineSatisfied)
-	require.Equal(t, "git_ancestry", status.SecurityBaseline.BaselineSatisfactionMethod)
+	require.Equal(t, "invalid_commit", status.SecurityBaseline.BaselineSatisfactionMethod)
+	require.Contains(t, status.EffectiveProtection.UnsafeReasons, "build_commit_invalid")
+	require.NotContains(t, status.EffectiveProtection.UnsafeReasons, "build_attestation_without_valid_commit")
 	require.Contains(t, status.EffectiveProtection.UnsafeReasons, "build_baseline_unverified")
 	require.Contains(t, status.EffectiveProtection.UnsafeReasons, "build_below_security_baseline")
 
 	svc.SetBuildInfo(BuildInfo{
 		Version:   "v-test",
-		Commit:    "5b056da6",
+		Commit:    "9216c84",
 		Date:      "2026-06-29T00:00:00Z",
 		BuildType: "release",
 	})
 	status, err = svc.GetStatus(context.Background())
 	require.NoError(t, err)
 	require.True(t, status.SecurityBaseline.BaselineSatisfied)
+	require.Equal(t, "commit_prefix", status.SecurityBaseline.BaselineSatisfactionMethod)
 	require.NotContains(t, status.EffectiveProtection.UnsafeReasons, "build_below_security_baseline")
 
+	svc.SetBuildInfo(BuildInfo{
+		Version:   "v-test",
+		Commit:    "9216",
+		Date:      "2026-06-29T00:00:00Z",
+		BuildType: "release",
+	})
+	status, err = svc.GetStatus(context.Background())
+	require.NoError(t, err)
+	require.False(t, status.SecurityBaseline.BaselineSatisfied)
+	require.Contains(t, status.EffectiveProtection.UnsafeReasons, "build_commit_invalid")
+	require.NotContains(t, status.EffectiveProtection.UnsafeReasons, "build_attestation_without_valid_commit")
+
 	t.Setenv("MODERATION_SECURITY_BASELINE_SATISFIED", "true")
+	svc.SetBuildInfo(BuildInfo{
+		Version:   "v-test",
+		Commit:    "docker",
+		Date:      "2026-06-29T00:00:00Z",
+		BuildType: "release",
+	})
+	status, err = svc.GetStatus(context.Background())
+	require.NoError(t, err)
+	require.False(t, status.SecurityBaseline.BaselineSatisfied)
+	require.Equal(t, "placeholder_commit", status.SecurityBaseline.BaselineSatisfactionMethod)
+	require.Contains(t, status.EffectiveProtection.UnsafeReasons, "build_commit_placeholder")
+	require.Contains(t, status.EffectiveProtection.UnsafeReasons, "build_attestation_without_valid_commit")
+
+	svc.SetBuildInfo(BuildInfo{
+		Version:   "v-test",
+		Commit:    "abcxyz",
+		Date:      "2026-06-29T00:00:00Z",
+		BuildType: "release",
+	})
+	status, err = svc.GetStatus(context.Background())
+	require.NoError(t, err)
+	require.False(t, status.SecurityBaseline.BaselineSatisfied)
+	require.Contains(t, status.EffectiveProtection.UnsafeReasons, "build_commit_invalid")
+	require.Contains(t, status.EffectiveProtection.UnsafeReasons, "build_attestation_without_valid_commit")
+
+	svc.SetBuildInfo(BuildInfo{
+		Version:   "v-test",
+		Commit:    "abc1234",
+		Date:      "2026-06-29T00:00:00Z",
+		BuildType: "source",
+	})
+	status, err = svc.GetStatus(context.Background())
+	require.NoError(t, err)
+	require.False(t, status.SecurityBaseline.BaselineSatisfied)
+	require.Equal(t, "invalid_attestation", status.SecurityBaseline.BaselineSatisfactionMethod)
+	require.Contains(t, status.EffectiveProtection.UnsafeReasons, "build_attestation_without_valid_commit")
+
 	svc.SetBuildInfo(BuildInfo{
 		Version:   "v-test",
 		Commit:    "abc1234",
@@ -2292,6 +2347,82 @@ func TestContentModerationStatusIncludesBuildAndSecurityBaseline(t *testing.T) {
 	require.True(t, status.SecurityBaseline.BaselineSatisfied)
 	require.Equal(t, "ci_attestation", status.SecurityBaseline.BaselineSatisfactionMethod)
 	require.NotContains(t, status.EffectiveProtection.UnsafeReasons, "build_baseline_unverified")
+}
+
+func TestContentModerationStatusIncludesRouteCoverage(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.BlockedKeywords = []string{"risk"}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetBuildInfo(BuildInfo{Commit: "9216c84", BuildType: "release"})
+
+	status, err := svc.GetStatus(context.Background())
+	require.NoError(t, err)
+	expectedCoverage := loadContentModerationGatewayCoverageForStatus(t)
+	require.Equal(t, "2026-06-29.1", status.RouteCoverage.ManifestVersion)
+	require.Equal(t, "covered", status.RouteCoverage.Status)
+	require.Equal(t, expectedCoverage.required, status.RouteCoverage.RequiredRoutes)
+	require.Equal(t, expectedCoverage.covered, status.RouteCoverage.CoveredRoutes)
+	require.Empty(t, status.RouteCoverage.UncoveredRoutes)
+	require.NotContains(t, status.EffectiveProtection.UnsafeReasons, "route_coverage_unknown")
+	require.NotContains(t, status.EffectiveProtection.UnsafeReasons, "uncovered_upstream_routes")
+}
+
+type contentModerationGatewayCoverageForStatus struct {
+	SchemaVersion int `json:"schema_version"`
+	Entries       []struct {
+		Upstream           bool   `json:"upstream"`
+		ModerationRequired bool   `json:"moderation_required"`
+		Status             string `json:"status"`
+	} `json:"entries"`
+}
+
+func loadContentModerationGatewayCoverageForStatus(t *testing.T) struct {
+	required int
+	covered  int
+} {
+	t.Helper()
+
+	_, file, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", ".."))
+	data, err := os.ReadFile(filepath.Join(repoRoot, "docs", "risk-control", "content-moderation-gateway-coverage.json"))
+	require.NoError(t, err)
+
+	var manifest contentModerationGatewayCoverageForStatus
+	require.NoError(t, json.Unmarshal(data, &manifest))
+	require.Equal(t, 1, manifest.SchemaVersion)
+
+	result := struct {
+		required int
+		covered  int
+	}{}
+	for _, entry := range manifest.Entries {
+		if !entry.Upstream || !entry.ModerationRequired {
+			continue
+		}
+		result.required++
+		if entry.Status == "covered" {
+			result.covered++
+		}
+	}
+	require.NotZero(t, result.required)
+	return result
 }
 
 func TestContentModerationStatusEffectiveProtection(t *testing.T) {
@@ -2311,7 +2442,7 @@ func TestContentModerationStatusEffectiveProtection(t *testing.T) {
 			nil,
 			nil,
 		)
-		svc.SetBuildInfo(BuildInfo{Commit: "5b056da6"})
+		svc.SetBuildInfo(BuildInfo{Commit: "9216c84", BuildType: "release"})
 		if prepare != nil {
 			prepare(svc)
 		}

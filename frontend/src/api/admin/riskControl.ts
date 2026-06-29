@@ -183,6 +183,7 @@ export interface ContentModerationRuntimeStatus {
   build: ContentModerationBuildStatus
   security_baseline: ContentModerationSecurityBaselineStatus
   effective_protection: ContentModerationEffectiveProtectionStatus
+  route_coverage: ContentModerationRouteCoverageStatus
   enabled: boolean
   risk_control_enabled: boolean
   mode: ModerationMode
@@ -247,6 +248,14 @@ export interface ContentModerationEffectiveProtectionStatus {
   deterministic_policy_present: boolean
   high_risk_rules_present: boolean
   unsafe_reasons: string[]
+}
+
+export interface ContentModerationRouteCoverageStatus {
+  manifest_version: string
+  status: string
+  required_routes: number
+  covered_routes: number
+  uncovered_routes: string[]
 }
 
 export interface ContentModerationAPIKeyLoad {

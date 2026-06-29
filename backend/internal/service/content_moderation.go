@@ -137,6 +137,10 @@ const (
 	contentModerationPolicySchemaVersion           = "2026-06-29.1"
 	contentModerationExtractorVersion              = "v4"
 	contentModerationMinimumSecurityBaselineCommit = "9216c848"
+	contentModerationRouteManifestVersion          = "2026-06-29.1"
+	contentModerationRouteRequiredCount            = 21
+	contentModerationRouteCoveredCount             = 21
+	minContentModerationBuildCommitPrefixLen       = 7
 )
 
 var contentModerationCategoryOrder = []string{
@@ -569,10 +573,19 @@ type ContentModerationEffectiveProtectionStatus struct {
 	UnsafeReasons              []string `json:"unsafe_reasons"`
 }
 
+type ContentModerationRouteCoverageStatus struct {
+	ManifestVersion string   `json:"manifest_version"`
+	Status          string   `json:"status"`
+	RequiredRoutes  int      `json:"required_routes"`
+	CoveredRoutes   int      `json:"covered_routes"`
+	UncoveredRoutes []string `json:"uncovered_routes"`
+}
+
 type ContentModerationRuntimeStatus struct {
 	Build                        ContentModerationBuildStatus               `json:"build"`
 	SecurityBaseline             ContentModerationSecurityBaselineStatus    `json:"security_baseline"`
 	EffectiveProtection          ContentModerationEffectiveProtectionStatus `json:"effective_protection"`
+	RouteCoverage                ContentModerationRouteCoverageStatus       `json:"route_coverage"`
 	Enabled                      bool                                       `json:"enabled"`
 	RiskControlEnabled           bool                                       `json:"risk_control_enabled"`
 	Mode                         string                                     `json:"mode"`
@@ -646,6 +659,9 @@ type ContentModerationService struct {
 	authCacheInvalidator     APIKeyAuthCacheInvalidator
 	emailService             *EmailService
 	buildInfo                BuildInfo
+	baselineStatusMu         sync.Mutex
+	baselineStatusValid      bool
+	baselineStatus           ContentModerationSecurityBaselineStatus
 	httpClient               *http.Client
 	asyncQueue               chan contentModerationTask
 	workerCount              int
@@ -733,6 +749,10 @@ func (s *ContentModerationService) SetBuildInfo(buildInfo BuildInfo) {
 		return
 	}
 	s.buildInfo = buildInfo
+	s.baselineStatusMu.Lock()
+	s.baselineStatusValid = false
+	s.baselineStatus = ContentModerationSecurityBaselineStatus{}
+	s.baselineStatusMu.Unlock()
 }
 
 func (s *ContentModerationService) GetConfig(ctx context.Context) (*ContentModerationConfigView, error) {
@@ -1628,10 +1648,12 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 		t := time.Unix(unix, 0)
 		lastCleanupAt = &t
 	}
+	routeCoverage := contentModerationRouteCoverageStatus()
 	return &ContentModerationRuntimeStatus{
 		Build:                        s.buildStatus(),
 		SecurityBaseline:             s.contentModerationSecurityBaselineStatus(),
-		EffectiveProtection:          s.buildContentModerationEffectiveProtectionStatus(cfg, riskEnabled),
+		EffectiveProtection:          s.buildContentModerationEffectiveProtectionStatus(cfg, riskEnabled, routeCoverage),
+		RouteCoverage:                routeCoverage,
 		Enabled:                      cfg.Enabled,
 		RiskControlEnabled:           riskEnabled,
 		Mode:                         cfg.Mode,
@@ -1677,39 +1699,110 @@ func (s *ContentModerationService) buildStatus() ContentModerationBuildStatus {
 }
 
 func (s *ContentModerationService) contentModerationSecurityBaselineStatus() ContentModerationSecurityBaselineStatus {
-	satisfied, method := s.contentModerationBaselineSatisfied()
-	return ContentModerationSecurityBaselineStatus{
+	if s == nil {
+		return ContentModerationSecurityBaselineStatus{
+			PolicySchemaVersion:           contentModerationPolicySchemaVersion,
+			ModerationExtractorVersion:    contentModerationExtractorVersion,
+			MinimumSecurityBaselineCommit: contentModerationMinimumSecurityBaselineCommit,
+			BaselineSatisfied:             false,
+			BaselineSatisfactionMethod:    "unknown",
+		}
+	}
+	s.baselineStatusMu.Lock()
+	defer s.baselineStatusMu.Unlock()
+	if s.baselineStatusValid {
+		return s.baselineStatus
+	}
+	satisfied, method := s.contentModerationBaselineSatisfiedLocked()
+	s.baselineStatus = ContentModerationSecurityBaselineStatus{
 		PolicySchemaVersion:           contentModerationPolicySchemaVersion,
 		ModerationExtractorVersion:    contentModerationExtractorVersion,
 		MinimumSecurityBaselineCommit: contentModerationMinimumSecurityBaselineCommit,
 		BaselineSatisfied:             satisfied,
 		BaselineSatisfactionMethod:    method,
 	}
+	s.baselineStatusValid = true
+	return s.baselineStatus
 }
 
-func (s *ContentModerationService) contentModerationBaselineSatisfied() (bool, string) {
-	if s == nil {
+func (s *ContentModerationService) contentModerationBaselineSatisfiedLocked() (bool, string) {
+	commit := strings.TrimSpace(s.buildInfo.Commit)
+	if isUnknownContentModerationBuildCommit(commit) {
 		return false, "unknown"
 	}
-	commit := strings.TrimSpace(s.buildInfo.Commit)
-	if commit == "" || strings.EqualFold(commit, "unknown") {
-		return false, "unknown"
+	if isPlaceholderContentModerationBuildCommit(commit) {
+		return false, "placeholder_commit"
+	}
+	if !isValidContentModerationBuildCommit(commit) {
+		return false, "invalid_commit"
 	}
 	if parseContentModerationBoolEnv("MODERATION_SECURITY_BASELINE_SATISFIED") {
+		if !isReleaseContentModerationBuildType(s.buildInfo.BuildType) {
+			return false, "invalid_attestation"
+		}
 		return true, "ci_attestation"
 	}
 	baseline := strings.TrimSpace(contentModerationMinimumSecurityBaselineCommit)
 	if baseline == "" {
 		return true, "not_required"
 	}
-	if strings.HasPrefix(commit, baseline) || strings.HasPrefix(baseline, commit) {
-		return true, "git_ancestry"
+	if contentModerationCommitPrefixMatches(commit, baseline) {
+		return true, "commit_prefix"
 	}
 	cmd := exec.Command("git", "merge-base", "--is-ancestor", baseline, commit)
 	if err := cmd.Run(); err == nil {
 		return true, "git_ancestry"
 	}
 	return false, "git_ancestry"
+}
+
+func isUnknownContentModerationBuildCommit(commit string) bool {
+	switch strings.ToLower(strings.TrimSpace(commit)) {
+	case "", "unknown":
+		return true
+	default:
+		return false
+	}
+}
+
+func isPlaceholderContentModerationBuildCommit(commit string) bool {
+	switch strings.ToLower(strings.TrimSpace(commit)) {
+	case "docker", "dev", "local":
+		return true
+	default:
+		return false
+	}
+}
+
+func isValidContentModerationBuildCommit(commit string) bool {
+	commit = strings.ToLower(strings.TrimSpace(commit))
+	if len(commit) < minContentModerationBuildCommitPrefixLen || len(commit) > 40 {
+		return false
+	}
+	for _, r := range commit {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func isReleaseContentModerationBuildType(buildType string) bool {
+	switch strings.ToLower(strings.TrimSpace(buildType)) {
+	case "release", "production":
+		return true
+	default:
+		return false
+	}
+}
+
+func contentModerationCommitPrefixMatches(commit string, baseline string) bool {
+	commit = strings.ToLower(strings.TrimSpace(commit))
+	baseline = strings.ToLower(strings.TrimSpace(baseline))
+	if len(commit) < minContentModerationBuildCommitPrefixLen || len(baseline) < minContentModerationBuildCommitPrefixLen {
+		return false
+	}
+	return strings.HasPrefix(commit, baseline) || strings.HasPrefix(baseline, commit)
 }
 
 func parseContentModerationBoolEnv(key string) bool {
@@ -1721,7 +1814,23 @@ func parseContentModerationBoolEnv(key string) bool {
 	}
 }
 
-func (s *ContentModerationService) buildContentModerationEffectiveProtectionStatus(cfg *ContentModerationConfig, riskEnabled bool) ContentModerationEffectiveProtectionStatus {
+func contentModerationRouteCoverageStatus() ContentModerationRouteCoverageStatus {
+	status := "covered"
+	if contentModerationRouteRequiredCount == 0 {
+		status = "unknown"
+	} else if contentModerationRouteCoveredCount != contentModerationRouteRequiredCount {
+		status = "mismatch"
+	}
+	return ContentModerationRouteCoverageStatus{
+		ManifestVersion: contentModerationRouteManifestVersion,
+		Status:          status,
+		RequiredRoutes:  contentModerationRouteRequiredCount,
+		CoveredRoutes:   contentModerationRouteCoveredCount,
+		UncoveredRoutes: []string{},
+	}
+}
+
+func (s *ContentModerationService) buildContentModerationEffectiveProtectionStatus(cfg *ContentModerationConfig, riskEnabled bool, routeCoverage ContentModerationRouteCoverageStatus) ContentModerationEffectiveProtectionStatus {
 	if cfg == nil {
 		cfg = defaultContentModerationConfig()
 	} else {
@@ -1743,13 +1852,33 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 	highRiskRulesBlocking, highRiskRulesPresent := contentModerationHighRiskRulesBlocking(cfg.keywordRules())
 	deterministicPolicyPresent := contentModerationDeterministicPolicyPresent(cfg)
 	baselineStatus := s.contentModerationSecurityBaselineStatus()
+	buildCommit := strings.TrimSpace(s.buildInfo.Commit)
+	attestationRequested := parseContentModerationBoolEnv("MODERATION_SECURITY_BASELINE_SATISFIED")
 
 	unsafeReasons := make([]string, 0, 12)
-	if strings.TrimSpace(s.buildInfo.Commit) == "" || strings.EqualFold(strings.TrimSpace(s.buildInfo.Commit), "unknown") {
+	if isUnknownContentModerationBuildCommit(buildCommit) {
 		unsafeReasons = append(unsafeReasons, "build_commit_unknown")
+	}
+	if isPlaceholderContentModerationBuildCommit(buildCommit) {
+		unsafeReasons = append(unsafeReasons, "build_commit_placeholder")
+	}
+	if !isUnknownContentModerationBuildCommit(buildCommit) && !isPlaceholderContentModerationBuildCommit(buildCommit) && !isValidContentModerationBuildCommit(buildCommit) {
+		unsafeReasons = append(unsafeReasons, "build_commit_invalid")
+	}
+	if attestationRequested && (!isValidContentModerationBuildCommit(buildCommit) || !isReleaseContentModerationBuildType(s.buildInfo.BuildType)) {
+		unsafeReasons = append(unsafeReasons, "build_attestation_without_valid_commit")
 	}
 	if !baselineStatus.BaselineSatisfied {
 		unsafeReasons = append(unsafeReasons, "build_baseline_unverified", "build_below_security_baseline")
+	}
+	if routeCoverage.Status == "unknown" {
+		unsafeReasons = append(unsafeReasons, "route_coverage_unknown")
+	}
+	if routeCoverage.Status == "mismatch" {
+		unsafeReasons = append(unsafeReasons, "route_manifest_mismatch")
+	}
+	if len(routeCoverage.UncoveredRoutes) > 0 {
+		unsafeReasons = append(unsafeReasons, "uncovered_upstream_routes")
 	}
 	if !riskEnabled {
 		unsafeReasons = append(unsafeReasons, "risk_control_disabled")
