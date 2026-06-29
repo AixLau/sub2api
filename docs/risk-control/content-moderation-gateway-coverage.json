@@ -193,6 +193,26 @@
     },
     {
       "method": "POST",
+      "path": "/images/generations",
+      "handler": "OpenAIGatewayHandler.Images",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_images",
+      "status": "covered",
+      "review_reason": "Root image generation alias reaches the same Images handler and moderation hook before upstream forwarding."
+    },
+    {
+      "method": "POST",
+      "path": "/images/edits",
+      "handler": "OpenAIGatewayHandler.Images",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_images",
+      "status": "covered",
+      "review_reason": "Root image edit alias reaches the same Images handler and moderation hook before upstream forwarding."
+    },
+    {
+      "method": "POST",
       "path": "/v1beta/models/*modelAction",
       "handler": "GatewayHandler.GeminiV1BetaModels",
       "upstream": true,

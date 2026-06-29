@@ -80,6 +80,8 @@ func TestGatewayModerationCoverageManifestDefinesCriticalUpstreamEntrypoints(t *
 		"POST /embeddings":                             "openai_embeddings",
 		"POST /v1/images/generations":                  "openai_images",
 		"POST /v1/images/edits":                        "openai_images",
+		"POST /images/generations":                     "openai_images",
+		"POST /images/edits":                           "openai_images",
 		"POST /v1beta/models/*modelAction":             "gemini",
 		"POST /antigravity/v1beta/models/*modelAction": "gemini",
 	}

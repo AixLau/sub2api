@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -2378,14 +2379,48 @@ func TestContentModerationStatusIncludesRouteCoverage(t *testing.T) {
 	require.Equal(t, "covered", status.RouteCoverage.Status)
 	require.Equal(t, expectedCoverage.required, status.RouteCoverage.RequiredRoutes)
 	require.Equal(t, expectedCoverage.covered, status.RouteCoverage.CoveredRoutes)
+	require.Equal(t, expectedCoverage.routes, contentModerationRouteCoverageRoutesForTest(contentModerationRouteCoverageEntries))
 	require.Empty(t, status.RouteCoverage.UncoveredRoutes)
 	require.NotContains(t, status.EffectiveProtection.UnsafeReasons, "route_coverage_unknown")
 	require.NotContains(t, status.EffectiveProtection.UnsafeReasons, "uncovered_upstream_routes")
 }
 
+func TestContentModerationRouteCoverageStatusListsUncoveredRoutes(t *testing.T) {
+	status := contentModerationRouteCoverageStatusFromEntries([]contentModerationRouteCoverageEntry{
+		{
+			Method:             "POST",
+			Path:               "/covered",
+			Upstream:           true,
+			ModerationRequired: true,
+			Status:             "covered",
+		},
+		{
+			Method:             "POST",
+			Path:               "/planned",
+			Upstream:           true,
+			ModerationRequired: true,
+			Status:             "planned",
+		},
+		{
+			Method:             "GET",
+			Path:               "/models",
+			Upstream:           false,
+			ModerationRequired: false,
+			Status:             "intentional_no_audit",
+		},
+	})
+
+	require.Equal(t, "mismatch", status.Status)
+	require.Equal(t, 2, status.RequiredRoutes)
+	require.Equal(t, 1, status.CoveredRoutes)
+	require.Equal(t, []string{"POST /planned"}, status.UncoveredRoutes)
+}
+
 type contentModerationGatewayCoverageForStatus struct {
 	SchemaVersion int `json:"schema_version"`
 	Entries       []struct {
+		Method             string `json:"method"`
+		Path               string `json:"path"`
 		Upstream           bool   `json:"upstream"`
 		ModerationRequired bool   `json:"moderation_required"`
 		Status             string `json:"status"`
@@ -2395,6 +2430,7 @@ type contentModerationGatewayCoverageForStatus struct {
 func loadContentModerationGatewayCoverageForStatus(t *testing.T) struct {
 	required int
 	covered  int
+	routes   []string
 } {
 	t.Helper()
 
@@ -2411,18 +2447,33 @@ func loadContentModerationGatewayCoverageForStatus(t *testing.T) struct {
 	result := struct {
 		required int
 		covered  int
+		routes   []string
 	}{}
 	for _, entry := range manifest.Entries {
 		if !entry.Upstream || !entry.ModerationRequired {
 			continue
 		}
 		result.required++
+		result.routes = append(result.routes, strings.TrimSpace(entry.Status)+" "+strings.TrimSpace(entry.Method)+" "+strings.TrimSpace(entry.Path))
 		if entry.Status == "covered" {
 			result.covered++
 		}
 	}
 	require.NotZero(t, result.required)
+	sort.Strings(result.routes)
 	return result
+}
+
+func contentModerationRouteCoverageRoutesForTest(entries []contentModerationRouteCoverageEntry) []string {
+	routes := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.Upstream || !entry.ModerationRequired {
+			continue
+		}
+		routes = append(routes, strings.TrimSpace(entry.Status)+" "+strings.TrimSpace(entry.Method)+" "+strings.TrimSpace(entry.Path))
+	}
+	sort.Strings(routes)
+	return routes
 }
 
 func TestContentModerationStatusEffectiveProtection(t *testing.T) {

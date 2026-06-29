@@ -138,10 +138,42 @@ const (
 	contentModerationExtractorVersion              = "v4"
 	contentModerationMinimumSecurityBaselineCommit = "9216c848"
 	contentModerationRouteManifestVersion          = "2026-06-29.1"
-	contentModerationRouteRequiredCount            = 21
-	contentModerationRouteCoveredCount             = 21
 	minContentModerationBuildCommitPrefixLen       = 7
 )
+
+type contentModerationRouteCoverageEntry struct {
+	Method             string
+	Path               string
+	Upstream           bool
+	ModerationRequired bool
+	Status             string
+}
+
+var contentModerationRouteCoverageEntries = []contentModerationRouteCoverageEntry{
+	{Method: "POST", Path: "/v1/messages", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/antigravity/v1/messages", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/v1/messages/count_tokens", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/antigravity/v1/messages/count_tokens", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/v1/chat/completions", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/chat/completions", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/v1/responses", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/v1/responses/*subpath", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/responses", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/responses/*subpath", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "GET", Path: "/v1/responses", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "GET", Path: "/responses", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/backend-api/codex/responses", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/backend-api/codex/responses/*subpath", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "GET", Path: "/backend-api/codex/responses", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/v1/embeddings", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/embeddings", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/v1/images/generations", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/v1/images/edits", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/images/generations", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/images/edits", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/v1beta/models/*modelAction", Upstream: true, ModerationRequired: true, Status: "covered"},
+	{Method: "POST", Path: "/antigravity/v1beta/models/*modelAction", Upstream: true, ModerationRequired: true, Status: "covered"},
+}
 
 var contentModerationCategoryOrder = []string{
 	"harassment",
@@ -1815,18 +1847,41 @@ func parseContentModerationBoolEnv(key string) bool {
 }
 
 func contentModerationRouteCoverageStatus() ContentModerationRouteCoverageStatus {
+	return contentModerationRouteCoverageStatusFromEntries(contentModerationRouteCoverageEntries)
+}
+
+func contentModerationRouteCoverageStatusFromEntries(entries []contentModerationRouteCoverageEntry) ContentModerationRouteCoverageStatus {
+	required := 0
+	covered := 0
+	uncoveredRoutes := make([]string, 0)
+	for _, entry := range entries {
+		if !entry.Upstream || !entry.ModerationRequired {
+			continue
+		}
+		required++
+		if entry.Status == "covered" {
+			covered++
+			continue
+		}
+		route := strings.TrimSpace(strings.TrimSpace(entry.Method) + " " + strings.TrimSpace(entry.Path))
+		if route == "" {
+			route = "unknown"
+		}
+		uncoveredRoutes = append(uncoveredRoutes, route)
+	}
+
 	status := "covered"
-	if contentModerationRouteRequiredCount == 0 {
+	if required == 0 {
 		status = "unknown"
-	} else if contentModerationRouteCoveredCount != contentModerationRouteRequiredCount {
+	} else if covered != required || len(uncoveredRoutes) > 0 {
 		status = "mismatch"
 	}
 	return ContentModerationRouteCoverageStatus{
 		ManifestVersion: contentModerationRouteManifestVersion,
 		Status:          status,
-		RequiredRoutes:  contentModerationRouteRequiredCount,
-		CoveredRoutes:   contentModerationRouteCoveredCount,
-		UncoveredRoutes: []string{},
+		RequiredRoutes:  required,
+		CoveredRoutes:   covered,
+		UncoveredRoutes: uncoveredRoutes,
 	}
 }
 
