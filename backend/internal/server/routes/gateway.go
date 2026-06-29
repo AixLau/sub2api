@@ -54,6 +54,7 @@ func RegisterGatewayRoutes(
 
 	// API网关（Claude API兼容）
 	gateway := r.Group("/v1")
+	moderatedGateway := NewModeratedRouteRegistrar(gateway)
 	gateway.Use(bodyLimit)
 	gateway.Use(clientRequestID)
 	gateway.Use(opsErrorLogger)
@@ -62,7 +63,12 @@ func RegisterGatewayRoutes(
 	gateway.Use(requireGroupAnthropic)
 	{
 		// /v1/messages: auto-route based on group platform
-		gateway.POST("/messages", func(c *gin.Context) {
+		moderatedGateway.POST("/messages", coveredModeratedRoute(
+			"/v1/messages",
+			"GatewayHandler.Messages",
+			service.ContentModerationProtocolAnthropicMessages,
+			"Anthropic Messages requests are moderated after request parsing and before billing, scheduling, and upstream forwarding.",
+		), func(c *gin.Context) {
 			if getGroupPlatform(c) == service.PlatformGrok {
 				rejectGrokUnsupportedEndpoint(c, "Messages API")
 				return
@@ -74,7 +80,12 @@ func RegisterGatewayRoutes(
 			h.Gateway.Messages(c)
 		})
 		// /v1/messages/count_tokens: OpenAI groups get 404
-		gateway.POST("/messages/count_tokens", func(c *gin.Context) {
+		moderatedGateway.POST("/messages/count_tokens", coveredModeratedRoute(
+			"/v1/messages/count_tokens",
+			"GatewayHandler.CountTokens",
+			service.ContentModerationProtocolAnthropicMessages,
+			"Anthropic count_tokens can forward client context to upstream, so it is moderated after model validation and before billing, scheduling, and forwarding.",
+		), func(c *gin.Context) {
 			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
 				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 				c.JSON(http.StatusNotFound, gin.H{
@@ -91,21 +102,36 @@ func RegisterGatewayRoutes(
 		gateway.GET("/models", h.Gateway.Models)
 		gateway.GET("/usage", h.Gateway.Usage)
 		// OpenAI Responses API: auto-route based on group platform
-		gateway.POST("/responses", func(c *gin.Context) {
+		moderatedGateway.POST("/responses", coveredModeratedRoute(
+			"/v1/responses",
+			"OpenAIGatewayHandler.Responses",
+			service.ContentModerationProtocolOpenAIResponses,
+			"OpenAI Responses requests are moderated before permission checks, scheduling, and upstream forwarding.",
+		), func(c *gin.Context) {
 			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
 				h.OpenAIGateway.Responses(c)
 				return
 			}
 			h.Gateway.Responses(c)
 		})
-		gateway.POST("/responses/*subpath", func(c *gin.Context) {
+		moderatedGateway.POST("/responses/*subpath", coveredModeratedRoute(
+			"/v1/responses/*subpath",
+			"OpenAIGatewayHandler.Responses",
+			service.ContentModerationProtocolOpenAIResponses,
+			"Versioned Responses subpaths reach the same Responses handler and moderation hook before upstream forwarding.",
+		), func(c *gin.Context) {
 			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
 				h.OpenAIGateway.Responses(c)
 				return
 			}
 			h.Gateway.Responses(c)
 		})
-		gateway.GET("/responses", func(c *gin.Context) {
+		moderatedGateway.GET("/responses", coveredModeratedRoute(
+			"/v1/responses",
+			"OpenAIGatewayHandler.ResponsesWebSocket",
+			service.ContentModerationProtocolOpenAIResponses,
+			"Responses WebSocket audits the first frame and subsequent client turns before upstream writes.",
+		), func(c *gin.Context) {
 			if getGroupPlatform(c) == service.PlatformGrok {
 				rejectGrokUnsupportedEndpoint(c, "Responses WebSocket API")
 				return
@@ -113,7 +139,12 @@ func RegisterGatewayRoutes(
 			h.OpenAIGateway.ResponsesWebSocket(c)
 		})
 		// OpenAI Chat Completions API: auto-route based on group platform
-		gateway.POST("/chat/completions", func(c *gin.Context) {
+		moderatedGateway.POST("/chat/completions", coveredModeratedRoute(
+			"/v1/chat/completions",
+			"OpenAIGatewayHandler.ChatCompletions",
+			service.ContentModerationProtocolOpenAIChat,
+			"OpenAI-compatible chat requests are moderated before image permission checks, scheduling, and upstream forwarding.",
+		), func(c *gin.Context) {
 			if getGroupPlatform(c) == service.PlatformGrok {
 				rejectGrokUnsupportedEndpoint(c, "Chat Completions API")
 				return
@@ -124,7 +155,12 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.ChatCompletions(c)
 		})
-		gateway.POST("/embeddings", func(c *gin.Context) {
+		moderatedGateway.POST("/embeddings", coveredModeratedRoute(
+			"/v1/embeddings",
+			"OpenAIGatewayHandler.Embeddings",
+			service.ContentModerationProtocolOpenAIEmbeddings,
+			"Embeddings input can be submitted to upstream policy systems, so input is moderated before channel mapping, scheduling, and forwarding.",
+		), func(c *gin.Context) {
 			if getGroupPlatform(c) != service.PlatformOpenAI {
 				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 				c.JSON(http.StatusNotFound, gin.H{
@@ -137,7 +173,12 @@ func RegisterGatewayRoutes(
 			}
 			h.OpenAIGateway.Embeddings(c)
 		})
-		gateway.POST("/images/generations", func(c *gin.Context) {
+		moderatedGateway.POST("/images/generations", coveredModeratedRoute(
+			"/v1/images/generations",
+			"OpenAIGatewayHandler.Images",
+			service.ContentModerationProtocolOpenAIImages,
+			"Image generation prompt and image metadata are moderated before permission checks, scheduling, and upstream forwarding.",
+		), func(c *gin.Context) {
 			if getGroupPlatform(c) != service.PlatformOpenAI {
 				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 				c.JSON(http.StatusNotFound, gin.H{
@@ -150,7 +191,12 @@ func RegisterGatewayRoutes(
 			}
 			h.OpenAIGateway.Images(c)
 		})
-		gateway.POST("/images/edits", func(c *gin.Context) {
+		moderatedGateway.POST("/images/edits", coveredModeratedRoute(
+			"/v1/images/edits",
+			"OpenAIGatewayHandler.Images",
+			service.ContentModerationProtocolOpenAIImages,
+			"Image edit prompt and image metadata are moderated before permission checks, scheduling, and upstream forwarding.",
+		), func(c *gin.Context) {
 			if getGroupPlatform(c) != service.PlatformOpenAI {
 				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 				c.JSON(http.StatusNotFound, gin.H{
@@ -167,6 +213,7 @@ func RegisterGatewayRoutes(
 
 	// Gemini 原生 API 兼容层（Gemini SDK/CLI 直连）
 	gemini := r.Group("/v1beta")
+	moderatedGemini := NewModeratedRouteRegistrar(gemini)
 	gemini.Use(bodyLimit)
 	gemini.Use(clientRequestID)
 	gemini.Use(opsErrorLogger)
@@ -177,7 +224,12 @@ func RegisterGatewayRoutes(
 		gemini.GET("/models", h.Gateway.GeminiV1BetaListModels)
 		gemini.GET("/models/:model", h.Gateway.GeminiV1BetaGetModel)
 		// Gin treats ":" as a param marker, but Gemini uses "{model}:{action}" in the same segment.
-		gemini.POST("/models/*modelAction", h.Gateway.GeminiV1BetaModels)
+		moderatedGemini.POST("/models/*modelAction", coveredModeratedRoute(
+			"/v1beta/models/*modelAction",
+			"GatewayHandler.GeminiV1BetaModels",
+			service.ContentModerationProtocolGemini,
+			"Gemini model action requests are moderated before account selection and upstream forwarding.",
+		), h.Gateway.GeminiV1BetaModels)
 	}
 
 	// OpenAI Responses API（不带v1前缀的别名）— auto-route based on group platform
@@ -188,9 +240,25 @@ func RegisterGatewayRoutes(
 		}
 		h.Gateway.Responses(c)
 	}
-	r.POST("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, responsesHandler)
-	r.POST("/responses/*subpath", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, responsesHandler)
-	r.GET("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
+	moderatedRoot := NewModeratedRouteRegistrar(r)
+	moderatedRoot.POST("/responses", coveredModeratedRoute(
+		"/responses",
+		"OpenAIGatewayHandler.Responses",
+		service.ContentModerationProtocolOpenAIResponses,
+		"Root Responses alias reaches the same OpenAI-compatible Responses handler and moderation hook.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, responsesHandler)
+	moderatedRoot.POST("/responses/*subpath", coveredModeratedRoute(
+		"/responses/*subpath",
+		"OpenAIGatewayHandler.Responses",
+		service.ContentModerationProtocolOpenAIResponses,
+		"Root Responses subpath alias reaches the same OpenAI-compatible Responses handler and moderation hook.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, responsesHandler)
+	moderatedRoot.GET("/responses", coveredModeratedRoute(
+		"/responses",
+		"OpenAIGatewayHandler.ResponsesWebSocket",
+		service.ContentModerationProtocolOpenAIResponses,
+		"Root Responses WebSocket alias audits the first frame and subsequent client turns before upstream writes.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) == service.PlatformGrok {
 			rejectGrokUnsupportedEndpoint(c, "Responses WebSocket API")
 			return
@@ -198,11 +266,27 @@ func RegisterGatewayRoutes(
 		h.OpenAIGateway.ResponsesWebSocket(c)
 	})
 	codexDirect := r.Group("/backend-api/codex")
+	moderatedCodexDirect := NewModeratedRouteRegistrar(codexDirect)
 	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic)
 	{
-		codexDirect.POST("/responses", responsesHandler)
-		codexDirect.POST("/responses/*subpath", responsesHandler)
-		codexDirect.GET("/responses", func(c *gin.Context) {
+		moderatedCodexDirect.POST("/responses", coveredModeratedRoute(
+			"/backend-api/codex/responses",
+			"OpenAIGatewayHandler.Responses",
+			service.ContentModerationProtocolOpenAIResponses,
+			"Codex direct Responses route reaches the same OpenAI-compatible Responses handler and moderation hook.",
+		), responsesHandler)
+		moderatedCodexDirect.POST("/responses/*subpath", coveredModeratedRoute(
+			"/backend-api/codex/responses/*subpath",
+			"OpenAIGatewayHandler.Responses",
+			service.ContentModerationProtocolOpenAIResponses,
+			"Codex direct Responses subpaths reach the same OpenAI-compatible Responses handler and moderation hook.",
+		), responsesHandler)
+		moderatedCodexDirect.GET("/responses", coveredModeratedRoute(
+			"/backend-api/codex/responses",
+			"OpenAIGatewayHandler.ResponsesWebSocket",
+			service.ContentModerationProtocolOpenAIResponses,
+			"Codex direct Responses WebSocket route audits the first frame and subsequent client turns before upstream writes.",
+		), func(c *gin.Context) {
 			if getGroupPlatform(c) == service.PlatformGrok {
 				rejectGrokUnsupportedEndpoint(c, "Responses WebSocket API")
 				return
@@ -211,7 +295,12 @@ func RegisterGatewayRoutes(
 		})
 	}
 	// OpenAI Chat Completions API（不带v1前缀的别名）— auto-route based on group platform
-	r.POST("/chat/completions", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
+	moderatedRoot.POST("/chat/completions", coveredModeratedRoute(
+		"/chat/completions",
+		"OpenAIGatewayHandler.ChatCompletions",
+		service.ContentModerationProtocolOpenAIChat,
+		"Root chat alias reaches the same OpenAI-compatible chat handler and moderation hook.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) == service.PlatformGrok {
 			rejectGrokUnsupportedEndpoint(c, "Chat Completions API")
 			return
@@ -222,7 +311,12 @@ func RegisterGatewayRoutes(
 		}
 		h.Gateway.ChatCompletions(c)
 	})
-	r.POST("/embeddings", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
+	moderatedRoot.POST("/embeddings", coveredModeratedRoute(
+		"/embeddings",
+		"OpenAIGatewayHandler.Embeddings",
+		service.ContentModerationProtocolOpenAIEmbeddings,
+		"Root embeddings alias reaches the same Embeddings handler and moderation hook.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) != service.PlatformOpenAI {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 			c.JSON(http.StatusNotFound, gin.H{
@@ -235,7 +329,12 @@ func RegisterGatewayRoutes(
 		}
 		h.OpenAIGateway.Embeddings(c)
 	})
-	r.POST("/images/generations", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
+	moderatedRoot.POST("/images/generations", coveredModeratedRoute(
+		"/images/generations",
+		"OpenAIGatewayHandler.Images",
+		service.ContentModerationProtocolOpenAIImages,
+		"Root image generation alias reaches the same Images handler and moderation hook before upstream forwarding.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) != service.PlatformOpenAI {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 			c.JSON(http.StatusNotFound, gin.H{
@@ -248,7 +347,12 @@ func RegisterGatewayRoutes(
 		}
 		h.OpenAIGateway.Images(c)
 	})
-	r.POST("/images/edits", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
+	moderatedRoot.POST("/images/edits", coveredModeratedRoute(
+		"/images/edits",
+		"OpenAIGatewayHandler.Images",
+		service.ContentModerationProtocolOpenAIImages,
+		"Root image edit alias reaches the same Images handler and moderation hook before upstream forwarding.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) != service.PlatformOpenAI {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 			c.JSON(http.StatusNotFound, gin.H{
@@ -267,6 +371,7 @@ func RegisterGatewayRoutes(
 
 	// Antigravity 专用路由（仅使用 antigravity 账户，不混合调度）
 	antigravityV1 := r.Group("/antigravity/v1")
+	moderatedAntigravityV1 := NewModeratedRouteRegistrar(antigravityV1)
 	antigravityV1.Use(bodyLimit)
 	antigravityV1.Use(clientRequestID)
 	antigravityV1.Use(opsErrorLogger)
@@ -275,13 +380,24 @@ func RegisterGatewayRoutes(
 	antigravityV1.Use(gin.HandlerFunc(apiKeyAuth))
 	antigravityV1.Use(requireGroupAnthropic)
 	{
-		antigravityV1.POST("/messages", h.Gateway.Messages)
-		antigravityV1.POST("/messages/count_tokens", h.Gateway.CountTokens)
+		moderatedAntigravityV1.POST("/messages", coveredModeratedRoute(
+			"/antigravity/v1/messages",
+			"GatewayHandler.Messages",
+			service.ContentModerationProtocolAnthropicMessages,
+			"Antigravity Messages uses the same GatewayHandler.Messages moderation hook before upstream forwarding.",
+		), h.Gateway.Messages)
+		moderatedAntigravityV1.POST("/messages/count_tokens", coveredModeratedRoute(
+			"/antigravity/v1/messages/count_tokens",
+			"GatewayHandler.CountTokens",
+			service.ContentModerationProtocolAnthropicMessages,
+			"Antigravity count_tokens uses the shared CountTokens handler and is moderated after model validation and before account selection or upstream forwarding.",
+		), h.Gateway.CountTokens)
 		antigravityV1.GET("/models", h.Gateway.AntigravityModels)
 		antigravityV1.GET("/usage", h.Gateway.Usage)
 	}
 
 	antigravityV1Beta := r.Group("/antigravity/v1beta")
+	moderatedAntigravityV1Beta := NewModeratedRouteRegistrar(antigravityV1Beta)
 	antigravityV1Beta.Use(bodyLimit)
 	antigravityV1Beta.Use(clientRequestID)
 	antigravityV1Beta.Use(opsErrorLogger)
@@ -292,7 +408,12 @@ func RegisterGatewayRoutes(
 	{
 		antigravityV1Beta.GET("/models", h.Gateway.GeminiV1BetaListModels)
 		antigravityV1Beta.GET("/models/:model", h.Gateway.GeminiV1BetaGetModel)
-		antigravityV1Beta.POST("/models/*modelAction", h.Gateway.GeminiV1BetaModels)
+		moderatedAntigravityV1Beta.POST("/models/*modelAction", coveredModeratedRoute(
+			"/antigravity/v1beta/models/*modelAction",
+			"GatewayHandler.GeminiV1BetaModels",
+			service.ContentModerationProtocolGemini,
+			"Antigravity Gemini-compatible model action requests use the same Gemini handler and moderation hook before upstream forwarding.",
+		), h.Gateway.GeminiV1BetaModels)
 	}
 
 }
