@@ -1,8 +1,11 @@
 package service
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/tidwall/gjson"
 )
@@ -541,6 +544,7 @@ func collectToolResultTextValueWithState(value gjson.Result, parts *[]string, im
 		return
 	case value.Type == gjson.String:
 		addLimitedToolResultText(parts, value.String(), state)
+		addDecodedBase64Text(parts, value.String(), state)
 	case value.IsArray():
 		value.ForEach(func(_, item gjson.Result) bool {
 			collectToolResultTextValueWithState(item, parts, images, depth+1, state)
@@ -651,22 +655,39 @@ func isLikelyBinaryPayloadField(item gjson.Result, parent gjson.Result) bool {
 		})
 		return seen && allMedia
 	case item.IsObject():
-		return hasAnyGJSONField(item,
-			"url",
-			"image_url",
-			"file_uri",
-			"fileUri",
-			"inline_data",
-			"inlineData",
-			"source",
-			"media_type",
-			"mediaType",
-			"mime_type",
-			"mimeType",
-		)
+		return isLikelyPureBinaryPayloadObject(item)
 	default:
 		return false
 	}
+}
+
+func isLikelyPureBinaryPayloadObject(value gjson.Result) bool {
+	if hasAnyGJSONField(value, "media_type", "mediaType", "mime_type", "mimeType") &&
+		hasAnyGJSONField(value, "data", "base64", "bytes") {
+		return true
+	}
+	if hasAnyGJSONField(value, "inline_data", "inlineData") {
+		return true
+	}
+	if hasAnyGJSONField(value, "url", "image_url", "file_uri", "fileUri") && !hasLikelyTextMetadataField(value) {
+		return true
+	}
+	return false
+}
+
+func hasLikelyTextMetadataField(value gjson.Result) bool {
+	return hasAnyGJSONField(value,
+		"caption",
+		"description",
+		"query",
+		"prompt",
+		"text",
+		"title",
+		"name",
+		"metadata",
+		"alt",
+		"label",
+	)
 }
 
 func hasAnyGJSONField(value gjson.Result, names ...string) bool {
@@ -697,6 +718,60 @@ func isLikelyBase64Text(text string) bool {
 		}
 	}
 	return seenPayload
+}
+
+func addDecodedBase64Text(parts *[]string, text string, state *toolResultTextState) {
+	decoded, ok := decodeLikelyBase64Text(text)
+	if !ok {
+		return
+	}
+	addLimitedToolResultText(parts, decoded, state)
+}
+
+func decodeLikelyBase64Text(text string) (string, bool) {
+	normalized := strings.TrimSpace(text)
+	if len(normalized) < 16 || !isLikelyBase64Text(normalized) {
+		return "", false
+	}
+	compact := strings.NewReplacer("\r", "", "\n", "", " ", "", "\t", "").Replace(normalized)
+	encodings := []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	}
+	for _, encoding := range encodings {
+		decoded, err := encoding.DecodeString(compact)
+		if err != nil {
+			continue
+		}
+		if text, ok := printableUTF8Text(decoded); ok {
+			return text, true
+		}
+	}
+	return "", false
+}
+
+func printableUTF8Text(data []byte) (string, bool) {
+	if len(data) == 0 || !utf8.Valid(data) {
+		return "", false
+	}
+	text := strings.TrimSpace(string(data))
+	if len([]rune(text)) < 4 {
+		return "", false
+	}
+	total := 0
+	printable := 0
+	for _, r := range text {
+		total++
+		if unicode.IsPrint(r) || unicode.IsSpace(r) {
+			printable++
+		}
+	}
+	if total == 0 || float64(printable)/float64(total) < 0.85 {
+		return "", false
+	}
+	return text, true
 }
 
 func appendModerationSources(sources *[]ContentModerationInputSource, source string, parts []string, start int) {

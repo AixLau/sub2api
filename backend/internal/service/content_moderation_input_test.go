@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -278,10 +279,11 @@ func TestExtractContentModerationInput_OpenAIChatScansResponseFormatSchema(t *te
 }
 
 func TestExtractContentModerationInput_ModelVisibleJSONScansDataFields(t *testing.T) {
+	encodedRiskText := base64.StdEncoding.EncodeToString([]byte("base64 解码后的风险短语"))
 	body := []byte(`{
 		"messages":[
 			{"role":"user","content":"继续"},
-			{"role":"assistant","tool_calls":[{"type":"function","function":{"name":"lookup","arguments":"{\"data\":\"tool arguments data 字段里的风险短语\",\"image\":\"tool arguments image 字段里的风险短语\",\"file\":\"tool arguments file 字段里的风险短语\",\"base64\":\"tool arguments base64 字段里的风险短语\"}"}}]}
+			{"role":"assistant","tool_calls":[{"type":"function","function":{"name":"lookup","arguments":"{\"data\":\"tool arguments data 字段里的风险短语\",\"image\":\"tool arguments image 字段里的风险短语\",\"file\":\"tool arguments file 字段里的风险短语\",\"base64\":\"tool arguments base64 字段里的风险短语\",\"metadata\":{\"data\":{\"source\":\"form\",\"query\":\"object data source 里的风险短语\"}},\"attachment\":{\"file\":{\"url\":\"https://example.com/a.png\",\"caption\":\"file caption 里的风险短语\"}},\"encoded\":\"` + encodedRiskText + `\"}"}}]}
 		],
 		"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object","properties":{"data":{"description":"schema data 字段里的风险短语"},"image":{"description":"schema image 字段里的风险短语"},"file":{"description":"schema file 字段里的风险短语"},"base64":{"description":"schema base64 字段里的风险短语"}}}}}]
 	}`)
@@ -296,6 +298,9 @@ func TestExtractContentModerationInput_ModelVisibleJSONScansDataFields(t *testin
 	require.Contains(t, input.Text, "schema image 字段里的风险短语")
 	require.Contains(t, input.Text, "schema file 字段里的风险短语")
 	require.Contains(t, input.Text, "schema base64 字段里的风险短语")
+	require.Contains(t, input.Text, "object data source 里的风险短语")
+	require.Contains(t, input.Text, "file caption 里的风险短语")
+	require.Contains(t, input.Text, "base64 解码后的风险短语")
 }
 
 func TestExtractContentModerationInput_ResponsesScansToolsAndFunctionCallArguments(t *testing.T) {
