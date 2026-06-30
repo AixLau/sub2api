@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"net/http"
@@ -133,6 +134,30 @@ type WaitQueueFullError struct {
 
 func (e *WaitQueueFullError) Error() string {
 	return "Too many pending requests, please retry later"
+}
+
+// IsConcurrencyRetryableError returns true if the error is a concurrency
+// slot acquisition failure that should trigger fallback to another account.
+// Returns false for context.Canceled (client disconnect) which should not retry.
+func IsConcurrencyRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Client disconnected - not retryable
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	// Concurrency timeout - retryable
+	var concurrencyErr *ConcurrencyError
+	if errors.As(err, &concurrencyErr) {
+		return concurrencyErr.IsTimeout
+	}
+	// Wait queue full - retryable
+	var waitQueueErr *WaitQueueFullError
+	if errors.As(err, &waitQueueErr) {
+		return true
+	}
+	return false
 }
 
 // ConcurrencyHelper provides common concurrency slot management for gateway handlers

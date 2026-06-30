@@ -205,16 +205,35 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 				h.chatCompletionsErrorResponse(c, http.StatusServiceUnavailable, "api_error", "No available accounts")
 				return
 			}
+			// Dynamic timeout: shorter wait when alternatives exist
+			effectiveTimeout := selection.WaitPlan.Timeout
+			if selection.CandidateCount > 1 {
+				effectiveTimeout = 5 * time.Second
+				reqLog.Debug("gateway.cc.using_short_wait_timeout",
+					zap.Int("candidate_count", selection.CandidateCount),
+					zap.Duration("timeout", effectiveTimeout),
+				)
+			}
+
 			accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
 				c,
 				account.ID,
 				selection.WaitPlan.MaxConcurrency,
-				selection.WaitPlan.Timeout,
+				effectiveTimeout,
 				reqStream,
 				&streamStarted,
 			)
 			if err != nil {
 				reqLog.Warn("gateway.cc.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+				if IsConcurrencyRetryableError(err) && fs.SwitchCount < fs.MaxSwitches {
+					fs.FailedAccountIDs[account.ID] = struct{}{}
+					fs.SwitchCount++
+					reqLog.Info("gateway.cc.concurrency_fallback",
+						zap.Int64("failed_account_id", account.ID),
+						zap.Int("switch_count", fs.SwitchCount),
+					)
+					continue
+				}
 				h.handleConcurrencyError(c, err, "account", streamStarted)
 				return
 			}

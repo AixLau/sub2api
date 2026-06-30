@@ -186,8 +186,21 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		_ = scheduleDecision
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		accountReleaseFunc, refreshedAccount, acquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, reqModel, false, service.OpenAIEndpointCapabilityChatCompletions, "", reqStream, &streamStarted, reqLog)
+		accountReleaseFunc, refreshedAccount, acquired, retryable := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, reqModel, false, service.OpenAIEndpointCapabilityChatCompletions, "", reqStream, &streamStarted, reqLog)
 		if !acquired {
+			if retryable && switchCount < maxAccountSwitches {
+				failedAccountIDs[account.ID] = struct{}{}
+				switchCount++
+				reqLog.Info("openai_chat_completions.concurrency_fallback",
+					zap.Int64("failed_account_id", account.ID),
+					zap.Int("switch_count", switchCount),
+				)
+				continue
+			}
+			// Retryable but cannot continue: write error response
+			if retryable {
+				h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many concurrent requests, please retry later", streamStarted)
+			}
 			return
 		}
 		account = refreshedAccount

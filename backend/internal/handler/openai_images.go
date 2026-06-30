@@ -206,8 +206,21 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		reqLog.Debug("openai.images.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		accountReleaseFunc, refreshedAccount, acquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, requestModel, false, "", parsed.RequiredCapability, parsed.Stream, &streamStarted, reqLog)
+		accountReleaseFunc, refreshedAccount, acquired, retryable := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, requestModel, false, "", parsed.RequiredCapability, parsed.Stream, &streamStarted, reqLog)
 		if !acquired {
+			if retryable && switchCount < maxAccountSwitches {
+				failedAccountIDs[account.ID] = struct{}{}
+				switchCount++
+				reqLog.Info("openai.images.concurrency_fallback",
+					zap.Int64("failed_account_id", account.ID),
+					zap.Int("switch_count", switchCount),
+				)
+				continue
+			}
+			// Retryable but cannot continue: write error response
+			if retryable {
+				h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many concurrent requests, please retry later", streamStarted)
+			}
 			return
 		}
 		account = refreshedAccount
