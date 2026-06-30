@@ -75,6 +75,32 @@ func TestOpenAIWebSocketPipelineRunsInitialFrameStagesInOrder(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestOpenAIWebSocketDefaultPipelineStagesMatchCoverageMetadata(t *testing.T) {
+	pipeline := newOpenAIGatewayPipeline(nil)
+	input := openAIWebSocketPipelineInput{
+		Protocol:      service.ContentModerationProtocolOpenAIResponses,
+		ImageEndpoint: "/v1/responses",
+	}
+
+	initialStageNames := openAIWebSocketGatewayStageNames(pipeline.webSocketInitialFramePipelineStages(input))
+	followupStageNames := openAIWebSocketGatewayStageNames(pipeline.webSocketFollowupFramePipelineStages(input))
+	metadataStages := moderationcoverage.OpenAIWebSocketPipelineStagesForRoute(
+		"OpenAIGatewayHandler.ResponsesWebSocket",
+		service.ContentModerationProtocolOpenAIResponses,
+	)
+
+	require.Equal(t, []string{"moderation", "image_permission", "cyber"}, initialStageNames)
+	require.Equal(t, []string{"moderation"}, followupStageNames)
+	requireOpenAIWebSocketMetadataStageCovered(t, metadataStages, moderationcoverage.StageModeration)
+	requireOpenAIWebSocketMetadataStageCovered(t, metadataStages, moderationcoverage.StageImage)
+	requireOpenAIWebSocketMetadataStageCovered(t, metadataStages, moderationcoverage.StageCyber)
+	requireOpenAIWebSocketMetadataStageCovered(t, metadataStages, moderationcoverage.StagePreForward)
+	requireOpenAIWebSocketMetadataStageCovered(t, metadataStages, moderationcoverage.StageBilling)
+	requireOpenAIWebSocketMetadataStageCovered(t, metadataStages, moderationcoverage.StageRouting)
+	requireOpenAIWebSocketMetadataStageCovered(t, metadataStages, moderationcoverage.StageForward)
+	requireOpenAIWebSocketMetadataStageCovered(t, metadataStages, moderationcoverage.StageUsage)
+}
+
 func TestOpenAIWebSocketPipelineMarksAdmissionWhenStagesAllow(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -134,6 +160,29 @@ func TestOpenAIWebSocketPipelineMarksAdmissionWhenStagesAllow(t *testing.T) {
 			require.True(t, moderationcoverage.PipelineAdmittedFromContext(c))
 		})
 	}
+}
+
+func openAIWebSocketGatewayStageNames(stages []openAIWebSocketGatewayStage) []string {
+	names := make([]string, 0, len(stages))
+	for _, stage := range stages {
+		if stage == nil {
+			continue
+		}
+		names = append(names, stage.Name())
+	}
+	return names
+}
+
+func requireOpenAIWebSocketMetadataStageCovered(t *testing.T, stages []moderationcoverage.PipelineStageCoverage, stageName string) {
+	t.Helper()
+	for _, stage := range stages {
+		if stage.Stage == stageName {
+			require.True(t, stage.Required, "websocket metadata stage %s should be required", stageName)
+			require.True(t, stage.Covered, "websocket metadata stage %s should be covered", stageName)
+			return
+		}
+	}
+	t.Fatalf("websocket metadata missing stage %s", stageName)
 }
 
 func TestOpenAIWebSocketPipelineRunsFollowupFrameStages(t *testing.T) {

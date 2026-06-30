@@ -76,6 +76,35 @@ func coveredModeratedRoute(path, handlerName, protocol, reviewReason string) Mod
 	return moderationcoverage.AnnotatePipelineCoverage(meta)
 }
 
+func coveredOpenAIHTTPRoute(path, handlerName, protocol, reviewReason string) ModeratedRouteMeta {
+	meta := coveredModeratedRoute(path, handlerName, protocol, reviewReason)
+	return mustHavePipelineCoverage(meta, moderationcoverage.PipelineOpenAIHTTP)
+}
+
+func coveredOpenAIWebSocketRoute(path, handlerName, protocol, reviewReason string) ModeratedRouteMeta {
+	meta := coveredModeratedRoute(path, handlerName, protocol, reviewReason)
+	meta.Pipeline = moderationcoverage.PipelineOpenAIWebSocket
+	meta.StageCoverage = []moderationcoverage.PipelineStageCoverage{
+		moderationcoverage.CoveredPipelineStage(moderationcoverage.StageModeration),
+		moderationcoverage.CoveredPipelineStage(moderationcoverage.StageCyber),
+		moderationcoverage.CoveredPipelineStage(moderationcoverage.StageImage),
+		moderationcoverage.CoveredPipelineStage(moderationcoverage.StagePreForward),
+		moderationcoverage.CoveredPipelineStage(moderationcoverage.StageBilling),
+		moderationcoverage.CoveredPipelineStage(moderationcoverage.StageRouting),
+		moderationcoverage.CoveredPipelineStage(moderationcoverage.StageForward),
+		moderationcoverage.CoveredPipelineStage(moderationcoverage.StageUsage),
+	}
+	return moderationcoverage.NormalizeEntry(meta)
+}
+
+func mustHavePipelineCoverage(meta ModeratedRouteMeta, pipeline string) ModeratedRouteMeta {
+	meta = moderationcoverage.NormalizeEntry(meta)
+	if meta.Pipeline != moderationcoverage.NormalizePipeline(pipeline) || len(meta.StageCoverage) == 0 {
+		panic("moderated route metadata missing required pipeline coverage")
+	}
+	return meta
+}
+
 func intentionalNoAuditRoute(path, handlerName, reviewReason string) ModeratedRouteMeta {
 	return ModeratedRouteMeta{
 		Path:               path,

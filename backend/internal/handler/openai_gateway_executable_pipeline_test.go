@@ -106,3 +106,105 @@ func TestOpenAIHTTPExecutableStageNilContextIsSafe(t *testing.T) {
 	require.Equal(t, 1, calls)
 	require.Empty(t, moderationcoverage.PipelineStageExecutionsFromContext(nil))
 }
+
+func TestGatewayPipelineRunsGenericExecutableStagesWithMetadata(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	var calls []string
+	pipeline := GatewayPipeline{
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+		Source:   moderationcoverage.SourceOpenAIHTTPExecutableStage,
+		Stages: []ExecutableStage{
+			{Name: moderationcoverage.StageBilling, Run: func() ExecutableStageResult {
+				calls = append(calls, moderationcoverage.StageBilling)
+				return ExecutableStageResult{}
+			}},
+			{Name: moderationcoverage.StageRouting, Run: func() ExecutableStageResult {
+				calls = append(calls, moderationcoverage.StageRouting)
+				return ExecutableStageResult{}
+			}},
+			ForwardStage(moderationcoverage.StageForward, func() ExecutableStageResult {
+				calls = append(calls, moderationcoverage.StageForward)
+				return ExecutableStageResult{}
+			}),
+			{Name: moderationcoverage.StageUsage, Run: func() ExecutableStageResult {
+				calls = append(calls, moderationcoverage.StageUsage)
+				return ExecutableStageResult{}
+			}},
+		},
+	}
+
+	result := pipeline.Run(c)
+
+	require.False(t, result.Stop)
+	require.NoError(t, result.Err)
+	require.Equal(t, []string{
+		moderationcoverage.StageBilling,
+		moderationcoverage.StageRouting,
+		moderationcoverage.StageForward,
+		moderationcoverage.StageUsage,
+	}, calls)
+	require.Equal(t, []moderationcoverage.PipelineStageExecution{
+		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageBilling, Source: moderationcoverage.SourceOpenAIHTTPExecutableStage},
+		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageRouting, Source: moderationcoverage.SourceOpenAIHTTPExecutableStage},
+		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageForward, Source: moderationcoverage.SourceOpenAIHTTPExecutableStage},
+		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageUsage, Source: moderationcoverage.SourceOpenAIHTTPExecutableStage},
+	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+}
+
+func TestGatewayPipelineStopBlocksLaterGenericExecutableStages(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	var calls []string
+	pipeline := GatewayPipeline{
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+		Source:   moderationcoverage.SourceOpenAIHTTPExecutableStage,
+		Stages: []ExecutableStage{
+			{Name: moderationcoverage.StageBilling, Run: func() ExecutableStageResult {
+				calls = append(calls, moderationcoverage.StageBilling)
+				return ExecutableStageResult{Stop: true}
+			}},
+			{Name: moderationcoverage.StageRouting, Run: func() ExecutableStageResult {
+				calls = append(calls, moderationcoverage.StageRouting)
+				return ExecutableStageResult{}
+			}},
+		},
+	}
+
+	result := pipeline.Run(c)
+
+	require.True(t, result.Stop)
+	require.NoError(t, result.Err)
+	require.Equal(t, []string{moderationcoverage.StageBilling}, calls)
+	require.Equal(t, []moderationcoverage.PipelineStageExecution{
+		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageBilling, Source: moderationcoverage.SourceOpenAIHTTPExecutableStage},
+	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+}
+
+func TestOpenAIHTTPExecutableStageAdapterUsesGatewayPipeline(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	openAIStage := openAIHTTPExecutableStage{
+		Stage: moderationcoverage.StageForward,
+		Run: func() openAIHTTPExecutableStageResult {
+			return openAIHTTPExecutableStageResult{}
+		},
+	}
+
+	pipeline := openAIHTTPExecutablePipeline([]openAIHTTPExecutableStage{openAIStage})
+	require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, pipeline.Pipeline)
+	require.Equal(t, moderationcoverage.SourceOpenAIHTTPExecutableStage, pipeline.Source)
+	require.Len(t, pipeline.Stages, 1)
+	require.Equal(t, moderationcoverage.StageForward, pipeline.Stages[0].Name)
+
+	result := pipeline.Run(c)
+
+	require.False(t, result.Stop)
+	require.NoError(t, result.Err)
+	require.Equal(t, []moderationcoverage.PipelineStageExecution{
+		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageForward, Source: moderationcoverage.SourceOpenAIHTTPExecutableStage},
+	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+}

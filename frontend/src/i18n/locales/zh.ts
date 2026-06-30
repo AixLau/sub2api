@@ -2633,6 +2633,8 @@ export default {
       protectionPipeline: '流水线',
       pipelineCoverageTitle: 'OpenAI 流水线覆盖',
       pipelineCoverageHint: '展示 OpenAI HTTP 路由在上游转发前的运行时阶段矩阵。',
+      pipelineExecutionTitle: '实际阶段执行',
+      pipelineExecutionHint: '进程内统计网关流水线阶段真实运行时记录的次数。',
       pipelineManifestVersion: '清单',
       pipelineManifestHash: '哈希',
       pipelineRoute: '路由',

@@ -103,6 +103,27 @@
           </div>
 
           <div class="space-y-5 p-6">
+            <div class="rounded-lg border border-gray-100 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900/30">
+              <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.pipelineExecutionTitle') }}</p>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.pipelineExecutionHint') }}</p>
+                </div>
+                <span class="inline-flex w-fit rounded-md bg-white px-2.5 py-1 font-mono text-xs font-medium text-gray-700 shadow-sm dark:bg-dark-800 dark:text-gray-200">
+                  {{ formatNumber(pipelineExecutionTotalCount) }}
+                </span>
+              </div>
+              <div v-if="pipelineExecutionRows.length" class="mt-3 flex flex-wrap gap-1.5">
+                <span
+                  v-for="execution in pipelineExecutionRows"
+                  :key="`${execution.pipeline}:${execution.stage}:${execution.source}`"
+                  class="inline-flex rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-700 shadow-sm dark:bg-dark-800 dark:text-gray-200"
+                >
+                  {{ execution.pipeline }} · {{ pipelineStageLabel(execution.stage) }} · {{ formatNumber(execution.count) }}
+                </span>
+              </div>
+            </div>
+
             <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
               <div
                 v-for="stage in pipelineStageRows"
@@ -1370,6 +1391,7 @@ import type {
   ContentModerationLog,
   ContentModerationModelFilter,
   ContentModerationModelFilterType,
+  ContentModerationPipelineGroupCoverageStatus,
   ContentModerationPipelineRouteCoverageStatus,
   ContentModerationPipelineRouteStageCoverageStatus,
   ContentModerationPipelineStageCoverageStatus,
@@ -1847,18 +1869,29 @@ const protectionRouteCoverageText = computed(() => {
 })
 
 const protectionPipelineCoverageText = computed(() => {
-  const coverage = status.value?.pipeline_coverage?.openai_http
-  if (!coverage) return '-'
-  return `${status.value?.pipeline_coverage?.status || '-'} · ${formatNumber(coverage.covered_routes)}/${formatNumber(coverage.required_routes)}`
+  const groups = pipelineCoverageGroups.value
+  if (!groups.length) return '-'
+  const covered = groups.reduce((total, coverage) => total + coverage.covered_routes, 0)
+  const required = groups.reduce((total, coverage) => total + coverage.required_routes, 0)
+  return `${status.value?.pipeline_coverage?.status || '-'} · ${formatNumber(covered)}/${formatNumber(required)}`
 })
 
-const openAIHTTPPipelineCoverage = computed(() => status.value?.pipeline_coverage?.openai_http)
+const pipelineCoverageGroups = computed<ContentModerationPipelineGroupCoverageStatus[]>(() => {
+  const coverage = status.value?.pipeline_coverage
+  return [
+    coverage?.openai_http,
+    coverage?.openai_websocket,
+  ].filter((group): group is ContentModerationPipelineGroupCoverageStatus => Boolean(group))
+})
 
-const pipelineCoverageMatrixVisible = computed(() => Boolean(openAIHTTPPipelineCoverage.value?.required_routes))
+const pipelineCoverageMatrixVisible = computed(() => (
+  pipelineCoverageGroups.value.some((coverage) => coverage.required_routes > 0) ||
+  (status.value?.pipeline_execution?.total_count ?? 0) > 0
+))
 
 const pipelineCoverageVersionText = computed(() => {
   const coverage = status.value?.pipeline_coverage
-  return openAIHTTPPipelineCoverage.value?.version || coverage?.version || '-'
+  return coverage?.version || '-'
 })
 
 const pipelineCoverageManifestVersionText = computed(() => status.value?.pipeline_coverage?.manifest_version || '-')
@@ -1878,13 +1911,45 @@ const pipelineCoverageStatusClass = computed(() => {
 })
 
 const pipelineStageRows = computed<ContentModerationPipelineStageCoverageStatus[]>(() => (
-  [...(openAIHTTPPipelineCoverage.value?.stage_coverage ?? [])].sort((a, b) => pipelineStageSortKey(a.stage).localeCompare(pipelineStageSortKey(b.stage)))
+  Array.from(pipelineCoverageGroups.value.reduce((byStage, coverage) => {
+    for (const stage of coverage.stage_coverage ?? []) {
+      const key = stage.stage
+      const existing = byStage.get(key) ?? {
+        stage: key,
+        required_routes: 0,
+        covered_routes: 0,
+        uncovered_routes: [],
+      }
+      existing.required_routes += stage.required_routes
+      existing.covered_routes += stage.covered_routes
+      existing.uncovered_routes = [...existing.uncovered_routes, ...(stage.uncovered_routes ?? [])]
+      byStage.set(key, existing)
+    }
+    return byStage
+  }, new Map<string, ContentModerationPipelineStageCoverageStatus>()).values())
+    .map((stage) => ({
+      ...stage,
+      uncovered_routes: [...new Set(stage.uncovered_routes)].sort(),
+    }))
+    .sort((a, b) => pipelineStageSortKey(a.stage).localeCompare(pipelineStageSortKey(b.stage)))
 ))
 
 const pipelineRouteRows = computed<ContentModerationPipelineRouteCoverageStatus[]>(() => (
-  [...(openAIHTTPPipelineCoverage.value?.routes ?? [])].sort((a, b) => {
+  pipelineCoverageGroups.value.flatMap((coverage) => coverage.routes ?? []).sort((a, b) => {
     const left = `${a.method} ${a.path} ${a.protocol}`
     const right = `${b.method} ${b.path} ${b.protocol}`
+    return left.localeCompare(right)
+  })
+))
+
+const pipelineExecutionTotalCount = computed(() => status.value?.pipeline_execution?.total_count ?? 0)
+
+const pipelineExecutionRows = computed(() => (
+  [...(status.value?.pipeline_execution?.executions ?? [])].sort((a, b) => {
+    const stageOrder = pipelineStageSortKey(a.stage).localeCompare(pipelineStageSortKey(b.stage))
+    if (stageOrder !== 0) return stageOrder
+    const left = `${a.pipeline} ${a.source}`
+    const right = `${b.pipeline} ${b.source}`
     return left.localeCompare(right)
   })
 ))

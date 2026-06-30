@@ -110,7 +110,7 @@ func RegisterGatewayRoutes(
 			"Usage lookup does not submit model-visible user content to upstream moderation-sensitive paths.",
 		), h.Gateway.Usage)
 		// OpenAI Responses API: auto-route based on group platform
-		moderatedGateway.POST("/responses", coveredModeratedRoute(
+		moderatedGateway.POST("/responses", coveredOpenAIHTTPRoute(
 			"/v1/responses",
 			"OpenAIGatewayHandler.Responses",
 			service.ContentModerationProtocolOpenAIResponses,
@@ -122,7 +122,7 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.Responses(c)
 		})
-		moderatedGateway.POST("/responses/*subpath", coveredModeratedRoute(
+		moderatedGateway.POST("/responses/*subpath", coveredOpenAIHTTPRoute(
 			"/v1/responses/*subpath",
 			"OpenAIGatewayHandler.Responses",
 			service.ContentModerationProtocolOpenAIResponses,
@@ -134,7 +134,7 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.Responses(c)
 		})
-		moderatedGateway.GET("/responses", coveredModeratedRoute(
+		moderatedGateway.GET("/responses", coveredOpenAIWebSocketRoute(
 			"/v1/responses",
 			"OpenAIGatewayHandler.ResponsesWebSocket",
 			service.ContentModerationProtocolOpenAIResponses,
@@ -147,7 +147,7 @@ func RegisterGatewayRoutes(
 			h.OpenAIGateway.ResponsesWebSocket(c)
 		})
 		// OpenAI Chat Completions API: auto-route based on group platform
-		moderatedGateway.POST("/chat/completions", coveredModeratedRoute(
+		moderatedGateway.POST("/chat/completions", coveredOpenAIHTTPRoute(
 			"/v1/chat/completions",
 			"OpenAIGatewayHandler.ChatCompletions",
 			service.ContentModerationProtocolOpenAIChat,
@@ -163,7 +163,7 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.ChatCompletions(c)
 		})
-		moderatedGateway.POST("/embeddings", coveredModeratedRoute(
+		moderatedGateway.POST("/embeddings", coveredOpenAIHTTPRoute(
 			"/v1/embeddings",
 			"OpenAIGatewayHandler.Embeddings",
 			service.ContentModerationProtocolOpenAIEmbeddings,
@@ -181,7 +181,7 @@ func RegisterGatewayRoutes(
 			}
 			h.OpenAIGateway.Embeddings(c)
 		})
-		moderatedGateway.POST("/images/generations", coveredModeratedRoute(
+		moderatedGateway.POST("/images/generations", coveredOpenAIHTTPRoute(
 			"/v1/images/generations",
 			"OpenAIGatewayHandler.Images",
 			service.ContentModerationProtocolOpenAIImages,
@@ -199,7 +199,7 @@ func RegisterGatewayRoutes(
 			}
 			h.OpenAIGateway.Images(c)
 		})
-		moderatedGateway.POST("/images/edits", coveredModeratedRoute(
+		moderatedGateway.POST("/images/edits", coveredOpenAIHTTPRoute(
 			"/v1/images/edits",
 			"OpenAIGatewayHandler.Images",
 			service.ContentModerationProtocolOpenAIImages,
@@ -257,19 +257,19 @@ func RegisterGatewayRoutes(
 		h.Gateway.Responses(c)
 	}
 	moderatedRoot := NewModeratedRouteRegistrar(r)
-	moderatedRoot.POST("/responses", coveredModeratedRoute(
+	moderatedRoot.POST("/responses", coveredOpenAIHTTPRoute(
 		"/responses",
 		"OpenAIGatewayHandler.Responses",
 		service.ContentModerationProtocolOpenAIResponses,
 		"Root Responses alias reaches the same OpenAI-compatible Responses handler and moderation hook.",
 	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, responsesHandler)
-	moderatedRoot.POST("/responses/*subpath", coveredModeratedRoute(
+	moderatedRoot.POST("/responses/*subpath", coveredOpenAIHTTPRoute(
 		"/responses/*subpath",
 		"OpenAIGatewayHandler.Responses",
 		service.ContentModerationProtocolOpenAIResponses,
 		"Root Responses subpath alias reaches the same OpenAI-compatible Responses handler and moderation hook.",
 	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, responsesHandler)
-	moderatedRoot.GET("/responses", coveredModeratedRoute(
+	moderatedRoot.GET("/responses", coveredOpenAIWebSocketRoute(
 		"/responses",
 		"OpenAIGatewayHandler.ResponsesWebSocket",
 		service.ContentModerationProtocolOpenAIResponses,
@@ -285,19 +285,19 @@ func RegisterGatewayRoutes(
 	moderatedCodexDirect := NewModeratedRouteRegistrar(codexDirect)
 	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic)
 	{
-		moderatedCodexDirect.POST("/responses", coveredModeratedRoute(
+		moderatedCodexDirect.POST("/responses", coveredOpenAIHTTPRoute(
 			"/backend-api/codex/responses",
 			"OpenAIGatewayHandler.Responses",
 			service.ContentModerationProtocolOpenAIResponses,
 			"Codex direct Responses route reaches the same OpenAI-compatible Responses handler and moderation hook.",
 		), responsesHandler)
-		moderatedCodexDirect.POST("/responses/*subpath", coveredModeratedRoute(
+		moderatedCodexDirect.POST("/responses/*subpath", coveredOpenAIHTTPRoute(
 			"/backend-api/codex/responses/*subpath",
 			"OpenAIGatewayHandler.Responses",
 			service.ContentModerationProtocolOpenAIResponses,
 			"Codex direct Responses subpaths reach the same OpenAI-compatible Responses handler and moderation hook.",
 		), responsesHandler)
-		moderatedCodexDirect.GET("/responses", coveredModeratedRoute(
+		moderatedCodexDirect.GET("/responses", coveredOpenAIWebSocketRoute(
 			"/backend-api/codex/responses",
 			"OpenAIGatewayHandler.ResponsesWebSocket",
 			service.ContentModerationProtocolOpenAIResponses,
@@ -311,7 +311,7 @@ func RegisterGatewayRoutes(
 		})
 	}
 	// OpenAI Chat Completions API（不带v1前缀的别名）— auto-route based on group platform
-	moderatedRoot.POST("/chat/completions", coveredModeratedRoute(
+	moderatedRoot.POST("/chat/completions", coveredOpenAIHTTPRoute(
 		"/chat/completions",
 		"OpenAIGatewayHandler.ChatCompletions",
 		service.ContentModerationProtocolOpenAIChat,
@@ -327,7 +327,7 @@ func RegisterGatewayRoutes(
 		}
 		h.Gateway.ChatCompletions(c)
 	})
-	moderatedRoot.POST("/embeddings", coveredModeratedRoute(
+	moderatedRoot.POST("/embeddings", coveredOpenAIHTTPRoute(
 		"/embeddings",
 		"OpenAIGatewayHandler.Embeddings",
 		service.ContentModerationProtocolOpenAIEmbeddings,
@@ -345,7 +345,7 @@ func RegisterGatewayRoutes(
 		}
 		h.OpenAIGateway.Embeddings(c)
 	})
-	moderatedRoot.POST("/images/generations", coveredModeratedRoute(
+	moderatedRoot.POST("/images/generations", coveredOpenAIHTTPRoute(
 		"/images/generations",
 		"OpenAIGatewayHandler.Images",
 		service.ContentModerationProtocolOpenAIImages,
@@ -363,7 +363,7 @@ func RegisterGatewayRoutes(
 		}
 		h.OpenAIGateway.Images(c)
 	})
-	moderatedRoot.POST("/images/edits", coveredModeratedRoute(
+	moderatedRoot.POST("/images/edits", coveredOpenAIHTTPRoute(
 		"/images/edits",
 		"OpenAIGatewayHandler.Images",
 		service.ContentModerationProtocolOpenAIImages,

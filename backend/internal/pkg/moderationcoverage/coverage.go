@@ -14,10 +14,11 @@ const (
 	StatusCovered            = "covered"
 	StatusIntentionalNoAudit = "intentional_no_audit"
 
-	PipelineOpenAIHTTP        = "openai_http"
-	PipelineOpenAIHTTPVersion = "openai-http-executable-v1"
-	PipelineOpenAIWebSocket   = "openai_websocket"
-	PipelineGatewayPreForward = "gateway_pre_forward"
+	PipelineOpenAIHTTP             = "openai_http"
+	PipelineOpenAIHTTPVersion      = "openai-http-executable-v1"
+	PipelineOpenAIWebSocket        = "openai_websocket"
+	PipelineOpenAIWebSocketVersion = "openai-websocket-executable-v1"
+	PipelineGatewayPreForward      = "gateway_pre_forward"
 
 	StageModeration = "moderation"
 	StageCyber      = "cyber"
@@ -33,11 +34,12 @@ const (
 	PipelineAdmissionContextKey       = "moderationcoverage.pipeline_admission"
 	PipelineStageExecutionsContextKey = "moderationcoverage.pipeline_stage_executions"
 
-	SourceOpenAIHTTPPreForward         = "OpenAIGatewayPipeline.RunHTTPPreForward"
-	SourceOpenAIHTTPExecutableStage    = "OpenAIGatewayPipeline.RunHTTPExecutableStage"
-	SourceOpenAIWebSocketInitialFrame  = "OpenAIGatewayPipeline.RunWebSocketInitialFrame"
-	SourceOpenAIWebSocketFollowupFrame = "OpenAIGatewayPipeline.RunWebSocketFollowupFrame"
-	SourceGatewayPreForward            = "GatewayPreForwardPipeline.Run"
+	SourceOpenAIHTTPPreForward           = "OpenAIGatewayPipeline.RunHTTPPreForward"
+	SourceOpenAIHTTPExecutableStage      = "OpenAIGatewayPipeline.RunHTTPExecutableStage"
+	SourceOpenAIWebSocketInitialFrame    = "OpenAIGatewayPipeline.RunWebSocketInitialFrame"
+	SourceOpenAIWebSocketFollowupFrame   = "OpenAIGatewayPipeline.RunWebSocketFollowupFrame"
+	SourceOpenAIWebSocketExecutableStage = "OpenAIGatewayPipeline.RunWebSocketExecutableStage"
+	SourceGatewayPreForward              = "GatewayPreForwardPipeline.Run"
 )
 
 type PipelineStageCoverage struct {
@@ -186,6 +188,7 @@ func MarkPipelineStageExecuted(c *gin.Context, pipeline, stage, source string) {
 	if execution.Pipeline == "" || execution.Stage == "" || execution.Source == "" {
 		return
 	}
+	recordPipelineStageExecution(execution)
 	executions := append(PipelineStageExecutionsFromContext(c), execution)
 	c.Set(PipelineStageExecutionsContextKey, normalizePipelineStageExecutions(executions))
 }
@@ -305,6 +308,11 @@ func NormalizeEntry(entry Entry) Entry {
 
 func AnnotatePipelineCoverage(entry Entry) Entry {
 	entry = NormalizeEntry(entry)
+	if stages := OpenAIWebSocketPipelineStagesForRoute(entry.Handler, entry.Protocol); len(stages) > 0 {
+		entry.Pipeline = PipelineOpenAIWebSocket
+		entry.StageCoverage = stages
+		return NormalizeEntry(entry)
+	}
 	stages := OpenAIHTTPPipelineStagesForRoute(entry.Handler, entry.Protocol)
 	if len(stages) == 0 {
 		return entry
@@ -343,6 +351,25 @@ func OpenAIHTTPPipelineStagesForRoute(handlerName, protocol string) []PipelineSt
 		CoveredPipelineStage(StageUsage),
 	)
 	return NormalizeStageCoverage(stages)
+}
+
+func OpenAIWebSocketPipelineStagesForRoute(handlerName, protocol string) []PipelineStageCoverage {
+	if strings.TrimSpace(protocol) != "openai_responses" {
+		return nil
+	}
+	if strings.TrimSpace(handlerName) != "OpenAIGatewayHandler.ResponsesWebSocket" {
+		return nil
+	}
+	return NormalizeStageCoverage([]PipelineStageCoverage{
+		CoveredPipelineStage(StageModeration),
+		CoveredPipelineStage(StageCyber),
+		CoveredPipelineStage(StageImage),
+		CoveredPipelineStage(StagePreForward),
+		CoveredPipelineStage(StageBilling),
+		CoveredPipelineStage(StageRouting),
+		CoveredPipelineStage(StageForward),
+		CoveredPipelineStage(StageUsage),
+	})
 }
 
 func CoveredPipelineStage(stage string) PipelineStageCoverage {

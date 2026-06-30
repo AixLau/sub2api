@@ -2557,6 +2557,8 @@ export default {
       protectionPipeline: 'Pipeline',
       pipelineCoverageTitle: 'OpenAI Pipeline Coverage',
       pipelineCoverageHint: 'Shows the runtime stage matrix for OpenAI HTTP routes before upstream forwarding.',
+      pipelineExecutionTitle: 'Observed stage execution',
+      pipelineExecutionHint: 'Process-local counts recorded when gateway pipeline stages actually run.',
       pipelineManifestVersion: 'manifest',
       pipelineManifestHash: 'hash',
       pipelineRoute: 'Route',

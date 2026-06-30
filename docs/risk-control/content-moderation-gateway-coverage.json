@@ -394,7 +394,50 @@
       "moderation_required": true,
       "protocol": "openai_responses",
       "status": "covered",
-      "review_reason": "Responses WebSocket audits the first frame and subsequent client turns before upstream writes."
+      "review_reason": "Responses WebSocket audits the first frame and subsequent client turns before upstream writes.",
+      "pipeline": "openai_websocket",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "cyber",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "image",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
+        }
+      ]
     },
     {
       "route": {
@@ -410,7 +453,50 @@
       "moderation_required": true,
       "protocol": "openai_responses",
       "status": "covered",
-      "review_reason": "Root Responses WebSocket alias audits the first frame and subsequent client turns before upstream writes."
+      "review_reason": "Root Responses WebSocket alias audits the first frame and subsequent client turns before upstream writes.",
+      "pipeline": "openai_websocket",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "cyber",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "image",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
+        }
+      ]
     },
     {
       "route": {
@@ -534,7 +620,50 @@
       "moderation_required": true,
       "protocol": "openai_responses",
       "status": "covered",
-      "review_reason": "Codex direct Responses WebSocket route audits the first frame and subsequent client turns before upstream writes."
+      "review_reason": "Codex direct Responses WebSocket route audits the first frame and subsequent client turns before upstream writes.",
+      "pipeline": "openai_websocket",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "cyber",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "image",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
+        }
+      ]
     },
     {
       "route": {

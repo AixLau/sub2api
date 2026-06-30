@@ -54,6 +54,8 @@ func TestPipelineAdmissionHelpersSetBooleanFlagAndMetadata(t *testing.T) {
 func TestPipelineStageExecutionHelpersCollectNormalizedDedupedExecutions(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	restoreObserver := ResetPipelineExecutionObserverForTest()
+	defer restoreObserver()
 
 	require.NotPanics(t, func() {
 		MarkPipelineStageExecuted(nil, PipelineOpenAIHTTP, StageRouting, "ignored")
@@ -75,6 +77,50 @@ func TestPipelineStageExecutionHelpersCollectNormalizedDedupedExecutions(t *test
 		{Pipeline: PipelineOpenAIHTTP, Stage: StageRouting, Source: "SourceB"},
 		{Pipeline: PipelineOpenAIHTTP, Stage: StageUsage, Source: "UsageSource"},
 	}, PipelineStageExecutionsFromContext(c))
+}
+
+func TestPipelineExecutionObserverCountsStageExecutionsAndCanResetForTest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	restoreObserver := ResetPipelineExecutionObserverForTest()
+	defer restoreObserver()
+
+	MarkPipelineStageExecuted(c, " OPENAI_HTTP ", " ROUTING ", " SourceB ")
+	MarkPipelineStageExecuted(c, PipelineOpenAIHTTP, StageRouting, "SourceB")
+	MarkPipelineStageExecuted(c, PipelineOpenAIHTTP, StageRouting, " SourceA ")
+	MarkPipelineStageExecuted(c, PipelineGatewayPreForward, StageBilling, "BillingSource")
+	MarkPipelineStageExecuted(c, "", StageBilling, "missing-pipeline")
+
+	snapshot := PipelineExecutionObserverSnapshot()
+	require.NotNil(t, snapshot.LastObservedAt)
+	require.Equal(t, int64(4), snapshot.TotalCount)
+	require.Equal(t, []PipelineStageExecutionObservation{
+		{Pipeline: PipelineGatewayPreForward, Stage: StageBilling, Source: "BillingSource", Count: 1, LastObservedAt: snapshot.Executions[0].LastObservedAt},
+		{Pipeline: PipelineOpenAIHTTP, Stage: StageRouting, Source: "SourceA", Count: 1, LastObservedAt: snapshot.Executions[1].LastObservedAt},
+		{Pipeline: PipelineOpenAIHTTP, Stage: StageRouting, Source: "SourceB", Count: 2, LastObservedAt: snapshot.Executions[2].LastObservedAt},
+	}, snapshot.Executions)
+
+	restoreSeeded := ReplacePipelineExecutionObserverForTest([]PipelineStageExecutionObservation{
+		{Pipeline: " OPENAI_HTTP ", Stage: " USAGE ", Source: " UsageSource ", Count: 7},
+	})
+	seeded := PipelineExecutionObserverSnapshot()
+	require.Equal(t, int64(7), seeded.TotalCount)
+	require.Len(t, seeded.Executions, 1)
+	require.Equal(t, PipelineStageExecutionObservation{
+		Pipeline:       PipelineOpenAIHTTP,
+		Stage:          StageUsage,
+		Source:         "UsageSource",
+		Count:          7,
+		LastObservedAt: seeded.Executions[0].LastObservedAt,
+	}, seeded.Executions[0])
+
+	restoreSeeded()
+	require.Equal(t, snapshot.TotalCount, PipelineExecutionObserverSnapshot().TotalCount)
+
+	resetRestore := ResetPipelineExecutionObserverForTest()
+	require.Empty(t, PipelineExecutionObserverSnapshot().Executions)
+	resetRestore()
+	require.Equal(t, snapshot.TotalCount, PipelineExecutionObserverSnapshot().TotalCount)
 }
 
 func TestPipelineStageExecutionsFromContextNormalizesStoredValues(t *testing.T) {
