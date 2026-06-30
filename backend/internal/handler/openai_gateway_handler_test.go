@@ -263,7 +263,7 @@ func TestOpenAIAcquireResponsesAccountSlotRefreshesAlreadyAcquiredSelection(t *t
 		ReleaseFunc: func() { released = true },
 	}
 
-	release, account, acquired := h.acquireResponsesAccountSlot(
+	release, account, acquired, _ := h.acquireResponsesAccountSlot(
 		c,
 		nil,
 		"",
@@ -879,6 +879,18 @@ func (r *contentModerationHandlerTestRepo) CleanupExpiredLogs(ctx context.Contex
 }
 
 func (r *contentModerationHandlerTestRepo) UpdateLogEmailSent(ctx context.Context, id int64, sent bool) error {
+	return nil
+}
+
+func (r *contentModerationHandlerTestRepo) UpdateLogViolationCountByDecisionID(ctx context.Context, decisionID string, count int) error {
+	return nil
+}
+
+func (r *contentModerationHandlerTestRepo) UpdateLogAccountActionByDecisionID(ctx context.Context, decisionID string, violationCount int, autoBanned bool) error {
+	return nil
+}
+
+func (r *contentModerationHandlerTestRepo) UpdateLogEmailSentByDecisionID(ctx context.Context, decisionID string, sent bool) error {
 	return nil
 }
 

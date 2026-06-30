@@ -168,6 +168,10 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 				)
 				continue
 			}
+			// Retryable but cannot continue: write error response
+			if retryable {
+				h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Too many concurrent requests, please retry later")
+			}
 			return
 		}
 		account = refreshedAccount

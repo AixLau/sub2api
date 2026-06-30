@@ -216,6 +216,10 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				)
 				continue
 			}
+			// Retryable but cannot continue: write error response
+			if retryable {
+				h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many concurrent requests, please retry later", streamStarted)
+			}
 			return
 		}
 		account = refreshedAccount
