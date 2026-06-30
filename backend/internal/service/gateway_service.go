@@ -536,10 +536,11 @@ type AccountWaitPlan struct {
 }
 
 type AccountSelectionResult struct {
-	Account     *Account
-	Acquired    bool
-	ReleaseFunc func()
-	WaitPlan    *AccountWaitPlan // nil means no wait allowed
+	Account        *Account
+	Acquired       bool
+	ReleaseFunc    func()
+	WaitPlan       *AccountWaitPlan // nil means no wait allowed
+	CandidateCount int              // Total number of candidate accounts (for wait timeout tuning)
 }
 
 // ClaudeUsage 表示Claude API返回的usage信息

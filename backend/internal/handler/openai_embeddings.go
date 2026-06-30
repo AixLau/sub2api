@@ -157,8 +157,17 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		account := selection.Account
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		accountReleaseFunc, refreshedAccount, accountAcquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, "", selection, reqModel, false, service.OpenAIEndpointCapabilityEmbeddings, "", false, &streamStarted, reqLog)
+		accountReleaseFunc, refreshedAccount, accountAcquired, retryable := h.acquireResponsesAccountSlot(c, apiKey.GroupID, "", selection, reqModel, false, service.OpenAIEndpointCapabilityEmbeddings, "", false, &streamStarted, reqLog)
 		if !accountAcquired {
+			if retryable && switchCount < maxAccountSwitches {
+				failedAccountIDs[account.ID] = struct{}{}
+				switchCount++
+				reqLog.Info("openai_embeddings.concurrency_fallback",
+					zap.Int64("failed_account_id", account.ID),
+					zap.Int("switch_count", switchCount),
+				)
+				continue
+			}
 			return
 		}
 		account = refreshedAccount

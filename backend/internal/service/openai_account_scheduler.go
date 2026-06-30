@@ -919,9 +919,10 @@ func (s *defaultOpenAIAccountScheduler) tryAcquireOpenAISelectionOrder(
 				_ = s.service.BindStickySession(ctx, req.GroupID, req.SessionHash, fresh.ID)
 			}
 			return &AccountSelectionResult{
-				Account:     fresh,
-				Acquired:    true,
-				ReleaseFunc: result.ReleaseFunc,
+				Account:        fresh,
+				Acquired:       true,
+				ReleaseFunc:    result.ReleaseFunc,
+				CandidateCount: len(selectionOrder),
 			}, compactBlocked, nil
 		}
 	}
@@ -1057,6 +1058,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 				Timeout:        cfg.FallbackWaitTimeout,
 				MaxWaiting:     cfg.FallbackMaxWaiting,
 			},
+			CandidateCount: len(selectionOrder),
 		}, candidateCount, topK, loadSkew, nil
 	}
 
