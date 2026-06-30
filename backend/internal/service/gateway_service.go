@@ -1709,7 +1709,8 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 					localExcluded[account.ID] = struct{}{} // 排除此账号
 					continue                               // 重新选择
 				}
-				return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
+				// Single account path (not looping through accounts): candidateCount = 1
+				return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil, 1)
 			}
 
 			// 对于等待计划的情况，也需要先检查会话限制
@@ -1721,20 +1722,22 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 			if stickyAccountID > 0 && stickyAccountID == account.ID && s.concurrencyService != nil {
 				waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, account.ID)
 				if waitingCount < cfg.StickySessionMaxWaiting {
+					// Single account path (sticky wait plan): candidateCount = 1
 					return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
 						AccountID:      account.ID,
 						MaxConcurrency: account.Concurrency,
 						Timeout:        cfg.StickySessionWaitTimeout,
 						MaxWaiting:     cfg.StickySessionMaxWaiting,
-					})
+					}, 1)
 				}
 			}
+			// Single account path (fallback wait plan): candidateCount = 1
 			return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
 				AccountID:      account.ID,
 				MaxConcurrency: account.Concurrency,
 				Timeout:        cfg.FallbackWaitTimeout,
 				MaxWaiting:     cfg.FallbackMaxWaiting,
-			})
+			}, 1)
 		}
 	}
 
@@ -1892,7 +1895,8 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 									if s.debugModelRoutingEnabled() {
 										logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] routed sticky hit: group_id=%v model=%s session=%s account=%d", derefGroupID(groupID), requestedModel, shortSessionHash(sessionHash), stickyAccountID)
 									}
-									return s.newSelectionResult(ctx, stickyAccount, true, result.ReleaseFunc, nil)
+									// Routing candidates path: candidateCount = len(routingCandidates)
+									return s.newSelectionResult(ctx, stickyAccount, true, result.ReleaseFunc, nil, len(routingCandidates))
 								}
 							}
 
@@ -1912,6 +1916,8 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 												Timeout:        cfg.StickySessionWaitTimeout,
 												MaxWaiting:     cfg.StickySessionMaxWaiting,
 											},
+											// Routing candidates path: candidateCount = len(routingCandidates)
+											CandidateCount: len(routingCandidates),
 										}, nil
 									}
 								} else {
@@ -2003,7 +2009,8 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 						if s.debugModelRoutingEnabled() {
 							logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] routed select: group_id=%v model=%s session=%s account=%d", derefGroupID(groupID), requestedModel, shortSessionHash(sessionHash), item.account.ID)
 						}
-						return s.newSelectionResult(ctx, item.account, true, result.ReleaseFunc, nil)
+						// Routing available path: candidateCount = len(routingAvailable)
+						return s.newSelectionResult(ctx, item.account, true, result.ReleaseFunc, nil, len(routingAvailable))
 					}
 				}
 
@@ -2016,12 +2023,13 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 					if s.debugModelRoutingEnabled() {
 						logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] routed wait: group_id=%v model=%s session=%s account=%d", derefGroupID(groupID), requestedModel, shortSessionHash(sessionHash), item.account.ID)
 					}
+					// Routing available path (wait plan): candidateCount = len(routingAvailable)
 					return s.newSelectionResult(ctx, item.account, false, nil, &AccountWaitPlan{
 						AccountID:      item.account.ID,
 						MaxConcurrency: item.account.Concurrency,
 						Timeout:        cfg.StickySessionWaitTimeout,
 						MaxWaiting:     cfg.StickySessionMaxWaiting,
-					})
+					}, len(routingAvailable))
 				}
 				// 所有路由账号会话限制都已满，继续到 Layer 2 回退
 			}
@@ -2091,7 +2099,8 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 							if s.cache != nil {
 								_ = s.cache.RefreshSessionTTL(ctx, derefGroupID(groupID), sessionHash, stickySessionTTL)
 							}
-							return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
+							// Single account path: candidateCount = 1 (not looping through accounts)
+					return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil, 1)
 						}
 					} else {
 						slog.Debug("sticky.layer1_5_no_routing_slot_busy",
@@ -2111,12 +2120,13 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 								"session", shortSessionHash(sessionHash),
 								"result", "wait_plan",
 							)
+							// Single sticky account path (wait plan): candidateCount = 1
 							return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
 								AccountID:      accountID,
 								MaxConcurrency: account.Concurrency,
 								Timeout:        cfg.StickySessionWaitTimeout,
 								MaxWaiting:     cfg.StickySessionMaxWaiting,
-							})
+							}, 1)
 						}
 					}
 				} else if !clearSticky {
@@ -2250,7 +2260,8 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 					if sessionHash != "" && s.cache != nil {
 						_ = s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, selected.account.ID, stickySessionTTL)
 					}
-					return s.newSelectionResult(ctx, selected.account, true, result.ReleaseFunc, nil)
+					// Layer 2 load-balance path: candidateCount = len(available) at the start of this for-loop iteration
+					return s.newSelectionResult(ctx, selected.account, true, result.ReleaseFunc, nil, len(available))
 				}
 			}
 
@@ -2273,12 +2284,13 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 		if !s.checkAndRegisterSession(ctx, acc, sessionHash) {
 			continue // 会话限制已满，尝试下一个账号
 		}
+		// Layer 3 fallback path: candidateCount = len(candidates)
 		return s.newSelectionResult(ctx, acc, false, nil, &AccountWaitPlan{
 			AccountID:      acc.ID,
 			MaxConcurrency: acc.Concurrency,
 			Timeout:        cfg.FallbackWaitTimeout,
 			MaxWaiting:     cfg.FallbackMaxWaiting,
-		})
+		}, len(candidates))
 	}
 	return nil, ErrNoAvailableAccounts
 }
@@ -2298,7 +2310,8 @@ func (s *GatewayService) tryAcquireByLegacyOrder(ctx context.Context, candidates
 			if sessionHash != "" && s.cache != nil {
 				_ = s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, acc.ID, stickySessionTTL)
 			}
-			selection, err := s.newSelectionResult(ctx, acc, true, result.ReleaseFunc, nil)
+			// Legacy order path: candidateCount = len(candidates)
+			selection, err := s.newSelectionResult(ctx, acc, true, result.ReleaseFunc, nil, len(candidates))
 			if err != nil {
 				return nil, false, err
 			}
@@ -2985,16 +2998,17 @@ func (s *GatewayService) hydrateSelectedAccount(ctx context.Context, account *Ac
 	return hydrated, nil
 }
 
-func (s *GatewayService) newSelectionResult(ctx context.Context, account *Account, acquired bool, release func(), waitPlan *AccountWaitPlan) (*AccountSelectionResult, error) {
+func (s *GatewayService) newSelectionResult(ctx context.Context, account *Account, acquired bool, release func(), waitPlan *AccountWaitPlan, candidateCount int) (*AccountSelectionResult, error) {
 	hydrated, err := s.hydrateSelectedAccount(ctx, account)
 	if err != nil {
 		return nil, err
 	}
 	return &AccountSelectionResult{
-		Account:     hydrated,
-		Acquired:    acquired,
-		ReleaseFunc: release,
-		WaitPlan:    waitPlan,
+		Account:        hydrated,
+		Acquired:       acquired,
+		ReleaseFunc:    release,
+		WaitPlan:       waitPlan,
+		CandidateCount: candidateCount,
 	}, nil
 }
 
