@@ -40,6 +40,7 @@ const (
 	SourceOpenAIWebSocketFollowupFrame   = "OpenAIGatewayPipeline.RunWebSocketFollowupFrame"
 	SourceOpenAIWebSocketExecutableStage = "OpenAIGatewayPipeline.RunWebSocketExecutableStage"
 	SourceGatewayPreForward              = "GatewayPreForwardPipeline.Run"
+	SourceModeratedRouteRegistrar        = "ModeratedRouteRegistrar.BindPipeline"
 )
 
 type PipelineStageCoverage struct {
@@ -72,6 +73,10 @@ type PipelineStageExecution struct {
 	Pipeline string
 	Stage    string
 	Source   string
+	Method   string
+	Path     string
+	Handler  string
+	Protocol string
 }
 
 type Status struct {
@@ -180,10 +185,15 @@ func MarkPipelineStageExecuted(c *gin.Context, pipeline, stage, source string) {
 	if c == nil {
 		return
 	}
+	routeMeta, _ := RouteMetaFromContext(c)
 	execution := normalizePipelineStageExecution(PipelineStageExecution{
 		Pipeline: pipeline,
 		Stage:    stage,
 		Source:   source,
+		Method:   routeMeta.Method,
+		Path:     routeMeta.Path,
+		Handler:  routeMeta.Handler,
+		Protocol: routeMeta.Protocol,
 	})
 	if execution.Pipeline == "" || execution.Stage == "" || execution.Source == "" {
 		return
@@ -449,6 +459,10 @@ func normalizePipelineStageExecution(execution PipelineStageExecution) PipelineS
 	execution.Pipeline = NormalizePipeline(execution.Pipeline)
 	execution.Stage = NormalizeStage(execution.Stage)
 	execution.Source = NormalizeSource(execution.Source)
+	execution.Method = NormalizeMethod(execution.Method)
+	execution.Path = NormalizePath(execution.Path)
+	execution.Handler = strings.TrimSpace(execution.Handler)
+	execution.Protocol = strings.TrimSpace(execution.Protocol)
 	return execution
 }
 
@@ -467,21 +481,45 @@ func normalizePipelineStageExecutions(executions []PipelineStageExecution) []Pip
 		normalized = append(normalized, execution)
 	}
 	sort.Slice(normalized, func(i, j int) bool {
-		if normalized[i].Pipeline != normalized[j].Pipeline {
-			return normalized[i].Pipeline < normalized[j].Pipeline
-		}
-		leftStage := PipelineStageSortKey(normalized[i].Stage)
-		rightStage := PipelineStageSortKey(normalized[j].Stage)
-		if leftStage != rightStage {
-			return leftStage < rightStage
-		}
-		return normalized[i].Source < normalized[j].Source
+		return pipelineStageExecutionLess(normalized[i], normalized[j])
 	})
 	return normalized
 }
 
 func pipelineStageExecutionKey(execution PipelineStageExecution) string {
-	return execution.Pipeline + "\x00" + execution.Stage + "\x00" + execution.Source
+	return strings.Join([]string{
+		execution.Pipeline,
+		execution.Stage,
+		execution.Source,
+		execution.Method,
+		execution.Path,
+		execution.Handler,
+		execution.Protocol,
+	}, "\x00")
+}
+
+func pipelineStageExecutionLess(left, right PipelineStageExecution) bool {
+	if left.Pipeline != right.Pipeline {
+		return left.Pipeline < right.Pipeline
+	}
+	leftStage := PipelineStageSortKey(left.Stage)
+	rightStage := PipelineStageSortKey(right.Stage)
+	if leftStage != rightStage {
+		return leftStage < rightStage
+	}
+	if left.Source != right.Source {
+		return left.Source < right.Source
+	}
+	if left.Method != right.Method {
+		return left.Method < right.Method
+	}
+	if left.Path != right.Path {
+		return left.Path < right.Path
+	}
+	if left.Handler != right.Handler {
+		return left.Handler < right.Handler
+	}
+	return left.Protocol < right.Protocol
 }
 
 func PipelineStageSortKey(stage string) string {

@@ -159,6 +159,64 @@ func TestModeratedRouteRegistrarInjectsRuntimeRouteMetaBeforeHandlers(t *testing
 	}
 }
 
+func TestModeratedRouteRegistrarBindsPipelineAdmissionBeforeHandlers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
+
+	router := gin.New()
+	registrar := NewModeratedRouteRegistrar(router)
+	var admission moderationcoverage.PipelineAdmission
+	var admitted bool
+
+	registrar.POST("/pipeline-admission", coveredOpenAIHTTPRoute(
+		"/pipeline-admission",
+		"OpenAIGatewayHandler.Responses",
+		"openai_responses",
+		"test route",
+	), func(c *gin.Context) {
+		admission, admitted = moderationcoverage.PipelineAdmissionFromContext(c)
+		c.Status(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/pipeline-admission", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	require.True(t, admitted)
+	require.True(t, admission.Admitted)
+	require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, admission.Pipeline)
+	require.Equal(t, moderationcoverage.StagePreForward, admission.Stage)
+	require.Equal(t, moderationcoverage.SourceModeratedRouteRegistrar, admission.Source)
+}
+
+func TestModeratedRouteRegistrarDoesNotBindPipelineAdmissionForNoAuditRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
+
+	router := gin.New()
+	registrar := NewModeratedRouteRegistrar(router)
+	var admitted bool
+
+	registrar.GETNoAudit("/health", intentionalNoAuditRoute(
+		"/health",
+		"HealthHandler",
+		"test route",
+	), func(c *gin.Context) {
+		admitted = moderationcoverage.PipelineAdmittedFromContext(c)
+		c.Status(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	require.False(t, admitted)
+}
+
 func TestOpenAIPipelineRouteHelpersAttachPipelineMetadata(t *testing.T) {
 	httpRoute := coveredOpenAIHTTPRoute(
 		"/v1/responses",

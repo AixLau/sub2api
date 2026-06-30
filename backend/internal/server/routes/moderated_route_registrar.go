@@ -58,9 +58,23 @@ func prependModeratedRouteMetaHandler(meta ModeratedRouteMeta, handlers []gin.Ha
 	prepended := make([]gin.HandlerFunc, 0, len(handlers)+1)
 	prepended = append(prepended, func(c *gin.Context) {
 		moderationcoverage.SetRouteMeta(c, meta)
+		bindModeratedRoutePipeline(c, meta)
 	})
 	prepended = append(prepended, handlers...)
 	return prepended
+}
+
+func bindModeratedRoutePipeline(c *gin.Context, meta ModeratedRouteMeta) {
+	meta = moderationcoverage.NormalizeEntry(meta)
+	if !meta.Upstream || !meta.ModerationRequired || meta.Pipeline == "" {
+		return
+	}
+	moderationcoverage.MarkPipelineAdmitted(
+		c,
+		meta.Pipeline,
+		moderationcoverage.StagePreForward,
+		moderationcoverage.SourceModeratedRouteRegistrar,
+	)
 }
 
 func coveredModeratedRoute(path, handlerName, protocol, reviewReason string) ModeratedRouteMeta {

@@ -10,6 +10,10 @@ type PipelineStageExecutionObservation struct {
 	Pipeline       string     `json:"pipeline"`
 	Stage          string     `json:"stage"`
 	Source         string     `json:"source"`
+	Method         string     `json:"method,omitempty"`
+	Path           string     `json:"path,omitempty"`
+	Handler        string     `json:"handler,omitempty"`
+	Protocol       string     `json:"protocol,omitempty"`
 	Count          int64      `json:"count"`
 	LastObservedAt *time.Time `json:"last_observed_at,omitempty"`
 }
@@ -44,6 +48,10 @@ func recordPipelineStageExecution(execution PipelineStageExecution) {
 	observation.Pipeline = execution.Pipeline
 	observation.Stage = execution.Stage
 	observation.Source = execution.Source
+	observation.Method = execution.Method
+	observation.Path = execution.Path
+	observation.Handler = execution.Handler
+	observation.Protocol = execution.Protocol
 	observation.Count++
 	observation.LastObservedAt = &now
 	pipelineExecutionObserver.observations[key] = observation
@@ -68,6 +76,10 @@ func ReplacePipelineExecutionObserverForTest(observations []PipelineStageExecuti
 			Pipeline: observation.Pipeline,
 			Stage:    observation.Stage,
 			Source:   observation.Source,
+			Method:   observation.Method,
+			Path:     observation.Path,
+			Handler:  observation.Handler,
+			Protocol: observation.Protocol,
 		})
 		if normalized.Pipeline == "" || normalized.Stage == "" || normalized.Source == "" || observation.Count <= 0 {
 			continue
@@ -81,6 +93,10 @@ func ReplacePipelineExecutionObserverForTest(observations []PipelineStageExecuti
 			Pipeline:       normalized.Pipeline,
 			Stage:          normalized.Stage,
 			Source:         normalized.Source,
+			Method:         normalized.Method,
+			Path:           normalized.Path,
+			Handler:        normalized.Handler,
+			Protocol:       normalized.Protocol,
 			Count:          observation.Count,
 			LastObservedAt: lastObservedAt,
 		}
@@ -110,15 +126,7 @@ func pipelineExecutionObserverSnapshotLocked() PipelineExecutionSnapshot {
 		executions = append(executions, clonePipelineStageExecutionObservation(observation))
 	}
 	sort.Slice(executions, func(i, j int) bool {
-		if executions[i].Pipeline != executions[j].Pipeline {
-			return executions[i].Pipeline < executions[j].Pipeline
-		}
-		leftStage := PipelineStageSortKey(executions[i].Stage)
-		rightStage := PipelineStageSortKey(executions[j].Stage)
-		if leftStage != rightStage {
-			return leftStage < rightStage
-		}
-		return executions[i].Source < executions[j].Source
+		return pipelineStageExecutionObservationLess(executions[i], executions[j])
 	})
 	var lastSeen *time.Time
 	if pipelineExecutionObserver.lastSeen != nil {
@@ -146,6 +154,10 @@ func restorePipelineExecutionObserverLocked(snapshot PipelineExecutionSnapshot) 
 			Pipeline: normalized.Pipeline,
 			Stage:    normalized.Stage,
 			Source:   normalized.Source,
+			Method:   normalized.Method,
+			Path:     normalized.Path,
+			Handler:  normalized.Handler,
+			Protocol: normalized.Protocol,
 		})
 		pipelineExecutionObserver.observations[key] = normalized
 	}
@@ -157,4 +169,27 @@ func clonePipelineStageExecutionObservation(observation PipelineStageExecutionOb
 		observation.LastObservedAt = &t
 	}
 	return observation
+}
+
+func pipelineStageExecutionObservationLess(left, right PipelineStageExecutionObservation) bool {
+	return pipelineStageExecutionLess(
+		PipelineStageExecution{
+			Pipeline: left.Pipeline,
+			Stage:    left.Stage,
+			Source:   left.Source,
+			Method:   left.Method,
+			Path:     left.Path,
+			Handler:  left.Handler,
+			Protocol: left.Protocol,
+		},
+		PipelineStageExecution{
+			Pipeline: right.Pipeline,
+			Stage:    right.Stage,
+			Source:   right.Source,
+			Method:   right.Method,
+			Path:     right.Path,
+			Handler:  right.Handler,
+			Protocol: right.Protocol,
+		},
+	)
 }

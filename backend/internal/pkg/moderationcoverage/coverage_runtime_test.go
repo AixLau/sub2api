@@ -123,6 +123,38 @@ func TestPipelineExecutionObserverCountsStageExecutionsAndCanResetForTest(t *tes
 	require.Equal(t, snapshot.TotalCount, PipelineExecutionObserverSnapshot().TotalCount)
 }
 
+func TestPipelineExecutionObserverSplitsExecutionsByRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	responsesCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	chatCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	restoreObserver := ResetPipelineExecutionObserverForTest()
+	defer restoreObserver()
+
+	SetRouteMeta(responsesCtx, Entry{
+		Method:   "POST",
+		Path:     "/v1/responses",
+		Handler:  "OpenAIGatewayHandler.Responses",
+		Protocol: "openai_responses",
+		Pipeline: PipelineOpenAIHTTP,
+	})
+	SetRouteMeta(chatCtx, Entry{
+		Method:   "POST",
+		Path:     "/v1/chat/completions",
+		Handler:  "OpenAIGatewayHandler.ChatCompletions",
+		Protocol: "openai_chat_completions",
+		Pipeline: PipelineOpenAIHTTP,
+	})
+
+	MarkPipelineStageExecuted(responsesCtx, PipelineOpenAIHTTP, StageRouting, SourceOpenAIHTTPExecutableStage)
+	MarkPipelineStageExecuted(chatCtx, PipelineOpenAIHTTP, StageRouting, SourceOpenAIHTTPExecutableStage)
+
+	snapshot := PipelineExecutionObserverSnapshot()
+	require.Equal(t, int64(2), snapshot.TotalCount)
+	require.Len(t, snapshot.Executions, 2)
+	require.Equal(t, "/v1/chat/completions", snapshot.Executions[0].Path)
+	require.Equal(t, "/v1/responses", snapshot.Executions[1].Path)
+}
+
 func TestPipelineStageExecutionsFromContextNormalizesStoredValues(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
