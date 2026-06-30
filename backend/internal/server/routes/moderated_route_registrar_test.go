@@ -2,6 +2,7 @@ package routes
 
 import (
 	"encoding/json"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -84,17 +85,27 @@ func TestGatewayRoutesHaveExplicitModerationClassification(t *testing.T) {
 		"route moderation classification entries must correspond to real Gin gateway routes")
 }
 
-func TestOpenAIModeratedRoutesHaveGuardCoverage(t *testing.T) {
+func TestOpenAIModeratedRoutesHaveGatewayPipelineModerationCoverage(t *testing.T) {
 	restore := replaceModeratedRouteRegistryForTest(nil)
 	defer restore()
 	_ = newGatewayRoutesTestRouter()
 
 	openAIProtocols := openAIModeratedRouteProtocolsFromRegistrar(GatewayModeratedRouteCoverageEntries())
 	guardProtocols := openAIGuardHelperProtocolsFromHandlerSources(t)
+	pipelineCoverage := openAIGatewayPipelineModerationCoverageFromHandlerSources(t)
 
 	require.NotEmpty(t, openAIProtocols, "OpenAI moderated route protocols should not be empty")
 	require.Empty(t, routeSetDifference(openAIProtocols, guardProtocols),
-		"OpenAI moderated route protocols must have a matching checkWithModerationGuard stage in OpenAI handlers")
+		"OpenAI moderated route protocols must still be passed through checkWithModerationGuard in OpenAI handlers")
+	require.True(t, pipelineCoverage.DelegatesToOpenAIGatewayPipeline,
+		"OpenAI moderation_required registrar protocols must be covered by the GatewayPipeline moderation stage; checkWithModerationGuard does not call OpenAIGatewayPipeline.CheckModeration")
+	require.True(t, pipelineCoverage.ForwardsModerationProtocol,
+		"checkWithModerationGuard calls OpenAIGatewayPipeline.CheckModeration at %s, but must forward moderationGuardInput.Protocol or the whole moderationGuardInput so registrar protocol coverage reaches the pipeline stage",
+		strings.Join(pipelineCoverage.Locations, ", "))
+
+	pipelineProtocols := guardProtocols
+	require.Empty(t, routeSetDifference(openAIProtocols, pipelineProtocols),
+		"OpenAI moderation_required registrar protocols must have GatewayPipeline moderation stage coverage")
 }
 
 func allGatewayRoutesFromRouter(router *gin.Engine) []string {
@@ -303,22 +314,19 @@ func openAIModeratedRouteProtocolsFromRegistrar(entries []ModeratedRouteMeta) []
 	return sortedRouteSet(protocolSet)
 }
 
+type openAIGatewayPipelineModerationCoverage struct {
+	DelegatesToOpenAIGatewayPipeline bool
+	ForwardsModerationProtocol       bool
+	Locations                        []string
+}
+
 func openAIGuardHelperProtocolsFromHandlerSources(t *testing.T) []string {
 	t.Helper()
 
-	_, file, _, ok := runtime.Caller(0)
-	require.True(t, ok)
-	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "..", ".."))
-	handlerDir := filepath.Join(repoRoot, "backend", "internal", "handler")
-	files, err := filepath.Glob(filepath.Join(handlerDir, "openai*.go"))
-	require.NoError(t, err)
-	sort.Strings(files)
+	files := handlerSourceFiles(t, "openai*.go")
 
 	protocolSet := make(map[string]struct{})
 	for _, file := range files {
-		if strings.HasSuffix(file, "_test.go") {
-			continue
-		}
 		src, err := os.ReadFile(file)
 		require.NoError(t, err)
 		fset := token.NewFileSet()
@@ -338,6 +346,285 @@ func openAIGuardHelperProtocolsFromHandlerSources(t *testing.T) []string {
 		})
 	}
 	return sortedRouteSet(protocolSet)
+}
+
+func openAIGatewayPipelineModerationCoverageFromHandlerSources(t *testing.T) openAIGatewayPipelineModerationCoverage {
+	t.Helper()
+
+	files := handlerSourceFiles(t, "*.go")
+	pipelineFields := openAIGatewayPipelineFieldsFromHandlerSources(t, files)
+	repoRoot := repoRootFromTestFile(t)
+	coverage := openAIGatewayPipelineModerationCoverage{}
+
+	for _, file := range files {
+		src, err := os.ReadFile(file)
+		require.NoError(t, err)
+		fset := token.NewFileSet()
+		parsed, err := parser.ParseFile(fset, file, src, 0)
+		require.NoError(t, err)
+
+		for _, decl := range parsed.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Name.Name != "checkWithModerationGuard" || fn.Body == nil {
+				continue
+			}
+
+			pipelineAliases := collectOpenAIGatewayPipelineAliases(fn.Body, pipelineFields)
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				selector, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || selector.Sel.Name != "CheckModeration" {
+					return true
+				}
+				if !isOpenAIGatewayPipelineReceiver(selector.X, pipelineFields, pipelineAliases) {
+					return true
+				}
+
+				coverage.DelegatesToOpenAIGatewayPipeline = true
+				pos := fset.Position(selector.Sel.Pos())
+				if rel, err := filepath.Rel(repoRoot, file); err == nil {
+					coverage.Locations = append(coverage.Locations, fmt.Sprintf("%s:%d", filepath.ToSlash(rel), pos.Line))
+				} else {
+					coverage.Locations = append(coverage.Locations, fmt.Sprintf("%s:%d", filepath.ToSlash(file), pos.Line))
+				}
+				if callForwardsModerationInputProtocol(call) {
+					coverage.ForwardsModerationProtocol = true
+				}
+				return true
+			})
+		}
+	}
+
+	sort.Strings(coverage.Locations)
+	return coverage
+}
+
+func handlerSourceFiles(t *testing.T, pattern string) []string {
+	t.Helper()
+
+	repoRoot := repoRootFromTestFile(t)
+	handlerDir := filepath.Join(repoRoot, "backend", "internal", "handler")
+	files, err := filepath.Glob(filepath.Join(handlerDir, pattern))
+	require.NoError(t, err)
+	sort.Strings(files)
+
+	sourceFiles := make([]string, 0, len(files))
+	for _, file := range files {
+		if !strings.HasSuffix(file, "_test.go") {
+			sourceFiles = append(sourceFiles, file)
+		}
+	}
+	return sourceFiles
+}
+
+func repoRootFromTestFile(t *testing.T) string {
+	t.Helper()
+
+	_, file, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "..", ".."))
+}
+
+func openAIGatewayPipelineFieldsFromHandlerSources(t *testing.T, files []string) map[string]struct{} {
+	t.Helper()
+
+	fields := make(map[string]struct{})
+	for _, file := range files {
+		src, err := os.ReadFile(file)
+		require.NoError(t, err)
+		fset := token.NewFileSet()
+		parsed, err := parser.ParseFile(fset, file, src, 0)
+		require.NoError(t, err)
+
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			typeSpec, ok := node.(*ast.TypeSpec)
+			if !ok || typeSpec.Name.Name != "OpenAIGatewayHandler" {
+				return true
+			}
+			structType, ok := typeSpec.Type.(*ast.StructType)
+			if !ok {
+				return true
+			}
+			for _, field := range structType.Fields.List {
+				if !astExprMentionsOpenAIGatewayPipeline(field.Type) {
+					continue
+				}
+				if len(field.Names) == 0 {
+					if name := astExprLastIdentName(field.Type); name != "" {
+						fields[name] = struct{}{}
+					}
+					continue
+				}
+				for _, name := range field.Names {
+					fields[name.Name] = struct{}{}
+				}
+			}
+			return true
+		})
+	}
+	return fields
+}
+
+func collectOpenAIGatewayPipelineAliases(body *ast.BlockStmt, pipelineFields map[string]struct{}) map[string]struct{} {
+	aliases := make(map[string]struct{})
+
+	ast.Inspect(body, func(node ast.Node) bool {
+		switch n := node.(type) {
+		case *ast.AssignStmt:
+			for i, rhs := range n.Rhs {
+				if !isOpenAIGatewayPipelineExpr(rhs, pipelineFields, aliases) {
+					continue
+				}
+				if i >= len(n.Lhs) {
+					continue
+				}
+				if ident, ok := n.Lhs[i].(*ast.Ident); ok {
+					aliases[ident.Name] = struct{}{}
+				}
+			}
+		case *ast.ValueSpec:
+			for i, value := range n.Values {
+				if !isOpenAIGatewayPipelineExpr(value, pipelineFields, aliases) {
+					continue
+				}
+				if i >= len(n.Names) {
+					continue
+				}
+				aliases[n.Names[i].Name] = struct{}{}
+			}
+		}
+		return true
+	})
+
+	return aliases
+}
+
+func isOpenAIGatewayPipelineReceiver(expr ast.Expr, pipelineFields, pipelineAliases map[string]struct{}) bool {
+	return isOpenAIGatewayPipelineExpr(expr, pipelineFields, pipelineAliases)
+}
+
+func isOpenAIGatewayPipelineExpr(expr ast.Expr, pipelineFields, pipelineAliases map[string]struct{}) bool {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		if _, ok := pipelineAliases[e.Name]; ok {
+			return true
+		}
+		return astExprNameMentionsOpenAIGatewayPipeline(e.Name)
+	case *ast.SelectorExpr:
+		if ident, ok := e.X.(*ast.Ident); ok && ident.Name == "h" {
+			if _, ok := pipelineFields[e.Sel.Name]; ok {
+				return true
+			}
+		}
+		return astExprMentionsOpenAIGatewayPipeline(e)
+	case *ast.CallExpr:
+		return astExprMentionsOpenAIGatewayPipeline(e.Fun)
+	case *ast.CompositeLit:
+		return astExprMentionsOpenAIGatewayPipeline(e.Type)
+	case *ast.ParenExpr:
+		return isOpenAIGatewayPipelineExpr(e.X, pipelineFields, pipelineAliases)
+	case *ast.StarExpr:
+		return isOpenAIGatewayPipelineExpr(e.X, pipelineFields, pipelineAliases)
+	case *ast.UnaryExpr:
+		return isOpenAIGatewayPipelineExpr(e.X, pipelineFields, pipelineAliases)
+	default:
+		return astExprMentionsOpenAIGatewayPipeline(expr)
+	}
+}
+
+func astExprMentionsOpenAIGatewayPipeline(expr ast.Expr) bool {
+	return astExprNameMentionsOpenAIGatewayPipeline(astExprName(expr))
+}
+
+func astExprNameMentionsOpenAIGatewayPipeline(name string) bool {
+	return strings.Contains(name, "OpenAIGatewayPipeline") || strings.Contains(name, "GatewayPipeline")
+}
+
+func astExprName(expr ast.Expr) string {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return e.Name
+	case *ast.SelectorExpr:
+		prefix := astExprName(e.X)
+		if prefix == "" {
+			return e.Sel.Name
+		}
+		return prefix + "." + e.Sel.Name
+	case *ast.StarExpr:
+		return astExprName(e.X)
+	case *ast.ParenExpr:
+		return astExprName(e.X)
+	case *ast.CallExpr:
+		return astExprName(e.Fun)
+	case *ast.CompositeLit:
+		return astExprName(e.Type)
+	case *ast.IndexExpr:
+		return astExprName(e.X)
+	case *ast.IndexListExpr:
+		return astExprName(e.X)
+	default:
+		return ""
+	}
+}
+
+func astExprLastIdentName(expr ast.Expr) string {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return e.Name
+	case *ast.SelectorExpr:
+		return e.Sel.Name
+	case *ast.StarExpr:
+		return astExprLastIdentName(e.X)
+	case *ast.ParenExpr:
+		return astExprLastIdentName(e.X)
+	default:
+		return ""
+	}
+}
+
+func callForwardsModerationInputProtocol(call *ast.CallExpr) bool {
+	for _, arg := range call.Args {
+		if exprForwardsModerationInputProtocol(arg) {
+			return true
+		}
+	}
+	return false
+}
+
+func exprForwardsModerationInputProtocol(expr ast.Expr) bool {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		return e.Name == "input"
+	case *ast.SelectorExpr:
+		if e.Sel.Name == "Protocol" {
+			if ident, ok := e.X.(*ast.Ident); ok && ident.Name == "input" {
+				return true
+			}
+		}
+	case *ast.CompositeLit:
+		for _, elt := range e.Elts {
+			switch value := elt.(type) {
+			case *ast.KeyValueExpr:
+				if key, ok := value.Key.(*ast.Ident); ok && key.Name == "Protocol" && exprForwardsModerationInputProtocol(value.Value) {
+					return true
+				}
+			case ast.Expr:
+				if exprForwardsModerationInputProtocol(value) {
+					return true
+				}
+			}
+		}
+	case *ast.CallExpr:
+		return callForwardsModerationInputProtocol(e)
+	case *ast.ParenExpr:
+		return exprForwardsModerationInputProtocol(e.X)
+	case *ast.UnaryExpr:
+		return exprForwardsModerationInputProtocol(e.X)
+	}
+	return false
 }
 
 func isCheckWithModerationGuardCall(call *ast.CallExpr) bool {

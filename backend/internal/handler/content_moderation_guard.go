@@ -28,11 +28,18 @@ func newContentModerationGuard(svc *service.ContentModerationService) moderation
 }
 
 func (h *OpenAIGatewayHandler) checkWithModerationGuard(c *gin.Context, reqLog *zap.Logger, input moderationGuardInput) *service.ContentModerationDecision {
-	guard := h.moderationGuard
-	if guard == nil {
-		guard = newContentModerationGuard(h.contentModerationService)
+	if h == nil {
+		return newOpenAIGatewayPipeline(nil).CheckModeration(c, reqLog, input)
 	}
-	return guard.Check(c, reqLog, input)
+	pipeline := h.pipeline
+	if pipeline == nil {
+		guard := h.moderationGuard
+		if guard == nil {
+			guard = newContentModerationGuard(h.contentModerationService)
+		}
+		pipeline = newOpenAIGatewayPipeline(guard)
+	}
+	return pipeline.CheckModeration(c, reqLog, input)
 }
 
 func (g *contentModerationGuard) Check(c *gin.Context, reqLog *zap.Logger, input moderationGuardInput) *service.ContentModerationDecision {
