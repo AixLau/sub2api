@@ -2547,6 +2547,10 @@ function pipelineStageLabel(stage: string): string {
     moderation: t('admin.riskControl.pipelineStageModeration'),
     cyber: t('admin.riskControl.pipelineStageCyber'),
     image: t('admin.riskControl.pipelineStageImage'),
+    billing: t('admin.riskControl.pipelineStageBilling'),
+    routing: t('admin.riskControl.pipelineStageRouting'),
+    forward: t('admin.riskControl.pipelineStageForward'),
+    usage: t('admin.riskControl.pipelineStageUsage'),
   }
   return labels[key] || stage || '-'
 }
@@ -2559,6 +2563,14 @@ function pipelineStageSortKey(stage: string): string {
       return '01:cyber'
     case 'image':
       return '02:image'
+    case 'billing':
+      return '03:billing'
+    case 'routing':
+      return '04:routing'
+    case 'forward':
+      return '05:forward'
+    case 'usage':
+      return '06:usage'
     default:
       return `99:${stage.trim().toLowerCase()}`
   }

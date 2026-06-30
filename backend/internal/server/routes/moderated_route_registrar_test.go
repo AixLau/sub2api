@@ -274,6 +274,10 @@ func TestOpenAIHTTPModeratedRouteRegistrarExposesPipelineStages(t *testing.T) {
 	for _, entry := range entries {
 		require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, entry.Pipeline, "path=%s handler=%s", entry.Path, entry.Handler)
 		requireStageRequiredAndCovered(t, entry, moderationcoverage.StageModeration)
+		requireStageRequiredAndCovered(t, entry, moderationcoverage.StageBilling)
+		requireStageRequiredAndCovered(t, entry, moderationcoverage.StageRouting)
+		requireStageRequiredAndCovered(t, entry, moderationcoverage.StageForward)
+		requireStageRequiredAndCovered(t, entry, moderationcoverage.StageUsage)
 		require.False(t, isOpenAIResponsesWebSocketHandler(entry.Handler),
 			"OpenAI HTTP pipeline metadata must not include Responses WebSocket routes")
 
@@ -313,6 +317,14 @@ func TestOpenAIHTTPPipelineCoverageMetadataMatchesHandlerSourceCoverage(t *testi
 			"%s %s cyber metadata drifted from handler source coverage", entry.Method, entry.Path)
 		require.Equal(t, coverage.HasImageStage, stageRequiredAndCovered(entry, moderationcoverage.StageImage),
 			"%s %s image metadata drifted from handler source coverage", entry.Method, entry.Path)
+		require.Equal(t, coverage.HasBillingStage, stageRequiredAndCovered(entry, moderationcoverage.StageBilling),
+			"%s %s billing metadata drifted from handler source coverage", entry.Method, entry.Path)
+		require.Equal(t, coverage.HasRoutingStage, stageRequiredAndCovered(entry, moderationcoverage.StageRouting),
+			"%s %s routing metadata drifted from handler source coverage", entry.Method, entry.Path)
+		require.Equal(t, coverage.HasForwardStage, stageRequiredAndCovered(entry, moderationcoverage.StageForward),
+			"%s %s forward metadata drifted from handler source coverage", entry.Method, entry.Path)
+		require.Equal(t, coverage.HasUsageStage, stageRequiredAndCovered(entry, moderationcoverage.StageUsage),
+			"%s %s usage metadata drifted from handler source coverage", entry.Method, entry.Path)
 	}
 }
 
@@ -581,6 +593,10 @@ type openAIHTTPHandlerStageCoverage struct {
 	HasModerationStage           bool
 	HasCyberStage                bool
 	HasImageStage                bool
+	HasBillingStage              bool
+	HasRoutingStage              bool
+	HasForwardStage              bool
+	HasUsageStage                bool
 	HasHTTPPreForwardPipeline    bool
 	HasDirectResponsesImageStage bool
 	HasDirectCyberReject         bool
@@ -678,6 +694,17 @@ func openAIHTTPStageCoverageFromHandlerSources(t *testing.T) map[string]openAIHT
 					case isDirectResponsesImageStageCall(n):
 						coverage.HasDirectResponsesImageStage = true
 						coverage.HasImageStage = true
+					case isOpenAIHTTPExecutableStageCall(n):
+						switch openAIHTTPExecutableStageArg(n) {
+						case moderationcoverage.StageBilling:
+							coverage.HasBillingStage = true
+						case moderationcoverage.StageRouting:
+							coverage.HasRoutingStage = true
+						case moderationcoverage.StageForward:
+							coverage.HasForwardStage = true
+						case moderationcoverage.StageUsage:
+							coverage.HasUsageStage = true
+						}
 					}
 				}
 				return true
@@ -1105,6 +1132,43 @@ func isCheckWithModerationGuardCall(call *ast.CallExpr) bool {
 func isOpenAIHTTPPreForwardPipelineCall(call *ast.CallExpr) bool {
 	selector, ok := call.Fun.(*ast.SelectorExpr)
 	return ok && selector.Sel.Name == "runOpenAIHTTPPreForwardPipeline"
+}
+
+func isOpenAIHTTPExecutableStageCall(call *ast.CallExpr) bool {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	return ok && selector.Sel.Name == "runOpenAIHTTPExecutableStage"
+}
+
+func openAIHTTPExecutableStageArg(call *ast.CallExpr) string {
+	if len(call.Args) < 2 {
+		return ""
+	}
+	return stageConstantValue(call.Args[1])
+}
+
+func stageConstantValue(expr ast.Expr) string {
+	switch e := expr.(type) {
+	case *ast.SelectorExpr:
+		switch e.Sel.Name {
+		case "StageBilling":
+			return moderationcoverage.StageBilling
+		case "StageRouting":
+			return moderationcoverage.StageRouting
+		case "StageForward":
+			return moderationcoverage.StageForward
+		case "StageUsage":
+			return moderationcoverage.StageUsage
+		case "StageModeration":
+			return moderationcoverage.StageModeration
+		case "StageCyber":
+			return moderationcoverage.StageCyber
+		case "StageImage":
+			return moderationcoverage.StageImage
+		}
+	case *ast.Ident:
+		return e.Name
+	}
+	return ""
 }
 
 func openAIHTTPPreForwardPipelineEnablesImageStage(call *ast.CallExpr) bool {

@@ -48,4 +48,44 @@ func TestPipelineAdmissionHelpersSetBooleanFlagAndMetadata(t *testing.T) {
 	require.Equal(t, PipelineOpenAIHTTP, admission.Pipeline)
 	require.Equal(t, StagePreForward, admission.Stage)
 	require.Equal(t, "source", admission.Source)
+	require.Empty(t, PipelineStageExecutionsFromContext(c))
+}
+
+func TestPipelineStageExecutionHelpersCollectNormalizedDedupedExecutions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	require.NotPanics(t, func() {
+		MarkPipelineStageExecuted(nil, PipelineOpenAIHTTP, StageRouting, "ignored")
+	})
+	require.Empty(t, PipelineStageExecutionsFromContext(nil))
+
+	MarkPipelineStageExecuted(c, " OPENAI_HTTP ", " ROUTING ", " SourceB ")
+	MarkPipelineStageExecuted(c, PipelineOpenAIHTTP, StageRouting, "SourceB")
+	MarkPipelineStageExecuted(c, PipelineOpenAIHTTP, StageRouting, " SourceA ")
+	MarkPipelineStageExecuted(c, PipelineGatewayPreForward, StageBilling, "BillingSource")
+	MarkPipelineStageExecuted(c, PipelineOpenAIHTTP, StageUsage, "UsageSource")
+
+	require.False(t, PipelineAdmittedFromContext(c))
+	_, ok := PipelineAdmissionFromContext(c)
+	require.False(t, ok)
+	require.Equal(t, []PipelineStageExecution{
+		{Pipeline: PipelineGatewayPreForward, Stage: StageBilling, Source: "BillingSource"},
+		{Pipeline: PipelineOpenAIHTTP, Stage: StageRouting, Source: "SourceA"},
+		{Pipeline: PipelineOpenAIHTTP, Stage: StageRouting, Source: "SourceB"},
+		{Pipeline: PipelineOpenAIHTTP, Stage: StageUsage, Source: "UsageSource"},
+	}, PipelineStageExecutionsFromContext(c))
+}
+
+func TestPipelineStageExecutionsFromContextNormalizesStoredValues(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Set(PipelineStageExecutionsContextKey, []PipelineStageExecution{
+		{Pipeline: " OPENAI_HTTP ", Stage: " USAGE ", Source: " Source "},
+		{Pipeline: PipelineOpenAIHTTP, Stage: StageUsage, Source: "Source"},
+	})
+
+	require.Equal(t, []PipelineStageExecution{
+		{Pipeline: PipelineOpenAIHTTP, Stage: StageUsage, Source: "Source"},
+	}, PipelineStageExecutionsFromContext(c))
 }

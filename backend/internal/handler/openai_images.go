@@ -11,6 +11,7 @@ import (
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -125,13 +126,18 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		defer userReleaseFunc()
 	}
 
-	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
-		reqLog.Info("openai.images.billing_eligibility_check_failed", zap.Error(err))
-		status, code, message, retryAfter := billingErrorDetails(err)
-		if retryAfter > 0 {
-			c.Header("Retry-After", strconv.Itoa(retryAfter))
+	if billingStage := h.runOpenAIHTTPExecutableStage(c, moderationcoverage.StageBilling, func() openAIHTTPExecutableStageResult {
+		if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
+			reqLog.Info("openai.images.billing_eligibility_check_failed", zap.Error(err))
+			status, code, message, retryAfter := billingErrorDetails(err)
+			if retryAfter > 0 {
+				c.Header("Retry-After", strconv.Itoa(retryAfter))
+			}
+			h.handleStreamingAwareError(c, status, code, message, streamStarted)
+			return openAIHTTPExecutableStageResult{Stop: true, Err: err}
 		}
-		h.handleStreamingAwareError(c, status, code, message, streamStarted)
+		return openAIHTTPExecutableStageResult{}
+	}); billingStage.Stop {
 		return
 	}
 
@@ -145,97 +151,115 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	var lastFailoverErr *service.UpstreamFailoverError
 
 	for {
-		reqLog.Debug("openai.images.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForImages(
-			requestCtx,
-			apiKey.GroupID,
-			sessionHash,
-			requestModel,
-			failedAccountIDs,
-			parsed.RequiredCapability,
-			subject.UserID,
-		)
-		if err != nil {
-			reqLog.Warn("openai.images.account_select_failed",
-				zap.Error(err),
-				zap.Int("excluded_account_count", len(failedAccountIDs)),
+		var account *service.Account
+		var accountReleaseFunc func()
+		routingRetry := false
+		if routingStage := h.runOpenAIHTTPExecutableStage(c, moderationcoverage.StageRouting, func() openAIHTTPExecutableStageResult {
+			reqLog.Debug("openai.images.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
+			selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForImages(
+				requestCtx,
+				apiKey.GroupID,
+				sessionHash,
+				requestModel,
+				failedAccountIDs,
+				parsed.RequiredCapability,
+				subject.UserID,
 			)
-			if len(failedAccountIDs) == 0 {
+			if err != nil {
+				reqLog.Warn("openai.images.account_select_failed",
+					zap.Error(err),
+					zap.Int("excluded_account_count", len(failedAccountIDs)),
+				)
+				if len(failedAccountIDs) == 0 {
+					cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, requestModel, service.PlatformOpenAI)
+					if !cls.ModelNotFound {
+						markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
+					}
+					message := cls.Message
+					if !cls.ModelNotFound {
+						message = "No available compatible accounts"
+					}
+					h.handleStreamingAwareError(c, cls.Status, cls.ErrType, message, streamStarted)
+					return openAIHTTPExecutableStageResult{Stop: true, Err: err}
+				}
+				if lastFailoverErr != nil {
+					h.handleFailoverExhausted(c, lastFailoverErr, streamStarted)
+				} else {
+					h.handleFailoverExhaustedSimple(c, 502, streamStarted)
+				}
+				return openAIHTTPExecutableStageResult{Stop: true, Err: err}
+			}
+			if selection == nil || selection.Account == nil {
 				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, requestModel, service.PlatformOpenAI)
 				if !cls.ModelNotFound {
-					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
+					markOpsRoutingCapacityLimited(c)
 				}
 				message := cls.Message
 				if !cls.ModelNotFound {
 					message = "No available compatible accounts"
 				}
 				h.handleStreamingAwareError(c, cls.Status, cls.ErrType, message, streamStarted)
-				return
+				return openAIHTTPExecutableStageResult{Stop: true}
 			}
-			if lastFailoverErr != nil {
-				h.handleFailoverExhausted(c, lastFailoverErr, streamStarted)
-			} else {
-				h.handleFailoverExhaustedSimple(c, 502, streamStarted)
+
+			reqLog.Debug("openai.images.account_schedule_decision",
+				zap.String("layer", scheduleDecision.Layer),
+				zap.Bool("sticky_session_hit", scheduleDecision.StickySessionHit),
+				zap.Int("candidate_count", scheduleDecision.CandidateCount),
+				zap.Int("top_k", scheduleDecision.TopK),
+				zap.Int64("latency_ms", scheduleDecision.LatencyMs),
+				zap.Float64("load_skew", scheduleDecision.LoadSkew),
+			)
+
+			account = selection.Account
+			sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
+			reqLog.Debug("openai.images.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
+			setOpsSelectedAccount(c, account.ID, account.Platform)
+
+			releaseFunc, refreshedAccount, acquired, retryable := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, requestModel, false, "", parsed.RequiredCapability, parsed.Stream, &streamStarted, reqLog)
+			if !acquired {
+				if retryable && switchCount < maxAccountSwitches {
+					failedAccountIDs[account.ID] = struct{}{}
+					switchCount++
+					routingRetry = true
+					reqLog.Info("openai.images.concurrency_fallback",
+						zap.Int64("failed_account_id", account.ID),
+						zap.Int("switch_count", switchCount),
+					)
+					return openAIHTTPExecutableStageResult{}
+				}
+				if retryable {
+					h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many concurrent requests, please retry later", streamStarted)
+				}
+				return openAIHTTPExecutableStageResult{Stop: true}
 			}
+			accountReleaseFunc = releaseFunc
+			account = refreshedAccount
+			return openAIHTTPExecutableStageResult{}
+		}); routingStage.Stop {
 			return
 		}
-		if selection == nil || selection.Account == nil {
-			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, requestModel, requestModel, service.PlatformOpenAI)
-			if !cls.ModelNotFound {
-				markOpsRoutingCapacityLimited(c)
-			}
-			message := cls.Message
-			if !cls.ModelNotFound {
-				message = "No available compatible accounts"
-			}
-			h.handleStreamingAwareError(c, cls.Status, cls.ErrType, message, streamStarted)
-			return
+		if routingRetry {
+			continue
 		}
-
-		reqLog.Debug("openai.images.account_schedule_decision",
-			zap.String("layer", scheduleDecision.Layer),
-			zap.Bool("sticky_session_hit", scheduleDecision.StickySessionHit),
-			zap.Int("candidate_count", scheduleDecision.CandidateCount),
-			zap.Int("top_k", scheduleDecision.TopK),
-			zap.Int64("latency_ms", scheduleDecision.LatencyMs),
-			zap.Float64("load_skew", scheduleDecision.LoadSkew),
-		)
-
-		account := selection.Account
-		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
-		reqLog.Debug("openai.images.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
-		setOpsSelectedAccount(c, account.ID, account.Platform)
-
-		accountReleaseFunc, refreshedAccount, acquired, retryable := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, requestModel, false, "", parsed.RequiredCapability, parsed.Stream, &streamStarted, reqLog)
-		if !acquired {
-			if retryable && switchCount < maxAccountSwitches {
-				failedAccountIDs[account.ID] = struct{}{}
-				switchCount++
-				reqLog.Info("openai.images.concurrency_fallback",
-					zap.Int64("failed_account_id", account.ID),
-					zap.Int("switch_count", switchCount),
-				)
-				continue
-			}
-			// Retryable but cannot continue: write error response
-			if retryable {
-				h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many concurrent requests, please retry later", streamStarted)
-			}
-			return
-		}
-		account = refreshedAccount
 
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 		forwardStart := time.Now()
-		writerSizeBeforeForward := c.Writer.Size()
-		result, err := func() (*service.OpenAIForwardResult, error) {
-			defer func() {
-				if accountReleaseFunc != nil {
-					accountReleaseFunc()
-				}
+		var writerSizeBeforeForward int
+		var result *service.OpenAIForwardResult
+		var err error
+		_ = h.runOpenAIHTTPExecutableStage(c, moderationcoverage.StageForward, func() openAIHTTPExecutableStageResult {
+			writerSizeBeforeForward = c.Writer.Size()
+			result, err = func() (*service.OpenAIForwardResult, error) {
+				defer func() {
+					if accountReleaseFunc != nil {
+						accountReleaseFunc()
+					}
+				}()
+				return h.gatewayService.ForwardImages(requestCtx, c, account, body, parsed, channelMapping.MappedModel)
 			}()
-			return h.gatewayService.ForwardImages(requestCtx, c, account, body, parsed, channelMapping.MappedModel)
-		}()
+			return openAIHTTPExecutableStageResult{Err: err}
+		})
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
 		upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)
 		responseLatencyMs := forwardDurationMs
@@ -363,30 +387,33 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		if result != nil {
 			upstreamModel = result.UpstreamModel
 		}
-		h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
-			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
-				Result:             result,
-				APIKey:             apiKey,
-				User:               apiKey.User,
-				Account:            account,
-				Subscription:       subscription,
-				InboundEndpoint:    inboundEndpoint,
-				UpstreamEndpoint:   upstreamEndpoint,
-				UserAgent:          userAgent,
-				IPAddress:          clientIP,
-				RequestPayloadHash: requestPayloadHash,
-				APIKeyService:      h.apiKeyService,
-				ChannelUsageFields: channelMapping.ToUsageFields(requestModel, upstreamModel),
-			}); err != nil {
-				logger.L().With(
-					zap.String("component", "handler.openai_gateway.images"),
-					zap.Int64("user_id", subject.UserID),
-					zap.Int64("api_key_id", apiKey.ID),
-					zap.Any("group_id", apiKey.GroupID),
-					zap.String("model", requestModel),
-					zap.Int64("account_id", account.ID),
-				).Error("openai.images.record_usage_failed", zap.Error(err))
-			}
+		_ = h.runOpenAIHTTPExecutableStage(c, moderationcoverage.StageUsage, func() openAIHTTPExecutableStageResult {
+			h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
+				if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
+					Result:             result,
+					APIKey:             apiKey,
+					User:               apiKey.User,
+					Account:            account,
+					Subscription:       subscription,
+					InboundEndpoint:    inboundEndpoint,
+					UpstreamEndpoint:   upstreamEndpoint,
+					UserAgent:          userAgent,
+					IPAddress:          clientIP,
+					RequestPayloadHash: requestPayloadHash,
+					APIKeyService:      h.apiKeyService,
+					ChannelUsageFields: channelMapping.ToUsageFields(requestModel, upstreamModel),
+				}); err != nil {
+					logger.L().With(
+						zap.String("component", "handler.openai_gateway.images"),
+						zap.Int64("user_id", subject.UserID),
+						zap.Int64("api_key_id", apiKey.ID),
+						zap.Any("group_id", apiKey.GroupID),
+						zap.String("model", requestModel),
+						zap.Int64("account_id", account.ID),
+					).Error("openai.images.record_usage_failed", zap.Error(err))
+				}
+			})
+			return openAIHTTPExecutableStageResult{}
 		})
 
 		reqLog.Debug("openai.images.request_completed",

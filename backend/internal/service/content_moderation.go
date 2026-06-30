@@ -138,7 +138,7 @@ const (
 	contentModerationPolicySchemaVersion           = "2026-06-29.1"
 	contentModerationExtractorVersion              = "v4"
 	contentModerationMinimumSecurityBaselineCommit = "9216c848"
-	contentModerationRouteManifestVersion          = "2026-06-29.2"
+	contentModerationRouteManifestVersion          = "2026-06-29.3"
 	contentModerationPipelineCoverageVersion       = moderationcoverage.PipelineOpenAIHTTPVersion
 	minContentModerationBuildCommitPrefixLen       = 7
 )

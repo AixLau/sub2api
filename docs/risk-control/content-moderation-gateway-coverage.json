@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "manifest_version": "2026-06-29.2",
+  "manifest_version": "2026-06-29.3",
   "entries": [
     {
       "route": {
@@ -90,6 +90,26 @@
           "stage": "cyber",
           "required": true,
           "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
         }
       ],
       "status": "covered",
@@ -117,6 +137,26 @@
         },
         {
           "stage": "cyber",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
           "required": true,
           "covered": true
         }
@@ -153,6 +193,26 @@
           "stage": "image",
           "required": true,
           "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
         }
       ],
       "status": "covered",
@@ -185,6 +245,26 @@
         },
         {
           "stage": "image",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
           "required": true,
           "covered": true
         }
@@ -221,6 +301,26 @@
           "stage": "image",
           "required": true,
           "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
         }
       ],
       "status": "covered",
@@ -253,6 +353,26 @@
         },
         {
           "stage": "image",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
           "required": true,
           "covered": true
         }
@@ -321,6 +441,26 @@
           "stage": "image",
           "required": true,
           "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
         }
       ],
       "status": "covered",
@@ -353,6 +493,26 @@
         },
         {
           "stage": "image",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
           "required": true,
           "covered": true
         }
@@ -395,6 +555,26 @@
           "stage": "moderation",
           "required": true,
           "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
         }
       ],
       "status": "covered",
@@ -417,6 +597,26 @@
       "stage_coverage": [
         {
           "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
           "required": true,
           "covered": true
         }
@@ -448,6 +648,26 @@
           "stage": "image",
           "required": true,
           "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
         }
       ],
       "status": "covered",
@@ -475,6 +695,26 @@
         },
         {
           "stage": "image",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
           "required": true,
           "covered": true
         }
@@ -506,6 +746,26 @@
           "stage": "image",
           "required": true,
           "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
         }
       ],
       "status": "covered",
@@ -533,6 +793,26 @@
         },
         {
           "stage": "image",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
           "required": true,
           "covered": true
         }

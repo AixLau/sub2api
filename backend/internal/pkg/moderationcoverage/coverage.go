@@ -15,7 +15,7 @@ const (
 	StatusIntentionalNoAudit = "intentional_no_audit"
 
 	PipelineOpenAIHTTP        = "openai_http"
-	PipelineOpenAIHTTPVersion = "openai-http-pre-forward-v2"
+	PipelineOpenAIHTTPVersion = "openai-http-executable-v1"
 	PipelineOpenAIWebSocket   = "openai_websocket"
 	PipelineGatewayPreForward = "gateway_pre_forward"
 
@@ -23,12 +23,18 @@ const (
 	StageCyber      = "cyber"
 	StageImage      = "image"
 	StagePreForward = "pre_forward"
+	StageBilling    = "billing"
+	StageRouting    = "routing"
+	StageForward    = "forward"
+	StageUsage      = "usage"
 
-	RuntimeRouteMetaContextKey  = "moderationcoverage.route_meta"
-	PipelineAdmittedContextKey  = "pipeline_admitted"
-	PipelineAdmissionContextKey = "moderationcoverage.pipeline_admission"
+	RuntimeRouteMetaContextKey        = "moderationcoverage.route_meta"
+	PipelineAdmittedContextKey        = "pipeline_admitted"
+	PipelineAdmissionContextKey       = "moderationcoverage.pipeline_admission"
+	PipelineStageExecutionsContextKey = "moderationcoverage.pipeline_stage_executions"
 
 	SourceOpenAIHTTPPreForward         = "OpenAIGatewayPipeline.RunHTTPPreForward"
+	SourceOpenAIHTTPExecutableStage    = "OpenAIGatewayPipeline.RunHTTPExecutableStage"
 	SourceOpenAIWebSocketInitialFrame  = "OpenAIGatewayPipeline.RunWebSocketInitialFrame"
 	SourceOpenAIWebSocketFollowupFrame = "OpenAIGatewayPipeline.RunWebSocketFollowupFrame"
 	SourceGatewayPreForward            = "GatewayPreForwardPipeline.Run"
@@ -55,6 +61,12 @@ type Entry struct {
 
 type PipelineAdmission struct {
 	Admitted bool
+	Pipeline string
+	Stage    string
+	Source   string
+}
+
+type PipelineStageExecution struct {
 	Pipeline string
 	Stage    string
 	Source   string
@@ -159,6 +171,54 @@ func PipelineAdmissionFromContext(c *gin.Context) (PipelineAdmission, bool) {
 		return normalizePipelineAdmission(*admission), true
 	default:
 		return PipelineAdmission{}, false
+	}
+}
+
+func MarkPipelineStageExecuted(c *gin.Context, pipeline, stage, source string) {
+	if c == nil {
+		return
+	}
+	execution := normalizePipelineStageExecution(PipelineStageExecution{
+		Pipeline: pipeline,
+		Stage:    stage,
+		Source:   source,
+	})
+	if execution.Pipeline == "" || execution.Stage == "" || execution.Source == "" {
+		return
+	}
+	executions := append(PipelineStageExecutionsFromContext(c), execution)
+	c.Set(PipelineStageExecutionsContextKey, normalizePipelineStageExecutions(executions))
+}
+
+func PipelineStageExecutionsFromContext(c *gin.Context) []PipelineStageExecution {
+	if c == nil {
+		return nil
+	}
+	value, ok := c.Get(PipelineStageExecutionsContextKey)
+	if !ok {
+		return nil
+	}
+	switch executions := value.(type) {
+	case []PipelineStageExecution:
+		return normalizePipelineStageExecutions(executions)
+	case []*PipelineStageExecution:
+		values := make([]PipelineStageExecution, 0, len(executions))
+		for _, execution := range executions {
+			if execution == nil {
+				continue
+			}
+			values = append(values, *execution)
+		}
+		return normalizePipelineStageExecutions(values)
+	case PipelineStageExecution:
+		return normalizePipelineStageExecutions([]PipelineStageExecution{executions})
+	case *PipelineStageExecution:
+		if executions == nil {
+			return nil
+		}
+		return normalizePipelineStageExecutions([]PipelineStageExecution{*executions})
+	default:
+		return nil
 	}
 }
 
@@ -276,6 +336,12 @@ func OpenAIHTTPPipelineStagesForRoute(handlerName, protocol string) []PipelineSt
 	default:
 		return nil
 	}
+	stages = append(stages,
+		CoveredPipelineStage(StageBilling),
+		CoveredPipelineStage(StageRouting),
+		CoveredPipelineStage(StageForward),
+		CoveredPipelineStage(StageUsage),
+	)
 	return NormalizeStageCoverage(stages)
 }
 
@@ -316,6 +382,10 @@ func NormalizeStage(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
 
+func NormalizeSource(value string) string {
+	return strings.TrimSpace(value)
+}
+
 func NormalizeStageCoverage(stages []PipelineStageCoverage) []PipelineStageCoverage {
 	stagesByName := make(map[string]PipelineStageCoverage, len(stages))
 	for _, stage := range stages {
@@ -344,8 +414,47 @@ func NormalizeStageCoverage(stages []PipelineStageCoverage) []PipelineStageCover
 func normalizePipelineAdmission(admission PipelineAdmission) PipelineAdmission {
 	admission.Pipeline = NormalizePipeline(admission.Pipeline)
 	admission.Stage = NormalizeStage(admission.Stage)
-	admission.Source = strings.TrimSpace(admission.Source)
+	admission.Source = NormalizeSource(admission.Source)
 	return admission
+}
+
+func normalizePipelineStageExecution(execution PipelineStageExecution) PipelineStageExecution {
+	execution.Pipeline = NormalizePipeline(execution.Pipeline)
+	execution.Stage = NormalizeStage(execution.Stage)
+	execution.Source = NormalizeSource(execution.Source)
+	return execution
+}
+
+func normalizePipelineStageExecutions(executions []PipelineStageExecution) []PipelineStageExecution {
+	executionsByKey := make(map[string]PipelineStageExecution, len(executions))
+	for _, execution := range executions {
+		normalized := normalizePipelineStageExecution(execution)
+		if normalized.Pipeline == "" || normalized.Stage == "" || normalized.Source == "" {
+			continue
+		}
+		executionsByKey[pipelineStageExecutionKey(normalized)] = normalized
+	}
+
+	normalized := make([]PipelineStageExecution, 0, len(executionsByKey))
+	for _, execution := range executionsByKey {
+		normalized = append(normalized, execution)
+	}
+	sort.Slice(normalized, func(i, j int) bool {
+		if normalized[i].Pipeline != normalized[j].Pipeline {
+			return normalized[i].Pipeline < normalized[j].Pipeline
+		}
+		leftStage := PipelineStageSortKey(normalized[i].Stage)
+		rightStage := PipelineStageSortKey(normalized[j].Stage)
+		if leftStage != rightStage {
+			return leftStage < rightStage
+		}
+		return normalized[i].Source < normalized[j].Source
+	})
+	return normalized
+}
+
+func pipelineStageExecutionKey(execution PipelineStageExecution) string {
+	return execution.Pipeline + "\x00" + execution.Stage + "\x00" + execution.Source
 }
 
 func PipelineStageSortKey(stage string) string {
@@ -356,6 +465,16 @@ func PipelineStageSortKey(stage string) string {
 		return "01:" + StageCyber
 	case StageImage:
 		return "02:" + StageImage
+	case StagePreForward:
+		return "03:" + StagePreForward
+	case StageBilling:
+		return "04:" + StageBilling
+	case StageRouting:
+		return "05:" + StageRouting
+	case StageForward:
+		return "06:" + StageForward
+	case StageUsage:
+		return "07:" + StageUsage
 	default:
 		return "99:" + NormalizeStage(stage)
 	}

@@ -2379,7 +2379,7 @@ func TestContentModerationStatusIncludesRouteCoverage(t *testing.T) {
 
 	status, err := svc.GetStatus(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, "2026-06-29.2", status.RouteCoverage.ManifestVersion)
+	require.Equal(t, "2026-06-29.3", status.RouteCoverage.ManifestVersion)
 	require.Equal(t, expectedCoverage.manifestVersion, status.RouteCoverage.ManifestVersion)
 	require.NotEmpty(t, status.RouteCoverage.ManifestHash)
 	require.Equal(t, moderationcoverage.HashFromEntries(expectedCoverage.entries), status.RouteCoverage.ManifestHash)
@@ -2460,27 +2460,43 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 			"required_routes": 3,
 			"covered_routes": 3,
 			"uncovered_routes": [],
-			"stage_coverage": [
-				{"stage": "moderation", "required_routes": 3, "covered_routes": 3, "uncovered_routes": []},
-				{"stage": "cyber", "required_routes": 2, "covered_routes": 2, "uncovered_routes": []},
-				{"stage": "image", "required_routes": 2, "covered_routes": 2, "uncovered_routes": []}
-			],
-			"routes": [
-				{"method": "POST", "path": "/v1/chat/completions", "handler": "OpenAIGatewayHandler.ChatCompletions", "protocol": "openai_chat_completions", "pipeline": "openai_http", "covered": true, "stages": [
-					{"stage": "moderation", "required": true, "covered": true},
-					{"stage": "cyber", "required": true, "covered": true}
-				]},
-				{"method": "POST", "path": "/v1/images/generations", "handler": "OpenAIGatewayHandler.Images", "protocol": "openai_images", "pipeline": "openai_http", "covered": true, "stages": [
-					{"stage": "moderation", "required": true, "covered": true},
-					{"stage": "image", "required": true, "covered": true}
-				]},
-				{"method": "POST", "path": "/v1/responses", "handler": "OpenAIGatewayHandler.Responses", "protocol": "openai_responses", "pipeline": "openai_http", "covered": true, "stages": [
-					{"stage": "moderation", "required": true, "covered": true},
-					{"stage": "cyber", "required": true, "covered": true},
-					{"stage": "image", "required": true, "covered": true}
-				]}
-			]
-		}
+				"stage_coverage": [
+					{"stage": "moderation", "required_routes": 3, "covered_routes": 3, "uncovered_routes": []},
+					{"stage": "cyber", "required_routes": 2, "covered_routes": 2, "uncovered_routes": []},
+					{"stage": "image", "required_routes": 2, "covered_routes": 2, "uncovered_routes": []},
+					{"stage": "billing", "required_routes": 3, "covered_routes": 3, "uncovered_routes": []},
+					{"stage": "routing", "required_routes": 3, "covered_routes": 3, "uncovered_routes": []},
+					{"stage": "forward", "required_routes": 3, "covered_routes": 3, "uncovered_routes": []},
+					{"stage": "usage", "required_routes": 3, "covered_routes": 3, "uncovered_routes": []}
+				],
+				"routes": [
+					{"method": "POST", "path": "/v1/chat/completions", "handler": "OpenAIGatewayHandler.ChatCompletions", "protocol": "openai_chat_completions", "pipeline": "openai_http", "covered": true, "stages": [
+						{"stage": "moderation", "required": true, "covered": true},
+						{"stage": "cyber", "required": true, "covered": true},
+						{"stage": "billing", "required": true, "covered": true},
+						{"stage": "routing", "required": true, "covered": true},
+						{"stage": "forward", "required": true, "covered": true},
+						{"stage": "usage", "required": true, "covered": true}
+					]},
+					{"method": "POST", "path": "/v1/images/generations", "handler": "OpenAIGatewayHandler.Images", "protocol": "openai_images", "pipeline": "openai_http", "covered": true, "stages": [
+						{"stage": "moderation", "required": true, "covered": true},
+						{"stage": "image", "required": true, "covered": true},
+						{"stage": "billing", "required": true, "covered": true},
+						{"stage": "routing", "required": true, "covered": true},
+						{"stage": "forward", "required": true, "covered": true},
+						{"stage": "usage", "required": true, "covered": true}
+					]},
+					{"method": "POST", "path": "/v1/responses", "handler": "OpenAIGatewayHandler.Responses", "protocol": "openai_responses", "pipeline": "openai_http", "covered": true, "stages": [
+						{"stage": "moderation", "required": true, "covered": true},
+						{"stage": "cyber", "required": true, "covered": true},
+						{"stage": "image", "required": true, "covered": true},
+						{"stage": "billing", "required": true, "covered": true},
+						{"stage": "routing", "required": true, "covered": true},
+						{"stage": "forward", "required": true, "covered": true},
+						{"stage": "usage", "required": true, "covered": true}
+					]}
+				]
+			}
 	}`, contentModerationRouteManifestVersion, contentModerationPipelineCoverageVersion, status.ManifestHash, contentModerationPipelineCoverageVersion), string(payload))
 	require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, status.OpenAIHTTP.Pipeline)
 	require.Equal(t, contentModerationPipelineCoverageVersion, status.OpenAIHTTP.Version)
@@ -2492,6 +2508,10 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 	requirePipelineStageSummary(t, status.OpenAIHTTP.StageCoverage, moderationcoverage.StageModeration, 3, 3, []string{})
 	requirePipelineStageSummary(t, status.OpenAIHTTP.StageCoverage, moderationcoverage.StageCyber, 2, 2, []string{})
 	requirePipelineStageSummary(t, status.OpenAIHTTP.StageCoverage, moderationcoverage.StageImage, 2, 2, []string{})
+	requirePipelineStageSummary(t, status.OpenAIHTTP.StageCoverage, moderationcoverage.StageBilling, 3, 3, []string{})
+	requirePipelineStageSummary(t, status.OpenAIHTTP.StageCoverage, moderationcoverage.StageRouting, 3, 3, []string{})
+	requirePipelineStageSummary(t, status.OpenAIHTTP.StageCoverage, moderationcoverage.StageForward, 3, 3, []string{})
+	requirePipelineStageSummary(t, status.OpenAIHTTP.StageCoverage, moderationcoverage.StageUsage, 3, 3, []string{})
 
 	responsesRoute := requirePipelineRouteSummary(t, status.OpenAIHTTP.Routes, "POST", "/v1/responses")
 	require.Equal(t, "OpenAIGatewayHandler.Responses", responsesRoute.Handler)
@@ -2503,6 +2523,10 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 		{Stage: moderationcoverage.StageModeration, Required: true, Covered: true},
 		{Stage: moderationcoverage.StageCyber, Required: true, Covered: true},
 		{Stage: moderationcoverage.StageImage, Required: true, Covered: true},
+		{Stage: moderationcoverage.StageBilling, Required: true, Covered: true},
+		{Stage: moderationcoverage.StageRouting, Required: true, Covered: true},
+		{Stage: moderationcoverage.StageForward, Required: true, Covered: true},
+		{Stage: moderationcoverage.StageUsage, Required: true, Covered: true},
 	}, responsesRoute.Stages)
 }
 
@@ -2534,15 +2558,7 @@ func TestContentModerationStatusIncludesPipelineCoverageFromRegisteredEntries(t 
 
 func TestContentModerationPipelineCoverageStatusReportsStageDrift(t *testing.T) {
 	entries := contentModerationPipelineCoverageFixtureEntries()
-	entries[1].StageCoverage = []moderationcoverage.PipelineStageCoverage{
-		coveredContentModerationPipelineStage(moderationcoverage.StageModeration),
-		coveredContentModerationPipelineStage(moderationcoverage.StageCyber),
-		{
-			Stage:    moderationcoverage.StageImage,
-			Required: true,
-			Covered:  false,
-		},
-	}
+	entries[1].StageCoverage = withContentModerationPipelineStageCovered(entries[1].StageCoverage, moderationcoverage.StageImage, false)
 
 	status := contentModerationPipelineCoverageStatusFromEntries(entries)
 
@@ -2555,10 +2571,7 @@ func TestContentModerationPipelineCoverageStatusReportsStageDrift(t *testing.T) 
 
 func TestContentModerationPipelineCoverageStatusReportsMissingExpectedStage(t *testing.T) {
 	entries := contentModerationPipelineCoverageFixtureEntries()
-	entries[1].StageCoverage = []moderationcoverage.PipelineStageCoverage{
-		coveredContentModerationPipelineStage(moderationcoverage.StageModeration),
-		coveredContentModerationPipelineStage(moderationcoverage.StageCyber),
-	}
+	entries[1].StageCoverage = withoutContentModerationPipelineStage(entries[1].StageCoverage, moderationcoverage.StageImage)
 
 	status := contentModerationPipelineCoverageStatusFromEntries(entries)
 
@@ -2575,6 +2588,10 @@ func TestContentModerationPipelineCoverageStatusReportsMissingExpectedStage(t *t
 		{Stage: moderationcoverage.StageModeration, Required: true, Covered: true},
 		{Stage: moderationcoverage.StageCyber, Required: true, Covered: true},
 		{Stage: moderationcoverage.StageImage, Required: true, Covered: false},
+		{Stage: moderationcoverage.StageBilling, Required: true, Covered: true},
+		{Stage: moderationcoverage.StageRouting, Required: true, Covered: true},
+		{Stage: moderationcoverage.StageForward, Required: true, Covered: true},
+		{Stage: moderationcoverage.StageUsage, Required: true, Covered: true},
 	}, responsesRoute.Stages)
 }
 
@@ -2596,7 +2613,15 @@ func TestContentModerationPipelineCoverageStatusReportsMissingOpenAIHTTPMetadata
 	require.Equal(t, 0, status.OpenAIHTTP.CoveredRoutes)
 	require.Equal(t, []string{"POST /v1/chat/completions"}, status.OpenAIHTTP.UncoveredRoutes)
 	require.Len(t, status.OpenAIHTTP.Routes, 1)
-	require.Equal(t, []string{moderationcoverage.StageModeration, moderationcoverage.StageCyber, "pipeline_metadata"}, status.OpenAIHTTP.Routes[0].UncoveredStages)
+	require.Equal(t, []string{
+		moderationcoverage.StageModeration,
+		moderationcoverage.StageCyber,
+		moderationcoverage.StageBilling,
+		moderationcoverage.StageRouting,
+		moderationcoverage.StageForward,
+		moderationcoverage.StageUsage,
+		"pipeline_metadata",
+	}, status.OpenAIHTTP.Routes[0].UncoveredStages)
 }
 
 func TestContentModerationPipelineCoverageStatusReportsWrongOpenAIHTTPPipelineMetadata(t *testing.T) {
@@ -2609,11 +2634,8 @@ func TestContentModerationPipelineCoverageStatusReportsWrongOpenAIHTTPPipelineMe
 			ModerationRequired: true,
 			Protocol:           ContentModerationProtocolOpenAIChat,
 			Pipeline:           "legacy",
-			StageCoverage: []moderationcoverage.PipelineStageCoverage{
-				coveredContentModerationPipelineStage(moderationcoverage.StageModeration),
-				coveredContentModerationPipelineStage(moderationcoverage.StageCyber),
-			},
-			Status: moderationcoverage.StatusCovered,
+			StageCoverage:      moderationcoverage.OpenAIHTTPPipelineStagesForRoute("OpenAIGatewayHandler.ChatCompletions", ContentModerationProtocolOpenAIChat),
+			Status:             moderationcoverage.StatusCovered,
 		},
 	})
 
@@ -2627,15 +2649,7 @@ func TestContentModerationPipelineCoverageStatusReportsWrongOpenAIHTTPPipelineMe
 
 func TestContentModerationStatusEffectiveProtectionIncludesPipelineCoverage(t *testing.T) {
 	entries := contentModerationPipelineCoverageFixtureEntries()
-	entries[1].StageCoverage = []moderationcoverage.PipelineStageCoverage{
-		coveredContentModerationPipelineStage(moderationcoverage.StageModeration),
-		coveredContentModerationPipelineStage(moderationcoverage.StageCyber),
-		{
-			Stage:    moderationcoverage.StageImage,
-			Required: true,
-			Covered:  false,
-		},
-	}
+	entries[1].StageCoverage = withContentModerationPipelineStageCovered(entries[1].StageCoverage, moderationcoverage.StageImage, false)
 	restore := moderationcoverage.ReplaceRegistryForTest(entries)
 	defer restore()
 
@@ -2740,7 +2754,7 @@ func loadContentModerationGatewayCoverageForStatus(t *testing.T) struct {
 	var manifest contentModerationGatewayCoverageForStatus
 	require.NoError(t, json.Unmarshal(data, &manifest))
 	require.Equal(t, 1, manifest.SchemaVersion)
-	require.Equal(t, "2026-06-29.2", manifest.ManifestVersion)
+	require.Equal(t, "2026-06-29.3", manifest.ManifestVersion)
 
 	result := struct {
 		manifestVersion string
@@ -2811,10 +2825,7 @@ func contentModerationPipelineCoverageFixtureEntries() []moderationcoverage.Entr
 			Protocol:           ContentModerationProtocolOpenAIChat,
 			Status:             moderationcoverage.StatusCovered,
 			Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
-			StageCoverage: []moderationcoverage.PipelineStageCoverage{
-				coveredContentModerationPipelineStage(moderationcoverage.StageModeration),
-				coveredContentModerationPipelineStage(moderationcoverage.StageCyber),
-			},
+			StageCoverage:      moderationcoverage.OpenAIHTTPPipelineStagesForRoute("OpenAIGatewayHandler.ChatCompletions", ContentModerationProtocolOpenAIChat),
 		},
 		{
 			Method:             "POST",
@@ -2825,11 +2836,7 @@ func contentModerationPipelineCoverageFixtureEntries() []moderationcoverage.Entr
 			Protocol:           ContentModerationProtocolOpenAIResponses,
 			Status:             moderationcoverage.StatusCovered,
 			Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
-			StageCoverage: []moderationcoverage.PipelineStageCoverage{
-				coveredContentModerationPipelineStage(moderationcoverage.StageModeration),
-				coveredContentModerationPipelineStage(moderationcoverage.StageCyber),
-				coveredContentModerationPipelineStage(moderationcoverage.StageImage),
-			},
+			StageCoverage:      moderationcoverage.OpenAIHTTPPipelineStagesForRoute("OpenAIGatewayHandler.Responses", ContentModerationProtocolOpenAIResponses),
 		},
 		{
 			Method:             "POST",
@@ -2840,10 +2847,7 @@ func contentModerationPipelineCoverageFixtureEntries() []moderationcoverage.Entr
 			Protocol:           ContentModerationProtocolOpenAIImages,
 			Status:             moderationcoverage.StatusCovered,
 			Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
-			StageCoverage: []moderationcoverage.PipelineStageCoverage{
-				coveredContentModerationPipelineStage(moderationcoverage.StageModeration),
-				coveredContentModerationPipelineStage(moderationcoverage.StageImage),
-			},
+			StageCoverage:      moderationcoverage.OpenAIHTTPPipelineStagesForRoute("OpenAIGatewayHandler.Images", ContentModerationProtocolOpenAIImages),
 		},
 		{
 			Method:             "POST",
@@ -2863,6 +2867,28 @@ func coveredContentModerationPipelineStage(stage string) moderationcoverage.Pipe
 		Required: true,
 		Covered:  true,
 	}
+}
+
+func withContentModerationPipelineStageCovered(stages []moderationcoverage.PipelineStageCoverage, stage string, covered bool) []moderationcoverage.PipelineStageCoverage {
+	out := make([]moderationcoverage.PipelineStageCoverage, 0, len(stages))
+	for _, item := range stages {
+		if item.Stage == stage {
+			item.Covered = covered
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func withoutContentModerationPipelineStage(stages []moderationcoverage.PipelineStageCoverage, stage string) []moderationcoverage.PipelineStageCoverage {
+	out := make([]moderationcoverage.PipelineStageCoverage, 0, len(stages))
+	for _, item := range stages {
+		if item.Stage == stage {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func requirePipelineStageSummary(t *testing.T, summaries []ContentModerationPipelineStageCoverageStatus, stage string, required int, covered int, uncovered []string) {
