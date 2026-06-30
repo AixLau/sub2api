@@ -187,8 +187,14 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	setOpsRequestContext(c, modelName, stream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(stream, false)))
 
-	if decision := h.checkContentModeration(c, reqLog, apiKey, authSubject, service.ContentModerationProtocolGemini, modelName, body); decision != nil && decision.Blocked {
-		googleError(c, contentModerationStatus(decision), decision.Message)
+	if pipelineResult := h.runGatewayPreForwardPipeline(c, reqLog, gatewayPreForwardPipelineInput{
+		APIKey:      apiKey,
+		Subject:     authSubject,
+		Protocol:    service.ContentModerationProtocolGemini,
+		Model:       modelName,
+		Body:        body,
+		ErrorFormat: gatewayPreForwardErrorGemini,
+	}); pipelineResult.Blocked {
 		return
 	}
 

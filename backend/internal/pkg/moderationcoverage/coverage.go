@@ -6,17 +6,32 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/gin-gonic/gin"
 )
 
 const (
 	StatusCovered            = "covered"
 	StatusIntentionalNoAudit = "intentional_no_audit"
 
-	PipelineOpenAIHTTP = "openai_http"
+	PipelineOpenAIHTTP        = "openai_http"
+	PipelineOpenAIHTTPVersion = "openai-http-pre-forward-v2"
+	PipelineOpenAIWebSocket   = "openai_websocket"
+	PipelineGatewayPreForward = "gateway_pre_forward"
 
 	StageModeration = "moderation"
 	StageCyber      = "cyber"
 	StageImage      = "image"
+	StagePreForward = "pre_forward"
+
+	RuntimeRouteMetaContextKey  = "moderationcoverage.route_meta"
+	PipelineAdmittedContextKey  = "pipeline_admitted"
+	PipelineAdmissionContextKey = "moderationcoverage.pipeline_admission"
+
+	SourceOpenAIHTTPPreForward         = "OpenAIGatewayPipeline.RunHTTPPreForward"
+	SourceOpenAIWebSocketInitialFrame  = "OpenAIGatewayPipeline.RunWebSocketInitialFrame"
+	SourceOpenAIWebSocketFollowupFrame = "OpenAIGatewayPipeline.RunWebSocketFollowupFrame"
+	SourceGatewayPreForward            = "GatewayPreForwardPipeline.Run"
 )
 
 type PipelineStageCoverage struct {
@@ -36,6 +51,13 @@ type Entry struct {
 	StageCoverage      []PipelineStageCoverage
 	Status             string
 	ReviewReason       string
+}
+
+type PipelineAdmission struct {
+	Admitted bool
+	Pipeline string
+	Stage    string
+	Source   string
 }
 
 type Status struct {
@@ -63,6 +85,81 @@ func Entries() []Entry {
 	registry.Lock()
 	defer registry.Unlock()
 	return entriesSnapshotLocked()
+}
+
+func SetRouteMeta(c *gin.Context, entry Entry) {
+	if c == nil {
+		return
+	}
+	c.Set(RuntimeRouteMetaContextKey, NormalizeEntry(entry))
+}
+
+func RouteMetaFromContext(c *gin.Context) (Entry, bool) {
+	if c == nil {
+		return Entry{}, false
+	}
+	value, ok := c.Get(RuntimeRouteMetaContextKey)
+	if !ok {
+		return Entry{}, false
+	}
+	switch meta := value.(type) {
+	case Entry:
+		return NormalizeEntry(meta), true
+	case *Entry:
+		if meta == nil {
+			return Entry{}, false
+		}
+		return NormalizeEntry(*meta), true
+	default:
+		return Entry{}, false
+	}
+}
+
+func MarkPipelineAdmitted(c *gin.Context, pipeline, stage, source string) {
+	if c == nil {
+		return
+	}
+	admission := PipelineAdmission{
+		Admitted: true,
+		Pipeline: NormalizePipeline(pipeline),
+		Stage:    NormalizeStage(stage),
+		Source:   strings.TrimSpace(source),
+	}
+	c.Set(PipelineAdmittedContextKey, true)
+	c.Set(PipelineAdmissionContextKey, admission)
+}
+
+func PipelineAdmittedFromContext(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	value, ok := c.Get(PipelineAdmittedContextKey)
+	if !ok {
+		return false
+	}
+	admitted, ok := value.(bool)
+	return ok && admitted
+}
+
+func PipelineAdmissionFromContext(c *gin.Context) (PipelineAdmission, bool) {
+	if c == nil {
+		return PipelineAdmission{}, false
+	}
+	value, ok := c.Get(PipelineAdmissionContextKey)
+	if !ok {
+		return PipelineAdmission{}, false
+	}
+	switch admission := value.(type) {
+	case PipelineAdmission:
+		return normalizePipelineAdmission(admission), true
+	case *PipelineAdmission:
+		if admission == nil {
+			return PipelineAdmission{}, false
+		}
+		return normalizePipelineAdmission(*admission), true
+	default:
+		return PipelineAdmission{}, false
+	}
 }
 
 func ReplaceRegistryForTest(entries []Entry) func() {
@@ -146,6 +243,59 @@ func NormalizeEntry(entry Entry) Entry {
 	return entry
 }
 
+func AnnotatePipelineCoverage(entry Entry) Entry {
+	entry = NormalizeEntry(entry)
+	stages := OpenAIHTTPPipelineStagesForRoute(entry.Handler, entry.Protocol)
+	if len(stages) == 0 {
+		return entry
+	}
+	entry.Pipeline = PipelineOpenAIHTTP
+	entry.StageCoverage = stages
+	return NormalizeEntry(entry)
+}
+
+func OpenAIHTTPPipelineStagesForRoute(handlerName, protocol string) []PipelineStageCoverage {
+	if !IsOpenAIHTTPPipelineProtocol(protocol) {
+		return nil
+	}
+
+	stages := []PipelineStageCoverage{
+		CoveredPipelineStage(StageModeration),
+	}
+	switch strings.TrimSpace(handlerName) {
+	case "OpenAIGatewayHandler.ChatCompletions":
+		stages = append(stages, CoveredPipelineStage(StageCyber))
+	case "OpenAIGatewayHandler.Responses":
+		stages = append(stages,
+			CoveredPipelineStage(StageCyber),
+			CoveredPipelineStage(StageImage),
+		)
+	case "OpenAIGatewayHandler.Images":
+		stages = append(stages, CoveredPipelineStage(StageImage))
+	case "OpenAIGatewayHandler.Embeddings":
+	default:
+		return nil
+	}
+	return NormalizeStageCoverage(stages)
+}
+
+func CoveredPipelineStage(stage string) PipelineStageCoverage {
+	return PipelineStageCoverage{
+		Stage:    NormalizeStage(stage),
+		Required: true,
+		Covered:  true,
+	}
+}
+
+func IsOpenAIHTTPPipelineProtocol(protocol string) bool {
+	switch strings.TrimSpace(protocol) {
+	case "openai_chat_completions", "openai_responses", "openai_images", "openai_embeddings":
+		return true
+	default:
+		return false
+	}
+}
+
 func NormalizeMethod(value string) string {
 	return strings.ToUpper(strings.TrimSpace(value))
 }
@@ -180,13 +330,35 @@ func NormalizeStageCoverage(stages []PipelineStageCoverage) []PipelineStageCover
 	for name := range stagesByName {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	sort.Slice(names, func(i, j int) bool {
+		return PipelineStageSortKey(names[i]) < PipelineStageSortKey(names[j])
+	})
 
 	normalized := make([]PipelineStageCoverage, 0, len(names))
 	for _, name := range names {
 		normalized = append(normalized, stagesByName[name])
 	}
 	return normalized
+}
+
+func normalizePipelineAdmission(admission PipelineAdmission) PipelineAdmission {
+	admission.Pipeline = NormalizePipeline(admission.Pipeline)
+	admission.Stage = NormalizeStage(admission.Stage)
+	admission.Source = strings.TrimSpace(admission.Source)
+	return admission
+}
+
+func PipelineStageSortKey(stage string) string {
+	switch NormalizeStage(stage) {
+	case StageModeration:
+		return "00:" + StageModeration
+	case StageCyber:
+		return "01:" + StageCyber
+	case StageImage:
+		return "02:" + StageImage
+	default:
+		return "99:" + NormalizeStage(stage)
+	}
 }
 
 func normalizeEntries(entries []Entry) []Entry {

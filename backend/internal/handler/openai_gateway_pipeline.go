@@ -5,16 +5,22 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
 type OpenAIGatewayPipeline struct {
-	moderationGuard      moderationGuard
-	cyberSessionChecker  openAIGatewayCyberSessionChecker
-	httpPreForwardStages []openAIHTTPGatewayStage
+	moderationGuard       moderationGuard
+	cyberSessionChecker   openAIGatewayCyberSessionChecker
+	httpPreForwardStages  []openAIHTTPGatewayStage
+	wsInitialFrameStages  []openAIWebSocketGatewayStage
+	wsFollowupFrameStages []openAIWebSocketGatewayStage
 }
+
+// OpenAIWebSocketPipeline is the WebSocket-facing surface of the OpenAI gateway pipeline.
+type OpenAIWebSocketPipeline = OpenAIGatewayPipeline
 
 func newOpenAIGatewayPipeline(guard moderationGuard, cyberSessionChecker ...openAIGatewayCyberSessionChecker) *OpenAIGatewayPipeline {
 	if guard == nil {
@@ -35,9 +41,11 @@ func (p *OpenAIGatewayPipeline) withCyberSessionChecker(checker openAIGatewayCyb
 		return newOpenAIGatewayPipeline(nil, checker)
 	}
 	return &OpenAIGatewayPipeline{
-		moderationGuard:      p.moderationGuard,
-		cyberSessionChecker:  checker,
-		httpPreForwardStages: p.httpPreForwardStages,
+		moderationGuard:       p.moderationGuard,
+		cyberSessionChecker:   checker,
+		httpPreForwardStages:  p.httpPreForwardStages,
+		wsInitialFrameStages:  p.wsInitialFrameStages,
+		wsFollowupFrameStages: p.wsFollowupFrameStages,
 	}
 }
 
@@ -67,6 +75,13 @@ type openAIHTTPGatewayStageResult struct {
 	Cleanup func()
 }
 
+type openAIHTTPModerationErrorFormat int
+
+const (
+	openAIHTTPModerationErrorOpenAI openAIHTTPModerationErrorFormat = iota
+	openAIHTTPModerationErrorAnthropic
+)
+
 // OpenAIHTTPModerationStage runs the OpenAI content moderation pre-forward check.
 type OpenAIHTTPModerationStage struct{}
 
@@ -94,9 +109,18 @@ func (OpenAIHTTPModerationStage) Run(ctx *openAIHTTPGatewayStageContext) openAIH
 		return openAIHTTPGatewayStageResult{}
 	}
 	if ctx.handler != nil {
-		ctx.handler.errorResponse(ctx.c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+		ctx.handler.writeOpenAIHTTPModerationError(ctx.c, input.ModerationErrorFormat, decision)
 	}
 	return openAIHTTPGatewayStageResult{Blocked: true}
+}
+
+func (h *OpenAIGatewayHandler) writeOpenAIHTTPModerationError(c *gin.Context, format openAIHTTPModerationErrorFormat, decision *service.ContentModerationDecision) {
+	switch format {
+	case openAIHTTPModerationErrorAnthropic:
+		h.anthropicErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+	default:
+		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+	}
 }
 
 // OpenAIHTTPImagePermissionStage enforces image generation permission for
@@ -214,6 +238,7 @@ func (p *OpenAIGatewayPipeline) RunHTTPPreForward(h *OpenAIGatewayHandler, c *gi
 			return openAIHTTPPreForwardPipelineResult{Blocked: true}
 		}
 	}
+	moderationcoverage.MarkPipelineAdmitted(c, moderationcoverage.PipelineOpenAIHTTP, moderationcoverage.StagePreForward, moderationcoverage.SourceOpenAIHTTPPreForward)
 	return openAIHTTPPreForwardPipelineResult{ImageReleaseFunc: cleanup}
 }
 
@@ -250,6 +275,187 @@ func combineOpenAIHTTPGatewayCleanup(current func(), next func()) func() {
 	}
 }
 
+type openAIWebSocketGatewayStage interface {
+	Name() string
+	Run(*openAIWebSocketGatewayStageContext) openAIWebSocketGatewayStageResult
+}
+
+type openAIWebSocketGatewayStageContext struct {
+	handler  *OpenAIGatewayHandler
+	pipeline *OpenAIGatewayPipeline
+	c        *gin.Context
+	reqLog   *zap.Logger
+	input    openAIWebSocketPipelineInput
+}
+
+type openAIWebSocketGatewayStageResult struct {
+	Result openAIWebSocketPipelineResult
+}
+
+// OpenAIWebSocketModerationStage runs the Responses WebSocket content moderation check.
+type OpenAIWebSocketModerationStage struct{}
+
+func (OpenAIWebSocketModerationStage) Name() string {
+	return "moderation"
+}
+
+func (OpenAIWebSocketModerationStage) Run(ctx *openAIWebSocketGatewayStageContext) openAIWebSocketGatewayStageResult {
+	if ctx == nil {
+		return openAIWebSocketGatewayStageResult{}
+	}
+	pipeline := ctx.pipeline
+	if pipeline == nil {
+		pipeline = newOpenAIGatewayPipeline(nil)
+	}
+	input := ctx.input
+	decision := pipeline.CheckModeration(ctx.c, ctx.reqLog, moderationGuardInput{
+		APIKey:   input.APIKey,
+		Subject:  input.Subject,
+		Protocol: input.Protocol,
+		Model:    input.Model,
+		Body:     input.Body,
+	})
+	if decision == nil || !decision.Blocked {
+		return openAIWebSocketGatewayStageResult{}
+	}
+	return openAIWebSocketGatewayStageResult{Result: openAIWebSocketPipelineResult{
+		Blocked:            true,
+		BlockReason:        openAIWebSocketPipelineBlockReasonModeration,
+		ModerationDecision: decision,
+		Message:            decision.Message,
+	}}
+}
+
+// OpenAIWebSocketImagePermissionStage enforces group image generation permission
+// for the initial Responses WebSocket frame before any upstream connection is used.
+type OpenAIWebSocketImagePermissionStage struct{}
+
+func (OpenAIWebSocketImagePermissionStage) Name() string {
+	return "image_permission"
+}
+
+func (OpenAIWebSocketImagePermissionStage) Run(ctx *openAIWebSocketGatewayStageContext) openAIWebSocketGatewayStageResult {
+	if ctx == nil || !openAIWebSocketGatewayImageIntent(ctx.input) {
+		return openAIWebSocketGatewayStageResult{}
+	}
+	var group *service.Group
+	if ctx.input.APIKey != nil {
+		group = ctx.input.APIKey.Group
+	}
+	if service.GroupAllowsImageGeneration(group) {
+		return openAIWebSocketGatewayStageResult{}
+	}
+	return openAIWebSocketGatewayStageResult{Result: openAIWebSocketPipelineResult{
+		Blocked:     true,
+		BlockReason: openAIWebSocketPipelineBlockReasonImagePermission,
+		Message:     service.ImageGenerationPermissionMessage(),
+	}}
+}
+
+func openAIWebSocketGatewayImageIntent(input openAIWebSocketPipelineInput) bool {
+	imageEndpoint := input.ImageEndpoint
+	if imageEndpoint == "" {
+		imageEndpoint = "/v1/responses"
+	}
+	return service.IsImageGenerationIntent(imageEndpoint, input.Model, input.Body)
+}
+
+// OpenAIWebSocketCyberStage rejects WebSocket sessions that are already blocked
+// by the cyber session policy. It intentionally does not write an HTTP response;
+// the WebSocket handler preserves the existing error-frame and close behavior.
+type OpenAIWebSocketCyberStage struct{}
+
+func (OpenAIWebSocketCyberStage) Name() string {
+	return "cyber"
+}
+
+func (OpenAIWebSocketCyberStage) Run(ctx *openAIWebSocketGatewayStageContext) openAIWebSocketGatewayStageResult {
+	if ctx == nil {
+		return openAIWebSocketGatewayStageResult{}
+	}
+	pipeline := ctx.pipeline
+	if pipeline == nil {
+		pipeline = newOpenAIGatewayPipeline(nil)
+	}
+	input := ctx.input
+	cyberResult := pipeline.checkCyberSessionBlock(ctx.c, openAIGatewayCyberSessionInput{
+		APIKey:   input.APIKey,
+		Protocol: input.Protocol,
+		Model:    input.Model,
+		Body:     input.CyberBody,
+		Format:   cyberBlockFormatResponses,
+	})
+	result := openAIWebSocketPipelineResult{}
+	if cyberResult != nil {
+		result.CyberBlockKey = cyberResult.BlockKey
+	}
+	if cyberResult == nil || !cyberResult.Blocked {
+		return openAIWebSocketGatewayStageResult{Result: result}
+	}
+	result.Blocked = true
+	result.BlockReason = openAIWebSocketPipelineBlockReasonCyberSession
+	result.Message = "session blocked by cyber-security policy"
+	return openAIWebSocketGatewayStageResult{Result: result}
+}
+
+// RunWebSocketInitialFrame runs the Responses WebSocket initial-frame stages in order.
+func (p *OpenAIGatewayPipeline) RunWebSocketInitialFrame(h *OpenAIGatewayHandler, c *gin.Context, reqLog *zap.Logger, input openAIWebSocketPipelineInput) openAIWebSocketPipelineResult {
+	return p.runWebSocketStages(h, c, reqLog, input, p.webSocketInitialFramePipelineStages(input), moderationcoverage.SourceOpenAIWebSocketInitialFrame)
+}
+
+// RunWebSocketFollowupFrame runs the Responses WebSocket follow-up-frame stages in order.
+func (p *OpenAIGatewayPipeline) RunWebSocketFollowupFrame(h *OpenAIGatewayHandler, c *gin.Context, reqLog *zap.Logger, input openAIWebSocketPipelineInput) openAIWebSocketPipelineResult {
+	return p.runWebSocketStages(h, c, reqLog, input, p.webSocketFollowupFramePipelineStages(input), moderationcoverage.SourceOpenAIWebSocketFollowupFrame)
+}
+
+func (p *OpenAIGatewayPipeline) runWebSocketStages(h *OpenAIGatewayHandler, c *gin.Context, reqLog *zap.Logger, input openAIWebSocketPipelineInput, stages []openAIWebSocketGatewayStage, source string) openAIWebSocketPipelineResult {
+	ctx := &openAIWebSocketGatewayStageContext{
+		handler:  h,
+		pipeline: p,
+		c:        c,
+		reqLog:   reqLog,
+		input:    input,
+	}
+	result := openAIWebSocketPipelineResult{}
+	for _, stage := range stages {
+		if stage == nil {
+			continue
+		}
+		stageResult := stage.Run(ctx).Result
+		if stageResult.CyberBlockKey != "" {
+			result.CyberBlockKey = stageResult.CyberBlockKey
+		}
+		if stageResult.Blocked {
+			if stageResult.CyberBlockKey == "" {
+				stageResult.CyberBlockKey = result.CyberBlockKey
+			}
+			return stageResult
+		}
+	}
+	moderationcoverage.MarkPipelineAdmitted(c, moderationcoverage.PipelineOpenAIWebSocket, moderationcoverage.StagePreForward, source)
+	return result
+}
+
+func (p *OpenAIGatewayPipeline) webSocketInitialFramePipelineStages(input openAIWebSocketPipelineInput) []openAIWebSocketGatewayStage {
+	if p != nil && len(p.wsInitialFrameStages) > 0 {
+		return p.wsInitialFrameStages
+	}
+	return []openAIWebSocketGatewayStage{
+		OpenAIWebSocketModerationStage{},
+		OpenAIWebSocketImagePermissionStage{},
+		OpenAIWebSocketCyberStage{},
+	}
+}
+
+func (p *OpenAIGatewayPipeline) webSocketFollowupFramePipelineStages(input openAIWebSocketPipelineInput) []openAIWebSocketGatewayStage {
+	if p != nil && len(p.wsFollowupFrameStages) > 0 {
+		return p.wsFollowupFrameStages
+	}
+	return []openAIWebSocketGatewayStage{
+		OpenAIWebSocketModerationStage{},
+	}
+}
+
 type openAIGatewayCyberSessionChecker interface {
 	CyberSessionBlockRuntime(ctx context.Context) (bool, time.Duration)
 	IsCyberSessionBlocked(ctx context.Context, key string) bool
@@ -269,6 +475,15 @@ type OpenAICyberStageResult struct {
 }
 
 func (p *OpenAIGatewayPipeline) CheckCyberSession(c *gin.Context, reqLog *zap.Logger, input openAIGatewayCyberSessionInput) *OpenAICyberStageResult {
+	result := p.checkCyberSessionBlock(c, input)
+	if result == nil || !result.Blocked {
+		return result
+	}
+	writeOpenAICyberSessionBlockedResponse(c, input.Format)
+	return result
+}
+
+func (p *OpenAIGatewayPipeline) checkCyberSessionBlock(c *gin.Context, input openAIGatewayCyberSessionInput) *OpenAICyberStageResult {
 	result := &OpenAICyberStageResult{}
 	if p == nil || p.cyberSessionChecker == nil || c == nil || input.APIKey == nil {
 		return result
@@ -277,25 +492,29 @@ func (p *OpenAIGatewayPipeline) CheckCyberSession(c *gin.Context, reqLog *zap.Lo
 	if c.Request != nil {
 		ctx = c.Request.Context()
 	}
-	enabled, _ := p.cyberSessionChecker.CyberSessionBlockRuntime(ctx)
-	if !enabled {
-		return result
-	}
 	key := service.CyberSessionBlockKey(input.APIKey.ID, c, input.Body)
 	if key == "" {
 		return result
 	}
 	result.BlockKey = key
+	enabled, _ := p.cyberSessionChecker.CyberSessionBlockRuntime(ctx)
+	if !enabled {
+		return result
+	}
 	if !p.cyberSessionChecker.IsCyberSessionBlocked(ctx, key) {
 		return result
 	}
 	result.Blocked = true
-	writeOpenAICyberSessionBlockedResponse(c, input.Format)
 	return result
 }
 
 func writeOpenAICyberSessionBlockedResponse(c *gin.Context, format cyberSessionBlockFormat) {
 	switch format {
+	case cyberBlockFormatAnthropic:
+		c.JSON(http.StatusForbidden, gin.H{"type": "error", "error": gin.H{
+			"type":    "permission_error",
+			"message": cyberSessionBlockedClientMsg,
+		}})
 	case cyberBlockFormatResponses, cyberBlockFormatChat:
 		c.JSON(http.StatusForbidden, gin.H{"error": gin.H{
 			"type":    "permission_error",

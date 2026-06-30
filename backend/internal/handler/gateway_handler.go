@@ -49,6 +49,8 @@ type GatewayHandler struct {
 	usageRecordWorkerPool     *service.UsageRecordWorkerPool
 	errorPassthroughService   *service.ErrorPassthroughService
 	contentModerationService  *service.ContentModerationService
+	moderationGuard           moderationGuard
+	preForwardPipeline        *GatewayPreForwardPipeline
 	concurrencyHelper         *ConcurrencyHelper
 	userMsgQueueHelper        *UserMsgQueueHelper
 	maxAccountSwitches        int
@@ -92,6 +94,7 @@ func NewGatewayHandler(
 	if userMsgQueueService != nil && cfg != nil {
 		umqHelper = NewUserMsgQueueHelper(userMsgQueueService, SSEPingFormatClaude, pingInterval)
 	}
+	moderationGuard := newContentModerationGuard(contentModerationService)
 
 	return &GatewayHandler{
 		gatewayService:            gatewayService,
@@ -104,6 +107,8 @@ func NewGatewayHandler(
 		usageRecordWorkerPool:     usageRecordWorkerPool,
 		errorPassthroughService:   errorPassthroughService,
 		contentModerationService:  contentModerationService,
+		moderationGuard:           moderationGuard,
+		preForwardPipeline:        newGatewayPreForwardPipeline(moderationGuard),
 		concurrencyHelper:         NewConcurrencyHelper(concurrencyService, SSEPingFormatClaude, pingInterval),
 		userMsgQueueHelper:        umqHelper,
 		maxAccountSwitches:        maxAccountSwitches,
@@ -196,8 +201,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		return
 	}
 
-	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolAnthropicMessages, reqModel, body); decision != nil && decision.Blocked {
-		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+	if pipelineResult := h.runGatewayPreForwardPipeline(c, reqLog, gatewayPreForwardPipelineInput{
+		APIKey:      apiKey,
+		Subject:     subject,
+		Protocol:    service.ContentModerationProtocolAnthropicMessages,
+		Model:       reqModel,
+		Body:        body,
+		ErrorFormat: gatewayPreForwardErrorAnthropic,
+	}); pipelineResult.Blocked {
 		return
 	}
 
@@ -1802,8 +1813,14 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 	setOpsRequestContext(c, parsedReq.Model, parsedReq.Stream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(parsedReq.Stream, false)))
 
-	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolAnthropicMessages, parsedReq.Model, body); decision != nil && decision.Blocked {
-		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+	if pipelineResult := h.runGatewayPreForwardPipeline(c, reqLog, gatewayPreForwardPipelineInput{
+		APIKey:      apiKey,
+		Subject:     subject,
+		Protocol:    service.ContentModerationProtocolAnthropicMessages,
+		Model:       parsedReq.Model,
+		Body:        body,
+		ErrorFormat: gatewayPreForwardErrorAnthropic,
+	}); pipelineResult.Blocked {
 		return
 	}
 

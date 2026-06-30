@@ -95,8 +95,14 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		return
 	}
 
-	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIChat, reqModel, body); decision != nil && decision.Blocked {
-		h.chatCompletionsErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+	if pipelineResult := h.runGatewayPreForwardPipeline(c, reqLog, gatewayPreForwardPipelineInput{
+		APIKey:      apiKey,
+		Subject:     subject,
+		Protocol:    service.ContentModerationProtocolOpenAIChat,
+		Model:       reqModel,
+		Body:        body,
+		ErrorFormat: gatewayPreForwardErrorOpenAIChat,
+	}); pipelineResult.Blocked {
 		return
 	}
 

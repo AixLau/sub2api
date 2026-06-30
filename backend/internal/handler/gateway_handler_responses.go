@@ -104,8 +104,14 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 
-	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, reqModel, body); decision != nil && decision.Blocked {
-		h.responsesErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+	if pipelineResult := h.runGatewayPreForwardPipeline(c, reqLog, gatewayPreForwardPipelineInput{
+		APIKey:      apiKey,
+		Subject:     subject,
+		Protocol:    service.ContentModerationProtocolOpenAIResponses,
+		Model:       reqModel,
+		Body:        body,
+		ErrorFormat: gatewayPreForwardErrorOpenAIResponses,
+	}); pipelineResult.Blocked {
 		return
 	}
 

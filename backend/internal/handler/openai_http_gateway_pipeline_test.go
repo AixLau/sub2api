@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -53,6 +54,8 @@ func TestOpenAIHTTPGatewayPipelineRunsStagesInOrderAndReleasesCleanupWhenLaterSt
 	require.Nil(t, result.ImageReleaseFunc)
 	require.Equal(t, 1, releaseCalls)
 	require.Equal(t, []string{"moderation", "image", "cyber", "image-release"}, events)
+	_, ok := moderationcoverage.PipelineAdmissionFromContext(c)
+	require.False(t, ok)
 }
 
 func TestOpenAIHTTPGatewayPipelineReturnsCleanupWhenAllStagesAllow(t *testing.T) {
@@ -76,9 +79,44 @@ func TestOpenAIHTTPGatewayPipelineReturnsCleanupWhenAllStagesAllow(t *testing.T)
 	require.False(t, result.Blocked)
 	require.NotNil(t, result.ImageReleaseFunc)
 	require.Zero(t, releaseCalls)
+	admission, ok := moderationcoverage.PipelineAdmissionFromContext(c)
+	require.True(t, ok)
+	require.True(t, admission.Admitted)
+	require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, admission.Pipeline)
+	require.Equal(t, moderationcoverage.StagePreForward, admission.Stage)
+	require.Equal(t, moderationcoverage.SourceOpenAIHTTPPreForward, admission.Source)
+	require.True(t, moderationcoverage.PipelineAdmittedFromContext(c))
 
 	result.ImageReleaseFunc()
 	require.Equal(t, 1, releaseCalls)
+}
+
+func TestOpenAIHTTPGatewayPipelineModerationStageCanWriteAnthropicErrorShape(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"risk"}]}`)
+	guard := &openAIGatewayPipelineModerationGuardSpy{decision: &service.ContentModerationDecision{
+		Blocked:    true,
+		StatusCode: http.StatusForbidden,
+		Message:    "blocked by pipeline",
+		Action:     service.ContentModerationActionBlock,
+	}}
+	pipeline := newOpenAIGatewayPipeline(guard)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	result := pipeline.RunHTTPPreForward(&OpenAIGatewayHandler{}, c, zap.NewNop(), openAIHTTPPreForwardPipelineInput{
+		Protocol:              service.ContentModerationProtocolAnthropicMessages,
+		Model:                 "claude-sonnet-4-5",
+		Body:                  body,
+		ModerationErrorFormat: openAIHTTPModerationErrorAnthropic,
+	})
+
+	require.True(t, result.Blocked)
+	require.Equal(t, http.StatusForbidden, recorder.Code)
+	require.Contains(t, recorder.Body.String(), `"type":"error"`)
+	require.Contains(t, recorder.Body.String(), `"type":"content_policy_violation"`)
+	require.Contains(t, recorder.Body.String(), "blocked by pipeline")
 }
 
 func TestOpenAIHTTPGatewayPipelineDefaultStagesReleaseImageSlotWhenCyberStageBlocks(t *testing.T) {

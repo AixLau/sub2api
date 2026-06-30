@@ -76,6 +76,95 @@
           </div>
         </div>
 
+        <div
+          v-if="pipelineCoverageMatrixVisible"
+          data-test="pipeline-coverage-matrix"
+          class="card"
+        >
+          <div class="flex flex-col gap-3 border-b border-gray-100 px-6 py-4 dark:border-dark-700 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.pipelineCoverageTitle') }}</h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.pipelineCoverageHint') }}</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="inline-flex max-w-full rounded-md bg-gray-100 px-2.5 py-1 font-mono text-xs font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+                {{ t('admin.riskControl.pipelineManifestVersion') }} {{ pipelineCoverageManifestVersionText }}
+              </span>
+              <span class="inline-flex rounded-md bg-gray-100 px-2.5 py-1 font-mono text-xs font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+                {{ pipelineCoverageVersionText }}
+              </span>
+              <span class="inline-flex max-w-full rounded-md bg-gray-100 px-2.5 py-1 font-mono text-xs font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+                {{ t('admin.riskControl.pipelineManifestHash') }} {{ pipelineCoverageManifestHashText }}
+              </span>
+              <span class="inline-flex rounded-md px-2.5 py-1 text-xs font-medium" :class="pipelineCoverageStatusClass">
+                {{ pipelineCoverageStatusText }}
+              </span>
+            </div>
+          </div>
+
+          <div class="space-y-5 p-6">
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div
+                v-for="stage in pipelineStageRows"
+                :key="stage.stage"
+                class="rounded-lg border border-gray-100 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900/30"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <p class="truncate text-sm font-semibold text-gray-900 dark:text-white">{{ pipelineStageLabel(stage.stage) }}</p>
+                    <p class="mt-1 truncate font-mono text-xs text-gray-500 dark:text-gray-400">{{ stage.stage }}</p>
+                  </div>
+                  <span class="inline-flex rounded-md bg-white px-2 py-1 font-mono text-xs font-medium text-gray-700 shadow-sm dark:bg-dark-800 dark:text-gray-200">
+                    {{ formatNumber(stage.covered_routes) }}/{{ formatNumber(stage.required_routes) }}
+                  </span>
+                </div>
+                <div class="mt-3 h-1.5 overflow-hidden rounded-full bg-white dark:bg-dark-800">
+                  <div class="h-full rounded-full bg-emerald-500" :style="{ width: pipelineStageCoverageWidth(stage) }"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="overflow-hidden rounded-lg border border-gray-100 dark:border-dark-700">
+              <div class="grid grid-cols-[minmax(190px,1.2fr)_minmax(150px,0.9fr)_minmax(190px,1fr)_minmax(180px,1.1fr)] gap-3 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-500 dark:bg-dark-900/50 dark:text-gray-400">
+                <span>{{ t('admin.riskControl.pipelineRoute') }}</span>
+                <span>{{ t('admin.riskControl.pipelineProtocol') }}</span>
+                <span>{{ t('admin.riskControl.pipelineHandler') }}</span>
+                <span>{{ t('admin.riskControl.pipelineStages') }}</span>
+              </div>
+              <div class="max-h-[360px] divide-y divide-gray-100 overflow-y-auto dark:divide-dark-700">
+                <div
+                  v-for="route in pipelineRouteRows"
+                  :key="`${route.method} ${route.path} ${route.protocol}`"
+                  class="grid grid-cols-1 gap-3 px-4 py-3 text-sm lg:grid-cols-[minmax(190px,1.2fr)_minmax(150px,0.9fr)_minmax(190px,1fr)_minmax(180px,1.1fr)] lg:items-center"
+                >
+                  <div class="min-w-0">
+                    <p class="truncate font-mono font-semibold text-gray-900 dark:text-white">{{ route.method }} {{ route.path }}</p>
+                    <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ route.pipeline || '-' }}</p>
+                  </div>
+                  <p class="min-w-0 truncate font-mono text-xs text-gray-600 dark:text-gray-300">{{ route.protocol || '-' }}</p>
+                  <p class="min-w-0 truncate font-mono text-xs text-gray-600 dark:text-gray-300">{{ route.handler || '-' }}</p>
+                  <div class="flex flex-wrap gap-1.5">
+                    <span
+                      v-for="stage in route.stages"
+                      :key="stage.stage"
+                      class="inline-flex rounded-md px-2 py-1 font-mono text-xs font-medium"
+                      :class="pipelineRouteStageClass(stage.covered)"
+                    >
+                      {{ stage.stage }}
+                    </span>
+                    <span
+                      v-if="route.uncovered_stages?.length"
+                      class="inline-flex rounded-md bg-rose-50 px-2 py-1 font-mono text-xs font-medium text-rose-700 dark:bg-rose-900/20 dark:text-rose-200"
+                    >
+                      {{ route.uncovered_stages.join(', ') }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div
             v-for="item in overviewItems"
@@ -1281,6 +1370,9 @@ import type {
   ContentModerationLog,
   ContentModerationModelFilter,
   ContentModerationModelFilterType,
+  ContentModerationPipelineRouteCoverageStatus,
+  ContentModerationPipelineRouteStageCoverageStatus,
+  ContentModerationPipelineStageCoverageStatus,
   ContentModerationRuntimeStatus,
   ContentModerationTestAuditResult,
   KeywordBlockingMode,
@@ -1759,6 +1851,43 @@ const protectionPipelineCoverageText = computed(() => {
   if (!coverage) return '-'
   return `${status.value?.pipeline_coverage?.status || '-'} · ${formatNumber(coverage.covered_routes)}/${formatNumber(coverage.required_routes)}`
 })
+
+const openAIHTTPPipelineCoverage = computed(() => status.value?.pipeline_coverage?.openai_http)
+
+const pipelineCoverageMatrixVisible = computed(() => Boolean(openAIHTTPPipelineCoverage.value?.required_routes))
+
+const pipelineCoverageVersionText = computed(() => {
+  const coverage = status.value?.pipeline_coverage
+  return openAIHTTPPipelineCoverage.value?.version || coverage?.version || '-'
+})
+
+const pipelineCoverageManifestVersionText = computed(() => status.value?.pipeline_coverage?.manifest_version || '-')
+
+const pipelineCoverageManifestHashText = computed(() => status.value?.pipeline_coverage?.manifest_hash || '-')
+
+const pipelineCoverageStatusText = computed(() => status.value?.pipeline_coverage?.status || '-')
+
+const pipelineCoverageStatusClass = computed(() => {
+  if (pipelineCoverageStatusText.value === 'covered') {
+    return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-200'
+  }
+  if (pipelineCoverageStatusText.value === 'mismatch') {
+    return 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-200'
+  }
+  return 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'
+})
+
+const pipelineStageRows = computed<ContentModerationPipelineStageCoverageStatus[]>(() => (
+  [...(openAIHTTPPipelineCoverage.value?.stage_coverage ?? [])].sort((a, b) => pipelineStageSortKey(a.stage).localeCompare(pipelineStageSortKey(b.stage)))
+))
+
+const pipelineRouteRows = computed<ContentModerationPipelineRouteCoverageStatus[]>(() => (
+  [...(openAIHTTPPipelineCoverage.value?.routes ?? [])].sort((a, b) => {
+    const left = `${a.method} ${a.path} ${a.protocol}`
+    const right = `${b.method} ${b.path} ${b.protocol}`
+    return left.localeCompare(right)
+  })
+))
 
 const overviewItems = computed<OverviewItem[]>(() => [
   {
@@ -2410,6 +2539,41 @@ function workerDotClass(state: WorkerSlotState): string {
   if (state === 'active') return 'bg-sky-500'
   if (state === 'idle') return 'bg-emerald-500'
   return 'bg-gray-300 dark:bg-dark-500'
+}
+
+function pipelineStageLabel(stage: string): string {
+  const key = stage.trim().toLowerCase()
+  const labels: Record<string, string> = {
+    moderation: t('admin.riskControl.pipelineStageModeration'),
+    cyber: t('admin.riskControl.pipelineStageCyber'),
+    image: t('admin.riskControl.pipelineStageImage'),
+  }
+  return labels[key] || stage || '-'
+}
+
+function pipelineStageSortKey(stage: string): string {
+  switch (stage.trim().toLowerCase()) {
+    case 'moderation':
+      return '00:moderation'
+    case 'cyber':
+      return '01:cyber'
+    case 'image':
+      return '02:image'
+    default:
+      return `99:${stage.trim().toLowerCase()}`
+  }
+}
+
+function pipelineStageCoverageWidth(stage: ContentModerationPipelineStageCoverageStatus): string {
+  if (!stage.required_routes) return '0%'
+  return `${Math.min(100, Math.max(0, (stage.covered_routes / stage.required_routes) * 100)).toFixed(1)}%`
+}
+
+function pipelineRouteStageClass(covered: ContentModerationPipelineRouteStageCoverageStatus['covered']): string {
+  if (covered) {
+    return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-200'
+  }
+  return 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-200'
 }
 
 function percent(value: number): string {

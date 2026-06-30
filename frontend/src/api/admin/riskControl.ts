@@ -261,6 +261,7 @@ export interface ContentModerationRouteCoverageStatus {
 }
 
 export interface ContentModerationPipelineCoverageStatus {
+  manifest_version: string
   version: string
   manifest_hash: string
   status: string
@@ -268,6 +269,7 @@ export interface ContentModerationPipelineCoverageStatus {
 }
 
 export interface ContentModerationOpenAIHTTPPipelineCoverageStatus {
+  version: string
   pipeline: string
   required_routes: number
   covered_routes: number

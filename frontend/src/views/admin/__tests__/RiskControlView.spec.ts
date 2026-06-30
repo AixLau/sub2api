@@ -535,4 +535,98 @@ describe('admin RiskControlView', () => {
       'overflow-y-auto',
     ]))
   })
+
+  it('renders OpenAI pipeline manifest metadata and route stage coverage', async () => {
+    getStatus.mockResolvedValue({
+      ...runtimeStatus(),
+      pipeline_coverage: {
+        manifest_version: '2026-06-29.2',
+        version: 'openai-http-pre-forward-v2',
+        manifest_hash: 'stage-hash-123',
+        status: 'mismatch',
+        openai_http: {
+          version: 'openai-http-pre-forward-v2',
+          pipeline: 'openai_http',
+          required_routes: 2,
+          covered_routes: 1,
+          uncovered_routes: ['POST /v1/responses'],
+          stage_coverage: [
+            {
+              stage: 'moderation',
+              required_routes: 2,
+              covered_routes: 2,
+              uncovered_routes: [],
+            },
+            {
+              stage: 'cyber',
+              required_routes: 2,
+              covered_routes: 2,
+              uncovered_routes: [],
+            },
+            {
+              stage: 'image',
+              required_routes: 1,
+              covered_routes: 0,
+              uncovered_routes: ['POST /v1/responses'],
+            },
+          ],
+          routes: [
+            {
+              method: 'POST',
+              path: '/v1/chat/completions',
+              handler: 'OpenAIGatewayHandler.ChatCompletions',
+              protocol: 'openai_chat_completions',
+              pipeline: 'openai_http',
+              covered: true,
+              stages: [
+                { stage: 'moderation', required: true, covered: true },
+                { stage: 'cyber', required: true, covered: true },
+              ],
+            },
+            {
+              method: 'POST',
+              path: '/v1/responses',
+              handler: 'OpenAIGatewayHandler.Responses',
+              protocol: 'openai_responses',
+              pipeline: 'openai_http',
+              covered: false,
+              uncovered_stages: ['image'],
+              stages: [
+                { stage: 'moderation', required: true, covered: true },
+                { stage: 'cyber', required: true, covered: true },
+                { stage: 'image', required: true, covered: false },
+              ],
+            },
+          ],
+        },
+      },
+    })
+
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const matrix = wrapper.get('[data-test="pipeline-coverage-matrix"]')
+    expect(matrix.text()).toContain('2026-06-29.2')
+    expect(matrix.text()).toContain('openai-http-pre-forward-v2')
+    expect(matrix.text()).toContain('stage-hash-123')
+    expect(matrix.text()).toContain('mismatch')
+    expect(matrix.text()).toContain('POST /v1/responses')
+    expect(matrix.text()).toContain('openai_http')
+    expect(matrix.text()).toContain('moderation')
+    expect(matrix.text()).toContain('cyber')
+    expect(matrix.text()).toContain('image')
+  })
 })

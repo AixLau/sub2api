@@ -139,7 +139,7 @@ const (
 	contentModerationExtractorVersion              = "v4"
 	contentModerationMinimumSecurityBaselineCommit = "9216c848"
 	contentModerationRouteManifestVersion          = "2026-06-29.2"
-	contentModerationPipelineCoverageVersion       = "openai-http-pre-forward-v2"
+	contentModerationPipelineCoverageVersion       = moderationcoverage.PipelineOpenAIHTTPVersion
 	minContentModerationBuildCommitPrefixLen       = 7
 )
 
@@ -578,13 +578,15 @@ type ContentModerationEffectiveProtectionStatus struct {
 type ContentModerationRouteCoverageStatus = moderationcoverage.Status
 
 type ContentModerationPipelineCoverageStatus struct {
-	Version      string                                            `json:"version"`
-	ManifestHash string                                            `json:"manifest_hash"`
-	Status       string                                            `json:"status"`
-	OpenAIHTTP   ContentModerationOpenAIHTTPPipelineCoverageStatus `json:"openai_http"`
+	ManifestVersion string                                            `json:"manifest_version"`
+	Version         string                                            `json:"version"`
+	ManifestHash    string                                            `json:"manifest_hash"`
+	Status          string                                            `json:"status"`
+	OpenAIHTTP      ContentModerationOpenAIHTTPPipelineCoverageStatus `json:"openai_http"`
 }
 
 type ContentModerationOpenAIHTTPPipelineCoverageStatus struct {
+	Version         string                                         `json:"version"`
 	Pipeline        string                                         `json:"pipeline"`
 	RequiredRoutes  int                                            `json:"required_routes"`
 	CoveredRoutes   int                                            `json:"covered_routes"`
@@ -1879,10 +1881,11 @@ func contentModerationPipelineCoverageStatusFromEntries(entries []contentModerat
 		status = "mismatch"
 	}
 	return ContentModerationPipelineCoverageStatus{
-		Version:      contentModerationPipelineCoverageVersion,
-		ManifestHash: contentModerationPipelineCoverageHashFromEntries(entries),
-		Status:       status,
-		OpenAIHTTP:   openAIHTTP,
+		ManifestVersion: contentModerationRouteManifestVersion,
+		Version:         contentModerationPipelineCoverageVersion,
+		ManifestHash:    contentModerationPipelineCoverageHashFromEntries(entries),
+		Status:          status,
+		OpenAIHTTP:      openAIHTTP,
 	}
 }
 
@@ -1915,6 +1918,7 @@ func contentModerationOpenAIHTTPPipelineCoverageStatusFromEntries(entries []cont
 	}
 
 	return ContentModerationOpenAIHTTPPipelineCoverageStatus{
+		Version:         moderationcoverage.PipelineOpenAIHTTPVersion,
 		Pipeline:        moderationcoverage.PipelineOpenAIHTTP,
 		RequiredRoutes:  len(routes),
 		CoveredRoutes:   coveredRoutes,
@@ -1925,7 +1929,7 @@ func contentModerationOpenAIHTTPPipelineCoverageStatusFromEntries(entries []cont
 }
 
 func contentModerationPipelineRouteCoverageStatusFromEntry(entry contentModerationRouteCoverageEntry) ContentModerationPipelineRouteCoverageStatus {
-	stages := make([]ContentModerationPipelineRouteStageCoverageStatus, 0, len(entry.StageCoverage))
+	stagesByName := make(map[string]ContentModerationPipelineRouteStageCoverageStatus, len(entry.StageCoverage))
 	uncoveredStages := make([]string, 0)
 	covered := normalizeContentModerationRouteCoverageStatus(entry.Status) == moderationcoverage.StatusCovered
 	if moderationcoverage.NormalizePipeline(entry.Pipeline) != moderationcoverage.PipelineOpenAIHTTP {
@@ -1937,27 +1941,50 @@ func contentModerationPipelineRouteCoverageStatusFromEntry(entry contentModerati
 		if stageName == "" {
 			continue
 		}
-		stageCovered := !stage.Required || stage.Covered
-		stages = append(stages, ContentModerationPipelineRouteStageCoverageStatus{
+		stagesByName[stageName] = ContentModerationPipelineRouteStageCoverageStatus{
 			Stage:    stageName,
 			Required: stage.Required,
 			Covered:  stage.Covered,
-		})
-		if stage.Required && !stageCovered {
+		}
+		if stage.Required && !stage.Covered {
 			covered = false
 			uncoveredStages = append(uncoveredStages, stageName)
 		}
 	}
-	if len(stages) == 0 {
+	expectedStages := moderationcoverage.OpenAIHTTPPipelineStagesForRoute(entry.Handler, entry.Protocol)
+	for _, expected := range expectedStages {
+		stageName := moderationcoverage.NormalizeStage(expected.Stage)
+		if stageName == "" {
+			continue
+		}
+		actual, ok := stagesByName[stageName]
+		if !ok {
+			actual = ContentModerationPipelineRouteStageCoverageStatus{
+				Stage:    stageName,
+				Required: expected.Required,
+				Covered:  false,
+			}
+			stagesByName[stageName] = actual
+		}
+		if expected.Required && (!actual.Required || !actual.Covered) {
+			covered = false
+			uncoveredStages = append(uncoveredStages, stageName)
+		}
+	}
+	if len(stagesByName) == 0 {
 		covered = false
 		if len(uncoveredStages) == 0 {
 			uncoveredStages = append(uncoveredStages, "pipeline_metadata")
 		}
 	}
+	stages := make([]ContentModerationPipelineRouteStageCoverageStatus, 0, len(stagesByName))
+	for _, stage := range stagesByName {
+		stages = append(stages, stage)
+	}
 	sort.Slice(stages, func(i, j int) bool {
 		return contentModerationPipelineStageSortKey(stages[i].Stage) < contentModerationPipelineStageSortKey(stages[j].Stage)
 	})
-	sort.Strings(uncoveredStages)
+	uncoveredStages = uniqueSortedContentModerationPipelineStages(uncoveredStages)
 	return ContentModerationPipelineRouteCoverageStatus{
 		Method:          normalizeContentModerationRouteCoverageMethod(entry.Method),
 		Path:            normalizeContentModerationRouteCoveragePath(entry.Path),
@@ -1968,6 +1995,26 @@ func contentModerationPipelineRouteCoverageStatusFromEntry(entry contentModerati
 		UncoveredStages: uncoveredStages,
 		Stages:          stages,
 	}
+}
+
+func uniqueSortedContentModerationPipelineStages(stages []string) []string {
+	seen := make(map[string]struct{}, len(stages))
+	out := make([]string, 0, len(stages))
+	for _, stage := range stages {
+		stage = moderationcoverage.NormalizeStage(stage)
+		if stage == "" {
+			continue
+		}
+		if _, ok := seen[stage]; ok {
+			continue
+		}
+		seen[stage] = struct{}{}
+		out = append(out, stage)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return contentModerationPipelineStageSortKey(out[i]) < contentModerationPipelineStageSortKey(out[j])
+	})
+	return out
 }
 
 func contentModerationPipelineStageCoverageStatusFromRoutes(routes []ContentModerationPipelineRouteCoverageStatus) []ContentModerationPipelineStageCoverageStatus {
@@ -2079,16 +2126,7 @@ func contentModerationPipelineRouteKey(method, path string) string {
 }
 
 func contentModerationPipelineStageSortKey(stage string) string {
-	switch moderationcoverage.NormalizeStage(stage) {
-	case moderationcoverage.StageModeration:
-		return "00:" + moderationcoverage.StageModeration
-	case moderationcoverage.StageCyber:
-		return "01:" + moderationcoverage.StageCyber
-	case moderationcoverage.StageImage:
-		return "02:" + moderationcoverage.StageImage
-	default:
-		return "99:" + moderationcoverage.NormalizeStage(stage)
-	}
+	return moderationcoverage.PipelineStageSortKey(stage)
 }
 
 func normalizeContentModerationRouteCoverageMethod(value string) string {

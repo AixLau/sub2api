@@ -27,6 +27,7 @@ type openAIHTTPPreForwardPipelineInput struct {
 	Body                            []byte
 	CyberBody                       []byte
 	CyberFormat                     cyberSessionBlockFormat
+	ModerationErrorFormat           openAIHTTPModerationErrorFormat
 	SkipCyberStage                  bool
 	EnableImageStage                bool
 	ImagePermissionBeforeModeration bool
@@ -37,6 +38,33 @@ type openAIHTTPPreForwardPipelineInput struct {
 type openAIHTTPPreForwardPipelineResult struct {
 	Blocked          bool
 	ImageReleaseFunc func()
+}
+
+type openAIWebSocketPipelineBlockReason int
+
+const (
+	openAIWebSocketPipelineBlockReasonNone openAIWebSocketPipelineBlockReason = iota
+	openAIWebSocketPipelineBlockReasonModeration
+	openAIWebSocketPipelineBlockReasonImagePermission
+	openAIWebSocketPipelineBlockReasonCyberSession
+)
+
+type openAIWebSocketPipelineInput struct {
+	APIKey        *service.APIKey
+	Subject       middleware2.AuthSubject
+	Protocol      string
+	Model         string
+	Body          []byte
+	CyberBody     []byte
+	ImageEndpoint string
+}
+
+type openAIWebSocketPipelineResult struct {
+	Blocked            bool
+	BlockReason        openAIWebSocketPipelineBlockReason
+	ModerationDecision *service.ContentModerationDecision
+	Message            string
+	CyberBlockKey      string
 }
 
 type contentModerationGuard struct {
@@ -67,6 +95,16 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPPreForwardPipeline(c *gin.Context, r
 	return pipeline.RunHTTPPreForward(h, c, reqLog, input)
 }
 
+func (h *OpenAIGatewayHandler) runOpenAIWebSocketInitialFramePipeline(c *gin.Context, reqLog *zap.Logger, input openAIWebSocketPipelineInput) openAIWebSocketPipelineResult {
+	pipeline := h.openAIWebSocketPipeline()
+	return pipeline.RunWebSocketInitialFrame(h, c, reqLog, input)
+}
+
+func (h *OpenAIGatewayHandler) runOpenAIWebSocketFollowupFramePipeline(c *gin.Context, reqLog *zap.Logger, input openAIWebSocketPipelineInput) openAIWebSocketPipelineResult {
+	pipeline := h.openAIWebSocketPipeline()
+	return pipeline.RunWebSocketFollowupFrame(h, c, reqLog, input)
+}
+
 func (h *OpenAIGatewayHandler) openAIHTTPPreForwardPipeline() *OpenAIGatewayPipeline {
 	if h == nil {
 		return newOpenAIGatewayPipeline(nil)
@@ -83,6 +121,10 @@ func (h *OpenAIGatewayHandler) openAIHTTPPreForwardPipeline() *OpenAIGatewayPipe
 		return pipeline.withCyberSessionChecker(h.gatewayService)
 	}
 	return pipeline
+}
+
+func (h *OpenAIGatewayHandler) openAIWebSocketPipeline() *OpenAIGatewayPipeline {
+	return h.openAIHTTPPreForwardPipeline()
 }
 
 func (h *OpenAIGatewayHandler) checkCyberSessionWithPipeline(c *gin.Context, reqLog *zap.Logger, input openAIGatewayCyberSessionInput) bool {

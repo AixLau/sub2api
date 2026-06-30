@@ -7,6 +7,7 @@ import (
 	"go/parser"
 	"go/token"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -25,13 +26,23 @@ type moderatedRouteCoverageManifest struct {
 }
 
 type moderatedRouteCoverageManifestEntry struct {
-	Method             string `json:"method"`
-	Path               string `json:"path"`
-	Upstream           bool   `json:"upstream"`
-	ModerationRequired bool   `json:"moderation_required"`
-	Protocol           string `json:"protocol"`
-	Status             string `json:"status"`
-	Handler            string `json:"handler"`
+	Route              moderatedRouteCoverageManifestRoute        `json:"route"`
+	Method             string                                     `json:"method"`
+	Path               string                                     `json:"path"`
+	Upstream           bool                                       `json:"upstream"`
+	ModerationRequired bool                                       `json:"moderation_required"`
+	Protocol           string                                     `json:"protocol"`
+	Pipeline           string                                     `json:"pipeline"`
+	StageCoverage      []moderationcoverage.PipelineStageCoverage `json:"stage_coverage"`
+	Status             string                                     `json:"status"`
+	Handler            string                                     `json:"handler"`
+}
+
+type moderatedRouteCoverageManifestRoute struct {
+	Method   string `json:"method"`
+	Path     string `json:"path"`
+	Handler  string `json:"handler"`
+	Protocol string `json:"protocol"`
 }
 
 func TestModeratedRouteRegistrarMatchesManifestAndRegisteredGatewayRoutes(t *testing.T) {
@@ -67,6 +78,76 @@ func TestModeratedRouteRegistrarMatchesManifestAndRegisteredGatewayRoutes(t *tes
 		"covered manifest route handlers must match the moderated route registrar")
 	require.Empty(t, routeSetDifference(registrarRouteHandlers, manifestRouteHandlers),
 		"moderated route registrar handlers must match the coverage manifest")
+}
+
+func TestModeratedRouteRegistrarInjectsRuntimeRouteMetaBeforeHandlers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name     string
+		method   string
+		register func(*ModeratedRouteRegistrar, string, ModeratedRouteMeta, ...gin.HandlerFunc) gin.IRoutes
+	}{
+		{
+			name:   "GET",
+			method: http.MethodGet,
+			register: func(registrar *ModeratedRouteRegistrar, path string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
+				return registrar.GET(path, meta, handlers...)
+			},
+		},
+		{
+			name:   "POST",
+			method: http.MethodPost,
+			register: func(registrar *ModeratedRouteRegistrar, path string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
+				return registrar.POST(path, meta, handlers...)
+			},
+		},
+		{
+			name:   "GETNoAudit",
+			method: http.MethodGet,
+			register: func(registrar *ModeratedRouteRegistrar, path string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
+				return registrar.GETNoAudit(path, meta, handlers...)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			restore := replaceModeratedRouteRegistryForTest(nil)
+			defer restore()
+
+			router := gin.New()
+			registrar := NewModeratedRouteRegistrar(router)
+			var runtimeMeta moderationcoverage.Entry
+			var ok bool
+			tt.register(registrar, "/runtime-meta", ModeratedRouteMeta{
+				Path:               " /runtime-meta ",
+				Handler:            " OpenAIGatewayHandler.Responses ",
+				Upstream:           true,
+				ModerationRequired: true,
+				Protocol:           " openai_responses ",
+				Status:             moderationcoverage.StatusCovered,
+			}, func(c *gin.Context) {
+				runtimeMeta, ok = moderationcoverage.RouteMetaFromContext(c)
+				c.Status(http.StatusNoContent)
+			})
+
+			req := httptest.NewRequest(tt.method, "/runtime-meta", nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			require.Equal(t, http.StatusNoContent, rec.Code)
+			require.True(t, ok)
+			require.Equal(t, tt.method, runtimeMeta.Method)
+			require.Equal(t, "/runtime-meta", runtimeMeta.Path)
+			require.Equal(t, "OpenAIGatewayHandler.Responses", runtimeMeta.Handler)
+			require.Equal(t, "openai_responses", runtimeMeta.Protocol)
+			require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, runtimeMeta.Pipeline)
+			requireStageRequiredAndCovered(t, runtimeMeta, moderationcoverage.StageModeration)
+			requireStageRequiredAndCovered(t, runtimeMeta, moderationcoverage.StageCyber)
+			requireStageRequiredAndCovered(t, runtimeMeta, moderationcoverage.StageImage)
+		})
+	}
 }
 
 func TestGatewayRoutesHaveExplicitModerationClassification(t *testing.T) {
@@ -148,7 +229,7 @@ func TestOpenAIHTTPModerationStageRunsBeforeCyberStage(t *testing.T) {
 func TestOpenAIHTTPHandlersUseUnifiedPreForwardPipeline(t *testing.T) {
 	stageCoverage := openAIHTTPStageCoverageFromHandlerSources(t)
 
-	for _, handlerName := range []string{"OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.Embeddings"} {
+	for _, handlerName := range []string{"OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.Embeddings", "OpenAIGatewayHandler.Messages"} {
 		coverage, ok := stageCoverage[handlerName]
 		require.True(t, ok, "OpenAI HTTP handler %s should be present in source coverage scan", handlerName)
 		require.True(t, coverage.HasHTTPPreForwardPipeline,
@@ -157,6 +238,8 @@ func TestOpenAIHTTPHandlersUseUnifiedPreForwardPipeline(t *testing.T) {
 			"%s must not call checkWithModerationGuard directly after adopting the unified HTTP pre-forward pipeline", handlerName)
 		require.NotContains(t, coverage.DirectStageLocations, "checkCyberSessionWithPipeline",
 			"%s must not call checkCyberSessionWithPipeline directly after adopting the unified HTTP pre-forward pipeline", handlerName)
+		require.False(t, coverage.HasDirectCyberReject,
+			"%s must run cyber checks through runOpenAIHTTPPreForwardPipeline, not rejectIfCyberSessionBlocked directly", handlerName)
 	}
 
 	responsesCoverage := stageCoverage["OpenAIGatewayHandler.Responses"]
@@ -230,6 +313,42 @@ func TestOpenAIHTTPPipelineCoverageMetadataMatchesHandlerSourceCoverage(t *testi
 			"%s %s cyber metadata drifted from handler source coverage", entry.Method, entry.Path)
 		require.Equal(t, coverage.HasImageStage, stageRequiredAndCovered(entry, moderationcoverage.StageImage),
 			"%s %s image metadata drifted from handler source coverage", entry.Method, entry.Path)
+	}
+}
+
+func TestGatewayModerationCoverageManifestPipelineStagesMatchRegistrarFacts(t *testing.T) {
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
+	_ = newGatewayRoutesTestRouter()
+
+	manifest := loadModeratedRouteCoverageManifest(t)
+	registrarByRoute := make(map[string]ModeratedRouteMeta)
+	for _, entry := range GatewayModeratedRouteCoverageEntries() {
+		entry = moderationcoverage.NormalizeEntry(entry)
+		registrarByRoute[moderatedRouteKey(entry.Method, entry.Path, entry.Protocol)] = entry
+	}
+
+	for _, entry := range manifest.Entries {
+		routeKey := moderatedRouteKey(entry.Method, entry.Path, entry.Protocol)
+		require.Equal(t, entry.Method, entry.Route.Method, "manifest route.method must mirror top-level method for %s", routeKey)
+		require.Equal(t, entry.Path, entry.Route.Path, "manifest route.path must mirror top-level path for %s", routeKey)
+		require.Equal(t, entry.Handler, entry.Route.Handler, "manifest route.handler must mirror top-level handler for %s", routeKey)
+		require.Equal(t, entry.Protocol, entry.Route.Protocol, "manifest route.protocol must mirror top-level protocol for %s", routeKey)
+
+		expectedStages := moderationcoverage.OpenAIHTTPPipelineStagesForRoute(entry.Handler, entry.Protocol)
+		if len(expectedStages) == 0 {
+			require.Empty(t, entry.Pipeline, "non-OpenAI HTTP manifest route must not declare pipeline metadata: %s", routeKey)
+			require.Empty(t, entry.StageCoverage, "non-OpenAI HTTP manifest route must not declare stage coverage: %s", routeKey)
+			continue
+		}
+
+		require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, entry.Pipeline, "manifest pipeline drifted for %s", routeKey)
+		require.Equal(t, expectedStages, moderationcoverage.NormalizeStageCoverage(entry.StageCoverage), "manifest stage coverage drifted for %s", routeKey)
+
+		registrarEntry, ok := registrarByRoute[routeKey]
+		require.True(t, ok, "registrar missing manifest route %s", routeKey)
+		require.Equal(t, entry.Pipeline, registrarEntry.Pipeline, "registrar pipeline drifted from manifest for %s", routeKey)
+		require.Equal(t, entry.StageCoverage, registrarEntry.StageCoverage, "registrar stage coverage drifted from manifest for %s", routeKey)
 	}
 }
 
@@ -572,7 +691,7 @@ func openAIHTTPStageCoverageFromHandlerSources(t *testing.T) map[string]openAIHT
 
 func openAIHTTPHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
 	switch fn.Name.Name {
-	case "ChatCompletions", "Responses", "Images", "Embeddings":
+	case "ChatCompletions", "Responses", "Images", "Embeddings", "Messages":
 	default:
 		return "", false
 	}

@@ -1,8 +1,6 @@
 package routes
 
 import (
-	"strings"
-
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/gin-gonic/gin"
 )
@@ -26,20 +24,20 @@ func NewModeratedRouteRegistrar(routes routeRegistrar) *ModeratedRouteRegistrar 
 
 func (r *ModeratedRouteRegistrar) GET(relativePath string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
 	meta.Method = "GET"
-	registerModeratedRoute(meta)
-	return r.routes.GET(relativePath, handlers...)
+	meta = registerModeratedRoute(meta)
+	return r.routes.GET(relativePath, prependModeratedRouteMetaHandler(meta, handlers)...)
 }
 
 func (r *ModeratedRouteRegistrar) GETNoAudit(relativePath string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
 	meta.Method = "GET"
-	registerModeratedRoute(meta)
-	return r.routes.GET(relativePath, handlers...)
+	meta = registerModeratedRoute(meta)
+	return r.routes.GET(relativePath, prependModeratedRouteMetaHandler(meta, handlers)...)
 }
 
 func (r *ModeratedRouteRegistrar) POST(relativePath string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
 	meta.Method = "POST"
-	registerModeratedRoute(meta)
-	return r.routes.POST(relativePath, handlers...)
+	meta = registerModeratedRoute(meta)
+	return r.routes.POST(relativePath, prependModeratedRouteMetaHandler(meta, handlers)...)
 }
 
 func GatewayModeratedRouteCoverageEntries() []ModeratedRouteMeta {
@@ -50,8 +48,19 @@ func replaceModeratedRouteRegistryForTest(entries []ModeratedRouteMeta) func() {
 	return moderationcoverage.ReplaceRegistryForTest(entries)
 }
 
-func registerModeratedRoute(meta ModeratedRouteMeta) {
+func registerModeratedRoute(meta ModeratedRouteMeta) ModeratedRouteMeta {
+	meta = moderationcoverage.AnnotatePipelineCoverage(meta)
 	moderationcoverage.Register(meta)
+	return meta
+}
+
+func prependModeratedRouteMetaHandler(meta ModeratedRouteMeta, handlers []gin.HandlerFunc) []gin.HandlerFunc {
+	prepended := make([]gin.HandlerFunc, 0, len(handlers)+1)
+	prepended = append(prepended, func(c *gin.Context) {
+		moderationcoverage.SetRouteMeta(c, meta)
+	})
+	prepended = append(prepended, handlers...)
+	return prepended
 }
 
 func coveredModeratedRoute(path, handlerName, protocol, reviewReason string) ModeratedRouteMeta {
@@ -64,8 +73,7 @@ func coveredModeratedRoute(path, handlerName, protocol, reviewReason string) Mod
 		Status:             moderationcoverage.StatusCovered,
 		ReviewReason:       reviewReason,
 	}
-	annotateOpenAIHTTPPipelineCoverage(&meta)
-	return meta
+	return moderationcoverage.AnnotatePipelineCoverage(meta)
 }
 
 func intentionalNoAuditRoute(path, handlerName, reviewReason string) ModeratedRouteMeta {
@@ -76,59 +84,5 @@ func intentionalNoAuditRoute(path, handlerName, reviewReason string) ModeratedRo
 		ModerationRequired: false,
 		Status:             moderationcoverage.StatusIntentionalNoAudit,
 		ReviewReason:       reviewReason,
-	}
-}
-
-func annotateOpenAIHTTPPipelineCoverage(meta *ModeratedRouteMeta) {
-	if meta == nil {
-		return
-	}
-	stages := openAIHTTPPipelineStagesForRoute(meta.Handler, meta.Protocol)
-	if len(stages) == 0 {
-		return
-	}
-	meta.Pipeline = moderationcoverage.PipelineOpenAIHTTP
-	meta.StageCoverage = stages
-}
-
-func openAIHTTPPipelineStagesForRoute(handlerName, protocol string) []moderationcoverage.PipelineStageCoverage {
-	if !isOpenAIHTTPPipelineProtocol(protocol) {
-		return nil
-	}
-
-	stages := []moderationcoverage.PipelineStageCoverage{
-		coveredPipelineStage(moderationcoverage.StageModeration),
-	}
-	switch strings.TrimSpace(handlerName) {
-	case "OpenAIGatewayHandler.ChatCompletions":
-		stages = append(stages, coveredPipelineStage(moderationcoverage.StageCyber))
-	case "OpenAIGatewayHandler.Responses":
-		stages = append(stages,
-			coveredPipelineStage(moderationcoverage.StageCyber),
-			coveredPipelineStage(moderationcoverage.StageImage),
-		)
-	case "OpenAIGatewayHandler.Images":
-		stages = append(stages, coveredPipelineStage(moderationcoverage.StageImage))
-	case "OpenAIGatewayHandler.Embeddings":
-	default:
-		return nil
-	}
-	return stages
-}
-
-func coveredPipelineStage(stage string) moderationcoverage.PipelineStageCoverage {
-	return moderationcoverage.PipelineStageCoverage{
-		Stage:    stage,
-		Required: true,
-		Covered:  true,
-	}
-}
-
-func isOpenAIHTTPPipelineProtocol(protocol string) bool {
-	switch strings.TrimSpace(protocol) {
-	case "openai_chat_completions", "openai_responses", "openai_images", "openai_embeddings":
-		return true
-	default:
-		return false
 	}
 }
