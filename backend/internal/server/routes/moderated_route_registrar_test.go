@@ -108,6 +108,43 @@ func TestOpenAIModeratedRoutesHaveGatewayPipelineModerationCoverage(t *testing.T
 		"OpenAI moderation_required registrar protocols must have GatewayPipeline moderation stage coverage")
 }
 
+func TestOpenAIHTTPModeratedRoutesHaveCyberStageCoverage(t *testing.T) {
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
+	_ = newGatewayRoutesTestRouter()
+
+	openAIHTTPProtocols := openAIHTTPModeratedRouteProtocolsFromRegistrar(GatewayModeratedRouteCoverageEntries())
+	stageCoverage := openAIHTTPStageCoverageFromHandlerSources(t)
+	directRejectLocations := openAIHTTPDirectCyberRejectLocations(stageCoverage)
+	cyberStageProtocols := openAIHTTPCyberStageProtocols(stageCoverage)
+
+	require.Equal(t, []string{"openai_chat_completions", "openai_responses"}, openAIHTTPProtocols,
+		"CyberStage coverage is required only for OpenAI HTTP Chat and Responses moderated route protocols")
+	require.Empty(t, directRejectLocations,
+		"OpenAI HTTP Chat/Responses must route cyber session checks through OpenAIGatewayPipeline.CheckCyberSession/CyberStage, not direct rejectIfCyberSessionBlocked calls at %s",
+		strings.Join(directRejectLocations, ", "))
+	require.Empty(t, routeSetDifference(openAIHTTPProtocols, cyberStageProtocols),
+		"OpenAI HTTP moderation_required registrar protocols must have CyberStage coverage through CheckCyberSession")
+	require.Empty(t, routeSetDifference(cyberStageProtocols, openAIHTTPProtocols),
+		"OpenAI HTTP CyberStage coverage should be scoped to moderated Chat/Responses protocols")
+}
+
+func TestOpenAIHTTPModerationStageRunsBeforeCyberStage(t *testing.T) {
+	stageCoverage := openAIHTTPStageCoverageFromHandlerSources(t)
+
+	for _, handlerName := range []string{"OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses"} {
+		coverage, ok := stageCoverage[handlerName]
+		require.True(t, ok, "OpenAI HTTP handler %s should be present in source coverage scan", handlerName)
+		require.True(t, coverage.HasModerationStage,
+			"%s must call checkWithModerationGuard before CyberStage", handlerName)
+		require.True(t, coverage.HasCyberStage,
+			"%s must call OpenAIGatewayPipeline.CheckCyberSession/CyberStage after moderation; old direct rejectIfCyberSessionBlocked calls are not stage coverage", handlerName)
+		require.Less(t, coverage.FirstModerationPos, coverage.FirstCyberPos,
+			"%s must run moderation before CyberStage (moderation at %s, cyber at %s)",
+			handlerName, strings.Join(coverage.ModerationLocations, ", "), strings.Join(coverage.CyberLocations, ", "))
+	}
+}
+
 func allGatewayRoutesFromRouter(router *gin.Engine) []string {
 	routeSet := make(map[string]struct{})
 	for _, route := range router.Routes() {
@@ -312,6 +349,196 @@ func openAIModeratedRouteProtocolsFromRegistrar(entries []ModeratedRouteMeta) []
 		}
 	}
 	return sortedRouteSet(protocolSet)
+}
+
+func openAIHTTPModeratedRouteProtocolsFromRegistrar(entries []ModeratedRouteMeta) []string {
+	protocolSet := make(map[string]struct{})
+	for _, entry := range entries {
+		entry = moderationcoverage.NormalizeEntry(entry)
+		if !entry.Upstream || !entry.ModerationRequired || entry.Status != moderationcoverage.StatusCovered {
+			continue
+		}
+		if !isOpenAIHTTPModeratedHandler(entry.Handler) {
+			continue
+		}
+		switch entry.Protocol {
+		case "openai_chat_completions", "openai_responses":
+			protocolSet[entry.Protocol] = struct{}{}
+		}
+	}
+	return sortedRouteSet(protocolSet)
+}
+
+type openAIHTTPHandlerStageCoverage struct {
+	Protocol                   string
+	HasModerationStage         bool
+	HasCyberStage              bool
+	HasDirectCyberReject       bool
+	FirstModerationPos         token.Pos
+	FirstCyberPos              token.Pos
+	ModerationLocations        []string
+	CyberLocations             []string
+	DirectCyberRejectLocations []string
+}
+
+func openAIHTTPStageCoverageFromHandlerSources(t *testing.T) map[string]openAIHTTPHandlerStageCoverage {
+	t.Helper()
+
+	repoRoot := repoRootFromTestFile(t)
+	handlerDir := filepath.Join(repoRoot, "backend", "internal", "handler")
+	files := []string{
+		filepath.Join(handlerDir, "openai_chat_completions.go"),
+		filepath.Join(handlerDir, "openai_gateway_handler.go"),
+	}
+	pipelineFields := openAIGatewayPipelineFieldsFromHandlerSources(t, files)
+	coverageByHandler := make(map[string]openAIHTTPHandlerStageCoverage)
+
+	for _, file := range files {
+		src, err := os.ReadFile(file)
+		require.NoError(t, err)
+		fset := token.NewFileSet()
+		parsed, err := parser.ParseFile(fset, file, src, 0)
+		require.NoError(t, err)
+
+		for _, decl := range parsed.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			handlerName, ok := openAIHTTPHandlerStageCoverageName(fn)
+			if !ok {
+				continue
+			}
+			coverage := openAIHTTPHandlerStageCoverage{}
+			pipelineAliases := collectOpenAIGatewayPipelineAliases(fn.Body, pipelineFields)
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				switch n := node.(type) {
+				case *ast.FuncLit:
+					return false
+				case *ast.CallExpr:
+					location := sourceLocation(repoRoot, file, fset.Position(n.Pos()).Line)
+					switch {
+					case isCheckWithModerationGuardCall(n):
+						coverage.HasModerationStage = true
+						if coverage.FirstModerationPos == token.NoPos || n.Pos() < coverage.FirstModerationPos {
+							coverage.FirstModerationPos = n.Pos()
+						}
+						coverage.ModerationLocations = append(coverage.ModerationLocations, location)
+						if protocol := serviceProtocolConstantValue(contentModerationProtocolArg(n)); isOpenAIHTTPModerationProtocol(protocol) {
+							coverage.Protocol = protocol
+						}
+					case isCheckCyberSessionCall(n, pipelineFields, pipelineAliases):
+						coverage.HasCyberStage = true
+						if coverage.FirstCyberPos == token.NoPos || n.Pos() < coverage.FirstCyberPos {
+							coverage.FirstCyberPos = n.Pos()
+						}
+						coverage.CyberLocations = append(coverage.CyberLocations, location)
+						if protocol := serviceProtocolConstantValue(contentModerationProtocolArg(n)); isOpenAIHTTPModerationProtocol(protocol) {
+							coverage.Protocol = protocol
+						}
+					case isDirectCyberSessionRejectCall(n):
+						coverage.HasDirectCyberReject = true
+						coverage.DirectCyberRejectLocations = append(coverage.DirectCyberRejectLocations, location)
+					}
+				}
+				return true
+			})
+			coverageByHandler[handlerName] = coverage
+		}
+	}
+
+	return coverageByHandler
+}
+
+func openAIHTTPHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
+	switch fn.Name.Name {
+	case "ChatCompletions", "Responses":
+	default:
+		return "", false
+	}
+	if fn.Recv == nil || len(fn.Recv.List) == 0 {
+		return "", false
+	}
+	if astExprLastIdentName(fn.Recv.List[0].Type) != "OpenAIGatewayHandler" {
+		return "", false
+	}
+	return "OpenAIGatewayHandler." + fn.Name.Name, true
+}
+
+func isOpenAIHTTPModeratedHandler(handler string) bool {
+	switch strings.TrimSpace(handler) {
+	case "OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses":
+		return true
+	default:
+		return false
+	}
+}
+
+func openAIHTTPDirectCyberRejectLocations(coverageByHandler map[string]openAIHTTPHandlerStageCoverage) []string {
+	locations := make([]string, 0)
+	for _, handlerName := range []string{"OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses"} {
+		coverage := coverageByHandler[handlerName]
+		locations = append(locations, coverage.DirectCyberRejectLocations...)
+	}
+	sort.Strings(locations)
+	return locations
+}
+
+func openAIHTTPCyberStageProtocols(coverageByHandler map[string]openAIHTTPHandlerStageCoverage) []string {
+	protocolSet := make(map[string]struct{})
+	for _, coverage := range coverageByHandler {
+		if !coverage.HasCyberStage || !isOpenAIHTTPModerationProtocol(coverage.Protocol) {
+			continue
+		}
+		protocolSet[coverage.Protocol] = struct{}{}
+	}
+	return sortedRouteSet(protocolSet)
+}
+
+func isOpenAIHTTPModerationProtocol(protocol string) bool {
+	switch protocol {
+	case "openai_chat_completions", "openai_responses":
+		return true
+	default:
+		return false
+	}
+}
+
+func isCheckCyberSessionCall(call *ast.CallExpr, pipelineFields, pipelineAliases map[string]struct{}) bool {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	switch selector.Sel.Name {
+	case "CheckCyberSession":
+		return isOpenAIGatewayPipelineReceiver(selector.X, pipelineFields, pipelineAliases)
+	case "checkCyberSessionWithPipeline":
+		receiver, ok := selector.X.(*ast.Ident)
+		return ok && receiver.Name == "h"
+	}
+	return false
+}
+
+func isDirectCyberSessionRejectCall(call *ast.CallExpr) bool {
+	return callName(call) == "rejectIfCyberSessionBlocked"
+}
+
+func callName(call *ast.CallExpr) string {
+	switch fun := call.Fun.(type) {
+	case *ast.Ident:
+		return fun.Name
+	case *ast.SelectorExpr:
+		return fun.Sel.Name
+	default:
+		return ""
+	}
+}
+
+func sourceLocation(repoRoot, file string, line int) string {
+	if rel, err := filepath.Rel(repoRoot, file); err == nil {
+		return fmt.Sprintf("%s:%d", filepath.ToSlash(rel), line)
+	}
+	return fmt.Sprintf("%s:%d", filepath.ToSlash(file), line)
 }
 
 type openAIGatewayPipelineModerationCoverage struct {

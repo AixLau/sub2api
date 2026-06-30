@@ -95,7 +95,13 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
 		return
 	}
-	if h.rejectIfCyberSessionBlocked(c, apiKey, body, reqModel, cyberBlockFormatChat) {
+	if h.checkCyberSessionWithPipeline(c, reqLog, openAIGatewayCyberSessionInput{
+		APIKey:   apiKey,
+		Model:    reqModel,
+		Body:     body,
+		Format:   cyberBlockFormatChat,
+		Protocol: service.ContentModerationProtocolOpenAIChat,
+	}) {
 		return
 	}
 
