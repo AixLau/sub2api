@@ -253,11 +253,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 
-	guard := h.moderationGuard
-	if guard == nil {
-		guard = newContentModerationGuard(h.contentModerationService)
-	}
-	if decision := guard.Check(c, reqLog, moderationGuardInput{
+	if decision := h.checkWithModerationGuard(c, reqLog, moderationGuardInput{
 		APIKey:   apiKey,
 		Subject:  subject,
 		Protocol: service.ContentModerationProtocolOpenAIResponses,
@@ -1318,11 +1314,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, true)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeWSV2))
 
-	guard := h.moderationGuard
-	if guard == nil {
-		guard = newContentModerationGuard(h.contentModerationService)
-	}
-	if decision := guard.Check(c, reqLog, moderationGuardInput{
+	if decision := h.checkWithModerationGuard(c, reqLog, moderationGuardInput{
 		APIKey:   apiKey,
 		Subject:  subject,
 		Protocol: service.ContentModerationProtocolOpenAIResponses,
@@ -1528,11 +1520,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if model == "" {
 					model = reqModel
 				}
-				guard := h.moderationGuard
-				if guard == nil {
-					guard = newContentModerationGuard(h.contentModerationService)
-				}
-				if decision := guard.Check(c, reqLog, moderationGuardInput{
+				if decision := h.checkWithModerationGuard(c, reqLog, moderationGuardInput{
 					APIKey:   apiKey,
 					Subject:  subject,
 					Protocol: service.ContentModerationProtocolOpenAIResponses,

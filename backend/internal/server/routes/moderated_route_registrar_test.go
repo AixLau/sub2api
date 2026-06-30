@@ -2,6 +2,9 @@ package routes
 
 import (
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -10,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -78,6 +82,19 @@ func TestGatewayRoutesHaveExplicitModerationClassification(t *testing.T) {
 		"every registered gateway route must explicitly declare whether moderation is required")
 	require.Empty(t, routeSetDifference(classifiedRoutes, actualRoutes),
 		"route moderation classification entries must correspond to real Gin gateway routes")
+}
+
+func TestOpenAIModeratedRoutesHaveGuardCoverage(t *testing.T) {
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
+	_ = newGatewayRoutesTestRouter()
+
+	openAIProtocols := openAIModeratedRouteProtocolsFromRegistrar(GatewayModeratedRouteCoverageEntries())
+	guardProtocols := openAIGuardHelperProtocolsFromHandlerSources(t)
+
+	require.NotEmpty(t, openAIProtocols, "OpenAI moderated route protocols should not be empty")
+	require.Empty(t, routeSetDifference(openAIProtocols, guardProtocols),
+		"OpenAI moderated route protocols must have a matching checkWithModerationGuard stage in OpenAI handlers")
 }
 
 func allGatewayRoutesFromRouter(router *gin.Engine) []string {
@@ -270,4 +287,104 @@ func sortedRouteSet(routeSet map[string]struct{}) []string {
 	}
 	sort.Strings(routes)
 	return routes
+}
+
+func openAIModeratedRouteProtocolsFromRegistrar(entries []ModeratedRouteMeta) []string {
+	protocolSet := make(map[string]struct{})
+	for _, entry := range entries {
+		entry = moderationcoverage.NormalizeEntry(entry)
+		if !entry.Upstream || !entry.ModerationRequired || entry.Status != moderationcoverage.StatusCovered {
+			continue
+		}
+		if strings.HasPrefix(entry.Protocol, "openai_") {
+			protocolSet[entry.Protocol] = struct{}{}
+		}
+	}
+	return sortedRouteSet(protocolSet)
+}
+
+func openAIGuardHelperProtocolsFromHandlerSources(t *testing.T) []string {
+	t.Helper()
+
+	_, file, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "..", ".."))
+	handlerDir := filepath.Join(repoRoot, "backend", "internal", "handler")
+	files, err := filepath.Glob(filepath.Join(handlerDir, "openai*.go"))
+	require.NoError(t, err)
+	sort.Strings(files)
+
+	protocolSet := make(map[string]struct{})
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(file)
+		require.NoError(t, err)
+		fset := token.NewFileSet()
+		parsed, err := parser.ParseFile(fset, file, src, 0)
+		require.NoError(t, err)
+
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok || !isCheckWithModerationGuardCall(call) {
+				return true
+			}
+			protocol := contentModerationProtocolArg(call)
+			if strings.HasPrefix(protocol, "ContentModerationProtocolOpenAI") {
+				protocolSet[serviceProtocolConstantValue(protocol)] = struct{}{}
+			}
+			return true
+		})
+	}
+	return sortedRouteSet(protocolSet)
+}
+
+func isCheckWithModerationGuardCall(call *ast.CallExpr) bool {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	return ok && selector.Sel.Name == "checkWithModerationGuard"
+}
+
+func contentModerationProtocolArg(call *ast.CallExpr) string {
+	for _, arg := range call.Args {
+		selector, ok := arg.(*ast.SelectorExpr)
+		if ok && strings.HasPrefix(selector.Sel.Name, "ContentModerationProtocol") {
+			return selector.Sel.Name
+		}
+
+		literal, ok := arg.(*ast.CompositeLit)
+		if !ok {
+			continue
+		}
+		for _, elt := range literal.Elts {
+			kv, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			key, ok := kv.Key.(*ast.Ident)
+			if !ok || key.Name != "Protocol" {
+				continue
+			}
+			selector, ok := kv.Value.(*ast.SelectorExpr)
+			if ok && strings.HasPrefix(selector.Sel.Name, "ContentModerationProtocol") {
+				return selector.Sel.Name
+			}
+		}
+	}
+	return ""
+}
+
+func serviceProtocolConstantValue(name string) string {
+	switch name {
+	case "ContentModerationProtocolOpenAIChat":
+		return "openai_chat_completions"
+	case "ContentModerationProtocolOpenAIResponses":
+		return "openai_responses"
+	case "ContentModerationProtocolOpenAIImages":
+		return "openai_images"
+	case "ContentModerationProtocolOpenAIEmbeddings":
+		return "openai_embeddings"
+	default:
+		return name
+	}
 }

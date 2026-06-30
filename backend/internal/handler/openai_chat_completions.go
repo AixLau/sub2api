@@ -85,11 +85,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 
-	guard := h.moderationGuard
-	if guard == nil {
-		guard = newContentModerationGuard(h.contentModerationService)
-	}
-	if decision := guard.Check(c, reqLog, moderationGuardInput{
+	if decision := h.checkWithModerationGuard(c, reqLog, moderationGuardInput{
 		APIKey:   apiKey,
 		Subject:  subject,
 		Protocol: service.ContentModerationProtocolOpenAIChat,

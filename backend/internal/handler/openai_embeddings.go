@@ -74,11 +74,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, false)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
 
-	guard := h.moderationGuard
-	if guard == nil {
-		guard = newContentModerationGuard(h.contentModerationService)
-	}
-	if decision := guard.Check(c, reqLog, moderationGuardInput{
+	if decision := h.checkWithModerationGuard(c, reqLog, moderationGuardInput{
 		APIKey:   apiKey,
 		Subject:  subject,
 		Protocol: service.ContentModerationProtocolOpenAIEmbeddings,

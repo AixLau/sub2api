@@ -86,11 +86,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
 		return
 	}
-	guard := h.moderationGuard
-	if guard == nil {
-		guard = newContentModerationGuard(h.contentModerationService)
-	}
-	if decision := guard.Check(c, reqLog, moderationGuardInput{
+	if decision := h.checkWithModerationGuard(c, reqLog, moderationGuardInput{
 		APIKey:   apiKey,
 		Subject:  subject,
 		Protocol: service.ContentModerationProtocolOpenAIImages,

@@ -27,6 +27,14 @@ func newContentModerationGuard(svc *service.ContentModerationService) moderation
 	return &contentModerationGuard{service: svc}
 }
 
+func (h *OpenAIGatewayHandler) checkWithModerationGuard(c *gin.Context, reqLog *zap.Logger, input moderationGuardInput) *service.ContentModerationDecision {
+	guard := h.moderationGuard
+	if guard == nil {
+		guard = newContentModerationGuard(h.contentModerationService)
+	}
+	return guard.Check(c, reqLog, input)
+}
+
 func (g *contentModerationGuard) Check(c *gin.Context, reqLog *zap.Logger, input moderationGuardInput) *service.ContentModerationDecision {
 	if g == nil || g.service == nil {
 		if reqLog != nil {
