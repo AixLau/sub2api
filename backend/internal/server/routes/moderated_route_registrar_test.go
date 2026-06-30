@@ -148,7 +148,7 @@ func TestOpenAIHTTPModerationStageRunsBeforeCyberStage(t *testing.T) {
 func TestOpenAIHTTPHandlersUseUnifiedPreForwardPipeline(t *testing.T) {
 	stageCoverage := openAIHTTPStageCoverageFromHandlerSources(t)
 
-	for _, handlerName := range []string{"OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses"} {
+	for _, handlerName := range []string{"OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.Embeddings"} {
 		coverage, ok := stageCoverage[handlerName]
 		require.True(t, ok, "OpenAI HTTP handler %s should be present in source coverage scan", handlerName)
 		require.True(t, coverage.HasHTTPPreForwardPipeline,
@@ -162,6 +162,75 @@ func TestOpenAIHTTPHandlersUseUnifiedPreForwardPipeline(t *testing.T) {
 	responsesCoverage := stageCoverage["OpenAIGatewayHandler.Responses"]
 	require.False(t, responsesCoverage.HasDirectResponsesImageStage,
 		"OpenAIGatewayHandler.Responses must run image permission/slot through runOpenAIHTTPPreForwardPipeline, not inline IsImageGenerationIntent/acquireImageGenerationSlot calls")
+}
+
+func TestOpenAIHTTPModeratedRouteRegistrarExposesPipelineStages(t *testing.T) {
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
+	_ = newGatewayRoutesTestRouter()
+
+	entries := openAIHTTPPipelineEntriesFromRegistrar(GatewayModeratedRouteCoverageEntries())
+
+	require.Equal(t, []string{
+		"POST /backend-api/codex/responses",
+		"POST /backend-api/codex/responses/*subpath",
+		"POST /chat/completions",
+		"POST /embeddings",
+		"POST /images/edits",
+		"POST /images/generations",
+		"POST /responses",
+		"POST /responses/*subpath",
+		"POST /v1/chat/completions",
+		"POST /v1/embeddings",
+		"POST /v1/images/edits",
+		"POST /v1/images/generations",
+		"POST /v1/responses",
+		"POST /v1/responses/*subpath",
+	}, moderatedRoutePathKeysFromEntries(entries))
+
+	for _, entry := range entries {
+		require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, entry.Pipeline, "path=%s handler=%s", entry.Path, entry.Handler)
+		requireStageRequiredAndCovered(t, entry, moderationcoverage.StageModeration)
+		require.False(t, isOpenAIResponsesWebSocketHandler(entry.Handler),
+			"OpenAI HTTP pipeline metadata must not include Responses WebSocket routes")
+
+		switch entry.Handler {
+		case "OpenAIGatewayHandler.ChatCompletions":
+			requireStageRequiredAndCovered(t, entry, moderationcoverage.StageCyber)
+			requireStageNotRequired(t, entry, moderationcoverage.StageImage)
+		case "OpenAIGatewayHandler.Responses":
+			requireStageRequiredAndCovered(t, entry, moderationcoverage.StageCyber)
+			requireStageRequiredAndCovered(t, entry, moderationcoverage.StageImage)
+		case "OpenAIGatewayHandler.Images":
+			requireStageNotRequired(t, entry, moderationcoverage.StageCyber)
+			requireStageRequiredAndCovered(t, entry, moderationcoverage.StageImage)
+		case "OpenAIGatewayHandler.Embeddings":
+			requireStageNotRequired(t, entry, moderationcoverage.StageCyber)
+			requireStageNotRequired(t, entry, moderationcoverage.StageImage)
+		default:
+			t.Fatalf("unexpected OpenAI HTTP pipeline handler %q for %s", entry.Handler, entry.Path)
+		}
+	}
+}
+
+func TestOpenAIHTTPPipelineCoverageMetadataMatchesHandlerSourceCoverage(t *testing.T) {
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
+	_ = newGatewayRoutesTestRouter()
+
+	stageCoverage := openAIHTTPStageCoverageFromHandlerSources(t)
+	entries := openAIHTTPPipelineEntriesFromRegistrar(GatewayModeratedRouteCoverageEntries())
+
+	for _, entry := range entries {
+		coverage, ok := stageCoverage[entry.Handler]
+		require.True(t, ok, "handler %s should be present in source coverage scan", entry.Handler)
+		require.Equal(t, coverage.HasModerationStage, stageRequiredAndCovered(entry, moderationcoverage.StageModeration),
+			"%s %s moderation metadata drifted from handler source coverage", entry.Method, entry.Path)
+		require.Equal(t, coverage.HasCyberStage, stageRequiredAndCovered(entry, moderationcoverage.StageCyber),
+			"%s %s cyber metadata drifted from handler source coverage", entry.Method, entry.Path)
+		require.Equal(t, coverage.HasImageStage, stageRequiredAndCovered(entry, moderationcoverage.StageImage),
+			"%s %s image metadata drifted from handler source coverage", entry.Method, entry.Path)
+	}
 }
 
 func allGatewayRoutesFromRouter(router *gin.Engine) []string {
@@ -392,6 +461,7 @@ type openAIHTTPHandlerStageCoverage struct {
 	Protocol                     string
 	HasModerationStage           bool
 	HasCyberStage                bool
+	HasImageStage                bool
 	HasHTTPPreForwardPipeline    bool
 	HasDirectResponsesImageStage bool
 	HasDirectCyberReject         bool
@@ -410,7 +480,9 @@ func openAIHTTPStageCoverageFromHandlerSources(t *testing.T) map[string]openAIHT
 	handlerDir := filepath.Join(repoRoot, "backend", "internal", "handler")
 	files := []string{
 		filepath.Join(handlerDir, "openai_chat_completions.go"),
+		filepath.Join(handlerDir, "openai_embeddings.go"),
 		filepath.Join(handlerDir, "openai_gateway_handler.go"),
+		filepath.Join(handlerDir, "openai_images.go"),
 	}
 	pipelineFields := openAIGatewayPipelineFieldsFromHandlerSources(t, files)
 	coverageByHandler := make(map[string]openAIHTTPHandlerStageCoverage)
@@ -443,15 +515,21 @@ func openAIHTTPStageCoverageFromHandlerSources(t *testing.T) map[string]openAIHT
 					case isOpenAIHTTPPreForwardPipelineCall(n):
 						coverage.HasHTTPPreForwardPipeline = true
 						coverage.HasModerationStage = true
-						coverage.HasCyberStage = true
+						hasCyberStage := !openAIHTTPPreForwardPipelineSkipsCyberStage(n)
+						coverage.HasCyberStage = hasCyberStage
+						if openAIHTTPPreForwardPipelineEnablesImageStage(n) {
+							coverage.HasImageStage = true
+						}
 						if coverage.FirstModerationPos == token.NoPos || n.Pos() < coverage.FirstModerationPos {
 							coverage.FirstModerationPos = n.Pos()
 						}
-						if coverage.FirstCyberPos == token.NoPos || n.Pos() < coverage.FirstCyberPos {
+						if hasCyberStage && (coverage.FirstCyberPos == token.NoPos || n.Pos() < coverage.FirstCyberPos) {
 							coverage.FirstCyberPos = n.Pos()
 						}
 						coverage.ModerationLocations = append(coverage.ModerationLocations, location)
-						coverage.CyberLocations = append(coverage.CyberLocations, location)
+						if hasCyberStage {
+							coverage.CyberLocations = append(coverage.CyberLocations, location)
+						}
 						if protocol := serviceProtocolConstantValue(contentModerationProtocolArg(n)); isOpenAIHTTPModerationProtocol(protocol) {
 							coverage.Protocol = protocol
 						}
@@ -480,6 +558,7 @@ func openAIHTTPStageCoverageFromHandlerSources(t *testing.T) map[string]openAIHT
 						coverage.DirectCyberRejectLocations = append(coverage.DirectCyberRejectLocations, location)
 					case isDirectResponsesImageStageCall(n):
 						coverage.HasDirectResponsesImageStage = true
+						coverage.HasImageStage = true
 					}
 				}
 				return true
@@ -493,7 +572,7 @@ func openAIHTTPStageCoverageFromHandlerSources(t *testing.T) map[string]openAIHT
 
 func openAIHTTPHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
 	switch fn.Name.Name {
-	case "ChatCompletions", "Responses":
+	case "ChatCompletions", "Responses", "Images", "Embeddings":
 	default:
 		return "", false
 	}
@@ -508,11 +587,15 @@ func openAIHTTPHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
 
 func isOpenAIHTTPModeratedHandler(handler string) bool {
 	switch strings.TrimSpace(handler) {
-	case "OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses":
+	case "OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.Embeddings":
 		return true
 	default:
 		return false
 	}
+}
+
+func isOpenAIResponsesWebSocketHandler(handler string) bool {
+	return strings.TrimSpace(handler) == "OpenAIGatewayHandler.ResponsesWebSocket"
 }
 
 func openAIHTTPDirectCyberRejectLocations(coverageByHandler map[string]openAIHTTPHandlerStageCoverage) []string {
@@ -538,7 +621,7 @@ func openAIHTTPCyberStageProtocols(coverageByHandler map[string]openAIHTTPHandle
 
 func isOpenAIHTTPModerationProtocol(protocol string) bool {
 	switch protocol {
-	case "openai_chat_completions", "openai_responses":
+	case "openai_chat_completions", "openai_responses", "openai_images", "openai_embeddings":
 		return true
 	default:
 		return false
@@ -905,6 +988,50 @@ func isOpenAIHTTPPreForwardPipelineCall(call *ast.CallExpr) bool {
 	return ok && selector.Sel.Name == "runOpenAIHTTPPreForwardPipeline"
 }
 
+func openAIHTTPPreForwardPipelineEnablesImageStage(call *ast.CallExpr) bool {
+	for _, arg := range call.Args {
+		literal, ok := arg.(*ast.CompositeLit)
+		if !ok {
+			continue
+		}
+		for _, elt := range literal.Elts {
+			kv, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			key, ok := kv.Key.(*ast.Ident)
+			if !ok || key.Name != "EnableImageStage" {
+				continue
+			}
+			value, ok := kv.Value.(*ast.Ident)
+			return ok && value.Name == "true"
+		}
+	}
+	return false
+}
+
+func openAIHTTPPreForwardPipelineSkipsCyberStage(call *ast.CallExpr) bool {
+	for _, arg := range call.Args {
+		literal, ok := arg.(*ast.CompositeLit)
+		if !ok {
+			continue
+		}
+		for _, elt := range literal.Elts {
+			kv, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			key, ok := kv.Key.(*ast.Ident)
+			if !ok || key.Name != "SkipCyberStage" {
+				continue
+			}
+			value, ok := kv.Value.(*ast.Ident)
+			return ok && value.Name == "true"
+		}
+	}
+	return false
+}
+
 func isDirectResponsesImageStageCall(call *ast.CallExpr) bool {
 	switch callName(call) {
 	case "IsImageGenerationIntent", "GroupAllowsImageGeneration", "acquireImageGenerationSlot":
@@ -956,4 +1083,57 @@ func serviceProtocolConstantValue(name string) string {
 	default:
 		return name
 	}
+}
+
+func openAIHTTPPipelineEntriesFromRegistrar(entries []ModeratedRouteMeta) []ModeratedRouteMeta {
+	out := make([]ModeratedRouteMeta, 0)
+	for _, entry := range entries {
+		entry = moderationcoverage.NormalizeEntry(entry)
+		if entry.Pipeline != moderationcoverage.PipelineOpenAIHTTP {
+			continue
+		}
+		out = append(out, entry)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return moderatedRouteKey(out[i].Method, out[i].Path, "") < moderatedRouteKey(out[j].Method, out[j].Path, "")
+	})
+	return out
+}
+
+func moderatedRoutePathKeysFromEntries(entries []ModeratedRouteMeta) []string {
+	routeSet := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		routeSet[moderatedRouteKey(entry.Method, entry.Path, "")] = struct{}{}
+	}
+	return sortedRouteSet(routeSet)
+}
+
+func requireStageRequiredAndCovered(t *testing.T, entry ModeratedRouteMeta, stage string) {
+	t.Helper()
+	require.True(t, stageRequiredAndCovered(entry, stage),
+		"%s %s must require and cover %s stage, got %#v", entry.Method, entry.Path, stage, entry.StageCoverage)
+}
+
+func requireStageNotRequired(t *testing.T, entry ModeratedRouteMeta, stage string) {
+	t.Helper()
+	require.False(t, stageRequired(entry, stage),
+		"%s %s must not require %s stage, got %#v", entry.Method, entry.Path, stage, entry.StageCoverage)
+}
+
+func stageRequiredAndCovered(entry ModeratedRouteMeta, stage string) bool {
+	for _, item := range entry.StageCoverage {
+		if item.Stage == stage {
+			return item.Required && item.Covered
+		}
+	}
+	return false
+}
+
+func stageRequired(entry ModeratedRouteMeta, stage string) bool {
+	for _, item := range entry.StageCoverage {
+		if item.Stage == stage {
+			return item.Required
+		}
+	}
+	return false
 }

@@ -180,7 +180,7 @@
       "moderation_required": true,
       "protocol": "openai_images",
       "status": "covered",
-      "review_reason": "Image generation prompt and image metadata are moderated before permission checks, scheduling, and upstream forwarding."
+      "review_reason": "Image generation permission is checked before moderation; prompt and image metadata are then moderated before scheduling and upstream forwarding."
     },
     {
       "method": "POST",
@@ -190,7 +190,7 @@
       "moderation_required": true,
       "protocol": "openai_images",
       "status": "covered",
-      "review_reason": "Image edit prompt and image metadata are moderated before permission checks, scheduling, and upstream forwarding."
+      "review_reason": "Image edit permission is checked before moderation; prompt and image metadata are then moderated before scheduling and upstream forwarding."
     },
     {
       "method": "POST",

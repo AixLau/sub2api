@@ -184,6 +184,7 @@ export interface ContentModerationRuntimeStatus {
   security_baseline: ContentModerationSecurityBaselineStatus
   effective_protection: ContentModerationEffectiveProtectionStatus
   route_coverage: ContentModerationRouteCoverageStatus
+  pipeline_coverage: ContentModerationPipelineCoverageStatus
   enabled: boolean
   risk_control_enabled: boolean
   mode: ModerationMode
@@ -257,6 +258,46 @@ export interface ContentModerationRouteCoverageStatus {
   required_routes: number
   covered_routes: number
   uncovered_routes: string[]
+}
+
+export interface ContentModerationPipelineCoverageStatus {
+  version: string
+  manifest_hash: string
+  status: string
+  openai_http: ContentModerationOpenAIHTTPPipelineCoverageStatus
+}
+
+export interface ContentModerationOpenAIHTTPPipelineCoverageStatus {
+  pipeline: string
+  required_routes: number
+  covered_routes: number
+  uncovered_routes: string[]
+  stage_coverage: ContentModerationPipelineStageCoverageStatus[]
+  routes: ContentModerationPipelineRouteCoverageStatus[]
+}
+
+export interface ContentModerationPipelineStageCoverageStatus {
+  stage: string
+  required_routes: number
+  covered_routes: number
+  uncovered_routes: string[]
+}
+
+export interface ContentModerationPipelineRouteCoverageStatus {
+  method: string
+  path: string
+  handler: string
+  protocol: string
+  pipeline: string
+  covered: boolean
+  uncovered_stages?: string[]
+  stages: ContentModerationPipelineRouteStageCoverageStatus[]
+}
+
+export interface ContentModerationPipelineRouteStageCoverageStatus {
+  stage: string
+  required: boolean
+  covered: boolean
 }
 
 export interface ContentModerationAPIKeyLoad {

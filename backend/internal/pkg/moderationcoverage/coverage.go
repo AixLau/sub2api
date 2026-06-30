@@ -11,7 +11,19 @@ import (
 const (
 	StatusCovered            = "covered"
 	StatusIntentionalNoAudit = "intentional_no_audit"
+
+	PipelineOpenAIHTTP = "openai_http"
+
+	StageModeration = "moderation"
+	StageCyber      = "cyber"
+	StageImage      = "image"
 )
+
+type PipelineStageCoverage struct {
+	Stage    string
+	Required bool
+	Covered  bool
+}
 
 type Entry struct {
 	Method             string
@@ -20,6 +32,8 @@ type Entry struct {
 	Upstream           bool
 	ModerationRequired bool
 	Protocol           string
+	Pipeline           string
+	StageCoverage      []PipelineStageCoverage
 	Status             string
 	ReviewReason       string
 }
@@ -125,6 +139,8 @@ func NormalizeEntry(entry Entry) Entry {
 	entry.Path = NormalizePath(entry.Path)
 	entry.Handler = strings.TrimSpace(entry.Handler)
 	entry.Protocol = strings.TrimSpace(entry.Protocol)
+	entry.Pipeline = NormalizePipeline(entry.Pipeline)
+	entry.StageCoverage = NormalizeStageCoverage(entry.StageCoverage)
 	entry.Status = NormalizeStatus(entry.Status)
 	entry.ReviewReason = strings.TrimSpace(entry.ReviewReason)
 	return entry
@@ -140,6 +156,37 @@ func NormalizePath(value string) string {
 
 func NormalizeStatus(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func NormalizePipeline(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func NormalizeStage(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func NormalizeStageCoverage(stages []PipelineStageCoverage) []PipelineStageCoverage {
+	stagesByName := make(map[string]PipelineStageCoverage, len(stages))
+	for _, stage := range stages {
+		stage.Stage = NormalizeStage(stage.Stage)
+		if stage.Stage == "" {
+			continue
+		}
+		stagesByName[stage.Stage] = stage
+	}
+
+	names := make([]string, 0, len(stagesByName))
+	for name := range stagesByName {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	normalized := make([]PipelineStageCoverage, 0, len(names))
+	for _, name := range names {
+		normalized = append(normalized, stagesByName[name])
+	}
+	return normalized
 }
 
 func normalizeEntries(entries []Entry) []Entry {

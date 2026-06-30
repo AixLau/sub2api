@@ -139,6 +139,7 @@ const (
 	contentModerationExtractorVersion              = "v4"
 	contentModerationMinimumSecurityBaselineCommit = "9216c848"
 	contentModerationRouteManifestVersion          = "2026-06-29.2"
+	contentModerationPipelineCoverageVersion       = "openai-http-pre-forward-v2"
 	minContentModerationBuildCommitPrefixLen       = 7
 )
 
@@ -576,11 +577,52 @@ type ContentModerationEffectiveProtectionStatus struct {
 
 type ContentModerationRouteCoverageStatus = moderationcoverage.Status
 
+type ContentModerationPipelineCoverageStatus struct {
+	Version      string                                            `json:"version"`
+	ManifestHash string                                            `json:"manifest_hash"`
+	Status       string                                            `json:"status"`
+	OpenAIHTTP   ContentModerationOpenAIHTTPPipelineCoverageStatus `json:"openai_http"`
+}
+
+type ContentModerationOpenAIHTTPPipelineCoverageStatus struct {
+	Pipeline        string                                         `json:"pipeline"`
+	RequiredRoutes  int                                            `json:"required_routes"`
+	CoveredRoutes   int                                            `json:"covered_routes"`
+	UncoveredRoutes []string                                       `json:"uncovered_routes"`
+	StageCoverage   []ContentModerationPipelineStageCoverageStatus `json:"stage_coverage"`
+	Routes          []ContentModerationPipelineRouteCoverageStatus `json:"routes"`
+}
+
+type ContentModerationPipelineStageCoverageStatus struct {
+	Stage           string   `json:"stage"`
+	RequiredRoutes  int      `json:"required_routes"`
+	CoveredRoutes   int      `json:"covered_routes"`
+	UncoveredRoutes []string `json:"uncovered_routes"`
+}
+
+type ContentModerationPipelineRouteCoverageStatus struct {
+	Method          string                                              `json:"method"`
+	Path            string                                              `json:"path"`
+	Handler         string                                              `json:"handler"`
+	Protocol        string                                              `json:"protocol"`
+	Pipeline        string                                              `json:"pipeline"`
+	Covered         bool                                                `json:"covered"`
+	UncoveredStages []string                                            `json:"uncovered_stages,omitempty"`
+	Stages          []ContentModerationPipelineRouteStageCoverageStatus `json:"stages"`
+}
+
+type ContentModerationPipelineRouteStageCoverageStatus struct {
+	Stage    string `json:"stage"`
+	Required bool   `json:"required"`
+	Covered  bool   `json:"covered"`
+}
+
 type ContentModerationRuntimeStatus struct {
 	Build                        ContentModerationBuildStatus               `json:"build"`
 	SecurityBaseline             ContentModerationSecurityBaselineStatus    `json:"security_baseline"`
 	EffectiveProtection          ContentModerationEffectiveProtectionStatus `json:"effective_protection"`
 	RouteCoverage                ContentModerationRouteCoverageStatus       `json:"route_coverage"`
+	PipelineCoverage             ContentModerationPipelineCoverageStatus    `json:"pipeline_coverage"`
 	Enabled                      bool                                       `json:"enabled"`
 	RiskControlEnabled           bool                                       `json:"risk_control_enabled"`
 	Mode                         string                                     `json:"mode"`
@@ -1643,12 +1685,15 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 		t := time.Unix(unix, 0)
 		lastCleanupAt = &t
 	}
-	routeCoverage := contentModerationRouteCoverageStatus()
+	coverageEntries := moderationcoverage.Entries()
+	routeCoverage := contentModerationRouteCoverageStatusFromEntries(coverageEntries)
+	pipelineCoverage := contentModerationPipelineCoverageStatusFromEntries(coverageEntries)
 	return &ContentModerationRuntimeStatus{
 		Build:                        s.buildStatus(),
 		SecurityBaseline:             s.contentModerationSecurityBaselineStatus(),
-		EffectiveProtection:          s.buildContentModerationEffectiveProtectionStatus(cfg, riskEnabled, routeCoverage),
+		EffectiveProtection:          s.buildContentModerationEffectiveProtectionStatus(cfg, riskEnabled, routeCoverage, pipelineCoverage),
 		RouteCoverage:                routeCoverage,
+		PipelineCoverage:             pipelineCoverage,
 		Enabled:                      cfg.Enabled,
 		RiskControlEnabled:           riskEnabled,
 		Mode:                         cfg.Mode,
@@ -1821,6 +1866,231 @@ func contentModerationRouteCoverageHashFromEntries(entries []contentModerationRo
 	return moderationcoverage.HashFromEntries(entries)
 }
 
+func contentModerationPipelineCoverageStatus() ContentModerationPipelineCoverageStatus {
+	return contentModerationPipelineCoverageStatusFromEntries(moderationcoverage.Entries())
+}
+
+func contentModerationPipelineCoverageStatusFromEntries(entries []contentModerationRouteCoverageEntry) ContentModerationPipelineCoverageStatus {
+	openAIHTTP := contentModerationOpenAIHTTPPipelineCoverageStatusFromEntries(entries)
+	status := "covered"
+	if openAIHTTP.RequiredRoutes == 0 {
+		status = "unknown"
+	} else if openAIHTTP.CoveredRoutes != openAIHTTP.RequiredRoutes || len(openAIHTTP.UncoveredRoutes) > 0 {
+		status = "mismatch"
+	}
+	return ContentModerationPipelineCoverageStatus{
+		Version:      contentModerationPipelineCoverageVersion,
+		ManifestHash: contentModerationPipelineCoverageHashFromEntries(entries),
+		Status:       status,
+		OpenAIHTTP:   openAIHTTP,
+	}
+}
+
+func contentModerationOpenAIHTTPPipelineCoverageStatusFromEntries(entries []contentModerationRouteCoverageEntry) ContentModerationOpenAIHTTPPipelineCoverageStatus {
+	routes := make([]ContentModerationPipelineRouteCoverageStatus, 0)
+	for _, entry := range entries {
+		entry = moderationcoverage.NormalizeEntry(entry)
+		if !contentModerationIsOpenAIHTTPPipelineRoute(entry) {
+			continue
+		}
+		routes = append(routes, contentModerationPipelineRouteCoverageStatusFromEntry(entry))
+	}
+	sort.Slice(routes, func(i, j int) bool {
+		left := contentModerationPipelineRouteKey(routes[i].Method, routes[i].Path)
+		right := contentModerationPipelineRouteKey(routes[j].Method, routes[j].Path)
+		if left == right {
+			return routes[i].Protocol < routes[j].Protocol
+		}
+		return left < right
+	})
+
+	coveredRoutes := 0
+	uncoveredRoutes := make([]string, 0)
+	for _, route := range routes {
+		if route.Covered {
+			coveredRoutes++
+			continue
+		}
+		uncoveredRoutes = append(uncoveredRoutes, contentModerationPipelineRouteKey(route.Method, route.Path))
+	}
+
+	return ContentModerationOpenAIHTTPPipelineCoverageStatus{
+		Pipeline:        moderationcoverage.PipelineOpenAIHTTP,
+		RequiredRoutes:  len(routes),
+		CoveredRoutes:   coveredRoutes,
+		UncoveredRoutes: uncoveredRoutes,
+		StageCoverage:   contentModerationPipelineStageCoverageStatusFromRoutes(routes),
+		Routes:          routes,
+	}
+}
+
+func contentModerationPipelineRouteCoverageStatusFromEntry(entry contentModerationRouteCoverageEntry) ContentModerationPipelineRouteCoverageStatus {
+	stages := make([]ContentModerationPipelineRouteStageCoverageStatus, 0, len(entry.StageCoverage))
+	uncoveredStages := make([]string, 0)
+	covered := normalizeContentModerationRouteCoverageStatus(entry.Status) == moderationcoverage.StatusCovered
+	if moderationcoverage.NormalizePipeline(entry.Pipeline) != moderationcoverage.PipelineOpenAIHTTP {
+		covered = false
+		uncoveredStages = append(uncoveredStages, "pipeline_metadata")
+	}
+	for _, stage := range entry.StageCoverage {
+		stageName := moderationcoverage.NormalizeStage(stage.Stage)
+		if stageName == "" {
+			continue
+		}
+		stageCovered := !stage.Required || stage.Covered
+		stages = append(stages, ContentModerationPipelineRouteStageCoverageStatus{
+			Stage:    stageName,
+			Required: stage.Required,
+			Covered:  stage.Covered,
+		})
+		if stage.Required && !stageCovered {
+			covered = false
+			uncoveredStages = append(uncoveredStages, stageName)
+		}
+	}
+	if len(stages) == 0 {
+		covered = false
+		if len(uncoveredStages) == 0 {
+			uncoveredStages = append(uncoveredStages, "pipeline_metadata")
+		}
+	}
+	sort.Slice(stages, func(i, j int) bool {
+		return contentModerationPipelineStageSortKey(stages[i].Stage) < contentModerationPipelineStageSortKey(stages[j].Stage)
+	})
+	sort.Strings(uncoveredStages)
+	return ContentModerationPipelineRouteCoverageStatus{
+		Method:          normalizeContentModerationRouteCoverageMethod(entry.Method),
+		Path:            normalizeContentModerationRouteCoveragePath(entry.Path),
+		Handler:         strings.TrimSpace(entry.Handler),
+		Protocol:        strings.TrimSpace(entry.Protocol),
+		Pipeline:        moderationcoverage.NormalizePipeline(entry.Pipeline),
+		Covered:         covered,
+		UncoveredStages: uncoveredStages,
+		Stages:          stages,
+	}
+}
+
+func contentModerationPipelineStageCoverageStatusFromRoutes(routes []ContentModerationPipelineRouteCoverageStatus) []ContentModerationPipelineStageCoverageStatus {
+	byStage := make(map[string]*ContentModerationPipelineStageCoverageStatus)
+	for _, route := range routes {
+		routeKey := contentModerationPipelineRouteKey(route.Method, route.Path)
+		for _, stage := range route.Stages {
+			if !stage.Required {
+				continue
+			}
+			stageName := moderationcoverage.NormalizeStage(stage.Stage)
+			if stageName == "" {
+				continue
+			}
+			summary := byStage[stageName]
+			if summary == nil {
+				summary = &ContentModerationPipelineStageCoverageStatus{Stage: stageName}
+				byStage[stageName] = summary
+			}
+			summary.RequiredRoutes++
+			if stage.Covered {
+				summary.CoveredRoutes++
+			} else {
+				summary.UncoveredRoutes = append(summary.UncoveredRoutes, routeKey)
+			}
+		}
+	}
+
+	stages := make([]string, 0, len(byStage))
+	for stage := range byStage {
+		stages = append(stages, stage)
+	}
+	sort.Slice(stages, func(i, j int) bool {
+		return contentModerationPipelineStageSortKey(stages[i]) < contentModerationPipelineStageSortKey(stages[j])
+	})
+
+	out := make([]ContentModerationPipelineStageCoverageStatus, 0, len(stages))
+	for _, stage := range stages {
+		summary := *byStage[stage]
+		if summary.UncoveredRoutes == nil {
+			summary.UncoveredRoutes = []string{}
+		}
+		sort.Strings(summary.UncoveredRoutes)
+		out = append(out, summary)
+	}
+	return out
+}
+
+func contentModerationPipelineCoverageHashFromEntries(entries []contentModerationRouteCoverageEntry) string {
+	parts := make([]string, 0)
+	for _, entry := range entries {
+		entry = moderationcoverage.NormalizeEntry(entry)
+		if !contentModerationIsOpenAIHTTPPipelineRoute(entry) {
+			continue
+		}
+		if len(entry.StageCoverage) == 0 {
+			parts = append(parts, strings.Join([]string{
+				entry.Pipeline,
+				normalizeContentModerationRouteCoverageMethod(entry.Method),
+				normalizeContentModerationRouteCoveragePath(entry.Path),
+				strings.TrimSpace(entry.Handler),
+				strings.TrimSpace(entry.Protocol),
+				normalizeContentModerationRouteCoverageStatus(entry.Status),
+				"pipeline_metadata",
+				"required",
+				"missing",
+			}, " "))
+			continue
+		}
+		for _, stage := range entry.StageCoverage {
+			parts = append(parts, strings.Join([]string{
+				entry.Pipeline,
+				normalizeContentModerationRouteCoverageMethod(entry.Method),
+				normalizeContentModerationRouteCoveragePath(entry.Path),
+				strings.TrimSpace(entry.Handler),
+				strings.TrimSpace(entry.Protocol),
+				normalizeContentModerationRouteCoverageStatus(entry.Status),
+				moderationcoverage.NormalizeStage(stage.Stage),
+				fmt.Sprintf("required=%t", stage.Required),
+				fmt.Sprintf("covered=%t", stage.Covered),
+			}, " "))
+		}
+	}
+	sort.Strings(parts)
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))
+	return hex.EncodeToString(sum[:])
+}
+
+func contentModerationIsOpenAIHTTPPipelineRoute(entry contentModerationRouteCoverageEntry) bool {
+	if !entry.Upstream || !entry.ModerationRequired {
+		return false
+	}
+	if normalizeContentModerationRouteCoverageMethod(entry.Method) != http.MethodPost {
+		return false
+	}
+	switch strings.TrimSpace(entry.Protocol) {
+	case ContentModerationProtocolOpenAIChat,
+		ContentModerationProtocolOpenAIResponses,
+		ContentModerationProtocolOpenAIImages,
+		ContentModerationProtocolOpenAIEmbeddings:
+		return true
+	default:
+		return false
+	}
+}
+
+func contentModerationPipelineRouteKey(method, path string) string {
+	return strings.TrimSpace(normalizeContentModerationRouteCoverageMethod(method) + " " + normalizeContentModerationRouteCoveragePath(path))
+}
+
+func contentModerationPipelineStageSortKey(stage string) string {
+	switch moderationcoverage.NormalizeStage(stage) {
+	case moderationcoverage.StageModeration:
+		return "00:" + moderationcoverage.StageModeration
+	case moderationcoverage.StageCyber:
+		return "01:" + moderationcoverage.StageCyber
+	case moderationcoverage.StageImage:
+		return "02:" + moderationcoverage.StageImage
+	default:
+		return "99:" + moderationcoverage.NormalizeStage(stage)
+	}
+}
+
 func normalizeContentModerationRouteCoverageMethod(value string) string {
 	return moderationcoverage.NormalizeMethod(value)
 }
@@ -1833,7 +2103,7 @@ func normalizeContentModerationRouteCoverageStatus(value string) string {
 	return moderationcoverage.NormalizeStatus(value)
 }
 
-func (s *ContentModerationService) buildContentModerationEffectiveProtectionStatus(cfg *ContentModerationConfig, riskEnabled bool, routeCoverage ContentModerationRouteCoverageStatus) ContentModerationEffectiveProtectionStatus {
+func (s *ContentModerationService) buildContentModerationEffectiveProtectionStatus(cfg *ContentModerationConfig, riskEnabled bool, routeCoverage ContentModerationRouteCoverageStatus, pipelineCoverage ContentModerationPipelineCoverageStatus) ContentModerationEffectiveProtectionStatus {
 	if cfg == nil {
 		cfg = defaultContentModerationConfig()
 	} else {
@@ -1858,7 +2128,7 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 	buildCommit := strings.TrimSpace(s.buildInfo.Commit)
 	attestationRequested := parseContentModerationBoolEnv("MODERATION_SECURITY_BASELINE_SATISFIED")
 
-	unsafeReasons := make([]string, 0, 12)
+	unsafeReasons := make([]string, 0, 16)
 	if isUnknownContentModerationBuildCommit(buildCommit) {
 		unsafeReasons = append(unsafeReasons, "build_commit_unknown")
 	}
@@ -1882,6 +2152,15 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 	}
 	if len(routeCoverage.UncoveredRoutes) > 0 {
 		unsafeReasons = append(unsafeReasons, "uncovered_upstream_routes")
+	}
+	if pipelineCoverage.Status == "unknown" {
+		unsafeReasons = append(unsafeReasons, "pipeline_coverage_unknown")
+	}
+	if pipelineCoverage.Status == "mismatch" {
+		unsafeReasons = append(unsafeReasons, "pipeline_coverage_mismatch")
+	}
+	if len(pipelineCoverage.OpenAIHTTP.UncoveredRoutes) > 0 {
+		unsafeReasons = append(unsafeReasons, "uncovered_pipeline_routes")
 	}
 	if !riskEnabled {
 		unsafeReasons = append(unsafeReasons, "risk_control_disabled")

@@ -1,0 +1,145 @@
+package handler
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+)
+
+func TestOpenAIHTTPGatewayPipelineRunsStagesInOrderAndReleasesCleanupWhenLaterStageBlocks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var events []string
+	releaseCalls := 0
+	pipeline := &OpenAIGatewayPipeline{
+		httpPreForwardStages: []openAIHTTPGatewayStage{
+			openAIHTTPGatewayPipelineTestStage{
+				name: "moderation",
+				run: func(*openAIHTTPGatewayStageContext) openAIHTTPGatewayStageResult {
+					events = append(events, "moderation")
+					return openAIHTTPGatewayStageResult{}
+				},
+			},
+			openAIHTTPGatewayPipelineTestStage{
+				name: "image",
+				run: func(*openAIHTTPGatewayStageContext) openAIHTTPGatewayStageResult {
+					events = append(events, "image")
+					return openAIHTTPGatewayStageResult{Cleanup: func() {
+						releaseCalls++
+						events = append(events, "image-release")
+					}}
+				},
+			},
+			openAIHTTPGatewayPipelineTestStage{
+				name: "cyber",
+				run: func(*openAIHTTPGatewayStageContext) openAIHTTPGatewayStageResult {
+					events = append(events, "cyber")
+					return openAIHTTPGatewayStageResult{Blocked: true}
+				},
+			},
+		},
+	}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	result := pipeline.RunHTTPPreForward(&OpenAIGatewayHandler{}, c, zap.NewNop(), openAIHTTPPreForwardPipelineInput{})
+
+	require.True(t, result.Blocked)
+	require.Nil(t, result.ImageReleaseFunc)
+	require.Equal(t, 1, releaseCalls)
+	require.Equal(t, []string{"moderation", "image", "cyber", "image-release"}, events)
+}
+
+func TestOpenAIHTTPGatewayPipelineReturnsCleanupWhenAllStagesAllow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	releaseCalls := 0
+	pipeline := &OpenAIGatewayPipeline{
+		httpPreForwardStages: []openAIHTTPGatewayStage{
+			openAIHTTPGatewayPipelineTestStage{
+				name: "image",
+				run: func(*openAIHTTPGatewayStageContext) openAIHTTPGatewayStageResult {
+					return openAIHTTPGatewayStageResult{Cleanup: func() { releaseCalls++ }}
+				},
+			},
+		},
+	}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	result := pipeline.RunHTTPPreForward(&OpenAIGatewayHandler{}, c, zap.NewNop(), openAIHTTPPreForwardPipelineInput{})
+
+	require.False(t, result.Blocked)
+	require.NotNil(t, result.ImageReleaseFunc)
+	require.Zero(t, releaseCalls)
+
+	result.ImageReleaseFunc()
+	require.Equal(t, 1, releaseCalls)
+}
+
+func TestOpenAIHTTPGatewayPipelineDefaultStagesReleaseImageSlotWhenCyberStageBlocks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"gpt-5.1","prompt_cache_key":"pipeline-image-session","input":"draw","tools":[{"type":"image_generation"}]}`)
+	apiKey := &service.APIKey{ID: 77, Group: &service.Group{AllowImageGeneration: true}}
+	c, w := newOpenAIGatewayPipelineCyberContext(http.MethodPost, "/v1/responses", body)
+	blockKey := service.CyberSessionBlockKey(apiKey.ID, c, body)
+	require.NotEmpty(t, blockKey)
+
+	guard := &openAIGatewayPipelineModerationGuardSpy{decision: &service.ContentModerationDecision{
+		Allowed: true,
+		Action:  service.ContentModerationActionAllow,
+	}}
+	checker := &openAIGatewayPipelineCyberCheckerStub{
+		enabled: true,
+		blocked: map[string]bool{blockKey: true},
+	}
+	h := &OpenAIGatewayHandler{
+		pipeline: newOpenAIGatewayPipeline(guard, checker),
+		cfg: &config.Config{Gateway: config.GatewayConfig{ImageConcurrency: config.ImageConcurrencyConfig{
+			Enabled:               true,
+			MaxConcurrentRequests: 1,
+			OverflowMode:          config.ImageConcurrencyOverflowModeReject,
+		}}},
+		imageLimiter: &imageConcurrencyLimiter{},
+	}
+
+	result := h.pipeline.RunHTTPPreForward(h, c, zap.NewNop(), openAIHTTPPreForwardPipelineInput{
+		APIKey:           apiKey,
+		Protocol:         service.ContentModerationProtocolOpenAIResponses,
+		Model:            "gpt-5.1",
+		Body:             body,
+		CyberFormat:      cyberBlockFormatResponses,
+		EnableImageStage: true,
+		ImageEndpoint:    "/v1/responses",
+	})
+
+	require.True(t, result.Blocked)
+	require.Nil(t, result.ImageReleaseFunc)
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Equal(t, []string{blockKey}, checker.checkedKeys)
+
+	nextRecorder := httptest.NewRecorder()
+	nextContext, _ := gin.CreateTestContext(nextRecorder)
+	nextContext.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	release, acquired := h.acquireImageGenerationSlot(nextContext, false)
+	require.True(t, acquired)
+	require.NotNil(t, release)
+	release()
+}
+
+type openAIHTTPGatewayPipelineTestStage struct {
+	name string
+	run  func(*openAIHTTPGatewayStageContext) openAIHTTPGatewayStageResult
+}
+
+func (s openAIHTTPGatewayPipelineTestStage) Name() string {
+	return s.name
+}
+
+func (s openAIHTTPGatewayPipelineTestStage) Run(ctx *openAIHTTPGatewayStageContext) openAIHTTPGatewayStageResult {
+	return s.run(ctx)
+}

@@ -51,7 +51,7 @@
                 </div>
               </div>
             </div>
-            <div class="grid grid-cols-2 gap-x-6 gap-y-3 border-t border-current/10 pt-3 text-sm md:grid-cols-4 xl:min-w-[620px] xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
+            <div class="grid grid-cols-2 gap-x-6 gap-y-3 border-t border-current/10 pt-3 text-sm md:grid-cols-5 xl:min-w-[760px] xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
               <div class="min-w-0">
                 <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.protectionBuild') }}</p>
                 <p class="mt-1 truncate font-mono font-semibold text-gray-900 dark:text-white">{{ protectionBuildCommit }}</p>
@@ -67,6 +67,10 @@
               <div class="min-w-0">
                 <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.protectionRoutes') }}</p>
                 <p class="mt-1 truncate font-semibold text-gray-900 dark:text-white">{{ protectionRouteCoverageText }}</p>
+              </div>
+              <div class="min-w-0">
+                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.protectionPipeline') }}</p>
+                <p class="mt-1 truncate font-semibold text-gray-900 dark:text-white">{{ protectionPipelineCoverageText }}</p>
               </div>
             </div>
           </div>
@@ -1750,6 +1754,12 @@ const protectionRouteCoverageText = computed(() => {
   return `${coverage.status || '-'} · ${formatNumber(coverage.covered_routes)}/${formatNumber(coverage.required_routes)}`
 })
 
+const protectionPipelineCoverageText = computed(() => {
+  const coverage = status.value?.pipeline_coverage?.openai_http
+  if (!coverage) return '-'
+  return `${status.value?.pipeline_coverage?.status || '-'} · ${formatNumber(coverage.covered_routes)}/${formatNumber(coverage.required_routes)}`
+})
+
 const overviewItems = computed<OverviewItem[]>(() => [
   {
     key: 'status',
@@ -2459,6 +2469,9 @@ function protectionUnsafeReasonLabel(reason: string): string {
     route_coverage_unknown: t('admin.riskControl.protectionReason.routeCoverageUnknown'),
     route_manifest_mismatch: t('admin.riskControl.protectionReason.routeManifestMismatch'),
     uncovered_upstream_routes: t('admin.riskControl.protectionReason.uncoveredUpstreamRoutes'),
+    pipeline_coverage_unknown: t('admin.riskControl.protectionReason.pipelineCoverageUnknown'),
+    pipeline_coverage_mismatch: t('admin.riskControl.protectionReason.pipelineCoverageMismatch'),
+    uncovered_pipeline_routes: t('admin.riskControl.protectionReason.uncoveredPipelineRoutes'),
   }
   return labels[reason] ?? reason
 }

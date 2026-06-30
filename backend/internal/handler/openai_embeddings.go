@@ -74,14 +74,14 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, false)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
 
-	if decision := h.checkWithModerationGuard(c, reqLog, moderationGuardInput{
-		APIKey:   apiKey,
-		Subject:  subject,
-		Protocol: service.ContentModerationProtocolOpenAIEmbeddings,
-		Model:    reqModel,
-		Body:     body,
-	}); decision != nil && decision.Blocked {
-		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+	if pipelineResult := h.runOpenAIHTTPPreForwardPipeline(c, reqLog, openAIHTTPPreForwardPipelineInput{
+		APIKey:         apiKey,
+		Subject:        subject,
+		Protocol:       service.ContentModerationProtocolOpenAIEmbeddings,
+		Model:          reqModel,
+		Body:           body,
+		SkipCyberStage: true,
+	}); pipelineResult.Blocked {
 		return
 	}
 

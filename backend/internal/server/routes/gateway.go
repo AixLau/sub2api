@@ -185,7 +185,7 @@ func RegisterGatewayRoutes(
 			"/v1/images/generations",
 			"OpenAIGatewayHandler.Images",
 			service.ContentModerationProtocolOpenAIImages,
-			"Image generation prompt and image metadata are moderated before permission checks, scheduling, and upstream forwarding.",
+			"Image generation permission is checked before moderation; prompt and image metadata are then moderated before scheduling and upstream forwarding.",
 		), func(c *gin.Context) {
 			if getGroupPlatform(c) != service.PlatformOpenAI {
 				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
@@ -203,7 +203,7 @@ func RegisterGatewayRoutes(
 			"/v1/images/edits",
 			"OpenAIGatewayHandler.Images",
 			service.ContentModerationProtocolOpenAIImages,
-			"Image edit prompt and image metadata are moderated before permission checks, scheduling, and upstream forwarding.",
+			"Image edit permission is checked before moderation; prompt and image metadata are then moderated before scheduling and upstream forwarding.",
 		), func(c *gin.Context) {
 			if getGroupPlatform(c) != service.PlatformOpenAI {
 				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)

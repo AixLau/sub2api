@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"strings"
+
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/gin-gonic/gin"
 )
@@ -53,7 +55,7 @@ func registerModeratedRoute(meta ModeratedRouteMeta) {
 }
 
 func coveredModeratedRoute(path, handlerName, protocol, reviewReason string) ModeratedRouteMeta {
-	return ModeratedRouteMeta{
+	meta := ModeratedRouteMeta{
 		Path:               path,
 		Handler:            handlerName,
 		Upstream:           true,
@@ -62,6 +64,8 @@ func coveredModeratedRoute(path, handlerName, protocol, reviewReason string) Mod
 		Status:             moderationcoverage.StatusCovered,
 		ReviewReason:       reviewReason,
 	}
+	annotateOpenAIHTTPPipelineCoverage(&meta)
+	return meta
 }
 
 func intentionalNoAuditRoute(path, handlerName, reviewReason string) ModeratedRouteMeta {
@@ -72,5 +76,59 @@ func intentionalNoAuditRoute(path, handlerName, reviewReason string) ModeratedRo
 		ModerationRequired: false,
 		Status:             moderationcoverage.StatusIntentionalNoAudit,
 		ReviewReason:       reviewReason,
+	}
+}
+
+func annotateOpenAIHTTPPipelineCoverage(meta *ModeratedRouteMeta) {
+	if meta == nil {
+		return
+	}
+	stages := openAIHTTPPipelineStagesForRoute(meta.Handler, meta.Protocol)
+	if len(stages) == 0 {
+		return
+	}
+	meta.Pipeline = moderationcoverage.PipelineOpenAIHTTP
+	meta.StageCoverage = stages
+}
+
+func openAIHTTPPipelineStagesForRoute(handlerName, protocol string) []moderationcoverage.PipelineStageCoverage {
+	if !isOpenAIHTTPPipelineProtocol(protocol) {
+		return nil
+	}
+
+	stages := []moderationcoverage.PipelineStageCoverage{
+		coveredPipelineStage(moderationcoverage.StageModeration),
+	}
+	switch strings.TrimSpace(handlerName) {
+	case "OpenAIGatewayHandler.ChatCompletions":
+		stages = append(stages, coveredPipelineStage(moderationcoverage.StageCyber))
+	case "OpenAIGatewayHandler.Responses":
+		stages = append(stages,
+			coveredPipelineStage(moderationcoverage.StageCyber),
+			coveredPipelineStage(moderationcoverage.StageImage),
+		)
+	case "OpenAIGatewayHandler.Images":
+		stages = append(stages, coveredPipelineStage(moderationcoverage.StageImage))
+	case "OpenAIGatewayHandler.Embeddings":
+	default:
+		return nil
+	}
+	return stages
+}
+
+func coveredPipelineStage(stage string) moderationcoverage.PipelineStageCoverage {
+	return moderationcoverage.PipelineStageCoverage{
+		Stage:    stage,
+		Required: true,
+		Covered:  true,
+	}
+}
+
+func isOpenAIHTTPPipelineProtocol(protocol string) bool {
+	switch strings.TrimSpace(protocol) {
+	case "openai_chat_completions", "openai_responses", "openai_images", "openai_embeddings":
+		return true
+	default:
+		return false
 	}
 }

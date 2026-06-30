@@ -82,26 +82,21 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		zap.String("capability", string(parsed.RequiredCapability)),
 	)
 
-	if !service.GroupAllowsImageGeneration(apiKey.Group) {
-		h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
+	if pipelineResult := h.runOpenAIHTTPPreForwardPipeline(c, reqLog, openAIHTTPPreForwardPipelineInput{
+		APIKey:                          apiKey,
+		Subject:                         subject,
+		Protocol:                        service.ContentModerationProtocolOpenAIImages,
+		Model:                           requestModel,
+		Body:                            parsed.ModerationBody(),
+		SkipCyberStage:                  true,
+		EnableImageStage:                true,
+		ImagePermissionBeforeModeration: true,
+		ImageEndpoint:                   parsed.Endpoint,
+		StreamStarted:                   streamStarted,
+	}); pipelineResult.Blocked {
 		return
-	}
-	if decision := h.checkWithModerationGuard(c, reqLog, moderationGuardInput{
-		APIKey:   apiKey,
-		Subject:  subject,
-		Protocol: service.ContentModerationProtocolOpenAIImages,
-		Model:    requestModel,
-		Body:     parsed.ModerationBody(),
-	}); decision != nil && decision.Blocked {
-		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
-		return
-	}
-	imageReleaseFunc, acquired := h.acquireImageGenerationSlot(c, streamStarted)
-	if !acquired {
-		return
-	}
-	if imageReleaseFunc != nil {
-		defer imageReleaseFunc()
+	} else if pipelineResult.ImageReleaseFunc != nil {
+		defer pipelineResult.ImageReleaseFunc()
 	}
 
 	if parsed.Multipart {

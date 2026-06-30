@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"net/http"
-
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -22,16 +20,18 @@ type moderationGuardInput struct {
 }
 
 type openAIHTTPPreForwardPipelineInput struct {
-	APIKey           *service.APIKey
-	Subject          middleware2.AuthSubject
-	Protocol         string
-	Model            string
-	Body             []byte
-	CyberBody        []byte
-	CyberFormat      cyberSessionBlockFormat
-	EnableImageStage bool
-	ImageEndpoint    string
-	StreamStarted    bool
+	APIKey                          *service.APIKey
+	Subject                         middleware2.AuthSubject
+	Protocol                        string
+	Model                           string
+	Body                            []byte
+	CyberBody                       []byte
+	CyberFormat                     cyberSessionBlockFormat
+	SkipCyberStage                  bool
+	EnableImageStage                bool
+	ImagePermissionBeforeModeration bool
+	ImageEndpoint                   string
+	StreamStarted                   bool
 }
 
 type openAIHTTPPreForwardPipelineResult struct {
@@ -63,60 +63,26 @@ func (h *OpenAIGatewayHandler) checkWithModerationGuard(c *gin.Context, reqLog *
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIHTTPPreForwardPipeline(c *gin.Context, reqLog *zap.Logger, input openAIHTTPPreForwardPipelineInput) openAIHTTPPreForwardPipelineResult {
-	result := openAIHTTPPreForwardPipelineResult{}
-	if decision := h.checkWithModerationGuard(c, reqLog, moderationGuardInput{
-		APIKey:   input.APIKey,
-		Subject:  input.Subject,
-		Protocol: input.Protocol,
-		Model:    input.Model,
-		Body:     input.Body,
-	}); decision != nil && decision.Blocked {
-		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
-		result.Blocked = true
-		return result
-	}
+	pipeline := h.openAIHTTPPreForwardPipeline()
+	return pipeline.RunHTTPPreForward(h, c, reqLog, input)
+}
 
-	if input.EnableImageStage {
-		imageEndpoint := input.ImageEndpoint
-		if imageEndpoint == "" {
-			imageEndpoint = "/v1/responses"
-		}
-		imageIntent := service.IsImageGenerationIntent(imageEndpoint, input.Model, input.Body)
-		if imageIntent && !service.GroupAllowsImageGeneration(input.APIKey.Group) {
-			h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
-			result.Blocked = true
-			return result
-		}
-		if imageIntent {
-			imageReleaseFunc, imageAcquired := h.acquireImageGenerationSlot(c, input.StreamStarted)
-			if !imageAcquired {
-				result.Blocked = true
-				return result
-			}
-			result.ImageReleaseFunc = imageReleaseFunc
-		}
+func (h *OpenAIGatewayHandler) openAIHTTPPreForwardPipeline() *OpenAIGatewayPipeline {
+	if h == nil {
+		return newOpenAIGatewayPipeline(nil)
 	}
-
-	cyberBody := input.CyberBody
-	if cyberBody == nil {
-		cyberBody = input.Body
-	}
-	if h.checkCyberSessionWithPipeline(c, reqLog, openAIGatewayCyberSessionInput{
-		APIKey:   input.APIKey,
-		Protocol: input.Protocol,
-		Model:    input.Model,
-		Body:     cyberBody,
-		Format:   input.CyberFormat,
-	}) {
-		if result.ImageReleaseFunc != nil {
-			result.ImageReleaseFunc()
-			result.ImageReleaseFunc = nil
+	pipeline := h.pipeline
+	if pipeline == nil {
+		guard := h.moderationGuard
+		if guard == nil {
+			guard = newContentModerationGuard(h.contentModerationService)
 		}
-		result.Blocked = true
-		return result
+		return newOpenAIGatewayPipeline(guard, h.gatewayService)
 	}
-
-	return result
+	if pipeline.cyberSessionChecker == nil && h.gatewayService != nil {
+		return pipeline.withCyberSessionChecker(h.gatewayService)
+	}
+	return pipeline
 }
 
 func (h *OpenAIGatewayHandler) checkCyberSessionWithPipeline(c *gin.Context, reqLog *zap.Logger, input openAIGatewayCyberSessionInput) bool {
@@ -132,10 +98,7 @@ func (h *OpenAIGatewayHandler) checkCyberSessionWithPipeline(c *gin.Context, req
 		}
 		pipeline = newOpenAIGatewayPipeline(guard, h.gatewayService)
 	} else if pipeline.cyberSessionChecker == nil && h.gatewayService != nil {
-		pipeline = &OpenAIGatewayPipeline{
-			moderationGuard:     pipeline.moderationGuard,
-			cyberSessionChecker: h.gatewayService,
-		}
+		pipeline = pipeline.withCyberSessionChecker(h.gatewayService)
 	}
 	result := pipeline.CheckCyberSession(c, reqLog, input)
 	if result == nil || !result.Blocked {
