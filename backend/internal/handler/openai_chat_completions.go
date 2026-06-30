@@ -85,23 +85,14 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 
-	if decision := h.checkWithModerationGuard(c, reqLog, moderationGuardInput{
-		APIKey:   apiKey,
-		Subject:  subject,
-		Protocol: service.ContentModerationProtocolOpenAIChat,
-		Model:    reqModel,
-		Body:     body,
-	}); decision != nil && decision.Blocked {
-		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
-		return
-	}
-	if h.checkCyberSessionWithPipeline(c, reqLog, openAIGatewayCyberSessionInput{
-		APIKey:   apiKey,
-		Model:    reqModel,
-		Body:     body,
-		Format:   cyberBlockFormatChat,
-		Protocol: service.ContentModerationProtocolOpenAIChat,
-	}) {
+	if pipelineResult := h.runOpenAIHTTPPreForwardPipeline(c, reqLog, openAIHTTPPreForwardPipelineInput{
+		APIKey:      apiKey,
+		Subject:     subject,
+		Protocol:    service.ContentModerationProtocolOpenAIChat,
+		Model:       reqModel,
+		Body:        body,
+		CyberFormat: cyberBlockFormatChat,
+	}); pipelineResult.Blocked {
 		return
 	}
 

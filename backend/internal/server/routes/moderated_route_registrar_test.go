@@ -96,7 +96,7 @@ func TestOpenAIModeratedRoutesHaveGatewayPipelineModerationCoverage(t *testing.T
 
 	require.NotEmpty(t, openAIProtocols, "OpenAI moderated route protocols should not be empty")
 	require.Empty(t, routeSetDifference(openAIProtocols, guardProtocols),
-		"OpenAI moderated route protocols must still be passed through checkWithModerationGuard in OpenAI handlers")
+		"OpenAI moderated route protocols must still pass through the OpenAI pre-forward moderation stage")
 	require.True(t, pipelineCoverage.DelegatesToOpenAIGatewayPipeline,
 		"OpenAI moderation_required registrar protocols must be covered by the GatewayPipeline moderation stage; checkWithModerationGuard does not call OpenAIGatewayPipeline.CheckModeration")
 	require.True(t, pipelineCoverage.ForwardsModerationProtocol,
@@ -139,10 +139,29 @@ func TestOpenAIHTTPModerationStageRunsBeforeCyberStage(t *testing.T) {
 			"%s must call checkWithModerationGuard before CyberStage", handlerName)
 		require.True(t, coverage.HasCyberStage,
 			"%s must call OpenAIGatewayPipeline.CheckCyberSession/CyberStage after moderation; old direct rejectIfCyberSessionBlocked calls are not stage coverage", handlerName)
-		require.Less(t, coverage.FirstModerationPos, coverage.FirstCyberPos,
+		require.LessOrEqual(t, coverage.FirstModerationPos, coverage.FirstCyberPos,
 			"%s must run moderation before CyberStage (moderation at %s, cyber at %s)",
 			handlerName, strings.Join(coverage.ModerationLocations, ", "), strings.Join(coverage.CyberLocations, ", "))
 	}
+}
+
+func TestOpenAIHTTPHandlersUseUnifiedPreForwardPipeline(t *testing.T) {
+	stageCoverage := openAIHTTPStageCoverageFromHandlerSources(t)
+
+	for _, handlerName := range []string{"OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses"} {
+		coverage, ok := stageCoverage[handlerName]
+		require.True(t, ok, "OpenAI HTTP handler %s should be present in source coverage scan", handlerName)
+		require.True(t, coverage.HasHTTPPreForwardPipeline,
+			"%s must call runOpenAIHTTPPreForwardPipeline before routing/billing/forwarding", handlerName)
+		require.NotContains(t, coverage.DirectStageLocations, "checkWithModerationGuard",
+			"%s must not call checkWithModerationGuard directly after adopting the unified HTTP pre-forward pipeline", handlerName)
+		require.NotContains(t, coverage.DirectStageLocations, "checkCyberSessionWithPipeline",
+			"%s must not call checkCyberSessionWithPipeline directly after adopting the unified HTTP pre-forward pipeline", handlerName)
+	}
+
+	responsesCoverage := stageCoverage["OpenAIGatewayHandler.Responses"]
+	require.False(t, responsesCoverage.HasDirectResponsesImageStage,
+		"OpenAIGatewayHandler.Responses must run image permission/slot through runOpenAIHTTPPreForwardPipeline, not inline IsImageGenerationIntent/acquireImageGenerationSlot calls")
 }
 
 func allGatewayRoutesFromRouter(router *gin.Engine) []string {
@@ -370,15 +389,18 @@ func openAIHTTPModeratedRouteProtocolsFromRegistrar(entries []ModeratedRouteMeta
 }
 
 type openAIHTTPHandlerStageCoverage struct {
-	Protocol                   string
-	HasModerationStage         bool
-	HasCyberStage              bool
-	HasDirectCyberReject       bool
-	FirstModerationPos         token.Pos
-	FirstCyberPos              token.Pos
-	ModerationLocations        []string
-	CyberLocations             []string
-	DirectCyberRejectLocations []string
+	Protocol                     string
+	HasModerationStage           bool
+	HasCyberStage                bool
+	HasHTTPPreForwardPipeline    bool
+	HasDirectResponsesImageStage bool
+	HasDirectCyberReject         bool
+	FirstModerationPos           token.Pos
+	FirstCyberPos                token.Pos
+	ModerationLocations          []string
+	CyberLocations               []string
+	DirectStageLocations         []string
+	DirectCyberRejectLocations   []string
 }
 
 func openAIHTTPStageCoverageFromHandlerSources(t *testing.T) map[string]openAIHTTPHandlerStageCoverage {
@@ -418,12 +440,28 @@ func openAIHTTPStageCoverageFromHandlerSources(t *testing.T) map[string]openAIHT
 				case *ast.CallExpr:
 					location := sourceLocation(repoRoot, file, fset.Position(n.Pos()).Line)
 					switch {
+					case isOpenAIHTTPPreForwardPipelineCall(n):
+						coverage.HasHTTPPreForwardPipeline = true
+						coverage.HasModerationStage = true
+						coverage.HasCyberStage = true
+						if coverage.FirstModerationPos == token.NoPos || n.Pos() < coverage.FirstModerationPos {
+							coverage.FirstModerationPos = n.Pos()
+						}
+						if coverage.FirstCyberPos == token.NoPos || n.Pos() < coverage.FirstCyberPos {
+							coverage.FirstCyberPos = n.Pos()
+						}
+						coverage.ModerationLocations = append(coverage.ModerationLocations, location)
+						coverage.CyberLocations = append(coverage.CyberLocations, location)
+						if protocol := serviceProtocolConstantValue(contentModerationProtocolArg(n)); isOpenAIHTTPModerationProtocol(protocol) {
+							coverage.Protocol = protocol
+						}
 					case isCheckWithModerationGuardCall(n):
 						coverage.HasModerationStage = true
 						if coverage.FirstModerationPos == token.NoPos || n.Pos() < coverage.FirstModerationPos {
 							coverage.FirstModerationPos = n.Pos()
 						}
 						coverage.ModerationLocations = append(coverage.ModerationLocations, location)
+						coverage.DirectStageLocations = append(coverage.DirectStageLocations, "checkWithModerationGuard")
 						if protocol := serviceProtocolConstantValue(contentModerationProtocolArg(n)); isOpenAIHTTPModerationProtocol(protocol) {
 							coverage.Protocol = protocol
 						}
@@ -433,12 +471,15 @@ func openAIHTTPStageCoverageFromHandlerSources(t *testing.T) map[string]openAIHT
 							coverage.FirstCyberPos = n.Pos()
 						}
 						coverage.CyberLocations = append(coverage.CyberLocations, location)
+						coverage.DirectStageLocations = append(coverage.DirectStageLocations, "checkCyberSessionWithPipeline")
 						if protocol := serviceProtocolConstantValue(contentModerationProtocolArg(n)); isOpenAIHTTPModerationProtocol(protocol) {
 							coverage.Protocol = protocol
 						}
 					case isDirectCyberSessionRejectCall(n):
 						coverage.HasDirectCyberReject = true
 						coverage.DirectCyberRejectLocations = append(coverage.DirectCyberRejectLocations, location)
+					case isDirectResponsesImageStageCall(n):
+						coverage.HasDirectResponsesImageStage = true
 					}
 				}
 				return true
@@ -562,7 +603,7 @@ func openAIGuardHelperProtocolsFromHandlerSources(t *testing.T) []string {
 
 		ast.Inspect(parsed, func(node ast.Node) bool {
 			call, ok := node.(*ast.CallExpr)
-			if !ok || !isCheckWithModerationGuardCall(call) {
+			if !ok || (!isCheckWithModerationGuardCall(call) && !isOpenAIHTTPPreForwardPipelineCall(call)) {
 				return true
 			}
 			protocol := contentModerationProtocolArg(call)
@@ -857,6 +898,20 @@ func exprForwardsModerationInputProtocol(expr ast.Expr) bool {
 func isCheckWithModerationGuardCall(call *ast.CallExpr) bool {
 	selector, ok := call.Fun.(*ast.SelectorExpr)
 	return ok && selector.Sel.Name == "checkWithModerationGuard"
+}
+
+func isOpenAIHTTPPreForwardPipelineCall(call *ast.CallExpr) bool {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	return ok && selector.Sel.Name == "runOpenAIHTTPPreForwardPipeline"
+}
+
+func isDirectResponsesImageStageCall(call *ast.CallExpr) bool {
+	switch callName(call) {
+	case "IsImageGenerationIntent", "GroupAllowsImageGeneration", "acquireImageGenerationSlot":
+		return true
+	default:
+		return false
+	}
 }
 
 func contentModerationProtocolArg(call *ast.CallExpr) string {

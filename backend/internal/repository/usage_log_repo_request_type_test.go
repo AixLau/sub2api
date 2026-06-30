@@ -456,11 +456,13 @@ func TestUsageLogRepositoryGetStatsWithFiltersExcludeUserIDs(t *testing.T) {
 			"total_input_tokens",
 			"total_output_tokens",
 			"total_cache_tokens",
+			"total_cache_creation_tokens",
+			"total_cache_read_tokens",
 			"total_cost",
 			"total_actual_cost",
 			"total_account_cost",
 			"avg_duration_ms",
-		}).AddRow(int64(0), int64(0), int64(0), int64(0), 0.0, 0.0, 0.0, 0.0))
+		}).AddRow(int64(0), int64(0), int64(0), int64(0), int64(0), int64(0), 0.0, 0.0, 0.0, 0.0))
 	mock.ExpectQuery("SELECT COALESCE\\(NULLIF\\(TRIM\\(inbound_endpoint\\), ''\\), 'unknown'\\) AS endpoint").
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), pqInt64ArrayMatcher{values: []int64{101, 202}}).
 		WillReturnRows(sqlmock.NewRows([]string{"endpoint", "requests", "total_tokens", "cost", "actual_cost"}))

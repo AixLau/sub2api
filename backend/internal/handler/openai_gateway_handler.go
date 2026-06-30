@@ -256,42 +256,23 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 
-	if decision := h.checkWithModerationGuard(c, reqLog, moderationGuardInput{
-		APIKey:   apiKey,
-		Subject:  subject,
-		Protocol: service.ContentModerationProtocolOpenAIResponses,
-		Model:    reqModel,
-		Body:     body,
-	}); decision != nil && decision.Blocked {
-		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+	pipelineResult := h.runOpenAIHTTPPreForwardPipeline(c, reqLog, openAIHTTPPreForwardPipelineInput{
+		APIKey:           apiKey,
+		Subject:          subject,
+		Protocol:         service.ContentModerationProtocolOpenAIResponses,
+		Model:            reqModel,
+		Body:             body,
+		CyberBody:        sessionHashBody,
+		CyberFormat:      cyberBlockFormatResponses,
+		EnableImageStage: true,
+		ImageEndpoint:    "/v1/responses",
+		StreamStarted:    streamStarted,
+	})
+	if pipelineResult.Blocked {
 		return
 	}
-
-	imageIntent := service.IsImageGenerationIntent("/v1/responses", reqModel, body)
-	if imageIntent && !service.GroupAllowsImageGeneration(apiKey.Group) {
-		h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
-		return
-	}
-	var imageReleaseFunc func()
-	if imageIntent {
-		var imageAcquired bool
-		imageReleaseFunc, imageAcquired = h.acquireImageGenerationSlot(c, streamStarted)
-		if !imageAcquired {
-			return
-		}
-		if imageReleaseFunc != nil {
-			defer imageReleaseFunc()
-		}
-	}
-
-	if h.checkCyberSessionWithPipeline(c, reqLog, openAIGatewayCyberSessionInput{
-		APIKey:   apiKey,
-		Protocol: service.ContentModerationProtocolOpenAIResponses,
-		Model:    reqModel,
-		Body:     sessionHashBody,
-		Format:   cyberBlockFormatResponses,
-	}) {
-		return
+	if pipelineResult.ImageReleaseFunc != nil {
+		defer pipelineResult.ImageReleaseFunc()
 	}
 
 	// 解析渠道级模型映射
