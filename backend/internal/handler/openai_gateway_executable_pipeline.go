@@ -34,7 +34,7 @@ func (p GatewayPipeline) Run(c *gin.Context) ExecutableStageResult {
 			continue
 		}
 		result := stage.Run()
-		moderationcoverage.MarkPipelineStageExecuted(c, p.Pipeline, stage.Name, p.Source)
+		moderationcoverage.MarkPipelineStageExecutedWithResult(c, p.Pipeline, stage.Name, p.Source, result.Err != nil)
 		if result.Stop || result.Err != nil {
 			return result
 		}

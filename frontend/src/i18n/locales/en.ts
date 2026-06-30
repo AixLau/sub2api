@@ -2559,6 +2559,8 @@ export default {
       pipelineCoverageHint: 'Shows the runtime stage matrix for OpenAI HTTP routes before upstream forwarding.',
       pipelineExecutionTitle: 'Observed stage execution',
       pipelineExecutionHint: 'Process-local counts recorded when gateway pipeline stages actually run.',
+      pipelineExecutionRecent: 'Recent',
+      pipelineExecutionErrors: 'Errors',
       pipelineManifestVersion: 'manifest',
       pipelineManifestHash: 'hash',
       pipelineRoute: 'Route',

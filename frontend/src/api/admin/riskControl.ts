@@ -306,6 +306,10 @@ export interface ContentModerationPipelineRouteStageCoverageStatus {
 
 export interface ContentModerationPipelineExecutionStatus {
   total_count: number
+  error_count: number
+  recent_window_seconds: number
+  recent_window_count: number
+  recent_window_error_count: number
   last_observed_at?: string
   executions: ContentModerationPipelineExecutionObservation[]
 }
@@ -314,7 +318,12 @@ export interface ContentModerationPipelineExecutionObservation {
   pipeline: string
   stage: string
   source: string
+  method?: string
+  path?: string
+  handler?: string
+  protocol?: string
   count: number
+  error_count: number
   last_observed_at?: string
 }
 

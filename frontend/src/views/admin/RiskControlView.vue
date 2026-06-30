@@ -109,17 +109,31 @@
                   <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.pipelineExecutionTitle') }}</p>
                   <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.pipelineExecutionHint') }}</p>
                 </div>
-                <span class="inline-flex w-fit rounded-md bg-white px-2.5 py-1 font-mono text-xs font-medium text-gray-700 shadow-sm dark:bg-dark-800 dark:text-gray-200">
-                  {{ formatNumber(pipelineExecutionTotalCount) }}
-                </span>
+                <div class="flex flex-wrap gap-1.5">
+                  <span class="inline-flex w-fit rounded-md bg-white px-2.5 py-1 font-mono text-xs font-medium text-gray-700 shadow-sm dark:bg-dark-800 dark:text-gray-200">
+                    {{ formatNumber(pipelineExecutionTotalCount) }}
+                  </span>
+                  <span class="inline-flex w-fit rounded-md bg-white px-2.5 py-1 font-mono text-xs font-medium text-gray-700 shadow-sm dark:bg-dark-800 dark:text-gray-200">
+                    {{ t('admin.riskControl.pipelineExecutionRecent') }} {{ formatNumber(pipelineExecutionRecentCount) }}
+                  </span>
+                  <span
+                    class="inline-flex w-fit rounded-md px-2.5 py-1 font-mono text-xs font-medium shadow-sm"
+                    :class="pipelineExecutionErrorCount > 0 ? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300' : 'bg-white text-gray-700 dark:bg-dark-800 dark:text-gray-200'"
+                  >
+                    {{ t('admin.riskControl.pipelineExecutionErrors') }} {{ formatNumber(pipelineExecutionErrorCount) }}
+                  </span>
+                </div>
               </div>
               <div v-if="pipelineExecutionRows.length" class="mt-3 flex flex-wrap gap-1.5">
                 <span
                   v-for="execution in pipelineExecutionRows"
-                  :key="`${execution.pipeline}:${execution.stage}:${execution.source}`"
+                  :key="`${execution.pipeline}:${execution.stage}:${execution.source}:${execution.method ?? ''}:${execution.path ?? ''}`"
                   class="inline-flex rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-700 shadow-sm dark:bg-dark-800 dark:text-gray-200"
                 >
-                  {{ execution.pipeline }} · {{ pipelineStageLabel(execution.stage) }} · {{ formatNumber(execution.count) }}
+                  {{ execution.pipeline }} · {{ pipelineStageLabel(execution.stage) }} · {{ execution.method ? `${execution.method} ${execution.path ?? ''}` : execution.source }} · {{ formatNumber(execution.count) }}
+                  <span v-if="execution.error_count > 0" class="ml-1 text-red-600 dark:text-red-300">
+                    / {{ t('admin.riskControl.pipelineExecutionErrors') }} {{ formatNumber(execution.error_count) }}
+                  </span>
                 </span>
               </div>
             </div>
@@ -1943,13 +1957,15 @@ const pipelineRouteRows = computed<ContentModerationPipelineRouteCoverageStatus[
 ))
 
 const pipelineExecutionTotalCount = computed(() => status.value?.pipeline_execution?.total_count ?? 0)
+const pipelineExecutionRecentCount = computed(() => status.value?.pipeline_execution?.recent_window_count ?? 0)
+const pipelineExecutionErrorCount = computed(() => status.value?.pipeline_execution?.error_count ?? 0)
 
 const pipelineExecutionRows = computed(() => (
   [...(status.value?.pipeline_execution?.executions ?? [])].sort((a, b) => {
     const stageOrder = pipelineStageSortKey(a.stage).localeCompare(pipelineStageSortKey(b.stage))
     if (stageOrder !== 0) return stageOrder
-    const left = `${a.pipeline} ${a.source}`
-    const right = `${b.pipeline} ${b.source}`
+    const left = `${a.pipeline} ${a.source} ${a.method ?? ''} ${a.path ?? ''}`
+    const right = `${b.pipeline} ${b.source} ${b.method ?? ''} ${b.path ?? ''}`
     return left.localeCompare(right)
   })
 ))

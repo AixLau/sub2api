@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -153,6 +154,54 @@ func TestPipelineExecutionObserverSplitsExecutionsByRoute(t *testing.T) {
 	require.Len(t, snapshot.Executions, 2)
 	require.Equal(t, "/v1/chat/completions", snapshot.Executions[0].Path)
 	require.Equal(t, "/v1/responses", snapshot.Executions[1].Path)
+}
+
+func TestPipelineExecutionObserverExposesRecentWindowCounts(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	restoreObserver := ResetPipelineExecutionObserverForTest()
+	defer restoreObserver()
+
+	MarkPipelineStageExecuted(c, PipelineOpenAIHTTP, StageRouting, SourceOpenAIHTTPExecutableStage)
+	MarkPipelineStageExecutedWithResult(c, PipelineOpenAIHTTP, StageForward, SourceOpenAIHTTPExecutableStage, true)
+
+	snapshot := PipelineExecutionObserverSnapshot()
+	require.Positive(t, snapshot.RecentWindowSeconds)
+	require.Equal(t, int64(2), snapshot.RecentWindowCount)
+	require.Equal(t, int64(1), snapshot.RecentWindowErrorCount)
+	require.Equal(t, int64(1), snapshot.ErrorCount)
+	require.Len(t, snapshot.Executions, 2)
+	require.Equal(t, int64(1), snapshot.Executions[1].ErrorCount)
+}
+
+func TestPipelineExecutionObserverExcludesOldExecutionsFromRecentWindow(t *testing.T) {
+	oldObservedAt := time.Now().UTC().Add(-10 * time.Minute)
+	recentObservedAt := time.Now().UTC()
+	restoreObserver := ReplacePipelineExecutionObserverForTest([]PipelineStageExecutionObservation{
+		{
+			Pipeline:       PipelineOpenAIHTTP,
+			Stage:          StageRouting,
+			Source:         SourceOpenAIHTTPExecutableStage,
+			Count:          4,
+			ErrorCount:     2,
+			LastObservedAt: &oldObservedAt,
+		},
+		{
+			Pipeline:       PipelineOpenAIHTTP,
+			Stage:          StageForward,
+			Source:         SourceOpenAIHTTPExecutableStage,
+			Count:          3,
+			ErrorCount:     1,
+			LastObservedAt: &recentObservedAt,
+		},
+	})
+	defer restoreObserver()
+
+	snapshot := PipelineExecutionObserverSnapshot()
+	require.Equal(t, int64(7), snapshot.TotalCount)
+	require.Equal(t, int64(3), snapshot.ErrorCount)
+	require.Equal(t, int64(3), snapshot.RecentWindowCount)
+	require.Equal(t, int64(1), snapshot.RecentWindowErrorCount)
 }
 
 func TestPipelineStageExecutionsFromContextNormalizesStoredValues(t *testing.T) {

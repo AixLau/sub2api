@@ -77,6 +77,7 @@ type PipelineStageExecution struct {
 	Path     string
 	Handler  string
 	Protocol string
+	Error    bool
 }
 
 type Status struct {
@@ -182,6 +183,10 @@ func PipelineAdmissionFromContext(c *gin.Context) (PipelineAdmission, bool) {
 }
 
 func MarkPipelineStageExecuted(c *gin.Context, pipeline, stage, source string) {
+	MarkPipelineStageExecutedWithResult(c, pipeline, stage, source, false)
+}
+
+func MarkPipelineStageExecutedWithResult(c *gin.Context, pipeline, stage, source string, failed bool) {
 	if c == nil {
 		return
 	}
@@ -194,6 +199,7 @@ func MarkPipelineStageExecuted(c *gin.Context, pipeline, stage, source string) {
 		Path:     routeMeta.Path,
 		Handler:  routeMeta.Handler,
 		Protocol: routeMeta.Protocol,
+		Error:    failed,
 	})
 	if execution.Pipeline == "" || execution.Stage == "" || execution.Source == "" {
 		return

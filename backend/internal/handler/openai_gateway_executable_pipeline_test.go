@@ -78,6 +78,8 @@ func TestOpenAIHTTPExecutableStagesStopBeforeLaterStages(t *testing.T) {
 func TestOpenAIHTTPExecutableStagePreservesError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	restoreObserver := moderationcoverage.ResetPipelineExecutionObserverForTest()
+	defer restoreObserver()
 	expectedErr := errors.New("billing failed")
 
 	result := (&OpenAIGatewayHandler{}).runOpenAIHTTPExecutableStage(c, moderationcoverage.StageBilling, func() openAIHTTPExecutableStageResult {
@@ -87,8 +89,12 @@ func TestOpenAIHTTPExecutableStagePreservesError(t *testing.T) {
 	require.True(t, result.Stop)
 	require.ErrorIs(t, result.Err, expectedErr)
 	require.Equal(t, []moderationcoverage.PipelineStageExecution{
-		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageBilling, Source: moderationcoverage.SourceOpenAIHTTPExecutableStage},
+		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageBilling, Source: moderationcoverage.SourceOpenAIHTTPExecutableStage, Error: true},
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+	snapshot := moderationcoverage.PipelineExecutionObserverSnapshot()
+	require.Equal(t, int64(1), snapshot.ErrorCount)
+	require.Len(t, snapshot.Executions, 1)
+	require.Equal(t, int64(1), snapshot.Executions[0].ErrorCount)
 }
 
 func TestOpenAIHTTPExecutableStageNilContextIsSafe(t *testing.T) {
