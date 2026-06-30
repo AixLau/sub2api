@@ -2100,7 +2100,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 								_ = s.cache.RefreshSessionTTL(ctx, derefGroupID(groupID), sessionHash, stickySessionTTL)
 							}
 							// Single account path: candidateCount = 1 (not looping through accounts)
-					return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil, 1)
+							return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil, 1)
 						}
 					} else {
 						slog.Debug("sticky.layer1_5_no_routing_slot_busy",
