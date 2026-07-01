@@ -238,6 +238,53 @@ func TestGatewayMessagesAndGeminiUseUsageStageAdapter(t *testing.T) {
 	}
 }
 
+func TestGatewayPreForwardHandlersUseBillingStage(t *testing.T) {
+	tests := []struct {
+		file     string
+		handler  string
+		minCalls int
+	}{
+		{file: "gateway_handler.go", handler: "Messages", minCalls: 2},
+		{file: "gateway_handler.go", handler: "CountTokens", minCalls: 1},
+		{file: "gemini_v1beta_handler.go", handler: "GeminiV1BetaModels", minCalls: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.file+"/"+tt.handler, func(t *testing.T) {
+			src, err := os.ReadFile(tt.file)
+			if err != nil {
+				t.Fatalf("read %s: %v", tt.file, err)
+			}
+			fset := token.NewFileSet()
+			parsed, err := parser.ParseFile(fset, tt.file, src, 0)
+			if err != nil {
+				t.Fatalf("parse %s: %v", tt.file, err)
+			}
+
+			fn := gatewayHandlerFuncDecl(t, parsed, tt.handler)
+			billingStageCalls := 0
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				selector, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				if selector.Sel.Name == "runGatewayBillingStage" {
+					billingStageCalls++
+				}
+				return true
+			})
+
+			if billingStageCalls < tt.minCalls {
+				t.Fatalf("GatewayHandler.%s must execute billing checks through runGatewayBillingStage, got %d calls", tt.handler, billingStageCalls)
+			}
+		})
+	}
+}
+
 func gatewayHandlerFuncDecl(t *testing.T, parsed *ast.File, name string) *ast.FuncDecl {
 	t.Helper()
 	for _, decl := range parsed.Decls {

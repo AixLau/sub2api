@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "manifest_version": "2026-06-29.8",
+  "manifest_version": "2026-06-29.9",
   "entries": [
     {
       "route": {
@@ -24,6 +24,11 @@
         },
         {
           "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
           "required": true,
           "covered": true
         },
@@ -67,6 +72,11 @@
           "covered": true
         },
         {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
           "stage": "forward",
           "required": true,
           "covered": true
@@ -106,6 +116,11 @@
           "covered": true
         },
         {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
           "stage": "forward",
           "required": true,
           "covered": true
@@ -136,6 +151,11 @@
         },
         {
           "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
           "required": true,
           "covered": true
         },
@@ -1057,6 +1077,11 @@
           "covered": true
         },
         {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
           "stage": "forward",
           "required": true,
           "covered": true
@@ -1092,6 +1117,11 @@
         },
         {
           "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
           "required": true,
           "covered": true
         },
