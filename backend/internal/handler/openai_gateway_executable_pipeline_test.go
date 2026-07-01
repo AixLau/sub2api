@@ -130,7 +130,7 @@ func TestGatewayPipelineRunsGenericExecutableStagesWithMetadata(t *testing.T) {
 				calls = append(calls, moderationcoverage.StageRouting)
 				return ExecutableStageResult{}
 			}},
-			ForwardStage(moderationcoverage.StageForward, func() ExecutableStageResult {
+			ForwardStageFunc(moderationcoverage.StageForward, func() ExecutableStageResult {
 				calls = append(calls, moderationcoverage.StageForward)
 				return ExecutableStageResult{}
 			}),
@@ -156,6 +156,36 @@ func TestGatewayPipelineRunsGenericExecutableStagesWithMetadata(t *testing.T) {
 		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageRouting, Source: moderationcoverage.SourceOpenAIHTTPExecutableStage},
 		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageForward, Source: moderationcoverage.SourceOpenAIHTTPExecutableStage},
 		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageUsage, Source: moderationcoverage.SourceOpenAIHTTPExecutableStage},
+	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+}
+
+func TestGatewayPipelineRunsForwardStageAdapter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	calls := 0
+
+	pipeline := GatewayPipeline{
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+		Source:   moderationcoverage.SourceOpenAIHTTPExecutableStage,
+		Stages: []ExecutableStage{
+			ExecutableForwardStage(ForwardStageAdapter{
+				Name: moderationcoverage.StageForward,
+				Forward: func(ctx *gin.Context) ExecutableStageResult {
+					require.Same(t, c, ctx)
+					calls++
+					return ExecutableStageResult{}
+				},
+			}),
+		},
+	}
+
+	result := pipeline.Run(c)
+
+	require.NoError(t, result.Err)
+	require.False(t, result.Stop)
+	require.Equal(t, 1, calls)
+	require.Equal(t, []moderationcoverage.PipelineStageExecution{
+		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageForward, Source: moderationcoverage.SourceOpenAIHTTPExecutableStage},
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
 }
 

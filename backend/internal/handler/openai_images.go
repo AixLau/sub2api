@@ -248,17 +248,19 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		var writerSizeBeforeForward int
 		var result *service.OpenAIForwardResult
 		var err error
-		_ = h.runOpenAIHTTPExecutableStage(c, moderationcoverage.StageForward, func() openAIHTTPExecutableStageResult {
-			writerSizeBeforeForward = c.Writer.Size()
-			result, err = func() (*service.OpenAIForwardResult, error) {
-				defer func() {
-					if accountReleaseFunc != nil {
-						accountReleaseFunc()
-					}
+		_ = h.runOpenAIHTTPForwardStage(c, ForwardStageAdapter{
+			Forward: func(*gin.Context) ExecutableStageResult {
+				writerSizeBeforeForward = c.Writer.Size()
+				result, err = func() (*service.OpenAIForwardResult, error) {
+					defer func() {
+						if accountReleaseFunc != nil {
+							accountReleaseFunc()
+						}
+					}()
+					return h.gatewayService.ForwardImages(requestCtx, c, account, body, parsed, channelMapping.MappedModel)
 				}()
-				return h.gatewayService.ForwardImages(requestCtx, c, account, body, parsed, channelMapping.MappedModel)
-			}()
-			return openAIHTTPExecutableStageResult{Err: err}
+				return ExecutableStageResult{Err: err}
+			},
 		})
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
 		upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)

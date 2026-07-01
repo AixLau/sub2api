@@ -6,8 +6,9 @@ import (
 )
 
 type ExecutableStage struct {
-	Name string
-	Run  func() ExecutableStageResult
+	Name           string
+	Run            func() ExecutableStageResult
+	RunWithContext func(*gin.Context) ExecutableStageResult
 }
 
 type ExecutableStageResult struct {
@@ -21,19 +22,68 @@ type GatewayPipeline struct {
 	Stages   []ExecutableStage
 }
 
-func ForwardStage(name string, run func() ExecutableStageResult) ExecutableStage {
-	return ExecutableStage{
+type ForwardStage interface {
+	StageName() string
+	RunForward(*gin.Context) ExecutableStageResult
+}
+
+type ForwardStageAdapter struct {
+	Name    string
+	Forward func(*gin.Context) ExecutableStageResult
+}
+
+func (a ForwardStageAdapter) StageName() string {
+	if a.Name == "" {
+		return moderationcoverage.StageForward
+	}
+	return a.Name
+}
+
+func (a ForwardStageAdapter) RunForward(c *gin.Context) ExecutableStageResult {
+	if a.Forward == nil {
+		return ExecutableStageResult{}
+	}
+	return a.Forward(c)
+}
+
+func ForwardStageFunc(name string, run func() ExecutableStageResult) ExecutableStage {
+	return ExecutableForwardStage(ForwardStageAdapter{
 		Name: name,
-		Run:  run,
+		Forward: func(*gin.Context) ExecutableStageResult {
+			return run()
+		},
+	})
+}
+
+func ExecutableForwardStage(adapter ForwardStage) ExecutableStage {
+	return ExecutableStage{
+		Name: adapter.StageName(),
+		RunWithContext: func(c *gin.Context) ExecutableStageResult {
+			return adapter.RunForward(c)
+		},
+	}
+}
+
+func executableForwardStageWithContext(c *gin.Context, adapter ForwardStage) ExecutableStage {
+	return ExecutableStage{
+		Name: adapter.StageName(),
+		RunWithContext: func(*gin.Context) ExecutableStageResult {
+			return adapter.RunForward(c)
+		},
 	}
 }
 
 func (p GatewayPipeline) Run(c *gin.Context) ExecutableStageResult {
 	for _, stage := range p.Stages {
-		if stage.Run == nil {
+		if stage.Run == nil && stage.RunWithContext == nil {
 			continue
 		}
-		result := stage.Run()
+		result := ExecutableStageResult{}
+		if stage.RunWithContext != nil {
+			result = stage.RunWithContext(c)
+		} else {
+			result = stage.Run()
+		}
 		moderationcoverage.MarkPipelineStageExecutedWithResult(c, p.Pipeline, stage.Name, p.Source, result.Err != nil)
 		if result.Stop || result.Err != nil {
 			return result
@@ -57,6 +107,16 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPExecutableStage(c *gin.Context, stag
 	return openAIHTTPExecutablePipeline([]openAIHTTPExecutableStage{
 		{Stage: stage, Run: run},
 	}).Run(c)
+}
+
+func (h *OpenAIGatewayHandler) runOpenAIHTTPForwardStage(c *gin.Context, adapter ForwardStage) openAIHTTPExecutableStageResult {
+	return GatewayPipeline{
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+		Source:   moderationcoverage.SourceOpenAIHTTPExecutableStage,
+		Stages: []ExecutableStage{
+			executableForwardStageWithContext(c, adapter),
+		},
+	}.Run(c)
 }
 
 func openAIHTTPExecutablePipeline(stages []openAIHTTPExecutableStage) GatewayPipeline {
@@ -84,6 +144,16 @@ func (h *OpenAIGatewayHandler) runOpenAIWebSocketExecutableStage(c *gin.Context,
 		Source:   moderationcoverage.SourceOpenAIWebSocketExecutableStage,
 		Stages: []ExecutableStage{
 			{Name: stage, Run: run},
+		},
+	}.Run(c)
+}
+
+func (h *OpenAIGatewayHandler) runOpenAIWebSocketForwardStage(c *gin.Context, adapter ForwardStage) ExecutableStageResult {
+	return GatewayPipeline{
+		Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
+		Source:   moderationcoverage.SourceOpenAIWebSocketExecutableStage,
+		Stages: []ExecutableStage{
+			executableForwardStageWithContext(c, adapter),
 		},
 	}.Run(c)
 }

@@ -435,17 +435,19 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		var writerSizeBeforeForward int
 		var result *service.OpenAIForwardResult
 		var err error
-		_ = h.runOpenAIHTTPExecutableStage(c, moderationcoverage.StageForward, func() openAIHTTPExecutableStageResult {
-			writerSizeBeforeForward = c.Writer.Size()
-			result, err = func() (*service.OpenAIForwardResult, error) {
-				defer func() {
-					if accountReleaseFunc != nil {
-						accountReleaseFunc()
-					}
+		_ = h.runOpenAIHTTPForwardStage(c, ForwardStageAdapter{
+			Forward: func(*gin.Context) ExecutableStageResult {
+				writerSizeBeforeForward = c.Writer.Size()
+				result, err = func() (*service.OpenAIForwardResult, error) {
+					defer func() {
+						if accountReleaseFunc != nil {
+							accountReleaseFunc()
+						}
+					}()
+					return h.gatewayService.Forward(c.Request.Context(), c, account, forwardBody)
 				}()
-				return h.gatewayService.Forward(c.Request.Context(), c, account, forwardBody)
-			}()
-			return openAIHTTPExecutableStageResult{Err: err}
+				return ExecutableStageResult{Err: err}
+			},
 		})
 		cyberBlockKeyHTTP := ""
 		if service.GetOpsCyberPolicy(c) != nil {
@@ -1723,9 +1725,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		requestPayloadHash = service.HashUsageRequestPayload(wsFirstMessage)
 
 		var proxyErr error
-		_ = h.runOpenAIWebSocketExecutableStage(c, moderationcoverage.StageForward, func() ExecutableStageResult {
-			proxyErr = h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks)
-			return ExecutableStageResult{Err: proxyErr}
+		_ = h.runOpenAIWebSocketForwardStage(c, ForwardStageAdapter{
+			Forward: func(*gin.Context) ExecutableStageResult {
+				proxyErr = h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks)
+				return ExecutableStageResult{Err: proxyErr}
+			},
 		})
 		if proxyErr != nil {
 			var failoverErr *service.UpstreamFailoverError
