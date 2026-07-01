@@ -89,7 +89,7 @@ type gatewayPreForwardStageResult struct {
 type GatewayPreForwardModerationStage struct{}
 
 func (GatewayPreForwardModerationStage) Name() string {
-	return "moderation"
+	return moderationcoverage.StageModeration
 }
 
 func (GatewayPreForwardModerationStage) Run(ctx *gatewayPreForwardStageContext) gatewayPreForwardStageResult {
@@ -125,16 +125,42 @@ func (p *GatewayPreForwardPipeline) Run(h *GatewayHandler, c *gin.Context, reqLo
 		reqLog:   reqLog,
 		input:    input,
 	}
-	for _, stage := range p.preForwardStages() {
+	result := GatewayPipeline{
+		Pipeline: moderationcoverage.PipelineGatewayPreForward,
+		Source:   moderationcoverage.SourceGatewayPreForward,
+		Stages:   gatewayPreForwardExecutableStages(ctx, p.preForwardStages()),
+	}.Run(c)
+	if result.Stop || result.Err != nil {
+		return gatewayPreForwardPipelineResult{Blocked: true}
+	}
+	return gatewayPreForwardPipelineResult{}
+}
+
+func gatewayPreForwardExecutableStages(ctx *gatewayPreForwardStageContext, stages []gatewayPreForwardStage) []ExecutableStage {
+	executableStages := make([]ExecutableStage, 0, len(stages)+1)
+	for _, stage := range stages {
 		if stage == nil {
 			continue
 		}
-		if result := stage.Run(ctx); result.Blocked {
-			return gatewayPreForwardPipelineResult{Blocked: true}
-		}
+		stage := stage
+		executableStages = append(executableStages, ExecutableStage{
+			Name: stage.Name(),
+			Run: func() ExecutableStageResult {
+				result := stage.Run(ctx)
+				return ExecutableStageResult{Stop: result.Blocked}
+			},
+		})
 	}
-	moderationcoverage.MarkPipelineAdmitted(c, moderationcoverage.PipelineGatewayPreForward, moderationcoverage.StagePreForward, moderationcoverage.SourceGatewayPreForward)
-	return gatewayPreForwardPipelineResult{}
+	executableStages = append(executableStages, ExecutableStage{
+		Name: moderationcoverage.StagePreForward,
+		Run: func() ExecutableStageResult {
+			if ctx != nil {
+				moderationcoverage.MarkPipelineAdmitted(ctx.c, moderationcoverage.PipelineGatewayPreForward, moderationcoverage.StagePreForward, moderationcoverage.SourceGatewayPreForward)
+			}
+			return ExecutableStageResult{}
+		},
+	})
+	return executableStages
 }
 
 func (p *GatewayPreForwardPipeline) preForwardStages() []gatewayPreForwardStage {

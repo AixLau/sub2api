@@ -113,6 +113,13 @@ func TestGatewayPreForwardPipelineModerationStageBlocksWithProviderErrorShape(t 
 			require.Equal(t, tt.body, guard.calls[0].Body)
 			_, ok := moderationcoverage.PipelineAdmissionFromContext(c)
 			require.False(t, ok)
+			require.Equal(t, []moderationcoverage.PipelineStageExecution{
+				{
+					Pipeline: moderationcoverage.PipelineGatewayPreForward,
+					Stage:    moderationcoverage.StageModeration,
+					Source:   moderationcoverage.SourceGatewayPreForward,
+				},
+			}, moderationcoverage.PipelineStageExecutionsFromContext(c))
 		})
 	}
 }
@@ -182,8 +189,75 @@ func TestGatewayPreForwardPipelineMarksAdmissionWhenModerationAllows(t *testing.
 			require.Equal(t, moderationcoverage.StagePreForward, admission.Stage)
 			require.Equal(t, moderationcoverage.SourceGatewayPreForward, admission.Source)
 			require.True(t, moderationcoverage.PipelineAdmittedFromContext(c))
+			require.Equal(t, []moderationcoverage.PipelineStageExecution{
+				{
+					Pipeline: moderationcoverage.PipelineGatewayPreForward,
+					Stage:    moderationcoverage.StageModeration,
+					Source:   moderationcoverage.SourceGatewayPreForward,
+				},
+				{
+					Pipeline: moderationcoverage.PipelineGatewayPreForward,
+					Stage:    moderationcoverage.StagePreForward,
+					Source:   moderationcoverage.SourceGatewayPreForward,
+				},
+			}, moderationcoverage.PipelineStageExecutionsFromContext(c))
 		})
 	}
+}
+
+func TestGatewayPreForwardPipelineExecutionIncludesRouteMetadata(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	guard := &gatewayPreForwardPipelineModerationGuardSpy{decision: &service.ContentModerationDecision{
+		Allowed: true,
+		Action:  service.ContentModerationActionAllow,
+	}}
+	pipeline := newGatewayPreForwardPipeline(guard)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+		Method:             http.MethodPost,
+		Path:               "/v1/messages",
+		Handler:            "GatewayHandler.Messages",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolAnthropicMessages,
+		Pipeline:           moderationcoverage.PipelineGatewayPreForward,
+		Status:             moderationcoverage.StatusCovered,
+	})
+
+	result := pipeline.Run(&GatewayHandler{}, c, zap.NewNop(), gatewayPreForwardPipelineInput{
+		APIKey:      &service.APIKey{ID: 12, Name: "gateway-key"},
+		Subject:     middleware2.AuthSubject{UserID: 43, Concurrency: 2},
+		Protocol:    service.ContentModerationProtocolAnthropicMessages,
+		Model:       "claude-sonnet-4-5",
+		Body:        []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`),
+		ErrorFormat: gatewayPreForwardErrorAnthropic,
+	})
+
+	require.False(t, result.Blocked)
+	require.Equal(t, []moderationcoverage.PipelineStageExecution{
+		{
+			Pipeline: moderationcoverage.PipelineGatewayPreForward,
+			Stage:    moderationcoverage.StageModeration,
+			Source:   moderationcoverage.SourceGatewayPreForward,
+			Method:   http.MethodPost,
+			Path:     "/v1/messages",
+			Handler:  "GatewayHandler.Messages",
+			Protocol: service.ContentModerationProtocolAnthropicMessages,
+		},
+		{
+			Pipeline: moderationcoverage.PipelineGatewayPreForward,
+			Stage:    moderationcoverage.StagePreForward,
+			Source:   moderationcoverage.SourceGatewayPreForward,
+			Method:   http.MethodPost,
+			Path:     "/v1/messages",
+			Handler:  "GatewayHandler.Messages",
+			Protocol: service.ContentModerationProtocolAnthropicMessages,
+		},
+	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
 }
 
 type gatewayPreForwardPipelineModerationGuardSpy struct {
