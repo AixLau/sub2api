@@ -218,6 +218,7 @@ func (OpenAIHTTPCyberStage) Run(ctx *openAIHTTPGatewayStageContext) openAIHTTPGa
 // RunHTTPPreForward runs the OpenAI HTTP pre-forward stages in order.
 func (p *OpenAIGatewayPipeline) RunHTTPPreForward(h *OpenAIGatewayHandler, c *gin.Context, reqLog *zap.Logger, input openAIHTTPPreForwardPipelineInput) openAIHTTPPreForwardPipelineResult {
 	var cleanup func()
+	blocked := false
 	ctx := &openAIHTTPGatewayStageContext{
 		handler:  h,
 		pipeline: p,
@@ -225,21 +226,67 @@ func (p *OpenAIGatewayPipeline) RunHTTPPreForward(h *OpenAIGatewayHandler, c *gi
 		reqLog:   reqLog,
 		input:    input,
 	}
-	for _, stage := range p.httpPreForwardPipelineStages(input) {
+	result := GatewayPipeline{
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+		Source:   moderationcoverage.SourceOpenAIHTTPPreForward,
+		Stages:   openAIHTTPPreForwardExecutableStages(ctx, p.httpPreForwardPipelineStages(input), &cleanup, &blocked),
+	}.Run(c)
+	if result.Stop || result.Err != nil || blocked {
+		if cleanup != nil {
+			cleanup()
+		}
+		return openAIHTTPPreForwardPipelineResult{Blocked: true}
+	}
+	return openAIHTTPPreForwardPipelineResult{ImageReleaseFunc: cleanup}
+}
+
+func openAIHTTPPreForwardExecutableStages(ctx *openAIHTTPGatewayStageContext, stages []openAIHTTPGatewayStage, cleanup *func(), blocked *bool) []ExecutableStage {
+	executableStages := make([]ExecutableStage, 0, len(stages)+1)
+	for _, stage := range stages {
 		if stage == nil {
 			continue
 		}
-		stageResult := stage.Run(ctx)
-		cleanup = combineOpenAIHTTPGatewayCleanup(cleanup, stageResult.Cleanup)
-		if stageResult.Blocked {
-			if cleanup != nil {
-				cleanup()
-			}
-			return openAIHTTPPreForwardPipelineResult{Blocked: true}
-		}
+		stage := stage
+		executableStages = append(executableStages, ExecutableStage{
+			Name: openAIHTTPPreForwardExecutableStageName(stage.Name()),
+			Run: func() ExecutableStageResult {
+				stageResult := stage.Run(ctx)
+				if cleanup != nil {
+					*cleanup = combineOpenAIHTTPGatewayCleanup(*cleanup, stageResult.Cleanup)
+				}
+				if stageResult.Blocked {
+					if blocked != nil {
+						*blocked = true
+					}
+					return ExecutableStageResult{Stop: true}
+				}
+				return ExecutableStageResult{}
+			},
+		})
 	}
-	moderationcoverage.MarkPipelineAdmitted(c, moderationcoverage.PipelineOpenAIHTTP, moderationcoverage.StagePreForward, moderationcoverage.SourceOpenAIHTTPPreForward)
-	return openAIHTTPPreForwardPipelineResult{ImageReleaseFunc: cleanup}
+	executableStages = append(executableStages, ExecutableStage{
+		Name: moderationcoverage.StagePreForward,
+		Run: func() ExecutableStageResult {
+			if ctx != nil {
+				moderationcoverage.MarkPipelineAdmitted(ctx.c, moderationcoverage.PipelineOpenAIHTTP, moderationcoverage.StagePreForward, moderationcoverage.SourceOpenAIHTTPPreForward)
+			}
+			return ExecutableStageResult{}
+		},
+	})
+	return executableStages
+}
+
+func openAIHTTPPreForwardExecutableStageName(stage string) string {
+	switch stage {
+	case "moderation":
+		return moderationcoverage.StageModeration
+	case "image_permission", "image_slot", "image":
+		return moderationcoverage.StageImage
+	case "cyber":
+		return moderationcoverage.StageCyber
+	default:
+		return moderationcoverage.NormalizeStage(stage)
+	}
 }
 
 func (p *OpenAIGatewayPipeline) httpPreForwardPipelineStages(input openAIHTTPPreForwardPipelineInput) []openAIHTTPGatewayStage {

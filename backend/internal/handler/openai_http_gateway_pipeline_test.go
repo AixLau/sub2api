@@ -91,6 +91,76 @@ func TestOpenAIHTTPGatewayPipelineReturnsCleanupWhenAllStagesAllow(t *testing.T)
 	require.Equal(t, 1, releaseCalls)
 }
 
+func TestOpenAIHTTPGatewayPipelineRecordsPreForwardStageExecution(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	pipeline := &OpenAIGatewayPipeline{
+		httpPreForwardStages: []openAIHTTPGatewayStage{
+			openAIHTTPGatewayPipelineTestStage{
+				name: "moderation",
+				run: func(*openAIHTTPGatewayStageContext) openAIHTTPGatewayStageResult {
+					return openAIHTTPGatewayStageResult{}
+				},
+			},
+			openAIHTTPGatewayPipelineTestStage{
+				name: "image_permission",
+				run: func(*openAIHTTPGatewayStageContext) openAIHTTPGatewayStageResult {
+					return openAIHTTPGatewayStageResult{}
+				},
+			},
+			openAIHTTPGatewayPipelineTestStage{
+				name: "image_slot",
+				run: func(*openAIHTTPGatewayStageContext) openAIHTTPGatewayStageResult {
+					return openAIHTTPGatewayStageResult{}
+				},
+			},
+			openAIHTTPGatewayPipelineTestStage{
+				name: "cyber",
+				run: func(*openAIHTTPGatewayStageContext) openAIHTTPGatewayStageResult {
+					return openAIHTTPGatewayStageResult{}
+				},
+			},
+		},
+	}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+		Method:             http.MethodPost,
+		Path:               "/v1/responses",
+		Handler:            "OpenAIGatewayHandler.Responses",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolOpenAIResponses,
+		Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
+		Status:             moderationcoverage.StatusCovered,
+	})
+
+	result := pipeline.RunHTTPPreForward(&OpenAIGatewayHandler{}, c, zap.NewNop(), openAIHTTPPreForwardPipelineInput{
+		APIKey:   &service.APIKey{ID: 9, Group: &service.Group{AllowImageGeneration: true}},
+		Protocol: service.ContentModerationProtocolOpenAIResponses,
+		Model:    "gpt-5.1",
+		Body:     []byte(`{"model":"gpt-5.1","input":"hello"}`),
+	})
+
+	require.False(t, result.Blocked)
+	executions := moderationcoverage.PipelineStageExecutionsFromContext(c)
+	require.Len(t, executions, 4)
+	for i, stage := range []string{
+		moderationcoverage.StageModeration,
+		moderationcoverage.StageCyber,
+		moderationcoverage.StageImage,
+		moderationcoverage.StagePreForward,
+	} {
+		require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, executions[i].Pipeline)
+		require.Equal(t, stage, executions[i].Stage)
+		require.Equal(t, moderationcoverage.SourceOpenAIHTTPPreForward, executions[i].Source)
+		require.Equal(t, http.MethodPost, executions[i].Method)
+		require.Equal(t, "/v1/responses", executions[i].Path)
+		require.Equal(t, "OpenAIGatewayHandler.Responses", executions[i].Handler)
+		require.Equal(t, service.ContentModerationProtocolOpenAIResponses, executions[i].Protocol)
+	}
+}
+
 func TestOpenAIHTTPGatewayPipelineModerationStageCanWriteAnthropicErrorShape(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"risk"}]}`)
