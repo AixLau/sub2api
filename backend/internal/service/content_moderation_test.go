@@ -2379,7 +2379,7 @@ func TestContentModerationStatusIncludesRouteCoverage(t *testing.T) {
 
 	status, err := svc.GetStatus(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, "2026-06-29.4", status.RouteCoverage.ManifestVersion)
+	require.Equal(t, "2026-06-29.5", status.RouteCoverage.ManifestVersion)
 	require.Equal(t, expectedCoverage.manifestVersion, status.RouteCoverage.ManifestVersion)
 	require.NotEmpty(t, status.RouteCoverage.ManifestHash)
 	require.Equal(t, moderationcoverage.HashFromEntries(expectedCoverage.entries), status.RouteCoverage.ManifestHash)
@@ -2619,6 +2619,17 @@ func TestContentModerationPipelineCoverageStatusSummarizesGatewayPreForwardStage
 			Pipeline:           moderationcoverage.PipelineGatewayPreForward,
 			StageCoverage:      moderationcoverage.GatewayPreForwardPipelineStagesForRoute("GatewayHandler.GeminiV1BetaModels", ContentModerationProtocolGemini),
 		},
+		{
+			Method:             "POST",
+			Path:               "/v1/messages/count_tokens",
+			Handler:            "GatewayHandler.CountTokens",
+			Upstream:           true,
+			ModerationRequired: true,
+			Protocol:           ContentModerationProtocolAnthropicMessages,
+			Status:             moderationcoverage.StatusCovered,
+			Pipeline:           moderationcoverage.PipelineGatewayPreForward,
+			StageCoverage:      moderationcoverage.GatewayPreForwardPipelineStagesForRoute("GatewayHandler.CountTokens", ContentModerationProtocolAnthropicMessages),
+		},
 	}
 
 	status := contentModerationPipelineCoverageStatusFromEntries(entries)
@@ -2626,11 +2637,12 @@ func TestContentModerationPipelineCoverageStatusSummarizesGatewayPreForwardStage
 	require.Equal(t, "covered", status.Status)
 	require.Equal(t, moderationcoverage.PipelineGatewayPreForward, status.GatewayPreForward.Pipeline)
 	require.Equal(t, moderationcoverage.PipelineGatewayPreForwardVersion, status.GatewayPreForward.Version)
-	require.Equal(t, 2, status.GatewayPreForward.RequiredRoutes)
-	require.Equal(t, 2, status.GatewayPreForward.CoveredRoutes)
+	require.Equal(t, 3, status.GatewayPreForward.RequiredRoutes)
+	require.Equal(t, 3, status.GatewayPreForward.CoveredRoutes)
 	require.Empty(t, status.GatewayPreForward.UncoveredRoutes)
-	requirePipelineStageSummary(t, status.GatewayPreForward.StageCoverage, moderationcoverage.StageModeration, 2, 2, []string{})
-	requirePipelineStageSummary(t, status.GatewayPreForward.StageCoverage, moderationcoverage.StagePreForward, 2, 2, []string{})
+	requirePipelineStageSummary(t, status.GatewayPreForward.StageCoverage, moderationcoverage.StageModeration, 3, 3, []string{})
+	requirePipelineStageSummary(t, status.GatewayPreForward.StageCoverage, moderationcoverage.StagePreForward, 3, 3, []string{})
+	requirePipelineStageSummary(t, status.GatewayPreForward.StageCoverage, moderationcoverage.StageForward, 1, 1, []string{})
 
 	messagesRoute := requirePipelineRouteSummary(t, status.GatewayPreForward.Routes, "POST", "/v1/messages")
 	require.Equal(t, "GatewayHandler.Messages", messagesRoute.Handler)
@@ -2642,6 +2654,18 @@ func TestContentModerationPipelineCoverageStatusSummarizesGatewayPreForwardStage
 		{Stage: moderationcoverage.StageModeration, Required: true, Covered: true},
 		{Stage: moderationcoverage.StagePreForward, Required: true, Covered: true},
 	}, messagesRoute.Stages)
+
+	countTokensRoute := requirePipelineRouteSummary(t, status.GatewayPreForward.Routes, "POST", "/v1/messages/count_tokens")
+	require.Equal(t, "GatewayHandler.CountTokens", countTokensRoute.Handler)
+	require.Equal(t, ContentModerationProtocolAnthropicMessages, countTokensRoute.Protocol)
+	require.Equal(t, moderationcoverage.PipelineGatewayPreForward, countTokensRoute.Pipeline)
+	require.True(t, countTokensRoute.Covered)
+	require.Empty(t, countTokensRoute.UncoveredStages)
+	require.Equal(t, []ContentModerationPipelineRouteStageCoverageStatus{
+		{Stage: moderationcoverage.StageModeration, Required: true, Covered: true},
+		{Stage: moderationcoverage.StagePreForward, Required: true, Covered: true},
+		{Stage: moderationcoverage.StageForward, Required: true, Covered: true},
+	}, countTokensRoute.Stages)
 }
 
 func TestContentModerationStatusIncludesPipelineCoverageFromRegisteredEntries(t *testing.T) {
@@ -2956,7 +2980,7 @@ func loadContentModerationGatewayCoverageForStatus(t *testing.T) struct {
 	var manifest contentModerationGatewayCoverageForStatus
 	require.NoError(t, json.Unmarshal(data, &manifest))
 	require.Equal(t, 1, manifest.SchemaVersion)
-	require.Equal(t, "2026-06-29.4", manifest.ManifestVersion)
+	require.Equal(t, "2026-06-29.5", manifest.ManifestVersion)
 
 	result := struct {
 		manifestVersion string

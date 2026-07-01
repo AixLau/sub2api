@@ -92,3 +92,49 @@ func TestGatewayPreForwardEntrypointsUseUnifiedPipelineHelper(t *testing.T) {
 		t.Fatalf("Anthropic/Gemini pre-forward moderation must use the unified pipeline helper:\n%s", strings.Join(violations, "\n"))
 	}
 }
+
+func TestGatewayCountTokensUsesForwardStageAdapter(t *testing.T) {
+	src, err := os.ReadFile("gateway_handler.go")
+	if err != nil {
+		t.Fatalf("read gateway_handler.go: %v", err)
+	}
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, "gateway_handler.go", src, 0)
+	if err != nil {
+		t.Fatalf("parse gateway_handler.go: %v", err)
+	}
+
+	fn := gatewayHandlerFuncDecl(t, parsed, "CountTokens")
+	hasForwardStage := false
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		if selector.Sel.Name == "runGatewayForwardStage" {
+			hasForwardStage = true
+		}
+		return true
+	})
+
+	if !hasForwardStage {
+		t.Fatalf("GatewayHandler.CountTokens must execute upstream forwarding through runGatewayForwardStage")
+	}
+}
+
+func gatewayHandlerFuncDecl(t *testing.T, parsed *ast.File, name string) *ast.FuncDecl {
+	t.Helper()
+	for _, decl := range parsed.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Recv == nil || fn.Name.Name != name {
+			continue
+		}
+		return fn
+	}
+	t.Fatalf("missing GatewayHandler.%s", name)
+	return nil
+}

@@ -41,6 +41,7 @@ const (
 	SourceOpenAIWebSocketFollowupFrame   = "OpenAIGatewayPipeline.RunWebSocketFollowupFrame"
 	SourceOpenAIWebSocketExecutableStage = "OpenAIGatewayPipeline.RunWebSocketExecutableStage"
 	SourceGatewayPreForward              = "GatewayPreForwardPipeline.Run"
+	SourceGatewayForwardStage            = "GatewayPipeline.RunForwardStage"
 )
 
 type PipelineStageCoverage struct {
@@ -397,15 +398,23 @@ func GatewayPreForwardPipelineStagesForRoute(handlerName, protocol string) []Pip
 	if !IsGatewayPreForwardPipelineProtocol(protocol) {
 		return nil
 	}
+	var stages []PipelineStageCoverage
 	switch strings.TrimSpace(handlerName) {
-	case "GatewayHandler.Messages", "GatewayHandler.CountTokens", "GatewayHandler.GeminiV1BetaModels":
+	case "GatewayHandler.CountTokens":
+		stages = []PipelineStageCoverage{
+			CoveredPipelineStage(StageModeration),
+			CoveredPipelineStage(StagePreForward),
+			CoveredPipelineStage(StageForward),
+		}
+	case "GatewayHandler.Messages", "GatewayHandler.GeminiV1BetaModels":
+		stages = []PipelineStageCoverage{
+			CoveredPipelineStage(StageModeration),
+			CoveredPipelineStage(StagePreForward),
+		}
 	default:
 		return nil
 	}
-	return NormalizeStageCoverage([]PipelineStageCoverage{
-		CoveredPipelineStage(StageModeration),
-		CoveredPipelineStage(StagePreForward),
-	})
+	return NormalizeStageCoverage(stages)
 }
 
 func CoveredPipelineStage(stage string) PipelineStageCoverage {
