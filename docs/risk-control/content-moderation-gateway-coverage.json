@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "manifest_version": "2026-06-29.7",
+  "manifest_version": "2026-06-29.8",
   "entries": [
     {
       "route": {
@@ -29,6 +29,11 @@
         },
         {
           "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
           "required": true,
           "covered": true
         }
@@ -63,6 +68,11 @@
         },
         {
           "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
           "required": true,
           "covered": true
         }
@@ -1050,6 +1060,11 @@
           "stage": "forward",
           "required": true,
           "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
         }
       ],
       "status": "covered",
@@ -1082,6 +1097,11 @@
         },
         {
           "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
           "required": true,
           "covered": true
         }

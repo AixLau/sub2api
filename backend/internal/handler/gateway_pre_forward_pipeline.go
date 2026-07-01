@@ -65,6 +65,16 @@ func (h *GatewayHandler) runGatewayForwardStage(c *gin.Context, adapter ForwardS
 	}.Run(c)
 }
 
+func (h *GatewayHandler) runGatewayUsageStage(c *gin.Context, adapter UsageStage) ExecutableStageResult {
+	return GatewayPipeline{
+		Pipeline: moderationcoverage.PipelineGatewayPreForward,
+		Source:   moderationcoverage.SourceGatewayUsageStage,
+		Stages: []ExecutableStage{
+			executableUsageStageWithContext(c, adapter),
+		},
+	}.Run(c)
+}
+
 func (h *GatewayHandler) gatewayPreForwardPipeline() *GatewayPreForwardPipeline {
 	if h == nil {
 		return newGatewayPreForwardPipeline(nil)

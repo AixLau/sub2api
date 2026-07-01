@@ -68,10 +68,16 @@ func TestGatewayPreForwardPipelineStagesForRouteIsSharedFactSource(t *testing.T)
 		{Stage: StagePreForward, Required: true, Covered: true},
 		{Stage: StageForward, Required: true, Covered: true},
 	}
+	withForwardAndUsage := []PipelineStageCoverage{
+		{Stage: StageModeration, Required: true, Covered: true},
+		{Stage: StagePreForward, Required: true, Covered: true},
+		{Stage: StageForward, Required: true, Covered: true},
+		{Stage: StageUsage, Required: true, Covered: true},
+	}
 
-	require.Equal(t, withForward, GatewayPreForwardPipelineStagesForRoute("GatewayHandler.Messages", "anthropic_messages"))
+	require.Equal(t, withForwardAndUsage, GatewayPreForwardPipelineStagesForRoute("GatewayHandler.Messages", "anthropic_messages"))
 	require.Equal(t, withForward, GatewayPreForwardPipelineStagesForRoute("GatewayHandler.CountTokens", "anthropic_messages"))
-	require.Equal(t, withForward, GatewayPreForwardPipelineStagesForRoute("GatewayHandler.GeminiV1BetaModels", "gemini"))
+	require.Equal(t, withForwardAndUsage, GatewayPreForwardPipelineStagesForRoute("GatewayHandler.GeminiV1BetaModels", "gemini"))
 	require.Nil(t, GatewayPreForwardPipelineStagesForRoute("OpenAIGatewayHandler.Responses", "openai_responses"))
 }
 

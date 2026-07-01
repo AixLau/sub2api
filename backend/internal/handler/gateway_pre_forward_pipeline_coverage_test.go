@@ -192,6 +192,52 @@ func TestGatewayGeminiV1BetaModelsUsesForwardStageAdapter(t *testing.T) {
 	}
 }
 
+func TestGatewayMessagesAndGeminiUseUsageStageAdapter(t *testing.T) {
+	tests := []struct {
+		file     string
+		handler  string
+		minCalls int
+	}{
+		{file: "gateway_handler.go", handler: "Messages", minCalls: 2},
+		{file: "gemini_v1beta_handler.go", handler: "GeminiV1BetaModels", minCalls: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.file+"/"+tt.handler, func(t *testing.T) {
+			src, err := os.ReadFile(tt.file)
+			if err != nil {
+				t.Fatalf("read %s: %v", tt.file, err)
+			}
+			fset := token.NewFileSet()
+			parsed, err := parser.ParseFile(fset, tt.file, src, 0)
+			if err != nil {
+				t.Fatalf("parse %s: %v", tt.file, err)
+			}
+
+			fn := gatewayHandlerFuncDecl(t, parsed, tt.handler)
+			usageStageCalls := 0
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				selector, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				if selector.Sel.Name == "runGatewayUsageStage" {
+					usageStageCalls++
+				}
+				return true
+			})
+
+			if usageStageCalls < tt.minCalls {
+				t.Fatalf("GatewayHandler.%s must execute usage recording through runGatewayUsageStage, got %d calls", tt.handler, usageStageCalls)
+			}
+		})
+	}
+}
+
 func gatewayHandlerFuncDecl(t *testing.T, parsed *ast.File, name string) *ast.FuncDecl {
 	t.Helper()
 	for _, decl := range parsed.Decls {
