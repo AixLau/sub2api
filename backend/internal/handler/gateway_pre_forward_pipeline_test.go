@@ -341,6 +341,45 @@ func TestGatewayBillingStageExecutionIncludesRouteMetadata(t *testing.T) {
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
 }
 
+func TestGatewayRoutingStageExecutionIncludesRouteMetadata(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+		Method:             http.MethodPost,
+		Path:               "/v1/messages",
+		Handler:            "GatewayHandler.Messages",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolAnthropicMessages,
+		Pipeline:           moderationcoverage.PipelineGatewayPreForward,
+		Status:             moderationcoverage.StatusCovered,
+	})
+
+	calls := 0
+	result := (&GatewayHandler{}).runGatewayRoutingStage(c, func() ExecutableStageResult {
+		calls++
+		return ExecutableStageResult{}
+	})
+
+	require.NoError(t, result.Err)
+	require.False(t, result.Stop)
+	require.Equal(t, 1, calls)
+	require.Equal(t, []moderationcoverage.PipelineStageExecution{
+		{
+			Pipeline: moderationcoverage.PipelineGatewayPreForward,
+			Stage:    moderationcoverage.StageRouting,
+			Source:   moderationcoverage.SourceGatewayRoutingStage,
+			Method:   http.MethodPost,
+			Path:     "/v1/messages",
+			Handler:  "GatewayHandler.Messages",
+			Protocol: service.ContentModerationProtocolAnthropicMessages,
+		},
+	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+}
+
 func TestGatewayUsageStageExecutionIncludesRouteMetadata(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

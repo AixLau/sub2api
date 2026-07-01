@@ -42,6 +42,7 @@ const (
 	SourceOpenAIWebSocketExecutableStage = "OpenAIGatewayPipeline.RunWebSocketExecutableStage"
 	SourceGatewayPreForward              = "GatewayPreForwardPipeline.Run"
 	SourceGatewayBillingStage            = "GatewayPipeline.RunBillingStage"
+	SourceGatewayRoutingStage            = "GatewayPipeline.RunRoutingStage"
 	SourceGatewayForwardStage            = "GatewayPipeline.RunForwardStage"
 	SourceGatewayUsageStage              = "GatewayPipeline.RunUsageStage"
 )
@@ -407,6 +408,7 @@ func GatewayPreForwardPipelineStagesForRoute(handlerName, protocol string) []Pip
 			CoveredPipelineStage(StageModeration),
 			CoveredPipelineStage(StagePreForward),
 			CoveredPipelineStage(StageBilling),
+			CoveredPipelineStage(StageRouting),
 			CoveredPipelineStage(StageForward),
 			CoveredPipelineStage(StageUsage),
 		}
@@ -415,6 +417,7 @@ func GatewayPreForwardPipelineStagesForRoute(handlerName, protocol string) []Pip
 			CoveredPipelineStage(StageModeration),
 			CoveredPipelineStage(StagePreForward),
 			CoveredPipelineStage(StageBilling),
+			CoveredPipelineStage(StageRouting),
 			CoveredPipelineStage(StageForward),
 		}
 	default:

@@ -67,12 +67,14 @@ func TestGatewayPreForwardPipelineStagesForRouteIsSharedFactSource(t *testing.T)
 		{Stage: StageModeration, Required: true, Covered: true},
 		{Stage: StagePreForward, Required: true, Covered: true},
 		{Stage: StageBilling, Required: true, Covered: true},
+		{Stage: StageRouting, Required: true, Covered: true},
 		{Stage: StageForward, Required: true, Covered: true},
 	}
 	withForwardAndUsage := []PipelineStageCoverage{
 		{Stage: StageModeration, Required: true, Covered: true},
 		{Stage: StagePreForward, Required: true, Covered: true},
 		{Stage: StageBilling, Required: true, Covered: true},
+		{Stage: StageRouting, Required: true, Covered: true},
 		{Stage: StageForward, Required: true, Covered: true},
 		{Stage: StageUsage, Required: true, Covered: true},
 	}

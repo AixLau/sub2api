@@ -2379,7 +2379,7 @@ func TestContentModerationStatusIncludesRouteCoverage(t *testing.T) {
 
 	status, err := svc.GetStatus(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, "2026-06-29.9", status.RouteCoverage.ManifestVersion)
+	require.Equal(t, "2026-06-29.10", status.RouteCoverage.ManifestVersion)
 	require.Equal(t, expectedCoverage.manifestVersion, status.RouteCoverage.ManifestVersion)
 	require.NotEmpty(t, status.RouteCoverage.ManifestHash)
 	require.Equal(t, moderationcoverage.HashFromEntries(expectedCoverage.entries), status.RouteCoverage.ManifestHash)
@@ -2516,6 +2516,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 				{"stage": "moderation", "required_routes": 1, "covered_routes": 1, "uncovered_routes": []},
 				{"stage": "pre_forward", "required_routes": 1, "covered_routes": 1, "uncovered_routes": []},
 				{"stage": "billing", "required_routes": 1, "covered_routes": 1, "uncovered_routes": []},
+				{"stage": "routing", "required_routes": 1, "covered_routes": 1, "uncovered_routes": []},
 				{"stage": "forward", "required_routes": 1, "covered_routes": 1, "uncovered_routes": []},
 				{"stage": "usage", "required_routes": 1, "covered_routes": 1, "uncovered_routes": []}
 			],
@@ -2524,6 +2525,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 					{"stage": "moderation", "required": true, "covered": true},
 					{"stage": "pre_forward", "required": true, "covered": true},
 					{"stage": "billing", "required": true, "covered": true},
+					{"stage": "routing", "required": true, "covered": true},
 					{"stage": "forward", "required": true, "covered": true},
 					{"stage": "usage", "required": true, "covered": true}
 				]}
@@ -2649,6 +2651,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesGatewayPreForwardStage
 	requirePipelineStageSummary(t, status.GatewayPreForward.StageCoverage, moderationcoverage.StageModeration, 3, 3, []string{})
 	requirePipelineStageSummary(t, status.GatewayPreForward.StageCoverage, moderationcoverage.StagePreForward, 3, 3, []string{})
 	requirePipelineStageSummary(t, status.GatewayPreForward.StageCoverage, moderationcoverage.StageBilling, 3, 3, []string{})
+	requirePipelineStageSummary(t, status.GatewayPreForward.StageCoverage, moderationcoverage.StageRouting, 3, 3, []string{})
 	requirePipelineStageSummary(t, status.GatewayPreForward.StageCoverage, moderationcoverage.StageForward, 3, 3, []string{})
 	requirePipelineStageSummary(t, status.GatewayPreForward.StageCoverage, moderationcoverage.StageUsage, 2, 2, []string{})
 
@@ -2662,6 +2665,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesGatewayPreForwardStage
 		{Stage: moderationcoverage.StageModeration, Required: true, Covered: true},
 		{Stage: moderationcoverage.StagePreForward, Required: true, Covered: true},
 		{Stage: moderationcoverage.StageBilling, Required: true, Covered: true},
+		{Stage: moderationcoverage.StageRouting, Required: true, Covered: true},
 		{Stage: moderationcoverage.StageForward, Required: true, Covered: true},
 		{Stage: moderationcoverage.StageUsage, Required: true, Covered: true},
 	}, messagesRoute.Stages)
@@ -2676,6 +2680,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesGatewayPreForwardStage
 		{Stage: moderationcoverage.StageModeration, Required: true, Covered: true},
 		{Stage: moderationcoverage.StagePreForward, Required: true, Covered: true},
 		{Stage: moderationcoverage.StageBilling, Required: true, Covered: true},
+		{Stage: moderationcoverage.StageRouting, Required: true, Covered: true},
 		{Stage: moderationcoverage.StageForward, Required: true, Covered: true},
 	}, countTokensRoute.Stages)
 
@@ -2689,6 +2694,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesGatewayPreForwardStage
 		{Stage: moderationcoverage.StageModeration, Required: true, Covered: true},
 		{Stage: moderationcoverage.StagePreForward, Required: true, Covered: true},
 		{Stage: moderationcoverage.StageBilling, Required: true, Covered: true},
+		{Stage: moderationcoverage.StageRouting, Required: true, Covered: true},
 		{Stage: moderationcoverage.StageForward, Required: true, Covered: true},
 		{Stage: moderationcoverage.StageUsage, Required: true, Covered: true},
 	}, geminiRoute.Stages)
@@ -3006,7 +3012,7 @@ func loadContentModerationGatewayCoverageForStatus(t *testing.T) struct {
 	var manifest contentModerationGatewayCoverageForStatus
 	require.NoError(t, json.Unmarshal(data, &manifest))
 	require.Equal(t, 1, manifest.SchemaVersion)
-	require.Equal(t, "2026-06-29.9", manifest.ManifestVersion)
+	require.Equal(t, "2026-06-29.10", manifest.ManifestVersion)
 
 	result := struct {
 		manifestVersion string
