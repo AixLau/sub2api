@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "manifest_version": "2026-06-29.5",
+  "manifest_version": "2026-06-29.6",
   "entries": [
     {
       "route": {
@@ -24,6 +24,11 @@
         },
         {
           "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
           "required": true,
           "covered": true
         }
@@ -53,6 +58,11 @@
         },
         {
           "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
           "required": true,
           "covered": true
         }
