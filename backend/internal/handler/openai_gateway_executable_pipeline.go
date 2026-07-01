@@ -32,6 +32,16 @@ type ForwardStageAdapter struct {
 	Forward func(*gin.Context) ExecutableStageResult
 }
 
+type UsageStage interface {
+	StageName() string
+	RunUsage(*gin.Context) ExecutableStageResult
+}
+
+type UsageStageAdapter struct {
+	Name  string
+	Usage func(*gin.Context) ExecutableStageResult
+}
+
 func (a ForwardStageAdapter) StageName() string {
 	if a.Name == "" {
 		return moderationcoverage.StageForward
@@ -44,6 +54,20 @@ func (a ForwardStageAdapter) RunForward(c *gin.Context) ExecutableStageResult {
 		return ExecutableStageResult{}
 	}
 	return a.Forward(c)
+}
+
+func (a UsageStageAdapter) StageName() string {
+	if a.Name == "" {
+		return moderationcoverage.StageUsage
+	}
+	return a.Name
+}
+
+func (a UsageStageAdapter) RunUsage(c *gin.Context) ExecutableStageResult {
+	if a.Usage == nil {
+		return ExecutableStageResult{}
+	}
+	return a.Usage(c)
 }
 
 func ForwardStageFunc(name string, run func() ExecutableStageResult) ExecutableStage {
@@ -64,11 +88,29 @@ func ExecutableForwardStage(adapter ForwardStage) ExecutableStage {
 	}
 }
 
+func ExecutableUsageStage(adapter UsageStage) ExecutableStage {
+	return ExecutableStage{
+		Name: adapter.StageName(),
+		RunWithContext: func(c *gin.Context) ExecutableStageResult {
+			return adapter.RunUsage(c)
+		},
+	}
+}
+
 func executableForwardStageWithContext(c *gin.Context, adapter ForwardStage) ExecutableStage {
 	return ExecutableStage{
 		Name: adapter.StageName(),
 		RunWithContext: func(*gin.Context) ExecutableStageResult {
 			return adapter.RunForward(c)
+		},
+	}
+}
+
+func executableUsageStageWithContext(c *gin.Context, adapter UsageStage) ExecutableStage {
+	return ExecutableStage{
+		Name: adapter.StageName(),
+		RunWithContext: func(*gin.Context) ExecutableStageResult {
+			return adapter.RunUsage(c)
 		},
 	}
 }
@@ -154,6 +196,16 @@ func (h *OpenAIGatewayHandler) runOpenAIWebSocketForwardStage(c *gin.Context, ad
 		Source:   moderationcoverage.SourceOpenAIWebSocketExecutableStage,
 		Stages: []ExecutableStage{
 			executableForwardStageWithContext(c, adapter),
+		},
+	}.Run(c)
+}
+
+func (h *OpenAIGatewayHandler) runOpenAIWebSocketUsageStage(c *gin.Context, adapter UsageStage) ExecutableStageResult {
+	return GatewayPipeline{
+		Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
+		Source:   moderationcoverage.SourceOpenAIWebSocketExecutableStage,
+		Stages: []ExecutableStage{
+			executableUsageStageWithContext(c, adapter),
 		},
 	}.Run(c)
 }

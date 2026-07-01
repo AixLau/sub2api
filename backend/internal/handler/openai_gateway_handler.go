@@ -1640,65 +1640,67 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return nil
 			},
 			AfterTurn: func(turn int, result *service.OpenAIForwardResult, turnErr error) {
-				_ = h.runOpenAIWebSocketExecutableStage(c, moderationcoverage.StageUsage, func() ExecutableStageResult {
-					return ExecutableStageResult{}
-				})
-				// F1: cyber 标记按 turn 生命周期清理——defer 保证任意早返回路径都执行；
-				// CyberBlocked 必须在 submit 前同步预捕获（task 闭包由 worker 池异步执行，
-				// 届时 defer 已清除标记）。
-				defer clearCyberPolicyTurnState(c)
-				releaseTurnSlots()
-				h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, reqModel, turnErr != nil, cyberBlockKey, channelMappingWS.ToUsageFields(reqModel, ""), requestPayloadHash)
-				if service.GetOpsCyberPolicy(c) != nil {
-					cyberBlockedThisConn = true
-				}
-				if turnErr != nil {
-					if result == nil || result.ImageCount <= 0 {
-						return
-					}
-					// cyber 命中时该 turn 的用量已由 recordCyberPolicyIfMarked(forwardErrored=true)
-					// 按真实 token 记录，这里不再走下方 RecordUsage，避免对同一 turn 双写/双扣费。
-					if service.GetOpsCyberPolicy(c) != nil {
-						return
-					}
-					reqLog.Warn("openai.websocket_partial_error_with_image_result",
-						zap.Int64("account_id", account.ID),
-						zap.Int("image_count", result.ImageCount),
-						zap.Error(turnErr),
-					)
-				}
-				if result == nil {
-					return
-				}
-				if account.Type == service.AccountTypeOAuth {
-					h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(ctx, account.ID, result.ResponseHeaders)
-				}
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, result.FirstTokenMs)
-				inboundEndpoint := GetInboundEndpoint(c)
-				upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account)
-				cyberBlocked := service.GetOpsCyberPolicy(c) != nil
-				h.submitOpenAIUsageRecordTask(ctx, result, func(taskCtx context.Context) {
-					if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
-						Result:             result,
-						APIKey:             apiKey,
-						User:               apiKey.User,
-						Account:            account,
-						Subscription:       subscription,
-						InboundEndpoint:    inboundEndpoint,
-						UpstreamEndpoint:   upstreamEndpoint,
-						UserAgent:          userAgent,
-						IPAddress:          clientIP,
-						RequestPayloadHash: requestPayloadHash,
-						APIKeyService:      h.apiKeyService,
-						ChannelUsageFields: channelMappingWS.ToUsageFields(reqModel, result.UpstreamModel),
-						CyberBlocked:       cyberBlocked,
-					}); err != nil {
-						reqLog.Error("openai.websocket_record_usage_failed",
-							zap.Int64("account_id", account.ID),
-							zap.String("request_id", result.RequestID),
-							zap.Error(err),
-						)
-					}
+				_ = h.runOpenAIWebSocketUsageStage(c, UsageStageAdapter{
+					Usage: func(*gin.Context) ExecutableStageResult {
+						// F1: cyber 标记按 turn 生命周期清理——defer 保证任意早返回路径都执行；
+						// CyberBlocked 必须在 submit 前同步预捕获（task 闭包由 worker 池异步执行，
+						// 届时 defer 已清除标记）。
+						defer clearCyberPolicyTurnState(c)
+						releaseTurnSlots()
+						h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, reqModel, turnErr != nil, cyberBlockKey, channelMappingWS.ToUsageFields(reqModel, ""), requestPayloadHash)
+						if service.GetOpsCyberPolicy(c) != nil {
+							cyberBlockedThisConn = true
+						}
+						if turnErr != nil {
+							if result == nil || result.ImageCount <= 0 {
+								return ExecutableStageResult{}
+							}
+							// cyber 命中时该 turn 的用量已由 recordCyberPolicyIfMarked(forwardErrored=true)
+							// 按真实 token 记录，这里不再走下方 RecordUsage，避免对同一 turn 双写/双扣费。
+							if service.GetOpsCyberPolicy(c) != nil {
+								return ExecutableStageResult{}
+							}
+							reqLog.Warn("openai.websocket_partial_error_with_image_result",
+								zap.Int64("account_id", account.ID),
+								zap.Int("image_count", result.ImageCount),
+								zap.Error(turnErr),
+							)
+						}
+						if result == nil {
+							return ExecutableStageResult{}
+						}
+						if account.Type == service.AccountTypeOAuth {
+							h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(ctx, account.ID, result.ResponseHeaders)
+						}
+						h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, result.FirstTokenMs)
+						inboundEndpoint := GetInboundEndpoint(c)
+						upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account)
+						cyberBlocked := service.GetOpsCyberPolicy(c) != nil
+						h.submitOpenAIUsageRecordTask(ctx, result, func(taskCtx context.Context) {
+							if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
+								Result:             result,
+								APIKey:             apiKey,
+								User:               apiKey.User,
+								Account:            account,
+								Subscription:       subscription,
+								InboundEndpoint:    inboundEndpoint,
+								UpstreamEndpoint:   upstreamEndpoint,
+								UserAgent:          userAgent,
+								IPAddress:          clientIP,
+								RequestPayloadHash: requestPayloadHash,
+								APIKeyService:      h.apiKeyService,
+								ChannelUsageFields: channelMappingWS.ToUsageFields(reqModel, result.UpstreamModel),
+								CyberBlocked:       cyberBlocked,
+							}); err != nil {
+								reqLog.Error("openai.websocket_record_usage_failed",
+									zap.Int64("account_id", account.ID),
+									zap.String("request_id", result.RequestID),
+									zap.Error(err),
+								)
+							}
+						})
+						return ExecutableStageResult{}
+					},
 				})
 			},
 		}

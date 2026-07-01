@@ -189,6 +189,35 @@ func TestGatewayPipelineRunsForwardStageAdapter(t *testing.T) {
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
 }
 
+func TestGatewayPipelineRunsUsageStageAdapter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	calls := 0
+
+	pipeline := GatewayPipeline{
+		Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
+		Source:   moderationcoverage.SourceOpenAIWebSocketExecutableStage,
+		Stages: []ExecutableStage{
+			ExecutableUsageStage(UsageStageAdapter{
+				Usage: func(ctx *gin.Context) ExecutableStageResult {
+					require.Same(t, c, ctx)
+					calls++
+					return ExecutableStageResult{}
+				},
+			}),
+		},
+	}
+
+	result := pipeline.Run(c)
+
+	require.NoError(t, result.Err)
+	require.False(t, result.Stop)
+	require.Equal(t, 1, calls)
+	require.Equal(t, []moderationcoverage.PipelineStageExecution{
+		{Pipeline: moderationcoverage.PipelineOpenAIWebSocket, Stage: moderationcoverage.StageUsage, Source: moderationcoverage.SourceOpenAIWebSocketExecutableStage},
+	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+}
+
 func TestGatewayPipelineStopBlocksLaterGenericExecutableStages(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
