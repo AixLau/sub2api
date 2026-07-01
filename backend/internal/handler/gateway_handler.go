@@ -474,25 +474,19 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 			// 记录 Forward 前已写入字节数，Forward 后若增加则说明 SSE 内容已发，禁止 failover
 			writerSizeBeforeForward := c.Writer.Size()
-			stageResult := h.runGatewayForwardStage(c, ForwardStageAdapter{
-				Forward: func(*gin.Context) ExecutableStageResult {
-					if account.Platform == service.PlatformAntigravity {
-						result, err = h.antigravityGatewayService.ForwardGemini(
-							requestCtx,
-							c,
-							account,
-							reqModel,
-							"generateContent",
-							reqStream,
-							body,
-							hasBoundSession,
-							service.WithForwardGeminiSession(derefGroupID(apiKey.GroupID), sessionKey),
-						)
-					} else {
-						result, err = h.geminiCompatService.Forward(requestCtx, c, account, body)
-					}
-					return ExecutableStageResult{Err: err}
-				},
+			stageResult := h.runGatewayForwardStage(c, GatewayMessagesGeminiForwardStage{
+				GeminiCompatService:       h.geminiCompatService,
+				AntigravityGatewayService: h.antigravityGatewayService,
+				RequestContext:            requestCtx,
+				Account:                   account,
+				Model:                     reqModel,
+				Action:                    "generateContent",
+				Stream:                    reqStream,
+				Body:                      body,
+				HasBoundSession:           hasBoundSession,
+				SessionGroupID:            derefGroupID(apiKey.GroupID),
+				SessionKey:                sessionKey,
+				Result:                    &result,
 			})
 			if err == nil {
 				err = stageResult.Err
@@ -892,15 +886,15 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 			// 记录 Forward 前已写入字节数，Forward 后若增加则说明 SSE 内容已发，禁止 failover
 			writerSizeBeforeForward := c.Writer.Size()
-			stageResult := h.runGatewayForwardStage(c, ForwardStageAdapter{
-				Forward: func(*gin.Context) ExecutableStageResult {
-					if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
-						result, err = h.antigravityGatewayService.Forward(requestCtx, c, account, attemptBody, hasBoundSession)
-					} else {
-						result, err = h.gatewayService.Forward(requestCtx, c, account, attemptParsedReq)
-					}
-					return ExecutableStageResult{Err: err}
-				},
+			stageResult := h.runGatewayForwardStage(c, GatewayMessagesForwardStage{
+				GatewayService:            h.gatewayService,
+				AntigravityGatewayService: h.antigravityGatewayService,
+				RequestContext:            requestCtx,
+				Account:                   account,
+				ParsedRequest:             attemptParsedReq,
+				Body:                      attemptBody,
+				HasBoundSession:           hasBoundSession,
+				Result:                    &result,
 			})
 			if err == nil {
 				err = stageResult.Err

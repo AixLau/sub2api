@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -63,6 +65,86 @@ func (h *GatewayHandler) runGatewayForwardStage(c *gin.Context, adapter ForwardS
 			executableForwardStageWithContext(c, adapter),
 		},
 	}.Run(c)
+}
+
+type GatewayMessagesGeminiForwardStage struct {
+	GeminiCompatService       *service.GeminiMessagesCompatService
+	AntigravityGatewayService *service.AntigravityGatewayService
+	RequestContext            context.Context
+	Account                   *service.Account
+	Model                     string
+	Action                    string
+	Stream                    bool
+	Body                      []byte
+	HasBoundSession           bool
+	SessionGroupID            int64
+	SessionKey                string
+	Result                    **service.ForwardResult
+}
+
+func (GatewayMessagesGeminiForwardStage) StageName() string {
+	return moderationcoverage.StageForward
+}
+
+func (s GatewayMessagesGeminiForwardStage) RunForward(c *gin.Context) ExecutableStageResult {
+	ctx := s.RequestContext
+	if ctx == nil {
+		ctx = c.Request.Context()
+	}
+	var result *service.ForwardResult
+	var err error
+	if s.Account.Platform == service.PlatformAntigravity {
+		result, err = s.AntigravityGatewayService.ForwardGemini(
+			ctx,
+			c,
+			s.Account,
+			s.Model,
+			s.Action,
+			s.Stream,
+			s.Body,
+			s.HasBoundSession,
+			service.WithForwardGeminiSession(s.SessionGroupID, s.SessionKey),
+		)
+	} else {
+		result, err = s.GeminiCompatService.Forward(ctx, c, s.Account, s.Body)
+	}
+	if s.Result != nil {
+		*s.Result = result
+	}
+	return ExecutableStageResult{Err: err}
+}
+
+type GatewayMessagesForwardStage struct {
+	GatewayService            *service.GatewayService
+	AntigravityGatewayService *service.AntigravityGatewayService
+	RequestContext            context.Context
+	Account                   *service.Account
+	ParsedRequest             *service.ParsedRequest
+	Body                      []byte
+	HasBoundSession           bool
+	Result                    **service.ForwardResult
+}
+
+func (GatewayMessagesForwardStage) StageName() string {
+	return moderationcoverage.StageForward
+}
+
+func (s GatewayMessagesForwardStage) RunForward(c *gin.Context) ExecutableStageResult {
+	ctx := s.RequestContext
+	if ctx == nil {
+		ctx = c.Request.Context()
+	}
+	var result *service.ForwardResult
+	var err error
+	if s.Account.Platform == service.PlatformAntigravity && s.Account.Type != service.AccountTypeAPIKey {
+		result, err = s.AntigravityGatewayService.Forward(ctx, c, s.Account, s.Body, s.HasBoundSession)
+	} else {
+		result, err = s.GatewayService.Forward(ctx, c, s.Account, s.ParsedRequest)
+	}
+	if s.Result != nil {
+		*s.Result = result
+	}
+	return ExecutableStageResult{Err: err}
 }
 
 type GatewayCountTokensForwardStage struct {

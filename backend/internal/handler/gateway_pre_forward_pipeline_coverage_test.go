@@ -195,6 +195,47 @@ func TestGatewayMessagesUsesForwardStageAdapterForForwardAttempts(t *testing.T) 
 	}
 }
 
+func TestGatewayMessagesUsesNamedForwardStageAdapters(t *testing.T) {
+	src, err := os.ReadFile("gateway_handler.go")
+	if err != nil {
+		t.Fatalf("read gateway_handler.go: %v", err)
+	}
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, "gateway_handler.go", src, 0)
+	if err != nil {
+		t.Fatalf("parse gateway_handler.go: %v", err)
+	}
+
+	fn := gatewayHandlerFuncDecl(t, parsed, "Messages")
+	namedAdapters := map[string]bool{
+		"GatewayMessagesGeminiForwardStage": false,
+		"GatewayMessagesForwardStage":       false,
+	}
+	var anonymousForwardStageAdapterLines []int
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		lit, ok := node.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		switch name := compositeTypeName(lit.Type); name {
+		case "GatewayMessagesGeminiForwardStage", "GatewayMessagesForwardStage":
+			namedAdapters[name] = true
+		case "ForwardStageAdapter":
+			anonymousForwardStageAdapterLines = append(anonymousForwardStageAdapterLines, fset.Position(lit.Pos()).Line)
+		}
+		return true
+	})
+
+	for name, seen := range namedAdapters {
+		if !seen {
+			t.Fatalf("GatewayHandler.Messages must pass %s to runGatewayForwardStage", name)
+		}
+	}
+	if len(anonymousForwardStageAdapterLines) > 0 {
+		t.Fatalf("GatewayHandler.Messages must not wrap forwarding with anonymous ForwardStageAdapter at lines %v", anonymousForwardStageAdapterLines)
+	}
+}
+
 func TestGatewayGeminiV1BetaModelsUsesForwardStageAdapter(t *testing.T) {
 	src, err := os.ReadFile("gemini_v1beta_handler.go")
 	if err != nil {
