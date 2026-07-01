@@ -400,16 +400,11 @@ func GatewayPreForwardPipelineStagesForRoute(handlerName, protocol string) []Pip
 	}
 	var stages []PipelineStageCoverage
 	switch strings.TrimSpace(handlerName) {
-	case "GatewayHandler.Messages", "GatewayHandler.CountTokens":
+	case "GatewayHandler.Messages", "GatewayHandler.CountTokens", "GatewayHandler.GeminiV1BetaModels":
 		stages = []PipelineStageCoverage{
 			CoveredPipelineStage(StageModeration),
 			CoveredPipelineStage(StagePreForward),
 			CoveredPipelineStage(StageForward),
-		}
-	case "GatewayHandler.GeminiV1BetaModels":
-		stages = []PipelineStageCoverage{
-			CoveredPipelineStage(StageModeration),
-			CoveredPipelineStage(StagePreForward),
 		}
 	default:
 		return nil

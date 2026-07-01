@@ -2379,7 +2379,7 @@ func TestContentModerationStatusIncludesRouteCoverage(t *testing.T) {
 
 	status, err := svc.GetStatus(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, "2026-06-29.6", status.RouteCoverage.ManifestVersion)
+	require.Equal(t, "2026-06-29.7", status.RouteCoverage.ManifestVersion)
 	require.Equal(t, expectedCoverage.manifestVersion, status.RouteCoverage.ManifestVersion)
 	require.NotEmpty(t, status.RouteCoverage.ManifestHash)
 	require.Equal(t, moderationcoverage.HashFromEntries(expectedCoverage.entries), status.RouteCoverage.ManifestHash)
@@ -2644,7 +2644,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesGatewayPreForwardStage
 	require.Empty(t, status.GatewayPreForward.UncoveredRoutes)
 	requirePipelineStageSummary(t, status.GatewayPreForward.StageCoverage, moderationcoverage.StageModeration, 3, 3, []string{})
 	requirePipelineStageSummary(t, status.GatewayPreForward.StageCoverage, moderationcoverage.StagePreForward, 3, 3, []string{})
-	requirePipelineStageSummary(t, status.GatewayPreForward.StageCoverage, moderationcoverage.StageForward, 2, 2, []string{})
+	requirePipelineStageSummary(t, status.GatewayPreForward.StageCoverage, moderationcoverage.StageForward, 3, 3, []string{})
 
 	messagesRoute := requirePipelineRouteSummary(t, status.GatewayPreForward.Routes, "POST", "/v1/messages")
 	require.Equal(t, "GatewayHandler.Messages", messagesRoute.Handler)
@@ -2669,6 +2669,18 @@ func TestContentModerationPipelineCoverageStatusSummarizesGatewayPreForwardStage
 		{Stage: moderationcoverage.StagePreForward, Required: true, Covered: true},
 		{Stage: moderationcoverage.StageForward, Required: true, Covered: true},
 	}, countTokensRoute.Stages)
+
+	geminiRoute := requirePipelineRouteSummary(t, status.GatewayPreForward.Routes, "POST", "/v1beta/models/*modelAction")
+	require.Equal(t, "GatewayHandler.GeminiV1BetaModels", geminiRoute.Handler)
+	require.Equal(t, ContentModerationProtocolGemini, geminiRoute.Protocol)
+	require.Equal(t, moderationcoverage.PipelineGatewayPreForward, geminiRoute.Pipeline)
+	require.True(t, geminiRoute.Covered)
+	require.Empty(t, geminiRoute.UncoveredStages)
+	require.Equal(t, []ContentModerationPipelineRouteStageCoverageStatus{
+		{Stage: moderationcoverage.StageModeration, Required: true, Covered: true},
+		{Stage: moderationcoverage.StagePreForward, Required: true, Covered: true},
+		{Stage: moderationcoverage.StageForward, Required: true, Covered: true},
+	}, geminiRoute.Stages)
 }
 
 func TestContentModerationStatusIncludesPipelineCoverageFromRegisteredEntries(t *testing.T) {
@@ -2983,7 +2995,7 @@ func loadContentModerationGatewayCoverageForStatus(t *testing.T) struct {
 	var manifest contentModerationGatewayCoverageForStatus
 	require.NoError(t, json.Unmarshal(data, &manifest))
 	require.Equal(t, 1, manifest.SchemaVersion)
-	require.Equal(t, "2026-06-29.6", manifest.ManifestVersion)
+	require.Equal(t, "2026-06-29.7", manifest.ManifestVersion)
 
 	result := struct {
 		manifestVersion string

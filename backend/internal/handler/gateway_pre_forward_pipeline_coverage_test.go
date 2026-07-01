@@ -159,6 +159,39 @@ func TestGatewayMessagesUsesForwardStageAdapterForForwardAttempts(t *testing.T) 
 	}
 }
 
+func TestGatewayGeminiV1BetaModelsUsesForwardStageAdapter(t *testing.T) {
+	src, err := os.ReadFile("gemini_v1beta_handler.go")
+	if err != nil {
+		t.Fatalf("read gemini_v1beta_handler.go: %v", err)
+	}
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, "gemini_v1beta_handler.go", src, 0)
+	if err != nil {
+		t.Fatalf("parse gemini_v1beta_handler.go: %v", err)
+	}
+
+	fn := gatewayHandlerFuncDecl(t, parsed, "GeminiV1BetaModels")
+	hasForwardStage := false
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		if selector.Sel.Name == "runGatewayForwardStage" {
+			hasForwardStage = true
+		}
+		return true
+	})
+
+	if !hasForwardStage {
+		t.Fatalf("GatewayHandler.GeminiV1BetaModels must execute upstream forwarding through runGatewayForwardStage")
+	}
+}
+
 func gatewayHandlerFuncDecl(t *testing.T, parsed *ast.File, name string) *ast.FuncDecl {
 	t.Helper()
 	for _, decl := range parsed.Decls {

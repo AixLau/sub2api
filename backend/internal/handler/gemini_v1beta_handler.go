@@ -479,20 +479,28 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 			requestCtx = service.WithAccountSwitchCount(requestCtx, fs.SwitchCount, h.metadataBridgeEnabled())
 		}
 		sessionGroupID := derefGroupID(apiKey.GroupID)
-		if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
-			result, err = h.antigravityGatewayService.ForwardGemini(
-				requestCtx,
-				c,
-				account,
-				modelName,
-				action,
-				stream,
-				body,
-				hasBoundSession,
-				service.WithForwardGeminiSession(sessionGroupID, sessionKey),
-			)
-		} else {
-			result, err = h.geminiCompatService.ForwardNative(requestCtx, c, account, modelName, action, stream, body)
+		stageResult := h.runGatewayForwardStage(c, ForwardStageAdapter{
+			Forward: func(*gin.Context) ExecutableStageResult {
+				if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
+					result, err = h.antigravityGatewayService.ForwardGemini(
+						requestCtx,
+						c,
+						account,
+						modelName,
+						action,
+						stream,
+						body,
+						hasBoundSession,
+						service.WithForwardGeminiSession(sessionGroupID, sessionKey),
+					)
+				} else {
+					result, err = h.geminiCompatService.ForwardNative(requestCtx, c, account, modelName, action, stream, body)
+				}
+				return ExecutableStageResult{Err: err}
+			},
+		})
+		if err == nil {
+			err = stageResult.Err
 		}
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()
