@@ -269,6 +269,42 @@ func TestGatewayGeminiV1BetaModelsUsesForwardStageAdapter(t *testing.T) {
 	}
 }
 
+func TestGatewayGeminiV1BetaModelsUsesNamedForwardStageAdapter(t *testing.T) {
+	src, err := os.ReadFile("gemini_v1beta_handler.go")
+	if err != nil {
+		t.Fatalf("read gemini_v1beta_handler.go: %v", err)
+	}
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, "gemini_v1beta_handler.go", src, 0)
+	if err != nil {
+		t.Fatalf("parse gemini_v1beta_handler.go: %v", err)
+	}
+
+	fn := gatewayHandlerFuncDecl(t, parsed, "GeminiV1BetaModels")
+	hasNamedAdapter := false
+	var anonymousForwardStageAdapterLines []int
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		lit, ok := node.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		switch compositeTypeName(lit.Type) {
+		case "GatewayGeminiV1BetaForwardStage":
+			hasNamedAdapter = true
+		case "ForwardStageAdapter":
+			anonymousForwardStageAdapterLines = append(anonymousForwardStageAdapterLines, fset.Position(lit.Pos()).Line)
+		}
+		return true
+	})
+
+	if !hasNamedAdapter {
+		t.Fatalf("GatewayHandler.GeminiV1BetaModels must pass GatewayGeminiV1BetaForwardStage to runGatewayForwardStage")
+	}
+	if len(anonymousForwardStageAdapterLines) > 0 {
+		t.Fatalf("GatewayHandler.GeminiV1BetaModels must not wrap forwarding with anonymous ForwardStageAdapter at lines %v", anonymousForwardStageAdapterLines)
+	}
+}
+
 func TestGatewayMessagesAndGeminiUseUsageStageAdapter(t *testing.T) {
 	tests := []struct {
 		file     string

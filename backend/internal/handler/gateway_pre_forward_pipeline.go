@@ -147,6 +147,53 @@ func (s GatewayMessagesForwardStage) RunForward(c *gin.Context) ExecutableStageR
 	return ExecutableStageResult{Err: err}
 }
 
+type GatewayGeminiV1BetaForwardStage struct {
+	GeminiCompatService       *service.GeminiMessagesCompatService
+	AntigravityGatewayService *service.AntigravityGatewayService
+	RequestContext            context.Context
+	Account                   *service.Account
+	Model                     string
+	Action                    string
+	Stream                    bool
+	Body                      []byte
+	HasBoundSession           bool
+	SessionGroupID            int64
+	SessionKey                string
+	Result                    **service.ForwardResult
+}
+
+func (GatewayGeminiV1BetaForwardStage) StageName() string {
+	return moderationcoverage.StageForward
+}
+
+func (s GatewayGeminiV1BetaForwardStage) RunForward(c *gin.Context) ExecutableStageResult {
+	ctx := s.RequestContext
+	if ctx == nil {
+		ctx = c.Request.Context()
+	}
+	var result *service.ForwardResult
+	var err error
+	if s.Account.Platform == service.PlatformAntigravity && s.Account.Type != service.AccountTypeAPIKey {
+		result, err = s.AntigravityGatewayService.ForwardGemini(
+			ctx,
+			c,
+			s.Account,
+			s.Model,
+			s.Action,
+			s.Stream,
+			s.Body,
+			s.HasBoundSession,
+			service.WithForwardGeminiSession(s.SessionGroupID, s.SessionKey),
+		)
+	} else {
+		result, err = s.GeminiCompatService.ForwardNative(ctx, c, s.Account, s.Model, s.Action, s.Stream, s.Body)
+	}
+	if s.Result != nil {
+		*s.Result = result
+	}
+	return ExecutableStageResult{Err: err}
+}
+
 type GatewayCountTokensForwardStage struct {
 	GatewayService *service.GatewayService
 	Account        *service.Account
