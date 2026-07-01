@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	coderws "github.com/coder/websocket"
@@ -237,6 +238,74 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPUsageStage(c *gin.Context, adapter U
 			executableUsageStageWithContext(c, adapter),
 		},
 	}.Run(c)
+}
+
+type OpenAIHTTPUsageStage struct {
+	Handler            *OpenAIGatewayHandler
+	RequestContext     context.Context
+	Result             *service.OpenAIForwardResult
+	APIKey             *service.APIKey
+	Account            *service.Account
+	Subscription       *service.UserSubscription
+	InboundEndpoint    string
+	UpstreamEndpoint   string
+	UserAgent          string
+	ClientIP           string
+	RequestPayloadHash string
+	ChannelUsageFields service.ChannelUsageFields
+	CyberBlocked       bool
+	Mandatory          bool
+	LogComponent       string
+	LogMessage         string
+	LogUserID          int64
+	LogModel           string
+}
+
+func (OpenAIHTTPUsageStage) StageName() string {
+	return moderationcoverage.StageUsage
+}
+
+func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
+	h := s.Handler
+	if h == nil {
+		return ExecutableStageResult{}
+	}
+	ctx := s.RequestContext
+	if ctx == nil {
+		ctx = c.Request.Context()
+	}
+	record := func(taskCtx context.Context) {
+		if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
+			Result:             s.Result,
+			APIKey:             s.APIKey,
+			User:               s.APIKey.User,
+			Account:            s.Account,
+			Subscription:       s.Subscription,
+			InboundEndpoint:    s.InboundEndpoint,
+			UpstreamEndpoint:   s.UpstreamEndpoint,
+			UserAgent:          s.UserAgent,
+			IPAddress:          s.ClientIP,
+			RequestPayloadHash: s.RequestPayloadHash,
+			APIKeyService:      h.apiKeyService,
+			ChannelUsageFields: s.ChannelUsageFields,
+			CyberBlocked:       s.CyberBlocked,
+		}); err != nil {
+			logger.L().With(
+				zap.String("component", s.LogComponent),
+				zap.Int64("user_id", s.LogUserID),
+				zap.Int64("api_key_id", s.APIKey.ID),
+				zap.Any("group_id", s.APIKey.GroupID),
+				zap.String("model", s.LogModel),
+				zap.Int64("account_id", s.Account.ID),
+			).Error(s.LogMessage, zap.Error(err))
+		}
+	}
+	if s.Mandatory {
+		h.submitMandatoryUsageRecordTask(ctx, record)
+		return ExecutableStageResult{}
+	}
+	h.submitOpenAIUsageRecordTask(ctx, s.Result, record)
+	return ExecutableStageResult{}
 }
 
 func openAIHTTPExecutablePipeline(stages []openAIHTTPExecutableStage) GatewayPipeline {

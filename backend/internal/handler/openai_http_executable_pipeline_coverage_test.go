@@ -56,6 +56,7 @@ func TestOpenAIHTTPHandlersUseUsageStageAdapter(t *testing.T) {
 	}{
 		{file: "openai_chat_completions.go", handler: "ChatCompletions"},
 		{file: "openai_gateway_handler.go", handler: "Responses"},
+		{file: "openai_gateway_handler.go", handler: "Messages"},
 		{file: "openai_images.go", handler: "Images"},
 		{file: "openai_embeddings.go", handler: "Embeddings"},
 	}
@@ -67,6 +68,50 @@ func TestOpenAIHTTPHandlersUseUsageStageAdapter(t *testing.T) {
 			calls := openAIHTTPExecutableStageCalls(t, tt.file, tt.handler)
 			require.NotContains(t, calls, "moderationcoverage.StageUsage",
 				"%s.%s must not wrap usage with runOpenAIHTTPExecutableStage", tt.file, tt.handler)
+		})
+	}
+}
+
+func TestOpenAIHTTPHandlersUseNamedUsageStageAdapter(t *testing.T) {
+	tests := []struct {
+		file    string
+		handler string
+	}{
+		{file: "openai_chat_completions.go", handler: "ChatCompletions"},
+		{file: "openai_gateway_handler.go", handler: "Responses"},
+		{file: "openai_gateway_handler.go", handler: "Messages"},
+		{file: "openai_images.go", handler: "Images"},
+		{file: "openai_embeddings.go", handler: "Embeddings"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.handler, func(t *testing.T) {
+			src, err := os.ReadFile(tt.file)
+			require.NoError(t, err)
+
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, tt.file, src, 0)
+			require.NoError(t, err)
+
+			fn := openAIHTTPHandlerFuncDecl(t, file, tt.handler)
+			hasNamedAdapter := false
+			var anonymousUsageStageAdapterLines []int
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				lit, ok := node.(*ast.CompositeLit)
+				if !ok {
+					return true
+				}
+				switch compositeTypeName(lit.Type) {
+				case "OpenAIHTTPUsageStage":
+					hasNamedAdapter = true
+				case "UsageStageAdapter":
+					anonymousUsageStageAdapterLines = append(anonymousUsageStageAdapterLines, fset.Position(lit.Pos()).Line)
+				}
+				return true
+			})
+
+			require.True(t, hasNamedAdapter, "%s.%s must pass OpenAIHTTPUsageStage to runOpenAIHTTPUsageStage", tt.file, tt.handler)
+			require.Empty(t, anonymousUsageStageAdapterLines, "%s.%s must not wrap usage with anonymous UsageStageAdapter at lines %v", tt.file, tt.handler, anonymousUsageStageAdapterLines)
 		})
 	}
 }

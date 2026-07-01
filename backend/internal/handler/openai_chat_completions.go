@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -9,7 +8,6 @@ import (
 
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -342,35 +340,23 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account)
 
 		cyberBlocked := service.GetOpsCyberPolicy(c) != nil
-		_ = h.runOpenAIHTTPUsageStage(c, UsageStageAdapter{
-			Usage: func(*gin.Context) ExecutableStageResult {
-				h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
-					if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
-						Result:             result,
-						APIKey:             apiKey,
-						User:               apiKey.User,
-						Account:            account,
-						Subscription:       subscription,
-						InboundEndpoint:    inboundEndpoint,
-						UpstreamEndpoint:   upstreamEndpoint,
-						UserAgent:          userAgent,
-						IPAddress:          clientIP,
-						APIKeyService:      h.apiKeyService,
-						ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
-						CyberBlocked:       cyberBlocked,
-					}); err != nil {
-						logger.L().With(
-							zap.String("component", "handler.openai_gateway.chat_completions"),
-							zap.Int64("user_id", subject.UserID),
-							zap.Int64("api_key_id", apiKey.ID),
-							zap.Any("group_id", apiKey.GroupID),
-							zap.String("model", reqModel),
-							zap.Int64("account_id", account.ID),
-						).Error("openai_chat_completions.record_usage_failed", zap.Error(err))
-					}
-				})
-				return ExecutableStageResult{}
-			},
+		_ = h.runOpenAIHTTPUsageStage(c, OpenAIHTTPUsageStage{
+			Handler:            h,
+			RequestContext:     c.Request.Context(),
+			Result:             result,
+			APIKey:             apiKey,
+			Account:            account,
+			Subscription:       subscription,
+			InboundEndpoint:    inboundEndpoint,
+			UpstreamEndpoint:   upstreamEndpoint,
+			UserAgent:          userAgent,
+			ClientIP:           clientIP,
+			ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+			CyberBlocked:       cyberBlocked,
+			LogComponent:       "handler.openai_gateway.chat_completions",
+			LogMessage:         "openai_chat_completions.record_usage_failed",
+			LogUserID:          subject.UserID,
+			LogModel:           reqModel,
 		})
 		reqLog.Debug("openai_chat_completions.request_completed",
 			zap.Int64("account_id", account.ID),

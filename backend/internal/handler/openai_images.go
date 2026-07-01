@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -10,7 +9,6 @@ import (
 
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -388,35 +386,24 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		if result != nil {
 			upstreamModel = result.UpstreamModel
 		}
-		_ = h.runOpenAIHTTPUsageStage(c, UsageStageAdapter{
-			Usage: func(*gin.Context) ExecutableStageResult {
-				h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
-					if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
-						Result:             result,
-						APIKey:             apiKey,
-						User:               apiKey.User,
-						Account:            account,
-						Subscription:       subscription,
-						InboundEndpoint:    inboundEndpoint,
-						UpstreamEndpoint:   upstreamEndpoint,
-						UserAgent:          userAgent,
-						IPAddress:          clientIP,
-						RequestPayloadHash: requestPayloadHash,
-						APIKeyService:      h.apiKeyService,
-						ChannelUsageFields: channelMapping.ToUsageFields(requestModel, upstreamModel),
-					}); err != nil {
-						logger.L().With(
-							zap.String("component", "handler.openai_gateway.images"),
-							zap.Int64("user_id", subject.UserID),
-							zap.Int64("api_key_id", apiKey.ID),
-							zap.Any("group_id", apiKey.GroupID),
-							zap.String("model", requestModel),
-							zap.Int64("account_id", account.ID),
-						).Error("openai.images.record_usage_failed", zap.Error(err))
-					}
-				})
-				return ExecutableStageResult{}
-			},
+		_ = h.runOpenAIHTTPUsageStage(c, OpenAIHTTPUsageStage{
+			Handler:            h,
+			RequestContext:     c.Request.Context(),
+			Result:             result,
+			APIKey:             apiKey,
+			Account:            account,
+			Subscription:       subscription,
+			InboundEndpoint:    inboundEndpoint,
+			UpstreamEndpoint:   upstreamEndpoint,
+			UserAgent:          userAgent,
+			ClientIP:           clientIP,
+			RequestPayloadHash: requestPayloadHash,
+			ChannelUsageFields: channelMapping.ToUsageFields(requestModel, upstreamModel),
+			Mandatory:          true,
+			LogComponent:       "handler.openai_gateway.images",
+			LogMessage:         "openai.images.record_usage_failed",
+			LogUserID:          subject.UserID,
+			LogModel:           requestModel,
 		})
 
 		reqLog.Debug("openai.images.request_completed",
