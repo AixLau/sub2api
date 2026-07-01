@@ -65,6 +65,25 @@ func (h *GatewayHandler) runGatewayForwardStage(c *gin.Context, adapter ForwardS
 	}.Run(c)
 }
 
+type GatewayCountTokensForwardStage struct {
+	GatewayService *service.GatewayService
+	Account        *service.Account
+	ParsedRequest  *service.ParsedRequest
+}
+
+func (GatewayCountTokensForwardStage) StageName() string {
+	return moderationcoverage.StageForward
+}
+
+func (s GatewayCountTokensForwardStage) RunForward(c *gin.Context) ExecutableStageResult {
+	if s.GatewayService == nil {
+		return ExecutableStageResult{}
+	}
+	return ExecutableStageResult{
+		Err: s.GatewayService.ForwardCountTokens(c.Request.Context(), c, s.Account, s.ParsedRequest),
+	}
+}
+
 func (h *GatewayHandler) runGatewayBillingStage(c *gin.Context, run func() ExecutableStageResult) ExecutableStageResult {
 	return GatewayPipeline{
 		Pipeline: moderationcoverage.PipelineGatewayPreForward,

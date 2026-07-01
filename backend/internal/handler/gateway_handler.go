@@ -1954,16 +1954,12 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 	setOpsSelectedAccount(c, account.ID, account.Platform)
 
 	// 转发请求（不记录使用量）
-	var forwardErr error
-	stageResult := h.runGatewayForwardStage(c, ForwardStageAdapter{
-		Forward: func(*gin.Context) ExecutableStageResult {
-			forwardErr = h.gatewayService.ForwardCountTokens(c.Request.Context(), c, account, parsedReq)
-			return ExecutableStageResult{Err: forwardErr}
-		},
+	stageResult := h.runGatewayForwardStage(c, GatewayCountTokensForwardStage{
+		GatewayService: h.gatewayService,
+		Account:        account,
+		ParsedRequest:  parsedReq,
 	})
-	if forwardErr == nil {
-		forwardErr = stageResult.Err
-	}
+	forwardErr := stageResult.Err
 	if forwardErr != nil {
 		reqLog.Error("gateway.count_tokens_forward_failed", zap.Int64("account_id", account.ID), zap.Error(forwardErr))
 		// 错误响应已在 ForwardCountTokens 中处理

@@ -126,6 +126,42 @@ func TestGatewayCountTokensUsesForwardStageAdapter(t *testing.T) {
 	}
 }
 
+func TestGatewayCountTokensUsesNamedForwardStageAdapter(t *testing.T) {
+	src, err := os.ReadFile("gateway_handler.go")
+	if err != nil {
+		t.Fatalf("read gateway_handler.go: %v", err)
+	}
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, "gateway_handler.go", src, 0)
+	if err != nil {
+		t.Fatalf("parse gateway_handler.go: %v", err)
+	}
+
+	fn := gatewayHandlerFuncDecl(t, parsed, "CountTokens")
+	hasNamedAdapter := false
+	hasAnonymousForwardStageAdapter := false
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		lit, ok := node.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		switch compositeTypeName(lit.Type) {
+		case "GatewayCountTokensForwardStage":
+			hasNamedAdapter = true
+		case "ForwardStageAdapter":
+			hasAnonymousForwardStageAdapter = true
+		}
+		return true
+	})
+
+	if !hasNamedAdapter {
+		t.Fatalf("GatewayHandler.CountTokens must pass GatewayCountTokensForwardStage to runGatewayForwardStage")
+	}
+	if hasAnonymousForwardStageAdapter {
+		t.Fatalf("GatewayHandler.CountTokens must not wrap forwarding with anonymous ForwardStageAdapter")
+	}
+}
+
 func TestGatewayMessagesUsesForwardStageAdapterForForwardAttempts(t *testing.T) {
 	src, err := os.ReadFile("gateway_handler.go")
 	if err != nil {
@@ -343,4 +379,15 @@ func gatewayHandlerFuncDecl(t *testing.T, parsed *ast.File, name string) *ast.Fu
 	}
 	t.Fatalf("missing GatewayHandler.%s", name)
 	return nil
+}
+
+func compositeTypeName(expr ast.Expr) string {
+	switch typ := expr.(type) {
+	case *ast.Ident:
+		return typ.Name
+	case *ast.SelectorExpr:
+		return typ.Sel.Name
+	default:
+		return ""
+	}
 }
