@@ -41,7 +41,6 @@ const (
 	SourceOpenAIWebSocketFollowupFrame   = "OpenAIGatewayPipeline.RunWebSocketFollowupFrame"
 	SourceOpenAIWebSocketExecutableStage = "OpenAIGatewayPipeline.RunWebSocketExecutableStage"
 	SourceGatewayPreForward              = "GatewayPreForwardPipeline.Run"
-	SourceModeratedRouteRegistrar        = "ModeratedRouteRegistrar.BindPipeline"
 )
 
 type PipelineStageCoverage struct {

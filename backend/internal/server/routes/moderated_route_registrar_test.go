@@ -95,11 +95,20 @@ func TestModeratedRouteRegistrarInjectsRuntimeRouteMetaBeforeHandlers(t *testing
 	tests := []struct {
 		name     string
 		method   string
+		meta     ModeratedRouteMeta
 		register func(*ModeratedRouteRegistrar, string, ModeratedRouteMeta, ...gin.HandlerFunc) gin.IRoutes
 	}{
 		{
 			name:   "GET",
 			method: http.MethodGet,
+			meta: ModeratedRouteMeta{
+				Path:               " /runtime-meta ",
+				Handler:            " OpenAIGatewayHandler.ResponsesWebSocket ",
+				Upstream:           true,
+				ModerationRequired: true,
+				Protocol:           " openai_responses ",
+				Status:             moderationcoverage.StatusCovered,
+			},
 			register: func(registrar *ModeratedRouteRegistrar, path string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
 				return registrar.GET(path, meta, handlers...)
 			},
@@ -107,6 +116,14 @@ func TestModeratedRouteRegistrarInjectsRuntimeRouteMetaBeforeHandlers(t *testing
 		{
 			name:   "POST",
 			method: http.MethodPost,
+			meta: ModeratedRouteMeta{
+				Path:               " /runtime-meta ",
+				Handler:            " OpenAIGatewayHandler.Responses ",
+				Upstream:           true,
+				ModerationRequired: true,
+				Protocol:           " openai_responses ",
+				Status:             moderationcoverage.StatusCovered,
+			},
 			register: func(registrar *ModeratedRouteRegistrar, path string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
 				return registrar.POST(path, meta, handlers...)
 			},
@@ -114,6 +131,11 @@ func TestModeratedRouteRegistrarInjectsRuntimeRouteMetaBeforeHandlers(t *testing
 		{
 			name:   "GETNoAudit",
 			method: http.MethodGet,
+			meta: intentionalNoAuditRoute(
+				" /runtime-meta ",
+				" NoAuditHandler ",
+				"test route",
+			),
 			register: func(registrar *ModeratedRouteRegistrar, path string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
 				return registrar.GETNoAudit(path, meta, handlers...)
 			},
@@ -129,15 +151,11 @@ func TestModeratedRouteRegistrarInjectsRuntimeRouteMetaBeforeHandlers(t *testing
 			registrar := NewModeratedRouteRegistrar(router)
 			var runtimeMeta moderationcoverage.Entry
 			var ok bool
-			tt.register(registrar, "/runtime-meta", ModeratedRouteMeta{
-				Path:               " /runtime-meta ",
-				Handler:            " OpenAIGatewayHandler.Responses ",
-				Upstream:           true,
-				ModerationRequired: true,
-				Protocol:           " openai_responses ",
-				Status:             moderationcoverage.StatusCovered,
-			}, func(c *gin.Context) {
+			tt.register(registrar, "/runtime-meta", tt.meta, func(c *gin.Context) {
 				runtimeMeta, ok = moderationcoverage.RouteMetaFromContext(c)
+				if runtimeMeta.Pipeline != "" {
+					moderationcoverage.MarkPipelineAdmitted(c, runtimeMeta.Pipeline, moderationcoverage.StagePreForward, "test pipeline")
+				}
 				c.Status(http.StatusNoContent)
 			})
 
@@ -149,46 +167,93 @@ func TestModeratedRouteRegistrarInjectsRuntimeRouteMetaBeforeHandlers(t *testing
 			require.True(t, ok)
 			require.Equal(t, tt.method, runtimeMeta.Method)
 			require.Equal(t, "/runtime-meta", runtimeMeta.Path)
-			require.Equal(t, "OpenAIGatewayHandler.Responses", runtimeMeta.Handler)
-			require.Equal(t, "openai_responses", runtimeMeta.Protocol)
-			require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, runtimeMeta.Pipeline)
-			requireStageRequiredAndCovered(t, runtimeMeta, moderationcoverage.StageModeration)
-			requireStageRequiredAndCovered(t, runtimeMeta, moderationcoverage.StageCyber)
-			requireStageRequiredAndCovered(t, runtimeMeta, moderationcoverage.StageImage)
+			if tt.name == "GETNoAudit" {
+				require.Equal(t, "NoAuditHandler", runtimeMeta.Handler)
+				require.Empty(t, runtimeMeta.Protocol)
+				require.Empty(t, runtimeMeta.Pipeline)
+			} else if tt.method == http.MethodGet {
+				require.Equal(t, "OpenAIGatewayHandler.ResponsesWebSocket", runtimeMeta.Handler)
+				require.Equal(t, "openai_responses", runtimeMeta.Protocol)
+				require.Equal(t, moderationcoverage.PipelineOpenAIWebSocket, runtimeMeta.Pipeline)
+			} else {
+				require.Equal(t, "OpenAIGatewayHandler.Responses", runtimeMeta.Handler)
+				require.Equal(t, "openai_responses", runtimeMeta.Protocol)
+				require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, runtimeMeta.Pipeline)
+				requireStageRequiredAndCovered(t, runtimeMeta, moderationcoverage.StageModeration)
+				requireStageRequiredAndCovered(t, runtimeMeta, moderationcoverage.StageCyber)
+				requireStageRequiredAndCovered(t, runtimeMeta, moderationcoverage.StageImage)
+			}
 		})
 	}
 }
 
-func TestModeratedRouteRegistrarBindsPipelineAdmissionBeforeHandlers(t *testing.T) {
+func TestModeratedRouteRegistrarRequiresPipelineAdmissionBeforeSuccessfulResponse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	restore := replaceModeratedRouteRegistryForTest(nil)
 	defer restore()
 
 	router := gin.New()
 	registrar := NewModeratedRouteRegistrar(router)
-	var admission moderationcoverage.PipelineAdmission
-	var admitted bool
+	var admittedBeforeHandler bool
 
-	registrar.POST("/pipeline-admission", coveredOpenAIHTTPRoute(
-		"/pipeline-admission",
+	registrar.POST("/pipeline-admission-required", coveredOpenAIHTTPRoute(
+		"/pipeline-admission-required",
 		"OpenAIGatewayHandler.Responses",
 		"openai_responses",
 		"test route",
 	), func(c *gin.Context) {
-		admission, admitted = moderationcoverage.PipelineAdmissionFromContext(c)
+		admittedBeforeHandler = moderationcoverage.PipelineAdmittedFromContext(c)
 		c.Status(http.StatusNoContent)
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/pipeline-admission", nil)
+	req := httptest.NewRequest(http.MethodPost, "/pipeline-admission-required", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.False(t, admittedBeforeHandler)
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Contains(t, rec.Body.String(), "pipeline_admission_missing")
+}
+
+func TestModeratedRouteRegistrarPreservesPipelineAdmissionFromHandlerPipeline(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
+
+	router := gin.New()
+	registrar := NewModeratedRouteRegistrar(router)
+	var admittedBeforeHandler bool
+	var admissionAfterPipeline moderationcoverage.PipelineAdmission
+	var admittedAfterPipeline bool
+
+	registrar.POST("/pipeline-admitted", coveredOpenAIHTTPRoute(
+		"/pipeline-admitted",
+		"OpenAIGatewayHandler.Responses",
+		"openai_responses",
+		"test route",
+	), func(c *gin.Context) {
+		admittedBeforeHandler = moderationcoverage.PipelineAdmittedFromContext(c)
+		moderationcoverage.MarkPipelineAdmitted(
+			c,
+			moderationcoverage.PipelineOpenAIHTTP,
+			moderationcoverage.StagePreForward,
+			moderationcoverage.SourceOpenAIHTTPPreForward,
+		)
+		admissionAfterPipeline, admittedAfterPipeline = moderationcoverage.PipelineAdmissionFromContext(c)
+		c.Status(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/pipeline-admitted", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
-	require.True(t, admitted)
-	require.True(t, admission.Admitted)
-	require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, admission.Pipeline)
-	require.Equal(t, moderationcoverage.StagePreForward, admission.Stage)
-	require.Equal(t, moderationcoverage.SourceModeratedRouteRegistrar, admission.Source)
+	require.False(t, admittedBeforeHandler)
+	require.True(t, admittedAfterPipeline)
+	require.True(t, admissionAfterPipeline.Admitted)
+	require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, admissionAfterPipeline.Pipeline)
+	require.Equal(t, moderationcoverage.StagePreForward, admissionAfterPipeline.Stage)
+	require.Equal(t, moderationcoverage.SourceOpenAIHTTPPreForward, admissionAfterPipeline.Source)
 }
 
 func TestModeratedRouteRegistrarDoesNotBindPipelineAdmissionForNoAuditRoutes(t *testing.T) {

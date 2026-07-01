@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"net/http"
+
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/gin-gonic/gin"
 )
@@ -58,23 +60,30 @@ func prependModeratedRouteMetaHandler(meta ModeratedRouteMeta, handlers []gin.Ha
 	prepended := make([]gin.HandlerFunc, 0, len(handlers)+1)
 	prepended = append(prepended, func(c *gin.Context) {
 		moderationcoverage.SetRouteMeta(c, meta)
-		bindModeratedRoutePipeline(c, meta)
+		c.Next()
+		enforceModeratedRoutePipelineAdmission(c, meta)
 	})
 	prepended = append(prepended, handlers...)
 	return prepended
 }
 
-func bindModeratedRoutePipeline(c *gin.Context, meta ModeratedRouteMeta) {
+func enforceModeratedRoutePipelineAdmission(c *gin.Context, meta ModeratedRouteMeta) {
 	meta = moderationcoverage.NormalizeEntry(meta)
 	if !meta.Upstream || !meta.ModerationRequired || meta.Pipeline == "" {
 		return
 	}
-	moderationcoverage.MarkPipelineAdmitted(
-		c,
-		meta.Pipeline,
-		moderationcoverage.StagePreForward,
-		moderationcoverage.SourceModeratedRouteRegistrar,
-	)
+	if c.Writer.Status() >= http.StatusBadRequest {
+		return
+	}
+	admission, ok := moderationcoverage.PipelineAdmissionFromContext(c)
+	if ok && admission.Admitted && admission.Pipeline == meta.Pipeline {
+		return
+	}
+	if !c.Writer.Written() {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"error": "pipeline_admission_missing",
+		})
+	}
 }
 
 func coveredModeratedRoute(path, handlerName, protocol, reviewReason string) ModeratedRouteMeta {
