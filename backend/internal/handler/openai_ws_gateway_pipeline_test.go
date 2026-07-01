@@ -162,6 +162,98 @@ func TestOpenAIWebSocketPipelineMarksAdmissionWhenStagesAllow(t *testing.T) {
 	}
 }
 
+func TestOpenAIWebSocketPipelineRecordsPreForwardStageExecution(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name       string
+		source     string
+		run        func(*OpenAIGatewayPipeline, *OpenAIGatewayHandler, *gin.Context, *zap.Logger, openAIWebSocketPipelineInput) openAIWebSocketPipelineResult
+		configure  func(*OpenAIGatewayPipeline)
+		wantStages []string
+	}{
+		{
+			name:   "initial frame",
+			source: moderationcoverage.SourceOpenAIWebSocketInitialFrame,
+			run:    (*OpenAIGatewayPipeline).RunWebSocketInitialFrame,
+			configure: func(p *OpenAIGatewayPipeline) {
+				p.wsInitialFrameStages = []openAIWebSocketGatewayStage{
+					openAIWebSocketGatewayPipelineTestStage{name: "moderation", run: func(*openAIWebSocketGatewayStageContext) openAIWebSocketGatewayStageResult {
+						return openAIWebSocketGatewayStageResult{}
+					}},
+					openAIWebSocketGatewayPipelineTestStage{name: "image_permission", run: func(*openAIWebSocketGatewayStageContext) openAIWebSocketGatewayStageResult {
+						return openAIWebSocketGatewayStageResult{}
+					}},
+					openAIWebSocketGatewayPipelineTestStage{name: "cyber", run: func(*openAIWebSocketGatewayStageContext) openAIWebSocketGatewayStageResult {
+						return openAIWebSocketGatewayStageResult{}
+					}},
+				}
+			},
+			wantStages: []string{
+				moderationcoverage.StageModeration,
+				moderationcoverage.StageCyber,
+				moderationcoverage.StageImage,
+				moderationcoverage.StagePreForward,
+			},
+		},
+		{
+			name:   "followup frame",
+			source: moderationcoverage.SourceOpenAIWebSocketFollowupFrame,
+			run:    (*OpenAIGatewayPipeline).RunWebSocketFollowupFrame,
+			configure: func(p *OpenAIGatewayPipeline) {
+				p.wsFollowupFrameStages = []openAIWebSocketGatewayStage{
+					openAIWebSocketGatewayPipelineTestStage{name: "moderation", run: func(*openAIWebSocketGatewayStageContext) openAIWebSocketGatewayStageResult {
+						return openAIWebSocketGatewayStageResult{}
+					}},
+				}
+			},
+			wantStages: []string{
+				moderationcoverage.StageModeration,
+				moderationcoverage.StagePreForward,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pipeline := &OpenAIGatewayPipeline{}
+			tt.configure(pipeline)
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+			moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+				Method:             http.MethodGet,
+				Path:               "/v1/responses",
+				Handler:            "OpenAIGatewayHandler.ResponsesWebSocket",
+				Upstream:           true,
+				ModerationRequired: true,
+				Protocol:           service.ContentModerationProtocolOpenAIResponses,
+				Pipeline:           moderationcoverage.PipelineOpenAIWebSocket,
+				Status:             moderationcoverage.StatusCovered,
+			})
+
+			result := tt.run(pipeline, &OpenAIGatewayHandler{}, c, zap.NewNop(), openAIWebSocketPipelineInput{
+				APIKey:  &service.APIKey{ID: 9, Group: &service.Group{AllowImageGeneration: true}},
+				Model:   "gpt-5.1",
+				Body:    []byte(`{"model":"gpt-5.1","input":"hello"}`),
+				Subject: middleware.AuthSubject{UserID: 44, Concurrency: 1},
+			})
+
+			require.False(t, result.Blocked)
+			executions := moderationcoverage.PipelineStageExecutionsFromContext(c)
+			require.Len(t, executions, len(tt.wantStages))
+			for i, stage := range tt.wantStages {
+				require.Equal(t, moderationcoverage.PipelineOpenAIWebSocket, executions[i].Pipeline)
+				require.Equal(t, stage, executions[i].Stage)
+				require.Equal(t, tt.source, executions[i].Source)
+				require.Equal(t, http.MethodGet, executions[i].Method)
+				require.Equal(t, "/v1/responses", executions[i].Path)
+				require.Equal(t, "OpenAIGatewayHandler.ResponsesWebSocket", executions[i].Handler)
+				require.Equal(t, service.ContentModerationProtocolOpenAIResponses, executions[i].Protocol)
+			}
+		})
+	}
+}
+
 func openAIWebSocketGatewayStageNames(stages []openAIWebSocketGatewayStage) []string {
 	names := make([]string, 0, len(stages))
 	for _, stage := range stages {

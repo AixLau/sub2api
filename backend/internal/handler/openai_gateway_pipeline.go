@@ -417,23 +417,67 @@ func (p *OpenAIGatewayPipeline) runWebSocketStages(h *OpenAIGatewayHandler, c *g
 		input:    input,
 	}
 	result := openAIWebSocketPipelineResult{}
+	executableResult := GatewayPipeline{
+		Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
+		Source:   source,
+		Stages:   openAIWebSocketExecutableStages(ctx, stages, source, &result),
+	}.Run(c)
+	if executableResult.Stop || executableResult.Err != nil {
+		return result
+	}
+	return result
+}
+
+func openAIWebSocketExecutableStages(ctx *openAIWebSocketGatewayStageContext, stages []openAIWebSocketGatewayStage, source string, result *openAIWebSocketPipelineResult) []ExecutableStage {
+	executableStages := make([]ExecutableStage, 0, len(stages)+1)
 	for _, stage := range stages {
 		if stage == nil {
 			continue
 		}
-		stageResult := stage.Run(ctx).Result
-		if stageResult.CyberBlockKey != "" {
-			result.CyberBlockKey = stageResult.CyberBlockKey
-		}
-		if stageResult.Blocked {
-			if stageResult.CyberBlockKey == "" {
-				stageResult.CyberBlockKey = result.CyberBlockKey
-			}
-			return stageResult
-		}
+		stage := stage
+		executableStages = append(executableStages, ExecutableStage{
+			Name: openAIWebSocketExecutableStageName(stage.Name()),
+			Run: func() ExecutableStageResult {
+				stageResult := stage.Run(ctx).Result
+				if result != nil && stageResult.CyberBlockKey != "" {
+					result.CyberBlockKey = stageResult.CyberBlockKey
+				}
+				if stageResult.Blocked {
+					if result != nil && stageResult.CyberBlockKey == "" {
+						stageResult.CyberBlockKey = result.CyberBlockKey
+					}
+					if result != nil {
+						*result = stageResult
+					}
+					return ExecutableStageResult{Stop: true}
+				}
+				return ExecutableStageResult{}
+			},
+		})
 	}
-	moderationcoverage.MarkPipelineAdmitted(c, moderationcoverage.PipelineOpenAIWebSocket, moderationcoverage.StagePreForward, source)
-	return result
+	executableStages = append(executableStages, ExecutableStage{
+		Name: moderationcoverage.StagePreForward,
+		Run: func() ExecutableStageResult {
+			if ctx != nil {
+				moderationcoverage.MarkPipelineAdmitted(ctx.c, moderationcoverage.PipelineOpenAIWebSocket, moderationcoverage.StagePreForward, source)
+			}
+			return ExecutableStageResult{}
+		},
+	})
+	return executableStages
+}
+
+func openAIWebSocketExecutableStageName(stage string) string {
+	switch stage {
+	case "moderation":
+		return moderationcoverage.StageModeration
+	case "image_permission":
+		return moderationcoverage.StageImage
+	case "cyber":
+		return moderationcoverage.StageCyber
+	default:
+		return moderationcoverage.NormalizeStage(stage)
+	}
 }
 
 func (p *OpenAIGatewayPipeline) webSocketInitialFramePipelineStages(input openAIWebSocketPipelineInput) []openAIWebSocketGatewayStage {
