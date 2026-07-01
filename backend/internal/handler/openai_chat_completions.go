@@ -233,20 +233,17 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		var writerSizeBeforeForward int
 		var result *service.OpenAIForwardResult
 		var err error
-		_ = h.runOpenAIHTTPForwardStage(c, ForwardStageAdapter{
-			Forward: func(*gin.Context) ExecutableStageResult {
-				writerSizeBeforeForward = c.Writer.Size()
-				result, err = func() (*service.OpenAIForwardResult, error) {
-					defer func() {
-						if accountReleaseFunc != nil {
-							accountReleaseFunc()
-						}
-					}()
-					return h.gatewayService.ForwardAsChatCompletions(c.Request.Context(), c, account, forwardBody, promptCacheKey, "")
-				}()
-				return ExecutableStageResult{Err: err}
-			},
+		stageResult := h.runOpenAIHTTPForwardStage(c, OpenAIHTTPForwardStage{
+			GatewayService:          h.gatewayService,
+			Kind:                    OpenAIHTTPForwardChatCompletions,
+			Account:                 account,
+			Body:                    forwardBody,
+			PromptCacheKey:          promptCacheKey,
+			ReleaseFunc:             accountReleaseFunc,
+			WriterSizeBeforeForward: &writerSizeBeforeForward,
+			Result:                  &result,
 		})
+		err = stageResult.Err
 		cyberBlockKeyChat := ""
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockKeyChat = service.CyberSessionBlockKey(apiKey.ID, c, body)

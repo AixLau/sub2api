@@ -435,20 +435,16 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		var writerSizeBeforeForward int
 		var result *service.OpenAIForwardResult
 		var err error
-		_ = h.runOpenAIHTTPForwardStage(c, ForwardStageAdapter{
-			Forward: func(*gin.Context) ExecutableStageResult {
-				writerSizeBeforeForward = c.Writer.Size()
-				result, err = func() (*service.OpenAIForwardResult, error) {
-					defer func() {
-						if accountReleaseFunc != nil {
-							accountReleaseFunc()
-						}
-					}()
-					return h.gatewayService.Forward(c.Request.Context(), c, account, forwardBody)
-				}()
-				return ExecutableStageResult{Err: err}
-			},
+		stageResult := h.runOpenAIHTTPForwardStage(c, OpenAIHTTPForwardStage{
+			GatewayService:          h.gatewayService,
+			Kind:                    OpenAIHTTPForwardResponses,
+			Account:                 account,
+			Body:                    forwardBody,
+			ReleaseFunc:             accountReleaseFunc,
+			WriterSizeBeforeForward: &writerSizeBeforeForward,
+			Result:                  &result,
 		})
+		err = stageResult.Err
 		cyberBlockKeyHTTP := ""
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockKeyHTTP = service.CyberSessionBlockKey(apiKey.ID, c, sessionHashBody)

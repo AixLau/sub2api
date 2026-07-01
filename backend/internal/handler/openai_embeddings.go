@@ -210,20 +210,16 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		var writerSizeBeforeForward int
 		var result *service.OpenAIForwardResult
 		var err error
-		_ = h.runOpenAIHTTPForwardStage(c, ForwardStageAdapter{
-			Forward: func(*gin.Context) ExecutableStageResult {
-				writerSizeBeforeForward = c.Writer.Size()
-				result, err = func() (*service.OpenAIForwardResult, error) {
-					defer func() {
-						if accountReleaseFunc != nil {
-							accountReleaseFunc()
-						}
-					}()
-					return h.gatewayService.ForwardEmbeddings(c.Request.Context(), c, account, forwardBody, "")
-				}()
-				return ExecutableStageResult{Err: err}
-			},
+		stageResult := h.runOpenAIHTTPForwardStage(c, OpenAIHTTPForwardStage{
+			GatewayService:          h.gatewayService,
+			Kind:                    OpenAIHTTPForwardEmbeddings,
+			Account:                 account,
+			Body:                    forwardBody,
+			ReleaseFunc:             accountReleaseFunc,
+			WriterSizeBeforeForward: &writerSizeBeforeForward,
+			Result:                  &result,
 		})
+		err = stageResult.Err
 
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
 		upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)

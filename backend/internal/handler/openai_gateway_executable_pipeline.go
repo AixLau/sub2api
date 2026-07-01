@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"context"
+
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -159,6 +162,69 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPForwardStage(c *gin.Context, adapter
 			executableForwardStageWithContext(c, adapter),
 		},
 	}.Run(c)
+}
+
+type OpenAIHTTPForwardKind string
+
+const (
+	OpenAIHTTPForwardResponses       OpenAIHTTPForwardKind = "responses"
+	OpenAIHTTPForwardChatCompletions OpenAIHTTPForwardKind = "chat_completions"
+	OpenAIHTTPForwardImages          OpenAIHTTPForwardKind = "images"
+	OpenAIHTTPForwardEmbeddings      OpenAIHTTPForwardKind = "embeddings"
+)
+
+type OpenAIHTTPForwardStage struct {
+	GatewayService          *service.OpenAIGatewayService
+	Kind                    OpenAIHTTPForwardKind
+	RequestContext          context.Context
+	Account                 *service.Account
+	Body                    []byte
+	PromptCacheKey          string
+	DefaultMappedModel      string
+	ParsedImagesRequest     *service.OpenAIImagesRequest
+	ChannelMappedModel      string
+	ReleaseFunc             func()
+	WriterSizeBeforeForward *int
+	Result                  **service.OpenAIForwardResult
+}
+
+func (OpenAIHTTPForwardStage) StageName() string {
+	return moderationcoverage.StageForward
+}
+
+func (s OpenAIHTTPForwardStage) RunForward(c *gin.Context) ExecutableStageResult {
+	if s.GatewayService == nil {
+		return ExecutableStageResult{}
+	}
+	ctx := s.RequestContext
+	if ctx == nil {
+		ctx = c.Request.Context()
+	}
+	if s.WriterSizeBeforeForward != nil {
+		*s.WriterSizeBeforeForward = c.Writer.Size()
+	}
+	defer func() {
+		if s.ReleaseFunc != nil {
+			s.ReleaseFunc()
+		}
+	}()
+
+	var result *service.OpenAIForwardResult
+	var err error
+	switch s.Kind {
+	case OpenAIHTTPForwardChatCompletions:
+		result, err = s.GatewayService.ForwardAsChatCompletions(ctx, c, s.Account, s.Body, s.PromptCacheKey, s.DefaultMappedModel)
+	case OpenAIHTTPForwardImages:
+		result, err = s.GatewayService.ForwardImages(ctx, c, s.Account, s.Body, s.ParsedImagesRequest, s.ChannelMappedModel)
+	case OpenAIHTTPForwardEmbeddings:
+		result, err = s.GatewayService.ForwardEmbeddings(ctx, c, s.Account, s.Body, s.DefaultMappedModel)
+	default:
+		result, err = s.GatewayService.Forward(ctx, c, s.Account, s.Body)
+	}
+	if s.Result != nil {
+		*s.Result = result
+	}
+	return ExecutableStageResult{Err: err}
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIHTTPUsageStage(c *gin.Context, adapter UsageStage) openAIHTTPExecutableStageResult {

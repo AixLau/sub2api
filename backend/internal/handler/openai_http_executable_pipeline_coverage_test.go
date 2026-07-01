@@ -93,6 +93,49 @@ func TestOpenAIHTTPHandlersUseForwardStageAdapter(t *testing.T) {
 	}
 }
 
+func TestOpenAIHTTPHandlersUseNamedForwardStageAdapter(t *testing.T) {
+	tests := []struct {
+		file    string
+		handler string
+	}{
+		{file: "openai_chat_completions.go", handler: "ChatCompletions"},
+		{file: "openai_gateway_handler.go", handler: "Responses"},
+		{file: "openai_images.go", handler: "Images"},
+		{file: "openai_embeddings.go", handler: "Embeddings"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.handler, func(t *testing.T) {
+			src, err := os.ReadFile(tt.file)
+			require.NoError(t, err)
+
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, tt.file, src, 0)
+			require.NoError(t, err)
+
+			fn := openAIHTTPHandlerFuncDecl(t, file, tt.handler)
+			hasNamedAdapter := false
+			var anonymousForwardStageAdapterLines []int
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				lit, ok := node.(*ast.CompositeLit)
+				if !ok {
+					return true
+				}
+				switch compositeTypeName(lit.Type) {
+				case "OpenAIHTTPForwardStage":
+					hasNamedAdapter = true
+				case "ForwardStageAdapter":
+					anonymousForwardStageAdapterLines = append(anonymousForwardStageAdapterLines, fset.Position(lit.Pos()).Line)
+				}
+				return true
+			})
+
+			require.True(t, hasNamedAdapter, "%s.%s must pass OpenAIHTTPForwardStage to runOpenAIHTTPForwardStage", tt.file, tt.handler)
+			require.Empty(t, anonymousForwardStageAdapterLines, "%s.%s must not wrap forwarding with anonymous ForwardStageAdapter at lines %v", tt.file, tt.handler, anonymousForwardStageAdapterLines)
+		})
+	}
+}
+
 func openAIHTTPExecutableStageCalls(t *testing.T, fileName string, handlerName string) map[string]int {
 	t.Helper()
 
@@ -163,6 +206,18 @@ func openAIHTTPForwardStageAdapterCalls(t *testing.T, fileName string, handlerNa
 
 	t.Fatalf("%s does not define handler %s", fileName, handlerName)
 	return 0
+}
+
+func openAIHTTPHandlerFuncDecl(t *testing.T, file *ast.File, handlerName string) *ast.FuncDecl {
+	t.Helper()
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if ok && fn.Name.Name == handlerName {
+			return fn
+		}
+	}
+	t.Fatalf("handler %s not found", handlerName)
+	return nil
 }
 
 func openAIHTTPUsageStageAdapterCalls(t *testing.T, fileName string, handlerName string) int {
