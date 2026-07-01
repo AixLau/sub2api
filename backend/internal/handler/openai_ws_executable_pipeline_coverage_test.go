@@ -29,6 +29,35 @@ func TestOpenAIResponsesWebSocketUsesExecutableGatewayStages(t *testing.T) {
 		"ResponsesWebSocket must not use an empty runOpenAIWebSocketExecutableStage wrapper for usage")
 }
 
+func TestOpenAIResponsesWebSocketUsesNamedForwardStageAdapter(t *testing.T) {
+	src, err := os.ReadFile("openai_gateway_handler.go")
+	require.NoError(t, err)
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "openai_gateway_handler.go", src, 0)
+	require.NoError(t, err)
+
+	fn := openAIWebSocketHandlerFuncDecl(t, file, "ResponsesWebSocket")
+	hasNamedAdapter := false
+	var anonymousForwardStageAdapterLines []int
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		lit, ok := node.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		switch compositeTypeName(lit.Type) {
+		case "OpenAIWebSocketForwardStage":
+			hasNamedAdapter = true
+		case "ForwardStageAdapter":
+			anonymousForwardStageAdapterLines = append(anonymousForwardStageAdapterLines, fset.Position(lit.Pos()).Line)
+		}
+		return true
+	})
+
+	require.True(t, hasNamedAdapter, "ResponsesWebSocket must pass OpenAIWebSocketForwardStage to runOpenAIWebSocketForwardStage")
+	require.Empty(t, anonymousForwardStageAdapterLines, "ResponsesWebSocket must not wrap forwarding with anonymous ForwardStageAdapter at lines %v", anonymousForwardStageAdapterLines)
+}
+
 func openAIWebSocketExecutableStageCalls(t *testing.T, fileName string, handlerName string) map[string]int {
 	t.Helper()
 
@@ -99,6 +128,18 @@ func openAIWebSocketForwardStageAdapterCalls(t *testing.T, fileName string, hand
 
 	t.Fatalf("%s does not define handler %s", fileName, handlerName)
 	return 0
+}
+
+func openAIWebSocketHandlerFuncDecl(t *testing.T, file *ast.File, handlerName string) *ast.FuncDecl {
+	t.Helper()
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if ok && fn.Name.Name == handlerName {
+			return fn
+		}
+	}
+	t.Fatalf("handler %s not found", handlerName)
+	return nil
 }
 
 func openAIWebSocketUsageStageAdapterCalls(t *testing.T, fileName string, handlerName string) int {

@@ -5,6 +5,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 )
 
@@ -274,6 +275,36 @@ func (h *OpenAIGatewayHandler) runOpenAIWebSocketForwardStage(c *gin.Context, ad
 			executableForwardStageWithContext(c, adapter),
 		},
 	}.Run(c)
+}
+
+type OpenAIWebSocketForwardStage struct {
+	GatewayService *service.OpenAIGatewayService
+	RequestContext context.Context
+	ClientConn     *coderws.Conn
+	Account        *service.Account
+	Token          string
+	FirstMessage   []byte
+	Hooks          *service.OpenAIWSIngressHooks
+	Err            *error
+}
+
+func (OpenAIWebSocketForwardStage) StageName() string {
+	return moderationcoverage.StageForward
+}
+
+func (s OpenAIWebSocketForwardStage) RunForward(c *gin.Context) ExecutableStageResult {
+	if s.GatewayService == nil {
+		return ExecutableStageResult{}
+	}
+	ctx := s.RequestContext
+	if ctx == nil {
+		ctx = c.Request.Context()
+	}
+	err := s.GatewayService.ProxyResponsesWebSocketFromClient(ctx, c, s.ClientConn, s.Account, s.Token, s.FirstMessage, s.Hooks)
+	if s.Err != nil {
+		*s.Err = err
+	}
+	return ExecutableStageResult{Err: err}
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIWebSocketUsageStage(c *gin.Context, adapter UsageStage) ExecutableStageResult {

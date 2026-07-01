@@ -1725,11 +1725,15 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		requestPayloadHash = service.HashUsageRequestPayload(wsFirstMessage)
 
 		var proxyErr error
-		_ = h.runOpenAIWebSocketForwardStage(c, ForwardStageAdapter{
-			Forward: func(*gin.Context) ExecutableStageResult {
-				proxyErr = h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks)
-				return ExecutableStageResult{Err: proxyErr}
-			},
+		_ = h.runOpenAIWebSocketForwardStage(c, OpenAIWebSocketForwardStage{
+			GatewayService: h.gatewayService,
+			RequestContext: ctx,
+			ClientConn:     wsConn,
+			Account:        account,
+			Token:          token,
+			FirstMessage:   wsFirstMessage,
+			Hooks:          hooks,
+			Err:            &proxyErr,
 		})
 		if proxyErr != nil {
 			var failoverErr *service.UpstreamFailoverError
