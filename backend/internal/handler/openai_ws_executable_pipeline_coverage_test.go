@@ -58,6 +58,35 @@ func TestOpenAIResponsesWebSocketUsesNamedForwardStageAdapter(t *testing.T) {
 	require.Empty(t, anonymousForwardStageAdapterLines, "ResponsesWebSocket must not wrap forwarding with anonymous ForwardStageAdapter at lines %v", anonymousForwardStageAdapterLines)
 }
 
+func TestOpenAIResponsesWebSocketUsesNamedUsageStageAdapter(t *testing.T) {
+	src, err := os.ReadFile("openai_gateway_handler.go")
+	require.NoError(t, err)
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "openai_gateway_handler.go", src, 0)
+	require.NoError(t, err)
+
+	fn := openAIWebSocketHandlerFuncDecl(t, file, "ResponsesWebSocket")
+	hasNamedAdapter := false
+	var anonymousUsageStageAdapterLines []int
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		lit, ok := node.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		switch compositeTypeName(lit.Type) {
+		case "OpenAIWebSocketUsageStage":
+			hasNamedAdapter = true
+		case "UsageStageAdapter":
+			anonymousUsageStageAdapterLines = append(anonymousUsageStageAdapterLines, fset.Position(lit.Pos()).Line)
+		}
+		return true
+	})
+
+	require.True(t, hasNamedAdapter, "ResponsesWebSocket must pass OpenAIWebSocketUsageStage to runOpenAIWebSocketUsageStage")
+	require.Empty(t, anonymousUsageStageAdapterLines, "ResponsesWebSocket must not wrap usage with anonymous UsageStageAdapter at lines %v", anonymousUsageStageAdapterLines)
+}
+
 func openAIWebSocketExecutableStageCalls(t *testing.T, fileName string, handlerName string) map[string]int {
 	t.Helper()
 

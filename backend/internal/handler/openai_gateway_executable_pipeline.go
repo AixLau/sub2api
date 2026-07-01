@@ -7,6 +7,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type ExecutableStage struct {
@@ -305,6 +306,102 @@ func (s OpenAIWebSocketForwardStage) RunForward(c *gin.Context) ExecutableStageR
 		*s.Err = err
 	}
 	return ExecutableStageResult{Err: err}
+}
+
+type OpenAIWebSocketUsageStage struct {
+	Handler              *OpenAIGatewayHandler
+	RequestContext       context.Context
+	ReqLog               *zap.Logger
+	APIKey               *service.APIKey
+	Account              *service.Account
+	Subscription         *service.UserSubscription
+	Model                string
+	TurnErr              error
+	Result               *service.OpenAIForwardResult
+	CyberBlockKey        string
+	ChannelMapping       service.ChannelMappingResult
+	RequestPayloadHash   string
+	ReleaseTurnSlots     func()
+	CyberBlockedThisConn *bool
+	UserAgent            string
+	ClientIP             string
+}
+
+func (OpenAIWebSocketUsageStage) StageName() string {
+	return moderationcoverage.StageUsage
+}
+
+func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
+	// Cyber turn state must live exactly one turn; usage recording runs async.
+	defer clearCyberPolicyTurnState(c)
+	if s.ReleaseTurnSlots != nil {
+		s.ReleaseTurnSlots()
+	}
+	h := s.Handler
+	if h == nil {
+		return ExecutableStageResult{}
+	}
+	ctx := s.RequestContext
+	if ctx == nil {
+		ctx = c.Request.Context()
+	}
+	reqLog := s.ReqLog
+	if reqLog == nil {
+		reqLog = zap.NewNop()
+	}
+
+	h.recordCyberPolicyIfMarked(c, s.APIKey, s.Account, s.Subscription, s.Model, s.TurnErr != nil, s.CyberBlockKey, s.ChannelMapping.ToUsageFields(s.Model, ""), s.RequestPayloadHash)
+	if service.GetOpsCyberPolicy(c) != nil && s.CyberBlockedThisConn != nil {
+		*s.CyberBlockedThisConn = true
+	}
+	if s.TurnErr != nil {
+		if s.Result == nil || s.Result.ImageCount <= 0 {
+			return ExecutableStageResult{}
+		}
+		// Cyber-hit usage is already written by recordCyberPolicyIfMarked(forwardErrored=true).
+		if service.GetOpsCyberPolicy(c) != nil {
+			return ExecutableStageResult{}
+		}
+		reqLog.Warn("openai.websocket_partial_error_with_image_result",
+			zap.Int64("account_id", s.Account.ID),
+			zap.Int("image_count", s.Result.ImageCount),
+			zap.Error(s.TurnErr),
+		)
+	}
+	if s.Result == nil {
+		return ExecutableStageResult{}
+	}
+	if s.Account.Type == service.AccountTypeOAuth {
+		h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(ctx, s.Account.ID, s.Result.ResponseHeaders)
+	}
+	h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account.ID, true, s.Result.FirstTokenMs)
+	inboundEndpoint := GetInboundEndpoint(c)
+	upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, s.Account)
+	cyberBlocked := service.GetOpsCyberPolicy(c) != nil
+	h.submitOpenAIUsageRecordTask(ctx, s.Result, func(taskCtx context.Context) {
+		if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
+			Result:             s.Result,
+			APIKey:             s.APIKey,
+			User:               s.APIKey.User,
+			Account:            s.Account,
+			Subscription:       s.Subscription,
+			InboundEndpoint:    inboundEndpoint,
+			UpstreamEndpoint:   upstreamEndpoint,
+			UserAgent:          s.UserAgent,
+			IPAddress:          s.ClientIP,
+			RequestPayloadHash: s.RequestPayloadHash,
+			APIKeyService:      h.apiKeyService,
+			ChannelUsageFields: s.ChannelMapping.ToUsageFields(s.Model, s.Result.UpstreamModel),
+			CyberBlocked:       cyberBlocked,
+		}); err != nil {
+			reqLog.Error("openai.websocket_record_usage_failed",
+				zap.Int64("account_id", s.Account.ID),
+				zap.String("request_id", s.Result.RequestID),
+				zap.Error(err),
+			)
+		}
+	})
+	return ExecutableStageResult{}
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIWebSocketUsageStage(c *gin.Context, adapter UsageStage) ExecutableStageResult {
