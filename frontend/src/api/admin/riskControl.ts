@@ -268,6 +268,7 @@ export interface ContentModerationPipelineCoverageStatus {
   status: string
   openai_http: ContentModerationPipelineGroupCoverageStatus
   openai_websocket: ContentModerationPipelineGroupCoverageStatus
+  gateway_pre_forward: ContentModerationPipelineGroupCoverageStatus
 }
 
 export interface ContentModerationPipelineGroupCoverageStatus {

@@ -62,6 +62,33 @@ func TestAnnotatePipelineCoverageUsesSharedOpenAIHTTPFacts(t *testing.T) {
 	require.Equal(t, OpenAIHTTPPipelineStagesForRoute(entry.Handler, entry.Protocol), entry.StageCoverage)
 }
 
+func TestGatewayPreForwardPipelineStagesForRouteIsSharedFactSource(t *testing.T) {
+	expected := []PipelineStageCoverage{
+		{Stage: StageModeration, Required: true, Covered: true},
+		{Stage: StagePreForward, Required: true, Covered: true},
+	}
+
+	require.Equal(t, expected, GatewayPreForwardPipelineStagesForRoute("GatewayHandler.Messages", "anthropic_messages"))
+	require.Equal(t, expected, GatewayPreForwardPipelineStagesForRoute("GatewayHandler.CountTokens", "anthropic_messages"))
+	require.Equal(t, expected, GatewayPreForwardPipelineStagesForRoute("GatewayHandler.GeminiV1BetaModels", "gemini"))
+	require.Nil(t, GatewayPreForwardPipelineStagesForRoute("OpenAIGatewayHandler.Responses", "openai_responses"))
+}
+
+func TestAnnotatePipelineCoverageUsesSharedGatewayPreForwardFacts(t *testing.T) {
+	entry := AnnotatePipelineCoverage(Entry{
+		Method:             "POST",
+		Path:               "/v1/messages",
+		Handler:            "GatewayHandler.Messages",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           "anthropic_messages",
+		Status:             StatusCovered,
+	})
+
+	require.Equal(t, PipelineGatewayPreForward, entry.Pipeline)
+	require.Equal(t, GatewayPreForwardPipelineStagesForRoute(entry.Handler, entry.Protocol), entry.StageCoverage)
+}
+
 func TestNormalizeStageCoverageSortsExecutableGatewayStages(t *testing.T) {
 	require.Equal(t, []PipelineStageCoverage{
 		{Stage: StageBilling, Required: true, Covered: true},

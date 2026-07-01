@@ -250,6 +250,43 @@ func TestOpenAIPipelineRouteHelpersAttachPipelineMetadata(t *testing.T) {
 	requireStageRequiredAndCovered(t, webSocketRoute, moderationcoverage.StageUsage)
 }
 
+func TestGatewayPreForwardRouteHelpersAttachPipelineMetadata(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		path     string
+		handler  string
+		protocol string
+	}{
+		{
+			name:     "anthropic messages",
+			path:     "/v1/messages",
+			handler:  "GatewayHandler.Messages",
+			protocol: "anthropic_messages",
+		},
+		{
+			name:     "anthropic count tokens",
+			path:     "/v1/messages/count_tokens",
+			handler:  "GatewayHandler.CountTokens",
+			protocol: "anthropic_messages",
+		},
+		{
+			name:     "gemini model actions",
+			path:     "/v1beta/models/*modelAction",
+			handler:  "GatewayHandler.GeminiV1BetaModels",
+			protocol: "gemini",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			route := coveredModeratedRoute(tt.path, tt.handler, tt.protocol, "test route")
+
+			require.Equal(t, moderationcoverage.PipelineGatewayPreForward, route.Pipeline)
+			require.Equal(t, moderationcoverage.GatewayPreForwardPipelineStagesForRoute(route.Handler, route.Protocol), route.StageCoverage)
+			requireStageRequiredAndCovered(t, route, moderationcoverage.StageModeration)
+			requireStageRequiredAndCovered(t, route, moderationcoverage.StagePreForward)
+		})
+	}
+}
+
 func TestGatewayRoutesHaveExplicitModerationClassification(t *testing.T) {
 	restore := replaceModeratedRouteRegistryForTest(nil)
 	defer restore()
@@ -452,6 +489,10 @@ func TestGatewayModerationCoverageManifestPipelineStagesMatchRegistrarFacts(t *t
 		if len(expectedStages) == 0 {
 			expectedPipeline = moderationcoverage.PipelineOpenAIWebSocket
 			expectedStages = moderationcoverage.OpenAIWebSocketPipelineStagesForRoute(entry.Handler, entry.Protocol)
+		}
+		if len(expectedStages) == 0 {
+			expectedPipeline = moderationcoverage.PipelineGatewayPreForward
+			expectedStages = moderationcoverage.GatewayPreForwardPipelineStagesForRoute(entry.Handler, entry.Protocol)
 		}
 		if len(expectedStages) == 0 {
 			require.Empty(t, entry.Pipeline, "non-pipeline manifest route must not declare pipeline metadata: %s", routeKey)

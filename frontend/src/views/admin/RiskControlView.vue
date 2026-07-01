@@ -1895,6 +1895,7 @@ const pipelineCoverageGroups = computed<ContentModerationPipelineGroupCoverageSt
   return [
     coverage?.openai_http,
     coverage?.openai_websocket,
+    coverage?.gateway_pre_forward,
   ].filter((group): group is ContentModerationPipelineGroupCoverageStatus => Boolean(group))
 })
 

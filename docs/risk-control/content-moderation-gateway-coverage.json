@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "manifest_version": "2026-06-29.3",
+  "manifest_version": "2026-06-29.4",
   "entries": [
     {
       "route": {
@@ -15,6 +15,19 @@
       "upstream": true,
       "moderation_required": true,
       "protocol": "anthropic_messages",
+      "pipeline": "gateway_pre_forward",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        }
+      ],
       "status": "covered",
       "review_reason": "Anthropic Messages requests are moderated after request parsing and before billing, scheduling, and upstream forwarding."
     },
@@ -31,6 +44,19 @@
       "upstream": true,
       "moderation_required": true,
       "protocol": "anthropic_messages",
+      "pipeline": "gateway_pre_forward",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        }
+      ],
       "status": "covered",
       "review_reason": "Antigravity Messages uses the same GatewayHandler.Messages moderation hook before upstream forwarding."
     },
@@ -47,6 +73,19 @@
       "upstream": true,
       "moderation_required": true,
       "protocol": "anthropic_messages",
+      "pipeline": "gateway_pre_forward",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        }
+      ],
       "status": "covered",
       "review_reason": "Anthropic count_tokens can forward client context to upstream, so it is moderated after model validation and before billing, scheduling, and forwarding."
     },
@@ -63,6 +102,19 @@
       "upstream": true,
       "moderation_required": true,
       "protocol": "anthropic_messages",
+      "pipeline": "gateway_pre_forward",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        }
+      ],
       "status": "covered",
       "review_reason": "Antigravity count_tokens uses the shared CountTokens handler and is moderated after model validation and before account selection or upstream forwarding."
     },
@@ -962,6 +1014,19 @@
       "upstream": true,
       "moderation_required": true,
       "protocol": "gemini",
+      "pipeline": "gateway_pre_forward",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        }
+      ],
       "status": "covered",
       "review_reason": "Gemini model action requests are moderated before account selection and upstream forwarding."
     },
@@ -978,6 +1043,19 @@
       "upstream": true,
       "moderation_required": true,
       "protocol": "gemini",
+      "pipeline": "gateway_pre_forward",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        }
+      ],
       "status": "covered",
       "review_reason": "Antigravity Gemini-compatible model action requests use the same Gemini handler and moderation hook before upstream forwarding."
     }

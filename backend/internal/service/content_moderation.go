@@ -138,8 +138,8 @@ const (
 	contentModerationPolicySchemaVersion           = "2026-06-29.1"
 	contentModerationExtractorVersion              = "v4"
 	contentModerationMinimumSecurityBaselineCommit = "9216c848"
-	contentModerationRouteManifestVersion          = "2026-06-29.3"
-	contentModerationPipelineCoverageVersion       = "openai-gateway-pipeline-v1"
+	contentModerationRouteManifestVersion          = "2026-06-29.4"
+	contentModerationPipelineCoverageVersion       = "gateway-pipeline-coverage-v1"
 	minContentModerationBuildCommitPrefixLen       = 7
 )
 
@@ -578,17 +578,20 @@ type ContentModerationEffectiveProtectionStatus struct {
 type ContentModerationRouteCoverageStatus = moderationcoverage.Status
 
 type ContentModerationPipelineCoverageStatus struct {
-	ManifestVersion string                                                 `json:"manifest_version"`
-	Version         string                                                 `json:"version"`
-	ManifestHash    string                                                 `json:"manifest_hash"`
-	Status          string                                                 `json:"status"`
-	OpenAIHTTP      ContentModerationOpenAIHTTPPipelineCoverageStatus      `json:"openai_http"`
-	OpenAIWebSocket ContentModerationOpenAIWebSocketPipelineCoverageStatus `json:"openai_websocket"`
+	ManifestVersion   string                                                   `json:"manifest_version"`
+	Version           string                                                   `json:"version"`
+	ManifestHash      string                                                   `json:"manifest_hash"`
+	Status            string                                                   `json:"status"`
+	OpenAIHTTP        ContentModerationOpenAIHTTPPipelineCoverageStatus        `json:"openai_http"`
+	OpenAIWebSocket   ContentModerationOpenAIWebSocketPipelineCoverageStatus   `json:"openai_websocket"`
+	GatewayPreForward ContentModerationGatewayPreForwardPipelineCoverageStatus `json:"gateway_pre_forward"`
 }
 
 type ContentModerationOpenAIHTTPPipelineCoverageStatus = ContentModerationPipelineGroupCoverageStatus
 
 type ContentModerationOpenAIWebSocketPipelineCoverageStatus = ContentModerationPipelineGroupCoverageStatus
+
+type ContentModerationGatewayPreForwardPipelineCoverageStatus = ContentModerationPipelineGroupCoverageStatus
 
 type ContentModerationPipelineGroupCoverageStatus struct {
 	Version         string                                         `json:"version"`
@@ -1899,21 +1902,30 @@ func contentModerationPipelineCoverageStatusFromEntries(entries []contentModerat
 		contentModerationIsOpenAIWebSocketPipelineRoute,
 		moderationcoverage.OpenAIWebSocketPipelineStagesForRoute,
 	)
+	gatewayPreForward := contentModerationPipelineGroupCoverageStatusFromEntries(
+		entries,
+		moderationcoverage.PipelineGatewayPreForward,
+		moderationcoverage.PipelineGatewayPreForwardVersion,
+		contentModerationIsGatewayPreForwardPipelineRoute,
+		moderationcoverage.GatewayPreForwardPipelineStagesForRoute,
+	)
 	status := "covered"
-	requiredRoutes := openAIHTTP.RequiredRoutes + openAIWebSocket.RequiredRoutes
+	requiredRoutes := openAIHTTP.RequiredRoutes + openAIWebSocket.RequiredRoutes + gatewayPreForward.RequiredRoutes
 	if requiredRoutes == 0 {
 		status = "unknown"
 	} else if openAIHTTP.CoveredRoutes != openAIHTTP.RequiredRoutes || len(openAIHTTP.UncoveredRoutes) > 0 ||
-		openAIWebSocket.CoveredRoutes != openAIWebSocket.RequiredRoutes || len(openAIWebSocket.UncoveredRoutes) > 0 {
+		openAIWebSocket.CoveredRoutes != openAIWebSocket.RequiredRoutes || len(openAIWebSocket.UncoveredRoutes) > 0 ||
+		gatewayPreForward.CoveredRoutes != gatewayPreForward.RequiredRoutes || len(gatewayPreForward.UncoveredRoutes) > 0 {
 		status = "mismatch"
 	}
 	return ContentModerationPipelineCoverageStatus{
-		ManifestVersion: contentModerationRouteManifestVersion,
-		Version:         contentModerationPipelineCoverageVersion,
-		ManifestHash:    contentModerationPipelineCoverageHashFromEntries(entries),
-		Status:          status,
-		OpenAIHTTP:      openAIHTTP,
-		OpenAIWebSocket: openAIWebSocket,
+		ManifestVersion:   contentModerationRouteManifestVersion,
+		Version:           contentModerationPipelineCoverageVersion,
+		ManifestHash:      contentModerationPipelineCoverageHashFromEntries(entries),
+		Status:            status,
+		OpenAIHTTP:        openAIHTTP,
+		OpenAIWebSocket:   openAIWebSocket,
+		GatewayPreForward: gatewayPreForward,
 	}
 }
 
@@ -1934,6 +1946,16 @@ func contentModerationOpenAIWebSocketPipelineCoverageStatusFromEntries(entries [
 		moderationcoverage.PipelineOpenAIWebSocketVersion,
 		contentModerationIsOpenAIWebSocketPipelineRoute,
 		moderationcoverage.OpenAIWebSocketPipelineStagesForRoute,
+	)
+}
+
+func contentModerationGatewayPreForwardPipelineCoverageStatusFromEntries(entries []contentModerationRouteCoverageEntry) ContentModerationGatewayPreForwardPipelineCoverageStatus {
+	return contentModerationPipelineGroupCoverageStatusFromEntries(
+		entries,
+		moderationcoverage.PipelineGatewayPreForward,
+		moderationcoverage.PipelineGatewayPreForwardVersion,
+		contentModerationIsGatewayPreForwardPipelineRoute,
+		moderationcoverage.GatewayPreForwardPipelineStagesForRoute,
 	)
 }
 
@@ -2128,7 +2150,9 @@ func contentModerationPipelineCoverageHashFromEntries(entries []contentModeratio
 	parts := make([]string, 0)
 	for _, entry := range entries {
 		entry = moderationcoverage.NormalizeEntry(entry)
-		if !contentModerationIsOpenAIHTTPPipelineRoute(entry) && !contentModerationIsOpenAIWebSocketPipelineRoute(entry) {
+		if !contentModerationIsOpenAIHTTPPipelineRoute(entry) &&
+			!contentModerationIsOpenAIWebSocketPipelineRoute(entry) &&
+			!contentModerationIsGatewayPreForwardPipelineRoute(entry) {
 			continue
 		}
 		if len(entry.StageCoverage) == 0 {
@@ -2193,6 +2217,16 @@ func contentModerationIsOpenAIWebSocketPipelineRoute(entry contentModerationRout
 		return false
 	}
 	return strings.TrimSpace(entry.Handler) == "OpenAIGatewayHandler.ResponsesWebSocket"
+}
+
+func contentModerationIsGatewayPreForwardPipelineRoute(entry contentModerationRouteCoverageEntry) bool {
+	if !entry.Upstream || !entry.ModerationRequired {
+		return false
+	}
+	if normalizeContentModerationRouteCoverageMethod(entry.Method) != http.MethodPost {
+		return false
+	}
+	return len(moderationcoverage.GatewayPreForwardPipelineStagesForRoute(entry.Handler, entry.Protocol)) > 0
 }
 
 func contentModerationPipelineRouteKey(method, path string) string {
@@ -2271,7 +2305,9 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 	if pipelineCoverage.Status == "mismatch" {
 		unsafeReasons = append(unsafeReasons, "pipeline_coverage_mismatch")
 	}
-	if len(pipelineCoverage.OpenAIHTTP.UncoveredRoutes) > 0 {
+	if len(pipelineCoverage.OpenAIHTTP.UncoveredRoutes) > 0 ||
+		len(pipelineCoverage.OpenAIWebSocket.UncoveredRoutes) > 0 ||
+		len(pipelineCoverage.GatewayPreForward.UncoveredRoutes) > 0 {
 		unsafeReasons = append(unsafeReasons, "uncovered_pipeline_routes")
 	}
 	if !riskEnabled {

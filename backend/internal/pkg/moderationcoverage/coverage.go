@@ -14,11 +14,12 @@ const (
 	StatusCovered            = "covered"
 	StatusIntentionalNoAudit = "intentional_no_audit"
 
-	PipelineOpenAIHTTP             = "openai_http"
-	PipelineOpenAIHTTPVersion      = "openai-http-executable-v1"
-	PipelineOpenAIWebSocket        = "openai_websocket"
-	PipelineOpenAIWebSocketVersion = "openai-websocket-executable-v1"
-	PipelineGatewayPreForward      = "gateway_pre_forward"
+	PipelineOpenAIHTTP               = "openai_http"
+	PipelineOpenAIHTTPVersion        = "openai-http-executable-v1"
+	PipelineOpenAIWebSocket          = "openai_websocket"
+	PipelineOpenAIWebSocketVersion   = "openai-websocket-executable-v1"
+	PipelineGatewayPreForward        = "gateway_pre_forward"
+	PipelineGatewayPreForwardVersion = "gateway-pre-forward-v1"
 
 	StageModeration = "moderation"
 	StageCyber      = "cyber"
@@ -331,7 +332,12 @@ func AnnotatePipelineCoverage(entry Entry) Entry {
 	}
 	stages := OpenAIHTTPPipelineStagesForRoute(entry.Handler, entry.Protocol)
 	if len(stages) == 0 {
-		return entry
+		if stages = GatewayPreForwardPipelineStagesForRoute(entry.Handler, entry.Protocol); len(stages) == 0 {
+			return entry
+		}
+		entry.Pipeline = PipelineGatewayPreForward
+		entry.StageCoverage = stages
+		return NormalizeEntry(entry)
 	}
 	entry.Pipeline = PipelineOpenAIHTTP
 	entry.StageCoverage = stages
@@ -388,6 +394,21 @@ func OpenAIWebSocketPipelineStagesForRoute(handlerName, protocol string) []Pipel
 	})
 }
 
+func GatewayPreForwardPipelineStagesForRoute(handlerName, protocol string) []PipelineStageCoverage {
+	if !IsGatewayPreForwardPipelineProtocol(protocol) {
+		return nil
+	}
+	switch strings.TrimSpace(handlerName) {
+	case "GatewayHandler.Messages", "GatewayHandler.CountTokens", "GatewayHandler.GeminiV1BetaModels":
+	default:
+		return nil
+	}
+	return NormalizeStageCoverage([]PipelineStageCoverage{
+		CoveredPipelineStage(StageModeration),
+		CoveredPipelineStage(StagePreForward),
+	})
+}
+
 func CoveredPipelineStage(stage string) PipelineStageCoverage {
 	return PipelineStageCoverage{
 		Stage:    NormalizeStage(stage),
@@ -399,6 +420,15 @@ func CoveredPipelineStage(stage string) PipelineStageCoverage {
 func IsOpenAIHTTPPipelineProtocol(protocol string) bool {
 	switch strings.TrimSpace(protocol) {
 	case "openai_chat_completions", "openai_responses", "openai_images", "openai_embeddings":
+		return true
+	default:
+		return false
+	}
+}
+
+func IsGatewayPreForwardPipelineProtocol(protocol string) bool {
+	switch strings.TrimSpace(protocol) {
+	case "anthropic_messages", "gemini":
 		return true
 	default:
 		return false

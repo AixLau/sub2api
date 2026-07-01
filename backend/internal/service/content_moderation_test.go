@@ -2379,7 +2379,7 @@ func TestContentModerationStatusIncludesRouteCoverage(t *testing.T) {
 
 	status, err := svc.GetStatus(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, "2026-06-29.3", status.RouteCoverage.ManifestVersion)
+	require.Equal(t, "2026-06-29.4", status.RouteCoverage.ManifestVersion)
 	require.Equal(t, expectedCoverage.manifestVersion, status.RouteCoverage.ManifestVersion)
 	require.NotEmpty(t, status.RouteCoverage.ManifestHash)
 	require.Equal(t, moderationcoverage.HashFromEntries(expectedCoverage.entries), status.RouteCoverage.ManifestHash)
@@ -2505,8 +2505,25 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 			"uncovered_routes": [],
 			"stage_coverage": [],
 			"routes": []
+		},
+		"gateway_pre_forward": {
+			"version": %q,
+			"pipeline": "gateway_pre_forward",
+			"required_routes": 1,
+			"covered_routes": 1,
+			"uncovered_routes": [],
+			"stage_coverage": [
+				{"stage": "moderation", "required_routes": 1, "covered_routes": 1, "uncovered_routes": []},
+				{"stage": "pre_forward", "required_routes": 1, "covered_routes": 1, "uncovered_routes": []}
+			],
+			"routes": [
+				{"method": "POST", "path": "/v1/messages", "handler": "GatewayHandler.Messages", "protocol": "anthropic_messages", "pipeline": "gateway_pre_forward", "covered": true, "stages": [
+					{"stage": "moderation", "required": true, "covered": true},
+					{"stage": "pre_forward", "required": true, "covered": true}
+				]}
+			]
 		}
-	}`, contentModerationRouteManifestVersion, contentModerationPipelineCoverageVersion, status.ManifestHash, moderationcoverage.PipelineOpenAIHTTPVersion, moderationcoverage.PipelineOpenAIWebSocketVersion), string(payload))
+	}`, contentModerationRouteManifestVersion, contentModerationPipelineCoverageVersion, status.ManifestHash, moderationcoverage.PipelineOpenAIHTTPVersion, moderationcoverage.PipelineOpenAIWebSocketVersion, moderationcoverage.PipelineGatewayPreForwardVersion), string(payload))
 	require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, status.OpenAIHTTP.Pipeline)
 	require.Equal(t, moderationcoverage.PipelineOpenAIHTTPVersion, status.OpenAIHTTP.Version)
 	require.Equal(t, 3, status.OpenAIHTTP.RequiredRoutes)
@@ -2576,6 +2593,55 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIWebSocketStages(
 	require.Equal(t, moderationcoverage.PipelineOpenAIWebSocket, wsRoute.Pipeline)
 	require.True(t, wsRoute.Covered)
 	require.Empty(t, wsRoute.UncoveredStages)
+}
+
+func TestContentModerationPipelineCoverageStatusSummarizesGatewayPreForwardStages(t *testing.T) {
+	entries := []moderationcoverage.Entry{
+		{
+			Method:             "POST",
+			Path:               "/v1/messages",
+			Handler:            "GatewayHandler.Messages",
+			Upstream:           true,
+			ModerationRequired: true,
+			Protocol:           ContentModerationProtocolAnthropicMessages,
+			Status:             moderationcoverage.StatusCovered,
+			Pipeline:           moderationcoverage.PipelineGatewayPreForward,
+			StageCoverage:      moderationcoverage.GatewayPreForwardPipelineStagesForRoute("GatewayHandler.Messages", ContentModerationProtocolAnthropicMessages),
+		},
+		{
+			Method:             "POST",
+			Path:               "/v1beta/models/*modelAction",
+			Handler:            "GatewayHandler.GeminiV1BetaModels",
+			Upstream:           true,
+			ModerationRequired: true,
+			Protocol:           ContentModerationProtocolGemini,
+			Status:             moderationcoverage.StatusCovered,
+			Pipeline:           moderationcoverage.PipelineGatewayPreForward,
+			StageCoverage:      moderationcoverage.GatewayPreForwardPipelineStagesForRoute("GatewayHandler.GeminiV1BetaModels", ContentModerationProtocolGemini),
+		},
+	}
+
+	status := contentModerationPipelineCoverageStatusFromEntries(entries)
+
+	require.Equal(t, "covered", status.Status)
+	require.Equal(t, moderationcoverage.PipelineGatewayPreForward, status.GatewayPreForward.Pipeline)
+	require.Equal(t, moderationcoverage.PipelineGatewayPreForwardVersion, status.GatewayPreForward.Version)
+	require.Equal(t, 2, status.GatewayPreForward.RequiredRoutes)
+	require.Equal(t, 2, status.GatewayPreForward.CoveredRoutes)
+	require.Empty(t, status.GatewayPreForward.UncoveredRoutes)
+	requirePipelineStageSummary(t, status.GatewayPreForward.StageCoverage, moderationcoverage.StageModeration, 2, 2, []string{})
+	requirePipelineStageSummary(t, status.GatewayPreForward.StageCoverage, moderationcoverage.StagePreForward, 2, 2, []string{})
+
+	messagesRoute := requirePipelineRouteSummary(t, status.GatewayPreForward.Routes, "POST", "/v1/messages")
+	require.Equal(t, "GatewayHandler.Messages", messagesRoute.Handler)
+	require.Equal(t, ContentModerationProtocolAnthropicMessages, messagesRoute.Protocol)
+	require.Equal(t, moderationcoverage.PipelineGatewayPreForward, messagesRoute.Pipeline)
+	require.True(t, messagesRoute.Covered)
+	require.Empty(t, messagesRoute.UncoveredStages)
+	require.Equal(t, []ContentModerationPipelineRouteStageCoverageStatus{
+		{Stage: moderationcoverage.StageModeration, Required: true, Covered: true},
+		{Stage: moderationcoverage.StagePreForward, Required: true, Covered: true},
+	}, messagesRoute.Stages)
 }
 
 func TestContentModerationStatusIncludesPipelineCoverageFromRegisteredEntries(t *testing.T) {
@@ -2890,7 +2956,7 @@ func loadContentModerationGatewayCoverageForStatus(t *testing.T) struct {
 	var manifest contentModerationGatewayCoverageForStatus
 	require.NoError(t, json.Unmarshal(data, &manifest))
 	require.Equal(t, 1, manifest.SchemaVersion)
-	require.Equal(t, "2026-06-29.3", manifest.ManifestVersion)
+	require.Equal(t, "2026-06-29.4", manifest.ManifestVersion)
 
 	result := struct {
 		manifestVersion string
@@ -2913,6 +2979,9 @@ func loadContentModerationGatewayCoverageForStatus(t *testing.T) struct {
 			require.Equal(t, expectedStages, moderationcoverage.NormalizeStageCoverage(entry.StageCoverage), "route=%s %s", entry.Method, entry.Path)
 		} else if expectedStages = moderationcoverage.OpenAIWebSocketPipelineStagesForRoute(entry.Handler, entry.Protocol); len(expectedStages) > 0 {
 			require.Equal(t, moderationcoverage.PipelineOpenAIWebSocket, entry.Pipeline, "route=%s %s", entry.Method, entry.Path)
+			require.Equal(t, expectedStages, moderationcoverage.NormalizeStageCoverage(entry.StageCoverage), "route=%s %s", entry.Method, entry.Path)
+		} else if expectedStages = moderationcoverage.GatewayPreForwardPipelineStagesForRoute(entry.Handler, entry.Protocol); len(expectedStages) > 0 {
+			require.Equal(t, moderationcoverage.PipelineGatewayPreForward, entry.Pipeline, "route=%s %s", entry.Method, entry.Path)
 			require.Equal(t, expectedStages, moderationcoverage.NormalizeStageCoverage(entry.StageCoverage), "route=%s %s", entry.Method, entry.Path)
 		} else {
 			require.Empty(t, entry.Pipeline, "route=%s %s", entry.Method, entry.Path)
@@ -2996,6 +3065,8 @@ func contentModerationPipelineCoverageFixtureEntries() []moderationcoverage.Entr
 			ModerationRequired: true,
 			Protocol:           ContentModerationProtocolAnthropicMessages,
 			Status:             moderationcoverage.StatusCovered,
+			Pipeline:           moderationcoverage.PipelineGatewayPreForward,
+			StageCoverage:      moderationcoverage.GatewayPreForwardPipelineStagesForRoute("GatewayHandler.Messages", ContentModerationProtocolAnthropicMessages),
 		},
 	}
 }
