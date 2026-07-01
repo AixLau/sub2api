@@ -801,6 +801,8 @@ func openAIHTTPStageCoverageFromHandlerSources(t *testing.T) map[string]openAIHT
 						coverage.HasImageStage = true
 					case isOpenAIHTTPForwardStageCall(n):
 						coverage.HasForwardStage = true
+					case isOpenAIHTTPUsageStageCall(n):
+						coverage.HasUsageStage = true
 					case isOpenAIHTTPExecutableStageCall(n):
 						switch openAIHTTPExecutableStageArg(n) {
 						case moderationcoverage.StageBilling:
@@ -1346,6 +1348,11 @@ func isOpenAIHTTPExecutableStageCall(call *ast.CallExpr) bool {
 func isOpenAIHTTPForwardStageCall(call *ast.CallExpr) bool {
 	selector, ok := call.Fun.(*ast.SelectorExpr)
 	return ok && selector.Sel.Name == "runOpenAIHTTPForwardStage"
+}
+
+func isOpenAIHTTPUsageStageCall(call *ast.CallExpr) bool {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	return ok && selector.Sel.Name == "runOpenAIHTTPUsageStage"
 }
 
 func openAIHTTPExecutableStageArg(call *ast.CallExpr) string {

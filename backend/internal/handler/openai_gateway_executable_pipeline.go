@@ -161,6 +161,16 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPForwardStage(c *gin.Context, adapter
 	}.Run(c)
 }
 
+func (h *OpenAIGatewayHandler) runOpenAIHTTPUsageStage(c *gin.Context, adapter UsageStage) openAIHTTPExecutableStageResult {
+	return GatewayPipeline{
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+		Source:   moderationcoverage.SourceOpenAIHTTPExecutableStage,
+		Stages: []ExecutableStage{
+			executableUsageStageWithContext(c, adapter),
+		},
+	}.Run(c)
+}
+
 func openAIHTTPExecutablePipeline(stages []openAIHTTPExecutableStage) GatewayPipeline {
 	return GatewayPipeline{
 		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
