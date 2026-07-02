@@ -38,11 +38,12 @@ type gatewayPreForwardPipelineResult struct {
 }
 
 type gatewayPreForwardRequest struct {
-	Protocol string
-	Model    string
-	Body     []byte
-	Stream   bool
-	Parsed   *service.ParsedRequest
+	Protocol    string
+	Model       string
+	Body        []byte
+	Stream      bool
+	Parsed      *service.ParsedRequest
+	ErrorFormat gatewayPreForwardErrorFormat
 }
 
 const gatewayPreForwardRequestContextKey = "gateway_pre_forward_request"
@@ -77,7 +78,7 @@ func (h *GatewayHandler) EnterGatewayPreForwardPipeline(c *gin.Context, meta mod
 	if meta.Pipeline != moderationcoverage.PipelineGatewayPreForward {
 		return gatewayPreForwardPipelineResult{}
 	}
-	if meta.Protocol != service.ContentModerationProtocolAnthropicMessages || strings.TrimSpace(meta.Handler) != "GatewayHandler.Messages" {
+	if meta.Protocol != service.ContentModerationProtocolAnthropicMessages || !gatewayPreForwardEntrypointHandlerSupported(meta.Handler) {
 		return gatewayPreForwardPipelineResult{}
 	}
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
@@ -111,26 +112,44 @@ func (h *GatewayHandler) EnterGatewayPreForwardPipeline(c *gin.Context, meta mod
 		return gatewayPreForwardPipelineResult{Blocked: true}
 	}
 
+	errorFormat := gatewayPreForwardErrorFormatForHandler(meta.Handler)
 	result := h.runGatewayPreForwardPipeline(c, reqLog, gatewayPreForwardPipelineInput{
 		APIKey:      apiKey,
 		Subject:     subject,
 		Protocol:    service.ContentModerationProtocolAnthropicMessages,
 		Model:       reqModel,
 		Body:        body,
-		ErrorFormat: gatewayPreForwardErrorAnthropic,
+		ErrorFormat: errorFormat,
 	})
 	if result.Blocked {
 		return result
 	}
 	setGatewayPreForwardRequest(c, gatewayPreForwardRequest{
-		Protocol: service.ContentModerationProtocolAnthropicMessages,
-		Model:    reqModel,
-		Body:     body,
-		Stream:   reqStream,
-		Parsed:   parsedReq,
+		Protocol:    service.ContentModerationProtocolAnthropicMessages,
+		Model:       reqModel,
+		Body:        body,
+		Stream:      reqStream,
+		Parsed:      parsedReq,
+		ErrorFormat: errorFormat,
 	})
 	restoreRequestBody(c, body)
 	return gatewayPreForwardPipelineResult{}
+}
+
+func gatewayPreForwardEntrypointHandlerSupported(handlerName string) bool {
+	switch strings.TrimSpace(handlerName) {
+	case "GatewayHandler.Messages", "GatewayHandler.CountTokens":
+		return true
+	default:
+		return false
+	}
+}
+
+func gatewayPreForwardErrorFormatForHandler(handlerName string) gatewayPreForwardErrorFormat {
+	switch strings.TrimSpace(handlerName) {
+	default:
+		return gatewayPreForwardErrorAnthropic
+	}
 }
 
 func (h *GatewayHandler) readGatewayMessagesPreForwardRequest(c *gin.Context) ([]byte, *service.ParsedRequest, bool) {

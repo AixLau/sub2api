@@ -14,13 +14,11 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	pkgerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
-	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
@@ -1794,11 +1792,6 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 		return
 	}
 
-	subject, ok := middleware2.GetAuthSubjectFromContext(c)
-	if !ok {
-		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
-		return
-	}
 	reqLog := requestLogger(
 		c,
 		"handler.gateway.count_tokens",
@@ -1807,29 +1800,17 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 	)
 	defer h.maybeLogCompatibilityFallbackMetrics(reqLog)
 
-	// 读取请求体
-	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
-	if err != nil {
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+	var body []byte
+	var parsedReq *service.ParsedRequest
+	if preForwardRequest, ok := gatewayPreForwardRequestFromContext(c, service.ContentModerationProtocolAnthropicMessages); ok {
+		body = preForwardRequest.Body
+		parsedReq = preForwardRequest.Parsed
+	} else {
+		var ok bool
+		body, parsedReq, ok = h.readGatewayMessagesPreForwardRequest(c)
+		if !ok {
 			return
 		}
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
-		return
-	}
-
-	if len(body) == 0 {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
-		return
-	}
-
-	setOpsRequestContext(c, "", false)
-
-	bodyRef := service.NewRequestBodyRef(body)
-	parsedReq, err := service.ParseGatewayRequest(bodyRef, domain.PlatformAnthropic)
-	if err != nil {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
-		return
 	}
 	// count_tokens 走 messages 严格校验时，复用已解析请求，避免二次反序列化。
 	SetClaudeCodeClientContext(c, body, parsedReq)
@@ -1845,17 +1826,6 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 
 	setOpsRequestContext(c, parsedReq.Model, parsedReq.Stream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(parsedReq.Stream, false)))
-
-	if pipelineResult := h.runGatewayPreForwardPipeline(c, reqLog, gatewayPreForwardPipelineInput{
-		APIKey:      apiKey,
-		Subject:     subject,
-		Protocol:    service.ContentModerationProtocolAnthropicMessages,
-		Model:       parsedReq.Model,
-		Body:        body,
-		ErrorFormat: gatewayPreForwardErrorAnthropic,
-	}); pipelineResult.Blocked {
-		return
-	}
 
 	// 获取订阅信息（可能为nil）
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
@@ -1890,7 +1860,7 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 		account, selectErr = h.gatewayService.SelectAccountForModel(c.Request.Context(), apiKey.GroupID, sessionHash, parsedReq.Model)
 		return ExecutableStageResult{Err: selectErr}
 	})
-	err = routingStage.Err
+	err := routingStage.Err
 	if err != nil {
 		reqLog.Warn("gateway.count_tokens_select_account_failed", zap.Error(err))
 		cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, parsedReq.Model, parsedReq.Model, service.PlatformAnthropic)

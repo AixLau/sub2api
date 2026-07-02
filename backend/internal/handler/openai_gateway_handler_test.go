@@ -1337,8 +1337,9 @@ func TestGatewayCountTokens_ContentModerationBlocksBeforeUpstreamSelection(t *te
 		contentModerationService: moderationSvc,
 	}
 
-	h.CountTokens(c)
+	result := h.EnterGatewayPreForwardPipeline(c, gatewayCountTokensRouteMetaForTest())
 
+	require.True(t, result.Blocked)
 	require.Equal(t, http.StatusForbidden, w.Code)
 	require.Contains(t, w.Body.String(), "内容审计测试阻断")
 	require.Eventually(t, func() bool {
@@ -1349,6 +1350,18 @@ func TestGatewayCountTokens_ContentModerationBlocksBeforeUpstreamSelection(t *te
 	require.Equal(t, "claude-sonnet-4-5", logs[0].Model)
 	require.Equal(t, service.ContentModerationActionKeywordBlock, logs[0].Action)
 	require.Equal(t, "count-token-risk", logs[0].MatchedKeyword)
+}
+
+func gatewayCountTokensRouteMetaForTest() moderationcoverage.Entry {
+	return moderationcoverage.Entry{
+		Method:             http.MethodPost,
+		Path:               "/v1/messages/count_tokens",
+		Handler:            "GatewayHandler.CountTokens",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolAnthropicMessages,
+		Pipeline:           moderationcoverage.PipelineGatewayPreForward,
+	}
 }
 
 func TestOpenAIResponsesWebSocket_ContentModerationBlocksFirstFrame(t *testing.T) {

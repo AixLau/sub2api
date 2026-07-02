@@ -12,7 +12,6 @@ import (
 
 func TestGatewayPreForwardEntrypointsUseUnifiedPipelineHelper(t *testing.T) {
 	tests := map[string][]string{
-		"gateway_handler.go":                  {"CountTokens"},
 		"gateway_handler_chat_completions.go": {"ChatCompletions"},
 		"gateway_handler_responses.go":        {"Responses"},
 		"gemini_v1beta_handler.go":            {"GeminiV1BetaModels"},
@@ -94,6 +93,15 @@ func TestGatewayPreForwardEntrypointsUseUnifiedPipelineHelper(t *testing.T) {
 }
 
 func TestAnthropicMessagesPreForwardRunsThroughGatewayPipelineRegistrar(t *testing.T) {
+	requireGatewayHandlerPreForwardThroughRegistrar(t, "Messages")
+}
+
+func TestGatewayCountTokensPreForwardRunsThroughGatewayPipelineRegistrar(t *testing.T) {
+	requireGatewayHandlerPreForwardThroughRegistrar(t, "CountTokens")
+}
+
+func requireGatewayHandlerPreForwardThroughRegistrar(t *testing.T, handlerName string) {
+	t.Helper()
 	src, err := os.ReadFile("gateway_handler.go")
 	if err != nil {
 		t.Fatalf("read gateway_handler.go: %v", err)
@@ -104,7 +112,7 @@ func TestAnthropicMessagesPreForwardRunsThroughGatewayPipelineRegistrar(t *testi
 		t.Fatalf("parse gateway_handler.go: %v", err)
 	}
 
-	fn := gatewayHandlerFuncDecl(t, parsed, "Messages")
+	fn := gatewayHandlerFuncDecl(t, parsed, handlerName)
 	var directPipelineCalls []int
 	hasCachedPreForwardRequest := false
 	ast.Inspect(fn.Body, func(node ast.Node) bool {
@@ -126,10 +134,10 @@ func TestAnthropicMessagesPreForwardRunsThroughGatewayPipelineRegistrar(t *testi
 	})
 
 	if len(directPipelineCalls) > 0 {
-		t.Fatalf("GatewayHandler.Messages must receive pre-forward admission from GatewayPipelineRegistrar instead of calling runGatewayPreForwardPipeline directly at lines %v", directPipelineCalls)
+		t.Fatalf("GatewayHandler.%s must receive pre-forward admission from GatewayPipelineRegistrar instead of calling runGatewayPreForwardPipeline directly at lines %v", handlerName, directPipelineCalls)
 	}
 	if !hasCachedPreForwardRequest {
-		t.Fatalf("GatewayHandler.Messages must consume the GatewayPipelineRegistrar pre-forward request cache")
+		t.Fatalf("GatewayHandler.%s must consume the GatewayPipelineRegistrar pre-forward request cache", handlerName)
 	}
 }
 

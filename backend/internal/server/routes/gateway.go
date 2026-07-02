@@ -76,7 +76,12 @@ func RegisterGatewayRoutes(
 			return GatewayPipelineEntryResult{}
 		}),
 		moderationcoverage.PipelineGatewayPreForward: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
-			if meta.Protocol != service.ContentModerationProtocolAnthropicMessages || meta.Handler != "GatewayHandler.Messages" {
+			if meta.Protocol != service.ContentModerationProtocolAnthropicMessages {
+				return GatewayPipelineEntryResult{}
+			}
+			switch meta.Handler {
+			case "GatewayHandler.Messages", "GatewayHandler.CountTokens":
+			default:
 				return GatewayPipelineEntryResult{}
 			}
 			switch getGroupPlatform(c) {
