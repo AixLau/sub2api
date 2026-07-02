@@ -34,7 +34,7 @@ func TestGatewayModerationCoverageManifestDefinesCriticalUpstreamEntrypoints(t *
 		t.Fatal("coverage manifest has no entries")
 	}
 
-	byPath := make(map[string]gatewayModerationCoverageEntry, len(manifest.Entries))
+	byRouteProtocol := make(map[string]gatewayModerationCoverageEntry, len(manifest.Entries))
 	for i, entry := range manifest.Entries {
 		if strings.TrimSpace(entry.Method) == "" {
 			t.Fatalf("entries[%d] missing method", i)
@@ -54,14 +54,16 @@ func TestGatewayModerationCoverageManifestDefinesCriticalUpstreamEntrypoints(t *
 		if entry.Status == "intentional_no_audit" && strings.TrimSpace(entry.ReviewReason) == "" {
 			t.Fatalf("entries[%d] path %q is intentional_no_audit but missing review_reason", i, entry.Path)
 		}
-		if previous, ok := byPath[entry.Method+" "+entry.Path]; ok {
-			t.Fatalf("duplicate route %s %s for handlers %q and %q", entry.Method, entry.Path, previous.Handler, entry.Handler)
+		routeProtocolKey := entry.Method + " " + entry.Path + " " + entry.Protocol
+		if previous, ok := byRouteProtocol[routeProtocolKey]; ok {
+			t.Fatalf("duplicate route branch %s for handlers %q and %q", routeProtocolKey, previous.Handler, entry.Handler)
 		}
-		byPath[entry.Method+" "+entry.Path] = entry
+		byRouteProtocol[routeProtocolKey] = entry
 	}
 
 	requiredCovered := map[string]string{
 		"POST /v1/messages":                            "anthropic_messages",
+		"POST /v1/messages openai_messages":            "openai_messages",
 		"POST /antigravity/v1/messages":                "anthropic_messages",
 		"POST /v1/messages/count_tokens":               "anthropic_messages",
 		"POST /antigravity/v1/messages/count_tokens":   "anthropic_messages",
@@ -87,7 +89,11 @@ func TestGatewayModerationCoverageManifestDefinesCriticalUpstreamEntrypoints(t *
 	}
 
 	for route, protocol := range requiredCovered {
-		entry, ok := byPath[route]
+		lookupKey := route
+		if !strings.HasSuffix(route, " "+protocol) {
+			lookupKey = route + " " + protocol
+		}
+		entry, ok := byRouteProtocol[lookupKey]
 		if !ok {
 			t.Fatalf("required gateway route %q missing from moderation coverage manifest", route)
 		}

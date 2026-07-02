@@ -62,6 +62,12 @@ func RegisterGatewayRoutes(
 	gateway.Use(gin.HandlerFunc(apiKeyAuth))
 	gateway.Use(requireGroupAnthropic)
 	{
+		openAIMessagesRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
+			"/v1/messages",
+			"OpenAIGatewayHandler.Messages",
+			service.ContentModerationProtocolOpenAIMessages,
+			"OpenAI groups using the Anthropic-compatible Messages endpoint are moderated by the OpenAI HTTP pipeline before scheduling and upstream forwarding.",
+		))
 		// /v1/messages: auto-route based on group platform
 		moderatedGateway.POST("/messages", coveredModeratedRoute(
 			"/v1/messages",
@@ -74,6 +80,7 @@ func RegisterGatewayRoutes(
 				return
 			}
 			if isOpenAIGatewayPlatform(c) {
+				setModeratedRouteBranchMeta(c, openAIMessagesRouteMeta)
 				h.OpenAIGateway.Messages(c)
 				return
 			}

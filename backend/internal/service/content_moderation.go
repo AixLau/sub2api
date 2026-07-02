@@ -90,6 +90,7 @@ const (
 	ContentModerationProtocolAnthropicMessages = "anthropic_messages"
 	ContentModerationProtocolOpenAIResponses   = "openai_responses"
 	ContentModerationProtocolOpenAIChat        = "openai_chat_completions"
+	ContentModerationProtocolOpenAIMessages    = "openai_messages"
 	ContentModerationProtocolGemini            = "gemini"
 	ContentModerationProtocolOpenAIImages      = "openai_images"
 	ContentModerationProtocolOpenAIEmbeddings  = "openai_embeddings"
@@ -138,7 +139,7 @@ const (
 	contentModerationPolicySchemaVersion           = "2026-06-29.1"
 	contentModerationExtractorVersion              = "v4"
 	contentModerationMinimumSecurityBaselineCommit = "9216c848"
-	contentModerationRouteManifestVersion          = "2026-06-29.10"
+	contentModerationRouteManifestVersion          = "2026-06-29.11"
 	contentModerationPipelineCoverageVersion       = "gateway-pipeline-coverage-v1"
 	minContentModerationBuildCommitPrefixLen       = 7
 )
@@ -2197,6 +2198,7 @@ func contentModerationIsOpenAIHTTPPipelineRoute(entry contentModerationRouteCove
 	}
 	switch strings.TrimSpace(entry.Protocol) {
 	case ContentModerationProtocolOpenAIChat,
+		ContentModerationProtocolOpenAIMessages,
 		ContentModerationProtocolOpenAIResponses,
 		ContentModerationProtocolOpenAIImages,
 		ContentModerationProtocolOpenAIEmbeddings:
@@ -2808,6 +2810,8 @@ func contentModerationPrimarySource(protocol string, content ContentModerationIn
 		return "openai_chat.messages.content"
 	case ContentModerationProtocolOpenAIResponses:
 		return "responses.input.content"
+	case ContentModerationProtocolOpenAIMessages:
+		return "openai_messages.content"
 	case ContentModerationProtocolAnthropicMessages:
 		return "anthropic.messages.content"
 	case ContentModerationProtocolGemini:

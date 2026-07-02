@@ -43,6 +43,15 @@ func TestOpenAIHTTPPipelineStagesForRouteIsSharedFactSource(t *testing.T) {
 		{Stage: StageUsage, Required: true, Covered: true},
 	}, OpenAIHTTPPipelineStagesForRoute("OpenAIGatewayHandler.Embeddings", "openai_embeddings"))
 
+	require.Equal(t, []PipelineStageCoverage{
+		{Stage: StageModeration, Required: true, Covered: true},
+		{Stage: StageCyber, Required: true, Covered: true},
+		{Stage: StageBilling, Required: true, Covered: true},
+		{Stage: StageRouting, Required: true, Covered: true},
+		{Stage: StageForward, Required: true, Covered: true},
+		{Stage: StageUsage, Required: true, Covered: true},
+	}, OpenAIHTTPPipelineStagesForRoute("OpenAIGatewayHandler.Messages", "openai_messages"))
+
 	require.Nil(t, OpenAIHTTPPipelineStagesForRoute("OpenAIGatewayHandler.ResponsesWebSocket", "openai_responses"))
 	require.Nil(t, OpenAIHTTPPipelineStagesForRoute("GatewayHandler.Messages", "anthropic_messages"))
 }

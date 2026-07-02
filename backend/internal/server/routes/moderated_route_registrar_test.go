@@ -256,6 +256,44 @@ func TestModeratedRouteRegistrarPreservesPipelineAdmissionFromHandlerPipeline(t 
 	require.Equal(t, moderationcoverage.SourceOpenAIHTTPPreForward, admissionAfterPipeline.Source)
 }
 
+func TestModeratedRouteRegistrarEnforcesRuntimeBranchRouteMeta(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
+
+	router := gin.New()
+	registrar := NewModeratedRouteRegistrar(router)
+	openAIMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
+		"/v1/messages",
+		"OpenAIGatewayHandler.Messages",
+		"openai_messages",
+		"test openai messages branch",
+	))
+
+	registrar.POST("/messages", coveredModeratedRoute(
+		"/v1/messages",
+		"GatewayHandler.Messages",
+		"anthropic_messages",
+		"test default messages branch",
+	), func(c *gin.Context) {
+		setModeratedRouteBranchMeta(c, openAIMeta)
+		moderationcoverage.MarkPipelineAdmitted(
+			c,
+			moderationcoverage.PipelineOpenAIHTTP,
+			moderationcoverage.StagePreForward,
+			moderationcoverage.SourceOpenAIHTTPPreForward,
+		)
+		c.Status(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/messages", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	require.NotContains(t, rec.Body.String(), "pipeline_admission_missing")
+}
+
 func TestModeratedRouteRegistrarDoesNotBindPipelineAdmissionForNoAuditRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	restore := replaceModeratedRouteRegistryForTest(nil)
@@ -401,8 +439,8 @@ func TestOpenAIHTTPModeratedRoutesHaveCyberStageCoverage(t *testing.T) {
 	directRejectLocations := openAIHTTPDirectCyberRejectLocations(stageCoverage)
 	cyberStageProtocols := openAIHTTPCyberStageProtocols(stageCoverage)
 
-	require.Equal(t, []string{"openai_chat_completions", "openai_responses"}, openAIHTTPProtocols,
-		"CyberStage coverage is required only for OpenAI HTTP Chat and Responses moderated route protocols")
+	require.Equal(t, []string{"openai_chat_completions", "openai_messages", "openai_responses"}, openAIHTTPProtocols,
+		"CyberStage coverage is required for OpenAI HTTP Chat, Messages, and Responses moderated route protocols")
 	require.Empty(t, directRejectLocations,
 		"OpenAI HTTP Chat/Responses must route cyber session checks through OpenAIGatewayPipeline.CheckCyberSession/CyberStage, not direct rejectIfCyberSessionBlocked calls at %s",
 		strings.Join(directRejectLocations, ", "))
@@ -469,6 +507,7 @@ func TestOpenAIHTTPModeratedRouteRegistrarExposesPipelineStages(t *testing.T) {
 		"POST /v1/embeddings",
 		"POST /v1/images/edits",
 		"POST /v1/images/generations",
+		"POST /v1/messages",
 		"POST /v1/responses",
 		"POST /v1/responses/*subpath",
 	}, moderatedRoutePathKeysFromEntries(entries))
@@ -495,6 +534,10 @@ func TestOpenAIHTTPModeratedRouteRegistrarExposesPipelineStages(t *testing.T) {
 			requireStageRequiredAndCovered(t, entry, moderationcoverage.StageImage)
 		case "OpenAIGatewayHandler.Embeddings":
 			requireStageNotRequired(t, entry, moderationcoverage.StageCyber)
+			requireStageNotRequired(t, entry, moderationcoverage.StageImage)
+		case "OpenAIGatewayHandler.Messages":
+			require.Equal(t, "openai_messages", entry.Protocol)
+			requireStageRequiredAndCovered(t, entry, moderationcoverage.StageCyber)
 			requireStageNotRequired(t, entry, moderationcoverage.StageImage)
 		default:
 			t.Fatalf("unexpected OpenAI HTTP pipeline handler %q for %s", entry.Handler, entry.Path)
@@ -792,7 +835,7 @@ func openAIHTTPModeratedRouteProtocolsFromRegistrar(entries []ModeratedRouteMeta
 			continue
 		}
 		switch entry.Protocol {
-		case "openai_chat_completions", "openai_responses":
+		case "openai_chat_completions", "openai_messages", "openai_responses":
 			protocolSet[entry.Protocol] = struct{}{}
 		}
 	}
@@ -948,7 +991,7 @@ func openAIHTTPHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
 
 func isOpenAIHTTPModeratedHandler(handler string) bool {
 	switch strings.TrimSpace(handler) {
-	case "OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.Embeddings":
+	case "OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Messages", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.Embeddings":
 		return true
 	default:
 		return false
@@ -982,7 +1025,7 @@ func openAIHTTPCyberStageProtocols(coverageByHandler map[string]openAIHTTPHandle
 
 func isOpenAIHTTPModerationProtocol(protocol string) bool {
 	switch protocol {
-	case "openai_chat_completions", "openai_responses", "openai_images", "openai_embeddings":
+	case "openai_chat_completions", "openai_messages", "openai_responses", "openai_images", "openai_embeddings":
 		return true
 	default:
 		return false
@@ -1579,6 +1622,8 @@ func serviceProtocolConstantValue(name string) string {
 	switch name {
 	case "ContentModerationProtocolOpenAIChat":
 		return "openai_chat_completions"
+	case "ContentModerationProtocolOpenAIMessages":
+		return "openai_messages"
 	case "ContentModerationProtocolOpenAIResponses":
 		return "openai_responses"
 	case "ContentModerationProtocolOpenAIImages":

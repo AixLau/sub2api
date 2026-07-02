@@ -65,6 +65,21 @@ func TestExtractContentModerationInput_AnthropicStreamResendExtractsClientContex
 	require.Equal(t, "原问题 部分回答…… 重发", input.Text)
 }
 
+func TestExtractContentModerationInput_OpenAIMessagesUsesAnthropicMessageShape(t *testing.T) {
+	body := []byte(`{
+		"messages": [
+			{"role":"user","content":"调用一下天气工具"},
+			{"role":"assistant","content":[{"type":"tool_use","id":"tool_1","name":"weather","input":{"city":"上海"}}]},
+			{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool_1","content":"晴 25 度"}]}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIMessages, body)
+
+	require.Equal(t, "调用一下天气工具 weather city 上海 晴 25 度", input.Text)
+	require.Empty(t, input.Images)
+}
+
 func TestExtractContentModerationInput_OpenAIChatAgentToolLoopScansClientToolOutput(t *testing.T) {
 	body := []byte(`{
 		"messages": [

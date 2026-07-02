@@ -735,7 +735,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	if pipelineResult := h.runOpenAIHTTPPreForwardPipeline(c, reqLog, openAIHTTPPreForwardPipelineInput{
 		APIKey:                apiKey,
 		Subject:               subject,
-		Protocol:              service.ContentModerationProtocolAnthropicMessages,
+		Protocol:              service.ContentModerationProtocolOpenAIMessages,
 		Model:                 reqModel,
 		Body:                  body,
 		CyberBody:             body,
@@ -768,13 +768,18 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		defer userReleaseFunc()
 	}
 
-	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
-		reqLog.Info("openai_messages.billing_eligibility_check_failed", zap.Error(err))
-		status, code, message, retryAfter := billingErrorDetails(err)
-		if retryAfter > 0 {
-			c.Header("Retry-After", strconv.Itoa(retryAfter))
+	if billingStage := h.runOpenAIHTTPExecutableStage(c, moderationcoverage.StageBilling, func() openAIHTTPExecutableStageResult {
+		if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
+			reqLog.Info("openai_messages.billing_eligibility_check_failed", zap.Error(err))
+			status, code, message, retryAfter := billingErrorDetails(err)
+			if retryAfter > 0 {
+				c.Header("Retry-After", strconv.Itoa(retryAfter))
+			}
+			h.anthropicStreamingAwareError(c, status, code, message, streamStarted)
+			return openAIHTTPExecutableStageResult{Stop: true, Err: err}
 		}
-		h.anthropicStreamingAwareError(c, status, code, message, streamStarted)
+		return openAIHTTPExecutableStageResult{}
+	}); billingStage.Stop {
 		return
 	}
 
@@ -793,75 +798,85 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		if effectiveMappedModel != "" {
 			currentRoutingModel = effectiveMappedModel
 		}
-		reqLog.Debug("openai_messages.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
-			c.Request.Context(),
-			apiKey.GroupID,
-			"", // no previous_response_id
-			sessionHash,
-			currentRoutingModel,
-			failedAccountIDs,
-			service.OpenAIUpstreamTransportAny,
-			service.OpenAIEndpointCapabilityChatCompletions,
-			false,
-			requestPlatform,
-			subject.UserID,
-		)
-		if err != nil {
-			reqLog.Warn("openai_messages.account_select_failed",
-				zap.Error(err),
-				zap.Int("excluded_account_count", len(failedAccountIDs)),
+		var account *service.Account
+		var accountReleaseFunc func()
+		routingRetry := false
+		if routingStage := h.runOpenAIHTTPExecutableStage(c, moderationcoverage.StageRouting, func() openAIHTTPExecutableStageResult {
+			reqLog.Debug("openai_messages.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
+			selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
+				c.Request.Context(),
+				apiKey.GroupID,
+				"", // no previous_response_id
+				sessionHash,
+				currentRoutingModel,
+				failedAccountIDs,
+				service.OpenAIUpstreamTransportAny,
+				service.OpenAIEndpointCapabilityChatCompletions,
+				false,
+				requestPlatform,
+				subject.UserID,
 			)
-			if len(failedAccountIDs) == 0 {
-				if err != nil {
+			if err != nil {
+				reqLog.Warn("openai_messages.account_select_failed",
+					zap.Error(err),
+					zap.Int("excluded_account_count", len(failedAccountIDs)),
+				)
+				if len(failedAccountIDs) == 0 {
 					cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, currentRoutingModel, reqModel, service.PlatformOpenAI)
 					if !cls.ModelNotFound {
 						markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 					}
 					h.anthropicStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
-					return
+					return openAIHTTPExecutableStageResult{Stop: true, Err: err}
 				}
-			} else {
 				if lastFailoverErr != nil {
 					h.handleAnthropicFailoverExhausted(c, lastFailoverErr, streamStarted)
 				} else {
 					h.anthropicStreamingAwareError(c, http.StatusBadGateway, "api_error", "Upstream request failed", streamStarted)
 				}
-				return
+				return openAIHTTPExecutableStageResult{Stop: true, Err: err}
 			}
-		}
-		if selection == nil || selection.Account == nil {
-			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, currentRoutingModel, reqModel, service.PlatformOpenAI)
-			if !cls.ModelNotFound {
-				markOpsRoutingCapacityLimited(c)
+			if selection == nil || selection.Account == nil {
+				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, currentRoutingModel, reqModel, service.PlatformOpenAI)
+				if !cls.ModelNotFound {
+					markOpsRoutingCapacityLimited(c)
+				}
+				h.anthropicStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
+				return openAIHTTPExecutableStageResult{Stop: true}
 			}
-			h.anthropicStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
-			return
-		}
-		account := selection.Account
-		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
-		reqLog.Debug("openai_messages.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
-		_ = scheduleDecision
-		setOpsSelectedAccount(c, account.ID, account.Platform)
+			account = selection.Account
+			sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
+			reqLog.Debug("openai_messages.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
+			_ = scheduleDecision
+			setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		accountReleaseFunc, refreshedAccount, acquired, retryable := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, currentRoutingModel, false, service.OpenAIEndpointCapabilityChatCompletions, "", reqStream, &streamStarted, reqLog)
-		if !acquired {
-			if retryable && switchCount < maxAccountSwitches {
-				failedAccountIDs[account.ID] = struct{}{}
-				switchCount++
-				reqLog.Info("openai_messages.concurrency_fallback",
-					zap.Int64("failed_account_id", account.ID),
-					zap.Int("switch_count", switchCount),
-				)
-				continue
+			releaseFunc, refreshedAccount, acquired, retryable := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, currentRoutingModel, false, service.OpenAIEndpointCapabilityChatCompletions, "", reqStream, &streamStarted, reqLog)
+			if !acquired {
+				if retryable && switchCount < maxAccountSwitches {
+					failedAccountIDs[account.ID] = struct{}{}
+					switchCount++
+					routingRetry = true
+					reqLog.Info("openai_messages.concurrency_fallback",
+						zap.Int64("failed_account_id", account.ID),
+						zap.Int("switch_count", switchCount),
+					)
+					return openAIHTTPExecutableStageResult{}
+				}
+				// Retryable but cannot continue: write error response
+				if retryable {
+					h.anthropicStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many concurrent requests, please retry later", streamStarted)
+				}
+				return openAIHTTPExecutableStageResult{Stop: true}
 			}
-			// Retryable but cannot continue: write error response
-			if retryable {
-				h.anthropicStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many concurrent requests, please retry later", streamStarted)
-			}
+			accountReleaseFunc = releaseFunc
+			account = refreshedAccount
+			return openAIHTTPExecutableStageResult{}
+		}); routingStage.Stop {
 			return
 		}
-		account = refreshedAccount
+		if routingRetry {
+			continue
+		}
 
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 		forwardStart := time.Now()

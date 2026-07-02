@@ -56,6 +56,15 @@ func registerModeratedRoute(meta ModeratedRouteMeta) ModeratedRouteMeta {
 	return meta
 }
 
+func registerModeratedRouteBranch(method string, meta ModeratedRouteMeta) ModeratedRouteMeta {
+	meta.Method = method
+	return registerModeratedRoute(meta)
+}
+
+func setModeratedRouteBranchMeta(c *gin.Context, meta ModeratedRouteMeta) {
+	moderationcoverage.SetRouteMeta(c, meta)
+}
+
 func prependModeratedRouteMetaHandler(meta ModeratedRouteMeta, handlers []gin.HandlerFunc) []gin.HandlerFunc {
 	prepended := make([]gin.HandlerFunc, 0, len(handlers)+1)
 	prepended = append(prepended, func(c *gin.Context) {
@@ -68,6 +77,9 @@ func prependModeratedRouteMetaHandler(meta ModeratedRouteMeta, handlers []gin.Ha
 }
 
 func enforceModeratedRoutePipelineAdmission(c *gin.Context, meta ModeratedRouteMeta) {
+	if runtimeMeta, ok := moderationcoverage.RouteMetaFromContext(c); ok {
+		meta = runtimeMeta
+	}
 	meta = moderationcoverage.NormalizeEntry(meta)
 	if !meta.Upstream || !meta.ModerationRequired || meta.Pipeline == "" {
 		return

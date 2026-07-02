@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "manifest_version": "2026-06-29.10",
+  "manifest_version": "2026-06-29.11",
   "entries": [
     {
       "route": {
@@ -50,6 +50,55 @@
       ],
       "status": "covered",
       "review_reason": "Anthropic Messages requests are moderated after request parsing and before billing, scheduling, and upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/v1/messages",
+        "handler": "OpenAIGatewayHandler.Messages",
+        "protocol": "openai_messages"
+      },
+      "method": "POST",
+      "path": "/v1/messages",
+      "handler": "OpenAIGatewayHandler.Messages",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_messages",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "cyber",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
+        }
+      ],
+      "status": "covered",
+      "review_reason": "OpenAI groups using the Anthropic-compatible Messages endpoint are moderated by the OpenAI HTTP pipeline before scheduling and upstream forwarding."
     },
     {
       "route": {

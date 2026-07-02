@@ -40,7 +40,7 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 	var sources []ContentModerationInputSource
 	toolState := &toolResultTextState{}
 	switch protocol {
-	case ContentModerationProtocolAnthropicMessages:
+	case ContentModerationProtocolAnthropicMessages, ContentModerationProtocolOpenAIMessages:
 		collectAnthropicInput(body, &parts, &images, &sources, toolState, auditScope)
 	case ContentModerationProtocolOpenAIChat:
 		collectOpenAIChatTopLevelModelContext(body, &parts, &images, &sources, toolState, auditScope)
@@ -93,6 +93,7 @@ func isUnexpectedEmptyModerationInput(protocol string, body []byte) bool {
 	}
 	switch protocol {
 	case ContentModerationProtocolOpenAIChat,
+		ContentModerationProtocolOpenAIMessages,
 		ContentModerationProtocolOpenAIResponses,
 		ContentModerationProtocolAnthropicMessages,
 		ContentModerationProtocolGemini,

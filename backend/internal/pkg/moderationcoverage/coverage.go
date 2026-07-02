@@ -358,6 +358,8 @@ func OpenAIHTTPPipelineStagesForRoute(handlerName, protocol string) []PipelineSt
 	switch strings.TrimSpace(handlerName) {
 	case "OpenAIGatewayHandler.ChatCompletions":
 		stages = append(stages, CoveredPipelineStage(StageCyber))
+	case "OpenAIGatewayHandler.Messages":
+		stages = append(stages, CoveredPipelineStage(StageCyber))
 	case "OpenAIGatewayHandler.Responses":
 		stages = append(stages,
 			CoveredPipelineStage(StageCyber),
@@ -436,7 +438,7 @@ func CoveredPipelineStage(stage string) PipelineStageCoverage {
 
 func IsOpenAIHTTPPipelineProtocol(protocol string) bool {
 	switch strings.TrimSpace(protocol) {
-	case "openai_chat_completions", "openai_responses", "openai_images", "openai_embeddings":
+	case "openai_chat_completions", "openai_messages", "openai_responses", "openai_images", "openai_embeddings":
 		return true
 	default:
 		return false
