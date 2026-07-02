@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -241,6 +242,98 @@ func (h *GatewayHandler) runGatewayUsageStage(c *gin.Context, adapter UsageStage
 			executableUsageStageWithContext(c, adapter),
 		},
 	}.Run(c)
+}
+
+type GatewayUsageStage struct {
+	Handler               *GatewayHandler
+	RequestContext        context.Context
+	Result                *service.ForwardResult
+	QuotaPlatform         string
+	APIKey                *service.APIKey
+	Account               *service.Account
+	Subscription          *service.UserSubscription
+	InboundEndpoint       string
+	UpstreamEndpoint      string
+	UserAgent             string
+	ClientIP              string
+	RequestPayloadHash    string
+	ForceCacheBilling     bool
+	APIKeyService         *service.APIKeyService
+	ChannelUsageFields    service.ChannelUsageFields
+	LongContext           bool
+	LongContextThreshold  int
+	LongContextMultiplier float64
+	LogComponent          string
+	LogMessage            string
+	LogUserID             int64
+	LogModel              string
+}
+
+func (GatewayUsageStage) StageName() string {
+	return moderationcoverage.StageUsage
+}
+
+func (s GatewayUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
+	h := s.Handler
+	if h == nil {
+		return ExecutableStageResult{}
+	}
+	ctx := s.RequestContext
+	if ctx == nil {
+		ctx = c.Request.Context()
+	}
+	record := func(taskCtx context.Context) {
+		var err error
+		if s.LongContext {
+			err = h.gatewayService.RecordUsageWithLongContext(taskCtx, &service.RecordUsageLongContextInput{
+				Result:                s.Result,
+				QuotaPlatform:         s.QuotaPlatform,
+				APIKey:                s.APIKey,
+				User:                  s.APIKey.User,
+				Account:               s.Account,
+				Subscription:          s.Subscription,
+				InboundEndpoint:       s.InboundEndpoint,
+				UpstreamEndpoint:      s.UpstreamEndpoint,
+				UserAgent:             s.UserAgent,
+				IPAddress:             s.ClientIP,
+				RequestPayloadHash:    s.RequestPayloadHash,
+				LongContextThreshold:  s.LongContextThreshold,
+				LongContextMultiplier: s.LongContextMultiplier,
+				ForceCacheBilling:     s.ForceCacheBilling,
+				APIKeyService:         s.APIKeyService,
+				ChannelUsageFields:    s.ChannelUsageFields,
+			})
+		} else {
+			err = h.gatewayService.RecordUsage(taskCtx, &service.RecordUsageInput{
+				Result:             s.Result,
+				QuotaPlatform:      s.QuotaPlatform,
+				APIKey:             s.APIKey,
+				User:               s.APIKey.User,
+				Account:            s.Account,
+				Subscription:       s.Subscription,
+				InboundEndpoint:    s.InboundEndpoint,
+				UpstreamEndpoint:   s.UpstreamEndpoint,
+				UserAgent:          s.UserAgent,
+				IPAddress:          s.ClientIP,
+				RequestPayloadHash: s.RequestPayloadHash,
+				ForceCacheBilling:  s.ForceCacheBilling,
+				APIKeyService:      s.APIKeyService,
+				ChannelUsageFields: s.ChannelUsageFields,
+			})
+		}
+		if err != nil {
+			logger.L().With(
+				zap.String("component", s.LogComponent),
+				zap.Int64("user_id", s.LogUserID),
+				zap.Int64("api_key_id", s.APIKey.ID),
+				zap.Any("group_id", s.APIKey.GroupID),
+				zap.String("model", s.LogModel),
+				zap.Int64("account_id", s.Account.ID),
+			).Error(s.LogMessage, zap.Error(err))
+		}
+	}
+	h.submitUsageRecordTask(ctx, record)
+	return ExecutableStageResult{}
 }
 
 func (h *GatewayHandler) gatewayPreForwardPipeline() *GatewayPreForwardPipeline {

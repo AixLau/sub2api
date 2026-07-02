@@ -351,6 +351,55 @@ func TestGatewayMessagesAndGeminiUseUsageStageAdapter(t *testing.T) {
 	}
 }
 
+func TestGatewayMessagesAndGeminiUseNamedUsageStageAdapter(t *testing.T) {
+	tests := []struct {
+		file     string
+		handler  string
+		minCalls int
+	}{
+		{file: "gateway_handler.go", handler: "Messages", minCalls: 2},
+		{file: "gemini_v1beta_handler.go", handler: "GeminiV1BetaModels", minCalls: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.file+"/"+tt.handler, func(t *testing.T) {
+			src, err := os.ReadFile(tt.file)
+			if err != nil {
+				t.Fatalf("read %s: %v", tt.file, err)
+			}
+			fset := token.NewFileSet()
+			parsed, err := parser.ParseFile(fset, tt.file, src, 0)
+			if err != nil {
+				t.Fatalf("parse %s: %v", tt.file, err)
+			}
+
+			fn := gatewayHandlerFuncDecl(t, parsed, tt.handler)
+			namedUsageStageCalls := 0
+			var anonymousUsageStageAdapterLines []int
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				lit, ok := node.(*ast.CompositeLit)
+				if !ok {
+					return true
+				}
+				switch compositeTypeName(lit.Type) {
+				case "GatewayUsageStage":
+					namedUsageStageCalls++
+				case "UsageStageAdapter":
+					anonymousUsageStageAdapterLines = append(anonymousUsageStageAdapterLines, fset.Position(lit.Pos()).Line)
+				}
+				return true
+			})
+
+			if namedUsageStageCalls < tt.minCalls {
+				t.Fatalf("GatewayHandler.%s must pass GatewayUsageStage to runGatewayUsageStage, got %d calls", tt.handler, namedUsageStageCalls)
+			}
+			if len(anonymousUsageStageAdapterLines) > 0 {
+				t.Fatalf("GatewayHandler.%s must not wrap usage with anonymous UsageStageAdapter at lines %v", tt.handler, anonymousUsageStageAdapterLines)
+			}
+		})
+	}
+}
+
 func TestGatewayPreForwardHandlersUseBillingStage(t *testing.T) {
 	tests := []struct {
 		file     string

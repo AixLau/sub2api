@@ -574,37 +574,26 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// ForceCacheBilling 提前拍成标量，避免 worker 闭包保活 failover 状态里的响应体。
 			forceCacheBilling := fs.ForceCacheBilling
 			quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-			_ = h.runGatewayUsageStage(c, UsageStageAdapter{
-				Usage: func(*gin.Context) ExecutableStageResult {
-					h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
-						if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-							Result:             result,
-							QuotaPlatform:      quotaPlatform,
-							APIKey:             apiKey,
-							User:               apiKey.User,
-							Account:            account,
-							Subscription:       subscription,
-							InboundEndpoint:    inboundEndpoint,
-							UpstreamEndpoint:   upstreamEndpoint,
-							UserAgent:          userAgent,
-							IPAddress:          clientIP,
-							RequestPayloadHash: requestPayloadHash,
-							ForceCacheBilling:  forceCacheBilling,
-							APIKeyService:      h.apiKeyService,
-							ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
-						}); err != nil {
-							logger.L().With(
-								zap.String("component", "handler.gateway.messages"),
-								zap.Int64("user_id", subject.UserID),
-								zap.Int64("api_key_id", apiKey.ID),
-								zap.Any("group_id", apiKey.GroupID),
-								zap.String("model", reqModel),
-								zap.Int64("account_id", account.ID),
-							).Error("gateway.record_usage_failed", zap.Error(err))
-						}
-					})
-					return ExecutableStageResult{}
-				},
+			_ = h.runGatewayUsageStage(c, GatewayUsageStage{
+				Handler:            h,
+				RequestContext:     c.Request.Context(),
+				Result:             result,
+				QuotaPlatform:      quotaPlatform,
+				APIKey:             apiKey,
+				Account:            account,
+				Subscription:       subscription,
+				InboundEndpoint:    inboundEndpoint,
+				UpstreamEndpoint:   upstreamEndpoint,
+				UserAgent:          userAgent,
+				ClientIP:           clientIP,
+				RequestPayloadHash: requestPayloadHash,
+				ForceCacheBilling:  forceCacheBilling,
+				APIKeyService:      h.apiKeyService,
+				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+				LogComponent:       "handler.gateway.messages",
+				LogMessage:         "gateway.record_usage_failed",
+				LogUserID:          subject.UserID,
+				LogModel:           reqModel,
 			})
 			return
 		}
@@ -1058,37 +1047,26 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// ForceCacheBilling 提前拍成标量，避免 worker 闭包保活 failover 状态里的响应体。
 			forceCacheBilling := fs.ForceCacheBilling
 			quotaPlatform := service.QuotaPlatform(c.Request.Context(), currentAPIKey)
-			_ = h.runGatewayUsageStage(c, UsageStageAdapter{
-				Usage: func(*gin.Context) ExecutableStageResult {
-					h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
-						if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-							Result:             result,
-							QuotaPlatform:      quotaPlatform,
-							APIKey:             currentAPIKey,
-							User:               currentAPIKey.User,
-							Account:            account,
-							Subscription:       currentSubscription,
-							InboundEndpoint:    inboundEndpoint,
-							UpstreamEndpoint:   upstreamEndpoint,
-							UserAgent:          userAgent,
-							IPAddress:          clientIP,
-							RequestPayloadHash: requestPayloadHash,
-							ForceCacheBilling:  forceCacheBilling,
-							APIKeyService:      h.apiKeyService,
-							ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
-						}); err != nil {
-							logger.L().With(
-								zap.String("component", "handler.gateway.messages"),
-								zap.Int64("user_id", subject.UserID),
-								zap.Int64("api_key_id", currentAPIKey.ID),
-								zap.Any("group_id", currentAPIKey.GroupID),
-								zap.String("model", reqModel),
-								zap.Int64("account_id", account.ID),
-							).Error("gateway.record_usage_failed", zap.Error(err))
-						}
-					})
-					return ExecutableStageResult{}
-				},
+			_ = h.runGatewayUsageStage(c, GatewayUsageStage{
+				Handler:            h,
+				RequestContext:     c.Request.Context(),
+				Result:             result,
+				QuotaPlatform:      quotaPlatform,
+				APIKey:             currentAPIKey,
+				Account:            account,
+				Subscription:       currentSubscription,
+				InboundEndpoint:    inboundEndpoint,
+				UpstreamEndpoint:   upstreamEndpoint,
+				UserAgent:          userAgent,
+				ClientIP:           clientIP,
+				RequestPayloadHash: requestPayloadHash,
+				ForceCacheBilling:  forceCacheBilling,
+				APIKeyService:      h.apiKeyService,
+				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+				LogComponent:       "handler.gateway.messages",
+				LogMessage:         "gateway.record_usage_failed",
+				LogUserID:          subject.UserID,
+				LogModel:           reqModel,
 			})
 			return
 		}
