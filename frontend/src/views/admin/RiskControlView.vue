@@ -122,6 +122,30 @@
                   >
                     {{ t('admin.riskControl.pipelineExecutionErrors') }} {{ formatNumber(pipelineExecutionErrorCount) }}
                   </span>
+                  <span
+                    v-if="pipelineExecutionObservationCoverage"
+                    class="inline-flex w-fit rounded-md px-2.5 py-1 font-mono text-xs font-medium shadow-sm"
+                    :class="pipelineExecutionObservationCoverageClass"
+                  >
+                    {{ t('admin.riskControl.pipelineExecutionObservedStages') }} {{ pipelineExecutionObservationCoverageText }}
+                  </span>
+                </div>
+              </div>
+              <div
+                v-if="pipelineExecutionUnobservedStageRows.length"
+                class="mt-3 rounded-lg border border-amber-100 bg-amber-50 p-3 dark:border-amber-900/30 dark:bg-amber-900/10"
+              >
+                <p class="mb-2 text-xs font-semibold text-amber-800 dark:text-amber-200">
+                  {{ t('admin.riskControl.pipelineExecutionUnobservedStages') }}
+                </p>
+                <div class="flex flex-wrap gap-1.5">
+                  <span
+                    v-for="stage in pipelineExecutionUnobservedStageRows"
+                    :key="stage"
+                    class="inline-flex max-w-full rounded-md bg-white px-2 py-1 font-mono text-xs font-medium text-amber-800 shadow-sm dark:bg-dark-800 dark:text-amber-100"
+                  >
+                    {{ stage }}
+                  </span>
                 </div>
               </div>
               <div v-if="pipelineExecutionRouteRows.length" class="mt-3">
@@ -1977,6 +2001,21 @@ const pipelineRouteRows = computed<ContentModerationPipelineRouteCoverageStatus[
 const pipelineExecutionTotalCount = computed(() => status.value?.pipeline_execution?.total_count ?? 0)
 const pipelineExecutionRecentCount = computed(() => status.value?.pipeline_execution?.recent_window_count ?? 0)
 const pipelineExecutionErrorCount = computed(() => status.value?.pipeline_execution?.error_count ?? 0)
+const pipelineExecutionObservationCoverage = computed(() => status.value?.pipeline_execution?.stage_observation_coverage)
+const pipelineExecutionObservationCoverageText = computed(() => {
+  const coverage = pipelineExecutionObservationCoverage.value
+  if (!coverage) return '-'
+  return `${formatNumber(coverage.observed_stages)}/${formatNumber(coverage.expected_stages)}`
+})
+const pipelineExecutionObservationCoverageClass = computed(() => {
+  const statusText = pipelineExecutionObservationCoverage.value?.status
+  if (statusText === 'covered') return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-200'
+  if (statusText === 'mismatch') return 'bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200'
+  return 'bg-white text-gray-700 dark:bg-dark-800 dark:text-gray-200'
+})
+const pipelineExecutionUnobservedStageRows = computed(() => (
+  [...(pipelineExecutionObservationCoverage.value?.unobserved_stages ?? [])].sort()
+))
 
 const pipelineExecutionRouteRows = computed(() => (
   [...(status.value?.pipeline_execution?.routes ?? [])].sort((a, b) => {

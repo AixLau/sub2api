@@ -2638,6 +2638,8 @@ export default {
       pipelineExecutionRoutes: '按路由汇总',
       pipelineExecutionRecent: '最近窗口',
       pipelineExecutionErrors: '错误',
+      pipelineExecutionObservedStages: '已观测阶段',
+      pipelineExecutionUnobservedStages: '未观测的预期阶段',
       pipelineManifestVersion: '清单',
       pipelineManifestHash: '哈希',
       pipelineRoute: '路由',

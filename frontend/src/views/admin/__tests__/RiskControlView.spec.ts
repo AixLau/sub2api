@@ -606,6 +606,15 @@ describe('admin RiskControlView', () => {
         recent_window_seconds: 300,
         recent_window_count: 3,
         recent_window_error_count: 1,
+        stage_observation_coverage: {
+          status: 'mismatch',
+          expected_stages: 7,
+          observed_stages: 1,
+          unobserved_stages: [
+            'POST /v1/responses OpenAIGatewayHandler.Responses moderation',
+            'POST /v1/responses OpenAIGatewayHandler.Responses usage',
+          ],
+        },
         executions: [
           {
             pipeline: 'openai_http',
@@ -680,5 +689,9 @@ describe('admin RiskControlView', () => {
     expect(matrix.text()).toContain('image')
     expect(matrix.text()).toContain('openai_responses')
     expect(matrix.text()).toContain('admin.riskControl.pipelineExecutionRoutes')
+    expect(matrix.text()).toContain('admin.riskControl.pipelineExecutionObservedStages')
+    expect(matrix.text()).toContain('1/7')
+    expect(matrix.text()).toContain('POST /v1/responses OpenAIGatewayHandler.Responses moderation')
+    expect(matrix.text()).toContain('POST /v1/responses OpenAIGatewayHandler.Responses usage')
   })
 })

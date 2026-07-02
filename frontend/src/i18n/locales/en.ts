@@ -2562,6 +2562,8 @@ export default {
       pipelineExecutionRoutes: 'Route summary',
       pipelineExecutionRecent: 'Recent',
       pipelineExecutionErrors: 'Errors',
+      pipelineExecutionObservedStages: 'Observed stages',
+      pipelineExecutionUnobservedStages: 'Unobserved expected stages',
       pipelineManifestVersion: 'manifest',
       pipelineManifestHash: 'hash',
       pipelineRoute: 'Route',

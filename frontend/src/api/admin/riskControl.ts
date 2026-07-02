@@ -315,6 +315,14 @@ export interface ContentModerationPipelineExecutionStatus {
   last_observed_at?: string
   executions: ContentModerationPipelineExecutionObservation[]
   routes: ContentModerationPipelineRouteExecutionObservation[]
+  stage_observation_coverage?: ContentModerationPipelineExecutionStageObservationCoverage
+}
+
+export interface ContentModerationPipelineExecutionStageObservationCoverage {
+  status: string
+  expected_stages: number
+  observed_stages: number
+  unobserved_stages: string[]
 }
 
 export interface ContentModerationPipelineExecutionObservation {
