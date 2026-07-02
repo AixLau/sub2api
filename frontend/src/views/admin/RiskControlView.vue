@@ -220,8 +220,8 @@
                   <p class="min-w-0 truncate font-mono text-xs text-gray-600 dark:text-gray-300">{{ route.protocol || '-' }}</p>
                   <div class="min-w-0">
                     <p class="truncate font-mono text-xs text-gray-600 dark:text-gray-300">{{ route.handler || '-' }}</p>
-                    <p v-if="route.forward_adapters?.length" class="mt-1 truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">
-                      {{ route.forward_adapters.join(', ') }}
+                    <p v-if="formatRouteForwardAdapters(route)" class="mt-1 truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">
+                      {{ formatRouteForwardAdapters(route) }}
                     </p>
                   </div>
                   <div class="flex flex-wrap gap-1.5">
@@ -2002,6 +2002,19 @@ const pipelineRouteRows = computed<ContentModerationPipelineRouteCoverageStatus[
     return left.localeCompare(right)
   })
 ))
+
+function formatRouteForwardAdapters(route: ContentModerationPipelineRouteCoverageStatus): string {
+  const descriptors = route.forward_adapter_descriptors ?? []
+  if (descriptors.length > 0) {
+    return descriptors
+      .map((adapter) => {
+        const name = adapter.name || '-'
+        return adapter.pipeline ? `${name}@${adapter.pipeline}` : name
+      })
+      .join(', ')
+  }
+  return route.forward_adapters?.join(', ') ?? ''
+}
 
 const pipelineExecutionTotalCount = computed(() => status.value?.pipeline_execution?.total_count ?? 0)
 const pipelineExecutionRecentCount = computed(() => status.value?.pipeline_execution?.recent_window_count ?? 0)

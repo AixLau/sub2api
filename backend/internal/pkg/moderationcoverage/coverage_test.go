@@ -125,6 +125,27 @@ func TestForwardAdaptersForRouteIsSharedFactSource(t *testing.T) {
 	require.Nil(t, ForwardAdaptersForRoute("UnknownHandler", "openai_responses"))
 }
 
+func TestForwardAdapterDescriptorsForRouteCarriesExecutableMetadata(t *testing.T) {
+	require.Equal(t, []RouteAdapterDescriptor{{
+		Stage:    StageForward,
+		Pipeline: PipelineOpenAIHTTP,
+		Name:     "OpenAIHTTPForwardStage",
+	}}, ForwardAdapterDescriptorsForRoute("OpenAIGatewayHandler.Responses", "openai_responses"))
+
+	require.Equal(t, []RouteAdapterDescriptor{{
+		Stage:    StageForward,
+		Pipeline: PipelineOpenAIWebSocket,
+		Name:     "OpenAIWebSocketForwardStage",
+	}}, ForwardAdapterDescriptorsForRoute("OpenAIGatewayHandler.ResponsesWebSocket", "openai_responses"))
+
+	require.Equal(t, []RouteAdapterDescriptor{
+		{Stage: StageForward, Pipeline: PipelineGatewayPreForward, Name: "GatewayMessagesGeminiForwardStage"},
+		{Stage: StageForward, Pipeline: PipelineGatewayPreForward, Name: "GatewayMessagesForwardStage"},
+	}, ForwardAdapterDescriptorsForRoute("GatewayHandler.Messages", "anthropic_messages"))
+
+	require.Nil(t, ForwardAdapterDescriptorsForRoute("UnknownHandler", "openai_responses"))
+}
+
 func TestNormalizeStageCoverageSortsExecutableGatewayStages(t *testing.T) {
 	require.Equal(t, []PipelineStageCoverage{
 		{Stage: StageBilling, Required: true, Covered: true},

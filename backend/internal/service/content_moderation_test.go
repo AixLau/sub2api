@@ -2472,7 +2472,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 				{"stage": "usage", "required_routes": 4, "covered_routes": 4, "uncovered_routes": []}
 			],
 			"routes": [
-				{"method": "POST", "path": "/v1/chat/completions", "handler": "OpenAIGatewayHandler.ChatCompletions", "protocol": "openai_chat_completions", "pipeline": "openai_http", "covered": true, "forward_adapters": ["OpenAIHTTPForwardStage"], "stages": [
+				{"method": "POST", "path": "/v1/chat/completions", "handler": "OpenAIGatewayHandler.ChatCompletions", "protocol": "openai_chat_completions", "pipeline": "openai_http", "covered": true, "forward_adapters": ["OpenAIHTTPForwardStage"], "forward_adapter_descriptors": [{"stage": "forward", "pipeline": "openai_http", "name": "OpenAIHTTPForwardStage"}], "stages": [
 					{"stage": "moderation", "required": true, "covered": true},
 					{"stage": "cyber", "required": true, "covered": true},
 					{"stage": "billing", "required": true, "covered": true},
@@ -2480,7 +2480,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 					{"stage": "forward", "required": true, "covered": true},
 					{"stage": "usage", "required": true, "covered": true}
 				]},
-				{"method": "POST", "path": "/v1/images/generations", "handler": "OpenAIGatewayHandler.Images", "protocol": "openai_images", "pipeline": "openai_http", "covered": true, "forward_adapters": ["OpenAIHTTPForwardStage"], "stages": [
+				{"method": "POST", "path": "/v1/images/generations", "handler": "OpenAIGatewayHandler.Images", "protocol": "openai_images", "pipeline": "openai_http", "covered": true, "forward_adapters": ["OpenAIHTTPForwardStage"], "forward_adapter_descriptors": [{"stage": "forward", "pipeline": "openai_http", "name": "OpenAIHTTPForwardStage"}], "stages": [
 					{"stage": "moderation", "required": true, "covered": true},
 					{"stage": "image", "required": true, "covered": true},
 					{"stage": "billing", "required": true, "covered": true},
@@ -2488,7 +2488,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 					{"stage": "forward", "required": true, "covered": true},
 					{"stage": "usage", "required": true, "covered": true}
 				]},
-				{"method": "POST", "path": "/v1/messages", "handler": "GatewayHandler.Messages", "protocol": "anthropic_messages", "pipeline": "gateway_pre_forward", "covered": true, "forward_adapters": ["GatewayMessagesGeminiForwardStage", "GatewayMessagesForwardStage"], "stages": [
+				{"method": "POST", "path": "/v1/messages", "handler": "GatewayHandler.Messages", "protocol": "anthropic_messages", "pipeline": "gateway_pre_forward", "covered": true, "forward_adapters": ["GatewayMessagesGeminiForwardStage", "GatewayMessagesForwardStage"], "forward_adapter_descriptors": [{"stage": "forward", "pipeline": "gateway_pre_forward", "name": "GatewayMessagesGeminiForwardStage"}, {"stage": "forward", "pipeline": "gateway_pre_forward", "name": "GatewayMessagesForwardStage"}], "stages": [
 					{"stage": "moderation", "required": true, "covered": true},
 					{"stage": "pre_forward", "required": true, "covered": true},
 					{"stage": "billing", "required": true, "covered": true},
@@ -2496,7 +2496,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 					{"stage": "forward", "required": true, "covered": true},
 					{"stage": "usage", "required": true, "covered": true}
 				]},
-				{"method": "POST", "path": "/v1/responses", "handler": "OpenAIGatewayHandler.Responses", "protocol": "openai_responses", "pipeline": "openai_http", "covered": true, "forward_adapters": ["OpenAIHTTPForwardStage"], "stages": [
+				{"method": "POST", "path": "/v1/responses", "handler": "OpenAIGatewayHandler.Responses", "protocol": "openai_responses", "pipeline": "openai_http", "covered": true, "forward_adapters": ["OpenAIHTTPForwardStage"], "forward_adapter_descriptors": [{"stage": "forward", "pipeline": "openai_http", "name": "OpenAIHTTPForwardStage"}], "stages": [
 					{"stage": "moderation", "required": true, "covered": true},
 					{"stage": "cyber", "required": true, "covered": true},
 					{"stage": "image", "required": true, "covered": true},
@@ -2524,7 +2524,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 					{"stage": "usage", "required_routes": 3, "covered_routes": 3, "uncovered_routes": []}
 				],
 				"routes": [
-					{"method": "POST", "path": "/v1/chat/completions", "handler": "OpenAIGatewayHandler.ChatCompletions", "protocol": "openai_chat_completions", "pipeline": "openai_http", "covered": true, "forward_adapters": ["OpenAIHTTPForwardStage"], "stages": [
+					{"method": "POST", "path": "/v1/chat/completions", "handler": "OpenAIGatewayHandler.ChatCompletions", "protocol": "openai_chat_completions", "pipeline": "openai_http", "covered": true, "forward_adapters": ["OpenAIHTTPForwardStage"], "forward_adapter_descriptors": [{"stage": "forward", "pipeline": "openai_http", "name": "OpenAIHTTPForwardStage"}], "stages": [
 						{"stage": "moderation", "required": true, "covered": true},
 						{"stage": "cyber", "required": true, "covered": true},
 						{"stage": "billing", "required": true, "covered": true},
@@ -2532,7 +2532,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 						{"stage": "forward", "required": true, "covered": true},
 						{"stage": "usage", "required": true, "covered": true}
 					]},
-					{"method": "POST", "path": "/v1/images/generations", "handler": "OpenAIGatewayHandler.Images", "protocol": "openai_images", "pipeline": "openai_http", "covered": true, "forward_adapters": ["OpenAIHTTPForwardStage"], "stages": [
+					{"method": "POST", "path": "/v1/images/generations", "handler": "OpenAIGatewayHandler.Images", "protocol": "openai_images", "pipeline": "openai_http", "covered": true, "forward_adapters": ["OpenAIHTTPForwardStage"], "forward_adapter_descriptors": [{"stage": "forward", "pipeline": "openai_http", "name": "OpenAIHTTPForwardStage"}], "stages": [
 						{"stage": "moderation", "required": true, "covered": true},
 						{"stage": "image", "required": true, "covered": true},
 						{"stage": "billing", "required": true, "covered": true},
@@ -2540,7 +2540,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 						{"stage": "forward", "required": true, "covered": true},
 						{"stage": "usage", "required": true, "covered": true}
 					]},
-					{"method": "POST", "path": "/v1/responses", "handler": "OpenAIGatewayHandler.Responses", "protocol": "openai_responses", "pipeline": "openai_http", "covered": true, "forward_adapters": ["OpenAIHTTPForwardStage"], "stages": [
+					{"method": "POST", "path": "/v1/responses", "handler": "OpenAIGatewayHandler.Responses", "protocol": "openai_responses", "pipeline": "openai_http", "covered": true, "forward_adapters": ["OpenAIHTTPForwardStage"], "forward_adapter_descriptors": [{"stage": "forward", "pipeline": "openai_http", "name": "OpenAIHTTPForwardStage"}], "stages": [
 						{"stage": "moderation", "required": true, "covered": true},
 						{"stage": "cyber", "required": true, "covered": true},
 						{"stage": "image", "required": true, "covered": true},
@@ -2597,7 +2597,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 				{"stage": "usage", "required_routes": 1, "covered_routes": 1, "uncovered_routes": []}
 			],
 			"routes": [
-				{"method": "POST", "path": "/v1/messages", "handler": "GatewayHandler.Messages", "protocol": "anthropic_messages", "pipeline": "gateway_pre_forward", "covered": true, "forward_adapters": ["GatewayMessagesGeminiForwardStage", "GatewayMessagesForwardStage"], "stages": [
+				{"method": "POST", "path": "/v1/messages", "handler": "GatewayHandler.Messages", "protocol": "anthropic_messages", "pipeline": "gateway_pre_forward", "covered": true, "forward_adapters": ["GatewayMessagesGeminiForwardStage", "GatewayMessagesForwardStage"], "forward_adapter_descriptors": [{"stage": "forward", "pipeline": "gateway_pre_forward", "name": "GatewayMessagesGeminiForwardStage"}, {"stage": "forward", "pipeline": "gateway_pre_forward", "name": "GatewayMessagesForwardStage"}], "stages": [
 					{"stage": "moderation", "required": true, "covered": true},
 					{"stage": "pre_forward", "required": true, "covered": true},
 					{"stage": "billing", "required": true, "covered": true},
@@ -2730,6 +2730,11 @@ func TestContentModerationPipelineCoverageStatusSummarizesGlobalGatewayPipeline(
 	require.Equal(t, moderationcoverage.PipelineOpenAIWebSocket, websocketRoute.Pipeline)
 	require.True(t, websocketRoute.Covered)
 	require.Equal(t, []string{"OpenAIWebSocketForwardStage"}, websocketRoute.ForwardAdapters)
+	require.Equal(t, []moderationcoverage.RouteAdapterDescriptor{{
+		Stage:    moderationcoverage.StageForward,
+		Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
+		Name:     "OpenAIWebSocketForwardStage",
+	}}, websocketRoute.ForwardAdapterDescriptors)
 }
 
 func TestContentModerationPipelineCoverageStatusSummarizesGatewayPreForwardStages(t *testing.T) {

@@ -591,6 +591,9 @@ describe('admin RiskControlView', () => {
               pipeline: 'openai_http',
               covered: false,
               forward_adapters: ['OpenAIHTTPForwardStage'],
+              forward_adapter_descriptors: [
+                { stage: 'forward', pipeline: 'openai_http', name: 'OpenAIHTTPForwardStage' },
+              ],
               uncovered_stages: ['image'],
               stages: [
                 { stage: 'moderation', required: true, covered: true },
@@ -694,6 +697,6 @@ describe('admin RiskControlView', () => {
     expect(matrix.text()).toContain('1/7')
     expect(matrix.text()).toContain('POST /v1/responses OpenAIGatewayHandler.Responses moderation')
     expect(matrix.text()).toContain('POST /v1/responses OpenAIGatewayHandler.Responses usage')
-    expect(matrix.text()).toContain('OpenAIHTTPForwardStage')
+    expect(matrix.text()).toContain('OpenAIHTTPForwardStage@openai_http')
   })
 })

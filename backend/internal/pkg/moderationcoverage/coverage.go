@@ -56,6 +56,12 @@ type PipelineStageCoverage struct {
 	Covered  bool
 }
 
+type RouteAdapterDescriptor struct {
+	Stage    string `json:"stage"`
+	Pipeline string `json:"pipeline"`
+	Name     string `json:"name"`
+}
+
 type Entry struct {
 	Method             string
 	Path               string
@@ -500,8 +506,33 @@ func GatewayPreForwardPipelineStagesForRoute(handlerName, protocol string) []Pip
 }
 
 func ForwardAdaptersForRoute(handlerName, protocol string) []string {
+	descriptors := ForwardAdapterDescriptorsForRoute(handlerName, protocol)
+	if len(descriptors) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(descriptors))
+	for _, descriptor := range descriptors {
+		if descriptor.Name == "" {
+			continue
+		}
+		names = append(names, descriptor.Name)
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	return names
+}
+
+func ForwardAdapterDescriptorsForRoute(handlerName, protocol string) []RouteAdapterDescriptor {
 	handlerName = strings.TrimSpace(handlerName)
 	protocol = strings.TrimSpace(protocol)
+	descriptor := func(pipeline, name string) RouteAdapterDescriptor {
+		return RouteAdapterDescriptor{
+			Stage:    StageForward,
+			Pipeline: NormalizePipeline(pipeline),
+			Name:     strings.TrimSpace(name),
+		}
+	}
 	switch handlerName {
 	case "OpenAIGatewayHandler.ChatCompletions",
 		"OpenAIGatewayHandler.Messages",
@@ -509,22 +540,25 @@ func ForwardAdaptersForRoute(handlerName, protocol string) []string {
 		"OpenAIGatewayHandler.Images",
 		"OpenAIGatewayHandler.Embeddings":
 		if len(OpenAIHTTPPipelineStagesForRoute(handlerName, protocol)) > 0 {
-			return []string{"OpenAIHTTPForwardStage"}
+			return []RouteAdapterDescriptor{descriptor(PipelineOpenAIHTTP, "OpenAIHTTPForwardStage")}
 		}
 	case "OpenAIGatewayHandler.ResponsesWebSocket":
 		if len(OpenAIWebSocketPipelineStagesForRoute(handlerName, protocol)) > 0 {
-			return []string{"OpenAIWebSocketForwardStage"}
+			return []RouteAdapterDescriptor{descriptor(PipelineOpenAIWebSocket, "OpenAIWebSocketForwardStage")}
 		}
 	case "GatewayHandler.Messages":
-		return []string{"GatewayMessagesGeminiForwardStage", "GatewayMessagesForwardStage"}
+		return []RouteAdapterDescriptor{
+			descriptor(PipelineGatewayPreForward, "GatewayMessagesGeminiForwardStage"),
+			descriptor(PipelineGatewayPreForward, "GatewayMessagesForwardStage"),
+		}
 	case "GatewayHandler.CountTokens":
-		return []string{"GatewayCountTokensForwardStage"}
+		return []RouteAdapterDescriptor{descriptor(PipelineGatewayPreForward, "GatewayCountTokensForwardStage")}
 	case "GatewayHandler.GeminiV1BetaModels":
-		return []string{"GatewayGeminiV1BetaForwardStage"}
+		return []RouteAdapterDescriptor{descriptor(PipelineGatewayPreForward, "GatewayGeminiV1BetaForwardStage")}
 	case "GatewayHandler.ChatCompletions":
-		return []string{"GatewayChatCompletionsForwardStage"}
+		return []RouteAdapterDescriptor{descriptor(PipelineGatewayPreForward, "GatewayChatCompletionsForwardStage")}
 	case "GatewayHandler.Responses":
-		return []string{"GatewayResponsesForwardStage"}
+		return []RouteAdapterDescriptor{descriptor(PipelineGatewayPreForward, "GatewayResponsesForwardStage")}
 	}
 	return nil
 }

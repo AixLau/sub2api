@@ -297,8 +297,15 @@ export interface ContentModerationPipelineRouteCoverageStatus {
   pipeline: string
   covered: boolean
   forward_adapters?: string[]
+  forward_adapter_descriptors?: ContentModerationRouteAdapterDescriptor[]
   uncovered_stages?: string[]
   stages: ContentModerationPipelineRouteStageCoverageStatus[]
+}
+
+export interface ContentModerationRouteAdapterDescriptor {
+  stage: string
+  pipeline: string
+  name: string
 }
 
 export interface ContentModerationPipelineRouteStageCoverageStatus {

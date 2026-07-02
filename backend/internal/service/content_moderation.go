@@ -627,15 +627,16 @@ type ContentModerationPipelineStageCoverageStatus struct {
 }
 
 type ContentModerationPipelineRouteCoverageStatus struct {
-	Method          string                                              `json:"method"`
-	Path            string                                              `json:"path"`
-	Handler         string                                              `json:"handler"`
-	Protocol        string                                              `json:"protocol"`
-	Pipeline        string                                              `json:"pipeline"`
-	Covered         bool                                                `json:"covered"`
-	ForwardAdapters []string                                            `json:"forward_adapters,omitempty"`
-	UncoveredStages []string                                            `json:"uncovered_stages,omitempty"`
-	Stages          []ContentModerationPipelineRouteStageCoverageStatus `json:"stages"`
+	Method                    string                                              `json:"method"`
+	Path                      string                                              `json:"path"`
+	Handler                   string                                              `json:"handler"`
+	Protocol                  string                                              `json:"protocol"`
+	Pipeline                  string                                              `json:"pipeline"`
+	Covered                   bool                                                `json:"covered"`
+	ForwardAdapters           []string                                            `json:"forward_adapters,omitempty"`
+	ForwardAdapterDescriptors []moderationcoverage.RouteAdapterDescriptor         `json:"forward_adapter_descriptors,omitempty"`
+	UncoveredStages           []string                                            `json:"uncovered_stages,omitempty"`
+	Stages                    []ContentModerationPipelineRouteStageCoverageStatus `json:"stages"`
 }
 
 type ContentModerationPipelineRouteStageCoverageStatus struct {
@@ -2147,15 +2148,16 @@ func contentModerationPipelineRouteCoverageStatusFromEntry(
 	})
 	uncoveredStages = uniqueSortedContentModerationPipelineStages(uncoveredStages)
 	return ContentModerationPipelineRouteCoverageStatus{
-		Method:          normalizeContentModerationRouteCoverageMethod(entry.Method),
-		Path:            normalizeContentModerationRouteCoveragePath(entry.Path),
-		Handler:         strings.TrimSpace(entry.Handler),
-		Protocol:        strings.TrimSpace(entry.Protocol),
-		Pipeline:        moderationcoverage.NormalizePipeline(entry.Pipeline),
-		Covered:         covered,
-		ForwardAdapters: moderationcoverage.ForwardAdaptersForRoute(entry.Handler, entry.Protocol),
-		UncoveredStages: uncoveredStages,
-		Stages:          stages,
+		Method:                    normalizeContentModerationRouteCoverageMethod(entry.Method),
+		Path:                      normalizeContentModerationRouteCoveragePath(entry.Path),
+		Handler:                   strings.TrimSpace(entry.Handler),
+		Protocol:                  strings.TrimSpace(entry.Protocol),
+		Pipeline:                  moderationcoverage.NormalizePipeline(entry.Pipeline),
+		Covered:                   covered,
+		ForwardAdapters:           moderationcoverage.ForwardAdaptersForRoute(entry.Handler, entry.Protocol),
+		ForwardAdapterDescriptors: moderationcoverage.ForwardAdapterDescriptorsForRoute(entry.Handler, entry.Protocol),
+		UncoveredStages:           uncoveredStages,
+		Stages:                    stages,
 	}
 }
 
