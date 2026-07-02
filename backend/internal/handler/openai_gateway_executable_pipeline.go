@@ -234,6 +234,17 @@ func (GatewayPipelineRunner) Run(c *gin.Context, p GatewayPipeline) ExecutableSt
 	return ExecutableStageResult{}
 }
 
+func runGatewayPipelineStage(c *gin.Context, pipeline string, source string, stage ExecutableStage) ExecutableStageResult {
+	if stage.Name == "" && stage.Run == nil && stage.RunWithContext == nil {
+		return ExecutableStageResult{}
+	}
+	return GatewayPipeline{
+		Pipeline: pipeline,
+		Source:   source,
+		Stages:   []ExecutableStage{stage},
+	}.Run(c)
+}
+
 type openAIHTTPExecutableStage struct {
 	Stage string
 	Run   func() openAIHTTPExecutableStageResult
@@ -260,23 +271,19 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPExecutableStage(c *gin.Context, stag
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIHTTPBillingStage(c *gin.Context, adapter BillingStage) openAIHTTPExecutableStageResult {
-	return GatewayPipeline{
-		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
-		Source:   moderationcoverage.SourceOpenAIHTTPExecutableStage,
-		Stages: []ExecutableStage{
-			executableBillingStageWithContext(c, adapter),
-		},
-	}.Run(c)
+	return runGatewayPipelineStage(c,
+		moderationcoverage.PipelineOpenAIHTTP,
+		moderationcoverage.SourceOpenAIHTTPExecutableStage,
+		executableBillingStageWithContext(c, adapter),
+	)
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIHTTPRoutingStage(c *gin.Context, adapter RoutingStage) openAIHTTPExecutableStageResult {
-	return GatewayPipeline{
-		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
-		Source:   moderationcoverage.SourceOpenAIHTTPExecutableStage,
-		Stages: []ExecutableStage{
-			executableRoutingStageWithContext(c, adapter),
-		},
-	}.Run(c)
+	return runGatewayPipelineStage(c,
+		moderationcoverage.PipelineOpenAIHTTP,
+		moderationcoverage.SourceOpenAIHTTPExecutableStage,
+		executableRoutingStageWithContext(c, adapter),
+	)
 }
 
 type OpenAIHTTPRoutingStage struct {
@@ -559,13 +566,11 @@ func (s OpenAIHTTPBillingStage) RunBilling(c *gin.Context) ExecutableStageResult
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIHTTPForwardStage(c *gin.Context, adapter ForwardStage) openAIHTTPExecutableStageResult {
-	return GatewayPipeline{
-		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
-		Source:   moderationcoverage.SourceOpenAIHTTPExecutableStage,
-		Stages: []ExecutableStage{
-			executableForwardStageWithContext(c, adapter),
-		},
-	}.Run(c)
+	return runGatewayPipelineStage(c,
+		moderationcoverage.PipelineOpenAIHTTP,
+		moderationcoverage.SourceOpenAIHTTPExecutableStage,
+		executableForwardStageWithContext(c, adapter),
+	)
 }
 
 type OpenAIHTTPForwardKind string
@@ -635,13 +640,11 @@ func (s OpenAIHTTPForwardStage) RunForward(c *gin.Context) ExecutableStageResult
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIHTTPUsageStage(c *gin.Context, adapter UsageStage) openAIHTTPExecutableStageResult {
-	return GatewayPipeline{
-		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
-		Source:   moderationcoverage.SourceOpenAIHTTPExecutableStage,
-		Stages: []ExecutableStage{
-			executableUsageStageWithContext(c, adapter),
-		},
-	}.Run(c)
+	return runGatewayPipelineStage(c,
+		moderationcoverage.PipelineOpenAIHTTP,
+		moderationcoverage.SourceOpenAIHTTPExecutableStage,
+		executableUsageStageWithContext(c, adapter),
+	)
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIHTTPScheduleResultStage(c *gin.Context, account *service.Account, success bool, firstTokenMs *int) openAIHTTPExecutableStageResult {
@@ -804,11 +807,11 @@ func (h *OpenAIGatewayHandler) runOpenAIWebSocketStage(c *gin.Context, adapter a
 	default:
 		return ExecutableStageResult{}
 	}
-	return GatewayPipeline{
-		Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
-		Source:   moderationcoverage.SourceOpenAIWebSocketExecutableStage,
-		Stages:   []ExecutableStage{stage},
-	}.Run(c)
+	return runGatewayPipelineStage(c,
+		moderationcoverage.PipelineOpenAIWebSocket,
+		moderationcoverage.SourceOpenAIWebSocketExecutableStage,
+		stage,
+	)
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIWebSocketBillingStage(c *gin.Context, adapter BillingStage) ExecutableStageResult {

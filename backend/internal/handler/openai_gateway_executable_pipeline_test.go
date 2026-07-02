@@ -2,8 +2,12 @@ package handler
 
 import (
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
@@ -112,6 +116,61 @@ func TestOpenAIHTTPExecutableStageNilContextIsSafe(t *testing.T) {
 	})
 	require.Equal(t, 1, calls)
 	require.Empty(t, moderationcoverage.PipelineStageExecutionsFromContext(nil))
+}
+
+func TestProtocolStageRunnersDelegateToGlobalStageRunner(t *testing.T) {
+	tests := []struct {
+		file      string
+		functions []string
+	}{
+		{
+			file: "openai_gateway_executable_pipeline.go",
+			functions: []string{
+				"runOpenAIHTTPBillingStage",
+				"runOpenAIHTTPRoutingStage",
+				"runOpenAIHTTPForwardStage",
+				"runOpenAIHTTPUsageStage",
+				"runOpenAIWebSocketStage",
+			},
+		},
+		{
+			file: "gateway_pre_forward_pipeline.go",
+			functions: []string{
+				"runGatewayBillingStage",
+				"runGatewayRoutingStage",
+				"runGatewayForwardStage",
+				"runGatewayUsageStage",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.file, func(t *testing.T) {
+			src, err := os.ReadFile(tt.file)
+			require.NoError(t, err)
+			fset := token.NewFileSet()
+			parsed, err := parser.ParseFile(fset, tt.file, src, 0)
+			require.NoError(t, err)
+
+			for _, functionName := range tt.functions {
+				fn := handlerFuncDeclByName(t, parsed, functionName)
+				var gatewayPipelineLiteralLines []int
+				ast.Inspect(fn.Body, func(node ast.Node) bool {
+					lit, ok := node.(*ast.CompositeLit)
+					if !ok || handlerASTLastIdentName(lit.Type) != "GatewayPipeline" {
+						return true
+					}
+					gatewayPipelineLiteralLines = append(gatewayPipelineLiteralLines, fset.Position(lit.Pos()).Line)
+					return true
+				})
+				require.Empty(t, gatewayPipelineLiteralLines,
+					"%s must delegate stage execution to the global GatewayPipeline stage runner instead of constructing GatewayPipeline directly at lines %v",
+					functionName,
+					gatewayPipelineLiteralLines,
+				)
+			}
+		})
+	}
 }
 
 func TestGatewayPipelineRunsGenericExecutableStagesWithMetadata(t *testing.T) {
@@ -386,4 +445,33 @@ func requirePipelineExecutionObservedWithError(t *testing.T, executions []modera
 		}
 	}
 	t.Fatalf("missing failed pipeline execution observation pipeline=%s stage=%s source=%s in %#v", pipeline, stage, source, executions)
+}
+
+func handlerFuncDeclByName(t *testing.T, file *ast.File, functionName string) *ast.FuncDecl {
+	t.Helper()
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if ok && fn.Name != nil && fn.Name.Name == functionName {
+			return fn
+		}
+	}
+	t.Fatalf("function %s not found", functionName)
+	return nil
+}
+
+func handlerASTLastIdentName(expr ast.Expr) string {
+	switch typed := expr.(type) {
+	case *ast.Ident:
+		return typed.Name
+	case *ast.SelectorExpr:
+		return typed.Sel.Name
+	case *ast.StarExpr:
+		return handlerASTLastIdentName(typed.X)
+	case *ast.IndexExpr:
+		return handlerASTLastIdentName(typed.X)
+	case *ast.IndexListExpr:
+		return handlerASTLastIdentName(typed.X)
+	default:
+		return ""
+	}
 }

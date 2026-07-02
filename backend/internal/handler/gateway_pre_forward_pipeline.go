@@ -333,13 +333,11 @@ func gatewayPreForwardRequestFromContext(c *gin.Context, protocol string) (gatew
 }
 
 func (h *GatewayHandler) runGatewayForwardStage(c *gin.Context, adapter ForwardStage) ExecutableStageResult {
-	return GatewayPipeline{
-		Pipeline: moderationcoverage.PipelineGatewayPreForward,
-		Source:   moderationcoverage.SourceGatewayForwardStage,
-		Stages: []ExecutableStage{
-			executableForwardStageWithContext(c, adapter),
-		},
-	}.Run(c)
+	return runGatewayPipelineStage(c,
+		moderationcoverage.PipelineGatewayPreForward,
+		moderationcoverage.SourceGatewayForwardStage,
+		executableForwardStageWithContext(c, adapter),
+	)
 }
 
 type GatewayMessagesGeminiForwardStage struct {
@@ -570,33 +568,27 @@ func (s GatewayRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult {
 }
 
 func (h *GatewayHandler) runGatewayBillingStage(c *gin.Context, adapter BillingStage) ExecutableStageResult {
-	return GatewayPipeline{
-		Pipeline: moderationcoverage.PipelineGatewayPreForward,
-		Source:   moderationcoverage.SourceGatewayBillingStage,
-		Stages: []ExecutableStage{
-			executableBillingStageWithContext(c, adapter),
-		},
-	}.Run(c)
+	return runGatewayPipelineStage(c,
+		moderationcoverage.PipelineGatewayPreForward,
+		moderationcoverage.SourceGatewayBillingStage,
+		executableBillingStageWithContext(c, adapter),
+	)
 }
 
 func (h *GatewayHandler) runGatewayRoutingStage(c *gin.Context, adapter RoutingStage) ExecutableStageResult {
-	return GatewayPipeline{
-		Pipeline: moderationcoverage.PipelineGatewayPreForward,
-		Source:   moderationcoverage.SourceGatewayRoutingStage,
-		Stages: []ExecutableStage{
-			executableRoutingStageWithContext(c, adapter),
-		},
-	}.Run(c)
+	return runGatewayPipelineStage(c,
+		moderationcoverage.PipelineGatewayPreForward,
+		moderationcoverage.SourceGatewayRoutingStage,
+		executableRoutingStageWithContext(c, adapter),
+	)
 }
 
 func (h *GatewayHandler) runGatewayUsageStage(c *gin.Context, adapter UsageStage) ExecutableStageResult {
-	return GatewayPipeline{
-		Pipeline: moderationcoverage.PipelineGatewayPreForward,
-		Source:   moderationcoverage.SourceGatewayUsageStage,
-		Stages: []ExecutableStage{
-			executableUsageStageWithContext(c, adapter),
-		},
-	}.Run(c)
+	return runGatewayPipelineStage(c,
+		moderationcoverage.PipelineGatewayPreForward,
+		moderationcoverage.SourceGatewayUsageStage,
+		executableUsageStageWithContext(c, adapter),
+	)
 }
 
 type GatewayUsageStage struct {
