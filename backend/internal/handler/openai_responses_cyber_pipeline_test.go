@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -33,8 +34,9 @@ func TestOpenAIResponsesHTTP_CyberBlockedByPipelineBeforeRoutingBillingSlotsAndF
 		return false, nil
 	})
 
-	h.Responses(c)
+	result := h.EnterOpenAIHTTPGatewayPipeline(c, openAIResponsesHTTPRouteMetaForTest())
 
+	require.True(t, result.Stop)
 	require.Equal(t, http.StatusForbidden, w.Code)
 	require.Contains(t, w.Body.String(), "session_blocked_by_cyber_policy")
 	require.Contains(t, w.Body.String(), cyberSessionBlockedClientMsg)
@@ -63,8 +65,9 @@ func TestOpenAIResponsesHTTP_ModerationBlockSkipsCyberPipelineStage(t *testing.T
 		return false, nil
 	})
 
-	h.Responses(c)
+	result := h.EnterOpenAIHTTPGatewayPipeline(c, openAIResponsesHTTPRouteMetaForTest())
 
+	require.True(t, result.Stop)
 	require.Equal(t, http.StatusForbidden, w.Code)
 	require.Contains(t, w.Body.String(), "moderation blocked before cyber")
 	require.Len(t, guard.calls, 1)
@@ -91,8 +94,9 @@ func TestOpenAIResponsesHTTP_ImagePermissionBlockBeforeCyberPipelineStage(t *tes
 		return false, nil
 	})
 
-	h.Responses(c)
+	result := h.EnterOpenAIHTTPGatewayPipeline(c, openAIResponsesHTTPRouteMetaForTest())
 
+	require.True(t, result.Stop)
 	require.Equal(t, http.StatusForbidden, w.Code)
 	require.Contains(t, w.Body.String(), service.ImageGenerationPermissionMessage())
 	require.NotContains(t, w.Body.String(), "session_blocked_by_cyber_policy")
@@ -109,6 +113,18 @@ func newOpenAIResponsesCyberPipelineContext(t *testing.T, body string) (*httptes
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(body))
 	setGatewayAuthContextForModerationTest(c)
 	return w, c
+}
+
+func openAIResponsesHTTPRouteMetaForTest() moderationcoverage.Entry {
+	return moderationcoverage.Entry{
+		Method:             http.MethodPost,
+		Path:               "/v1/responses",
+		Handler:            "OpenAIGatewayHandler.Responses",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolOpenAIResponses,
+		Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
+	}
 }
 
 func newOpenAIResponsesCyberPipelineHandler(

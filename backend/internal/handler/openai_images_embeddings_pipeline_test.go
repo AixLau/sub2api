@@ -62,7 +62,7 @@ func TestOpenAIImagesUseHTTPPreForwardPipelineInHandler(t *testing.T) {
 	}
 }
 
-func TestOpenAIChatAndEmbeddingsPreForwardRunThroughGatewayPipelineRegistrar(t *testing.T) {
+func TestOpenAIChatResponsesAndEmbeddingsPreForwardRunThroughGatewayPipelineRegistrar(t *testing.T) {
 	tests := []struct {
 		name             string
 		file             string
@@ -74,6 +74,12 @@ func TestOpenAIChatAndEmbeddingsPreForwardRunThroughGatewayPipelineRegistrar(t *
 			file:             "openai_chat_completions.go",
 			handler:          "ChatCompletions",
 			protocolConstant: "ContentModerationProtocolOpenAIChat",
+		},
+		{
+			name:             "responses",
+			file:             "openai_gateway_handler.go",
+			handler:          "Responses",
+			protocolConstant: "ContentModerationProtocolOpenAIResponses",
 		},
 		{
 			name:             "embeddings",

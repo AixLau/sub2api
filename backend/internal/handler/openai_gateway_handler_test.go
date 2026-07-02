@@ -1242,8 +1242,9 @@ func TestOpenAIResponses_ContentModerationBlocksDeepToolSchemaBeforeForward(t *t
 		concurrencyHelper:        NewConcurrencyHelper(service.NewConcurrencyService(&concurrencyCacheMock{}), SSEPingFormatNone, time.Second),
 	}
 
-	h.Responses(c)
+	result := h.EnterOpenAIHTTPGatewayPipeline(c, openAIResponsesHTTPRouteMetaForTest())
 
+	require.True(t, result.Stop)
 	require.Equal(t, http.StatusForbidden, w.Code)
 	require.Contains(t, w.Body.String(), "内容审计测试阻断")
 	require.Eventually(t, func() bool {

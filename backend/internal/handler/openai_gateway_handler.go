@@ -180,100 +180,33 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 
-	// Read request body
-	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
-	if err != nil {
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+	var body []byte
+	var sessionHashBody []byte
+	var reqModel string
+	var reqStream bool
+	var imageReleaseFunc func()
+	if preForwardRequest, ok := openAIHTTPPreForwardRequestFromContext(c, service.ContentModerationProtocolOpenAIResponses); ok {
+		body = preForwardRequest.Body
+		sessionHashBody = preForwardRequest.CyberBody
+		if len(sessionHashBody) == 0 {
+			sessionHashBody = body
+		}
+		reqModel = preForwardRequest.Model
+		reqStream = preForwardRequest.Stream
+		imageReleaseFunc = preForwardRequest.ImageReleaseFunc
+	} else {
+		body, reqModel, reqStream, sessionHashBody, ok = h.readOpenAIHTTPPreForwardRequest(c, reqLog, service.ContentModerationProtocolOpenAIResponses)
+		if !ok {
 			return
 		}
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
-		return
-	}
-
-	if len(body) == 0 {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
-		return
-	}
-
-	setOpsRequestContext(c, "", false)
-	sessionHashBody := body
-	if service.IsOpenAIResponsesCompactPathForTest(c) {
-		if compactSeed := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()); compactSeed != "" {
-			c.Set(service.OpenAICompactSessionSeedKeyForTest(), compactSeed)
-		}
-		normalizedCompactBody, normalizedCompact, compactErr := service.NormalizeOpenAICompactRequestBodyForTest(body)
-		if compactErr != nil {
-			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to normalize compact request body")
-			return
-		}
-		if normalizedCompact {
-			body = normalizedCompactBody
-		}
-	}
-
-	// 校验请求体 JSON 合法性
-	if !gjson.ValidBytes(body) {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
-		return
-	}
-
-	// 使用 gjson 只读提取字段做校验，避免完整 Unmarshal
-	modelResult := gjson.GetBytes(body, "model")
-	if !modelResult.Exists() || modelResult.Type != gjson.String || modelResult.String() == "" {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
-		return
-	}
-	reqModel := modelResult.String()
-
-	reqStream, ok := parseOpenAICompatibleStream(body)
-	if !ok {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
-		return
 	}
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
-	previousResponseID := strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String())
-	if previousResponseID != "" {
-		previousResponseIDKind := service.ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
-		reqLog = reqLog.With(
-			zap.Bool("has_previous_response_id", true),
-			zap.String("previous_response_id_kind", previousResponseIDKind),
-			zap.Int("previous_response_id_len", len(previousResponseID)),
-		)
-		if previousResponseIDKind == service.OpenAIPreviousResponseIDKindMessageID {
-			reqLog.Warn("openai.request_validation_failed",
-				zap.String("reason", "previous_response_id_looks_like_message_id"),
-			)
-			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "previous_response_id must be a response.id (resp_*), not a message id")
-			return
-		}
-		reqLog.Warn("openai.request_validation_failed",
-			zap.String("reason", "previous_response_id_requires_wsv2"),
-		)
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "previous_response_id is only supported on Responses WebSocket v2")
-		return
-	}
 
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 
-	pipelineResult := h.runOpenAIHTTPPreForwardPipeline(c, reqLog, openAIHTTPPreForwardPipelineInput{
-		APIKey:           apiKey,
-		Subject:          subject,
-		Protocol:         service.ContentModerationProtocolOpenAIResponses,
-		Model:            reqModel,
-		Body:             body,
-		CyberBody:        sessionHashBody,
-		CyberFormat:      cyberBlockFormatResponses,
-		EnableImageStage: true,
-		ImageEndpoint:    "/v1/responses",
-		StreamStarted:    streamStarted,
-	})
-	if pipelineResult.Blocked {
-		return
-	}
-	if pipelineResult.ImageReleaseFunc != nil {
-		defer pipelineResult.ImageReleaseFunc()
+	if imageReleaseFunc != nil {
+		defer imageReleaseFunc()
 	}
 
 	// 解析渠道级模型映射
@@ -325,6 +258,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	// Generate session hash (header first; fallback to prompt_cache_key)
 	sessionHash := h.gatewayService.GenerateSessionHash(c, sessionHashBody)
 	requireCompact := isOpenAIRemoteCompactPath(c)
+	previousResponseID := strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String())
 
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0

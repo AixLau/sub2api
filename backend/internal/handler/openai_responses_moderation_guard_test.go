@@ -38,8 +38,9 @@ func TestOpenAIResponsesHTTP_UsesModerationGuardBeforeImagePermissionAndForwardi
 		maxAccountSwitches:       1,
 	}
 
-	h.Responses(c)
+	result := h.EnterOpenAIHTTPGatewayPipeline(c, openAIResponsesHTTPRouteMetaForTest())
 
+	require.True(t, result.Stop)
 	require.Equal(t, http.StatusForbidden, w.Code)
 	require.Contains(t, w.Body.String(), "guard blocked responses")
 	require.NotContains(t, w.Body.String(), service.ImageGenerationPermissionMessage())

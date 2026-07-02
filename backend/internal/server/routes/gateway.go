@@ -58,7 +58,7 @@ func RegisterGatewayRoutes(
 	openAIHTTPPipelineEntrypoints := GatewayPipelineEntrypoints{
 		moderationcoverage.PipelineOpenAIHTTP: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
 			switch meta.Protocol {
-			case service.ContentModerationProtocolOpenAIChat, service.ContentModerationProtocolOpenAIEmbeddings:
+			case service.ContentModerationProtocolOpenAIChat, service.ContentModerationProtocolOpenAIResponses, service.ContentModerationProtocolOpenAIEmbeddings:
 			default:
 				return GatewayPipelineEntryResult{}
 			}
@@ -304,7 +304,7 @@ func RegisterGatewayRoutes(
 		h.OpenAIGateway.ResponsesWebSocket(c)
 	})
 	codexDirect := r.Group("/backend-api/codex")
-	moderatedCodexDirect := NewModeratedRouteRegistrar(codexDirect)
+	moderatedCodexDirect := NewGatewayPipelineRegistrar(codexDirect, openAIHTTPPipelineEntrypoints)
 	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic)
 	{
 		moderatedCodexDirect.POST("/responses", coveredOpenAIHTTPRoute(
