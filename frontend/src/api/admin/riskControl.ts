@@ -296,6 +296,7 @@ export interface ContentModerationPipelineRouteCoverageStatus {
   protocol: string
   pipeline: string
   covered: boolean
+  forward_adapters?: string[]
   uncovered_stages?: string[]
   stages: ContentModerationPipelineRouteStageCoverageStatus[]
 }

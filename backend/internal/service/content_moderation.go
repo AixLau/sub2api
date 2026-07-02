@@ -633,6 +633,7 @@ type ContentModerationPipelineRouteCoverageStatus struct {
 	Protocol        string                                              `json:"protocol"`
 	Pipeline        string                                              `json:"pipeline"`
 	Covered         bool                                                `json:"covered"`
+	ForwardAdapters []string                                            `json:"forward_adapters,omitempty"`
 	UncoveredStages []string                                            `json:"uncovered_stages,omitempty"`
 	Stages          []ContentModerationPipelineRouteStageCoverageStatus `json:"stages"`
 }
@@ -2152,6 +2153,7 @@ func contentModerationPipelineRouteCoverageStatusFromEntry(
 		Protocol:        strings.TrimSpace(entry.Protocol),
 		Pipeline:        moderationcoverage.NormalizePipeline(entry.Pipeline),
 		Covered:         covered,
+		ForwardAdapters: contentModerationForwardAdaptersForRoute(entry.Handler, entry.Protocol),
 		UncoveredStages: uncoveredStages,
 		Stages:          stages,
 	}
@@ -2290,6 +2292,36 @@ func contentModerationGlobalPipelineStagesForRoute(handlerName, protocol string)
 		return stages
 	}
 	return moderationcoverage.GatewayPreForwardPipelineStagesForRoute(handlerName, protocol)
+}
+
+func contentModerationForwardAdaptersForRoute(handlerName, protocol string) []string {
+	handlerName = strings.TrimSpace(handlerName)
+	protocol = strings.TrimSpace(protocol)
+	switch handlerName {
+	case "OpenAIGatewayHandler.ChatCompletions",
+		"OpenAIGatewayHandler.Messages",
+		"OpenAIGatewayHandler.Responses",
+		"OpenAIGatewayHandler.Images",
+		"OpenAIGatewayHandler.Embeddings":
+		if len(moderationcoverage.OpenAIHTTPPipelineStagesForRoute(handlerName, protocol)) > 0 {
+			return []string{"OpenAIHTTPForwardStage"}
+		}
+	case "OpenAIGatewayHandler.ResponsesWebSocket":
+		if len(moderationcoverage.OpenAIWebSocketPipelineStagesForRoute(handlerName, protocol)) > 0 {
+			return []string{"OpenAIWebSocketForwardStage"}
+		}
+	case "GatewayHandler.Messages":
+		return []string{"GatewayMessagesGeminiForwardStage", "GatewayMessagesForwardStage"}
+	case "GatewayHandler.CountTokens":
+		return []string{"GatewayCountTokensForwardStage"}
+	case "GatewayHandler.GeminiV1BetaModels":
+		return []string{"GatewayGeminiV1BetaForwardStage"}
+	case "GatewayHandler.ChatCompletions":
+		return []string{"GatewayChatCompletionsForwardStage"}
+	case "GatewayHandler.Responses":
+		return []string{"GatewayResponsesForwardStage"}
+	}
+	return nil
 }
 
 func contentModerationGlobalPipelineAcceptsRoutePipeline(routePipeline string) bool {

@@ -218,7 +218,12 @@
                     <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ route.pipeline || '-' }}</p>
                   </div>
                   <p class="min-w-0 truncate font-mono text-xs text-gray-600 dark:text-gray-300">{{ route.protocol || '-' }}</p>
-                  <p class="min-w-0 truncate font-mono text-xs text-gray-600 dark:text-gray-300">{{ route.handler || '-' }}</p>
+                  <div class="min-w-0">
+                    <p class="truncate font-mono text-xs text-gray-600 dark:text-gray-300">{{ route.handler || '-' }}</p>
+                    <p v-if="route.forward_adapters?.length" class="mt-1 truncate font-mono text-[11px] text-gray-500 dark:text-gray-400">
+                      {{ route.forward_adapters.join(', ') }}
+                    </p>
+                  </div>
                   <div class="flex flex-wrap gap-1.5">
                     <span
                       v-for="stage in route.stages"
