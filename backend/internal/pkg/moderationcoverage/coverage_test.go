@@ -111,6 +111,20 @@ func TestAnnotatePipelineCoverageUsesSharedGatewayPreForwardFacts(t *testing.T) 
 	require.Equal(t, GatewayPreForwardPipelineStagesForRoute(entry.Handler, entry.Protocol), entry.StageCoverage)
 }
 
+func TestForwardAdaptersForRouteIsSharedFactSource(t *testing.T) {
+	require.Equal(t, []string{"OpenAIHTTPForwardStage"}, ForwardAdaptersForRoute("OpenAIGatewayHandler.Responses", "openai_responses"))
+	require.Equal(t, []string{"OpenAIHTTPForwardStage"}, ForwardAdaptersForRoute("OpenAIGatewayHandler.Embeddings", "openai_embeddings"))
+	require.Equal(t, []string{"OpenAIWebSocketForwardStage"}, ForwardAdaptersForRoute("OpenAIGatewayHandler.ResponsesWebSocket", "openai_responses"))
+	require.Equal(t, []string{"GatewayMessagesGeminiForwardStage", "GatewayMessagesForwardStage"}, ForwardAdaptersForRoute("GatewayHandler.Messages", "anthropic_messages"))
+	require.Equal(t, []string{"GatewayCountTokensForwardStage"}, ForwardAdaptersForRoute("GatewayHandler.CountTokens", "anthropic_messages"))
+	require.Equal(t, []string{"GatewayGeminiV1BetaForwardStage"}, ForwardAdaptersForRoute("GatewayHandler.GeminiV1BetaModels", "gemini"))
+	require.Equal(t, []string{"GatewayChatCompletionsForwardStage"}, ForwardAdaptersForRoute("GatewayHandler.ChatCompletions", "openai_chat_completions"))
+	require.Equal(t, []string{"GatewayResponsesForwardStage"}, ForwardAdaptersForRoute("GatewayHandler.Responses", "openai_responses"))
+
+	require.Nil(t, ForwardAdaptersForRoute("OpenAIGatewayHandler.ResponsesWebSocket", "openai_realtime"))
+	require.Nil(t, ForwardAdaptersForRoute("UnknownHandler", "openai_responses"))
+}
+
 func TestNormalizeStageCoverageSortsExecutableGatewayStages(t *testing.T) {
 	require.Equal(t, []PipelineStageCoverage{
 		{Stage: StageBilling, Required: true, Covered: true},

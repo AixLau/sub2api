@@ -499,6 +499,36 @@ func GatewayPreForwardPipelineStagesForRoute(handlerName, protocol string) []Pip
 	return NormalizeStageCoverage(stages)
 }
 
+func ForwardAdaptersForRoute(handlerName, protocol string) []string {
+	handlerName = strings.TrimSpace(handlerName)
+	protocol = strings.TrimSpace(protocol)
+	switch handlerName {
+	case "OpenAIGatewayHandler.ChatCompletions",
+		"OpenAIGatewayHandler.Messages",
+		"OpenAIGatewayHandler.Responses",
+		"OpenAIGatewayHandler.Images",
+		"OpenAIGatewayHandler.Embeddings":
+		if len(OpenAIHTTPPipelineStagesForRoute(handlerName, protocol)) > 0 {
+			return []string{"OpenAIHTTPForwardStage"}
+		}
+	case "OpenAIGatewayHandler.ResponsesWebSocket":
+		if len(OpenAIWebSocketPipelineStagesForRoute(handlerName, protocol)) > 0 {
+			return []string{"OpenAIWebSocketForwardStage"}
+		}
+	case "GatewayHandler.Messages":
+		return []string{"GatewayMessagesGeminiForwardStage", "GatewayMessagesForwardStage"}
+	case "GatewayHandler.CountTokens":
+		return []string{"GatewayCountTokensForwardStage"}
+	case "GatewayHandler.GeminiV1BetaModels":
+		return []string{"GatewayGeminiV1BetaForwardStage"}
+	case "GatewayHandler.ChatCompletions":
+		return []string{"GatewayChatCompletionsForwardStage"}
+	case "GatewayHandler.Responses":
+		return []string{"GatewayResponsesForwardStage"}
+	}
+	return nil
+}
+
 func CoveredPipelineStage(stage string) PipelineStageCoverage {
 	return PipelineStageCoverage{
 		Stage:    NormalizeStage(stage),
