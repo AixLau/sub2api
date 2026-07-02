@@ -231,10 +231,10 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	}
 
 	// 2) billing eligibility check (after wait)
-	billingStage := h.runGatewayBillingStage(c, func() ExecutableStageResult {
+	billingStage := h.runGatewayBillingStage(c, GatewayBillingStage{Billing: func(*gin.Context) ExecutableStageResult {
 		err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey))
 		return ExecutableStageResult{Err: err}
-	})
+	}})
 	if err := billingStage.Err; err != nil {
 		reqLog.Info("gemini.billing_eligibility_check_failed", zap.Error(err))
 		status, _, message, retryAfter := billingErrorDetails(err)
@@ -360,11 +360,11 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 
 	for {
 		var selection *service.AccountSelectionResult
-		routingStage := h.runGatewayRoutingStage(c, func() ExecutableStageResult {
+		routingStage := h.runGatewayRoutingStage(c, GatewayRoutingStage{Routing: func(*gin.Context) ExecutableStageResult {
 			var selectErr error
 			selection, selectErr = h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, modelName, fs.FailedAccountIDs, "", authSubject.UserID) // Gemini 不使用会话限制
 			return ExecutableStageResult{Err: selectErr}
-		})
+		}})
 		err := routingStage.Err
 		if err != nil {
 			if len(fs.FailedAccountIDs) == 0 {

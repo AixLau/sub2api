@@ -488,22 +488,52 @@ func (s GatewayCountTokensForwardStage) RunForward(c *gin.Context) ExecutableSta
 	}
 }
 
-func (h *GatewayHandler) runGatewayBillingStage(c *gin.Context, run func() ExecutableStageResult) ExecutableStageResult {
+type GatewayBillingStage struct {
+	Billing func(*gin.Context) ExecutableStageResult
+}
+
+func (GatewayBillingStage) StageName() string {
+	return moderationcoverage.StageBilling
+}
+
+func (s GatewayBillingStage) RunBilling(c *gin.Context) ExecutableStageResult {
+	if s.Billing == nil {
+		return ExecutableStageResult{}
+	}
+	return s.Billing(c)
+}
+
+type GatewayRoutingStage struct {
+	Routing func(*gin.Context) ExecutableStageResult
+}
+
+func (GatewayRoutingStage) StageName() string {
+	return moderationcoverage.StageRouting
+}
+
+func (s GatewayRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult {
+	if s.Routing == nil {
+		return ExecutableStageResult{}
+	}
+	return s.Routing(c)
+}
+
+func (h *GatewayHandler) runGatewayBillingStage(c *gin.Context, adapter BillingStage) ExecutableStageResult {
 	return GatewayPipeline{
 		Pipeline: moderationcoverage.PipelineGatewayPreForward,
 		Source:   moderationcoverage.SourceGatewayBillingStage,
 		Stages: []ExecutableStage{
-			{Name: moderationcoverage.StageBilling, Run: run},
+			executableBillingStageWithContext(c, adapter),
 		},
 	}.Run(c)
 }
 
-func (h *GatewayHandler) runGatewayRoutingStage(c *gin.Context, run func() ExecutableStageResult) ExecutableStageResult {
+func (h *GatewayHandler) runGatewayRoutingStage(c *gin.Context, adapter RoutingStage) ExecutableStageResult {
 	return GatewayPipeline{
 		Pipeline: moderationcoverage.PipelineGatewayPreForward,
 		Source:   moderationcoverage.SourceGatewayRoutingStage,
 		Stages: []ExecutableStage{
-			{Name: moderationcoverage.StageRouting, Run: run},
+			executableRoutingStageWithContext(c, adapter),
 		},
 	}.Run(c)
 }

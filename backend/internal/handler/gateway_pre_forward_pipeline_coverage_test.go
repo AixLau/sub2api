@@ -508,6 +508,55 @@ func TestGatewayPreForwardHandlersUseBillingStage(t *testing.T) {
 	}
 }
 
+func TestGatewayPreForwardHandlersUseNamedBillingStageAdapter(t *testing.T) {
+	tests := []struct {
+		file    string
+		handler string
+	}{
+		{file: "gateway_handler.go", handler: "Messages"},
+		{file: "gateway_handler.go", handler: "CountTokens"},
+		{file: "gemini_v1beta_handler.go", handler: "GeminiV1BetaModels"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.file+"/"+tt.handler, func(t *testing.T) {
+			src, err := os.ReadFile(tt.file)
+			if err != nil {
+				t.Fatalf("read %s: %v", tt.file, err)
+			}
+			fset := token.NewFileSet()
+			parsed, err := parser.ParseFile(fset, tt.file, src, 0)
+			if err != nil {
+				t.Fatalf("parse %s: %v", tt.file, err)
+			}
+
+			fn := gatewayHandlerFuncDecl(t, parsed, tt.handler)
+			hasNamedAdapter := false
+			var anonymousBillingStageAdapterLines []int
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				lit, ok := node.(*ast.CompositeLit)
+				if !ok {
+					return true
+				}
+				switch compositeTypeName(lit.Type) {
+				case "GatewayBillingStage":
+					hasNamedAdapter = true
+				case "BillingStageAdapter":
+					anonymousBillingStageAdapterLines = append(anonymousBillingStageAdapterLines, fset.Position(lit.Pos()).Line)
+				}
+				return true
+			})
+
+			if !hasNamedAdapter {
+				t.Fatalf("%s.%s must pass GatewayBillingStage to runGatewayBillingStage", tt.file, tt.handler)
+			}
+			if len(anonymousBillingStageAdapterLines) > 0 {
+				t.Fatalf("%s.%s must not wrap billing with anonymous BillingStageAdapter at lines %v", tt.file, tt.handler, anonymousBillingStageAdapterLines)
+			}
+		})
+	}
+}
+
 func TestGatewayPreForwardHandlersUseRoutingStage(t *testing.T) {
 	tests := []struct {
 		file     string
@@ -550,6 +599,55 @@ func TestGatewayPreForwardHandlersUseRoutingStage(t *testing.T) {
 
 			if routingStageCalls < tt.minCalls {
 				t.Fatalf("GatewayHandler.%s must execute account selection through runGatewayRoutingStage, got %d calls", tt.handler, routingStageCalls)
+			}
+		})
+	}
+}
+
+func TestGatewayPreForwardHandlersUseNamedRoutingStageAdapter(t *testing.T) {
+	tests := []struct {
+		file    string
+		handler string
+	}{
+		{file: "gateway_handler.go", handler: "Messages"},
+		{file: "gateway_handler.go", handler: "CountTokens"},
+		{file: "gemini_v1beta_handler.go", handler: "GeminiV1BetaModels"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.file+"/"+tt.handler, func(t *testing.T) {
+			src, err := os.ReadFile(tt.file)
+			if err != nil {
+				t.Fatalf("read %s: %v", tt.file, err)
+			}
+			fset := token.NewFileSet()
+			parsed, err := parser.ParseFile(fset, tt.file, src, 0)
+			if err != nil {
+				t.Fatalf("parse %s: %v", tt.file, err)
+			}
+
+			fn := gatewayHandlerFuncDecl(t, parsed, tt.handler)
+			hasNamedAdapter := false
+			var anonymousRoutingStageAdapterLines []int
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				lit, ok := node.(*ast.CompositeLit)
+				if !ok {
+					return true
+				}
+				switch compositeTypeName(lit.Type) {
+				case "GatewayRoutingStage":
+					hasNamedAdapter = true
+				case "RoutingStageAdapter":
+					anonymousRoutingStageAdapterLines = append(anonymousRoutingStageAdapterLines, fset.Position(lit.Pos()).Line)
+				}
+				return true
+			})
+
+			if !hasNamedAdapter {
+				t.Fatalf("%s.%s must pass GatewayRoutingStage to runGatewayRoutingStage", tt.file, tt.handler)
+			}
+			if len(anonymousRoutingStageAdapterLines) > 0 {
+				t.Fatalf("%s.%s must not wrap routing with anonymous RoutingStageAdapter at lines %v", tt.file, tt.handler, anonymousRoutingStageAdapterLines)
 			}
 		})
 	}

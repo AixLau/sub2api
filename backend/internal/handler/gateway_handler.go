@@ -212,10 +212,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	}
 
 	// 2. 【新增】Wait后二次检查余额/订阅
-	billingStage := h.runGatewayBillingStage(c, func() ExecutableStageResult {
+	billingStage := h.runGatewayBillingStage(c, GatewayBillingStage{Billing: func(*gin.Context) ExecutableStageResult {
 		err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey))
 		return ExecutableStageResult{Err: err}
-	})
+	}})
 	if err := billingStage.Err; err != nil {
 		reqLog.Info("gateway.billing_eligibility_check_failed", zap.Error(err))
 		status, code, message, retryAfter := billingErrorDetails(err)
@@ -290,11 +290,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 		for {
 			var selection *service.AccountSelectionResult
-			routingStage := h.runGatewayRoutingStage(c, func() ExecutableStageResult {
+			routingStage := h.runGatewayRoutingStage(c, GatewayRoutingStage{Routing: func(*gin.Context) ExecutableStageResult {
 				var selectErr error
 				selection, selectErr = h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, reqModel, fs.FailedAccountIDs, "", subject.UserID) // Gemini 不使用会话限制
 				return ExecutableStageResult{Err: selectErr}
-			})
+			}})
 			err = routingStage.Err
 			if err != nil {
 				if len(fs.FailedAccountIDs) == 0 {
@@ -608,11 +608,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				zap.Int("failed_account_count", len(fs.FailedAccountIDs)),
 			)
 			var selection *service.AccountSelectionResult
-			routingStage := h.runGatewayRoutingStage(c, func() ExecutableStageResult {
+			routingStage := h.runGatewayRoutingStage(c, GatewayRoutingStage{Routing: func(*gin.Context) ExecutableStageResult {
 				var selectErr error
 				selection, selectErr = h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), currentAPIKey.GroupID, sessionKey, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
 				return ExecutableStageResult{Err: selectErr}
-			})
+			}})
 			err = routingStage.Err
 			if err != nil {
 				if len(fs.FailedAccountIDs) == 0 {
@@ -909,10 +909,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 							return
 						}
 						fallbackAPIKey := cloneAPIKeyWithGroup(apiKey, fallbackGroup)
-						billingStage := h.runGatewayBillingStage(c, func() ExecutableStageResult {
+						billingStage := h.runGatewayBillingStage(c, GatewayBillingStage{Billing: func(*gin.Context) ExecutableStageResult {
 							err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), fallbackAPIKey.User, fallbackAPIKey, fallbackGroup, nil, service.PlatformFromAPIKey(fallbackAPIKey))
 							return ExecutableStageResult{Err: err}
-						})
+						}})
 						if err := billingStage.Err; err != nil {
 							status, code, message, retryAfter := billingErrorDetails(err)
 							if retryAfter > 0 {
@@ -1832,10 +1832,10 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 
 	// 校验 billing eligibility（订阅/余额）
 	// 【注意】不计算并发，但需要校验订阅/余额
-	billingStage := h.runGatewayBillingStage(c, func() ExecutableStageResult {
+	billingStage := h.runGatewayBillingStage(c, GatewayBillingStage{Billing: func(*gin.Context) ExecutableStageResult {
 		err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey))
 		return ExecutableStageResult{Err: err}
-	})
+	}})
 	if err := billingStage.Err; err != nil {
 		status, code, message, retryAfter := billingErrorDetails(err)
 		if retryAfter > 0 {
@@ -1855,11 +1855,11 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 
 	// 选择支持该模型的账号
 	var account *service.Account
-	routingStage := h.runGatewayRoutingStage(c, func() ExecutableStageResult {
+	routingStage := h.runGatewayRoutingStage(c, GatewayRoutingStage{Routing: func(*gin.Context) ExecutableStageResult {
 		var selectErr error
 		account, selectErr = h.gatewayService.SelectAccountForModel(c.Request.Context(), apiKey.GroupID, sessionHash, parsedReq.Model)
 		return ExecutableStageResult{Err: selectErr}
-	})
+	}})
 	err := routingStage.Err
 	if err != nil {
 		reqLog.Warn("gateway.count_tokens_select_account_failed", zap.Error(err))

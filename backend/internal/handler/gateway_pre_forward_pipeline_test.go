@@ -320,10 +320,10 @@ func TestGatewayBillingStageExecutionIncludesRouteMetadata(t *testing.T) {
 	})
 
 	calls := 0
-	result := (&GatewayHandler{}).runGatewayBillingStage(c, func() ExecutableStageResult {
+	result := (&GatewayHandler{}).runGatewayBillingStage(c, GatewayBillingStage{Billing: func(*gin.Context) ExecutableStageResult {
 		calls++
 		return ExecutableStageResult{}
-	})
+	}})
 
 	require.NoError(t, result.Err)
 	require.False(t, result.Stop)
@@ -359,10 +359,10 @@ func TestGatewayRoutingStageExecutionIncludesRouteMetadata(t *testing.T) {
 	})
 
 	calls := 0
-	result := (&GatewayHandler{}).runGatewayRoutingStage(c, func() ExecutableStageResult {
+	result := (&GatewayHandler{}).runGatewayRoutingStage(c, GatewayRoutingStage{Routing: func(*gin.Context) ExecutableStageResult {
 		calls++
 		return ExecutableStageResult{}
-	})
+	}})
 
 	require.NoError(t, result.Err)
 	require.False(t, result.Stop)
