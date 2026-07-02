@@ -1422,7 +1422,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		var token string
 		stickyPreviousHit := false
 		scheduleLayer := ""
-		if routingStage := h.runOpenAIWebSocketRoutingStage(c, RoutingStageAdapter{
+		if routingStage := h.runOpenAIWebSocketRoutingStage(c, OpenAIWebSocketRoutingStage{
 			Routing: func(*gin.Context) ExecutableStageResult {
 				reqLog.Debug("openai.websocket_account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
 				selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(

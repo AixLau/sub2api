@@ -628,6 +628,21 @@ func (h *OpenAIGatewayHandler) runOpenAIWebSocketRoutingStage(c *gin.Context, ad
 	}.Run(c)
 }
 
+type OpenAIWebSocketRoutingStage struct {
+	Routing func(*gin.Context) ExecutableStageResult
+}
+
+func (OpenAIWebSocketRoutingStage) StageName() string {
+	return moderationcoverage.StageRouting
+}
+
+func (s OpenAIWebSocketRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult {
+	if s.Routing == nil {
+		return ExecutableStageResult{}
+	}
+	return s.Routing(c)
+}
+
 func (h *OpenAIGatewayHandler) runOpenAIWebSocketForwardStage(c *gin.Context, adapter ForwardStage) ExecutableStageResult {
 	return GatewayPipeline{
 		Pipeline: moderationcoverage.PipelineOpenAIWebSocket,

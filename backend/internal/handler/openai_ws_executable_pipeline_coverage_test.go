@@ -77,14 +77,16 @@ func TestOpenAIResponsesWebSocketUsesNamedRoutingStageAdapter(t *testing.T) {
 			return true
 		}
 		switch compositeTypeName(lit.Type) {
-		case "RoutingStageAdapter":
+		case "OpenAIWebSocketRoutingStage":
 			hasNamedAdapter = true
+		case "RoutingStageAdapter":
+			anonymousRoutingStageAdapterLines = append(anonymousRoutingStageAdapterLines, fset.Position(lit.Pos()).Line)
 		}
 		return true
 	})
 
-	require.True(t, hasNamedAdapter, "ResponsesWebSocket must pass RoutingStageAdapter to runOpenAIWebSocketRoutingStage")
-	require.Empty(t, anonymousRoutingStageAdapterLines, "ResponsesWebSocket must not wrap routing with unexpected anonymous routing adapters at lines %v", anonymousRoutingStageAdapterLines)
+	require.True(t, hasNamedAdapter, "ResponsesWebSocket must pass OpenAIWebSocketRoutingStage to runOpenAIWebSocketRoutingStage")
+	require.Empty(t, anonymousRoutingStageAdapterLines, "ResponsesWebSocket must not wrap routing with anonymous RoutingStageAdapter at lines %v", anonymousRoutingStageAdapterLines)
 }
 
 func TestOpenAIResponsesWebSocketUsesNamedForwardStageAdapter(t *testing.T) {
