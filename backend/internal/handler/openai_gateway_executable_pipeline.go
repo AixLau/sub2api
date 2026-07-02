@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
@@ -35,9 +36,19 @@ type ForwardStage interface {
 	RunForward(*gin.Context) ExecutableStageResult
 }
 
+type BillingStage interface {
+	StageName() string
+	RunBilling(*gin.Context) ExecutableStageResult
+}
+
 type ForwardStageAdapter struct {
 	Name    string
 	Forward func(*gin.Context) ExecutableStageResult
+}
+
+type BillingStageAdapter struct {
+	Name    string
+	Billing func(*gin.Context) ExecutableStageResult
 }
 
 type UsageStage interface {
@@ -62,6 +73,20 @@ func (a ForwardStageAdapter) RunForward(c *gin.Context) ExecutableStageResult {
 		return ExecutableStageResult{}
 	}
 	return a.Forward(c)
+}
+
+func (a BillingStageAdapter) StageName() string {
+	if a.Name == "" {
+		return moderationcoverage.StageBilling
+	}
+	return a.Name
+}
+
+func (a BillingStageAdapter) RunBilling(c *gin.Context) ExecutableStageResult {
+	if a.Billing == nil {
+		return ExecutableStageResult{}
+	}
+	return a.Billing(c)
 }
 
 func (a UsageStageAdapter) StageName() string {
@@ -96,6 +121,15 @@ func ExecutableForwardStage(adapter ForwardStage) ExecutableStage {
 	}
 }
 
+func ExecutableBillingStage(adapter BillingStage) ExecutableStage {
+	return ExecutableStage{
+		Name: adapter.StageName(),
+		RunWithContext: func(c *gin.Context) ExecutableStageResult {
+			return adapter.RunBilling(c)
+		},
+	}
+}
+
 func ExecutableUsageStage(adapter UsageStage) ExecutableStage {
 	return ExecutableStage{
 		Name: adapter.StageName(),
@@ -110,6 +144,15 @@ func executableForwardStageWithContext(c *gin.Context, adapter ForwardStage) Exe
 		Name: adapter.StageName(),
 		RunWithContext: func(*gin.Context) ExecutableStageResult {
 			return adapter.RunForward(c)
+		},
+	}
+}
+
+func executableBillingStageWithContext(c *gin.Context, adapter BillingStage) ExecutableStage {
+	return ExecutableStage{
+		Name: adapter.StageName(),
+		RunWithContext: func(*gin.Context) ExecutableStageResult {
+			return adapter.RunBilling(c)
 		},
 	}
 }
@@ -162,6 +205,69 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPExecutableStage(c *gin.Context, stag
 	return openAIHTTPExecutablePipeline([]openAIHTTPExecutableStage{
 		{Stage: stage, Run: run},
 	}).Run(c)
+}
+
+func (h *OpenAIGatewayHandler) runOpenAIHTTPBillingStage(c *gin.Context, adapter BillingStage) openAIHTTPExecutableStageResult {
+	return GatewayPipeline{
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+		Source:   moderationcoverage.SourceOpenAIHTTPExecutableStage,
+		Stages: []ExecutableStage{
+			executableBillingStageWithContext(c, adapter),
+		},
+	}.Run(c)
+}
+
+type OpenAIHTTPBillingStage struct {
+	Handler          *OpenAIGatewayHandler
+	ReqLog           *zap.Logger
+	APIKey           *service.APIKey
+	Subscription     *service.UserSubscription
+	StreamStarted    bool
+	ErrorResponder   func(*gin.Context, int, string, string)
+	ErrorComponent   string
+	RequestContext   context.Context
+	QuotaPlatformCtx context.Context
+}
+
+func (OpenAIHTTPBillingStage) StageName() string {
+	return moderationcoverage.StageBilling
+}
+
+func (s OpenAIHTTPBillingStage) RunBilling(c *gin.Context) ExecutableStageResult {
+	h := s.Handler
+	if h == nil || h.billingCacheService == nil || s.APIKey == nil {
+		return ExecutableStageResult{}
+	}
+	ctx := s.RequestContext
+	if ctx == nil {
+		ctx = c.Request.Context()
+	}
+	quotaCtx := s.QuotaPlatformCtx
+	if quotaCtx == nil {
+		quotaCtx = c.Request.Context()
+	}
+	reqLog := s.ReqLog
+	if reqLog == nil {
+		reqLog = zap.NewNop()
+	}
+	if err := h.billingCacheService.CheckBillingEligibility(ctx, s.APIKey.User, s.APIKey, s.APIKey.Group, s.Subscription, service.QuotaPlatform(quotaCtx, s.APIKey)); err != nil {
+		component := s.ErrorComponent
+		if component == "" {
+			component = "openai.billing_eligibility_check_failed"
+		}
+		reqLog.Info(component, zap.Error(err))
+		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		if s.ErrorResponder != nil {
+			s.ErrorResponder(c, status, code, message)
+		} else {
+			h.handleStreamingAwareError(c, status, code, message, s.StreamStarted)
+		}
+		return ExecutableStageResult{Stop: true, Err: err}
+	}
+	return ExecutableStageResult{}
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIHTTPForwardStage(c *gin.Context, adapter ForwardStage) openAIHTTPExecutableStageResult {

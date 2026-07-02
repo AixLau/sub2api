@@ -240,17 +240,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	}
 
 	// 2. Re-check billing eligibility after wait
-	if billingStage := h.runOpenAIHTTPExecutableStage(c, moderationcoverage.StageBilling, func() openAIHTTPExecutableStageResult {
-		if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
-			reqLog.Info("openai.billing_eligibility_check_failed", zap.Error(err))
-			status, code, message, retryAfter := billingErrorDetails(err)
-			if retryAfter > 0 {
-				c.Header("Retry-After", strconv.Itoa(retryAfter))
-			}
-			h.handleStreamingAwareError(c, status, code, message, streamStarted)
-			return openAIHTTPExecutableStageResult{Stop: true, Err: err}
-		}
-		return openAIHTTPExecutableStageResult{}
+	if billingStage := h.runOpenAIHTTPBillingStage(c, OpenAIHTTPBillingStage{
+		Handler:        h,
+		ReqLog:         reqLog,
+		APIKey:         apiKey,
+		Subscription:   subscription,
+		StreamStarted:  streamStarted,
+		ErrorComponent: "openai.billing_eligibility_check_failed",
 	}); billingStage.Stop {
 		return
 	}
@@ -704,17 +700,16 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		defer userReleaseFunc()
 	}
 
-	if billingStage := h.runOpenAIHTTPExecutableStage(c, moderationcoverage.StageBilling, func() openAIHTTPExecutableStageResult {
-		if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
-			reqLog.Info("openai_messages.billing_eligibility_check_failed", zap.Error(err))
-			status, code, message, retryAfter := billingErrorDetails(err)
-			if retryAfter > 0 {
-				c.Header("Retry-After", strconv.Itoa(retryAfter))
-			}
+	if billingStage := h.runOpenAIHTTPBillingStage(c, OpenAIHTTPBillingStage{
+		Handler:        h,
+		ReqLog:         reqLog,
+		APIKey:         apiKey,
+		Subscription:   subscription,
+		StreamStarted:  streamStarted,
+		ErrorComponent: "openai_messages.billing_eligibility_check_failed",
+		ErrorResponder: func(c *gin.Context, status int, code, message string) {
 			h.anthropicStreamingAwareError(c, status, code, message, streamStarted)
-			return openAIHTTPExecutableStageResult{Stop: true, Err: err}
-		}
-		return openAIHTTPExecutableStageResult{}
+		},
 	}); billingStage.Stop {
 		return
 	}
