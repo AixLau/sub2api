@@ -81,6 +81,7 @@ export const adminPaymentAPI = {
     payment_type?: string
     user_id?: number
     keyword?: string
+    user_query?: string
     start_date?: string
     end_date?: string
     order_type?: string
