@@ -107,6 +107,14 @@ func TestGatewayRouteRegistrationDelegatesGlobalEntrypointToDispatcher(t *testin
 		strings.Join(directCalls, ", "))
 }
 
+func TestGatewayRouteRegistrationDelegatesBranchEntrypointsToRegistrar(t *testing.T) {
+	directCalls := gatewayRouteRegistrationDirectBranchEntrypointsFromSource(t, gatewaySourceFile(t))
+
+	require.Empty(t, directCalls,
+		"production gateway route registration must enter auto-route branch pipelines through ModeratedRouteRegistrar.EnterBranchPipeline, found %s",
+		strings.Join(directCalls, ", "))
+}
+
 func TestModeratedRouteRegistrarInjectsRuntimeRouteMetaBeforeHandlers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -656,6 +664,52 @@ func TestModeratedRouteRegistrarEnforcesRuntimeBranchRouteMeta(t *testing.T) {
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
 	require.NotContains(t, rec.Body.String(), "pipeline_admission_missing")
+}
+
+func TestModeratedRouteRegistrarEnterBranchPipelineSetsMetaAndRunsEntrypoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
+
+	router := gin.New()
+	var metaAtEntrypoint ModeratedRouteMeta
+	registrar := NewGatewayPipelineRegistrar(router, GatewayPipelineEntrypoints{
+		moderationcoverage.PipelineGatewayGlobal: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+			metaAtEntrypoint = meta
+			moderationcoverage.MarkPipelineAdmitted(c, meta.Pipeline, moderationcoverage.StagePreForward, "test branch entrypoint")
+			return GatewayPipelineEntryResult{}
+		}),
+	})
+	defaultMeta := coveredModeratedRoute(
+		"/v1/messages",
+		"GatewayHandler.Messages",
+		"anthropic_messages",
+		"test default messages branch",
+	)
+	branchMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
+		"/v1/messages",
+		"OpenAIGatewayHandler.Messages",
+		"openai_messages",
+		"test openai messages branch",
+	))
+
+	registrar.POST("/messages", defaultMeta, func(c *gin.Context) {
+		result := registrar.EnterBranchPipeline(c, branchMeta)
+		require.False(t, result.Stop)
+		runtimeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
+		require.True(t, ok)
+		require.Equal(t, branchMeta.Handler, runtimeMeta.Handler)
+		require.True(t, moderationcoverage.PipelineAdmittedFromContext(c))
+		c.Status(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/messages", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	require.Equal(t, branchMeta.Handler, metaAtEntrypoint.Handler)
+	require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, metaAtEntrypoint.Pipeline)
 }
 
 func TestModeratedRouteRegistrarDoesNotBindPipelineAdmissionForNoAuditRoutes(t *testing.T) {
@@ -1612,6 +1666,34 @@ func gatewayRouteRegistrationInlinePipelineDispatchesFromSource(t *testing.T, fi
 					sourceLocation(repoRootFromTestFile(t), file, pos.Line), call))
 			}
 		}
+		return true
+	})
+	sort.Strings(violations)
+	return violations
+}
+
+func gatewayRouteRegistrationDirectBranchEntrypointsFromSource(t *testing.T, file string) []string {
+	t.Helper()
+
+	src, err := os.ReadFile(file)
+	require.NoError(t, err)
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, file, src, 0)
+	require.NoError(t, err)
+
+	violations := make([]string, 0)
+	registerFn := functionDeclByName(parsed, "RegisterGatewayRoutes")
+	require.NotNil(t, registerFn)
+	ast.Inspect(registerFn.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if callName(call) != "enterModeratedRouteBranchPipeline" {
+			return true
+		}
+		pos := fset.Position(call.Pos())
+		violations = append(violations, sourceLocation(repoRootFromTestFile(t), file, pos.Line))
 		return true
 	})
 	sort.Strings(violations)

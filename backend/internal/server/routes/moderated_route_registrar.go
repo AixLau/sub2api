@@ -137,11 +137,19 @@ func setModeratedRouteBranchMeta(c *gin.Context, meta ModeratedRouteMeta) {
 }
 
 func enterModeratedRouteBranchPipeline(c *gin.Context, registrar *ModeratedRouteRegistrar, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
-	setModeratedRouteBranchMeta(c, meta)
 	if registrar == nil {
+		setModeratedRouteBranchMeta(c, meta)
 		return GatewayPipelineEntryResult{}
 	}
-	return registrar.runGatewayPipelineEntrypoint(c, meta)
+	return registrar.EnterBranchPipeline(c, meta)
+}
+
+func (r *ModeratedRouteRegistrar) EnterBranchPipeline(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+	setModeratedRouteBranchMeta(c, meta)
+	if r == nil {
+		return GatewayPipelineEntryResult{}
+	}
+	return r.runGatewayPipelineEntrypoint(c, meta)
 }
 
 func normalizeGatewayPipelineEntrypoints(entrypoints GatewayPipelineEntrypoints) GatewayPipelineEntrypoints {

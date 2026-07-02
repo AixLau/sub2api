@@ -85,7 +85,7 @@ func RegisterGatewayRoutes(
 				return
 			}
 			if isOpenAIGatewayPlatform(c) {
-				if enterModeratedRouteBranchPipeline(c, moderatedGateway, openAIMessagesRouteMeta).Stop {
+				if moderatedGateway.EnterBranchPipeline(c, openAIMessagesRouteMeta).Stop {
 					return
 				}
 				h.OpenAIGateway.Messages(c)
@@ -137,7 +137,7 @@ func RegisterGatewayRoutes(
 			"Responses requests for non-OpenAI groups are moderated by the shared Gateway pre-forward pipeline before scheduling and upstream forwarding.",
 		), func(c *gin.Context) {
 			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
-				if enterModeratedRouteBranchPipeline(c, moderatedGateway, openAIResponsesRouteMeta).Stop {
+				if moderatedGateway.EnterBranchPipeline(c, openAIResponsesRouteMeta).Stop {
 					return
 				}
 				h.OpenAIGateway.Responses(c)
@@ -158,7 +158,7 @@ func RegisterGatewayRoutes(
 			"Responses subpaths for non-OpenAI groups use the shared Gateway pre-forward pipeline before upstream forwarding.",
 		), func(c *gin.Context) {
 			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
-				if enterModeratedRouteBranchPipeline(c, moderatedGateway, openAIResponsesSubpathRouteMeta).Stop {
+				if moderatedGateway.EnterBranchPipeline(c, openAIResponsesSubpathRouteMeta).Stop {
 					return
 				}
 				h.OpenAIGateway.Responses(c)
@@ -196,7 +196,7 @@ func RegisterGatewayRoutes(
 				return
 			}
 			if isOpenAIGatewayPlatform(c) {
-				if enterModeratedRouteBranchPipeline(c, moderatedGateway, openAIChatCompletionsRouteMeta).Stop {
+				if moderatedGateway.EnterBranchPipeline(c, openAIChatCompletionsRouteMeta).Stop {
 					return
 				}
 				h.OpenAIGateway.ChatCompletions(c)
@@ -299,7 +299,7 @@ func RegisterGatewayRoutes(
 	moderatedRoot := NewGatewayPipelineRegistrar(r, openAIHTTPPipelineEntrypoints)
 	responsesHandler := func(c *gin.Context) {
 		if isOpenAIResponsesCompatibleGatewayPlatform(c) {
-			if enterModeratedRouteBranchPipeline(c, moderatedRoot, rootOpenAIResponsesRouteMeta).Stop {
+			if moderatedRoot.EnterBranchPipeline(c, rootOpenAIResponsesRouteMeta).Stop {
 				return
 			}
 			h.OpenAIGateway.Responses(c)
@@ -321,7 +321,7 @@ func RegisterGatewayRoutes(
 	))
 	responsesSubpathHandler := func(c *gin.Context) {
 		if isOpenAIResponsesCompatibleGatewayPlatform(c) {
-			if enterModeratedRouteBranchPipeline(c, moderatedRoot, rootOpenAIResponsesSubpathRouteMeta).Stop {
+			if moderatedRoot.EnterBranchPipeline(c, rootOpenAIResponsesSubpathRouteMeta).Stop {
 				return
 			}
 			h.OpenAIGateway.Responses(c)
@@ -359,7 +359,7 @@ func RegisterGatewayRoutes(
 		))
 		codexResponsesHandler := func(c *gin.Context) {
 			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
-				if enterModeratedRouteBranchPipeline(c, moderatedCodexDirect, codexOpenAIResponsesRouteMeta).Stop {
+				if moderatedCodexDirect.EnterBranchPipeline(c, codexOpenAIResponsesRouteMeta).Stop {
 					return
 				}
 				h.OpenAIGateway.Responses(c)
@@ -381,7 +381,7 @@ func RegisterGatewayRoutes(
 		))
 		codexResponsesSubpathHandler := func(c *gin.Context) {
 			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
-				if enterModeratedRouteBranchPipeline(c, moderatedCodexDirect, codexOpenAIResponsesSubpathRouteMeta).Stop {
+				if moderatedCodexDirect.EnterBranchPipeline(c, codexOpenAIResponsesSubpathRouteMeta).Stop {
 					return
 				}
 				h.OpenAIGateway.Responses(c)
@@ -426,7 +426,7 @@ func RegisterGatewayRoutes(
 			return
 		}
 		if isOpenAIGatewayPlatform(c) {
-			if enterModeratedRouteBranchPipeline(c, moderatedRoot, rootOpenAIChatCompletionsRouteMeta).Stop {
+			if moderatedRoot.EnterBranchPipeline(c, rootOpenAIChatCompletionsRouteMeta).Stop {
 				return
 			}
 			h.OpenAIGateway.ChatCompletions(c)
