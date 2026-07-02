@@ -2797,18 +2797,34 @@ func TestContentModerationStatusIncludesPipelineCoverageFromRegisteredEntries(t 
 	entries := contentModerationPipelineCoverageFixtureEntries()
 	restore := moderationcoverage.ReplaceRegistryForTest(entries)
 	defer restore()
+	oldObservedAt := time.Now().UTC().Add(-10 * time.Minute)
+	recentObservedAt := time.Now().UTC()
 	restoreExecution := moderationcoverage.ReplacePipelineExecutionObserverForTest([]moderationcoverage.PipelineStageExecutionObservation{
 		{
-			Pipeline: moderationcoverage.PipelineOpenAIHTTP,
-			Stage:    moderationcoverage.StageRouting,
-			Source:   moderationcoverage.SourceOpenAIHTTPExecutableStage,
-			Method:   "POST",
-			Path:     "/v1/responses",
-			Handler:  "OpenAIGatewayHandler.Responses",
-			Protocol: "openai_responses",
-			Count:    2,
+			Pipeline:       moderationcoverage.PipelineOpenAIHTTP,
+			Stage:          moderationcoverage.StageRouting,
+			Source:         moderationcoverage.SourceOpenAIHTTPExecutableStage,
+			Method:         "POST",
+			Path:           "/v1/responses",
+			Handler:        "OpenAIGatewayHandler.Responses",
+			Protocol:       "openai_responses",
+			Count:          2,
+			ErrorCount:     1,
+			LastObservedAt: &oldObservedAt,
 		},
-		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageUsage, Source: "usage-recorder", Count: 1},
+		{
+			Pipeline:       moderationcoverage.PipelineOpenAIHTTP,
+			Stage:          moderationcoverage.StageRouting,
+			Source:         moderationcoverage.SourceOpenAIHTTPExecutableStage,
+			Method:         "POST",
+			Path:           "/v1/responses",
+			Handler:        "OpenAIGatewayHandler.Responses",
+			Protocol:       "openai_responses",
+			Count:          3,
+			ErrorCount:     1,
+			LastObservedAt: &recentObservedAt,
+		},
+		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageUsage, Source: "usage-recorder", Count: 1, LastObservedAt: &recentObservedAt},
 	})
 	defer restoreExecution()
 
@@ -2837,7 +2853,9 @@ func TestContentModerationStatusIncludesPipelineCoverageFromRegisteredEntries(t 
 	require.NoError(t, json.Unmarshal(payload, &statusJSON))
 	pipelineExecutionJSON, ok := statusJSON["pipeline_execution"].(map[string]any)
 	require.True(t, ok, "runtime status JSON must expose pipeline_execution")
-	require.Equal(t, float64(3), pipelineExecutionJSON["total_count"])
+	require.Equal(t, float64(6), pipelineExecutionJSON["total_count"])
+	require.Equal(t, float64(4), pipelineExecutionJSON["recent_window_count"])
+	require.Equal(t, float64(1), pipelineExecutionJSON["recent_window_error_count"])
 	executionsJSON, ok := pipelineExecutionJSON["executions"].([]any)
 	require.True(t, ok, "pipeline_execution.executions must be a JSON array")
 	require.Len(t, executionsJSON, 2)
@@ -2850,28 +2868,38 @@ func TestContentModerationStatusIncludesPipelineCoverageFromRegisteredEntries(t 
 	require.Equal(t, "/v1/responses", firstExecutionJSON["path"])
 	require.Equal(t, "OpenAIGatewayHandler.Responses", firstExecutionJSON["handler"])
 	require.Equal(t, "openai_responses", firstExecutionJSON["protocol"])
-	require.Equal(t, float64(2), firstExecutionJSON["count"])
+	require.Equal(t, float64(5), firstExecutionJSON["count"])
+	require.Equal(t, float64(2), firstExecutionJSON["error_count"])
+	require.Equal(t, float64(3), firstExecutionJSON["recent_count"])
+	require.Equal(t, float64(1), firstExecutionJSON["recent_error_count"])
 	require.Contains(t, firstExecutionJSON, "last_observed_at")
-	require.Equal(t, int64(3), status.PipelineExecution.TotalCount)
+	require.Equal(t, int64(6), status.PipelineExecution.TotalCount)
+	require.Equal(t, int64(4), status.PipelineExecution.RecentWindowCount)
+	require.Equal(t, int64(1), status.PipelineExecution.RecentWindowErrorCount)
 	require.NotNil(t, status.PipelineExecution.LastObservedAt)
 	require.Equal(t, []ContentModerationPipelineExecutionObservationStatus{
 		{
-			Pipeline:       moderationcoverage.PipelineOpenAIHTTP,
-			Stage:          moderationcoverage.StageRouting,
-			Source:         moderationcoverage.SourceOpenAIHTTPExecutableStage,
-			Method:         "POST",
-			Path:           "/v1/responses",
-			Handler:        "OpenAIGatewayHandler.Responses",
-			Protocol:       "openai_responses",
-			Count:          2,
-			LastObservedAt: status.PipelineExecution.Executions[0].LastObservedAt,
+			Pipeline:         moderationcoverage.PipelineOpenAIHTTP,
+			Stage:            moderationcoverage.StageRouting,
+			Source:           moderationcoverage.SourceOpenAIHTTPExecutableStage,
+			Method:           "POST",
+			Path:             "/v1/responses",
+			Handler:          "OpenAIGatewayHandler.Responses",
+			Protocol:         "openai_responses",
+			Count:            5,
+			ErrorCount:       2,
+			RecentCount:      3,
+			RecentErrorCount: 1,
+			LastObservedAt:   status.PipelineExecution.Executions[0].LastObservedAt,
 		},
 		{
-			Pipeline:       moderationcoverage.PipelineOpenAIHTTP,
-			Stage:          moderationcoverage.StageUsage,
-			Source:         "usage-recorder",
-			Count:          1,
-			LastObservedAt: status.PipelineExecution.Executions[1].LastObservedAt,
+			Pipeline:         moderationcoverage.PipelineOpenAIHTTP,
+			Stage:            moderationcoverage.StageUsage,
+			Source:           "usage-recorder",
+			Count:            1,
+			RecentCount:      1,
+			RecentErrorCount: 0,
+			LastObservedAt:   status.PipelineExecution.Executions[1].LastObservedAt,
 		},
 	}, status.PipelineExecution.Executions)
 }

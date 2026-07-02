@@ -7,16 +7,18 @@ import (
 )
 
 type PipelineStageExecutionObservation struct {
-	Pipeline       string     `json:"pipeline"`
-	Stage          string     `json:"stage"`
-	Source         string     `json:"source"`
-	Method         string     `json:"method,omitempty"`
-	Path           string     `json:"path,omitempty"`
-	Handler        string     `json:"handler,omitempty"`
-	Protocol       string     `json:"protocol,omitempty"`
-	Count          int64      `json:"count"`
-	ErrorCount     int64      `json:"error_count"`
-	LastObservedAt *time.Time `json:"last_observed_at,omitempty"`
+	Pipeline         string     `json:"pipeline"`
+	Stage            string     `json:"stage"`
+	Source           string     `json:"source"`
+	Method           string     `json:"method,omitempty"`
+	Path             string     `json:"path,omitempty"`
+	Handler          string     `json:"handler,omitempty"`
+	Protocol         string     `json:"protocol,omitempty"`
+	Count            int64      `json:"count"`
+	ErrorCount       int64      `json:"error_count"`
+	RecentCount      int64      `json:"recent_count"`
+	RecentErrorCount int64      `json:"recent_error_count"`
+	LastObservedAt   *time.Time `json:"last_observed_at,omitempty"`
 }
 
 type PipelineExecutionSnapshot struct {
@@ -128,6 +130,7 @@ func ReplacePipelineExecutionObserverForTest(observations []PipelineStageExecuti
 			now := time.Now().UTC()
 			lastObservedAt = &now
 		}
+		key := pipelineStageExecutionKey(normalized)
 		seeded := PipelineStageExecutionObservation{
 			Pipeline:       normalized.Pipeline,
 			Stage:          normalized.Stage,
@@ -140,7 +143,15 @@ func ReplacePipelineExecutionObserverForTest(observations []PipelineStageExecuti
 			ErrorCount:     observation.ErrorCount,
 			LastObservedAt: lastObservedAt,
 		}
-		pipelineExecutionObserver.observations[pipelineStageExecutionKey(normalized)] = seeded
+		if existing, ok := pipelineExecutionObserver.observations[key]; ok {
+			seeded.Count += existing.Count
+			seeded.ErrorCount += existing.ErrorCount
+			if existing.LastObservedAt != nil && existing.LastObservedAt.After(*seeded.LastObservedAt) {
+				t := *existing.LastObservedAt
+				seeded.LastObservedAt = &t
+			}
+		}
+		pipelineExecutionObserver.observations[key] = seeded
 		pipelineExecutionObserver.totalCount += observation.Count
 		pipelineExecutionObserver.errorCount += observation.ErrorCount
 		appendPipelineStageExecutionEventLocked(pipelineStageExecutionEvent{
@@ -168,9 +179,28 @@ func ResetPipelineExecutionObserverForTest() func() {
 }
 
 func pipelineExecutionObserverSnapshotLocked() PipelineExecutionSnapshot {
+	now := time.Now().UTC()
+	recentByKey := pipelineExecutionRecentCountsByKeyLocked(now)
 	executions := make([]PipelineStageExecutionObservation, 0, len(pipelineExecutionObserver.observations))
 	for _, observation := range pipelineExecutionObserver.observations {
-		executions = append(executions, clonePipelineStageExecutionObservation(observation))
+		clone := clonePipelineStageExecutionObservation(observation)
+		key := pipelineStageExecutionKey(PipelineStageExecution{
+			Pipeline: clone.Pipeline,
+			Stage:    clone.Stage,
+			Source:   clone.Source,
+			Method:   clone.Method,
+			Path:     clone.Path,
+			Handler:  clone.Handler,
+			Protocol: clone.Protocol,
+		})
+		if recent, ok := recentByKey[key]; ok {
+			clone.RecentCount = recent.count
+			clone.RecentErrorCount = recent.errorCount
+		} else {
+			clone.RecentCount = 0
+			clone.RecentErrorCount = 0
+		}
+		executions = append(executions, clone)
 	}
 	sort.Slice(executions, func(i, j int) bool {
 		return pipelineStageExecutionObservationLess(executions[i], executions[j])
@@ -180,7 +210,7 @@ func pipelineExecutionObserverSnapshotLocked() PipelineExecutionSnapshot {
 		t := *pipelineExecutionObserver.lastSeen
 		lastSeen = &t
 	}
-	recentCount, recentErrorCount := pipelineExecutionRecentCountsLocked(time.Now().UTC())
+	recentCount, recentErrorCount := pipelineExecutionRecentCountsFromRecentByKey(recentByKey)
 	return PipelineExecutionSnapshot{
 		TotalCount:             pipelineExecutionObserver.totalCount,
 		ErrorCount:             pipelineExecutionObserver.errorCount,
@@ -233,6 +263,11 @@ func restorePipelineExecutionObserverLocked(snapshot PipelineExecutionSnapshot) 
 	}
 }
 
+type pipelineExecutionRecentCounts struct {
+	count      int64
+	errorCount int64
+}
+
 func clonePipelineStageExecutionObservation(observation PipelineStageExecutionObservation) PipelineStageExecutionObservation {
 	if observation.LastObservedAt != nil {
 		t := *observation.LastObservedAt
@@ -249,15 +284,34 @@ func appendPipelineStageExecutionEventLocked(event pipelineStageExecutionEvent) 
 }
 
 func pipelineExecutionRecentCountsLocked(now time.Time) (int64, int64) {
+	return pipelineExecutionRecentCountsFromRecentByKey(pipelineExecutionRecentCountsByKeyLocked(now))
+}
+
+func pipelineExecutionRecentCountsByKeyLocked(now time.Time) map[string]pipelineExecutionRecentCounts {
 	cutoff := now.Add(-pipelineExecutionRecentWindow)
-	var count int64
-	var errorCount int64
+	recentByKey := make(map[string]pipelineExecutionRecentCounts)
 	for _, event := range pipelineExecutionObserver.events {
 		if event.ObservedAt.Before(cutoff) {
 			continue
 		}
-		count += event.Count
-		errorCount += event.ErrorCount
+		key := pipelineStageExecutionKey(event.Execution)
+		if key == "" {
+			continue
+		}
+		recent := recentByKey[key]
+		recent.count += event.Count
+		recent.errorCount += event.ErrorCount
+		recentByKey[key] = recent
+	}
+	return recentByKey
+}
+
+func pipelineExecutionRecentCountsFromRecentByKey(recentByKey map[string]pipelineExecutionRecentCounts) (int64, int64) {
+	var count int64
+	var errorCount int64
+	for _, recent := range recentByKey {
+		count += recent.count
+		errorCount += recent.errorCount
 	}
 	return count, errorCount
 }
