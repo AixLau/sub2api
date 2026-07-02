@@ -605,6 +605,8 @@ func TestGatewayPreForwardHandlersUseBillingStage(t *testing.T) {
 		{file: "gateway_handler.go", handler: "Messages", minCalls: 2},
 		{file: "gateway_handler.go", handler: "CountTokens", minCalls: 1},
 		{file: "gemini_v1beta_handler.go", handler: "GeminiV1BetaModels", minCalls: 1},
+		{file: "gateway_handler_chat_completions.go", handler: "ChatCompletions", minCalls: 1},
+		{file: "gateway_handler_responses.go", handler: "Responses", minCalls: 1},
 	}
 
 	for _, tt := range tests {
@@ -621,6 +623,7 @@ func TestGatewayPreForwardHandlersUseBillingStage(t *testing.T) {
 
 			fn := gatewayHandlerFuncDecl(t, parsed, tt.handler)
 			billingStageCalls := 0
+			var directBillingLines []int
 			ast.Inspect(fn.Body, func(node ast.Node) bool {
 				call, ok := node.(*ast.CallExpr)
 				if !ok {
@@ -633,12 +636,17 @@ func TestGatewayPreForwardHandlersUseBillingStage(t *testing.T) {
 				if selector.Sel.Name == "runGatewayBillingStage" {
 					billingStageCalls++
 				}
+				if selector.Sel.Name == "CheckBillingEligibility" {
+					directBillingLines = append(directBillingLines, fset.Position(call.Pos()).Line)
+				}
 				return true
 			})
 
 			if billingStageCalls < tt.minCalls {
 				t.Fatalf("GatewayHandler.%s must execute billing checks through runGatewayBillingStage, got %d calls", tt.handler, billingStageCalls)
 			}
+			require.Empty(t, directBillingLines,
+				"GatewayHandler.%s must not call billing service directly at lines %v", tt.handler, directBillingLines)
 		})
 	}
 }
@@ -651,6 +659,8 @@ func TestGatewayPreForwardHandlersUseNamedBillingStageAdapter(t *testing.T) {
 		{file: "gateway_handler.go", handler: "Messages"},
 		{file: "gateway_handler.go", handler: "CountTokens"},
 		{file: "gemini_v1beta_handler.go", handler: "GeminiV1BetaModels"},
+		{file: "gateway_handler_chat_completions.go", handler: "ChatCompletions"},
+		{file: "gateway_handler_responses.go", handler: "Responses"},
 	}
 
 	for _, tt := range tests {
@@ -701,6 +711,8 @@ func TestGatewayPreForwardHandlersUseRoutingStage(t *testing.T) {
 		{file: "gateway_handler.go", handler: "Messages", minCalls: 2},
 		{file: "gateway_handler.go", handler: "CountTokens", minCalls: 1},
 		{file: "gemini_v1beta_handler.go", handler: "GeminiV1BetaModels", minCalls: 1},
+		{file: "gateway_handler_chat_completions.go", handler: "ChatCompletions", minCalls: 1},
+		{file: "gateway_handler_responses.go", handler: "Responses", minCalls: 1},
 	}
 
 	for _, tt := range tests {
@@ -717,6 +729,7 @@ func TestGatewayPreForwardHandlersUseRoutingStage(t *testing.T) {
 
 			fn := gatewayHandlerFuncDecl(t, parsed, tt.handler)
 			routingStageCalls := 0
+			var directRoutingLines []int
 			ast.Inspect(fn.Body, func(node ast.Node) bool {
 				call, ok := node.(*ast.CallExpr)
 				if !ok {
@@ -729,12 +742,17 @@ func TestGatewayPreForwardHandlersUseRoutingStage(t *testing.T) {
 				if selector.Sel.Name == "runGatewayRoutingStage" {
 					routingStageCalls++
 				}
+				if selector.Sel.Name == "SelectAccountWithLoadAwareness" || selector.Sel.Name == "SelectAccountForModel" {
+					directRoutingLines = append(directRoutingLines, fset.Position(call.Pos()).Line)
+				}
 				return true
 			})
 
 			if routingStageCalls < tt.minCalls {
 				t.Fatalf("GatewayHandler.%s must execute account selection through runGatewayRoutingStage, got %d calls", tt.handler, routingStageCalls)
 			}
+			require.Empty(t, directRoutingLines,
+				"GatewayHandler.%s must not call routing service directly at lines %v", tt.handler, directRoutingLines)
 		})
 	}
 }
@@ -747,6 +765,8 @@ func TestGatewayPreForwardHandlersUseNamedRoutingStage(t *testing.T) {
 		{file: "gateway_handler.go", handler: "Messages"},
 		{file: "gateway_handler.go", handler: "CountTokens"},
 		{file: "gemini_v1beta_handler.go", handler: "GeminiV1BetaModels"},
+		{file: "gateway_handler_chat_completions.go", handler: "ChatCompletions"},
+		{file: "gateway_handler_responses.go", handler: "Responses"},
 	}
 
 	for _, tt := range tests {
@@ -800,6 +820,8 @@ func TestGatewayPreForwardHandlersUseNamedRoutingStageAdapter(t *testing.T) {
 		{file: "gateway_handler.go", handler: "Messages"},
 		{file: "gateway_handler.go", handler: "CountTokens"},
 		{file: "gemini_v1beta_handler.go", handler: "GeminiV1BetaModels"},
+		{file: "gateway_handler_chat_completions.go", handler: "ChatCompletions"},
+		{file: "gateway_handler_responses.go", handler: "Responses"},
 	}
 
 	for _, tt := range tests {
