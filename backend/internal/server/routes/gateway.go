@@ -86,9 +86,11 @@ func RegisterGatewayRoutes(
 			default:
 				return GatewayPipelineEntryResult{}
 			}
-			switch getGroupPlatform(c) {
-			case service.PlatformOpenAI, service.PlatformGrok:
-				return GatewayPipelineEntryResult{}
+			if !middleware.HasForcePlatform(c) {
+				switch getGroupPlatform(c) {
+				case service.PlatformOpenAI, service.PlatformGrok:
+					return GatewayPipelineEntryResult{}
+				}
 			}
 			result := h.Gateway.EnterGatewayPreForwardPipeline(c, meta)
 			return GatewayPipelineEntryResult{Stop: result.Blocked}
@@ -533,7 +535,7 @@ func RegisterGatewayRoutes(
 
 	// Antigravity 专用路由（仅使用 antigravity 账户，不混合调度）
 	antigravityV1 := r.Group("/antigravity/v1")
-	moderatedAntigravityV1 := NewModeratedRouteRegistrar(antigravityV1)
+	moderatedAntigravityV1 := NewGatewayPipelineRegistrar(antigravityV1, openAIHTTPPipelineEntrypoints)
 	antigravityV1.Use(bodyLimit)
 	antigravityV1.Use(clientRequestID)
 	antigravityV1.Use(opsErrorLogger)
