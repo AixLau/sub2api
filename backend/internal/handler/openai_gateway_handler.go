@@ -37,6 +37,7 @@ type OpenAIGatewayHandler struct {
 	moderationGuard          moderationGuard
 	pipeline                 *OpenAIGatewayPipeline
 	forwardStageRegistry     *ForwardStageRegistry
+	stageAdapterRegistry     *StageAdapterRegistry
 	opsService               *service.OpsService
 	concurrencyHelper        *ConcurrencyHelper
 	imageLimiter             *imageConcurrencyLimiter
@@ -128,6 +129,7 @@ func NewOpenAIGatewayHandler(
 		}
 	}
 	guard := newContentModerationGuard(contentModerationService)
+	stageRegistry := NewStageAdapterRegistry()
 	return &OpenAIGatewayHandler{
 		gatewayService:           gatewayService,
 		billingCacheService:      billingCacheService,
@@ -137,7 +139,8 @@ func NewOpenAIGatewayHandler(
 		contentModerationService: contentModerationService,
 		moderationGuard:          guard,
 		pipeline:                 newOpenAIGatewayPipeline(guard, gatewayService),
-		forwardStageRegistry:     NewForwardStageRegistry(),
+		forwardStageRegistry:     stageRegistry,
+		stageAdapterRegistry:     stageRegistry,
 		opsService:               opsService,
 		concurrencyHelper:        NewConcurrencyHelper(concurrencyService, SSEPingFormatComment, pingInterval),
 		imageLimiter:             &imageConcurrencyLimiter{},

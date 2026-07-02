@@ -53,11 +53,16 @@ type ForwardStageAdapter struct {
 	Forward func(*gin.Context) ExecutableStageResult
 }
 
-type ForwardStageRegistry struct {
-	adapters map[forwardStageRegistryKey]ForwardStage
+type StageAdapterRegistry struct {
+	forwardAdapters map[stageAdapterRegistryKey]ForwardStage
+	billingAdapters map[stageAdapterRegistryKey]BillingStage
+	routingAdapters map[stageAdapterRegistryKey]RoutingStage
+	usageAdapters   map[stageAdapterRegistryKey]UsageStage
 }
 
-type forwardStageRegistryKey struct {
+type ForwardStageRegistry = StageAdapterRegistry
+
+type stageAdapterRegistryKey struct {
 	Stage    string
 	Pipeline string
 	Name     string
@@ -66,6 +71,21 @@ type forwardStageRegistryKey struct {
 type registeredForwardStage struct {
 	stage   string
 	adapter ForwardStage
+}
+
+type registeredBillingStage struct {
+	stage   string
+	adapter BillingStage
+}
+
+type registeredRoutingStage struct {
+	stage   string
+	adapter RoutingStage
+}
+
+type registeredUsageStage struct {
+	stage   string
+	adapter UsageStage
 }
 
 type BillingStageAdapter struct {
@@ -102,41 +122,145 @@ func (a ForwardStageAdapter) RunForward(c *gin.Context) ExecutableStageResult {
 	return a.Forward(c)
 }
 
-func NewForwardStageRegistry() *ForwardStageRegistry {
-	return &ForwardStageRegistry{adapters: map[forwardStageRegistryKey]ForwardStage{}}
+func NewStageAdapterRegistry() *StageAdapterRegistry {
+	return &StageAdapterRegistry{
+		forwardAdapters: map[stageAdapterRegistryKey]ForwardStage{},
+		billingAdapters: map[stageAdapterRegistryKey]BillingStage{},
+		routingAdapters: map[stageAdapterRegistryKey]RoutingStage{},
+		usageAdapters:   map[stageAdapterRegistryKey]UsageStage{},
+	}
 }
 
-func (r *ForwardStageRegistry) Register(descriptor moderationcoverage.RouteAdapterDescriptor, adapter ForwardStage) {
+func NewForwardStageRegistry() *ForwardStageRegistry {
+	return NewStageAdapterRegistry()
+}
+
+func (r *StageAdapterRegistry) Register(descriptor moderationcoverage.RouteAdapterDescriptor, adapter ForwardStage) {
+	r.RegisterForward(descriptor, adapter)
+}
+
+func (r *StageAdapterRegistry) RegisterForward(descriptor moderationcoverage.RouteAdapterDescriptor, adapter ForwardStage) {
 	if r == nil || adapter == nil {
 		return
 	}
-	key := forwardStageRegistryKeyFromDescriptor(descriptor)
+	key := stageAdapterRegistryKeyFromDescriptor(descriptor)
 	if key.Stage != moderationcoverage.StageForward || key.Pipeline == "" || key.Name == "" {
 		return
 	}
-	if r.adapters == nil {
-		r.adapters = map[forwardStageRegistryKey]ForwardStage{}
+	if r.forwardAdapters == nil {
+		r.forwardAdapters = map[stageAdapterRegistryKey]ForwardStage{}
 	}
-	r.adapters[key] = adapter
+	r.forwardAdapters[key] = adapter
 }
 
-func (r *ForwardStageRegistry) Resolve(descriptor moderationcoverage.RouteAdapterDescriptor) (ForwardStage, bool) {
+func (r *StageAdapterRegistry) RegisterBilling(descriptor moderationcoverage.RouteAdapterDescriptor, adapter BillingStage) {
+	if r == nil || adapter == nil {
+		return
+	}
+	key := stageAdapterRegistryKeyFromDescriptor(descriptor)
+	if key.Stage != moderationcoverage.StageBilling || key.Pipeline == "" || key.Name == "" {
+		return
+	}
+	if r.billingAdapters == nil {
+		r.billingAdapters = map[stageAdapterRegistryKey]BillingStage{}
+	}
+	r.billingAdapters[key] = adapter
+}
+
+func (r *StageAdapterRegistry) RegisterRouting(descriptor moderationcoverage.RouteAdapterDescriptor, adapter RoutingStage) {
+	if r == nil || adapter == nil {
+		return
+	}
+	key := stageAdapterRegistryKeyFromDescriptor(descriptor)
+	if key.Stage != moderationcoverage.StageRouting || key.Pipeline == "" || key.Name == "" {
+		return
+	}
+	if r.routingAdapters == nil {
+		r.routingAdapters = map[stageAdapterRegistryKey]RoutingStage{}
+	}
+	r.routingAdapters[key] = adapter
+}
+
+func (r *StageAdapterRegistry) RegisterUsage(descriptor moderationcoverage.RouteAdapterDescriptor, adapter UsageStage) {
+	if r == nil || adapter == nil {
+		return
+	}
+	key := stageAdapterRegistryKeyFromDescriptor(descriptor)
+	if key.Stage != moderationcoverage.StageUsage || key.Pipeline == "" || key.Name == "" {
+		return
+	}
+	if r.usageAdapters == nil {
+		r.usageAdapters = map[stageAdapterRegistryKey]UsageStage{}
+	}
+	r.usageAdapters[key] = adapter
+}
+
+func (r *StageAdapterRegistry) Resolve(descriptor moderationcoverage.RouteAdapterDescriptor) (ForwardStage, bool) {
+	return r.ResolveForward(descriptor)
+}
+
+func (r *StageAdapterRegistry) ResolveForward(descriptor moderationcoverage.RouteAdapterDescriptor) (ForwardStage, bool) {
 	if r == nil {
 		return nil, false
 	}
-	key := forwardStageRegistryKeyFromDescriptor(descriptor)
+	key := stageAdapterRegistryKeyFromDescriptor(descriptor)
 	if key.Stage != moderationcoverage.StageForward || key.Pipeline == "" || key.Name == "" {
 		return nil, false
 	}
-	adapter, ok := r.adapters[key]
+	adapter, ok := r.forwardAdapters[key]
 	if !ok {
 		return nil, false
 	}
 	return registeredForwardStage{stage: key.Stage, adapter: adapter}, true
 }
 
-func forwardStageRegistryKeyFromDescriptor(descriptor moderationcoverage.RouteAdapterDescriptor) forwardStageRegistryKey {
-	return forwardStageRegistryKey{
+func (r *StageAdapterRegistry) ResolveBilling(descriptor moderationcoverage.RouteAdapterDescriptor) (BillingStage, bool) {
+	if r == nil {
+		return nil, false
+	}
+	key := stageAdapterRegistryKeyFromDescriptor(descriptor)
+	if key.Stage != moderationcoverage.StageBilling || key.Pipeline == "" || key.Name == "" {
+		return nil, false
+	}
+	adapter, ok := r.billingAdapters[key]
+	if !ok {
+		return nil, false
+	}
+	return registeredBillingStage{stage: key.Stage, adapter: adapter}, true
+}
+
+func (r *StageAdapterRegistry) ResolveRouting(descriptor moderationcoverage.RouteAdapterDescriptor) (RoutingStage, bool) {
+	if r == nil {
+		return nil, false
+	}
+	key := stageAdapterRegistryKeyFromDescriptor(descriptor)
+	if key.Stage != moderationcoverage.StageRouting || key.Pipeline == "" || key.Name == "" {
+		return nil, false
+	}
+	adapter, ok := r.routingAdapters[key]
+	if !ok {
+		return nil, false
+	}
+	return registeredRoutingStage{stage: key.Stage, adapter: adapter}, true
+}
+
+func (r *StageAdapterRegistry) ResolveUsage(descriptor moderationcoverage.RouteAdapterDescriptor) (UsageStage, bool) {
+	if r == nil {
+		return nil, false
+	}
+	key := stageAdapterRegistryKeyFromDescriptor(descriptor)
+	if key.Stage != moderationcoverage.StageUsage || key.Pipeline == "" || key.Name == "" {
+		return nil, false
+	}
+	adapter, ok := r.usageAdapters[key]
+	if !ok {
+		return nil, false
+	}
+	return registeredUsageStage{stage: key.Stage, adapter: adapter}, true
+}
+
+func stageAdapterRegistryKeyFromDescriptor(descriptor moderationcoverage.RouteAdapterDescriptor) stageAdapterRegistryKey {
+	return stageAdapterRegistryKey{
 		Stage:    moderationcoverage.NormalizeStage(descriptor.Stage),
 		Pipeline: moderationcoverage.NormalizePipeline(descriptor.Pipeline),
 		Name:     descriptor.Name,
@@ -155,6 +279,48 @@ func (s registeredForwardStage) RunForward(c *gin.Context) ExecutableStageResult
 		return ExecutableStageResult{}
 	}
 	return s.adapter.RunForward(c)
+}
+
+func (s registeredBillingStage) StageName() string {
+	if s.stage == "" {
+		return moderationcoverage.StageBilling
+	}
+	return s.stage
+}
+
+func (s registeredBillingStage) RunBilling(c *gin.Context) ExecutableStageResult {
+	if s.adapter == nil {
+		return ExecutableStageResult{}
+	}
+	return s.adapter.RunBilling(c)
+}
+
+func (s registeredRoutingStage) StageName() string {
+	if s.stage == "" {
+		return moderationcoverage.StageRouting
+	}
+	return s.stage
+}
+
+func (s registeredRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult {
+	if s.adapter == nil {
+		return ExecutableStageResult{}
+	}
+	return s.adapter.RunRouting(c)
+}
+
+func (s registeredUsageStage) StageName() string {
+	if s.stage == "" {
+		return moderationcoverage.StageUsage
+	}
+	return s.stage
+}
+
+func (s registeredUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
+	if s.adapter == nil {
+		return ExecutableStageResult{}
+	}
+	return s.adapter.RunUsage(c)
 }
 
 func (a BillingStageAdapter) StageName() string {
@@ -345,6 +511,7 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPExecutableStage(c *gin.Context, stag
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIHTTPBillingStage(c *gin.Context, adapter BillingStage) openAIHTTPExecutableStageResult {
+	adapter = h.openAIHTTPBillingStageFromRouteDescriptor(c, adapter)
 	return runGatewayPipelineStage(c,
 		moderationcoverage.PipelineOpenAIHTTP,
 		moderationcoverage.SourceOpenAIHTTPExecutableStage,
@@ -353,11 +520,61 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPBillingStage(c *gin.Context, adapter
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIHTTPRoutingStage(c *gin.Context, adapter RoutingStage) openAIHTTPExecutableStageResult {
+	adapter = h.openAIHTTPRoutingStageFromRouteDescriptor(c, adapter)
 	return runGatewayPipelineStage(c,
 		moderationcoverage.PipelineOpenAIHTTP,
 		moderationcoverage.SourceOpenAIHTTPExecutableStage,
 		executableRoutingStageWithContext(c, adapter),
 	)
+}
+
+func (h *OpenAIGatewayHandler) openAIHTTPStageAdapterRegistry() *StageAdapterRegistry {
+	if h == nil {
+		return nil
+	}
+	registry := h.stageAdapterRegistry
+	if registry == nil {
+		registry = h.forwardStageRegistry
+	}
+	if registry == nil {
+		registry = NewStageAdapterRegistry()
+		h.stageAdapterRegistry = registry
+	}
+	return registry
+}
+
+func (h *OpenAIGatewayHandler) openAIHTTPBillingStageFromRouteDescriptor(c *gin.Context, fallback BillingStage) BillingStage {
+	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
+	if !ok {
+		return fallback
+	}
+	for _, descriptor := range moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol) {
+		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineOpenAIHTTP ||
+			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageBilling {
+			continue
+		}
+		if adapter, ok := h.openAIHTTPStageAdapterRegistry().ResolveBilling(descriptor); ok {
+			return adapter
+		}
+	}
+	return fallback
+}
+
+func (h *OpenAIGatewayHandler) openAIHTTPRoutingStageFromRouteDescriptor(c *gin.Context, fallback RoutingStage) RoutingStage {
+	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
+	if !ok {
+		return fallback
+	}
+	for _, descriptor := range moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol) {
+		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineOpenAIHTTP ||
+			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageRouting {
+			continue
+		}
+		if adapter, ok := h.openAIHTTPStageAdapterRegistry().ResolveRouting(descriptor); ok {
+			return adapter
+		}
+	}
+	return fallback
 }
 
 type OpenAIHTTPRoutingStage struct {
@@ -653,17 +870,13 @@ func (h *OpenAIGatewayHandler) openAIHTTPForwardStageFromRouteDescriptor(c *gin.
 	if !ok {
 		return fallback
 	}
-	descriptors := moderationcoverage.ForwardAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol)
+	descriptors := moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol)
 	for _, descriptor := range descriptors {
-		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineOpenAIHTTP {
+		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineOpenAIHTTP ||
+			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageForward {
 			continue
 		}
-		registry := h.forwardStageRegistry
-		if registry == nil {
-			registry = NewForwardStageRegistry()
-			h.forwardStageRegistry = registry
-		}
-		if adapter, ok := registry.Resolve(descriptor); ok {
+		if adapter, ok := h.openAIHTTPStageAdapterRegistry().ResolveForward(descriptor); ok {
 			return adapter
 		}
 	}
@@ -737,11 +950,29 @@ func (s OpenAIHTTPForwardStage) RunForward(c *gin.Context) ExecutableStageResult
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIHTTPUsageStage(c *gin.Context, adapter UsageStage) openAIHTTPExecutableStageResult {
+	adapter = h.openAIHTTPUsageStageFromRouteDescriptor(c, adapter)
 	return runGatewayPipelineStage(c,
 		moderationcoverage.PipelineOpenAIHTTP,
 		moderationcoverage.SourceOpenAIHTTPExecutableStage,
 		executableUsageStageWithContext(c, adapter),
 	)
+}
+
+func (h *OpenAIGatewayHandler) openAIHTTPUsageStageFromRouteDescriptor(c *gin.Context, fallback UsageStage) UsageStage {
+	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
+	if !ok {
+		return fallback
+	}
+	for _, descriptor := range moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol) {
+		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineOpenAIHTTP ||
+			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageUsage {
+			continue
+		}
+		if adapter, ok := h.openAIHTTPStageAdapterRegistry().ResolveUsage(descriptor); ok {
+			return adapter
+		}
+	}
+	return fallback
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIHTTPScheduleResultStage(c *gin.Context, account *service.Account, success bool, firstTokenMs *int) openAIHTTPExecutableStageResult {
@@ -894,13 +1125,16 @@ func (h *OpenAIGatewayHandler) runOpenAIWebSocketStage(c *gin.Context, adapter a
 	stage := ExecutableStage{}
 	switch typed := adapter.(type) {
 	case BillingStage:
+		typed = h.openAIWebSocketBillingStageFromRouteDescriptor(c, typed)
 		stage = executableBillingStageWithContext(c, typed)
 	case RoutingStage:
+		typed = h.openAIWebSocketRoutingStageFromRouteDescriptor(c, typed)
 		stage = executableRoutingStageWithContext(c, typed)
 	case ForwardStage:
 		typed = h.openAIWebSocketForwardStageFromRouteDescriptor(c, typed)
 		stage = executableForwardStageWithContext(c, typed)
 	case UsageStage:
+		typed = h.openAIWebSocketUsageStageFromRouteDescriptor(c, typed)
 		stage = executableUsageStageWithContext(c, typed)
 	default:
 		return ExecutableStageResult{}
@@ -914,6 +1148,38 @@ func (h *OpenAIGatewayHandler) runOpenAIWebSocketStage(c *gin.Context, adapter a
 
 func (h *OpenAIGatewayHandler) runOpenAIWebSocketBillingStage(c *gin.Context, adapter BillingStage) ExecutableStageResult {
 	return h.runOpenAIWebSocketStage(c, adapter)
+}
+
+func (h *OpenAIGatewayHandler) openAIWebSocketStageAdapterRegistry() *StageAdapterRegistry {
+	if h == nil {
+		return nil
+	}
+	registry := h.stageAdapterRegistry
+	if registry == nil {
+		registry = h.forwardStageRegistry
+	}
+	if registry == nil {
+		registry = NewStageAdapterRegistry()
+		h.stageAdapterRegistry = registry
+	}
+	return registry
+}
+
+func (h *OpenAIGatewayHandler) openAIWebSocketBillingStageFromRouteDescriptor(c *gin.Context, fallback BillingStage) BillingStage {
+	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
+	if !ok {
+		return fallback
+	}
+	for _, descriptor := range moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol) {
+		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineOpenAIWebSocket ||
+			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageBilling {
+			continue
+		}
+		if adapter, ok := h.openAIWebSocketStageAdapterRegistry().ResolveBilling(descriptor); ok {
+			return adapter
+		}
+	}
+	return fallback
 }
 
 type OpenAIWebSocketBillingStage struct {
@@ -957,6 +1223,23 @@ func (s OpenAIWebSocketBillingStage) RunBilling(c *gin.Context) ExecutableStageR
 
 func (h *OpenAIGatewayHandler) runOpenAIWebSocketRoutingStage(c *gin.Context, adapter RoutingStage) ExecutableStageResult {
 	return h.runOpenAIWebSocketStage(c, adapter)
+}
+
+func (h *OpenAIGatewayHandler) openAIWebSocketRoutingStageFromRouteDescriptor(c *gin.Context, fallback RoutingStage) RoutingStage {
+	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
+	if !ok {
+		return fallback
+	}
+	for _, descriptor := range moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol) {
+		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineOpenAIWebSocket ||
+			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageRouting {
+			continue
+		}
+		if adapter, ok := h.openAIWebSocketStageAdapterRegistry().ResolveRouting(descriptor); ok {
+			return adapter
+		}
+	}
+	return fallback
 }
 
 type OpenAIWebSocketRoutingStage struct {
@@ -1112,17 +1395,13 @@ func (h *OpenAIGatewayHandler) openAIWebSocketForwardStageFromRouteDescriptor(c 
 	if !ok {
 		return fallback
 	}
-	descriptors := moderationcoverage.ForwardAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol)
+	descriptors := moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol)
 	for _, descriptor := range descriptors {
-		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineOpenAIWebSocket {
+		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineOpenAIWebSocket ||
+			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageForward {
 			continue
 		}
-		registry := h.forwardStageRegistry
-		if registry == nil {
-			registry = NewForwardStageRegistry()
-			h.forwardStageRegistry = registry
-		}
-		if adapter, ok := registry.Resolve(descriptor); ok {
+		if adapter, ok := h.openAIWebSocketStageAdapterRegistry().ResolveForward(descriptor); ok {
 			return adapter
 		}
 	}
@@ -1265,4 +1544,21 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 
 func (h *OpenAIGatewayHandler) runOpenAIWebSocketUsageStage(c *gin.Context, adapter UsageStage) ExecutableStageResult {
 	return h.runOpenAIWebSocketStage(c, adapter)
+}
+
+func (h *OpenAIGatewayHandler) openAIWebSocketUsageStageFromRouteDescriptor(c *gin.Context, fallback UsageStage) UsageStage {
+	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
+	if !ok {
+		return fallback
+	}
+	for _, descriptor := range moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol) {
+		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineOpenAIWebSocket ||
+			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageUsage {
+			continue
+		}
+		if adapter, ok := h.openAIWebSocketStageAdapterRegistry().ResolveUsage(descriptor); ok {
+			return adapter
+		}
+	}
+	return fallback
 }

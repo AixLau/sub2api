@@ -50,6 +50,7 @@ type GatewayHandler struct {
 	moderationGuard           moderationGuard
 	preForwardPipeline        *GatewayPreForwardPipeline
 	forwardStageRegistry      *ForwardStageRegistry
+	stageAdapterRegistry      *StageAdapterRegistry
 	concurrencyHelper         *ConcurrencyHelper
 	userMsgQueueHelper        *UserMsgQueueHelper
 	maxAccountSwitches        int
@@ -94,6 +95,7 @@ func NewGatewayHandler(
 		umqHelper = NewUserMsgQueueHelper(userMsgQueueService, SSEPingFormatClaude, pingInterval)
 	}
 	moderationGuard := newContentModerationGuard(contentModerationService)
+	stageRegistry := NewStageAdapterRegistry()
 
 	return &GatewayHandler{
 		gatewayService:            gatewayService,
@@ -108,7 +110,8 @@ func NewGatewayHandler(
 		contentModerationService:  contentModerationService,
 		moderationGuard:           moderationGuard,
 		preForwardPipeline:        newGatewayPreForwardPipeline(moderationGuard),
-		forwardStageRegistry:      NewForwardStageRegistry(),
+		forwardStageRegistry:      stageRegistry,
+		stageAdapterRegistry:      stageRegistry,
 		concurrencyHelper:         NewConcurrencyHelper(concurrencyService, SSEPingFormatClaude, pingInterval),
 		userMsgQueueHelper:        umqHelper,
 		maxAccountSwitches:        maxAccountSwitches,

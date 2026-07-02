@@ -491,6 +491,100 @@ func TestOpenAIHTTPForwardStageUsesRouteDescriptorRegistry(t *testing.T) {
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
 }
 
+func TestOpenAIHTTPBillingRoutingUsageStagesUseRouteDescriptorRegistry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name      string
+		stage     string
+		register  func(*StageAdapterRegistry, string, *int)
+		run       func(*OpenAIGatewayHandler, *gin.Context) openAIHTTPExecutableStageResult
+		wantExec  moderationcoverage.PipelineStageExecution
+		wantCalls int
+	}{
+		{
+			name:  "billing",
+			stage: moderationcoverage.StageBilling,
+			register: func(registry *StageAdapterRegistry, pipeline string, calls *int) {
+				registry.RegisterBilling(moderationcoverage.RouteAdapterDescriptor{Stage: moderationcoverage.StageBilling, Pipeline: pipeline, Name: "OpenAIHTTPBillingStage"}, BillingStageAdapter{
+					Name: "OpenAIHTTPBillingStage",
+					Billing: func(*gin.Context) ExecutableStageResult {
+						*calls++
+						return ExecutableStageResult{}
+					},
+				})
+			},
+			run: func(h *OpenAIGatewayHandler, c *gin.Context) openAIHTTPExecutableStageResult {
+				return h.runOpenAIHTTPBillingStage(c, BillingStageAdapter{Name: "OpenAIHTTPBillingStage"})
+			},
+		},
+		{
+			name:  "routing",
+			stage: moderationcoverage.StageRouting,
+			register: func(registry *StageAdapterRegistry, pipeline string, calls *int) {
+				registry.RegisterRouting(moderationcoverage.RouteAdapterDescriptor{Stage: moderationcoverage.StageRouting, Pipeline: pipeline, Name: "OpenAIHTTPRoutingStage"}, RoutingStageAdapter{
+					Name: "OpenAIHTTPRoutingStage",
+					Routing: func(*gin.Context) ExecutableStageResult {
+						*calls++
+						return ExecutableStageResult{}
+					},
+				})
+			},
+			run: func(h *OpenAIGatewayHandler, c *gin.Context) openAIHTTPExecutableStageResult {
+				return h.runOpenAIHTTPRoutingStage(c, RoutingStageAdapter{Name: "OpenAIHTTPRoutingStage"})
+			},
+		},
+		{
+			name:  "usage",
+			stage: moderationcoverage.StageUsage,
+			register: func(registry *StageAdapterRegistry, pipeline string, calls *int) {
+				registry.RegisterUsage(moderationcoverage.RouteAdapterDescriptor{Stage: moderationcoverage.StageUsage, Pipeline: pipeline, Name: "OpenAIHTTPUsageStage"}, UsageStageAdapter{
+					Name: "OpenAIHTTPUsageStage",
+					Usage: func(*gin.Context) ExecutableStageResult {
+						*calls++
+						return ExecutableStageResult{}
+					},
+				})
+			},
+			run: func(h *OpenAIGatewayHandler, c *gin.Context) openAIHTTPExecutableStageResult {
+				return h.runOpenAIHTTPUsageStage(c, UsageStageAdapter{Name: "OpenAIHTTPUsageStage"})
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+			moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+				Method:   http.MethodPost,
+				Path:     "/v1/responses",
+				Handler:  "OpenAIGatewayHandler.Responses",
+				Protocol: "openai_responses",
+				Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+			})
+			calls := 0
+			registry := NewStageAdapterRegistry()
+			tt.register(registry, moderationcoverage.PipelineOpenAIHTTP, &calls)
+			handler := &OpenAIGatewayHandler{stageAdapterRegistry: registry}
+
+			result := tt.run(handler, c)
+
+			require.False(t, result.Stop)
+			require.NoError(t, result.Err)
+			require.Equal(t, 1, calls)
+			require.Equal(t, []moderationcoverage.PipelineStageExecution{{
+				Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+				Stage:    tt.stage,
+				Source:   moderationcoverage.SourceOpenAIHTTPExecutableStage,
+				Method:   http.MethodPost,
+				Path:     "/v1/responses",
+				Handler:  "OpenAIGatewayHandler.Responses",
+				Protocol: "openai_responses",
+			}}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+		})
+	}
+}
+
 func TestOpenAIHTTPForwardStageDoesNotCacheRequestFallback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler := &OpenAIGatewayHandler{
@@ -572,6 +666,98 @@ func TestOpenAIWebSocketForwardStageUsesRouteDescriptorRegistry(t *testing.T) {
 			Protocol: "openai_responses",
 		},
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+}
+
+func TestOpenAIWebSocketBillingRoutingUsageStagesUseRouteDescriptorRegistry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name     string
+		stage    string
+		register func(*StageAdapterRegistry, string, *int)
+		run      func(*OpenAIGatewayHandler, *gin.Context) ExecutableStageResult
+	}{
+		{
+			name:  "billing",
+			stage: moderationcoverage.StageBilling,
+			register: func(registry *StageAdapterRegistry, pipeline string, calls *int) {
+				registry.RegisterBilling(moderationcoverage.RouteAdapterDescriptor{Stage: moderationcoverage.StageBilling, Pipeline: pipeline, Name: "OpenAIWebSocketBillingStage"}, BillingStageAdapter{
+					Name: "OpenAIWebSocketBillingStage",
+					Billing: func(*gin.Context) ExecutableStageResult {
+						*calls++
+						return ExecutableStageResult{}
+					},
+				})
+			},
+			run: func(h *OpenAIGatewayHandler, c *gin.Context) ExecutableStageResult {
+				return h.runOpenAIWebSocketStage(c, BillingStageAdapter{Name: "OpenAIWebSocketBillingStage"})
+			},
+		},
+		{
+			name:  "routing",
+			stage: moderationcoverage.StageRouting,
+			register: func(registry *StageAdapterRegistry, pipeline string, calls *int) {
+				registry.RegisterRouting(moderationcoverage.RouteAdapterDescriptor{Stage: moderationcoverage.StageRouting, Pipeline: pipeline, Name: "OpenAIWebSocketRoutingStage"}, RoutingStageAdapter{
+					Name: "OpenAIWebSocketRoutingStage",
+					Routing: func(*gin.Context) ExecutableStageResult {
+						*calls++
+						return ExecutableStageResult{}
+					},
+				})
+			},
+			run: func(h *OpenAIGatewayHandler, c *gin.Context) ExecutableStageResult {
+				return h.runOpenAIWebSocketStage(c, RoutingStageAdapter{Name: "OpenAIWebSocketRoutingStage"})
+			},
+		},
+		{
+			name:  "usage",
+			stage: moderationcoverage.StageUsage,
+			register: func(registry *StageAdapterRegistry, pipeline string, calls *int) {
+				registry.RegisterUsage(moderationcoverage.RouteAdapterDescriptor{Stage: moderationcoverage.StageUsage, Pipeline: pipeline, Name: "OpenAIWebSocketUsageStage"}, UsageStageAdapter{
+					Name: "OpenAIWebSocketUsageStage",
+					Usage: func(*gin.Context) ExecutableStageResult {
+						*calls++
+						return ExecutableStageResult{}
+					},
+				})
+			},
+			run: func(h *OpenAIGatewayHandler, c *gin.Context) ExecutableStageResult {
+				return h.runOpenAIWebSocketStage(c, UsageStageAdapter{Name: "OpenAIWebSocketUsageStage"})
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+			moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+				Method:   http.MethodGet,
+				Path:     "/v1/responses",
+				Handler:  "OpenAIGatewayHandler.ResponsesWebSocket",
+				Protocol: "openai_responses",
+				Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
+			})
+			calls := 0
+			registry := NewStageAdapterRegistry()
+			tt.register(registry, moderationcoverage.PipelineOpenAIWebSocket, &calls)
+			handler := &OpenAIGatewayHandler{stageAdapterRegistry: registry}
+
+			result := tt.run(handler, c)
+
+			require.False(t, result.Stop)
+			require.NoError(t, result.Err)
+			require.Equal(t, 1, calls)
+			require.Equal(t, []moderationcoverage.PipelineStageExecution{{
+				Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
+				Stage:    tt.stage,
+				Source:   moderationcoverage.SourceOpenAIWebSocketExecutableStage,
+				Method:   http.MethodGet,
+				Path:     "/v1/responses",
+				Handler:  "OpenAIGatewayHandler.ResponsesWebSocket",
+				Protocol: "openai_responses",
+			}}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+		})
+	}
 }
 
 func TestOpenAIWebSocketForwardStageDoesNotCacheRequestFallback(t *testing.T) {

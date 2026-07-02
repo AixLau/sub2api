@@ -361,6 +361,106 @@ func TestGatewayForwardStageUsesRouteDescriptorRegistry(t *testing.T) {
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
 }
 
+func TestGatewayBillingRoutingUsageStagesUseRouteDescriptorRegistry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name     string
+		stage    string
+		register func(*StageAdapterRegistry, string, *int)
+		run      func(*GatewayHandler, *gin.Context) ExecutableStageResult
+	}{
+		{
+			name:  "billing",
+			stage: moderationcoverage.StageBilling,
+			register: func(registry *StageAdapterRegistry, pipeline string, calls *int) {
+				registry.RegisterBilling(moderationcoverage.RouteAdapterDescriptor{Stage: moderationcoverage.StageBilling, Pipeline: pipeline, Name: "GatewayBillingStage"}, BillingStageAdapter{
+					Name: "GatewayBillingStage",
+					Billing: func(*gin.Context) ExecutableStageResult {
+						*calls++
+						return ExecutableStageResult{}
+					},
+				})
+			},
+			run: func(h *GatewayHandler, c *gin.Context) ExecutableStageResult {
+				return h.runGatewayBillingStage(c, BillingStageAdapter{Name: "GatewayBillingStage"})
+			},
+		},
+		{
+			name:  "routing",
+			stage: moderationcoverage.StageRouting,
+			register: func(registry *StageAdapterRegistry, pipeline string, calls *int) {
+				registry.RegisterRouting(moderationcoverage.RouteAdapterDescriptor{Stage: moderationcoverage.StageRouting, Pipeline: pipeline, Name: "GatewayRoutingStage"}, RoutingStageAdapter{
+					Name: "GatewayRoutingStage",
+					Routing: func(*gin.Context) ExecutableStageResult {
+						*calls++
+						return ExecutableStageResult{}
+					},
+				})
+			},
+			run: func(h *GatewayHandler, c *gin.Context) ExecutableStageResult {
+				return h.runGatewayRoutingStage(c, RoutingStageAdapter{Name: "GatewayRoutingStage"})
+			},
+		},
+		{
+			name:  "usage",
+			stage: moderationcoverage.StageUsage,
+			register: func(registry *StageAdapterRegistry, pipeline string, calls *int) {
+				registry.RegisterUsage(moderationcoverage.RouteAdapterDescriptor{Stage: moderationcoverage.StageUsage, Pipeline: pipeline, Name: "GatewayUsageStage"}, UsageStageAdapter{
+					Name: "GatewayUsageStage",
+					Usage: func(*gin.Context) ExecutableStageResult {
+						*calls++
+						return ExecutableStageResult{}
+					},
+				})
+			},
+			run: func(h *GatewayHandler, c *gin.Context) ExecutableStageResult {
+				return h.runGatewayUsageStage(c, UsageStageAdapter{Name: "GatewayUsageStage"})
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+			moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+				Method:             http.MethodPost,
+				Path:               "/v1/messages",
+				Handler:            "GatewayHandler.Messages",
+				Upstream:           true,
+				ModerationRequired: true,
+				Protocol:           service.ContentModerationProtocolAnthropicMessages,
+				Pipeline:           moderationcoverage.PipelineGatewayPreForward,
+				Status:             moderationcoverage.StatusCovered,
+			})
+			calls := 0
+			registry := NewStageAdapterRegistry()
+			tt.register(registry, moderationcoverage.PipelineGatewayPreForward, &calls)
+			handler := &GatewayHandler{stageAdapterRegistry: registry}
+
+			result := tt.run(handler, c)
+
+			require.False(t, result.Stop)
+			require.NoError(t, result.Err)
+			require.Equal(t, 1, calls)
+			require.Equal(t, []moderationcoverage.PipelineStageExecution{{
+				Pipeline: moderationcoverage.PipelineGatewayPreForward,
+				Stage:    tt.stage,
+				Source: map[string]string{
+					moderationcoverage.StageBilling: moderationcoverage.SourceGatewayBillingStage,
+					moderationcoverage.StageRouting: moderationcoverage.SourceGatewayRoutingStage,
+					moderationcoverage.StageUsage:   moderationcoverage.SourceGatewayUsageStage,
+				}[tt.stage],
+				Method:   http.MethodPost,
+				Path:     "/v1/messages",
+				Handler:  "GatewayHandler.Messages",
+				Protocol: service.ContentModerationProtocolAnthropicMessages,
+			}}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+		})
+	}
+}
+
 func TestGatewayForwardStageDoesNotCacheRequestFallback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

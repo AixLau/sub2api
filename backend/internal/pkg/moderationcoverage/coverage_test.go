@@ -146,6 +146,32 @@ func TestForwardAdapterDescriptorsForRouteCarriesExecutableMetadata(t *testing.T
 	require.Nil(t, ForwardAdapterDescriptorsForRoute("UnknownHandler", "openai_responses"))
 }
 
+func TestStageAdapterDescriptorsForRouteCarriesExecutableMetadata(t *testing.T) {
+	require.Equal(t, []RouteAdapterDescriptor{
+		{Stage: StageBilling, Pipeline: PipelineOpenAIHTTP, Name: "OpenAIHTTPBillingStage"},
+		{Stage: StageRouting, Pipeline: PipelineOpenAIHTTP, Name: "OpenAIHTTPRoutingStage"},
+		{Stage: StageForward, Pipeline: PipelineOpenAIHTTP, Name: "OpenAIHTTPForwardStage"},
+		{Stage: StageUsage, Pipeline: PipelineOpenAIHTTP, Name: "OpenAIHTTPUsageStage"},
+	}, StageAdapterDescriptorsForRoute("OpenAIGatewayHandler.Responses", "openai_responses"))
+
+	require.Equal(t, []RouteAdapterDescriptor{
+		{Stage: StageBilling, Pipeline: PipelineOpenAIWebSocket, Name: "OpenAIWebSocketBillingStage"},
+		{Stage: StageRouting, Pipeline: PipelineOpenAIWebSocket, Name: "OpenAIWebSocketRoutingStage"},
+		{Stage: StageForward, Pipeline: PipelineOpenAIWebSocket, Name: "OpenAIWebSocketForwardStage"},
+		{Stage: StageUsage, Pipeline: PipelineOpenAIWebSocket, Name: "OpenAIWebSocketUsageStage"},
+	}, StageAdapterDescriptorsForRoute("OpenAIGatewayHandler.ResponsesWebSocket", "openai_responses"))
+
+	require.Equal(t, []RouteAdapterDescriptor{
+		{Stage: StageBilling, Pipeline: PipelineGatewayPreForward, Name: "GatewayBillingStage"},
+		{Stage: StageRouting, Pipeline: PipelineGatewayPreForward, Name: "GatewayRoutingStage"},
+		{Stage: StageForward, Pipeline: PipelineGatewayPreForward, Name: "GatewayMessagesGeminiForwardStage"},
+		{Stage: StageForward, Pipeline: PipelineGatewayPreForward, Name: "GatewayMessagesForwardStage"},
+		{Stage: StageUsage, Pipeline: PipelineGatewayPreForward, Name: "GatewayUsageStage"},
+	}, StageAdapterDescriptorsForRoute("GatewayHandler.Messages", "anthropic_messages"))
+
+	require.Nil(t, StageAdapterDescriptorsForRoute("UnknownHandler", "openai_responses"))
+}
+
 func TestNormalizeStageCoverageSortsExecutableGatewayStages(t *testing.T) {
 	require.Equal(t, []PipelineStageCoverage{
 		{Stage: StageBilling, Required: true, Covered: true},

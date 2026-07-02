@@ -347,21 +347,32 @@ func (h *GatewayHandler) gatewayForwardStageFromRouteDescriptor(c *gin.Context, 
 	if !ok {
 		return fallback
 	}
-	descriptors := moderationcoverage.ForwardAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol)
+	descriptors := moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol)
 	for _, descriptor := range descriptors {
-		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineGatewayPreForward {
+		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineGatewayPreForward ||
+			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageForward {
 			continue
 		}
-		registry := h.forwardStageRegistry
-		if registry == nil {
-			registry = NewForwardStageRegistry()
-			h.forwardStageRegistry = registry
-		}
-		if adapter, ok := registry.Resolve(descriptor); ok {
+		if adapter, ok := h.gatewayStageAdapterRegistry().ResolveForward(descriptor); ok {
 			return adapter
 		}
 	}
 	return fallback
+}
+
+func (h *GatewayHandler) gatewayStageAdapterRegistry() *StageAdapterRegistry {
+	if h == nil {
+		return nil
+	}
+	registry := h.stageAdapterRegistry
+	if registry == nil {
+		registry = h.forwardStageRegistry
+	}
+	if registry == nil {
+		registry = NewStageAdapterRegistry()
+		h.stageAdapterRegistry = registry
+	}
+	return registry
 }
 
 type GatewayMessagesGeminiForwardStage struct {
@@ -655,6 +666,7 @@ func (s GatewayRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult {
 }
 
 func (h *GatewayHandler) runGatewayBillingStage(c *gin.Context, adapter BillingStage) ExecutableStageResult {
+	adapter = h.gatewayBillingStageFromRouteDescriptor(c, adapter)
 	return runGatewayPipelineStage(c,
 		moderationcoverage.PipelineGatewayPreForward,
 		moderationcoverage.SourceGatewayBillingStage,
@@ -663,6 +675,7 @@ func (h *GatewayHandler) runGatewayBillingStage(c *gin.Context, adapter BillingS
 }
 
 func (h *GatewayHandler) runGatewayRoutingStage(c *gin.Context, adapter RoutingStage) ExecutableStageResult {
+	adapter = h.gatewayRoutingStageFromRouteDescriptor(c, adapter)
 	return runGatewayPipelineStage(c,
 		moderationcoverage.PipelineGatewayPreForward,
 		moderationcoverage.SourceGatewayRoutingStage,
@@ -671,11 +684,63 @@ func (h *GatewayHandler) runGatewayRoutingStage(c *gin.Context, adapter RoutingS
 }
 
 func (h *GatewayHandler) runGatewayUsageStage(c *gin.Context, adapter UsageStage) ExecutableStageResult {
+	adapter = h.gatewayUsageStageFromRouteDescriptor(c, adapter)
 	return runGatewayPipelineStage(c,
 		moderationcoverage.PipelineGatewayPreForward,
 		moderationcoverage.SourceGatewayUsageStage,
 		executableUsageStageWithContext(c, adapter),
 	)
+}
+
+func (h *GatewayHandler) gatewayBillingStageFromRouteDescriptor(c *gin.Context, fallback BillingStage) BillingStage {
+	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
+	if !ok {
+		return fallback
+	}
+	for _, descriptor := range moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol) {
+		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineGatewayPreForward ||
+			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageBilling {
+			continue
+		}
+		if adapter, ok := h.gatewayStageAdapterRegistry().ResolveBilling(descriptor); ok {
+			return adapter
+		}
+	}
+	return fallback
+}
+
+func (h *GatewayHandler) gatewayRoutingStageFromRouteDescriptor(c *gin.Context, fallback RoutingStage) RoutingStage {
+	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
+	if !ok {
+		return fallback
+	}
+	for _, descriptor := range moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol) {
+		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineGatewayPreForward ||
+			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageRouting {
+			continue
+		}
+		if adapter, ok := h.gatewayStageAdapterRegistry().ResolveRouting(descriptor); ok {
+			return adapter
+		}
+	}
+	return fallback
+}
+
+func (h *GatewayHandler) gatewayUsageStageFromRouteDescriptor(c *gin.Context, fallback UsageStage) UsageStage {
+	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
+	if !ok {
+		return fallback
+	}
+	for _, descriptor := range moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol) {
+		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineGatewayPreForward ||
+			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageUsage {
+			continue
+		}
+		if adapter, ok := h.gatewayStageAdapterRegistry().ResolveUsage(descriptor); ok {
+			return adapter
+		}
+	}
+	return fallback
 }
 
 type GatewayUsageStage struct {
