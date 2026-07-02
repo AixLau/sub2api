@@ -273,7 +273,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				var imageUpstreamErr *service.OpenAIImagesUpstreamError
 				if errors.As(err, &imageUpstreamErr) {
 					retryableServerError := service.IsOpenAIImagesRetryableUpstreamError(imageUpstreamErr)
-					h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, !retryableServerError, nil)
+					h.runOpenAIHTTPScheduleResultStage(c, account, !retryableServerError, nil)
 					logEvent := "openai.images.upstream_user_error"
 					if retryableServerError {
 						logEvent = "openai.images.upstream_server_error_after_flush"
@@ -289,7 +289,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				}
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
-					h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+					h.runOpenAIHTTPScheduleResultStage(c, account, false, nil)
 					if c.Writer.Size() != writerSizeBeforeForward {
 						reqLog.Warn("openai.images.upstream_failover_skipped_after_flush",
 							zap.Int64("account_id", account.ID),
@@ -337,7 +337,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 					)
 					continue
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+				h.runOpenAIHTTPScheduleResultStage(c, account, false, nil)
 				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {
@@ -357,13 +357,8 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				return
 			}
 		}
-		if result != nil {
-			if account.Type == service.AccountTypeOAuth {
-				h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
-			}
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, result.FirstTokenMs)
-		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, nil)
+		if result != nil && account.Type == service.AccountTypeOAuth {
+			h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
 		}
 
 		userAgent := c.GetHeader("User-Agent")
@@ -379,6 +374,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		if result != nil {
 			upstreamModel = result.UpstreamModel
 		}
+		scheduleSucceeded := true
 		_ = h.runOpenAIHTTPUsageStage(c, OpenAIHTTPUsageStage{
 			Handler:            h,
 			RequestContext:     c.Request.Context(),
@@ -392,6 +388,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			ClientIP:           clientIP,
 			RequestPayloadHash: requestPayloadHash,
 			ChannelUsageFields: channelMapping.ToUsageFields(requestModel, upstreamModel),
+			ScheduleSuccess:    &scheduleSucceeded,
 			Mandatory:          true,
 			LogComponent:       "handler.openai_gateway.images",
 			LogMessage:         "openai.images.record_usage_failed",

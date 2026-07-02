@@ -408,6 +408,15 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPUsageStage(c *gin.Context, adapter U
 	}.Run(c)
 }
 
+func (h *OpenAIGatewayHandler) runOpenAIHTTPScheduleResultStage(c *gin.Context, account *service.Account, success bool, firstTokenMs *int) openAIHTTPExecutableStageResult {
+	return h.runOpenAIHTTPUsageStage(c, OpenAIHTTPUsageStage{
+		Handler:            h,
+		Account:            account,
+		ScheduleSuccess:    &success,
+		ScheduleFirstToken: firstTokenMs,
+	})
+}
+
 type OpenAIHTTPUsageStage struct {
 	Handler            *OpenAIGatewayHandler
 	RequestContext     context.Context
@@ -422,6 +431,8 @@ type OpenAIHTTPUsageStage struct {
 	RequestPayloadHash string
 	ChannelUsageFields service.ChannelUsageFields
 	CyberBlocked       bool
+	ScheduleSuccess    *bool
+	ScheduleFirstToken *int
 	Mandatory          bool
 	LogComponent       string
 	LogMessage         string
@@ -441,6 +452,16 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 	ctx := s.RequestContext
 	if ctx == nil {
 		ctx = c.Request.Context()
+	}
+	if s.ScheduleSuccess != nil && s.Account != nil {
+		firstTokenMs := s.ScheduleFirstToken
+		if firstTokenMs == nil && s.Result != nil {
+			firstTokenMs = s.Result.FirstTokenMs
+		}
+		h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account.ID, *s.ScheduleSuccess, firstTokenMs)
+	}
+	if s.Result == nil {
+		return ExecutableStageResult{}
 	}
 	record := func(taskCtx context.Context) {
 		if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{

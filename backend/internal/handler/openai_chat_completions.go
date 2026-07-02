@@ -268,7 +268,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, true)
 						return
 					}
-					h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+					h.runOpenAIHTTPScheduleResultStage(c, account, false, nil)
 					// Pool mode: retry on the same account
 					if failoverErr.RetryableOnSameAccount {
 						retryLimit := account.GetPoolModeRetryCount()
@@ -309,7 +309,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					)
 					continue
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+				h.runOpenAIHTTPScheduleResultStage(c, account, false, nil)
 				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {
@@ -324,18 +324,13 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 				return
 			}
 		}
-		if result != nil {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, result.FirstTokenMs)
-		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, nil)
-		}
-
 		userAgent := c.GetHeader("User-Agent")
 		clientIP := ip.GetClientIP(c)
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account)
 
 		cyberBlocked := service.GetOpsCyberPolicy(c) != nil
+		scheduleSucceeded := true
 		_ = h.runOpenAIHTTPUsageStage(c, OpenAIHTTPUsageStage{
 			Handler:            h,
 			RequestContext:     c.Request.Context(),
@@ -349,6 +344,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			ClientIP:           clientIP,
 			ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 			CyberBlocked:       cyberBlocked,
+			ScheduleSuccess:    &scheduleSucceeded,
 			LogComponent:       "handler.openai_gateway.chat_completions",
 			LogMessage:         "openai_chat_completions.record_usage_failed",
 			LogUserID:          subject.UserID,
