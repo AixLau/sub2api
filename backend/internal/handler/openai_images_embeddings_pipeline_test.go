@@ -62,11 +62,35 @@ func TestOpenAIImagesUseHTTPPreForwardPipelineInHandler(t *testing.T) {
 	}
 }
 
-func TestOpenAIEmbeddingsPreForwardRunsThroughGatewayPipelineRegistrar(t *testing.T) {
-	require.False(t, handlerCallsOpenAIHTTPPreForwardPipeline(t, "openai_embeddings.go", "Embeddings"),
-		"OpenAIGatewayHandler.Embeddings must receive pre-forward admission from GatewayPipelineRegistrar instead of calling runOpenAIHTTPPreForwardPipeline directly")
-	require.True(t, gatewaySourceBindsOpenAIHTTPEntrypointForProtocol(t, "ContentModerationProtocolOpenAIEmbeddings"),
-		"OpenAI embeddings routes must bind OpenAIGatewayHandler.EnterOpenAIHTTPGatewayPipeline through NewGatewayPipelineRegistrar")
+func TestOpenAIChatAndEmbeddingsPreForwardRunThroughGatewayPipelineRegistrar(t *testing.T) {
+	tests := []struct {
+		name             string
+		file             string
+		handler          string
+		protocolConstant string
+	}{
+		{
+			name:             "chat",
+			file:             "openai_chat_completions.go",
+			handler:          "ChatCompletions",
+			protocolConstant: "ContentModerationProtocolOpenAIChat",
+		},
+		{
+			name:             "embeddings",
+			file:             "openai_embeddings.go",
+			handler:          "Embeddings",
+			protocolConstant: "ContentModerationProtocolOpenAIEmbeddings",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.False(t, handlerCallsOpenAIHTTPPreForwardPipeline(t, tt.file, tt.handler),
+				"OpenAIGatewayHandler.%s must receive pre-forward admission from GatewayPipelineRegistrar instead of calling runOpenAIHTTPPreForwardPipeline directly", tt.handler)
+			require.True(t, gatewaySourceBindsOpenAIHTTPEntrypointForProtocol(t, tt.protocolConstant),
+				"OpenAI %s routes must bind OpenAIGatewayHandler.EnterOpenAIHTTPGatewayPipeline through NewGatewayPipelineRegistrar", tt.name)
+		})
+	}
 }
 
 func TestOpenAIImagesAndEmbeddingsPipelineSkipCyberStagePreservesExistingBehavior(t *testing.T) {

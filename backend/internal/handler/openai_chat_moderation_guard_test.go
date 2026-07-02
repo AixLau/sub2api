@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -37,8 +38,17 @@ func TestOpenAIChatCompletions_UsesModerationGuardBeforeForwarding(t *testing.T)
 		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(&concurrencyCacheMock{}), SSEPingFormatNone, time.Second),
 	}
 
-	h.ChatCompletions(c)
+	result := h.EnterOpenAIHTTPGatewayPipeline(c, moderationcoverage.Entry{
+		Method:             http.MethodPost,
+		Path:               "/v1/chat/completions",
+		Handler:            "OpenAIGatewayHandler.ChatCompletions",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolOpenAIChat,
+		Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
+	})
 
+	require.True(t, result.Stop)
 	require.Equal(t, http.StatusForbidden, w.Code)
 	require.Contains(t, w.Body.String(), "guard blocked chat")
 	require.Len(t, guard.calls, 1)
@@ -77,8 +87,17 @@ func TestOpenAIChatCompletions_ChecksModerationGuardBeforeCyberSessionBlock(t *t
 		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(&concurrencyCacheMock{}), SSEPingFormatNone, time.Second),
 	}
 
-	h.ChatCompletions(c)
+	result := h.EnterOpenAIHTTPGatewayPipeline(c, moderationcoverage.Entry{
+		Method:             http.MethodPost,
+		Path:               "/v1/chat/completions",
+		Handler:            "OpenAIGatewayHandler.ChatCompletions",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolOpenAIChat,
+		Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
+	})
 
+	require.True(t, result.Stop)
 	require.Equal(t, http.StatusForbidden, w.Code)
 	require.Contains(t, w.Body.String(), "session_blocked_by_cyber_policy")
 	require.Len(t, guard.calls, 1)

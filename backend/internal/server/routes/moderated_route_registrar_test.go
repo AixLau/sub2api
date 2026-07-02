@@ -1060,6 +1060,15 @@ func mergeOpenAIHTTPGatewayEntrypointStageCoverage(t *testing.T, coverageByHandl
 	protocols := openAIHTTPGatewayEntrypointProtocolsFromHandlerSources(t)
 	for _, protocol := range protocols {
 		switch protocol {
+		case "openai_chat_completions":
+			coverage := coverageByHandler["OpenAIGatewayHandler.ChatCompletions"]
+			coverage.Protocol = protocol
+			coverage.HasHTTPPreForwardPipeline = true
+			coverage.HasModerationStage = true
+			coverage.HasCyberStage = true
+			coverage.ModerationLocations = append(coverage.ModerationLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
+			coverage.CyberLocations = append(coverage.CyberLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
+			coverageByHandler["OpenAIGatewayHandler.ChatCompletions"] = coverage
 		case "openai_embeddings":
 			coverage := coverageByHandler["OpenAIGatewayHandler.Embeddings"]
 			coverage.Protocol = protocol
@@ -1321,6 +1330,16 @@ func openAIHTTPGatewayEntrypointProtocolsFromHandlerSources(t *testing.T) []stri
 			continue
 		}
 		ast.Inspect(fn.Body, func(node ast.Node) bool {
+			caseClause, ok := node.(*ast.CaseClause)
+			if ok {
+				for _, expr := range caseClause.List {
+					protocol := serviceProtocolConstantValue(astExprLastIdentName(expr))
+					if isOpenAIHTTPModerationProtocol(protocol) {
+						protocolSet[protocol] = struct{}{}
+					}
+				}
+				return true
+			}
 			call, ok := node.(*ast.CallExpr)
 			if !ok || !isOpenAIHTTPPreForwardPipelineCall(call) {
 				return true

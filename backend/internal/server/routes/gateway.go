@@ -57,7 +57,12 @@ func RegisterGatewayRoutes(
 	gateway := r.Group("/v1")
 	openAIHTTPPipelineEntrypoints := GatewayPipelineEntrypoints{
 		moderationcoverage.PipelineOpenAIHTTP: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
-			if meta.Protocol != service.ContentModerationProtocolOpenAIEmbeddings {
+			switch meta.Protocol {
+			case service.ContentModerationProtocolOpenAIChat, service.ContentModerationProtocolOpenAIEmbeddings:
+			default:
+				return GatewayPipelineEntryResult{}
+			}
+			if !isOpenAIGatewayPlatform(c) {
 				return GatewayPipelineEntryResult{}
 			}
 			result := h.OpenAIGateway.EnterOpenAIHTTPGatewayPipeline(c, meta)

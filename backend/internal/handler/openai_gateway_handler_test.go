@@ -1116,6 +1116,88 @@ func TestOpenAIEmbeddings_SkipsPreForwardWhenGatewayPipelineEntrypointAlreadyRan
 	require.Empty(t, guard.calls)
 }
 
+func TestOpenAIChat_GatewayPipelineEntrypointRunsPreForwardAndCachesRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	guard := &moderationGuardSpy{decision: &service.ContentModerationDecision{
+		Allowed: true,
+		Action:  service.ContentModerationActionAllow,
+	}}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	body := `{"model":"gpt-5.1","stream":true,"messages":[{"role":"user","content":"entrypoint chat"}]}`
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	setGatewayAuthContextForModerationTest(c)
+
+	h := &OpenAIGatewayHandler{
+		moderationGuard: guard,
+		gatewayService:  &service.OpenAIGatewayService{},
+	}
+
+	result := h.EnterOpenAIHTTPGatewayPipeline(c, moderationcoverage.Entry{
+		Method:             http.MethodPost,
+		Path:               "/v1/chat/completions",
+		Handler:            "OpenAIGatewayHandler.ChatCompletions",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolOpenAIChat,
+		Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
+	})
+
+	require.False(t, result.Stop)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, guard.calls, 1)
+	require.Equal(t, service.ContentModerationProtocolOpenAIChat, guard.calls[0].Protocol)
+	require.Equal(t, "gpt-5.1", guard.calls[0].Model)
+	require.JSONEq(t, body, string(guard.calls[0].Body))
+	require.True(t, moderationcoverage.PipelineAdmittedFromContext(c))
+
+	cached, ok := openAIHTTPPreForwardRequestFromContext(c, service.ContentModerationProtocolOpenAIChat)
+	require.True(t, ok)
+	require.Equal(t, "gpt-5.1", cached.Model)
+	require.True(t, cached.Stream)
+	require.JSONEq(t, body, string(cached.Body))
+}
+
+func TestOpenAIChat_GatewayPipelineEntrypointCyberBlockStopsBeforeHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	guard := &moderationGuardSpy{decision: &service.ContentModerationDecision{
+		Allowed: true,
+		Action:  service.ContentModerationActionAllow,
+	}}
+	cyberChecker := &openAIChatCyberPipelineCheckerSpy{enabled: true, blocked: true}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	body := `{"model":"gpt-5.1","prompt_cache_key":"chat-session","messages":[{"role":"user","content":"hello"}]}`
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	setGatewayAuthContextForModerationTest(c)
+
+	apiKey, ok := middleware.GetAPIKeyFromContext(c)
+	require.True(t, ok)
+	h := &OpenAIGatewayHandler{
+		pipeline:       &OpenAIGatewayPipeline{moderationGuard: guard, cyberSessionChecker: cyberChecker},
+		gatewayService: &service.OpenAIGatewayService{},
+	}
+
+	result := h.EnterOpenAIHTTPGatewayPipeline(c, moderationcoverage.Entry{
+		Method:             http.MethodPost,
+		Path:               "/v1/chat/completions",
+		Handler:            "OpenAIGatewayHandler.ChatCompletions",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolOpenAIChat,
+		Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
+	})
+
+	require.True(t, result.Stop)
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Contains(t, w.Body.String(), "session_blocked_by_cyber_policy")
+	require.Len(t, guard.calls, 1)
+	require.Equal(t, 1, cyberChecker.runtimeCalls)
+	require.Equal(t, []string{service.CyberSessionBlockKey(apiKey.ID, c, []byte(body))}, cyberChecker.checkedKeys)
+}
+
 func TestOpenAIResponses_ContentModerationBlocksDeepToolSchemaBeforeForward(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	moderationSvc, repo := newBlockingContentModerationServiceForHandlerTest(t, "deep schema risk")
