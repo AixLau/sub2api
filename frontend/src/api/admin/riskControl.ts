@@ -313,6 +313,7 @@ export interface ContentModerationPipelineExecutionStatus {
   recent_window_error_count: number
   last_observed_at?: string
   executions: ContentModerationPipelineExecutionObservation[]
+  routes: ContentModerationPipelineRouteExecutionObservation[]
 }
 
 export interface ContentModerationPipelineExecutionObservation {
@@ -326,6 +327,20 @@ export interface ContentModerationPipelineExecutionObservation {
   count: number
   error_count: number
   last_observed_at?: string
+}
+
+export interface ContentModerationPipelineRouteExecutionObservation {
+  pipeline: string
+  method?: string
+  path?: string
+  handler?: string
+  protocol?: string
+  count: number
+  error_count: number
+  recent_count: number
+  recent_error_count: number
+  last_observed_at?: string
+  stages: ContentModerationPipelineExecutionObservation[]
 }
 
 export interface ContentModerationAPIKeyLoad {

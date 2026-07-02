@@ -2,6 +2,7 @@ package moderationcoverage
 
 import (
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -21,14 +22,29 @@ type PipelineStageExecutionObservation struct {
 	LastObservedAt   *time.Time `json:"last_observed_at,omitempty"`
 }
 
+type PipelineStageRouteExecutionObservation struct {
+	Pipeline         string                              `json:"pipeline"`
+	Method           string                              `json:"method,omitempty"`
+	Path             string                              `json:"path,omitempty"`
+	Handler          string                              `json:"handler,omitempty"`
+	Protocol         string                              `json:"protocol,omitempty"`
+	Count            int64                               `json:"count"`
+	ErrorCount       int64                               `json:"error_count"`
+	RecentCount      int64                               `json:"recent_count"`
+	RecentErrorCount int64                               `json:"recent_error_count"`
+	LastObservedAt   *time.Time                          `json:"last_observed_at,omitempty"`
+	Stages           []PipelineStageExecutionObservation `json:"stages"`
+}
+
 type PipelineExecutionSnapshot struct {
-	TotalCount             int64                               `json:"total_count"`
-	ErrorCount             int64                               `json:"error_count"`
-	RecentWindowSeconds    int64                               `json:"recent_window_seconds"`
-	RecentWindowCount      int64                               `json:"recent_window_count"`
-	RecentWindowErrorCount int64                               `json:"recent_window_error_count"`
-	LastObservedAt         *time.Time                          `json:"last_observed_at,omitempty"`
-	Executions             []PipelineStageExecutionObservation `json:"executions"`
+	TotalCount             int64                                    `json:"total_count"`
+	ErrorCount             int64                                    `json:"error_count"`
+	RecentWindowSeconds    int64                                    `json:"recent_window_seconds"`
+	RecentWindowCount      int64                                    `json:"recent_window_count"`
+	RecentWindowErrorCount int64                                    `json:"recent_window_error_count"`
+	LastObservedAt         *time.Time                               `json:"last_observed_at,omitempty"`
+	Executions             []PipelineStageExecutionObservation      `json:"executions"`
+	Routes                 []PipelineStageRouteExecutionObservation `json:"routes"`
 }
 
 const (
@@ -219,6 +235,7 @@ func pipelineExecutionObserverSnapshotLocked() PipelineExecutionSnapshot {
 		RecentWindowErrorCount: recentErrorCount,
 		LastObservedAt:         lastSeen,
 		Executions:             executions,
+		Routes:                 pipelineExecutionRouteObservationsFromExecutions(executions),
 	}
 }
 
@@ -316,6 +333,60 @@ func pipelineExecutionRecentCountsFromRecentByKey(recentByKey map[string]pipelin
 	return count, errorCount
 }
 
+func pipelineExecutionRouteObservationsFromExecutions(executions []PipelineStageExecutionObservation) []PipelineStageRouteExecutionObservation {
+	byRoute := make(map[string]*PipelineStageRouteExecutionObservation)
+	for _, execution := range executions {
+		execution = clonePipelineStageExecutionObservation(execution)
+		key := pipelineStageExecutionRouteKey(execution)
+		if key == "" {
+			continue
+		}
+		route := byRoute[key]
+		if route == nil {
+			route = &PipelineStageRouteExecutionObservation{
+				Pipeline: execution.Pipeline,
+				Method:   execution.Method,
+				Path:     execution.Path,
+				Handler:  execution.Handler,
+				Protocol: execution.Protocol,
+				Stages:   make([]PipelineStageExecutionObservation, 0),
+			}
+			byRoute[key] = route
+		}
+		route.Count += execution.Count
+		route.ErrorCount += execution.ErrorCount
+		route.RecentCount += execution.RecentCount
+		route.RecentErrorCount += execution.RecentErrorCount
+		if execution.LastObservedAt != nil && (route.LastObservedAt == nil || execution.LastObservedAt.After(*route.LastObservedAt)) {
+			t := *execution.LastObservedAt
+			route.LastObservedAt = &t
+		}
+		route.Stages = append(route.Stages, execution)
+	}
+
+	routes := make([]PipelineStageRouteExecutionObservation, 0, len(byRoute))
+	for _, route := range byRoute {
+		sort.Slice(route.Stages, func(i, j int) bool {
+			return pipelineStageExecutionObservationLess(route.Stages[i], route.Stages[j])
+		})
+		routes = append(routes, *route)
+	}
+	sort.Slice(routes, func(i, j int) bool {
+		return pipelineRouteExecutionObservationLess(routes[i], routes[j])
+	})
+	return routes
+}
+
+func pipelineStageExecutionRouteKey(execution PipelineStageExecutionObservation) string {
+	return strings.Join([]string{
+		NormalizePipeline(execution.Pipeline),
+		NormalizeMethod(execution.Method),
+		NormalizePath(execution.Path),
+		strings.TrimSpace(execution.Handler),
+		strings.TrimSpace(execution.Protocol),
+	}, "\x00")
+}
+
 func boolToInt64(value bool) int64 {
 	if value {
 		return 1
@@ -338,6 +409,25 @@ func pipelineStageExecutionObservationLess(left, right PipelineStageExecutionObs
 			Pipeline: right.Pipeline,
 			Stage:    right.Stage,
 			Source:   right.Source,
+			Method:   right.Method,
+			Path:     right.Path,
+			Handler:  right.Handler,
+			Protocol: right.Protocol,
+		},
+	)
+}
+
+func pipelineRouteExecutionObservationLess(left, right PipelineStageRouteExecutionObservation) bool {
+	return pipelineStageExecutionLess(
+		PipelineStageExecution{
+			Pipeline: left.Pipeline,
+			Method:   left.Method,
+			Path:     left.Path,
+			Handler:  left.Handler,
+			Protocol: left.Protocol,
+		},
+		PipelineStageExecution{
+			Pipeline: right.Pipeline,
 			Method:   right.Method,
 			Path:     right.Path,
 			Handler:  right.Handler,

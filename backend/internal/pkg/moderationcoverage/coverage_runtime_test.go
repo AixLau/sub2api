@@ -261,6 +261,79 @@ func TestPipelineExecutionObserverExposesRecentCountsPerExecution(t *testing.T) 
 	require.Equal(t, int64(1), snapshot.Executions[0].RecentErrorCount)
 }
 
+func TestPipelineExecutionObserverExposesRouteSummaries(t *testing.T) {
+	oldObservedAt := time.Now().UTC().Add(-10 * time.Minute)
+	recentObservedAt := time.Now().UTC()
+	restoreObserver := ReplacePipelineExecutionObserverForTest([]PipelineStageExecutionObservation{
+		{
+			Pipeline:       PipelineOpenAIHTTP,
+			Stage:          StageForward,
+			Source:         SourceOpenAIHTTPExecutableStage,
+			Method:         http.MethodPost,
+			Path:           "/v1/responses",
+			Handler:        "OpenAIGatewayHandler.Responses",
+			Protocol:       "openai_responses",
+			Count:          4,
+			ErrorCount:     2,
+			LastObservedAt: &oldObservedAt,
+		},
+		{
+			Pipeline:       PipelineOpenAIHTTP,
+			Stage:          StageUsage,
+			Source:         SourceOpenAIHTTPExecutableStage,
+			Method:         http.MethodPost,
+			Path:           "/v1/responses",
+			Handler:        "OpenAIGatewayHandler.Responses",
+			Protocol:       "openai_responses",
+			Count:          3,
+			ErrorCount:     1,
+			LastObservedAt: &recentObservedAt,
+		},
+		{
+			Pipeline:       PipelineGatewayPreForward,
+			Stage:          StageRouting,
+			Source:         SourceGatewayRoutingStage,
+			Method:         http.MethodPost,
+			Path:           "/v1/messages",
+			Handler:        "GatewayHandler.Messages",
+			Protocol:       "anthropic_messages",
+			Count:          2,
+			LastObservedAt: &recentObservedAt,
+		},
+	})
+	defer restoreObserver()
+
+	snapshot := PipelineExecutionObserverSnapshot()
+	require.Len(t, snapshot.Routes, 2)
+	require.Equal(t, PipelineStageRouteExecutionObservation{
+		Pipeline:       PipelineGatewayPreForward,
+		Method:         http.MethodPost,
+		Path:           "/v1/messages",
+		Handler:        "GatewayHandler.Messages",
+		Protocol:       "anthropic_messages",
+		Count:          2,
+		RecentCount:    2,
+		LastObservedAt: snapshot.Routes[0].LastObservedAt,
+		Stages:         []PipelineStageExecutionObservation{snapshot.Routes[0].Stages[0]},
+	}, snapshot.Routes[0])
+	require.Equal(t, PipelineGatewayPreForward, snapshot.Routes[0].Stages[0].Pipeline)
+	require.Equal(t, StageRouting, snapshot.Routes[0].Stages[0].Stage)
+	require.Equal(t, int64(2), snapshot.Routes[0].Stages[0].Count)
+
+	require.Equal(t, PipelineOpenAIHTTP, snapshot.Routes[1].Pipeline)
+	require.Equal(t, http.MethodPost, snapshot.Routes[1].Method)
+	require.Equal(t, "/v1/responses", snapshot.Routes[1].Path)
+	require.Equal(t, "OpenAIGatewayHandler.Responses", snapshot.Routes[1].Handler)
+	require.Equal(t, "openai_responses", snapshot.Routes[1].Protocol)
+	require.Equal(t, int64(7), snapshot.Routes[1].Count)
+	require.Equal(t, int64(3), snapshot.Routes[1].ErrorCount)
+	require.Equal(t, int64(3), snapshot.Routes[1].RecentCount)
+	require.Equal(t, int64(1), snapshot.Routes[1].RecentErrorCount)
+	require.Len(t, snapshot.Routes[1].Stages, 2)
+	require.Equal(t, StageForward, snapshot.Routes[1].Stages[0].Stage)
+	require.Equal(t, StageUsage, snapshot.Routes[1].Stages[1].Stage)
+}
+
 func TestPipelineStageExecutionsFromContextNormalizesStoredValues(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())

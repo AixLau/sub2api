@@ -2885,6 +2885,9 @@ func TestContentModerationStatusIncludesPipelineCoverageFromRegisteredEntries(t 
 	executionsJSON, ok := pipelineExecutionJSON["executions"].([]any)
 	require.True(t, ok, "pipeline_execution.executions must be a JSON array")
 	require.Len(t, executionsJSON, 2)
+	routesJSON, ok := pipelineExecutionJSON["routes"].([]any)
+	require.True(t, ok, "pipeline_execution.routes must be a JSON array")
+	require.Len(t, routesJSON, 2)
 	firstExecutionJSON, ok := executionsJSON[0].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, firstExecutionJSON["pipeline"])
@@ -2899,6 +2902,20 @@ func TestContentModerationStatusIncludesPipelineCoverageFromRegisteredEntries(t 
 	require.Equal(t, float64(3), firstExecutionJSON["recent_count"])
 	require.Equal(t, float64(1), firstExecutionJSON["recent_error_count"])
 	require.Contains(t, firstExecutionJSON, "last_observed_at")
+	responsesRouteJSON := requirePipelineExecutionRouteJSON(t, routesJSON, "/v1/responses")
+	require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, responsesRouteJSON["pipeline"])
+	require.Equal(t, "POST", responsesRouteJSON["method"])
+	require.Equal(t, "/v1/responses", responsesRouteJSON["path"])
+	require.Equal(t, "OpenAIGatewayHandler.Responses", responsesRouteJSON["handler"])
+	require.Equal(t, "openai_responses", responsesRouteJSON["protocol"])
+	require.Equal(t, float64(5), responsesRouteJSON["count"])
+	require.Equal(t, float64(2), responsesRouteJSON["error_count"])
+	require.Equal(t, float64(3), responsesRouteJSON["recent_count"])
+	require.Equal(t, float64(1), responsesRouteJSON["recent_error_count"])
+	require.Contains(t, responsesRouteJSON, "last_observed_at")
+	firstRouteStagesJSON, ok := responsesRouteJSON["stages"].([]any)
+	require.True(t, ok)
+	require.Len(t, firstRouteStagesJSON, 1)
 	require.Equal(t, int64(6), status.PipelineExecution.TotalCount)
 	require.Equal(t, int64(4), status.PipelineExecution.RecentWindowCount)
 	require.Equal(t, int64(1), status.PipelineExecution.RecentWindowErrorCount)
@@ -3327,6 +3344,19 @@ func requirePipelineRouteSummary(t *testing.T, routes []ContentModerationPipelin
 	}
 	t.Fatalf("missing pipeline route %s %s in %#v", method, path, routes)
 	return ContentModerationPipelineRouteCoverageStatus{}
+}
+
+func requirePipelineExecutionRouteJSON(t *testing.T, routes []any, path string) map[string]any {
+	t.Helper()
+	for _, item := range routes {
+		route, ok := item.(map[string]any)
+		require.True(t, ok, "pipeline_execution.routes item must be an object")
+		if route["path"] == path {
+			return route
+		}
+	}
+	t.Fatalf("missing pipeline execution route %s in %#v", path, routes)
+	return nil
 }
 
 func TestContentModerationStatusEffectiveProtection(t *testing.T) {
