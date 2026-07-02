@@ -417,6 +417,31 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPScheduleResultStage(c *gin.Context, 
 	})
 }
 
+func (h *OpenAIGatewayHandler) runOpenAIHTTPCyberUsageStage(c *gin.Context, input OpenAIHTTPCyberUsageStageInput) openAIHTTPExecutableStageResult {
+	return h.runOpenAIHTTPUsageStage(c, OpenAIHTTPUsageStage{
+		Handler:            h,
+		APIKey:             input.APIKey,
+		Account:            input.Account,
+		Subscription:       input.Subscription,
+		LogModel:           input.Model,
+		ForwardErrored:     input.ForwardErrored,
+		CyberBlockKey:      input.CyberBlockKey,
+		ChannelUsageFields: input.ChannelUsageFields,
+		RequestPayloadHash: input.RequestPayloadHash,
+	})
+}
+
+type OpenAIHTTPCyberUsageStageInput struct {
+	APIKey             *service.APIKey
+	Account            *service.Account
+	Subscription       *service.UserSubscription
+	Model              string
+	ForwardErrored     bool
+	CyberBlockKey      string
+	ChannelUsageFields service.ChannelUsageFields
+	RequestPayloadHash string
+}
+
 type OpenAIHTTPUsageStage struct {
 	Handler            *OpenAIGatewayHandler
 	RequestContext     context.Context
@@ -431,6 +456,8 @@ type OpenAIHTTPUsageStage struct {
 	RequestPayloadHash string
 	ChannelUsageFields service.ChannelUsageFields
 	CyberBlocked       bool
+	ForwardErrored     bool
+	CyberBlockKey      string
 	ScheduleSuccess    *bool
 	ScheduleFirstToken *int
 	Mandatory          bool
@@ -460,6 +487,7 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 		}
 		h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account.ID, *s.ScheduleSuccess, firstTokenMs)
 	}
+	h.recordCyberPolicyIfMarked(c, s.APIKey, s.Account, s.Subscription, s.LogModel, s.ForwardErrored, s.CyberBlockKey, s.ChannelUsageFields, s.RequestPayloadHash)
 	if s.Result == nil {
 		return ExecutableStageResult{}
 	}

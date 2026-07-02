@@ -247,6 +247,47 @@ func TestOpenAIHTTPHandlersScheduleResultsStayInsideUsageStage(t *testing.T) {
 	}
 }
 
+func TestOpenAIHTTPHandlersCyberPolicyRecordsStayInsideUsageStage(t *testing.T) {
+	tests := []struct {
+		file    string
+		handler string
+	}{
+		{file: "openai_chat_completions.go", handler: "ChatCompletions"},
+		{file: "openai_gateway_handler.go", handler: "Responses"},
+		{file: "openai_gateway_handler.go", handler: "Messages"},
+		{file: "openai_images.go", handler: "Images"},
+		{file: "openai_embeddings.go", handler: "Embeddings"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.handler, func(t *testing.T) {
+			src, err := os.ReadFile(tt.file)
+			require.NoError(t, err)
+
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, tt.file, src, 0)
+			require.NoError(t, err)
+
+			fn := openAIHTTPHandlerFuncDecl(t, file, tt.handler)
+			var directCyberLines []int
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				selector, ok := call.Fun.(*ast.SelectorExpr)
+				if ok && selector.Sel.Name == "recordCyberPolicyIfMarked" {
+					directCyberLines = append(directCyberLines, fset.Position(call.Pos()).Line)
+				}
+				return true
+			})
+
+			require.Empty(t, directCyberLines,
+				"%s.%s must record cyber policy through OpenAIHTTPUsageStage, direct calls at lines %v", tt.file, tt.handler, directCyberLines)
+		})
+	}
+}
+
 func TestOpenAIHTTPHandlersUseForwardStageAdapter(t *testing.T) {
 	tests := []struct {
 		file    string

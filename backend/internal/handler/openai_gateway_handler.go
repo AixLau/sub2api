@@ -380,7 +380,16 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockKeyHTTP = service.CyberSessionBlockKey(apiKey.ID, c, sessionHashBody)
 		}
-		h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, reqModel, err != nil, cyberBlockKeyHTTP, channelMapping.ToUsageFields(reqModel, ""), service.HashUsageRequestPayload(body))
+		h.runOpenAIHTTPCyberUsageStage(c, OpenAIHTTPCyberUsageStageInput{
+			APIKey:             apiKey,
+			Account:            account,
+			Subscription:       subscription,
+			Model:              reqModel,
+			ForwardErrored:     err != nil,
+			CyberBlockKey:      cyberBlockKeyHTTP,
+			ChannelUsageFields: channelMapping.ToUsageFields(reqModel, ""),
+			RequestPayloadHash: service.HashUsageRequestPayload(body),
+		})
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
 		upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)
 		responseLatencyMs := forwardDurationMs
@@ -833,7 +842,16 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockKeyMsg = service.CyberSessionBlockKey(apiKey.ID, c, body)
 		}
-		h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, reqModel, err != nil, cyberBlockKeyMsg, channelMappingMsg.ToUsageFields(reqModel, ""), service.HashUsageRequestPayload(body))
+		h.runOpenAIHTTPCyberUsageStage(c, OpenAIHTTPCyberUsageStageInput{
+			APIKey:             apiKey,
+			Account:            account,
+			Subscription:       subscription,
+			Model:              reqModel,
+			ForwardErrored:     err != nil,
+			CyberBlockKey:      cyberBlockKeyMsg,
+			ChannelUsageFields: channelMappingMsg.ToUsageFields(reqModel, ""),
+			RequestPayloadHash: service.HashUsageRequestPayload(body),
+		})
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
 		upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)
 		responseLatencyMs := forwardDurationMs
