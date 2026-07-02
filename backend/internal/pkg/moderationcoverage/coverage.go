@@ -20,6 +20,8 @@ const (
 	PipelineOpenAIWebSocketVersion   = "openai-websocket-executable-v1"
 	PipelineGatewayPreForward        = "gateway_pre_forward"
 	PipelineGatewayPreForwardVersion = "gateway-pre-forward-v1"
+	PipelineGatewayGlobal            = "gateway_global"
+	PipelineGatewayGlobalVersion     = "gateway-global-v1"
 
 	StageModeration = "moderation"
 	StageCyber      = "cyber"

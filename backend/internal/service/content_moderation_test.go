@@ -2454,6 +2454,58 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 		"version": %q,
 		"manifest_hash": %q,
 		"status": "covered",
+		"global": {
+			"version": %q,
+			"pipeline": "gateway_global",
+			"required_routes": 4,
+			"covered_routes": 4,
+			"uncovered_routes": [],
+			"stage_coverage": [
+				{"stage": "moderation", "required_routes": 4, "covered_routes": 4, "uncovered_routes": []},
+				{"stage": "cyber", "required_routes": 2, "covered_routes": 2, "uncovered_routes": []},
+				{"stage": "image", "required_routes": 2, "covered_routes": 2, "uncovered_routes": []},
+				{"stage": "pre_forward", "required_routes": 1, "covered_routes": 1, "uncovered_routes": []},
+				{"stage": "billing", "required_routes": 4, "covered_routes": 4, "uncovered_routes": []},
+				{"stage": "routing", "required_routes": 4, "covered_routes": 4, "uncovered_routes": []},
+				{"stage": "forward", "required_routes": 4, "covered_routes": 4, "uncovered_routes": []},
+				{"stage": "usage", "required_routes": 4, "covered_routes": 4, "uncovered_routes": []}
+			],
+			"routes": [
+				{"method": "POST", "path": "/v1/chat/completions", "handler": "OpenAIGatewayHandler.ChatCompletions", "protocol": "openai_chat_completions", "pipeline": "openai_http", "covered": true, "stages": [
+					{"stage": "moderation", "required": true, "covered": true},
+					{"stage": "cyber", "required": true, "covered": true},
+					{"stage": "billing", "required": true, "covered": true},
+					{"stage": "routing", "required": true, "covered": true},
+					{"stage": "forward", "required": true, "covered": true},
+					{"stage": "usage", "required": true, "covered": true}
+				]},
+				{"method": "POST", "path": "/v1/images/generations", "handler": "OpenAIGatewayHandler.Images", "protocol": "openai_images", "pipeline": "openai_http", "covered": true, "stages": [
+					{"stage": "moderation", "required": true, "covered": true},
+					{"stage": "image", "required": true, "covered": true},
+					{"stage": "billing", "required": true, "covered": true},
+					{"stage": "routing", "required": true, "covered": true},
+					{"stage": "forward", "required": true, "covered": true},
+					{"stage": "usage", "required": true, "covered": true}
+				]},
+				{"method": "POST", "path": "/v1/messages", "handler": "GatewayHandler.Messages", "protocol": "anthropic_messages", "pipeline": "gateway_pre_forward", "covered": true, "stages": [
+					{"stage": "moderation", "required": true, "covered": true},
+					{"stage": "pre_forward", "required": true, "covered": true},
+					{"stage": "billing", "required": true, "covered": true},
+					{"stage": "routing", "required": true, "covered": true},
+					{"stage": "forward", "required": true, "covered": true},
+					{"stage": "usage", "required": true, "covered": true}
+				]},
+				{"method": "POST", "path": "/v1/responses", "handler": "OpenAIGatewayHandler.Responses", "protocol": "openai_responses", "pipeline": "openai_http", "covered": true, "stages": [
+					{"stage": "moderation", "required": true, "covered": true},
+					{"stage": "cyber", "required": true, "covered": true},
+					{"stage": "image", "required": true, "covered": true},
+					{"stage": "billing", "required": true, "covered": true},
+					{"stage": "routing", "required": true, "covered": true},
+					{"stage": "forward", "required": true, "covered": true},
+					{"stage": "usage", "required": true, "covered": true}
+				]}
+			]
+		},
 		"openai_http": {
 			"version": %q,
 			"pipeline": "openai_http",
@@ -2531,7 +2583,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 				]}
 			]
 		}
-	}`, contentModerationRouteManifestVersion, contentModerationPipelineCoverageVersion, status.ManifestHash, moderationcoverage.PipelineOpenAIHTTPVersion, moderationcoverage.PipelineOpenAIWebSocketVersion, moderationcoverage.PipelineGatewayPreForwardVersion), string(payload))
+	}`, contentModerationRouteManifestVersion, contentModerationPipelineCoverageVersion, status.ManifestHash, moderationcoverage.PipelineGatewayGlobalVersion, moderationcoverage.PipelineOpenAIHTTPVersion, moderationcoverage.PipelineOpenAIWebSocketVersion, moderationcoverage.PipelineGatewayPreForwardVersion), string(payload))
 	require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, status.OpenAIHTTP.Pipeline)
 	require.Equal(t, moderationcoverage.PipelineOpenAIHTTPVersion, status.OpenAIHTTP.Version)
 	require.Equal(t, 3, status.OpenAIHTTP.RequiredRoutes)
@@ -2601,6 +2653,47 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIWebSocketStages(
 	require.Equal(t, moderationcoverage.PipelineOpenAIWebSocket, wsRoute.Pipeline)
 	require.True(t, wsRoute.Covered)
 	require.Empty(t, wsRoute.UncoveredStages)
+}
+
+func TestContentModerationPipelineCoverageStatusSummarizesGlobalGatewayPipeline(t *testing.T) {
+	entries := append(contentModerationPipelineCoverageFixtureEntries(), moderationcoverage.Entry{
+		Method:             "GET",
+		Path:               "/v1/responses",
+		Handler:            "OpenAIGatewayHandler.ResponsesWebSocket",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           ContentModerationProtocolOpenAIResponses,
+		Status:             moderationcoverage.StatusCovered,
+		Pipeline:           moderationcoverage.PipelineOpenAIWebSocket,
+		StageCoverage:      moderationcoverage.OpenAIWebSocketPipelineStagesForRoute("OpenAIGatewayHandler.ResponsesWebSocket", ContentModerationProtocolOpenAIResponses),
+	})
+
+	status := contentModerationPipelineCoverageStatusFromEntries(entries)
+
+	require.Equal(t, moderationcoverage.PipelineGatewayGlobal, status.Global.Pipeline)
+	require.Equal(t, moderationcoverage.PipelineGatewayGlobalVersion, status.Global.Version)
+	require.Equal(t, 5, status.Global.RequiredRoutes)
+	require.Equal(t, 5, status.Global.CoveredRoutes)
+	require.Empty(t, status.Global.UncoveredRoutes)
+	require.Len(t, status.Global.Routes, 5)
+	requirePipelineStageSummary(t, status.Global.StageCoverage, moderationcoverage.StageModeration, 5, 5, []string{})
+	requirePipelineStageSummary(t, status.Global.StageCoverage, moderationcoverage.StageCyber, 3, 3, []string{})
+	requirePipelineStageSummary(t, status.Global.StageCoverage, moderationcoverage.StageImage, 3, 3, []string{})
+	requirePipelineStageSummary(t, status.Global.StageCoverage, moderationcoverage.StagePreForward, 2, 2, []string{})
+	requirePipelineStageSummary(t, status.Global.StageCoverage, moderationcoverage.StageBilling, 5, 5, []string{})
+	requirePipelineStageSummary(t, status.Global.StageCoverage, moderationcoverage.StageRouting, 5, 5, []string{})
+	requirePipelineStageSummary(t, status.Global.StageCoverage, moderationcoverage.StageForward, 5, 5, []string{})
+	requirePipelineStageSummary(t, status.Global.StageCoverage, moderationcoverage.StageUsage, 5, 5, []string{})
+
+	gatewayRoute := requirePipelineRouteSummary(t, status.Global.Routes, "POST", "/v1/messages")
+	require.Equal(t, "GatewayHandler.Messages", gatewayRoute.Handler)
+	require.Equal(t, moderationcoverage.PipelineGatewayPreForward, gatewayRoute.Pipeline)
+	require.True(t, gatewayRoute.Covered)
+
+	websocketRoute := requirePipelineRouteSummary(t, status.Global.Routes, "GET", "/v1/responses")
+	require.Equal(t, "OpenAIGatewayHandler.ResponsesWebSocket", websocketRoute.Handler)
+	require.Equal(t, moderationcoverage.PipelineOpenAIWebSocket, websocketRoute.Pipeline)
+	require.True(t, websocketRoute.Covered)
 }
 
 func TestContentModerationPipelineCoverageStatusSummarizesGatewayPreForwardStages(t *testing.T) {

@@ -583,10 +583,13 @@ type ContentModerationPipelineCoverageStatus struct {
 	Version           string                                                   `json:"version"`
 	ManifestHash      string                                                   `json:"manifest_hash"`
 	Status            string                                                   `json:"status"`
+	Global            ContentModerationGlobalPipelineCoverageStatus            `json:"global"`
 	OpenAIHTTP        ContentModerationOpenAIHTTPPipelineCoverageStatus        `json:"openai_http"`
 	OpenAIWebSocket   ContentModerationOpenAIWebSocketPipelineCoverageStatus   `json:"openai_websocket"`
 	GatewayPreForward ContentModerationGatewayPreForwardPipelineCoverageStatus `json:"gateway_pre_forward"`
 }
+
+type ContentModerationGlobalPipelineCoverageStatus = ContentModerationPipelineGroupCoverageStatus
 
 type ContentModerationOpenAIHTTPPipelineCoverageStatus = ContentModerationPipelineGroupCoverageStatus
 
@@ -1889,6 +1892,7 @@ func contentModerationPipelineCoverageStatus() ContentModerationPipelineCoverage
 }
 
 func contentModerationPipelineCoverageStatusFromEntries(entries []contentModerationRouteCoverageEntry) ContentModerationPipelineCoverageStatus {
+	global := contentModerationGlobalPipelineCoverageStatusFromEntries(entries)
 	openAIHTTP := contentModerationPipelineGroupCoverageStatusFromEntries(
 		entries,
 		moderationcoverage.PipelineOpenAIHTTP,
@@ -1911,10 +1915,11 @@ func contentModerationPipelineCoverageStatusFromEntries(entries []contentModerat
 		moderationcoverage.GatewayPreForwardPipelineStagesForRoute,
 	)
 	status := "covered"
-	requiredRoutes := openAIHTTP.RequiredRoutes + openAIWebSocket.RequiredRoutes + gatewayPreForward.RequiredRoutes
+	requiredRoutes := global.RequiredRoutes
 	if requiredRoutes == 0 {
 		status = "unknown"
-	} else if openAIHTTP.CoveredRoutes != openAIHTTP.RequiredRoutes || len(openAIHTTP.UncoveredRoutes) > 0 ||
+	} else if global.CoveredRoutes != global.RequiredRoutes || len(global.UncoveredRoutes) > 0 ||
+		openAIHTTP.CoveredRoutes != openAIHTTP.RequiredRoutes || len(openAIHTTP.UncoveredRoutes) > 0 ||
 		openAIWebSocket.CoveredRoutes != openAIWebSocket.RequiredRoutes || len(openAIWebSocket.UncoveredRoutes) > 0 ||
 		gatewayPreForward.CoveredRoutes != gatewayPreForward.RequiredRoutes || len(gatewayPreForward.UncoveredRoutes) > 0 {
 		status = "mismatch"
@@ -1924,10 +1929,22 @@ func contentModerationPipelineCoverageStatusFromEntries(entries []contentModerat
 		Version:           contentModerationPipelineCoverageVersion,
 		ManifestHash:      contentModerationPipelineCoverageHashFromEntries(entries),
 		Status:            status,
+		Global:            global,
 		OpenAIHTTP:        openAIHTTP,
 		OpenAIWebSocket:   openAIWebSocket,
 		GatewayPreForward: gatewayPreForward,
 	}
+}
+
+func contentModerationGlobalPipelineCoverageStatusFromEntries(entries []contentModerationRouteCoverageEntry) ContentModerationGlobalPipelineCoverageStatus {
+	return contentModerationPipelineGroupCoverageStatusFromEntriesWithPipelineValidator(
+		entries,
+		moderationcoverage.PipelineGatewayGlobal,
+		moderationcoverage.PipelineGatewayGlobalVersion,
+		contentModerationIsGlobalPipelineRoute,
+		contentModerationGlobalPipelineStagesForRoute,
+		contentModerationGlobalPipelineAcceptsRoutePipeline,
+	)
 }
 
 func contentModerationOpenAIHTTPPipelineCoverageStatusFromEntries(entries []contentModerationRouteCoverageEntry) ContentModerationOpenAIHTTPPipelineCoverageStatus {
@@ -1967,13 +1984,33 @@ func contentModerationPipelineGroupCoverageStatusFromEntries(
 	include func(contentModerationRouteCoverageEntry) bool,
 	expectedStagesForRoute func(handlerName, protocol string) []moderationcoverage.PipelineStageCoverage,
 ) ContentModerationPipelineGroupCoverageStatus {
+	return contentModerationPipelineGroupCoverageStatusFromEntriesWithPipelineValidator(
+		entries,
+		pipeline,
+		version,
+		include,
+		expectedStagesForRoute,
+		func(routePipeline string) bool {
+			return moderationcoverage.NormalizePipeline(routePipeline) == moderationcoverage.NormalizePipeline(pipeline)
+		},
+	)
+}
+
+func contentModerationPipelineGroupCoverageStatusFromEntriesWithPipelineValidator(
+	entries []contentModerationRouteCoverageEntry,
+	pipeline string,
+	version string,
+	include func(contentModerationRouteCoverageEntry) bool,
+	expectedStagesForRoute func(handlerName, protocol string) []moderationcoverage.PipelineStageCoverage,
+	pipelineValid func(routePipeline string) bool,
+) ContentModerationPipelineGroupCoverageStatus {
 	routes := make([]ContentModerationPipelineRouteCoverageStatus, 0)
 	for _, entry := range entries {
 		entry = moderationcoverage.NormalizeEntry(entry)
 		if include == nil || !include(entry) {
 			continue
 		}
-		routes = append(routes, contentModerationPipelineRouteCoverageStatusFromEntry(entry, pipeline, expectedStagesForRoute))
+		routes = append(routes, contentModerationPipelineRouteCoverageStatusFromEntry(entry, pipelineValid, expectedStagesForRoute))
 	}
 	sort.Slice(routes, func(i, j int) bool {
 		left := contentModerationPipelineRouteKey(routes[i].Method, routes[i].Path, routes[i].Handler)
@@ -2007,13 +2044,13 @@ func contentModerationPipelineGroupCoverageStatusFromEntries(
 
 func contentModerationPipelineRouteCoverageStatusFromEntry(
 	entry contentModerationRouteCoverageEntry,
-	expectedPipeline string,
+	pipelineValid func(routePipeline string) bool,
 	expectedStagesForRoute func(handlerName, protocol string) []moderationcoverage.PipelineStageCoverage,
 ) ContentModerationPipelineRouteCoverageStatus {
 	stagesByName := make(map[string]ContentModerationPipelineRouteStageCoverageStatus, len(entry.StageCoverage))
 	uncoveredStages := make([]string, 0)
 	covered := normalizeContentModerationRouteCoverageStatus(entry.Status) == moderationcoverage.StatusCovered
-	if moderationcoverage.NormalizePipeline(entry.Pipeline) != moderationcoverage.NormalizePipeline(expectedPipeline) {
+	if pipelineValid == nil || !pipelineValid(entry.Pipeline) {
 		covered = false
 		uncoveredStages = append(uncoveredStages, "pipeline_metadata")
 	}
@@ -2197,6 +2234,34 @@ func contentModerationIsOpenAIHTTPPipelineRoute(entry contentModerationRouteCove
 		return false
 	}
 	return len(moderationcoverage.OpenAIHTTPPipelineStagesForRoute(entry.Handler, entry.Protocol)) > 0
+}
+
+func contentModerationIsGlobalPipelineRoute(entry contentModerationRouteCoverageEntry) bool {
+	if !entry.Upstream || !entry.ModerationRequired {
+		return false
+	}
+	return len(contentModerationGlobalPipelineStagesForRoute(entry.Handler, entry.Protocol)) > 0
+}
+
+func contentModerationGlobalPipelineStagesForRoute(handlerName, protocol string) []moderationcoverage.PipelineStageCoverage {
+	if stages := moderationcoverage.OpenAIHTTPPipelineStagesForRoute(handlerName, protocol); len(stages) > 0 {
+		return stages
+	}
+	if stages := moderationcoverage.OpenAIWebSocketPipelineStagesForRoute(handlerName, protocol); len(stages) > 0 {
+		return stages
+	}
+	return moderationcoverage.GatewayPreForwardPipelineStagesForRoute(handlerName, protocol)
+}
+
+func contentModerationGlobalPipelineAcceptsRoutePipeline(routePipeline string) bool {
+	switch moderationcoverage.NormalizePipeline(routePipeline) {
+	case moderationcoverage.PipelineOpenAIHTTP,
+		moderationcoverage.PipelineOpenAIWebSocket,
+		moderationcoverage.PipelineGatewayPreForward:
+		return true
+	default:
+		return false
+	}
 }
 
 func contentModerationIsOpenAIWebSocketPipelineRoute(entry contentModerationRouteCoverageEntry) bool {
