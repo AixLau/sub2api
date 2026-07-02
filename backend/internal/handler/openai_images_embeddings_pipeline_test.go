@@ -19,7 +19,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestOpenAIChatResponsesImagesAndEmbeddingsPreForwardRunThroughGatewayPipelineRegistrar(t *testing.T) {
+func TestOpenAIChatMessagesResponsesImagesAndEmbeddingsPreForwardRunThroughGatewayPipelineRegistrar(t *testing.T) {
 	tests := []struct {
 		name             string
 		file             string
@@ -31,6 +31,12 @@ func TestOpenAIChatResponsesImagesAndEmbeddingsPreForwardRunThroughGatewayPipeli
 			file:             "openai_chat_completions.go",
 			handler:          "ChatCompletions",
 			protocolConstant: "ContentModerationProtocolOpenAIChat",
+		},
+		{
+			name:             "messages",
+			file:             "openai_gateway_handler.go",
+			handler:          "Messages",
+			protocolConstant: "ContentModerationProtocolOpenAIMessages",
 		},
 		{
 			name:             "responses",

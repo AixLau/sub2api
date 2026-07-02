@@ -632,52 +632,54 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		return
 	}
 
-	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
-	if err != nil {
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			h.anthropicErrorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+	var body []byte
+	var reqModel string
+	var reqStream bool
+	if preForwardRequest, ok := openAIHTTPPreForwardRequestFromContext(c, service.ContentModerationProtocolOpenAIMessages); ok {
+		body = preForwardRequest.Body
+		reqModel = preForwardRequest.Model
+		reqStream = preForwardRequest.Stream
+	} else {
+		var err error
+		body, err = pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+		if err != nil {
+			if maxErr, ok := extractMaxBytesError(err); ok {
+				h.anthropicErrorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+				return
+			}
+			h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
 			return
 		}
-		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
-		return
-	}
-	if len(body) == 0 {
-		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
-		return
-	}
+		if len(body) == 0 {
+			h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
+			return
+		}
 
-	if !gjson.ValidBytes(body) {
-		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
-		return
-	}
+		if !gjson.ValidBytes(body) {
+			h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
+			return
+		}
 
-	modelResult := gjson.GetBytes(body, "model")
-	if !modelResult.Exists() || modelResult.Type != gjson.String || modelResult.String() == "" {
-		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
-		return
+		modelResult := gjson.GetBytes(body, "model")
+		if !modelResult.Exists() || modelResult.Type != gjson.String || modelResult.String() == "" {
+			h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
+			return
+		}
+		reqModel = modelResult.String()
+		var ok bool
+		reqStream, ok = parseOpenAICompatibleStream(body)
+		if !ok {
+			h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
+			return
+		}
 	}
-	reqModel := modelResult.String()
 	routingModel := service.NormalizeOpenAICompatRequestedModel(reqModel)
 	preferredMappedModel := resolveOpenAIMessagesDispatchMappedModel(apiKey, reqModel)
-	reqStream := gjson.GetBytes(body, "stream").Bool()
 
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
 
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
-
-	if pipelineResult := h.runOpenAIHTTPPreForwardPipeline(c, reqLog, openAIHTTPPreForwardPipelineInput{
-		APIKey:                apiKey,
-		Subject:               subject,
-		Protocol:              service.ContentModerationProtocolOpenAIMessages,
-		Model:                 reqModel,
-		Body:                  body,
-		CyberBody:             body,
-		CyberFormat:           cyberBlockFormatAnthropic,
-		ModerationErrorFormat: openAIHTTPModerationErrorAnthropic,
-	}); pipelineResult.Blocked {
-		return
-	}
 
 	// 解析渠道级模型映射
 	channelMappingMsg, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
@@ -726,6 +728,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	sameAccountRetryCount := make(map[int64]int)
 	var lastFailoverErr *service.UpstreamFailoverError
 	effectiveMappedModel := preferredMappedModel
+	var err error
 
 	for {
 		currentRoutingModel := routingModel

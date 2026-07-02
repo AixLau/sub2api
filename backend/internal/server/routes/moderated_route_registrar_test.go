@@ -1069,6 +1069,15 @@ func mergeOpenAIHTTPGatewayEntrypointStageCoverage(t *testing.T, coverageByHandl
 			coverage.ModerationLocations = append(coverage.ModerationLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
 			coverage.CyberLocations = append(coverage.CyberLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
 			coverageByHandler["OpenAIGatewayHandler.ChatCompletions"] = coverage
+		case "openai_messages":
+			coverage := coverageByHandler["OpenAIGatewayHandler.Messages"]
+			coverage.Protocol = protocol
+			coverage.HasHTTPPreForwardPipeline = true
+			coverage.HasModerationStage = true
+			coverage.HasCyberStage = true
+			coverage.ModerationLocations = append(coverage.ModerationLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
+			coverage.CyberLocations = append(coverage.CyberLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
+			coverageByHandler["OpenAIGatewayHandler.Messages"] = coverage
 		case "openai_responses":
 			coverage := coverageByHandler["OpenAIGatewayHandler.Responses"]
 			coverage.Protocol = protocol

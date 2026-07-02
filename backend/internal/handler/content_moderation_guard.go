@@ -122,7 +122,7 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPPreForwardPipeline(c *gin.Context, r
 func (h *OpenAIGatewayHandler) EnterOpenAIHTTPGatewayPipeline(c *gin.Context, meta moderationcoverage.Entry) OpenAIHTTPGatewayPipelineEntryResult {
 	meta = moderationcoverage.NormalizeEntry(meta)
 	switch meta.Protocol {
-	case service.ContentModerationProtocolOpenAIChat, service.ContentModerationProtocolOpenAIResponses, service.ContentModerationProtocolOpenAIImages, service.ContentModerationProtocolOpenAIEmbeddings:
+	case service.ContentModerationProtocolOpenAIChat, service.ContentModerationProtocolOpenAIMessages, service.ContentModerationProtocolOpenAIResponses, service.ContentModerationProtocolOpenAIImages, service.ContentModerationProtocolOpenAIEmbeddings:
 	default:
 		return OpenAIHTTPGatewayPipelineEntryResult{}
 	}
@@ -145,6 +145,8 @@ func (h *OpenAIGatewayHandler) EnterOpenAIHTTPGatewayPipeline(c *gin.Context, me
 	switch meta.Protocol {
 	case service.ContentModerationProtocolOpenAIChat:
 		logComponent = "handler.openai_gateway.chat_completions"
+	case service.ContentModerationProtocolOpenAIMessages:
+		logComponent = "handler.openai_gateway.messages"
 	case service.ContentModerationProtocolOpenAIResponses:
 		logComponent = "handler.openai_gateway.responses"
 	case service.ContentModerationProtocolOpenAIImages:
@@ -175,6 +177,10 @@ func (h *OpenAIGatewayHandler) EnterOpenAIHTTPGatewayPipeline(c *gin.Context, me
 	switch meta.Protocol {
 	case service.ContentModerationProtocolOpenAIChat:
 		pipelineInput.CyberFormat = cyberBlockFormatChat
+	case service.ContentModerationProtocolOpenAIMessages:
+		pipelineInput.CyberBody = body
+		pipelineInput.CyberFormat = cyberBlockFormatAnthropic
+		pipelineInput.ModerationErrorFormat = openAIHTTPModerationErrorAnthropic
 	case service.ContentModerationProtocolOpenAIResponses:
 		pipelineInput.CyberBody = cyberBody
 		pipelineInput.CyberFormat = cyberBlockFormatResponses
@@ -294,7 +300,7 @@ func (h *OpenAIGatewayHandler) readOpenAIHTTPPreForwardRequest(c *gin.Context, r
 		return nil, "", false, nil, nil, false
 	}
 	stream := false
-	if protocol == service.ContentModerationProtocolOpenAIChat || protocol == service.ContentModerationProtocolOpenAIResponses {
+	if protocol == service.ContentModerationProtocolOpenAIChat || protocol == service.ContentModerationProtocolOpenAIMessages || protocol == service.ContentModerationProtocolOpenAIResponses {
 		var ok bool
 		stream, ok = parseOpenAICompatibleStream(body)
 		if !ok {

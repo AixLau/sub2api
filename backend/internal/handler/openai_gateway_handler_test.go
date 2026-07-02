@@ -1293,8 +1293,9 @@ func TestOpenAIAnthropicMessages_ContentModerationBlocksToolUseMediaBeforeForwar
 		concurrencyHelper:        NewConcurrencyHelper(service.NewConcurrencyService(&concurrencyCacheMock{}), SSEPingFormatNone, time.Second),
 	}
 
-	h.Messages(c)
+	result := h.EnterOpenAIHTTPGatewayPipeline(c, openAIMessagesHTTPRouteMetaForTest())
 
+	require.True(t, result.Stop)
 	require.Equal(t, http.StatusForbidden, w.Code)
 	require.Contains(t, w.Body.String(), "内容审计测试阻断")
 	require.Eventually(t, func() bool {
@@ -1305,6 +1306,18 @@ func TestOpenAIAnthropicMessages_ContentModerationBlocksToolUseMediaBeforeForwar
 	require.Equal(t, "claude-sonnet-4-5", logs[0].Model)
 	require.Equal(t, service.ContentModerationActionKeywordBlock, logs[0].Action)
 	require.Equal(t, "tool media risk", logs[0].MatchedKeyword)
+}
+
+func openAIMessagesHTTPRouteMetaForTest() moderationcoverage.Entry {
+	return moderationcoverage.Entry{
+		Method:             http.MethodPost,
+		Path:               "/v1/messages",
+		Handler:            "OpenAIGatewayHandler.Messages",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolOpenAIMessages,
+		Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
+	}
 }
 
 func TestGatewayCountTokens_ContentModerationBlocksBeforeUpstreamSelection(t *testing.T) {
