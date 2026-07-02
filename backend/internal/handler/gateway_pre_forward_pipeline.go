@@ -2,7 +2,11 @@ package handler
 
 import (
 	"context"
+	"net/http"
+	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/domain"
+	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -33,6 +37,16 @@ type gatewayPreForwardPipelineResult struct {
 	Blocked bool
 }
 
+type gatewayPreForwardRequest struct {
+	Protocol string
+	Model    string
+	Body     []byte
+	Stream   bool
+	Parsed   *service.ParsedRequest
+}
+
+const gatewayPreForwardRequestContextKey = "gateway_pre_forward_request"
+
 type GatewayPreForwardPipeline struct {
 	moderationGuard moderationGuard
 	stages          []gatewayPreForwardStage
@@ -56,6 +70,119 @@ func (p *GatewayPreForwardPipeline) CheckModeration(c *gin.Context, reqLog *zap.
 func (h *GatewayHandler) runGatewayPreForwardPipeline(c *gin.Context, reqLog *zap.Logger, input gatewayPreForwardPipelineInput) gatewayPreForwardPipelineResult {
 	pipeline := h.gatewayPreForwardPipeline()
 	return pipeline.Run(h, c, reqLog, input)
+}
+
+func (h *GatewayHandler) EnterGatewayPreForwardPipeline(c *gin.Context, meta moderationcoverage.Entry) gatewayPreForwardPipelineResult {
+	meta = moderationcoverage.NormalizeEntry(meta)
+	if meta.Pipeline != moderationcoverage.PipelineGatewayPreForward {
+		return gatewayPreForwardPipelineResult{}
+	}
+	if meta.Protocol != service.ContentModerationProtocolAnthropicMessages || strings.TrimSpace(meta.Handler) != "GatewayHandler.Messages" {
+		return gatewayPreForwardPipelineResult{}
+	}
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return gatewayPreForwardPipelineResult{Blocked: true}
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
+		return gatewayPreForwardPipelineResult{Blocked: true}
+	}
+	reqLog := requestLogger(
+		c,
+		"handler.gateway.messages",
+		zap.Int64("user_id", subject.UserID),
+		zap.Int64("api_key_id", apiKey.ID),
+		zap.Any("group_id", apiKey.GroupID),
+	)
+	body, parsedReq, ok := h.readGatewayMessagesPreForwardRequest(c)
+	if !ok {
+		return gatewayPreForwardPipelineResult{Blocked: true}
+	}
+	reqModel := parsedReq.Model
+	reqStream := parsedReq.Stream
+	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
+	setOpsRequestContext(c, reqModel, reqStream)
+	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
+	if reqModel == "" {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
+		return gatewayPreForwardPipelineResult{Blocked: true}
+	}
+
+	result := h.runGatewayPreForwardPipeline(c, reqLog, gatewayPreForwardPipelineInput{
+		APIKey:      apiKey,
+		Subject:     subject,
+		Protocol:    service.ContentModerationProtocolAnthropicMessages,
+		Model:       reqModel,
+		Body:        body,
+		ErrorFormat: gatewayPreForwardErrorAnthropic,
+	})
+	if result.Blocked {
+		return result
+	}
+	setGatewayPreForwardRequest(c, gatewayPreForwardRequest{
+		Protocol: service.ContentModerationProtocolAnthropicMessages,
+		Model:    reqModel,
+		Body:     body,
+		Stream:   reqStream,
+		Parsed:   parsedReq,
+	})
+	restoreRequestBody(c, body)
+	return gatewayPreForwardPipelineResult{}
+}
+
+func (h *GatewayHandler) readGatewayMessagesPreForwardRequest(c *gin.Context) ([]byte, *service.ParsedRequest, bool) {
+	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+	if err != nil {
+		if maxErr, ok := extractMaxBytesError(err); ok {
+			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+			return nil, nil, false
+		}
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		return nil, nil, false
+	}
+	if len(body) == 0 {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
+		return nil, nil, false
+	}
+	bodyRef := service.NewRequestBodyRef(body)
+	parsedReq, err := service.ParseGatewayRequest(bodyRef, domain.PlatformAnthropic)
+	if err != nil {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
+		return nil, nil, false
+	}
+	return body, parsedReq, true
+}
+
+func setGatewayPreForwardRequest(c *gin.Context, request gatewayPreForwardRequest) {
+	if c == nil {
+		return
+	}
+	request.Protocol = strings.TrimSpace(request.Protocol)
+	request.Model = strings.TrimSpace(request.Model)
+	request.Body = append([]byte(nil), request.Body...)
+	c.Set(gatewayPreForwardRequestContextKey, request)
+}
+
+func gatewayPreForwardRequestFromContext(c *gin.Context, protocol string) (gatewayPreForwardRequest, bool) {
+	if c == nil {
+		return gatewayPreForwardRequest{}, false
+	}
+	value, ok := c.Get(gatewayPreForwardRequestContextKey)
+	if !ok {
+		return gatewayPreForwardRequest{}, false
+	}
+	request, ok := value.(gatewayPreForwardRequest)
+	if !ok {
+		return gatewayPreForwardRequest{}, false
+	}
+	if strings.TrimSpace(request.Protocol) != strings.TrimSpace(protocol) || len(request.Body) == 0 || strings.TrimSpace(request.Model) == "" || request.Parsed == nil {
+		return gatewayPreForwardRequest{}, false
+	}
+	request.Body = append([]byte(nil), request.Body...)
+	return request, true
 }
 
 func (h *GatewayHandler) runGatewayForwardStage(c *gin.Context, adapter ForwardStage) ExecutableStageResult {

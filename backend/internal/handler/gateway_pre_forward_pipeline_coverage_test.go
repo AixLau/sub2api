@@ -12,7 +12,7 @@ import (
 
 func TestGatewayPreForwardEntrypointsUseUnifiedPipelineHelper(t *testing.T) {
 	tests := map[string][]string{
-		"gateway_handler.go":                  {"Messages", "CountTokens"},
+		"gateway_handler.go":                  {"CountTokens"},
 		"gateway_handler_chat_completions.go": {"ChatCompletions"},
 		"gateway_handler_responses.go":        {"Responses"},
 		"gemini_v1beta_handler.go":            {"GeminiV1BetaModels"},
@@ -90,6 +90,46 @@ func TestGatewayPreForwardEntrypointsUseUnifiedPipelineHelper(t *testing.T) {
 
 	if len(violations) > 0 {
 		t.Fatalf("Anthropic/Gemini pre-forward moderation must use the unified pipeline helper:\n%s", strings.Join(violations, "\n"))
+	}
+}
+
+func TestAnthropicMessagesPreForwardRunsThroughGatewayPipelineRegistrar(t *testing.T) {
+	src, err := os.ReadFile("gateway_handler.go")
+	if err != nil {
+		t.Fatalf("read gateway_handler.go: %v", err)
+	}
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, "gateway_handler.go", src, 0)
+	if err != nil {
+		t.Fatalf("parse gateway_handler.go: %v", err)
+	}
+
+	fn := gatewayHandlerFuncDecl(t, parsed, "Messages")
+	var directPipelineCalls []int
+	hasCachedPreForwardRequest := false
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		switch fun := call.Fun.(type) {
+		case *ast.SelectorExpr:
+			if fun.Sel.Name == "runGatewayPreForwardPipeline" {
+				directPipelineCalls = append(directPipelineCalls, fset.Position(fun.Pos()).Line)
+			}
+		case *ast.Ident:
+			if fun.Name == "gatewayPreForwardRequestFromContext" {
+				hasCachedPreForwardRequest = true
+			}
+		}
+		return true
+	})
+
+	if len(directPipelineCalls) > 0 {
+		t.Fatalf("GatewayHandler.Messages must receive pre-forward admission from GatewayPipelineRegistrar instead of calling runGatewayPreForwardPipeline directly at lines %v", directPipelineCalls)
+	}
+	if !hasCachedPreForwardRequest {
+		t.Fatalf("GatewayHandler.Messages must consume the GatewayPipelineRegistrar pre-forward request cache")
 	}
 }
 

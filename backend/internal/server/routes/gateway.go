@@ -75,6 +75,17 @@ func RegisterGatewayRoutes(
 			moderationcoverage.MarkPipelineEntrypointEntered(c, moderationcoverage.PipelineOpenAIWebSocket, "GatewayPipelineRegistrar.OpenAIWebSocket")
 			return GatewayPipelineEntryResult{}
 		}),
+		moderationcoverage.PipelineGatewayPreForward: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+			if meta.Protocol != service.ContentModerationProtocolAnthropicMessages || meta.Handler != "GatewayHandler.Messages" {
+				return GatewayPipelineEntryResult{}
+			}
+			switch getGroupPlatform(c) {
+			case service.PlatformOpenAI, service.PlatformGrok:
+				return GatewayPipelineEntryResult{}
+			}
+			result := h.Gateway.EnterGatewayPreForwardPipeline(c, meta)
+			return GatewayPipelineEntryResult{Stop: result.Blocked}
+		}),
 	}
 	moderatedGateway := NewGatewayPipelineRegistrar(gateway, openAIHTTPPipelineEntrypoints)
 	gateway.Use(bodyLimit)

@@ -142,29 +142,17 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	)
 	defer h.maybeLogCompatibilityFallbackMetrics(reqLog)
 
-	// 读取请求体
-	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
-	if err != nil {
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+	var body []byte
+	var parsedReq *service.ParsedRequest
+	if preForwardRequest, ok := gatewayPreForwardRequestFromContext(c, service.ContentModerationProtocolAnthropicMessages); ok {
+		body = preForwardRequest.Body
+		parsedReq = preForwardRequest.Parsed
+	} else {
+		var ok bool
+		body, parsedReq, ok = h.readGatewayMessagesPreForwardRequest(c)
+		if !ok {
 			return
 		}
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
-		return
-	}
-
-	if len(body) == 0 {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
-		return
-	}
-
-	setOpsRequestContext(c, "", false)
-
-	bodyRef := service.NewRequestBodyRef(body)
-	parsedReq, err := service.ParseGatewayRequest(bodyRef, domain.PlatformAnthropic)
-	if err != nil {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
-		return
 	}
 	reqModel := parsedReq.Model
 	reqStream := parsedReq.Stream
@@ -198,17 +186,6 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	// 验证 model 必填
 	if reqModel == "" {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
-		return
-	}
-
-	if pipelineResult := h.runGatewayPreForwardPipeline(c, reqLog, gatewayPreForwardPipelineInput{
-		APIKey:      apiKey,
-		Subject:     subject,
-		Protocol:    service.ContentModerationProtocolAnthropicMessages,
-		Model:       reqModel,
-		Body:        body,
-		ErrorFormat: gatewayPreForwardErrorAnthropic,
-	}); pipelineResult.Blocked {
 		return
 	}
 
