@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"strconv"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -239,6 +241,14 @@ type openAIHTTPExecutableStage struct {
 
 type openAIHTTPExecutableStageResult = ExecutableStageResult
 
+type openAIHTTPRoutingErrorFormat int
+
+const (
+	openAIHTTPRoutingErrorOpenAI openAIHTTPRoutingErrorFormat = iota
+	openAIHTTPRoutingErrorAnthropicMessages
+	openAIHTTPRoutingErrorEmbeddings
+)
+
 func (h *OpenAIGatewayHandler) runOpenAIHTTPExecutableStages(c *gin.Context, stages []openAIHTTPExecutableStage) openAIHTTPExecutableStageResult {
 	return openAIHTTPExecutablePipeline(stages).Run(c)
 }
@@ -270,7 +280,33 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPRoutingStage(c *gin.Context, adapter
 }
 
 type OpenAIHTTPRoutingStage struct {
-	Routing func(*gin.Context) ExecutableStageResult
+	Handler                    *OpenAIGatewayHandler
+	RequestContext             context.Context
+	ReqLog                     *zap.Logger
+	APIKey                     *service.APIKey
+	SubjectUserID              int64
+	RequestedModel             string
+	DisplayModel               string
+	SessionHash                *string
+	PreviousResponseID         string
+	FailedAccountIDs           map[int64]struct{}
+	RequiredTransport          service.OpenAIUpstreamTransport
+	RequiredCapability         service.OpenAIEndpointCapability
+	RequiredImageCapability    service.OpenAIImagesCapability
+	RequireCompact             bool
+	RequestPlatform            string
+	Stream                     bool
+	StreamStarted              *bool
+	MaxAccountSwitches         int
+	SwitchCount                *int
+	LastFailoverErr            *service.UpstreamFailoverError
+	UseSimpleFailoverExhausted bool
+	ErrorFormat                openAIHTTPRoutingErrorFormat
+	NoAccountMessage           string
+	LogPrefix                  string
+	Account                    **service.Account
+	AccountReleaseFunc         *func()
+	Retry                      *bool
 }
 
 func (OpenAIHTTPRoutingStage) StageName() string {
@@ -278,10 +314,195 @@ func (OpenAIHTTPRoutingStage) StageName() string {
 }
 
 func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult {
-	if s.Routing == nil {
+	h := s.Handler
+	if h == nil || h.gatewayService == nil || s.APIKey == nil || s.Account == nil {
 		return ExecutableStageResult{}
 	}
-	return s.Routing(c)
+	reqLog := s.ReqLog
+	if reqLog == nil {
+		reqLog = zap.NewNop()
+	}
+	logPrefix := s.LogPrefix
+	if logPrefix == "" {
+		logPrefix = "openai"
+	}
+	failedAccountIDs := s.FailedAccountIDs
+	if failedAccountIDs == nil {
+		failedAccountIDs = map[int64]struct{}{}
+	}
+	ctx := s.RequestContext
+	if ctx == nil {
+		ctx = c.Request.Context()
+	}
+	sessionHash := ""
+	if s.SessionHash != nil {
+		sessionHash = *s.SessionHash
+	}
+	displayModel := s.DisplayModel
+	if displayModel == "" {
+		displayModel = s.RequestedModel
+	}
+	reqLog.Debug(logPrefix+".account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
+	selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
+		ctx,
+		s.APIKey.GroupID,
+		s.PreviousResponseID,
+		sessionHash,
+		s.RequestedModel,
+		failedAccountIDs,
+		s.RequiredTransport,
+		s.RequiredCapability,
+		s.RequireCompact,
+		s.RequestPlatform,
+		s.SubjectUserID,
+	)
+	if s.RequiredImageCapability != "" {
+		selection, scheduleDecision, err = h.gatewayService.SelectAccountWithSchedulerForImages(
+			ctx,
+			s.APIKey.GroupID,
+			sessionHash,
+			s.RequestedModel,
+			failedAccountIDs,
+			s.RequiredImageCapability,
+			s.SubjectUserID,
+		)
+	}
+	if err != nil {
+		reqLog.Warn(logPrefix+".account_select_failed", zap.Error(err), zap.Int("excluded_account_count", len(failedAccountIDs)))
+		return s.handleOpenAIHTTPRoutingSelectionError(c, err, len(failedAccountIDs) == 0, displayModel)
+	}
+	if selection == nil || selection.Account == nil {
+		s.handleOpenAIHTTPRoutingNoAccount(c, displayModel)
+		return ExecutableStageResult{Stop: true}
+	}
+	if s.PreviousResponseID != "" {
+		reqLog.Debug(logPrefix+".account_selected_with_previous_response_id", zap.Int64("account_id", selection.Account.ID))
+	}
+	if scheduleDecision != (service.OpenAIAccountScheduleDecision{}) {
+		reqLog.Debug(logPrefix+".account_schedule_decision",
+			zap.String("layer", scheduleDecision.Layer),
+			zap.Bool("sticky_previous_hit", scheduleDecision.StickyPreviousHit),
+			zap.Bool("sticky_session_hit", scheduleDecision.StickySessionHit),
+			zap.Int("candidate_count", scheduleDecision.CandidateCount),
+			zap.Int("top_k", scheduleDecision.TopK),
+			zap.Int64("latency_ms", scheduleDecision.LatencyMs),
+			zap.Float64("load_skew", scheduleDecision.LoadSkew),
+		)
+	}
+	account := selection.Account
+	if s.SessionHash != nil {
+		*s.SessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
+		sessionHash = *s.SessionHash
+	}
+	reqLog.Debug(logPrefix+".account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
+	setOpsSelectedAccount(c, account.ID, account.Platform)
+
+	streamStarted := false
+	streamStartedPtr := &streamStarted
+	if s.StreamStarted != nil {
+		streamStartedPtr = s.StreamStarted
+	}
+	releaseFunc, refreshedAccount, acquired, retryable := h.acquireResponsesAccountSlot(c, s.APIKey.GroupID, sessionHash, selection, s.RequestedModel, false, s.RequiredCapability, s.RequiredImageCapability, s.Stream, streamStartedPtr, reqLog)
+	if !acquired {
+		if retryable && s.SwitchCount != nil && *s.SwitchCount < s.MaxAccountSwitches {
+			failedAccountIDs[account.ID] = struct{}{}
+			*s.SwitchCount = *s.SwitchCount + 1
+			if s.Retry != nil {
+				*s.Retry = true
+			}
+			reqLog.Info(logPrefix+".concurrency_fallback", zap.Int64("failed_account_id", account.ID), zap.Int("switch_count", *s.SwitchCount))
+			return ExecutableStageResult{}
+		}
+		if retryable {
+			s.writeOpenAIHTTPRoutingError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many concurrent requests, please retry later")
+		}
+		return ExecutableStageResult{Stop: true}
+	}
+	if s.AccountReleaseFunc != nil {
+		*s.AccountReleaseFunc = releaseFunc
+	}
+	*s.Account = refreshedAccount
+	return ExecutableStageResult{}
+}
+
+func (s OpenAIHTTPRoutingStage) handleOpenAIHTTPRoutingSelectionError(c *gin.Context, err error, firstAttempt bool, displayModel string) ExecutableStageResult {
+	if firstAttempt {
+		if errors.Is(err, service.ErrNoAvailableCompactAccounts) {
+			markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
+			s.writeOpenAIHTTPRoutingError(c, http.StatusServiceUnavailable, "compact_not_supported", "No available OpenAI accounts support /responses/compact")
+			return ExecutableStageResult{Stop: true, Err: err}
+		}
+		cls := classifyNoAccountErrorFromGin(c, s.Handler.gatewayService, s.APIKey, displayModel, displayModel, service.PlatformOpenAI)
+		if !cls.ModelNotFound {
+			markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
+		}
+		message := cls.Message
+		if s.NoAccountMessage != "" && !cls.ModelNotFound {
+			message = s.NoAccountMessage
+		}
+		s.writeOpenAIHTTPRoutingError(c, cls.Status, cls.ErrType, message)
+		return ExecutableStageResult{Stop: true, Err: err}
+	}
+	s.writeOpenAIHTTPRoutingFailoverExhausted(c)
+	return ExecutableStageResult{Stop: true, Err: err}
+}
+
+func (s OpenAIHTTPRoutingStage) handleOpenAIHTTPRoutingNoAccount(c *gin.Context, displayModel string) {
+	cls := classifyNoAccountErrorFromGin(c, s.Handler.gatewayService, s.APIKey, displayModel, displayModel, service.PlatformOpenAI)
+	if !cls.ModelNotFound {
+		markOpsRoutingCapacityLimited(c)
+	}
+	message := cls.Message
+	if s.NoAccountMessage != "" && !cls.ModelNotFound {
+		message = s.NoAccountMessage
+	}
+	s.writeOpenAIHTTPRoutingError(c, cls.Status, cls.ErrType, message)
+}
+
+func (s OpenAIHTTPRoutingStage) writeOpenAIHTTPRoutingFailoverExhausted(c *gin.Context) {
+	h := s.Handler
+	streamStarted := false
+	if s.StreamStarted != nil {
+		streamStarted = *s.StreamStarted
+	}
+	switch s.ErrorFormat {
+	case openAIHTTPRoutingErrorAnthropicMessages:
+		if s.LastFailoverErr != nil {
+			h.handleAnthropicFailoverExhausted(c, s.LastFailoverErr, streamStarted)
+		} else {
+			h.anthropicStreamingAwareError(c, http.StatusBadGateway, "api_error", "Upstream request failed", streamStarted)
+		}
+	case openAIHTTPRoutingErrorEmbeddings:
+		if s.LastFailoverErr != nil {
+			h.handleFailoverExhausted(c, s.LastFailoverErr, false)
+		} else {
+			h.errorResponse(c, http.StatusBadGateway, "api_error", "Upstream request failed")
+		}
+	default:
+		if s.LastFailoverErr != nil {
+			h.handleFailoverExhausted(c, s.LastFailoverErr, streamStarted)
+		} else if s.UseSimpleFailoverExhausted {
+			h.handleFailoverExhaustedSimple(c, 502, streamStarted)
+		} else {
+			h.handleStreamingAwareError(c, http.StatusBadGateway, "api_error", "Upstream request failed", streamStarted)
+		}
+	}
+}
+
+func (s OpenAIHTTPRoutingStage) writeOpenAIHTTPRoutingError(c *gin.Context, status int, code, message string) {
+	h := s.Handler
+	streamStarted := false
+	if s.StreamStarted != nil {
+		streamStarted = *s.StreamStarted
+	}
+	switch s.ErrorFormat {
+	case openAIHTTPRoutingErrorAnthropicMessages:
+		h.anthropicStreamingAwareError(c, status, code, message, streamStarted)
+	case openAIHTTPRoutingErrorEmbeddings:
+		h.errorResponse(c, status, code, message)
+	default:
+		h.handleStreamingAwareError(c, status, code, message, streamStarted)
+	}
 }
 
 type OpenAIHTTPBillingStage struct {

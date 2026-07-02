@@ -139,6 +139,52 @@ func TestOpenAIHTTPHandlersUseNamedRoutingStageAdapter(t *testing.T) {
 	}
 }
 
+func TestOpenAIHTTPHandlersDoNotPassRoutingClosureToRoutingStage(t *testing.T) {
+	tests := []struct {
+		file    string
+		handler string
+	}{
+		{file: "openai_chat_completions.go", handler: "ChatCompletions"},
+		{file: "openai_gateway_handler.go", handler: "Responses"},
+		{file: "openai_gateway_handler.go", handler: "Messages"},
+		{file: "openai_images.go", handler: "Images"},
+		{file: "openai_embeddings.go", handler: "Embeddings"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.handler, func(t *testing.T) {
+			src, err := os.ReadFile(tt.file)
+			require.NoError(t, err)
+
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, tt.file, src, 0)
+			require.NoError(t, err)
+
+			fn := openAIHTTPHandlerFuncDecl(t, file, tt.handler)
+			var routingClosureLines []int
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				lit, ok := node.(*ast.CompositeLit)
+				if !ok || compositeTypeName(lit.Type) != "OpenAIHTTPRoutingStage" {
+					return true
+				}
+				for _, elt := range lit.Elts {
+					kv, ok := elt.(*ast.KeyValueExpr)
+					if !ok {
+						continue
+					}
+					key, ok := kv.Key.(*ast.Ident)
+					if ok && key.Name == "Routing" {
+						routingClosureLines = append(routingClosureLines, fset.Position(kv.Pos()).Line)
+					}
+				}
+				return true
+			})
+
+			require.Empty(t, routingClosureLines, "%s.%s must not pass Routing closures to OpenAIHTTPRoutingStage at lines %v", tt.file, tt.handler, routingClosureLines)
+		})
+	}
+}
+
 func TestOpenAIHTTPHandlersUseNamedBillingStageAdapter(t *testing.T) {
 	tests := []struct {
 		file    string

@@ -118,72 +118,23 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		var accountReleaseFunc func()
 		routingRetry := false
 		if routingStage := h.runOpenAIHTTPRoutingStage(c, OpenAIHTTPRoutingStage{
-			Routing: func(*gin.Context) ExecutableStageResult {
-				selection, _, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
-					c.Request.Context(),
-					apiKey.GroupID,
-					"",
-					"",
-					reqModel,
-					failedAccountIDs,
-					service.OpenAIUpstreamTransportHTTPSSE,
-					service.OpenAIEndpointCapabilityEmbeddings,
-					false,
-					requestPlatform,
-					subject.UserID,
-				)
-				if err != nil {
-					reqLog.Warn("openai_embeddings.account_select_failed",
-						zap.Error(err),
-						zap.Int("excluded_account_count", len(failedAccountIDs)),
-					)
-					if len(failedAccountIDs) == 0 {
-						cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, service.PlatformOpenAI)
-						if !cls.ModelNotFound {
-							markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
-						}
-						h.errorResponse(c, cls.Status, cls.ErrType, cls.Message)
-						return openAIHTTPExecutableStageResult{Stop: true, Err: err}
-					}
-					if lastFailoverErr != nil {
-						h.handleFailoverExhausted(c, lastFailoverErr, false)
-					} else {
-						h.errorResponse(c, http.StatusBadGateway, "api_error", "Upstream request failed")
-					}
-					return openAIHTTPExecutableStageResult{Stop: true, Err: err}
-				}
-				if selection == nil || selection.Account == nil {
-					cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, service.PlatformOpenAI)
-					if !cls.ModelNotFound {
-						markOpsRoutingCapacityLimited(c)
-					}
-					h.errorResponse(c, cls.Status, cls.ErrType, cls.Message)
-					return openAIHTTPExecutableStageResult{Stop: true}
-				}
-				account = selection.Account
-				setOpsSelectedAccount(c, account.ID, account.Platform)
-
-				releaseFunc, refreshedAccount, accountAcquired, retryable := h.acquireResponsesAccountSlot(c, apiKey.GroupID, "", selection, reqModel, false, service.OpenAIEndpointCapabilityEmbeddings, "", false, &streamStarted, reqLog)
-				if !accountAcquired {
-					if retryable && switchCount < maxAccountSwitches {
-						failedAccountIDs[account.ID] = struct{}{}
-						switchCount++
-						routingRetry = true
-						reqLog.Info("openai_embeddings.concurrency_fallback",
-							zap.Int64("failed_account_id", account.ID),
-							zap.Int("switch_count", switchCount),
-						)
-						return openAIHTTPExecutableStageResult{}
-					}
-					if retryable {
-						h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Too many concurrent requests, please retry later")
-					}
-					return openAIHTTPExecutableStageResult{Stop: true}
-				}
-				accountReleaseFunc = releaseFunc
-				account = refreshedAccount
-				return openAIHTTPExecutableStageResult{}
-			},
+			Handler:            h,
+			ReqLog:             reqLog,
+			APIKey:             apiKey,
+			SubjectUserID:      subject.UserID,
+			RequestedModel:     reqModel,
+			FailedAccountIDs:   failedAccountIDs,
+			RequiredTransport:  service.OpenAIUpstreamTransportHTTPSSE,
+			RequiredCapability: service.OpenAIEndpointCapabilityEmbeddings,
+			RequestPlatform:    requestPlatform,
+			MaxAccountSwitches: maxAccountSwitches,
+			SwitchCount:        &switchCount,
+			LastFailoverErr:    lastFailoverErr,
+			ErrorFormat:        openAIHTTPRoutingErrorEmbeddings,
+			LogPrefix:          "openai_embeddings",
+			Account:            &account,
+			AccountReleaseFunc: &accountReleaseFunc,
+			Retry:              &routingRetry,
 		}); routingStage.Stop {
 			return
 		}
