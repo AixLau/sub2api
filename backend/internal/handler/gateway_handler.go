@@ -212,10 +212,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	}
 
 	// 2. 【新增】Wait后二次检查余额/订阅
-	billingStage := h.runGatewayBillingStage(c, GatewayBillingStage{Billing: func(*gin.Context) ExecutableStageResult {
-		err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey))
-		return ExecutableStageResult{Err: err}
-	}})
+	billingStage := h.runGatewayBillingStage(c, GatewayBillingStage{
+		Handler:          h,
+		RequestContext:   c.Request.Context(),
+		QuotaPlatformCtx: c.Request.Context(),
+		APIKey:           apiKey,
+		Group:            apiKey.Group,
+		Subscription:     subscription,
+	})
 	if err := billingStage.Err; err != nil {
 		reqLog.Info("gateway.billing_eligibility_check_failed", zap.Error(err))
 		status, code, message, retryAfter := billingErrorDetails(err)
@@ -909,10 +913,13 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 							return
 						}
 						fallbackAPIKey := cloneAPIKeyWithGroup(apiKey, fallbackGroup)
-						billingStage := h.runGatewayBillingStage(c, GatewayBillingStage{Billing: func(*gin.Context) ExecutableStageResult {
-							err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), fallbackAPIKey.User, fallbackAPIKey, fallbackGroup, nil, service.PlatformFromAPIKey(fallbackAPIKey))
-							return ExecutableStageResult{Err: err}
-						}})
+						billingStage := h.runGatewayBillingStage(c, GatewayBillingStage{
+							Handler:        h,
+							RequestContext: c.Request.Context(),
+							QuotaPlatform:  service.PlatformFromAPIKey(fallbackAPIKey),
+							APIKey:         fallbackAPIKey,
+							Group:          fallbackGroup,
+						})
 						if err := billingStage.Err; err != nil {
 							status, code, message, retryAfter := billingErrorDetails(err)
 							if retryAfter > 0 {
@@ -1832,10 +1839,14 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 
 	// 校验 billing eligibility（订阅/余额）
 	// 【注意】不计算并发，但需要校验订阅/余额
-	billingStage := h.runGatewayBillingStage(c, GatewayBillingStage{Billing: func(*gin.Context) ExecutableStageResult {
-		err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey))
-		return ExecutableStageResult{Err: err}
-	}})
+	billingStage := h.runGatewayBillingStage(c, GatewayBillingStage{
+		Handler:          h,
+		RequestContext:   c.Request.Context(),
+		QuotaPlatformCtx: c.Request.Context(),
+		APIKey:           apiKey,
+		Group:            apiKey.Group,
+		Subscription:     subscription,
+	})
 	if err := billingStage.Err; err != nil {
 		status, code, message, retryAfter := billingErrorDetails(err)
 		if retryAfter > 0 {

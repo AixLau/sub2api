@@ -28,6 +28,59 @@ func TestGatewayGeminiV1BetaModelsPreForwardRunsThroughGatewayPipelineRegistrar(
 	requireGatewayHandlerPreForwardThroughRegistrarInFile(t, "gemini_v1beta_handler.go", "GeminiV1BetaModels")
 }
 
+func TestGatewayPreForwardHandlersUseNamedBillingStage(t *testing.T) {
+	tests := []struct {
+		file    string
+		handler string
+	}{
+		{file: "gateway_handler.go", handler: "Messages"},
+		{file: "gateway_handler.go", handler: "CountTokens"},
+		{file: "gemini_v1beta_handler.go", handler: "GeminiV1BetaModels"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.file+"/"+tt.handler, func(t *testing.T) {
+			src, err := os.ReadFile(tt.file)
+			if err != nil {
+				t.Fatalf("read %s: %v", tt.file, err)
+			}
+			fset := token.NewFileSet()
+			parsed, err := parser.ParseFile(fset, tt.file, src, 0)
+			if err != nil {
+				t.Fatalf("parse %s: %v", tt.file, err)
+			}
+
+			fn := gatewayHandlerFuncDecl(t, parsed, tt.handler)
+			var anonymousBillingLines []int
+			hasNamedBillingStage := false
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				lit, ok := node.(*ast.CompositeLit)
+				if !ok {
+					return true
+				}
+				if compositeTypeName(lit.Type) != "GatewayBillingStage" {
+					return true
+				}
+				hasNamedBillingStage = true
+				for _, elt := range lit.Elts {
+					kv, ok := elt.(*ast.KeyValueExpr)
+					if !ok {
+						continue
+					}
+					key, ok := kv.Key.(*ast.Ident)
+					if ok && key.Name == "Billing" {
+						anonymousBillingLines = append(anonymousBillingLines, fset.Position(kv.Pos()).Line)
+					}
+				}
+				return true
+			})
+
+			require.True(t, hasNamedBillingStage, "GatewayHandler.%s must pass GatewayBillingStage to runGatewayBillingStage", tt.handler)
+			require.Empty(t, anonymousBillingLines, "GatewayHandler.%s must not configure GatewayBillingStage with anonymous Billing funcs at lines %v", tt.handler, anonymousBillingLines)
+		})
+	}
+}
+
 func TestGatewayChatCompletionsPreForwardRunsThroughGatewayPipelineRegistrar(t *testing.T) {
 	requireGatewayHandlerPreForwardThroughRegistrarInFile(t, "gateway_handler_chat_completions.go", "ChatCompletions")
 }

@@ -489,7 +489,13 @@ func (s GatewayCountTokensForwardStage) RunForward(c *gin.Context) ExecutableSta
 }
 
 type GatewayBillingStage struct {
-	Billing func(*gin.Context) ExecutableStageResult
+	Handler          *GatewayHandler
+	RequestContext   context.Context
+	QuotaPlatformCtx context.Context
+	QuotaPlatform    string
+	APIKey           *service.APIKey
+	Group            *service.Group
+	Subscription     *service.UserSubscription
 }
 
 func (GatewayBillingStage) StageName() string {
@@ -497,10 +503,29 @@ func (GatewayBillingStage) StageName() string {
 }
 
 func (s GatewayBillingStage) RunBilling(c *gin.Context) ExecutableStageResult {
-	if s.Billing == nil {
+	h := s.Handler
+	if h == nil || h.billingCacheService == nil || s.APIKey == nil {
 		return ExecutableStageResult{}
 	}
-	return s.Billing(c)
+	ctx := s.RequestContext
+	if ctx == nil {
+		ctx = c.Request.Context()
+	}
+	quotaPlatform := s.QuotaPlatform
+	if quotaPlatform == "" {
+		quotaCtx := s.QuotaPlatformCtx
+		if quotaCtx == nil {
+			quotaCtx = c.Request.Context()
+		}
+		quotaPlatform = service.QuotaPlatform(quotaCtx, s.APIKey)
+	}
+	group := s.Group
+	if group == nil {
+		group = s.APIKey.Group
+	}
+	return ExecutableStageResult{
+		Err: h.billingCacheService.CheckBillingEligibility(ctx, s.APIKey.User, s.APIKey, group, s.Subscription, quotaPlatform),
+	}
 }
 
 type GatewayRoutingStage struct {
