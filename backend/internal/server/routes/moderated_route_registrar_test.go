@@ -111,7 +111,7 @@ func TestGatewayRouteRegistrationDelegatesBranchEntrypointsToRegistrar(t *testin
 	directCalls := gatewayRouteRegistrationDirectBranchEntrypointsFromSource(t, gatewaySourceFile(t))
 
 	require.Empty(t, directCalls,
-		"production gateway route registration must enter auto-route branch pipelines through ModeratedRouteRegistrar.EnterBranchPipeline, found %s",
+		"production gateway route registration must enter auto-route branch pipelines through enterModeratedRouteBranchPipeline helper, found direct EnterBranchPipeline calls at %s",
 		strings.Join(directCalls, ", "))
 }
 
@@ -1699,7 +1699,8 @@ func gatewayRouteRegistrationDirectBranchEntrypointsFromSource(t *testing.T, fil
 		if !ok {
 			return true
 		}
-		if callName(call) != "enterModeratedRouteBranchPipeline" {
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || selector.Sel.Name != "EnterBranchPipeline" {
 			return true
 		}
 		pos := fset.Position(call.Pos())
