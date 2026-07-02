@@ -543,11 +543,11 @@ const diagnosisReport = computed<DiagnosisItem[]>(() => {
     }
   }
 
-  const ttftP99 = ov.ttft?.p99_ms ?? 0
-  if (ttftP99 > 500) {
+  const ttftAvg = ov.ttft?.avg_ms ?? 0
+  if (ttftAvg > 500) {
     report.push({
       type: 'warning',
-      message: t('admin.ops.diagnosis.ttftHigh', { ttft: ttftP99.toFixed(0) }),
+      message: t('admin.ops.diagnosis.ttftHigh', { ttft: ttftAvg.toFixed(0) }),
       impact: t('admin.ops.diagnosis.ttftHighImpact'),
       action: t('admin.ops.diagnosis.ttftHighAction')
     })

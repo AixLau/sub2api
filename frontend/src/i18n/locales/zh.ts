@@ -5134,9 +5134,9 @@ export default {
         memoryHigh: '内存使用率偏高 ({usage}%)',
         memoryHighImpact: '内存压力较大，需要关注',
         memoryHighAction: '监控内存趋势，检查是否有内存泄漏',
-        ttftHigh: '首 Token 时间偏高 ({ttft}ms)',
+        ttftHigh: '平均首 Token 延迟偏高 ({ttft}ms)',
         ttftHighImpact: '用户感知时长增加',
-        ttftHighAction: '优化请求处理流程，减少前置逻辑耗时',
+        ttftHighAction: '查看首 Token 明细，按模型、账号和上游排查慢启动、排队、网络或长上下文请求',
         // Error rate diagnostics
         upstreamCritical: '上游错误率严重偏高 ({rate}%)',
         upstreamCriticalImpact: '可能影响大量用户请求',

@@ -4975,9 +4975,9 @@ export default {
         memoryHigh: 'Memory usage elevated ({usage}%)',
         memoryHighImpact: 'Memory pressure is high, needs attention',
         memoryHighAction: 'Monitor memory trends, check for memory leaks',
-        ttftHigh: 'Time to first token elevated ({ttft}ms)',
+        ttftHigh: 'Average time to first token elevated ({ttft}ms)',
         ttftHighImpact: 'User perceived latency increased',
-        ttftHighAction: 'Optimize request processing flow, reduce pre-processing time',
+        ttftHighAction: 'Review TTFT details by model, account, and upstream to isolate slow startup, queueing, network, or long-context requests',
         // Error rate diagnostics
         upstreamCritical: 'Upstream error rate critically high ({rate}%)',
         upstreamCriticalImpact: 'May affect many user requests',
