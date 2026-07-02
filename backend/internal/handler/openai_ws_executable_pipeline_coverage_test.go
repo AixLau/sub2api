@@ -31,6 +31,53 @@ func TestOpenAIResponsesWebSocketUsesExecutableGatewayStages(t *testing.T) {
 		"ResponsesWebSocket must not use an empty runOpenAIWebSocketExecutableStage wrapper for usage")
 }
 
+func TestOpenAIResponsesWebSocketUsesNamedFramePipelineAdapter(t *testing.T) {
+	src, err := os.ReadFile("openai_gateway_handler.go")
+	require.NoError(t, err)
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "openai_gateway_handler.go", src, 0)
+	require.NoError(t, err)
+
+	fn := openAIWebSocketHandlerFuncDecl(t, file, "ResponsesWebSocket")
+	var directFramePipelineLines []int
+	hasNamedInitialAdapter := false
+	hasNamedFollowupAdapter := false
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		switch selector.Sel.Name {
+		case "runOpenAIWebSocketInitialFramePipeline", "runOpenAIWebSocketFollowupFramePipeline":
+			directFramePipelineLines = append(directFramePipelineLines, fset.Position(call.Pos()).Line)
+		case "runOpenAIWebSocketFramePipeline":
+			if len(call.Args) < 2 {
+				return true
+			}
+			adapterName := strings.TrimSpace(nodeString(t, fset, call.Args[1]))
+			if lit, ok := call.Args[1].(*ast.CompositeLit); ok {
+				adapterName = compositeTypeName(lit.Type)
+			}
+			switch adapterName {
+			case "OpenAIWebSocketInitialFramePipelineAdapter":
+				hasNamedInitialAdapter = true
+			case "OpenAIWebSocketFollowupFramePipelineAdapter":
+				hasNamedFollowupAdapter = true
+			}
+		}
+		return true
+	})
+
+	require.Empty(t, directFramePipelineLines, "ResponsesWebSocket must not call low-level WebSocket frame pipeline helpers directly at lines %v", directFramePipelineLines)
+	require.True(t, hasNamedInitialAdapter, "ResponsesWebSocket must run initial frame checks through OpenAIWebSocketInitialFramePipelineAdapter")
+	require.True(t, hasNamedFollowupAdapter, "ResponsesWebSocket must run follow-up frame checks through OpenAIWebSocketFollowupFramePipelineAdapter")
+}
+
 func TestOpenAIResponsesWebSocketUsesNamedBillingStageAdapter(t *testing.T) {
 	src, err := os.ReadFile("openai_gateway_handler.go")
 	require.NoError(t, err)

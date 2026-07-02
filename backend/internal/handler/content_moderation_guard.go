@@ -227,6 +227,35 @@ func (h *OpenAIGatewayHandler) runOpenAIWebSocketFollowupFramePipeline(c *gin.Co
 	return pipeline.RunWebSocketFollowupFrame(h, c, reqLog, input)
 }
 
+type OpenAIWebSocketFramePipelineAdapter interface {
+	RunFramePipeline(*OpenAIGatewayHandler, *gin.Context, *zap.Logger, openAIWebSocketPipelineInput) openAIWebSocketPipelineResult
+}
+
+type OpenAIWebSocketInitialFramePipelineAdapter struct{}
+
+func (OpenAIWebSocketInitialFramePipelineAdapter) RunFramePipeline(h *OpenAIGatewayHandler, c *gin.Context, reqLog *zap.Logger, input openAIWebSocketPipelineInput) openAIWebSocketPipelineResult {
+	if h == nil {
+		return newOpenAIGatewayPipeline(nil).RunWebSocketInitialFrame(nil, c, reqLog, input)
+	}
+	return h.runOpenAIWebSocketInitialFramePipeline(c, reqLog, input)
+}
+
+type OpenAIWebSocketFollowupFramePipelineAdapter struct{}
+
+func (OpenAIWebSocketFollowupFramePipelineAdapter) RunFramePipeline(h *OpenAIGatewayHandler, c *gin.Context, reqLog *zap.Logger, input openAIWebSocketPipelineInput) openAIWebSocketPipelineResult {
+	if h == nil {
+		return newOpenAIGatewayPipeline(nil).RunWebSocketFollowupFrame(nil, c, reqLog, input)
+	}
+	return h.runOpenAIWebSocketFollowupFramePipeline(c, reqLog, input)
+}
+
+func (h *OpenAIGatewayHandler) runOpenAIWebSocketFramePipeline(c *gin.Context, adapter OpenAIWebSocketFramePipelineAdapter, reqLog *zap.Logger, input openAIWebSocketPipelineInput) openAIWebSocketPipelineResult {
+	if adapter == nil {
+		return openAIWebSocketPipelineResult{}
+	}
+	return adapter.RunFramePipeline(h, c, reqLog, input)
+}
+
 func (h *OpenAIGatewayHandler) openAIHTTPPreForwardPipeline() *OpenAIGatewayPipeline {
 	if h == nil {
 		return newOpenAIGatewayPipeline(nil)

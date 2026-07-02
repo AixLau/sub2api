@@ -1210,7 +1210,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 	// F5a: 握手层会话屏蔽检查。WS 握手无 body，显式标识仅来自握手 header
 	// （session_id / conversation_id）；无标识则放行，连接内仍有本地 flag 兜底。
-	initialPipelineResult := h.runOpenAIWebSocketInitialFramePipeline(c, reqLog, openAIWebSocketPipelineInput{
+	initialPipelineResult := h.runOpenAIWebSocketFramePipeline(c, OpenAIWebSocketInitialFramePipelineAdapter{}, reqLog, openAIWebSocketPipelineInput{
 		APIKey:        apiKey,
 		Subject:       subject,
 		Protocol:      service.ContentModerationProtocolOpenAIResponses,
@@ -1347,7 +1347,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if model == "" {
 					model = reqModel
 				}
-				pipelineResult := h.runOpenAIWebSocketFollowupFramePipeline(c, reqLog, openAIWebSocketPipelineInput{
+				pipelineResult := h.runOpenAIWebSocketFramePipeline(c, OpenAIWebSocketFollowupFramePipelineAdapter{}, reqLog, openAIWebSocketPipelineInput{
 					APIKey:   apiKey,
 					Subject:  subject,
 					Protocol: service.ContentModerationProtocolOpenAIResponses,
