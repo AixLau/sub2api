@@ -2955,6 +2955,55 @@ func TestContentModerationStatusIncludesPipelineCoverageFromRegisteredEntries(t 
 	}, status.PipelineExecution.Executions)
 }
 
+func TestContentModerationStatusReportsPipelineExecutionObservationCoverage(t *testing.T) {
+	entries := contentModerationPipelineCoverageFixtureEntries()
+	restore := moderationcoverage.ReplaceRegistryForTest(entries)
+	defer restore()
+	observedAt := time.Now().UTC()
+	restoreExecution := moderationcoverage.ReplacePipelineExecutionObserverForTest([]moderationcoverage.PipelineStageExecutionObservation{
+		{
+			Pipeline:       moderationcoverage.PipelineOpenAIHTTP,
+			Stage:          moderationcoverage.StageRouting,
+			Source:         moderationcoverage.SourceOpenAIHTTPExecutableStage,
+			Method:         "POST",
+			Path:           "/v1/responses",
+			Handler:        "OpenAIGatewayHandler.Responses",
+			Protocol:       ContentModerationProtocolOpenAIResponses,
+			Count:          1,
+			LastObservedAt: &observedAt,
+		},
+	})
+	defer restoreExecution()
+
+	cfg := defaultContentModerationConfig()
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	status, err := svc.GetStatus(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "mismatch", status.PipelineExecution.StageObservationCoverage.Status)
+	require.Equal(t, 25, status.PipelineExecution.StageObservationCoverage.ExpectedStages)
+	require.Equal(t, 1, status.PipelineExecution.StageObservationCoverage.ObservedStages)
+	require.Contains(t, status.PipelineExecution.StageObservationCoverage.UnobservedStages,
+		"POST /v1/responses OpenAIGatewayHandler.Responses moderation")
+	require.Contains(t, status.PipelineExecution.StageObservationCoverage.UnobservedStages,
+		"POST /v1/responses OpenAIGatewayHandler.Responses forward")
+	require.NotContains(t, status.PipelineExecution.StageObservationCoverage.UnobservedStages,
+		"POST /v1/responses OpenAIGatewayHandler.Responses routing")
+}
+
 func TestContentModerationPipelineCoverageStatusReportsStageDrift(t *testing.T) {
 	entries := contentModerationPipelineCoverageFixtureEntries()
 	entries[1].StageCoverage = withContentModerationPipelineStageCovered(entries[1].StageCoverage, moderationcoverage.StageImage, false)

@@ -334,6 +334,50 @@ func TestPipelineExecutionObserverExposesRouteSummaries(t *testing.T) {
 	require.Equal(t, StageUsage, snapshot.Routes[1].Stages[1].Stage)
 }
 
+func TestPipelineExecutionObserverReportsExpectedStageObservationCoverage(t *testing.T) {
+	restoreRegistry := ReplaceRegistryForTest([]Entry{
+		{
+			Method:             http.MethodPost,
+			Path:               "/v1/responses",
+			Handler:            "OpenAIGatewayHandler.Responses",
+			Upstream:           true,
+			ModerationRequired: true,
+			Protocol:           "openai_responses",
+			Pipeline:           PipelineOpenAIHTTP,
+			Status:             StatusCovered,
+			StageCoverage: []PipelineStageCoverage{
+				CoveredPipelineStage(StageRouting),
+				CoveredPipelineStage(StageForward),
+			},
+		},
+	})
+	defer restoreRegistry()
+	observedAt := time.Now().UTC()
+	restoreObserver := ReplacePipelineExecutionObserverForTest([]PipelineStageExecutionObservation{
+		{
+			Pipeline:       PipelineOpenAIHTTP,
+			Stage:          StageRouting,
+			Source:         SourceOpenAIHTTPExecutableStage,
+			Method:         http.MethodPost,
+			Path:           "/v1/responses",
+			Handler:        "OpenAIGatewayHandler.Responses",
+			Protocol:       "openai_responses",
+			Count:          1,
+			LastObservedAt: &observedAt,
+		},
+	})
+	defer restoreObserver()
+
+	snapshot := PipelineExecutionObserverSnapshot()
+
+	require.Equal(t, PipelineExecutionStageObservationCoverage{
+		Status:           "mismatch",
+		ExpectedStages:   2,
+		ObservedStages:   1,
+		UnobservedStages: []string{"POST /v1/responses OpenAIGatewayHandler.Responses forward"},
+	}, snapshot.StageObservationCoverage)
+}
+
 func TestPipelineStageExecutionsFromContextNormalizesStoredValues(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())

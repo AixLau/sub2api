@@ -37,14 +37,22 @@ type PipelineStageRouteExecutionObservation struct {
 }
 
 type PipelineExecutionSnapshot struct {
-	TotalCount             int64                                    `json:"total_count"`
-	ErrorCount             int64                                    `json:"error_count"`
-	RecentWindowSeconds    int64                                    `json:"recent_window_seconds"`
-	RecentWindowCount      int64                                    `json:"recent_window_count"`
-	RecentWindowErrorCount int64                                    `json:"recent_window_error_count"`
-	LastObservedAt         *time.Time                               `json:"last_observed_at,omitempty"`
-	Executions             []PipelineStageExecutionObservation      `json:"executions"`
-	Routes                 []PipelineStageRouteExecutionObservation `json:"routes"`
+	TotalCount               int64                                     `json:"total_count"`
+	ErrorCount               int64                                     `json:"error_count"`
+	RecentWindowSeconds      int64                                     `json:"recent_window_seconds"`
+	RecentWindowCount        int64                                     `json:"recent_window_count"`
+	RecentWindowErrorCount   int64                                     `json:"recent_window_error_count"`
+	LastObservedAt           *time.Time                                `json:"last_observed_at,omitempty"`
+	Executions               []PipelineStageExecutionObservation       `json:"executions"`
+	Routes                   []PipelineStageRouteExecutionObservation  `json:"routes"`
+	StageObservationCoverage PipelineExecutionStageObservationCoverage `json:"stage_observation_coverage"`
+}
+
+type PipelineExecutionStageObservationCoverage struct {
+	Status           string   `json:"status"`
+	ExpectedStages   int      `json:"expected_stages"`
+	ObservedStages   int      `json:"observed_stages"`
+	UnobservedStages []string `json:"unobserved_stages"`
 }
 
 const (
@@ -228,14 +236,15 @@ func pipelineExecutionObserverSnapshotLocked() PipelineExecutionSnapshot {
 	}
 	recentCount, recentErrorCount := pipelineExecutionRecentCountsFromRecentByKey(recentByKey)
 	return PipelineExecutionSnapshot{
-		TotalCount:             pipelineExecutionObserver.totalCount,
-		ErrorCount:             pipelineExecutionObserver.errorCount,
-		RecentWindowSeconds:    int64(pipelineExecutionRecentWindow.Seconds()),
-		RecentWindowCount:      recentCount,
-		RecentWindowErrorCount: recentErrorCount,
-		LastObservedAt:         lastSeen,
-		Executions:             executions,
-		Routes:                 pipelineExecutionRouteObservationsFromExecutions(executions),
+		TotalCount:               pipelineExecutionObserver.totalCount,
+		ErrorCount:               pipelineExecutionObserver.errorCount,
+		RecentWindowSeconds:      int64(pipelineExecutionRecentWindow.Seconds()),
+		RecentWindowCount:        recentCount,
+		RecentWindowErrorCount:   recentErrorCount,
+		LastObservedAt:           lastSeen,
+		Executions:               executions,
+		Routes:                   pipelineExecutionRouteObservationsFromExecutions(executions),
+		StageObservationCoverage: pipelineExecutionStageObservationCoverageFromExecutions(executions),
 	}
 }
 
@@ -375,6 +384,82 @@ func pipelineExecutionRouteObservationsFromExecutions(executions []PipelineStage
 		return pipelineRouteExecutionObservationLess(routes[i], routes[j])
 	})
 	return routes
+}
+
+func pipelineExecutionStageObservationCoverageFromExecutions(executions []PipelineStageExecutionObservation) PipelineExecutionStageObservationCoverage {
+	observed := make(map[string]struct{}, len(executions))
+	for _, execution := range executions {
+		execution = clonePipelineStageExecutionObservation(execution)
+		key := pipelineStageExecutionObservationCoverageKey(execution.Pipeline, execution.Method, execution.Path, execution.Handler, execution.Protocol, execution.Stage)
+		if key == "" {
+			continue
+		}
+		observed[key] = struct{}{}
+	}
+
+	expected := make(map[string]string)
+	registry.Lock()
+	entries := entriesSnapshotLocked()
+	registry.Unlock()
+	for _, entry := range entries {
+		entry = NormalizeEntry(entry)
+		if !entry.Upstream || !entry.ModerationRequired || entry.Pipeline == "" || entry.Status != StatusCovered {
+			continue
+		}
+		for _, stage := range entry.StageCoverage {
+			stage.Stage = NormalizeStage(stage.Stage)
+			if !stage.Required || !stage.Covered || stage.Stage == "" {
+				continue
+			}
+			key := pipelineStageExecutionObservationCoverageKey(entry.Pipeline, entry.Method, entry.Path, entry.Handler, entry.Protocol, stage.Stage)
+			if key == "" {
+				continue
+			}
+			expected[key] = strings.TrimSpace(strings.Join([]string{
+				entry.Method,
+				entry.Path,
+				entry.Handler,
+				stage.Stage,
+			}, " "))
+		}
+	}
+
+	unobserved := make([]string, 0)
+	observedExpected := 0
+	for key, label := range expected {
+		if _, ok := observed[key]; ok {
+			observedExpected++
+			continue
+		}
+		unobserved = append(unobserved, label)
+	}
+	sort.Strings(unobserved)
+	status := "not_applicable"
+	if len(expected) > 0 {
+		status = "covered"
+	}
+	if len(unobserved) > 0 {
+		status = "mismatch"
+	}
+	return PipelineExecutionStageObservationCoverage{
+		Status:           status,
+		ExpectedStages:   len(expected),
+		ObservedStages:   observedExpected,
+		UnobservedStages: unobserved,
+	}
+}
+
+func pipelineStageExecutionObservationCoverageKey(pipeline, method, path, handler, protocol, stage string) string {
+	pipeline = NormalizePipeline(pipeline)
+	method = NormalizeMethod(method)
+	path = NormalizePath(path)
+	handler = strings.TrimSpace(handler)
+	protocol = strings.TrimSpace(protocol)
+	stage = NormalizeStage(stage)
+	if pipeline == "" || method == "" || path == "" || handler == "" || protocol == "" || stage == "" {
+		return ""
+	}
+	return strings.Join([]string{pipeline, method, path, handler, protocol, stage}, "\x00")
 }
 
 func pipelineStageExecutionRouteKey(execution PipelineStageExecutionObservation) string {
