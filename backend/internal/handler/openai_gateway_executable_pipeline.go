@@ -619,6 +619,7 @@ type OpenAIWebSocketUsageStage struct {
 	RequestPayloadHash   string
 	ReleaseTurnSlots     func()
 	CyberBlockedThisConn *bool
+	ScheduleSuccess      *bool
 	UserAgent            string
 	ClientIP             string
 }
@@ -665,12 +666,19 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 		)
 	}
 	if s.Result == nil {
+		if s.ScheduleSuccess != nil && s.Account != nil {
+			h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account.ID, *s.ScheduleSuccess, nil)
+		}
 		return ExecutableStageResult{}
 	}
 	if s.Account.Type == service.AccountTypeOAuth {
 		h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(ctx, s.Account.ID, s.Result.ResponseHeaders)
 	}
-	h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account.ID, true, s.Result.FirstTokenMs)
+	scheduleSuccess := true
+	if s.ScheduleSuccess != nil {
+		scheduleSuccess = *s.ScheduleSuccess
+	}
+	h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account.ID, scheduleSuccess, s.Result.FirstTokenMs)
 	inboundEndpoint := GetInboundEndpoint(c)
 	upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, s.Account)
 	cyberBlocked := service.GetOpsCyberPolicy(c) != nil

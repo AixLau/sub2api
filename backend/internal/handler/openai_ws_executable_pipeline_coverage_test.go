@@ -145,6 +145,32 @@ func TestOpenAIResponsesWebSocketUsesNamedUsageStageAdapter(t *testing.T) {
 	require.Empty(t, anonymousUsageStageAdapterLines, "ResponsesWebSocket must not wrap usage with anonymous UsageStageAdapter at lines %v", anonymousUsageStageAdapterLines)
 }
 
+func TestOpenAIResponsesWebSocketScheduleResultsStayInsideUsageStage(t *testing.T) {
+	src, err := os.ReadFile("openai_gateway_handler.go")
+	require.NoError(t, err)
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "openai_gateway_handler.go", src, 0)
+	require.NoError(t, err)
+
+	fn := openAIWebSocketHandlerFuncDecl(t, file, "ResponsesWebSocket")
+	var directScheduleResultLines []int
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if ok && selector.Sel.Name == "ReportOpenAIAccountScheduleResult" {
+			directScheduleResultLines = append(directScheduleResultLines, fset.Position(call.Pos()).Line)
+		}
+		return true
+	})
+
+	require.Empty(t, directScheduleResultLines,
+		"ResponsesWebSocket must report schedule results through OpenAIWebSocketUsageStage, direct calls at lines %v", directScheduleResultLines)
+}
+
 func openAIWebSocketExecutableStageCalls(t *testing.T, fileName string, handlerName string) map[string]int {
 	t.Helper()
 

@@ -1635,7 +1635,19 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		if proxyErr != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(proxyErr, &failoverErr) {
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+				scheduleFailed := false
+				_ = h.runOpenAIWebSocketUsageStage(c, OpenAIWebSocketUsageStage{
+					Handler:         h,
+					RequestContext:  ctx,
+					ReqLog:          reqLog,
+					APIKey:          apiKey,
+					Account:         account,
+					Subscription:    subscription,
+					Model:           reqModel,
+					TurnErr:         proxyErr,
+					ChannelMapping:  channelMappingWS,
+					ScheduleSuccess: &scheduleFailed,
+				})
 				releaseAccountSlot()
 				failedAccountIDs[account.ID] = struct{}{}
 				h.gatewayService.CooldownUserAccount(ctx, subject.UserID, account.ID, h.gatewayService.UserAccountCooldownTTL(ctx))
@@ -1662,7 +1674,19 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				continue
 			}
 
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+			scheduleFailed := false
+			_ = h.runOpenAIWebSocketUsageStage(c, OpenAIWebSocketUsageStage{
+				Handler:         h,
+				RequestContext:  ctx,
+				ReqLog:          reqLog,
+				APIKey:          apiKey,
+				Account:         account,
+				Subscription:    subscription,
+				Model:           reqModel,
+				TurnErr:         proxyErr,
+				ChannelMapping:  channelMappingWS,
+				ScheduleSuccess: &scheduleFailed,
+			})
 			closeStatus, closeReason := summarizeWSCloseErrorForLog(proxyErr)
 			reqLog.Warn("openai.websocket_proxy_failed",
 				zap.Int64("account_id", account.ID),
