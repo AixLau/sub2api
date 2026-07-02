@@ -172,6 +172,7 @@ type OpenAIHTTPForwardKind string
 const (
 	OpenAIHTTPForwardResponses       OpenAIHTTPForwardKind = "responses"
 	OpenAIHTTPForwardChatCompletions OpenAIHTTPForwardKind = "chat_completions"
+	OpenAIHTTPForwardMessages        OpenAIHTTPForwardKind = "messages"
 	OpenAIHTTPForwardImages          OpenAIHTTPForwardKind = "images"
 	OpenAIHTTPForwardEmbeddings      OpenAIHTTPForwardKind = "embeddings"
 )
@@ -217,6 +218,8 @@ func (s OpenAIHTTPForwardStage) RunForward(c *gin.Context) ExecutableStageResult
 	switch s.Kind {
 	case OpenAIHTTPForwardChatCompletions:
 		result, err = s.GatewayService.ForwardAsChatCompletions(ctx, c, s.Account, s.Body, s.PromptCacheKey, s.DefaultMappedModel)
+	case OpenAIHTTPForwardMessages:
+		result, err = s.GatewayService.ForwardAsAnthropic(ctx, c, s.Account, s.Body, s.PromptCacheKey, s.DefaultMappedModel)
 	case OpenAIHTTPForwardImages:
 		result, err = s.GatewayService.ForwardImages(ctx, c, s.Account, s.Body, s.ParsedImagesRequest, s.ChannelMappedModel)
 	case OpenAIHTTPForwardEmbeddings:

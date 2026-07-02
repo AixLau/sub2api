@@ -123,6 +123,7 @@ func TestOpenAIHTTPHandlersUseForwardStageAdapter(t *testing.T) {
 	}{
 		{file: "openai_chat_completions.go", handler: "ChatCompletions"},
 		{file: "openai_gateway_handler.go", handler: "Responses"},
+		{file: "openai_gateway_handler.go", handler: "Messages"},
 		{file: "openai_images.go", handler: "Images"},
 		{file: "openai_embeddings.go", handler: "Embeddings"},
 	}
@@ -145,6 +146,7 @@ func TestOpenAIHTTPHandlersUseNamedForwardStageAdapter(t *testing.T) {
 	}{
 		{file: "openai_chat_completions.go", handler: "ChatCompletions"},
 		{file: "openai_gateway_handler.go", handler: "Responses"},
+		{file: "openai_gateway_handler.go", handler: "Messages"},
 		{file: "openai_images.go", handler: "Images"},
 		{file: "openai_embeddings.go", handler: "Embeddings"},
 	}

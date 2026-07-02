@@ -870,14 +870,18 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		// 应用渠道模型映射到请求体
 		forwardBody := mappedBodyForMessages(channelMappingMsg.Mapped, channelMappingMsg.MappedModel)
 		writerSizeBeforeForward := c.Writer.Size()
-		result, err := func() (*service.OpenAIForwardResult, error) {
-			defer func() {
-				if accountReleaseFunc != nil {
-					accountReleaseFunc()
-				}
-			}()
-			return h.gatewayService.ForwardAsAnthropic(c.Request.Context(), c, account, forwardBody, promptCacheKey, defaultMappedModel)
-		}()
+		var result *service.OpenAIForwardResult
+		stageResult := h.runOpenAIHTTPForwardStage(c, OpenAIHTTPForwardStage{
+			GatewayService:     h.gatewayService,
+			Kind:               OpenAIHTTPForwardMessages,
+			Account:            account,
+			Body:               forwardBody,
+			PromptCacheKey:     promptCacheKey,
+			DefaultMappedModel: defaultMappedModel,
+			ReleaseFunc:        accountReleaseFunc,
+			Result:             &result,
+		})
+		err = stageResult.Err
 		cyberBlockKeyMsg := ""
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockKeyMsg = service.CyberSessionBlockKey(apiKey.ID, c, body)
