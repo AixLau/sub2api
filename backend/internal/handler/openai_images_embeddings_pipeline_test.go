@@ -19,7 +19,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestOpenAIImagesAndEmbeddingsUseHTTPPreForwardPipeline(t *testing.T) {
+func TestOpenAIImagesUseHTTPPreForwardPipelineInHandler(t *testing.T) {
 	tests := []struct {
 		name                            string
 		file                            string
@@ -39,13 +39,6 @@ func TestOpenAIImagesAndEmbeddingsUseHTTPPreForwardPipeline(t *testing.T) {
 			enableImageStage:                "true",
 			imagePermissionBeforeModeration: "true",
 			imageEndpoint:                   "parsed.Endpoint",
-		},
-		{
-			name:     "embeddings",
-			file:     "openai_embeddings.go",
-			handler:  "Embeddings",
-			protocol: "service.ContentModerationProtocolOpenAIEmbeddings",
-			body:     "body",
 		},
 	}
 
@@ -67,6 +60,13 @@ func TestOpenAIImagesAndEmbeddingsUseHTTPPreForwardPipeline(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOpenAIEmbeddingsPreForwardRunsThroughGatewayPipelineRegistrar(t *testing.T) {
+	require.False(t, handlerCallsOpenAIHTTPPreForwardPipeline(t, "openai_embeddings.go", "Embeddings"),
+		"OpenAIGatewayHandler.Embeddings must receive pre-forward admission from GatewayPipelineRegistrar instead of calling runOpenAIHTTPPreForwardPipeline directly")
+	require.True(t, gatewaySourceBindsOpenAIHTTPEntrypointForProtocol(t, "ContentModerationProtocolOpenAIEmbeddings"),
+		"OpenAI embeddings routes must bind OpenAIGatewayHandler.EnterOpenAIHTTPGatewayPipeline through NewGatewayPipelineRegistrar")
 }
 
 func TestOpenAIImagesAndEmbeddingsPipelineSkipCyberStagePreservesExistingBehavior(t *testing.T) {
@@ -191,6 +191,54 @@ func openAIHTTPPipelineInputFields(t *testing.T, fileName string, handlerName st
 
 	t.Fatalf("%s does not define handler %s", fileName, handlerName)
 	return nil
+}
+
+func handlerCallsOpenAIHTTPPreForwardPipeline(t *testing.T, fileName string, handlerName string) bool {
+	t.Helper()
+
+	src, err := os.ReadFile(fileName)
+	require.NoError(t, err)
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, fileName, src, 0)
+	require.NoError(t, err)
+
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != handlerName {
+			continue
+		}
+		found := false
+		ast.Inspect(fn.Body, func(node ast.Node) bool {
+			if found {
+				return false
+			}
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if ok && selector.Sel.Name == "runOpenAIHTTPPreForwardPipeline" {
+				found = true
+				return false
+			}
+			return true
+		})
+		return found
+	}
+
+	t.Fatalf("%s does not define handler %s", fileName, handlerName)
+	return false
+}
+
+func gatewaySourceBindsOpenAIHTTPEntrypointForProtocol(t *testing.T, protocolConstant string) bool {
+	t.Helper()
+
+	src, err := os.ReadFile("../server/routes/gateway.go")
+	require.NoError(t, err)
+	return strings.Contains(string(src), "NewGatewayPipelineRegistrar") &&
+		strings.Contains(string(src), "EnterOpenAIHTTPGatewayPipeline") &&
+		strings.Contains(string(src), protocolConstant)
 }
 
 func compositeLiteralFields(t *testing.T, fset *token.FileSet, lit *ast.CompositeLit) map[string]string {

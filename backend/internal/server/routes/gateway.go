@@ -5,6 +5,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -54,7 +55,16 @@ func RegisterGatewayRoutes(
 
 	// API网关（Claude API兼容）
 	gateway := r.Group("/v1")
-	moderatedGateway := NewModeratedRouteRegistrar(gateway)
+	openAIHTTPPipelineEntrypoints := GatewayPipelineEntrypoints{
+		moderationcoverage.PipelineOpenAIHTTP: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+			if meta.Protocol != service.ContentModerationProtocolOpenAIEmbeddings {
+				return GatewayPipelineEntryResult{}
+			}
+			result := h.OpenAIGateway.EnterOpenAIHTTPGatewayPipeline(c, meta)
+			return GatewayPipelineEntryResult{Stop: result.Stop}
+		}),
+	}
+	moderatedGateway := NewGatewayPipelineRegistrar(gateway, openAIHTTPPipelineEntrypoints)
 	gateway.Use(bodyLimit)
 	gateway.Use(clientRequestID)
 	gateway.Use(opsErrorLogger)
@@ -263,7 +273,7 @@ func RegisterGatewayRoutes(
 		}
 		h.Gateway.Responses(c)
 	}
-	moderatedRoot := NewModeratedRouteRegistrar(r)
+	moderatedRoot := NewGatewayPipelineRegistrar(r, openAIHTTPPipelineEntrypoints)
 	moderatedRoot.POST("/responses", coveredOpenAIHTTPRoute(
 		"/responses",
 		"OpenAIGatewayHandler.Responses",

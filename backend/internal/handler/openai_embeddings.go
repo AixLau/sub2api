@@ -45,44 +45,41 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		return
 	}
 
-	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
-	if err != nil {
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+	var body []byte
+	var reqModel string
+	if preForwardRequest, ok := openAIHTTPPreForwardRequestFromContext(c, service.ContentModerationProtocolOpenAIEmbeddings); ok {
+		body = preForwardRequest.Body
+		reqModel = preForwardRequest.Model
+	} else {
+		var err error
+		body, err = pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+		if err != nil {
+			if maxErr, ok := extractMaxBytesError(err); ok {
+				h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+				return
+			}
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
 			return
 		}
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
-		return
-	}
-	if len(body) == 0 {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
-		return
-	}
-	if !gjson.ValidBytes(body) {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
-		return
-	}
+		if len(body) == 0 {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
+			return
+		}
+		if !gjson.ValidBytes(body) {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
+			return
+		}
 
-	modelResult := gjson.GetBytes(body, "model")
-	if !modelResult.Exists() || modelResult.Type != gjson.String || strings.TrimSpace(modelResult.String()) == "" {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
-		return
+		modelResult := gjson.GetBytes(body, "model")
+		if !modelResult.Exists() || modelResult.Type != gjson.String || strings.TrimSpace(modelResult.String()) == "" {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
+			return
+		}
+		reqModel = modelResult.String()
 	}
-	reqModel := modelResult.String()
 	reqLog = reqLog.With(zap.String("model", reqModel))
 	setOpsRequestContext(c, reqModel, false)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
-
-	if pipelineResult := h.runOpenAIHTTPPreForwardPipeline(c, reqLog, openAIHTTPPreForwardPipelineInput{
-		APIKey:         apiKey,
-		Subject:        subject,
-		Protocol:       service.ContentModerationProtocolOpenAIEmbeddings,
-		Model:          reqModel,
-		Body:           body,
-		SkipCyberStage: true,
-	}); pipelineResult.Blocked {
-		return
-	}
 
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
 

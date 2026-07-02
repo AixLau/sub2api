@@ -13,6 +13,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -959,8 +960,17 @@ func TestOpenAIEmbeddings_ContentModerationBlocksBeforeScheduling(t *testing.T) 
 		concurrencyHelper:        NewConcurrencyHelper(service.NewConcurrencyService(&concurrencyCacheMock{}), SSEPingFormatNone, time.Second),
 	}
 
-	h.Embeddings(c)
+	result := h.EnterOpenAIHTTPGatewayPipeline(c, moderationcoverage.Entry{
+		Method:             http.MethodPost,
+		Path:               "/v1/embeddings",
+		Handler:            "OpenAIGatewayHandler.Embeddings",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolOpenAIEmbeddings,
+		Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
+	})
 
+	require.True(t, result.Stop)
 	require.Equal(t, http.StatusForbidden, w.Code)
 	require.Contains(t, w.Body.String(), "内容审计测试阻断")
 	require.Eventually(t, func() bool {
@@ -1006,14 +1016,104 @@ func TestOpenAIEmbeddings_UsesModerationGuardBeforeScheduling(t *testing.T) {
 		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(&concurrencyCacheMock{}), SSEPingFormatNone, time.Second),
 	}
 
-	h.Embeddings(c)
+	result := h.EnterOpenAIHTTPGatewayPipeline(c, moderationcoverage.Entry{
+		Method:             http.MethodPost,
+		Path:               "/v1/embeddings",
+		Handler:            "OpenAIGatewayHandler.Embeddings",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolOpenAIEmbeddings,
+		Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
+	})
 
+	require.True(t, result.Stop)
 	require.Equal(t, http.StatusForbidden, w.Code)
 	require.Contains(t, w.Body.String(), "guard blocked")
 	require.Len(t, guard.calls, 1)
 	require.Equal(t, service.ContentModerationProtocolOpenAIEmbeddings, guard.calls[0].Protocol)
 	require.Equal(t, "text-embedding-3-small", guard.calls[0].Model)
 	require.JSONEq(t, body, string(guard.calls[0].Body))
+}
+
+func TestOpenAIEmbeddings_GatewayPipelineEntrypointRunsPreForwardAndCachesRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	guard := &moderationGuardSpy{decision: &service.ContentModerationDecision{
+		Allowed: true,
+		Action:  service.ContentModerationActionAllow,
+	}}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	body := `{"model":"text-embedding-3-small","input":"entrypoint-risk"}`
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(body))
+	setGatewayAuthContextForModerationTest(c)
+
+	h := &OpenAIGatewayHandler{
+		moderationGuard: guard,
+		gatewayService:  &service.OpenAIGatewayService{},
+	}
+
+	result := h.EnterOpenAIHTTPGatewayPipeline(c, moderationcoverage.Entry{
+		Method:             http.MethodPost,
+		Path:               "/v1/embeddings",
+		Handler:            "OpenAIGatewayHandler.Embeddings",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolOpenAIEmbeddings,
+		Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
+	})
+
+	require.False(t, result.Stop)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Len(t, guard.calls, 1)
+	require.Equal(t, service.ContentModerationProtocolOpenAIEmbeddings, guard.calls[0].Protocol)
+	require.Equal(t, "text-embedding-3-small", guard.calls[0].Model)
+	require.JSONEq(t, body, string(guard.calls[0].Body))
+	require.True(t, moderationcoverage.PipelineAdmittedFromContext(c))
+
+	cached, ok := openAIHTTPPreForwardRequestFromContext(c, service.ContentModerationProtocolOpenAIEmbeddings)
+	require.True(t, ok)
+	require.Equal(t, "text-embedding-3-small", cached.Model)
+	require.JSONEq(t, body, string(cached.Body))
+
+	restored, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+	require.NoError(t, err)
+	require.JSONEq(t, body, string(restored))
+}
+
+func TestOpenAIEmbeddings_SkipsPreForwardWhenGatewayPipelineEntrypointAlreadyRan(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	guard := &moderationGuardSpy{decision: &service.ContentModerationDecision{
+		Blocked:    true,
+		StatusCode: http.StatusForbidden,
+		Message:    "guard should not run twice",
+		Action:     service.ContentModerationActionBlock,
+	}}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	body := []byte(`{"model":"text-embedding-3-small","input":"cached"}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(string(body)))
+	setGatewayAuthContextForModerationTest(c)
+	setOpenAIHTTPPreForwardRequest(c, openAIHTTPPreForwardRequest{
+		Protocol: service.ContentModerationProtocolOpenAIEmbeddings,
+		Model:    "text-embedding-3-small",
+		Body:     body,
+	})
+	moderationcoverage.MarkPipelineAdmitted(c, moderationcoverage.PipelineOpenAIHTTP, moderationcoverage.StagePreForward, "test entrypoint")
+
+	h := &OpenAIGatewayHandler{
+		moderationGuard:     guard,
+		gatewayService:      &service.OpenAIGatewayService{},
+		billingCacheService: &service.BillingCacheService{},
+		apiKeyService:       &service.APIKeyService{},
+		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(&concurrencyCacheMock{}), SSEPingFormatNone, time.Second),
+	}
+
+	h.Embeddings(c)
+
+	require.NotContains(t, w.Body.String(), "guard should not run twice")
+	require.Empty(t, guard.calls)
 }
 
 func TestOpenAIResponses_ContentModerationBlocksDeepToolSchemaBeforeForward(t *testing.T) {

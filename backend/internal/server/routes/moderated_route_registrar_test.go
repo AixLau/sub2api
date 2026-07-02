@@ -552,7 +552,7 @@ func TestOpenAIHTTPHandlersUseUnifiedPreForwardPipeline(t *testing.T) {
 		coverage, ok := stageCoverage[handlerName]
 		require.True(t, ok, "OpenAI HTTP handler %s should be present in source coverage scan", handlerName)
 		require.True(t, coverage.HasHTTPPreForwardPipeline,
-			"%s must call runOpenAIHTTPPreForwardPipeline before routing/billing/forwarding", handlerName)
+			"%s must run the OpenAI HTTP pre-forward pipeline before routing/billing/forwarding, either from the handler or GatewayPipelineRegistrar entrypoint", handlerName)
 		require.NotContains(t, coverage.DirectStageLocations, "checkWithModerationGuard",
 			"%s must not call checkWithModerationGuard directly after adopting the unified HTTP pre-forward pipeline", handlerName)
 		require.NotContains(t, coverage.DirectStageLocations, "checkCyberSessionWithPipeline",
@@ -1049,8 +1049,26 @@ func openAIHTTPStageCoverageFromHandlerSources(t *testing.T) map[string]openAIHT
 			coverageByHandler[handlerName] = coverage
 		}
 	}
+	mergeOpenAIHTTPGatewayEntrypointStageCoverage(t, coverageByHandler)
 
 	return coverageByHandler
+}
+
+func mergeOpenAIHTTPGatewayEntrypointStageCoverage(t *testing.T, coverageByHandler map[string]openAIHTTPHandlerStageCoverage) {
+	t.Helper()
+
+	protocols := openAIHTTPGatewayEntrypointProtocolsFromHandlerSources(t)
+	for _, protocol := range protocols {
+		switch protocol {
+		case "openai_embeddings":
+			coverage := coverageByHandler["OpenAIGatewayHandler.Embeddings"]
+			coverage.Protocol = protocol
+			coverage.HasHTTPPreForwardPipeline = true
+			coverage.HasModerationStage = true
+			coverage.ModerationLocations = append(coverage.ModerationLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
+			coverageByHandler["OpenAIGatewayHandler.Embeddings"] = coverage
+		}
+	}
 }
 
 func openAIHTTPHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
@@ -1203,7 +1221,7 @@ func collectModeratedRouteRegistrarNames(file *ast.File) map[string]struct{} {
 		}
 		for i, rhs := range assign.Rhs {
 			call, ok := rhs.(*ast.CallExpr)
-			if !ok || callName(call) != "NewModeratedRouteRegistrar" || i >= len(assign.Lhs) {
+			if !ok || !isModeratedRouteRegistrarConstructor(callName(call)) || i >= len(assign.Lhs) {
 				continue
 			}
 			if ident, ok := assign.Lhs[i].(*ast.Ident); ok {
@@ -1213,6 +1231,15 @@ func collectModeratedRouteRegistrarNames(file *ast.File) map[string]struct{} {
 		return true
 	})
 	return names
+}
+
+func isModeratedRouteRegistrarConstructor(name string) bool {
+	switch name {
+	case "NewModeratedRouteRegistrar", "NewGatewayPipelineRegistrar":
+		return true
+	default:
+		return false
+	}
 }
 
 func isGatewayRouteRegistrationMethod(name string) bool {
@@ -1261,6 +1288,41 @@ func openAIGuardHelperProtocolsFromHandlerSources(t *testing.T) []string {
 		ast.Inspect(parsed, func(node ast.Node) bool {
 			call, ok := node.(*ast.CallExpr)
 			if !ok || (!isCheckWithModerationGuardCall(call) && !isOpenAIHTTPPreForwardPipelineCall(call)) {
+				return true
+			}
+			protocol := contentModerationProtocolArg(call)
+			if strings.HasPrefix(protocol, "ContentModerationProtocolOpenAI") {
+				protocolSet[serviceProtocolConstantValue(protocol)] = struct{}{}
+			}
+			return true
+		})
+	}
+	for _, protocol := range openAIHTTPGatewayEntrypointProtocolsFromHandlerSources(t) {
+		protocolSet[protocol] = struct{}{}
+	}
+	return sortedRouteSet(protocolSet)
+}
+
+func openAIHTTPGatewayEntrypointProtocolsFromHandlerSources(t *testing.T) []string {
+	t.Helper()
+
+	repoRoot := repoRootFromTestFile(t)
+	file := filepath.Join(repoRoot, "backend", "internal", "handler", "content_moderation_guard.go")
+	src, err := os.ReadFile(file)
+	require.NoError(t, err)
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, file, src, 0)
+	require.NoError(t, err)
+
+	protocolSet := make(map[string]struct{})
+	for _, decl := range parsed.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "EnterOpenAIHTTPGatewayPipeline" || fn.Body == nil {
+			continue
+		}
+		ast.Inspect(fn.Body, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok || !isOpenAIHTTPPreForwardPipelineCall(call) {
 				return true
 			}
 			protocol := contentModerationProtocolArg(call)

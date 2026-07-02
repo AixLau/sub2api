@@ -1,9 +1,17 @@
 package handler
 
 import (
+	"bytes"
+	"io"
+	"net/http"
+	"strings"
+
+	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
 
@@ -39,6 +47,18 @@ type openAIHTTPPreForwardPipelineResult struct {
 	Blocked          bool
 	ImageReleaseFunc func()
 }
+
+type OpenAIHTTPGatewayPipelineEntryResult struct {
+	Stop bool
+}
+
+type openAIHTTPPreForwardRequest struct {
+	Protocol string
+	Model    string
+	Body     []byte
+}
+
+const openAIHTTPPreForwardRequestContextKey = "openai_http_pre_forward_request"
 
 type openAIWebSocketPipelineBlockReason int
 
@@ -95,6 +115,61 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPPreForwardPipeline(c *gin.Context, r
 	return pipeline.RunHTTPPreForward(h, c, reqLog, input)
 }
 
+func (h *OpenAIGatewayHandler) EnterOpenAIHTTPGatewayPipeline(c *gin.Context, meta moderationcoverage.Entry) OpenAIHTTPGatewayPipelineEntryResult {
+	meta = moderationcoverage.NormalizeEntry(meta)
+	if meta.Protocol != service.ContentModerationProtocolOpenAIEmbeddings {
+		return OpenAIHTTPGatewayPipelineEntryResult{}
+	}
+	if h == nil {
+		return OpenAIHTTPGatewayPipelineEntryResult{}
+	}
+
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return OpenAIHTTPGatewayPipelineEntryResult{Stop: true}
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
+		return OpenAIHTTPGatewayPipelineEntryResult{Stop: true}
+	}
+
+	reqLog := requestLogger(
+		c,
+		"handler.openai_gateway.embeddings",
+		zap.Int64("user_id", subject.UserID),
+		zap.Int64("api_key_id", apiKey.ID),
+		zap.Any("group_id", apiKey.GroupID),
+	)
+	body, model, ok := h.readOpenAIEmbeddingsPreForwardRequest(c)
+	if !ok {
+		return OpenAIHTTPGatewayPipelineEntryResult{Stop: true}
+	}
+	reqLog = reqLog.With(zap.String("model", model))
+	setOpsRequestContext(c, model, false)
+	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
+
+	if pipelineResult := h.runOpenAIHTTPPreForwardPipeline(c, reqLog, openAIHTTPPreForwardPipelineInput{
+		APIKey:         apiKey,
+		Subject:        subject,
+		Protocol:       service.ContentModerationProtocolOpenAIEmbeddings,
+		Model:          model,
+		Body:           body,
+		SkipCyberStage: true,
+	}); pipelineResult.Blocked {
+		return OpenAIHTTPGatewayPipelineEntryResult{Stop: true}
+	}
+
+	setOpenAIHTTPPreForwardRequest(c, openAIHTTPPreForwardRequest{
+		Protocol: service.ContentModerationProtocolOpenAIEmbeddings,
+		Model:    model,
+		Body:     body,
+	})
+	restoreRequestBody(c, body)
+	return OpenAIHTTPGatewayPipelineEntryResult{}
+}
+
 func (h *OpenAIGatewayHandler) runOpenAIWebSocketInitialFramePipeline(c *gin.Context, reqLog *zap.Logger, input openAIWebSocketPipelineInput) openAIWebSocketPipelineResult {
 	pipeline := h.openAIWebSocketPipeline()
 	return pipeline.RunWebSocketInitialFrame(h, c, reqLog, input)
@@ -121,6 +196,71 @@ func (h *OpenAIGatewayHandler) openAIHTTPPreForwardPipeline() *OpenAIGatewayPipe
 		return pipeline.withCyberSessionChecker(h.gatewayService)
 	}
 	return pipeline
+}
+
+func (h *OpenAIGatewayHandler) readOpenAIEmbeddingsPreForwardRequest(c *gin.Context) ([]byte, string, bool) {
+	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+	if err != nil {
+		if maxErr, ok := extractMaxBytesError(err); ok {
+			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+			return nil, "", false
+		}
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		return nil, "", false
+	}
+	restoreRequestBody(c, body)
+	if len(body) == 0 {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
+		return nil, "", false
+	}
+	if !gjson.ValidBytes(body) {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
+		return nil, "", false
+	}
+
+	modelResult := gjson.GetBytes(body, "model")
+	if !modelResult.Exists() || modelResult.Type != gjson.String || strings.TrimSpace(modelResult.String()) == "" {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
+		return nil, "", false
+	}
+	return body, modelResult.String(), true
+}
+
+func setOpenAIHTTPPreForwardRequest(c *gin.Context, request openAIHTTPPreForwardRequest) {
+	if c == nil {
+		return
+	}
+	request.Protocol = strings.TrimSpace(request.Protocol)
+	request.Model = strings.TrimSpace(request.Model)
+	request.Body = append([]byte(nil), request.Body...)
+	c.Set(openAIHTTPPreForwardRequestContextKey, request)
+}
+
+func openAIHTTPPreForwardRequestFromContext(c *gin.Context, protocol string) (openAIHTTPPreForwardRequest, bool) {
+	if c == nil {
+		return openAIHTTPPreForwardRequest{}, false
+	}
+	value, ok := c.Get(openAIHTTPPreForwardRequestContextKey)
+	if !ok {
+		return openAIHTTPPreForwardRequest{}, false
+	}
+	request, ok := value.(openAIHTTPPreForwardRequest)
+	if !ok {
+		return openAIHTTPPreForwardRequest{}, false
+	}
+	if strings.TrimSpace(request.Protocol) != strings.TrimSpace(protocol) || len(request.Body) == 0 || strings.TrimSpace(request.Model) == "" {
+		return openAIHTTPPreForwardRequest{}, false
+	}
+	request.Body = append([]byte(nil), request.Body...)
+	return request, true
+}
+
+func restoreRequestBody(c *gin.Context, body []byte) {
+	if c == nil || c.Request == nil {
+		return
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(body))
+	c.Request.ContentLength = int64(len(body))
 }
 
 func (h *OpenAIGatewayHandler) openAIWebSocketPipeline() *OpenAIGatewayPipeline {
