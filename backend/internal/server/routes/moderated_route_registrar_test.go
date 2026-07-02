@@ -284,6 +284,72 @@ func TestGatewayPipelineRegistrarRequiresEntrypointForPipelineRouteAtRegistratio
 	)
 }
 
+func TestGatewayPipelineRegistrarAcceptsGlobalEntrypointForPipelineRouteAtRegistration(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
+
+	router := gin.New()
+	registrar := NewGatewayPipelineRegistrar(router, GatewayPipelineEntrypoints{
+		moderationcoverage.PipelineGatewayGlobal: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+			moderationcoverage.MarkPipelineAdmitted(c, meta.Pipeline, moderationcoverage.StagePreForward, "test global gateway pipeline entrypoint")
+			return GatewayPipelineEntryResult{}
+		}),
+	})
+
+	require.NotPanics(t, func() {
+		registrar.POST("/pipeline-global-entrypoint", coveredOpenAIHTTPRoute(
+			"/pipeline-global-entrypoint",
+			"OpenAIGatewayHandler.Responses",
+			"openai_responses",
+			"test route",
+		), func(c *gin.Context) {
+			c.Status(http.StatusNoContent)
+		})
+	})
+}
+
+func TestGatewayPipelineRegistrarRunsGlobalEntrypointBeforeHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
+
+	router := gin.New()
+	var entrypointCalled bool
+	var handlerCalled bool
+	var metaAtEntrypoint ModeratedRouteMeta
+	registrar := NewGatewayPipelineRegistrar(router, GatewayPipelineEntrypoints{
+		moderationcoverage.PipelineGatewayGlobal: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+			entrypointCalled = true
+			metaAtEntrypoint = meta
+			moderationcoverage.MarkPipelineAdmitted(c, meta.Pipeline, moderationcoverage.StagePreForward, "test global gateway pipeline entrypoint")
+			return GatewayPipelineEntryResult{}
+		}),
+	})
+
+	registrar.POST("/pipeline-global-entrypoint", coveredOpenAIHTTPRoute(
+		"/pipeline-global-entrypoint",
+		"OpenAIGatewayHandler.Responses",
+		"openai_responses",
+		"test route",
+	), func(c *gin.Context) {
+		handlerCalled = true
+		require.True(t, moderationcoverage.PipelineAdmittedFromContext(c))
+		c.Status(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/pipeline-global-entrypoint", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	require.True(t, entrypointCalled)
+	require.True(t, handlerCalled)
+	require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, metaAtEntrypoint.Pipeline)
+	require.Equal(t, "/pipeline-global-entrypoint", metaAtEntrypoint.Path)
+	require.Equal(t, "openai_responses", metaAtEntrypoint.Protocol)
+}
+
 func TestGatewayPipelineRegistrarRunsOpenAIWebSocketEntrypointBeforeHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	restore := replaceModeratedRouteRegistryForTest(nil)

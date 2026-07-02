@@ -104,7 +104,7 @@ func (r *ModeratedRouteRegistrar) requireEntrypointForPipelineRoute(meta Moderat
 	if !meta.Upstream || !meta.ModerationRequired || meta.Pipeline == "" {
 		return
 	}
-	if r.entrypoints[meta.Pipeline] != nil {
+	if r.entrypointForPipeline(meta.Pipeline) != nil {
 		return
 	}
 	panic(fmt.Sprintf(
@@ -114,6 +114,17 @@ func (r *ModeratedRouteRegistrar) requireEntrypointForPipelineRoute(meta Moderat
 		meta.Handler,
 		meta.Pipeline,
 	))
+}
+
+func (r *ModeratedRouteRegistrar) entrypointForPipeline(pipeline string) GatewayPipelineEntrypoint {
+	if r == nil || len(r.entrypoints) == 0 {
+		return nil
+	}
+	pipeline = moderationcoverage.NormalizePipeline(pipeline)
+	if entrypoint := r.entrypoints[pipeline]; entrypoint != nil {
+		return entrypoint
+	}
+	return r.entrypoints[moderationcoverage.PipelineGatewayGlobal]
 }
 
 func registerModeratedRouteBranch(method string, meta ModeratedRouteMeta) ModeratedRouteMeta {
@@ -181,7 +192,7 @@ func (r *ModeratedRouteRegistrar) runGatewayPipelineEntrypoint(c *gin.Context, m
 	if !meta.Upstream || !meta.ModerationRequired || meta.Pipeline == "" {
 		return GatewayPipelineEntryResult{}
 	}
-	entrypoint := r.entrypoints[meta.Pipeline]
+	entrypoint := r.entrypointForPipeline(meta.Pipeline)
 	if entrypoint == nil {
 		return GatewayPipelineEntryResult{}
 	}
