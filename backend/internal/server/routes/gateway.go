@@ -58,7 +58,7 @@ func RegisterGatewayRoutes(
 	openAIHTTPPipelineEntrypoints := GatewayPipelineEntrypoints{
 		moderationcoverage.PipelineOpenAIHTTP: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
 			switch meta.Protocol {
-			case service.ContentModerationProtocolOpenAIChat, service.ContentModerationProtocolOpenAIResponses, service.ContentModerationProtocolOpenAIEmbeddings:
+			case service.ContentModerationProtocolOpenAIChat, service.ContentModerationProtocolOpenAIResponses, service.ContentModerationProtocolOpenAIImages, service.ContentModerationProtocolOpenAIEmbeddings:
 			default:
 				return GatewayPipelineEntryResult{}
 			}

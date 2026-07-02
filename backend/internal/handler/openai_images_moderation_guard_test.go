@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -64,8 +65,9 @@ func TestOpenAIImages_UsesModerationGuardBeforeImageSlotAndForward(t *testing.T)
 	require.NotNil(t, release)
 	defer release()
 
-	h.Images(c)
+	result := h.EnterOpenAIHTTPGatewayPipeline(c, openAIImagesHTTPRouteMetaForTest())
 
+	require.True(t, result.Stop)
 	require.Equal(t, http.StatusForbidden, rec.Code)
 	require.Equal(t, "content_policy_violation", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
 	require.Contains(t, rec.Body.String(), "guard blocked images")
@@ -75,6 +77,18 @@ func TestOpenAIImages_UsesModerationGuardBeforeImageSlotAndForward(t *testing.T)
 	require.Equal(t, parsed.Model, guard.calls[0].Model)
 	require.JSONEq(t, string(expectedModerationBody), string(guard.calls[0].Body))
 	require.NotEqual(t, body, string(guard.calls[0].Body))
+}
+
+func openAIImagesHTTPRouteMetaForTest() moderationcoverage.Entry {
+	return moderationcoverage.Entry{
+		Method:             http.MethodPost,
+		Path:               "/v1/images/generations",
+		Handler:            "OpenAIGatewayHandler.Images",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolOpenAIImages,
+		Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
+	}
 }
 
 type openAIImagesModerationGuardSpy struct {

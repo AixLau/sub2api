@@ -47,29 +47,39 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		return
 	}
 
-	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
-	if err != nil {
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+	var body []byte
+	var parsed *service.OpenAIImagesRequest
+	var imageReleaseFunc func()
+	if preForwardRequest, ok := openAIHTTPPreForwardRequestFromContext(c, service.ContentModerationProtocolOpenAIImages); ok {
+		body = preForwardRequest.Body
+		parsed = preForwardRequest.ImagesRequest
+		imageReleaseFunc = preForwardRequest.ImageReleaseFunc
+	} else {
+		var err error
+		body, err = pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+		if err != nil {
+			if maxErr, ok := extractMaxBytesError(err); ok {
+				h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+				return
+			}
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
 			return
 		}
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
-		return
-	}
-	if len(body) == 0 {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
-		return
-	}
+		if len(body) == 0 {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
+			return
+		}
 
-	if isMultipartImagesContentType(c.GetHeader("Content-Type")) {
 		setOpsRequestContext(c, "", false)
-	} else {
-		setOpsRequestContext(c, "", false)
-	}
 
-	parsed, err := h.gatewayService.ParseOpenAIImagesRequest(c, body)
-	if err != nil {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+		parsed, err = h.gatewayService.ParseOpenAIImagesRequest(c, body)
+		if err != nil {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+			return
+		}
+	}
+	if parsed == nil {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return
 	}
 	requestModel := parsed.Model
@@ -81,21 +91,8 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		zap.String("capability", string(parsed.RequiredCapability)),
 	)
 
-	if pipelineResult := h.runOpenAIHTTPPreForwardPipeline(c, reqLog, openAIHTTPPreForwardPipelineInput{
-		APIKey:                          apiKey,
-		Subject:                         subject,
-		Protocol:                        service.ContentModerationProtocolOpenAIImages,
-		Model:                           requestModel,
-		Body:                            parsed.ModerationBody(),
-		SkipCyberStage:                  true,
-		EnableImageStage:                true,
-		ImagePermissionBeforeModeration: true,
-		ImageEndpoint:                   parsed.Endpoint,
-		StreamStarted:                   streamStarted,
-	}); pipelineResult.Blocked {
-		return
-	} else if pipelineResult.ImageReleaseFunc != nil {
-		defer pipelineResult.ImageReleaseFunc()
+	if imageReleaseFunc != nil {
+		defer imageReleaseFunc()
 	}
 
 	if parsed.Multipart {

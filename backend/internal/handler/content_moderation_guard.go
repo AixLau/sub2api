@@ -59,6 +59,7 @@ type openAIHTTPPreForwardRequest struct {
 	CyberBody        []byte
 	Stream           bool
 	ImageReleaseFunc func()
+	ImagesRequest    *service.OpenAIImagesRequest
 }
 
 const openAIHTTPPreForwardRequestContextKey = "openai_http_pre_forward_request"
@@ -121,7 +122,7 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPPreForwardPipeline(c *gin.Context, r
 func (h *OpenAIGatewayHandler) EnterOpenAIHTTPGatewayPipeline(c *gin.Context, meta moderationcoverage.Entry) OpenAIHTTPGatewayPipelineEntryResult {
 	meta = moderationcoverage.NormalizeEntry(meta)
 	switch meta.Protocol {
-	case service.ContentModerationProtocolOpenAIChat, service.ContentModerationProtocolOpenAIResponses, service.ContentModerationProtocolOpenAIEmbeddings:
+	case service.ContentModerationProtocolOpenAIChat, service.ContentModerationProtocolOpenAIResponses, service.ContentModerationProtocolOpenAIImages, service.ContentModerationProtocolOpenAIEmbeddings:
 	default:
 		return OpenAIHTTPGatewayPipelineEntryResult{}
 	}
@@ -146,6 +147,8 @@ func (h *OpenAIGatewayHandler) EnterOpenAIHTTPGatewayPipeline(c *gin.Context, me
 		logComponent = "handler.openai_gateway.chat_completions"
 	case service.ContentModerationProtocolOpenAIResponses:
 		logComponent = "handler.openai_gateway.responses"
+	case service.ContentModerationProtocolOpenAIImages:
+		logComponent = "handler.openai_gateway.images"
 	}
 	reqLog := requestLogger(
 		c,
@@ -154,7 +157,7 @@ func (h *OpenAIGatewayHandler) EnterOpenAIHTTPGatewayPipeline(c *gin.Context, me
 		zap.Int64("api_key_id", apiKey.ID),
 		zap.Any("group_id", apiKey.GroupID),
 	)
-	body, model, stream, cyberBody, ok := h.readOpenAIHTTPPreForwardRequest(c, reqLog, meta.Protocol)
+	body, model, stream, cyberBody, imagesRequest, ok := h.readOpenAIHTTPPreForwardRequest(c, reqLog, meta.Protocol)
 	if !ok {
 		return OpenAIHTTPGatewayPipelineEntryResult{Stop: true}
 	}
@@ -177,6 +180,15 @@ func (h *OpenAIGatewayHandler) EnterOpenAIHTTPGatewayPipeline(c *gin.Context, me
 		pipelineInput.CyberFormat = cyberBlockFormatResponses
 		pipelineInput.EnableImageStage = true
 		pipelineInput.ImageEndpoint = "/v1/responses"
+	case service.ContentModerationProtocolOpenAIImages:
+		pipelineInput.Body = nil
+		if imagesRequest != nil {
+			pipelineInput.Body = imagesRequest.ModerationBody()
+			pipelineInput.ImageEndpoint = imagesRequest.Endpoint
+		}
+		pipelineInput.SkipCyberStage = true
+		pipelineInput.EnableImageStage = true
+		pipelineInput.ImagePermissionBeforeModeration = true
 	case service.ContentModerationProtocolOpenAIEmbeddings:
 		pipelineInput.SkipCyberStage = true
 	}
@@ -193,6 +205,7 @@ func (h *OpenAIGatewayHandler) EnterOpenAIHTTPGatewayPipeline(c *gin.Context, me
 		CyberBody:        cyberBody,
 		Stream:           stream,
 		ImageReleaseFunc: pipelineResult.ImageReleaseFunc,
+		ImagesRequest:    imagesRequest,
 	})
 	restoreRequestBody(c, body)
 	return OpenAIHTTPGatewayPipelineEntryResult{}
@@ -226,20 +239,20 @@ func (h *OpenAIGatewayHandler) openAIHTTPPreForwardPipeline() *OpenAIGatewayPipe
 	return pipeline
 }
 
-func (h *OpenAIGatewayHandler) readOpenAIHTTPPreForwardRequest(c *gin.Context, reqLog *zap.Logger, protocol string) ([]byte, string, bool, []byte, bool) {
+func (h *OpenAIGatewayHandler) readOpenAIHTTPPreForwardRequest(c *gin.Context, reqLog *zap.Logger, protocol string) ([]byte, string, bool, []byte, *service.OpenAIImagesRequest, bool) {
 	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 	if err != nil {
 		if maxErr, ok := extractMaxBytesError(err); ok {
 			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
-			return nil, "", false, nil, false
+			return nil, "", false, nil, nil, false
 		}
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
-		return nil, "", false, nil, false
+		return nil, "", false, nil, nil, false
 	}
 	restoreRequestBody(c, body)
 	if len(body) == 0 {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
-		return nil, "", false, nil, false
+		return nil, "", false, nil, nil, false
 	}
 
 	cyberBody := body
@@ -252,7 +265,7 @@ func (h *OpenAIGatewayHandler) readOpenAIHTTPPreForwardRequest(c *gin.Context, r
 			normalizedCompactBody, normalizedCompact, compactErr := service.NormalizeOpenAICompactRequestBodyForTest(body)
 			if compactErr != nil {
 				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to normalize compact request body")
-				return nil, "", false, nil, false
+				return nil, "", false, nil, nil, false
 			}
 			if normalizedCompact {
 				body = normalizedCompactBody
@@ -260,16 +273,25 @@ func (h *OpenAIGatewayHandler) readOpenAIHTTPPreForwardRequest(c *gin.Context, r
 		}
 		restoreRequestBody(c, body)
 	}
+	if protocol == service.ContentModerationProtocolOpenAIImages {
+		setOpsRequestContext(c, "", false)
+		parsed, err := h.gatewayService.ParseOpenAIImagesRequest(c, body)
+		if err != nil {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+			return nil, "", false, nil, nil, false
+		}
+		return body, parsed.Model, parsed.Stream, nil, parsed, true
+	}
 
 	if !gjson.ValidBytes(body) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
-		return nil, "", false, nil, false
+		return nil, "", false, nil, nil, false
 	}
 
 	modelResult := gjson.GetBytes(body, "model")
 	if !modelResult.Exists() || modelResult.Type != gjson.String || strings.TrimSpace(modelResult.String()) == "" {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
-		return nil, "", false, nil, false
+		return nil, "", false, nil, nil, false
 	}
 	stream := false
 	if protocol == service.ContentModerationProtocolOpenAIChat || protocol == service.ContentModerationProtocolOpenAIResponses {
@@ -277,7 +299,7 @@ func (h *OpenAIGatewayHandler) readOpenAIHTTPPreForwardRequest(c *gin.Context, r
 		stream, ok = parseOpenAICompatibleStream(body)
 		if !ok {
 			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
-			return nil, "", false, nil, false
+			return nil, "", false, nil, nil, false
 		}
 	}
 	if protocol == service.ContentModerationProtocolOpenAIResponses {
@@ -298,7 +320,7 @@ func (h *OpenAIGatewayHandler) readOpenAIHTTPPreForwardRequest(c *gin.Context, r
 					)
 				}
 				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "previous_response_id must be a response.id (resp_*), not a message id")
-				return nil, "", false, nil, false
+				return nil, "", false, nil, nil, false
 			}
 			if reqLog != nil {
 				reqLog.Warn("openai.request_validation_failed",
@@ -306,10 +328,10 @@ func (h *OpenAIGatewayHandler) readOpenAIHTTPPreForwardRequest(c *gin.Context, r
 				)
 			}
 			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "previous_response_id is only supported on Responses WebSocket v2")
-			return nil, "", false, nil, false
+			return nil, "", false, nil, nil, false
 		}
 	}
-	return body, modelResult.String(), stream, cyberBody, true
+	return body, modelResult.String(), stream, cyberBody, nil, true
 }
 
 func setOpenAIHTTPPreForwardRequest(c *gin.Context, request openAIHTTPPreForwardRequest) {

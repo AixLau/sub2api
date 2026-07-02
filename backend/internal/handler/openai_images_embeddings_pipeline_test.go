@@ -19,50 +19,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestOpenAIImagesUseHTTPPreForwardPipelineInHandler(t *testing.T) {
-	tests := []struct {
-		name                            string
-		file                            string
-		handler                         string
-		protocol                        string
-		body                            string
-		enableImageStage                string
-		imagePermissionBeforeModeration string
-		imageEndpoint                   string
-	}{
-		{
-			name:                            "images",
-			file:                            "openai_images.go",
-			handler:                         "Images",
-			protocol:                        "service.ContentModerationProtocolOpenAIImages",
-			body:                            "parsed.ModerationBody()",
-			enableImageStage:                "true",
-			imagePermissionBeforeModeration: "true",
-			imageEndpoint:                   "parsed.Endpoint",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			fields := openAIHTTPPipelineInputFields(t, tt.file, tt.handler)
-
-			require.Equal(t, tt.protocol, fields["Protocol"])
-			require.Equal(t, tt.body, fields["Body"])
-			require.Equal(t, "true", fields["SkipCyberStage"])
-			if tt.enableImageStage != "" {
-				require.Equal(t, tt.enableImageStage, fields["EnableImageStage"])
-			}
-			if tt.imagePermissionBeforeModeration != "" {
-				require.Equal(t, tt.imagePermissionBeforeModeration, fields["ImagePermissionBeforeModeration"])
-			}
-			if tt.imageEndpoint != "" {
-				require.Equal(t, tt.imageEndpoint, fields["ImageEndpoint"])
-			}
-		})
-	}
-}
-
-func TestOpenAIChatResponsesAndEmbeddingsPreForwardRunThroughGatewayPipelineRegistrar(t *testing.T) {
+func TestOpenAIChatResponsesImagesAndEmbeddingsPreForwardRunThroughGatewayPipelineRegistrar(t *testing.T) {
 	tests := []struct {
 		name             string
 		file             string
@@ -80,6 +37,12 @@ func TestOpenAIChatResponsesAndEmbeddingsPreForwardRunThroughGatewayPipelineRegi
 			file:             "openai_gateway_handler.go",
 			handler:          "Responses",
 			protocolConstant: "ContentModerationProtocolOpenAIResponses",
+		},
+		{
+			name:             "images",
+			file:             "openai_images.go",
+			handler:          "Images",
+			protocolConstant: "ContentModerationProtocolOpenAIImages",
 		},
 		{
 			name:             "embeddings",

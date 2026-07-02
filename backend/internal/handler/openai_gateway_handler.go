@@ -195,7 +195,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		reqStream = preForwardRequest.Stream
 		imageReleaseFunc = preForwardRequest.ImageReleaseFunc
 	} else {
-		body, reqModel, reqStream, sessionHashBody, ok = h.readOpenAIHTTPPreForwardRequest(c, reqLog, service.ContentModerationProtocolOpenAIResponses)
+		body, reqModel, reqStream, sessionHashBody, _, ok = h.readOpenAIHTTPPreForwardRequest(c, reqLog, service.ContentModerationProtocolOpenAIResponses)
 		if !ok {
 			return
 		}
