@@ -208,6 +208,9 @@ const kindBadgeClass = (kind: string) => {
                     {{ t('admin.ops.requestDetails.table.duration') }}
                   </th>
                   <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    {{ t('usage.firstToken') }}
+                  </th>
+                  <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                     {{ t('admin.ops.requestDetails.table.status') }}
                   </th>
                   <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -236,6 +239,9 @@ const kindBadgeClass = (kind: string) => {
                   </td>
                   <td class="whitespace-nowrap px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
                     {{ typeof row.duration_ms === 'number' ? `${row.duration_ms} ms` : '-' }}
+                  </td>
+                  <td class="whitespace-nowrap px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
+                    {{ typeof row.first_token_ms === 'number' ? `${row.first_token_ms} ms` : '-' }}
                   </td>
                   <td class="whitespace-nowrap px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
                     {{ row.status_code ?? '-' }}
