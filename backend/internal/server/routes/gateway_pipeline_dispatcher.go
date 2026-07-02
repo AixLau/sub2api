@@ -95,7 +95,9 @@ func (d *GatewayPipelineEntrypointDispatcher) enterOpenAIWebSocket(c *gin.Contex
 	if meta.Protocol != service.ContentModerationProtocolOpenAIResponses {
 		return GatewayPipelineEntryResult{}
 	}
-	moderationcoverage.MarkPipelineEntrypointEntered(c, moderationcoverage.PipelineOpenAIWebSocket, "GatewayPipelineRegistrar.OpenAIWebSocket")
+	const source = "GatewayPipelineRegistrar.OpenAIWebSocket"
+	moderationcoverage.MarkPipelineEntrypointEntered(c, moderationcoverage.PipelineOpenAIWebSocket, source)
+	moderationcoverage.MarkPipelineAdmitted(c, moderationcoverage.PipelineOpenAIWebSocket, moderationcoverage.StagePreForward, source)
 	return GatewayPipelineEntryResult{}
 }
 

@@ -485,6 +485,12 @@ func TestGatewayPipelineEntrypointDispatcherMarksOpenAIWebSocketEntrypoint(t *te
 	require.False(t, result.Stop)
 	_, ok := moderationcoverage.PipelineEntrypointEnteredFromContext(c, moderationcoverage.PipelineOpenAIWebSocket)
 	require.True(t, ok)
+	admission, ok := moderationcoverage.PipelineAdmissionFromContext(c)
+	require.True(t, ok)
+	require.True(t, admission.Admitted)
+	require.Equal(t, moderationcoverage.PipelineOpenAIWebSocket, admission.Pipeline)
+	require.Equal(t, moderationcoverage.StagePreForward, admission.Stage)
+	require.Equal(t, "GatewayPipelineRegistrar.OpenAIWebSocket", admission.Source)
 }
 
 func TestGatewayPipelineEntrypointDispatcherDispatchesGatewayPreForward(t *testing.T) {
