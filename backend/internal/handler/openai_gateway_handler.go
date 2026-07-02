@@ -1279,7 +1279,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	requestPlatform := openAICompatibleRequestPlatform(apiKey)
-	if billingStage := h.runOpenAIWebSocketBillingStage(c, OpenAIWebSocketBillingStage{
+	if billingStage := h.runOpenAIWebSocketStage(c, OpenAIWebSocketBillingStage{
 		Handler:          h,
 		RequestContext:   ctx,
 		QuotaPlatformCtx: c.Request.Context(),
@@ -1307,7 +1307,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		var token string
 		stickyPreviousHit := false
 		scheduleLayer := ""
-		if routingStage := h.runOpenAIWebSocketRoutingStage(c, OpenAIWebSocketRoutingStage{
+		if routingStage := h.runOpenAIWebSocketStage(c, OpenAIWebSocketRoutingStage{
 			Handler:               h,
 			RequestContext:        ctx,
 			ReqLog:                reqLog,
@@ -1396,7 +1396,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return nil
 			},
 			AfterTurn: func(turn int, result *service.OpenAIForwardResult, turnErr error) {
-				_ = h.runOpenAIWebSocketUsageStage(c, OpenAIWebSocketUsageStage{
+				_ = h.runOpenAIWebSocketStage(c, OpenAIWebSocketUsageStage{
 					Handler:              h,
 					RequestContext:       ctx,
 					ReqLog:               reqLog,
@@ -1439,7 +1439,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		requestPayloadHash = service.HashUsageRequestPayload(wsFirstMessage)
 
 		var proxyErr error
-		_ = h.runOpenAIWebSocketForwardStage(c, OpenAIWebSocketForwardStage{
+		_ = h.runOpenAIWebSocketStage(c, OpenAIWebSocketForwardStage{
 			GatewayService: h.gatewayService,
 			RequestContext: ctx,
 			ClientConn:     wsConn,
@@ -1453,7 +1453,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(proxyErr, &failoverErr) {
 				scheduleFailed := false
-				_ = h.runOpenAIWebSocketUsageStage(c, OpenAIWebSocketUsageStage{
+				_ = h.runOpenAIWebSocketStage(c, OpenAIWebSocketUsageStage{
 					Handler:         h,
 					RequestContext:  ctx,
 					ReqLog:          reqLog,
@@ -1492,7 +1492,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			}
 
 			scheduleFailed := false
-			_ = h.runOpenAIWebSocketUsageStage(c, OpenAIWebSocketUsageStage{
+			_ = h.runOpenAIWebSocketStage(c, OpenAIWebSocketUsageStage{
 				Handler:         h,
 				RequestContext:  ctx,
 				ReqLog:          reqLog,

@@ -160,6 +160,67 @@ func TestGatewayPipelineRunsGenericExecutableStagesWithMetadata(t *testing.T) {
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
 }
 
+func TestOpenAIWebSocketStageRunnerRunsAllAdapterTypes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	var calls []string
+	handler := &OpenAIGatewayHandler{}
+
+	result := handler.runOpenAIWebSocketStage(c, BillingStageAdapter{
+		Name: moderationcoverage.StageBilling,
+		Billing: func(*gin.Context) ExecutableStageResult {
+			calls = append(calls, moderationcoverage.StageBilling)
+			return ExecutableStageResult{}
+		},
+	})
+	require.False(t, result.Stop)
+	require.NoError(t, result.Err)
+
+	result = handler.runOpenAIWebSocketStage(c, RoutingStageAdapter{
+		Name: moderationcoverage.StageRouting,
+		Routing: func(*gin.Context) ExecutableStageResult {
+			calls = append(calls, moderationcoverage.StageRouting)
+			return ExecutableStageResult{}
+		},
+	})
+	require.False(t, result.Stop)
+	require.NoError(t, result.Err)
+
+	result = handler.runOpenAIWebSocketStage(c, ForwardStageAdapter{
+		Name: moderationcoverage.StageForward,
+		Forward: func(*gin.Context) ExecutableStageResult {
+			calls = append(calls, moderationcoverage.StageForward)
+			return ExecutableStageResult{}
+		},
+	})
+	require.False(t, result.Stop)
+	require.NoError(t, result.Err)
+
+	result = handler.runOpenAIWebSocketStage(c, UsageStageAdapter{
+		Name: moderationcoverage.StageUsage,
+		Usage: func(*gin.Context) ExecutableStageResult {
+			calls = append(calls, moderationcoverage.StageUsage)
+			return ExecutableStageResult{}
+		},
+	})
+	require.False(t, result.Stop)
+	require.NoError(t, result.Err)
+
+	require.Equal(t, []string{
+		moderationcoverage.StageBilling,
+		moderationcoverage.StageRouting,
+		moderationcoverage.StageForward,
+		moderationcoverage.StageUsage,
+	}, calls)
+	require.Equal(t, []moderationcoverage.PipelineStageExecution{
+		{Pipeline: moderationcoverage.PipelineOpenAIWebSocket, Stage: moderationcoverage.StageBilling, Source: moderationcoverage.SourceOpenAIWebSocketExecutableStage},
+		{Pipeline: moderationcoverage.PipelineOpenAIWebSocket, Stage: moderationcoverage.StageRouting, Source: moderationcoverage.SourceOpenAIWebSocketExecutableStage},
+		{Pipeline: moderationcoverage.PipelineOpenAIWebSocket, Stage: moderationcoverage.StageForward, Source: moderationcoverage.SourceOpenAIWebSocketExecutableStage},
+		{Pipeline: moderationcoverage.PipelineOpenAIWebSocket, Stage: moderationcoverage.StageUsage, Source: moderationcoverage.SourceOpenAIWebSocketExecutableStage},
+	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+}
+
 func TestGatewayPipelineRunnerRunsPipelineAndRecordsGlobalExecution(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
