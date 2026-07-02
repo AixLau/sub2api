@@ -89,6 +89,37 @@ func TestOpenAIResponsesWebSocketUsesNamedRoutingStageAdapter(t *testing.T) {
 	require.Empty(t, anonymousRoutingStageAdapterLines, "ResponsesWebSocket must not wrap routing with anonymous RoutingStageAdapter at lines %v", anonymousRoutingStageAdapterLines)
 }
 
+func TestOpenAIResponsesWebSocketDoesNotPassRoutingClosureToRoutingStage(t *testing.T) {
+	src, err := os.ReadFile("openai_gateway_handler.go")
+	require.NoError(t, err)
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "openai_gateway_handler.go", src, 0)
+	require.NoError(t, err)
+
+	fn := openAIWebSocketHandlerFuncDecl(t, file, "ResponsesWebSocket")
+	var routingClosureLines []int
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		lit, ok := node.(*ast.CompositeLit)
+		if !ok || compositeTypeName(lit.Type) != "OpenAIWebSocketRoutingStage" {
+			return true
+		}
+		for _, elt := range lit.Elts {
+			kv, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			key, ok := kv.Key.(*ast.Ident)
+			if ok && key.Name == "Routing" {
+				routingClosureLines = append(routingClosureLines, fset.Position(kv.Pos()).Line)
+			}
+		}
+		return true
+	})
+
+	require.Empty(t, routingClosureLines, "ResponsesWebSocket must not pass Routing closures to OpenAIWebSocketRoutingStage at lines %v", routingClosureLines)
+}
+
 func TestOpenAIResponsesWebSocketUsesNamedForwardStageAdapter(t *testing.T) {
 	src, err := os.ReadFile("openai_gateway_handler.go")
 	require.NoError(t, err)
