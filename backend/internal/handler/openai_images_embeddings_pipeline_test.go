@@ -63,7 +63,7 @@ func TestOpenAIChatMessagesResponsesImagesAndEmbeddingsPreForwardRunThroughGatew
 			require.False(t, handlerCallsOpenAIHTTPPreForwardPipeline(t, tt.file, tt.handler),
 				"OpenAIGatewayHandler.%s must receive pre-forward admission from GatewayPipelineRegistrar instead of calling runOpenAIHTTPPreForwardPipeline directly", tt.handler)
 			require.True(t, gatewaySourceBindsOpenAIHTTPEntrypointForProtocol(t, tt.protocolConstant),
-				"OpenAI %s routes must bind OpenAIGatewayHandler.EnterOpenAIHTTPGatewayPipeline through NewGatewayPipelineRegistrar", tt.name)
+				"OpenAI %s routes must bind OpenAIGatewayHandler.EnterOpenAIHTTPGatewayPipeline through the global GatewayPipelineEntrypointDispatcher", tt.name)
 		})
 	}
 }
@@ -233,11 +233,16 @@ func handlerCallsOpenAIHTTPPreForwardPipeline(t *testing.T, fileName string, han
 func gatewaySourceBindsOpenAIHTTPEntrypointForProtocol(t *testing.T, protocolConstant string) bool {
 	t.Helper()
 
-	src, err := os.ReadFile("../server/routes/gateway.go")
+	gatewaySrc, err := os.ReadFile("../server/routes/gateway.go")
 	require.NoError(t, err)
-	return strings.Contains(string(src), "NewGatewayPipelineRegistrar") &&
-		strings.Contains(string(src), "EnterOpenAIHTTPGatewayPipeline") &&
-		strings.Contains(string(src), protocolConstant)
+	dispatcherSrc, err := os.ReadFile("../server/routes/gateway_pipeline_dispatcher.go")
+	require.NoError(t, err)
+
+	return strings.Contains(string(gatewaySrc), "NewGatewayPipelineRegistrar") &&
+		strings.Contains(string(gatewaySrc), "NewGatewayPipelineEntrypointDispatcherForHandlers") &&
+		strings.Contains(string(gatewaySrc), protocolConstant) &&
+		strings.Contains(string(dispatcherSrc), "EnterOpenAIHTTPGatewayPipeline") &&
+		strings.Contains(string(dispatcherSrc), protocolConstant)
 }
 
 func compositeLiteralFields(t *testing.T, fset *token.FileSet, lit *ast.CompositeLit) map[string]string {

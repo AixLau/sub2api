@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -96,6 +97,14 @@ func TestGatewayRouteRegistrationUsesSingleGlobalPipelineEntrypoint(t *testing.T
 
 	require.Equal(t, []string{"moderationcoverage.PipelineGatewayGlobal"}, entrypointKeys,
 		"production gateway route registration must bind one gateway_global entrypoint; global entrypoint dispatches to protocol adapters")
+}
+
+func TestGatewayRouteRegistrationDelegatesGlobalEntrypointToDispatcher(t *testing.T) {
+	directCalls := gatewayRouteRegistrationInlinePipelineDispatchesFromSource(t, gatewaySourceFile(t))
+
+	require.Empty(t, directCalls,
+		"production gateway route registration must delegate gateway_global dispatch to GatewayPipelineEntrypointDispatcher instead of inline protocol dispatch, found %s",
+		strings.Join(directCalls, ", "))
 }
 
 func TestModeratedRouteRegistrarInjectsRuntimeRouteMetaBeforeHandlers(t *testing.T) {
@@ -406,6 +415,135 @@ func TestGatewayPipelineRegistrarRunsOpenAIWebSocketEntrypointBeforeHandler(t *t
 	require.Equal(t, moderationcoverage.PipelineOpenAIWebSocket, metaAtEntrypoint.Pipeline)
 	require.Equal(t, "/pipeline-ws-entrypoint", metaAtEntrypoint.Path)
 	require.Equal(t, "openai_responses", metaAtEntrypoint.Protocol)
+}
+
+func TestGatewayPipelineEntrypointDispatcherDispatchesOpenAIHTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	var called bool
+	dispatcher := NewGatewayPipelineEntrypointDispatcher(GatewayPipelineEntrypointDispatcherConfig{
+		IsOpenAIPlatform: func(*gin.Context) bool { return true },
+		OpenAIHTTP: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+			called = true
+			moderationcoverage.MarkPipelineAdmitted(c, meta.Pipeline, moderationcoverage.StagePreForward, "test openai http dispatcher")
+			return GatewayPipelineEntryResult{Stop: true}
+		}),
+	})
+
+	result := dispatcher.EnterGatewayPipeline(c, ModeratedRouteMeta{
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+		Protocol: service.ContentModerationProtocolOpenAIResponses,
+	})
+
+	require.True(t, result.Stop)
+	require.True(t, called)
+	require.True(t, moderationcoverage.PipelineAdmittedFromContext(c))
+}
+
+func TestGatewayPipelineEntrypointDispatcherSkipsOpenAIHTTPForNonOpenAIPlatform(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	var called bool
+	dispatcher := NewGatewayPipelineEntrypointDispatcher(GatewayPipelineEntrypointDispatcherConfig{
+		IsOpenAIPlatform: func(*gin.Context) bool { return false },
+		OpenAIHTTP: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+			called = true
+			return GatewayPipelineEntryResult{Stop: true}
+		}),
+	})
+
+	result := dispatcher.EnterGatewayPipeline(c, ModeratedRouteMeta{
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+		Protocol: service.ContentModerationProtocolOpenAIResponses,
+	})
+
+	require.False(t, result.Stop)
+	require.False(t, called)
+}
+
+func TestGatewayPipelineEntrypointDispatcherMarksOpenAIWebSocketEntrypoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	dispatcher := NewGatewayPipelineEntrypointDispatcher(GatewayPipelineEntrypointDispatcherConfig{})
+
+	result := dispatcher.EnterGatewayPipeline(c, ModeratedRouteMeta{
+		Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
+		Protocol: service.ContentModerationProtocolOpenAIResponses,
+	})
+
+	require.False(t, result.Stop)
+	_, ok := moderationcoverage.PipelineEntrypointEnteredFromContext(c, moderationcoverage.PipelineOpenAIWebSocket)
+	require.True(t, ok)
+}
+
+func TestGatewayPipelineEntrypointDispatcherDispatchesGatewayPreForward(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	var called bool
+	dispatcher := NewGatewayPipelineEntrypointDispatcher(GatewayPipelineEntrypointDispatcherConfig{
+		GroupPlatform: func(*gin.Context) string { return service.PlatformAnthropic },
+		GatewayPreForward: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+			called = true
+			moderationcoverage.MarkPipelineAdmitted(c, meta.Pipeline, moderationcoverage.StagePreForward, "test gateway pre-forward dispatcher")
+			return GatewayPipelineEntryResult{Stop: true}
+		}),
+	})
+
+	result := dispatcher.EnterGatewayPipeline(c, ModeratedRouteMeta{
+		Pipeline: moderationcoverage.PipelineGatewayPreForward,
+		Protocol: service.ContentModerationProtocolAnthropicMessages,
+		Handler:  "GatewayHandler.Messages",
+	})
+
+	require.True(t, result.Stop)
+	require.True(t, called)
+	require.True(t, moderationcoverage.PipelineAdmittedFromContext(c))
+}
+
+func TestGatewayPipelineEntrypointDispatcherSkipsGatewayPreForwardForOpenAIPlatformWithoutForce(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	var called bool
+	dispatcher := NewGatewayPipelineEntrypointDispatcher(GatewayPipelineEntrypointDispatcherConfig{
+		GroupPlatform: func(*gin.Context) string { return service.PlatformOpenAI },
+		GatewayPreForward: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+			called = true
+			return GatewayPipelineEntryResult{Stop: true}
+		}),
+	})
+
+	result := dispatcher.EnterGatewayPipeline(c, ModeratedRouteMeta{
+		Pipeline: moderationcoverage.PipelineGatewayPreForward,
+		Protocol: service.ContentModerationProtocolAnthropicMessages,
+		Handler:  "GatewayHandler.Messages",
+	})
+
+	require.False(t, result.Stop)
+	require.False(t, called)
+}
+
+func TestGatewayPipelineEntrypointDispatcherIgnoresUnknownPipeline(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	dispatcher := NewGatewayPipelineEntrypointDispatcher(GatewayPipelineEntrypointDispatcherConfig{
+		OpenAIHTTP: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+			t.Fatalf("unknown pipeline must not dispatch to OpenAI HTTP")
+			return GatewayPipelineEntryResult{}
+		}),
+	})
+
+	result := dispatcher.EnterGatewayPipeline(c, ModeratedRouteMeta{
+		Pipeline: "future_pipeline",
+		Protocol: service.ContentModerationProtocolOpenAIResponses,
+	})
+
+	require.False(t, result.Stop)
 }
 
 func TestGatewayPipelineRegistrarStopsBeforeHandlerWhenEntrypointStops(t *testing.T) {
@@ -1441,6 +1579,53 @@ func gatewayPipelineEntrypointKeysFromSource(t *testing.T, file string) []string
 		return true
 	})
 	return sortedRouteSet(keys)
+}
+
+func gatewayRouteRegistrationInlinePipelineDispatchesFromSource(t *testing.T, file string) []string {
+	t.Helper()
+
+	src, err := os.ReadFile(file)
+	require.NoError(t, err)
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, file, src, 0)
+	require.NoError(t, err)
+
+	violations := make([]string, 0)
+	registerFn := functionDeclByName(parsed, "RegisterGatewayRoutes")
+	require.NotNil(t, registerFn)
+	ast.Inspect(registerFn.Body, func(node ast.Node) bool {
+		switch typed := node.(type) {
+		case *ast.SwitchStmt:
+			if exprString(typed.Tag) == "meta.Pipeline" {
+				pos := fset.Position(typed.Pos())
+				violations = append(violations, fmt.Sprintf("%s inline meta.Pipeline switch",
+					sourceLocation(repoRootFromTestFile(t), file, pos.Line)))
+			}
+		case *ast.CallExpr:
+			call := exprString(typed.Fun)
+			switch {
+			case strings.Contains(call, "EnterOpenAIHTTPGatewayPipeline"),
+				strings.Contains(call, "EnterOpenAIWebSocketGatewayPipeline"),
+				strings.Contains(call, "EnterGatewayPreForwardPipeline"):
+				pos := fset.Position(typed.Pos())
+				violations = append(violations, fmt.Sprintf("%s direct %s call",
+					sourceLocation(repoRootFromTestFile(t), file, pos.Line), call))
+			}
+		}
+		return true
+	})
+	sort.Strings(violations)
+	return violations
+}
+
+func functionDeclByName(file *ast.File, name string) *ast.FuncDecl {
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if ok && fn.Name != nil && fn.Name.Name == name {
+			return fn
+		}
+	}
+	return nil
 }
 
 func exprString(expr ast.Expr) string {
