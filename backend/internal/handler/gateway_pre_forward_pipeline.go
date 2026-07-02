@@ -360,10 +360,6 @@ func (h *GatewayHandler) gatewayForwardStageFromRouteDescriptor(c *gin.Context, 
 		if adapter, ok := registry.Resolve(descriptor); ok {
 			return adapter
 		}
-		registry.Register(descriptor, fallback)
-		if adapter, ok := registry.Resolve(descriptor); ok {
-			return adapter
-		}
 	}
 	return fallback
 }

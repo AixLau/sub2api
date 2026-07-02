@@ -361,6 +361,40 @@ func TestGatewayForwardStageUsesRouteDescriptorRegistry(t *testing.T) {
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
 }
 
+func TestGatewayForwardStageDoesNotCacheRequestFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	handler := &GatewayHandler{
+		forwardStageRegistry: NewForwardStageRegistry(),
+	}
+	calls := []string{}
+	for _, name := range []string{"first", "second"} {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", nil)
+		moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+			Method:             http.MethodPost,
+			Path:               "/v1/messages/count_tokens",
+			Handler:            "GatewayHandler.CountTokens",
+			Upstream:           true,
+			ModerationRequired: true,
+			Protocol:           service.ContentModerationProtocolAnthropicMessages,
+			Pipeline:           moderationcoverage.PipelineGatewayPreForward,
+			Status:             moderationcoverage.StatusCovered,
+		})
+		result := handler.runGatewayForwardStage(c, ForwardStageAdapter{
+			Name: "GatewayCountTokensForwardStage",
+			Forward: func(*gin.Context) ExecutableStageResult {
+				calls = append(calls, name)
+				return ExecutableStageResult{}
+			},
+		})
+		require.NoError(t, result.Err)
+		require.False(t, result.Stop)
+	}
+
+	require.Equal(t, []string{"first", "second"}, calls)
+}
+
 func TestGatewayBillingStageExecutionIncludesRouteMetadata(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

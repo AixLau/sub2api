@@ -114,6 +114,30 @@ func TestOpenAIResponsesWebSocketUsesUnifiedStageRunner(t *testing.T) {
 	require.Positive(t, unifiedStageRunnerCalls, "ResponsesWebSocket must run WebSocket executable stages through runOpenAIWebSocketStage")
 }
 
+func TestOpenAIWebSocketForwardStageRunnerUsesRouteDescriptorResolver(t *testing.T) {
+	src, err := os.ReadFile("openai_gateway_executable_pipeline.go")
+	require.NoError(t, err)
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "openai_gateway_executable_pipeline.go", src, 0)
+	require.NoError(t, err)
+
+	fn := openAIWebSocketHandlerFuncDecl(t, file, "runOpenAIWebSocketStage")
+	callsDescriptorResolver := false
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if ok && selector.Sel.Name == "openAIWebSocketForwardStageFromRouteDescriptor" {
+			callsDescriptorResolver = true
+		}
+		return true
+	})
+	require.True(t, callsDescriptorResolver, "runOpenAIWebSocketStage must resolve forward adapter from route descriptor metadata before execution")
+}
+
 func TestOpenAIResponsesWebSocketUsesNamedBillingStageAdapter(t *testing.T) {
 	src, err := os.ReadFile("openai_gateway_handler.go")
 	require.NoError(t, err)

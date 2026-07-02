@@ -491,6 +491,119 @@ func TestOpenAIHTTPForwardStageUsesRouteDescriptorRegistry(t *testing.T) {
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
 }
 
+func TestOpenAIHTTPForwardStageDoesNotCacheRequestFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := &OpenAIGatewayHandler{
+		forwardStageRegistry: NewForwardStageRegistry(),
+	}
+	calls := []string{}
+	for _, name := range []string{"first", "second"} {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+		moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+			Method:   http.MethodPost,
+			Path:     "/v1/responses",
+			Handler:  "OpenAIGatewayHandler.Responses",
+			Protocol: "openai_responses",
+			Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+		})
+		result := handler.runOpenAIHTTPForwardStage(c, ForwardStageAdapter{
+			Name: "OpenAIHTTPForwardStage",
+			Forward: func(*gin.Context) ExecutableStageResult {
+				calls = append(calls, name)
+				return ExecutableStageResult{}
+			},
+		})
+		require.False(t, result.Stop)
+		require.NoError(t, result.Err)
+	}
+
+	require.Equal(t, []string{"first", "second"}, calls)
+}
+
+func TestOpenAIWebSocketForwardStageUsesRouteDescriptorRegistry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+	moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+		Method:   http.MethodGet,
+		Path:     "/v1/responses",
+		Handler:  "OpenAIGatewayHandler.ResponsesWebSocket",
+		Protocol: "openai_responses",
+		Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
+	})
+	calls := []string{}
+	registered := ForwardStageAdapter{
+		Name: "OpenAIWebSocketForwardStage",
+		Forward: func(*gin.Context) ExecutableStageResult {
+			calls = append(calls, "registered")
+			return ExecutableStageResult{}
+		},
+	}
+	direct := ForwardStageAdapter{
+		Name: "OpenAIWebSocketForwardStage",
+		Forward: func(*gin.Context) ExecutableStageResult {
+			calls = append(calls, "direct")
+			return ExecutableStageResult{}
+		},
+	}
+	handler := &OpenAIGatewayHandler{
+		forwardStageRegistry: NewForwardStageRegistry(),
+	}
+	handler.forwardStageRegistry.Register(moderationcoverage.RouteAdapterDescriptor{
+		Stage:    moderationcoverage.StageForward,
+		Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
+		Name:     "OpenAIWebSocketForwardStage",
+	}, registered)
+
+	result := handler.runOpenAIWebSocketStage(c, direct)
+
+	require.False(t, result.Stop)
+	require.NoError(t, result.Err)
+	require.Equal(t, []string{"registered"}, calls)
+	require.Equal(t, []moderationcoverage.PipelineStageExecution{
+		{
+			Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
+			Stage:    moderationcoverage.StageForward,
+			Source:   moderationcoverage.SourceOpenAIWebSocketExecutableStage,
+			Method:   http.MethodGet,
+			Path:     "/v1/responses",
+			Handler:  "OpenAIGatewayHandler.ResponsesWebSocket",
+			Protocol: "openai_responses",
+		},
+	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+}
+
+func TestOpenAIWebSocketForwardStageDoesNotCacheRequestFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := &OpenAIGatewayHandler{
+		forwardStageRegistry: NewForwardStageRegistry(),
+	}
+	calls := []string{}
+	for _, name := range []string{"first", "second"} {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+		moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+			Method:   http.MethodGet,
+			Path:     "/v1/responses",
+			Handler:  "OpenAIGatewayHandler.ResponsesWebSocket",
+			Protocol: "openai_responses",
+			Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
+		})
+		result := handler.runOpenAIWebSocketStage(c, ForwardStageAdapter{
+			Name: "OpenAIWebSocketForwardStage",
+			Forward: func(*gin.Context) ExecutableStageResult {
+				calls = append(calls, name)
+				return ExecutableStageResult{}
+			},
+		})
+		require.False(t, result.Stop)
+		require.NoError(t, result.Err)
+	}
+
+	require.Equal(t, []string{"first", "second"}, calls)
+}
+
 func TestGatewayPipelineRunsUsageStageAdapter(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
