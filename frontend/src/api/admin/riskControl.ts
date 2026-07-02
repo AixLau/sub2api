@@ -274,6 +274,7 @@ export interface ContentModerationPipelineCoverageStatus {
 export interface ContentModerationPipelineGroupCoverageStatus {
   version: string
   pipeline: string
+  status: string
   required_routes: number
   covered_routes: number
   uncovered_routes: string[]

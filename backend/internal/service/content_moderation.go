@@ -596,6 +596,7 @@ type ContentModerationOpenAIHTTPPipelineCoverageStatus = ContentModerationPipeli
 type ContentModerationOpenAIWebSocketPipelineCoverageStatus struct {
 	Version         string                                         `json:"version"`
 	Pipeline        string                                         `json:"pipeline"`
+	Status          string                                         `json:"status"`
 	RequiredRoutes  int                                            `json:"required_routes"`
 	CoveredRoutes   int                                            `json:"covered_routes"`
 	UncoveredRoutes []string                                       `json:"uncovered_routes"`
@@ -610,6 +611,7 @@ type ContentModerationGatewayPreForwardPipelineCoverageStatus = ContentModeratio
 type ContentModerationPipelineGroupCoverageStatus struct {
 	Version         string                                         `json:"version"`
 	Pipeline        string                                         `json:"pipeline"`
+	Status          string                                         `json:"status"`
 	RequiredRoutes  int                                            `json:"required_routes"`
 	CoveredRoutes   int                                            `json:"covered_routes"`
 	UncoveredRoutes []string                                       `json:"uncovered_routes"`
@@ -1986,6 +1988,7 @@ func contentModerationOpenAIWebSocketPipelineCoverageStatusFromEntries(entries [
 	return ContentModerationOpenAIWebSocketPipelineCoverageStatus{
 		Version:         summary.Version,
 		Pipeline:        summary.Pipeline,
+		Status:          summary.Status,
 		RequiredRoutes:  summary.RequiredRoutes,
 		CoveredRoutes:   summary.CoveredRoutes,
 		UncoveredRoutes: summary.UncoveredRoutes,
@@ -2059,10 +2062,17 @@ func contentModerationPipelineGroupCoverageStatusFromEntriesWithPipelineValidato
 		}
 		uncoveredRoutes = append(uncoveredRoutes, contentModerationPipelineRouteKey(route.Method, route.Path, route.Handler))
 	}
+	status := "covered"
+	if len(routes) == 0 {
+		status = "not_applicable"
+	} else if coveredRoutes != len(routes) || len(uncoveredRoutes) > 0 {
+		status = "mismatch"
+	}
 
 	return ContentModerationPipelineGroupCoverageStatus{
 		Version:         version,
 		Pipeline:        moderationcoverage.NormalizePipeline(pipeline),
+		Status:          status,
 		RequiredRoutes:  len(routes),
 		CoveredRoutes:   coveredRoutes,
 		UncoveredRoutes: uncoveredRoutes,

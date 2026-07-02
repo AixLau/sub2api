@@ -2457,6 +2457,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 		"global": {
 			"version": %q,
 			"pipeline": "gateway_global",
+			"status": "covered",
 			"required_routes": 4,
 			"covered_routes": 4,
 			"uncovered_routes": [],
@@ -2509,6 +2510,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 		"openai_http": {
 			"version": %q,
 			"pipeline": "openai_http",
+			"status": "covered",
 			"required_routes": 3,
 			"covered_routes": 3,
 			"uncovered_routes": [],
@@ -2552,6 +2554,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 		"openai_websocket": {
 			"version": %q,
 			"pipeline": "openai_websocket",
+			"status": "not_applicable",
 			"required_routes": 0,
 			"covered_routes": 0,
 			"uncovered_routes": [],
@@ -2560,6 +2563,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 			"responses": {
 				"version": %q,
 				"pipeline": "openai_websocket",
+				"status": "not_applicable",
 				"required_routes": 0,
 				"covered_routes": 0,
 				"uncovered_routes": [],
@@ -2569,6 +2573,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 			"realtime": {
 				"version": %q,
 				"pipeline": "openai_websocket",
+				"status": "not_applicable",
 				"required_routes": 0,
 				"covered_routes": 0,
 				"uncovered_routes": [],
@@ -2579,6 +2584,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 		"gateway_pre_forward": {
 			"version": %q,
 			"pipeline": "gateway_pre_forward",
+			"status": "covered",
 			"required_routes": 1,
 			"covered_routes": 1,
 			"uncovered_routes": [],
@@ -2658,10 +2664,12 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIWebSocketStages(
 	require.Equal(t, moderationcoverage.PipelineOpenAIWebSocket, status.OpenAIWebSocket.Responses.Pipeline)
 	require.Equal(t, 1, status.OpenAIWebSocket.Responses.RequiredRoutes)
 	require.Equal(t, 1, status.OpenAIWebSocket.Responses.CoveredRoutes)
+	require.Equal(t, "covered", status.OpenAIWebSocket.Responses.Status)
 	require.Len(t, status.OpenAIWebSocket.Responses.Routes, 1)
 	require.Equal(t, moderationcoverage.PipelineOpenAIWebSocket, status.OpenAIWebSocket.Realtime.Pipeline)
 	require.Equal(t, 0, status.OpenAIWebSocket.Realtime.RequiredRoutes)
 	require.Equal(t, 0, status.OpenAIWebSocket.Realtime.CoveredRoutes)
+	require.Equal(t, "not_applicable", status.OpenAIWebSocket.Realtime.Status)
 	require.Empty(t, status.OpenAIWebSocket.Realtime.Routes)
 
 	requirePipelineStageSummary(t, status.OpenAIWebSocket.StageCoverage, moderationcoverage.StageModeration, 1, 1, []string{})
