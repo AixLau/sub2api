@@ -691,6 +691,7 @@ func TestOpenAIResponsesWebSocket_SetsClientTransportWSWhenUpgradeValid(t *testi
 	c.Request = httptest.NewRequest(http.MethodGet, "/openai/v1/responses", nil)
 	c.Request.Header.Set("Upgrade", "websocket")
 	c.Request.Header.Set("Connection", "Upgrade")
+	moderationcoverage.MarkPipelineEntrypointEntered(c, moderationcoverage.PipelineOpenAIWebSocket, "test websocket gateway pipeline entrypoint")
 
 	h := &OpenAIGatewayHandler{}
 	h.ResponsesWebSocket(c)
@@ -1633,8 +1634,24 @@ func newOpenAIWSHandlerTestServer(t *testing.T, h *OpenAIGatewayHandler, subject
 		c.Set(string(middleware.ContextKeyUser), subject)
 		c.Next()
 	})
-	router.GET("/openai/v1/responses", h.ResponsesWebSocket)
+	router.GET("/openai/v1/responses", markOpenAIWebSocketGatewayPipelineEntrypointForTest(), h.ResponsesWebSocket)
 	return httptest.NewServer(router)
+}
+
+func markOpenAIWebSocketGatewayPipelineEntrypointForTest() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+			Method:             http.MethodGet,
+			Path:               c.FullPath(),
+			Handler:            "OpenAIGatewayHandler.ResponsesWebSocket",
+			Upstream:           true,
+			ModerationRequired: true,
+			Protocol:           service.ContentModerationProtocolOpenAIResponses,
+			Pipeline:           moderationcoverage.PipelineOpenAIWebSocket,
+		})
+		moderationcoverage.MarkPipelineEntrypointEntered(c, moderationcoverage.PipelineOpenAIWebSocket, "test websocket gateway pipeline entrypoint")
+		c.Next()
+	}
 }
 
 type openAIResponsesWSUsageLogCase struct {
@@ -1908,7 +1925,7 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.User.ID, Concurrency: 1})
 		c.Next()
 	})
-	router.GET("/openai/v1/responses", h.ResponsesWebSocket)
+	router.GET("/openai/v1/responses", markOpenAIWebSocketGatewayPipelineEntrypointForTest(), h.ResponsesWebSocket)
 	handlerServer := httptest.NewServer(router)
 	defer handlerServer.Close()
 
@@ -2094,7 +2111,7 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.User.ID, Concurrency: 1})
 		c.Next()
 	})
-	router.GET("/openai/v1/responses", h.ResponsesWebSocket)
+	router.GET("/openai/v1/responses", markOpenAIWebSocketGatewayPipelineEntrypointForTest(), h.ResponsesWebSocket)
 	handlerServer := httptest.NewServer(router)
 	defer handlerServer.Close()
 

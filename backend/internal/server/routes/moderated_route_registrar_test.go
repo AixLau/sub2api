@@ -261,6 +261,55 @@ func TestGatewayPipelineRegistrarRunsPipelineEntrypointBeforeHandler(t *testing.
 	require.Equal(t, "openai_responses", metaAtEntrypoint.Protocol)
 }
 
+func TestGatewayPipelineRegistrarRunsOpenAIWebSocketEntrypointBeforeHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
+
+	router := gin.New()
+	var entrypointCalled bool
+	var handlerCalled bool
+	var metaAtEntrypoint ModeratedRouteMeta
+	registrar := NewGatewayPipelineRegistrar(router, GatewayPipelineEntrypoints{
+		moderationcoverage.PipelineOpenAIWebSocket: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+			entrypointCalled = true
+			metaAtEntrypoint = meta
+			moderationcoverage.MarkPipelineStageExecuted(
+				c,
+				meta.Pipeline,
+				moderationcoverage.StagePreForward,
+				"test websocket gateway pipeline entrypoint",
+			)
+			return GatewayPipelineEntryResult{}
+		}),
+	})
+
+	registrar.GET("/pipeline-ws-entrypoint", coveredOpenAIWebSocketRoute(
+		"/pipeline-ws-entrypoint",
+		"OpenAIGatewayHandler.ResponsesWebSocket",
+		"openai_responses",
+		"test websocket route",
+	), func(c *gin.Context) {
+		handlerCalled = true
+		executions := moderationcoverage.PipelineStageExecutionsFromContext(c)
+		require.Len(t, executions, 1)
+		require.Equal(t, moderationcoverage.PipelineOpenAIWebSocket, executions[0].Pipeline)
+		require.Equal(t, moderationcoverage.StagePreForward, executions[0].Stage)
+		c.Status(http.StatusUpgradeRequired)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/pipeline-ws-entrypoint", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusUpgradeRequired, rec.Code)
+	require.True(t, entrypointCalled)
+	require.True(t, handlerCalled)
+	require.Equal(t, moderationcoverage.PipelineOpenAIWebSocket, metaAtEntrypoint.Pipeline)
+	require.Equal(t, "/pipeline-ws-entrypoint", metaAtEntrypoint.Path)
+	require.Equal(t, "openai_responses", metaAtEntrypoint.Protocol)
+}
+
 func TestGatewayPipelineRegistrarStopsBeforeHandlerWhenEntrypointStops(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	restore := replaceModeratedRouteRegistryForTest(nil)

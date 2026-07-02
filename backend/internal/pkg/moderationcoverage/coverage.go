@@ -31,6 +31,7 @@ const (
 	StageUsage      = "usage"
 
 	RuntimeRouteMetaContextKey        = "moderationcoverage.route_meta"
+	PipelineEntrypointContextKey      = "moderationcoverage.pipeline_entrypoint"
 	PipelineAdmittedContextKey        = "pipeline_admitted"
 	PipelineAdmissionContextKey       = "moderationcoverage.pipeline_admission"
 	PipelineStageExecutionsContextKey = "moderationcoverage.pipeline_stage_executions"
@@ -70,6 +71,12 @@ type PipelineAdmission struct {
 	Admitted bool
 	Pipeline string
 	Stage    string
+	Source   string
+}
+
+type PipelineEntrypoint struct {
+	Entered  bool
+	Pipeline string
 	Source   string
 }
 
@@ -184,6 +191,50 @@ func PipelineAdmissionFromContext(c *gin.Context) (PipelineAdmission, bool) {
 	default:
 		return PipelineAdmission{}, false
 	}
+}
+
+func MarkPipelineEntrypointEntered(c *gin.Context, pipeline, source string) {
+	if c == nil {
+		return
+	}
+	entrypoint := PipelineEntrypoint{
+		Entered:  true,
+		Pipeline: NormalizePipeline(pipeline),
+		Source:   strings.TrimSpace(source),
+	}
+	if entrypoint.Pipeline == "" {
+		return
+	}
+	c.Set(PipelineEntrypointContextKey, entrypoint)
+}
+
+func PipelineEntrypointEnteredFromContext(c *gin.Context, pipeline string) (PipelineEntrypoint, bool) {
+	if c == nil {
+		return PipelineEntrypoint{}, false
+	}
+	value, ok := c.Get(PipelineEntrypointContextKey)
+	if !ok {
+		return PipelineEntrypoint{}, false
+	}
+	var entrypoint PipelineEntrypoint
+	switch v := value.(type) {
+	case PipelineEntrypoint:
+		entrypoint = v
+	case *PipelineEntrypoint:
+		if v == nil {
+			return PipelineEntrypoint{}, false
+		}
+		entrypoint = *v
+	default:
+		return PipelineEntrypoint{}, false
+	}
+	entrypoint.Pipeline = NormalizePipeline(entrypoint.Pipeline)
+	entrypoint.Source = strings.TrimSpace(entrypoint.Source)
+	entrypoint.Entered = entrypoint.Entered && entrypoint.Pipeline != ""
+	if !entrypoint.Entered || entrypoint.Pipeline != NormalizePipeline(pipeline) {
+		return PipelineEntrypoint{}, false
+	}
+	return entrypoint, true
 }
 
 func MarkPipelineStageExecuted(c *gin.Context, pipeline, stage, source string) {

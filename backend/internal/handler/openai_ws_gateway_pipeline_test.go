@@ -17,6 +17,35 @@ import (
 	"go.uber.org/zap"
 )
 
+func TestOpenAIResponsesWebSocketRequiresGatewayPipelineRegistrarEntrypoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+	c.Request.Header.Set("Connection", "Upgrade")
+	c.Request.Header.Set("Upgrade", "websocket")
+	c.Request.Header.Set("Sec-WebSocket-Version", "13")
+	c.Request.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	setGatewayAuthContextForModerationTest(c)
+	moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+		Method:             http.MethodGet,
+		Path:               "/v1/responses",
+		Handler:            "OpenAIGatewayHandler.ResponsesWebSocket",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolOpenAIResponses,
+		Pipeline:           moderationcoverage.PipelineOpenAIWebSocket,
+	})
+
+	h := &OpenAIGatewayHandler{}
+
+	h.ResponsesWebSocket(c)
+
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	require.Contains(t, w.Body.String(), "OpenAI WebSocket pipeline entrypoint missing")
+}
+
 func TestOpenAIWebSocketPipelineRunsInitialFrameStagesInOrder(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

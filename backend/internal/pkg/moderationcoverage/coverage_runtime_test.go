@@ -52,6 +52,23 @@ func TestPipelineAdmissionHelpersSetBooleanFlagAndMetadata(t *testing.T) {
 	require.Empty(t, PipelineStageExecutionsFromContext(c))
 }
 
+func TestPipelineEntrypointHelpersSetAndMatchPipeline(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	MarkPipelineEntrypointEntered(c, " OPENAI_WEBSOCKET ", " websocket entrypoint ")
+
+	entrypoint, ok := PipelineEntrypointEnteredFromContext(c, PipelineOpenAIWebSocket)
+	require.True(t, ok)
+	require.True(t, entrypoint.Entered)
+	require.Equal(t, PipelineOpenAIWebSocket, entrypoint.Pipeline)
+	require.Equal(t, "websocket entrypoint", entrypoint.Source)
+	_, ok = PipelineEntrypointEnteredFromContext(c, PipelineOpenAIHTTP)
+	require.False(t, ok)
+	require.False(t, PipelineAdmittedFromContext(c))
+	require.Empty(t, PipelineStageExecutionsFromContext(c))
+}
+
 func TestPipelineStageExecutionHelpersCollectNormalizedDedupedExecutions(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())

@@ -379,6 +379,18 @@ func restoreRequestBody(c *gin.Context, body []byte) {
 	c.Request.ContentLength = int64(len(body))
 }
 
+func requireOpenAIWebSocketGatewayPipelineEntrypoint(c *gin.Context) bool {
+	if _, ok := moderationcoverage.PipelineEntrypointEnteredFromContext(c, moderationcoverage.PipelineOpenAIWebSocket); ok {
+		return true
+	}
+	if c != nil {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"error": "OpenAI WebSocket pipeline entrypoint missing",
+		})
+	}
+	return false
+}
+
 func (h *OpenAIGatewayHandler) openAIWebSocketPipeline() *OpenAIGatewayPipeline {
 	return h.openAIHTTPPreForwardPipeline()
 }

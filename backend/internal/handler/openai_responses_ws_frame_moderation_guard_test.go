@@ -135,7 +135,7 @@ func TestOpenAIResponsesWebSocket_SubsequentFrameUsesModerationGuardAndBlocksBef
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.User.ID, Concurrency: 1})
 		c.Next()
 	})
-	router.GET("/openai/v1/responses", h.ResponsesWebSocket)
+	router.GET("/openai/v1/responses", markOpenAIWebSocketGatewayPipelineEntrypointForTest(), h.ResponsesWebSocket)
 	handlerServer := httptest.NewServer(router)
 	defer handlerServer.Close()
 

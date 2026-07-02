@@ -68,6 +68,13 @@ func RegisterGatewayRoutes(
 			result := h.OpenAIGateway.EnterOpenAIHTTPGatewayPipeline(c, meta)
 			return GatewayPipelineEntryResult{Stop: result.Stop}
 		}),
+		moderationcoverage.PipelineOpenAIWebSocket: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+			if meta.Protocol != service.ContentModerationProtocolOpenAIResponses {
+				return GatewayPipelineEntryResult{}
+			}
+			moderationcoverage.MarkPipelineEntrypointEntered(c, moderationcoverage.PipelineOpenAIWebSocket, "GatewayPipelineRegistrar.OpenAIWebSocket")
+			return GatewayPipelineEntryResult{}
+		}),
 	}
 	moderatedGateway := NewGatewayPipelineRegistrar(gateway, openAIHTTPPipelineEntrypoints)
 	gateway.Use(bodyLimit)
