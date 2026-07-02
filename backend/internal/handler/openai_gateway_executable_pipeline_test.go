@@ -395,6 +395,102 @@ func TestGatewayPipelineRunsForwardStageAdapter(t *testing.T) {
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
 }
 
+func TestForwardStageRegistryResolvesRouteAdapterDescriptor(t *testing.T) {
+	registry := NewForwardStageRegistry()
+	called := false
+	registry.Register(moderationcoverage.RouteAdapterDescriptor{
+		Stage:    moderationcoverage.StageForward,
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+		Name:     "OpenAIHTTPForwardStage",
+	}, ForwardStageAdapter{
+		Name: "OpenAIHTTPForwardStage",
+		Forward: func(*gin.Context) ExecutableStageResult {
+			called = true
+			return ExecutableStageResult{}
+		},
+	})
+
+	adapter, ok := registry.Resolve(moderationcoverage.RouteAdapterDescriptor{
+		Stage:    moderationcoverage.StageForward,
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+		Name:     "OpenAIHTTPForwardStage",
+	})
+	require.True(t, ok)
+	require.Equal(t, moderationcoverage.StageForward, adapter.StageName())
+
+	result := adapter.RunForward(nil)
+
+	require.False(t, result.Stop)
+	require.NoError(t, result.Err)
+	require.True(t, called)
+
+	_, ok = registry.Resolve(moderationcoverage.RouteAdapterDescriptor{
+		Stage:    moderationcoverage.StageForward,
+		Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
+		Name:     "OpenAIHTTPForwardStage",
+	})
+	require.False(t, ok)
+
+	_, ok = registry.Resolve(moderationcoverage.RouteAdapterDescriptor{
+		Stage:    moderationcoverage.StageUsage,
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+		Name:     "OpenAIHTTPForwardStage",
+	})
+	require.False(t, ok)
+}
+
+func TestOpenAIHTTPForwardStageUsesRouteDescriptorRegistry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+		Method:   http.MethodPost,
+		Path:     "/v1/responses",
+		Handler:  "OpenAIGatewayHandler.Responses",
+		Protocol: "openai_responses",
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+	})
+	calls := []string{}
+	registered := ForwardStageAdapter{
+		Name: "OpenAIHTTPForwardStage",
+		Forward: func(*gin.Context) ExecutableStageResult {
+			calls = append(calls, "registered")
+			return ExecutableStageResult{}
+		},
+	}
+	direct := ForwardStageAdapter{
+		Name: "OpenAIHTTPForwardStage",
+		Forward: func(*gin.Context) ExecutableStageResult {
+			calls = append(calls, "direct")
+			return ExecutableStageResult{}
+		},
+	}
+	handler := &OpenAIGatewayHandler{
+		forwardStageRegistry: NewForwardStageRegistry(),
+	}
+	handler.forwardStageRegistry.Register(moderationcoverage.RouteAdapterDescriptor{
+		Stage:    moderationcoverage.StageForward,
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+		Name:     "OpenAIHTTPForwardStage",
+	}, registered)
+
+	result := handler.runOpenAIHTTPForwardStage(c, direct)
+
+	require.False(t, result.Stop)
+	require.NoError(t, result.Err)
+	require.Equal(t, []string{"registered"}, calls)
+	require.Equal(t, []moderationcoverage.PipelineStageExecution{
+		{
+			Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+			Stage:    moderationcoverage.StageForward,
+			Source:   moderationcoverage.SourceOpenAIHTTPExecutableStage,
+			Method:   http.MethodPost,
+			Path:     "/v1/responses",
+			Handler:  "OpenAIGatewayHandler.Responses",
+			Protocol: "openai_responses",
+		},
+	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+}
+
 func TestGatewayPipelineRunsUsageStageAdapter(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
