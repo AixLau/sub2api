@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
@@ -36,36 +37,41 @@ func (f GatewayPipelineEntrypointFunc) EnterGatewayPipeline(c *gin.Context, meta
 type GatewayPipelineEntrypoints map[string]GatewayPipelineEntrypoint
 
 type ModeratedRouteRegistrar struct {
-	routes      routeRegistrar
-	entrypoints GatewayPipelineEntrypoints
+	routes                    routeRegistrar
+	entrypoints               GatewayPipelineEntrypoints
+	requirePipelineEntrypoint bool
 }
 
 func NewModeratedRouteRegistrar(routes routeRegistrar) *ModeratedRouteRegistrar {
-	return NewGatewayPipelineRegistrar(routes, nil)
+	return &ModeratedRouteRegistrar{
+		routes:      routes,
+		entrypoints: nil,
+	}
 }
 
 func NewGatewayPipelineRegistrar(routes routeRegistrar, entrypoints GatewayPipelineEntrypoints) *ModeratedRouteRegistrar {
 	return &ModeratedRouteRegistrar{
-		routes:      routes,
-		entrypoints: normalizeGatewayPipelineEntrypoints(entrypoints),
+		routes:                    routes,
+		entrypoints:               normalizeGatewayPipelineEntrypoints(entrypoints),
+		requirePipelineEntrypoint: true,
 	}
 }
 
 func (r *ModeratedRouteRegistrar) GET(relativePath string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
 	meta.Method = "GET"
-	meta = registerModeratedRoute(meta)
+	meta = r.registerRoute(meta)
 	return r.routes.GET(relativePath, r.prependModeratedRouteMetaHandler(meta, handlers)...)
 }
 
 func (r *ModeratedRouteRegistrar) GETNoAudit(relativePath string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
 	meta.Method = "GET"
-	meta = registerModeratedRoute(meta)
+	meta = r.registerRoute(meta)
 	return r.routes.GET(relativePath, r.prependModeratedRouteMetaHandler(meta, handlers)...)
 }
 
 func (r *ModeratedRouteRegistrar) POST(relativePath string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
 	meta.Method = "POST"
-	meta = registerModeratedRoute(meta)
+	meta = r.registerRoute(meta)
 	return r.routes.POST(relativePath, r.prependModeratedRouteMetaHandler(meta, handlers)...)
 }
 
@@ -81,6 +87,33 @@ func registerModeratedRoute(meta ModeratedRouteMeta) ModeratedRouteMeta {
 	meta = moderationcoverage.AnnotatePipelineCoverage(meta)
 	moderationcoverage.Register(meta)
 	return meta
+}
+
+func (r *ModeratedRouteRegistrar) registerRoute(meta ModeratedRouteMeta) ModeratedRouteMeta {
+	meta = moderationcoverage.AnnotatePipelineCoverage(meta)
+	r.requireEntrypointForPipelineRoute(meta)
+	moderationcoverage.Register(meta)
+	return meta
+}
+
+func (r *ModeratedRouteRegistrar) requireEntrypointForPipelineRoute(meta ModeratedRouteMeta) {
+	if r == nil || !r.requirePipelineEntrypoint {
+		return
+	}
+	meta = moderationcoverage.NormalizeEntry(meta)
+	if !meta.Upstream || !meta.ModerationRequired || meta.Pipeline == "" {
+		return
+	}
+	if r.entrypoints[meta.Pipeline] != nil {
+		return
+	}
+	panic(fmt.Sprintf(
+		"gateway pipeline route %s %s %s requires entrypoint for pipeline %s",
+		meta.Method,
+		meta.Path,
+		meta.Handler,
+		meta.Pipeline,
+	))
 }
 
 func registerModeratedRouteBranch(method string, meta ModeratedRouteMeta) ModeratedRouteMeta {

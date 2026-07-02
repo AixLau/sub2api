@@ -261,6 +261,29 @@ func TestGatewayPipelineRegistrarRunsPipelineEntrypointBeforeHandler(t *testing.
 	require.Equal(t, "openai_responses", metaAtEntrypoint.Protocol)
 }
 
+func TestGatewayPipelineRegistrarRequiresEntrypointForPipelineRouteAtRegistration(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
+
+	router := gin.New()
+	registrar := NewGatewayPipelineRegistrar(router, GatewayPipelineEntrypoints{})
+
+	require.PanicsWithValue(t,
+		"gateway pipeline route POST /pipeline-entrypoint-missing OpenAIGatewayHandler.Responses requires entrypoint for pipeline openai_http",
+		func() {
+			registrar.POST("/pipeline-entrypoint-missing", coveredOpenAIHTTPRoute(
+				"/pipeline-entrypoint-missing",
+				"OpenAIGatewayHandler.Responses",
+				"openai_responses",
+				"test route",
+			), func(c *gin.Context) {
+				c.Status(http.StatusNoContent)
+			})
+		},
+	)
+}
+
 func TestGatewayPipelineRegistrarRunsOpenAIWebSocketEntrypointBeforeHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	restore := replaceModeratedRouteRegistryForTest(nil)
