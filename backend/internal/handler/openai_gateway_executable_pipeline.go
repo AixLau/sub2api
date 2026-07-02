@@ -41,6 +41,11 @@ type BillingStage interface {
 	RunBilling(*gin.Context) ExecutableStageResult
 }
 
+type RoutingStage interface {
+	StageName() string
+	RunRouting(*gin.Context) ExecutableStageResult
+}
+
 type ForwardStageAdapter struct {
 	Name    string
 	Forward func(*gin.Context) ExecutableStageResult
@@ -49,6 +54,11 @@ type ForwardStageAdapter struct {
 type BillingStageAdapter struct {
 	Name    string
 	Billing func(*gin.Context) ExecutableStageResult
+}
+
+type RoutingStageAdapter struct {
+	Name    string
+	Routing func(*gin.Context) ExecutableStageResult
 }
 
 type UsageStage interface {
@@ -87,6 +97,20 @@ func (a BillingStageAdapter) RunBilling(c *gin.Context) ExecutableStageResult {
 		return ExecutableStageResult{}
 	}
 	return a.Billing(c)
+}
+
+func (a RoutingStageAdapter) StageName() string {
+	if a.Name == "" {
+		return moderationcoverage.StageRouting
+	}
+	return a.Name
+}
+
+func (a RoutingStageAdapter) RunRouting(c *gin.Context) ExecutableStageResult {
+	if a.Routing == nil {
+		return ExecutableStageResult{}
+	}
+	return a.Routing(c)
 }
 
 func (a UsageStageAdapter) StageName() string {
@@ -130,6 +154,15 @@ func ExecutableBillingStage(adapter BillingStage) ExecutableStage {
 	}
 }
 
+func ExecutableRoutingStage(adapter RoutingStage) ExecutableStage {
+	return ExecutableStage{
+		Name: adapter.StageName(),
+		RunWithContext: func(c *gin.Context) ExecutableStageResult {
+			return adapter.RunRouting(c)
+		},
+	}
+}
+
 func ExecutableUsageStage(adapter UsageStage) ExecutableStage {
 	return ExecutableStage{
 		Name: adapter.StageName(),
@@ -153,6 +186,15 @@ func executableBillingStageWithContext(c *gin.Context, adapter BillingStage) Exe
 		Name: adapter.StageName(),
 		RunWithContext: func(*gin.Context) ExecutableStageResult {
 			return adapter.RunBilling(c)
+		},
+	}
+}
+
+func executableRoutingStageWithContext(c *gin.Context, adapter RoutingStage) ExecutableStage {
+	return ExecutableStage{
+		Name: adapter.StageName(),
+		RunWithContext: func(*gin.Context) ExecutableStageResult {
+			return adapter.RunRouting(c)
 		},
 	}
 }
@@ -213,6 +255,16 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPBillingStage(c *gin.Context, adapter
 		Source:   moderationcoverage.SourceOpenAIHTTPExecutableStage,
 		Stages: []ExecutableStage{
 			executableBillingStageWithContext(c, adapter),
+		},
+	}.Run(c)
+}
+
+func (h *OpenAIGatewayHandler) runOpenAIHTTPRoutingStage(c *gin.Context, adapter RoutingStage) openAIHTTPExecutableStageResult {
+	return GatewayPipeline{
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+		Source:   moderationcoverage.SourceOpenAIHTTPExecutableStage,
+		Stages: []ExecutableStage{
+			executableRoutingStageWithContext(c, adapter),
 		},
 	}.Run(c)
 }

@@ -1368,6 +1368,8 @@ func openAIHTTPStageCoverageFromHandlerSources(t *testing.T) map[string]openAIHT
 						coverage.HasImageStage = true
 					case isOpenAIHTTPBillingStageCall(n):
 						coverage.HasBillingStage = true
+					case isOpenAIHTTPRoutingStageCall(n):
+						coverage.HasRoutingStage = true
 					case isOpenAIHTTPForwardStageCall(n):
 						coverage.HasForwardStage = true
 					case isOpenAIHTTPUsageStageCall(n):
@@ -2135,6 +2137,11 @@ func isOpenAIHTTPExecutableStageCall(call *ast.CallExpr) bool {
 func isOpenAIHTTPBillingStageCall(call *ast.CallExpr) bool {
 	selector, ok := call.Fun.(*ast.SelectorExpr)
 	return ok && selector.Sel.Name == "runOpenAIHTTPBillingStage"
+}
+
+func isOpenAIHTTPRoutingStageCall(call *ast.CallExpr) bool {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	return ok && selector.Sel.Name == "runOpenAIHTTPRoutingStage"
 }
 
 func isOpenAIHTTPForwardStageCall(call *ast.CallExpr) bool {
