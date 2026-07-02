@@ -353,15 +353,10 @@ func TestGatewayRoutingStageExecutionIncludesRouteMetadata(t *testing.T) {
 		Status:             moderationcoverage.StatusCovered,
 	})
 
-	calls := 0
-	result := (&GatewayHandler{}).runGatewayRoutingStage(c, GatewayRoutingStage{Routing: func(*gin.Context) ExecutableStageResult {
-		calls++
-		return ExecutableStageResult{}
-	}})
+	result := (&GatewayHandler{}).runGatewayRoutingStage(c, GatewayRoutingStage{})
 
 	require.NoError(t, result.Err)
 	require.False(t, result.Stop)
-	require.Equal(t, 1, calls)
 	require.Equal(t, []moderationcoverage.PipelineStageExecution{
 		{
 			Pipeline: moderationcoverage.PipelineGatewayPreForward,

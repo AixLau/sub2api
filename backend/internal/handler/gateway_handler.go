@@ -294,11 +294,16 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 		for {
 			var selection *service.AccountSelectionResult
-			routingStage := h.runGatewayRoutingStage(c, GatewayRoutingStage{Routing: func(*gin.Context) ExecutableStageResult {
-				var selectErr error
-				selection, selectErr = h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, reqModel, fs.FailedAccountIDs, "", subject.UserID) // Gemini 不使用会话限制
-				return ExecutableStageResult{Err: selectErr}
-			}})
+			routingStage := h.runGatewayRoutingStage(c, GatewayRoutingStage{
+				Handler:          h,
+				RequestContext:   c.Request.Context(),
+				GroupID:          apiKey.GroupID,
+				SessionHash:      sessionKey,
+				Model:            reqModel,
+				FailedAccountIDs: fs.FailedAccountIDs,
+				Sub2APIUserID:    subject.UserID,
+				Selection:        &selection,
+			})
 			err = routingStage.Err
 			if err != nil {
 				if len(fs.FailedAccountIDs) == 0 {
@@ -612,11 +617,17 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				zap.Int("failed_account_count", len(fs.FailedAccountIDs)),
 			)
 			var selection *service.AccountSelectionResult
-			routingStage := h.runGatewayRoutingStage(c, GatewayRoutingStage{Routing: func(*gin.Context) ExecutableStageResult {
-				var selectErr error
-				selection, selectErr = h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), currentAPIKey.GroupID, sessionKey, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
-				return ExecutableStageResult{Err: selectErr}
-			}})
+			routingStage := h.runGatewayRoutingStage(c, GatewayRoutingStage{
+				Handler:          h,
+				RequestContext:   c.Request.Context(),
+				GroupID:          currentAPIKey.GroupID,
+				SessionHash:      sessionKey,
+				Model:            reqModel,
+				FailedAccountIDs: fs.FailedAccountIDs,
+				MetadataUserID:   parsedReq.MetadataUserID,
+				Sub2APIUserID:    subject.UserID,
+				Selection:        &selection,
+			})
 			err = routingStage.Err
 			if err != nil {
 				if len(fs.FailedAccountIDs) == 0 {
@@ -1866,11 +1877,15 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 
 	// 选择支持该模型的账号
 	var account *service.Account
-	routingStage := h.runGatewayRoutingStage(c, GatewayRoutingStage{Routing: func(*gin.Context) ExecutableStageResult {
-		var selectErr error
-		account, selectErr = h.gatewayService.SelectAccountForModel(c.Request.Context(), apiKey.GroupID, sessionHash, parsedReq.Model)
-		return ExecutableStageResult{Err: selectErr}
-	}})
+	routingStage := h.runGatewayRoutingStage(c, GatewayRoutingStage{
+		Handler:           h,
+		RequestContext:    c.Request.Context(),
+		GroupID:           apiKey.GroupID,
+		SessionHash:       sessionHash,
+		Model:             parsedReq.Model,
+		UseModelSelection: true,
+		Account:           &account,
+	})
 	err := routingStage.Err
 	if err != nil {
 		reqLog.Warn("gateway.count_tokens_select_account_failed", zap.Error(err))

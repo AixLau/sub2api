@@ -657,6 +657,59 @@ func TestGatewayPreForwardHandlersUseRoutingStage(t *testing.T) {
 	}
 }
 
+func TestGatewayPreForwardHandlersUseNamedRoutingStage(t *testing.T) {
+	tests := []struct {
+		file    string
+		handler string
+	}{
+		{file: "gateway_handler.go", handler: "Messages"},
+		{file: "gateway_handler.go", handler: "CountTokens"},
+		{file: "gemini_v1beta_handler.go", handler: "GeminiV1BetaModels"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.file+"/"+tt.handler, func(t *testing.T) {
+			src, err := os.ReadFile(tt.file)
+			if err != nil {
+				t.Fatalf("read %s: %v", tt.file, err)
+			}
+			fset := token.NewFileSet()
+			parsed, err := parser.ParseFile(fset, tt.file, src, 0)
+			if err != nil {
+				t.Fatalf("parse %s: %v", tt.file, err)
+			}
+
+			fn := gatewayHandlerFuncDecl(t, parsed, tt.handler)
+			var anonymousRoutingLines []int
+			hasNamedRoutingStage := false
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				lit, ok := node.(*ast.CompositeLit)
+				if !ok {
+					return true
+				}
+				if compositeTypeName(lit.Type) != "GatewayRoutingStage" {
+					return true
+				}
+				hasNamedRoutingStage = true
+				for _, elt := range lit.Elts {
+					kv, ok := elt.(*ast.KeyValueExpr)
+					if !ok {
+						continue
+					}
+					key, ok := kv.Key.(*ast.Ident)
+					if ok && key.Name == "Routing" {
+						anonymousRoutingLines = append(anonymousRoutingLines, fset.Position(kv.Pos()).Line)
+					}
+				}
+				return true
+			})
+
+			require.True(t, hasNamedRoutingStage, "GatewayHandler.%s must pass GatewayRoutingStage to runGatewayRoutingStage", tt.handler)
+			require.Empty(t, anonymousRoutingLines, "GatewayHandler.%s must not configure GatewayRoutingStage with anonymous Routing funcs at lines %v", tt.handler, anonymousRoutingLines)
+		})
+	}
+}
+
 func TestGatewayPreForwardHandlersUseNamedRoutingStageAdapter(t *testing.T) {
 	tests := []struct {
 		file    string

@@ -364,11 +364,16 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 
 	for {
 		var selection *service.AccountSelectionResult
-		routingStage := h.runGatewayRoutingStage(c, GatewayRoutingStage{Routing: func(*gin.Context) ExecutableStageResult {
-			var selectErr error
-			selection, selectErr = h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, modelName, fs.FailedAccountIDs, "", authSubject.UserID) // Gemini 不使用会话限制
-			return ExecutableStageResult{Err: selectErr}
-		}})
+		routingStage := h.runGatewayRoutingStage(c, GatewayRoutingStage{
+			Handler:          h,
+			RequestContext:   c.Request.Context(),
+			GroupID:          apiKey.GroupID,
+			SessionHash:      sessionKey,
+			Model:            modelName,
+			FailedAccountIDs: fs.FailedAccountIDs,
+			Sub2APIUserID:    authSubject.UserID,
+			Selection:        &selection,
+		})
 		err := routingStage.Err
 		if err != nil {
 			if len(fs.FailedAccountIDs) == 0 {

@@ -529,7 +529,17 @@ func (s GatewayBillingStage) RunBilling(c *gin.Context) ExecutableStageResult {
 }
 
 type GatewayRoutingStage struct {
-	Routing func(*gin.Context) ExecutableStageResult
+	Handler           *GatewayHandler
+	RequestContext    context.Context
+	GroupID           *int64
+	SessionHash       string
+	Model             string
+	FailedAccountIDs  map[int64]struct{}
+	MetadataUserID    string
+	Sub2APIUserID     int64
+	UseModelSelection bool
+	Selection         **service.AccountSelectionResult
+	Account           **service.Account
 }
 
 func (GatewayRoutingStage) StageName() string {
@@ -537,10 +547,26 @@ func (GatewayRoutingStage) StageName() string {
 }
 
 func (s GatewayRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult {
-	if s.Routing == nil {
+	h := s.Handler
+	if h == nil || h.gatewayService == nil {
 		return ExecutableStageResult{}
 	}
-	return s.Routing(c)
+	ctx := s.RequestContext
+	if ctx == nil {
+		ctx = c.Request.Context()
+	}
+	if s.UseModelSelection {
+		account, err := h.gatewayService.SelectAccountForModel(ctx, s.GroupID, s.SessionHash, s.Model)
+		if s.Account != nil {
+			*s.Account = account
+		}
+		return ExecutableStageResult{Err: err}
+	}
+	selection, err := h.gatewayService.SelectAccountWithLoadAwareness(ctx, s.GroupID, s.SessionHash, s.Model, s.FailedAccountIDs, s.MetadataUserID, s.Sub2APIUserID)
+	if s.Selection != nil {
+		*s.Selection = selection
+	}
+	return ExecutableStageResult{Err: err}
 }
 
 func (h *GatewayHandler) runGatewayBillingStage(c *gin.Context, adapter BillingStage) ExecutableStageResult {
