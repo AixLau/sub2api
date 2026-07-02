@@ -76,11 +76,13 @@ func RegisterGatewayRoutes(
 			return GatewayPipelineEntryResult{}
 		}),
 		moderationcoverage.PipelineGatewayPreForward: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
-			if meta.Protocol != service.ContentModerationProtocolAnthropicMessages {
+			switch meta.Protocol {
+			case service.ContentModerationProtocolAnthropicMessages, service.ContentModerationProtocolGemini:
+			default:
 				return GatewayPipelineEntryResult{}
 			}
 			switch meta.Handler {
-			case "GatewayHandler.Messages", "GatewayHandler.CountTokens":
+			case "GatewayHandler.Messages", "GatewayHandler.CountTokens", "GatewayHandler.GeminiV1BetaModels":
 			default:
 				return GatewayPipelineEntryResult{}
 			}
@@ -266,7 +268,7 @@ func RegisterGatewayRoutes(
 
 	// Gemini 原生 API 兼容层（Gemini SDK/CLI 直连）
 	gemini := r.Group("/v1beta")
-	moderatedGemini := NewModeratedRouteRegistrar(gemini)
+	moderatedGemini := NewGatewayPipelineRegistrar(gemini, openAIHTTPPipelineEntrypoints)
 	gemini.Use(bodyLimit)
 	gemini.Use(clientRequestID)
 	gemini.Use(opsErrorLogger)
@@ -470,7 +472,7 @@ func RegisterGatewayRoutes(
 	}
 
 	antigravityV1Beta := r.Group("/antigravity/v1beta")
-	moderatedAntigravityV1Beta := NewModeratedRouteRegistrar(antigravityV1Beta)
+	moderatedAntigravityV1Beta := NewGatewayPipelineRegistrar(antigravityV1Beta, openAIHTTPPipelineEntrypoints)
 	antigravityV1Beta.Use(bodyLimit)
 	antigravityV1Beta.Use(clientRequestID)
 	antigravityV1Beta.Use(opsErrorLogger)

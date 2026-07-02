@@ -159,42 +159,46 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		}
 	}
 
-	modelName, action, err := parseGeminiModelAction(strings.TrimPrefix(c.Param("modelAction"), "/"))
-	if err != nil {
-		googleError(c, http.StatusNotFound, err.Error())
-		return
-	}
-
-	stream := action == "streamGenerateContent"
-	reqLog = reqLog.With(zap.String("model", modelName), zap.String("action", action), zap.Bool("stream", stream))
-
-	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
-	if err != nil {
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			googleError(c, http.StatusRequestEntityTooLarge, buildBodyTooLargeMessage(maxErr.Limit))
+	var body []byte
+	var modelName string
+	var action string
+	var stream bool
+	if preForwardRequest, ok := gatewayPreForwardRequestFromContext(c, service.ContentModerationProtocolGemini); ok {
+		body = preForwardRequest.Body
+		modelName = preForwardRequest.Model
+		stream = preForwardRequest.Stream
+		var err error
+		_, action, err = parseGeminiModelAction(strings.TrimPrefix(c.Param("modelAction"), "/"))
+		if err != nil {
+			googleError(c, http.StatusNotFound, err.Error())
 			return
 		}
-		googleError(c, http.StatusBadRequest, "Failed to read request body")
-		return
+	} else {
+		var err error
+		modelName, action, err = parseGeminiModelAction(strings.TrimPrefix(c.Param("modelAction"), "/"))
+		if err != nil {
+			googleError(c, http.StatusNotFound, err.Error())
+			return
+		}
+		stream = action == "streamGenerateContent"
+		body, err = pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+		if err != nil {
+			if maxErr, ok := extractMaxBytesError(err); ok {
+				googleError(c, http.StatusRequestEntityTooLarge, buildBodyTooLargeMessage(maxErr.Limit))
+				return
+			}
+			googleError(c, http.StatusBadRequest, "Failed to read request body")
+			return
+		}
+		if len(body) == 0 {
+			googleError(c, http.StatusBadRequest, "Request body is empty")
+			return
+		}
 	}
-	if len(body) == 0 {
-		googleError(c, http.StatusBadRequest, "Request body is empty")
-		return
-	}
+	reqLog = reqLog.With(zap.String("model", modelName), zap.String("action", action), zap.Bool("stream", stream))
 
 	setOpsRequestContext(c, modelName, stream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(stream, false)))
-
-	if pipelineResult := h.runGatewayPreForwardPipeline(c, reqLog, gatewayPreForwardPipelineInput{
-		APIKey:      apiKey,
-		Subject:     authSubject,
-		Protocol:    service.ContentModerationProtocolGemini,
-		Model:       modelName,
-		Body:        body,
-		ErrorFormat: gatewayPreForwardErrorGemini,
-	}); pipelineResult.Blocked {
-		return
-	}
 
 	// 解析渠道级模型映射
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, modelName)

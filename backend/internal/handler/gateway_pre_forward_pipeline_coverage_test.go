@@ -14,7 +14,6 @@ func TestGatewayPreForwardEntrypointsUseUnifiedPipelineHelper(t *testing.T) {
 	tests := map[string][]string{
 		"gateway_handler_chat_completions.go": {"ChatCompletions"},
 		"gateway_handler_responses.go":        {"Responses"},
-		"gemini_v1beta_handler.go":            {"GeminiV1BetaModels"},
 	}
 
 	var violations []string
@@ -100,16 +99,24 @@ func TestGatewayCountTokensPreForwardRunsThroughGatewayPipelineRegistrar(t *test
 	requireGatewayHandlerPreForwardThroughRegistrar(t, "CountTokens")
 }
 
+func TestGatewayGeminiV1BetaModelsPreForwardRunsThroughGatewayPipelineRegistrar(t *testing.T) {
+	requireGatewayHandlerPreForwardThroughRegistrarInFile(t, "gemini_v1beta_handler.go", "GeminiV1BetaModels")
+}
+
 func requireGatewayHandlerPreForwardThroughRegistrar(t *testing.T, handlerName string) {
+	requireGatewayHandlerPreForwardThroughRegistrarInFile(t, "gateway_handler.go", handlerName)
+}
+
+func requireGatewayHandlerPreForwardThroughRegistrarInFile(t *testing.T, fileName, handlerName string) {
 	t.Helper()
-	src, err := os.ReadFile("gateway_handler.go")
+	src, err := os.ReadFile(fileName)
 	if err != nil {
-		t.Fatalf("read gateway_handler.go: %v", err)
+		t.Fatalf("read %s: %v", fileName, err)
 	}
 	fset := token.NewFileSet()
-	parsed, err := parser.ParseFile(fset, "gateway_handler.go", src, 0)
+	parsed, err := parser.ParseFile(fset, fileName, src, 0)
 	if err != nil {
-		t.Fatalf("parse gateway_handler.go: %v", err)
+		t.Fatalf("parse %s: %v", fileName, err)
 	}
 
 	fn := gatewayHandlerFuncDecl(t, parsed, handlerName)

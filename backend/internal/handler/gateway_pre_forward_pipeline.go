@@ -78,17 +78,23 @@ func (h *GatewayHandler) EnterGatewayPreForwardPipeline(c *gin.Context, meta mod
 	if meta.Pipeline != moderationcoverage.PipelineGatewayPreForward {
 		return gatewayPreForwardPipelineResult{}
 	}
-	if meta.Protocol != service.ContentModerationProtocolAnthropicMessages || !gatewayPreForwardEntrypointHandlerSupported(meta.Handler) {
+	if !gatewayPreForwardEntrypointSupported(meta.Handler, meta.Protocol) {
 		return gatewayPreForwardPipelineResult{}
 	}
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok {
-		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		writeGatewayPreForwardEntrypointError(c, meta.Protocol, http.StatusUnauthorized, "authentication_error", "Invalid API key")
 		return gatewayPreForwardPipelineResult{Blocked: true}
+	}
+	if meta.Protocol == service.ContentModerationProtocolGemini && !middleware2.HasForcePlatform(c) {
+		if apiKey.Group == nil || apiKey.Group.Platform != service.PlatformGemini {
+			googleError(c, http.StatusBadRequest, "API key group platform is not gemini")
+			return gatewayPreForwardPipelineResult{Blocked: true}
+		}
 	}
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok {
-		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
+		writeGatewayPreForwardEntrypointError(c, meta.Protocol, http.StatusInternalServerError, "api_error", "User context not found")
 		return gatewayPreForwardPipelineResult{Blocked: true}
 	}
 	reqLog := requestLogger(
@@ -98,17 +104,15 @@ func (h *GatewayHandler) EnterGatewayPreForwardPipeline(c *gin.Context, meta mod
 		zap.Int64("api_key_id", apiKey.ID),
 		zap.Any("group_id", apiKey.GroupID),
 	)
-	body, parsedReq, ok := h.readGatewayMessagesPreForwardRequest(c)
+	body, parsedReq, model, stream, ok := h.readGatewayPreForwardEntrypointRequest(c, meta)
 	if !ok {
 		return gatewayPreForwardPipelineResult{Blocked: true}
 	}
-	reqModel := parsedReq.Model
-	reqStream := parsedReq.Stream
-	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
-	setOpsRequestContext(c, reqModel, reqStream)
-	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
-	if reqModel == "" {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
+	reqLog = reqLog.With(zap.String("model", model), zap.Bool("stream", stream))
+	setOpsRequestContext(c, model, stream)
+	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(stream, false)))
+	if model == "" {
+		writeGatewayPreForwardEntrypointError(c, meta.Protocol, http.StatusBadRequest, "invalid_request_error", "model is required")
 		return gatewayPreForwardPipelineResult{Blocked: true}
 	}
 
@@ -116,8 +120,8 @@ func (h *GatewayHandler) EnterGatewayPreForwardPipeline(c *gin.Context, meta mod
 	result := h.runGatewayPreForwardPipeline(c, reqLog, gatewayPreForwardPipelineInput{
 		APIKey:      apiKey,
 		Subject:     subject,
-		Protocol:    service.ContentModerationProtocolAnthropicMessages,
-		Model:       reqModel,
+		Protocol:    meta.Protocol,
+		Model:       model,
 		Body:        body,
 		ErrorFormat: errorFormat,
 	})
@@ -125,10 +129,10 @@ func (h *GatewayHandler) EnterGatewayPreForwardPipeline(c *gin.Context, meta mod
 		return result
 	}
 	setGatewayPreForwardRequest(c, gatewayPreForwardRequest{
-		Protocol:    service.ContentModerationProtocolAnthropicMessages,
-		Model:       reqModel,
+		Protocol:    meta.Protocol,
+		Model:       model,
 		Body:        body,
-		Stream:      reqStream,
+		Stream:      stream,
 		Parsed:      parsedReq,
 		ErrorFormat: errorFormat,
 	})
@@ -136,17 +140,89 @@ func (h *GatewayHandler) EnterGatewayPreForwardPipeline(c *gin.Context, meta mod
 	return gatewayPreForwardPipelineResult{}
 }
 
-func gatewayPreForwardEntrypointHandlerSupported(handlerName string) bool {
-	switch strings.TrimSpace(handlerName) {
-	case "GatewayHandler.Messages", "GatewayHandler.CountTokens":
-		return true
+func gatewayPreForwardEntrypointSupported(handlerName, protocol string) bool {
+	switch strings.TrimSpace(protocol) {
+	case service.ContentModerationProtocolAnthropicMessages:
+		switch strings.TrimSpace(handlerName) {
+		case "GatewayHandler.Messages", "GatewayHandler.CountTokens":
+			return true
+		default:
+			return false
+		}
+	case service.ContentModerationProtocolGemini:
+		return strings.TrimSpace(handlerName) == "GatewayHandler.GeminiV1BetaModels"
 	default:
 		return false
 	}
 }
 
+func writeGatewayPreForwardEntrypointError(c *gin.Context, protocol string, status int, code, message string) {
+	switch strings.TrimSpace(protocol) {
+	case service.ContentModerationProtocolGemini:
+		googleError(c, status, message)
+	default:
+		if code == "" {
+			code = "api_error"
+		}
+		c.JSON(status, gin.H{
+			"type": "error",
+			"error": gin.H{
+				"type":    code,
+				"message": message,
+			},
+		})
+	}
+}
+
+func (h *GatewayHandler) readGatewayPreForwardEntrypointRequest(c *gin.Context, meta moderationcoverage.Entry) ([]byte, *service.ParsedRequest, string, bool, bool) {
+	switch strings.TrimSpace(meta.Protocol) {
+	case service.ContentModerationProtocolGemini:
+		body, model, stream, ok := h.readGatewayGeminiPreForwardRequest(c)
+		if !ok {
+			return nil, nil, "", false, false
+		}
+		return body, &service.ParsedRequest{Model: model, Stream: stream}, model, stream, true
+	default:
+		body, parsedReq, ok := h.readGatewayMessagesPreForwardRequest(c)
+		if !ok {
+			return nil, nil, "", false, false
+		}
+		return body, parsedReq, parsedReq.Model, parsedReq.Stream, true
+	}
+}
+
+func (h *GatewayHandler) readGatewayGeminiPreForwardRequest(c *gin.Context) ([]byte, string, bool, bool) {
+	modelName, action, err := parseGeminiModelAction(strings.TrimPrefix(c.Param("modelAction"), "/"))
+	if err != nil {
+		googleError(c, http.StatusNotFound, err.Error())
+		return nil, "", false, false
+	}
+	stream := action == "streamGenerateContent"
+
+	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+	if err != nil {
+		if maxErr, ok := extractMaxBytesError(err); ok {
+			googleError(c, http.StatusRequestEntityTooLarge, buildBodyTooLargeMessage(maxErr.Limit))
+			return nil, "", false, false
+		}
+		googleError(c, http.StatusBadRequest, "Failed to read request body")
+		return nil, "", false, false
+	}
+	if len(body) == 0 {
+		googleError(c, http.StatusBadRequest, "Request body is empty")
+		return nil, "", false, false
+	}
+	return body, modelName, stream, true
+}
+
 func gatewayPreForwardErrorFormatForHandler(handlerName string) gatewayPreForwardErrorFormat {
 	switch strings.TrimSpace(handlerName) {
+	case "GatewayHandler.GeminiV1BetaModels":
+		return gatewayPreForwardErrorGemini
+	case "GatewayHandler.ChatCompletions":
+		return gatewayPreForwardErrorOpenAIChat
+	case "GatewayHandler.Responses":
+		return gatewayPreForwardErrorOpenAIResponses
 	default:
 		return gatewayPreForwardErrorAnthropic
 	}
