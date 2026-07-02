@@ -490,6 +490,30 @@ func TestGatewayChatCompletionsAndResponsesUseForwardStageAdapter(t *testing.T) 
 	}
 }
 
+func TestGatewayForwardStageRunnerUsesRouteDescriptorResolver(t *testing.T) {
+	src, err := os.ReadFile("gateway_pre_forward_pipeline.go")
+	require.NoError(t, err)
+
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, "gateway_pre_forward_pipeline.go", src, 0)
+	require.NoError(t, err)
+
+	fn := gatewayHandlerFuncDecl(t, parsed, "runGatewayForwardStage")
+	callsDescriptorResolver := false
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if ok && selector.Sel.Name == "gatewayForwardStageFromRouteDescriptor" {
+			callsDescriptorResolver = true
+		}
+		return true
+	})
+	require.True(t, callsDescriptorResolver, "runGatewayForwardStage must resolve forward adapter from route descriptor metadata before execution")
+}
+
 func TestGatewayMessagesAndGeminiUseUsageStageAdapter(t *testing.T) {
 	tests := []struct {
 		file     string

@@ -334,11 +334,38 @@ func gatewayPreForwardRequestFromContext(c *gin.Context, protocol string) (gatew
 }
 
 func (h *GatewayHandler) runGatewayForwardStage(c *gin.Context, adapter ForwardStage) ExecutableStageResult {
+	adapter = h.gatewayForwardStageFromRouteDescriptor(c, adapter)
 	return runGatewayPipelineStage(c,
 		moderationcoverage.PipelineGatewayPreForward,
 		moderationcoverage.SourceGatewayForwardStage,
 		executableForwardStageWithContext(c, adapter),
 	)
+}
+
+func (h *GatewayHandler) gatewayForwardStageFromRouteDescriptor(c *gin.Context, fallback ForwardStage) ForwardStage {
+	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
+	if !ok {
+		return fallback
+	}
+	descriptors := moderationcoverage.ForwardAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol)
+	for _, descriptor := range descriptors {
+		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineGatewayPreForward {
+			continue
+		}
+		registry := h.forwardStageRegistry
+		if registry == nil {
+			registry = NewForwardStageRegistry()
+			h.forwardStageRegistry = registry
+		}
+		if adapter, ok := registry.Resolve(descriptor); ok {
+			return adapter
+		}
+		registry.Register(descriptor, fallback)
+		if adapter, ok := registry.Resolve(descriptor); ok {
+			return adapter
+		}
+	}
+	return fallback
 }
 
 type GatewayMessagesGeminiForwardStage struct {

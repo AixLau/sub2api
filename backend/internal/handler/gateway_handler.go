@@ -49,6 +49,7 @@ type GatewayHandler struct {
 	contentModerationService  *service.ContentModerationService
 	moderationGuard           moderationGuard
 	preForwardPipeline        *GatewayPreForwardPipeline
+	forwardStageRegistry      *ForwardStageRegistry
 	concurrencyHelper         *ConcurrencyHelper
 	userMsgQueueHelper        *UserMsgQueueHelper
 	maxAccountSwitches        int
@@ -107,6 +108,7 @@ func NewGatewayHandler(
 		contentModerationService:  contentModerationService,
 		moderationGuard:           moderationGuard,
 		preForwardPipeline:        newGatewayPreForwardPipeline(moderationGuard),
+		forwardStageRegistry:      NewForwardStageRegistry(),
 		concurrencyHelper:         NewConcurrencyHelper(concurrencyService, SSEPingFormatClaude, pingInterval),
 		userMsgQueueHelper:        umqHelper,
 		maxAccountSwitches:        maxAccountSwitches,

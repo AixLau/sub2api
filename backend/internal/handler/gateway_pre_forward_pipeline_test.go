@@ -302,6 +302,65 @@ func TestGatewayForwardStageExecutionIncludesRouteMetadata(t *testing.T) {
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
 }
 
+func TestGatewayForwardStageUsesRouteDescriptorRegistry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", nil)
+	moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+		Method:             http.MethodPost,
+		Path:               "/v1/messages/count_tokens",
+		Handler:            "GatewayHandler.CountTokens",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolAnthropicMessages,
+		Pipeline:           moderationcoverage.PipelineGatewayPreForward,
+		Status:             moderationcoverage.StatusCovered,
+	})
+
+	calls := []string{}
+	registered := ForwardStageAdapter{
+		Name: "GatewayCountTokensForwardStage",
+		Forward: func(*gin.Context) ExecutableStageResult {
+			calls = append(calls, "registered")
+			return ExecutableStageResult{}
+		},
+	}
+	direct := ForwardStageAdapter{
+		Name: "GatewayCountTokensForwardStage",
+		Forward: func(*gin.Context) ExecutableStageResult {
+			calls = append(calls, "direct")
+			return ExecutableStageResult{}
+		},
+	}
+	handler := &GatewayHandler{
+		forwardStageRegistry: NewForwardStageRegistry(),
+	}
+	handler.forwardStageRegistry.Register(moderationcoverage.RouteAdapterDescriptor{
+		Stage:    moderationcoverage.StageForward,
+		Pipeline: moderationcoverage.PipelineGatewayPreForward,
+		Name:     "GatewayCountTokensForwardStage",
+	}, registered)
+
+	result := handler.runGatewayForwardStage(c, direct)
+
+	require.NoError(t, result.Err)
+	require.False(t, result.Stop)
+	require.Equal(t, []string{"registered"}, calls)
+	require.Equal(t, []moderationcoverage.PipelineStageExecution{
+		{
+			Pipeline: moderationcoverage.PipelineGatewayPreForward,
+			Stage:    moderationcoverage.StageForward,
+			Source:   moderationcoverage.SourceGatewayForwardStage,
+			Method:   http.MethodPost,
+			Path:     "/v1/messages/count_tokens",
+			Handler:  "GatewayHandler.CountTokens",
+			Protocol: service.ContentModerationProtocolAnthropicMessages,
+		},
+	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+}
+
 func TestGatewayBillingStageExecutionIncludesRouteMetadata(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
