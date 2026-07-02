@@ -290,6 +290,7 @@ export interface ContentModerationLog {
   flagged: boolean
   highest_category: string
   highest_score: number
+  matched_keyword: string
   category_scores: Record<string, number>
   threshold_snapshot: Record<string, number>
   input_excerpt: string
@@ -300,7 +301,6 @@ export interface ContentModerationLog {
   email_sent: boolean
   user_status: string
   queue_delay_ms: number | null
-  matched_keyword: string
   keyword_category: string
   keyword_severity: string
   created_at: string
