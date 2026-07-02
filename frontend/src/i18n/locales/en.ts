@@ -2559,6 +2559,7 @@ export default {
       pipelineCoverageHint: 'Shows the runtime stage matrix for upstream routes before forwarding.',
       pipelineExecutionTitle: 'Observed stage execution',
       pipelineExecutionHint: 'Process-local counts recorded when gateway pipeline stages actually run.',
+      pipelineExecutionRoutes: 'Route summary',
       pipelineExecutionRecent: 'Recent',
       pipelineExecutionErrors: 'Errors',
       pipelineManifestVersion: 'manifest',

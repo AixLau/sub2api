@@ -2635,6 +2635,7 @@ export default {
       pipelineCoverageHint: '展示上游路由在转发前的运行时阶段矩阵。',
       pipelineExecutionTitle: '实际阶段执行',
       pipelineExecutionHint: '进程内统计网关流水线阶段真实运行时记录的次数。',
+      pipelineExecutionRoutes: '按路由汇总',
       pipelineExecutionRecent: '最近窗口',
       pipelineExecutionErrors: '错误',
       pipelineManifestVersion: '清单',

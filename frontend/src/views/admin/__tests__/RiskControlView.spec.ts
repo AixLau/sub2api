@@ -600,6 +600,56 @@ describe('admin RiskControlView', () => {
           ],
         },
       },
+      pipeline_execution: {
+        total_count: 7,
+        error_count: 2,
+        recent_window_seconds: 300,
+        recent_window_count: 3,
+        recent_window_error_count: 1,
+        executions: [
+          {
+            pipeline: 'openai_http',
+            stage: 'forward',
+            source: 'OpenAIGatewayPipeline.RunHTTPExecutableStage',
+            method: 'POST',
+            path: '/v1/responses',
+            handler: 'OpenAIGatewayHandler.Responses',
+            protocol: 'openai_responses',
+            count: 7,
+            error_count: 2,
+            recent_count: 3,
+            recent_error_count: 1,
+          },
+        ],
+        routes: [
+          {
+            pipeline: 'openai_http',
+            method: 'POST',
+            path: '/v1/responses',
+            handler: 'OpenAIGatewayHandler.Responses',
+            protocol: 'openai_responses',
+            count: 7,
+            error_count: 2,
+            recent_count: 3,
+            recent_error_count: 1,
+            stages: [
+              {
+                pipeline: 'openai_http',
+                stage: 'forward',
+                source: 'OpenAIGatewayPipeline.RunHTTPExecutableStage',
+                method: 'POST',
+                path: '/v1/responses',
+                handler: 'OpenAIGatewayHandler.Responses',
+                protocol: 'openai_responses',
+                count: 7,
+                error_count: 2,
+                recent_count: 3,
+                recent_error_count: 1,
+              },
+            ],
+          },
+        ],
+      },
     })
 
     const wrapper = mount(RiskControlView, {
@@ -628,5 +678,7 @@ describe('admin RiskControlView', () => {
     expect(matrix.text()).toContain('moderation')
     expect(matrix.text()).toContain('cyber')
     expect(matrix.text()).toContain('image')
+    expect(matrix.text()).toContain('openai_responses')
+    expect(matrix.text()).toContain('admin.riskControl.pipelineExecutionRoutes')
   })
 })

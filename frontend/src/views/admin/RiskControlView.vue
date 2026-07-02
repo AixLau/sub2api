@@ -124,7 +124,24 @@
                   </span>
                 </div>
               </div>
-              <div v-if="pipelineExecutionRows.length" class="mt-3 flex flex-wrap gap-1.5">
+              <div v-if="pipelineExecutionRouteRows.length" class="mt-3">
+                <p class="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
+                  {{ t('admin.riskControl.pipelineExecutionRoutes') }}
+                </p>
+                <div class="flex flex-wrap gap-1.5">
+                  <span
+                    v-for="route in pipelineExecutionRouteRows"
+                    :key="`${route.pipeline}:${route.method ?? ''}:${route.path ?? ''}:${route.handler ?? ''}:${route.protocol ?? ''}`"
+                    class="inline-flex rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-700 shadow-sm dark:bg-dark-800 dark:text-gray-200"
+                  >
+                    {{ route.pipeline }} · {{ route.method ? `${route.method} ${route.path ?? ''}` : route.handler || route.protocol || '-' }} · {{ route.protocol || route.handler || '-' }} · {{ formatNumber(route.count) }}
+                    <span v-if="route.error_count > 0" class="ml-1 text-red-600 dark:text-red-300">
+                      / {{ t('admin.riskControl.pipelineExecutionErrors') }} {{ formatNumber(route.error_count) }}
+                    </span>
+                  </span>
+                </div>
+              </div>
+              <div v-else-if="pipelineExecutionRows.length" class="mt-3 flex flex-wrap gap-1.5">
                 <span
                   v-for="execution in pipelineExecutionRows"
                   :key="`${execution.pipeline}:${execution.stage}:${execution.source}:${execution.method ?? ''}:${execution.path ?? ''}`"
@@ -1960,6 +1977,14 @@ const pipelineRouteRows = computed<ContentModerationPipelineRouteCoverageStatus[
 const pipelineExecutionTotalCount = computed(() => status.value?.pipeline_execution?.total_count ?? 0)
 const pipelineExecutionRecentCount = computed(() => status.value?.pipeline_execution?.recent_window_count ?? 0)
 const pipelineExecutionErrorCount = computed(() => status.value?.pipeline_execution?.error_count ?? 0)
+
+const pipelineExecutionRouteRows = computed(() => (
+  [...(status.value?.pipeline_execution?.routes ?? [])].sort((a, b) => {
+    const left = `${a.pipeline} ${a.method ?? ''} ${a.path ?? ''} ${a.protocol ?? ''} ${a.handler ?? ''}`
+    const right = `${b.pipeline} ${b.method ?? ''} ${b.path ?? ''} ${b.protocol ?? ''} ${b.handler ?? ''}`
+    return left.localeCompare(right)
+  })
+))
 
 const pipelineExecutionRows = computed(() => (
   [...(status.value?.pipeline_execution?.executions ?? [])].sort((a, b) => {
