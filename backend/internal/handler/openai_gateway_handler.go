@@ -16,7 +16,6 @@ import (
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -1384,13 +1383,14 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	requestPlatform := openAICompatibleRequestPlatform(apiKey)
-	if billingStage := h.runOpenAIWebSocketExecutableStage(c, moderationcoverage.StageBilling, func() ExecutableStageResult {
-		if err := h.billingCacheService.CheckBillingEligibility(ctx, apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
-			reqLog.Info("openai.websocket_billing_eligibility_check_failed", zap.Error(err))
-			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "billing check failed")
-			return ExecutableStageResult{Stop: true, Err: err}
-		}
-		return ExecutableStageResult{}
+	if billingStage := h.runOpenAIWebSocketBillingStage(c, OpenAIWebSocketBillingStage{
+		Handler:          h,
+		RequestContext:   ctx,
+		QuotaPlatformCtx: c.Request.Context(),
+		ReqLog:           reqLog,
+		APIKey:           apiKey,
+		Subscription:     subscription,
+		ClientConn:       wsConn,
 	}); billingStage.Stop {
 		return
 	}
@@ -1411,102 +1411,104 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		var token string
 		stickyPreviousHit := false
 		scheduleLayer := ""
-		if routingStage := h.runOpenAIWebSocketExecutableStage(c, moderationcoverage.StageRouting, func() ExecutableStageResult {
-			reqLog.Debug("openai.websocket_account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-			selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
-				ctx,
-				apiKey.GroupID,
-				previousResponseID,
-				sessionHash,
-				reqModel,
-				failedAccountIDs,
-				service.OpenAIUpstreamTransportResponsesWebsocketV2,
-				service.OpenAIEndpointCapabilityChatCompletions,
-				false,
-				requestPlatform,
-				subject.UserID,
-			)
-			if err != nil {
-				reqLog.Warn("openai.websocket_account_select_failed",
-					zap.Error(err),
-					zap.Int("excluded_account_count", len(failedAccountIDs)),
-				)
-				if lastFailoverErr != nil {
-					closeOpenAIWSFailoverExhausted(wsConn, lastFailoverErr)
-				} else {
-					closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "no available account")
-				}
-				return ExecutableStageResult{Stop: true, Err: err}
-			}
-			if selection == nil || selection.Account == nil {
-				if lastFailoverErr != nil {
-					closeOpenAIWSFailoverExhausted(wsConn, lastFailoverErr)
-				} else {
-					closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "no available account")
-				}
-				return ExecutableStageResult{Stop: true}
-			}
-
-			account = selection.Account
-			accountMaxConcurrency = account.Concurrency
-			if selection.WaitPlan != nil && selection.WaitPlan.MaxConcurrency > 0 {
-				accountMaxConcurrency = selection.WaitPlan.MaxConcurrency
-			}
-			accountReleaseFunc := selection.ReleaseFunc
-			if !selection.Acquired {
-				if selection.WaitPlan == nil {
-					closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "account is busy, please retry later")
-					return ExecutableStageResult{Stop: true}
-				}
-				fastReleaseFunc, fastAcquired, err := h.concurrencyHelper.TryAcquireAccountSlot(
+		if routingStage := h.runOpenAIWebSocketRoutingStage(c, RoutingStageAdapter{
+			Routing: func(*gin.Context) ExecutableStageResult {
+				reqLog.Debug("openai.websocket_account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
+				selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
 					ctx,
-					account.ID,
-					selection.WaitPlan.MaxConcurrency,
+					apiKey.GroupID,
+					previousResponseID,
+					sessionHash,
+					reqModel,
+					failedAccountIDs,
+					service.OpenAIUpstreamTransportResponsesWebsocketV2,
+					service.OpenAIEndpointCapabilityChatCompletions,
+					false,
+					requestPlatform,
+					subject.UserID,
 				)
 				if err != nil {
-					reqLog.Warn("openai.websocket_account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
-					closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to acquire account concurrency slot")
+					reqLog.Warn("openai.websocket_account_select_failed",
+						zap.Error(err),
+						zap.Int("excluded_account_count", len(failedAccountIDs)),
+					)
+					if lastFailoverErr != nil {
+						closeOpenAIWSFailoverExhausted(wsConn, lastFailoverErr)
+					} else {
+						closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "no available account")
+					}
 					return ExecutableStageResult{Stop: true, Err: err}
 				}
-				if !fastAcquired {
-					closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "account is busy, please retry later")
+				if selection == nil || selection.Account == nil {
+					if lastFailoverErr != nil {
+						closeOpenAIWSFailoverExhausted(wsConn, lastFailoverErr)
+					} else {
+						closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "no available account")
+					}
 					return ExecutableStageResult{Stop: true}
 				}
-				refreshed, refreshErr := h.gatewayService.RefreshSelectedAccountBeforeUse(ctx, account, reqModel, false, service.OpenAIEndpointCapabilityChatCompletions, "")
-				if refreshErr != nil {
-					if fastReleaseFunc != nil {
-						fastReleaseFunc()
-					}
-					reqLog.Info("openai.websocket_selected_account_unavailable_before_use", zap.Int64("account_id", account.ID), zap.Error(refreshErr))
-					closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "no available account")
-					return ExecutableStageResult{Stop: true, Err: refreshErr}
+
+				account = selection.Account
+				accountMaxConcurrency = account.Concurrency
+				if selection.WaitPlan != nil && selection.WaitPlan.MaxConcurrency > 0 {
+					accountMaxConcurrency = selection.WaitPlan.MaxConcurrency
 				}
-				selection.Account = refreshed
-				account = refreshed
-				accountReleaseFunc = fastReleaseFunc
-			}
-			currentAccountRelease = wrapReleaseOnDone(ctx, accountReleaseFunc)
-			if err := h.gatewayService.BindStickySession(ctx, apiKey.GroupID, sessionHash, account.ID); err != nil {
-				reqLog.Warn("openai.websocket_bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
-			}
-			stickyPreviousHit = scheduleDecision.StickyPreviousHit
-			scheduleLayer = scheduleDecision.Layer
+				accountReleaseFunc := selection.ReleaseFunc
+				if !selection.Acquired {
+					if selection.WaitPlan == nil {
+						closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "account is busy, please retry later")
+						return ExecutableStageResult{Stop: true}
+					}
+					fastReleaseFunc, fastAcquired, err := h.concurrencyHelper.TryAcquireAccountSlot(
+						ctx,
+						account.ID,
+						selection.WaitPlan.MaxConcurrency,
+					)
+					if err != nil {
+						reqLog.Warn("openai.websocket_account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+						closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to acquire account concurrency slot")
+						return ExecutableStageResult{Stop: true, Err: err}
+					}
+					if !fastAcquired {
+						closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "account is busy, please retry later")
+						return ExecutableStageResult{Stop: true}
+					}
+					refreshed, refreshErr := h.gatewayService.RefreshSelectedAccountBeforeUse(ctx, account, reqModel, false, service.OpenAIEndpointCapabilityChatCompletions, "")
+					if refreshErr != nil {
+						if fastReleaseFunc != nil {
+							fastReleaseFunc()
+						}
+						reqLog.Info("openai.websocket_selected_account_unavailable_before_use", zap.Int64("account_id", account.ID), zap.Error(refreshErr))
+						closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "no available account")
+						return ExecutableStageResult{Stop: true, Err: refreshErr}
+					}
+					selection.Account = refreshed
+					account = refreshed
+					accountReleaseFunc = fastReleaseFunc
+				}
+				currentAccountRelease = wrapReleaseOnDone(ctx, accountReleaseFunc)
+				if err := h.gatewayService.BindStickySession(ctx, apiKey.GroupID, sessionHash, account.ID); err != nil {
+					reqLog.Warn("openai.websocket_bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+				}
+				stickyPreviousHit = scheduleDecision.StickyPreviousHit
+				scheduleLayer = scheduleDecision.Layer
 
-			var tokenErr error
-			token, _, tokenErr = h.gatewayService.GetAccessToken(ctx, account)
-			if tokenErr != nil {
-				reqLog.Warn("openai.websocket_get_access_token_failed", zap.Int64("account_id", account.ID), zap.Error(tokenErr))
-				closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to get access token")
-				return ExecutableStageResult{Stop: true, Err: tokenErr}
-			}
+				var tokenErr error
+				token, _, tokenErr = h.gatewayService.GetAccessToken(ctx, account)
+				if tokenErr != nil {
+					reqLog.Warn("openai.websocket_get_access_token_failed", zap.Int64("account_id", account.ID), zap.Error(tokenErr))
+					closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to get access token")
+					return ExecutableStageResult{Stop: true, Err: tokenErr}
+				}
 
-			reqLog.Debug("openai.websocket_account_selected",
-				zap.Int64("account_id", account.ID),
-				zap.String("account_name", account.Name),
-				zap.String("schedule_layer", scheduleDecision.Layer),
-				zap.Int("candidate_count", scheduleDecision.CandidateCount),
-			)
-			return ExecutableStageResult{}
+				reqLog.Debug("openai.websocket_account_selected",
+					zap.Int64("account_id", account.ID),
+					zap.String("account_name", account.Name),
+					zap.String("schedule_layer", scheduleDecision.Layer),
+					zap.Int("candidate_count", scheduleDecision.CandidateCount),
+				)
+				return ExecutableStageResult{}
+			},
 		}); routingStage.Stop {
 			return
 		}

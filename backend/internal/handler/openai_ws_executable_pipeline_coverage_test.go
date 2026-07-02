@@ -13,12 +13,14 @@ import (
 
 func TestOpenAIResponsesWebSocketUsesExecutableGatewayStages(t *testing.T) {
 	calls := openAIWebSocketExecutableStageCalls(t, "openai_gateway_handler.go", "ResponsesWebSocket")
-	for _, stage := range []string{
-		"moderationcoverage.StageBilling",
-		"moderationcoverage.StageRouting",
-	} {
-		require.Contains(t, calls, stage, "ResponsesWebSocket must execute %s through runOpenAIWebSocketExecutableStage", stage)
-	}
+	require.Positive(t, openAIWebSocketBillingStageAdapterCalls(t, "openai_gateway_handler.go", "ResponsesWebSocket"),
+		"ResponsesWebSocket must execute billing through runOpenAIWebSocketBillingStage")
+	require.NotContains(t, calls, "moderationcoverage.StageBilling",
+		"ResponsesWebSocket must not wrap billing with runOpenAIWebSocketExecutableStage")
+	require.Positive(t, openAIWebSocketRoutingStageAdapterCalls(t, "openai_gateway_handler.go", "ResponsesWebSocket"),
+		"ResponsesWebSocket must execute routing through runOpenAIWebSocketRoutingStage")
+	require.NotContains(t, calls, "moderationcoverage.StageRouting",
+		"ResponsesWebSocket must not wrap routing with runOpenAIWebSocketExecutableStage")
 	require.Positive(t, openAIWebSocketForwardStageAdapterCalls(t, "openai_gateway_handler.go", "ResponsesWebSocket"),
 		"ResponsesWebSocket must execute forward through runOpenAIWebSocketForwardStage")
 	require.NotContains(t, calls, "moderationcoverage.StageForward",
@@ -27,6 +29,62 @@ func TestOpenAIResponsesWebSocketUsesExecutableGatewayStages(t *testing.T) {
 		"ResponsesWebSocket must execute usage through runOpenAIWebSocketUsageStage")
 	require.NotContains(t, calls, "moderationcoverage.StageUsage",
 		"ResponsesWebSocket must not use an empty runOpenAIWebSocketExecutableStage wrapper for usage")
+}
+
+func TestOpenAIResponsesWebSocketUsesNamedBillingStageAdapter(t *testing.T) {
+	src, err := os.ReadFile("openai_gateway_handler.go")
+	require.NoError(t, err)
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "openai_gateway_handler.go", src, 0)
+	require.NoError(t, err)
+
+	fn := openAIWebSocketHandlerFuncDecl(t, file, "ResponsesWebSocket")
+	hasNamedAdapter := false
+	var anonymousBillingStageAdapterLines []int
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		lit, ok := node.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		switch compositeTypeName(lit.Type) {
+		case "OpenAIWebSocketBillingStage":
+			hasNamedAdapter = true
+		case "BillingStageAdapter":
+			anonymousBillingStageAdapterLines = append(anonymousBillingStageAdapterLines, fset.Position(lit.Pos()).Line)
+		}
+		return true
+	})
+
+	require.True(t, hasNamedAdapter, "ResponsesWebSocket must pass OpenAIWebSocketBillingStage to runOpenAIWebSocketBillingStage")
+	require.Empty(t, anonymousBillingStageAdapterLines, "ResponsesWebSocket must not wrap billing with anonymous BillingStageAdapter at lines %v", anonymousBillingStageAdapterLines)
+}
+
+func TestOpenAIResponsesWebSocketUsesNamedRoutingStageAdapter(t *testing.T) {
+	src, err := os.ReadFile("openai_gateway_handler.go")
+	require.NoError(t, err)
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "openai_gateway_handler.go", src, 0)
+	require.NoError(t, err)
+
+	fn := openAIWebSocketHandlerFuncDecl(t, file, "ResponsesWebSocket")
+	hasNamedAdapter := false
+	var anonymousRoutingStageAdapterLines []int
+	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		lit, ok := node.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		switch compositeTypeName(lit.Type) {
+		case "RoutingStageAdapter":
+			hasNamedAdapter = true
+		}
+		return true
+	})
+
+	require.True(t, hasNamedAdapter, "ResponsesWebSocket must pass RoutingStageAdapter to runOpenAIWebSocketRoutingStage")
+	require.Empty(t, anonymousRoutingStageAdapterLines, "ResponsesWebSocket must not wrap routing with unexpected anonymous routing adapters at lines %v", anonymousRoutingStageAdapterLines)
 }
 
 func TestOpenAIResponsesWebSocketUsesNamedForwardStageAdapter(t *testing.T) {
@@ -148,6 +206,74 @@ func openAIWebSocketForwardStageAdapterCalls(t *testing.T, fileName string, hand
 			}
 			selector, ok := call.Fun.(*ast.SelectorExpr)
 			if ok && selector.Sel.Name == "runOpenAIWebSocketForwardStage" {
+				calls++
+			}
+			return true
+		})
+		return calls
+	}
+
+	t.Fatalf("%s does not define handler %s", fileName, handlerName)
+	return 0
+}
+
+func openAIWebSocketBillingStageAdapterCalls(t *testing.T, fileName string, handlerName string) int {
+	t.Helper()
+
+	src, err := os.ReadFile(fileName)
+	require.NoError(t, err)
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, fileName, src, 0)
+	require.NoError(t, err)
+
+	calls := 0
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != handlerName {
+			continue
+		}
+		ast.Inspect(fn.Body, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if ok && selector.Sel.Name == "runOpenAIWebSocketBillingStage" {
+				calls++
+			}
+			return true
+		})
+		return calls
+	}
+
+	t.Fatalf("%s does not define handler %s", fileName, handlerName)
+	return 0
+}
+
+func openAIWebSocketRoutingStageAdapterCalls(t *testing.T, fileName string, handlerName string) int {
+	t.Helper()
+
+	src, err := os.ReadFile(fileName)
+	require.NoError(t, err)
+
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, fileName, src, 0)
+	require.NoError(t, err)
+
+	calls := 0
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != handlerName {
+			continue
+		}
+		ast.Inspect(fn.Body, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if ok && selector.Sel.Name == "runOpenAIWebSocketRoutingStage" {
 				calls++
 			}
 			return true

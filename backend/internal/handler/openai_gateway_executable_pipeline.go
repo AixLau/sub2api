@@ -505,6 +505,65 @@ func (h *OpenAIGatewayHandler) runOpenAIWebSocketExecutableStage(c *gin.Context,
 	}.Run(c)
 }
 
+func (h *OpenAIGatewayHandler) runOpenAIWebSocketBillingStage(c *gin.Context, adapter BillingStage) ExecutableStageResult {
+	return GatewayPipeline{
+		Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
+		Source:   moderationcoverage.SourceOpenAIWebSocketExecutableStage,
+		Stages: []ExecutableStage{
+			executableBillingStageWithContext(c, adapter),
+		},
+	}.Run(c)
+}
+
+type OpenAIWebSocketBillingStage struct {
+	Handler          *OpenAIGatewayHandler
+	RequestContext   context.Context
+	QuotaPlatformCtx context.Context
+	ReqLog           *zap.Logger
+	APIKey           *service.APIKey
+	Subscription     *service.UserSubscription
+	ClientConn       *coderws.Conn
+}
+
+func (OpenAIWebSocketBillingStage) StageName() string {
+	return moderationcoverage.StageBilling
+}
+
+func (s OpenAIWebSocketBillingStage) RunBilling(c *gin.Context) ExecutableStageResult {
+	h := s.Handler
+	if h == nil || h.billingCacheService == nil || s.APIKey == nil {
+		return ExecutableStageResult{}
+	}
+	ctx := s.RequestContext
+	if ctx == nil {
+		ctx = c.Request.Context()
+	}
+	quotaCtx := s.QuotaPlatformCtx
+	if quotaCtx == nil {
+		quotaCtx = c.Request.Context()
+	}
+	reqLog := s.ReqLog
+	if reqLog == nil {
+		reqLog = zap.NewNop()
+	}
+	if err := h.billingCacheService.CheckBillingEligibility(ctx, s.APIKey.User, s.APIKey, s.APIKey.Group, s.Subscription, service.QuotaPlatform(quotaCtx, s.APIKey)); err != nil {
+		reqLog.Info("openai.websocket_billing_eligibility_check_failed", zap.Error(err))
+		closeOpenAIClientWS(s.ClientConn, coderws.StatusPolicyViolation, "billing check failed")
+		return ExecutableStageResult{Stop: true, Err: err}
+	}
+	return ExecutableStageResult{}
+}
+
+func (h *OpenAIGatewayHandler) runOpenAIWebSocketRoutingStage(c *gin.Context, adapter RoutingStage) ExecutableStageResult {
+	return GatewayPipeline{
+		Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
+		Source:   moderationcoverage.SourceOpenAIWebSocketExecutableStage,
+		Stages: []ExecutableStage{
+			executableRoutingStageWithContext(c, adapter),
+		},
+	}.Run(c)
+}
+
 func (h *OpenAIGatewayHandler) runOpenAIWebSocketForwardStage(c *gin.Context, adapter ForwardStage) ExecutableStageResult {
 	return GatewayPipeline{
 		Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
