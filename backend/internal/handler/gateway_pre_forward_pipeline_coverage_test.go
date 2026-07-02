@@ -498,6 +498,8 @@ func TestGatewayMessagesAndGeminiUseUsageStageAdapter(t *testing.T) {
 	}{
 		{file: "gateway_handler.go", handler: "Messages", minCalls: 2},
 		{file: "gemini_v1beta_handler.go", handler: "GeminiV1BetaModels", minCalls: 1},
+		{file: "gateway_handler_chat_completions.go", handler: "ChatCompletions", minCalls: 1},
+		{file: "gateway_handler_responses.go", handler: "Responses", minCalls: 1},
 	}
 
 	for _, tt := range tests {
@@ -514,6 +516,7 @@ func TestGatewayMessagesAndGeminiUseUsageStageAdapter(t *testing.T) {
 
 			fn := gatewayHandlerFuncDecl(t, parsed, tt.handler)
 			usageStageCalls := 0
+			var directRecordUsageLines []int
 			ast.Inspect(fn.Body, func(node ast.Node) bool {
 				call, ok := node.(*ast.CallExpr)
 				if !ok {
@@ -526,11 +529,17 @@ func TestGatewayMessagesAndGeminiUseUsageStageAdapter(t *testing.T) {
 				if selector.Sel.Name == "runGatewayUsageStage" {
 					usageStageCalls++
 				}
+				if selector.Sel.Name == "RecordUsage" || selector.Sel.Name == "RecordUsageWithLongContext" {
+					directRecordUsageLines = append(directRecordUsageLines, fset.Position(call.Pos()).Line)
+				}
 				return true
 			})
 
 			if usageStageCalls < tt.minCalls {
 				t.Fatalf("GatewayHandler.%s must execute usage recording through runGatewayUsageStage, got %d calls", tt.handler, usageStageCalls)
+			}
+			if len(directRecordUsageLines) > 0 {
+				t.Fatalf("GatewayHandler.%s must not call usage repository/service directly at lines %v", tt.handler, directRecordUsageLines)
 			}
 		})
 	}
@@ -544,6 +553,8 @@ func TestGatewayMessagesAndGeminiUseNamedUsageStageAdapter(t *testing.T) {
 	}{
 		{file: "gateway_handler.go", handler: "Messages", minCalls: 2},
 		{file: "gemini_v1beta_handler.go", handler: "GeminiV1BetaModels", minCalls: 1},
+		{file: "gateway_handler_chat_completions.go", handler: "ChatCompletions", minCalls: 1},
+		{file: "gateway_handler_responses.go", handler: "Responses", minCalls: 1},
 	}
 
 	for _, tt := range tests {

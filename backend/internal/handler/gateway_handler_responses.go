@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -276,28 +275,25 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 
-		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
-			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-				Result:             result,
-				QuotaPlatform:      quotaPlatform,
-				APIKey:             apiKey,
-				User:               apiKey.User,
-				Account:            account,
-				Subscription:       subscription,
-				InboundEndpoint:    inboundEndpoint,
-				UpstreamEndpoint:   upstreamEndpoint,
-				UserAgent:          userAgent,
-				IPAddress:          clientIP,
-				RequestPayloadHash: requestPayloadHash,
-				APIKeyService:      h.apiKeyService,
-				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
-			}); err != nil {
-				reqLog.Error("gateway.responses.record_usage_failed",
-					zap.Int64("account_id", account.ID),
-					zap.Error(err),
-				)
-			}
+		_ = h.runGatewayUsageStage(c, GatewayUsageStage{
+			Handler:            h,
+			RequestContext:     c.Request.Context(),
+			Result:             result,
+			QuotaPlatform:      service.QuotaPlatform(c.Request.Context(), apiKey),
+			APIKey:             apiKey,
+			Account:            account,
+			Subscription:       subscription,
+			InboundEndpoint:    inboundEndpoint,
+			UpstreamEndpoint:   upstreamEndpoint,
+			UserAgent:          userAgent,
+			ClientIP:           clientIP,
+			RequestPayloadHash: requestPayloadHash,
+			APIKeyService:      h.apiKeyService,
+			ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+			LogComponent:       "gateway.responses.record_usage",
+			LogMessage:         "gateway.responses.record_usage_failed",
+			LogUserID:          subject.UserID,
+			LogModel:           reqModel,
 		})
 		return
 	}
