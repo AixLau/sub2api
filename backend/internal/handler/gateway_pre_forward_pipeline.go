@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -414,6 +415,69 @@ func (s GatewayMessagesForwardStage) RunForward(c *gin.Context) ExecutableStageR
 	} else {
 		result, err = s.GatewayService.Forward(ctx, c, s.Account, s.ParsedRequest)
 	}
+	if s.Result != nil {
+		*s.Result = result
+	}
+	return ExecutableStageResult{Err: err}
+}
+
+type GatewayChatCompletionsForwardStage struct {
+	GatewayService      *service.GatewayService
+	GeminiCompatService *service.GeminiMessagesCompatService
+	RequestContext      context.Context
+	Account             *service.Account
+	ParsedRequest       *service.ParsedRequest
+	Body                []byte
+	Result              **service.ForwardResult
+}
+
+func (GatewayChatCompletionsForwardStage) StageName() string {
+	return moderationcoverage.StageForward
+}
+
+func (s GatewayChatCompletionsForwardStage) RunForward(c *gin.Context) ExecutableStageResult {
+	ctx := s.RequestContext
+	if ctx == nil {
+		ctx = c.Request.Context()
+	}
+	var result *service.ForwardResult
+	var err error
+	if s.Account != nil && s.Account.Platform == service.PlatformGemini {
+		if s.GeminiCompatService == nil {
+			return ExecutableStageResult{Err: errors.New("gemini compatibility service is not configured")}
+		}
+		result, err = s.GeminiCompatService.ForwardAsChatCompletions(ctx, c, s.Account, s.Body)
+	} else {
+		result, err = s.GatewayService.ForwardAsChatCompletions(ctx, c, s.Account, s.Body, s.ParsedRequest)
+	}
+	if s.Result != nil {
+		*s.Result = result
+	}
+	return ExecutableStageResult{Err: err}
+}
+
+type GatewayResponsesForwardStage struct {
+	GatewayService *service.GatewayService
+	RequestContext context.Context
+	Account        *service.Account
+	ParsedRequest  *service.ParsedRequest
+	Body           []byte
+	Result         **service.ForwardResult
+}
+
+func (GatewayResponsesForwardStage) StageName() string {
+	return moderationcoverage.StageForward
+}
+
+func (s GatewayResponsesForwardStage) RunForward(c *gin.Context) ExecutableStageResult {
+	if s.GatewayService == nil {
+		return ExecutableStageResult{}
+	}
+	ctx := s.RequestContext
+	if ctx == nil {
+		ctx = c.Request.Context()
+	}
+	result, err := s.GatewayService.ForwardAsResponses(ctx, c, s.Account, s.Body, s.ParsedRequest)
 	if s.Result != nil {
 		*s.Result = result
 	}

@@ -221,7 +221,16 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		if channelMapping.Mapped {
 			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)
 		}
-		result, err := h.gatewayService.ForwardAsResponses(requestCtx, c, account, forwardBody, parsedReq)
+		var result *service.ForwardResult
+		stageResult := h.runGatewayForwardStage(c, GatewayResponsesForwardStage{
+			GatewayService: h.gatewayService,
+			RequestContext: requestCtx,
+			Account:        account,
+			ParsedRequest:  parsedReq,
+			Body:           forwardBody,
+			Result:         &result,
+		})
+		err = stageResult.Err
 
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()

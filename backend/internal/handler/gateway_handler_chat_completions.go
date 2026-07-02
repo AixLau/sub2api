@@ -240,10 +240,17 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 				}
 				return
 			}
-			result, err = h.geminiCompatService.ForwardAsChatCompletions(c.Request.Context(), c, account, forwardBody)
-		} else {
-			result, err = h.gatewayService.ForwardAsChatCompletions(c.Request.Context(), c, account, forwardBody, parsedReq)
 		}
+		stageResult := h.runGatewayForwardStage(c, GatewayChatCompletionsForwardStage{
+			GatewayService:      h.gatewayService,
+			GeminiCompatService: h.geminiCompatService,
+			RequestContext:      c.Request.Context(),
+			Account:             account,
+			ParsedRequest:       parsedReq,
+			Body:                forwardBody,
+			Result:              &result,
+		})
+		err = stageResult.Err
 
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()

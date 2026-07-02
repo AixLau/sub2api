@@ -419,6 +419,77 @@ func TestGatewayGeminiV1BetaModelsUsesNamedForwardStageAdapter(t *testing.T) {
 	}
 }
 
+func TestGatewayChatCompletionsAndResponsesUseForwardStageAdapter(t *testing.T) {
+	tests := []struct {
+		file         string
+		handler      string
+		stageAdapter string
+		forbidden    []string
+	}{
+		{
+			file:         "gateway_handler_chat_completions.go",
+			handler:      "ChatCompletions",
+			stageAdapter: "GatewayChatCompletionsForwardStage",
+			forbidden:    []string{"ForwardAsChatCompletions"},
+		},
+		{
+			file:         "gateway_handler_responses.go",
+			handler:      "Responses",
+			stageAdapter: "GatewayResponsesForwardStage",
+			forbidden:    []string{"ForwardAsResponses"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.handler, func(t *testing.T) {
+			src, err := os.ReadFile(tt.file)
+			if err != nil {
+				t.Fatalf("read %s: %v", tt.file, err)
+			}
+			fset := token.NewFileSet()
+			parsed, err := parser.ParseFile(fset, tt.file, src, 0)
+			if err != nil {
+				t.Fatalf("parse %s: %v", tt.file, err)
+			}
+
+			fn := gatewayHandlerFuncDecl(t, parsed, tt.handler)
+			forwardStageCalls := 0
+			hasNamedForwardStage := false
+			var directForwardLines []int
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if ok {
+					if selector, ok := call.Fun.(*ast.SelectorExpr); ok {
+						if selector.Sel.Name == "runGatewayForwardStage" {
+							forwardStageCalls++
+						}
+						for _, forbidden := range tt.forbidden {
+							if selector.Sel.Name == forbidden {
+								directForwardLines = append(directForwardLines, fset.Position(call.Pos()).Line)
+							}
+						}
+					}
+				}
+				lit, ok := node.(*ast.CompositeLit)
+				if ok && compositeTypeName(lit.Type) == tt.stageAdapter {
+					hasNamedForwardStage = true
+				}
+				return true
+			})
+
+			if forwardStageCalls == 0 {
+				t.Fatalf("GatewayHandler.%s must execute upstream forwarding through runGatewayForwardStage", tt.handler)
+			}
+			if !hasNamedForwardStage {
+				t.Fatalf("GatewayHandler.%s must pass %s to runGatewayForwardStage", tt.handler, tt.stageAdapter)
+			}
+			if len(directForwardLines) > 0 {
+				t.Fatalf("GatewayHandler.%s must not call upstream forward services directly at lines %v", tt.handler, directForwardLines)
+			}
+		})
+	}
+}
+
 func TestGatewayMessagesAndGeminiUseUsageStageAdapter(t *testing.T) {
 	tests := []struct {
 		file     string
