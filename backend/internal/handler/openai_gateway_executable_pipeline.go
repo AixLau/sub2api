@@ -269,6 +269,21 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPRoutingStage(c *gin.Context, adapter
 	}.Run(c)
 }
 
+type OpenAIHTTPRoutingStage struct {
+	Routing func(*gin.Context) ExecutableStageResult
+}
+
+func (OpenAIHTTPRoutingStage) StageName() string {
+	return moderationcoverage.StageRouting
+}
+
+func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult {
+	if s.Routing == nil {
+		return ExecutableStageResult{}
+	}
+	return s.Routing(c)
+}
+
 type OpenAIHTTPBillingStage struct {
 	Handler          *OpenAIGatewayHandler
 	ReqLog           *zap.Logger

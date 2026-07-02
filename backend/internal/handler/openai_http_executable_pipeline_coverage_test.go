@@ -95,6 +95,50 @@ func TestOpenAIHTTPHandlersUseBillingStageAdapter(t *testing.T) {
 	}
 }
 
+func TestOpenAIHTTPHandlersUseNamedRoutingStageAdapter(t *testing.T) {
+	tests := []struct {
+		file    string
+		handler string
+	}{
+		{file: "openai_chat_completions.go", handler: "ChatCompletions"},
+		{file: "openai_gateway_handler.go", handler: "Responses"},
+		{file: "openai_gateway_handler.go", handler: "Messages"},
+		{file: "openai_images.go", handler: "Images"},
+		{file: "openai_embeddings.go", handler: "Embeddings"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.handler, func(t *testing.T) {
+			src, err := os.ReadFile(tt.file)
+			require.NoError(t, err)
+
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, tt.file, src, 0)
+			require.NoError(t, err)
+
+			fn := openAIHTTPHandlerFuncDecl(t, file, tt.handler)
+			hasNamedAdapter := false
+			var anonymousRoutingStageAdapterLines []int
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				lit, ok := node.(*ast.CompositeLit)
+				if !ok {
+					return true
+				}
+				switch compositeTypeName(lit.Type) {
+				case "OpenAIHTTPRoutingStage":
+					hasNamedAdapter = true
+				case "RoutingStageAdapter":
+					anonymousRoutingStageAdapterLines = append(anonymousRoutingStageAdapterLines, fset.Position(lit.Pos()).Line)
+				}
+				return true
+			})
+
+			require.True(t, hasNamedAdapter, "%s.%s must pass OpenAIHTTPRoutingStage to runOpenAIHTTPRoutingStage", tt.file, tt.handler)
+			require.Empty(t, anonymousRoutingStageAdapterLines, "%s.%s must not wrap routing with anonymous RoutingStageAdapter at lines %v", tt.file, tt.handler, anonymousRoutingStageAdapterLines)
+		})
+	}
+}
+
 func TestOpenAIHTTPHandlersUseNamedBillingStageAdapter(t *testing.T) {
 	tests := []struct {
 		file    string

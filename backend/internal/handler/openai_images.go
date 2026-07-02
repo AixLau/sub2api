@@ -143,7 +143,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		var account *service.Account
 		var accountReleaseFunc func()
 		routingRetry := false
-		if routingStage := h.runOpenAIHTTPRoutingStage(c, RoutingStageAdapter{
+		if routingStage := h.runOpenAIHTTPRoutingStage(c, OpenAIHTTPRoutingStage{
 			Routing: func(*gin.Context) ExecutableStageResult {
 				reqLog.Debug("openai.images.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
 				selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForImages(

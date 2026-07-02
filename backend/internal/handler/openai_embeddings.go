@@ -117,7 +117,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		var account *service.Account
 		var accountReleaseFunc func()
 		routingRetry := false
-		if routingStage := h.runOpenAIHTTPRoutingStage(c, RoutingStageAdapter{
+		if routingStage := h.runOpenAIHTTPRoutingStage(c, OpenAIHTTPRoutingStage{
 			Routing: func(*gin.Context) ExecutableStageResult {
 				selection, _, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
 					c.Request.Context(),

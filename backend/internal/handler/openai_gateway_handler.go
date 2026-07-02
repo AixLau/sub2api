@@ -265,7 +265,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		var account *service.Account
 		var accountReleaseFunc func()
 		routingRetry := false
-		if routingStage := h.runOpenAIHTTPRoutingStage(c, RoutingStageAdapter{
+		if routingStage := h.runOpenAIHTTPRoutingStage(c, OpenAIHTTPRoutingStage{
 			Routing: func(*gin.Context) ExecutableStageResult {
 				// Select account supporting the requested model
 				reqLog.Debug("openai.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
@@ -740,7 +740,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		var account *service.Account
 		var accountReleaseFunc func()
 		routingRetry := false
-		if routingStage := h.runOpenAIHTTPRoutingStage(c, RoutingStageAdapter{
+		if routingStage := h.runOpenAIHTTPRoutingStage(c, OpenAIHTTPRoutingStage{
 			Routing: func(*gin.Context) ExecutableStageResult {
 				reqLog.Debug("openai_messages.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
 				selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
