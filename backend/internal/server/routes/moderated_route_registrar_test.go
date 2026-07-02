@@ -710,11 +710,11 @@ func TestGatewayModerationCoverageManifestPipelineStagesMatchRegistrarFacts(t *t
 	registrarByRoute := make(map[string]ModeratedRouteMeta)
 	for _, entry := range GatewayModeratedRouteCoverageEntries() {
 		entry = moderationcoverage.NormalizeEntry(entry)
-		registrarByRoute[moderatedRouteKey(entry.Method, entry.Path, entry.Protocol)] = entry
+		registrarByRoute[moderatedRouteKey(entry.Method, entry.Path, entry.Protocol+" "+entry.Handler)] = entry
 	}
 
 	for _, entry := range manifest.Entries {
-		routeKey := moderatedRouteKey(entry.Method, entry.Path, entry.Protocol)
+		routeKey := moderatedRouteKey(entry.Method, entry.Path, entry.Protocol+" "+entry.Handler)
 		require.Equal(t, entry.Method, entry.Route.Method, "manifest route.method must mirror top-level method for %s", routeKey)
 		require.Equal(t, entry.Path, entry.Route.Path, "manifest route.path must mirror top-level path for %s", routeKey)
 		require.Equal(t, entry.Handler, entry.Route.Handler, "manifest route.handler must mirror top-level handler for %s", routeKey)

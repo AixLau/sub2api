@@ -92,6 +92,14 @@ func setModeratedRouteBranchMeta(c *gin.Context, meta ModeratedRouteMeta) {
 	moderationcoverage.SetRouteMeta(c, meta)
 }
 
+func enterModeratedRouteBranchPipeline(c *gin.Context, registrar *ModeratedRouteRegistrar, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+	setModeratedRouteBranchMeta(c, meta)
+	if registrar == nil {
+		return GatewayPipelineEntryResult{}
+	}
+	return registrar.runGatewayPipelineEntrypoint(c, meta)
+}
+
 func normalizeGatewayPipelineEntrypoints(entrypoints GatewayPipelineEntrypoints) GatewayPipelineEntrypoints {
 	if len(entrypoints) == 0 {
 		return nil
@@ -108,16 +116,27 @@ func normalizeGatewayPipelineEntrypoints(entrypoints GatewayPipelineEntrypoints)
 }
 
 func (r *ModeratedRouteRegistrar) prependModeratedRouteMetaHandler(meta ModeratedRouteMeta, handlers []gin.HandlerFunc) []gin.HandlerFunc {
-	prepended := make([]gin.HandlerFunc, 0, len(handlers)+1)
-	prepended = append(prepended, func(c *gin.Context) {
+	routeMetaHandler := func(c *gin.Context) {
 		moderationcoverage.SetRouteMeta(c, meta)
-		if r != nil && r.runGatewayPipelineEntrypoint(c, meta).Stop {
-			return
-		}
 		c.Next()
 		enforceModeratedRoutePipelineAdmission(c, meta)
+	}
+	if len(handlers) == 0 {
+		return []gin.HandlerFunc{routeMetaHandler}
+	}
+	prepended := make([]gin.HandlerFunc, 0, len(handlers)+2)
+	prepended = append(prepended, routeMetaHandler)
+	if r == nil || len(r.entrypoints) == 0 {
+		prepended = append(prepended, handlers...)
+		return prepended
+	}
+	prepended = append(prepended, handlers[:len(handlers)-1]...)
+	prepended = append(prepended, func(c *gin.Context) {
+		if r.runGatewayPipelineEntrypoint(c, meta).Stop {
+			return
+		}
 	})
-	prepended = append(prepended, handlers...)
+	prepended = append(prepended, handlers[len(handlers)-1])
 	return prepended
 }
 

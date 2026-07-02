@@ -12,6 +12,7 @@ import (
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
 
@@ -151,6 +152,10 @@ func gatewayPreForwardEntrypointSupported(handlerName, protocol string) bool {
 		}
 	case service.ContentModerationProtocolGemini:
 		return strings.TrimSpace(handlerName) == "GatewayHandler.GeminiV1BetaModels"
+	case service.ContentModerationProtocolOpenAIChat:
+		return strings.TrimSpace(handlerName) == "GatewayHandler.ChatCompletions"
+	case service.ContentModerationProtocolOpenAIResponses:
+		return strings.TrimSpace(handlerName) == "GatewayHandler.Responses"
 	default:
 		return false
 	}
@@ -182,6 +187,18 @@ func (h *GatewayHandler) readGatewayPreForwardEntrypointRequest(c *gin.Context, 
 			return nil, nil, "", false, false
 		}
 		return body, &service.ParsedRequest{Model: model, Stream: stream}, model, stream, true
+	case service.ContentModerationProtocolOpenAIChat:
+		body, model, stream, ok := h.readOpenAICompatibleGatewayPreForwardRequest(c, h.chatCompletionsErrorResponse)
+		if !ok {
+			return nil, nil, "", false, false
+		}
+		return body, &service.ParsedRequest{Model: model, Stream: stream, Body: service.NewRequestBodyRef(body)}, model, stream, true
+	case service.ContentModerationProtocolOpenAIResponses:
+		body, model, stream, ok := h.readOpenAICompatibleGatewayPreForwardRequest(c, h.responsesErrorResponse)
+		if !ok {
+			return nil, nil, "", false, false
+		}
+		return body, &service.ParsedRequest{Model: model, Stream: stream, Body: service.NewRequestBodyRef(body)}, model, stream, true
 	default:
 		body, parsedReq, ok := h.readGatewayMessagesPreForwardRequest(c)
 		if !ok {
@@ -213,6 +230,41 @@ func (h *GatewayHandler) readGatewayGeminiPreForwardRequest(c *gin.Context) ([]b
 		return nil, "", false, false
 	}
 	return body, modelName, stream, true
+}
+
+func (h *GatewayHandler) readOpenAICompatibleGatewayPreForwardRequest(
+	c *gin.Context,
+	writeError func(*gin.Context, int, string, string),
+) ([]byte, string, bool, bool) {
+	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+	if err != nil {
+		if maxErr, ok := extractMaxBytesError(err); ok {
+			writeError(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+			return nil, "", false, false
+		}
+		writeError(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		return nil, "", false, false
+	}
+	if len(body) == 0 {
+		writeError(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
+		return nil, "", false, false
+	}
+	setOpsRequestContext(c, "", false)
+	if !gjson.ValidBytes(body) {
+		writeError(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
+		return nil, "", false, false
+	}
+	modelResult := gjson.GetBytes(body, "model")
+	if !modelResult.Exists() || modelResult.Type != gjson.String || modelResult.String() == "" {
+		writeError(c, http.StatusBadRequest, "invalid_request_error", "model is required")
+		return nil, "", false, false
+	}
+	stream, ok := parseOpenAICompatibleStream(body)
+	if !ok {
+		writeError(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
+		return nil, "", false, false
+	}
+	return body, modelResult.String(), stream, true
 }
 
 func gatewayPreForwardErrorFormatForHandler(handlerName string) gatewayPreForwardErrorFormat {

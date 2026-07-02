@@ -1976,8 +1976,8 @@ func contentModerationPipelineGroupCoverageStatusFromEntries(
 		routes = append(routes, contentModerationPipelineRouteCoverageStatusFromEntry(entry, pipeline, expectedStagesForRoute))
 	}
 	sort.Slice(routes, func(i, j int) bool {
-		left := contentModerationPipelineRouteKey(routes[i].Method, routes[i].Path)
-		right := contentModerationPipelineRouteKey(routes[j].Method, routes[j].Path)
+		left := contentModerationPipelineRouteKey(routes[i].Method, routes[i].Path, routes[i].Handler)
+		right := contentModerationPipelineRouteKey(routes[j].Method, routes[j].Path, routes[j].Handler)
 		if left == right {
 			return routes[i].Protocol < routes[j].Protocol
 		}
@@ -1991,7 +1991,7 @@ func contentModerationPipelineGroupCoverageStatusFromEntries(
 			coveredRoutes++
 			continue
 		}
-		uncoveredRoutes = append(uncoveredRoutes, contentModerationPipelineRouteKey(route.Method, route.Path))
+		uncoveredRoutes = append(uncoveredRoutes, contentModerationPipelineRouteKey(route.Method, route.Path, route.Handler))
 	}
 
 	return ContentModerationPipelineGroupCoverageStatus{
@@ -2104,7 +2104,7 @@ func uniqueSortedContentModerationPipelineStages(stages []string) []string {
 func contentModerationPipelineStageCoverageStatusFromRoutes(routes []ContentModerationPipelineRouteCoverageStatus) []ContentModerationPipelineStageCoverageStatus {
 	byStage := make(map[string]*ContentModerationPipelineStageCoverageStatus)
 	for _, route := range routes {
-		routeKey := contentModerationPipelineRouteKey(route.Method, route.Path)
+		routeKey := contentModerationPipelineRouteKey(route.Method, route.Path, route.Handler)
 		for _, stage := range route.Stages {
 			if !stage.Required {
 				continue
@@ -2196,16 +2196,7 @@ func contentModerationIsOpenAIHTTPPipelineRoute(entry contentModerationRouteCove
 	if normalizeContentModerationRouteCoverageMethod(entry.Method) != http.MethodPost {
 		return false
 	}
-	switch strings.TrimSpace(entry.Protocol) {
-	case ContentModerationProtocolOpenAIChat,
-		ContentModerationProtocolOpenAIMessages,
-		ContentModerationProtocolOpenAIResponses,
-		ContentModerationProtocolOpenAIImages,
-		ContentModerationProtocolOpenAIEmbeddings:
-		return true
-	default:
-		return false
-	}
+	return len(moderationcoverage.OpenAIHTTPPipelineStagesForRoute(entry.Handler, entry.Protocol)) > 0
 }
 
 func contentModerationIsOpenAIWebSocketPipelineRoute(entry contentModerationRouteCoverageEntry) bool {
@@ -2231,8 +2222,12 @@ func contentModerationIsGatewayPreForwardPipelineRoute(entry contentModerationRo
 	return len(moderationcoverage.GatewayPreForwardPipelineStagesForRoute(entry.Handler, entry.Protocol)) > 0
 }
 
-func contentModerationPipelineRouteKey(method, path string) string {
-	return strings.TrimSpace(normalizeContentModerationRouteCoverageMethod(method) + " " + normalizeContentModerationRouteCoveragePath(path))
+func contentModerationPipelineRouteKey(method, path, handler string) string {
+	key := strings.TrimSpace(normalizeContentModerationRouteCoverageMethod(method) + " " + normalizeContentModerationRouteCoveragePath(path))
+	if handler = strings.TrimSpace(handler); handler != "" {
+		key += " " + handler
+	}
+	return key
 }
 
 func contentModerationPipelineStageSortKey(stage string) string {

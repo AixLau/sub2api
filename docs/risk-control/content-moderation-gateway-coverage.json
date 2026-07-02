@@ -241,6 +241,55 @@
       "route": {
         "method": "POST",
         "path": "/v1/chat/completions",
+        "handler": "GatewayHandler.ChatCompletions",
+        "protocol": "openai_chat_completions"
+      },
+      "method": "POST",
+      "path": "/v1/chat/completions",
+      "handler": "GatewayHandler.ChatCompletions",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_chat_completions",
+      "pipeline": "gateway_pre_forward",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
+        }
+      ],
+      "status": "covered",
+      "review_reason": "Chat Completions requests for non-OpenAI groups are moderated by the shared Gateway pre-forward pipeline before scheduling and upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/v1/chat/completions",
         "handler": "OpenAIGatewayHandler.ChatCompletions",
         "protocol": "openai_chat_completions"
       },
@@ -290,6 +339,55 @@
       "route": {
         "method": "POST",
         "path": "/chat/completions",
+        "handler": "GatewayHandler.ChatCompletions",
+        "protocol": "openai_chat_completions"
+      },
+      "method": "POST",
+      "path": "/chat/completions",
+      "handler": "GatewayHandler.ChatCompletions",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_chat_completions",
+      "pipeline": "gateway_pre_forward",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
+        }
+      ],
+      "status": "covered",
+      "review_reason": "Root chat alias for non-OpenAI groups uses the shared Gateway pre-forward pipeline before upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/chat/completions",
         "handler": "OpenAIGatewayHandler.ChatCompletions",
         "protocol": "openai_chat_completions"
       },
@@ -334,6 +432,55 @@
       ],
       "status": "covered",
       "review_reason": "Root chat alias reaches the same OpenAI-compatible chat handler and moderation hook."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/v1/responses",
+        "handler": "GatewayHandler.Responses",
+        "protocol": "openai_responses"
+      },
+      "method": "POST",
+      "path": "/v1/responses",
+      "handler": "GatewayHandler.Responses",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "pipeline": "gateway_pre_forward",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
+        }
+      ],
+      "status": "covered",
+      "review_reason": "Responses requests for non-OpenAI groups are moderated by the shared Gateway pre-forward pipeline before scheduling and upstream forwarding."
     },
     {
       "route": {
@@ -393,6 +540,55 @@
       "route": {
         "method": "POST",
         "path": "/v1/responses/*subpath",
+        "handler": "GatewayHandler.Responses",
+        "protocol": "openai_responses"
+      },
+      "method": "POST",
+      "path": "/v1/responses/*subpath",
+      "handler": "GatewayHandler.Responses",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "pipeline": "gateway_pre_forward",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
+        }
+      ],
+      "status": "covered",
+      "review_reason": "Responses subpaths for non-OpenAI groups use the shared Gateway pre-forward pipeline before upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/v1/responses/*subpath",
         "handler": "OpenAIGatewayHandler.Responses",
         "protocol": "openai_responses"
       },
@@ -447,6 +643,55 @@
       "route": {
         "method": "POST",
         "path": "/responses",
+        "handler": "GatewayHandler.Responses",
+        "protocol": "openai_responses"
+      },
+      "method": "POST",
+      "path": "/responses",
+      "handler": "GatewayHandler.Responses",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "pipeline": "gateway_pre_forward",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
+        }
+      ],
+      "status": "covered",
+      "review_reason": "Root Responses alias for non-OpenAI groups uses the shared Gateway pre-forward pipeline before upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/responses",
         "handler": "OpenAIGatewayHandler.Responses",
         "protocol": "openai_responses"
       },
@@ -496,6 +741,55 @@
       ],
       "status": "covered",
       "review_reason": "Root Responses alias reaches the same OpenAI-compatible Responses handler and moderation hook."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/responses/*subpath",
+        "handler": "GatewayHandler.Responses",
+        "protocol": "openai_responses"
+      },
+      "method": "POST",
+      "path": "/responses/*subpath",
+      "handler": "GatewayHandler.Responses",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "pipeline": "gateway_pre_forward",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
+        }
+      ],
+      "status": "covered",
+      "review_reason": "Root Responses subpath alias for non-OpenAI groups uses the shared Gateway pre-forward pipeline before upstream forwarding."
     },
     {
       "route": {
@@ -673,6 +967,55 @@
       "route": {
         "method": "POST",
         "path": "/backend-api/codex/responses",
+        "handler": "GatewayHandler.Responses",
+        "protocol": "openai_responses"
+      },
+      "method": "POST",
+      "path": "/backend-api/codex/responses",
+      "handler": "GatewayHandler.Responses",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "pipeline": "gateway_pre_forward",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
+        }
+      ],
+      "status": "covered",
+      "review_reason": "Codex direct Responses route for non-OpenAI groups uses the shared Gateway pre-forward pipeline before upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/backend-api/codex/responses",
         "handler": "OpenAIGatewayHandler.Responses",
         "protocol": "openai_responses"
       },
@@ -722,6 +1065,55 @@
       ],
       "status": "covered",
       "review_reason": "Codex direct Responses route reaches the same OpenAI-compatible Responses handler and moderation hook."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/backend-api/codex/responses/*subpath",
+        "handler": "GatewayHandler.Responses",
+        "protocol": "openai_responses"
+      },
+      "method": "POST",
+      "path": "/backend-api/codex/responses/*subpath",
+      "handler": "GatewayHandler.Responses",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "pipeline": "gateway_pre_forward",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
+        }
+      ],
+      "status": "covered",
+      "review_reason": "Codex direct Responses subpaths for non-OpenAI groups use the shared Gateway pre-forward pipeline before upstream forwarding."
     },
     {
       "route": {

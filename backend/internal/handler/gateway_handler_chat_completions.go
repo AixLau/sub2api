@@ -7,12 +7,10 @@ import (
 	"strconv"
 	"time"
 
-	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
-	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
 
@@ -44,41 +42,19 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		zap.Any("group_id", apiKey.GroupID),
 	)
 
-	// Read request body
-	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
-	if err != nil {
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			h.chatCompletionsErrorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+	var body []byte
+	var reqModel string
+	var reqStream bool
+	if preForwardRequest, ok := gatewayPreForwardRequestFromContext(c, service.ContentModerationProtocolOpenAIChat); ok {
+		body = preForwardRequest.Body
+		reqModel = preForwardRequest.Model
+		reqStream = preForwardRequest.Stream
+	} else {
+		var ok bool
+		body, reqModel, reqStream, ok = h.readOpenAICompatibleGatewayPreForwardRequest(c, h.chatCompletionsErrorResponse)
+		if !ok {
 			return
 		}
-		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
-		return
-	}
-
-	if len(body) == 0 {
-		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
-		return
-	}
-
-	setOpsRequestContext(c, "", false)
-
-	// Validate JSON
-	if !gjson.ValidBytes(body) {
-		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
-		return
-	}
-
-	// Extract model and stream
-	modelResult := gjson.GetBytes(body, "model")
-	if !modelResult.Exists() || modelResult.Type != gjson.String || modelResult.String() == "" {
-		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
-		return
-	}
-	reqModel := modelResult.String()
-	reqStream, ok := parseOpenAICompatibleStream(body)
-	if !ok {
-		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
-		return
 	}
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
 
@@ -92,17 +68,6 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 	if apiKey.Group != nil && apiKey.Group.ClaudeCodeOnly {
 		h.chatCompletionsErrorResponse(c, http.StatusForbidden, "permission_error",
 			"This group is restricted to Claude Code clients (/v1/messages only)")
-		return
-	}
-
-	if pipelineResult := h.runGatewayPreForwardPipeline(c, reqLog, gatewayPreForwardPipelineInput{
-		APIKey:      apiKey,
-		Subject:     subject,
-		Protocol:    service.ContentModerationProtocolOpenAIChat,
-		Model:       reqModel,
-		Body:        body,
-		ErrorFormat: gatewayPreForwardErrorOpenAIChat,
-	}); pipelineResult.Blocked {
 		return
 	}
 

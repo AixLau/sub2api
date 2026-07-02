@@ -77,12 +77,12 @@ func RegisterGatewayRoutes(
 		}),
 		moderationcoverage.PipelineGatewayPreForward: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
 			switch meta.Protocol {
-			case service.ContentModerationProtocolAnthropicMessages, service.ContentModerationProtocolGemini:
+			case service.ContentModerationProtocolAnthropicMessages, service.ContentModerationProtocolGemini, service.ContentModerationProtocolOpenAIChat, service.ContentModerationProtocolOpenAIResponses:
 			default:
 				return GatewayPipelineEntryResult{}
 			}
 			switch meta.Handler {
-			case "GatewayHandler.Messages", "GatewayHandler.CountTokens", "GatewayHandler.GeminiV1BetaModels":
+			case "GatewayHandler.Messages", "GatewayHandler.CountTokens", "GatewayHandler.GeminiV1BetaModels", "GatewayHandler.ChatCompletions", "GatewayHandler.Responses":
 			default:
 				return GatewayPipelineEntryResult{}
 			}
@@ -120,7 +120,9 @@ func RegisterGatewayRoutes(
 				return
 			}
 			if isOpenAIGatewayPlatform(c) {
-				setModeratedRouteBranchMeta(c, openAIMessagesRouteMeta)
+				if enterModeratedRouteBranchPipeline(c, moderatedGateway, openAIMessagesRouteMeta).Stop {
+					return
+				}
 				h.OpenAIGateway.Messages(c)
 				return
 			}
@@ -157,25 +159,43 @@ func RegisterGatewayRoutes(
 			"Usage lookup does not submit model-visible user content to upstream moderation-sensitive paths.",
 		), h.Gateway.Usage)
 		// OpenAI Responses API: auto-route based on group platform
-		moderatedGateway.POST("/responses", coveredOpenAIHTTPRoute(
+		openAIResponsesRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
 			"/v1/responses",
 			"OpenAIGatewayHandler.Responses",
 			service.ContentModerationProtocolOpenAIResponses,
 			"OpenAI Responses requests are moderated before permission checks, scheduling, and upstream forwarding.",
+		))
+		moderatedGateway.POST("/responses", coveredModeratedRoute(
+			"/v1/responses",
+			"GatewayHandler.Responses",
+			service.ContentModerationProtocolOpenAIResponses,
+			"Responses requests for non-OpenAI groups are moderated by the shared Gateway pre-forward pipeline before scheduling and upstream forwarding.",
 		), func(c *gin.Context) {
 			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
+				if enterModeratedRouteBranchPipeline(c, moderatedGateway, openAIResponsesRouteMeta).Stop {
+					return
+				}
 				h.OpenAIGateway.Responses(c)
 				return
 			}
 			h.Gateway.Responses(c)
 		})
-		moderatedGateway.POST("/responses/*subpath", coveredOpenAIHTTPRoute(
+		openAIResponsesSubpathRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
 			"/v1/responses/*subpath",
 			"OpenAIGatewayHandler.Responses",
 			service.ContentModerationProtocolOpenAIResponses,
 			"Versioned Responses subpaths reach the same Responses handler and moderation hook before upstream forwarding.",
+		))
+		moderatedGateway.POST("/responses/*subpath", coveredModeratedRoute(
+			"/v1/responses/*subpath",
+			"GatewayHandler.Responses",
+			service.ContentModerationProtocolOpenAIResponses,
+			"Responses subpaths for non-OpenAI groups use the shared Gateway pre-forward pipeline before upstream forwarding.",
 		), func(c *gin.Context) {
 			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
+				if enterModeratedRouteBranchPipeline(c, moderatedGateway, openAIResponsesSubpathRouteMeta).Stop {
+					return
+				}
 				h.OpenAIGateway.Responses(c)
 				return
 			}
@@ -194,17 +214,26 @@ func RegisterGatewayRoutes(
 			h.OpenAIGateway.ResponsesWebSocket(c)
 		})
 		// OpenAI Chat Completions API: auto-route based on group platform
-		moderatedGateway.POST("/chat/completions", coveredOpenAIHTTPRoute(
+		openAIChatCompletionsRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
 			"/v1/chat/completions",
 			"OpenAIGatewayHandler.ChatCompletions",
 			service.ContentModerationProtocolOpenAIChat,
 			"OpenAI-compatible chat requests are moderated before image permission checks, scheduling, and upstream forwarding.",
+		))
+		moderatedGateway.POST("/chat/completions", coveredModeratedRoute(
+			"/v1/chat/completions",
+			"GatewayHandler.ChatCompletions",
+			service.ContentModerationProtocolOpenAIChat,
+			"Chat Completions requests for non-OpenAI groups are moderated by the shared Gateway pre-forward pipeline before scheduling and upstream forwarding.",
 		), func(c *gin.Context) {
 			if getGroupPlatform(c) == service.PlatformGrok {
 				rejectGrokUnsupportedEndpoint(c, "Chat Completions API")
 				return
 			}
 			if isOpenAIGatewayPlatform(c) {
+				if enterModeratedRouteBranchPipeline(c, moderatedGateway, openAIChatCompletionsRouteMeta).Stop {
+					return
+				}
 				h.OpenAIGateway.ChatCompletions(c)
 				return
 			}
@@ -296,26 +325,51 @@ func RegisterGatewayRoutes(
 	}
 
 	// OpenAI Responses API（不带v1前缀的别名）— auto-route based on group platform
+	rootOpenAIResponsesRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
+		"/responses",
+		"OpenAIGatewayHandler.Responses",
+		service.ContentModerationProtocolOpenAIResponses,
+		"Root Responses alias reaches the same OpenAI-compatible Responses handler and moderation hook.",
+	))
+	moderatedRoot := NewGatewayPipelineRegistrar(r, openAIHTTPPipelineEntrypoints)
 	responsesHandler := func(c *gin.Context) {
 		if isOpenAIResponsesCompatibleGatewayPlatform(c) {
+			if enterModeratedRouteBranchPipeline(c, moderatedRoot, rootOpenAIResponsesRouteMeta).Stop {
+				return
+			}
 			h.OpenAIGateway.Responses(c)
 			return
 		}
 		h.Gateway.Responses(c)
 	}
-	moderatedRoot := NewGatewayPipelineRegistrar(r, openAIHTTPPipelineEntrypoints)
-	moderatedRoot.POST("/responses", coveredOpenAIHTTPRoute(
+	moderatedRoot.POST("/responses", coveredModeratedRoute(
 		"/responses",
-		"OpenAIGatewayHandler.Responses",
+		"GatewayHandler.Responses",
 		service.ContentModerationProtocolOpenAIResponses,
-		"Root Responses alias reaches the same OpenAI-compatible Responses handler and moderation hook.",
+		"Root Responses alias for non-OpenAI groups uses the shared Gateway pre-forward pipeline before upstream forwarding.",
 	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, responsesHandler)
-	moderatedRoot.POST("/responses/*subpath", coveredOpenAIHTTPRoute(
+	rootOpenAIResponsesSubpathRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
 		"/responses/*subpath",
 		"OpenAIGatewayHandler.Responses",
 		service.ContentModerationProtocolOpenAIResponses,
 		"Root Responses subpath alias reaches the same OpenAI-compatible Responses handler and moderation hook.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, responsesHandler)
+	))
+	responsesSubpathHandler := func(c *gin.Context) {
+		if isOpenAIResponsesCompatibleGatewayPlatform(c) {
+			if enterModeratedRouteBranchPipeline(c, moderatedRoot, rootOpenAIResponsesSubpathRouteMeta).Stop {
+				return
+			}
+			h.OpenAIGateway.Responses(c)
+			return
+		}
+		h.Gateway.Responses(c)
+	}
+	moderatedRoot.POST("/responses/*subpath", coveredModeratedRoute(
+		"/responses/*subpath",
+		"GatewayHandler.Responses",
+		service.ContentModerationProtocolOpenAIResponses,
+		"Root Responses subpath alias for non-OpenAI groups uses the shared Gateway pre-forward pipeline before upstream forwarding.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, responsesSubpathHandler)
 	moderatedRoot.GET("/responses", coveredOpenAIWebSocketRoute(
 		"/responses",
 		"OpenAIGatewayHandler.ResponsesWebSocket",
@@ -332,18 +386,50 @@ func RegisterGatewayRoutes(
 	moderatedCodexDirect := NewGatewayPipelineRegistrar(codexDirect, openAIHTTPPipelineEntrypoints)
 	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic)
 	{
-		moderatedCodexDirect.POST("/responses", coveredOpenAIHTTPRoute(
+		codexOpenAIResponsesRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
 			"/backend-api/codex/responses",
 			"OpenAIGatewayHandler.Responses",
 			service.ContentModerationProtocolOpenAIResponses,
 			"Codex direct Responses route reaches the same OpenAI-compatible Responses handler and moderation hook.",
-		), responsesHandler)
-		moderatedCodexDirect.POST("/responses/*subpath", coveredOpenAIHTTPRoute(
+		))
+		codexResponsesHandler := func(c *gin.Context) {
+			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
+				if enterModeratedRouteBranchPipeline(c, moderatedCodexDirect, codexOpenAIResponsesRouteMeta).Stop {
+					return
+				}
+				h.OpenAIGateway.Responses(c)
+				return
+			}
+			h.Gateway.Responses(c)
+		}
+		moderatedCodexDirect.POST("/responses", coveredModeratedRoute(
+			"/backend-api/codex/responses",
+			"GatewayHandler.Responses",
+			service.ContentModerationProtocolOpenAIResponses,
+			"Codex direct Responses route for non-OpenAI groups uses the shared Gateway pre-forward pipeline before upstream forwarding.",
+		), codexResponsesHandler)
+		codexOpenAIResponsesSubpathRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
 			"/backend-api/codex/responses/*subpath",
 			"OpenAIGatewayHandler.Responses",
 			service.ContentModerationProtocolOpenAIResponses,
 			"Codex direct Responses subpaths reach the same OpenAI-compatible Responses handler and moderation hook.",
-		), responsesHandler)
+		))
+		codexResponsesSubpathHandler := func(c *gin.Context) {
+			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
+				if enterModeratedRouteBranchPipeline(c, moderatedCodexDirect, codexOpenAIResponsesSubpathRouteMeta).Stop {
+					return
+				}
+				h.OpenAIGateway.Responses(c)
+				return
+			}
+			h.Gateway.Responses(c)
+		}
+		moderatedCodexDirect.POST("/responses/*subpath", coveredModeratedRoute(
+			"/backend-api/codex/responses/*subpath",
+			"GatewayHandler.Responses",
+			service.ContentModerationProtocolOpenAIResponses,
+			"Codex direct Responses subpaths for non-OpenAI groups use the shared Gateway pre-forward pipeline before upstream forwarding.",
+		), codexResponsesSubpathHandler)
 		moderatedCodexDirect.GET("/responses", coveredOpenAIWebSocketRoute(
 			"/backend-api/codex/responses",
 			"OpenAIGatewayHandler.ResponsesWebSocket",
@@ -358,17 +444,26 @@ func RegisterGatewayRoutes(
 		})
 	}
 	// OpenAI Chat Completions API（不带v1前缀的别名）— auto-route based on group platform
-	moderatedRoot.POST("/chat/completions", coveredOpenAIHTTPRoute(
+	rootOpenAIChatCompletionsRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
 		"/chat/completions",
 		"OpenAIGatewayHandler.ChatCompletions",
 		service.ContentModerationProtocolOpenAIChat,
 		"Root chat alias reaches the same OpenAI-compatible chat handler and moderation hook.",
+	))
+	moderatedRoot.POST("/chat/completions", coveredModeratedRoute(
+		"/chat/completions",
+		"GatewayHandler.ChatCompletions",
+		service.ContentModerationProtocolOpenAIChat,
+		"Root chat alias for non-OpenAI groups uses the shared Gateway pre-forward pipeline before upstream forwarding.",
 	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) == service.PlatformGrok {
 			rejectGrokUnsupportedEndpoint(c, "Chat Completions API")
 			return
 		}
 		if isOpenAIGatewayPlatform(c) {
+			if enterModeratedRouteBranchPipeline(c, moderatedRoot, rootOpenAIChatCompletionsRouteMeta).Stop {
+				return
+			}
 			h.OpenAIGateway.ChatCompletions(c)
 			return
 		}

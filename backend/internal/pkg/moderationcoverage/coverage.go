@@ -456,7 +456,7 @@ func GatewayPreForwardPipelineStagesForRoute(handlerName, protocol string) []Pip
 	}
 	var stages []PipelineStageCoverage
 	switch strings.TrimSpace(handlerName) {
-	case "GatewayHandler.Messages", "GatewayHandler.GeminiV1BetaModels":
+	case "GatewayHandler.Messages", "GatewayHandler.GeminiV1BetaModels", "GatewayHandler.ChatCompletions", "GatewayHandler.Responses":
 		stages = []PipelineStageCoverage{
 			CoveredPipelineStage(StageModeration),
 			CoveredPipelineStage(StagePreForward),
@@ -498,7 +498,7 @@ func IsOpenAIHTTPPipelineProtocol(protocol string) bool {
 
 func IsGatewayPreForwardPipelineProtocol(protocol string) bool {
 	switch strings.TrimSpace(protocol) {
-	case "anthropic_messages", "gemini":
+	case "anthropic_messages", "gemini", "openai_chat_completions", "openai_responses":
 		return true
 	default:
 		return false
@@ -687,5 +687,5 @@ func entryKey(entry Entry) string {
 	if strings.TrimSpace(entry.Method) == "" || strings.TrimSpace(entry.Path) == "" {
 		return ""
 	}
-	return entry.Method + " " + entry.Path + " " + entry.Protocol
+	return entry.Method + " " + entry.Path + " " + entry.Protocol + " " + entry.Handler
 }

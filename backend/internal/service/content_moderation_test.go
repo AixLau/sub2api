@@ -2792,8 +2792,8 @@ func TestContentModerationPipelineCoverageStatusReportsStageDrift(t *testing.T) 
 	require.Equal(t, "mismatch", status.Status)
 	require.Equal(t, 3, status.OpenAIHTTP.RequiredRoutes)
 	require.Equal(t, 2, status.OpenAIHTTP.CoveredRoutes)
-	require.Equal(t, []string{"POST /v1/responses"}, status.OpenAIHTTP.UncoveredRoutes)
-	requirePipelineStageSummary(t, status.OpenAIHTTP.StageCoverage, moderationcoverage.StageImage, 2, 1, []string{"POST /v1/responses"})
+	require.Equal(t, []string{"POST /v1/responses OpenAIGatewayHandler.Responses"}, status.OpenAIHTTP.UncoveredRoutes)
+	requirePipelineStageSummary(t, status.OpenAIHTTP.StageCoverage, moderationcoverage.StageImage, 2, 1, []string{"POST /v1/responses OpenAIGatewayHandler.Responses"})
 }
 
 func TestContentModerationPipelineCoverageStatusReportsMissingExpectedStage(t *testing.T) {
@@ -2805,8 +2805,8 @@ func TestContentModerationPipelineCoverageStatusReportsMissingExpectedStage(t *t
 	require.Equal(t, "mismatch", status.Status)
 	require.Equal(t, 3, status.OpenAIHTTP.RequiredRoutes)
 	require.Equal(t, 2, status.OpenAIHTTP.CoveredRoutes)
-	require.Equal(t, []string{"POST /v1/responses"}, status.OpenAIHTTP.UncoveredRoutes)
-	requirePipelineStageSummary(t, status.OpenAIHTTP.StageCoverage, moderationcoverage.StageImage, 2, 1, []string{"POST /v1/responses"})
+	require.Equal(t, []string{"POST /v1/responses OpenAIGatewayHandler.Responses"}, status.OpenAIHTTP.UncoveredRoutes)
+	requirePipelineStageSummary(t, status.OpenAIHTTP.StageCoverage, moderationcoverage.StageImage, 2, 1, []string{"POST /v1/responses OpenAIGatewayHandler.Responses"})
 
 	responsesRoute := requirePipelineRouteSummary(t, status.OpenAIHTTP.Routes, "POST", "/v1/responses")
 	require.False(t, responsesRoute.Covered)
@@ -2838,7 +2838,7 @@ func TestContentModerationPipelineCoverageStatusReportsMissingOpenAIHTTPMetadata
 	require.Equal(t, "mismatch", status.Status)
 	require.Equal(t, 1, status.OpenAIHTTP.RequiredRoutes)
 	require.Equal(t, 0, status.OpenAIHTTP.CoveredRoutes)
-	require.Equal(t, []string{"POST /v1/chat/completions"}, status.OpenAIHTTP.UncoveredRoutes)
+	require.Equal(t, []string{"POST /v1/chat/completions OpenAIGatewayHandler.ChatCompletions"}, status.OpenAIHTTP.UncoveredRoutes)
 	require.Len(t, status.OpenAIHTTP.Routes, 1)
 	require.Equal(t, []string{
 		moderationcoverage.StageModeration,
@@ -2869,7 +2869,7 @@ func TestContentModerationPipelineCoverageStatusReportsWrongOpenAIHTTPPipelineMe
 	require.Equal(t, "mismatch", status.Status)
 	require.Equal(t, 1, status.OpenAIHTTP.RequiredRoutes)
 	require.Equal(t, 0, status.OpenAIHTTP.CoveredRoutes)
-	require.Equal(t, []string{"POST /v1/chat/completions"}, status.OpenAIHTTP.UncoveredRoutes)
+	require.Equal(t, []string{"POST /v1/chat/completions OpenAIGatewayHandler.ChatCompletions"}, status.OpenAIHTTP.UncoveredRoutes)
 	require.Len(t, status.OpenAIHTTP.Routes, 1)
 	require.Equal(t, []string{"pipeline_metadata"}, status.OpenAIHTTP.Routes[0].UncoveredStages)
 }
@@ -2890,7 +2890,7 @@ func TestContentModerationPipelineCoverageStatusReportsMissingOpenAIWebSocketMet
 	require.Equal(t, "mismatch", status.Status)
 	require.Equal(t, 1, status.OpenAIWebSocket.RequiredRoutes)
 	require.Equal(t, 0, status.OpenAIWebSocket.CoveredRoutes)
-	require.Equal(t, []string{"GET /v1/responses"}, status.OpenAIWebSocket.UncoveredRoutes)
+	require.Equal(t, []string{"GET /v1/responses OpenAIGatewayHandler.ResponsesWebSocket"}, status.OpenAIWebSocket.UncoveredRoutes)
 	require.Len(t, status.OpenAIWebSocket.Routes, 1)
 	require.Equal(t, []string{
 		moderationcoverage.StageModeration,
