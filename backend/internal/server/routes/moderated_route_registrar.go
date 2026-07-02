@@ -16,30 +16,57 @@ type routeRegistrar interface {
 // the gateway content moderation guard before upstream forwarding.
 type ModeratedRouteMeta = moderationcoverage.Entry
 
+type GatewayPipelineEntryResult struct {
+	Stop bool
+}
+
+type GatewayPipelineEntrypoint interface {
+	EnterGatewayPipeline(*gin.Context, ModeratedRouteMeta) GatewayPipelineEntryResult
+}
+
+type GatewayPipelineEntrypointFunc func(*gin.Context, ModeratedRouteMeta) GatewayPipelineEntryResult
+
+func (f GatewayPipelineEntrypointFunc) EnterGatewayPipeline(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+	if f == nil {
+		return GatewayPipelineEntryResult{}
+	}
+	return f(c, meta)
+}
+
+type GatewayPipelineEntrypoints map[string]GatewayPipelineEntrypoint
+
 type ModeratedRouteRegistrar struct {
-	routes routeRegistrar
+	routes      routeRegistrar
+	entrypoints GatewayPipelineEntrypoints
 }
 
 func NewModeratedRouteRegistrar(routes routeRegistrar) *ModeratedRouteRegistrar {
-	return &ModeratedRouteRegistrar{routes: routes}
+	return NewGatewayPipelineRegistrar(routes, nil)
+}
+
+func NewGatewayPipelineRegistrar(routes routeRegistrar, entrypoints GatewayPipelineEntrypoints) *ModeratedRouteRegistrar {
+	return &ModeratedRouteRegistrar{
+		routes:      routes,
+		entrypoints: normalizeGatewayPipelineEntrypoints(entrypoints),
+	}
 }
 
 func (r *ModeratedRouteRegistrar) GET(relativePath string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
 	meta.Method = "GET"
 	meta = registerModeratedRoute(meta)
-	return r.routes.GET(relativePath, prependModeratedRouteMetaHandler(meta, handlers)...)
+	return r.routes.GET(relativePath, r.prependModeratedRouteMetaHandler(meta, handlers)...)
 }
 
 func (r *ModeratedRouteRegistrar) GETNoAudit(relativePath string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
 	meta.Method = "GET"
 	meta = registerModeratedRoute(meta)
-	return r.routes.GET(relativePath, prependModeratedRouteMetaHandler(meta, handlers)...)
+	return r.routes.GET(relativePath, r.prependModeratedRouteMetaHandler(meta, handlers)...)
 }
 
 func (r *ModeratedRouteRegistrar) POST(relativePath string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
 	meta.Method = "POST"
 	meta = registerModeratedRoute(meta)
-	return r.routes.POST(relativePath, prependModeratedRouteMetaHandler(meta, handlers)...)
+	return r.routes.POST(relativePath, r.prependModeratedRouteMetaHandler(meta, handlers)...)
 }
 
 func GatewayModeratedRouteCoverageEntries() []ModeratedRouteMeta {
@@ -65,15 +92,52 @@ func setModeratedRouteBranchMeta(c *gin.Context, meta ModeratedRouteMeta) {
 	moderationcoverage.SetRouteMeta(c, meta)
 }
 
-func prependModeratedRouteMetaHandler(meta ModeratedRouteMeta, handlers []gin.HandlerFunc) []gin.HandlerFunc {
+func normalizeGatewayPipelineEntrypoints(entrypoints GatewayPipelineEntrypoints) GatewayPipelineEntrypoints {
+	if len(entrypoints) == 0 {
+		return nil
+	}
+	normalized := make(GatewayPipelineEntrypoints, len(entrypoints))
+	for pipeline, entrypoint := range entrypoints {
+		pipeline = moderationcoverage.NormalizePipeline(pipeline)
+		if pipeline == "" || entrypoint == nil {
+			continue
+		}
+		normalized[pipeline] = entrypoint
+	}
+	return normalized
+}
+
+func (r *ModeratedRouteRegistrar) prependModeratedRouteMetaHandler(meta ModeratedRouteMeta, handlers []gin.HandlerFunc) []gin.HandlerFunc {
 	prepended := make([]gin.HandlerFunc, 0, len(handlers)+1)
 	prepended = append(prepended, func(c *gin.Context) {
 		moderationcoverage.SetRouteMeta(c, meta)
+		if r != nil && r.runGatewayPipelineEntrypoint(c, meta).Stop {
+			return
+		}
 		c.Next()
 		enforceModeratedRoutePipelineAdmission(c, meta)
 	})
 	prepended = append(prepended, handlers...)
 	return prepended
+}
+
+func (r *ModeratedRouteRegistrar) runGatewayPipelineEntrypoint(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+	if r == nil || len(r.entrypoints) == 0 {
+		return GatewayPipelineEntryResult{}
+	}
+	meta = moderationcoverage.NormalizeEntry(meta)
+	if !meta.Upstream || !meta.ModerationRequired || meta.Pipeline == "" {
+		return GatewayPipelineEntryResult{}
+	}
+	entrypoint := r.entrypoints[meta.Pipeline]
+	if entrypoint == nil {
+		return GatewayPipelineEntryResult{}
+	}
+	result := entrypoint.EnterGatewayPipeline(c, meta)
+	if result.Stop {
+		c.Abort()
+	}
+	return result
 }
 
 func enforceModeratedRoutePipelineAdmission(c *gin.Context, meta ModeratedRouteMeta) {
