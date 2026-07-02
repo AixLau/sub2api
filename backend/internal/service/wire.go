@@ -41,6 +41,7 @@ func ProvideUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, b
 func ProvideContentModerationService(
 	settingRepo SettingRepository,
 	repo ContentModerationRepository,
+	outboxRepo ContentModerationOutboxRepository,
 	hashCache ContentModerationHashCache,
 	groupRepo GroupRepository,
 	userRepo UserRepository,
@@ -49,6 +50,7 @@ func ProvideContentModerationService(
 	buildInfo BuildInfo,
 ) *ContentModerationService {
 	svc := NewContentModerationService(settingRepo, repo, hashCache, groupRepo, userRepo, authCacheInvalidator, emailService)
+	svc.SetOutboxRepository(outboxRepo)
 	svc.SetBuildInfo(buildInfo)
 	return svc
 }

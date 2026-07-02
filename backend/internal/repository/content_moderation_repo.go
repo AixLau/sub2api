@@ -50,19 +50,24 @@ func (r *contentModerationRepository) CreateLog(ctx context.Context, log *servic
 	}
 	err = r.db.QueryRowContext(ctx, `
 INSERT INTO content_moderation_logs (
-    request_id, user_id, user_email, api_key_id, api_key_name, group_id, group_name,
+    decision_id, request_id, user_id, user_email, api_key_id, api_key_name, group_id, group_name,
     endpoint, provider, model, mode, action, flagged, highest_category, highest_score,
     category_scores, threshold_snapshot, input_excerpt, upstream_latency_ms, error,
     matched_keyword, keyword_category, keyword_severity,
     violation_count, auto_banned, email_sent, queue_delay_ms
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7,
-    $8, $9, $10, $11, $12, $13, $14, $15,
-    $16::jsonb, $17::jsonb, $18, $19, $20,
-    $21, $22, $23,
-    $24, $25, $26, $27
+    $1, $2, $3, $4, $5, $6, $7, $8,
+    $9, $10, $11, $12, $13, $14, $15, $16,
+    $17::jsonb, $18::jsonb, $19, $20, $21,
+    $22, $23, $24,
+    $25, $26, $27, $28
+) ON CONFLICT (decision_id) WHERE decision_id <> '' DO UPDATE SET
+    queue_delay_ms = COALESCE(EXCLUDED.queue_delay_ms, content_moderation_logs.queue_delay_ms),
+    violation_count = GREATEST(content_moderation_logs.violation_count, EXCLUDED.violation_count),
+    auto_banned = content_moderation_logs.auto_banned OR EXCLUDED.auto_banned,
+    email_sent = content_moderation_logs.email_sent OR EXCLUDED.email_sent
 ) RETURNING id, created_at`,
-		log.RequestID, userID, log.UserEmail, apiKeyID, log.APIKeyName, groupID, log.GroupName,
+		log.DecisionID, log.RequestID, userID, log.UserEmail, apiKeyID, log.APIKeyName, groupID, log.GroupName,
 		log.Endpoint, log.Provider, log.Model, log.Mode, log.Action, log.Flagged, log.HighestCategory, log.HighestScore,
 		string(categoryScores), string(thresholdSnapshot), log.InputExcerpt, latency, log.Error,
 		log.MatchedKeyword, log.KeywordCategory, log.KeywordSeverity,
@@ -215,6 +220,39 @@ func (r *contentModerationRepository) UpdateLogEmailSent(ctx context.Context, id
 	_, err := r.db.ExecContext(ctx, `UPDATE content_moderation_logs SET email_sent = $1 WHERE id = $2`, sent, id)
 	if err != nil {
 		return fmt.Errorf("update content moderation log email_sent: %w", err)
+	}
+	return nil
+}
+
+func (r *contentModerationRepository) UpdateLogViolationCountByDecisionID(ctx context.Context, decisionID string, count int) error {
+	if strings.TrimSpace(decisionID) == "" {
+		return nil
+	}
+	_, err := r.db.ExecContext(ctx, `UPDATE content_moderation_logs SET violation_count = $1 WHERE decision_id = $2`, count, decisionID)
+	if err != nil {
+		return fmt.Errorf("update content moderation log violation_count: %w", err)
+	}
+	return nil
+}
+
+func (r *contentModerationRepository) UpdateLogAccountActionByDecisionID(ctx context.Context, decisionID string, violationCount int, autoBanned bool) error {
+	if strings.TrimSpace(decisionID) == "" {
+		return nil
+	}
+	_, err := r.db.ExecContext(ctx, `UPDATE content_moderation_logs SET violation_count = $1, auto_banned = $2 WHERE decision_id = $3`, violationCount, autoBanned, decisionID)
+	if err != nil {
+		return fmt.Errorf("update content moderation log account action: %w", err)
+	}
+	return nil
+}
+
+func (r *contentModerationRepository) UpdateLogEmailSentByDecisionID(ctx context.Context, decisionID string, sent bool) error {
+	if strings.TrimSpace(decisionID) == "" {
+		return nil
+	}
+	_, err := r.db.ExecContext(ctx, `UPDATE content_moderation_logs SET email_sent = $1 WHERE decision_id = $2`, sent, decisionID)
+	if err != nil {
+		return fmt.Errorf("update content moderation log email_sent by decision: %w", err)
 	}
 	return nil
 }

@@ -214,6 +214,26 @@
     },
     {
       "method": "POST",
+      "path": "/v1/videos/generations",
+      "handler": "OpenAIGatewayHandler.GrokVideoGeneration",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_images",
+      "status": "covered",
+      "review_reason": "Grok video generation prompt metadata is moderated through the shared Grok media handler before permission checks, scheduling, and upstream forwarding."
+    },
+    {
+      "method": "POST",
+      "path": "/videos/generations",
+      "handler": "OpenAIGatewayHandler.GrokVideoGeneration",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_images",
+      "status": "covered",
+      "review_reason": "Root Grok video generation alias reaches the shared Grok media moderation hook before upstream forwarding."
+    },
+    {
+      "method": "POST",
       "path": "/v1beta/models/*modelAction",
       "handler": "GatewayHandler.GeminiV1BetaModels",
       "upstream": true,

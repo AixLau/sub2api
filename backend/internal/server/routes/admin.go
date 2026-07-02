@@ -129,6 +129,9 @@ func registerContentModerationRoutes(admin *gin.RouterGroup, h *handler.Handlers
 		risk.POST("/users/:user_id/unban", h.Admin.ContentModeration.UnbanUser)
 		risk.DELETE("/hashes", h.Admin.ContentModeration.DeleteFlaggedHash)
 		risk.DELETE("/hashes/all", h.Admin.ContentModeration.ClearFlaggedHashes)
+		risk.GET("/outbox/dead-letters", h.Admin.ContentModeration.ListOutboxDeadLetters)
+		risk.POST("/outbox/dead-letters/:id/replay", h.Admin.ContentModeration.ReplayOutboxDeadLetter)
+		risk.POST("/outbox/cleanup", h.Admin.ContentModeration.CleanupOutbox)
 	}
 }
 

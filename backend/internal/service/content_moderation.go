@@ -522,6 +522,7 @@ type ContentModerationDecision struct {
 
 type ContentModerationLog struct {
 	ID                int64              `json:"id"`
+	DecisionID        string             `json:"decision_id,omitempty"`
 	RequestID         string             `json:"request_id"`
 	UserID            *int64             `json:"user_id,omitempty"`
 	UserEmail         string             `json:"user_email"`
@@ -648,6 +649,7 @@ type ContentModerationRuntimeStatus struct {
 	LastCleanupAt                *time.Time                                 `json:"last_cleanup_at,omitempty"`
 	LastCleanupDeletedHit        int64                                      `json:"last_cleanup_deleted_hit"`
 	LastCleanupDeletedNonHit     int64                                      `json:"last_cleanup_deleted_non_hit"`
+	Outbox                       ContentModerationOutboxStatus              `json:"outbox"`
 }
 
 type ContentModerationUnbanUserResult struct {
@@ -673,6 +675,9 @@ type ContentModerationRepository interface {
 	CleanupExpiredLogs(ctx context.Context, hitBefore time.Time, nonHitBefore time.Time) (*ContentModerationCleanupResult, error)
 	// UpdateLogEmailSent 回写邮件发送结果（F7：CreateLog 先行后补 EmailSent）。
 	UpdateLogEmailSent(ctx context.Context, id int64, sent bool) error
+	UpdateLogViolationCountByDecisionID(ctx context.Context, decisionID string, count int) error
+	UpdateLogAccountActionByDecisionID(ctx context.Context, decisionID string, violationCount int, autoBanned bool) error
+	UpdateLogEmailSentByDecisionID(ctx context.Context, decisionID string, sent bool) error
 }
 
 type ContentModerationHashCache interface {
@@ -691,6 +696,7 @@ type ContentModerationService struct {
 	userRepo                 UserRepository
 	authCacheInvalidator     APIKeyAuthCacheInvalidator
 	emailService             *EmailService
+	outboxRepo               ContentModerationOutboxRepository
 	buildInfo                BuildInfo
 	baselineStatusMu         sync.Mutex
 	baselineStatusValid      bool
@@ -713,6 +719,7 @@ type ContentModerationService struct {
 	lastCleanupUnix          atomic.Int64
 	lastCleanupDeletedHit    atomic.Int64
 	lastCleanupDeletedNonHit atomic.Int64
+	lastOutboxCleanupDeleted atomic.Int64
 	keyHealthMu              sync.Mutex
 	keyHealth                map[string]*contentModerationKeyHealth
 }
@@ -1164,25 +1171,6 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		return contentModerationFailureDecision(cfg), nil
 	}
 	hashText := content.Hash()
-	if cfg.Mode == ContentModerationModePreBlock {
-		if cfg.shouldRunLocalRules() {
-			if keywordMatch, hit := matchContentModerationKeyword(content.Text, cfg.keywordRules()); hit {
-				return s.keywordDecision(input, cfg, content, hashText, keywordMatch), nil
-			}
-		}
-		if !cfg.externalModerationRequired() {
-			s.recordPreBlockSyncMetric(0, ContentModerationActionAllow)
-			slog.Info("content_moderation.skip_external_moderation_rule_only",
-				"user_id", input.UserID,
-				"api_key_id", input.APIKeyID,
-				"group_id", contentModerationLogGroupID(input.GroupID),
-				"endpoint", input.Endpoint,
-				"protocol", input.Protocol,
-				"engine_mode", cfg.EngineMode,
-				"keyword_blocking_mode", cfg.KeywordBlockingMode)
-			return allow, nil
-		}
-	}
 	if cfg.PreHashCheckEnabled && s.hashCache != nil {
 		matched, err := s.hashCache.HasFlaggedInputHash(ctx, hashText)
 		if err != nil {
@@ -1216,6 +1204,25 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 				InputHash:  hashText,
 				Action:     ContentModerationActionHashBlock,
 			}, nil
+		}
+	}
+	if cfg.Mode == ContentModerationModePreBlock {
+		if cfg.shouldRunLocalRules() {
+			if keywordMatch, hit := matchContentModerationKeyword(content.Text, cfg.keywordRules()); hit {
+				return s.keywordDecision(input, cfg, content, hashText, keywordMatch), nil
+			}
+		}
+		if !cfg.externalModerationRequired() {
+			s.recordPreBlockSyncMetric(0, ContentModerationActionAllow)
+			slog.Info("content_moderation.skip_external_moderation_rule_only",
+				"user_id", input.UserID,
+				"api_key_id", input.APIKeyID,
+				"group_id", contentModerationLogGroupID(input.GroupID),
+				"endpoint", input.Endpoint,
+				"protocol", input.Protocol,
+				"engine_mode", cfg.EngineMode,
+				"keyword_blocking_mode", cfg.KeywordBlockingMode)
+			return allow, nil
 		}
 	}
 	if len(cfg.apiKeys()) == 0 {
@@ -1447,7 +1454,14 @@ func (s *ContentModerationService) enqueueAsync(input ContentModerationCheckInpu
 }
 
 func (s *ContentModerationService) enqueueRecord(input ContentModerationCheckInput, cfg *ContentModerationConfig, log *ContentModerationLog, inputHash string, recordHash bool, applySideEffects bool) {
-	if s == nil || s.asyncQueue == nil || log == nil {
+	if s == nil || log == nil {
+		return
+	}
+	if s.enqueueModerationOutboxRecord(input, cfg, log, inputHash, recordHash, applySideEffects) {
+		s.asyncEnqueued.Add(1)
+		return
+	}
+	if s.asyncQueue == nil {
 		return
 	}
 	queueSize := defaultContentModerationQueueSize
@@ -1682,10 +1696,11 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 		lastCleanupAt = &t
 	}
 	routeCoverage := contentModerationRouteCoverageStatus()
+	outboxStatus := s.contentModerationOutboxStatus(ctx)
 	return &ContentModerationRuntimeStatus{
 		Build:                        s.buildStatus(),
 		SecurityBaseline:             s.contentModerationSecurityBaselineStatus(),
-		EffectiveProtection:          s.buildContentModerationEffectiveProtectionStatus(cfg, riskEnabled, routeCoverage),
+		EffectiveProtection:          s.buildContentModerationEffectiveProtectionStatus(cfg, riskEnabled, routeCoverage, flaggedHashCount),
 		RouteCoverage:                routeCoverage,
 		Enabled:                      cfg.Enabled,
 		RiskControlEnabled:           riskEnabled,
@@ -1716,6 +1731,7 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 		LastCleanupAt:                lastCleanupAt,
 		LastCleanupDeletedHit:        s.lastCleanupDeletedHit.Load(),
 		LastCleanupDeletedNonHit:     s.lastCleanupDeletedNonHit.Load(),
+		Outbox:                       outboxStatus,
 	}, nil
 }
 
@@ -1915,7 +1931,7 @@ func normalizeContentModerationRouteCoverageStatus(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
 
-func (s *ContentModerationService) buildContentModerationEffectiveProtectionStatus(cfg *ContentModerationConfig, riskEnabled bool, routeCoverage ContentModerationRouteCoverageStatus) ContentModerationEffectiveProtectionStatus {
+func (s *ContentModerationService) buildContentModerationEffectiveProtectionStatus(cfg *ContentModerationConfig, riskEnabled bool, routeCoverage ContentModerationRouteCoverageStatus, flaggedHashCount int64) ContentModerationEffectiveProtectionStatus {
 	if cfg == nil {
 		cfg = defaultContentModerationConfig()
 	} else {
@@ -1935,7 +1951,8 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 	externalAPIHealth := s.contentModerationExternalAPIHealth(cfg)
 	externalAPIHealthy := !externalAPIRequired || externalAPIHealth.healthy
 	highRiskRulesBlocking, highRiskRulesPresent := contentModerationHighRiskRulesBlocking(cfg.keywordRules())
-	deterministicPolicyPresent := contentModerationDeterministicPolicyPresent(cfg)
+	hashBlockingPolicyPresent := contentModerationHashBlockingPolicyPresent(cfg, flaggedHashCount)
+	deterministicPolicyPresent := contentModerationDeterministicPolicyPresent(cfg) || hashBlockingPolicyPresent
 	baselineStatus := s.contentModerationSecurityBaselineStatus()
 	buildCommit := strings.TrimSpace(s.buildInfo.Commit)
 	attestationRequested := parseContentModerationBoolEnv("MODERATION_SECURITY_BASELINE_SATISFIED")
@@ -2003,7 +2020,7 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 			unsafeReasons = append(unsafeReasons, "external_api_last_test_failed")
 		}
 	}
-	if !highRiskRulesBlocking {
+	if !highRiskRulesBlocking && !hashBlockingPolicyPresent {
 		unsafeReasons = append(unsafeReasons, "high_risk_rules_not_blocking")
 	}
 	switch cfg.EngineMode {
@@ -2114,6 +2131,13 @@ func contentModerationDeterministicPolicyPresent(cfg *ContentModerationConfig) b
 	return false
 }
 
+func contentModerationHashBlockingPolicyPresent(cfg *ContentModerationConfig, flaggedHashCount int64) bool {
+	if cfg == nil {
+		return false
+	}
+	return cfg.PreHashCheckEnabled && flaggedHashCount > 0
+}
+
 func (s *ContentModerationService) cleanupWorker() {
 	timer := time.NewTimer(contentModerationCleanupDelay)
 	defer timer.Stop()
@@ -2149,6 +2173,7 @@ func (s *ContentModerationService) runCleanupOnce() {
 	s.lastCleanupUnix.Store(result.FinishedAt.Unix())
 	s.lastCleanupDeletedHit.Store(result.DeletedHit)
 	s.lastCleanupDeletedNonHit.Store(result.DeletedNonHit)
+	s.cleanupContentModerationOutbox(ctx, now)
 }
 
 func (s *ContentModerationService) loadConfig(ctx context.Context) (*ContentModerationConfig, error) {
@@ -2322,6 +2347,7 @@ func (s *ContentModerationService) buildLog(input ContentModerationCheckInput, c
 		apiKeyID = &input.APIKeyID
 	}
 	return &ContentModerationLog{
+		DecisionID:        contentModerationDecisionID(input, nil, ""),
 		RequestID:         input.RequestID,
 		UserID:            userID,
 		UserEmail:         input.UserEmail,

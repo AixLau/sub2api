@@ -175,6 +175,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			"",
 			false,
 			service.PlatformGrok,
+			subject.UserID,
 		)
 		if err != nil {
 			reqLog.Warn("grok_media.account_select_failed",
@@ -218,7 +219,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		accountReleaseFunc, accountAcquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, false, &streamStarted, reqLog)
+		accountReleaseFunc, _, accountAcquired, _ := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, requestModel, false, "", "", false, &streamStarted, reqLog)
 		if !accountAcquired {
 			return
 		}

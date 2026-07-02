@@ -1,8 +1,13 @@
 package routes
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
+	"sort"
 	"strings"
 	"testing"
 
@@ -13,6 +18,19 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type gatewayRoutesModerationCoverageManifest struct {
+	SchemaVersion int                                            `json:"schema_version"`
+	Entries       []gatewayRoutesModerationCoverageManifestEntry `json:"entries"`
+}
+
+type gatewayRoutesModerationCoverageManifestEntry struct {
+	Method             string `json:"method"`
+	Path               string `json:"path"`
+	Upstream           bool   `json:"upstream"`
+	ModerationRequired bool   `json:"moderation_required"`
+	Status             string `json:"status"`
+}
 
 func newGatewayRoutesTestRouter(platform ...string) *gin.Engine {
 	gin.SetMode(gin.TestMode)
@@ -63,6 +81,25 @@ func TestGatewayRoutesOpenAIResponsesCompactPathIsRegistered(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should hit OpenAI responses handler", path)
 	}
+}
+
+func TestGatewayModerationCoverageManifestMatchesRegisteredUpstreamRoutes(t *testing.T) {
+	router := newGatewayRoutesTestRouter()
+
+	actualRoutes := gatewayModerationCoveredRoutesFromRouter(router)
+	manifestRoutes := gatewayModerationCoveredRoutesFromManifest(t)
+	proofRoutes := gatewayModerationCriticalRouteCoverageProofRoutes()
+
+	require.NotEmpty(t, actualRoutes, "registered gateway routes requiring moderation coverage should not be empty")
+	require.NotEmpty(t, manifestRoutes, "manifest routes requiring moderation coverage should not be empty")
+	require.NotEmpty(t, proofRoutes, "critical gateway route coverage proof routes should not be empty")
+
+	require.Empty(t, gatewayModerationRouteSetDifference(actualRoutes, manifestRoutes),
+		"registered upstream gateway routes must be declared as covered in docs/risk-control/content-moderation-gateway-coverage.json")
+	require.Empty(t, gatewayModerationRouteSetDifference(manifestRoutes, actualRoutes),
+		"covered moderation manifest routes must still exist in the real Gin gateway route table")
+	require.Empty(t, gatewayModerationRouteSetDifference(manifestRoutes, proofRoutes),
+		"covered moderation manifest routes must have explicit critical-route test proof")
 }
 
 func TestGatewayRoutesOpenAIImagesPathsAreRegistered(t *testing.T) {
@@ -193,4 +230,140 @@ func TestGatewayRoutesOpenAICountTokensPathIsRegistered(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 	require.NotEqual(t, http.StatusNotFound, w.Code)
+}
+
+func gatewayModerationCoveredRoutesFromRouter(router *gin.Engine) []string {
+	routeSet := make(map[string]struct{})
+	for _, route := range router.Routes() {
+		if gatewayRouteRequiresModerationCoverage(route.Method, route.Path) {
+			routeSet[gatewayModerationRouteKey(route.Method, route.Path)] = struct{}{}
+		}
+	}
+	return gatewayModerationSortedRouteSet(routeSet)
+}
+
+func gatewayRouteRequiresModerationCoverage(method, path string) bool {
+	switch strings.ToUpper(strings.TrimSpace(method)) {
+	case http.MethodPost:
+		return gatewayPostRouteCanCarryUpstreamUserContent(path)
+	case http.MethodGet:
+		switch strings.TrimSpace(path) {
+		case "/v1/responses", "/responses", "/backend-api/codex/responses":
+			return true
+		default:
+			return false
+		}
+	default:
+		return false
+	}
+}
+
+func gatewayPostRouteCanCarryUpstreamUserContent(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	switch path {
+	case "/responses", "/responses/*subpath",
+		"/chat/completions",
+		"/embeddings",
+		"/images/generations", "/images/edits",
+		"/videos/generations":
+		return true
+	}
+	return strings.HasPrefix(path, "/v1/") ||
+		strings.HasPrefix(path, "/v1beta/") ||
+		strings.HasPrefix(path, "/antigravity/v1/") ||
+		strings.HasPrefix(path, "/antigravity/v1beta/") ||
+		strings.HasPrefix(path, "/backend-api/codex/")
+}
+
+func gatewayModerationCoveredRoutesFromManifest(t *testing.T) []string {
+	t.Helper()
+
+	manifest := loadGatewayRoutesModerationCoverageManifest(t)
+	require.Equal(t, 1, manifest.SchemaVersion)
+
+	routeSet := make(map[string]struct{})
+	for _, entry := range manifest.Entries {
+		if !entry.Upstream || !entry.ModerationRequired || strings.TrimSpace(entry.Status) != "covered" {
+			continue
+		}
+		routeSet[gatewayModerationRouteKey(entry.Method, entry.Path)] = struct{}{}
+	}
+	return gatewayModerationSortedRouteSet(routeSet)
+}
+
+func gatewayModerationCriticalRouteCoverageProofRoutes() []string {
+	routeSet := map[string]struct{}{
+		"POST /v1/messages":                            {},
+		"POST /antigravity/v1/messages":                {},
+		"POST /v1/messages/count_tokens":               {},
+		"POST /antigravity/v1/messages/count_tokens":   {},
+		"POST /v1/chat/completions":                    {},
+		"POST /chat/completions":                       {},
+		"POST /v1/responses":                           {},
+		"POST /v1/responses/*subpath":                  {},
+		"POST /responses":                              {},
+		"POST /responses/*subpath":                     {},
+		"GET /v1/responses":                            {},
+		"GET /responses":                               {},
+		"POST /backend-api/codex/responses":            {},
+		"POST /backend-api/codex/responses/*subpath":   {},
+		"GET /backend-api/codex/responses":             {},
+		"POST /v1/embeddings":                          {},
+		"POST /embeddings":                             {},
+		"POST /v1/images/generations":                  {},
+		"POST /v1/images/edits":                        {},
+		"POST /images/generations":                     {},
+		"POST /images/edits":                           {},
+		"POST /v1/videos/generations":                  {},
+		"POST /videos/generations":                     {},
+		"POST /v1beta/models/*modelAction":             {},
+		"POST /antigravity/v1beta/models/*modelAction": {},
+	}
+	return gatewayModerationSortedRouteSet(routeSet)
+}
+
+func loadGatewayRoutesModerationCoverageManifest(t *testing.T) gatewayRoutesModerationCoverageManifest {
+	t.Helper()
+
+	_, file, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "..", ".."))
+	path := filepath.Join(repoRoot, "docs", "risk-control", "content-moderation-gateway-coverage.json")
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	var manifest gatewayRoutesModerationCoverageManifest
+	require.NoError(t, json.Unmarshal(data, &manifest))
+	return manifest
+}
+
+func gatewayModerationRouteKey(method, path string) string {
+	return strings.ToUpper(strings.TrimSpace(method)) + " " + strings.TrimSpace(path)
+}
+
+func gatewayModerationRouteSetDifference(left, right []string) []string {
+	rightSet := make(map[string]struct{}, len(right))
+	for _, route := range right {
+		rightSet[route] = struct{}{}
+	}
+	missing := make([]string, 0)
+	for _, route := range left {
+		if _, ok := rightSet[route]; !ok {
+			missing = append(missing, route)
+		}
+	}
+	sort.Strings(missing)
+	return missing
+}
+
+func gatewayModerationSortedRouteSet(routeSet map[string]struct{}) []string {
+	routes := make([]string, 0, len(routeSet))
+	for route := range routeSet {
+		routes = append(routes, route)
+	}
+	sort.Strings(routes)
+	return routes
 }

@@ -36,6 +36,18 @@ func (r *cyberOrderingTestRepo) UpdateLogEmailSent(ctx context.Context, id int64
 	return nil
 }
 
+func (r *cyberOrderingTestRepo) UpdateLogViolationCountByDecisionID(ctx context.Context, decisionID string, count int) error {
+	return nil
+}
+
+func (r *cyberOrderingTestRepo) UpdateLogAccountActionByDecisionID(ctx context.Context, decisionID string, violationCount int, autoBanned bool) error {
+	return nil
+}
+
+func (r *cyberOrderingTestRepo) UpdateLogEmailSentByDecisionID(ctx context.Context, decisionID string, sent bool) error {
+	return nil
+}
+
 func (r *cyberOrderingTestRepo) ListLogs(ctx context.Context, filter ContentModerationLogFilter) ([]ContentModerationLog, *pagination.PaginationResult, error) {
 	return nil, nil, nil
 }
