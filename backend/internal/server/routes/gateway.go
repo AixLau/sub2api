@@ -56,44 +56,47 @@ func RegisterGatewayRoutes(
 	// API网关（Claude API兼容）
 	gateway := r.Group("/v1")
 	openAIHTTPPipelineEntrypoints := GatewayPipelineEntrypoints{
-		moderationcoverage.PipelineOpenAIHTTP: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
-			switch meta.Protocol {
-			case service.ContentModerationProtocolOpenAIChat, service.ContentModerationProtocolOpenAIMessages, service.ContentModerationProtocolOpenAIResponses, service.ContentModerationProtocolOpenAIImages, service.ContentModerationProtocolOpenAIEmbeddings:
-			default:
-				return GatewayPipelineEntryResult{}
-			}
-			if !isOpenAIGatewayPlatform(c) {
-				return GatewayPipelineEntryResult{}
-			}
-			result := h.OpenAIGateway.EnterOpenAIHTTPGatewayPipeline(c, meta)
-			return GatewayPipelineEntryResult{Stop: result.Stop}
-		}),
-		moderationcoverage.PipelineOpenAIWebSocket: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
-			if meta.Protocol != service.ContentModerationProtocolOpenAIResponses {
-				return GatewayPipelineEntryResult{}
-			}
-			moderationcoverage.MarkPipelineEntrypointEntered(c, moderationcoverage.PipelineOpenAIWebSocket, "GatewayPipelineRegistrar.OpenAIWebSocket")
-			return GatewayPipelineEntryResult{}
-		}),
-		moderationcoverage.PipelineGatewayPreForward: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
-			switch meta.Protocol {
-			case service.ContentModerationProtocolAnthropicMessages, service.ContentModerationProtocolGemini, service.ContentModerationProtocolOpenAIChat, service.ContentModerationProtocolOpenAIResponses:
-			default:
-				return GatewayPipelineEntryResult{}
-			}
-			switch meta.Handler {
-			case "GatewayHandler.Messages", "GatewayHandler.CountTokens", "GatewayHandler.GeminiV1BetaModels", "GatewayHandler.ChatCompletions", "GatewayHandler.Responses":
-			default:
-				return GatewayPipelineEntryResult{}
-			}
-			if !middleware.HasForcePlatform(c) {
-				switch getGroupPlatform(c) {
-				case service.PlatformOpenAI, service.PlatformGrok:
+		moderationcoverage.PipelineGatewayGlobal: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+			switch meta.Pipeline {
+			case moderationcoverage.PipelineOpenAIHTTP:
+				switch meta.Protocol {
+				case service.ContentModerationProtocolOpenAIChat, service.ContentModerationProtocolOpenAIMessages, service.ContentModerationProtocolOpenAIResponses, service.ContentModerationProtocolOpenAIImages, service.ContentModerationProtocolOpenAIEmbeddings:
+				default:
 					return GatewayPipelineEntryResult{}
 				}
+				if !isOpenAIGatewayPlatform(c) {
+					return GatewayPipelineEntryResult{}
+				}
+				result := h.OpenAIGateway.EnterOpenAIHTTPGatewayPipeline(c, meta)
+				return GatewayPipelineEntryResult{Stop: result.Stop}
+			case moderationcoverage.PipelineOpenAIWebSocket:
+				if meta.Protocol != service.ContentModerationProtocolOpenAIResponses {
+					return GatewayPipelineEntryResult{}
+				}
+				moderationcoverage.MarkPipelineEntrypointEntered(c, moderationcoverage.PipelineOpenAIWebSocket, "GatewayPipelineRegistrar.OpenAIWebSocket")
+				return GatewayPipelineEntryResult{}
+			case moderationcoverage.PipelineGatewayPreForward:
+				switch meta.Protocol {
+				case service.ContentModerationProtocolAnthropicMessages, service.ContentModerationProtocolGemini, service.ContentModerationProtocolOpenAIChat, service.ContentModerationProtocolOpenAIResponses:
+				default:
+					return GatewayPipelineEntryResult{}
+				}
+				switch meta.Handler {
+				case "GatewayHandler.Messages", "GatewayHandler.CountTokens", "GatewayHandler.GeminiV1BetaModels", "GatewayHandler.ChatCompletions", "GatewayHandler.Responses":
+				default:
+					return GatewayPipelineEntryResult{}
+				}
+				if !middleware.HasForcePlatform(c) {
+					switch getGroupPlatform(c) {
+					case service.PlatformOpenAI, service.PlatformGrok:
+						return GatewayPipelineEntryResult{}
+					}
+				}
+				result := h.Gateway.EnterGatewayPreForwardPipeline(c, meta)
+				return GatewayPipelineEntryResult{Stop: result.Blocked}
+			default:
+				return GatewayPipelineEntryResult{}
 			}
-			result := h.Gateway.EnterGatewayPreForwardPipeline(c, meta)
-			return GatewayPipelineEntryResult{Stop: result.Blocked}
 		}),
 	}
 	moderatedGateway := NewGatewayPipelineRegistrar(gateway, openAIHTTPPipelineEntrypoints)

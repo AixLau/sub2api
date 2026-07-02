@@ -1,9 +1,11 @@
 package routes
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"net/http"
@@ -87,6 +89,13 @@ func TestGatewaySourceDoesNotRegisterUpstreamRoutesOutsideModeratedRegistrar(t *
 	require.Empty(t, rawRegistrations,
 		"gateway upstream routes must be registered through ModeratedRouteRegistrar or explicit NoAudit methods, found raw registrations at %s",
 		strings.Join(rawRegistrations, ", "))
+}
+
+func TestGatewayRouteRegistrationUsesSingleGlobalPipelineEntrypoint(t *testing.T) {
+	entrypointKeys := gatewayPipelineEntrypointKeysFromSource(t, gatewaySourceFile(t))
+
+	require.Equal(t, []string{"moderationcoverage.PipelineGatewayGlobal"}, entrypointKeys,
+		"production gateway route registration must bind one gateway_global entrypoint; global entrypoint dispatches to protocol adapters")
 }
 
 func TestModeratedRouteRegistrarInjectsRuntimeRouteMetaBeforeHandlers(t *testing.T) {
@@ -1405,6 +1414,41 @@ func collectModeratedRouteRegistrarNames(file *ast.File) map[string]struct{} {
 		return true
 	})
 	return names
+}
+
+func gatewayPipelineEntrypointKeysFromSource(t *testing.T, file string) []string {
+	t.Helper()
+
+	src, err := os.ReadFile(file)
+	require.NoError(t, err)
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, file, src, 0)
+	require.NoError(t, err)
+
+	keys := make(map[string]struct{})
+	ast.Inspect(parsed, func(node ast.Node) bool {
+		lit, ok := node.(*ast.CompositeLit)
+		if !ok || astExprLastIdentName(lit.Type) != "GatewayPipelineEntrypoints" {
+			return true
+		}
+		for _, element := range lit.Elts {
+			kv, ok := element.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			keys[exprString(kv.Key)] = struct{}{}
+		}
+		return true
+	})
+	return sortedRouteSet(keys)
+}
+
+func exprString(expr ast.Expr) string {
+	var buf bytes.Buffer
+	if err := format.Node(&buf, token.NewFileSet(), expr); err != nil {
+		return ""
+	}
+	return buf.String()
 }
 
 func isModeratedRouteRegistrarConstructor(name string) bool {
