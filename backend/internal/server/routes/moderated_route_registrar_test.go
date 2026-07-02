@@ -997,6 +997,32 @@ func TestOpenAIHTTPPipelineCoverageMetadataMatchesHandlerSourceCoverage(t *testi
 	}
 }
 
+func TestGatewayPreForwardPipelineCoverageMetadataMatchesHandlerSourceCoverage(t *testing.T) {
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
+	_ = newGatewayRoutesTestRouter()
+
+	stageCoverage := gatewayPreForwardStageCoverageFromHandlerSources(t)
+	entries := gatewayPreForwardPipelineEntriesFromRegistrar(GatewayModeratedRouteCoverageEntries())
+
+	for _, entry := range entries {
+		coverage, ok := stageCoverage[entry.Handler]
+		require.True(t, ok, "handler %s should be present in Gateway pre-forward source coverage scan", entry.Handler)
+		require.Equal(t, coverage.HasModerationStage, stageRequiredAndCovered(entry, moderationcoverage.StageModeration),
+			"%s %s moderation metadata drifted from handler source coverage", entry.Method, entry.Path)
+		require.Equal(t, coverage.HasPreForwardStage, stageRequiredAndCovered(entry, moderationcoverage.StagePreForward),
+			"%s %s pre-forward metadata drifted from handler source coverage", entry.Method, entry.Path)
+		require.Equal(t, coverage.HasBillingStage, stageRequiredAndCovered(entry, moderationcoverage.StageBilling),
+			"%s %s billing metadata drifted from handler source coverage", entry.Method, entry.Path)
+		require.Equal(t, coverage.HasRoutingStage, stageRequiredAndCovered(entry, moderationcoverage.StageRouting),
+			"%s %s routing metadata drifted from handler source coverage", entry.Method, entry.Path)
+		require.Equal(t, coverage.HasForwardStage, stageRequiredAndCovered(entry, moderationcoverage.StageForward),
+			"%s %s forward metadata drifted from handler source coverage", entry.Method, entry.Path)
+		require.Equal(t, coverage.HasUsageStage, stageRequiredAndCovered(entry, moderationcoverage.StageUsage),
+			"%s %s usage metadata drifted from handler source coverage", entry.Method, entry.Path)
+	}
+}
+
 func TestGatewayModerationCoverageManifestPipelineStagesMatchRegistrarFacts(t *testing.T) {
 	restore := replaceModeratedRouteRegistryForTest(nil)
 	defer restore()
@@ -1286,6 +1312,74 @@ type openAIHTTPHandlerStageCoverage struct {
 	DirectCyberRejectLocations   []string
 }
 
+type gatewayPreForwardHandlerStageCoverage struct {
+	HasModerationStage bool
+	HasPreForwardStage bool
+	HasBillingStage    bool
+	HasRoutingStage    bool
+	HasForwardStage    bool
+	HasUsageStage      bool
+}
+
+func gatewayPreForwardStageCoverageFromHandlerSources(t *testing.T) map[string]gatewayPreForwardHandlerStageCoverage {
+	t.Helper()
+
+	repoRoot := repoRootFromTestFile(t)
+	handlerDir := filepath.Join(repoRoot, "backend", "internal", "handler")
+	files := []string{
+		filepath.Join(handlerDir, "gateway_handler.go"),
+		filepath.Join(handlerDir, "gateway_handler_chat_completions.go"),
+		filepath.Join(handlerDir, "gateway_handler_responses.go"),
+		filepath.Join(handlerDir, "gemini_v1beta_handler.go"),
+	}
+	coverageByHandler := make(map[string]gatewayPreForwardHandlerStageCoverage)
+
+	for _, file := range files {
+		src, err := os.ReadFile(file)
+		require.NoError(t, err)
+		fset := token.NewFileSet()
+		parsed, err := parser.ParseFile(fset, file, src, 0)
+		require.NoError(t, err)
+
+		for _, decl := range parsed.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			handlerName, ok := gatewayPreForwardHandlerStageCoverageName(fn)
+			if !ok {
+				continue
+			}
+			coverage := gatewayPreForwardHandlerStageCoverage{}
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				if _, ok := node.(*ast.FuncLit); ok {
+					return false
+				}
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				switch {
+				case isGatewayPreForwardRequestFromContextCall(call):
+					coverage.HasModerationStage = true
+					coverage.HasPreForwardStage = true
+				case isGatewayBillingStageCall(call):
+					coverage.HasBillingStage = true
+				case isGatewayRoutingStageCall(call):
+					coverage.HasRoutingStage = true
+				case isGatewayForwardStageCall(call):
+					coverage.HasForwardStage = true
+				case isGatewayUsageStageCall(call):
+					coverage.HasUsageStage = true
+				}
+				return true
+			})
+			coverageByHandler[handlerName] = coverage
+		}
+	}
+	return coverageByHandler
+}
+
 func openAIHTTPStageCoverageFromHandlerSources(t *testing.T) map[string]openAIHTTPHandlerStageCoverage {
 	t.Helper()
 
@@ -1454,6 +1548,22 @@ func mergeOpenAIHTTPGatewayEntrypointStageCoverage(t *testing.T, coverageByHandl
 			coverageByHandler["OpenAIGatewayHandler.Embeddings"] = coverage
 		}
 	}
+}
+
+func gatewayPreForwardHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
+	switch fn.Name.Name {
+	case "Messages", "CountTokens", "GeminiV1BetaModels", "ChatCompletions", "Responses":
+	default:
+		return "", false
+	}
+	if fn.Recv == nil || len(fn.Recv.List) == 0 {
+		return "", false
+	}
+	receiver := strings.TrimPrefix(astExprLastIdentName(fn.Recv.List[0].Type), "*")
+	if receiver != "GatewayHandler" {
+		return "", false
+	}
+	return "GatewayHandler." + fn.Name.Name, true
 }
 
 func openAIHTTPHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
@@ -2161,6 +2271,31 @@ func isOpenAIHTTPUsageStageCall(call *ast.CallExpr) bool {
 	return ok && selector.Sel.Name == "runOpenAIHTTPUsageStage"
 }
 
+func isGatewayPreForwardRequestFromContextCall(call *ast.CallExpr) bool {
+	ident, ok := call.Fun.(*ast.Ident)
+	return ok && ident.Name == "gatewayPreForwardRequestFromContext"
+}
+
+func isGatewayBillingStageCall(call *ast.CallExpr) bool {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	return ok && selector.Sel.Name == "runGatewayBillingStage"
+}
+
+func isGatewayRoutingStageCall(call *ast.CallExpr) bool {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	return ok && selector.Sel.Name == "runGatewayRoutingStage"
+}
+
+func isGatewayForwardStageCall(call *ast.CallExpr) bool {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	return ok && selector.Sel.Name == "runGatewayForwardStage"
+}
+
+func isGatewayUsageStageCall(call *ast.CallExpr) bool {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	return ok && selector.Sel.Name == "runGatewayUsageStage"
+}
+
 func openAIHTTPExecutableStageArg(call *ast.CallExpr) string {
 	if len(call.Args) < 2 {
 		return ""
@@ -2297,6 +2432,21 @@ func openAIHTTPPipelineEntriesFromRegistrar(entries []ModeratedRouteMeta) []Mode
 	for _, entry := range entries {
 		entry = moderationcoverage.NormalizeEntry(entry)
 		if entry.Pipeline != moderationcoverage.PipelineOpenAIHTTP {
+			continue
+		}
+		out = append(out, entry)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return moderatedRouteKey(out[i].Method, out[i].Path, "") < moderatedRouteKey(out[j].Method, out[j].Path, "")
+	})
+	return out
+}
+
+func gatewayPreForwardPipelineEntriesFromRegistrar(entries []ModeratedRouteMeta) []ModeratedRouteMeta {
+	out := make([]ModeratedRouteMeta, 0)
+	for _, entry := range entries {
+		entry = moderationcoverage.NormalizeEntry(entry)
+		if entry.Pipeline != moderationcoverage.PipelineGatewayPreForward {
 			continue
 		}
 		out = append(out, entry)

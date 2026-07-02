@@ -100,7 +100,14 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 	}
 
 	// 2. Re-check billing
-	if err := h.billingCacheService.CheckBillingEligibility(requestCtx, apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(requestCtx, apiKey)); err != nil {
+	billingStage := h.runGatewayBillingStage(c, GatewayBillingStage{
+		Handler:        h,
+		RequestContext: requestCtx,
+		APIKey:         apiKey,
+		Group:          apiKey.Group,
+		Subscription:   subscription,
+	})
+	if err := billingStage.Err; err != nil {
 		reqLog.Info("gateway.responses.billing_check_failed", zap.Error(err))
 		status, code, message, retryAfter := billingErrorDetails(err)
 		if retryAfter > 0 {
@@ -127,7 +134,18 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 	fs := NewFailoverState(h.maxAccountSwitches, false)
 
 	for {
-		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(requestCtx, apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, "", subject.UserID)
+		var selection *service.AccountSelectionResult
+		routingStage := h.runGatewayRoutingStage(c, GatewayRoutingStage{
+			Handler:          h,
+			RequestContext:   requestCtx,
+			GroupID:          apiKey.GroupID,
+			SessionHash:      sessionHash,
+			Model:            reqModel,
+			FailedAccountIDs: fs.FailedAccountIDs,
+			Sub2APIUserID:    subject.UserID,
+			Selection:        &selection,
+		})
+		err := routingStage.Err
 		if err != nil {
 			if len(fs.FailedAccountIDs) == 0 {
 				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, service.PlatformAnthropic)
