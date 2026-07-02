@@ -129,6 +129,14 @@ func (a UsageStageAdapter) RunUsage(c *gin.Context) ExecutableStageResult {
 	return a.Usage(c)
 }
 
+func newGatewayPipeline(pipeline string, source string, stages []ExecutableStage) GatewayPipeline {
+	return GatewayPipeline{
+		Pipeline: pipeline,
+		Source:   source,
+		Stages:   stages,
+	}
+}
+
 func ForwardStageFunc(name string, run func() ExecutableStageResult) ExecutableStage {
 	return ExecutableForwardStage(ForwardStageAdapter{
 		Name: name,
@@ -238,11 +246,7 @@ func runGatewayPipelineStage(c *gin.Context, pipeline string, source string, sta
 	if stage.Name == "" && stage.Run == nil && stage.RunWithContext == nil {
 		return ExecutableStageResult{}
 	}
-	return GatewayPipeline{
-		Pipeline: pipeline,
-		Source:   source,
-		Stages:   []ExecutableStage{stage},
-	}.Run(c)
+	return newGatewayPipeline(pipeline, source, []ExecutableStage{stage}).Run(c)
 }
 
 type openAIHTTPExecutableStage struct {
@@ -765,11 +769,11 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 }
 
 func openAIHTTPExecutablePipeline(stages []openAIHTTPExecutableStage) GatewayPipeline {
-	return GatewayPipeline{
-		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
-		Source:   moderationcoverage.SourceOpenAIHTTPExecutableStage,
-		Stages:   openAIHTTPExecutableStages(stages),
-	}
+	return newGatewayPipeline(
+		moderationcoverage.PipelineOpenAIHTTP,
+		moderationcoverage.SourceOpenAIHTTPExecutableStage,
+		openAIHTTPExecutableStages(stages),
+	)
 }
 
 func openAIHTTPExecutableStages(stages []openAIHTTPExecutableStage) []ExecutableStage {
@@ -784,13 +788,13 @@ func openAIHTTPExecutableStages(stages []openAIHTTPExecutableStage) []Executable
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIWebSocketExecutableStage(c *gin.Context, stage string, run func() ExecutableStageResult) ExecutableStageResult {
-	return GatewayPipeline{
-		Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
-		Source:   moderationcoverage.SourceOpenAIWebSocketExecutableStage,
-		Stages: []ExecutableStage{
+	return newGatewayPipeline(
+		moderationcoverage.PipelineOpenAIWebSocket,
+		moderationcoverage.SourceOpenAIWebSocketExecutableStage,
+		[]ExecutableStage{
 			{Name: stage, Run: run},
 		},
-	}.Run(c)
+	).Run(c)
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIWebSocketStage(c *gin.Context, adapter any) ExecutableStageResult {

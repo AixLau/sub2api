@@ -173,6 +173,59 @@ func TestProtocolStageRunnersDelegateToGlobalStageRunner(t *testing.T) {
 	}
 }
 
+func TestGatewayPipelineConstructionIsCentralized(t *testing.T) {
+	tests := []struct {
+		file             string
+		allowedFunctions map[string]struct{}
+	}{
+		{
+			file: "openai_gateway_executable_pipeline.go",
+			allowedFunctions: map[string]struct{}{
+				"newGatewayPipeline": {},
+			},
+		},
+		{
+			file:             "gateway_pre_forward_pipeline.go",
+			allowedFunctions: map[string]struct{}{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.file, func(t *testing.T) {
+			src, err := os.ReadFile(tt.file)
+			require.NoError(t, err)
+			fset := token.NewFileSet()
+			parsed, err := parser.ParseFile(fset, tt.file, src, 0)
+			require.NoError(t, err)
+
+			var directConstructionLines []int
+			for _, decl := range parsed.Decls {
+				fn, ok := decl.(*ast.FuncDecl)
+				if !ok || fn.Body == nil {
+					continue
+				}
+				if _, allowed := tt.allowedFunctions[fn.Name.Name]; allowed {
+					continue
+				}
+				ast.Inspect(fn.Body, func(node ast.Node) bool {
+					lit, ok := node.(*ast.CompositeLit)
+					if !ok || handlerASTLastIdentName(lit.Type) != "GatewayPipeline" {
+						return true
+					}
+					directConstructionLines = append(directConstructionLines, fset.Position(lit.Pos()).Line)
+					return true
+				})
+			}
+
+			require.Empty(t, directConstructionLines,
+				"%s must construct GatewayPipeline only through newGatewayPipeline, found direct literals at lines %v",
+				tt.file,
+				directConstructionLines,
+			)
+		})
+	}
+}
+
 func TestGatewayPipelineRunsGenericExecutableStagesWithMetadata(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())

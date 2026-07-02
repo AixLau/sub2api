@@ -753,11 +753,11 @@ func (p *GatewayPreForwardPipeline) Run(h *GatewayHandler, c *gin.Context, reqLo
 		reqLog:   reqLog,
 		input:    input,
 	}
-	result := GatewayPipeline{
-		Pipeline: moderationcoverage.PipelineGatewayPreForward,
-		Source:   moderationcoverage.SourceGatewayPreForward,
-		Stages:   gatewayPreForwardExecutableStages(ctx, p.preForwardStages()),
-	}.Run(c)
+	result := newGatewayPipeline(
+		moderationcoverage.PipelineGatewayPreForward,
+		moderationcoverage.SourceGatewayPreForward,
+		gatewayPreForwardExecutableStages(ctx, p.preForwardStages()),
+	).Run(c)
 	if result.Stop || result.Err != nil {
 		return gatewayPreForwardPipelineResult{Blocked: true}
 	}
