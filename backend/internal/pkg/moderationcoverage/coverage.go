@@ -266,6 +266,24 @@ func MarkPipelineStageExecutedWithResult(c *gin.Context, pipeline, stage, source
 	c.Set(PipelineStageExecutionsContextKey, normalizePipelineStageExecutions(executions))
 }
 
+func ObservePipelineStageExecutedWithResult(c *gin.Context, pipeline, stage, source string, failed bool) {
+	routeMeta, _ := RouteMetaFromContext(c)
+	execution := normalizePipelineStageExecution(PipelineStageExecution{
+		Pipeline: pipeline,
+		Stage:    stage,
+		Source:   source,
+		Method:   routeMeta.Method,
+		Path:     routeMeta.Path,
+		Handler:  routeMeta.Handler,
+		Protocol: routeMeta.Protocol,
+		Error:    failed,
+	})
+	if execution.Pipeline == "" || execution.Stage == "" || execution.Source == "" {
+		return
+	}
+	recordPipelineStageExecution(execution)
+}
+
 func PipelineStageExecutionsFromContext(c *gin.Context) []PipelineStageExecution {
 	if c == nil {
 		return nil

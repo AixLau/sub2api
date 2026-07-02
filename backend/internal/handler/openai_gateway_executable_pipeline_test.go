@@ -92,9 +92,10 @@ func TestOpenAIHTTPExecutableStagePreservesError(t *testing.T) {
 		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageBilling, Source: moderationcoverage.SourceOpenAIHTTPExecutableStage, Error: true},
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
 	snapshot := moderationcoverage.PipelineExecutionObserverSnapshot()
-	require.Equal(t, int64(1), snapshot.ErrorCount)
-	require.Len(t, snapshot.Executions, 1)
-	require.Equal(t, int64(1), snapshot.Executions[0].ErrorCount)
+	require.Equal(t, int64(2), snapshot.ErrorCount)
+	require.Len(t, snapshot.Executions, 2)
+	requirePipelineExecutionObservedWithError(t, snapshot.Executions, moderationcoverage.PipelineOpenAIHTTP, moderationcoverage.StageBilling, moderationcoverage.SourceOpenAIHTTPExecutableStage)
+	requirePipelineExecutionObservedWithError(t, snapshot.Executions, moderationcoverage.PipelineGatewayGlobal, moderationcoverage.StageBilling, moderationcoverage.SourceOpenAIHTTPExecutableStage)
 }
 
 func TestOpenAIHTTPExecutableStageNilContextIsSafe(t *testing.T) {
@@ -157,6 +158,38 @@ func TestGatewayPipelineRunsGenericExecutableStagesWithMetadata(t *testing.T) {
 		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageForward, Source: moderationcoverage.SourceOpenAIHTTPExecutableStage},
 		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageUsage, Source: moderationcoverage.SourceOpenAIHTTPExecutableStage},
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+}
+
+func TestGatewayPipelineRunnerRunsPipelineAndRecordsGlobalExecution(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	restoreObserver := moderationcoverage.ResetPipelineExecutionObserverForTest()
+	defer restoreObserver()
+
+	calls := 0
+	pipeline := GatewayPipeline{
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+		Source:   moderationcoverage.SourceOpenAIHTTPExecutableStage,
+		Stages: []ExecutableStage{
+			{Name: moderationcoverage.StageForward, Run: func() ExecutableStageResult {
+				calls++
+				return ExecutableStageResult{}
+			}},
+		},
+	}
+
+	result := GatewayPipelineRunner{}.Run(c, pipeline)
+
+	require.NoError(t, result.Err)
+	require.False(t, result.Stop)
+	require.Equal(t, 1, calls)
+	require.Equal(t, []moderationcoverage.PipelineStageExecution{
+		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageForward, Source: moderationcoverage.SourceOpenAIHTTPExecutableStage},
+	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+
+	snapshot := moderationcoverage.PipelineExecutionObserverSnapshot()
+	require.Len(t, snapshot.Executions, 2)
+	requirePipelineExecutionObserved(t, snapshot.Executions, moderationcoverage.PipelineGatewayGlobal, moderationcoverage.StageForward, moderationcoverage.SourceOpenAIHTTPExecutableStage)
 }
 
 func TestGatewayPipelineRunsForwardStageAdapter(t *testing.T) {
@@ -272,4 +305,24 @@ func TestOpenAIHTTPExecutableStageAdapterUsesGatewayPipeline(t *testing.T) {
 	require.Equal(t, []moderationcoverage.PipelineStageExecution{
 		{Pipeline: moderationcoverage.PipelineOpenAIHTTP, Stage: moderationcoverage.StageForward, Source: moderationcoverage.SourceOpenAIHTTPExecutableStage},
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+}
+
+func requirePipelineExecutionObserved(t *testing.T, executions []moderationcoverage.PipelineStageExecutionObservation, pipeline, stage, source string) {
+	t.Helper()
+	for _, execution := range executions {
+		if execution.Pipeline == pipeline && execution.Stage == stage && execution.Source == source && execution.Count == 1 {
+			return
+		}
+	}
+	t.Fatalf("missing pipeline execution observation pipeline=%s stage=%s source=%s in %#v", pipeline, stage, source, executions)
+}
+
+func requirePipelineExecutionObservedWithError(t *testing.T, executions []moderationcoverage.PipelineStageExecutionObservation, pipeline, stage, source string) {
+	t.Helper()
+	for _, execution := range executions {
+		if execution.Pipeline == pipeline && execution.Stage == stage && execution.Source == source && execution.Count == 1 && execution.ErrorCount == 1 {
+			return
+		}
+	}
+	t.Fatalf("missing failed pipeline execution observation pipeline=%s stage=%s source=%s in %#v", pipeline, stage, source, executions)
 }

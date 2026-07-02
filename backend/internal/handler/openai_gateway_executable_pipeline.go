@@ -28,6 +28,8 @@ type GatewayPipeline struct {
 	Stages   []ExecutableStage
 }
 
+type GatewayPipelineRunner struct{}
+
 type ForwardStage interface {
 	StageName() string
 	RunForward(*gin.Context) ExecutableStageResult
@@ -122,6 +124,10 @@ func executableUsageStageWithContext(c *gin.Context, adapter UsageStage) Executa
 }
 
 func (p GatewayPipeline) Run(c *gin.Context) ExecutableStageResult {
+	return GatewayPipelineRunner{}.Run(c, p)
+}
+
+func (GatewayPipelineRunner) Run(c *gin.Context, p GatewayPipeline) ExecutableStageResult {
 	for _, stage := range p.Stages {
 		if stage.Run == nil && stage.RunWithContext == nil {
 			continue
@@ -133,6 +139,7 @@ func (p GatewayPipeline) Run(c *gin.Context) ExecutableStageResult {
 			result = stage.Run()
 		}
 		moderationcoverage.MarkPipelineStageExecutedWithResult(c, p.Pipeline, stage.Name, p.Source, result.Err != nil)
+		moderationcoverage.ObservePipelineStageExecutedWithResult(c, moderationcoverage.PipelineGatewayGlobal, stage.Name, p.Source, result.Err != nil)
 		if result.Stop || result.Err != nil {
 			return result
 		}
