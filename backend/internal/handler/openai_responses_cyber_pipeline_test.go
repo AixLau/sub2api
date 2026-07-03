@@ -39,12 +39,42 @@ func TestOpenAIResponsesHTTP_CyberBlockedByPipelineBeforeRoutingBillingSlotsAndF
 	require.True(t, result.Stop)
 	require.Equal(t, http.StatusForbidden, w.Code)
 	require.Contains(t, w.Body.String(), "session_blocked_by_cyber_policy")
-	require.Contains(t, w.Body.String(), cyberSessionBlockedClientMsg)
+	require.Contains(t, w.Body.String(), "会话已被OpenAI网络安全策略屏蔽,请开启新会话")
+	require.NotContains(t, w.Body.String(), "OpenAI/Anthropic")
 	require.Len(t, guard.calls, 1)
 	require.Equal(t, service.ContentModerationProtocolOpenAIResponses, guard.calls[0].Protocol)
 	require.Equal(t, "gpt-5.1", guard.calls[0].Model)
 	require.Equal(t, []byte(body), guard.calls[0].Body)
 	require.Equal(t, 1, cyberChecker.runtimeCalls)
+	require.Equal(t, []string{service.CyberSessionBlockKey(apiKey.ID, c, []byte(body))}, cyberChecker.checkedKeys)
+}
+
+func TestOpenAIResponsesHTTP_CyberBlockedUsesRequestPlatformInClientMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := `{"model":"claude-sonnet-4-6","prompt_cache_key":"responses-cyber-session","input":"hello"}`
+	w, c := newOpenAIResponsesCyberPipelineContext(t, body)
+	apiKey, ok := middleware.GetAPIKeyFromContext(c)
+	require.True(t, ok)
+	apiKey.Group.Platform = service.PlatformAnthropic
+
+	guard := &moderationGuardSpy{decision: &service.ContentModerationDecision{
+		Allowed: true,
+		Action:  service.ContentModerationActionAllow,
+	}}
+	cyberChecker := &openAIResponsesCyberPipelineCheckerSpy{enabled: true, blocked: true}
+	h := newOpenAIResponsesCyberPipelineHandler(t, guard, cyberChecker, func(context.Context, int64, int, string) (bool, error) {
+		t.Fatalf("cyber-blocked responses request must not acquire a user slot")
+		return false, nil
+	})
+
+	result := h.EnterOpenAIHTTPGatewayPipeline(c, openAIResponsesHTTPRouteMetaForTest())
+
+	require.True(t, result.Stop)
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Contains(t, w.Body.String(), "session_blocked_by_cyber_policy")
+	require.Contains(t, w.Body.String(), "会话已被Anthropic网络安全策略屏蔽,请开启新会话")
+	require.NotContains(t, w.Body.String(), "会话已被OpenAI网络安全策略屏蔽")
 	require.Equal(t, []string{service.CyberSessionBlockKey(apiKey.ID, c, []byte(body))}, cyberChecker.checkedKeys)
 }
 

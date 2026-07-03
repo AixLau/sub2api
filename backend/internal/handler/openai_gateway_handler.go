@@ -1372,7 +1372,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			BeforeTurn: func(turn int) error {
 				// turn==1 的会话屏蔽已由握手层检查覆盖；连接内 flag 只拦截后续 turn。
 				if cyberBlockedThisConn {
-					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)
+					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMessageForAPIKey(apiKey), nil)
 				}
 				if turn == 1 {
 					return nil
@@ -1996,12 +1996,12 @@ func (h *OpenAIGatewayHandler) writeOpenAIWebSocketPipelineBlock(ctx context.Con
 			message = service.ImageGenerationPermissionMessage()
 		}
 	case openAIWebSocketPipelineBlockReasonCyberSession:
-		writeCyberSessionBlockedWSError(ctx, conn)
+		writeCyberSessionBlockedWSError(ctx, conn, cyberSessionBlockPlatform(apiKey, service.ContentModerationProtocolOpenAIResponses, cyberBlockFormatResponses))
 		if h != nil && result.CyberBlockKey != "" {
 			h.enqueueCyberSessionBlockedOpsEntry(c, apiKey, model, result.CyberBlockKey)
 		}
 		if message == "" {
-			message = "session blocked by cyber-security policy"
+			message = cyberSessionBlockedClientMessageForAPIKey(apiKey)
 		}
 	default:
 		if message == "" {
@@ -2013,24 +2013,25 @@ func (h *OpenAIGatewayHandler) writeOpenAIWebSocketPipelineBlock(ctx context.Con
 
 // writeCyberSessionBlockedWSError sends an error frame telling the client this
 // session is blocked by the cyber session block (F5a) before closing.
-func writeCyberSessionBlockedWSError(ctx context.Context, conn *coderws.Conn) {
+func writeCyberSessionBlockedWSError(ctx context.Context, conn *coderws.Conn, platform string) {
 	if conn == nil {
 		return
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	message := cyberSessionBlockedClientMessage(platform)
 	payload, err := json.Marshal(gin.H{
 		"event_id": "evt_cyber_session_blocked",
 		"type":     "error",
 		"error": gin.H{
 			"type":    "permission_error",
 			"code":    "session_blocked_by_cyber_policy",
-			"message": cyberSessionBlockedClientMsg,
+			"message": message,
 		},
 	})
 	if err != nil {
-		payload = []byte(`{"event_id":"evt_cyber_session_blocked","type":"error","error":{"type":"permission_error","code":"session_blocked_by_cyber_policy","message":"This session is blocked by cyber-security policy, please start a new session"}}`)
+		payload = []byte(`{"event_id":"evt_cyber_session_blocked","type":"error","error":{"type":"permission_error","code":"session_blocked_by_cyber_policy","message":"会话已被OpenAI网络安全策略屏蔽,请开启新会话"}}`)
 	}
 	writeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
@@ -2106,8 +2107,53 @@ func buildCyberPolicyOpsErrorEntry(meta cyberPolicyOpsErrorMeta, mark *service.C
 	return entry
 }
 
-// 双语单串：网关客户端面向中英用户，且本错误无 i18n 协商通道。
-const cyberSessionBlockedClientMsg = "该会话已被网络安全策略屏蔽，请开启新会话 / This session is blocked by cyber-security policy, please start a new session"
+func cyberSessionBlockedClientMessageForAPIKey(apiKey *service.APIKey) string {
+	return cyberSessionBlockedClientMessage(cyberSessionBlockPlatform(apiKey, "", cyberBlockFormatResponses))
+}
+
+func cyberSessionBlockedClientMessage(platform string) string {
+	return fmt.Sprintf("会话已被%s网络安全策略屏蔽,请开启新会话", cyberSessionBlockPlatformLabel(platform))
+}
+
+func cyberSessionBlockPlatform(apiKey *service.APIKey, protocol string, format cyberSessionBlockFormat) string {
+	if apiKey != nil && apiKey.Group != nil && strings.TrimSpace(apiKey.Group.Platform) != "" {
+		return strings.TrimSpace(apiKey.Group.Platform)
+	}
+	switch protocol {
+	case service.ContentModerationProtocolAnthropicMessages:
+		return service.PlatformAnthropic
+	case service.ContentModerationProtocolOpenAIChat,
+		service.ContentModerationProtocolOpenAIMessages,
+		service.ContentModerationProtocolOpenAIResponses,
+		service.ContentModerationProtocolOpenAIImages,
+		service.ContentModerationProtocolOpenAIEmbeddings:
+		return service.PlatformOpenAI
+	}
+	if format == cyberBlockFormatAnthropic {
+		return service.PlatformAnthropic
+	}
+	return service.PlatformOpenAI
+}
+
+func cyberSessionBlockPlatformLabel(platform string) string {
+	value := strings.TrimSpace(platform)
+	switch strings.ToLower(value) {
+	case service.PlatformOpenAI:
+		return "OpenAI"
+	case service.PlatformAnthropic:
+		return "Anthropic"
+	case service.PlatformGemini:
+		return "Gemini"
+	case service.PlatformGrok:
+		return "Grok"
+	case service.PlatformAntigravity:
+		return "Antigravity"
+	}
+	if value == "" {
+		return "OpenAI"
+	}
+	return value
+}
 
 // buildCyberSessionBlockedOpsEntry builds the ops_error_logs entry for a request
 // rejected locally by the cyber session block (F5a). Distinct error_type from
@@ -2186,13 +2232,13 @@ func (h *OpenAIGatewayHandler) rejectIfCyberSessionBlocked(c *gin.Context, apiKe
 	case cyberBlockFormatAnthropic:
 		c.JSON(http.StatusForbidden, gin.H{"type": "error", "error": gin.H{
 			"type":    "permission_error",
-			"message": cyberSessionBlockedClientMsg,
+			"message": cyberSessionBlockedClientMessage(cyberSessionBlockPlatform(apiKey, "", format)),
 		}})
 	default: // cyberBlockFormatResponses 与 cyberBlockFormatChat：同构的 OpenAI error envelope
 		c.JSON(http.StatusForbidden, gin.H{"error": gin.H{
 			"type":    "permission_error",
 			"code":    "session_blocked_by_cyber_policy",
-			"message": cyberSessionBlockedClientMsg,
+			"message": cyberSessionBlockedClientMessage(cyberSessionBlockPlatform(apiKey, "", format)),
 		}})
 	}
 	h.enqueueCyberSessionBlockedOpsEntry(c, apiKey, model, key)

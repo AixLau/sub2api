@@ -74,7 +74,7 @@ func TestOpenAIWebSocketPipelineRunsInitialFrameStagesInOrder(t *testing.T) {
 						Result: openAIWebSocketPipelineResult{
 							Blocked:       true,
 							BlockReason:   openAIWebSocketPipelineBlockReasonCyberSession,
-							Message:       cyberSessionBlockedClientMsg,
+							Message:       cyberSessionBlockedClientMessage(service.PlatformOpenAI),
 							CyberBlockKey: "ws-session-key",
 						},
 					}

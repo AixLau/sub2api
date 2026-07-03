@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
@@ -441,7 +442,7 @@ func (OpenAIWebSocketCyberStage) Run(ctx *openAIWebSocketGatewayStageContext) op
 	}
 	result.Blocked = true
 	result.BlockReason = openAIWebSocketPipelineBlockReasonCyberSession
-	result.Message = "session blocked by cyber-security policy"
+	result.Message = cyberSessionBlockedClientMessage(cyberSessionBlockPlatform(input.APIKey, input.Protocol, cyberBlockFormatResponses))
 	return openAIWebSocketGatewayStageResult{Result: result}
 }
 
@@ -558,6 +559,7 @@ type openAIGatewayCyberSessionInput struct {
 	Model    string
 	Body     []byte
 	Format   cyberSessionBlockFormat
+	Platform string
 }
 
 type OpenAICyberStageResult struct {
@@ -570,7 +572,11 @@ func (p *OpenAIGatewayPipeline) CheckCyberSession(c *gin.Context, reqLog *zap.Lo
 	if result == nil || !result.Blocked {
 		return result
 	}
-	writeOpenAICyberSessionBlockedResponse(c, input.Format)
+	platform := strings.TrimSpace(input.Platform)
+	if platform == "" {
+		platform = cyberSessionBlockPlatform(input.APIKey, input.Protocol, input.Format)
+	}
+	writeOpenAICyberSessionBlockedResponse(c, input.Format, platform)
 	return result
 }
 
@@ -599,24 +605,25 @@ func (p *OpenAIGatewayPipeline) checkCyberSessionBlock(c *gin.Context, input ope
 	return result
 }
 
-func writeOpenAICyberSessionBlockedResponse(c *gin.Context, format cyberSessionBlockFormat) {
+func writeOpenAICyberSessionBlockedResponse(c *gin.Context, format cyberSessionBlockFormat, platform string) {
+	message := cyberSessionBlockedClientMessage(platform)
 	switch format {
 	case cyberBlockFormatAnthropic:
 		c.JSON(http.StatusForbidden, gin.H{"type": "error", "error": gin.H{
 			"type":    "permission_error",
-			"message": cyberSessionBlockedClientMsg,
+			"message": message,
 		}})
 	case cyberBlockFormatResponses, cyberBlockFormatChat:
 		c.JSON(http.StatusForbidden, gin.H{"error": gin.H{
 			"type":    "permission_error",
 			"code":    "session_blocked_by_cyber_policy",
-			"message": cyberSessionBlockedClientMsg,
+			"message": message,
 		}})
 	default:
 		c.JSON(http.StatusForbidden, gin.H{"error": gin.H{
 			"type":    "permission_error",
 			"code":    "session_blocked_by_cyber_policy",
-			"message": cyberSessionBlockedClientMsg,
+			"message": message,
 		}})
 	}
 }

@@ -41,7 +41,7 @@ func TestOpenAIGatewayPipelineCheckCyberSessionBlocked(t *testing.T) {
 	require.Equal(t, blockKey, result.BlockKey)
 	require.Equal(t, http.StatusForbidden, w.Code)
 	require.Contains(t, w.Body.String(), "session_blocked_by_cyber_policy")
-	require.Contains(t, w.Body.String(), cyberSessionBlockedClientMsg)
+	require.Contains(t, w.Body.String(), cyberSessionBlockedClientMessage(service.PlatformOpenAI))
 	require.Equal(t, []string{blockKey}, checker.checkedKeys)
 }
 
