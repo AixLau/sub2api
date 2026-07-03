@@ -6566,6 +6566,8 @@ export default {
         field_nineplusShopTokenHint: '9.plus 店铺地址中的 token，例如 https://9.plus/shop/XXXX 中的 XXXX。',
         field_nineplusDefaultContactHint: '下单时没有用户联系方式时使用；9.plus 也用它作为查询密码。',
         field_nineplusChannelIdHint: '默认 10，通常无需修改；只有指定 9.plus 支付通道时填写。',
+        field_merchantNo: '商户号',
+        field_platformPublicKey: '平台公钥',
         field_cid: '支付渠道 ID',
         field_cidAlipay: '支付宝渠道 ID',
         field_cidWxpay: '微信渠道 ID',
