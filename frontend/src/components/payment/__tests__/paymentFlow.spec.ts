@@ -194,6 +194,23 @@ describe('decidePaymentLaunch', () => {
     expect(decision.recovery.payUrl).toBe('')
   })
 
+  it('renders haozpay pay_url as QR-only waiting content', () => {
+    const decision = decidePaymentLaunch(createOrderResult({
+      pay_url: 'https://cashier.haozpay.com/cashier-pc?orderNo=HZHT123&merchantNo=HZ207',
+      payment_mode: 'redirect',
+    }), {
+      visibleMethod: 'haozpay',
+      orderType: 'balance',
+      isMobile: false,
+    })
+
+    expect(decision.kind).toBe('qr_waiting')
+    expect(decision.paymentState.qrCode).toBe('https://cashier.haozpay.com/cashier-pc?orderNo=HZHT123&merchantNo=HZ207')
+    expect(decision.paymentState.payUrl).toBe('')
+    expect(decision.recovery.qrCode).toBe('https://cashier.haozpay.com/cashier-pc?orderNo=HZHT123&merchantNo=HZ207')
+    expect(decision.recovery.payUrl).toBe('')
+  })
+
   it('returns wechat oauth launch when backend requires in-app authorization', () => {
     const decision = decidePaymentLaunch(createOrderResult({
       result_type: 'oauth_required',

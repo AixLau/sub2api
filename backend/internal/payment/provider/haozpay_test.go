@@ -178,7 +178,7 @@ func TestHaozPayCreatePaymentSendsBizBodyAsJSONString(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create payment: %v", err)
 	}
-	if resp.TradeNo != "HP123" || resp.PayURL != "https://cashier.example/pay" {
+	if resp.TradeNo != "HP123" || resp.QRCode != "https://cashier.example/pay" || resp.PayURL != "" {
 		t.Fatalf("response = %+v", resp)
 	}
 

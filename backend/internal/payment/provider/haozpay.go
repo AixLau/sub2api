@@ -160,7 +160,7 @@ func (h *HaozPay) CreatePayment(ctx context.Context, req payment.CreatePaymentRe
 
 	return &payment.CreatePaymentResponse{
 		TradeNo: resp.Data.SeqID,
-		PayURL:  resp.Data.PayInfo,
+		QRCode:  resp.Data.PayInfo,
 	}, nil
 }
 

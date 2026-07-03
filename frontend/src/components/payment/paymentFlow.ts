@@ -17,9 +17,10 @@ const VISIBLE_METHOD_ALIASES = {
   stripe: 'stripe',
   airwallex: 'airwallex',
   nineplus: 'nineplus',
+  haozpay: 'haozpay',
 } as const
 
-export type VisiblePaymentMethod = 'alipay' | 'wxpay' | 'stripe' | 'airwallex' | 'nineplus'
+export type VisiblePaymentMethod = 'alipay' | 'wxpay' | 'stripe' | 'airwallex' | 'nineplus' | 'haozpay'
 export type StripeVisibleMethod = 'alipay' | 'wechat_pay'
 export type PaymentLaunchKind =
   | 'qr_waiting'
@@ -218,7 +219,7 @@ export function decidePaymentLaunch(
     ? false
     : context.isMobile
 
-  if (visibleMethod === 'nineplus' && (baseState.qrCode || baseState.payUrl)) {
+  if ((visibleMethod === 'nineplus' || visibleMethod === 'haozpay') && (baseState.qrCode || baseState.payUrl)) {
     const paymentState = {
       ...baseState,
       qrCode: baseState.qrCode || baseState.payUrl,

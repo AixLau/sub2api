@@ -228,11 +228,11 @@ const VERIFY_RETRY_INTERVAL_MS = 15000
 const NINEPLUS_VERIFY_RETRY_INTERVAL_MS = 3000
 const VERIFY_RETRY_MAX_ATTEMPTS = 6
 
-// nineplus is an alipay-based aggregator (payment.methods.nineplus === '支付宝'),
-// so it shares alipay branding on the QR surface.
-const isAlipay = computed(() => props.paymentType.includes('alipay') || props.paymentType === 'nineplus')
+// Aggregators reuse the Alipay-style QR surface because the cashier URL should
+// be scanned in the external wallet instead of opened as an in-app page.
+const isAlipay = computed(() => props.paymentType.includes('alipay') || props.paymentType === 'nineplus' || props.paymentType === 'haozpay')
 const isWxpay = computed(() => props.paymentType.includes('wxpay'))
-const isNinePlus = computed(() => props.paymentType === 'nineplus')
+const isHostedQrAggregator = computed(() => props.paymentType === 'nineplus' || props.paymentType === 'haozpay')
 
 const brandIcon = computed(() => (isWxpay.value ? wxpayIcon : alipayIcon))
 
@@ -316,14 +316,14 @@ async function renderQR() {
 }
 
 async function tryRecoverPendingOrder(order: PaymentOrder): Promise<PaymentOrder> {
-  if (!isWxpay.value && !isNinePlus.value) return order
+  if (!isWxpay.value && !isHostedQrAggregator.value) return order
   const outTradeNo = String(order.out_trade_no || '').trim()
   if (!outTradeNo) return order
   const normalizedStatus = String(order.status || '').trim().toUpperCase()
   if (normalizedStatus !== 'PENDING') return order
   const now = Date.now()
-  const reachedMaxAttempts = !isNinePlus.value && verifyAttempts >= VERIFY_RETRY_MAX_ATTEMPTS
-  const retryInterval = isNinePlus.value ? NINEPLUS_VERIFY_RETRY_INTERVAL_MS : VERIFY_RETRY_INTERVAL_MS
+  const reachedMaxAttempts = !isHostedQrAggregator.value && verifyAttempts >= VERIFY_RETRY_MAX_ATTEMPTS
+  const retryInterval = isHostedQrAggregator.value ? NINEPLUS_VERIFY_RETRY_INTERVAL_MS : VERIFY_RETRY_INTERVAL_MS
   if (reachedMaxAttempts || now - lastVerifyAt < retryInterval) {
     return order
   }
