@@ -376,10 +376,9 @@ func (h *HaozPay) signRequest(reqBody map[string]interface{}) (string, error) {
 
 	// Step 4: SHA256 hash
 	hash := sha256.Sum256([]byte(signString))
-	hashHex := fmt.Sprintf("%x", hash)
 
 	// Step 5: RSA encrypt with private key
-	encrypted, err := rsa.SignPKCS1v15(rand.Reader, h.privateKey, crypto.SHA256, []byte(hashHex))
+	encrypted, err := rsa.SignPKCS1v15(rand.Reader, h.privateKey, crypto.SHA256, hash[:])
 	if err != nil {
 		return "", fmt.Errorf("rsa sign: %w", err)
 	}
@@ -423,7 +422,6 @@ func (h *HaozPay) verifyNotificationSignature(merchantNo string, timestamp int64
 
 	// SHA256 hash
 	hash := sha256.Sum256([]byte(signString))
-	hashHex := fmt.Sprintf("%x", hash)
 
 	// Decode signature
 	signature, err := base64.StdEncoding.DecodeString(sign)
@@ -432,7 +430,7 @@ func (h *HaozPay) verifyNotificationSignature(merchantNo string, timestamp int64
 	}
 
 	// Verify with platform public key
-	err = rsa.VerifyPKCS1v15(h.platformPubKey, crypto.SHA256, []byte(hashHex), signature)
+	err = rsa.VerifyPKCS1v15(h.platformPubKey, crypto.SHA256, hash[:], signature)
 	if err != nil {
 		return fmt.Errorf("verify failed: %w", err)
 	}
@@ -483,11 +481,28 @@ func (h *HaozPay) postJSON(ctx context.Context, url string, data interface{}) ([
 	return body, nil
 }
 
-// parseRSAPrivateKey parses PKCS8 PEM-encoded private key.
-func parseRSAPrivateKey(keyPEM string) (*rsa.PrivateKey, error) {
-	block, _ := pem.Decode([]byte(keyPEM))
+// decodePEMOrBase64DER accepts either a full PEM block or a raw base64 DER key
+// copied from a payment console.
+func decodePEMOrBase64DER(keyText string, defaultPEMType string) (*pem.Block, error) {
+	trimmed := strings.TrimSpace(keyText)
+	block, _ := pem.Decode([]byte(trimmed))
 	if block == nil {
-		return nil, fmt.Errorf("invalid PEM block")
+		raw := strings.Join(strings.Fields(trimmed), "")
+		der, err := base64.StdEncoding.DecodeString(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid PEM block")
+		}
+		block = &pem.Block{Type: defaultPEMType, Bytes: der}
+	}
+	return block, nil
+}
+
+// parseRSAPrivateKey parses PKCS8/PKCS1 PEM-encoded private keys and raw
+// base64 DER private keys.
+func parseRSAPrivateKey(keyPEM string) (*rsa.PrivateKey, error) {
+	block, err := decodePEMOrBase64DER(keyPEM, "PRIVATE KEY")
+	if err != nil {
+		return nil, err
 	}
 
 	// Try PKCS8 first
@@ -503,11 +518,11 @@ func parseRSAPrivateKey(keyPEM string) (*rsa.PrivateKey, error) {
 	return x509.ParsePKCS1PrivateKey(block.Bytes)
 }
 
-// parseRSAPublicKey parses PEM-encoded public key.
+// parseRSAPublicKey parses PEM-encoded public keys and raw base64 DER public keys.
 func parseRSAPublicKey(keyPEM string) (*rsa.PublicKey, error) {
-	block, _ := pem.Decode([]byte(keyPEM))
-	if block == nil {
-		return nil, fmt.Errorf("invalid PEM block")
+	block, err := decodePEMOrBase64DER(keyPEM, "PUBLIC KEY")
+	if err != nil {
+		return nil, err
 	}
 
 	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
