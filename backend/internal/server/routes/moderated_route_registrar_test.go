@@ -88,8 +88,16 @@ func TestGatewaySourceDoesNotRegisterUpstreamRoutesOutsideModeratedRegistrar(t *
 	rawRegistrations := rawGatewayUpstreamRouteRegistrationsFromSource(t, gatewaySourceFile(t))
 
 	require.Empty(t, rawRegistrations,
-		"gateway upstream routes must be registered through ModeratedRouteRegistrar or explicit NoAudit methods, found raw registrations at %s",
+		"gateway upstream routes must be registered through GatewayPipelineRegistrar or explicit NoAudit methods, found raw registrations at %s",
 		strings.Join(rawRegistrations, ", "))
+}
+
+func TestGatewaySourceDoesNotUseLegacyModeratedRegistrarForUpstreamRoutes(t *testing.T) {
+	legacyRegistrars := legacyModeratedRouteRegistrarNamesFromSource(t, gatewaySourceFile(t))
+
+	require.Empty(t, legacyRegistrars,
+		"production gateway route registration must use GatewayPipelineRegistrar as the only upstream registration API, found legacy registrar variables %s",
+		strings.Join(legacyRegistrars, ", "))
 }
 
 func TestGatewayRouteRegistrationUsesSingleGlobalPipelineEntrypoint(t *testing.T) {
@@ -1691,7 +1699,7 @@ func rawGatewayUpstreamRouteRegistrationsFromSource(t *testing.T, file string) [
 	parsed, err := parser.ParseFile(fset, file, src, 0)
 	require.NoError(t, err)
 
-	moderatedRegistrars := collectModeratedRouteRegistrarNames(parsed)
+	moderatedRegistrars := collectGatewayPipelineRegistrarNames(parsed)
 	rawRegistrations := make([]string, 0)
 	ast.Inspect(parsed, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
@@ -1726,7 +1734,7 @@ func rawGatewayUpstreamRouteRegistrationsFromSource(t *testing.T, file string) [
 	return rawRegistrations
 }
 
-func collectModeratedRouteRegistrarNames(file *ast.File) map[string]struct{} {
+func collectGatewayPipelineRegistrarNames(file *ast.File) map[string]struct{} {
 	names := make(map[string]struct{})
 	ast.Inspect(file, func(node ast.Node) bool {
 		assign, ok := node.(*ast.AssignStmt)
@@ -1735,7 +1743,7 @@ func collectModeratedRouteRegistrarNames(file *ast.File) map[string]struct{} {
 		}
 		for i, rhs := range assign.Rhs {
 			call, ok := rhs.(*ast.CallExpr)
-			if !ok || !isModeratedRouteRegistrarConstructor(callName(call)) || i >= len(assign.Lhs) {
+			if !ok || callName(call) != "NewGatewayPipelineRegistrar" || i >= len(assign.Lhs) {
 				continue
 			}
 			if ident, ok := assign.Lhs[i].(*ast.Ident); ok {
@@ -1745,6 +1753,38 @@ func collectModeratedRouteRegistrarNames(file *ast.File) map[string]struct{} {
 		return true
 	})
 	return names
+}
+
+func legacyModeratedRouteRegistrarNamesFromSource(t *testing.T, file string) []string {
+	t.Helper()
+
+	src, err := os.ReadFile(file)
+	require.NoError(t, err)
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, file, src, 0)
+	require.NoError(t, err)
+
+	registrars := make([]string, 0)
+	ast.Inspect(parsed, func(node ast.Node) bool {
+		assign, ok := node.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+		for i, rhs := range assign.Rhs {
+			call, ok := rhs.(*ast.CallExpr)
+			if !ok || callName(call) != "NewModeratedRouteRegistrar" || i >= len(assign.Lhs) {
+				continue
+			}
+			if ident, ok := assign.Lhs[i].(*ast.Ident); ok {
+				pos := fset.Position(call.Pos())
+				registrars = append(registrars, fmt.Sprintf("%s %s",
+					sourceLocation(repoRootFromTestFile(t), file, pos.Line), ident.Name))
+			}
+		}
+		return true
+	})
+	sort.Strings(registrars)
+	return registrars
 }
 
 func gatewayPipelineEntrypointKeysFromSource(t *testing.T, file string) []string {

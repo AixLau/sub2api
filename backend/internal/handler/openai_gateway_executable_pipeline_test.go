@@ -295,7 +295,7 @@ func TestOpenAIWebSocketStageRunnerRunsAllAdapterTypes(t *testing.T) {
 	handler := &OpenAIGatewayHandler{}
 
 	result := handler.runOpenAIWebSocketStage(c, BillingStageAdapter{
-		Name: moderationcoverage.StageBilling,
+		Name: "OpenAIWebSocketBillingStage",
 		Billing: func(*gin.Context) ExecutableStageResult {
 			calls = append(calls, moderationcoverage.StageBilling)
 			return ExecutableStageResult{}
@@ -305,7 +305,7 @@ func TestOpenAIWebSocketStageRunnerRunsAllAdapterTypes(t *testing.T) {
 	require.NoError(t, result.Err)
 
 	result = handler.runOpenAIWebSocketStage(c, RoutingStageAdapter{
-		Name: moderationcoverage.StageRouting,
+		Name: "OpenAIWebSocketRoutingStage",
 		Routing: func(*gin.Context) ExecutableStageResult {
 			calls = append(calls, moderationcoverage.StageRouting)
 			return ExecutableStageResult{}
@@ -325,7 +325,7 @@ func TestOpenAIWebSocketStageRunnerRunsAllAdapterTypes(t *testing.T) {
 	require.NoError(t, result.Err)
 
 	result = handler.runOpenAIWebSocketStage(c, UsageStageAdapter{
-		Name: moderationcoverage.StageUsage,
+		Name: "OpenAIWebSocketUsageStage",
 		Usage: func(*gin.Context) ExecutableStageResult {
 			calls = append(calls, moderationcoverage.StageUsage)
 			return ExecutableStageResult{}
@@ -551,6 +551,141 @@ func TestOpenAIHTTPForwardStageRequiresDescriptorBoundAdapter(t *testing.T) {
 	require.Equal(t, 0, calls)
 }
 
+func TestOpenAIHTTPBillingRoutingUsageStagesRequireRegistrarRouteMetadata(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name    string
+		stage   string
+		adapter func(*int) any
+		run     func(*OpenAIGatewayHandler, *gin.Context, any) openAIHTTPExecutableStageResult
+	}{
+		{
+			name:  "billing",
+			stage: moderationcoverage.StageBilling,
+			adapter: func(calls *int) any {
+				return BillingStageAdapter{Name: "OpenAIHTTPBillingStage", Billing: func(*gin.Context) ExecutableStageResult {
+					*calls++
+					return ExecutableStageResult{}
+				}}
+			},
+			run: func(h *OpenAIGatewayHandler, c *gin.Context, adapter any) openAIHTTPExecutableStageResult {
+				return h.runOpenAIHTTPBillingStage(c, adapter.(BillingStage))
+			},
+		},
+		{
+			name:  "routing",
+			stage: moderationcoverage.StageRouting,
+			adapter: func(calls *int) any {
+				return RoutingStageAdapter{Name: "OpenAIHTTPRoutingStage", Routing: func(*gin.Context) ExecutableStageResult {
+					*calls++
+					return ExecutableStageResult{}
+				}}
+			},
+			run: func(h *OpenAIGatewayHandler, c *gin.Context, adapter any) openAIHTTPExecutableStageResult {
+				return h.runOpenAIHTTPRoutingStage(c, adapter.(RoutingStage))
+			},
+		},
+		{
+			name:  "usage",
+			stage: moderationcoverage.StageUsage,
+			adapter: func(calls *int) any {
+				return UsageStageAdapter{Name: "OpenAIHTTPUsageStage", Usage: func(*gin.Context) ExecutableStageResult {
+					*calls++
+					return ExecutableStageResult{}
+				}}
+			},
+			run: func(h *OpenAIGatewayHandler, c *gin.Context, adapter any) openAIHTTPExecutableStageResult {
+				return h.runOpenAIHTTPUsageStage(c, adapter.(UsageStage))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			calls := 0
+
+			result := tt.run(&OpenAIGatewayHandler{}, c, tt.adapter(&calls))
+
+			require.True(t, result.Stop)
+			require.ErrorContains(t, result.Err, "pipeline route metadata is required before "+tt.stage)
+			require.Equal(t, 0, calls)
+		})
+	}
+}
+
+func TestOpenAIHTTPBillingRoutingUsageStagesRequireDescriptorBoundAdapter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name    string
+		stage   string
+		adapter func(*int) any
+		run     func(*OpenAIGatewayHandler, *gin.Context, any) openAIHTTPExecutableStageResult
+	}{
+		{
+			name:  "billing",
+			stage: moderationcoverage.StageBilling,
+			adapter: func(calls *int) any {
+				return BillingStageAdapter{Name: "UnregisteredBillingStage", Billing: func(*gin.Context) ExecutableStageResult {
+					*calls++
+					return ExecutableStageResult{}
+				}}
+			},
+			run: func(h *OpenAIGatewayHandler, c *gin.Context, adapter any) openAIHTTPExecutableStageResult {
+				return h.runOpenAIHTTPBillingStage(c, adapter.(BillingStage))
+			},
+		},
+		{
+			name:  "routing",
+			stage: moderationcoverage.StageRouting,
+			adapter: func(calls *int) any {
+				return RoutingStageAdapter{Name: "UnregisteredRoutingStage", Routing: func(*gin.Context) ExecutableStageResult {
+					*calls++
+					return ExecutableStageResult{}
+				}}
+			},
+			run: func(h *OpenAIGatewayHandler, c *gin.Context, adapter any) openAIHTTPExecutableStageResult {
+				return h.runOpenAIHTTPRoutingStage(c, adapter.(RoutingStage))
+			},
+		},
+		{
+			name:  "usage",
+			stage: moderationcoverage.StageUsage,
+			adapter: func(calls *int) any {
+				return UsageStageAdapter{Name: "UnregisteredUsageStage", Usage: func(*gin.Context) ExecutableStageResult {
+					*calls++
+					return ExecutableStageResult{}
+				}}
+			},
+			run: func(h *OpenAIGatewayHandler, c *gin.Context, adapter any) openAIHTTPExecutableStageResult {
+				return h.runOpenAIHTTPUsageStage(c, adapter.(UsageStage))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+			moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+				Method:                  http.MethodPost,
+				Path:                    "/v1/responses",
+				Handler:                 "OpenAIGatewayHandler.Responses",
+				Protocol:                "openai_responses",
+				Pipeline:                moderationcoverage.PipelineOpenAIHTTP,
+				StageAdapterDescriptors: moderationcoverage.StageAdapterDescriptorsForRoute("OpenAIGatewayHandler.Responses", "openai_responses"),
+			})
+			calls := 0
+
+			result := tt.run(&OpenAIGatewayHandler{}, c, tt.adapter(&calls))
+
+			require.True(t, result.Stop)
+			require.ErrorContains(t, result.Err, "pipeline "+tt.stage+" stage adapter is not bound by route descriptor")
+			require.Equal(t, 0, calls)
+		})
+	}
+}
+
 func TestOpenAIHTTPBillingRoutingUsageStagesUseRouteDescriptorRegistry(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tests := []struct {
@@ -771,6 +906,121 @@ func TestOpenAIWebSocketForwardStageRequiresDescriptorBoundAdapter(t *testing.T)
 	require.True(t, result.Stop)
 	require.ErrorContains(t, result.Err, "pipeline forward stage adapter is not bound by route descriptor")
 	require.Equal(t, 0, calls)
+}
+
+func TestOpenAIWebSocketBillingRoutingUsageStagesRequireRegistrarRouteMetadata(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name    string
+		stage   string
+		adapter func(*int) any
+	}{
+		{
+			name:  "billing",
+			stage: moderationcoverage.StageBilling,
+			adapter: func(calls *int) any {
+				return BillingStageAdapter{Name: "OpenAIWebSocketBillingStage", Billing: func(*gin.Context) ExecutableStageResult {
+					*calls++
+					return ExecutableStageResult{}
+				}}
+			},
+		},
+		{
+			name:  "routing",
+			stage: moderationcoverage.StageRouting,
+			adapter: func(calls *int) any {
+				return RoutingStageAdapter{Name: "OpenAIWebSocketRoutingStage", Routing: func(*gin.Context) ExecutableStageResult {
+					*calls++
+					return ExecutableStageResult{}
+				}}
+			},
+		},
+		{
+			name:  "usage",
+			stage: moderationcoverage.StageUsage,
+			adapter: func(calls *int) any {
+				return UsageStageAdapter{Name: "OpenAIWebSocketUsageStage", Usage: func(*gin.Context) ExecutableStageResult {
+					*calls++
+					return ExecutableStageResult{}
+				}}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			calls := 0
+
+			result := (&OpenAIGatewayHandler{}).runOpenAIWebSocketStage(c, tt.adapter(&calls))
+
+			require.True(t, result.Stop)
+			require.ErrorContains(t, result.Err, "pipeline route metadata is required before "+tt.stage)
+			require.Equal(t, 0, calls)
+		})
+	}
+}
+
+func TestOpenAIWebSocketBillingRoutingUsageStagesRequireDescriptorBoundAdapter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name    string
+		stage   string
+		adapter func(*int) any
+	}{
+		{
+			name:  "billing",
+			stage: moderationcoverage.StageBilling,
+			adapter: func(calls *int) any {
+				return BillingStageAdapter{Name: "UnregisteredBillingStage", Billing: func(*gin.Context) ExecutableStageResult {
+					*calls++
+					return ExecutableStageResult{}
+				}}
+			},
+		},
+		{
+			name:  "routing",
+			stage: moderationcoverage.StageRouting,
+			adapter: func(calls *int) any {
+				return RoutingStageAdapter{Name: "UnregisteredRoutingStage", Routing: func(*gin.Context) ExecutableStageResult {
+					*calls++
+					return ExecutableStageResult{}
+				}}
+			},
+		},
+		{
+			name:  "usage",
+			stage: moderationcoverage.StageUsage,
+			adapter: func(calls *int) any {
+				return UsageStageAdapter{Name: "UnregisteredUsageStage", Usage: func(*gin.Context) ExecutableStageResult {
+					*calls++
+					return ExecutableStageResult{}
+				}}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+			moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+				Method:                  http.MethodGet,
+				Path:                    "/v1/responses",
+				Handler:                 "OpenAIGatewayHandler.ResponsesWebSocket",
+				Protocol:                "openai_responses",
+				Pipeline:                moderationcoverage.PipelineOpenAIWebSocket,
+				StageAdapterDescriptors: moderationcoverage.StageAdapterDescriptorsForRoute("OpenAIGatewayHandler.ResponsesWebSocket", "openai_responses"),
+			})
+			calls := 0
+
+			result := (&OpenAIGatewayHandler{}).runOpenAIWebSocketStage(c, tt.adapter(&calls))
+
+			require.True(t, result.Stop)
+			require.ErrorContains(t, result.Err, "pipeline "+tt.stage+" stage adapter is not bound by route descriptor")
+			require.Equal(t, 0, calls)
+		})
+	}
 }
 
 func TestOpenAIWebSocketBillingRoutingUsageStagesUseRouteDescriptorRegistry(t *testing.T) {

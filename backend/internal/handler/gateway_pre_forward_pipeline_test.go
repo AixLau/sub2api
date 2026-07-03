@@ -410,6 +410,149 @@ func TestGatewayForwardStageRequiresDescriptorBoundAdapter(t *testing.T) {
 	require.Equal(t, 0, calls)
 }
 
+func TestGatewayBillingRoutingUsageStagesRequireRegistrarRouteMetadata(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name    string
+		stage   string
+		adapter func(*int) any
+		run     func(*GatewayHandler, *gin.Context, any) ExecutableStageResult
+	}{
+		{
+			name:  "billing",
+			stage: moderationcoverage.StageBilling,
+			adapter: func(calls *int) any {
+				return BillingStageAdapter{Name: "GatewayBillingStage", Billing: func(*gin.Context) ExecutableStageResult {
+					*calls++
+					return ExecutableStageResult{}
+				}}
+			},
+			run: func(h *GatewayHandler, c *gin.Context, adapter any) ExecutableStageResult {
+				return h.runGatewayBillingStage(c, adapter.(BillingStage))
+			},
+		},
+		{
+			name:  "routing",
+			stage: moderationcoverage.StageRouting,
+			adapter: func(calls *int) any {
+				return RoutingStageAdapter{Name: "GatewayRoutingStage", Routing: func(*gin.Context) ExecutableStageResult {
+					*calls++
+					return ExecutableStageResult{}
+				}}
+			},
+			run: func(h *GatewayHandler, c *gin.Context, adapter any) ExecutableStageResult {
+				return h.runGatewayRoutingStage(c, adapter.(RoutingStage))
+			},
+		},
+		{
+			name:  "usage",
+			stage: moderationcoverage.StageUsage,
+			adapter: func(calls *int) any {
+				return UsageStageAdapter{Name: "GatewayUsageStage", Usage: func(*gin.Context) ExecutableStageResult {
+					*calls++
+					return ExecutableStageResult{}
+				}}
+			},
+			run: func(h *GatewayHandler, c *gin.Context, adapter any) ExecutableStageResult {
+				return h.runGatewayUsageStage(c, adapter.(UsageStage))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			calls := 0
+
+			result := tt.run(&GatewayHandler{}, c, tt.adapter(&calls))
+
+			require.True(t, result.Stop)
+			require.ErrorContains(t, result.Err, "pipeline route metadata is required before "+tt.stage)
+			require.Equal(t, 0, calls)
+		})
+	}
+}
+
+func TestGatewayBillingRoutingUsageStagesRequireDescriptorBoundAdapter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name    string
+		stage   string
+		adapter func(*int) any
+		run     func(*GatewayHandler, *gin.Context, any) ExecutableStageResult
+	}{
+		{
+			name:  "billing",
+			stage: moderationcoverage.StageBilling,
+			adapter: func(calls *int) any {
+				return BillingStageAdapter{Name: "UnregisteredBillingStage", Billing: func(*gin.Context) ExecutableStageResult {
+					*calls++
+					return ExecutableStageResult{}
+				}}
+			},
+			run: func(h *GatewayHandler, c *gin.Context, adapter any) ExecutableStageResult {
+				return h.runGatewayBillingStage(c, adapter.(BillingStage))
+			},
+		},
+		{
+			name:  "routing",
+			stage: moderationcoverage.StageRouting,
+			adapter: func(calls *int) any {
+				return RoutingStageAdapter{Name: "UnregisteredRoutingStage", Routing: func(*gin.Context) ExecutableStageResult {
+					*calls++
+					return ExecutableStageResult{}
+				}}
+			},
+			run: func(h *GatewayHandler, c *gin.Context, adapter any) ExecutableStageResult {
+				return h.runGatewayRoutingStage(c, adapter.(RoutingStage))
+			},
+		},
+		{
+			name:  "usage",
+			stage: moderationcoverage.StageUsage,
+			adapter: func(calls *int) any {
+				return UsageStageAdapter{Name: "UnregisteredUsageStage", Usage: func(*gin.Context) ExecutableStageResult {
+					*calls++
+					return ExecutableStageResult{}
+				}}
+			},
+			run: func(h *GatewayHandler, c *gin.Context, adapter any) ExecutableStageResult {
+				return h.runGatewayUsageStage(c, adapter.(UsageStage))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			path := "/v1/messages/count_tokens"
+			handler := "GatewayHandler.CountTokens"
+			if tt.stage == moderationcoverage.StageUsage {
+				path = "/v1/messages"
+				handler = "GatewayHandler.Messages"
+			}
+			c.Request = httptest.NewRequest(http.MethodPost, path, nil)
+			moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+				Method:                  http.MethodPost,
+				Path:                    path,
+				Handler:                 handler,
+				Protocol:                service.ContentModerationProtocolAnthropicMessages,
+				Pipeline:                moderationcoverage.PipelineGatewayPreForward,
+				StageAdapterDescriptors: moderationcoverage.StageAdapterDescriptorsForRoute(handler, service.ContentModerationProtocolAnthropicMessages),
+			})
+			calls := 0
+
+			result := tt.run(&GatewayHandler{}, c, tt.adapter(&calls))
+
+			require.True(t, result.Stop)
+			require.ErrorContains(t, result.Err, "pipeline "+tt.stage+" stage adapter is not bound by route descriptor")
+			require.Equal(t, 0, calls)
+		})
+	}
+}
+
 func TestGatewayBillingRoutingUsageStagesUseRouteDescriptorRegistry(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -631,6 +774,7 @@ func TestGatewayUsageStageExecutionIncludesRouteMetadata(t *testing.T) {
 
 	calls := 0
 	result := (&GatewayHandler{}).runGatewayUsageStage(c, UsageStageAdapter{
+		Name: "GatewayUsageStage",
 		Usage: func(ctx *gin.Context) ExecutableStageResult {
 			require.Same(t, c, ctx)
 			calls++

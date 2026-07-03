@@ -300,6 +300,54 @@ func blockedForwardStage(pipeline, message string) ForwardStage {
 	}
 }
 
+func blockedBillingStage(pipeline, message string) BillingStage {
+	pipeline = moderationcoverage.NormalizePipeline(pipeline)
+	if message == "" {
+		message = "pipeline billing stage is not registered"
+	}
+	return BillingStageAdapter{
+		Name: moderationcoverage.StageBilling,
+		Billing: func(*gin.Context) ExecutableStageResult {
+			return ExecutableStageResult{
+				Stop: true,
+				Err:  fmt.Errorf("%s: %s", pipeline, message),
+			}
+		},
+	}
+}
+
+func blockedRoutingStage(pipeline, message string) RoutingStage {
+	pipeline = moderationcoverage.NormalizePipeline(pipeline)
+	if message == "" {
+		message = "pipeline routing stage is not registered"
+	}
+	return RoutingStageAdapter{
+		Name: moderationcoverage.StageRouting,
+		Routing: func(*gin.Context) ExecutableStageResult {
+			return ExecutableStageResult{
+				Stop: true,
+				Err:  fmt.Errorf("%s: %s", pipeline, message),
+			}
+		},
+	}
+}
+
+func blockedUsageStage(pipeline, message string) UsageStage {
+	pipeline = moderationcoverage.NormalizePipeline(pipeline)
+	if message == "" {
+		message = "pipeline usage stage is not registered"
+	}
+	return UsageStageAdapter{
+		Name: moderationcoverage.StageUsage,
+		Usage: func(*gin.Context) ExecutableStageResult {
+			return ExecutableStageResult{
+				Stop: true,
+				Err:  fmt.Errorf("%s: %s", pipeline, message),
+			}
+		},
+	}
+}
+
 func stageAdapterDescriptorsForRuntimeRoute(routeMeta moderationcoverage.Entry) []moderationcoverage.RouteAdapterDescriptor {
 	descriptors := moderationcoverage.NormalizeRouteAdapterDescriptors(routeMeta.StageAdapterDescriptors)
 	if len(descriptors) > 0 {
@@ -339,6 +387,48 @@ func bindForwardStageAdapterForDescriptor(registry *StageAdapterRegistry, descri
 	}
 	key := stageAdapterRegistryKeyFromDescriptor(descriptor)
 	return registeredForwardStage{stage: key.Stage, adapter: fallback}, true
+}
+
+func bindBillingStageAdapterForDescriptor(registry *StageAdapterRegistry, descriptor moderationcoverage.RouteAdapterDescriptor, fallback BillingStage) (BillingStage, bool) {
+	if registry == nil {
+		return nil, false
+	}
+	if adapter, ok := registry.ResolveBilling(descriptor); ok {
+		return adapter, true
+	}
+	if strings.TrimSpace(descriptor.Name) == "" || stageAdapterImplementationName(fallback) != strings.TrimSpace(descriptor.Name) {
+		return nil, false
+	}
+	key := stageAdapterRegistryKeyFromDescriptor(descriptor)
+	return registeredBillingStage{stage: key.Stage, adapter: fallback}, true
+}
+
+func bindRoutingStageAdapterForDescriptor(registry *StageAdapterRegistry, descriptor moderationcoverage.RouteAdapterDescriptor, fallback RoutingStage) (RoutingStage, bool) {
+	if registry == nil {
+		return nil, false
+	}
+	if adapter, ok := registry.ResolveRouting(descriptor); ok {
+		return adapter, true
+	}
+	if strings.TrimSpace(descriptor.Name) == "" || stageAdapterImplementationName(fallback) != strings.TrimSpace(descriptor.Name) {
+		return nil, false
+	}
+	key := stageAdapterRegistryKeyFromDescriptor(descriptor)
+	return registeredRoutingStage{stage: key.Stage, adapter: fallback}, true
+}
+
+func bindUsageStageAdapterForDescriptor(registry *StageAdapterRegistry, descriptor moderationcoverage.RouteAdapterDescriptor, fallback UsageStage) (UsageStage, bool) {
+	if registry == nil {
+		return nil, false
+	}
+	if adapter, ok := registry.ResolveUsage(descriptor); ok {
+		return adapter, true
+	}
+	if strings.TrimSpace(descriptor.Name) == "" || stageAdapterImplementationName(fallback) != strings.TrimSpace(descriptor.Name) {
+		return nil, false
+	}
+	key := stageAdapterRegistryKeyFromDescriptor(descriptor)
+	return registeredUsageStage{stage: key.Stage, adapter: fallback}, true
 }
 
 func (s registeredBillingStage) StageName() string {
@@ -606,35 +696,45 @@ func (h *OpenAIGatewayHandler) openAIHTTPStageAdapterRegistry() *StageAdapterReg
 func (h *OpenAIGatewayHandler) openAIHTTPBillingStageFromRouteDescriptor(c *gin.Context, fallback BillingStage) BillingStage {
 	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
 	if !ok {
-		return fallback
+		return blockedBillingStage(moderationcoverage.PipelineOpenAIHTTP, "pipeline route metadata is required before billing")
 	}
-	for _, descriptor := range moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol) {
+	found := false
+	for _, descriptor := range stageAdapterDescriptorsForRuntimeRoute(routeMeta) {
 		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineOpenAIHTTP ||
 			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageBilling {
 			continue
 		}
-		if adapter, ok := h.openAIHTTPStageAdapterRegistry().ResolveBilling(descriptor); ok {
+		found = true
+		if adapter, ok := bindBillingStageAdapterForDescriptor(h.openAIHTTPStageAdapterRegistry(), descriptor, fallback); ok {
 			return adapter
 		}
 	}
-	return fallback
+	if !found {
+		return blockedBillingStage(moderationcoverage.PipelineOpenAIHTTP, "pipeline billing stage descriptor is required before billing")
+	}
+	return blockedBillingStage(moderationcoverage.PipelineOpenAIHTTP, "pipeline billing stage adapter is not bound by route descriptor")
 }
 
 func (h *OpenAIGatewayHandler) openAIHTTPRoutingStageFromRouteDescriptor(c *gin.Context, fallback RoutingStage) RoutingStage {
 	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
 	if !ok {
-		return fallback
+		return blockedRoutingStage(moderationcoverage.PipelineOpenAIHTTP, "pipeline route metadata is required before routing")
 	}
-	for _, descriptor := range moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol) {
+	found := false
+	for _, descriptor := range stageAdapterDescriptorsForRuntimeRoute(routeMeta) {
 		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineOpenAIHTTP ||
 			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageRouting {
 			continue
 		}
-		if adapter, ok := h.openAIHTTPStageAdapterRegistry().ResolveRouting(descriptor); ok {
+		found = true
+		if adapter, ok := bindRoutingStageAdapterForDescriptor(h.openAIHTTPStageAdapterRegistry(), descriptor, fallback); ok {
 			return adapter
 		}
 	}
-	return fallback
+	if !found {
+		return blockedRoutingStage(moderationcoverage.PipelineOpenAIHTTP, "pipeline routing stage descriptor is required before routing")
+	}
+	return blockedRoutingStage(moderationcoverage.PipelineOpenAIHTTP, "pipeline routing stage adapter is not bound by route descriptor")
 }
 
 type OpenAIHTTPRoutingStage struct {
@@ -1026,18 +1126,23 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPUsageStage(c *gin.Context, adapter U
 func (h *OpenAIGatewayHandler) openAIHTTPUsageStageFromRouteDescriptor(c *gin.Context, fallback UsageStage) UsageStage {
 	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
 	if !ok {
-		return fallback
+		return blockedUsageStage(moderationcoverage.PipelineOpenAIHTTP, "pipeline route metadata is required before usage")
 	}
-	for _, descriptor := range moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol) {
+	found := false
+	for _, descriptor := range stageAdapterDescriptorsForRuntimeRoute(routeMeta) {
 		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineOpenAIHTTP ||
 			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageUsage {
 			continue
 		}
-		if adapter, ok := h.openAIHTTPStageAdapterRegistry().ResolveUsage(descriptor); ok {
+		found = true
+		if adapter, ok := bindUsageStageAdapterForDescriptor(h.openAIHTTPStageAdapterRegistry(), descriptor, fallback); ok {
 			return adapter
 		}
 	}
-	return fallback
+	if !found {
+		return blockedUsageStage(moderationcoverage.PipelineOpenAIHTTP, "pipeline usage stage descriptor is required before usage")
+	}
+	return blockedUsageStage(moderationcoverage.PipelineOpenAIHTTP, "pipeline usage stage adapter is not bound by route descriptor")
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIHTTPScheduleResultStage(c *gin.Context, account *service.Account, success bool, firstTokenMs *int) openAIHTTPExecutableStageResult {
@@ -1233,18 +1338,23 @@ func (h *OpenAIGatewayHandler) openAIWebSocketStageAdapterRegistry() *StageAdapt
 func (h *OpenAIGatewayHandler) openAIWebSocketBillingStageFromRouteDescriptor(c *gin.Context, fallback BillingStage) BillingStage {
 	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
 	if !ok {
-		return fallback
+		return blockedBillingStage(moderationcoverage.PipelineOpenAIWebSocket, "pipeline route metadata is required before billing")
 	}
-	for _, descriptor := range moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol) {
+	found := false
+	for _, descriptor := range stageAdapterDescriptorsForRuntimeRoute(routeMeta) {
 		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineOpenAIWebSocket ||
 			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageBilling {
 			continue
 		}
-		if adapter, ok := h.openAIWebSocketStageAdapterRegistry().ResolveBilling(descriptor); ok {
+		found = true
+		if adapter, ok := bindBillingStageAdapterForDescriptor(h.openAIWebSocketStageAdapterRegistry(), descriptor, fallback); ok {
 			return adapter
 		}
 	}
-	return fallback
+	if !found {
+		return blockedBillingStage(moderationcoverage.PipelineOpenAIWebSocket, "pipeline billing stage descriptor is required before billing")
+	}
+	return blockedBillingStage(moderationcoverage.PipelineOpenAIWebSocket, "pipeline billing stage adapter is not bound by route descriptor")
 }
 
 type OpenAIWebSocketBillingStage struct {
@@ -1293,18 +1403,23 @@ func (h *OpenAIGatewayHandler) runOpenAIWebSocketRoutingStage(c *gin.Context, ad
 func (h *OpenAIGatewayHandler) openAIWebSocketRoutingStageFromRouteDescriptor(c *gin.Context, fallback RoutingStage) RoutingStage {
 	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
 	if !ok {
-		return fallback
+		return blockedRoutingStage(moderationcoverage.PipelineOpenAIWebSocket, "pipeline route metadata is required before routing")
 	}
-	for _, descriptor := range moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol) {
+	found := false
+	for _, descriptor := range stageAdapterDescriptorsForRuntimeRoute(routeMeta) {
 		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineOpenAIWebSocket ||
 			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageRouting {
 			continue
 		}
-		if adapter, ok := h.openAIWebSocketStageAdapterRegistry().ResolveRouting(descriptor); ok {
+		found = true
+		if adapter, ok := bindRoutingStageAdapterForDescriptor(h.openAIWebSocketStageAdapterRegistry(), descriptor, fallback); ok {
 			return adapter
 		}
 	}
-	return fallback
+	if !found {
+		return blockedRoutingStage(moderationcoverage.PipelineOpenAIWebSocket, "pipeline routing stage descriptor is required before routing")
+	}
+	return blockedRoutingStage(moderationcoverage.PipelineOpenAIWebSocket, "pipeline routing stage adapter is not bound by route descriptor")
 }
 
 type OpenAIWebSocketRoutingStage struct {
@@ -1619,16 +1734,21 @@ func (h *OpenAIGatewayHandler) runOpenAIWebSocketUsageStage(c *gin.Context, adap
 func (h *OpenAIGatewayHandler) openAIWebSocketUsageStageFromRouteDescriptor(c *gin.Context, fallback UsageStage) UsageStage {
 	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
 	if !ok {
-		return fallback
+		return blockedUsageStage(moderationcoverage.PipelineOpenAIWebSocket, "pipeline route metadata is required before usage")
 	}
-	for _, descriptor := range moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol) {
+	found := false
+	for _, descriptor := range stageAdapterDescriptorsForRuntimeRoute(routeMeta) {
 		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineOpenAIWebSocket ||
 			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageUsage {
 			continue
 		}
-		if adapter, ok := h.openAIWebSocketStageAdapterRegistry().ResolveUsage(descriptor); ok {
+		found = true
+		if adapter, ok := bindUsageStageAdapterForDescriptor(h.openAIWebSocketStageAdapterRegistry(), descriptor, fallback); ok {
 			return adapter
 		}
 	}
-	return fallback
+	if !found {
+		return blockedUsageStage(moderationcoverage.PipelineOpenAIWebSocket, "pipeline usage stage descriptor is required before usage")
+	}
+	return blockedUsageStage(moderationcoverage.PipelineOpenAIWebSocket, "pipeline usage stage adapter is not bound by route descriptor")
 }

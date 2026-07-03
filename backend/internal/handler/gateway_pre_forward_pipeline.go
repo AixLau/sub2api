@@ -700,52 +700,67 @@ func (h *GatewayHandler) runGatewayUsageStage(c *gin.Context, adapter UsageStage
 func (h *GatewayHandler) gatewayBillingStageFromRouteDescriptor(c *gin.Context, fallback BillingStage) BillingStage {
 	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
 	if !ok {
-		return fallback
+		return blockedBillingStage(moderationcoverage.PipelineGatewayPreForward, "pipeline route metadata is required before billing")
 	}
-	for _, descriptor := range moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol) {
+	found := false
+	for _, descriptor := range stageAdapterDescriptorsForRuntimeRoute(routeMeta) {
 		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineGatewayPreForward ||
 			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageBilling {
 			continue
 		}
-		if adapter, ok := h.gatewayStageAdapterRegistry().ResolveBilling(descriptor); ok {
+		found = true
+		if adapter, ok := bindBillingStageAdapterForDescriptor(h.gatewayStageAdapterRegistry(), descriptor, fallback); ok {
 			return adapter
 		}
 	}
-	return fallback
+	if !found {
+		return blockedBillingStage(moderationcoverage.PipelineGatewayPreForward, "pipeline billing stage descriptor is required before billing")
+	}
+	return blockedBillingStage(moderationcoverage.PipelineGatewayPreForward, "pipeline billing stage adapter is not bound by route descriptor")
 }
 
 func (h *GatewayHandler) gatewayRoutingStageFromRouteDescriptor(c *gin.Context, fallback RoutingStage) RoutingStage {
 	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
 	if !ok {
-		return fallback
+		return blockedRoutingStage(moderationcoverage.PipelineGatewayPreForward, "pipeline route metadata is required before routing")
 	}
-	for _, descriptor := range moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol) {
+	found := false
+	for _, descriptor := range stageAdapterDescriptorsForRuntimeRoute(routeMeta) {
 		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineGatewayPreForward ||
 			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageRouting {
 			continue
 		}
-		if adapter, ok := h.gatewayStageAdapterRegistry().ResolveRouting(descriptor); ok {
+		found = true
+		if adapter, ok := bindRoutingStageAdapterForDescriptor(h.gatewayStageAdapterRegistry(), descriptor, fallback); ok {
 			return adapter
 		}
 	}
-	return fallback
+	if !found {
+		return blockedRoutingStage(moderationcoverage.PipelineGatewayPreForward, "pipeline routing stage descriptor is required before routing")
+	}
+	return blockedRoutingStage(moderationcoverage.PipelineGatewayPreForward, "pipeline routing stage adapter is not bound by route descriptor")
 }
 
 func (h *GatewayHandler) gatewayUsageStageFromRouteDescriptor(c *gin.Context, fallback UsageStage) UsageStage {
 	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
 	if !ok {
-		return fallback
+		return blockedUsageStage(moderationcoverage.PipelineGatewayPreForward, "pipeline route metadata is required before usage")
 	}
-	for _, descriptor := range moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol) {
+	found := false
+	for _, descriptor := range stageAdapterDescriptorsForRuntimeRoute(routeMeta) {
 		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineGatewayPreForward ||
 			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageUsage {
 			continue
 		}
-		if adapter, ok := h.gatewayStageAdapterRegistry().ResolveUsage(descriptor); ok {
+		found = true
+		if adapter, ok := bindUsageStageAdapterForDescriptor(h.gatewayStageAdapterRegistry(), descriptor, fallback); ok {
 			return adapter
 		}
 	}
-	return fallback
+	if !found {
+		return blockedUsageStage(moderationcoverage.PipelineGatewayPreForward, "pipeline usage stage descriptor is required before usage")
+	}
+	return blockedUsageStage(moderationcoverage.PipelineGatewayPreForward, "pipeline usage stage adapter is not bound by route descriptor")
 }
 
 type GatewayUsageStage struct {
