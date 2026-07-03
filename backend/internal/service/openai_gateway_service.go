@@ -47,7 +47,7 @@ const (
 	openaiStickySessionTTL          = time.Hour // 粘性会话TTL
 	// 与真实 Codex CLI 的 User-Agent 结构对齐：
 	// {originator}/{version} ({OS} {OS_version}; {arch}) {terminal}
-	// 旧值 "codex_cli_rs/0.125.0" 缺少 OS/架构/终端后缀，易被上游指纹识别为非官方客户端。
+	// 此常量仅作为文档/回退用途；实际使用时优先从 GetOpenAICodexUserAgent() 读取后台配置。
 	codexCLIUserAgent = "codex_cli_rs/0.125.0 (Ubuntu 22.4.0; x86_64) xterm-256color"
 	// codex_cli_only 拒绝时单个请求头日志长度上限（字符）
 	codexCLIOnlyHeaderValueMaxBytes = 256
@@ -3784,11 +3784,11 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		req.Header.Set("user-agent", customUA)
 	}
 	if s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
-		req.Header.Set("user-agent", codexCLIUserAgent)
+		req.Header.Set("user-agent", s.getCodexCLIUserAgent(ctx))
 	}
 	// OAuth 安全透传：对非 Codex UA 统一兜底，降低被上游风控拦截概率。
 	if account.Type == AccountTypeOAuth && !openai.IsCodexCLIRequest(req.Header.Get("user-agent")) {
-		req.Header.Set("user-agent", codexCLIUserAgent)
+		req.Header.Set("user-agent", s.getCodexCLIUserAgent(ctx))
 	}
 
 	// 浏览器型 UA 兜底：仅 OAuth（ChatGPT 内部接口）账号生效，若最终 user-agent 仍为浏览器
@@ -4582,7 +4582,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// 若开启 ForceCodexCLI，则强制将上游 User-Agent 伪装为 Codex CLI。
 	// 用于网关未透传/改写 User-Agent 时，仍能命中 Codex 侧识别逻辑。
 	if s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
-		req.Header.Set("user-agent", codexCLIUserAgent)
+		req.Header.Set("user-agent", s.getCodexCLIUserAgent(ctx))
 	}
 
 	// 浏览器型 UA 兜底：仅 OAuth（ChatGPT 内部接口）账号生效，若最终 user-agent 仍为浏览器
@@ -4595,6 +4595,18 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	}
 
 	return req, nil
+}
+
+// getCodexCLIUserAgent 返回用于 ForceCodexCLI 和 OAuth 兜底的 Codex CLI User-Agent。
+// 优先使用后台配置的 openai_codex_user_agent；为空时回退到内置默认值。
+func (s *OpenAIGatewayService) getCodexCLIUserAgent(ctx context.Context) string {
+	if s != nil && s.settingService != nil {
+		if v := strings.TrimSpace(s.settingService.GetOpenAICodexUserAgent(ctx)); v != "" {
+			return v
+		}
+	}
+	// 回退到内置默认值
+	return DefaultOpenAICodexUserAgent
 }
 
 // overrideBrowserUserAgent 检查请求的最终 user-agent，若为浏览器 UA 则替换为后台配置的 Codex UA。
@@ -4612,13 +4624,7 @@ func (s *OpenAIGatewayService) overrideBrowserUserAgent(ctx context.Context, acc
 	if !openai.IsBrowserUserAgent(currentUA) {
 		return
 	}
-	codexUA := DefaultOpenAICodexUserAgent
-	if s != nil && s.settingService != nil {
-		if v := strings.TrimSpace(s.settingService.GetOpenAICodexUserAgent(ctx)); v != "" {
-			codexUA = v
-		}
-	}
-	req.Header.Set("user-agent", codexUA)
+	req.Header.Set("user-agent", s.getCodexCLIUserAgent(ctx))
 }
 
 func (s *OpenAIGatewayService) handleErrorResponse(
