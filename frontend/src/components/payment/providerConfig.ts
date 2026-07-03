@@ -37,6 +37,7 @@ export const PROVIDER_SUPPORTED_TYPES: Record<string, string[]> = {
   stripe: ['card', 'alipay', 'wxpay', 'link'],
   airwallex: ['airwallex'],
   nineplus: ['nineplus'],
+  haozpay: ['alipay', 'wxpay'],
 }
 
 /** Available payment modes for EasyPay providers. */
@@ -153,6 +154,11 @@ export const PROVIDER_CONFIG_FIELDS: Record<string, ConfigFieldDef[]> = {
     { key: 'defaultContact', label: '', sensitive: false, hintKey: 'admin.settings.payment.field_nineplusDefaultContactHint' },
     { key: 'channelId', label: '', sensitive: false, defaultValue: '10', optional: true, hintKey: 'admin.settings.payment.field_nineplusChannelIdHint' },
     { key: 'apiBase', label: '', sensitive: false, defaultValue: 'https://9.plus', optional: true },
+  ],
+  haozpay: [
+    { key: 'merchantNo', label: '', sensitive: false },
+    { key: 'privateKey', label: '', sensitive: true },
+    { key: 'platformPublicKey', label: '', sensitive: false },
   ],
 }
 
