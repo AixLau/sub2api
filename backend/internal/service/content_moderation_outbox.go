@@ -1,0 +1,522 @@
+package service
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"strconv"
+	"strings"
+	"time"
+)
+
+const (
+	ContentModerationOutboxEventLogWrite       = "content_moderation_log_write"
+	ContentModerationOutboxEventViolationCount = "violation_count_update"
+	ContentModerationOutboxEventUserAutoBan    = "user_auto_ban"
+	ContentModerationOutboxEventHashBlock      = "hash_block_record"
+	ContentModerationOutboxEventEmail          = "email_notification"
+	ContentModerationOutboxEventAdminAlert     = "admin_alert"
+
+	ContentModerationOutboxPriorityStrong = "strong"
+	ContentModerationOutboxPriorityWeak   = "weak"
+)
+
+const (
+	contentModerationOutboxDefaultClaimLimit  = 20
+	contentModerationOutboxLockDuration       = 2 * time.Minute
+	contentModerationOutboxPollInterval       = time.Second
+	contentModerationOutboxStrongMaxRetries   = 20
+	contentModerationOutboxWeakMaxRetries     = 5
+	contentModerationOutboxCleanupBatch       = 5000
+	contentModerationOutboxSucceededKeepDays  = 7
+	contentModerationOutboxDeadLetterKeepDays = 90
+)
+
+type ContentModerationOutboxRepository interface {
+	EnqueueEvents(ctx context.Context, events []ContentModerationOutboxEvent) error
+	ClaimDueEvents(ctx context.Context, now time.Time, limit int, lockFor time.Duration) ([]ContentModerationOutboxEvent, error)
+	MarkEventSucceeded(ctx context.Context, id int64) error
+	ScheduleEventRetry(ctx context.Context, id int64, retryCount int, nextRetryAt time.Time, lastError string) error
+	MarkEventDeadLetter(ctx context.Context, id int64, lastError string) error
+	GetStatus(ctx context.Context, now time.Time) (*ContentModerationOutboxStatus, error)
+	ListDeadLetters(ctx context.Context, limit int) ([]ContentModerationOutboxEvent, error)
+	ReplayDeadLetter(ctx context.Context, id int64) (bool, error)
+	Cleanup(ctx context.Context, succeededBefore time.Time, deadLetterBefore time.Time, limit int) (int64, error)
+}
+
+type ContentModerationOutboxEvent struct {
+	ID          int64          `json:"id,omitempty"`
+	DecisionID  string         `json:"decision_id"`
+	EventType   string         `json:"event_type"`
+	EventKey    string         `json:"event_key,omitempty"`
+	Priority    string         `json:"priority"`
+	Payload     map[string]any `json:"payload,omitempty"`
+	RetryCount  int            `json:"retry_count,omitempty"`
+	MaxRetries  int            `json:"max_retries,omitempty"`
+	NextRetryAt time.Time      `json:"next_retry_at,omitempty"`
+	CreatedAt   time.Time      `json:"created_at,omitempty"`
+	LastError   string         `json:"last_error,omitempty"`
+}
+
+type ContentModerationOutboxStatus struct {
+	Enabled                 bool      `json:"enabled"`
+	Healthy                 bool      `json:"healthy"`
+	Pending                 int64     `json:"pending"`
+	Retry                   int64     `json:"retry"`
+	Processing              int64     `json:"processing"`
+	Succeeded               int64     `json:"succeeded"`
+	DeadLetter              int64     `json:"dead_letter"`
+	OldestPendingAgeSeconds int64     `json:"oldest_pending_age_seconds"`
+	OldestPendingAt         time.Time `json:"oldest_pending_at,omitempty"`
+	LastError               string    `json:"last_error,omitempty"`
+	LastDeadLetterAt        time.Time `json:"last_dead_letter_at,omitempty"`
+	LastCleanupAt           time.Time `json:"last_cleanup_at,omitempty"`
+	LastCleanupDeleted      int64     `json:"last_cleanup_deleted"`
+}
+
+type contentModerationOutboxPayload struct {
+	Log       *ContentModerationLog    `json:"log,omitempty"`
+	Config    *ContentModerationConfig `json:"config,omitempty"`
+	InputHash string                   `json:"input_hash,omitempty"`
+	EmailKind string                   `json:"email_kind,omitempty"`
+}
+
+func (s *ContentModerationService) SetOutboxRepository(repo ContentModerationOutboxRepository) {
+	if s == nil {
+		return
+	}
+	s.outboxRepo = repo
+	if repo != nil {
+		go s.outboxWorker()
+	}
+}
+
+func (s *ContentModerationService) enqueueModerationOutboxRecord(input ContentModerationCheckInput, cfg *ContentModerationConfig, log *ContentModerationLog, inputHash string, recordHash bool, applySideEffects bool) bool {
+	if s == nil || s.outboxRepo == nil || log == nil {
+		return false
+	}
+	if strings.TrimSpace(log.DecisionID) == "" {
+		log.DecisionID = contentModerationDecisionID(input, log, inputHash)
+	}
+	payload := contentModerationOutboxPayload{
+		Log:       cloneContentModerationLog(log),
+		Config:    cloneContentModerationConfig(cfg),
+		InputHash: inputHash,
+	}
+	events := []ContentModerationOutboxEvent{
+		newContentModerationOutboxEvent(log.DecisionID, ContentModerationOutboxEventLogWrite, "", ContentModerationOutboxPriorityStrong, payload),
+	}
+	if recordHash {
+		events = append(events, newContentModerationOutboxEvent(log.DecisionID, ContentModerationOutboxEventHashBlock, "", ContentModerationOutboxPriorityStrong, payload))
+	}
+	if applySideEffects && log.Flagged {
+		if log.UserID != nil && *log.UserID > 0 {
+			events = append(events,
+				newContentModerationOutboxEvent(log.DecisionID, ContentModerationOutboxEventViolationCount, "", ContentModerationOutboxPriorityStrong, payload),
+				newContentModerationOutboxEvent(log.DecisionID, ContentModerationOutboxEventUserAutoBan, "", ContentModerationOutboxPriorityStrong, payload),
+			)
+		}
+		if cfg != nil && cfg.EmailOnHit && strings.TrimSpace(log.UserEmail) != "" {
+			emailPayload := payload
+			emailPayload.EmailKind = "violation"
+			events = append(events, newContentModerationOutboxEvent(log.DecisionID, ContentModerationOutboxEventEmail, "violation", ContentModerationOutboxPriorityWeak, emailPayload))
+		}
+		events = append(events, newContentModerationOutboxEvent(log.DecisionID, ContentModerationOutboxEventAdminAlert, "", ContentModerationOutboxPriorityWeak, payload))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := s.outboxRepo.EnqueueEvents(ctx, events); err != nil {
+		slog.Warn("content_moderation.outbox_enqueue_failed",
+			"user_id", input.UserID,
+			"endpoint", input.Endpoint,
+			"action", log.Action,
+			"decision_id", log.DecisionID,
+			"error", err)
+		return false
+	}
+	return true
+}
+
+func newContentModerationOutboxEvent(decisionID, eventType, eventKey, priority string, payload contentModerationOutboxPayload) ContentModerationOutboxEvent {
+	return ContentModerationOutboxEvent{
+		DecisionID: strings.TrimSpace(decisionID),
+		EventType:  eventType,
+		EventKey:   eventKey,
+		Priority:   priority,
+		Payload:    contentModerationOutboxPayloadMap(payload),
+		MaxRetries: ContentModerationOutboxDefaultMaxRetries(priority),
+	}
+}
+
+func ContentModerationOutboxDefaultMaxRetries(priority string) int {
+	if priority == ContentModerationOutboxPriorityWeak {
+		return contentModerationOutboxWeakMaxRetries
+	}
+	return contentModerationOutboxStrongMaxRetries
+}
+
+func contentModerationDecisionID(input ContentModerationCheckInput, log *ContentModerationLog, inputHash string) string {
+	if log != nil && strings.TrimSpace(log.DecisionID) != "" {
+		return trimContentModerationDecisionID(strings.TrimSpace(log.DecisionID))
+	}
+	if strings.TrimSpace(input.RequestID) != "" {
+		return trimContentModerationDecisionID("cm_" + strings.TrimSpace(input.RequestID) + "_" + contentModerationRandomToken())
+	}
+	if strings.TrimSpace(inputHash) != "" {
+		return trimContentModerationDecisionID("cm_" + strings.TrimSpace(inputHash)[:min(16, len(strings.TrimSpace(inputHash)))] + "_" + contentModerationRandomToken())
+	}
+	return trimContentModerationDecisionID("cm_" + strconv.FormatInt(time.Now().UnixNano(), 36) + "_" + contentModerationRandomToken())
+}
+
+func trimContentModerationDecisionID(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) <= 128 {
+		return value
+	}
+	return value[:111] + "_" + contentModerationRandomToken()
+}
+
+func contentModerationRandomToken() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano(), 36)
+	}
+	return fmt.Sprintf("%x", b[:])
+}
+
+func contentModerationOutboxPayloadMap(payload contentModerationOutboxPayload) map[string]any {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return map[string]any{}
+	}
+	out := map[string]any{}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return map[string]any{}
+	}
+	return out
+}
+
+func contentModerationOutboxPayloadFromMap(payload map[string]any) (contentModerationOutboxPayload, error) {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return contentModerationOutboxPayload{}, err
+	}
+	var out contentModerationOutboxPayload
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return contentModerationOutboxPayload{}, err
+	}
+	return out, nil
+}
+
+func (s *ContentModerationService) outboxWorker() {
+	ticker := time.NewTicker(contentModerationOutboxPollInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := s.ProcessContentModerationOutboxOnce(ctx, contentModerationOutboxDefaultClaimLimit); err != nil {
+			slog.Warn("content_moderation.outbox_worker_failed", "error", err)
+		}
+		cancel()
+	}
+}
+
+func (s *ContentModerationService) ProcessContentModerationOutboxOnce(ctx context.Context, limit int) error {
+	if s == nil || s.outboxRepo == nil {
+		return nil
+	}
+	events, err := s.outboxRepo.ClaimDueEvents(ctx, time.Now(), limit, contentModerationOutboxLockDuration)
+	if err != nil {
+		return err
+	}
+	for _, event := range events {
+		if err := s.processContentModerationOutboxEvent(ctx, event); err != nil {
+			s.handleContentModerationOutboxEventFailure(ctx, event, err)
+			continue
+		}
+		if err := s.outboxRepo.MarkEventSucceeded(ctx, event.ID); err != nil {
+			slog.Warn("content_moderation.outbox_mark_succeeded_failed", "event_id", event.ID, "error", err)
+		}
+	}
+	return nil
+}
+
+func (s *ContentModerationService) contentModerationOutboxStatus(ctx context.Context) ContentModerationOutboxStatus {
+	if s == nil || s.outboxRepo == nil {
+		return ContentModerationOutboxStatus{Enabled: false, Healthy: false}
+	}
+	status, err := s.outboxRepo.GetStatus(ctx, time.Now())
+	if err != nil {
+		slog.Warn("content_moderation.outbox_status_failed", "error", err)
+		return ContentModerationOutboxStatus{Enabled: true, Healthy: false, LastError: err.Error()}
+	}
+	if status == nil {
+		return ContentModerationOutboxStatus{Enabled: true, Healthy: false}
+	}
+	status.Enabled = true
+	status.LastCleanupDeleted = s.lastOutboxCleanupDeleted.Load()
+	return *status
+}
+
+func (s *ContentModerationService) ListContentModerationOutboxDeadLetters(ctx context.Context, limit int) ([]ContentModerationOutboxEvent, error) {
+	if s == nil || s.outboxRepo == nil {
+		return []ContentModerationOutboxEvent{}, nil
+	}
+	return s.outboxRepo.ListDeadLetters(ctx, limit)
+}
+
+func (s *ContentModerationService) ReplayContentModerationOutboxDeadLetter(ctx context.Context, id int64) (bool, error) {
+	if s == nil || s.outboxRepo == nil || id <= 0 {
+		return false, nil
+	}
+	return s.outboxRepo.ReplayDeadLetter(ctx, id)
+}
+
+func (s *ContentModerationService) cleanupContentModerationOutbox(ctx context.Context, now time.Time) {
+	if s == nil || s.outboxRepo == nil {
+		return
+	}
+	deleted, err := s.outboxRepo.Cleanup(
+		ctx,
+		now.AddDate(0, 0, -contentModerationOutboxSucceededKeepDays),
+		now.AddDate(0, 0, -contentModerationOutboxDeadLetterKeepDays),
+		contentModerationOutboxCleanupBatch,
+	)
+	if err != nil {
+		slog.Warn("content_moderation.outbox_cleanup_failed", "error", err)
+		return
+	}
+	s.lastOutboxCleanupDeleted.Store(deleted)
+}
+
+func (s *ContentModerationService) CleanupContentModerationOutbox(ctx context.Context) (int64, error) {
+	if s == nil || s.outboxRepo == nil {
+		return 0, nil
+	}
+	now := time.Now()
+	deleted, err := s.outboxRepo.Cleanup(
+		ctx,
+		now.AddDate(0, 0, -contentModerationOutboxSucceededKeepDays),
+		now.AddDate(0, 0, -contentModerationOutboxDeadLetterKeepDays),
+		contentModerationOutboxCleanupBatch,
+	)
+	if err != nil {
+		return 0, err
+	}
+	s.lastOutboxCleanupDeleted.Store(deleted)
+	return deleted, nil
+}
+
+func (s *ContentModerationService) handleContentModerationOutboxEventFailure(ctx context.Context, event ContentModerationOutboxEvent, err error) {
+	if s == nil || s.outboxRepo == nil {
+		return
+	}
+	nextRetry := event.RetryCount + 1
+	if nextRetry >= event.MaxRetries {
+		if markErr := s.outboxRepo.MarkEventDeadLetter(ctx, event.ID, err.Error()); markErr != nil {
+			slog.Warn("content_moderation.outbox_dead_letter_failed", "event_id", event.ID, "error", markErr)
+		}
+		return
+	}
+	backoff := time.Duration(nextRetry*nextRetry) * time.Second
+	if event.Priority == ContentModerationOutboxPriorityWeak && backoff > time.Minute {
+		backoff = time.Minute
+	}
+	if event.Priority == ContentModerationOutboxPriorityStrong && backoff > 10*time.Minute {
+		backoff = 10 * time.Minute
+	}
+	if retryErr := s.outboxRepo.ScheduleEventRetry(ctx, event.ID, nextRetry, time.Now().Add(backoff), err.Error()); retryErr != nil {
+		slog.Warn("content_moderation.outbox_retry_schedule_failed", "event_id", event.ID, "error", retryErr)
+	}
+}
+
+func (s *ContentModerationService) processContentModerationOutboxEvent(ctx context.Context, event ContentModerationOutboxEvent) error {
+	payload, err := contentModerationOutboxPayloadFromMap(event.Payload)
+	if err != nil {
+		return err
+	}
+	switch event.EventType {
+	case ContentModerationOutboxEventLogWrite:
+		return s.ensureContentModerationOutboxLog(ctx, payload)
+	case ContentModerationOutboxEventHashBlock:
+		if err := s.ensureContentModerationOutboxLog(ctx, payload); err != nil {
+			return err
+		}
+		if s.hashCache == nil || strings.TrimSpace(payload.InputHash) == "" {
+			return nil
+		}
+		return s.hashCache.RecordFlaggedInputHash(ctx, payload.InputHash)
+	case ContentModerationOutboxEventViolationCount:
+		if err := s.ensureContentModerationOutboxLog(ctx, payload); err != nil {
+			return err
+		}
+		count, err := s.contentModerationViolationCount(ctx, payload.Config, payload.Log)
+		if err != nil {
+			return err
+		}
+		if s.repo != nil && payload.Log != nil {
+			return s.repo.UpdateLogViolationCountByDecisionID(ctx, payload.Log.DecisionID, count)
+		}
+		return nil
+	case ContentModerationOutboxEventUserAutoBan:
+		if err := s.ensureContentModerationOutboxLog(ctx, payload); err != nil {
+			return err
+		}
+		autoBanJustApplied, count, err := s.applyContentModerationAutoBan(ctx, payload.Config, payload.Log)
+		if err != nil {
+			return err
+		}
+		if s.repo != nil && payload.Log != nil {
+			if err := s.repo.UpdateLogAccountActionByDecisionID(ctx, payload.Log.DecisionID, count, payload.Log.AutoBanned); err != nil {
+				return err
+			}
+		}
+		if autoBanJustApplied && payload.Config != nil && payload.Log != nil && strings.TrimSpace(payload.Log.UserEmail) != "" {
+			emailPayload := payload
+			emailPayload.EmailKind = "account_disabled"
+			if err := s.outboxRepo.EnqueueEvents(ctx, []ContentModerationOutboxEvent{
+				newContentModerationOutboxEvent(payload.Log.DecisionID, ContentModerationOutboxEventEmail, "account_disabled", ContentModerationOutboxPriorityWeak, emailPayload),
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	case ContentModerationOutboxEventEmail:
+		if err := s.ensureContentModerationOutboxLog(ctx, payload); err != nil {
+			return err
+		}
+		sent, err := s.sendContentModerationOutboxEmail(ctx, payload)
+		if err != nil {
+			return err
+		}
+		if sent && s.repo != nil && payload.Log != nil {
+			return s.repo.UpdateLogEmailSentByDecisionID(ctx, payload.Log.DecisionID, true)
+		}
+		return nil
+	case ContentModerationOutboxEventAdminAlert:
+		if err := s.ensureContentModerationOutboxLog(ctx, payload); err != nil {
+			return err
+		}
+		return s.sendContentModerationAdminAlert(ctx, payload)
+	default:
+		return fmt.Errorf("unknown content moderation outbox event type %q", event.EventType)
+	}
+}
+
+func (s *ContentModerationService) ensureContentModerationOutboxLog(ctx context.Context, payload contentModerationOutboxPayload) error {
+	if s == nil || s.repo == nil || payload.Log == nil {
+		return nil
+	}
+	return s.repo.CreateLog(ctx, payload.Log)
+}
+
+func (s *ContentModerationService) contentModerationViolationCount(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog) (int, error) {
+	if s == nil || cfg == nil || log == nil || !log.Flagged || log.UserID == nil || *log.UserID <= 0 {
+		return 0, nil
+	}
+	if s.repo == nil || cfg.ViolationWindowHours <= 0 {
+		return 1, nil
+	}
+	since := time.Now().Add(-time.Duration(cfg.ViolationWindowHours) * time.Hour)
+	count, err := s.repo.CountFlaggedByUserSince(ctx, *log.UserID, since, cfg.CyberPolicyExcludeFromBanCount)
+	if err != nil {
+		return 0, err
+	}
+	if count <= 0 {
+		return 1, nil
+	}
+	return count, nil
+}
+
+func (s *ContentModerationService) applyContentModerationAutoBan(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog) (bool, int, error) {
+	count, err := s.contentModerationViolationCount(ctx, cfg, log)
+	if err != nil {
+		return false, 0, err
+	}
+	if s == nil || cfg == nil || log == nil || !log.Flagged || log.UserID == nil || *log.UserID <= 0 {
+		return false, count, nil
+	}
+	log.ViolationCount = count
+	if !cfg.AutoBanEnabled || cfg.BanThreshold <= 0 || count < cfg.BanThreshold || s.userRepo == nil {
+		return false, count, nil
+	}
+	user, err := s.userRepo.GetByID(ctx, *log.UserID)
+	if err != nil {
+		return false, count, err
+	}
+	if user.IsAdmin() {
+		return false, count, nil
+	}
+	justApplied := false
+	if user.Status != StatusDisabled {
+		user.Status = StatusDisabled
+		if err := s.userRepo.Update(ctx, user); err != nil {
+			return false, count, err
+		}
+		if s.authCacheInvalidator != nil {
+			s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, *log.UserID)
+		}
+		justApplied = true
+	}
+	log.AutoBanned = true
+	return justApplied, count, nil
+}
+
+func (s *ContentModerationService) sendContentModerationOutboxEmail(ctx context.Context, payload contentModerationOutboxPayload) (bool, error) {
+	if s == nil || s.emailService == nil || payload.Log == nil || payload.Config == nil || strings.TrimSpace(payload.Log.UserEmail) == "" {
+		return false, nil
+	}
+	switch payload.EmailKind {
+	case "account_disabled":
+		if err := s.sendAccountDisabledEmail(ctx, payload.Config, payload.Log); err != nil {
+			return false, err
+		}
+		return true, nil
+	default:
+		if err := s.sendViolationEmail(ctx, payload.Config, payload.Log); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+}
+
+func (s *ContentModerationService) sendContentModerationAdminAlert(ctx context.Context, payload contentModerationOutboxPayload) error {
+	if s == nil || s.emailService == nil || s.userRepo == nil || payload.Log == nil {
+		return nil
+	}
+	admin, err := s.userRepo.GetFirstAdmin(ctx)
+	if err != nil || admin == nil || strings.TrimSpace(admin.Email) == "" {
+		return nil
+	}
+	subject := "Content moderation alert"
+	body := fmt.Sprintf("Content moderation %s on %s for user %s, action=%s, category=%s, score=%.4f",
+		payload.Log.DecisionID,
+		payload.Log.Endpoint,
+		payload.Log.UserEmail,
+		payload.Log.Action,
+		payload.Log.HighestCategory,
+		payload.Log.HighestScore)
+	return s.emailService.SendEmail(ctx, admin.Email, subject, body)
+}
+
+func cloneContentModerationLog(log *ContentModerationLog) *ContentModerationLog {
+	if log == nil {
+		return nil
+	}
+	out := *log
+	out.UserID = cloneInt64Ptr(log.UserID)
+	out.APIKeyID = cloneInt64Ptr(log.APIKeyID)
+	out.GroupID = cloneInt64Ptr(log.GroupID)
+	out.CategoryScores = cloneFloatMap(log.CategoryScores)
+	out.ThresholdSnapshot = cloneFloatMap(log.ThresholdSnapshot)
+	if log.UpstreamLatencyMS != nil {
+		v := *log.UpstreamLatencyMS
+		out.UpstreamLatencyMS = &v
+	}
+	if log.QueueDelayMS != nil {
+		v := *log.QueueDelayMS
+		out.QueueDelayMS = &v
+	}
+	return &out
+}

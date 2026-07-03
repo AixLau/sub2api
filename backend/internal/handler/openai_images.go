@@ -222,7 +222,10 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						zap.String("error_code", imageUpstreamErr.Code),
 						zap.Error(err),
 					)
-					return
+					if !retryableServerError {
+						return
+					}
+					err = &service.UpstreamFailoverError{StatusCode: imageUpstreamErr.StatusCode}
 				}
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
@@ -294,7 +297,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				return
 			}
 		}
-		if result != nil && account.Type == service.AccountTypeOAuth {
+		if result != nil && account.Type == service.AccountTypeOAuth && !account.IsShadow() {
 			h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
 		}
 
@@ -306,6 +309,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		}
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 
 		upstreamModel := ""
 		if result != nil {
@@ -324,6 +328,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			UserAgent:          userAgent,
 			ClientIP:           clientIP,
 			RequestPayloadHash: requestPayloadHash,
+			QuotaPlatform:      quotaPlatform,
 			ChannelUsageFields: channelMapping.ToUsageFields(requestModel, upstreamModel),
 			ScheduleSuccess:    &scheduleSucceeded,
 			Mandatory:          true,

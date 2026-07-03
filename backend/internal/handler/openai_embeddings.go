@@ -211,6 +211,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		clientIP := ip.GetClientIP(c)
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 
 		scheduleSucceeded := true
 		_ = h.runOpenAIHTTPUsageStage(c, OpenAIHTTPUsageStage{
@@ -224,6 +225,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			UpstreamEndpoint:   upstreamEndpoint,
 			UserAgent:          userAgent,
 			ClientIP:           clientIP,
+			QuotaPlatform:      quotaPlatform,
 			ScheduleSuccess:    &scheduleSucceeded,
 			ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 			LogComponent:       "handler.openai_gateway.embeddings",

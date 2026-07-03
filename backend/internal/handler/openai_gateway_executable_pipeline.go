@@ -1191,6 +1191,7 @@ type OpenAIHTTPUsageStage struct {
 	UserAgent          string
 	ClientIP           string
 	RequestPayloadHash string
+	QuotaPlatform      string
 	ChannelUsageFields service.ChannelUsageFields
 	CyberBlocked       bool
 	ForwardErrored     bool
@@ -1228,6 +1229,10 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 	if s.Result == nil {
 		return ExecutableStageResult{}
 	}
+	quotaPlatform := s.QuotaPlatform
+	if quotaPlatform == "" {
+		quotaPlatform = service.QuotaPlatform(c.Request.Context(), s.APIKey)
+	}
 	record := func(taskCtx context.Context) {
 		if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
 			Result:             s.Result,
@@ -1241,6 +1246,7 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 			IPAddress:          s.ClientIP,
 			RequestPayloadHash: s.RequestPayloadHash,
 			APIKeyService:      h.apiKeyService,
+			QuotaPlatform:      quotaPlatform,
 			ChannelUsageFields: s.ChannelUsageFields,
 			CyberBlocked:       s.CyberBlocked,
 		}); err != nil {
@@ -1636,6 +1642,7 @@ type OpenAIWebSocketUsageStage struct {
 	CyberBlockKey        string
 	ChannelMapping       service.ChannelMappingResult
 	RequestPayloadHash   string
+	QuotaPlatform        string
 	ReleaseTurnSlots     func()
 	CyberBlockedThisConn *bool
 	ScheduleSuccess      *bool
@@ -1690,7 +1697,7 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 		}
 		return ExecutableStageResult{}
 	}
-	if s.Account.Type == service.AccountTypeOAuth {
+	if s.Account.Type == service.AccountTypeOAuth && !s.Account.IsShadow() {
 		h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(ctx, s.Account.ID, s.Result.ResponseHeaders)
 	}
 	scheduleSuccess := true
@@ -1701,6 +1708,10 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 	inboundEndpoint := GetInboundEndpoint(c)
 	upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, s.Account)
 	cyberBlocked := service.GetOpsCyberPolicy(c) != nil
+	quotaPlatform := s.QuotaPlatform
+	if quotaPlatform == "" {
+		quotaPlatform = service.QuotaPlatform(c.Request.Context(), s.APIKey)
+	}
 	h.submitOpenAIUsageRecordTask(ctx, s.Result, func(taskCtx context.Context) {
 		if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
 			Result:             s.Result,
@@ -1714,6 +1725,7 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 			IPAddress:          s.ClientIP,
 			RequestPayloadHash: s.RequestPayloadHash,
 			APIKeyService:      h.apiKeyService,
+			QuotaPlatform:      quotaPlatform,
 			ChannelUsageFields: s.ChannelMapping.ToUsageFields(s.Model, s.Result.UpstreamModel),
 			CyberBlocked:       cyberBlocked,
 		}); err != nil {

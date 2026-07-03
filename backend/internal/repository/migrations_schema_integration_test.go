@@ -101,6 +101,27 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 	requireColumn(t, tx, "scheduler_outbox", "dedup_key", "text", 0, true)
 	requireIndex(t, tx, "scheduler_outbox", "idx_scheduler_outbox_pending_dedup_key")
 
+	// ops_system_logs: API key id index for operational log triage
+	requireColumn(t, tx, "ops_system_logs", "api_key_id", "bigint", 0, true)
+	requireIndex(t, tx, "ops_system_logs", "idx_ops_system_logs_api_key_id_created_at")
+
+	// content_moderation_outbox reliable side effects
+	requireColumn(t, tx, "content_moderation_logs", "decision_id", "character varying", 128, false)
+	requireIndex(t, tx, "content_moderation_logs", "idx_content_moderation_logs_decision_id")
+	requireColumn(t, tx, "content_moderation_outbox", "decision_id", "character varying", 128, false)
+	requireColumn(t, tx, "content_moderation_outbox", "event_type", "character varying", 64, false)
+	requireColumn(t, tx, "content_moderation_outbox", "priority", "character varying", 16, false)
+	requireColumn(t, tx, "content_moderation_outbox", "status", "character varying", 24, false)
+	requireColumn(t, tx, "content_moderation_outbox", "payload", "jsonb", 0, false)
+	requireColumn(t, tx, "content_moderation_outbox", "retry_count", "integer", 0, false)
+	requireColumn(t, tx, "content_moderation_outbox", "max_retries", "integer", 0, false)
+	requireColumn(t, tx, "content_moderation_outbox", "next_retry_at", "timestamp with time zone", 0, false)
+	requireColumn(t, tx, "content_moderation_outbox", "locked_until", "timestamp with time zone", 0, true)
+	requireColumn(t, tx, "content_moderation_outbox", "dead_letter_at", "timestamp with time zone", 0, true)
+	requireIndex(t, tx, "content_moderation_outbox", "idx_content_moderation_outbox_decision_event")
+	requireIndex(t, tx, "content_moderation_outbox", "idx_content_moderation_outbox_due")
+	requireIndex(t, tx, "content_moderation_outbox", "idx_content_moderation_outbox_dead_letter")
+
 	// user_allowed_groups table should exist
 	var uagRegclass sql.NullString
 	require.NoError(t, tx.QueryRowContext(context.Background(), "SELECT to_regclass('public.user_allowed_groups')").Scan(&uagRegclass))

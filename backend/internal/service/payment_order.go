@@ -13,6 +13,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -944,11 +945,18 @@ func (s *PaymentService) AdminListOrders(ctx context.Context, userID int64, p Or
 		q = q.Where(paymentorder.PaymentTypeEQ(p.PaymentType))
 	}
 	if p.Keyword != "" {
-		q = q.Where(paymentorder.Or(
-			paymentorder.OutTradeNoContainsFold(p.Keyword),
-			paymentorder.UserEmailContainsFold(p.Keyword),
-			paymentorder.UserNameContainsFold(p.Keyword),
-		))
+		q = q.Where(paymentorder.OutTradeNoContainsFold(strings.TrimSpace(p.Keyword)))
+	}
+	if p.UserQuery != "" {
+		userQuery := strings.TrimSpace(p.UserQuery)
+		userPredicates := []predicate.PaymentOrder{
+			paymentorder.UserEmailContainsFold(userQuery),
+			paymentorder.UserNameContainsFold(userQuery),
+		}
+		if uid, err := strconv.ParseInt(userQuery, 10, 64); err == nil && uid > 0 {
+			userPredicates = append(userPredicates, paymentorder.UserIDEQ(uid))
+		}
+		q = q.Where(paymentorder.Or(userPredicates...))
 	}
 	total, err := q.Clone().Count(ctx)
 	if err != nil {

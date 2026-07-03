@@ -63,6 +63,7 @@ func (h *PaymentHandler) ListOrders(c *gin.Context) {
 		OrderType:   c.Query("order_type"),
 		PaymentType: c.Query("payment_type"),
 		Keyword:     c.Query("keyword"),
+		UserQuery:   c.Query("user_query"),
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -250,6 +251,22 @@ func (h *PaymentHandler) ProcessRefund(c *gin.Context) {
 	}
 
 	result, err := h.paymentService.ExecuteRefund(c.Request.Context(), plan)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+// QueryAndFinalizeRefund queries the provider refund status and finalizes a pending refund.
+// POST /api/v1/admin/payment/orders/:id/refund/query
+func (h *PaymentHandler) QueryAndFinalizeRefund(c *gin.Context) {
+	orderID, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	result, err := h.paymentService.QueryAndFinalizeRefund(c.Request.Context(), orderID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

@@ -37,6 +37,15 @@ func TestOpenAIHTTPPipelineStagesForRouteIsSharedFactSource(t *testing.T) {
 
 	require.Equal(t, []PipelineStageCoverage{
 		{Stage: StageModeration, Required: true, Covered: true},
+		{Stage: StageImage, Required: true, Covered: true},
+		{Stage: StageBilling, Required: true, Covered: true},
+		{Stage: StageRouting, Required: true, Covered: true},
+		{Stage: StageForward, Required: true, Covered: true},
+		{Stage: StageUsage, Required: true, Covered: true},
+	}, OpenAIHTTPPipelineStagesForRoute("OpenAIGatewayHandler.GrokVideoGeneration", "openai_images"))
+
+	require.Equal(t, []PipelineStageCoverage{
+		{Stage: StageModeration, Required: true, Covered: true},
 		{Stage: StageBilling, Required: true, Covered: true},
 		{Stage: StageRouting, Required: true, Covered: true},
 		{Stage: StageForward, Required: true, Covered: true},

@@ -449,6 +449,8 @@ func OpenAIHTTPPipelineStagesForRoute(handlerName, protocol string) []PipelineSt
 		)
 	case "OpenAIGatewayHandler.Images":
 		stages = append(stages, CoveredPipelineStage(StageImage))
+	case "OpenAIGatewayHandler.GrokVideoGeneration":
+		stages = append(stages, CoveredPipelineStage(StageImage))
 	case "OpenAIGatewayHandler.Embeddings":
 	default:
 		return nil

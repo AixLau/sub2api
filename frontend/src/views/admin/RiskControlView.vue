@@ -540,6 +540,9 @@
                     <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
                       <div>{{ row.highest_category || '-' }}</div>
                       <div class="text-xs text-gray-400">{{ percent(row.highest_score) }}</div>
+                      <div v-if="row.matched_keyword" class="mt-0.5 text-xs font-medium text-red-600 dark:text-red-300" :title="t('admin.riskControl.matchedKeyword') + ': ' + row.matched_keyword">
+                        {{ t('admin.riskControl.matchedKeyword') }}: {{ row.matched_keyword }}
+                      </div>
                     </td>
                     <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
                       <div>{{ violationCountText(row) }}</div>
@@ -1386,6 +1389,10 @@
                 {{ inputDetailRow.highest_category || '-' }} / {{ percent(inputDetailRow.highest_score) }}
               </p>
             </div>
+            <div v-if="inputDetailRow.matched_keyword" class="rounded-lg border border-red-100 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-900/20">
+              <p class="text-xs font-medium text-red-500 dark:text-red-300">{{ t('admin.riskControl.matchedKeyword') }}</p>
+              <p class="mt-1 truncate text-sm font-semibold text-red-700 dark:text-red-200" :title="inputDetailRow.matched_keyword">{{ inputDetailRow.matched_keyword }}</p>
+            </div>
           </div>
 
           <div v-if="inputDetailRow.matched_keyword" class="rounded-xl border border-amber-100 bg-amber-50 p-4 shadow-sm dark:border-amber-900/40 dark:bg-amber-900/10">
@@ -1517,6 +1524,7 @@ const riskThresholdCategories = Object.keys(riskThresholdDefaults)
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const defaultBlockMessage = () => t('admin.riskControl.defaultBlockMessage')
 
 const loading = ref(true)
 const saving = ref(false)
@@ -1569,7 +1577,7 @@ const configForm = reactive({
   worker_count: 4,
   queue_size: 32768,
   block_status: 403,
-  block_message: '内容审计命中风险规则，请调整输入后重试',
+  block_message: defaultBlockMessage(),
   email_on_hit: true,
   auto_ban_enabled: true,
   cyber_policy_exclude_from_ban_count: false,
@@ -2265,7 +2273,7 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.worker_count = config.worker_count || 4
   configForm.queue_size = config.queue_size || 32768
   configForm.block_status = config.block_status || 403
-  configForm.block_message = config.block_message || '内容审计命中风险规则，请调整输入后重试'
+  configForm.block_message = config.block_message || defaultBlockMessage()
   configForm.email_on_hit = config.email_on_hit ?? true
   configForm.auto_ban_enabled = config.auto_ban_enabled ?? true
   configForm.cyber_policy_exclude_from_ban_count = config.cyber_policy_exclude_from_ban_count ?? false
@@ -2349,7 +2357,7 @@ async function saveConfig() {
       worker_count: Number(configForm.worker_count) || 4,
       queue_size: Number(configForm.queue_size) || 32768,
       block_status: Number(configForm.block_status) || 403,
-      block_message: configForm.block_message || '内容审计命中风险规则，请调整输入后重试',
+      block_message: configForm.block_message || defaultBlockMessage(),
       email_on_hit: configForm.email_on_hit,
       auto_ban_enabled: configForm.auto_ban_enabled,
       cyber_policy_exclude_from_ban_count: configForm.cyber_policy_exclude_from_ban_count,

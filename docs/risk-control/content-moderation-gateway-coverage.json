@@ -1515,6 +1515,104 @@
     {
       "route": {
         "method": "POST",
+        "path": "/v1/videos/generations",
+        "handler": "OpenAIGatewayHandler.GrokVideoGeneration",
+        "protocol": "openai_images"
+      },
+      "method": "POST",
+      "path": "/v1/videos/generations",
+      "handler": "OpenAIGatewayHandler.GrokVideoGeneration",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_images",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "image",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
+        }
+      ],
+      "status": "covered",
+      "review_reason": "Grok video generation prompt metadata is moderated through the shared Grok media handler before permission checks, scheduling, and upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/videos/generations",
+        "handler": "OpenAIGatewayHandler.GrokVideoGeneration",
+        "protocol": "openai_images"
+      },
+      "method": "POST",
+      "path": "/videos/generations",
+      "handler": "OpenAIGatewayHandler.GrokVideoGeneration",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_images",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "image",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "usage",
+          "required": true,
+          "covered": true
+        }
+      ],
+      "status": "covered",
+      "review_reason": "Root Grok video generation alias reaches the shared Grok media moderation hook before upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
         "path": "/v1beta/models/*modelAction",
         "handler": "GatewayHandler.GeminiV1BetaModels",
         "protocol": "gemini"

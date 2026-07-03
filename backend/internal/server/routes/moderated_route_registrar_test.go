@@ -1149,7 +1149,8 @@ func postRouteCanReachUpstreamContent(path string) bool {
 	case "/responses", "/responses/*subpath",
 		"/chat/completions",
 		"/embeddings",
-		"/images/generations", "/images/edits":
+		"/images/generations", "/images/edits",
+		"/videos/generations":
 		return true
 	}
 	return strings.HasPrefix(path, "/v1/") ||

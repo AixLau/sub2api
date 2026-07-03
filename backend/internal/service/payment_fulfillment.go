@@ -55,10 +55,10 @@ func parseLegacyPaymentOrderID(orderID string, lookupErr error) (int64, bool) {
 		return 0, false
 	}
 	orderID = strings.TrimSpace(orderID)
-	if !strings.HasPrefix(orderID, orderIDPrefix) {
+	if !strings.HasPrefix(orderID, legacyOrderIDPrefix) {
 		return 0, false
 	}
-	trimmed := strings.TrimPrefix(orderID, orderIDPrefix)
+	trimmed := strings.TrimPrefix(orderID, legacyOrderIDPrefix)
 	if trimmed == "" || trimmed == orderID {
 		return 0, false
 	}

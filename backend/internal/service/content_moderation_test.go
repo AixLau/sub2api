@@ -90,14 +90,33 @@ func (r *contentModerationTestSettingRepo) Delete(ctx context.Context, key strin
 }
 
 type contentModerationTestRepo struct {
-	mu   sync.Mutex
-	logs []ContentModerationLog
+	mu                       sync.Mutex
+	logs                     []ContentModerationLog
+	violationCountByDecision map[string]int
+	autoBannedByDecision     map[string]bool
+	emailSentByDecision      map[string]bool
 }
 
 func (r *contentModerationTestRepo) CreateLog(ctx context.Context, log *ContentModerationLog) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if log != nil {
+		if log.CreatedAt.IsZero() {
+			log.CreatedAt = time.Now()
+		}
+		for i := range r.logs {
+			if log.DecisionID != "" && r.logs[i].DecisionID == log.DecisionID {
+				if log.QueueDelayMS != nil {
+					r.logs[i].QueueDelayMS = log.QueueDelayMS
+				}
+				if log.ViolationCount > r.logs[i].ViolationCount {
+					r.logs[i].ViolationCount = log.ViolationCount
+				}
+				r.logs[i].AutoBanned = r.logs[i].AutoBanned || log.AutoBanned
+				r.logs[i].EmailSent = r.logs[i].EmailSent || log.EmailSent
+				return nil
+			}
+		}
 		r.logs = append(r.logs, *log)
 	}
 	return nil
@@ -131,6 +150,56 @@ func (r *contentModerationTestRepo) CleanupExpiredLogs(ctx context.Context, hitB
 }
 
 func (r *contentModerationTestRepo) UpdateLogEmailSent(ctx context.Context, id int64, sent bool) error {
+	return nil
+}
+
+func (r *contentModerationTestRepo) UpdateLogViolationCountByDecisionID(ctx context.Context, decisionID string, count int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.violationCountByDecision == nil {
+		r.violationCountByDecision = map[string]int{}
+	}
+	r.violationCountByDecision[decisionID] = count
+	for i := range r.logs {
+		if r.logs[i].DecisionID == decisionID {
+			r.logs[i].ViolationCount = count
+		}
+	}
+	return nil
+}
+
+func (r *contentModerationTestRepo) UpdateLogAccountActionByDecisionID(ctx context.Context, decisionID string, violationCount int, autoBanned bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.violationCountByDecision == nil {
+		r.violationCountByDecision = map[string]int{}
+	}
+	if r.autoBannedByDecision == nil {
+		r.autoBannedByDecision = map[string]bool{}
+	}
+	r.violationCountByDecision[decisionID] = violationCount
+	r.autoBannedByDecision[decisionID] = autoBanned
+	for i := range r.logs {
+		if r.logs[i].DecisionID == decisionID {
+			r.logs[i].ViolationCount = violationCount
+			r.logs[i].AutoBanned = autoBanned
+		}
+	}
+	return nil
+}
+
+func (r *contentModerationTestRepo) UpdateLogEmailSentByDecisionID(ctx context.Context, decisionID string, sent bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.emailSentByDecision == nil {
+		r.emailSentByDecision = map[string]bool{}
+	}
+	r.emailSentByDecision[decisionID] = sent
+	for i := range r.logs {
+		if r.logs[i].DecisionID == decisionID {
+			r.logs[i].EmailSent = sent
+		}
+	}
 	return nil
 }
 
@@ -174,6 +243,7 @@ type contentModerationTestHashCache struct {
 
 type contentModerationTestUserRepo struct {
 	user    *User
+	admin   *User
 	updated []User
 }
 
@@ -194,7 +264,11 @@ func (r *contentModerationTestUserRepo) GetByEmail(ctx context.Context, email st
 }
 
 func (r *contentModerationTestUserRepo) GetFirstAdmin(ctx context.Context) (*User, error) {
-	panic("unexpected GetFirstAdmin call")
+	if r.admin == nil {
+		return nil, ErrUserNotFound
+	}
+	clone := *r.admin
+	return &clone, nil
 }
 
 func (r *contentModerationTestUserRepo) Update(ctx context.Context, user *User) error {
@@ -395,6 +469,205 @@ func (c *contentModerationTestHashCache) snapshotDeleted() []string {
 	defer c.mu.Unlock()
 	out := make([]string, len(c.deleted))
 	copy(out, c.deleted)
+	return out
+}
+
+type contentModerationTestOutboxRepo struct {
+	mu        sync.Mutex
+	nextID    int64
+	events    []ContentModerationOutboxEvent
+	succeeded []int64
+	retried   []int64
+	dead      []int64
+}
+
+func (r *contentModerationTestOutboxRepo) EnqueueEvents(ctx context.Context, events []ContentModerationOutboxEvent) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, event := range events {
+		duplicate := false
+		for _, existing := range r.events {
+			if existing.DecisionID == event.DecisionID && existing.EventType == event.EventType && existing.EventKey == event.EventKey {
+				duplicate = true
+				break
+			}
+		}
+		if duplicate {
+			continue
+		}
+		r.nextID++
+		event.ID = r.nextID
+		if event.MaxRetries <= 0 {
+			event.MaxRetries = ContentModerationOutboxDefaultMaxRetries(event.Priority)
+		}
+		r.events = append(r.events, event)
+	}
+	return nil
+}
+
+func (r *contentModerationTestOutboxRepo) ClaimDueEvents(ctx context.Context, now time.Time, limit int, lockFor time.Duration) ([]ContentModerationOutboxEvent, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if limit <= 0 {
+		limit = len(r.events)
+	}
+	succeeded := map[int64]struct{}{}
+	for _, id := range r.succeeded {
+		succeeded[id] = struct{}{}
+	}
+	dead := map[int64]struct{}{}
+	for _, id := range r.dead {
+		dead[id] = struct{}{}
+	}
+	out := make([]ContentModerationOutboxEvent, 0, limit)
+	for _, event := range r.events {
+		if _, ok := succeeded[event.ID]; ok {
+			continue
+		}
+		if _, ok := dead[event.ID]; ok {
+			continue
+		}
+		out = append(out, event)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (r *contentModerationTestOutboxRepo) MarkEventSucceeded(ctx context.Context, id int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.succeeded = append(r.succeeded, id)
+	return nil
+}
+
+func (r *contentModerationTestOutboxRepo) ScheduleEventRetry(ctx context.Context, id int64, retryCount int, nextRetryAt time.Time, lastError string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.retried = append(r.retried, id)
+	for i := range r.events {
+		if r.events[i].ID == id {
+			r.events[i].RetryCount = retryCount
+			r.events[i].NextRetryAt = nextRetryAt
+		}
+	}
+	return nil
+}
+
+func (r *contentModerationTestOutboxRepo) MarkEventDeadLetter(ctx context.Context, id int64, lastError string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.dead = append(r.dead, id)
+	for i := range r.events {
+		if r.events[i].ID == id {
+			r.events[i].LastError = lastError
+		}
+	}
+	return nil
+}
+
+func (r *contentModerationTestOutboxRepo) GetStatus(ctx context.Context, now time.Time) (*ContentModerationOutboxStatus, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	succeeded := map[int64]struct{}{}
+	for _, id := range r.succeeded {
+		succeeded[id] = struct{}{}
+	}
+	dead := map[int64]struct{}{}
+	for _, id := range r.dead {
+		dead[id] = struct{}{}
+	}
+	status := &ContentModerationOutboxStatus{Enabled: true, Healthy: len(dead) == 0}
+	for _, event := range r.events {
+		if _, ok := succeeded[event.ID]; ok {
+			status.Succeeded++
+			continue
+		}
+		if _, ok := dead[event.ID]; ok {
+			status.DeadLetter++
+			status.LastError = event.LastError
+			continue
+		}
+		if event.RetryCount > 0 {
+			status.Retry++
+		} else {
+			status.Pending++
+		}
+	}
+	return status, nil
+}
+
+func (r *contentModerationTestOutboxRepo) ListDeadLetters(ctx context.Context, limit int) ([]ContentModerationOutboxEvent, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	dead := map[int64]struct{}{}
+	for _, id := range r.dead {
+		dead[id] = struct{}{}
+	}
+	out := []ContentModerationOutboxEvent{}
+	for _, event := range r.events {
+		if _, ok := dead[event.ID]; ok {
+			out = append(out, event)
+		}
+	}
+	return out, nil
+}
+
+func (r *contentModerationTestOutboxRepo) ReplayDeadLetter(ctx context.Context, id int64) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := r.dead[:0]
+	replayed := false
+	for _, deadID := range r.dead {
+		if deadID == id {
+			replayed = true
+			continue
+		}
+		out = append(out, deadID)
+	}
+	r.dead = out
+	return replayed, nil
+}
+
+func (r *contentModerationTestOutboxRepo) Cleanup(ctx context.Context, succeededBefore time.Time, deadLetterBefore time.Time, limit int) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	deleted := int64(len(r.succeeded) + len(r.dead))
+	r.succeeded = nil
+	r.dead = nil
+	return deleted, nil
+}
+
+func (r *contentModerationTestOutboxRepo) snapshotEvents() []ContentModerationOutboxEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]ContentModerationOutboxEvent, len(r.events))
+	copy(out, r.events)
+	return out
+}
+
+func (r *contentModerationTestOutboxRepo) snapshotSucceeded() []int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]int64, len(r.succeeded))
+	copy(out, r.succeeded)
+	return out
+}
+
+func (r *contentModerationTestOutboxRepo) snapshotRetried() []int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]int64, len(r.retried))
+	copy(out, r.retried)
+	return out
+}
+
+func (r *contentModerationTestOutboxRepo) snapshotDead() []int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]int64, len(r.dead))
+	copy(out, r.dead)
 	return out
 }
 
@@ -893,6 +1166,232 @@ func TestContentModerationCheck_RuleOnlyEngineModeAllowsMissWithoutAPIKey(t *tes
 	require.Len(t, repo.snapshotLogs(), 0)
 }
 
+func TestContentModerationCheck_RuleOnlyEngineModeChecksHashBeforeAllowingMiss(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.APIKeys = []string{}
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.BlockedKeywords = []string{"never-matches"}
+	cfg.PreHashCheckEnabled = true
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	content := ContentModerationInput{Text: "known historical violation"}
+	content.Normalize()
+	hashCache := &contentModerationTestHashCache{hashes: map[string]struct{}{
+		content.Hash(): {},
+	}}
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		hashCache,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/chat/completions",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"known historical violation"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionHashBlock, decision.Action)
+	require.Equal(t, content.Hash(), decision.InputHash)
+	require.Equal(t, []string{content.Hash()}, hashCache.snapshotChecked())
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, ContentModerationActionHashBlock, logs[0].Action)
+}
+
+func TestContentModerationCheck_LegacyKeywordOnlyChecksHashBeforeAllowingMiss(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.APIKeys = []string{}
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.BlockedKeywords = []string{"never-matches"}
+	cfg.PreHashCheckEnabled = true
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	content := ContentModerationInput{Text: "legacy known historical violation"}
+	content.Normalize()
+	hashCache := &contentModerationTestHashCache{hashes: map[string]struct{}{
+		content.Hash(): {},
+	}}
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		hashCache,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/chat/completions",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"legacy known historical violation"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionHashBlock, decision.Action)
+	require.Equal(t, content.Hash(), decision.InputHash)
+	require.Equal(t, []string{content.Hash()}, hashCache.snapshotChecked())
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, ContentModerationActionHashBlock, logs[0].Action)
+}
+
+func TestContentModerationOutboxPersistsBlockedSideEffects(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.APIKeys = []string{}
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.BlockedKeywords = []string{"forbidden"}
+	cfg.EmailOnHit = true
+	cfg.AutoBanEnabled = true
+	cfg.BanThreshold = 1
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	hashCache := &contentModerationTestHashCache{}
+	outbox := &contentModerationTestOutboxRepo{}
+	userRepo := &contentModerationTestUserRepo{
+		user:  &User{ID: 1001, Email: "user@example.com", Role: RoleUser, Status: StatusActive},
+		admin: &User{ID: 1, Email: "admin@example.com", Role: RoleAdmin, Status: StatusActive},
+	}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		hashCache,
+		nil,
+		userRepo,
+		nil,
+		nil,
+	)
+	svc.SetOutboxRepository(outbox)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		RequestID: "req-outbox-1",
+		UserID:    1001,
+		UserEmail: "user@example.com",
+		Endpoint:  "/v1/chat/completions",
+		Provider:  "openai",
+		Protocol:  ContentModerationProtocolOpenAIChat,
+		Body:      []byte(`{"messages":[{"role":"user","content":"forbidden content"}]}`),
+	})
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+
+	events := outbox.snapshotEvents()
+	require.Len(t, events, 5)
+	eventTypes := make([]string, 0, len(events))
+	for _, event := range events {
+		eventTypes = append(eventTypes, event.EventType+":"+event.Priority)
+		require.NotEmpty(t, event.DecisionID)
+	}
+	require.ElementsMatch(t, []string{
+		ContentModerationOutboxEventLogWrite + ":" + ContentModerationOutboxPriorityStrong,
+		ContentModerationOutboxEventViolationCount + ":" + ContentModerationOutboxPriorityStrong,
+		ContentModerationOutboxEventUserAutoBan + ":" + ContentModerationOutboxPriorityStrong,
+		ContentModerationOutboxEventEmail + ":" + ContentModerationOutboxPriorityWeak,
+		ContentModerationOutboxEventAdminAlert + ":" + ContentModerationOutboxPriorityWeak,
+	}, eventTypes)
+
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(context.Background(), 10))
+
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.NotEmpty(t, logs[0].DecisionID)
+	require.Equal(t, 1, logs[0].ViolationCount)
+	require.True(t, logs[0].AutoBanned)
+	require.Equal(t, StatusDisabled, userRepo.user.Status)
+	require.Len(t, outbox.snapshotSucceeded(), 5)
+}
+
+func TestContentModerationOutboxRetriesStrongAndDeadLettersWeakEvents(t *testing.T) {
+	outbox := &contentModerationTestOutboxRepo{}
+	svc := NewContentModerationService(nil, nil, nil, nil, nil, nil, nil)
+	svc.SetOutboxRepository(outbox)
+	require.NoError(t, outbox.EnqueueEvents(context.Background(), []ContentModerationOutboxEvent{
+		{
+			DecisionID: "decision-retry",
+			EventType:  "unknown_strong_event",
+			Priority:   ContentModerationOutboxPriorityStrong,
+			Payload:    map[string]any{},
+		},
+		{
+			DecisionID: "decision-dead",
+			EventType:  "unknown_weak_event",
+			Priority:   ContentModerationOutboxPriorityWeak,
+			Payload:    map[string]any{},
+			RetryCount: ContentModerationOutboxDefaultMaxRetries(ContentModerationOutboxPriorityWeak) - 1,
+			MaxRetries: ContentModerationOutboxDefaultMaxRetries(ContentModerationOutboxPriorityWeak),
+		},
+	}))
+
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(context.Background(), 10))
+
+	require.Len(t, outbox.snapshotRetried(), 1)
+	require.Len(t, outbox.snapshotDead(), 1)
+}
+
+func TestContentModerationOutboxStatusReplayAndCleanup(t *testing.T) {
+	outbox := &contentModerationTestOutboxRepo{}
+	svc := NewContentModerationService(nil, nil, nil, nil, nil, nil, nil)
+	svc.SetOutboxRepository(outbox)
+	require.NoError(t, outbox.EnqueueEvents(context.Background(), []ContentModerationOutboxEvent{{
+		DecisionID: "decision-dead",
+		EventType:  "unknown_weak_event",
+		Priority:   ContentModerationOutboxPriorityWeak,
+		Payload:    map[string]any{},
+		RetryCount: ContentModerationOutboxDefaultMaxRetries(ContentModerationOutboxPriorityWeak) - 1,
+		MaxRetries: ContentModerationOutboxDefaultMaxRetries(ContentModerationOutboxPriorityWeak),
+	}}))
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(context.Background(), 10))
+
+	status := svc.contentModerationOutboxStatus(context.Background())
+	require.True(t, status.Enabled)
+	require.False(t, status.Healthy)
+	require.Equal(t, int64(1), status.DeadLetter)
+
+	dead, err := svc.ListContentModerationOutboxDeadLetters(context.Background(), 10)
+	require.NoError(t, err)
+	require.Len(t, dead, 1)
+	replayed, err := svc.ReplayContentModerationOutboxDeadLetter(context.Background(), dead[0].ID)
+	require.NoError(t, err)
+	require.True(t, replayed)
+
+	status = svc.contentModerationOutboxStatus(context.Background())
+	require.True(t, status.Healthy)
+	require.Zero(t, status.DeadLetter)
+
+	deleted, err := svc.CleanupContentModerationOutbox(context.Background())
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, deleted, int64(0))
+}
+
 func TestContentModerationCheck_EngineModeWinsOverConflictingLegacyKeywordMode(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
@@ -1083,7 +1582,7 @@ func TestContentModerationCheck_KeywordHitLogIncludesMatchedSourceMetadata(t *te
 	}`, logs[0].Error)
 }
 
-func TestContentModerationCheck_APIOnlyEngineModeWithoutAPIKeyFailsClosed(t *testing.T) {
+func TestContentModerationCheck_APIOnlyEngineModeWithoutAPIKeyAllowsRequest(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
@@ -1111,9 +1610,42 @@ func TestContentModerationCheck_APIOnlyEngineModeWithoutAPIKeyFailsClosed(t *tes
 	})
 
 	require.NoError(t, err)
-	require.True(t, decision.Blocked)
-	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
-	require.Equal(t, ContentModerationActionError, decision.Action)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
+}
+
+func TestContentModerationCheck_ObserveWithoutAPIKeyAllowsRequest(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModeObserve
+	cfg.APIKeys = []string{}
+	cfg.EngineMode = ContentModerationEngineModeAPIOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		&contentModerationTestRepo{},
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
 }
 
 func TestContentModerationCheck_PreBlockNonEmptyUnexpectedEmptyExtractionFailsClosed(t *testing.T) {
@@ -3705,6 +4237,49 @@ func TestContentModerationStatusEffectiveProtection(t *testing.T) {
 			require.Contains(t, status.EffectiveProtection.UnsafeReasons, tt.reason)
 		})
 	}
+}
+
+func TestContentModerationStatusRuleOnlyWithFlaggedHashesHasDeterministicPolicy(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.AuditScope = ContentModerationAuditScopeAllContext
+	cfg.AllGroups = true
+	cfg.ModelFilter = ContentModerationModelFilter{Type: ContentModerationModelFilterAll}
+	cfg.FailStrategy = ContentModerationFailStrategy{Default: ContentModerationFailStrategyClosed}
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.APIKeys = nil
+	cfg.BlockedKeywords = nil
+	cfg.KeywordRules = nil
+	cfg.PreHashCheckEnabled = true
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	hashCache := &contentModerationTestHashCache{hashes: map[string]struct{}{
+		strings.Repeat("a", 64): {},
+	}}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		nil,
+		hashCache,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetBuildInfo(BuildInfo{Commit: "9216c84", BuildType: "release"})
+
+	status, err := svc.GetStatus(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, int64(1), status.FlaggedHashCount)
+	require.True(t, status.EffectiveProtection.DeterministicPolicyPresent)
+	require.NotContains(t, status.EffectiveProtection.UnsafeReasons, "rule_only_without_blocking_rules")
+	require.NotContains(t, status.EffectiveProtection.UnsafeReasons, "no_deterministic_high_risk_policy")
+	require.NotContains(t, status.EffectiveProtection.UnsafeReasons, "high_risk_rules_not_blocking")
 }
 
 func TestContentModerationStatusTracksPreBlockAPIKeyLoad(t *testing.T) {

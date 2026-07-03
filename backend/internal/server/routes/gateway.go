@@ -43,12 +43,45 @@ func RegisterGatewayRoutes(
 	isOpenAIGatewayPlatform := func(c *gin.Context) bool {
 		return getGroupPlatform(c) == service.PlatformOpenAI
 	}
-	rejectGrokUnsupportedEndpoint := func(c *gin.Context, endpoint string) {
+	imagesHandler := func(c *gin.Context) {
+		switch getGroupPlatform(c) {
+		case service.PlatformOpenAI:
+			h.OpenAIGateway.Images(c)
+		case service.PlatformGrok:
+			h.OpenAIGateway.GrokImages(c)
+		default:
+			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": gin.H{
+					"type":    "not_found_error",
+					"message": "Images API is not supported for this platform",
+				},
+			})
+		}
+	}
+	videoGenerationHandler := func(c *gin.Context) {
+		if getGroupPlatform(c) == service.PlatformGrok {
+			h.OpenAIGateway.GrokVideoGeneration(c)
+			return
+		}
 		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": gin.H{
 				"type":    "not_found_error",
-				"message": endpoint + " is not supported for Grok groups",
+				"message": "Videos API is not supported for this platform",
+			},
+		})
+	}
+	videoStatusHandler := func(c *gin.Context) {
+		if getGroupPlatform(c) == service.PlatformGrok {
+			h.OpenAIGateway.GrokVideoStatus(c)
+			return
+		}
+		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": gin.H{
+				"type":    "not_found_error",
+				"message": "Videos API is not supported for this platform",
 			},
 		})
 	}
@@ -80,11 +113,7 @@ func RegisterGatewayRoutes(
 			service.ContentModerationProtocolAnthropicMessages,
 			"Anthropic Messages requests are moderated after request parsing and before billing, scheduling, and upstream forwarding.",
 		), func(c *gin.Context) {
-			if getGroupPlatform(c) == service.PlatformGrok {
-				rejectGrokUnsupportedEndpoint(c, "Messages API")
-				return
-			}
-			if isOpenAIGatewayPlatform(c) {
+			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
 				if enterModeratedRouteBranchPipeline(c, moderatedGateway, openAIMessagesRouteMeta).Stop {
 					return
 				}
@@ -93,14 +122,18 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.Messages(c)
 		})
-		// /v1/messages/count_tokens: OpenAI groups get 404
+		// /v1/messages/count_tokens: OpenAI uses Anthropic-compatible bridge; Grok remains unsupported.
 		moderatedGateway.POST("/messages/count_tokens", coveredModeratedRoute(
 			"/v1/messages/count_tokens",
 			"GatewayHandler.CountTokens",
 			service.ContentModerationProtocolAnthropicMessages,
 			"Anthropic count_tokens can forward client context to upstream, so it is moderated after model validation and before billing, scheduling, and forwarding.",
 		), func(c *gin.Context) {
-			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
+			if isOpenAIGatewayPlatform(c) {
+				h.OpenAIGateway.CountTokens(c)
+				return
+			}
+			if getGroupPlatform(c) == service.PlatformGrok {
 				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 				c.JSON(http.StatusNotFound, gin.H{
 					"type": "error",
@@ -172,10 +205,6 @@ func RegisterGatewayRoutes(
 			service.ContentModerationProtocolOpenAIResponses,
 			"Responses WebSocket audits the first frame and subsequent client turns before upstream writes.",
 		), func(c *gin.Context) {
-			if getGroupPlatform(c) == service.PlatformGrok {
-				rejectGrokUnsupportedEndpoint(c, "Responses WebSocket API")
-				return
-			}
 			h.OpenAIGateway.ResponsesWebSocket(c)
 		})
 		// OpenAI Chat Completions API: auto-route based on group platform
@@ -191,11 +220,7 @@ func RegisterGatewayRoutes(
 			service.ContentModerationProtocolOpenAIChat,
 			"Chat Completions requests for non-OpenAI groups are moderated by the shared Gateway pre-forward pipeline before scheduling and upstream forwarding.",
 		), func(c *gin.Context) {
-			if getGroupPlatform(c) == service.PlatformGrok {
-				rejectGrokUnsupportedEndpoint(c, "Chat Completions API")
-				return
-			}
-			if isOpenAIGatewayPlatform(c) {
+			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
 				if enterModeratedRouteBranchPipeline(c, moderatedGateway, openAIChatCompletionsRouteMeta).Stop {
 					return
 				}
@@ -228,17 +253,7 @@ func RegisterGatewayRoutes(
 			service.ContentModerationProtocolOpenAIImages,
 			"Image generation permission is checked before moderation; prompt and image metadata are then moderated before scheduling and upstream forwarding.",
 		), func(c *gin.Context) {
-			if getGroupPlatform(c) != service.PlatformOpenAI {
-				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-				c.JSON(http.StatusNotFound, gin.H{
-					"error": gin.H{
-						"type":    "not_found_error",
-						"message": "Images API is not supported for this platform",
-					},
-				})
-				return
-			}
-			h.OpenAIGateway.Images(c)
+			imagesHandler(c)
 		})
 		moderatedGateway.POST("/images/edits", coveredOpenAIHTTPRoute(
 			"/v1/images/edits",
@@ -246,18 +261,33 @@ func RegisterGatewayRoutes(
 			service.ContentModerationProtocolOpenAIImages,
 			"Image edit permission is checked before moderation; prompt and image metadata are then moderated before scheduling and upstream forwarding.",
 		), func(c *gin.Context) {
-			if getGroupPlatform(c) != service.PlatformOpenAI {
-				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-				c.JSON(http.StatusNotFound, gin.H{
-					"error": gin.H{
-						"type":    "not_found_error",
-						"message": "Images API is not supported for this platform",
-					},
-				})
+			imagesHandler(c)
+		})
+		openAIVideoGenerationRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
+			"/v1/videos/generations",
+			"OpenAIGatewayHandler.GrokVideoGeneration",
+			service.ContentModerationProtocolOpenAIImages,
+			"Grok video generation prompt metadata is moderated through the shared Grok media handler before permission checks, scheduling, and upstream forwarding.",
+		))
+		moderatedGateway.POST("/videos/generations", intentionalNoAuditRoute(
+			"/v1/videos/generations",
+			"OpenAIGatewayHandler.GrokVideoGeneration",
+			"Non-Grok groups are rejected before upstream content handling; Grok groups enter the OpenAI HTTP moderation branch.",
+		), func(c *gin.Context) {
+			if getGroupPlatform(c) != service.PlatformGrok {
+				videoGenerationHandler(c)
 				return
 			}
-			h.OpenAIGateway.Images(c)
+			if enterModeratedRouteBranchPipeline(c, moderatedGateway, openAIVideoGenerationRouteMeta).Stop {
+				return
+			}
+			videoGenerationHandler(c)
 		})
+		moderatedGateway.GETNoAudit("/videos/:request_id", intentionalNoAuditRoute(
+			"/v1/videos/:request_id",
+			"OpenAIGatewayHandler.GrokVideoStatus",
+			"Grok video status lookup uses an upstream request id and does not submit new model-visible user content.",
+		), videoStatusHandler)
 	}
 
 	// Gemini 原生 API 兼容层（Gemini SDK/CLI 直连）
@@ -342,7 +372,7 @@ func RegisterGatewayRoutes(
 		"Root Responses WebSocket alias audits the first frame and subsequent client turns before upstream writes.",
 	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) == service.PlatformGrok {
-			rejectGrokUnsupportedEndpoint(c, "Responses WebSocket API")
+			h.OpenAIGateway.ResponsesWebSocket(c)
 			return
 		}
 		h.OpenAIGateway.ResponsesWebSocket(c)
@@ -401,10 +431,6 @@ func RegisterGatewayRoutes(
 			service.ContentModerationProtocolOpenAIResponses,
 			"Codex direct Responses WebSocket route audits the first frame and subsequent client turns before upstream writes.",
 		), func(c *gin.Context) {
-			if getGroupPlatform(c) == service.PlatformGrok {
-				rejectGrokUnsupportedEndpoint(c, "Responses WebSocket API")
-				return
-			}
 			h.OpenAIGateway.ResponsesWebSocket(c)
 		})
 	}
@@ -421,11 +447,7 @@ func RegisterGatewayRoutes(
 		service.ContentModerationProtocolOpenAIChat,
 		"Root chat alias for non-OpenAI groups uses the shared Gateway pre-forward pipeline before upstream forwarding.",
 	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
-		if getGroupPlatform(c) == service.PlatformGrok {
-			rejectGrokUnsupportedEndpoint(c, "Chat Completions API")
-			return
-		}
-		if isOpenAIGatewayPlatform(c) {
+		if isOpenAIResponsesCompatibleGatewayPlatform(c) {
 			if enterModeratedRouteBranchPipeline(c, moderatedRoot, rootOpenAIChatCompletionsRouteMeta).Stop {
 				return
 			}
@@ -458,17 +480,7 @@ func RegisterGatewayRoutes(
 		service.ContentModerationProtocolOpenAIImages,
 		"Root image generation alias reaches the same Images handler and moderation hook before upstream forwarding.",
 	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
-		if getGroupPlatform(c) != service.PlatformOpenAI {
-			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-			c.JSON(http.StatusNotFound, gin.H{
-				"error": gin.H{
-					"type":    "not_found_error",
-					"message": "Images API is not supported for this platform",
-				},
-			})
-			return
-		}
-		h.OpenAIGateway.Images(c)
+		imagesHandler(c)
 	})
 	moderatedRoot.POST("/images/edits", coveredOpenAIHTTPRoute(
 		"/images/edits",
@@ -476,18 +488,33 @@ func RegisterGatewayRoutes(
 		service.ContentModerationProtocolOpenAIImages,
 		"Root image edit alias reaches the same Images handler and moderation hook before upstream forwarding.",
 	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
-		if getGroupPlatform(c) != service.PlatformOpenAI {
-			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-			c.JSON(http.StatusNotFound, gin.H{
-				"error": gin.H{
-					"type":    "not_found_error",
-					"message": "Images API is not supported for this platform",
-				},
-			})
+		imagesHandler(c)
+	})
+	rootOpenAIVideoGenerationRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
+		"/videos/generations",
+		"OpenAIGatewayHandler.GrokVideoGeneration",
+		service.ContentModerationProtocolOpenAIImages,
+		"Root Grok video generation alias reaches the shared Grok media moderation hook before upstream forwarding.",
+	))
+	moderatedRoot.POST("/videos/generations", intentionalNoAuditRoute(
+		"/videos/generations",
+		"OpenAIGatewayHandler.GrokVideoGeneration",
+		"Non-Grok groups are rejected before upstream content handling; Grok groups enter the OpenAI HTTP moderation branch.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
+		if getGroupPlatform(c) != service.PlatformGrok {
+			videoGenerationHandler(c)
 			return
 		}
-		h.OpenAIGateway.Images(c)
+		if enterModeratedRouteBranchPipeline(c, moderatedRoot, rootOpenAIVideoGenerationRouteMeta).Stop {
+			return
+		}
+		videoGenerationHandler(c)
 	})
+	moderatedRoot.GETNoAudit("/videos/:request_id", intentionalNoAuditRoute(
+		"/videos/:request_id",
+		"OpenAIGatewayHandler.GrokVideoStatus",
+		"Root Grok video status lookup uses an upstream request id and does not submit new model-visible user content.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, videoStatusHandler)
 
 	// Antigravity 模型列表
 	moderatedRoot.GETNoAudit("/antigravity/models", intentionalNoAuditRoute(

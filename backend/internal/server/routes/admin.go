@@ -129,6 +129,9 @@ func registerContentModerationRoutes(admin *gin.RouterGroup, h *handler.Handlers
 		risk.POST("/users/:user_id/unban", h.Admin.ContentModeration.UnbanUser)
 		risk.DELETE("/hashes", h.Admin.ContentModeration.DeleteFlaggedHash)
 		risk.DELETE("/hashes/all", h.Admin.ContentModeration.ClearFlaggedHashes)
+		risk.GET("/outbox/dead-letters", h.Admin.ContentModeration.ListOutboxDeadLetters)
+		risk.POST("/outbox/dead-letters/:id/replay", h.Admin.ContentModeration.ReplayOutboxDeadLetter)
+		risk.POST("/outbox/cleanup", h.Admin.ContentModeration.CleanupOutbox)
 	}
 }
 
@@ -337,6 +340,9 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 
 		// Antigravity 默认模型映射
 		accounts.GET("/antigravity/default-model-mapping", h.Admin.Account.GetAntigravityDefaultModelMapping)
+
+		// Spark 影子账号
+		accounts.POST("/:id/shadow", h.Admin.OpenAIOAuth.CreateShadow)
 
 		// Claude OAuth routes
 		accounts.POST("/generate-auth-url", h.Admin.OAuth.GenerateAuthURL)
@@ -562,6 +568,8 @@ func registerSubscriptionRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		subscriptions.POST("/:id/extend", h.Admin.Subscription.Extend)
 		subscriptions.POST("/:id/add-monthly-bonus", h.Admin.Subscription.AddMonthlyBonus)
 		subscriptions.POST("/:id/reset-quota", h.Admin.Subscription.ResetQuota)
+		subscriptions.POST("/:id/revoke", h.Admin.Subscription.Revoke)
+		subscriptions.POST("/:id/restore", h.Admin.Subscription.Restore)
 		subscriptions.DELETE("/:id", h.Admin.Subscription.Revoke)
 	}
 

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -38,18 +39,38 @@ func (r openAIImagesFailoverAccountRepo) ListSchedulableByGroupIDAndPlatform(_ c
 	return r.accountsForPlatform(platform), nil
 }
 
+func (r openAIImagesFailoverAccountRepo) ListSchedulableByGroupIDAndPlatforms(_ context.Context, _ int64, platforms []string) ([]service.Account, error) {
+	return r.accountsForPlatforms(platforms), nil
+}
+
 func (r openAIImagesFailoverAccountRepo) ListSchedulableByPlatform(_ context.Context, platform string) ([]service.Account, error) {
 	return r.accountsForPlatform(platform), nil
+}
+
+func (r openAIImagesFailoverAccountRepo) ListSchedulableByPlatforms(_ context.Context, platforms []string) ([]service.Account, error) {
+	return r.accountsForPlatforms(platforms), nil
 }
 
 func (r openAIImagesFailoverAccountRepo) ListSchedulableUngroupedByPlatform(_ context.Context, platform string) ([]service.Account, error) {
 	return r.accountsForPlatform(platform), nil
 }
 
+func (r openAIImagesFailoverAccountRepo) ListSchedulableUngroupedByPlatforms(_ context.Context, platforms []string) ([]service.Account, error) {
+	return r.accountsForPlatforms(platforms), nil
+}
+
 func (r openAIImagesFailoverAccountRepo) accountsForPlatform(platform string) []service.Account {
+	return r.accountsForPlatforms([]string{platform})
+}
+
+func (r openAIImagesFailoverAccountRepo) accountsForPlatforms(platforms []string) []service.Account {
+	allowed := make(map[string]struct{}, len(platforms))
+	for _, platform := range platforms {
+		allowed[platform] = struct{}{}
+	}
 	out := make([]service.Account, 0, len(r.accounts))
 	for _, account := range r.accounts {
-		if account.Platform == platform {
+		if _, ok := allowed[account.Platform]; ok {
 			out = append(out, account)
 		}
 	}
@@ -97,6 +118,9 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 			Schedulable: true,
 			Concurrency: 0,
 			Priority:    0,
+			AccountGroups: []service.AccountGroup{
+				{GroupID: groupID},
+			},
 			Credentials: map[string]any{"access_token": "token-1"},
 		},
 		{
@@ -108,6 +132,9 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 			Schedulable: true,
 			Concurrency: 0,
 			Priority:    1,
+			AccountGroups: []service.AccountGroup{
+				{GroupID: groupID},
+			},
 			Credentials: map[string]any{"access_token": "token-2"},
 		},
 	}
@@ -154,17 +181,27 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 	)
 	handler.maxAccountSwitches = 10
 
-	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat"}`)
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","response_format":"b64_json"}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = req
+	moderationcoverage.SetRouteMeta(c, moderationcoverage.AnnotatePipelineCoverage(moderationcoverage.Entry{
+		Method:             http.MethodPost,
+		Path:               "/v1/images/generations",
+		Handler:            "OpenAIGatewayHandler.Images",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolOpenAIImages,
+		Status:             moderationcoverage.StatusCovered,
+	}))
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
 		ID:      99,
 		GroupID: &groupID,
 		Group: &service.Group{
 			ID:                   groupID,
+			Platform:             service.PlatformOpenAI,
 			AllowImageGeneration: true,
 		},
 		User: &service.User{ID: 100},
@@ -173,7 +210,7 @@ func TestOpenAIGatewayHandlerImages_ServerErrorFailsOverAndReturnsClearErrorWhen
 
 	handler.Images(c)
 
-	require.Equal(t, []int64{1, 2}, upstream.calls())
+	require.Equalf(t, []int64{1, 2}, upstream.calls(), "status=%d body=%s", rec.Code, rec.Body.String())
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Equal(t, "upstream_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
 	require.Equal(t, "Upstream service temporarily unavailable", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())

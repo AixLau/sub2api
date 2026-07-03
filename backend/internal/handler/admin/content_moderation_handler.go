@@ -267,6 +267,47 @@ func (h *ContentModerationHandler) ClearFlaggedHashes(c *gin.Context) {
 	response.Success(c, result)
 }
 
+func (h *ContentModerationHandler) ListOutboxDeadLetters(c *gin.Context) {
+	limit := 50
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			response.BadRequest(c, "Invalid limit")
+			return
+		}
+		limit = parsed
+	}
+	items, err := h.service.ListContentModerationOutboxDeadLetters(c.Request.Context(), limit)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, items)
+}
+
+func (h *ContentModerationHandler) ReplayOutboxDeadLetter(c *gin.Context) {
+	id, err := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "Invalid dead-letter id")
+		return
+	}
+	replayed, err := h.service.ReplayContentModerationOutboxDeadLetter(c.Request.Context(), id)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"replayed": replayed})
+}
+
+func (h *ContentModerationHandler) CleanupOutbox(c *gin.Context) {
+	deleted, err := h.service.CleanupContentModerationOutbox(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"deleted": deleted})
+}
+
 func parseContentModerationDate(raw string) (time.Time, bool, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

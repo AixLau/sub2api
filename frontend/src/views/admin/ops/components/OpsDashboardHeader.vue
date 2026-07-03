@@ -543,11 +543,11 @@ const diagnosisReport = computed<DiagnosisItem[]>(() => {
     }
   }
 
-  const ttftP99 = ov.ttft?.p99_ms ?? 0
-  if (ttftP99 > 500) {
+  const ttftAvg = ov.ttft?.avg_ms ?? 0
+  if (ttftAvg > 500) {
     report.push({
       type: 'warning',
-      message: t('admin.ops.diagnosis.ttftHigh', { ttft: ttftP99.toFixed(0) }),
+      message: t('admin.ops.diagnosis.ttftHigh', { ttft: ttftAvg.toFixed(0) }),
       impact: t('admin.ops.diagnosis.ttftHighImpact'),
       action: t('admin.ops.diagnosis.ttftHighAction')
     })
@@ -889,7 +889,7 @@ function handleToolbarRefresh() {
 
           <template v-if="props.autoRefreshEnabled && props.autoRefreshCountdown !== undefined">
             <span>·</span>
-            <span>剩余 {{ props.autoRefreshCountdown }}s</span>
+            <span>{{ t('admin.ops.autoRefreshRemaining', { seconds: props.autoRefreshCountdown }) }}</span>
           </template>
         </div>
       </div>
@@ -1338,7 +1338,7 @@ function handleToolbarRefresh() {
               v-if="!props.fullscreen"
               class="text-[10px] font-bold text-blue-500 hover:underline"
               type="button"
-              @click="openDetails({ title: t('admin.ops.ttftLabel'), sort: 'duration_desc' })"
+              @click="openDetails({ title: t('admin.ops.ttftLabel'), sort: 'first_token_desc' })"
             >
               {{ t('admin.ops.requestDetails.details') }}
             </button>

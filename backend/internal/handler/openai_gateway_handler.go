@@ -415,7 +415,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				return
 			}
 		}
-		if result != nil && account.Type == service.AccountTypeOAuth {
+		if result != nil && account.Type == service.AccountTypeOAuth && !account.IsShadow() {
 			h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
 		}
 
@@ -425,6 +425,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		requestPayloadHash := service.HashUsageRequestPayload(body)
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account)
+		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
 		cyberBlocked := service.GetOpsCyberPolicy(c) != nil
@@ -441,6 +442,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			UserAgent:          userAgent,
 			ClientIP:           clientIP,
 			RequestPayloadHash: requestPayloadHash,
+			QuotaPlatform:      quotaPlatform,
 			ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 			CyberBlocked:       cyberBlocked,
 			ScheduleSuccess:    &scheduleSucceeded,
@@ -565,7 +567,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	)
 
 	// 检查分组是否允许 /v1/messages 调度
-	if apiKey.Group != nil && !apiKey.Group.AllowMessagesDispatch {
+	if apiKey.Group != nil && apiKey.Group.Platform != service.PlatformGrok && !apiKey.Group.AllowMessagesDispatch {
 		h.anthropicErrorResponse(c, http.StatusForbidden, "permission_error",
 			"This group does not allow /v1/messages dispatch")
 		return
@@ -829,6 +831,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		requestPayloadHash := service.HashUsageRequestPayload(body)
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account)
+		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 
 		cyberBlocked := service.GetOpsCyberPolicy(c) != nil
 		scheduleSucceeded := true
@@ -844,6 +847,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			UserAgent:          userAgent,
 			ClientIP:           clientIP,
 			RequestPayloadHash: requestPayloadHash,
+			QuotaPlatform:      quotaPlatform,
 			ChannelUsageFields: channelMappingMsg.ToUsageFields(reqModel, result.UpstreamModel),
 			CyberBlocked:       cyberBlocked,
 			ScheduleSuccess:    &scheduleSucceeded,
