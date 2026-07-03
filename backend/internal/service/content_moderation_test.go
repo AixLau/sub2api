@@ -1581,7 +1581,7 @@ func TestContentModerationCheck_KeywordHitLogIncludesMatchedSourceMetadata(t *te
 	}`, logs[0].Error)
 }
 
-func TestContentModerationCheck_APIOnlyEngineModeWithoutAPIKeyFailsClosed(t *testing.T) {
+func TestContentModerationCheck_APIOnlyEngineModeWithoutAPIKeyAllowsRequest(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
@@ -1609,9 +1609,9 @@ func TestContentModerationCheck_APIOnlyEngineModeWithoutAPIKeyFailsClosed(t *tes
 	})
 
 	require.NoError(t, err)
-	require.True(t, decision.Blocked)
-	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
-	require.Equal(t, ContentModerationActionError, decision.Action)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
 }
 
 func TestContentModerationCheck_ObserveWithoutAPIKeyAllowsRequest(t *testing.T) {

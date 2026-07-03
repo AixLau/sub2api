@@ -1226,18 +1226,12 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		}
 	}
 	if len(cfg.apiKeys()) == 0 {
-		if cfg.Mode == ContentModerationModePreBlock {
-			s.recordPreBlockSyncMetric(0, ContentModerationActionError)
-		}
-		slog.Warn("content_moderation.skip_no_audit_api_keys",
+		slog.Info("content_moderation.skip_no_audit_api_keys",
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,
 			"group_id", contentModerationLogGroupID(input.GroupID),
 			"endpoint", input.Endpoint,
 			"protocol", input.Protocol)
-		if cfg.Mode == ContentModerationModePreBlock && cfg.shouldFailClosed(input) {
-			return contentModerationFailureDecision(cfg), nil
-		}
 		return allow, nil
 	}
 	if cfg.Mode == ContentModerationModeObserve {
