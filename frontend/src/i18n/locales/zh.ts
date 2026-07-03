@@ -2623,7 +2623,7 @@ export default {
       protectionStrong: '强保护',
       protectionUnsafe: '非强保护',
       protectionUnknown: '未知',
-      protectionStrongDescription: '当前构建、配置、外部审计与路由覆盖均满足保护基线。',
+      protectionStrongDescription: '当前构建、本地审计配置与网关覆盖均满足保护基线。',
       protectionUnsafeDescription: '当前状态存在风险原因，可能无法证明请求会在上游前被可靠保护。',
       protectionUnknownDescription: '尚未加载保护状态。',
       protectionBuild: '构建',
@@ -2656,6 +2656,9 @@ export default {
       protectionSatisfied: '已满足',
       protectionUnsatisfied: '未满足',
       protectionExternalNotConfigured: '未配置',
+      protectionExternalLocalAudit: '本地审计',
+      protectionExternalOptional: '可选补充',
+      protectionExternalOptionalNotConfigured: '可选补充 · 未配置',
       protectionHealthy: '健康',
       protectionUnhealthy: '异常',
       protectionReason: {

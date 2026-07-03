@@ -3552,6 +3552,37 @@ func TestContentModerationStatusEffectiveProtection(t *testing.T) {
 	require.Equal(t, 1, status.EffectiveProtection.ExternalAPIUsableKeyCount)
 	require.True(t, status.EffectiveProtection.HighRiskRulesBlocking)
 
+	t.Run("hybrid local policy is strong without external api", func(t *testing.T) {
+		cfg := secureConfig()
+		cfg.APIKeys = nil
+
+		status := makeStatus(t, cfg, true, markKeyOK)
+
+		require.True(t, status.EffectiveProtection.EffectiveBlocking)
+		require.Empty(t, status.EffectiveProtection.UnsafeReasons)
+		require.False(t, status.EffectiveProtection.ExternalAPIConfigured)
+		require.False(t, status.EffectiveProtection.ExternalAPIHealthy)
+		require.Equal(t, 0, status.EffectiveProtection.ExternalAPIUsableKeyCount)
+		require.True(t, status.EffectiveProtection.DeterministicPolicyPresent)
+		require.True(t, status.EffectiveProtection.HighRiskRulesBlocking)
+	})
+
+	t.Run("hybrid local policy is strong when external api is frozen", func(t *testing.T) {
+		cfg := secureConfig()
+
+		status := makeStatus(t, cfg, true, func(svc *ContentModerationService) {
+			svc.markAPIKeyError("sk-test", "unauthorized", 10, http.StatusUnauthorized)
+		})
+
+		require.True(t, status.EffectiveProtection.EffectiveBlocking)
+		require.Empty(t, status.EffectiveProtection.UnsafeReasons)
+		require.True(t, status.EffectiveProtection.ExternalAPIConfigured)
+		require.False(t, status.EffectiveProtection.ExternalAPIHealthy)
+		require.Equal(t, 0, status.EffectiveProtection.ExternalAPIUsableKeyCount)
+		require.True(t, status.EffectiveProtection.DeterministicPolicyPresent)
+		require.True(t, status.EffectiveProtection.HighRiskRulesBlocking)
+	})
+
 	tests := []struct {
 		name    string
 		mutate  func(*ContentModerationConfig)
@@ -3617,27 +3648,6 @@ func TestContentModerationStatusEffectiveProtection(t *testing.T) {
 			reason: "model_filter_not_all",
 		},
 		{
-			name: "external api missing for hybrid",
-			mutate: func(cfg *ContentModerationConfig) {
-				cfg.APIKeys = nil
-			},
-			risk:   true,
-			reason: "external_api_not_configured",
-		},
-		{
-			name: "external api key frozen for hybrid",
-			prepare: func(svc *ContentModerationService) {
-				svc.markAPIKeyError("sk-test", "unauthorized", 10, http.StatusUnauthorized)
-			},
-			risk:   true,
-			reason: "external_api_all_keys_frozen",
-		},
-		{
-			name:   "external api health unknown for hybrid",
-			risk:   true,
-			reason: "external_api_health_unknown",
-		},
-		{
 			name: "rule only without blocking rules",
 			mutate: func(cfg *ContentModerationConfig) {
 				cfg.EngineMode = ContentModerationEngineModeRuleOnly
@@ -3655,6 +3665,15 @@ func TestContentModerationStatusEffectiveProtection(t *testing.T) {
 			},
 			risk:   true,
 			reason: "api_only_without_healthy_external_api",
+		},
+		{
+			name: "api only without configured external api",
+			mutate: func(cfg *ContentModerationConfig) {
+				cfg.EngineMode = ContentModerationEngineModeAPIOnly
+				cfg.APIKeys = nil
+			},
+			risk:   true,
+			reason: "external_api_not_configured",
 		},
 		{
 			name: "high risk rule warn only",
@@ -3678,7 +3697,7 @@ func TestContentModerationStatusEffectiveProtection(t *testing.T) {
 				tt.mutate(cfg)
 			}
 			prepare := tt.prepare
-			if prepare == nil && tt.reason != "external_api_health_unknown" && tt.reason != "api_only_without_healthy_external_api" {
+			if prepare == nil && tt.reason != "api_only_without_healthy_external_api" && tt.reason != "external_api_not_configured" {
 				prepare = markKeyOK
 			}
 			status := makeStatus(t, cfg, tt.risk, prepare)

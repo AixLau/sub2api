@@ -228,6 +228,50 @@ describe('admin RiskControlView', () => {
     }))
   })
 
+  it('describes hybrid external moderation as optional when local audit protects', async () => {
+    getStatus.mockResolvedValue({
+      ...runtimeStatus(),
+      effective_protection: {
+        effective_blocking: true,
+        risk_control_enabled: true,
+        moderation_enabled: true,
+        mode: 'pre_block',
+        audit_scope: 'all_context',
+        public_fail_strategy: 'closed',
+        group_coverage: 'all_public_groups',
+        model_coverage: 'all',
+        engine_mode: 'hybrid',
+        external_api_configured: false,
+        external_api_healthy: false,
+        external_api_usable_key_count: 0,
+        external_api_last_error: '',
+        high_risk_rules_blocking: true,
+        deterministic_policy_present: true,
+        high_risk_rules_present: true,
+        unsafe_reasons: [],
+      },
+    })
+
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.riskControl.protectionExternalOptionalNotConfigured')
+    expect(wrapper.text()).not.toContain('admin.riskControl.protectionExternalNotConfigured')
+  })
+
   it('renders keyword metadata in records and input detail', async () => {
     listLogs.mockResolvedValue({
       items: [

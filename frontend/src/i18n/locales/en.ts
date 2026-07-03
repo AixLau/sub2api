@@ -2547,7 +2547,7 @@ export default {
       protectionStrong: 'Strong',
       protectionUnsafe: 'Unsafe',
       protectionUnknown: 'Unknown',
-      protectionStrongDescription: 'Current build, config, external moderation, and route coverage satisfy the protection baseline.',
+      protectionStrongDescription: 'Current build, local audit config, and gateway coverage satisfy the protection baseline.',
       protectionUnsafeDescription: 'Current status has unsafe reasons that can expose upstream accounts or make protection unverifiable.',
       protectionUnknownDescription: 'Protection status has not been loaded.',
       protectionBuild: 'Build',
@@ -2580,6 +2580,9 @@ export default {
       protectionSatisfied: 'Satisfied',
       protectionUnsatisfied: 'Unsatisfied',
       protectionExternalNotConfigured: 'Not configured',
+      protectionExternalLocalAudit: 'Local audit',
+      protectionExternalOptional: 'Optional',
+      protectionExternalOptionalNotConfigured: 'Optional · not configured',
       protectionHealthy: 'Healthy',
       protectionUnhealthy: 'Unhealthy',
       protectionReason: {

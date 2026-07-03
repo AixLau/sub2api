@@ -1917,8 +1917,13 @@ const protectionBaselineText = computed(() => {
 const protectionExternalAPIText = computed(() => {
   const effective = status.value?.effective_protection
   if (!effective) return '-'
+  if (effective.engine_mode === 'rule_only') return t('admin.riskControl.protectionExternalLocalAudit')
+  if (effective.engine_mode === 'hybrid' && !effective.external_api_configured) {
+    return t('admin.riskControl.protectionExternalOptionalNotConfigured')
+  }
   if (!effective.external_api_configured) return t('admin.riskControl.protectionExternalNotConfigured')
   const state = effective.external_api_healthy ? t('admin.riskControl.protectionHealthy') : t('admin.riskControl.protectionUnhealthy')
+  if (effective.engine_mode === 'hybrid') return `${t('admin.riskControl.protectionExternalOptional')} · ${state} · ${formatNumber(effective.external_api_usable_key_count)}`
   return `${state} · ${formatNumber(effective.external_api_usable_key_count)}`
 })
 

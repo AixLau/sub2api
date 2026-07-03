@@ -2438,10 +2438,10 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 		groupCoverage = "scoped_groups"
 	}
 	modelCoverage := modelFilter.Type
-	externalAPIRequired := cfg.externalModerationRequired()
-	externalAPIConfigured := !externalAPIRequired || len(cfg.apiKeys()) > 0
+	externalAPIConfigured := len(cfg.apiKeys()) > 0
 	externalAPIHealth := s.contentModerationExternalAPIHealth(cfg)
-	externalAPIHealthy := !externalAPIRequired || externalAPIHealth.healthy
+	externalAPIHealthy := externalAPIConfigured && externalAPIHealth.healthy
+	externalAPIRequiredForStrongProtection := cfg.EngineMode == ContentModerationEngineModeAPIOnly
 	highRiskRulesBlocking, highRiskRulesPresent := contentModerationHighRiskRulesBlocking(cfg.keywordRules())
 	deterministicPolicyPresent := contentModerationDeterministicPolicyPresent(cfg)
 	baselineStatus := s.contentModerationSecurityBaselineStatus()
@@ -2505,10 +2505,10 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 	if modelFilter.Type != ContentModerationModelFilterAll {
 		unsafeReasons = append(unsafeReasons, "model_filter_not_all")
 	}
-	if !externalAPIConfigured {
+	if externalAPIRequiredForStrongProtection && !externalAPIConfigured {
 		unsafeReasons = append(unsafeReasons, "external_api_not_configured")
 	}
-	if externalAPIRequired && externalAPIConfigured {
+	if externalAPIRequiredForStrongProtection && externalAPIConfigured {
 		if externalAPIHealth.configuredKeyCount > 0 && externalAPIHealth.frozenKeyCount == externalAPIHealth.configuredKeyCount {
 			unsafeReasons = append(unsafeReasons, "external_api_all_keys_frozen")
 		}
@@ -2533,10 +2533,6 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 	case ContentModerationEngineModeAPIOnly:
 		if !externalAPIHealthy {
 			unsafeReasons = append(unsafeReasons, "api_only_without_healthy_external_api")
-		}
-	case ContentModerationEngineModeHybrid:
-		if !externalAPIHealthy {
-			unsafeReasons = append(unsafeReasons, "hybrid_external_api_unhealthy")
 		}
 	}
 
