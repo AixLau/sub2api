@@ -590,7 +590,7 @@ describe("admin SettingsView payment visible method controls", () => {
     }
   });
 
-  it("offers nineplus as a creatable payment provider", async () => {
+  it("offers aggregators as creatable payment providers", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
       payment_enabled_types: [
@@ -600,6 +600,7 @@ describe("admin SettingsView payment visible method controls", () => {
         "stripe",
         "airwallex",
         "nineplus",
+        "haozpay",
       ],
     });
 
@@ -687,8 +688,11 @@ describe("admin SettingsView payment visible method controls", () => {
 
     expect(dialog.attributes("data-show")).toBe("true");
     expect(allKeyOptions.map((option) => option.value)).toContain("nineplus");
+    expect(allKeyOptions.map((option) => option.value)).toContain("haozpay");
     expect(enabledKeyOptions.map((option) => option.value)).toContain("nineplus");
+    expect(enabledKeyOptions.map((option) => option.value)).toContain("haozpay");
     expect(allPaymentTypes.map((option) => option.value)).toContain("nineplus");
+    expect(allPaymentTypes.map((option) => option.value)).toContain("haozpay");
   });
 
   it("does not submit legacy visible payment method settings", async () => {

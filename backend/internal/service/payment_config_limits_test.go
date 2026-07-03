@@ -200,6 +200,24 @@ func TestPcGroupByPaymentType(t *testing.T) {
 	})
 }
 
+func TestEnabledHaozPayProviderContributesVisiblePaymentMethods(t *testing.T) {
+	t.Parallel()
+
+	groups := pcGroupByPaymentType([]*dbent.PaymentProviderInstance{
+		makeInstance(1, payment.TypeHaozPay, "alipay,wxpay", ""),
+	})
+	filtered := (&PaymentConfigService{}).pcApplyEnabledVisibleMethodInstances(context.Background(), groups, []*dbent.PaymentProviderInstance{
+		makeInstance(1, payment.TypeHaozPay, "alipay,wxpay", ""),
+	})
+
+	require.Contains(t, filtered, payment.TypeAlipay)
+	require.Contains(t, filtered, payment.TypeWxpay)
+	require.Len(t, filtered[payment.TypeAlipay], 1)
+	require.Len(t, filtered[payment.TypeWxpay], 1)
+	require.Equal(t, payment.TypeHaozPay, filtered[payment.TypeAlipay][0].ProviderKey)
+	require.Equal(t, payment.TypeHaozPay, filtered[payment.TypeWxpay][0].ProviderKey)
+}
+
 func TestPcAggregateMethodCurrency(t *testing.T) {
 	t.Parallel()
 

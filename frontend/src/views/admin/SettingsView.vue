@@ -9951,6 +9951,7 @@ const allPaymentTypes = computed(() => [
   { value: "stripe", label: t("payment.methods.stripe") },
   { value: "airwallex", label: t("payment.methods.airwallex") },
   { value: "nineplus", label: t("admin.settings.payment.providerNinePlus") },
+  { value: "haozpay", label: t("admin.settings.payment.providerHaozpay") },
 ]);
 
 function isPaymentTypeEnabled(type: string): boolean {
@@ -10009,6 +10010,7 @@ const providerKeyOptions = computed(() => [
   { value: "stripe", label: t("admin.settings.payment.providerStripe") },
   { value: "airwallex", label: t("admin.settings.payment.providerAirwallex") },
   { value: "nineplus", label: t("admin.settings.payment.providerNinePlus") },
+  { value: "haozpay", label: t("admin.settings.payment.providerHaozpay") },
 ]);
 
 const enabledProviderKeyOptions = computed(() => {
@@ -10090,7 +10092,7 @@ function getProviderVisibleMethods(
         }
       });
     }
-  } else if (provider.provider_key === "easypay") {
+  } else if (provider.provider_key === "easypay" || provider.provider_key === "haozpay") {
     supportedTypes.forEach(addMethod);
   }
 

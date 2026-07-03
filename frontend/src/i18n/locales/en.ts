@@ -6469,6 +6469,7 @@ export default {
         providerManagement: 'Provider Management',
         providerManagementDesc: 'Manage payment provider instances',
         providerNinePlus: '9.plus',
+        providerHaozpay: 'HaozPay',
         syncNinePlusProducts: 'Sync 9.plus products',
         syncNinePlusProductsShort: '9.plus',
         syncNinePlusProductsSuccess: '9.plus products synced. Updated providers: {count}',
