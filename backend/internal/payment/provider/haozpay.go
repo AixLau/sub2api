@@ -4,7 +4,6 @@ package provider
 import (
 	"bytes"
 	"context"
-	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -14,6 +13,8 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"math"
+	"math/big"
 	"net/http"
 	"sort"
 	"strconv"
@@ -28,7 +29,7 @@ const (
 	haozpayAPIBase         = "https://gate.haozpay.com"
 	haozpayCreatePath      = "/pay-core/payment/order"
 	haozpayQueryPath       = "/pay-core/payment/order/query"
-	haozpayRefundPath      = "/pay-core/refund/apply"
+	haozpayRefundPath      = "/pay-core/payment/refund"
 	haozpayHTTPTimeout     = 30 * time.Second
 	maxHaozpayResponseSize = 2 << 20 // 2MB
 
@@ -109,32 +110,26 @@ func (h *HaozPay) CreatePayment(ctx context.Context, req payment.CreatePaymentRe
 
 	// Build business parameters
 	bizBody := map[string]interface{}{
+		"orderNo":           req.OrderID,
 		"orderTitle":        req.Subject,
-		"orderAmount":       req.Amount,
+		"orderAmount":       json.Number(req.Amount),
 		"payType":           payType,
 		"useHaozPayCashier": true,
-		"notifyUrl":         h.config["notifyUrl"],
+		"notifyUrl":         h.notifyURL(req.NotifyURL),
 	}
 
 	// Add redirect URL if provided
-	if redirectURL := strings.TrimSpace(h.config["redirectUrl"]); redirectURL != "" {
+	if redirectURL := strings.TrimSpace(req.ReturnURL); redirectURL != "" {
+		bizBody["redirectUrl"] = redirectURL
+	} else if redirectURL := strings.TrimSpace(h.config["redirectUrl"]); redirectURL != "" {
 		bizBody["redirectUrl"] = redirectURL
 	}
 
 	// Build request with signature
-	timestamp := time.Now().UnixMilli()
-	reqBody := map[string]interface{}{
-		"merchantNo": h.merchantNo,
-		"timestamp":  timestamp,
-		"bizBody":    bizBody,
-	}
-
-	// Sign request
-	sign, err := h.signRequest(reqBody)
+	reqBody, err := h.signedRequestBody(bizBody)
 	if err != nil {
 		return nil, fmt.Errorf("sign request: %w", err)
 	}
-	reqBody["sign"] = sign
 
 	// Send request
 	respBody, err := h.postJSON(ctx, haozpayAPIBase+haozpayCreatePath, reqBody)
@@ -170,37 +165,38 @@ func (h *HaozPay) CreatePayment(ctx context.Context, req payment.CreatePaymentRe
 }
 
 // VerifyNotification verifies and parses HaozPay async notification.
-func (h *HaozPay) VerifyNotification(ctx context.Context, rawBody string, headers map[string]string) (*payment.PaymentNotification, error) {
-	var notify struct {
-		MerchantNo string                 `json:"merchantNo"`
-		Timestamp  int64                  `json:"timestamp"`
-		BizBody    map[string]interface{} `json:"bizBody"`
-		Sign       string                 `json:"sign"`
-	}
-
-	if err := json.Unmarshal([]byte(rawBody), &notify); err != nil {
+func (h *HaozPay) VerifyNotification(_ context.Context, rawBody string, _ map[string]string) (*payment.PaymentNotification, error) {
+	notify, err := decodeHaozPayJSONObject(rawBody)
+	if err != nil {
 		return nil, fmt.Errorf("parse notification: %w", err)
 	}
 
+	sign, _ := notify["sign"].(string)
+	if strings.TrimSpace(sign) == "" {
+		return nil, fmt.Errorf("missing sign")
+	}
+	merchantNo := haozpayStringValue(notify["merchantNo"])
+	if h.merchantNo != "" && merchantNo != h.merchantNo {
+		return nil, fmt.Errorf("merchantNo mismatch")
+	}
+
 	// Verify signature
-	if err := h.verifyNotificationSignature(notify.MerchantNo, notify.Timestamp, notify.BizBody, notify.Sign); err != nil {
+	if err := h.verifyNotificationSignature(notify, sign); err != nil {
 		return nil, fmt.Errorf("verify signature: %w", err)
 	}
 
 	// Extract business data
-	tradeNo, _ := notify.BizBody["seqId"].(string)
-	orderID, _ := notify.BizBody["merchantOrderNo"].(string)
-	status, _ := notify.BizBody["status"].(string)
-	amount := 0.0
-	if amt, ok := notify.BizBody["orderAmount"].(float64); ok {
-		amount = amt
-	} else if amtStr, ok := notify.BizBody["orderAmount"].(string); ok {
-		amount, _ = strconv.ParseFloat(amtStr, 64)
+	bizParams, err := haozpayBusinessParams(notify)
+	if err != nil {
+		return nil, fmt.Errorf("parse business params: %w", err)
 	}
+	orderID := firstHaozPayString(bizParams, "orderNo", "merchantOrderNo")
+	tradeNo := firstHaozPayString(bizParams, "seqId", "paySeqId", "orderNo", "merchantOrderNo")
+	amount := firstHaozPayFloat(bizParams, "payAmount", "orderAmount", "ordAmt")
 
 	// Map status
 	providerStatus := payment.ProviderStatusFailed
-	if status == haozpayStatusSuccess || status == haozpayStatusPaid {
+	if haozpayPaymentSucceeded(bizParams) {
 		providerStatus = payment.ProviderStatusSuccess
 	}
 
@@ -221,19 +217,10 @@ func (h *HaozPay) QueryOrder(ctx context.Context, tradeNo string) (*payment.Quer
 		"seqId": tradeNo,
 	}
 
-	timestamp := time.Now().UnixMilli()
-	reqBody := map[string]interface{}{
-		"merchantNo": h.merchantNo,
-		"timestamp":  timestamp,
-		"bizBody":    bizBody,
-	}
-
-	// Sign request
-	sign, err := h.signRequest(reqBody)
+	reqBody, err := h.signedRequestBody(bizBody)
 	if err != nil {
 		return nil, fmt.Errorf("sign request: %w", err)
 	}
-	reqBody["sign"] = sign
 
 	// Send request
 	respBody, err := h.postJSON(ctx, haozpayAPIBase+haozpayQueryPath, reqBody)
@@ -263,7 +250,7 @@ func (h *HaozPay) QueryOrder(ctx context.Context, tradeNo string) (*payment.Quer
 	// Map status
 	status := payment.ProviderStatusPending
 	if resp.Data.Status == haozpayStatusSuccess || resp.Data.Status == haozpayStatusPaid {
-		status = payment.ProviderStatusSuccess
+		status = payment.ProviderStatusPaid
 	}
 
 	return &payment.QueryOrderResponse{
@@ -278,24 +265,15 @@ func (h *HaozPay) QueryOrder(ctx context.Context, tradeNo string) (*payment.Quer
 func (h *HaozPay) Refund(ctx context.Context, req payment.RefundRequest) (*payment.RefundResponse, error) {
 	// Build business parameters
 	bizBody := map[string]interface{}{
-		"seqId":        req.TradeNo,
-		"refundAmount": req.Amount,
+		"orderNo":      firstNonEmpty(req.OrderID, req.TradeNo),
+		"refundAmount": json.Number(req.Amount),
 		"refundReason": req.Reason,
 	}
 
-	timestamp := time.Now().UnixMilli()
-	reqBody := map[string]interface{}{
-		"merchantNo": h.merchantNo,
-		"timestamp":  timestamp,
-		"bizBody":    bizBody,
-	}
-
-	// Sign request
-	sign, err := h.signRequest(reqBody)
+	reqBody, err := h.signedRequestBody(bizBody)
 	if err != nil {
 		return nil, fmt.Errorf("sign request: %w", err)
 	}
-	reqBody["sign"] = sign
 
 	// Send request
 	respBody, err := h.postJSON(ctx, haozpayAPIBase+haozpayRefundPath, reqBody)
@@ -308,7 +286,8 @@ func (h *HaozPay) Refund(ctx context.Context, req payment.RefundRequest) (*payme
 		Code    int    `json:"code"`
 		Message string `json:"message"`
 		Data    struct {
-			RefundID string `json:"refundId"`
+			RefundID     string `json:"seqId"`
+			RefundStatus int    `json:"refundStatus"`
 		} `json:"data"`
 	}
 
@@ -322,119 +301,64 @@ func (h *HaozPay) Refund(ctx context.Context, req payment.RefundRequest) (*payme
 
 	return &payment.RefundResponse{
 		RefundID: resp.Data.RefundID,
-		Status:   payment.ProviderStatusSuccess,
+		Status:   haozpayRefundProviderStatus(resp.Data.RefundStatus),
 	}, nil
+}
+
+func (h *HaozPay) signedRequestBody(bizBody map[string]interface{}) (map[string]interface{}, error) {
+	bizBodyJSON, err := marshalHaozPayBizBody(bizBody)
+	if err != nil {
+		return nil, err
+	}
+	reqBody := map[string]interface{}{
+		"merchantNo": h.merchantNo,
+		"timestamp":  time.Now().UnixMilli(),
+		"bizBody":    bizBodyJSON,
+	}
+	sign, err := h.signRequest(reqBody)
+	if err != nil {
+		return nil, err
+	}
+	reqBody["sign"] = sign
+	return reqBody, nil
 }
 
 // signRequest signs a HaozPay API request following their specification:
 // 1. Extract and flatten bizBody parameters
 // 2. Sort all parameters by key (dictionary order)
 // 3. Build sign string: key1=value1&key2=value2...
-// 4. SHA256 hash the sign string
-// 5. RSA encrypt with merchant private key
+// 4. SHA256 hash the sign string to a 64-byte lowercase hex string
+// 5. RSA private-key encrypt/sign the hex string bytes with PKCS#1 v1.5
 // 6. Base64 encode
 func (h *HaozPay) signRequest(reqBody map[string]interface{}) (string, error) {
-	// Step 1: Flatten bizBody
-	signParams := make(map[string]string)
-
-	// Extract bizBody if present
-	if bizBody, ok := reqBody["bizBody"].(map[string]interface{}); ok {
-		for k, v := range bizBody {
-			if v != nil {
-				signParams[k] = fmt.Sprintf("%v", v)
-			}
-		}
+	sha256Hex, err := haozpaySHA256HexForPayload(reqBody)
+	if err != nil {
+		return "", err
 	}
-
-	// Add common parameters
-	if merchantNo, ok := reqBody["merchantNo"].(string); ok {
-		signParams["merchantNo"] = merchantNo
-	}
-	if timestamp, ok := reqBody["timestamp"].(int64); ok {
-		signParams["timestamp"] = strconv.FormatInt(timestamp, 10)
-	}
-
-	// Step 2 & 3: Sort and build sign string
-	keys := make([]string, 0, len(signParams))
-	for k := range signParams {
-		if signParams[k] != "" { // Skip empty values
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-
-	var buf strings.Builder
-	for i, k := range keys {
-		if i > 0 {
-			buf.WriteByte('&')
-		}
-		buf.WriteString(k)
-		buf.WriteByte('=')
-		buf.WriteString(signParams[k])
-	}
-	signString := buf.String()
-
-	// Step 4: SHA256 hash
-	hash := sha256.Sum256([]byte(signString))
-
-	// Step 5: RSA encrypt with private key
-	encrypted, err := rsa.SignPKCS1v15(rand.Reader, h.privateKey, crypto.SHA256, hash[:])
+	encrypted, err := rsa.SignPKCS1v15(rand.Reader, h.privateKey, 0, []byte(sha256Hex))
 	if err != nil {
 		return "", fmt.Errorf("rsa sign: %w", err)
 	}
-
-	// Step 6: Base64 encode
 	return base64.StdEncoding.EncodeToString(encrypted), nil
 }
 
 // verifyNotificationSignature verifies HaozPay notification signature using platform public key.
-func (h *HaozPay) verifyNotificationSignature(merchantNo string, timestamp int64, bizBody map[string]interface{}, sign string) error {
-	// Flatten parameters for verification
-	signParams := make(map[string]string)
-
-	for k, v := range bizBody {
-		if v != nil {
-			signParams[k] = fmt.Sprintf("%v", v)
-		}
+func (h *HaozPay) verifyNotificationSignature(payload map[string]interface{}, sign string) error {
+	sha256Hex, err := haozpaySHA256HexForPayload(payload)
+	if err != nil {
+		return err
 	}
-	signParams["merchantNo"] = merchantNo
-	signParams["timestamp"] = strconv.FormatInt(timestamp, 10)
-
-	// Build sign string
-	keys := make([]string, 0, len(signParams))
-	for k := range signParams {
-		if signParams[k] != "" {
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-
-	var buf strings.Builder
-	for i, k := range keys {
-		if i > 0 {
-			buf.WriteByte('&')
-		}
-		buf.WriteString(k)
-		buf.WriteByte('=')
-		buf.WriteString(signParams[k])
-	}
-	signString := buf.String()
-
-	// SHA256 hash
-	hash := sha256.Sum256([]byte(signString))
-
-	// Decode signature
 	signature, err := base64.StdEncoding.DecodeString(sign)
 	if err != nil {
 		return fmt.Errorf("decode signature: %w", err)
 	}
-
-	// Verify with platform public key
-	err = rsa.VerifyPKCS1v15(h.platformPubKey, crypto.SHA256, hash[:], signature)
+	decrypted, err := haozpayPublicDecryptPKCS1v15(h.platformPubKey, signature)
 	if err != nil {
 		return fmt.Errorf("verify failed: %w", err)
 	}
-
+	if string(decrypted) != sha256Hex {
+		return fmt.Errorf("signature digest mismatch")
+	}
 	return nil
 }
 
@@ -448,6 +372,228 @@ func (h *HaozPay) mapPaymentType(paymentType string) (int, error) {
 	default:
 		return 0, fmt.Errorf("unsupported payment type: %s", paymentType)
 	}
+}
+
+func (h *HaozPay) notifyURL(override string) string {
+	if notifyURL := strings.TrimSpace(override); notifyURL != "" {
+		return notifyURL
+	}
+	return strings.TrimSpace(h.config["notifyUrl"])
+}
+
+func marshalHaozPayBizBody(bizBody map[string]interface{}) (string, error) {
+	data, err := json.Marshal(bizBody)
+	if err != nil {
+		return "", fmt.Errorf("marshal bizBody: %w", err)
+	}
+	return string(data), nil
+}
+
+func haozpaySHA256HexForPayload(payload map[string]interface{}) (string, error) {
+	signString, err := haozpaySignString(payload)
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.Sum256([]byte(signString))
+	return fmt.Sprintf("%x", hash), nil
+}
+
+func haozpaySignString(payload map[string]interface{}) (string, error) {
+	signParams, err := haozpaySignParams(payload)
+	if err != nil {
+		return "", err
+	}
+	keys := make([]string, 0, len(signParams))
+	for k, v := range signParams {
+		if strings.TrimSpace(v) != "" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+
+	var buf strings.Builder
+	for i, k := range keys {
+		if i > 0 {
+			buf.WriteByte('&')
+		}
+		buf.WriteString(k)
+		buf.WriteByte('=')
+		buf.WriteString(signParams[k])
+	}
+	return buf.String(), nil
+}
+
+func haozpaySignParams(payload map[string]interface{}) (map[string]string, error) {
+	params := make(map[string]string)
+	for k, v := range payload {
+		if k == "sign" || v == nil {
+			continue
+		}
+		if k == "bizBody" {
+			bizParams, err := haozpayBusinessParams(payload)
+			if err != nil {
+				return nil, err
+			}
+			for bk, bv := range bizParams {
+				if bv != nil {
+					params[bk] = haozpayStringValue(bv)
+				}
+			}
+			continue
+		}
+		params[k] = haozpayStringValue(v)
+	}
+	return params, nil
+}
+
+func haozpayBusinessParams(payload map[string]interface{}) (map[string]interface{}, error) {
+	bizBody, ok := payload["bizBody"]
+	if !ok || bizBody == nil {
+		params := make(map[string]interface{}, len(payload))
+		for k, v := range payload {
+			if k == "sign" || v == nil {
+				continue
+			}
+			params[k] = v
+		}
+		return params, nil
+	}
+	switch body := bizBody.(type) {
+	case map[string]interface{}:
+		return body, nil
+	case string:
+		return decodeHaozPayJSONObject(body)
+	default:
+		return nil, fmt.Errorf("unsupported bizBody type %T", bizBody)
+	}
+}
+
+func decodeHaozPayJSONObject(raw string) (map[string]interface{}, error) {
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.UseNumber()
+	var payload map[string]interface{}
+	if err := decoder.Decode(&payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func haozpayStringValue(v interface{}) string {
+	switch value := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return value
+	case json.Number:
+		return value.String()
+	case int:
+		return strconv.Itoa(value)
+	case int64:
+		return strconv.FormatInt(value, 10)
+	case int32:
+		return strconv.FormatInt(int64(value), 10)
+	case uint:
+		return strconv.FormatUint(uint64(value), 10)
+	case uint64:
+		return strconv.FormatUint(value, 10)
+	case float64:
+		if math.Trunc(value) == value {
+			return strconv.FormatInt(int64(value), 10)
+		}
+		return strconv.FormatFloat(value, 'f', -1, 64)
+	case float32:
+		f := float64(value)
+		if math.Trunc(f) == f {
+			return strconv.FormatInt(int64(f), 10)
+		}
+		return strconv.FormatFloat(f, 'f', -1, 32)
+	case bool:
+		return strconv.FormatBool(value)
+	default:
+		return fmt.Sprintf("%v", value)
+	}
+}
+
+func firstHaozPayString(params map[string]interface{}, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(haozpayStringValue(params[key])); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func firstHaozPayFloat(params map[string]interface{}, keys ...string) float64 {
+	for _, key := range keys {
+		if value := strings.TrimSpace(haozpayStringValue(params[key])); value != "" {
+			parsed, err := strconv.ParseFloat(value, 64)
+			if err == nil {
+				return parsed
+			}
+		}
+	}
+	return 0
+}
+
+func haozpayPaymentSucceeded(params map[string]interface{}) bool {
+	statusText := strings.ToUpper(firstHaozPayString(params, "status", "tradeStatus"))
+	if statusText == haozpayStatusSuccess || statusText == haozpayStatusPaid {
+		return true
+	}
+	statusCode := firstHaozPayString(params, "payStatus")
+	return statusCode == "2"
+}
+
+func haozpayRefundProviderStatus(status int) string {
+	switch status {
+	case 2:
+		return payment.ProviderStatusSuccess
+	case 3:
+		return payment.ProviderStatusFailed
+	default:
+		return payment.ProviderStatusPending
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func haozpayPublicDecryptPKCS1v15(pub *rsa.PublicKey, ciphertext []byte) ([]byte, error) {
+	if pub == nil {
+		return nil, fmt.Errorf("missing public key")
+	}
+	if len(ciphertext) != pub.Size() {
+		return nil, fmt.Errorf("invalid ciphertext size")
+	}
+	c := new(big.Int).SetBytes(ciphertext)
+	m := new(big.Int).Exp(c, big.NewInt(int64(pub.E)), pub.N)
+	em := leftPadBytes(m.Bytes(), pub.Size())
+	if len(em) < 11 || em[0] != 0 || em[1] != 1 {
+		return nil, fmt.Errorf("invalid rsa block")
+	}
+	i := 2
+	for i < len(em) && em[i] == 0xff {
+		i++
+	}
+	if i < 10 || i >= len(em) || em[i] != 0 {
+		return nil, fmt.Errorf("invalid rsa padding")
+	}
+	return em[i+1:], nil
+}
+
+func leftPadBytes(in []byte, size int) []byte {
+	if len(in) >= size {
+		return in
+	}
+	out := make([]byte, size)
+	copy(out[size-len(in):], in)
+	return out
 }
 
 // postJSON sends a JSON request and returns response body.

@@ -178,6 +178,18 @@ func TestExtractOutTradeNo(t *testing.T) {
 			rawBody:     `{"name":"payment_intent.succeeded","data":{"object":{"merchant_order_id":"sub2_awx_123"}}}`,
 			want:        "sub2_awx_123",
 		},
+		{
+			name:        "haozpay flat payment callback",
+			providerKey: payment.TypeHaozPay,
+			rawBody:     `{"orderNo":"sub2_haozpay_123","merchantNo":"M123456","payStatus":2}`,
+			want:        "sub2_haozpay_123",
+		},
+		{
+			name:        "haozpay nested legacy callback",
+			providerKey: payment.TypeHaozPay,
+			rawBody:     `{"bizBody":{"merchantOrderNo":"sub2_haozpay_456"}}`,
+			want:        "sub2_haozpay_456",
+		},
 	}
 
 	for _, tt := range tests {

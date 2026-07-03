@@ -173,10 +173,17 @@ func extractOutTradeNo(rawBody, providerKey string) string {
 	case payment.TypeHaozPay:
 		var payload struct {
 			BizBody map[string]interface{} `json:"bizBody"`
+			OrderNo string                 `json:"orderNo"`
 		}
 		if err := json.Unmarshal([]byte(rawBody), &payload); err == nil {
+			if orderNo := strings.TrimSpace(payload.OrderNo); orderNo != "" {
+				return orderNo
+			}
 			if merchantOrderNo, ok := payload.BizBody["merchantOrderNo"].(string); ok {
 				return strings.TrimSpace(merchantOrderNo)
+			}
+			if orderNo, ok := payload.BizBody["orderNo"].(string); ok {
+				return strings.TrimSpace(orderNo)
 			}
 		}
 	}
