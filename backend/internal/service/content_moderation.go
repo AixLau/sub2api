@@ -1235,7 +1235,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"group_id", contentModerationLogGroupID(input.GroupID),
 			"endpoint", input.Endpoint,
 			"protocol", input.Protocol)
-		if cfg.shouldFailClosed(input) {
+		if cfg.Mode == ContentModerationModePreBlock && cfg.shouldFailClosed(input) {
 			return contentModerationFailureDecision(cfg), nil
 		}
 		return allow, nil

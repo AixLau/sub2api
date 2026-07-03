@@ -1614,6 +1614,39 @@ func TestContentModerationCheck_APIOnlyEngineModeWithoutAPIKeyFailsClosed(t *tes
 	require.Equal(t, ContentModerationActionError, decision.Action)
 }
 
+func TestContentModerationCheck_ObserveWithoutAPIKeyAllowsRequest(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModeObserve
+	cfg.APIKeys = []string{}
+	cfg.EngineMode = ContentModerationEngineModeAPIOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		&contentModerationTestRepo{},
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
+}
+
 func TestContentModerationCheck_PreBlockNonEmptyUnexpectedEmptyExtractionFailsClosed(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
