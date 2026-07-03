@@ -2004,12 +2004,14 @@ const pipelineRouteRows = computed<ContentModerationPipelineRouteCoverageStatus[
 ))
 
 function formatRouteForwardAdapters(route: ContentModerationPipelineRouteCoverageStatus): string {
-  const descriptors = route.forward_adapter_descriptors ?? []
+  const descriptors = route.stage_adapter_descriptors ?? route.forward_adapter_descriptors ?? []
   if (descriptors.length > 0) {
     return descriptors
       .map((adapter) => {
         const name = adapter.name || '-'
-        return adapter.pipeline ? `${name}@${adapter.pipeline}` : name
+        const pipeline = adapter.pipeline ? `@${adapter.pipeline}` : ''
+        const stage = adapter.stage ? `${adapter.stage}:` : ''
+        return `${stage}${name}${pipeline}`
       })
       .join(', ')
   }

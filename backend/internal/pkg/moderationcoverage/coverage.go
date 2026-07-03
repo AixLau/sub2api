@@ -63,16 +63,17 @@ type RouteAdapterDescriptor struct {
 }
 
 type Entry struct {
-	Method             string
-	Path               string
-	Handler            string
-	Upstream           bool
-	ModerationRequired bool
-	Protocol           string
-	Pipeline           string
-	StageCoverage      []PipelineStageCoverage
-	Status             string
-	ReviewReason       string
+	Method                  string
+	Path                    string
+	Handler                 string
+	Upstream                bool
+	ModerationRequired      bool
+	Protocol                string
+	Pipeline                string
+	StageCoverage           []PipelineStageCoverage
+	StageAdapterDescriptors []RouteAdapterDescriptor
+	Status                  string
+	ReviewReason            string
 }
 
 type PipelineAdmission struct {
@@ -398,6 +399,7 @@ func NormalizeEntry(entry Entry) Entry {
 	entry.Protocol = strings.TrimSpace(entry.Protocol)
 	entry.Pipeline = NormalizePipeline(entry.Pipeline)
 	entry.StageCoverage = NormalizeStageCoverage(entry.StageCoverage)
+	entry.StageAdapterDescriptors = NormalizeRouteAdapterDescriptors(entry.StageAdapterDescriptors)
 	entry.Status = NormalizeStatus(entry.Status)
 	entry.ReviewReason = strings.TrimSpace(entry.ReviewReason)
 	return entry
@@ -408,6 +410,7 @@ func AnnotatePipelineCoverage(entry Entry) Entry {
 	if stages := OpenAIWebSocketPipelineStagesForRoute(entry.Handler, entry.Protocol); len(stages) > 0 {
 		entry.Pipeline = PipelineOpenAIWebSocket
 		entry.StageCoverage = stages
+		entry.StageAdapterDescriptors = StageAdapterDescriptorsForRoute(entry.Handler, entry.Protocol)
 		return NormalizeEntry(entry)
 	}
 	stages := OpenAIHTTPPipelineStagesForRoute(entry.Handler, entry.Protocol)
@@ -417,10 +420,12 @@ func AnnotatePipelineCoverage(entry Entry) Entry {
 		}
 		entry.Pipeline = PipelineGatewayPreForward
 		entry.StageCoverage = stages
+		entry.StageAdapterDescriptors = StageAdapterDescriptorsForRoute(entry.Handler, entry.Protocol)
 		return NormalizeEntry(entry)
 	}
 	entry.Pipeline = PipelineOpenAIHTTP
 	entry.StageCoverage = stages
+	entry.StageAdapterDescriptors = StageAdapterDescriptorsForRoute(entry.Handler, entry.Protocol)
 	return NormalizeEntry(entry)
 }
 
@@ -458,10 +463,16 @@ func OpenAIHTTPPipelineStagesForRoute(handlerName, protocol string) []PipelineSt
 }
 
 func OpenAIWebSocketPipelineStagesForRoute(handlerName, protocol string) []PipelineStageCoverage {
-	if strings.TrimSpace(protocol) != "openai_responses" {
+	switch strings.TrimSpace(protocol) {
+	case "openai_responses", "openai_realtime":
+	default:
 		return nil
 	}
-	if strings.TrimSpace(handlerName) != "OpenAIGatewayHandler.ResponsesWebSocket" {
+	switch strings.TrimSpace(handlerName) {
+	case "OpenAIGatewayHandler.ResponsesWebSocket",
+		"OpenAIGatewayHandler.RealtimeWebSocket",
+		"OpenAIGatewayHandler.Realtime":
+	default:
 		return nil
 	}
 	return NormalizeStageCoverage([]PipelineStageCoverage{
@@ -598,6 +609,10 @@ func StageAdapterDescriptorsForRoute(handlerName, protocol string) []RouteAdapte
 		if len(OpenAIWebSocketPipelineStagesForRoute(handlerName, protocol)) > 0 {
 			return openAIWebSocket()
 		}
+	case "OpenAIGatewayHandler.RealtimeWebSocket", "OpenAIGatewayHandler.Realtime":
+		if len(OpenAIWebSocketPipelineStagesForRoute(handlerName, protocol)) > 0 {
+			return openAIWebSocket()
+		}
 	case "GatewayHandler.Messages":
 		return gatewayPreForward("GatewayMessagesGeminiForwardStage", "GatewayMessagesForwardStage")
 	case "GatewayHandler.CountTokens":
@@ -618,6 +633,48 @@ func CoveredPipelineStage(stage string) PipelineStageCoverage {
 		Required: true,
 		Covered:  true,
 	}
+}
+
+func NormalizeRouteAdapterDescriptors(descriptors []RouteAdapterDescriptor) []RouteAdapterDescriptor {
+	if len(descriptors) == 0 {
+		return nil
+	}
+	seen := make(map[string]RouteAdapterDescriptor, len(descriptors))
+	for _, descriptor := range descriptors {
+		normalized := RouteAdapterDescriptor{
+			Stage:    NormalizeStage(descriptor.Stage),
+			Pipeline: NormalizePipeline(descriptor.Pipeline),
+			Name:     strings.TrimSpace(descriptor.Name),
+		}
+		if normalized.Stage == "" || normalized.Pipeline == "" || normalized.Name == "" {
+			continue
+		}
+		key := normalized.Stage + "\x00" + normalized.Pipeline + "\x00" + normalized.Name
+		seen[key] = normalized
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(seen))
+	for key := range seen {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		left := seen[keys[i]]
+		right := seen[keys[j]]
+		if left.Stage != right.Stage {
+			return PipelineStageSortKey(left.Stage) < PipelineStageSortKey(right.Stage)
+		}
+		if left.Pipeline != right.Pipeline {
+			return left.Pipeline < right.Pipeline
+		}
+		return left.Name < right.Name
+	})
+	out := make([]RouteAdapterDescriptor, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, seen[key])
+	}
+	return out
 }
 
 func IsOpenAIHTTPPipelineProtocol(protocol string) bool {

@@ -253,18 +253,7 @@ func coveredOpenAIHTTPRoute(path, handlerName, protocol, reviewReason string) Mo
 
 func coveredOpenAIWebSocketRoute(path, handlerName, protocol, reviewReason string) ModeratedRouteMeta {
 	meta := coveredModeratedRoute(path, handlerName, protocol, reviewReason)
-	meta.Pipeline = moderationcoverage.PipelineOpenAIWebSocket
-	meta.StageCoverage = []moderationcoverage.PipelineStageCoverage{
-		moderationcoverage.CoveredPipelineStage(moderationcoverage.StageModeration),
-		moderationcoverage.CoveredPipelineStage(moderationcoverage.StageCyber),
-		moderationcoverage.CoveredPipelineStage(moderationcoverage.StageImage),
-		moderationcoverage.CoveredPipelineStage(moderationcoverage.StagePreForward),
-		moderationcoverage.CoveredPipelineStage(moderationcoverage.StageBilling),
-		moderationcoverage.CoveredPipelineStage(moderationcoverage.StageRouting),
-		moderationcoverage.CoveredPipelineStage(moderationcoverage.StageForward),
-		moderationcoverage.CoveredPipelineStage(moderationcoverage.StageUsage),
-	}
-	return moderationcoverage.NormalizeEntry(meta)
+	return mustHavePipelineCoverage(meta, moderationcoverage.PipelineOpenAIWebSocket)
 }
 
 func mustHavePipelineCoverage(meta ModeratedRouteMeta, pipeline string) ModeratedRouteMeta {

@@ -2447,7 +2447,12 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 	require.Equal(t, contentModerationPipelineCoverageVersion, status.Version)
 	require.Equal(t, "covered", status.Status)
 	require.NotEmpty(t, status.ManifestHash)
-	payload, err := json.Marshal(status)
+	snapshotStatus := status
+	clearPipelineGroupRouteStageAdapterDescriptorsForTest(&snapshotStatus.Global)
+	clearPipelineGroupRouteStageAdapterDescriptorsForTest(&snapshotStatus.OpenAIHTTP)
+	clearOpenAIWebSocketRouteStageAdapterDescriptorsForTest(&snapshotStatus.OpenAIWebSocket)
+	clearPipelineGroupRouteStageAdapterDescriptorsForTest(&snapshotStatus.GatewayPreForward)
+	payload, err := json.Marshal(snapshotStatus)
 	require.NoError(t, err)
 	require.JSONEq(t, fmt.Sprintf(`{
 		"manifest_version": %q,
@@ -2629,6 +2634,7 @@ func TestContentModerationPipelineCoverageStatusSummarizesOpenAIHTTPStages(t *te
 	require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, responsesRoute.Pipeline)
 	require.True(t, responsesRoute.Covered)
 	require.Empty(t, responsesRoute.UncoveredStages)
+	require.Equal(t, moderationcoverage.StageAdapterDescriptorsForRoute(responsesRoute.Handler, responsesRoute.Protocol), responsesRoute.StageAdapterDescriptors)
 	require.Equal(t, []ContentModerationPipelineRouteStageCoverageStatus{
 		{Stage: moderationcoverage.StageModeration, Required: true, Covered: true},
 		{Stage: moderationcoverage.StageCyber, Required: true, Covered: true},
@@ -2735,6 +2741,58 @@ func TestContentModerationPipelineCoverageStatusSummarizesGlobalGatewayPipeline(
 		Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
 		Name:     "OpenAIWebSocketForwardStage",
 	}}, websocketRoute.ForwardAdapterDescriptors)
+	require.Equal(t, moderationcoverage.StageAdapterDescriptorsForRoute(websocketRoute.Handler, websocketRoute.Protocol), websocketRoute.StageAdapterDescriptors)
+}
+
+func clearPipelineGroupRouteStageAdapterDescriptorsForTest(group *ContentModerationPipelineGroupCoverageStatus) {
+	if group == nil {
+		return
+	}
+	routes := make([]ContentModerationPipelineRouteCoverageStatus, len(group.Routes))
+	copy(routes, group.Routes)
+	group.Routes = routes
+	for i := range group.Routes {
+		group.Routes[i].StageAdapterDescriptors = nil
+	}
+}
+
+func clearOpenAIWebSocketRouteStageAdapterDescriptorsForTest(group *ContentModerationOpenAIWebSocketPipelineCoverageStatus) {
+	if group == nil {
+		return
+	}
+	routes := make([]ContentModerationPipelineRouteCoverageStatus, len(group.Routes))
+	copy(routes, group.Routes)
+	group.Routes = routes
+	for i := range group.Routes {
+		group.Routes[i].StageAdapterDescriptors = nil
+	}
+	clearPipelineGroupRouteStageAdapterDescriptorsForTest(&group.Responses)
+	clearPipelineGroupRouteStageAdapterDescriptorsForTest(&group.Realtime)
+}
+
+func TestContentModerationPipelineCoverageStatusSummarizesOpenAIRealtimeWebSocketStages(t *testing.T) {
+	status := contentModerationPipelineCoverageStatusFromEntries([]moderationcoverage.Entry{
+		moderationcoverage.AnnotatePipelineCoverage(moderationcoverage.Entry{
+			Method:             "GET",
+			Path:               "/v1/realtime",
+			Handler:            "OpenAIGatewayHandler.RealtimeWebSocket",
+			Upstream:           true,
+			ModerationRequired: true,
+			Protocol:           "openai_realtime",
+			Status:             moderationcoverage.StatusCovered,
+		}),
+	})
+
+	require.Equal(t, "covered", status.OpenAIWebSocket.Realtime.Status)
+	require.Equal(t, 1, status.OpenAIWebSocket.Realtime.RequiredRoutes)
+	require.Equal(t, 1, status.OpenAIWebSocket.Realtime.CoveredRoutes)
+	require.Empty(t, status.OpenAIWebSocket.Responses.Routes)
+	require.Len(t, status.OpenAIWebSocket.Realtime.Routes, 1)
+	route := status.OpenAIWebSocket.Realtime.Routes[0]
+	require.Equal(t, "OpenAIGatewayHandler.RealtimeWebSocket", route.Handler)
+	require.Equal(t, "openai_realtime", route.Protocol)
+	require.Equal(t, moderationcoverage.PipelineOpenAIWebSocket, route.Pipeline)
+	require.Equal(t, moderationcoverage.StageAdapterDescriptorsForRoute(route.Handler, route.Protocol), route.StageAdapterDescriptors)
 }
 
 func TestContentModerationPipelineCoverageStatusSummarizesGatewayPreForwardStages(t *testing.T) {

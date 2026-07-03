@@ -69,6 +69,7 @@ func TestAnnotatePipelineCoverageUsesSharedOpenAIHTTPFacts(t *testing.T) {
 
 	require.Equal(t, PipelineOpenAIHTTP, entry.Pipeline)
 	require.Equal(t, OpenAIHTTPPipelineStagesForRoute(entry.Handler, entry.Protocol), entry.StageCoverage)
+	require.Equal(t, StageAdapterDescriptorsForRoute(entry.Handler, entry.Protocol), entry.StageAdapterDescriptors)
 }
 
 func TestGatewayPreForwardPipelineStagesForRouteIsSharedFactSource(t *testing.T) {
@@ -121,7 +122,7 @@ func TestForwardAdaptersForRouteIsSharedFactSource(t *testing.T) {
 	require.Equal(t, []string{"GatewayChatCompletionsForwardStage"}, ForwardAdaptersForRoute("GatewayHandler.ChatCompletions", "openai_chat_completions"))
 	require.Equal(t, []string{"GatewayResponsesForwardStage"}, ForwardAdaptersForRoute("GatewayHandler.Responses", "openai_responses"))
 
-	require.Nil(t, ForwardAdaptersForRoute("OpenAIGatewayHandler.ResponsesWebSocket", "openai_realtime"))
+	require.Equal(t, []string{"OpenAIWebSocketForwardStage"}, ForwardAdaptersForRoute("OpenAIGatewayHandler.ResponsesWebSocket", "openai_realtime"))
 	require.Nil(t, ForwardAdaptersForRoute("UnknownHandler", "openai_responses"))
 }
 
@@ -160,6 +161,13 @@ func TestStageAdapterDescriptorsForRouteCarriesExecutableMetadata(t *testing.T) 
 		{Stage: StageForward, Pipeline: PipelineOpenAIWebSocket, Name: "OpenAIWebSocketForwardStage"},
 		{Stage: StageUsage, Pipeline: PipelineOpenAIWebSocket, Name: "OpenAIWebSocketUsageStage"},
 	}, StageAdapterDescriptorsForRoute("OpenAIGatewayHandler.ResponsesWebSocket", "openai_responses"))
+
+	require.Equal(t, []RouteAdapterDescriptor{
+		{Stage: StageBilling, Pipeline: PipelineOpenAIWebSocket, Name: "OpenAIWebSocketBillingStage"},
+		{Stage: StageRouting, Pipeline: PipelineOpenAIWebSocket, Name: "OpenAIWebSocketRoutingStage"},
+		{Stage: StageForward, Pipeline: PipelineOpenAIWebSocket, Name: "OpenAIWebSocketForwardStage"},
+		{Stage: StageUsage, Pipeline: PipelineOpenAIWebSocket, Name: "OpenAIWebSocketUsageStage"},
+	}, StageAdapterDescriptorsForRoute("OpenAIGatewayHandler.RealtimeWebSocket", "openai_realtime"))
 
 	require.Equal(t, []RouteAdapterDescriptor{
 		{Stage: StageBilling, Pipeline: PipelineGatewayPreForward, Name: "GatewayBillingStage"},

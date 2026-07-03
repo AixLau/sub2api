@@ -267,8 +267,13 @@ export interface ContentModerationPipelineCoverageStatus {
   manifest_hash: string
   status: string
   openai_http: ContentModerationPipelineGroupCoverageStatus
-  openai_websocket: ContentModerationPipelineGroupCoverageStatus
+  openai_websocket: ContentModerationOpenAIWebSocketPipelineCoverageStatus
   gateway_pre_forward: ContentModerationPipelineGroupCoverageStatus
+}
+
+export interface ContentModerationOpenAIWebSocketPipelineCoverageStatus extends ContentModerationPipelineGroupCoverageStatus {
+  responses: ContentModerationPipelineGroupCoverageStatus
+  realtime: ContentModerationPipelineGroupCoverageStatus
 }
 
 export interface ContentModerationPipelineGroupCoverageStatus {
@@ -298,6 +303,7 @@ export interface ContentModerationPipelineRouteCoverageStatus {
   covered: boolean
   forward_adapters?: string[]
   forward_adapter_descriptors?: ContentModerationRouteAdapterDescriptor[]
+  stage_adapter_descriptors?: ContentModerationRouteAdapterDescriptor[]
   uncovered_stages?: string[]
   stages: ContentModerationPipelineRouteStageCoverageStatus[]
 }

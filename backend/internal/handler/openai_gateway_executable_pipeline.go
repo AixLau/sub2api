@@ -3,8 +3,11 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"reflect"
 	"strconv"
+	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
@@ -279,6 +282,63 @@ func (s registeredForwardStage) RunForward(c *gin.Context) ExecutableStageResult
 		return ExecutableStageResult{}
 	}
 	return s.adapter.RunForward(c)
+}
+
+func blockedForwardStage(pipeline, message string) ForwardStage {
+	pipeline = moderationcoverage.NormalizePipeline(pipeline)
+	if message == "" {
+		message = "pipeline forward stage is not registered"
+	}
+	return ForwardStageAdapter{
+		Name: moderationcoverage.StageForward,
+		Forward: func(*gin.Context) ExecutableStageResult {
+			return ExecutableStageResult{
+				Stop: true,
+				Err:  fmt.Errorf("%s: %s", pipeline, message),
+			}
+		},
+	}
+}
+
+func stageAdapterDescriptorsForRuntimeRoute(routeMeta moderationcoverage.Entry) []moderationcoverage.RouteAdapterDescriptor {
+	descriptors := moderationcoverage.NormalizeRouteAdapterDescriptors(routeMeta.StageAdapterDescriptors)
+	if len(descriptors) > 0 {
+		return descriptors
+	}
+	return moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol)
+}
+
+func stageAdapterImplementationName(adapter any) string {
+	if adapter == nil {
+		return ""
+	}
+	if named, ok := adapter.(interface{ StageName() string }); ok {
+		name := strings.TrimSpace(named.StageName())
+		switch name {
+		case "", moderationcoverage.StageBilling, moderationcoverage.StageRouting, moderationcoverage.StageForward, moderationcoverage.StageUsage:
+		default:
+			return name
+		}
+	}
+	t := reflect.TypeOf(adapter)
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return t.Name()
+}
+
+func bindForwardStageAdapterForDescriptor(registry *StageAdapterRegistry, descriptor moderationcoverage.RouteAdapterDescriptor, fallback ForwardStage) (ForwardStage, bool) {
+	if registry == nil {
+		return nil, false
+	}
+	if adapter, ok := registry.ResolveForward(descriptor); ok {
+		return adapter, true
+	}
+	if strings.TrimSpace(descriptor.Name) == "" || stageAdapterImplementationName(fallback) != strings.TrimSpace(descriptor.Name) {
+		return nil, false
+	}
+	key := stageAdapterRegistryKeyFromDescriptor(descriptor)
+	return registeredForwardStage{stage: key.Stage, adapter: fallback}, true
 }
 
 func (s registeredBillingStage) StageName() string {
@@ -868,19 +928,24 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPForwardStage(c *gin.Context, adapter
 func (h *OpenAIGatewayHandler) openAIHTTPForwardStageFromRouteDescriptor(c *gin.Context, fallback ForwardStage) ForwardStage {
 	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
 	if !ok {
-		return fallback
+		return blockedForwardStage(moderationcoverage.PipelineOpenAIHTTP, "pipeline route metadata is required before forward")
 	}
-	descriptors := moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol)
+	descriptors := stageAdapterDescriptorsForRuntimeRoute(routeMeta)
+	found := false
 	for _, descriptor := range descriptors {
 		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineOpenAIHTTP ||
 			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageForward {
 			continue
 		}
-		if adapter, ok := h.openAIHTTPStageAdapterRegistry().ResolveForward(descriptor); ok {
+		found = true
+		if adapter, ok := bindForwardStageAdapterForDescriptor(h.openAIHTTPStageAdapterRegistry(), descriptor, fallback); ok {
 			return adapter
 		}
 	}
-	return fallback
+	if !found {
+		return blockedForwardStage(moderationcoverage.PipelineOpenAIHTTP, "pipeline forward stage descriptor is required before forward")
+	}
+	return blockedForwardStage(moderationcoverage.PipelineOpenAIHTTP, "pipeline forward stage adapter is not bound by route descriptor")
 }
 
 type OpenAIHTTPForwardKind string
@@ -1393,19 +1458,24 @@ func (h *OpenAIGatewayHandler) runOpenAIWebSocketForwardStage(c *gin.Context, ad
 func (h *OpenAIGatewayHandler) openAIWebSocketForwardStageFromRouteDescriptor(c *gin.Context, fallback ForwardStage) ForwardStage {
 	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
 	if !ok {
-		return fallback
+		return blockedForwardStage(moderationcoverage.PipelineOpenAIWebSocket, "pipeline route metadata is required before forward")
 	}
-	descriptors := moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol)
+	descriptors := stageAdapterDescriptorsForRuntimeRoute(routeMeta)
+	found := false
 	for _, descriptor := range descriptors {
 		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineOpenAIWebSocket ||
 			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageForward {
 			continue
 		}
-		if adapter, ok := h.openAIWebSocketStageAdapterRegistry().ResolveForward(descriptor); ok {
+		found = true
+		if adapter, ok := bindForwardStageAdapterForDescriptor(h.openAIWebSocketStageAdapterRegistry(), descriptor, fallback); ok {
 			return adapter
 		}
 	}
-	return fallback
+	if !found {
+		return blockedForwardStage(moderationcoverage.PipelineOpenAIWebSocket, "pipeline forward stage descriptor is required before forward")
+	}
+	return blockedForwardStage(moderationcoverage.PipelineOpenAIWebSocket, "pipeline forward stage adapter is not bound by route descriptor")
 }
 
 type OpenAIWebSocketForwardStage struct {

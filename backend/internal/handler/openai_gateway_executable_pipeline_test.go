@@ -275,6 +275,21 @@ func TestGatewayPipelineRunsGenericExecutableStagesWithMetadata(t *testing.T) {
 func TestOpenAIWebSocketStageRunnerRunsAllAdapterTypes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+	moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+		Method:             http.MethodGet,
+		Path:               "/v1/responses",
+		Handler:            "OpenAIGatewayHandler.ResponsesWebSocket",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           "openai_responses",
+		Pipeline:           moderationcoverage.PipelineOpenAIWebSocket,
+		Status:             moderationcoverage.StatusCovered,
+		StageAdapterDescriptors: moderationcoverage.StageAdapterDescriptorsForRoute(
+			"OpenAIGatewayHandler.ResponsesWebSocket",
+			"openai_responses",
+		),
+	})
 
 	var calls []string
 	handler := &OpenAIGatewayHandler{}
@@ -300,7 +315,7 @@ func TestOpenAIWebSocketStageRunnerRunsAllAdapterTypes(t *testing.T) {
 	require.NoError(t, result.Err)
 
 	result = handler.runOpenAIWebSocketStage(c, ForwardStageAdapter{
-		Name: moderationcoverage.StageForward,
+		Name: "OpenAIWebSocketForwardStage",
 		Forward: func(*gin.Context) ExecutableStageResult {
 			calls = append(calls, moderationcoverage.StageForward)
 			return ExecutableStageResult{}
@@ -326,10 +341,10 @@ func TestOpenAIWebSocketStageRunnerRunsAllAdapterTypes(t *testing.T) {
 		moderationcoverage.StageUsage,
 	}, calls)
 	require.Equal(t, []moderationcoverage.PipelineStageExecution{
-		{Pipeline: moderationcoverage.PipelineOpenAIWebSocket, Stage: moderationcoverage.StageBilling, Source: moderationcoverage.SourceOpenAIWebSocketExecutableStage},
-		{Pipeline: moderationcoverage.PipelineOpenAIWebSocket, Stage: moderationcoverage.StageRouting, Source: moderationcoverage.SourceOpenAIWebSocketExecutableStage},
-		{Pipeline: moderationcoverage.PipelineOpenAIWebSocket, Stage: moderationcoverage.StageForward, Source: moderationcoverage.SourceOpenAIWebSocketExecutableStage},
-		{Pipeline: moderationcoverage.PipelineOpenAIWebSocket, Stage: moderationcoverage.StageUsage, Source: moderationcoverage.SourceOpenAIWebSocketExecutableStage},
+		{Pipeline: moderationcoverage.PipelineOpenAIWebSocket, Stage: moderationcoverage.StageBilling, Source: moderationcoverage.SourceOpenAIWebSocketExecutableStage, Method: http.MethodGet, Path: "/v1/responses", Handler: "OpenAIGatewayHandler.ResponsesWebSocket", Protocol: "openai_responses"},
+		{Pipeline: moderationcoverage.PipelineOpenAIWebSocket, Stage: moderationcoverage.StageRouting, Source: moderationcoverage.SourceOpenAIWebSocketExecutableStage, Method: http.MethodGet, Path: "/v1/responses", Handler: "OpenAIGatewayHandler.ResponsesWebSocket", Protocol: "openai_responses"},
+		{Pipeline: moderationcoverage.PipelineOpenAIWebSocket, Stage: moderationcoverage.StageForward, Source: moderationcoverage.SourceOpenAIWebSocketExecutableStage, Method: http.MethodGet, Path: "/v1/responses", Handler: "OpenAIGatewayHandler.ResponsesWebSocket", Protocol: "openai_responses"},
+		{Pipeline: moderationcoverage.PipelineOpenAIWebSocket, Stage: moderationcoverage.StageUsage, Source: moderationcoverage.SourceOpenAIWebSocketExecutableStage, Method: http.MethodGet, Path: "/v1/responses", Handler: "OpenAIGatewayHandler.ResponsesWebSocket", Protocol: "openai_responses"},
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
 }
 
@@ -489,6 +504,51 @@ func TestOpenAIHTTPForwardStageUsesRouteDescriptorRegistry(t *testing.T) {
 			Protocol: "openai_responses",
 		},
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+}
+
+func TestOpenAIHTTPForwardStageRequiresRegistrarRouteMetadata(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	calls := 0
+
+	result := (&OpenAIGatewayHandler{}).runOpenAIHTTPForwardStage(c, ForwardStageAdapter{
+		Name: "OpenAIHTTPForwardStage",
+		Forward: func(*gin.Context) ExecutableStageResult {
+			calls++
+			return ExecutableStageResult{}
+		},
+	})
+
+	require.True(t, result.Stop)
+	require.ErrorContains(t, result.Err, "pipeline route metadata is required before forward")
+	require.Equal(t, 0, calls)
+}
+
+func TestOpenAIHTTPForwardStageRequiresDescriptorBoundAdapter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+		Method:                  http.MethodPost,
+		Path:                    "/v1/responses",
+		Handler:                 "OpenAIGatewayHandler.Responses",
+		Protocol:                "openai_responses",
+		Pipeline:                moderationcoverage.PipelineOpenAIHTTP,
+		StageAdapterDescriptors: moderationcoverage.StageAdapterDescriptorsForRoute("OpenAIGatewayHandler.Responses", "openai_responses"),
+	})
+	calls := 0
+
+	result := (&OpenAIGatewayHandler{}).runOpenAIHTTPForwardStage(c, ForwardStageAdapter{
+		Name: "UnregisteredForwardStage",
+		Forward: func(*gin.Context) ExecutableStageResult {
+			calls++
+			return ExecutableStageResult{}
+		},
+	})
+
+	require.True(t, result.Stop)
+	require.ErrorContains(t, result.Err, "pipeline forward stage adapter is not bound by route descriptor")
+	require.Equal(t, 0, calls)
 }
 
 func TestOpenAIHTTPBillingRoutingUsageStagesUseRouteDescriptorRegistry(t *testing.T) {
@@ -666,6 +726,51 @@ func TestOpenAIWebSocketForwardStageUsesRouteDescriptorRegistry(t *testing.T) {
 			Protocol: "openai_responses",
 		},
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+}
+
+func TestOpenAIWebSocketForwardStageRequiresRegistrarRouteMetadata(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	calls := 0
+
+	result := (&OpenAIGatewayHandler{}).runOpenAIWebSocketStage(c, ForwardStageAdapter{
+		Name: "OpenAIWebSocketForwardStage",
+		Forward: func(*gin.Context) ExecutableStageResult {
+			calls++
+			return ExecutableStageResult{}
+		},
+	})
+
+	require.True(t, result.Stop)
+	require.ErrorContains(t, result.Err, "pipeline route metadata is required before forward")
+	require.Equal(t, 0, calls)
+}
+
+func TestOpenAIWebSocketForwardStageRequiresDescriptorBoundAdapter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+	moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+		Method:                  http.MethodGet,
+		Path:                    "/v1/responses",
+		Handler:                 "OpenAIGatewayHandler.ResponsesWebSocket",
+		Protocol:                "openai_responses",
+		Pipeline:                moderationcoverage.PipelineOpenAIWebSocket,
+		StageAdapterDescriptors: moderationcoverage.StageAdapterDescriptorsForRoute("OpenAIGatewayHandler.ResponsesWebSocket", "openai_responses"),
+	})
+	calls := 0
+
+	result := (&OpenAIGatewayHandler{}).runOpenAIWebSocketStage(c, ForwardStageAdapter{
+		Name: "UnregisteredForwardStage",
+		Forward: func(*gin.Context) ExecutableStageResult {
+			calls++
+			return ExecutableStageResult{}
+		},
+	})
+
+	require.True(t, result.Stop)
+	require.ErrorContains(t, result.Err, "pipeline forward stage adapter is not bound by route descriptor")
+	require.Equal(t, 0, calls)
 }
 
 func TestOpenAIWebSocketBillingRoutingUsageStagesUseRouteDescriptorRegistry(t *testing.T) {

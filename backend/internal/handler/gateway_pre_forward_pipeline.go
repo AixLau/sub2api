@@ -345,19 +345,24 @@ func (h *GatewayHandler) runGatewayForwardStage(c *gin.Context, adapter ForwardS
 func (h *GatewayHandler) gatewayForwardStageFromRouteDescriptor(c *gin.Context, fallback ForwardStage) ForwardStage {
 	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
 	if !ok {
-		return fallback
+		return blockedForwardStage(moderationcoverage.PipelineGatewayPreForward, "pipeline route metadata is required before forward")
 	}
-	descriptors := moderationcoverage.StageAdapterDescriptorsForRoute(routeMeta.Handler, routeMeta.Protocol)
+	descriptors := stageAdapterDescriptorsForRuntimeRoute(routeMeta)
+	found := false
 	for _, descriptor := range descriptors {
 		if moderationcoverage.NormalizePipeline(descriptor.Pipeline) != moderationcoverage.PipelineGatewayPreForward ||
 			moderationcoverage.NormalizeStage(descriptor.Stage) != moderationcoverage.StageForward {
 			continue
 		}
-		if adapter, ok := h.gatewayStageAdapterRegistry().ResolveForward(descriptor); ok {
+		found = true
+		if adapter, ok := bindForwardStageAdapterForDescriptor(h.gatewayStageAdapterRegistry(), descriptor, fallback); ok {
 			return adapter
 		}
 	}
-	return fallback
+	if !found {
+		return blockedForwardStage(moderationcoverage.PipelineGatewayPreForward, "pipeline forward stage descriptor is required before forward")
+	}
+	return blockedForwardStage(moderationcoverage.PipelineGatewayPreForward, "pipeline forward stage adapter is not bound by route descriptor")
 }
 
 func (h *GatewayHandler) gatewayStageAdapterRegistry() *StageAdapterRegistry {

@@ -201,10 +201,12 @@ func TestModeratedRouteRegistrarInjectsRuntimeRouteMetaBeforeHandlers(t *testing
 				require.Equal(t, "OpenAIGatewayHandler.ResponsesWebSocket", runtimeMeta.Handler)
 				require.Equal(t, "openai_responses", runtimeMeta.Protocol)
 				require.Equal(t, moderationcoverage.PipelineOpenAIWebSocket, runtimeMeta.Pipeline)
+				require.Equal(t, moderationcoverage.StageAdapterDescriptorsForRoute(runtimeMeta.Handler, runtimeMeta.Protocol), runtimeMeta.StageAdapterDescriptors)
 			} else {
 				require.Equal(t, "OpenAIGatewayHandler.Responses", runtimeMeta.Handler)
 				require.Equal(t, "openai_responses", runtimeMeta.Protocol)
 				require.Equal(t, moderationcoverage.PipelineOpenAIHTTP, runtimeMeta.Pipeline)
+				require.Equal(t, moderationcoverage.StageAdapterDescriptorsForRoute(runtimeMeta.Handler, runtimeMeta.Protocol), runtimeMeta.StageAdapterDescriptors)
 				requireStageRequiredAndCovered(t, runtimeMeta, moderationcoverage.StageModeration)
 				requireStageRequiredAndCovered(t, runtimeMeta, moderationcoverage.StageCyber)
 				requireStageRequiredAndCovered(t, runtimeMeta, moderationcoverage.StageImage)
@@ -759,6 +761,7 @@ func TestOpenAIPipelineRouteHelpersAttachPipelineMetadata(t *testing.T) {
 	requireStageRequiredAndCovered(t, httpRoute, moderationcoverage.StageRouting)
 	requireStageRequiredAndCovered(t, httpRoute, moderationcoverage.StageForward)
 	requireStageRequiredAndCovered(t, httpRoute, moderationcoverage.StageUsage)
+	require.Equal(t, moderationcoverage.StageAdapterDescriptorsForRoute(httpRoute.Handler, httpRoute.Protocol), httpRoute.StageAdapterDescriptors)
 
 	webSocketRoute := coveredOpenAIWebSocketRoute(
 		"/v1/responses",
@@ -775,6 +778,22 @@ func TestOpenAIPipelineRouteHelpersAttachPipelineMetadata(t *testing.T) {
 	requireStageRequiredAndCovered(t, webSocketRoute, moderationcoverage.StageRouting)
 	requireStageRequiredAndCovered(t, webSocketRoute, moderationcoverage.StageForward)
 	requireStageRequiredAndCovered(t, webSocketRoute, moderationcoverage.StageUsage)
+	require.Equal(t, moderationcoverage.StageAdapterDescriptorsForRoute(webSocketRoute.Handler, webSocketRoute.Protocol), webSocketRoute.StageAdapterDescriptors)
+}
+
+func TestOpenAIPipelineRouteHelpersAttachRealtimeWebSocketMetadata(t *testing.T) {
+	route := coveredOpenAIWebSocketRoute(
+		"/v1/realtime",
+		"OpenAIGatewayHandler.RealtimeWebSocket",
+		"openai_realtime",
+		"test realtime route",
+	)
+
+	require.Equal(t, moderationcoverage.PipelineOpenAIWebSocket, route.Pipeline)
+	requireStageRequiredAndCovered(t, route, moderationcoverage.StageModeration)
+	requireStageRequiredAndCovered(t, route, moderationcoverage.StagePreForward)
+	requireStageRequiredAndCovered(t, route, moderationcoverage.StageForward)
+	require.Equal(t, moderationcoverage.StageAdapterDescriptorsForRoute(route.Handler, route.Protocol), route.StageAdapterDescriptors)
 }
 
 func TestGatewayPreForwardRouteHelpersAttachPipelineMetadata(t *testing.T) {

@@ -594,6 +594,12 @@ describe('admin RiskControlView', () => {
               forward_adapter_descriptors: [
                 { stage: 'forward', pipeline: 'openai_http', name: 'OpenAIHTTPForwardStage' },
               ],
+              stage_adapter_descriptors: [
+                { stage: 'billing', pipeline: 'openai_http', name: 'OpenAIHTTPBillingStage' },
+                { stage: 'routing', pipeline: 'openai_http', name: 'OpenAIHTTPRoutingStage' },
+                { stage: 'forward', pipeline: 'openai_http', name: 'OpenAIHTTPForwardStage' },
+                { stage: 'usage', pipeline: 'openai_http', name: 'OpenAIHTTPUsageStage' },
+              ],
               uncovered_stages: ['image'],
               stages: [
                 { stage: 'moderation', required: true, covered: true },
@@ -697,6 +703,7 @@ describe('admin RiskControlView', () => {
     expect(matrix.text()).toContain('1/7')
     expect(matrix.text()).toContain('POST /v1/responses OpenAIGatewayHandler.Responses moderation')
     expect(matrix.text()).toContain('POST /v1/responses OpenAIGatewayHandler.Responses usage')
-    expect(matrix.text()).toContain('OpenAIHTTPForwardStage@openai_http')
+    expect(matrix.text()).toContain('billing:OpenAIHTTPBillingStage@openai_http')
+    expect(matrix.text()).toContain('forward:OpenAIHTTPForwardStage@openai_http')
   })
 })

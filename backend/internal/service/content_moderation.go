@@ -635,6 +635,7 @@ type ContentModerationPipelineRouteCoverageStatus struct {
 	Covered                   bool                                                `json:"covered"`
 	ForwardAdapters           []string                                            `json:"forward_adapters,omitempty"`
 	ForwardAdapterDescriptors []moderationcoverage.RouteAdapterDescriptor         `json:"forward_adapter_descriptors,omitempty"`
+	StageAdapterDescriptors   []moderationcoverage.RouteAdapterDescriptor         `json:"stage_adapter_descriptors,omitempty"`
 	UncoveredStages           []string                                            `json:"uncovered_stages,omitempty"`
 	Stages                    []ContentModerationPipelineRouteStageCoverageStatus `json:"stages"`
 }
@@ -2154,11 +2155,55 @@ func contentModerationPipelineRouteCoverageStatusFromEntry(
 		Protocol:                  strings.TrimSpace(entry.Protocol),
 		Pipeline:                  moderationcoverage.NormalizePipeline(entry.Pipeline),
 		Covered:                   covered,
-		ForwardAdapters:           moderationcoverage.ForwardAdaptersForRoute(entry.Handler, entry.Protocol),
-		ForwardAdapterDescriptors: moderationcoverage.ForwardAdapterDescriptorsForRoute(entry.Handler, entry.Protocol),
+		ForwardAdapters:           contentModerationForwardAdaptersForEntry(entry),
+		ForwardAdapterDescriptors: contentModerationForwardAdapterDescriptorsForEntry(entry),
+		StageAdapterDescriptors:   contentModerationStageAdapterDescriptorsForEntry(entry),
 		UncoveredStages:           uncoveredStages,
 		Stages:                    stages,
 	}
+}
+
+func contentModerationStageAdapterDescriptorsForEntry(entry contentModerationRouteCoverageEntry) []moderationcoverage.RouteAdapterDescriptor {
+	descriptors := moderationcoverage.NormalizeRouteAdapterDescriptors(entry.StageAdapterDescriptors)
+	if len(descriptors) > 0 {
+		return descriptors
+	}
+	return moderationcoverage.StageAdapterDescriptorsForRoute(entry.Handler, entry.Protocol)
+}
+
+func contentModerationForwardAdapterDescriptorsForEntry(entry contentModerationRouteCoverageEntry) []moderationcoverage.RouteAdapterDescriptor {
+	stageDescriptors := contentModerationStageAdapterDescriptorsForEntry(entry)
+	if len(stageDescriptors) == 0 {
+		return nil
+	}
+	out := make([]moderationcoverage.RouteAdapterDescriptor, 0, len(stageDescriptors))
+	for _, descriptor := range stageDescriptors {
+		if moderationcoverage.NormalizeStage(descriptor.Stage) == moderationcoverage.StageForward {
+			out = append(out, descriptor)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func contentModerationForwardAdaptersForEntry(entry contentModerationRouteCoverageEntry) []string {
+	descriptors := contentModerationForwardAdapterDescriptorsForEntry(entry)
+	if len(descriptors) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(descriptors))
+	for _, descriptor := range descriptors {
+		if strings.TrimSpace(descriptor.Name) == "" {
+			continue
+		}
+		out = append(out, strings.TrimSpace(descriptor.Name))
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func uniqueSortedContentModerationPipelineStages(stages []string) []string {

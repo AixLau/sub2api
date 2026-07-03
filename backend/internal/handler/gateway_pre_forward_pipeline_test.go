@@ -267,18 +267,20 @@ func TestGatewayForwardStageExecutionIncludesRouteMetadata(t *testing.T) {
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", nil)
 	moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
-		Method:             http.MethodPost,
-		Path:               "/v1/messages/count_tokens",
-		Handler:            "GatewayHandler.CountTokens",
-		Upstream:           true,
-		ModerationRequired: true,
-		Protocol:           service.ContentModerationProtocolAnthropicMessages,
-		Pipeline:           moderationcoverage.PipelineGatewayPreForward,
-		Status:             moderationcoverage.StatusCovered,
+		Method:                  http.MethodPost,
+		Path:                    "/v1/messages/count_tokens",
+		Handler:                 "GatewayHandler.CountTokens",
+		Upstream:                true,
+		ModerationRequired:      true,
+		Protocol:                service.ContentModerationProtocolAnthropicMessages,
+		Pipeline:                moderationcoverage.PipelineGatewayPreForward,
+		Status:                  moderationcoverage.StatusCovered,
+		StageAdapterDescriptors: moderationcoverage.StageAdapterDescriptorsForRoute("GatewayHandler.CountTokens", service.ContentModerationProtocolAnthropicMessages),
 	})
 
 	calls := 0
 	result := (&GatewayHandler{}).runGatewayForwardStage(c, ForwardStageAdapter{
+		Name: "GatewayCountTokensForwardStage",
 		Forward: func(ctx *gin.Context) ExecutableStageResult {
 			require.Same(t, c, ctx)
 			calls++
@@ -359,6 +361,53 @@ func TestGatewayForwardStageUsesRouteDescriptorRegistry(t *testing.T) {
 			Protocol: service.ContentModerationProtocolAnthropicMessages,
 		},
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
+}
+
+func TestGatewayForwardStageRequiresRegistrarRouteMetadata(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	calls := 0
+
+	result := (&GatewayHandler{}).runGatewayForwardStage(c, ForwardStageAdapter{
+		Name: "GatewayCountTokensForwardStage",
+		Forward: func(*gin.Context) ExecutableStageResult {
+			calls++
+			return ExecutableStageResult{}
+		},
+	})
+
+	require.True(t, result.Stop)
+	require.ErrorContains(t, result.Err, "pipeline route metadata is required before forward")
+	require.Equal(t, 0, calls)
+}
+
+func TestGatewayForwardStageRequiresDescriptorBoundAdapter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", nil)
+	moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+		Method:                  http.MethodPost,
+		Path:                    "/v1/messages/count_tokens",
+		Handler:                 "GatewayHandler.CountTokens",
+		Protocol:                service.ContentModerationProtocolAnthropicMessages,
+		Pipeline:                moderationcoverage.PipelineGatewayPreForward,
+		StageAdapterDescriptors: moderationcoverage.StageAdapterDescriptorsForRoute("GatewayHandler.CountTokens", service.ContentModerationProtocolAnthropicMessages),
+	})
+	calls := 0
+
+	result := (&GatewayHandler{}).runGatewayForwardStage(c, ForwardStageAdapter{
+		Name: "UnregisteredForwardStage",
+		Forward: func(*gin.Context) ExecutableStageResult {
+			calls++
+			return ExecutableStageResult{}
+		},
+	})
+
+	require.True(t, result.Stop)
+	require.ErrorContains(t, result.Err, "pipeline forward stage adapter is not bound by route descriptor")
+	require.Equal(t, 0, calls)
 }
 
 func TestGatewayBillingRoutingUsageStagesUseRouteDescriptorRegistry(t *testing.T) {
