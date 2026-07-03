@@ -646,6 +646,35 @@ func TestExtractContentModerationInput_ResponsesScansClientSuppliedSystemDevelop
 	require.Contains(t, input.Text, "继续")
 }
 
+func TestExtractContentModerationInput_ResponsesSkipsPureCodexAmbientSafetyPrompt(t *testing.T) {
+	body := []byte(`{
+		"input":[
+			{
+				"type":"input_text",
+				"text":"You are an expert at upholding safety and compliance standards for Codex ambient suggestions"
+			}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Empty(t, input.Text)
+	require.Empty(t, input.Images)
+}
+
+func TestExtractContentModerationInput_ResponsesRolelessInputTextStillExtracted(t *testing.T) {
+	body := []byte(`{
+		"input":[
+			{"type":"input_text","text":"ordinary user prompt"}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Equal(t, "ordinary user prompt", input.Text)
+	require.Empty(t, input.Images)
+}
+
 func TestExtractContentModerationInput_ResponsesScansUnknownClientRoles(t *testing.T) {
 	body := []byte(`{
 		"input":[

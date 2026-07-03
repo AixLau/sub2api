@@ -24,11 +24,27 @@ func TestBuildContentModerationLogWhere_BlockedIncludesAllBlockActions(t *testin
 func TestBuildContentModerationLogWhere_SearchIncludesKeywordMetadata(t *testing.T) {
 	where, args := buildContentModerationLogWhere(service.ContentModerationLogFilter{Search: "privacy"})
 
-	require.Len(t, args, 6)
+	require.Len(t, args, 10)
 	sql := strings.Join(where, " AND ")
 	require.NotContains(t, sql, "l.input_excerpt ILIKE")
 	require.Contains(t, sql, "l.matched_keyword ILIKE")
 	require.Contains(t, sql, "l.keyword_category ILIKE")
+	require.Contains(t, sql, "l.keyword_action ILIKE")
+	require.Contains(t, sql, "l.effective_keyword_action ILIKE")
+	require.Contains(t, sql, "l.risk_context_type ILIKE")
+	require.Contains(t, sql, "l.review_status ILIKE")
+}
+
+func TestBuildContentModerationLogWhere_ReviewFiltersKeywordReviews(t *testing.T) {
+	where, args := buildContentModerationLogWhere(service.ContentModerationLogFilter{
+		Result:       "review",
+		ReviewStatus: service.ContentModerationReviewStatusPending,
+	})
+
+	require.Equal(t, []any{service.ContentModerationReviewStatusPending}, args)
+	sql := strings.Join(where, " AND ")
+	require.Contains(t, sql, "l.action = 'keyword_review'")
+	require.Contains(t, sql, "l.review_status = $1")
 }
 
 func TestBuildContentModerationLogWhere_SearchCanIncludeInputExcerpt(t *testing.T) {
@@ -37,7 +53,7 @@ func TestBuildContentModerationLogWhere_SearchCanIncludeInputExcerpt(t *testing.
 		SearchInputExcerpt: true,
 	})
 
-	require.Len(t, args, 7)
+	require.Len(t, args, 11)
 	sql := strings.Join(where, " AND ")
 	require.Contains(t, sql, "l.input_excerpt ILIKE")
 }

@@ -960,6 +960,10 @@ func (r *contentModerationHandlerTestRepo) UpdateLogEmailSentByDecisionID(ctx co
 	return nil
 }
 
+func (r *contentModerationHandlerTestRepo) ReviewLog(ctx context.Context, id int64, input service.ContentModerationLogReviewInput) (*service.ContentModerationLog, error) {
+	return &service.ContentModerationLog{ID: id, ReviewStatus: input.Status, ReviewNote: input.Note}, nil
+}
+
 func newBlockingContentModerationServiceForHandlerTest(t *testing.T, keyword string) (*service.ContentModerationService, *contentModerationHandlerTestRepo) {
 	t.Helper()
 	cfg := &service.ContentModerationConfig{

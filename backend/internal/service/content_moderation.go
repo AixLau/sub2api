@@ -37,12 +37,13 @@ const (
 	contentModerationAPIKeysModeAppend  = "append"
 	contentModerationAPIKeysModeReplace = "replace"
 
-	ContentModerationActionAllow        = "allow"
-	ContentModerationActionBlock        = "block"
-	ContentModerationActionHashBlock    = "hash_block"
-	ContentModerationActionKeywordBlock = "keyword_block"
-	ContentModerationActionError        = "error"
-	ContentModerationActionCyberPolicy  = "cyber_policy" // cyber_policy 硬阻断的风控日志 action（封号计数排除按此值过滤）
+	ContentModerationActionAllow         = "allow"
+	ContentModerationActionBlock         = "block"
+	ContentModerationActionHashBlock     = "hash_block"
+	ContentModerationActionKeywordBlock  = "keyword_block"
+	ContentModerationActionKeywordReview = "keyword_review"
+	ContentModerationActionError         = "error"
+	ContentModerationActionCyberPolicy   = "cyber_policy" // cyber_policy 硬阻断的风控日志 action（封号计数排除按此值过滤）
 
 	contentModerationKeywordCategory = "keyword"
 
@@ -82,6 +83,16 @@ const (
 	ContentModerationKeywordActionBlock   = "block"
 	ContentModerationKeywordActionObserve = "observe"
 	ContentModerationKeywordActionWarn    = "warn"
+
+	ContentModerationRiskContextActualRequest  = "actual_request"
+	ContentModerationRiskContextMetaDiscussion = "meta_discussion"
+	ContentModerationRiskContextCodexInternal  = "codex_internal"
+	ContentModerationRiskContextEducational    = "educational"
+	ContentModerationRiskContextUnknown        = "unknown"
+
+	ContentModerationReviewStatusPending            = "pending"
+	ContentModerationReviewStatusFalsePositive      = "false_positive"
+	ContentModerationReviewStatusConfirmedViolation = "confirmed_violation"
 
 	ContentModerationModelFilterAll     = "all"
 	ContentModerationModelFilterInclude = "include"
@@ -380,6 +391,9 @@ type ContentModerationKeywordTestResult struct {
 	KeywordCategory   string `json:"keyword_category"`
 	KeywordSeverity   string `json:"keyword_severity"`
 	Action            string `json:"keyword_action"`
+	EffectiveAction   string `json:"effective_keyword_action"`
+	RiskContextType   string `json:"risk_context_type"`
+	RiskContextReason string `json:"risk_context_reason"`
 	NormalizedExcerpt string `json:"normalized_excerpt"`
 }
 
@@ -476,58 +490,71 @@ func (in ContentModerationInput) Hash() string {
 }
 
 type ContentModerationDecision struct {
-	Allowed         bool               `json:"allowed"`
-	Blocked         bool               `json:"blocked"`
-	Flagged         bool               `json:"flagged"`
-	Message         string             `json:"message"`
-	StatusCode      int                `json:"status_code"`
-	InputHash       string             `json:"input_hash,omitempty"`
-	HighestCategory string             `json:"highest_category"`
-	HighestScore    float64            `json:"highest_score"`
-	CategoryScores  map[string]float64 `json:"category_scores"`
-	Action          string             `json:"action"`
-	MatchedKeyword  string             `json:"matched_keyword,omitempty"`
-	KeywordCategory string             `json:"keyword_category,omitempty"`
-	KeywordSeverity string             `json:"keyword_severity,omitempty"`
+	Allowed                bool               `json:"allowed"`
+	Blocked                bool               `json:"blocked"`
+	Flagged                bool               `json:"flagged"`
+	Message                string             `json:"message"`
+	StatusCode             int                `json:"status_code"`
+	InputHash              string             `json:"input_hash,omitempty"`
+	HighestCategory        string             `json:"highest_category"`
+	HighestScore           float64            `json:"highest_score"`
+	CategoryScores         map[string]float64 `json:"category_scores"`
+	Action                 string             `json:"action"`
+	MatchedKeyword         string             `json:"matched_keyword,omitempty"`
+	KeywordCategory        string             `json:"keyword_category,omitempty"`
+	KeywordSeverity        string             `json:"keyword_severity,omitempty"`
+	KeywordAction          string             `json:"keyword_action,omitempty"`
+	EffectiveKeywordAction string             `json:"effective_keyword_action,omitempty"`
+	RiskContextType        string             `json:"risk_context_type,omitempty"`
+	RiskContextReason      string             `json:"risk_context_reason,omitempty"`
 }
 
 type ContentModerationLog struct {
-	ID                int64              `json:"id"`
-	DecisionID        string             `json:"decision_id,omitempty"`
-	RequestID         string             `json:"request_id"`
-	UserID            *int64             `json:"user_id,omitempty"`
-	UserEmail         string             `json:"user_email"`
-	APIKeyID          *int64             `json:"api_key_id,omitempty"`
-	APIKeyName        string             `json:"api_key_name"`
-	GroupID           *int64             `json:"group_id,omitempty"`
-	GroupName         string             `json:"group_name"`
-	Endpoint          string             `json:"endpoint"`
-	Provider          string             `json:"provider"`
-	Model             string             `json:"model"`
-	Mode              string             `json:"mode"`
-	Action            string             `json:"action"`
-	Flagged           bool               `json:"flagged"`
-	HighestCategory   string             `json:"highest_category"`
-	HighestScore      float64            `json:"highest_score"`
-	MatchedKeyword    string             `json:"matched_keyword"`
-	CategoryScores    map[string]float64 `json:"category_scores"`
-	ThresholdSnapshot map[string]float64 `json:"threshold_snapshot"`
-	InputExcerpt      string             `json:"input_excerpt"`
-	UpstreamLatencyMS *int               `json:"upstream_latency_ms,omitempty"`
-	Error             string             `json:"error"`
-	KeywordCategory   string             `json:"keyword_category"`
-	KeywordSeverity   string             `json:"keyword_severity"`
-	ViolationCount    int                `json:"violation_count"`
-	AutoBanned        bool               `json:"auto_banned"`
-	EmailSent         bool               `json:"email_sent"`
-	UserStatus        string             `json:"user_status"`
-	QueueDelayMS      *int               `json:"queue_delay_ms,omitempty"`
-	CreatedAt         time.Time          `json:"created_at"`
+	ID                     int64              `json:"id"`
+	DecisionID             string             `json:"decision_id,omitempty"`
+	RequestID              string             `json:"request_id"`
+	UserID                 *int64             `json:"user_id,omitempty"`
+	UserEmail              string             `json:"user_email"`
+	APIKeyID               *int64             `json:"api_key_id,omitempty"`
+	APIKeyName             string             `json:"api_key_name"`
+	GroupID                *int64             `json:"group_id,omitempty"`
+	GroupName              string             `json:"group_name"`
+	Endpoint               string             `json:"endpoint"`
+	Provider               string             `json:"provider"`
+	Model                  string             `json:"model"`
+	Mode                   string             `json:"mode"`
+	Action                 string             `json:"action"`
+	Flagged                bool               `json:"flagged"`
+	HighestCategory        string             `json:"highest_category"`
+	HighestScore           float64            `json:"highest_score"`
+	CategoryScores         map[string]float64 `json:"category_scores"`
+	ThresholdSnapshot      map[string]float64 `json:"threshold_snapshot"`
+	InputExcerpt           string             `json:"input_excerpt"`
+	UpstreamLatencyMS      *int               `json:"upstream_latency_ms,omitempty"`
+	Error                  string             `json:"error"`
+	MatchedKeyword         string             `json:"matched_keyword"`
+	KeywordCategory        string             `json:"keyword_category"`
+	KeywordSeverity        string             `json:"keyword_severity"`
+	KeywordAction          string             `json:"keyword_action"`
+	EffectiveKeywordAction string             `json:"effective_keyword_action"`
+	RiskContextType        string             `json:"risk_context_type"`
+	RiskContextReason      string             `json:"risk_context_reason"`
+	ReviewStatus           string             `json:"review_status"`
+	ReviewNote             string             `json:"review_note"`
+	ReviewedBy             *int64             `json:"reviewed_by,omitempty"`
+	ReviewedAt             *time.Time         `json:"reviewed_at,omitempty"`
+	ViolationCount         int                `json:"violation_count"`
+	AutoBanned             bool               `json:"auto_banned"`
+	EmailSent              bool               `json:"email_sent"`
+	UserStatus             string             `json:"user_status"`
+	QueueDelayMS           *int               `json:"queue_delay_ms,omitempty"`
+	CreatedAt              time.Time          `json:"created_at"`
 }
 
 type ContentModerationLogFilter struct {
 	Pagination         pagination.PaginationParams
 	Result             string
+	ReviewStatus       string
 	GroupID            *int64
 	Endpoint           string
 	Search             string
@@ -695,6 +722,12 @@ type ContentModerationUnbanUserResult struct {
 	Status string `json:"status"`
 }
 
+type ContentModerationLogReviewInput struct {
+	Status     string `json:"status"`
+	Note       string `json:"note"`
+	ReviewedBy int64  `json:"reviewed_by"`
+}
+
 type ContentModerationDeleteHashResult struct {
 	InputHash string `json:"input_hash"`
 	Deleted   bool   `json:"deleted"`
@@ -716,6 +749,7 @@ type ContentModerationRepository interface {
 	UpdateLogViolationCountByDecisionID(ctx context.Context, decisionID string, count int) error
 	UpdateLogAccountActionByDecisionID(ctx context.Context, decisionID string, violationCount int, autoBanned bool) error
 	UpdateLogEmailSentByDecisionID(ctx context.Context, decisionID string, sent bool) error
+	ReviewLog(ctx context.Context, id int64, input ContentModerationLogReviewInput) (*ContentModerationLog, error)
 }
 
 type ContentModerationHashCache interface {
@@ -1057,11 +1091,15 @@ func (s *ContentModerationService) TestKeywords(ctx context.Context, prompt stri
 		NormalizedExcerpt: trimRunes(normalized, maxModerationExcerptRunes),
 	}
 	if match, hit := matchContentModerationKeyword(prompt, cfg.keywordRules()); hit {
+		decision := decideContentModerationKeyword(prompt, match)
 		result.Matched = true
 		result.MatchedKeyword = match.Keyword
 		result.KeywordCategory = match.Category
 		result.KeywordSeverity = match.Severity
 		result.Action = match.Action
+		result.EffectiveAction = decision.effectiveAction
+		result.RiskContextType = decision.context.Type
+		result.RiskContextReason = decision.context.Reason
 		result.NormalizedExcerpt = trimRunes(highlightKeywordComparable(normalized, match.Keyword), maxModerationExcerptRunes)
 	}
 	return result, nil
@@ -1409,13 +1447,8 @@ func (s *ContentModerationService) recordPreBlockSyncMetric(latencyMS int, actio
 
 func (s *ContentModerationService) keywordDecision(input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string, keywordMatch ContentModerationKeywordRule) *ContentModerationDecision {
 	scores := map[string]float64{contentModerationKeywordCategory: 1.0}
-	action := keywordMatch.Action
-	blocked := action == ContentModerationKeywordActionBlock
-	if blocked {
-		action = ContentModerationActionKeywordBlock
-	}
-	flagged := true
-	if blocked {
+	keywordDecision := decideContentModerationKeyword(content.Text, keywordMatch)
+	if keywordDecision.blocked {
 		s.recordPreBlockSyncMetric(0, ContentModerationActionKeywordBlock)
 	} else {
 		s.recordPreBlockSyncMetric(0, ContentModerationActionAllow)
@@ -1431,30 +1464,15 @@ func (s *ContentModerationService) keywordDecision(input ContentModerationCheckI
 		"keyword_category", keywordMatch.Category,
 		"keyword_severity", keywordMatch.Severity,
 		"keyword_action", keywordMatch.Action,
-		"blocked", blocked)
+		"effective_keyword_action", keywordDecision.effectiveAction,
+		"risk_context_type", keywordDecision.context.Type,
+		"risk_context_reason", keywordDecision.context.Reason,
+		"blocked", keywordDecision.blocked)
 	logMetadata := contentModerationHitLogMetadata(cfg, content, contentModerationMatchedSource(input.Protocol, keywordMatch.Keyword, content))
-	log := s.buildLog(input, cfg, action, flagged, contentModerationKeywordCategory, 1.0, scores, content.ExcerptText(), nil, nil, logMetadata)
-	log.MatchedKeyword = keywordMatch.Keyword
-	log.KeywordCategory = keywordMatch.Category
-	log.KeywordSeverity = keywordMatch.Severity
-	s.enqueueRecord(input, cfg, log, hashText, false, blocked)
-	decision := &ContentModerationDecision{
-		Allowed:         !blocked,
-		Blocked:         blocked,
-		Flagged:         flagged,
-		HighestCategory: contentModerationKeywordCategory,
-		HighestScore:    1.0,
-		CategoryScores:  scores,
-		Action:          action,
-		MatchedKeyword:  keywordMatch.Keyword,
-		KeywordCategory: keywordMatch.Category,
-		KeywordSeverity: keywordMatch.Severity,
-	}
-	if blocked {
-		decision.Message = cfg.BlockMessage
-		decision.StatusCode = cfg.BlockStatus
-	}
-	return decision
+	log := s.buildLog(input, cfg, keywordDecision.action, keywordDecision.flagged, contentModerationKeywordCategory, 1.0, scores, content.ExcerptText(), nil, nil, logMetadata)
+	applyContentModerationKeywordMetadata(log, keywordDecision)
+	s.enqueueRecord(input, cfg, log, hashText, false, keywordDecision.blocked)
+	return contentModerationDecisionFromKeyword(cfg, keywordDecision, scores)
 }
 
 func (s *ContentModerationService) enqueueAsync(input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string) {
@@ -1650,6 +1668,18 @@ func (s *ContentModerationService) UnbanUser(ctx context.Context, userID int64) 
 		UserID: userID,
 		Status: StatusActive,
 	}, nil
+}
+
+func (s *ContentModerationService) ReviewLog(ctx context.Context, id int64, input ContentModerationLogReviewInput) (*ContentModerationLog, error) {
+	if s == nil || s.repo == nil {
+		return nil, infraerrors.InternalServer("CONTENT_MODERATION_REPOSITORY_UNAVAILABLE", "内容审计仓储不可用")
+	}
+	if id <= 0 {
+		return nil, infraerrors.BadRequest("INVALID_CONTENT_MODERATION_LOG_ID", "审核记录 ID 无效")
+	}
+	input.Status = normalizeContentModerationReviewStatus(input.Status)
+	input.Note = trimRunes(strings.TrimSpace(input.Note), 1000)
+	return s.repo.ReviewLog(ctx, id, input)
 }
 
 func (s *ContentModerationService) DeleteFlaggedInputHash(ctx context.Context, inputHash string) (*ContentModerationDeleteHashResult, error) {
@@ -4095,6 +4125,19 @@ func normalizeContentModerationKeywordAction(action string) string {
 	}
 }
 
+func normalizeContentModerationReviewStatus(status string) string {
+	switch strings.TrimSpace(status) {
+	case ContentModerationReviewStatusFalsePositive:
+		return ContentModerationReviewStatusFalsePositive
+	case ContentModerationReviewStatusConfirmedViolation:
+		return ContentModerationReviewStatusConfirmedViolation
+	case ContentModerationReviewStatusPending:
+		return ContentModerationReviewStatusPending
+	default:
+		return ContentModerationReviewStatusPending
+	}
+}
+
 func normalizeKeywordBlockingMode(mode string) string {
 	switch strings.TrimSpace(mode) {
 	case ContentModerationKeywordModeKeywordOnly:
@@ -4253,6 +4296,140 @@ func int64SliceContains(values []int64, needle int64) bool {
 		}
 	}
 	return false
+}
+
+type contentModerationRiskContext struct {
+	Type   string
+	Reason string
+}
+
+type contentModerationKeywordDecision struct {
+	rule            ContentModerationKeywordRule
+	context         contentModerationRiskContext
+	action          string
+	flagged         bool
+	blocked         bool
+	effectiveAction string
+}
+
+func decideContentModerationKeyword(text string, rule ContentModerationKeywordRule) contentModerationKeywordDecision {
+	rule = normalizeContentModerationKeywordRules([]ContentModerationKeywordRule{rule})[0]
+	ctx := classifyContentModerationKeywordContext(text, rule)
+	effectiveAction := rule.Action
+	downgradedForContext := shouldDowngradeKeywordActionForContext(ctx)
+	if downgradedForContext {
+		effectiveAction = ContentModerationKeywordActionObserve
+	}
+	decision := contentModerationKeywordDecision{
+		rule:            rule,
+		context:         ctx,
+		action:          effectiveAction,
+		flagged:         true,
+		blocked:         false,
+		effectiveAction: effectiveAction,
+	}
+	switch {
+	case effectiveAction == ContentModerationKeywordActionBlock:
+		decision.action = ContentModerationActionKeywordBlock
+		decision.blocked = true
+	case downgradedForContext:
+		decision.action = ContentModerationActionKeywordReview
+		decision.flagged = false
+	}
+	return decision
+}
+
+func classifyContentModerationKeywordContext(text string, rule ContentModerationKeywordRule) contentModerationRiskContext {
+	normalized := normalizeKeywordComparable(text)
+	if normalized == "" {
+		return contentModerationRiskContext{Type: ContentModerationRiskContextUnknown, Reason: "empty_text"}
+	}
+	if isCodexInternalPromptText(text) {
+		return contentModerationRiskContext{Type: ContentModerationRiskContextCodexInternal, Reason: "codex_internal_prompt_marker"}
+	}
+	metaMarkers := []string{
+		"审计关键词", "关键词", "规则列表", "违规行为列表", "风控规则", "拦截规则", "审核规则", "误杀",
+		"policy", "safety policy", "keyword", "rule list", "audit rule", "moderation rule", "false positive",
+	}
+	if containsAnyKeywordComparable(normalized, metaMarkers) {
+		return contentModerationRiskContext{Type: ContentModerationRiskContextMetaDiscussion, Reason: "policy_or_keyword_rule_discussion"}
+	}
+	educationalMarkers := []string{
+		"如何防范", "安全教育", "合规培训", "风险说明", "案例分析",
+		"how to prevent", "safety training", "compliance training", "risk explanation", "case study",
+	}
+	if containsAnyKeywordComparable(normalized, educationalMarkers) {
+		return contentModerationRiskContext{Type: ContentModerationRiskContextEducational, Reason: "educational_or_prevention_context"}
+	}
+	actualRequestMarkers := []string{
+		"帮我生成", "生成一份", "写一个", "教我", "教程", "步骤", "方法", "购买", "出售", "绕过",
+		"generate", "write", "teach me", "tutorial", "steps", "method", "buy", "sell", "bypass",
+	}
+	if containsAnyKeywordComparable(normalized, actualRequestMarkers) {
+		return contentModerationRiskContext{Type: ContentModerationRiskContextActualRequest, Reason: "request_intent_marker"}
+	}
+	return contentModerationRiskContext{Type: ContentModerationRiskContextUnknown, Reason: "no_context_marker"}
+}
+
+func shouldDowngradeKeywordActionForContext(ctx contentModerationRiskContext) bool {
+	switch ctx.Type {
+	case ContentModerationRiskContextCodexInternal, ContentModerationRiskContextMetaDiscussion, ContentModerationRiskContextEducational:
+		return true
+	default:
+		return false
+	}
+}
+
+func containsAnyKeywordComparable(normalizedText string, markers []string) bool {
+	for _, marker := range markers {
+		normalizedMarker := normalizeKeywordComparable(marker)
+		if normalizedMarker != "" && strings.Contains(normalizedText, normalizedMarker) {
+			return true
+		}
+	}
+	return false
+}
+
+func applyContentModerationKeywordMetadata(log *ContentModerationLog, decision contentModerationKeywordDecision) {
+	if log == nil {
+		return
+	}
+	log.MatchedKeyword = decision.rule.Keyword
+	log.KeywordCategory = decision.rule.Category
+	log.KeywordSeverity = decision.rule.Severity
+	log.KeywordAction = decision.rule.Action
+	log.EffectiveKeywordAction = decision.effectiveAction
+	log.RiskContextType = decision.context.Type
+	log.RiskContextReason = decision.context.Reason
+	if decision.action == ContentModerationActionKeywordReview {
+		log.ReviewStatus = ContentModerationReviewStatusPending
+	}
+}
+
+func contentModerationDecisionFromKeyword(cfg *ContentModerationConfig, keywordDecision contentModerationKeywordDecision, scores map[string]float64) *ContentModerationDecision {
+	decision := &ContentModerationDecision{
+		Allowed:                !keywordDecision.blocked,
+		Blocked:                keywordDecision.blocked,
+		Flagged:                keywordDecision.flagged,
+		Message:                "",
+		StatusCode:             0,
+		HighestCategory:        contentModerationKeywordCategory,
+		HighestScore:           1.0,
+		CategoryScores:         scores,
+		Action:                 keywordDecision.action,
+		MatchedKeyword:         keywordDecision.rule.Keyword,
+		KeywordCategory:        keywordDecision.rule.Category,
+		KeywordSeverity:        keywordDecision.rule.Severity,
+		KeywordAction:          keywordDecision.rule.Action,
+		EffectiveKeywordAction: keywordDecision.effectiveAction,
+		RiskContextType:        keywordDecision.context.Type,
+		RiskContextReason:      keywordDecision.context.Reason,
+	}
+	if keywordDecision.blocked && cfg != nil {
+		decision.Message = cfg.BlockMessage
+		decision.StatusCode = cfg.BlockStatus
+	}
+	return decision
 }
 
 func matchBlockedKeyword(text string, keywords []string) (string, bool) {
