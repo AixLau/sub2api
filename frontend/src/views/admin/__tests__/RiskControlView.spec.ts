@@ -580,7 +580,7 @@ describe('admin RiskControlView', () => {
     ]))
   })
 
-  it('renders OpenAI pipeline manifest metadata and route stage coverage', async () => {
+  it('renders operator-readable protection summary and keeps pipeline diagnostics collapsed by default', async () => {
     getStatus.mockResolvedValue({
       ...runtimeStatus(),
       pipeline_coverage: {
@@ -731,23 +731,34 @@ describe('admin RiskControlView', () => {
 
     await flushPromises()
 
-    const matrix = wrapper.get('[data-test="pipeline-coverage-matrix"]')
-    expect(matrix.text()).toContain('2026-06-29.2')
-    expect(matrix.text()).toContain('openai-http-pre-forward-v2')
-    expect(matrix.text()).toContain('stage-hash-123')
-    expect(matrix.text()).toContain('mismatch')
-    expect(matrix.text()).toContain('POST /v1/responses')
-    expect(matrix.text()).toContain('openai_http')
-    expect(matrix.text()).toContain('moderation')
-    expect(matrix.text()).toContain('cyber')
-    expect(matrix.text()).toContain('image')
-    expect(matrix.text()).toContain('openai_responses')
-    expect(matrix.text()).toContain('admin.riskControl.pipelineExecutionRoutes')
-    expect(matrix.text()).toContain('admin.riskControl.pipelineExecutionObservedStages')
-    expect(matrix.text()).toContain('1/7')
-    expect(matrix.text()).toContain('POST /v1/responses OpenAIGatewayHandler.Responses moderation')
-    expect(matrix.text()).toContain('POST /v1/responses OpenAIGatewayHandler.Responses usage')
-    expect(matrix.text()).toContain('billing:OpenAIHTTPBillingStage@openai_http')
-    expect(matrix.text()).toContain('forward:OpenAIHTTPForwardStage@openai_http')
+    const summary = wrapper.get('[data-test="pipeline-operator-summary"]')
+    expect(summary.text()).toContain('admin.riskControl.protectionChainTitle')
+    expect(summary.text()).toContain('admin.riskControl.protectionChainCoverage')
+    expect(summary.text()).toContain('mismatch · 1/2')
+    expect(summary.text()).toContain('admin.riskControl.protectionChainRecentTraffic')
+    expect(summary.text()).toContain('3')
+    expect(summary.text()).toContain('admin.riskControl.protectionChainErrors')
+    expect(summary.text()).toContain('2')
+    expect(summary.text()).toContain('admin.riskControl.protectionChainObservedChecks')
+    expect(summary.text()).toContain('1/7')
+    expect(summary.text()).toContain('admin.riskControl.protectionChainUnobservedSummary')
+    expect(summary.text()).toContain('2')
+
+    expect(summary.text()).not.toContain('stage-hash-123')
+    expect(summary.text()).not.toContain('OpenAIGatewayHandler.Responses')
+    expect(summary.text()).not.toContain('billing:OpenAIHTTPBillingStage@openai_http')
+
+    expect(wrapper.find('[data-test="pipeline-advanced-diagnostics"]').exists()).toBe(false)
+
+    await wrapper.get('[data-test="pipeline-advanced-toggle"]').trigger('click')
+
+    const diagnostics = wrapper.get('[data-test="pipeline-advanced-diagnostics"]')
+    expect(diagnostics.text()).toContain('2026-06-29.2')
+    expect(diagnostics.text()).toContain('openai-http-pre-forward-v2')
+    expect(diagnostics.text()).toContain('stage-hash-123')
+    expect(diagnostics.text()).toContain('POST /v1/responses OpenAIGatewayHandler.Responses moderation')
+    expect(diagnostics.text()).toContain('POST /v1/responses OpenAIGatewayHandler.Responses usage')
+    expect(diagnostics.text()).toContain('billing:OpenAIHTTPBillingStage@openai_http')
+    expect(diagnostics.text()).toContain('forward:OpenAIHTTPForwardStage@openai_http')
   })
 })

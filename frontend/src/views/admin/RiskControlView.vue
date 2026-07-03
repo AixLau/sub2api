@@ -78,31 +78,106 @@
 
         <div
           v-if="pipelineCoverageMatrixVisible"
-          data-test="pipeline-coverage-matrix"
+          data-test="pipeline-operator-summary"
           class="card"
         >
-          <div class="flex flex-col gap-3 border-b border-gray-100 px-6 py-4 dark:border-dark-700 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.pipelineCoverageTitle') }}</h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.pipelineCoverageHint') }}</p>
+          <div class="flex flex-col gap-4 border-b border-gray-100 px-6 py-4 dark:border-dark-700 lg:flex-row lg:items-center lg:justify-between">
+            <div class="flex min-w-0 gap-3">
+              <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg" :class="pipelineOperatorIconClass">
+                <Icon name="shield" size="md" />
+              </div>
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.protectionChainTitle') }}</h2>
+                  <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-medium" :class="pipelineOperatorBadgeClass">
+                    {{ pipelineOperatorBadgeText }}
+                  </span>
+                </div>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ pipelineOperatorDescription }}</p>
+              </div>
             </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="inline-flex max-w-full rounded-md bg-gray-100 px-2.5 py-1 font-mono text-xs font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300">
-                {{ t('admin.riskControl.pipelineManifestVersion') }} {{ pipelineCoverageManifestVersionText }}
-              </span>
-              <span class="inline-flex rounded-md bg-gray-100 px-2.5 py-1 font-mono text-xs font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300">
-                {{ pipelineCoverageVersionText }}
-              </span>
-              <span class="inline-flex max-w-full rounded-md bg-gray-100 px-2.5 py-1 font-mono text-xs font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300">
-                {{ t('admin.riskControl.pipelineManifestHash') }} {{ pipelineCoverageManifestHashText }}
-              </span>
-              <span class="inline-flex rounded-md px-2.5 py-1 text-xs font-medium" :class="pipelineCoverageStatusClass">
-                {{ pipelineCoverageStatusText }}
-              </span>
+            <button
+              type="button"
+              data-test="pipeline-advanced-toggle"
+              class="btn btn-secondary inline-flex w-fit items-center gap-2"
+              :aria-expanded="advancedPipelineDiagnosticsOpen"
+              @click="advancedPipelineDiagnosticsOpen = !advancedPipelineDiagnosticsOpen"
+            >
+              <Icon name="document" size="sm" />
+              {{ advancedPipelineDiagnosticsOpen ? t('admin.riskControl.hideAdvancedDiagnostics') : t('admin.riskControl.showAdvancedDiagnostics') }}
+            </button>
+          </div>
+
+          <div class="space-y-4 p-6">
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div
+                v-for="item in pipelineOperatorSummaryItems"
+                :key="item.key"
+                class="rounded-lg border border-gray-100 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900/30"
+              >
+                <div class="flex min-w-0 items-center gap-3">
+                  <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg" :class="item.iconClass">
+                    <Icon :name="item.icon" size="sm" />
+                  </div>
+                  <div class="min-w-0">
+                    <p class="truncate text-xs font-medium text-gray-500 dark:text-gray-400">{{ item.label }}</p>
+                    <p class="mt-1 truncate text-xl font-semibold leading-7 text-gray-900 dark:text-white" :class="item.valueClass">{{ item.value }}</p>
+                    <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ item.meta }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="pipelineCoverageNeedsAttention || pipelineExecutionErrorCount > 0 || pipelineExecutionUnobservedCount > 0" class="space-y-2">
+              <div
+                v-if="pipelineCoverageNeedsAttention"
+                class="rounded-lg border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900/30 dark:bg-rose-900/10 dark:text-rose-200"
+              >
+                {{ t('admin.riskControl.protectionChainCoverageAction') }}
+              </div>
+              <div
+                v-if="pipelineExecutionErrorCount > 0"
+                class="rounded-lg border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900/30 dark:bg-rose-900/10 dark:text-rose-200"
+              >
+                {{ t('admin.riskControl.protectionChainRuntimeErrorAction') }}
+              </div>
+              <div
+                v-if="pipelineExecutionUnobservedCount > 0"
+                class="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/30 dark:bg-amber-900/10 dark:text-amber-200"
+              >
+                {{ t('admin.riskControl.protectionChainUnobservedSummary') }}
+                <span class="font-mono font-semibold">{{ formatNumber(pipelineExecutionUnobservedCount) }}</span>
+              </div>
             </div>
           </div>
 
-          <div class="space-y-5 p-6">
+          <div
+            v-if="advancedPipelineDiagnosticsOpen"
+            data-test="pipeline-advanced-diagnostics"
+            class="space-y-5 border-t border-gray-100 p-6 dark:border-dark-700"
+          >
+            <div class="flex flex-col gap-3 rounded-lg border border-gray-100 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900/30 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.advancedDiagnosticsTitle') }}</h3>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.advancedDiagnosticsHint') }}</p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="inline-flex max-w-full rounded-md bg-white px-2.5 py-1 font-mono text-xs font-medium text-gray-600 shadow-sm dark:bg-dark-800 dark:text-gray-300">
+                  {{ t('admin.riskControl.pipelineManifestVersion') }} {{ pipelineCoverageManifestVersionText }}
+                </span>
+                <span class="inline-flex rounded-md bg-white px-2.5 py-1 font-mono text-xs font-medium text-gray-600 shadow-sm dark:bg-dark-800 dark:text-gray-300">
+                  {{ pipelineCoverageVersionText }}
+                </span>
+                <span class="inline-flex max-w-full rounded-md bg-white px-2.5 py-1 font-mono text-xs font-medium text-gray-600 shadow-sm dark:bg-dark-800 dark:text-gray-300">
+                  {{ t('admin.riskControl.pipelineManifestHash') }} {{ pipelineCoverageManifestHashText }}
+                </span>
+                <span class="inline-flex rounded-md px-2.5 py-1 text-xs font-medium" :class="pipelineCoverageStatusClass">
+                  {{ pipelineCoverageStatusText }}
+                </span>
+              </div>
+            </div>
+
+            <div class="space-y-5">
             <div class="rounded-lg border border-gray-100 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900/30">
               <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div>
@@ -244,6 +319,7 @@
               </div>
             </div>
           </div>
+        </div>
         </div>
 
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -1479,6 +1555,7 @@ type WorkerSlotState = 'active' | 'idle' | 'disabled'
 type APIKeysWriteMode = 'append' | 'replace'
 type OverviewIcon = 'shield' | 'key' | 'users' | 'document'
 type ProtectionStatusTone = 'strong' | 'unsafe' | 'unknown'
+type PipelineOperatorIcon = 'shield' | 'filter' | 'refresh' | 'document'
 type OverviewItem = {
   key: string
   label: string
@@ -1488,6 +1565,15 @@ type OverviewItem = {
   iconClass: string
   badge?: string
   badgeClass?: string
+}
+type PipelineOperatorSummaryItem = {
+  key: string
+  label: string
+  value: string
+  meta: string
+  icon: PipelineOperatorIcon
+  iconClass: string
+  valueClass?: string
 }
 type ModerationScoreRow = {
   category: string
@@ -1535,6 +1621,7 @@ const keywordTesting = ref(false)
 const hashActionLoading = ref(false)
 const unbanningUserID = ref<number | null>(null)
 const settingsOpen = ref(false)
+const advancedPipelineDiagnosticsOpen = ref(false)
 const activeSettingsTab = ref<SettingsTab>('basic')
 const groupSearch = ref('')
 const flaggedHashInput = ref('')
@@ -1963,6 +2050,18 @@ const pipelineCoverageMatrixVisible = computed(() => (
   (status.value?.pipeline_execution?.total_count ?? 0) > 0
 ))
 
+const pipelineCoverageRequiredRouteCount = computed(() => (
+  pipelineCoverageGroups.value.reduce((total, coverage) => total + coverage.required_routes, 0)
+))
+
+const pipelineCoverageCoveredRouteCount = computed(() => (
+  pipelineCoverageGroups.value.reduce((total, coverage) => total + coverage.covered_routes, 0)
+))
+
+const pipelineCoverageUncoveredRouteCount = computed(() => (
+  Math.max(0, pipelineCoverageRequiredRouteCount.value - pipelineCoverageCoveredRouteCount.value)
+))
+
 const pipelineCoverageVersionText = computed(() => {
   const coverage = status.value?.pipeline_coverage
   return coverage?.version || '-'
@@ -2034,6 +2133,7 @@ function formatRouteForwardAdapters(route: ContentModerationPipelineRouteCoverag
 const pipelineExecutionTotalCount = computed(() => status.value?.pipeline_execution?.total_count ?? 0)
 const pipelineExecutionRecentCount = computed(() => status.value?.pipeline_execution?.recent_window_count ?? 0)
 const pipelineExecutionErrorCount = computed(() => status.value?.pipeline_execution?.error_count ?? 0)
+const pipelineExecutionRecentErrorCount = computed(() => status.value?.pipeline_execution?.recent_window_error_count ?? 0)
 const pipelineExecutionObservationCoverage = computed(() => status.value?.pipeline_execution?.stage_observation_coverage)
 const pipelineExecutionObservationCoverageText = computed(() => {
   const coverage = pipelineExecutionObservationCoverage.value
@@ -2049,6 +2149,124 @@ const pipelineExecutionObservationCoverageClass = computed(() => {
 const pipelineExecutionUnobservedStageRows = computed(() => (
   [...(pipelineExecutionObservationCoverage.value?.unobserved_stages ?? [])].sort()
 ))
+
+const pipelineExecutionUnobservedCount = computed(() => pipelineExecutionUnobservedStageRows.value.length)
+
+const pipelineCoverageNeedsAttention = computed(() => (
+  pipelineCoverageStatusText.value === 'mismatch' ||
+  pipelineCoverageUncoveredRouteCount.value > 0
+))
+
+const pipelineObservationNeedsAttention = computed(() => (
+  pipelineExecutionObservationCoverage.value?.status === 'mismatch' ||
+  pipelineExecutionUnobservedCount.value > 0
+))
+
+const pipelineOperatorTone = computed<'ok' | 'warning' | 'danger' | 'idle'>(() => {
+  if (!pipelineCoverageMatrixVisible.value) return 'idle'
+  if (protectionStatusTone.value === 'unsafe' || pipelineCoverageNeedsAttention.value) return 'danger'
+  if (pipelineExecutionErrorCount.value > 0 || pipelineObservationNeedsAttention.value) return 'warning'
+  if (pipelineExecutionTotalCount.value === 0) return 'idle'
+  return 'ok'
+})
+
+const pipelineOperatorIconClass = computed(() => {
+  if (pipelineOperatorTone.value === 'ok') return 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-300'
+  if (pipelineOperatorTone.value === 'danger') return 'bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-300'
+  if (pipelineOperatorTone.value === 'warning') return 'bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-300'
+  return 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-300'
+})
+
+const pipelineOperatorBadgeClass = computed(() => {
+  if (pipelineOperatorTone.value === 'ok') return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-200'
+  if (pipelineOperatorTone.value === 'danger') return 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-200'
+  if (pipelineOperatorTone.value === 'warning') return 'bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200'
+  return 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'
+})
+
+const pipelineOperatorBadgeText = computed(() => {
+  if (pipelineOperatorTone.value === 'ok') return t('admin.riskControl.protectionChainNormal')
+  if (pipelineOperatorTone.value === 'danger') return t('admin.riskControl.protectionChainNeedsAttention')
+  if (pipelineOperatorTone.value === 'warning') return t('admin.riskControl.protectionChainHasWarnings')
+  return t('admin.riskControl.protectionChainWaiting')
+})
+
+const pipelineOperatorDescription = computed(() => {
+  if (pipelineOperatorTone.value === 'ok') return t('admin.riskControl.protectionChainNormalDescription')
+  if (pipelineOperatorTone.value === 'danger') return t('admin.riskControl.protectionChainNeedsAttentionDescription')
+  if (pipelineOperatorTone.value === 'warning') return t('admin.riskControl.protectionChainHasWarningsDescription')
+  return t('admin.riskControl.protectionChainWaitingDescription')
+})
+
+const pipelineCoverageMetaText = computed(() => {
+  if (pipelineCoverageRequiredRouteCount.value === 0) return t('admin.riskControl.protectionChainCoverageMetaUnknown')
+  if (pipelineCoverageUncoveredRouteCount.value > 0) {
+    return t('admin.riskControl.protectionChainCoverageMetaMissing', { count: formatNumber(pipelineCoverageUncoveredRouteCount.value) })
+  }
+  return t('admin.riskControl.protectionChainCoverageMetaOk')
+})
+
+const pipelineRecentTrafficMetaText = computed(() => (
+  t('admin.riskControl.protectionChainRecentTrafficMeta', { count: formatNumber(pipelineExecutionTotalCount.value) })
+))
+
+const pipelineErrorsMetaText = computed(() => {
+  if (pipelineExecutionErrorCount.value === 0) return t('admin.riskControl.protectionChainNoErrors')
+  return t('admin.riskControl.protectionChainErrorsMeta', {
+    recent: formatNumber(pipelineExecutionRecentErrorCount.value),
+    total: formatNumber(pipelineExecutionErrorCount.value),
+  })
+})
+
+const pipelineObservedMetaText = computed(() => {
+  if (!pipelineExecutionObservationCoverage.value) return t('admin.riskControl.protectionChainObservedChecksWaiting')
+  if (pipelineExecutionUnobservedCount.value > 0) {
+    return t('admin.riskControl.protectionChainObservedChecksMissing', { count: formatNumber(pipelineExecutionUnobservedCount.value) })
+  }
+  return t('admin.riskControl.protectionChainObservedChecksOk')
+})
+
+const pipelineOperatorSummaryItems = computed<PipelineOperatorSummaryItem[]>(() => [
+  {
+    key: 'coverage',
+    label: t('admin.riskControl.protectionChainCoverage'),
+    value: protectionPipelineCoverageText.value,
+    meta: pipelineCoverageMetaText.value,
+    icon: 'shield',
+    iconClass: pipelineCoverageNeedsAttention.value
+      ? 'bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-300'
+      : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-300',
+  },
+  {
+    key: 'traffic',
+    label: t('admin.riskControl.protectionChainRecentTraffic'),
+    value: formatNumber(pipelineExecutionRecentCount.value),
+    meta: pipelineRecentTrafficMetaText.value,
+    icon: 'refresh',
+    iconClass: 'bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300',
+  },
+  {
+    key: 'errors',
+    label: t('admin.riskControl.protectionChainErrors'),
+    value: formatNumber(pipelineExecutionErrorCount.value),
+    meta: pipelineErrorsMetaText.value,
+    icon: 'document',
+    iconClass: pipelineExecutionErrorCount.value > 0
+      ? 'bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-300'
+      : 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-300',
+    valueClass: pipelineExecutionErrorCount.value > 0 ? 'text-rose-700 dark:text-rose-300' : undefined,
+  },
+  {
+    key: 'observed',
+    label: t('admin.riskControl.protectionChainObservedChecks'),
+    value: pipelineExecutionObservationCoverageText.value,
+    meta: pipelineObservedMetaText.value,
+    icon: 'filter',
+    iconClass: pipelineObservationNeedsAttention.value
+      ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-300'
+      : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-300',
+  },
+])
 
 const pipelineExecutionRouteRows = computed(() => (
   [...(status.value?.pipeline_execution?.routes ?? [])].sort((a, b) => {
