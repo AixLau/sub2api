@@ -862,15 +862,6 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 	}
 	releaseFunc, refreshedAccount, acquired, retryable := h.acquireResponsesAccountSlot(c, s.APIKey.GroupID, sessionHash, selection, s.RequestedModel, false, s.RequiredCapability, s.RequiredImageCapability, s.Stream, streamStartedPtr, reqLog)
 	if !acquired {
-		if retryable && s.SwitchCount != nil && *s.SwitchCount < s.MaxAccountSwitches {
-			failedAccountIDs[account.ID] = struct{}{}
-			*s.SwitchCount = *s.SwitchCount + 1
-			if s.Retry != nil {
-				*s.Retry = true
-			}
-			reqLog.Info(logPrefix+".concurrency_fallback", zap.Int64("failed_account_id", account.ID), zap.Int("switch_count", *s.SwitchCount))
-			return ExecutableStageResult{}
-		}
 		if retryable {
 			s.writeOpenAIHTTPRoutingError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many concurrent requests, please retry later")
 		}

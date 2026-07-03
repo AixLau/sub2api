@@ -422,15 +422,6 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				if err != nil {
 					reqLog.Warn("gateway.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 					releaseWait()
-					if IsConcurrencyRetryableError(err) && fs.SwitchCount < fs.MaxSwitches {
-						fs.FailedAccountIDs[account.ID] = struct{}{}
-						fs.SwitchCount++
-						reqLog.Info("gateway.concurrency_fallback",
-							zap.Int64("failed_account_id", account.ID),
-							zap.Int("switch_count", fs.SwitchCount),
-						)
-						continue
-					}
 					h.handleConcurrencyError(c, err, "account", streamStarted)
 					return
 				}
@@ -757,15 +748,6 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				if err != nil {
 					reqLog.Warn("gateway.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 					releaseWait()
-					if IsConcurrencyRetryableError(err) && fs.SwitchCount < fs.MaxSwitches {
-						fs.FailedAccountIDs[account.ID] = struct{}{}
-						fs.SwitchCount++
-						reqLog.Info("gateway.concurrency_fallback",
-							zap.Int64("failed_account_id", account.ID),
-							zap.Int("switch_count", fs.SwitchCount),
-						)
-						continue
-					}
 					h.handleConcurrencyError(c, err, "account", streamStarted)
 					return
 				}
