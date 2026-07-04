@@ -190,7 +190,7 @@ func (h *HaozPay) VerifyNotification(_ context.Context, rawBody string, _ map[st
 	if err != nil {
 		return nil, fmt.Errorf("parse business params: %w", err)
 	}
-	orderID := firstHaozPayString(bizParams, "orderNo", "merchantOrderNo")
+	orderID := firstHaozPayString(bizParams, "merchantOrderNo", "orderNo")
 	tradeNo := firstHaozPayString(bizParams, "seqId", "paySeqId", "orderNo", "merchantOrderNo")
 	amount := firstHaozPayFloat(bizParams, "payAmount", "orderAmount", "ordAmt")
 

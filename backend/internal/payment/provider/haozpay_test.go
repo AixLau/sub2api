@@ -272,6 +272,56 @@ func TestHaozPayVerifyNotificationAcceptsFlatPaymentCallback(t *testing.T) {
 	}
 }
 
+func TestHaozPayVerifyNotificationUsesMerchantOrderNoAsLocalOrderID(t *testing.T) {
+	t.Parallel()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate rsa key: %v", err)
+	}
+	h := &HaozPay{
+		merchantNo:     "M123456",
+		platformPubKey: &key.PublicKey,
+	}
+
+	params := map[string]interface{}{
+		"orderNo":         "HZHT202607042073255420652335104",
+		"merchantOrderNo": "20260704d7HL7QV0",
+		"merchantNo":      "M123456",
+		"orderAmount":     "1.01",
+		"payAmount":       "1.01",
+		"payType":         "0",
+		"payChannel":      "HFDG",
+		"payStatus":       2,
+		"payTime":         "2026-07-04 12:00:09",
+		"createTime":      "2026-07-04 11:59:45",
+		"timestamp":       int64(1783137609000),
+	}
+	sign, err := haozPayTestPrivateEncryptSign(key, params)
+	if err != nil {
+		t.Fatalf("sign callback: %v", err)
+	}
+	params["sign"] = sign
+	raw, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("marshal callback: %v", err)
+	}
+
+	notification, err := h.VerifyNotification(context.Background(), string(raw), nil)
+	if err != nil {
+		t.Fatalf("verify notification: %v", err)
+	}
+	if notification.OrderID != "20260704d7HL7QV0" {
+		t.Fatalf("OrderID = %q, want merchantOrderNo", notification.OrderID)
+	}
+	if notification.TradeNo != "HZHT202607042073255420652335104" {
+		t.Fatalf("TradeNo = %q, want platform orderNo", notification.TradeNo)
+	}
+	if notification.Status != payment.ProviderStatusSuccess {
+		t.Fatalf("Status = %q, want success", notification.Status)
+	}
+}
+
 func TestHaozPayVerifyNotificationDoesNotTreatRefundCallbackAsPaymentSuccess(t *testing.T) {
 	t.Parallel()
 

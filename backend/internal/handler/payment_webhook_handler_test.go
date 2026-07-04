@@ -185,6 +185,12 @@ func TestExtractOutTradeNo(t *testing.T) {
 			want:        "sub2_haozpay_123",
 		},
 		{
+			name:        "haozpay flat callback prefers merchant order number",
+			providerKey: payment.TypeHaozPay,
+			rawBody:     `{"orderNo":"HZHT202607042073255420652335104","merchantOrderNo":"20260704d7HL7QV0","merchantNo":"M123456","payStatus":2}`,
+			want:        "20260704d7HL7QV0",
+		},
+		{
 			name:        "haozpay nested legacy callback",
 			providerKey: payment.TypeHaozPay,
 			rawBody:     `{"bizBody":{"merchantOrderNo":"sub2_haozpay_456"}}`,
