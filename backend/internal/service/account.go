@@ -1341,15 +1341,55 @@ func (a *Account) SupportsOpenAIImageCapability(capability OpenAIImagesCapabilit
 	if capability == "" {
 		return true
 	}
+	if a == nil {
+		return false
+	}
 	if !a.IsOpenAI() {
 		return false
 	}
 	switch capability {
 	case OpenAIImagesCapabilityBasic, OpenAIImagesCapabilityNative:
 		return a.Type == AccountTypeOAuth || a.Type == AccountTypeAPIKey
+	case OpenAIImagesCapabilityResponsesImageTool:
+		if a.Type != AccountTypeOAuth && a.Type != AccountTypeAPIKey {
+			return false
+		}
+		return a.hasOpenAIResponsesImageToolCapabilityMarker() || a.hasOpenAIGPTImageModelMapping()
 	default:
-		return true
+		return false
 	}
+}
+
+func (a *Account) hasOpenAIResponsesImageToolCapabilityMarker() bool {
+	configured, found := a.openAIEndpointCapabilitySet()
+	if !found {
+		return false
+	}
+	for _, marker := range []string{
+		"responses_image_tool",
+		"responses-image-tool",
+		"image_tool",
+		"image-tool",
+	} {
+		if configured[marker] {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *Account) hasOpenAIGPTImageModelMapping() bool {
+	for requestedModel, mappedModel := range a.GetModelMapping() {
+		if isOpenAIGPTImageModelMappingEntry(requestedModel) || isOpenAIGPTImageModelMappingEntry(mappedModel) {
+			return true
+		}
+	}
+	return false
+}
+
+func isOpenAIGPTImageModelMappingEntry(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(model, "gpt-image-")
 }
 
 func (a *Account) GetChatGPTUserID() string {

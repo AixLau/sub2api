@@ -801,20 +801,10 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 		displayModel = s.RequestedModel
 	}
 	reqLog.Debug(logPrefix+".account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-	selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
-		ctx,
-		s.APIKey.GroupID,
-		s.PreviousResponseID,
-		sessionHash,
-		s.RequestedModel,
-		failedAccountIDs,
-		s.RequiredTransport,
-		s.RequiredCapability,
-		s.RequireCompact,
-		s.RequestPlatform,
-		s.SubjectUserID,
-	)
-	if s.RequiredImageCapability != "" {
+	var selection *service.AccountSelectionResult
+	var scheduleDecision service.OpenAIAccountScheduleDecision
+	var err error
+	if s.RequiredImageCapability != "" && s.RequiredCapability == "" {
 		selection, scheduleDecision, err = h.gatewayService.SelectAccountWithSchedulerForImages(
 			ctx,
 			s.APIKey.GroupID,
@@ -822,6 +812,21 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 			s.RequestedModel,
 			failedAccountIDs,
 			s.RequiredImageCapability,
+			s.SubjectUserID,
+		)
+	} else {
+		selection, scheduleDecision, err = h.gatewayService.SelectAccountWithSchedulerForCapabilityAndImage(
+			ctx,
+			s.APIKey.GroupID,
+			s.PreviousResponseID,
+			sessionHash,
+			s.RequestedModel,
+			failedAccountIDs,
+			s.RequiredTransport,
+			s.RequiredCapability,
+			s.RequiredImageCapability,
+			s.RequireCompact,
+			s.RequestPlatform,
 			s.SubjectUserID,
 		)
 	}

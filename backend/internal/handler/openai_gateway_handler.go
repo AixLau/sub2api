@@ -108,6 +108,13 @@ func openAICompatibleRequestPlatform(apiKey *service.APIKey) string {
 	return service.PlatformOpenAI
 }
 
+func openAIResponsesRequiredImageCapability(reqModel string, body []byte) service.OpenAIImagesCapability {
+	if service.IsImageGenerationIntent("/v1/responses", reqModel, body) {
+		return service.OpenAIImagesCapabilityResponsesImageTool
+	}
+	return ""
+}
+
 // NewOpenAIGatewayHandler creates a new OpenAIGatewayHandler
 func NewOpenAIGatewayHandler(
 	gatewayService *service.OpenAIGatewayService,
@@ -213,8 +220,14 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		defer imageReleaseFunc()
 	}
 
+	requestCtx := c.Request.Context()
+	requiredImageCapability := openAIResponsesRequiredImageCapability(reqModel, body)
+	if requiredImageCapability != "" {
+		requestCtx = service.WithOpenAIImageGenerationIntent(requestCtx)
+	}
+
 	// 解析渠道级模型映射
-	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
+	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(requestCtx, apiKey.GroupID, reqModel)
 	forwardBody := openAIModelMappedBody(body, channelMapping.Mapped, channelMapping.MappedModel, h.gatewayService.ReplaceModelInBody)
 
 	// 提前校验 function_call_output 是否具备可关联上下文，避免上游 400。
@@ -272,6 +285,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		routingRetry := false
 		if routingStage := h.runOpenAIHTTPRoutingStage(c, OpenAIHTTPRoutingStage{
 			Handler:                    h,
+			RequestContext:             requestCtx,
 			ReqLog:                     reqLog,
 			APIKey:                     apiKey,
 			SubjectUserID:              subject.UserID,
@@ -281,6 +295,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			FailedAccountIDs:           failedAccountIDs,
 			RequiredTransport:          service.OpenAIUpstreamTransportAny,
 			RequiredCapability:         service.OpenAIEndpointCapabilityChatCompletions,
+			RequiredImageCapability:    requiredImageCapability,
 			RequireCompact:             requireCompact,
 			RequestPlatform:            requestPlatform,
 			Stream:                     reqStream,

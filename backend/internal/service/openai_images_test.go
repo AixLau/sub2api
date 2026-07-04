@@ -452,6 +452,55 @@ func TestAccountSupportsOpenAIImageCapability_EmptyRequirementDoesNotRejectGrok(
 	require.False(t, account.SupportsOpenAIImageCapability(OpenAIImagesCapabilityBasic))
 }
 
+func TestAccountSupportsOpenAIResponsesImageToolCapability(t *testing.T) {
+	responsesImageToolCapability := OpenAIImagesCapabilityResponsesImageTool
+
+	t.Run("text only model mapping does not support responses image tool", func(t *testing.T) {
+		account := &Account{
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeAPIKey,
+			Credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"gpt-5.5":           "gpt-5.5",
+					"codex-auto-review": "codex-auto-review",
+				},
+			},
+		}
+
+		require.False(t, account.SupportsOpenAIImageCapability(responsesImageToolCapability))
+	})
+
+	t.Run("gpt-image mapping supports responses image tool", func(t *testing.T) {
+		account := &Account{
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeAPIKey,
+			Credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"gpt-5.5":    "gpt-5.5",
+					"draw-alias": "gpt-image-2",
+				},
+			},
+		}
+
+		require.True(t, account.SupportsOpenAIImageCapability(responsesImageToolCapability))
+	})
+
+	t.Run("explicit image tool capability supports responses image tool", func(t *testing.T) {
+		account := &Account{
+			Platform: PlatformOpenAI,
+			Type:     AccountTypeAPIKey,
+			Credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"gpt-5.5": "gpt-5.5",
+				},
+				"openai_capabilities": []any{"chat_completions", "responses_image_tool"},
+			},
+		}
+
+		require.True(t, account.SupportsOpenAIImageCapability(responsesImageToolCapability))
+	})
+}
+
 func TestAccountSupportsOpenAIEndpointCapability(t *testing.T) {
 	t.Run("OpenAI APIKey 默认兼容 chat 和 embeddings", func(t *testing.T) {
 		account := &Account{
