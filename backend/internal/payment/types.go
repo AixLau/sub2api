@@ -4,8 +4,13 @@ package payment
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrProviderOrderNotFound marks an upstream "order not found" response that
+// callers may handle by trying another provider-specific order identifier.
+var ErrProviderOrderNotFound = errors.New("provider order not found")
 
 // PaymentType represents a supported payment method.
 type PaymentType = string

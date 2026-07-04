@@ -699,7 +699,7 @@ func TestReconcilePendingWxpayOrdersBackfillsPaidOrder(t *testing.T) {
 	require.Len(t, redeemRepo.useCalls, 1)
 }
 
-func TestReconcilePendingHaozPayOrdersRecoversExpiredPaidOrderByMerchantOrderNo(t *testing.T) {
+func TestReconcilePendingHaozPayOrdersFallsBackToCashierOrderNo(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -711,12 +711,26 @@ func TestReconcilePendingHaozPayOrdersRecoversExpiredPaidOrderByMerchantOrderNo(
 	privateKeyPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privDER}))
 	publicKeyPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER}))
 
-	var queryPayload map[string]any
+	var queryOrderNos []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/pay-core/payment/queryOrderDetail", r.URL.Path)
+		var queryPayload map[string]any
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&queryPayload))
+		bizBodyString, ok := queryPayload["bizBody"].(string)
+		require.True(t, ok)
+		var bizBody map[string]any
+		decoder := json.NewDecoder(strings.NewReader(bizBodyString))
+		decoder.UseNumber()
+		require.NoError(t, decoder.Decode(&bizBody))
+		orderNo, _ := bizBody["orderNo"].(string)
+		queryOrderNos = append(queryOrderNos, orderNo)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"seqId":"HZHT_RECONCILE","orderNo":"sub2_haozpay_reconcile","payStatus":2,"payAmount":1.01}}`))
+		if orderNo == "sub2_haozpay_reconcile" {
+			_, _ = w.Write([]byte(`{"code":310054,"message":"订单不存在","data":null}`))
+			return
+		}
+		require.Equal(t, "HZHT_RECONCILE", orderNo)
+		_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"reqSeqId":"HZHT_RECONCILE","orderNo":"HZHT_RECONCILE","merchantOrderNo":"sub2_haozpay_reconcile","transStat":"S","payAmt":1.01}}`))
 	}))
 	t.Cleanup(server.Close)
 
@@ -815,14 +829,7 @@ func TestReconcilePendingHaozPayOrdersRecoversExpiredPaidOrderByMerchantOrderNo(
 	recovered, err := svc.ReconcilePendingHaozPayOrders(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, recovered)
-	require.NotNil(t, queryPayload)
-	bizBodyString, ok := queryPayload["bizBody"].(string)
-	require.True(t, ok)
-	var bizBody map[string]any
-	decoder := json.NewDecoder(strings.NewReader(bizBodyString))
-	decoder.UseNumber()
-	require.NoError(t, decoder.Decode(&bizBody))
-	require.Equal(t, order.OutTradeNo, bizBody["orderNo"])
+	require.Equal(t, []string{order.OutTradeNo, "HZHT_RECONCILE"}, queryOrderNos)
 
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)

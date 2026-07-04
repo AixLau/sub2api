@@ -34,9 +34,11 @@ const (
 	haozpayHTTPTimeout     = 30 * time.Second
 	maxHaozpayResponseSize = 2 << 20 // 2MB
 
-	haozpayCodeSuccess   = 0
-	haozpayStatusSuccess = "SUCCESS"
-	haozpayStatusPaid    = "PAID"
+	haozpayCodeSuccess    = 0
+	haozpayCodeNotFound   = 310054
+	haozpayCodeNoResource = 10005
+	haozpayStatusSuccess  = "SUCCESS"
+	haozpayStatusPaid     = "PAID"
 )
 
 // HaozPay payment types (mapped from our internal types).
@@ -239,11 +241,15 @@ func (h *HaozPay) QueryOrder(ctx context.Context, tradeNo string) (*payment.Quer
 			PayStatus     int     `json:"payStatus"`
 			SeqID         string  `json:"seqId"`
 			PaySeqID      string  `json:"paySeqId"`
+			ReqSeqID      string  `json:"reqSeqId"`
 			OrderNo       string  `json:"orderNo"`
 			PartyOrderID  string  `json:"partyOrderId"`
 			MerchantOrder string  `json:"merchantOrderNo"`
+			TransStat     string  `json:"transStat"`
 			OrderAmount   float64 `json:"orderAmount"`
 			PayAmount     float64 `json:"payAmount"`
+			PayAmt        float64 `json:"payAmt"`
+			TransAmt      float64 `json:"transAmt"`
 		} `json:"data"`
 	}
 
@@ -252,6 +258,9 @@ func (h *HaozPay) QueryOrder(ctx context.Context, tradeNo string) (*payment.Quer
 	}
 
 	if resp.Code != haozpayCodeSuccess {
+		if haozpayIsOrderNotFound(resp.Code, resp.Message) {
+			return nil, fmt.Errorf("%w: %s (code: %d)", payment.ErrProviderOrderNotFound, resp.Message, resp.Code)
+		}
 		return nil, fmt.Errorf("haozpay query error: %s (code: %d)", resp.Message, resp.Code)
 	}
 
@@ -261,14 +270,15 @@ func (h *HaozPay) QueryOrder(ctx context.Context, tradeNo string) (*payment.Quer
 		strings.EqualFold(resp.Data.Status, haozpayStatusPaid) ||
 		strings.EqualFold(resp.Data.TradeStatus, haozpayStatusSuccess) ||
 		strings.EqualFold(resp.Data.TradeStatus, haozpayStatusPaid) ||
+		strings.EqualFold(resp.Data.TransStat, "S") ||
 		resp.Data.PayStatus == 2 {
 		status = payment.ProviderStatusPaid
 	}
-	amount := resp.Data.PayAmount
+	amount := firstNonZeroFloat(resp.Data.PayAmount, resp.Data.PayAmt, resp.Data.TransAmt)
 	if amount == 0 {
 		amount = resp.Data.OrderAmount
 	}
-	respTradeNo := firstNonEmpty(resp.Data.SeqID, resp.Data.PaySeqID, resp.Data.OrderNo, resp.Data.PartyOrderID, resp.Data.MerchantOrder, tradeNo)
+	respTradeNo := firstNonEmpty(resp.Data.SeqID, resp.Data.PaySeqID, resp.Data.ReqSeqID, resp.Data.OrderNo, resp.Data.PartyOrderID, resp.Data.MerchantOrder, tradeNo)
 
 	return &payment.QueryOrderResponse{
 		TradeNo:  respTradeNo,
@@ -276,6 +286,14 @@ func (h *HaozPay) QueryOrder(ctx context.Context, tradeNo string) (*payment.Quer
 		Amount:   amount,
 		Metadata: h.MerchantIdentityMetadata(),
 	}, nil
+}
+
+func haozpayIsOrderNotFound(code int, message string) bool {
+	if code == haozpayCodeNotFound || code == haozpayCodeNoResource {
+		return true
+	}
+	message = strings.TrimSpace(message)
+	return strings.Contains(message, "订单不存在") || strings.Contains(message, "找不到资源")
 }
 
 // Refund initiates a refund with HaozPay.
@@ -556,6 +574,15 @@ func firstHaozPayFloat(params map[string]interface{}, keys ...string) float64 {
 			if err == nil {
 				return parsed
 			}
+		}
+	}
+	return 0
+}
+
+func firstNonZeroFloat(values ...float64) float64 {
+	for _, value := range values {
+		if value != 0 {
+			return value
 		}
 	}
 	return 0

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -164,7 +165,7 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 	if queryRef == "" {
 		return ""
 	}
-	resp, err := prov.QueryOrder(ctx, queryRef)
+	resp, effectiveQueryRef, err := queryPaymentOrderWithFallback(ctx, prov, o, queryRef)
 	if err != nil {
 		slog.Warn("query upstream failed", "orderID", o.ID, "error", err)
 		return ""
@@ -175,10 +176,10 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 				"expected": o.PayAmount,
 				"paid":     resp.Amount,
 				"tradeNo":  resp.TradeNo,
-				"queryRef": queryRef,
+				"queryRef": effectiveQueryRef,
 			})
-			slog.Warn("query upstream returned invalid paid amount", "orderID", o.ID, "queryRef", queryRef, "paid", resp.Amount)
-			retriedResp, retryOK := requeryPaidOrderOnce(ctx, prov, queryRef)
+			slog.Warn("query upstream returned invalid paid amount", "orderID", o.ID, "queryRef", effectiveQueryRef, "paid", resp.Amount)
+			retriedResp, retryOK := requeryPaidOrderOnce(ctx, prov, effectiveQueryRef)
 			if !retryOK {
 				return ""
 			}
@@ -217,6 +218,36 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 	return ""
 }
 
+func queryPaymentOrderWithFallback(ctx context.Context, prov payment.Provider, order *dbent.PaymentOrder, queryRef string) (*payment.QueryOrderResponse, string, error) {
+	resp, err := prov.QueryOrder(ctx, queryRef)
+	if err == nil {
+		return resp, queryRef, nil
+	}
+	fallbackRef := haozPayFallbackQueryReference(order, prov, queryRef, err)
+	if fallbackRef == "" {
+		return nil, queryRef, err
+	}
+	fallbackResp, fallbackErr := prov.QueryOrder(ctx, fallbackRef)
+	if fallbackErr != nil {
+		return nil, fallbackRef, fallbackErr
+	}
+	return fallbackResp, fallbackRef, nil
+}
+
+func haozPayFallbackQueryReference(order *dbent.PaymentOrder, prov payment.Provider, queryRef string, err error) string {
+	if !errors.Is(err, payment.ErrProviderOrderNotFound) {
+		return ""
+	}
+	if paymentOrderProviderKey(order, prov) != payment.TypeHaozPay {
+		return ""
+	}
+	fallbackRef := haozPayOrderPlatformTradeNo(order)
+	if fallbackRef == "" || strings.EqualFold(fallbackRef, strings.TrimSpace(queryRef)) {
+		return ""
+	}
+	return fallbackRef
+}
+
 func requeryPaidOrderOnce(ctx context.Context, prov payment.Provider, queryRef string) (*payment.QueryOrderResponse, bool) {
 	if prov == nil || strings.TrimSpace(queryRef) == "" {
 		return nil, false
@@ -232,11 +263,7 @@ func requeryPaidOrderOnce(ctx context.Context, prov payment.Provider, queryRef s
 	return resp, true
 }
 
-func paymentOrderQueryReference(order *dbent.PaymentOrder, prov payment.Provider) string {
-	if order == nil {
-		return ""
-	}
-
+func paymentOrderProviderKey(order *dbent.PaymentOrder, prov payment.Provider) string {
 	providerKey := ""
 	if prov != nil {
 		providerKey = strings.TrimSpace(prov.ProviderKey())
@@ -246,14 +273,21 @@ func paymentOrderQueryReference(order *dbent.PaymentOrder, prov payment.Provider
 			providerKey = strings.TrimSpace(snapshot.ProviderKey)
 		}
 	}
-	if providerKey == "" {
+	if order != nil && providerKey == "" {
 		providerKey = strings.TrimSpace(psStringValue(order.ProviderKey))
 	}
-	if providerKey == "" {
+	if order != nil && providerKey == "" {
 		providerKey = strings.TrimSpace(order.PaymentType)
 	}
+	return payment.GetBasePaymentType(providerKey)
+}
 
-	switch payment.GetBasePaymentType(providerKey) {
+func paymentOrderQueryReference(order *dbent.PaymentOrder, prov payment.Provider) string {
+	if order == nil {
+		return ""
+	}
+
+	switch paymentOrderProviderKey(order, prov) {
 	case payment.TypeAlipay, payment.TypeEasyPay, payment.TypeWxpay:
 		return strings.TrimSpace(order.OutTradeNo)
 	case payment.TypeHaozPay:
