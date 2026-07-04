@@ -18,17 +18,10 @@
         type="button"
         :data-testid="`quick-amount-${preset}`"
         class="recharge-choice-card relative min-h-[74px] px-4 py-3 text-left"
-        :class="{ 'recharge-choice-card-selected': modelValue === preset }"
-        :aria-pressed="modelValue === preset"
+        :class="{ 'recharge-choice-card-selected': selectedPreset === preset }"
+        :aria-pressed="selectedPreset === preset"
         @click="selectPreset(preset)"
       >
-        <span
-          v-if="modelValue === preset"
-          class="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white"
-          aria-hidden="true"
-        >
-          <Icon name="check" size="xs" :stroke-width="2.4" />
-        </span>
         <span class="block text-lg font-semibold text-slate-950">{{ formatAmount(preset) }}</span>
         <span v-if="showPresetMeta" class="mt-1 block text-xs text-slate-500">{{ t('payment.rechargeUi.noFee') }}</span>
       </button>
@@ -71,7 +64,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import Icon from '@/components/icons/Icon.vue'
 import { currencySymbol } from '@/components/payment/currency'
 
 const props = withDefaults(defineProps<{
@@ -115,6 +107,11 @@ const filteredAmounts = computed(() =>
 const currencyPrefix = computed(() => currencySymbol(props.currency))
 const isCustomActive = computed(() =>
   customFocused.value || (props.modelValue !== null && !amountSet.value.has(props.modelValue))
+)
+const selectedPreset = computed(() =>
+  !isCustomActive.value && props.modelValue !== null && amountSet.value.has(props.modelValue)
+    ? props.modelValue
+    : null
 )
 
 const AMOUNT_PATTERN = /^\d*(\.\d{0,2})?$/

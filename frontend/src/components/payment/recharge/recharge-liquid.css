@@ -450,12 +450,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.76);
 }
 
-.recharge-page-shell .subscription-liquid-accent,
-.recharge-page-content .subscription-liquid-accent {
-  height: 0.28rem;
-  opacity: 0.82;
-}
-
 .recharge-page-shell .subscription-current-card,
 .recharge-page-content .subscription-current-card {
   background:
@@ -501,43 +495,6 @@
   color: #475569;
 }
 
-.recharge-page-shell .subscription-detail-grid,
-.recharge-page-content .subscription-detail-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.7rem;
-}
-
-.recharge-page-shell .subscription-detail-item,
-.recharge-page-content .subscription-detail-item {
-  display: flex;
-  min-height: 52px;
-  flex-direction: column;
-  justify-content: center;
-  gap: 0.15rem;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.52);
-  padding: 0.65rem 0.75rem;
-}
-
-.recharge-page-shell .subscription-detail-item span,
-.recharge-page-content .subscription-detail-item span {
-  color: #64748b;
-  font-size: 0.72rem;
-  font-weight: 600;
-}
-
-.recharge-page-shell .subscription-detail-item strong,
-.recharge-page-content .subscription-detail-item strong {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: #0f172a;
-  font-size: 0.95rem;
-  font-weight: 800;
-  line-height: 1.25;
-}
-
 @media (min-width: 768px) {
   .recharge-page-shell {
     margin: -0.75rem;
@@ -564,8 +521,4 @@
     min-height: 92px;
   }
 
-  .recharge-page-shell .subscription-detail-grid,
-  .recharge-page-content .subscription-detail-grid {
-    grid-template-columns: 1fr;
-  }
 }

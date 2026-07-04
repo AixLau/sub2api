@@ -1,76 +1,25 @@
 <template>
   <div
     :class="[
-      'subscription-liquid-plan-card group relative flex flex-col overflow-hidden transition-all',
+      'subscription-liquid-plan-card group relative flex flex-col transition-all',
       'hover:-translate-y-0.5',
-      borderClass,
     ]"
   >
-    <!-- Colored top accent bar -->
-    <div :class="['subscription-liquid-accent', accentClass]" />
-
-    <div class="flex flex-1 flex-col p-4 sm:p-5">
-      <!-- Header: name + badge + price -->
-      <div class="mb-4 flex items-start justify-between gap-3">
-        <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-center gap-2">
-            <h3 class="break-words text-base font-bold text-slate-950">{{ plan.name }}</h3>
-            <span :class="['shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold', badgeLightClass]">
-              {{ pLabel }}
-            </span>
-          </div>
-          <p v-if="plan.description" class="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">
+    <div class="flex min-h-[190px] flex-1 flex-col p-4 sm:p-5">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h3 class="break-words text-lg font-extrabold leading-tight text-slate-950">{{ plan.name }}</h3>
+          <p
+            v-if="plan.description"
+            data-testid="subscription-plan-description"
+            class="mt-2 line-clamp-2 text-sm leading-relaxed text-slate-500"
+          >
             {{ plan.description }}
           </p>
         </div>
-        <div class="shrink-0 text-right">
-          <div data-testid="subscription-plan-price" class="flex items-baseline justify-end gap-1">
-            <span class="text-xs font-semibold text-blue-500">$</span>
-            <span class="text-2xl font-extrabold tracking-normal text-blue-700">{{ plan.price }}</span>
-          </div>
-          <span class="text-[11px] text-slate-500">/ {{ validitySuffix }}</span>
-          <div v-if="plan.original_price" class="mt-0.5 flex items-center justify-end gap-1.5">
-            <span class="text-xs text-slate-400 line-through">${{ plan.original_price }}</span>
-            <span :class="['rounded-full px-1.5 py-0.5 text-[10px] font-semibold', discountClass]">{{ discountText }}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Group quota info (compact) -->
-      <div class="subscription-detail-grid mb-4">
-        <div class="subscription-detail-item">
-          <span>{{ t('payment.planCard.rate') }}</span>
-          <strong>{{ rateDisplay }}</strong>
-        </div>
-        <div v-if="hasPeakRate" class="subscription-detail-item sm:col-span-2">
-          <span>{{ t('payment.planCard.peakRate') }}</span>
-          <strong class="text-right text-amber-700">{{ peakRateDisplay }}</strong>
-        </div>
-        <div v-if="plan.daily_limit_usd != null" class="subscription-detail-item">
-          <span>{{ t('payment.planCard.dailyLimit') }}</span>
-          <strong>${{ plan.daily_limit_usd }}</strong>
-        </div>
-        <div v-if="plan.weekly_limit_usd != null" class="subscription-detail-item">
-          <span>{{ t('payment.planCard.weeklyLimit') }}</span>
-          <strong>${{ plan.weekly_limit_usd }}</strong>
-        </div>
-        <div v-if="plan.monthly_limit_usd != null" class="subscription-detail-item">
-          <span>{{ t('payment.planCard.monthlyLimit') }}</span>
-          <strong>${{ plan.monthly_limit_usd }}</strong>
-        </div>
-        <div v-if="plan.daily_limit_usd == null && plan.weekly_limit_usd == null && plan.monthly_limit_usd == null" class="subscription-detail-item">
-          <span>{{ t('payment.planCard.quota') }}</span>
-          <strong>{{ t('payment.planCard.unlimited') }}</strong>
-        </div>
-        <div v-if="modelScopeLabels.length > 0" class="subscription-detail-item sm:col-span-2">
-          <span>{{ t('payment.planCard.models') }}</span>
-          <div class="flex flex-wrap justify-end gap-1">
-            <span v-for="scope in modelScopeLabels" :key="scope"
-              class="rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
-              {{ scope }}
-            </span>
-          </div>
-        </div>
+        <span :class="['shrink-0 rounded-full px-2 py-1 text-xs font-bold', badgeLightClass]">
+          {{ pLabel }}
+        </span>
       </div>
 
       <!-- Features list (compact) -->
@@ -85,10 +34,26 @@
 
       <div class="flex-1" />
 
+      <div class="mt-5 flex flex-wrap items-end justify-between gap-3">
+        <div class="min-w-0">
+          <div data-testid="subscription-plan-price" class="flex items-baseline gap-1">
+            <span class="text-3xl font-extrabold tracking-normal text-blue-700">{{ formattedPrice }}</span>
+            <span class="text-sm font-semibold text-slate-500">/ {{ validitySuffix }}</span>
+          </div>
+          <div v-if="plan.original_price" class="mt-1 flex items-center gap-1.5">
+            <span class="text-sm text-slate-400 line-through">{{ formattedOriginalPrice }}</span>
+            <span :class="['rounded-full px-1.5 py-0.5 text-[10px] font-semibold', discountClass]">{{ discountText }}</span>
+          </div>
+        </div>
+        <p data-testid="subscription-plan-quota" class="text-sm font-bold text-slate-500">
+          {{ quotaSummary }}
+        </p>
+      </div>
+
       <!-- Subscribe Button -->
       <button
         type="button"
-        class="recharge-primary-button w-full"
+        class="recharge-primary-button mt-5 w-full"
         @click="emit('select', plan)"
       >
         {{ isRenewal ? t('payment.renewNow') : t('payment.subscribeNow') }}
@@ -102,12 +67,9 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { SubscriptionPlan } from '@/types/payment'
 import type { UserSubscription } from '@/types'
-import { useAppStore } from '@/stores/app'
-import { hasPeakRate as groupHasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
+import { formatPaymentAmount } from '@/components/payment/currency'
 import {
-  platformAccentBarClass,
   platformBadgeLightClass,
-  platformBorderClass,
   platformDiscountClass,
   platformLabel,
 } from '@/utils/platformColors'
@@ -122,11 +84,14 @@ const isRenewal = computed(() =>
 )
 
 // Derived color classes from central config
-const accentClass = computed(() => platformAccentBarClass(platform.value))
-const borderClass = computed(() => platformBorderClass(platform.value))
 const badgeLightClass = computed(() => platformBadgeLightClass(platform.value))
 const discountClass = computed(() => platformDiscountClass(platform.value))
 const pLabel = computed(() => platformLabel(platform.value))
+
+const formattedPrice = computed(() => formatPaymentAmount(props.plan.price, 'CNY'))
+const formattedOriginalPrice = computed(() =>
+  props.plan.original_price ? formatPaymentAmount(props.plan.original_price, 'CNY') : ''
+)
 
 const discountText = computed(() => {
   if (!props.plan.original_price || props.plan.original_price <= 0) return ''
@@ -134,30 +99,12 @@ const discountText = computed(() => {
   return pct > 0 ? `-${pct}%` : ''
 })
 
-const rateDisplay = computed(() => {
-  const rate = props.plan.rate_multiplier ?? 1
-  return `×${Number(rate.toPrecision(10))}`
-})
-
-const appStore = useAppStore()
-
-const hasPeakRate = computed(() => groupHasPeakRate(props.plan))
-
-const peakRateDisplay = computed(() => {
-  return formatPeakRateWindow(props.plan, serverTimezoneLabel(appStore.cachedPublicSettings?.server_utc_offset))
-})
-
-const MODEL_SCOPE_LABELS: Record<string, string> = {
-  claude: 'Claude',
-  gemini_text: 'Gemini',
-  gemini_image: 'Imagen',
-}
-
-const modelScopeLabels = computed(() => {
-  if (platform.value !== 'antigravity') return []
-  const scopes = props.plan.supported_model_scopes
-  if (!scopes || scopes.length === 0) return []
-  return scopes.map(s => MODEL_SCOPE_LABELS[s] || s)
+const quotaSummary = computed(() => {
+  const monthly = props.plan.monthly_limit_usd
+  if (monthly != null && monthly > 0) {
+    return `${t('payment.planCard.monthlyQuota')} ${formatPaymentAmount(monthly, 'USD')}`
+  }
+  return t('payment.planCard.unlimited')
 })
 
 const validitySuffix = computed(() => {

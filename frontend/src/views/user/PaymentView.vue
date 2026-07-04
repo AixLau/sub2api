@@ -68,6 +68,7 @@
                         :show-header="false"
                         @select="selectedMethod = $event"
                       />
+                      <RechargeTrustBar class="hidden xl:block" />
                     </div>
                     <RechargeOrderSummary
                       :formatted-amount="formatSelectedPaymentAmount(validAmount)"
@@ -126,6 +127,7 @@
                         :show-header="false"
                         @select="selectedMethod = $event"
                       />
+                      <RechargeTrustBar class="hidden lg:block" />
                     </div>
                     <aside data-testid="recharge-confirmation" class="recharge-glass-card p-5 sm:p-6 lg:sticky lg:top-24">
                       <div class="space-y-4">
@@ -180,7 +182,7 @@
                     </aside>
                   </div>
 
-                  <RechargeTrustBar />
+                  <RechargeTrustBar :class="isNinePlusSelected ? 'lg:hidden' : 'xl:hidden'" />
                 </div>
               </template>
             </template>
@@ -281,47 +283,30 @@
                   <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
                     <div class="space-y-5">
                       <section class="recharge-glass-card p-5 sm:p-6" aria-labelledby="selected-plan-title">
-                        <div class="mb-4 flex flex-wrap items-center gap-2">
-                          <span :class="['rounded-full px-2 py-0.5 text-[11px] font-semibold', planBadgeClass]">
+                        <div class="flex items-start justify-between gap-3">
+                          <div class="min-w-0">
+                            <h3 id="selected-plan-title" class="break-words text-lg font-extrabold leading-tight text-slate-950">{{ selectedPlan.name }}</h3>
+                            <p v-if="selectedPlan.description" class="mt-2 line-clamp-2 text-sm leading-relaxed text-slate-500">
+                              {{ selectedPlan.description }}
+                            </p>
+                          </div>
+                          <span :class="['shrink-0 rounded-full px-2 py-1 text-xs font-bold', planBadgeClass]">
                             {{ platformLabel(selectedPlan.group_platform || '') }}
                           </span>
-                          <h3 id="selected-plan-title" class="text-lg font-bold text-slate-950">{{ selectedPlan.name }}</h3>
                         </div>
-                        <div class="flex flex-wrap items-baseline gap-2">
-                          <span v-if="selectedPlan.original_price" class="text-sm text-slate-400 line-through">
-                            {{ formatSelectedSubscriptionPaymentAmount(selectedPlan.original_price) }}
-                          </span>
-                          <span :class="['text-3xl font-bold', planTextClass]">{{ formatSelectedSubscriptionPaymentAmount(selectedPlan.price) }}</span>
-                          <span class="text-sm text-slate-500">/ {{ planValiditySuffix }}</span>
-                        </div>
-                        <p v-if="selectedPlan.description" class="mt-2 text-sm leading-relaxed text-slate-500">
-                          {{ selectedPlan.description }}
-                        </p>
-                        <div class="subscription-detail-grid mt-4">
-                          <div class="subscription-detail-item">
-                            <span>{{ t('payment.planCard.rate') }}</span>
-                            <strong :class="planTextClass">×{{ selectedPlan.rate_multiplier ?? 1 }}</strong>
+                        <div class="mt-6 flex flex-wrap items-end justify-between gap-3">
+                          <div class="min-w-0">
+                            <div class="flex flex-wrap items-baseline gap-1.5">
+                              <span class="text-3xl font-extrabold tracking-normal text-blue-700">{{ formatSelectedSubscriptionPaymentAmount(selectedPlan.price) }}</span>
+                              <span class="text-sm font-semibold text-slate-500">/ {{ planValiditySuffix }}</span>
+                            </div>
+                            <div v-if="selectedPlan.original_price" class="mt-1">
+                              <span class="text-sm text-slate-400 line-through">
+                                {{ formatSelectedSubscriptionPaymentAmount(selectedPlan.original_price) }}
+                              </span>
+                            </div>
                           </div>
-                          <div v-if="planHasPeakRate(selectedPlan)" class="subscription-detail-item">
-                            <span>{{ t('payment.planCard.peakRate') }}</span>
-                            <strong class="text-amber-700">{{ planPeakRateLabel(selectedPlan) }}</strong>
-                          </div>
-                          <div v-if="selectedPlan.daily_limit_usd != null" class="subscription-detail-item">
-                            <span>{{ t('payment.planCard.dailyLimit') }}</span>
-                            <strong>${{ selectedPlan.daily_limit_usd }}</strong>
-                          </div>
-                          <div v-if="selectedPlan.weekly_limit_usd != null" class="subscription-detail-item">
-                            <span>{{ t('payment.planCard.weeklyLimit') }}</span>
-                            <strong>${{ selectedPlan.weekly_limit_usd }}</strong>
-                          </div>
-                          <div v-if="selectedPlan.monthly_limit_usd != null" class="subscription-detail-item">
-                            <span>{{ t('payment.planCard.monthlyLimit') }}</span>
-                            <strong>${{ selectedPlan.monthly_limit_usd }}</strong>
-                          </div>
-                          <div v-if="selectedPlan.daily_limit_usd == null && selectedPlan.weekly_limit_usd == null && selectedPlan.monthly_limit_usd == null" class="subscription-detail-item">
-                            <span>{{ t('payment.planCard.quota') }}</span>
-                            <strong>{{ t('payment.planCard.unlimited') }}</strong>
-                          </div>
+                          <p class="text-sm font-bold text-slate-500">{{ selectedPlanQuotaSummary }}</p>
                         </div>
                       </section>
                       <RechargeMethodSelector
@@ -439,7 +424,6 @@ import { useAppStore } from '@/stores'
 import { paymentAPI } from '@/api/payment'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
-import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
 import type {
   SubscriptionPlan,
   CheckoutInfoResponse,
@@ -467,7 +451,7 @@ import {
   type PaymentRecoverySnapshot,
   writePaymentRecoverySnapshot,
 } from '@/components/payment/paymentFlow'
-import { platformBadgeClass, platformTextClass, platformLabel } from '@/utils/platformColors'
+import { platformBadgeClass, platformLabel } from '@/utils/platformColors'
 import SubscriptionPlanCard from '@/components/payment/SubscriptionPlanCard.vue'
 import PaymentStatusPanel from '@/components/payment/PaymentStatusPanel.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -1068,7 +1052,6 @@ watch(() => [activeTab.value, ninePlusSubscriptionProducts.value.length] as cons
 
 // Subscription confirm: platform accent colors (clean card, no gradient)
 const planBadgeClass = computed(() => platformBadgeClass(selectedPlan.value?.group_platform || ''))
-const planTextClass = computed(() => platformTextClass(selectedPlan.value?.group_platform || ''))
 
 // Renewal modal state
 const showRenewalModal = ref(false)
@@ -1086,13 +1069,13 @@ const planValiditySuffix = computed(() => {
   return `${selectedPlan.value.validity_days}${t('payment.days')}`
 })
 
-function planHasPeakRate(plan: SubscriptionPlan): boolean {
-  return hasPeakRate(plan)
-}
-
-function planPeakRateLabel(plan: SubscriptionPlan): string {
-  return formatPeakRateWindow(plan, serverTimezoneLabel(appStore.cachedPublicSettings?.server_utc_offset))
-}
+const selectedPlanQuotaSummary = computed(() => {
+  const monthly = selectedPlan.value?.monthly_limit_usd
+  if (monthly != null && monthly > 0) {
+    return `${t('payment.planCard.monthlyQuota')} ${formatPaymentAmount(monthly, 'USD', localeCode.value)}`
+  }
+  return t('payment.planCard.unlimited')
+})
 
 function selectPlan(plan: SubscriptionPlan) {
   selectedPlan.value = plan

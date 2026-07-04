@@ -7575,6 +7575,7 @@ export default {
       dailyLimit: 'Daily',
       weeklyLimit: 'Weekly',
       monthlyLimit: 'Monthly',
+      monthlyQuota: 'Monthly Quota',
       quota: 'Quota',
       unlimited: 'Unlimited',
       models: 'Models',

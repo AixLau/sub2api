@@ -652,6 +652,38 @@ describe('PaymentView subscription confirmation amounts', () => {
     expect(text).toContain(total)
     expect(wrapper.findAll('button').some(button => button.text().includes(total))).toBe(true)
   })
+
+  it('uses compact selected plan styling without exposing rate or daily weekly monthly limits', async () => {
+    const wrapper = await mountSubscriptionConfirm({
+      method: {
+        currency: 'CNY',
+      },
+      plan: {
+        name: 'Pro',
+        description: 'For stable team collaboration',
+        price: 299,
+        original_price: 399,
+        rate_multiplier: 1.3,
+        daily_limit_usd: 0,
+        weekly_limit_usd: 0,
+        monthly_limit_usd: 220,
+      },
+    })
+
+    const text = wrapper.text()
+
+    expect(text).toContain('Pro')
+    expect(text).toContain('For stable team collaboration')
+    expect(text).toContain(formatPaymentAmount(299, 'CNY'))
+    expect(text).toContain(formatPaymentAmount(399, 'CNY'))
+    expect(text).toContain(formatPaymentAmount(220, 'USD'))
+    expect(text).not.toContain('×1.3')
+    expect(text).not.toContain('payment.planCard.rate')
+    expect(text).not.toContain('payment.planCard.dailyLimit')
+    expect(text).not.toContain('payment.planCard.weeklyLimit')
+    expect(text).not.toContain('payment.planCard.monthlyLimit')
+    expect(wrapper.find('.subscription-detail-grid').exists()).toBe(false)
+  })
 })
 
 describe('PaymentView recharge liquid glass selection', () => {

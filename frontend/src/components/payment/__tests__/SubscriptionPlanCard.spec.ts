@@ -17,6 +17,10 @@ const i18n = createI18n({
         planCard: {
           quota: "Quota",
           rate: "Rate",
+          dailyLimit: "Daily",
+          weeklyLimit: "Weekly",
+          monthlyLimit: "Monthly",
+          monthlyQuota: "Monthly Quota",
           unlimited: "Unlimited",
         },
         subscribeNow: "Subscribe now",
@@ -33,10 +37,14 @@ const mountPlanCard = (groupPlatform: string) =>
         group_id: 10,
         group_platform: groupPlatform,
         name: "Pro",
+        description: "For stable team collaboration",
         price: 10,
         amount: 1000,
         features: [],
-        rate_multiplier: 1,
+        rate_multiplier: 1.3,
+        daily_limit_usd: 0,
+        weekly_limit_usd: 0,
+        monthly_limit_usd: 400,
         validity_days: 30,
         validity_unit: "day",
         supported_model_scopes: ["claude", "gemini_text", "gemini_image"],
@@ -55,19 +63,31 @@ describe("SubscriptionPlanCard", () => {
     expect(wrapper.find("[data-testid='subscription-plan-features']").exists()).toBe(false);
   });
 
-  it("does not show Antigravity model scopes for OpenAI plans", () => {
+  it("uses the compact purchase-card layout without rate or limit detail blocks", () => {
+    const wrapper = mountPlanCard("openai");
+    const text = wrapper.text();
+
+    expect(wrapper.find("[data-testid='subscription-plan-description']").text()).toBe("For stable team collaboration");
+    expect(wrapper.find("[data-testid='subscription-plan-price']").text()).toContain("¥10.00");
+    expect(wrapper.find("[data-testid='subscription-plan-quota']").text()).toContain("$400");
+    expect(text).not.toContain("×1.3");
+    expect(text).not.toContain("Rate");
+    expect(text).not.toContain("Daily");
+    expect(text).not.toContain("Weekly");
+    expect(text).not.toContain("Monthly Limit");
+    expect(wrapper.find(".subscription-detail-grid").exists()).toBe(false);
+  });
+
+  it("does not show platform model scopes on compact plan cards", () => {
     const text = mountPlanCard("openai").text();
 
     expect(text).not.toContain("Claude");
     expect(text).not.toContain("Gemini");
     expect(text).not.toContain("Imagen");
-  });
 
-  it("shows model scopes for Antigravity plans", () => {
-    const text = mountPlanCard("antigravity").text();
-
-    expect(text).toContain("Claude");
-    expect(text).toContain("Gemini");
-    expect(text).toContain("Imagen");
+    const antigravityText = mountPlanCard("antigravity").text();
+    expect(antigravityText).not.toContain("Claude");
+    expect(antigravityText).not.toContain("Gemini");
+    expect(antigravityText).not.toContain("Imagen");
   });
 });

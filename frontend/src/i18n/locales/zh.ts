@@ -7757,6 +7757,7 @@ export default {
       dailyLimit: '日限额',
       weeklyLimit: '周限额',
       monthlyLimit: '月限额',
+      monthlyQuota: '月度额度',
       quota: '配额',
       unlimited: '无限制',
       models: '模型',
