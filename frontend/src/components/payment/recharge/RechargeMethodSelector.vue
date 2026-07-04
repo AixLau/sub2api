@@ -29,9 +29,9 @@
           <img v-if="methodIcon(method.type)" :src="methodIcon(method.type)" alt="" class="h-6 w-6 object-contain" />
           <Icon v-else :name="fallbackIcon(method.type)" size="md" />
         </span>
-        <span class="min-w-0 flex-1 text-left">
-          <span class="flex items-center gap-2">
-            <span class="truncate text-sm font-semibold text-slate-950">{{ methodLabel(method.type) }}</span>
+        <span class="recharge-method-content">
+          <span class="recharge-method-title-row">
+            <span class="recharge-method-name">{{ methodLabel(method.type) }}</span>
             <span
               v-if="isRecommended(method.type)"
               class="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700"
@@ -39,10 +39,9 @@
               {{ t('payment.rechargeUi.recommended') }}
             </span>
           </span>
-          <span class="mt-1 block text-xs text-slate-500">
+          <span v-if="!method.available || method.fee_rate > 0" class="recharge-method-meta">
             <template v-if="!method.available">{{ t('payment.rechargeUi.methodUnavailable') }}</template>
-            <template v-else-if="method.fee_rate > 0">{{ t('payment.fee') }} {{ method.fee_rate }}%</template>
-            <template v-else>{{ methodDescription(method.type) }}</template>
+            <template v-else>{{ t('payment.fee') }} {{ method.fee_rate }}%</template>
           </span>
         </span>
         <span
@@ -117,14 +116,6 @@ function methodLabel(type: string): string {
   if (type === 'stripe') return t('payment.rechargeUi.enterpriseCard')
   if (type === 'airwallex') return t('payment.methods.airwallex')
   return t(`payment.methods.${type}`, type)
-}
-
-function methodDescription(type: string): string {
-  if (type === 'stripe') return t('payment.rechargeUi.cardMethodDesc')
-  if (type === 'airwallex') return t('payment.rechargeUi.globalMethodDesc')
-  if (type.includes('wxpay')) return t('payment.rechargeUi.fastAndSecure')
-  if (type.includes('alipay') || type === 'nineplus' || type === 'haozpay') return t('payment.rechargeUi.instantArrival')
-  return t('payment.rechargeUi.fastAndSecure')
 }
 
 function methodToneClass(type: string): string {
