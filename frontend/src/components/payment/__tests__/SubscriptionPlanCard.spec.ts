@@ -30,7 +30,7 @@ const i18n = createI18n({
   },
 });
 
-const mountPlanCard = (groupPlatform: string) =>
+const mountPlanCard = (groupPlatform: string, overrides = {}) =>
   mount(SubscriptionPlanCard, {
     props: {
       plan: {
@@ -50,6 +50,7 @@ const mountPlanCard = (groupPlatform: string) =>
         validity_unit: "day",
         supported_model_scopes: ["claude", "gemini_text", "gemini_image"],
         is_active: true,
+        ...overrides,
       },
     },
     global: { plugins: [i18n, createPinia()] },
@@ -83,6 +84,29 @@ describe("SubscriptionPlanCard", () => {
     expect(text).not.toContain("Weekly");
     expect(text).not.toContain("Monthly Limit");
     expect(wrapper.find(".subscription-detail-grid").exists()).toBe(false);
+  });
+
+  it("removes generated quota-only description copy from plan cards", () => {
+    const wrapper = mountPlanCard("openai", {
+      description: "包含 400 额度",
+    });
+    const text = wrapper.text();
+
+    expect(wrapper.find("[data-testid='subscription-plan-description']").exists()).toBe(false);
+    expect(wrapper.find("[data-testid='subscription-plan-quota-summary']").text()).toBe("400 额度");
+    expect(text).not.toContain("包含 400 额度");
+  });
+
+  it("removes generated quota description even when the backend quota field differs", () => {
+    const wrapper = mountPlanCard("openai", {
+      description: "包含 500 额度",
+      monthly_limit_usd: 400,
+    });
+    const text = wrapper.text();
+
+    expect(wrapper.find("[data-testid='subscription-plan-description']").exists()).toBe(false);
+    expect(wrapper.find("[data-testid='subscription-plan-quota-summary']").text()).toBe("400 额度");
+    expect(text).not.toContain("包含 500 额度");
   });
 
   it("does not show platform model scopes on compact plan cards", () => {

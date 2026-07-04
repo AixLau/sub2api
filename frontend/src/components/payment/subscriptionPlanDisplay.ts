@@ -62,9 +62,13 @@ function stripGeneratedSummary(description: string, quotaSummary: string, labels
   if (!description) return ''
 
   let result = description.trim()
+  const quotaUnitPattern = uniquePattern([labels.quotaUnit, '额度', 'credits', 'quota'])
+  const dayUnitPattern = uniquePattern([labels.dayUnit, '天', 'days', 'day'])
+  result = result
+    .replace(new RegExp(`包含\\s*\\d+(?:\\.\\d+)?\\s*(?:${quotaUnitPattern})\\s*[\/／]\\s*${validityDays}\\s*(?:${dayUnitPattern})`, 'gi'), '')
+    .replace(new RegExp(`包含\\s*\\d+(?:\\.\\d+)?\\s*(?:${quotaUnitPattern})`, 'gi'), '')
+
   if (quotaSummary) {
-    const quotaUnitPattern = uniquePattern([labels.quotaUnit, '额度', 'credits', 'quota'])
-    const dayUnitPattern = uniquePattern([labels.dayUnit, '天', 'days', 'day'])
     const quotaValue = quotaSummary.replace(new RegExp(`\\s*(?:${quotaUnitPattern})$`, 'i'), '')
     result = result
       .replace(new RegExp(`包含\\s*${quotaValue}\\s*(?:${quotaUnitPattern})\\s*[\/／]\\s*${validityDays}\\s*(?:${dayUnitPattern})`, 'gi'), '')
