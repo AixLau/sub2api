@@ -7567,6 +7567,7 @@ export default {
       instantArrival: '实时到账',
       orderSummary: '订单摘要',
       estimatedBalance: '预计到账余额',
+      estimatedCreditedAmount: '预计到账金额',
       arrivalTime: '到账时间',
       instantArrivalShort: '实时到账',
       subscriptionHint: '选择企业订阅套餐，并通过同一套安全收银台完成支付。',

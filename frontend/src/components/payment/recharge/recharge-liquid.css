@@ -1,4 +1,5 @@
-.recharge-page-shell {
+.recharge-page-shell,
+.recharge-page-content {
   --recharge-surface: rgba(255, 255, 255, 0.68);
   --recharge-surface-strong: rgba(255, 255, 255, 0.82);
   --recharge-border: rgba(148, 163, 184, 0.22);
@@ -6,6 +7,11 @@
   --recharge-shadow-card: 0 20px 60px rgba(15, 23, 42, 0.08);
 
   position: relative;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+
+.recharge-page-shell {
   margin: -0.5rem;
   padding: 1rem;
   border-radius: 28px;
@@ -13,11 +19,10 @@
     radial-gradient(circle at 20% 0%, rgba(59, 130, 246, 0.12), transparent 32%),
     radial-gradient(circle at 90% 10%, rgba(96, 165, 250, 0.16), transparent 28%),
     linear-gradient(180deg, #f6f9ff 0%, #eef4fb 100%);
-  color: #0f172a;
-  font-variant-numeric: tabular-nums;
 }
 
 .recharge-page-shell .recharge-glass-card,
+.recharge-page-content .recharge-glass-card,
 .recharge-page-shell.recharge-glass-card {
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 24px;
@@ -29,7 +34,8 @@
   -webkit-backdrop-filter: blur(24px) saturate(180%);
 }
 
-.recharge-page-shell .recharge-section-title {
+.recharge-page-shell .recharge-section-title,
+.recharge-page-content .recharge-section-title {
   font-size: 0.95rem;
   font-weight: 700;
   color: #0f172a;
@@ -142,7 +148,8 @@
   box-shadow: 0 16px 28px rgba(37, 99, 235, 0.28);
 }
 
-.recharge-page-shell .recharge-choice-card {
+.recharge-page-shell .recharge-choice-card,
+.recharge-page-content .recharge-choice-card {
   min-height: 96px;
   border: 1px solid var(--recharge-border);
   border-radius: 16px;
@@ -155,17 +162,20 @@
     background-color 160ms ease;
 }
 
-.recharge-page-shell .recharge-choice-card:hover {
+.recharge-page-shell .recharge-choice-card:hover,
+.recharge-page-content .recharge-choice-card:hover {
   transform: translateY(-1px);
   border-color: rgba(37, 99, 235, 0.45);
 }
 
-.recharge-page-shell .recharge-choice-card:focus-visible {
+.recharge-page-shell .recharge-choice-card:focus-visible,
+.recharge-page-content .recharge-choice-card:focus-visible {
   outline: 2px solid rgba(37, 99, 235, 0.55);
   outline-offset: 2px;
 }
 
-.recharge-page-shell .recharge-choice-card-selected {
+.recharge-page-shell .recharge-choice-card-selected,
+.recharge-page-content .recharge-choice-card-selected {
   position: relative;
   border-color: rgba(37, 99, 235, 0.9);
   background: rgba(37, 99, 235, 0.08);
@@ -174,7 +184,8 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
-.recharge-page-shell .recharge-choice-card-selected::after {
+.recharge-page-shell .recharge-choice-card-selected::after,
+.recharge-page-content .recharge-choice-card-selected::after {
   position: absolute;
   right: 0.8rem;
   top: 0.8rem;
@@ -193,7 +204,8 @@
   box-shadow: 0 8px 18px rgba(37, 99, 235, 0.22);
 }
 
-.recharge-page-shell .recharge-method-card {
+.recharge-page-shell .recharge-method-card,
+.recharge-page-content .recharge-method-card {
   display: flex;
   min-height: 66px;
   align-items: center;
@@ -210,17 +222,20 @@
     background-color 160ms ease;
 }
 
-.recharge-page-shell .recharge-method-card:hover:not(:disabled) {
+.recharge-page-shell .recharge-method-card:hover:not(:disabled),
+.recharge-page-content .recharge-method-card:hover:not(:disabled) {
   transform: translateY(-1px);
   border-color: rgba(37, 99, 235, 0.45);
 }
 
-.recharge-page-shell .recharge-method-card:focus-visible {
+.recharge-page-shell .recharge-method-card:focus-visible,
+.recharge-page-content .recharge-method-card:focus-visible {
   outline: 2px solid rgba(37, 99, 235, 0.55);
   outline-offset: 2px;
 }
 
-.recharge-page-shell .recharge-method-card-selected {
+.recharge-page-shell .recharge-method-card-selected,
+.recharge-page-content .recharge-method-card-selected {
   border-color: rgba(37, 99, 235, 0.9);
   background: rgba(37, 99, 235, 0.08);
   box-shadow:
@@ -228,12 +243,14 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
-.recharge-page-shell .recharge-method-card-disabled {
+.recharge-page-shell .recharge-method-card-disabled,
+.recharge-page-content .recharge-method-card-disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
 
-.recharge-page-shell .recharge-method-icon {
+.recharge-page-shell .recharge-method-icon,
+.recharge-page-content .recharge-method-icon {
   display: flex;
   height: 42px;
   width: 42px;
@@ -243,22 +260,26 @@
   border-radius: 14px;
 }
 
-.recharge-page-shell .recharge-method-icon-alipay {
+.recharge-page-shell .recharge-method-icon-alipay,
+.recharge-page-content .recharge-method-icon-alipay {
   background: rgba(2, 169, 241, 0.1);
   color: #0277d4;
 }
 
-.recharge-page-shell .recharge-method-icon-wxpay {
+.recharge-page-shell .recharge-method-icon-wxpay,
+.recharge-page-content .recharge-method-icon-wxpay {
   background: rgba(22, 163, 74, 0.1);
   color: #16a34a;
 }
 
-.recharge-page-shell .recharge-method-icon-stripe {
+.recharge-page-shell .recharge-method-icon-stripe,
+.recharge-page-content .recharge-method-icon-stripe {
   background: rgba(99, 91, 255, 0.1);
   color: #635bff;
 }
 
-.recharge-page-shell .recharge-method-icon-airwallex {
+.recharge-page-shell .recharge-method-icon-airwallex,
+.recharge-page-content .recharge-method-icon-airwallex {
   background: rgba(249, 115, 22, 0.1);
   color: #ea580c;
 }
@@ -268,7 +289,8 @@
   top: 6rem;
 }
 
-.recharge-page-shell .recharge-primary-button {
+.recharge-page-shell .recharge-primary-button,
+.recharge-page-content .recharge-primary-button {
   display: inline-flex;
   min-height: 54px;
   align-items: center;
@@ -284,23 +306,27 @@
     opacity 160ms ease;
 }
 
-.recharge-page-shell .recharge-primary-button:hover:not(:disabled) {
+.recharge-page-shell .recharge-primary-button:hover:not(:disabled),
+.recharge-page-content .recharge-primary-button:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 18px 36px rgba(15, 98, 254, 0.32);
 }
 
-.recharge-page-shell .recharge-primary-button:focus-visible {
+.recharge-page-shell .recharge-primary-button:focus-visible,
+.recharge-page-content .recharge-primary-button:focus-visible {
   outline: 2px solid rgba(37, 99, 235, 0.55);
   outline-offset: 2px;
 }
 
-.recharge-page-shell .recharge-primary-button:disabled {
+.recharge-page-shell .recharge-primary-button:disabled,
+.recharge-page-content .recharge-primary-button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
   box-shadow: none;
 }
 
-.recharge-page-shell .recharge-secondary-button {
+.recharge-page-shell .recharge-secondary-button,
+.recharge-page-content .recharge-secondary-button {
   display: inline-flex;
   min-height: 48px;
   align-items: center;
@@ -321,7 +347,8 @@
     box-shadow 160ms ease;
 }
 
-.recharge-page-shell .recharge-secondary-button:hover:not(:disabled) {
+.recharge-page-shell .recharge-secondary-button:hover:not(:disabled),
+.recharge-page-content .recharge-secondary-button:hover:not(:disabled) {
   transform: translateY(-1px);
   border-color: rgba(37, 99, 235, 0.38);
   color: #0f172a;
@@ -330,7 +357,8 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.76);
 }
 
-.recharge-page-shell .subscription-liquid-plan-card {
+.recharge-page-shell .subscription-liquid-plan-card,
+.recharge-page-content .subscription-liquid-plan-card {
   min-height: 100%;
   border: 1px solid var(--recharge-border);
   border-radius: 18px;
@@ -344,25 +372,74 @@
   -webkit-backdrop-filter: blur(18px) saturate(170%);
 }
 
-.recharge-page-shell .subscription-liquid-plan-card:hover {
+.recharge-page-shell .subscription-liquid-plan-card:hover,
+.recharge-page-content .subscription-liquid-plan-card:hover {
   border-color: rgba(37, 99, 235, 0.42);
   box-shadow:
     0 18px 42px rgba(15, 23, 42, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.76);
 }
 
-.recharge-page-shell .subscription-liquid-accent {
+.recharge-page-shell .subscription-liquid-accent,
+.recharge-page-content .subscription-liquid-accent {
   height: 0.28rem;
   opacity: 0.82;
 }
 
-.recharge-page-shell .subscription-detail-grid {
+.recharge-page-shell .subscription-current-card,
+.recharge-page-content .subscription-current-card {
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.56)),
+    radial-gradient(circle at 88% 44%, rgba(37, 99, 235, 0.12), transparent 30%);
+}
+
+.recharge-page-shell .subscription-current-icon,
+.recharge-page-content .subscription-current-icon {
+  display: inline-flex;
+  height: 30px;
+  width: 30px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+}
+
+.recharge-page-shell .subscription-current-platform,
+.recharge-page-content .subscription-current-platform,
+.recharge-page-shell .subscription-current-remaining,
+.recharge-page-content .subscription-current-remaining {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.recharge-page-shell .subscription-current-platform,
+.recharge-page-content .subscription-current-platform {
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+}
+
+.recharge-page-shell .subscription-current-remaining,
+.recharge-page-content .subscription-current-remaining {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(255, 255, 255, 0.58);
+  color: #475569;
+}
+
+.recharge-page-shell .subscription-detail-grid,
+.recharge-page-content .subscription-detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.7rem;
 }
 
-.recharge-page-shell .subscription-detail-item {
+.recharge-page-shell .subscription-detail-item,
+.recharge-page-content .subscription-detail-item {
   display: flex;
   min-height: 52px;
   flex-direction: column;
@@ -374,13 +451,15 @@
   padding: 0.65rem 0.75rem;
 }
 
-.recharge-page-shell .subscription-detail-item span {
+.recharge-page-shell .subscription-detail-item span,
+.recharge-page-content .subscription-detail-item span {
   color: #64748b;
   font-size: 0.72rem;
   font-weight: 600;
 }
 
-.recharge-page-shell .subscription-detail-item strong {
+.recharge-page-shell .subscription-detail-item strong,
+.recharge-page-content .subscription-detail-item strong {
   min-width: 0;
   overflow-wrap: anywhere;
   color: #0f172a;
@@ -410,11 +489,13 @@
     position: static;
   }
 
-  .recharge-page-shell .recharge-choice-card {
+  .recharge-page-shell .recharge-choice-card,
+  .recharge-page-content .recharge-choice-card {
     min-height: 92px;
   }
 
-  .recharge-page-shell .subscription-detail-grid {
+  .recharge-page-shell .subscription-detail-grid,
+  .recharge-page-content .subscription-detail-grid {
     grid-template-columns: 1fr;
   }
 }

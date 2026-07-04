@@ -1,6 +1,10 @@
 <template>
-  <section class="recharge-glass-card p-5 sm:p-6" aria-labelledby="recharge-method-title">
-    <div class="mb-4">
+  <section
+    class="recharge-glass-card p-5 sm:p-6"
+    :aria-labelledby="showHeader ? 'recharge-method-title' : undefined"
+    :aria-label="showHeader ? undefined : t('payment.rechargeUi.selectPaymentMethod')"
+  >
+    <div v-if="showHeader" class="mb-4">
       <p id="recharge-method-title" class="recharge-section-title">2. {{ t('payment.rechargeUi.selectPaymentMethod') }}</p>
       <p class="mt-1 text-sm text-slate-500">{{ t('payment.rechargeUi.paymentMethodHint') }}</p>
     </div>
@@ -65,10 +69,13 @@ import wxpayIcon from '@/assets/icons/wxpay.svg'
 import stripeIcon from '@/assets/icons/stripe.svg'
 import airwallexIcon from '@/assets/icons/airwallex.svg'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   methods: PaymentMethodOption[]
   selected: string
-}>()
+  showHeader?: boolean
+}>(), {
+  showHeader: true,
+})
 
 const emit = defineEmits<{
   select: [type: string]

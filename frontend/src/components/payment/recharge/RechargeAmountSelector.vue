@@ -1,6 +1,10 @@
 <template>
-  <section class="recharge-glass-card p-5 sm:p-6" aria-labelledby="recharge-amount-title">
-    <div class="mb-4 flex items-start justify-between gap-4">
+  <section
+    class="recharge-glass-card p-5 sm:p-6"
+    :aria-labelledby="showHeader ? 'recharge-amount-title' : undefined"
+    :aria-label="showHeader ? undefined : t('payment.rechargeUi.selectAmount')"
+  >
+    <div v-if="showHeader" class="mb-4 flex items-start justify-between gap-4">
       <div>
         <p id="recharge-amount-title" class="recharge-section-title">1. {{ t('payment.rechargeUi.selectAmount') }}</p>
         <p class="mt-1 text-sm text-slate-500">{{ t('payment.rechargeUi.amountHint') }}</p>
@@ -26,7 +30,7 @@
           <Icon name="check" size="xs" :stroke-width="2.4" />
         </span>
         <span class="block text-lg font-semibold text-slate-950">{{ formatAmount(preset) }}</span>
-        <span class="mt-1 block text-xs text-slate-500">{{ t('payment.rechargeUi.noFee') }}</span>
+        <span v-if="showPresetMeta" class="mt-1 block text-xs text-slate-500">{{ t('payment.rechargeUi.noFee') }}</span>
       </button>
 
       <label
@@ -80,6 +84,8 @@ const props = withDefaults(defineProps<{
   error?: string
   inputId?: string
   errorId?: string
+  showHeader?: boolean
+  showPresetMeta?: boolean
   formatAmount: (value: number) => string
 }>(), {
   amounts: () => [10, 20, 50, 100, 200, 500, 1000],
@@ -90,6 +96,8 @@ const props = withDefaults(defineProps<{
   error: '',
   inputId: 'recharge-custom-amount',
   errorId: 'recharge-amount-error',
+  showHeader: true,
+  showPresetMeta: true,
 })
 
 const emit = defineEmits<{

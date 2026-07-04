@@ -7386,6 +7386,7 @@ export default {
       instantArrival: 'Real-time arrival',
       orderSummary: 'Order Summary',
       estimatedBalance: 'Estimated Balance',
+      estimatedCreditedAmount: 'Estimated Credited Amount',
       arrivalTime: 'Arrival Time',
       instantArrivalShort: 'Instant',
       subscriptionHint: 'Choose an enterprise plan and complete payment through the same secure checkout.',

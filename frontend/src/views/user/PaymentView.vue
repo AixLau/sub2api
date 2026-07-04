@@ -1,201 +1,201 @@
 <template>
   <AppLayout>
-    <div class="mx-auto max-w-6xl space-y-5">
-      <div v-if="loading" class="flex items-center justify-center py-20">
-        <div class="h-8 w-8 animate-spin rounded-full border-4 border-primary-500 border-t-transparent"></div>
-      </div>
-      <template v-else>
-        <!-- Mode Switcher -->
-        <PurchaseModeTabs
-          v-if="paymentPhase === 'select'"
-          v-model="activeTab"
-          :tabs="tabs"
-        />
-        <!-- Payment in progress (shared by recharge and subscription) -->
-        <template v-if="paymentPhase === 'paying'">
-          <PaymentStatusPanel
-            :order-id="paymentState.orderId"
-            :qr-code="paymentState.qrCode"
-            :expires-at="paymentState.expiresAt"
-            :payment-type="paymentState.paymentType"
-            :pay-url="paymentState.payUrl"
-            :order-type="paymentState.orderType"
-            :currency="paymentState.currency || selectedCurrency"
-            :pay-amount="paymentState.payAmount || paymentState.amount"
-            @done="onPaymentDone"
-            @success="onPaymentSuccess"
-            @settled="onPaymentSettled"
-          />
-        </template>
-        <!-- Tab content (select phase) -->
-        <template v-else>
-          <!-- Top-up Tab -->
-          <template v-if="activeTab === 'recharge'">
-            <div v-if="enabledMethods.length === 0" class="recharge-glass-card py-16 text-center">
-              <p class="text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
-            </div>
-            <template v-if="enabledMethods.length > 0">
-              <div data-testid="recharge-liquid-page" class="recharge-page-shell">
-                <RechargeHeader :account-name="accountDisplayName" />
-                <AccountBalanceHero
-                  :account-name="accountDisplayName"
-                  :account-id="accountDisplayId"
-                  :formatted-balance="formattedCurrentBalance"
-                />
+    <div data-testid="recharge-liquid-page" class="recharge-page-canvas">
+      <div class="recharge-page-content mx-auto max-w-6xl space-y-5">
+        <div v-if="loading" class="flex items-center justify-center py-20">
+          <div class="h-8 w-8 animate-spin rounded-full border-4 border-primary-500 border-t-transparent"></div>
+        </div>
 
-                <div
-                  v-if="!isNinePlusSelected"
-                  data-testid="recharge-layout"
-                  class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start"
-                >
-                  <div data-testid="recharge-controls" class="space-y-5">
-                    <RechargeAmountSelector
-                      v-model="amount"
-                      :amounts="quickRechargeAmounts"
-                      :min="effectiveMinAmount"
-                      :max="effectiveMaxAmount"
-                      :currency="selectedCurrency"
-                      :locale="localeCode"
-                      :error="amountError"
-                      :format-amount="formatSelectedPaymentAmount"
-                    />
-                    <RechargeMethodSelector
-                      v-if="rechargeMethodTypes.length >= 1"
-                      :methods="methodOptions"
-                      :selected="selectedMethod"
-                      @select="selectedMethod = $event"
+        <template v-else>
+          <PurchaseModeTabs
+            v-if="paymentPhase === 'select'"
+            v-model="activeTab"
+            :tabs="tabs"
+          />
+
+          <template v-if="paymentPhase === 'paying'">
+            <PaymentStatusPanel
+              :order-id="paymentState.orderId"
+              :qr-code="paymentState.qrCode"
+              :expires-at="paymentState.expiresAt"
+              :payment-type="paymentState.paymentType"
+              :pay-url="paymentState.payUrl"
+              :order-type="paymentState.orderType"
+              :currency="paymentState.currency || selectedCurrency"
+              :pay-amount="paymentState.payAmount || paymentState.amount"
+              @done="onPaymentDone"
+              @success="onPaymentSuccess"
+              @settled="onPaymentSettled"
+            />
+          </template>
+
+          <template v-else>
+            <template v-if="activeTab === 'recharge'">
+              <div v-if="enabledMethods.length === 0" class="recharge-glass-card py-16 text-center">
+                <p class="text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
+              </div>
+
+              <template v-if="enabledMethods.length > 0">
+                <div class="space-y-5">
+                  <AccountBalanceHero
+                    :account-name="accountDisplayName"
+                    :account-id="accountDisplayId"
+                    :formatted-balance="formattedCurrentBalance"
+                  />
+
+                  <div
+                    v-if="!isNinePlusSelected"
+                    data-testid="recharge-layout"
+                    class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start"
+                  >
+                    <div data-testid="recharge-controls" class="space-y-5">
+                      <RechargeAmountSelector
+                        v-model="amount"
+                        :amounts="quickRechargeAmounts"
+                        :min="effectiveMinAmount"
+                        :max="effectiveMaxAmount"
+                        :currency="selectedCurrency"
+                        :locale="localeCode"
+                        :error="amountError"
+                        :format-amount="formatSelectedPaymentAmount"
+                        :show-header="false"
+                        :show-preset-meta="false"
+                      />
+                      <RechargeMethodSelector
+                        v-if="rechargeMethodTypes.length >= 1"
+                        :methods="methodOptions"
+                        :selected="selectedMethod"
+                        :show-header="false"
+                        @select="selectedMethod = $event"
+                      />
+                    </div>
+                    <RechargeOrderSummary
+                      :formatted-amount="formatSelectedPaymentAmount(validAmount)"
+                      :formatted-fee="formatSelectedPaymentAmount(feeAmount)"
+                      :formatted-total="formatSelectedPaymentAmount(totalAmount)"
+                      :formatted-estimated-credited-amount="formattedEstimatedCreditedAmount"
+                      :disabled="!canSubmit || submitting"
+                      :submitting="submitting"
+                      :has-submitted="submitAttempted"
+                      :error-message="errorMessage"
+                      :error-hint-message="errorHintMessage"
+                      @submit="handleSubmitRecharge"
                     />
                   </div>
-                  <RechargeOrderSummary
-                    :formatted-amount="formatSelectedPaymentAmount(validAmount)"
-                    :formatted-fee="formatSelectedPaymentAmount(feeAmount)"
-                    :formatted-total="formatSelectedPaymentAmount(totalAmount)"
-                    :formatted-estimated-balance="formattedEstimatedBalance"
-                    :disabled="!canSubmit || submitting"
-                    :submitting="submitting"
-                    :has-submitted="submitAttempted"
-                    :error-message="errorMessage"
-                    :error-hint-message="errorHintMessage"
-                    @submit="handleSubmitRecharge"
-                  />
-                </div>
 
-                <div
-                  v-else
-                  data-testid="recharge-layout"
-                  class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start"
-                >
-                  <div data-testid="recharge-controls" class="space-y-5">
-                    <div class="recharge-glass-card p-5 sm:p-6">
-                      <div class="mb-3">
-                        <p class="recharge-section-title">1. {{ t('payment.nineplus.selectProduct') }}</p>
+                  <div
+                    v-else
+                    data-testid="recharge-layout"
+                    class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start"
+                  >
+                    <div data-testid="recharge-controls" class="space-y-5">
+                      <div class="recharge-glass-card p-5 sm:p-6">
+                        <div class="mb-3">
+                          <p class="recharge-section-title">{{ t('payment.nineplus.selectProduct') }}</p>
+                        </div>
+                        <div v-if="availableNinePlusProducts.length" class="grid gap-3 sm:grid-cols-2">
+                          <button
+                            v-for="product in availableNinePlusProducts"
+                            :key="product.product_id"
+                            type="button"
+                            :data-testid="`nineplus-product-${product.product_id}`"
+                            class="recharge-choice-card px-4 py-3 text-left"
+                            :class="selectedNinePlusProductId === product.product_id
+                              ? 'recharge-choice-card-selected'
+                              : ''"
+                            @click="selectedNinePlusProductId = product.product_id"
+                          >
+                            <div class="flex items-start justify-between gap-3">
+                              <span class="text-sm font-medium text-slate-600">{{ product.display_name }}</span>
+                              <span v-if="product.badge" class="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">{{ product.badge }}</span>
+                            </div>
+                            <div class="mt-2 flex flex-wrap items-end justify-between gap-2">
+                              <p class="text-2xl font-semibold tracking-normal text-slate-950">{{ formatNinePlusCreditedAmount(product) || product.display_name }}</p>
+                              <p class="text-sm font-semibold text-blue-700">
+                                {{ t('payment.amountLabel') }} {{ formatSelectedPaymentAmount(ninePlusProductPriceAmount(product)) }}
+                              </p>
+                            </div>
+                          </button>
+                        </div>
+                        <p v-else class="py-8 text-center text-sm text-slate-500">{{ t('payment.nineplus.noProducts') }}</p>
                       </div>
-                      <div v-if="availableNinePlusProducts.length" class="grid gap-3 sm:grid-cols-2">
-                        <button
-                          v-for="product in availableNinePlusProducts"
-                          :key="product.product_id"
-                          type="button"
-                          :data-testid="`nineplus-product-${product.product_id}`"
-                          class="recharge-choice-card px-4 py-3 text-left"
-                          :class="selectedNinePlusProductId === product.product_id
-                            ? 'recharge-choice-card-selected'
-                            : ''"
-                          @click="selectedNinePlusProductId = product.product_id"
-                        >
-                          <div class="flex items-start justify-between gap-3">
-                            <span class="text-sm font-medium text-slate-600">{{ product.display_name }}</span>
-                            <span v-if="product.badge" class="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">{{ product.badge }}</span>
+                      <RechargeMethodSelector
+                        v-if="rechargeMethodTypes.length >= 1"
+                        :methods="methodOptions"
+                        :selected="selectedMethod"
+                        :show-header="false"
+                        @select="selectedMethod = $event"
+                      />
+                    </div>
+                    <aside data-testid="recharge-confirmation" class="recharge-glass-card p-5 sm:p-6 lg:sticky lg:top-24">
+                      <div class="space-y-4">
+                        <div>
+                          <p class="recharge-section-title">{{ t('payment.rechargeUi.orderSummary') }}</p>
+                          <p class="mt-1 text-3xl font-semibold tracking-normal text-slate-950">{{ formatSelectedPaymentAmount(totalAmount) }}</p>
+                        </div>
+                        <div v-if="validAmount > 0" class="space-y-2 text-sm">
+                          <div v-if="isNinePlusSelected && selectedNinePlusCreditedAmountLabel" class="flex justify-between">
+                            <span class="text-slate-500">{{ t('payment.creditedBalance') }}</span>
+                            <span class="font-semibold text-slate-950">{{ selectedNinePlusCreditedAmountLabel }}</span>
                           </div>
-                          <div class="mt-2 flex flex-wrap items-end justify-between gap-2">
-                            <p class="text-2xl font-semibold tracking-normal text-slate-950">{{ formatNinePlusCreditedAmount(product) || product.display_name }}</p>
-                            <p class="text-sm font-semibold text-blue-700">
-                              {{ t('payment.amountLabel') }} {{ formatSelectedPaymentAmount(ninePlusProductPriceAmount(product)) }}
-                            </p>
+                          <div class="flex justify-between">
+                            <span class="text-slate-500">{{ isNinePlusSelected ? t('payment.amountLabel') : t('payment.paymentAmount') }}</span>
+                            <span class="text-slate-950">{{ formatSelectedPaymentAmount(isNinePlusSelected ? selectedNinePlusProductPriceAmount : validAmount) }}</span>
                           </div>
+                          <div v-if="isNinePlusSelected && selectedNinePlusProductFeeAmount > 0" class="flex justify-between">
+                            <span class="text-slate-500">{{ t('payment.fee') }}</span>
+                            <span class="text-slate-950">{{ formatSelectedPaymentAmount(selectedNinePlusProductFeeAmount) }}</span>
+                          </div>
+                          <div v-else-if="feeRate > 0" class="flex justify-between">
+                            <span class="text-slate-500">{{ t('payment.fee') }} ({{ feeRate }}%)</span>
+                            <span class="text-slate-950">{{ formatSelectedPaymentAmount(feeAmount) }}</span>
+                          </div>
+                          <div
+                            v-if="balanceRechargeMultiplier !== 1 && !isNinePlusSelected"
+                            class="flex justify-between"
+                            :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': feeRate <= 0 }"
+                          >
+                            <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
+                            <span class="text-gray-900 dark:text-white">${{ creditedAmount.toFixed(2) }}</span>
+                          </div>
+                          <p
+                            v-if="balanceRechargeMultiplier !== 1 && !isNinePlusSelected"
+                            class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400"
+                          >
+                            {{ t('payment.rechargeRatePreview', { usd: balanceRechargeMultiplier.toFixed(2) }) }}
+                          </p>
+                        </div>
+                        <div v-if="errorMessage" class="rounded-2xl border border-red-200 bg-red-50/80 px-4 py-3 text-sm text-red-700" role="alert">
+                          <p>{{ errorMessage }}</p>
+                          <p v-if="errorHintMessage" class="mt-1 text-red-600/80">{{ errorHintMessage }}</p>
+                        </div>
+                        <button data-testid="submit-recharge" class="recharge-primary-button w-full" :disabled="!canSubmit || submitting" :aria-busy="submitting" @click="handleSubmitRecharge">
+                          <span v-if="submitting" class="flex items-center justify-center gap-2">
+                            <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
+                            {{ t('common.processing') }}
+                          </span>
+                          <span v-else>{{ t('payment.rechargeUi.rechargeNow') }}</span>
                         </button>
                       </div>
-                      <p v-else class="py-8 text-center text-sm text-slate-500">{{ t('payment.nineplus.noProducts') }}</p>
-                    </div>
-                    <RechargeMethodSelector
-                      v-if="rechargeMethodTypes.length >= 1"
-                      :methods="methodOptions"
-                      :selected="selectedMethod"
-                      @select="selectedMethod = $event"
-                    />
+                    </aside>
                   </div>
-                  <aside data-testid="recharge-confirmation" class="recharge-glass-card p-5 sm:p-6 lg:sticky lg:top-24">
-                    <div class="space-y-4">
-                      <div>
-                        <p class="recharge-section-title">3. {{ t('payment.rechargeUi.orderSummary') }}</p>
-                        <p class="mt-1 text-3xl font-semibold tracking-normal text-slate-950">{{ formatSelectedPaymentAmount(totalAmount) }}</p>
-                      </div>
-                      <div v-if="validAmount > 0" class="space-y-2 text-sm">
-                      <div v-if="isNinePlusSelected && selectedNinePlusCreditedAmountLabel" class="flex justify-between">
-                        <span class="text-slate-500">{{ t('payment.creditedBalance') }}</span>
-                        <span class="font-semibold text-slate-950">{{ selectedNinePlusCreditedAmountLabel }}</span>
-                      </div>
-                      <div class="flex justify-between">
-                        <span class="text-slate-500">{{ isNinePlusSelected ? t('payment.amountLabel') : t('payment.paymentAmount') }}</span>
-                        <span class="text-slate-950">{{ formatSelectedPaymentAmount(isNinePlusSelected ? selectedNinePlusProductPriceAmount : validAmount) }}</span>
-                      </div>
-                      <div v-if="isNinePlusSelected && selectedNinePlusProductFeeAmount > 0" class="flex justify-between">
-                        <span class="text-slate-500">{{ t('payment.fee') }}</span>
-                        <span class="text-slate-950">{{ formatSelectedPaymentAmount(selectedNinePlusProductFeeAmount) }}</span>
-                      </div>
-                      <div v-else-if="feeRate > 0" class="flex justify-between">
-                        <span class="text-slate-500">{{ t('payment.fee') }} ({{ feeRate }}%)</span>
-                        <span class="text-slate-950">{{ formatSelectedPaymentAmount(feeAmount) }}</span>
-                      </div>
-                      <div v-if="balanceRechargeMultiplier !== 1 && !isNinePlusSelected" class="flex justify-between" :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': feeRate <= 0 }">
-                        <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
-                        <span class="text-gray-900 dark:text-white">${{ creditedAmount.toFixed(2) }}</span>
-                      </div>
-                      <p v-if="balanceRechargeMultiplier !== 1 && !isNinePlusSelected" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
-                        {{ t('payment.rechargeRatePreview', { usd: balanceRechargeMultiplier.toFixed(2) }) }}
-                      </p>
-                    </div>
-                    <div v-if="errorMessage" class="rounded-2xl border border-red-200 bg-red-50/80 px-4 py-3 text-sm text-red-700" role="alert">
-                      <p>{{ errorMessage }}</p>
-                      <p v-if="errorHintMessage" class="mt-1 text-red-600/80">{{ errorHintMessage }}</p>
-                    </div>
-                    <button data-testid="submit-recharge" class="recharge-primary-button w-full" :disabled="!canSubmit || submitting" :aria-busy="submitting" @click="handleSubmitRecharge">
-                      <span v-if="submitting" class="flex items-center justify-center gap-2">
-                        <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
-                        {{ t('common.processing') }}
-                      </span>
-                      <span v-else>{{ t('payment.rechargeUi.rechargeNow') }}</span>
-                    </button>
-                  </div>
-                </aside>
-                </div>
 
-                <RechargeTrustBar />
-              </div>
+                  <RechargeTrustBar />
+                </div>
+              </template>
             </template>
-          </template>
-          <!-- Subscribe Tab -->
-          <template v-else-if="activeTab === 'subscription'">
-            <template v-if="ninePlusSubscriptionProducts.length > 0">
-              <div data-testid="subscription-layout" class="recharge-page-shell space-y-5">
-                <RechargeHeader
-                  :account-name="accountDisplayName"
-                  :show-account-pill="false"
-                />
-                <AccountBalanceHero
+
+            <template v-else-if="activeTab === 'subscription' && ninePlusSubscriptionProducts.length > 0">
+              <div data-testid="subscription-layout" class="space-y-5">
+                <CurrentSubscriptionCard
                   v-if="currentSubscriptionSummary"
-                  data-testid="current-subscription-hero"
-                  :account-name="accountDisplayName"
-                  :account-id="accountDisplayId"
-                  :formatted-balance="formattedCurrentBalance"
-                  :show-balance="false"
-                  :subscription-summary="currentSubscriptionSummary"
+                  :subscription="currentSubscriptionSummary"
                 />
                 <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
                   <div data-testid="subscription-controls" class="space-y-5">
                     <section class="recharge-glass-card p-5 sm:p-6" aria-labelledby="nineplus-subscription-title">
                       <div class="mb-4">
-                        <p id="nineplus-subscription-title" class="recharge-section-title">1. {{ t('payment.nineplus.selectSubscriptionProduct') }}</p>
-                        <p class="mt-1 text-sm text-slate-500">{{ t('payment.rechargeUi.subscriptionHint') }}</p>
+                        <p id="nineplus-subscription-title" class="recharge-section-title">{{ t('payment.nineplus.selectSubscriptionProduct') }}</p>
                       </div>
                       <div class="grid gap-3 sm:grid-cols-2">
                         <button
@@ -227,11 +227,12 @@
                       v-if="subscriptionNinePlusMethodOptions.length"
                       :methods="subscriptionNinePlusMethodOptions"
                       :selected="selectedMethod"
+                      :show-header="false"
                       @select="selectedMethod = $event"
                     />
                   </div>
                   <aside data-testid="subscription-confirmation" class="recharge-glass-card recharge-summary-card p-5 sm:p-6">
-                    <p class="recharge-section-title">2. {{ t('payment.rechargeUi.orderSummary') }}</p>
+                    <p class="recharge-section-title">{{ t('payment.rechargeUi.orderSummary') }}</p>
                     <div class="mt-5 space-y-4 text-sm">
                       <div v-if="effectiveNinePlusSubscriptionProduct" class="flex items-center justify-between gap-4">
                         <span class="text-slate-500">{{ t('payment.nineplus.selectedSubscription') }}</span>
@@ -268,20 +269,12 @@
                 <RechargeTrustBar />
               </div>
             </template>
-            <template v-else>
-              <div data-testid="subscription-layout" class="recharge-page-shell space-y-5">
-                <RechargeHeader
-                  :account-name="accountDisplayName"
-                  :show-account-pill="false"
-                />
-                <AccountBalanceHero
+
+            <template v-else-if="activeTab === 'subscription'">
+              <div data-testid="subscription-layout" class="space-y-5">
+                <CurrentSubscriptionCard
                   v-if="currentSubscriptionSummary"
-                  data-testid="current-subscription-hero"
-                  :account-name="accountDisplayName"
-                  :account-id="accountDisplayId"
-                  :formatted-balance="formattedCurrentBalance"
-                  :show-balance="false"
-                  :subscription-summary="currentSubscriptionSummary"
+                  :subscription="currentSubscriptionSummary"
                 />
                 <!-- Subscription confirm (inline, replaces plan list) -->
                 <template v-if="selectedPlan">
@@ -335,11 +328,12 @@
                         v-if="subMethodOptions.length"
                         :methods="subMethodOptions"
                         :selected="selectedMethod"
+                        :show-header="false"
                         @select="selectedMethod = $event"
                       />
                     </div>
                     <aside data-testid="subscription-confirmation" class="recharge-glass-card recharge-summary-card p-5 sm:p-6">
-                      <p class="recharge-section-title">2. {{ t('payment.rechargeUi.orderSummary') }}</p>
+                      <p class="recharge-section-title">{{ t('payment.rechargeUi.orderSummary') }}</p>
                       <div class="mt-5 space-y-4 text-sm">
                         <div class="flex items-center justify-between gap-4">
                           <span class="text-slate-500">{{ t('payment.rechargeUi.selectedPlan') }}</span>
@@ -379,8 +373,7 @@
                   </section>
                   <section v-else class="recharge-glass-card p-5 sm:p-6" aria-labelledby="subscription-plans-title">
                     <div class="mb-4">
-                      <p id="subscription-plans-title" class="recharge-section-title">1. {{ t('payment.tabSubscribe') }}</p>
-                      <p class="mt-1 text-sm text-slate-500">{{ t('payment.rechargeUi.subscriptionHint') }}</p>
+                      <p id="subscription-plans-title" class="recharge-section-title">{{ t('payment.tabSubscribe') }}</p>
                     </div>
                     <div :class="planGridClass">
                       <SubscriptionPlanCard v-for="plan in checkout.plans" :key="plan.id" :plan="plan" :active-subscriptions="activeSubscriptions" @select="selectPlan" />
@@ -391,16 +384,21 @@
               </div>
             </template>
           </template>
-        </template>
-        <div v-if="(checkout.help_text || checkout.help_image_url) && paymentPhase === 'select' && !selectedPlan" class="card p-4">
-          <div class="flex flex-col items-center gap-3">
-            <img v-if="checkout.help_image_url" :src="checkout.help_image_url" alt=""
-              class="h-40 max-w-full cursor-pointer rounded-lg object-contain transition-opacity hover:opacity-80"
-              @click="previewImage = checkout.help_image_url" />
-            <p v-if="checkout.help_text" class="text-center text-sm text-gray-500 dark:text-gray-400">{{ checkout.help_text }}</p>
+
+          <div v-if="(checkout.help_text || checkout.help_image_url) && paymentPhase === 'select' && !selectedPlan" class="recharge-glass-card p-4">
+            <div class="flex flex-col items-center gap-3">
+              <img
+                v-if="checkout.help_image_url"
+                :src="checkout.help_image_url"
+                alt=""
+                class="h-40 max-w-full cursor-pointer rounded-lg object-contain transition-opacity hover:opacity-80"
+                @click="previewImage = checkout.help_image_url"
+              />
+              <p v-if="checkout.help_text" class="text-center text-sm text-slate-500">{{ checkout.help_text }}</p>
+            </div>
           </div>
-        </div>
-      </template>
+        </template>
+      </div>
     </div>
     <!-- Renewal Plan Selection Modal -->
     <Teleport to="body">
@@ -450,8 +448,8 @@ import type {
   OrderType,
 } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import RechargeHeader from '@/components/payment/recharge/RechargeHeader.vue'
 import AccountBalanceHero from '@/components/payment/recharge/AccountBalanceHero.vue'
+import CurrentSubscriptionCard from '@/components/payment/recharge/CurrentSubscriptionCard.vue'
 import RechargeAmountSelector from '@/components/payment/recharge/RechargeAmountSelector.vue'
 import RechargeMethodSelector from '@/components/payment/recharge/RechargeMethodSelector.vue'
 import RechargeOrderSummary from '@/components/payment/recharge/RechargeOrderSummary.vue'
@@ -908,6 +906,10 @@ function formatSelectedPaymentAmount(value: number): string {
   return formatPaymentAmount(value, selectedCurrency.value, localeCode.value)
 }
 
+function formatCreditedAmount(value: number): string {
+  return formatPaymentAmount(value, 'USD', localeCode.value)
+}
+
 function formatSelectedSubscriptionPaymentAmount(value: number): string {
   return formatSelectedPaymentAmount(roundPaymentAmount(value, selectedCurrency.value))
 }
@@ -934,10 +936,7 @@ const totalAmount = computed(() =>
     ? Math.round((validAmount.value + feeAmount.value) * 100) / 100
     : validAmount.value
 )
-const estimatedBalance = computed(() =>
-  currentBalanceAmount.value + (!isNinePlusSelected.value ? creditedAmount.value : 0)
-)
-const formattedEstimatedBalance = computed(() => formatSelectedPaymentAmount(estimatedBalance.value))
+const formattedEstimatedCreditedAmount = computed(() => formatCreditedAmount(creditedAmount.value))
 
 const amountError = computed(() => {
   if (validAmount.value <= 0) return ''
@@ -1539,258 +1538,14 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.recharge-page-shell {
-  --recharge-bg: #f3f7fd;
-  --recharge-surface: rgba(255, 255, 255, 0.68);
-  --recharge-surface-strong: rgba(255, 255, 255, 0.84);
-  --recharge-border: rgba(148, 163, 184, 0.22);
-  --recharge-primary: #0f62fe;
-  --recharge-primary-soft: rgba(15, 98, 254, 0.1);
-  --recharge-text: #0f172a;
-  --recharge-muted: #64748b;
-  --recharge-shadow-card: 0 20px 60px rgba(15, 23, 42, 0.08);
-
-  position: relative;
-  margin: -0.5rem;
+.recharge-page-canvas {
+  min-height: calc(100vh - 4rem);
+  margin: -1rem;
   padding: 1rem;
-  border-radius: 28px;
   background:
-    radial-gradient(circle at 20% 0%, rgba(59, 130, 246, 0.12), transparent 32%),
-    radial-gradient(circle at 90% 10%, rgba(96, 165, 250, 0.16), transparent 28%),
+    radial-gradient(circle at 18% 0%, rgba(59, 130, 246, 0.1), transparent 30%),
+    radial-gradient(circle at 88% 8%, rgba(96, 165, 250, 0.14), transparent 26%),
     linear-gradient(180deg, #f6f9ff 0%, #eef4fb 100%);
-  color: var(--recharge-text);
-  font-variant-numeric: tabular-nums;
-}
-
-.recharge-page-shell :deep(.recharge-glass-card),
-.recharge-glass-card {
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 24px;
-  background: var(--recharge-surface);
-  box-shadow:
-    var(--recharge-shadow-card),
-    inset 0 1px 0 rgba(255, 255, 255, 0.75);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-}
-
-.recharge-page-shell :deep(.recharge-section-title),
-.recharge-section-title {
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.recharge-page-shell :deep(.recharge-mode-tabs),
-.recharge-mode-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.35rem;
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.52);
-  padding: 0.35rem;
-  box-shadow:
-    0 12px 32px rgba(15, 23, 42, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-}
-
-.recharge-page-shell :deep(.recharge-mode-tab),
-.recharge-mode-tab {
-  min-height: 44px;
-  border-radius: 14px;
-  color: #475569;
-  font-size: 0.9rem;
-  font-weight: 700;
-  transition:
-    transform 160ms ease,
-    color 160ms ease,
-    box-shadow 160ms ease,
-    background-color 160ms ease;
-}
-
-.recharge-page-shell :deep(.recharge-mode-tab:hover),
-.recharge-mode-tab:hover {
-  color: #0f172a;
-}
-
-.recharge-page-shell :deep(.recharge-mode-tab:focus-visible),
-.recharge-mode-tab:focus-visible {
-  outline: 2px solid rgba(37, 99, 235, 0.55);
-  outline-offset: 2px;
-}
-
-.recharge-page-shell :deep(.recharge-mode-tab-active),
-.recharge-mode-tab-active {
-  background: rgba(255, 255, 255, 0.86);
-  color: #0f172a;
-  box-shadow:
-    0 10px 24px rgba(15, 23, 42, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.86);
-}
-
-.recharge-top-pill {
-  display: inline-flex;
-  min-height: 44px;
-  max-width: 100%;
-  align-items: center;
-  gap: 0.6rem;
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.62);
-  padding: 0.45rem 0.75rem;
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-}
-
-.recharge-hero-card {
-  position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.78);
-  border-radius: 24px;
-  background:
-    linear-gradient(120deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.52)),
-    radial-gradient(circle at 86% 38%, rgba(37, 99, 235, 0.14), transparent 28%);
-  box-shadow:
-    0 24px 68px rgba(15, 23, 42, 0.09),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-}
-
-.recharge-wallet-art {
-  position: absolute;
-  right: 7%;
-  top: 50%;
-  display: none;
-  height: 88px;
-  width: 112px;
-  transform: translateY(-50%) rotate(-8deg);
-  align-items: center;
-  justify-content: center;
-  border-radius: 28px;
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.28), rgba(147, 197, 253, 0.2));
-  color: rgba(37, 99, 235, 0.78);
-  box-shadow:
-    0 24px 48px rgba(37, 99, 235, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
-}
-
-.recharge-wallet-plus {
-  position: absolute;
-  right: -12px;
-  bottom: 12px;
-  display: flex;
-  height: 38px;
-  width: 38px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: rgba(59, 130, 246, 0.82);
-  color: white;
-  box-shadow: 0 16px 28px rgba(37, 99, 235, 0.28);
-}
-
-.recharge-page-shell :deep(.recharge-choice-card) {
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.56);
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
-  transition:
-    transform 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    background-color 160ms ease;
-}
-
-.recharge-page-shell :deep(.recharge-choice-card:hover) {
-  transform: translateY(-1px);
-  border-color: rgba(37, 99, 235, 0.45);
-}
-
-.recharge-page-shell :deep(.recharge-choice-card:focus-visible) {
-  outline: 2px solid rgba(37, 99, 235, 0.55);
-  outline-offset: 2px;
-}
-
-.recharge-page-shell :deep(.recharge-choice-card-selected) {
-  border-color: rgba(37, 99, 235, 0.9);
-  background: rgba(37, 99, 235, 0.08);
-  box-shadow:
-    0 12px 28px rgba(37, 99, 235, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
-}
-
-.recharge-page-shell :deep(.recharge-method-card) {
-  display: flex;
-  min-height: 66px;
-  align-items: center;
-  gap: 0.85rem;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.58);
-  padding: 0.8rem 0.95rem;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
-  transition:
-    transform 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    background-color 160ms ease;
-}
-
-.recharge-page-shell :deep(.recharge-method-card:hover:not(:disabled)) {
-  transform: translateY(-1px);
-  border-color: rgba(37, 99, 235, 0.45);
-}
-
-.recharge-page-shell :deep(.recharge-method-card:focus-visible) {
-  outline: 2px solid rgba(37, 99, 235, 0.55);
-  outline-offset: 2px;
-}
-
-.recharge-page-shell :deep(.recharge-method-card-selected) {
-  border-color: rgba(37, 99, 235, 0.9);
-  background: rgba(37, 99, 235, 0.08);
-  box-shadow:
-    0 12px 28px rgba(37, 99, 235, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
-}
-
-.recharge-page-shell :deep(.recharge-method-card-disabled) {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.recharge-page-shell :deep(.recharge-method-icon) {
-  display: flex;
-  height: 42px;
-  width: 42px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: 14px;
-}
-
-.recharge-page-shell :deep(.recharge-method-icon-alipay) {
-  background: rgba(2, 169, 241, 0.1);
-  color: #0277d4;
-}
-
-.recharge-page-shell :deep(.recharge-method-icon-wxpay) {
-  background: rgba(22, 163, 74, 0.1);
-  color: #16a34a;
-}
-
-.recharge-page-shell :deep(.recharge-method-icon-stripe) {
-  background: rgba(99, 91, 255, 0.1);
-  color: #635bff;
-}
-
-.recharge-page-shell :deep(.recharge-method-icon-airwallex) {
-  background: rgba(249, 115, 22, 0.1);
-  color: #ea580c;
 }
 
 .recharge-summary-card {
@@ -1798,47 +1553,17 @@ onMounted(async () => {
   top: 6rem;
 }
 
-.recharge-page-shell :deep(.recharge-primary-button),
-.recharge-primary-button {
-  min-height: 54px;
-  border-radius: 16px;
-  background: linear-gradient(180deg, #2f80ff 0%, #0f62fe 100%);
-  color: #ffffff;
-  font-weight: 700;
-  box-shadow: 0 16px 32px rgba(15, 98, 254, 0.26);
-  transition:
-    transform 160ms ease,
-    box-shadow 160ms ease,
-    opacity 160ms ease;
-}
-
-.recharge-page-shell :deep(.recharge-primary-button:hover:not(:disabled)),
-.recharge-primary-button:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 18px 36px rgba(15, 98, 254, 0.32);
-}
-
-.recharge-page-shell :deep(.recharge-primary-button:focus-visible),
-.recharge-primary-button:focus-visible {
-  outline: 2px solid rgba(37, 99, 235, 0.55);
-  outline-offset: 2px;
-}
-
-.recharge-page-shell :deep(.recharge-primary-button:disabled),
-.recharge-primary-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-  box-shadow: none;
-}
-
 @media (min-width: 768px) {
-  .recharge-page-shell {
-    margin: -0.75rem;
+  .recharge-page-canvas {
+    margin: -1.5rem;
     padding: 1.5rem;
   }
+}
 
-  .recharge-wallet-art {
-    display: flex;
+@media (min-width: 1024px) {
+  .recharge-page-canvas {
+    margin: -2rem;
+    padding: 2rem;
   }
 }
 

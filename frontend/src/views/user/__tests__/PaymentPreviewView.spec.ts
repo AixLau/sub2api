@@ -52,7 +52,7 @@ vi.mock('vue-i18n', async () => {
     'payment.rechargeUi.enterpriseCard': '银行卡支付',
     'payment.rechargeUi.enterpriseEncryption': '企业级加密保护',
     'payment.rechargeUi.enterpriseEncryptionDesc': 'SSL 加密传输，数据安全存储。',
-    'payment.rechargeUi.estimatedBalance': '预计到账余额',
+    'payment.rechargeUi.estimatedCreditedAmount': '预计到账金额',
     'payment.rechargeUi.fastAndSecure': '安全快捷',
     'payment.rechargeUi.globalMethodDesc': '全球支付网络',
     'payment.rechargeUi.instantArrival': '实时到账',

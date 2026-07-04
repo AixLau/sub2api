@@ -17,6 +17,13 @@ const routerResolve = vi.hoisted(() => vi.fn(() => ({ href: '/payment/stripe?moc
 const createOrder = vi.hoisted(() => vi.fn())
 const refreshUser = vi.hoisted(() => vi.fn())
 const fetchActiveSubscriptions = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+const authStoreState = vi.hoisted(() => ({
+  user: {
+    username: 'demo-user',
+    email: 'demo@example.com',
+    balance: 0,
+  },
+}))
 const subscriptionStoreState = vi.hoisted(() => ({
   activeSubscriptions: [] as UserSubscription[],
 }))
@@ -46,6 +53,7 @@ vi.mock('vue-i18n', async () => {
     'payment.amountLabel': '充值金额',
     'payment.packagePriceShort': '套餐价',
     'payment.amountTooLow': '最低金额为 {min}',
+    'payment.rechargeUi.estimatedCreditedAmount': '预计到账金额',
   }
   return {
     ...actual,
@@ -64,11 +72,7 @@ vi.mock('vue-i18n', async () => {
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
-    user: {
-      username: 'demo-user',
-      email: 'demo@example.com',
-      balance: 0,
-    },
+    user: authStoreState.user,
     refreshUser,
   }),
 }))
@@ -408,7 +412,7 @@ function mountPaymentViewForContent() {
 
 async function mountRechargeView(
   options: Partial<CheckoutInfoResponse> = {},
-  mountOptions: { activeSubscriptions?: UserSubscription[] } = {},
+  mountOptions: { activeSubscriptions?: UserSubscription[]; balance?: number } = {},
 ) {
   routeState.path = '/purchase'
   routeState.query = {}
@@ -426,6 +430,11 @@ async function mountRechargeView(
     currency: 'CNY',
   })
   refreshUser.mockReset()
+  authStoreState.user = {
+    username: 'demo-user',
+    email: 'demo@example.com',
+    balance: mountOptions.balance ?? 0,
+  }
   fetchActiveSubscriptions.mockReset().mockResolvedValue(undefined)
   subscriptionStoreState.activeSubscriptions = mountOptions.activeSubscriptions ?? []
   showError.mockReset()
@@ -669,6 +678,48 @@ describe('PaymentView recharge liquid glass selection', () => {
     }))
   })
 
+  it('uses AppLayout content as the page canvas instead of rendering a nested recharge page shell', async () => {
+    const wrapper = await mountRechargeView()
+
+    const rechargePage = wrapper.find('[data-testid="recharge-liquid-page"]')
+
+    expect(rechargePage.exists()).toBe(true)
+    expect(rechargePage.classes()).not.toContain('recharge-page-shell')
+    expect(wrapper.findComponent({ name: 'RechargeHeader' }).exists()).toBe(false)
+    expect(wrapper.find('[data-testid="recharge-header-account-pill"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('payment.rechargeUi.title')
+    expect(wrapper.text()).not.toContain('payment.rechargeUi.subtitle')
+  })
+
+  it('keeps recharge cards focused on amounts without business instruction copy or discount text', async () => {
+    const wrapper = await mountRechargeView()
+
+    expect(wrapper.text()).not.toContain('payment.rechargeUi.amountHint')
+    expect(wrapper.text()).not.toContain('payment.rechargeUi.paymentMethodHint')
+    expect(wrapper.text()).not.toContain('payment.rechargeUi.noFee')
+    expect(wrapper.findAll('.recharge-section-title').map(title => title.text()).every(title => !/^\d+\./.test(title))).toBe(true)
+
+    const quickAmount = wrapper.find('[data-testid="quick-amount-50"]')
+    expect(quickAmount.exists()).toBe(true)
+    expect(quickAmount.text()).toBe(formatPaymentAmount(50, 'CNY'))
+  })
+
+  it('shows estimated credited amount from the backend multiplier without adding current balance', async () => {
+    const wrapper = await mountRechargeView({
+      balance_recharge_multiplier: 3,
+    }, {
+      balance: 120,
+    })
+
+    await wrapper.find('[data-testid="quick-amount-50"]').trigger('click')
+
+    const summaryText = wrapper.find('[data-testid="order-summary"]').text()
+
+    expect(summaryText).toContain('预计到账金额')
+    expect(summaryText).toContain(formatPaymentAmount(150, 'USD'))
+    expect(summaryText).not.toContain(formatPaymentAmount(270, 'USD'))
+  })
+
   it('shows a clear segmented switch from recharge to subscription without changing payment flow state', async () => {
     const wrapper = await mountRechargeView({
       plans: [
@@ -701,7 +752,7 @@ describe('PaymentView recharge liquid glass selection', () => {
     expect(wrapper.find('[data-testid="recharge-layout"]').exists()).toBe(false)
   })
 
-  it('renders the current subscription summary from active subscription API data without showing balance', async () => {
+  it('renders the current subscription summary from active subscription API data without using the account balance hero', async () => {
     const wrapper = await mountRechargeView({
       plans: [
         {
@@ -730,14 +781,18 @@ describe('PaymentView recharge liquid glass selection', () => {
 
     await wrapper.find('[data-testid="purchase-mode-subscription"]').trigger('click')
 
-    const subscriptionHero = wrapper.find('[data-testid="current-subscription-hero"]')
-    expect(subscriptionHero.exists()).toBe(true)
-    expect(subscriptionHero.text()).toContain('payment.activeSubscription')
-    expect(subscriptionHero.text()).toContain('Pro 套餐')
-    expect(subscriptionHero.text()).toContain('OpenAI')
-    expect(subscriptionHero.text()).toContain('userSubscriptions.daysRemaining')
-    expect(subscriptionHero.text()).not.toContain('payment.rechargeUi.availableBalance')
-    expect(subscriptionHero.text()).not.toContain(formatPaymentAmount(0, 'CNY'))
+    const subscriptionCard = wrapper.find('[data-testid="current-subscription-card"]')
+    expect(subscriptionCard.exists()).toBe(true)
+    expect(subscriptionCard.text()).toContain('payment.activeSubscription')
+    expect(subscriptionCard.text()).toContain('Pro 套餐')
+    expect(subscriptionCard.text()).toContain('OpenAI')
+    expect(subscriptionCard.text()).toContain('userSubscriptions.daysRemaining')
+    expect(subscriptionCard.text()).not.toContain('payment.rechargeUi.availableBalance')
+    expect(subscriptionCard.text()).not.toContain(formatPaymentAmount(0, 'CNY'))
+    expect(wrapper.find('[data-testid="account-balance-hero"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="recharge-header-account-pill"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="subscription-layout"]').text()).not.toContain('demo-user')
+    expect(wrapper.find('[data-testid="subscription-layout"]').text()).not.toContain('demo@example.com')
     expect(wrapper.text().match(/payment.activeSubscription/g)).toHaveLength(1)
   })
 
@@ -768,7 +823,28 @@ describe('PaymentView recharge liquid glass selection', () => {
 
     await wrapper.find('[data-testid="purchase-mode-subscription"]').trigger('click')
 
-    expect(wrapper.find('[data-testid="current-subscription-hero"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="current-subscription-card"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="account-balance-hero"]').exists()).toBe(false)
+  })
+
+  it('keeps nineplus subscription products on the cleaned subscription surface without account or balance UI', async () => {
+    const wrapper = await mountRechargeView(checkoutInfoWithNinePlusCatalogFixture().data, {
+      activeSubscriptions: [activeSubscriptionFixture()],
+      balance: 88,
+    })
+
+    await wrapper.find('[data-testid="purchase-mode-subscription"]').trigger('click')
+
+    const layout = wrapper.find('[data-testid="subscription-layout"]')
+
+    expect(wrapper.find('[data-testid="current-subscription-card"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="account-balance-hero"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="recharge-header-account-pill"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="nineplus-subscription-product-sub-standard"]').exists()).toBe(true)
+    expect(layout.text()).not.toContain('payment.rechargeUi.availableBalance')
+    expect(layout.text()).not.toContain(formatPaymentAmount(88, 'CNY'))
+    expect(layout.text()).not.toContain('demo-user')
+    expect(layout.text()).not.toContain('demo@example.com')
   })
 
   it('disables submission and links the validation message when custom amount is below the method minimum', async () => {

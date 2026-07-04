@@ -1,6 +1,6 @@
 <template>
   <aside data-testid="order-summary" class="recharge-glass-card recharge-summary-card p-5 sm:p-6" aria-labelledby="order-summary-title">
-    <p id="order-summary-title" class="recharge-section-title">3. {{ t('payment.rechargeUi.orderSummary') }}</p>
+    <p id="order-summary-title" class="recharge-section-title">{{ t('payment.rechargeUi.orderSummary') }}</p>
 
     <div class="mt-5 space-y-4 text-sm">
       <div class="flex items-center justify-between gap-4">
@@ -22,8 +22,8 @@
       </div>
       <div class="border-t border-slate-200/70 pt-4">
         <div class="flex items-center justify-between gap-4">
-          <span class="text-slate-500">{{ t('payment.rechargeUi.estimatedBalance') }}</span>
-          <span class="font-semibold text-slate-950">{{ formattedEstimatedBalance }}</span>
+          <span class="text-slate-500">{{ t('payment.rechargeUi.estimatedCreditedAmount') }}</span>
+          <span class="font-semibold text-slate-950">{{ formattedEstimatedCreditedAmount }}</span>
         </div>
         <div class="mt-3 flex items-center justify-between gap-4">
           <span class="text-slate-500">{{ t('payment.rechargeUi.arrivalTime') }}</span>
@@ -76,7 +76,7 @@ const props = defineProps<{
   formattedAmount: string
   formattedFee: string
   formattedTotal: string
-  formattedEstimatedBalance: string
+  formattedEstimatedCreditedAmount: string
   disabled: boolean
   submitting: boolean
   hasSubmitted?: boolean

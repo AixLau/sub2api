@@ -40,7 +40,7 @@
           :formatted-amount="formatCny(validAmount)"
           :formatted-fee="formatCny(feeAmount)"
           :formatted-total="formatCny(totalAmount)"
-          :formatted-estimated-balance="formatCny(currentBalance + validAmount)"
+          :formatted-estimated-credited-amount="formatCny(validAmount)"
           :disabled="!!amountError || validAmount <= 0"
           :submitting="false"
           @submit="showPreviewNotice = true"
