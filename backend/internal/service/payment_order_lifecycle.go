@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -243,12 +244,42 @@ func paymentOrderQueryReference(order *dbent.PaymentOrder, prov payment.Provider
 	switch payment.GetBasePaymentType(providerKey) {
 	case payment.TypeAlipay, payment.TypeEasyPay, payment.TypeWxpay:
 		return strings.TrimSpace(order.OutTradeNo)
+	case payment.TypeHaozPay:
+		if tradeNo := strings.TrimSpace(order.PaymentTradeNo); tradeNo != "" {
+			return tradeNo
+		}
+		if tradeNo := haozPayOrderPlatformTradeNo(order); tradeNo != "" {
+			return tradeNo
+		}
+		return strings.TrimSpace(order.OutTradeNo)
 	default:
 		if tradeNo := strings.TrimSpace(order.PaymentTradeNo); tradeNo != "" {
 			return tradeNo
 		}
 		return strings.TrimSpace(order.OutTradeNo)
 	}
+}
+
+func haozPayOrderPlatformTradeNo(order *dbent.PaymentOrder) string {
+	if order == nil {
+		return ""
+	}
+	if tradeNo := extractHaozPayCashierOrderNo(psStringValue(order.PayURL)); tradeNo != "" {
+		return tradeNo
+	}
+	return extractHaozPayCashierOrderNo(psStringValue(order.QrCode))
+}
+
+func extractHaozPayCashierOrderNo(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(parsed.Query().Get("orderNo"))
 }
 
 func paymentOrderShouldPersistUpstreamTradeNo(queryRef, upstreamTradeNo, currentTradeNo string) bool {

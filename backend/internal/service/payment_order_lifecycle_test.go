@@ -1246,6 +1246,26 @@ func TestPaymentOrderQueryReferenceUsesOutTradeNoForOfficialProviders(t *testing
 	}))
 }
 
+func TestPaymentOrderQueryReferenceExtractsHaozPayPlatformOrderNoFromCashierURL(t *testing.T) {
+	t.Parallel()
+
+	order := &dbent.PaymentOrder{
+		OutTradeNo:     "20260704BIdEeZRA",
+		PaymentType:    payment.TypeAlipay,
+		PaymentTradeNo: "",
+		QrCode:         paymentOrderLifecycleStringPtr("https://cashier.haozpay.com/cashier-pc?orderNo=HZHT202607042073263983919542272&merchantNo=HZ2072997091048607744"),
+		ProviderKey:    paymentOrderLifecycleStringPtr(payment.TypeHaozPay),
+	}
+
+	require.Equal(t, "HZHT202607042073263983919542272", paymentOrderQueryReference(order, paymentFulfillmentTestProvider{
+		key: payment.TypeHaozPay,
+	}))
+}
+
+func paymentOrderLifecycleStringPtr(value string) *string {
+	return &value
+}
+
 func newPaymentOrderLifecycleTestClient(t *testing.T) *dbent.Client {
 	t.Helper()
 

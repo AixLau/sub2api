@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
+	"time"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
@@ -90,6 +91,57 @@ func TestHandlePaymentNotification_NonSuccessStatus_Skips(t *testing.T) {
 	err := svc.HandlePaymentNotification(ctx, notification, payment.TypeStripe)
 	require.NoError(t, err,
 		"non-success notifications must short-circuit before the DB lookup")
+}
+
+func TestHandlePaymentNotificationFindsOrderByProviderTradeNo(t *testing.T) {
+	ctx := context.Background()
+	client := newOrderNotFoundTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("haozpay-provider-trade@example.com").
+		SetPasswordHash("hash").
+		SetUsername("haozpay-provider-trade").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(7.50).
+		SetPayAmount(1.01).
+		SetFeeRate(0).
+		SetRechargeCode("HAOZPAY-PROVIDER-TRADE").
+		SetOutTradeNo("20260704BIdEeZRA").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("HZHT202607042073263983919542272").
+		SetProviderKey(payment.TypeHaozPay).
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCompleted).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now().Add(-time.Minute)).
+		SetCompletedAt(time.Now().Add(-time.Minute)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{
+		entClient:       client,
+		providersLoaded: true,
+	}
+
+	err = svc.HandlePaymentNotification(ctx, &payment.PaymentNotification{
+		OrderID: "HZHT202607042073263983919542272",
+		TradeNo: "HZHT202607042073263983919542272",
+		Status:  payment.NotificationStatusSuccess,
+		Amount:  1.01,
+	}, payment.TypeHaozPay)
+	require.NoError(t, err)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
 }
 
 // TestErrOrderNotFound_DistinctFromOtherErrors guards against an accidental

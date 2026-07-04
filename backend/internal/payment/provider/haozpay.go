@@ -16,6 +16,7 @@ import (
 	"math"
 	"math/big"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -159,7 +160,7 @@ func (h *HaozPay) CreatePayment(ctx context.Context, req payment.CreatePaymentRe
 	}
 
 	return &payment.CreatePaymentResponse{
-		TradeNo: resp.Data.SeqID,
+		TradeNo: firstNonEmpty(resp.Data.SeqID, extractHaozPayCashierOrderNo(resp.Data.PayInfo)),
 		QRCode:  resp.Data.PayInfo,
 	}, nil
 }
@@ -562,6 +563,18 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func extractHaozPayCashierOrderNo(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(parsed.Query().Get("orderNo"))
 }
 
 func haozpayPublicDecryptPKCS1v15(pub *rsa.PublicKey, ciphertext []byte) ([]byte, error) {

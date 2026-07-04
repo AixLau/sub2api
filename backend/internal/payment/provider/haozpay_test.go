@@ -219,6 +219,43 @@ func TestHaozPayCreatePaymentSendsBizBodyAsJSONString(t *testing.T) {
 	}
 }
 
+func TestHaozPayCreatePaymentExtractsPlatformOrderNoFromCashierURL(t *testing.T) {
+	t.Parallel()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate rsa key: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"payInfo":"https://cashier.haozpay.com/cashier-pc?orderNo=HZHT202607042073263983919542272&merchantNo=HZ2072997091048607744","merchantOrderNo":"20260704BIdEeZRA","orderAmount":1.01}}`))
+	}))
+	defer server.Close()
+
+	h := &HaozPay{
+		config: map[string]string{
+			"notifyUrl": "https://example.com/api/v1/payment/webhook/haozpay",
+		},
+		httpClient: &http.Client{Transport: rewriteHostTransport(server.URL)},
+		merchantNo: "M123456",
+		privateKey: key,
+	}
+
+	resp, err := h.CreatePayment(context.Background(), payment.CreatePaymentRequest{
+		Amount:      "1.01",
+		OrderID:     "20260704BIdEeZRA",
+		PaymentType: payment.TypeAlipay,
+		Subject:     "Balance recharge",
+	})
+	if err != nil {
+		t.Fatalf("create payment: %v", err)
+	}
+	if resp.TradeNo != "HZHT202607042073263983919542272" {
+		t.Fatalf("TradeNo = %q, want cashier orderNo", resp.TradeNo)
+	}
+}
+
 func TestHaozPayVerifyNotificationAcceptsFlatPaymentCallback(t *testing.T) {
 	t.Parallel()
 

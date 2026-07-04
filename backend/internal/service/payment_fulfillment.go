@@ -37,6 +37,9 @@ func (s *PaymentService) HandlePaymentNotification(ctx context.Context, n *payme
 	// Look up order by out_trade_no (the external order ID we sent to the provider)
 	order, err := s.entClient.PaymentOrder.Query().Where(paymentorder.OutTradeNo(n.OrderID)).Only(ctx)
 	if err != nil {
+		if fallbackOrder, fallbackErr := s.findPaymentOrderByProviderTradeNo(ctx, n.OrderID); fallbackErr == nil {
+			return s.confirmPayment(ctx, fallbackOrder.ID, n.TradeNo, n.Amount, pk, n.Metadata)
+		}
 		// Fallback only for true legacy "sub2_N" DB-ID payloads when the
 		// current out_trade_no lookup genuinely did not find an order.
 		if oid, ok := parseLegacyPaymentOrderID(n.OrderID, err); ok {
@@ -48,6 +51,14 @@ func (s *PaymentService) HandlePaymentNotification(ctx context.Context, n *payme
 		return fmt.Errorf("lookup order failed for out_trade_no %s: %w", n.OrderID, err)
 	}
 	return s.confirmPayment(ctx, order.ID, n.TradeNo, n.Amount, pk, n.Metadata)
+}
+
+func (s *PaymentService) findPaymentOrderByProviderTradeNo(ctx context.Context, tradeNo string) (*dbent.PaymentOrder, error) {
+	tradeNo = strings.TrimSpace(tradeNo)
+	if tradeNo == "" {
+		return nil, &dbent.NotFoundError{}
+	}
+	return s.entClient.PaymentOrder.Query().Where(paymentorder.PaymentTradeNo(tradeNo)).Only(ctx)
 }
 
 func parseLegacyPaymentOrderID(orderID string, lookupErr error) (int64, bool) {
