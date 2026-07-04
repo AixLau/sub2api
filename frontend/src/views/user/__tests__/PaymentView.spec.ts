@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, shallowMount } from '@vue/test-utils'
+import { flushPromises, mount, shallowMount } from '@vue/test-utils'
 import PaymentView from '../PaymentView.vue'
 import { PAYMENT_RECOVERY_STORAGE_KEY } from '@/components/payment/paymentFlow'
 import { formatPaymentAmount } from '@/components/payment/currency'
 import type { CheckoutInfoResponse, MethodLimit, SubscriptionPlan } from '@/types/payment'
+import type { UserSubscription } from '@/types'
 
 const routeState = vi.hoisted(() => ({
   path: '/purchase',
@@ -16,6 +17,9 @@ const routerResolve = vi.hoisted(() => vi.fn(() => ({ href: '/payment/stripe?moc
 const createOrder = vi.hoisted(() => vi.fn())
 const refreshUser = vi.hoisted(() => vi.fn())
 const fetchActiveSubscriptions = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+const subscriptionStoreState = vi.hoisted(() => ({
+  activeSubscriptions: [] as UserSubscription[],
+}))
 const showError = vi.hoisted(() => vi.fn())
 const showInfo = vi.hoisted(() => vi.fn())
 const showWarning = vi.hoisted(() => vi.fn())
@@ -41,11 +45,19 @@ vi.mock('vue-i18n', async () => {
   const translations: Record<string, string> = {
     'payment.amountLabel': '充值金额',
     'payment.packagePriceShort': '套餐价',
+    'payment.amountTooLow': '最低金额为 {min}',
   }
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => translations[key] ?? key,
+      t: (key: string, params?: Record<string, unknown>) => {
+        const template = translations[key] ?? key
+        if (!params) return template
+        return Object.entries(params).reduce(
+          (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
+          template,
+        )
+      },
     }),
   }
 })
@@ -69,7 +81,7 @@ vi.mock('@/stores/payment', () => ({
 
 vi.mock('@/stores/subscriptions', () => ({
   useSubscriptionStore: () => ({
-    activeSubscriptions: [],
+    activeSubscriptions: subscriptionStoreState.activeSubscriptions,
     fetchActiveSubscriptions,
   }),
 }))
@@ -324,6 +336,59 @@ function checkoutInfoWithNinePlusCatalogFixture() {
   }
 }
 
+function activeSubscriptionFixture(overrides: Partial<UserSubscription> = {}): UserSubscription {
+  const expiresAt = new Date(Date.now() + 21 * 24 * 60 * 60 * 1000).toISOString()
+
+  return {
+    id: 42,
+    user_id: 1,
+    group_id: 3,
+    status: 'active',
+    starts_at: '2026-06-13T00:00:00.000Z',
+    expires_at: expiresAt,
+    daily_usage_usd: 0,
+    weekly_usage_usd: 0,
+    monthly_usage_usd: 0,
+    monthly_bonus_usd: 0,
+    daily_window_start: null,
+    weekly_window_start: null,
+    monthly_window_start: null,
+    created_at: '2026-06-13T00:00:00.000Z',
+    updated_at: '2026-06-13T00:00:00.000Z',
+    group: {
+      id: 3,
+      name: 'Pro 套餐',
+      description: null,
+      platform: 'openai',
+      rate_multiplier: 1,
+      is_exclusive: false,
+      status: 'active',
+      subscription_type: 'subscription',
+      daily_limit_usd: null,
+      weekly_limit_usd: null,
+      monthly_limit_usd: null,
+      allow_image_generation: false,
+      image_rate_independent: false,
+      image_rate_multiplier: 1,
+      image_price_1k: null,
+      image_price_2k: null,
+      image_price_4k: null,
+      peak_rate_enabled: false,
+      peak_start: '',
+      peak_end: '',
+      peak_rate_multiplier: 1,
+      claude_code_only: false,
+      fallback_group_id: null,
+      fallback_group_id_on_invalid_request: null,
+      require_oauth_only: false,
+      require_privacy_set: false,
+      created_at: '2026-06-13T00:00:00.000Z',
+      updated_at: '2026-06-13T00:00:00.000Z',
+    },
+    ...overrides,
+  }
+}
+
 function mountPaymentViewForContent() {
   return shallowMount(PaymentView, {
     global: {
@@ -331,11 +396,90 @@ function mountPaymentViewForContent() {
         AppLayout: {
           template: '<div class="app-layout-stub"><slot /></div>',
         },
+        PaymentStatusPanel: {
+          template: '<div data-testid="payment-status-panel-stub" />',
+        },
         Teleport: true,
         Transition: false,
       },
     },
   })
+}
+
+async function mountRechargeView(
+  options: Partial<CheckoutInfoResponse> = {},
+  mountOptions: { activeSubscriptions?: UserSubscription[] } = {},
+) {
+  routeState.path = '/purchase'
+  routeState.query = {}
+  routerReplace.mockReset().mockResolvedValue(undefined)
+  routerPush.mockReset().mockResolvedValue(undefined)
+  routerResolve.mockClear()
+  createOrder.mockReset().mockResolvedValue({
+    order_id: 812,
+    amount: 50,
+    pay_amount: 50,
+    fee_rate: 0,
+    expires_at: '2099-01-01T00:10:00.000Z',
+    payment_type: 'alipay',
+    out_trade_no: 'sub2_recharge_812',
+    currency: 'CNY',
+  })
+  refreshUser.mockReset()
+  fetchActiveSubscriptions.mockReset().mockResolvedValue(undefined)
+  subscriptionStoreState.activeSubscriptions = mountOptions.activeSubscriptions ?? []
+  showError.mockReset()
+  showInfo.mockReset()
+  showWarning.mockReset()
+  getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({
+    methods: {
+      alipay: {
+        daily_limit: 0,
+        daily_used: 0,
+        daily_remaining: 0,
+        single_min: 10,
+        single_max: 500000,
+        fee_rate: 0,
+        available: true,
+        currency: 'CNY',
+      },
+      wxpay: {
+        daily_limit: 0,
+        daily_used: 0,
+        daily_remaining: 0,
+        single_min: 10,
+        single_max: 500000,
+        fee_rate: 0,
+        available: true,
+        currency: 'CNY',
+      },
+      ...options.methods,
+    },
+    global_min: 10,
+    global_max: 500000,
+    balance_recharge_multiplier: 1,
+    recharge_fee_rate: 0,
+    ...options,
+  }))
+  window.localStorage.clear()
+
+  const wrapper = mount(PaymentView, {
+    global: {
+      stubs: {
+        AppLayout: {
+          template: '<div class="app-layout-stub"><slot /></div>',
+        },
+        SubscriptionPlanCard: {
+          template: '<div data-testid="subscription-plan-card-stub" />',
+        },
+        Teleport: true,
+        Transition: false,
+      },
+    },
+  })
+  await flushPromises()
+  await flushPromises()
+  return wrapper
 }
 
 function jsapiOrderFixture(resumeToken: string) {
@@ -391,6 +535,7 @@ async function mountSubscriptionConfirm(options: Parameters<typeof checkoutInfoW
   createOrder.mockReset()
   refreshUser.mockReset()
   fetchActiveSubscriptions.mockReset().mockResolvedValue(undefined)
+  subscriptionStoreState.activeSubscriptions = []
   showError.mockReset()
   showInfo.mockReset()
   showWarning.mockReset()
@@ -497,6 +642,165 @@ describe('PaymentView subscription confirmation amounts', () => {
     expect(text).toContain(fee)
     expect(text).toContain(total)
     expect(wrapper.findAll('button').some(button => button.text().includes(total))).toBe(true)
+  })
+})
+
+describe('PaymentView recharge liquid glass selection', () => {
+  it('renders the account recharge surface and submits the selected quick amount through the existing order flow', async () => {
+    const wrapper = await mountRechargeView()
+
+    expect(wrapper.find('[data-testid="recharge-liquid-page"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="purchase-mode-recharge"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="account-balance-hero"]').text()).toContain('demo-user')
+    expect(wrapper.find('[data-testid="order-summary"]').text()).toContain(formatPaymentAmount(0, 'CNY'))
+
+    await wrapper.find('[data-testid="quick-amount-50"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="order-summary"]').text()).toContain(formatPaymentAmount(50, 'CNY'))
+    expect(wrapper.find('[data-testid="submit-recharge"]').attributes('disabled')).toBeUndefined()
+
+    await wrapper.find('[data-testid="submit-recharge"]').trigger('click')
+    await flushPromises()
+
+    expect(createOrder).toHaveBeenCalledWith(expect.objectContaining({
+      amount: 50,
+      payment_type: 'alipay',
+      order_type: 'balance',
+    }))
+  })
+
+  it('shows a clear segmented switch from recharge to subscription without changing payment flow state', async () => {
+    const wrapper = await mountRechargeView({
+      plans: [
+        {
+          id: 7,
+          group_id: 3,
+          name: 'Starter',
+          description: '',
+          price: 128,
+          original_price: 0,
+          validity_days: 30,
+          validity_unit: 'day',
+          rate_multiplier: 1,
+          daily_limit_usd: null,
+          weekly_limit_usd: null,
+          monthly_limit_usd: null,
+          features: [],
+          group_platform: 'openai',
+          sort_order: 1,
+          for_sale: true,
+          group_name: 'OpenAI',
+        },
+      ],
+    })
+
+    await wrapper.find('[data-testid="purchase-mode-subscription"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="purchase-mode-subscription"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="subscription-layout"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="recharge-layout"]').exists()).toBe(false)
+  })
+
+  it('renders the current subscription summary from active subscription API data without showing balance', async () => {
+    const wrapper = await mountRechargeView({
+      plans: [
+        {
+          id: 7,
+          group_id: 3,
+          name: 'Starter',
+          description: '',
+          price: 128,
+          original_price: 0,
+          validity_days: 30,
+          validity_unit: 'day',
+          rate_multiplier: 1,
+          daily_limit_usd: null,
+          weekly_limit_usd: null,
+          monthly_limit_usd: null,
+          features: [],
+          group_platform: 'openai',
+          sort_order: 1,
+          for_sale: true,
+          group_name: 'OpenAI',
+        },
+      ],
+    }, {
+      activeSubscriptions: [activeSubscriptionFixture()],
+    })
+
+    await wrapper.find('[data-testid="purchase-mode-subscription"]').trigger('click')
+
+    const subscriptionHero = wrapper.find('[data-testid="current-subscription-hero"]')
+    expect(subscriptionHero.exists()).toBe(true)
+    expect(subscriptionHero.text()).toContain('payment.activeSubscription')
+    expect(subscriptionHero.text()).toContain('Pro 套餐')
+    expect(subscriptionHero.text()).toContain('OpenAI')
+    expect(subscriptionHero.text()).toContain('userSubscriptions.daysRemaining')
+    expect(subscriptionHero.text()).not.toContain('payment.rechargeUi.availableBalance')
+    expect(subscriptionHero.text()).not.toContain(formatPaymentAmount(0, 'CNY'))
+    expect(wrapper.text().match(/payment.activeSubscription/g)).toHaveLength(1)
+  })
+
+  it('does not render the current subscription summary when the API returns no active subscription', async () => {
+    const wrapper = await mountRechargeView({
+      plans: [
+        {
+          id: 7,
+          group_id: 3,
+          name: 'Starter',
+          description: '',
+          price: 128,
+          original_price: 0,
+          validity_days: 30,
+          validity_unit: 'day',
+          rate_multiplier: 1,
+          daily_limit_usd: null,
+          weekly_limit_usd: null,
+          monthly_limit_usd: null,
+          features: [],
+          group_platform: 'openai',
+          sort_order: 1,
+          for_sale: true,
+          group_name: 'OpenAI',
+        },
+      ],
+    })
+
+    await wrapper.find('[data-testid="purchase-mode-subscription"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="current-subscription-hero"]').exists()).toBe(false)
+  })
+
+  it('disables submission and links the validation message when custom amount is below the method minimum', async () => {
+    const wrapper = await mountRechargeView()
+    const input = wrapper.find('[data-testid="custom-recharge-amount"]')
+
+    await input.setValue('9.99')
+
+    const error = wrapper.find('[data-testid="amount-error"]')
+    expect(error.exists()).toBe(true)
+    expect(error.text()).toContain('¥10.00')
+    expect(input.attributes('aria-describedby')).toBe('recharge-amount-error')
+    expect(wrapper.find('[data-testid="submit-recharge"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('updates payment method selection without losing the selected recharge amount', async () => {
+    const wrapper = await mountRechargeView()
+
+    await wrapper.find('[data-testid="quick-amount-100"]').trigger('click')
+    await wrapper.find('[data-testid="payment-method-wxpay"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="payment-method-wxpay"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.find('[data-testid="order-summary"]').text()).toContain(formatPaymentAmount(100, 'CNY'))
+
+    await wrapper.find('[data-testid="submit-recharge"]').trigger('click')
+    await flushPromises()
+
+    expect(createOrder).toHaveBeenCalledWith(expect.objectContaining({
+      amount: 100,
+      payment_type: 'wxpay',
+      order_type: 'balance',
+    }))
   })
 })
 

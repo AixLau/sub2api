@@ -665,6 +665,19 @@ const routes: RouteRecordRaw[] = [
   },
 
   // ==================== 404 Not Found ====================
+  ...(import.meta.env.DEV ? [
+    {
+      path: '/purchase-preview',
+      name: 'PurchasePreview',
+      component: () => import('@/views/user/PaymentPreviewView.vue'),
+      meta: {
+        requiresAuth: false,
+        requiresAdmin: false,
+        title: 'Recharge Preview',
+        requiresPayment: false
+      }
+    } satisfies RouteRecordRaw
+  ] : []),
   {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
