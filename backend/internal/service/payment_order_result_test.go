@@ -160,12 +160,12 @@ func TestCalculateCreateOrderPayAmountUsesCurrencyPrecision(t *testing.T) {
 func TestCalculateCreateOrderPayAmountForSubscriptionKeepsDirectPrice(t *testing.T) {
 	t.Parallel()
 
-	amountStr, amount, err := calculateCreateOrderPayAmount(5, 0, "CNY")
+	amountStr, amount, err := calculateCreateOrderPayAmountForPaymentType(payment.TypeAlipay, payment.OrderTypeSubscription, 50, 0, 10, "CNY")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if amountStr != "5.00" || amount != 5 {
-		t.Fatalf("subscription CNY pay amount = (%q, %v), want (5.00, 5)", amountStr, amount)
+	if amountStr != "50.00" || amount != 50 {
+		t.Fatalf("subscription CNY pay amount = (%q, %v), want (50.00, 50)", amountStr, amount)
 	}
 }
 
@@ -184,12 +184,12 @@ func TestCalculateCreateOrderPayAmountForNinePlusSubscriptionUsesProductPaymentA
 func TestCalculateCreateOrderPayAmountForSubscriptionAppliesFeeToDirectPrice(t *testing.T) {
 	t.Parallel()
 
-	amountStr, amount, err := calculateCreateOrderPayAmount(5, 2.5, "CNY")
+	amountStr, amount, err := calculateCreateOrderPayAmountForPaymentType(payment.TypeAlipay, payment.OrderTypeSubscription, 50, 2.5, 10, "CNY")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if amountStr != "5.13" || amount != 5.13 {
-		t.Fatalf("subscription CNY pay amount with fee = (%q, %v), want (5.13, 5.13)", amountStr, amount)
+	if amountStr != "51.25" || amount != 51.25 {
+		t.Fatalf("subscription CNY pay amount with fee = (%q, %v), want (51.25, 51.25)", amountStr, amount)
 	}
 }
 

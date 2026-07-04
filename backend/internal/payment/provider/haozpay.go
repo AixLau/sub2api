@@ -195,7 +195,7 @@ func (h *HaozPay) VerifyNotification(_ context.Context, rawBody string, _ map[st
 	}
 	orderID := firstHaozPayString(bizParams, "merchantOrderNo", "orderNo")
 	tradeNo := firstHaozPayString(bizParams, "seqId", "paySeqId", "orderNo", "merchantOrderNo")
-	amount := firstHaozPayFloat(bizParams, "payAmount", "orderAmount", "ordAmt")
+	amount := firstHaozPayFloat(bizParams, "orderAmount", "payAmount", "ordAmt")
 
 	// Map status
 	providerStatus := payment.ProviderStatusFailed
@@ -233,24 +233,9 @@ func (h *HaozPay) QueryOrder(ctx context.Context, tradeNo string) (*payment.Quer
 
 	// Parse response
 	var resp struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-		Data    struct {
-			Status        string  `json:"status"`
-			TradeStatus   string  `json:"tradeStatus"`
-			PayStatus     int     `json:"payStatus"`
-			SeqID         string  `json:"seqId"`
-			PaySeqID      string  `json:"paySeqId"`
-			ReqSeqID      string  `json:"reqSeqId"`
-			OrderNo       string  `json:"orderNo"`
-			PartyOrderID  string  `json:"partyOrderId"`
-			MerchantOrder string  `json:"merchantOrderNo"`
-			TransStat     string  `json:"transStat"`
-			OrderAmount   float64 `json:"orderAmount"`
-			PayAmount     float64 `json:"payAmount"`
-			PayAmt        float64 `json:"payAmt"`
-			TransAmt      float64 `json:"transAmt"`
-		} `json:"data"`
+		Code    int              `json:"code"`
+		Message string           `json:"message"`
+		Data    haozpayQueryData `json:"data"`
 	}
 
 	if err := json.Unmarshal(respBody, &resp); err != nil {
@@ -266,19 +251,11 @@ func (h *HaozPay) QueryOrder(ctx context.Context, tradeNo string) (*payment.Quer
 
 	// Map status
 	status := payment.ProviderStatusPending
-	if strings.EqualFold(resp.Data.Status, haozpayStatusSuccess) ||
-		strings.EqualFold(resp.Data.Status, haozpayStatusPaid) ||
-		strings.EqualFold(resp.Data.TradeStatus, haozpayStatusSuccess) ||
-		strings.EqualFold(resp.Data.TradeStatus, haozpayStatusPaid) ||
-		strings.EqualFold(resp.Data.TransStat, "S") ||
-		resp.Data.PayStatus == 2 {
+	if resp.Data.paymentSucceeded() {
 		status = payment.ProviderStatusPaid
 	}
-	amount := firstNonZeroFloat(resp.Data.PayAmount, resp.Data.PayAmt, resp.Data.TransAmt)
-	if amount == 0 {
-		amount = resp.Data.OrderAmount
-	}
-	respTradeNo := firstNonEmpty(resp.Data.SeqID, resp.Data.PaySeqID, resp.Data.ReqSeqID, resp.Data.OrderNo, resp.Data.PartyOrderID, resp.Data.MerchantOrder, tradeNo)
+	amount := resp.Data.amount()
+	respTradeNo := firstNonEmpty(resp.Data.tradeNo(), tradeNo)
 
 	return &payment.QueryOrderResponse{
 		TradeNo:  respTradeNo,
@@ -286,6 +263,77 @@ func (h *HaozPay) QueryOrder(ctx context.Context, tradeNo string) (*payment.Quer
 		Amount:   amount,
 		Metadata: h.MerchantIdentityMetadata(),
 	}, nil
+}
+
+type haozpayQueryData struct {
+	Status             string            `json:"status"`
+	TradeStatus        string            `json:"tradeStatus"`
+	PayStatus          int               `json:"payStatus"`
+	OrderStatus        int               `json:"orderStatus"`
+	SeqID              string            `json:"seqId"`
+	PaySeqID           string            `json:"paySeqId"`
+	ReqSeqID           string            `json:"reqSeqId"`
+	OrderNo            string            `json:"orderNo"`
+	PartyOrderID       string            `json:"partyOrderId"`
+	MerchantOrder      string            `json:"merchantOrderNo"`
+	TransStat          string            `json:"transStat"`
+	OrderAmount        float64           `json:"orderAmount"`
+	PayAmount          float64           `json:"payAmount"`
+	PayAmt             float64           `json:"payAmt"`
+	TransAmt           float64           `json:"transAmt"`
+	HostOrderInfo      *haozpayQueryData `json:"hostOrderInfo"`
+	PayInfo            *haozpayQueryData `json:"payInfo"`
+	TradeConfirmRecord *haozpayQueryData `json:"tradeConfirmRecord"`
+}
+
+func (d haozpayQueryData) paymentSucceeded() bool {
+	if haozpayQueryDataPaymentSucceeded(d) {
+		return true
+	}
+	for _, nested := range []*haozpayQueryData{d.HostOrderInfo, d.PayInfo} {
+		if nested != nil && nested.paymentSucceeded() {
+			return true
+		}
+	}
+	return false
+}
+
+func haozpayQueryDataPaymentSucceeded(d haozpayQueryData) bool {
+	return strings.EqualFold(d.Status, haozpayStatusSuccess) ||
+		strings.EqualFold(d.Status, haozpayStatusPaid) ||
+		strings.EqualFold(d.TradeStatus, haozpayStatusSuccess) ||
+		strings.EqualFold(d.TradeStatus, haozpayStatusPaid) ||
+		strings.EqualFold(d.TransStat, "S") ||
+		d.PayStatus == 2 ||
+		d.OrderStatus == 2
+}
+
+func (d haozpayQueryData) amount() float64 {
+	if amount := firstNonZeroFloat(d.OrderAmount, d.PayAmount, d.PayAmt, d.TransAmt); amount != 0 {
+		return amount
+	}
+	for _, nested := range []*haozpayQueryData{d.HostOrderInfo, d.PayInfo, d.TradeConfirmRecord} {
+		if nested != nil {
+			if amount := nested.amount(); amount != 0 {
+				return amount
+			}
+		}
+	}
+	return 0
+}
+
+func (d haozpayQueryData) tradeNo() string {
+	if tradeNo := firstNonEmpty(d.SeqID, d.PaySeqID, d.ReqSeqID, d.OrderNo, d.PartyOrderID, d.MerchantOrder); tradeNo != "" {
+		return tradeNo
+	}
+	for _, nested := range []*haozpayQueryData{d.HostOrderInfo, d.PayInfo} {
+		if nested != nil {
+			if tradeNo := nested.tradeNo(); tradeNo != "" {
+				return tradeNo
+			}
+		}
+	}
+	return ""
 }
 
 func haozpayIsOrderNotFound(code int, message string) bool {

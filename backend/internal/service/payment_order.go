@@ -720,11 +720,7 @@ func calculateCreateOrderPayAmountForPaymentType(paymentType, orderType string, 
 }
 
 func calculateCreateOrderPaymentAmount(orderType string, limitAmount, multiplier float64, currency string) float64 {
-	normalizedCurrency, err := payment.NormalizePaymentCurrency(currency)
-	if err != nil || normalizedCurrency != payment.DefaultPaymentCurrency || orderType != payment.OrderTypeSubscription {
-		return limitAmount
-	}
-	return calculateGatewayPaymentAmount(limitAmount, multiplier, normalizedCurrency)
+	return limitAmount
 }
 
 func validateCreateOrderAmountCurrency(amount float64, currency string) error {

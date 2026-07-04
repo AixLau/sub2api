@@ -309,6 +309,51 @@ func TestHaozPayVerifyNotificationAcceptsFlatPaymentCallback(t *testing.T) {
 	}
 }
 
+func TestHaozPayVerifyNotificationUsesOrderAmountWhenPayAmountIsNet(t *testing.T) {
+	t.Parallel()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate rsa key: %v", err)
+	}
+	h := &HaozPay{
+		merchantNo:     "M123456",
+		platformPubKey: &key.PublicKey,
+	}
+
+	params := map[string]interface{}{
+		"orderNo":         "HZHT202607042073412271199350784",
+		"merchantOrderNo": "20260704naCD4hyY",
+		"merchantNo":      "M123456",
+		"orderAmount":     "10.00",
+		"payAmount":       "9.92",
+		"payType":         "0",
+		"payChannel":      "HFDG",
+		"payStatus":       2,
+		"feeAmount":       "0.08",
+		"payTime":         "2026-07-04 22:23:26",
+		"createTime":      "2026-07-04 22:23:02",
+		"timestamp":       int64(1783175006000),
+	}
+	sign, err := haozPayTestPrivateEncryptSign(key, params)
+	if err != nil {
+		t.Fatalf("sign callback: %v", err)
+	}
+	params["sign"] = sign
+	raw, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("marshal callback: %v", err)
+	}
+
+	notification, err := h.VerifyNotification(context.Background(), string(raw), nil)
+	if err != nil {
+		t.Fatalf("verify notification: %v", err)
+	}
+	if notification.Amount != 10 {
+		t.Fatalf("Amount = %v, want gross order amount 10", notification.Amount)
+	}
+}
+
 func TestHaozPayVerifyNotificationUsesMerchantOrderNoAsLocalOrderID(t *testing.T) {
 	t.Parallel()
 
@@ -453,6 +498,92 @@ func TestHaozPayQueryOrderMapsSuccessfulStatusToPaid(t *testing.T) {
 	}
 	if bizBody["orderNo"] != "sub2_haozpay_123" {
 		t.Fatalf("orderNo = %#v, want sub2_haozpay_123", bizBody["orderNo"])
+	}
+}
+
+func TestHaozPayQueryOrderUsesOrderAmountWhenPayAmountIsNet(t *testing.T) {
+	t.Parallel()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate rsa key: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"seqId":"HZHT202607042073412271199350784","merchantOrderNo":"20260704naCD4hyY","payStatus":2,"orderAmount":10.00,"payAmount":9.92}}`))
+	}))
+	defer server.Close()
+
+	h := &HaozPay{
+		httpClient: &http.Client{Transport: rewriteHostTransport(server.URL)},
+		merchantNo: "M123456",
+		privateKey: key,
+	}
+
+	resp, err := h.QueryOrder(context.Background(), "20260704naCD4hyY")
+	if err != nil {
+		t.Fatalf("query order: %v", err)
+	}
+	if resp.Amount != 10 {
+		t.Fatalf("Amount = %v, want gross order amount 10", resp.Amount)
+	}
+}
+
+func TestHaozPayQueryOrderReadsNestedHostedOrderResponse(t *testing.T) {
+	t.Parallel()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate rsa key: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"code":0,
+			"message":"成功",
+			"data":{
+				"hostOrderInfo":{
+					"orderNo":"HZHT202607042073415216105959424",
+					"orderAmount":5,
+					"orderStatus":2,
+					"orderStatusDesc":"支付成功",
+					"payAmount":5
+				},
+				"payInfo":{
+					"orderNo":"HZHT202607042073415216105959424",
+					"orderAmount":5,
+					"payStatus":2,
+					"payStatusDesc":"支付成功",
+					"payAmount":5
+				},
+				"tradeConfirmRecord":{
+					"payAmount":5
+				}
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	h := &HaozPay{
+		httpClient: &http.Client{Transport: rewriteHostTransport(server.URL)},
+		merchantNo: "M123456",
+		privateKey: key,
+	}
+
+	resp, err := h.QueryOrder(context.Background(), "HZHT202607042073415216105959424")
+	if err != nil {
+		t.Fatalf("query order: %v", err)
+	}
+	if resp.Status != payment.ProviderStatusPaid {
+		t.Fatalf("Status = %q, want paid", resp.Status)
+	}
+	if resp.Amount != 5 {
+		t.Fatalf("Amount = %v, want 5", resp.Amount)
+	}
+	if resp.TradeNo != "HZHT202607042073415216105959424" {
+		t.Fatalf("TradeNo = %q, want upstream order no", resp.TradeNo)
 	}
 }
 
