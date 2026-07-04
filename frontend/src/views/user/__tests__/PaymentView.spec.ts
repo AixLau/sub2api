@@ -1124,4 +1124,24 @@ describe('PaymentView nineplus unified display', () => {
     expect(cards[0].text()).toContain('套餐价 ¥29.90')
     expect(cards[0].text()).not.toContain('实付 ¥30.50')
   })
+
+  it('uses the liquid glass preview surface for nineplus subscription selection', async () => {
+    getCheckoutInfo.mockResolvedValue(checkoutInfoWithNinePlusCatalogFixture())
+    const wrapper = mountPaymentViewForContent()
+
+    await flushPromises()
+
+    ;(wrapper.vm as { activeTab: 'recharge' | 'subscription' }).activeTab = 'subscription'
+    await wrapper.vm.$nextTick()
+
+    const productCard = wrapper.find('[data-testid="nineplus-subscription-product-sub-starter"]')
+    const summary = wrapper.find('[data-testid="subscription-confirmation"]')
+    const submit = wrapper.find('[data-testid="submit-subscription"]')
+
+    expect(productCard.classes()).toContain('recharge-choice-card')
+    expect(productCard.classes()).toContain('recharge-choice-card-selected')
+    expect(summary.classes()).toContain('recharge-glass-card')
+    expect(summary.classes()).toContain('recharge-summary-card')
+    expect(submit.classes()).toContain('recharge-primary-button')
+  })
 })

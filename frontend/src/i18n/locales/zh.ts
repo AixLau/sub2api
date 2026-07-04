@@ -423,7 +423,7 @@ export default {
     logout: '退出登录',
     github: 'GitHub',
     mySubscriptions: '我的订阅',
-    buySubscription: '充值/订阅',
+    buySubscription: '账户充值',
     docs: '文档',
     myOrders: '我的订单',
     orderManagement: '订单管理',
@@ -7281,8 +7281,8 @@ export default {
 
   // Recharge / Subscription Page
   purchase: {
-    title: '充值/订阅',
-    description: '按页面提示完成充值或订阅',
+    title: '账户充值',
+    description: '快速为账户充值，支持多种支付方式，资金实时到账。',
     openInNewTab: '新窗口打开',
     notEnabledTitle: '该功能未开启',
     notEnabledDesc: '管理员暂未开启充值/订阅入口，请联系管理员。',

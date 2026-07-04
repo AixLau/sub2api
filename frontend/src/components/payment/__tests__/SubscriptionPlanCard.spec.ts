@@ -47,6 +47,14 @@ const mountPlanCard = (groupPlatform: string) =>
   });
 
 describe("SubscriptionPlanCard", () => {
+  it("uses the liquid glass subscription plan card surface", () => {
+    const wrapper = mountPlanCard("openai");
+
+    expect(wrapper.classes()).toContain("subscription-liquid-plan-card");
+    expect(wrapper.find("[data-testid='subscription-plan-price']").exists()).toBe(true);
+    expect(wrapper.find("[data-testid='subscription-plan-features']").exists()).toBe(false);
+  });
+
   it("does not show Antigravity model scopes for OpenAI plans", () => {
     const text = mountPlanCard("openai").text();
 
