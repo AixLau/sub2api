@@ -331,6 +331,34 @@
   top: 6rem;
 }
 
+.recharge-page-shell .recharge-summary-highlight,
+.recharge-page-content .recharge-summary-highlight {
+  display: flex;
+  min-height: 82px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(255, 255, 255, 0.62)),
+    rgba(255, 255, 255, 0.5);
+  padding: 1rem;
+  box-shadow:
+    0 14px 32px rgba(37, 99, 235, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.76);
+}
+
+.recharge-page-shell .recharge-summary-highlight-value,
+.recharge-page-content .recharge-summary-highlight-value {
+  min-width: 0;
+  color: #1d4ed8;
+  font-size: 1.75rem;
+  font-weight: 800;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
 .recharge-page-shell .recharge-primary-button,
 .recharge-page-content .recharge-primary-button {
   display: inline-flex;

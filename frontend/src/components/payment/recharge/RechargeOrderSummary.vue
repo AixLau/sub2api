@@ -21,11 +21,14 @@
         </div>
       </div>
       <div class="border-t border-slate-200/70 pt-4">
-        <div class="flex items-center justify-between gap-4">
-          <span class="text-slate-500">{{ t('payment.rechargeUi.estimatedCreditedAmount') }}</span>
-          <span class="font-semibold text-slate-950">{{ formattedEstimatedCreditedAmount }}</span>
+        <div
+          data-testid="estimated-credited-highlight"
+          class="recharge-summary-highlight"
+        >
+          <span class="text-sm font-semibold text-slate-600">{{ t('payment.rechargeUi.estimatedCreditedAmount') }}</span>
+          <span class="recharge-summary-highlight-value">{{ formattedEstimatedCreditedAmount }}</span>
         </div>
-        <div class="mt-3 flex items-center justify-between gap-4">
+        <div class="mt-4 flex items-center justify-between gap-4">
           <span class="text-slate-500">{{ t('payment.rechargeUi.arrivalTime') }}</span>
           <span class="font-semibold text-emerald-600">{{ t('payment.rechargeUi.instantArrivalShort') }}</span>
         </div>

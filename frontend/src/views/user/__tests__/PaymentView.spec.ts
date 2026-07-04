@@ -714,10 +714,14 @@ describe('PaymentView recharge liquid glass selection', () => {
     await wrapper.find('[data-testid="quick-amount-50"]').trigger('click')
 
     const summaryText = wrapper.find('[data-testid="order-summary"]').text()
+    const creditedHighlight = wrapper.find('[data-testid="estimated-credited-highlight"]')
 
     expect(summaryText).toContain('预计到账金额')
     expect(summaryText).toContain(formatPaymentAmount(150, 'USD'))
     expect(summaryText).not.toContain(formatPaymentAmount(270, 'USD'))
+    expect(creditedHighlight.exists()).toBe(true)
+    expect(creditedHighlight.text()).toContain(formatPaymentAmount(150, 'USD'))
+    expect(creditedHighlight.classes()).toContain('recharge-summary-highlight')
   })
 
   it('shows a clear segmented switch from recharge to subscription without changing payment flow state', async () => {
