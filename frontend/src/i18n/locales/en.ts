@@ -7576,6 +7576,8 @@ export default {
       weeklyLimit: 'Weekly',
       monthlyLimit: 'Monthly',
       quota: 'Quota',
+      quotaUnit: 'credits',
+      validitySuffix: ' valid',
       unlimited: 'Unlimited',
       models: 'Models',
     },

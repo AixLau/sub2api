@@ -16,6 +16,8 @@ const i18n = createI18n({
         models: "Models",
         planCard: {
           quota: "Quota",
+          quotaUnit: "额度",
+          validitySuffix: "有效",
           rate: "Rate",
           dailyLimit: "Daily",
           weeklyLimit: "Weekly",
@@ -66,8 +68,12 @@ describe("SubscriptionPlanCard", () => {
     const wrapper = mountPlanCard("openai");
     const text = wrapper.text();
 
-    expect(wrapper.find("[data-testid='subscription-plan-description']").text()).toBe("包含 400 额度 / 30 天");
-    expect(wrapper.find("[data-testid='subscription-plan-price']").text()).toContain("¥10.00");
+    expect(wrapper.find("[data-testid='subscription-plan-description']").exists()).toBe(false);
+    expect(wrapper.find("[data-testid='subscription-plan-quota-summary']").text()).toBe("400 额度");
+    expect(wrapper.find("[data-testid='subscription-plan-validity-summary']").text()).toBe("30 天有效");
+    expect(wrapper.find("[data-testid='subscription-plan-price']").text()).toBe("¥10.00");
+    expect(text).not.toContain("包含 400 额度 / 30 天");
+    expect(text).not.toContain("/ 30");
     expect(wrapper.find("[data-testid='subscription-plan-quota']").exists()).toBe(false);
     expect(text).not.toContain("OpenAI");
     expect(text).not.toContain("$400");

@@ -7758,6 +7758,8 @@ export default {
       weeklyLimit: '周限额',
       monthlyLimit: '月限额',
       quota: '配额',
+      quotaUnit: '额度',
+      validitySuffix: '有效',
       unlimited: '无限制',
       models: '模型',
     },

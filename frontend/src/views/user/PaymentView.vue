@@ -286,16 +286,23 @@
                         <div>
                           <div class="min-w-0">
                             <h3 id="selected-plan-title" class="break-words text-lg font-extrabold leading-tight text-slate-950">{{ selectedPlan.name }}</h3>
-                            <p v-if="selectedPlan.description" class="mt-2 line-clamp-2 text-sm leading-relaxed text-slate-500">
-                              {{ selectedPlan.description }}
+                            <p v-if="selectedPlanDisplay.description" class="mt-2 line-clamp-2 text-sm leading-relaxed text-slate-500">
+                              {{ selectedPlanDisplay.description }}
                             </p>
                           </div>
                         </div>
                         <div class="mt-6 flex flex-wrap items-end justify-between gap-3">
+                          <div v-if="selectedPlanDisplay.quotaSummary || selectedPlanDisplay.validitySummary" class="min-w-0">
+                            <p v-if="selectedPlanDisplay.quotaSummary" class="text-2xl font-extrabold tracking-normal text-slate-950">
+                              {{ selectedPlanDisplay.quotaSummary }}
+                            </p>
+                            <p v-if="selectedPlanDisplay.validitySummary" class="mt-1 text-sm font-semibold text-slate-500">
+                              {{ selectedPlanDisplay.validitySummary }}
+                            </p>
+                          </div>
                           <div class="min-w-0">
-                            <div class="flex flex-wrap items-baseline gap-1.5">
+                            <div>
                               <span class="text-3xl font-extrabold tracking-normal text-blue-700">{{ formatSelectedSubscriptionPaymentAmount(selectedPlan.price) }}</span>
-                              <span class="text-sm font-semibold text-slate-500">/ {{ planValiditySuffix }}</span>
                             </div>
                             <div v-if="selectedPlan.original_price" class="mt-1">
                               <span class="text-sm text-slate-400 line-through">
@@ -452,6 +459,7 @@ import SubscriptionPlanCard from '@/components/payment/SubscriptionPlanCard.vue'
 import PaymentStatusPanel from '@/components/payment/PaymentStatusPanel.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
+import { buildSubscriptionPlanDisplay, buildSubscriptionPlanDisplayLabels, type SubscriptionPlanDisplay } from '@/components/payment/subscriptionPlanDisplay'
 import type { PaymentMethodOption } from '@/components/payment/PaymentMethodSelector.vue'
 import { buildPaymentErrorToastMessage, describePaymentScenarioError } from './paymentUx'
 import { hasWechatResumeQuery, parseWechatResumeRoute, stripWechatResumeQuery } from './paymentWechatResume'
@@ -1054,12 +1062,11 @@ const renewalPlans = computed(() => {
   return checkout.value.plans.filter(p => p.group_id === renewGroupId.value)
 })
 
-const planValiditySuffix = computed(() => {
-  if (!selectedPlan.value) return ''
-  const u = selectedPlan.value.validity_unit || 'day'
-  if (u === 'month') return t('payment.perMonth')
-  if (u === 'year') return t('payment.perYear')
-  return `${selectedPlan.value.validity_days}${t('payment.days')}`
+const selectedPlanDisplay = computed<SubscriptionPlanDisplay>(() => {
+  if (!selectedPlan.value) {
+    return { description: '', quotaSummary: '', validitySummary: '' }
+  }
+  return buildSubscriptionPlanDisplay(selectedPlan.value, buildSubscriptionPlanDisplayLabels(t))
 })
 
 function selectPlan(plan: SubscriptionPlan) {

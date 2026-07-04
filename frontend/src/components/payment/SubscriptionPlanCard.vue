@@ -10,11 +10,11 @@
         <div class="min-w-0">
           <h3 class="break-words text-lg font-extrabold leading-tight text-slate-950">{{ plan.name }}</h3>
           <p
-            v-if="plan.description"
+            v-if="planDisplay.description"
             data-testid="subscription-plan-description"
             class="mt-2 line-clamp-2 text-sm leading-relaxed text-slate-500"
           >
-            {{ plan.description }}
+            {{ planDisplay.description }}
           </p>
         </div>
       </div>
@@ -32,10 +32,25 @@
       <div class="flex-1" />
 
       <div class="mt-5 flex flex-wrap items-end justify-between gap-3">
+        <div v-if="planDisplay.quotaSummary || planDisplay.validitySummary" class="min-w-0">
+          <p
+            v-if="planDisplay.quotaSummary"
+            data-testid="subscription-plan-quota-summary"
+            class="text-2xl font-extrabold tracking-normal text-slate-950"
+          >
+            {{ planDisplay.quotaSummary }}
+          </p>
+          <p
+            v-if="planDisplay.validitySummary"
+            data-testid="subscription-plan-validity-summary"
+            class="mt-1 text-sm font-semibold text-slate-500"
+          >
+            {{ planDisplay.validitySummary }}
+          </p>
+        </div>
         <div class="min-w-0">
-          <div data-testid="subscription-plan-price" class="flex items-baseline gap-1">
+          <div data-testid="subscription-plan-price">
             <span class="text-3xl font-extrabold tracking-normal text-blue-700">{{ formattedPrice }}</span>
-            <span class="text-sm font-semibold text-slate-500">/ {{ validitySuffix }}</span>
           </div>
           <div v-if="plan.original_price" class="mt-1 flex items-center gap-1.5">
             <span class="text-sm text-slate-400 line-through">{{ formattedOriginalPrice }}</span>
@@ -65,6 +80,7 @@ import { formatPaymentAmount } from '@/components/payment/currency'
 import {
   platformDiscountClass,
 } from '@/utils/platformColors'
+import { buildSubscriptionPlanDisplay, buildSubscriptionPlanDisplayLabels } from '@/components/payment/subscriptionPlanDisplay'
 
 const props = defineProps<{ plan: SubscriptionPlan; activeSubscriptions?: UserSubscription[] }>()
 const emit = defineEmits<{ select: [plan: SubscriptionPlan] }>()
@@ -76,6 +92,7 @@ const isRenewal = computed(() =>
 
 // Derived color classes from central config
 const discountClass = computed(() => platformDiscountClass(props.plan.group_platform || ''))
+const planDisplay = computed(() => buildSubscriptionPlanDisplay(props.plan, buildSubscriptionPlanDisplayLabels(t)))
 
 const formattedPrice = computed(() => formatPaymentAmount(props.plan.price, 'CNY'))
 const formattedOriginalPrice = computed(() =>
@@ -88,10 +105,4 @@ const discountText = computed(() => {
   return pct > 0 ? `-${pct}%` : ''
 })
 
-const validitySuffix = computed(() => {
-  const u = props.plan.validity_unit || 'day'
-  if (u === 'month') return t('payment.perMonth')
-  if (u === 'year') return t('payment.perYear')
-  return `${props.plan.validity_days}${t('payment.days')}`
-})
 </script>
