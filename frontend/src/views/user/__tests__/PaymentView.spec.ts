@@ -660,7 +660,7 @@ describe('PaymentView subscription confirmation amounts', () => {
       },
       plan: {
         name: 'Pro',
-        description: 'For stable team collaboration',
+        description: '包含 220 额度 / 30 天',
         price: 299,
         original_price: 399,
         rate_multiplier: 1.3,
@@ -673,10 +673,10 @@ describe('PaymentView subscription confirmation amounts', () => {
     const text = wrapper.text()
 
     expect(text).toContain('Pro')
-    expect(text).toContain('For stable team collaboration')
+    expect(text).toContain('包含 220 额度 / 30 天')
     expect(text).toContain(formatPaymentAmount(299, 'CNY'))
     expect(text).toContain(formatPaymentAmount(399, 'CNY'))
-    expect(text).toContain(formatPaymentAmount(220, 'USD'))
+    expect(text).not.toContain(formatPaymentAmount(220, 'USD'))
     expect(text).not.toContain('×1.3')
     expect(text).not.toContain('payment.planCard.rate')
     expect(text).not.toContain('payment.planCard.dailyLimit')

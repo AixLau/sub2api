@@ -306,7 +306,6 @@
                               </span>
                             </div>
                           </div>
-                          <p class="text-sm font-bold text-slate-500">{{ selectedPlanQuotaSummary }}</p>
                         </div>
                       </section>
                       <RechargeMethodSelector
@@ -1067,14 +1066,6 @@ const planValiditySuffix = computed(() => {
   if (u === 'month') return t('payment.perMonth')
   if (u === 'year') return t('payment.perYear')
   return `${selectedPlan.value.validity_days}${t('payment.days')}`
-})
-
-const selectedPlanQuotaSummary = computed(() => {
-  const monthly = selectedPlan.value?.monthly_limit_usd
-  if (monthly != null && monthly > 0) {
-    return `${t('payment.planCard.monthlyQuota')} ${formatPaymentAmount(monthly, 'USD', localeCode.value)}`
-  }
-  return t('payment.planCard.unlimited')
 })
 
 function selectPlan(plan: SubscriptionPlan) {

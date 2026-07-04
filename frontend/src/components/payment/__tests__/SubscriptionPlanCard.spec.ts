@@ -20,7 +20,6 @@ const i18n = createI18n({
           dailyLimit: "Daily",
           weeklyLimit: "Weekly",
           monthlyLimit: "Monthly",
-          monthlyQuota: "Monthly Quota",
           unlimited: "Unlimited",
         },
         subscribeNow: "Subscribe now",
@@ -37,7 +36,7 @@ const mountPlanCard = (groupPlatform: string) =>
         group_id: 10,
         group_platform: groupPlatform,
         name: "Pro",
-        description: "For stable team collaboration",
+        description: "包含 400 额度 / 30 天",
         price: 10,
         amount: 1000,
         features: [],
@@ -67,9 +66,10 @@ describe("SubscriptionPlanCard", () => {
     const wrapper = mountPlanCard("openai");
     const text = wrapper.text();
 
-    expect(wrapper.find("[data-testid='subscription-plan-description']").text()).toBe("For stable team collaboration");
+    expect(wrapper.find("[data-testid='subscription-plan-description']").text()).toBe("包含 400 额度 / 30 天");
     expect(wrapper.find("[data-testid='subscription-plan-price']").text()).toContain("¥10.00");
-    expect(wrapper.find("[data-testid='subscription-plan-quota']").text()).toContain("$400");
+    expect(wrapper.find("[data-testid='subscription-plan-quota']").exists()).toBe(false);
+    expect(text).not.toContain("$400");
     expect(text).not.toContain("×1.3");
     expect(text).not.toContain("Rate");
     expect(text).not.toContain("Daily");

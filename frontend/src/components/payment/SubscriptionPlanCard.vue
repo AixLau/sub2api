@@ -45,9 +45,6 @@
             <span :class="['rounded-full px-1.5 py-0.5 text-[10px] font-semibold', discountClass]">{{ discountText }}</span>
           </div>
         </div>
-        <p data-testid="subscription-plan-quota" class="text-sm font-bold text-slate-500">
-          {{ quotaSummary }}
-        </p>
       </div>
 
       <!-- Subscribe Button -->
@@ -97,14 +94,6 @@ const discountText = computed(() => {
   if (!props.plan.original_price || props.plan.original_price <= 0) return ''
   const pct = Math.round((1 - props.plan.price / props.plan.original_price) * 100)
   return pct > 0 ? `-${pct}%` : ''
-})
-
-const quotaSummary = computed(() => {
-  const monthly = props.plan.monthly_limit_usd
-  if (monthly != null && monthly > 0) {
-    return `${t('payment.planCard.monthlyQuota')} ${formatPaymentAmount(monthly, 'USD')}`
-  }
-  return t('payment.planCard.unlimited')
 })
 
 const validitySuffix = computed(() => {
