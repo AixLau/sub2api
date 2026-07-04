@@ -124,3 +124,21 @@ func (l *imageConcurrencyLimiter) waiterReleaseFunc() func() {
 		})
 	}
 }
+
+func (l *imageConcurrencyLimiter) idle() bool {
+	if l == nil {
+		return true
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.active == 0 && l.waiting == 0
+}
+
+func (l *imageConcurrencyLimiter) activeCount() int {
+	if l == nil {
+		return 0
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.active
+}

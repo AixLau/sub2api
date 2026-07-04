@@ -392,6 +392,10 @@ gateway:
     # Max concurrent image generation requests in this process, 0=unlimited
     # 当前进程允许同时处理的图片生成请求数，0=不限制
     max_concurrent_requests: 0
+    # Hard ceiling for concurrent image generation requests per user in this process.
+    # The effective per-user limit shrinks to the current idle image slots; 0=unlimited.
+    # 当前进程内单个用户图片并发硬上限；实际上限会随当前空闲图片槽动态收缩，0=不限制
+    max_concurrent_requests_per_user: 0
     # Overflow mode when the image concurrency limit is full: reject/wait
     # 图片并发满时的处理方式：reject=立即拒绝，wait=等待槽位
     overflow_mode: "reject"

@@ -1414,6 +1414,11 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "gateway.image_concurrency.max_concurrent_requests must be non-negative",
 		},
 		{
+			name:    "gateway image concurrency max per user negative",
+			mutate:  func(c *Config) { c.Gateway.ImageConcurrency.MaxConcurrentRequestsPerUser = -1 },
+			wantErr: "gateway.image_concurrency.max_concurrent_requests_per_user must be non-negative",
+		},
+		{
 			name:    "gateway image concurrency overflow mode invalid",
 			mutate:  func(c *Config) { c.Gateway.ImageConcurrency.OverflowMode = "queue" },
 			wantErr: "gateway.image_concurrency.overflow_mode",
@@ -1961,6 +1966,9 @@ func TestLoad_DefaultGatewayImageStreamConfig(t *testing.T) {
 	}
 	if cfg.Gateway.ImageConcurrency.MaxConcurrentRequests != 0 {
 		t.Fatalf("image_concurrency.max_concurrent_requests = %d, want 0", cfg.Gateway.ImageConcurrency.MaxConcurrentRequests)
+	}
+	if cfg.Gateway.ImageConcurrency.MaxConcurrentRequestsPerUser != 0 {
+		t.Fatalf("image_concurrency.max_concurrent_requests_per_user = %d, want 0", cfg.Gateway.ImageConcurrency.MaxConcurrentRequestsPerUser)
 	}
 	if cfg.Gateway.ImageConcurrency.OverflowMode != ImageConcurrencyOverflowModeReject {
 		t.Fatalf("image_concurrency.overflow_mode = %q, want %q", cfg.Gateway.ImageConcurrency.OverflowMode, ImageConcurrencyOverflowModeReject)

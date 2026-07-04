@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -41,6 +42,8 @@ type OpenAIGatewayHandler struct {
 	opsService               *service.OpsService
 	concurrencyHelper        *ConcurrencyHelper
 	imageLimiter             *imageConcurrencyLimiter
+	imageUserLimiterMu       sync.Mutex
+	imageUserLimiters        map[int64]*imageConcurrencyLimiter
 	maxAccountSwitches       int
 	cfg                      *config.Config
 }
@@ -151,6 +154,7 @@ func NewOpenAIGatewayHandler(
 		opsService:               opsService,
 		concurrencyHelper:        NewConcurrencyHelper(concurrencyService, SSEPingFormatComment, pingInterval),
 		imageLimiter:             &imageConcurrencyLimiter{},
+		imageUserLimiters:        map[int64]*imageConcurrencyLimiter{},
 		maxAccountSwitches:       maxAccountSwitches,
 		cfg:                      cfg,
 	}
@@ -1710,24 +1714,143 @@ func (h *OpenAIGatewayHandler) submitMandatoryUsageRecordTask(parent context.Con
 }
 
 func (h *OpenAIGatewayHandler) acquireImageGenerationSlot(c *gin.Context, streamStarted bool) (func(), bool) {
-	if h == nil || h.cfg == nil || h.imageLimiter == nil {
+	if h == nil || h.cfg == nil {
 		return nil, true
 	}
 	imageConcurrency := h.cfg.Gateway.ImageConcurrency
+	if !imageConcurrency.Enabled {
+		return nil, true
+	}
 	wait := strings.TrimSpace(imageConcurrency.OverflowMode) == config.ImageConcurrencyOverflowModeWait
-	release, acquired := h.imageLimiter.Acquire(
+	var releases []func()
+	releaseAll := func() {
+		for i := len(releases) - 1; i >= 0; i-- {
+			if releases[i] != nil {
+				releases[i]()
+			}
+		}
+	}
+
+	userLimit := h.currentImageGenerationUserLimit(imageConcurrency)
+	if userLimit > 0 {
+		if userID, ok := imageGenerationConcurrencyUserID(c); ok {
+			userImageConcurrency := imageConcurrency
+			userImageConcurrency.MaxConcurrentRequestsPerUser = userLimit
+			release, acquired := h.acquireUserImageGenerationSlot(c, userID, userImageConcurrency, wait)
+			if !acquired {
+				releaseAll()
+				h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Image generation concurrency limit exceeded, please retry later", streamStarted)
+				return nil, false
+			}
+			if release != nil {
+				releases = append(releases, release)
+			}
+		}
+	}
+
+	if h.imageLimiter != nil {
+		release, acquired := h.imageLimiter.Acquire(
+			c.Request.Context(),
+			true,
+			imageConcurrency.MaxConcurrentRequests,
+			wait,
+			time.Duration(imageConcurrency.WaitTimeoutSeconds)*time.Second,
+			imageConcurrency.MaxWaitingRequests,
+		)
+		if !acquired {
+			releaseAll()
+			h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Image generation concurrency limit exceeded, please retry later", streamStarted)
+			return nil, false
+		}
+		if release != nil {
+			releases = append(releases, release)
+		}
+	}
+
+	if len(releases) == 0 {
+		return nil, true
+	}
+	return releaseAll, true
+}
+
+func (h *OpenAIGatewayHandler) currentImageGenerationUserLimit(imageConcurrency config.ImageConcurrencyConfig) int {
+	hardLimit := imageConcurrency.MaxConcurrentRequestsPerUser
+	if hardLimit <= 0 {
+		return 0
+	}
+	totalLimit := imageConcurrency.MaxConcurrentRequests
+	if totalLimit <= 0 || h == nil || h.imageLimiter == nil {
+		return hardLimit
+	}
+	idleSlots := totalLimit - h.imageLimiter.activeCount()
+	if idleSlots <= 0 {
+		return hardLimit
+	}
+	if idleSlots < hardLimit {
+		return idleSlots
+	}
+	return hardLimit
+}
+
+func imageGenerationConcurrencyUserID(c *gin.Context) (int64, bool) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if ok && subject.UserID > 0 {
+		return subject.UserID, true
+	}
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if ok && apiKey != nil && apiKey.User != nil && apiKey.User.ID > 0 {
+		return apiKey.User.ID, true
+	}
+	return 0, false
+}
+
+func (h *OpenAIGatewayHandler) acquireUserImageGenerationSlot(c *gin.Context, userID int64, imageConcurrency config.ImageConcurrencyConfig, wait bool) (func(), bool) {
+	limiter := h.imageLimiterForUser(userID)
+	release, acquired := limiter.Acquire(
 		c.Request.Context(),
-		imageConcurrency.Enabled,
-		imageConcurrency.MaxConcurrentRequests,
+		true,
+		imageConcurrency.MaxConcurrentRequestsPerUser,
 		wait,
 		time.Duration(imageConcurrency.WaitTimeoutSeconds)*time.Second,
 		imageConcurrency.MaxWaitingRequests,
 	)
-	if acquired {
-		return release, true
+	if !acquired {
+		h.pruneImageLimiterForUser(userID, limiter)
+		return nil, false
 	}
-	h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Image generation concurrency limit exceeded, please retry later", streamStarted)
-	return nil, false
+	if release == nil {
+		h.pruneImageLimiterForUser(userID, limiter)
+		return nil, true
+	}
+	return func() {
+		release()
+		h.pruneImageLimiterForUser(userID, limiter)
+	}, true
+}
+
+func (h *OpenAIGatewayHandler) imageLimiterForUser(userID int64) *imageConcurrencyLimiter {
+	h.imageUserLimiterMu.Lock()
+	defer h.imageUserLimiterMu.Unlock()
+	if h.imageUserLimiters == nil {
+		h.imageUserLimiters = map[int64]*imageConcurrencyLimiter{}
+	}
+	limiter := h.imageUserLimiters[userID]
+	if limiter == nil {
+		limiter = &imageConcurrencyLimiter{}
+		h.imageUserLimiters[userID] = limiter
+	}
+	return limiter
+}
+
+func (h *OpenAIGatewayHandler) pruneImageLimiterForUser(userID int64, limiter *imageConcurrencyLimiter) {
+	if h == nil || limiter == nil || !limiter.idle() {
+		return
+	}
+	h.imageUserLimiterMu.Lock()
+	defer h.imageUserLimiterMu.Unlock()
+	if h.imageUserLimiters[userID] == limiter && limiter.idle() {
+		delete(h.imageUserLimiters, userID)
+	}
 }
 
 // handleConcurrencyError handles concurrency-related acquire errors.

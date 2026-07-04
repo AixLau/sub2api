@@ -1013,12 +1013,59 @@ func (s OpenAIHTTPBillingStage) RunBilling(c *gin.Context) ExecutableStageResult
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIHTTPForwardStage(c *gin.Context, adapter ForwardStage) openAIHTTPExecutableStageResult {
+	adapter, releaseFunc := detachOpenAIHTTPForwardRelease(adapter)
 	adapter = h.openAIHTTPForwardStageFromRouteDescriptor(c, adapter)
+	if releaseFunc != nil {
+		adapter = forwardStageWithRelease{stage: adapter, release: releaseFunc}
+	}
 	return runGatewayPipelineStage(c,
 		moderationcoverage.PipelineOpenAIHTTP,
 		moderationcoverage.SourceOpenAIHTTPExecutableStage,
 		executableForwardStageWithContext(c, adapter),
 	)
+}
+
+func detachOpenAIHTTPForwardRelease(adapter ForwardStage) (ForwardStage, func()) {
+	switch stage := adapter.(type) {
+	case OpenAIHTTPForwardStage:
+		release := stage.ReleaseFunc
+		stage.ReleaseFunc = nil
+		return stage, release
+	case *OpenAIHTTPForwardStage:
+		if stage == nil {
+			return adapter, nil
+		}
+		copyStage := *stage
+		release := copyStage.ReleaseFunc
+		copyStage.ReleaseFunc = nil
+		return copyStage, release
+	default:
+		return adapter, nil
+	}
+}
+
+type forwardStageWithRelease struct {
+	stage   ForwardStage
+	release func()
+}
+
+func (s forwardStageWithRelease) StageName() string {
+	if s.stage == nil {
+		return moderationcoverage.StageForward
+	}
+	return s.stage.StageName()
+}
+
+func (s forwardStageWithRelease) RunForward(c *gin.Context) ExecutableStageResult {
+	defer func() {
+		if s.release != nil {
+			s.release()
+		}
+	}()
+	if s.stage == nil {
+		return ExecutableStageResult{}
+	}
+	return s.stage.RunForward(c)
 }
 
 func (h *OpenAIGatewayHandler) openAIHTTPForwardStageFromRouteDescriptor(c *gin.Context, fallback ForwardStage) ForwardStage {

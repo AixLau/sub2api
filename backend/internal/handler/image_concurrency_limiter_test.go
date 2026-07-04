@@ -141,6 +141,92 @@ func TestOpenAIGatewayHandlerAcquireImageGenerationSlot_Returns429WhenFull(t *te
 	require.Contains(t, rec.Body.String(), "Image generation concurrency limit exceeded")
 }
 
+func TestOpenAIGatewayHandlerAcquireImageGenerationSlot_LimitsPerUserIndependently(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &OpenAIGatewayHandler{
+		cfg: &config.Config{
+			Gateway: config.GatewayConfig{
+				ImageConcurrency: config.ImageConcurrencyConfig{
+					Enabled:                      true,
+					MaxConcurrentRequestsPerUser: 1,
+					OverflowMode:                 config.ImageConcurrencyOverflowModeReject,
+				},
+			},
+		},
+		imageLimiter: &imageConcurrencyLimiter{},
+	}
+	userOne := newImageConcurrencyUserContext(20)
+	releaseOne, acquiredOne := h.acquireImageGenerationSlot(userOne, false)
+	require.True(t, acquiredOne)
+	require.NotNil(t, releaseOne)
+	defer releaseOne()
+
+	blocked := newImageConcurrencyUserContext(20)
+	blockedRelease, blockedAcquired := h.acquireImageGenerationSlot(blocked, false)
+	require.False(t, blockedAcquired)
+	require.Nil(t, blockedRelease)
+	require.Equal(t, http.StatusTooManyRequests, blocked.Writer.Status())
+
+	userTwo := newImageConcurrencyUserContext(21)
+	releaseTwo, acquiredTwo := h.acquireImageGenerationSlot(userTwo, false)
+	require.True(t, acquiredTwo)
+	require.NotNil(t, releaseTwo)
+	releaseTwo()
+
+	releaseOne()
+	afterRelease := newImageConcurrencyUserContext(20)
+	nextRelease, nextAcquired := h.acquireImageGenerationSlot(afterRelease, false)
+	require.True(t, nextAcquired)
+	require.NotNil(t, nextRelease)
+	nextRelease()
+}
+
+func TestOpenAIGatewayHandlerAcquireImageGenerationSlot_UserLimitGrowsWithIdleSlots(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &OpenAIGatewayHandler{
+		cfg: &config.Config{
+			Gateway: config.GatewayConfig{
+				ImageConcurrency: config.ImageConcurrencyConfig{
+					Enabled:                      true,
+					MaxConcurrentRequests:        6,
+					MaxConcurrentRequestsPerUser: 4,
+					OverflowMode:                 config.ImageConcurrencyOverflowModeReject,
+				},
+			},
+		},
+		imageLimiter: &imageConcurrencyLimiter{},
+	}
+
+	releaseUser20A, acquired := h.acquireImageGenerationSlot(newImageConcurrencyUserContext(20), false)
+	require.True(t, acquired)
+	defer releaseUser20A()
+	releaseUser20B, acquired := h.acquireImageGenerationSlot(newImageConcurrencyUserContext(20), false)
+	require.True(t, acquired)
+	defer releaseUser20B()
+
+	var otherReleases []func()
+	for _, userID := range []int64{21, 22, 23} {
+		release, otherAcquired := h.acquireImageGenerationSlot(newImageConcurrencyUserContext(userID), false)
+		require.True(t, otherAcquired)
+		require.NotNil(t, release)
+		otherReleases = append(otherReleases, release)
+	}
+
+	blocked := newImageConcurrencyUserContext(20)
+	blockedRelease, blockedAcquired := h.acquireImageGenerationSlot(blocked, false)
+	require.False(t, blockedAcquired)
+	require.Nil(t, blockedRelease)
+	require.Equal(t, http.StatusTooManyRequests, blocked.Writer.Status())
+
+	for _, release := range otherReleases {
+		release()
+	}
+	releaseUser20C, acquired := h.acquireImageGenerationSlot(newImageConcurrencyUserContext(20), false)
+	require.True(t, acquired)
+	require.NotNil(t, releaseUser20C)
+	releaseUser20C()
+}
+
 func TestOpenAIGatewayHandlerResponses_ImageIntentRejectedByImageConcurrency(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := `{"model":"gpt-5.4","input":"draw","tools":[{"type":"image_generation"}]}`
@@ -230,4 +316,12 @@ func TestOpenAIGatewayHandlerResponses_TextOnlyNotRejectedByImageConcurrency(t *
 
 	require.NotEqual(t, http.StatusTooManyRequests, rec.Code)
 	require.NotContains(t, rec.Body.String(), "Image generation concurrency limit exceeded")
+}
+
+func newImageConcurrencyUserContext(userID int64) *gin.Context {
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil)
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: userID})
+	return c
 }

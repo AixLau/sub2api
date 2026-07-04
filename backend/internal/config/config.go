@@ -675,6 +675,8 @@ type ImageConcurrencyConfig struct {
 	Enabled bool `mapstructure:"enabled"`
 	// MaxConcurrentRequests: 当前进程允许同时处理的图片生成请求数，0表示不限制
 	MaxConcurrentRequests int `mapstructure:"max_concurrent_requests"`
+	// MaxConcurrentRequestsPerUser: 当前进程内单个用户图片并发硬上限，实际上限会随空闲图片槽动态收缩，0表示不限制
+	MaxConcurrentRequestsPerUser int `mapstructure:"max_concurrent_requests_per_user"`
 	// OverflowMode: 图片并发达到上限后的处理方式：reject/wait
 	OverflowMode string `mapstructure:"overflow_mode"`
 	// WaitTimeoutSeconds: overflow_mode=wait 时等待图片并发槽位的超时时间（秒）
@@ -1899,6 +1901,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_http2.fallback_ttl_seconds", 600)
 	viper.SetDefault("gateway.image_concurrency.enabled", false)
 	viper.SetDefault("gateway.image_concurrency.max_concurrent_requests", 0)
+	viper.SetDefault("gateway.image_concurrency.max_concurrent_requests_per_user", 0)
 	viper.SetDefault("gateway.image_concurrency.overflow_mode", ImageConcurrencyOverflowModeReject)
 	viper.SetDefault("gateway.image_concurrency.wait_timeout_seconds", 30)
 	viper.SetDefault("gateway.image_concurrency.max_waiting_requests", 100)
@@ -2484,6 +2487,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.ImageConcurrency.MaxConcurrentRequests < 0 {
 		return fmt.Errorf("gateway.image_concurrency.max_concurrent_requests must be non-negative")
+	}
+	if c.Gateway.ImageConcurrency.MaxConcurrentRequestsPerUser < 0 {
+		return fmt.Errorf("gateway.image_concurrency.max_concurrent_requests_per_user must be non-negative")
 	}
 	switch strings.TrimSpace(c.Gateway.ImageConcurrency.OverflowMode) {
 	case "", ImageConcurrencyOverflowModeReject, ImageConcurrencyOverflowModeWait:

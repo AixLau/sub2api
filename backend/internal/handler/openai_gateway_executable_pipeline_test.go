@@ -506,6 +506,69 @@ func TestOpenAIHTTPForwardStageUsesRouteDescriptorRegistry(t *testing.T) {
 	}, moderationcoverage.PipelineStageExecutionsFromContext(c))
 }
 
+func TestOpenAIHTTPForwardStageReleasesSlotWhenDescriptorUsesRegisteredAdapter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil)
+	moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+		Method:   http.MethodPost,
+		Path:     "/v1/images/generations",
+		Handler:  "OpenAIGatewayHandler.Images",
+		Protocol: "openai_images",
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+	})
+	registry := NewStageAdapterRegistry()
+	forwardCalls := 0
+	registry.RegisterForward(moderationcoverage.RouteAdapterDescriptor{
+		Stage:    moderationcoverage.StageForward,
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+		Name:     "OpenAIHTTPForwardStage",
+	}, ForwardStageAdapter{
+		Name: "OpenAIHTTPForwardStage",
+		Forward: func(*gin.Context) ExecutableStageResult {
+			forwardCalls++
+			return ExecutableStageResult{}
+		},
+	})
+	handler := &OpenAIGatewayHandler{stageAdapterRegistry: registry}
+	releaseCalls := 0
+
+	result := handler.runOpenAIHTTPForwardStage(c, OpenAIHTTPForwardStage{
+		ReleaseFunc: func() {
+			releaseCalls++
+		},
+	})
+
+	require.False(t, result.Stop)
+	require.NoError(t, result.Err)
+	require.Equal(t, 1, forwardCalls)
+	require.Equal(t, 1, releaseCalls)
+}
+
+func TestOpenAIHTTPForwardStageReleasesSlotOnceForFallbackAdapter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil)
+	moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+		Method:   http.MethodPost,
+		Path:     "/v1/images/generations",
+		Handler:  "OpenAIGatewayHandler.Images",
+		Protocol: "openai_images",
+		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
+	})
+	releaseCalls := 0
+
+	result := (&OpenAIGatewayHandler{}).runOpenAIHTTPForwardStage(c, OpenAIHTTPForwardStage{
+		ReleaseFunc: func() {
+			releaseCalls++
+		},
+	})
+
+	require.False(t, result.Stop)
+	require.NoError(t, result.Err)
+	require.Equal(t, 1, releaseCalls)
+}
+
 func TestOpenAIHTTPForwardStageRequiresRegistrarRouteMetadata(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
