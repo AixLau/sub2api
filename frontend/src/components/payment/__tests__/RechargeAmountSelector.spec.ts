@@ -24,6 +24,15 @@ function mountSelector() {
 }
 
 describe('RechargeAmountSelector', () => {
+  it('renders quick amount cards as integer amounts without decimals', () => {
+    const wrapper = mountSelector()
+
+    const preset = wrapper.find('[data-testid="quick-amount-1000"]')
+
+    expect(preset.text()).toContain('¥1,000')
+    expect(preset.text()).not.toContain('.00')
+  })
+
   it('clears the preset selected state when custom amount is focused', async () => {
     const wrapper = mountSelector()
 
@@ -38,5 +47,17 @@ describe('RechargeAmountSelector', () => {
 
     expect(preset.classes()).not.toContain('recharge-choice-card-selected')
     expect(wrapper.findAll('.recharge-choice-card-selected')).toHaveLength(1)
+  })
+
+  it('rejects decimal custom amounts instead of updating the selected amount', async () => {
+    const wrapper = mountSelector()
+    const customInput = wrapper.find<HTMLInputElement>('[data-testid="custom-recharge-amount"]')
+
+    await customInput.trigger('focus')
+    await customInput.setValue('125')
+    await customInput.setValue('125.5')
+
+    expect(customInput.element.value).toBe('125')
+    expect(wrapper.props('modelValue')).toBe(125)
   })
 })

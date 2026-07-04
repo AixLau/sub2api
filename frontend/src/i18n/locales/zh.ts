@@ -7682,6 +7682,7 @@ export default {
     notAvailable: '充值功能暂未开放',
     confirmSubscription: '确认订阅',
     confirmCancel: '确定要取消此订单吗？',
+    amountMustBeInteger: '充值金额必须为整数',
     amountTooLow: '最低金额为 {min}',
     amountTooHigh: '最高金额为 {max}',
     amountNoMethod: '该金额没有可用的支付方式',

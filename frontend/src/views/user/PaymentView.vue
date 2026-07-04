@@ -928,6 +928,9 @@ const formattedEstimatedCreditedAmount = computed(() => formatCreditedAmount(cre
 
 const amountError = computed(() => {
   if (validAmount.value <= 0) return ''
+  if (!isNinePlusSelected.value && !Number.isInteger(validAmount.value)) {
+    return t('payment.amountMustBeInteger')
+  }
   if (!isNinePlusSelected.value && validAmount.value < effectiveMinAmount.value) {
     return t('payment.amountTooLow', { min: formatSelectedPaymentAmount(effectiveMinAmount.value) })
   }

@@ -7500,6 +7500,7 @@ export default {
     notAvailable: 'Top-up is currently unavailable',
     confirmSubscription: 'Confirm Subscription',
     confirmCancel: 'Are you sure you want to cancel this order?',
+    amountMustBeInteger: 'Recharge amount must be an integer',
     amountTooLow: 'Minimum amount is {min}',
     amountTooHigh: 'Maximum amount is {max}',
     amountNoMethod: 'No payment method available for this amount',

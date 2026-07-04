@@ -52,6 +52,7 @@ vi.mock('vue-i18n', async () => {
   const translations: Record<string, string> = {
     'payment.amountLabel': '充值金额',
     'payment.packagePriceShort': '套餐价',
+    'payment.amountMustBeInteger': '充值金额必须为整数',
     'payment.amountTooLow': '最低金额为 {min}',
     'payment.rechargeUi.estimatedCreditedAmount': '预计到账金额',
   }
@@ -737,7 +738,8 @@ describe('PaymentView recharge liquid glass selection', () => {
 
     const quickAmount = wrapper.find('[data-testid="quick-amount-50"]')
     expect(quickAmount.exists()).toBe(true)
-    expect(quickAmount.text()).toBe(formatPaymentAmount(50, 'CNY'))
+    expect(quickAmount.text()).toBe('¥50')
+    expect(quickAmount.text()).not.toContain('.00')
   })
 
   it('shows estimated credited amount from the backend multiplier without adding current balance', async () => {
@@ -891,12 +893,25 @@ describe('PaymentView recharge liquid glass selection', () => {
     const wrapper = await mountRechargeView()
     const input = wrapper.find('[data-testid="custom-recharge-amount"]')
 
-    await input.setValue('9.99')
+    await input.setValue('9')
 
     const error = wrapper.find('[data-testid="amount-error"]')
     expect(error.exists()).toBe(true)
     expect(error.text()).toContain('¥10.00')
     expect(input.attributes('aria-describedby')).toBe('recharge-amount-error')
+    expect(wrapper.find('[data-testid="submit-recharge"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('disables submission when recharge amount is not an integer', async () => {
+    const wrapper = await mountRechargeView()
+    const amountSelector = wrapper.findComponent({ name: 'RechargeAmountSelector' })
+
+    await amountSelector.vm.$emit('update:modelValue', 12.5)
+    await flushPromises()
+
+    const error = wrapper.find('[data-testid="amount-error"]')
+    expect(error.exists()).toBe(true)
+    expect(error.text()).toContain('充值金额必须为整数')
     expect(wrapper.find('[data-testid="submit-recharge"]').attributes('disabled')).toBeDefined()
   })
 

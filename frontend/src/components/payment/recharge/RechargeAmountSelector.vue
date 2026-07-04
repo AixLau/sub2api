@@ -22,7 +22,7 @@
         :aria-pressed="selectedPreset === preset"
         @click="selectPreset(preset)"
       >
-        <span class="block text-lg font-semibold text-slate-950">{{ formatAmount(preset) }}</span>
+        <span class="block text-lg font-semibold text-slate-950">{{ formatPresetAmount(preset) }}</span>
         <span v-if="showPresetMeta" class="mt-1 block text-xs text-slate-500">{{ t('payment.rechargeUi.noFee') }}</span>
       </button>
 
@@ -37,7 +37,7 @@
             :id="inputId"
             data-testid="custom-recharge-amount"
             type="text"
-            inputmode="decimal"
+            inputmode="numeric"
             :value="customText"
             :placeholder="t('payment.rechargeUi.customAmountPlaceholder')"
             :aria-invalid="!!error"
@@ -114,7 +114,22 @@ const selectedPreset = computed(() =>
     : null
 )
 
-const AMOUNT_PATTERN = /^\d*(\.\d{0,2})?$/
+const AMOUNT_PATTERN = /^\d*$/
+
+function formatPresetAmount(amount: number): string {
+  const safeAmount = Number.isFinite(amount) ? Math.trunc(amount) : 0
+  try {
+    return new Intl.NumberFormat(props.locale || undefined, {
+      style: 'currency',
+      currency: props.currency,
+      currencyDisplay: 'narrowSymbol',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(safeAmount)
+  } catch {
+    return `${currencyPrefix.value}${safeAmount.toLocaleString('en-US')}`
+  }
+}
 
 function selectPreset(amount: number) {
   customFocused.value = false
