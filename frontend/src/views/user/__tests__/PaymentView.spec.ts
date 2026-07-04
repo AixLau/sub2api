@@ -676,6 +676,7 @@ describe('PaymentView subscription confirmation amounts', () => {
     expect(text).toContain('包含 220 额度 / 30 天')
     expect(text).toContain(formatPaymentAmount(299, 'CNY'))
     expect(text).toContain(formatPaymentAmount(399, 'CNY'))
+    expect(text).not.toContain('OpenAI')
     expect(text).not.toContain(formatPaymentAmount(220, 'USD'))
     expect(text).not.toContain('×1.3')
     expect(text).not.toContain('payment.planCard.rate')

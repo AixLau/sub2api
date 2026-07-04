@@ -283,16 +283,13 @@
                   <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
                     <div class="space-y-5">
                       <section class="recharge-glass-card p-5 sm:p-6" aria-labelledby="selected-plan-title">
-                        <div class="flex items-start justify-between gap-3">
+                        <div>
                           <div class="min-w-0">
                             <h3 id="selected-plan-title" class="break-words text-lg font-extrabold leading-tight text-slate-950">{{ selectedPlan.name }}</h3>
                             <p v-if="selectedPlan.description" class="mt-2 line-clamp-2 text-sm leading-relaxed text-slate-500">
                               {{ selectedPlan.description }}
                             </p>
                           </div>
-                          <span :class="['shrink-0 rounded-full px-2 py-1 text-xs font-bold', planBadgeClass]">
-                            {{ platformLabel(selectedPlan.group_platform || '') }}
-                          </span>
                         </div>
                         <div class="mt-6 flex flex-wrap items-end justify-between gap-3">
                           <div class="min-w-0">
@@ -450,7 +447,7 @@ import {
   type PaymentRecoverySnapshot,
   writePaymentRecoverySnapshot,
 } from '@/components/payment/paymentFlow'
-import { platformBadgeClass, platformLabel } from '@/utils/platformColors'
+import { platformLabel } from '@/utils/platformColors'
 import SubscriptionPlanCard from '@/components/payment/SubscriptionPlanCard.vue'
 import PaymentStatusPanel from '@/components/payment/PaymentStatusPanel.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -1048,9 +1045,6 @@ watch(() => [activeTab.value, ninePlusSubscriptionProducts.value.length] as cons
     selectedMethod.value = 'nineplus'
   }
 })
-
-// Subscription confirm: platform accent colors (clean card, no gradient)
-const planBadgeClass = computed(() => platformBadgeClass(selectedPlan.value?.group_platform || ''))
 
 // Renewal modal state
 const showRenewalModal = ref(false)

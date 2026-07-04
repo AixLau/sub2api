@@ -69,6 +69,7 @@ describe("SubscriptionPlanCard", () => {
     expect(wrapper.find("[data-testid='subscription-plan-description']").text()).toBe("包含 400 额度 / 30 天");
     expect(wrapper.find("[data-testid='subscription-plan-price']").text()).toContain("¥10.00");
     expect(wrapper.find("[data-testid='subscription-plan-quota']").exists()).toBe(false);
+    expect(text).not.toContain("OpenAI");
     expect(text).not.toContain("$400");
     expect(text).not.toContain("×1.3");
     expect(text).not.toContain("Rate");

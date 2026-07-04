@@ -6,7 +6,7 @@
     ]"
   >
     <div class="flex min-h-[190px] flex-1 flex-col p-4 sm:p-5">
-      <div class="flex items-start justify-between gap-3">
+      <div>
         <div class="min-w-0">
           <h3 class="break-words text-lg font-extrabold leading-tight text-slate-950">{{ plan.name }}</h3>
           <p
@@ -17,9 +17,6 @@
             {{ plan.description }}
           </p>
         </div>
-        <span :class="['shrink-0 rounded-full px-2 py-1 text-xs font-bold', badgeLightClass]">
-          {{ pLabel }}
-        </span>
       </div>
 
       <!-- Features list (compact) -->
@@ -66,24 +63,19 @@ import type { SubscriptionPlan } from '@/types/payment'
 import type { UserSubscription } from '@/types'
 import { formatPaymentAmount } from '@/components/payment/currency'
 import {
-  platformBadgeLightClass,
   platformDiscountClass,
-  platformLabel,
 } from '@/utils/platformColors'
 
 const props = defineProps<{ plan: SubscriptionPlan; activeSubscriptions?: UserSubscription[] }>()
 const emit = defineEmits<{ select: [plan: SubscriptionPlan] }>()
 const { t } = useI18n()
 
-const platform = computed(() => props.plan.group_platform || '')
 const isRenewal = computed(() =>
   props.activeSubscriptions?.some(s => s.group_id === props.plan.group_id && s.status === 'active') ?? false
 )
 
 // Derived color classes from central config
-const badgeLightClass = computed(() => platformBadgeLightClass(platform.value))
-const discountClass = computed(() => platformDiscountClass(platform.value))
-const pLabel = computed(() => platformLabel(platform.value))
+const discountClass = computed(() => platformDiscountClass(props.plan.group_platform || ''))
 
 const formattedPrice = computed(() => formatPaymentAmount(props.plan.price, 'CNY'))
 const formattedOriginalPrice = computed(() =>
