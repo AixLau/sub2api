@@ -229,7 +229,7 @@ func TestHaozPayCreatePaymentExtractsPlatformOrderNoFromCashierURL(t *testing.T)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"payInfo":"https://cashier.haozpay.com/cashier-pc?orderNo=HZHT202607042073263983919542272&merchantNo=HZ2072997091048607744","merchantOrderNo":"20260704BIdEeZRA","orderAmount":1.01}}`))
+		_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"seqId":"HP_REQUEST_SEQ","payInfo":"https://cashier.haozpay.com/cashier-pc?orderNo=HZHT202607042073263983919542272&merchantNo=HZ2072997091048607744","merchantOrderNo":"20260704BIdEeZRA","orderAmount":1.01}}`))
 	}))
 	defer server.Close()
 
@@ -420,7 +420,7 @@ func TestHaozPayQueryOrderMapsSuccessfulStatusToPaid(t *testing.T) {
 			t.Fatalf("decode request: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"seqId":"HP123","status":"SUCCESS","orderAmount":10.00}}`))
+		_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"seqId":"HP123","orderNo":"sub2_haozpay_123","partyOrderId":"HP123","payStatus":2,"payAmount":10.00}}`))
 	}))
 	defer server.Close()
 
@@ -451,8 +451,8 @@ func TestHaozPayQueryOrderMapsSuccessfulStatusToPaid(t *testing.T) {
 	if err := bizDecoder.Decode(&bizBody); err != nil {
 		t.Fatalf("decode bizBody string: %v", err)
 	}
-	if bizBody["seqId"] != "sub2_haozpay_123" {
-		t.Fatalf("seqId = %#v, want sub2_haozpay_123", bizBody["seqId"])
+	if bizBody["orderNo"] != "sub2_haozpay_123" {
+		t.Fatalf("orderNo = %#v, want sub2_haozpay_123", bizBody["orderNo"])
 	}
 }
 

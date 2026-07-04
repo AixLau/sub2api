@@ -28,10 +28,12 @@ const (
 	checkPaidResultCancelled   = "cancelled"
 
 	pendingWxpayReconcileLimit = 20
+	haozPayExpiredReconcileAge = 24 * time.Hour
 )
 
 type checkPaidOptions struct {
-	cancelIfUnpaid bool
+	cancelIfUnpaid       bool
+	allowExpiredRecovery bool
 }
 
 func (s *PaymentService) checkCancelRateLimit(ctx context.Context, userID int64, cfg *PaymentConfig) error {
@@ -149,6 +151,10 @@ func (s *PaymentService) reconcilePaid(ctx context.Context, o *dbent.PaymentOrde
 	return s.checkPaidWithOptions(ctx, o, checkPaidOptions{})
 }
 
+func (s *PaymentService) reconcilePaidIncludingExpired(ctx context.Context, o *dbent.PaymentOrder) string {
+	return s.checkPaidWithOptions(ctx, o, checkPaidOptions{allowExpiredRecovery: true})
+}
+
 func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.PaymentOrder, opts checkPaidOptions) string {
 	prov, err := s.getOrderProvider(ctx, o)
 	if err != nil {
@@ -189,6 +195,12 @@ func (s *PaymentService) checkPaidWithOptions(ctx context.Context, o *dbent.Paym
 				o.PaymentTradeNo = upstreamTradeNo
 			}
 			notificationTradeNo = upstreamTradeNo
+		}
+		if opts.allowExpiredRecovery && o.Status == OrderStatusExpired {
+			if err := s.confirmPaymentAllowExpired(ctx, o.ID, notificationTradeNo, resp.Amount, prov.ProviderKey(), resp.Metadata); err != nil {
+				slog.Error("fulfillment failed during expired checkPaid", "orderID", o.ID, "error", err)
+			}
+			return checkPaidResultAlreadyPaid
 		}
 		if err := s.HandlePaymentNotification(ctx, &payment.PaymentNotification{TradeNo: notificationTradeNo, OrderID: o.OutTradeNo, Amount: resp.Amount, Status: payment.ProviderStatusSuccess, Metadata: resp.Metadata}, prov.ProviderKey()); err != nil {
 			slog.Error("fulfillment failed during checkPaid", "orderID", o.ID, "error", err)
@@ -245,12 +257,6 @@ func paymentOrderQueryReference(order *dbent.PaymentOrder, prov payment.Provider
 	case payment.TypeAlipay, payment.TypeEasyPay, payment.TypeWxpay:
 		return strings.TrimSpace(order.OutTradeNo)
 	case payment.TypeHaozPay:
-		if tradeNo := strings.TrimSpace(order.PaymentTradeNo); tradeNo != "" {
-			return tradeNo
-		}
-		if tradeNo := haozPayOrderPlatformTradeNo(order); tradeNo != "" {
-			return tradeNo
-		}
 		return strings.TrimSpace(order.OutTradeNo)
 	default:
 		if tradeNo := strings.TrimSpace(order.PaymentTradeNo); tradeNo != "" {
@@ -392,6 +398,40 @@ func (s *PaymentService) ReconcilePendingNinePlusOrders(ctx context.Context) (in
 	recovered := 0
 	for _, order := range orders {
 		if s.reconcilePaid(ctx, order) == checkPaidResultAlreadyPaid {
+			recovered++
+		}
+	}
+	return recovered, nil
+}
+
+// ReconcilePendingHaozPayOrders actively checks recent pending HaozPay orders so
+// paid orders can be fulfilled when the provider callback is delayed or absent.
+func (s *PaymentService) ReconcilePendingHaozPayOrders(ctx context.Context) (int, error) {
+	now := time.Now()
+	orders, err := s.entClient.PaymentOrder.Query().
+		Where(
+			paymentorder.Or(
+				paymentorder.And(
+					paymentorder.StatusEQ(OrderStatusPending),
+					paymentorder.ExpiresAtGT(now),
+				),
+				paymentorder.And(
+					paymentorder.StatusEQ(OrderStatusExpired),
+					paymentorder.CreatedAtGTE(now.Add(-haozPayExpiredReconcileAge)),
+				),
+			),
+			paymentorder.ProviderKeyEQ(payment.TypeHaozPay),
+		).
+		Order(dbent.Asc(paymentorder.FieldCreatedAt)).
+		Limit(pendingWxpayReconcileLimit).
+		All(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("query pending haozpay orders: %w", err)
+	}
+
+	recovered := 0
+	for _, order := range orders {
+		if s.reconcilePaidIncludingExpired(ctx, order) == checkPaidResultAlreadyPaid {
 			recovered++
 		}
 	}

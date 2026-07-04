@@ -121,6 +121,57 @@ func (s *PaymentService) confirmPayment(ctx context.Context, oid int64, tradeNo 
 	return s.toPaid(ctx, o, tradeNo, paid, pk)
 }
 
+func (s *PaymentService) confirmPaymentAllowExpired(ctx context.Context, oid int64, tradeNo string, paid float64, pk string, metadata map[string]string) error {
+	o, err := s.entClient.PaymentOrder.Get(ctx, oid)
+	if err != nil {
+		slog.Error("order not found", "orderID", oid)
+		return nil
+	}
+	if strings.TrimSpace(pk) != payment.TypeHaozPay {
+		return s.confirmPayment(ctx, oid, tradeNo, paid, pk, metadata)
+	}
+	if o.Status != OrderStatusExpired {
+		return s.confirmPayment(ctx, oid, tradeNo, paid, pk, metadata)
+	}
+	return s.confirmPaymentWithExpiredCutoff(ctx, o, tradeNo, paid, pk, metadata, time.Now().Add(-haozPayExpiredReconcileAge))
+}
+
+func (s *PaymentService) confirmPaymentWithExpiredCutoff(ctx context.Context, o *dbent.PaymentOrder, tradeNo string, paid float64, pk string, metadata map[string]string, expiredCutoff time.Time) error {
+	instanceProviderKey := ""
+	if inst, instErr := s.getOrderProviderInstance(ctx, o); instErr == nil && inst != nil {
+		instanceProviderKey = inst.ProviderKey
+	}
+	expectedProviderKey := expectedNotificationProviderKeyForOrder(s.registry, o, instanceProviderKey)
+	if expectedProviderKey != "" && strings.TrimSpace(pk) != "" && !strings.EqualFold(expectedProviderKey, strings.TrimSpace(pk)) {
+		s.writeAuditLog(ctx, o.ID, "PAYMENT_PROVIDER_MISMATCH", pk, map[string]any{
+			"expectedProvider": expectedProviderKey,
+			"actualProvider":   pk,
+			"tradeNo":          tradeNo,
+		})
+		return fmt.Errorf("provider mismatch: expected %s, got %s", expectedProviderKey, pk)
+	}
+	if err := validateProviderNotificationMetadata(o, pk, metadata); err != nil {
+		s.writeAuditLog(ctx, o.ID, "PAYMENT_PROVIDER_METADATA_MISMATCH", pk, map[string]any{
+			"detail":  err.Error(),
+			"tradeNo": tradeNo,
+		})
+		return err
+	}
+	if !isValidProviderAmount(paid) {
+		s.writeAuditLog(ctx, o.ID, "PAYMENT_INVALID_AMOUNT", pk, map[string]any{
+			"expected": o.PayAmount,
+			"paid":     paid,
+			"tradeNo":  tradeNo,
+		})
+		return fmt.Errorf("invalid paid amount from provider: %v", paid)
+	}
+	if math.Abs(paid-o.PayAmount) > paymentAmountToleranceForCurrency(PaymentOrderCurrency(o)) {
+		s.writeAuditLog(ctx, o.ID, "PAYMENT_AMOUNT_MISMATCH", pk, map[string]any{"expected": o.PayAmount, "paid": paid, "tradeNo": tradeNo})
+		return fmt.Errorf("amount mismatch: expected %s, got %s", strconv.FormatFloat(o.PayAmount, 'f', -1, 64), strconv.FormatFloat(paid, 'f', -1, 64))
+	}
+	return s.toPaidWithExpiredCutoff(ctx, o, tradeNo, paid, pk, expiredCutoff)
+}
+
 func paymentAmountToleranceForCurrency(currency string) float64 {
 	minorUnit := payment.CurrencyMinorUnit(currency)
 	if minorUnit <= 2 {
@@ -153,9 +204,13 @@ func expectedNotificationProviderKey(registry *payment.Registry, orderPaymentTyp
 }
 
 func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, tradeNo string, paid float64, pk string) error {
+	now := time.Now()
+	return s.toPaidWithExpiredCutoff(ctx, o, tradeNo, paid, pk, now.Add(-paymentGraceMinutes*time.Minute))
+}
+
+func (s *PaymentService) toPaidWithExpiredCutoff(ctx context.Context, o *dbent.PaymentOrder, tradeNo string, paid float64, pk string, expiredCutoff time.Time) error {
 	previousStatus := o.Status
 	now := time.Now()
-	grace := now.Add(-paymentGraceMinutes * time.Minute)
 	c, err := s.entClient.PaymentOrder.Update().Where(
 		paymentorder.IDEQ(o.ID),
 		paymentorder.Or(
@@ -163,7 +218,7 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 			paymentorder.StatusEQ(OrderStatusCancelled),
 			paymentorder.And(
 				paymentorder.StatusEQ(OrderStatusExpired),
-				paymentorder.UpdatedAtGTE(grace),
+				paymentorder.UpdatedAtGTE(expiredCutoff),
 			),
 		),
 	).SetStatus(OrderStatusPaid).SetPayAmount(paid).SetPaymentTradeNo(tradeNo).SetPaidAt(now).ClearFailedAt().ClearFailedReason().Save(ctx)

@@ -29,7 +29,7 @@ import (
 const (
 	haozpayAPIBase         = "https://gate.haozpay.com"
 	haozpayCreatePath      = "/pay-core/payment/order"
-	haozpayQueryPath       = "/pay-core/payment/order/query"
+	haozpayQueryPath       = "/pay-core/payment/queryOrderDetail"
 	haozpayRefundPath      = "/pay-core/payment/refund"
 	haozpayHTTPTimeout     = 30 * time.Second
 	maxHaozpayResponseSize = 2 << 20 // 2MB
@@ -133,7 +133,7 @@ func (h *HaozPay) CreatePayment(ctx context.Context, req payment.CreatePaymentRe
 	}
 
 	// Send request
-	respBody, err := h.postJSON(ctx, haozpayAPIBase+haozpayCreatePath, reqBody)
+	respBody, err := h.postJSON(ctx, h.apiBase()+haozpayCreatePath, reqBody)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +160,7 @@ func (h *HaozPay) CreatePayment(ctx context.Context, req payment.CreatePaymentRe
 	}
 
 	return &payment.CreatePaymentResponse{
-		TradeNo: firstNonEmpty(resp.Data.SeqID, extractHaozPayCashierOrderNo(resp.Data.PayInfo)),
+		TradeNo: firstNonEmpty(extractHaozPayCashierOrderNo(resp.Data.PayInfo), resp.Data.SeqID),
 		QRCode:  resp.Data.PayInfo,
 	}, nil
 }
@@ -215,7 +215,7 @@ func (h *HaozPay) VerifyNotification(_ context.Context, rawBody string, _ map[st
 func (h *HaozPay) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOrderResponse, error) {
 	// Build request
 	bizBody := map[string]interface{}{
-		"seqId": tradeNo,
+		"orderNo": tradeNo,
 	}
 
 	reqBody, err := h.signedRequestBody(bizBody)
@@ -224,7 +224,7 @@ func (h *HaozPay) QueryOrder(ctx context.Context, tradeNo string) (*payment.Quer
 	}
 
 	// Send request
-	respBody, err := h.postJSON(ctx, haozpayAPIBase+haozpayQueryPath, reqBody)
+	respBody, err := h.postJSON(ctx, h.apiBase()+haozpayQueryPath, reqBody)
 	if err != nil {
 		return nil, err
 	}
@@ -234,9 +234,16 @@ func (h *HaozPay) QueryOrder(ctx context.Context, tradeNo string) (*payment.Quer
 		Code    int    `json:"code"`
 		Message string `json:"message"`
 		Data    struct {
-			Status      string  `json:"status"`
-			SeqID       string  `json:"seqId"`
-			OrderAmount float64 `json:"orderAmount"`
+			Status        string  `json:"status"`
+			TradeStatus   string  `json:"tradeStatus"`
+			PayStatus     int     `json:"payStatus"`
+			SeqID         string  `json:"seqId"`
+			PaySeqID      string  `json:"paySeqId"`
+			OrderNo       string  `json:"orderNo"`
+			PartyOrderID  string  `json:"partyOrderId"`
+			MerchantOrder string  `json:"merchantOrderNo"`
+			OrderAmount   float64 `json:"orderAmount"`
+			PayAmount     float64 `json:"payAmount"`
 		} `json:"data"`
 	}
 
@@ -250,14 +257,23 @@ func (h *HaozPay) QueryOrder(ctx context.Context, tradeNo string) (*payment.Quer
 
 	// Map status
 	status := payment.ProviderStatusPending
-	if resp.Data.Status == haozpayStatusSuccess || resp.Data.Status == haozpayStatusPaid {
+	if strings.EqualFold(resp.Data.Status, haozpayStatusSuccess) ||
+		strings.EqualFold(resp.Data.Status, haozpayStatusPaid) ||
+		strings.EqualFold(resp.Data.TradeStatus, haozpayStatusSuccess) ||
+		strings.EqualFold(resp.Data.TradeStatus, haozpayStatusPaid) ||
+		resp.Data.PayStatus == 2 {
 		status = payment.ProviderStatusPaid
 	}
+	amount := resp.Data.PayAmount
+	if amount == 0 {
+		amount = resp.Data.OrderAmount
+	}
+	respTradeNo := firstNonEmpty(resp.Data.SeqID, resp.Data.PaySeqID, resp.Data.OrderNo, resp.Data.PartyOrderID, resp.Data.MerchantOrder, tradeNo)
 
 	return &payment.QueryOrderResponse{
-		TradeNo:  resp.Data.SeqID,
+		TradeNo:  respTradeNo,
 		Status:   status,
-		Amount:   resp.Data.OrderAmount,
+		Amount:   amount,
 		Metadata: h.MerchantIdentityMetadata(),
 	}, nil
 }
@@ -277,7 +293,7 @@ func (h *HaozPay) Refund(ctx context.Context, req payment.RefundRequest) (*payme
 	}
 
 	// Send request
-	respBody, err := h.postJSON(ctx, haozpayAPIBase+haozpayRefundPath, reqBody)
+	respBody, err := h.postJSON(ctx, h.apiBase()+haozpayRefundPath, reqBody)
 	if err != nil {
 		return nil, err
 	}
@@ -380,6 +396,15 @@ func (h *HaozPay) notifyURL(override string) string {
 		return notifyURL
 	}
 	return strings.TrimSpace(h.config["notifyUrl"])
+}
+
+func (h *HaozPay) apiBase() string {
+	if h != nil {
+		if apiBase := strings.TrimRight(strings.TrimSpace(h.config["apiBase"]), "/"); apiBase != "" {
+			return apiBase
+		}
+	}
+	return haozpayAPIBase
 }
 
 func marshalHaozPayBizBody(bizBody map[string]interface{}) (string, error) {

@@ -121,6 +121,15 @@ func (s *PaymentOrderExpiryService) runOnce() {
 		slog.Info("[PaymentOrderExpiry] reconciled paid nineplus orders", "count", ninePlusRecovered)
 	}
 
+	haozPayCtx, cancel := context.WithTimeout(context.Background(), expiryCheckTimeout)
+	haozPayRecovered, err := s.paymentSvc.ReconcilePendingHaozPayOrders(haozPayCtx)
+	cancel()
+	if err != nil {
+		slog.Warn("[PaymentOrderExpiry] failed to reconcile pending haozpay orders", "error", err)
+	} else if haozPayRecovered > 0 {
+		slog.Info("[PaymentOrderExpiry] reconciled paid haozpay orders", "count", haozPayRecovered)
+	}
+
 	ninePlusFulfillCtx, cancel := context.WithTimeout(context.Background(), expiryCheckTimeout)
 	ninePlusCompleted, err := s.paymentSvc.ReconcileNinePlusFulfillment(ninePlusFulfillCtx)
 	cancel()

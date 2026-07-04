@@ -4,11 +4,16 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"database/sql"
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -694,6 +699,139 @@ func TestReconcilePendingWxpayOrdersBackfillsPaidOrder(t *testing.T) {
 	require.Len(t, redeemRepo.useCalls, 1)
 }
 
+func TestReconcilePendingHaozPayOrdersRecoversExpiredPaidOrderByMerchantOrderNo(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	privDER, err := x509.MarshalPKCS8PrivateKey(key)
+	require.NoError(t, err)
+	pubDER, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
+	require.NoError(t, err)
+	privateKeyPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privDER}))
+	publicKeyPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER}))
+
+	var queryPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/pay-core/payment/queryOrderDetail", r.URL.Path)
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&queryPayload))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"seqId":"HZHT_RECONCILE","orderNo":"sub2_haozpay_reconcile","payStatus":2,"payAmount":1.01}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	user, err := client.User.Create().
+		SetEmail("haozpay-reconcile@example.com").
+		SetPasswordHash("hash").
+		SetUsername("haozpay-reconcile-user").
+		Save(ctx)
+	require.NoError(t, err)
+	providerConfig := map[string]string{
+		"merchantNo":        "HZ_MERCHANT",
+		"privateKey":        privateKeyPEM,
+		"platformPublicKey": publicKeyPEM,
+		"notifyUrl":         "https://example.com/api/v1/payment/webhook/haozpay",
+		"apiBase":           server.URL,
+	}
+	config, err := json.Marshal(providerConfig)
+	require.NoError(t, err)
+	instance, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeHaozPay).
+		SetName("haozpay-test").
+		SetConfig(string(config)).
+		SetSupportedTypes(payment.TypeAlipay).
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	instanceID := strconv.FormatInt(instance.ID, 10)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(7.5).
+		SetPayAmount(1.01).
+		SetFeeRate(0).
+		SetRechargeCode("HAOZPAY-RECONCILE").
+		SetOutTradeNo("sub2_haozpay_reconcile").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusExpired).
+		SetExpiresAt(time.Now().Add(-time.Minute)).
+		SetQrCode("https://cashier.haozpay.com?orderNo=HZHT_RECONCILE&merchantNo=HZ_MERCHANT").
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(instanceID).
+		SetProviderKey(payment.TypeHaozPay).
+		Save(ctx)
+	require.NoError(t, err)
+
+	userRepo := &mockUserRepo{
+		getByIDUser: &User{
+			ID:       user.ID,
+			Email:    user.Email,
+			Username: user.Username,
+			Balance:  0,
+		},
+	}
+	userRepo.updateBalanceFn = func(ctx context.Context, id int64, amount float64) error {
+		require.Equal(t, user.ID, id)
+		if userRepo.getByIDUser != nil {
+			userRepo.getByIDUser.Balance += amount
+		}
+		return nil
+	}
+	redeemRepo := &paymentOrderLifecycleRedeemRepo{
+		codesByCode: map[string]*RedeemCode{
+			order.RechargeCode: {
+				ID:     1,
+				Code:   order.RechargeCode,
+				Type:   RedeemTypeBalance,
+				Value:  order.Amount,
+				Status: StatusUnused,
+			},
+		},
+	}
+	redeemService := NewRedeemService(
+		redeemRepo,
+		userRepo,
+		nil,
+		nil,
+		nil,
+		client,
+		nil,
+		nil,
+	)
+	svc := &PaymentService{
+		entClient:       client,
+		registry:        payment.NewRegistry(),
+		loadBalancer:    paymentOrderLifecycleLoadBalancer{config: providerConfig},
+		redeemService:   redeemService,
+		userRepo:        userRepo,
+		providersLoaded: true,
+	}
+
+	recovered, err := svc.ReconcilePendingHaozPayOrders(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, recovered)
+	require.NotNil(t, queryPayload)
+	bizBodyString, ok := queryPayload["bizBody"].(string)
+	require.True(t, ok)
+	var bizBody map[string]any
+	decoder := json.NewDecoder(strings.NewReader(bizBodyString))
+	decoder.UseNumber()
+	require.NoError(t, decoder.Decode(&bizBody))
+	require.Equal(t, order.OutTradeNo, bizBody["orderNo"])
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Equal(t, "HZHT_RECONCILE", reloaded.PaymentTradeNo)
+	require.Equal(t, 7.5, userRepo.getByIDUser.Balance)
+	require.Len(t, redeemRepo.useCalls, 1)
+}
+
 func TestReconcilePendingNinePlusOrdersQueriesOnlyPendingUnexpiredNinePlusOrders(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentOrderLifecycleTestClient(t)
@@ -1246,7 +1384,7 @@ func TestPaymentOrderQueryReferenceUsesOutTradeNoForOfficialProviders(t *testing
 	}))
 }
 
-func TestPaymentOrderQueryReferenceExtractsHaozPayPlatformOrderNoFromCashierURL(t *testing.T) {
+func TestPaymentOrderQueryReferenceUsesMerchantOrderNoForHaozPay(t *testing.T) {
 	t.Parallel()
 
 	order := &dbent.PaymentOrder{
@@ -1257,9 +1395,10 @@ func TestPaymentOrderQueryReferenceExtractsHaozPayPlatformOrderNoFromCashierURL(
 		ProviderKey:    paymentOrderLifecycleStringPtr(payment.TypeHaozPay),
 	}
 
-	require.Equal(t, "HZHT202607042073263983919542272", paymentOrderQueryReference(order, paymentFulfillmentTestProvider{
+	require.Equal(t, order.OutTradeNo, paymentOrderQueryReference(order, paymentFulfillmentTestProvider{
 		key: payment.TypeHaozPay,
 	}))
+	require.Equal(t, "HZHT202607042073263983919542272", haozPayOrderPlatformTradeNo(order))
 }
 
 func paymentOrderLifecycleStringPtr(value string) *string {
