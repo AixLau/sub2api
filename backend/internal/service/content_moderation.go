@@ -1270,7 +1270,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			scores := map[string]float64{"hash": 1.0}
 			logMetadata := contentModerationHitLogMetadata(cfg, content, contentModerationPrimarySource(input.Protocol, content))
 			log := s.buildLog(input, cfg, ContentModerationActionHashBlock, true, "hash", 1.0, scores, content.ExcerptText(), nil, nil, logMetadata)
-			s.enqueueRecord(input, cfg, log, hashText, false, false)
+			s.enqueueRecord(ctx, input, cfg, log, hashText, false, false)
 			return &ContentModerationDecision{
 				Allowed:    false,
 				Blocked:    true,
@@ -1285,7 +1285,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	if cfg.Mode == ContentModerationModePreBlock {
 		if cfg.shouldRunLocalRules() {
 			if keywordMatch, hit := matchContentModerationKeyword(content.Text, cfg.keywordRules()); hit {
-				return s.keywordDecision(input, cfg, content, hashText, keywordMatch), nil
+				return s.keywordDecision(ctx, input, cfg, content, hashText, keywordMatch), nil
 			}
 		}
 		if !cfg.externalModerationRequired() {
@@ -1397,7 +1397,7 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 		}
 		log := s.buildLog(input, cfg, action, flagged, highestCategory, highestScore, result.CategoryScores, content.ExcerptText(), &latency, queueDelay, logMetadata)
 		if queueDelay == nil && cfg.Mode == ContentModerationModePreBlock {
-			s.enqueueRecord(input, cfg, log, hashText, flagged, flagged)
+			s.enqueueRecord(ctx, input, cfg, log, hashText, flagged, flagged)
 		} else {
 			s.persistContentModerationLog(ctx, cfg, log, hashText, flagged, flagged)
 		}
@@ -1445,7 +1445,7 @@ func (s *ContentModerationService) recordPreBlockSyncMetric(latencyMS int, actio
 	}
 }
 
-func (s *ContentModerationService) keywordDecision(input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string, keywordMatch ContentModerationKeywordRule) *ContentModerationDecision {
+func (s *ContentModerationService) keywordDecision(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string, keywordMatch ContentModerationKeywordRule) *ContentModerationDecision {
 	scores := map[string]float64{contentModerationKeywordCategory: 1.0}
 	keywordDecision := decideContentModerationKeyword(content.Text, keywordMatch)
 	if keywordDecision.blocked {
@@ -1471,7 +1471,7 @@ func (s *ContentModerationService) keywordDecision(input ContentModerationCheckI
 	logMetadata := contentModerationHitLogMetadata(cfg, content, contentModerationMatchedSource(input.Protocol, keywordMatch.Keyword, content))
 	log := s.buildLog(input, cfg, keywordDecision.action, keywordDecision.flagged, contentModerationKeywordCategory, 1.0, scores, content.ExcerptText(), nil, nil, logMetadata)
 	applyContentModerationKeywordMetadata(log, keywordDecision)
-	s.enqueueRecord(input, cfg, log, hashText, false, keywordDecision.blocked)
+	s.enqueueRecord(ctx, input, cfg, log, hashText, false, keywordDecision.blocked)
 	return contentModerationDecisionFromKeyword(cfg, keywordDecision, scores)
 }
 
@@ -1503,10 +1503,11 @@ func (s *ContentModerationService) enqueueAsync(input ContentModerationCheckInpu
 	}
 }
 
-func (s *ContentModerationService) enqueueRecord(input ContentModerationCheckInput, cfg *ContentModerationConfig, log *ContentModerationLog, inputHash string, recordHash bool, applySideEffects bool) {
+func (s *ContentModerationService) enqueueRecord(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, log *ContentModerationLog, inputHash string, recordHash bool, applySideEffects bool) {
 	if s == nil || log == nil {
 		return
 	}
+	s.persistBlockedLogForVisibility(ctx, log)
 	if s.enqueueModerationOutboxRecord(input, cfg, log, inputHash, recordHash, applySideEffects) {
 		s.asyncEnqueued.Add(1)
 		return
@@ -1545,6 +1546,32 @@ func (s *ContentModerationService) enqueueRecord(input ContentModerationCheckInp
 			"endpoint", input.Endpoint,
 			"action", log.Action)
 		s.asyncDropped.Add(1)
+	}
+}
+
+func (s *ContentModerationService) persistBlockedLogForVisibility(ctx context.Context, log *ContentModerationLog) {
+	if s == nil || s.repo == nil || log == nil || !contentModerationActionIsBlocking(log.Action) {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := s.repo.CreateLog(ctx, log); err != nil {
+		slog.Warn("content_moderation.create_block_log_failed",
+			"user_id", contentModerationEmailUserID(log),
+			"endpoint", log.Endpoint,
+			"action", log.Action,
+			"decision_id", log.DecisionID,
+			"error", err)
+	}
+}
+
+func contentModerationActionIsBlocking(action string) bool {
+	switch strings.TrimSpace(action) {
+	case ContentModerationActionBlock, ContentModerationActionHashBlock, ContentModerationActionKeywordBlock:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -3051,7 +3078,13 @@ func (s *ContentModerationService) applyFlaggedAccountSideEffects(ctx context.Co
 	if s.repo != nil && cfg.ViolationWindowHours > 0 {
 		since := time.Now().Add(-time.Duration(cfg.ViolationWindowHours) * time.Hour)
 		if n, err := s.repo.CountFlaggedByUserSince(ctx, *log.UserID, since, cfg.CyberPolicyExcludeFromBanCount); err == nil {
-			count = n + 1
+			count = n
+			if log.ID == 0 {
+				count++
+			}
+			if count <= 0 {
+				count = 1
+			}
 		}
 	}
 	log.ViolationCount = count

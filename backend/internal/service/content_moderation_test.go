@@ -1432,6 +1432,10 @@ func TestContentModerationOutboxPersistsBlockedSideEffects(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, decision.Blocked)
 
+	immediateLogs := repo.snapshotLogs()
+	require.Len(t, immediateLogs, 1)
+	require.Equal(t, ContentModerationActionKeywordBlock, immediateLogs[0].Action)
+
 	events := outbox.snapshotEvents()
 	require.Len(t, events, 5)
 	eventTypes := make([]string, 0, len(events))
@@ -4779,7 +4783,10 @@ func TestContentModerationCheck_HashBlockLogsDoNotIncreaseNextViolationCount(t *
 	logs := requireContentModerationLogCount(t, repo, 2)
 	require.Equal(t, ContentModerationActionHashBlock, logs[0].Action)
 	require.Equal(t, ContentModerationActionBlock, logs[1].Action)
-	require.Equal(t, 1, logs[1].ViolationCount)
+	require.Eventually(t, func() bool {
+		logs = repo.snapshotLogs()
+		return len(logs) == 2 && logs[1].ViolationCount == 1
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestContentModerationAutoBanSkipsAdminAccount(t *testing.T) {
