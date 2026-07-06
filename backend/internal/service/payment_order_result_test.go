@@ -267,6 +267,18 @@ func TestCalculateCreateOrderPayAmountForBalanceIgnoresSubscriptionRate(t *testi
 	}
 }
 
+func TestCalculateCreateOrderPayAmountForBalanceDoesNotDivideByRechargeMultiplier(t *testing.T) {
+	t.Parallel()
+
+	amountStr, amount, err := calculateCreateOrderPayAmountForPaymentType(payment.TypeAlipay, payment.OrderTypeBalance, 10, 0, 10, "CNY", 7.15)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if amountStr != "10.00" || amount != 10 {
+		t.Fatalf("balance CNY pay amount = (%q, %v), want (10.00, 10)", amountStr, amount)
+	}
+}
+
 func TestCalculateCreditedBalanceStillUsesRechargeMultiplier(t *testing.T) {
 	t.Parallel()
 

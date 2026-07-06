@@ -738,9 +738,6 @@ func calculateCreateOrderPayAmountForPaymentType(paymentType, orderType string, 
 }
 
 func calculateCreateOrderPaymentAmount(orderType string, limitAmount, multiplier float64, currency string, usdToCnyRate float64) float64 {
-	if orderType == payment.OrderTypeBalance {
-		return calculateGatewayPaymentAmount(limitAmount, multiplier, currency)
-	}
 	if orderType == payment.OrderTypeSubscription {
 		return calculateSubscriptionGatewayBaseAmount(limitAmount, usdToCnyRate, currency)
 	}
