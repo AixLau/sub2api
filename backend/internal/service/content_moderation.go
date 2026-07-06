@@ -549,6 +549,7 @@ type ContentModerationLog struct {
 	UserStatus             string             `json:"user_status"`
 	QueueDelayMS           *int               `json:"queue_delay_ms,omitempty"`
 	CreatedAt              time.Time          `json:"created_at"`
+	persisted              bool
 }
 
 type ContentModerationLogFilter struct {
@@ -1563,7 +1564,9 @@ func (s *ContentModerationService) persistBlockedLogForVisibility(ctx context.Co
 			"action", log.Action,
 			"decision_id", log.DecisionID,
 			"error", err)
+		return
 	}
+	log.persisted = true
 }
 
 func contentModerationActionIsBlocking(action string) bool {
@@ -2959,11 +2962,24 @@ func (s *ContentModerationService) persistContentModerationLog(ctx context.Conte
 		autoBanJustApplied = s.applyFlaggedAccountSideEffects(ctx, cfg, log)
 		s.sendFlaggedNotificationSideEffects(ctx, cfg, log, autoBanJustApplied)
 	}
-	if s.repo != nil {
+	if log.persisted && s.repo != nil && strings.TrimSpace(log.DecisionID) != "" {
+		if log.ViolationCount > 0 || log.AutoBanned {
+			if err := s.repo.UpdateLogAccountActionByDecisionID(ctx, log.DecisionID, log.ViolationCount, log.AutoBanned); err != nil {
+				slog.Warn("content_moderation.update_persisted_log_account_action_failed", "decision_id", log.DecisionID, "error", err)
+			}
+		}
+		if log.EmailSent {
+			if err := s.repo.UpdateLogEmailSentByDecisionID(ctx, log.DecisionID, true); err != nil {
+				slog.Warn("content_moderation.update_persisted_log_email_failed", "decision_id", log.DecisionID, "error", err)
+			}
+		}
+	}
+	if s.repo != nil && !log.persisted {
 		if err := s.repo.CreateLog(ctx, log); err != nil {
 			slog.Warn("content_moderation.create_log_failed", "user_id", contentModerationEmailUserID(log), "endpoint", log.Endpoint, "action", log.Action, "error", err)
 			return
 		}
+		log.persisted = true
 	}
 }
 

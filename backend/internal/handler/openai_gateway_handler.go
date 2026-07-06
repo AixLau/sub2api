@@ -1227,6 +1227,8 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "previous_response_id must be a response.id (resp_*), not a message id")
 		return
 	}
+	firstMessageToolCoverage := service.AnalyzeToolCallOutputContextCoverageBytes(firstMessage)
+	previousResponseCanMove := !firstMessageToolCoverage.HasFunctionCallOutput || firstMessageToolCoverage.ContextCoversAllCallIDs
 	reqLog = reqLog.With(
 		zap.Bool("ws_ingress", true),
 		zap.String("model", reqModel),
@@ -1276,7 +1278,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	// 必须尽早注册，确保任何 early return 都能释放已获取的并发槽位。
 	defer releaseTurnSlots()
 
-	userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserSlot(ctx, subject.UserID, subject.Concurrency)
+	userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserSlotForAPIKey(ctx, subject.UserID, subject.Concurrency, apiKey.ID)
 	if err != nil {
 		reqLog.Warn("openai.websocket_user_slot_acquire_failed", zap.Error(err))
 		closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to acquire user concurrency slot")
@@ -1291,7 +1293,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		if currentUserRelease != nil {
 			return true
 		}
-		userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserSlot(ctx, subject.UserID, subject.Concurrency)
+		userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserSlotForAPIKey(ctx, subject.UserID, subject.Concurrency, apiKey.ID)
 		if err != nil {
 			reqLog.Warn("openai.websocket_user_slot_reacquire_failed", zap.Error(err))
 			closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to acquire user concurrency slot")
@@ -1307,6 +1309,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	requestPlatform := openAICompatibleRequestPlatform(apiKey)
+	requiredTransport := service.OpenAIUpstreamTransportResponsesWebsocketV2Ingress
+	if requestPlatform == service.PlatformGrok {
+		requiredTransport = service.OpenAIUpstreamTransportHTTPSSE
+	}
 	if billingStage := h.runOpenAIWebSocketStage(c, OpenAIWebSocketBillingStage{
 		Handler:          h,
 		RequestContext:   ctx,
@@ -1336,24 +1342,26 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		stickyPreviousHit := false
 		scheduleLayer := ""
 		if routingStage := h.runOpenAIWebSocketStage(c, OpenAIWebSocketRoutingStage{
-			Handler:               h,
-			RequestContext:        ctx,
-			ReqLog:                reqLog,
-			APIKey:                apiKey,
-			SubjectUserID:         subject.UserID,
-			RequestedModel:        reqModel,
-			SessionHash:           sessionHash,
-			PreviousResponseID:    previousResponseID,
-			FailedAccountIDs:      failedAccountIDs,
-			RequestPlatform:       requestPlatform,
-			ClientConn:            wsConn,
-			LastFailoverErr:       lastFailoverErr,
-			Account:               &account,
-			AccountMaxConcurrency: &accountMaxConcurrency,
-			CurrentAccountRelease: &currentAccountRelease,
-			Token:                 &token,
-			StickyPreviousHit:     &stickyPreviousHit,
-			ScheduleLayer:         &scheduleLayer,
+			Handler:                 h,
+			RequestContext:          ctx,
+			ReqLog:                  reqLog,
+			APIKey:                  apiKey,
+			SubjectUserID:           subject.UserID,
+			RequestedModel:          reqModel,
+			SessionHash:             sessionHash,
+			PreviousResponseID:      previousResponseID,
+			FailedAccountIDs:        failedAccountIDs,
+			RequiredTransport:       requiredTransport,
+			PreviousResponseCanMove: previousResponseCanMove,
+			RequestPlatform:         requestPlatform,
+			ClientConn:              wsConn,
+			LastFailoverErr:         lastFailoverErr,
+			Account:                 &account,
+			AccountMaxConcurrency:   &accountMaxConcurrency,
+			CurrentAccountRelease:   &currentAccountRelease,
+			Token:                   &token,
+			StickyPreviousHit:       &stickyPreviousHit,
+			ScheduleLayer:           &scheduleLayer,
 		}); routingStage.Stop {
 			return
 		}
@@ -1399,7 +1407,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				// 防御式清理：避免异常路径下旧槽位覆盖导致泄漏。
 				releaseTurnSlots()
 				// 非首轮 turn 需要重新抢占并发槽位，避免长连接空闲占槽。
-				userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserSlot(ctx, subject.UserID, subject.Concurrency)
+				userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserSlotForAPIKey(ctx, subject.UserID, subject.Concurrency, apiKey.ID)
 				if err != nil {
 					return service.NewOpenAIWSClientCloseError(coderws.StatusInternalError, "failed to acquire user concurrency slot", err)
 				}
@@ -1454,8 +1462,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		// 说明该会话链不属于本次调度到的账号，原样转发会触发上游会话链鉴权失败（“鉴权失败，请检查 API Key”）。
 		// 故剥离首包里的 previous_response_id，改用首包内 input 重建上下文；带 function_call_output 的
 		// 工具续链无法重建，保持原样。仅作用于首轮首包，后续 turn 的续链由 WS 转发层既有逻辑处理。
-		if previousResponseID != "" && !stickyPreviousHit &&
-			!service.ValidateFunctionCallOutputContextBytes(wsFirstMessage).HasFunctionCallOutput {
+		if previousResponseID != "" && !stickyPreviousHit && previousResponseCanMove {
 			wsFirstMessage = service.RemovePreviousResponseIDFromBody(wsFirstMessage)
 			reqLog.Debug("openai.websocket_previous_response_id_stripped_cross_group",
 				zap.Int64("account_id", account.ID),

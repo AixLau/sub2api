@@ -172,7 +172,7 @@ import { usePaymentStore } from '@/stores/payment'
 import { useAppStore } from '@/stores'
 import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
-import { getPaymentPopupFeatures } from '@/components/payment/providerConfig'
+import { getPaymentPopupFeatures, isBuiltInAlipayMethod, isBuiltInWxpayMethod } from '@/components/payment/providerConfig'
 import { currencySymbol, formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import type { PaymentOrder } from '@/types/payment'
 import Icon from '@/components/icons/Icon.vue'
@@ -230,8 +230,8 @@ const VERIFY_RETRY_MAX_ATTEMPTS = 6
 
 // Aggregators reuse the Alipay-style QR surface because the cashier URL should
 // be scanned in the external wallet instead of opened as an in-app page.
-const isAlipay = computed(() => props.paymentType.includes('alipay') || props.paymentType === 'nineplus' || props.paymentType === 'haozpay')
-const isWxpay = computed(() => props.paymentType.includes('wxpay'))
+const isAlipay = computed(() => isBuiltInAlipayMethod(props.paymentType) || props.paymentType === 'nineplus' || props.paymentType === 'haozpay')
+const isWxpay = computed(() => isBuiltInWxpayMethod(props.paymentType))
 const isHostedQrAggregator = computed(() => props.paymentType === 'nineplus' || props.paymentType === 'haozpay')
 
 const brandIcon = computed(() => (isWxpay.value ? wxpayIcon : alipayIcon))

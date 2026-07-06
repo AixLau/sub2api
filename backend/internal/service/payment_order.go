@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/shopspring/decimal"
 )
 
 // --- Order Creation ---
@@ -79,7 +80,7 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 			return nil, err
 		}
 	}
-	payAmountStr, payAmount, err := calculateCreateOrderPayAmountForPaymentType(req.PaymentType, req.OrderType, limitAmount, feeRate, cfg.BalanceRechargeMultiplier, methodCurrency)
+	payAmountStr, payAmount, err := calculateCreateOrderPayAmountForPaymentType(req.PaymentType, req.OrderType, limitAmount, feeRate, cfg.BalanceRechargeMultiplier, methodCurrency, cfg.SubscriptionUSDToCNYRate)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +112,7 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 		selectedCurrency = paymentProviderConfigCurrency(sel.ProviderKey, sel.Config)
 	}
 	if selectedCurrency != methodCurrency || req.PaymentType == payment.TypeNinePlus {
-		payAmountStr, payAmount, err = calculateCreateOrderPayAmountForPaymentType(req.PaymentType, req.OrderType, limitAmount, feeRate, cfg.BalanceRechargeMultiplier, selectedCurrency)
+		payAmountStr, payAmount, err = calculateCreateOrderPayAmountForPaymentType(req.PaymentType, req.OrderType, limitAmount, feeRate, cfg.BalanceRechargeMultiplier, selectedCurrency, cfg.SubscriptionUSDToCNYRate)
 		if err != nil {
 			return nil, err
 		}
@@ -524,6 +525,7 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 		}
 		return nil, classifyCreatePaymentError(req, sel.ProviderKey, err)
 	}
+	sanitizeCreatePaymentResponseDetails(pr)
 	update := s.entClient.PaymentOrder.UpdateOneID(order.ID).
 		SetNillablePaymentTradeNo(psNilIfEmpty(pr.TradeNo)).
 		SetNillablePayURL(psNilIfEmpty(pr.PayURL)).
@@ -553,6 +555,22 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 	resp := buildCreateOrderResponse(order, req, payAmount, sel, pr, resultType)
 	resp.ResumeToken = resumeToken
 	return resp, nil
+}
+
+func sanitizeCreatePaymentResponseDetails(pr *payment.CreatePaymentResponse) {
+	if pr == nil {
+		return
+	}
+	pr.TradeNo = removePostgresTextNUL(pr.TradeNo)
+	pr.PayURL = removePostgresTextNUL(pr.PayURL)
+	pr.QRCode = removePostgresTextNUL(pr.QRCode)
+}
+
+func removePostgresTextNUL(value string) string {
+	if !strings.ContainsRune(value, 0) {
+		return value
+	}
+	return strings.ReplaceAll(value, "\x00", "")
 }
 
 func buildProviderCreatePaymentRequest(req CreateOrderRequest, sel *payment.InstanceSelection, orderID, amount, subject string) payment.CreatePaymentRequest {
@@ -707,20 +725,48 @@ func calculateCreateOrderPayAmount(limitAmount, feeRate float64, currency string
 	return payAmountStr, payAmount, nil
 }
 
-func calculateCreateOrderPayAmountForOrder(orderType string, limitAmount, feeRate, multiplier float64, currency string) (string, float64, error) {
-	paymentAmount := calculateCreateOrderPaymentAmount(orderType, limitAmount, multiplier, currency)
+func calculateCreateOrderPayAmountForOrder(orderType string, limitAmount, feeRate, multiplier float64, currency string, usdToCnyRate float64) (string, float64, error) {
+	paymentAmount := calculateCreateOrderPaymentAmount(orderType, limitAmount, multiplier, currency, usdToCnyRate)
 	return calculateCreateOrderPayAmount(paymentAmount, feeRate, currency)
 }
 
-func calculateCreateOrderPayAmountForPaymentType(paymentType, orderType string, limitAmount, feeRate, multiplier float64, currency string) (string, float64, error) {
+func calculateCreateOrderPayAmountForPaymentType(paymentType, orderType string, limitAmount, feeRate, multiplier float64, currency string, usdToCnyRate float64) (string, float64, error) {
 	if paymentType == payment.TypeNinePlus && orderType == payment.OrderTypeSubscription {
 		return calculateCreateOrderPayAmount(limitAmount, feeRate, currency)
 	}
-	return calculateCreateOrderPayAmountForOrder(orderType, limitAmount, feeRate, multiplier, currency)
+	return calculateCreateOrderPayAmountForOrder(orderType, limitAmount, feeRate, multiplier, currency, usdToCnyRate)
 }
 
-func calculateCreateOrderPaymentAmount(orderType string, limitAmount, multiplier float64, currency string) float64 {
+func calculateCreateOrderPaymentAmount(orderType string, limitAmount, multiplier float64, currency string, usdToCnyRate float64) float64 {
+	if orderType == payment.OrderTypeBalance {
+		return calculateGatewayPaymentAmount(limitAmount, multiplier, currency)
+	}
+	if orderType == payment.OrderTypeSubscription {
+		return calculateSubscriptionGatewayBaseAmount(limitAmount, usdToCnyRate, currency)
+	}
 	return limitAmount
+}
+
+func calculateCreateOrderPayAmountForOrderType(limitAmount, feeRate float64, currency, orderType string, usdToCnyRate float64) (string, float64, error) {
+	paymentAmount := limitAmount
+	if orderType == payment.OrderTypeSubscription {
+		paymentAmount = calculateSubscriptionGatewayBaseAmount(limitAmount, usdToCnyRate, currency)
+	}
+	return calculateCreateOrderPayAmount(paymentAmount, feeRate, currency)
+}
+
+// calculateSubscriptionGatewayBaseAmount 计算订阅订单的网关扣款基数。
+// 换算是显式 opt-in：仅当管理员配置了订阅汇率（rate > 0，1 USD = rate CNY）
+// 且网关币种为 CNY 时，按 price × rate 换算；未配置时保持 price 直付的存量行为。
+func calculateSubscriptionGatewayBaseAmount(amount, usdToCnyRate float64, currency string) float64 {
+	rate := normalizeSubscriptionUSDToCNYRate(usdToCnyRate)
+	if rate <= 0 || currency != payment.DefaultPaymentCurrency {
+		return amount
+	}
+	return decimal.NewFromFloat(amount).
+		Mul(decimal.NewFromFloat(rate)).
+		Round(int32(payment.CurrencyMaxFractionDigits(currency))).
+		InexactFloat64()
 }
 
 func validateCreateOrderAmountCurrency(amount float64, currency string) error {

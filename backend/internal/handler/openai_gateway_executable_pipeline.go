@@ -752,6 +752,7 @@ type OpenAIHTTPRoutingStage struct {
 	RequiredCapability         service.OpenAIEndpointCapability
 	RequiredImageCapability    service.OpenAIImagesCapability
 	RequireCompact             bool
+	PreviousResponseCanMove    bool
 	RequestPlatform            string
 	Stream                     bool
 	StreamStarted              *bool
@@ -826,6 +827,7 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 			s.RequiredCapability,
 			s.RequiredImageCapability,
 			s.RequireCompact,
+			s.PreviousResponseCanMove,
 			s.RequestPlatform,
 			s.SubjectUserID,
 		)
@@ -1472,24 +1474,26 @@ func (h *OpenAIGatewayHandler) openAIWebSocketRoutingStageFromRouteDescriptor(c 
 }
 
 type OpenAIWebSocketRoutingStage struct {
-	Handler               *OpenAIGatewayHandler
-	RequestContext        context.Context
-	ReqLog                *zap.Logger
-	APIKey                *service.APIKey
-	SubjectUserID         int64
-	RequestedModel        string
-	SessionHash           string
-	PreviousResponseID    string
-	FailedAccountIDs      map[int64]struct{}
-	RequestPlatform       string
-	ClientConn            *coderws.Conn
-	LastFailoverErr       *service.UpstreamFailoverError
-	Account               **service.Account
-	AccountMaxConcurrency *int
-	CurrentAccountRelease *func()
-	Token                 *string
-	StickyPreviousHit     *bool
-	ScheduleLayer         *string
+	Handler                 *OpenAIGatewayHandler
+	RequestContext          context.Context
+	ReqLog                  *zap.Logger
+	APIKey                  *service.APIKey
+	SubjectUserID           int64
+	RequestedModel          string
+	SessionHash             string
+	PreviousResponseID      string
+	FailedAccountIDs        map[int64]struct{}
+	RequiredTransport       service.OpenAIUpstreamTransport
+	PreviousResponseCanMove bool
+	RequestPlatform         string
+	ClientConn              *coderws.Conn
+	LastFailoverErr         *service.UpstreamFailoverError
+	Account                 **service.Account
+	AccountMaxConcurrency   *int
+	CurrentAccountRelease   *func()
+	Token                   *string
+	StickyPreviousHit       *bool
+	ScheduleLayer           *string
 }
 
 func (OpenAIWebSocketRoutingStage) StageName() string {
@@ -1513,6 +1517,10 @@ func (s OpenAIWebSocketRoutingStage) RunRouting(c *gin.Context) ExecutableStageR
 	if failedAccountIDs == nil {
 		failedAccountIDs = map[int64]struct{}{}
 	}
+	requiredTransport := s.RequiredTransport
+	if requiredTransport == "" {
+		requiredTransport = service.OpenAIUpstreamTransportResponsesWebsocketV2
+	}
 	reqLog.Debug("openai.websocket_account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
 	selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
 		ctx,
@@ -1521,9 +1529,10 @@ func (s OpenAIWebSocketRoutingStage) RunRouting(c *gin.Context) ExecutableStageR
 		s.SessionHash,
 		s.RequestedModel,
 		failedAccountIDs,
-		service.OpenAIUpstreamTransportResponsesWebsocketV2,
+		requiredTransport,
 		service.OpenAIEndpointCapabilityChatCompletions,
 		false,
+		s.PreviousResponseCanMove,
 		s.RequestPlatform,
 		s.SubjectUserID,
 	)
