@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -242,7 +243,7 @@ func writeAnthropicCountTokensError(c *gin.Context, status int, errType, message
 		"type": "error",
 		"error": gin.H{
 			"type":    errType,
-			"message": message,
+			"message": clientmsg.Localize(message),
 		},
 	})
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -68,7 +69,7 @@ func writeResponsesFailedSSE(c *gin.Context, errType, message string) bool {
 			Output: []any{},
 			Error: responsesFailedError{
 				Code:    mapResponsesErrorCode(errType),
-				Message: message,
+				Message: clientmsg.Localize(message),
 			},
 		},
 	})

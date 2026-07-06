@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
@@ -134,7 +135,7 @@ func buildOpenAIWSHTTPBridgeErrorEvent(statusCode int, message string) []byte {
 		"status": statusCode,
 		"error": map[string]any{
 			"type":    "upstream_error",
-			"message": message,
+			"message": clientmsg.Localize(message),
 		},
 	}
 	body, err := json.Marshal(event)

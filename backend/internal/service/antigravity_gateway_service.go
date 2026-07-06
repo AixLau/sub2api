@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -3680,7 +3681,7 @@ func (s *AntigravityGatewayService) writeClaudeError(c *gin.Context, status int,
 	MarkResponseCommitted(c)
 	c.JSON(status, gin.H{
 		"type":  "error",
-		"error": gin.H{"type": errType, "message": message},
+		"error": gin.H{"type": errType, "message": clientmsg.Localize(message)},
 	})
 	return fmt.Errorf("%s", message)
 }
@@ -3760,7 +3761,7 @@ func (s *AntigravityGatewayService) writeMappedClaudeError(c *gin.Context, accou
 
 	c.JSON(statusCode, gin.H{
 		"type":  "error",
-		"error": gin.H{"type": errType, "message": errMsg},
+		"error": gin.H{"type": errType, "message": clientmsg.Localize(errMsg)},
 	})
 	if upstreamMsg == "" {
 		return fmt.Errorf("upstream error: %d", upstreamStatus)
@@ -3787,7 +3788,7 @@ func (s *AntigravityGatewayService) writeGoogleError(c *gin.Context, status int,
 	c.JSON(status, gin.H{
 		"error": gin.H{
 			"code":    status,
-			"message": message,
+			"message": clientmsg.Localize(message),
 			"status":  statusStr,
 		},
 	})

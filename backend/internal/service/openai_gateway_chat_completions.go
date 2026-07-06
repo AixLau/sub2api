@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
@@ -635,7 +636,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			errorPayload, _ := json.Marshal(gin.H{
 				"error": gin.H{
 					"type":    "upstream_error",
-					"message": message,
+					"message": clientmsg.Localize(message),
 				},
 			})
 			if c != nil && c.Writer != nil && !c.Writer.Written() {
@@ -962,7 +963,7 @@ func writeChatCompletionsError(c *gin.Context, statusCode int, errType, message 
 	c.JSON(statusCode, gin.H{
 		"error": gin.H{
 			"type":    errType,
-			"message": message,
+			"message": clientmsg.Localize(message),
 		},
 	})
 }
@@ -976,7 +977,7 @@ func buildChatStreamErrorSSE(code, message string) string {
 		"error": gin.H{
 			"type":    "invalid_request_error",
 			"code":    code,
-			"message": message,
+			"message": clientmsg.Localize(message),
 		},
 	})
 	if err != nil {

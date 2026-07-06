@@ -15,6 +15,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
@@ -1085,7 +1086,7 @@ func writeAnthropicError(c *gin.Context, statusCode int, errType, message string
 		"type": "error",
 		"error": gin.H{
 			"type":    errType,
-			"message": message,
+			"message": clientmsg.Localize(message),
 		},
 	})
 }
@@ -1099,7 +1100,7 @@ func buildAnthropicStreamErrorSSE(errType, message string) string {
 		"type": "error",
 		"error": gin.H{
 			"type":    errType,
-			"message": message,
+			"message": clientmsg.Localize(message),
 		},
 	})
 	if err != nil {

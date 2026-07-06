@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -70,7 +71,7 @@ type ErrorResponse struct {
 func NewErrorResponse(code, message string) ErrorResponse {
 	return ErrorResponse{
 		Code:    code,
-		Message: message,
+		Message: clientmsg.Localize(message),
 	}
 }
 
@@ -90,8 +91,11 @@ type GatewayErrorWriter func(c *gin.Context, status int, message string)
 // AnthropicErrorWriter 按 Anthropic API 规范输出错误
 func AnthropicErrorWriter(c *gin.Context, status int, message string) {
 	c.JSON(status, gin.H{
-		"type":  "error",
-		"error": gin.H{"type": "permission_error", "message": message},
+		"type": "error",
+		"error": gin.H{
+			"type":    "permission_error",
+			"message": clientmsg.Localize(message),
+		},
 	})
 }
 
@@ -100,7 +104,7 @@ func GoogleErrorWriter(c *gin.Context, status int, message string) {
 	c.JSON(status, gin.H{
 		"error": gin.H{
 			"code":    status,
-			"message": message,
+			"message": clientmsg.Localize(message),
 			"status":  googleapi.HTTPStatusToGoogleStatus(status),
 		},
 	})

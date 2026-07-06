@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 	"github.com/gin-gonic/gin"
@@ -51,7 +52,7 @@ func Created(c *gin.Context, data any) {
 func Accepted(c *gin.Context, data any) {
 	c.JSON(http.StatusAccepted, Response{
 		Code:    0,
-		Message: "accepted",
+		Message: clientmsg.Localize("accepted"),
 		Data:    data,
 	})
 }
@@ -60,7 +61,7 @@ func Accepted(c *gin.Context, data any) {
 func Error(c *gin.Context, statusCode int, message string) {
 	c.JSON(statusCode, Response{
 		Code:     statusCode,
-		Message:  message,
+		Message:  clientmsg.Localize(message),
 		Reason:   "",
 		Metadata: nil,
 	})
@@ -71,7 +72,7 @@ func Error(c *gin.Context, statusCode int, message string) {
 func ErrorWithDetails(c *gin.Context, statusCode int, message, reason string, metadata map[string]string) {
 	c.JSON(statusCode, Response{
 		Code:     statusCode,
-		Message:  message,
+		Message:  clientmsg.Localize(message),
 		Reason:   reason,
 		Metadata: metadata,
 	})

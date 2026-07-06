@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
@@ -604,7 +605,7 @@ func writeGrokMediaErrorResponse(c *gin.Context, statusCode int, errType, messag
 	c.JSON(statusCode, gin.H{
 		"error": gin.H{
 			"type":    strings.TrimSpace(errType),
-			"message": strings.TrimSpace(message),
+			"message": clientmsg.Localize(strings.TrimSpace(message)),
 		},
 	})
 }

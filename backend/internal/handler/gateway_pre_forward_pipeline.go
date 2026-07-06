@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
@@ -174,7 +175,7 @@ func writeGatewayPreForwardEntrypointError(c *gin.Context, protocol string, stat
 			"type": "error",
 			"error": gin.H{
 				"type":    code,
-				"message": message,
+				"message": clientmsg.Localize(message),
 			},
 		})
 	}

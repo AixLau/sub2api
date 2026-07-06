@@ -28,6 +28,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/anthropicfp"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -8083,7 +8084,7 @@ func (s *GatewayService) handleErrorResponse(ctx context.Context, resp *http.Res
 			"type": "error",
 			"error": gin.H{
 				"type":    errType,
-				"message": errMsg,
+				"message": clientmsg.Localize(errMsg),
 			},
 		})
 
@@ -8143,7 +8144,7 @@ func (s *GatewayService) handleErrorResponse(ctx context.Context, resp *http.Res
 		"type": "error",
 		"error": gin.H{
 			"type":    errType,
-			"message": errMsg,
+			"message": clientmsg.Localize(errMsg),
 		},
 	})
 
@@ -8246,7 +8247,7 @@ func (s *GatewayService) handleRetryExhaustedError(ctx context.Context, resp *ht
 			"type": "error",
 			"error": gin.H{
 				"type":    errType,
-				"message": errMsg,
+				"message": clientmsg.Localize(errMsg),
 			},
 		})
 
@@ -8410,12 +8411,12 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 			"type": "error",
 			"error": map[string]string{
 				"type":    reason,
-				"message": message,
+				"message": clientmsg.Localize(message),
 			},
 		})
 		if err != nil {
 			// json.Marshal 不可能在已知 string-only 输入上失败，保守 fallback
-			body = []byte(fmt.Sprintf(`{"type":"error","error":{"type":%q,"message":%q}}`, reason, message))
+			body = []byte(fmt.Sprintf(`{"type":"error","error":{"type":%q,"message":%q}}`, reason, clientmsg.Localize(message)))
 		}
 		_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", body)
 		flusher.Flush()
@@ -10710,7 +10711,7 @@ func (s *GatewayService) countTokensError(c *gin.Context, status int, errType, m
 		"type": "error",
 		"error": gin.H{
 			"type":    errType,
-			"message": message,
+			"message": clientmsg.Localize(message),
 		},
 	})
 }

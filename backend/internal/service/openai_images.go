@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
@@ -1550,7 +1551,7 @@ func newOpenAIImageStatusError(resp *req.Response, fallback string, errorBodyRea
 
 	return &openAIImageStatusError{
 		StatusCode:      statusCode,
-		Message:         message,
+		Message:         clientmsg.Localize(message),
 		ResponseBody:    body,
 		ResponseHeaders: headers,
 		RequestID:       requestID,

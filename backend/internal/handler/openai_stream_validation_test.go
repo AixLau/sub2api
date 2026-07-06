@@ -79,7 +79,7 @@ func TestOpenAICompatibleHandlersRejectInvalidStreamFieldType(t *testing.T) {
 			tt.run(c)
 
 			require.Equal(t, http.StatusBadRequest, rec.Code)
-			require.Equal(t, invalidStreamFieldTypeMessage, gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
+			require.Equal(t, "stream 字段类型无效", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
 			require.Contains(t, rec.Body.String(), "invalid_request_error")
 		})
 	}

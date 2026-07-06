@@ -138,7 +138,7 @@ func TestOpenAIGatewayHandlerAcquireImageGenerationSlot_Returns429WhenFull(t *te
 	require.Nil(t, blockedRelease)
 	require.Equal(t, http.StatusTooManyRequests, rec.Code)
 	require.Equal(t, "rate_limit_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
-	require.Contains(t, rec.Body.String(), "Image generation concurrency limit exceeded")
+	require.Contains(t, rec.Body.String(), "图片生成并发已达上限")
 }
 
 func TestOpenAIGatewayHandlerAcquireImageGenerationSlot_LimitsPerUserIndependently(t *testing.T) {
@@ -271,7 +271,7 @@ func TestOpenAIGatewayHandlerResponses_ImageIntentRejectedByImageConcurrency(t *
 	require.True(t, result.Stop)
 	require.Equal(t, http.StatusTooManyRequests, rec.Code)
 	require.Equal(t, "rate_limit_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
-	require.Contains(t, rec.Body.String(), "Image generation concurrency limit exceeded")
+	require.Contains(t, rec.Body.String(), "图片生成并发已达上限")
 }
 
 func TestOpenAIGatewayHandlerResponses_TextOnlyNotRejectedByImageConcurrency(t *testing.T) {

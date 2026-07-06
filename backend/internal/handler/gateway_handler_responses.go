@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -313,7 +314,7 @@ func (h *GatewayHandler) responsesErrorResponse(c *gin.Context, status int, code
 	c.JSON(status, gin.H{
 		"error": gin.H{
 			"code":    code,
-			"message": message,
+			"message": clientmsg.Localize(message),
 		},
 	})
 }

@@ -23,6 +23,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
@@ -779,7 +780,7 @@ func (s *OpenAIGatewayService) writeOpenAIWSFallbackErrorResponse(c *gin.Context
 	c.JSON(statusCode, gin.H{
 		"error": gin.H{
 			"type":    errType,
-			"message": clientMessage,
+			"message": clientmsg.Localize(clientMessage),
 		},
 	})
 	return true
@@ -4160,7 +4161,7 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	body, _ := json.Marshal(gin.H{
 		"error": gin.H{
 			"type":    "upstream_error",
-			"message": message,
+			"message": clientmsg.Localize(message),
 		},
 	})
 	return &UpstreamFailoverError{
@@ -4751,7 +4752,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		c.JSON(status, gin.H{
 			"error": gin.H{
 				"type":    errType,
-				"message": errMsg,
+				"message": clientmsg.Localize(errMsg),
 			},
 		})
 		if upstreamMsg == "" {
@@ -4779,7 +4780,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": gin.H{
 				"type":    "upstream_error",
-				"message": "Upstream gateway error",
+				"message": clientmsg.Localize("Upstream gateway error"),
 			},
 		})
 		if upstreamMsg == "" {
@@ -4880,7 +4881,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	c.JSON(statusCode, gin.H{
 		"error": gin.H{
 			"type":    errType,
-			"message": errMsg,
+			"message": clientmsg.Localize(errMsg),
 		},
 	})
 
@@ -6080,7 +6081,7 @@ func (s *OpenAIGatewayService) writeOpenAINonStreamingProtocolError(resp *http.R
 	c.JSON(http.StatusBadGateway, gin.H{
 		"error": gin.H{
 			"type":    "upstream_error",
-			"message": message,
+			"message": clientmsg.Localize(message),
 		},
 	})
 	return fmt.Errorf("non-streaming openai protocol error: %s", message)
