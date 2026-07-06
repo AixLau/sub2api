@@ -23,22 +23,22 @@ func APIKeyAuthGoogle(apiKeyService *service.APIKeyService, cfg *config.Config) 
 func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if v := strings.TrimSpace(c.Query("api_key")); v != "" {
-			abortWithGoogleError(c, 400, "Query parameter api_key is deprecated. Use Authorization header or key instead.")
+			abortWithGoogleError(c, 400, localizedAPIKeyAuthMessage("api_key_in_query_deprecated"))
 			return
 		}
 		apiKeyString := extractAPIKeyForGoogle(c)
 		if apiKeyString == "" {
-			abortWithGoogleError(c, 401, "API key is required")
+			abortWithGoogleError(c, 401, localizedAPIKeyAuthMessage("API_KEY_REQUIRED"))
 			return
 		}
 
 		apiKey, err := apiKeyService.GetByKey(c.Request.Context(), apiKeyString)
 		if err != nil {
 			if errors.Is(err, service.ErrAPIKeyNotFound) {
-				abortWithGoogleError(c, 401, "Invalid API key")
+				abortWithGoogleError(c, 401, localizedAPIKeyAuthMessage("INVALID_API_KEY"))
 				return
 			}
-			abortWithGoogleError(c, 500, "Failed to validate API key")
+			abortWithGoogleError(c, 500, localizedAPIKeyAuthMessage("INTERNAL_ERROR"))
 			return
 		}
 
@@ -47,15 +47,15 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 		SetOpsFallbackAPIKey(c, apiKey)
 
 		if !apiKey.IsActive() {
-			abortWithGoogleError(c, 401, "API key is disabled")
+			abortWithGoogleError(c, 401, localizedAPIKeyAuthMessage("API_KEY_DISABLED"))
 			return
 		}
 		if apiKey.User == nil {
-			abortWithGoogleError(c, 401, "User associated with API key not found")
+			abortWithGoogleError(c, 401, localizedAPIKeyAuthMessage("USER_NOT_FOUND"))
 			return
 		}
 		if !apiKey.User.IsActive() {
-			abortWithGoogleError(c, 401, "User account is not active")
+			abortWithGoogleError(c, 401, localizedAPIKeyAuthMessage("USER_INACTIVE"))
 			return
 		}
 		if _, message, ok := validateAPIKeyGroupAvailable(apiKey); !ok {
@@ -86,7 +86,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 				apiKey.Group.ID,
 			)
 			if err != nil {
-				abortWithGoogleError(c, 403, "No active subscription found for this group")
+				abortWithGoogleError(c, 403, localizedAPIKeyAuthMessage("SUBSCRIPTION_NOT_FOUND"))
 				return
 			}
 
@@ -98,7 +98,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 					errors.Is(err, service.ErrMonthlyLimitExceeded) {
 					status = 429
 				}
-				abortWithGoogleError(c, status, err.Error())
+				abortWithGoogleError(c, status, localizedSubscriptionErrorMessage(err))
 				return
 			}
 
@@ -110,7 +110,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			}
 		} else {
 			if apiKey.User.Balance <= 0 {
-				abortWithGoogleError(c, 403, "Insufficient account balance")
+				abortWithGoogleError(c, 403, localizedAPIKeyAuthMessage("INSUFFICIENT_BALANCE"))
 				return
 			}
 		}

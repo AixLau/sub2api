@@ -175,6 +175,7 @@ func TestSimpleModeBypassesQuotaCheck(t *testing.T) {
 
 		require.Equal(t, http.StatusTooManyRequests, w.Code)
 		require.Contains(t, w.Body.String(), "USAGE_LIMIT_EXCEEDED")
+		require.Contains(t, w.Body.String(), "套餐今日额度已用完，请稍后再试或切换账号")
 	})
 }
 
@@ -603,6 +604,203 @@ func TestAPIKeyAuthGoogleSetsOpsFallbackKeyOnEarlyAbort(t *testing.T) {
 	require.Equal(t, user.ID, fallback.User.ID)
 }
 
+func TestAPIKeyAuthLocalClientErrorsUseLocalizedMessages(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	activeUser := &service.User{
+		ID:          7,
+		Role:        service.RoleUser,
+		Status:      service.StatusActive,
+		Balance:     10,
+		Concurrency: 3,
+	}
+	activeGroup := &service.Group{
+		ID:               101,
+		Name:             "sub",
+		Status:           service.StatusActive,
+		Platform:         service.PlatformAnthropic,
+		Hydrated:         true,
+		SubscriptionType: service.SubscriptionTypeSubscription,
+	}
+	activeAPIKey := &service.APIKey{
+		ID:      100,
+		UserID:  activeUser.ID,
+		GroupID: &activeGroup.ID,
+		Key:     "test-key",
+		Status:  service.StatusActive,
+		User:    activeUser,
+		Group:   activeGroup,
+	}
+
+	tests := []struct {
+		name                string
+		apiKey              *service.APIKey
+		path                string
+		headerKey           string
+		headerValue         string
+		repoErr             error
+		subscriptionService *service.SubscriptionService
+		wantStatus          int
+		wantCode            string
+		wantMessage         string
+	}{
+		{
+			name:        "query api key rejected",
+			apiKey:      activeAPIKey,
+			path:        "/t?api_key=legacy",
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "api_key_in_query_deprecated",
+			wantMessage: "不再支持通过 URL 查询参数传递 API Key，请改用 Authorization 请求头",
+		},
+		{
+			name:        "missing api key",
+			path:        "/t",
+			wantStatus:  http.StatusUnauthorized,
+			wantCode:    "API_KEY_REQUIRED",
+			wantMessage: "缺少 API Key，请在 Authorization Bearer、x-api-key 或 x-goog-api-key 中提供",
+		},
+		{
+			name:        "invalid api key",
+			path:        "/t",
+			headerKey:   "x-api-key",
+			headerValue: "bad-key",
+			repoErr:     service.ErrAPIKeyNotFound,
+			wantStatus:  http.StatusUnauthorized,
+			wantCode:    "INVALID_API_KEY",
+			wantMessage: "API Key 无效",
+		},
+		{
+			name:        "api key disabled",
+			apiKey:      cloneAPIKeyForAuthTest(activeAPIKey, func(k *service.APIKey) { k.Status = service.StatusDisabled }),
+			path:        "/t",
+			headerKey:   "x-api-key",
+			headerValue: "test-key",
+			wantStatus:  http.StatusUnauthorized,
+			wantCode:    "API_KEY_DISABLED",
+			wantMessage: "API Key 已停用",
+		},
+		{
+			name:        "api key user missing",
+			apiKey:      cloneAPIKeyForAuthTest(activeAPIKey, func(k *service.APIKey) { k.User = nil }),
+			path:        "/t",
+			headerKey:   "x-api-key",
+			headerValue: "test-key",
+			wantStatus:  http.StatusUnauthorized,
+			wantCode:    "INVALID_API_KEY",
+			wantMessage: "API Key 无效",
+		},
+		{
+			name: "api key user inactive",
+			apiKey: cloneAPIKeyForAuthTest(activeAPIKey, func(k *service.APIKey) {
+				user := *activeUser
+				user.Status = service.StatusDisabled
+				k.User = &user
+			}),
+			path:        "/t",
+			headerKey:   "x-api-key",
+			headerValue: "test-key",
+			wantStatus:  http.StatusUnauthorized,
+			wantCode:    "USER_INACTIVE",
+			wantMessage: "用户账户未启用",
+		},
+		{
+			name:   "subscription not found",
+			apiKey: activeAPIKey,
+			path:   "/t",
+			subscriptionService: service.NewSubscriptionService(nil, &stubUserSubscriptionRepo{
+				getActive: func(ctx context.Context, userID, groupID int64) (*service.UserSubscription, error) {
+					return nil, service.ErrSubscriptionNotFound
+				},
+			}, nil, nil, &config.Config{RunMode: config.RunModeStandard}),
+			headerKey:   "x-api-key",
+			headerValue: "test-key",
+			wantStatus:  http.StatusForbidden,
+			wantCode:    "SUBSCRIPTION_NOT_FOUND",
+			wantMessage: "当前分组没有可用订阅，请联系管理员开通或续费",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.subscriptionService != nil {
+				t.Cleanup(tt.subscriptionService.Stop)
+			}
+			apiKeyRepo := &stubApiKeyRepo{
+				getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+					if tt.repoErr != nil {
+						return nil, tt.repoErr
+					}
+					if tt.apiKey == nil || key != tt.apiKey.Key {
+						return nil, service.ErrAPIKeyNotFound
+					}
+					clone := *tt.apiKey
+					return &clone, nil
+				},
+			}
+			cfg := &config.Config{RunMode: config.RunModeStandard}
+			apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
+			router := newAuthTestRouter(apiKeyService, tt.subscriptionService, cfg)
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			if tt.headerKey != "" {
+				req.Header.Set(tt.headerKey, tt.headerValue)
+			}
+			router.ServeHTTP(w, req)
+
+			require.Equal(t, tt.wantStatus, w.Code)
+			requireAPIKeyAuthError(t, w, tt.wantCode, tt.wantMessage)
+		})
+	}
+}
+
+func cloneAPIKeyForAuthTest(apiKey *service.APIKey, mutate func(*service.APIKey)) *service.APIKey {
+	clone := *apiKey
+	if mutate != nil {
+		mutate(&clone)
+	}
+	return &clone
+}
+
+func TestAPIKeyAuthInsufficientBalanceUsesLocalizedClientMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	apiKey := &service.APIKey{
+		ID:     100,
+		UserID: 7,
+		Key:    "test-key",
+		Status: service.StatusActive,
+		User: &service.User{
+			ID:          7,
+			Role:        service.RoleUser,
+			Status:      service.StatusActive,
+			Balance:     0,
+			Concurrency: 3,
+		},
+	}
+	apiKeyRepo := &stubApiKeyRepo{
+		getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+			if key != apiKey.Key {
+				return nil, service.ErrAPIKeyNotFound
+			}
+			clone := *apiKey
+			return &clone, nil
+		},
+	}
+
+	cfg := &config.Config{RunMode: config.RunModeStandard}
+	apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
+	router := newAuthTestRouter(apiKeyService, nil, cfg)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/t", nil)
+	req.Header.Set("x-api-key", apiKey.Key)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	requireAPIKeyAuthError(t, w, "INSUFFICIENT_BALANCE", "当前账户余额不足，请充值后重试")
+}
+
 func TestRequireGroupAssignmentMarksUngroupedKeyBusinessLimited(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -641,7 +839,7 @@ func TestRequireGroupAssignmentMarksUngroupedKeyBusinessLimited(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusForbidden, w.Code)
-	require.Contains(t, w.Body.String(), "not assigned to any group")
+	require.Contains(t, w.Body.String(), "API Key 未分配分组，无法调度")
 	require.True(t, markedBusinessLimited)
 	require.Equal(t, service.OpsClientBusinessLimitedReasonAPIKeyGroupUnassigned, businessLimitedReason)
 }
@@ -703,7 +901,7 @@ func TestAPIKeyAuthIPRestrictionDoesNotTrustForwardedClientIPByDefault(t *testin
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusForbidden, w.Code)
-	requireAPIKeyAuthError(t, w, "ACCESS_DENIED", "Access denied. Your IP is 9.9.9.9")
+	requireAPIKeyAuthError(t, w, "ACCESS_DENIED", "访问被拒绝，当前 IP 为 9.9.9.9")
 	require.True(t, markedBusinessLimited)
 	require.Equal(t, service.OpsClientBusinessLimitedReasonIPRestriction, businessLimitedReason)
 }
@@ -753,7 +951,7 @@ func TestAPIKeyAuthIPRestrictionIncludesClientIPForBlacklistDenial(t *testing.T)
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusForbidden, w.Code)
-	requireAPIKeyAuthError(t, w, "ACCESS_DENIED", "Access denied. Your IP is 9.9.9.9")
+	requireAPIKeyAuthError(t, w, "ACCESS_DENIED", "访问被拒绝，当前 IP 为 9.9.9.9")
 }
 
 func TestAPIKeyAuthIPRestrictionCanTrustForwardedClientIPForReverseProxy(t *testing.T) {
@@ -856,7 +1054,7 @@ func TestAPIKeyAuthIPRestrictionUsesForwardedClientIPInDenialWhenTrusted(t *test
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusForbidden, w.Code)
-	requireAPIKeyAuthError(t, w, "ACCESS_DENIED", "Access denied. Your IP is 1.2.3.4")
+	requireAPIKeyAuthError(t, w, "ACCESS_DENIED", "访问被拒绝，当前 IP 为 1.2.3.4")
 }
 
 func TestAPIKeyAuthTouchesLastUsedOnSuccess(t *testing.T) {
@@ -1210,6 +1408,10 @@ func (r *stubUserSubscriptionRepo) ListActiveByUserID(ctx context.Context, userI
 	return nil, errors.New("not implemented")
 }
 
+func (r *stubUserSubscriptionRepo) ListActiveByUserIDPlatformSubscriptionType(ctx context.Context, userID int64, platform, subscriptionType string) ([]service.UserSubscription, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (r *stubUserSubscriptionRepo) ListByGroupID(ctx context.Context, groupID int64, params pagination.PaginationParams) ([]service.UserSubscription, *pagination.PaginationResult, error) {
 	return nil, nil, errors.New("not implemented")
 }
@@ -1266,6 +1468,10 @@ func (r *stubUserSubscriptionRepo) ResetMonthlyUsage(ctx context.Context, id int
 	if r.resetMonthly != nil {
 		return r.resetMonthly(ctx, id, newWindowStart)
 	}
+	return errors.New("not implemented")
+}
+
+func (r *stubUserSubscriptionRepo) AddMonthlyBonus(ctx context.Context, id int64, amountUSD float64) error {
 	return errors.New("not implemented")
 }
 

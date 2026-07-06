@@ -8,6 +8,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -33,7 +34,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		queryKey := strings.TrimSpace(c.Query("key"))
 		queryApiKey := strings.TrimSpace(c.Query("api_key"))
 		if queryKey != "" || queryApiKey != "" {
-			AbortWithError(c, 400, "api_key_in_query_deprecated", "API key in query parameter is deprecated. Please use Authorization header instead.")
+			AbortWithError(c, 400, "api_key_in_query_deprecated", localizedAPIKeyAuthMessage("api_key_in_query_deprecated"))
 			return
 		}
 
@@ -61,7 +62,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 
 		// 如果所有header都没有API key
 		if apiKeyString == "" {
-			AbortWithError(c, 401, "API_KEY_REQUIRED", "API key is required in Authorization header (Bearer scheme), x-api-key header, or x-goog-api-key header")
+			AbortWithError(c, 401, "API_KEY_REQUIRED", localizedAPIKeyAuthMessage("API_KEY_REQUIRED"))
 			return
 		}
 
@@ -70,10 +71,10 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		apiKey, err := apiKeyService.GetByKey(c.Request.Context(), apiKeyString)
 		if err != nil {
 			if errors.Is(err, service.ErrAPIKeyNotFound) {
-				AbortWithError(c, 401, "INVALID_API_KEY", "Invalid API key")
+				AbortWithError(c, 401, "INVALID_API_KEY", localizedAPIKeyAuthMessage("INVALID_API_KEY"))
 				return
 			}
-			AbortWithError(c, 500, "INTERNAL_ERROR", "Failed to validate API key")
+			AbortWithError(c, 500, "INTERNAL_ERROR", localizedAPIKeyAuthMessage("INTERNAL_ERROR"))
 			return
 		}
 
@@ -87,7 +88,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		if !apiKey.IsActive() &&
 			apiKey.Status != service.StatusAPIKeyExpired &&
 			apiKey.Status != service.StatusAPIKeyQuotaExhausted {
-			AbortWithError(c, 401, "API_KEY_DISABLED", "API key is disabled")
+			AbortWithError(c, 401, "API_KEY_DISABLED", localizedAPIKeyAuthMessage("API_KEY_DISABLED"))
 			return
 		}
 
@@ -104,20 +105,20 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 					clientIP = "unknown"
 				}
 				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonIPRestriction)
-				AbortWithError(c, 403, "ACCESS_DENIED", fmt.Sprintf("Access denied. Your IP is %s", clientIP))
+				AbortWithError(c, 403, "ACCESS_DENIED", localizedAccessDeniedMessage(clientIP))
 				return
 			}
 		}
 
 		// 检查关联的用户
 		if apiKey.User == nil {
-			AbortWithError(c, 401, "USER_NOT_FOUND", "User associated with API key not found")
+			AbortWithError(c, 401, "USER_NOT_FOUND", localizedAPIKeyAuthMessage("USER_NOT_FOUND"))
 			return
 		}
 
 		// 检查用户状态
 		if !apiKey.User.IsActive() {
-			AbortWithError(c, 401, "USER_INACTIVE", "User account is not active")
+			AbortWithError(c, 401, "USER_INACTIVE", localizedAPIKeyAuthMessage("USER_INACTIVE"))
 			return
 		}
 		if abortIfAPIKeyGroupUnavailable(c, apiKey) {
@@ -158,7 +159,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			)
 			if subErr != nil {
 				if !skipBilling {
-					AbortWithError(c, 403, "SUBSCRIPTION_NOT_FOUND", "No active subscription found for this group")
+					AbortWithError(c, 403, "SUBSCRIPTION_NOT_FOUND", localizedAPIKeyAuthMessage("SUBSCRIPTION_NOT_FOUND"))
 					return
 				}
 				// skipBilling: 订阅不存在也放行，handler 会返回可用的数据
@@ -202,7 +203,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 						code = "USAGE_LIMIT_EXCEEDED"
 						status = 429
 					}
-					AbortWithError(c, status, code, validateErr.Error())
+					AbortWithError(c, status, code, localizedSubscriptionErrorMessage(validateErr))
 					return
 				}
 
@@ -214,7 +215,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			} else {
 				// 非订阅模式 或 订阅模式但 subscriptionService 未注入：回退到余额检查
 				if apiKey.User.Balance <= 0 {
-					AbortWithError(c, 403, "INSUFFICIENT_BALANCE", "Insufficient account balance")
+					AbortWithError(c, 403, "INSUFFICIENT_BALANCE", localizedAPIKeyAuthMessage("INSUFFICIENT_BALANCE"))
 					return
 				}
 			}
@@ -304,7 +305,7 @@ func abortIfAPIKeyGroupNotAllowed(c *gin.Context, apiKey *service.APIKey) bool {
 		return false
 	}
 	service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonAPIKeyGroupUnavailable)
-	AbortWithError(c, 403, "GROUP_NOT_ALLOWED", "API Key 所属专属分组不再允许当前用户使用")
+	AbortWithError(c, 403, "GROUP_NOT_ALLOWED", localizedAPIKeyAuthMessage("GROUP_NOT_ALLOWED"))
 	return true
 }
 
@@ -317,6 +318,62 @@ func validateAPIKeyGroupAllowed(apiKey *service.APIKey) bool {
 		return true
 	}
 	return apiKey.User.CanBindGroup(group.ID, group.IsExclusive)
+}
+
+func localizedAPIKeyAuthMessage(code string) string {
+	switch strings.TrimSpace(code) {
+	case "api_key_in_query_deprecated":
+		return "不再支持通过 URL 查询参数传递 API Key，请改用 Authorization 请求头"
+	case "API_KEY_REQUIRED":
+		return "缺少 API Key，请在 Authorization Bearer、x-api-key 或 x-goog-api-key 中提供"
+	case "INVALID_API_KEY":
+		return "API Key 无效"
+	case "INTERNAL_ERROR":
+		return "验证 API Key 失败，请稍后重试"
+	case "API_KEY_DISABLED":
+		return "API Key 已停用"
+	case "USER_NOT_FOUND":
+		return "API Key 关联的用户不存在"
+	case "USER_INACTIVE":
+		return "用户账户未启用"
+	case "SUBSCRIPTION_NOT_FOUND":
+		return "当前分组没有可用订阅，请联系管理员开通或续费"
+	case "INSUFFICIENT_BALANCE":
+		return "当前账户余额不足，请充值后重试"
+	case "GROUP_NOT_ALLOWED":
+		return "API Key 所属专属分组不再允许当前用户使用"
+	default:
+		return ""
+	}
+}
+
+func localizedAccessDeniedMessage(clientIP string) string {
+	clientIP = strings.TrimSpace(clientIP)
+	if clientIP == "" {
+		clientIP = "unknown"
+	}
+	return fmt.Sprintf("访问被拒绝，当前 IP 为 %s", clientIP)
+}
+
+func localizedSubscriptionErrorMessage(err error) string {
+	switch infraerrors.Reason(err) {
+	case "DAILY_LIMIT_EXCEEDED":
+		return "套餐今日额度已用完，请稍后再试或切换账号"
+	case "WEEKLY_LIMIT_EXCEEDED":
+		return "套餐本周额度已用完，请稍后再试或切换账号"
+	case "MONTHLY_LIMIT_EXCEEDED":
+		return "套餐本月额度已用完，请续费或切换账号"
+	case "SUBSCRIPTION_EXPIRED":
+		return "当前订阅已过期，请续费或切换账号"
+	case "SUBSCRIPTION_SUSPENDED":
+		return "当前订阅已暂停，请联系管理员"
+	default:
+		msg := strings.TrimSpace(infraerrors.Message(err))
+		if msg != "" {
+			return msg
+		}
+		return "订阅状态不可用，请联系管理员"
+	}
 }
 
 func validateAPIKeyGroupAvailable(apiKey *service.APIKey) (string, string, bool) {

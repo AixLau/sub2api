@@ -1282,9 +1282,15 @@ func isOpsClientAuthError(code string, msg string) bool {
 		strings.Contains(msg, "api key is disabled") ||
 		strings.Contains(msg, "user associated with api key not found") ||
 		strings.Contains(msg, "user account is not active") ||
+		strings.Contains(msg, "api key 无效") ||
+		strings.Contains(msg, "缺少 api key") ||
+		strings.Contains(msg, "api key 已停用") ||
+		strings.Contains(msg, "api key 关联的用户不存在") ||
+		strings.Contains(msg, "用户账户未启用") ||
 		strings.Contains(msg, "api key 所属分组已删除") ||
 		strings.Contains(msg, "api key 所属分组已停用") ||
-		strings.Contains(msg, "api key is not assigned to any group")
+		strings.Contains(msg, "api key is not assigned to any group") ||
+		strings.Contains(msg, "api key 未分配分组")
 }
 
 func isOpsLocalBusinessLimitError(code string, msg string) bool {
@@ -1299,10 +1305,13 @@ func isOpsLocalBusinessLimitError(code string, msg string) bool {
 	}
 	return strings.Contains(msg, "api key in query parameter is deprecated") ||
 		strings.Contains(msg, "query parameter api_key is deprecated") ||
+		strings.Contains(msg, "不再支持通过 url 查询参数传递 api key") ||
 		strings.Contains(msg, "no active subscription found for this group") ||
+		strings.Contains(msg, "当前分组没有可用订阅") ||
 		strings.Contains(msg, "subscription is invalid or expired") ||
 		strings.Contains(msg, opsErrInsufficientBalance) ||
 		strings.Contains(msg, "insufficient account balance") ||
+		strings.Contains(msg, "当前账户余额不足") ||
 		strings.Contains(msg, "api key group platform is not gemini") ||
 		strings.Contains(msg, "api key 额度已用完") ||
 		strings.Contains(msg, "api key 5小时限额已用完") ||
@@ -1311,6 +1320,11 @@ func isOpsLocalBusinessLimitError(code string, msg string) bool {
 		strings.Contains(msg, "daily usage limit exceeded") ||
 		strings.Contains(msg, "weekly usage limit exceeded") ||
 		strings.Contains(msg, "monthly usage limit exceeded") ||
+		strings.Contains(msg, "套餐今日额度已用完") ||
+		strings.Contains(msg, "套餐本周额度已用完") ||
+		strings.Contains(msg, "套餐本月额度已用完") ||
+		strings.Contains(msg, "当前订阅已过期") ||
+		strings.Contains(msg, "当前订阅已暂停") ||
 		strings.Contains(msg, "usage quota exhausted for this platform") ||
 		strings.Contains(msg, "requests-per-minute limit exceeded") ||
 		strings.Contains(msg, "too many pending requests") ||
