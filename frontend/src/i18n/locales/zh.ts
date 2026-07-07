@@ -4581,7 +4581,7 @@ export default {
       connectingToApi: '连接 API 中...',
       testCompleted: '测试完成！',
       testLatency: '延迟：{latency}ms',
-      testFirstToken: '首个内容：{firstToken}ms',
+      testFirstToken: '首字：{firstToken}ms',
       testDuration: '总耗时：{duration}ms',
       connectedToApi: '已连接到 API',
       usingModel: '使用模型：{model}',
