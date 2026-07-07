@@ -25,6 +25,7 @@ const messages: Record<string, string> = {
   'admin.dashboard.day': 'Day',
   'admin.dashboard.hour': 'Hour',
   'admin.usage.failedToLoadUser': 'Failed to load user',
+  'usage.reasoningEffort': '推理强度',
 }
 
 const formatLocalDate = (date: Date): string => {
@@ -181,6 +182,25 @@ describe('admin UsageView distribution metric toggles', () => {
     resolveSecond({ models: [{ model: 'B', total_tokens: 20 }] })
     await flushPromises()
     expect((wrapper.vm as any).requestedModelStats).toEqual([{ model: 'B', total_tokens: 20 }])
+  })
+
+  it('shows reasoning effort by default in admin usage columns', async () => {
+    const wrapper = mount(UsageView, {
+      global: { stubs: {
+        AppLayout: AppLayoutStub, UsageStatsCards: true, UsageFilters: UsageFiltersStub,
+        UsageTable: true, UsageExportProgress: true, UsageCleanupDialog: true,
+        UserBalanceHistoryModal: true, AuditLogModal: true, Pagination: true, Select: true,
+        DateRangePicker: true, Icon: true, TokenUsageTrend: true,
+        ModelDistributionChart: true, GroupDistributionChart: true,
+        EndpointDistributionChart: true,
+      } },
+    })
+    vi.advanceTimersByTime(120)
+    await flushPromises()
+
+    const columns = (wrapper.vm as any).visibleColumns
+    expect(columns.some((column: any) => column.key === 'reasoning_effort')).toBe(true)
+    expect(columns.find((column: any) => column.key === 'reasoning_effort')?.label).toBe('推理强度')
   })
 
   it('keeps model and group metric toggles independent without refetching chart data', async () => {
