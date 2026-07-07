@@ -69,7 +69,7 @@ INSERT INTO content_moderation_logs (
     violation_count = GREATEST(content_moderation_logs.violation_count, EXCLUDED.violation_count),
     auto_banned = content_moderation_logs.auto_banned OR EXCLUDED.auto_banned,
     email_sent = content_moderation_logs.email_sent OR EXCLUDED.email_sent
-) RETURNING id, created_at`,
+RETURNING id, created_at`,
 		log.DecisionID, log.RequestID, userID, log.UserEmail, apiKeyID, log.APIKeyName, groupID, log.GroupName,
 		log.Endpoint, log.Provider, log.Model, log.Mode, log.Action, log.Flagged, log.HighestCategory, log.HighestScore,
 		string(categoryScores), string(thresholdSnapshot), log.InputExcerpt, latency, log.Error,

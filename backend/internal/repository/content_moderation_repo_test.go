@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -91,6 +92,91 @@ func TestContentModerationRepositoryCountFlaggedByUserSince_ExcludesCyberPolicyW
 
 	require.NoError(t, err)
 	require.Equal(t, 3, count)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestContentModerationRepositoryCreateLog_UsesValidUpsertReturningSQL(t *testing.T) {
+	queryMatcher := sqlmock.QueryMatcherFunc(func(expectedSQL, actualSQL string) error {
+		if expectedSQL != "content_moderation_create_log" {
+			return sqlmock.QueryMatcherRegexp.Match(expectedSQL, actualSQL)
+		}
+		if strings.Contains(actualSQL, "EXCLUDED.email_sent\n) RETURNING") {
+			return fmt.Errorf("unexpected closing parenthesis before RETURNING: %s", actualSQL)
+		}
+		if !strings.Contains(actualSQL, "ON CONFLICT (decision_id) WHERE decision_id <> '' DO UPDATE SET") {
+			return fmt.Errorf("expected partial-index upsert clause, got: %s", actualSQL)
+		}
+		if !strings.Contains(actualSQL, "EXCLUDED.email_sent\nRETURNING id, created_at") {
+			return fmt.Errorf("expected RETURNING to follow the final assignment, got: %s", actualSQL)
+		}
+		return nil
+	})
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(queryMatcher))
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := NewContentModerationRepository(db)
+	now := time.Now()
+	userID := int64(292)
+	apiKeyID := int64(373)
+	groupID := int64(2)
+	latency := 25
+	queueDelay := 7
+	reviewedBy := int64(1)
+	reviewedAt := now.Add(-time.Minute)
+	log := &service.ContentModerationLog{
+		DecisionID:             "cm_req_hash",
+		RequestID:              "req-1",
+		UserID:                 &userID,
+		UserEmail:              "user@example.com",
+		APIKeyID:               &apiKeyID,
+		APIKeyName:             "codex",
+		GroupID:                &groupID,
+		GroupName:              "Codex高速专线",
+		Endpoint:               "/v1/chat/completions",
+		Provider:               "openai",
+		Model:                  "gpt-5.4",
+		Mode:                   "pre_block",
+		Action:                 "keyword_block",
+		Flagged:                true,
+		HighestCategory:        "keyword",
+		HighestScore:           1,
+		CategoryScores:         map[string]float64{"keyword": 1},
+		ThresholdSnapshot:      map[string]float64{"keyword": 1},
+		InputExcerpt:           "developer message",
+		UpstreamLatencyMS:      &latency,
+		Error:                  "blocked",
+		MatchedKeyword:         "developer message",
+		KeywordCategory:        "jailbreak",
+		KeywordSeverity:        "high",
+		KeywordAction:          "block",
+		EffectiveKeywordAction: "block",
+		RiskContextType:        "actual_request",
+		RiskContextReason:      "request_intent_marker",
+		ReviewStatus:           "pending",
+		ReviewNote:             "note",
+		ReviewedBy:             &reviewedBy,
+		ReviewedAt:             &reviewedAt,
+		ViolationCount:         1,
+		AutoBanned:             false,
+		EmailSent:              false,
+		QueueDelayMS:           &queueDelay,
+	}
+
+	mock.ExpectQuery("content_moderation_create_log").
+		WithArgs(
+			log.DecisionID, log.RequestID, userID, log.UserEmail, apiKeyID, log.APIKeyName, groupID, log.GroupName,
+			log.Endpoint, log.Provider, log.Model, log.Mode, log.Action, log.Flagged, log.HighestCategory, log.HighestScore,
+			`{"keyword":1}`, `{"keyword":1}`, log.InputExcerpt, latency, log.Error,
+			log.MatchedKeyword, log.KeywordCategory, log.KeywordSeverity, log.KeywordAction, log.EffectiveKeywordAction,
+			log.RiskContextType, log.RiskContextReason, log.ReviewStatus, log.ReviewNote, reviewedBy, reviewedAt,
+			log.ViolationCount, log.AutoBanned, log.EmailSent, queueDelay,
+		).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(42), now))
+
+	require.NoError(t, repo.CreateLog(context.Background(), log))
+	require.Equal(t, int64(42), log.ID)
+	require.Equal(t, now, log.CreatedAt)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
