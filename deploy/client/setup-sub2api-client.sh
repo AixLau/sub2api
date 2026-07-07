@@ -439,7 +439,7 @@ write_codex_api_key_auth() {
   local tmp
   tmp="$(mktemp)"
 
-  printf '{\n  "OPENAI_API_KEY": "%s"\n}\n' "$(json_escape "$API_KEY")" >"$tmp"
+  printf '{\n  "auth_mode": "apikey",\n  "OPENAI_API_KEY": "%s"\n}\n' "$(json_escape "$API_KEY")" >"$tmp"
   backup_file "$file"
   mv "$tmp" "$file"
   chmod 600 "$file" 2>/dev/null || true

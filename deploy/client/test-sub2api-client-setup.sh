@@ -362,6 +362,7 @@ test_codex_without_official_login_cache_creates_api_key_auth() {
 
   assert_file "$home_dir/.codex/config.toml"
   assert_file "$home_dir/.codex/auth.json"
+  assert_json_value "$home_dir/.codex/auth.json" '.auth_mode' "apikey"
   assert_json_value "$home_dir/.codex/auth.json" '.OPENAI_API_KEY' "$API_KEY"
   assert_contains "$home_dir/.codex/config.toml" "experimental_bearer_token = \"$API_KEY\""
   assert_not_contains "$home_dir/output.txt" "官方登录缓存"
@@ -375,6 +376,7 @@ test_codex_existing_api_key_auth_is_replaced() {
 
   run_setup "$home_dir" "" --client codex
 
+  assert_json_value "$home_dir/.codex/auth.json" '.auth_mode' "apikey"
   assert_json_value "$home_dir/.codex/auth.json" '.OPENAI_API_KEY' "$API_KEY"
   assert_contains "$home_dir/.codex/config.toml" "experimental_bearer_token = \"$API_KEY\""
   ls "$home_dir/.codex"/auth.json.bak.* >/dev/null 2>&1 || fail "missing Codex auth backup"

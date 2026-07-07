@@ -249,6 +249,7 @@ function Write-CodexApiKeyAuth {
 
     Backup-File -Path $Path
     Write-JsonObject -Path $Path -Object ([pscustomobject]@{
+        auth_mode = "apikey"
         OPENAI_API_KEY = $ApiKey
     })
 }
