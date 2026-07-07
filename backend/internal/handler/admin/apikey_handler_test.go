@@ -34,7 +34,7 @@ func TestAdminAPIKeyHandler_UpdateGroup_InvalidID(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.Contains(t, rec.Body.String(), "Invalid API key ID")
+	require.Contains(t, rec.Body.String(), "API Key ID 无效")
 }
 
 func TestAdminAPIKeyHandler_UpdateGroup_InvalidJSON(t *testing.T) {
@@ -46,7 +46,7 @@ func TestAdminAPIKeyHandler_UpdateGroup_InvalidJSON(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.Contains(t, rec.Body.String(), "Invalid request")
+	require.Contains(t, rec.Body.String(), "请求无效")
 }
 
 func TestAdminAPIKeyHandler_UpdateGroup_KeyNotFound(t *testing.T) {

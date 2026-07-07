@@ -770,7 +770,7 @@ func TestOpenAIGatewayServiceForwardImages_OAuthUpstreamHTTPErrorSurfacesRealErr
 	require.Equal(t, "invalid_request_error", gjson.Get(rec.Body.String(), "error.type").String())
 	require.Equal(t, "unknown_parameter", gjson.Get(rec.Body.String(), "error.code").String())
 	require.Equal(t, "size", gjson.Get(rec.Body.String(), "error.param").String())
-	require.Contains(t, gjson.Get(rec.Body.String(), "error.message").String(), "Invalid value for 'size'")
+	require.Contains(t, gjson.Get(rec.Body.String(), "error.message").String(), "无效的 value for 'size'")
 }
 
 func TestOpenAIGatewayServiceForwardImages_OAuthNonStreamModerationBlockedReturnsClientError(t *testing.T) {

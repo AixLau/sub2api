@@ -920,7 +920,7 @@ func TestOpenAIHTTPModerationStageRunsBeforeCyberStage(t *testing.T) {
 func TestOpenAIHTTPHandlersUseUnifiedPreForwardPipeline(t *testing.T) {
 	stageCoverage := openAIHTTPStageCoverageFromHandlerSources(t)
 
-	for _, handlerName := range []string{"OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.Embeddings", "OpenAIGatewayHandler.Messages"} {
+	for _, handlerName := range []string{"OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.Embeddings", "OpenAIGatewayHandler.Messages"} {
 		coverage, ok := stageCoverage[handlerName]
 		require.True(t, ok, "OpenAI HTTP handler %s should be present in source coverage scan", handlerName)
 		require.True(t, coverage.HasHTTPPreForwardPipeline,
@@ -961,6 +961,8 @@ func TestOpenAIHTTPModeratedRouteRegistrarExposesPipelineStages(t *testing.T) {
 		"POST /v1/messages",
 		"POST /v1/responses",
 		"POST /v1/responses/*subpath",
+		"POST /v1/videos/generations",
+		"POST /videos/generations",
 	}, moderatedRoutePathKeysFromEntries(entries))
 
 	for _, entry := range entries {
@@ -981,6 +983,9 @@ func TestOpenAIHTTPModeratedRouteRegistrarExposesPipelineStages(t *testing.T) {
 			requireStageRequiredAndCovered(t, entry, moderationcoverage.StageCyber)
 			requireStageRequiredAndCovered(t, entry, moderationcoverage.StageImage)
 		case "OpenAIGatewayHandler.Images":
+			requireStageNotRequired(t, entry, moderationcoverage.StageCyber)
+			requireStageRequiredAndCovered(t, entry, moderationcoverage.StageImage)
+		case "OpenAIGatewayHandler.GrokVideoGeneration":
 			requireStageNotRequired(t, entry, moderationcoverage.StageCyber)
 			requireStageRequiredAndCovered(t, entry, moderationcoverage.StageImage)
 		case "OpenAIGatewayHandler.Embeddings":
@@ -1418,6 +1423,7 @@ func openAIHTTPStageCoverageFromHandlerSources(t *testing.T) map[string]openAIHT
 		filepath.Join(handlerDir, "openai_embeddings.go"),
 		filepath.Join(handlerDir, "openai_gateway_handler.go"),
 		filepath.Join(handlerDir, "openai_images.go"),
+		filepath.Join(handlerDir, "grok_media.go"),
 	}
 	pipelineFields := openAIGatewayPipelineFieldsFromHandlerSources(t, files)
 	coverageByHandler := make(map[string]openAIHTTPHandlerStageCoverage)
@@ -1567,6 +1573,17 @@ func mergeOpenAIHTTPGatewayEntrypointStageCoverage(t *testing.T, coverageByHandl
 			coverage.HasImageStage = true
 			coverage.ModerationLocations = append(coverage.ModerationLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
 			coverageByHandler["OpenAIGatewayHandler.Images"] = coverage
+			videoCoverage := coverageByHandler["OpenAIGatewayHandler.GrokVideoGeneration"]
+			videoCoverage.Protocol = protocol
+			videoCoverage.HasHTTPPreForwardPipeline = true
+			videoCoverage.HasModerationStage = true
+			videoCoverage.HasImageStage = true
+			videoCoverage.HasBillingStage = true
+			videoCoverage.HasRoutingStage = true
+			videoCoverage.HasForwardStage = true
+			videoCoverage.HasUsageStage = true
+			videoCoverage.ModerationLocations = append(videoCoverage.ModerationLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
+			coverageByHandler["OpenAIGatewayHandler.GrokVideoGeneration"] = videoCoverage
 		case "openai_embeddings":
 			coverage := coverageByHandler["OpenAIGatewayHandler.Embeddings"]
 			coverage.Protocol = protocol
@@ -1596,7 +1613,7 @@ func gatewayPreForwardHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) 
 
 func openAIHTTPHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
 	switch fn.Name.Name {
-	case "ChatCompletions", "Responses", "Images", "Embeddings", "Messages":
+	case "ChatCompletions", "Responses", "Images", "GrokVideoGeneration", "Embeddings", "Messages":
 	default:
 		return "", false
 	}
@@ -1611,7 +1628,7 @@ func openAIHTTPHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
 
 func isOpenAIHTTPModeratedHandler(handler string) bool {
 	switch strings.TrimSpace(handler) {
-	case "OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Messages", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.Embeddings":
+	case "OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Messages", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.Embeddings":
 		return true
 	default:
 		return false

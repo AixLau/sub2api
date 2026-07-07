@@ -603,6 +603,7 @@ func StageAdapterDescriptorsForRoute(handlerName, protocol string) []RouteAdapte
 		"OpenAIGatewayHandler.Messages",
 		"OpenAIGatewayHandler.Responses",
 		"OpenAIGatewayHandler.Images",
+		"OpenAIGatewayHandler.GrokVideoGeneration",
 		"OpenAIGatewayHandler.Embeddings":
 		if len(OpenAIHTTPPipelineStagesForRoute(handlerName, protocol)) > 0 {
 			return openAIHTTP()
