@@ -358,10 +358,10 @@ func TestUsageLogRepositoryListWithFiltersRequestTypePriority(t *testing.T) {
 		ExactTotal:  true,
 	}
 
-	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM usage_logs WHERE \\(request_type = \\$1 OR \\(request_type = 0 AND openai_ws_mode = TRUE\\)\\)").
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM usage_logs WHERE actual_cost > 0 AND \\(request_type = \\$1 OR \\(request_type = 0 AND openai_ws_mode = TRUE\\)\\)").
 		WithArgs(requestType).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(0)))
-	mock.ExpectQuery("SELECT .* FROM usage_logs WHERE \\(request_type = \\$1 OR \\(request_type = 0 AND openai_ws_mode = TRUE\\)\\) ORDER BY id DESC LIMIT \\$2 OFFSET \\$3").
+	mock.ExpectQuery("SELECT .* FROM usage_logs WHERE actual_cost > 0 AND \\(request_type = \\$1 OR \\(request_type = 0 AND openai_ws_mode = TRUE\\)\\) ORDER BY id DESC LIMIT \\$2 OFFSET \\$3").
 		WithArgs(requestType, 20, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
@@ -382,7 +382,7 @@ func TestUsageLogRepositoryListWithFiltersRequestedModelSource(t *testing.T) {
 		ModelFilterSource: usagestats.ModelSourceRequested,
 	}
 
-	mock.ExpectQuery("SELECT .* FROM usage_logs WHERE COALESCE\\(NULLIF\\(TRIM\\(requested_model\\), ''\\), model\\) = \\$1 ORDER BY id DESC LIMIT \\$2 OFFSET \\$3").
+	mock.ExpectQuery("SELECT .* FROM usage_logs WHERE actual_cost > 0 AND COALESCE\\(NULLIF\\(TRIM\\(requested_model\\), ''\\), model\\) = \\$1 ORDER BY id DESC LIMIT \\$2 OFFSET \\$3").
 		WithArgs("gpt-5", 21, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
@@ -390,6 +390,30 @@ func TestUsageLogRepositoryListWithFiltersRequestedModelSource(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, logs)
 	require.NotNil(t, page)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUsageLogRepositoryListWithFiltersExcludesFailedPlaceholders(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+
+	filters := usagestats.UsageLogFilters{
+		UserID:     42,
+		ExactTotal: true,
+	}
+
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM usage_logs WHERE user_id = \\$1 AND actual_cost > 0").
+		WithArgs(int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(0)))
+	mock.ExpectQuery("SELECT .* FROM usage_logs WHERE user_id = \\$1 AND actual_cost > 0 ORDER BY id DESC LIMIT \\$2 OFFSET \\$3").
+		WithArgs(int64(42), 20, 0).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	logs, page, err := repo.ListWithFilters(context.Background(), pagination.PaginationParams{Page: 1, PageSize: 20}, filters)
+	require.NoError(t, err)
+	require.Empty(t, logs)
+	require.NotNil(t, page)
+	require.Equal(t, int64(0), page.Total)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

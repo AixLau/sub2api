@@ -24,6 +24,7 @@ This directory contains files for deploying Sub2API on Linux servers.
 | `sub2api-datamanagementd.service` | datamanagementd systemd service unit file |
 | `DATAMANAGEMENTD_CN.md` | datamanagementd 部署与联动说明（中文） |
 | `config.example.yaml` | Example configuration file |
+| `react-landing-production.md` | 当前 React 官网 + Sub2API 双服务生产部署 Runbook |
 
 ---
 
@@ -224,6 +225,129 @@ docker compose down -v
 See `.env.example` for all available options.
 
 > **Note:** The `docker-deploy.sh` script automatically generates `JWT_SECRET`, `TOTP_ENCRYPTION_KEY`, and `POSTGRES_PASSWORD` for you.
+
+### Dual-Service Deployment With A React Landing Site
+
+If a separate React landing project owns the public brand pages, keep Sub2API on its existing route layout and let the reverse proxy route only those brand entry paths to React. Do **not** add a `/console` prefix to Sub2API.
+
+For the current `aixlau.me` production layout, use the runbook in [`deploy/react-landing-production.md`](./react-landing-production.md). It covers the exact Caddy route ownership, React static upload command, Sub2API Docker Compose update flow, rollback, and Cloudflare cache notes.
+
+Build the Sub2API frontend with `VITE_REACT_LANDING_ROUTES=true` only for this dual-service layout. Leave it unset for the default single-service deployment so the Vue app continues to serve `/`, `/home`, `/login`, `/register`, `/forgot-password`, and `/reset-password` itself.
+
+Recommended ownership:
+
+| Path | Upstream |
+|------|----------|
+| `/`, `/home` | React landing service |
+| `/login`, `/register`, `/forgot-password`, `/reset-password` | React landing/auth entry service |
+| `/dashboard`, `/keys`, `/usage`, `/profile`, `/admin/*` | Sub2API frontend/backend service |
+| `/auth/*`, `/email-verify`, `/payment/*`, `/legal/*` | Sub2API service |
+| `/api/*`, `/v1/*`, `/health` | Sub2API backend API |
+
+The React auth pages should call the same-origin Sub2API API endpoints (`/api/v1/auth/login`, `/api/v1/auth/register`, `/api/v1/auth/forgot-password`) and persist the existing Sub2API browser keys: `auth_token`, `refresh_token`, `auth_user`, and `token_expires_at`.
+
+Example Caddy configuration:
+
+```caddyfile
+example.com {
+	# Sub2API API and console routes.
+	@sub2api path /api/* /v1/* /health /setup* /dashboard* /keys* /usage* /redeem* /affiliate* /available-channels* /profile* /subscriptions* /purchase* /orders* /payment* /custom* /admin* /monitor* /auth* /email-verify* /legal*
+	reverse_proxy @sub2api 127.0.0.1:8080
+
+	# React landing and brand auth entry routes.
+	reverse_proxy 127.0.0.1:4173
+}
+```
+
+If the React build is served as static files by Caddy instead of a separate Node/static-server upstream, keep its built assets off Sub2API's `/assets/*` path. For example, build React with `build.assetsDir = 'landing-assets'`, upload the React `dist/` directory to `/var/www/example.com/landing`, then route only the React-owned entry paths and asset prefix:
+
+```caddyfile
+example.com {
+	@react_assets path /landing-assets/*
+	header @react_assets Cache-Control "public, max-age=31536000, immutable"
+	handle @react_assets {
+		root * /var/www/example.com/landing
+		file_server
+	}
+
+	@react_landing path / /home /login /register /forgot-password /reset-password /change-password
+	handle @react_landing {
+		root * /var/www/example.com/landing
+		try_files {path} /index.html
+		file_server
+	}
+
+	@sub2api path /api/* /v1/* /health /setup* /dashboard* /keys* /usage* /redeem* /affiliate* /available-channels* /profile* /subscriptions* /purchase* /orders* /payment* /custom* /admin* /monitor* /auth* /email-verify* /legal* /assets/*
+	reverse_proxy @sub2api 127.0.0.1:8080
+}
+```
+
+Example Nginx configuration:
+
+```nginx
+server {
+    server_name example.com;
+
+    location ~ ^/(api|v1)(/|$) {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location ~ ^/(health|setup|dashboard|keys|usage|redeem|affiliate|available-channels|profile|subscriptions|purchase|orders|payment|custom|admin|monitor|auth|email-verify|legal)(/|$) {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:4173;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Build and run the two services independently:
+
+```bash
+# React landing site
+cd /path/to/react-landing
+npm install
+npm run build
+npm run preview -- --host 127.0.0.1 --port 4173
+
+# Sub2API
+cd /path/to/sub2api/deploy
+docker compose -f docker-compose.local.yml up -d
+```
+
+For production, replace `npm run preview` with a static file server or container for the React build output. Keep `/api/*` on the same public origin as the React site so browser auth requests do not need CORS.
+
+Current production static upload pattern:
+
+```bash
+# Run from the React landing project after npm run build.
+tar -C dist -czf - . | ssh sub2api-server \
+  'mkdir -p /var/www/aixlau.me/landing && tar -C /var/www/aixlau.me/landing -xzf -'
+```
+
+The upload command intentionally overlays files and does not delete old hashed assets. Only clean old assets after confirming the current HTML references are live, and follow the repository deletion-safety rules.
+
+Recommended verification:
+
+```bash
+curl -fsSL https://aixlau.me/ | rg -o 'landing-assets/[^" ]+'
+curl -fsSI https://aixlau.me/register
+curl -fsS http://127.0.0.1:8080/health
+docker compose -f docker-compose.local.yml ps
+```
 
 ### Easy Migration (Local Directory Version)
 

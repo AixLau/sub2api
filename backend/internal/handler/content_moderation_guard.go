@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
@@ -275,8 +276,14 @@ func (h *OpenAIGatewayHandler) openAIHTTPPreForwardPipeline() *OpenAIGatewayPipe
 }
 
 func (h *OpenAIGatewayHandler) readOpenAIHTTPPreForwardRequest(c *gin.Context, reqLog *zap.Logger, protocol string) ([]byte, string, bool, []byte, *service.OpenAIImagesRequest, bool) {
+	bodyReadStart := time.Now()
 	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+	bodyReadMs := time.Since(bodyReadStart).Milliseconds()
 	if err != nil {
+		reqLog.Warn("openai.request_body_read_failed",
+			zap.Int64("request_body_read_ms", bodyReadMs),
+			zap.Error(err),
+		)
 		if maxErr, ok := extractMaxBytesError(err); ok {
 			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
 			return nil, "", false, nil, nil, false
@@ -284,6 +291,10 @@ func (h *OpenAIGatewayHandler) readOpenAIHTTPPreForwardRequest(c *gin.Context, r
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
 		return nil, "", false, nil, nil, false
 	}
+	reqLog.Debug("openai.request_body_read_done",
+		zap.Int64("request_body_read_ms", bodyReadMs),
+		zap.Int64("body_bytes", int64(len(body))),
+	)
 	restoreRequestBody(c, body)
 	if len(body) == 0 {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")

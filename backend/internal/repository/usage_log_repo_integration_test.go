@@ -688,6 +688,45 @@ func (s *UsageLogRepoSuite) TestListWithFilters() {
 	s.Require().Equal(int64(1), page.Total)
 }
 
+func (s *UsageLogRepoSuite) TestListWithFilters_ExcludesFailedPlaceholders() {
+	user := mustCreateUser(s.T(), s.client, &service.User{Email: "filters-placeholders@test.com"})
+	apiKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: user.ID, Key: "sk-filters-placeholders", Name: "k"})
+	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-filters-placeholders"})
+	now := time.Now().UTC()
+
+	success := s.createUsageLog(user, apiKey, account, 10, 20, 0.5, now)
+	success.Model = "success"
+	success.RequestedModel = "success"
+
+	zeroCostSuccess := s.createUsageLog(user, apiKey, account, 15, 25, 0, now.Add(time.Second))
+	zeroCostSuccess.Model = "pricing-missing"
+	zeroCostSuccess.RequestedModel = "pricing-missing"
+
+	failedPlaceholder := &service.UsageLog{
+		UserID:         user.ID,
+		APIKeyID:       apiKey.ID,
+		AccountID:      account.ID,
+		RequestID:      uuid.NewString(),
+		Model:          "failed-placeholder",
+		RequestedModel: "failed-placeholder",
+		CreatedAt:      now.Add(2 * time.Second),
+	}
+	_, err := s.repo.Create(s.ctx, failedPlaceholder)
+	s.Require().NoError(err)
+
+	logs, page, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{
+		Page:      1,
+		PageSize:  10,
+		SortBy:    "created_at",
+		SortOrder: "asc",
+	}, usagestats.UsageLogFilters{UserID: user.ID})
+	s.Require().NoError(err)
+	s.Require().Equal(int64(2), page.Total)
+	s.Require().Len(logs, 2)
+	s.Require().Equal("success", logs[0].RequestedModel)
+	s.Require().Equal("pricing-missing", logs[1].RequestedModel)
+}
+
 // --- GetDashboardStats ---
 
 func (s *UsageLogRepoSuite) TestDashboardStats_TodayTotalsAndPerformance() {

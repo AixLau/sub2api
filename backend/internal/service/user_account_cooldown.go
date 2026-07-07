@@ -39,16 +39,21 @@ func (s *OpenAIGatewayService) UserAccountCooldownTTL(ctx context.Context) time.
 }
 
 func mergeUserAccountCooldowns(ctx context.Context, cache GatewayCache, excludedIDs map[int64]struct{}, userID int64) map[int64]struct{} {
+	merged, _ := mergeUserAccountCooldownsWithDiagnostics(ctx, cache, excludedIDs, userID)
+	return merged
+}
+
+func mergeUserAccountCooldownsWithDiagnostics(ctx context.Context, cache GatewayCache, excludedIDs map[int64]struct{}, userID int64) (map[int64]struct{}, map[int64]struct{}) {
 	if cache == nil || userID <= 0 {
-		return excludedIDs
+		return excludedIDs, nil
 	}
 	cooldowns, err := cache.GetUserAccountCooldowns(ctx, userID)
 	if err != nil {
 		slog.Warn("failed to get user account cooldowns", "user_id", userID, "error", err)
-		return excludedIDs
+		return excludedIDs, nil
 	}
 	if len(cooldowns) == 0 {
-		return excludedIDs
+		return excludedIDs, nil
 	}
 	merged := make(map[int64]struct{}, len(excludedIDs)+len(cooldowns))
 	for id := range excludedIDs {
@@ -57,7 +62,7 @@ func mergeUserAccountCooldowns(ctx context.Context, cache GatewayCache, excluded
 	for id := range cooldowns {
 		merged[id] = struct{}{}
 	}
-	return merged
+	return merged, cooldowns
 }
 
 func (s *GatewayService) mergeUserAccountCooldowns(ctx context.Context, excludedIDs map[int64]struct{}, userID int64) map[int64]struct{} {
@@ -79,6 +84,13 @@ func (s *OpenAIGatewayService) mergeUserAccountCooldowns(ctx context.Context, ex
 		return excludedIDs
 	}
 	return mergeUserAccountCooldowns(ctx, s.cache, excludedIDs, userID)
+}
+
+func (s *OpenAIGatewayService) mergeUserAccountCooldownsWithDiagnostics(ctx context.Context, excludedIDs map[int64]struct{}, userID int64) (map[int64]struct{}, map[int64]struct{}) {
+	if s == nil {
+		return excludedIDs, nil
+	}
+	return mergeUserAccountCooldownsWithDiagnostics(ctx, s.cache, excludedIDs, userID)
 }
 
 func (s *OpenAIGatewayService) CooldownUserAccount(ctx context.Context, userID, accountID int64, ttl time.Duration) {

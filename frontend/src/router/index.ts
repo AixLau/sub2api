@@ -14,22 +14,9 @@ import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveRouteDocumentTitle } from './title'
 
-/**
- * Route definitions with lazy loading
- */
-const routes: RouteRecordRaw[] = [
-  // ==================== Setup Routes ====================
-  {
-    path: '/setup',
-    name: 'Setup',
-    component: () => import('@/views/setup/SetupWizardView.vue'),
-    meta: {
-      requiresAuth: false,
-      title: 'Setup'
-    }
-  },
+export const reactLandingRoutesEnabled = import.meta.env.VITE_REACT_LANDING_ROUTES === 'true'
 
-  // ==================== Public Routes ====================
+const vueOwnedPublicEntryRoutes: RouteRecordRaw[] = [
   {
     path: '/home',
     name: 'Home',
@@ -59,6 +46,48 @@ const routes: RouteRecordRaw[] = [
       titleKey: 'auth.createAccount'
     }
   },
+  {
+    path: '/forgot-password',
+    name: 'ForgotPassword',
+    component: () => import('@/views/auth/ForgotPasswordView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'Forgot Password',
+      titleKey: 'auth.forgotPasswordTitle'
+    }
+  },
+  {
+    path: '/reset-password',
+    name: 'ResetPassword',
+    component: () => import('@/views/auth/ResetPasswordView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'Reset Password'
+    }
+  },
+]
+
+/**
+ * Route definitions with lazy loading
+ */
+const routes: RouteRecordRaw[] = [
+  // ==================== Setup Routes ====================
+  {
+    path: '/setup',
+    name: 'Setup',
+    component: () => import('@/views/setup/SetupWizardView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'Setup'
+    }
+  },
+
+  // ==================== Public Routes ====================
+  // In dual-service deployments, VITE_REACT_LANDING_ROUTES=true lets the
+  // branded React landing app own '/', '/home', '/login', '/register',
+  // '/forgot-password', and '/reset-password'. Default single-service
+  // deployments keep the Vue public entry routes registered.
+  ...(!reactLandingRoutesEnabled ? vueOwnedPublicEntryRoutes : []),
   {
     path: '/email-verify',
     name: 'EmailVerify',
@@ -139,25 +168,6 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/forgot-password',
-    name: 'ForgotPassword',
-    component: () => import('@/views/auth/ForgotPasswordView.vue'),
-    meta: {
-      requiresAuth: false,
-      title: 'Forgot Password',
-      titleKey: 'auth.forgotPasswordTitle'
-    }
-  },
-  {
-    path: '/reset-password',
-    name: 'ResetPassword',
-    component: () => import('@/views/auth/ResetPasswordView.vue'),
-    meta: {
-      requiresAuth: false,
-      title: 'Reset Password'
-    }
-  },
-  {
     path: '/key-usage',
     name: 'KeyUsage',
     component: () => import('@/views/KeyUsageView.vue'),
@@ -187,10 +197,10 @@ const routes: RouteRecordRaw[] = [
   },
 
   // ==================== User Routes ====================
-  {
+  ...(!reactLandingRoutesEnabled ? [{
     path: '/',
     redirect: '/home'
-  },
+  }] : []),
   {
     path: '/dashboard',
     name: 'Dashboard',
@@ -704,6 +714,31 @@ const router = createRouter({
   }
 })
 
+export function buildReactLoginRedirectUrl(redirectTarget: string): string {
+  const params = new URLSearchParams()
+  if (redirectTarget) {
+    params.set('redirect', redirectTarget)
+  }
+  const query = params.toString()
+  return query ? `/login?${query}` : '/login'
+}
+
+function redirectToReactLogin(redirectTarget: string): void {
+  window.location.assign(buildReactLoginRedirectUrl(redirectTarget))
+}
+
+function redirectToLogin(next: (to?: unknown) => void, redirectTarget: string): void {
+  if (reactLandingRoutesEnabled) {
+    redirectToReactLogin(redirectTarget)
+    next(false)
+    return
+  }
+  next({
+    path: '/login',
+    query: redirectTarget ? { redirect: redirectTarget } : undefined,
+  })
+}
+
 /**
  * Navigation guard: Authentication check
  */
@@ -770,7 +805,12 @@ router.beforeEach(async (to, _from, next) => {
     try {
       const status = await getSetupStatus()
       if (!status.needs_setup) {
-        next(resolveCompletedSetupRedirectPath(authStore.isAuthenticated, authStore.isAdmin))
+        const redirectPath = resolveCompletedSetupRedirectPath(authStore.isAuthenticated, authStore.isAdmin)
+        if (redirectPath === '/login') {
+          redirectToLogin(next, to.fullPath)
+          return
+        }
+        next(redirectPath)
         return
       }
     } catch {
@@ -796,7 +836,7 @@ router.beforeEach(async (to, _from, next) => {
     if (appStore.backendModeEnabled && !authStore.isAuthenticated) {
       const isAllowed = isBackendModePublicRouteAllowed(to.path, authStore.hasPendingAuthSession)
       if (!isAllowed) {
-        next('/login')
+        redirectToLogin(next, to.fullPath)
         return
       }
     }
@@ -807,10 +847,7 @@ router.beforeEach(async (to, _from, next) => {
   // Route requires authentication
   if (!authStore.isAuthenticated) {
     // Not authenticated, redirect to login
-    next({
-      path: '/login',
-      query: { redirect: to.fullPath } // Save intended destination
-    })
+    redirectToLogin(next, to.fullPath)
     return
   }
 
@@ -878,7 +915,7 @@ router.beforeEach(async (to, _from, next) => {
     }
     const isAllowed = isBackendModePublicRouteAllowed(to.path, authStore.hasPendingAuthSession)
     if (!isAllowed) {
-      next('/login')
+      redirectToLogin(next, to.fullPath)
       return
     }
   }

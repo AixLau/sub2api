@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -24,6 +26,8 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestOpenAIHandleStreamingAwareError_JSONEscaping(t *testing.T) {
@@ -154,6 +158,37 @@ func TestReadRequestBodyWithPrealloc_MaxBytesError(t *testing.T) {
 	require.Error(t, err)
 	var maxErr *http.MaxBytesError
 	require.ErrorAs(t, err, &maxErr)
+}
+
+func TestReadOpenAIHTTPPreForwardRequest_LogsBodyReadTiming(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	payload := `{"model":"gpt-5","input":"hello"}`
+	clientRequestID := "client-req-test"
+
+	core, observed := observer.New(zapcore.DebugLevel)
+	reqLogger := zap.New(core).With(zap.String("client_request_id", clientRequestID))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(payload))
+	ctx := context.WithValue(req.Context(), ctxkey.ClientRequestID, clientRequestID)
+	ctx = logger.IntoContext(ctx, reqLogger)
+	c.Request = req.WithContext(ctx)
+
+	h := &OpenAIGatewayHandler{}
+	body, model, stream, _, _, ok := h.readOpenAIHTTPPreForwardRequest(c, reqLogger, service.ContentModerationProtocolOpenAIResponses)
+
+	require.True(t, ok)
+	require.Equal(t, "gpt-5", model)
+	require.False(t, stream)
+	require.JSONEq(t, payload, string(body))
+
+	entries := observed.FilterMessage("openai.request_body_read_done").All()
+	require.Len(t, entries, 1)
+	fields := entries[0].ContextMap()
+	require.Equal(t, clientRequestID, fields["client_request_id"])
+	require.Equal(t, int64(len(payload)), fields["body_bytes"])
+	require.Contains(t, fields, "request_body_read_ms")
 }
 
 func TestOpenAIEnsureForwardErrorResponse_WritesFallbackWhenNotWritten(t *testing.T) {

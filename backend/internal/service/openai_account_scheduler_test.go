@@ -140,6 +140,7 @@ func (c schedulerTestConcurrencyCache) GetAccountWaitingCount(ctx context.Contex
 type schedulerTestGatewayCache struct {
 	sessionBindings map[string]int64
 	deletedSessions map[string]int
+	userCooldowns   map[int64]map[int64]struct{}
 }
 
 func (c *schedulerTestGatewayCache) GetSessionAccountID(ctx context.Context, groupID int64, sessionHash string) (int64, error) {
@@ -178,7 +179,18 @@ func (c *schedulerTestGatewayCache) SetUserAccountCooldown(ctx context.Context, 
 }
 
 func (c *schedulerTestGatewayCache) GetUserAccountCooldowns(ctx context.Context, userID int64) (map[int64]struct{}, error) {
-	return nil, nil
+	if c.userCooldowns == nil {
+		return nil, nil
+	}
+	cooldowns := c.userCooldowns[userID]
+	if len(cooldowns) == 0 {
+		return nil, nil
+	}
+	out := make(map[int64]struct{}, len(cooldowns))
+	for id := range cooldowns {
+		out[id] = struct{}{}
+	}
+	return out, nil
 }
 
 func newSchedulerTestOpenAIWSV2Config() *config.Config {
@@ -485,6 +497,91 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabled_Require
 	require.ErrorContains(t, err, "no available OpenAI accounts")
 	require.Nil(t, selection)
 	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_SelectionFailureDiagnostics(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	ctx := context.Background()
+	groupID := int64(10110)
+	accounts := []Account{
+		{
+			ID:          36031,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    0,
+			Credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"gpt-image": "gpt-image",
+				},
+			},
+		},
+		{
+			ID:          36032,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    1,
+			Extra: map[string]any{
+				"temp_unschedulable_until": time.Now().Add(time.Minute).Format(time.RFC3339),
+			},
+		},
+		{
+			ID:          36033,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: false,
+			Concurrency: 1,
+			Priority:    2,
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = true
+	svc := &OpenAIGatewayService{
+		accountRepo: schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache: &schedulerTestGatewayCache{
+			userCooldowns: map[int64]map[int64]struct{}{
+				42: {36032: {}},
+			},
+		},
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	selection, decision, err := svc.SelectAccountWithSchedulerForCapability(
+		ctx,
+		&groupID,
+		"",
+		"",
+		"gpt-5.5",
+		nil,
+		OpenAIUpstreamTransportAny,
+		OpenAIEndpointCapabilityChatCompletions,
+		false,
+		false,
+		PlatformOpenAI,
+		42,
+	)
+	require.ErrorContains(t, err, "no available")
+	require.Nil(t, selection)
+	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
+	require.Equal(t, "gpt-5.5", decision.RequestedModel)
+	require.Equal(t, PlatformOpenAI, decision.Platform)
+	require.Equal(t, OpenAIEndpointCapabilityChatCompletions, decision.RequiredCapability)
+	require.Equal(t, OpenAIUpstreamTransportAny, decision.RequiredTransport)
+	require.Equal(t, 3, decision.DBCandidateCount)
+	require.Equal(t, 1, decision.FilteredByModelCount)
+	require.Equal(t, 1, decision.FilteredBySchedulableCount)
+	require.Equal(t, 1, decision.FilteredByUserCooldownCount)
+	require.Equal(t, 0, decision.FilteredByConcurrencyCount)
+	require.Equal(t, 0, decision.CandidateCount)
 }
 
 func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabled_EmbeddingsSkipsChatOnlyAccount(t *testing.T) {

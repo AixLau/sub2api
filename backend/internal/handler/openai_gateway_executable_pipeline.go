@@ -833,7 +833,11 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 		)
 	}
 	if err != nil {
-		reqLog.Warn(logPrefix+".account_select_failed", zap.Error(err), zap.Int("excluded_account_count", len(failedAccountIDs)))
+		fields := append(openAIAccountScheduleDecisionLogFields(scheduleDecision),
+			zap.Error(err),
+			zap.Int("excluded_account_count", len(failedAccountIDs)),
+		)
+		reqLog.Warn(logPrefix+".account_select_failed", fields...)
 		return s.handleOpenAIHTTPRoutingSelectionError(c, err, len(failedAccountIDs) == 0, displayModel)
 	}
 	if selection == nil || selection.Account == nil {
@@ -844,15 +848,7 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 		reqLog.Debug(logPrefix+".account_selected_with_previous_response_id", zap.Int64("account_id", selection.Account.ID))
 	}
 	if scheduleDecision != (service.OpenAIAccountScheduleDecision{}) {
-		reqLog.Debug(logPrefix+".account_schedule_decision",
-			zap.String("layer", scheduleDecision.Layer),
-			zap.Bool("sticky_previous_hit", scheduleDecision.StickyPreviousHit),
-			zap.Bool("sticky_session_hit", scheduleDecision.StickySessionHit),
-			zap.Int("candidate_count", scheduleDecision.CandidateCount),
-			zap.Int("top_k", scheduleDecision.TopK),
-			zap.Int64("latency_ms", scheduleDecision.LatencyMs),
-			zap.Float64("load_skew", scheduleDecision.LoadSkew),
-		)
+		reqLog.Debug(logPrefix+".account_schedule_decision", openAIAccountScheduleDecisionLogFields(scheduleDecision)...)
 	}
 	account := selection.Account
 	if s.SessionHash != nil {
@@ -879,6 +875,36 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 	}
 	*s.Account = refreshedAccount
 	return ExecutableStageResult{}
+}
+
+func openAIAccountScheduleDecisionLogFields(decision service.OpenAIAccountScheduleDecision) []zap.Field {
+	return []zap.Field{
+		zap.String("layer", decision.Layer),
+		zap.Bool("sticky_previous_hit", decision.StickyPreviousHit),
+		zap.Bool("sticky_session_hit", decision.StickySessionHit),
+		zap.String("model", decision.RequestedModel),
+		zap.String("platform", decision.Platform),
+		zap.String("required_transport", string(decision.RequiredTransport)),
+		zap.String("required_capability", string(decision.RequiredCapability)),
+		zap.String("required_image_capability", string(decision.RequiredImageCapability)),
+		zap.Bool("require_compact", decision.RequireCompact),
+		zap.String("snapshot_version", decision.SnapshotVersion),
+		zap.Int("snapshot_candidate_count", decision.SnapshotCandidateCount),
+		zap.Int("db_candidate_count", decision.DBCandidateCount),
+		zap.Int("candidate_count", decision.CandidateCount),
+		zap.Int("top_k", decision.TopK),
+		zap.Int64("latency_ms", decision.LatencyMs),
+		zap.Float64("load_skew", decision.LoadSkew),
+		zap.Int64("selected_account_id", decision.SelectedAccountID),
+		zap.String("selected_account_type", decision.SelectedAccountType),
+		zap.Int("filtered_by_model_count", decision.FilteredByModelCount),
+		zap.Int("filtered_by_schedulable_count", decision.FilteredBySchedulableCount),
+		zap.Int("filtered_by_runtime_status_count", decision.FilteredByRuntimeStatusCount),
+		zap.Int("filtered_by_user_cooldown_count", decision.FilteredByUserCooldownCount),
+		zap.Int("filtered_by_transport_count", decision.FilteredByTransportCount),
+		zap.Int("filtered_by_capability_count", decision.FilteredByCapabilityCount),
+		zap.Int("filtered_by_concurrency_count", decision.FilteredByConcurrencyCount),
+	}
 }
 
 func (s OpenAIHTTPRoutingStage) handleOpenAIHTTPRoutingSelectionError(c *gin.Context, err error, firstAttempt bool, displayModel string) ExecutableStageResult {

@@ -29,7 +29,10 @@ func ClientRequestID() gin.HandlerFunc {
 			return
 		}
 
-		id := uuid.New().String()
+		id := strings.TrimSpace(c.GetHeader(clientRequestIDHeader))
+		if id == "" {
+			id = uuid.New().String()
+		}
 		c.Header(clientRequestIDHeader, id)
 		ctx := context.WithValue(c.Request.Context(), ctxkey.ClientRequestID, id)
 		requestLogger := logger.FromContext(ctx).With(zap.String("client_request_id", strings.TrimSpace(id)))

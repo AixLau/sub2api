@@ -13,16 +13,21 @@ This directory contains the Vue Router configuration for the Sub2API frontend ap
 
 ### Public Routes (No Authentication Required)
 
-| Path        | Component    | Description            |
-| ----------- | ------------ | ---------------------- |
-| `/login`    | LoginView    | User login page        |
-| `/register` | RegisterView | User registration page |
+By default, single-service deployments keep Vue-owned `/`, `/home`, `/login`, `/register`, `/forgot-password`, and `/reset-password` routes. In the dual-service deployment, set `VITE_REACT_LANDING_ROUTES=true` so the branded React landing app owns those paths and Vue leaves them unregistered.
+
+| Path | Component | Description |
+| ---- | --------- | ----------- |
+| `/setup` | SetupWizardView | Initial setup wizard |
+| `/email-verify` | EmailVerifyView | Registration email verification |
+| `/auth/*` | OAuth callback views | OAuth callback and account binding flows |
+| `/key-usage` | KeyUsageView | Public API key usage lookup |
+| `/payment/*` | Payment callback/result views | Public payment return pages |
+| `/legal/:documentId` | LegalDocumentView | Public legal documents |
 
 ### User Routes (Authentication Required)
 
 | Path         | Component     | Description                  |
 | ------------ | ------------- | ---------------------------- |
-| `/`          | -             | Redirects to `/dashboard`    |
 | `/dashboard` | DashboardView | User dashboard with stats    |
 | `/keys`      | KeysView      | API key management           |
 | `/usage`     | UsageView     | Usage records and statistics |
@@ -55,11 +60,11 @@ The router implements a comprehensive navigation guard that:
 
 1. **Sets Page Title**: Updates document title based on route meta
 2. **Checks Authentication**:
-   - Public routes (`requiresAuth: false`) are accessible without login
+   - Public Vue routes (`requiresAuth: false`) are accessible without login
    - Protected routes require authentication
    - Redirects to `/login` if not authenticated
 3. **Prevents Double Login**:
-   - Redirects authenticated users away from login/register pages
+   - React-owned login/register paths are not part of this router only when `VITE_REACT_LANDING_ROUTES=true`
 4. **Role-Based Access Control**:
    - Admin routes (`requiresAdmin: true`) require admin role
    - Non-admin users are redirected to `/dashboard`
@@ -73,7 +78,7 @@ User navigates to route
         ↓
 Set page title from meta
         ↓
-Is route public? ──Yes──→ Already authenticated? ──Yes──→ Redirect to /dashboard
+Is route public? ──Yes──→ Allow access
         ↓ No                                        ↓ No
         ↓                                      Allow access
         ↓
@@ -207,7 +212,7 @@ router.onError((error) => {
 
 To test navigation guards and route access:
 
-1. **Public Route Access**: Visit `/login` without authentication
+1. **Public Route Access**: Visit `/key-usage` without authentication
 2. **Protected Route**: Try accessing `/dashboard` without login (should redirect)
 3. **Admin Access**: Login as regular user, try `/admin/users` (should redirect to dashboard)
 4. **Admin Success**: Login as admin, access `/admin/users` (should succeed)
