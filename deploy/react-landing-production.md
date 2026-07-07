@@ -29,6 +29,20 @@ Sub2API 前端只有在构建时设置 `VITE_REACT_LANDING_ROUTES=true` 才会�
 
 React 登录、注册、找回密码页面必须使用同源 API，例如 `/api/v1/auth/login`、`/api/v1/auth/register`、`/api/v1/auth/send-verify-code`、`/api/v1/auth/forgot-password`。登录成功后保持 Sub2API 前端已有的浏览器存储键：`auth_token`、`refresh_token`、`auth_user`、`token_expires_at`。
 
+React 登录和注册入口还必须接入 Sub2API 后端的登录条款确认。页面加载时调用 `/api/v1/settings/public`，读取 `login_agreement_enabled`、`login_agreement_mode`、`login_agreement_updated_at`、`login_agreement_revision`、`login_agreement_documents`。当 `login_agreement_enabled=true` 且文档列表非空时，在提交登录、注册、第三方快捷登录前要求用户确认：
+
+```text
+我已阅读并同意 服务条款、使用政策、支持的国家和地区、服务特定条款
+```
+
+文档链接指向 Sub2API 已有公开路由 `/legal/{document.id}`，例如 `/legal/terms`、`/legal/usage-policy`、`/legal/supported-regions`、`/legal/service-specific-terms`。用户确认后使用与 Vue 控制台相同的 localStorage 键 `sub2api_login_agreement_consent` 保存当前 revision：
+
+```json
+{"revision":"<login_agreement_revision>","accepted_at":"<ISO timestamp>"}
+```
+
+如果后端返回的 revision 和本地保存值不一致，必须重新要求确认；未确认前应禁用或拦截账号密码登录、注册、第三方快捷登录，并给出“请先阅读并同意最新条款”的提示。若 `login_agreement_revision` 为空，可按 Vue 控制台兜底规则拼接：`login_agreement_updated_at + ":" + documents.map(doc => doc.id + ":" + doc.title).join("|")`。
+
 ## Caddy 配置模板
 
 以下模板保留 Sub2API 原路由，不添加 `/console` 前缀，并让 React 只接管明确的官网入口。
@@ -108,10 +122,10 @@ sudo systemctl reload caddy
 
 ## React 官网发布流程
 
-React 官网项目在独立仓库中构建。要求构建产物使用 `landing-assets` 作为资源目录，避免和 Sub2API Vue 的 `/assets/*` 冲突。
+React 官网项目位于本仓库 `react-frontend/`。要求构建产物使用 `landing-assets` 作为资源目录，避免和 Sub2API Vue 的 `/assets/*` 冲突。
 
 ```bash
-cd /path/to/react-landing
+cd /path/to/sub2api/react-frontend
 npm test
 npm run typecheck
 npm run build

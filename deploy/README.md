@@ -317,8 +317,8 @@ server {
 Build and run the two services independently:
 
 ```bash
-# React landing site
-cd /path/to/react-landing
+# React frontend service
+cd /path/to/sub2api/react-frontend
 npm install
 npm run build
 npm run preview -- --host 127.0.0.1 --port 4173
@@ -333,7 +333,7 @@ For production, replace `npm run preview` with a static file server or container
 Current production static upload pattern:
 
 ```bash
-# Run from the React landing project after npm run build.
+# Run from react-frontend/ after npm run build.
 tar -C dist -czf - . | ssh sub2api-server \
   'mkdir -p /var/www/aixlau.me/landing && tar -C /var/www/aixlau.me/landing -xzf -'
 ```

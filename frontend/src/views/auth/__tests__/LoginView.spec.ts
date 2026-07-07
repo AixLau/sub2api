@@ -95,12 +95,15 @@ describe('LoginView visual baseline', () => {
       password_reset_enabled: true,
       backend_mode_enabled: false,
       login_agreement_enabled: false,
+      login_agreement_mode: 'checkbox',
+      login_agreement_updated_at: '2026-03-31',
+      login_agreement_revision: 'revision-disabled',
       login_agreement_documents: [],
     })
   })
 
-  it('renders the restored white-and-blue split login layout', async () => {
-    const wrapper = mount(LoginView, {
+  function mountLoginView() {
+    return mount(LoginView, {
       global: {
         stubs: {
           AuthLayout: {
@@ -116,11 +119,21 @@ describe('LoginView visual baseline', () => {
           DingTalkOAuthSection: true,
           WechatOAuthSection: true,
           OidcOAuthSection: true,
-          LoginAgreementPrompt: true,
+          LoginAgreementPrompt: {
+            name: 'LoginAgreementPrompt',
+            props: ['accepted', 'documents', 'mode'],
+            emits: ['accept', 'reject', 'open'],
+            template:
+              '<div data-test="login-agreement"><button type="button" data-test="accept-agreement" @click="$emit(\'accept\')">accept</button></div>',
+          },
           TotpLoginModal: true,
         },
       },
     })
+  }
+
+  it('renders the restored white-and-blue split login layout', async () => {
+    const wrapper = mountLoginView()
 
     await flushPromises()
 
@@ -131,5 +144,62 @@ describe('LoginView visual baseline', () => {
     expect(html).toContain('lg:w-1/2')
     expect(text).toContain('统一 API 密钥管理')
     expect(text).toContain('返回首页')
+  })
+
+  it('blocks backend login until the current login agreement revision is accepted', async () => {
+    localStorage.removeItem('sub2api_login_agreement_consent')
+    getPublicSettingsMock.mockResolvedValueOnce({
+      turnstile_enabled: false,
+      turnstile_site_key: '',
+      linuxdo_oauth_enabled: false,
+      dingtalk_oauth_enabled: false,
+      oidc_oauth_enabled: false,
+      oidc_oauth_provider_name: 'OIDC',
+      github_oauth_enabled: false,
+      google_oauth_enabled: false,
+      password_reset_enabled: true,
+      backend_mode_enabled: false,
+      login_agreement_enabled: true,
+      login_agreement_mode: 'checkbox',
+      login_agreement_updated_at: '2026-03-31',
+      login_agreement_revision: 'revision-2026-03-31',
+      login_agreement_documents: [
+        { id: 'terms', title: '服务条款', content_md: '' },
+        { id: 'usage-policy', title: '使用政策', content_md: '' },
+        { id: 'supported-regions', title: '支持的国家和地区', content_md: '' },
+        { id: 'service-specific-terms', title: '服务特定条款', content_md: '' },
+      ],
+    })
+    loginMock.mockResolvedValue({
+      access_token: 'token',
+      refresh_token: 'refresh-token',
+      expires_in: 3600,
+      user: { id: 1, email: 'user@example.com', role: 'user' },
+    })
+
+    const wrapper = mountLoginView()
+    await flushPromises()
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(loginMock).not.toHaveBeenCalled()
+    expect(showWarningMock).toHaveBeenCalledWith('legal.loginAgreementPrompt.loginRequiredWarning')
+
+    wrapper.getComponent({ name: 'LoginAgreementPrompt' }).vm.$emit('accept')
+    await wrapper.vm.$nextTick()
+    expect(JSON.parse(localStorage.getItem('sub2api_login_agreement_consent') || '{}')).toMatchObject({
+      revision: 'revision-2026-03-31',
+    })
+    await wrapper.get('#email').setValue('user@example.com')
+    await wrapper.get('#password').setValue('password123')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(loginMock).toHaveBeenCalledWith({
+      email: 'user@example.com',
+      password: 'password123',
+      turnstile_token: undefined,
+    })
   })
 })
