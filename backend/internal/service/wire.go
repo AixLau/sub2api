@@ -47,10 +47,14 @@ func ProvideContentModerationService(
 	userRepo UserRepository,
 	authCacheInvalidator APIKeyAuthCacheInvalidator,
 	emailService *EmailService,
+	encryptor SecretEncryptor,
 	buildInfo BuildInfo,
 ) *ContentModerationService {
 	svc := NewContentModerationService(settingRepo, repo, hashCache, groupRepo, userRepo, authCacheInvalidator, emailService)
 	svc.SetOutboxRepository(outboxRepo)
+	if rawStore, ok := repo.(ContentModerationRawRequestSnapshotStore); ok {
+		svc.SetRawRequestSnapshotStore(rawStore, encryptor)
+	}
 	svc.SetBuildInfo(buildInfo)
 	return svc
 }

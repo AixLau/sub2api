@@ -113,9 +113,12 @@ SELECT
     COALESCE(l.keyword_action, ''), COALESCE(l.effective_keyword_action, ''),
     COALESCE(l.risk_context_type, ''), COALESCE(l.risk_context_reason, ''),
     COALESCE(l.review_status, ''), COALESCE(l.review_note, ''), l.reviewed_by, l.reviewed_at,
-    l.violation_count, l.auto_banned, l.email_sent, COALESCE(u.status, ''), l.queue_delay_ms, l.created_at
+    l.violation_count, l.auto_banned, l.email_sent, COALESCE(u.status, ''), l.queue_delay_ms,
+    (rs.id IS NOT NULL), COALESCE(rs.body_bytes, 0), COALESCE(rs.truncated, FALSE),
+    l.created_at
 FROM content_moderation_logs l
-LEFT JOIN users u ON u.id = l.user_id `+whereSQL+`
+LEFT JOIN users u ON u.id = l.user_id
+LEFT JOIN content_moderation_raw_request_snapshots rs ON rs.log_id = l.id `+whereSQL+`
 ORDER BY l.created_at DESC, l.id DESC
 LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 		queryArgs...,
@@ -169,6 +172,9 @@ LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 			&item.EmailSent,
 			&item.UserStatus,
 			&queueDelay,
+			&item.RawRequestAvailable,
+			&item.RawRequestBytes,
+			&item.RawRequestTruncated,
 			&item.CreatedAt,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan content moderation log: %w", err)
@@ -282,6 +288,60 @@ func (r *contentModerationRepository) UpdateLogEmailSentByDecisionID(ctx context
 	return nil
 }
 
+func (r *contentModerationRepository) CreateRawRequestSnapshot(ctx context.Context, snapshot *service.ContentModerationRawRequestSnapshot) error {
+	if r == nil || r.db == nil || snapshot == nil || snapshot.LogID <= 0 || strings.TrimSpace(snapshot.BodyEncrypted) == "" {
+		return nil
+	}
+	err := r.db.QueryRowContext(ctx, `
+INSERT INTO content_moderation_raw_request_snapshots (
+    log_id, request_id, body_encrypted, body_bytes, truncated
+) VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (log_id) DO UPDATE SET
+    request_id = EXCLUDED.request_id,
+    body_encrypted = EXCLUDED.body_encrypted,
+    body_bytes = EXCLUDED.body_bytes,
+    truncated = EXCLUDED.truncated
+RETURNING id, created_at`,
+		snapshot.LogID,
+		snapshot.RequestID,
+		snapshot.BodyEncrypted,
+		snapshot.BodyBytes,
+		snapshot.Truncated,
+	).Scan(&snapshot.ID, &snapshot.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("insert content moderation raw request snapshot: %w", err)
+	}
+	return nil
+}
+
+func (r *contentModerationRepository) GetRawRequestSnapshotByLogID(ctx context.Context, logID int64) (*service.ContentModerationRawRequestSnapshot, error) {
+	if r == nil || r.db == nil || logID <= 0 {
+		return nil, infraerrors.NotFound("CONTENT_MODERATION_RAW_REQUEST_NOT_FOUND", "原始请求快照不存在")
+	}
+	var snapshot service.ContentModerationRawRequestSnapshot
+	err := r.db.QueryRowContext(ctx, `
+SELECT id, log_id, request_id, body_encrypted, body_bytes, truncated, created_at
+FROM content_moderation_raw_request_snapshots
+WHERE log_id = $1`,
+		logID,
+	).Scan(
+		&snapshot.ID,
+		&snapshot.LogID,
+		&snapshot.RequestID,
+		&snapshot.BodyEncrypted,
+		&snapshot.BodyBytes,
+		&snapshot.Truncated,
+		&snapshot.CreatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, infraerrors.NotFound("CONTENT_MODERATION_RAW_REQUEST_NOT_FOUND", "原始请求快照不存在")
+		}
+		return nil, fmt.Errorf("get content moderation raw request snapshot: %w", err)
+	}
+	return &snapshot, nil
+}
+
 func (r *contentModerationRepository) ReviewLog(ctx context.Context, id int64, input service.ContentModerationLogReviewInput) (*service.ContentModerationLog, error) {
 	if id <= 0 {
 		return nil, fmt.Errorf("invalid content moderation log id")
@@ -308,9 +368,12 @@ SELECT
     COALESCE(l.keyword_action, ''), COALESCE(l.effective_keyword_action, ''),
     COALESCE(l.risk_context_type, ''), COALESCE(l.risk_context_reason, ''),
     COALESCE(l.review_status, ''), COALESCE(l.review_note, ''), l.reviewed_by, l.reviewed_at,
-    l.violation_count, l.auto_banned, l.email_sent, COALESCE(u.status, ''), l.queue_delay_ms, l.created_at
+    l.violation_count, l.auto_banned, l.email_sent, COALESCE(u.status, ''), l.queue_delay_ms,
+    (rs.id IS NOT NULL), COALESCE(rs.body_bytes, 0), COALESCE(rs.truncated, FALSE),
+    l.created_at
 FROM updated l
 LEFT JOIN users u ON u.id = l.user_id
+LEFT JOIN content_moderation_raw_request_snapshots rs ON rs.log_id = l.id
 `, id, input.Status, input.Note, reviewedBy)
 	if err != nil {
 		return nil, fmt.Errorf("review content moderation log: %w", err)
@@ -371,6 +434,9 @@ func scanContentModerationLogRows(rows *sql.Rows) ([]service.ContentModerationLo
 			&item.EmailSent,
 			&item.UserStatus,
 			&queueDelay,
+			&item.RawRequestAvailable,
+			&item.RawRequestBytes,
+			&item.RawRequestTruncated,
 			&item.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan content moderation log: %w", err)

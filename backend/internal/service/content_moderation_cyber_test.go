@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
@@ -170,6 +172,99 @@ func TestRecordCyberPolicyEvent_WritesLogWhenEnabled(t *testing.T) {
 		"Error should mention flagged or cyber_policy")
 }
 
+func TestRecordCyberPolicyEvent_StoresEncryptedRawRequestSnapshot(t *testing.T) {
+	repo := &contentModerationRawSnapshotTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled: "true",
+		}},
+		repo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetRawRequestSnapshotStore(repo, contentModerationTestEncryptor{})
+
+	rawBody := []byte(`{"model":"gpt-5","input":"show the exact user prompt","secret":"sk-raw-user-secret"}`)
+	svc.RecordCyberPolicyEvent(context.Background(), CyberPolicyRecordInput{
+		RequestID:       "req-raw",
+		UserID:          1,
+		UserEmail:       "u@x.com",
+		Model:           "gpt-5",
+		Endpoint:        "/v1/responses",
+		UpstreamMessage: "flagged",
+		UpstreamStatus:  400,
+		RequestBody:     rawBody,
+	})
+
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.True(t, logs[0].RawRequestAvailable)
+	require.Equal(t, len(rawBody), logs[0].RawRequestBytes)
+	require.False(t, logs[0].RawRequestTruncated)
+	require.NotContains(t, logs[0].Error, "show the exact user prompt", "plain request body must not be copied into the regular audit error")
+
+	stored, ok := repo.snapshotRaw(logs[0].ID)
+	require.True(t, ok)
+	require.NotContains(t, stored.BodyEncrypted, "show the exact user prompt", "snapshot storage must be encrypted")
+	require.NotContains(t, stored.BodyEncrypted, "sk-raw-user-secret", "snapshot storage must not contain plaintext secrets")
+
+	view, err := svc.GetRawRequestSnapshot(context.Background(), logs[0].ID)
+	require.NoError(t, err)
+	require.Equal(t, logs[0].ID, view.LogID)
+	require.Equal(t, "req-raw", view.RequestID)
+	require.Equal(t, string(rawBody), view.Body)
+	require.Equal(t, len(rawBody), view.BodyBytes)
+	require.False(t, view.Truncated)
+}
+
+func TestRecordCyberSessionBlockedEvent_WritesRiskAuditWithoutBanCount(t *testing.T) {
+	repo := &cyberSessionBlockedRawSnapshotTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled: "true",
+		}},
+		repo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetRawRequestSnapshotStore(repo, contentModerationTestEncryptor{})
+
+	rawBody := []byte(`{"model":"gpt-5","prompt_cache_key":"sess-1","input":"retry after cyber policy"}`)
+	svc.RecordCyberSessionBlockedEvent(context.Background(), CyberSessionBlockedRecordInput{
+		RequestID:       "req-session-blocked",
+		UserID:          1,
+		UserEmail:       "u@x.com",
+		APIKeyID:        9,
+		APIKeyName:      "H",
+		Endpoint:        "/v1/responses",
+		Model:           "gpt-5",
+		SessionBlockKey: "abc123",
+		RequestBody:     rawBody,
+	})
+
+	require.Empty(t, repo.snapshotCountCalls(), "session-block follow-up rows must not run auto-ban counting")
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionCyberPolicySessionBlocked, logs[0].Action)
+	require.True(t, logs[0].Flagged)
+	require.Equal(t, "pre_upstream", logs[0].Mode)
+	require.Equal(t, "cyber_policy_session_blocked", logs[0].HighestCategory)
+	require.Equal(t, 0, logs[0].ViolationCount)
+	require.False(t, logs[0].AutoBanned)
+	require.True(t, logs[0].RawRequestAvailable)
+
+	view, err := svc.GetRawRequestSnapshot(context.Background(), logs[0].ID)
+	require.NoError(t, err)
+	require.Equal(t, string(rawBody), view.Body)
+	require.Equal(t, len(rawBody), view.BodyBytes)
+}
+
 // TestRecordCyberPolicyEvent_CreateLogBeforeEmail verifies F7: the moderation
 // log is persisted BEFORE email delivery, and EmailSent is patched afterwards —
 // SMTP hangs can no longer swallow the audit record.
@@ -315,4 +410,102 @@ func TestRecordCyberPolicyEvent_DefaultCountsTowardBan(t *testing.T) {
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
 	require.GreaterOrEqual(t, logs[0].ViolationCount, 1, "默认路径行为不变（现状回归）")
+}
+
+type contentModerationRawSnapshotTestRepo struct {
+	contentModerationTestRepo
+	rawMu sync.Mutex
+	raw   map[int64]ContentModerationRawRequestSnapshot
+}
+
+func (r *contentModerationRawSnapshotTestRepo) CreateRawRequestSnapshot(ctx context.Context, snapshot *ContentModerationRawRequestSnapshot) error {
+	r.rawMu.Lock()
+	defer r.rawMu.Unlock()
+	if r.raw == nil {
+		r.raw = map[int64]ContentModerationRawRequestSnapshot{}
+	}
+	cp := *snapshot
+	r.raw[cp.LogID] = cp
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for idx := range r.logs {
+		if r.logs[idx].ID == cp.LogID {
+			r.logs[idx].RawRequestAvailable = true
+			r.logs[idx].RawRequestBytes = cp.BodyBytes
+			r.logs[idx].RawRequestTruncated = cp.Truncated
+			break
+		}
+	}
+	return nil
+}
+
+func (r *contentModerationRawSnapshotTestRepo) GetRawRequestSnapshotByLogID(ctx context.Context, logID int64) (*ContentModerationRawRequestSnapshot, error) {
+	r.rawMu.Lock()
+	defer r.rawMu.Unlock()
+	snapshot, ok := r.raw[logID]
+	if !ok {
+		return nil, infraerrors.NotFound("CONTENT_MODERATION_RAW_REQUEST_NOT_FOUND", "原始请求快照不存在")
+	}
+	return &snapshot, nil
+}
+
+func (r *contentModerationRawSnapshotTestRepo) snapshotRaw(logID int64) (ContentModerationRawRequestSnapshot, bool) {
+	r.rawMu.Lock()
+	defer r.rawMu.Unlock()
+	snapshot, ok := r.raw[logID]
+	return snapshot, ok
+}
+
+type cyberSessionBlockedRawSnapshotTestRepo struct {
+	banCountArgsTestRepo
+	rawMu sync.Mutex
+	raw   map[int64]ContentModerationRawRequestSnapshot
+}
+
+func (r *cyberSessionBlockedRawSnapshotTestRepo) CreateRawRequestSnapshot(ctx context.Context, snapshot *ContentModerationRawRequestSnapshot) error {
+	r.rawMu.Lock()
+	defer r.rawMu.Unlock()
+	if r.raw == nil {
+		r.raw = map[int64]ContentModerationRawRequestSnapshot{}
+	}
+	cp := *snapshot
+	r.raw[cp.LogID] = cp
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for idx := range r.logs {
+		if r.logs[idx].ID == cp.LogID {
+			r.logs[idx].RawRequestAvailable = true
+			r.logs[idx].RawRequestBytes = cp.BodyBytes
+			r.logs[idx].RawRequestTruncated = cp.Truncated
+			break
+		}
+	}
+	return nil
+}
+
+func (r *cyberSessionBlockedRawSnapshotTestRepo) GetRawRequestSnapshotByLogID(ctx context.Context, logID int64) (*ContentModerationRawRequestSnapshot, error) {
+	r.rawMu.Lock()
+	defer r.rawMu.Unlock()
+	snapshot, ok := r.raw[logID]
+	if !ok {
+		return nil, infraerrors.NotFound("CONTENT_MODERATION_RAW_REQUEST_NOT_FOUND", "原始请求快照不存在")
+	}
+	return &snapshot, nil
+}
+
+type contentModerationTestEncryptor struct{}
+
+func (contentModerationTestEncryptor) Encrypt(plaintext string) (string, error) {
+	return "enc:" + base64.StdEncoding.EncodeToString([]byte(plaintext)), nil
+}
+
+func (contentModerationTestEncryptor) Decrypt(ciphertext string) (string, error) {
+	encoded := strings.TrimPrefix(ciphertext, "enc:")
+	plain, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return "", err
+	}
+	return string(plain), nil
 }

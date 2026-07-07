@@ -121,6 +121,14 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 	requireIndex(t, tx, "content_moderation_outbox", "idx_content_moderation_outbox_decision_event")
 	requireIndex(t, tx, "content_moderation_outbox", "idx_content_moderation_outbox_due")
 	requireIndex(t, tx, "content_moderation_outbox", "idx_content_moderation_outbox_dead_letter")
+	requireColumn(t, tx, "content_moderation_raw_request_snapshots", "log_id", "bigint", 0, false)
+	requireColumn(t, tx, "content_moderation_raw_request_snapshots", "request_id", "character varying", 128, false)
+	requireColumn(t, tx, "content_moderation_raw_request_snapshots", "body_encrypted", "text", 0, false)
+	requireColumn(t, tx, "content_moderation_raw_request_snapshots", "body_bytes", "integer", 0, false)
+	requireColumn(t, tx, "content_moderation_raw_request_snapshots", "truncated", "boolean", 0, false)
+	requireForeignKeyOnDelete(t, tx, "content_moderation_raw_request_snapshots", "log_id", "content_moderation_logs", "CASCADE")
+	requireIndex(t, tx, "content_moderation_raw_request_snapshots", "idx_content_moderation_raw_request_log_id")
+	requireIndex(t, tx, "content_moderation_raw_request_snapshots", "idx_content_moderation_raw_request_request_id")
 
 	// user_allowed_groups table should exist
 	var uagRegclass sql.NullString

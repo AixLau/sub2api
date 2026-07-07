@@ -37,13 +37,14 @@ const (
 	contentModerationAPIKeysModeAppend  = "append"
 	contentModerationAPIKeysModeReplace = "replace"
 
-	ContentModerationActionAllow         = "allow"
-	ContentModerationActionBlock         = "block"
-	ContentModerationActionHashBlock     = "hash_block"
-	ContentModerationActionKeywordBlock  = "keyword_block"
-	ContentModerationActionKeywordReview = "keyword_review"
-	ContentModerationActionError         = "error"
-	ContentModerationActionCyberPolicy   = "cyber_policy" // cyber_policy 硬阻断的风控日志 action（封号计数排除按此值过滤）
+	ContentModerationActionAllow                     = "allow"
+	ContentModerationActionBlock                     = "block"
+	ContentModerationActionHashBlock                 = "hash_block"
+	ContentModerationActionKeywordBlock              = "keyword_block"
+	ContentModerationActionKeywordReview             = "keyword_review"
+	ContentModerationActionError                     = "error"
+	ContentModerationActionCyberPolicy               = "cyber_policy" // cyber_policy 硬阻断的风控日志 action（封号计数排除按此值过滤）
+	ContentModerationActionCyberPolicySessionBlocked = "cyber_policy_session_blocked"
 
 	contentModerationKeywordCategory = "keyword"
 
@@ -110,12 +111,13 @@ const (
 	ContentModerationAuditScopeUserAndTool = "user_and_tool"
 	ContentModerationAuditScopeAllContext  = "all_context"
 
-	defaultContentModerationBaseURL   = "https://api.openai.com"
-	defaultContentModerationModel     = "omni-moderation-latest"
-	defaultContentModerationTimeoutMS = 3000
-	maxContentModerationTimeoutMS     = 30000
-	maxModerationInputRunes           = 12000
-	maxModerationExcerptRunes         = 240
+	defaultContentModerationBaseURL     = "https://api.openai.com"
+	defaultContentModerationModel       = "omni-moderation-latest"
+	defaultContentModerationTimeoutMS   = 3000
+	maxContentModerationTimeoutMS       = 30000
+	maxModerationInputRunes             = 12000
+	maxModerationExcerptRunes           = 240
+	maxContentModerationRawRequestBytes = 64 * 1024 * 1024
 
 	defaultContentModerationWorkerCount          = 4
 	maxContentModerationWorkerCount              = 32
@@ -548,8 +550,30 @@ type ContentModerationLog struct {
 	EmailSent              bool               `json:"email_sent"`
 	UserStatus             string             `json:"user_status"`
 	QueueDelayMS           *int               `json:"queue_delay_ms,omitempty"`
+	RawRequestAvailable    bool               `json:"raw_request_available"`
+	RawRequestBytes        int                `json:"raw_request_bytes"`
+	RawRequestTruncated    bool               `json:"raw_request_truncated"`
 	CreatedAt              time.Time          `json:"created_at"`
 	persisted              bool
+}
+
+type ContentModerationRawRequestSnapshot struct {
+	ID            int64     `json:"id"`
+	LogID         int64     `json:"log_id"`
+	RequestID     string    `json:"request_id"`
+	BodyEncrypted string    `json:"-"`
+	BodyBytes     int       `json:"body_bytes"`
+	Truncated     bool      `json:"truncated"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+type ContentModerationRawRequestView struct {
+	LogID     int64     `json:"log_id"`
+	RequestID string    `json:"request_id"`
+	Body      string    `json:"body"`
+	BodyBytes int       `json:"body_bytes"`
+	Truncated bool      `json:"truncated"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type ContentModerationLogFilter struct {
@@ -753,6 +777,11 @@ type ContentModerationRepository interface {
 	ReviewLog(ctx context.Context, id int64, input ContentModerationLogReviewInput) (*ContentModerationLog, error)
 }
 
+type ContentModerationRawRequestSnapshotStore interface {
+	CreateRawRequestSnapshot(ctx context.Context, snapshot *ContentModerationRawRequestSnapshot) error
+	GetRawRequestSnapshotByLogID(ctx context.Context, logID int64) (*ContentModerationRawRequestSnapshot, error)
+}
+
 type ContentModerationHashCache interface {
 	RecordFlaggedInputHash(ctx context.Context, inputHash string) error
 	HasFlaggedInputHash(ctx context.Context, inputHash string) (bool, error)
@@ -764,6 +793,8 @@ type ContentModerationHashCache interface {
 type ContentModerationService struct {
 	settingRepo              SettingRepository
 	repo                     ContentModerationRepository
+	rawRequestSnapshotStore  ContentModerationRawRequestSnapshotStore
+	rawRequestEncryptor      SecretEncryptor
 	hashCache                ContentModerationHashCache
 	groupRepo                GroupRepository
 	userRepo                 UserRepository
@@ -866,6 +897,14 @@ func (s *ContentModerationService) SetBuildInfo(buildInfo BuildInfo) {
 	s.baselineStatusValid = false
 	s.baselineStatus = ContentModerationSecurityBaselineStatus{}
 	s.baselineStatusMu.Unlock()
+}
+
+func (s *ContentModerationService) SetRawRequestSnapshotStore(store ContentModerationRawRequestSnapshotStore, encryptor SecretEncryptor) {
+	if s == nil {
+		return
+	}
+	s.rawRequestSnapshotStore = store
+	s.rawRequestEncryptor = encryptor
 }
 
 func (s *ContentModerationService) GetConfig(ctx context.Context) (*ContentModerationConfigView, error) {
@@ -1710,6 +1749,34 @@ func (s *ContentModerationService) ReviewLog(ctx context.Context, id int64, inpu
 	input.Status = normalizeContentModerationReviewStatus(input.Status)
 	input.Note = trimRunes(strings.TrimSpace(input.Note), 1000)
 	return s.repo.ReviewLog(ctx, id, input)
+}
+
+func (s *ContentModerationService) GetRawRequestSnapshot(ctx context.Context, logID int64) (*ContentModerationRawRequestView, error) {
+	if logID <= 0 {
+		return nil, infraerrors.BadRequest("INVALID_CONTENT_MODERATION_LOG_ID", "审核记录 ID 无效")
+	}
+	if s == nil || s.rawRequestSnapshotStore == nil {
+		return nil, infraerrors.NotFound("CONTENT_MODERATION_RAW_REQUEST_NOT_FOUND", "原始请求快照不存在")
+	}
+	if s.rawRequestEncryptor == nil {
+		return nil, infraerrors.InternalServer("CONTENT_MODERATION_RAW_REQUEST_ENCRYPTOR_UNAVAILABLE", "原始请求解密器不可用")
+	}
+	snapshot, err := s.rawRequestSnapshotStore.GetRawRequestSnapshotByLogID(ctx, logID)
+	if err != nil {
+		return nil, err
+	}
+	body, err := s.rawRequestEncryptor.Decrypt(snapshot.BodyEncrypted)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt content moderation raw request snapshot: %w", err)
+	}
+	return &ContentModerationRawRequestView{
+		LogID:     snapshot.LogID,
+		RequestID: snapshot.RequestID,
+		Body:      body,
+		BodyBytes: snapshot.BodyBytes,
+		Truncated: snapshot.Truncated,
+		CreatedAt: snapshot.CreatedAt,
+	}, nil
 }
 
 func (s *ContentModerationService) DeleteFlaggedInputHash(ctx context.Context, inputHash string) (*ContentModerationDeleteHashResult, error) {
@@ -4697,6 +4764,21 @@ type CyberPolicyRecordInput struct {
 	UpstreamStatus  int
 	UpstreamInTok   int
 	UpstreamOutTok  int
+	RequestBody     []byte
+}
+
+type CyberSessionBlockedRecordInput struct {
+	RequestID       string
+	UserID          int64
+	UserEmail       string
+	APIKeyID        int64
+	APIKeyName      string
+	GroupID         *int64
+	GroupName       string
+	Endpoint        string
+	Model           string
+	SessionBlockKey string
+	RequestBody     []byte
 }
 
 // RecordCyberPolicyEvent 把一次 cyber_policy 硬阻断写入风控中心日志、计入违规计数、
@@ -4761,6 +4843,9 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 		logPersisted = false
 		slog.Warn("content_moderation.cyber_create_log_failed", "user_id", in.UserID, "error", err)
 	}
+	if logPersisted {
+		s.storeRawRequestSnapshot(ctx, log, in.RequestBody)
+	}
 	emailSent := false
 	if s.emailService != nil && strings.TrimSpace(log.UserEmail) != "" {
 		if err := s.sendCyberPolicyEmail(ctx, log); err != nil {
@@ -4781,6 +4866,85 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 			slog.Warn("content_moderation.cyber_update_email_sent_failed", "log_id", log.ID, "error", err)
 		}
 	}
+}
+
+func (s *ContentModerationService) RecordCyberSessionBlockedEvent(ctx context.Context, in CyberSessionBlockedRecordInput) {
+	if s == nil || s.repo == nil {
+		return
+	}
+	if !s.isRiskControlEnabled(ctx) {
+		return
+	}
+	var userID *int64
+	if in.UserID > 0 {
+		userID = &in.UserID
+	}
+	var apiKeyID *int64
+	if in.APIKeyID > 0 {
+		apiKeyID = &in.APIKeyID
+	}
+	errText := "cyber_policy_session_blocked"
+	if key := strings.TrimSpace(in.SessionBlockKey); key != "" {
+		errText += "\nsession_block_key=" + key
+	}
+	log := &ContentModerationLog{
+		RequestID:       in.RequestID,
+		UserID:          userID,
+		UserEmail:       in.UserEmail,
+		APIKeyID:        apiKeyID,
+		APIKeyName:      in.APIKeyName,
+		GroupID:         cloneInt64Ptr(in.GroupID),
+		GroupName:       in.GroupName,
+		Endpoint:        in.Endpoint,
+		Provider:        "openai",
+		Model:           in.Model,
+		Mode:            "pre_upstream",
+		Action:          ContentModerationActionCyberPolicySessionBlocked,
+		Flagged:         true,
+		HighestCategory: ContentModerationActionCyberPolicySessionBlocked,
+		HighestScore:    1.0,
+		Error:           trimRunes(redactContentModerationSecrets(errText), maxModerationExcerptRunes*4),
+		CreatedAt:       time.Now(),
+	}
+	if err := s.repo.CreateLog(ctx, log); err != nil {
+		slog.Warn("content_moderation.cyber_session_blocked_create_log_failed", "user_id", in.UserID, "error", err)
+		return
+	}
+	s.storeRawRequestSnapshot(ctx, log, in.RequestBody)
+}
+
+func (s *ContentModerationService) storeRawRequestSnapshot(ctx context.Context, log *ContentModerationLog, body []byte) {
+	if s == nil || log == nil || log.ID <= 0 || len(body) == 0 || s.rawRequestSnapshotStore == nil || s.rawRequestEncryptor == nil {
+		return
+	}
+	rawBody, truncated := truncateContentModerationRawRequestBody(body)
+	encrypted, err := s.rawRequestEncryptor.Encrypt(string(rawBody))
+	if err != nil {
+		slog.Warn("content_moderation.raw_request_encrypt_failed", "log_id", log.ID, "error", err)
+		return
+	}
+	snapshot := &ContentModerationRawRequestSnapshot{
+		LogID:         log.ID,
+		RequestID:     log.RequestID,
+		BodyEncrypted: encrypted,
+		BodyBytes:     len(body),
+		Truncated:     truncated,
+		CreatedAt:     time.Now(),
+	}
+	if err := s.rawRequestSnapshotStore.CreateRawRequestSnapshot(ctx, snapshot); err != nil {
+		slog.Warn("content_moderation.raw_request_snapshot_create_failed", "log_id", log.ID, "error", err)
+		return
+	}
+	log.RawRequestAvailable = true
+	log.RawRequestBytes = snapshot.BodyBytes
+	log.RawRequestTruncated = snapshot.Truncated
+}
+
+func truncateContentModerationRawRequestBody(body []byte) ([]byte, bool) {
+	if len(body) <= maxContentModerationRawRequestBytes {
+		return append([]byte(nil), body...), false
+	}
+	return append([]byte(nil), body[:maxContentModerationRawRequestBytes]...), true
 }
 
 func (s *ContentModerationService) sendCyberPolicyEmail(ctx context.Context, log *ContentModerationLog) error {

@@ -349,6 +349,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			CyberBlockKey:      cyberBlockKeyHTTP,
 			ChannelUsageFields: channelMapping.ToUsageFields(reqModel, ""),
 			RequestPayloadHash: service.HashUsageRequestPayload(body),
+			RequestBody:        body,
 		})
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
 		upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)
@@ -763,6 +764,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			CyberBlockKey:      cyberBlockKeyMsg,
 			ChannelUsageFields: channelMappingMsg.ToUsageFields(reqModel, ""),
 			RequestPayloadHash: service.HashUsageRequestPayload(body),
+			RequestBody:        body,
 		})
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
 		upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)
@@ -2388,6 +2390,7 @@ func (h *OpenAIGatewayHandler) rejectIfCyberSessionBlocked(c *gin.Context, apiKe
 		}})
 	}
 	h.enqueueCyberSessionBlockedOpsEntry(c, apiKey, model, key)
+	h.recordCyberSessionBlockedRiskEvent(c, apiKey, model, key, body)
 	return true
 }
 
@@ -2422,11 +2425,53 @@ func (h *OpenAIGatewayHandler) enqueueCyberSessionBlockedOpsEntry(c *gin.Context
 	enqueueOpsErrorLog(h.opsService, buildCyberSessionBlockedOpsEntry(meta))
 }
 
+func (h *OpenAIGatewayHandler) recordCyberSessionBlockedRiskEvent(c *gin.Context, apiKey *service.APIKey, model string, sessionBlockKey string, requestBody []byte) {
+	if h == nil || h.contentModerationService == nil || c == nil {
+		return
+	}
+	requestID := c.Writer.Header().Get("X-Request-Id")
+	inboundEndpoint := GetInboundEndpoint(c)
+	var userID, apiKeyID int64
+	var userEmail, apiKeyName, groupName string
+	var groupID *int64
+	if apiKey != nil {
+		apiKeyID = apiKey.ID
+		apiKeyName = apiKey.Name
+		groupID = apiKey.GroupID
+		if apiKey.User != nil {
+			userID = apiKey.User.ID
+			userEmail = apiKey.User.Email
+		}
+		if apiKey.Group != nil {
+			groupName = apiKey.Group.Name
+		}
+	}
+	cmSvc := h.contentModerationService
+	body := append([]byte(nil), requestBody...)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		cmSvc.RecordCyberSessionBlockedEvent(ctx, service.CyberSessionBlockedRecordInput{
+			RequestID:       requestID,
+			UserID:          userID,
+			UserEmail:       userEmail,
+			APIKeyID:        apiKeyID,
+			APIKeyName:      apiKeyName,
+			GroupID:         groupID,
+			GroupName:       groupName,
+			Endpoint:        inboundEndpoint,
+			Model:           model,
+			SessionBlockKey: sessionBlockKey,
+			RequestBody:     body,
+		})
+	}()
+}
+
 // recordCyberPolicyIfMarked 在 gateway forward 返回后检查 cyber 标记，异步写风控日志/邮件，
 // 并在 forward 返回错误时写一条 tokens=0 用量行。标记由 gateway 服务层在透传 cyber 后设置；
 // 当前请求已发给用户，本方法只做事后记录，不影响响应。forwardErrored 为 true 时才写用量行，
 // 避免与正常 RecordUsage(forward 成功路径)重复。每请求至多记录一次。
-func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey *service.APIKey, account *service.Account, subscription *service.UserSubscription, model string, forwardErrored bool, cyberBlockKey string, channelFields service.ChannelUsageFields, requestPayloadHash string) {
+func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey *service.APIKey, account *service.Account, subscription *service.UserSubscription, model string, forwardErrored bool, cyberBlockKey string, channelFields service.ChannelUsageFields, requestPayloadHash string, requestBody []byte) {
 	mark := service.GetOpsCyberPolicy(c)
 	if mark == nil {
 		return
@@ -2520,6 +2565,7 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 				UpstreamStatus:  mark.UpstreamStatus,
 				UpstreamInTok:   mark.UpstreamInTok,
 				UpstreamOutTok:  mark.UpstreamOutTok,
+				RequestBody:     requestBody,
 			})
 		}
 		if forwardErrored && gwSvc != nil {

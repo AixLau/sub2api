@@ -1607,10 +1607,25 @@
                   {{ inputDetailRow.endpoint || '-' }} · {{ inputDetailRow.provider || '-' }} / {{ inputDetailRow.model || '-' }}
                 </p>
               </div>
-              <span v-if="inputDetailRow.group_name" class="inline-flex rounded-md bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">
-                {{ inputDetailRow.group_name }}
-              </span>
+              <div class="flex flex-wrap items-center gap-2">
+                <button
+                  v-if="inputDetailRow.raw_request_available"
+                  type="button"
+                  class="btn btn-secondary inline-flex items-center gap-2"
+                  :disabled="rawRequestLoading"
+                  @click="loadRawRequest(inputDetailRow)"
+                >
+                  <Icon name="eye" size="sm" :class="rawRequestLoading ? 'animate-pulse' : ''" />
+                  {{ t('admin.riskControl.viewRawRequest') }}
+                </button>
+                <span v-if="inputDetailRow.group_name" class="inline-flex rounded-md bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">
+                  {{ inputDetailRow.group_name }}
+                </span>
+              </div>
             </div>
+            <p v-if="inputDetailRow.raw_request_available" class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+              {{ rawRequestMetaText }}
+            </p>
             <pre class="mt-4 max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-950 p-4 text-sm leading-6 text-gray-100 shadow-inner dark:bg-black/50">{{ inputDetailText }}</pre>
           </div>
         </div>
@@ -1726,6 +1741,7 @@ const defaultBlockMessage = () => t('admin.riskControl.defaultBlockMessage')
 const loading = ref(true)
 const saving = ref(false)
 const logsLoading = ref(false)
+const rawRequestLoading = ref(false)
 const statusLoading = ref(false)
 const apiKeyTesting = ref(false)
 const keywordTesting = ref(false)
@@ -1749,6 +1765,10 @@ const moderationTestResult = ref<ContentModerationTestAuditResult | null>(null)
 const keywordTestPrompt = ref('')
 const keywordTestResult = ref<TestContentModerationKeywordsResponse | null>(null)
 const inputDetailRow = ref<ContentModerationLog | null>(null)
+const rawRequestBody = ref('')
+const rawRequestBodyLogID = ref<number | null>(null)
+const rawRequestBytes = ref<number | null>(null)
+const rawRequestTruncated = ref(false)
 let statusTimer: number | null = null
 
 const configForm = reactive({
@@ -2479,7 +2499,19 @@ const riskThresholdRows = computed<RiskThresholdRow[]>(() => (
 
 const inputDetailText = computed(() => {
   if (!inputDetailRow.value) return '-'
+  if (rawRequestBodyLogID.value === inputDetailRow.value.id && rawRequestBody.value) return rawRequestBody.value
   return inputDetailRow.value.input_excerpt || inputDetailRow.value.error || '-'
+})
+
+const rawRequestMetaText = computed(() => {
+  const row = inputDetailRow.value
+  if (!row) return ''
+  const bytes = rawRequestBytes.value ?? row.raw_request_bytes ?? 0
+  const truncated = rawRequestBodyLogID.value === row.id ? rawRequestTruncated.value : row.raw_request_truncated
+  return t('admin.riskControl.rawRequestMeta', {
+    bytes: formatNumber(bytes),
+    truncated: truncated ? t('admin.riskControl.rawRequestTruncatedYes') : t('admin.riskControl.rawRequestTruncatedNo'),
+  })
 })
 
 const queueUsagePercent = computed(() => `${Math.min(100, Math.max(0, status.value?.queue_usage_percent ?? 0)).toFixed(1)}%`)
@@ -2782,10 +2814,34 @@ function inputSummaryText(row: ContentModerationLog): string {
 
 function openInputDetail(row: ContentModerationLog) {
   inputDetailRow.value = row
+  rawRequestBody.value = ''
+  rawRequestBodyLogID.value = null
+  rawRequestBytes.value = null
+  rawRequestTruncated.value = false
 }
 
 function closeInputDetail() {
   inputDetailRow.value = null
+  rawRequestBody.value = ''
+  rawRequestBodyLogID.value = null
+  rawRequestBytes.value = null
+  rawRequestTruncated.value = false
+}
+
+async function loadRawRequest(row: ContentModerationLog) {
+  if (rawRequestLoading.value || !row.raw_request_available) return
+  rawRequestLoading.value = true
+  try {
+    const raw = await adminAPI.riskControl.getRawRequest(row.id)
+    rawRequestBody.value = raw.body || ''
+    rawRequestBodyLogID.value = row.id
+    rawRequestBytes.value = raw.body_bytes
+    rawRequestTruncated.value = raw.truncated
+  } catch (err: unknown) {
+    appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.rawRequestFailed')))
+  } finally {
+    rawRequestLoading.value = false
+  }
 }
 
 async function unbanUser(row: ContentModerationLog) {
@@ -3061,6 +3117,7 @@ function modeDescription(mode: ModerationMode): string {
 
 function resultLabel(row: ContentModerationLog): string {
   if (row.action === 'cyber_policy') return t('admin.riskControl.action.cyberPolicy')
+  if (row.action === 'cyber_policy_session_blocked') return t('admin.riskControl.action.cyberPolicySessionBlocked')
   if (row.action === 'keyword_block') return t('admin.riskControl.action.keywordBlock')
   if (row.action === 'keyword_review') return t('admin.riskControl.action.keywordReview')
   if (row.action === 'block') return t('admin.riskControl.action.block')
@@ -3070,7 +3127,7 @@ function resultLabel(row: ContentModerationLog): string {
 }
 
 function resultBadgeClass(row: ContentModerationLog): string {
-  if (row.action === 'block' || row.action === 'keyword_block' || row.action === 'cyber_policy') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+  if (row.action === 'block' || row.action === 'keyword_block' || row.action === 'cyber_policy' || row.action === 'cyber_policy_session_blocked') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
   if (row.action === 'keyword_review') return 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
   if (row.action === 'error' || row.error) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
   if (row.flagged) return 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300'

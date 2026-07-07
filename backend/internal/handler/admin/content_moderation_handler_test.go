@@ -3,9 +3,11 @@ package admin
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -21,6 +23,7 @@ import (
 type contentModerationHandlerReviewRepo struct {
 	mu   sync.Mutex
 	logs []service.ContentModerationLog
+	raw  map[int64]service.ContentModerationRawRequestSnapshot
 }
 
 func (r *contentModerationHandlerReviewRepo) CreateLog(ctx context.Context, log *service.ContentModerationLog) error {
@@ -81,6 +84,27 @@ func (r *contentModerationHandlerReviewRepo) ReviewLog(ctx context.Context, id i
 	return nil, infraerrors.NotFound("CONTENT_MODERATION_LOG_NOT_FOUND", "审核记录不存在")
 }
 
+func (r *contentModerationHandlerReviewRepo) CreateRawRequestSnapshot(ctx context.Context, snapshot *service.ContentModerationRawRequestSnapshot) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.raw == nil {
+		r.raw = map[int64]service.ContentModerationRawRequestSnapshot{}
+	}
+	cp := *snapshot
+	r.raw[cp.LogID] = cp
+	return nil
+}
+
+func (r *contentModerationHandlerReviewRepo) GetRawRequestSnapshotByLogID(ctx context.Context, logID int64) (*service.ContentModerationRawRequestSnapshot, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	snapshot, ok := r.raw[logID]
+	if !ok {
+		return nil, infraerrors.NotFound("CONTENT_MODERATION_RAW_REQUEST_NOT_FOUND", "原始请求快照不存在")
+	}
+	return &snapshot, nil
+}
+
 func TestContentModerationHandlerReviewLog(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &contentModerationHandlerReviewRepo{logs: []service.ContentModerationLog{{
@@ -116,4 +140,51 @@ func TestContentModerationHandlerReviewLog(t *testing.T) {
 	require.NotNil(t, payload.Data.ReviewedBy)
 	require.Equal(t, int64(7), *payload.Data.ReviewedBy)
 	require.NotNil(t, payload.Data.ReviewedAt)
+}
+
+func TestContentModerationHandlerGetRawRequestSnapshot(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &contentModerationHandlerReviewRepo{raw: map[int64]service.ContentModerationRawRequestSnapshot{
+		42: {
+			LogID:         42,
+			RequestID:     "req-raw",
+			BodyEncrypted: "enc:" + base64.StdEncoding.EncodeToString([]byte(`{"model":"gpt-5","input":"full prompt"}`)),
+			BodyBytes:     39,
+			Truncated:     false,
+			CreatedAt:     time.Now(),
+		},
+	}}
+	svc := service.NewContentModerationService(nil, repo, nil, nil, nil, nil, nil)
+	svc.SetRawRequestSnapshotStore(repo, contentModerationHandlerTestEncryptor{})
+	h := NewContentModerationHandler(svc)
+	router := gin.New()
+	router.GET("/admin/risk-control/logs/:id/raw-request", h.GetRawRequestSnapshot)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/risk-control/logs/42/raw-request", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var payload struct {
+		Data service.ContentModerationRawRequestView `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	require.Equal(t, int64(42), payload.Data.LogID)
+	require.Equal(t, "req-raw", payload.Data.RequestID)
+	require.Equal(t, `{"model":"gpt-5","input":"full prompt"}`, payload.Data.Body)
+	require.False(t, payload.Data.Truncated)
+}
+
+type contentModerationHandlerTestEncryptor struct{}
+
+func (contentModerationHandlerTestEncryptor) Encrypt(plaintext string) (string, error) {
+	return "enc:" + base64.StdEncoding.EncodeToString([]byte(plaintext)), nil
+}
+
+func (contentModerationHandlerTestEncryptor) Decrypt(ciphertext string) (string, error) {
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(ciphertext, "enc:"))
+	if err != nil {
+		return "", err
+	}
+	return string(decoded), nil
 }

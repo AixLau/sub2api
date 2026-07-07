@@ -199,6 +199,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			CyberBlockKey:      cyberBlockKeyChat,
 			ChannelUsageFields: channelMapping.ToUsageFields(reqModel, ""),
 			RequestPayloadHash: service.HashUsageRequestPayload(body),
+			RequestBody:        body,
 		})
 
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()

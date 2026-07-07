@@ -421,6 +421,9 @@ export interface ContentModerationLog {
   review_note: string
   reviewed_by: number | null
   reviewed_at: string | null
+  raw_request_available: boolean
+  raw_request_bytes: number
+  raw_request_truncated: boolean
   created_at: string
 }
 
@@ -452,6 +455,15 @@ export interface ContentModerationUnbanUserResponse {
 export interface ReviewContentModerationLogPayload {
   status: 'pending' | 'false_positive' | 'confirmed_violation' | string
   note?: string
+}
+
+export interface ContentModerationRawRequest {
+  log_id: number
+  request_id: string
+  body: string
+  body_bytes: number
+  truncated: boolean
+  created_at: string
 }
 
 export interface DeleteFlaggedHashResponse {
@@ -524,6 +536,13 @@ export async function reviewLog(
   return data
 }
 
+export async function getRawRequest(logID: number): Promise<ContentModerationRawRequest> {
+  const { data } = await apiClient.get<ContentModerationRawRequest>(
+    `/admin/risk-control/logs/${logID}/raw-request`
+  )
+  return data
+}
+
 export async function deleteFlaggedHash(inputHash: string): Promise<DeleteFlaggedHashResponse> {
   const { data } = await apiClient.delete<DeleteFlaggedHashResponse>('/admin/risk-control/hashes', {
     data: { input_hash: inputHash },
@@ -545,6 +564,7 @@ export const riskControlAPI = {
   listLogs,
   unbanUser,
   reviewLog,
+  getRawRequest,
   deleteFlaggedHash,
   clearFlaggedHashes,
 }

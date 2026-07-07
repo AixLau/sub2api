@@ -13,6 +13,7 @@ const {
   listLogs,
   testKeywords,
   reviewLog,
+  getRawRequest,
   getGroups,
   showError,
   showSuccess,
@@ -23,6 +24,7 @@ const {
   listLogs: vi.fn(),
   testKeywords: vi.fn(),
   reviewLog: vi.fn(),
+  getRawRequest: vi.fn(),
   getGroups: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
@@ -37,6 +39,7 @@ vi.mock('@/api/admin', () => ({
       listLogs,
       testKeywords,
       reviewLog,
+      getRawRequest,
       testAPIKeys: vi.fn(),
       deleteFlaggedHash: vi.fn(),
       clearFlaggedHashes: vi.fn(),
@@ -204,6 +207,7 @@ describe('admin RiskControlView', () => {
     listLogs.mockReset()
     testKeywords.mockReset()
     reviewLog.mockReset()
+    getRawRequest.mockReset()
     getGroups.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
@@ -264,6 +268,9 @@ describe('admin RiskControlView', () => {
       review_note: payload.note ?? '',
       reviewed_by: 1,
       reviewed_at: '2026-06-19T08:01:00Z',
+      raw_request_available: false,
+      raw_request_bytes: 0,
+      raw_request_truncated: false,
       upstream_latency_ms: null,
       error: '',
       violation_count: 0,
@@ -353,6 +360,9 @@ describe('admin RiskControlView', () => {
           review_note: '',
           reviewed_by: null,
           reviewed_at: null,
+          raw_request_available: false,
+          raw_request_bytes: 0,
+          raw_request_truncated: false,
           upstream_latency_ms: null,
           error: '',
           violation_count: 1,
@@ -396,6 +406,97 @@ describe('admin RiskControlView', () => {
     expect(wrapper.text()).toContain('admin.riskControl.keywordMetadata')
     expect(wrapper.text()).toContain('admin.riskControl.keywordCategory')
     expect(wrapper.text()).toContain('admin.riskControl.keywordSeverity')
+  })
+
+  it('loads full raw request content from a risk audit log detail', async () => {
+    listLogs.mockResolvedValue({
+      items: [
+        {
+          id: 26190,
+          request_id: 'def739c1-3389-45ba-acb1-2c47977b82c4',
+          user_id: 244,
+          user_email: '1914823683@qq.com',
+          api_key_id: 9,
+          api_key_name: 'H',
+          group_id: 5,
+          group_name: 'Codex高速专线',
+          endpoint: '/responses',
+          provider: 'openai',
+          model: 'gpt-5.4',
+          mode: 'pre_upstream',
+          action: 'cyber_policy_session_blocked',
+          flagged: true,
+          highest_category: 'cyber_policy_session_blocked',
+          highest_score: 1,
+          category_scores: {},
+          threshold_snapshot: {},
+          input_excerpt: 'cyber_policy_session_blocked',
+          matched_keyword: '',
+          keyword_category: '',
+          keyword_severity: '',
+          keyword_action: '',
+          effective_keyword_action: '',
+          risk_context_type: 'actual_request',
+          risk_context_reason: 'openai_cyber_policy_session_block',
+          review_status: '',
+          review_note: '',
+          reviewed_by: null,
+          reviewed_at: null,
+          raw_request_available: true,
+          raw_request_bytes: 103,
+          raw_request_truncated: false,
+          upstream_latency_ms: null,
+          error: 'cyber_policy_session_blocked',
+          violation_count: 0,
+          auto_banned: false,
+          email_sent: false,
+          user_status: 'active',
+          queue_delay_ms: null,
+          created_at: '2026-07-06T13:55:56Z',
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+    getRawRequest.mockResolvedValue({
+      log_id: 26190,
+      request_id: 'def739c1-3389-45ba-acb1-2c47977b82c4',
+      body: '{"model":"gpt-5.4","input":[{"role":"user","content":"please inspect this OpenAI cyber policy block"}]}',
+      body_bytes: 103,
+      truncated: false,
+      created_at: '2026-07-06T13:55:56Z',
+    })
+
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.riskControl.action.cyberPolicySessionBlocked')
+    await findButtonByText(wrapper, 'cyber_policy_session_blocked').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.riskControl.viewRawRequest')
+    expect(wrapper.text()).toContain('admin.riskControl.rawRequestMeta')
+
+    await findButtonByText(wrapper, 'admin.riskControl.viewRawRequest').trigger('click')
+    await flushPromises()
+
+    expect(getRawRequest).toHaveBeenCalledWith(26190)
+    expect(wrapper.text()).toContain('please inspect this OpenAI cyber policy block')
   })
 
   it('runs keyword tests without saving config or writing logs', async () => {
@@ -477,6 +578,9 @@ describe('admin RiskControlView', () => {
           review_note: '',
           reviewed_by: null,
           reviewed_at: null,
+          raw_request_available: false,
+          raw_request_bytes: 0,
+          raw_request_truncated: false,
           upstream_latency_ms: null,
           error: '',
           violation_count: 0,

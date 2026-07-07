@@ -212,6 +212,7 @@ func (OpenAIHTTPCyberStage) Run(ctx *openAIHTTPGatewayStageContext) openAIHTTPGa
 	}
 	if ctx.handler != nil {
 		ctx.handler.enqueueCyberSessionBlockedOpsEntry(ctx.c, input.APIKey, input.Model, result.BlockKey)
+		ctx.handler.recordCyberSessionBlockedRiskEvent(ctx.c, input.APIKey, input.Model, result.BlockKey, cyberBody)
 	}
 	return openAIHTTPGatewayStageResult{Blocked: true}
 }

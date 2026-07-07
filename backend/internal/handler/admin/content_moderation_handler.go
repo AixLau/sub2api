@@ -278,6 +278,20 @@ func (h *ContentModerationHandler) ReviewLog(c *gin.Context) {
 	response.Success(c, result)
 }
 
+func (h *ContentModerationHandler) GetRawRequestSnapshot(c *gin.Context) {
+	logID, err := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
+	if err != nil || logID <= 0 {
+		response.BadRequest(c, "Invalid log id")
+		return
+	}
+	result, err := h.service.GetRawRequestSnapshot(c.Request.Context(), logID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
 func (h *ContentModerationHandler) DeleteFlaggedHash(c *gin.Context) {
 	var req contentModerationHashRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

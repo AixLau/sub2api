@@ -1210,6 +1210,7 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPCyberUsageStage(c *gin.Context, inpu
 		CyberBlockKey:      input.CyberBlockKey,
 		ChannelUsageFields: input.ChannelUsageFields,
 		RequestPayloadHash: input.RequestPayloadHash,
+		RequestBody:        input.RequestBody,
 	})
 }
 
@@ -1222,6 +1223,7 @@ type OpenAIHTTPCyberUsageStageInput struct {
 	CyberBlockKey      string
 	ChannelUsageFields service.ChannelUsageFields
 	RequestPayloadHash string
+	RequestBody        []byte
 }
 
 type OpenAIHTTPUsageStage struct {
@@ -1236,6 +1238,7 @@ type OpenAIHTTPUsageStage struct {
 	UserAgent          string
 	ClientIP           string
 	RequestPayloadHash string
+	RequestBody        []byte
 	QuotaPlatform      string
 	ChannelUsageFields service.ChannelUsageFields
 	CyberBlocked       bool
@@ -1270,7 +1273,7 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 		}
 		h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account.ID, *s.ScheduleSuccess, firstTokenMs)
 	}
-	h.recordCyberPolicyIfMarked(c, s.APIKey, s.Account, s.Subscription, s.LogModel, s.ForwardErrored, s.CyberBlockKey, s.ChannelUsageFields, s.RequestPayloadHash)
+	h.recordCyberPolicyIfMarked(c, s.APIKey, s.Account, s.Subscription, s.LogModel, s.ForwardErrored, s.CyberBlockKey, s.ChannelUsageFields, s.RequestPayloadHash, s.RequestBody)
 	if s.Result == nil {
 		return ExecutableStageResult{}
 	}
@@ -1725,7 +1728,7 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 		reqLog = zap.NewNop()
 	}
 
-	h.recordCyberPolicyIfMarked(c, s.APIKey, s.Account, s.Subscription, s.Model, s.TurnErr != nil, s.CyberBlockKey, s.ChannelMapping.ToUsageFields(s.Model, ""), s.RequestPayloadHash)
+	h.recordCyberPolicyIfMarked(c, s.APIKey, s.Account, s.Subscription, s.Model, s.TurnErr != nil, s.CyberBlockKey, s.ChannelMapping.ToUsageFields(s.Model, ""), s.RequestPayloadHash, nil)
 	if service.GetOpsCyberPolicy(c) != nil && s.CyberBlockedThisConn != nil {
 		*s.CyberBlockedThisConn = true
 	}
