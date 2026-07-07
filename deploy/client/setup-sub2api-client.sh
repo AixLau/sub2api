@@ -434,6 +434,17 @@ write_codex_auth_from_input() {
   return 0
 }
 
+write_codex_api_key_auth() {
+  local file="$1"
+  local tmp
+  tmp="$(mktemp)"
+
+  printf '{\n  "OPENAI_API_KEY": "%s"\n}\n' "$(json_escape "$API_KEY")" >"$tmp"
+  backup_file "$file"
+  mv "$tmp" "$file"
+  chmod 600 "$file" 2>/dev/null || true
+}
+
 codex_auth_is_official() {
   local file="$1"
   [ -s "$file" ] || return 1
@@ -635,7 +646,8 @@ if [ "$CLIENT" = "codex" ]; then
   elif write_codex_auth_from_input "$CODEX_AUTH"; then
     CODEX_AUTH_STATUS="imported"
   else
-    CODEX_AUTH_STATUS="missing"
+    write_codex_api_key_auth "$CODEX_AUTH"
+    CODEX_AUTH_STATUS="api_key"
   fi
 elif [ "$CLIENT" = "claude" ]; then
   mkdir -p "$CLAUDE_DIR"

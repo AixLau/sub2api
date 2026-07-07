@@ -244,6 +244,15 @@ function Write-CodexAuthFromInput {
     return $true
 }
 
+function Write-CodexApiKeyAuth {
+    param([string]$Path)
+
+    Backup-File -Path $Path
+    Write-JsonObject -Path $Path -Object ([pscustomobject]@{
+        OPENAI_API_KEY = $ApiKey
+    })
+}
+
 function Test-CodexAuthIsOfficial {
     param([string]$Path)
 
@@ -586,7 +595,8 @@ if ($Client -eq "codex") {
         $CodexAuthStatus = "imported"
     }
     else {
-        $CodexAuthStatus = "missing"
+        Write-CodexApiKeyAuth -Path $CodexAuth
+        $CodexAuthStatus = "api_key"
     }
 }
 elseif ($Client -eq "claude") {

@@ -676,17 +676,10 @@
             <p>把命令整段复制到 PowerShell 里按回车。脚本会自动下载安装程序，然后先让你选择客户端，再打开浏览器自动授权并创建 API Key。</p>
             <div class="code-block">
               <button class="copy" data-copy>复制</button>
-              <pre><code>irm "https://aixlau.me/install/bootstrap.ps1?v=20260620-auto-key" | iex</code></pre>
+              <pre><code>powershell -ExecutionPolicy Bypass -Command "irm 'https://aixlau.me/install/bootstrap.ps1' | iex"</code></pre>
             </div>
             <div class="note">
               <strong>提示：</strong>如果浏览器没有自动打开，PowerShell 里会显示一个链接和验证码，手动打开链接并保持登录即可，页面会自动处理。
-            </div>
-            <div class="note warn">
-              <strong>如果提示"无法加载脚本 / 执行策略"被拦住：</strong>复制下面这条等效命令再跑一次即可（只对本次有效，不改你电脑的全局设置）。
-            </div>
-            <div class="code-block">
-              <button class="copy" data-copy>复制</button>
-              <pre><code>powershell -ExecutionPolicy Bypass -Command "irm 'https://aixlau.me/install/bootstrap.ps1?v=20260620-auto-key' | iex"</code></pre>
             </div>
           </article>
 
