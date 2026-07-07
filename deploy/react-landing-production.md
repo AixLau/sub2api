@@ -122,7 +122,7 @@ sudo systemctl reload caddy
 
 ## React 官网发布流程
 
-React 官网项目位于本仓库 `react-frontend/`。要求构建产物使用 `landing-assets` 作为资源目录，避免和 Sub2API Vue 的 `/assets/*` 冲突。
+React 官网项目位于本仓库 `react-frontend/`。该目录只保留当前线上使用的 React/Vite 首页和认证入口代码；不要在其中维护第二套 Vue/Tailwind 首页实现。构建产物必须使用 `landing-assets` 作为资源目录，避免和 Sub2API Vue 控制台的 `/assets/*` 冲突。
 
 ```bash
 cd /path/to/sub2api/react-frontend

@@ -23,7 +23,7 @@ The active app is:
 
 Do not migrate the active work to Vue, Tailwind, a dashboard framework, or the Aurora black-video registration prompt unless the user explicitly asks.
 
-The repo still contains some older Vue/LumaAPI files. Treat them as legacy/reference files unless the active React entry changes.
+This package intentionally keeps only the React/Vite landing and auth-entry app. Do not add parallel Vue, Tailwind, or alternate landing implementations here unless the user explicitly asks for a new app architecture.
 
 Active entry and core files:
 - `src/main.tsx`
