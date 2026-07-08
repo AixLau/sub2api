@@ -70,7 +70,7 @@ describe('VariableWidthLineChart', () => {
     expect(wrapper.find('.vw-line__legend-marker').attributes('style')).toContain('background-color: rgb(37, 99, 235)')
   })
 
-  it('creates a native G2 trail line with size mapped to the y field', async () => {
+  it('creates a native G2 trail line with compressed dynamic width derived from the y field', async () => {
     mountChart()
     await nextTick()
 
@@ -117,7 +117,7 @@ describe('VariableWidthLineChart', () => {
         y: '__vw_y__',
         color: '__vw_color__',
         series: '__vw_series__',
-        size: '__vw_y__',
+        size: '__vw_visual_size__',
         shape: 'trail',
       },
       legend: false,
@@ -130,8 +130,15 @@ describe('VariableWidthLineChart', () => {
     expect(options.interaction).toEqual({})
     expect(options.children[0].scale.size).toMatchObject({
       type: 'linear',
-      domain: [0, 500],
+      range: [3.2, 8.9],
     })
+    expect(mainLayer.scale.size.range).toEqual([1.2, 6.5])
+    const originalPoints = options.data.filter((point: Record<string, unknown>) => point.__vw_staccato__ === false)
+    const inputPoints = originalPoints.filter((point: Record<string, unknown>) => point.__vw_color__ === '输入')
+    const lowVisualSize = Number(inputPoints[0].__vw_visual_size__)
+    const highVisualSize = Number(inputPoints[1].__vw_visual_size__)
+    expect(highVisualSize).toBeGreaterThan(lowVisualSize)
+    expect(highVisualSize / lowVisualSize).toBeLessThan(400 / 200)
     expect(options.children.some((child: Record<string, unknown>) => child.type === 'point')).toBe(false)
     expect(chartInstances[0].render).toHaveBeenCalledTimes(1)
   })
@@ -160,6 +167,7 @@ describe('VariableWidthLineChart', () => {
 
     expect(options.data.length).toBeGreaterThan(chartData.length)
     expect(inputSeries.length).toBeGreaterThan(2)
+    expect(inputSeries.filter((point: Record<string, unknown>) => point.__vw_staccato__ === true)).toHaveLength(3)
     expect(inputSeries[0].__vw_y__).toBe(200)
     expect(inputSeries.at(-1).__vw_y__).toBe(400)
     expect(inputSeries.some((point: Record<string, unknown>) => point.__vw_staccato__ === true)).toBe(true)
@@ -180,7 +188,7 @@ describe('VariableWidthLineChart', () => {
 
     const options = chartInstances[0].options.mock.calls[0][0]
     expect(options.children).toHaveLength(1)
-    expect(options.children[0].scale.size.range).toEqual([1.5, 12])
+    expect(options.children[0].scale.size.range).toEqual([1.2, 6.5])
   })
 
   it('uses an external tooltip renderer when provided', async () => {

@@ -96,14 +96,17 @@ type StrokeEffect = 'staccato' | 'smooth'
 type InnerDatum = RawDatum & {
   __vw_x__: unknown
   __vw_y__: number
+  __vw_visual_size__: number
   __vw_color__: string
   __vw_series__: string
   __vw_staccato__?: boolean
+  __vw_staccato_index__?: string
   __vw_tooltip_x__?: unknown
 }
 
 const X_KEY = '__vw_x__'
 const Y_KEY = '__vw_y__'
+const SIZE_KEY = '__vw_visual_size__'
 const COLOR_KEY = '__vw_color__'
 const SERIES_KEY = '__vw_series__'
 const PLOT_PADDING_LEFT = 56
@@ -148,8 +151,8 @@ const props = withDefaults(defineProps<{
   data: () => [],
   height: 192,
   colors: () => ['#2563eb', '#059669', '#f97316', '#14b8a6', '#7c3aed'],
-  minLineWidth: 1.5,
-  maxLineWidth: 12,
+  minLineWidth: 1.2,
+  maxLineWidth: 6.5,
   showLegend: true,
   showEndDot: false,
   endDotSize: 10,
@@ -207,6 +210,7 @@ const normalizedData = computed<InnerDatum[]>(() => {
       ...raw,
       [X_KEY]: x,
       [Y_KEY]: y,
+      [SIZE_KEY]: toVisualSize(y),
       [COLOR_KEY]: colorName,
       [SERIES_KEY]: `${colorName}__${segmentNo}`,
       __vw_staccato__: false,
@@ -277,6 +281,22 @@ const yExtent = computed(() => {
   }
 
   return { min, max }
+})
+
+const toVisualSize = (value: number): number =>
+  Math.pow(Math.max(value, 0), 0.62)
+
+const sizeExtent = computed(() => {
+  if (props.yDomain) {
+    const min = toVisualSize(props.yDomain[0])
+    const max = toVisualSize(props.yDomain[1])
+    return max === min ? { min, max: min + 1 } : { min, max }
+  }
+
+  const values = normalizedData.value.map((item) => item[SIZE_KEY])
+  const min = Math.min(...values, 0)
+  const max = Math.max(...values, 1)
+  return max === min ? { min, max: min + 1 } : { min, max }
 })
 
 const gridTickValues = computed(() => {
@@ -442,14 +462,11 @@ const buildStaccatoSegment = (
   const direction = Math.sign(yDelta)
   const { min, max } = yExtent.value
   const ySpan = Math.max(max - min, 1)
-  const amplitude = Math.min(Math.abs(yDelta) * 0.22, ySpan * 0.055)
+  const amplitude = Math.min(Math.abs(yDelta) * 0.08, ySpan * 0.018)
   const pattern = [
-    { t: 0.16, p: 0.10, kick: 0.00 },
-    { t: 0.28, p: 0.34, kick: 0.22 },
-    { t: 0.38, p: 0.28, kick: -0.20 },
-    { t: 0.56, p: 0.58, kick: 0.12 },
-    { t: 0.70, p: 0.55, kick: -0.16 },
-    { t: 0.86, p: 0.82, kick: 0.08 },
+    { t: 0.24, p: 0.20, kick: 0.05 },
+    { t: 0.50, p: 0.46, kick: -0.06 },
+    { t: 0.76, p: 0.74, kick: 0.04 },
   ]
 
   return pattern.map(({ t, p, kick }, index) => {
@@ -464,6 +481,7 @@ const buildStaccatoSegment = (
       ...next,
       [X_KEY]: x,
       [Y_KEY]: y,
+      [SIZE_KEY]: toVisualSize(y),
       [COLOR_KEY]: next[COLOR_KEY],
       [SERIES_KEY]: next[SERIES_KEY],
       __vw_staccato__: true,
@@ -578,7 +596,7 @@ const buildLineScale = (
   }
 
   if (props.yDomain) {
-    size.domain = props.yDomain
+    size.domain = [sizeExtent.value.min, sizeExtent.value.max]
   }
 
   return { size }
@@ -601,7 +619,7 @@ const createTrailLayer = ({
     y: Y_KEY,
     color: COLOR_KEY,
     series: SERIES_KEY,
-    size: Y_KEY,
+    size: SIZE_KEY,
     shape: 'trail',
   },
   scale: buildLineScale(minWidthOffset, maxWidthOffset),
@@ -645,9 +663,9 @@ const renderChart = async () => {
 
   const children: any[] = props.brushEffect
     ? [
-        createTrailLayer({ minWidthOffset: 4, maxWidthOffset: 8, opacity: 0.16 }),
-        createTrailLayer({ minWidthOffset: 2, maxWidthOffset: 4, opacity: 0.28 }),
-        createTrailLayer({ opacity: 0.96, showAxis: true }),
+        createTrailLayer({ minWidthOffset: 2, maxWidthOffset: 2.4, opacity: 0.08 }),
+        createTrailLayer({ minWidthOffset: 0.9, maxWidthOffset: 1.1, opacity: 0.16 }),
+        createTrailLayer({ opacity: 0.94, showAxis: true }),
       ]
     : [
         createTrailLayer({ showAxis: true }),
