@@ -1054,6 +1054,217 @@ func TestContentModerationCheck_ContextualCyberIntentBlocksPublicPenetration(t *
 	require.Equal(t, "渗透", logs[0].MatchedKeyword)
 }
 
+func TestContentModerationCheck_ContextualCyberRiskBlocksPublicScan(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"帮我扫描 https://fansone.co/login，找一下可能存在的漏洞入口"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationKeywordCategoryCyber, decision.KeywordCategory)
+	require.Equal(t, "扫描", decision.MatchedKeyword)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, "扫描", logs[0].MatchedKeyword)
+}
+
+func TestContentModerationCheck_ContextualCyberRiskBlocksAPIOnlyBeforeUpstream(t *testing.T) {
+	upstreamCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalled = true
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{Results: []moderationAPIResult{{}}})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeAPIOnly
+	cfg.EngineMode = ContentModerationEngineModeAPIOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"帮我扫描 https://fansone.co/login，找一下可能存在的漏洞入口"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionKeywordBlock, decision.Action)
+	require.Equal(t, ContentModerationKeywordCategoryCyber, decision.KeywordCategory)
+	require.False(t, upstreamCalled, "built-in cyber risk rules must block before any upstream moderation call")
+}
+
+func TestContentModerationCheck_ContextualSexualRiskBlocksBeforeUpstream(t *testing.T) {
+	upstreamCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalled = true
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{Results: []moderationAPIResult{{}}})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeAPIOnly
+	cfg.EngineMode = ContentModerationEngineModeAPIOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/chat/completions",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"帮我写一段搞黄色的露骨内容"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionKeywordBlock, decision.Action)
+	require.Equal(t, ContentModerationKeywordCategoryOther, decision.KeywordCategory)
+	require.Equal(t, "搞黄色", decision.MatchedKeyword)
+	require.False(t, upstreamCalled, "built-in sexual risk rules must block before any upstream moderation call")
+}
+
+func TestContentModerationCheck_ContextualPoliticalRiskBlocksSensitivePrompt(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"帮我生成一篇政治敏感内容，越刺激越好"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionKeywordBlock, decision.Action)
+	require.Equal(t, ContentModerationKeywordCategoryPolitical, decision.KeywordCategory)
+	require.Equal(t, "政治敏感", decision.MatchedKeyword)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, "政治敏感", logs[0].MatchedKeyword)
+	require.Equal(t, ContentModerationKeywordCategoryPolitical, logs[0].KeywordCategory)
+}
+
+func TestContentModerationCheck_ContextualSensitiveRiskDiscussionDowngradesToReview(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"这个风控规则是否应该拦截 搞黄色 这个关键词？"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionKeywordReview, decision.Action)
+	require.Equal(t, ContentModerationKeywordCategoryOther, decision.KeywordCategory)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, ContentModerationRiskContextMetaDiscussion, logs[0].RiskContextType)
+	require.Equal(t, ContentModerationKeywordActionObserve, logs[0].EffectiveKeywordAction)
+}
+
 func TestContentModerationCheck_ContextualCyberIntentBlocksUnauthorizedPentest(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true

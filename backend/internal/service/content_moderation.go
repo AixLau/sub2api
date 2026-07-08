@@ -1343,6 +1343,8 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			if keywordMatch, hit := matchContentModerationLocalRule(content.Text, cfg.keywordRules()); hit {
 				return s.keywordDecision(ctx, input, cfg, content, hashText, keywordMatch), nil
 			}
+		} else if keywordMatch, hit := matchContextualBuiltInRiskRule(content.Text); hit {
+			return s.keywordDecision(ctx, input, cfg, content, hashText, keywordMatch), nil
 		}
 		if !cfg.externalModerationRequired() {
 			s.recordPreBlockSyncMetric(0, ContentModerationActionAllow)
@@ -4761,7 +4763,7 @@ func matchContentModerationLocalRule(text string, rules []ContentModerationKeywo
 	if match, hit := matchContentModerationKeyword(text, rules); hit {
 		return match, true
 	}
-	return matchContextualCyberIntentRule(text)
+	return matchContextualBuiltInRiskRule(text)
 }
 
 func matchContentModerationKeyword(text string, rules []ContentModerationKeywordRule) (ContentModerationKeywordRule, bool) {
@@ -4794,31 +4796,94 @@ func matchContentModerationKeyword(text string, rules []ContentModerationKeyword
 	return ContentModerationKeywordRule{}, false
 }
 
-func matchContextualCyberIntentRule(text string) (ContentModerationKeywordRule, bool) {
+func matchContextualBuiltInRiskRule(text string) (ContentModerationKeywordRule, bool) {
 	normalized := normalizeKeywordComparable(text)
 	if normalized == "" {
 		return ContentModerationKeywordRule{}, false
 	}
 	if keyword, hit := contextualCyberDatabaseExtractionKeyword(text, normalized); hit {
-		return contextualCyberIntentRule(keyword), true
+		return contextualBuiltInRiskRule(keyword, ContentModerationKeywordCategoryCyber, ContentModerationKeywordSeverityCritical), true
 	}
 	if keyword, hit := contextualCyberReverseCrackingKeyword(normalized); hit {
-		return contextualCyberIntentRule(keyword), true
+		return contextualBuiltInRiskRule(keyword, ContentModerationKeywordCategoryCyber, ContentModerationKeywordSeverityCritical), true
 	}
 	if keyword, hit := contextualCyberIntrusionKeyword(text, normalized); hit {
-		return contextualCyberIntentRule(keyword), true
+		return contextualBuiltInRiskRule(keyword, ContentModerationKeywordCategoryCyber, ContentModerationKeywordSeverityCritical), true
+	}
+	if keyword, hit := contextualSexualExplicitKeyword(normalized); hit {
+		return contextualBuiltInRiskRule(keyword, ContentModerationKeywordCategoryOther, ContentModerationKeywordSeverityHigh), true
+	}
+	if keyword, hit := contextualPoliticalSensitiveKeyword(normalized); hit {
+		return contextualBuiltInRiskRule(keyword, ContentModerationKeywordCategoryPolitical, ContentModerationKeywordSeverityHigh), true
 	}
 	return ContentModerationKeywordRule{}, false
 }
 
-func contextualCyberIntentRule(keyword string) ContentModerationKeywordRule {
+func matchContextualCyberIntentRule(text string) (ContentModerationKeywordRule, bool) {
+	match, hit := matchContextualBuiltInRiskRule(text)
+	if !hit || match.Category != ContentModerationKeywordCategoryCyber {
+		return ContentModerationKeywordRule{}, false
+	}
+	return match, true
+}
+
+func contextualBuiltInRiskRule(keyword string, category string, severity string) ContentModerationKeywordRule {
 	return ContentModerationKeywordRule{
 		Keyword:  keyword,
-		Category: ContentModerationKeywordCategoryCyber,
-		Severity: ContentModerationKeywordSeverityCritical,
+		Category: category,
+		Severity: severity,
 		Action:   ContentModerationKeywordActionBlock,
 		Enabled:  true,
 	}
+}
+
+func contextualCyberIntentRule(keyword string) ContentModerationKeywordRule {
+	return contextualBuiltInRiskRule(keyword, ContentModerationKeywordCategoryCyber, ContentModerationKeywordSeverityCritical)
+}
+
+func contextualSexualExplicitKeyword(normalized string) (string, bool) {
+	return firstContentModerationMarker(normalized, []string{
+		"搞黄色",
+		"搞颜色",
+		"黄色内容",
+		"色情内容",
+		"成人内容",
+		"露骨内容",
+		"露骨色情",
+		"淫秽色情",
+		"情色",
+		"涩图",
+		"黄图",
+		"黄片",
+		"裸聊",
+		"约炮",
+		"nsfw",
+		"porn",
+		"porno",
+		"pornography",
+		"erotic",
+		"sexually explicit",
+		"adult content",
+	})
+}
+
+func contextualPoliticalSensitiveKeyword(normalized string) (string, bool) {
+	return firstContentModerationMarker(normalized, []string{
+		"政治敏感",
+		"敏感政治",
+		"涉政敏感",
+		"政治敏感内容",
+		"政治敏感话题",
+		"反动言论",
+		"煽动颠覆",
+		"颠覆国家政权",
+		"分裂国家",
+		"台独",
+		"港独",
+		"藏独",
+		"疆独",
+		"法轮功",
+	})
 }
 
 func contextualCyberDatabaseExtractionKeyword(rawText string, normalized string) (string, bool) {
@@ -4931,12 +4996,18 @@ func contextualCyberIntrusionKeyword(rawText string, normalized string) (string,
 		return keyword, true
 	}
 	keyword, hasOffensiveProbe := firstContentModerationMarker(normalized, []string{
+		"扫描",
 		"渗透",
 		"penetration flow",
 		"pentest",
 		"漏洞扫描",
+		"漏洞验证",
 		"漏洞利用",
 		"exploit",
+		"scan",
+		"recon",
+		"reconnaissance",
+		"vulnerability",
 		"sql injection",
 		"sqlmap",
 		"nmap",
