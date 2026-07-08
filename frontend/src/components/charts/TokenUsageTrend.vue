@@ -22,7 +22,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { DualAxes, type DualAxesOptions } from '@antv/g2plot'
+import { createElement } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { Line, type LineConfig } from '@ant-design/plots'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import type { TrendDataPoint } from '@/types'
 
@@ -40,20 +42,13 @@ const props = withDefaults(defineProps<{
 
 type TokenSeriesPoint = {
   date: string
-  type: string
+  category: string
   value: number
   source: TrendDataPoint
 }
 
-type HitRateSeriesPoint = {
-  date: string
-  type: string
-  hitRate: number
-  source: TrendDataPoint
-}
-
 const chartContainer = ref<HTMLElement | null>(null)
-const plot = shallowRef<DualAxes | null>(null)
+const reactRoot = shallowRef<Root | null>(null)
 
 const isDarkMode = computed(() => {
   return document.documentElement.classList.contains('dark')
@@ -68,8 +63,8 @@ const chartColors = computed(() => ({
   grid: isDarkMode.value ? 'rgba(55, 65, 81, 0.45)' : 'rgba(229, 231, 235, 0.8)',
   input: '#2563eb',
   output: '#059669',
-  cacheCreation: '#d97706',
-  cacheRead: '#0891b2',
+  cacheCreation: '#f97316',
+  cacheRead: '#14b8a6',
   cacheHitRate: '#7c3aed'
 }))
 
@@ -92,20 +87,11 @@ const tokenLabels = computed(() => ({
 
 const tokenSeries = computed<TokenSeriesPoint[]>(() =>
   props.trendData.flatMap((data) => [
-    { date: data.date, type: tokenLabels.value.input, value: data.input_tokens, source: data },
-    { date: data.date, type: tokenLabels.value.output, value: data.output_tokens, source: data },
-    { date: data.date, type: tokenLabels.value.cacheCreation, value: data.cache_creation_tokens, source: data },
-    { date: data.date, type: tokenLabels.value.cacheRead, value: data.cache_read_tokens, source: data }
+    { date: data.date, category: tokenLabels.value.input, value: data.input_tokens, source: data },
+    { date: data.date, category: tokenLabels.value.output, value: data.output_tokens, source: data },
+    { date: data.date, category: tokenLabels.value.cacheCreation, value: data.cache_creation_tokens, source: data },
+    { date: data.date, category: tokenLabels.value.cacheRead, value: data.cache_read_tokens, source: data }
   ])
-)
-
-const hitRateSeries = computed<HitRateSeriesPoint[]>(() =>
-  props.trendData.map((data) => ({
-    date: data.date,
-    type: tokenLabels.value.cacheHitRate,
-    hitRate: getCacheHitRate(data),
-    source: data
-  }))
 )
 
 const tokenColorMap = computed<Record<string, string>>(() => ({
@@ -116,127 +102,74 @@ const tokenColorMap = computed<Record<string, string>>(() => ({
   [tokenLabels.value.cacheHitRate]: chartColors.value.cacheHitRate
 }))
 
-const buildChartOptions = (): DualAxesOptions => ({
-  data: [tokenSeries.value, hitRateSeries.value],
-  xField: 'date',
-  yField: ['value', 'hitRate'],
+const buildChartOptions = (): LineConfig => ({
+  data: tokenSeries.value,
+  xField: (datum: TokenSeriesPoint) => parseDateForChart(datum.date),
+  yField: 'value',
+  sizeField: 'value',
+  shapeField: 'trail',
+  colorField: 'category',
   autoFit: true,
-  padding: [12, 48, 52, 64],
-  appendPadding: [0, 6, 0, 0],
-  animation: false,
+  padding: [12, 28, 46, 56],
   legend: {
-    position: 'top',
-    itemName: {
-      style: {
-        fill: chartColors.value.text,
-        fontSize: 12
-      }
+    size: false,
+    color: {
+      position: 'top',
+      itemLabelFill: chartColors.value.text,
+      itemLabelFontSize: 12,
+      itemMarker: 'line'
     }
   },
-  xAxis: {
-    label: {
-      autoRotate: true,
-      autoHide: true,
-      style: {
-        fill: chartColors.value.text,
-        fontSize: 11
-      }
-    },
-    line: {
-      style: {
-        stroke: chartColors.value.border
-      }
-    },
-    tickLine: {
-      style: {
-        stroke: chartColors.value.border
-      }
+  scale: {
+    y: { nice: true },
+    size: { range: [1.25, 10] },
+    color: {
+      range: [
+        chartColors.value.input,
+        chartColors.value.output,
+        chartColors.value.cacheCreation,
+        chartColors.value.cacheRead
+      ]
     }
   },
-  yAxis: [
-    {
-      label: {
-        formatter: (value: string) => formatTokens(Number(value)),
-        style: {
-          fill: chartColors.value.text,
-          fontSize: 11
-        }
-      },
-      grid: {
-        line: {
-          style: {
-            stroke: chartColors.value.grid
-          }
-        }
-      }
+  axis: {
+    x: {
+      labelAutoHide: true,
+      labelAutoRotate: true,
+      labelFill: chartColors.value.text,
+      labelFontSize: 11,
+      lineStroke: chartColors.value.border,
+      tickStroke: chartColors.value.border,
+      labelFormatter: (value: unknown) => formatAxisDate(value)
     },
-    {
-      min: 0,
-      max: 100,
-      label: {
-        formatter: (value: string) => `${value}%`,
-        style: {
-          fill: chartColors.value.cacheHitRate,
-          fontSize: 11
-        }
-      },
-      grid: null
+    y: {
+      labelFill: chartColors.value.text,
+      labelFontSize: 11,
+      labelFormatter: (value: unknown) => formatTokens(Number(value)),
+      gridStroke: chartColors.value.grid
     }
-  ],
-  geometryOptions: [
-    {
-      geometry: 'line',
-      seriesField: 'type',
-      smooth: true,
-      color: (datum: Record<string, unknown>) => tokenColorMap.value[String(datum.type)],
-      lineStyle: {
-        lineWidth: 2
-      },
-      point: {
-        size: 2,
-        style: (datum: Record<string, unknown>) => ({
-          fill: '#ffffff',
-          stroke: tokenColorMap.value[String(datum.type)],
-          lineWidth: 1.5
-        })
-      }
-    },
-    {
-      geometry: 'line',
-      smooth: true,
-      color: chartColors.value.cacheHitRate,
-      lineStyle: {
-        lineWidth: 2,
-        lineDash: [6, 6]
-      },
-      point: {
-        size: 2,
-        style: {
-          fill: '#ffffff',
-          stroke: chartColors.value.cacheHitRate,
-          lineWidth: 1.5
-        }
-      }
-    }
-  ],
+  },
   tooltip: {
-    shared: true,
-    showCrosshairs: true,
-    showMarkers: true,
-    domStyles: {
-      'g2-tooltip': {
-        backgroundColor: chartColors.value.background,
-        border: `1px solid ${chartColors.value.border}`,
-        borderRadius: '8px',
-        boxShadow: '0 10px 24px rgba(15, 23, 42, 0.16)',
-        color: chartColors.value.body,
-        padding: '12px'
-      }
-    },
-    customContent: (title: string) => buildTooltipHtml(title)
+    title: (datum: TokenSeriesPoint) => datum.date,
+    items: [
+      (datum: TokenSeriesPoint) => ({
+        name: datum.category,
+        color: tokenColorMap.value[datum.category],
+        value: formatTokens(datum.value)
+      })
+    ]
   },
-  theme: {
-    defaultColor: chartColors.value.input
+  interaction: {
+    tooltip: {
+      shared: true,
+      crosshairs: true,
+      marker: true,
+      render: (_event: unknown, options: { title: string }) => buildTooltipHtml(String(options.title ?? ''))
+    }
+  },
+  style: {
+    lineCap: 'round',
+    lineJoin: 'round'
   }
 })
 
@@ -246,20 +179,17 @@ const syncPlot = () => {
     return
   }
 
-  const options = buildChartOptions()
-  if (plot.value) {
-    plot.value.update(options)
-    return
+  if (!reactRoot.value) {
+    reactRoot.value = createRoot(chartContainer.value)
   }
 
-  plot.value = new DualAxes(chartContainer.value, options)
-  plot.value.render()
+  reactRoot.value.render(createElement(Line, buildChartOptions()))
 }
 
 const destroyPlot = () => {
-  if (!plot.value) return
-  plot.value.destroy()
-  plot.value = null
+  if (!reactRoot.value) return
+  reactRoot.value.unmount()
+  reactRoot.value = null
 }
 
 onMounted(() => {
@@ -279,15 +209,35 @@ watch(
   { deep: true }
 )
 
+const parseDateForChart = (value: string): Date | string => {
+  const normalizedValue = value.includes(' ') ? value.replace(' ', 'T') : value
+  const date = new Date(normalizedValue)
+  return Number.isNaN(date.getTime()) ? value : date
+}
+
+const formatAxisDate = (value: unknown): string => {
+  const date = value instanceof Date ? value : new Date(String(value))
+  if (Number.isNaN(date.getTime())) {
+    return String(value)
+  }
+
+  const hasHourlyData = props.trendData.some((point) => point.date.includes(':'))
+  return new Intl.DateTimeFormat('zh-CN', hasHourlyData
+    ? { month: '2-digit', day: '2-digit', hour: '2-digit' }
+    : { month: '2-digit', day: '2-digit' }
+  ).format(date)
+}
+
 const getCacheHitRate = (data: TrendDataPoint): number => {
   const totalPromptTokens = data.input_tokens + data.cache_read_tokens + data.cache_creation_tokens
   return totalPromptTokens > 0 ? (data.cache_read_tokens / totalPromptTokens) * 100 : 0
 }
 
 const totalUsageTokens = (data: TrendDataPoint): number =>
-  data.input_tokens + data.output_tokens + data.cache_creation_tokens + data.cache_read_tokens
+  data.total_tokens ?? data.input_tokens + data.output_tokens + data.cache_creation_tokens + data.cache_read_tokens
 
 const formatTokens = (value: number): string => {
+  if (!Number.isFinite(value)) return '0'
   if (value >= 1_000_000_000) {
     return `${(value / 1_000_000_000).toFixed(2)}B`
   } else if (value >= 1_000_000) {
@@ -309,10 +259,26 @@ const formatCost = (value: number): string => {
   return value.toFixed(4)
 }
 
+const findTrendPoint = (title: string): TrendDataPoint | undefined => {
+  const exactMatch = props.trendData.find((point) => point.date === title)
+  if (exactMatch) return exactMatch
+
+  const titleTime = dateToTime(title)
+  if (titleTime === null) return undefined
+  return props.trendData.find((point) => dateToTime(point.date) === titleTime)
+}
+
+const dateToTime = (value: string): number | null => {
+  const parsed = parseDateForChart(value)
+  if (!(parsed instanceof Date)) return null
+  const time = parsed.getTime()
+  return Number.isNaN(time) ? null : time
+}
+
 const buildTooltipHtml = (title: string): string => {
-  const data = props.trendData.find((point) => point.date === title)
+  const data = findTrendPoint(title)
   if (!data) {
-    return `<div class="space-y-1 text-xs">${escapeHtml(title)}</div>`
+    return `<div style="color: ${chartColors.value.body};">${escapeHtml(title)}</div>`
   }
 
   const rows = [
@@ -329,13 +295,13 @@ const buildTooltipHtml = (title: string): string => {
   ]
 
   return `
-    <div style="min-width: 180px; color: ${chartColors.value.body};">
-      <div style="margin-bottom: 8px; font-weight: 700; color: ${chartColors.value.title};">${escapeHtml(title)}</div>
+    <div style="min-width: 190px; color: ${chartColors.value.body}; background: ${chartColors.value.background}; border: 1px solid ${chartColors.value.border}; border-radius: 8px; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16); padding: 12px;">
+      <div style="margin-bottom: 8px; font-weight: 700; color: ${chartColors.value.title};">${escapeHtml(data.date)}</div>
       <div style="display: grid; gap: 5px;">
         ${rows.map((row) => `
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
             <span style="display: inline-flex; align-items: center; gap: 6px;">
-              <span style="width: 9px; height: 9px; border: 2px solid ${row.color}; display: inline-block;"></span>
+              <span style="width: 9px; height: 9px; border-radius: 999px; background: ${row.color}; display: inline-block;"></span>
               ${escapeHtml(row.label)}
             </span>
             <span style="font-weight: 600; color: ${chartColors.value.title};">${escapeHtml(row.value)}</span>

@@ -87,7 +87,15 @@ export default defineConfig(({ mode }) => {
             }
 
             // 图表库
-            if (id.includes('/chart.js/') || id.includes('/vue-chartjs/') || id.includes('/@antv/')) {
+            if (
+              id.includes('/chart.js/') ||
+              id.includes('/vue-chartjs/') ||
+              id.includes('/@antv/') ||
+              id.includes('/@ant-design/plots/') ||
+              id.includes('/@ant-design/charts-util/') ||
+              id.includes('/react/') ||
+              id.includes('/react-dom/')
+            ) {
               return 'vendor-chart'
             }
 
