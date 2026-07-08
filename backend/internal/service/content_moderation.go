@@ -480,6 +480,21 @@ func (in ContentModerationInput) ExcerptText() string {
 	return in.Text
 }
 
+func (in ContentModerationInput) KeywordHitExcerpt(keyword string) string {
+	if strings.TrimSpace(keyword) == "" {
+		return in.ExcerptText()
+	}
+	for _, source := range in.Sources {
+		if excerpt, ok := contentModerationKeywordHitExcerptFromText(source.Text, keyword); ok {
+			return excerpt
+		}
+	}
+	if excerpt, ok := contentModerationKeywordHitExcerptFromText(in.Text, keyword); ok {
+		return excerpt
+	}
+	return in.ExcerptText()
+}
+
 func (in ContentModerationInput) Hash() string {
 	h := sha256.New()
 	_, _ = h.Write([]byte("text:"))
@@ -1510,7 +1525,7 @@ func (s *ContentModerationService) keywordDecision(ctx context.Context, input Co
 		"risk_context_reason", keywordDecision.context.Reason,
 		"blocked", keywordDecision.blocked)
 	logMetadata := contentModerationHitLogMetadata(cfg, content, contentModerationMatchedSource(input.Protocol, keywordMatch.Keyword, content))
-	log := s.buildLog(input, cfg, keywordDecision.action, keywordDecision.flagged, contentModerationKeywordCategory, 1.0, scores, content.ExcerptText(), nil, nil, logMetadata)
+	log := s.buildLog(input, cfg, keywordDecision.action, keywordDecision.flagged, contentModerationKeywordCategory, 1.0, scores, content.KeywordHitExcerpt(keywordMatch.Keyword), nil, nil, logMetadata)
 	applyContentModerationKeywordMetadata(log, keywordDecision)
 	s.enqueueRecord(ctx, input, cfg, log, hashText, false, keywordDecision.blocked)
 	return contentModerationDecisionFromKeyword(cfg, keywordDecision, scores)
@@ -3014,6 +3029,184 @@ func contentModerationInputExcerptForLog(cfg *ContentModerationConfig, text stri
 		return ""
 	}
 	return trimRunes(redactContentModerationSecrets(text), maxModerationExcerptRunes)
+}
+
+func contentModerationKeywordHitExcerptFromText(text string, keyword string) (string, bool) {
+	text = strings.TrimSpace(text)
+	keyword = strings.TrimSpace(keyword)
+	if text == "" || keyword == "" {
+		return "", false
+	}
+	if start, end, ok := findDisplayKeywordSpanWithBoundary(text, keyword); ok {
+		return contentModerationExcerptAroundByteSpan(text, start, end, maxModerationExcerptRunes), true
+	}
+	normalizedText, start, end, ok := findContentModerationKeywordComparableSpan(text, keyword)
+	if !ok {
+		return "", false
+	}
+	return contentModerationExcerptAroundByteSpan(normalizedText, start, end, maxModerationExcerptRunes), true
+}
+
+func findDisplayKeywordSpanWithBoundary(text string, keyword string) (int, int, bool) {
+	if start, end, ok := findExactDisplayKeywordSpanWithBoundary(text, keyword); ok {
+		return start, end, true
+	}
+	if !isASCIIString(keyword) {
+		return 0, 0, false
+	}
+	keywordLen := len(keyword)
+	if keywordLen == 0 || len(text) < keywordLen {
+		return 0, 0, false
+	}
+	for start := 0; start <= len(text)-keywordLen; start++ {
+		end := start + keywordLen
+		if asciiEqualFold(text[start:end], keyword) &&
+			keywordComparableStartBoundaryAt(text, start) &&
+			keywordComparableEndBoundaryAt(text, end) {
+			return start, end, true
+		}
+	}
+	return 0, 0, false
+}
+
+func findExactDisplayKeywordSpanWithBoundary(text string, keyword string) (int, int, bool) {
+	start := 0
+	for {
+		idx := strings.Index(text[start:], keyword)
+		if idx < 0 {
+			return 0, 0, false
+		}
+		absoluteIdx := start + idx
+		endIdx := absoluteIdx + len(keyword)
+		if keywordComparableStartBoundaryAt(text, absoluteIdx) && keywordComparableEndBoundaryAt(text, endIdx) {
+			return absoluteIdx, endIdx, true
+		}
+		start = absoluteIdx + 1
+	}
+}
+
+func contentModerationExcerptAroundByteSpan(text string, startByte int, endByte int, maxRunes int) string {
+	if maxRunes <= 0 || text == "" {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= maxRunes {
+		return text
+	}
+	startRune := byteOffsetToRuneIndex(text, startByte)
+	endRune := byteOffsetToRuneIndex(text, endByte)
+	if startRune < 0 {
+		startRune = 0
+	}
+	if startRune > len(runes) {
+		startRune = len(runes)
+	}
+	if endRune <= startRune {
+		endRune = startRune + 1
+	}
+	if endRune > len(runes) {
+		endRune = len(runes)
+	}
+
+	markerRunes := 0
+	if startRune > 0 {
+		markerRunes += 3
+	}
+	if endRune < len(runes) {
+		markerRunes += 3
+	}
+	available := maxRunes - markerRunes
+	if available <= 0 {
+		available = maxRunes
+	}
+	spanRunes := endRune - startRune
+	windowStart := startRune
+	windowEnd := endRune
+	if spanRunes >= available {
+		windowEnd = windowStart + available
+		if windowEnd > len(runes) {
+			windowEnd = len(runes)
+			windowStart = windowEnd - available
+			if windowStart < 0 {
+				windowStart = 0
+			}
+		}
+	} else {
+		before := (available - spanRunes) / 2
+		windowStart = startRune - before
+		if windowStart < 0 {
+			windowStart = 0
+		}
+		windowEnd = windowStart + available
+		if windowEnd < endRune {
+			windowEnd = endRune
+			windowStart = windowEnd - available
+			if windowStart < 0 {
+				windowStart = 0
+			}
+		}
+		if windowEnd > len(runes) {
+			windowEnd = len(runes)
+			windowStart = windowEnd - available
+			if windowStart < 0 {
+				windowStart = 0
+			}
+		}
+	}
+
+	var builder strings.Builder
+	if windowStart > 0 {
+		builder.WriteString("...")
+	}
+	builder.WriteString(string(runes[windowStart:windowEnd]))
+	if windowEnd < len(runes) {
+		builder.WriteString("...")
+	}
+	return builder.String()
+}
+
+func byteOffsetToRuneIndex(text string, offset int) int {
+	if offset <= 0 {
+		return 0
+	}
+	count := 0
+	for idx := range text {
+		if idx >= offset {
+			return count
+		}
+		count++
+	}
+	return count
+}
+
+func isASCIIString(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if value[i] > unicode.MaxASCII {
+			return false
+		}
+	}
+	return true
+}
+
+func asciiEqualFold(a string, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		left := asciiToLower(a[i])
+		right := asciiToLower(b[i])
+		if left != right {
+			return false
+		}
+	}
+	return true
+}
+
+func asciiToLower(ch byte) byte {
+	if ch >= 'A' && ch <= 'Z' {
+		return ch + ('a' - 'A')
+	}
+	return ch
 }
 
 func (s *ContentModerationService) persistContentModerationLog(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog, hashText string, recordHash bool, applySideEffects bool) {
@@ -4582,31 +4775,54 @@ func matchContentModerationKeyword(text string, rules []ContentModerationKeyword
 			continue
 		}
 		compactKeyword := compactKeywordComparable(normalizedKeyword)
-		if containsKeywordComparableWithBoundary(normalizedText, normalizedKeyword) ||
-			(compactKeyword != "" && containsCompactKeywordComparableWithBoundary(normalizedText, compactText, compactKeyword)) {
+		if _, _, hit := findKeywordComparableSpanWithBoundary(normalizedText, normalizedKeyword); hit {
 			return rule, true
+		}
+		if compactKeyword != "" {
+			if _, _, hit := findCompactKeywordComparableSpanWithBoundary(normalizedText, compactText, compactKeyword); hit {
+				return rule, true
+			}
 		}
 	}
 	return ContentModerationKeywordRule{}, false
 }
 
-func containsKeywordComparableWithBoundary(normalizedText, normalizedKeyword string) bool {
+func findContentModerationKeywordComparableSpan(text string, keyword string) (string, int, int, bool) {
+	normalizedText := normalizeKeywordComparable(text)
+	normalizedKeyword := normalizeKeywordComparable(keyword)
+	if normalizedText == "" || normalizedKeyword == "" {
+		return "", 0, 0, false
+	}
+	if start, end, hit := findKeywordComparableSpanWithBoundary(normalizedText, normalizedKeyword); hit {
+		return normalizedText, start, end, true
+	}
+	compactKeyword := compactKeywordComparable(normalizedKeyword)
+	if compactKeyword == "" {
+		return "", 0, 0, false
+	}
+	if start, end, hit := findCompactKeywordComparableSpanWithBoundary(normalizedText, compactKeywordComparable(normalizedText), compactKeyword); hit {
+		return normalizedText, start, end, true
+	}
+	return "", 0, 0, false
+}
+
+func findKeywordComparableSpanWithBoundary(normalizedText, normalizedKeyword string) (int, int, bool) {
 	start := 0
 	for {
 		idx := strings.Index(normalizedText[start:], normalizedKeyword)
 		if idx < 0 {
-			return false
+			return 0, 0, false
 		}
 		absoluteIdx := start + idx
 		endIdx := absoluteIdx + len(normalizedKeyword)
 		if keywordComparableStartBoundaryAt(normalizedText, absoluteIdx) && keywordComparableEndBoundaryAt(normalizedText, endIdx) {
-			return true
+			return absoluteIdx, endIdx, true
 		}
 		start = absoluteIdx + 1
 	}
 }
 
-func containsCompactKeywordComparableWithBoundary(normalizedText, compactText, compactKeyword string) bool {
+func findCompactKeywordComparableSpanWithBoundary(normalizedText, compactText, compactKeyword string) (int, int, bool) {
 	compactToNormalized := make([]int, 0, len(compactText))
 	for idx, r := range normalizedText {
 		if r == ' ' {
@@ -4617,13 +4833,13 @@ func containsCompactKeywordComparableWithBoundary(normalizedText, compactText, c
 		}
 	}
 	if len(compactToNormalized) != len(compactText) {
-		return false
+		return 0, 0, false
 	}
 	start := 0
 	for {
 		idx := strings.Index(compactText[start:], compactKeyword)
 		if idx < 0 {
-			return false
+			return 0, 0, false
 		}
 		compactIdx := start + idx
 		compactEndIdx := compactIdx + len(compactKeyword)
@@ -4632,7 +4848,7 @@ func containsCompactKeywordComparableWithBoundary(normalizedText, compactText, c
 		_, lastSize := utf8.DecodeRuneInString(normalizedText[compactToNormalized[lastCompactIdx]:])
 		normalizedEndIdx := compactToNormalized[lastCompactIdx] + lastSize
 		if keywordComparableStartBoundaryAt(normalizedText, normalizedStartIdx) && keywordComparableEndBoundaryAt(normalizedText, normalizedEndIdx) {
-			return true
+			return normalizedStartIdx, normalizedEndIdx, true
 		}
 		start = compactIdx + 1
 	}

@@ -140,9 +140,32 @@ func collectModelVisibleField(value gjson.Result, source string, parts *[]string
 	if !value.Exists() {
 		return
 	}
+	if shouldSkipKnownAgentInternalModelVisibleField(source, value) {
+		return
+	}
 	before := len(*parts)
 	collectToolResultTextValue(value, parts, images, 0, toolState)
 	appendModerationSources(sources, source, *parts, before)
+}
+
+func shouldSkipKnownAgentInternalModelVisibleField(source string, value gjson.Result) bool {
+	switch source {
+	case "openai_chat.instructions", "responses.instructions", "responses.developer", "responses.system":
+		return isKnownAgentInternalModelPromptValue(value)
+	default:
+		return false
+	}
+}
+
+func isKnownAgentInternalModelPromptValue(value gjson.Result) bool {
+	var parts []string
+	var images []string
+	toolState := &toolResultTextState{}
+	collectToolResultTextValue(value, &parts, &images, 0, toolState)
+	if len(images) > 0 {
+		return false
+	}
+	return isKnownAgentInternalPromptText(strings.Join(parts, "\n"))
 }
 
 func isOpenAIEmbeddingsTokenInput(body []byte) bool {
@@ -257,8 +280,11 @@ func collectToolCallArgumentsValue(value gjson.Result, parts *[]string, images *
 func collectAnthropicInput(body []byte, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {
 	before := len(*parts)
 	if shouldIncludeModerationRole("system", "", auditScope) {
-		collectAnthropicContentValue(gjson.GetBytes(body, "system"), parts, images, toolState)
-		appendModerationSources(sources, "anthropic.system", *parts, before)
+		system := gjson.GetBytes(body, "system")
+		if !isAnthropicAgentInternalSystemPrompt(system) {
+			collectAnthropicContentValue(system, parts, images, toolState)
+			appendModerationSources(sources, "anthropic.system", *parts, before)
+		}
 	}
 	if shouldIncludeTopLevelModelContext(auditScope) {
 		collectModelVisibleField(gjson.GetBytes(body, "tools"), "anthropic.tools", parts, images, sources, toolState)
@@ -1047,6 +1073,56 @@ func isCodexInternalPromptText(text string) bool {
 	}
 	return strings.EqualFold(normalized, normalizeContentModerationText(codexCompactionSummaryPrefix)) ||
 		strings.EqualFold(normalized, normalizeContentModerationText(codexAmbientSafetyPromptText))
+}
+
+func isAnthropicAgentInternalSystemPrompt(value gjson.Result) bool {
+	if !value.Exists() {
+		return false
+	}
+	var parts []string
+	var images []string
+	toolState := &toolResultTextState{}
+	collectAnthropicContentValue(value, &parts, &images, toolState)
+	if len(images) > 0 {
+		return false
+	}
+	return isKnownAgentInternalPromptText(strings.Join(parts, "\n"))
+}
+
+func isKnownAgentInternalPromptText(text string) bool {
+	if isCodexInternalPromptText(text) {
+		return true
+	}
+	normalized := strings.ToLower(normalizeContentModerationText(text))
+	if normalized == "" {
+		return false
+	}
+	codexMarkers := []string{
+		"you are codex, a coding agent",
+		"you and the user share one workspace",
+	}
+	if containsAllNormalizedMarkers(normalized, codexMarkers) {
+		return true
+	}
+	claudeMarkers := [][]string{
+		{"you are claude code, anthropic's official cli for claude", "claude agent sdk"},
+		{"you are a claude agent", "anthropic's claude agent sdk"},
+	}
+	for _, markers := range claudeMarkers {
+		if containsAllNormalizedMarkers(normalized, markers) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAllNormalizedMarkers(normalized string, markers []string) bool {
+	for _, marker := range markers {
+		if !strings.Contains(normalized, marker) {
+			return false
+		}
+	}
+	return true
 }
 
 func isCodexInternalScaffoldPayload(body []byte) bool {
