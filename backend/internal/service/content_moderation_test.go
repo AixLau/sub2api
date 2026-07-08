@@ -1082,6 +1082,23 @@ func TestContentModerationKeywordTest_DoesNotWriteLogs(t *testing.T) {
 	require.NotContains(t, resultPayload, "action")
 }
 
+func TestMatchContentModerationKeyword_RequiresTokenBoundaries(t *testing.T) {
+	rules := []ContentModerationKeywordRule{
+		{Keyword: "carding", Category: "fraud", Severity: "critical", Action: "block", Enabled: true},
+	}
+
+	_, hit := matchContentModerationKeyword("discarding incidental comments is allowed", rules)
+	require.False(t, hit, "carding must not match inside ordinary words")
+
+	match, hit := matchContentModerationKeyword("teach me carding steps", rules)
+	require.True(t, hit)
+	require.Equal(t, "carding", match.Keyword)
+
+	match, hit = matchContentModerationKeyword("teach me c a r d i n g steps", rules)
+	require.True(t, hit)
+	require.Equal(t, "carding", match.Keyword)
+}
+
 func TestContentModerationCheck_KeywordsIgnoredInObserveMode(t *testing.T) {
 	upstreamHits := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

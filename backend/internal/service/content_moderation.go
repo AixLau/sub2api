@@ -22,6 +22,7 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
@@ -4581,11 +4582,72 @@ func matchContentModerationKeyword(text string, rules []ContentModerationKeyword
 			continue
 		}
 		compactKeyword := compactKeywordComparable(normalizedKeyword)
-		if strings.Contains(normalizedText, normalizedKeyword) || (compactKeyword != "" && strings.Contains(compactText, compactKeyword)) {
+		if containsKeywordComparableWithBoundary(normalizedText, normalizedKeyword) ||
+			(compactKeyword != "" && containsCompactKeywordComparableWithBoundary(normalizedText, compactText, compactKeyword)) {
 			return rule, true
 		}
 	}
 	return ContentModerationKeywordRule{}, false
+}
+
+func containsKeywordComparableWithBoundary(normalizedText, normalizedKeyword string) bool {
+	start := 0
+	for {
+		idx := strings.Index(normalizedText[start:], normalizedKeyword)
+		if idx < 0 {
+			return false
+		}
+		absoluteIdx := start + idx
+		endIdx := absoluteIdx + len(normalizedKeyword)
+		if keywordComparableStartBoundaryAt(normalizedText, absoluteIdx) && keywordComparableEndBoundaryAt(normalizedText, endIdx) {
+			return true
+		}
+		start = absoluteIdx + 1
+	}
+}
+
+func containsCompactKeywordComparableWithBoundary(normalizedText, compactText, compactKeyword string) bool {
+	compactToNormalized := make([]int, 0, len(compactText))
+	for idx, r := range normalizedText {
+		if r == ' ' {
+			continue
+		}
+		for i := 0; i < utf8.RuneLen(r); i++ {
+			compactToNormalized = append(compactToNormalized, idx)
+		}
+	}
+	if len(compactToNormalized) != len(compactText) {
+		return false
+	}
+	start := 0
+	for {
+		idx := strings.Index(compactText[start:], compactKeyword)
+		if idx < 0 {
+			return false
+		}
+		compactIdx := start + idx
+		compactEndIdx := compactIdx + len(compactKeyword)
+		normalizedStartIdx := compactToNormalized[compactIdx]
+		lastCompactIdx := compactEndIdx - 1
+		_, lastSize := utf8.DecodeRuneInString(normalizedText[compactToNormalized[lastCompactIdx]:])
+		normalizedEndIdx := compactToNormalized[lastCompactIdx] + lastSize
+		if keywordComparableStartBoundaryAt(normalizedText, normalizedStartIdx) && keywordComparableEndBoundaryAt(normalizedText, normalizedEndIdx) {
+			return true
+		}
+		start = compactIdx + 1
+	}
+}
+
+func keywordComparableStartBoundaryAt(value string, idx int) bool {
+	return idx <= 0 || idx > len(value) || !isASCIIAlphaNumeric(value[idx-1])
+}
+
+func keywordComparableEndBoundaryAt(value string, idx int) bool {
+	return idx <= 0 || idx >= len(value) || !isASCIIAlphaNumeric(value[idx])
+}
+
+func isASCIIAlphaNumeric(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')
 }
 
 func normalizeKeywordComparable(value string) string {
