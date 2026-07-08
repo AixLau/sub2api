@@ -163,6 +163,27 @@ describe('VariableWidthLineChart', () => {
     })
   })
 
+  it('uses the same y domain for the G2 line scale and custom grid labels when yDomain is automatic', async () => {
+    mountChart({
+      data: [
+        { date: '2026-07-08T00:00:00', value: 7_910_000, category: '缓存读取' },
+        { date: '2026-07-08T15:00:00', value: 25_540_000, category: '缓存读取' },
+        { date: '2026-07-08T23:00:00', value: 31_660_000, category: '缓存读取' },
+      ],
+      xField: (datum: Record<string, unknown>) => new Date(String(datum.date)),
+      yDomain: undefined,
+      yTicks: undefined,
+      xTicks: undefined,
+    })
+    await nextTick()
+
+    const options = chartInstances[0].options.mock.calls[0][0]
+    expect(options.scale.y).toMatchObject({
+      domain: [0, 31_660_000],
+      nice: false,
+    })
+  })
+
   it('renders isolated single-point series without enabling endpoint dots', async () => {
     mountChart({
       data: [

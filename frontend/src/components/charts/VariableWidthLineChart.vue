@@ -593,14 +593,10 @@ const buildViewScale = () => {
       domain: seriesNames.value,
       range: colorRange.value,
     },
-    y: props.yDomain
-      ? {
-          domain: props.yDomain,
-          nice: false,
-        }
-      : {
-          nice: true,
-        },
+    y: {
+      domain: [yExtent.value.min, yExtent.value.max],
+      nice: false,
+    },
   }
 
   if (props.yTicks?.length) {
