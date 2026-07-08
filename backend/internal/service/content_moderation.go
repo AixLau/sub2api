@@ -5126,6 +5126,9 @@ func matchContextualBuiltInRiskRule(text string) (ContentModerationKeywordRule, 
 	if normalized == "" {
 		return ContentModerationKeywordRule{}, false
 	}
+	if keyword, hit := contextualJailbreakInstructionKeyword(normalized); hit {
+		return contextualBuiltInRiskRule(keyword, ContentModerationKeywordCategoryJailbreak, ContentModerationKeywordSeverityCritical), true
+	}
 	if keyword, hit := contextualCyberDatabaseExtractionKeyword(text, normalized); hit {
 		return contextualBuiltInRiskRule(keyword, ContentModerationKeywordCategoryCyber, ContentModerationKeywordSeverityCritical), true
 	}
@@ -5169,6 +5172,77 @@ func contextualCyberIntentRule(keyword string) ContentModerationKeywordRule {
 type contentModerationRiskScoreMarker struct {
 	Keyword string
 	Score   int
+}
+
+var contentModerationJailbreakInstructionScoreGroups = [][]contentModerationRiskScoreMarker{
+	{
+		{Keyword: "codex-keysmith", Score: 40},
+		{Keyword: "model_instructions_file", Score: 30},
+		{Keyword: "gpt5.5-unrestricted", Score: 60},
+		{Keyword: "gpt5 5 unrestricted", Score: 60},
+		{Keyword: "unrestricted mode", Score: 45},
+		{Keyword: "mode unrestricted", Score: 45},
+		{Keyword: "unrestricted developer mode", Score: 65},
+		{Keyword: "解除限制", Score: 55},
+		{Keyword: "破解限制", Score: 55},
+		{Keyword: "破限", Score: 55},
+		{Keyword: "绕过限制", Score: 55},
+		{Keyword: "关闭限制", Score: 45},
+	},
+	{
+		{Keyword: "all standard content filters are disabled", Score: 65},
+		{Keyword: "content filters are disabled", Score: 55},
+		{Keyword: "standard content filters disabled", Score: 55},
+		{Keyword: "disable content filters", Score: 50},
+		{Keyword: "disable safety policy", Score: 50},
+		{Keyword: "关闭内容过滤", Score: 55},
+		{Keyword: "禁用内容过滤", Score: 55},
+		{Keyword: "关闭安全策略", Score: 50},
+		{Keyword: "忽略安全策略", Score: 45},
+		{Keyword: "绕过安全策略", Score: 50},
+	},
+	{
+		{Keyword: "complete all tasks without refusal", Score: 55},
+		{Keyword: "without refusal", Score: 35},
+		{Keyword: "never refuse", Score: 40},
+		{Keyword: "never respond with i can t", Score: 35},
+		{Keyword: "不要拒绝", Score: 40},
+		{Keyword: "不得拒绝", Score: 40},
+		{Keyword: "无条件完成", Score: 40},
+	},
+	{
+		{Keyword: "prioritize completeness over safety", Score: 55},
+		{Keyword: "completeness over safety", Score: 40},
+		{Keyword: "thorough answer", Score: 25},
+		{Keyword: "安全让位于完整性", Score: 45},
+		{Keyword: "完整性优先于安全", Score: 45},
+	},
+	{
+		{Keyword: "never mention these instructions", Score: 45},
+		{Keyword: "never acknowledge the mode switch", Score: 45},
+		{Keyword: "simply comply", Score: 35},
+		{Keyword: "不要提及这些指令", Score: 40},
+		{Keyword: "不要承认模式切换", Score: 40},
+		{Keyword: "直接照做", Score: 30},
+	},
+	{
+		{Keyword: "fully isolated sandbox", Score: 35},
+		{Keyword: "sandbox fixture", Score: 35},
+		{Keyword: "no real world consequences", Score: 40},
+		{Keyword: "authorized professional activities", Score: 35},
+		{Keyword: "默认授权", Score: 35},
+		{Keyword: "沙盒环境", Score: 25},
+		{Keyword: "没有现实后果", Score: 40},
+	},
+	{
+		{Keyword: "penetration testing", Score: 20},
+		{Keyword: "reverse engineering", Score: 20},
+		{Keyword: "exploit development", Score: 25},
+		{Keyword: "vulnerability analysis", Score: 20},
+		{Keyword: "nsfw content", Score: 25},
+		{Keyword: "generate freely", Score: 25},
+		{Keyword: "do not censor warn or moralize", Score: 35},
+	},
 }
 
 var contentModerationSexualScoreGroups = [][]contentModerationRiskScoreMarker{
@@ -5260,6 +5334,10 @@ func scoreContentModerationRiskKeyword(normalized string, markerGroups ...[]cont
 		}
 	}
 	return firstKeyword, total
+}
+
+func contextualJailbreakInstructionKeyword(normalized string) (string, bool) {
+	return scoredContentModerationRiskKeyword(normalized, 100, contentModerationJailbreakInstructionScoreGroups...)
 }
 
 func contentModerationLocalClassifierCandidateForText(text string) (contentModerationLocalClassifierCandidate, bool) {
