@@ -110,7 +110,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 	})
 	if err := billingStage.Err; err != nil {
 		reqLog.Info("gateway.responses.billing_check_failed", zap.Error(err))
-		status, code, message, retryAfter := billingErrorDetails(err)
+		status, code, message, retryAfter := billingErrorDetailsForContext(c, err)
 		if retryAfter > 0 {
 			c.Header("Retry-After", strconv.Itoa(retryAfter))
 		}
@@ -311,6 +311,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 
 // responsesErrorResponse writes an error in OpenAI Responses API format.
 func (h *GatewayHandler) responsesErrorResponse(c *gin.Context, status int, code, message string) {
+	markOpsClientMessageDiagnostic(c, code, message)
 	c.JSON(status, gin.H{
 		"error": gin.H{
 			"code":    code,

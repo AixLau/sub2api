@@ -35,6 +35,7 @@ func TestOpenAIHandleStreamingAwareError_JSONEscaping(t *testing.T) {
 		name    string
 		errType string
 		message string
+		want    string
 	}{
 		{
 			name:    "包含双引号的消息",
@@ -60,6 +61,7 @@ func TestOpenAIHandleStreamingAwareError_JSONEscaping(t *testing.T) {
 			name:    "普通消息",
 			errType: "upstream_error",
 			message: "Upstream service temporarily unavailable",
+			want:    "服务暂时不可用，请稍后重试",
 		},
 	}
 
@@ -95,7 +97,11 @@ func TestOpenAIHandleStreamingAwareError_JSONEscaping(t *testing.T) {
 			errorObj, ok := parsed["error"].(map[string]any)
 			require.True(t, ok, "应包含 error 对象")
 			assert.Equal(t, tt.errType, errorObj["type"])
-			assert.Equal(t, tt.message, errorObj["message"])
+			want := tt.want
+			if want == "" {
+				want = tt.message
+			}
+			assert.Equal(t, want, errorObj["message"])
 		})
 	}
 }
@@ -209,7 +215,7 @@ func TestOpenAIEnsureForwardErrorResponse_WritesFallbackWhenNotWritten(t *testin
 	errorObj, ok := parsed["error"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "upstream_error", errorObj["type"])
-	assert.Equal(t, "上游请求失败", errorObj["message"])
+	assert.Equal(t, "请求处理失败，请稍后重试", errorObj["message"])
 }
 
 // Writer 已写后 ensureForwardErrorResponse 必须仍然把错误信息以 SSE
@@ -253,7 +259,7 @@ func TestOpenAIEnsureForwardErrorResponse_ResponsesRouteAfterWrittenEmitsRespons
 	assert.Contains(t, body, "event: response.failed\n", "appended a Responses terminal event")
 	assert.Contains(t, body, `"type":"response.failed"`)
 	assert.Contains(t, body, `"code":"upstream_error"`)
-	assert.Contains(t, body, "上游请求失败")
+	assert.Contains(t, body, "请求处理失败，请稍后重试")
 }
 
 type openAITestAccountRepo struct {
@@ -375,7 +381,7 @@ func TestOpenAIRecoverResponsesPanic_WritesFallbackResponse(t *testing.T) {
 	errorObj, ok := parsed["error"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "upstream_error", errorObj["type"])
-	assert.Equal(t, "上游请求失败", errorObj["message"])
+	assert.Equal(t, "请求处理失败，请稍后重试", errorObj["message"])
 }
 
 func TestOpenAIRecoverResponsesPanic_NoPanicNoWrite(t *testing.T) {

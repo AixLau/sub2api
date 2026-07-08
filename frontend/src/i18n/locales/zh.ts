@@ -5508,7 +5508,7 @@ export default {
       },
       // Error Details Modal
       errorDetails: {
-        upstreamErrors: '上游错误',
+        upstreamErrors: '诊断原因',
         requestErrors: '请求错误',
         unresolved: '未解决',
         resolved: '已解决',
@@ -5552,7 +5552,7 @@ export default {
           status: '状态码',
           message: '消息',
           detail: '详情',
-          upstreamErrors: '上游错误列表'
+          upstreamErrors: '诊断原因列表'
         },
         upstreamEvent: {
           account: '账号',

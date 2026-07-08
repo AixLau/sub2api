@@ -67,24 +67,28 @@ var exactMessages = map[string]string{
 	"Gemini compatibility service is not configured":          "Gemini 兼容服务未配置",
 	"Too many pending requests, please retry later":           "待处理请求过多，请稍后重试",
 	"Too many concurrent requests, please retry later":        "并发请求过多，请稍后重试",
+	"Service temporarily unavailable, please retry later":     "服务暂时不可用，请稍后重试",
+	"context canceled":                                        "请求已取消",
 
-	"Upstream request failed":                             "上游请求失败",
+	"Upstream request failed":                             "请求处理失败，请稍后重试",
 	"Request failed":                                      "请求失败",
-	"Upstream gateway error":                              "上游网关错误",
+	"Upstream gateway error":                              "服务网关错误",
 	"Upstream returned no supported models":               "上游未返回支持的模型",
 	"Upstream returned an invalid non-streaming response": "上游返回了无效的非流式响应",
 	"Upstream returned an empty completion without usage; no fallback account was available": "上游返回空内容且无用量信息，并且没有可用的备用账号",
 	"OpenAI upstream response failed":                                  "OpenAI 上游响应失败",
 	"OpenAI stream disconnected before completion":                     "OpenAI 流式响应在完成前中断",
 	"Upstream compact response failed":                                 "上游 compact 响应失败",
-	"Upstream authentication failed, please contact administrator":     "上游认证失败，请联系管理员",
-	"Upstream authentication failed":                                   "上游认证失败",
-	"Upstream access forbidden, please contact administrator":          "上游访问被拒绝，请联系管理员",
-	"Upstream access forbidden":                                        "上游访问被拒绝",
-	"Upstream rate limit exceeded, please retry later":                 "上游限流，请稍后重试",
-	"Upstream rate limit exceeded":                                     "上游限流",
-	"Upstream service overloaded":                                      "上游服务过载",
-	"Upstream payment required: insufficient balance or billing issue": "上游需要付款：余额不足或存在计费问题",
+	"Upstream authentication failed, please contact administrator":     "服务认证失败，请联系管理员",
+	"Upstream authentication failed":                                   "服务认证失败",
+	"Upstream access forbidden, please contact administrator":          "服务访问被拒绝，请联系管理员",
+	"Upstream access forbidden":                                        "服务访问被拒绝",
+	"Upstream rate limit exceeded, please retry later":                 "服务请求过于频繁，请稍后重试",
+	"Upstream rate limit exceeded":                                     "服务请求过于频繁",
+	"Upstream service overloaded":                                      "服务繁忙，请稍后重试",
+	"Upstream service overloaded, please retry later":                  "服务繁忙，请稍后重试",
+	"Upstream service temporarily unavailable":                         "服务暂时不可用，请稍后重试",
+	"Upstream payment required: insufficient balance or billing issue": "服务计费失败：余额不足或存在计费问题",
 	"Empty upstream response":                                          "上游响应为空",
 	"Failed to read upstream stream":                                   "读取上游流失败",
 	"Failed to read upstream response":                                 "读取上游响应失败",
@@ -92,27 +96,39 @@ var exactMessages = map[string]string{
 	"Upstream stream ended without a response":                         "上游流结束但没有返回响应",
 	"Upstream stream ended without a terminal response event":          "上游流结束但没有返回终止响应事件",
 
-	"Failed to read request body":                              "读取请求体失败",
-	"Request body is empty":                                    "请求体为空",
-	"Failed to parse request body":                             "解析请求体失败",
-	"Failed to normalize compact request body":                 "规范化 compact 请求体失败",
-	"Failed to build request":                                  "构建请求失败",
-	"Failed to build upstream request":                         "构建上游请求失败",
-	"Failed to get access token":                               "获取 access token 失败",
-	"Failed to read response":                                  "读取响应失败",
-	"model is required":                                        "缺少 model 参数",
-	"Missing model":                                            "缺少模型名称",
-	"Missing action in URL":                                    "URL 中缺少 action",
-	"Invalid request":                                          "请求无效",
-	"Invalid request body":                                     "请求体无效",
-	"invalid stream field type":                                "stream 字段类型无效",
-	"Invalid or expired 2FA session":                           "两步验证会话无效或已过期",
-	"Invalid payment type":                                     "支付类型无效",
-	"Invalid stream value, use true or false":                  "stream 值无效，请使用 true 或 false",
-	"Invalid billing_type":                                     "billing_type 无效",
-	"Invalid billing_mode":                                     "billing_mode 无效",
-	"Invalid model_source, user usage only supports requested": "model_source 无效，用户用量仅支持 requested",
-	"Too many API key IDs (maximum 100 allowed)":               "API Key ID 过多（最多 100 个）",
+	"Failed to read request body":                                  "读取请求体失败",
+	"Request body is empty":                                        "请求体为空",
+	"Failed to parse request body":                                 "解析请求体失败",
+	"Failed to normalize compact request body":                     "规范化 compact 请求体失败",
+	"Failed to build request":                                      "构建请求失败",
+	"Failed to build upstream request":                             "构建上游请求失败",
+	"Failed to get access token":                                   "获取 access token 失败",
+	"Failed to read response":                                      "读取响应失败",
+	"model is required":                                            "缺少 model 参数",
+	"Missing model":                                                "缺少模型名称",
+	"Missing action in URL":                                        "URL 中缺少 action",
+	"Invalid request":                                              "请求无效",
+	"Invalid request body":                                         "请求体无效",
+	"invalid stream field type":                                    "stream 字段类型无效",
+	"Invalid or expired 2FA session":                               "两步验证会话无效或已过期",
+	"Invalid payment type":                                         "支付类型无效",
+	"Invalid stream value, use true or false":                      "stream 值无效，请使用 true 或 false",
+	"Invalid billing_type":                                         "billing_type 无效",
+	"Invalid billing_mode":                                         "billing_mode 无效",
+	"Invalid model_source, user usage only supports requested":     "model_source 无效，用户用量仅支持 requested",
+	"Too many API key IDs (maximum 100 allowed)":                   "API Key ID 过多（最多 100 个）",
+	"Billing error":                                                "计费校验失败，请稍后重试或联系管理员",
+	"Billing service temporarily unavailable. Please retry later.": "计费服务暂时不可用，请稍后重试",
+	"insufficient balance":                                         "当前账户余额不足，请充值后重试",
+	"group requests-per-minute limit exceeded":                     "当前分组请求频率过高，请稍后重试",
+	"user requests-per-minute limit exceeded":                      "当前用户请求频率过高，请稍后重试",
+	"Daily usage quota exhausted for this platform.":               "当前平台今日用量额度已用完，请在额度重置后重试",
+	"Weekly usage quota exhausted for this platform.":              "当前平台本周用量额度已用完，请在额度重置后重试",
+	"Monthly usage quota exhausted for this platform.":             "当前平台本月用量额度已用完，请在额度重置后重试",
+	"subscription is invalid or expired":                           "当前套餐无效或已过期，请续费或联系管理员",
+	"daily usage limit exceeded":                                   "当前套餐今日用量额度已用完，请在额度重置后重试",
+	"weekly usage limit exceeded":                                  "当前套餐本周用量额度已用完，请在额度重置后重试",
+	"monthly usage limit exceeded":                                 "当前套餐本月用量额度已用完，请在额度重置后重试",
 
 	"Invalid id":                                   "ID 无效",
 	"Invalid usage ID":                             "用量记录 ID 无效",
@@ -166,8 +182,8 @@ var exactMessages = map[string]string{
 var prefixMessages = []prefixRule{
 	{prefix: "Invalid request: ", replacement: "请求无效："},
 	{prefix: "No available Gemini accounts: ", replacement: "暂无可用 Gemini 账号："},
-	{prefix: "Upstream request failed after retries: ", replacement: "上游请求多次重试后失败："},
-	{prefix: "Upstream request failed (status ", replacement: "上游请求失败（状态码 "},
+	{prefix: "Upstream request failed after retries: ", replacement: "请求多次重试后失败："},
+	{prefix: "Upstream request failed (status ", replacement: "请求处理失败（状态码 "},
 	{prefix: "Unsupported action: ", replacement: "不支持的 action："},
 	{prefix: "Request failed: ", replacement: "请求失败："},
 	{prefix: "Authentication failed (401): ", replacement: "认证失败 (401)："},
@@ -187,6 +203,24 @@ func localizePattern(msg string) (string, bool) {
 	}
 	if strings.HasPrefix(msg, "body size ") && strings.Contains(msg, " exceeds limit ") {
 		return strings.Replace(strings.Replace(msg, "body size ", "请求体大小 ", 1), " exceeds limit ", " 超过限制 ", 1), true
+	}
+	if strings.HasPrefix(msg, "Concurrency limit exceeded for ") && strings.HasSuffix(msg, ", please retry later") {
+		slot := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(msg, "Concurrency limit exceeded for "), ", please retry later"))
+		switch slot {
+		case "user":
+			slot = "用户"
+		case "account":
+			slot = "账号"
+		case "global":
+			slot = "全局"
+		}
+		if slot == "" {
+			slot = "当前"
+		}
+		if slot == "当前" {
+			return "当前并发请求已达上限，请稍后重试", true
+		}
+		return "当前" + slot + "并发请求已达上限，请稍后重试", true
 	}
 	return "", false
 }

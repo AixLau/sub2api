@@ -3,10 +3,13 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -53,6 +56,33 @@ func TestBillingErrorDetails_UnknownErrorFallsBackTo403(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, status)
 	require.Equal(t, "billing_error", code)
 	require.NotEmpty(t, msg)
+}
+
+func TestBillingErrorDetails_LocalMessagesAreLocalizedForClients(t *testing.T) {
+	_, _, msg, _ := billingErrorDetails(service.ErrInsufficientBalance)
+	require.Equal(t, "当前账户余额不足，请充值后重试", clientmsg.Localize(msg))
+
+	_, _, msg, _ = billingErrorDetails(service.ErrGroupRPMExceeded)
+	require.Equal(t, "当前分组请求频率过高，请稍后重试", clientmsg.Localize(msg))
+}
+
+func TestBillingErrorDetailsForContext_PreservesRawDiagnosticForOps(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	status, code, msg, _ := billingErrorDetailsForContext(c, service.ErrInsufficientBalance)
+	require.Equal(t, http.StatusForbidden, status)
+	require.Equal(t, "billing_error", code)
+	require.Equal(t, "insufficient balance", msg)
+
+	gotMsg, ok := c.Get(service.OpsDiagnosticMessageKey)
+	require.True(t, ok)
+	require.Equal(t, "insufficient balance", gotMsg)
+
+	gotDetail, ok := c.Get(service.OpsDiagnosticDetailKey)
+	require.True(t, ok)
+	require.JSONEq(t, `{"code":"INSUFFICIENT_BALANCE","message":"insufficient balance","source":"gateway_billing"}`, gotDetail.(string))
 }
 
 func TestExtractQuotaResetSeconds_T19_HappyPath(t *testing.T) {

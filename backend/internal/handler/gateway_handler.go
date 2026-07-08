@@ -228,7 +228,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	})
 	if err := billingStage.Err; err != nil {
 		reqLog.Info("gateway.billing_eligibility_check_failed", zap.Error(err))
-		status, code, message, retryAfter := billingErrorDetails(err)
+		status, code, message, retryAfter := billingErrorDetailsForContext(c, err)
 		if retryAfter > 0 {
 			c.Header("Retry-After", strconv.Itoa(retryAfter))
 		}
@@ -970,7 +970,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 							Group:          fallbackGroup,
 						})
 						if err := billingStage.Err; err != nil {
-							status, code, message, retryAfter := billingErrorDetails(err)
+							status, code, message, retryAfter := billingErrorDetailsForContext(c, err)
 							if retryAfter > 0 {
 								c.Header("Retry-After", strconv.Itoa(retryAfter))
 							}
@@ -1724,6 +1724,7 @@ func (h *GatewayHandler) mapUpstreamError(statusCode int) (int, string, string) 
 
 // handleStreamingAwareError handles errors that may occur after streaming has started
 func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
+	markOpsClientMessageDiagnostic(c, errType, message)
 	if streamStarted {
 		// /v1/responses 的严格 SDK（Codex CLI）要求终止事件必须属于
 		// response.completed/failed/incomplete/cancelled 集合。
@@ -1839,6 +1840,7 @@ func (h *GatewayHandler) checkClaudeCodeVersion(c *gin.Context) bool {
 
 // errorResponse 返回Claude API格式的错误响应
 func (h *GatewayHandler) errorResponse(c *gin.Context, status int, errType, message string) {
+	markOpsClientMessageDiagnostic(c, errType, message)
 	c.JSON(status, gin.H{
 		"type": "error",
 		"error": gin.H{
@@ -1908,7 +1910,7 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 		Subscription:     subscription,
 	})
 	if err := billingStage.Err; err != nil {
-		status, code, message, retryAfter := billingErrorDetails(err)
+		status, code, message, retryAfter := billingErrorDetailsForContext(c, err)
 		if retryAfter > 0 {
 			c.Header("Retry-After", strconv.Itoa(retryAfter))
 		}
@@ -2247,6 +2249,51 @@ func billingErrorDetails(err error) (status int, code, message string, retryAfte
 		msg = "Billing error"
 	}
 	return http.StatusForbidden, "billing_error", msg, 0
+}
+
+func billingErrorDetailsForContext(c *gin.Context, err error) (status int, code, message string, retryAfter int) {
+	status, code, message, retryAfter = billingErrorDetails(err)
+	markOpsBillingDiagnostic(c, err)
+	return status, code, message, retryAfter
+}
+
+func markOpsBillingDiagnostic(c *gin.Context, err error) {
+	if c == nil || err == nil {
+		return
+	}
+	reason := strings.TrimSpace(pkgerrors.Reason(err))
+	msg := strings.TrimSpace(pkgerrors.Message(err))
+	if reason == "" && msg == "" {
+		return
+	}
+	detail := map[string]string{
+		"source": "gateway_billing",
+	}
+	if reason != "" {
+		detail["code"] = reason
+	}
+	if msg != "" {
+		detail["message"] = msg
+	}
+	raw, _ := json.Marshal(detail)
+	service.SetOpsDiagnostic(c, msg, string(raw))
+}
+
+func markOpsClientMessageDiagnostic(c *gin.Context, errType, message string) {
+	if c == nil {
+		return
+	}
+	msg := strings.TrimSpace(message)
+	if msg == "" || clientmsg.Localize(msg) == msg {
+		return
+	}
+	detail := map[string]string{
+		"source":  "gateway_response",
+		"type":    strings.TrimSpace(errType),
+		"message": msg,
+	}
+	raw, _ := json.Marshal(detail)
+	service.SetOpsDiagnostic(c, msg, string(raw))
 }
 
 func (h *GatewayHandler) metadataBridgeEnabled() bool {

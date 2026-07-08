@@ -15,6 +15,8 @@ const (
 	OpsUpstreamErrorMessageKey = "ops_upstream_error_message"
 	OpsUpstreamErrorDetailKey  = "ops_upstream_error_detail"
 	OpsUpstreamErrorsKey       = "ops_upstream_errors"
+	OpsDiagnosticMessageKey    = "ops_diagnostic_message"
+	OpsDiagnosticDetailKey     = "ops_diagnostic_detail"
 
 	// Optional stage latencies (milliseconds) for troubleshooting and alerting.
 	OpsAuthLatencyMsKey      = "ops_auth_latency_ms"
@@ -92,6 +94,22 @@ func HasOpsClientBusinessLimited(c *gin.Context) bool {
 // original upstream status code before mapping it to a client-facing code.
 func SetOpsUpstreamError(c *gin.Context, upstreamStatusCode int, upstreamMessage, upstreamDetail string) {
 	setOpsUpstreamError(c, upstreamStatusCode, upstreamMessage, upstreamDetail)
+}
+
+func SetOpsDiagnostic(c *gin.Context, message, detail string) {
+	if c == nil {
+		return
+	}
+	if msg := strings.TrimSpace(message); msg != "" {
+		if _, exists := c.Get(OpsDiagnosticMessageKey); !exists {
+			c.Set(OpsDiagnosticMessageKey, msg)
+		}
+	}
+	if detail := strings.TrimSpace(detail); detail != "" {
+		if _, exists := c.Get(OpsDiagnosticDetailKey); !exists {
+			c.Set(OpsDiagnosticDetailKey, detail)
+		}
+	}
 }
 
 func setOpsUpstreamError(c *gin.Context, upstreamStatusCode int, upstreamMessage, upstreamDetail string) {

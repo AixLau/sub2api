@@ -39,9 +39,39 @@ func TestLocalize(t *testing.T) {
 			want: "并发请求过多，请稍后重试",
 		},
 		{
+			name: "local billing balance",
+			in:   "insufficient balance",
+			want: "当前账户余额不足，请充值后重试",
+		},
+		{
+			name: "local billing unavailable",
+			in:   "Billing service temporarily unavailable. Please retry later.",
+			want: "计费服务暂时不可用，请稍后重试",
+		},
+		{
+			name: "local platform daily quota",
+			in:   "Daily usage quota exhausted for this platform.",
+			want: "当前平台今日用量额度已用完，请在额度重置后重试",
+		},
+		{
+			name: "local group rpm",
+			in:   "group requests-per-minute limit exceeded",
+			want: "当前分组请求频率过高，请稍后重试",
+		},
+		{
+			name: "local concurrency pattern",
+			in:   "Concurrency limit exceeded for user, please retry later",
+			want: "当前用户并发请求已达上限，请稍后重试",
+		},
+		{
 			name: "upstream status prefix",
 			in:   "Upstream request failed (status 502)",
-			want: "上游请求失败（状态码 502)",
+			want: "请求处理失败（状态码 502)",
+		},
+		{
+			name: "upstream overloaded without topology",
+			in:   "Upstream service overloaded, please retry later",
+			want: "服务繁忙，请稍后重试",
 		},
 		{
 			name: "trim match preserves localized",

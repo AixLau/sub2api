@@ -1026,7 +1026,7 @@ func (s OpenAIHTTPBillingStage) RunBilling(c *gin.Context) ExecutableStageResult
 			component = "openai.billing_eligibility_check_failed"
 		}
 		reqLog.Info(component, zap.Error(err))
-		status, code, message, retryAfter := billingErrorDetails(err)
+		status, code, message, retryAfter := billingErrorDetailsForContext(c, err)
 		if retryAfter > 0 {
 			c.Header("Retry-After", strconv.Itoa(retryAfter))
 		}

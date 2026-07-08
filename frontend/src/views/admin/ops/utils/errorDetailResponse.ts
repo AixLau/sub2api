@@ -4,7 +4,10 @@ const GENERIC_UPSTREAM_MESSAGES = new Set([
   'upstream request failed',
   'upstream request failed after retries',
   'upstream gateway error',
-  'upstream service temporarily unavailable'
+  'upstream service temporarily unavailable',
+  '请求处理失败，请稍后重试',
+  '服务网关错误',
+  '服务暂时不可用，请稍后重试'
 ])
 
 type ParsedGatewayError = {

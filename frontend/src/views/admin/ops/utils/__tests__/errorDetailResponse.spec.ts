@@ -44,6 +44,21 @@ describe('errorDetailResponse', () => {
     expect(resolvePrimaryResponseBody(detail, 'request')).toBe('{"provider_message":"real upstream detail"}')
   })
 
+  it('prefers upstream payload when localized request body is generic gateway wrapper', () => {
+    const detail = makeDetail({
+      error_body: JSON.stringify({
+        type: 'error',
+        error: {
+          type: 'upstream_error',
+          message: '请求处理失败，请稍后重试'
+        }
+      }),
+      upstream_error_detail: '{"provider_message":"real upstream detail"}'
+    })
+
+    expect(resolvePrimaryResponseBody(detail, 'request')).toBe('{"provider_message":"real upstream detail"}')
+  })
+
   it('keeps error_body for request modal when body is not generic wrapper', () => {
     const detail = makeDetail({
       error_body: JSON.stringify({

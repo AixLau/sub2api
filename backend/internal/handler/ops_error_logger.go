@@ -955,6 +955,24 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 					}
 				}
 			}
+			if entry.UpstreamErrorMessage == nil {
+				if v, ok := c.Get(service.OpsDiagnosticMessageKey); ok {
+					if s, ok := v.(string); ok {
+						if msg := strings.TrimSpace(s); msg != "" {
+							entry.UpstreamErrorMessage = &msg
+						}
+					}
+				}
+			}
+			if entry.UpstreamErrorDetail == nil {
+				if v, ok := c.Get(service.OpsDiagnosticDetailKey); ok {
+					if s, ok := v.(string); ok {
+						if detail := strings.TrimSpace(s); detail != "" {
+							entry.UpstreamErrorDetail = &detail
+						}
+					}
+				}
+			}
 		}
 
 		if apiKey != nil {

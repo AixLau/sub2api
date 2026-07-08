@@ -5350,7 +5350,7 @@ export default {
       },
       // Error Details Modal
       errorDetails: {
-        upstreamErrors: 'Upstream Errors',
+        upstreamErrors: 'Diagnostics',
         requestErrors: 'Request Errors',
         unresolved: 'Unresolved',
         resolved: 'Resolved',
@@ -5394,7 +5394,7 @@ export default {
           status: 'Status',
           message: 'Message',
           detail: 'Detail',
-          upstreamErrors: 'Upstream Errors'
+          upstreamErrors: 'Diagnostics'
         },
         upstreamEvent: {
           account: 'Account',
