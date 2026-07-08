@@ -877,6 +877,56 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()
 			}
+			recordUsageResult := func(result *service.ForwardResult) {
+				if result == nil {
+					return
+				}
+				// 捕获请求信息（用于异步记录，避免在 goroutine 中访问 gin.Context）
+				userAgent := c.GetHeader("User-Agent")
+				clientIP := ip.GetClientIP(c)
+				// Forward 内部可能继续改写 body，usage 去重指纹必须使用最终上游接受的当前 body。
+				requestPayloadHash := service.HashUsageRequestPayload(attemptParsedReq.Body.Bytes())
+				inboundEndpoint := GetInboundEndpoint(c)
+				upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+
+				if result.ReasoningEffort == nil {
+					result.ReasoningEffort = service.NormalizeClaudeOutputEffort(attemptParsedReq.OutputEffort)
+				}
+				// 同上（重试路径中的对称填充）。详见非重试路径同名注释。
+				if result.ReasoningEffort == nil && attemptParsedReq.ThinkingEnabled {
+					protocolModel := result.UpstreamModel
+					if protocolModel == "" {
+						protocolModel = result.Model
+					}
+					result.ReasoningEffort = service.DefaultEffortForThinkingEnabled(protocolModel)
+				}
+
+				// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
+				// ForceCacheBilling 提前拍成标量，避免 worker 闭包保活 failover 状态里的响应体。
+				forceCacheBilling := fs.ForceCacheBilling
+				quotaPlatform := service.QuotaPlatform(c.Request.Context(), currentAPIKey)
+				_ = h.runGatewayUsageStage(c, GatewayUsageStage{
+					Handler:            h,
+					RequestContext:     c.Request.Context(),
+					Result:             result,
+					QuotaPlatform:      quotaPlatform,
+					APIKey:             currentAPIKey,
+					Account:            account,
+					Subscription:       currentSubscription,
+					InboundEndpoint:    inboundEndpoint,
+					UpstreamEndpoint:   upstreamEndpoint,
+					UserAgent:          userAgent,
+					ClientIP:           clientIP,
+					RequestPayloadHash: requestPayloadHash,
+					ForceCacheBilling:  forceCacheBilling,
+					APIKeyService:      h.apiKeyService,
+					ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+					LogComponent:       "handler.gateway.messages",
+					LogMessage:         "gateway.record_usage_failed",
+					LogUserID:          subject.UserID,
+					LogModel:           reqModel,
+				})
+			}
 			if err != nil {
 				// Beta policy block: return 400 immediately, no failover
 				var betaBlockedErr *service.BetaBlockedError
@@ -957,6 +1007,25 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						return
 					}
 				}
+				billableStreamUsageError := service.IsBillableStreamUsageError(err)
+				if result != nil && (billableStreamUsageError || service.ForwardResultHasBillableUsage(result)) {
+					recordUsageResult(result)
+					usageRecordedEvent := "gateway.forward_usage_recorded_after_error"
+					if billableStreamUsageError {
+						usageRecordedEvent = "gateway.billable_stream_usage_recorded_after_error"
+					}
+					reqLog.Warn(usageRecordedEvent,
+						zap.Int64("account_id", account.ID),
+						zap.String("account_name", account.Name),
+						zap.String("account_platform", account.Platform),
+						zap.String("model", reqModel),
+						zap.Bool("billable_stream_usage_error", billableStreamUsageError),
+						zap.Int("input_tokens", result.Usage.InputTokens),
+						zap.Int("output_tokens", result.Usage.OutputTokens),
+						zap.Int("cache_creation_tokens", result.Usage.CacheCreationInputTokens),
+						zap.Int("cache_read_tokens", result.Usage.CacheReadInputTokens),
+					)
+				}
 				upstreamErrorAlreadyCommunicated := gatewayForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {
@@ -1004,51 +1073,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 			}
 
-			// 捕获请求信息（用于异步记录，避免在 goroutine 中访问 gin.Context）
-			userAgent := c.GetHeader("User-Agent")
-			clientIP := ip.GetClientIP(c)
-			// Forward 内部可能继续改写 body，usage 去重指纹必须使用最终上游接受的当前 body。
-			requestPayloadHash := service.HashUsageRequestPayload(attemptParsedReq.Body.Bytes())
-			inboundEndpoint := GetInboundEndpoint(c)
-			upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
-
-			if result.ReasoningEffort == nil {
-				result.ReasoningEffort = service.NormalizeClaudeOutputEffort(attemptParsedReq.OutputEffort)
-			}
-			// 同上（重试路径中的对称填充）。详见非重试路径同名注释。
-			if result.ReasoningEffort == nil && attemptParsedReq.ThinkingEnabled {
-				protocolModel := result.UpstreamModel
-				if protocolModel == "" {
-					protocolModel = result.Model
-				}
-				result.ReasoningEffort = service.DefaultEffortForThinkingEnabled(protocolModel)
-			}
-
-			// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
-			// ForceCacheBilling 提前拍成标量，避免 worker 闭包保活 failover 状态里的响应体。
-			forceCacheBilling := fs.ForceCacheBilling
-			quotaPlatform := service.QuotaPlatform(c.Request.Context(), currentAPIKey)
-			_ = h.runGatewayUsageStage(c, GatewayUsageStage{
-				Handler:            h,
-				RequestContext:     c.Request.Context(),
-				Result:             result,
-				QuotaPlatform:      quotaPlatform,
-				APIKey:             currentAPIKey,
-				Account:            account,
-				Subscription:       currentSubscription,
-				InboundEndpoint:    inboundEndpoint,
-				UpstreamEndpoint:   upstreamEndpoint,
-				UserAgent:          userAgent,
-				ClientIP:           clientIP,
-				RequestPayloadHash: requestPayloadHash,
-				ForceCacheBilling:  forceCacheBilling,
-				APIKeyService:      h.apiKeyService,
-				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
-				LogComponent:       "handler.gateway.messages",
-				LogMessage:         "gateway.record_usage_failed",
-				LogUserID:          subject.UserID,
-				LogModel:           reqModel,
-			})
+			recordUsageResult(result)
 			return
 		}
 		if !retryWithFallback {

@@ -384,7 +384,7 @@ func TestGatewayServiceRecordUsage_UsesFallbackRequestIDForUsageLog(t *testing.T
 	require.Equal(t, "local:gateway-local-fallback", usageRepo.lastLog.RequestID)
 }
 
-func TestGatewayServiceRecordUsage_PrefersClientRequestIDOverUpstreamRequestID(t *testing.T) {
+func TestGatewayServiceRecordUsage_PrefersUpstreamRequestIDOverClientRequestID(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
 	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
@@ -408,9 +408,33 @@ func TestGatewayServiceRecordUsage_PrefersClientRequestIDOverUpstreamRequestID(t
 
 	require.NoError(t, err)
 	require.NotNil(t, billingRepo.lastCmd)
-	require.Equal(t, "client:client-stable-123", billingRepo.lastCmd.RequestID)
+	require.Equal(t, "upstream-volatile-456", billingRepo.lastCmd.RequestID)
 	require.NotNil(t, usageRepo.lastLog)
-	require.Equal(t, "client:client-stable-123", usageRepo.lastLog.RequestID)
+	require.Equal(t, "upstream-volatile-456", usageRepo.lastLog.RequestID)
+}
+
+func TestForwardResultHasBillableUsage(t *testing.T) {
+	require.False(t, ForwardResultHasBillableUsage(nil))
+	require.False(t, ForwardResultHasBillableUsage(&ForwardResult{}))
+	require.True(t, ForwardResultHasBillableUsage(&ForwardResult{Usage: ClaudeUsage{OutputTokens: 1}}))
+	require.True(t, ForwardResultHasBillableUsage(&ForwardResult{Usage: ClaudeUsage{CacheReadInputTokens: 1}}))
+	require.True(t, ForwardResultHasBillableUsage(&ForwardResult{Usage: ClaudeUsage{CacheCreation1hTokens: 1}}))
+	require.True(t, ForwardResultHasBillableUsage(&ForwardResult{Usage: ClaudeUsage{ImageOutputTokens: 1}}))
+}
+
+func TestStreamingResultHasBillableUsage(t *testing.T) {
+	require.False(t, streamingResultHasBillableUsage(nil))
+	require.False(t, streamingResultHasBillableUsage(&streamingResult{}))
+	require.True(t, streamingResultHasBillableUsage(&streamingResult{usage: &ClaudeUsage{OutputTokens: 1}}))
+}
+
+func TestBillableStreamUsageErrorWrapsCause(t *testing.T) {
+	cause := errors.New("stream read error")
+	err := &BillableStreamUsageError{Err: cause}
+
+	require.True(t, IsBillableStreamUsageError(err))
+	require.ErrorIs(t, err, cause)
+	require.Equal(t, cause.Error(), err.Error())
 }
 
 func TestGatewayServiceRecordUsage_GeneratesRequestIDWhenAllSourcesMissing(t *testing.T) {

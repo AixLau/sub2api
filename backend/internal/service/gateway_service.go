@@ -582,6 +582,68 @@ type ForwardResult struct {
 	ImageSizeBreakdown map[string]int
 }
 
+// BillableStreamUsageError indicates that a stream ended with an error after
+// upstream had already returned billable usage.
+type BillableStreamUsageError struct {
+	Err error
+}
+
+func (e *BillableStreamUsageError) Error() string {
+	if e == nil || e.Err == nil {
+		return "billable stream usage incomplete"
+	}
+	return e.Err.Error()
+}
+
+func (e *BillableStreamUsageError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+func IsBillableStreamUsageError(err error) bool {
+	var target *BillableStreamUsageError
+	return errors.As(err, &target)
+}
+
+func ForwardResultHasBillableUsage(result *ForwardResult) bool {
+	return result != nil && claudeUsageHasBillableTokens(&result.Usage)
+}
+
+func claudeUsageHasBillableTokens(usage *ClaudeUsage) bool {
+	if usage == nil {
+		return false
+	}
+	return usage.InputTokens > 0 ||
+		usage.OutputTokens > 0 ||
+		usage.CacheCreationInputTokens > 0 ||
+		usage.CacheReadInputTokens > 0 ||
+		usage.CacheCreation5mTokens > 0 ||
+		usage.CacheCreation1hTokens > 0 ||
+		usage.ImageOutputTokens > 0
+}
+
+func streamingResultHasBillableUsage(result *streamingResult) bool {
+	return result != nil && claudeUsageHasBillableTokens(result.usage)
+}
+
+func forwardResultFromStreamingResult(requestID string, result *streamingResult, model string, upstreamModel string, startTime time.Time) *ForwardResult {
+	if result == nil || result.usage == nil {
+		return nil
+	}
+	return &ForwardResult{
+		RequestID:        requestID,
+		Usage:            *result.usage,
+		Model:            model,
+		UpstreamModel:    upstreamModel,
+		Stream:           true,
+		Duration:         time.Since(startTime),
+		FirstTokenMs:     result.firstTokenMs,
+		ClientDisconnect: result.clientDisconnect,
+	}
+}
+
 // UpstreamFailoverError indicates an upstream error that should trigger account failover.
 type UpstreamFailoverError struct {
 	StatusCode             int
@@ -5669,11 +5731,29 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 					account.ID, account.Name, resp.Header.Get("x-request-id"),
 					truncateString(sseErr.RawData, 1000),
 				)
+				if streamingResultHasBillableUsage(streamResult) {
+					return forwardResultFromStreamingResult(
+						resp.Header.Get("x-request-id"),
+						streamResult,
+						originalModel,
+						mappedModel,
+						startTime,
+					), &BillableStreamUsageError{Err: err}
+				}
 
 				return nil, &UpstreamFailoverError{
 					StatusCode:   403,
 					ResponseBody: body,
 				}
+			}
+			if streamingResultHasBillableUsage(streamResult) {
+				return forwardResultFromStreamingResult(
+					resp.Header.Get("x-request-id"),
+					streamResult,
+					originalModel,
+					mappedModel,
+					startTime,
+				), &BillableStreamUsageError{Err: err}
 			}
 			return nil, err
 		}
@@ -5935,6 +6015,15 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 	if input.RequestStream {
 		streamResult, err := s.handleStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, input.StartTime, input.RequestModel)
 		if err != nil {
+			if streamingResultHasBillableUsage(streamResult) {
+				return forwardResultFromStreamingResult(
+					resp.Header.Get("x-request-id"),
+					streamResult,
+					input.OriginalModel,
+					input.RequestModel,
+					input.StartTime,
+				), &BillableStreamUsageError{Err: err}
+			}
 			return nil, err
 		}
 		usage = streamResult.usage
@@ -8626,7 +8715,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				// 默认 *net.OpError 的 Error() 会泄露内部 IP/端口和上游地址。完整 ev.err
 				// 仅在下方 LegacyPrintf 内部日志中保留供运维诊断。
 				disconnectMsg := "upstream stream disconnected: " + sanitizeStreamError(ev.err)
-				if !c.Writer.Written() {
+				if !c.Writer.Written() && !claudeUsageHasBillableTokens(usage) {
 					logger.LegacyPrintf("service.gateway", "Upstream stream read error before any client output (account=%d), failing over: %v", account.ID, ev.err)
 					body, _ := json.Marshal(map[string]any{
 						"type": "error",
@@ -8655,6 +8744,9 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				outputBlocks, data, usagePatch, err := processSSEEvent(pendingEventLines)
 				pendingEventLines = pendingEventLines[:0]
 				if err != nil {
+					if claudeUsageHasBillableTokens(usage) {
+						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, err
+					}
 					if clientDisconnected {
 						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, nil
 					}
@@ -9227,6 +9319,9 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 }
 
 func resolveUsageBillingRequestID(ctx context.Context, upstreamRequestID string) string {
+	if requestID := strings.TrimSpace(upstreamRequestID); requestID != "" {
+		return requestID
+	}
 	if ctx != nil {
 		if clientRequestID, _ := ctx.Value(ctxkey.ClientRequestID).(string); strings.TrimSpace(clientRequestID) != "" {
 			return "client:" + strings.TrimSpace(clientRequestID)
@@ -9234,9 +9329,6 @@ func resolveUsageBillingRequestID(ctx context.Context, upstreamRequestID string)
 		if requestID, _ := ctx.Value(ctxkey.RequestID).(string); strings.TrimSpace(requestID) != "" {
 			return "local:" + strings.TrimSpace(requestID)
 		}
-	}
-	if requestID := strings.TrimSpace(upstreamRequestID); requestID != "" {
-		return requestID
 	}
 	return "generated:" + generateRequestID()
 }
