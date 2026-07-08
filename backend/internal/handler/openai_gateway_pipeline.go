@@ -116,6 +116,7 @@ func (OpenAIHTTPModerationStage) Run(ctx *openAIHTTPGatewayStageContext) openAIH
 }
 
 func (h *OpenAIGatewayHandler) writeOpenAIHTTPModerationError(c *gin.Context, format openAIHTTPModerationErrorFormat, decision *service.ContentModerationDecision) {
+	markOpsContentModerationDiagnostic(c, decision)
 	switch format {
 	case openAIHTTPModerationErrorAnthropic:
 		h.anthropicErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)

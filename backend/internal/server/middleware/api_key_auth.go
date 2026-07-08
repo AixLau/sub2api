@@ -2,8 +2,10 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -34,6 +36,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		queryKey := strings.TrimSpace(c.Query("key"))
 		queryApiKey := strings.TrimSpace(c.Query("api_key"))
 		if queryKey != "" || queryApiKey != "" {
+			markOpsAPIKeyAuthDiagnostic(c, "api_key_in_query_deprecated", "api_key_in_query", nil, map[string]string{
+				"parameter": firstNonEmpty(queryKeyName(queryKey, "key"), queryKeyName(queryApiKey, "api_key")),
+			})
 			AbortWithError(c, 400, "api_key_in_query_deprecated", localizedAPIKeyAuthMessage("api_key_in_query_deprecated"))
 			return
 		}
@@ -62,6 +67,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 
 		// 如果所有header都没有API key
 		if apiKeyString == "" {
+			markOpsAPIKeyAuthDiagnostic(c, "API_KEY_REQUIRED", "missing_api_key", nil, map[string]string{
+				"accepted_headers": "Authorization Bearer,x-api-key,x-goog-api-key",
+			})
 			AbortWithError(c, 401, "API_KEY_REQUIRED", localizedAPIKeyAuthMessage("API_KEY_REQUIRED"))
 			return
 		}
@@ -71,9 +79,15 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		apiKey, err := apiKeyService.GetByKey(c.Request.Context(), apiKeyString)
 		if err != nil {
 			if errors.Is(err, service.ErrAPIKeyNotFound) {
+				markOpsAPIKeyAuthDiagnostic(c, "INVALID_API_KEY", "api_key_not_found", nil, map[string]string{
+					"attempted_key_prefix": apiKeyPrefixForOps(apiKeyString),
+				})
 				AbortWithError(c, 401, "INVALID_API_KEY", localizedAPIKeyAuthMessage("INVALID_API_KEY"))
 				return
 			}
+			markOpsAPIKeyAuthDiagnostic(c, "INTERNAL_ERROR", "api_key_lookup_failed", nil, map[string]string{
+				"raw_error": strings.TrimSpace(err.Error()),
+			})
 			AbortWithError(c, 500, "INTERNAL_ERROR", localizedAPIKeyAuthMessage("INTERNAL_ERROR"))
 			return
 		}
@@ -88,6 +102,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		if !apiKey.IsActive() &&
 			apiKey.Status != service.StatusAPIKeyExpired &&
 			apiKey.Status != service.StatusAPIKeyQuotaExhausted {
+			markOpsAPIKeyAuthDiagnostic(c, "API_KEY_DISABLED", "api_key_disabled", apiKey, nil)
 			AbortWithError(c, 401, "API_KEY_DISABLED", localizedAPIKeyAuthMessage("API_KEY_DISABLED"))
 			return
 		}
@@ -105,6 +120,11 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 					clientIP = "unknown"
 				}
 				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonIPRestriction)
+				markOpsAPIKeyAuthDiagnostic(c, "ACCESS_DENIED", "api_key_ip_restriction", apiKey, map[string]string{
+					"client_ip":            clientIP,
+					"whitelist_configured": strconv.FormatBool(len(apiKey.IPWhitelist) > 0),
+					"blacklist_configured": strconv.FormatBool(len(apiKey.IPBlacklist) > 0),
+				})
 				AbortWithError(c, 403, "ACCESS_DENIED", localizedAccessDeniedMessage(clientIP))
 				return
 			}
@@ -112,12 +132,14 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 
 		// 检查关联的用户
 		if apiKey.User == nil {
+			markOpsAPIKeyAuthDiagnostic(c, "USER_NOT_FOUND", "api_key_user_missing", apiKey, nil)
 			AbortWithError(c, 401, "USER_NOT_FOUND", localizedAPIKeyAuthMessage("USER_NOT_FOUND"))
 			return
 		}
 
 		// 检查用户状态
 		if !apiKey.User.IsActive() {
+			markOpsAPIKeyAuthDiagnostic(c, "USER_INACTIVE", "user_inactive", apiKey, nil)
 			AbortWithError(c, 401, "USER_INACTIVE", localizedAPIKeyAuthMessage("USER_INACTIVE"))
 			return
 		}
@@ -159,6 +181,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			)
 			if subErr != nil {
 				if !skipBilling {
+					markOpsAPIKeyAuthDiagnostic(c, "SUBSCRIPTION_NOT_FOUND", "subscription_not_found", apiKey, map[string]string{
+						"raw_error": strings.TrimSpace(subErr.Error()),
+					})
 					AbortWithError(c, 403, "SUBSCRIPTION_NOT_FOUND", localizedAPIKeyAuthMessage("SUBSCRIPTION_NOT_FOUND"))
 					return
 				}
@@ -174,19 +199,23 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			// Key 状态检查
 			switch apiKey.Status {
 			case service.StatusAPIKeyQuotaExhausted:
+				markOpsAPIKeyAuthDiagnostic(c, "API_KEY_QUOTA_EXHAUSTED", "api_key_quota_exhausted", apiKey, nil)
 				AbortWithError(c, 429, "API_KEY_QUOTA_EXHAUSTED", "API key 额度已用完")
 				return
 			case service.StatusAPIKeyExpired:
+				markOpsAPIKeyAuthDiagnostic(c, "API_KEY_EXPIRED", "api_key_expired", apiKey, nil)
 				AbortWithError(c, 403, "API_KEY_EXPIRED", "API key 已过期")
 				return
 			}
 
 			// 运行时过期/配额检查（即使状态是 active，也要检查时间和用量）
 			if apiKey.IsExpired() {
+				markOpsAPIKeyAuthDiagnostic(c, "API_KEY_EXPIRED", "api_key_expired", apiKey, nil)
 				AbortWithError(c, 403, "API_KEY_EXPIRED", "API key 已过期")
 				return
 			}
 			if apiKey.IsQuotaExhausted() {
+				markOpsAPIKeyAuthDiagnostic(c, "API_KEY_QUOTA_EXHAUSTED", "api_key_quota_exhausted", apiKey, nil)
 				AbortWithError(c, 429, "API_KEY_QUOTA_EXHAUSTED", "API key 额度已用完")
 				return
 			}
@@ -203,6 +232,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 						code = "USAGE_LIMIT_EXCEEDED"
 						status = 429
 					}
+					markOpsAPIKeyAuthDiagnostic(c, code, strings.ToLower(code), apiKey, map[string]string{
+						"raw_error": strings.TrimSpace(validateErr.Error()),
+					})
 					AbortWithError(c, status, code, localizedSubscriptionErrorMessage(validateErr))
 					return
 				}
@@ -215,6 +247,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			} else {
 				// 非订阅模式 或 订阅模式但 subscriptionService 未注入：回退到余额检查
 				if apiKey.User.Balance <= 0 {
+					markOpsAPIKeyAuthDiagnostic(c, "INSUFFICIENT_BALANCE", "insufficient_balance", apiKey, nil)
 					AbortWithError(c, 403, "INSUFFICIENT_BALANCE", localizedAPIKeyAuthMessage("INSUFFICIENT_BALANCE"))
 					return
 				}
@@ -296,6 +329,7 @@ func abortIfAPIKeyGroupUnavailable(c *gin.Context, apiKey *service.APIKey) bool 
 		return false
 	}
 	service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonAPIKeyGroupUnavailable)
+	markOpsAPIKeyAuthDiagnostic(c, code, strings.ToLower(code), apiKey, nil)
 	AbortWithError(c, 403, code, message)
 	return true
 }
@@ -305,8 +339,143 @@ func abortIfAPIKeyGroupNotAllowed(c *gin.Context, apiKey *service.APIKey) bool {
 		return false
 	}
 	service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonAPIKeyGroupUnavailable)
+	markOpsAPIKeyAuthDiagnostic(c, "GROUP_NOT_ALLOWED", "group_not_allowed", apiKey, nil)
 	AbortWithError(c, 403, "GROUP_NOT_ALLOWED", localizedAPIKeyAuthMessage("GROUP_NOT_ALLOWED"))
 	return true
+}
+
+func markOpsAPIKeyAuthDiagnostic(c *gin.Context, code, reason string, apiKey *service.APIKey, extra map[string]string) {
+	if c == nil {
+		return
+	}
+	code = strings.TrimSpace(code)
+	reason = strings.TrimSpace(reason)
+	message := opsAPIKeyAuthDiagnosticMessage(code, reason, apiKey)
+	detail := map[string]string{
+		"source": "api_key_auth",
+	}
+	if code != "" {
+		detail["code"] = code
+	}
+	if reason != "" {
+		detail["reason"] = reason
+	}
+	if message != "" {
+		detail["message"] = message
+	}
+	if apiKey != nil {
+		detail["api_key_id"] = strconv.FormatInt(apiKey.ID, 10)
+		detail["api_key_status"] = strings.TrimSpace(apiKey.Status)
+		if prefix := apiKeyPrefixForOps(apiKey.Key); prefix != "" {
+			detail["api_key_prefix"] = prefix
+		}
+		if apiKey.GroupID != nil {
+			detail["group_id"] = strconv.FormatInt(*apiKey.GroupID, 10)
+		}
+		if apiKey.Group != nil {
+			detail["group_status"] = strings.TrimSpace(apiKey.Group.Status)
+			detail["group_platform"] = strings.TrimSpace(apiKey.Group.Platform)
+		}
+		if apiKey.User != nil {
+			detail["user_id"] = strconv.FormatInt(apiKey.User.ID, 10)
+			detail["user_status"] = strings.TrimSpace(apiKey.User.Status)
+			detail["user_balance"] = fmt.Sprintf("%.4f", apiKey.User.Balance)
+		}
+	}
+	for k, v := range extra {
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		if k != "" && v != "" {
+			detail[k] = v
+		}
+	}
+	raw, _ := json.Marshal(detail)
+	service.SetOpsDiagnostic(c, message, string(raw))
+}
+
+func opsAPIKeyAuthDiagnosticMessage(code, reason string, apiKey *service.APIKey) string {
+	switch code {
+	case "api_key_in_query_deprecated":
+		return "API Key 传递方式已废弃：请求使用了 URL 查询参数，请改用请求头"
+	case "API_KEY_REQUIRED":
+		return "缺少 API Key：请求头未提供 Authorization Bearer、x-api-key 或 x-goog-api-key"
+	case "INVALID_API_KEY":
+		return "API Key 无效：未找到匹配的 Key，可能填错、已删除或使用了其它平台的 Key"
+	case "INTERNAL_ERROR":
+		return "验证 API Key 失败：Key 查询阶段出现内部错误"
+	case "API_KEY_DISABLED":
+		return fmt.Sprintf("API Key 已停用：当前 Key 状态为 %s", apiKeyStatusForMessage(apiKey))
+	case "ACCESS_DENIED":
+		return "访问被拒绝：当前客户端 IP 未通过 API Key 白名单/黑名单限制"
+	case "USER_NOT_FOUND":
+		return "API Key 关联用户不存在：Key 已加载但没有可用用户记录"
+	case "USER_INACTIVE":
+		return fmt.Sprintf("用户账户未启用：API Key 关联用户状态为 %s", userStatusForMessage(apiKey))
+	case "SUBSCRIPTION_NOT_FOUND":
+		return "订阅不可用：当前分组没有可用订阅"
+	case "USAGE_LIMIT_EXCEEDED":
+		return "套餐额度已用完：订阅窗口额度检查未通过"
+	case "SUBSCRIPTION_INVALID":
+		return "订阅状态不可用：订阅校验未通过"
+	case "API_KEY_QUOTA_EXHAUSTED":
+		return "API Key 额度已用完：Key 状态或累计用量已达到限额"
+	case "API_KEY_EXPIRED":
+		return "API Key 已过期：Key 状态或过期时间已失效"
+	case "INSUFFICIENT_BALANCE":
+		return "账户余额不足：用户余额 <= 0，网关在本地计费阶段拒绝请求"
+	case "GROUP_DELETED":
+		return "API Key 所属分组已删除：分组状态不可用于调度"
+	case "GROUP_DISABLED":
+		return "API Key 所属分组已停用：分组状态不可用于调度"
+	case "GROUP_NOT_ALLOWED":
+		return "API Key 所属专属分组不允许当前用户使用"
+	default:
+		if reason != "" {
+			return "API Key 鉴权失败：" + reason
+		}
+		return "API Key 鉴权失败"
+	}
+}
+
+func apiKeyStatusForMessage(apiKey *service.APIKey) string {
+	if apiKey == nil || strings.TrimSpace(apiKey.Status) == "" {
+		return "unknown"
+	}
+	return strings.TrimSpace(apiKey.Status)
+}
+
+func userStatusForMessage(apiKey *service.APIKey) string {
+	if apiKey == nil || apiKey.User == nil || strings.TrimSpace(apiKey.User.Status) == "" {
+		return "unknown"
+	}
+	return strings.TrimSpace(apiKey.User.Status)
+}
+
+func apiKeyPrefixForOps(key string) string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return ""
+	}
+	if len(key) <= 8 {
+		return key
+	}
+	return key[:8]
+}
+
+func queryKeyName(value, name string) string {
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+	return name
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func validateAPIKeyGroupAllowed(apiKey *service.APIKey) bool {

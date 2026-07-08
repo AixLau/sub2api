@@ -1,19 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { post } = vi.hoisted(() => ({
+const { get, post } = vi.hoisted(() => ({
+  get: vi.fn(),
   post: vi.fn(),
 }))
 
 vi.mock('@/api/client', () => ({
   apiClient: {
+    get,
     post,
   },
 }))
 
 import {
   bindUserAuthIdentity,
+  getUserUsageStats,
   type AdminBindAuthIdentityRequest,
   type AdminBoundAuthIdentity,
+  type AdminUserUsageStats,
 } from '@/api/admin/users'
 
 type Assert<T extends true> = T
@@ -57,15 +61,33 @@ type ExpectedAdminBoundAuthIdentity = {
   } | null
 }
 
+type ExpectedAdminUserUsageStats = {
+  period: string
+  total_requests: number
+  total_input_tokens: number
+  total_output_tokens: number
+  total_cache_tokens: number
+  total_cache_creation_tokens: number
+  total_cache_read_tokens: number
+  total_tokens: number
+  total_cost: number
+  total_actual_cost: number
+  average_duration_ms: number
+}
+
 const requestContractExact: Assert<
   IsExact<AdminBindAuthIdentityRequest, ExpectedAdminBindAuthIdentityRequest>
 > = true
 const responseContractExact: Assert<
   IsExact<AdminBoundAuthIdentity, ExpectedAdminBoundAuthIdentity>
 > = true
+const usageStatsContractExact: Assert<
+  IsExact<AdminUserUsageStats, ExpectedAdminUserUsageStats>
+> = true
 
 describe('admin users api auth identity binding', () => {
   beforeEach(() => {
+    get.mockReset()
     post.mockReset()
   })
 
@@ -113,5 +135,33 @@ describe('admin users api auth identity binding', () => {
   it('keeps bind auth identity request and response types aligned with the backend contract', () => {
     expect(requestContractExact).toBe(true)
     expect(responseContractExact).toBe(true)
+  })
+
+  it('fetches backend-compatible user usage stats for a requested period', async () => {
+    const response: AdminUserUsageStats = {
+      period: '7d',
+      total_requests: 4,
+      total_input_tokens: 100,
+      total_output_tokens: 50,
+      total_cache_tokens: 10,
+      total_cache_creation_tokens: 3,
+      total_cache_read_tokens: 7,
+      total_tokens: 160,
+      total_cost: 1.2,
+      total_actual_cost: 0.8,
+      average_duration_ms: 250,
+    }
+    get.mockResolvedValue({ data: response })
+
+    const result = await getUserUsageStats(9, '7d')
+
+    expect(get).toHaveBeenCalledWith('/admin/users/9/usage', {
+      params: { period: '7d' },
+    })
+    expect(result).toEqual(response)
+  })
+
+  it('keeps user usage stats response type aligned with the backend contract', () => {
+    expect(usageStatsContractExact).toBe(true)
   })
 })

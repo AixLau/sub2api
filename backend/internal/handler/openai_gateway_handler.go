@@ -613,6 +613,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				h.anthropicErrorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
 				return
 			}
+			markOpsRequestBodyReadError(c, err)
 			h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
 			return
 		}
@@ -1867,6 +1868,7 @@ func (h *OpenAIGatewayHandler) pruneImageLimiterForUser(userID int64, limiter *i
 
 // handleConcurrencyError handles concurrency-related acquire errors.
 func (h *OpenAIGatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted bool) {
+	markOpsConcurrencyErrorDiagnostic(c, err)
 	status, errType, message := concurrencyErrorResponse(err, slotType)
 	h.handleStreamingAwareError(c, status, errType, message, streamStarted)
 }
@@ -2138,6 +2140,7 @@ func (h *OpenAIGatewayHandler) writeOpenAIWebSocketPipelineBlock(ctx context.Con
 	switch result.BlockReason {
 	case openAIWebSocketPipelineBlockReasonModeration:
 		if result.ModerationDecision != nil {
+			markOpsContentModerationDiagnostic(c, result.ModerationDecision)
 			writeContentModerationWSError(ctx, conn, result.ModerationDecision)
 			if message == "" {
 				message = result.ModerationDecision.Message
@@ -2243,6 +2246,18 @@ func buildCyberPolicyOpsErrorEntry(meta cyberPolicyOpsErrorMeta, mark *service.C
 		ErrorOwner:  "provider",
 		CreatedAt:   meta.CreatedAt,
 	}
+	upstreamMsg := strings.TrimSpace(mark.Message)
+	if upstreamMsg == "" {
+		upstreamMsg = "cyber_policy"
+	}
+	entry.UpstreamErrorMessage = &upstreamMsg
+	entry.UpstreamErrorDetail = opsJSONDetail(map[string]string{
+		"source":          "cyber_policy",
+		"reason":          "upstream_cyber_policy",
+		"code":            strings.TrimSpace(mark.Code),
+		"message":         upstreamMsg,
+		"upstream_status": strconv.Itoa(mark.UpstreamStatus),
+	})
 	if meta.UserID > 0 {
 		entry.UserID = &meta.UserID
 	}
@@ -2335,9 +2350,18 @@ func buildCyberSessionBlockedOpsEntry(meta cyberPolicyOpsErrorMeta) *service.Ops
 		CreatedAt:         meta.CreatedAt,
 		// AccountID 有意不设：请求在账号选择前即被拒绝。
 	}
+	msg := "网络安全策略已封锁会话：本次请求在账号选择前被本地拒绝"
+	entry.UpstreamErrorMessage = &msg
+	detail := map[string]string{
+		"source":  "cyber_session_block",
+		"reason":  "local_session_blocked",
+		"message": msg,
+	}
 	if meta.SessionBlockKey != "" {
 		entry.ErrorBody = "session_block_key=" + meta.SessionBlockKey
+		detail["session_block_key"] = meta.SessionBlockKey
 	}
+	entry.UpstreamErrorDetail = opsJSONDetail(detail)
 	if meta.UserID > 0 {
 		entry.UserID = &meta.UserID
 	}
@@ -2349,6 +2373,18 @@ func buildCyberSessionBlockedOpsEntry(meta cyberPolicyOpsErrorMeta) *service.Ops
 		entry.ClientIP = &meta.ClientIP
 	}
 	return entry
+}
+
+func opsJSONDetail(detail map[string]string) *string {
+	if len(detail) == 0 {
+		return nil
+	}
+	raw, err := json.Marshal(detail)
+	if err != nil {
+		return nil
+	}
+	value := string(raw)
+	return &value
 }
 
 // cyberSessionBlockFormat selects the per-endpoint error envelope for a locally

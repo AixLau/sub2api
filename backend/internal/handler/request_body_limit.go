@@ -1,9 +1,16 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
 )
 
 func extractMaxBytesError(err error) (*http.MaxBytesError, bool) {
@@ -24,4 +31,30 @@ func formatBodyLimit(limit int64) string {
 
 func buildBodyTooLargeMessage(limit int64) string {
 	return fmt.Sprintf("Request body too large, limit is %s", formatBodyLimit(limit))
+}
+
+func markOpsRequestBodyReadError(c *gin.Context, err error) {
+	if c == nil || err == nil {
+		return
+	}
+	rawErr := strings.TrimSpace(err.Error())
+	reason := "request_body_read_failed"
+	message := "读取请求体失败"
+	if errors.Is(err, io.ErrUnexpectedEOF) || strings.Contains(strings.ToLower(rawErr), "unexpected eof") {
+		reason = "client_upload_interrupted"
+		message = "请求体上传未完成：客户端在请求体传输完成前断开连接"
+	}
+	detail := map[string]string{
+		"source":  "request_body_reader",
+		"reason":  reason,
+		"message": message,
+	}
+	if rawErr != "" {
+		detail["raw_error"] = rawErr
+	}
+	if c.Request != nil && c.Request.ContentLength > 0 {
+		detail["content_length"] = strconv.FormatInt(c.Request.ContentLength, 10)
+	}
+	raw, _ := json.Marshal(detail)
+	service.SetOpsDiagnostic(c, message, string(raw))
 }

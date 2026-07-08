@@ -2120,6 +2120,12 @@ export default {
       failedToLoadBalanceHistory: '加载余额记录失败',
       createdAt: '创建时间',
       totalRecharged: '总充值',
+      todayUsage: '今日消费',
+      sevenDayUsage: '7日消费',
+      thirtyDayUsage: '30日消费',
+      usageRequests: '请求数',
+      usageTokens: 'Token',
+      usageTokenBreakdown: '输入 {input} / 输出 {output} / 缓存 {cache}',
       // Settings Dropdowns
       filterSettings: '筛选设置',
       columnSettings: '列设置',

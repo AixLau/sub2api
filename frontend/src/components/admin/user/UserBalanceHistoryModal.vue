@@ -47,6 +47,36 @@
         </div>
       </div>
 
+      <!-- Usage summary -->
+      <div class="grid gap-3 sm:grid-cols-3">
+        <div
+          v-for="item in usageSummaryItems"
+          :key="item.period"
+          class="rounded-lg border border-gray-200 bg-white p-3 dark:border-dark-600 dark:bg-dark-800"
+        >
+          <div class="flex items-center justify-between gap-2">
+            <p class="text-xs font-medium text-gray-500 dark:text-dark-400">{{ item.label }}</p>
+            <Icon name="chartBar" size="xs" class="text-primary-500" />
+          </div>
+          <p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">
+            ${{ formatCost(item.stats?.total_actual_cost ?? item.stats?.total_cost ?? 0) }}
+          </p>
+          <div class="mt-2 grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <p class="text-gray-400 dark:text-dark-500">{{ t('admin.users.usageRequests') }}</p>
+              <p class="font-medium text-gray-700 dark:text-gray-200">{{ formatNumber(item.stats?.total_requests || 0) }}</p>
+            </div>
+            <div>
+              <p class="text-gray-400 dark:text-dark-500">{{ t('admin.users.usageTokens') }}</p>
+              <p class="font-medium text-gray-700 dark:text-gray-200">{{ formatNumber(item.stats?.total_tokens || 0) }}</p>
+            </div>
+          </div>
+          <p class="mt-2 truncate text-xs text-gray-400 dark:text-dark-500" :title="tokenBreakdown(item.stats)">
+            {{ tokenBreakdown(item.stats) }}
+          </p>
+        </div>
+      </div>
+
       <!-- Type filter + Action buttons -->
       <div class="flex items-center gap-3">
         <Select
@@ -174,7 +204,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { adminAPI, type BalanceHistoryItem } from '@/api/admin'
+import { adminAPI, type AdminUserUsageStats, type BalanceHistoryItem } from '@/api/admin'
 import { formatDateTime } from '@/utils/format'
 import type { AdminUser } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -192,8 +222,19 @@ const total = ref(0)
 const totalRecharged = ref(0)
 const pageSize = 15
 const typeFilter = ref('')
+type UsagePeriod = 'today' | '7d' | '30d'
+const usageStats = ref<Record<UsagePeriod, AdminUserUsageStats | null>>({
+  today: null,
+  '7d': null,
+  '30d': null
+})
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize) || 1)
+const usageSummaryItems = computed(() => [
+  { period: 'today' as const, label: t('admin.users.todayUsage'), stats: usageStats.value.today },
+  { period: '7d' as const, label: t('admin.users.sevenDayUsage'), stats: usageStats.value['7d'] },
+  { period: '30d' as const, label: t('admin.users.thirtyDayUsage'), stats: usageStats.value['30d'] }
+])
 
 // Type filter options
 const typeOptions = computed(() => [
@@ -210,9 +251,29 @@ const typeOptions = computed(() => [
 watch(() => props.show, (v) => {
   if (v && props.user) {
     typeFilter.value = ''
+    usageStats.value = { today: null, '7d': null, '30d': null }
     loadHistory(1)
+    loadUsageStats()
   }
 })
+
+const loadUsageStats = async () => {
+  if (!props.user) return
+  try {
+    const [today, sevenDay, thirtyDay] = await Promise.all([
+      adminAPI.users.getUserUsageStats(props.user.id, 'today'),
+      adminAPI.users.getUserUsageStats(props.user.id, '7d'),
+      adminAPI.users.getUserUsageStats(props.user.id, '30d')
+    ])
+    usageStats.value = {
+      today,
+      '7d': sevenDay,
+      '30d': thirtyDay
+    }
+  } catch (error) {
+    console.error('Failed to load user usage stats:', error)
+  }
+}
 
 const loadHistory = async (page: number) => {
   if (!props.user) return
@@ -325,4 +386,12 @@ const formatValue = (item: BalanceHistoryItem) => {
   const sign = item.value >= 0 ? '+' : ''
   return `${sign}${item.value}`
 }
+
+const formatCost = (value: number) => value.toFixed(2)
+const formatNumber = (value: number) => value.toLocaleString()
+const tokenBreakdown = (stats: AdminUserUsageStats | null) => t('admin.users.usageTokenBreakdown', {
+  input: formatNumber(stats?.total_input_tokens || 0),
+  output: formatNumber(stats?.total_output_tokens || 0),
+  cache: formatNumber(stats?.total_cache_tokens || 0)
+})
 </script>

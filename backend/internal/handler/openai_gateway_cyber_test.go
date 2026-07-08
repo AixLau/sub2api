@@ -8,6 +8,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 // newTestGinContext builds a bare gin.Context backed by an httptest recorder.
@@ -115,6 +116,11 @@ func TestBuildCyberSessionBlockedOpsEntry(t *testing.T) {
 	require.True(t, entry.IsBusinessLimited)
 	require.Equal(t, "gateway_local", entry.ErrorSource)
 	require.Equal(t, "platform", entry.ErrorOwner)
+	require.NotNil(t, entry.UpstreamErrorMessage)
+	require.Contains(t, *entry.UpstreamErrorMessage, "已封锁会话")
+	require.NotNil(t, entry.UpstreamErrorDetail)
+	require.Equal(t, "cyber_session_block", gjson.Get(*entry.UpstreamErrorDetail, "source").String())
+	require.Equal(t, "local_session_blocked", gjson.Get(*entry.UpstreamErrorDetail, "reason").String())
 	require.Empty(t, entry.ErrorBody, "no session block key → ErrorBody must be empty")
 
 	entryWithKey := buildCyberSessionBlockedOpsEntry(cyberPolicyOpsErrorMeta{
@@ -122,6 +128,8 @@ func TestBuildCyberSessionBlockedOpsEntry(t *testing.T) {
 		SessionBlockKey: "abc123",
 	})
 	require.Equal(t, "session_block_key=abc123", entryWithKey.ErrorBody)
+	require.NotNil(t, entryWithKey.UpstreamErrorDetail)
+	require.Equal(t, "abc123", gjson.Get(*entryWithKey.UpstreamErrorDetail, "session_block_key").String())
 }
 
 // TestRejectIfCyberSessionBlocked_FailOpen verifies fail-open paths: nil handler

@@ -23,11 +23,15 @@ func APIKeyAuthGoogle(apiKeyService *service.APIKeyService, cfg *config.Config) 
 func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if v := strings.TrimSpace(c.Query("api_key")); v != "" {
+			markOpsAPIKeyAuthDiagnostic(c, "api_key_in_query_deprecated", "api_key_in_query", nil, map[string]string{"parameter": "api_key"})
 			abortWithGoogleError(c, 400, localizedAPIKeyAuthMessage("api_key_in_query_deprecated"))
 			return
 		}
 		apiKeyString := extractAPIKeyForGoogle(c)
 		if apiKeyString == "" {
+			markOpsAPIKeyAuthDiagnostic(c, "API_KEY_REQUIRED", "missing_api_key", nil, map[string]string{
+				"accepted_headers": "x-goog-api-key,Authorization Bearer,x-api-key",
+			})
 			abortWithGoogleError(c, 401, localizedAPIKeyAuthMessage("API_KEY_REQUIRED"))
 			return
 		}
@@ -35,9 +39,15 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 		apiKey, err := apiKeyService.GetByKey(c.Request.Context(), apiKeyString)
 		if err != nil {
 			if errors.Is(err, service.ErrAPIKeyNotFound) {
+				markOpsAPIKeyAuthDiagnostic(c, "INVALID_API_KEY", "api_key_not_found", nil, map[string]string{
+					"attempted_key_prefix": apiKeyPrefixForOps(apiKeyString),
+				})
 				abortWithGoogleError(c, 401, localizedAPIKeyAuthMessage("INVALID_API_KEY"))
 				return
 			}
+			markOpsAPIKeyAuthDiagnostic(c, "INTERNAL_ERROR", "api_key_lookup_failed", nil, map[string]string{
+				"raw_error": strings.TrimSpace(err.Error()),
+			})
 			abortWithGoogleError(c, 500, localizedAPIKeyAuthMessage("INTERNAL_ERROR"))
 			return
 		}
@@ -47,19 +57,23 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 		SetOpsFallbackAPIKey(c, apiKey)
 
 		if !apiKey.IsActive() {
+			markOpsAPIKeyAuthDiagnostic(c, "API_KEY_DISABLED", "api_key_disabled", apiKey, nil)
 			abortWithGoogleError(c, 401, localizedAPIKeyAuthMessage("API_KEY_DISABLED"))
 			return
 		}
 		if apiKey.User == nil {
+			markOpsAPIKeyAuthDiagnostic(c, "USER_NOT_FOUND", "api_key_user_missing", apiKey, nil)
 			abortWithGoogleError(c, 401, localizedAPIKeyAuthMessage("USER_NOT_FOUND"))
 			return
 		}
 		if !apiKey.User.IsActive() {
+			markOpsAPIKeyAuthDiagnostic(c, "USER_INACTIVE", "user_inactive", apiKey, nil)
 			abortWithGoogleError(c, 401, localizedAPIKeyAuthMessage("USER_INACTIVE"))
 			return
 		}
-		if _, message, ok := validateAPIKeyGroupAvailable(apiKey); !ok {
+		if code, message, ok := validateAPIKeyGroupAvailable(apiKey); !ok {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonAPIKeyGroupUnavailable)
+			markOpsAPIKeyAuthDiagnostic(c, code, strings.ToLower(code), apiKey, nil)
 			abortWithGoogleError(c, 403, message)
 			return
 		}
@@ -86,6 +100,9 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 				apiKey.Group.ID,
 			)
 			if err != nil {
+				markOpsAPIKeyAuthDiagnostic(c, "SUBSCRIPTION_NOT_FOUND", "subscription_not_found", apiKey, map[string]string{
+					"raw_error": strings.TrimSpace(err.Error()),
+				})
 				abortWithGoogleError(c, 403, localizedAPIKeyAuthMessage("SUBSCRIPTION_NOT_FOUND"))
 				return
 			}
@@ -98,6 +115,13 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 					errors.Is(err, service.ErrMonthlyLimitExceeded) {
 					status = 429
 				}
+				code := "SUBSCRIPTION_INVALID"
+				if status == 429 {
+					code = "USAGE_LIMIT_EXCEEDED"
+				}
+				markOpsAPIKeyAuthDiagnostic(c, code, strings.ToLower(code), apiKey, map[string]string{
+					"raw_error": strings.TrimSpace(err.Error()),
+				})
 				abortWithGoogleError(c, status, localizedSubscriptionErrorMessage(err))
 				return
 			}
@@ -110,6 +134,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			}
 		} else {
 			if apiKey.User.Balance <= 0 {
+				markOpsAPIKeyAuthDiagnostic(c, "INSUFFICIENT_BALANCE", "insufficient_balance", apiKey, nil)
 				abortWithGoogleError(c, 403, localizedAPIKeyAuthMessage("INSUFFICIENT_BALANCE"))
 				return
 			}

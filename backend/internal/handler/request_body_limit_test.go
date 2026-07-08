@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -42,4 +43,29 @@ func TestRequestBodyLimitTooLarge(t *testing.T) {
 
 	require.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
 	require.Contains(t, recorder.Body.String(), buildBodyTooLargeMessage(limit))
+}
+
+func TestMarkOpsRequestBodyReadError_UnexpectedEOF(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	req.ContentLength = 1056991
+	c.Request = req
+
+	markOpsRequestBodyReadError(c, io.ErrUnexpectedEOF)
+
+	gotMsg, ok := c.Get(service.OpsDiagnosticMessageKey)
+	require.True(t, ok)
+	require.Equal(t, "请求体上传未完成：客户端在请求体传输完成前断开连接", gotMsg)
+
+	gotDetail, ok := c.Get(service.OpsDiagnosticDetailKey)
+	require.True(t, ok)
+	require.JSONEq(t, `{
+		"source":"request_body_reader",
+		"reason":"client_upload_interrupted",
+		"message":"请求体上传未完成：客户端在请求体传输完成前断开连接",
+		"raw_error":"unexpected EOF",
+		"content_length":"1056991"
+	}`, gotDetail.(string))
 }

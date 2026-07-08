@@ -224,6 +224,7 @@ func (h *GatewayHandler) readGatewayGeminiPreForwardRequest(c *gin.Context) ([]b
 			googleError(c, http.StatusRequestEntityTooLarge, buildBodyTooLargeMessage(maxErr.Limit))
 			return nil, "", false, false
 		}
+		markOpsRequestBodyReadError(c, err)
 		googleError(c, http.StatusBadRequest, "Failed to read request body")
 		return nil, "", false, false
 	}
@@ -244,6 +245,7 @@ func (h *GatewayHandler) readOpenAICompatibleGatewayPreForwardRequest(
 			writeError(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
 			return nil, "", false, false
 		}
+		markOpsRequestBodyReadError(c, err)
 		writeError(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
 		return nil, "", false, false
 	}
@@ -289,6 +291,7 @@ func (h *GatewayHandler) readGatewayMessagesPreForwardRequest(c *gin.Context) ([
 			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
 			return nil, nil, false
 		}
+		markOpsRequestBodyReadError(c, err)
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
 		return nil, nil, false
 	}
@@ -972,6 +975,7 @@ func (p *GatewayPreForwardPipeline) preForwardStages() []gatewayPreForwardStage 
 }
 
 func (h *GatewayHandler) writeGatewayPreForwardModerationError(c *gin.Context, format gatewayPreForwardErrorFormat, decision *service.ContentModerationDecision) {
+	markOpsContentModerationDiagnostic(c, decision)
 	switch format {
 	case gatewayPreForwardErrorGemini:
 		googleError(c, contentModerationStatus(decision), decision.Message)

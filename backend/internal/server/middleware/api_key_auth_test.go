@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestSimpleModeBypassesQuotaCheck(t *testing.T) {
@@ -799,6 +800,137 @@ func TestAPIKeyAuthInsufficientBalanceUsesLocalizedClientMessage(t *testing.T) {
 
 	require.Equal(t, http.StatusForbidden, w.Code)
 	requireAPIKeyAuthError(t, w, "INSUFFICIENT_BALANCE", "当前账户余额不足，请充值后重试")
+}
+
+func TestAPIKeyAuthErrorsSetOpsDiagnostic(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	activeUser := &service.User{
+		ID:          7,
+		Email:       "ops@example.com",
+		Role:        service.RoleUser,
+		Status:      service.StatusActive,
+		Balance:     10,
+		Concurrency: 3,
+	}
+	group := &service.Group{
+		ID:       42,
+		Name:     "Codex高速专线",
+		Platform: "openai",
+		Status:   service.StatusActive,
+		Hydrated: true,
+	}
+	activeAPIKey := &service.APIKey{
+		ID:      100,
+		UserID:  activeUser.ID,
+		Key:     "sk-test-valid",
+		Name:    "测试 Key",
+		Status:  service.StatusActive,
+		User:    activeUser,
+		Group:   group,
+		GroupID: &group.ID,
+	}
+
+	tests := []struct {
+		name             string
+		apiKey           *service.APIKey
+		headerValue      string
+		wantStatus       int
+		wantMessagePart  string
+		wantDetailFields map[string]string
+	}{
+		{
+			name:            "invalid key records attempted prefix",
+			headerValue:     "sk-live-missing-secret",
+			wantStatus:      http.StatusUnauthorized,
+			wantMessagePart: "未找到匹配的 Key",
+			wantDetailFields: map[string]string{
+				"source":               "api_key_auth",
+				"code":                 "INVALID_API_KEY",
+				"reason":               "api_key_not_found",
+				"attempted_key_prefix": "sk-live-",
+			},
+		},
+		{
+			name: "inactive user records user status",
+			apiKey: cloneAPIKeyForAuthTest(activeAPIKey, func(k *service.APIKey) {
+				user := *activeUser
+				user.Status = service.StatusDisabled
+				k.User = &user
+			}),
+			headerValue:     activeAPIKey.Key,
+			wantStatus:      http.StatusUnauthorized,
+			wantMessagePart: "关联用户状态",
+			wantDetailFields: map[string]string{
+				"source":      "api_key_auth",
+				"code":        "USER_INACTIVE",
+				"reason":      "user_inactive",
+				"user_status": service.StatusDisabled,
+				"user_id":     "7",
+			},
+		},
+		{
+			name: "insufficient balance records local billing reason",
+			apiKey: cloneAPIKeyForAuthTest(activeAPIKey, func(k *service.APIKey) {
+				user := *activeUser
+				user.Balance = 0
+				k.User = &user
+			}),
+			headerValue:     activeAPIKey.Key,
+			wantStatus:      http.StatusForbidden,
+			wantMessagePart: "本地计费阶段拒绝",
+			wantDetailFields: map[string]string{
+				"source":       "api_key_auth",
+				"code":         "INSUFFICIENT_BALANCE",
+				"reason":       "insufficient_balance",
+				"user_balance": "0.0000",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			apiKeyRepo := &stubApiKeyRepo{
+				getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+					if tt.apiKey == nil || key != tt.apiKey.Key {
+						return nil, service.ErrAPIKeyNotFound
+					}
+					clone := *tt.apiKey
+					return &clone, nil
+				},
+			}
+			cfg := &config.Config{RunMode: config.RunModeStandard}
+			apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
+			router := gin.New()
+			var gotMessage string
+			var gotDetail string
+			router.Use(func(c *gin.Context) {
+				c.Next()
+				if v, ok := c.Get(service.OpsDiagnosticMessageKey); ok {
+					gotMessage, _ = v.(string)
+				}
+				if v, ok := c.Get(service.OpsDiagnosticDetailKey); ok {
+					gotDetail, _ = v.(string)
+				}
+			})
+			router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg)))
+			router.GET("/t", func(c *gin.Context) {
+				c.JSON(http.StatusOK, gin.H{"ok": true})
+			})
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/t", nil)
+			req.Header.Set("x-api-key", tt.headerValue)
+			router.ServeHTTP(w, req)
+
+			require.Equal(t, tt.wantStatus, w.Code)
+			require.Contains(t, gotMessage, tt.wantMessagePart)
+			require.NotEmpty(t, gotDetail)
+			for key, want := range tt.wantDetailFields {
+				require.Equal(t, want, gjson.Get(gotDetail, key).String(), "diagnostic field %s", key)
+			}
+		})
+	}
 }
 
 func TestRequireGroupAssignmentMarksUngroupedKeyBusinessLimited(t *testing.T) {

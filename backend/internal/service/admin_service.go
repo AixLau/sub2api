@@ -25,6 +25,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/util/httputil"
 )
@@ -409,6 +410,20 @@ type UserGroupRPMStatus struct {
 	Source    string `json:"source"` // "group" | "override"
 }
 
+type AdminUserUsageStats struct {
+	Period                   string  `json:"period"`
+	TotalRequests            int64   `json:"total_requests"`
+	TotalInputTokens         int64   `json:"total_input_tokens"`
+	TotalOutputTokens        int64   `json:"total_output_tokens"`
+	TotalCacheTokens         int64   `json:"total_cache_tokens"`
+	TotalCacheCreationTokens int64   `json:"total_cache_creation_tokens"`
+	TotalCacheReadTokens     int64   `json:"total_cache_read_tokens"`
+	TotalTokens              int64   `json:"total_tokens"`
+	TotalCost                float64 `json:"total_cost"`
+	TotalActualCost          float64 `json:"total_actual_cost"`
+	AverageDurationMs        float64 `json:"average_duration_ms"`
+}
+
 // BulkUpdateAccountsResult is the aggregated response for bulk updates.
 type BulkUpdateAccountsResult struct {
 	Success    int                       `json:"success"`
@@ -574,6 +589,7 @@ type adminServiceImpl struct {
 	proxyRepo            ProxyRepository
 	apiKeyRepo           APIKeyRepository
 	redeemCodeRepo       RedeemCodeRepository
+	usageLogRepo         UsageLogRepository
 	userGroupRateRepo    UserGroupRateRepository
 	userRPMCache         UserRPMCache
 	billingCacheService  *BillingCacheService
@@ -600,6 +616,7 @@ func NewAdminService(
 	proxyRepo ProxyRepository,
 	apiKeyRepo APIKeyRepository,
 	redeemCodeRepo RedeemCodeRepository,
+	usageLogRepo UsageLogRepository,
 	userGroupRateRepo UserGroupRateRepository,
 	userRPMCache UserRPMCache,
 	billingCacheService *BillingCacheService,
@@ -620,6 +637,7 @@ func NewAdminService(
 		proxyRepo:            proxyRepo,
 		apiKeyRepo:           apiKeyRepo,
 		redeemCodeRepo:       redeemCodeRepo,
+		usageLogRepo:         usageLogRepo,
 		userGroupRateRepo:    userGroupRateRepo,
 		userRPMCache:         userRPMCache,
 		billingCacheService:  billingCacheService,
@@ -1163,14 +1181,51 @@ func (s *adminServiceImpl) GetUserRPMStatus(ctx context.Context, userID int64) (
 }
 
 func (s *adminServiceImpl) GetUserUsageStats(ctx context.Context, userID int64, period string) (any, error) {
-	// Return mock data for now
-	return map[string]any{
-		"period":          period,
-		"total_requests":  0,
-		"total_cost":      0.0,
-		"total_tokens":    0,
-		"avg_duration_ms": 0,
+	normalizedPeriod, startTime, endTime := userUsageStatsWindow(period)
+	if s.usageLogRepo == nil {
+		return &AdminUserUsageStats{Period: normalizedPeriod}, nil
+	}
+
+	stats, err := s.usageLogRepo.GetUserStatsAggregated(ctx, userID, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+	if stats == nil {
+		return &AdminUserUsageStats{Period: normalizedPeriod}, nil
+	}
+
+	return &AdminUserUsageStats{
+		Period:                   normalizedPeriod,
+		TotalRequests:            stats.TotalRequests,
+		TotalInputTokens:         stats.TotalInputTokens,
+		TotalOutputTokens:        stats.TotalOutputTokens,
+		TotalCacheTokens:         stats.TotalCacheTokens,
+		TotalCacheCreationTokens: stats.TotalCacheCreationTokens,
+		TotalCacheReadTokens:     stats.TotalCacheReadTokens,
+		TotalTokens:              stats.TotalTokens,
+		TotalCost:                stats.TotalCost,
+		TotalActualCost:          stats.TotalActualCost,
+		AverageDurationMs:        stats.AverageDurationMs,
 	}, nil
+}
+
+func userUsageStatsWindow(period string) (string, time.Time, time.Time) {
+	now := timezone.Now()
+	normalized := strings.ToLower(strings.TrimSpace(period))
+	if normalized == "" {
+		normalized = "month"
+	}
+
+	switch normalized {
+	case "today", "day":
+		return "today", timezone.StartOfDay(now), now
+	case "7d", "7day", "7days", "week":
+		return normalized, now.AddDate(0, 0, -7), now
+	case "30d", "30day", "30days", "month":
+		return normalized, now.AddDate(0, 0, -30), now
+	default:
+		return normalized, now.AddDate(0, 0, -30), now
+	}
 }
 
 // GetUserBalanceHistory returns paginated balance/concurrency change records for a user.

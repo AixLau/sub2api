@@ -4,9 +4,13 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestConcurrencyErrorResponse(t *testing.T) {
@@ -60,4 +64,22 @@ func TestConcurrencyErrorResponse(t *testing.T) {
 			require.Equal(t, tt.wantMessage, message)
 		})
 	}
+}
+
+func TestMarkOpsConcurrencyErrorDiagnostic_ContextCanceled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	markOpsConcurrencyErrorDiagnostic(c, context.Canceled)
+
+	gotMessage, ok := c.Get(service.OpsDiagnosticMessageKey)
+	require.True(t, ok)
+	require.Equal(t, "客户端已断开连接或取消请求，网关停止继续处理", gotMessage)
+
+	gotDetail, ok := c.Get(service.OpsDiagnosticDetailKey)
+	require.True(t, ok)
+	require.Equal(t, "request_context", gjson.Get(gotDetail.(string), "source").String())
+	require.Equal(t, "client_request_canceled", gjson.Get(gotDetail.(string), "reason").String())
+	require.Equal(t, "context canceled", gjson.Get(gotDetail.(string), "raw_error").String())
 }

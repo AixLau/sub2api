@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -31,6 +33,54 @@ func contentModerationStatus(decision *service.ContentModerationDecision) int {
 
 func contentModerationErrorCode(decision *service.ContentModerationDecision) string {
 	return "content_policy_violation"
+}
+
+func markOpsContentModerationDiagnostic(c *gin.Context, decision *service.ContentModerationDecision) {
+	if c == nil || decision == nil {
+		return
+	}
+	message := "内容审计拦截：命中风险规则"
+	if keyword := strings.TrimSpace(decision.MatchedKeyword); keyword != "" {
+		message = "内容审计拦截：命中关键词 " + keyword
+	} else if category := strings.TrimSpace(decision.HighestCategory); category != "" {
+		message = "内容审计拦截：最高风险分类 " + category
+	}
+	detail := map[string]string{
+		"source":         "content_moderation",
+		"code":           contentModerationErrorCode(decision),
+		"action":         strings.TrimSpace(decision.Action),
+		"client_message": strings.TrimSpace(decision.Message),
+		"status_code":    fmt.Sprintf("%d", contentModerationStatus(decision)),
+	}
+	if decision.HighestCategory != "" {
+		detail["highest_category"] = strings.TrimSpace(decision.HighestCategory)
+	}
+	if decision.HighestScore > 0 {
+		detail["highest_score"] = fmt.Sprintf("%.4f", decision.HighestScore)
+	}
+	if decision.MatchedKeyword != "" {
+		detail["matched_keyword"] = strings.TrimSpace(decision.MatchedKeyword)
+	}
+	if decision.KeywordCategory != "" {
+		detail["keyword_category"] = strings.TrimSpace(decision.KeywordCategory)
+	}
+	if decision.KeywordSeverity != "" {
+		detail["keyword_severity"] = strings.TrimSpace(decision.KeywordSeverity)
+	}
+	if decision.KeywordAction != "" {
+		detail["keyword_action"] = strings.TrimSpace(decision.KeywordAction)
+	}
+	if decision.EffectiveKeywordAction != "" {
+		detail["effective_keyword_action"] = strings.TrimSpace(decision.EffectiveKeywordAction)
+	}
+	if decision.RiskContextType != "" {
+		detail["risk_context_type"] = strings.TrimSpace(decision.RiskContextType)
+	}
+	if decision.RiskContextReason != "" {
+		detail["risk_context_reason"] = strings.TrimSpace(decision.RiskContextReason)
+	}
+	raw, _ := json.Marshal(detail)
+	service.SetOpsDiagnostic(c, message, string(raw))
 }
 
 func contentModerationCheckErrorDecision() *service.ContentModerationDecision {

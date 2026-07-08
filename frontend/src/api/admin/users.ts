@@ -209,19 +209,25 @@ export async function getUserApiKeys(id: number): Promise<PaginatedResponse<ApiK
  * @param period - Time period
  * @returns User usage statistics
  */
+export interface AdminUserUsageStats {
+  period: string
+  total_requests: number
+  total_input_tokens: number
+  total_output_tokens: number
+  total_cache_tokens: number
+  total_cache_creation_tokens: number
+  total_cache_read_tokens: number
+  total_tokens: number
+  total_cost: number
+  total_actual_cost: number
+  average_duration_ms: number
+}
+
 export async function getUserUsageStats(
   id: number,
   period: string = 'month'
-): Promise<{
-  total_requests: number
-  total_cost: number
-  total_tokens: number
-}> {
-  const { data } = await apiClient.get<{
-    total_requests: number
-    total_cost: number
-    total_tokens: number
-  }>(`/admin/users/${id}/usage`, {
+): Promise<AdminUserUsageStats> {
+  const { data } = await apiClient.get<AdminUserUsageStats>(`/admin/users/${id}/usage`, {
     params: { period }
   })
   return data

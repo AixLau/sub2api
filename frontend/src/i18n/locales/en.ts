@@ -2063,6 +2063,12 @@ export default {
       failedToLoadBalanceHistory: 'Failed to load balance history',
       createdAt: 'Created',
       totalRecharged: 'Total Recharged',
+      todayUsage: 'Today Spend',
+      sevenDayUsage: '7-Day Spend',
+      thirtyDayUsage: '30-Day Spend',
+      usageRequests: 'Requests',
+      usageTokens: 'Tokens',
+      usageTokenBreakdown: 'In {input} / Out {output} / Cache {cache}',
       roles: {
         admin: 'Admin',
         user: 'User'
