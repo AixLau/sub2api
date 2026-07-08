@@ -51,24 +51,8 @@
           />
         </div>
 
-        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <EndpointDistributionChart
-            v-model:source="endpointDistributionSource"
-            v-model:metric="endpointDistributionMetric"
-            :endpoint-stats="inboundEndpointStats"
-            :upstream-endpoint-stats="upstreamEndpointStats"
-            :endpoint-path-stats="endpointPathStats"
-            :loading="endpointStatsLoading"
-            :show-source-toggle="false"
-            :show-metric-toggle="true"
-            :show-cost="true"
-            :show-standard-cost="false"
-            :enable-breakdown="false"
-            :title="t('usage.endpointDistribution')"
-            :start-date="startDate"
-            :end-date="endDate"
-          />
-          <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" :show-cost="true" />
+        <div class="grid grid-cols-1 gap-6">
+          <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" :show-cost="true" chart-height-class="h-80" />
         </div>
       </div>
 
@@ -219,7 +203,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { keysAPI, usageAPI, userGroupsAPI } from '@/api'
@@ -231,7 +215,6 @@ import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'
 import UsageTable from '@/components/admin/usage/UsageTable.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import GroupDistributionChart from '@/components/charts/GroupDistributionChart.vue'
-import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import Icon from '@/components/icons/Icon.vue'
 import UserErrorRequestsTable from '@/components/user/UserErrorRequestsTable.vue'
@@ -241,7 +224,6 @@ import { BILLING_MODE_IMAGE, getBillingModeLabel } from '@/utils/billingMode'
 import { resolveUsageRequestType, requestTypeToLegacyStream } from '@/utils/usageRequestType'
 import type {
   ApiKey,
-  EndpointStat,
   Group,
   GroupStat,
   ModelStat,
@@ -258,21 +240,16 @@ const { t } = useI18n()
 const appStore = useAppStore()
 
 type DistributionMetric = 'tokens' | 'actual_cost'
-type EndpointSource = 'inbound' | 'upstream' | 'path'
 
 const usageStats = ref<UsageStatsResponse | null>(null)
 const usageLogs = ref<UsageLog[]>([])
 const trendData = ref<TrendDataPoint[]>([])
 const requestedModelStats = ref<ModelStat[]>([])
 const groupStats = ref<GroupStat[]>([])
-const inboundEndpointStats = ref<EndpointStat[]>([])
-const upstreamEndpointStats = ref<EndpointStat[]>([])
-const endpointPathStats = ref<EndpointStat[]>([])
 
 const loading = ref(false)
 const chartsLoading = ref(false)
 const modelStatsLoading = ref(false)
-const endpointStatsLoading = ref(false)
 const exporting = ref(false)
 const errorRows = ref<UserErrorRequest[]>([])
 const errorLoading = ref(false)
@@ -352,8 +329,6 @@ const granularity = ref<'day' | 'hour'>(getGranularityForRange(startDate.value, 
 
 const modelDistributionMetric = ref<DistributionMetric>('tokens')
 const groupDistributionMetric = ref<DistributionMetric>('tokens')
-const endpointDistributionMetric = ref<DistributionMetric>('tokens')
-const endpointDistributionSource = ref<EndpointSource>('inbound')
 const activeTab = ref<'usage' | 'errors'>('usage')
 const errorViewEnabled = computed(() => appStore.cachedPublicSettings?.allow_user_view_error_requests ?? false)
 
@@ -457,22 +432,13 @@ const loadLogs = async () => {
 
 const loadStats = async () => {
   const seq = ++statsReqSeq
-  endpointStatsLoading.value = true
   try {
     const stats = await usageAPI.getStats(normalizedFilters.value)
     if (seq !== statsReqSeq) return
     usageStats.value = stats
-    inboundEndpointStats.value = stats.endpoints || []
-    upstreamEndpointStats.value = []
-    endpointPathStats.value = []
   } catch (error) {
     if (seq !== statsReqSeq) return
     console.error('Failed to load usage stats:', error)
-    inboundEndpointStats.value = []
-    upstreamEndpointStats.value = []
-    endpointPathStats.value = []
-  } finally {
-    if (seq === statsReqSeq) endpointStatsLoading.value = false
   }
 }
 
@@ -884,7 +850,4 @@ onUnmounted(() => {
   document.removeEventListener('click', handleColumnClickOutside)
 })
 
-watch(endpointDistributionSource, () => {
-  // Endpoint source switching is handled by the chart component using already loaded stats.
-})
 </script>

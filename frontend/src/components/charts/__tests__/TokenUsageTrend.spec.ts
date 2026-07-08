@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { defineComponent } from 'vue'
 
 import TokenUsageTrend from '../TokenUsageTrend.vue'
 
@@ -17,34 +17,6 @@ const messages: Record<string, string> = {
   'admin.dashboard.noDataAvailable': 'No data available',
 }
 
-const { createRootMock, lineMock, reactRoots } = vi.hoisted(() => {
-  const roots: any[] = []
-  const LineMock = vi.fn(() => null)
-  const CreateRootMock = vi.fn((container) => {
-    const root = {
-      container,
-      render: vi.fn(),
-      unmount: vi.fn(),
-    }
-    roots.push(root)
-    return root
-  })
-
-  return {
-    createRootMock: CreateRootMock,
-    lineMock: LineMock,
-    reactRoots: roots,
-  }
-})
-
-vi.mock('@ant-design/plots', () => ({
-  Line: lineMock,
-}))
-
-vi.mock('react-dom/client', () => ({
-  createRoot: createRootMock,
-}))
-
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return {
@@ -53,6 +25,30 @@ vi.mock('vue-i18n', async () => {
       t: (key: string) => messages[key] ?? key,
     }),
   }
+})
+
+const VariableWidthLineChartStub = defineComponent({
+  name: 'VariableWidthLineChart',
+  props: {
+    title: String,
+    data: Array,
+    xField: [String, Function],
+    yField: [String, Function],
+    colorField: [String, Function],
+    colors: Array,
+    height: Number,
+    yDomain: Array,
+    yTicks: Array,
+    xTicks: Array,
+    showLegend: Boolean,
+    brushEffect: Boolean,
+    strokeEffect: String,
+    emptyText: String,
+    tooltipHtml: Function,
+    formatX: Function,
+    formatY: Function,
+  },
+  template: '<div class="variable-width-line-chart" />',
 })
 
 const trendPoint = {
@@ -67,42 +63,40 @@ const trendPoint = {
   actual_cost: 4.58,
 }
 
-const getRenderedConfig = () => {
-  const root = reactRoots[0]
-  return root.render.mock.calls.at(-1)[0].props
-}
+const mountTrend = (props: Record<string, unknown> = {}) => mount(TokenUsageTrend, {
+  props: {
+    trendData: [trendPoint],
+    ...props,
+  },
+  global: {
+    stubs: {
+      LoadingSpinner: true,
+      VariableWidthLineChart: VariableWidthLineChartStub,
+    },
+  },
+})
+
+const getChart = (wrapper: ReturnType<typeof mountTrend>) =>
+  wrapper.findComponent(VariableWidthLineChartStub)
 
 describe('TokenUsageTrend', () => {
-  afterEach(() => {
-    createRootMock.mockClear()
-    lineMock.mockClear()
-    reactRoots.splice(0)
-  })
-
   it('does not render total usage or cost summary in the chart header', () => {
-    const wrapper = mount(TokenUsageTrend, {
-      props: {
-        showCost: true,
-        trendData: [
-          trendPoint,
-          {
-            date: '2026-05-09',
-            requests: 1,
-            input_tokens: 100,
-            output_tokens: 25,
-            cache_creation_tokens: 50,
-            cache_read_tokens: 25,
-            total_tokens: 200,
-            cost: 0.4,
-            actual_cost: 0.51,
-          },
-        ],
-      },
-      global: {
-        stubs: {
-          LoadingSpinner: true,
+    const wrapper = mountTrend({
+      showCost: true,
+      trendData: [
+        trendPoint,
+        {
+          date: '2026-05-09',
+          requests: 1,
+          input_tokens: 100,
+          output_tokens: 25,
+          cache_creation_tokens: 50,
+          cache_read_tokens: 25,
+          total_tokens: 200,
+          cost: 0.4,
+          actual_cost: 0.51,
         },
-      },
+      ],
     })
 
     const text = wrapper.text()
@@ -111,47 +105,30 @@ describe('TokenUsageTrend', () => {
     expect(text).not.toContain('$5.09')
   })
 
-  it('renders the trend with Ant Design Plots trail line', () => {
-    mount(TokenUsageTrend, {
-      props: {
-        trendData: [trendPoint],
-      },
-      global: {
-        stubs: {
-          LoadingSpinner: true,
-        },
-      },
-    })
+  it('renders the trend through the native G2 variable-width line component', () => {
+    const wrapper = mountTrend()
+    const chart = getChart(wrapper)
 
-    expect(createRootMock).toHaveBeenCalledTimes(1)
-    expect(reactRoots[0].render).toHaveBeenCalledTimes(1)
-
-    const config = getRenderedConfig()
-    expect(reactRoots[0].render.mock.calls[0][0].type).toBe(lineMock)
-    expect(config).toMatchObject({
-      autoFit: true,
+    expect(chart.exists()).toBe(true)
+    expect(chart.props()).toMatchObject({
+      title: 'Token 使用趋势',
       yField: 'value',
-      sizeField: 'value',
-      shapeField: 'trail',
       colorField: 'category',
-      legend: expect.objectContaining({ size: false }),
+      showLegend: true,
+      brushEffect: true,
+      strokeEffect: 'staccato',
     })
-    expect(config.xField({ date: '2026-05-08' })).toEqual(new Date('2026-05-08'))
+    expect(chart.props('xField')).toEqual(expect.any(Function))
+    expect(chart.props('formatX')).toEqual(expect.any(Function))
+    expect(chart.props('formatY')).toEqual(expect.any(Function))
+    expect(chart.props('tooltipHtml')).toEqual(expect.any(Function))
+    expect(chart.props('colors')).toEqual(['#2563eb', '#059669', '#f97316', '#14b8a6'])
+    expect((chart.props('xField') as (datum: { date: string }) => unknown)({ date: '2026-05-08' })).toEqual(new Date('2026-05-08'))
   })
 
-  it('maps token series for Ant Design Plots', () => {
-    mount(TokenUsageTrend, {
-      props: {
-        trendData: [trendPoint],
-      },
-      global: {
-        stubs: {
-          LoadingSpinner: true,
-        },
-      },
-    })
-
-    const { data } = getRenderedConfig()
+  it('maps token series for the native G2 chart', () => {
+    const wrapper = mountTrend()
+    const data = getChart(wrapper).props('data')
 
     expect(data).toEqual([
       expect.objectContaining({ date: '2026-05-08', category: '输入', value: 200 }),
@@ -162,54 +139,33 @@ describe('TokenUsageTrend', () => {
   })
 
   it('returns 0 hit rate in the tooltip when all prompt tokens are zero', () => {
-    mount(TokenUsageTrend, {
-      props: {
-        trendData: [
-          {
-            date: '2026-05-08',
-            requests: 0,
-            input_tokens: 0,
-            output_tokens: 0,
-            cache_creation_tokens: 0,
-            cache_read_tokens: 0,
-            total_tokens: 0,
-            cost: 0,
-            actual_cost: 0,
-          },
-        ],
-      },
-      global: {
-        stubs: {
-          LoadingSpinner: true,
+    const wrapper = mountTrend({
+      trendData: [
+        {
+          date: '2026-05-08',
+          requests: 0,
+          input_tokens: 0,
+          output_tokens: 0,
+          cache_creation_tokens: 0,
+          cache_read_tokens: 0,
+          total_tokens: 0,
+          cost: 0,
+          actual_cost: 0,
         },
-      },
+      ],
     })
 
-    const tooltipHtml = getRenderedConfig().interaction.tooltip.render(null, {
-      title: '2026-05-08',
-      items: [],
-    })
+    const tooltipHtml = (getChart(wrapper).props('tooltipHtml') as (title: string) => string)('2026-05-08')
     expect(tooltipHtml).toContain('缓存命中率')
     expect(tooltipHtml).toContain('0.0%')
   })
 
   it('localizes tooltip footer and hides cost by default', () => {
-    mount(TokenUsageTrend, {
-      props: {
-        trendData: [trendPoint],
-      },
-      global: {
-        stubs: {
-          LoadingSpinner: true,
-        },
-      },
-    })
+    const wrapper = mountTrend()
+    const tooltipHtml = (getChart(wrapper).props('tooltipHtml') as (title: string) => string)('2026-05-08')
 
-    const tooltipHtml = getRenderedConfig().interaction.tooltip.render(null, {
-      title: '2026-05-08',
-      items: [],
-    })
-
+    expect(tooltipHtml).toContain('background: #111827')
+    expect(tooltipHtml).toContain('box-shadow: 0 18px 38px rgba(0, 0, 0, 0.32)')
     expect(tooltipHtml).toContain('总使用: 1.05K')
     expect(tooltipHtml).not.toContain('$')
     expect(tooltipHtml).not.toContain('消费')
@@ -218,22 +174,8 @@ describe('TokenUsageTrend', () => {
   })
 
   it('shows total usage and cost in tooltip footer when enabled', () => {
-    mount(TokenUsageTrend, {
-      props: {
-        showCost: true,
-        trendData: [trendPoint],
-      },
-      global: {
-        stubs: {
-          LoadingSpinner: true,
-        },
-      },
-    })
-
-    const tooltipHtml = getRenderedConfig().interaction.tooltip.render(null, {
-      title: '2026-05-08',
-      items: [],
-    })
+    const wrapper = mountTrend({ showCost: true })
+    const tooltipHtml = (getChart(wrapper).props('tooltipHtml') as (title: string) => string)('2026-05-08')
 
     expect(tooltipHtml).toContain('总使用: 1.05K')
     expect(tooltipHtml).toContain('消费: $4.58')
@@ -243,55 +185,15 @@ describe('TokenUsageTrend', () => {
   })
 
   it('allows callers to enlarge the chart height', () => {
-    const wrapper = mount(TokenUsageTrend, {
-      props: {
-        chartHeightClass: 'h-80',
-        trendData: [trendPoint],
-      },
-      global: {
-        stubs: {
-          LoadingSpinner: true,
-        },
-      },
-    })
+    const wrapper = mountTrend({ chartHeightClass: 'h-80' })
 
-    expect(wrapper.find('.h-80').exists()).toBe(true)
+    expect(getChart(wrapper).props('height')).toBe(320)
   })
 
-  it('updates and unmounts the React chart with the component lifecycle', async () => {
-    const wrapper = mount(TokenUsageTrend, {
-      props: {
-        trendData: [trendPoint],
-      },
-      global: {
-        stubs: {
-          LoadingSpinner: true,
-        },
-      },
-    })
+  it('uses localized no-data text inside the native chart component', () => {
+    const wrapper = mountTrend({ trendData: [] })
 
-    const root = reactRoots[0]
-
-    await wrapper.setProps({
-      trendData: [
-        {
-          ...trendPoint,
-          date: '2026-05-09',
-          input_tokens: 400,
-          total_tokens: 1250,
-        },
-      ],
-    })
-    await nextTick()
-
-    expect(root.render).toHaveBeenCalledTimes(2)
-    expect(getRenderedConfig().data).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ date: '2026-05-09', category: '输入', value: 400 }),
-      ])
-    )
-
-    wrapper.unmount()
-    expect(root.unmount).toHaveBeenCalledTimes(1)
+    expect(getChart(wrapper).props('data')).toEqual([])
+    expect(getChart(wrapper).props('emptyText')).toBe('No data available')
   })
 })

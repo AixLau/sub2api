@@ -100,8 +100,8 @@ const usageTableStub = {
   template: '<div class="usage-table" :data-columns="JSON.stringify((columns || []).map((col) => col.key))" :data-show-account-billing="String(showAccountBilling)" :data-show-upstream-endpoint="String(showUpstreamEndpoint)" :data-show-cost-breakdown="String(showCostBreakdown)" />',
 }
 const tokenUsageTrendStub = {
-  props: ['showCost'],
-  template: '<div class="token-usage-trend" :data-show-cost="String(showCost)" />',
+  props: ['showCost', 'chartHeightClass'],
+  template: '<div class="token-usage-trend" :data-show-cost="String(showCost)" :data-height="chartHeightClass" />',
 }
 const usageStatsCardsStub = {
   props: ['showAccountCost', 'showStandardCost', 'showCost'],
@@ -242,10 +242,9 @@ describe('user UsageView', () => {
       expect(chart.attributes('data-show-standard-cost')).toBe('false')
     }
 
-    expect(wrapper.find('.endpoint-distribution-chart').attributes('data-show-cost')).toBe('true')
-    expect(wrapper.find('.endpoint-distribution-chart').attributes('data-show-standard-cost')).toBe('false')
-    expect(wrapper.find('.endpoint-distribution-chart').attributes('data-metric')).toBe('tokens')
+    expect(wrapper.find('.endpoint-distribution-chart').exists()).toBe(false)
     expect(wrapper.find('.token-usage-trend').attributes('data-show-cost')).toBe('true')
+    expect(wrapper.find('.token-usage-trend').attributes('data-height')).toBe('h-80')
 
     const tableColumns = JSON.parse(wrapper.find('.usage-table').attributes('data-columns') || '[]')
     expect(tableColumns).toContain('cost')
