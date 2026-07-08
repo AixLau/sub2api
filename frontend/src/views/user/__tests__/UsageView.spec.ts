@@ -250,7 +250,7 @@ describe('user UsageView', () => {
     const tableColumns = JSON.parse(wrapper.find('.usage-table').attributes('data-columns') || '[]')
     expect(tableColumns).toContain('cost')
     expect(wrapper.find('.usage-table').attributes('data-show-account-billing')).toBe('false')
-    expect(wrapper.find('.usage-table').attributes('data-show-cost-breakdown')).toBe('false')
+    expect(wrapper.find('.usage-table').attributes('data-show-cost-breakdown')).toBe('undefined')
   })
 
   it('renders usage inside a Tremor-style dashboard shell', async () => {
