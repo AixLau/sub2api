@@ -39,7 +39,6 @@
                 <div class="space-y-5">
                   <AccountBalanceHero
                     :account-name="accountDisplayName"
-                    :account-id="accountDisplayId"
                     :formatted-balance="formattedCurrentBalance"
                   />
 
@@ -844,11 +843,6 @@ const localeCode = computed(() => {
 const accountDisplayName = computed(() =>
   user.value?.username || user.value?.email || t('payment.rechargeUi.defaultAccountName')
 )
-const accountDisplayId = computed(() => {
-  const maybeUser = user.value as { id?: number | string; user_id?: number | string; email?: string } | null | undefined
-  const rawId = maybeUser?.id ?? maybeUser?.user_id ?? maybeUser?.email ?? accountDisplayName.value
-  return String(rawId)
-})
 const currentBalanceAmount = computed(() => {
   const value = user.value?.balance
   return Number.isFinite(value) ? Number(value) : 0

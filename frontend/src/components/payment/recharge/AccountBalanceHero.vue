@@ -16,9 +16,6 @@
               {{ t('payment.rechargeUi.verified') }}
             </span>
           </div>
-          <p class="mt-2 text-sm text-slate-500">
-            {{ t('payment.rechargeUi.accountId') }} {{ accountId }}
-          </p>
         </div>
       </div>
 
@@ -64,7 +61,6 @@ import Icon from '@/components/icons/Icon.vue'
 
 const props = withDefaults(defineProps<{
   accountName: string
-  accountId: string
   formattedBalance: string
   showBalance?: boolean
   subscriptionSummary?: {

@@ -41,7 +41,6 @@ vi.mock('vue-i18n', async () => {
     'payment.tabTopUp': '充值',
     'payment.activeSubscription': '当前订阅',
     'payment.rechargeUi.activeMode': '当前模式',
-    'payment.rechargeUi.accountId': '账户 ID',
     'payment.rechargeUi.agreementName': '充值协议',
     'payment.rechargeUi.agreementPrefix': '我已阅读并同意',
     'payment.rechargeUi.amountHint': '选择快捷金额，或输入自定义充值金额。',
@@ -103,7 +102,10 @@ describe('PaymentPreviewView', () => {
     const wrapper = mount(PaymentPreviewView)
 
     expect(wrapper.find('[data-testid="recharge-liquid-page"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="account-balance-hero"]').text()).toContain('Acme Corporation')
+    const heroText = wrapper.find('[data-testid="account-balance-hero"]').text()
+    expect(heroText).toContain('Acme Corporation')
+    expect(heroText).not.toContain('账户 ID')
+    expect(heroText).not.toContain('1000 8888 6666')
     expect(wrapper.find('[data-testid="purchase-mode-recharge"]').attributes('aria-pressed')).toBe('true')
 
     await wrapper.find('[data-testid="quick-amount-100"]').trigger('click')

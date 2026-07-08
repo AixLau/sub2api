@@ -7441,7 +7441,6 @@ export default {
       activeMode: 'Purchase mode',
       defaultAccountName: 'Current Account',
       verified: 'Verified',
-      accountId: 'Account ID',
       availableBalance: 'Available Balance',
       selectAmount: 'Select Recharge Amount',
       amountHint: 'Choose a preset amount or enter a custom amount.',

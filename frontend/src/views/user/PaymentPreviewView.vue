@@ -8,7 +8,6 @@
       />
       <AccountBalanceHero
         account-name="Acme Corporation"
-        account-id="1000 8888 6666"
         :formatted-balance="formatCny(currentBalance)"
         :show-balance="activeMode === 'recharge'"
         :subscription-summary="activeMode === 'subscription' ? currentSubscriptionSummary : null"

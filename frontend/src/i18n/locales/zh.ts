@@ -7622,7 +7622,6 @@ export default {
       activeMode: '购买模式',
       defaultAccountName: '当前账户',
       verified: '企业认证',
-      accountId: '账户 ID',
       availableBalance: '当前可用余额',
       selectAmount: '选择充值金额',
       amountHint: '选择快捷金额，或输入自定义充值金额。',
