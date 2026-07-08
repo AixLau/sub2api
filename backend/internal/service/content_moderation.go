@@ -1146,7 +1146,7 @@ func (s *ContentModerationService) TestKeywords(ctx context.Context, prompt stri
 		Matched:           false,
 		NormalizedExcerpt: trimRunes(normalized, maxModerationExcerptRunes),
 	}
-	if match, hit := matchContentModerationKeyword(prompt, cfg.keywordRules()); hit {
+	if match, hit := matchContentModerationLocalRule(prompt, cfg.keywordRules()); hit {
 		decision := decideContentModerationKeyword(prompt, match)
 		result.Matched = true
 		result.MatchedKeyword = match.Keyword
@@ -1340,7 +1340,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	}
 	if cfg.Mode == ContentModerationModePreBlock {
 		if cfg.shouldRunLocalRules() {
-			if keywordMatch, hit := matchContentModerationKeyword(content.Text, cfg.keywordRules()); hit {
+			if keywordMatch, hit := matchContentModerationLocalRule(content.Text, cfg.keywordRules()); hit {
 				return s.keywordDecision(ctx, input, cfg, content, hashText, keywordMatch), nil
 			}
 		}
@@ -4757,6 +4757,13 @@ func matchBlockedKeyword(text string, keywords []string) (string, bool) {
 	return match.Keyword, hit
 }
 
+func matchContentModerationLocalRule(text string, rules []ContentModerationKeywordRule) (ContentModerationKeywordRule, bool) {
+	if match, hit := matchContentModerationKeyword(text, rules); hit {
+		return match, true
+	}
+	return matchContextualCyberIntentRule(text)
+}
+
 func matchContentModerationKeyword(text string, rules []ContentModerationKeywordRule) (ContentModerationKeywordRule, bool) {
 	if text == "" || len(rules) == 0 {
 		return ContentModerationKeywordRule{}, false
@@ -4785,6 +4792,244 @@ func matchContentModerationKeyword(text string, rules []ContentModerationKeyword
 		}
 	}
 	return ContentModerationKeywordRule{}, false
+}
+
+func matchContextualCyberIntentRule(text string) (ContentModerationKeywordRule, bool) {
+	normalized := normalizeKeywordComparable(text)
+	if normalized == "" {
+		return ContentModerationKeywordRule{}, false
+	}
+	if keyword, hit := contextualCyberDatabaseExtractionKeyword(text, normalized); hit {
+		return contextualCyberIntentRule(keyword), true
+	}
+	if keyword, hit := contextualCyberReverseCrackingKeyword(normalized); hit {
+		return contextualCyberIntentRule(keyword), true
+	}
+	if keyword, hit := contextualCyberIntrusionKeyword(text, normalized); hit {
+		return contextualCyberIntentRule(keyword), true
+	}
+	return ContentModerationKeywordRule{}, false
+}
+
+func contextualCyberIntentRule(keyword string) ContentModerationKeywordRule {
+	return ContentModerationKeywordRule{
+		Keyword:  keyword,
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityCritical,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}
+}
+
+func contextualCyberDatabaseExtractionKeyword(rawText string, normalized string) (string, bool) {
+	keyword, hasExtraction := firstContentModerationMarker(normalized, []string{
+		"拿到数据库",
+		"拿数据库",
+		"获取数据库",
+		"读取数据库",
+		"下载数据库",
+		"导出数据库",
+		"数据库数据",
+		"拖库",
+		"脱库",
+		"dump database",
+		"dump the database",
+		"database dump",
+		"extract database",
+		"steal database",
+		"get database",
+		"download database",
+	})
+	if !hasExtraction {
+		return "", false
+	}
+	if hasContentModerationSelfOwnedDatabaseContext(normalized) {
+		return "", false
+	}
+	if looksLikeExternalCyberTarget(rawText, normalized) || hasContentModerationOffensiveCyberContext(normalized) {
+		return keyword, true
+	}
+	return "", false
+}
+
+func contextualCyberReverseCrackingKeyword(normalized string) (string, bool) {
+	if hasAnyContentModerationMarker(normalized, []string{"ctf", "靶场", "本地样本", "本地 ctf", "local ctf", "local sandbox", "training lab"}) {
+		return "", false
+	}
+	hasReverse := hasAnyContentModerationMarker(normalized, []string{
+		"逆向",
+		"反编译",
+		"脱壳",
+		"reverse",
+		"reverse engineering",
+		"decompile",
+		"disassemble",
+	})
+	if !hasReverse {
+		return "", false
+	}
+	keyword, hasCracking := firstContentModerationMarker(normalized, []string{
+		"破解",
+		"绕过授权",
+		"绕过激活",
+		"授权校验",
+		"激活限制",
+		"注册码",
+		"激活码",
+		"crack",
+		"license bypass",
+		"bypass license",
+		"keygen",
+		"activation bypass",
+	})
+	if !hasCracking {
+		return "", false
+	}
+	return keyword, true
+}
+
+func contextualCyberIntrusionKeyword(rawText string, normalized string) (string, bool) {
+	if hasAnyContentModerationMarker(normalized, []string{
+		"已授权",
+		"已获得授权",
+		"书面授权",
+		"客户授权",
+		"授权测试",
+		"授权范围",
+		"自有",
+		"自有网站",
+		"自有系统",
+		"自己的网站",
+		"自己的系统",
+		"自己的服务器",
+		"我的网站",
+		"我的系统",
+		"我的服务器",
+		"ctf",
+		"靶场",
+		"本地",
+		"测试环境",
+		"training lab",
+		"local sandbox",
+	}) {
+		return "", false
+	}
+	keyword, hit := firstContentModerationMarker(normalized, []string{
+		"未经授权渗透",
+		"未授权渗透",
+		"入侵网站",
+		"攻击网站",
+		"绕过登录",
+		"拿 shell",
+		"getshell",
+		"webshell",
+		"上传木马",
+		"植入后门",
+		"bypass login",
+	})
+	if hit {
+		return keyword, true
+	}
+	keyword, hasOffensiveProbe := firstContentModerationMarker(normalized, []string{
+		"渗透",
+		"penetration flow",
+		"pentest",
+		"漏洞扫描",
+		"漏洞利用",
+		"exploit",
+		"sql injection",
+		"sqlmap",
+		"nmap",
+		"metasploit",
+		"burp",
+		"拿 shell",
+		"getshell",
+		"webshell",
+	})
+	if hasOffensiveProbe && looksLikeExternalCyberTarget(rawText, normalized) {
+		return keyword, true
+	}
+	return "", false
+}
+
+func hasContentModerationOffensiveCyberContext(normalized string) bool {
+	return hasAnyContentModerationMarker(normalized, []string{
+		"扫描",
+		"渗透",
+		"penetration flow",
+		"pentest",
+		"漏洞利用",
+		"漏洞扫描",
+		"exploit",
+		"入侵",
+		"黑客",
+		"攻击",
+		"绕过登录",
+		"sql injection",
+		"sqlmap",
+		"nmap",
+		"metasploit",
+		"burp",
+		"拿 shell",
+		"getshell",
+		"webshell",
+		"目标站",
+		"公网",
+		"外网",
+	})
+}
+
+func hasContentModerationSelfOwnedDatabaseContext(normalized string) bool {
+	return hasAnyContentModerationMarker(normalized, []string{
+		"我自己的数据库",
+		"自己的数据库",
+		"我的数据库",
+		"自有数据库",
+		"本地数据库",
+		"公司数据库",
+		"自家数据库",
+		"我的网站",
+		"自有网站",
+		"localhost",
+		"127 0 0 1",
+		"pg dump",
+		"备份",
+		"backup",
+		"my database",
+		"own database",
+		"our database",
+	})
+}
+
+func looksLikeExternalCyberTarget(rawText string, normalized string) bool {
+	lower := strings.ToLower(rawText)
+	if strings.Contains(lower, "http://") || strings.Contains(lower, "https://") {
+		return true
+	}
+	if hasAnyContentModerationMarker(normalized, []string{"公网", "外网", "目标站", "public target", "remote host"}) {
+		return true
+	}
+	for _, suffix := range []string{".com", ".co", ".cn", ".net", ".org", ".io", ".top", ".xyz", ".app", ".dev"} {
+		if strings.Contains(lower, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAnyContentModerationMarker(normalized string, markers []string) bool {
+	_, ok := firstContentModerationMarker(normalized, markers)
+	return ok
+}
+
+func firstContentModerationMarker(normalized string, markers []string) (string, bool) {
+	for _, marker := range markers {
+		normalizedMarker := normalizeKeywordComparable(marker)
+		if normalizedMarker != "" && strings.Contains(normalized, normalizedMarker) {
+			return marker, true
+		}
+	}
+	return "", false
 }
 
 func findContentModerationKeywordComparableSpan(text string, keyword string) (string, int, int, bool) {
