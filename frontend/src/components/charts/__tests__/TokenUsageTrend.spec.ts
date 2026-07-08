@@ -233,4 +233,34 @@ describe('TokenUsageTrend', () => {
     expect(footer.join(' ')).not.toContain('Standard')
     expect(footer.join(' ')).not.toContain('标准')
   })
+
+  it('uses a visible tooltip footer color in light mode', () => {
+    const wrapper = mount(TokenUsageTrend, {
+      props: {
+        showCost: true,
+        trendData: [
+          {
+            date: '2026-05-08',
+            requests: 1,
+            input_tokens: 200,
+            output_tokens: 50,
+            cache_creation_tokens: 300,
+            cache_read_tokens: 500,
+            cost: 2.64,
+            actual_cost: 4.58,
+          },
+        ],
+      },
+      global: {
+        stubs: {
+          LoadingSpinner: true,
+        },
+      },
+    })
+
+    const tooltipOptions = (wrapper.vm as any).$?.setupState.lineOptions.plugins.tooltip
+
+    expect(tooltipOptions.backgroundColor).toBe('#ffffff')
+    expect(tooltipOptions.footerColor).toBe('#111827')
+  })
 })

@@ -173,6 +173,7 @@ const lineOptions = computed(() => ({
       backgroundColor: isDarkMode.value ? '#111827' : '#ffffff',
       titleColor: isDarkMode.value ? '#f9fafb' : '#111827',
       bodyColor: isDarkMode.value ? '#e5e7eb' : '#374151',
+      footerColor: isDarkMode.value ? '#f9fafb' : '#111827',
       borderColor: isDarkMode.value ? '#374151' : '#e5e7eb',
       borderWidth: 1,
       padding: 12,
