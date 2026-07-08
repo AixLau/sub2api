@@ -227,25 +227,25 @@ describe('user UsageView', () => {
     expect(getAvailable).toHaveBeenCalled()
   })
 
-  it('hides account and standard cost comparisons on user summary charts', async () => {
+  it('shows user total consumption while hiding account and standard cost comparisons', async () => {
     const wrapper = mountUsageView()
     await flushPromises()
 
     const summary = wrapper.find('.usage-stats-cards')
-    expect(summary.attributes('data-show-cost')).toBe('false')
+    expect(summary.attributes('data-show-cost')).toBe('true')
     expect(summary.attributes('data-show-account-cost')).toBe('false')
     expect(summary.attributes('data-show-standard-cost')).toBe('false')
 
     for (const chart of wrapper.findAll('.distribution-chart')) {
-      expect(chart.attributes('data-show-cost')).toBe('false')
+      expect(chart.attributes('data-show-cost')).toBe('true')
       expect(chart.attributes('data-show-account-cost')).toBe('false')
       expect(chart.attributes('data-show-standard-cost')).toBe('false')
     }
 
-    expect(wrapper.find('.endpoint-distribution-chart').attributes('data-show-cost')).toBe('false')
+    expect(wrapper.find('.endpoint-distribution-chart').attributes('data-show-cost')).toBe('true')
     expect(wrapper.find('.endpoint-distribution-chart').attributes('data-show-standard-cost')).toBe('false')
     expect(wrapper.find('.endpoint-distribution-chart').attributes('data-metric')).toBe('tokens')
-    expect(wrapper.find('.token-usage-trend').attributes('data-show-cost')).toBe('false')
+    expect(wrapper.find('.token-usage-trend').attributes('data-show-cost')).toBe('true')
 
     const tableColumns = JSON.parse(wrapper.find('.usage-table').attributes('data-columns') || '[]')
     expect(tableColumns).not.toContain('cost')

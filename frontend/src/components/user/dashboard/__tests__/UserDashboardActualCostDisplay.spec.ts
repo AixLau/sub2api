@@ -62,7 +62,10 @@ const DateRangePickerStub = { template: '<span />' }
 const SelectStub = { template: '<span />' }
 const EmptyStateStub = { template: '<div />' }
 const RouterLinkStub = { template: '<a><slot /></a>' }
-const TokenUsageTrendStub = { template: '<div />' }
+const TokenUsageTrendStub = {
+  props: ['showCost'],
+  template: '<div class="token-usage-trend" :data-show-cost="String(showCost)" />',
+}
 
 const dashboardStats = (): UserStatsType => ({
   total_api_keys: 2,
@@ -86,6 +89,17 @@ const dashboardStats = (): UserStatsType => ({
   average_duration_ms: 123,
   rpm: 1,
   tpm: 300,
+  by_platform: [
+    {
+      platform: 'openai',
+      total_requests: 8,
+      total_tokens: 240,
+      total_actual_cost: 20,
+      today_requests: 2,
+      today_tokens: 120,
+      today_actual_cost: 5,
+    },
+  ],
 })
 
 const modelStats = (): ModelStat[] => [
@@ -145,7 +159,7 @@ const recentUsage = (): UsageLog[] => [
 ]
 
 describe('user dashboard cost visibility', () => {
-  it('does not show usage costs in the summary cards', () => {
+  it('shows user actual consumption in the summary cards without standard cost', () => {
     const wrapper = mount(UserDashboardStats, {
       props: {
         stats: dashboardStats(),
@@ -160,14 +174,16 @@ describe('user dashboard cost visibility', () => {
     })
 
     const text = wrapper.text()
-    expect(text).not.toContain('Today Cost')
-    expect(text).not.toContain('$24.8752')
-    expect(text).not.toContain('$7796.5673')
+    expect(text).toContain('Today Cost')
+    expect(text).toContain('$24.8752')
+    expect(text).toContain('$7796.5673')
+    expect(text).toContain('$20.0000')
+    expect(text).toContain('$5.0000')
     expect(text).not.toContain('$19.1348')
     expect(text).not.toContain('$7746.7298')
   })
 
-  it('does not show usage costs in the model distribution table', () => {
+  it('shows user actual consumption in charts without standard cost', () => {
     const wrapper = mount(UserDashboardCharts, {
       props: {
         loading: false,
@@ -188,13 +204,14 @@ describe('user dashboard cost visibility', () => {
     })
 
     const text = wrapper.text()
-    expect(text).not.toContain('Actual')
-    expect(text).not.toContain('$24.8752')
+    expect(text).toContain('Actual')
+    expect(text).toContain('$24.8752')
     expect(text).not.toContain('$19.1348')
     expect(text).not.toContain('Standard')
+    expect(wrapper.find('.token-usage-trend').attributes('data-show-cost')).toBe('true')
   })
 
-  it('does not show usage costs in recent usage records', () => {
+  it('shows user actual consumption in recent usage records without standard cost', () => {
     const wrapper = mount(UserDashboardRecentUsage, {
       props: {
         data: recentUsage(),
@@ -211,7 +228,7 @@ describe('user dashboard cost visibility', () => {
     })
 
     const text = wrapper.text()
-    expect(text).not.toContain('$24.8752')
+    expect(text).toContain('$24.8752')
     expect(text).not.toContain('$19.1348')
   })
 })

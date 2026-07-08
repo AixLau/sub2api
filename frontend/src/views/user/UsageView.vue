@@ -1,7 +1,7 @@
 <template>
   <AppLayout>
     <div class="space-y-6" data-usage-dashboard="tremor-shell">
-      <UsageStatsCards data-usage-dashboard="summary" :stats="usageStats" :show-account-cost="false" :show-standard-cost="false" :show-cost="false" />
+      <UsageStatsCards data-usage-dashboard="summary" :stats="usageStats" :show-account-cost="false" :show-standard-cost="false" :show-cost="true" />
 
       <div class="space-y-4">
         <div class="card p-4" data-usage-dashboard="controls">
@@ -29,8 +29,8 @@
             :model-stats="requestedModelStats"
             :loading="modelStatsLoading"
             :show-source-toggle="false"
-            :show-metric-toggle="false"
-            :show-cost="false"
+            :show-metric-toggle="true"
+            :show-cost="true"
             :enable-breakdown="false"
             :show-account-cost="false"
             :show-standard-cost="false"
@@ -41,8 +41,8 @@
             v-model:metric="groupDistributionMetric"
             :group-stats="groupStats"
             :loading="chartsLoading"
-            :show-metric-toggle="false"
-            :show-cost="false"
+            :show-metric-toggle="true"
+            :show-cost="true"
             :enable-breakdown="false"
             :show-account-cost="false"
             :show-standard-cost="false"
@@ -60,15 +60,15 @@
             :endpoint-path-stats="endpointPathStats"
             :loading="endpointStatsLoading"
             :show-source-toggle="false"
-            :show-metric-toggle="false"
-            :show-cost="false"
+            :show-metric-toggle="true"
+            :show-cost="true"
             :show-standard-cost="false"
             :enable-breakdown="false"
             :title="t('usage.endpointDistribution')"
             :start-date="startDate"
             :end-date="endDate"
           />
-          <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" :show-cost="false" />
+          <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" :show-cost="true" />
         </div>
       </div>
 
