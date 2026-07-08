@@ -265,30 +265,15 @@
               :end-date="endDate"
               @ranking-click="goToUserUsage"
             />
-            <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" show-cost />
+            <ActiveUsersTrend :trend-data="activeUsersTrend" :loading="activeUsersTrendLoading" />
           </div>
 
-          <!-- Active Users & User Usage Trends -->
-          <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <ActiveUsersTrend :trend-data="activeUsersTrend" :loading="activeUsersTrendLoading" />
-            <div class="card p-4">
-              <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
-                {{ t('admin.dashboard.recentUsage') }} (Top 12)
-              </h3>
-              <div class="h-48">
-                <div v-if="userTrendLoading" class="flex h-full items-center justify-center">
-                  <LoadingSpinner size="md" />
-                </div>
-                <Line v-else-if="userTrendChartData" :data="userTrendChartData" :options="lineOptions" />
-                <div
-                  v-else
-                  class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400"
-                >
-                  {{ t('admin.dashboard.noDataAvailable') }}
-                </div>
-              </div>
-            </div>
-          </div>
+          <TokenUsageTrend
+            :trend-data="trendData"
+            :loading="chartsLoading"
+            chart-height-class="h-80"
+            show-cost
+          />
 
         </div>
       </template>
@@ -308,7 +293,6 @@ import type {
   DashboardStats,
   TrendDataPoint,
   ModelStat,
-  UserUsageTrendPoint,
   UserSpendingRankingItem
 } from '@/types'
 import type { ActiveUsersTrendPoint } from '@/api/admin/dashboard'
@@ -321,35 +305,11 @@ import ModelDistributionChart from '@/components/charts/ModelDistributionChart.v
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import ActiveUsersTrend from '@/components/charts/ActiveUsersTrend.vue'
 
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Tooltip,
-  Legend,
-  Filler
-} from 'chart.js'
-import { Line } from 'vue-chartjs'
-
-// Register Chart.js components
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Tooltip,
-  Legend,
-  Filler
-)
-
 const appStore = useAppStore()
 const router = useRouter()
 const stats = ref<DashboardStats | null>(null)
 const loading = ref(false)
 const chartsLoading = ref(false)
-const userTrendLoading = ref(false)
 const activeUsersTrendLoading = ref(false)
 const rankingLoading = ref(false)
 const rankingError = ref(false)
@@ -357,14 +317,12 @@ const rankingError = ref(false)
 // Chart data
 const trendData = ref<TrendDataPoint[]>([])
 const modelStats = ref<ModelStat[]>([])
-const userTrend = ref<UserUsageTrendPoint[]>([])
 const activeUsersTrend = ref<ActiveUsersTrendPoint[]>([])
 const rankingItems = ref<UserSpendingRankingItem[]>([])
 const rankingTotalActualCost = ref(0)
 const rankingTotalRequests = ref(0)
 const rankingTotalTokens = ref(0)
 let chartLoadSeq = 0
-let usersTrendLoadSeq = 0
 let activeUsersTrendLoadSeq = 0
 let rankingLoadSeq = 0
 const rankingLimit = 12
@@ -394,140 +352,6 @@ const granularityOptions = computed(() => [
   { value: 'day', label: t('admin.dashboard.day') },
   { value: 'hour', label: t('admin.dashboard.hour') }
 ])
-
-// Dark mode detection
-const isDarkMode = computed(() => {
-  return document.documentElement.classList.contains('dark')
-})
-
-// Chart colors
-const chartColors = computed(() => ({
-  text: isDarkMode.value ? '#e5e7eb' : '#374151',
-  grid: isDarkMode.value ? '#374151' : '#e5e7eb'
-}))
-
-// Line chart options (for user trend chart)
-const lineOptions = computed(() => ({
-  responsive: true,
-  maintainAspectRatio: false,
-  interaction: {
-    intersect: false,
-    mode: 'index' as const
-  },
-  plugins: {
-    legend: {
-      position: 'top' as const,
-      labels: {
-        color: chartColors.value.text,
-        usePointStyle: true,
-        pointStyle: 'circle',
-        padding: 15,
-        font: {
-          size: 11
-        }
-      }
-    },
-    tooltip: {
-      itemSort: (a: any, b: any) => {
-        const aValue = typeof a?.raw === 'number' ? a.raw : Number(a?.parsed?.y ?? 0)
-        const bValue = typeof b?.raw === 'number' ? b.raw : Number(b?.parsed?.y ?? 0)
-        return bValue - aValue
-      },
-      callbacks: {
-        label: (context: any) => {
-          return `${context.dataset.label}: ${formatTokens(context.raw)}`
-        }
-      }
-    }
-  },
-  scales: {
-    x: {
-      grid: {
-        color: chartColors.value.grid
-      },
-      ticks: {
-        color: chartColors.value.text,
-        font: {
-          size: 10
-        }
-      }
-    },
-    y: {
-      grid: {
-        color: chartColors.value.grid
-      },
-      ticks: {
-        color: chartColors.value.text,
-        font: {
-          size: 10
-        },
-        callback: (value: string | number) => formatTokens(Number(value))
-      }
-    }
-  }
-}))
-
-// User trend chart data
-const userTrendChartData = computed(() => {
-  if (!userTrend.value?.length) return null
-
-  const getDisplayName = (point: UserUsageTrendPoint): string => {
-    const username = point.username?.trim()
-    if (username) {
-      return username
-    }
-
-    const email = point.email?.trim()
-    if (email) {
-      return email
-    }
-
-    return t('admin.redeem.userPrefix', { id: point.user_id })
-  }
-
-  // Group by user_id to avoid merging different users with the same display name
-  const userGroups = new Map<number, { name: string; data: Map<string, number> }>()
-  const allDates = new Set<string>()
-
-  userTrend.value.forEach((point) => {
-    allDates.add(point.date)
-    const key = point.user_id
-    if (!userGroups.has(key)) {
-      userGroups.set(key, { name: getDisplayName(point), data: new Map() })
-    }
-    userGroups.get(key)!.data.set(point.date, point.tokens)
-  })
-
-  const sortedDates = Array.from(allDates).sort()
-  const colors = [
-    '#3b82f6',
-    '#10b981',
-    '#f59e0b',
-    '#ef4444',
-    '#8b5cf6',
-    '#ec4899',
-    '#14b8a6',
-    '#f97316',
-    '#6366f1',
-    '#84cc16',
-    '#06b6d4',
-    '#a855f7'
-  ]
-
-  const datasets = Array.from(userGroups.values()).map((group, idx) => ({
-    label: group.name,
-    data: sortedDates.map((date) => group.data.get(date) || 0),
-    borderColor: colors[idx % colors.length],
-    backgroundColor: `${colors[idx % colors.length]}20`,
-    fill: false,
-    tension: 0.3
-  }))
-
-  return {
-    labels: sortedDates,
-    datasets
-  }
-})
 
 // Format helpers
 const formatTokens = (value: number | undefined): string => {
@@ -638,29 +462,6 @@ const loadDashboardSnapshot = async (includeStats: boolean) => {
   }
 }
 
-const loadUsersTrend = async () => {
-  const currentSeq = ++usersTrendLoadSeq
-  userTrendLoading.value = true
-  try {
-    const response = await adminAPI.dashboard.getUserUsageTrend({
-      start_date: startDate.value,
-      end_date: endDate.value,
-      granularity: granularity.value,
-      limit: 12
-    })
-    if (currentSeq !== usersTrendLoadSeq) return
-    userTrend.value = response.trend || []
-  } catch (error) {
-    if (currentSeq !== usersTrendLoadSeq) return
-    console.error('Error loading users trend:', error)
-    userTrend.value = []
-  } finally {
-    if (currentSeq === usersTrendLoadSeq) {
-      userTrendLoading.value = false
-    }
-  }
-}
-
 const loadActiveUsersTrend = async () => {
   const currentSeq = ++activeUsersTrendLoadSeq
   activeUsersTrendLoading.value = true
@@ -716,7 +517,6 @@ const loadUserSpendingRanking = async () => {
 const loadDashboardStats = async () => {
   await Promise.all([
     loadDashboardSnapshot(true),
-    loadUsersTrend(),
     loadActiveUsersTrend(),
     loadUserSpendingRanking()
   ])
@@ -725,7 +525,6 @@ const loadDashboardStats = async () => {
 const loadChartData = async () => {
   await Promise.all([
     loadDashboardSnapshot(false),
-    loadUsersTrend(),
     loadActiveUsersTrend(),
     loadUserSpendingRanking()
   ])

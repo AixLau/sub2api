@@ -71,6 +71,29 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
   })) as unknown as typeof window.matchMedia
 }
 
+if (typeof URL.createObjectURL !== 'function') {
+  URL.createObjectURL = vi.fn(() => 'blob:mock-url')
+}
+
+if (typeof URL.revokeObjectURL !== 'function') {
+  URL.revokeObjectURL = vi.fn()
+}
+
+if (typeof globalThis.Worker === 'undefined') {
+  class MockWorker {
+    onmessage: ((event: MessageEvent) => void) | null = null
+    onmessageerror: ((event: MessageEvent) => void) | null = null
+
+    postMessage() {
+      this.onmessage?.({ data: null } as MessageEvent)
+    }
+
+    terminate() {}
+  }
+
+  globalThis.Worker = MockWorker as unknown as typeof Worker
+}
+
 // Mock IntersectionObserver
 class MockIntersectionObserver {
   observe = vi.fn()

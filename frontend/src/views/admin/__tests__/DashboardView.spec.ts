@@ -4,9 +4,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import type { DashboardStats } from '@/types'
 import DashboardView from '../DashboardView.vue'
 
-const { getSnapshotV2, getUserUsageTrend, getUserSpendingRanking } = vi.hoisted(() => ({
+const { getSnapshotV2, getUserUsageTrend, getActiveUsersTrend, getUserSpendingRanking } = vi.hoisted(() => ({
   getSnapshotV2: vi.fn(),
   getUserUsageTrend: vi.fn(),
+  getActiveUsersTrend: vi.fn(),
   getUserSpendingRanking: vi.fn()
 }))
 
@@ -15,6 +16,7 @@ vi.mock('@/api/admin', () => ({
     dashboard: {
       getSnapshotV2,
       getUserUsageTrend,
+      getActiveUsersTrend,
       getUserSpendingRanking
     }
   }
@@ -89,6 +91,7 @@ describe('admin DashboardView', () => {
   beforeEach(() => {
     getSnapshotV2.mockReset()
     getUserUsageTrend.mockReset()
+    getActiveUsersTrend.mockReset()
     getUserSpendingRanking.mockReset()
 
     getSnapshotV2.mockResolvedValue({
@@ -97,6 +100,12 @@ describe('admin DashboardView', () => {
       models: []
     })
     getUserUsageTrend.mockResolvedValue({
+      trend: [],
+      start_date: '',
+      end_date: '',
+      granularity: 'hour'
+    })
+    getActiveUsersTrend.mockResolvedValue({
       trend: [],
       start_date: '',
       end_date: '',
@@ -139,5 +148,34 @@ describe('admin DashboardView', () => {
       end_date: formatLocalDate(now),
       granularity: 'hour'
     }))
+  })
+
+  it('does not load recent usage trend and enlarges token usage trend', async () => {
+    const TokenUsageTrendStub = {
+      props: ['trendData', 'loading', 'showCost', 'chartHeightClass'],
+      template: '<section data-testid="token-usage-trend" :data-height="chartHeightClass" />'
+    }
+
+    const wrapper = mount(DashboardView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          LoadingSpinner: true,
+          Icon: true,
+          DateRangePicker: true,
+          Select: true,
+          ModelDistributionChart: true,
+          TokenUsageTrend: TokenUsageTrendStub,
+          ActiveUsersTrend: true,
+          Line: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(getUserUsageTrend).not.toHaveBeenCalled()
+    expect(wrapper.text()).not.toContain('admin.dashboard.recentUsage')
+    expect(wrapper.find('[data-testid="token-usage-trend"]').attributes('data-height')).toBe('h-80')
   })
 })

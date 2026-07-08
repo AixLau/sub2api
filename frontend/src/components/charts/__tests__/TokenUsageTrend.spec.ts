@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 
 import TokenUsageTrend from '../TokenUsageTrend.vue'
 
@@ -16,6 +17,32 @@ const messages: Record<string, string> = {
   'admin.dashboard.noDataAvailable': 'No data available',
 }
 
+const { dualAxesInstances, DualAxesMock } = vi.hoisted(() => {
+  const instances: any[] = []
+  const Mock = vi.fn().mockImplementation((container, options) => {
+    const instance = {
+      container,
+      options,
+      render: vi.fn(),
+      update: vi.fn((nextOptions) => {
+        instance.options = nextOptions
+      }),
+      destroy: vi.fn(),
+    }
+    instances.push(instance)
+    return instance
+  })
+
+  return {
+    dualAxesInstances: instances,
+    DualAxesMock: Mock,
+  }
+})
+
+vi.mock('@antv/g2plot', () => ({
+  DualAxes: DualAxesMock,
+}))
+
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return {
@@ -26,29 +53,29 @@ vi.mock('vue-i18n', async () => {
   }
 })
 
-vi.mock('vue-chartjs', () => ({
-  Line: {
-    props: ['data', 'options'],
-    template: '<div class="chart-data">{{ JSON.stringify(data) }}</div>',
-  },
-}))
+const trendPoint = {
+  date: '2026-05-08',
+  requests: 1,
+  input_tokens: 200,
+  output_tokens: 50,
+  cache_creation_tokens: 300,
+  cache_read_tokens: 500,
+  cost: 2.64,
+  actual_cost: 4.58,
+}
 
 describe('TokenUsageTrend', () => {
+  afterEach(() => {
+    DualAxesMock.mockClear()
+    dualAxesInstances.splice(0)
+  })
+
   it('does not render total usage or cost summary in the chart header', () => {
     const wrapper = mount(TokenUsageTrend, {
       props: {
         showCost: true,
         trendData: [
-          {
-            date: '2026-05-08',
-            requests: 1,
-            input_tokens: 200,
-            output_tokens: 50,
-            cache_creation_tokens: 300,
-            cache_read_tokens: 500,
-            cost: 2,
-            actual_cost: 4.58,
-          },
+          trendPoint,
           {
             date: '2026-05-09',
             requests: 1,
@@ -74,21 +101,10 @@ describe('TokenUsageTrend', () => {
     expect(text).not.toContain('$5.09')
   })
 
-  it('calculates cache hit rate against all prompt tokens', () => {
-    const wrapper = mount(TokenUsageTrend, {
+  it('renders the trend with AntV G2Plot DualAxes', () => {
+    mount(TokenUsageTrend, {
       props: {
-        trendData: [
-          {
-            date: '2026-05-08',
-            requests: 1,
-            input_tokens: 500,
-            output_tokens: 100,
-            cache_creation_tokens: 0,
-            cache_read_tokens: 1500,
-            cost: 0.01,
-            actual_cost: 0.005,
-          },
-        ],
+        trendData: [trendPoint],
       },
       global: {
         stubs: {
@@ -97,16 +113,53 @@ describe('TokenUsageTrend', () => {
       },
     })
 
-    const chartData = JSON.parse(wrapper.find('.chart-data').text())
-    const hitRateDataset = chartData.datasets.find(
-      (ds: any) => ds.label === '缓存命中率'
-    )
-    // Hit rate = 1500 / (500 + 1500 + 0) * 100 = 75%
-    expect(hitRateDataset.data[0]).toBe(75)
+    expect(DualAxesMock).toHaveBeenCalledTimes(1)
+    expect(dualAxesInstances[0].render).toHaveBeenCalledTimes(1)
+    expect(dualAxesInstances[0].options).toMatchObject({
+      autoFit: true,
+      xField: 'date',
+      yField: ['value', 'hitRate'],
+      geometryOptions: [
+        expect.objectContaining({
+          geometry: 'line',
+          seriesField: 'type',
+          smooth: true,
+        }),
+        expect.objectContaining({
+          geometry: 'line',
+          smooth: true,
+        }),
+      ],
+    })
+  })
+
+  it('maps token series and cache hit rate for G2Plot', () => {
+    mount(TokenUsageTrend, {
+      props: {
+        trendData: [trendPoint],
+      },
+      global: {
+        stubs: {
+          LoadingSpinner: true,
+        },
+      },
+    })
+
+    const [tokenSeries, hitRateSeries] = dualAxesInstances[0].options.data
+
+    expect(tokenSeries).toEqual([
+      expect.objectContaining({ date: '2026-05-08', type: '输入', value: 200 }),
+      expect.objectContaining({ date: '2026-05-08', type: '输出', value: 50 }),
+      expect.objectContaining({ date: '2026-05-08', type: '缓存创建', value: 300 }),
+      expect.objectContaining({ date: '2026-05-08', type: '缓存读取', value: 500 }),
+    ])
+    expect(hitRateSeries).toEqual([
+      expect.objectContaining({ date: '2026-05-08', type: '缓存命中率', hitRate: 50 }),
+    ])
   })
 
   it('returns 0 hit rate when all prompt tokens are zero', () => {
-    const wrapper = mount(TokenUsageTrend, {
+    mount(TokenUsageTrend, {
       props: {
         trendData: [
           {
@@ -128,59 +181,14 @@ describe('TokenUsageTrend', () => {
       },
     })
 
-    const chartData = JSON.parse(wrapper.find('.chart-data').text())
-    const hitRateDataset = chartData.datasets.find(
-      (ds: any) => ds.label === '缓存命中率'
-    )
-    expect(hitRateDataset.data[0]).toBe(0)
-  })
-
-  it('includes cache_creation_tokens in denominator for Anthropic models', () => {
-    const wrapper = mount(TokenUsageTrend, {
-      props: {
-        trendData: [
-          {
-            date: '2026-05-08',
-            requests: 1,
-            input_tokens: 200,
-            output_tokens: 50,
-            cache_creation_tokens: 300,
-            cache_read_tokens: 500,
-            cost: 0.02,
-            actual_cost: 0.01,
-          },
-        ],
-      },
-      global: {
-        stubs: {
-          LoadingSpinner: true,
-        },
-      },
-    })
-
-    const chartData = JSON.parse(wrapper.find('.chart-data').text())
-    const hitRateDataset = chartData.datasets.find(
-      (ds: any) => ds.label === '缓存命中率'
-    )
-    // Hit rate = 500 / (200 + 500 + 300) * 100 = 50%
-    expect(hitRateDataset.data[0]).toBe(50)
+    const [, hitRateSeries] = dualAxesInstances[0].options.data
+    expect(hitRateSeries[0].hitRate).toBe(0)
   })
 
   it('localizes tooltip footer and hides cost by default', () => {
-    const wrapper = mount(TokenUsageTrend, {
+    mount(TokenUsageTrend, {
       props: {
-        trendData: [
-          {
-            date: '2026-05-08',
-            requests: 1,
-            input_tokens: 200,
-            output_tokens: 50,
-            cache_creation_tokens: 300,
-            cache_read_tokens: 500,
-            cost: 2.64,
-            actual_cost: 4.58,
-          },
-        ],
+        trendData: [trendPoint],
       },
       global: {
         stubs: {
@@ -189,33 +197,20 @@ describe('TokenUsageTrend', () => {
       },
     })
 
-    const footer = (wrapper.vm as any).$?.setupState.lineOptions.plugins.tooltip.callbacks.footer([
-      { dataIndex: 0 },
-    ])
+    const tooltipHtml = dualAxesInstances[0].options.tooltip.customContent('2026-05-08', [])
 
-    expect(footer).toEqual(['总使用: 1.05K'])
-    expect(footer.join(' ')).not.toContain('$')
-    expect(footer.join(' ')).not.toContain('消费')
-    expect(footer.join(' ')).not.toContain('Standard')
-    expect(footer.join(' ')).not.toContain('标准')
+    expect(tooltipHtml).toContain('总使用: 1.05K')
+    expect(tooltipHtml).not.toContain('$')
+    expect(tooltipHtml).not.toContain('消费')
+    expect(tooltipHtml).not.toContain('Standard')
+    expect(tooltipHtml).not.toContain('标准')
   })
 
   it('shows total usage and cost in tooltip footer when enabled', () => {
-    const wrapper = mount(TokenUsageTrend, {
+    mount(TokenUsageTrend, {
       props: {
         showCost: true,
-        trendData: [
-          {
-            date: '2026-05-08',
-            requests: 1,
-            input_tokens: 200,
-            output_tokens: 50,
-            cache_creation_tokens: 300,
-            cache_read_tokens: 500,
-            cost: 2.64,
-            actual_cost: 4.58,
-          },
-        ],
+        trendData: [trendPoint],
       },
       global: {
         stubs: {
@@ -224,32 +219,20 @@ describe('TokenUsageTrend', () => {
       },
     })
 
-    const footer = (wrapper.vm as any).$?.setupState.lineOptions.plugins.tooltip.callbacks.footer([
-      { dataIndex: 0 },
-    ])
+    const tooltipHtml = dualAxesInstances[0].options.tooltip.customContent('2026-05-08', [])
 
-    expect(footer).toEqual(['总使用: 1.05K', '消费: $4.58'])
-    expect(footer.join(' ')).not.toContain('实际消费')
-    expect(footer.join(' ')).not.toContain('Standard')
-    expect(footer.join(' ')).not.toContain('标准')
+    expect(tooltipHtml).toContain('总使用: 1.05K')
+    expect(tooltipHtml).toContain('消费: $4.58')
+    expect(tooltipHtml).not.toContain('实际消费')
+    expect(tooltipHtml).not.toContain('Standard')
+    expect(tooltipHtml).not.toContain('标准')
   })
 
-  it('uses a visible tooltip footer color in light mode', () => {
+  it('allows callers to enlarge the chart height', () => {
     const wrapper = mount(TokenUsageTrend, {
       props: {
-        showCost: true,
-        trendData: [
-          {
-            date: '2026-05-08',
-            requests: 1,
-            input_tokens: 200,
-            output_tokens: 50,
-            cache_creation_tokens: 300,
-            cache_read_tokens: 500,
-            cost: 2.64,
-            actual_cost: 4.58,
-          },
-        ],
+        chartHeightClass: 'h-80',
+        trendData: [trendPoint],
       },
       global: {
         stubs: {
@@ -258,9 +241,42 @@ describe('TokenUsageTrend', () => {
       },
     })
 
-    const tooltipOptions = (wrapper.vm as any).$?.setupState.lineOptions.plugins.tooltip
+    expect(wrapper.find('.h-80').exists()).toBe(true)
+  })
 
-    expect(tooltipOptions.backgroundColor).toBe('#ffffff')
-    expect(tooltipOptions.footerColor).toBe('#111827')
+  it('updates and destroys the G2Plot instance with the component lifecycle', async () => {
+    const wrapper = mount(TokenUsageTrend, {
+      props: {
+        trendData: [trendPoint],
+      },
+      global: {
+        stubs: {
+          LoadingSpinner: true,
+        },
+      },
+    })
+
+    const instance = dualAxesInstances[0]
+
+    await wrapper.setProps({
+      trendData: [
+        {
+          ...trendPoint,
+          date: '2026-05-09',
+          input_tokens: 400,
+        },
+      ],
+    })
+    await nextTick()
+
+    expect(instance.update).toHaveBeenCalled()
+    expect(instance.options.data[0]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ date: '2026-05-09', type: '输入', value: 400 }),
+      ])
+    )
+
+    wrapper.unmount()
+    expect(instance.destroy).toHaveBeenCalledTimes(1)
   })
 })
