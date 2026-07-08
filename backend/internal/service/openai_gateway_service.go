@@ -6662,11 +6662,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	// Create usage log
 	durationMs := int(result.Duration.Milliseconds())
 	accountRateMultiplier := account.BillingRateMultiplier()
-	requestID := resolveUsageBillingRequestID(ctx, result.RequestID)
-	if result.OpenAIWSMode {
-		if upstreamRequestID := strings.TrimSpace(result.RequestID); upstreamRequestID != "" {
-			requestID = upstreamRequestID
-		}
+	requestID := resolveOpenAIUsageBillingRequestID(ctx, result)
+	if requestID == "" {
+		requestID = resolveUsageBillingRequestID(ctx, "")
 	}
 
 	// 确定 RequestedModel（渠道映射前的原始模型）
@@ -6798,6 +6796,18 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 
 	return nil
+}
+
+func resolveOpenAIUsageBillingRequestID(ctx context.Context, result *OpenAIForwardResult) string {
+	if result != nil {
+		if upstreamRequestID := strings.TrimSpace(result.RequestID); upstreamRequestID != "" {
+			return upstreamRequestID
+		}
+		if responseID := strings.TrimSpace(result.ResponseID); responseID != "" {
+			return responseID
+		}
+	}
+	return resolveUsageBillingRequestID(ctx, "")
 }
 
 func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
