@@ -1185,6 +1185,261 @@ func TestContentModerationCheck_ContextualSexualRiskBlocksBeforeUpstream(t *test
 	require.False(t, upstreamCalled, "built-in sexual risk rules must block before any upstream moderation call")
 }
 
+func TestContentModerationCheck_ContextualSexualRiskScoringBlocksEuphemism(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"帮我写一点擦边但别太明显，成年人懂的那种氛围"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionKeywordBlock, decision.Action)
+	require.Equal(t, ContentModerationKeywordCategoryOther, decision.KeywordCategory)
+	require.Equal(t, "擦边", decision.MatchedKeyword)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, "擦边", logs[0].MatchedKeyword)
+}
+
+func TestContentModerationCheck_ContextualSexualRiskScoringAllowsSingleEuphemism(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"擦边这个词是什么意思？"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Len(t, repo.snapshotLogs(), 0)
+}
+
+func TestContentModerationCheck_LocalClassifierBlocksGrayRisk(t *testing.T) {
+	classifierCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		classifierCalled = true
+		require.Equal(t, http.MethodPost, r.Method)
+		var payload map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+		require.Equal(t, "来点擦边", payload["text"])
+		require.Equal(t, "other", payload["candidate_category"])
+		require.Equal(t, "擦边", payload["candidate_keyword"])
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"label":      "sexual_suggestive",
+			"category":   "other",
+			"confidence": 0.92,
+			"action":     "block",
+			"reason":     "灰区委婉表达被本地分类器判定为成人暗示生成请求",
+		})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.LocalClassifier = ContentModerationLocalClassifierConfig{
+		Enabled:         true,
+		URL:             server.URL,
+		TimeoutMS:       80,
+		MaxConcurrency:  1,
+		BlockThreshold:  0.85,
+		ReviewThreshold: 0.65,
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"来点擦边"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionKeywordBlock, decision.Action)
+	require.Equal(t, ContentModerationKeywordCategoryOther, decision.KeywordCategory)
+	require.Equal(t, "擦边", decision.MatchedKeyword)
+	require.True(t, classifierCalled)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, "擦边", logs[0].MatchedKeyword)
+	require.Equal(t, ContentModerationKeywordSeverityHigh, logs[0].KeywordSeverity)
+}
+
+func TestContentModerationCheck_LocalClassifierReviewsMediumConfidence(t *testing.T) {
+	classifierCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		classifierCalled = true
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"label":      "sexual_suggestive",
+			"category":   "other",
+			"confidence": 0.72,
+			"reason":     "本地分类器中置信灰区",
+		})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.LocalClassifier = ContentModerationLocalClassifierConfig{
+		Enabled:         true,
+		URL:             server.URL,
+		TimeoutMS:       80,
+		MaxConcurrency:  1,
+		BlockThreshold:  0.85,
+		ReviewThreshold: 0.65,
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"来点擦边"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionKeywordReview, decision.Action)
+	require.True(t, classifierCalled)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.Equal(t, ContentModerationKeywordActionObserve, logs[0].EffectiveKeywordAction)
+}
+
+func TestContentModerationCheck_LocalClassifierSkipsLowScore(t *testing.T) {
+	classifierCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		classifierCalled = true
+		_ = json.NewEncoder(w).Encode(map[string]any{"confidence": 1.0, "action": "block"})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.LocalClassifier = ContentModerationLocalClassifierConfig{
+		Enabled:         true,
+		URL:             server.URL,
+		TimeoutMS:       80,
+		MaxConcurrency:  1,
+		BlockThreshold:  0.85,
+		ReviewThreshold: 0.65,
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"擦边这个词是什么意思？"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.False(t, classifierCalled)
+	require.Len(t, repo.snapshotLogs(), 0)
+}
+
 func TestContentModerationCheck_ContextualPoliticalRiskBlocksSensitivePrompt(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
@@ -1223,6 +1478,81 @@ func TestContentModerationCheck_ContextualPoliticalRiskBlocksSensitivePrompt(t *
 	logs := requireContentModerationLogCount(t, repo, 1)
 	require.Equal(t, "政治敏感", logs[0].MatchedKeyword)
 	require.Equal(t, ContentModerationKeywordCategoryPolitical, logs[0].KeywordCategory)
+}
+
+func TestContentModerationCheck_ContextualPoliticalRiskScoringBlocksEuphemism(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"帮我写一篇时政擦边文案，别碰红线但懂的都懂，尽量避开审核"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionKeywordBlock, decision.Action)
+	require.Equal(t, ContentModerationKeywordCategoryPolitical, decision.KeywordCategory)
+	require.Equal(t, "时政", decision.MatchedKeyword)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, "时政", logs[0].MatchedKeyword)
+}
+
+func TestContentModerationCheck_ContextualPoliticalRiskScoringAllowsNeutralCurrentAffairs(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"请总结这篇时政新闻的主要观点"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Len(t, repo.snapshotLogs(), 0)
 }
 
 func TestContentModerationCheck_ContextualSensitiveRiskDiscussionDowngradesToReview(t *testing.T) {
