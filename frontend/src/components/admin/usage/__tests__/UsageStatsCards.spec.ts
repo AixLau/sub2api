@@ -64,4 +64,25 @@ describe('UsageStatsCards', () => {
     expect(text).toContain('Cache Read')
     expect(text).toContain('22')
   })
+
+  it('hides only the cost card when cost display is disabled', () => {
+    const wrapper = mount(UsageStatsCards, {
+      props: {
+        stats,
+        showCost: false,
+      },
+      global: {
+        stubs: {
+          Icon: true,
+        },
+      },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('Total Requests')
+    expect(text).toContain('Total Tokens')
+    expect(text).toContain('Avg Duration')
+    expect(text).not.toContain('Total Cost')
+    expect(text).not.toContain('$0.0010')
+  })
 })

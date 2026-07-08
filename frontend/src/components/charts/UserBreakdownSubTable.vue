@@ -22,7 +22,7 @@
           <td class="py-1 text-right text-gray-500 dark:text-gray-400">
             {{ formatTokens(user.total_tokens) }}
           </td>
-          <td class="py-1 text-right text-green-600 dark:text-green-400">
+          <td v-if="showCost" class="py-1 text-right text-green-600 dark:text-green-400">
             ${{ formatCost(user.actual_cost) }}
           </td>
           <td v-if="showAccountCost" class="py-1 text-right text-orange-500 dark:text-orange-400">
@@ -48,16 +48,19 @@ const { t } = useI18n()
 const props = withDefaults(defineProps<{
   items: UserBreakdownItem[]
   loading?: boolean
+  showCost?: boolean
   showAccountCost?: boolean
   showStandardCost?: boolean
 }>(), {
   loading: false,
+  showCost: true,
   showAccountCost: true,
   showStandardCost: true,
 })
 
-const showAccountCost = computed(() => props.showAccountCost)
-const showStandardCost = computed(() => props.showStandardCost)
+const showCost = computed(() => props.showCost)
+const showAccountCost = computed(() => showCost.value && props.showAccountCost)
+const showStandardCost = computed(() => showCost.value && props.showStandardCost)
 
 const formatTokens = (value: number): string => {
   if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`

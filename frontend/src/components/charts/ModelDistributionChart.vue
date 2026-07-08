@@ -1,5 +1,5 @@
 <template>
-  <div class="card p-4">
+  <div :class="chartShellClass">
     <div class="mb-4 flex items-center justify-between gap-3">
       <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
         {{ !enableRankingView || activeView === 'model_distribution'
@@ -49,7 +49,7 @@
           <button
             type="button"
             class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
-            :class="metric === 'tokens'
+            :class="effectiveMetric === 'tokens'
               ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
             @click="emit('update:metric', 'tokens')"
@@ -57,9 +57,10 @@
             {{ t('admin.dashboard.metricTokens') }}
           </button>
           <button
+            v-if="showCost"
             type="button"
             class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
-            :class="metric === 'actual_cost'
+            :class="effectiveMetric === 'actual_cost'
               ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
             @click="emit('update:metric', 'actual_cost')"
@@ -113,7 +114,7 @@
               <th class="pb-2 text-left">{{ t('admin.dashboard.model') }}</th>
               <th class="pb-2 text-right">{{ t('admin.dashboard.requests') }}</th>
               <th class="pb-2 text-right">{{ t('admin.dashboard.tokens') }}</th>
-              <th class="pb-2 text-right">{{ t('admin.dashboard.actual') }}</th>
+              <th v-if="showCost" class="pb-2 text-right">{{ t('admin.dashboard.actual') }}</th>
               <th v-if="showAccountCost" class="pb-2 text-right">{{ t('admin.dashboard.accountCost') }}</th>
               <th v-if="showStandardCost" class="pb-2 text-right">{{ t('admin.dashboard.standard') }}</th>
             </tr>
@@ -142,7 +143,7 @@
                 <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">
                   {{ formatTokens(model.total_tokens) }}
                 </td>
-                <td class="py-1.5 text-right text-green-600 dark:text-green-400">
+                <td v-if="showCost" class="py-1.5 text-right text-green-600 dark:text-green-400">
                   ${{ formatCost(model.actual_cost) }}
                 </td>
                 <td v-if="showAccountCost" class="py-1.5 text-right text-orange-500 dark:text-orange-400">
@@ -157,6 +158,7 @@
                   <UserBreakdownSubTable
                     :items="breakdownItems"
                     :loading="breakdownLoading"
+                    :show-cost="showCost"
                     :show-account-cost="showAccountCost"
                     :show-standard-cost="showStandardCost"
                   />
@@ -275,10 +277,12 @@ const props = withDefaults(defineProps<{
   showSourceToggle?: boolean
   showMetricToggle?: boolean
   enableBreakdown?: boolean
+  showCost?: boolean
   showAccountCost?: boolean
   showStandardCost?: boolean
   rankingLoading?: boolean
   rankingError?: boolean
+  surface?: 'default' | 'tremor'
   startDate?: string
   endDate?: string
   filters?: Record<string, any>
@@ -296,10 +300,12 @@ const props = withDefaults(defineProps<{
   showSourceToggle: false,
   showMetricToggle: false,
   enableBreakdown: true,
+  showCost: true,
   showAccountCost: true,
   showStandardCost: true,
   rankingLoading: false,
-  rankingError: false
+  rankingError: false,
+  surface: 'default'
 })
 
 const expandedKey = ref<string | null>(null)
@@ -338,10 +344,15 @@ const emit = defineEmits<{
 }>()
 
 const enableRankingView = computed(() => props.enableRankingView)
-const showAccountCost = computed(() => props.showAccountCost)
-const showStandardCost = computed(() => props.showStandardCost)
-const distributionColspan = computed(() => 4 + (showAccountCost.value ? 1 : 0) + (showStandardCost.value ? 1 : 0))
+const showCost = computed(() => props.showCost)
+const showAccountCost = computed(() => showCost.value && props.showAccountCost)
+const showStandardCost = computed(() => showCost.value && props.showStandardCost)
+const effectiveMetric = computed<DistributionMetric>(() => (showCost.value && props.metric === 'actual_cost') ? 'actual_cost' : 'tokens')
+const distributionColspan = computed(() => 3 + (showCost.value ? 1 : 0) + (showAccountCost.value ? 1 : 0) + (showStandardCost.value ? 1 : 0))
 const activeView = ref<'model_distribution' | 'spending_ranking'>('model_distribution')
+const chartShellClass = computed(() => props.surface === 'tremor'
+  ? 'relative w-full rounded-lg border border-gray-200 bg-white p-5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-gray-900 dark:bg-[#090E1A]'
+  : 'card p-4')
 
 const chartColors = [
   '#3b82f6',
@@ -366,7 +377,7 @@ const displayModelStats = computed(() => {
       : props.modelStats
   if (!sourceStats?.length) return []
 
-  const metricKey = props.metric === 'actual_cost' ? 'actual_cost' : 'total_tokens'
+  const metricKey = effectiveMetric.value === 'actual_cost' ? 'actual_cost' : 'total_tokens'
   return [...sourceStats].sort((a, b) => toFiniteNumber(b[metricKey]) - toFiniteNumber(a[metricKey]))
 })
 
@@ -377,7 +388,7 @@ const chartData = computed(() => {
     labels: displayModelStats.value.map((m) => m.model),
     datasets: [
       {
-        data: displayModelStats.value.map((m) => toFiniteNumber(props.metric === 'actual_cost' ? m.actual_cost : m.total_tokens)),
+        data: displayModelStats.value.map((m) => toFiniteNumber(effectiveMetric.value === 'actual_cost' ? m.actual_cost : m.total_tokens)),
         backgroundColor: chartColors.slice(0, displayModelStats.value.length),
         borderWidth: 0
       }
@@ -453,7 +464,7 @@ const doughnutOptions = computed(() => ({
           const value = context.raw as number
           const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0)
           const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0'
-          const formattedValue = props.metric === 'actual_cost'
+          const formattedValue = effectiveMetric.value === 'actual_cost'
             ? `$${formatCost(value)}`
             : formatTokens(value)
           return `${context.label}: ${formattedValue} (${percentage}%)`

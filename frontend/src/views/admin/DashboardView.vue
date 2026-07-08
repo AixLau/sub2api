@@ -265,7 +265,7 @@
               :end-date="endDate"
               @ranking-click="goToUserUsage"
             />
-            <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
+            <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" show-cost />
           </div>
 
           <!-- Active Users & User Usage Trends -->

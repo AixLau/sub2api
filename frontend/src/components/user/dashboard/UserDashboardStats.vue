@@ -45,24 +45,6 @@
       </div>
     </div>
 
-    <!-- Today Cost -->
-    <div class="card p-4">
-      <div class="flex items-center gap-3">
-        <div class="rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30">
-          <Icon name="dollar" size="md" class="text-purple-600 dark:text-purple-400" :stroke-width="2" />
-        </div>
-        <div>
-          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.todayCost') }}</p>
-          <p class="text-xl font-bold text-gray-900 dark:text-white">
-            <span class="text-purple-600 dark:text-purple-400">${{ formatCost(stats?.today_actual_cost || 0) }}</span>
-          </p>
-          <p class="text-xs">
-            <span class="text-gray-500 dark:text-gray-400">{{ t('common.total') }}: </span>
-            <span class="text-purple-600 dark:text-purple-400">${{ formatCost(stats?.total_actual_cost || 0) }}</span>
-          </p>
-        </div>
-      </div>
-    </div>
   </div>
 
   <!-- Row 2: Token Stats -->
@@ -153,15 +135,11 @@
           <span class="text-sm font-semibold text-gray-900 dark:text-white">
             {{ item.isOther ? t('dashboard.platformOther') : platformLabel(item.platform) }}
           </span>
-          <span class="font-mono text-sm text-purple-600 dark:text-purple-400" :title="t('dashboard.actual')">
-            ${{ formatCost(item.total_actual_cost) }}
+          <span class="font-mono text-sm text-gray-700 dark:text-gray-300">
+            {{ formatTokens(item.total_tokens) }}
           </span>
         </div>
         <div class="mt-2 space-y-1 text-xs">
-          <div class="flex items-center justify-between">
-            <span class="text-gray-500 dark:text-gray-400">{{ t('dashboard.todayCost') }}</span>
-            <span class="font-mono text-gray-900 dark:text-white">${{ formatCost(item.today_actual_cost) }}</span>
-          </div>
           <div class="flex items-center justify-between">
             <span class="text-gray-500 dark:text-gray-400">{{ t('dashboard.requests') }}</span>
             <span class="font-mono text-gray-700 dark:text-gray-300">
@@ -198,7 +176,7 @@
                 <div class="flex items-center justify-between text-xs">
                   <span class="text-gray-600 dark:text-gray-300">{{ t(`dashboard.platformQuota.${w}`) }}</span>
                   <span class="font-mono text-gray-700 dark:text-gray-200">
-                    ${{ formatUsd((quotaVal(item.quota, `${w}_usage_usd`) as number) ?? 0) }} / ${{ formatUsd(quotaVal(item.quota, `${w}_limit_usd`) as number) }}
+                    {{ calcPercent((quotaVal(item.quota, `${w}_usage_usd`) as number) ?? 0, quotaVal(item.quota, `${w}_limit_usd`) as number) }}%
                   </span>
                 </div>
                 <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700">
@@ -229,8 +207,6 @@ import type { PlatformQuotaItem } from '@/types'
 
 interface FusedPlatformCard {
   platform: string
-  total_actual_cost: number
-  today_actual_cost: number
   total_requests: number
   total_tokens: number
   isOther?: boolean
@@ -256,13 +232,9 @@ const platformLabel = (p: string) => PLATFORM_LABELS[p] ?? p
 
 const sortedPlatforms = computed(() => {
   const list = props.stats?.by_platform ?? []
-  return [...list].sort((a, b) => b.total_actual_cost - a.total_actual_cost)
+  return [...list].sort((a, b) => b.total_tokens - a.total_tokens)
 })
 
-// 处理"各平台之和 < 总值"的差值：后端按平台聚合时过滤了无法归属平台的行
-// （group 与 account 都缺 platform）。这里把差值作为"其他"卡片显式展示，
-// 避免 Row 1 总值与 Row 3 平台拆分加总对不上、用户困惑。
-const OTHER_THRESHOLD = 0.0001
 const platformCards = computed<FusedPlatformCard[]>(() => {
   // 建立 by_platform Map
   const byPlat = new Map<string, (typeof sortedPlatforms.value)[number]>()
@@ -272,8 +244,6 @@ const platformCards = computed<FusedPlatformCard[]>(() => {
   const byQuota = new Map<string, PlatformQuotaItem>()
   for (const q of props.platformQuotas ?? []) byQuota.set(q.platform, q)
 
-  // union 平台集合。后端 by_platform / quota 接口均不会返回 platform='__other__'，
-  // 无需显式排除；__other__ 由下方差值补差逻辑单独追加。
   const platforms = new Set<string>([...byPlat.keys(), ...byQuota.keys()])
 
   const PLATFORM_ORDER = ['anthropic', 'openai', 'gemini', 'antigravity', 'grok']
@@ -283,8 +253,6 @@ const platformCards = computed<FusedPlatformCard[]>(() => {
     const stat = byPlat.get(p)
     cards.push({
       platform: p,
-      total_actual_cost: stat?.total_actual_cost ?? 0,
-      today_actual_cost: stat?.today_actual_cost ?? 0,
       total_requests: stat?.total_requests ?? 0,
       total_tokens: stat?.total_tokens ?? 0,
       quota: byQuota.get(p),
@@ -300,25 +268,6 @@ const platformCards = computed<FusedPlatformCard[]>(() => {
     if (bi === -1) return -1
     return ai - bi
   })
-
-  // __other__ 补差逻辑：只对 by_platform 有 usage 数据的总和计算
-  const total = props.stats?.total_actual_cost ?? 0
-  const today = props.stats?.today_actual_cost ?? 0
-  const sumTotal = cards.reduce((s, c) => s + c.total_actual_cost, 0)
-  const sumToday = cards.reduce((s, c) => s + c.today_actual_cost, 0)
-  const diffTotal = Math.max(0, total - sumTotal)
-  const diffToday = Math.max(0, today - sumToday)
-
-  if (diffTotal > OTHER_THRESHOLD || diffToday > OTHER_THRESHOLD) {
-    cards.push({
-      platform: '__other__',
-      total_actual_cost: diffTotal,
-      today_actual_cost: diffToday,
-      total_requests: 0,
-      total_tokens: 0,
-      isOther: true,
-    })
-  }
 
   return cards
 })
@@ -348,17 +297,6 @@ function quotaBarClass(p: number): string {
   return 'bg-green-500'
 }
 
-// 与 formatBalance 一致使用 Intl.NumberFormat 做半偶舍入，避免 toFixed 在不同 JS 引擎
-// 下偶发截断而非四舍五入（与后端展示精度不一致）。
-const usdFormatter = new Intl.NumberFormat('en-US', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-})
-function formatUsd(n: number): string {
-  if (!Number.isFinite(n)) return '0.00'
-  return usdFormatter.format(n)
-}
-
 function formatResetTime(iso: string | null | undefined): string {
   if (!iso) return ''
   const d = new Date(iso)
@@ -379,7 +317,6 @@ const formatBalance = (b: number) =>
   }).format(b)
 
 const formatNumber = (n: number) => n.toLocaleString()
-const formatCost = (c: number) => c.toFixed(4)
 const formatTokens = (t: number) => {
   if (t >= 1_000_000) return `${(t / 1_000_000).toFixed(1)}M`
   if (t >= 1000) return `${(t / 1000).toFixed(1)}K`

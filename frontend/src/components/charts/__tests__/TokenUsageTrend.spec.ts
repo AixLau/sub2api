@@ -4,7 +4,14 @@ import { mount } from '@vue/test-utils'
 import TokenUsageTrend from '../TokenUsageTrend.vue'
 
 const messages: Record<string, string> = {
-  'admin.dashboard.tokenUsageTrend': 'Token Usage Trend',
+  'usage.tokenUsageTrend': 'Token 使用趋势',
+  'usage.trend.input': '输入',
+  'usage.trend.output': '输出',
+  'usage.trend.cacheCreation': '缓存创建',
+  'usage.trend.cacheRead': '缓存读取',
+  'usage.trend.cacheHitRate': '缓存命中率',
+  'usage.trend.totalUsage': '总使用',
+  'usage.trend.actualCost': '实际消费',
   'admin.dashboard.noDataAvailable': 'No data available',
 }
 
@@ -51,7 +58,7 @@ describe('TokenUsageTrend', () => {
 
     const chartData = JSON.parse(wrapper.find('.chart-data').text())
     const hitRateDataset = chartData.datasets.find(
-      (ds: any) => ds.label === 'Cache Hit Rate'
+      (ds: any) => ds.label === '缓存命中率'
     )
     // Hit rate = 1500 / (500 + 1500 + 0) * 100 = 75%
     expect(hitRateDataset.data[0]).toBe(75)
@@ -82,7 +89,7 @@ describe('TokenUsageTrend', () => {
 
     const chartData = JSON.parse(wrapper.find('.chart-data').text())
     const hitRateDataset = chartData.datasets.find(
-      (ds: any) => ds.label === 'Cache Hit Rate'
+      (ds: any) => ds.label === '缓存命中率'
     )
     expect(hitRateDataset.data[0]).toBe(0)
   })
@@ -112,9 +119,76 @@ describe('TokenUsageTrend', () => {
 
     const chartData = JSON.parse(wrapper.find('.chart-data').text())
     const hitRateDataset = chartData.datasets.find(
-      (ds: any) => ds.label === 'Cache Hit Rate'
+      (ds: any) => ds.label === '缓存命中率'
     )
     // Hit rate = 500 / (200 + 500 + 300) * 100 = 50%
     expect(hitRateDataset.data[0]).toBe(50)
+  })
+
+  it('localizes tooltip footer and hides cost by default', () => {
+    const wrapper = mount(TokenUsageTrend, {
+      props: {
+        trendData: [
+          {
+            date: '2026-05-08',
+            requests: 1,
+            input_tokens: 200,
+            output_tokens: 50,
+            cache_creation_tokens: 300,
+            cache_read_tokens: 500,
+            cost: 2.64,
+            actual_cost: 4.58,
+          },
+        ],
+      },
+      global: {
+        stubs: {
+          LoadingSpinner: true,
+        },
+      },
+    })
+
+    const footer = (wrapper.vm as any).$?.setupState.lineOptions.plugins.tooltip.callbacks.footer([
+      { dataIndex: 0 },
+    ])
+
+    expect(footer).toEqual(['总使用: 1.05K'])
+    expect(footer.join(' ')).not.toContain('$')
+    expect(footer.join(' ')).not.toContain('实际消费')
+    expect(footer.join(' ')).not.toContain('Standard')
+    expect(footer.join(' ')).not.toContain('标准')
+  })
+
+  it('shows actual cost in tooltip footer when enabled for admins', () => {
+    const wrapper = mount(TokenUsageTrend, {
+      props: {
+        showCost: true,
+        trendData: [
+          {
+            date: '2026-05-08',
+            requests: 1,
+            input_tokens: 200,
+            output_tokens: 50,
+            cache_creation_tokens: 300,
+            cache_read_tokens: 500,
+            cost: 2.64,
+            actual_cost: 4.58,
+          },
+        ],
+      },
+      global: {
+        stubs: {
+          LoadingSpinner: true,
+        },
+      },
+    })
+
+    const footer = (wrapper.vm as any).$?.setupState.lineOptions.plugins.tooltip.callbacks.footer([
+      { dataIndex: 0 },
+    ])
+
+    expect(footer).toEqual(['总使用: 1.05K', '实际消费: $4.58'])
+    expect(footer.join(' ')).not.toContain('Standard')
+    expect(footer.join(' ')).not.toContain('标准')
   })
 })

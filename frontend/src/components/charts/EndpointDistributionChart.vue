@@ -48,7 +48,7 @@
           <button
             type="button"
             class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
-            :class="metric === 'tokens'
+            :class="effectiveMetric === 'tokens'
               ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
             @click="emit('update:metric', 'tokens')"
@@ -56,9 +56,10 @@
             {{ t('admin.dashboard.metricTokens') }}
           </button>
           <button
+            v-if="showCost"
             type="button"
             class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
-            :class="metric === 'actual_cost'
+            :class="effectiveMetric === 'actual_cost'
               ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
             @click="emit('update:metric', 'actual_cost')"
@@ -82,8 +83,8 @@
               <th class="pb-2 text-left">{{ t('usage.endpoint') }}</th>
               <th class="pb-2 text-right">{{ t('admin.dashboard.requests') }}</th>
               <th class="pb-2 text-right">{{ t('admin.dashboard.tokens') }}</th>
-              <th class="pb-2 text-right">{{ t('admin.dashboard.actual') }}</th>
-              <th class="pb-2 text-right">{{ t('admin.dashboard.standard') }}</th>
+              <th v-if="showCost" class="pb-2 text-right">{{ t('admin.dashboard.actual') }}</th>
+              <th v-if="showStandardCost" class="pb-2 text-right">{{ t('admin.dashboard.standard') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -106,18 +107,20 @@
                 <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">
                   {{ formatTokens(item.total_tokens) }}
                 </td>
-                <td class="py-1.5 text-right text-green-600 dark:text-green-400">
+                <td v-if="showCost" class="py-1.5 text-right text-green-600 dark:text-green-400">
                   ${{ formatCost(item.actual_cost) }}
                 </td>
-                <td class="py-1.5 text-right text-gray-400 dark:text-gray-500">
+                <td v-if="showStandardCost" class="py-1.5 text-right text-gray-400 dark:text-gray-500">
                   ${{ formatCost(item.cost) }}
                 </td>
               </tr>
               <tr v-if="expandedKey === item.endpoint">
-                <td colspan="5" class="p-0">
+                <td :colspan="distributionColspan" class="p-0">
                   <UserBreakdownSubTable
                     :items="breakdownItems"
                     :loading="breakdownLoading"
+                    :show-cost="showCost"
+                    :show-standard-cost="showStandardCost"
                   />
                 </td>
               </tr>
@@ -160,6 +163,8 @@ const props = withDefaults(
     source?: EndpointSource
     showMetricToggle?: boolean
     showSourceToggle?: boolean
+    showCost?: boolean
+    showStandardCost?: boolean
     enableBreakdown?: boolean
     startDate?: string
     endDate?: string
@@ -174,6 +179,8 @@ const props = withDefaults(
     source: 'inbound',
     showMetricToggle: false,
     showSourceToggle: false,
+    showCost: true,
+    showStandardCost: true,
     enableBreakdown: true
   }
 )
@@ -186,6 +193,10 @@ const emit = defineEmits<{
 const expandedKey = ref<string | null>(null)
 const breakdownItems = ref<UserBreakdownItem[]>([])
 const breakdownLoading = ref(false)
+const showCost = computed(() => props.showCost)
+const showStandardCost = computed(() => showCost.value && props.showStandardCost)
+const effectiveMetric = computed<DistributionMetric>(() => (showCost.value && props.metric === 'actual_cost') ? 'actual_cost' : 'tokens')
+const distributionColspan = computed(() => 3 + (showCost.value ? 1 : 0) + (showStandardCost.value ? 1 : 0))
 
 const toggleBreakdown = async (endpoint: string) => {
   if (expandedKey.value === endpoint) {
@@ -234,7 +245,7 @@ const displayEndpointStats = computed(() => {
       : props.endpointStats
   if (!sourceStats?.length) return []
 
-  const metricKey = props.metric === 'actual_cost' ? 'actual_cost' : 'total_tokens'
+  const metricKey = effectiveMetric.value === 'actual_cost' ? 'actual_cost' : 'total_tokens'
   return [...sourceStats].sort((a, b) => b[metricKey] - a[metricKey])
 })
 
@@ -246,7 +257,7 @@ const chartData = computed(() => {
     datasets: [
       {
         data: displayEndpointStats.value.map((item) =>
-          props.metric === 'actual_cost' ? item.actual_cost : item.total_tokens
+          effectiveMetric.value === 'actual_cost' ? item.actual_cost : item.total_tokens
         ),
         backgroundColor: chartColors.slice(0, displayEndpointStats.value.length),
         borderWidth: 0
@@ -268,7 +279,7 @@ const doughnutOptions = computed(() => ({
           const value = context.raw as number
           const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0)
           const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0'
-          const formattedValue = props.metric === 'actual_cost'
+          const formattedValue = effectiveMetric.value === 'actual_cost'
             ? `$${formatCost(value)}`
             : formatTokens(value)
           return `${context.label}: ${formattedValue} (${percentage}%)`

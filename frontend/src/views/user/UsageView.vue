@@ -1,10 +1,10 @@
 <template>
   <AppLayout>
-    <div class="space-y-6">
-      <UsageStatsCards :stats="usageStats" :show-account-cost="false" :show-standard-cost="false" />
+    <div class="space-y-6" data-usage-dashboard="tremor-shell">
+      <UsageStatsCards data-usage-dashboard="summary" :stats="usageStats" :show-account-cost="false" :show-standard-cost="false" :show-cost="false" />
 
       <div class="space-y-4">
-        <div class="card p-4">
+        <div class="card p-4" data-usage-dashboard="controls">
           <div class="flex flex-wrap items-center gap-4">
             <div class="flex items-center gap-2">
               <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.dashboard.timeRange') }}:</span>
@@ -23,13 +23,14 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2" data-usage-dashboard="analytics">
           <ModelDistributionChart
             v-model:metric="modelDistributionMetric"
             :model-stats="requestedModelStats"
             :loading="modelStatsLoading"
             :show-source-toggle="false"
-            :show-metric-toggle="true"
+            :show-metric-toggle="false"
+            :show-cost="false"
             :enable-breakdown="false"
             :show-account-cost="false"
             :show-standard-cost="false"
@@ -40,7 +41,8 @@
             v-model:metric="groupDistributionMetric"
             :group-stats="groupStats"
             :loading="chartsLoading"
-            :show-metric-toggle="true"
+            :show-metric-toggle="false"
+            :show-cost="false"
             :enable-breakdown="false"
             :show-account-cost="false"
             :show-standard-cost="false"
@@ -58,17 +60,19 @@
             :endpoint-path-stats="endpointPathStats"
             :loading="endpointStatsLoading"
             :show-source-toggle="false"
-            :show-metric-toggle="true"
+            :show-metric-toggle="false"
+            :show-cost="false"
+            :show-standard-cost="false"
             :enable-breakdown="false"
             :title="t('usage.endpointDistribution')"
             :start-date="startDate"
             :end-date="endDate"
           />
-          <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
+          <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" :show-cost="false" />
         </div>
       </div>
 
-      <div class="card p-6">
+      <div class="card p-6" data-usage-dashboard="records">
         <div class="flex flex-wrap items-end justify-between gap-4">
           <div v-if="activeTab === 'errors'" class="flex flex-1 flex-wrap items-end gap-4">
             <div class="w-full sm:w-auto sm:min-w-[220px]">
@@ -650,8 +654,6 @@ const exportToCSV = async () => {
       'Output Tokens',
       'Cache Read Tokens',
       'Cache Creation Tokens',
-      'Rate Multiplier',
-      'Billed Cost',
       'First Token (ms)',
       'Duration (ms)',
     ]
@@ -668,8 +670,6 @@ const exportToCSV = async () => {
       log.output_tokens,
       log.cache_read_tokens,
       log.cache_creation_tokens,
-      log.rate_multiplier,
-      log.actual_cost.toFixed(8),
       log.first_token_ms ?? '',
       log.duration_ms ?? '',
     ].map(escapeCSVValue))
@@ -707,7 +707,6 @@ const allColumns = computed<Column[]>(() => [
   { key: 'stream', label: t('usage.type'), sortable: false },
   { key: 'billing_mode', label: t('admin.usage.billingMode'), sortable: false },
   { key: 'tokens', label: t('usage.tokens'), sortable: false },
-  { key: 'cost', label: t('usage.cost'), sortable: false },
   { key: 'first_token', label: t('usage.firstToken'), sortable: false },
   { key: 'duration', label: t('usage.duration'), sortable: false },
   { key: 'created_at', label: t('usage.time'), sortable: true },

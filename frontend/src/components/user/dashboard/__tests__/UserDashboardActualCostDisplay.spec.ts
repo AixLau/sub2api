@@ -144,8 +144,8 @@ const recentUsage = (): UsageLog[] => [
   },
 ]
 
-describe('user dashboard actual cost display', () => {
-  it('shows only actual cost in the today and total cost card', () => {
+describe('user dashboard cost visibility', () => {
+  it('does not show usage costs in the summary cards', () => {
     const wrapper = mount(UserDashboardStats, {
       props: {
         stats: dashboardStats(),
@@ -160,14 +160,14 @@ describe('user dashboard actual cost display', () => {
     })
 
     const text = wrapper.text()
-    expect(text).toContain('$24.8752')
-    expect(text).toContain('Total: $7796.5673')
+    expect(text).not.toContain('Today Cost')
+    expect(text).not.toContain('$24.8752')
+    expect(text).not.toContain('$7796.5673')
     expect(text).not.toContain('$19.1348')
     expect(text).not.toContain('$7746.7298')
-    expect(text).not.toContain(' / $')
   })
 
-  it('shows only actual cost in the model distribution table', () => {
+  it('does not show usage costs in the model distribution table', () => {
     const wrapper = mount(UserDashboardCharts, {
       props: {
         loading: false,
@@ -188,12 +188,13 @@ describe('user dashboard actual cost display', () => {
     })
 
     const text = wrapper.text()
-    expect(text).toContain('$24.8752')
+    expect(text).not.toContain('Actual')
+    expect(text).not.toContain('$24.8752')
     expect(text).not.toContain('$19.1348')
     expect(text).not.toContain('Standard')
   })
 
-  it('shows only actual cost in recent usage records', () => {
+  it('does not show usage costs in recent usage records', () => {
     const wrapper = mount(UserDashboardRecentUsage, {
       props: {
         data: recentUsage(),
@@ -210,8 +211,7 @@ describe('user dashboard actual cost display', () => {
     })
 
     const text = wrapper.text()
-    expect(text).toContain('$24.8752')
+    expect(text).not.toContain('$24.8752')
     expect(text).not.toContain('$19.1348')
-    expect(text).not.toContain(' / $')
   })
 })

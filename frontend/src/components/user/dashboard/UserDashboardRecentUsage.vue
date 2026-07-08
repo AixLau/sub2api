@@ -24,9 +24,9 @@
           </div>
           <div class="text-right">
             <p class="text-sm font-semibold">
-              <span class="text-green-600 dark:text-green-400">${{ formatCost(log.actual_cost) }}</span>
+              <span class="text-gray-900 dark:text-white">{{ (log.input_tokens + log.output_tokens).toLocaleString() }} tokens</span>
             </p>
-            <p class="text-xs text-gray-500 dark:text-dark-400">{{ (log.input_tokens + log.output_tokens).toLocaleString() }} tokens</p>
+            <p class="text-xs text-gray-500 dark:text-dark-400">{{ log.input_tokens.toLocaleString() }} / {{ log.output_tokens.toLocaleString() }}</p>
           </div>
         </div>
 
@@ -52,5 +52,4 @@ defineProps<{
   loading: boolean
 }>()
 const { t } = useI18n()
-const formatCost = (c: number) => c.toFixed(4)
 </script>

@@ -1,20 +1,20 @@
 <template>
   <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-    <div class="card p-4 flex items-center gap-3">
-      <div class="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30 text-blue-600">
+    <div :class="statCardClass">
+      <div class="rounded-lg bg-blue-50 p-2 text-blue-600 ring-1 ring-blue-500/10 dark:bg-blue-400/10 dark:text-blue-400 dark:ring-blue-400/20">
         <Icon name="document" size="md" />
       </div>
       <div>
-        <p class="text-xs font-medium text-gray-500">{{ t('usage.totalRequests') }}</p>
-        <p class="text-xl font-bold">{{ stats?.total_requests?.toLocaleString() || '0' }}</p>
+        <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('usage.totalRequests') }}</p>
+        <p :class="valueClass">{{ stats?.total_requests?.toLocaleString() || '0' }}</p>
         <p class="text-xs text-gray-400">{{ t('usage.inSelectedRange') }}</p>
       </div>
     </div>
-    <div class="card p-4 flex items-center gap-3">
-      <div class="rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30 text-amber-600"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" /></svg></div>
+    <div :class="statCardClass">
+      <div class="rounded-lg bg-amber-50 p-2 text-amber-600 ring-1 ring-amber-500/10 dark:bg-amber-400/10 dark:text-amber-400 dark:ring-amber-400/20"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" /></svg></div>
       <div>
-        <p class="text-xs font-medium text-gray-500">{{ t('usage.totalTokens') }}</p>
-        <p class="text-xl font-bold">{{ formatTokens(stats?.total_tokens || 0) }}</p>
+        <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('usage.totalTokens') }}</p>
+        <p :class="valueClass">{{ formatTokens(stats?.total_tokens || 0) }}</p>
         <p class="flex flex-wrap items-center gap-x-1 text-xs text-gray-500">
           <span>{{ t('usage.in') }}: {{ formatTokens(stats?.total_input_tokens || 0) }}</span>
           <span>/</span>
@@ -58,13 +58,13 @@
         </p>
       </div>
     </div>
-    <div class="card p-4 flex items-center gap-3">
-      <div class="rounded-lg bg-green-100 p-2 dark:bg-green-900/30 text-green-600">
+    <div v-if="showCost" :class="statCardClass">
+      <div class="rounded-lg bg-emerald-50 p-2 text-emerald-600 ring-1 ring-emerald-500/10 dark:bg-emerald-400/10 dark:text-emerald-400 dark:ring-emerald-400/20">
         <Icon name="dollar" size="md" />
       </div>
       <div class="min-w-0 flex-1">
-        <p class="text-xs font-medium text-gray-500">{{ t('usage.totalCost') }}</p>
-        <p class="text-xl font-bold text-green-600">
+        <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('usage.totalCost') }}</p>
+        <p :class="[valueClass, 'text-emerald-600 dark:text-emerald-400']">
           ${{ (stats?.total_actual_cost || 0).toFixed(4) }}
         </p>
         <p v-if="showAccountCost || showStandardCost" class="text-xs text-gray-400">
@@ -79,11 +79,11 @@
         </p>
       </div>
     </div>
-    <div class="card p-4 flex items-center gap-3">
-      <div class="rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30 text-purple-600">
+    <div :class="statCardClass">
+      <div class="rounded-lg bg-violet-50 p-2 text-violet-600 ring-1 ring-violet-500/10 dark:bg-violet-400/10 dark:text-violet-400 dark:ring-violet-400/20">
         <Icon name="clock" size="md" />
       </div>
-      <div><p class="text-xs font-medium text-gray-500">{{ t('usage.avgDuration') }}</p><p class="text-xl font-bold">{{ formatDuration(stats?.average_duration_ms || 0) }}</p></div>
+      <div><p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('usage.avgDuration') }}</p><p :class="valueClass">{{ formatDuration(stats?.average_duration_ms || 0) }}</p></div>
     </div>
   </div>
 </template>
@@ -99,11 +99,15 @@ const props = withDefaults(defineProps<{
   stats: (AdminUsageStatsResponse | UsageStatsResponse) | null
   showAccountCost?: boolean
   showStandardCost?: boolean
+  showCost?: boolean
   strikeStandardCost?: boolean
+  surface?: 'default' | 'tremor'
 }>(), {
   showAccountCost: true,
   showStandardCost: true,
+  showCost: true,
   strikeStandardCost: false,
+  surface: 'default',
 })
 
 const { t } = useI18n()
@@ -114,7 +118,14 @@ const totalAccountCost = computed(() => {
 })
 const showAccountCost = computed(() => props.showAccountCost)
 const showStandardCost = computed(() => props.showStandardCost)
+const showCost = computed(() => props.showCost)
 const strikeStandardCost = computed(() => props.strikeStandardCost)
+const statCardClass = computed(() => props.surface === 'tremor'
+  ? 'flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-4 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-gray-900 dark:bg-[#090E1A]'
+  : 'card p-4 flex items-center gap-3')
+const valueClass = computed(() => props.surface === 'tremor'
+  ? 'mt-1 text-2xl font-semibold tracking-normal text-gray-950 dark:text-gray-50'
+  : 'text-xl font-bold')
 
 const formatDuration = (ms: number) =>
   ms < 1000 ? `${ms.toFixed(0)}ms` : `${(ms / 1000).toFixed(2)}s`

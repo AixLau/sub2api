@@ -95,13 +95,25 @@ vi.mock('vue-i18n', async () => {
 
 const simpleStub = { template: '<div><slot /></div>' }
 const chartStub = { template: '<div />' }
+const usageTableStub = {
+  props: ['columns', 'showAccountBilling', 'showUpstreamEndpoint'],
+  template: '<div class="usage-table" :data-columns="JSON.stringify((columns || []).map((col) => col.key))" :data-show-account-billing="String(showAccountBilling)" :data-show-upstream-endpoint="String(showUpstreamEndpoint)" />',
+}
+const tokenUsageTrendStub = {
+  props: ['showCost'],
+  template: '<div class="token-usage-trend" :data-show-cost="String(showCost)" />',
+}
 const usageStatsCardsStub = {
-  props: ['showAccountCost', 'showStandardCost'],
-  template: '<div class="usage-stats-cards" :data-show-account-cost="String(showAccountCost)" :data-show-standard-cost="String(showStandardCost)" />',
+  props: ['showAccountCost', 'showStandardCost', 'showCost'],
+  template: '<div class="usage-stats-cards" :data-show-cost="String(showCost)" :data-show-account-cost="String(showAccountCost)" :data-show-standard-cost="String(showStandardCost)" />',
 }
 const distributionChartStub = {
-  props: ['showAccountCost', 'showStandardCost'],
-  template: '<div class="distribution-chart" :data-show-account-cost="String(showAccountCost)" :data-show-standard-cost="String(showStandardCost)" />',
+  props: ['showCost', 'showAccountCost', 'showStandardCost', 'metric'],
+  template: '<div class="distribution-chart" :data-show-cost="String(showCost)" :data-metric="String(metric)" :data-show-account-cost="String(showAccountCost)" :data-show-standard-cost="String(showStandardCost)" />',
+}
+const endpointDistributionChartStub = {
+  props: ['showCost', 'showStandardCost', 'metric'],
+  template: '<div class="endpoint-distribution-chart" :data-show-cost="String(showCost)" :data-metric="String(metric)" :data-show-standard-cost="String(showStandardCost)" />',
 }
 
 const usageLog = {
@@ -145,11 +157,11 @@ function mountUsageView() {
         DateRangePicker: true,
         Icon: true,
         UsageStatsCards: usageStatsCardsStub,
-        UsageTable: chartStub,
+        UsageTable: usageTableStub,
         ModelDistributionChart: distributionChartStub,
         GroupDistributionChart: distributionChartStub,
-        EndpointDistributionChart: chartStub,
-        TokenUsageTrend: chartStub,
+        EndpointDistributionChart: endpointDistributionChartStub,
+        TokenUsageTrend: tokenUsageTrendStub,
       },
     },
   })
@@ -220,13 +232,35 @@ describe('user UsageView', () => {
     await flushPromises()
 
     const summary = wrapper.find('.usage-stats-cards')
+    expect(summary.attributes('data-show-cost')).toBe('false')
     expect(summary.attributes('data-show-account-cost')).toBe('false')
     expect(summary.attributes('data-show-standard-cost')).toBe('false')
 
     for (const chart of wrapper.findAll('.distribution-chart')) {
+      expect(chart.attributes('data-show-cost')).toBe('false')
       expect(chart.attributes('data-show-account-cost')).toBe('false')
       expect(chart.attributes('data-show-standard-cost')).toBe('false')
     }
+
+    expect(wrapper.find('.endpoint-distribution-chart').attributes('data-show-cost')).toBe('false')
+    expect(wrapper.find('.endpoint-distribution-chart').attributes('data-show-standard-cost')).toBe('false')
+    expect(wrapper.find('.endpoint-distribution-chart').attributes('data-metric')).toBe('tokens')
+    expect(wrapper.find('.token-usage-trend').attributes('data-show-cost')).toBe('false')
+
+    const tableColumns = JSON.parse(wrapper.find('.usage-table').attributes('data-columns') || '[]')
+    expect(tableColumns).not.toContain('cost')
+    expect(wrapper.find('.usage-table').attributes('data-show-account-billing')).toBe('false')
+  })
+
+  it('renders usage inside a Tremor-style dashboard shell', async () => {
+    const wrapper = mountUsageView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-usage-dashboard="tremor-shell"]').exists()).toBe(true)
+    expect(wrapper.find('[data-usage-dashboard="summary"]').exists()).toBe(true)
+    expect(wrapper.find('[data-usage-dashboard="controls"]').exists()).toBe(true)
+    expect(wrapper.find('[data-usage-dashboard="analytics"]').exists()).toBe(true)
+    expect(wrapper.find('[data-usage-dashboard="records"]').exists()).toBe(true)
   })
 
   it('exports csv with current filters and without admin-only fields', async () => {
@@ -261,12 +295,14 @@ describe('user UsageView', () => {
     expect(showSuccess).toHaveBeenCalled()
     expect(csvContent.startsWith('\uFEFF')).toBe(true)
     expect(csvContent.slice(1)).toBe([
-      'Time,API Key Name,Model,Reasoning Effort,Inbound Endpoint,IP Address,Type,Billing Mode,Input Tokens,Output Tokens,Cache Read Tokens,Cache Creation Tokens,Rate Multiplier,Billed Cost,Original Cost,First Token (ms),Duration (ms)',
-      '2026-03-08T00:00:00Z,demo-key,gpt-5.4,"\'-",,203.0.113.10,Sync,Token,4057,101,278272,4,1,0.09288300,0.09288300,12,345',
+      'Time,API Key Name,Model,Reasoning Effort,Inbound Endpoint,IP Address,Type,Billing Mode,Input Tokens,Output Tokens,Cache Read Tokens,Cache Creation Tokens,First Token (ms),Duration (ms)',
+      '2026-03-08T00:00:00Z,demo-key,gpt-5.4,"\'-",,203.0.113.10,Sync,Token,4057,101,278272,4,12,345',
     ].join('\n'))
     expect(csvContent).toContain('IP Address')
     expect(csvContent).toContain('203.0.113.10')
-    expect(csvContent).toContain('Billed Cost')
+    expect(csvContent).not.toContain('Billed Cost')
+    expect(csvContent).not.toContain('Rate Multiplier')
+    expect(csvContent).not.toContain('0.092883')
     expect(csvContent).not.toContain('Original Cost')
     expect(csvContent).not.toContain('Upstream Endpoint')
     expect(csvContent).not.toContain('account_cost')

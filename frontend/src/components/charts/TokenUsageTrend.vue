@@ -1,7 +1,7 @@
 <template>
-  <div class="card p-4">
+  <div :class="chartShellClass">
     <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
-      {{ t('admin.dashboard.tokenUsageTrend') }}
+      {{ tokenUsageTrendTitle }}
     </h3>
     <div v-if="loading" class="flex h-48 items-center justify-center">
       <LoadingSpinner />
@@ -52,6 +52,8 @@ const { t } = useI18n()
 const props = defineProps<{
   trendData: TrendDataPoint[]
   loading?: boolean
+  surface?: 'default' | 'tremor'
+  showCost?: boolean
 }>()
 
 const isDarkMode = computed(() => {
@@ -59,14 +61,23 @@ const isDarkMode = computed(() => {
 })
 
 const chartColors = computed(() => ({
-  text: isDarkMode.value ? '#e5e7eb' : '#374151',
-  grid: isDarkMode.value ? '#374151' : '#e5e7eb',
-  input: '#3b82f6',
-  output: '#10b981',
-  cacheCreation: '#f59e0b',
-  cacheRead: '#06b6d4',
-  cacheHitRate: '#8b5cf6'
+  text: isDarkMode.value ? '#d1d5db' : '#4b5563',
+  grid: isDarkMode.value ? 'rgba(55, 65, 81, 0.45)' : 'rgba(229, 231, 235, 0.8)',
+  input: '#2563eb',
+  output: '#059669',
+  cacheCreation: '#d97706',
+  cacheRead: '#0891b2',
+  cacheHitRate: '#7c3aed'
 }))
+
+const chartShellClass = computed(() => props.surface === 'tremor'
+  ? 'relative w-full rounded-lg border border-gray-200 bg-white p-5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-gray-900 dark:bg-[#090E1A]'
+  : 'card p-4')
+
+const tokenUsageTrendTitle = computed(() => {
+  const label = t('usage.tokenUsageTrend')
+  return label === 'usage.tokenUsageTrend' ? 'Token 使用趋势' : label
+})
 
 const chartData = computed(() => {
   if (!props.trendData?.length) return null
@@ -75,39 +86,51 @@ const chartData = computed(() => {
     labels: props.trendData.map((d) => d.date),
     datasets: [
       {
-        label: 'Input',
+        label: t('usage.trend.input'),
         data: props.trendData.map((d) => d.input_tokens),
         borderColor: chartColors.value.input,
         backgroundColor: `${chartColors.value.input}20`,
         fill: true,
-        tension: 0.3
+        tension: 0.35,
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 3
       },
       {
-        label: 'Output',
+        label: t('usage.trend.output'),
         data: props.trendData.map((d) => d.output_tokens),
         borderColor: chartColors.value.output,
         backgroundColor: `${chartColors.value.output}20`,
         fill: true,
-        tension: 0.3
+        tension: 0.35,
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 3
       },
       {
-        label: 'Cache Creation',
+        label: t('usage.trend.cacheCreation'),
         data: props.trendData.map((d) => d.cache_creation_tokens),
         borderColor: chartColors.value.cacheCreation,
         backgroundColor: `${chartColors.value.cacheCreation}20`,
         fill: true,
-        tension: 0.3
+        tension: 0.35,
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 3
       },
       {
-        label: 'Cache Read',
+        label: t('usage.trend.cacheRead'),
         data: props.trendData.map((d) => d.cache_read_tokens),
         borderColor: chartColors.value.cacheRead,
         backgroundColor: `${chartColors.value.cacheRead}20`,
         fill: true,
-        tension: 0.3
+        tension: 0.35,
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 3
       },
       {
-        label: 'Cache Hit Rate',
+        label: t('usage.trend.cacheHitRate'),
         data: props.trendData.map((d) => {
           const totalPromptTokens = d.input_tokens + d.cache_read_tokens + d.cache_creation_tokens
           return totalPromptTokens > 0 ? (d.cache_read_tokens / totalPromptTokens) * 100 : 0
@@ -116,7 +139,10 @@ const chartData = computed(() => {
         backgroundColor: `${chartColors.value.cacheHitRate}20`,
         borderDash: [5, 5],
         fill: false,
-        tension: 0.3,
+        tension: 0.35,
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 3,
         yAxisID: 'yPercent'
       }
     ]
@@ -144,6 +170,13 @@ const lineOptions = computed(() => ({
       }
     },
     tooltip: {
+      backgroundColor: isDarkMode.value ? '#111827' : '#ffffff',
+      titleColor: isDarkMode.value ? '#f9fafb' : '#111827',
+      bodyColor: isDarkMode.value ? '#e5e7eb' : '#374151',
+      borderColor: isDarkMode.value ? '#374151' : '#e5e7eb',
+      borderWidth: 1,
+      padding: 12,
+      displayColors: true,
       callbacks: {
         label: (context: any) => {
           if (context.dataset.yAxisID === 'yPercent') {
@@ -155,7 +188,13 @@ const lineOptions = computed(() => ({
           const dataIndex = tooltipItems[0]?.dataIndex
           if (dataIndex !== undefined && props.trendData[dataIndex]) {
             const data = props.trendData[dataIndex]
-            return `Actual: $${formatCost(data.actual_cost)} | Standard: $${formatCost(data.cost)}`
+            const footerLines = [
+              `${t('usage.trend.totalUsage')}: ${formatTokens(totalUsageTokens(data))}`,
+            ]
+            if (props.showCost) {
+              footerLines.push(`${t('usage.trend.actualCost')}: $${formatCost(data.actual_cost)}`)
+            }
+            return footerLines
           }
           return ''
         }
@@ -214,6 +253,9 @@ const formatTokens = (value: number): string => {
   }
   return value.toLocaleString()
 }
+
+const totalUsageTokens = (data: TrendDataPoint): number =>
+  data.input_tokens + data.output_tokens + data.cache_creation_tokens + data.cache_read_tokens
 
 const formatCost = (value: number): string => {
   if (value >= 1000) {
