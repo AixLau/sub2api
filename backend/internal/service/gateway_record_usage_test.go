@@ -495,6 +495,41 @@ func TestGatewayServiceRecordUsage_DroppedUsageLogFallsBackToSyncCreate(t *testi
 	require.NoError(t, usageRepo.lastCtxErr)
 }
 
+func TestGatewayServiceRecordUsage_BillingFingerprintConflictRetriesAndPersistsUsage(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{
+		errs:    []error{ErrUsageBillingRequestConflict, nil},
+		results: []*UsageBillingApplyResult{nil, &UsageBillingApplyResult{Applied: true}},
+	}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID: "gateway_conflicting_upstream_id",
+			Usage: ClaudeUsage{
+				InputTokens:  10,
+				OutputTokens: 6,
+			},
+			Model:    "claude-sonnet-4",
+			Duration: time.Second,
+		},
+		APIKey:  &APIKey{ID: 509},
+		User:    &User{ID: 609},
+		Account: &Account{ID: 709},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 2, billingRepo.calls)
+	require.Len(t, billingRepo.cmds, 2)
+	require.Equal(t, "gateway_conflicting_upstream_id", billingRepo.cmds[0].RequestID)
+	require.NotEqual(t, billingRepo.cmds[0].RequestID, billingRepo.cmds[1].RequestID)
+	require.True(t, strings.HasPrefix(billingRepo.cmds[1].RequestID, "conflict:"))
+	require.Equal(t, billingRepo.cmds[0].RequestFingerprint, billingRepo.cmds[1].RequestFingerprint)
+	require.Equal(t, 1, usageRepo.calls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, billingRepo.cmds[1].RequestID, usageRepo.lastLog.RequestID)
+}
+
 func TestGatewayServiceRecordUsage_BillingErrorSkipsUsageLogWrite(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	billingRepo := &openAIRecordUsageBillingRepoStub{err: context.DeadlineExceeded}

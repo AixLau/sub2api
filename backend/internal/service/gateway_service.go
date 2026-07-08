@@ -9420,6 +9420,26 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 	defer cancel()
 
 	result, err := repo.Apply(billingCtx, cmd)
+	if errors.Is(err, ErrUsageBillingRequestConflict) {
+		originalRequestID := cmd.RequestID
+		conflictRequestID := buildUsageBillingConflictRequestID(cmd.RequestID, cmd.RequestFingerprint)
+		retryCmd := *cmd
+		retryCmd.RequestID = conflictRequestID
+		retryCmd.Normalize()
+
+		slog.Warn("usage billing fingerprint conflict; retrying with derived request id",
+			"api_key_id", cmd.APIKeyID,
+			"user_id", cmd.UserID,
+			"account_id", cmd.AccountID,
+			"original_request_id", originalRequestID,
+			"derived_request_id", conflictRequestID,
+		)
+
+		result, err = repo.Apply(billingCtx, &retryCmd)
+		if err == nil && usageLog != nil {
+			usageLog.RequestID = conflictRequestID
+		}
+	}
 	if err != nil {
 		return false, err
 	}

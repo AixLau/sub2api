@@ -93,6 +93,12 @@ func HashUsageRequestPayload(payload []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func buildUsageBillingConflictRequestID(requestID, requestFingerprint string) string {
+	raw := strings.TrimSpace(requestID) + "\x00" + strings.TrimSpace(requestFingerprint)
+	sum := sha256.Sum256([]byte(raw))
+	return "conflict:" + hex.EncodeToString(sum[:16])
+}
+
 func valueOrZero(v *int64) int64 {
 	if v == nil {
 		return 0

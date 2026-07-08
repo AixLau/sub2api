@@ -33,23 +33,46 @@ type openAIRecordUsageBillingRepoStub struct {
 	UsageBillingRepository
 
 	result     *UsageBillingApplyResult
+	results    []*UsageBillingApplyResult
 	err        error
+	errs       []error
 	calls      int
 	lastCmd    *UsageBillingCommand
+	cmds       []*UsageBillingCommand
 	lastCtxErr error
 }
 
 func (s *openAIRecordUsageBillingRepoStub) Apply(ctx context.Context, cmd *UsageBillingCommand) (*UsageBillingApplyResult, error) {
+	callIndex := s.calls
 	s.calls++
-	s.lastCmd = cmd
+	s.lastCmd = cloneUsageBillingCommandForTest(cmd)
+	s.cmds = append(s.cmds, s.lastCmd)
 	s.lastCtxErr = ctx.Err()
+	if callIndex < len(s.errs) && s.errs[callIndex] != nil {
+		return nil, s.errs[callIndex]
+	}
 	if s.err != nil {
 		return nil, s.err
+	}
+	if callIndex < len(s.results) && s.results[callIndex] != nil {
+		return s.results[callIndex], nil
 	}
 	if s.result != nil {
 		return s.result, nil
 	}
 	return &UsageBillingApplyResult{Applied: true}, nil
+}
+
+func cloneUsageBillingCommandForTest(cmd *UsageBillingCommand) *UsageBillingCommand {
+	if cmd == nil {
+		return nil
+	}
+	cp := *cmd
+	if cmd.SubscriptionID != nil {
+		v := *cmd.SubscriptionID
+		cp.SubscriptionID = &v
+	}
+	return &cp
 }
 
 func TestOpenAIGatewayServiceRecordUsage_RejectsNilInput(t *testing.T) {
@@ -972,6 +995,43 @@ func TestOpenAIGatewayServiceRecordUsage_BillingErrorSkipsUsageLogWrite(t *testi
 	require.Error(t, err)
 	require.Equal(t, 1, billingRepo.calls)
 	require.Equal(t, 0, usageRepo.calls)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_BillingFingerprintConflictRetriesAndPersistsUsage(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{
+		errs:    []error{ErrUsageBillingRequestConflict, nil},
+		results: []*UsageBillingApplyResult{nil, &UsageBillingApplyResult{Applied: true}},
+	}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo, nil)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID: "resp_conflicting_upstream_id",
+			Usage: OpenAIUsage{
+				InputTokens:  8,
+				OutputTokens: 4,
+			},
+			Model:    "gpt-5.1",
+			Duration: time.Second,
+		},
+		APIKey:  &APIKey{ID: 10049},
+		User:    &User{ID: 20049},
+		Account: &Account{ID: 30049},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 2, billingRepo.calls)
+	require.Len(t, billingRepo.cmds, 2)
+	require.Equal(t, "resp_conflicting_upstream_id", billingRepo.cmds[0].RequestID)
+	require.NotEqual(t, billingRepo.cmds[0].RequestID, billingRepo.cmds[1].RequestID)
+	require.True(t, strings.HasPrefix(billingRepo.cmds[1].RequestID, "conflict:"))
+	require.Equal(t, billingRepo.cmds[0].RequestFingerprint, billingRepo.cmds[1].RequestFingerprint)
+	require.Equal(t, 1, usageRepo.calls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, billingRepo.cmds[1].RequestID, usageRepo.lastLog.RequestID)
 }
 
 func TestOpenAIGatewayServiceRecordUsage_UpdatesAPIKeyQuotaWhenConfigured(t *testing.T) {
