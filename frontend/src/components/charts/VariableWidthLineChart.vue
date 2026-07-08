@@ -92,6 +92,8 @@ type RawDatum = Record<string, unknown>
 type FieldGetter = string | ((datum: RawDatum, index: number) => unknown)
 type ScaleType = 'linear' | 'time' | 'point' | 'band'
 type StrokeEffect = 'staccato' | 'smooth'
+type ComparableXKind = 'date' | 'date-string' | 'number'
+type ComparableX = { kind: ComparableXKind; value: number }
 
 type InnerDatum = RawDatum & {
   __vw_x__: unknown
@@ -271,6 +273,17 @@ const endDotData = computed(() => {
   return Array.from(lastPointMap.values())
 })
 
+const isolatedPointData = computed(() => {
+  const counts = new Map<string, number>()
+
+  normalizedData.value.forEach((item) => {
+    const key = item[SERIES_KEY]
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  })
+
+  return normalizedData.value.filter((item) => (counts.get(item[SERIES_KEY]) ?? 0) === 1)
+})
+
 const yExtent = computed(() => {
   const values = normalizedData.value.map((item) => item[Y_KEY])
   const min = props.yDomain?.[0] ?? 0
@@ -318,6 +331,18 @@ const gridTickItems = computed(() => {
   }))
 })
 
+function toInterpolatableX(value: unknown): ComparableX | null {
+  if (value instanceof Date) return { kind: 'date', value: value.getTime() }
+  if (typeof value === 'number' && Number.isFinite(value)) return { kind: 'number', value }
+  if (typeof value === 'string') {
+    const date = new Date(value)
+    if (!Number.isNaN(date.getTime())) {
+      return { kind: 'date-string', value: date.getTime() }
+    }
+  }
+  return null
+}
+
 const xValues = computed(() => {
   const seen = new Set<string>()
   const values: unknown[] = []
@@ -335,6 +360,39 @@ const xValues = computed(() => {
   return values
 })
 
+const xComparableScale = computed(() => {
+  const items = xValues.value.map((value, index) => ({
+    value,
+    index,
+    comparable: toInterpolatableX(value),
+  }))
+
+  if (!items.length || items.some((item) => item.comparable === null)) {
+    return null
+  }
+
+  const comparableItems = items as Array<{
+    value: unknown
+    index: number
+    comparable: ComparableX
+  }>
+  const positions = comparableItems.map((item) => item.comparable.value)
+  const min = Math.min(...positions)
+  const max = Math.max(...positions)
+
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) {
+    return null
+  }
+
+  return {
+    items: comparableItems,
+    min,
+    max,
+    span: max - min,
+    scaleType: comparableItems.some((item) => item.comparable.kind !== 'number') ? 'time' : 'linear',
+  }
+})
+
 const xDisplayTicks = computed(() => {
   if (props.xTicks?.length) return props.xTicks
 
@@ -346,9 +404,20 @@ const xDisplayTicks = computed(() => {
   return Array.from(indexes).sort((a, b) => a - b).map((index) => values[index])
 })
 
+const getXPositionPercent = (value: unknown, fallbackIndex: number): number => {
+  const scale = xComparableScale.value
+  const comparable = toInterpolatableX(value)
+
+  if (scale && comparable) {
+    return clamp(((comparable.value - scale.min) / scale.span) * 100, 0, 100)
+  }
+
+  const denominator = Math.max(xValues.value.length - 1, 1)
+  return (fallbackIndex / denominator) * 100
+}
+
 const xTickItems = computed(() => {
   const allValues = xValues.value
-  const denominator = Math.max(allValues.length - 1, 1)
 
   return xDisplayTicks.value.map((value, index) => {
     const foundIndex = allValues.findIndex((candidate) => isSameXValue(candidate, value))
@@ -357,7 +426,7 @@ const xTickItems = computed(() => {
     return {
       key: xTickKey(value, index),
       label: props.formatX ? props.formatX(value) : String(value),
-      left: (valueIndex / denominator) * 100,
+      left: getXPositionPercent(value, valueIndex),
     }
   })
 })
@@ -384,9 +453,11 @@ const handleTooltipMove = (event: MouseEvent) => {
   const plotHeight = Math.max(rect.height - PLOT_PADDING_TOP - PLOT_PADDING_BOTTOM, 1)
   const localX = clamp(event.clientX - rect.left, PLOT_PADDING_LEFT, rect.width - PLOT_PADDING_RIGHT)
   const localY = clamp(event.clientY - rect.top, PLOT_PADDING_TOP, rect.height - PLOT_PADDING_BOTTOM)
-  const progress = values.length <= 1 ? 0 : (localX - PLOT_PADDING_LEFT) / plotWidth
-  const nearestIndex = Math.round(progress * (values.length - 1))
-  const title = values[clamp(nearestIndex, 0, values.length - 1)]
+  const progress = values.length <= 1 ? 0 : clamp((localX - PLOT_PADDING_LEFT) / plotWidth, 0, 1)
+  const scale = xComparableScale.value
+  const title = scale
+    ? findNearestComparableXValue(scale.min + progress * scale.span)
+    : values[clamp(Math.round(progress * (values.length - 1)), 0, values.length - 1)]
   const preferredLeft = localX + 16
   const left = preferredLeft + TOOLTIP_WIDTH > rect.width
     ? localX - TOOLTIP_WIDTH - 16
@@ -400,6 +471,17 @@ const handleTooltipMove = (event: MouseEvent) => {
     top,
     title,
   }
+}
+
+const findNearestComparableXValue = (target: number): unknown => {
+  const scale = xComparableScale.value
+  if (!scale?.items.length) return xValues.value[0]
+
+  return scale.items.reduce((nearest, item) => {
+    const currentDistance = Math.abs(item.comparable.value - target)
+    const nearestDistance = Math.abs(nearest.comparable.value - target)
+    return currentDistance < nearestDistance ? item : nearest
+  }, scale.items[0]).value
 }
 
 const hideTooltip = () => {
@@ -491,21 +573,9 @@ const buildStaccatoSegment = (
   })
 }
 
-const toInterpolatableX = (value: unknown): { kind: 'date' | 'date-string' | 'number'; value: number } | null => {
-  if (value instanceof Date) return { kind: 'date', value: value.getTime() }
-  if (typeof value === 'number' && Number.isFinite(value)) return { kind: 'number', value }
-  if (typeof value === 'string') {
-    const date = new Date(value)
-    if (!Number.isNaN(date.getTime())) {
-      return { kind: 'date-string', value: date.getTime() }
-    }
-  }
-  return null
-}
-
 const interpolateX = (
-  previous: { kind: 'date' | 'date-string' | 'number'; value: number },
-  next: { kind: 'date' | 'date-string' | 'number'; value: number },
+  previous: ComparableX,
+  next: ComparableX,
   progress: number,
 ): Date | number | string => {
   const value = previous.value + (next.value - previous.value) * progress
@@ -540,11 +610,26 @@ const buildViewScale = () => {
     }
   }
 
-  if (props.xScaleType || props.xTicks?.length) {
+  const comparableScale = xComparableScale.value
+
+  if (props.xScaleType || props.xTicks?.length || comparableScale) {
     scale.x = {}
 
     if (props.xScaleType) {
       ;(scale.x as Record<string, unknown>).type = props.xScaleType
+    } else if (comparableScale) {
+      ;(scale.x as Record<string, unknown>).type = comparableScale.scaleType
+    }
+
+    const xScaleType = (scale.x as Record<string, unknown>).type
+    if (
+      comparableScale &&
+      (xScaleType === 'time' || xScaleType === 'linear')
+    ) {
+      ;(scale.x as Record<string, unknown>).domain = comparableScale.scaleType === 'time'
+        ? [new Date(comparableScale.min), new Date(comparableScale.max)]
+        : [comparableScale.min, comparableScale.max]
+      ;(scale.x as Record<string, unknown>).nice = false
     }
 
     if (props.xTicks?.length) {
@@ -686,6 +771,26 @@ const renderChart = async () => {
         stroke: 'transparent',
         lineWidth: 0,
         fillOpacity: 1,
+      },
+      tooltip: false,
+      legend: false,
+      axis: false,
+    })
+  } else if (isolatedPointData.value.length) {
+    children.push({
+      type: 'point',
+      data: isolatedPointData.value,
+      encode: {
+        x: X_KEY,
+        y: Y_KEY,
+        color: COLOR_KEY,
+        shape: 'point',
+        size: 5,
+      },
+      style: {
+        stroke: '#ffffff',
+        lineWidth: 1.5,
+        fillOpacity: 0.96,
       },
       tooltip: false,
       legend: false,

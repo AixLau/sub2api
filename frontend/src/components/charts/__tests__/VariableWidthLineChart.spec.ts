@@ -54,6 +54,11 @@ const mountChart = (props: Record<string, unknown> = {}) => mount(VariableWidthL
   },
 })
 
+const extractLeftPercent = (style: string | undefined): number => {
+  const match = style?.match(/left:\s*([0-9.]+)%/)
+  return match ? Number(match[1]) : Number.NaN
+}
+
 describe('VariableWidthLineChart', () => {
   afterEach(() => {
     ChartMock.mockClear()
@@ -158,6 +163,26 @@ describe('VariableWidthLineChart', () => {
     })
   })
 
+  it('renders isolated single-point series without enabling endpoint dots', async () => {
+    mountChart({
+      data: [
+        { date: '2026-07-09T00:00:00', value: 200, category: '输入' },
+      ],
+      xField: (datum: Record<string, unknown>) => new Date(String(datum.date)),
+      xTicks: undefined,
+      showEndDot: false,
+    })
+    await nextTick()
+
+    const options = chartInstances[0].options.mock.calls[0][0]
+    const pointLayers = options.children.filter((child: Record<string, unknown>) => child.type === 'point')
+
+    expect(pointLayers).toHaveLength(1)
+    expect(pointLayers[0].data).toEqual([
+      expect.objectContaining({ __vw_color__: '输入', __vw_y__: 200 }),
+    ])
+  })
+
   it('expands original points into staccato brush segments by default', async () => {
     mountChart()
     await nextTick()
@@ -226,6 +251,67 @@ describe('VariableWidthLineChart', () => {
     await nextTick()
 
     expect(wrapper.find('.vw-line__tooltip').exists()).toBe(false)
+    rectSpy.mockRestore()
+  })
+
+  it('positions datetime x-axis labels by elapsed time instead of point index', async () => {
+    const wrapper = mountChart({
+      data: [
+        { date: '2026-07-09T00:00:00', value: 10, category: '输入' },
+        { date: '2026-07-09T20:00:00', value: 30, category: '输入' },
+        { date: '2026-07-09T21:00:00', value: 20, category: '输入' },
+        { date: '2026-07-09T22:00:00', value: 40, category: '输入' },
+      ],
+      xField: (datum: Record<string, unknown>) => new Date(String(datum.date)),
+      xTicks: undefined,
+    })
+    await nextTick()
+
+    const labels = wrapper.findAll('.vw-line__x-label')
+    const labelPositions = labels.map((label) => extractLeftPercent(label.attributes('style')))
+
+    expect(labels.map((label) => label.text())).toHaveLength(4)
+    expect(labelPositions[0]).toBeCloseTo(0, 3)
+    expect(labelPositions[1]).toBeCloseTo((20 / 22) * 100, 3)
+    expect(labelPositions[2]).toBeCloseTo((21 / 22) * 100, 3)
+    expect(labelPositions[3]).toBeCloseTo(100, 3)
+  })
+
+  it('selects tooltip values by nearest datetime rather than nearest point index', async () => {
+    const tooltipHtml = vi.fn((title: unknown) => `<div>${String(title)}</div>`)
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      right: 400,
+      bottom: 320,
+      left: 0,
+      width: 400,
+      height: 320,
+      toJSON: () => ({}),
+    } as DOMRect)
+    const wrapper = mountChart({
+      data: [
+        { date: '2026-07-09T00:00:00', value: 10, category: '输入' },
+        { date: '2026-07-09T20:00:00', value: 30, category: '输入' },
+        { date: '2026-07-09T21:00:00', value: 20, category: '输入' },
+        { date: '2026-07-09T22:00:00', value: 40, category: '输入' },
+      ],
+      xField: (datum: Record<string, unknown>) => new Date(String(datum.date)),
+      xTicks: undefined,
+      tooltipHtml,
+    })
+    await nextTick()
+
+    await wrapper.find('.vw-line__body').trigger('mousemove', {
+      clientX: 184,
+      clientY: 120,
+    })
+    await nextTick()
+
+    const title = tooltipHtml.mock.calls[0][0]
+    expect(title).toEqual(new Date('2026-07-09T00:00:00'))
+
     rectSpy.mockRestore()
   })
 
