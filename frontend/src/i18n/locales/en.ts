@@ -930,6 +930,7 @@ export default {
       cacheRead: 'Cache Read',
       cacheHitRate: 'Cache Hit Rate',
       totalUsage: 'Total Usage',
+      cost: 'Cost',
       actualCost: 'Actual Cost',
     },
     accountCost: 'Cost',

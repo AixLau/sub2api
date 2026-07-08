@@ -183,6 +183,7 @@
           :columns="visibleColumns"
           :server-side-sort="true"
           :show-account-billing="false"
+          :show-cost-breakdown="false"
           :show-upstream-endpoint="false"
           default-sort-key="created_at"
           default-sort-order="desc"
@@ -707,6 +708,7 @@ const allColumns = computed<Column[]>(() => [
   { key: 'stream', label: t('usage.type'), sortable: false },
   { key: 'billing_mode', label: t('admin.usage.billingMode'), sortable: false },
   { key: 'tokens', label: t('usage.tokens'), sortable: false },
+  { key: 'cost', label: t('usage.cost'), sortable: false },
   { key: 'first_token', label: t('usage.firstToken'), sortable: false },
   { key: 'duration', label: t('usage.duration'), sortable: false },
   { key: 'created_at', label: t('usage.time'), sortable: true },

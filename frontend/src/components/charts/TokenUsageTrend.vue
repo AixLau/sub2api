@@ -192,7 +192,7 @@ const lineOptions = computed(() => ({
               `${t('usage.trend.totalUsage')}: ${formatTokens(totalUsageTokens(data))}`,
             ]
             if (props.showCost) {
-              footerLines.push(`${t('usage.trend.actualCost')}: $${formatCost(data.actual_cost)}`)
+              footerLines.push(`${t('usage.trend.cost')}: $${formatCost(data.actual_cost)}`)
             }
             return footerLines
           }

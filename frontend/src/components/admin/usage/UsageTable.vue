@@ -170,6 +170,7 @@
               <span class="font-medium text-green-600 dark:text-green-400">${{ row.actual_cost?.toFixed(6) || '0.000000' }}</span>
               <!-- Cost Detail Tooltip -->
               <div
+                v-if="showCostBreakdown"
                 class="group relative"
                 @mouseenter="showTooltip($event, row)"
                 @mouseleave="hideTooltip"
@@ -295,7 +296,7 @@
   <!-- Cost Tooltip Portal -->
   <Teleport to="body">
     <div
-      v-if="tooltipVisible"
+      v-if="showCostBreakdown && tooltipVisible"
       class="fixed z-[9999] pointer-events-none -translate-y-1/2"
       :style="{
         left: tooltipPosition.x + 'px',
@@ -473,6 +474,7 @@ interface Props {
   defaultSortKey?: string
   defaultSortOrder?: 'asc' | 'desc'
   showAccountBilling?: boolean
+  showCostBreakdown?: boolean
   showUpstreamEndpoint?: boolean
 }
 
@@ -482,6 +484,7 @@ const props = withDefaults(defineProps<Props>(), {
   defaultSortKey: '',
   defaultSortOrder: 'asc',
   showAccountBilling: true,
+  showCostBreakdown: true,
   showUpstreamEndpoint: true
 })
 const emit = defineEmits<{
@@ -491,6 +494,7 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 const showAccountBilling = props.showAccountBilling
+const showCostBreakdown = props.showCostBreakdown
 const showUpstreamEndpoint = props.showUpstreamEndpoint
 const ipGeoBatchLoading = ref(false)
 

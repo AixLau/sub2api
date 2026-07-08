@@ -934,6 +934,7 @@ export default {
       cacheRead: '缓存读取',
       cacheHitRate: '缓存命中率',
       totalUsage: '总使用',
+      cost: '消费',
       actualCost: '实际消费',
     },
     accountCost: '成本',

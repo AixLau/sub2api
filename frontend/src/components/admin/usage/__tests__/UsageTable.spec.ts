@@ -170,6 +170,31 @@ describe('admin UsageTable tooltip', () => {
     expect(text).toContain('$0.069568')
   })
 
+  it('can show only actual cost without cost breakdown tooltip', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [baseImageRow],
+        loading: false,
+        columns: [],
+        showCostBreakdown: false,
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('$0.400000')
+    expect(text).not.toContain('Cost Breakdown')
+    expect(text).not.toContain('Input Cost')
+    expect(wrapper.find('.group.relative').exists()).toBe(false)
+  })
+
   it('shows requested and upstream models separately for admin rows', () => {
     const row = {
       request_id: 'req-admin-model-1',

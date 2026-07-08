@@ -96,8 +96,8 @@ vi.mock('vue-i18n', async () => {
 const simpleStub = { template: '<div><slot /></div>' }
 const chartStub = { template: '<div />' }
 const usageTableStub = {
-  props: ['columns', 'showAccountBilling', 'showUpstreamEndpoint'],
-  template: '<div class="usage-table" :data-columns="JSON.stringify((columns || []).map((col) => col.key))" :data-show-account-billing="String(showAccountBilling)" :data-show-upstream-endpoint="String(showUpstreamEndpoint)" />',
+  props: ['columns', 'showAccountBilling', 'showUpstreamEndpoint', 'showCostBreakdown'],
+  template: '<div class="usage-table" :data-columns="JSON.stringify((columns || []).map((col) => col.key))" :data-show-account-billing="String(showAccountBilling)" :data-show-upstream-endpoint="String(showUpstreamEndpoint)" :data-show-cost-breakdown="String(showCostBreakdown)" />',
 }
 const tokenUsageTrendStub = {
   props: ['showCost'],
@@ -248,8 +248,9 @@ describe('user UsageView', () => {
     expect(wrapper.find('.token-usage-trend').attributes('data-show-cost')).toBe('true')
 
     const tableColumns = JSON.parse(wrapper.find('.usage-table').attributes('data-columns') || '[]')
-    expect(tableColumns).not.toContain('cost')
+    expect(tableColumns).toContain('cost')
     expect(wrapper.find('.usage-table').attributes('data-show-account-billing')).toBe('false')
+    expect(wrapper.find('.usage-table').attributes('data-show-cost-breakdown')).toBe('false')
   })
 
   it('renders usage inside a Tremor-style dashboard shell', async () => {
