@@ -30,6 +30,7 @@
           <template v-if="showRechargeAdjustedRate">
             <span class="mr-1 line-through opacity-50">{{ formatRateMultiplier(rateMultiplier) }}x</span>
             <span class="font-bold">{{ adjustedRateMultiplierText }}x</span>
+            <span v-if="!hasCustomRate" class="ml-1">{{ t('admin.groups.rateLabel') }}</span>
           </template>
           <template v-else-if="hasCustomRate">
             <span class="mr-1 line-through opacity-50">{{ formatRateMultiplier(rateMultiplier) }}x</span>

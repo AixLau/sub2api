@@ -36,6 +36,7 @@ describe('GroupOptionItem', () => {
 
     expect(wrapper.text()).toContain('1.7x')
     expect(wrapper.text()).toContain('0.17x')
+    expect(wrapper.text()).toContain('admin.groups.rateLabel')
   })
 
   it('shows custom rate divided by the balance recharge multiplier without changing the struck original rate', () => {
