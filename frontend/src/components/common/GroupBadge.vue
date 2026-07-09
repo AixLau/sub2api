@@ -11,10 +11,13 @@
     <span class="truncate">{{ name }}</span>
     <!-- Right side label -->
     <span v-if="showLabel" :class="labelClass">
-      <template v-if="hasCustomRate">
-        <!-- 原倍率删除线 + 专属倍率高亮 -->
-        <span class="line-through opacity-50 mr-0.5">{{ rateMultiplier }}x</span>
-        <span class="font-bold">{{ userRateMultiplier }}x</span>
+      <template v-if="showRechargeAdjustedRate">
+        <span class="line-through opacity-50 mr-0.5">{{ formatRateMultiplier(rateMultiplier) }}x</span>
+        <span class="font-bold">{{ adjustedRateMultiplierText }}x</span>
+      </template>
+      <template v-else-if="hasCustomRate">
+        <span class="line-through opacity-50 mr-0.5">{{ formatRateMultiplier(rateMultiplier) }}x</span>
+        <span class="font-bold">{{ formatRateMultiplier(userRateMultiplier) }}x</span>
       </template>
       <template v-else>
         {{ labelText }}
@@ -79,6 +82,17 @@ const hasCustomRate = computed(() => {
 
 const appStore = useAppStore()
 
+const formatRateMultiplier = (value: number | null | undefined) => {
+  if (value === null || value === undefined || !Number.isFinite(value)) return ''
+  const rounded = Math.round(value * 1_000_000) / 1_000_000
+  return rounded.toFixed(6).replace(/\.?0+$/, '')
+}
+
+const balanceRechargeMultiplier = computed(() => {
+  const multiplier = Number(appStore.cachedPublicSettings?.payment_balance_recharge_multiplier)
+  return Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1
+})
+
 const hasPeakRate = computed(() => {
   return Boolean(props.showRate && props.peakRateEnabled && props.peakStart && props.peakEnd)
 })
@@ -103,14 +117,34 @@ const peakRateTitle = computed(() => {
 const showLabel = computed(() => {
   if (!props.showRate) return false
   // 订阅类型：显示天数或"订阅"
-  if (isSubscription.value) return true
+  if (isSubscription.value && !props.alwaysShowRate) return true
   // 标准类型：显示倍率（包括专属倍率）
   return props.rateMultiplier !== undefined || hasCustomRate.value
 })
 
+const showRechargeAdjustedRate = computed(() => {
+  return (
+    props.showRate &&
+    props.rateMultiplier !== undefined &&
+    (!isSubscription.value || props.alwaysShowRate) &&
+    Math.abs(balanceRechargeMultiplier.value - 1) > 1e-9
+  )
+})
+
+const effectiveDisplayRateMultiplier = computed(() => {
+  return hasCustomRate.value ? props.userRateMultiplier : props.rateMultiplier
+})
+
+const adjustedRateMultiplierText = computed(() => {
+  const effectiveRate = effectiveDisplayRateMultiplier.value
+  if (effectiveRate === null || effectiveRate === undefined) return ''
+  return formatRateMultiplier(effectiveRate / balanceRechargeMultiplier.value)
+})
+
 // Label text
 const labelText = computed(() => {
-  const rateLabel = props.rateMultiplier !== undefined ? `${props.rateMultiplier}x` : ''
+  const rateLabel =
+    props.rateMultiplier !== undefined ? `${formatRateMultiplier(props.rateMultiplier)}x` : ''
   if (isSubscription.value && !props.alwaysShowRate) {
     // 如果有剩余天数，显示天数
     if (props.daysRemaining !== null && props.daysRemaining !== undefined) {
