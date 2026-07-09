@@ -1220,6 +1220,47 @@ func TestContentModerationCheck_ContextualCyberRiskBlocksPublicScan(t *testing.T
 	require.Equal(t, "扫描", logs[0].MatchedKeyword)
 }
 
+func TestContentModerationCheck_ContextualCyberRiskAllowsToolDeclarationRecon(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	body := []byte(`{
+		"model":"gpt-5.5",
+		"tools":[{"type":"function","name":"shell_command","description":"Runs a Powershell command. The tool can support recon notes for a remote host when the model decides to call it.","parameters":{"type":"object","properties":{"command":{"type":"string","description":"Examples: Get-ChildItem -Force; Get-ChildItem -Recurse -File"}}}}],
+		"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"帮我整理当前项目文件列表"}]}]
+	}`)
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     body,
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Len(t, repo.snapshotLogs(), 0)
+}
+
 func TestContentModerationCheck_ContextualCyberRiskBlocksAPIOnlyBeforeUpstream(t *testing.T) {
 	upstreamCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

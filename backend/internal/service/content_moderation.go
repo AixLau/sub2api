@@ -1363,10 +1363,10 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	}
 	if cfg.Mode == ContentModerationModePreBlock {
 		if cfg.shouldRunLocalRules() {
-			if keywordMatch, hit := matchContentModerationLocalRule(content.Text, cfg.keywordRules()); hit {
+			if keywordMatch, hit := matchContentModerationLocalRuleInput(content, cfg.keywordRules()); hit {
 				return s.keywordDecision(ctx, input, cfg, content, hashText, keywordMatch), nil
 			}
-		} else if keywordMatch, hit := matchContextualBuiltInRiskRule(content.Text); hit {
+		} else if keywordMatch, hit := matchContextualBuiltInRiskRuleInput(content); hit {
 			return s.keywordDecision(ctx, input, cfg, content, hashText, keywordMatch), nil
 		}
 		if classifierDecision, decided := s.localClassifierDecision(ctx, input, cfg, content, hashText); decided {
@@ -5100,6 +5100,13 @@ func matchContentModerationLocalRule(text string, rules []ContentModerationKeywo
 	return matchContextualBuiltInRiskRule(text)
 }
 
+func matchContentModerationLocalRuleInput(content ContentModerationInput, rules []ContentModerationKeywordRule) (ContentModerationKeywordRule, bool) {
+	if match, hit := matchContentModerationKeyword(content.Text, rules); hit {
+		return match, true
+	}
+	return matchContextualBuiltInRiskRuleInput(content)
+}
+
 func matchContentModerationKeyword(text string, rules []ContentModerationKeywordRule) (ContentModerationKeywordRule, bool) {
 	if text == "" || len(rules) == 0 {
 		return ContentModerationKeywordRule{}, false
@@ -5128,6 +5135,34 @@ func matchContentModerationKeyword(text string, rules []ContentModerationKeyword
 		}
 	}
 	return ContentModerationKeywordRule{}, false
+}
+
+func matchContextualBuiltInRiskRuleInput(content ContentModerationInput) (ContentModerationKeywordRule, bool) {
+	if len(content.Sources) == 0 {
+		return matchContextualBuiltInRiskRule(content.Text)
+	}
+	for _, source := range content.Sources {
+		if shouldSkipContextualBuiltInRiskSource(source.Source) {
+			continue
+		}
+		if match, hit := matchContextualBuiltInRiskRule(source.Text); hit {
+			return match, true
+		}
+	}
+	return ContentModerationKeywordRule{}, false
+}
+
+func shouldSkipContextualBuiltInRiskSource(source string) bool {
+	switch strings.TrimSpace(source) {
+	case "openai_chat.tools",
+		"openai_chat.functions",
+		"responses.tools",
+		"anthropic.tools",
+		"gemini.tools":
+		return true
+	default:
+		return false
+	}
 }
 
 func shouldUseCompactKeywordMatch(normalizedKeyword string) bool {
