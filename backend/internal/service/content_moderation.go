@@ -5276,7 +5276,6 @@ var contentModerationSexualScoreGroups = [][]contentModerationRiskScoreMarker{
 		{Keyword: "涩涩", Score: 45},
 		{Keyword: "福利", Score: 35},
 		{Keyword: "私房", Score: 40},
-		{Keyword: "18+", Score: 45},
 		{Keyword: "r18", Score: 45},
 		{Keyword: "成人向", Score: 45},
 		{Keyword: "成年人懂", Score: 35},
