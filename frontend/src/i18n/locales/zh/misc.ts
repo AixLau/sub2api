@@ -38,18 +38,35 @@ export default {
     restartRequired: '请重启服务以应用更新',
     restartNow: '立即重启',
     restarting: '正在重启...',
-    retry: '重试'
+    retry: '重试',
+    rollback: '版本回退',
+    rollbackSelectVersion: '选择要回退到的版本（近 3 个版本）',
+    rollbackConfirm: '回退到 {version}',
+    rollbackWarning: '回退将下载所选版本并替换当前程序，完成后需重启服务',
+    rollingBack: '正在回退...',
+    rollbackComplete: '回退完成',
+    rollbackFailed: '回退失败',
+    manualRollbackCommand: '手动回退方式',
+    copyCommand: '复制',
+    copied: '已复制',
+    noRollbackVersions: '暂无可回退的版本',
+    loadVersionsFailed: '获取版本列表失败',
+    rollbackSourceHint: '源码构建不支持在线回退',
+    deployScript: '脚本部署',
+    deployDocker: 'Docker',
+    dockerEditCompose: '修改 docker-compose.yml 中的镜像版本',
+    dockerRecreate: '重新创建容器'
   },
 
   // Recharge / Subscription Page
   purchase: {
-    title: '充值/订阅',
-    description: '为账户充值或购买订阅套餐',
+    title: '帐户充值',
+    description: '为帐户充值',
     openInNewTab: '新窗口打开',
     notEnabledTitle: '该功能未开启',
-    notEnabledDesc: '管理员暂未开启充值/订阅入口，请联系管理员。',
-    notConfiguredTitle: '充值/订阅链接未配置',
-    notConfiguredDesc: '管理员已开启入口，但尚未配置充值/订阅链接，请联系管理员。'
+    notEnabledDesc: '管理员暂未开启帐户充值入口，请联系管理员。',
+    notConfiguredTitle: '帐户充值链接未配置',
+    notConfiguredDesc: '管理员已开启入口，但尚未配置帐户充值链接，请联系管理员。'
   },
 
   // Custom Page (iframe embed)
@@ -292,7 +309,7 @@ export default {
 
   // Payment System
   payment: {
-    title: '充值/订阅',
+    title: '帐户充值',
     amountLabel: '充值金额',
     paymentAmount: '支付金额',
     creditedBalance: '到账余额',

@@ -473,11 +473,11 @@ export default {
         hideCcsImportButtonHint: '启用后将在 API Keys 页面隐藏"导入 CCS"按钮'
       },
       purchase: {
-        title: '充值/订阅页面',
-        description: '在侧边栏展示“充值/订阅”入口，并在页面内通过 iframe 打开指定链接',
-        enabled: '显示充值/订阅入口',
+        title: '帐户充值页面',
+        description: '在侧边栏展示“帐户充值”入口，并在页面内通过 iframe 打开指定链接',
+        enabled: '显示帐户充值入口',
         enabledHint: '仅在标准模式（非简单模式）下展示',
-        url: '充值/订阅页面 URL',
+        url: '帐户充值页面 URL',
         urlPlaceholder: 'https://example.com/purchase',
         urlHint: '必须是完整的 http(s) 链接',
         iframeWarning:

@@ -11,6 +11,7 @@ import (
 type routeRegistrar interface {
 	GET(relativePath string, handlers ...gin.HandlerFunc) gin.IRoutes
 	POST(relativePath string, handlers ...gin.HandlerFunc) gin.IRoutes
+	DELETE(relativePath string, handlers ...gin.HandlerFunc) gin.IRoutes
 }
 
 // ModeratedRouteMeta describes an upstream route that must remain covered by
@@ -73,6 +74,18 @@ func (r *ModeratedRouteRegistrar) POST(relativePath string, meta ModeratedRouteM
 	meta.Method = "POST"
 	meta = r.registerRoute(meta)
 	return r.routes.POST(relativePath, r.prependModeratedRouteMetaHandler(meta, handlers)...)
+}
+
+func (r *ModeratedRouteRegistrar) DELETE(relativePath string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
+	meta.Method = "DELETE"
+	meta = r.registerRoute(meta)
+	return r.routes.DELETE(relativePath, r.prependModeratedRouteMetaHandler(meta, handlers)...)
+}
+
+func (r *ModeratedRouteRegistrar) DELETENoAudit(relativePath string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
+	meta.Method = "DELETE"
+	meta = r.registerRoute(meta)
+	return r.routes.DELETE(relativePath, r.prependModeratedRouteMetaHandler(meta, handlers)...)
 }
 
 func GatewayModeratedRouteCoverageEntries() []ModeratedRouteMeta {

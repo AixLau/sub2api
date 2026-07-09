@@ -343,8 +343,16 @@ func RegisterGatewayRoutes(
 			"BatchImageHandler.Cancel",
 			"Batch image cancel updates local job state and does not submit new model-visible user content.",
 		), h.BatchImage.Cancel)
-		gateway.DELETE("/images/batches/:id", h.BatchImage.DeleteRecord)
-		gateway.DELETE("/images/batches/:id/outputs", h.BatchImage.DeleteOutputs)
+		moderatedGateway.DELETENoAudit("/images/batches/:id", intentionalNoAuditRoute(
+			"/v1/images/batches/:id",
+			"BatchImageHandler.DeleteRecord",
+			"Batch image record deletion removes local job metadata and does not submit model-visible user content.",
+		), h.BatchImage.DeleteRecord)
+		moderatedGateway.DELETENoAudit("/images/batches/:id/outputs", intentionalNoAuditRoute(
+			"/v1/images/batches/:id/outputs",
+			"BatchImageHandler.DeleteOutputs",
+			"Batch image output deletion removes local generated files and does not submit model-visible user content.",
+		), h.BatchImage.DeleteOutputs)
 	}
 
 	// Gemini 原生 API 兼容层（Gemini SDK/CLI 直连）
@@ -490,7 +498,11 @@ func RegisterGatewayRoutes(
 		), func(c *gin.Context) {
 			h.OpenAIGateway.ResponsesWebSocket(c)
 		})
-		codexDirect.GET("/models", h.OpenAIGateway.CodexModels)
+		moderatedCodexDirect.GETNoAudit("/models", intentionalNoAuditRoute(
+			"/backend-api/codex/models",
+			"OpenAIGatewayHandler.CodexModels",
+			"Codex model manifest lookup reads model metadata and does not submit model-visible user content.",
+		), h.OpenAIGateway.CodexModels)
 	}
 	// OpenAI Chat Completions API（不带v1前缀的别名）— auto-route based on group platform
 	rootOpenAIChatCompletionsRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(

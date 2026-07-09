@@ -1413,7 +1413,7 @@ func TestAPIKeyAuthRejectsExhaustedBalance(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusForbidden, w.Code)
-	requireAPIKeyAuthError(t, w, "INSUFFICIENT_BALANCE", "Insufficient account balance")
+	requireAPIKeyAuthError(t, w, "INSUFFICIENT_BALANCE", "当前账户余额不足，请充值后重试")
 }
 
 func newAuthTestRouter(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config) *gin.Engine {

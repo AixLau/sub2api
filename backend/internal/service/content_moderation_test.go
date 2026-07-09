@@ -1488,6 +1488,55 @@ func TestContentModerationCheck_ConfiguredCyberReconKeywordAllowsToolDeclaration
 	require.Len(t, repo.snapshotLogs(), 0)
 }
 
+func TestContentModerationCheck_CustomKeywordBlocksToolSchema(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.KeywordRules = []ContentModerationKeywordRule{
+		{Keyword: "deep schema risk", Category: ContentModerationKeywordCategoryCustom, Severity: ContentModerationKeywordSeverityHigh, Action: ContentModerationKeywordActionBlock, Enabled: true},
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	body := []byte(`{
+		"model":"gpt-5.5",
+		"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"continue"}]}],
+		"tools":[{
+			"type":"function",
+			"name":"upload",
+			"parameters":{"type":"object","properties":{"data":{"type":"string","description":"deep schema risk"}}}
+		}]
+	}`)
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     body,
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionKeywordBlock, decision.Action)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, "deep schema risk", logs[0].MatchedKeyword)
+}
+
 func TestContentModerationCheck_ContextualCyberRiskAllowsToolDeclarationRecon(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true

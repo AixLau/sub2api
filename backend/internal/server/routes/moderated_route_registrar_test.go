@@ -174,6 +174,18 @@ func TestModeratedRouteRegistrarInjectsRuntimeRouteMetaBeforeHandlers(t *testing
 				return registrar.GETNoAudit(path, meta, handlers...)
 			},
 		},
+		{
+			name:   "DELETENoAudit",
+			method: http.MethodDelete,
+			meta: intentionalNoAuditRoute(
+				" /runtime-meta ",
+				" NoAuditDeleteHandler ",
+				"test delete route",
+			),
+			register: func(registrar *ModeratedRouteRegistrar, path string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
+				return registrar.DELETENoAudit(path, meta, handlers...)
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -201,8 +213,12 @@ func TestModeratedRouteRegistrarInjectsRuntimeRouteMetaBeforeHandlers(t *testing
 			require.True(t, ok)
 			require.Equal(t, tt.method, runtimeMeta.Method)
 			require.Equal(t, "/runtime-meta", runtimeMeta.Path)
-			if tt.name == "GETNoAudit" {
-				require.Equal(t, "NoAuditHandler", runtimeMeta.Handler)
+			if tt.name == "GETNoAudit" || tt.name == "DELETENoAudit" {
+				if tt.name == "GETNoAudit" {
+					require.Equal(t, "NoAuditHandler", runtimeMeta.Handler)
+				} else {
+					require.Equal(t, "NoAuditDeleteHandler", runtimeMeta.Handler)
+				}
 				require.Empty(t, runtimeMeta.Protocol)
 				require.Empty(t, runtimeMeta.Pipeline)
 			} else if tt.method == http.MethodGet {
@@ -1148,6 +1164,10 @@ func routeRequiresModerationCoverage(method, path string) bool {
 func postRouteCanReachUpstreamContent(path string) bool {
 	path = strings.TrimSpace(path)
 	if path == "" {
+		return false
+	}
+	switch path {
+	case "/v1/images/batches/:id/cancel":
 		return false
 	}
 	switch path {

@@ -264,6 +264,10 @@ func gatewayPostRouteCanCarryUpstreamUserContent(path string) bool {
 		return false
 	}
 	switch path {
+	case "/v1/images/batches/:id/cancel":
+		return false
+	}
+	switch path {
 	case "/responses", "/responses/*subpath",
 		"/chat/completions",
 		"/embeddings",
@@ -315,6 +319,7 @@ func gatewayModerationCriticalRouteCoverageProofRoutes() []string {
 		"POST /embeddings":                             {},
 		"POST /v1/images/generations":                  {},
 		"POST /v1/images/edits":                        {},
+		"POST /v1/images/batches":                      {},
 		"POST /images/generations":                     {},
 		"POST /images/edits":                           {},
 		"POST /v1/videos/generations":                  {},

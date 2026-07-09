@@ -365,6 +365,41 @@ func TestExtractContentModerationInput_ResponsesScansToolsAndFunctionCallArgumen
 	require.Contains(t, input.Text, "responses schema description 里的风险短语")
 }
 
+func TestExtractContentModerationInput_ResponsesScansFlatToolSchemaDataDescription(t *testing.T) {
+	body := []byte(`{
+		"model":"gpt-5.5",
+		"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"continue"}]}],
+		"tools":[{
+			"type":"function",
+			"name":"upload",
+			"parameters":{
+				"type":"object",
+				"properties":{
+					"file":{
+						"type":"object",
+						"properties":{
+							"metadata":{
+								"type":"object",
+								"properties":{
+									"data":{
+										"type":"string",
+										"description":"deep schema risk"
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Contains(t, input.Text, "deep schema risk")
+	require.False(t, input.Truncated)
+}
+
 func TestExtractContentModerationInput_ResponsesScansTextFormatSchema(t *testing.T) {
 	body := []byte(`{
 		"input":"继续",

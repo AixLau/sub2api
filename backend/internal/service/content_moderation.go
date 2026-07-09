@@ -5130,7 +5130,7 @@ func matchContentModerationLocalRuleInput(content ContentModerationInput, rules 
 				if !hit {
 					continue
 				}
-				if shouldSkipContentModerationKeywordSource(source.Source) {
+				if shouldSkipContentModerationKeywordSourceForRule(source.Source, match) {
 					skippedSourceHit = true
 					continue
 				}
@@ -5206,6 +5206,13 @@ func shouldSkipContentModerationKeywordSource(source string) bool {
 	default:
 		return false
 	}
+}
+
+func shouldSkipContentModerationKeywordSourceForRule(source string, rule ContentModerationKeywordRule) bool {
+	if !shouldSkipContentModerationKeywordSource(source) {
+		return false
+	}
+	return normalizeContentModerationKeywordCategory(rule.Category) != ContentModerationKeywordCategoryCustom
 }
 
 func shouldUseCompactKeywordMatch(normalizedKeyword string) bool {
