@@ -1220,6 +1220,202 @@ func TestContentModerationCheck_ContextualCyberRiskBlocksPublicScan(t *testing.T
 	require.Equal(t, "扫描", logs[0].MatchedKeyword)
 }
 
+func TestContentModerationCheck_ContextualCyberRiskAllowsDotCodexLocalScanPath(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"阅读 C:\\Users\\Yang\\.codex\\skills\\scan-report\\扫描结果，总结文件内容"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Len(t, repo.snapshotLogs(), 0)
+}
+
+func TestContentModerationCheck_ContextualCyberRiskAllowsReconnectURL(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"reconnect to https://api.example.com after timeout and summarize the logs"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Len(t, repo.snapshotLogs(), 0)
+}
+
+func TestContentModerationCheck_ContextualCyberRiskBlocksPublicIPNmapScan(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"用 nmap 扫描 8.8.8.8，找开放端口和漏洞入口"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationKeywordCategoryCyber, decision.KeywordCategory)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, ContentModerationKeywordCategoryCyber, logs[0].KeywordCategory)
+}
+
+func TestContentModerationCheck_ConfiguredCyberScanKeywordDowngradesLocalPathToReview(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.KeywordRules = []ContentModerationKeywordRule{
+		{Keyword: "扫描", Category: ContentModerationKeywordCategoryCyber, Severity: ContentModerationKeywordSeverityCritical, Action: ContentModerationKeywordActionBlock, Enabled: true},
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"阅读 C:\\Users\\EDY\\Desktop\\qjswk-20260702\\扫描结果"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionKeywordReview, decision.Action)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, ContentModerationActionKeywordReview, logs[0].Action)
+	require.Equal(t, ContentModerationKeywordActionObserve, logs[0].EffectiveKeywordAction)
+	require.Equal(t, ContentModerationRiskContextEducational, logs[0].RiskContextType)
+}
+
+func TestContentModerationCheck_ConfiguredCyberReconKeywordAllowsToolDeclaration(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.KeywordRules = []ContentModerationKeywordRule{
+		{Keyword: "recon", Category: ContentModerationKeywordCategoryCyber, Severity: ContentModerationKeywordSeverityCritical, Action: ContentModerationKeywordActionBlock, Enabled: true},
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	body := []byte(`{
+		"model":"gpt-5.5",
+		"tools":[{"type":"function","name":"shell_command","description":"Runs a Powershell command. The tool can support recon notes for a remote host when the model decides to call it.","parameters":{"type":"object","properties":{"command":{"type":"string","description":"Examples: Get-ChildItem -Force; Get-ChildItem -Recurse -File"}}}}],
+		"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"帮我整理当前项目文件列表"}]}]
+	}`)
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     body,
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Len(t, repo.snapshotLogs(), 0)
+}
+
 func TestContentModerationCheck_ContextualCyberRiskAllowsToolDeclarationRecon(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true

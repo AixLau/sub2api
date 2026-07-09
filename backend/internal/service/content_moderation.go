@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
@@ -5007,6 +5008,9 @@ func classifyContentModerationKeywordContext(text string, rule ContentModeration
 	if containsAnyKeywordComparable(normalized, securityGuidanceMarkers) {
 		return contentModerationRiskContext{Type: ContentModerationRiskContextEducational, Reason: "security_guidance_context"}
 	}
+	if isContentModerationCyberProbeRule(rule) && looksLikeLocalFilesystemContext(text, normalized) && !looksLikeExternalCyberTarget(text, normalized) {
+		return contentModerationRiskContext{Type: ContentModerationRiskContextEducational, Reason: "local_filesystem_context"}
+	}
 	actualRequestMarkers := []string{
 		"帮我生成", "生成一份", "写一个", "教我", "教程", "步骤", "方法", "购买", "出售", "绕过",
 		"generate", "write", "teach me", "tutorial", "steps", "method", "buy", "sell", "bypass",
@@ -5024,6 +5028,19 @@ func shouldDowngradeKeywordActionForContext(ctx contentModerationRiskContext) bo
 	default:
 		return false
 	}
+}
+
+func isContentModerationCyberProbeRule(rule ContentModerationKeywordRule) bool {
+	normalizedKeyword := normalizeKeywordComparable(rule.Keyword)
+	if normalizedKeyword == "" {
+		return false
+	}
+	for _, marker := range contentModerationCyberProbeMarkers {
+		if normalizedKeyword == normalizeKeywordComparable(marker) {
+			return true
+		}
+	}
+	return rule.Category == ContentModerationKeywordCategoryCyber && hasAnyContentModerationMarker(normalizedKeyword, contentModerationCyberProbeMarkers)
 }
 
 func containsAnyKeywordComparable(normalizedText string, markers []string) bool {
@@ -5101,8 +5118,27 @@ func matchContentModerationLocalRule(text string, rules []ContentModerationKeywo
 }
 
 func matchContentModerationLocalRuleInput(content ContentModerationInput, rules []ContentModerationKeywordRule) (ContentModerationKeywordRule, bool) {
-	if match, hit := matchContentModerationKeyword(content.Text, rules); hit {
-		return match, true
+	normalizedRules := normalizeContentModerationKeywordRules(rules)
+	if len(normalizedRules) > 0 {
+		skippedSourceHit := false
+		if len(content.Sources) > 0 {
+			for _, source := range content.Sources {
+				match, hit := matchContentModerationKeyword(source.Text, normalizedRules)
+				if !hit {
+					continue
+				}
+				if shouldSkipContentModerationKeywordSource(source.Source) {
+					skippedSourceHit = true
+					continue
+				}
+				return match, true
+			}
+		}
+		if !skippedSourceHit {
+			if match, hit := matchContentModerationKeyword(content.Text, normalizedRules); hit {
+				return match, true
+			}
+		}
 	}
 	return matchContextualBuiltInRiskRuleInput(content)
 }
@@ -5153,6 +5189,10 @@ func matchContextualBuiltInRiskRuleInput(content ContentModerationInput) (Conten
 }
 
 func shouldSkipContextualBuiltInRiskSource(source string) bool {
+	return shouldSkipContentModerationKeywordSource(source)
+}
+
+func shouldSkipContentModerationKeywordSource(source string) bool {
 	switch strings.TrimSpace(source) {
 	case "openai_chat.tools",
 		"openai_chat.functions",
@@ -5582,32 +5622,34 @@ func contextualCyberIntrusionKeyword(rawText string, normalized string) (string,
 	if hit {
 		return keyword, true
 	}
-	keyword, hasOffensiveProbe := firstContentModerationMarker(normalized, []string{
-		"扫描",
-		"渗透",
-		"penetration flow",
-		"pentest",
-		"漏洞扫描",
-		"漏洞验证",
-		"漏洞利用",
-		"exploit",
-		"scan",
-		"recon",
-		"reconnaissance",
-		"vulnerability",
-		"sql injection",
-		"sqlmap",
-		"nmap",
-		"metasploit",
-		"burp",
-		"拿 shell",
-		"getshell",
-		"webshell",
-	})
+	keyword, hasOffensiveProbe := firstContentModerationMarker(normalized, contentModerationCyberProbeMarkers)
 	if hasOffensiveProbe && looksLikeExternalCyberTarget(rawText, normalized) {
 		return keyword, true
 	}
 	return "", false
+}
+
+var contentModerationCyberProbeMarkers = []string{
+	"扫描",
+	"渗透",
+	"penetration flow",
+	"pentest",
+	"漏洞扫描",
+	"漏洞验证",
+	"漏洞利用",
+	"exploit",
+	"scan",
+	"recon",
+	"reconnaissance",
+	"vulnerability",
+	"sql injection",
+	"sqlmap",
+	"nmap",
+	"metasploit",
+	"burp",
+	"拿 shell",
+	"getshell",
+	"webshell",
 }
 
 func hasContentModerationOffensiveCyberContext(normalized string) bool {
@@ -5667,12 +5709,135 @@ func looksLikeExternalCyberTarget(rawText string, normalized string) bool {
 	if hasAnyContentModerationMarker(normalized, []string{"公网", "外网", "目标站", "public target", "remote host"}) {
 		return true
 	}
-	for _, suffix := range []string{".com", ".co", ".cn", ".net", ".org", ".io", ".top", ".xyz", ".app", ".dev"} {
-		if strings.Contains(lower, suffix) {
+	tokens := contentModerationExternalTargetTokens(lower)
+	if !looksLikeLocalFilesystemContext(rawText, normalized) {
+		for _, token := range tokens {
+			if isPublicIPCyberTarget(token) || isPublicDomainCyberTarget(token) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func looksLikeLocalFilesystemContext(rawText string, normalized string) bool {
+	lower := strings.ToLower(rawText)
+	if hasWindowsDrivePath(lower) ||
+		strings.Contains(lower, `\users\`) ||
+		strings.Contains(lower, "/users/") ||
+		strings.Contains(lower, "/home/") ||
+		strings.Contains(lower, "/var/") ||
+		strings.Contains(lower, "/tmp/") ||
+		strings.Contains(lower, "~/") ||
+		strings.Contains(lower, "./") ||
+		strings.Contains(lower, "../") ||
+		strings.Contains(lower, ".codex") ||
+		strings.Contains(lower, ".config") ||
+		strings.Contains(lower, ".devcontainer") {
+		return true
+	}
+	return hasAnyContentModerationMarker(normalized, []string{
+		"扫描结果",
+		"本地文件",
+		"本地目录",
+		"本地路径",
+		"文件夹",
+		"文件路径",
+		"目录路径",
+		"项目文件",
+		"桌面",
+		"下载目录",
+		"local file",
+		"local folder",
+		"local path",
+		"project file",
+		"scan result",
+		"scan results",
+	})
+}
+
+func hasWindowsDrivePath(lower string) bool {
+	for idx := 0; idx+2 < len(lower); idx++ {
+		ch := lower[idx]
+		if ch < 'a' || ch > 'z' || lower[idx+1] != ':' {
+			continue
+		}
+		if lower[idx+2] == '\\' || lower[idx+2] == '/' {
 			return true
 		}
 	}
 	return false
+}
+
+func contentModerationExternalTargetTokens(lower string) []string {
+	if lower == "" {
+		return nil
+	}
+	return strings.FieldsFunc(lower, func(r rune) bool {
+		return !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '-')
+	})
+}
+
+func isPublicIPCyberTarget(token string) bool {
+	token = strings.Trim(token, ".-")
+	if token == "" {
+		return false
+	}
+	addr, err := netip.ParseAddr(token)
+	if err != nil {
+		return false
+	}
+	return addr.IsGlobalUnicast() &&
+		!addr.IsLoopback() &&
+		!addr.IsPrivate() &&
+		!addr.IsLinkLocalUnicast() &&
+		!addr.IsUnspecified()
+}
+
+func isPublicDomainCyberTarget(token string) bool {
+	token = strings.Trim(strings.TrimSpace(token), ".-")
+	if token == "" || strings.HasPrefix(token, ".") || !strings.Contains(token, ".") {
+		return false
+	}
+	if _, err := netip.ParseAddr(token); err == nil {
+		return false
+	}
+	labels := strings.Split(token, ".")
+	if len(labels) < 2 {
+		return false
+	}
+	tld := labels[len(labels)-1]
+	if !isContentModerationPublicDomainSuffix(tld) {
+		return false
+	}
+	for _, label := range labels {
+		if !isContentModerationDomainLabel(label) {
+			return false
+		}
+	}
+	return true
+}
+
+func isContentModerationPublicDomainSuffix(tld string) bool {
+	switch tld {
+	case "com", "co", "cn", "net", "org", "io", "top", "xyz", "app", "dev":
+		return true
+	default:
+		return false
+	}
+}
+
+func isContentModerationDomainLabel(label string) bool {
+	if label == "" || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+		return false
+	}
+	for _, ch := range label {
+		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func hasAnyContentModerationMarker(normalized string, markers []string) bool {
@@ -5683,7 +5848,10 @@ func hasAnyContentModerationMarker(normalized string, markers []string) bool {
 func firstContentModerationMarker(normalized string, markers []string) (string, bool) {
 	for _, marker := range markers {
 		normalizedMarker := normalizeKeywordComparable(marker)
-		if normalizedMarker != "" && strings.Contains(normalized, normalizedMarker) {
+		if normalizedMarker == "" {
+			continue
+		}
+		if _, _, hit := findKeywordComparableSpanWithBoundary(normalized, normalizedMarker); hit {
 			return marker, true
 		}
 	}
