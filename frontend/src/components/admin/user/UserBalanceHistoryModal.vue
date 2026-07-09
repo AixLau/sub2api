@@ -68,12 +68,9 @@
             </div>
             <div>
               <p class="text-gray-400 dark:text-dark-500">{{ t('admin.users.usageTokens') }}</p>
-              <p class="font-medium text-gray-700 dark:text-gray-200">{{ formatNumber(item.stats?.total_tokens || 0) }}</p>
+              <p class="font-medium text-gray-700 dark:text-gray-200">{{ formatCompactNumber(item.stats?.total_tokens || 0) }}</p>
             </div>
           </div>
-          <p class="mt-2 truncate text-xs text-gray-400 dark:text-dark-500" :title="tokenBreakdown(item.stats)">
-            {{ tokenBreakdown(item.stats) }}
-          </p>
         </div>
       </div>
 
@@ -205,7 +202,7 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI, type AdminUserUsageStats, type BalanceHistoryItem } from '@/api/admin'
-import { formatDateTime } from '@/utils/format'
+import { formatCompactNumber, formatDateTime } from '@/utils/format'
 import type { AdminUser } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
@@ -389,9 +386,4 @@ const formatValue = (item: BalanceHistoryItem) => {
 
 const formatCost = (value: number) => value.toFixed(2)
 const formatNumber = (value: number) => value.toLocaleString()
-const tokenBreakdown = (stats: AdminUserUsageStats | null) => t('admin.users.usageTokenBreakdown', {
-  input: formatNumber(stats?.total_input_tokens || 0),
-  output: formatNumber(stats?.total_output_tokens || 0),
-  cache: formatNumber(stats?.total_cache_tokens || 0)
-})
 </script>

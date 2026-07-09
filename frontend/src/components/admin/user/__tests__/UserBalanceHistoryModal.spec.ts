@@ -103,7 +103,7 @@ describe('UserBalanceHistoryModal', () => {
       total_cache_tokens: 10,
       total_cache_creation_tokens: 4,
       total_cache_read_tokens: 6,
-      total_tokens: 160,
+      total_tokens: 13_353_354,
       total_cost: 1.23,
       total_actual_cost: period === 'today' ? 0.5 : period === '7d' ? 2.75 : 9.25,
       average_duration_ms: 250,
@@ -132,7 +132,8 @@ describe('UserBalanceHistoryModal', () => {
     expect(text).toContain('$0.50')
     expect(text).toContain('$2.75')
     expect(text).toContain('$9.25')
-    expect(text).toContain('160')
-    expect(text).toContain('In 100 / Out 50 / Cache 10')
+    expect(text).toContain('13.4M')
+    expect(text).not.toContain('13,353,354')
+    expect(text).not.toContain('In 100 / Out 50 / Cache 10')
   })
 })
