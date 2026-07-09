@@ -20,7 +20,7 @@ describe('GroupBadge', () => {
     setActivePinia(createPinia())
   })
 
-  it('shows group rate divided by the balance recharge multiplier', () => {
+  it('shows only group rate divided by the balance recharge multiplier', () => {
     const appStore = useAppStore()
     appStore.cachedPublicSettings = {
       payment_balance_recharge_multiplier: 10
@@ -34,11 +34,11 @@ describe('GroupBadge', () => {
       }
     })
 
-    expect(wrapper.text()).toContain('1.7x')
     expect(wrapper.text()).toContain('0.17x')
+    expect(wrapper.text()).not.toContain('1.7x')
   })
 
-  it('shows custom rate divided by the balance recharge multiplier', () => {
+  it('shows only custom rate divided by the balance recharge multiplier', () => {
     const appStore = useAppStore()
     appStore.cachedPublicSettings = {
       payment_balance_recharge_multiplier: 10
@@ -53,8 +53,8 @@ describe('GroupBadge', () => {
       }
     })
 
-    expect(wrapper.text()).toContain('1.733x')
     expect(wrapper.text()).toContain('0.15x')
+    expect(wrapper.text()).not.toContain('1.733x')
     expect(wrapper.text()).not.toContain('1.5x')
   })
 })

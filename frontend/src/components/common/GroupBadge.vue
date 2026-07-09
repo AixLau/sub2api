@@ -12,7 +12,6 @@
     <!-- Right side label -->
     <span v-if="showLabel" :class="labelClass">
       <template v-if="showRechargeAdjustedRate">
-        <span class="line-through opacity-50 mr-0.5">{{ formatRateMultiplier(rateMultiplier) }}x</span>
         <span class="font-bold">{{ adjustedRateMultiplierText }}x</span>
       </template>
       <template v-else-if="hasCustomRate">
