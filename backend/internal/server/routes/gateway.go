@@ -150,7 +150,16 @@ func RegisterGatewayRoutes(
 			"/v1/models",
 			"GatewayHandler.Models",
 			"Model listing does not submit model-visible user content to upstream moderation-sensitive paths.",
-		), h.Gateway.Models)
+		), func(c *gin.Context) {
+			// Codex CLI / Codex app refresh their model picker from the provider's
+			// /models endpoint with a client_version query and expect the ChatGPT
+			// Codex manifest format; other clients keep the OpenAI-style list.
+			if isOpenAIGatewayPlatform(c) && c.Query("client_version") != "" {
+				h.OpenAIGateway.CodexModels(c)
+				return
+			}
+			h.Gateway.Models(c)
+		})
 		moderatedGateway.GETNoAudit("/usage", intentionalNoAuditRoute(
 			"/v1/usage",
 			"GatewayHandler.Usage",
@@ -288,6 +297,54 @@ func RegisterGatewayRoutes(
 			"OpenAIGatewayHandler.GrokVideoStatus",
 			"Grok video status lookup uses an upstream request id and does not submit new model-visible user content.",
 		), videoStatusHandler)
+		moderatedGateway.POST("/images/batches", coveredModeratedRoute(
+			"/v1/images/batches",
+			"BatchImageHandler.Submit",
+			service.ContentModerationProtocolBatchImages,
+			"Batch image submit contains per-item prompts and reference image metadata, so the raw request is moderated before job creation and provider submission.",
+		), func(c *gin.Context) {
+			if h.OpenAIGateway == nil || !h.OpenAIGateway.ModerateBatchImageSubmit(c) {
+				return
+			}
+			h.BatchImage.Submit(c)
+		})
+		moderatedGateway.GETNoAudit("/images/batches", intentionalNoAuditRoute(
+			"/v1/images/batches",
+			"BatchImageHandler.List",
+			"Batch image listing reads local job metadata and does not submit new model-visible user content.",
+		), h.BatchImage.List)
+		moderatedGateway.GETNoAudit("/images/batches/models", intentionalNoAuditRoute(
+			"/v1/images/batches/models",
+			"BatchImageHandler.Models",
+			"Batch image model listing reads allowed model metadata and does not submit model-visible user content.",
+		), h.BatchImage.Models)
+		moderatedGateway.GETNoAudit("/images/batches/:id", intentionalNoAuditRoute(
+			"/v1/images/batches/:id",
+			"BatchImageHandler.Get",
+			"Batch image detail reads existing local job state and does not submit new model-visible user content.",
+		), h.BatchImage.Get)
+		moderatedGateway.GETNoAudit("/images/batches/:id/items", intentionalNoAuditRoute(
+			"/v1/images/batches/:id/items",
+			"BatchImageHandler.Items",
+			"Batch image item listing reads existing local item state and does not submit new model-visible user content.",
+		), h.BatchImage.Items)
+		moderatedGateway.GETNoAudit("/images/batches/:id/items/:custom_id/content", intentionalNoAuditRoute(
+			"/v1/images/batches/:id/items/:custom_id/content",
+			"BatchImageHandler.ItemContent",
+			"Batch image item content download streams already generated output and does not submit new model-visible user content.",
+		), h.BatchImage.ItemContent)
+		moderatedGateway.GETNoAudit("/images/batches/:id/download", intentionalNoAuditRoute(
+			"/v1/images/batches/:id/download",
+			"BatchImageHandler.Download",
+			"Batch image archive download streams already generated output and does not submit new model-visible user content.",
+		), h.BatchImage.Download)
+		moderatedGateway.POST("/images/batches/:id/cancel", intentionalNoAuditRoute(
+			"/v1/images/batches/:id/cancel",
+			"BatchImageHandler.Cancel",
+			"Batch image cancel updates local job state and does not submit new model-visible user content.",
+		), h.BatchImage.Cancel)
+		gateway.DELETE("/images/batches/:id", h.BatchImage.DeleteRecord)
+		gateway.DELETE("/images/batches/:id/outputs", h.BatchImage.DeleteOutputs)
 	}
 
 	// Gemini 原生 API 兼容层（Gemini SDK/CLI 直连）
@@ -433,6 +490,7 @@ func RegisterGatewayRoutes(
 		), func(c *gin.Context) {
 			h.OpenAIGateway.ResponsesWebSocket(c)
 		})
+		codexDirect.GET("/models", h.OpenAIGateway.CodexModels)
 	}
 	// OpenAI Chat Completions API（不带v1前缀的别名）— auto-route based on group platform
 	rootOpenAIChatCompletionsRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(

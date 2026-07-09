@@ -190,19 +190,19 @@ func (h *GatewayHandler) readGatewayPreForwardEntrypointRequest(c *gin.Context, 
 		}
 		return body, &service.ParsedRequest{Model: model, Stream: stream}, model, stream, true
 	case service.ContentModerationProtocolOpenAIChat:
-		body, model, stream, ok := h.readOpenAICompatibleGatewayPreForwardRequest(c, h.chatCompletionsErrorResponse)
+		body, model, stream, ok := h.readOpenAICompatibleGatewayPreForwardRequest(c, h.chatCompletionsErrorResponse, nil)
 		if !ok {
 			return nil, nil, "", false, false
 		}
 		return body, &service.ParsedRequest{Model: model, Stream: stream, Body: service.NewRequestBodyRef(body)}, model, stream, true
 	case service.ContentModerationProtocolOpenAIResponses:
-		body, model, stream, ok := h.readOpenAICompatibleGatewayPreForwardRequest(c, h.responsesErrorResponse)
+		body, model, stream, ok := h.readOpenAICompatibleGatewayPreForwardRequest(c, h.responsesErrorResponse, nil)
 		if !ok {
 			return nil, nil, "", false, false
 		}
 		return body, &service.ParsedRequest{Model: model, Stream: stream, Body: service.NewRequestBodyRef(body)}, model, stream, true
 	default:
-		body, parsedReq, ok := h.readGatewayMessagesPreForwardRequest(c)
+		body, parsedReq, ok := h.readGatewayMessagesPreForwardRequest(c, nil)
 		if !ok {
 			return nil, nil, "", false, false
 		}
@@ -238,8 +238,9 @@ func (h *GatewayHandler) readGatewayGeminiPreForwardRequest(c *gin.Context) ([]b
 func (h *GatewayHandler) readOpenAICompatibleGatewayPreForwardRequest(
 	c *gin.Context,
 	writeError func(*gin.Context, int, string, string),
+	reqLog *zap.Logger,
 ) ([]byte, string, bool, bool) {
-	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 	if err != nil {
 		if maxErr, ok := extractMaxBytesError(err); ok {
 			writeError(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
@@ -255,6 +256,7 @@ func (h *GatewayHandler) readOpenAICompatibleGatewayPreForwardRequest(
 	}
 	setOpsRequestContext(c, "", false)
 	if !gjson.ValidBytes(body) {
+		logRequestBodyParseFailure(reqLog, body, nil)
 		writeError(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return nil, "", false, false
 	}
@@ -284,8 +286,8 @@ func gatewayPreForwardErrorFormatForHandler(handlerName string) gatewayPreForwar
 	}
 }
 
-func (h *GatewayHandler) readGatewayMessagesPreForwardRequest(c *gin.Context) ([]byte, *service.ParsedRequest, bool) {
-	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+func (h *GatewayHandler) readGatewayMessagesPreForwardRequest(c *gin.Context, reqLog *zap.Logger) ([]byte, *service.ParsedRequest, bool) {
+	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 	if err != nil {
 		if maxErr, ok := extractMaxBytesError(err); ok {
 			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
@@ -302,6 +304,7 @@ func (h *GatewayHandler) readGatewayMessagesPreForwardRequest(c *gin.Context) ([
 	bodyRef := service.NewRequestBodyRef(body)
 	parsedReq, err := service.ParseGatewayRequest(bodyRef, domain.PlatformAnthropic)
 	if err != nil {
+		logRequestBodyParseFailure(reqLog, body, err)
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return nil, nil, false
 	}

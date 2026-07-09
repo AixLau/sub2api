@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -277,7 +276,7 @@ func (h *OpenAIGatewayHandler) openAIHTTPPreForwardPipeline() *OpenAIGatewayPipe
 
 func (h *OpenAIGatewayHandler) readOpenAIHTTPPreForwardRequest(c *gin.Context, reqLog *zap.Logger, protocol string) ([]byte, string, bool, []byte, *service.OpenAIImagesRequest, bool) {
 	bodyReadStart := time.Now()
-	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 	bodyReadMs := time.Since(bodyReadStart).Milliseconds()
 	if err != nil {
 		reqLog.Warn("openai.request_body_read_failed",
@@ -331,6 +330,7 @@ func (h *OpenAIGatewayHandler) readOpenAIHTTPPreForwardRequest(c *gin.Context, r
 	}
 
 	if !gjson.ValidBytes(body) {
+		logRequestBodyParseFailure(reqLog, body, nil)
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return nil, "", false, nil, nil, false
 	}

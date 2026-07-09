@@ -58,6 +58,8 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 		before = len(parts)
 		collectContentValue(gjson.GetBytes(body, "images"), &parts, &images)
 		appendModerationSources(&sources, "image.images", parts, before)
+	case ContentModerationProtocolBatchImages:
+		collectBatchImagesInput(body, &parts, &images, &sources)
 	case ContentModerationProtocolOpenAIEmbeddings:
 		collectOpenAIEmbeddingsInput(gjson.GetBytes(body, "input"), &parts, &images, &sources, toolState)
 	default:
@@ -99,6 +101,7 @@ func isUnexpectedEmptyModerationInput(protocol string, body []byte) bool {
 		ContentModerationProtocolAnthropicMessages,
 		ContentModerationProtocolGemini,
 		ContentModerationProtocolOpenAIImages,
+		ContentModerationProtocolBatchImages,
 		ContentModerationProtocolOpenAIEmbeddings:
 		return true
 	default:
@@ -110,6 +113,23 @@ func collectOpenAIEmbeddingsInput(input gjson.Result, parts *[]string, images *[
 	before := len(*parts)
 	collectToolResultTextValue(input, parts, images, 0, toolState)
 	appendModerationSources(sources, "openai_embeddings.input", *parts, before)
+}
+
+func collectBatchImagesInput(body []byte, parts *[]string, images *[]string, sources *[]ContentModerationInputSource) {
+	items := gjson.GetBytes(body, "items")
+	if !items.IsArray() {
+		return
+	}
+	items.ForEach(func(_, item gjson.Result) bool {
+		before := len(*parts)
+		addModerationText(parts, item.Get("prompt").String())
+		appendModerationSources(sources, "batch_image.items.prompt", *parts, before)
+
+		before = len(*parts)
+		collectContentValue(item.Get("reference_images"), parts, images)
+		appendModerationSources(sources, "batch_image.items.reference_images", *parts, before)
+		return true
+	})
 }
 
 func collectOpenAIChatTopLevelModelContext(body []byte, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {

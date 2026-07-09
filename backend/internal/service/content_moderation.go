@@ -107,6 +107,7 @@ const (
 	ContentModerationProtocolOpenAIMessages    = "openai_messages"
 	ContentModerationProtocolGemini            = "gemini"
 	ContentModerationProtocolOpenAIImages      = "openai_images"
+	ContentModerationProtocolBatchImages       = "batch_images"
 	ContentModerationProtocolOpenAIEmbeddings  = "openai_embeddings"
 
 	ContentModerationAuditScopeUserOnly    = "user_only"
@@ -3621,6 +3622,8 @@ func contentModerationPrimarySource(protocol string, content ContentModerationIn
 		return "gemini.contents.parts"
 	case ContentModerationProtocolOpenAIImages:
 		return "image.prompt"
+	case ContentModerationProtocolBatchImages:
+		return "batch_image.items.prompt"
 	case ContentModerationProtocolOpenAIEmbeddings:
 		return "openai_embeddings.input"
 	default:
@@ -5581,6 +5584,12 @@ func contextualCyberReverseCrackingKeyword(normalized string) (string, bool) {
 }
 
 func contextualCyberIntrusionKeyword(rawText string, normalized string) (string, bool) {
+	if looksLikeNegativeLoginBypassSafetyInstruction(normalized) && !hasStrongContentModerationCyberAbuseIntent(normalized) {
+		return "", false
+	}
+	if looksLikeBenignAgentScanContext(normalized) && !hasStrongContentModerationCyberAbuseIntent(normalized) {
+		return "", false
+	}
 	if hasAnyContentModerationMarker(normalized, []string{
 		"已授权",
 		"已获得授权",
@@ -5629,6 +5638,71 @@ func contextualCyberIntrusionKeyword(rawText string, normalized string) (string,
 	return "", false
 }
 
+func looksLikeNegativeLoginBypassSafetyInstruction(normalized string) bool {
+	return hasAnyContentModerationMarker(normalized, []string{
+		"不绕过登录",
+		"不要绕过登录",
+		"不得绕过登录",
+		"不能绕过登录",
+		"禁止绕过登录",
+		"无需绕过登录",
+		"别绕过登录",
+		"不要尝试绕过登录",
+		"不尝试绕过登录",
+		"不去绕过登录",
+		"do not bypass login",
+		"don t bypass login",
+		"dont bypass login",
+		"must not bypass login",
+		"without bypassing login",
+		"no login bypass",
+		"do not bypass authentication",
+		"don t bypass authentication",
+		"without bypassing authentication",
+		"do not bypass auth",
+		"don t bypass auth",
+		"without bypassing auth",
+	})
+}
+
+func looksLikeBenignAgentScanContext(normalized string) bool {
+	return hasAnyContentModerationMarker(normalized, []string{
+		"scan the skills",
+		"scan skills",
+		"scan the skill",
+		"scan the instructions",
+		"scan instructions",
+		"scan the docs",
+		"scan docs",
+		"scan the document",
+		"scan document",
+		"scan the local file",
+		"scan local file",
+		"scan the local folder",
+		"scan local folder",
+		"scan the repository",
+		"scan repository",
+		"scan the repo",
+		"scan repo",
+		"scan the workspace",
+		"scan workspace",
+		"scan the project",
+		"scan project",
+		"load it with skill view",
+		"reference docs",
+		"local file line comments",
+		"扫描技能",
+		"扫描下面的技能",
+		"扫描指令",
+		"扫描文档",
+		"扫描本地文件",
+		"扫描本地目录",
+		"扫描文件夹",
+		"扫描项目",
+		"扫描仓库",
+	})
+}
+
 var contentModerationCyberProbeMarkers = []string{
 	"扫描",
 	"渗透",
@@ -5650,6 +5724,48 @@ var contentModerationCyberProbeMarkers = []string{
 	"拿 shell",
 	"getshell",
 	"webshell",
+}
+
+func hasStrongContentModerationCyberAbuseIntent(normalized string) bool {
+	if hasAnyContentModerationMarker(normalized, []string{"绕过登录", "bypass login"}) && !looksLikeNegativeLoginBypassSafetyInstruction(normalized) {
+		return true
+	}
+	return hasAnyContentModerationMarker(normalized, []string{
+		"未经授权",
+		"未授权",
+		"入侵",
+		"攻击",
+		"黑客",
+		"渗透",
+		"漏洞入口",
+		"漏洞扫描",
+		"漏洞验证",
+		"漏洞利用",
+		"漏洞挖掘",
+		"开放端口",
+		"拿 shell",
+		"getshell",
+		"webshell",
+		"上传木马",
+		"植入后门",
+		"public target",
+		"remote host",
+		"unauthorized",
+		"attack",
+		"intrude",
+		"exploit",
+		"find vulnerabilities",
+		"vulnerability scan",
+		"vulnerability scanning",
+		"open ports",
+		"pentest",
+		"penetration",
+		"sql injection",
+		"sqlmap",
+		"nmap",
+		"metasploit",
+		"burp",
+	})
 }
 
 func hasContentModerationOffensiveCyberContext(normalized string) bool {

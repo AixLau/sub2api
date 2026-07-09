@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -57,4 +59,15 @@ func markOpsRequestBodyReadError(c *gin.Context, err error) {
 	}
 	raw, _ := json.Marshal(detail)
 	service.SetOpsDiagnostic(c, message, string(raw))
+}
+
+func readLenientJSONRequestBodyWithPrealloc(req *http.Request, cfg *config.Config) ([]byte, error) {
+	return pkghttputil.ReadLenientJSONRequestBodyWithPrealloc(req, gatewayMaxBodySize(cfg))
+}
+
+func gatewayMaxBodySize(cfg *config.Config) int64 {
+	if cfg == nil {
+		return 0
+	}
+	return cfg.Gateway.MaxBodySize
 }

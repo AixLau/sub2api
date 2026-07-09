@@ -1860,12 +1860,19 @@ func (s *GeminiMessagesCompatService) writeGeminiMappedError(c *gin.Context, acc
 
 	c.JSON(statusCode, gin.H{
 		"type":  "error",
-		"error": gin.H{"type": errType, "message": clientmsg.Localize(errMsg)},
+		"error": gin.H{"type": errType, "message": geminiCompatClientErrorMessage(errMsg)},
 	})
 	if upstreamMsg == "" {
 		return fmt.Errorf("upstream error: %d", upstreamStatus)
 	}
 	return fmt.Errorf("upstream error: %d message=%s", upstreamStatus, upstreamMsg)
+}
+
+func geminiCompatClientErrorMessage(message string) string {
+	if strings.TrimSpace(message) == "Upstream request failed" {
+		return "上游请求失败"
+	}
+	return clientmsg.Localize(message)
 }
 
 type claudeErrorMapping struct {

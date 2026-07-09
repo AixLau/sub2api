@@ -51,7 +51,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		reqStream = preForwardRequest.Stream
 	} else {
 		var ok bool
-		body, reqModel, reqStream, ok = h.readOpenAICompatibleGatewayPreForwardRequest(c, h.responsesErrorResponse)
+		body, reqModel, reqStream, ok = h.readOpenAICompatibleGatewayPreForwardRequest(c, h.responsesErrorResponse, reqLog)
 		if !ok {
 			return
 		}

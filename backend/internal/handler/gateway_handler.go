@@ -153,7 +153,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		parsedReq = preForwardRequest.Parsed
 	} else {
 		var ok bool
-		body, parsedReq, ok = h.readGatewayMessagesPreForwardRequest(c)
+		body, parsedReq, ok = h.readGatewayMessagesPreForwardRequest(c, reqLog)
 		if !ok {
 			return
 		}
@@ -1727,6 +1727,11 @@ func (h *GatewayHandler) mapUpstreamError(statusCode int) (int, string, string) 
 func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
 	markOpsClientMessageDiagnostic(c, errType, message)
 	if streamStarted {
+		// 响应状态码已固化为 200（ping/部分数据已 flush），错误只能就地以 SSE 帧回传。
+		// 标记本次流内错误，供 ops_error_logger 补记——否则该中间件按 status>=400 采集，
+		// 这类挂在 200 流上的失败（如并发限流回退）不会进错误看板。
+		service.MarkOpsStreamError(c, errType, message, status)
+
 		// /v1/responses 的严格 SDK（Codex CLI）要求终止事件必须属于
 		// response.completed/failed/incomplete/cancelled 集合。
 		// Anthropic-backed Responses 路径同样会因为通用 error 帧被拒。
@@ -1877,7 +1882,7 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 		parsedReq = preForwardRequest.Parsed
 	} else {
 		var ok bool
-		body, parsedReq, ok = h.readGatewayMessagesPreForwardRequest(c)
+		body, parsedReq, ok = h.readGatewayMessagesPreForwardRequest(c, reqLog)
 		if !ok {
 			return
 		}

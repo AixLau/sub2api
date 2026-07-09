@@ -11,6 +11,7 @@ import (
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
 
@@ -102,6 +103,49 @@ func (h *OpenAIGatewayHandler) checkContentModeration(c *gin.Context, reqLog *za
 		return contentModerationCheckErrorDecision()
 	}
 	return runContentModeration(c, reqLog, h.contentModerationService, apiKey, subject, protocol, model, body)
+}
+
+func (h *OpenAIGatewayHandler) ModerateBatchImageSubmit(c *gin.Context) bool {
+	reqLog := requestLogger(c, "handler.batch_image.submit_moderation")
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return false
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
+		return false
+	}
+
+	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
+	if err != nil {
+		if maxErr, ok := extractMaxBytesError(err); ok {
+			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+			return false
+		}
+		markOpsRequestBodyReadError(c, err)
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		return false
+	}
+	if len(body) == 0 {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
+		return false
+	}
+	if !gjson.ValidBytes(body) {
+		logRequestBodyParseFailure(reqLog, body, nil)
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
+		return false
+	}
+
+	model := strings.TrimSpace(gjson.GetBytes(body, "model").String())
+	decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolBatchImages, model, body)
+	if decision != nil && decision.Blocked {
+		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+		return false
+	}
+	restoreRequestBody(c, body)
+	return true
 }
 
 func runContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.ContentModerationService, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol string, model string, body []byte) *service.ContentModerationDecision {

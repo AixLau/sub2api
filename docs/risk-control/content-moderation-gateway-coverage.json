@@ -1417,6 +1417,24 @@
     {
       "route": {
         "method": "POST",
+        "path": "/v1/images/batches",
+        "handler": "BatchImageHandler.Submit",
+        "protocol": "batch_images"
+      },
+      "method": "POST",
+      "path": "/v1/images/batches",
+      "handler": "BatchImageHandler.Submit",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "batch_images",
+      "pipeline": "",
+      "stage_coverage": [],
+      "status": "covered",
+      "review_reason": "Batch image submit contains per-item prompts and reference image metadata, so the raw request is moderated before job creation and provider submission."
+    },
+    {
+      "route": {
+        "method": "POST",
         "path": "/images/generations",
         "handler": "OpenAIGatewayHandler.Images",
         "protocol": "openai_images"

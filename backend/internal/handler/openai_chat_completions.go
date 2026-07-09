@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -55,7 +54,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		reqStream = preForwardRequest.Stream
 	} else {
 		var err error
-		body, err = pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+		body, err = readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 		if err != nil {
 			if maxErr, ok := extractMaxBytesError(err); ok {
 				h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
@@ -71,8 +70,9 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		}
 
 		if !gjson.ValidBytes(body) {
-			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
-			return
+		logRequestBodyParseFailure(reqLog, body, nil)
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
+		return
 		}
 
 		modelResult := gjson.GetBytes(body, "model")

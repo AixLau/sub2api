@@ -1220,6 +1220,78 @@ func TestContentModerationCheck_ContextualCyberRiskBlocksPublicScan(t *testing.T
 	require.Equal(t, "扫描", logs[0].MatchedKeyword)
 }
 
+func TestContentModerationCheck_ContextualCyberRiskAllowsNegativeLoginBypassInstruction(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/responses",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"请验收 /generate 页面。若页面未登录，让人工完成登录；不读取、不打印 cookie / token，不绕过登录。只检查页面是否正常加载。"}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Len(t, repo.snapshotLogs(), 0)
+}
+
+func TestContentModerationCheck_ContextualCyberRiskAllowsAgentSkillScanInstructionWithURL(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/chat/completions",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"Before replying, scan the skills below. If a skill matches, load it with skill_view. Reference docs: https://example.com/agent/skills. Then review the local file/line comments."}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Len(t, repo.snapshotLogs(), 0)
+}
+
 func TestContentModerationCheck_ContextualCyberRiskAllowsDotCodexLocalScanPath(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true

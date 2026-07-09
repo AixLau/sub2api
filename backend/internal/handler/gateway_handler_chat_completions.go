@@ -51,7 +51,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		reqStream = preForwardRequest.Stream
 	} else {
 		var ok bool
-		body, reqModel, reqStream, ok = h.readOpenAICompatibleGatewayPreForwardRequest(c, h.chatCompletionsErrorResponse)
+		body, reqModel, reqStream, ok = h.readOpenAICompatibleGatewayPreForwardRequest(c, h.chatCompletionsErrorResponse, reqLog)
 		if !ok {
 			return
 		}

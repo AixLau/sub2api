@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -50,7 +49,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		reqModel = preForwardRequest.Model
 	} else {
 		var err error
-		body, err = pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
+		body, err = readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 		if err != nil {
 			if maxErr, ok := extractMaxBytesError(err); ok {
 				h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
@@ -65,6 +64,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			return
 		}
 		if !gjson.ValidBytes(body) {
+			logRequestBodyParseFailure(reqLog, body, nil)
 			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 			return
 		}
