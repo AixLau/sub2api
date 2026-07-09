@@ -43,6 +43,8 @@ const VariableWidthLineChartStub = defineComponent({
     showLegend: Boolean,
     brushEffect: Boolean,
     strokeEffect: String,
+    minLineWidth: Number,
+    maxLineWidth: Number,
     emptyText: String,
     tooltipHtml: Function,
     formatX: Function,
@@ -115,8 +117,10 @@ describe('TokenUsageTrend', () => {
       yField: 'value',
       colorField: 'category',
       showLegend: true,
-      brushEffect: true,
-      strokeEffect: 'staccato',
+      brushEffect: false,
+      strokeEffect: 'smooth',
+      minLineWidth: 2.2,
+      maxLineWidth: 3.4,
     })
     expect(chart.props('xField')).toEqual(expect.any(Function))
     expect(chart.props('formatX')).toEqual(expect.any(Function))
@@ -165,7 +169,10 @@ describe('TokenUsageTrend', () => {
     const tooltipHtml = (getChart(wrapper).props('tooltipHtml') as (title: string) => string)('2026-05-08')
 
     expect(tooltipHtml).toContain('background: #111827')
-    expect(tooltipHtml).toContain('box-shadow: 0 18px 38px rgba(0, 0, 0, 0.32)')
+    expect(tooltipHtml).toContain('min-width: 212px')
+    expect(tooltipHtml).toContain('font-size: 12px')
+    expect(tooltipHtml).toContain('padding: 10px 12px')
+    expect(tooltipHtml).toContain('box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28)')
     expect(tooltipHtml).toContain('总使用: 1.05K')
     expect(tooltipHtml).not.toContain('$')
     expect(tooltipHtml).not.toContain('消费')

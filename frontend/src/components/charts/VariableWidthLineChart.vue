@@ -115,7 +115,7 @@ const PLOT_PADDING_LEFT = 56
 const PLOT_PADDING_RIGHT = 24
 const PLOT_PADDING_TOP = 12
 const PLOT_PADDING_BOTTOM = 42
-const TOOLTIP_WIDTH = 280
+const TOOLTIP_WIDTH = 236
 
 const DEFAULT_COLORS = [
   '#2563eb',
@@ -458,16 +458,21 @@ const handleTooltipMove = (event: MouseEvent) => {
   const title = scale
     ? findNearestComparableXValue(scale.min + progress * scale.span)
     : values[clamp(Math.round(progress * (values.length - 1)), 0, values.length - 1)]
-  const preferredLeft = localX + 16
+  const titleIndex = values.findIndex((candidate) => isSameXValue(candidate, title))
+  const snappedX = PLOT_PADDING_LEFT + (
+    getXPositionPercent(title, titleIndex >= 0 ? titleIndex : Math.round(progress * (values.length - 1))) / 100
+  ) * plotWidth
+  const preferredLeft = snappedX + 12
   const left = preferredLeft + TOOLTIP_WIDTH > rect.width
-    ? localX - TOOLTIP_WIDTH - 16
+    ? snappedX - TOOLTIP_WIDTH - 12
     : preferredLeft
-  const top = clamp(localY - 96, 8, plotHeight + PLOT_PADDING_TOP - 24)
+  const maxLeft = Math.max(8, rect.width - TOOLTIP_WIDTH - 8)
+  const top = clamp(localY - 80, 8, plotHeight + PLOT_PADDING_TOP - 24)
 
   tooltipState.value = {
     visible: true,
-    x: localX,
-    left: clamp(left, 8, rect.width - TOOLTIP_WIDTH - 8),
+    x: snappedX,
+    left: clamp(left, 8, maxLeft),
     top,
     title,
   }

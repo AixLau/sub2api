@@ -332,6 +332,7 @@ describe('VariableWidthLineChart', () => {
 
     const title = tooltipHtml.mock.calls[0][0]
     expect(title).toEqual(new Date('2026-07-09T00:00:00'))
+    expect(wrapper.find('.vw-line__tooltip-crosshair').attributes('style')).toContain('left: 56px')
 
     rectSpy.mockRestore()
   })

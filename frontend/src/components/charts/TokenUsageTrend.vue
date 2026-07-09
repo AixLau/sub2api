@@ -17,8 +17,10 @@
       :format-y="formatTokenAxis"
       :tooltip-html="buildTooltipHtml"
       show-legend
-      brush-effect
-      stroke-effect="staccato"
+      :brush-effect="false"
+      stroke-effect="smooth"
+      :min-line-width="2.2"
+      :max-line-width="3.4"
     />
   </div>
 </template>
@@ -214,20 +216,20 @@ const buildTooltipHtml = (title: unknown): string => {
   ]
 
   return `
-    <div style="min-width: 248px; color: ${chartColors.value.tooltipBody}; background: ${chartColors.value.tooltipBackground}; border: 1px solid ${chartColors.value.tooltipBorder}; border-radius: 8px; box-shadow: 0 18px 38px rgba(0, 0, 0, 0.32); padding: 14px 16px;">
-      <div style="margin-bottom: 12px; font-size: 13px; font-weight: 600; color: ${chartColors.value.tooltipTitle};">${escapeHtml(data.date)}</div>
-      <div style="display: grid; gap: 9px;">
+    <div style="min-width: 212px; font-size: 12px; line-height: 1.35; color: ${chartColors.value.tooltipBody}; background: ${chartColors.value.tooltipBackground}; border: 1px solid ${chartColors.value.tooltipBorder}; border-radius: 7px; box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28); padding: 10px 12px;">
+      <div style="margin-bottom: 8px; font-size: 12px; font-weight: 600; color: ${chartColors.value.tooltipTitle};">${escapeHtml(data.date)}</div>
+      <div style="display: grid; gap: 6px;">
         ${rows.map((row) => `
-          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
-            <span style="display: inline-flex; align-items: center; gap: 8px; min-width: 0; color: ${chartColors.value.tooltipBody};">
-              <span style="width: 9px; height: 9px; flex: 0 0 auto; border-radius: 999px; background: ${row.color}; display: inline-block;"></span>
-              ${escapeHtml(row.label)}
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+            <span style="display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: ${chartColors.value.tooltipBody};">
+              <span style="width: 7px; height: 7px; flex: 0 0 auto; border-radius: 999px; background: ${row.color}; display: inline-block;"></span>
+              <span>${escapeHtml(row.label)}</span>
             </span>
             <span style="font-weight: 700; color: ${chartColors.value.tooltipValue};">${escapeHtml(row.value)}</span>
           </div>
         `).join('')}
       </div>
-      <div style="margin-top: 12px; border-top: 1px solid ${chartColors.value.tooltipBorder}; padding-top: 10px; display: grid; gap: 6px; color: ${chartColors.value.tooltipValue}; font-weight: 700;">
+      <div style="margin-top: 9px; border-top: 1px solid ${chartColors.value.tooltipBorder}; padding-top: 8px; display: grid; gap: 4px; color: ${chartColors.value.tooltipValue}; font-weight: 700;">
         ${summaryRows.map((row) => `<div>${escapeHtml(row)}</div>`).join('')}
       </div>
     </div>
