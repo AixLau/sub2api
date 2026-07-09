@@ -1113,6 +1113,32 @@ func isKnownAgentInternalPromptText(text string) bool {
 			return true
 		}
 	}
+	if isKnownAgentSafetyBaselinePromptText(normalized) {
+		return true
+	}
+	return false
+}
+
+func isKnownAgentSafetyBaselinePromptText(normalized string) bool {
+	if normalized == "" {
+		return false
+	}
+	baselineMarkers := [][]string{
+		{
+			"be careful not to introduce security vulnerabilities",
+			"owasp top 10 vulnerabilities",
+		},
+		{
+			"tool results may include data from external sources",
+			"prompt injection",
+			"flag it directly to the user",
+		},
+	}
+	for _, markers := range baselineMarkers {
+		if containsAllNormalizedMarkers(normalized, markers) {
+			return true
+		}
+	}
 	return false
 }
 

@@ -4998,6 +4998,15 @@ func classifyContentModerationKeywordContext(text string, rule ContentModeration
 	if containsAnyKeywordComparable(normalized, educationalMarkers) {
 		return contentModerationRiskContext{Type: ContentModerationRiskContextEducational, Reason: "educational_or_prevention_context"}
 	}
+	securityGuidanceMarkers := []string{
+		"避免引入", "安全漏洞", "防止漏洞", "owasp top 10", "审查代码",
+		"be careful not to introduce security vulnerabilities",
+		"avoid introducing security vulnerabilities",
+		"security vulnerabilities", "tool results may include data from external sources",
+	}
+	if containsAnyKeywordComparable(normalized, securityGuidanceMarkers) {
+		return contentModerationRiskContext{Type: ContentModerationRiskContextEducational, Reason: "security_guidance_context"}
+	}
 	actualRequestMarkers := []string{
 		"帮我生成", "生成一份", "写一个", "教我", "教程", "步骤", "方法", "购买", "出售", "绕过",
 		"generate", "write", "teach me", "tutorial", "steps", "method", "buy", "sell", "bypass",
@@ -5112,13 +5121,28 @@ func matchContentModerationKeyword(text string, rules []ContentModerationKeyword
 		if _, _, hit := findKeywordComparableSpanWithBoundary(normalizedText, normalizedKeyword); hit {
 			return rule, true
 		}
-		if compactKeyword != "" {
+		if shouldUseCompactKeywordMatch(normalizedKeyword) && compactKeyword != "" {
 			if _, _, hit := findCompactKeywordComparableSpanWithBoundary(normalizedText, compactText, compactKeyword); hit {
 				return rule, true
 			}
 		}
 	}
 	return ContentModerationKeywordRule{}, false
+}
+
+func shouldUseCompactKeywordMatch(normalizedKeyword string) bool {
+	compactKeyword := compactKeywordComparable(normalizedKeyword)
+	if compactKeyword == "" {
+		return false
+	}
+	allDigits := true
+	for _, r := range compactKeyword {
+		if !unicode.IsDigit(r) {
+			allDigits = false
+			break
+		}
+	}
+	return !allDigits
 }
 
 func matchContextualBuiltInRiskRule(text string) (ContentModerationKeywordRule, bool) {
