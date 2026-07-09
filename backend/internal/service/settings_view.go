@@ -298,19 +298,20 @@ type PublicSettings struct {
 	CustomMenuItems             string // JSON array of custom menu items
 	CustomEndpoints             string // JSON array of custom endpoints
 
-	LinuxDoOAuthEnabled      bool
-	DingTalkOAuthEnabled     bool
-	WeChatOAuthEnabled       bool
-	WeChatOAuthOpenEnabled   bool
-	WeChatOAuthMPEnabled     bool
-	WeChatOAuthMobileEnabled bool
-	BackendModeEnabled       bool
-	PaymentEnabled           bool
-	OIDCOAuthEnabled         bool
-	OIDCOAuthProviderName    string
-	GitHubOAuthEnabled       bool
-	GoogleOAuthEnabled       bool
-	Version                  string
+	LinuxDoOAuthEnabled       bool
+	DingTalkOAuthEnabled      bool
+	WeChatOAuthEnabled        bool
+	WeChatOAuthOpenEnabled    bool
+	WeChatOAuthMPEnabled      bool
+	WeChatOAuthMobileEnabled  bool
+	BackendModeEnabled        bool
+	PaymentEnabled            bool
+	BalanceRechargeMultiplier float64
+	OIDCOAuthEnabled          bool
+	OIDCOAuthProviderName     string
+	GitHubOAuthEnabled        bool
+	GoogleOAuthEnabled        bool
+	Version                   string
 
 	BalanceLowNotifyEnabled     bool
 	AccountQuotaNotifyEnabled   bool

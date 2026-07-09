@@ -27,12 +27,16 @@
       <div class="flex shrink-0 flex-col items-end gap-1">
         <!-- Rate pill (platform color) -->
         <span v-if="rateMultiplier !== undefined" :class="['inline-flex items-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold', ratePillClass]">
-          <template v-if="hasCustomRate">
-            <span class="mr-1 line-through opacity-50">{{ rateMultiplier }}x</span>
-            <span class="font-bold">{{ userRateMultiplier }}x</span>
+          <template v-if="showRechargeAdjustedRate">
+            <span class="mr-1 line-through opacity-50">{{ formatRateMultiplier(rateMultiplier) }}x</span>
+            <span class="font-bold">{{ adjustedRateMultiplierText }}x</span>
+          </template>
+          <template v-else-if="hasCustomRate">
+            <span class="mr-1 line-through opacity-50">{{ formatRateMultiplier(rateMultiplier) }}x</span>
+            <span class="font-bold">{{ formatRateMultiplier(userRateMultiplier) }}x</span>
           </template>
           <template v-else>
-            {{ rateMultiplier }}x {{ t('admin.groups.rateLabel') }}
+            {{ formatRateMultiplier(rateMultiplier) }}x {{ t('admin.groups.rateLabel') }}
           </template>
         </span>
         <span
@@ -102,6 +106,31 @@ const hasCustomRate = computed(() => {
 })
 
 const appStore = useAppStore()
+
+const formatRateMultiplier = (value: number | null | undefined) => {
+  if (value === null || value === undefined || !Number.isFinite(value)) return ''
+  const rounded = Math.round(value * 1_000_000) / 1_000_000
+  return rounded.toFixed(6).replace(/\.?0+$/, '')
+}
+
+const balanceRechargeMultiplier = computed(() => {
+  const multiplier = Number(appStore.cachedPublicSettings?.payment_balance_recharge_multiplier)
+  return Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1
+})
+
+const showRechargeAdjustedRate = computed(() => {
+  return props.rateMultiplier !== undefined && Math.abs(balanceRechargeMultiplier.value - 1) > 1e-9
+})
+
+const effectiveDisplayRateMultiplier = computed(() => {
+  return hasCustomRate.value ? props.userRateMultiplier : props.rateMultiplier
+})
+
+const adjustedRateMultiplierText = computed(() => {
+  const effectiveRate = effectiveDisplayRateMultiplier.value
+  if (effectiveRate === null || effectiveRate === undefined) return ''
+  return formatRateMultiplier(effectiveRate / balanceRechargeMultiplier.value)
+})
 
 const hasPeakRate = computed(() => {
   return Boolean(props.peakRateEnabled && props.peakStart && props.peakEnd)
