@@ -324,7 +324,7 @@ export default {
       unbanSuccess: 'User has been unbanned',
       unbanFailed: 'Failed to unban user',
       inputDetailTitle: 'Input Summary Detail',
-      inputDetailContent: 'Full Content',
+      inputDetailContent: 'Input Excerpt',
       matchedKeyword: 'Matched Keyword',
       queueDelay: 'Queued {ms} ms',
       allGroups: 'All Groups',
@@ -429,7 +429,7 @@ export default {
         currentFilter: 'Current filter',
       },
       filters: {
-        search: 'Search user/key/summary',
+        search: 'Search user/key/keyword/summary',
         from: 'From',
         to: 'To',
         allGroups: 'All Groups',

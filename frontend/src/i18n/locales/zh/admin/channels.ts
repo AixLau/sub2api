@@ -324,7 +324,7 @@ export default {
       unbanSuccess: '用户已解封',
       unbanFailed: '解封用户失败',
       inputDetailTitle: '输入摘要详情',
-      inputDetailContent: '完整内容',
+      inputDetailContent: '输入摘要',
       matchedKeyword: '命中关键词',
       queueDelay: '排队 {ms} ms',
       allGroups: '全部分组',
@@ -429,7 +429,7 @@ export default {
         currentFilter: '当前筛选结果',
       },
       filters: {
-        search: '按用户/Key/摘要搜索',
+        search: '按用户/Key/关键词/摘要搜索',
         from: '开始时间',
         to: '结束时间',
         allGroups: '全部分组',
