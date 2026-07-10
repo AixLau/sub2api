@@ -94,6 +94,7 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // billing_tier
 			sqlmock.AnyArg(), // billing_mode
 			sqlmock.AnyArg(), // account_stats_cost
+			service.UsageSourceGateway,
 			createdAt,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(99), createdAt))
@@ -180,6 +181,7 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			sqlmock.AnyArg(), // billing_tier
 			sqlmock.AnyArg(), // billing_mode
 			sqlmock.AnyArg(), // account_stats_cost
+			service.UsageSourceGateway,
 			createdAt,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(100), createdAt))
@@ -857,8 +859,8 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 		now := time.Now().UTC()
 		log, err := scanUsageLog(usageLogScannerStub{values: []any{
 			int64(4),
-			int64(13),
-			int64(23),
+			sql.NullInt64{},
+			sql.NullInt64{},
 			int64(33),
 			sql.NullString{Valid: true, String: "req-image-metadata"},
 			"gpt-image-2",
@@ -898,9 +900,13 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},
 			sql.NullString{},
 			sql.NullFloat64{},
+			string(service.UsageSourceAccountTest),
 			now,
 		}})
 		require.NoError(t, err)
+		require.Equal(t, service.UsageSourceAccountTest, log.Source)
+		require.Zero(t, log.UserID)
+		require.Zero(t, log.APIKeyID)
 		require.Equal(t, 2, log.ImageCount)
 		require.NotNil(t, log.ImageSize)
 		require.Equal(t, "4K", *log.ImageSize)
@@ -916,10 +922,10 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 	t.Run("request_type_ws_v2_overrides_legacy", func(t *testing.T) {
 		now := time.Now().UTC()
 		log, err := scanUsageLog(usageLogScannerStub{values: []any{
-			int64(1),  // id
-			int64(10), // user_id
-			int64(20), // api_key_id
-			int64(30), // account_id
+			int64(1),                              // id
+			sql.NullInt64{Int64: 10, Valid: true}, // user_id
+			sql.NullInt64{Int64: 20, Valid: true}, // api_key_id
+			int64(30),                             // account_id
 			sql.NullString{Valid: true, String: "req-1"},
 			"gpt-5", // model
 			sql.NullString{Valid: true, String: "gpt-5"}, // requested_model
@@ -969,6 +975,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
+			string(service.UsageSourceGateway),
 			now,
 		}})
 		require.NoError(t, err)
@@ -983,8 +990,8 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 		now := time.Now().UTC()
 		log, err := scanUsageLog(usageLogScannerStub{values: []any{
 			int64(2),
-			int64(11),
-			int64(21),
+			sql.NullInt64{Int64: 11, Valid: true},
+			sql.NullInt64{Int64: 21, Valid: true},
 			int64(31),
 			sql.NullString{Valid: true, String: "req-2"},
 			"gpt-5",
@@ -1024,6 +1031,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
+			string(service.UsageSourceGateway),
 			now,
 		}})
 		require.NoError(t, err)
@@ -1038,8 +1046,8 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 		now := time.Now().UTC()
 		log, err := scanUsageLog(usageLogScannerStub{values: []any{
 			int64(3),
-			int64(12),
-			int64(22),
+			sql.NullInt64{Int64: 12, Valid: true},
+			sql.NullInt64{Int64: 22, Valid: true},
 			int64(32),
 			sql.NullString{Valid: true, String: "req-3"},
 			"gpt-5.4",
@@ -1079,6 +1087,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
+			string(service.UsageSourceGateway),
 			now,
 		}})
 		require.NoError(t, err)

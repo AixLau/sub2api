@@ -87,6 +87,79 @@ func (s *UsageLogRepoSuite) TestCreate() {
 	s.Require().NotZero(log.ID)
 }
 
+func TestUsageLogRepositoryAccountTestCreateListAndHydrate(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := newUsageLogRepositoryWithSQL(client, integrationDB)
+	account := mustCreateAccount(t, client, &service.Account{Name: "acc-account-test-" + uuid.NewString()})
+	requestID := uuid.NewString()
+
+	log := &service.UsageLog{
+		Source:         service.UsageSourceAccountTest,
+		AccountID:      account.ID,
+		RequestID:      requestID,
+		Model:          "gpt-5.4",
+		RequestedModel: "gpt-5.4",
+		InputTokens:    12,
+		OutputTokens:   4,
+		TotalCost:      0.001,
+		ActualCost:     0,
+		CreatedAt:      time.Now().UTC(),
+	}
+	inserted, err := repo.Create(ctx, log)
+	require.NoError(t, err)
+	require.True(t, inserted)
+	require.NotZero(t, log.ID)
+
+	logs, page, err := repo.ListByAccount(ctx, account.ID, pagination.PaginationParams{Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), page.Total)
+	require.Len(t, logs, 1)
+
+	ids := collectUsageLogIDs(logs)
+	require.Empty(t, ids.userIDs, "actorless rows must not query Ent user ID 0")
+	require.Empty(t, ids.apiKeyIDs, "actorless rows must not query Ent API-key ID 0")
+	require.NoError(t, repo.hydrateUsageLogAssociations(ctx, logs))
+
+	got := logs[0]
+	require.Equal(t, requestID, got.RequestID)
+	require.Equal(t, service.UsageSourceAccountTest, got.Source)
+	require.Zero(t, got.UserID)
+	require.Zero(t, got.APIKeyID)
+	require.Nil(t, got.User)
+	require.Nil(t, got.APIKey)
+	require.NotNil(t, got.Account)
+	require.Equal(t, account.ID, got.Account.ID)
+	require.Zero(t, got.ActualCost)
+}
+
+func TestUsageLogRepositoryAccountTestCreateHonorsExistingEntTransaction(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	account := mustCreateAccount(t, tx.Client(), &service.Account{Name: "acc-account-test-tx-" + uuid.NewString()})
+	fallbackDB, fallbackMock := newSQLMock(t)
+	repo := newUsageLogRepositoryWithSQL(tx.Client(), fallbackDB)
+
+	log := &service.UsageLog{
+		Source:    service.UsageSourceAccountTest,
+		AccountID: account.ID,
+		RequestID: uuid.NewString(),
+		Model:     "gpt-5.4",
+		CreatedAt: time.Now().UTC(),
+	}
+	inserted, err := repo.Create(dbent.NewTxContext(ctx, tx), log)
+	require.NoError(t, err)
+	require.True(t, inserted)
+	require.NotZero(t, log.ID)
+
+	stored, err := tx.Client().UsageLog.Get(ctx, log.ID)
+	require.NoError(t, err)
+	require.Nil(t, stored.UserID)
+	require.Nil(t, stored.APIKeyID)
+	require.Equal(t, string(service.UsageSourceAccountTest), stored.Source)
+	require.NoError(t, fallbackMock.ExpectationsWereMet(), "existing Ent transaction must take precedence over repository fallback SQL")
+}
+
 func TestUsageLogRepositoryCreate_BatchPathConcurrent(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)

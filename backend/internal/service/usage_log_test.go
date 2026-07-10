@@ -110,3 +110,64 @@ func TestUsageLogSyncRequestTypeAndLegacyFieldsNilReceiver(t *testing.T) {
 	var log *UsageLog
 	log.SyncRequestTypeAndLegacyFields()
 }
+
+func TestUsageLogValidateActors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		log     *UsageLog
+		wantErr string
+	}{
+		{
+			name: "gateway actors are valid",
+			log:  &UsageLog{Source: UsageSourceGateway, UserID: 1, APIKeyID: 2, AccountID: 3},
+		},
+		{
+			name:    "gateway requires user",
+			log:     &UsageLog{Source: UsageSourceGateway, APIKeyID: 2, AccountID: 3},
+			wantErr: "user_id",
+		},
+		{
+			name:    "gateway requires api key",
+			log:     &UsageLog{Source: UsageSourceGateway, UserID: 1, AccountID: 3},
+			wantErr: "api_key_id",
+		},
+		{
+			name: "account test is actorless",
+			log:  &UsageLog{Source: UsageSourceAccountTest, AccountID: 7},
+		},
+		{
+			name:    "account test rejects user",
+			log:     &UsageLog{Source: UsageSourceAccountTest, UserID: 1, AccountID: 7},
+			wantErr: "account_test",
+		},
+		{
+			name:    "account test rejects api key",
+			log:     &UsageLog{Source: UsageSourceAccountTest, APIKeyID: 2, AccountID: 7},
+			wantErr: "account_test",
+		},
+		{
+			name:    "account test requires account",
+			log:     &UsageLog{Source: UsageSourceAccountTest},
+			wantErr: "account_id",
+		},
+		{
+			name:    "nil usage log",
+			wantErr: "usage log",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := tt.log.ValidateActors()
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}

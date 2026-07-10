@@ -3,13 +3,32 @@
 package repository
 
 import (
+	"context"
+	"database/sql"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
+
+type usageLogCallRecorder struct {
+	calls int
+}
+
+func (r *usageLogCallRecorder) ExecContext(context.Context, string, ...any) (sql.Result, error) {
+	r.calls++
+	return nil, errors.New("unexpected usage log exec")
+}
+
+func (r *usageLogCallRecorder) QueryContext(context.Context, string, ...any) (*sql.Rows, error) {
+	r.calls++
+	return nil, errors.New("unexpected usage log query")
+}
 
 func TestSafeDateFormat(t *testing.T) {
 	tests := []struct {
@@ -64,4 +83,160 @@ func TestBuildUsageLogBatchInsertQuery_UsesConflictDoNothing(t *testing.T) {
 
 	require.Contains(t, query, "ON CONFLICT (request_id, api_key_id) DO NOTHING")
 	require.NotContains(t, strings.ToUpper(query), "DO UPDATE")
+}
+
+func TestPrepareUsageLogInsertAccountTestActors(t *testing.T) {
+	createdAt := time.Date(2026, 7, 10, 8, 30, 0, 0, time.UTC)
+
+	accountTest := prepareUsageLogInsert(&service.UsageLog{
+		Source:    service.UsageSourceAccountTest,
+		AccountID: 7,
+		RequestID: uuid.NewString(),
+		Model:     "gpt-5.4",
+		CreatedAt: createdAt,
+	})
+	require.Nil(t, accountTest.args[0])
+	require.Nil(t, accountTest.args[1])
+	require.Equal(t, int64(7), accountTest.args[2])
+	require.Equal(t, service.UsageSourceAccountTest, accountTest.args[len(accountTest.args)-2])
+	require.Equal(t, createdAt, accountTest.args[len(accountTest.args)-1])
+
+	gateway := prepareUsageLogInsert(&service.UsageLog{
+		Source:    service.UsageSourceGateway,
+		UserID:    1,
+		APIKeyID:  2,
+		AccountID: 3,
+		RequestID: uuid.NewString(),
+		Model:     "gpt-5.4",
+		CreatedAt: createdAt,
+	})
+	require.Equal(t, int64(1), gateway.args[0])
+	require.Equal(t, int64(2), gateway.args[1])
+	require.Equal(t, int64(3), gateway.args[2])
+	require.Equal(t, service.UsageSourceGateway, gateway.args[len(gateway.args)-2])
+	require.Equal(t, createdAt, gateway.args[len(gateway.args)-1])
+
+	require.Len(t, accountTest.args, len(usageLogInsertArgTypes))
+	require.Equal(t, "text", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-2])
+	require.Equal(t, "timestamptz", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-1])
+}
+
+func TestUsageLogRepositoryRejectsInvalidActors(t *testing.T) {
+	tests := []struct {
+		name    string
+		log     service.UsageLog
+		wantErr string
+	}{
+		{
+			name:    "gateway missing user",
+			log:     service.UsageLog{Source: service.UsageSourceGateway, APIKeyID: 2, AccountID: 3},
+			wantErr: "user_id",
+		},
+		{
+			name:    "gateway missing api key",
+			log:     service.UsageLog{Source: service.UsageSourceGateway, UserID: 1, AccountID: 3},
+			wantErr: "api_key_id",
+		},
+		{
+			name:    "gateway missing account",
+			log:     service.UsageLog{Source: service.UsageSourceGateway, UserID: 1, APIKeyID: 2},
+			wantErr: "account_id",
+		},
+		{
+			name:    "account test with user",
+			log:     service.UsageLog{Source: service.UsageSourceAccountTest, UserID: 1, AccountID: 7},
+			wantErr: "account_test",
+		},
+		{
+			name:    "account test with api key",
+			log:     service.UsageLog{Source: service.UsageSourceAccountTest, APIKeyID: 2, AccountID: 7},
+			wantErr: "account_test",
+		},
+		{
+			name:    "account test missing account",
+			log:     service.UsageLog{Source: service.UsageSourceAccountTest},
+			wantErr: "account_id",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run("Create/"+tt.name, func(t *testing.T) {
+			exec := &usageLogCallRecorder{}
+			repo := &usageLogRepository{sql: exec}
+			log := tt.log
+			log.RequestID = uuid.NewString()
+
+			inserted, err := repo.Create(context.Background(), &log)
+			require.False(t, inserted)
+			require.ErrorContains(t, err, tt.wantErr)
+			require.Zero(t, exec.calls, "invalid actors must be rejected before synchronous fallback")
+		})
+
+		t.Run("CreateBestEffort/"+tt.name, func(t *testing.T) {
+			exec := &usageLogCallRecorder{}
+			repo := &usageLogRepository{sql: exec}
+			log := tt.log
+			log.RequestID = uuid.NewString()
+
+			err := repo.CreateBestEffort(context.Background(), &log)
+			require.ErrorContains(t, err, tt.wantErr)
+			require.Zero(t, exec.calls, "invalid actors must be rejected before synchronous fallback")
+		})
+	}
+
+	t.Run("rejects before batch queues", func(t *testing.T) {
+		repo := &usageLogRepository{
+			db:                &sql.DB{},
+			createBatchCh:     make(chan usageLogCreateRequest, 1),
+			bestEffortBatchCh: make(chan usageLogBestEffortRequest, 1),
+		}
+		repo.createBatchOnce.Do(func() {})
+		repo.bestEffortBatchOnce.Do(func() {})
+		invalid := &service.UsageLog{
+			Source:    service.UsageSourceAccountTest,
+			UserID:    1,
+			AccountID: 7,
+			RequestID: uuid.NewString(),
+		}
+
+		createCtx, cancelCreate := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		_, err := repo.Create(createCtx, invalid)
+		cancelCreate()
+		require.ErrorContains(t, err, "account_test")
+		require.Empty(t, repo.createBatchCh)
+
+		bestEffortCtx, cancelBestEffort := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		err = repo.CreateBestEffort(bestEffortCtx, invalid)
+		cancelBestEffort()
+		require.ErrorContains(t, err, "account_test")
+		require.Empty(t, repo.bestEffortBatchCh)
+	})
+}
+
+func TestUsageLogRepositoryAccountTestUsesCreateSingle(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := newUsageLogRepositoryWithSQL(nil, db)
+	repo.createBatchCh = make(chan usageLogCreateRequest, 1)
+	repo.createBatchOnce.Do(func() {})
+
+	createdAt := time.Date(2026, 7, 10, 9, 0, 0, 0, time.UTC)
+	log := &service.UsageLog{
+		Source:    service.UsageSourceAccountTest,
+		AccountID: 7,
+		RequestID: uuid.NewString(),
+		Model:     "gpt-5.4",
+		CreatedAt: createdAt,
+	}
+	prepared := prepareUsageLogInsert(log)
+	mock.ExpectQuery(`(?s)^\s*INSERT INTO usage_logs`).
+		WithArgs(anySliceToDriverValues(prepared.args)...).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(101), createdAt))
+
+	inserted, err := repo.Create(context.Background(), log)
+	require.NoError(t, err)
+	require.True(t, inserted)
+	require.Equal(t, int64(101), log.ID)
+	require.Empty(t, repo.createBatchCh, "account-test logs must bypass the request-ID batch queue")
+	require.NoError(t, mock.ExpectationsWereMet())
 }
