@@ -176,7 +176,7 @@ export interface UserBreakdownParams {
   user_id?: number
   api_key_id?: number
   account_id?: number
-  request_type?: number
+  request_type?: UsageRequestType
   stream?: boolean
   billing_type?: number | null
   exclude_user_ids?: number[] | string

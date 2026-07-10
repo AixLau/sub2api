@@ -44,7 +44,7 @@ func TestAccountTestService_TestAccountConnection_OpenAICompactOAuthSuccessPersi
 	svc := &AccountTestService{
 		accountRepo:    repo,
 		httpUpstream:   upstream,
-		settingService: newOpenAICodexUASettingService("system-codex/1.0"),
+		settingService: newOpenAICodexUASettingService("codex_vscode/1.0"),
 	}
 
 	rec := httptest.NewRecorder()
@@ -60,7 +60,8 @@ func TestAccountTestService_TestAccountConnection_OpenAICompactOAuthSuccessPersi
 	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("Version"))
 	require.NotEmpty(t, upstream.lastReq.Header.Get("Session_Id"))
 	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(upstream.lastReq.Context()))
-	require.Equal(t, "system-codex/1.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "codex_vscode/1.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "codex_vscode", upstream.lastReq.Header.Get("Originator"))
 	require.Equal(t, "chatgpt-acc", upstream.lastReq.Header.Get("chatgpt-account-id"))
 	require.Equal(t, "true", upstream.lastReq.Header.Get("x-openai-fedramp"))
 	require.Equal(t, "gpt-5.4", gjson.GetBytes(upstream.lastBody, "model").String())

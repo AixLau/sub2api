@@ -39,7 +39,7 @@ func TestResolveOpenAICodexUpstreamUserAgentPrecedence(t *testing.T) {
 
 func TestOpenAICodexOAuthUpstreamRequestsIgnoreClientUserAgent(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	settings := newOpenAICodexUASettingService("system-codex/1.0")
+	settings := newOpenAICodexUASettingService("codex_vscode/1.0")
 	account := &Account{
 		Platform:    PlatformOpenAI,
 		Type:        AccountTypeOAuth,
@@ -59,7 +59,8 @@ func TestOpenAICodexOAuthUpstreamRequestsIgnoreClientUserAgent(t *testing.T) {
 		svc := &OpenAIGatewayService{settingService: settings}
 		req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", false, "", true)
 		require.NoError(t, err)
-		require.Equal(t, "system-codex/1.0", req.Header.Get("User-Agent"))
+		require.Equal(t, "codex_vscode/1.0", req.Header.Get("User-Agent"))
+		require.Equal(t, "codex_vscode", req.Header.Get("Originator"))
 	})
 
 	t.Run("passthrough", func(t *testing.T) {
@@ -67,7 +68,8 @@ func TestOpenAICodexOAuthUpstreamRequestsIgnoreClientUserAgent(t *testing.T) {
 		svc := &OpenAIGatewayService{settingService: settings}
 		req, err := svc.buildUpstreamRequestOpenAIPassthrough(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token")
 		require.NoError(t, err)
-		require.Equal(t, "system-codex/1.0", req.Header.Get("User-Agent"))
+		require.Equal(t, "codex_vscode/1.0", req.Header.Get("User-Agent"))
+		require.Equal(t, "codex_vscode", req.Header.Get("Originator"))
 	})
 
 	t.Run("websocket", func(t *testing.T) {
@@ -85,7 +87,8 @@ func TestOpenAICodexOAuthUpstreamRequestsIgnoreClientUserAgent(t *testing.T) {
 			"",
 		)
 		require.NoError(t, err)
-		require.Equal(t, "system-codex/1.0", headers.Get("User-Agent"))
+		require.Equal(t, "codex_vscode/1.0", headers.Get("User-Agent"))
+		require.Equal(t, "codex_vscode", headers.Get("Originator"))
 	})
 }
 
@@ -96,13 +99,13 @@ func TestOpenAICodexAccountUserAgentWinsEvenWhenForceCodexCLIEnabled(t *testing.
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.1.0")
 
-	settings := newOpenAICodexUASettingService("system-codex/1.0")
+	settings := newOpenAICodexUASettingService("codex_vscode/1.0")
 	account := &Account{
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
 			"chatgpt_account_id": "chatgpt-acc",
-			"user_agent":         "account-codex/2.0",
+			"user_agent":         "codex-tui/2.0",
 		},
 	}
 	cfg := &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: true}}
@@ -110,5 +113,6 @@ func TestOpenAICodexAccountUserAgentWinsEvenWhenForceCodexCLIEnabled(t *testing.
 
 	req, err := svc.buildUpstreamRequestOpenAIPassthrough(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token")
 	require.NoError(t, err)
-	require.Equal(t, "account-codex/2.0", req.Header.Get("User-Agent"))
+	require.Equal(t, "codex-tui/2.0", req.Header.Get("User-Agent"))
+	require.Equal(t, "codex-tui", req.Header.Get("Originator"))
 }
