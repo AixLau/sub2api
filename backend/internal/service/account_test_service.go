@@ -116,6 +116,7 @@ type AccountTestService struct {
 	antigravityGatewayService *AntigravityGatewayService
 	httpUpstream              HTTPUpstream
 	cfg                       *config.Config
+	settingService            *SettingService
 	tlsFPProfileService       *TLSFingerprintProfileService
 }
 
@@ -128,6 +129,7 @@ func NewAccountTestService(
 	antigravityGatewayService *AntigravityGatewayService,
 	httpUpstream HTTPUpstream,
 	cfg *config.Config,
+	settingService *SettingService,
 	tlsFPProfileService *TLSFingerprintProfileService,
 ) *AccountTestService {
 	return &AccountTestService{
@@ -138,6 +140,7 @@ func NewAccountTestService(
 		antigravityGatewayService: antigravityGatewayService,
 		httpUpstream:              httpUpstream,
 		cfg:                       cfg,
+		settingService:            settingService,
 		tlsFPProfileService:       tlsFPProfileService,
 	}
 }
@@ -658,12 +661,10 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		req.Header.Set("accept", "text/event-stream")
 		req.Header.Set("OpenAI-Beta", "responses=experimental")
 		req.Header.Set("Originator", "codex_cli_rs")
-		if customUA := strings.TrimSpace(credentialAccount.GetOpenAIUserAgent()); customUA != "" {
-			req.Header.Set("User-Agent", customUA)
-		} else {
-			req.Header.Set("User-Agent", codexCLIUserAgent)
-		}
+		req.Header.Set("User-Agent", resolveOpenAICodexUpstreamUserAgent(ctx, credentialAccount, s.settingService))
 		setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
+		// 与真实转发一致：originator 与最终 User-Agent 首段配套，否则上游 404（issue #3901）。
+		enforceCodexIdentityHeaders(req.Header)
 	}
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
@@ -912,8 +913,9 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	req.Header.Set("Authorization", "Bearer "+authToken)
 	req.Header.Set("OpenAI-Beta", "responses=experimental")
 	req.Header.Set("Originator", "codex_cli_rs")
-	req.Header.Set("User-Agent", codexCLIUserAgent)
+	req.Header.Set("User-Agent", resolveOpenAICodexUpstreamUserAgent(ctx, account, s.settingService))
 	req.Header.Set("Version", codexCLIVersion)
+	enforceCodexIdentityHeaders(req.Header)
 	probeSessionID := compactProbeSessionID(account.ID)
 	req.Header.Set("Session_ID", probeSessionID)
 	req.Header.Set("Conversation_ID", probeSessionID)
@@ -1789,13 +1791,11 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("OpenAI-Beta", "responses=experimental")
-	req.Header.Set("originator", "opencode")
-	if customUA := strings.TrimSpace(account.GetOpenAIUserAgent()); customUA != "" {
-		req.Header.Set("User-Agent", customUA)
-	} else {
-		req.Header.Set("User-Agent", codexCLIUserAgent)
-	}
+	req.Header.Set("originator", "codex_cli_rs")
+	req.Header.Set("User-Agent", resolveOpenAICodexUpstreamUserAgent(ctx, account, s.settingService))
 	setOpenAIChatGPTAccountHeaders(req.Header, account)
+	// 与真实转发一致：originator 与最终 User-Agent 首段配套（原 opencode 与 Codex UA 错配会 404，issue #3901）。
+	enforceCodexIdentityHeaders(req.Header)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {

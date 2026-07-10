@@ -433,7 +433,7 @@ func TestSettingService_GetAntigravityUserAgentVersion_Precedence(t *testing.T) 
 }
 
 func TestSettingService_GetOpenAICodexUserAgent_Precedence(t *testing.T) {
-	const expectedDefault = "codex-tui/0.140.0 (Windows 10.0.19045; x86_64) WindowsTerminal (codex-tui; 0.140.0)"
+	const expectedDefault = DefaultOpenAICodexUserAgent
 
 	t.Run("后台设置优先", func(t *testing.T) {
 		svc := NewSettingService(&settingAntigravityUARepoStub{values: map[string]string{
