@@ -101,7 +101,7 @@ func appendUsageLogExcludeUserIDsWhereCondition(conditions []string, args []any,
 	if strings.TrimSpace(column) == "" {
 		column = "user_id"
 	}
-	conditions = append(conditions, fmt.Sprintf("%s <> ALL($%d)", column, len(args)+1))
+	conditions = append(conditions, fmt.Sprintf("(%s IS NULL OR %s <> ALL($%d))", column, column, len(args)+1))
 	args = append(args, pq.Array(ids))
 	return conditions, args
 }
@@ -114,7 +114,7 @@ func appendUsageLogExcludeUserIDsQueryFilter(query string, args []any, column st
 	if strings.TrimSpace(column) == "" {
 		column = "user_id"
 	}
-	query += fmt.Sprintf(" AND %s <> ALL($%d)", column, len(args)+1)
+	query += fmt.Sprintf(" AND (%s IS NULL OR %s <> ALL($%d))", column, column, len(args)+1)
 	args = append(args, pq.Array(ids))
 	return query, args
 }

@@ -51,6 +51,8 @@ const messages: Record<string, string> = {
   'admin.usage.billingModeToken': 'Token',
   'admin.usage.billingModePerRequest': 'Per request',
   'admin.usage.billingModeImage': 'Image',
+  'usage.accountTest': 'Account test',
+  'usage.modelCost': 'Model cost',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -68,6 +70,8 @@ const DataTableStub = {
   template: `
     <div>
       <div v-for="row in data" :key="row.request_id">
+        <slot name="cell-user" :row="row" />
+        <slot name="cell-api_key" :row="row" />
         <slot name="cell-model" :row="row" :value="row.model" />
         <slot name="cell-billing_mode" :row="row" />
         <slot name="cell-tokens" :row="row" />
@@ -206,6 +210,48 @@ describe('admin UsageTable tooltip', () => {
     const text = wrapper.text()
     expect(text).toContain('claude-sonnet-4')
     expect(text).toContain('claude-sonnet-4-20250514')
+  })
+
+  it('labels account-test rows with actor placeholders and model cost', () => {
+    const row = {
+      request_id: 'account-test-1',
+      source: 'account_test',
+      user_id: 0,
+      api_key_id: 0,
+      model: 'gpt-5.4',
+      actual_cost: 0,
+      total_cost: 0.012345,
+      account_rate_multiplier: 1,
+      rate_multiplier: 1,
+      input_cost: 0.002,
+      output_cost: 0.010345,
+      cache_creation_cost: 0,
+      cache_read_cost: 0,
+      input_tokens: 100,
+      output_tokens: 20,
+    }
+
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [row],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('Account test')
+    expect(text).toContain('Model cost')
+    expect(text).toContain('$0.012345')
+    expect(text).not.toContain('#0')
   })
 
   it.each([
