@@ -69,6 +69,7 @@ func ProvideContentModerationService(
 		svc.SetRawRequestSnapshotStore(rawStore, encryptor)
 	}
 	svc.SetBuildInfo(buildInfo)
+	svc.Start(context.Background())
 	return svc
 }
 

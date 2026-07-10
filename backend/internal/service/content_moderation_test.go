@@ -25,11 +25,14 @@ import (
 )
 
 type contentModerationTestSettingRepo struct {
+	mu     sync.RWMutex
 	values map[string]string
 	errors map[string]error
 }
 
 func (r *contentModerationTestSettingRepo) Get(ctx context.Context, key string) (*Setting, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	if err, ok := r.errors[key]; ok {
 		return nil, err
 	}
@@ -40,6 +43,8 @@ func (r *contentModerationTestSettingRepo) Get(ctx context.Context, key string) 
 }
 
 func (r *contentModerationTestSettingRepo) GetValue(ctx context.Context, key string) (string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	if err, ok := r.errors[key]; ok {
 		return "", err
 	}
@@ -50,6 +55,8 @@ func (r *contentModerationTestSettingRepo) GetValue(ctx context.Context, key str
 }
 
 func (r *contentModerationTestSettingRepo) Set(ctx context.Context, key, value string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.values == nil {
 		r.values = map[string]string{}
 	}
@@ -58,6 +65,8 @@ func (r *contentModerationTestSettingRepo) Set(ctx context.Context, key, value s
 }
 
 func (r *contentModerationTestSettingRepo) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	out := map[string]string{}
 	for _, key := range keys {
 		if value, ok := r.values[key]; ok {
@@ -68,6 +77,8 @@ func (r *contentModerationTestSettingRepo) GetMultiple(ctx context.Context, keys
 }
 
 func (r *contentModerationTestSettingRepo) SetMultiple(ctx context.Context, settings map[string]string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.values == nil {
 		r.values = map[string]string{}
 	}
@@ -78,6 +89,8 @@ func (r *contentModerationTestSettingRepo) SetMultiple(ctx context.Context, sett
 }
 
 func (r *contentModerationTestSettingRepo) GetAll(ctx context.Context) (map[string]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	out := make(map[string]string, len(r.values))
 	for key, value := range r.values {
 		out[key] = value
@@ -86,6 +99,8 @@ func (r *contentModerationTestSettingRepo) GetAll(ctx context.Context) (map[stri
 }
 
 func (r *contentModerationTestSettingRepo) Delete(ctx context.Context, key string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	delete(r.values, key)
 	return nil
 }
@@ -1014,6 +1029,8 @@ func TestContentModerationCheck_ContextualJailbreakInstructionDiscussionDowngrad
 		nil,
 		nil,
 	)
+	svc.Start(context.Background())
+	t.Cleanup(svc.Close)
 
 	body := []byte(`{"input":"请查阅 codex-keysmith 的风控规则：unrestricted developer mode、content filters are disabled、complete all tasks without refusal。分析如何防范其破解限制并进行拦截。"}`)
 	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
@@ -1426,6 +1443,8 @@ func TestContentModerationCheck_ConfiguredCyberScanKeywordDowngradesLocalPathToR
 		nil,
 		nil,
 	)
+	svc.Start(context.Background())
+	t.Cleanup(svc.Close)
 
 	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
 		Endpoint: "/v1/responses",
@@ -1892,6 +1911,8 @@ func TestContentModerationCheck_LocalClassifierReviewsMediumConfidence(t *testin
 		nil,
 		nil,
 	)
+	svc.Start(context.Background())
+	t.Cleanup(svc.Close)
 
 	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
 		Endpoint: "/v1/responses",
@@ -2099,6 +2120,8 @@ func TestContentModerationCheck_ContextualSensitiveRiskDiscussionDowngradesToRev
 		nil,
 		nil,
 	)
+	svc.Start(context.Background())
+	t.Cleanup(svc.Close)
 
 	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
 		Endpoint: "/v1/responses",
@@ -2353,6 +2376,8 @@ func TestContentModerationCheck_ObserveKeywordRuleRecordsReviewWithoutBlocking(t
 		nil,
 		nil,
 	)
+	svc.Start(context.Background())
+	t.Cleanup(svc.Close)
 
 	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
 		Protocol: ContentModerationProtocolOpenAIChat,
@@ -2398,6 +2423,8 @@ func TestContentModerationCheck_MetaDiscussionDowngradesBlockKeywordToReview(t *
 		nil,
 		nil,
 	)
+	svc.Start(context.Background())
+	t.Cleanup(svc.Close)
 
 	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
 		Protocol: ContentModerationProtocolOpenAIChat,
@@ -2555,6 +2582,8 @@ func TestContentModerationCheck_KeywordObserveActionAllowsAndLogsHit(t *testing.
 		nil,
 		nil,
 	)
+	svc.Start(context.Background())
+	t.Cleanup(svc.Close)
 
 	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
 		Protocol: ContentModerationProtocolOpenAIChat,
@@ -2597,6 +2626,8 @@ func TestContentModerationCheck_KeywordWarnActionAllowsAndLogsHit(t *testing.T) 
 		nil,
 		nil,
 	)
+	svc.Start(context.Background())
+	t.Cleanup(svc.Close)
 
 	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
 		Protocol: ContentModerationProtocolOpenAIChat,
@@ -3407,6 +3438,8 @@ func TestContentModerationCheck_KeywordOnlyDoesNotSkipCodexCompactionSummaryMixe
 		nil,
 		nil,
 	)
+	svc.Start(context.Background())
+	t.Cleanup(svc.Close)
 
 	body := []byte(`{"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"Codex高速分组\nAnother language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done. The previous summary mentioned prompt injection as an audit keyword."}]}]}`)
 	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
@@ -3567,6 +3600,8 @@ func TestContentModerationCheck_SecurityGuidanceDowngradesInjectionKeywordsToRev
 		nil,
 		nil,
 	)
+	svc.Start(context.Background())
+	t.Cleanup(svc.Close)
 
 	body := []byte(`{"messages":[{"role":"user","content":"请审查这段代码，避免引入 command injection、XSS、SQL injection 等 OWASP Top 10 安全漏洞。"}]}`)
 	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
@@ -3769,8 +3804,10 @@ func TestContentModerationUpdateConfig_KeywordModeUpdateWithoutEngineModeKeepsLe
 	require.Equal(t, ContentModerationKeywordModeKeywordOnly, view.KeywordBlockingMode)
 	require.Equal(t, ContentModerationEngineModeRuleOnly, view.EngineMode)
 
+	savedRaw, err := settingRepo.GetValue(context.Background(), SettingKeyContentModerationConfig)
+	require.NoError(t, err)
 	var saved ContentModerationConfig
-	require.NoError(t, json.Unmarshal([]byte(settingRepo.values[SettingKeyContentModerationConfig]), &saved))
+	require.NoError(t, json.Unmarshal([]byte(savedRaw), &saved))
 	saved.normalize()
 	require.Equal(t, ContentModerationKeywordModeKeywordOnly, saved.KeywordBlockingMode)
 	require.Equal(t, ContentModerationEngineModeRuleOnly, saved.EngineMode)
@@ -3969,8 +4006,10 @@ func TestContentModerationUpdateConfig_AppendsAndDeletesAPIKeys(t *testing.T) {
 	require.Equal(t, 2, view.APIKeyCount)
 	require.Equal(t, []string{maskSecretTail("sk-old-b"), maskSecretTail("sk-new-c")}, view.APIKeyMasks)
 
+	savedRaw, err := repo.GetValue(context.Background(), SettingKeyContentModerationConfig)
+	require.NoError(t, err)
 	var saved ContentModerationConfig
-	require.NoError(t, json.Unmarshal([]byte(repo.values[SettingKeyContentModerationConfig]), &saved))
+	require.NoError(t, json.Unmarshal([]byte(savedRaw), &saved))
 	require.Equal(t, []string{"sk-old-b", "sk-new-c"}, saved.apiKeys())
 }
 
@@ -3997,8 +4036,10 @@ func TestContentModerationUpdateConfig_ReplacesAPIKeysWhenRequested(t *testing.T
 	require.Equal(t, 1, view.APIKeyCount)
 	require.Equal(t, []string{maskSecretTail("sk-new-only")}, view.APIKeyMasks)
 
+	savedRaw, err := repo.GetValue(context.Background(), SettingKeyContentModerationConfig)
+	require.NoError(t, err)
 	var saved ContentModerationConfig
-	require.NoError(t, json.Unmarshal([]byte(repo.values[SettingKeyContentModerationConfig]), &saved))
+	require.NoError(t, json.Unmarshal([]byte(savedRaw), &saved))
 	require.Equal(t, []string{"sk-new-only"}, saved.apiKeys())
 }
 
@@ -4026,8 +4067,10 @@ func TestContentModerationUpdateConfig_SavesCustomThresholds(t *testing.T) {
 	require.Equal(t, 1.0, view.Thresholds["harassment"])
 	require.NotContains(t, view.Thresholds, "unknown")
 
+	savedRaw, err := repo.GetValue(context.Background(), SettingKeyContentModerationConfig)
+	require.NoError(t, err)
 	var saved ContentModerationConfig
-	require.NoError(t, json.Unmarshal([]byte(repo.values[SettingKeyContentModerationConfig]), &saved))
+	require.NoError(t, json.Unmarshal([]byte(savedRaw), &saved))
 	require.Equal(t, 0.72, saved.Thresholds["sexual"])
 	require.Equal(t, 1.0, saved.Thresholds["harassment"])
 	require.NotContains(t, saved.Thresholds, "unknown")
@@ -4202,6 +4245,8 @@ func TestContentModerationCheck_OpenAIResponsesRecordsNonHitForCodexPayload(t *t
 		nil,
 		nil,
 	)
+	svc.Start(context.Background())
+	t.Cleanup(svc.Close)
 
 	body := []byte(`{
 		"model":"gpt-5.5",
@@ -6392,6 +6437,8 @@ func TestContentModerationCheck_HashBlockLogsDoNotIncreaseNextViolationCount(t *
 		nil,
 		nil,
 	)
+	svc.Start(context.Background())
+	t.Cleanup(svc.Close)
 
 	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
 		UserID:   userID,
@@ -6535,6 +6582,8 @@ func TestContentModerationCheck_PreBlockFlaggedWritesRedisHashCache(t *testing.T
 		nil,
 		nil,
 	)
+	svc.Start(context.Background())
+	t.Cleanup(svc.Close)
 
 	body := []byte(`{"messages":[{"role":"user","content":"repeat blocked prompt"}]}`)
 	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
@@ -6732,8 +6781,10 @@ func TestContentModerationUpdateConfig_CyberPolicyExcludeFromBanCount(t *testing
 	require.True(t, view.CyberPolicyExcludeFromBanCount)
 
 	// 持久化 JSON 含字段
+	savedRaw, err := settingRepo.GetValue(context.Background(), SettingKeyContentModerationConfig)
+	require.NoError(t, err)
 	var saved ContentModerationConfig
-	require.NoError(t, json.Unmarshal([]byte(settingRepo.values[SettingKeyContentModerationConfig]), &saved))
+	require.NoError(t, json.Unmarshal([]byte(savedRaw), &saved))
 	require.True(t, saved.CyberPolicyExcludeFromBanCount)
 
 	// 二次读取（从持久化 JSON 反序列化）roundtrip

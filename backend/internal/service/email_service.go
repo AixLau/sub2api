@@ -178,7 +178,7 @@ func (s *EmailService) SendEmail(ctx context.Context, to, subject, body string) 
 	if err != nil {
 		return err
 	}
-	return s.SendEmailWithConfig(config, to, subject, body)
+	return s.sendEmailWithConfig(ctx, config, to, subject, body)
 }
 
 const smtpDialTimeout = 10 * time.Second
@@ -186,6 +186,10 @@ const smtpIOTimeout = 20 * time.Second
 
 // SendEmailWithConfig 使用指定配置发送邮件
 func (s *EmailService) SendEmailWithConfig(config *SMTPConfig, to, subject, body string) error {
+	return s.sendEmailWithConfig(context.Background(), config, to, subject, body)
+}
+
+func (s *EmailService) sendEmailWithConfig(ctx context.Context, config *SMTPConfig, to, subject, body string) error {
 	// Sanitize all SMTP header fields to prevent header injection (CR/LF removal).
 	to = sanitizeEmailHeader(to)
 	subject = sanitizeEmailHeader(subject)
@@ -202,21 +206,41 @@ func (s *EmailService) SendEmailWithConfig(config *SMTPConfig, to, subject, body
 	auth := smtp.PlainAuth("", config.Username, config.Password, config.Host)
 
 	if config.UseTLS {
-		return s.sendMailTLS(addr, auth, config.From, to, []byte(msg), config.Host)
+		return s.sendMailTLS(ctx, addr, auth, config.From, to, []byte(msg), config.Host)
 	}
 
-	return s.sendMailPlain(addr, auth, config.From, to, []byte(msg), config.Host)
+	return s.sendMailPlain(ctx, addr, auth, config.From, to, []byte(msg), config.Host)
+}
+
+func prepareSMTPConnection(ctx context.Context, conn net.Conn) func() {
+	deadline := time.Now().Add(smtpIOTimeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	_ = conn.SetDeadline(deadline)
+
+	callbackDone := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		defer close(callbackDone)
+		_ = conn.Close()
+	})
+	return func() {
+		if !stop() {
+			<-callbackDone
+		}
+	}
 }
 
 // sendMailPlain sends mail without TLS using a dialer with timeout.
-func (s *EmailService) sendMailPlain(addr string, auth smtp.Auth, from, to string, msg []byte, host string) error {
+func (s *EmailService) sendMailPlain(ctx context.Context, addr string, auth smtp.Auth, from, to string, msg []byte, host string) error {
 	dialer := &net.Dialer{Timeout: smtpDialTimeout}
-	conn, err := dialer.Dial("tcp", addr)
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("smtp dial: %w", err)
 	}
-	_ = conn.SetDeadline(time.Now().Add(smtpIOTimeout))
 	defer func() { _ = conn.Close() }()
+	stopCancel := prepareSMTPConnection(ctx, conn)
+	defer stopCancel()
 
 	client, err := smtp.NewClient(conn, host)
 	if err != nil {
@@ -256,7 +280,7 @@ func (s *EmailService) sendMailPlain(addr string, auth smtp.Auth, from, to strin
 }
 
 // sendMailTLS 使用TLS发送邮件
-func (s *EmailService) sendMailTLS(addr string, auth smtp.Auth, from, to string, msg []byte, host string) error {
+func (s *EmailService) sendMailTLS(ctx context.Context, addr string, auth smtp.Auth, from, to string, msg []byte, host string) error {
 	tlsConfig := &tls.Config{
 		ServerName: host,
 		// 强制 TLS 1.2+，避免协议降级导致的弱加密风险。
@@ -264,14 +288,20 @@ func (s *EmailService) sendMailTLS(addr string, auth smtp.Auth, from, to string,
 	}
 
 	dialer := &net.Dialer{Timeout: smtpDialTimeout}
-	conn, err := tls.DialWithDialer(dialer, "tcp", addr, tlsConfig)
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("tls dial: %w", err)
 	}
-	_ = conn.SetDeadline(time.Now().Add(smtpIOTimeout))
 	defer func() { _ = conn.Close() }()
+	stopCancel := prepareSMTPConnection(ctx, conn)
+	defer stopCancel()
 
-	client, err := smtp.NewClient(conn, host)
+	tlsConn := tls.Client(conn, tlsConfig)
+	if err = tlsConn.HandshakeContext(ctx); err != nil {
+		return fmt.Errorf("tls dial: %w", err)
+	}
+
+	client, err := smtp.NewClient(tlsConn, host)
 	if err != nil {
 		return fmt.Errorf("new smtp client: %w", err)
 	}

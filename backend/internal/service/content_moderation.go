@@ -1009,6 +1009,47 @@ type ContentModerationService struct {
 	moderationCacheHMACKey    []byte
 	moderationCacheKeyVersion uint64
 	metrics                   *ContentModerationMetrics
+	runtimeMu                 sync.Mutex
+	runtimeCancel             context.CancelFunc
+	runtimeWG                 sync.WaitGroup
+	runtimeStarted            bool
+	runtimeClosed             bool
+	runtimeCloseOnce          sync.Once
+	runtimeDone               chan struct{}
+	runtimeTimings            contentModerationRuntimeTimings
+}
+
+type contentModerationRuntimeTimings struct {
+	workerIdleWait     time.Duration
+	cleanupDelay       time.Duration
+	cleanupInterval    time.Duration
+	outboxPollInterval time.Duration
+}
+
+func defaultContentModerationRuntimeTimings() contentModerationRuntimeTimings {
+	return contentModerationRuntimeTimings{
+		workerIdleWait:     time.Second,
+		cleanupDelay:       contentModerationCleanupDelay,
+		cleanupInterval:    contentModerationCleanupInterval,
+		outboxPollInterval: contentModerationOutboxPollInterval,
+	}
+}
+
+func (t contentModerationRuntimeTimings) normalized() contentModerationRuntimeTimings {
+	defaults := defaultContentModerationRuntimeTimings()
+	if t.workerIdleWait <= 0 {
+		t.workerIdleWait = defaults.workerIdleWait
+	}
+	if t.cleanupDelay <= 0 {
+		t.cleanupDelay = defaults.cleanupDelay
+	}
+	if t.cleanupInterval <= 0 {
+		t.cleanupInterval = defaults.cleanupInterval
+	}
+	if t.outboxPollInterval <= 0 {
+		t.outboxPollInterval = defaults.outboxPollInterval
+	}
+	return t
 }
 
 type contentModerationTask struct {
@@ -1063,17 +1104,82 @@ func NewContentModerationService(
 		workerCount:          maxContentModerationWorkerCount,
 		asyncQueue:           make(chan contentModerationTask, maxContentModerationQueueSize),
 		keyHealth:            make(map[string]*contentModerationKeyHealth),
+		runtimeDone:          make(chan struct{}),
+		runtimeTimings:       defaultContentModerationRuntimeTimings(),
 	}
 	if len(accountScopeRepos) > 0 {
 		svc.accountScopeRepo = accountScopeRepos[0]
 	}
-	if settingRepo != nil && repo != nil {
-		for i := 0; i < svc.workerCount; i++ {
-			go svc.worker(i)
-		}
-		go svc.cleanupWorker()
-	}
 	return svc
+}
+
+// Start launches the content moderation background runtime once.
+func (s *ContentModerationService) Start(parent context.Context) {
+	if s == nil {
+		return
+	}
+	if parent == nil {
+		parent = context.Background()
+	}
+
+	s.runtimeMu.Lock()
+	if s.runtimeStarted || s.runtimeClosed {
+		s.runtimeMu.Unlock()
+		return
+	}
+	if s.runtimeDone == nil {
+		s.runtimeDone = make(chan struct{})
+	}
+	ctx, cancel := context.WithCancel(parent)
+	s.runtimeCancel = cancel
+	s.runtimeStarted = true
+	timings := s.runtimeTimings.normalized()
+	if s.settingRepo != nil && s.repo != nil {
+		for i := 0; i < s.workerCount; i++ {
+			s.runtimeWG.Add(1)
+			go func(workerID int) {
+				defer s.runtimeWG.Done()
+				s.worker(ctx, workerID, timings.workerIdleWait)
+			}(i)
+		}
+		s.runtimeWG.Add(1)
+		go func() {
+			defer s.runtimeWG.Done()
+			s.cleanupWorker(ctx, timings.cleanupDelay, timings.cleanupInterval)
+		}()
+	}
+	if s.outboxRepo != nil {
+		s.runtimeWG.Add(1)
+		go func() {
+			defer s.runtimeWG.Done()
+			s.outboxWorker(ctx, timings.outboxPollInterval)
+		}()
+	}
+	s.runtimeMu.Unlock()
+}
+
+// Close cancels the background runtime and waits for every loop to stop.
+func (s *ContentModerationService) Close() {
+	if s == nil {
+		return
+	}
+	s.runtimeMu.Lock()
+	if s.runtimeDone == nil {
+		s.runtimeDone = make(chan struct{})
+	}
+	s.runtimeClosed = true
+	cancel := s.runtimeCancel
+	done := s.runtimeDone
+	s.runtimeMu.Unlock()
+
+	s.runtimeCloseOnce.Do(func() {
+		if cancel != nil {
+			cancel()
+		}
+		s.runtimeWG.Wait()
+		close(done)
+	})
+	<-done
 }
 
 func (s *ContentModerationService) SetBuildInfo(buildInfo BuildInfo) {
@@ -2380,18 +2486,26 @@ func contentModerationActionIsBlocking(action string) bool {
 	}
 }
 
-func (s *ContentModerationService) worker(id int) {
+func (s *ContentModerationService) worker(runtimeCtx context.Context, id int, idleWait time.Duration) {
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), maxContentModerationTimeoutMS*time.Millisecond+10*time.Second)
+		if runtimeCtx.Err() != nil {
+			return
+		}
+		ctx, cancel := context.WithTimeout(runtimeCtx, maxContentModerationTimeoutMS*time.Millisecond+10*time.Second)
 		cfg, err := s.loadConfig(ctx)
 		if err != nil || id >= cfg.WorkerCount {
 			cancel()
-			time.Sleep(time.Second)
+			if !waitForContentModerationRuntime(runtimeCtx, idleWait) {
+				return
+			}
 			continue
 		}
-		task, ok := s.dequeueAsyncTask(ctx, time.Second)
+		task, ok := s.dequeueAsyncTask(ctx, idleWait)
 		if !ok {
 			cancel()
+			if runtimeCtx.Err() != nil {
+				return
+			}
 			continue
 		}
 		func() {
@@ -2429,6 +2543,20 @@ func (s *ContentModerationService) worker(id int) {
 			_ = s.checkSync(ctx, task.input, cfg, task.content, task.inputHash, &queueDelay, false)
 			s.asyncProcessed.Add(1)
 		}()
+	}
+}
+
+func waitForContentModerationRuntime(ctx context.Context, wait time.Duration) bool {
+	if wait <= 0 {
+		wait = time.Second
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 
@@ -3597,24 +3725,31 @@ func contentModerationHashBlockingPolicyPresent(cfg *ContentModerationConfig, fl
 	return cfg.PreHashCheckEnabled && flaggedHashCount > 0
 }
 
-func (s *ContentModerationService) cleanupWorker() {
-	timer := time.NewTimer(contentModerationCleanupDelay)
+func (s *ContentModerationService) cleanupWorker(runtimeCtx context.Context, delay, interval time.Duration) {
+	timer := time.NewTimer(delay)
 	defer timer.Stop()
 	for {
-		<-timer.C
-		s.runCleanupOnce()
-		timer.Reset(contentModerationCleanupInterval)
+		select {
+		case <-runtimeCtx.Done():
+			return
+		case <-timer.C:
+			s.runCleanupOnce(runtimeCtx)
+			timer.Reset(interval)
+		}
 	}
 }
 
-func (s *ContentModerationService) runCleanupOnce() {
+func (s *ContentModerationService) runCleanupOnce(parent context.Context) {
 	if s == nil || s.repo == nil || s.settingRepo == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), contentModerationCleanupTimeout)
+	ctx, cancel := context.WithTimeout(parent, contentModerationCleanupTimeout)
 	defer cancel()
 	cfg, err := s.loadConfig(ctx)
 	if err != nil {
+		if parentErr := parent.Err(); parentErr != nil && errors.Is(err, parentErr) {
+			return
+		}
 		slog.Warn("content_moderation.cleanup_load_config_failed", "error", err)
 		return
 	}
@@ -3623,6 +3758,9 @@ func (s *ContentModerationService) runCleanupOnce() {
 	nonHitBefore := now.AddDate(0, 0, -cfg.NonHitRetentionDays)
 	result, err := s.repo.CleanupExpiredLogs(ctx, hitBefore, nonHitBefore)
 	if err != nil {
+		if parentErr := parent.Err(); parentErr != nil && errors.Is(err, parentErr) {
+			return
+		}
 		slog.Warn("content_moderation.cleanup_failed", "error", err)
 		return
 	}

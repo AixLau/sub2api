@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -52,6 +53,16 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 	idempotencyCleanupSvc := service.NewIdempotencyCleanupService(nil, cfg)
 	schedulerSnapshotSvc := service.NewSchedulerSnapshotService(nil, nil, nil, nil, cfg)
 	opsSystemLogSinkSvc := service.NewOpsSystemLogSink(nil)
+	moderationOutbox := newServerContentModerationOutboxRepo()
+	contentModerationSvc := service.NewContentModerationService(nil, nil, nil, nil, nil, nil, nil)
+	contentModerationSvc.SetOutboxRepository(moderationOutbox)
+	contentModerationSvc.Start(context.Background())
+	t.Cleanup(contentModerationSvc.Close)
+	select {
+	case <-moderationOutbox.claimStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("content moderation outbox loop did not start")
+	}
 
 	cleanup := provideCleanup(
 		nil, // entClient
@@ -71,6 +82,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		idempotencyCleanupSvc,
 		&service.BatchImageCleanupService{},
 		nil, // batchImageWorker
+		contentModerationSvc,
 		pricingSvc,
 		emailQueueSvc,
 		billingCacheSvc,
@@ -92,4 +104,68 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 	require.NotPanics(t, func() {
 		cleanup()
 	})
+	select {
+	case <-moderationOutbox.claimStopped:
+	case <-time.After(time.Second):
+		t.Fatal("server cleanup did not stop content moderation runtime")
+	}
+}
+
+type serverContentModerationOutboxRepo struct {
+	claimStarted chan struct{}
+	claimStopped chan struct{}
+}
+
+func newServerContentModerationOutboxRepo() *serverContentModerationOutboxRepo {
+	return &serverContentModerationOutboxRepo{
+		claimStarted: make(chan struct{}),
+		claimStopped: make(chan struct{}),
+	}
+}
+
+func (r *serverContentModerationOutboxRepo) EnqueueEvents(context.Context, []service.ContentModerationOutboxEvent) error {
+	return nil
+}
+
+func (r *serverContentModerationOutboxRepo) ClaimDueEvents(ctx context.Context, _ time.Time, _ int, _ time.Duration) ([]service.ContentModerationOutboxEvent, error) {
+	select {
+	case <-r.claimStarted:
+	default:
+		close(r.claimStarted)
+	}
+	<-ctx.Done()
+	select {
+	case <-r.claimStopped:
+	default:
+		close(r.claimStopped)
+	}
+	return nil, ctx.Err()
+}
+
+func (r *serverContentModerationOutboxRepo) MarkEventSucceeded(context.Context, int64) error {
+	return nil
+}
+
+func (r *serverContentModerationOutboxRepo) ScheduleEventRetry(context.Context, int64, int, time.Time, string) error {
+	return nil
+}
+
+func (r *serverContentModerationOutboxRepo) MarkEventDeadLetter(context.Context, int64, string) error {
+	return nil
+}
+
+func (r *serverContentModerationOutboxRepo) GetStatus(context.Context, time.Time) (*service.ContentModerationOutboxStatus, error) {
+	return &service.ContentModerationOutboxStatus{}, nil
+}
+
+func (r *serverContentModerationOutboxRepo) ListDeadLetters(context.Context, int) ([]service.ContentModerationOutboxEvent, error) {
+	return nil, nil
+}
+
+func (r *serverContentModerationOutboxRepo) ReplayDeadLetter(context.Context, int64) (bool, error) {
+	return false, nil
+}
+
+func (r *serverContentModerationOutboxRepo) Cleanup(context.Context, time.Time, time.Time, int) (int64, error) {
+	return 0, nil
 }
