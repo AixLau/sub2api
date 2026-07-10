@@ -582,7 +582,10 @@ func (_q *UsageLogQuery) loadUser(ctx context.Context, query *UserQuery, nodes [
 	ids := make([]int64, 0, len(nodes))
 	nodeids := make(map[int64][]*UsageLog)
 	for i := range nodes {
-		fk := nodes[i].UserID
+		if nodes[i].UserID == nil {
+			continue
+		}
+		fk := *nodes[i].UserID
 		if _, ok := nodeids[fk]; !ok {
 			ids = append(ids, fk)
 		}
@@ -611,7 +614,10 @@ func (_q *UsageLogQuery) loadAPIKey(ctx context.Context, query *APIKeyQuery, nod
 	ids := make([]int64, 0, len(nodes))
 	nodeids := make(map[int64][]*UsageLog)
 	for i := range nodes {
-		fk := nodes[i].APIKeyID
+		if nodes[i].APIKeyID == nil {
+			continue
+		}
+		fk := *nodes[i].APIKeyID
 		if _, ok := nodeids[fk]; !ok {
 			ids = append(ids, fk)
 		}
