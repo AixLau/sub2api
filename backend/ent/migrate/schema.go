@@ -1594,7 +1594,7 @@ var (
 				Symbol:     "usage_logs_api_keys_usage_logs",
 				Columns:    []*schema.Column{UsageLogsColumns[41]},
 				RefColumns: []*schema.Column{APIKeysColumns[0]},
-				OnDelete:   schema.SetNull,
+				OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:     "usage_logs_accounts_usage_logs",
@@ -1612,7 +1612,7 @@ var (
 				Symbol:     "usage_logs_users_usage_logs",
 				Columns:    []*schema.Column{UsageLogsColumns[44]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
-				OnDelete:   schema.SetNull,
+				OnDelete:   schema.Cascade,
 			},
 			{
 				Symbol:     "usage_logs_user_subscriptions_usage_logs",

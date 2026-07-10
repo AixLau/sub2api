@@ -13,11 +13,7 @@ BEGIN
     ) THEN
         ALTER TABLE usage_logs
             ADD CONSTRAINT usage_logs_source_check
-            CHECK (source IN ('gateway', 'account_test'));
+            CHECK (source IN ('gateway', 'account_test')) NOT VALID;
     END IF;
 END
 $$;
-
-CREATE INDEX IF NOT EXISTS idx_usage_logs_admin_visible_id
-    ON usage_logs (id DESC)
-    WHERE actual_cost > 0 OR source = 'account_test';
