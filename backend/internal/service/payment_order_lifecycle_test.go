@@ -1254,8 +1254,9 @@ func TestMarkCompletedDoesNotWriteSuccessAuditWhenStatusWasNotUpdated(t *testing
 	require.NoError(t, err)
 
 	svc := &PaymentService{entClient: client}
-	err = svc.markCompleted(ctx, order, "RECHARGE_SUCCESS")
-	require.NoError(t, err)
+	err = svc.markCompleted(ctx, order, &paymentFulfillmentLease{version: order.UpdatedAt}, "RECHARGE_SUCCESS")
+	require.Error(t, err)
+	require.Equal(t, "CONFLICT", infraerrors.Reason(err))
 
 	successLogs, err := client.PaymentAuditLog.Query().
 		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("RECHARGE_SUCCESS")).

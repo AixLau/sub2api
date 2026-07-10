@@ -1157,7 +1157,7 @@ func (s OpenAIHTTPForwardStage) RunForward(c *gin.Context) ExecutableStageResult
 		ctx = c.Request.Context()
 	}
 	if s.WriterSizeBeforeForward != nil {
-		*s.WriterSizeBeforeForward = c.Writer.Size()
+		*s.WriterSizeBeforeForward = service.OpenAICompactKeepaliveAdjustedWrittenSize(c)
 	}
 	defer func() {
 		if s.ReleaseFunc != nil {

@@ -63,56 +63,64 @@ func (s *PaymentService) ExecuteNinePlusFulfillment(ctx context.Context, oid int
 	if o.Status != OrderStatusPaid && o.Status != OrderStatusFailed && o.Status != OrderStatusRecharging {
 		return infraerrors.BadRequest("INVALID_STATUS", "order cannot fulfill in status "+o.Status)
 	}
-	if o.Status == OrderStatusRecharging && time.Since(o.UpdatedAt) < ninePlusFulfillmentLockTTL {
-		return nil
-	}
-	if o.Status != OrderStatusRecharging {
-		c, err := s.entClient.PaymentOrder.Update().
-			Where(paymentorder.IDEQ(oid), paymentorder.StatusIn(OrderStatusPaid, OrderStatusFailed)).
-			SetStatus(OrderStatusRecharging).
-			Save(ctx)
-		if err != nil {
-			return fmt.Errorf("lock nineplus order: %w", err)
-		}
-		if c == 0 {
+	lease, err := s.acquirePaymentFulfillmentLeaseWithDuration(ctx, o, ninePlusFulfillmentLockTTL)
+	if err != nil {
+		if o.Status == OrderStatusRecharging && time.Since(o.UpdatedAt) < ninePlusFulfillmentLockTTL && infraerrors.Reason(err) == "CONFLICT" {
 			return nil
 		}
+		return err
+	}
+	if lease == nil {
+		return nil
 	}
 	if s.externalShopService == nil || s.redeemService == nil {
 		err := infraerrors.ServiceUnavailable("NINEPLUS_NOT_CONFIGURED", "nineplus fulfillment is unavailable")
-		s.markFailed(ctx, oid, err)
+		s.markFailed(ctx, oid, lease, err)
 		return err
 	}
 	helper, err := s.ninePlusHelperForOrder(ctx, o)
 	if err != nil {
-		s.markFailed(ctx, oid, err)
+		s.markFailed(ctx, oid, lease, err)
 		return err
 	}
 	result, err := helper.FulfillNinePlusPaymentOrder(ctx, o)
 	if err != nil {
 		if infraerrors.Reason(err) == "NINEPLUS_DELIVERY_PENDING" {
-			s.releaseNinePlusFulfillmentLock(ctx, oid)
+			s.releaseNinePlusFulfillmentLock(ctx, oid, lease)
 			return nil
 		}
 		if isNinePlusTransientFulfillmentError(err) {
-			s.releaseNinePlusFulfillmentLock(ctx, oid)
+			s.releaseNinePlusFulfillmentLock(ctx, oid, lease)
 			return err
 		}
-		s.markFailed(ctx, oid, err)
+		s.markFailed(ctx, oid, lease, err)
 		return err
 	}
 	if o.OrderType != payment.OrderTypeSubscription && result != nil && result.CreditedAmount > 0 && result.CreditedAmount != o.Amount {
-		updated, updateErr := s.entClient.PaymentOrder.UpdateOneID(o.ID).
+		updatedCount, updateErr := s.entClient.PaymentOrder.Update().
+			Where(
+				paymentorder.IDEQ(o.ID),
+				paymentorder.StatusEQ(OrderStatusRecharging),
+				paymentorder.UpdatedAtEQ(lease.version),
+			).
 			SetAmount(result.CreditedAmount).
 			Save(ctx)
 		if updateErr != nil {
-			s.markFailed(ctx, oid, updateErr)
+			s.markFailed(ctx, oid, lease, updateErr)
 			return fmt.Errorf("update nineplus credited amount: %w", updateErr)
 		}
+		if updatedCount == 0 {
+			return infraerrors.Conflict("CONFLICT", "nineplus fulfillment lease was lost while updating credited amount")
+		}
+		updated, updateErr := s.entClient.PaymentOrder.Get(ctx, o.ID)
+		if updateErr != nil {
+			return fmt.Errorf("reload nineplus credited amount: %w", updateErr)
+		}
 		o = updated
+		lease.version = updated.UpdatedAt
 	}
 	if err := s.applyAffiliateRebateForOrder(ctx, o); err != nil {
-		s.markFailed(ctx, oid, err)
+		s.markFailed(ctx, oid, lease, err)
 		return err
 	}
 	auditAction := "RECHARGE_SUCCESS"
@@ -123,16 +131,23 @@ func (s *PaymentService) ExecuteNinePlusFulfillment(ctx context.Context, oid int
 	if o.OrderType == payment.OrderTypeSubscription && result != nil {
 		emailCtx = s.subscriptionPurchaseEmailContextFromRedeem(ctx, o, result.SubscriptionRedeemed)
 	}
-	return s.markCompleted(ctx, o, auditAction, emailCtx)
+	return s.markCompleted(ctx, o, lease, auditAction, emailCtx)
 }
 
 func isNinePlusTransientFulfillmentError(err error) bool {
 	return infraerrors.Reason(err) == "NINEPLUS_UPSTREAM_ERROR"
 }
 
-func (s *PaymentService) releaseNinePlusFulfillmentLock(ctx context.Context, oid int64) {
+func (s *PaymentService) releaseNinePlusFulfillmentLock(ctx context.Context, oid int64, lease *paymentFulfillmentLease) {
+	if lease == nil {
+		return
+	}
 	if _, err := s.entClient.PaymentOrder.Update().
-		Where(paymentorder.IDEQ(oid), paymentorder.StatusEQ(OrderStatusRecharging)).
+		Where(
+			paymentorder.IDEQ(oid),
+			paymentorder.StatusEQ(OrderStatusRecharging),
+			paymentorder.UpdatedAtEQ(lease.version),
+		).
 		SetStatus(OrderStatusPaid).
 		Save(ctx); err != nil {
 		slog.Warn("release nineplus fulfillment lock failed", "orderID", oid, "error", err)
