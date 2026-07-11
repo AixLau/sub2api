@@ -3,6 +3,7 @@ package repository
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -122,15 +123,15 @@ func (c *contentModerationPassCache) StorePASS(ctx context.Context, opts service
 	_, _ = pipe.Exec(ctx)
 }
 
-func (c *contentModerationPassCache) DeletePASS(ctx context.Context, opts service.ContentModerationPassCacheOptions, keys []string) {
+func (c *contentModerationPassCache) DeletePASS(ctx context.Context, opts service.ContentModerationPassCacheOptions, keys []string) error {
 	if !opts.Enabled || c == nil || c.rdb == nil || len(keys) == 0 {
-		return
+		return nil
 	}
 	redisKeys := make([]string, 0, len(keys))
 	for _, key := range keys {
 		redisKeys = append(redisKeys, moderationCacheKey("pass", opts.KeyVersion, key))
 	}
-	_ = c.rdb.Del(ctx, redisKeys...).Err()
+	return c.rdb.Del(ctx, redisKeys...).Err()
 }
 
 func (c *contentModerationPassCache) LookupQuarantine(ctx context.Context, opts service.ContentModerationPassCacheOptions, keys []string) (map[string]service.ContentModerationQuarantineEntry, error) {
@@ -208,7 +209,8 @@ func (c *contentModerationPassCache) DeleteQuarantine(ctx context.Context, opts 
 }
 
 func comparisonKey(correlationID string) string {
-	return "moderation:comparison:v1:" + strings.TrimSpace(correlationID)
+	digest := sha256.Sum256([]byte(strings.TrimSpace(correlationID)))
+	return fmt.Sprintf("moderation:comparison:v1:%x", digest)
 }
 
 func (c *contentModerationPassCache) GetComparisonMetadata(ctx context.Context, correlationID string) (*service.ContentModerationComparisonMetadata, error) {
@@ -223,7 +225,7 @@ func (c *contentModerationPassCache) GetComparisonMetadata(ctx context.Context, 
 		return nil, err
 	}
 	var metadata service.ContentModerationComparisonMetadata
-	if err := json.Unmarshal(data, &metadata); err != nil {
+	if err := decodeStrictJSON(data, &metadata); err != nil {
 		return nil, err
 	}
 	if err := validateComparisonMetadata(metadata, len(data)); err != nil {
@@ -233,6 +235,9 @@ func (c *contentModerationPassCache) GetComparisonMetadata(ctx context.Context, 
 }
 
 func validateComparisonMetadata(metadata service.ContentModerationComparisonMetadata, encodedBytes int) error {
+	if metadata.SchemaVersion != moderationCacheSchemaVersion {
+		return fmt.Errorf("invalid moderation comparison schema version")
+	}
 	if len(metadata.ChunkKeys) > maxComparisonChunkKeys || len(metadata.RiskTypes) > maxComparisonRiskTypes || encodedBytes > maxComparisonMetadataBytes {
 		return fmt.Errorf("moderation comparison metadata exceeds bounds")
 	}
@@ -243,6 +248,7 @@ func (c *contentModerationPassCache) StoreComparisonMetadata(ctx context.Context
 	if c == nil || c.rdb == nil || strings.TrimSpace(correlationID) == "" {
 		return nil
 	}
+	metadata.SchemaVersion = moderationCacheSchemaVersion
 	data, err := json.Marshal(metadata)
 	if err != nil {
 		return err

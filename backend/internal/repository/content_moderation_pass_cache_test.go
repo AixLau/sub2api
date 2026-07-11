@@ -66,7 +66,7 @@ func TestContentModerationPassCache(t *testing.T) {
 		_, err := cache.LookupPASS(ctx, disabled, []string{"x"})
 		require.NoError(t, err)
 		cache.StorePASS(ctx, disabled, []string{"x"})
-		cache.DeletePASS(ctx, disabled, []string{"x"})
+		require.NoError(t, cache.DeletePASS(ctx, disabled, []string{"x"}))
 		require.Equal(t, before, mr.CommandCount())
 	})
 
@@ -81,7 +81,9 @@ func TestContentModerationPassCache(t *testing.T) {
 		stored, err := cache.GetComparisonMetadata(ctx, "req-correlation")
 		require.NoError(t, err)
 		require.Equal(t, meta.RequestID, stored.RequestID)
-		require.InDelta(t, (30 * 24 * time.Hour).Seconds(), mr.TTL("moderation:comparison:v1:req-correlation").Seconds(), 1)
+		comparisonRedisKey := comparisonKey("req-correlation")
+		require.NotContains(t, comparisonRedisKey, "req-correlation")
+		require.InDelta(t, (30 * 24 * time.Hour).Seconds(), mr.TTL(comparisonRedisKey).Seconds(), 1)
 
 		mr.Set("moderation:quarantine:v1:7:bad", "bad-json")
 		got, err = cache.LookupQuarantine(ctx, opts, []string{"request-digest", "bad"})
@@ -105,21 +107,46 @@ func TestContentModerationPassCache(t *testing.T) {
 
 		oversizedJSON, err := json.Marshal(tooManyChunks)
 		require.NoError(t, err)
-		mr.Set("moderation:comparison:v1:corrupt-oversized", string(oversizedJSON))
+		mr.Set(comparisonKey("corrupt-oversized"), string(oversizedJSON))
 		_, err = cache.GetComparisonMetadata(ctx, "corrupt-oversized")
 		require.Error(t, err)
+	})
+
+	t.Run("pass deletion reports failure", func(t *testing.T) {
+		deadRedis := miniredis.RunT(t)
+		deadClient := redis.NewClient(&redis.Options{Addr: deadRedis.Addr(), MaxRetries: -1})
+		deadCache := NewContentModerationPassCache(deadClient)
+		deadRedis.Close()
+		deleteCtx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		require.Error(t, deadCache.DeletePASS(deleteCtx, opts, []string{"digest"}))
 	})
 
 	t.Run("cache values contain no content or identity fields", func(t *testing.T) {
 		cache.StorePASS(ctx, opts, []string{"privacy-digest"})
 		require.NoError(t, cache.StoreQuarantine(ctx, opts, map[string]service.ContentModerationQuarantineEntry{"privacy-request": {}}))
-		for _, key := range []string{"moderation:pass:v1:7:privacy-digest", "moderation:quarantine:v1:7:privacy-request"} {
+		metadata := service.ContentModerationComparisonMetadata{RequestID: "request-opaque", DecisionID: "decision-opaque", RequestHMAC: "request-hmac", ChunkKeys: []string{"chunk-hmac"}}
+		require.NoError(t, cache.StoreComparisonMetadata(ctx, "correlation-secret", metadata))
+		comparisonRedisKey := comparisonKey("correlation-secret")
+		require.NotContains(t, comparisonRedisKey, "correlation-secret")
+		for _, key := range []string{"moderation:pass:v1:7:privacy-digest", "moderation:quarantine:v1:7:privacy-request", comparisonRedisKey} {
 			value, err := mr.Get(key)
 			require.NoError(t, err)
 			for _, forbidden := range []string{"prompt", "content", "verdict", "email", "user_id", "1914823683@qq.com"} {
 				require.NotContains(t, strings.ToLower(key+value), forbidden)
 			}
 		}
+		comparisonValue, err := mr.Get(comparisonRedisKey)
+		require.NoError(t, err)
+		var comparisonFields map[string]any
+		require.NoError(t, json.Unmarshal([]byte(comparisonValue), &comparisonFields))
+		require.Contains(t, comparisonFields, "schema_version")
+		comparisonFields["unexpected"] = true
+		corrupt, err := json.Marshal(comparisonFields)
+		require.NoError(t, err)
+		mr.Set(comparisonRedisKey, string(corrupt))
+		_, err = cache.GetComparisonMetadata(ctx, "correlation-secret")
+		require.Error(t, err)
 	})
 
 	t.Run("connection failure is not a cache miss", func(t *testing.T) {

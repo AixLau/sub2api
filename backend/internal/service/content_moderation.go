@@ -842,6 +842,7 @@ type ContentModerationQuarantineEntry struct {
 }
 
 type ContentModerationComparisonMetadata struct {
+	SchemaVersion        int       `json:"schema_version"`
 	RequestID            string    `json:"request_id"`
 	DecisionID           string    `json:"decision_id"`
 	RequestHMAC          string    `json:"request_hmac"`
@@ -863,7 +864,7 @@ type ContentModerationComparisonMetadata struct {
 type ContentModerationPassCache interface {
 	LookupPASS(ctx context.Context, opts ContentModerationPassCacheOptions, keys []string) (map[string]bool, error)
 	StorePASS(ctx context.Context, opts ContentModerationPassCacheOptions, keys []string)
-	DeletePASS(ctx context.Context, opts ContentModerationPassCacheOptions, keys []string)
+	DeletePASS(ctx context.Context, opts ContentModerationPassCacheOptions, keys []string) error
 	LookupQuarantine(ctx context.Context, opts ContentModerationPassCacheOptions, keys []string) (map[string]ContentModerationQuarantineEntry, error)
 	StoreQuarantine(ctx context.Context, opts ContentModerationPassCacheOptions, entries map[string]ContentModerationQuarantineEntry) error
 	DeleteQuarantine(ctx context.Context, opts ContentModerationPassCacheOptions, keys []string) error
