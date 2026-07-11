@@ -101,6 +101,52 @@ func TestExtractionCompletenessUnsupportedNestedRequiredValues(t *testing.T) {
 	}
 }
 
+func TestExtractionCompletenessRejectsUnknownContentShapes(t *testing.T) {
+	tests := []struct{ name, protocol, body string }{
+		{"chat future block", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":[{"type":"future_text","text":"unsafe"}]}]}`},
+		{"responses future block", ContentModerationProtocolOpenAIResponses, `{"input":[{"role":"user","content":[{"type":"future_text","text":"unsafe"}]}]}`},
+		{"anthropic future block", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"future_text","text":"unsafe"}]}]}`},
+		{"responses future item", ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"future_text","text":"unsafe"}]}`},
+		{"chat tool call missing function", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":"safe","tool_calls":[{"type":"function"}]}]}`},
+		{"chat function call missing arguments", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":"safe","function_call":{"name":"run"}}]}`},
+		{"gemini camel response scalar", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"functionResponse":42}]}]}`},
+		{"gemini snake response scalar", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"function_response":false}]}]}`},
+		{"gemini camel call scalar", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"functionCall":"bad"}]}]}`},
+		{"gemini snake call scalar", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"function_call":42}]}]}`},
+		{"gemini snake system scalar", ContentModerationProtocolGemini, `{"system_instruction":42,"contents":[]}`},
+		{"gemini camel system scalar", ContentModerationProtocolGemini, `{"systemInstruction":false,"contents":[]}`},
+		{"gemini system parts scalar", ContentModerationProtocolGemini, `{"system_instruction":{"parts":[42,{"text":"unsafe"}]},"contents":[]}`},
+		{"chat scalar tools", ContentModerationProtocolOpenAIChat, `{"tools":42,"messages":[]}`},
+		{"responses scalar instructions", ContentModerationProtocolOpenAIResponses, `{"instructions":false,"input":"safe"}`},
+		{"anthropic scalar tool choice", ContentModerationProtocolAnthropicMessages, `{"tool_choice":42,"messages":[]}`},
+		{"gemini scalar tools", ContentModerationProtocolGemini, `{"tools":42,"contents":[]}`},
+		{"anthropic malformed image source", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"image","source":42}]}]}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ExtractContentModerationInput(tt.protocol, []byte(tt.body))
+			require.True(t, got.Truncated)
+			require.Contains(t, got.TruncateReasons, "unsupported_required_value")
+		})
+	}
+}
+
+func TestExtractionCompletenessAcceptsEveryKnownContentShape(t *testing.T) {
+	tests := []struct{ name, protocol, body string }{
+		{"chat text and image", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":[{"type":"text","text":"ok"},{"type":"image_url","image_url":{"url":"https://example.test/a.png"}}]}]}`},
+		{"responses input text and image", ContentModerationProtocolOpenAIResponses, `{"input":[{"role":"user","content":[{"type":"input_text","text":"ok"},{"type":"input_image","image_url":"https://example.test/a.png"}]}]}`},
+		{"anthropic text image tools", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"text","text":"ok"},{"type":"image","source":{"media_type":"image/png","data":"aA=="}},{"type":"tool_use","name":"run","input":{"n":1}},{"type":"tool_result","content":{"value":"ok"}}]}]}`},
+		{"gemini all parts", ContentModerationProtocolGemini, `{"systemInstruction":{"parts":[{"text":"sys"}]},"contents":[{"role":"user","parts":[{"text":"ok"},{"functionCall":{"name":"run","args":{"n":1}}},{"function_response":{"response":{"value":"ok"}}},{"inlineData":{"mimeType":"image/png","data":"aA=="}}]}]}`},
+		{"chat model context", ContentModerationProtocolOpenAIChat, `{"instructions":"sys","tools":[{"type":"function","function":{"name":"run"}}],"messages":[]}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ExtractContentModerationInput(tt.protocol, []byte(tt.body))
+			require.False(t, got.Truncated, got.TruncateReasons)
+		})
+	}
+}
+
 func TestExtractionCompletenessProductionSourcesFeedCanonicalizer(t *testing.T) {
 	body := []byte(`{"messages":[{"role":" Foo.Bar ","content":"  Ａ  \t keep <system-reminder>raw</system-reminder> "},{"role":"","content":" duplicate  text "},{"role":"","content":" duplicate  text "},{"role":"tool","content":{"result":"two"}}]}`)
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)

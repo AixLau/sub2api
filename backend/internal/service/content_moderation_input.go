@@ -174,10 +174,24 @@ func validateModerationProtocolShape(protocol string, body []byte, state *toolRe
 			state.markTruncated("unsupported_required_value")
 			return
 		}
+		typ := strings.ToLower(strings.TrimSpace(value.Get("type").String()))
+		switch typ {
+		case "", "text", "input_text", "output_text", "message", "image_url", "input_image", "image", "tool_result", "tool_use":
+		default:
+			state.markTruncated("unsupported_required_value")
+			return
+		}
+		if typ == "image" || typ == "input_image" || typ == "image_url" {
+			if source := value.Get("source"); source.Exists() && !source.IsObject() {
+				state.markTruncated("unsupported_required_value")
+			}
+			if imageURL := value.Get("image_url"); imageURL.Exists() && imageURL.Type != gjson.String && !imageURL.IsObject() {
+				state.markTruncated("unsupported_required_value")
+			}
+		}
 		if text := value.Get("text"); text.Exists() && text.Type != gjson.String {
 			state.markTruncated("unsupported_required_value")
 		}
-		typ := strings.ToLower(strings.TrimSpace(value.Get("type").String()))
 		if content := value.Get("content"); content.Exists() {
 			if typ == "tool_result" {
 				validateToolRoot(content)
@@ -211,7 +225,7 @@ func validateModerationProtocolShape(protocol string, body []byte, state *toolRe
 					state.markTruncated("unsupported_required_value")
 				} else {
 					calls.ForEach(func(_, call gjson.Result) bool {
-						if !call.IsObject() || (call.Get("function").Exists() && !call.Get("function").IsObject()) {
+						if !call.IsObject() || !call.Get("function").IsObject() || !call.Get("function.arguments").Exists() {
 							state.markTruncated("unsupported_required_value")
 							return true
 						}
@@ -221,7 +235,7 @@ func validateModerationProtocolShape(protocol string, body []byte, state *toolRe
 				}
 			}
 			if call := message.Get("function_call"); call.Exists() {
-				if !call.IsObject() {
+				if !call.IsObject() || !call.Get("arguments").Exists() {
 					state.markTruncated("unsupported_required_value")
 				} else {
 					validateToolRoot(call.Get("arguments"))
@@ -232,11 +246,20 @@ func validateModerationProtocolShape(protocol string, body []byte, state *toolRe
 	}
 	switch protocol {
 	case ContentModerationProtocolOpenAIChat:
+		for _, path := range []string{"instructions", "tools", "functions", "tool_choice", "response_format"} {
+			validateToolRoot(root.Get(path))
+		}
 		validateMessages("messages")
 	case ContentModerationProtocolAnthropicMessages, ContentModerationProtocolOpenAIMessages:
 		validateContent(root.Get("system"))
+		for _, path := range []string{"tools", "tool_choice", "output_format"} {
+			validateToolRoot(root.Get(path))
+		}
 		validateMessages("messages")
 	case ContentModerationProtocolOpenAIResponses:
+		for _, path := range []string{"instructions", "developer", "system", "tools", "tool_choice", "text.format", "response_format"} {
+			validateToolRoot(root.Get(path))
+		}
 		input := root.Get("input")
 		markUnsupported(input, "string", "array", "object")
 		validateResponseItem := func(item gjson.Result) {
@@ -257,6 +280,12 @@ func validateModerationProtocolShape(protocol string, body []byte, state *toolRe
 				validateToolRoot(item.Get("input"))
 				validateToolRoot(item.Get("parameters"))
 			default:
+				switch typ {
+				case "", "message", "input_text", "output_text":
+				default:
+					state.markTruncated("unsupported_required_value")
+					return
+				}
 				validateContent(item.Get("content"))
 			}
 		}
@@ -269,28 +298,89 @@ func validateModerationProtocolShape(protocol string, body []byte, state *toolRe
 			validateResponseItem(input)
 		}
 	case ContentModerationProtocolGemini:
+		for _, path := range []string{"tools", "toolConfig", "tool_config", "generationConfig.responseSchema", "generationConfig.responseJsonSchema", "generation_config.response_schema", "generation_config.response_json_schema"} {
+			validateToolRoot(root.Get(path))
+		}
+		validateGeminiPart := func(part gjson.Result) {
+			if !part.IsObject() {
+				state.markTruncated("unsupported_required_value")
+				return
+			}
+			recognized := false
+			if text := part.Get("text"); text.Exists() {
+				recognized = true
+				if text.Type != gjson.String {
+					state.markTruncated("unsupported_required_value")
+				}
+			}
+			for _, path := range []string{"functionResponse", "function_response"} {
+				container := part.Get(path)
+				if !container.Exists() {
+					continue
+				}
+				recognized = true
+				if !container.IsObject() {
+					state.markTruncated("unsupported_required_value")
+					continue
+				}
+				validateToolRoot(container.Get("response"))
+			}
+			for _, path := range []string{"functionCall", "function_call"} {
+				container := part.Get(path)
+				if !container.Exists() {
+					continue
+				}
+				recognized = true
+				if !container.IsObject() {
+					state.markTruncated("unsupported_required_value")
+					continue
+				}
+				validateToolRoot(container.Get("args"))
+			}
+			for _, path := range []string{"inlineData", "inline_data", "fileData", "file_data"} {
+				container := part.Get(path)
+				if !container.Exists() {
+					continue
+				}
+				recognized = true
+				if !container.IsObject() {
+					state.markTruncated("unsupported_required_value")
+				}
+			}
+			if !recognized {
+				state.markTruncated("unsupported_required_value")
+			}
+		}
+		validateSystemInstruction := func(value gjson.Result) {
+			if !value.Exists() {
+				return
+			}
+			if value.IsObject() && value.Get("parts").Exists() {
+				parts := value.Get("parts")
+				if !parts.IsArray() {
+					state.markTruncated("unsupported_required_value")
+					return
+				}
+				parts.ForEach(func(_, part gjson.Result) bool {
+					validateGeminiPart(part)
+					return true
+				})
+				return
+			}
+			validateContent(value)
+		}
+		validateSystemInstruction(root.Get("system_instruction"))
+		validateSystemInstruction(root.Get("systemInstruction"))
 		contents := root.Get("contents")
 		if contents.Exists() && !contents.IsArray() {
 			state.markTruncated("unsupported_required_value")
 		}
 		contents.ForEach(func(_, content gjson.Result) bool {
-			if !content.IsObject() || (content.Get("parts").Exists() && !content.Get("parts").IsArray()) {
+			if !content.IsObject() || !content.Get("parts").Exists() || !content.Get("parts").IsArray() {
 				state.markTruncated("unsupported_required_value")
 			}
 			content.Get("parts").ForEach(func(_, part gjson.Result) bool {
-				if !part.IsObject() {
-					state.markTruncated("unsupported_required_value")
-					return true
-				}
-				if text := part.Get("text"); text.Exists() && text.Type != gjson.String {
-					state.markTruncated("unsupported_required_value")
-				}
-				for _, path := range []string{"functionResponse.response", "function_response.response"} {
-					validateToolRoot(part.Get(path))
-				}
-				for _, path := range []string{"functionCall.args", "function_call.args"} {
-					validateToolRoot(part.Get(path))
-				}
+				validateGeminiPart(part)
 				return true
 			})
 			return true
