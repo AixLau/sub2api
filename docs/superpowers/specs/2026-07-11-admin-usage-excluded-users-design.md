@@ -53,9 +53,9 @@ Selecting a search result adds its ID if it is not already present, records its 
 
 Selected IDs render below the search field as wrapping labels. A known user displays `email` with `#ID` as secondary text and preserves the existing deleted-user badge. An unknown or manually entered ID displays `#ID`. Each label has an icon button with a translated accessible name that removes only that ID and emits one filter change.
 
-The search input's clear action clears only the current keyword. Page reset clears all selected IDs through the existing parent filter reset. On external filter changes, the component removes metadata for IDs that are no longer selected but never rewrites the search keyword into an ID list.
+The search input's clear action clears only the current keyword and invalidates the current autocomplete request. Page reset clears all selected IDs through the existing parent filter reset. When the selected ID list becomes empty through reset, the picker also invalidates the search generation, clears keyword/results/metadata, closes the dropdown, and ends its loading state. A response from a search started before reset cannot repopulate the picker. On other external filter changes, the component removes metadata for IDs that are no longer selected but never rewrites the search keyword into an ID list.
 
-For backward compatibility, blurring or pressing Enter on input made entirely of comma/whitespace-separated positive integers adds those IDs and clears the keyword. Arbitrary text is treated only as a search keyword and is never converted into a filter without selecting a result.
+For backward compatibility, blurring or pressing Enter on input made entirely of comma/whitespace-separated positive integers appends all parsed IDs to the current selection in one atomic operation, deduplicates them while preserving the current order, and clears the keyword. It emits exactly one filter change only when at least one new ID was added. An all-duplicate submission clears the keyword without emitting. Enter commits and clears the keyword before a subsequent blur, so the blur is a no-op rather than a second submission. Arbitrary text is treated only as a search keyword and is never converted into a filter without selecting a result.
 
 ### Usage Analytics Page
 
@@ -67,9 +67,18 @@ For backward compatibility, blurring or pressing Enter on input made entirely of
 - dashboard trend and group snapshot;
 - user-ranking and distribution-chart breakdown filters.
 
-The statistics request owns a loading flag that is passed to `UsageStatsCards`. While a new filtered request is active, the cards show a stable loading presentation instead of presenting old values as current. Only the newest request may replace the totals. If that request fails, the stored statistics are cleared.
+The statistics request owns `loading` and `failed` state passed to `UsageStatsCards`. While a new filtered request is active, the cards show stable skeleton placeholders instead of presenting old values as current. Only the newest request may replace the totals. If that request fails, the stored statistics are cleared and the cards render an explicit translated failed-to-load state with em-dash values; a valid empty response still renders numeric zeroes.
 
-The snapshot request already has request sequencing. Its latest-request failure additionally clears trend and group arrays. Model-stat failures continue to clear only the affected model source. Existing loading states hide old chart content while replacement data is pending.
+Every usage-page request surface follows newest-only application:
+
+- the usage list keeps its existing abort-controller ownership;
+- statistics and endpoint distributions share the statistics generation;
+- trend and group distributions share the snapshot generation;
+- requested, upstream, and mapping model distributions use independent per-source generations so concurrent or lazy source loads cannot invalidate one another;
+- `UserTokenRanking` keeps its own generation and filter watcher;
+- expanded model/group/endpoint breakdowns use the generations described below.
+
+Starting a new generation hides old content behind the existing loading presentation. A latest statistics failure clears totals and every endpoint source. A latest snapshot failure clears trend and group arrays. A latest model failure clears only that model source. A latest ranking failure clears ranking rows. Chart and ranking failures intentionally use their existing empty/no-data presentation after clearing; this scope adds no new chart error UI. Existing error logging remains. Obsolete successes and failures do not change loading, data, or failure state.
 
 ### Expanded Distribution Breakdowns
 
@@ -96,6 +105,8 @@ A breakdown response may update the UI only when its sequence is current and the
 - Deleted users remain selectable and visibly marked.
 - Unknown externally supplied IDs remain removable through their `#ID` fallback labels.
 - Invalid free text does not erase existing selections or emit a malformed filter.
+- Reset and clear invalidate pending autocomplete work before clearing picker UI.
+- Manual IDs append atomically; all-duplicate input and Enter-followed-by-blur do not emit redundant changes.
 - A stale request cannot replace statistics, chart arrays, or expanded breakdown data.
 - A failed latest request cannot leave pre-filter values presented as the current result.
 
@@ -108,10 +119,12 @@ Focused component tests will cover:
 - selecting multiple email results renders email-first labels while retaining numeric filter IDs;
 - duplicate selection does not duplicate IDs or emit a redundant change;
 - removing one label preserves the other selections;
-- manual numeric IDs use the fallback label and external reset removes stale labels;
+- manual numeric IDs append atomically, use the fallback label, emit once across Enter/blur, and do not emit for all-duplicate input;
+- reset/clear invalidates a deferred autocomplete response and removes keyword, results, labels, metadata, dropdown, and loading state;
 - the usage page sends the same serialized exclusions to list, statistics, model, snapshot, export/breakdown props, and ranking consumers;
-- statistics loading and latest-request failure never present old totals as current;
-- snapshot failure clears old trend/group data;
+- statistics loading uses placeholders, valid empty results render zeroes, and latest-request failure renders the explicit failed state instead of old totals;
+- latest failures clear endpoint sources, trend/group data, each model source, and ranking rows according to their request ownership;
+- obsolete list, statistics, endpoint, snapshot, model-source, and ranking responses cannot restore pre-filter data or end a newer loading state;
 - each distribution chart reloads an expanded row when exclusions change;
 - each distribution chart ignores a deferred response from the previous filter generation.
 
