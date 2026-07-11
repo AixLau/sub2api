@@ -654,6 +654,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	// Set common headers
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+authToken)
+	req.Header.Set("User-Agent", resolveOpenAICodexUpstreamUserAgent(ctx, credentialAccount, s.settingService))
 
 	// Set OAuth-specific headers for ChatGPT internal API
 	if isOAuth {
@@ -666,7 +667,6 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		enforceCodexIdentityHeaders(req.Header)
 	}
 
-	req.Header.Set("User-Agent", resolveOpenAICodexUpstreamUserAgent(ctx, credentialAccount, s.settingService))
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	credentialAccount.ApplyHeaderOverrides(req.Header)
 

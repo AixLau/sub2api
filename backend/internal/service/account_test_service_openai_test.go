@@ -137,6 +137,29 @@ func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.
 	require.Contains(t, recorder.Body.String(), "test_complete")
 }
 
+func TestAccountTestService_OpenAIOAuthAccountTestConfiguredUserAgentIdentity(t *testing.T) {
+	ctx, _ := newTestContext()
+	resp := newJSONResponse(http.StatusOK, "data: {\"type\":\"response.completed\"}\n\n")
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{httpUpstream: upstream}
+	account := &Account{
+		ID:          96,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "test-token",
+			"user_agent":   "codex_vscode/1.0",
+		},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.4", "", "")
+	require.NoError(t, err)
+	require.Len(t, upstream.requests, 1)
+	require.Equal(t, "codex_vscode/1.0", upstream.requests[0].Header.Get("User-Agent"))
+	require.Equal(t, "codex_vscode", upstream.requests[0].Header.Get("Originator"))
+}
+
 func TestAccountTestService_OpenAISuccessIncludesTimingMetrics(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, recorder := newTestContext()
