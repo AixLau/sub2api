@@ -200,31 +200,42 @@ func (p *moderationProviderAdapter) decodeOpenAI(body io.Reader) (ProviderModera
 
 func (p *moderationProviderAdapter) decodeZhipu(body io.Reader) (ProviderModerationResult, error) {
 	type result struct {
-		RiskLevel *string            `json:"risk_level"`
-		RiskTypes *[]json.RawMessage `json:"risk_types"`
+		ContentType string             `json:"content_type"`
+		RiskLevel   *string            `json:"risk_level"`
+		RiskType    *[]json.RawMessage `json:"risk_type"`
+		RiskTypes   *[]json.RawMessage `json:"risk_types"`
 	}
 	var response struct {
-		ID        string   `json:"id"`
-		Created   int64    `json:"created"`
-		RequestID string   `json:"request_id"`
-		Results   []result `json:"results"`
+		ID         string   `json:"id"`
+		Created    int64    `json:"created"`
+		RequestID  string   `json:"request_id"`
+		ResultList []result `json:"result_list"`
+		Results    []result `json:"results"`
 	}
 	if err := decodeModerationJSON(body, &response); err != nil {
 		return ProviderModerationResult{}, p.providerError(ModerationProviderErrorSchema, 0, err)
 	}
-	if len(response.Results) != 1 {
+	results := response.ResultList
+	if len(results) == 0 {
+		results = response.Results
+	}
+	if len(results) != 1 {
 		return ProviderModerationResult{}, p.providerError(ModerationProviderErrorSchema, 0, errors.New("Zhipu moderation requires exactly one result"))
 	}
-	r := response.Results[0]
-	if r.RiskLevel == nil || r.RiskTypes == nil {
+	r := results[0]
+	riskTypes := r.RiskType
+	if riskTypes == nil {
+		riskTypes = r.RiskTypes
+	}
+	if r.RiskLevel == nil || riskTypes == nil {
 		return ProviderModerationResult{}, p.providerError(ModerationProviderErrorSchema, 0, errors.New("missing Zhipu moderation fields"))
 	}
 	level := ModerationLevel(*r.RiskLevel)
 	if level != ModerationLevelPass && level != ModerationLevelReview && level != ModerationLevelReject {
 		return ProviderModerationResult{}, p.providerError(ModerationProviderErrorSchema, 0, errors.New("unknown Zhipu risk level"))
 	}
-	values := make([]string, 0, len(*r.RiskTypes))
-	for _, raw := range *r.RiskTypes {
+	values := make([]string, 0, len(*riskTypes))
+	for _, raw := range *riskTypes {
 		var value string
 		if err := json.Unmarshal(raw, &value); err != nil {
 			return ProviderModerationResult{}, p.providerError(ModerationProviderErrorSchema, 0, err)
