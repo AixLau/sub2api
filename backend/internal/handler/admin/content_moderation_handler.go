@@ -32,8 +32,11 @@ type contentModerationConfigRequest struct {
 	RequestAuditTimeoutMS    *int                `json:"request_audit_timeout_ms"`
 	Enabled                  *bool               `json:"enabled"`
 	Mode                     *string             `json:"mode"`
+	Provider                 *string             `json:"provider"`
 	BaseURL                  *string             `json:"base_url"`
 	Model                    *string             `json:"model"`
+	PassCacheEnabled         *bool               `json:"pass_cache_enabled"`
+	PassCacheTTLSeconds      *int                `json:"pass_cache_ttl_seconds"`
 	APIKey                   *string             `json:"api_key"`
 	APIKeys                  *[]string           `json:"api_keys"`
 	APIKeysMode              string              `json:"api_keys_mode"`
@@ -75,6 +78,7 @@ type contentModerationConfigRequest struct {
 
 type contentModerationAPIKeyTestRequest struct {
 	APIKeys   []string `json:"api_keys"`
+	Provider  string   `json:"provider"`
 	BaseURL   string   `json:"base_url"`
 	Model     string   `json:"model"`
 	TimeoutMS int      `json:"timeout_ms"`
@@ -122,8 +126,11 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		RequestAuditTimeoutMS:          req.RequestAuditTimeoutMS,
 		Enabled:                        req.Enabled,
 		Mode:                           req.Mode,
+		Provider:                       req.Provider,
 		BaseURL:                        req.BaseURL,
 		Model:                          req.Model,
+		PassCacheEnabled:               req.PassCacheEnabled,
+		PassCacheTTLSeconds:            req.PassCacheTTLSeconds,
 		APIKey:                         req.APIKey,
 		APIKeys:                        req.APIKeys,
 		APIKeysMode:                    req.APIKeysMode,
@@ -175,6 +182,7 @@ func (h *ContentModerationHandler) TestAPIKeys(c *gin.Context) {
 	}
 	result, err := h.service.TestAPIKeys(c.Request.Context(), service.TestContentModerationAPIKeysInput{
 		APIKeys:   req.APIKeys,
+		Provider:  req.Provider,
 		BaseURL:   req.BaseURL,
 		Model:     req.Model,
 		TimeoutMS: req.TimeoutMS,
@@ -209,6 +217,10 @@ func (h *ContentModerationHandler) GetStatus(c *gin.Context) {
 		return
 	}
 	response.Success(c, status)
+}
+
+func (h *ContentModerationHandler) GetMetrics(c *gin.Context) {
+	h.service.ModerationMetricsHandler().ServeHTTP(c.Writer, c.Request)
 }
 
 func (h *ContentModerationHandler) ListLogs(c *gin.Context) {

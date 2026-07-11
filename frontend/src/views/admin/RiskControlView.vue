@@ -742,8 +742,12 @@
                 <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ modeDescription(configForm.mode) }}</p>
               </div>
               <div>
+				<label class="input-label">{{ t('admin.riskControl.provider') }}</label>
+				<Select v-model="configForm.provider" :options="providerOptions" @update:modelValue="onProviderChange" />
+			  </div>
+			  <div>
                 <label class="input-label">{{ t('admin.riskControl.baseUrl') }}</label>
-                <input v-model.trim="configForm.base_url" type="url" class="input" placeholder="https://api.openai.com" />
+				<input v-model.trim="configForm.base_url" type="url" class="input" :placeholder="configForm.provider === 'zhipu' ? 'https://open.bigmodel.cn/api' : 'https://api.openai.com'" />
               </div>
               <div>
                 <label class="input-label">{{ t('admin.riskControl.model') }}</label>
@@ -764,6 +768,17 @@
                   <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">%</span>
                 </div>
               </div>
+			  <div class="flex items-center justify-between rounded-lg border border-gray-100 p-4 dark:border-dark-700">
+				<div>
+				  <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.passCache') }}</p>
+				  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.passCacheHint') }}</p>
+				</div>
+				<Toggle v-model="configForm.pass_cache_enabled" />
+			  </div>
+			  <div>
+				<label class="input-label">{{ t('admin.riskControl.passCacheTtl') }}</label>
+				<input v-model.number="configForm.pass_cache_ttl_seconds" type="number" min="60" max="2592000" class="input" :disabled="!configForm.pass_cache_enabled" />
+			  </div>
             </div>
 
             <div class="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-800">
@@ -1741,6 +1756,7 @@ import type {
   ContentModerationTestAuditResult,
   KeywordBlockingMode,
   ModerationMode,
+  ModerationProvider,
   TestContentModerationKeywordsResponse,
   UpdateContentModerationConfig,
 } from '@/api/admin/riskControl'
@@ -1862,8 +1878,11 @@ const configForm = reactive({
 	resource_protection_status: null as ContentModerationConfig['resource_protection_status'] | null,
   enabled: false,
   mode: 'pre_block' as ModerationMode,
+  provider: 'openai' as ModerationProvider,
   base_url: 'https://api.openai.com',
   model: 'omni-moderation-latest',
+  pass_cache_enabled: false,
+  pass_cache_ttl_seconds: 86400,
   api_keys_text: '',
   api_key_configured: false,
   api_key_masked: '',
@@ -1948,6 +1967,21 @@ const modeOptions = computed<SelectOption[]>(() => [
   { value: 'observe', label: t('admin.riskControl.modeObserve') },
   { value: 'off', label: t('admin.riskControl.modeOff') },
 ])
+const providerOptions = computed<SelectOption[]>(() => [
+  { label: 'OpenAI', value: 'openai' },
+  { label: t('admin.riskControl.providerZhipu'), value: 'zhipu' },
+])
+
+function onProviderChange(value: string | number | boolean | null) {
+  const provider: ModerationProvider = value === 'zhipu' ? 'zhipu' : 'openai'
+  if (provider === 'zhipu') {
+    if (!configForm.base_url || configForm.base_url === 'https://api.openai.com') configForm.base_url = 'https://open.bigmodel.cn/api'
+    if (!configForm.model || configForm.model === 'omni-moderation-latest') configForm.model = 'moderation'
+    return
+  }
+  if (!configForm.base_url || configForm.base_url === 'https://open.bigmodel.cn/api') configForm.base_url = 'https://api.openai.com'
+  if (!configForm.model || configForm.model === 'moderation') configForm.model = 'omni-moderation-latest'
+}
 
 const keywordBlockingModeOptions = computed<Array<{ value: KeywordBlockingMode; label: string; description: string }>>(() => [
   {
@@ -2763,8 +2797,11 @@ function applyConfig(config: ContentModerationConfig) {
 	configForm.resource_protection_status = config.resource_protection_status || null
   configForm.enabled = config.enabled
   configForm.mode = config.mode
+	configForm.provider = config.provider || 'openai'
   configForm.base_url = config.base_url || 'https://api.openai.com'
   configForm.model = config.model || 'omni-moderation-latest'
+	configForm.pass_cache_enabled = config.pass_cache_enabled ?? false
+	configForm.pass_cache_ttl_seconds = config.pass_cache_ttl_seconds || 86400
   configForm.api_keys_text = ''
   configForm.api_key_configured = config.api_key_configured
   configForm.api_key_masked = config.api_key_masked || ''
@@ -2908,8 +2945,11 @@ async function saveConfig() {
 	  request_audit_timeout_ms: Number(configForm.request_audit_timeout_ms),
       enabled: configForm.enabled,
       mode: configForm.mode,
+	  provider: configForm.provider,
       base_url: configForm.base_url,
       model: configForm.model,
+	  pass_cache_enabled: configForm.pass_cache_enabled,
+	  pass_cache_ttl_seconds: Number(configForm.pass_cache_ttl_seconds) || 86400,
       timeout_ms: Number(configForm.timeout_ms) || 3000,
       retry_count: Number(configForm.retry_count) || 0,
       sample_rate: Number(configForm.sample_rate) || 0,
@@ -3158,6 +3198,7 @@ async function testApiKeys(useInputKeys: boolean) {
   try {
     const result = await adminAPI.riskControl.testAPIKeys({
       api_keys: keys,
+	  provider: configForm.provider,
       base_url: configForm.base_url,
       model: configForm.model,
       timeout_ms: Number(configForm.timeout_ms) || 3000,

@@ -48,10 +48,22 @@ func ProvideContentModerationService(
 	userRepo UserRepository,
 	authCacheInvalidator APIKeyAuthCacheInvalidator,
 	emailService *EmailService,
+	passCache ContentModerationPassCache,
+	feedbackEpochRepo ModerationFeedbackEpochRepository,
 	encryptor SecretEncryptor,
+	cfg *config.Config,
 	buildInfo BuildInfo,
 ) *ContentModerationService {
 	svc := NewContentModerationService(settingRepo, repo, hashCache, groupRepo, userRepo, authCacheInvalidator, emailService, accountRepo)
+	key, _ := cfg.Moderation.CacheHMACKeyBytes()
+	svc.SetIncrementalModerationDependencies(
+		passCache,
+		feedbackEpochRepo,
+		NewRestrictedModerationClientFactory(cfg.Moderation.AllowedHosts),
+		key,
+		cfg.Moderation.CacheHMACKeyVersion,
+	)
+	svc.SetModerationMetrics(NewContentModerationMetrics())
 	svc.SetOutboxRepository(outboxRepo)
 	if rawStore, ok := repo.(ContentModerationRawRequestSnapshotStore); ok {
 		svc.SetRawRequestSnapshotStore(rawStore, encryptor)

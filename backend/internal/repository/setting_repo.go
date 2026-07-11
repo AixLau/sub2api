@@ -2,12 +2,76 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
+	"math"
+	"strconv"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
+
+const moderationFeedbackEpochSettingKey = "moderation_feedback_epoch"
+
+type moderationFeedbackEpochRepository struct{ db *sql.DB }
+
+func NewModerationFeedbackEpochRepository(db *sql.DB) service.ModerationFeedbackEpochRepository {
+	return &moderationFeedbackEpochRepository{db: db}
+}
+
+func (r *moderationFeedbackEpochRepository) GetModerationFeedbackEpoch(ctx context.Context) (uint64, error) {
+	var value string
+	err := r.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = $1`, moderationFeedbackEpochSettingKey).Scan(&value)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	epoch, err := strconv.ParseUint(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid moderation feedback epoch: %w", err)
+	}
+	return epoch, nil
+}
+
+func (r *moderationFeedbackEpochRepository) IncrementModerationFeedbackEpoch(ctx context.Context) (uint64, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO settings (key, value, updated_at) VALUES ($1, '0', NOW())
+		ON CONFLICT (key) DO NOTHING`, moderationFeedbackEpochSettingKey); err != nil {
+		return 0, err
+	}
+
+	var value string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT value FROM settings WHERE key = $1 FOR UPDATE`, moderationFeedbackEpochSettingKey).Scan(&value); err != nil {
+		return 0, err
+	}
+	epoch, err := strconv.ParseUint(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid moderation feedback epoch: %w", err)
+	}
+	if epoch == math.MaxUint64 {
+		return 0, fmt.Errorf("invalid moderation feedback epoch: uint64 overflow")
+	}
+	epoch++
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE settings SET value = $1, updated_at = NOW() WHERE key = $2`, strconv.FormatUint(epoch, 10), moderationFeedbackEpochSettingKey); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return epoch, nil
+}
 
 type settingRepository struct {
 	client *ent.Client

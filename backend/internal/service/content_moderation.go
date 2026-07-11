@@ -225,8 +225,11 @@ type ContentModerationConfig struct {
 	ResourceProtectionConfig
 	Enabled              bool                                   `json:"enabled"`
 	Mode                 string                                 `json:"mode"`
+	Provider             string                                 `json:"provider,omitempty"`
 	BaseURL              string                                 `json:"base_url"`
 	Model                string                                 `json:"model"`
+	PassCacheEnabled     bool                                   `json:"pass_cache_enabled,omitempty"`
+	PassCacheTTLSeconds  int                                    `json:"pass_cache_ttl_seconds,omitempty"`
 	APIKey               string                                 `json:"api_key,omitempty"`
 	APIKeys              []string                               `json:"api_keys,omitempty"`
 	TimeoutMS            int                                    `json:"timeout_ms"`
@@ -270,8 +273,11 @@ type ContentModerationConfigView struct {
 	ResourceProtectionStatus       ResourceProtectionStatus               `json:"resource_protection_status"`
 	Enabled                        bool                                   `json:"enabled"`
 	Mode                           string                                 `json:"mode"`
+	Provider                       string                                 `json:"provider"`
 	BaseURL                        string                                 `json:"base_url"`
 	Model                          string                                 `json:"model"`
+	PassCacheEnabled               bool                                   `json:"pass_cache_enabled"`
+	PassCacheTTLSeconds            int                                    `json:"pass_cache_ttl_seconds"`
 	APIKeyConfigured               bool                                   `json:"api_key_configured"`
 	APIKeyMasked                   string                                 `json:"api_key_masked"`
 	APIKeyCount                    int                                    `json:"api_key_count"`
@@ -365,6 +371,7 @@ type ContentModerationAPIKeyLoad struct {
 
 type TestContentModerationAPIKeysInput struct {
 	APIKeys   []string `json:"api_keys"`
+	Provider  string   `json:"provider"`
 	BaseURL   string   `json:"base_url"`
 	Model     string   `json:"model"`
 	TimeoutMS int      `json:"timeout_ms"`
@@ -399,8 +406,11 @@ type UpdateContentModerationConfigInput struct {
 	RequestAuditTimeoutMS          *int                                    `json:"request_audit_timeout_ms"`
 	Enabled                        *bool                                   `json:"enabled"`
 	Mode                           *string                                 `json:"mode"`
+	Provider                       *string                                 `json:"provider"`
 	BaseURL                        *string                                 `json:"base_url"`
 	Model                          *string                                 `json:"model"`
+	PassCacheEnabled               *bool                                   `json:"pass_cache_enabled"`
+	PassCacheTTLSeconds            *int                                    `json:"pass_cache_ttl_seconds"`
 	APIKey                         *string                                 `json:"api_key"`
 	APIKeys                        *[]string                               `json:"api_keys"`
 	APIKeysMode                    string                                  `json:"api_keys_mode"`
@@ -502,20 +512,23 @@ type ContentModerationInput struct {
 	Text            string
 	Images          []string
 	Sources         []ContentModerationInputSource
+	Extraction      ModerationExtraction
 	Truncated       bool
 	TruncateReasons []string
 }
 
 type ContentModerationInputSource struct {
-	Source string
-	Text   string
+	Source   string
+	Role     string
+	Text     string
+	rawParts []string
 }
 
 func (in *ContentModerationInput) Normalize() {
 	if in == nil {
 		return
 	}
-	in.Text = trimRunes(normalizeContentModerationText(in.Text), maxModerationInputRunes)
+	in.Text = trimRunes(stripKnownSystemReminderBlocks(in.Text), maxModerationInputRunes)
 	in.Images = normalizeModerationImages(in.Images)
 	in.Sources = normalizeContentModerationInputSources(in.Sources)
 	in.TruncateReasons = normalizeContentModerationTruncateReasons(in.TruncateReasons)
@@ -811,6 +824,16 @@ type ContentModerationRuntimeStatus struct {
 	Enabled                      bool                                       `json:"enabled"`
 	RiskControlEnabled           bool                                       `json:"risk_control_enabled"`
 	Mode                         string                                     `json:"mode"`
+	Provider                     string                                     `json:"provider"`
+	Model                        string                                     `json:"model"`
+	PassCacheEnabled             bool                                       `json:"pass_cache_enabled"`
+	PassCacheAvailable           bool                                       `json:"pass_cache_available"`
+	PassCacheDegradedReason      string                                     `json:"pass_cache_degraded_reason,omitempty"`
+	PassCacheTTLSeconds          int                                        `json:"pass_cache_ttl_seconds"`
+	ChunkerVersion               string                                     `json:"chunker_version"`
+	ChunkMaxRunes                int                                        `json:"chunk_max_runes"`
+	ChunkOverlapRunes            int                                        `json:"chunk_overlap_runes"`
+	ChunkMaxCount                int                                        `json:"chunk_max_count"`
 	WorkerCount                  int                                        `json:"worker_count"`
 	MaxWorkers                   int                                        `json:"max_workers"`
 	ActiveWorkers                int                                        `json:"active_workers"`
@@ -892,46 +915,100 @@ type ContentModerationAccountScopeRepository interface {
 	GetByIDs(ctx context.Context, ids []int64) ([]*Account, error)
 }
 
+type ContentModerationPassCacheOptions struct {
+	Enabled    bool
+	KeyVersion uint64
+	TTL        time.Duration
+}
+
+type ContentModerationQuarantineEntry struct {
+	SchemaVersion int   `json:"schema_version"`
+	ExpiresAt     int64 `json:"expires_at"`
+}
+
+type ContentModerationComparisonMetadata struct {
+	SchemaVersion        int       `json:"schema_version"`
+	RequestID            string    `json:"request_id"`
+	DecisionID           string    `json:"decision_id"`
+	RequestHMAC          string    `json:"request_hmac"`
+	ChunkKeys            []string  `json:"chunk_keys"`
+	Provider             string    `json:"provider"`
+	Model                string    `json:"model"`
+	PolicyScope          string    `json:"policy_scope"`
+	AggregateLevel       string    `json:"aggregate_level"`
+	RiskTypes            []string  `json:"risk_types"`
+	TotalChunks          int       `json:"total_chunks"`
+	CachedChunks         int       `json:"cached_chunks"`
+	FreshChunks          int       `json:"fresh_chunks"`
+	CompletePASSEvidence bool      `json:"complete_pass_evidence"`
+	ForwardedUpstream    string    `json:"forwarded_upstream"`
+	ForwardedAt          time.Time `json:"forwarded_at"`
+	CorrelationDeadline  time.Time `json:"correlation_deadline"`
+}
+
+type ContentModerationPassCache interface {
+	LookupPASS(ctx context.Context, opts ContentModerationPassCacheOptions, keys []string) (map[string]bool, error)
+	StorePASS(ctx context.Context, opts ContentModerationPassCacheOptions, keys []string)
+	DeletePASS(ctx context.Context, opts ContentModerationPassCacheOptions, keys []string) error
+	LookupQuarantine(ctx context.Context, opts ContentModerationPassCacheOptions, keys []string) (map[string]ContentModerationQuarantineEntry, error)
+	StoreQuarantine(ctx context.Context, opts ContentModerationPassCacheOptions, entries map[string]ContentModerationQuarantineEntry) error
+	DeleteQuarantine(ctx context.Context, opts ContentModerationPassCacheOptions, keys []string) error
+	GetComparisonMetadata(ctx context.Context, correlationID string) (*ContentModerationComparisonMetadata, error)
+	StoreComparisonMetadata(ctx context.Context, correlationID string, metadata ContentModerationComparisonMetadata) error
+	DeleteComparisonMetadata(ctx context.Context, correlationID string) error
+}
+
+type ModerationFeedbackEpochRepository interface {
+	GetModerationFeedbackEpoch(ctx context.Context) (uint64, error)
+	IncrementModerationFeedbackEpoch(ctx context.Context) (uint64, error)
+}
+
 type ContentModerationService struct {
-	resourceProtection       *ResourceProtectionManager
-	configUpdateMu           sync.Mutex
-	settingRepo              SettingRepository
-	repo                     ContentModerationRepository
-	rawRequestSnapshotStore  ContentModerationRawRequestSnapshotStore
-	rawRequestEncryptor      SecretEncryptor
-	hashCache                ContentModerationHashCache
-	groupRepo                GroupRepository
-	accountScopeRepo         ContentModerationAccountScopeRepository
-	userRepo                 UserRepository
-	authCacheInvalidator     APIKeyAuthCacheInvalidator
-	emailService             *EmailService
-	outboxRepo               ContentModerationOutboxRepository
-	buildInfo                BuildInfo
-	baselineStatusMu         sync.Mutex
-	baselineStatusValid      bool
-	baselineStatus           ContentModerationSecurityBaselineStatus
-	httpClient               *http.Client
-	asyncQueue               chan contentModerationTask
-	workerCount              int
-	apiKeyCursor             atomic.Uint64
-	asyncActive              atomic.Int64
-	asyncEnqueued            atomic.Int64
-	asyncDropped             atomic.Int64
-	asyncProcessed           atomic.Int64
-	asyncErrors              atomic.Int64
-	preBlockActive           atomic.Int64
-	preBlockChecked          atomic.Int64
-	preBlockAllowed          atomic.Int64
-	preBlockBlocked          atomic.Int64
-	preBlockErrors           atomic.Int64
-	preBlockLatencyTotalMS   atomic.Int64
-	localClassifierActive    atomic.Int64
-	lastCleanupUnix          atomic.Int64
-	lastCleanupDeletedHit    atomic.Int64
-	lastCleanupDeletedNonHit atomic.Int64
-	lastOutboxCleanupDeleted atomic.Int64
-	keyHealthMu              sync.Mutex
-	keyHealth                map[string]*contentModerationKeyHealth
+	resourceProtection        *ResourceProtectionManager
+	configUpdateMu            sync.Mutex
+	settingRepo               SettingRepository
+	repo                      ContentModerationRepository
+	rawRequestSnapshotStore   ContentModerationRawRequestSnapshotStore
+	rawRequestEncryptor       SecretEncryptor
+	hashCache                 ContentModerationHashCache
+	groupRepo                 GroupRepository
+	accountScopeRepo          ContentModerationAccountScopeRepository
+	userRepo                  UserRepository
+	authCacheInvalidator      APIKeyAuthCacheInvalidator
+	emailService              *EmailService
+	outboxRepo                ContentModerationOutboxRepository
+	buildInfo                 BuildInfo
+	baselineStatusMu          sync.Mutex
+	baselineStatusValid       bool
+	baselineStatus            ContentModerationSecurityBaselineStatus
+	httpClient                *http.Client
+	asyncQueue                chan contentModerationTask
+	workerCount               int
+	apiKeyCursor              atomic.Uint64
+	asyncActive               atomic.Int64
+	asyncEnqueued             atomic.Int64
+	asyncDropped              atomic.Int64
+	asyncProcessed            atomic.Int64
+	asyncErrors               atomic.Int64
+	preBlockActive            atomic.Int64
+	preBlockChecked           atomic.Int64
+	preBlockAllowed           atomic.Int64
+	preBlockBlocked           atomic.Int64
+	preBlockErrors            atomic.Int64
+	preBlockLatencyTotalMS    atomic.Int64
+	localClassifierActive     atomic.Int64
+	lastCleanupUnix           atomic.Int64
+	lastCleanupDeletedHit     atomic.Int64
+	lastCleanupDeletedNonHit  atomic.Int64
+	lastOutboxCleanupDeleted  atomic.Int64
+	keyHealthMu               sync.Mutex
+	keyHealth                 map[string]*contentModerationKeyHealth
+	passCache                 ContentModerationPassCache
+	feedbackEpochRepo         ModerationFeedbackEpochRepository
+	restrictedClientFactory   RestrictedModerationClientFactory
+	moderationCacheHMACKey    []byte
+	moderationCacheKeyVersion uint64
+	metrics                   *ContentModerationMetrics
 }
 
 type contentModerationTask struct {
@@ -1010,6 +1087,30 @@ func (s *ContentModerationService) SetBuildInfo(buildInfo BuildInfo) {
 	s.baselineStatusMu.Unlock()
 }
 
+func (s *ContentModerationService) SetIncrementalModerationDependencies(passCache ContentModerationPassCache, epochRepo ModerationFeedbackEpochRepository, factory RestrictedModerationClientFactory, hmacKey []byte, keyVersion uint64) {
+	if s == nil {
+		return
+	}
+	s.passCache = passCache
+	s.feedbackEpochRepo = epochRepo
+	s.restrictedClientFactory = factory
+	s.moderationCacheHMACKey = append([]byte(nil), hmacKey...)
+	s.moderationCacheKeyVersion = keyVersion
+}
+
+func (s *ContentModerationService) SetModerationMetrics(metrics *ContentModerationMetrics) {
+	if s != nil {
+		s.metrics = metrics
+	}
+}
+
+func (s *ContentModerationService) ModerationMetricsHandler() http.Handler {
+	if s == nil || s.metrics == nil {
+		return http.NotFoundHandler()
+	}
+	return s.metrics.Handler()
+}
+
 func (s *ContentModerationService) SetRawRequestSnapshotStore(store ContentModerationRawRequestSnapshotStore, encryptor SecretEncryptor) {
 	if s == nil {
 		return
@@ -1065,11 +1166,20 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if input.Mode != nil {
 		cfg.Mode = strings.TrimSpace(*input.Mode)
 	}
+	if input.Provider != nil {
+		cfg.Provider = strings.TrimSpace(*input.Provider)
+	}
 	if input.BaseURL != nil {
 		cfg.BaseURL = strings.TrimSpace(*input.BaseURL)
 	}
 	if input.Model != nil {
 		cfg.Model = strings.TrimSpace(*input.Model)
+	}
+	if input.PassCacheEnabled != nil {
+		cfg.PassCacheEnabled = *input.PassCacheEnabled
+	}
+	if input.PassCacheTTLSeconds != nil {
+		cfg.PassCacheTTLSeconds = *input.PassCacheTTLSeconds
 	}
 	if input.TimeoutMS != nil {
 		cfg.TimeoutMS = *input.TimeoutMS
@@ -1226,6 +1336,9 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 	if strings.TrimSpace(input.BaseURL) != "" {
 		cfg.BaseURL = input.BaseURL
 	}
+	if strings.TrimSpace(input.Provider) != "" {
+		cfg.Provider = input.Provider
+	}
 	if strings.TrimSpace(input.Model) != "" {
 		cfg.Model = input.Model
 	}
@@ -1233,6 +1346,9 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 		cfg.TimeoutMS = input.TimeoutMS
 	}
 	cfg.normalize()
+	if cfg.Provider != "openai" && cfg.Provider != "zhipu" {
+		return nil, infraerrors.BadRequest("INVALID_CONTENT_MODERATION_PROVIDER", "内容审计服务商无效")
+	}
 	testInput, imageCount, err := buildModerationTestInput(input.Prompt, input.Images)
 	if err != nil {
 		return nil, err
@@ -1256,7 +1372,36 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 	for idx, key := range keys {
 		start := time.Now()
 		httpStatus := 0
-		result, err := s.callModerationOnceWithInput(ctx, cfg, key, testInput, &httpStatus)
+		var result *moderationAPIResult
+		if cfg.Provider == "zhipu" {
+			if imageCount > 0 {
+				return nil, infraerrors.BadRequest("INVALID_CONTENT_MODERATION_TEST_INPUT", "智谱内容审核仅支持文本测试")
+			}
+			if s.restrictedClientFactory == nil {
+				return nil, errors.New("restricted moderation client factory is unavailable")
+			}
+			client, clientErr := s.restrictedClientFactory.Client(cfg.BaseURL, time.Duration(cfg.TimeoutMS)*time.Millisecond)
+			if clientErr != nil {
+				return nil, clientErr
+			}
+			provider, providerErr := NewZhipuModerationProvider(cfg.BaseURL, client)
+			if providerErr != nil {
+				return nil, providerErr
+			}
+			providerResult, providerErr := provider.ModerateText(ctx, cfg.Model, key, strings.TrimSpace(input.Prompt))
+			if providerErr != nil {
+				err = providerErr
+				var typed *ModerationProviderError
+				if errors.As(providerErr, &typed) {
+					httpStatus = typed.HTTPStatus
+				}
+			} else {
+				result = moderationAPIResultFromProvider(providerResult)
+				httpStatus = http.StatusOK
+			}
+		} else {
+			result, err = s.callModerationOnceWithInput(ctx, cfg, key, testInput, &httpStatus)
+		}
 		latency := int(time.Since(start).Milliseconds())
 		keyHash := moderationAPIKeyHash(key)
 		if err != nil {
@@ -1672,7 +1817,28 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 	start := time.Now()
 	auditCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.RequestAuditTimeoutMS)*time.Millisecond)
 	defer cancel()
-	result, err := s.callModerationContent(auditCtx, cfg, content, trackPreBlock)
+	var result *moderationAPIResult
+	providerLevel := ModerationLevel("")
+	providerRiskTypes := []string(nil)
+	var err error
+	if s.incrementalModerationAvailable(content) {
+		var aggregated AggregatedModerationBatch
+		aggregated, err = s.runIncrementalModeration(auditCtx, input, cfg, content)
+		if err == nil {
+			providerLevel = aggregated.Level
+			providerRiskTypes = aggregated.RiskTypes
+			result = &moderationAPIResult{Flagged: providerLevel != ModerationLevelPass, CategoryScores: map[string]float64{}}
+			if providerLevel != ModerationLevelPass {
+				category := "provider"
+				if len(providerRiskTypes) > 0 {
+					category = providerRiskTypes[0]
+				}
+				result.CategoryScores[category] = 1
+			}
+		}
+	} else {
+		result, err = s.callModerationContent(auditCtx, cfg, content, trackPreBlock)
+	}
 	latency := int(time.Since(start).Milliseconds())
 	if err != nil {
 		if trackPreBlock {
@@ -1703,6 +1869,15 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 	}
 
 	flagged, highestCategory, highestScore := evaluateModerationScores(result.CategoryScores, cfg.Thresholds)
+	if providerLevel == ModerationLevelReview || providerLevel == ModerationLevelReject {
+		flagged = true
+		if len(providerRiskTypes) > 0 {
+			highestCategory = providerRiskTypes[0]
+		} else {
+			highestCategory = strings.ToLower(string(providerLevel))
+		}
+		highestScore = 1
+	}
 	action := ContentModerationActionAllow
 	blocked := false
 	if allowBlock && flagged && cfg.Mode == ContentModerationModePreBlock {
@@ -2336,7 +2511,46 @@ func (s *ContentModerationService) ReviewLog(ctx context.Context, id int64, inpu
 	}
 	input.Status = normalizeContentModerationReviewStatus(input.Status)
 	input.Note = trimRunes(strings.TrimSpace(input.Note), 1000)
-	return s.repo.ReviewLog(ctx, id, input)
+	log, err := s.repo.ReviewLog(ctx, id, input)
+	if err != nil {
+		return nil, err
+	}
+	if log == nil || s.passCache == nil || strings.TrimSpace(log.RequestID) == "" {
+		return log, nil
+	}
+	metadata, err := s.passCache.GetComparisonMetadata(ctx, log.RequestID)
+	if err != nil || metadata == nil || metadata.DecisionID == "" || metadata.RequestHMAC == "" {
+		if err != nil {
+			return nil, fmt.Errorf("load moderation review correlation: %w", err)
+		}
+		return log, nil
+	}
+	opts := ContentModerationPassCacheOptions{Enabled: true, KeyVersion: s.moderationCacheKeyVersion, TTL: 24 * time.Hour}
+	switch input.Status {
+	case ContentModerationReviewStatusFalsePositive:
+		if err := s.passCache.DeleteQuarantine(ctx, opts, []string{metadata.RequestHMAC}); err != nil {
+			return nil, fmt.Errorf("delete moderation quarantine: %w", err)
+		}
+	case ContentModerationReviewStatusConfirmedViolation:
+		opts.TTL = 30 * 24 * time.Hour
+		if err := s.passCache.StoreQuarantine(ctx, opts, map[string]ContentModerationQuarantineEntry{metadata.RequestHMAC: {}}); err != nil {
+			return nil, fmt.Errorf("extend moderation quarantine: %w", err)
+		}
+		if log.HighestScore >= 1 && s.feedbackEpochRepo != nil {
+			if _, err := s.feedbackEpochRepo.IncrementModerationFeedbackEpoch(ctx); err != nil {
+				return nil, fmt.Errorf("increment moderation feedback epoch: %w", err)
+			}
+			if s.metrics != nil {
+				s.metrics.highSeverityMiss.Inc()
+			}
+		}
+	default:
+		return log, nil
+	}
+	if err := s.passCache.DeleteComparisonMetadata(ctx, log.RequestID); err != nil {
+		return nil, fmt.Errorf("delete moderation comparison metadata: %w", err)
+	}
+	return log, nil
 }
 
 func (s *ContentModerationService) GetRawRequestSnapshot(ctx context.Context, logID int64) (*ContentModerationRawRequestView, error) {
@@ -2457,6 +2671,16 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 		Enabled:                      cfg.Enabled,
 		RiskControlEnabled:           riskEnabled,
 		Mode:                         cfg.Mode,
+		Provider:                     cfg.Provider,
+		Model:                        cfg.Model,
+		PassCacheEnabled:             cfg.PassCacheEnabled,
+		PassCacheAvailable:           s.passCache != nil && len(s.moderationCacheHMACKey) == sha256.Size && s.moderationCacheKeyVersion > 0,
+		PassCacheDegradedReason:      s.moderationCacheDegradedReason(cfg),
+		PassCacheTTLSeconds:          cfg.PassCacheTTLSeconds,
+		ChunkerVersion:               ModerationChunkerVersion,
+		ChunkMaxRunes:                ModerationChunkMaxRunes,
+		ChunkOverlapRunes:            ModerationChunkOverlap,
+		ChunkMaxCount:                ModerationChunkMaxCount,
 		WorkerCount:                  cfg.WorkerCount,
 		MaxWorkers:                   maxContentModerationWorkerCount,
 		ActiveWorkers:                active,
@@ -3453,6 +3677,9 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 	default:
 		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_MODE", "内容审计模式无效")
 	}
+	if cfg.Provider != "openai" && cfg.Provider != "zhipu" {
+		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_PROVIDER", "内容审计服务商无效")
+	}
 	if _, err := url.ParseRequestURI(cfg.BaseURL); err != nil {
 		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_BASE_URL", "OpenAI Base URL 无效")
 	}
@@ -3918,12 +4145,12 @@ func normalizeContentModerationInputSources(sources []ContentModerationInputSour
 	}
 	out := make([]ContentModerationInputSource, 0, len(sources))
 	for _, source := range sources {
-		name := strings.TrimSpace(source.Source)
-		text := trimRunes(normalizeContentModerationText(source.Text), maxModerationInputRunes)
-		if name == "" || text == "" {
+		name := source.Source
+		text := trimRunes(stripKnownSystemReminderBlocks(source.Text), maxModerationInputRunes)
+		if strings.TrimSpace(name) == "" || text == "" {
 			continue
 		}
-		out = append(out, ContentModerationInputSource{Source: name, Text: text})
+		out = append(out, ContentModerationInputSource{Source: name, Role: strings.ToLower(strings.TrimSpace(source.Role)), Text: text})
 	}
 	return out
 }
@@ -4151,8 +4378,11 @@ func defaultContentModerationConfig() *ContentModerationConfig {
 		ResourceProtectionConfig: DefaultResourceProtectionConfig(),
 		Enabled:                  false,
 		Mode:                     ContentModerationModePreBlock,
+		Provider:                 "openai",
 		BaseURL:                  defaultContentModerationBaseURL,
 		Model:                    defaultContentModerationModel,
+		PassCacheEnabled:         false,
+		PassCacheTTLSeconds:      24 * 60 * 60,
 		TimeoutMS:                defaultContentModerationTimeoutMS,
 		SampleRate:               100,
 		AllGroups:                true,
@@ -4225,14 +4455,35 @@ func (cfg *ContentModerationConfig) normalize() {
 	if cfg.Mode == "" {
 		cfg.Mode = ContentModerationModePreBlock
 	}
+	cfg.Provider = strings.ToLower(strings.TrimSpace(cfg.Provider))
+	if cfg.Provider == "" {
+		cfg.Provider = "openai"
+	}
 	if cfg.BaseURL == "" {
-		cfg.BaseURL = defaultContentModerationBaseURL
+		if cfg.Provider == "zhipu" {
+			cfg.BaseURL = "https://open.bigmodel.cn/api"
+		} else {
+			cfg.BaseURL = defaultContentModerationBaseURL
+		}
 	}
 	cfg.BaseURL = strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
 	if cfg.Model == "" {
-		cfg.Model = defaultContentModerationModel
+		if cfg.Provider == "zhipu" {
+			cfg.Model = "moderation"
+		} else {
+			cfg.Model = defaultContentModerationModel
+		}
 	}
 	cfg.Model = strings.TrimSpace(cfg.Model)
+	if cfg.PassCacheTTLSeconds <= 0 {
+		cfg.PassCacheTTLSeconds = 24 * 60 * 60
+	}
+	if cfg.PassCacheTTLSeconds < 60 {
+		cfg.PassCacheTTLSeconds = 60
+	}
+	if cfg.PassCacheTTLSeconds > 30*24*60*60 {
+		cfg.PassCacheTTLSeconds = 30 * 24 * 60 * 60
+	}
 	if cfg.TimeoutMS <= 0 {
 		cfg.TimeoutMS = defaultContentModerationTimeoutMS
 	}
@@ -4684,8 +4935,11 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		ResourceProtectionStatus:       s.ResourceProtectionStatus(),
 		Enabled:                        cfg.Enabled,
 		Mode:                           cfg.Mode,
+		Provider:                       cfg.Provider,
 		BaseURL:                        cfg.BaseURL,
 		Model:                          cfg.Model,
+		PassCacheEnabled:               cfg.PassCacheEnabled,
+		PassCacheTTLSeconds:            cfg.PassCacheTTLSeconds,
 		APIKeyConfigured:               len(keys) > 0,
 		APIKeyMasked:                   apiKeyMasked,
 		APIKeyCount:                    len(keys),
@@ -6646,6 +6900,50 @@ type CyberSessionBlockedRecordInput struct {
 	RequestBody     []byte
 }
 
+func (s *ContentModerationService) correlateCyberPolicyMiss(ctx context.Context, cfg *ContentModerationConfig, requestID string) *ContentModerationComparisonMetadata {
+	if s == nil || s.passCache == nil || cfg == nil || strings.TrimSpace(requestID) == "" {
+		if s != nil && s.metrics != nil {
+			s.metrics.correlation.WithLabelValues("missing_id").Inc()
+		}
+		return nil
+	}
+	metadata, err := s.passCache.GetComparisonMetadata(ctx, requestID)
+	if err != nil || metadata == nil {
+		if err != nil {
+			slog.Warn("content_moderation.cyber_comparison_read_failed", "error", err)
+		}
+		if s.metrics != nil {
+			s.metrics.correlation.WithLabelValues("missing_metadata").Inc()
+		}
+		return nil
+	}
+	now := time.Now()
+	if metadata.RequestID != requestID || strings.TrimSpace(metadata.DecisionID) == "" ||
+		metadata.Provider != "zhipu" || metadata.ForwardedUpstream != "openai" ||
+		!metadata.CompletePASSEvidence || metadata.AggregateLevel != string(ModerationLevelPass) ||
+		metadata.TotalChunks <= 0 || metadata.TotalChunks != metadata.CachedChunks+metadata.FreshChunks ||
+		metadata.ForwardedAt.IsZero() || metadata.CorrelationDeadline.IsZero() || now.Before(metadata.ForwardedAt) || now.After(metadata.CorrelationDeadline) ||
+		len(metadata.ChunkKeys) != metadata.TotalChunks || strings.TrimSpace(metadata.RequestHMAC) == "" {
+		if s.metrics != nil {
+			s.metrics.correlation.WithLabelValues("ineligible").Inc()
+		}
+		return nil
+	}
+	opts := ContentModerationPassCacheOptions{Enabled: true, KeyVersion: s.moderationCacheKeyVersion, TTL: 24 * time.Hour}
+	if err := s.passCache.DeletePASS(ctx, opts, metadata.ChunkKeys); err != nil {
+		slog.Warn("content_moderation.cyber_pass_delete_failed", "request_id", requestID, "error", err)
+	}
+	if err := s.passCache.StoreQuarantine(ctx, opts, map[string]ContentModerationQuarantineEntry{metadata.RequestHMAC: {}}); err != nil {
+		slog.Warn("content_moderation.cyber_quarantine_write_failed", "request_id", requestID, "error", err)
+		return nil
+	}
+	if s.metrics != nil {
+		s.metrics.correlation.WithLabelValues("correlated").Inc()
+		s.metrics.pendingReviewAge.Set(0)
+	}
+	return metadata
+}
+
 // RecordCyberPolicyEvent 把一次 cyber_policy 硬阻断写入风控中心日志、计入违规计数、
 // 并给用户发邮件。当前请求已由 gateway 透传给用户；本方法仅做事后记录/通知/计数。
 // 仅受 risk_control_enabled 总开关约束（不受内容审核 Enabled/Mode/scope/sample 约束）。
@@ -6661,6 +6959,7 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 		slog.Warn("content_moderation.cyber_load_config_failed", "error", err)
 		cfg = &ContentModerationConfig{}
 	}
+	correlated := s.correlateCyberPolicyMiss(ctx, cfg, in.RequestID)
 	var userID *int64
 	if in.UserID > 0 {
 		userID = &in.UserID
@@ -6695,6 +6994,10 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 		HighestScore:    1.0,
 		Error:           trimRunes(redactContentModerationSecrets(errBody), maxModerationExcerptRunes*4),
 		CreatedAt:       time.Now(),
+	}
+	if correlated != nil {
+		log.DecisionID = correlated.DecisionID
+		log.ReviewStatus = ContentModerationReviewStatusPending
 	}
 	// 开关开时 cyber_policy 不参与封号计数：当次不判定（此处跳过），
 	// 历史行由 CountFlaggedByUserSince 的 excludeCyberPolicy 排除。

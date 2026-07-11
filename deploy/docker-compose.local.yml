@@ -77,6 +77,9 @@ services:
       - REDIS_POOL_SIZE=${REDIS_POOL_SIZE:-1024}
       - REDIS_MIN_IDLE_CONNS=${REDIS_MIN_IDLE_CONNS:-10}
       - REDIS_ENABLE_TLS=${REDIS_ENABLE_TLS:-false}
+      - MODERATION_CACHE_HMAC_KEY=${MODERATION_CACHE_HMAC_KEY:-}
+      - MODERATION_CACHE_HMAC_KEY_VERSION=${MODERATION_CACHE_HMAC_KEY_VERSION:-1}
+      - MODERATION_ALLOWED_HOSTS=${MODERATION_ALLOWED_HOSTS:-api.openai.com,open.bigmodel.cn}
 
       # =======================================================================
       # Admin Account (auto-created on first run)

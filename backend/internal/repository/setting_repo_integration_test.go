@@ -4,11 +4,83 @@ package repository
 
 import (
 	"context"
+	"fmt"
+	"math"
+	"strconv"
+	"sync"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
+
+func TestModerationFeedbackEpoch(t *testing.T) {
+	ctx := context.Background()
+	repo := NewModerationFeedbackEpochRepository(integrationDB)
+	_, err := integrationDB.ExecContext(ctx, `DELETE FROM settings WHERE key = $1`, moderationFeedbackEpochSettingKey)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = integrationDB.ExecContext(context.Background(), `DELETE FROM settings WHERE key = $1`, moderationFeedbackEpochSettingKey)
+	})
+
+	epoch, err := repo.GetModerationFeedbackEpoch(ctx)
+	require.NoError(t, err)
+	require.Zero(t, epoch)
+
+	const workers = 16
+	var wg sync.WaitGroup
+	errs := make(chan error, workers)
+	values := make(chan uint64, workers)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			value, incrementErr := repo.IncrementModerationFeedbackEpoch(ctx)
+			if incrementErr != nil {
+				errs <- incrementErr
+				return
+			}
+			values <- value
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	close(values)
+	for incrementErr := range errs {
+		require.NoError(t, incrementErr)
+	}
+	seen := make(map[uint64]bool, workers)
+	for value := range values {
+		seen[value] = true
+	}
+	require.Len(t, seen, workers)
+
+	reloaded := NewModerationFeedbackEpochRepository(integrationDB)
+	epoch, err = reloaded.GetModerationFeedbackEpoch(ctx)
+	require.NoError(t, err)
+	require.Equal(t, uint64(workers), epoch)
+
+	for _, invalid := range []string{"malformed", "-1", "18446744073709551616"} {
+		t.Run(fmt.Sprintf("invalid_%s", invalid), func(t *testing.T) {
+			_, err := integrationDB.ExecContext(ctx, `UPDATE settings SET value = $1 WHERE key = $2`, invalid, moderationFeedbackEpochSettingKey)
+			require.NoError(t, err)
+			_, err = reloaded.GetModerationFeedbackEpoch(ctx)
+			require.Error(t, err)
+			_, err = reloaded.IncrementModerationFeedbackEpoch(ctx)
+			require.Error(t, err)
+		})
+	}
+
+	maxEpoch := strconv.FormatUint(math.MaxUint64, 10)
+	_, err = integrationDB.ExecContext(ctx, `UPDATE settings SET value = $1 WHERE key = $2`, maxEpoch, moderationFeedbackEpochSettingKey)
+	require.NoError(t, err)
+	_, err = reloaded.IncrementModerationFeedbackEpoch(ctx)
+	require.ErrorContains(t, err, "overflow")
+	epoch, err = reloaded.GetModerationFeedbackEpoch(ctx)
+	require.NoError(t, err)
+	require.Equal(t, uint64(math.MaxUint64), epoch, "overflow must roll back without changing the authoritative value")
+}
 
 type SettingRepoSuite struct {
 	suite.Suite
