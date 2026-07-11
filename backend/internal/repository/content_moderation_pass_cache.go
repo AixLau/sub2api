@@ -137,33 +137,34 @@ func (c *contentModerationPassCache) LookupQuarantine(ctx context.Context, opts 
 	if !opts.Enabled || c == nil || c.rdb == nil || len(keys) == 0 {
 		return map[string]service.ContentModerationQuarantineEntry{}, nil
 	}
-	redisKeys := make([]string, 0, len(keys))
+	cmds := make([]*redis.StringCmd, 0, len(keys))
+	pipe := c.rdb.Pipeline()
 	for _, key := range keys {
-		redisKeys = append(redisKeys, moderationCacheKey("quarantine", opts.KeyVersion, key))
+		cmds = append(cmds, pipe.Get(ctx, moderationCacheKey("quarantine", opts.KeyVersion, key)))
 	}
-	values, err := c.rdb.MGet(ctx, redisKeys...).Result()
-	if err != nil {
-		return nil, err
+	execCmds, execErr := pipe.Exec(ctx)
+	if execErr != nil && !errors.Is(execErr, redis.Nil) {
+		return map[string]service.ContentModerationQuarantineEntry{}, execErr
 	}
-	if len(values) != len(keys) {
-		return nil, fmt.Errorf("moderation quarantine reply count: got %d want %d", len(values), len(keys))
+	if len(execCmds) != len(keys) || len(cmds) != len(keys) {
+		return map[string]service.ContentModerationQuarantineEntry{}, fmt.Errorf("moderation quarantine pipeline reply count: got %d want %d", len(execCmds), len(keys))
 	}
 	now := time.Now().Unix()
 	result := make(map[string]service.ContentModerationQuarantineEntry, len(keys))
-	for i, value := range values {
-		if value == nil {
+	for i, cmd := range cmds {
+		value, err := cmd.Result()
+		if errors.Is(err, redis.Nil) {
 			continue
 		}
-		text, ok := value.(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid moderation quarantine value type")
+		if err != nil {
+			return map[string]service.ContentModerationQuarantineEntry{}, err
 		}
 		var entry service.ContentModerationQuarantineEntry
-		if err := decodeStrictJSON([]byte(text), &entry); err != nil {
-			return nil, err
+		if err := decodeStrictJSON([]byte(value), &entry); err != nil {
+			return map[string]service.ContentModerationQuarantineEntry{}, err
 		}
 		if entry.SchemaVersion != moderationCacheSchemaVersion || entry.ExpiresAt <= now {
-			return nil, fmt.Errorf("invalid moderation quarantine value")
+			return map[string]service.ContentModerationQuarantineEntry{}, fmt.Errorf("invalid moderation quarantine value")
 		}
 		result[keys[i]] = entry
 	}

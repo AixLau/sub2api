@@ -88,6 +88,11 @@ func TestContentModerationPassCache(t *testing.T) {
 		require.Error(t, err)
 		require.Empty(t, got, "one malformed quarantine reply must discard every hit")
 
+		mr.HSet("moderation:quarantine:v1:7:wrong-type", "field", "value")
+		got, err = cache.LookupQuarantine(ctx, opts, []string{"request-digest", "missing", "wrong-type"})
+		require.Error(t, err)
+		require.Empty(t, got, "a command error in mixed hit/miss/error replies must discard every hit")
+
 		tooManyChunks := meta
 		tooManyChunks.ChunkKeys = make([]string, maxComparisonChunkKeys+1)
 		require.Error(t, cache.StoreComparisonMetadata(ctx, "oversized", tooManyChunks))
