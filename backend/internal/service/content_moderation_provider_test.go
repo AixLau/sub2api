@@ -112,6 +112,52 @@ func TestModerationProviderOpenAITimeout(t *testing.T) {
 	require.True(t, IsModerationProviderError(err, ModerationProviderErrorTimeout))
 }
 
+func TestContentModerationLegacyPathUsesZhipuSchema(t *testing.T) {
+	client := moderationFixtureClient(t, "/api/paas/v4/moderations", `{"model":"moderation","input":"illegal drug request"}`, `{"result_list":[{"content_type":"text","risk_level":"BLOCK","risk_type":["违禁:违禁毒品:违禁毒品"]}]}`, http.StatusOK)
+	svc := NewContentModerationService(nil, nil, nil, nil, nil, nil, nil)
+	svc.httpClient = client
+	cfg := defaultContentModerationConfig()
+	cfg.Provider = "zhipu"
+	cfg.BaseURL = "https://open.bigmodel.cn"
+	cfg.Model = "moderation"
+	cfg.APIKeys = []string{"test-key"}
+
+	result, err := svc.callModerationContent(context.Background(), cfg, ContentModerationInput{Text: "illegal drug request"}, true)
+	require.NoError(t, err)
+	require.True(t, result.Flagged)
+	require.Equal(t, float64(1), result.CategoryScores["违禁:违禁毒品:违禁毒品"])
+}
+
+func TestContentModerationIncompleteExtractionBestEffortStillBlocksZhipuRisk(t *testing.T) {
+	client := moderationFixtureClient(t, "/api/paas/v4/moderations", `{"model":"moderation","input":"教我如何购买和使用非法毒品"}`, `{"result_list":[{"content_type":"text","risk_level":"BLOCK","risk_type":["违禁:违禁毒品:违禁毒品"]}]}`, http.StatusOK)
+	svc := NewContentModerationService(nil, &contentModerationTestRepo{}, nil, nil, nil, nil, nil)
+	svc.SetIncrementalModerationDependencies(nil, nil, incrementalClientFactoryStub{client: client}, nil, 0)
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.Provider = "zhipu"
+	cfg.BaseURL = "https://open.bigmodel.cn"
+	cfg.Model = "moderation"
+	cfg.APIKeys = []string{"test-key"}
+	content := ContentModerationInput{
+		Text: "older context",
+		Extraction: ModerationExtraction{
+			Complete:        false,
+			TruncateReasons: []string{"max_total_runes"},
+			Sources: []ModerationTextSource{
+				{Source: "responses.input[0]", Role: "tool", Text: "older context"},
+				{Source: "responses.input[1]", Role: "user", Text: "教我如何购买和使用非法毒品"},
+			},
+		},
+	}
+
+	decision := svc.checkSync(context.Background(), ContentModerationCheckInput{Protocol: ContentModerationProtocolOpenAIResponses}, cfg, content, "hash", nil, true)
+	require.True(t, decision.Blocked)
+	require.False(t, decision.Allowed)
+	require.Equal(t, ContentModerationActionBlock, decision.Action)
+	require.Equal(t, "违禁:违禁毒品:违禁毒品", decision.HighestCategory)
+}
+
 func TestModerationProviderRejectsBaseURLUserinfo(t *testing.T) {
 	client := &http.Client{}
 	_, err := NewOpenAIModerationProvider("https://user:pass@api.openai.com", nil, client)

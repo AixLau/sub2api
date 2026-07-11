@@ -356,6 +356,8 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 				validateToolRoot(item.Get("arguments"))
 				validateToolRoot(item.Get("input"))
 				validateToolRoot(item.Get("parameters"))
+			case isResponsesKnownCallItem(item):
+				validateToolRoot(item)
 			default:
 				switch typ {
 				case "", "message", "input_text", "output_text", "reasoning", "item_reference", "compaction":
@@ -844,6 +846,10 @@ func collectResponsesInputItem(item gjson.Result, parts *[]string, images *[]str
 		collectToolResultTextValue(item.Get("parameters"), parts, images, 0, toolState)
 		return
 	}
+	if isResponsesKnownCallItem(item) {
+		collectToolResultTextValue(item, parts, images, 0, toolState)
+		return
+	}
 	if isResponsesUserTextItem(item) {
 		collectContentValue(item.Get("content"), parts, images)
 		if item.Get("type").String() == "input_text" || item.Get("text").Exists() {
@@ -885,6 +891,21 @@ func isResponsesClientSuppliedToolOutputItem(item gjson.Result) bool {
 func isResponsesFunctionOrToolCallItem(item gjson.Result) bool {
 	typ := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
 	return !strings.Contains(typ, "call_output") && (strings.Contains(typ, "function_call") || strings.Contains(typ, "tool_call"))
+}
+
+func isResponsesKnownCallItem(item gjson.Result) bool {
+	return isResponsesKnownCallType(strings.ToLower(strings.TrimSpace(item.Get("type").String())))
+}
+
+func isResponsesKnownCallType(typ string) bool {
+	switch typ {
+	case "computer_call", "local_shell_call", "shell_call", "apply_patch_call",
+		"web_search_call", "file_search_call", "image_generation_call", "code_interpreter_call",
+		"mcp_call", "mcp_list_tools", "mcp_approval_request", "mcp_approval_response":
+		return true
+	default:
+		return false
+	}
 }
 
 func collectGeminiContents(contents gjson.Result, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {
@@ -1415,6 +1436,8 @@ func responsesInputItemRole(item gjson.Result) string {
 		return "tool"
 	case strings.Contains(typ, "function_call"), strings.Contains(typ, "tool_call"):
 		return "assistant"
+	case isResponsesKnownCallType(typ):
+		return "assistant"
 	default:
 		return "user"
 	}
@@ -1424,7 +1447,7 @@ func shouldIncludeModerationRole(role string, typ string, auditScope string) boo
 	role = strings.ToLower(strings.TrimSpace(role))
 	typ = strings.ToLower(strings.TrimSpace(typ))
 	auditScope = normalizeContentModerationAuditScope(auditScope)
-	isUser := role == "user" || role == ""
+	isUser := role == "user" || (role == "" && !isResponsesKnownCallType(typ))
 	isTool := role == "tool" || role == "function" ||
 		strings.Contains(typ, "tool_result") ||
 		strings.Contains(typ, "function_call_output")

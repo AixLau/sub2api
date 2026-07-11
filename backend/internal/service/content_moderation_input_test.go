@@ -386,6 +386,22 @@ func TestExtractContentModerationInput_CodexCallOutputsAndLargeToolContextRemain
 	require.Greater(t, len(chunks), 1)
 }
 
+func TestExtractContentModerationInput_CodexKnownCallItemsRemainComplete(t *testing.T) {
+	body := []byte(`{"input":[
+		{"type":"computer_call","action":{"type":"click","x":10,"y":20}},
+		{"type":"local_shell_call","action":{"command":"rg unsafe"}},
+		{"type":"web_search_call","action":{"query":"unsafe query"}},
+		{"type":"code_interpreter_call","code":"print('unsafe')"},
+		{"role":"user","content":[{"type":"input_text","text":"请处理用户请求"}]}
+	]}`)
+
+	got := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeAllContext)
+	require.False(t, got.Truncated, got.TruncateReasons)
+	require.True(t, got.Extraction.Complete)
+	require.Contains(t, got.Text, "unsafe query")
+	require.Contains(t, got.Text, "请处理用户请求")
+}
+
 func TestExtractContentModerationInput_AnthropicAgentToolLoopScansClientToolResult(t *testing.T) {
 	body := []byte(`{
 		"messages": [

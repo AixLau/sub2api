@@ -2057,7 +2057,7 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 	providerLevel := ModerationLevel("")
 	providerRiskTypes := []string(nil)
 	var err error
-	if s.incrementalModerationAvailable(content) {
+	if s.incrementalModerationAvailable(content) && content.Extraction.Complete {
 		var aggregated AggregatedModerationBatch
 		aggregated, err = s.runIncrementalModeration(auditCtx, input, cfg, content)
 		if err == nil {
@@ -2073,6 +2073,15 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 			}
 		}
 	} else {
+		if !content.Extraction.Complete {
+			slog.Warn("content_moderation.incomplete_extraction_best_effort",
+				"user_id", input.UserID,
+				"api_key_id", input.APIKeyID,
+				"endpoint", input.Endpoint,
+				"protocol", input.Protocol,
+				"truncate_reasons", content.Extraction.TruncateReasons)
+			content = contentModerationBestEffortInput(content)
+		}
 		result, err = s.callModerationContent(auditCtx, cfg, content, trackPreBlock)
 	}
 	latency := int(time.Since(start).Milliseconds())
@@ -2104,7 +2113,8 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 		return allow
 	}
 
-	flagged, highestCategory, highestScore := evaluateModerationScores(result.CategoryScores, cfg.Thresholds)
+	flaggedByScore, highestCategory, highestScore := evaluateModerationScores(result.CategoryScores, cfg.Thresholds)
+	flagged := result.Flagged || flaggedByScore
 	if providerLevel == ModerationLevelReview || providerLevel == ModerationLevelReject {
 		flagged = true
 		if len(providerRiskTypes) > 0 {
@@ -2176,7 +2186,33 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 	}
 }
 
+func contentModerationBestEffortInput(content ContentModerationInput) ContentModerationInput {
+	for index := len(content.Extraction.Sources) - 1; index >= 0; index-- {
+		source := content.Extraction.Sources[index]
+		role := strings.ToLower(strings.TrimSpace(source.Role))
+		if role != "user" && role != "" {
+			continue
+		}
+		if text := strings.TrimSpace(source.Text); text != "" {
+			return ContentModerationInput{Text: trimRunes(text, maxModerationInputRunes)}
+		}
+	}
+	for index := len(content.Extraction.Sources) - 1; index >= 0; index-- {
+		if text := strings.TrimSpace(content.Extraction.Sources[index].Text); text != "" {
+			return ContentModerationInput{Text: trimRunes(text, maxModerationInputRunes)}
+		}
+	}
+	return ContentModerationInput{Text: content.Text, Images: content.Images}
+}
+
 func (s *ContentModerationService) callModerationContent(ctx context.Context, cfg *ContentModerationConfig, content ContentModerationInput, track bool) (*moderationAPIResult, error) {
+	if cfg.Provider == "zhipu" {
+		text := strings.TrimSpace(content.Text)
+		if text == "" {
+			return nil, errors.New("zhipu moderation requires text input")
+		}
+		return s.callModeration(ctx, cfg, text, track)
+	}
 	combined := &moderationAPIResult{CategoryScores: map[string]float64{}}
 	merge := func(result *moderationAPIResult) {
 		if result == nil {
@@ -4154,6 +4190,39 @@ func (s *ContentModerationService) callModeration(ctx context.Context, cfg *Cont
 }
 
 func (s *ContentModerationService) callModerationOnceWithInput(ctx context.Context, cfg *ContentModerationConfig, apiKey string, input any, httpStatus *int) (*moderationAPIResult, error) {
+	if cfg.Provider == "zhipu" {
+		text, ok := input.(string)
+		if !ok || strings.TrimSpace(text) == "" {
+			return nil, errors.New("zhipu moderation requires text input")
+		}
+		client := s.httpClient
+		if client == nil {
+			client = http.DefaultClient
+		}
+		if s.restrictedClientFactory != nil {
+			var err error
+			client, err = s.restrictedClientFactory.Client(cfg.BaseURL, time.Duration(cfg.TimeoutMS)*time.Millisecond)
+			if err != nil {
+				return nil, err
+			}
+		}
+		provider, err := NewZhipuModerationProvider(cfg.BaseURL, client)
+		if err != nil {
+			return nil, err
+		}
+		providerResult, err := provider.ModerateText(ctx, cfg.Model, apiKey, text)
+		if err != nil {
+			var providerErr *ModerationProviderError
+			if httpStatus != nil && errors.As(err, &providerErr) {
+				*httpStatus = providerErr.HTTPStatus
+			}
+			return nil, err
+		}
+		if httpStatus != nil {
+			*httpStatus = http.StatusOK
+		}
+		return moderationAPIResultFromProvider(providerResult), nil
+	}
 	base := strings.TrimRight(cfg.BaseURL, "/")
 	endpoint, err := url.JoinPath(base, "/v1/moderations")
 	if err != nil {
