@@ -74,11 +74,6 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 		collectOpenAIChatMessages(gjson.GetBytes(body, "messages"), &parts, &images, &sources, toolState, auditScope)
 		collectGeminiInput(body, &parts, &images, &sources, toolState, auditScope)
 	}
-	for _, source := range sources {
-		if utf8.RuneCountInString(source.Text) > maxModerationInputRunes {
-			toolState.markTruncated("max_source_runes")
-		}
-	}
 	out := ContentModerationInput{
 		Text:            legacyModerationTextFromParts(parts),
 		Images:          normalizeModerationImages(images),
@@ -89,12 +84,11 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 	out.Extraction = moderationExtractionFromInputSources(sources, !toolState.truncated, toolState.truncateReasons)
 	out.Normalize()
 	deduplicateContentModerationInput(&out)
-	if utf8.RuneCountInString(out.Text) > maxModerationInputRunes {
-		out.Truncated = true
-		out.TruncateReasons = normalizeContentModerationTruncateReasons(append(out.TruncateReasons, "max_input_runes"))
-		out.Extraction.Complete = false
-		out.Extraction.TruncateReasons = append([]string(nil), out.TruncateReasons...)
-		out.Text = trimRunes(out.Text, maxModerationInputRunes)
+	// Text is the bounded legacy/display projection. Extraction retains the
+	// complete source stream used by incremental moderation and chunking.
+	out.Text = trimRunes(out.Text, maxModerationInputRunes)
+	if protocol == ContentModerationProtocolOpenAIResponses && isCodexInternalPromptText(out.Text) {
+		return ContentModerationInput{Extraction: ModerationExtraction{Complete: true}}
 	}
 	return out
 }

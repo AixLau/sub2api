@@ -345,18 +345,25 @@ func TestExtractionCompletenessObjectKeyOverflow(t *testing.T) {
 	require.Contains(t, got.TruncateReasons, "max_object_keys")
 }
 
-func TestExtractionCompletenessSourceAndAggregateRuneOverflow(t *testing.T) {
+func TestExtractionCompletenessPreservesContentBeyondLegacyTextLimit(t *testing.T) {
 	oversized := strings.Repeat("甲", maxModerationInputRunes+1)
 	body := []byte(`{"messages":[{"role":"user","content":` + strconv.Quote(oversized) + `}]}`)
 	got := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
-	require.True(t, got.Truncated)
-	require.Contains(t, got.TruncateReasons, "max_source_runes")
+	require.False(t, got.Truncated, got.TruncateReasons)
+	require.True(t, got.Extraction.Complete)
+	require.Equal(t, len([]rune(oversized)), got.Extraction.TotalRunes)
+	require.LessOrEqual(t, utf8.RuneCountInString(got.Text), maxModerationInputRunes)
+	stream, err := CanonicalizeModerationExtraction(got.Extraction)
+	require.NoError(t, err)
+	chunks, err := PlanModerationChunks(stream)
+	require.NoError(t, err)
+	require.Greater(t, len(chunks), 1)
 
 	half := strings.Repeat("甲", maxModerationInputRunes/2+1)
 	body = []byte(`{"messages":[{"role":"user","content":` + strconv.Quote(half) + `},{"role":"assistant","content":` + strconv.Quote(half+"乙") + `}]}`)
 	got = ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
-	require.True(t, got.Truncated)
-	require.Contains(t, got.TruncateReasons, "max_input_runes")
+	require.False(t, got.Truncated, got.TruncateReasons)
+	require.True(t, got.Extraction.Complete)
 	require.LessOrEqual(t, utf8.RuneCountInString(got.Text), maxModerationInputRunes)
 }
 
