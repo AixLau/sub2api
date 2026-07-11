@@ -52,7 +52,11 @@ func (s *ContentModerationService) runIncrementalModeration(ctx context.Context,
 		return AggregatedModerationBatch{}, err
 	}
 	if !stream.Complete {
-		return AggregatedModerationBatch{}, &ModerationBatchError{Code: ModerationBatchErrorIncomplete, Err: errors.New("moderation extraction is incomplete")}
+		reasons := strings.Join(content.Extraction.TruncateReasons, ",")
+		if reasons == "" {
+			reasons = "unknown"
+		}
+		return AggregatedModerationBatch{}, &ModerationBatchError{Code: ModerationBatchErrorIncomplete, Err: fmt.Errorf("moderation extraction is incomplete: %s", reasons)}
 	}
 	chunks, err := PlanModerationChunks(stream)
 	if err != nil {

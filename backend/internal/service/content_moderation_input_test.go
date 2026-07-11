@@ -367,6 +367,25 @@ func TestExtractionCompletenessPreservesContentBeyondLegacyTextLimit(t *testing.
 	require.LessOrEqual(t, utf8.RuneCountInString(got.Text), maxModerationInputRunes)
 }
 
+func TestExtractContentModerationInput_CodexCallOutputsAndLargeToolContextRemainComplete(t *testing.T) {
+	largeOutput := strings.Repeat("工具输出内容", 5000)
+	body := []byte(`{"tools":[{"type":"function","name":"shell","description":` + strconv.Quote(strings.Repeat("工具说明", 3000)) + `}],"input":[` +
+		`{"type":"reasoning","summary":[]},` +
+		`{"type":"custom_tool_call_output","call_id":"call_1","output":` + strconv.Quote(largeOutput) + `},` +
+		`{"role":"user","content":[{"type":"input_text","text":"请总结结果"}]}` +
+		`]}`)
+
+	got := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeAllContext)
+	require.False(t, got.Truncated, got.TruncateReasons)
+	require.True(t, got.Extraction.Complete)
+	require.Greater(t, got.Extraction.TotalRunes, maxModerationInputRunes)
+	stream, err := CanonicalizeModerationExtraction(got.Extraction)
+	require.NoError(t, err)
+	chunks, err := PlanModerationChunks(stream)
+	require.NoError(t, err)
+	require.Greater(t, len(chunks), 1)
+}
+
 func TestExtractContentModerationInput_AnthropicAgentToolLoopScansClientToolResult(t *testing.T) {
 	body := []byte(`{
 		"messages": [
