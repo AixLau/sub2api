@@ -112,6 +112,14 @@ func TestModerationProviderOpenAITimeout(t *testing.T) {
 	require.True(t, IsModerationProviderError(err, ModerationProviderErrorTimeout))
 }
 
+func TestModerationProviderRejectsBaseURLUserinfo(t *testing.T) {
+	client := &http.Client{}
+	_, err := NewOpenAIModerationProvider("https://user:pass@api.openai.com", nil, client)
+	require.Error(t, err)
+	_, err = NewZhipuModerationProvider("https://user:pass@open.bigmodel.cn", client)
+	require.Error(t, err)
+}
+
 func TestModerationProviderZhipuGoldenFixtures(t *testing.T) {
 	tests := []struct {
 		name, response string

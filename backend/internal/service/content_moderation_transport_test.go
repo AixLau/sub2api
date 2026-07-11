@@ -27,6 +27,10 @@ func TestModerationTransportRejectsUnsafeConfiguration(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+	for _, timeout := range []time.Duration{0, -time.Second} {
+		_, err := newRestrictedModerationClientFactory([]string{"api.example.com"}, resolver, nil).Client("https://api.example.com", timeout)
+		require.Error(t, err)
+	}
 }
 
 func TestModerationTransportRejectsUnsafeAddressesAndMixedDNS(t *testing.T) {
@@ -64,39 +68,28 @@ func TestModerationTransportAcceptsPublicAddresses(t *testing.T) {
 	}
 }
 
-func TestModerationTransportRejectsRebindAndPinsValidatedIP(t *testing.T) {
+func TestModerationTransportPinsConstructionResolution(t *testing.T) {
 	resolveCalls := 0
 	resolver := func(context.Context, string) ([]net.IP, error) {
 		resolveCalls++
 		if resolveCalls == 1 {
 			return []net.IP{net.ParseIP("93.184.216.34")}, nil
 		}
-		return []net.IP{net.ParseIP("93.184.216.35")}, nil
+		return []net.IP{net.ParseIP("127.0.0.1")}, nil
 	}
-	dialed := false
-	dial := func(context.Context, string, string) (net.Conn, error) {
-		dialed = true
-		return nil, errors.New("unexpected")
+	var address string
+	dial := func(_ context.Context, _ string, gotAddress string) (net.Conn, error) {
+		address = gotAddress
+		return nil, errors.New("stop after dial")
 	}
 	client, err := newRestrictedModerationClientFactory([]string{"api.example.com"}, resolver, dial).Client("https://api.example.com", time.Second)
 	require.NoError(t, err)
 	_, err = client.Get("https://api.example.com/v1/moderations")
 	require.Error(t, err)
-	require.False(t, dialed)
-
-	resolver = func(context.Context, string) ([]net.IP, error) { return []net.IP{net.ParseIP("93.184.216.34")}, nil }
-	var address string
-	dial = func(_ context.Context, _ string, gotAddress string) (net.Conn, error) {
-		address = gotAddress
-		return nil, errors.New("stop after dial")
-	}
-	client, err = newRestrictedModerationClientFactory([]string{"api.example.com"}, resolver, dial).Client("https://api.example.com", time.Second)
-	require.NoError(t, err)
 	transport := client.Transport.(*http.Transport)
 	require.Equal(t, "api.example.com", transport.TLSClientConfig.ServerName)
-	_, err = client.Get("https://api.example.com/v1/moderations")
-	require.Error(t, err)
 	require.Equal(t, "93.184.216.34:443", address)
+	require.Equal(t, 1, resolveCalls)
 }
 
 func TestModerationTransportRejectsRedirectsWithoutCredentialForwarding(t *testing.T) {

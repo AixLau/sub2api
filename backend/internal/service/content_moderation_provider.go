@@ -102,7 +102,7 @@ func NewZhipuModerationProvider(baseURL string, client *http.Client) (Moderation
 
 func moderationProviderEndpoint(baseURL, fixedPath string) (string, error) {
 	u, err := url.Parse(baseURL)
-	if err != nil || u.Scheme != "https" || u.Hostname() == "" {
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
 		return "", errors.New("invalid moderation provider base URL")
 	}
 	u.Path, u.RawPath, u.RawQuery, u.Fragment = fixedPath, "", "", ""
@@ -153,7 +153,11 @@ func (p *moderationProviderAdapter) ModerateText(ctx context.Context, model, api
 }
 
 func (p *moderationProviderAdapter) providerError(kind ModerationProviderErrorKind, status int, err error) error {
-	return &ModerationProviderError{Kind: kind, Provider: p.name, HTTPStatus: status, Err: err}
+	return newModerationProviderError(p.name, kind, status, err)
+}
+
+func newModerationProviderError(provider string, kind ModerationProviderErrorKind, status int, err error) error {
+	return &ModerationProviderError{Kind: kind, Provider: provider, HTTPStatus: status, Err: err}
 }
 
 func (p *moderationProviderAdapter) decodeOpenAI(body io.Reader) (ProviderModerationResult, error) {
@@ -240,7 +244,7 @@ func normalizeZhipuRiskTypes(values []string) ([]string, error) {
 			continue
 		}
 		if !utf8.ValidString(value) || utf8.RuneCountInString(value) > 64 {
-			return nil, (&moderationProviderAdapter{name: "zhipu"}).providerError(ModerationProviderErrorSchema, 0, errors.New("invalid Zhipu risk type"))
+			return nil, newModerationProviderError("zhipu", ModerationProviderErrorSchema, 0, errors.New("invalid Zhipu risk type"))
 		}
 		if _, ok := seen[value]; ok {
 			continue
@@ -248,7 +252,7 @@ func normalizeZhipuRiskTypes(values []string) ([]string, error) {
 		seen[value] = struct{}{}
 		out = append(out, value)
 		if len(out) > 32 {
-			return nil, (&moderationProviderAdapter{name: "zhipu"}).providerError(ModerationProviderErrorSchema, 0, errors.New("too many Zhipu risk types"))
+			return nil, newModerationProviderError("zhipu", ModerationProviderErrorSchema, 0, errors.New("too many Zhipu risk types"))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return strings.Compare(out[i], out[j]) < 0 })

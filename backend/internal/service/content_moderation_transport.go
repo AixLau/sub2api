@@ -59,6 +59,9 @@ func newRestrictedModerationClientFactory(allowedHosts []string, resolve moderat
 }
 
 func (f *restrictedModerationClientFactory) Client(endpoint string, timeout time.Duration) (*http.Client, error) {
+	if timeout <= 0 {
+		return nil, errors.New("moderation client timeout must be positive")
+	}
 	u, err := url.Parse(endpoint)
 	if err != nil || u.Scheme != "https" || u.Hostname() == "" {
 		return nil, errors.New("moderation endpoint must be HTTPS")
@@ -84,17 +87,6 @@ func (f *restrictedModerationClientFactory) Client(endpoint string, timeout time
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: host}
 	transport := &http.Transport{Proxy: nil, TLSClientConfig: tlsConfig, ForceAttemptHTTP2: true}
 	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		current, err := f.resolve(ctx, host)
-		if err != nil {
-			return nil, err
-		}
-		currentSet, err := validatedModerationIPs(current)
-		if err != nil {
-			return nil, err
-		}
-		if strings.Join(initialSet, ",") != strings.Join(currentSet, ",") {
-			return nil, errors.New("moderation endpoint DNS changed after validation")
-		}
 		_, port, err := net.SplitHostPort(address)
 		if err != nil {
 			return nil, err
