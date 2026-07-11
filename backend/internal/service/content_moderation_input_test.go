@@ -85,6 +85,12 @@ func TestExtractionCompletenessUnsupportedNestedRequiredValues(t *testing.T) {
 		{"openai images nested scalar", ContentModerationProtocolOpenAIImages, `{"prompt":"safe","images":[42,"unsafe suffix"]}`},
 		{"batch reference scalar", ContentModerationProtocolBatchImages, `{"items":[{"prompt":"safe","reference_images":[42,"unsafe suffix"]}]}`},
 		{"embeddings mixed scalar", ContentModerationProtocolOpenAIEmbeddings, `{"input":[42,"unsafe suffix"]}`},
+		{"anthropic tool use scalar input", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"tool_use","input":42}]}]}`},
+		{"gemini camel function args scalar", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"functionCall":{"name":"run","args":42}}]}]}`},
+		{"gemini snake function args scalar", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"function_call":{"name":"run","args":false}}]}]}`},
+		{"chat malformed tool calls", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":"safe","tool_calls":42}]}`},
+		{"chat malformed function call", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":"safe","function_call":true}]}`},
+		{"chat scalar function arguments", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":"safe","tool_calls":[{"function":{"arguments":42}}]}]}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -96,17 +102,23 @@ func TestExtractionCompletenessUnsupportedNestedRequiredValues(t *testing.T) {
 }
 
 func TestExtractionCompletenessProductionSourcesFeedCanonicalizer(t *testing.T) {
-	body := []byte(`{"messages":[{"role":" User ","content":" Ａ "},{"role":"tool","content":{"result":"two"}}]}`)
+	body := []byte(`{"messages":[{"role":" Foo.Bar ","content":"  Ａ  \t keep <system-reminder>raw</system-reminder> "},{"role":"","content":" duplicate  text "},{"role":"","content":" duplicate  text "},{"role":"tool","content":{"result":"two"}}]}`)
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
 	require.True(t, input.Extraction.Complete)
 	require.Equal(t, []ModerationTextSource{
-		{Source: "openai_chat.messages[0].role=user.content", Role: "user", Text: "Ａ"},
-		{Source: "openai_chat.messages[1].role=tool.content", Role: "tool", Text: "result two"},
+		{Source: "openai_chat.messages[0].role=foo.bar.content", Role: "foo.bar", Text: "  Ａ  \t keep <system-reminder>raw</system-reminder> "},
+		{Source: "openai_chat.messages[1].role=empty.content", Role: "", Text: " duplicate  text "},
+		{Source: "openai_chat.messages[2].role=empty.content", Role: "", Text: " duplicate  text "},
+		{Source: "openai_chat.messages[3].role=tool.content", Role: "tool", Text: "result\ntwo"},
 	}, input.Extraction.Sources)
 	stream, err := CanonicalizeModerationExtraction(input.Extraction)
 	require.NoError(t, err)
-	require.Equal(t, "A\nresult two", stream.Text)
-	require.Equal(t, "openai_chat.messages[0].role=user.content", stream.Sources[0].Source)
+	require.Equal(t, "A keep <system-reminder>raw</system-reminder>\nduplicate text\nduplicate text\nresult two", stream.Text)
+	require.Equal(t, "foo.bar", stream.Sources[0].Role)
+	require.Equal(t, "", stream.Sources[1].Role)
+	require.Equal(t, "openai_chat.messages[0].role=foo.bar.content", stream.Sources[0].Source)
+	require.NotContains(t, input.Text, "<system-reminder>")
+	require.Len(t, input.Sources, 3)
 }
 
 func TestExtractionCompletenessNestedBudgetsHaveStableReasons(t *testing.T) {

@@ -451,16 +451,17 @@ type ContentModerationInput struct {
 }
 
 type ContentModerationInputSource struct {
-	Source string
-	Role   string
-	Text   string
+	Source   string
+	Role     string
+	Text     string
+	rawParts []string
 }
 
 func (in *ContentModerationInput) Normalize() {
 	if in == nil {
 		return
 	}
-	in.Text = trimRunes(normalizeContentModerationText(in.Text), maxModerationInputRunes)
+	in.Text = trimRunes(stripKnownSystemReminderBlocks(in.Text), maxModerationInputRunes)
 	in.Images = normalizeModerationImages(in.Images)
 	in.Sources = normalizeContentModerationInputSources(in.Sources)
 	in.TruncateReasons = normalizeContentModerationTruncateReasons(in.TruncateReasons)
@@ -3580,7 +3581,7 @@ func normalizeContentModerationInputSources(sources []ContentModerationInputSour
 	out := make([]ContentModerationInputSource, 0, len(sources))
 	for _, source := range sources {
 		name := source.Source
-		text := trimRunes(normalizeContentModerationText(source.Text), maxModerationInputRunes)
+		text := trimRunes(stripKnownSystemReminderBlocks(source.Text), maxModerationInputRunes)
 		if strings.TrimSpace(name) == "" || text == "" {
 			continue
 		}
