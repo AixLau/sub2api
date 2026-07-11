@@ -187,6 +187,11 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 				state.markTruncated("unsupported_required_value")
 			}
 		}
+		requirePresentString := func(field gjson.Result) {
+			if !field.Exists() || field.Type != gjson.String || strings.TrimSpace(field.String()) == "" {
+				state.markTruncated("unsupported_required_value")
+			}
+		}
 		recognizedUntyped := value.Get("text").Exists() || value.Get("content").Exists()
 		for _, path := range []string{"image_url", "url", "source", "media_type", "mime_type", "mimeType", "data", "base64"} {
 			recognizedUntyped = recognizedUntyped || value.Get(path).Exists()
@@ -201,11 +206,23 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 			state.markTruncated("unsupported_required_value")
 		}
 		if imageURL := value.Get("image_url"); imageURL.IsObject() {
-			requireString(imageURL.Get("url"))
+			requirePresentString(imageURL.Get("url"))
+		} else if imageURL.Exists() {
+			requirePresentString(imageURL)
 		}
 		if source := value.Get("source"); source.IsObject() {
-			for _, field := range []string{"media_type", "mediaType", "data", "url"} {
+			for _, field := range []string{"type", "media_type", "mediaType", "data", "url"} {
 				requireString(source.Get(field))
+			}
+			if source.Get("url").Exists() || strings.EqualFold(strings.TrimSpace(source.Get("type").String()), "url") {
+				requirePresentString(source.Get("url"))
+			} else {
+				mediaType := source.Get("media_type")
+				if !mediaType.Exists() {
+					mediaType = source.Get("mediaType")
+				}
+				requirePresentString(mediaType)
+				requirePresentString(source.Get("data"))
 			}
 		}
 		for _, field := range []string{"url", "media_type", "mime_type", "mimeType", "data", "base64"} {
@@ -222,7 +239,14 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 			}
 		}
 		if typ == "tool_use" {
-			validateToolRoot(value.Get("input"))
+			requirePresentString(value.Get("name"))
+			input := value.Get("input")
+			if !input.IsObject() {
+				state.markTruncated("unsupported_required_value")
+			}
+		}
+		if (typ == "image_url" || typ == "input_image") && !value.Get("image_url").Exists() {
+			state.markTruncated("unsupported_required_value")
 		}
 	}
 	validateMessages := func(path string) {
@@ -363,7 +387,13 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 					state.markTruncated("unsupported_required_value")
 					continue
 				}
-				validateToolRoot(container.Get("response"))
+				name := container.Get("name")
+				if !name.Exists() || name.Type != gjson.String || strings.TrimSpace(name.String()) == "" {
+					state.markTruncated("unsupported_required_value")
+				}
+				if !container.Get("response").IsObject() {
+					state.markTruncated("unsupported_required_value")
+				}
 			}
 			for _, path := range []string{"functionCall", "function_call"} {
 				container := part.Get(path)
@@ -375,7 +405,13 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 					state.markTruncated("unsupported_required_value")
 					continue
 				}
-				validateToolRoot(container.Get("args"))
+				name := container.Get("name")
+				if !name.Exists() || name.Type != gjson.String || strings.TrimSpace(name.String()) == "" {
+					state.markTruncated("unsupported_required_value")
+				}
+				if !container.Get("args").IsObject() {
+					state.markTruncated("unsupported_required_value")
+				}
 			}
 			for _, path := range []string{"inlineData", "inline_data", "fileData", "file_data"} {
 				container := part.Get(path)
@@ -394,6 +430,13 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 				for _, field := range fields {
 					leaf := container.Get(field)
 					if leaf.Exists() && leaf.Type != gjson.String {
+						state.markTruncated("unsupported_required_value")
+					}
+				}
+				required := fields
+				for _, field := range required {
+					leaf := container.Get(field)
+					if !leaf.Exists() || leaf.Type != gjson.String || strings.TrimSpace(leaf.String()) == "" {
 						state.markTruncated("unsupported_required_value")
 					}
 				}
@@ -915,6 +958,7 @@ func collectContentValue(value gjson.Result, parts *[]string, images *[]string) 
 		addModerationImage(images, value.Get("image_url.url").String())
 		addModerationImage(images, value.Get("image_url").String())
 		addModerationImage(images, value.Get("url").String())
+		addModerationImage(images, value.Get("source.url").String())
 		addModerationImageData(images, value.Get("source.media_type").String(), value.Get("source.data").String())
 		addModerationImageData(images, value.Get("source.mediaType").String(), value.Get("source.data").String())
 		addModerationImageData(images, value.Get("media_type").String(), value.Get("data").String())
@@ -1016,6 +1060,7 @@ func collectToolResultTextValueWithState(value gjson.Result, parts *[]string, im
 		addModerationImage(images, value.Get("image_url.url").String())
 		addModerationImage(images, value.Get("image_url").String())
 		addModerationImage(images, value.Get("url").String())
+		addModerationImage(images, value.Get("source.url").String())
 		addModerationImageData(images, value.Get("source.media_type").String(), value.Get("source.data").String())
 		addModerationImageData(images, value.Get("source.mediaType").String(), value.Get("source.data").String())
 		addModerationImageData(images, value.Get("media_type").String(), value.Get("data").String())

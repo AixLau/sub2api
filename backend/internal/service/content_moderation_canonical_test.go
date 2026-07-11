@@ -47,6 +47,51 @@ func TestModerationChunkAppendAndEditIdentityStability(t *testing.T) {
 	require.NotEqual(t, identity(ordered[0]), identity(reordered[0]))
 }
 
+func TestModerationChunkAppendGoldenVectors(t *testing.T) {
+	plan := func(text string) []ModerationChunk {
+		stream, err := CanonicalizeModerationExtraction(ModerationExtraction{Complete: true, Sources: []ModerationTextSource{{Source: "message", Role: "user", Text: text}}})
+		require.NoError(t, err)
+		chunks, err := PlanModerationChunks(stream)
+		require.NoError(t, err)
+		return chunks
+	}
+	digest := func(chunk ModerationChunk) string {
+		key := make([]byte, 32)
+		for i := range key {
+			key[i] = byte(i)
+		}
+		_, got, err := BuildModerationChunkIdentity(key, ModerationIdentityInput{KeyVersion: 7, FeedbackEpoch: 9, Provider: "zhipu", Model: "moderation", AuditScope: "all_context", PolicyScope: "legacy-v1:abc", ChunkerVersion: "zhipu-text-v1", ContextFrame: chunk.ContextFrame, NormalizedText: chunk.NormalizedText})
+		require.NoError(t, err)
+		return hex.EncodeToString(got)
+	}
+
+	before := plan(strings.Repeat("甲", 1600) + strings.Repeat("乙", 201))
+	after := plan(strings.Repeat("甲", 1600) + strings.Repeat("乙", 201) + strings.Repeat("丙", 1600))
+	require.Len(t, before, 2)
+	require.Len(t, after, 3)
+
+	require.Equal(t, strings.Repeat("甲", 1600)+strings.Repeat("乙", 200), before[0].Text)
+	require.Equal(t, [2]int{0, 1800}, [2]int{before[0].StartRune, before[0].EndRune})
+	require.Equal(t, "6368756e6b2d636f6e746578742d7631010475736572076d65737361676500880e", hex.EncodeToString(before[0].ContextFrame))
+	require.Equal(t, "9ecc6a12edd2d2cf1e7e6fd5a86072ae424f91f03a2fb3f7744b9aff41fc304a", digest(before[0]))
+	require.Equal(t, before[0], after[0])
+
+	require.Equal(t, strings.Repeat("乙", 201), before[1].Text)
+	require.Equal(t, [2]int{1600, 1801}, [2]int{before[1].StartRune, before[1].EndRune})
+	require.Equal(t, "6368756e6b2d636f6e746578742d7631010475736572076d657373616765c00c890e", hex.EncodeToString(before[1].ContextFrame))
+	require.Equal(t, "dbc6d2ebc8af6756f6c7f9deec5e816242c1409981556cea69f6b3875342215b", digest(before[1]))
+
+	require.Equal(t, strings.Repeat("乙", 201)+strings.Repeat("丙", 1599), after[1].Text)
+	require.Equal(t, [2]int{1600, 3400}, [2]int{after[1].StartRune, after[1].EndRune})
+	require.Equal(t, "6368756e6b2d636f6e746578742d7631010475736572076d657373616765c00cc81a", hex.EncodeToString(after[1].ContextFrame))
+	require.Equal(t, "fdbe3a2a9a6a95ec3771ec23d2a80fa2b35b347b4b02bcc7d009c4bde46d3aca", digest(after[1]))
+
+	require.Equal(t, strings.Repeat("丙", 201), after[2].Text)
+	require.Equal(t, [2]int{3200, 3401}, [2]int{after[2].StartRune, after[2].EndRune})
+	require.Equal(t, "6368756e6b2d636f6e746578742d7631010475736572076d6573736167658019c91a", hex.EncodeToString(after[2].ContextFrame))
+	require.Equal(t, "bf96017cbd43d04f4ab6ca7ef1d92656933f86e0ddcf34f34674f44330af25cc", digest(after[2]))
+}
+
 func TestCanonicalizeModerationExtractionGolden(t *testing.T) {
 	in := ModerationExtraction{Complete: true, Sources: []ModerationTextSource{
 		{Source: "chat\x00separator", Role: " USER ", Text: "  Ａe\u0301\u200b\u200c\u200d\u2060\ufeff\u200e\t中😀  "},

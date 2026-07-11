@@ -31,5 +31,7 @@ func TestCanonicalLegacyModerationPolicyScopeDeterministicAndExcludesOperations(
 	require.NoError(t, err)
 	require.Equal(t, jsonA, jsonB)
 	require.Equal(t, scopeA, scopeB)
+	require.Equal(t, `{"adapter_version":"zhipu-v1","audit_scope":"all_context","base_host_path":"example.com/paas/v4","chunker_version":"zhipu-text-v1","engine_mode":"hybrid","extractor_version":"extract-v1","failure_policy":"closed","feedback_epoch":4,"group_filters":[2,9],"model":"moderation","model_filters":["a","z"],"provider":"zhipu","rules":[{"keyword":"Z","category":"","severity":"","action":"block","enabled":false},{"keyword":"a","category":"","severity":"","action":"review","enabled":false}],"thresholds":{"a":0.1,"b":0.9}}`, string(jsonA))
+	require.Equal(t, "legacy-v1:fb65c13756a9f5f8c78023e50122fcd6d6f4ddf5ee99166efab060d24e6d1106", scopeA)
 	require.NotContains(t, string(jsonA), "secret")
 }

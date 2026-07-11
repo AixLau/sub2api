@@ -35,7 +35,7 @@ func TestExtractionCompletenessSupportedProtocolsAndOrderedSources(t *testing.T)
 		{"openai responses", ContentModerationProtocolOpenAIResponses, `{"input":[{"role":"user","content":"one"},{"type":"function_call_output","output":{"value":"two"}}]}`, []string{"responses.input[0].role=user.content", "responses.input[1].function_call_output"}},
 		{"openai messages", ContentModerationProtocolOpenAIMessages, `{"messages":[{"role":"user","content":"one"},{"role":"assistant","content":[{"type":"tool_result","content":{"value":"two"}}]}]}`, []string{"anthropic.messages[0].role=user.content", "anthropic.messages[1].role=assistant.content"}},
 		{"anthropic", ContentModerationProtocolAnthropicMessages, `{"system":"zero","messages":[{"role":"user","content":[{"type":"tool_use","name":"run","input":{"value":"one"}}]},{"role":"assistant","content":[{"type":"tool_result","content":{"value":"two"}}]}]}`, []string{"anthropic.system", "anthropic.messages[0].role=user.content", "anthropic.messages[1].role=assistant.content"}},
-		{"gemini", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"text":"one"},{"functionCall":{"name":"run","args":{"value":"two"}}}]},{"role":"model","parts":[{"functionResponse":{"response":{"value":"three"}}}]}]}`, []string{"gemini.contents[0].role=user.parts", "gemini.contents[1].role=model.parts"}},
+		{"gemini", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"text":"one"},{"functionCall":{"name":"run","args":{"value":"two"}}}]},{"role":"model","parts":[{"functionResponse":{"name":"run","response":{"value":"three"}}}]}]}`, []string{"gemini.contents[0].role=user.parts", "gemini.contents[1].role=model.parts"}},
 		{"embeddings", ContentModerationProtocolOpenAIEmbeddings, `{"input":["one","two"]}`, []string{"openai_embeddings.input"}},
 		{"images", ContentModerationProtocolOpenAIImages, `{"prompt":"one"}`, []string{"image.prompt"}},
 		{"batch images", ContentModerationProtocolBatchImages, `{"items":[{"prompt":"one"},{"prompt":"two"}]}`, []string{"batch_image.items.prompt", "batch_image.items.prompt"}},
@@ -136,7 +136,7 @@ func TestExtractionCompletenessAcceptsEveryKnownContentShape(t *testing.T) {
 		{"chat text and image", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":[{"type":"text","text":"ok"},{"type":"image_url","image_url":{"url":"https://example.test/a.png"}}]}]}`},
 		{"responses input text and image", ContentModerationProtocolOpenAIResponses, `{"input":[{"role":"user","content":[{"type":"input_text","text":"ok"},{"type":"input_image","image_url":"https://example.test/a.png"}]}]}`},
 		{"anthropic text image tools", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"text","text":"ok"},{"type":"image","source":{"media_type":"image/png","data":"aA=="}},{"type":"tool_use","name":"run","input":{"n":1}},{"type":"tool_result","content":{"value":"ok"}}]}]}`},
-		{"gemini all parts", ContentModerationProtocolGemini, `{"systemInstruction":{"parts":[{"text":"sys"}]},"contents":[{"role":"user","parts":[{"text":"ok"},{"functionCall":{"name":"run","args":{"n":1}}},{"function_response":{"response":{"value":"ok"}}},{"inlineData":{"mimeType":"image/png","data":"aA=="}}]}]}`},
+		{"gemini all parts", ContentModerationProtocolGemini, `{"systemInstruction":{"parts":[{"text":"sys"}]},"contents":[{"role":"user","parts":[{"text":"ok"},{"functionCall":{"name":"run","args":{"n":1}}},{"function_response":{"name":"run","response":{"value":"ok"}}},{"inlineData":{"mimeType":"image/png","data":"aA=="}}]}]}`},
 		{"chat model context", ContentModerationProtocolOpenAIChat, `{"instructions":"sys","tools":[{"type":"function","function":{"name":"run"}}],"messages":[]}`},
 	}
 	for _, tt := range tests {
@@ -171,6 +171,8 @@ func TestExtractionCompletenessAcceptsKnownMediaLeafVariants(t *testing.T) {
 	tests := []struct{ name, protocol, body string }{
 		{"generic image url", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.test/a.png"}}]}]}`},
 		{"anthropic source", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"image","source":{"media_type":"image/png","data":"aA=="}}]}]}`},
+		{"anthropic URL source", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"image","source":{"type":"url","url":"https://example.test/a.png"}}]}]}`},
+		{"gemini camel inline and file", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"inlineData":{"mimeType":"image/png","data":"aA=="}},{"fileData":{"fileUri":"https://example.test/a.png"}}]}]}`},
 		{"gemini snake inline and file", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"inline_data":{"mime_type":"image/png","data":"aA=="}},{"file_data":{"file_uri":"https://example.test/a.png"}}]}]}`},
 	}
 	for _, tt := range tests {
@@ -179,6 +181,38 @@ func TestExtractionCompletenessAcceptsKnownMediaLeafVariants(t *testing.T) {
 			require.False(t, got.Truncated, got.TruncateReasons)
 		})
 	}
+}
+
+func TestExtractionCompletenessRequiresToolAndMediaFields(t *testing.T) {
+	tests := []struct{ name, protocol, body string }{
+		{"anthropic tool missing name", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"tool_use","input":{}}]}]}`},
+		{"anthropic tool numeric name", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"tool_use","name":42,"input":{}}]}]}`},
+		{"anthropic tool missing input", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"tool_use","name":"run"}]}]}`},
+		{"anthropic tool string input", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"tool_use","name":"run","input":"bad"}]}]}`},
+		{"gemini call missing name", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"functionCall":{"args":{}}}]}]}`},
+		{"gemini call missing args", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"function_call":{"name":"run"}}]}]}`},
+		{"gemini response missing name", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"functionResponse":{"response":{}}}]}]}`},
+		{"gemini response scalar response", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"function_response":{"name":"run","response":"bad"}}]}]}`},
+		{"image url missing url", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":[{"type":"image_url","image_url":{}}]}]}`},
+		{"anthropic source missing data", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"image","source":{"media_type":"image/png"}}]}]}`},
+		{"anthropic URL source missing url", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"image","source":{"type":"url"}}]}]}`},
+		{"anthropic source scalar type", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"image","source":{"type":7,"url":"https://example.test/a.png"}}]}]}`},
+		{"gemini inline missing data", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"inlineData":{"mimeType":"image/png"}}]}]}`},
+		{"gemini file missing uri", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"file_data":{}}]}]}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ExtractContentModerationInput(tt.protocol, []byte(tt.body))
+			require.True(t, got.Truncated)
+			require.Contains(t, got.TruncateReasons, "unsupported_required_value")
+		})
+	}
+}
+
+func TestExtractionCollectsAnthropicURLSource(t *testing.T) {
+	got := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, []byte(`{"messages":[{"role":"user","content":[{"type":"image","source":{"type":"url","url":"https://example.test/a.png"}}]}]}`))
+	require.False(t, got.Truncated, got.TruncateReasons)
+	require.Equal(t, []string{"https://example.test/a.png"}, got.Images)
 }
 
 func TestExtractionCompletenessValidationMatchesAuditScope(t *testing.T) {
