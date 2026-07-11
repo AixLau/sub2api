@@ -1548,7 +1548,8 @@ func limitContentModerationImages(images []string) []string {
 }
 
 func addModerationText(parts *[]string, text string) {
-	if strings.TrimSpace(text) == "" {
+	text = stripKnownSystemReminderBlocks(text)
+	if text == "" {
 		return
 	}
 	*parts = append(*parts, text)
