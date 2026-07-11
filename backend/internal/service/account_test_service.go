@@ -118,6 +118,36 @@ type AccountTestService struct {
 	cfg                       *config.Config
 	settingService            *SettingService
 	tlsFPProfileService       *TLSFingerprintProfileService
+	usageLogWriter            accountTestUsageLogWriter
+	billingService            *BillingService
+	pricingResolver           *ModelPricingResolver
+}
+
+type accountTestUsageLogWriter interface {
+	Create(ctx context.Context, log *UsageLog) (inserted bool, err error)
+}
+
+type openAIAccountTestUsage struct {
+	account          *Account
+	model            string
+	userAgent        string
+	upstreamEndpoint string
+	requestID        string
+	stream           bool
+	usage            OpenAIUsage
+	imageCount       int
+	imageSize        string
+}
+
+type accountTestUsageRecordingContextKey struct{}
+
+func withoutAccountTestUsageRecording(ctx context.Context) context.Context {
+	return context.WithValue(ctx, accountTestUsageRecordingContextKey{}, false)
+}
+
+func shouldRecordAccountTestUsage(ctx context.Context) bool {
+	record, ok := ctx.Value(accountTestUsageRecordingContextKey{}).(bool)
+	return !ok || record
 }
 
 // NewAccountTestService creates a new AccountTestService
@@ -130,6 +160,9 @@ func NewAccountTestService(
 	httpUpstream HTTPUpstream,
 	cfg *config.Config,
 	settingService *SettingService,
+	usageLogRepo UsageLogRepository,
+	billingService *BillingService,
+	pricingResolver *ModelPricingResolver,
 	tlsFPProfileService *TLSFingerprintProfileService,
 ) *AccountTestService {
 	return &AccountTestService{
@@ -141,6 +174,9 @@ func NewAccountTestService(
 		httpUpstream:              httpUpstream,
 		cfg:                       cfg,
 		settingService:            settingService,
+		usageLogWriter:            usageLogRepo,
+		billingService:            billingService,
+		pricingResolver:           pricingResolver,
 		tlsFPProfileService:       tlsFPProfileService,
 	}
 }
@@ -161,6 +197,131 @@ func (s *AccountTestService) validateUpstreamBaseURL(raw string) (string, error)
 		return "", err
 	}
 	return normalized, nil
+}
+
+func (s *AccountTestService) forceOpenAIAccountTestIdentity(ctx context.Context, header http.Header) string {
+	userAgent := DefaultOpenAICodexUserAgent
+	if s != nil && s.settingService != nil {
+		if configured := strings.TrimSpace(s.settingService.GetOpenAICodexUserAgent(ctx)); configured != "" {
+			userAgent = configured
+		}
+	}
+	header.Set("User-Agent", userAgent)
+	enforceCodexIdentityHeaders(header)
+	return header.Get("User-Agent")
+}
+
+func (s *AccountTestService) completeOpenAIAccountTest(c *gin.Context, metrics *accountTestMetrics, result *openAIAccountTestUsage) error {
+	if result != nil && s != nil && s.usageLogWriter != nil && shouldRecordAccountTestUsage(c.Request.Context()) {
+		if err := s.recordOpenAIAccountTest(c.Request.Context(), metrics, result); err != nil {
+			return s.sendErrorAndEnd(c, fmt.Sprintf("Connection succeeded but failed to record usage: %s", err.Error()))
+		}
+	}
+	s.sendEvent(c, metrics.completeEvent(true, ""))
+	return nil
+}
+
+func (s *AccountTestService) recordOpenAIAccountTest(ctx context.Context, metrics *accountTestMetrics, result *openAIAccountTestUsage) error {
+	if result == nil || result.account == nil {
+		return errors.New("account test usage context is incomplete")
+	}
+
+	requestID := strings.TrimSpace(result.requestID)
+	if requestID == "" {
+		requestID = "account-test-" + uuid.NewString()
+	}
+	inputTokens := result.usage.InputTokens - result.usage.CacheReadInputTokens - result.usage.CacheCreationInputTokens
+	if inputTokens < 0 {
+		inputTokens = 0
+	}
+	rateMultiplier := 1.0
+	logEntry := &UsageLog{
+		Source:              UsageSourceAccountTest,
+		AccountID:           result.account.ID,
+		RequestID:           requestID,
+		Model:               result.model,
+		RequestedModel:      result.model,
+		InputTokens:         inputTokens,
+		OutputTokens:        result.usage.OutputTokens,
+		CacheCreationTokens: result.usage.CacheCreationInputTokens,
+		CacheReadTokens:     result.usage.CacheReadInputTokens,
+		ImageOutputTokens:   result.usage.ImageOutputTokens,
+		RateMultiplier:      rateMultiplier,
+		ActualCost:          0,
+		ImageCount:          result.imageCount,
+		CreatedAt:           time.Now().UTC(),
+	}
+	if result.stream {
+		logEntry.RequestType = RequestTypeStream
+	} else {
+		logEntry.RequestType = RequestTypeSync
+	}
+	logEntry.SyncRequestTypeAndLegacyFields()
+	if result.userAgent != "" {
+		userAgent := result.userAgent
+		logEntry.UserAgent = &userAgent
+	}
+	if result.upstreamEndpoint != "" {
+		upstreamEndpoint := result.upstreamEndpoint
+		logEntry.UpstreamEndpoint = &upstreamEndpoint
+	}
+	inboundEndpoint := "/api/v1/admin/accounts/:id/test"
+	logEntry.InboundEndpoint = &inboundEndpoint
+	if result.imageSize != "" {
+		imageSize := result.imageSize
+		logEntry.ImageSize = &imageSize
+	}
+	if metrics != nil {
+		duration := int(time.Since(metrics.startedAt).Milliseconds())
+		logEntry.DurationMs = &duration
+		logEntry.FirstTokenMs = metrics.firstToken
+	}
+	logEntry.AccountRateMultiplier = &rateMultiplier
+
+	if s.billingService != nil {
+		requestCount := result.imageCount
+		if requestCount <= 0 {
+			requestCount = 1
+		}
+		cost, err := s.billingService.CalculateCostUnified(CostInput{
+			Ctx:   ctx,
+			Model: result.model,
+			Tokens: UsageTokens{
+				InputTokens:         inputTokens,
+				OutputTokens:        result.usage.OutputTokens,
+				CacheCreationTokens: result.usage.CacheCreationInputTokens,
+				CacheReadTokens:     result.usage.CacheReadInputTokens,
+				ImageOutputTokens:   result.usage.ImageOutputTokens,
+			},
+			RequestCount:   requestCount,
+			SizeTier:       result.imageSize,
+			RateMultiplier: rateMultiplier,
+			Resolver:       s.pricingResolver,
+		})
+		if err != nil {
+			log.Printf("Account test pricing unavailable for model %s: %v", result.model, err)
+		} else if cost != nil {
+			logEntry.InputCost = cost.InputCost
+			logEntry.OutputCost = cost.OutputCost
+			logEntry.CacheCreationCost = cost.CacheCreationCost
+			logEntry.CacheReadCost = cost.CacheReadCost
+			logEntry.ImageOutputCost = cost.ImageOutputCost
+			logEntry.TotalCost = cost.TotalCost
+			if cost.BillingMode != "" {
+				billingMode := cost.BillingMode
+				logEntry.BillingMode = &billingMode
+			}
+		}
+	}
+
+	inserted, err := s.usageLogWriter.Create(ctx, logEntry)
+	if err != nil {
+		return err
+	}
+	if !inserted {
+		return errors.New("usage record was not inserted")
+	}
+	return nil
 }
 
 // generateSessionString generates a Claude Code style session string.
@@ -669,6 +830,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	credentialAccount.ApplyHeaderOverrides(req.Header)
+	userAgent := s.forceOpenAIAccountTestIdentity(ctx, req.Header)
 
 	// Get proxy URL
 	proxyURL := ""
@@ -703,8 +865,14 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
 	}
 
-	// Process SSE stream
-	return s.processOpenAIStream(c, resp.Body, metrics)
+	// Process SSE stream and persist usage before reporting success.
+	return s.processOpenAIStream(c, resp.Body, metrics, &openAIAccountTestUsage{
+		account:          account,
+		model:            testModelID,
+		userAgent:        userAgent,
+		upstreamEndpoint: req.URL.Path,
+		stream:           true,
+	})
 }
 
 // testGrokAccountConnection tests a Grok OAuth account through xAI's Responses API.
@@ -789,7 +957,7 @@ func (s *AccountTestService) testGrokAccountConnection(c *gin.Context, account *
 
 	metrics := newAccountTestMetrics()
 	metrics.markResponse()
-	return s.processOpenAIStream(c, resp.Body, metrics)
+	return s.processOpenAIStream(c, resp.Body, metrics, nil)
 }
 
 // testOpenAIChatCompletionsConnection tests an OpenAI-compatible APIKey account
@@ -830,6 +998,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	req.Header.Set("User-Agent", resolveOpenAICodexUpstreamUserAgent(ctx, account, s.settingService))
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	account.ApplyHeaderOverrides(req.Header)
+	userAgent := s.forceOpenAIAccountTestIdentity(ctx, req.Header)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -855,7 +1024,13 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Chat Completions API (/v1/chat/completions) returned %d: %s", resp.StatusCode, string(body)))
 	}
 
-	return s.processOpenAIChatCompletionsStream(c, resp.Body, metrics)
+	return s.processOpenAIChatCompletionsStream(c, resp.Body, metrics, &openAIAccountTestUsage{
+		account:          account,
+		model:            testModelID,
+		userAgent:        userAgent,
+		upstreamEndpoint: req.URL.Path,
+		stream:           true,
+	})
 }
 
 // testOpenAICompactConnection probes /responses/compact and persists the
@@ -928,6 +1103,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	account.ApplyHeaderOverrides(req.Header)
+	userAgent := s.forceOpenAIAccountTestIdentity(ctx, req.Header)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -973,8 +1149,15 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 
 	s.sendEvent(c, TestEvent{Type: "content", Text: "Compact probe succeeded"})
 	metrics.markFirstToken()
-	s.sendEvent(c, metrics.completeEvent(true, ""))
-	return nil
+	usage, _ := extractOpenAIUsageFromJSONBytes(body)
+	return s.completeOpenAIAccountTest(c, metrics, &openAIAccountTestUsage{
+		account:          account,
+		model:            testModelID,
+		userAgent:        userAgent,
+		upstreamEndpoint: req.URL.Path,
+		requestID:        extractOpenAIResponseIDFromJSONBytes(body),
+		usage:            usage,
+	})
 }
 
 func (s *AccountTestService) reconcileOpenAI429State(ctx context.Context, account *Account, headers http.Header, body []byte) {
@@ -1443,7 +1626,8 @@ func createOpenAIChatCompletionsTestPayload(modelID string, prompt string) map[s
 				"content": testPrompt,
 			},
 		},
-		"stream": true,
+		"stream":         true,
+		"stream_options": map[string]any{"include_usage": true},
 	}
 }
 
@@ -1504,7 +1688,7 @@ func (s *AccountTestService) processClaudeStream(c *gin.Context, body io.Reader,
 
 // processOpenAIChatCompletionsStream processes SSE chunks from the
 // OpenAI-compatible Chat Completions API.
-func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, body io.Reader, metrics *accountTestMetrics) error {
+func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, body io.Reader, metrics *accountTestMetrics, result *openAIAccountTestUsage) error {
 	reader := bufio.NewReader(body)
 	seenJSON := false
 	seenFinish := false
@@ -1515,8 +1699,7 @@ func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, 
 			if err == io.EOF {
 				if seenFinish {
 					s.sendEvent(c, TestEvent{Type: "status", Text: "已通过 /v1/chat/completions 验证"})
-					s.sendEvent(c, metrics.completeEvent(true, ""))
-					return nil
+					return s.completeOpenAIAccountTest(c, metrics, result)
 				}
 				if seenJSON {
 					return s.sendErrorAndEnd(c, "Chat Completions stream from /v1/chat/completions ended before [DONE]")
@@ -1534,8 +1717,7 @@ func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, 
 		jsonStr := sseDataPrefix.ReplaceAllString(line, "")
 		if jsonStr == "[DONE]" {
 			s.sendEvent(c, TestEvent{Type: "status", Text: "已通过 /v1/chat/completions 验证"})
-			s.sendEvent(c, metrics.completeEvent(true, ""))
-			return nil
+			return s.completeOpenAIAccountTest(c, metrics, result)
 		}
 
 		var data map[string]any
@@ -1543,6 +1725,14 @@ func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, 
 			return s.sendErrorAndEnd(c, "Invalid Chat Completions response from /v1/chat/completions: expected JSON data")
 		}
 		seenJSON = true
+		if result != nil {
+			if usage, ok := extractOpenAIUsageFromJSONBytes([]byte(jsonStr)); ok {
+				result.usage = usage
+			}
+			if requestID := extractOpenAIResponseIDFromJSONBytes([]byte(jsonStr)); requestID != "" {
+				result.requestID = requestID
+			}
+		}
 
 		if errData, ok := data["error"].(map[string]any); ok {
 			errorMsg := "Chat Completions API (/v1/chat/completions) returned an error"
@@ -1581,7 +1771,7 @@ func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, 
 }
 
 // processOpenAIStream processes the SSE stream from OpenAI Responses API
-func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader, metrics *accountTestMetrics) error {
+func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader, metrics *accountTestMetrics, result *openAIAccountTestUsage) error {
 	reader := bufio.NewReader(body)
 	seenCompleted := false
 
@@ -1590,8 +1780,7 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader,
 		if err != nil {
 			if err == io.EOF {
 				if seenCompleted {
-					s.sendEvent(c, metrics.completeEvent(true, ""))
-					return nil
+					return s.completeOpenAIAccountTest(c, metrics, result)
 				}
 				return s.sendErrorAndEnd(c, "Stream ended before response.completed")
 			}
@@ -1606,8 +1795,7 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader,
 		jsonStr := sseDataPrefix.ReplaceAllString(line, "")
 		if jsonStr == "[DONE]" {
 			if seenCompleted {
-				s.sendEvent(c, metrics.completeEvent(true, ""))
-				return nil
+				return s.completeOpenAIAccountTest(c, metrics, result)
 			}
 			return s.sendErrorAndEnd(c, "Stream ended before response.completed")
 		}
@@ -1627,8 +1815,14 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader,
 				s.sendEvent(c, TestEvent{Type: "content", Text: delta})
 			}
 		case "response.completed", "response.done":
-			s.sendEvent(c, metrics.completeEvent(true, ""))
-			return nil
+			seenCompleted = true
+			if result != nil {
+				if usage, ok := extractOpenAIUsageFromJSONBytes([]byte(jsonStr)); ok {
+					result.usage = usage
+				}
+				result.requestID = extractOpenAIResponseIDFromJSONBytes([]byte(jsonStr))
+			}
+			return s.completeOpenAIAccountTest(c, metrics, result)
 		case "response.failed":
 			errorMsg := "OpenAI response failed"
 			if responseData, ok := data["response"].(map[string]any); ok {
@@ -1697,6 +1891,7 @@ func (s *AccountTestService) testOpenAIImageAPIKey(c *gin.Context, ctx context.C
 	req.Header.Set("User-Agent", resolveOpenAICodexUpstreamUserAgent(ctx, account, s.settingService))
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	account.ApplyHeaderOverrides(req.Header)
+	userAgent := s.forceOpenAIAccountTestIdentity(ctx, req.Header)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -1749,8 +1944,16 @@ func (s *AccountTestService) testOpenAIImageAPIKey(c *gin.Context, ctx context.C
 		}
 	}
 
-	s.sendEvent(c, metrics.completeEvent(true, ""))
-	return nil
+	usage, _ := extractOpenAIUsageFromJSONBytes(body)
+	return s.completeOpenAIAccountTest(c, metrics, &openAIAccountTestUsage{
+		account:          account,
+		model:            modelID,
+		userAgent:        userAgent,
+		upstreamEndpoint: req.URL.Path,
+		requestID:        extractOpenAIResponseIDFromJSONBytes(body),
+		usage:            usage,
+		imageCount:       len(result.Data),
+	})
 }
 
 // testOpenAIImageOAuth tests OpenAI image generation using an OAuth account via Codex /responses API.
@@ -1798,6 +2001,8 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 	setOpenAIChatGPTAccountHeaders(req.Header, account)
 	// 与真实转发一致：originator 与最终 User-Agent 首段配套（原 opencode 与 Codex UA 错配会 404，issue #3901）。
 	enforceCodexIdentityHeaders(req.Header)
+	account.ApplyHeaderOverrides(req.Header)
+	userAgent := s.forceOpenAIAccountTestIdentity(ctx, req.Header)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -1827,7 +2032,7 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to read image response: %s", err.Error()))
 	}
 
-	results, _, _, _, _, err := collectOpenAIImagesFromResponsesBody(body)
+	results, _, _, firstMeta, _, err := collectOpenAIImagesFromResponsesBody(body)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to parse image response: %s", err.Error()))
 	}
@@ -1849,8 +2054,32 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 		})
 	}
 
-	s.sendEvent(c, metrics.completeEvent(true, ""))
-	return nil
+	usage, requestID := extractOpenAIAccountTestUsageFromSSEBody(body)
+	return s.completeOpenAIAccountTest(c, metrics, &openAIAccountTestUsage{
+		account:          account,
+		model:            modelID,
+		userAgent:        userAgent,
+		upstreamEndpoint: req.URL.Path,
+		requestID:        requestID,
+		stream:           true,
+		usage:            usage,
+		imageCount:       len(results),
+		imageSize:        firstMeta.Size,
+	})
+}
+
+func extractOpenAIAccountTestUsageFromSSEBody(body []byte) (OpenAIUsage, string) {
+	var usage OpenAIUsage
+	var requestID string
+	forEachOpenAISSEDataPayload(string(body), func(payload []byte) {
+		if parsed, ok := extractOpenAIUsageFromJSONBytes(payload); ok {
+			usage = parsed
+		}
+		if id := extractOpenAIResponseIDFromJSONBytes(payload); id != "" {
+			requestID = id
+		}
+	})
+	return usage, requestID
 }
 
 func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
@@ -1873,6 +2102,7 @@ func (s *AccountTestService) sendErrorAndEnd(c *gin.Context, errorMsg string) er
 // capturing SSE output via httptest.NewRecorder, then parses the result.
 func (s *AccountTestService) RunTestBackground(ctx context.Context, accountID int64, modelID string) (*ScheduledTestResult, error) {
 	startedAt := time.Now()
+	ctx = withoutAccountTestUsageRecording(ctx)
 
 	w := httptest.NewRecorder()
 	ginCtx, _ := gin.CreateTestContext(w)

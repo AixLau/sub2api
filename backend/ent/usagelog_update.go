@@ -46,6 +46,12 @@ func (_u *UsageLogUpdate) SetNillableUserID(v *int64) *UsageLogUpdate {
 	return _u
 }
 
+// ClearUserID clears the value of the "user_id" field.
+func (_u *UsageLogUpdate) ClearUserID() *UsageLogUpdate {
+	_u.mutation.ClearUserID()
+	return _u
+}
+
 // SetAPIKeyID sets the "api_key_id" field.
 func (_u *UsageLogUpdate) SetAPIKeyID(v int64) *UsageLogUpdate {
 	_u.mutation.SetAPIKeyID(v)
@@ -60,6 +66,12 @@ func (_u *UsageLogUpdate) SetNillableAPIKeyID(v *int64) *UsageLogUpdate {
 	return _u
 }
 
+// ClearAPIKeyID clears the value of the "api_key_id" field.
+func (_u *UsageLogUpdate) ClearAPIKeyID() *UsageLogUpdate {
+	_u.mutation.ClearAPIKeyID()
+	return _u
+}
+
 // SetAccountID sets the "account_id" field.
 func (_u *UsageLogUpdate) SetAccountID(v int64) *UsageLogUpdate {
 	_u.mutation.SetAccountID(v)
@@ -70,6 +82,20 @@ func (_u *UsageLogUpdate) SetAccountID(v int64) *UsageLogUpdate {
 func (_u *UsageLogUpdate) SetNillableAccountID(v *int64) *UsageLogUpdate {
 	if v != nil {
 		_u.SetAccountID(*v)
+	}
+	return _u
+}
+
+// SetSource sets the "source" field.
+func (_u *UsageLogUpdate) SetSource(v string) *UsageLogUpdate {
+	_u.mutation.SetSource(v)
+	return _u
+}
+
+// SetNillableSource sets the "source" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableSource(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetSource(*v)
 	}
 	return _u
 }
@@ -982,6 +1008,11 @@ func (_u *UsageLogUpdate) ExecX(ctx context.Context) {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *UsageLogUpdate) check() error {
+	if v, ok := _u.mutation.Source(); ok {
+		if err := usagelog.SourceValidator(v); err != nil {
+			return &ValidationError{Name: "source", err: fmt.Errorf(`ent: validator failed for field "UsageLog.source": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.RequestID(); ok {
 		if err := usagelog.RequestIDValidator(v); err != nil {
 			return &ValidationError{Name: "request_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.request_id": %w`, err)}
@@ -1052,12 +1083,6 @@ func (_u *UsageLogUpdate) check() error {
 			return &ValidationError{Name: "video_resolution", err: fmt.Errorf(`ent: validator failed for field "UsageLog.video_resolution": %w`, err)}
 		}
 	}
-	if _u.mutation.UserCleared() && len(_u.mutation.UserIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "UsageLog.user"`)
-	}
-	if _u.mutation.APIKeyCleared() && len(_u.mutation.APIKeyIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "UsageLog.api_key"`)
-	}
 	if _u.mutation.AccountCleared() && len(_u.mutation.AccountIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "UsageLog.account"`)
 	}
@@ -1075,6 +1100,9 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 				ps[i](selector)
 			}
 		}
+	}
+	if value, ok := _u.mutation.Source(); ok {
+		_spec.SetField(usagelog.FieldSource, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.RequestID(); ok {
 		_spec.SetField(usagelog.FieldRequestID, field.TypeString, value)
@@ -1486,6 +1514,12 @@ func (_u *UsageLogUpdateOne) SetNillableUserID(v *int64) *UsageLogUpdateOne {
 	return _u
 }
 
+// ClearUserID clears the value of the "user_id" field.
+func (_u *UsageLogUpdateOne) ClearUserID() *UsageLogUpdateOne {
+	_u.mutation.ClearUserID()
+	return _u
+}
+
 // SetAPIKeyID sets the "api_key_id" field.
 func (_u *UsageLogUpdateOne) SetAPIKeyID(v int64) *UsageLogUpdateOne {
 	_u.mutation.SetAPIKeyID(v)
@@ -1500,6 +1534,12 @@ func (_u *UsageLogUpdateOne) SetNillableAPIKeyID(v *int64) *UsageLogUpdateOne {
 	return _u
 }
 
+// ClearAPIKeyID clears the value of the "api_key_id" field.
+func (_u *UsageLogUpdateOne) ClearAPIKeyID() *UsageLogUpdateOne {
+	_u.mutation.ClearAPIKeyID()
+	return _u
+}
+
 // SetAccountID sets the "account_id" field.
 func (_u *UsageLogUpdateOne) SetAccountID(v int64) *UsageLogUpdateOne {
 	_u.mutation.SetAccountID(v)
@@ -1510,6 +1550,20 @@ func (_u *UsageLogUpdateOne) SetAccountID(v int64) *UsageLogUpdateOne {
 func (_u *UsageLogUpdateOne) SetNillableAccountID(v *int64) *UsageLogUpdateOne {
 	if v != nil {
 		_u.SetAccountID(*v)
+	}
+	return _u
+}
+
+// SetSource sets the "source" field.
+func (_u *UsageLogUpdateOne) SetSource(v string) *UsageLogUpdateOne {
+	_u.mutation.SetSource(v)
+	return _u
+}
+
+// SetNillableSource sets the "source" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableSource(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetSource(*v)
 	}
 	return _u
 }
@@ -2435,6 +2489,11 @@ func (_u *UsageLogUpdateOne) ExecX(ctx context.Context) {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *UsageLogUpdateOne) check() error {
+	if v, ok := _u.mutation.Source(); ok {
+		if err := usagelog.SourceValidator(v); err != nil {
+			return &ValidationError{Name: "source", err: fmt.Errorf(`ent: validator failed for field "UsageLog.source": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.RequestID(); ok {
 		if err := usagelog.RequestIDValidator(v); err != nil {
 			return &ValidationError{Name: "request_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.request_id": %w`, err)}
@@ -2505,12 +2564,6 @@ func (_u *UsageLogUpdateOne) check() error {
 			return &ValidationError{Name: "video_resolution", err: fmt.Errorf(`ent: validator failed for field "UsageLog.video_resolution": %w`, err)}
 		}
 	}
-	if _u.mutation.UserCleared() && len(_u.mutation.UserIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "UsageLog.user"`)
-	}
-	if _u.mutation.APIKeyCleared() && len(_u.mutation.APIKeyIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "UsageLog.api_key"`)
-	}
 	if _u.mutation.AccountCleared() && len(_u.mutation.AccountIDs()) > 0 {
 		return errors.New(`ent: clearing a required unique edge "UsageLog.account"`)
 	}
@@ -2545,6 +2598,9 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 				ps[i](selector)
 			}
 		}
+	}
+	if value, ok := _u.mutation.Source(); ok {
+		_spec.SetField(usagelog.FieldSource, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.RequestID(); ok {
 		_spec.SetField(usagelog.FieldRequestID, field.TypeString, value)

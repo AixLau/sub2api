@@ -251,6 +251,8 @@ export default {
     totalCost: 'Total Cost',
     standardCost: 'Standard',
     actualCost: 'Actual',
+    accountTest: 'Account test',
+    modelCost: 'Model cost',
     accountCost: 'Cost',
     userBilled: 'User billed',
     accountBilled: 'Account billed',

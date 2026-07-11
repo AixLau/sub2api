@@ -5,8 +5,10 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )
 
@@ -186,6 +188,128 @@ func TestMigrationsRunner_AuthIdentityAndPaymentSchemaStayAligned(t *testing.T) 
 	requireIndex(t, tx, "payment_orders", "paymentorder_out_trade_no")
 	requirePartialUniqueIndexDefinition(t, tx, "payment_orders", "paymentorder_out_trade_no", "out_trade_no", "WHERE")
 	requireIndexAbsent(t, tx, "payment_orders", "paymentorder_out_trade_no_unique")
+}
+
+func TestMigration173AllowsActorlessAccountTestUsage(t *testing.T) {
+	ctx := context.Background()
+	tx := testTx(t)
+
+	var accountID int64
+	err := tx.QueryRowContext(ctx, `
+INSERT INTO accounts (name, platform, type)
+VALUES ($1, $2, $3)
+RETURNING id
+`, "migration-173-account", "openai", "oauth").Scan(&accountID)
+	require.NoError(t, err, "create account fixture")
+
+	var usageLogID int64
+	err = tx.QueryRowContext(ctx, `
+INSERT INTO usage_logs (
+	user_id,
+	api_key_id,
+	account_id,
+	request_id,
+	model,
+	source,
+	actual_cost
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id
+`, nil, nil, accountID, "migration-173-account-test", "gpt-5", "account_test", 0).Scan(&usageLogID)
+	require.NoError(t, err, "insert actorless account test usage")
+
+	var (
+		userID   sql.NullInt64
+		apiKeyID sql.NullInt64
+		source   string
+	)
+	err = tx.QueryRowContext(ctx, `
+SELECT user_id, api_key_id, source
+FROM usage_logs
+WHERE id = $1
+`, usageLogID).Scan(&userID, &apiKeyID, &source)
+	require.NoError(t, err, "read actorless account test usage")
+	require.False(t, userID.Valid, "user_id should remain SQL NULL")
+	require.False(t, apiKeyID.Valid, "api_key_id should remain SQL NULL")
+	require.Equal(t, "account_test", source)
+
+	var gatewayUserID int64
+	err = tx.QueryRowContext(ctx, `
+INSERT INTO users (email, password_hash, role, status, balance, concurrency)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id
+`, "migration-173-default-source@example.com", "hash", "user", "active", 0, 1).Scan(&gatewayUserID)
+	require.NoError(t, err, "create gateway user fixture")
+
+	var gatewayAPIKeyID int64
+	err = tx.QueryRowContext(ctx, `
+INSERT INTO api_keys (user_id, key, name, status)
+VALUES ($1, $2, $3, $4)
+RETURNING id
+`, gatewayUserID, "sk-migration-173-default-source", "migration-173-default-source", "active").Scan(&gatewayAPIKeyID)
+	require.NoError(t, err, "create gateway API key fixture")
+
+	var defaultSource string
+	err = tx.QueryRowContext(ctx, `
+INSERT INTO usage_logs (
+	user_id,
+	api_key_id,
+	account_id,
+	request_id,
+	model,
+	actual_cost
+)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING source
+`, gatewayUserID, gatewayAPIKeyID, accountID, "migration-173-default-source", "gpt-5", 1).Scan(&defaultSource)
+	require.NoError(t, err, "insert gateway usage with the source default")
+	require.Equal(t, "gateway", defaultSource)
+
+	_, err = tx.ExecContext(ctx, "SAVEPOINT migration_173_unsupported_source")
+	require.NoError(t, err, "create savepoint for rejected source")
+	_, err = tx.ExecContext(ctx, `
+INSERT INTO usage_logs (
+	user_id,
+	api_key_id,
+	account_id,
+	request_id,
+	model,
+	source
+)
+VALUES ($1, $2, $3, $4, $5, $6)
+`, nil, nil, accountID, "migration-173-unsupported", "gpt-5", "unsupported")
+	require.Error(t, err, "unsupported source should violate the usage_logs source check")
+	var pqErr *pq.Error
+	require.True(t, errors.As(err, &pqErr), "unsupported source error should expose PostgreSQL details")
+	require.Equal(t, pq.ErrorCode("23514"), pqErr.Code)
+	require.Equal(t, "usage_logs_source_check", pqErr.Constraint)
+	_, rollbackErr := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT migration_173_unsupported_source")
+	require.NoError(t, rollbackErr, "recover transaction after rejected source")
+	_, releaseErr := tx.ExecContext(ctx, "RELEASE SAVEPOINT migration_173_unsupported_source")
+	require.NoError(t, releaseErr, "release rejected source savepoint")
+
+	var (
+		isPartial bool
+		indexDef  string
+		predicate string
+	)
+	err = tx.QueryRowContext(ctx, `
+SELECT
+	i.indpred IS NOT NULL,
+	pg_get_indexdef(i.indexrelid),
+	pg_get_expr(i.indpred, i.indrelid)
+FROM pg_class idx
+JOIN pg_index i ON i.indexrelid = idx.oid
+JOIN pg_class tbl ON tbl.oid = i.indrelid
+JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+WHERE ns.nspname = 'public'
+  AND tbl.relname = $1
+  AND idx.relname = $2
+`, "usage_logs", "idx_usage_logs_admin_visible_id").Scan(&isPartial, &indexDef, &predicate)
+	require.NoError(t, err, "query account test usage partial index")
+	require.True(t, isPartial, "expected idx_usage_logs_admin_visible_id to be partial")
+	require.Contains(t, indexDef, "(id DESC)")
+	require.Equal(t, "((actual_cost > (0)::numeric) OR ((source)::text = 'account_test'::text))", predicate)
 }
 
 func requireIndex(t *testing.T, tx *sql.Tx, table, index string) {

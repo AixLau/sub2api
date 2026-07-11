@@ -96,11 +96,26 @@ func ApplyLegacyRequestFields(requestType RequestType, fallbackStream bool, fall
 	}
 }
 
+type UsageSource string
+
+const (
+	UsageSourceGateway     UsageSource = "gateway"
+	UsageSourceAccountTest UsageSource = "account_test"
+)
+
+func (s UsageSource) Normalize() UsageSource {
+	if s == UsageSourceAccountTest {
+		return s
+	}
+	return UsageSourceGateway
+}
+
 type UsageLog struct {
 	ID        int64
 	UserID    int64
 	APIKeyID  int64
 	AccountID int64
+	Source    UsageSource
 	RequestID string
 	Model     string
 	// RequestedModel is the client-requested model name recorded for stable user/admin display.
@@ -191,6 +206,28 @@ type UsageLog struct {
 
 func (u *UsageLog) TotalTokens() int {
 	return u.InputTokens + u.OutputTokens + u.CacheCreationTokens + u.CacheReadTokens
+}
+
+func (u *UsageLog) ValidateActors() error {
+	if u == nil {
+		return fmt.Errorf("usage log is required")
+	}
+	if u.AccountID <= 0 {
+		return fmt.Errorf("usage log account_id must be positive")
+	}
+	if u.Source.Normalize() == UsageSourceAccountTest {
+		if u.UserID != 0 || u.APIKeyID != 0 {
+			return fmt.Errorf("account_test usage log must not include user_id or api_key_id")
+		}
+		return nil
+	}
+	if u.UserID <= 0 {
+		return fmt.Errorf("gateway usage log user_id must be positive")
+	}
+	if u.APIKeyID <= 0 {
+		return fmt.Errorf("gateway usage log api_key_id must be positive")
+	}
+	return nil
 }
 
 func (u *UsageLog) EffectiveRequestType() RequestType {

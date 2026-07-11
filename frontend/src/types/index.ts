@@ -1387,6 +1387,7 @@ export interface UsageLogAccountSummary {
 }
 
 export interface AdminUsageLog extends UsageLog {
+  source?: 'gateway' | 'account_test'
   upstream_model?: string | null
   model_mapping_chain?: string | null
 

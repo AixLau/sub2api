@@ -186,6 +186,13 @@ func TestUsageLogFromService_FallsBackToLegacyModelWhenRequestedModelMissing(t *
 	require.Equal(t, "claude-3", adminDTO.Model)
 }
 
+func TestUsageLogFromServiceAdminIncludesAccountTestSource(t *testing.T) {
+	t.Parallel()
+
+	dto := UsageLogFromServiceAdmin(&service.UsageLog{Source: service.UsageSourceAccountTest})
+	require.Equal(t, string(service.UsageSourceAccountTest), dto.Source)
+}
+
 func TestUsageLogFromService_IncludesImageBillingMetadataForUserAndAdmin(t *testing.T) {
 	t.Parallel()
 
