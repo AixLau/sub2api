@@ -121,6 +121,59 @@ func TestOpenAIEntryPointsUseUnifiedModerationGuardHelper(t *testing.T) {
 	}
 }
 
+func TestCountTokensModerationCoverageUsesAuditedPreForwardBodyBeforeFallbackRead(t *testing.T) {
+	src, err := os.ReadFile("openai_gateway_count_tokens.go")
+	if err != nil {
+		t.Fatalf("read CountTokens handler: %v", err)
+	}
+
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, "openai_gateway_count_tokens.go", src, 0)
+	if err != nil {
+		t.Fatalf("parse CountTokens handler: %v", err)
+	}
+
+	var cachedBodyCall token.Pos
+	var fallbackBodyRead token.Pos
+	for _, decl := range parsed.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "CountTokens" || fn.Body == nil {
+			continue
+		}
+		ast.Inspect(fn.Body, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			ident, ok := call.Fun.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			switch ident.Name {
+			case "gatewayPreForwardRequestFromContext":
+				cachedBodyCall = ident.Pos()
+			case "readLenientJSONRequestBodyWithPrealloc":
+				fallbackBodyRead = ident.Pos()
+			}
+			return true
+		})
+	}
+
+	if cachedBodyCall == token.NoPos {
+		t.Fatal("OpenAIGatewayHandler.CountTokens must consume the audited gateway pre-forward request from context")
+	}
+	if fallbackBodyRead == token.NoPos {
+		t.Fatal("OpenAIGatewayHandler.CountTokens must retain a direct-handler request-body fallback")
+	}
+	if cachedBodyCall >= fallbackBodyRead {
+		t.Fatalf(
+			"CountTokens must prefer audited bytes before the direct-handler fallback (cached at %s, fallback at %s)",
+			fset.Position(cachedBodyCall),
+			fset.Position(fallbackBodyRead),
+		)
+	}
+}
+
 func contentModerationProtocolArg(call *ast.CallExpr) string {
 	for _, arg := range call.Args {
 		selector, ok := arg.(*ast.SelectorExpr)

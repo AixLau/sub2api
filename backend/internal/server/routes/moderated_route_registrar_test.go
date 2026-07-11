@@ -468,6 +468,7 @@ func TestGatewayPipelineEntrypointDispatcherDispatchesOpenAIHTTP(t *testing.T) {
 	result := dispatcher.EnterGatewayPipeline(c, ModeratedRouteMeta{
 		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
 		Protocol: service.ContentModerationProtocolOpenAIResponses,
+		Handler:  "OpenAIGatewayHandler.Responses",
 	})
 
 	require.True(t, result.Stop)
@@ -481,6 +482,7 @@ func TestGatewayPipelineEntrypointDispatcherSkipsOpenAIHTTPForNonOpenAIPlatform(
 
 	var called bool
 	dispatcher := NewGatewayPipelineEntrypointDispatcher(GatewayPipelineEntrypointDispatcherConfig{
+		GroupPlatform:    func(*gin.Context) string { return service.PlatformAnthropic },
 		IsOpenAIPlatform: func(*gin.Context) bool { return false },
 		OpenAIHTTP: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
 			called = true
@@ -491,6 +493,7 @@ func TestGatewayPipelineEntrypointDispatcherSkipsOpenAIHTTPForNonOpenAIPlatform(
 	result := dispatcher.EnterGatewayPipeline(c, ModeratedRouteMeta{
 		Pipeline: moderationcoverage.PipelineOpenAIHTTP,
 		Protocol: service.ContentModerationProtocolOpenAIResponses,
+		Handler:  "OpenAIGatewayHandler.Responses",
 	})
 
 	require.False(t, result.Stop)
@@ -506,6 +509,7 @@ func TestGatewayPipelineEntrypointDispatcherMarksOpenAIWebSocketEntrypoint(t *te
 	result := dispatcher.EnterGatewayPipeline(c, ModeratedRouteMeta{
 		Pipeline: moderationcoverage.PipelineOpenAIWebSocket,
 		Protocol: service.ContentModerationProtocolOpenAIResponses,
+		Handler:  "OpenAIGatewayHandler.ResponsesWebSocket",
 	})
 
 	require.False(t, result.Stop)
@@ -565,6 +569,31 @@ func TestGatewayPipelineEntrypointDispatcherSkipsGatewayPreForwardForOpenAIPlatf
 
 	require.False(t, result.Stop)
 	require.False(t, called)
+}
+
+func TestModeratedRouteRegistrarAcceptsBlockedBranchWithoutPipelineAdmission(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
+
+	router := gin.New()
+	registrar := NewModeratedRouteRegistrar(router)
+	registrar.POST("/pipeline-blocked", coveredModeratedRoute(
+		"/pipeline-blocked",
+		"GatewayHandler.CountTokens",
+		service.ContentModerationProtocolAnthropicMessages,
+		"test blocked branch",
+	), func(c *gin.Context) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "unsupported platform"})
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/pipeline-blocked", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Contains(t, rec.Body.String(), "unsupported platform")
+	require.NotContains(t, rec.Body.String(), "pipeline_admission_missing")
 }
 
 func TestGatewayPipelineEntrypointDispatcherIgnoresUnknownPipeline(t *testing.T) {

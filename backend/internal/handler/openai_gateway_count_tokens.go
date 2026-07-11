@@ -46,15 +46,22 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		return
 	}
 
-	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
-	if err != nil {
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			h.anthropicErrorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+	var body []byte
+	if preForwardRequest, ok := gatewayPreForwardRequestFromContext(c, service.ContentModerationProtocolAnthropicMessages); ok {
+		body = preForwardRequest.Body
+		restoreRequestBody(c, body)
+	} else {
+		var err error
+		body, err = readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
+		if err != nil {
+			if maxErr, ok := extractMaxBytesError(err); ok {
+				h.anthropicErrorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+				return
+			}
+			markOpsRequestBodyReadError(c, err)
+			h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
 			return
 		}
-		markOpsRequestBodyReadError(c, err)
-		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
-		return
 	}
 	if len(body) == 0 {
 		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")

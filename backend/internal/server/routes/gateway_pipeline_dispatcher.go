@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"strings"
+
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -73,16 +75,7 @@ func (d *GatewayPipelineEntrypointDispatcher) EnterGatewayPipeline(c *gin.Contex
 }
 
 func (d *GatewayPipelineEntrypointDispatcher) enterOpenAIHTTP(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
-	switch meta.Protocol {
-	case service.ContentModerationProtocolOpenAIChat,
-		service.ContentModerationProtocolOpenAIMessages,
-		service.ContentModerationProtocolOpenAIResponses,
-		service.ContentModerationProtocolOpenAIImages,
-		service.ContentModerationProtocolOpenAIEmbeddings:
-	default:
-		return GatewayPipelineEntryResult{}
-	}
-	if d.isOpenAIPlatform != nil && !d.isOpenAIPlatform(c) {
+	if !openAIHTTPAdmissionSupported(d.groupPlatformForRequest(c), meta) {
 		return GatewayPipelineEntryResult{}
 	}
 	if d.openAIHTTP == nil {
@@ -92,7 +85,8 @@ func (d *GatewayPipelineEntrypointDispatcher) enterOpenAIHTTP(c *gin.Context, me
 }
 
 func (d *GatewayPipelineEntrypointDispatcher) enterOpenAIWebSocket(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
-	if meta.Protocol != service.ContentModerationProtocolOpenAIResponses {
+	if meta.Protocol != service.ContentModerationProtocolOpenAIResponses ||
+		meta.Handler != "OpenAIGatewayHandler.ResponsesWebSocket" {
 		return GatewayPipelineEntryResult{}
 	}
 	const source = "GatewayPipelineRegistrar.OpenAIWebSocket"
@@ -102,30 +96,16 @@ func (d *GatewayPipelineEntrypointDispatcher) enterOpenAIWebSocket(c *gin.Contex
 }
 
 func (d *GatewayPipelineEntrypointDispatcher) enterGatewayPreForward(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
-	switch meta.Protocol {
-	case service.ContentModerationProtocolAnthropicMessages,
-		service.ContentModerationProtocolGemini,
-		service.ContentModerationProtocolOpenAIChat,
-		service.ContentModerationProtocolOpenAIResponses:
-	default:
-		return GatewayPipelineEntryResult{}
-	}
-	switch meta.Handler {
-	case "GatewayHandler.Messages",
-		"GatewayHandler.CountTokens",
-		"GatewayHandler.GeminiV1BetaModels",
-		"GatewayHandler.ChatCompletions",
-		"GatewayHandler.Responses":
-	default:
+	if !gatewayPreForwardAdmissionSupported(meta) {
 		return GatewayPipelineEntryResult{}
 	}
 	if !middleware.HasForcePlatform(c) {
-		groupPlatform := ""
-		if d.groupPlatform != nil {
-			groupPlatform = d.groupPlatform(c)
-		}
-		switch groupPlatform {
-		case service.PlatformOpenAI, service.PlatformGrok:
+		switch d.groupPlatformForRequest(c) {
+		case service.PlatformOpenAI:
+			if !isOpenAICountTokensGenericAdmission(meta) {
+				return GatewayPipelineEntryResult{}
+			}
+		case service.PlatformGrok:
 			return GatewayPipelineEntryResult{}
 		}
 	}
@@ -133,4 +113,75 @@ func (d *GatewayPipelineEntrypointDispatcher) enterGatewayPreForward(c *gin.Cont
 		return GatewayPipelineEntryResult{}
 	}
 	return d.gatewayPreForward.EnterGatewayPipeline(c, meta)
+}
+
+func (d *GatewayPipelineEntrypointDispatcher) groupPlatformForRequest(c *gin.Context) string {
+	if d != nil && d.groupPlatform != nil {
+		if platform := strings.TrimSpace(d.groupPlatform(c)); platform != "" {
+			return platform
+		}
+	}
+	if d != nil && d.isOpenAIPlatform != nil && d.isOpenAIPlatform(c) {
+		return service.PlatformOpenAI
+	}
+	return ""
+}
+
+func openAIHTTPAdmissionSupported(platform string, meta ModeratedRouteMeta) bool {
+	platform = strings.TrimSpace(platform)
+	handlerName := strings.TrimSpace(meta.Handler)
+	protocol := strings.TrimSpace(meta.Protocol)
+
+	switch platform {
+	case service.PlatformOpenAI:
+		switch handlerName {
+		case "OpenAIGatewayHandler.ChatCompletions":
+			return protocol == service.ContentModerationProtocolOpenAIChat
+		case "OpenAIGatewayHandler.Messages":
+			return protocol == service.ContentModerationProtocolOpenAIMessages
+		case "OpenAIGatewayHandler.Responses":
+			return protocol == service.ContentModerationProtocolOpenAIResponses
+		case "OpenAIGatewayHandler.Images":
+			return protocol == service.ContentModerationProtocolOpenAIImages
+		case "OpenAIGatewayHandler.Embeddings":
+			return protocol == service.ContentModerationProtocolOpenAIEmbeddings
+		default:
+			return false
+		}
+	case service.PlatformGrok:
+		switch handlerName {
+		case "OpenAIGatewayHandler.ChatCompletions":
+			return protocol == service.ContentModerationProtocolOpenAIChat
+		case "OpenAIGatewayHandler.Messages":
+			return protocol == service.ContentModerationProtocolOpenAIMessages
+		case "OpenAIGatewayHandler.Responses":
+			return protocol == service.ContentModerationProtocolOpenAIResponses
+		default:
+			return false
+		}
+	default:
+		return false
+	}
+}
+
+func gatewayPreForwardAdmissionSupported(meta ModeratedRouteMeta) bool {
+	switch strings.TrimSpace(meta.Handler) {
+	case "GatewayHandler.Messages":
+		return strings.TrimSpace(meta.Protocol) == service.ContentModerationProtocolAnthropicMessages
+	case "GatewayHandler.CountTokens":
+		return strings.TrimSpace(meta.Protocol) == service.ContentModerationProtocolAnthropicMessages
+	case "GatewayHandler.GeminiV1BetaModels":
+		return strings.TrimSpace(meta.Protocol) == service.ContentModerationProtocolGemini
+	case "GatewayHandler.ChatCompletions":
+		return strings.TrimSpace(meta.Protocol) == service.ContentModerationProtocolOpenAIChat
+	case "GatewayHandler.Responses":
+		return strings.TrimSpace(meta.Protocol) == service.ContentModerationProtocolOpenAIResponses
+	default:
+		return false
+	}
+}
+
+func isOpenAICountTokensGenericAdmission(meta ModeratedRouteMeta) bool {
+	return strings.TrimSpace(meta.Handler) == "GatewayHandler.CountTokens" &&
+		strings.TrimSpace(meta.Protocol) == service.ContentModerationProtocolAnthropicMessages
 }
