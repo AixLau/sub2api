@@ -479,6 +479,81 @@ func TestAccountTestService_OpenAIAPIKeyResponsesUnsupportedUsesChatCompletionsP
 	require.NotContains(t, body, "当前测试接口仅支持 Responses API 路径")
 }
 
+func TestAccountTestService_OpenAIAPIKeyAccountTestUserAgent(t *testing.T) {
+	tests := []struct {
+		name         string
+		model        string
+		extra        map[string]any
+		responseBody string
+		wantPath     string
+	}{
+		{
+			name:         "Responses (/v1/responses)",
+			model:        "gpt-5.4",
+			responseBody: "data: {\"type\":\"response.completed\"}\n\n",
+			wantPath:     "/v1/responses",
+		},
+		{
+			name:         "Chat Completions (/v1/chat/completions)",
+			model:        "gpt-5.4",
+			extra:        map[string]any{openai_compat.ExtraKeyResponsesSupported: false},
+			responseBody: "data: [DONE]\n\n",
+			wantPath:     "/v1/chat/completions",
+		},
+		{
+			name:         "images (/v1/images/generations)",
+			model:        "gpt-image-1",
+			responseBody: `{"data":[{"b64_json":"aW1hZ2U="}]}`,
+			wantPath:     "/v1/images/generations",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, tc := range []struct {
+				name          string
+				override      bool
+				wantUserAgent string
+			}{
+				{name: "account user_agent", wantUserAgent: "account-test-agent/1.0"},
+				{name: "enabled header override wins", override: true, wantUserAgent: "override-agent/2.0"},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					ctx, _ := newTestContext()
+					upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(http.StatusOK, tt.responseBody)}}
+					svc := &AccountTestService{
+						httpUpstream: upstream,
+						cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+					}
+					credentials := map[string]any{
+						"api_key":    "sk-test",
+						"base_url":   "https://compat-upstream.example",
+						"user_agent": "account-test-agent/1.0",
+					}
+					if tc.override {
+						credentials[credKeyHeaderOverrideEnabled] = true
+						credentials[credKeyHeaderOverrides] = map[string]any{"user-agent": "override-agent/2.0"}
+					}
+					account := &Account{
+						ID:          95,
+						Platform:    PlatformOpenAI,
+						Type:        AccountTypeAPIKey,
+						Concurrency: 1,
+						Credentials: credentials,
+						Extra:       tt.extra,
+					}
+
+					err := svc.testOpenAIAccountConnection(ctx, account, tt.model, "test prompt", "")
+					require.NoError(t, err)
+					require.Len(t, upstream.requests, 1)
+					require.Equal(t, tt.wantPath, upstream.requests[0].URL.Path)
+					require.Equal(t, tc.wantUserAgent, upstream.requests[0].Header.Get("User-Agent"))
+				})
+			}
+		})
+	}
+}
+
 func TestAccountTestService_OpenAIChatCompletionsPathReturns4xx(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, recorder := newTestContext()
