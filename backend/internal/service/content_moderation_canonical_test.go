@@ -87,14 +87,19 @@ func TestModerationChunkBoundariesAndBudget(t *testing.T) {
 		require.NoError(t, err)
 		chunks, err := PlanModerationChunks(stream)
 		require.NoError(t, err)
-		expected := 0
-		if n > 0 {
-			expected = (n-1)/ModerationChunkStride + 1
-		}
+		expected := map[int]int{0: 0, 1: 1, 1800: 1, 1801: 2, 2000: 2, 3400: 2}[n]
 		require.Len(t, chunks, expected)
 	}
-	over := ModerationChunkStride*ModerationChunkMaxCount + 1
-	stream, err := CanonicalizeModerationExtraction(ModerationExtraction{Complete: true, Sources: []ModerationTextSource{{Text: strings.Repeat("x", over)}}})
+	maxCovered := ModerationChunkMaxRunes + (ModerationChunkMaxCount-1)*ModerationChunkStride
+	stream, err := CanonicalizeModerationExtraction(ModerationExtraction{Complete: true, Sources: []ModerationTextSource{{Text: strings.Repeat("x", maxCovered)}}})
+	require.NoError(t, err)
+	chunks, err := PlanModerationChunks(stream)
+	require.NoError(t, err)
+	require.Len(t, chunks, ModerationChunkMaxCount)
+	require.Equal(t, maxCovered, chunks[len(chunks)-1].EndRune)
+
+	over := maxCovered + 1
+	stream, err = CanonicalizeModerationExtraction(ModerationExtraction{Complete: true, Sources: []ModerationTextSource{{Text: strings.Repeat("x", over)}}})
 	require.NoError(t, err)
 	_, err = PlanModerationChunks(stream)
 	require.ErrorIs(t, err, ErrModerationChunkBudget)

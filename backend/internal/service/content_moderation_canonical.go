@@ -113,7 +113,10 @@ func PlanModerationChunks(stream CanonicalModerationStream) ([]ModerationChunk, 
 	if len(runes) == 0 {
 		return nil, nil
 	}
-	count := (len(runes)-1)/ModerationChunkStride + 1
+	count := 1
+	if len(runes) > ModerationChunkMaxRunes {
+		count += (len(runes) - ModerationChunkMaxRunes + ModerationChunkStride - 1) / ModerationChunkStride
+	}
 	if count > ModerationChunkMaxCount {
 		return nil, ErrModerationChunkBudget
 	}
@@ -123,6 +126,9 @@ func PlanModerationChunks(stream CanonicalModerationStream) ([]ModerationChunk, 
 		spans, sourceStart, sourceEnd := overlappingModerationSourceSpans(stream.Sources, start, end)
 		text := string(runes[start:end])
 		chunks = append(chunks, ModerationChunk{Index: index, Text: text, NormalizedText: text, RuneCount: end - start, StartRune: start, EndRune: end, SourceStart: sourceStart, SourceEnd: sourceEnd, ContextFrame: encodeModerationChunkContext(spans)})
+		if end == len(runes) {
+			break
+		}
 	}
 	return chunks, nil
 }

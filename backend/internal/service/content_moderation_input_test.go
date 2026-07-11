@@ -71,6 +71,44 @@ func TestExtractionCompletenessUnsupportedRequiredValues(t *testing.T) {
 	}
 }
 
+func TestExtractionCompletenessUnsupportedNestedRequiredValues(t *testing.T) {
+	tests := []struct{ name, protocol, body string }{
+		{"chat content array scalar", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":[42,"unsafe suffix"]}]}`},
+		{"chat tool output scalar", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"tool","content":true}]}`},
+		{"anthropic content array scalar", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[42,"unsafe suffix"]}]}`},
+		{"anthropic tool result scalar", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"tool_result","content":false}]}]}`},
+		{"responses input scalar item", ContentModerationProtocolOpenAIResponses, `{"input":[true,{"role":"user","content":"unsafe suffix"}]}`},
+		{"responses function output scalar", ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"function_call_output","output":42}]}`},
+		{"responses object function output scalar", ContentModerationProtocolOpenAIResponses, `{"input":{"type":"function_call_output","output":42}}`},
+		{"gemini part scalar", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[42,{"text":"unsafe suffix"}]}]}`},
+		{"anthropic system array scalar", ContentModerationProtocolAnthropicMessages, `{"system":[42,"unsafe suffix"],"messages":[]}`},
+		{"openai images nested scalar", ContentModerationProtocolOpenAIImages, `{"prompt":"safe","images":[42,"unsafe suffix"]}`},
+		{"batch reference scalar", ContentModerationProtocolBatchImages, `{"items":[{"prompt":"safe","reference_images":[42,"unsafe suffix"]}]}`},
+		{"embeddings mixed scalar", ContentModerationProtocolOpenAIEmbeddings, `{"input":[42,"unsafe suffix"]}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ExtractContentModerationInput(tt.protocol, []byte(tt.body))
+			require.True(t, got.Truncated)
+			require.Contains(t, got.TruncateReasons, "unsupported_required_value")
+		})
+	}
+}
+
+func TestExtractionCompletenessProductionSourcesFeedCanonicalizer(t *testing.T) {
+	body := []byte(`{"messages":[{"role":" User ","content":" Ａ "},{"role":"tool","content":{"result":"two"}}]}`)
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
+	require.True(t, input.Extraction.Complete)
+	require.Equal(t, []ModerationTextSource{
+		{Source: "openai_chat.messages[0].role=user.content", Role: "user", Text: "Ａ"},
+		{Source: "openai_chat.messages[1].role=tool.content", Role: "tool", Text: "result two"},
+	}, input.Extraction.Sources)
+	stream, err := CanonicalizeModerationExtraction(input.Extraction)
+	require.NoError(t, err)
+	require.Equal(t, "A\nresult two", stream.Text)
+	require.Equal(t, "openai_chat.messages[0].role=user.content", stream.Sources[0].Source)
+}
+
 func TestExtractionCompletenessNestedBudgetsHaveStableReasons(t *testing.T) {
 	deep := `"tail"`
 	for range maxToolResultTextDepth + 2 {

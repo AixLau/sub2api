@@ -30,13 +30,13 @@ func ExtractContentModerationText(protocol string, body []byte) string {
 
 func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...string) ContentModerationInput {
 	if !utf8.Valid(body) {
-		return ContentModerationInput{Truncated: true, TruncateReasons: []string{"invalid_utf8"}}
+		return incompleteContentModerationInput("invalid_utf8")
 	}
 	if len(body) == 0 {
 		return ContentModerationInput{}
 	}
 	if !gjson.ValidBytes(body) {
-		return ContentModerationInput{Truncated: true, TruncateReasons: []string{"invalid_json"}}
+		return incompleteContentModerationInput("invalid_json")
 	}
 	auditScope := ContentModerationAuditScopeAllContext
 	if len(auditScopes) > 0 {
@@ -86,17 +86,34 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 		Truncated:       toolState.truncated,
 		TruncateReasons: append([]string(nil), toolState.truncateReasons...),
 	}
+	out.Extraction = moderationExtractionFromInputSources(sources, !toolState.truncated, toolState.truncateReasons)
 	out.Normalize()
 	deduplicateContentModerationInput(&out)
 	if utf8.RuneCountInString(out.Text) > maxModerationInputRunes {
 		out.Truncated = true
 		out.TruncateReasons = normalizeContentModerationTruncateReasons(append(out.TruncateReasons, "max_input_runes"))
+		out.Extraction.Complete = false
+		out.Extraction.TruncateReasons = append([]string(nil), out.TruncateReasons...)
 		out.Text = trimRunes(out.Text, maxModerationInputRunes)
 	}
 	if protocol == ContentModerationProtocolOpenAIResponses && isCodexInternalPromptText(out.Text) {
 		return ContentModerationInput{}
 	}
 	return out
+}
+
+func incompleteContentModerationInput(reason string) ContentModerationInput {
+	reasons := []string{reason}
+	return ContentModerationInput{Extraction: ModerationExtraction{Complete: false, TruncateReasons: reasons}, Truncated: true, TruncateReasons: reasons}
+}
+
+func moderationExtractionFromInputSources(sources []ContentModerationInputSource, complete bool, reasons []string) ModerationExtraction {
+	extraction := ModerationExtraction{Complete: complete, TruncateReasons: append([]string(nil), reasons...)}
+	for _, source := range sources {
+		extraction.Sources = append(extraction.Sources, ModerationTextSource{Source: source.Source, Role: source.Role, Text: source.Text})
+		extraction.TotalRunes += utf8.RuneCountInString(source.Text)
+	}
+	return extraction
 }
 
 func validateModerationProtocolShape(protocol string, body []byte, state *toolResultTextState) {
@@ -112,6 +129,40 @@ func validateModerationProtocolShape(protocol string, body []byte, state *toolRe
 		}
 		state.markTruncated("unsupported_required_value")
 	}
+	var validateContent func(gjson.Result)
+	validateToolRoot := func(value gjson.Result) {
+		markUnsupported(value, "string", "array", "object")
+	}
+	validateContent = func(value gjson.Result) {
+		if !value.Exists() || value.Type == gjson.String {
+			return
+		}
+		if value.IsArray() {
+			value.ForEach(func(_, child gjson.Result) bool {
+				if child.Type != gjson.String && !child.IsArray() && !child.IsObject() {
+					state.markTruncated("unsupported_required_value")
+					return true
+				}
+				validateContent(child)
+				return true
+			})
+			return
+		}
+		if !value.IsObject() {
+			state.markTruncated("unsupported_required_value")
+			return
+		}
+		if text := value.Get("text"); text.Exists() && text.Type != gjson.String {
+			state.markTruncated("unsupported_required_value")
+		}
+		if content := value.Get("content"); content.Exists() {
+			if strings.EqualFold(strings.TrimSpace(value.Get("type").String()), "tool_result") {
+				validateToolRoot(content)
+			} else {
+				validateContent(content)
+			}
+		}
+	}
 	validateMessages := func(path string) {
 		messages := root.Get(path)
 		if messages.Exists() && !messages.IsArray() {
@@ -123,7 +174,21 @@ func validateModerationProtocolShape(protocol string, body []byte, state *toolRe
 				state.markTruncated("unsupported_required_value")
 				return true
 			}
-			markUnsupported(message.Get("content"), "string", "array", "object")
+			content := message.Get("content")
+			if role := strings.ToLower(strings.TrimSpace(message.Get("role").String())); role == "tool" || role == "function" {
+				validateToolRoot(content)
+			} else {
+				validateContent(content)
+			}
+			if calls := message.Get("tool_calls"); calls.IsArray() {
+				calls.ForEach(func(_, call gjson.Result) bool {
+					validateToolRoot(call.Get("function.arguments"))
+					return true
+				})
+			}
+			if call := message.Get("function_call"); call.IsObject() {
+				validateToolRoot(call.Get("arguments"))
+			}
 			return true
 		})
 	}
@@ -131,10 +196,40 @@ func validateModerationProtocolShape(protocol string, body []byte, state *toolRe
 	case ContentModerationProtocolOpenAIChat:
 		validateMessages("messages")
 	case ContentModerationProtocolAnthropicMessages, ContentModerationProtocolOpenAIMessages:
-		markUnsupported(root.Get("system"), "string", "array", "object")
+		validateContent(root.Get("system"))
 		validateMessages("messages")
 	case ContentModerationProtocolOpenAIResponses:
-		markUnsupported(root.Get("input"), "string", "array", "object")
+		input := root.Get("input")
+		markUnsupported(input, "string", "array", "object")
+		validateResponseItem := func(item gjson.Result) {
+			if item.Type == gjson.String {
+				return
+			}
+			if !item.IsObject() {
+				state.markTruncated("unsupported_required_value")
+				return
+			}
+			typ := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
+			switch {
+			case strings.Contains(typ, "function_call_output") || strings.Contains(typ, "tool_result"):
+				validateToolRoot(item.Get("output"))
+				validateToolRoot(item.Get("content"))
+			case strings.Contains(typ, "function_call") || strings.Contains(typ, "tool_call"):
+				validateToolRoot(item.Get("arguments"))
+				validateToolRoot(item.Get("input"))
+				validateToolRoot(item.Get("parameters"))
+			default:
+				validateContent(item.Get("content"))
+			}
+		}
+		if input.IsArray() {
+			input.ForEach(func(_, item gjson.Result) bool {
+				validateResponseItem(item)
+				return true
+			})
+		} else if input.IsObject() {
+			validateResponseItem(input)
+		}
 	case ContentModerationProtocolGemini:
 		contents := root.Get("contents")
 		if contents.Exists() && !contents.IsArray() {
@@ -144,10 +239,24 @@ func validateModerationProtocolShape(protocol string, body []byte, state *toolRe
 			if !content.IsObject() || (content.Get("parts").Exists() && !content.Get("parts").IsArray()) {
 				state.markTruncated("unsupported_required_value")
 			}
+			content.Get("parts").ForEach(func(_, part gjson.Result) bool {
+				if !part.IsObject() {
+					state.markTruncated("unsupported_required_value")
+					return true
+				}
+				if text := part.Get("text"); text.Exists() && text.Type != gjson.String {
+					state.markTruncated("unsupported_required_value")
+				}
+				for _, path := range []string{"functionResponse.response", "function_response.response"} {
+					validateToolRoot(part.Get(path))
+				}
+				return true
+			})
 			return true
 		})
 	case ContentModerationProtocolOpenAIImages:
 		markUnsupported(root.Get("prompt"), "string")
+		validateContent(root.Get("images"))
 	case ContentModerationProtocolBatchImages:
 		items := root.Get("items")
 		if items.Exists() && !items.IsArray() {
@@ -159,10 +268,20 @@ func validateModerationProtocolShape(protocol string, body []byte, state *toolRe
 				return true
 			}
 			markUnsupported(item.Get("prompt"), "string")
+			validateContent(item.Get("reference_images"))
 			return true
 		})
 	case ContentModerationProtocolOpenAIEmbeddings:
-		markUnsupported(root.Get("input"), "string", "array")
+		input := root.Get("input")
+		markUnsupported(input, "string", "array")
+		if input.IsArray() && !isEmbeddingTokenArray(input) && !isEmbeddingTokenBatchArray(input) {
+			input.ForEach(func(_, item gjson.Result) bool {
+				if item.Type != gjson.String {
+					state.markTruncated("unsupported_required_value")
+				}
+				return true
+			})
+		}
 	}
 }
 
@@ -1006,8 +1125,7 @@ func appendModerationSources(sources *[]ContentModerationInputSource, source str
 	if sources == nil || start < 0 || start >= len(parts) {
 		return
 	}
-	source = strings.TrimSpace(source)
-	if source == "" {
+	if strings.TrimSpace(source) == "" {
 		return
 	}
 	text := normalizeContentModerationText(strings.Join(parts[start:], "\n"))
@@ -1016,8 +1134,31 @@ func appendModerationSources(sources *[]ContentModerationInputSource, source str
 	}
 	*sources = append(*sources, ContentModerationInputSource{
 		Source: source,
+		Role:   moderationRoleForSource(source),
 		Text:   text,
 	})
+}
+
+func moderationRoleForSource(source string) string {
+	if marker := strings.Index(source, ".role="); marker >= 0 {
+		role := source[marker+len(".role="):]
+		if end := strings.IndexByte(role, '.'); end >= 0 {
+			role = role[:end]
+		}
+		if role != "empty" {
+			return strings.ToLower(strings.TrimSpace(role))
+		}
+	}
+	switch {
+	case strings.Contains(source, "function_call_output"), strings.Contains(source, "tool_result"):
+		return "tool"
+	case source == "anthropic.system", strings.HasPrefix(source, "gemini.system"), strings.HasSuffix(source, ".system"):
+		return "system"
+	case source == "responses.developer":
+		return "developer"
+	default:
+		return "user"
+	}
 }
 
 func sourceRoleName(role string) string {
@@ -1082,7 +1223,7 @@ func deduplicateContentModerationInput(input *ContentModerationInput) {
 			continue
 		}
 		seen[key] = struct{}{}
-		out = append(out, ContentModerationInputSource{Source: source.Source, Text: text})
+		out = append(out, ContentModerationInputSource{Source: source.Source, Role: source.Role, Text: text})
 		parts = append(parts, text)
 	}
 	input.Sources = out

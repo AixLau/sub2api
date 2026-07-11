@@ -445,12 +445,14 @@ type ContentModerationInput struct {
 	Text            string
 	Images          []string
 	Sources         []ContentModerationInputSource
+	Extraction      ModerationExtraction
 	Truncated       bool
 	TruncateReasons []string
 }
 
 type ContentModerationInputSource struct {
 	Source string
+	Role   string
 	Text   string
 }
 
@@ -3577,12 +3579,12 @@ func normalizeContentModerationInputSources(sources []ContentModerationInputSour
 	}
 	out := make([]ContentModerationInputSource, 0, len(sources))
 	for _, source := range sources {
-		name := strings.TrimSpace(source.Source)
+		name := source.Source
 		text := trimRunes(normalizeContentModerationText(source.Text), maxModerationInputRunes)
-		if name == "" || text == "" {
+		if strings.TrimSpace(name) == "" || text == "" {
 			continue
 		}
-		out = append(out, ContentModerationInputSource{Source: name, Text: text})
+		out = append(out, ContentModerationInputSource{Source: name, Role: strings.ToLower(strings.TrimSpace(source.Role)), Text: text})
 	}
 	return out
 }
