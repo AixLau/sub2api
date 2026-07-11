@@ -38,6 +38,15 @@ func (s *ContentModerationService) incrementalModerationAvailable(content Conten
 }
 
 func (s *ContentModerationService) runIncrementalModeration(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput) (AggregatedModerationBatch, error) {
+	started := time.Now()
+	cacheState := "cold"
+	finalLevel := ModerationLevel("")
+	chunkCount := 0
+	defer func() {
+		if s.metrics != nil {
+			s.metrics.observeRequest(cfg.Mode, cacheState, finalLevel, started, chunkCount)
+		}
+	}()
 	stream, err := CanonicalizeModerationExtraction(content.Extraction)
 	if err != nil {
 		return AggregatedModerationBatch{}, err
@@ -50,8 +59,10 @@ func (s *ContentModerationService) runIncrementalModeration(ctx context.Context,
 		return AggregatedModerationBatch{}, err
 	}
 	if len(chunks) == 0 {
+		finalLevel = ModerationLevelPass
 		return AggregatedModerationBatch{Level: ModerationLevelPass, Evidence: []ModerationBatchEvidence{}}, nil
 	}
+	chunkCount = len(chunks)
 
 	feedbackEpoch := uint64(0)
 	if s.feedbackEpochRepo != nil {
@@ -107,9 +118,16 @@ func (s *ContentModerationService) runIncrementalModeration(ctx context.Context,
 		requestKey := moderationRequestCacheKey(ids)
 		quarantine, lookupErr := s.passCache.LookupQuarantine(ctx, cacheOpts, []string{requestKey})
 		if lookupErr != nil {
+			if s.metrics != nil {
+				s.metrics.cache.WithLabelValues("quarantine_read", "error").Inc()
+			}
 			return AggregatedModerationBatch{}, fmt.Errorf("lookup moderation quarantine: %w", lookupErr)
 		}
 		if _, hit := quarantine[requestKey]; hit {
+			if s.metrics != nil {
+				s.metrics.cache.WithLabelValues("quarantine_read", "hit").Inc()
+			}
+			finalLevel = ModerationLevelReview
 			return AggregatedModerationBatch{Level: ModerationLevelReview, RiskTypes: []string{"quarantine"}}, nil
 		}
 	}
@@ -118,7 +136,12 @@ func (s *ContentModerationService) runIncrementalModeration(ctx context.Context,
 	if cacheEnabled {
 		hits, err = s.passCache.LookupPASS(ctx, cacheOpts, ids)
 		if err != nil {
+			if s.metrics != nil {
+				s.metrics.cache.WithLabelValues("pass_read", "error").Inc()
+			}
 			hits = map[string]bool{}
+		} else if s.metrics != nil {
+			s.metrics.cache.WithLabelValues("pass_read", "success").Inc()
 		}
 	}
 	evidence := make([]ModerationBatchEvidence, 0, len(chunks))
@@ -129,6 +152,11 @@ func (s *ContentModerationService) runIncrementalModeration(ctx context.Context,
 			continue
 		}
 		misses = append(misses, ModerationBatchChunk{ID: ids[index], Text: chunk.Text})
+	}
+	if len(hits) == len(chunks) {
+		cacheState = "all_hit"
+	} else if len(hits) > 0 {
+		cacheState = "incremental"
 	}
 	if len(misses) > 0 {
 		mode := ModerationBatchModeObserve
@@ -141,10 +169,23 @@ func (s *ContentModerationService) runIncrementalModeration(ctx context.Context,
 			MaxConcurrency: ModerationBatchDefaultConcurrency, MaxCalls: len(misses) * 2,
 		}
 		evidence = append(evidence, executor.Execute(ctx, misses, mode)...)
+		if s.metrics != nil {
+			for _, item := range evidence[len(evidence)-len(misses):] {
+				result := "success"
+				if item.Err != nil {
+					result = "error"
+				}
+				s.metrics.providerCalls.WithLabelValues(result).Inc()
+			}
+		}
 	}
 	aggregated, err := AggregateModerationBatch(stream.Complete, ids, evidence)
 	if err != nil {
 		return AggregatedModerationBatch{}, err
+	}
+	finalLevel = aggregated.Level
+	if s.metrics != nil && strings.EqualFold(strings.TrimSpace(input.Provider), "openai") {
+		s.metrics.forwardedEvidence.WithLabelValues(boundedModerationAggregate(aggregated.Level)).Inc()
 	}
 	if cacheEnabled && aggregated.Level == ModerationLevelPass {
 		freshKeys := make([]string, 0, len(misses))
@@ -152,6 +193,26 @@ func (s *ContentModerationService) runIncrementalModeration(ctx context.Context,
 			freshKeys = append(freshKeys, miss.ID)
 		}
 		s.passCache.StorePASS(ctx, cacheOpts, freshKeys)
+		if s.metrics != nil && len(freshKeys) > 0 {
+			s.metrics.cache.WithLabelValues("pass_write", "attempt").Add(float64(len(freshKeys)))
+		}
+	}
+	if cacheState == "all_hit" && cfg.Mode == ContentModerationModeObserve && shouldForceFreshModeration(input.RequestID) {
+		freshChunks := make([]ModerationBatchChunk, len(chunks))
+		for index, chunk := range chunks {
+			freshChunks[index] = ModerationBatchChunk{ID: ids[index], Text: chunk.Text}
+		}
+		executor := ModerationBatchExecutor{Provider: provider, Keys: contentModerationBatchKeySelector{service: s, config: cfg}, Model: cfg.Model, BatchTimeout: ModerationBatchDefaultTimeout, CallTimeout: min(time.Duration(cfg.TimeoutMS)*time.Millisecond, ModerationBatchDefaultCallTimeout), MaxConcurrency: ModerationBatchDefaultConcurrency, MaxCalls: len(freshChunks) * 2}
+		fresh, freshErr := AggregateModerationBatch(true, ids, executor.Execute(ctx, freshChunks, ModerationBatchModeObserve))
+		if s.metrics != nil {
+			result := "provider_error"
+			if freshErr == nil && fresh.Level == aggregated.Level {
+				result = "equivalent"
+			} else if freshErr == nil {
+				result = "mismatch"
+			}
+			s.metrics.forcedFresh.WithLabelValues(result).Inc()
+		}
 	}
 	if cacheEnabled && cfg.Provider == "zhipu" && aggregated.Level == ModerationLevelPass && strings.TrimSpace(input.RequestID) != "" {
 		decisionID := contentModerationDecisionID(input, nil, "")
@@ -170,6 +231,14 @@ func (s *ContentModerationService) runIncrementalModeration(ctx context.Context,
 		}
 	}
 	return aggregated, nil
+}
+
+func shouldForceFreshModeration(requestID string) bool {
+	if strings.TrimSpace(requestID) == "" {
+		return false
+	}
+	digest := sha256.Sum256([]byte(requestID))
+	return int(digest[0]) < 3
 }
 
 func legacyModerationRules(rules []ContentModerationKeywordRule) []LegacyModerationRule {

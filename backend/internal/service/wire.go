@@ -62,6 +62,7 @@ func ProvideContentModerationService(
 		key,
 		cfg.Moderation.CacheHMACKeyVersion,
 	)
+	svc.SetModerationMetrics(NewContentModerationMetrics())
 	svc.SetOutboxRepository(outboxRepo)
 	if rawStore, ok := repo.(ContentModerationRawRequestSnapshotStore); ok {
 		svc.SetRawRequestSnapshotStore(rawStore, encryptor)

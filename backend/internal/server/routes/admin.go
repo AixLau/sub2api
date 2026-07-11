@@ -125,6 +125,7 @@ func registerContentModerationRoutes(admin *gin.RouterGroup, h *handler.Handlers
 		risk.POST("/api-keys/test", h.Admin.ContentModeration.TestAPIKeys)
 		risk.POST("/keywords/test", h.Admin.ContentModeration.TestKeywords)
 		risk.GET("/status", h.Admin.ContentModeration.GetStatus)
+		risk.GET("/metrics", h.Admin.ContentModeration.GetMetrics)
 		risk.GET("/logs", h.Admin.ContentModeration.ListLogs)
 		risk.GET("/logs/:id/raw-request", h.Admin.ContentModeration.GetRawRequestSnapshot)
 		risk.PATCH("/logs/:id/review", h.Admin.ContentModeration.ReviewLog)

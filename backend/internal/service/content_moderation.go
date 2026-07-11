@@ -940,6 +940,7 @@ type ContentModerationService struct {
 	restrictedClientFactory   RestrictedModerationClientFactory
 	moderationCacheHMACKey    []byte
 	moderationCacheKeyVersion uint64
+	metrics                   *ContentModerationMetrics
 }
 
 type contentModerationTask struct {
@@ -1022,6 +1023,19 @@ func (s *ContentModerationService) SetIncrementalModerationDependencies(passCach
 	s.restrictedClientFactory = factory
 	s.moderationCacheHMACKey = append([]byte(nil), hmacKey...)
 	s.moderationCacheKeyVersion = keyVersion
+}
+
+func (s *ContentModerationService) SetModerationMetrics(metrics *ContentModerationMetrics) {
+	if s != nil {
+		s.metrics = metrics
+	}
+}
+
+func (s *ContentModerationService) ModerationMetricsHandler() http.Handler {
+	if s == nil || s.metrics == nil {
+		return http.NotFoundHandler()
+	}
+	return s.metrics.Handler()
 }
 
 func (s *ContentModerationService) SetRawRequestSnapshotStore(store ContentModerationRawRequestSnapshotStore, encryptor SecretEncryptor) {
@@ -2227,6 +2241,9 @@ func (s *ContentModerationService) ReviewLog(ctx context.Context, id int64, inpu
 		if log.HighestScore >= 1 && s.feedbackEpochRepo != nil {
 			if _, err := s.feedbackEpochRepo.IncrementModerationFeedbackEpoch(ctx); err != nil {
 				return nil, fmt.Errorf("increment moderation feedback epoch: %w", err)
+			}
+			if s.metrics != nil {
+				s.metrics.highSeverityMiss.Inc()
 			}
 		}
 	default:
@@ -6492,12 +6509,18 @@ type CyberSessionBlockedRecordInput struct {
 
 func (s *ContentModerationService) correlateCyberPolicyMiss(ctx context.Context, cfg *ContentModerationConfig, requestID string) *ContentModerationComparisonMetadata {
 	if s == nil || s.passCache == nil || cfg == nil || strings.TrimSpace(requestID) == "" {
+		if s != nil && s.metrics != nil {
+			s.metrics.correlation.WithLabelValues("missing_id").Inc()
+		}
 		return nil
 	}
 	metadata, err := s.passCache.GetComparisonMetadata(ctx, requestID)
 	if err != nil || metadata == nil {
 		if err != nil {
 			slog.Warn("content_moderation.cyber_comparison_read_failed", "error", err)
+		}
+		if s.metrics != nil {
+			s.metrics.correlation.WithLabelValues("missing_metadata").Inc()
 		}
 		return nil
 	}
@@ -6508,6 +6531,9 @@ func (s *ContentModerationService) correlateCyberPolicyMiss(ctx context.Context,
 		metadata.TotalChunks <= 0 || metadata.TotalChunks != metadata.CachedChunks+metadata.FreshChunks ||
 		metadata.ForwardedAt.IsZero() || metadata.CorrelationDeadline.IsZero() || now.Before(metadata.ForwardedAt) || now.After(metadata.CorrelationDeadline) ||
 		len(metadata.ChunkKeys) != metadata.TotalChunks || strings.TrimSpace(metadata.RequestHMAC) == "" {
+		if s.metrics != nil {
+			s.metrics.correlation.WithLabelValues("ineligible").Inc()
+		}
 		return nil
 	}
 	opts := ContentModerationPassCacheOptions{Enabled: true, KeyVersion: s.moderationCacheKeyVersion, TTL: 24 * time.Hour}
@@ -6517,6 +6543,10 @@ func (s *ContentModerationService) correlateCyberPolicyMiss(ctx context.Context,
 	if err := s.passCache.StoreQuarantine(ctx, opts, map[string]ContentModerationQuarantineEntry{metadata.RequestHMAC: {}}); err != nil {
 		slog.Warn("content_moderation.cyber_quarantine_write_failed", "request_id", requestID, "error", err)
 		return nil
+	}
+	if s.metrics != nil {
+		s.metrics.correlation.WithLabelValues("correlated").Inc()
+		s.metrics.pendingReviewAge.Set(0)
 	}
 	return metadata
 }

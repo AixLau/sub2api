@@ -197,6 +197,10 @@ func (h *ContentModerationHandler) GetStatus(c *gin.Context) {
 	response.Success(c, status)
 }
 
+func (h *ContentModerationHandler) GetMetrics(c *gin.Context) {
+	h.service.ModerationMetricsHandler().ServeHTTP(c.Writer, c.Request)
+}
+
 func (h *ContentModerationHandler) ListLogs(c *gin.Context) {
 	page, pageSize := response.ParsePagination(c)
 	filter := service.ContentModerationLogFilter{
