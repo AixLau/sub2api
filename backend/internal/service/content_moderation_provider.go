@@ -204,7 +204,10 @@ func (p *moderationProviderAdapter) decodeZhipu(body io.Reader) (ProviderModerat
 		RiskTypes *[]json.RawMessage `json:"risk_types"`
 	}
 	var response struct {
-		Results []result `json:"results"`
+		ID        string   `json:"id"`
+		Created   int64    `json:"created"`
+		RequestID string   `json:"request_id"`
+		Results   []result `json:"results"`
 	}
 	if err := decodeModerationJSON(body, &response); err != nil {
 		return ProviderModerationResult{}, p.providerError(ModerationProviderErrorSchema, 0, err)
