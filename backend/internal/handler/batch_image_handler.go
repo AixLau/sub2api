@@ -234,14 +234,29 @@ func batchImageOwnerFromContext(c *gin.Context) (service.BatchImageOwner, bool) 
 	if !ok || apiKey == nil || apiKey.ID <= 0 || apiKey.UserID <= 0 {
 		return service.BatchImageOwner{}, false
 	}
-	return service.BatchImageOwner{
-		UserID:   apiKey.UserID,
-		APIKeyID: apiKey.ID,
-		GroupID:  apiKey.GroupID,
-	}, true
+	owner := service.BatchImageOwner{
+		UserID:     apiKey.UserID,
+		APIKeyID:   apiKey.ID,
+		APIKeyName: apiKey.Name,
+		GroupID:    apiKey.GroupID,
+	}
+	if apiKey.User != nil {
+		owner.UserEmail = apiKey.User.Email
+	}
+	if apiKey.Group != nil {
+		owner.GroupName = apiKey.Group.Name
+	}
+	return owner, true
 }
 
 func batchImageError(c *gin.Context, err error) {
+	var moderationErr *service.ContentModerationGateError
+	if errors.As(err, &moderationErr) {
+		c.JSON(moderationErr.StatusCode, gin.H{"error": gin.H{
+			"type": "invalid_request_error", "code": moderationErr.Code, "message": moderationErr.Message,
+		}})
+		return
+	}
 	status := infraerrors.Code(err)
 	code := infraerrors.Reason(err)
 	message := infraerrors.Message(err)

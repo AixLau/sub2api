@@ -668,11 +668,41 @@ func (s GatewayRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult {
 		if s.Account != nil {
 			*s.Account = account
 		}
+		if err == nil && account != nil {
+			if value, ok := c.Get(gatewayPreForwardRequestContextKey); ok {
+				if request, requestOK := value.(gatewayPreForwardRequest); requestOK {
+					apiKey, _ := middleware2.GetAPIKeyFromContext(c)
+					subject, _ := middleware2.GetAuthSubjectFromContext(c)
+					gate := runSelectedAccountContentModeration(c, requestLogger(c, "handler.gateway.account_moderation"), h.contentModerationService, apiKey, subject, request.Protocol, request.Model, request.Body, account)
+					if gate != nil && gate.Decision != nil && gate.Decision.Blocked {
+						h.writeGatewayPreForwardModerationError(c, request.ErrorFormat, gate.Decision)
+						return ExecutableStageResult{Stop: true}
+					}
+				}
+			}
+		}
 		return ExecutableStageResult{Err: err}
 	}
 	selection, err := h.gatewayService.SelectAccountWithLoadAwareness(ctx, s.GroupID, s.SessionHash, s.Model, s.FailedAccountIDs, s.MetadataUserID, s.Sub2APIUserID)
 	if s.Selection != nil {
 		*s.Selection = selection
+	}
+	if err == nil && selection != nil && selection.Account != nil {
+		if value, ok := c.Get(gatewayPreForwardRequestContextKey); ok {
+			if request, requestOK := value.(gatewayPreForwardRequest); requestOK {
+				apiKey, _ := middleware2.GetAPIKeyFromContext(c)
+				subject, _ := middleware2.GetAuthSubjectFromContext(c)
+				gate := runSelectedAccountContentModeration(c, requestLogger(c, "handler.gateway.account_moderation"), h.contentModerationService, apiKey, subject, request.Protocol, request.Model, request.Body, selection.Account)
+				if gate != nil && gate.Decision != nil && gate.Decision.Blocked {
+					if selection.Acquired && selection.ReleaseFunc != nil {
+						selection.ReleaseFunc()
+						selection.ReleaseFunc = nil
+					}
+					h.writeGatewayPreForwardModerationError(c, request.ErrorFormat, gate.Decision)
+					return ExecutableStageResult{Stop: true}
+				}
+			}
+		}
 	}
 	return ExecutableStageResult{Err: err}
 }

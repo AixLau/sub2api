@@ -376,6 +376,9 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 			Sub2APIUserID:    authSubject.UserID,
 			Selection:        &selection,
 		})
+		if routingStage.Stop {
+			return
+		}
 		err := routingStage.Err
 		if err != nil {
 			if len(fs.FailedAccountIDs) == 0 {

@@ -114,6 +114,19 @@ const (
 	ContentModerationAuditScopeUserAndTool = "user_and_tool"
 	ContentModerationAuditScopeAllContext  = "all_context"
 
+	ContentModerationAccountScopeAll      = "all"
+	ContentModerationAccountScopeOAuth    = "oauth"
+	ContentModerationAccountScopeSelected = "selected"
+
+	ContentModerationDispositionOutOfScope          = "out_of_scope"
+	ContentModerationDispositionDeterministicAllow  = "deterministic_allow"
+	ContentModerationDispositionObserveEnqueued     = "observe_enqueued"
+	ContentModerationDispositionObserveDropped      = "observe_dropped"
+	ContentModerationDispositionAllowed             = "allowed"
+	ContentModerationDispositionBlocked             = "blocked"
+	ContentModerationDispositionProviderErrorOpen   = "provider_error_fail_open"
+	ContentModerationDispositionProviderErrorClosed = "provider_error_fail_closed"
+
 	defaultContentModerationBaseURL     = "https://api.openai.com"
 	defaultContentModerationModel       = "omni-moderation-latest"
 	defaultContentModerationTimeoutMS   = 3000
@@ -220,6 +233,8 @@ type ContentModerationConfig struct {
 	SampleRate           int                                    `json:"sample_rate"`
 	AllGroups            bool                                   `json:"all_groups"`
 	GroupIDs             []int64                                `json:"group_ids"`
+	AccountScope         string                                 `json:"account_scope,omitempty"`
+	AccountIDs           []int64                                `json:"account_ids,omitempty"`
 	RecordNonHits        bool                                   `json:"record_non_hits"`
 	AuditScope           string                                 `json:"audit_scope,omitempty"`
 	StoreInputExcerpt    bool                                   `json:"store_input_excerpt"`
@@ -264,6 +279,8 @@ type ContentModerationConfigView struct {
 	SampleRate                     int                                    `json:"sample_rate"`
 	AllGroups                      bool                                   `json:"all_groups"`
 	GroupIDs                       []int64                                `json:"group_ids"`
+	AccountScope                   string                                 `json:"account_scope"`
+	AccountIDs                     []int64                                `json:"account_ids"`
 	RecordNonHits                  bool                                   `json:"record_non_hits"`
 	AuditScope                     string                                 `json:"audit_scope"`
 	StoreInputExcerpt              bool                                   `json:"store_input_excerpt"`
@@ -382,6 +399,8 @@ type UpdateContentModerationConfigInput struct {
 	SampleRate                     *int                                    `json:"sample_rate"`
 	AllGroups                      *bool                                   `json:"all_groups"`
 	GroupIDs                       *[]int64                                `json:"group_ids"`
+	AccountScope                   *string                                 `json:"account_scope"`
+	AccountIDs                     *[]int64                                `json:"account_ids"`
 	RecordNonHits                  *bool                                   `json:"record_non_hits"`
 	AuditScope                     *string                                 `json:"audit_scope"`
 	StoreInputExcerpt              *bool                                   `json:"store_input_excerpt"`
@@ -427,19 +446,46 @@ type ContentModerationModelFilter struct {
 }
 
 type ContentModerationCheckInput struct {
-	RequestID  string
-	UserID     int64
-	UserEmail  string
-	APIKeyID   int64
-	APIKeyName string
-	GroupID    *int64
-	GroupName  string
-	Endpoint   string
-	Provider   string
-	Model      string
-	Protocol   string
-	Body       []byte
+	RequestID   string
+	UserID      int64
+	UserEmail   string
+	APIKeyID    int64
+	APIKeyName  string
+	GroupID     *int64
+	GroupName   string
+	AccountID   int64
+	AccountName string
+	AccountType string
+	Endpoint    string
+	Provider    string
+	Model       string
+	Protocol    string
+	Body        []byte
 }
+
+type ContentModerationAttemptState struct {
+	Disposition    string
+	Decision       *ContentModerationDecision
+	InputHash      string
+	PolicyRevision string
+	Reusable       bool
+}
+
+type ContentModerationGateResult struct {
+	Disposition    string
+	Decision       *ContentModerationDecision
+	InputHash      string
+	PolicyRevision string
+	Reused         bool
+	NextState      *ContentModerationAttemptState
+}
+
+type contentModerationPolicySnapshot struct {
+	riskEnabled bool
+	config      *ContentModerationConfig
+}
+
+type contentModerationPolicySnapshotContextKey struct{}
 
 type ContentModerationInput struct {
 	Text            string
@@ -558,6 +604,9 @@ type ContentModerationLog struct {
 	APIKeyName             string             `json:"api_key_name"`
 	GroupID                *int64             `json:"group_id,omitempty"`
 	GroupName              string             `json:"group_name"`
+	AccountID              *int64             `json:"account_id,omitempty"`
+	AccountName            string             `json:"account_name"`
+	AccountType            string             `json:"account_type"`
 	Endpoint               string             `json:"endpoint"`
 	Provider               string             `json:"provider"`
 	Model                  string             `json:"model"`
@@ -654,6 +703,7 @@ type ContentModerationEffectiveProtectionStatus struct {
 	AuditScope                 string   `json:"audit_scope"`
 	PublicFailStrategy         string   `json:"public_fail_strategy"`
 	GroupCoverage              string   `json:"group_coverage"`
+	AccountCoverage            string   `json:"account_coverage"`
 	ModelCoverage              string   `json:"model_coverage"`
 	EngineMode                 string   `json:"engine_mode"`
 	ExternalAPIConfigured      bool     `json:"external_api_configured"`
@@ -827,6 +877,10 @@ type ContentModerationHashCache interface {
 	CountFlaggedInputHashes(ctx context.Context) (int64, error)
 }
 
+type ContentModerationAccountScopeRepository interface {
+	GetByIDs(ctx context.Context, ids []int64) ([]*Account, error)
+}
+
 type ContentModerationService struct {
 	settingRepo              SettingRepository
 	repo                     ContentModerationRepository
@@ -834,6 +888,7 @@ type ContentModerationService struct {
 	rawRequestEncryptor      SecretEncryptor
 	hashCache                ContentModerationHashCache
 	groupRepo                GroupRepository
+	accountScopeRepo         ContentModerationAccountScopeRepository
 	userRepo                 UserRepository
 	authCacheInvalidator     APIKeyAuthCacheInvalidator
 	emailService             *EmailService
@@ -903,6 +958,7 @@ func NewContentModerationService(
 	userRepo UserRepository,
 	authCacheInvalidator APIKeyAuthCacheInvalidator,
 	emailService *EmailService,
+	accountScopeRepos ...ContentModerationAccountScopeRepository,
 ) *ContentModerationService {
 	svc := &ContentModerationService{
 		settingRepo:          settingRepo,
@@ -916,6 +972,9 @@ func NewContentModerationService(
 		workerCount:          maxContentModerationWorkerCount,
 		asyncQueue:           make(chan contentModerationTask, maxContentModerationQueueSize),
 		keyHealth:            make(map[string]*contentModerationKeyHealth),
+	}
+	if len(accountScopeRepos) > 0 {
+		svc.accountScopeRepo = accountScopeRepos[0]
 	}
 	if settingRepo != nil && repo != nil {
 		for i := 0; i < svc.workerCount; i++ {
@@ -951,6 +1010,17 @@ func (s *ContentModerationService) GetConfig(ctx context.Context) (*ContentModer
 		return nil, err
 	}
 	return s.configView(cfg), nil
+}
+
+func (s *ContentModerationService) RequiresSelectedAccount(ctx context.Context) bool {
+	if s == nil {
+		return false
+	}
+	cfg, err := s.loadConfig(ctx)
+	if err != nil {
+		return false
+	}
+	return normalizeContentModerationAccountScope(cfg.AccountScope) != ContentModerationAccountScopeAll
 }
 
 func (s *ContentModerationService) UpdateConfig(ctx context.Context, input UpdateContentModerationConfigInput) (*ContentModerationConfigView, error) {
@@ -1044,6 +1114,15 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	}
 	if input.GroupIDs != nil {
 		cfg.GroupIDs = normalizeInt64IDs(*input.GroupIDs)
+	}
+	if input.AccountScope != nil {
+		if !isValidContentModerationAccountScope(*input.AccountScope) {
+			return nil, infraerrors.BadRequest("INVALID_CONTENT_MODERATION_ACCOUNT_SCOPE", "内容审计账号范围无效")
+		}
+		cfg.AccountScope = strings.TrimSpace(*input.AccountScope)
+	}
+	if input.AccountIDs != nil {
+		cfg.AccountIDs = normalizeInt64IDs(*input.AccountIDs)
 	}
 	if input.RecordNonHits != nil {
 		cfg.RecordNonHits = *input.RecordNonHits
@@ -1186,6 +1265,132 @@ func (s *ContentModerationService) TestKeywords(ctx context.Context, prompt stri
 	return result, nil
 }
 
+func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, input ContentModerationCheckInput, prior *ContentModerationAttemptState) (*ContentModerationGateResult, error) {
+	allow := &ContentModerationDecision{Allowed: true, Action: ContentModerationActionAllow}
+	if s == nil || s.settingRepo == nil || s.repo == nil {
+		return &ContentModerationGateResult{
+			Disposition: ContentModerationDispositionProviderErrorClosed,
+			Decision:    contentModerationFailureDecision(defaultContentModerationConfig()),
+		}, nil
+	}
+	riskEnabled := s != nil && s.isRiskControlEnabled(ctx)
+	cfg, err := s.loadConfig(ctx)
+	if err != nil {
+		return &ContentModerationGateResult{
+			Disposition: ContentModerationDispositionProviderErrorClosed,
+			Decision:    contentModerationFailureDecision(defaultContentModerationConfig()),
+		}, nil
+	}
+	policyRevision := contentModerationPolicyRevision(riskEnabled, cfg)
+	inGroupScope := cfg.includesGroup(input.GroupID)
+	inAccountScope := cfg.includesAccount(input.AccountID, input.AccountType)
+	inModelScope := cfg.includesModel(input.Model)
+	if !inGroupScope || !inAccountScope || !inModelScope {
+		event := "content_moderation.skip_scope_out_of_scope"
+		if !inAccountScope {
+			event = "content_moderation.skip_account_out_of_scope"
+		}
+		slog.Info(event,
+			"user_id", input.UserID,
+			"api_key_id", input.APIKeyID,
+			"group_id", contentModerationLogGroupID(input.GroupID),
+			"account_id", input.AccountID,
+			"account_name", input.AccountName,
+			"account_type", input.AccountType,
+			"account_scope", cfg.AccountScope,
+			"configured_account_ids", cfg.AccountIDs,
+			"in_account_scope", inAccountScope,
+			"in_group_scope", inGroupScope,
+			"in_model_scope", inModelScope,
+			"endpoint", input.Endpoint,
+			"protocol", input.Protocol)
+		return &ContentModerationGateResult{
+			Disposition:    ContentModerationDispositionOutOfScope,
+			Decision:       allow,
+			PolicyRevision: policyRevision,
+			NextState:      prior,
+		}, nil
+	}
+
+	content := ExtractContentModerationInput(input.Protocol, input.Body, cfg.AuditScope)
+	content.Normalize()
+	inputHash := content.Hash()
+	if prior != nil && prior.Reusable && prior.InputHash == inputHash && prior.PolicyRevision == policyRevision {
+		return &ContentModerationGateResult{
+			Disposition:    prior.Disposition,
+			Decision:       prior.Decision,
+			InputHash:      inputHash,
+			PolicyRevision: policyRevision,
+			Reused:         true,
+			NextState:      prior,
+		}, nil
+	}
+	if riskEnabled && cfg.Enabled && cfg.Mode == ContentModerationModeObserve && !content.IsEmpty() && len(cfg.apiKeys()) > 0 {
+		disposition := ContentModerationDispositionObserveDropped
+		result := &ContentModerationGateResult{
+			Disposition: disposition, Decision: allow, InputHash: inputHash, PolicyRevision: policyRevision,
+		}
+		if s.enqueueAsync(input, cfg, content, inputHash) {
+			disposition = ContentModerationDispositionObserveEnqueued
+			result.Disposition = disposition
+			result.NextState = &ContentModerationAttemptState{
+				Disposition: disposition, Decision: allow, InputHash: inputHash, PolicyRevision: policyRevision, Reusable: true,
+			}
+		}
+		return result, nil
+	}
+
+	snapshotCtx := context.WithValue(ctx, contentModerationPolicySnapshotContextKey{}, contentModerationPolicySnapshot{
+		riskEnabled: riskEnabled,
+		config:      cloneContentModerationConfig(cfg),
+	})
+	decision, err := s.Check(snapshotCtx, input)
+	if err != nil {
+		return nil, err
+	}
+	disposition := ContentModerationDispositionAllowed
+	reusable := true
+	switch {
+	case decision != nil && decision.Blocked && decision.Action == ContentModerationActionError:
+		disposition = ContentModerationDispositionProviderErrorClosed
+		reusable = false
+	case decision != nil && decision.Blocked:
+		disposition = ContentModerationDispositionBlocked
+		reusable = false
+	case decision != nil && decision.Action == ContentModerationActionError:
+		disposition = ContentModerationDispositionProviderErrorOpen
+		reusable = false
+	case !riskEnabled || !cfg.Enabled || cfg.Mode == ContentModerationModeOff || content.IsEmpty() || len(cfg.apiKeys()) == 0 || !cfg.externalModerationRequired():
+		disposition = ContentModerationDispositionDeterministicAllow
+	}
+	result := &ContentModerationGateResult{
+		Disposition:    disposition,
+		Decision:       decision,
+		InputHash:      inputHash,
+		PolicyRevision: policyRevision,
+	}
+	if reusable {
+		result.NextState = &ContentModerationAttemptState{
+			Disposition:    disposition,
+			Decision:       decision,
+			InputHash:      inputHash,
+			PolicyRevision: policyRevision,
+			Reusable:       true,
+		}
+	}
+	return result, nil
+}
+
+func contentModerationPolicyRevision(riskEnabled bool, cfg *ContentModerationConfig) string {
+	payload, _ := json.Marshal(struct {
+		Version     int                      `json:"version"`
+		RiskEnabled bool                     `json:"risk_control_enabled"`
+		Config      *ContentModerationConfig `json:"config"`
+	}{Version: 1, RiskEnabled: riskEnabled, Config: cfg})
+	hash := sha256.Sum256(payload)
+	return hex.EncodeToString(hash[:])
+}
+
 func (s *ContentModerationService) Check(ctx context.Context, input ContentModerationCheckInput) (*ContentModerationDecision, error) {
 	allow := &ContentModerationDecision{Allowed: true, Action: ContentModerationActionAllow}
 	if s == nil || s.settingRepo == nil || s.repo == nil {
@@ -1197,7 +1402,13 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"protocol", input.Protocol)
 		return contentModerationFailureDecision(defaultContentModerationConfig()), nil
 	}
-	if !s.isRiskControlEnabled(ctx) {
+	riskEnabled := s.isRiskControlEnabled(ctx)
+	var snapshot contentModerationPolicySnapshot
+	if value, ok := ctx.Value(contentModerationPolicySnapshotContextKey{}).(contentModerationPolicySnapshot); ok {
+		snapshot = value
+		riskEnabled = value.riskEnabled
+	}
+	if !riskEnabled {
 		slog.Info("content_moderation.skip_feature_disabled",
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,
@@ -1206,7 +1417,13 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"protocol", input.Protocol)
 		return allow, nil
 	}
-	cfg, err := s.loadConfig(ctx)
+	var cfg *ContentModerationConfig
+	var err error
+	if snapshot.config != nil {
+		cfg = cloneContentModerationConfig(snapshot.config)
+	} else {
+		cfg, err = s.loadConfig(ctx)
+	}
 	if err != nil {
 		slog.Warn("content_moderation.skip_config_load_failed",
 			"user_id", input.UserID,
@@ -1805,9 +2022,9 @@ func normalizeLocalClassifierKeywordCategory(category string, label string, fall
 	}
 }
 
-func (s *ContentModerationService) enqueueAsync(input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string) {
+func (s *ContentModerationService) enqueueAsync(input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string) bool {
 	if s == nil || s.asyncQueue == nil {
-		return
+		return false
 	}
 	queueSize := defaultContentModerationQueueSize
 	if cfg != nil && cfg.QueueSize > 0 {
@@ -1816,7 +2033,7 @@ func (s *ContentModerationService) enqueueAsync(input ContentModerationCheckInpu
 	if len(s.asyncQueue) >= queueSize {
 		slog.Warn("content_moderation.async_queue_full", "user_id", input.UserID, "endpoint", input.Endpoint, "queue_size", queueSize)
 		s.asyncDropped.Add(1)
-		return
+		return false
 	}
 	task := contentModerationTask{
 		input:      input,
@@ -1827,9 +2044,11 @@ func (s *ContentModerationService) enqueueAsync(input ContentModerationCheckInpu
 	select {
 	case s.asyncQueue <- task:
 		s.asyncEnqueued.Add(1)
+		return true
 	default:
 		slog.Warn("content_moderation.async_queue_full", "user_id", input.UserID, "endpoint", input.Endpoint)
 		s.asyncDropped.Add(1)
+		return false
 	}
 }
 
@@ -2864,6 +3083,13 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 	if !cfg.AllGroups {
 		groupCoverage = "scoped_groups"
 	}
+	accountCoverage := "all_accounts"
+	switch cfg.AccountScope {
+	case ContentModerationAccountScopeOAuth:
+		accountCoverage = "oauth_accounts"
+	case ContentModerationAccountScopeSelected:
+		accountCoverage = "selected_accounts"
+	}
 	modelCoverage := modelFilter.Type
 	externalAPIConfigured := len(cfg.apiKeys()) > 0
 	externalAPIHealth := s.contentModerationExternalAPIHealth(cfg)
@@ -2930,6 +3156,9 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 	if !cfg.AllGroups {
 		unsafeReasons = append(unsafeReasons, "group_scope_not_all")
 	}
+	if cfg.AccountScope != ContentModerationAccountScopeAll {
+		unsafeReasons = append(unsafeReasons, "account_scope_not_all")
+	}
 	if modelFilter.Type != ContentModerationModelFilterAll {
 		unsafeReasons = append(unsafeReasons, "model_filter_not_all")
 	}
@@ -2972,6 +3201,7 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 		AuditScope:                 cfg.AuditScope,
 		PublicFailStrategy:         failStrategy.Default,
 		GroupCoverage:              groupCoverage,
+		AccountCoverage:            accountCoverage,
 		ModelCoverage:              modelCoverage,
 		EngineMode:                 cfg.EngineMode,
 		ExternalAPIConfigured:      externalAPIConfigured,
@@ -3158,6 +3388,28 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 	if cfg.ModelFilter.Type != ContentModerationModelFilterAll && len(cfg.ModelFilter.Models) == 0 {
 		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_MODEL_FILTER", "指定或排除模型时至少需要配置 1 个模型")
 	}
+	if cfg.AccountScope == ContentModerationAccountScopeSelected {
+		if len(cfg.AccountIDs) == 0 {
+			return infraerrors.BadRequest("CONTENT_MODERATION_ACCOUNT_IDS_REQUIRED", "指定账号审计时至少需要配置 1 个账号")
+		}
+		if s.accountScopeRepo != nil {
+			accounts, err := s.accountScopeRepo.GetByIDs(ctx, cfg.AccountIDs)
+			if err != nil {
+				return fmt.Errorf("validate content moderation accounts: %w", err)
+			}
+			found := make(map[int64]struct{}, len(accounts))
+			for _, account := range accounts {
+				if account != nil {
+					found[account.ID] = struct{}{}
+				}
+			}
+			for _, accountID := range cfg.AccountIDs {
+				if _, ok := found[accountID]; !ok {
+					return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_ACCOUNT", fmt.Sprintf("审计账号不存在: %d", accountID))
+				}
+			}
+		}
+	}
 	if !cfg.AllGroups && len(cfg.GroupIDs) > 0 && s.groupRepo != nil {
 		for _, groupID := range cfg.GroupIDs {
 			if _, err := s.groupRepo.GetByIDLite(ctx, groupID); err != nil {
@@ -3280,6 +3532,10 @@ func (s *ContentModerationService) buildLog(input ContentModerationCheckInput, c
 	if input.APIKeyID > 0 {
 		apiKeyID = &input.APIKeyID
 	}
+	var accountID *int64
+	if input.AccountID > 0 {
+		accountID = &input.AccountID
+	}
 	return &ContentModerationLog{
 		DecisionID:        contentModerationDecisionID(input, nil, ""),
 		RequestID:         input.RequestID,
@@ -3289,6 +3545,9 @@ func (s *ContentModerationService) buildLog(input ContentModerationCheckInput, c
 		APIKeyName:        input.APIKeyName,
 		GroupID:           cloneInt64Ptr(input.GroupID),
 		GroupName:         input.GroupName,
+		AccountID:         accountID,
+		AccountName:       input.AccountName,
+		AccountType:       input.AccountType,
 		Endpoint:          input.Endpoint,
 		Provider:          input.Provider,
 		Model:             input.Model,
@@ -3815,6 +4074,8 @@ func defaultContentModerationConfig() *ContentModerationConfig {
 		SampleRate:           100,
 		AllGroups:            true,
 		GroupIDs:             []int64{},
+		AccountScope:         ContentModerationAccountScopeAll,
+		AccountIDs:           []int64{},
 		RecordNonHits:        false,
 		AuditScope:           ContentModerationAuditScopeAllContext,
 		StoreInputExcerpt:    true,
@@ -3857,6 +4118,7 @@ func cloneContentModerationConfig(cfg *ContentModerationConfig) *ContentModerati
 	clone := *cfg
 	clone.APIKeys = append([]string(nil), cfg.APIKeys...)
 	clone.GroupIDs = append([]int64(nil), cfg.GroupIDs...)
+	clone.AccountIDs = append([]int64(nil), cfg.AccountIDs...)
 	clone.BlockedKeywords = append([]string(nil), cfg.BlockedKeywords...)
 	clone.KeywordRules = cloneContentModerationKeywordRules(cfg.KeywordRules)
 	clone.Thresholds = cloneFloatMap(cfg.Thresholds)
@@ -3943,6 +4205,11 @@ func (cfg *ContentModerationConfig) normalize() {
 		cfg.NonHitRetentionDays = maxContentModerationNonHitRetentionDays
 	}
 	cfg.GroupIDs = normalizeInt64IDs(cfg.GroupIDs)
+	cfg.AccountScope = normalizeContentModerationAccountScope(cfg.AccountScope)
+	cfg.AccountIDs = normalizeInt64IDs(cfg.AccountIDs)
+	if cfg.AccountScope != ContentModerationAccountScopeSelected {
+		cfg.AccountIDs = []int64{}
+	}
 	cfg.AuditScope = normalizeContentModerationAuditScope(cfg.AuditScope)
 	cfg.Thresholds = mergeContentModerationThresholds(ContentModerationDefaultThresholds(), cfg.Thresholds)
 	cfg.BlockedKeywords = normalizeBlockedKeywords(cfg.BlockedKeywords)
@@ -4006,6 +4273,26 @@ func normalizeContentModerationAuditScope(scope string) string {
 		return ContentModerationAuditScopeAllContext
 	default:
 		return ContentModerationAuditScopeAllContext
+	}
+}
+
+func normalizeContentModerationAccountScope(scope string) string {
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case ContentModerationAccountScopeOAuth:
+		return ContentModerationAccountScopeOAuth
+	case ContentModerationAccountScopeSelected:
+		return ContentModerationAccountScopeSelected
+	default:
+		return ContentModerationAccountScopeAll
+	}
+}
+
+func isValidContentModerationAccountScope(scope string) bool {
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case ContentModerationAccountScopeAll, ContentModerationAccountScopeOAuth, ContentModerationAccountScopeSelected:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -4080,6 +4367,25 @@ func (cfg *ContentModerationConfig) includesGroup(groupID *int64) bool {
 		}
 	}
 	return false
+}
+
+func (cfg *ContentModerationConfig) includesAccount(accountID int64, accountType string) bool {
+	if cfg == nil || accountID <= 0 {
+		return false
+	}
+	switch normalizeContentModerationAccountScope(cfg.AccountScope) {
+	case ContentModerationAccountScopeOAuth:
+		return accountType == AccountTypeOAuth || accountType == AccountTypeSetupToken
+	case ContentModerationAccountScopeSelected:
+		for _, id := range cfg.AccountIDs {
+			if id == accountID {
+				return true
+			}
+		}
+		return false
+	default:
+		return true
+	}
 }
 
 func (cfg *ContentModerationConfig) includesModel(model string) bool {
@@ -4303,6 +4609,8 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		SampleRate:                     cfg.SampleRate,
 		AllGroups:                      cfg.AllGroups,
 		GroupIDs:                       append([]int64(nil), cfg.GroupIDs...),
+		AccountScope:                   cfg.AccountScope,
+		AccountIDs:                     append([]int64(nil), cfg.AccountIDs...),
 		RecordNonHits:                  cfg.RecordNonHits,
 		AuditScope:                     cfg.AuditScope,
 		StoreInputExcerpt:              cfg.StoreInputExcerpt,

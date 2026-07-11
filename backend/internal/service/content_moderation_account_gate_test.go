@@ -1,0 +1,162 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+func newAccountGateTestService(t *testing.T, cfg *ContentModerationConfig) *ContentModerationService {
+	t.Helper()
+	cfg.normalize()
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	return NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(raw),
+		}},
+		&contentModerationTestRepo{}, nil, nil, nil, nil, nil,
+	)
+}
+
+func TestCheckAccountAttemptSkipsOutOfScopeAccount(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.AccountScope = ContentModerationAccountScopeOAuth
+	svc := newAccountGateTestService(t, cfg)
+
+	result, err := svc.CheckAccountAttempt(context.Background(), ContentModerationCheckInput{
+		UserID:      1,
+		GroupID:     nil,
+		AccountID:   9,
+		AccountType: AccountTypeAPIKey,
+		Model:       "gpt-5",
+		Protocol:    ContentModerationProtocolOpenAIChat,
+		Body:        []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	}, nil)
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationDispositionOutOfScope, result.Disposition)
+	require.NotNil(t, result.Decision)
+	require.True(t, result.Decision.Allowed)
+	require.Nil(t, result.NextState)
+}
+
+func TestCheckAccountAttemptTreatsSetupTokenAsOAuth(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.AccountScope = ContentModerationAccountScopeOAuth
+	svc := newAccountGateTestService(t, cfg)
+
+	result, err := svc.CheckAccountAttempt(context.Background(), ContentModerationCheckInput{
+		UserID:      1,
+		AccountID:   9,
+		AccountType: AccountTypeSetupToken,
+		Model:       "gpt-5",
+		Protocol:    ContentModerationProtocolOpenAIChat,
+		Body:        []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	}, nil)
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationDispositionDeterministicAllow, result.Disposition)
+	require.NotNil(t, result.NextState)
+	require.True(t, result.NextState.Reusable)
+}
+
+func TestCheckAccountAttemptPreservesReusableStateAcrossOutOfScopeFailover(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.AccountScope = ContentModerationAccountScopeOAuth
+	svc := newAccountGateTestService(t, cfg)
+	input := ContentModerationCheckInput{
+		UserID:      1,
+		AccountID:   9,
+		AccountType: AccountTypeOAuth,
+		Model:       "gpt-5",
+		Protocol:    ContentModerationProtocolOpenAIChat,
+		Body:        []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	}
+
+	first, err := svc.CheckAccountAttempt(context.Background(), input, nil)
+	require.NoError(t, err)
+	require.NotNil(t, first.NextState)
+
+	input.AccountID = 10
+	input.AccountType = AccountTypeAPIKey
+	middle, err := svc.CheckAccountAttempt(context.Background(), input, first.NextState)
+	require.NoError(t, err)
+	require.Same(t, first.NextState, middle.NextState)
+
+	input.AccountID = 11
+	input.AccountType = AccountTypeOAuth
+	last, err := svc.CheckAccountAttempt(context.Background(), input, middle.NextState)
+	require.NoError(t, err)
+	require.True(t, last.Reused)
+	require.Same(t, first.NextState, last.NextState)
+}
+
+func TestCheckAccountAttemptDoesNotReuseDisabledPolicyAfterEnablement(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.AccountScope = ContentModerationAccountScopeAll
+	cfg.normalize()
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	settings := &contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyRiskControlEnabled:      "false",
+		SettingKeyContentModerationConfig: string(raw),
+	}}
+	svc := &ContentModerationService{settingRepo: settings, repo: &contentModerationTestRepo{}}
+	input := ContentModerationCheckInput{
+		AccountID: 1, AccountType: AccountTypeAPIKey, Model: "gpt-5",
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	}
+
+	first, err := svc.CheckAccountAttempt(context.Background(), input, nil)
+	require.NoError(t, err)
+	require.NotNil(t, first.NextState)
+	settings.values[SettingKeyRiskControlEnabled] = "true"
+	second, err := svc.CheckAccountAttempt(context.Background(), input, first.NextState)
+	require.NoError(t, err)
+	require.False(t, second.Reused)
+	require.NotEqual(t, first.PolicyRevision, second.PolicyRevision)
+}
+
+func TestCheckAccountAttemptObserveDropClearsPriorReusableState(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModeObserve
+	cfg.APIKeys = []string{"audit-key"}
+	cfg.AccountScope = ContentModerationAccountScopeAll
+	cfg.QueueSize = 1
+	cfg.normalize()
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	svc := &ContentModerationService{
+		settingRepo: &contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled: "true", SettingKeyContentModerationConfig: string(raw),
+		}},
+		repo:       &contentModerationTestRepo{},
+		asyncQueue: make(chan contentModerationTask, 1),
+	}
+	svc.asyncQueue <- contentModerationTask{}
+	prior := &ContentModerationAttemptState{Reusable: true, InputHash: "old", PolicyRevision: "old"}
+
+	result, err := svc.CheckAccountAttempt(context.Background(), ContentModerationCheckInput{
+		AccountID: 1, AccountType: AccountTypeAPIKey, Model: "gpt-5",
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	}, prior)
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationDispositionObserveDropped, result.Disposition)
+	require.Nil(t, result.NextState)
+}

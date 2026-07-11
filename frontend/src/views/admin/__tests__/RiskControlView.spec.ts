@@ -15,6 +15,7 @@ const {
   reviewLog,
   getRawRequest,
   getGroups,
+	listAccounts,
   showError,
   showSuccess,
 } = vi.hoisted(() => ({
@@ -26,6 +27,7 @@ const {
   reviewLog: vi.fn(),
   getRawRequest: vi.fn(),
   getGroups: vi.fn(),
+	listAccounts: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
 }))
@@ -48,6 +50,9 @@ vi.mock('@/api/admin', () => ({
     groups: {
       getAll: getGroups,
     },
+	accounts: {
+		list: listAccounts,
+	},
   },
 }))
 
@@ -91,6 +96,8 @@ const baseConfig = (): ContentModerationConfig => ({
   sample_rate: 100,
   all_groups: true,
   group_ids: [],
+	account_scope: 'all',
+	account_ids: [],
   record_non_hits: false,
   audit_scope: 'all_context',
   store_input_excerpt: true,
@@ -209,6 +216,7 @@ describe('admin RiskControlView', () => {
     reviewLog.mockReset()
     getRawRequest.mockReset()
     getGroups.mockReset()
+	listAccounts.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
 
@@ -227,6 +235,7 @@ describe('admin RiskControlView', () => {
       normalized_excerpt: '',
     })
     getGroups.mockResolvedValue([])
+	listAccounts.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 100, pages: 0 })
     updateConfig.mockImplementation(async (payload: UpdateContentModerationConfig) => ({
       ...baseConfig(),
       ...payload,
@@ -718,6 +727,34 @@ describe('admin RiskControlView', () => {
     }))
     expect(showError).not.toHaveBeenCalled()
   })
+
+	it('saves OAuth credential account scope without selected account IDs', async () => {
+		const wrapper = mount(RiskControlView, {
+			global: {
+				stubs: {
+					AppLayout: AppLayoutStub,
+					BaseDialog: BaseDialogStub,
+					Icon: true,
+					Select: true,
+					Toggle: true,
+					Pagination: true,
+					ModelWhitelistSelector: ModelWhitelistSelectorStub,
+				},
+			},
+		})
+
+		await flushPromises()
+		await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+		await findButtonByText(wrapper, 'admin.riskControl.tabs.scope').trigger('click')
+		await findButtonByText(wrapper, 'admin.riskControl.accountScopeOAuth').trigger('click')
+		await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+		await flushPromises()
+
+		expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+			account_scope: 'oauth',
+			account_ids: [],
+		}))
+	})
 
   it('submits edited risk control thresholds when saving moderation config', async () => {
     const wrapper = mount(RiskControlView, {

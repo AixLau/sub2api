@@ -44,13 +44,14 @@ func ProvideContentModerationService(
 	outboxRepo ContentModerationOutboxRepository,
 	hashCache ContentModerationHashCache,
 	groupRepo GroupRepository,
+	accountRepo AccountRepository,
 	userRepo UserRepository,
 	authCacheInvalidator APIKeyAuthCacheInvalidator,
 	emailService *EmailService,
 	encryptor SecretEncryptor,
 	buildInfo BuildInfo,
 ) *ContentModerationService {
-	svc := NewContentModerationService(settingRepo, repo, hashCache, groupRepo, userRepo, authCacheInvalidator, emailService)
+	svc := NewContentModerationService(settingRepo, repo, hashCache, groupRepo, userRepo, authCacheInvalidator, emailService, accountRepo)
 	svc.SetOutboxRepository(outboxRepo)
 	if rawStore, ok := repo.(ContentModerationRawRequestSnapshotStore); ok {
 		svc.SetRawRequestSnapshotStore(rawStore, encryptor)
@@ -693,6 +694,7 @@ var ProviderSet = wire.NewSet(
 	NewChannelService,
 	NewModelPricingResolver,
 	ProvideContentModerationService,
+	wire.Bind(new(BatchImageModerationGate), new(*ContentModerationService)),
 	NewAffiliateService,
 	ProvidePaymentConfigService,
 	ProvidePaymentService,

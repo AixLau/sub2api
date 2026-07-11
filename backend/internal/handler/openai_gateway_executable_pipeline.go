@@ -11,6 +11,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
+	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
@@ -869,6 +870,23 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 			s.writeOpenAIHTTPRoutingError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many concurrent requests, please retry later")
 		}
 		return ExecutableStageResult{Stop: true}
+	}
+	if value, ok := c.Get(openAIHTTPPreForwardRequestContextKey); ok {
+		if request, requestOK := value.(openAIHTTPPreForwardRequest); requestOK {
+			subject, _ := middleware2.GetAuthSubjectFromContext(c)
+			gate := runSelectedAccountContentModeration(c, reqLog, h.contentModerationService, s.APIKey, subject, request.Protocol, request.Model, request.Body, refreshedAccount)
+			if gate != nil && gate.Decision != nil && gate.Decision.Blocked {
+				if releaseFunc != nil {
+					releaseFunc()
+				}
+				format := openAIHTTPModerationErrorOpenAI
+				if request.Protocol == service.ContentModerationProtocolOpenAIMessages {
+					format = openAIHTTPModerationErrorAnthropic
+				}
+				h.writeOpenAIHTTPModerationError(c, format, gate.Decision)
+				return ExecutableStageResult{Stop: true}
+			}
+		}
 	}
 	if s.AccountReleaseFunc != nil {
 		*s.AccountReleaseFunc = releaseFunc
