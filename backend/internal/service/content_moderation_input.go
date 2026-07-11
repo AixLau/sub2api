@@ -29,8 +29,14 @@ func ExtractContentModerationText(protocol string, body []byte) string {
 }
 
 func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...string) ContentModerationInput {
-	if len(body) == 0 || !gjson.ValidBytes(body) {
+	if !utf8.Valid(body) {
+		return ContentModerationInput{Truncated: true, TruncateReasons: []string{"invalid_utf8"}}
+	}
+	if len(body) == 0 {
 		return ContentModerationInput{}
+	}
+	if !gjson.ValidBytes(body) {
+		return ContentModerationInput{Truncated: true, TruncateReasons: []string{"invalid_json"}}
 	}
 	auditScope := ContentModerationAuditScopeAllContext
 	if len(auditScopes) > 0 {
@@ -40,6 +46,7 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 	var images []string
 	var sources []ContentModerationInputSource
 	toolState := &toolResultTextState{}
+	validateModerationProtocolShape(protocol, body, toolState)
 	switch protocol {
 	case ContentModerationProtocolAnthropicMessages, ContentModerationProtocolOpenAIMessages:
 		collectAnthropicInput(body, &parts, &images, &sources, toolState, auditScope)
@@ -67,6 +74,11 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 		collectOpenAIChatMessages(gjson.GetBytes(body, "messages"), &parts, &images, &sources, toolState, auditScope)
 		collectGeminiInput(body, &parts, &images, &sources, toolState, auditScope)
 	}
+	for _, source := range sources {
+		if utf8.RuneCountInString(source.Text) > maxModerationInputRunes {
+			toolState.markTruncated("max_source_runes")
+		}
+	}
 	out := ContentModerationInput{
 		Text:            normalizeContentModerationText(strings.Join(parts, "\n")),
 		Images:          normalizeModerationImages(images),
@@ -76,10 +88,82 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 	}
 	out.Normalize()
 	deduplicateContentModerationInput(&out)
+	if utf8.RuneCountInString(out.Text) > maxModerationInputRunes {
+		out.Truncated = true
+		out.TruncateReasons = normalizeContentModerationTruncateReasons(append(out.TruncateReasons, "max_input_runes"))
+		out.Text = trimRunes(out.Text, maxModerationInputRunes)
+	}
 	if protocol == ContentModerationProtocolOpenAIResponses && isCodexInternalPromptText(out.Text) {
 		return ContentModerationInput{}
 	}
 	return out
+}
+
+func validateModerationProtocolShape(protocol string, body []byte, state *toolResultTextState) {
+	root := gjson.ParseBytes(body)
+	markUnsupported := func(value gjson.Result, allowed ...string) {
+		if !value.Exists() {
+			return
+		}
+		for _, kind := range allowed {
+			if (kind == "string" && value.Type == gjson.String) || (kind == "array" && value.IsArray()) || (kind == "object" && value.IsObject()) {
+				return
+			}
+		}
+		state.markTruncated("unsupported_required_value")
+	}
+	validateMessages := func(path string) {
+		messages := root.Get(path)
+		if messages.Exists() && !messages.IsArray() {
+			state.markTruncated("unsupported_required_value")
+			return
+		}
+		messages.ForEach(func(_, message gjson.Result) bool {
+			if !message.IsObject() {
+				state.markTruncated("unsupported_required_value")
+				return true
+			}
+			markUnsupported(message.Get("content"), "string", "array", "object")
+			return true
+		})
+	}
+	switch protocol {
+	case ContentModerationProtocolOpenAIChat:
+		validateMessages("messages")
+	case ContentModerationProtocolAnthropicMessages, ContentModerationProtocolOpenAIMessages:
+		markUnsupported(root.Get("system"), "string", "array", "object")
+		validateMessages("messages")
+	case ContentModerationProtocolOpenAIResponses:
+		markUnsupported(root.Get("input"), "string", "array", "object")
+	case ContentModerationProtocolGemini:
+		contents := root.Get("contents")
+		if contents.Exists() && !contents.IsArray() {
+			state.markTruncated("unsupported_required_value")
+		}
+		contents.ForEach(func(_, content gjson.Result) bool {
+			if !content.IsObject() || (content.Get("parts").Exists() && !content.Get("parts").IsArray()) {
+				state.markTruncated("unsupported_required_value")
+			}
+			return true
+		})
+	case ContentModerationProtocolOpenAIImages:
+		markUnsupported(root.Get("prompt"), "string")
+	case ContentModerationProtocolBatchImages:
+		items := root.Get("items")
+		if items.Exists() && !items.IsArray() {
+			state.markTruncated("unsupported_required_value")
+		}
+		items.ForEach(func(_, item gjson.Result) bool {
+			if !item.IsObject() {
+				state.markTruncated("unsupported_required_value")
+				return true
+			}
+			markUnsupported(item.Get("prompt"), "string")
+			return true
+		})
+	case ContentModerationProtocolOpenAIEmbeddings:
+		markUnsupported(root.Get("input"), "string", "array")
+	}
 }
 
 func isUnexpectedEmptyModerationInput(protocol string, body []byte) bool {
@@ -597,10 +681,27 @@ func collectToolResultTextValueWithState(value gjson.Result, parts *[]string, im
 		addStringOrDecodedBase64Text(parts, value.String(), state)
 	case value.IsArray():
 		value.ForEach(func(_, item gjson.Result) bool {
+			if state.strings >= maxToolResultTextStrings {
+				state.markTruncated("max_strings")
+				return false
+			}
+			if state.totalRunes >= maxToolResultTextTotalRunes {
+				state.markTruncated("max_total_runes")
+				return false
+			}
 			collectToolResultTextValueWithState(item, parts, images, depth+1, state)
-			return state.strings < maxToolResultTextStrings && state.totalRunes < maxToolResultTextTotalRunes
+			return true
 		})
 	case value.IsObject():
+		remainingObjectKeys := maxToolResultObjectKeys - state.objectKeys
+		objectKeys := 0
+		value.ForEach(func(_, _ gjson.Result) bool {
+			objectKeys++
+			return objectKeys <= remainingObjectKeys
+		})
+		if objectKeys > remainingObjectKeys {
+			state.markTruncated("max_object_keys")
+		}
 		addModerationImage(images, value.Get("image_url.url").String())
 		addModerationImage(images, value.Get("image_url").String())
 		addModerationImage(images, value.Get("url").String())
@@ -613,6 +714,18 @@ func collectToolResultTextValueWithState(value gjson.Result, parts *[]string, im
 		addModerationImage(images, value.Get("data").String())
 		addModerationImage(images, value.Get("base64").String())
 		value.ForEach(func(key, item gjson.Result) bool {
+			if state.strings >= maxToolResultTextStrings {
+				state.markTruncated("max_strings")
+				return false
+			}
+			if state.totalRunes >= maxToolResultTextTotalRunes {
+				state.markTruncated("max_total_runes")
+				return false
+			}
+			if state.objectKeys >= maxToolResultObjectKeys {
+				state.markTruncated("max_object_keys")
+				return false
+			}
 			keyText := key.String()
 			if shouldSkipToolResultTextField(keyText, item, value, state) {
 				return true
@@ -624,7 +737,7 @@ func collectToolResultTextValueWithState(value gjson.Result, parts *[]string, im
 				state.markTruncated("max_object_keys")
 			}
 			collectToolResultTextValueWithState(item, parts, images, depth+1, state)
-			return state.strings < maxToolResultTextStrings && state.totalRunes < maxToolResultTextTotalRunes && state.objectKeys < maxToolResultObjectKeys
+			return true
 		})
 	}
 }
