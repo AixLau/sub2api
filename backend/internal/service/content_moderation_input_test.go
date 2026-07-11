@@ -147,6 +147,80 @@ func TestExtractionCompletenessAcceptsEveryKnownContentShape(t *testing.T) {
 	}
 }
 
+func TestExtractionCompletenessRejectsUntypedAndMalformedMediaShapes(t *testing.T) {
+	tests := []struct{ name, protocol, body string }{
+		{"untyped future", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":[{"future":"unsafe"}]}]}`},
+		{"image url leaf", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":42}}]}]}`},
+		{"anthropic source media type", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"image","source":{"media_type":42,"data":"aA=="}}]}]}`},
+		{"anthropic source data", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"image","source":{"media_type":"image/png","data":false}}]}]}`},
+		{"generic url leaf", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":[{"type":"image","url":42}]}]}`},
+		{"gemini inline mime", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"inlineData":{"mimeType":42,"data":"aA=="}}]}]}`},
+		{"gemini inline data", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"inline_data":{"mime_type":"image/png","data":false}}]}]}`},
+		{"gemini file uri", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"fileData":{"fileUri":42}}]}]}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ExtractContentModerationInput(tt.protocol, []byte(tt.body))
+			require.True(t, got.Truncated)
+			require.Contains(t, got.TruncateReasons, "unsupported_required_value")
+		})
+	}
+}
+
+func TestExtractionCompletenessAcceptsKnownMediaLeafVariants(t *testing.T) {
+	tests := []struct{ name, protocol, body string }{
+		{"generic image url", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.test/a.png"}}]}]}`},
+		{"anthropic source", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"image","source":{"media_type":"image/png","data":"aA=="}}]}]}`},
+		{"gemini snake inline and file", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"inline_data":{"mime_type":"image/png","data":"aA=="}},{"file_data":{"file_uri":"https://example.test/a.png"}}]}]}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ExtractContentModerationInput(tt.protocol, []byte(tt.body))
+			require.False(t, got.Truncated, got.TruncateReasons)
+		})
+	}
+}
+
+func TestExtractionCompletenessValidationMatchesAuditScope(t *testing.T) {
+	body := []byte(`{"instructions":42,"messages":[{"role":"system","content":[{"future":"system"}]},{"role":"assistant","content":[{"future":"assistant"}]},{"role":"tool","content":42},{"role":"user","content":"safe"}]}`)
+	tests := []struct {
+		scope          string
+		wantIncomplete bool
+	}{
+		{ContentModerationAuditScopeAllContext, true},
+		{ContentModerationAuditScopeUserAndTool, true},
+		{ContentModerationAuditScopeUserOnly, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.scope, func(t *testing.T) {
+			got := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body, tt.scope)
+			require.Equal(t, tt.wantIncomplete, got.Truncated, got.TruncateReasons)
+		})
+	}
+
+	userMalformed := []byte(`{"messages":[{"role":"assistant","content":"safe"},{"role":"user","content":[{"future":"unsafe"}]}]}`)
+	for _, scope := range []string{ContentModerationAuditScopeAllContext, ContentModerationAuditScopeUserAndTool, ContentModerationAuditScopeUserOnly} {
+		got := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, userMalformed, scope)
+		require.True(t, got.Truncated, scope)
+	}
+
+	excludedCases := []struct{ name, protocol, body string }{
+		{"responses assistant", ContentModerationProtocolOpenAIResponses, `{"input":[{"role":"assistant","content":[{"future":"unsafe"}]}]}`},
+		{"anthropic assistant", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"assistant","content":[{"future":"unsafe"}]}]}`},
+		{"gemini model", ContentModerationProtocolGemini, `{"contents":[{"role":"model","parts":42}]}`},
+	}
+	for _, tc := range excludedCases {
+		t.Run(tc.name, func(t *testing.T) {
+			all := ExtractContentModerationInput(tc.protocol, []byte(tc.body), ContentModerationAuditScopeAllContext)
+			require.True(t, all.Truncated)
+			for _, scope := range []string{ContentModerationAuditScopeUserAndTool, ContentModerationAuditScopeUserOnly} {
+				excluded := ExtractContentModerationInput(tc.protocol, []byte(tc.body), scope)
+				require.False(t, excluded.Truncated, excluded.TruncateReasons)
+			}
+		})
+	}
+}
+
 func TestExtractionCompletenessProductionSourcesFeedCanonicalizer(t *testing.T) {
 	body := []byte(`{"messages":[{"role":" Foo.Bar ","content":"  Ａ  \t keep <system-reminder>raw</system-reminder> "},{"role":"","content":" duplicate  text "},{"role":"","content":" duplicate  text "},{"role":"tool","content":{"result":"two"}}]}`)
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)

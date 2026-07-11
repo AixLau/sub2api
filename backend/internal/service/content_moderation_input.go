@@ -46,7 +46,7 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 	var images []string
 	var sources []ContentModerationInputSource
 	toolState := &toolResultTextState{}
-	validateModerationProtocolShape(protocol, body, toolState)
+	validateModerationProtocolShape(protocol, body, auditScope, toolState)
 	switch protocol {
 	case ContentModerationProtocolAnthropicMessages, ContentModerationProtocolOpenAIMessages:
 		collectAnthropicInput(body, &parts, &images, &sources, toolState, auditScope)
@@ -138,8 +138,9 @@ func moderationExtractionFromInputSources(sources []ContentModerationInputSource
 	return extraction
 }
 
-func validateModerationProtocolShape(protocol string, body []byte, state *toolResultTextState) {
+func validateModerationProtocolShape(protocol string, body []byte, auditScope string, state *toolResultTextState) {
 	root := gjson.ParseBytes(body)
+	auditScope = normalizeContentModerationAuditScope(auditScope)
 	markUnsupported := func(value gjson.Result, allowed ...string) {
 		if !value.Exists() {
 			return
@@ -181,13 +182,34 @@ func validateModerationProtocolShape(protocol string, body []byte, state *toolRe
 			state.markTruncated("unsupported_required_value")
 			return
 		}
-		if typ == "image" || typ == "input_image" || typ == "image_url" {
-			if source := value.Get("source"); source.Exists() && !source.IsObject() {
+		requireString := func(field gjson.Result) {
+			if field.Exists() && field.Type != gjson.String {
 				state.markTruncated("unsupported_required_value")
 			}
-			if imageURL := value.Get("image_url"); imageURL.Exists() && imageURL.Type != gjson.String && !imageURL.IsObject() {
-				state.markTruncated("unsupported_required_value")
+		}
+		recognizedUntyped := value.Get("text").Exists() || value.Get("content").Exists()
+		for _, path := range []string{"image_url", "url", "source", "media_type", "mime_type", "mimeType", "data", "base64"} {
+			recognizedUntyped = recognizedUntyped || value.Get(path).Exists()
+		}
+		if typ == "" && !recognizedUntyped {
+			state.markTruncated("unsupported_required_value")
+		}
+		if source := value.Get("source"); source.Exists() && !source.IsObject() {
+			state.markTruncated("unsupported_required_value")
+		}
+		if imageURL := value.Get("image_url"); imageURL.Exists() && imageURL.Type != gjson.String && !imageURL.IsObject() {
+			state.markTruncated("unsupported_required_value")
+		}
+		if imageURL := value.Get("image_url"); imageURL.IsObject() {
+			requireString(imageURL.Get("url"))
+		}
+		if source := value.Get("source"); source.IsObject() {
+			for _, field := range []string{"media_type", "mediaType", "data", "url"} {
+				requireString(source.Get(field))
 			}
+		}
+		for _, field := range []string{"url", "media_type", "mime_type", "mimeType", "data", "base64"} {
+			requireString(value.Get(field))
 		}
 		if text := value.Get("text"); text.Exists() && text.Type != gjson.String {
 			state.markTruncated("unsupported_required_value")
@@ -214,8 +236,12 @@ func validateModerationProtocolShape(protocol string, body []byte, state *toolRe
 				state.markTruncated("unsupported_required_value")
 				return true
 			}
+			role := strings.ToLower(strings.TrimSpace(message.Get("role").String()))
+			if !shouldIncludeModerationRole(role, "", auditScope) {
+				return true
+			}
 			content := message.Get("content")
-			if role := strings.ToLower(strings.TrimSpace(message.Get("role").String())); role == "tool" || role == "function" {
+			if role == "tool" || role == "function" {
 				validateToolRoot(content)
 			} else {
 				validateContent(content)
@@ -246,19 +272,27 @@ func validateModerationProtocolShape(protocol string, body []byte, state *toolRe
 	}
 	switch protocol {
 	case ContentModerationProtocolOpenAIChat:
-		for _, path := range []string{"instructions", "tools", "functions", "tool_choice", "response_format"} {
-			validateToolRoot(root.Get(path))
+		if shouldIncludeTopLevelModelContext(auditScope) {
+			for _, path := range []string{"instructions", "tools", "functions", "tool_choice", "response_format"} {
+				validateToolRoot(root.Get(path))
+			}
 		}
 		validateMessages("messages")
 	case ContentModerationProtocolAnthropicMessages, ContentModerationProtocolOpenAIMessages:
-		validateContent(root.Get("system"))
-		for _, path := range []string{"tools", "tool_choice", "output_format"} {
-			validateToolRoot(root.Get(path))
+		if shouldIncludeModerationRole("system", "", auditScope) {
+			validateContent(root.Get("system"))
+		}
+		if shouldIncludeTopLevelModelContext(auditScope) {
+			for _, path := range []string{"tools", "tool_choice", "output_format"} {
+				validateToolRoot(root.Get(path))
+			}
 		}
 		validateMessages("messages")
 	case ContentModerationProtocolOpenAIResponses:
-		for _, path := range []string{"instructions", "developer", "system", "tools", "tool_choice", "text.format", "response_format"} {
-			validateToolRoot(root.Get(path))
+		if shouldIncludeTopLevelModelContext(auditScope) {
+			for _, path := range []string{"instructions", "developer", "system", "tools", "tool_choice", "text.format", "response_format"} {
+				validateToolRoot(root.Get(path))
+			}
 		}
 		input := root.Get("input")
 		markUnsupported(input, "string", "array", "object")
@@ -271,6 +305,10 @@ func validateModerationProtocolShape(protocol string, body []byte, state *toolRe
 				return
 			}
 			typ := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
+			role := strings.ToLower(strings.TrimSpace(item.Get("role").String()))
+			if !shouldIncludeModerationRole(role, typ, auditScope) {
+				return
+			}
 			switch {
 			case strings.Contains(typ, "function_call_output") || strings.Contains(typ, "tool_result"):
 				validateToolRoot(item.Get("output"))
@@ -298,8 +336,10 @@ func validateModerationProtocolShape(protocol string, body []byte, state *toolRe
 			validateResponseItem(input)
 		}
 	case ContentModerationProtocolGemini:
-		for _, path := range []string{"tools", "toolConfig", "tool_config", "generationConfig.responseSchema", "generationConfig.responseJsonSchema", "generation_config.response_schema", "generation_config.response_json_schema"} {
-			validateToolRoot(root.Get(path))
+		if shouldIncludeTopLevelModelContext(auditScope) {
+			for _, path := range []string{"tools", "toolConfig", "tool_config", "generationConfig.responseSchema", "generationConfig.responseJsonSchema", "generation_config.response_schema", "generation_config.response_json_schema"} {
+				validateToolRoot(root.Get(path))
+			}
 		}
 		validateGeminiPart := func(part gjson.Result) {
 			if !part.IsObject() {
@@ -345,6 +385,17 @@ func validateModerationProtocolShape(protocol string, body []byte, state *toolRe
 				recognized = true
 				if !container.IsObject() {
 					state.markTruncated("unsupported_required_value")
+					continue
+				}
+				fields := map[string][]string{
+					"inlineData": {"mimeType", "data"}, "inline_data": {"mime_type", "data"},
+					"fileData": {"fileUri"}, "file_data": {"file_uri"},
+				}[path]
+				for _, field := range fields {
+					leaf := container.Get(field)
+					if leaf.Exists() && leaf.Type != gjson.String {
+						state.markTruncated("unsupported_required_value")
+					}
 				}
 			}
 			if !recognized {
@@ -369,14 +420,24 @@ func validateModerationProtocolShape(protocol string, body []byte, state *toolRe
 			}
 			validateContent(value)
 		}
-		validateSystemInstruction(root.Get("system_instruction"))
-		validateSystemInstruction(root.Get("systemInstruction"))
+		if shouldIncludeModerationRole("system", "", auditScope) {
+			validateSystemInstruction(root.Get("system_instruction"))
+			validateSystemInstruction(root.Get("systemInstruction"))
+		}
 		contents := root.Get("contents")
 		if contents.Exists() && !contents.IsArray() {
 			state.markTruncated("unsupported_required_value")
 		}
 		contents.ForEach(func(_, content gjson.Result) bool {
-			if !content.IsObject() || !content.Get("parts").Exists() || !content.Get("parts").IsArray() {
+			if !content.IsObject() {
+				state.markTruncated("unsupported_required_value")
+				return true
+			}
+			role := strings.ToLower(strings.TrimSpace(content.Get("role").String()))
+			if !shouldIncludeModerationRole(role, "", auditScope) {
+				return true
+			}
+			if !content.Get("parts").Exists() || !content.Get("parts").IsArray() {
 				state.markTruncated("unsupported_required_value")
 			}
 			content.Get("parts").ForEach(func(_, part gjson.Result) bool {
