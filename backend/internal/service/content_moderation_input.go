@@ -60,7 +60,7 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 		collectGeminiInput(body, &parts, &images, &sources, toolState, auditScope)
 	case ContentModerationProtocolOpenAIImages:
 		before := len(parts)
-		addModerationText(&parts, gjson.GetBytes(body, "prompt").String())
+		addModerationRawText(&parts, gjson.GetBytes(body, "prompt").String())
 		appendModerationSources(&sources, "image.prompt", "user", parts, before)
 		before = len(parts)
 		collectContentValue(gjson.GetBytes(body, "images"), &parts, &images)
@@ -584,7 +584,7 @@ func collectBatchImagesInput(body []byte, parts *[]string, images *[]string, sou
 	}
 	items.ForEach(func(_, item gjson.Result) bool {
 		before := len(*parts)
-		addModerationText(parts, item.Get("prompt").String())
+		addModerationRawText(parts, item.Get("prompt").String())
 		appendModerationSources(sources, "batch_image.items.prompt", "user", *parts, before)
 
 		before = len(*parts)
@@ -797,7 +797,7 @@ func collectAnthropicContentValue(value gjson.Result, parts *[]string, images *[
 	case !value.Exists():
 		return
 	case value.Type == gjson.String:
-		addModerationText(parts, value.String())
+		addModerationRawText(parts, value.String())
 	case value.IsArray():
 		value.ForEach(func(_, item gjson.Result) bool {
 			collectAnthropicContentValue(item, parts, images, toolState)
@@ -808,7 +808,7 @@ func collectAnthropicContentValue(value gjson.Result, parts *[]string, images *[
 		switch typ {
 		case "", "text", "input_text", "output_text", "message":
 			if value.Get("text").Exists() {
-				addModerationText(parts, value.Get("text").String())
+				addModerationRawText(parts, value.Get("text").String())
 			}
 			if value.Get("content").Exists() {
 				collectAnthropicContentValue(value.Get("content"), parts, images, toolState)
@@ -830,7 +830,7 @@ func collectResponsesInput(input gjson.Result, parts *[]string, images *[]string
 		return
 	case input.Type == gjson.String:
 		before := len(*parts)
-		addModerationText(parts, input.String())
+		addModerationRawText(parts, input.String())
 		appendModerationSources(sources, "responses.input", "user", *parts, before)
 	case input.IsArray():
 		input.ForEach(func(index, item gjson.Result) bool {
@@ -918,7 +918,7 @@ func collectGeminiContents(contents gjson.Result, parts *[]string, images *[]str
 		before := len(*parts)
 		if arr := item.Get("parts"); arr.IsArray() {
 			arr.ForEach(func(_, part gjson.Result) bool {
-				addModerationText(parts, part.Get("text").String())
+				addModerationRawText(parts, part.Get("text").String())
 				collectGeminiFunctionResponseText(parts, part.Get("functionResponse"), toolState)
 				collectGeminiFunctionResponseText(parts, part.Get("function_response"), toolState)
 				collectGeminiFunctionCallText(parts, part.Get("functionCall"), toolState)
@@ -957,7 +957,7 @@ func collectGeminiSystemInstruction(value gjson.Result, parts *[]string, images 
 	}
 	if arr := value.Get("parts"); arr.IsArray() {
 		arr.ForEach(func(_, part gjson.Result) bool {
-			addModerationText(parts, part.Get("text").String())
+			addModerationRawText(parts, part.Get("text").String())
 			addGeminiModerationImage(images, part)
 			return true
 		})
@@ -971,7 +971,7 @@ func collectContentValue(value gjson.Result, parts *[]string, images *[]string) 
 	case !value.Exists():
 		return
 	case value.Type == gjson.String:
-		addModerationText(parts, value.String())
+		addModerationRawText(parts, value.String())
 	case value.IsArray():
 		value.ForEach(func(_, item gjson.Result) bool {
 			collectContentValue(item, parts, images)
@@ -994,7 +994,7 @@ func collectContentValue(value gjson.Result, parts *[]string, images *[]string) 
 		switch typ {
 		case "", "text", "input_text", "output_text", "message":
 			if value.Get("text").Exists() {
-				addModerationText(parts, value.Get("text").String())
+				addModerationRawText(parts, value.Get("text").String())
 			}
 			if value.Get("content").Exists() {
 				collectContentValue(value.Get("content"), parts, images)
@@ -1140,7 +1140,7 @@ func addLimitedToolResultText(parts *[]string, text string, state *toolResultTex
 	}
 	text = trimRunes(text, remainingRunes)
 	before := len(*parts)
-	addModerationText(parts, text)
+	addModerationRawText(parts, text)
 	if len(*parts) > before {
 		state.strings++
 		state.totalRunes += len([]rune((*parts)[len(*parts)-1]))
@@ -1553,6 +1553,12 @@ func addModerationText(parts *[]string, text string) {
 		return
 	}
 	*parts = append(*parts, text)
+}
+
+func addModerationRawText(parts *[]string, text string) {
+	if strings.TrimSpace(text) != "" {
+		*parts = append(*parts, text)
+	}
 }
 
 func stripKnownSystemReminderBlocks(text string) string {
