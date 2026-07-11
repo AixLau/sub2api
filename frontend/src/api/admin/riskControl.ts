@@ -39,6 +39,16 @@ export interface ContentModerationKeywordRule {
 }
 
 export interface ContentModerationConfig {
+	max_request_body_mib: number
+	inflight_memory_budget_mib: number
+	request_memory_multiplier: number
+	minimum_request_charge_kib: number
+	small_request_threshold_mib: number
+	small_request_reserve_mib: number
+	admission_wait_timeout_ms: number
+	image_audit_max_concurrency: number
+	request_audit_timeout_ms: number
+	resource_protection_status: ResourceProtectionStatus
   enabled: boolean
   mode: ModerationMode
   base_url: string
@@ -76,6 +86,14 @@ export interface ContentModerationConfig {
   model_filter: ContentModerationModelFilter
   fail_strategy?: ContentModerationFailStrategy
   cyber_policy_exclude_from_ban_count: boolean
+}
+
+export interface ResourceProtectionStatus {
+  runtime_safe_maximum_mib: number
+  active_bytes: number
+  active_reservations: number
+  waiting_requests: number
+  active_image_audits: number
 }
 
 export interface ContentModerationFailStrategy {
@@ -143,6 +161,15 @@ export interface ContentModerationTestAuditResult {
 }
 
 export interface UpdateContentModerationConfig {
+	max_request_body_mib?: number
+	inflight_memory_budget_mib?: number
+	request_memory_multiplier?: number
+	minimum_request_charge_kib?: number
+	small_request_threshold_mib?: number
+	small_request_reserve_mib?: number
+	admission_wait_timeout_ms?: number
+	image_audit_max_concurrency?: number
+	request_audit_timeout_ms?: number
   enabled?: boolean
   mode?: ModerationMode
   base_url?: string

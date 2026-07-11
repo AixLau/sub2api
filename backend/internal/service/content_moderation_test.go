@@ -4108,7 +4108,7 @@ func TestExtractContentModerationInput_OpenAIImagesIncludesPromptAndImages(t *te
 	require.Equal(t, []string{"https://example.com/source.png", "data:image/png;base64,aGVsbG8="}, input.Images)
 }
 
-func TestContentModerationInput_NormalizeKeepsImagesAndModerationInputUsesFirstImageDeterministically(t *testing.T) {
+func TestContentModerationInput_NormalizeAndModerationInputKeepAllImages(t *testing.T) {
 	images := []string{
 		"data:image/png;base64,Zmlyc3Q=",
 		"data:image/png;base64,c2Vjb25k",
@@ -4123,14 +4123,17 @@ func TestContentModerationInput_NormalizeKeepsImagesAndModerationInputUsesFirstI
 
 	parts, ok := input.ModerationInput().([]moderationAPIInputPart)
 	require.True(t, ok)
-	require.Len(t, parts, 2)
+	require.Len(t, parts, 3)
 	require.Equal(t, "text", parts[0].Type)
 	require.Equal(t, "image_url", parts[1].Type)
 	require.NotNil(t, parts[1].ImageURL)
 	require.Equal(t, images[0], parts[1].ImageURL.URL)
+	require.Equal(t, "image_url", parts[2].Type)
+	require.NotNil(t, parts[2].ImageURL)
+	require.Equal(t, images[1], parts[2].ImageURL.URL)
 }
 
-func TestBuildModerationTestInputUsesFirstImageWhenMultipleImagesProvided(t *testing.T) {
+func TestBuildModerationTestInputUsesAllImages(t *testing.T) {
 	input, imageCount, err := buildModerationTestInput("check image", []string{
 		"data:image/png;base64,Zmlyc3Q=",
 		"data:image/png;base64,c2Vjb25k",
@@ -4140,8 +4143,9 @@ func TestBuildModerationTestInputUsesFirstImageWhenMultipleImagesProvided(t *tes
 	require.Equal(t, 2, imageCount)
 	parts, ok := input.([]moderationAPIInputPart)
 	require.True(t, ok)
-	require.Len(t, parts, 2)
+	require.Len(t, parts, 3)
 	require.Equal(t, "data:image/png;base64,Zmlyc3Q=", parts[1].ImageURL.URL)
+	require.Equal(t, "data:image/png;base64,c2Vjb25k", parts[2].ImageURL.URL)
 }
 
 func TestExtractContentModerationInput_OpenAIResponsesCodexPayloadUsesAllUserMessages(t *testing.T) {

@@ -1031,13 +1031,6 @@ func normalizeModerationImages(images []string) []string {
 	return out
 }
 
-func limitContentModerationImages(images []string) []string {
-	if len(images) <= maxContentModerationInputImages {
-		return images
-	}
-	return images[:maxContentModerationInputImages]
-}
-
 func addModerationText(parts *[]string, text string) {
 	text = strings.TrimSpace(text)
 	if text == "" {

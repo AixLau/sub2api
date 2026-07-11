@@ -486,7 +486,9 @@ func FuzzExtractContentModerationInput_ChaosCorpus(f *testing.F) {
 		}
 		input := ExtractContentModerationInput(protocol, []byte(body))
 		require.LessOrEqual(t, len([]rune(input.Text)), maxModerationInputRunes)
-		require.LessOrEqual(t, len(input.Images), maxContentModerationInputImages)
+		// Image count is intentionally unlimited; the request body limit and
+		// moderation scheduler bound resource usage without dropping later images.
+		require.GreaterOrEqual(t, len(input.Images), 0)
 		if len(input.TruncateReasons) > 0 {
 			require.True(t, input.Truncated)
 		}

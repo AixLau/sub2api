@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -128,6 +129,21 @@ func (h *OpenAIGatewayHandler) EnterOpenAIHTTPGatewayPipeline(c *gin.Context, me
 	}
 	if h == nil {
 		return OpenAIHTTPGatewayPipelineEntryResult{}
+	}
+	if h.contentModerationService != nil {
+		protectedCtx, protectErr := h.contentModerationService.AcquireRequestResources(c.Request.Context(), c.Request.ContentLength, c.GetHeader("Content-Encoding"))
+		if protectErr != nil {
+			if errors.Is(protectErr, service.ErrRequestMemoryBudgetExhausted) {
+				c.Header("Retry-After", "1")
+				h.errorResponse(c, http.StatusTooManyRequests, "request_memory_budget_exhausted", "Request memory budget exhausted")
+			} else if varMax := new(service.RequestBodyTooLargeError); errors.As(protectErr, &varMax) {
+				h.errorResponse(c, http.StatusRequestEntityTooLarge, "request_body_too_large", buildBodyTooLargeMessage(varMax.Limit))
+			} else {
+				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", protectErr.Error())
+			}
+			return OpenAIHTTPGatewayPipelineEntryResult{Stop: true}
+		}
+		c.Request = c.Request.WithContext(protectedCtx)
 	}
 
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)

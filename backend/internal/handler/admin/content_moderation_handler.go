@@ -21,32 +21,41 @@ func NewContentModerationHandler(svc *service.ContentModerationService) *Content
 }
 
 type contentModerationConfigRequest struct {
-	Enabled              *bool               `json:"enabled"`
-	Mode                 *string             `json:"mode"`
-	BaseURL              *string             `json:"base_url"`
-	Model                *string             `json:"model"`
-	APIKey               *string             `json:"api_key"`
-	APIKeys              *[]string           `json:"api_keys"`
-	APIKeysMode          string              `json:"api_keys_mode"`
-	DeleteAPIKeyHashes   *[]string           `json:"delete_api_key_hashes"`
-	ClearAPIKey          bool                `json:"clear_api_key"`
-	TimeoutMS            *int                `json:"timeout_ms"`
-	SampleRate           *int                `json:"sample_rate"`
-	AllGroups            *bool               `json:"all_groups"`
-	GroupIDs             *[]int64            `json:"group_ids"`
-	RecordNonHits        *bool               `json:"record_non_hits"`
-	AuditScope           *string             `json:"audit_scope"`
-	StoreInputExcerpt    *bool               `json:"store_input_excerpt"`
-	SearchInputExcerpt   *bool               `json:"search_input_excerpt"`
-	Thresholds           *map[string]float64 `json:"thresholds"`
-	WorkerCount          *int                `json:"worker_count"`
-	QueueSize            *int                `json:"queue_size"`
-	BlockStatus          *int                `json:"block_status"`
-	BlockMessage         *string             `json:"block_message"`
-	EmailOnHit           *bool               `json:"email_on_hit"`
-	AutoBanEnabled       *bool               `json:"auto_ban_enabled"`
-	BanThreshold         *int                `json:"ban_threshold"`
-	ViolationWindowHours *int                `json:"violation_window_hours"`
+	MaxRequestBodyMiB        *int                `json:"max_request_body_mib"`
+	InflightMemoryBudgetMiB  *int                `json:"inflight_memory_budget_mib"`
+	RequestMemoryMultiplier  *int                `json:"request_memory_multiplier"`
+	MinimumRequestChargeKiB  *int                `json:"minimum_request_charge_kib"`
+	SmallRequestThresholdMiB *int                `json:"small_request_threshold_mib"`
+	SmallRequestReserveMiB   *int                `json:"small_request_reserve_mib"`
+	AdmissionWaitTimeoutMS   *int                `json:"admission_wait_timeout_ms"`
+	ImageAuditMaxConcurrency *int                `json:"image_audit_max_concurrency"`
+	RequestAuditTimeoutMS    *int                `json:"request_audit_timeout_ms"`
+	Enabled                  *bool               `json:"enabled"`
+	Mode                     *string             `json:"mode"`
+	BaseURL                  *string             `json:"base_url"`
+	Model                    *string             `json:"model"`
+	APIKey                   *string             `json:"api_key"`
+	APIKeys                  *[]string           `json:"api_keys"`
+	APIKeysMode              string              `json:"api_keys_mode"`
+	DeleteAPIKeyHashes       *[]string           `json:"delete_api_key_hashes"`
+	ClearAPIKey              bool                `json:"clear_api_key"`
+	TimeoutMS                *int                `json:"timeout_ms"`
+	SampleRate               *int                `json:"sample_rate"`
+	AllGroups                *bool               `json:"all_groups"`
+	GroupIDs                 *[]int64            `json:"group_ids"`
+	RecordNonHits            *bool               `json:"record_non_hits"`
+	AuditScope               *string             `json:"audit_scope"`
+	StoreInputExcerpt        *bool               `json:"store_input_excerpt"`
+	SearchInputExcerpt       *bool               `json:"search_input_excerpt"`
+	Thresholds               *map[string]float64 `json:"thresholds"`
+	WorkerCount              *int                `json:"worker_count"`
+	QueueSize                *int                `json:"queue_size"`
+	BlockStatus              *int                `json:"block_status"`
+	BlockMessage             *string             `json:"block_message"`
+	EmailOnHit               *bool               `json:"email_on_hit"`
+	AutoBanEnabled           *bool               `json:"auto_ban_enabled"`
+	BanThreshold             *int                `json:"ban_threshold"`
+	ViolationWindowHours     *int                `json:"violation_window_hours"`
 	// cyber_policy 命中是否排除出自动封号计数；前端 RiskControlView 已发送该字段，
 	// service.UpdateContentModerationConfigInput 已支持，此前 handler 层缺透传导致开关静默失效。
 	CyberPolicyExcludeFromBanCount *bool                                   `json:"cyber_policy_exclude_from_ban_count"`
@@ -100,6 +109,15 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		return
 	}
 	cfg, err := h.service.UpdateConfig(c.Request.Context(), service.UpdateContentModerationConfigInput{
+		MaxRequestBodyMiB:              req.MaxRequestBodyMiB,
+		InflightMemoryBudgetMiB:        req.InflightMemoryBudgetMiB,
+		RequestMemoryMultiplier:        req.RequestMemoryMultiplier,
+		MinimumRequestChargeKiB:        req.MinimumRequestChargeKiB,
+		SmallRequestThresholdMiB:       req.SmallRequestThresholdMiB,
+		SmallRequestReserveMiB:         req.SmallRequestReserveMiB,
+		AdmissionWaitTimeoutMS:         req.AdmissionWaitTimeoutMS,
+		ImageAuditMaxConcurrency:       req.ImageAuditMaxConcurrency,
+		RequestAuditTimeoutMS:          req.RequestAuditTimeoutMS,
 		Enabled:                        req.Enabled,
 		Mode:                           req.Mode,
 		BaseURL:                        req.BaseURL,

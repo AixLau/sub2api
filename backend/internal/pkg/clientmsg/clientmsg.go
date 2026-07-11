@@ -67,6 +67,7 @@ var exactMessages = map[string]string{
 	"Gemini compatibility service is not configured":          "Gemini 兼容服务未配置",
 	"Too many pending requests, please retry later":           "待处理请求过多，请稍后重试",
 	"Too many concurrent requests, please retry later":        "并发请求过多，请稍后重试",
+	"Request memory budget exhausted":                         "当前请求所需资源超过可用准入配额，请稍后重试",
 	"Service temporarily unavailable, please retry later":     "服务暂时不可用，请稍后重试",
 	"context canceled":                                        "请求已取消",
 
@@ -193,6 +194,10 @@ var prefixMessages = []prefixRule{
 }
 
 func localizePattern(msg string) (string, bool) {
+	if strings.HasPrefix(msg, "Request body too large, limit is ") {
+		limit := strings.TrimSpace(strings.TrimPrefix(msg, "Request body too large, limit is "))
+		return "请求体过大，最大允许 " + limit, true
+	}
 	if strings.HasPrefix(msg, "Model ") && strings.HasSuffix(msg, " is not supported by any configured account in this group") {
 		model := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(msg, "Model "), " is not supported by any configured account in this group"))
 		return "该分组中没有任何已配置账号支持模型 " + model, true

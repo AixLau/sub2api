@@ -146,8 +146,7 @@ const (
 	contentModerationKeyRateLimitFreezeDuration            = time.Minute
 	contentModerationKeyAuthFreezeDuration                 = 10 * time.Minute
 	contentModerationKeyHTTPErrorFreezeDuration            = 10 * time.Second
-	maxContentModerationInputImages                        = 1
-	maxContentModerationTestImages                         = maxContentModerationInputImages
+	maxContentModerationTestImages                         = 32
 	maxContentModerationTestImageBytes                     = 8 * 1024 * 1024
 	maxContentModerationTestImageDataURLBytes              = 12 * 1024 * 1024
 	maxContentModerationBlockedKeywords                    = 10000
@@ -210,6 +209,7 @@ func ContentModerationCategories() []string {
 }
 
 type ContentModerationConfig struct {
+	ResourceProtectionConfig
 	Enabled              bool                                   `json:"enabled"`
 	Mode                 string                                 `json:"mode"`
 	BaseURL              string                                 `json:"base_url"`
@@ -251,6 +251,8 @@ type ContentModerationConfig struct {
 }
 
 type ContentModerationConfigView struct {
+	ResourceProtectionConfig
+	ResourceProtectionStatus       ResourceProtectionStatus               `json:"resource_protection_status"`
 	Enabled                        bool                                   `json:"enabled"`
 	Mode                           string                                 `json:"mode"`
 	BaseURL                        string                                 `json:"base_url"`
@@ -369,6 +371,15 @@ type ContentModerationTestAuditResult struct {
 }
 
 type UpdateContentModerationConfigInput struct {
+	MaxRequestBodyMiB              *int                                    `json:"max_request_body_mib"`
+	InflightMemoryBudgetMiB        *int                                    `json:"inflight_memory_budget_mib"`
+	RequestMemoryMultiplier        *int                                    `json:"request_memory_multiplier"`
+	MinimumRequestChargeKiB        *int                                    `json:"minimum_request_charge_kib"`
+	SmallRequestThresholdMiB       *int                                    `json:"small_request_threshold_mib"`
+	SmallRequestReserveMiB         *int                                    `json:"small_request_reserve_mib"`
+	AdmissionWaitTimeoutMS         *int                                    `json:"admission_wait_timeout_ms"`
+	ImageAuditMaxConcurrency       *int                                    `json:"image_audit_max_concurrency"`
+	RequestAuditTimeoutMS          *int                                    `json:"request_audit_timeout_ms"`
 	Enabled                        *bool                                   `json:"enabled"`
 	Mode                           *string                                 `json:"mode"`
 	BaseURL                        *string                                 `json:"base_url"`
@@ -480,7 +491,7 @@ func (in ContentModerationInput) hasOversizedEncodedPayloadSkipped() bool {
 }
 
 func (in ContentModerationInput) ModerationInput() any {
-	images := limitContentModerationImages(in.Images)
+	images := in.Images
 	if len(images) == 0 {
 		return in.Text
 	}
@@ -828,6 +839,8 @@ type ContentModerationHashCache interface {
 }
 
 type ContentModerationService struct {
+	resourceProtection       *ResourceProtectionManager
+	configUpdateMu           sync.Mutex
 	settingRepo              SettingRepository
 	repo                     ContentModerationRepository
 	rawRequestSnapshotStore  ContentModerationRawRequestSnapshotStore
@@ -905,6 +918,7 @@ func NewContentModerationService(
 	emailService *EmailService,
 ) *ContentModerationService {
 	svc := &ContentModerationService{
+		resourceProtection:   NewResourceProtectionManager(DefaultResourceProtectionConfig()),
 		settingRepo:          settingRepo,
 		repo:                 repo,
 		hashCache:            hashCache,
@@ -954,12 +968,29 @@ func (s *ContentModerationService) GetConfig(ctx context.Context) (*ContentModer
 }
 
 func (s *ContentModerationService) UpdateConfig(ctx context.Context, input UpdateContentModerationConfigInput) (*ContentModerationConfigView, error) {
+	s.configUpdateMu.Lock()
+	defer s.configUpdateMu.Unlock()
 	cfg, err := s.loadConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if input.Enabled != nil {
 		cfg.Enabled = *input.Enabled
+	}
+	protectionFields := []struct {
+		dst *int
+		src *int
+	}{
+		{&cfg.MaxRequestBodyMiB, input.MaxRequestBodyMiB}, {&cfg.InflightMemoryBudgetMiB, input.InflightMemoryBudgetMiB},
+		{&cfg.RequestMemoryMultiplier, input.RequestMemoryMultiplier}, {&cfg.MinimumRequestChargeKiB, input.MinimumRequestChargeKiB},
+		{&cfg.SmallRequestThresholdMiB, input.SmallRequestThresholdMiB}, {&cfg.SmallRequestReserveMiB, input.SmallRequestReserveMiB},
+		{&cfg.AdmissionWaitTimeoutMS, input.AdmissionWaitTimeoutMS}, {&cfg.ImageAuditMaxConcurrency, input.ImageAuditMaxConcurrency},
+		{&cfg.RequestAuditTimeoutMS, input.RequestAuditTimeoutMS},
+	}
+	for _, field := range protectionFields {
+		if field.src != nil {
+			*field.dst = *field.src
+		}
 	}
 	if input.Mode != nil {
 		cfg.Mode = strings.TrimSpace(*input.Mode)
@@ -1095,6 +1126,9 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	}
 	if err := s.settingRepo.Set(ctx, SettingKeyContentModerationConfig, string(raw)); err != nil {
 		return nil, fmt.Errorf("save content moderation config: %w", err)
+	}
+	if s.resourceProtection != nil {
+		_ = s.resourceProtection.Update(cfg.ResourceProtectionConfig)
 	}
 	return s.configView(cfg), nil
 }
@@ -1419,7 +1453,9 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 		defer s.preBlockActive.Add(-1)
 	}
 	start := time.Now()
-	result, err := s.callModeration(ctx, cfg, content.ModerationInput(), trackPreBlock)
+	auditCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.RequestAuditTimeoutMS)*time.Millisecond)
+	defer cancel()
+	result, err := s.callModerationContent(auditCtx, cfg, content, trackPreBlock)
 	latency := int(time.Since(start).Milliseconds())
 	if err != nil {
 		if trackPreBlock {
@@ -1510,6 +1546,49 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 		CategoryScores:  result.CategoryScores,
 		Action:          action,
 	}
+}
+
+func (s *ContentModerationService) callModerationContent(ctx context.Context, cfg *ContentModerationConfig, content ContentModerationInput, track bool) (*moderationAPIResult, error) {
+	combined := &moderationAPIResult{CategoryScores: map[string]float64{}}
+	merge := func(result *moderationAPIResult) {
+		if result == nil {
+			return
+		}
+		combined.Flagged = combined.Flagged || result.Flagged
+		for category, score := range result.CategoryScores {
+			if score > combined.CategoryScores[category] {
+				combined.CategoryScores[category] = score
+			}
+		}
+	}
+	if strings.TrimSpace(content.Text) != "" {
+		result, err := s.callModeration(ctx, cfg, content.Text, track)
+		if err != nil {
+			return nil, err
+		}
+		merge(result)
+		if hit, _, _ := evaluateModerationScores(combined.CategoryScores, cfg.Thresholds); hit {
+			return combined, nil
+		}
+	}
+	for _, image := range content.Images {
+		release, err := s.resourceProtection.AcquireImage(ctx)
+		if err != nil {
+			return nil, err
+		}
+		result, callErr := func() (*moderationAPIResult, error) {
+			defer release()
+			return s.callModeration(ctx, cfg, []moderationAPIInputPart{{Type: "image_url", ImageURL: &moderationAPIImageURLRef{URL: image}}}, track)
+		}()
+		if callErr != nil {
+			return nil, callErr
+		}
+		merge(result)
+		if hit, _, _ := evaluateModerationScores(combined.CategoryScores, cfg.Thresholds); hit {
+			return combined, nil
+		}
+	}
+	return combined, nil
 }
 
 func (s *ContentModerationService) recordPreBlockSyncMetric(latencyMS int, action string) {
@@ -3136,6 +3215,9 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_CONFIG", "内容审计配置不能为空")
 	}
 	cfg.normalize()
+	if err := cfg.ResourceProtectionConfig.Validate(detectRuntimeSafeMaximumMiB()); err != nil {
+		return infraerrors.BadRequest("INVALID_RESOURCE_PROTECTION_CONFIG", err.Error())
+	}
 	switch cfg.Mode {
 	case ContentModerationModeOff, ContentModerationModeObserve, ContentModerationModePreBlock:
 	default:
@@ -3807,36 +3889,37 @@ func (s *ContentModerationService) siteName(ctx context.Context) string {
 
 func defaultContentModerationConfig() *ContentModerationConfig {
 	return &ContentModerationConfig{
-		Enabled:              false,
-		Mode:                 ContentModerationModePreBlock,
-		BaseURL:              defaultContentModerationBaseURL,
-		Model:                defaultContentModerationModel,
-		TimeoutMS:            defaultContentModerationTimeoutMS,
-		SampleRate:           100,
-		AllGroups:            true,
-		GroupIDs:             []int64{},
-		RecordNonHits:        false,
-		AuditScope:           ContentModerationAuditScopeAllContext,
-		StoreInputExcerpt:    true,
-		SearchInputExcerpt:   false,
-		Thresholds:           ContentModerationDefaultThresholds(),
-		WorkerCount:          defaultContentModerationWorkerCount,
-		QueueSize:            defaultContentModerationQueueSize,
-		BlockStatus:          defaultContentModerationBlockHTTPStatus,
-		BlockMessage:         defaultContentModerationBlockMessage,
-		EmailOnHit:           true,
-		AutoBanEnabled:       true,
-		BanThreshold:         defaultContentModerationBanThreshold,
-		ViolationWindowHours: defaultContentModerationViolationWindowHours,
-		RetryCount:           defaultContentModerationRetryCount,
-		HitRetentionDays:     defaultContentModerationHitRetentionDays,
-		NonHitRetentionDays:  defaultContentModerationNonHitRetentionDays,
-		PreHashCheckEnabled:  false,
-		BlockedKeywords:      []string{},
-		KeywordRules:         []ContentModerationKeywordRule{},
-		KeywordBlockingMode:  ContentModerationKeywordModeKeywordAndAPI,
-		EngineMode:           "",
-		LocalClassifier:      defaultContentModerationLocalClassifierConfig(),
+		ResourceProtectionConfig: DefaultResourceProtectionConfig(),
+		Enabled:                  false,
+		Mode:                     ContentModerationModePreBlock,
+		BaseURL:                  defaultContentModerationBaseURL,
+		Model:                    defaultContentModerationModel,
+		TimeoutMS:                defaultContentModerationTimeoutMS,
+		SampleRate:               100,
+		AllGroups:                true,
+		GroupIDs:                 []int64{},
+		RecordNonHits:            false,
+		AuditScope:               ContentModerationAuditScopeAllContext,
+		StoreInputExcerpt:        true,
+		SearchInputExcerpt:       false,
+		Thresholds:               ContentModerationDefaultThresholds(),
+		WorkerCount:              defaultContentModerationWorkerCount,
+		QueueSize:                defaultContentModerationQueueSize,
+		BlockStatus:              defaultContentModerationBlockHTTPStatus,
+		BlockMessage:             defaultContentModerationBlockMessage,
+		EmailOnHit:               true,
+		AutoBanEnabled:           true,
+		BanThreshold:             defaultContentModerationBanThreshold,
+		ViolationWindowHours:     defaultContentModerationViolationWindowHours,
+		RetryCount:               defaultContentModerationRetryCount,
+		HitRetentionDays:         defaultContentModerationHitRetentionDays,
+		NonHitRetentionDays:      defaultContentModerationNonHitRetentionDays,
+		PreHashCheckEnabled:      false,
+		BlockedKeywords:          []string{},
+		KeywordRules:             []ContentModerationKeywordRule{},
+		KeywordBlockingMode:      ContentModerationKeywordModeKeywordAndAPI,
+		EngineMode:               "",
+		LocalClassifier:          defaultContentModerationLocalClassifierConfig(),
 		ModelFilter: ContentModerationModelFilter{
 			Type:   ContentModerationModelFilterAll,
 			Models: []string{},
@@ -3870,6 +3953,7 @@ func cloneContentModerationConfig(cfg *ContentModerationConfig) *ContentModerati
 }
 
 func (cfg *ContentModerationConfig) normalize() {
+	cfg.ResourceProtectionConfig.Normalize()
 	if cfg.APIKey != "" {
 		cfg.APIKeys = normalizeModerationAPIKeys(append(cfg.APIKeys, cfg.APIKey))
 		cfg.APIKey = ""
@@ -4290,6 +4374,8 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		apiKeyMasked = masks[0]
 	}
 	return &ContentModerationConfigView{
+		ResourceProtectionConfig:       cfg.ResourceProtectionConfig,
+		ResourceProtectionStatus:       s.ResourceProtectionStatus(),
 		Enabled:                        cfg.Enabled,
 		Mode:                           cfg.Mode,
 		BaseURL:                        cfg.BaseURL,
@@ -4471,7 +4557,6 @@ func buildModerationTestInput(prompt string, images []string) (any, int, error) 
 		normalizedImages = append(normalizedImages, image)
 	}
 	imageCount := len(normalizedImages)
-	normalizedImages = limitContentModerationImages(normalizedImages)
 	if prompt == "" && len(normalizedImages) == 0 {
 		return "hello", 0, nil
 	}

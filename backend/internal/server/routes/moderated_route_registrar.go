@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -197,9 +198,12 @@ func (r *ModeratedRouteRegistrar) prependModeratedRouteMetaHandler(meta Moderate
 	}
 	prepended = append(prepended, handlers[:len(handlers)-1]...)
 	prepended = append(prepended, func(c *gin.Context) {
+		defer service.ReleaseRequestResources(c.Request.Context())
 		if r.runGatewayPipelineEntrypoint(c, meta).Stop {
 			return
 		}
+		c.Next()
+		c.Abort()
 	})
 	prepended = append(prepended, handlers[len(handlers)-1])
 	return prepended

@@ -34,6 +34,16 @@ func TestLocalize(t *testing.T) {
 			want: "请求体大小 1048577 超过限制 1048576",
 		},
 		{
+			name: "request body limit pattern",
+			in:   "Request body too large, limit is 50MB",
+			want: "请求体过大，最大允许 50MB",
+		},
+		{
+			name: "request memory budget exhausted",
+			in:   "Request memory budget exhausted",
+			want: "当前请求所需资源超过可用准入配额，请稍后重试",
+		},
+		{
 			name: "concurrency exact",
 			in:   "Too many concurrent requests, please retry later",
 			want: "并发请求过多，请稍后重试",

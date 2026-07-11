@@ -84,6 +84,24 @@ func (h *GatewayHandler) EnterGatewayPreForwardPipeline(c *gin.Context, meta mod
 	if !gatewayPreForwardEntrypointSupported(meta.Handler, meta.Protocol) {
 		return gatewayPreForwardPipelineResult{}
 	}
+	if h.contentModerationService != nil {
+		protectedCtx, err := h.contentModerationService.AcquireRequestResources(c.Request.Context(), c.Request.ContentLength, c.GetHeader("Content-Encoding"))
+		if err != nil {
+			if errors.Is(err, service.ErrRequestMemoryBudgetExhausted) {
+				c.Header("Retry-After", "1")
+				writeGatewayPreForwardEntrypointError(c, meta.Protocol, http.StatusTooManyRequests, "request_memory_budget_exhausted", "Request memory budget exhausted")
+			} else {
+				var sizeErr *service.RequestBodyTooLargeError
+				if errors.As(err, &sizeErr) {
+					writeGatewayPreForwardEntrypointError(c, meta.Protocol, http.StatusRequestEntityTooLarge, "request_body_too_large", buildBodyTooLargeMessage(sizeErr.Limit))
+				} else {
+					writeGatewayPreForwardEntrypointError(c, meta.Protocol, http.StatusBadRequest, "invalid_request_error", err.Error())
+				}
+			}
+			return gatewayPreForwardPipelineResult{Blocked: true}
+		}
+		c.Request = c.Request.WithContext(protectedCtx)
+	}
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok {
 		writeGatewayPreForwardEntrypointError(c, meta.Protocol, http.StatusUnauthorized, "authentication_error", "Invalid API key")

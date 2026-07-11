@@ -62,7 +62,13 @@ func markOpsRequestBodyReadError(c *gin.Context, err error) {
 }
 
 func readLenientJSONRequestBodyWithPrealloc(req *http.Request, cfg *config.Config) ([]byte, error) {
-	return pkghttputil.ReadLenientJSONRequestBodyWithPrealloc(req, gatewayMaxBodySize(cfg))
+	limit := gatewayMaxBodySize(cfg)
+	if req != nil {
+		if protected := service.RequestBodyLimit(req.Context()); protected > 0 && (limit <= 0 || protected < limit) {
+			limit = protected
+		}
+	}
+	return pkghttputil.ReadLenientJSONRequestBodyWithPrealloc(req, limit)
 }
 
 func gatewayMaxBodySize(cfg *config.Config) int64 {

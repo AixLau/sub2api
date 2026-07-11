@@ -1213,6 +1213,22 @@
             </div>
           </div>
 
+		  <div v-else-if="activeSettingsTab === 'resources'" class="space-y-5">
+			<div v-if="configForm.resource_protection_status" class="grid grid-cols-2 gap-3 text-sm lg:grid-cols-5">
+			  <div class="border-b border-gray-100 pb-2 dark:border-dark-700"><span class="block text-xs text-gray-500">{{ t('admin.riskControl.resourceSafeMaximum') }}</span>{{ configForm.resource_protection_status.runtime_safe_maximum_mib }} MiB</div>
+			  <div class="border-b border-gray-100 pb-2 dark:border-dark-700"><span class="block text-xs text-gray-500">{{ t('admin.riskControl.resourceActiveBytes') }}</span>{{ Math.round(configForm.resource_protection_status.active_bytes / 1048576) }} MiB</div>
+			  <div class="border-b border-gray-100 pb-2 dark:border-dark-700"><span class="block text-xs text-gray-500">{{ t('admin.riskControl.resourceReservations') }}</span>{{ configForm.resource_protection_status.active_reservations }}</div>
+			  <div class="border-b border-gray-100 pb-2 dark:border-dark-700"><span class="block text-xs text-gray-500">{{ t('admin.riskControl.resourceWaiting') }}</span>{{ configForm.resource_protection_status.waiting_requests }}</div>
+			  <div class="border-b border-gray-100 pb-2 dark:border-dark-700"><span class="block text-xs text-gray-500">{{ t('admin.riskControl.resourceImageAudits') }}</span>{{ configForm.resource_protection_status.active_image_audits }}</div>
+			</div>
+			<div class="grid grid-cols-1 gap-5 lg:grid-cols-3">
+			  <div v-for="field in resourceProtectionFields" :key="field.key">
+				<label class="input-label">{{ field.label }}</label>
+				<input v-model.number="configForm[field.key]" type="number" :min="field.min" :max="field.max" class="input" />
+			  </div>
+			</div>
+		  </div>
+
           <div v-else-if="activeSettingsTab === 'response'" class="space-y-5">
             <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
               <div>
@@ -1676,7 +1692,7 @@ import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { formatDateTime as formatDateTimeValue } from '@/utils/format'
 
-type SettingsTab = 'basic' | 'scope' | 'runtime' | 'response' | 'riskThresholds' | 'retention' | 'keywords'
+type SettingsTab = 'basic' | 'scope' | 'runtime' | 'resources' | 'response' | 'riskThresholds' | 'retention' | 'keywords'
 type WorkerSlotState = 'active' | 'idle' | 'disabled'
 type APIKeysWriteMode = 'append' | 'replace'
 type OverviewIcon = 'shield' | 'key' | 'users' | 'document'
@@ -1772,6 +1788,16 @@ const rawRequestTruncated = ref(false)
 let statusTimer: number | null = null
 
 const configForm = reactive({
+	max_request_body_mib: 50,
+	inflight_memory_budget_mib: 400,
+	request_memory_multiplier: 4,
+	minimum_request_charge_kib: 256,
+	small_request_threshold_mib: 1,
+	small_request_reserve_mib: 64,
+	admission_wait_timeout_ms: 5000,
+	image_audit_max_concurrency: 5,
+	request_audit_timeout_ms: 30000,
+	resource_protection_status: null as ContentModerationConfig['resource_protection_status'] | null,
   enabled: false,
   mode: 'pre_block' as ModerationMode,
   base_url: 'https://api.openai.com',
@@ -1834,10 +1860,23 @@ const settingsTabs = computed<Array<{ id: SettingsTab; label: string }>>(() => [
   { id: 'basic', label: t('admin.riskControl.tabs.basic') },
   { id: 'scope', label: t('admin.riskControl.tabs.scope') },
   { id: 'runtime', label: t('admin.riskControl.tabs.runtime') },
+	{ id: 'resources', label: t('admin.riskControl.tabs.resources') },
   { id: 'response', label: t('admin.riskControl.tabs.response') },
   { id: 'riskThresholds', label: t('admin.riskControl.tabs.riskThresholds') },
   { id: 'keywords', label: t('admin.riskControl.tabs.keywords') },
   { id: 'retention', label: t('admin.riskControl.tabs.retention') },
+])
+
+const resourceProtectionFields = computed(() => [
+  { key: 'max_request_body_mib' as const, label: t('admin.riskControl.maxRequestBodyMiB'), min: 1, max: 256 },
+  { key: 'inflight_memory_budget_mib' as const, label: t('admin.riskControl.inflightMemoryBudgetMiB'), min: 64, max: configForm.resource_protection_status?.runtime_safe_maximum_mib || 1024 },
+  { key: 'request_memory_multiplier' as const, label: t('admin.riskControl.requestMemoryMultiplier'), min: 2, max: 8 },
+  { key: 'minimum_request_charge_kib' as const, label: t('admin.riskControl.minimumRequestChargeKiB'), min: 64, max: 4096 },
+  { key: 'small_request_threshold_mib' as const, label: t('admin.riskControl.smallRequestThresholdMiB'), min: 1, max: 8 },
+  { key: 'small_request_reserve_mib' as const, label: t('admin.riskControl.smallRequestReserveMiB'), min: 16, max: 512 },
+  { key: 'admission_wait_timeout_ms' as const, label: t('admin.riskControl.admissionWaitTimeoutMS'), min: 0, max: 60000 },
+  { key: 'image_audit_max_concurrency' as const, label: t('admin.riskControl.imageAuditMaxConcurrency'), min: 1, max: 32 },
+  { key: 'request_audit_timeout_ms' as const, label: t('admin.riskControl.requestAuditTimeoutMS'), min: 1000, max: 300000 },
 ])
 
 const modeOptions = computed<SelectOption[]>(() => [
@@ -2624,6 +2663,16 @@ const runtimeBadgeClass = computed(() => {
 })
 
 function applyConfig(config: ContentModerationConfig) {
+	configForm.max_request_body_mib = config.max_request_body_mib || 50
+	configForm.inflight_memory_budget_mib = config.inflight_memory_budget_mib || 400
+	configForm.request_memory_multiplier = config.request_memory_multiplier || 4
+	configForm.minimum_request_charge_kib = config.minimum_request_charge_kib || 256
+	configForm.small_request_threshold_mib = config.small_request_threshold_mib || 1
+	configForm.small_request_reserve_mib = config.small_request_reserve_mib || 64
+	configForm.admission_wait_timeout_ms = config.admission_wait_timeout_ms ?? 5000
+	configForm.image_audit_max_concurrency = config.image_audit_max_concurrency || 5
+	configForm.request_audit_timeout_ms = config.request_audit_timeout_ms || 30000
+	configForm.resource_protection_status = config.resource_protection_status || null
   configForm.enabled = config.enabled
   configForm.mode = config.mode
   configForm.base_url = config.base_url || 'https://api.openai.com'
@@ -2719,6 +2768,15 @@ async function saveConfig() {
       return
     }
     const payload: UpdateContentModerationConfig = {
+	  max_request_body_mib: Number(configForm.max_request_body_mib),
+	  inflight_memory_budget_mib: Number(configForm.inflight_memory_budget_mib),
+	  request_memory_multiplier: Number(configForm.request_memory_multiplier),
+	  minimum_request_charge_kib: Number(configForm.minimum_request_charge_kib),
+	  small_request_threshold_mib: Number(configForm.small_request_threshold_mib),
+	  small_request_reserve_mib: Number(configForm.small_request_reserve_mib),
+	  admission_wait_timeout_ms: Number(configForm.admission_wait_timeout_ms),
+	  image_audit_max_concurrency: Number(configForm.image_audit_max_concurrency),
+	  request_audit_timeout_ms: Number(configForm.request_audit_timeout_ms),
       enabled: configForm.enabled,
       mode: configForm.mode,
       base_url: configForm.base_url,
