@@ -830,6 +830,53 @@ type ContentModerationHashCache interface {
 	CountFlaggedInputHashes(ctx context.Context) (int64, error)
 }
 
+type ContentModerationPassCacheOptions struct {
+	Enabled    bool
+	KeyVersion uint64
+	TTL        time.Duration
+}
+
+type ContentModerationQuarantineEntry struct {
+	SchemaVersion int   `json:"schema_version"`
+	ExpiresAt     int64 `json:"expires_at"`
+}
+
+type ContentModerationComparisonMetadata struct {
+	RequestID            string    `json:"request_id"`
+	DecisionID           string    `json:"decision_id"`
+	RequestHMAC          string    `json:"request_hmac"`
+	ChunkKeys            []string  `json:"chunk_keys"`
+	Provider             string    `json:"provider"`
+	Model                string    `json:"model"`
+	PolicyScope          string    `json:"policy_scope"`
+	AggregateLevel       string    `json:"aggregate_level"`
+	RiskTypes            []string  `json:"risk_types"`
+	TotalChunks          int       `json:"total_chunks"`
+	CachedChunks         int       `json:"cached_chunks"`
+	FreshChunks          int       `json:"fresh_chunks"`
+	CompletePASSEvidence bool      `json:"complete_pass_evidence"`
+	ForwardedUpstream    string    `json:"forwarded_upstream"`
+	ForwardedAt          time.Time `json:"forwarded_at"`
+	CorrelationDeadline  time.Time `json:"correlation_deadline"`
+}
+
+type ContentModerationPassCache interface {
+	LookupPASS(ctx context.Context, opts ContentModerationPassCacheOptions, keys []string) (map[string]bool, error)
+	StorePASS(ctx context.Context, opts ContentModerationPassCacheOptions, keys []string)
+	DeletePASS(ctx context.Context, opts ContentModerationPassCacheOptions, keys []string)
+	LookupQuarantine(ctx context.Context, opts ContentModerationPassCacheOptions, keys []string) (map[string]ContentModerationQuarantineEntry, error)
+	StoreQuarantine(ctx context.Context, opts ContentModerationPassCacheOptions, entries map[string]ContentModerationQuarantineEntry) error
+	DeleteQuarantine(ctx context.Context, opts ContentModerationPassCacheOptions, keys []string) error
+	GetComparisonMetadata(ctx context.Context, correlationID string) (*ContentModerationComparisonMetadata, error)
+	StoreComparisonMetadata(ctx context.Context, correlationID string, metadata ContentModerationComparisonMetadata) error
+	DeleteComparisonMetadata(ctx context.Context, correlationID string) error
+}
+
+type ModerationFeedbackEpochRepository interface {
+	GetModerationFeedbackEpoch(ctx context.Context) (uint64, error)
+	IncrementModerationFeedbackEpoch(ctx context.Context) (uint64, error)
+}
+
 type ContentModerationService struct {
 	settingRepo              SettingRepository
 	repo                     ContentModerationRepository
