@@ -6524,6 +6524,20 @@ func TestBuildContentModerationTestAuditResult_UsesConfiguredThresholdsOnly(t *t
 	require.Equal(t, 0.98, result.Thresholds["harassment"])
 }
 
+func TestBuildContentModerationTestAuditResult_PreservesExplicitDynamicProviderHit(t *testing.T) {
+	result := buildContentModerationTestAuditResult(&moderationAPIResult{
+		Flagged: true,
+		CategoryScores: map[string]float64{
+			"违禁:违禁其他:违禁其他": 1,
+		},
+	}, nil)
+
+	require.NotNil(t, result)
+	require.True(t, result.Flagged)
+	require.Equal(t, "违禁:违禁其他:违禁其他", result.HighestCategory)
+	require.Equal(t, 1.0, result.HighestScore)
+}
+
 func TestContentModerationCallModeration_400DoesNotFreezeAPIKey(t *testing.T) {
 	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

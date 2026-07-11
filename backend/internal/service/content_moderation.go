@@ -5638,6 +5638,13 @@ func buildContentModerationTestAuditResult(result *moderationAPIResult, threshol
 	}
 	thresholdSnapshot := mergeContentModerationThresholds(ContentModerationDefaultThresholds(), thresholds)
 	flagged, highestCategory, highestScore := evaluateModerationScores(scores, thresholdSnapshot)
+	// Providers such as Zhipu return dynamic risk labels instead of the fixed
+	// OpenAI category set. Their explicit reject/review decision is represented
+	// by Flagged with a synthetic score of 1, so preserve that decision even
+	// when the dynamic label has no configured threshold.
+	if result.Flagged && highestScore >= 1 {
+		flagged = true
+	}
 	compositeScore := highestScore
 	return &ContentModerationTestAuditResult{
 		Flagged:         flagged,
