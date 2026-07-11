@@ -235,7 +235,7 @@ func (p *moderationProviderAdapter) decodeZhipu(body io.Reader) (ProviderModerat
 	if r.RiskLevel == nil || riskTypes == nil {
 		return ProviderModerationResult{}, p.providerError(ModerationProviderErrorSchema, 0, errors.New("missing Zhipu moderation fields"))
 	}
-	level := ModerationLevel(*r.RiskLevel)
+	level := ModerationLevel(strings.ToUpper(strings.TrimSpace(*r.RiskLevel)))
 	if level != ModerationLevelPass && level != ModerationLevelReview && level != ModerationLevelReject {
 		return ProviderModerationResult{}, p.providerError(ModerationProviderErrorSchema, 0, errors.New("unknown Zhipu risk level"))
 	}

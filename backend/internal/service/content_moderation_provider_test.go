@@ -130,6 +130,7 @@ func TestModerationProviderZhipuGoldenFixtures(t *testing.T) {
 	}{
 		{"pass actual schema", `{"id":"mod-test","created":1710000000,"request_id":"req-test","result_list":[{"content_type":"text","risk_level":"PASS","risk_type":[]}],"usage":{"moderation_text":{"call_count":1}}}`, 200, ModerationLevelPass, []string{}, ""},
 		{"review normalizes risks", `{"results":[{"risk_level":"REVIEW","risk_types":[" z ","a","z","Z",""]}]}`, 200, ModerationLevelReview, []string{"Z", "a", "z"}, ""},
+		{"reject normalizes level", `{"result_list":[{"content_type":"text","risk_level":" reject ","risk_type":["violence"]}]}`, 200, ModerationLevelReject, []string{"violence"}, ""},
 		{"reject", `{"results":[{"risk_level":"REJECT","risk_types":["违法"]}]}`, 200, ModerationLevelReject, []string{"违法"}, ""},
 		{"non string", `{"results":[{"risk_level":"REJECT","risk_types":[1]}]}`, 200, "", nil, ModerationProviderErrorSchema},
 		{"unknown level", `{"results":[{"risk_level":"LOW","risk_types":[]}]}`, 200, "", nil, ModerationProviderErrorSchema},
