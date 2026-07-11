@@ -144,7 +144,7 @@ func TestModerationProviderZhipuGoldenFixtures(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client := moderationFixtureClient(t, "/paas/v4/moderations", `{"model":"moderation","input":"hello"}`, tt.response, tt.status)
+			client := moderationFixtureClient(t, "/api/paas/v4/moderations", `{"model":"moderation","input":"hello"}`, tt.response, tt.status)
 			provider, err := NewZhipuModerationProvider("https://open.bigmodel.cn/api", client)
 			require.NoError(t, err)
 			require.Equal(t, "zhipu", provider.Name())

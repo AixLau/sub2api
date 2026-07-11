@@ -90,7 +90,7 @@ func NewOpenAIModerationProvider(baseURL string, thresholds map[string]float64, 
 }
 
 func NewZhipuModerationProvider(baseURL string, client *http.Client) (ModerationProvider, error) {
-	endpoint, err := moderationProviderEndpoint(baseURL, "/paas/v4/moderations")
+	endpoint, err := moderationProviderEndpoint(baseURL, "/api/paas/v4/moderations")
 	if err != nil {
 		return nil, err
 	}
