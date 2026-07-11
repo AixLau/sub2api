@@ -211,6 +211,11 @@ func (p *moderationProviderAdapter) decodeZhipu(body io.Reader) (ProviderModerat
 		RequestID  string   `json:"request_id"`
 		ResultList []result `json:"result_list"`
 		Results    []result `json:"results"`
+		Usage      struct {
+			ModerationText struct {
+				CallCount float64 `json:"call_count"`
+			} `json:"moderation_text"`
+		} `json:"usage"`
 	}
 	if err := decodeModerationJSON(body, &response); err != nil {
 		return ProviderModerationResult{}, p.providerError(ModerationProviderErrorSchema, 0, err)

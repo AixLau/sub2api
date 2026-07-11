@@ -128,7 +128,7 @@ func TestModerationProviderZhipuGoldenFixtures(t *testing.T) {
 		wantRisks      []string
 		kind           ModerationProviderErrorKind
 	}{
-		{"pass actual schema", `{"id":"mod-test","created":1710000000,"request_id":"req-test","result_list":[{"content_type":"text","risk_level":"PASS","risk_type":[]}]}`, 200, ModerationLevelPass, []string{}, ""},
+		{"pass actual schema", `{"id":"mod-test","created":1710000000,"request_id":"req-test","result_list":[{"content_type":"text","risk_level":"PASS","risk_type":[]}],"usage":{"moderation_text":{"call_count":1}}}`, 200, ModerationLevelPass, []string{}, ""},
 		{"review normalizes risks", `{"results":[{"risk_level":"REVIEW","risk_types":[" z ","a","z","Z",""]}]}`, 200, ModerationLevelReview, []string{"Z", "a", "z"}, ""},
 		{"reject", `{"results":[{"risk_level":"REJECT","risk_types":["违法"]}]}`, 200, ModerationLevelReject, []string{"违法"}, ""},
 		{"non string", `{"results":[{"risk_level":"REJECT","risk_types":[1]}]}`, 200, "", nil, ModerationProviderErrorSchema},
