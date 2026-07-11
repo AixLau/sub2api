@@ -6,15 +6,15 @@
       </div>
 
       <template v-else>
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-end">
+          <div class="lg:hidden">
             <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.title') }}</h1>
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.description') }}</p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
-            <button type="button" class="btn btn-secondary inline-flex items-center gap-2" :disabled="statusLoading" @click="loadStatus(false)">
-              <Icon name="refresh" size="sm" :class="statusLoading ? 'animate-spin' : ''" />
-              {{ t('admin.riskControl.refreshStatus') }}
+            <button type="button" class="btn btn-secondary inline-flex items-center gap-2" :disabled="statusLoading || logsLoading" @click="refreshDashboard">
+              <Icon name="refresh" size="sm" :class="statusLoading || logsLoading ? 'animate-spin' : ''" />
+              {{ t('admin.riskControl.refreshDashboard') }}
             </button>
             <button type="button" class="btn btn-primary inline-flex items-center gap-2" @click="openSettings">
               <Icon name="cog" size="sm" />
@@ -27,7 +27,7 @@
           class="rounded-lg border px-5 py-4 shadow-sm"
           :class="protectionStatusCardClass"
         >
-          <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div class="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(560px,1fr)] xl:items-center">
             <div class="flex min-w-0 gap-3">
               <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg" :class="protectionStatusIconClass">
                 <Icon name="shield" size="md" />
@@ -51,35 +51,98 @@
                 </div>
               </div>
             </div>
-            <div class="grid grid-cols-2 gap-x-6 gap-y-3 border-t border-current/10 pt-3 text-sm md:grid-cols-5 xl:min-w-[760px] xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
+            <div class="grid grid-cols-2 gap-3 border-t border-current/10 pt-4 text-sm xl:border-l xl:border-t-0 xl:pl-5 xl:pt-0">
               <div class="min-w-0">
-                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.protectionBuild') }}</p>
-                <p class="mt-1 truncate font-mono font-semibold text-gray-900 dark:text-white">{{ protectionBuildCommit }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.adminSummary.enforcement') }}</p>
+                <p class="mt-1 truncate font-semibold text-gray-900 dark:text-white">{{ modeLabel(status?.mode ?? configForm.mode) }}</p>
               </div>
               <div class="min-w-0">
-                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.protectionBaseline') }}</p>
-                <p class="mt-1 truncate font-semibold text-gray-900 dark:text-white">{{ protectionBaselineText }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.adminSummary.scope') }}</p>
+                <p class="mt-1 truncate font-semibold text-gray-900 dark:text-white">{{ adminScopeSummary }}</p>
               </div>
               <div class="min-w-0">
-                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.protectionExternalAPI') }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.adminSummary.response') }}</p>
+                <p class="mt-1 truncate font-semibold text-gray-900 dark:text-white">{{ adminResponseSummary }}</p>
+              </div>
+              <div class="min-w-0">
+                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.adminSummary.auditService') }}</p>
                 <p class="mt-1 truncate font-semibold text-gray-900 dark:text-white">{{ protectionExternalAPIText }}</p>
               </div>
-              <div class="min-w-0">
-                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.protectionRoutes') }}</p>
-                <p class="mt-1 truncate font-semibold text-gray-900 dark:text-white">{{ protectionRouteCoverageText }}</p>
+            </div>
+          </div>
+        </div>
+
+        <section data-test="admin-risk-summary" class="space-y-3">
+          <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.adminSummary.title') }}</h2>
+              <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.adminSummary.hint') }}</p>
+            </div>
+            <span class="text-xs text-gray-400 dark:text-gray-500">{{ t('admin.riskControl.adminSummary.retentionWindow') }}</span>
+          </div>
+          <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <button
+              v-for="item in adminMetricItems"
+              :key="item.key"
+              :data-test="`admin-metric-${item.key}`"
+              type="button"
+              class="group min-h-[164px] rounded-lg border bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:bg-dark-800 sm:p-4"
+              :class="item.cardClass"
+              @click="applyAdminMetricFilter(item.key)"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex h-10 w-10 items-center justify-center rounded-lg" :class="item.iconClass">
+                  <Icon :name="item.icon" size="sm" />
+                </div>
+                <Icon name="arrowRight" size="xs" class="mt-1 text-gray-300 transition group-hover:translate-x-0.5 group-hover:text-gray-500" />
               </div>
-              <div class="min-w-0">
-                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.protectionPipeline') }}</p>
-                <p class="mt-1 truncate font-semibold text-gray-900 dark:text-white">{{ protectionPipelineCoverageText }}</p>
+              <p class="mt-4 text-2xl font-semibold text-gray-900 dark:text-white">{{ item.value }}</p>
+              <p class="mt-1 text-sm font-medium text-gray-700 dark:text-gray-200">{{ item.label }}</p>
+              <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ item.meta }}</p>
+            </button>
+          </div>
+        </section>
+
+        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
+          <div class="card p-5">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.adminSummary.attentionTitle') }}</h2>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.adminSummary.attentionHint') }}</p>
+              </div>
+              <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-medium" :class="adminAttentionBadgeClass">{{ adminAttentionBadge }}</span>
+            </div>
+            <div class="mt-4 space-y-2">
+              <div v-for="item in adminAttentionItems" :key="item.key" class="flex gap-3 rounded-lg border border-gray-100 px-3 py-3 dark:border-dark-700">
+                <Icon :name="item.icon" size="sm" class="mt-0.5 flex-shrink-0" :class="item.iconClass" />
+                <div class="min-w-0">
+                  <p class="text-sm font-medium text-gray-900 dark:text-white">{{ item.title }}</p>
+                  <p class="mt-0.5 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ item.description }}</p>
+                </div>
               </div>
             </div>
+          </div>
+
+          <div class="card p-5">
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.adminSummary.policyTitle') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.adminSummary.policyHint') }}</p>
+            <dl class="mt-4 divide-y divide-gray-100 text-sm dark:divide-dark-700">
+              <div v-for="item in adminPolicyItems" :key="item.label" class="flex items-center justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
+                <dt class="text-gray-500 dark:text-gray-400">{{ item.label }}</dt>
+                <dd class="max-w-[65%] truncate text-right font-medium text-gray-900 dark:text-white">{{ item.value }}</dd>
+              </div>
+            </dl>
+            <button type="button" class="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400" @click="openSettings">
+              {{ t('admin.riskControl.adminSummary.reviewPolicy') }}
+              <Icon name="arrowRight" size="xs" />
+            </button>
           </div>
         </div>
 
         <div
           v-if="pipelineCoverageMatrixVisible"
           data-test="pipeline-operator-summary"
-          class="card"
+          :class="advancedPipelineDiagnosticsOpen ? 'card' : 'hidden'"
         >
           <div class="flex flex-col gap-4 border-b border-gray-100 px-6 py-4 dark:border-dark-700 lg:flex-row lg:items-center lg:justify-between">
             <div class="flex min-w-0 gap-3">
@@ -162,6 +225,15 @@
                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.advancedDiagnosticsHint') }}</p>
               </div>
               <div class="flex flex-wrap items-center gap-2">
+                <span class="inline-flex max-w-full rounded-md bg-white px-2.5 py-1 font-mono text-xs font-medium text-gray-600 shadow-sm dark:bg-dark-800 dark:text-gray-300">
+                  {{ t('admin.riskControl.protectionBuild') }} {{ protectionBuildCommit }}
+                </span>
+                <span class="inline-flex max-w-full rounded-md bg-white px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm dark:bg-dark-800 dark:text-gray-300">
+                  {{ t('admin.riskControl.protectionBaseline') }} {{ protectionBaselineText }}
+                </span>
+                <span class="inline-flex max-w-full rounded-md bg-white px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm dark:bg-dark-800 dark:text-gray-300">
+                  {{ t('admin.riskControl.protectionRoutes') }} {{ protectionRouteCoverageText }}
+                </span>
                 <span class="inline-flex max-w-full rounded-md bg-white px-2.5 py-1 font-mono text-xs font-medium text-gray-600 shadow-sm dark:bg-dark-800 dark:text-gray-300">
                   {{ t('admin.riskControl.pipelineManifestVersion') }} {{ pipelineCoverageManifestVersionText }}
                 </span>
@@ -322,7 +394,7 @@
         </div>
         </div>
 
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div class="hidden grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div
             v-for="item in overviewItems"
             :key="item.key"
@@ -352,8 +424,31 @@
           </div>
         </div>
 
+        <div class="card flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex min-w-0 items-start gap-3">
+            <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-dark-700 dark:text-gray-300">
+              <Icon name="chart" size="sm" />
+            </div>
+            <div>
+              <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.adminSummary.operationsTitle') }}</h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ adminOperationsSummary }}</p>
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="btn btn-secondary inline-flex items-center gap-2" @click="runtimeDetailsOpen = !runtimeDetailsOpen">
+              <Icon name="chart" size="sm" />
+              {{ runtimeDetailsOpen ? t('admin.riskControl.adminSummary.hideRuntime') : t('admin.riskControl.adminSummary.showRuntime') }}
+            </button>
+            <button v-if="pipelineCoverageMatrixVisible" type="button" class="btn btn-secondary inline-flex items-center gap-2" @click="advancedPipelineDiagnosticsOpen = !advancedPipelineDiagnosticsOpen">
+              <Icon name="document" size="sm" />
+              {{ advancedPipelineDiagnosticsOpen ? t('admin.riskControl.hideAdvancedDiagnostics') : t('admin.riskControl.showAdvancedDiagnostics') }}
+            </button>
+          </div>
+        </div>
+
         <div
           v-if="showPreBlockRuntimeCard"
+          v-show="runtimeDetailsOpen"
           data-test="pre-block-runtime-cards"
           class="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,520px)_minmax(0,1fr)]"
         >
@@ -450,7 +545,7 @@
           </div>
         </div>
 
-        <div v-if="showWorkerRuntimeCard" class="card">
+        <div v-if="showWorkerRuntimeCard" v-show="runtimeDetailsOpen" class="card">
           <div class="flex flex-col gap-4 border-b border-gray-100 px-6 py-4 dark:border-dark-700 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.workerStatus') }}</h2>
@@ -529,7 +624,7 @@
           </div>
         </div>
 
-        <div class="card">
+        <div data-test="risk-records" class="card scroll-mt-4">
           <div class="flex flex-col gap-4 border-b border-gray-100 px-6 py-4 dark:border-dark-700">
             <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
@@ -1763,7 +1858,7 @@ import type {
 import type { AdminGroup, SelectOption } from '@/types'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
-import { formatDateTime as formatDateTimeValue } from '@/utils/format'
+import { formatDateTime as formatDateTimeValue, formatDateTimeLocalInput } from '@/utils/format'
 
 type SettingsTab = 'basic' | 'scope' | 'runtime' | 'resources' | 'response' | 'riskThresholds' | 'retention' | 'keywords'
 type WorkerSlotState = 'active' | 'idle' | 'disabled'
@@ -1790,6 +1885,23 @@ type PipelineOperatorSummaryItem = {
   icon: PipelineOperatorIcon
   iconClass: string
   valueClass?: string
+}
+type AdminMetricKey = 'blocked' | 'hit' | 'pending' | 'error'
+type AdminMetricItem = {
+  key: AdminMetricKey
+  label: string
+  value: string
+  meta: string
+  icon: 'shield' | 'exclamationTriangle' | 'clock' | 'exclamationCircle'
+  iconClass: string
+  cardClass: string
+}
+type AdminAttentionItem = {
+  key: string
+  title: string
+  description: string
+  icon: 'checkCircle' | 'exclamationTriangle' | 'exclamationCircle' | 'clock'
+  iconClass: string
 }
 type ModerationScoreRow = {
   category: string
@@ -1840,6 +1952,7 @@ const unbanningUserID = ref<number | null>(null)
 const reviewingLogID = ref<number | null>(null)
 const settingsOpen = ref(false)
 const advancedPipelineDiagnosticsOpen = ref(false)
+const runtimeDetailsOpen = ref(false)
 const activeSettingsTab = ref<SettingsTab>('basic')
 const groupSearch = ref('')
 const accountSearch = ref('')
@@ -1850,6 +1963,7 @@ const selectedAccountDetails = ref<Record<number, AccountOption>>({})
 const accountPagination = reactive({ page: 1, page_size: 20, total: 0 })
 const logs = ref<ContentModerationLog[]>([])
 const status = ref<ContentModerationRuntimeStatus | null>(null)
+const adminSummary = reactive({ blocked: 0, hit: 0, pending: 0, error: 0 })
 const testedApiKeyStatuses = ref<ContentModerationAPIKeyStatus[]>([])
 const pendingDeleteApiKeyHashes = ref<string[]>([])
 const apiKeyRowsExpanded = ref<boolean>(false)
@@ -2634,6 +2748,146 @@ const overviewItems = computed<OverviewItem[]>(() => [
   },
 ])
 
+const adminScopeSummary = computed(() => {
+  const groupsText = configForm.all_groups
+    ? t('admin.riskControl.allGroups')
+    : t('admin.riskControl.selectedGroupCount', { count: configForm.group_ids.length })
+  return `${groupsText} · ${modelFilterSummary.value}`
+})
+
+const adminResponseSummary = computed(() => {
+  if (!configForm.auto_ban_enabled) {
+    return configForm.email_on_hit
+      ? t('admin.riskControl.adminSummary.notifyOnly')
+      : t('admin.riskControl.adminSummary.blockOnly')
+  }
+  return t('admin.riskControl.adminSummary.autoBanAfter', { count: configForm.ban_threshold })
+})
+
+const adminMetricItems = computed<AdminMetricItem[]>(() => [
+  {
+    key: 'blocked',
+    label: t('admin.riskControl.adminSummary.blocked24h'),
+    value: formatNumber(adminSummary.blocked),
+    meta: t('admin.riskControl.adminSummary.blocked24hHint'),
+    icon: 'shield',
+    iconClass: 'bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-300',
+    cardClass: 'border-rose-100 hover:border-rose-200 dark:border-rose-900/30',
+  },
+  {
+    key: 'hit',
+    label: t('admin.riskControl.adminSummary.hits24h'),
+    value: formatNumber(adminSummary.hit),
+    meta: t('admin.riskControl.adminSummary.hits24hHint'),
+    icon: 'exclamationTriangle',
+    iconClass: 'bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-300',
+    cardClass: 'border-amber-100 hover:border-amber-200 dark:border-amber-900/30',
+  },
+  {
+    key: 'pending',
+    label: t('admin.riskControl.adminSummary.pendingReview'),
+    value: formatNumber(adminSummary.pending),
+    meta: t('admin.riskControl.adminSummary.pendingReviewHint'),
+    icon: 'clock',
+    iconClass: 'bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300',
+    cardClass: 'border-sky-100 hover:border-sky-200 dark:border-sky-900/30',
+  },
+  {
+    key: 'error',
+    label: t('admin.riskControl.adminSummary.errors24h'),
+    value: formatNumber(adminSummary.error),
+    meta: t('admin.riskControl.adminSummary.errors24hHint'),
+    icon: 'exclamationCircle',
+    iconClass: 'bg-violet-50 text-violet-600 dark:bg-violet-900/20 dark:text-violet-300',
+    cardClass: 'border-violet-100 hover:border-violet-200 dark:border-violet-900/30',
+  },
+])
+
+const adminAttentionItems = computed<AdminAttentionItem[]>(() => {
+  const items: AdminAttentionItem[] = []
+  if (protectionStatusTone.value !== 'strong') {
+    items.push({
+      key: 'protection',
+      title: t('admin.riskControl.adminSummary.protectionAttention'),
+      description: protectionStatusDescription.value,
+      icon: 'exclamationTriangle',
+      iconClass: 'text-rose-500',
+    })
+  }
+  if (adminSummary.pending > 0) {
+    items.push({
+      key: 'pending',
+      title: t('admin.riskControl.adminSummary.pendingAttention', { count: adminSummary.pending }),
+      description: t('admin.riskControl.adminSummary.pendingAttentionHint'),
+      icon: 'clock',
+      iconClass: 'text-sky-500',
+    })
+  }
+  if (adminSummary.error > 0 || pipelineExecutionErrorCount.value > 0) {
+    items.push({
+      key: 'errors',
+      title: t('admin.riskControl.adminSummary.errorAttention', { count: adminSummary.error }),
+      description: t('admin.riskControl.adminSummary.errorAttentionHint'),
+      icon: 'exclamationCircle',
+      iconClass: 'text-violet-500',
+    })
+  }
+  if (adminSummary.blocked > 0) {
+    items.push({
+      key: 'blocked',
+      title: t('admin.riskControl.adminSummary.blockedAttention', { count: adminSummary.blocked }),
+      description: t('admin.riskControl.adminSummary.blockedAttentionHint'),
+      icon: 'exclamationTriangle',
+      iconClass: 'text-amber-500',
+    })
+  }
+  if (items.length === 0) {
+    items.push({
+      key: 'clear',
+      title: t('admin.riskControl.adminSummary.noAttention'),
+      description: t('admin.riskControl.adminSummary.noAttentionHint'),
+      icon: 'checkCircle',
+      iconClass: 'text-emerald-500',
+    })
+  }
+  return items.slice(0, 3)
+})
+
+const adminAttentionBadge = computed(() => (
+  adminAttentionItems.value[0]?.key === 'clear'
+    ? t('admin.riskControl.adminSummary.normal')
+    : t('admin.riskControl.adminSummary.itemCount', { count: adminAttentionItems.value.length })
+))
+
+const adminAttentionBadgeClass = computed(() => (
+  adminAttentionItems.value[0]?.key === 'clear'
+    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+    : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
+))
+
+const adminPolicyItems = computed(() => [
+  { label: t('admin.riskControl.adminSummary.policyMode'), value: modeLabel(configForm.mode) },
+  { label: t('admin.riskControl.adminSummary.policyScope'), value: adminScopeSummary.value },
+  { label: t('admin.riskControl.adminSummary.policyRule'), value: t('admin.riskControl.adminSummary.ruleCount', { count: enabledKeywordRuleCount.value + legacyBlockedKeywordCount.value }) },
+  { label: t('admin.riskControl.adminSummary.policyResponse'), value: adminResponseSummary.value },
+  { label: t('admin.riskControl.adminSummary.policyRetention'), value: t('admin.riskControl.adminSummary.retentionDays', { count: configForm.hit_retention_days }) },
+])
+
+const adminOperationsSummary = computed(() => {
+  const mode = status.value?.mode ?? configForm.mode
+  if (mode === 'pre_block') {
+    return t('admin.riskControl.adminSummary.preBlockOperations', {
+      checked: formatNumber(status.value?.pre_block_checked ?? 0),
+      errors: formatNumber(status.value?.pre_block_errors ?? 0),
+      latency: formatNumber(status.value?.pre_block_avg_latency_ms ?? 0),
+    })
+  }
+  return t('admin.riskControl.adminSummary.workerOperations', {
+    queue: formatNumber(status.value?.queue_length ?? 0),
+    errors: formatNumber((status.value?.dropped ?? 0) + (status.value?.errors ?? 0)),
+  })
+})
+
 const moderationScoreRows = computed<ModerationScoreRow[]>(() => {
   const result = moderationTestResult.value
   if (!result) return []
@@ -2864,7 +3118,7 @@ async function loadAll() {
       configForm.api_key_statuses = [...runtimeStatus.api_key_statuses]
       prunePendingDeleteAPIKeyHashes()
     }
-    await loadLogs()
+    await Promise.all([loadLogs(), loadAdminSummary()])
   } catch (err: unknown) {
     appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.loadFailed')))
   } finally {
@@ -2919,6 +3173,10 @@ async function loadStatus(silent = true) {
   } finally {
     statusLoading.value = false
   }
+}
+
+async function refreshDashboard() {
+  await Promise.all([loadStatus(false), loadLogs(), loadAdminSummary()])
 }
 
 async function saveConfig() {
@@ -2998,7 +3256,7 @@ async function saveConfig() {
     applyConfig(updated)
     settingsOpen.value = false
     appStore.showSuccess(t('admin.riskControl.saved'))
-    await Promise.all([loadStatus(true), loadLogs()])
+    await Promise.all([loadStatus(true), loadLogs(), loadAdminSummary()])
   } catch (err: unknown) {
     appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.saveFailed')))
   } finally {
@@ -3031,6 +3289,38 @@ async function loadLogs() {
   } finally {
     logsLoading.value = false
   }
+}
+
+async function loadAdminSummary() {
+  const from = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  try {
+    const [blocked, hit, pending, error] = await Promise.all([
+      adminAPI.riskControl.listLogs({ page: 1, page_size: 1, result: 'blocked', from }),
+      adminAPI.riskControl.listLogs({ page: 1, page_size: 1, result: 'hit', from }),
+      adminAPI.riskControl.listLogs({ page: 1, page_size: 1, review_status: 'pending' }),
+      adminAPI.riskControl.listLogs({ page: 1, page_size: 1, result: 'error', from }),
+    ])
+    adminSummary.blocked = blocked.total
+    adminSummary.hit = hit.total
+    adminSummary.pending = pending.total
+    adminSummary.error = error.total
+  } catch {
+    // The records table remains usable if an aggregate request fails.
+  }
+}
+
+function applyAdminMetricFilter(key: AdminMetricKey) {
+  pagination.page = 1
+  filters.from = key === 'pending'
+    ? ''
+    : formatDateTimeLocalInput(Math.floor(Date.now() / 1000) - 24 * 60 * 60)
+  filters.to = ''
+  filters.review_status = key === 'pending' ? 'pending' : ''
+  filters.result = key === 'pending' ? '' : key
+  void loadLogs()
+  requestAnimationFrame(() => {
+    document.querySelector('[data-test="risk-records"]')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+  })
 }
 
 function canUnbanRow(row: ContentModerationLog): boolean {
@@ -3104,6 +3394,7 @@ async function reviewLog(row: ContentModerationLog, status: 'false_positive' | '
     if (inputDetailRow.value?.id === reviewed.id) {
       inputDetailRow.value = reviewed
     }
+    await loadAdminSummary()
     appStore.showSuccess(t('admin.riskControl.reviewSaved'))
   } catch (err: unknown) {
     appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.reviewFailed')))

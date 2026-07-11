@@ -335,6 +335,47 @@ describe('admin RiskControlView', () => {
     expect(wrapper.text()).not.toContain('admin.riskControl.protectionExternalNotConfigured')
   })
 
+  it('shows actionable admin risk totals and filters records from a metric', async () => {
+    listLogs.mockImplementation(async (params: Record<string, unknown>) => {
+      let total = 0
+      if (params.result === 'blocked' && params.page_size === 1) total = 7
+      if (params.result === 'hit' && params.page_size === 1) total = 11
+      if (params.review_status === 'pending' && params.page_size === 1) total = 3
+      if (params.result === 'error' && params.page_size === 1) total = 2
+      return { items: [], total, page: 1, page_size: Number(params.page_size ?? 20), pages: total > 0 ? 1 : 0 }
+    })
+
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="admin-metric-blocked"]').text()).toContain('7')
+    expect(wrapper.get('[data-test="admin-metric-hit"]').text()).toContain('11')
+    expect(wrapper.get('[data-test="admin-metric-pending"]').text()).toContain('3')
+    expect(wrapper.get('[data-test="admin-metric-error"]').text()).toContain('2')
+
+    await wrapper.get('[data-test="admin-metric-blocked"]').trigger('click')
+    await flushPromises()
+
+    expect(listLogs).toHaveBeenCalledWith(expect.objectContaining({
+      page_size: 20,
+      result: 'blocked',
+      from: expect.any(String),
+    }))
+  })
+
   it('renders keyword metadata in records and input detail', async () => {
     listLogs.mockResolvedValue({
       items: [
