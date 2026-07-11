@@ -10,8 +10,6 @@ $ErrorActionPreference = "Stop"
 $GatewayUrl = "https://aixlau.me"
 $ClaudeBaseUrl = "$GatewayUrl/antigravity"
 $DefaultCodexModel = "gpt-5.5"
-$ManagedBegin = "# BEGIN SUB2API MANAGED BLOCK"
-$ManagedEnd = "# END SUB2API MANAGED BLOCK"
 $Backups = New-Object System.Collections.Generic.List[string]
 
 if (-not ("Sub2ApiTimeoutWebClient" -as [type])) {
@@ -199,51 +197,6 @@ function ConvertTo-TomlString {
     return $Value.Replace("\", "\\").Replace('"', '\"').Replace("`r", "\r").Replace("`n", "\n").Replace("`t", "\t")
 }
 
-function Test-CodexAuthInput {
-    return -not [string]::IsNullOrWhiteSpace($env:SUB2API_CODEX_AUTH_JSON_B64) -or
-        -not [string]::IsNullOrWhiteSpace($env:SUB2API_CODEX_AUTH_JSON) -or
-        -not [string]::IsNullOrWhiteSpace($env:SUB2API_CODEX_AUTH_FILE)
-}
-
-function Write-CodexAuthFromInput {
-    param([string]$Path)
-
-    if (-not (Test-CodexAuthInput)) {
-        return $false
-    }
-
-    $Content = ""
-    if (-not [string]::IsNullOrWhiteSpace($env:SUB2API_CODEX_AUTH_JSON_B64)) {
-        try {
-            $Bytes = [Convert]::FromBase64String($env:SUB2API_CODEX_AUTH_JSON_B64)
-            $Content = [Text.Encoding]::UTF8.GetString($Bytes)
-        }
-        catch {
-            throw "SUB2API_CODEX_AUTH_JSON_B64 不是有效的 base64 内容。"
-        }
-    }
-    elseif (-not [string]::IsNullOrWhiteSpace($env:SUB2API_CODEX_AUTH_JSON)) {
-        $Content = $env:SUB2API_CODEX_AUTH_JSON
-    }
-    elseif (-not [string]::IsNullOrWhiteSpace($env:SUB2API_CODEX_AUTH_FILE)) {
-        if (-not (Test-Path -LiteralPath $env:SUB2API_CODEX_AUTH_FILE -PathType Leaf)) {
-            throw "Codex auth 文件不存在：$env:SUB2API_CODEX_AUTH_FILE"
-        }
-        $Content = Get-Content -LiteralPath $env:SUB2API_CODEX_AUTH_FILE -Raw
-    }
-
-    try {
-        $null = $Content | ConvertFrom-Json
-    }
-    catch {
-        throw "Codex auth JSON 格式无效，请检查提供的 auth 内容。"
-    }
-
-    Backup-File -Path $Path
-    Set-Content -LiteralPath $Path -Value $Content -Encoding UTF8
-    return $true
-}
-
 function Write-CodexApiKeyAuth {
     param([string]$Path)
 
@@ -254,85 +207,24 @@ function Write-CodexApiKeyAuth {
     })
 }
 
-function Test-CodexAuthIsOfficial {
-    param([string]$Path)
-
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        return $false
-    }
-    $Raw = Get-Content -LiteralPath $Path -Raw
-    if ([string]::IsNullOrWhiteSpace($Raw)) {
-        return $false
-    }
-    try {
-        $Obj = $Raw | ConvertFrom-Json
-    }
-    catch {
-        return $false
-    }
-    if ($Obj.auth_mode -eq "chatgpt") {
-        return $true
-    }
-    if ($Obj.tokens -and -not [string]::IsNullOrWhiteSpace($Obj.tokens.refresh_token)) {
-        return $true
-    }
-    return $false
-}
-
 function Write-CodexConfig {
     param([string]$Path)
 
-    if (Test-Path -LiteralPath $Path -PathType Leaf) {
-        $Content = Get-Content -LiteralPath $Path -Raw
-        $Pattern = "(?s)\r?\n?# BEGIN SUB2API MANAGED BLOCK.*?# END SUB2API MANAGED BLOCK\r?\n?"
-        $Content = [regex]::Replace($Content, $Pattern, "`n")
-        $Lines = $Content -split "\r?\n"
-        $Out = New-Object System.Collections.Generic.List[string]
-        $ProviderSet = $false
-        $InTable = $false
-
-        foreach ($Line in $Lines) {
-            if ($Line -match "^\[") {
-                if (-not $ProviderSet) {
-                    $Out.Add('model_provider = "sub2api"') | Out-Null
-                    $ProviderSet = $true
-                }
-                $InTable = $true
-            }
-
-            if (-not $InTable -and $Line -match "^\s*model_provider\s*=") {
-                if (-not $ProviderSet) {
-                    $Out.Add('model_provider = "sub2api"') | Out-Null
-                    $ProviderSet = $true
-                }
-                continue
-            }
-            $Out.Add($Line) | Out-Null
-        }
-
-        if (-not $ProviderSet) {
-            $Out.Insert(0, 'model_provider = "sub2api"')
-        }
-    }
-    else {
-        $Out = New-Object System.Collections.Generic.List[string]
-        $Out.Add('model_provider = "sub2api"') | Out-Null
-        $Out.Add("model = `"$DefaultCodexModel`"") | Out-Null
-        $Out.Add('model_reasoning_effort = "high"') | Out-Null
-        $Out.Add('model_reasoning_summary = "auto"') | Out-Null
-        $Out.Add('model_verbosity = "medium"') | Out-Null
-        $Out.Add('disable_response_storage = true') | Out-Null
-    }
-
+    $Out = New-Object System.Collections.Generic.List[string]
+    $Out.Add("# Sub2API Codex config generated on 2026-07-12.") | Out-Null
+    $Out.Add('model_provider = "xinglian"') | Out-Null
+    $Out.Add("model = `"$DefaultCodexModel`"") | Out-Null
+    $Out.Add('model_reasoning_effort = "high"') | Out-Null
+    $Out.Add('model_reasoning_summary = "auto"') | Out-Null
+    $Out.Add('model_verbosity = "medium"') | Out-Null
+    $Out.Add('disable_response_storage = true') | Out-Null
+    $Out.Add('preferred_auth_method = "apikey"') | Out-Null
     $Out.Add("") | Out-Null
-    $Out.Add($ManagedBegin) | Out-Null
-    $Out.Add("[model_providers.sub2api]") | Out-Null
-    $Out.Add('name = "Sub2API"') | Out-Null
+    $Out.Add('[model_providers.xinglian]') | Out-Null
+    $Out.Add('name = "XingLian"') | Out-Null
     $Out.Add("base_url = `"$GatewayUrl`"") | Out-Null
     $Out.Add('wire_api = "responses"') | Out-Null
     $Out.Add("requires_openai_auth = true") | Out-Null
-    $Out.Add("experimental_bearer_token = `"$(ConvertTo-TomlString -Value $ApiKey)`"") | Out-Null
-    $Out.Add($ManagedEnd) | Out-Null
 
     Set-Content -LiteralPath $Path -Value ($Out -join [Environment]::NewLine) -Encoding UTF8
 }
@@ -559,20 +451,8 @@ $ClaudeDir = Join-Path $HOME ".claude"
 $CodexConfig = Join-Path $CodexDir "config.toml"
 $CodexAuth = Join-Path $CodexDir "auth.json"
 $ClaudeSettings = Join-Path $ClaudeDir "settings.json"
-$CodexAuthStatus = "missing"
 
-if ($Client -eq "codex") {
-    if (Test-CodexAuthIsOfficial -Path $CodexAuth) {
-        $CodexAuthStatus = "present"
-    }
-    elseif (Test-CodexAuthInput) {
-        $CodexAuthStatus = "will_import"
-    }
-    else {
-        $CodexAuthStatus = "missing"
-    }
-}
-elseif ($Client -eq "claude") {
+if ($Client -eq "claude") {
     $null = Read-JsonObject -Path $ClaudeSettings
 }
 
@@ -589,16 +469,7 @@ if ($Client -eq "codex") {
     New-Item -ItemType Directory -Path $CodexDir -Force | Out-Null
     Backup-File -Path $CodexConfig
     Write-CodexConfig -Path $CodexConfig
-    if (Test-CodexAuthIsOfficial -Path $CodexAuth) {
-        $CodexAuthStatus = "present"
-    }
-    elseif (Write-CodexAuthFromInput -Path $CodexAuth) {
-        $CodexAuthStatus = "imported"
-    }
-    else {
-        Write-CodexApiKeyAuth -Path $CodexAuth
-        $CodexAuthStatus = "api_key"
-    }
+    Write-CodexApiKeyAuth -Path $CodexAuth
 }
 elseif ($Client -eq "claude") {
     New-Item -ItemType Directory -Path $ClaudeDir -Force | Out-Null

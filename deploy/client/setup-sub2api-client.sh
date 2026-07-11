@@ -20,8 +20,6 @@ usage() {
 用法: setup-sub2api-client.sh [--client codex|claude] [--api-key sk-...] [--proxy-direct yes|no] [--manual-key]
 
 只配置一个本机客户端：Codex 或 Claude Code。
-如需迁移自己的 Codex 官方登录缓存，可设置环境变量：
-  SUB2API_CODEX_AUTH_JSON_B64 / SUB2API_CODEX_AUTH_JSON / SUB2API_CODEX_AUTH_FILE
 USAGE
 }
 
@@ -379,61 +377,6 @@ need_jq_for_existing_json() {
   fi
 }
 
-has_codex_auth_input() {
-  [ -n "${SUB2API_CODEX_AUTH_JSON_B64:-}" ] || \
-    [ -n "${SUB2API_CODEX_AUTH_JSON:-}" ] || \
-    [ -n "${SUB2API_CODEX_AUTH_FILE:-}" ]
-}
-
-decode_base64() {
-  if base64 --decode >/dev/null 2>&1 <<EOF
-dGVzdA==
-EOF
-  then
-    base64 --decode
-  else
-    base64 -D
-  fi
-}
-
-write_codex_auth_from_input() {
-  local file="$1"
-  local tmp
-
-  has_codex_auth_input || return 1
-  tmp="$(mktemp)"
-
-  if [ -n "${SUB2API_CODEX_AUTH_JSON_B64:-}" ]; then
-    if ! printf '%s' "$SUB2API_CODEX_AUTH_JSON_B64" | decode_base64 >"$tmp"; then
-      rm -f "$tmp"
-      printf 'SUB2API_CODEX_AUTH_JSON_B64 不是有效的 base64 内容。\n' >&2
-      exit 1
-    fi
-  elif [ -n "${SUB2API_CODEX_AUTH_JSON:-}" ]; then
-    printf '%s\n' "$SUB2API_CODEX_AUTH_JSON" >"$tmp"
-  elif [ -n "${SUB2API_CODEX_AUTH_FILE:-}" ]; then
-    if [ ! -f "$SUB2API_CODEX_AUTH_FILE" ]; then
-      rm -f "$tmp"
-      printf 'Codex auth 文件不存在：%s\n' "$SUB2API_CODEX_AUTH_FILE" >&2
-      exit 1
-    fi
-    cp "$SUB2API_CODEX_AUTH_FILE" "$tmp"
-  fi
-
-  if command -v jq >/dev/null 2>&1; then
-    if ! jq empty "$tmp" >/dev/null 2>&1; then
-      rm -f "$tmp"
-      printf 'Codex auth JSON 格式无效，请检查提供的 auth 内容。\n' >&2
-      exit 1
-    fi
-  fi
-
-  backup_file "$file"
-  mv "$tmp" "$file"
-  chmod 600 "$file" 2>/dev/null || true
-  return 0
-}
-
 write_codex_api_key_auth() {
   local file="$1"
   local tmp
@@ -443,18 +386,6 @@ write_codex_api_key_auth() {
   backup_file "$file"
   mv "$tmp" "$file"
   chmod 600 "$file" 2>/dev/null || true
-}
-
-codex_auth_is_official() {
-  local file="$1"
-  [ -s "$file" ] || return 1
-  if command -v jq >/dev/null 2>&1; then
-    jq -e '((.auth_mode? // "") == "chatgpt") or ((.tokens.refresh_token? // "") != "")' "$file" >/dev/null 2>&1
-    return
-  fi
-  grep -Eq '"refresh_token"[[:space:]]*:[[:space:]]*"[^"]+"' "$file" && return 0
-  grep -Eq '"auth_mode"[[:space:]]*:[[:space:]]*"chatgpt"' "$file" && return 0
-  return 1
 }
 
 backup_file() {
@@ -479,54 +410,24 @@ write_codex_config() {
   local tmp
   tmp="$(mktemp)"
 
-  if [ -f "$file" ]; then
-    awk -v begin="$MANAGED_BEGIN" -v end="$MANAGED_END" '
-      $0 == begin { skip = 1; next }
-      $0 == end { skip = 0; next }
-      !skip { print }
-    ' "$file" >"$tmp.stripped"
-
-    awk '
-      BEGIN { provider_set = 0; in_table = 0 }
-      /^\[/ { in_table = 1 }
-      !in_table && /^[[:space:]]*model_provider[[:space:]]*=/ {
-        if (!provider_set) {
-          print "model_provider = \"sub2api\""
-          provider_set = 1
-        }
-        next
-      }
-      { print }
-      END {
-        if (!provider_set) {
-          print "model_provider = \"sub2api\""
-        }
-      }
-    ' "$tmp.stripped" >"$tmp"
-  else
-    {
-      printf 'model_provider = "sub2api"\n'
-      printf 'model = "%s"\n' "$DEFAULT_CODEX_MODEL"
-      printf 'model_reasoning_effort = "high"\n'
-      printf 'model_reasoning_summary = "auto"\n'
-      printf 'model_verbosity = "medium"\n'
-      printf 'disable_response_storage = true\n'
-    } >"$tmp"
-  fi
-
   {
-    printf '\n%s\n' "$MANAGED_BEGIN"
-    printf '[model_providers.sub2api]\n'
-    printf 'name = "Sub2API"\n'
+    printf '# Sub2API Codex config generated on 2026-07-12.\n'
+    printf 'model_provider = "xinglian"\n'
+    printf 'model = "%s"\n' "$DEFAULT_CODEX_MODEL"
+    printf 'model_reasoning_effort = "high"\n'
+    printf 'model_reasoning_summary = "auto"\n'
+    printf 'model_verbosity = "medium"\n'
+    printf 'disable_response_storage = true\n'
+    printf 'preferred_auth_method = "apikey"\n'
+    printf '\n'
+    printf '[model_providers.xinglian]\n'
+    printf 'name = "XingLian"\n'
     printf 'base_url = "%s"\n' "$GATEWAY_URL"
     printf 'wire_api = "responses"\n'
     printf 'requires_openai_auth = true\n'
-    printf 'experimental_bearer_token = "%s"\n' "$(toml_escape "$API_KEY")"
-    printf '%s\n' "$MANAGED_END"
-  } >>"$tmp"
+  } >"$tmp"
 
   mv "$tmp" "$file"
-  rm -f "$tmp.stripped"
   chmod 600 "$file" 2>/dev/null || true
 }
 
@@ -614,16 +515,8 @@ CODEX_CONFIG="$CODEX_DIR/config.toml"
 CODEX_AUTH="$CODEX_DIR/auth.json"
 CLAUDE_SETTINGS="$CLAUDE_DIR/settings.json"
 BACKUPS=""
-CODEX_AUTH_STATUS="missing"
-
 if [ "$CLIENT" = "codex" ]; then
-  if codex_auth_is_official "$CODEX_AUTH"; then
-    CODEX_AUTH_STATUS="present"
-  elif has_codex_auth_input; then
-    CODEX_AUTH_STATUS="will_import"
-  else
-    CODEX_AUTH_STATUS="missing"
-  fi
+  :
 elif [ "$CLIENT" = "claude" ]; then
   need_jq_for_existing_json "$CLAUDE_SETTINGS"
 fi
@@ -641,14 +534,7 @@ if [ "$CLIENT" = "codex" ]; then
   mkdir -p "$CODEX_DIR"
   backup_file "$CODEX_CONFIG"
   write_codex_config "$CODEX_CONFIG"
-  if codex_auth_is_official "$CODEX_AUTH"; then
-    CODEX_AUTH_STATUS="present"
-  elif write_codex_auth_from_input "$CODEX_AUTH"; then
-    CODEX_AUTH_STATUS="imported"
-  else
-    write_codex_api_key_auth "$CODEX_AUTH"
-    CODEX_AUTH_STATUS="api_key"
-  fi
+  write_codex_api_key_auth "$CODEX_AUTH"
 elif [ "$CLIENT" = "claude" ]; then
   mkdir -p "$CLAUDE_DIR"
   backup_file "$CLAUDE_SETTINGS"

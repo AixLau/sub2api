@@ -91,14 +91,15 @@ test_codex_config_creation_only() {
   assert_file "$home_dir/.codex/config.toml"
   assert_file "$home_dir/.codex/auth.json"
   [ ! -e "$home_dir/.claude/settings.json" ] || fail "Claude settings should not be created for codex client"
-  assert_contains "$home_dir/.codex/config.toml" 'model_provider = "sub2api"'
-  assert_contains "$home_dir/.codex/config.toml" '[model_providers.sub2api]'
+  assert_contains "$home_dir/.codex/config.toml" 'model_provider = "xinglian"'
+  assert_contains "$home_dir/.codex/config.toml" '[model_providers.xinglian]'
   assert_contains "$home_dir/.codex/config.toml" "base_url = \"$GATEWAY_URL\""
   assert_contains "$home_dir/.codex/config.toml" 'wire_api = "responses"'
   assert_contains "$home_dir/.codex/config.toml" 'requires_openai_auth = true'
-  assert_contains "$home_dir/.codex/config.toml" "experimental_bearer_token = \"$API_KEY\""
-  assert_json_value "$home_dir/.codex/auth.json" '.auth_mode' "chatgpt"
-  assert_not_contains "$home_dir/.codex/auth.json" "$API_KEY"
+  assert_contains "$home_dir/.codex/config.toml" 'preferred_auth_method = "apikey"'
+  assert_not_contains "$home_dir/.codex/config.toml" "experimental_bearer_token"
+  assert_json_value "$home_dir/.codex/auth.json" '.auth_mode' "apikey"
+  assert_json_value "$home_dir/.codex/auth.json" '.OPENAI_API_KEY' "$API_KEY"
 }
 
 test_claude_config_creation_only() {
@@ -114,7 +115,7 @@ test_claude_config_creation_only() {
   assert_json_value "$home_dir/.claude/settings.json" '.env.ANTHROPIC_AUTH_TOKEN' "$API_KEY"
 }
 
-test_existing_config_preserved_and_backed_up() {
+test_existing_codex_files_are_backed_up_and_replaced() {
   local home_dir
   home_dir="$(mktemp -d)"
   mkdir -p "$home_dir/.codex" "$home_dir/.claude"
@@ -130,23 +131,40 @@ test_existing_config_preserved_and_backed_up() {
 
   run_setup "$home_dir" "" --client codex
 
-  assert_contains "$home_dir/.codex/config.toml" 'model = "gpt-5.4"'
-  assert_contains "$home_dir/.codex/config.toml" '[mcp_servers.keep]'
-  assert_contains "$home_dir/.codex/config.toml" 'command = "keep-me"'
-  assert_contains "$home_dir/.codex/config.toml" 'model_provider = "sub2api"'
-  assert_contains "$home_dir/.codex/config.toml" "experimental_bearer_token = \"$API_KEY\""
-  assert_json_value "$home_dir/.codex/auth.json" '.OTHER_KEY' "keep"
-  assert_json_value "$home_dir/.codex/auth.json" '.auth_mode' "chatgpt"
-  assert_not_contains "$home_dir/.codex/auth.json" "$API_KEY"
+  assert_not_contains "$home_dir/.codex/config.toml" 'model = "gpt-5.4"'
+  assert_not_contains "$home_dir/.codex/config.toml" '[mcp_servers.keep]'
+  assert_not_contains "$home_dir/.codex/config.toml" 'command = "keep-me"'
+  assert_contains "$home_dir/.codex/config.toml" 'model_provider = "xinglian"'
+  assert_not_contains "$home_dir/.codex/config.toml" "experimental_bearer_token"
+  assert_json_value "$home_dir/.codex/auth.json" '.auth_mode' "apikey"
+  assert_json_value "$home_dir/.codex/auth.json" '.OPENAI_API_KEY' "$API_KEY"
+  [ "$(jq -r 'has("OTHER_KEY")' "$home_dir/.codex/auth.json")" = "false" ] || fail "Codex auth should be replaced, not merged"
   assert_json_value "$home_dir/.claude/settings.json" '.env.ANTHROPIC_AUTH_TOKEN' "old"
 
   ls "$home_dir/.codex"/config.toml.bak.* >/dev/null 2>&1 || fail "missing Codex config backup"
-  if ls "$home_dir/.codex"/auth.json.bak.* >/dev/null 2>&1; then
-    fail "Codex auth should not be backed up or modified in enhanced mode"
-  fi
+  ls "$home_dir/.codex"/auth.json.bak.* >/dev/null 2>&1 || fail "missing Codex auth backup"
   if ls "$home_dir/.claude"/settings.json.bak.* >/dev/null 2>&1; then
     fail "Claude settings should not be backed up for codex client"
   fi
+}
+
+test_existing_config_without_provider_is_replaced() {
+  local home_dir
+  home_dir="$(mktemp -d)"
+  mkdir -p "$home_dir/.codex"
+  prepare_codex_official_auth "$home_dir"
+  printf '%s\n' \
+    '[mcp_servers.keep]' \
+    'command = "keep-me"' \
+    >"$home_dir/.codex/config.toml"
+
+  run_setup "$home_dir" "" --client codex
+
+  local first_line
+  first_line="$(sed -n '1p' "$home_dir/.codex/config.toml")"
+  [ "$first_line" = '# Sub2API Codex config generated on 2026-07-12.' ] || fail "Codex config should be replaced with generated config"
+  assert_not_contains "$home_dir/.codex/config.toml" '[mcp_servers.keep]'
+  assert_not_contains "$home_dir/.codex/config.toml" 'command = "keep-me"'
 }
 
 test_idempotent_managed_block() {
@@ -158,7 +176,7 @@ test_idempotent_managed_block() {
   run_setup "$home_dir" "" --client codex
 
   local count
-  count="$(grep -Fc '[model_providers.sub2api]' "$home_dir/.codex/config.toml")"
+  count="$(grep -Fc '[model_providers.xinglian]' "$home_dir/.codex/config.toml")"
   [ "$count" = "1" ] || fail "expected one managed provider block, got $count"
 }
 
@@ -317,7 +335,8 @@ SH
   assert_contains "$home_dir/output.txt" "页面验证码"
   assert_contains "$home_dir/output.txt" "授权完成，正在写入配置"
   assert_not_contains "$home_dir/output.txt" "请输入你的 API Key"
-  assert_contains "$home_dir/.codex/config.toml" 'experimental_bearer_token = "sk-auto-envelope-test"'
+  assert_not_contains "$home_dir/.codex/config.toml" "experimental_bearer_token"
+  assert_json_value "$home_dir/.codex/auth.json" '.OPENAI_API_KEY' "sk-auto-envelope-test"
 }
 
 test_prompts_for_api_key_in_chinese() {
@@ -332,8 +351,8 @@ test_prompts_for_api_key_in_chinese() {
   fi
 
   assert_contains "$home_dir/output.txt" "请输入你的 API Key"
-  assert_contains "$home_dir/.codex/config.toml" "experimental_bearer_token = \"$API_KEY\""
-  assert_not_contains "$home_dir/.codex/auth.json" "$API_KEY"
+  assert_not_contains "$home_dir/.codex/config.toml" "experimental_bearer_token"
+  assert_json_value "$home_dir/.codex/auth.json" '.OPENAI_API_KEY' "$API_KEY"
 }
 
 test_success_output_is_simple_and_does_not_leak_shell_fragments() {
@@ -364,7 +383,7 @@ test_codex_without_official_login_cache_creates_api_key_auth() {
   assert_file "$home_dir/.codex/auth.json"
   assert_json_value "$home_dir/.codex/auth.json" '.auth_mode' "apikey"
   assert_json_value "$home_dir/.codex/auth.json" '.OPENAI_API_KEY' "$API_KEY"
-  assert_contains "$home_dir/.codex/config.toml" "experimental_bearer_token = \"$API_KEY\""
+  assert_not_contains "$home_dir/.codex/config.toml" "experimental_bearer_token"
   assert_not_contains "$home_dir/output.txt" "官方登录缓存"
 }
 
@@ -378,22 +397,24 @@ test_codex_existing_api_key_auth_is_replaced() {
 
   assert_json_value "$home_dir/.codex/auth.json" '.auth_mode' "apikey"
   assert_json_value "$home_dir/.codex/auth.json" '.OPENAI_API_KEY' "$API_KEY"
-  assert_contains "$home_dir/.codex/config.toml" "experimental_bearer_token = \"$API_KEY\""
+  assert_not_contains "$home_dir/.codex/config.toml" "experimental_bearer_token"
   ls "$home_dir/.codex"/auth.json.bak.* >/dev/null 2>&1 || fail "missing Codex auth backup"
 }
 
-test_codex_keeps_existing_official_login_cache() {
+test_codex_replaces_existing_official_login_cache() {
   local home_dir
   home_dir="$(mktemp -d)"
   prepare_codex_official_auth "$home_dir"
 
   run_setup "$home_dir" "" --client codex
 
-  assert_json_value "$home_dir/.codex/auth.json" '.tokens.refresh_token' "official-cache"
+  assert_json_value "$home_dir/.codex/auth.json" '.auth_mode' "apikey"
+  assert_json_value "$home_dir/.codex/auth.json" '.OPENAI_API_KEY' "$API_KEY"
+  ls "$home_dir/.codex"/auth.json.bak.* >/dev/null 2>&1 || fail "missing Codex auth backup"
   assert_not_contains "$home_dir/output.txt" "官方登录缓存"
 }
 
-test_codex_auth_can_be_imported_from_private_base64_env() {
+test_codex_auth_input_env_is_ignored_and_api_key_auth_is_written() {
   local home_dir auth_json auth_b64
   home_dir="$(mktemp -d)"
   auth_json='{"OPENAI_API_KEY":null,"auth_mode":"chatgpt","tokens":{"refresh_token":"private-cache"}}'
@@ -403,9 +424,10 @@ test_codex_auth_can_be_imported_from_private_base64_env() {
 
   assert_file "$home_dir/.codex/config.toml"
   assert_file "$home_dir/.codex/auth.json"
-  assert_contains "$home_dir/.codex/auth.json" '"private-cache"'
-  assert_not_contains "$home_dir/.codex/auth.json" "$API_KEY"
-  assert_contains "$home_dir/.codex/config.toml" "experimental_bearer_token = \"$API_KEY\""
+  assert_not_contains "$home_dir/.codex/auth.json" '"private-cache"'
+  assert_json_value "$home_dir/.codex/auth.json" '.auth_mode' "apikey"
+  assert_json_value "$home_dir/.codex/auth.json" '.OPENAI_API_KEY' "$API_KEY"
+  assert_not_contains "$home_dir/.codex/config.toml" "experimental_bearer_token"
   assert_not_contains "$home_dir/output.txt" "官方登录缓存"
 }
 
@@ -460,7 +482,8 @@ test_malformed_json_stops_safely() {
 test_help_is_chinese
 test_codex_config_creation_only
 test_claude_config_creation_only
-test_existing_config_preserved_and_backed_up
+test_existing_codex_files_are_backed_up_and_replaced
+test_existing_config_without_provider_is_replaced
 test_idempotent_managed_block
 test_no_confirmation_prompt
 test_interactive_choice_selects_claude_only
@@ -473,8 +496,8 @@ test_prompts_for_api_key_in_chinese
 test_success_output_is_simple_and_does_not_leak_shell_fragments
 test_codex_without_official_login_cache_creates_api_key_auth
 test_codex_existing_api_key_auth_is_replaced
-test_codex_keeps_existing_official_login_cache
-test_codex_auth_can_be_imported_from_private_base64_env
+test_codex_replaces_existing_official_login_cache
+test_codex_auth_input_env_is_ignored_and_api_key_auth_is_written
 test_proxy_direct_rule_can_be_added_to_clash_config
 test_proxy_direct_rule_is_skipped_when_disabled
 test_malformed_json_stops_safely
