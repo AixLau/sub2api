@@ -1045,6 +1045,9 @@ func TestExtractContentModerationInput_ResponsesSkipsPureCodexAmbientSafetyPromp
 
 	require.Empty(t, input.Text)
 	require.Empty(t, input.Images)
+	require.True(t, input.Extraction.Complete)
+	require.Empty(t, input.Extraction.Sources)
+	require.False(t, input.Truncated)
 }
 
 func TestExtractContentModerationInput_AnthropicSkipsClaudeCodeSystemPrompt(t *testing.T) {

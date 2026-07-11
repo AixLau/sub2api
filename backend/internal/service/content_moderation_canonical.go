@@ -109,7 +109,11 @@ func canonicalizeModerationText(text string) string {
 }
 
 func PlanModerationChunks(stream CanonicalModerationStream) ([]ModerationChunk, error) {
-	runes := []rune(stream.Text)
+	maxCovered := ModerationChunkMaxRunes + (ModerationChunkMaxCount-1)*ModerationChunkStride
+	runes, err := boundedModerationRunes(stream.Text, maxCovered)
+	if err != nil {
+		return nil, err
+	}
 	if len(runes) == 0 {
 		return nil, nil
 	}
@@ -131,6 +135,22 @@ func PlanModerationChunks(stream CanonicalModerationStream) ([]ModerationChunk, 
 		}
 	}
 	return chunks, nil
+}
+
+func boundedModerationRunes(text string, limit int) ([]rune, error) {
+	runes := make([]rune, 0, min(len(text), limit))
+	for len(text) > 0 {
+		r, size := utf8.DecodeRuneInString(text)
+		if r == utf8.RuneError && size == 1 {
+			return nil, ErrInvalidModerationUTF8
+		}
+		if len(runes) == limit {
+			return nil, ErrModerationChunkBudget
+		}
+		runes = append(runes, r)
+		text = text[size:]
+	}
+	return runes, nil
 }
 
 type moderationSourceSpan struct {

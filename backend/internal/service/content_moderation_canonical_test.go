@@ -149,3 +149,17 @@ func TestModerationChunkBoundariesAndBudget(t *testing.T) {
 	_, err = PlanModerationChunks(stream)
 	require.ErrorIs(t, err, ErrModerationChunkBudget)
 }
+
+func TestPlanModerationChunksRejectsLargeInputBeforeReturningChunks(t *testing.T) {
+	maxCovered := ModerationChunkMaxRunes + (ModerationChunkMaxCount-1)*ModerationChunkStride
+	stream := CanonicalModerationStream{Text: strings.Repeat("界", maxCovered*20), Complete: true}
+	chunks, err := PlanModerationChunks(stream)
+	require.ErrorIs(t, err, ErrModerationChunkBudget)
+	require.Nil(t, chunks)
+}
+
+func TestPlanModerationChunksRejectsInvalidUTF8(t *testing.T) {
+	chunks, err := PlanModerationChunks(CanonicalModerationStream{Text: string([]byte{'a', 0xff}), Complete: true})
+	require.ErrorIs(t, err, ErrInvalidModerationUTF8)
+	require.Nil(t, chunks)
+}

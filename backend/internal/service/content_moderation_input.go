@@ -97,7 +97,7 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 		out.Text = trimRunes(out.Text, maxModerationInputRunes)
 	}
 	if protocol == ContentModerationProtocolOpenAIResponses && isCodexInternalPromptText(out.Text) {
-		return ContentModerationInput{}
+		return ContentModerationInput{Extraction: ModerationExtraction{Complete: true}}
 	}
 	return out
 }
