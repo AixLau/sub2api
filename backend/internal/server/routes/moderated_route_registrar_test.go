@@ -313,6 +313,43 @@ func TestGatewayPipelineRegistrarRunsPipelineEntrypointBeforeHandler(t *testing.
 	require.Equal(t, "openai_responses", metaAtEntrypoint.Protocol)
 }
 
+func TestGatewayPipelineRegistrarReleasesResourcesFromEntrypointContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	restore := replaceModeratedRouteRegistryForTest(nil)
+	defer restore()
+
+	router := gin.New()
+	moderationService := service.NewContentModerationService(nil, nil, nil, nil, nil, nil, nil)
+	registrar := NewGatewayPipelineRegistrar(router, GatewayPipelineEntrypoints{
+		moderationcoverage.PipelineOpenAIHTTP: GatewayPipelineEntrypointFunc(func(c *gin.Context, meta ModeratedRouteMeta) GatewayPipelineEntryResult {
+			protectedCtx, err := moderationService.AcquireRequestResources(c.Request.Context(), c.Request.ContentLength, c.GetHeader("Content-Encoding"))
+			require.NoError(t, err)
+			c.Request = c.Request.WithContext(protectedCtx)
+			moderationcoverage.MarkPipelineAdmitted(c, meta.Pipeline, moderationcoverage.StagePreForward, "test resource admission")
+			return GatewayPipelineEntryResult{}
+		}),
+	})
+
+	registrar.POST("/resource-release", coveredOpenAIHTTPRoute(
+		"/resource-release",
+		"OpenAIGatewayHandler.Responses",
+		"openai_responses",
+		"test route",
+	), func(c *gin.Context) {
+		require.Greater(t, moderationService.ResourceProtectionStatus().ActiveBytes, int64(0))
+		c.Status(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/resource-release", strings.NewReader("{}"))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	status := moderationService.ResourceProtectionStatus()
+	require.Zero(t, status.ActiveBytes)
+	require.Zero(t, status.ActiveReservations)
+}
+
 func TestGatewayPipelineRegistrarRequiresEntrypointForPipelineRouteAtRegistration(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	restore := replaceModeratedRouteRegistryForTest(nil)
