@@ -52,6 +52,8 @@ Create one adjacent `_test.go` file for each new backend unit. Modify existing c
 - Create: `backend/internal/service/content_moderation_canonical_test.go`
 - Create: `backend/internal/service/content_moderation_identity.go`
 - Create: `backend/internal/service/content_moderation_identity_test.go`
+- Modify: `backend/internal/service/content_moderation.go`
+- Modify: `backend/internal/service/content_moderation_test.go`
 - Modify: `backend/internal/service/content_moderation_input.go`
 - Modify: `backend/internal/service/content_moderation_input_test.go`
 
@@ -62,8 +64,8 @@ Create one adjacent `_test.go` file for each new backend unit. Modify existing c
 - [ ] **Step 5:** Run `cd backend && go test ./internal/service -run 'Canonical|ModerationChunk|ExtractionCompleteness' -count=1`. Expected: FAIL on missing APIs.
 - [ ] **Step 6:** Implement `CanonicalizeModerationExtraction` and `PlanModerationChunks` in `content_moderation_canonical.go`; use fixed rune offsets only. Apply the exact per-source normalization from Step 1, join canonical sources with one LF, and expose that same canonical chunk text to both provider calls and cache identity. Encode context-frame fields with `binary.PutUvarint`. Implement policy-scope serialization and the outer big-endian length/version HMAC message in `content_moderation_identity.go`.
 - [ ] **Step 7:** Implement legacy policy scope over the exact spec fields: provider, validated base host/path, model, audit scope, thresholds, normalized rules, engine mode, model/group filters, failure policy, adapter/extractor/chunker versions, and feedback epoch. Exclude credentials/TTL/workers/retries. Use sorted UTF-8 JSON keys, normalized decimals, no insignificant whitespace, and deterministic normalized rule/filter arrays.
-- [ ] **Step 8:** Replace silent extraction trimming with explicit `Complete=false` and stable reasons. Ensure deduplication cannot rebuild over-limit text while claiming completeness.
-- [ ] **Step 9:** Run `cd backend && gofmt -w internal/service/content_moderation_canonical.go internal/service/content_moderation_canonical_test.go internal/service/content_moderation_identity.go internal/service/content_moderation_identity_test.go internal/service/content_moderation_input.go internal/service/content_moderation_input_test.go && go test ./internal/service -run 'Canonical|ModerationChunk|ModerationIdentity|Extraction|Input' -count=1 && go test -race ./internal/service -run 'Canonical|ModerationChunk|ModerationIdentity' -count=1`. Expected: PASS.
+- [ ] **Step 8:** Replace silent extraction trimming with explicit `Complete=false` and stable reasons. Extend the production `ContentModerationInputSource` path to carry server-derived role and byte-exact source name into canonicalization before legacy text normalization/deduplication. Ensure deduplication cannot rebuild over-limit text while claiming completeness, and add collector-to-canonicalizer integration tests rather than leaving the new extraction model test-only.
+- [ ] **Step 9:** Run `cd backend && gofmt -w internal/service/content_moderation_canonical.go internal/service/content_moderation_canonical_test.go internal/service/content_moderation_identity.go internal/service/content_moderation_identity_test.go internal/service/content_moderation.go internal/service/content_moderation_test.go internal/service/content_moderation_input.go internal/service/content_moderation_input_test.go && go test ./internal/service -run 'Canonical|ModerationChunk|ModerationIdentity|Extraction|Input' -count=1 && go test -race ./internal/service -run 'Canonical|ModerationChunk|ModerationIdentity' -count=1`. Expected: PASS.
 - [ ] **Step 10:** Commit with `git commit -m "feat: add stable moderation text chunks"`.
 
 ### Task 3: Provider adapters and restricted transport
