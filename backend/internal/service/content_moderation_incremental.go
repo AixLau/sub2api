@@ -153,7 +153,22 @@ func (s *ContentModerationService) runIncrementalModeration(ctx context.Context,
 		}
 		s.passCache.StorePASS(ctx, cacheOpts, freshKeys)
 	}
-	_ = input // reserved for request-level comparison metadata in Task 8
+	if cacheEnabled && cfg.Provider == "zhipu" && aggregated.Level == ModerationLevelPass && strings.TrimSpace(input.RequestID) != "" {
+		decisionID := contentModerationDecisionID(input, nil, "")
+		if decisionID != "" {
+			now := time.Now()
+			metadata := ContentModerationComparisonMetadata{
+				RequestID: input.RequestID, DecisionID: decisionID, RequestHMAC: moderationRequestCacheKey(ids),
+				ChunkKeys: append([]string(nil), ids...), Provider: cfg.Provider, Model: cfg.Model, PolicyScope: policyScope,
+				AggregateLevel: string(aggregated.Level), TotalChunks: len(ids), CachedChunks: len(hits), FreshChunks: len(misses),
+				CompletePASSEvidence: true, ForwardedUpstream: strings.ToLower(strings.TrimSpace(input.Provider)),
+				ForwardedAt: now, CorrelationDeadline: now.Add(10 * time.Minute),
+			}
+			if err := s.passCache.StoreComparisonMetadata(ctx, input.RequestID, metadata); err != nil {
+				return AggregatedModerationBatch{}, fmt.Errorf("store moderation comparison metadata: %w", err)
+			}
+		}
+	}
 	return aggregated, nil
 }
 

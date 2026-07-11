@@ -30,11 +30,14 @@ func (e incrementalEpochStub) IncrementModerationFeedbackEpoch(context.Context) 
 }
 
 type incrementalPassCacheStub struct {
-	mu        sync.Mutex
-	pass      map[string]bool
-	lookupErr error
-	lookups   int
-	stores    int
+	mu         sync.Mutex
+	pass       map[string]bool
+	lookupErr  error
+	lookups    int
+	stores     int
+	metadata   *ContentModerationComparisonMetadata
+	deleted    []string
+	quarantine map[string]ContentModerationQuarantineEntry
 }
 
 func (c *incrementalPassCacheStub) LookupPASS(_ context.Context, _ ContentModerationPassCacheOptions, keys []string) (map[string]bool, error) {
@@ -60,22 +63,33 @@ func (c *incrementalPassCacheStub) StorePASS(_ context.Context, _ ContentModerat
 		c.pass[key] = true
 	}
 }
-func (*incrementalPassCacheStub) DeletePASS(context.Context, ContentModerationPassCacheOptions, []string) error {
+
+func (c *incrementalPassCacheStub) DeletePASS(_ context.Context, _ ContentModerationPassCacheOptions, keys []string) error {
+	c.deleted = append(c.deleted, keys...)
 	return nil
 }
 func (*incrementalPassCacheStub) LookupQuarantine(context.Context, ContentModerationPassCacheOptions, []string) (map[string]ContentModerationQuarantineEntry, error) {
 	return map[string]ContentModerationQuarantineEntry{}, nil
 }
-func (*incrementalPassCacheStub) StoreQuarantine(context.Context, ContentModerationPassCacheOptions, map[string]ContentModerationQuarantineEntry) error {
+
+func (c *incrementalPassCacheStub) StoreQuarantine(_ context.Context, _ ContentModerationPassCacheOptions, entries map[string]ContentModerationQuarantineEntry) error {
+	if c.quarantine == nil {
+		c.quarantine = map[string]ContentModerationQuarantineEntry{}
+	}
+	for key, entry := range entries {
+		c.quarantine[key] = entry
+	}
 	return nil
 }
 func (*incrementalPassCacheStub) DeleteQuarantine(context.Context, ContentModerationPassCacheOptions, []string) error {
 	return nil
 }
-func (*incrementalPassCacheStub) GetComparisonMetadata(context.Context, string) (*ContentModerationComparisonMetadata, error) {
-	return nil, nil
+func (c *incrementalPassCacheStub) GetComparisonMetadata(context.Context, string) (*ContentModerationComparisonMetadata, error) {
+	return c.metadata, nil
 }
-func (*incrementalPassCacheStub) StoreComparisonMetadata(context.Context, string, ContentModerationComparisonMetadata) error {
+
+func (c *incrementalPassCacheStub) StoreComparisonMetadata(_ context.Context, _ string, metadata ContentModerationComparisonMetadata) error {
+	c.metadata = &metadata
 	return nil
 }
 func (*incrementalPassCacheStub) DeleteComparisonMetadata(context.Context, string) error { return nil }
@@ -129,4 +143,24 @@ func TestContentModerationIncrementalCacheReadErrorAuditsEveryChunk(t *testing.T
 	require.NoError(t, err)
 	require.Equal(t, ModerationLevelPass, got.Level)
 	require.Equal(t, int64(2), calls.Load())
+}
+
+func TestContentModerationCyberCorrelationDeletesPASSAndQuarantinesRequest(t *testing.T) {
+	now := time.Now()
+	cache := &incrementalPassCacheStub{metadata: &ContentModerationComparisonMetadata{
+		RequestID: "req-1", DecisionID: "decision-1", RequestHMAC: "request-hmac", ChunkKeys: []string{"chunk-a", "chunk-b"},
+		Provider: "zhipu", AggregateLevel: string(ModerationLevelPass), TotalChunks: 2, CachedChunks: 1, FreshChunks: 1,
+		CompletePASSEvidence: true, ForwardedUpstream: "openai", ForwardedAt: now.Add(-time.Minute), CorrelationDeadline: now.Add(time.Minute),
+	}}
+	svc := NewContentModerationService(nil, nil, nil, nil, nil, nil, nil)
+	svc.SetIncrementalModerationDependencies(cache, incrementalEpochStub{}, incrementalClientFactoryStub{}, []byte(strings.Repeat("k", 32)), 1)
+	got := svc.correlateCyberPolicyMiss(context.Background(), defaultContentModerationConfig(), "req-1")
+	require.NotNil(t, got)
+	require.Equal(t, []string{"chunk-a", "chunk-b"}, cache.deleted)
+	require.Contains(t, cache.quarantine, "request-hmac")
+
+	cache.deleted = nil
+	cache.metadata.CorrelationDeadline = now.Add(-time.Second)
+	require.Nil(t, svc.correlateCyberPolicyMiss(context.Background(), defaultContentModerationConfig(), "req-1"))
+	require.Empty(t, cache.deleted)
 }

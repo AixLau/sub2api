@@ -2199,7 +2199,43 @@ func (s *ContentModerationService) ReviewLog(ctx context.Context, id int64, inpu
 	}
 	input.Status = normalizeContentModerationReviewStatus(input.Status)
 	input.Note = trimRunes(strings.TrimSpace(input.Note), 1000)
-	return s.repo.ReviewLog(ctx, id, input)
+	log, err := s.repo.ReviewLog(ctx, id, input)
+	if err != nil {
+		return nil, err
+	}
+	if log == nil || s.passCache == nil || strings.TrimSpace(log.RequestID) == "" {
+		return log, nil
+	}
+	metadata, err := s.passCache.GetComparisonMetadata(ctx, log.RequestID)
+	if err != nil || metadata == nil || metadata.DecisionID == "" || metadata.RequestHMAC == "" {
+		if err != nil {
+			return nil, fmt.Errorf("load moderation review correlation: %w", err)
+		}
+		return log, nil
+	}
+	opts := ContentModerationPassCacheOptions{Enabled: true, KeyVersion: s.moderationCacheKeyVersion, TTL: 24 * time.Hour}
+	switch input.Status {
+	case ContentModerationReviewStatusFalsePositive:
+		if err := s.passCache.DeleteQuarantine(ctx, opts, []string{metadata.RequestHMAC}); err != nil {
+			return nil, fmt.Errorf("delete moderation quarantine: %w", err)
+		}
+	case ContentModerationReviewStatusConfirmedViolation:
+		opts.TTL = 30 * 24 * time.Hour
+		if err := s.passCache.StoreQuarantine(ctx, opts, map[string]ContentModerationQuarantineEntry{metadata.RequestHMAC: {}}); err != nil {
+			return nil, fmt.Errorf("extend moderation quarantine: %w", err)
+		}
+		if log.HighestScore >= 1 && s.feedbackEpochRepo != nil {
+			if _, err := s.feedbackEpochRepo.IncrementModerationFeedbackEpoch(ctx); err != nil {
+				return nil, fmt.Errorf("increment moderation feedback epoch: %w", err)
+			}
+		}
+	default:
+		return log, nil
+	}
+	if err := s.passCache.DeleteComparisonMetadata(ctx, log.RequestID); err != nil {
+		return nil, fmt.Errorf("delete moderation comparison metadata: %w", err)
+	}
+	return log, nil
 }
 
 func (s *ContentModerationService) GetRawRequestSnapshot(ctx context.Context, logID int64) (*ContentModerationRawRequestView, error) {
@@ -6454,6 +6490,37 @@ type CyberSessionBlockedRecordInput struct {
 	RequestBody     []byte
 }
 
+func (s *ContentModerationService) correlateCyberPolicyMiss(ctx context.Context, cfg *ContentModerationConfig, requestID string) *ContentModerationComparisonMetadata {
+	if s == nil || s.passCache == nil || cfg == nil || strings.TrimSpace(requestID) == "" {
+		return nil
+	}
+	metadata, err := s.passCache.GetComparisonMetadata(ctx, requestID)
+	if err != nil || metadata == nil {
+		if err != nil {
+			slog.Warn("content_moderation.cyber_comparison_read_failed", "error", err)
+		}
+		return nil
+	}
+	now := time.Now()
+	if metadata.RequestID != requestID || strings.TrimSpace(metadata.DecisionID) == "" ||
+		metadata.Provider != "zhipu" || metadata.ForwardedUpstream != "openai" ||
+		!metadata.CompletePASSEvidence || metadata.AggregateLevel != string(ModerationLevelPass) ||
+		metadata.TotalChunks <= 0 || metadata.TotalChunks != metadata.CachedChunks+metadata.FreshChunks ||
+		metadata.ForwardedAt.IsZero() || metadata.CorrelationDeadline.IsZero() || now.Before(metadata.ForwardedAt) || now.After(metadata.CorrelationDeadline) ||
+		len(metadata.ChunkKeys) != metadata.TotalChunks || strings.TrimSpace(metadata.RequestHMAC) == "" {
+		return nil
+	}
+	opts := ContentModerationPassCacheOptions{Enabled: true, KeyVersion: s.moderationCacheKeyVersion, TTL: 24 * time.Hour}
+	if err := s.passCache.DeletePASS(ctx, opts, metadata.ChunkKeys); err != nil {
+		slog.Warn("content_moderation.cyber_pass_delete_failed", "request_id", requestID, "error", err)
+	}
+	if err := s.passCache.StoreQuarantine(ctx, opts, map[string]ContentModerationQuarantineEntry{metadata.RequestHMAC: {}}); err != nil {
+		slog.Warn("content_moderation.cyber_quarantine_write_failed", "request_id", requestID, "error", err)
+		return nil
+	}
+	return metadata
+}
+
 // RecordCyberPolicyEvent 把一次 cyber_policy 硬阻断写入风控中心日志、计入违规计数、
 // 并给用户发邮件。当前请求已由 gateway 透传给用户；本方法仅做事后记录/通知/计数。
 // 仅受 risk_control_enabled 总开关约束（不受内容审核 Enabled/Mode/scope/sample 约束）。
@@ -6469,6 +6536,7 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 		slog.Warn("content_moderation.cyber_load_config_failed", "error", err)
 		cfg = &ContentModerationConfig{}
 	}
+	correlated := s.correlateCyberPolicyMiss(ctx, cfg, in.RequestID)
 	var userID *int64
 	if in.UserID > 0 {
 		userID = &in.UserID
@@ -6503,6 +6571,10 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 		HighestScore:    1.0,
 		Error:           trimRunes(redactContentModerationSecrets(errBody), maxModerationExcerptRunes*4),
 		CreatedAt:       time.Now(),
+	}
+	if correlated != nil {
+		log.DecisionID = correlated.DecisionID
+		log.ReviewStatus = ContentModerationReviewStatusPending
 	}
 	// 开关开时 cyber_policy 不参与封号计数：当次不判定（此处跳过），
 	// 历史行由 CountFlaggedByUserSince 的 excludeCyberPolicy 排除。
