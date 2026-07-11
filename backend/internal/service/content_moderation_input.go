@@ -238,6 +238,9 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 				validateContent(content)
 			}
 		}
+		if typ == "tool_result" && !value.Get("content").Exists() {
+			state.markTruncated("unsupported_required_value")
+		}
 		if typ == "tool_use" {
 			requirePresentString(value.Get("name"))
 			input := value.Get("input")
@@ -247,6 +250,21 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 		}
 		if (typ == "image_url" || typ == "input_image") && !value.Get("image_url").Exists() {
 			state.markTruncated("unsupported_required_value")
+		}
+		if typ == "image" {
+			mediaPaths := []string{"source", "image_url", "url", "data", "base64"}
+			hasMedia := false
+			for _, path := range mediaPaths {
+				hasMedia = hasMedia || value.Get(path).Exists()
+			}
+			if !hasMedia {
+				state.markTruncated("unsupported_required_value")
+			}
+			for _, path := range []string{"url", "data", "base64"} {
+				if leaf := value.Get(path); leaf.Exists() {
+					requirePresentString(leaf)
+				}
+			}
 		}
 	}
 	validateMessages := func(path string) {
@@ -335,9 +353,15 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 			}
 			switch {
 			case strings.Contains(typ, "function_call_output") || strings.Contains(typ, "tool_result"):
+				if !item.Get("output").Exists() && !item.Get("content").Exists() {
+					state.markTruncated("unsupported_required_value")
+				}
 				validateToolRoot(item.Get("output"))
 				validateToolRoot(item.Get("content"))
 			case strings.Contains(typ, "function_call") || strings.Contains(typ, "tool_call"):
+				if !item.Get("arguments").Exists() && !item.Get("input").Exists() && !item.Get("parameters").Exists() {
+					state.markTruncated("unsupported_required_value")
+				}
 				validateToolRoot(item.Get("arguments"))
 				validateToolRoot(item.Get("input"))
 				validateToolRoot(item.Get("parameters"))

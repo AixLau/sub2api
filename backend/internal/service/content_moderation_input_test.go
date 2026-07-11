@@ -185,15 +185,23 @@ func TestExtractionCompletenessAcceptsKnownMediaLeafVariants(t *testing.T) {
 
 func TestExtractionCompletenessRequiresToolAndMediaFields(t *testing.T) {
 	tests := []struct{ name, protocol, body string }{
+		{"responses output missing payload", ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"function_call_output"}]}`},
+		{"responses result missing payload", ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"tool_result"}]}`},
+		{"responses call missing payload", ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"function_call"}]}`},
+		{"responses tool call missing payload", ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"tool_call"}]}`},
 		{"anthropic tool missing name", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"tool_use","input":{}}]}]}`},
 		{"anthropic tool numeric name", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"tool_use","name":42,"input":{}}]}]}`},
 		{"anthropic tool missing input", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"tool_use","name":"run"}]}]}`},
 		{"anthropic tool string input", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"tool_use","name":"run","input":"bad"}]}]}`},
+		{"anthropic result missing content", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"tool_result"}]}]}`},
 		{"gemini call missing name", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"functionCall":{"args":{}}}]}]}`},
 		{"gemini call missing args", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"function_call":{"name":"run"}}]}]}`},
 		{"gemini response missing name", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"functionResponse":{"response":{}}}]}]}`},
 		{"gemini response scalar response", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"function_response":{"name":"run","response":"bad"}}]}]}`},
 		{"image url missing url", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":[{"type":"image_url","image_url":{}}]}]}`},
+		{"image missing payload", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"image"}]}]}`},
+		{"image empty direct URL", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":[{"type":"image","url":""}]}]}`},
+		{"image scalar source", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"image","source":"bad"}]}]}`},
 		{"anthropic source missing data", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"image","source":{"media_type":"image/png"}}]}]}`},
 		{"anthropic URL source missing url", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"image","source":{"type":"url"}}]}]}`},
 		{"anthropic source scalar type", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"image","source":{"type":7,"url":"https://example.test/a.png"}}]}]}`},
@@ -205,6 +213,28 @@ func TestExtractionCompletenessRequiresToolAndMediaFields(t *testing.T) {
 			got := ExtractContentModerationInput(tt.protocol, []byte(tt.body))
 			require.True(t, got.Truncated)
 			require.Contains(t, got.TruncateReasons, "unsupported_required_value")
+		})
+	}
+}
+
+func TestExtractionCompletenessAcceptsToolAndImagePayloadAlternatives(t *testing.T) {
+	tests := []struct{ name, protocol, body string }{
+		{"responses output", ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"function_call_output","output":"ok"}]}`},
+		{"responses output content", ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"tool_result","content":{"value":"ok"}}]}`},
+		{"responses call arguments", ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"function_call","arguments":"{}"}]}`},
+		{"responses call input", ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"tool_call","input":{}}]}`},
+		{"responses call parameters", ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"tool_call","parameters":{}}]}`},
+		{"anthropic result content", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"tool_result","content":"ok"}]}]}`},
+		{"image source base64", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"image","source":{"media_type":"image/png","data":"aA=="}}]}]}`},
+		{"image source URL", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"image","source":{"type":"url","url":"https://example.test/a.png"}}]}]}`},
+		{"image URL leaf", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":[{"type":"image","url":"https://example.test/a.png"}]}]}`},
+		{"image data leaf", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":[{"type":"image","data":"aA=="}]}]}`},
+		{"image base64 leaf", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":[{"type":"image","base64":"aA=="}]}]}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ExtractContentModerationInput(tt.protocol, []byte(tt.body))
+			require.False(t, got.Truncated, got.TruncateReasons)
 		})
 	}
 }
