@@ -23,8 +23,11 @@ func NewContentModerationHandler(svc *service.ContentModerationService) *Content
 type contentModerationConfigRequest struct {
 	Enabled              *bool               `json:"enabled"`
 	Mode                 *string             `json:"mode"`
+	Provider             *string             `json:"provider"`
 	BaseURL              *string             `json:"base_url"`
 	Model                *string             `json:"model"`
+	PassCacheEnabled     *bool               `json:"pass_cache_enabled"`
+	PassCacheTTLSeconds  *int                `json:"pass_cache_ttl_seconds"`
 	APIKey               *string             `json:"api_key"`
 	APIKeys              *[]string           `json:"api_keys"`
 	APIKeysMode          string              `json:"api_keys_mode"`
@@ -64,6 +67,7 @@ type contentModerationConfigRequest struct {
 
 type contentModerationAPIKeyTestRequest struct {
 	APIKeys   []string `json:"api_keys"`
+	Provider  string   `json:"provider"`
 	BaseURL   string   `json:"base_url"`
 	Model     string   `json:"model"`
 	TimeoutMS int      `json:"timeout_ms"`
@@ -102,8 +106,11 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 	cfg, err := h.service.UpdateConfig(c.Request.Context(), service.UpdateContentModerationConfigInput{
 		Enabled:                        req.Enabled,
 		Mode:                           req.Mode,
+		Provider:                       req.Provider,
 		BaseURL:                        req.BaseURL,
 		Model:                          req.Model,
+		PassCacheEnabled:               req.PassCacheEnabled,
+		PassCacheTTLSeconds:            req.PassCacheTTLSeconds,
 		APIKey:                         req.APIKey,
 		APIKeys:                        req.APIKeys,
 		APIKeysMode:                    req.APIKeysMode,
@@ -153,6 +160,7 @@ func (h *ContentModerationHandler) TestAPIKeys(c *gin.Context) {
 	}
 	result, err := h.service.TestAPIKeys(c.Request.Context(), service.TestContentModerationAPIKeysInput{
 		APIKeys:   req.APIKeys,
+		Provider:  req.Provider,
 		BaseURL:   req.BaseURL,
 		Model:     req.Model,
 		TimeoutMS: req.TimeoutMS,

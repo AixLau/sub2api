@@ -169,3 +169,34 @@ func moderationRequestCacheKey(chunkIDs []string) string {
 	digest := sha256.Sum256([]byte(strings.Join(chunkIDs, "\n")))
 	return hex.EncodeToString(digest[:])
 }
+
+func moderationAPIResultFromProvider(result ProviderModerationResult) *moderationAPIResult {
+	scores := map[string]float64{}
+	for category, score := range result.CategoryScores {
+		scores[category] = score
+	}
+	if result.Level != ModerationLevelPass {
+		category := strings.ToLower(string(result.Level))
+		if len(result.RiskTypes) > 0 {
+			category = result.RiskTypes[0]
+		}
+		scores[category] = 1
+	}
+	return &moderationAPIResult{Flagged: result.Level != ModerationLevelPass, CategoryScores: scores}
+}
+
+func (s *ContentModerationService) moderationCacheDegradedReason(cfg *ContentModerationConfig) string {
+	if cfg == nil || !cfg.PassCacheEnabled {
+		return ""
+	}
+	if s == nil || s.passCache == nil {
+		return "cache_unavailable"
+	}
+	if len(s.moderationCacheHMACKey) != sha256.Size {
+		return "hmac_key_unavailable"
+	}
+	if s.moderationCacheKeyVersion == 0 {
+		return "hmac_key_version_invalid"
+	}
+	return ""
+}

@@ -352,6 +352,7 @@ type ContentModerationAPIKeyLoad struct {
 
 type TestContentModerationAPIKeysInput struct {
 	APIKeys   []string `json:"api_keys"`
+	Provider  string   `json:"provider"`
 	BaseURL   string   `json:"base_url"`
 	Model     string   `json:"model"`
 	TimeoutMS int      `json:"timeout_ms"`
@@ -762,6 +763,16 @@ type ContentModerationRuntimeStatus struct {
 	Enabled                      bool                                       `json:"enabled"`
 	RiskControlEnabled           bool                                       `json:"risk_control_enabled"`
 	Mode                         string                                     `json:"mode"`
+	Provider                     string                                     `json:"provider"`
+	Model                        string                                     `json:"model"`
+	PassCacheEnabled             bool                                       `json:"pass_cache_enabled"`
+	PassCacheAvailable           bool                                       `json:"pass_cache_available"`
+	PassCacheDegradedReason      string                                     `json:"pass_cache_degraded_reason,omitempty"`
+	PassCacheTTLSeconds          int                                        `json:"pass_cache_ttl_seconds"`
+	ChunkerVersion               string                                     `json:"chunker_version"`
+	ChunkMaxRunes                int                                        `json:"chunk_max_runes"`
+	ChunkOverlapRunes            int                                        `json:"chunk_overlap_runes"`
+	ChunkMaxCount                int                                        `json:"chunk_max_count"`
 	WorkerCount                  int                                        `json:"worker_count"`
 	MaxWorkers                   int                                        `json:"max_workers"`
 	ActiveWorkers                int                                        `json:"active_workers"`
@@ -1198,6 +1209,9 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 	if strings.TrimSpace(input.BaseURL) != "" {
 		cfg.BaseURL = input.BaseURL
 	}
+	if strings.TrimSpace(input.Provider) != "" {
+		cfg.Provider = input.Provider
+	}
 	if strings.TrimSpace(input.Model) != "" {
 		cfg.Model = input.Model
 	}
@@ -1205,6 +1219,9 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 		cfg.TimeoutMS = input.TimeoutMS
 	}
 	cfg.normalize()
+	if cfg.Provider != "openai" && cfg.Provider != "zhipu" {
+		return nil, infraerrors.BadRequest("INVALID_CONTENT_MODERATION_PROVIDER", "内容审计服务商无效")
+	}
 	testInput, imageCount, err := buildModerationTestInput(input.Prompt, input.Images)
 	if err != nil {
 		return nil, err
@@ -1228,7 +1245,36 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 	for idx, key := range keys {
 		start := time.Now()
 		httpStatus := 0
-		result, err := s.callModerationOnceWithInput(ctx, cfg, key, testInput, &httpStatus)
+		var result *moderationAPIResult
+		if cfg.Provider == "zhipu" {
+			if imageCount > 0 {
+				return nil, infraerrors.BadRequest("INVALID_CONTENT_MODERATION_TEST_INPUT", "智谱内容审核仅支持文本测试")
+			}
+			if s.restrictedClientFactory == nil {
+				return nil, errors.New("restricted moderation client factory is unavailable")
+			}
+			client, clientErr := s.restrictedClientFactory.Client(cfg.BaseURL, time.Duration(cfg.TimeoutMS)*time.Millisecond)
+			if clientErr != nil {
+				return nil, clientErr
+			}
+			provider, providerErr := NewZhipuModerationProvider(cfg.BaseURL, client)
+			if providerErr != nil {
+				return nil, providerErr
+			}
+			providerResult, providerErr := provider.ModerateText(ctx, cfg.Model, key, strings.TrimSpace(input.Prompt))
+			if providerErr != nil {
+				err = providerErr
+				var typed *ModerationProviderError
+				if errors.As(providerErr, &typed) {
+					httpStatus = typed.HTTPStatus
+				}
+			} else {
+				result = moderationAPIResultFromProvider(providerResult)
+				httpStatus = http.StatusOK
+			}
+		} else {
+			result, err = s.callModerationOnceWithInput(ctx, cfg, key, testInput, &httpStatus)
+		}
 		latency := int(time.Since(start).Milliseconds())
 		keyHash := moderationAPIKeyHash(key)
 		if err != nil {
@@ -2274,6 +2320,16 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 		Enabled:                      cfg.Enabled,
 		RiskControlEnabled:           riskEnabled,
 		Mode:                         cfg.Mode,
+		Provider:                     cfg.Provider,
+		Model:                        cfg.Model,
+		PassCacheEnabled:             cfg.PassCacheEnabled,
+		PassCacheAvailable:           s.passCache != nil && len(s.moderationCacheHMACKey) == sha256.Size && s.moderationCacheKeyVersion > 0,
+		PassCacheDegradedReason:      s.moderationCacheDegradedReason(cfg),
+		PassCacheTTLSeconds:          cfg.PassCacheTTLSeconds,
+		ChunkerVersion:               ModerationChunkerVersion,
+		ChunkMaxRunes:                ModerationChunkMaxRunes,
+		ChunkOverlapRunes:            ModerationChunkOverlap,
+		ChunkMaxCount:                ModerationChunkMaxCount,
 		WorkerCount:                  cfg.WorkerCount,
 		MaxWorkers:                   maxContentModerationWorkerCount,
 		ActiveWorkers:                active,

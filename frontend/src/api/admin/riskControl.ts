@@ -1,6 +1,7 @@
 import { apiClient } from '../client'
 
 export type ModerationMode = 'off' | 'observe' | 'pre_block'
+export type ModerationProvider = 'openai' | 'zhipu'
 export type KeywordBlockingMode = 'keyword_only' | 'keyword_and_api' | 'api_only'
 export type ContentModerationEngineMode = 'rule_only' | 'api_only' | 'hybrid'
 export type ContentModerationAuditScope = 'user_only' | 'user_and_tool' | 'all_context'
@@ -41,8 +42,11 @@ export interface ContentModerationKeywordRule {
 export interface ContentModerationConfig {
   enabled: boolean
   mode: ModerationMode
+  provider: ModerationProvider
   base_url: string
   model: string
+  pass_cache_enabled: boolean
+  pass_cache_ttl_seconds: number
   api_key_configured: boolean
   api_key_masked: string
   api_key_count: number
@@ -104,6 +108,7 @@ export interface ContentModerationAPIKeyStatus {
 
 export interface TestContentModerationAPIKeysPayload {
   api_keys?: string[]
+  provider?: ModerationProvider
   base_url?: string
   model?: string
   timeout_ms?: number
@@ -145,8 +150,11 @@ export interface ContentModerationTestAuditResult {
 export interface UpdateContentModerationConfig {
   enabled?: boolean
   mode?: ModerationMode
+  provider?: ModerationProvider
   base_url?: string
   model?: string
+  pass_cache_enabled?: boolean
+  pass_cache_ttl_seconds?: number
   api_key?: string
   api_keys?: string[]
   api_keys_mode?: 'append' | 'replace'
@@ -192,6 +200,16 @@ export interface ContentModerationRuntimeStatus {
   enabled: boolean
   risk_control_enabled: boolean
   mode: ModerationMode
+  provider: ModerationProvider
+  model: string
+  pass_cache_enabled: boolean
+  pass_cache_available: boolean
+  pass_cache_degraded_reason?: string
+  pass_cache_ttl_seconds: number
+  chunker_version: string
+  chunk_max_runes: number
+  chunk_overlap_runes: number
+  chunk_max_count: number
   worker_count: number
   max_workers: number
   active_workers: number
