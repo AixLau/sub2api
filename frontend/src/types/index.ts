@@ -1482,8 +1482,8 @@ export interface DashboardStats {
   // 用户统计
   total_users: number
   today_new_users: number // 今日新增用户数
-  active_users: number // 今日有请求的用户数
-  hourly_active_users: number // 当前小时活跃用户数（UTC）
+  active_users: number // 今日调用网关 API 的用户数
+  hourly_active_users: number // 当前小时调用网关 API 的用户数
   stats_updated_at: string // 统计更新时间（UTC RFC3339）
   stats_stale: boolean // 统计是否过期
 

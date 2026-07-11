@@ -1456,6 +1456,45 @@ func (s *UsageLogRepoSuite) TestGetUserUsageTrendByUserID_HourlyGranularity() {
 	s.Require().Len(trend, 3) // 3 different hours
 }
 
+func (s *UsageLogRepoSuite) TestGetActiveUsersTrendCountsOnlyGatewayAPIUsers() {
+	apiUser := mustCreateUser(s.T(), s.client, &service.User{Email: "active-api-user@test.com"})
+	apiKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: apiUser.ID, Key: "sk-active-api-user", Name: "k"})
+	websiteOnlyUser := mustCreateUser(s.T(), s.client, &service.User{Email: "active-website-only@test.com"})
+	s.Require().Positive(websiteOnlyUser.ID)
+	nonGatewayUser := mustCreateUser(s.T(), s.client, &service.User{Email: "active-non-gateway@test.com"})
+	nonGatewayKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: nonGatewayUser.ID, Key: "sk-active-non-gateway", Name: "k"})
+	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-active-users-trend"})
+
+	base := time.Date(2025, 1, 15, 12, 0, 0, 0, time.UTC)
+	s.createUsageLog(apiUser, apiKey, account, 10, 20, 0.5, base)
+
+	// This row represents a non-gateway record that must not make a user active.
+	_, err := s.tx.ExecContext(s.ctx, `
+		INSERT INTO usage_logs (user_id, api_key_id, account_id, request_id, model, source, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, nonGatewayUser.ID, nonGatewayKey.ID, account.ID, uuid.NewString(), "account-test", string(service.UsageSourceAccountTest), base)
+	s.Require().NoError(err)
+
+	// websiteOnlyUser has no usage log, matching a user who only signs into the website.
+	startTime := base.Add(-time.Hour)
+	endTime := base.Add(24 * time.Hour)
+	trend, err := s.repo.GetActiveUsersTrend(s.ctx, startTime, endTime, "day")
+	s.Require().NoError(err, "GetActiveUsersTrend")
+	s.Require().Equal([]usagestats.ActiveUsersTrendPoint{{Date: "2025-01-15", ActiveUsers: 1}}, trend)
+
+	aggRepo := newDashboardAggregationRepositoryWithSQL(s.tx)
+	s.Require().NoError(aggRepo.AggregateRange(s.ctx, startTime, endTime), "AggregateRange")
+	hourStart := base.In(timezone.Location()).Truncate(time.Hour)
+	var aggregatedActiveUsers int64
+	err = scanSingleRow(s.ctx, s.tx, `
+		SELECT active_users
+		FROM usage_dashboard_hourly
+		WHERE bucket_start = $1
+	`, []any{hourStart}, &aggregatedActiveUsers)
+	s.Require().NoError(err, "read aggregated active users")
+	s.Require().Equal(int64(1), aggregatedActiveUsers)
+}
+
 // --- GetUserModelStats ---
 
 func (s *UsageLogRepoSuite) TestGetUserModelStats() {

@@ -269,10 +269,11 @@ func (r *usageLogRepository) GetActiveUsersTrend(ctx context.Context, startTime,
 			TO_CHAR(created_at, '%s') as date,
 			COUNT(DISTINCT user_id) as active_users
 		FROM usage_logs
-		WHERE created_at >= $1 AND created_at < $2
+		WHERE %s
+		  AND created_at >= $1 AND created_at < $2
 		GROUP BY date
 		ORDER BY date ASC
-	`, dateFormat)
+	`, dateFormat, activeAPIUserWhereClause)
 
 	rows, err := r.sql.QueryContext(ctx, query, startTime, endTime)
 	if err != nil {

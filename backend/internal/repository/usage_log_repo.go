@@ -13,7 +13,14 @@ import (
 	gocache "github.com/patrickmn/go-cache"
 )
 
-const rawUsageLogModelColumn = "model"
+const (
+	rawUsageLogModelColumn = "model"
+
+	// activeAPIUserWhereClause defines the only records that can make a user active
+	// in dashboard metrics: a user-backed request through the API gateway.
+	// Account test logs and other non-gateway records must not affect active users.
+	activeAPIUserWhereClause = "source = 'gateway' AND user_id IS NOT NULL AND api_key_id IS NOT NULL"
+)
 
 // rawUsageLogModelColumn preserves the exact stored usage_logs.model semantics for direct filters.
 // Historical rows may contain upstream/billing model values, while newer rows store requested_model.

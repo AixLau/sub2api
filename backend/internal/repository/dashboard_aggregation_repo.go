@@ -290,15 +290,16 @@ func (r *dashboardAggregationRepository) EnsureUsageLogsPartitions(ctx context.C
 
 func (r *dashboardAggregationRepository) insertHourlyActiveUsers(ctx context.Context, start, end time.Time) error {
 	tzName := timezone.Name()
-	query := `
+	query := fmt.Sprintf(`
 		INSERT INTO usage_dashboard_hourly_users (bucket_start, user_id)
 		SELECT DISTINCT
 			date_trunc('hour', created_at AT TIME ZONE $3) AT TIME ZONE $3 AS bucket_start,
 			user_id
 		FROM usage_logs
-		WHERE created_at >= $1 AND created_at < $2
+		WHERE %s
+		  AND created_at >= $1 AND created_at < $2
 		ON CONFLICT DO NOTHING
-	`
+	`, activeAPIUserWhereClause)
 	_, err := r.sql.ExecContext(ctx, query, start, end, tzName)
 	return err
 }

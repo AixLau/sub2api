@@ -27,7 +27,7 @@ export default {
       active: 'active',
       ok: 'ok',
       err: 'err',
-      activeUsers: 'active users',
+      activeUsers: 'API active users',
       create: 'Create',
       timeRange: 'Time Range',
       granularity: 'Granularity',

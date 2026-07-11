@@ -26,7 +26,7 @@ export default {
     noGroupsSelected: 'Select at least one group for {platform}.',
   },
   dashboard: {
-    activeUsersTrend: 'Active Users Trend',
+    activeUsersTrend: 'API Active Users Trend',
   },
   ops: {
     runtime: {

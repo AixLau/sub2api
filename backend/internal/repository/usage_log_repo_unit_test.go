@@ -6,11 +6,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -60,6 +62,22 @@ func TestSafeDateFormat(t *testing.T) {
 			require.Equal(t, tc.expected, got, "safeDateFormat(%q)", tc.granularity)
 		})
 	}
+}
+
+func TestUsageLogRepositoryGetActiveUsersTrendUsesGatewayAPIUsers(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+
+	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	mock.ExpectQuery(regexp.QuoteMeta("WHERE source = 'gateway' AND user_id IS NOT NULL AND api_key_id IS NOT NULL")).WithArgs(start, end).WillReturnRows(
+		sqlmock.NewRows([]string{"date", "active_users"}).AddRow("2025-01-01", int64(2)),
+	)
+
+	trend, err := repo.GetActiveUsersTrend(context.Background(), start, end, "day")
+	require.NoError(t, err)
+	require.Equal(t, []usagestats.ActiveUsersTrendPoint{{Date: "2025-01-01", ActiveUsers: 2}}, trend)
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestBuildUsageLogBatchInsertQuery_UsesConflictDoNothing(t *testing.T) {
