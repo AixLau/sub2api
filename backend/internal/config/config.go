@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"os"
 	"strings"
@@ -94,6 +95,26 @@ type Config struct {
 	Update                  UpdateConfig                  `mapstructure:"update"`
 	Idempotency             IdempotencyConfig             `mapstructure:"idempotency"`
 	BatchImage              BatchImageConfig              `mapstructure:"batch_image"`
+	Moderation              ModerationSecurityConfig      `mapstructure:"moderation"`
+}
+
+type ModerationSecurityConfig struct {
+	CacheHMACKey        string   `mapstructure:"cache_hmac_key"`
+	CacheHMACKeyVersion uint64   `mapstructure:"cache_hmac_key_version"`
+	AllowedHosts        []string `mapstructure:"allowed_hosts"`
+}
+
+// CacheHMACKeyBytes returns the cache signing key when it is exactly 32 hex-encoded bytes.
+// Invalid or missing key material makes the cache unavailable without disabling moderation.
+func (c ModerationSecurityConfig) CacheHMACKeyBytes() ([]byte, bool) {
+	if len(c.CacheHMACKey) != 64 {
+		return nil, false
+	}
+	key, err := hex.DecodeString(c.CacheHMACKey)
+	if err != nil || len(key) != 32 {
+		return nil, false
+	}
+	return key, true
 }
 
 type LogConfig struct {
@@ -1455,6 +1476,9 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	// 环境变量支持
 	viper.AutomaticEnv()
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	if err := bindModerationEnv(); err != nil {
+		return nil, fmt.Errorf("bind moderation environment: %w", err)
+	}
 
 	// 默认值
 	setDefaults()
@@ -1470,6 +1494,17 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	if err := viper.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config error: %w", err)
 	}
+	if rawHosts, ok := os.LookupEnv("MODERATION_ALLOWED_HOSTS"); ok {
+		cfg.Moderation.AllowedHosts = strings.Split(rawHosts, ",")
+	}
+	if cfg.Moderation.CacheHMACKeyVersion == 0 {
+		return nil, fmt.Errorf("moderation cache HMAC key version must be greater than zero")
+	}
+	allowedHosts, err := normalizeModerationAllowedHosts(cfg.Moderation.AllowedHosts)
+	if err != nil {
+		return nil, fmt.Errorf("invalid moderation allowed hosts: %w", err)
+	}
+	cfg.Moderation.AllowedHosts = allowedHosts
 	if cfg.Gateway.OpenAIScheduler.StickyEscapeTTFTMs == 0 {
 		cfg.Gateway.OpenAIScheduler.StickyEscapeTTFTMs = 15000
 	}
@@ -1601,6 +1636,71 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+func bindModerationEnv() error {
+	bindings := []struct {
+		key string
+		env string
+	}{
+		{key: "moderation.cache_hmac_key", env: "MODERATION_CACHE_HMAC_KEY"},
+		{key: "moderation.cache_hmac_key_version", env: "MODERATION_CACHE_HMAC_KEY_VERSION"},
+		{key: "moderation.allowed_hosts", env: "MODERATION_ALLOWED_HOSTS"},
+	}
+	for _, binding := range bindings {
+		if err := viper.BindEnv(binding.key, binding.env); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func normalizeModerationAllowedHosts(hosts []string) ([]string, error) {
+	if len(hosts) == 0 {
+		return nil, fmt.Errorf("allowlist must not be empty")
+	}
+
+	normalized := make([]string, 0, len(hosts))
+	seen := make(map[string]struct{}, len(hosts))
+	for _, raw := range hosts {
+		host := strings.ToLower(strings.TrimSpace(raw))
+		if err := validateModerationDNSName(host); err != nil {
+			return nil, fmt.Errorf("host %q: %w", raw, err)
+		}
+		if _, exists := seen[host]; exists {
+			return nil, fmt.Errorf("duplicate host %q", host)
+		}
+		seen[host] = struct{}{}
+		normalized = append(normalized, host)
+	}
+	return normalized, nil
+}
+
+func validateModerationDNSName(host string) error {
+	if host == "" {
+		return fmt.Errorf("empty host")
+	}
+	if host == "localhost" {
+		return fmt.Errorf("localhost is not allowed")
+	}
+	if net.ParseIP(host) != nil {
+		return fmt.Errorf("IP literals are not allowed")
+	}
+	if len(host) > 253 || strings.HasSuffix(host, ".") {
+		return fmt.Errorf("invalid DNS name")
+	}
+
+	for _, label := range strings.Split(host, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return fmt.Errorf("invalid DNS label")
+		}
+		for _, char := range label {
+			if (char < 'a' || char > 'z') && (char < '0' || char > '9') && char != '-' {
+				return fmt.Errorf("invalid DNS character")
+			}
+		}
+	}
+	return nil
 }
 
 func setDefaults() {
@@ -1929,6 +2029,11 @@ func setDefaults() {
 	viper.SetDefault("idempotency.max_stored_response_len", 64*1024)
 	viper.SetDefault("idempotency.cleanup_interval_seconds", 60)
 	viper.SetDefault("idempotency.cleanup_batch_size", 500)
+
+	// Moderation cache security
+	viper.SetDefault("moderation.cache_hmac_key", "")
+	viper.SetDefault("moderation.cache_hmac_key_version", uint64(1))
+	viper.SetDefault("moderation.allowed_hosts", []string{"api.openai.com", "open.bigmodel.cn"})
 
 	// Gateway
 	viper.SetDefault("gateway.response_header_timeout", 600) // 600秒(10分钟)等待上游响应头，LLM高负载时可能排队较久
