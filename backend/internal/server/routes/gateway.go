@@ -301,13 +301,8 @@ func RegisterGatewayRoutes(
 			"/v1/images/batches",
 			"BatchImageHandler.Submit",
 			service.ContentModerationProtocolBatchImages,
-			"Batch image submit contains per-item prompts and reference image metadata, so the raw request is moderated before job creation and provider submission.",
-		), func(c *gin.Context) {
-			if h.OpenAIGateway == nil || !h.OpenAIGateway.ModerateBatchImageSubmit(c) {
-				return
-			}
-			h.BatchImage.Submit(c)
-		})
+			"Batch image submit is moderated after account selection and before pricing, job creation, balance hold, or provider submission.",
+		), h.BatchImage.Submit)
 		moderatedGateway.GETNoAudit("/images/batches", intentionalNoAuditRoute(
 			"/v1/images/batches",
 			"BatchImageHandler.List",

@@ -4,6 +4,7 @@ export type ModerationMode = 'off' | 'observe' | 'pre_block'
 export type KeywordBlockingMode = 'keyword_only' | 'keyword_and_api' | 'api_only'
 export type ContentModerationEngineMode = 'rule_only' | 'api_only' | 'hybrid'
 export type ContentModerationAuditScope = 'user_only' | 'user_and_tool' | 'all_context'
+export type ContentModerationAccountScope = 'all' | 'oauth' | 'selected'
 export type ContentModerationModelFilterType = 'all' | 'include' | 'exclude'
 export type ContentModerationKeywordCategory =
   | 'custom'
@@ -62,6 +63,8 @@ export interface ContentModerationConfig {
   sample_rate: number
   all_groups: boolean
   group_ids: number[]
+  account_scope?: ContentModerationAccountScope
+  account_ids?: number[]
   record_non_hits: boolean
   audit_scope: ContentModerationAuditScope | string
   store_input_excerpt: boolean
@@ -183,6 +186,8 @@ export interface UpdateContentModerationConfig {
   sample_rate?: number
   all_groups?: boolean
   group_ids?: number[]
+  account_scope?: ContentModerationAccountScope
+  account_ids?: number[]
   record_non_hits?: boolean
   audit_scope?: ContentModerationAuditScope | string
   store_input_excerpt?: boolean
@@ -270,6 +275,7 @@ export interface ContentModerationEffectiveProtectionStatus {
   audit_scope: ContentModerationAuditScope | string
   public_fail_strategy: 'open' | 'closed' | string
   group_coverage: string
+  account_coverage: string
   model_coverage: string
   engine_mode: ContentModerationEngineMode | string
   external_api_configured: boolean
@@ -419,6 +425,9 @@ export interface ContentModerationLog {
   api_key_name: string
   group_id: number | null
   group_name: string
+  account_id?: number | null
+  account_name?: string
+  account_type?: string
   endpoint: string
   provider: string
   model: string

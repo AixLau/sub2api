@@ -140,6 +140,38 @@ func TestBatchImagePublicService_Submit(t *testing.T) {
 		require.Empty(t, gemini.submits)
 	})
 
+	t.Run("moderates selected account before pricing job hold and provider submit", func(t *testing.T) {
+		svc, repo, queue, gemini, _ := newTestBatchImagePublicService(true)
+		gate := &fakeBatchImageModerationGate{result: &ContentModerationGateResult{
+			Disposition: ContentModerationDispositionBlocked,
+			Decision: &ContentModerationDecision{
+				Blocked: true, StatusCode: 451, Message: "blocked batch prompt", Action: ContentModerationActionBlock,
+			},
+		}}
+		svc.Moderation = gate
+		owner := BatchImageOwner{UserID: 11, UserEmail: "user@example.com", APIKeyID: 22, APIKeyName: "batch-key", GroupName: "images"}
+
+		_, err := svc.Submit(ctx, owner, validBatchImageSubmitRequest(), "idem-blocked")
+
+		var gateErr *ContentModerationGateError
+		require.ErrorAs(t, err, &gateErr)
+		require.Equal(t, 451, gateErr.StatusCode)
+		require.Equal(t, "content_policy_violation", gateErr.Code)
+		require.Equal(t, "blocked batch prompt", gateErr.Message)
+		require.Len(t, gate.inputs, 1)
+		require.Equal(t, int64(202), gate.inputs[0].AccountID)
+		require.Equal(t, AccountTypeServiceAccount, gate.inputs[0].AccountType)
+		require.Equal(t, ContentModerationProtocolBatchImages, gate.inputs[0].Protocol)
+		require.Equal(t, "batch-key", gate.inputs[0].APIKeyName)
+		var normalized BatchImageSubmitRequest
+		require.NoError(t, json.Unmarshal(gate.inputs[0].Body, &normalized))
+		require.Equal(t, "hero", normalized.Items[0].Prompt)
+		require.Empty(t, repo.jobs)
+		require.Empty(t, queue.enqueued)
+		require.Empty(t, gemini.submits)
+		require.Empty(t, svc.BillingRepo.(*fakeBatchImageBillingRepo).reserves)
+	})
+
 	t.Run("group batch image disabled rejects before provider submit", func(t *testing.T) {
 		svc, repo, queue, gemini, _ := newTestBatchImagePublicService(true)
 		groupID := int64(7)
@@ -738,6 +770,17 @@ func newTestBatchImagePublicService(enabled bool) (*BatchImagePublicService, *fa
 
 func testBatchImageOwner() BatchImageOwner {
 	return BatchImageOwner{UserID: 11, APIKeyID: 22}
+}
+
+type fakeBatchImageModerationGate struct {
+	inputs []ContentModerationCheckInput
+	result *ContentModerationGateResult
+	err    error
+}
+
+func (f *fakeBatchImageModerationGate) CheckAccountAttempt(_ context.Context, input ContentModerationCheckInput, _ *ContentModerationAttemptState) (*ContentModerationGateResult, error) {
+	f.inputs = append(f.inputs, input)
+	return f.result, f.err
 }
 
 type fakeBatchImageAuthCacheInvalidator struct {

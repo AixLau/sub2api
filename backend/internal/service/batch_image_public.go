@@ -39,6 +39,23 @@ type BatchImageAccountSelectionRepository interface {
 	ListSchedulableByGroupIDAndPlatform(ctx context.Context, groupID int64, platform string) ([]Account, error)
 }
 
+type BatchImageModerationGate interface {
+	CheckAccountAttempt(context.Context, ContentModerationCheckInput, *ContentModerationAttemptState) (*ContentModerationGateResult, error)
+}
+
+type ContentModerationGateError struct {
+	StatusCode int
+	Code       string
+	Message    string
+}
+
+func (e *ContentModerationGateError) Error() string {
+	if e == nil {
+		return "content moderation gate error"
+	}
+	return e.Message
+}
+
 type BatchImageGroupPricingRepository interface {
 	GetByIDLite(ctx context.Context, id int64) (*Group, error)
 }
@@ -75,9 +92,12 @@ type BatchImageReferenceInput struct {
 }
 
 type BatchImageOwner struct {
-	UserID   int64
-	APIKeyID int64
-	GroupID  *int64
+	UserID     int64
+	UserEmail  string
+	APIKeyID   int64
+	APIKeyName string
+	GroupID    *int64
+	GroupName  string
 }
 
 type BatchImagePublicService struct {
@@ -90,6 +110,7 @@ type BatchImagePublicService struct {
 	Pricing           BatchImagePricingResolver
 	BillingRepo       UsageBillingRepository
 	AuthCache         APIKeyAuthCacheInvalidator
+	Moderation        BatchImageModerationGate
 	Config            *config.Config
 }
 
@@ -181,7 +202,7 @@ type BatchImageItemsQuery struct {
 	Cursor string
 }
 
-func NewBatchImagePublicService(repo BatchImageRepository, accountRepo AccountRepository, groupRepo GroupRepository, userGroupRateRepo UserGroupRateRepository, queue BatchImageQueue, pricing *BatchImageModelPricingResolver, billingRepo UsageBillingRepository, authCache APIKeyAuthCacheInvalidator, cfg *config.Config) *BatchImagePublicService {
+func NewBatchImagePublicService(repo BatchImageRepository, accountRepo AccountRepository, groupRepo GroupRepository, userGroupRateRepo UserGroupRateRepository, queue BatchImageQueue, pricing *BatchImageModelPricingResolver, billingRepo UsageBillingRepository, authCache APIKeyAuthCacheInvalidator, moderation BatchImageModerationGate, cfg *config.Config) *BatchImagePublicService {
 	return &BatchImagePublicService{
 		Repo:              repo,
 		AccountRepo:       accountRepo,
@@ -192,6 +213,7 @@ func NewBatchImagePublicService(repo BatchImageRepository, accountRepo AccountRe
 		Pricing:           pricing,
 		BillingRepo:       billingRepo,
 		AuthCache:         authCache,
+		Moderation:        moderation,
 		Config:            cfg,
 	}
 }
@@ -232,6 +254,9 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 
 	provider, account, err := s.selectProviderAndAccount(ctx, owner, normalized.Provider, normalized.Model)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.moderateSelectedAccount(ctx, owner, normalized, provider.Name(), account); err != nil {
 		return nil, err
 	}
 	pricingSnapshot, err := s.resolvePricingSnapshot(ctx, owner, normalized, provider.Name(), account)
@@ -397,6 +422,47 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 		return nil, err
 	}
 	return BatchImageJobToPublic(created), nil
+}
+
+func (s *BatchImagePublicService) moderateSelectedAccount(ctx context.Context, owner BatchImageOwner, req BatchImageSubmitRequest, provider string, account *Account) error {
+	if s == nil || s.Moderation == nil || account == nil {
+		return nil
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		return &ContentModerationGateError{StatusCode: 500, Code: "CONTENT_MODERATION_INPUT_ERROR", Message: "failed to prepare content moderation input"}
+	}
+	result, err := s.Moderation.CheckAccountAttempt(ctx, ContentModerationCheckInput{
+		UserID:      owner.UserID,
+		UserEmail:   owner.UserEmail,
+		APIKeyID:    owner.APIKeyID,
+		APIKeyName:  owner.APIKeyName,
+		GroupID:     cloneInt64Ptr(owner.GroupID),
+		GroupName:   owner.GroupName,
+		AccountID:   account.ID,
+		AccountName: account.Name,
+		AccountType: account.Type,
+		Endpoint:    "/v1/images/batches",
+		Provider:    provider,
+		Model:       req.Model,
+		Protocol:    ContentModerationProtocolBatchImages,
+		Body:        body,
+	}, nil)
+	if err != nil {
+		return &ContentModerationGateError{StatusCode: 503, Code: "CONTENT_MODERATION_UNAVAILABLE", Message: "content moderation is temporarily unavailable"}
+	}
+	if result != nil && result.Decision != nil && result.Decision.Blocked {
+		status := result.Decision.StatusCode
+		if status < 400 || status > 599 {
+			status = 403
+		}
+		message := strings.TrimSpace(result.Decision.Message)
+		if message == "" {
+			message = "request blocked by content policy"
+		}
+		return &ContentModerationGateError{StatusCode: status, Code: "content_policy_violation", Message: message}
+	}
+	return nil
 }
 
 func (s *BatchImagePublicService) releaseFailedSubmitHold(ctx context.Context, job *BatchImageJob, requestHash string) error {

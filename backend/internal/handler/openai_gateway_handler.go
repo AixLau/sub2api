@@ -1431,6 +1431,18 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		}); routingStage.Stop {
 			return
 		}
+		if gate := runSelectedAccountContentModeration(c, reqLog, h.contentModerationService, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, reqModel, firstMessage, account); gate != nil && gate.Decision != nil && gate.Decision.Blocked {
+			releaseAccountSlot()
+			pipelineResult := openAIWebSocketPipelineResult{
+				Blocked:            true,
+				BlockReason:        openAIWebSocketPipelineBlockReasonModeration,
+				ModerationDecision: gate.Decision,
+				Message:            gate.Decision.Message,
+			}
+			closeReason := h.writeOpenAIWebSocketPipelineBlock(ctx, c, wsConn, apiKey, reqModel, pipelineResult)
+			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, closeReason)
+			return
+		}
 
 		var requestPayloadHash string
 		hooks := &service.OpenAIWSIngressHooks{
@@ -1457,6 +1469,16 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					Body:     payload,
 				})
 				if pipelineResult.Blocked {
+					closeReason := h.writeOpenAIWebSocketPipelineBlock(ctx, c, wsConn, apiKey, model, pipelineResult)
+					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, closeReason, nil)
+				}
+				if gate := runSelectedAccountContentModeration(c, reqLog, h.contentModerationService, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, model, payload, account); gate != nil && gate.Decision != nil && gate.Decision.Blocked {
+					pipelineResult := openAIWebSocketPipelineResult{
+						Blocked:            true,
+						BlockReason:        openAIWebSocketPipelineBlockReasonModeration,
+						ModerationDecision: gate.Decision,
+						Message:            gate.Decision.Message,
+					}
 					closeReason := h.writeOpenAIWebSocketPipelineBlock(ctx, c, wsConn, apiKey, model, pipelineResult)
 					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, closeReason, nil)
 				}
@@ -1498,6 +1520,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return nil
 			},
 			AfterTurn: func(turn int, result *service.OpenAIForwardResult, turnErr error) {
+				// Reuse is bounded to one pending frame. Once a turn is forwarded,
+				// blocked, or abandoned, an identical later frame must be moderated anew.
+				c.Set(selectedAccountModerationStateContextKey, (*service.ContentModerationAttemptState)(nil))
 				_ = h.runOpenAIWebSocketStage(c, OpenAIWebSocketUsageStage{
 					Handler:              h,
 					RequestContext:       ctx,

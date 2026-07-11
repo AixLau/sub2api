@@ -113,6 +113,9 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 
 	// content_moderation_outbox reliable side effects
 	requireColumn(t, tx, "content_moderation_logs", "decision_id", "character varying", 128, false)
+	requireColumn(t, tx, "content_moderation_logs", "account_id", "bigint", 0, true)
+	requireColumn(t, tx, "content_moderation_logs", "account_name", "character varying", 255, true)
+	requireColumn(t, tx, "content_moderation_logs", "account_type", "character varying", 32, true)
 	requireIndex(t, tx, "content_moderation_logs", "idx_content_moderation_logs_decision_id")
 	requireColumn(t, tx, "content_moderation_outbox", "decision_id", "character varying", 128, false)
 	requireColumn(t, tx, "content_moderation_outbox", "event_type", "character varying", 64, false)

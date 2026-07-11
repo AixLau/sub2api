@@ -120,6 +120,7 @@ func TestContentModerationRepositoryCreateLog_UsesValidUpsertReturningSQL(t *tes
 	userID := int64(292)
 	apiKeyID := int64(373)
 	groupID := int64(2)
+	accountID := int64(42)
 	latency := 25
 	queueDelay := 7
 	reviewedBy := int64(1)
@@ -133,6 +134,9 @@ func TestContentModerationRepositoryCreateLog_UsesValidUpsertReturningSQL(t *tes
 		APIKeyName:             "codex",
 		GroupID:                &groupID,
 		GroupName:              "Codex高速专线",
+		AccountID:              &accountID,
+		AccountName:            "oauth-primary",
+		AccountType:            service.AccountTypeOAuth,
 		Endpoint:               "/v1/chat/completions",
 		Provider:               "openai",
 		Model:                  "gpt-5.4",
@@ -166,6 +170,7 @@ func TestContentModerationRepositoryCreateLog_UsesValidUpsertReturningSQL(t *tes
 	mock.ExpectQuery("content_moderation_create_log").
 		WithArgs(
 			log.DecisionID, log.RequestID, userID, log.UserEmail, apiKeyID, log.APIKeyName, groupID, log.GroupName,
+			accountID, log.AccountName, log.AccountType,
 			log.Endpoint, log.Provider, log.Model, log.Mode, log.Action, log.Flagged, log.HighestCategory, log.HighestScore,
 			`{"keyword":1}`, `{"keyword":1}`, log.InputExcerpt, latency, log.Error,
 			log.MatchedKeyword, log.KeywordCategory, log.KeywordSeverity, log.KeywordAction, log.EffectiveKeywordAction,
@@ -232,6 +237,7 @@ func TestContentModerationRepositoryListLogsIncludesRawRequestMetadata(t *testin
 		WithArgs(20, 0).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "request_id", "user_id", "user_email", "api_key_id", "api_key_name", "group_id", "group_name",
+			"account_id", "account_name", "account_type",
 			"endpoint", "provider", "model", "mode", "action", "flagged", "highest_category", "highest_score",
 			"category_scores", "threshold_snapshot", "input_excerpt", "upstream_latency_ms", "error",
 			"matched_keyword", "keyword_category", "keyword_severity", "keyword_action", "effective_keyword_action",
@@ -240,6 +246,7 @@ func TestContentModerationRepositoryListLogsIncludesRawRequestMetadata(t *testin
 			"raw_request_available", "raw_request_bytes", "raw_request_truncated", "created_at",
 		}).AddRow(
 			int64(42), "req-raw", nil, "u@example.com", nil, "H", nil, "Default",
+			int64(77), "oauth-primary", service.AccountTypeOAuth,
 			"/v1/responses", "openai", "gpt-5", "post_upstream", "cyber_policy", true, "cyber_policy", 1.0,
 			[]byte(`{}`), []byte(`{}`), "", nil, "flagged",
 			"", "", "", "", "",
@@ -255,5 +262,9 @@ func TestContentModerationRepositoryListLogsIncludesRawRequestMetadata(t *testin
 	require.True(t, items[0].RawRequestAvailable)
 	require.Equal(t, 128, items[0].RawRequestBytes)
 	require.True(t, items[0].RawRequestTruncated)
+	require.NotNil(t, items[0].AccountID)
+	require.Equal(t, int64(77), *items[0].AccountID)
+	require.Equal(t, "oauth-primary", items[0].AccountName)
+	require.Equal(t, service.AccountTypeOAuth, items[0].AccountType)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

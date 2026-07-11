@@ -310,6 +310,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				Sub2APIUserID:    subject.UserID,
 				Selection:        &selection,
 			})
+			if routingStage.Stop {
+				return
+			}
 			err = routingStage.Err
 			if err != nil {
 				if len(fs.FailedAccountIDs) == 0 {
@@ -625,6 +628,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				Sub2APIUserID:    subject.UserID,
 				Selection:        &selection,
 			})
+			if routingStage.Stop {
+				return
+			}
 			err = routingStage.Err
 			if err != nil {
 				if len(fs.FailedAccountIDs) == 0 {
@@ -1943,6 +1949,9 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 		UseModelSelection: true,
 		Account:           &account,
 	})
+	if routingStage.Stop {
+		return
+	}
 	err := routingStage.Err
 	if err != nil {
 		reqLog.Warn("gateway.count_tokens_select_account_failed", zap.Error(err))

@@ -45,6 +45,10 @@ func (r *contentModerationRepository) CreateLog(ctx context.Context, log *servic
 	if log.GroupID != nil {
 		groupID = *log.GroupID
 	}
+	var accountID any
+	if log.AccountID != nil {
+		accountID = *log.AccountID
+	}
 	var latency any
 	if log.UpstreamLatencyMS != nil {
 		latency = *log.UpstreamLatencyMS
@@ -52,6 +56,7 @@ func (r *contentModerationRepository) CreateLog(ctx context.Context, log *servic
 	err = r.db.QueryRowContext(ctx, `
 INSERT INTO content_moderation_logs (
     decision_id, request_id, user_id, user_email, api_key_id, api_key_name, group_id, group_name,
+    account_id, account_name, account_type,
     endpoint, provider, model, mode, action, flagged, highest_category, highest_score,
     category_scores, threshold_snapshot, input_excerpt, upstream_latency_ms, error,
     matched_keyword, keyword_category, keyword_severity, keyword_action, effective_keyword_action,
@@ -59,11 +64,12 @@ INSERT INTO content_moderation_logs (
     violation_count, auto_banned, email_sent, queue_delay_ms
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
-    $9, $10, $11, $12, $13, $14, $15, $16,
-    $17::jsonb, $18::jsonb, $19, $20, $21,
-    $22, $23, $24, $25, $26,
-    $27, $28, $29, $30, $31, $32,
-    $33, $34, $35, $36
+    $9, $10, $11,
+    $12, $13, $14, $15, $16, $17, $18, $19,
+    $20::jsonb, $21::jsonb, $22, $23, $24,
+    $25, $26, $27, $28, $29,
+    $30, $31, $32, $33, $34, $35,
+    $36, $37, $38, $39
 ) ON CONFLICT (decision_id) WHERE decision_id <> '' DO UPDATE SET
     queue_delay_ms = COALESCE(EXCLUDED.queue_delay_ms, content_moderation_logs.queue_delay_ms),
     violation_count = GREATEST(content_moderation_logs.violation_count, EXCLUDED.violation_count),
@@ -71,6 +77,7 @@ INSERT INTO content_moderation_logs (
     email_sent = content_moderation_logs.email_sent OR EXCLUDED.email_sent
 RETURNING id, created_at`,
 		log.DecisionID, log.RequestID, userID, log.UserEmail, apiKeyID, log.APIKeyName, groupID, log.GroupName,
+		accountID, log.AccountName, log.AccountType,
 		log.Endpoint, log.Provider, log.Model, log.Mode, log.Action, log.Flagged, log.HighestCategory, log.HighestScore,
 		string(categoryScores), string(thresholdSnapshot), log.InputExcerpt, latency, log.Error,
 		log.MatchedKeyword, log.KeywordCategory, log.KeywordSeverity, log.KeywordAction, log.EffectiveKeywordAction,
@@ -107,6 +114,7 @@ func (r *contentModerationRepository) ListLogs(ctx context.Context, filter servi
 	rows, err := r.db.QueryContext(ctx, `
 SELECT
     l.id, l.request_id, l.user_id, l.user_email, l.api_key_id, l.api_key_name, l.group_id, l.group_name,
+    l.account_id, l.account_name, l.account_type,
     l.endpoint, l.provider, l.model, l.mode, l.action, l.flagged, l.highest_category, l.highest_score,
     l.category_scores, l.threshold_snapshot, l.input_excerpt, l.upstream_latency_ms, l.error,
     COALESCE(l.matched_keyword, ''), COALESCE(l.keyword_category, ''), COALESCE(l.keyword_severity, ''),
@@ -131,7 +139,8 @@ LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 	items := make([]service.ContentModerationLog, 0)
 	for rows.Next() {
 		var item service.ContentModerationLog
-		var userID, apiKeyID, groupID, latency, queueDelay, reviewedBy sql.NullInt64
+		var userID, apiKeyID, groupID, accountID, latency, queueDelay, reviewedBy sql.NullInt64
+		var accountName, accountType sql.NullString
 		var reviewedAt sql.NullTime
 		var scoresRaw, thresholdsRaw []byte
 		if err := rows.Scan(
@@ -143,6 +152,9 @@ LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 			&item.APIKeyName,
 			&groupID,
 			&item.GroupName,
+			&accountID,
+			&accountName,
+			&accountType,
 			&item.Endpoint,
 			&item.Provider,
 			&item.Model,
@@ -191,6 +203,12 @@ LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 			v := groupID.Int64
 			item.GroupID = &v
 		}
+		if accountID.Valid {
+			v := accountID.Int64
+			item.AccountID = &v
+		}
+		item.AccountName = accountName.String
+		item.AccountType = accountType.String
 		if latency.Valid {
 			v := int(latency.Int64)
 			item.UpstreamLatencyMS = &v

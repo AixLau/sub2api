@@ -15,6 +15,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const selectedAccountModerationStateContextKey = "selected_account_moderation_state"
+
 func (h *GatewayHandler) checkContentModeration(c *gin.Context, reqLog *zap.Logger, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol string, model string, body []byte) *service.ContentModerationDecision {
 	if h == nil || h.contentModerationService == nil {
 		if reqLog != nil {
@@ -224,6 +226,29 @@ func buildContentModerationInput(c *gin.Context, apiKey *service.APIKey, subject
 		input.Endpoint = c.Request.URL.Path
 	}
 	return input
+}
+
+func runSelectedAccountContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.ContentModerationService, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol, model string, body []byte, account *service.Account) *service.ContentModerationGateResult {
+	if svc == nil || account == nil || c == nil || c.Request == nil || !svc.RequiresSelectedAccount(c.Request.Context()) {
+		return nil
+	}
+	input := buildContentModerationInput(c, apiKey, subject, protocol, model, body)
+	input.AccountID = account.ID
+	input.AccountName = account.Name
+	input.AccountType = account.Type
+	var prior *service.ContentModerationAttemptState
+	if value, ok := c.Get(selectedAccountModerationStateContextKey); ok {
+		prior, _ = value.(*service.ContentModerationAttemptState)
+	}
+	result, err := svc.CheckAccountAttempt(c.Request.Context(), input, prior)
+	if err != nil {
+		if reqLog != nil {
+			reqLog.Warn("content_moderation.account_attempt_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+		}
+		return &service.ContentModerationGateResult{Decision: contentModerationCheckErrorDecision(), Disposition: service.ContentModerationDispositionProviderErrorClosed}
+	}
+	c.Set(selectedAccountModerationStateContextKey, result.NextState)
+	return result
 }
 
 func contentModerationProvider(apiKey *service.APIKey) string {

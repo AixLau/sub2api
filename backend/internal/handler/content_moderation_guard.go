@@ -482,5 +482,8 @@ func (g *contentModerationGuard) Check(c *gin.Context, reqLog *zap.Logger, input
 		}
 		return contentModerationCheckErrorDecision()
 	}
+	if c != nil && c.Request != nil && g.service.RequiresSelectedAccount(c.Request.Context()) {
+		return &service.ContentModerationDecision{Allowed: true, Action: service.ContentModerationActionAllow}
+	}
 	return runContentModeration(c, reqLog, g.service, input.APIKey, input.Subject, input.Protocol, input.Model, input.Body)
 }

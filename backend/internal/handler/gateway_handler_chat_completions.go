@@ -148,6 +148,9 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 			Sub2APIUserID:    subject.UserID,
 			Selection:        &selection,
 		})
+		if routingStage.Stop {
+			return
+		}
 		err := routingStage.Err
 		if err != nil {
 			if len(fs.FailedAccountIDs) == 0 {

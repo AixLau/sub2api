@@ -579,6 +579,7 @@
                 <tr>
                   <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.time') }}</th>
                   <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.group') }}</th>
+				  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.upstreamAccount') }}</th>
                   <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.user') }}</th>
                   <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.apiKey') }}</th>
                   <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.endpoint') }}</th>
@@ -591,15 +592,19 @@
               </thead>
               <tbody class="divide-y divide-gray-100 bg-white dark:divide-dark-800 dark:bg-dark-800">
                 <tr v-if="logsLoading">
-                  <td colspan="10" class="px-5 py-12 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('common.loading') }}</td>
+				  <td colspan="11" class="px-5 py-12 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('common.loading') }}</td>
                 </tr>
                 <tr v-else-if="logs.length === 0">
-                  <td colspan="10" class="px-5 py-12 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.emptyLogs') }}</td>
+				  <td colspan="11" class="px-5 py-12 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.emptyLogs') }}</td>
                 </tr>
                 <template v-else>
                   <tr v-for="row in logs" :key="row.id" class="hover:bg-gray-50 dark:hover:bg-dark-700/60">
                     <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(row.created_at) }}</td>
                     <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">{{ row.group_name || '-' }}</td>
+					<td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
+						<div>{{ row.account_name || '-' }}</div>
+						<div v-if="row.account_id" class="text-xs text-gray-400">#{{ row.account_id }} · {{ row.account_type || '-' }}</div>
+					</td>
                     <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
                       <div>{{ row.user_email || '-' }}</div>
                       <div v-if="row.user_id" class="text-xs text-gray-400">UID {{ row.user_id }}</div>
@@ -1084,6 +1089,54 @@
                 <p v-if="filteredGroups.length === 0" class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.noGroups') }}</p>
               </div>
             </div>
+
+			<div class="space-y-4 border-t border-gray-100 pt-5 dark:border-dark-700">
+				<div>
+					<h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.accountScope') }}</h3>
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.accountScopeHint') }}</p>
+				</div>
+				<div class="grid grid-cols-1 gap-2 md:grid-cols-3">
+					<button
+						v-for="option in accountScopeOptions"
+						:key="option.value"
+						type="button"
+						class="rounded-lg border p-3 text-left transition-colors"
+						:class="configForm.account_scope === option.value ? 'border-primary-300 bg-primary-50 dark:border-primary-700 dark:bg-primary-900/20' : 'border-gray-100 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700/60'"
+						@click="configForm.account_scope = option.value"
+					>
+						<span class="block text-sm font-semibold text-gray-900 dark:text-white">{{ option.label }}</span>
+						<span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">{{ option.description }}</span>
+					</button>
+				</div>
+				<div v-if="configForm.account_scope === 'selected'" class="space-y-3">
+					<input v-model.trim="accountSearch" type="search" class="input" :placeholder="t('admin.riskControl.searchAccounts')" @keyup.enter="loadAccountPage(1)" />
+					<div class="grid max-h-[360px] grid-cols-1 gap-2 overflow-y-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
+						<button
+							v-for="account in filteredAccounts"
+							:key="account.id"
+							type="button"
+							class="flex min-h-16 items-center justify-between rounded-lg border p-3 text-left transition-colors"
+							:class="isAccountSelected(account.id) ? 'border-primary-300 bg-primary-50 dark:border-primary-700 dark:bg-primary-900/20' : 'border-gray-100 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700/60'"
+							@click="toggleAccount(account.id)"
+						>
+							<span class="min-w-0">
+								<span class="block truncate text-sm font-semibold text-gray-900 dark:text-white">{{ account.name || `#${account.id}` }}</span>
+								<span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">{{ account.platform }} · {{ account.type }}</span>
+							</span>
+							<Icon v-if="isAccountSelected(account.id)" name="check" size="sm" class="text-primary-500" />
+						</button>
+						<p v-if="filteredAccounts.length === 0" class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.noAccounts') }}</p>
+					</div>
+					<Pagination
+						v-if="accountPagination.total > accountPagination.page_size"
+						:page="accountPagination.page"
+						:total="accountPagination.total"
+						:page-size="accountPagination.page_size"
+						:show-page-size-selector="false"
+						@update:page="loadAccountPage"
+					/>
+				</div>
+			</div>
 
             <div class="space-y-4 rounded-lg border border-gray-100 p-4 dark:border-dark-700">
               <div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
@@ -1637,6 +1690,9 @@
                 <span v-if="inputDetailRow.group_name" class="inline-flex rounded-md bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">
                   {{ inputDetailRow.group_name }}
                 </span>
+				<span v-if="inputDetailRow.account_name || inputDetailRow.account_id" class="inline-flex rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700 dark:bg-dark-700 dark:text-gray-300">
+					{{ inputDetailRow.account_name || `#${inputDetailRow.account_id}` }} · {{ inputDetailRow.account_type || '-' }}
+				</span>
               </div>
             </div>
             <p v-if="inputDetailRow.raw_request_available" class="mt-3 text-xs text-gray-500 dark:text-gray-400">
@@ -1669,6 +1725,7 @@ import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.
 import { adminAPI } from '@/api/admin'
 import type {
   ContentModerationAuditScope,
+	ContentModerationAccountScope,
   ContentModerationAPIKeyLoad,
   ContentModerationAPIKeyStatus,
   ContentModerationConfig,
@@ -1695,6 +1752,7 @@ import { formatDateTime as formatDateTimeValue } from '@/utils/format'
 type SettingsTab = 'basic' | 'scope' | 'runtime' | 'resources' | 'response' | 'riskThresholds' | 'retention' | 'keywords'
 type WorkerSlotState = 'active' | 'idle' | 'disabled'
 type APIKeysWriteMode = 'append' | 'replace'
+type AccountOption = { id: number; name: string; platform: string; type: string }
 type OverviewIcon = 'shield' | 'key' | 'users' | 'document'
 type ProtectionStatusTone = 'strong' | 'unsafe' | 'unknown'
 type PipelineOperatorIcon = 'shield' | 'filter' | 'refresh' | 'document'
@@ -1768,8 +1826,12 @@ const settingsOpen = ref(false)
 const advancedPipelineDiagnosticsOpen = ref(false)
 const activeSettingsTab = ref<SettingsTab>('basic')
 const groupSearch = ref('')
+const accountSearch = ref('')
 const flaggedHashInput = ref('')
 const groups = ref<AdminGroup[]>([])
+const accounts = ref<AccountOption[]>([])
+const selectedAccountDetails = ref<Record<number, AccountOption>>({})
+const accountPagination = reactive({ page: 1, page_size: 20, total: 0 })
 const logs = ref<ContentModerationLog[]>([])
 const status = ref<ContentModerationRuntimeStatus | null>(null)
 const testedApiKeyStatuses = ref<ContentModerationAPIKeyStatus[]>([])
@@ -1815,6 +1877,8 @@ const configForm = reactive({
   sample_rate: 100,
   all_groups: true,
   group_ids: [] as number[],
+	account_scope: 'all' as ContentModerationAccountScope,
+	account_ids: [] as number[],
   record_non_hits: false,
   audit_scope: 'all_context' as ContentModerationAuditScope,
   store_input_excerpt: true,
@@ -2015,7 +2079,31 @@ const groupFilterOptions = computed<SelectOption[]>(() => [
   })),
 ])
 
-const selectedGroupCount = computed(() => String(configForm.group_ids.length))
+const accountScopeSummary = computed(() => {
+	if (configForm.account_scope === 'oauth') return t('admin.riskControl.accountScopeOAuth')
+	if (configForm.account_scope === 'selected') return t('admin.riskControl.selectedAccountCount', { count: configForm.account_ids.length })
+	return t('admin.riskControl.accountScopeAll')
+})
+
+const accountScopeOptions = computed(() => [
+	{ value: 'all' as const, label: t('admin.riskControl.accountScopeAll'), description: t('admin.riskControl.accountScopeAllHint') },
+	{ value: 'oauth' as const, label: t('admin.riskControl.accountScopeOAuth'), description: t('admin.riskControl.accountScopeOAuthHint') },
+	{ value: 'selected' as const, label: t('admin.riskControl.accountScopeSelected'), description: t('admin.riskControl.accountScopeSelectedHint') },
+])
+
+const filteredAccounts = computed(() => {
+	const keyword = accountSearch.value.trim().toLowerCase()
+	const merged = new Map<number, AccountOption>()
+	for (const account of accounts.value) merged.set(account.id, account)
+	for (const id of configForm.account_ids) {
+		const account = selectedAccountDetails.value[id]
+		if (account) merged.set(id, account)
+		else if (!merged.has(id)) merged.set(id, { id, name: `#${id}`, platform: '-', type: '-' })
+	}
+	const values = [...merged.values()]
+	if (!keyword) return values
+	return values.filter((account) => [account.name, account.platform, account.type, String(account.id)].some((value) => String(value || '').toLowerCase().includes(keyword)))
+})
 
 const modelFilterModelCount = computed(() => configForm.model_filter_models.length)
 
@@ -2414,7 +2502,7 @@ const pipelineObservedMetaText = computed(() => {
 })
 
 const pipelineOperatorSummaryItems = computed<PipelineOperatorSummaryItem[]>(() => [
-  {
+	  {
     key: 'coverage',
     label: t('admin.riskControl.protectionChainCoverage'),
     value: protectionPipelineCoverageText.value,
@@ -2497,8 +2585,8 @@ const overviewItems = computed<OverviewItem[]>(() => [
   {
     key: 'scope',
     label: t('admin.riskControl.overview.groupScope'),
-    value: configForm.all_groups ? t('admin.riskControl.allGroups') : selectedGroupCount.value,
-    meta: modelFilterSummary.value,
+	value: `${configForm.all_groups ? t('admin.riskControl.allGroups') : t('admin.riskControl.selectedGroupCount', { count: configForm.group_ids.length })} / ${accountScopeSummary.value}`,
+	meta: modelFilterSummary.value,
     icon: 'users',
     iconClass: 'bg-violet-50 text-violet-600 dark:bg-violet-900/20 dark:text-violet-300',
   },
@@ -2693,6 +2781,8 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.sample_rate = config.sample_rate ?? 100
   configForm.all_groups = config.all_groups
   configForm.group_ids = Array.isArray(config.group_ids) ? [...config.group_ids] : []
+	configForm.account_scope = config.account_scope === 'oauth' || config.account_scope === 'selected' ? config.account_scope : 'all'
+	configForm.account_ids = Array.isArray(config.account_ids) ? [...config.account_ids] : []
   configForm.record_non_hits = config.record_non_hits
   configForm.audit_scope = normalizeAuditScope(config.audit_scope)
   configForm.store_input_excerpt = config.store_input_excerpt ?? true
@@ -2721,13 +2811,17 @@ function applyConfig(config: ContentModerationConfig) {
 async function loadAll() {
   loading.value = true
   try {
-    const [config, groupItems, runtimeStatus] = await Promise.all([
-      adminAPI.riskControl.getConfig(),
-      adminAPI.groups.getAll(),
-      adminAPI.riskControl.getStatus(),
-    ])
-    applyConfig(config)
-    groups.value = groupItems
+		const config = await adminAPI.riskControl.getConfig()
+		applyConfig(config)
+		const [groupItems, accountPage, runtimeStatus] = await Promise.all([
+		  adminAPI.groups.getAll(),
+		adminAPI.accounts.list(1, accountPagination.page_size, { lite: 'true' }),
+		  adminAPI.riskControl.getStatus(),
+		])
+		groups.value = groupItems
+	accounts.value = accountPage.items
+	accountPagination.total = accountPage.total
+	await hydrateSelectedAccountDetails()
     status.value = runtimeStatus
     if (Array.isArray(runtimeStatus.api_key_statuses)) {
       configForm.api_key_statuses = [...runtimeStatus.api_key_statuses]
@@ -2739,6 +2833,37 @@ async function loadAll() {
   } finally {
     loading.value = false
   }
+}
+
+async function loadAccountPage(page: number) {
+	try {
+		const result = await adminAPI.accounts.list(page, accountPagination.page_size, {
+			lite: 'true', search: accountSearch.value.trim() || undefined,
+		})
+		accounts.value = result.items
+		accountPagination.page = page
+		accountPagination.total = result.total
+		for (const account of result.items) {
+			if (configForm.account_ids.includes(account.id)) selectedAccountDetails.value[account.id] = account
+		}
+	} catch (err: unknown) {
+		appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.loadFailed')))
+	}
+}
+
+async function hydrateSelectedAccountDetails() {
+	await Promise.all(configForm.account_ids.map(async (id) => {
+		const current = accounts.value.find((account) => account.id === id)
+		if (current) {
+			selectedAccountDetails.value[id] = current
+			return
+		}
+		try {
+			selectedAccountDetails.value[id] = await adminAPI.accounts.getById(id)
+		} catch {
+			// Keep an ID-only fallback so stale selections remain removable.
+		}
+	}))
 }
 
 async function loadStatus(silent = true) {
@@ -2767,6 +2892,10 @@ async function saveConfig() {
       appStore.showError(t('admin.riskControl.modelFilterModelsRequired'))
       return
     }
+	if (configForm.account_scope === 'selected' && configForm.account_ids.length === 0) {
+		appStore.showError(t('admin.riskControl.accountScopeSelectedRequired'))
+		return
+	}
     const payload: UpdateContentModerationConfig = {
 	  max_request_body_mib: Number(configForm.max_request_body_mib),
 	  inflight_memory_budget_mib: Number(configForm.inflight_memory_budget_mib),
@@ -2786,6 +2915,8 @@ async function saveConfig() {
       sample_rate: Number(configForm.sample_rate) || 0,
       all_groups: configForm.all_groups,
       group_ids: configForm.all_groups ? [] : [...configForm.group_ids],
+		account_scope: configForm.account_scope,
+		account_ids: configForm.account_scope === 'selected' ? [...configForm.account_ids] : [],
       record_non_hits: configForm.record_non_hits,
       audit_scope: configForm.audit_scope,
       store_input_excerpt: configForm.store_input_excerpt,
@@ -3153,6 +3284,16 @@ function toggleGroup(groupID: number) {
   } else {
     configForm.group_ids.push(groupID)
   }
+}
+
+function toggleAccount(accountID: number) {
+	const index = configForm.account_ids.indexOf(accountID)
+	if (index >= 0) configForm.account_ids.splice(index, 1)
+	else configForm.account_ids.push(accountID)
+}
+
+function isAccountSelected(accountID: number): boolean {
+	return configForm.account_ids.includes(accountID)
 }
 
 function isGroupSelected(groupID: number): boolean {
