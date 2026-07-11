@@ -30,7 +30,11 @@ func TestModerationTransportRejectsUnsafeConfiguration(t *testing.T) {
 }
 
 func TestModerationTransportRejectsUnsafeAddressesAndMixedDNS(t *testing.T) {
-	unsafe := []string{"127.0.0.1", "10.0.0.1", "172.16.0.1", "192.168.0.1", "169.254.1.1", "169.254.169.254", "224.0.0.1", "0.0.0.0", "::1", "fc00::1", "fe80::1", "ff02::1", "::"}
+	unsafe := []string{
+		"127.0.0.1", "10.0.0.1", "172.16.0.1", "192.168.0.1", "169.254.1.1", "169.254.169.254", "224.0.0.1", "0.0.0.0",
+		"100.64.0.1", "192.0.0.1", "192.0.2.1", "198.18.0.1", "198.51.100.1", "203.0.113.1", "240.0.0.1",
+		"::1", "fc00::1", "fe80::1", "ff02::1", "::", "2001:db8::1", "2001:2::1", "3fff::1", "5f00::1",
+	}
 	for _, raw := range unsafe {
 		t.Run(raw, func(t *testing.T) {
 			resolver := func(context.Context, string) ([]net.IP, error) { return []net.IP{net.ParseIP(raw)}, nil }
@@ -43,6 +47,16 @@ func TestModerationTransportRejectsUnsafeAddressesAndMixedDNS(t *testing.T) {
 	}
 	_, err := newRestrictedModerationClientFactory([]string{"api.example.com"}, resolver, nil).Client("https://api.example.com", time.Second)
 	require.Error(t, err)
+}
+
+func TestModerationTransportAcceptsPublicAddresses(t *testing.T) {
+	for _, raw := range []string{"8.8.8.8", "1.1.1.1", "2606:4700:4700::1111", "2001:4860:4860::8888"} {
+		t.Run(raw, func(t *testing.T) {
+			resolver := func(context.Context, string) ([]net.IP, error) { return []net.IP{net.ParseIP(raw)}, nil }
+			_, err := newRestrictedModerationClientFactory([]string{"api.example.com"}, resolver, nil).Client("https://api.example.com", time.Second)
+			require.NoError(t, err)
+		})
+	}
 }
 
 func TestModerationTransportRejectsRebindAndPinsValidatedIP(t *testing.T) {

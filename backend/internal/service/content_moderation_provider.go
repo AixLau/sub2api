@@ -164,18 +164,23 @@ func (p *moderationProviderAdapter) decodeOpenAI(body io.Reader) (ProviderModera
 	var response struct {
 		Results []result `json:"results"`
 	}
-	dec := json.NewDecoder(io.LimitReader(body, 1<<20))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&response); err != nil {
+	if err := decodeModerationJSON(body, &response); err != nil {
 		return ProviderModerationResult{}, p.providerError(ModerationProviderErrorSchema, 0, err)
 	}
-	if err := requireJSONEOF(dec); err != nil || len(response.Results) != 1 || response.Results[0].Flagged == nil || response.Results[0].CategoryScores == nil || len(*response.Results[0].CategoryScores) == 0 {
-		if err == nil {
-			err = errors.New("OpenAI moderation requires exactly one result with scores")
-		}
-		return ProviderModerationResult{}, p.providerError(ModerationProviderErrorSchema, 0, err)
+	if len(response.Results) != 1 || response.Results[0].Flagged == nil {
+		return ProviderModerationResult{}, p.providerError(ModerationProviderErrorSchema, 0, errors.New("OpenAI moderation requires exactly one result with flagged state"))
 	}
 	r := response.Results[0]
+	if *r.Flagged {
+		scores := map[string]float64{}
+		if r.CategoryScores != nil {
+			scores = *r.CategoryScores
+		}
+		return ProviderModerationResult{Level: ModerationLevelReject, CategoryScores: scores, RiskTypes: []string{}}, nil
+	}
+	if r.CategoryScores == nil || len(*r.CategoryScores) == 0 {
+		return ProviderModerationResult{}, p.providerError(ModerationProviderErrorSchema, 0, errors.New("OpenAI unflagged moderation requires scores"))
+	}
 	level := ModerationLevelPass
 	for category, score := range *r.CategoryScores {
 		threshold, ok := p.thresholds[category]
@@ -185,9 +190,6 @@ func (p *moderationProviderAdapter) decodeOpenAI(body io.Reader) (ProviderModera
 		if score >= threshold {
 			level = ModerationLevelReject
 		}
-	}
-	if *r.Flagged {
-		level = ModerationLevelReject
 	}
 	return ProviderModerationResult{Level: level, CategoryScores: *r.CategoryScores, RiskTypes: []string{}}, nil
 }
@@ -200,16 +202,11 @@ func (p *moderationProviderAdapter) decodeZhipu(body io.Reader) (ProviderModerat
 	var response struct {
 		Results []result `json:"results"`
 	}
-	dec := json.NewDecoder(io.LimitReader(body, 1<<20))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&response); err != nil {
+	if err := decodeModerationJSON(body, &response); err != nil {
 		return ProviderModerationResult{}, p.providerError(ModerationProviderErrorSchema, 0, err)
 	}
-	if err := requireJSONEOF(dec); err != nil || len(response.Results) != 1 {
-		if err == nil {
-			err = errors.New("Zhipu moderation requires exactly one result")
-		}
-		return ProviderModerationResult{}, p.providerError(ModerationProviderErrorSchema, 0, err)
+	if len(response.Results) != 1 {
+		return ProviderModerationResult{}, p.providerError(ModerationProviderErrorSchema, 0, errors.New("Zhipu moderation requires exactly one result"))
 	}
 	r := response.Results[0]
 	if r.RiskLevel == nil || r.RiskTypes == nil {
@@ -256,6 +253,25 @@ func normalizeZhipuRiskTypes(values []string) ([]string, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return strings.Compare(out[i], out[j]) < 0 })
 	return out, nil
+}
+
+func decodeModerationJSON(body io.Reader, out any) error {
+	raw, err := io.ReadAll(io.LimitReader(body, (1<<20)+1))
+	if err != nil {
+		return err
+	}
+	if len(raw) > 1<<20 {
+		return errors.New("moderation response exceeds size limit")
+	}
+	if !utf8.Valid(raw) {
+		return errors.New("moderation response is not valid UTF-8")
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(out); err != nil {
+		return err
+	}
+	return requireJSONEOF(dec)
 }
 
 func requireJSONEOF(dec *json.Decoder) error {

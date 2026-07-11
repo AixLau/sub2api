@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -41,6 +42,7 @@ func TestModerationProviderOpenAIGoldenFixtures(t *testing.T) {
 	}{
 		{"pass", `{"results":[{"flagged":false,"category_scores":{"hate":0.64,"violence":0.1}}]}`, 200, ModerationLevelPass, ""},
 		{"flagged always rejects", `{"results":[{"flagged":true,"category_scores":{"hate":0.01}}]}`, 200, ModerationLevelReject, ""},
+		{"flagged unknown category rejects", `{"results":[{"flagged":true,"category_scores":{"future-risk":0.01}}]}`, 200, ModerationLevelReject, ""},
 		{"threshold hit rejects", `{"results":[{"flagged":false,"category_scores":{"hate":0.65}}]}`, 200, ModerationLevelReject, ""},
 		{"empty scores", `{"results":[{"flagged":false,"category_scores":{}}]}`, 200, "", ModerationProviderErrorSchema},
 		{"missing scores", `{"results":[{"flagged":false}]}`, 200, "", ModerationProviderErrorSchema},
@@ -70,6 +72,32 @@ func TestModerationProviderOpenAIGoldenFixtures(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Equal(t, tt.want, got.Level)
+		})
+	}
+}
+
+func TestModerationProviderRejectsInvalidRawUTF8(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		provider func(*http.Client) (ModerationProvider, error)
+		body     []byte
+	}{
+		{"openai", func(client *http.Client) (ModerationProvider, error) {
+			return NewOpenAIModerationProvider("https://api.openai.com", nil, client)
+		}, []byte{'{', '"', 'r', 'e', 's', 'u', 'l', 't', 's', '"', ':', '[', '{', '"', 'f', 'l', 'a', 'g', 'g', 'e', 'd', '"', ':', 'f', 'a', 'l', 's', 'e', ',', '"', 'c', 'a', 't', 'e', 'g', 'o', 'r', 'y', '_', 's', 'c', 'o', 'r', 'e', 's', '"', ':', '{', '"', 0xff, '"', ':', '0', '}', '}', ']', '}'}},
+		{"zhipu", func(client *http.Client) (ModerationProvider, error) {
+			return NewZhipuModerationProvider("https://open.bigmodel.cn", client)
+		}, []byte(`{"results":[{"risk_level":"PASS","risk_types":["` + string([]byte{0xff}) + `"]}]}`)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &http.Client{Transport: moderationRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(tc.body)), Request: req}, nil
+			})}
+			provider, err := tc.provider(client)
+			require.NoError(t, err)
+			got, err := provider.ModerateText(context.Background(), "moderation", "test-key", "hello")
+			require.True(t, IsModerationProviderError(err, ModerationProviderErrorSchema))
+			require.NotEqual(t, ModerationLevelPass, got.Level)
 		})
 	}
 }
