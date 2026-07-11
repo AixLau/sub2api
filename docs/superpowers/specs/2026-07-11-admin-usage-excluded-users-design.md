@@ -105,7 +105,7 @@ A breakdown response may update the UI only when its sequence is current and the
 - Deleted users remain selectable and visibly marked.
 - Unknown externally supplied IDs remain removable through their `#ID` fallback labels.
 - Invalid free text does not erase existing selections or emit a malformed filter.
-- Reset and clear invalidate pending autocomplete work before clearing picker UI.
+- Search-input clear invalidates pending autocomplete work, clears keyword/results/dropdown/loading, and preserves selected labels. Page reset additionally clears every selected label and its metadata.
 - Manual IDs append atomically; all-duplicate input and Enter-followed-by-blur do not emit redundant changes.
 - A stale request cannot replace statistics, chart arrays, or expanded breakdown data.
 - A failed latest request cannot leave pre-filter values presented as the current result.
@@ -120,7 +120,8 @@ Focused component tests will cover:
 - duplicate selection does not duplicate IDs or emit a redundant change;
 - removing one label preserves the other selections;
 - manual numeric IDs append atomically, use the fallback label, emit once across Enter/blur, and do not emit for all-duplicate input;
-- reset/clear invalidates a deferred autocomplete response and removes keyword, results, labels, metadata, dropdown, and loading state;
+- search-input clear invalidates a deferred autocomplete response and removes keyword, results, dropdown, and loading state while preserving selected labels and metadata;
+- page reset invalidates a deferred autocomplete response and removes keyword, results, selected labels, metadata, dropdown, and loading state;
 - the usage page sends the same serialized exclusions to list, statistics, model, snapshot, export/breakdown props, and ranking consumers;
 - statistics loading uses placeholders, valid empty results render zeroes, and latest-request failure renders the explicit failed state instead of old totals;
 - latest failures clear endpoint sources, trend/group data, each model source, and ranking rows according to their request ownership;
