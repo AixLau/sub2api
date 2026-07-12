@@ -24,7 +24,10 @@ func contentModerationSemanticGateCandidateForKeyword(cfg *ContentModerationConf
 	category := strings.ToLower(strings.TrimSpace(rule.Category))
 	if normalizeContentModerationSemanticReviewTrigger(cfg.SemanticReview.Trigger) != ContentModerationSemanticReviewTriggerAll &&
 		category != ContentModerationKeywordCategoryCyber && category != ContentModerationKeywordCategoryJailbreak &&
-		!strings.Contains(category, "cyber") && !strings.Contains(category, "jailbreak") {
+		!strings.Contains(category, "cyber") && !strings.Contains(category, "jailbreak") &&
+		!strings.EqualFold(strings.TrimSpace(rule.Action), ContentModerationKeywordActionBlock) &&
+		!strings.EqualFold(strings.TrimSpace(rule.Severity), ContentModerationKeywordSeverityHigh) &&
+		!strings.EqualFold(strings.TrimSpace(rule.Severity), ContentModerationKeywordSeverityCritical) {
 		return contentModerationSemanticGateCandidate{}, false
 	}
 	return contentModerationSemanticGateCandidate{
@@ -32,6 +35,21 @@ func contentModerationSemanticGateCandidateForKeyword(cfg *ContentModerationConf
 		Keyword:  strings.TrimSpace(rule.Keyword),
 		Category: category,
 		Severity: strings.TrimSpace(rule.Severity),
+	}, true
+}
+
+func contentModerationSemanticGateCandidateForAll(cfg *ContentModerationConfig, content ContentModerationInput, router ContentModerationSemanticReviewRouter) (contentModerationSemanticGateCandidate, bool) {
+	if cfg == nil || !cfg.SemanticReview.Enabled || router == nil || strings.TrimSpace(content.Text) == "" {
+		return contentModerationSemanticGateCandidate{}, false
+	}
+	if normalizeContentModerationSemanticReviewTrigger(cfg.SemanticReview.Trigger) != ContentModerationSemanticReviewTriggerAll {
+		return contentModerationSemanticGateCandidate{}, false
+	}
+	return contentModerationSemanticGateCandidate{
+		Input:    ContentModerationSemanticReviewInput{Text: buildContentModerationSemanticReviewInput(cfg.SemanticReview, content, "")},
+		Keyword:  "semantic_review",
+		Category: "semantic_review",
+		Severity: ContentModerationKeywordSeverityHigh,
 	}, true
 }
 
@@ -78,7 +96,7 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 		// continue to the required ordinary moderation API in hybrid mode.
 		return nil, false
 	}
-	result = normalizeSemanticReviewResult(result)
+	result, policyOverride := applySemanticReviewPolicy(result)
 	category := "semantic_review"
 	if len(result.Categories) > 0 && strings.TrimSpace(result.Categories[0]) != "" {
 		category = result.Categories[0]
@@ -90,7 +108,7 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 	if score > 1 {
 		score = 1
 	}
-	metadata := contentModerationSemanticGateMetadata(cfg, content, input.Protocol, candidate, result)
+	metadata := contentModerationSemanticGateMetadata(cfg, content, input.Protocol, candidate, result, policyOverride)
 	categoryScores := map[string]float64{"semantic_review": score}
 
 	switch result.Verdict {
@@ -138,7 +156,7 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 	return nil, false
 }
 
-func contentModerationSemanticGateMetadata(cfg *ContentModerationConfig, content ContentModerationInput, protocol string, candidate contentModerationSemanticGateCandidate, result ContentModerationSemanticReviewResult) string {
+func contentModerationSemanticGateMetadata(cfg *ContentModerationConfig, content ContentModerationInput, protocol string, candidate contentModerationSemanticGateCandidate, result ContentModerationSemanticReviewResult, policyOverride bool) string {
 	metadata := map[string]any{}
 	base := contentModerationHitLogMetadata(cfg, content, contentModerationMatchedSource(protocol, candidate.Keyword, content))
 	if strings.TrimSpace(base) != "" {
@@ -146,11 +164,16 @@ func contentModerationSemanticGateMetadata(cfg *ContentModerationConfig, content
 	}
 	metadata["semantic_review_model"] = result.Model
 	metadata["semantic_review_verdict"] = result.Verdict
+	metadata["semantic_review_intent"] = result.Intent
+	metadata["semantic_review_target"] = result.Target
+	metadata["semantic_review_authorization"] = result.Authorization
 	metadata["semantic_review_categories"] = result.Categories
 	metadata["semantic_review_confidence"] = result.Confidence
 	metadata["semantic_review_severity"] = result.Severity
 	metadata["semantic_review_operationality"] = result.Operationality
+	metadata["semantic_review_executability"] = result.Executability
 	metadata["semantic_review_reason_codes"] = result.ReasonCodes
+	metadata["semantic_review_policy_override"] = policyOverride
 	metadata["semantic_review_candidate"] = candidate.Keyword
 	raw, err := json.Marshal(metadata)
 	if err != nil {

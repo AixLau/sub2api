@@ -232,6 +232,47 @@ data: [DONE]
 	require.Equal(t, "review", doneResult.Verdict)
 }
 
+func TestParseSemanticReviewRiskDimensions(t *testing.T) {
+	result, err := parseSemanticReviewModelOutput(`{"verdict":"review","intent":"harmful","target":"third_party","authorization":"unauthorized","severity":"critical","confidence":0.97,"operationality":"actionable","executability":"direct","categories":["unauthorized_access"],"reason_codes":["no_authorization"]}`)
+	require.NoError(t, err)
+	require.Equal(t, "harmful", result.Intent)
+	require.Equal(t, "third_party", result.Target)
+	require.Equal(t, "unauthorized", result.Authorization)
+	require.Equal(t, "actionable", result.Operationality)
+	require.Equal(t, "direct", result.Executability)
+}
+
+func TestSemanticReviewPolicyRejectsExplicitUnauthorizedExecutableAbuse(t *testing.T) {
+	result, overridden := applySemanticReviewPolicy(ContentModerationSemanticReviewResult{
+		Verdict:        "review",
+		Intent:         "harmful",
+		Target:         "third_party",
+		Authorization:  "unauthorized",
+		Operationality: "actionable",
+		Executability:  "direct",
+		Categories:     []string{"unauthorized_access"},
+	})
+
+	require.True(t, overridden)
+	require.Equal(t, "reject", result.Verdict)
+	require.Contains(t, result.ReasonCodes, "semantic_policy_reject")
+}
+
+func TestSemanticReviewPolicyAllowsAuthorizedCTFLabRequest(t *testing.T) {
+	result, overridden := applySemanticReviewPolicy(ContentModerationSemanticReviewResult{
+		Verdict:        "allow",
+		Intent:         "defensive",
+		Target:         "authorized_lab",
+		Authorization:  "authorized",
+		Operationality: "actionable",
+		Executability:  "direct",
+		Categories:     []string{"cyber"},
+	})
+
+	require.False(t, overridden)
+	require.Equal(t, "allow", result.Verdict)
+}
+
 func TestEnqueueSemanticReviewEncryptsInputAndStripsAPIKeys(t *testing.T) {
 	outbox := &contentModerationTestOutboxRepo{}
 	svc := &ContentModerationService{

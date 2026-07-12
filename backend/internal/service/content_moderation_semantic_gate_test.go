@@ -17,6 +17,94 @@ type contentModerationSemanticReviewRouterStub struct {
 	input  ContentModerationSemanticReviewInput
 }
 
+func TestContentModerationSemanticCandidateLocalReviewIncludesBlockingHighRiskKeyword(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.SemanticReview.Enabled = true
+	cfg.SemanticReview.Trigger = ContentModerationSemanticReviewTriggerLocalReview
+	router := &contentModerationSemanticReviewRouterStub{}
+
+	candidate, ok := contentModerationSemanticGateCandidateForKeyword(cfg, ContentModerationInput{Text: "generate explicit sexual content"}, ContentModerationKeywordRule{
+		Keyword:  "explicit sexual",
+		Category: ContentModerationKeywordCategoryOther,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}, router)
+
+	require.True(t, ok)
+	require.Equal(t, "other", candidate.Category)
+}
+
+func TestContentModerationSemanticCandidateAllDoesNotRequireKeyword(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.SemanticReview.Enabled = true
+	cfg.SemanticReview.Trigger = ContentModerationSemanticReviewTriggerAll
+	router := &contentModerationSemanticReviewRouterStub{}
+
+	candidate, ok := contentModerationSemanticGateCandidateForAll(cfg, ContentModerationInput{Text: "a request without a configured keyword"}, router)
+
+	require.True(t, ok)
+	require.Equal(t, "semantic_review", candidate.Category)
+}
+
+func TestContentModerationCheck_TriggerAllAuditsMissWithoutKeyword(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.BlockedKeywords = []string{"configured-keyword-that-does-not-match"}
+	cfg.SemanticReview = ContentModerationSemanticReviewConfig{
+		Enabled:      true,
+		Trigger:      ContentModerationSemanticReviewTriggerAll,
+		PrimaryModel: ContentModerationSemanticReviewPrimaryModel,
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	router := &contentModerationSemanticReviewRouterStub{
+		result: ContentModerationSemanticReviewResult{
+			Verdict:        "reject",
+			Intent:         "harmful",
+			Target:         "third_party",
+			Authorization:  "unauthorized",
+			Severity:       "critical",
+			Confidence:     0.99,
+			Operationality: "actionable",
+			Executability:  "direct",
+			Categories:     []string{"unauthorized_access"},
+		},
+	}
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetSemanticReviewRouter(router)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Endpoint: "/v1/chat/completions",
+		Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"an ordinary request without any configured keyword"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionSemanticReviewReject, decision.Action)
+	require.Equal(t, "semantic_review", decision.MatchedKeyword)
+	require.Equal(t, 1, router.calls)
+	require.Contains(t, router.input.Text, "without any configured keyword")
+}
+
 func (s *contentModerationSemanticReviewRouterStub) Review(_ context.Context, _ ContentModerationSemanticReviewConfig, input ContentModerationSemanticReviewInput) (ContentModerationSemanticReviewResult, error) {
 	s.calls++
 	s.input = input

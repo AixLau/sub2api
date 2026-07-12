@@ -6,7 +6,7 @@
 
 1. 本地规则负责低延迟、确定性的强拦截，覆盖破限提示、越权、凭证窃取、恶意代码和明确的入侵操作。
 2. 现有内容安全模型继续负责色情、暴力、自残等分类；它的结果不由语义模型替代。
-3. 内置 OpenAI/Codex 账号池负责补充识别破限、逆向、凭证窃取和渗透意图。可靠 outbox 负责后置复核、重试和审计落库。
+3. 内置 OpenAI/Codex 账号池负责补充识别破限、逆向、凭证窃取和渗透意图。语义复核必须同时评估意图、操作性、目标、授权和可执行性；可靠 outbox 负责后置复核、重试和审计落库。
 
 后置复核发生在请求内容已经被允许之后，不能撤回已经转发给上游的请求。`pre_block` 模式下，命中本地 cyber/jailbreak 候选时还可以进入语义模型的同步候选复核；`observe` 模式只做后置复核，不影响当前请求。
 
@@ -61,7 +61,7 @@ Spark 账号使用仓库已有的 OpenAI 调度器。Spark 额度窗口刷新复
 
 ## 输入成本控制
 
-语义模型不接收完整对话历史。`local_review` 仅抽取命中本地规则的 source，并截取关键词附近文本；`all` 仅抽取最近一条 user source 和最近一条 tool/function source。system、developer 和 assistant 历史默认不发送，除非其自身触发本地规则。每段最多约 1200 字符、最多 3 段，并受 `max_input_runes` 总预算硬限制；缺少结构化 source 的旧协议才回退到截断后的聚合文本。
+语义模型不接收完整对话历史。`local_review` 抽取本地高风险候选 source，并截取关键词附近文本；候选包括 cyber/jailbreak、block 动作或 high/critical 严重度规则。`all` 在同步 `pre_block` 路径中对符合范围的文本进行语义复核，即使没有配置关键词；异步路径仅抽取最近一条 user source 和最近一条 tool/function source。system、developer 和 assistant 历史默认不发送，除非其自身触发本地规则。每段最多约 1200 字符、最多 3 段，并受 `max_input_runes` 总预算硬限制；缺少结构化 source 的旧协议才回退到截断后的聚合文本。
 
 ## 结构化结果
 
@@ -70,17 +70,23 @@ Spark 账号使用仓库已有的 OpenAI 调度器。Spark 额度窗口刷新复
 ```json
 {
   "verdict": "allow|review|reject",
+  "intent": "benign|defensive|harmful|ambiguous",
+  "target": "none|self_owned|authorized_lab|third_party|external_service|unknown",
+  "authorization": "authorized|unauthorized|unclear|not_applicable",
   "categories": ["jailbreak", "credential_theft"],
   "severity": "low|medium|high|critical",
   "confidence": 0.0,
   "operationality": "none|conceptual|actionable",
+  "executability": "none|indirect|direct",
   "reason_codes": ["actionable_bypass_request"]
 }
 ```
 
-- `allow`：良性、防御性、教育性或非操作性内容。
-- `review`：授权或意图无法确定，写入待人工复核记录。
-- `reject`：明确的可操作性违规意图，写入命中记录；同步候选复核场景按配置拦截，后置场景只影响审计和后续风控。
+- `allow`：良性、防御性、教育性、已授权实验室或非操作性内容。
+- `review`：目标、授权或意图无法确定，写入待人工复核记录。
+- `reject`：明确的恶意意图，且具有可操作、可直接执行的能力，或明确针对未授权目标；同步候选复核场景按配置拦截，后置场景只影响审计和后续风控。
+
+网关还会对模型结果做确定性收敛：当结果包含 `intent=harmful`、`operationality=actionable`、`executability=direct` 且 `authorization=unauthorized` 时，即使模型原始 verdict 是 `allow` 或 `review`，也升级为 `reject`。授权的自有系统、隔离实验室和 CTF 不因关键词单独命中而自动升级；授权不明确时保留 `review`。
 
 模型输出解析同时支持 Responses JSON 和 Codex SSE；空响应、非法 JSON 和 HTTP 临时错误按可恢复失败处理，不把模型的自由文本当成放行依据。
 

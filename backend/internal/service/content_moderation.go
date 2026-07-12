@@ -1978,9 +1978,11 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 				if promptDecision, terminal := s.promptFilterDecision(ctx, input, cfg, content, hashText); terminal {
 					return promptDecision, nil
 				}
-				if candidate, ok := contentModerationSemanticGateCandidateForPromptFilter(cfg, content, s.semanticReviewRouter); ok {
-					if semanticDecision, terminal := s.semanticReviewGate(ctx, input, cfg, content, hashText, candidate); terminal {
-						return semanticDecision, nil
+				if normalizeContentModerationSemanticReviewTrigger(cfg.SemanticReview.Trigger) != ContentModerationSemanticReviewTriggerAll {
+					if candidate, ok := contentModerationSemanticGateCandidateForPromptFilter(cfg, content, s.semanticReviewRouter); ok {
+						if semanticDecision, terminal := s.semanticReviewGate(ctx, input, cfg, content, hashText, candidate); terminal {
+							return semanticDecision, nil
+						}
 					}
 				}
 			}
@@ -1991,6 +1993,11 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			}
 		}
 		if !cfg.externalModerationRequired() {
+			if candidate, ok := contentModerationSemanticGateCandidateForAll(cfg, content, s.semanticReviewRouter); ok {
+				if semanticDecision, terminal := s.semanticReviewGate(ctx, input, cfg, content, hashText, candidate); terminal {
+					return semanticDecision, nil
+				}
+			}
 			s.recordPreBlockSyncMetric(0, ContentModerationActionAllow)
 			slog.Info("content_moderation.skip_external_moderation_rule_only",
 				"user_id", input.UserID,
@@ -2033,8 +2040,15 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	}
 
 	decision := s.checkSync(ctx, input, cfg, content, hashText, nil, true)
-	if localKeywordMatch != nil && decision != nil && !decision.Blocked && decision.Action != ContentModerationActionError {
-		if candidate, ok := contentModerationSemanticGateCandidateForKeyword(cfg, content, *localKeywordMatch, s.semanticReviewRouter); ok {
+	if decision != nil && !decision.Blocked && decision.Action != ContentModerationActionError {
+		var candidate contentModerationSemanticGateCandidate
+		var ok bool
+		if localKeywordMatch != nil {
+			candidate, ok = contentModerationSemanticGateCandidateForKeyword(cfg, content, *localKeywordMatch, s.semanticReviewRouter)
+		} else {
+			candidate, ok = contentModerationSemanticGateCandidateForAll(cfg, content, s.semanticReviewRouter)
+		}
+		if ok {
 			if semanticDecision, terminal := s.semanticReviewGate(ctx, input, cfg, content, hashText, candidate); terminal {
 				return semanticDecision, nil
 			}
