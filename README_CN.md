@@ -219,6 +219,8 @@ Nginx 默认会丢弃名称中含下划线的请求头（如 `session_id`），�
 
 ## 部署方式
 
+完整的部署文件选择、Compose 升级、自定义镜像远端发布、备份、回滚和故障排查说明见 [`deploy/README.md`](deploy/README.md)。下方保留快速入口。
+
 ### 方式一：脚本安装（推荐）
 
 一键安装脚本，自动从 GitHub Releases 下载预编译的二进制文件。

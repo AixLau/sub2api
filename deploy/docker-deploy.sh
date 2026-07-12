@@ -8,10 +8,10 @@
 #   - Creates necessary data directories
 #
 # After running this script, you can start services with:
-#   docker-compose up -d
+#   docker compose up -d
 # =============================================================================
 
-set -e
+set -euo pipefail
 
 # Colors for output
 RED='\033[0;31m'
@@ -65,7 +65,7 @@ main() {
     fi
 
     # Check if deployment already exists
-    if [ -f "docker-compose.yml" ] && [ -f ".env" ]; then
+    if [ -e "docker-compose.yml" ] || [ -e ".env" ] || [ -e ".env.example" ]; then
         print_warning "Deployment files already exist in current directory."
         read -p "Overwrite existing files? (y/N): " -r
         echo
@@ -135,13 +135,8 @@ main() {
     echo "  Preparation Complete!"
     echo "=========================================="
     echo ""
-    echo "Generated secure credentials:"
-    echo "  POSTGRES_PASSWORD:     ${POSTGRES_PASSWORD}"
-    echo "  JWT_SECRET:            ${JWT_SECRET}"
-    echo "  TOTP_ENCRYPTION_KEY:   ${TOTP_ENCRYPTION_KEY}"
-    echo ""
-    print_warning "These credentials have been saved to .env file."
-    print_warning "Please keep them secure and do not share publicly!"
+    print_success "Generated credentials were saved to .env (mode 0600)."
+    print_warning "Do not print, share, or commit the .env file."
     echo ""
     echo "Directory structure:"
     echo "  docker-compose.yml        - Docker Compose configuration"
@@ -154,10 +149,10 @@ main() {
     echo "Next steps:"
     echo "  1. (Optional) Edit .env to customize configuration"
     echo "  2. Start services:"
-    echo "     docker-compose up -d"
+    echo "     docker compose up -d"
     echo ""
     echo "  3. View logs:"
-    echo "     docker-compose logs -f sub2api"
+    echo "     docker compose logs -f sub2api"
     echo ""
     echo "  4. Access Web UI:"
     echo "     http://localhost:8080"

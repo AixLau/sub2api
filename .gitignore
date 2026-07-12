@@ -133,6 +133,9 @@ deploy/docker-compose.override.yml
 .superpowers/
 vite.config.js
 docs/*
+!docs/deployment/
+docs/deployment/*
+!docs/deployment/README.md
 !docs/PAYMENT.md
 !docs/PAYMENT_CN.md
 !docs/ADMIN_PAYMENT_INTEGRATION_API.md

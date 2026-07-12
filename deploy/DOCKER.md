@@ -1,76 +1,82 @@
 # Sub2API Docker Image
 
-Sub2API is an AI API Gateway Platform for distributing and managing AI product subscription API quotas.
+The published image contains the Sub2API backend, embedded web frontend, runtime resources, and PostgreSQL client tools used by the data-management features.
 
-## Quick Start
+## Recommended Use
+
+Use the maintained Compose files instead of assembling an application, PostgreSQL, and Redis stack from an outdated inline example:
+
+- `docker-compose.local.yml`: complete stack with bind-mounted data directories
+- `docker-compose.yml`: complete stack with named volumes
+- `docker-compose.standalone.yml`: application only, using external PostgreSQL and Redis
+
+See [README.md](./README.md) for setup, upgrade, rollback, backup, and health-check instructions.
+
+## Standalone Container
+
+When PostgreSQL and Redis already exist, the minimum shape is:
 
 ```bash
 docker run -d \
   --name sub2api \
-  -p 8080:8080 \
-  -e DATABASE_URL="postgres://user:pass@host:5432/sub2api" \
-  -e REDIS_URL="redis://host:6379" \
+  --restart unless-stopped \
+  -p 127.0.0.1:8080:8080 \
+  -e AUTO_SETUP=true \
+  -e SERVER_HOST=0.0.0.0 \
+  -e SERVER_PORT=8080 \
+  -e DATABASE_HOST=postgres.example.internal \
+  -e DATABASE_PASSWORD='<set-at-runtime>' \
+  -e REDIS_HOST=redis.example.internal \
+  -e JWT_SECRET='<set-at-runtime>' \
+  -e TOTP_ENCRYPTION_KEY='<set-at-runtime>' \
+  -v sub2api_data:/app/data \
   weishaw/sub2api:latest
 ```
 
-## Docker Compose
+Prefer `--env-file` over putting secrets in shell history. Never commit the env file.
 
-```yaml
-version: '3.8'
+## Health Check
 
-services:
-  sub2api:
-    image: weishaw/sub2api:latest
-    ports:
-      - "8080:8080"
-    environment:
-      - DATABASE_URL=postgres://postgres:postgres@db:5432/sub2api?sslmode=disable
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      - db
-      - redis
+The image defines a Docker health check against the container's `/health` endpoint. Verify both Docker state and HTTP response:
 
-  db:
-    image: postgres:15-alpine
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=sub2api
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  redis:
-    image: redis:7-alpine
-    volumes:
-      - redis_data:/data
-
-volumes:
-  postgres_data:
-  redis_data:
+```bash
+docker inspect sub2api --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}'
+curl -fsS http://127.0.0.1:8080/health
 ```
 
-## Environment Variables
+Expected HTTP response:
 
-| Variable | Description | Required | Default |
-|----------|-------------|----------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | Yes | - |
-| `REDIS_URL` | Redis connection string | Yes | - |
-| `PORT` | Server port | No | `8080` |
-| `GIN_MODE` | Gin framework mode (`debug`/`release`) | No | `release` |
+```json
+{"status":"ok"}
+```
 
-## Supported Architectures
+## Tags And Architectures
 
-- `linux/amd64`
-- `linux/arm64`
+- `latest`: latest stable release
+- `x.y.z`: exact release
+- `x.y`: latest patch in a minor release
+- `x`: latest minor in a major release
+- Supported release architectures: `linux/amd64`, `linux/arm64`
 
-## Tags
+For production, pin an exact version instead of relying on `latest` so rollback remains deterministic.
 
-- `latest` - Latest stable release
-- `x.y.z` - Specific version
-- `x.y` - Latest patch of minor version
-- `x` - Latest minor of major version
+## Build Locally
+
+```bash
+commit=$(git rev-parse --short HEAD)
+version=$(tr -d '\r\n' < backend/cmd/server/VERSION)
+docker buildx build \
+  --platform linux/amd64 \
+  --build-arg "VERSION=${version}" \
+  --build-arg "COMMIT=${commit}" \
+  --load \
+  -t "sub2api:${commit}-amd64" \
+  -f Dockerfile .
+```
+
+Use `deploy/remote-compose-deploy.sh` to publish that commit to an existing Compose server without building on the server.
 
 ## Links
 
-- [GitHub Repository](https://github.com/weishaw/sub2api)
-- [Documentation](https://github.com/weishaw/sub2api#readme)
+- [GitHub repository](https://github.com/Wei-Shaw/sub2api)
+- [Deployment guide](./README.md)
