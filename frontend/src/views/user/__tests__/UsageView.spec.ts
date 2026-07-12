@@ -94,7 +94,6 @@ vi.mock('vue-i18n', async () => {
 })
 
 const simpleStub = { template: '<div><slot /></div>' }
-const chartStub = { template: '<div />' }
 const usageTableStub = {
   props: ['columns', 'showAccountBilling', 'showUpstreamEndpoint', 'showCostBreakdown'],
   template: '<div class="usage-table" :data-columns="JSON.stringify((columns || []).map((col) => col.key))" :data-show-account-billing="String(showAccountBilling)" :data-show-upstream-endpoint="String(showUpstreamEndpoint)" :data-show-cost-breakdown="String(showCostBreakdown)" />',
