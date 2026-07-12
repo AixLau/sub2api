@@ -5508,7 +5508,7 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		PromptFilterMode:               cfg.PromptFilterMode,
 		PromptFilterThreshold:          cfg.PromptFilterThreshold,
 		PromptFilterStrictThreshold:    cfg.PromptFilterStrictThreshold,
-		PromptFilterSourceRevision:     promptfilter.BuiltinSourceRevision,
+		PromptFilterSourceRevision:     promptfilter.BuiltinRuleSetRevision,
 		PromptFilterSourceURL:          promptfilter.BuiltinSourceURL,
 		PromptFilterSourceAuthor:       promptfilter.BuiltinSourceAuthor,
 		PromptFilterSourcePermission:   promptfilter.BuiltinSourcePermission,

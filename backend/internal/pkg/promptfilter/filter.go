@@ -13,8 +13,11 @@ import (
 const (
 	// BuiltinSourceRevision identifies the exact upstream rule set used here.
 	BuiltinSourceRevision = "codex2api@6793e0b09fe170895878f73f256a3d7ee7e5a08b"
-	BuiltinSourceURL      = "https://github.com/james-6-23/codex2api/tree/6793e0b09fe170895878f73f256a3d7ee7e5a08b/security/promptfilter"
-	BuiltinSourceAuthor   = "james-6-23/codex2api"
+	// BuiltinRuleSetRevision identifies the upstream rules plus local supplemental
+	// cyber and prompt-injection rules maintained in this repository.
+	BuiltinRuleSetRevision = BuiltinSourceRevision + "+" + supplementalSourceRevision
+	BuiltinSourceURL       = "https://github.com/james-6-23/codex2api/tree/6793e0b09fe170895878f73f256a3d7ee7e5a08b/security/promptfilter"
+	BuiltinSourceAuthor    = "james-6-23/codex2api"
 	// The upstream rule set is redistributed in this derivative with permission from its author.
 	BuiltinSourcePermission = "redistributed with permission from the upstream author"
 )
@@ -98,14 +101,27 @@ type Engine struct {
 var engineCache sync.Map // map[string]*Engine
 
 func BuiltinPatternConfigs() []PatternConfig {
-	out := make([]PatternConfig, len(defaultPatternConfigs))
-	copy(out, defaultPatternConfigs)
+	out := builtinPatternConfigs()
 	for idx := range out {
 		if out[idx].Regex == "" {
 			out[idx].Regex = out[idx].Pattern
 		}
 		out[idx].Pattern = ""
-		out[idx].SourceRevision = BuiltinSourceRevision
+		if strings.TrimSpace(out[idx].SourceRevision) == "" {
+			out[idx].SourceRevision = BuiltinSourceRevision
+		}
+	}
+	return out
+}
+
+func builtinPatternConfigs() []PatternConfig {
+	out := make([]PatternConfig, 0, len(defaultPatternConfigs)+len(supplementalPatternConfigs))
+	out = append(out, defaultPatternConfigs...)
+	out = append(out, supplementalPatternConfigs...)
+	for idx := len(defaultPatternConfigs); idx < len(out); idx++ {
+		if strings.TrimSpace(out[idx].SourceRevision) == "" {
+			out[idx].SourceRevision = supplementalSourceRevision
+		}
 	}
 	return out
 }
@@ -122,9 +138,12 @@ func NewEngine(cfg Config) (*Engine, error) {
 	for _, name := range cfg.DisabledPatterns {
 		disabled[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
 	}
-	merged := make([]PatternConfig, 0, len(defaultPatternConfigs)+len(cfg.CustomPatterns))
-	for _, pattern := range defaultPatternConfigs {
-		pattern.SourceRevision = BuiltinSourceRevision
+	builtins := builtinPatternConfigs()
+	merged := make([]PatternConfig, 0, len(builtins)+len(cfg.CustomPatterns))
+	for _, pattern := range builtins {
+		if strings.TrimSpace(pattern.SourceRevision) == "" {
+			pattern.SourceRevision = BuiltinSourceRevision
+		}
 		if pattern.Regex == "" {
 			pattern.Regex = pattern.Pattern
 		}
@@ -179,7 +198,7 @@ func Inspect(text string, cfg Config) Verdict {
 		Threshold:       cfg.Threshold,
 		StrictThreshold: cfg.StrictThreshold,
 		ExtractedRunes:  utf8.RuneCountInString(text),
-		SourceRevision:  BuiltinSourceRevision,
+		SourceRevision:  BuiltinRuleSetRevision,
 	}
 	if cfg.Mode == ModeOff || strings.TrimSpace(text) == "" {
 		return verdict
@@ -200,7 +219,7 @@ func (e *Engine) inspect(text string) Verdict {
 		Threshold:       cfg.Threshold,
 		StrictThreshold: cfg.StrictThreshold,
 		ExtractedRunes:  utf8.RuneCountInString(text),
-		SourceRevision:  BuiltinSourceRevision,
+		SourceRevision:  BuiltinRuleSetRevision,
 	}
 	scanText := normalizeForScan(limitScanText(text, cfg.MaxTextLength))
 	if utf8.RuneCountInString(scanText) < 3 {
@@ -314,7 +333,10 @@ func operationalPattern(name string) bool {
 	case "credential_theft", "evasion", "operational_remote_access_request", "operational_exploit_request",
 		"reverse_engineering_secret_extraction", "reverse_engineering_license_bypass", "reverse_engineering_anti_debug_bypass",
 		"frida_hook_abuse", "license_cracking", "data_exfiltration", "ransomware_deployment", "credential_dumping",
-		"token_theft", "mass_exploitation":
+		"token_theft", "mass_exploitation", "jailbreak_operational_request", "prompt_injection_override",
+		"system_prompt_extraction", "agent_tool_permission_bypass", "web_exploitation_operational_request",
+		"binary_exploitation_operational_request", "crypto_key_recovery_request", "reverse_engineering_operational_request",
+		"pentest_operational_request", "credential_attack_operational_request":
 		return true
 	default:
 		return false
