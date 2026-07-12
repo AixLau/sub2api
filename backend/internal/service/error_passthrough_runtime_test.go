@@ -89,6 +89,34 @@ func TestOpenAIHandleErrorResponse_NoRuleKeepsDefault(t *testing.T) {
 	assert.Equal(t, "上游请求失败", errField["message"])
 }
 
+func TestOpenAIHandleErrorResponse_BadRequestExposesUpstreamMessage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	svc := &OpenAIGatewayService{}
+	upstreamMessage := "Invalid value: 'max'. Supported values are: 'none', 'minimal', 'low', 'medium', 'high', and 'xhigh'."
+	respBody := []byte(`{"error":{"message":"` + upstreamMessage + `","type":"invalid_request_error","param":"reasoning.effort","code":"invalid_value"}}`)
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Body:       io.NopCloser(bytes.NewReader(respBody)),
+		Header:     http.Header{},
+	}
+	account := &Account{ID: 13, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+	_, err := svc.handleErrorResponse(context.Background(), resp, c, account, nil)
+	require.Error(t, err)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	errField, ok := payload["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "invalid_request_error", errField["type"])
+	assert.Equal(t, upstreamMessage, errField["message"])
+	assert.NotContains(t, rec.Body.String(), "上游请求失败")
+}
+
 func TestOpenAIHandleErrorResponse_CodexUnsupportedChatGPTModelReturnsBadRequest(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

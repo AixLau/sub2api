@@ -262,6 +262,13 @@ func openAIClientErrorForUpstream(c *gin.Context, upstreamStatus int, upstreamMs
 		return http.StatusBadRequest, "invalid_request_error", "该模型已被 OpenAI 官方弃用，请切换最新模型", true
 	}
 
+	// A non-transient upstream 400 is a client validation error. Returning it as
+	// 502/upstream_error makes Codex retry the same invalid request, often several
+	// times, while hiding the actionable validation message from the client.
+	if upstreamStatus == http.StatusBadRequest && strings.TrimSpace(upstreamMsg) != "" {
+		return http.StatusBadRequest, "invalid_request_error", upstreamMsg, true
+	}
+
 	errType := strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, "error.type").String()))
 	errMsg := strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, "error.message").String()))
 
