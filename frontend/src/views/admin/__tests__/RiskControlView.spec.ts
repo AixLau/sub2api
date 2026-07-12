@@ -96,10 +96,10 @@ const baseConfig = (): ContentModerationConfig => ({
   sample_rate: 100,
   all_groups: true,
   group_ids: [],
-	account_scope: 'all',
-	account_ids: [],
+  account_scope: 'all',
+  account_ids: [],
   record_non_hits: false,
-  audit_scope: 'all_context',
+  audit_scope: 'user_only',
   store_input_excerpt: true,
   search_input_excerpt: false,
   worker_count: 4,
@@ -117,7 +117,18 @@ const baseConfig = (): ContentModerationConfig => ({
   blocked_keywords: [],
   keyword_rules: [],
   keyword_blocking_mode: 'keyword_and_api',
-  engine_mode: 'hybrid',
+  engine_mode: 'candidate_only',
+  decision_cache_enabled: true,
+  decision_cache_ttl_seconds: 600,
+  candidate_fragment_runes: 2000,
+  semantic_review: {
+    enabled: true,
+    trigger: 'local_review',
+    primary_model: 'gpt-5.3-codex-spark',
+    fallback_models: ['gpt-5-mini'],
+    timeout_ms: 20000,
+    max_input_runes: 2000,
+  },
   thresholds: {
     harassment: 0.98,
     sexual: 0.65,
@@ -291,7 +302,7 @@ describe('admin RiskControlView', () => {
     }))
   })
 
-  it('describes hybrid external moderation as optional when local audit protects', async () => {
+  it('describes platform semantic fallback when ordinary moderation is not configured', async () => {
     getStatus.mockResolvedValue({
       ...runtimeStatus(),
       effective_protection: {
@@ -299,11 +310,11 @@ describe('admin RiskControlView', () => {
         risk_control_enabled: true,
         moderation_enabled: true,
         mode: 'pre_block',
-        audit_scope: 'all_context',
+        audit_scope: 'user_only',
         public_fail_strategy: 'closed',
         group_coverage: 'all_public_groups',
         model_coverage: 'all',
-        engine_mode: 'hybrid',
+        engine_mode: 'candidate_only',
         external_api_configured: false,
         external_api_healthy: false,
         external_api_usable_key_count: 0,
@@ -331,7 +342,7 @@ describe('admin RiskControlView', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('admin.riskControl.protectionExternalOptionalNotConfigured')
+    expect(wrapper.text()).toContain('admin.riskControl.protectionExternalSemanticFallback')
     expect(wrapper.text()).not.toContain('admin.riskControl.protectionExternalNotConfigured')
   })
 
@@ -722,7 +733,7 @@ describe('admin RiskControlView', () => {
     expect(wrapper.text()).toContain('child sexual abuse material')
     expect(wrapper.text()).toContain('minor_safety')
     expect(wrapper.text()).toContain('critical')
-    expect(wrapper.text()).toContain('block')
+    expect(wrapper.text()).not.toContain('admin.riskControl.keywordAction')
     expect(wrapper.text()).toContain('admin.riskControl.keywordRuleEnabled')
     expect(wrapper.text()).toContain('suicide method')
     expect(wrapper.text()).toContain('self_harm')
@@ -733,6 +744,15 @@ describe('admin RiskControlView', () => {
 
     expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
       keyword_rules: config.keyword_rules,
+      engine_mode: 'candidate_only',
+      keyword_blocking_mode: 'keyword_and_api',
+      record_non_hits: false,
+      audit_scope: 'user_only',
+      semantic_review: expect.objectContaining({
+        enabled: true,
+        trigger: 'local_review',
+        max_input_runes: 2000,
+      }),
     }))
   })
 

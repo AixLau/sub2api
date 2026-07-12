@@ -100,13 +100,13 @@ func TestContentModerationRepositoryCreateLog_UsesValidUpsertReturningSQL(t *tes
 		if expectedSQL != "content_moderation_create_log" {
 			return sqlmock.QueryMatcherRegexp.Match(expectedSQL, actualSQL)
 		}
-		if strings.Contains(actualSQL, "EXCLUDED.email_sent\n) RETURNING") {
+		if strings.Contains(actualSQL, "EXCLUDED.duplicate_retry_count\n) RETURNING") {
 			return fmt.Errorf("unexpected closing parenthesis before RETURNING: %s", actualSQL)
 		}
 		if !strings.Contains(actualSQL, "ON CONFLICT (decision_id) WHERE decision_id <> '' DO UPDATE SET") {
 			return fmt.Errorf("expected partial-index upsert clause, got: %s", actualSQL)
 		}
-		if !strings.Contains(actualSQL, "EXCLUDED.email_sent\nRETURNING id, created_at") {
+		if !strings.Contains(actualSQL, "EXCLUDED.duplicate_retry_count)\nRETURNING id, created_at") {
 			return fmt.Errorf("expected RETURNING to follow the final assignment, got: %s", actualSQL)
 		}
 		return nil
@@ -176,6 +176,9 @@ func TestContentModerationRepositoryCreateLog_UsesValidUpsertReturningSQL(t *tes
 			log.MatchedKeyword, log.KeywordCategory, log.KeywordSeverity, log.KeywordAction, log.EffectiveKeywordAction,
 			log.RiskContextType, log.RiskContextReason, log.ReviewStatus, log.ReviewNote, reviewedBy, reviewedAt,
 			log.ViolationCount, log.AutoBanned, log.EmailSent, queueDelay,
+			log.DecisionSource, log.ModerationProvider, log.ModerationModel, log.SourceOrigin,
+			log.SelectedSource, log.SelectedSourceRole, log.SelectedFragmentRunes,
+			log.DecisionCacheHit, log.DuplicateRetryCount, log.UserViolationEligible,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(42), now))
 
@@ -233,7 +236,7 @@ func TestContentModerationRepositoryListLogsIncludesRawRequestMetadata(t *testin
 	now := time.Now()
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM content_moderation_logs l WHERE l.id IS NOT NULL")).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery(regexp.QuoteMeta("LEFT JOIN content_moderation_raw_request_snapshots rs ON rs.log_id = l.id WHERE l.id IS NOT NULL")).
+	mock.ExpectQuery(regexp.QuoteMeta("LEFT JOIN content_moderation_raw_request_snapshots rs ON rs.log_id = l.id LEFT JOIN content_moderation_evidence_snapshots es ON es.log_id = l.id WHERE l.id IS NOT NULL")).
 		WithArgs(20, 0).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "request_id", "user_id", "user_email", "api_key_id", "api_key_name", "group_id", "group_name",
@@ -243,7 +246,9 @@ func TestContentModerationRepositoryListLogsIncludesRawRequestMetadata(t *testin
 			"matched_keyword", "keyword_category", "keyword_severity", "keyword_action", "effective_keyword_action",
 			"risk_context_type", "risk_context_reason", "review_status", "review_note", "reviewed_by", "reviewed_at",
 			"violation_count", "auto_banned", "email_sent", "user_status", "queue_delay_ms",
-			"raw_request_available", "raw_request_bytes", "raw_request_truncated", "created_at",
+			"raw_request_available", "raw_request_bytes", "raw_request_truncated",
+			"decision_source", "moderation_provider", "moderation_model", "source_origin", "selected_source", "selected_source_role",
+			"selected_fragment_runes", "decision_cache_hit", "duplicate_retry_count", "user_violation_eligible", "evidence_available", "created_at",
 		}).AddRow(
 			int64(42), "req-raw", nil, "u@example.com", nil, "H", nil, "Default",
 			int64(77), "oauth-primary", service.AccountTypeOAuth,
@@ -252,7 +257,9 @@ func TestContentModerationRepositoryListLogsIncludesRawRequestMetadata(t *testin
 			"", "", "", "", "",
 			"", "", "", "", nil, nil,
 			0, false, false, "active", nil,
-			true, 128, true, now,
+			true, 128, true,
+			"ordinary_api", "openai", "omni-moderation-latest", "user_turn", "responses.input", "user",
+			240, true, 2, true, true, now,
 		))
 
 	items, page, err := repo.ListLogs(context.Background(), service.ContentModerationLogFilter{})

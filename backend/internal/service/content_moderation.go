@@ -65,6 +65,10 @@ const (
 	ContentModerationEngineModeRuleOnly = "rule_only"
 	ContentModerationEngineModeAPIOnly  = "api_only"
 	ContentModerationEngineModeHybrid   = "hybrid"
+	// ContentModerationEngineModeCandidateOnly runs external reviewers only
+	// after a source-local candidate is found. It deliberately does not flatten
+	// unrelated request context into the provider input.
+	ContentModerationEngineModeCandidateOnly = "candidate_only"
 
 	ContentModerationFailStrategyOpen   = "open"
 	ContentModerationFailStrategyClosed = "closed"
@@ -141,6 +145,7 @@ const (
 	maxContentModerationTimeoutMS       = 30000
 	maxModerationInputRunes             = 12000
 	maxModerationExcerptRunes           = 240
+	maxContentModerationCandidateRunes  = 2000
 	maxContentModerationRawRequestBytes = 64 * 1024 * 1024
 
 	defaultContentModerationWorkerCount                    = 4
@@ -162,6 +167,9 @@ const (
 	minContentModerationLocalClassifierScore               = 60
 	defaultContentModerationHitRetentionDays               = 180
 	defaultContentModerationNonHitRetentionDays            = 3
+	defaultContentModerationDecisionCacheTTLSeconds        = 10 * 60
+	minContentModerationDecisionCacheTTLSeconds            = 10
+	maxContentModerationDecisionCacheTTLSeconds            = 60 * 60
 	maxContentModerationRetentionDays                      = 3650
 	maxContentModerationNonHitRetentionDays                = 3
 	contentModerationKeyRateLimitFreezeDuration            = time.Minute
@@ -238,6 +246,9 @@ type ContentModerationConfig struct {
 	Model                       string                                 `json:"model"`
 	PassCacheEnabled            bool                                   `json:"pass_cache_enabled,omitempty"`
 	PassCacheTTLSeconds         int                                    `json:"pass_cache_ttl_seconds,omitempty"`
+	DecisionCacheEnabled        bool                                   `json:"decision_cache_enabled"`
+	DecisionCacheTTLSeconds     int                                    `json:"decision_cache_ttl_seconds"`
+	CandidateFragmentRunes      int                                    `json:"candidate_fragment_runes"`
 	APIKey                      string                                 `json:"api_key,omitempty"`
 	APIKeys                     []string                               `json:"api_keys,omitempty"`
 	TimeoutMS                   int                                    `json:"timeout_ms"`
@@ -290,6 +301,9 @@ type ContentModerationConfigView struct {
 	Model                          string                                 `json:"model"`
 	PassCacheEnabled               bool                                   `json:"pass_cache_enabled"`
 	PassCacheTTLSeconds            int                                    `json:"pass_cache_ttl_seconds"`
+	DecisionCacheEnabled           bool                                   `json:"decision_cache_enabled"`
+	DecisionCacheTTLSeconds        int                                    `json:"decision_cache_ttl_seconds"`
+	CandidateFragmentRunes         int                                    `json:"candidate_fragment_runes"`
 	APIKeyConfigured               bool                                   `json:"api_key_configured"`
 	APIKeyMasked                   string                                 `json:"api_key_masked"`
 	APIKeyCount                    int                                    `json:"api_key_count"`
@@ -446,6 +460,9 @@ type UpdateContentModerationConfigInput struct {
 	Model                          *string                                 `json:"model"`
 	PassCacheEnabled               *bool                                   `json:"pass_cache_enabled"`
 	PassCacheTTLSeconds            *int                                    `json:"pass_cache_ttl_seconds"`
+	DecisionCacheEnabled           *bool                                   `json:"decision_cache_enabled"`
+	DecisionCacheTTLSeconds        *int                                    `json:"decision_cache_ttl_seconds"`
+	CandidateFragmentRunes         *int                                    `json:"candidate_fragment_runes"`
 	APIKey                         *string                                 `json:"api_key"`
 	APIKeys                        *[]string                               `json:"api_keys"`
 	APIKeysMode                    string                                  `json:"api_keys_mode"`
@@ -529,6 +546,10 @@ type ContentModerationAttemptState struct {
 	InputHash      string
 	PolicyRevision string
 	Reusable       bool
+	// candidateDecisionID is deliberately process-private. It lets account
+	// failover record a retry against the original candidate decision without
+	// exposing an internal audit identifier in the gateway response.
+	candidateDecisionID string
 }
 
 type ContentModerationGateResult struct {
@@ -661,6 +682,7 @@ type ContentModerationDecision struct {
 	EffectiveKeywordAction string             `json:"effective_keyword_action,omitempty"`
 	RiskContextType        string             `json:"risk_context_type,omitempty"`
 	RiskContextReason      string             `json:"risk_context_reason,omitempty"`
+	candidateDecisionID    string
 }
 
 type ContentModerationLog struct {
@@ -708,6 +730,17 @@ type ContentModerationLog struct {
 	RawRequestAvailable    bool               `json:"raw_request_available"`
 	RawRequestBytes        int                `json:"raw_request_bytes"`
 	RawRequestTruncated    bool               `json:"raw_request_truncated"`
+	DecisionSource         string             `json:"decision_source"`
+	ModerationProvider     string             `json:"moderation_provider"`
+	ModerationModel        string             `json:"moderation_model"`
+	SourceOrigin           string             `json:"source_origin"`
+	SelectedSource         string             `json:"selected_source"`
+	SelectedSourceRole     string             `json:"selected_source_role"`
+	SelectedFragmentRunes  int                `json:"selected_fragment_runes"`
+	DecisionCacheHit       bool               `json:"decision_cache_hit"`
+	DuplicateRetryCount    int                `json:"duplicate_retry_count"`
+	UserViolationEligible  bool               `json:"user_violation_eligible"`
+	EvidenceAvailable      bool               `json:"evidence_available"`
 	CreatedAt              time.Time          `json:"created_at"`
 	persisted              bool
 }
@@ -875,6 +908,11 @@ type ContentModerationRuntimeStatus struct {
 	PassCacheAvailable           bool                                       `json:"pass_cache_available"`
 	PassCacheDegradedReason      string                                     `json:"pass_cache_degraded_reason,omitempty"`
 	PassCacheTTLSeconds          int                                        `json:"pass_cache_ttl_seconds"`
+	DecisionCacheEnabled         bool                                       `json:"decision_cache_enabled"`
+	DecisionCacheAvailable       bool                                       `json:"decision_cache_available"`
+	DecisionCacheDistributed     bool                                       `json:"decision_cache_distributed"`
+	DecisionCacheTTLSeconds      int                                        `json:"decision_cache_ttl_seconds"`
+	CandidateFragmentRunes       int                                        `json:"candidate_fragment_runes"`
 	ChunkerVersion               string                                     `json:"chunker_version"`
 	ChunkMaxRunes                int                                        `json:"chunk_max_runes"`
 	ChunkOverlapRunes            int                                        `json:"chunk_overlap_runes"`
@@ -1015,6 +1053,7 @@ type ContentModerationService struct {
 	repo                      ContentModerationRepository
 	rawRequestSnapshotStore   ContentModerationRawRequestSnapshotStore
 	rawRequestEncryptor       SecretEncryptor
+	evidenceStore             ContentModerationEvidenceStore
 	hashCache                 ContentModerationHashCache
 	groupRepo                 GroupRepository
 	accountScopeRepo          ContentModerationAccountScopeRepository
@@ -1049,10 +1088,14 @@ type ContentModerationService struct {
 	keyHealthMu               sync.Mutex
 	keyHealth                 map[string]*contentModerationKeyHealth
 	passCache                 ContentModerationPassCache
+	decisionCache             ContentModerationDecisionCache
+	candidateDecisionMemory   *contentModerationCandidateMemoryDecisionCache
+	candidateDecisionFlights  *contentModerationCandidateDecisionCoordinator
 	feedbackEpochRepo         ModerationFeedbackEpochRepository
 	restrictedClientFactory   RestrictedModerationClientFactory
 	semanticReviewRouter      ContentModerationSemanticReviewRouter
 	moderationCacheHMACKey    []byte
+	decisionCacheHMACKey      []byte
 	moderationCacheKeyVersion uint64
 	metrics                   *ContentModerationMetrics
 	runtimeMu                 sync.Mutex
@@ -1138,20 +1181,22 @@ func NewContentModerationService(
 	accountScopeRepos ...ContentModerationAccountScopeRepository,
 ) *ContentModerationService {
 	svc := &ContentModerationService{
-		resourceProtection:   NewResourceProtectionManager(DefaultResourceProtectionConfig()),
-		settingRepo:          settingRepo,
-		repo:                 repo,
-		hashCache:            hashCache,
-		groupRepo:            groupRepo,
-		userRepo:             userRepo,
-		authCacheInvalidator: authCacheInvalidator,
-		emailService:         emailService,
-		httpClient:           &http.Client{},
-		workerCount:          maxContentModerationWorkerCount,
-		asyncQueue:           make(chan contentModerationTask, maxContentModerationQueueSize),
-		keyHealth:            make(map[string]*contentModerationKeyHealth),
-		runtimeDone:          make(chan struct{}),
-		runtimeTimings:       defaultContentModerationRuntimeTimings(),
+		resourceProtection:       NewResourceProtectionManager(DefaultResourceProtectionConfig()),
+		settingRepo:              settingRepo,
+		repo:                     repo,
+		hashCache:                hashCache,
+		groupRepo:                groupRepo,
+		userRepo:                 userRepo,
+		authCacheInvalidator:     authCacheInvalidator,
+		emailService:             emailService,
+		httpClient:               &http.Client{},
+		workerCount:              maxContentModerationWorkerCount,
+		asyncQueue:               make(chan contentModerationTask, maxContentModerationQueueSize),
+		keyHealth:                make(map[string]*contentModerationKeyHealth),
+		candidateDecisionMemory:  newContentModerationCandidateMemoryDecisionCache(),
+		candidateDecisionFlights: newContentModerationCandidateDecisionCoordinator(),
+		runtimeDone:              make(chan struct{}),
+		runtimeTimings:           defaultContentModerationRuntimeTimings(),
 	}
 	if len(accountScopeRepos) > 0 {
 		svc.accountScopeRepo = accountScopeRepos[0]
@@ -1347,6 +1392,15 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if input.PassCacheTTLSeconds != nil {
 		cfg.PassCacheTTLSeconds = *input.PassCacheTTLSeconds
 	}
+	if input.DecisionCacheEnabled != nil {
+		cfg.DecisionCacheEnabled = *input.DecisionCacheEnabled
+	}
+	if input.DecisionCacheTTLSeconds != nil {
+		cfg.DecisionCacheTTLSeconds = *input.DecisionCacheTTLSeconds
+	}
+	if input.CandidateFragmentRunes != nil {
+		cfg.CandidateFragmentRunes = *input.CandidateFragmentRunes
+	}
 	if input.TimeoutMS != nil {
 		cfg.TimeoutMS = *input.TimeoutMS
 	}
@@ -1397,7 +1451,7 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	}
 	if input.KeywordBlockingMode != nil {
 		cfg.KeywordBlockingMode = strings.TrimSpace(*input.KeywordBlockingMode)
-		if input.EngineMode == nil {
+		if input.EngineMode == nil && !cfg.candidateOnly() {
 			cfg.EngineMode = ""
 		}
 	}
@@ -1483,10 +1537,12 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 			cfg.APIKey = ""
 		}
 	}
+	normalizeContentModerationCandidateOnlyInvariants(cfg)
 	if err := s.validateConfig(ctx, cfg); err != nil {
 		return nil, err
 	}
 	cfg.normalize()
+	normalizeContentModerationCandidateOnlyInvariants(cfg)
 	raw, err := json.Marshal(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("marshal content moderation config: %w", err)
@@ -1680,10 +1736,17 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 		}, nil
 	}
 
-	content := ExtractContentModerationInput(input.Protocol, input.Body, cfg.AuditScope)
+	auditScope := cfg.AuditScope
+	if cfg.candidateOnly() {
+		auditScope = ContentModerationAuditScopeUserOnly
+	}
+	content := ExtractContentModerationInput(input.Protocol, input.Body, auditScope)
 	content.Normalize()
 	inputHash := content.Hash()
 	if prior != nil && prior.Reusable && prior.InputHash == inputHash && prior.PolicyRevision == policyRevision {
+		if cfg.candidateOnly() && prior.candidateDecisionID != "" {
+			s.recordCandidateDuplicateRetry(ctx, prior.candidateDecisionID)
+		}
 		return &ContentModerationGateResult{
 			Disposition:    prior.Disposition,
 			Decision:       prior.Decision,
@@ -1692,6 +1755,9 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 			Reused:         true,
 			NextState:      prior,
 		}, nil
+	}
+	if cfg.candidateOnly() {
+		return s.checkCandidateOnlyAccountAttempt(ctx, input, cfg, riskEnabled, content, inputHash, policyRevision)
 	}
 	observeProviderFallback := cfg.externalModerationRequired() && s.semanticReviewRouter != nil && len(cfg.apiKeys()) == 0
 	if riskEnabled && cfg.Enabled && cfg.Mode == ContentModerationModeObserve && !content.IsEmpty() && (len(cfg.apiKeys()) > 0 || cfg.SemanticReview.Enabled || observeProviderFallback) {
@@ -1894,8 +1960,15 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"configured_models", cfg.ModelFilter.Models)
 		return allow, nil
 	}
-	content := ExtractContentModerationInput(input.Protocol, input.Body, cfg.AuditScope)
+	auditScope := cfg.AuditScope
+	if cfg.candidateOnly() {
+		auditScope = ContentModerationAuditScopeUserOnly
+	}
+	content := ExtractContentModerationInput(input.Protocol, input.Body, auditScope)
 	if content.IsEmpty() {
+		if cfg.candidateOnly() && contentModerationCandidateExtractionIncomplete(content) {
+			return s.candidateExtractionFailureDecision(ctx, input, cfg, content), nil
+		}
 		slog.Info("content_moderation.skip_empty_input",
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,
@@ -1926,6 +1999,9 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		"text_runes", len([]rune(content.Text)),
 		"image_count", len(content.Images))
 	if cfg.Mode == ContentModerationModePreBlock && content.hasOversizedEncodedPayloadSkipped() {
+		if cfg.candidateOnly() {
+			return s.candidateExtractionFailureDecision(ctx, input, cfg, content), nil
+		}
 		s.recordPreBlockSyncMetric(0, ContentModerationActionError)
 		slog.Warn("content_moderation.oversized_encoded_payload_fail_open",
 			"user_id", input.UserID,
@@ -1935,6 +2011,9 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"protocol", input.Protocol,
 			"truncate_reasons", content.TruncateReasons)
 		return contentModerationFailureDecision(cfg), nil
+	}
+	if cfg.candidateOnly() {
+		return s.checkCandidateOnly(ctx, input, cfg, content), nil
 	}
 	hashText := content.Hash()
 	if cfg.PreHashCheckEnabled && s.hashCache != nil {
@@ -3306,6 +3385,11 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 		PassCacheAvailable:           s.passCache != nil && len(s.moderationCacheHMACKey) == sha256.Size && s.moderationCacheKeyVersion > 0,
 		PassCacheDegradedReason:      s.moderationCacheDegradedReason(cfg),
 		PassCacheTTLSeconds:          cfg.PassCacheTTLSeconds,
+		DecisionCacheEnabled:         cfg.DecisionCacheEnabled,
+		DecisionCacheAvailable:       s.decisionCacheEnabled(cfg),
+		DecisionCacheDistributed:     s.distributedDecisionCacheEnabled(cfg),
+		DecisionCacheTTLSeconds:      cfg.DecisionCacheTTLSeconds,
+		CandidateFragmentRunes:       cfg.CandidateFragmentRunes,
 		ChunkerVersion:               ModerationChunkerVersion,
 		ChunkMaxRunes:                ModerationChunkMaxRunes,
 		ChunkOverlapRunes:            ModerationChunkOverlap,
@@ -4008,6 +4092,7 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 		cfg = cloneContentModerationConfig(cfg)
 	}
 	cfg.normalize()
+	normalizeContentModerationCandidateOnlyInvariants(cfg)
 
 	failStrategy := normalizeContentModerationFailStrategy(cfg.FailStrategy)
 	modelFilter := normalizeContentModerationModelFilter(cfg.ModelFilter)
@@ -4026,10 +4111,11 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 	externalAPIConfigured := len(cfg.apiKeys()) > 0
 	externalAPIHealth := s.contentModerationExternalAPIHealth(cfg)
 	externalAPIHealthy := externalAPIConfigured && externalAPIHealth.healthy
-	// Hybrid pre-block still requires an audit key: otherwise broad local
-	// evidence would silently become an allow path when semantic review is
-	// unavailable. Rule-only remains self-contained.
-	externalAPIRequiredForStrongProtection := cfg.Mode == ContentModerationModePreBlock && cfg.externalModerationRequired()
+	// Candidate review can use the platform semantic reviewer when the ordinary
+	// moderation API is unavailable. That availability path still returns the
+	// configured failure decision rather than silently allowing a candidate.
+	externalAPIRequiredForStrongProtection := cfg.Mode == ContentModerationModePreBlock &&
+		cfg.externalModerationRequired() && !cfg.candidateOnly()
 	highRiskRulesBlocking, highRiskRulesPresent := contentModerationHighRiskRulesBlocking(cfg.keywordRules())
 	if normalizeContentModerationPromptFilterMode(cfg.PromptFilterMode) == promptfilter.ModeBlock {
 		highRiskRulesPresent = true
@@ -4086,8 +4172,11 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 	if cfg.Mode != ContentModerationModePreBlock {
 		unsafeReasons = append(unsafeReasons, "mode_not_pre_block")
 	}
-	if cfg.AuditScope != ContentModerationAuditScopeAllContext {
+	if !cfg.candidateOnly() && cfg.AuditScope != ContentModerationAuditScopeAllContext {
 		unsafeReasons = append(unsafeReasons, "audit_scope_not_all_context")
+	}
+	if cfg.candidateOnly() && s.semanticReviewRouter == nil {
+		unsafeReasons = append(unsafeReasons, "candidate_semantic_reviewer_unavailable")
 	}
 	if failStrategy.Default == ContentModerationFailStrategyOpen {
 		unsafeReasons = append(unsafeReasons, "public_fail_open")
@@ -4287,19 +4376,47 @@ func (s *ContentModerationService) loadConfig(ctx context.Context) (*ContentMode
 	if err != nil {
 		if errors.Is(err, ErrSettingNotFound) {
 			cfg.normalize()
+			normalizeContentModerationCandidateOnlyInvariants(cfg)
 			return cfg, nil
 		}
 		return nil, fmt.Errorf("get content moderation config: %w", err)
 	}
 	if strings.TrimSpace(raw) == "" {
 		cfg.normalize()
+		normalizeContentModerationCandidateOnlyInvariants(cfg)
 		return cfg, nil
 	}
+	// A saved configuration from before candidate_only did not have an engine
+	// field at all. Start that field empty before unmarshalling so its legacy
+	// keyword mode is still used to derive rule_only, api_only, or hybrid.
+	// New installations take the candidate_only default through the missing/
+	// empty-setting branches above, and new saves always persist engine_mode.
+	cfg.EngineMode = ""
 	if err := json.Unmarshal([]byte(raw), cfg); err != nil {
 		return nil, infraerrors.BadRequest("INVALID_CONTENT_MODERATION_CONFIG", "内容审计配置不是有效 JSON")
 	}
 	cfg.normalize()
+	normalizeContentModerationCandidateOnlyInvariants(cfg)
 	return cfg, nil
+}
+
+// normalizeContentModerationCandidateOnlyInvariants keeps the source-local
+// candidate contract coherent. Explicit legacy engine modes remain readable so
+// an upgrade never changes a deployed policy until an administrator saves the
+// candidate-only configuration from the risk-control page.
+func normalizeContentModerationCandidateOnlyInvariants(cfg *ContentModerationConfig) {
+	if cfg == nil {
+		return
+	}
+	if cfg.EngineMode == ContentModerationEngineModeCandidateOnly {
+		cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordAndAPI
+		cfg.AuditScope = ContentModerationAuditScopeUserOnly
+		cfg.RecordNonHits = false
+		cfg.CandidateFragmentRunes = maxContentModerationCandidateRunes
+		cfg.SemanticReview.Enabled = true
+		cfg.SemanticReview.Trigger = ContentModerationSemanticReviewTriggerLocalReview
+		cfg.SemanticReview.MaxInputRunes = maxContentModerationCandidateRunes
+	}
 }
 
 func (s *ContentModerationService) isRiskControlEnabled(ctx context.Context) (bool, error) {
@@ -5067,6 +5184,9 @@ func defaultContentModerationConfig() *ContentModerationConfig {
 		Model:                       defaultContentModerationModel,
 		PassCacheEnabled:            false,
 		PassCacheTTLSeconds:         24 * 60 * 60,
+		DecisionCacheEnabled:        true,
+		DecisionCacheTTLSeconds:     defaultContentModerationDecisionCacheTTLSeconds,
+		CandidateFragmentRunes:      maxContentModerationCandidateRunes,
 		TimeoutMS:                   defaultContentModerationTimeoutMS,
 		SampleRate:                  100,
 		AllGroups:                   true,
@@ -5093,7 +5213,7 @@ func defaultContentModerationConfig() *ContentModerationConfig {
 		BlockedKeywords:             []string{},
 		KeywordRules:                []ContentModerationKeywordRule{},
 		KeywordBlockingMode:         ContentModerationKeywordModeKeywordAndAPI,
-		EngineMode:                  "",
+		EngineMode:                  ContentModerationEngineModeCandidateOnly,
 		PromptFilterMode:            promptfilter.ModeObserve,
 		PromptFilterThreshold:       promptfilter.DefaultThreshold,
 		PromptFilterStrictThreshold: promptfilter.DefaultStrictThreshold,
@@ -5175,6 +5295,21 @@ func (cfg *ContentModerationConfig) normalize() {
 	}
 	if cfg.PassCacheTTLSeconds > 30*24*60*60 {
 		cfg.PassCacheTTLSeconds = 30 * 24 * 60 * 60
+	}
+	if cfg.DecisionCacheTTLSeconds <= 0 {
+		cfg.DecisionCacheTTLSeconds = defaultContentModerationDecisionCacheTTLSeconds
+	}
+	if cfg.DecisionCacheTTLSeconds < minContentModerationDecisionCacheTTLSeconds {
+		cfg.DecisionCacheTTLSeconds = minContentModerationDecisionCacheTTLSeconds
+	}
+	if cfg.DecisionCacheTTLSeconds > maxContentModerationDecisionCacheTTLSeconds {
+		cfg.DecisionCacheTTLSeconds = maxContentModerationDecisionCacheTTLSeconds
+	}
+	if cfg.CandidateFragmentRunes <= 0 {
+		cfg.CandidateFragmentRunes = maxContentModerationCandidateRunes
+	}
+	if cfg.CandidateFragmentRunes > maxContentModerationCandidateRunes {
+		cfg.CandidateFragmentRunes = maxContentModerationCandidateRunes
 	}
 	if cfg.TimeoutMS <= 0 {
 		cfg.TimeoutMS = defaultContentModerationTimeoutMS
@@ -5403,7 +5538,7 @@ func (cfg *ContentModerationConfig) shouldRunLocalRules() bool {
 	switch cfg.EngineMode {
 	case ContentModerationEngineModeAPIOnly:
 		return false
-	case ContentModerationEngineModeRuleOnly, ContentModerationEngineModeHybrid:
+	case ContentModerationEngineModeRuleOnly, ContentModerationEngineModeHybrid, ContentModerationEngineModeCandidateOnly:
 		return true
 	default:
 		return normalizeKeywordBlockingMode(cfg.KeywordBlockingMode) != ContentModerationKeywordModeAPIOnly
@@ -5417,11 +5552,15 @@ func (cfg *ContentModerationConfig) externalModerationRequired() bool {
 	switch cfg.EngineMode {
 	case ContentModerationEngineModeRuleOnly:
 		return false
-	case ContentModerationEngineModeAPIOnly, ContentModerationEngineModeHybrid:
+	case ContentModerationEngineModeAPIOnly, ContentModerationEngineModeHybrid, ContentModerationEngineModeCandidateOnly:
 		return true
 	default:
 		return normalizeKeywordBlockingMode(cfg.KeywordBlockingMode) != ContentModerationKeywordModeKeywordOnly
 	}
+}
+
+func (cfg *ContentModerationConfig) candidateOnly() bool {
+	return cfg != nil && cfg.EngineMode == ContentModerationEngineModeCandidateOnly
 }
 
 func (cfg *ContentModerationConfig) promptFilterConfig() promptfilter.Config {
@@ -5700,6 +5839,9 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		Model:                          cfg.Model,
 		PassCacheEnabled:               cfg.PassCacheEnabled,
 		PassCacheTTLSeconds:            cfg.PassCacheTTLSeconds,
+		DecisionCacheEnabled:           cfg.DecisionCacheEnabled,
+		DecisionCacheTTLSeconds:        cfg.DecisionCacheTTLSeconds,
+		CandidateFragmentRunes:         cfg.CandidateFragmentRunes,
 		APIKeyConfigured:               len(keys) > 0,
 		APIKeyMasked:                   apiKeyMasked,
 		APIKeyCount:                    len(keys),
@@ -5989,6 +6131,7 @@ type moderationAPIResponse struct {
 type moderationAPIResult struct {
 	Flagged        bool               `json:"flagged"`
 	CategoryScores map[string]float64 `json:"category_scores"`
+	ProviderLevel  ModerationLevel    `json:"-"`
 }
 
 func evaluateModerationScores(scores map[string]float64, thresholds map[string]float64) (bool, string, float64) {
@@ -6122,7 +6265,8 @@ func cloneContentModerationKeywordRules(in []ContentModerationKeywordRule) []Con
 }
 
 func normalizeContentModerationKeywordCategory(category string) string {
-	switch strings.TrimSpace(category) {
+	category = strings.ToLower(strings.TrimSpace(category))
+	switch category {
 	case ContentModerationKeywordCategoryCustom:
 		return ContentModerationKeywordCategoryCustom
 	case ContentModerationKeywordCategoryJailbreak:
@@ -6155,6 +6299,22 @@ func normalizeContentModerationKeywordCategory(category string) string {
 		return ContentModerationKeywordCategoryBiometric
 	case ContentModerationKeywordCategoryOther:
 		return ContentModerationKeywordCategoryOther
+	// Prompt-filter categories describe capability/intent rather than the
+	// provider's fixed moderation taxonomy. Preserve that distinction so they
+	// are routed to the semantic reviewer instead of being silently treated as
+	// generic "other" content by an ordinary moderation API.
+	case "prompt_injection", "prompt_evasion", "agent_abuse":
+		return ContentModerationKeywordCategoryJailbreak
+	case "ctf", "web_exploitation", "web_payload", "binary_exploitation",
+		"crypto_attack", "reverse_engineering", "pentest_tooling",
+		"credential_attack", "malicious", "malware", "evasion",
+		"post_exploitation", "remote_access", "exploit", "tooling",
+		"scanning", "vulnerability", "license_cracking", "data_theft",
+		"network_attack", "resource_abuse", "social_engineering",
+		"supply_chain", "container_security", "cloud_security", "web_attack",
+		"wireless_attack", "iot_security", "blockchain_security",
+		"api_security", "physical_attack":
+		return ContentModerationKeywordCategoryCyber
 	default:
 		return ContentModerationKeywordCategoryOther
 	}
@@ -6222,6 +6382,8 @@ func normalizeModerationEngineMode(mode string) string {
 		return ContentModerationEngineModeAPIOnly
 	case ContentModerationEngineModeHybrid:
 		return ContentModerationEngineModeHybrid
+	case ContentModerationEngineModeCandidateOnly:
+		return ContentModerationEngineModeCandidateOnly
 	default:
 		return ""
 	}

@@ -270,7 +270,7 @@ func moderationAPIResultFromProvider(result ProviderModerationResult) *moderatio
 		}
 		scores[category] = 1
 	}
-	return &moderationAPIResult{Flagged: result.Level != ModerationLevelPass, CategoryScores: scores}
+	return &moderationAPIResult{Flagged: result.Level != ModerationLevelPass, CategoryScores: scores, ProviderLevel: result.Level}
 }
 
 func (s *ContentModerationService) moderationCacheDegradedReason(cfg *ContentModerationConfig) string {

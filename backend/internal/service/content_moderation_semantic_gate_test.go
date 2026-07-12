@@ -142,6 +142,7 @@ func TestContentModerationProviderFailureFallsBackToSemanticReview(t *testing.T)
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.RetryCount = 0
@@ -326,6 +327,7 @@ func TestContentModerationProviderPassDoesNotCallSemanticFallback(t *testing.T) 
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.RetryCount = 0
@@ -366,6 +368,7 @@ func TestContentModerationCheckMissingProviderKeyEnqueuesSemanticFallbackInObser
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModeObserve
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.APIKeys = nil
 	cfg.SemanticReview.Enabled = false
 	rawCfg, err := json.Marshal(cfg)
@@ -582,6 +585,7 @@ func TestContentModerationCheck_HybridCyberKeywordUsesOrdinaryModerationAndSeman
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.KeywordRules = []ContentModerationKeywordRule{{
@@ -647,6 +651,7 @@ func TestContentModerationCheck_HybridCyberKeywordBlocksOnSemanticRejectAfterOrd
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.RetryCount = 0

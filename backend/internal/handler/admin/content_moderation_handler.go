@@ -37,6 +37,9 @@ type contentModerationConfigRequest struct {
 	Model                    *string             `json:"model"`
 	PassCacheEnabled         *bool               `json:"pass_cache_enabled"`
 	PassCacheTTLSeconds      *int                `json:"pass_cache_ttl_seconds"`
+	DecisionCacheEnabled     *bool               `json:"decision_cache_enabled"`
+	DecisionCacheTTLSeconds  *int                `json:"decision_cache_ttl_seconds"`
+	CandidateFragmentRunes   *int                `json:"candidate_fragment_runes"`
 	APIKey                   *string             `json:"api_key"`
 	APIKeys                  *[]string           `json:"api_keys"`
 	APIKeysMode              string              `json:"api_keys_mode"`
@@ -135,6 +138,9 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		Model:                          req.Model,
 		PassCacheEnabled:               req.PassCacheEnabled,
 		PassCacheTTLSeconds:            req.PassCacheTTLSeconds,
+		DecisionCacheEnabled:           req.DecisionCacheEnabled,
+		DecisionCacheTTLSeconds:        req.DecisionCacheTTLSeconds,
+		CandidateFragmentRunes:         req.CandidateFragmentRunes,
 		APIKey:                         req.APIKey,
 		APIKeys:                        req.APIKeys,
 		APIKeysMode:                    req.APIKeysMode,
@@ -327,6 +333,20 @@ func (h *ContentModerationHandler) GetRawRequestSnapshot(c *gin.Context) {
 		return
 	}
 	result, err := h.service.GetRawRequestSnapshot(c.Request.Context(), logID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *ContentModerationHandler) GetEvidenceSnapshot(c *gin.Context) {
+	logID, err := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
+	if err != nil || logID <= 0 {
+		response.BadRequest(c, "Invalid log id")
+		return
+	}
+	result, err := h.service.GetEvidenceSnapshot(c.Request.Context(), logID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

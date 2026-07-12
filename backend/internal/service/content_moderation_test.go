@@ -876,6 +876,7 @@ func TestContentModerationCheck_HybridKeywordHitCallsUpstreamAPIAndAllowsWhenAPI
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.BlockedKeywords = []string{"secret-token"}
@@ -923,6 +924,7 @@ func TestContentModerationCheck_HybridKeywordHitBlocksWhenAPIFlags(t *testing.T)
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.BlockedKeywords = []string{"secret-token"}
@@ -2485,6 +2487,7 @@ func TestContentModerationCheck_ObserveKeywordRuleRecordsReviewWithoutBlocking(t
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
@@ -2534,6 +2537,7 @@ func TestContentModerationCheck_MetaDiscussionDowngradesBlockKeywordToReview(t *
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
 	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
 	cfg.KeywordRules = []ContentModerationKeywordRule{
 		{Keyword: "儿童性虐待材料", Category: "minor_safety", Severity: "critical", Action: "block", Enabled: true},
@@ -2656,6 +2660,7 @@ func TestContentModerationCheck_KeywordsIgnoredInObserveMode(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModeObserve
+	cfg.EngineMode = ContentModerationEngineModeAPIOnly
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.BlockedKeywords = []string{"secret-token"}
@@ -2693,6 +2698,7 @@ func TestContentModerationCheck_KeywordObserveActionAllowsAndLogsHit(t *testing.
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
 	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
 	cfg.KeywordRules = []ContentModerationKeywordRule{
 		{Keyword: "risky phrase", Category: "privacy", Severity: "medium", Action: "observe", Enabled: true},
@@ -2737,6 +2743,7 @@ func TestContentModerationCheck_KeywordWarnActionAllowsAndLogsHit(t *testing.T) 
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
 	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
 	cfg.KeywordRules = []ContentModerationKeywordRule{
 		{Keyword: "warning phrase", Category: "fraud", Severity: "low", Action: "warn", Enabled: true},
@@ -2788,6 +2795,7 @@ func TestContentModerationCheck_KeywordOnlyStrategySkipsAPIOnMiss(t *testing.T) 
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.BlockedKeywords = []string{"never-matches"}
@@ -2911,6 +2919,8 @@ func TestContentModerationCheck_LegacyKeywordOnlyChecksHashBeforeAllowingMiss(t 
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	// Explicitly exercise the persisted pre-engine-mode configuration.
+	cfg.EngineMode = ""
 	cfg.APIKeys = []string{}
 	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
 	cfg.BlockedKeywords = []string{"never-matches"}
@@ -3652,6 +3662,7 @@ func TestContentModerationCheck_KeywordOnlyScansCodexApprovalAssessmentContinuat
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.BlockedKeywords = []string{"untrusted evidence"}
@@ -3700,6 +3711,7 @@ func TestContentModerationCheck_KeywordOnlyDoesNotSkipCodexCompactionSummaryMixe
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.KeywordRules = []ContentModerationKeywordRule{
@@ -3754,6 +3766,7 @@ func TestContentModerationCheck_KeywordOnlyScansClaudeCodeSystemPrompt(t *testin
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.KeywordRules = []ContentModerationKeywordRule{
@@ -3814,6 +3827,7 @@ func TestContentModerationCheck_KeywordOnlySkipsClaudeSafetyBaselineSystemPrompt
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.KeywordRules = []ContentModerationKeywordRule{
@@ -3866,6 +3880,7 @@ func TestContentModerationCheck_SecurityGuidanceDowngradesInjectionKeywordsToRev
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
 	cfg.KeywordRules = []ContentModerationKeywordRule{
 		{Keyword: "sql injection", Category: "cyber", Severity: "critical", Action: "block", Enabled: true},
 	}
@@ -3917,6 +3932,7 @@ func TestContentModerationCheck_KeywordOnlyScansCodexAgentInstructions(t *testin
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.KeywordRules = []ContentModerationKeywordRule{
@@ -3972,6 +3988,7 @@ func TestContentModerationCheck_KeywordOnlySkipsPureCodexAmbientSafetyPrompt(t *
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.KeywordRules = []ContentModerationKeywordRule{
@@ -4020,6 +4037,7 @@ func TestContentModerationCheck_APIOnlyStrategyIgnoresKeywordList(t *testing.T) 
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeAPIOnly
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.BlockedKeywords = []string{"secret-token"}
@@ -4066,6 +4084,7 @@ func TestContentModerationCheck_APIOnlyStrategyAuditsBuiltInKeyword(t *testing.T
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeAPIOnly
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.KeywordBlockingMode = ContentModerationKeywordModeAPIOnly
@@ -4263,10 +4282,52 @@ func TestContentModerationLoadConfig_LegacyConfigDefaultsModelFilterToAll(t *tes
 	cfg, err := svc.loadConfig(context.Background())
 
 	require.NoError(t, err)
+	require.Equal(t, ContentModerationEngineModeHybrid, cfg.EngineMode)
+	require.Equal(t, ContentModerationKeywordModeKeywordAndAPI, cfg.KeywordBlockingMode)
 	require.Equal(t, ContentModerationModelFilterAll, cfg.ModelFilter.Type)
 	require.Empty(t, cfg.ModelFilter.Models)
 	require.True(t, cfg.includesModel("gpt-5.5"))
 	require.True(t, cfg.includesModel("gpt-5.4"))
+}
+
+func TestContentModerationLoadConfig_LegacyKeywordOnlyConfigKeepsRuleOnlyMode(t *testing.T) {
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyContentModerationConfig: `{"enabled":true,"keyword_blocking_mode":"keyword_only"}`,
+		}},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	cfg, err := svc.loadConfig(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationEngineModeRuleOnly, cfg.EngineMode)
+	require.Equal(t, ContentModerationKeywordModeKeywordOnly, cfg.KeywordBlockingMode)
+}
+
+func TestContentModerationLoadConfig_MissingConfigUsesCandidateOnly(t *testing.T) {
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{}},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	cfg, err := svc.loadConfig(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationEngineModeCandidateOnly, cfg.EngineMode)
+	require.Equal(t, ContentModerationAuditScopeUserOnly, cfg.AuditScope)
+	require.False(t, cfg.RecordNonHits)
+	require.True(t, cfg.SemanticReview.Enabled)
 }
 
 func TestContentModerationCheck_ModelFilterUsesRequestedModelNotBodyModel(t *testing.T) {
@@ -4563,6 +4624,7 @@ func TestContentModerationCheck_OpenAIResponsesRecordsNonHitForCodexPayload(t *t
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.RecordNonHits = true
@@ -4628,6 +4690,7 @@ func TestContentModerationCheck_PreBlockBlocksCodexResponsesLatestUserInput(t *t
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.BlockStatus = http.StatusUnavailableForLegalReasons
@@ -4695,6 +4758,7 @@ func TestContentModerationCheck_SampleRateDoesNotSkipAuditScan(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.SampleRate = 0
@@ -4738,6 +4802,7 @@ func TestContentModerationCheck_SampleRateDoesNotSkipHitLog(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.SampleRate = 0
@@ -4823,6 +4888,7 @@ func TestContentModerationCheck_AuditAPIFailureFailsOpenForPublicGroup(t *testin
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.RetryCount = 0
@@ -4867,6 +4933,7 @@ func TestContentModerationCheck_AuditAPIFailureCanFailOpenForTrustedGroup(t *tes
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.RetryCount = 0
@@ -4919,6 +4986,7 @@ func TestContentModerationStatusTracksPreBlockSyncMetrics(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	rawCfg, err := json.Marshal(cfg)
@@ -6238,11 +6306,11 @@ func TestContentModerationStatusEffectiveProtection(t *testing.T) {
 		cfg := defaultContentModerationConfig()
 		cfg.Enabled = true
 		cfg.Mode = ContentModerationModePreBlock
-		cfg.AuditScope = ContentModerationAuditScopeAllContext
+		cfg.AuditScope = ContentModerationAuditScopeUserOnly
 		cfg.AllGroups = true
 		cfg.ModelFilter = ContentModerationModelFilter{Type: ContentModerationModelFilterAll}
 		cfg.FailStrategy = ContentModerationFailStrategy{Default: ContentModerationFailStrategyClosed}
-		cfg.EngineMode = ContentModerationEngineModeHybrid
+		cfg.EngineMode = ContentModerationEngineModeCandidateOnly
 		cfg.APIKeys = []string{"sk-test"}
 		cfg.KeywordRules = []ContentModerationKeywordRule{{
 			Keyword:  "critical-risk",
@@ -6253,7 +6321,11 @@ func TestContentModerationStatusEffectiveProtection(t *testing.T) {
 		return cfg
 	}
 
+	markCandidateReviewReady := func(svc *ContentModerationService) {
+		svc.SetSemanticReviewRouter(&contentModerationSemanticReviewRouterStub{})
+	}
 	markKeyOK := func(svc *ContentModerationService) {
+		markCandidateReviewReady(svc)
 		svc.markAPIKeySuccess("sk-test", 12, http.StatusOK)
 	}
 
@@ -6263,24 +6335,35 @@ func TestContentModerationStatusEffectiveProtection(t *testing.T) {
 	require.True(t, status.EffectiveProtection.RiskControlEnabled)
 	require.True(t, status.EffectiveProtection.ModerationEnabled)
 	require.Equal(t, ContentModerationModePreBlock, status.EffectiveProtection.Mode)
-	require.Equal(t, ContentModerationAuditScopeAllContext, status.EffectiveProtection.AuditScope)
+	require.Equal(t, ContentModerationAuditScopeUserOnly, status.EffectiveProtection.AuditScope)
 	require.Equal(t, ContentModerationFailStrategyClosed, status.EffectiveProtection.PublicFailStrategy)
 	require.Equal(t, "all_public_groups", status.EffectiveProtection.GroupCoverage)
 	require.Equal(t, ContentModerationModelFilterAll, status.EffectiveProtection.ModelCoverage)
-	require.Equal(t, ContentModerationEngineModeHybrid, status.EffectiveProtection.EngineMode)
+	require.Equal(t, ContentModerationEngineModeCandidateOnly, status.EffectiveProtection.EngineMode)
 	require.True(t, status.EffectiveProtection.ExternalAPIConfigured)
 	require.True(t, status.EffectiveProtection.ExternalAPIHealthy)
 	require.Equal(t, 1, status.EffectiveProtection.ExternalAPIUsableKeyCount)
 	require.True(t, status.EffectiveProtection.HighRiskRulesBlocking)
 
-	t.Run("hybrid pre-block requires an external api", func(t *testing.T) {
+	t.Run("candidate pre-block requires the platform semantic reviewer", func(t *testing.T) {
+		cfg := secureConfig()
+
+		status := makeStatus(t, cfg, true, func(svc *ContentModerationService) {
+			svc.markAPIKeySuccess("sk-test", 12, http.StatusOK)
+		})
+
+		require.False(t, status.EffectiveProtection.EffectiveBlocking)
+		require.Contains(t, status.EffectiveProtection.UnsafeReasons, "candidate_semantic_reviewer_unavailable")
+	})
+
+	t.Run("candidate pre-block falls back to the platform reviewer without an ordinary api", func(t *testing.T) {
 		cfg := secureConfig()
 		cfg.APIKeys = nil
 
 		status := makeStatus(t, cfg, true, markKeyOK)
 
-		require.False(t, status.EffectiveProtection.EffectiveBlocking)
-		require.Contains(t, status.EffectiveProtection.UnsafeReasons, "external_api_not_configured")
+		require.True(t, status.EffectiveProtection.EffectiveBlocking)
+		require.NotContains(t, status.EffectiveProtection.UnsafeReasons, "external_api_not_configured")
 		require.False(t, status.EffectiveProtection.ExternalAPIConfigured)
 		require.False(t, status.EffectiveProtection.ExternalAPIHealthy)
 		require.Equal(t, 0, status.EffectiveProtection.ExternalAPIUsableKeyCount)
@@ -6288,15 +6371,16 @@ func TestContentModerationStatusEffectiveProtection(t *testing.T) {
 		require.True(t, status.EffectiveProtection.HighRiskRulesBlocking)
 	})
 
-	t.Run("hybrid pre-block requires a usable external api", func(t *testing.T) {
+	t.Run("candidate pre-block falls back when ordinary api keys are unusable", func(t *testing.T) {
 		cfg := secureConfig()
 
 		status := makeStatus(t, cfg, true, func(svc *ContentModerationService) {
+			markCandidateReviewReady(svc)
 			svc.markAPIKeyError("sk-test", "unauthorized", 10, http.StatusUnauthorized)
 		})
 
-		require.False(t, status.EffectiveProtection.EffectiveBlocking)
-		require.Contains(t, status.EffectiveProtection.UnsafeReasons, "external_api_no_usable_key")
+		require.True(t, status.EffectiveProtection.EffectiveBlocking)
+		require.NotContains(t, status.EffectiveProtection.UnsafeReasons, "external_api_no_usable_key")
 		require.True(t, status.EffectiveProtection.ExternalAPIConfigured)
 		require.False(t, status.EffectiveProtection.ExternalAPIHealthy)
 		require.Equal(t, 0, status.EffectiveProtection.ExternalAPIUsableKeyCount)
@@ -6333,8 +6417,9 @@ func TestContentModerationStatusEffectiveProtection(t *testing.T) {
 			reason: "mode_not_pre_block",
 		},
 		{
-			name: "audit scope user only",
+			name: "rule only audit scope user only",
 			mutate: func(cfg *ContentModerationConfig) {
+				cfg.EngineMode = ContentModerationEngineModeRuleOnly
 				cfg.AuditScope = ContentModerationAuditScopeUserOnly
 			},
 			risk:   true,
@@ -6484,6 +6569,7 @@ func TestContentModerationStatusTracksPreBlockAPIKeyLoad(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-one", "sk-two"}
 	rawCfg, err := json.Marshal(cfg)
@@ -6529,6 +6615,7 @@ func TestContentModerationStatusTracksPreBlockLocalBlocks(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
 	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
 	cfg.BlockedKeywords = []string{"blocked"}
 	rawCfg, err := json.Marshal(cfg)
@@ -6696,6 +6783,7 @@ func TestContentModerationTestAPIKeys_400DoesNotFreezeAPIKey(t *testing.T) {
 func TestContentModerationCheck_PreHashUsesRedisHashCache(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.PreHashCheckEnabled = true
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.BlockStatus = http.StatusConflict
@@ -6761,6 +6849,7 @@ func TestContentModerationCheck_HashBlockLogsDoNotIncreaseNextViolationCount(t *
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.AutoBanEnabled = false
@@ -6914,6 +7003,7 @@ func TestContentModerationCheck_PreBlockFlaggedWritesRedisHashCache(t *testing.T
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.PreHashCheckEnabled = true
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}

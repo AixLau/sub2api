@@ -153,6 +153,7 @@ func TestCheckAccountAttemptObserveDropClearsPriorReusableState(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModeObserve
+	cfg.EngineMode = ContentModerationEngineModeHybrid
 	cfg.APIKeys = []string{"audit-key"}
 	cfg.AccountScope = ContentModerationAccountScopeAll
 	cfg.QueueSize = 1

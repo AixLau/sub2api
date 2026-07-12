@@ -49,6 +49,7 @@ func ProvideContentModerationService(
 	authCacheInvalidator APIKeyAuthCacheInvalidator,
 	emailService *EmailService,
 	passCache ContentModerationPassCache,
+	decisionCache ContentModerationDecisionCache,
 	feedbackEpochRepo ModerationFeedbackEpochRepository,
 	encryptor SecretEncryptor,
 	openAIGatewayService *OpenAIGatewayService,
@@ -58,6 +59,7 @@ func ProvideContentModerationService(
 ) *ContentModerationService {
 	svc := NewContentModerationService(settingRepo, repo, hashCache, groupRepo, userRepo, authCacheInvalidator, emailService, accountRepo)
 	key, _ := cfg.Moderation.CacheHMACKeyBytes()
+	decisionCacheKey, _ := cfg.ContentModerationDecisionCacheHMACKeyBytes()
 	svc.SetIncrementalModerationDependencies(
 		passCache,
 		feedbackEpochRepo,
@@ -65,6 +67,8 @@ func ProvideContentModerationService(
 		key,
 		cfg.Moderation.CacheHMACKeyVersion,
 	)
+	svc.SetDecisionCacheKey(decisionCacheKey)
+	svc.SetDecisionCache(decisionCache)
 	svc.SetModerationMetrics(NewContentModerationMetrics())
 	svc.SetOutboxRepository(outboxRepo)
 	svc.SetSemanticReviewRouter(NewOpenAIContentModerationSemanticReviewRouter(
@@ -73,6 +77,9 @@ func ProvideContentModerationService(
 	))
 	if rawStore, ok := repo.(ContentModerationRawRequestSnapshotStore); ok {
 		svc.SetRawRequestSnapshotStore(rawStore, encryptor)
+	}
+	if evidenceStore, ok := repo.(ContentModerationEvidenceStore); ok {
+		svc.SetEvidenceStore(evidenceStore, encryptor)
 	}
 	svc.SetBuildInfo(buildInfo)
 	svc.Start(context.Background())

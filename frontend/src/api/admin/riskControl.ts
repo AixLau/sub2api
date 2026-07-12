@@ -3,7 +3,7 @@ import { apiClient } from '../client'
 export type ModerationMode = 'off' | 'observe' | 'pre_block'
 export type ModerationProvider = 'openai' | 'zhipu'
 export type KeywordBlockingMode = 'keyword_only' | 'keyword_and_api' | 'api_only'
-export type ContentModerationEngineMode = 'rule_only' | 'api_only' | 'hybrid'
+export type ContentModerationEngineMode = 'rule_only' | 'api_only' | 'hybrid' | 'candidate_only'
 export type ContentModerationPromptFilterMode = 'off' | 'observe' | 'warn' | 'block'
 export type ContentModerationAuditScope = 'user_only' | 'user_and_tool' | 'all_context'
 export type ContentModerationAccountScope = 'all' | 'oauth' | 'selected'
@@ -68,6 +68,9 @@ export interface ContentModerationConfig {
   model: string
   pass_cache_enabled: boolean
   pass_cache_ttl_seconds: number
+  decision_cache_enabled?: boolean
+  decision_cache_ttl_seconds?: number
+  candidate_fragment_runes?: number
   api_key_configured: boolean
   api_key_masked: string
   api_key_count: number
@@ -203,6 +206,9 @@ export interface UpdateContentModerationConfig {
   model?: string
   pass_cache_enabled?: boolean
   pass_cache_ttl_seconds?: number
+  decision_cache_enabled?: boolean
+  decision_cache_ttl_seconds?: number
+  candidate_fragment_runes?: number
   api_key?: string
   api_keys?: string[]
   api_keys_mode?: 'append' | 'replace'
@@ -260,6 +266,11 @@ export interface ContentModerationRuntimeStatus {
   pass_cache_available: boolean
   pass_cache_degraded_reason?: string
   pass_cache_ttl_seconds: number
+  decision_cache_enabled?: boolean
+  decision_cache_available?: boolean
+  decision_cache_distributed?: boolean
+  decision_cache_ttl_seconds?: number
+  candidate_fragment_runes?: number
   chunker_version: string
   chunk_max_runes: number
   chunk_overlap_runes: number
@@ -500,6 +511,17 @@ export interface ContentModerationLog {
   raw_request_available: boolean
   raw_request_bytes: number
   raw_request_truncated: boolean
+  decision_source?: string
+  moderation_provider?: string
+  moderation_model?: string
+  source_origin?: string
+  selected_source?: string
+  selected_source_role?: string
+  selected_fragment_runes?: number
+  decision_cache_hit?: boolean
+  duplicate_retry_count?: number
+  user_violation_eligible?: boolean
+  evidence_available?: boolean
   created_at: string
 }
 
@@ -539,6 +561,16 @@ export interface ContentModerationRawRequest {
   body: string
   body_bytes: number
   truncated: boolean
+  created_at: string
+}
+
+export interface ContentModerationEvidence {
+  log_id: number
+  request_id: string
+  selection: Record<string, unknown>
+  payload: string
+  payload_hmac: string
+  payload_runes: number
   created_at: string
 }
 
@@ -619,6 +651,13 @@ export async function getRawRequest(logID: number): Promise<ContentModerationRaw
   return data
 }
 
+export async function getEvidence(logID: number): Promise<ContentModerationEvidence> {
+  const { data } = await apiClient.get<ContentModerationEvidence>(
+    `/admin/risk-control/logs/${logID}/evidence`
+  )
+  return data
+}
+
 export async function deleteFlaggedHash(inputHash: string): Promise<DeleteFlaggedHashResponse> {
   const { data } = await apiClient.delete<DeleteFlaggedHashResponse>('/admin/risk-control/hashes', {
     data: { input_hash: inputHash },
@@ -641,6 +680,7 @@ export const riskControlAPI = {
   unbanUser,
   reviewLog,
   getRawRequest,
+  getEvidence,
   deleteFlaggedHash,
   clearFlaggedHashes,
 }

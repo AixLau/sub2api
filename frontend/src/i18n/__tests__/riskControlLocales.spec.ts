@@ -59,4 +59,13 @@ describe('risk control locale copy', () => {
     expect(en.admin.riskControl.inputDetailContent).toBe('Input Excerpt')
     expect(en.admin.riskControl.inputDetailContent).not.toContain('Full')
   })
+
+  it('describes candidate review as a single bounded user fragment', () => {
+    expect(zh.admin.riskControl.promptFilterModeHint).toContain('一个用户上下文片段')
+    expect(zh.admin.riskControl.promptFilterModeHint).not.toContain('混合模式')
+    expect(zh.admin.riskControl.semanticReviewHint).toContain('gpt-5.3-codex-spark')
+    expect(en.admin.riskControl.promptFilterModeHint).toContain('one user-context fragment')
+    expect(en.admin.riskControl.promptFilterModeHint).not.toContain('hybrid mode')
+    expect(en.admin.riskControl.semanticReviewHint).toContain('gpt-5-mini')
+  })
 })

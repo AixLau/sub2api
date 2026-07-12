@@ -61,7 +61,10 @@ INSERT INTO content_moderation_logs (
     category_scores, threshold_snapshot, input_excerpt, upstream_latency_ms, error,
     matched_keyword, keyword_category, keyword_severity, keyword_action, effective_keyword_action,
     risk_context_type, risk_context_reason, review_status, review_note, reviewed_by, reviewed_at,
-    violation_count, auto_banned, email_sent, queue_delay_ms
+    violation_count, auto_banned, email_sent, queue_delay_ms,
+    decision_source, moderation_provider, moderation_model, source_origin,
+    selected_source, selected_source_role, selected_fragment_runes,
+    decision_cache_hit, duplicate_retry_count, user_violation_eligible
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
     $9, $10, $11,
@@ -69,12 +72,15 @@ INSERT INTO content_moderation_logs (
     $20::jsonb, $21::jsonb, $22, $23, $24,
     $25, $26, $27, $28, $29,
     $30, $31, $32, $33, $34, $35,
-    $36, $37, $38, $39
+    $36, $37, $38, $39,
+    $40, $41, $42, $43, $44, $45, $46, $47, $48, $49
 ) ON CONFLICT (decision_id) WHERE decision_id <> '' DO UPDATE SET
     queue_delay_ms = COALESCE(EXCLUDED.queue_delay_ms, content_moderation_logs.queue_delay_ms),
     violation_count = GREATEST(content_moderation_logs.violation_count, EXCLUDED.violation_count),
     auto_banned = content_moderation_logs.auto_banned OR EXCLUDED.auto_banned,
-    email_sent = content_moderation_logs.email_sent OR EXCLUDED.email_sent
+    email_sent = content_moderation_logs.email_sent OR EXCLUDED.email_sent,
+    decision_cache_hit = content_moderation_logs.decision_cache_hit OR EXCLUDED.decision_cache_hit,
+    duplicate_retry_count = GREATEST(content_moderation_logs.duplicate_retry_count, EXCLUDED.duplicate_retry_count)
 RETURNING id, created_at`,
 		log.DecisionID, log.RequestID, userID, log.UserEmail, apiKeyID, log.APIKeyName, groupID, log.GroupName,
 		accountID, log.AccountName, log.AccountType,
@@ -83,6 +89,9 @@ RETURNING id, created_at`,
 		log.MatchedKeyword, log.KeywordCategory, log.KeywordSeverity, log.KeywordAction, log.EffectiveKeywordAction,
 		log.RiskContextType, log.RiskContextReason, log.ReviewStatus, log.ReviewNote, nullableInt64Ptr(log.ReviewedBy), log.ReviewedAt,
 		log.ViolationCount, log.AutoBanned, log.EmailSent, nullableIntPtr(log.QueueDelayMS),
+		log.DecisionSource, log.ModerationProvider, log.ModerationModel, log.SourceOrigin,
+		log.SelectedSource, log.SelectedSourceRole, log.SelectedFragmentRunes,
+		log.DecisionCacheHit, log.DuplicateRetryCount, log.UserViolationEligible,
 	).Scan(&log.ID, &log.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("insert content moderation log: %w", err)
@@ -123,10 +132,15 @@ SELECT
     COALESCE(l.review_status, ''), COALESCE(l.review_note, ''), l.reviewed_by, l.reviewed_at,
     l.violation_count, l.auto_banned, l.email_sent, COALESCE(u.status, ''), l.queue_delay_ms,
     (rs.id IS NOT NULL), COALESCE(rs.body_bytes, 0), COALESCE(rs.truncated, FALSE),
+    COALESCE(l.decision_source, ''), COALESCE(l.moderation_provider, ''), COALESCE(l.moderation_model, ''),
+    COALESCE(l.source_origin, ''), COALESCE(l.selected_source, ''), COALESCE(l.selected_source_role, ''),
+    COALESCE(l.selected_fragment_runes, 0), COALESCE(l.decision_cache_hit, FALSE),
+    COALESCE(l.duplicate_retry_count, 0), COALESCE(l.user_violation_eligible, FALSE), (es.id IS NOT NULL),
     l.created_at
 FROM content_moderation_logs l
 LEFT JOIN users u ON u.id = l.user_id
-LEFT JOIN content_moderation_raw_request_snapshots rs ON rs.log_id = l.id `+whereSQL+`
+LEFT JOIN content_moderation_raw_request_snapshots rs ON rs.log_id = l.id
+LEFT JOIN content_moderation_evidence_snapshots es ON es.log_id = l.id `+whereSQL+`
 ORDER BY l.created_at DESC, l.id DESC
 LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 		queryArgs...,
@@ -187,6 +201,17 @@ LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 			&item.RawRequestAvailable,
 			&item.RawRequestBytes,
 			&item.RawRequestTruncated,
+			&item.DecisionSource,
+			&item.ModerationProvider,
+			&item.ModerationModel,
+			&item.SourceOrigin,
+			&item.SelectedSource,
+			&item.SelectedSourceRole,
+			&item.SelectedFragmentRunes,
+			&item.DecisionCacheHit,
+			&item.DuplicateRetryCount,
+			&item.UserViolationEligible,
+			&item.EvidenceAvailable,
 			&item.CreatedAt,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan content moderation log: %w", err)
@@ -361,6 +386,86 @@ WHERE log_id = $1`,
 	return &snapshot, nil
 }
 
+func (r *contentModerationRepository) CreateEvidenceSnapshot(ctx context.Context, snapshot *service.ContentModerationEvidenceSnapshot) error {
+	if r == nil || r.db == nil || snapshot == nil || snapshot.LogID <= 0 || strings.TrimSpace(snapshot.PayloadEncrypted) == "" {
+		return nil
+	}
+	selection, err := json.Marshal(snapshot.Selection)
+	if err != nil {
+		return fmt.Errorf("marshal content moderation evidence selection: %w", err)
+	}
+	err = r.db.QueryRowContext(ctx, `
+INSERT INTO content_moderation_evidence_snapshots (
+    log_id, request_id, selection, payload_encrypted, payload_hmac, payload_runes
+) VALUES ($1, $2, $3::jsonb, $4, $5, $6)
+ON CONFLICT (log_id) DO UPDATE SET
+    request_id = EXCLUDED.request_id,
+    selection = EXCLUDED.selection,
+    payload_encrypted = EXCLUDED.payload_encrypted,
+    payload_hmac = EXCLUDED.payload_hmac,
+    payload_runes = EXCLUDED.payload_runes
+RETURNING id, created_at`,
+		snapshot.LogID,
+		snapshot.RequestID,
+		string(selection),
+		snapshot.PayloadEncrypted,
+		snapshot.PayloadHMAC,
+		snapshot.PayloadRunes,
+	).Scan(&snapshot.ID, &snapshot.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("insert content moderation evidence snapshot: %w", err)
+	}
+	return nil
+}
+
+func (r *contentModerationRepository) GetEvidenceSnapshotByLogID(ctx context.Context, logID int64) (*service.ContentModerationEvidenceSnapshot, error) {
+	if r == nil || r.db == nil || logID <= 0 {
+		return nil, infraerrors.NotFound("CONTENT_MODERATION_EVIDENCE_NOT_FOUND", "审核送审证据不存在")
+	}
+	var snapshot service.ContentModerationEvidenceSnapshot
+	var selectionRaw []byte
+	err := r.db.QueryRowContext(ctx, `
+SELECT id, log_id, request_id, selection, payload_encrypted, payload_hmac, payload_runes, created_at
+FROM content_moderation_evidence_snapshots
+WHERE log_id = $1`, logID).Scan(
+		&snapshot.ID,
+		&snapshot.LogID,
+		&snapshot.RequestID,
+		&selectionRaw,
+		&snapshot.PayloadEncrypted,
+		&snapshot.PayloadHMAC,
+		&snapshot.PayloadRunes,
+		&snapshot.CreatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, infraerrors.NotFound("CONTENT_MODERATION_EVIDENCE_NOT_FOUND", "审核送审证据不存在")
+		}
+		return nil, fmt.Errorf("get content moderation evidence snapshot: %w", err)
+	}
+	snapshot.Selection = map[string]any{}
+	if len(selectionRaw) > 0 {
+		if err := json.Unmarshal(selectionRaw, &snapshot.Selection); err != nil {
+			return nil, fmt.Errorf("decode content moderation evidence selection: %w", err)
+		}
+	}
+	return &snapshot, nil
+}
+
+func (r *contentModerationRepository) IncrementDuplicateRetryCount(ctx context.Context, decisionID string) error {
+	if r == nil || r.db == nil || strings.TrimSpace(decisionID) == "" {
+		return nil
+	}
+	if _, err := r.db.ExecContext(ctx, `
+UPDATE content_moderation_logs
+SET duplicate_retry_count = duplicate_retry_count + 1,
+    decision_cache_hit = TRUE
+WHERE decision_id = $1`, decisionID); err != nil {
+		return fmt.Errorf("increment content moderation duplicate retry count: %w", err)
+	}
+	return nil
+}
+
 func (r *contentModerationRepository) ReviewLog(ctx context.Context, id int64, input service.ContentModerationLogReviewInput) (*service.ContentModerationLog, error) {
 	if id <= 0 {
 		return nil, fmt.Errorf("invalid content moderation log id")
@@ -389,10 +494,15 @@ SELECT
     COALESCE(l.review_status, ''), COALESCE(l.review_note, ''), l.reviewed_by, l.reviewed_at,
     l.violation_count, l.auto_banned, l.email_sent, COALESCE(u.status, ''), l.queue_delay_ms,
     (rs.id IS NOT NULL), COALESCE(rs.body_bytes, 0), COALESCE(rs.truncated, FALSE),
+    COALESCE(l.decision_source, ''), COALESCE(l.moderation_provider, ''), COALESCE(l.moderation_model, ''),
+    COALESCE(l.source_origin, ''), COALESCE(l.selected_source, ''), COALESCE(l.selected_source_role, ''),
+    COALESCE(l.selected_fragment_runes, 0), COALESCE(l.decision_cache_hit, FALSE),
+    COALESCE(l.duplicate_retry_count, 0), COALESCE(l.user_violation_eligible, FALSE), (es.id IS NOT NULL),
     l.created_at
 FROM updated l
 LEFT JOIN users u ON u.id = l.user_id
 LEFT JOIN content_moderation_raw_request_snapshots rs ON rs.log_id = l.id
+LEFT JOIN content_moderation_evidence_snapshots es ON es.log_id = l.id
 `, id, input.Status, input.Note, reviewedBy)
 	if err != nil {
 		return nil, fmt.Errorf("review content moderation log: %w", err)
@@ -456,6 +566,17 @@ func scanContentModerationLogRows(rows *sql.Rows) ([]service.ContentModerationLo
 			&item.RawRequestAvailable,
 			&item.RawRequestBytes,
 			&item.RawRequestTruncated,
+			&item.DecisionSource,
+			&item.ModerationProvider,
+			&item.ModerationModel,
+			&item.SourceOrigin,
+			&item.SelectedSource,
+			&item.SelectedSourceRole,
+			&item.SelectedFragmentRunes,
+			&item.DecisionCacheHit,
+			&item.DuplicateRetryCount,
+			&item.UserViolationEligible,
+			&item.EvidenceAvailable,
 			&item.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan content moderation log: %w", err)

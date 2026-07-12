@@ -128,6 +128,7 @@ func registerContentModerationRoutes(admin *gin.RouterGroup, h *handler.Handlers
 		risk.GET("/metrics", h.Admin.ContentModeration.GetMetrics)
 		risk.GET("/logs", h.Admin.ContentModeration.ListLogs)
 		risk.GET("/logs/:id/raw-request", h.Admin.ContentModeration.GetRawRequestSnapshot)
+		risk.GET("/logs/:id/evidence", h.Admin.ContentModeration.GetEvidenceSnapshot)
 		risk.PATCH("/logs/:id/review", h.Admin.ContentModeration.ReviewLog)
 		risk.POST("/users/:user_id/unban", h.Admin.ContentModeration.UnbanUser)
 		risk.DELETE("/hashes", h.Admin.ContentModeration.DeleteFlaggedHash)

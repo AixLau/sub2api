@@ -2,7 +2,9 @@
 package config
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -115,6 +117,23 @@ func (c ModerationSecurityConfig) CacheHMACKeyBytes() ([]byte, bool) {
 		return nil, false
 	}
 	return key, true
+}
+
+// ContentModerationDecisionCacheHMACKeyBytes returns a stable key for the
+// short-lived retry-decision cache. A dedicated moderation key takes priority.
+// Older deployments may not have one yet, so derive a domain-separated key
+// from the required AES secret instead of falling back to unhashed user text.
+func (c Config) ContentModerationDecisionCacheHMACKeyBytes() ([]byte, bool) {
+	if key, ok := c.Moderation.CacheHMACKeyBytes(); ok {
+		return key, true
+	}
+	root, err := hex.DecodeString(c.Totp.EncryptionKey)
+	if err != nil || len(root) != sha256.Size {
+		return nil, false
+	}
+	mac := hmac.New(sha256.New, root)
+	_, _ = mac.Write([]byte("sub2api/content-moderation-decision-cache/v1"))
+	return mac.Sum(nil), true
 }
 
 type LogConfig struct {

@@ -69,6 +69,12 @@ type Match struct {
 	Strict         bool   `json:"strict,omitempty"`
 	Operational    bool   `json:"operational,omitempty"`
 	SourceRevision string `json:"source_revision,omitempty"`
+	// StartByte and EndByte identify the raw user-text region that triggered the
+	// pattern. They are intentionally excluded from serialized diagnostics: the
+	// moderation service keeps the actual bounded payload in its encrypted
+	// evidence store instead of leaking it through rule metadata.
+	StartByte int `json:"-"`
+	EndByte   int `json:"-"`
 }
 
 type Verdict struct {
@@ -230,7 +236,7 @@ func (e *Engine) inspect(text string) Verdict {
 		if pattern.re.FindStringIndex(scanText) == nil {
 			continue
 		}
-		matchesByName[pattern.cfg.Name] = Match{
+		match := Match{
 			Name:           pattern.cfg.Name,
 			Weight:         pattern.cfg.Weight,
 			Category:       pattern.cfg.Category,
@@ -238,6 +244,14 @@ func (e *Engine) inspect(text string) Verdict {
 			Operational:    pattern.operational,
 			SourceRevision: pattern.cfg.SourceRevision,
 		}
+		// scanText is whitespace-normalized for stable scoring, so its offsets
+		// cannot safely be projected back to the request. A second raw lookup is
+		// used only to locate the context window sent to the reviewer.
+		if rawSpan := pattern.re.FindStringIndex(text); len(rawSpan) == 2 {
+			match.StartByte = rawSpan[0]
+			match.EndByte = rawSpan[1]
+		}
+		matchesByName[pattern.cfg.Name] = match
 	}
 	if len(matchesByName) == 0 {
 		return verdict

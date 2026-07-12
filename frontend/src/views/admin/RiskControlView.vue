@@ -856,18 +856,11 @@
                 </div>
               </div>
               <div class="rounded-lg border border-gray-100 p-4 dark:border-dark-700 lg:col-span-2">
-                <div class="flex items-start justify-between gap-4">
-                  <div>
-                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.semanticReviewEnabled') }}</p>
-                    <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.semanticReviewHint') }}</p>
-                  </div>
-                  <Toggle v-model="configForm.semantic_review_enabled" />
+                <div>
+                  <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.semanticReviewEnabled') }}</p>
+                  <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.semanticReviewHint') }}</p>
                 </div>
-                <div v-if="configForm.semantic_review_enabled" class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div>
-                    <label class="input-label">{{ t('admin.riskControl.semanticReviewTrigger') }}</label>
-                    <Select v-model="configForm.semantic_review_trigger" :options="semanticReviewTriggerOptions" />
-                  </div>
+                <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
                     <label class="input-label">{{ t('admin.riskControl.semanticReviewPrimaryModel') }}</label>
                     <Select v-model="configForm.semantic_review_primary_model" :options="semanticReviewModelOptions" />
@@ -876,15 +869,9 @@
                     <label class="input-label">{{ t('admin.riskControl.semanticReviewFallbackModels') }}</label>
                     <textarea v-model="configForm.semantic_review_fallback_models_text" class="input min-h-20 resize-y font-mono text-sm" :placeholder="t('admin.riskControl.semanticReviewFallbackModelsPlaceholder')"></textarea>
                   </div>
-                  <div class="grid grid-cols-2 gap-3">
-                    <div>
-                      <label class="input-label">{{ t('admin.riskControl.semanticReviewTimeout') }}</label>
-                      <input v-model.number="configForm.semantic_review_timeout_ms" type="number" min="1000" max="60000" class="input" />
-                    </div>
-                    <div>
-                      <label class="input-label">{{ t('admin.riskControl.semanticReviewMaxInput') }}</label>
-                      <input v-model.number="configForm.semantic_review_max_input_runes" type="number" min="256" max="12000" class="input" />
-                    </div>
+                  <div>
+                    <label class="input-label">{{ t('admin.riskControl.semanticReviewTimeout') }}</label>
+                    <input v-model.number="configForm.semantic_review_timeout_ms" type="number" min="1000" max="60000" class="input" />
                   </div>
                 </div>
               </div>
@@ -923,10 +910,26 @@
 				<Toggle v-model="configForm.pass_cache_enabled" />
 			  </div>
 			  <div>
-				<label class="input-label">{{ t('admin.riskControl.passCacheTtl') }}</label>
-				<input v-model.number="configForm.pass_cache_ttl_seconds" type="number" min="60" max="2592000" class="input" :disabled="!configForm.pass_cache_enabled" />
-			  </div>
-            </div>
+					<label class="input-label">{{ t('admin.riskControl.passCacheTtl') }}</label>
+					<input v-model.number="configForm.pass_cache_ttl_seconds" type="number" min="60" max="2592000" class="input" :disabled="!configForm.pass_cache_enabled" />
+				  </div>
+			  <div class="flex items-center justify-between rounded-lg border border-gray-100 p-4 dark:border-dark-700">
+					<div>
+					  <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.decisionCache') }}</p>
+					  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.decisionCacheHint') }}</p>
+					</div>
+					<Toggle v-model="configForm.decision_cache_enabled" />
+				  </div>
+			  <div>
+					<label class="input-label">{{ t('admin.riskControl.decisionCacheTtl') }}</label>
+					<input v-model.number="configForm.decision_cache_ttl_seconds" type="number" min="10" max="3600" class="input" :disabled="!configForm.decision_cache_enabled" />
+				  </div>
+			  <div class="rounded-lg border border-gray-100 p-4 dark:border-dark-700">
+					<p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.candidateFragmentRunes') }}</p>
+					<p class="mt-1 font-mono text-sm font-semibold text-gray-900 dark:text-white">2,000</p>
+					<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.candidateFragmentRunesHint') }}</p>
+				  </div>
+			</div>
 
             <div class="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-800">
               <div class="flex flex-col gap-4 border-b border-gray-100 bg-gray-50 px-4 py-4 dark:border-dark-700 dark:bg-dark-800/60 lg:flex-row lg:items-center lg:justify-between">
@@ -1356,17 +1359,6 @@
               <label class="input-label">{{ t('admin.riskControl.queueSize') }}</label>
               <input v-model.number="configForm.queue_size" type="number" min="100" max="100000" class="input" />
             </div>
-            <div class="flex items-center justify-between rounded-lg border border-gray-100 p-4 dark:border-dark-700 lg:col-span-2">
-              <div>
-                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.recordNonHits') }}</p>
-                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.recordNonHitsHint') }}</p>
-              </div>
-              <Toggle v-model="configForm.record_non_hits" />
-            </div>
-            <div>
-              <label class="input-label">{{ t('admin.riskControl.auditScope') }}</label>
-              <Select v-model="configForm.audit_scope" :options="auditScopeOptions" />
-            </div>
             <div class="flex items-center justify-between rounded-lg border border-gray-100 p-4 dark:border-dark-700">
               <div>
                 <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.storeInputExcerpt') }}</p>
@@ -1559,35 +1551,6 @@
               </div>
             </div>
 
-            <div class="space-y-2">
-              <label class="input-label">{{ t('admin.riskControl.keywordBlockingMode') }}</label>
-              <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <button
-                  v-for="option in keywordBlockingModeOptions"
-                  :key="option.value"
-                  type="button"
-                  class="rounded-lg border p-3 text-left transition-colors"
-                  :class="configForm.keyword_blocking_mode === option.value
-                    ? 'border-primary-300 bg-primary-50 text-primary-900 shadow-sm dark:border-primary-700 dark:bg-primary-900/20 dark:text-primary-100'
-                    : 'border-gray-100 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700/60'"
-                  @click="configForm.keyword_blocking_mode = option.value"
-                >
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-sm font-semibold">{{ option.label }}</span>
-                    <span
-                      class="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border"
-                      :class="configForm.keyword_blocking_mode === option.value
-                        ? 'border-primary-500 bg-primary-500 text-white'
-                        : 'border-gray-300 text-transparent dark:border-dark-500'"
-                    >
-                      <Icon name="check" size="xs" :stroke-width="2" />
-                    </span>
-                  </div>
-                  <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ option.description }}</p>
-                </button>
-              </div>
-            </div>
-
             <div class="overflow-hidden rounded-lg border border-gray-100 bg-white dark:border-dark-700 dark:bg-dark-800">
               <div class="flex flex-col gap-3 border-b border-gray-100 bg-gray-50 px-4 py-3 dark:border-dark-700 dark:bg-dark-800/60 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -1605,12 +1568,11 @@
                       <th class="px-4 py-3 text-left font-medium">{{ t('admin.riskControl.matchedKeyword') }}</th>
                       <th class="px-4 py-3 text-left font-medium">{{ t('admin.riskControl.keywordCategory') }}</th>
                       <th class="px-4 py-3 text-left font-medium">{{ t('admin.riskControl.keywordSeverity') }}</th>
-                      <th class="px-4 py-3 text-left font-medium">{{ t('admin.riskControl.keywordAction') }}</th>
                       <th class="px-4 py-3 text-left font-medium">{{ t('admin.riskControl.keywordRuleStatus') }}</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-gray-100 bg-white dark:divide-dark-700 dark:bg-dark-800">
-                    <tr v-for="rule in keywordRuleList" :key="`${rule.keyword}:${rule.category}:${rule.severity}:${rule.action}`">
+                    <tr v-for="rule in keywordRuleList" :key="`${rule.keyword}:${rule.category}:${rule.severity}`">
                       <td class="max-w-[360px] px-4 py-3">
                         <span class="block break-words font-mono text-xs font-semibold text-gray-900 dark:text-white">{{ rule.keyword }}</span>
                       </td>
@@ -1619,9 +1581,6 @@
                       </td>
                       <td class="px-4 py-3">
                         <span class="inline-flex rounded-md bg-amber-50 px-2 py-1 font-mono text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{{ rule.severity || '-' }}</span>
-                      </td>
-                      <td class="px-4 py-3">
-                        <span class="font-mono text-xs font-medium text-gray-700 dark:text-gray-200">{{ rule.action || '-' }}</span>
                       </td>
                       <td class="px-4 py-3">
                         <span
@@ -1651,7 +1610,6 @@
                 v-model="configForm.blocked_keywords_text"
                 class="input min-h-52 resize-y font-mono text-sm"
                 :placeholder="t('admin.riskControl.blockedKeywordsPlaceholder')"
-                :disabled="configForm.keyword_blocking_mode === 'api_only'"
               ></textarea>
               <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.riskControl.blockedKeywordsLimit', { max: blockedKeywordMax }) }}
@@ -1792,7 +1750,7 @@
             </div>
           </div>
 
-          <div v-if="inputDetailRow.matched_keyword" class="rounded-xl border border-amber-100 bg-amber-50 p-4 shadow-sm dark:border-amber-900/40 dark:bg-amber-900/10">
+			  <div v-if="inputDetailRow.matched_keyword" class="rounded-xl border border-amber-100 bg-amber-50 p-4 shadow-sm dark:border-amber-900/40 dark:bg-amber-900/10">
             <p class="text-sm font-semibold text-amber-800 dark:text-amber-100">{{ t('admin.riskControl.keywordMetadata') }}</p>
             <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
@@ -1828,9 +1786,31 @@
                 <p class="mt-1 break-words text-sm font-semibold text-amber-900 dark:text-amber-50">{{ inputDetailRow.review_note }}</p>
               </div>
             </div>
-          </div>
+			  </div>
 
-          <div class="rounded-xl border border-gray-100 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-800">
+			  <div v-if="inputDetailRow.decision_source" class="rounded-xl border border-sky-100 bg-sky-50 p-4 shadow-sm dark:border-sky-900/40 dark:bg-sky-900/10">
+				<p class="text-sm font-semibold text-sky-800 dark:text-sky-100">{{ t('admin.riskControl.reviewDelivery') }}</p>
+				<div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+				  <div>
+					<p class="text-xs font-medium text-sky-700/80 dark:text-sky-200/80">{{ t('admin.riskControl.decisionSource') }}</p>
+					<p class="mt-1 break-words font-mono text-sm font-semibold text-sky-900 dark:text-sky-50">{{ inputDetailRow.decision_source }}</p>
+				  </div>
+				  <div>
+					<p class="text-xs font-medium text-sky-700/80 dark:text-sky-200/80">{{ t('admin.riskControl.reviewerModel') }}</p>
+					<p class="mt-1 break-words font-mono text-sm font-semibold text-sky-900 dark:text-sky-50">{{ inputDetailRow.moderation_provider || '-' }} / {{ inputDetailRow.moderation_model || '-' }}</p>
+				  </div>
+				  <div>
+					<p class="text-xs font-medium text-sky-700/80 dark:text-sky-200/80">{{ t('admin.riskControl.selectedSource') }}</p>
+					<p class="mt-1 break-words font-mono text-sm font-semibold text-sky-900 dark:text-sky-50">{{ inputDetailRow.selected_source || '-' }} ({{ inputDetailRow.selected_source_role || '-' }})</p>
+				  </div>
+				  <div>
+					<p class="text-xs font-medium text-sky-700/80 dark:text-sky-200/80">{{ t('admin.riskControl.reviewDelivery') }}</p>
+					<p class="mt-1 break-words font-mono text-sm font-semibold text-sky-900 dark:text-sky-50">{{ inputDetailRow.selected_fragment_runes || 0 }} · {{ inputDetailRow.duplicate_retry_count || 0 }}</p>
+				  </div>
+				</div>
+			  </div>
+
+			  <div class="rounded-xl border border-gray-100 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-800">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.inputDetailContent') }}</p>
@@ -1839,16 +1819,26 @@
                 </p>
               </div>
               <div class="flex flex-wrap items-center gap-2">
-                <button
-                  v-if="inputDetailRow.raw_request_available"
+				<button
+				  v-if="inputDetailRow.raw_request_available"
                   type="button"
                   class="btn btn-secondary inline-flex items-center gap-2"
                   :disabled="rawRequestLoading"
                   @click="loadRawRequest(inputDetailRow)"
                 >
                   <Icon name="eye" size="sm" :class="rawRequestLoading ? 'animate-pulse' : ''" />
-                  {{ t('admin.riskControl.viewRawRequest') }}
-                </button>
+				  {{ t('admin.riskControl.viewRawRequest') }}
+				</button>
+				<button
+				  v-if="inputDetailRow.evidence_available"
+				  type="button"
+				  class="btn btn-secondary inline-flex items-center gap-2"
+				  :disabled="evidenceLoading"
+				  @click="loadEvidence(inputDetailRow)"
+				>
+				  <Icon name="eye" size="sm" :class="evidenceLoading ? 'animate-pulse' : ''" />
+				  {{ t('admin.riskControl.viewReviewPayload') }}
+				</button>
                 <span v-if="inputDetailRow.group_name" class="inline-flex rounded-md bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">
                   {{ inputDetailRow.group_name }}
                 </span>
@@ -1886,11 +1876,11 @@ import Pagination from '@/components/common/Pagination.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import { adminAPI } from '@/api/admin'
 import type {
-  ContentModerationAuditScope,
 	ContentModerationAccountScope,
   ContentModerationAPIKeyLoad,
   ContentModerationAPIKeyStatus,
   ContentModerationConfig,
+	ContentModerationEvidence,
   ContentModerationKeywordRule,
   ContentModerationLog,
   ContentModerationModelFilter,
@@ -1899,11 +1889,10 @@ import type {
   ContentModerationPipelineRouteCoverageStatus,
   ContentModerationPipelineRouteStageCoverageStatus,
   ContentModerationPipelineStageCoverageStatus,
-	  ContentModerationPromptFilterMode,
-	  ContentModerationSemanticReviewConfig,
+	ContentModerationPromptFilterMode,
+	ContentModerationSemanticReviewConfig,
   ContentModerationRuntimeStatus,
   ContentModerationTestAuditResult,
-  KeywordBlockingMode,
   ModerationMode,
   ModerationProvider,
   TestContentModerationKeywordsResponse,
@@ -2034,6 +2023,8 @@ const rawRequestBody = ref('')
 const rawRequestBodyLogID = ref<number | null>(null)
 const rawRequestBytes = ref<number | null>(null)
 const rawRequestTruncated = ref(false)
+const evidence = ref<ContentModerationEvidence | null>(null)
+const evidenceLoading = ref(false)
 let statusTimer: number | null = null
 
 const configForm = reactive({
@@ -2052,17 +2043,16 @@ const configForm = reactive({
 	  prompt_filter_mode: 'observe' as ContentModerationPromptFilterMode,
 	  prompt_filter_threshold: 50,
 	  prompt_filter_strict_threshold: 90,
-	  semantic_review_enabled: false,
-	  semantic_review_trigger: 'local_review',
 	  semantic_review_primary_model: 'gpt-5.3-codex-spark',
   semantic_review_fallback_models_text: 'gpt-5-mini',
 	  semantic_review_timeout_ms: 20000,
-	  semantic_review_max_input_runes: 4000,
 	  provider: 'openai' as ModerationProvider,
   base_url: 'https://api.openai.com',
   model: 'omni-moderation-latest',
   pass_cache_enabled: false,
   pass_cache_ttl_seconds: 86400,
+	decision_cache_enabled: true,
+	decision_cache_ttl_seconds: 600,
   api_keys_text: '',
   api_key_configured: false,
   api_key_masked: '',
@@ -2078,8 +2068,6 @@ const configForm = reactive({
   group_ids: [] as number[],
 	account_scope: 'all' as ContentModerationAccountScope,
 	account_ids: [] as number[],
-  record_non_hits: false,
-  audit_scope: 'all_context' as ContentModerationAuditScope,
   store_input_excerpt: true,
   search_input_excerpt: false,
   worker_count: 4,
@@ -2097,7 +2085,6 @@ const configForm = reactive({
   thresholds: { ...riskThresholdDefaults } as Record<string, number>,
   blocked_keywords_text: '',
   keyword_rules: [] as ContentModerationKeywordRule[],
-  keyword_blocking_mode: 'keyword_and_api' as KeywordBlockingMode,
   model_filter_type: 'all' as ContentModerationModelFilterType,
   model_filter_models: [] as string[],
 })
@@ -2163,24 +2150,6 @@ function onProviderChange(value: string | number | boolean | null) {
   if (!configForm.model || configForm.model === 'moderation') configForm.model = 'omni-moderation-latest'
 }
 
-const keywordBlockingModeOptions = computed<Array<{ value: KeywordBlockingMode; label: string; description: string }>>(() => [
-  {
-    value: 'keyword_and_api',
-    label: t('admin.riskControl.keywordModeKeywordAndApi'),
-    description: t('admin.riskControl.keywordModeKeywordAndApiDesc'),
-  },
-  {
-    value: 'keyword_only',
-    label: t('admin.riskControl.keywordModeKeywordOnly'),
-    description: t('admin.riskControl.keywordModeKeywordOnlyDesc'),
-  },
-  {
-    value: 'api_only',
-    label: t('admin.riskControl.keywordModeApiOnly'),
-    description: t('admin.riskControl.keywordModeApiOnlyDesc'),
-  },
-])
-
 const promptFilterModeOptions = computed<SelectOption[]>(() => [
   { value: 'observe', label: t('admin.riskControl.promptFilterModeObserve') },
   { value: 'warn', label: t('admin.riskControl.promptFilterModeWarn') },
@@ -2188,20 +2157,9 @@ const promptFilterModeOptions = computed<SelectOption[]>(() => [
   { value: 'off', label: t('admin.riskControl.promptFilterModeOff') },
 ])
 
-const semanticReviewTriggerOptions = computed<SelectOption[]>(() => [
-  { value: 'local_review', label: t('admin.riskControl.semanticReviewTriggerLocal') },
-  { value: 'all', label: t('admin.riskControl.semanticReviewTriggerAll') },
-])
-
 const semanticReviewModelOptions = computed<SelectOption[]>(() => [
   { value: 'gpt-5.3-codex-spark', label: 'gpt-5.3-codex-spark' },
   { value: 'gpt-5-mini', label: 'gpt-5-mini' },
-])
-
-const auditScopeOptions = computed<SelectOption[]>(() => [
-  { value: 'all_context', label: t('admin.riskControl.auditScopeAllContext') },
-  { value: 'user_and_tool', label: t('admin.riskControl.auditScopeUserAndTool') },
-  { value: 'user_only', label: t('admin.riskControl.auditScopeUserOnly') },
 ])
 
 const modelFilterOptions = computed<Array<{ value: ContentModerationModelFilterType; label: string; description: string }>>(() => [
@@ -2247,14 +2205,6 @@ const keywordNoticeTones = {
 }
 
 const keywordNotice = computed<KeywordNoticeView>(() => {
-  const strategy = configForm.keyword_blocking_mode
-  if (strategy === 'api_only') {
-    return {
-      ...keywordNoticeTones.info,
-      title: t('admin.riskControl.keywordModeApiOnlyNotice'),
-      description: t('admin.riskControl.keywordModeApiOnlyDesc'),
-    }
-  }
   if (configForm.mode !== 'pre_block') {
     return {
       ...keywordNoticeTones.warning,
@@ -2262,25 +2212,11 @@ const keywordNotice = computed<KeywordNoticeView>(() => {
       description: t('admin.riskControl.blockedKeywordsDescription'),
     }
   }
-  if (strategy === 'keyword_only') {
-    return {
-      ...keywordNoticeTones.info,
-      title: t('admin.riskControl.keywordModeKeywordOnlyNotice'),
-      description: t('admin.riskControl.keywordModeKeywordOnlyDesc'),
-    }
-  }
-  if (strategy === 'keyword_and_api') {
-    return {
-      ...keywordNoticeTones.info,
-      title: t('admin.riskControl.keywordModeKeywordAndApiNotice'),
-      description: t('admin.riskControl.keywordModeKeywordAndApiDesc'),
-    }
-  }
-  return {
-    ...keywordNoticeTones.info,
-    title: t('admin.riskControl.blockedKeywordsPreBlockHint'),
-    description: t('admin.riskControl.blockedKeywordsDescription'),
-  }
+	return {
+		...keywordNoticeTones.info,
+		title: t('admin.riskControl.keywordModeCandidateOnlyNotice'),
+		description: t('admin.riskControl.keywordModeCandidateOnlyDesc'),
+	}
 })
 
 const resultOptions = computed<SelectOption[]>(() => [
@@ -2525,13 +2461,16 @@ const protectionBaselineText = computed(() => {
 const protectionExternalAPIText = computed(() => {
   const effective = status.value?.effective_protection
   if (!effective) return '-'
-  if (effective.engine_mode === 'rule_only') return t('admin.riskControl.protectionExternalLocalAudit')
-  if (effective.engine_mode === 'hybrid' && !effective.external_api_configured) {
-    return t('admin.riskControl.protectionExternalOptionalNotConfigured')
+  if (effective.engine_mode === 'candidate_only' && !effective.external_api_configured) {
+    return t('admin.riskControl.protectionExternalSemanticFallback')
   }
+  if (effective.engine_mode === 'candidate_only') {
+    const state = effective.external_api_healthy ? t('admin.riskControl.protectionHealthy') : t('admin.riskControl.protectionUnhealthy')
+    return `${state} · ${formatNumber(effective.external_api_usable_key_count)} · ${t('admin.riskControl.protectionExternalSemanticFallback')}`
+  }
+  if (effective.engine_mode === 'rule_only') return t('admin.riskControl.protectionExternalLocalAudit')
   if (!effective.external_api_configured) return t('admin.riskControl.protectionExternalNotConfigured')
   const state = effective.external_api_healthy ? t('admin.riskControl.protectionHealthy') : t('admin.riskControl.protectionUnhealthy')
-  if (effective.engine_mode === 'hybrid') return `${t('admin.riskControl.protectionExternalOptional')} · ${state} · ${formatNumber(effective.external_api_usable_key_count)}`
   return `${state} · ${formatNumber(effective.external_api_usable_key_count)}`
 })
 
@@ -3004,6 +2943,7 @@ const riskThresholdRows = computed<RiskThresholdRow[]>(() => (
 
 const inputDetailText = computed(() => {
   if (!inputDetailRow.value) return '-'
+  if (evidence.value?.log_id === inputDetailRow.value.id) return evidence.value.payload || '-'
   if (rawRequestBodyLogID.value === inputDetailRow.value.id && rawRequestBody.value) return rawRequestBody.value
   return inputDetailRow.value.input_excerpt || inputDetailRow.value.error || '-'
 })
@@ -3145,19 +3085,16 @@ function applyConfig(config: ContentModerationConfig) {
 	configForm.prompt_filter_threshold = config.prompt_filter_threshold || 50
 	configForm.prompt_filter_strict_threshold = config.prompt_filter_strict_threshold || 90
 	const semanticReview: ContentModerationSemanticReviewConfig = config.semantic_review || {
-		enabled: false,
+		enabled: true,
 		trigger: 'local_review',
 		primary_model: 'gpt-5.3-codex-spark',
-			fallback_models: ['gpt-5-mini'],
+		fallback_models: ['gpt-5-mini'],
 		timeout_ms: 20000,
-		max_input_runes: 4000,
+		max_input_runes: 2000,
 	}
-	configForm.semantic_review_enabled = semanticReview.enabled ?? false
-	configForm.semantic_review_trigger = semanticReview.trigger === 'all' ? 'all' : 'local_review'
 	configForm.semantic_review_primary_model = semanticReview.primary_model || 'gpt-5.3-codex-spark'
 	configForm.semantic_review_fallback_models_text = Array.isArray(semanticReview.fallback_models) ? semanticReview.fallback_models.join('\n') : ''
 	configForm.semantic_review_timeout_ms = semanticReview.timeout_ms || 20000
-	configForm.semantic_review_max_input_runes = semanticReview.max_input_runes || 4000
 	promptFilterSourceRevision.value = config.prompt_filter_source_revision || ''
 	promptFilterSourceURL.value = config.prompt_filter_source_url || ''
 	promptFilterSourceAuthor.value = config.prompt_filter_source_author || ''
@@ -3166,6 +3103,8 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.model = config.model || 'omni-moderation-latest'
 	configForm.pass_cache_enabled = config.pass_cache_enabled ?? false
 	configForm.pass_cache_ttl_seconds = config.pass_cache_ttl_seconds || 86400
+	configForm.decision_cache_enabled = config.decision_cache_enabled ?? true
+	configForm.decision_cache_ttl_seconds = config.decision_cache_ttl_seconds || 600
   configForm.api_keys_text = ''
   configForm.api_key_configured = config.api_key_configured
   configForm.api_key_masked = config.api_key_masked || ''
@@ -3184,8 +3123,6 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.group_ids = Array.isArray(config.group_ids) ? [...config.group_ids] : []
 	configForm.account_scope = config.account_scope === 'oauth' || config.account_scope === 'selected' ? config.account_scope : 'all'
 	configForm.account_ids = Array.isArray(config.account_ids) ? [...config.account_ids] : []
-  configForm.record_non_hits = config.record_non_hits
-  configForm.audit_scope = normalizeAuditScope(config.audit_scope)
   configForm.store_input_excerpt = config.store_input_excerpt ?? true
   configForm.search_input_excerpt = config.search_input_excerpt ?? false
   configForm.worker_count = config.worker_count || 4
@@ -3203,7 +3140,6 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.thresholds = riskThresholdsFromConfig(config.thresholds)
   configForm.blocked_keywords_text = Array.isArray(config.blocked_keywords) ? config.blocked_keywords.join('\n') : ''
   configForm.keyword_rules = normalizeKeywordRules(config.keyword_rules)
-  configForm.keyword_blocking_mode = normalizeKeywordBlockingMode(config.keyword_blocking_mode)
   const modelFilter = normalizeModelFilter(config.model_filter)
   configForm.model_filter_type = modelFilter.type
   configForm.model_filter_models = modelFilter.models
@@ -3317,21 +3253,23 @@ async function saveConfig() {
 	      prompt_filter_threshold: Number(configForm.prompt_filter_threshold) || 50,
 	      prompt_filter_strict_threshold: Number(configForm.prompt_filter_strict_threshold) || 90,
 	      semantic_review: {
-	        enabled: configForm.semantic_review_enabled,
-	        trigger: configForm.semantic_review_trigger,
+	        enabled: true,
+	        trigger: 'local_review',
 	        primary_model: configForm.semantic_review_primary_model.trim() || 'gpt-5.3-codex-spark',
 	        fallback_models: configForm.semantic_review_fallback_models_text
 	          .split(/[\n,]/)
 	          .map((model) => model.trim())
 	          .filter(Boolean),
 	        timeout_ms: Number(configForm.semantic_review_timeout_ms) || 20000,
-	        max_input_runes: Number(configForm.semantic_review_max_input_runes) || 4000,
+	        max_input_runes: 2000,
 	      },
 	      provider: configForm.provider,
       base_url: configForm.base_url,
       model: configForm.model,
 	  pass_cache_enabled: configForm.pass_cache_enabled,
 	  pass_cache_ttl_seconds: Number(configForm.pass_cache_ttl_seconds) || 86400,
+	  decision_cache_enabled: configForm.decision_cache_enabled,
+	  decision_cache_ttl_seconds: Number(configForm.decision_cache_ttl_seconds) || 600,
       timeout_ms: Number(configForm.timeout_ms) || 3000,
       retry_count: Number(configForm.retry_count) || 0,
       sample_rate: Number(configForm.sample_rate) || 0,
@@ -3339,8 +3277,8 @@ async function saveConfig() {
       group_ids: configForm.all_groups ? [] : [...configForm.group_ids],
 		account_scope: configForm.account_scope,
 		account_ids: configForm.account_scope === 'selected' ? [...configForm.account_ids] : [],
-      record_non_hits: configForm.record_non_hits,
-      audit_scope: configForm.audit_scope,
+	      record_non_hits: false,
+	      audit_scope: 'user_only',
       store_input_excerpt: configForm.store_input_excerpt,
       search_input_excerpt: configForm.search_input_excerpt,
       clear_api_key: configForm.clear_api_key,
@@ -3359,8 +3297,9 @@ async function saveConfig() {
       thresholds: buildRiskThresholdPayload(),
       blocked_keywords: blockedKeywordList.value,
       keyword_rules: keywordRuleList.value,
-      keyword_blocking_mode: configForm.keyword_blocking_mode,
-      model_filter: modelFilterPayload,
+	  keyword_blocking_mode: 'keyword_and_api',
+	  engine_mode: 'candidate_only',
+	  model_filter: modelFilterPayload,
     }
     const keys = parseApiKeys(configForm.api_keys_text)
     if (!payload.clear_api_key && configForm.api_keys_mode === 'replace' && keys.length === 0) {
@@ -3461,6 +3400,7 @@ function openInputDetail(row: ContentModerationLog) {
   rawRequestBodyLogID.value = null
   rawRequestBytes.value = null
   rawRequestTruncated.value = false
+  evidence.value = null
 }
 
 function closeInputDetail() {
@@ -3469,6 +3409,7 @@ function closeInputDetail() {
   rawRequestBodyLogID.value = null
   rawRequestBytes.value = null
   rawRequestTruncated.value = false
+  evidence.value = null
 }
 
 async function loadRawRequest(row: ContentModerationLog) {
@@ -3476,6 +3417,7 @@ async function loadRawRequest(row: ContentModerationLog) {
   rawRequestLoading.value = true
   try {
     const raw = await adminAPI.riskControl.getRawRequest(row.id)
+		evidence.value = null
     rawRequestBody.value = raw.body || ''
     rawRequestBodyLogID.value = row.id
     rawRequestBytes.value = raw.body_bytes
@@ -3484,6 +3426,20 @@ async function loadRawRequest(row: ContentModerationLog) {
     appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.rawRequestFailed')))
   } finally {
     rawRequestLoading.value = false
+  }
+}
+
+async function loadEvidence(row: ContentModerationLog) {
+  if (evidenceLoading.value || !row.evidence_available) return
+  evidenceLoading.value = true
+  try {
+		rawRequestBody.value = ''
+		rawRequestBodyLogID.value = null
+    evidence.value = await adminAPI.riskControl.getEvidence(row.id)
+  } catch (err: unknown) {
+    appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.reviewPayloadFailed')))
+  } finally {
+    evidenceLoading.value = false
   }
 }
 
@@ -3927,6 +3883,7 @@ function protectionUnsafeReasonLabel(reason: string): string {
     no_deterministic_high_risk_policy: t('admin.riskControl.protectionReason.noDeterministicHighRiskPolicy'),
     api_only_without_healthy_external_api: t('admin.riskControl.protectionReason.apiOnlyWithoutHealthyExternalAPI'),
     hybrid_external_api_unhealthy: t('admin.riskControl.protectionReason.hybridExternalAPIUnhealthy'),
+		candidate_semantic_reviewer_unavailable: t('admin.riskControl.semanticReviewUnavailable'),
     build_commit_unknown: t('admin.riskControl.protectionReason.buildCommitUnknown'),
     build_commit_placeholder: t('admin.riskControl.protectionReason.buildCommitPlaceholder'),
     build_commit_invalid: t('admin.riskControl.protectionReason.buildCommitInvalid'),
@@ -3987,20 +3944,6 @@ function parseApiKeys(value: string): string[] {
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter((item, index, arr) => item && arr.indexOf(item) === index)
-}
-
-function normalizeKeywordBlockingMode(value: unknown): KeywordBlockingMode {
-  if (value === 'keyword_only' || value === 'api_only' || value === 'keyword_and_api') {
-    return value
-  }
-  return 'keyword_and_api'
-}
-
-function normalizeAuditScope(value: unknown): ContentModerationAuditScope {
-  if (value === 'user_only' || value === 'user_and_tool' || value === 'all_context') {
-    return value
-  }
-  return 'all_context'
 }
 
 function normalizeModelFilter(value: unknown): ContentModerationModelFilter {
