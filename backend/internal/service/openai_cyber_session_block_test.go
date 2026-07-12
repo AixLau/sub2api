@@ -60,6 +60,7 @@ func TestCyberSessionBlockKey(t *testing.T) {
 
 type fakeCyberBlockStore struct {
 	blocked map[string]bool
+	readErr error
 }
 
 var _ CyberSessionBlockStore = (*fakeCyberBlockStore)(nil)
@@ -73,6 +74,9 @@ func (f *fakeCyberBlockStore) SetCyberSessionBlocked(_ context.Context, key stri
 }
 
 func (f *fakeCyberBlockStore) IsCyberSessionBlocked(_ context.Context, key string) (bool, error) {
+	if f.readErr != nil {
+		return false, f.readErr
+	}
 	return f.blocked[key], nil
 }
 
@@ -195,4 +199,16 @@ func TestCyberSessionBlock_RoundTrip(t *testing.T) {
 
 	// Different key: still not blocked.
 	require.False(t, svc.IsCyberSessionBlocked(ctx, "other-key"))
+}
+
+func TestIsCyberSessionBlocked_CanceledReadFailsOpen(t *testing.T) {
+	settingSvc := &SettingService{
+		settingRepo: &fakeSettingRepo{vals: map[string]string{
+			SettingKeyCyberSessionBlockEnabled: "true",
+		}},
+	}
+	combo := &comboCacheAndStore{store: fakeCyberBlockStore{readErr: context.Canceled}}
+	svc := &OpenAIGatewayService{cache: combo, settingService: settingSvc}
+
+	require.False(t, svc.IsCyberSessionBlocked(context.Background(), "session-key"))
 }

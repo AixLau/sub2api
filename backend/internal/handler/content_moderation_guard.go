@@ -2,12 +2,14 @@ package handler
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -134,6 +136,24 @@ func (h *OpenAIGatewayHandler) EnterOpenAIHTTPGatewayPipeline(c *gin.Context, me
 		protectedCtx, protectErr := h.contentModerationService.AcquireRequestResources(c.Request.Context(), c.Request.ContentLength, c.GetHeader("Content-Encoding"))
 		if protectErr != nil {
 			if errors.Is(protectErr, service.ErrRequestMemoryBudgetExhausted) {
+				var budgetErr *service.RequestMemoryBudgetExhaustedError
+				if errors.As(protectErr, &budgetErr) {
+					logger.FromContext(c.Request.Context()).Warn("request_memory_admission_rejected",
+						zap.Int64("request_content_length", budgetErr.RequestContentLength),
+						zap.Int64("estimated_charge_bytes", budgetErr.EstimatedChargeBytes),
+						zap.Int64("active_bytes", budgetErr.ActiveBytes),
+						zap.Int64("admission_limit_bytes", budgetErr.AdmissionLimitBytes),
+						zap.Int64("available_bytes", budgetErr.AvailableBytes),
+						zap.Int("active_reservations", budgetErr.ActiveReservations),
+						zap.Int("waiting_requests", budgetErr.WaitingRequests),
+						zap.Int("admission_wait_ms", budgetErr.AdmissionWaitMS),
+						zap.Bool("ambiguous_length", budgetErr.AmbiguousLength),
+						zap.Bool("small_request", budgetErr.SmallRequest),
+					)
+					if raw, err := json.Marshal(budgetErr); err == nil {
+						service.SetOpsDiagnostic(c, "请求内存准入预算耗尽", string(raw))
+					}
+				}
 				c.Header("Retry-After", "1")
 				h.errorResponse(c, http.StatusTooManyRequests, "request_memory_budget_exhausted", "Request memory budget exhausted")
 			} else if varMax := new(service.RequestBodyTooLargeError); errors.As(protectErr, &varMax) {
@@ -295,6 +315,15 @@ func (h *OpenAIGatewayHandler) readOpenAIHTTPPreForwardRequest(c *gin.Context, r
 	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
 	bodyReadMs := time.Since(bodyReadStart).Milliseconds()
 	if err != nil {
+		if requestErr := c.Request.Context().Err(); requestErr != nil {
+			reqLog.Debug("openai.request_body_read_canceled",
+				zap.Int64("request_body_read_ms", bodyReadMs),
+				zap.Error(requestErr),
+			)
+			markOpsRequestBodyReadError(c, requestErr)
+			c.Status(statusClientClosedRequest)
+			return nil, "", false, nil, nil, false
+		}
 		reqLog.Warn("openai.request_body_read_failed",
 			zap.Int64("request_body_read_ms", bodyReadMs),
 			zap.Error(err),

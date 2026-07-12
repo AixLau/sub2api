@@ -26,6 +26,27 @@ const (
 
 var ErrRequestMemoryBudgetExhausted = errors.New("request memory budget exhausted")
 
+type RequestMemoryBudgetExhaustedError struct {
+	RequestContentLength int64 `json:"request_content_length"`
+	EstimatedChargeBytes int64 `json:"estimated_charge_bytes"`
+	ActiveBytes          int64 `json:"active_bytes"`
+	AdmissionLimitBytes  int64 `json:"admission_limit_bytes"`
+	AvailableBytes       int64 `json:"available_bytes"`
+	ActiveReservations   int   `json:"active_reservations"`
+	WaitingRequests      int   `json:"waiting_requests"`
+	AdmissionWaitMS      int   `json:"admission_wait_ms"`
+	AmbiguousLength      bool  `json:"ambiguous_length"`
+	SmallRequest         bool  `json:"small_request"`
+}
+
+func (e *RequestMemoryBudgetExhaustedError) Error() string {
+	return ErrRequestMemoryBudgetExhausted.Error()
+}
+
+func (e *RequestMemoryBudgetExhaustedError) Unwrap() error {
+	return ErrRequestMemoryBudgetExhausted
+}
+
 type ResourceProtectionConfig struct {
 	MaxRequestBodyMiB        int `json:"max_request_body_mib"`
 	InflightMemoryBudgetMiB  int `json:"inflight_memory_budget_mib"`
@@ -271,11 +292,11 @@ func (m *ResourceProtectionManager) Acquire(ctx context.Context, contentLength i
 		if m.cancel(w) {
 			m.release(charge)
 		}
-		return nil, ErrRequestMemoryBudgetExhausted
+		return nil, m.memoryBudgetExhaustedError(contentLength, charge, ambiguous, small, cfg.AdmissionWaitTimeoutMS)
 	default:
 		if timeout == 0 {
 			m.cancel(w)
-			return nil, ErrRequestMemoryBudgetExhausted
+			return nil, m.memoryBudgetExhaustedError(contentLength, charge, ambiguous, small, 0)
 		}
 	}
 	select {
@@ -290,7 +311,32 @@ func (m *ResourceProtectionManager) Acquire(ctx context.Context, contentLength i
 		if m.cancel(w) {
 			m.release(charge)
 		}
-		return nil, ErrRequestMemoryBudgetExhausted
+		return nil, m.memoryBudgetExhaustedError(contentLength, charge, ambiguous, small, cfg.AdmissionWaitTimeoutMS)
+	}
+}
+
+func (m *ResourceProtectionManager) memoryBudgetExhaustedError(contentLength, charge int64, ambiguous, small bool, waitMS int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	limit := int64(m.config.InflightMemoryBudgetMiB) << 20
+	if !small {
+		limit -= int64(m.config.SmallRequestReserveMiB) << 20
+	}
+	available := limit - m.activeBytes
+	if available < 0 {
+		available = 0
+	}
+	return &RequestMemoryBudgetExhaustedError{
+		RequestContentLength: contentLength,
+		EstimatedChargeBytes: charge,
+		ActiveBytes:          m.activeBytes,
+		AdmissionLimitBytes:  limit,
+		AvailableBytes:       available,
+		ActiveReservations:   m.activeReservations,
+		WaitingRequests:      len(m.waiters),
+		AdmissionWaitMS:      waitMS,
+		AmbiguousLength:      ambiguous,
+		SmallRequest:         small,
 	}
 }
 

@@ -26,6 +26,30 @@ func TestResourceProtectionDefaultMaximumRequestCharge(t *testing.T) {
 	require.Eventually(t, func() bool { return m.Status().ActiveBytes == 0 }, time.Second, time.Millisecond)
 }
 
+func TestResourceProtectionBudgetErrorIncludesAdmissionSnapshot(t *testing.T) {
+	cfg := DefaultResourceProtectionConfig()
+	cfg.AdmissionWaitTimeoutMS = 1
+	m := NewResourceProtectionManager(cfg)
+	reservation, err := m.Acquire(context.Background(), 50<<20, false)
+	require.NoError(t, err)
+	defer reservation.Release()
+
+	_, err = m.Acquire(context.Background(), 50<<20, false)
+	var budgetErr *RequestMemoryBudgetExhaustedError
+	require.ErrorAs(t, err, &budgetErr)
+	require.ErrorIs(t, err, ErrRequestMemoryBudgetExhausted)
+	require.Equal(t, int64(50<<20), budgetErr.RequestContentLength)
+	require.Equal(t, int64(200<<20), budgetErr.EstimatedChargeBytes)
+	require.Equal(t, int64(200<<20), budgetErr.ActiveBytes)
+	require.Equal(t, int64(336<<20), budgetErr.AdmissionLimitBytes)
+	require.Equal(t, int64(136<<20), budgetErr.AvailableBytes)
+	require.Equal(t, 1, budgetErr.ActiveReservations)
+	require.Zero(t, budgetErr.WaitingRequests)
+	require.Equal(t, 1, budgetErr.AdmissionWaitMS)
+	require.False(t, budgetErr.AmbiguousLength)
+	require.False(t, budgetErr.SmallRequest)
+}
+
 func TestResourceProtectionRejectsDeclaredOversizeBeforeAdmission(t *testing.T) {
 	m := NewResourceProtectionManager(DefaultResourceProtectionConfig())
 	_, err := m.Acquire(context.Background(), (50<<20)+1, false)

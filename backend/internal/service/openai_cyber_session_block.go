@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -92,6 +93,9 @@ func (s *OpenAIGatewayService) IsCyberSessionBlocked(ctx context.Context, key st
 	}
 	blocked, err := store.IsCyberSessionBlocked(ctx, key)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return false
+		}
 		logger.LegacyPrintf("service.openai_gateway", "cyber session block read failed: err=%v", err)
 		return false
 	}

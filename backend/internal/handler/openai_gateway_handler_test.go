@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,6 +30,14 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 )
+
+type requestBodyErrorReader struct {
+	err error
+}
+
+func (r requestBodyErrorReader) Read([]byte) (int, error) {
+	return 0, r.err
+}
 
 func TestOpenAIHandleStreamingAwareError_JSONEscaping(t *testing.T) {
 	tests := []struct {
@@ -195,6 +204,28 @@ func TestReadOpenAIHTTPPreForwardRequest_LogsBodyReadTiming(t *testing.T) {
 	require.Equal(t, clientRequestID, fields["client_request_id"])
 	require.Equal(t, int64(len(payload)), fields["body_bytes"])
 	require.Contains(t, fields, "request_body_read_ms")
+}
+
+func TestReadOpenAIHTTPPreForwardRequest_CanceledUploadReturns499(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	core, observed := observer.New(zapcore.DebugLevel)
+	reqLogger := zap.New(core)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", requestBodyErrorReader{err: io.ErrUnexpectedEOF})
+	c.Request = req.WithContext(ctx)
+
+	h := &OpenAIGatewayHandler{}
+	_, _, _, _, _, ok := h.readOpenAIHTTPPreForwardRequest(c, reqLogger, service.ContentModerationProtocolOpenAIResponses)
+
+	require.False(t, ok)
+	require.Equal(t, statusClientClosedRequest, c.Writer.Status())
+	require.Empty(t, w.Body.String())
+	require.Len(t, observed.FilterMessage("openai.request_body_read_canceled").All(), 1)
+	require.Empty(t, observed.FilterMessage("openai.request_body_read_failed").All())
 }
 
 func TestOpenAIEnsureForwardErrorResponse_WritesFallbackWhenNotWritten(t *testing.T) {
