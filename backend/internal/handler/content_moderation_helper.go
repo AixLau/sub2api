@@ -88,12 +88,8 @@ func markOpsContentModerationDiagnostic(c *gin.Context, decision *service.Conten
 
 func contentModerationCheckErrorDecision() *service.ContentModerationDecision {
 	return &service.ContentModerationDecision{
-		Allowed:    false,
-		Blocked:    true,
-		Flagged:    true,
-		StatusCode: http.StatusServiceUnavailable,
-		Message:    "内容安全模块暂时不可用，请稍后重试",
-		Action:     service.ContentModerationActionError,
+		Allowed: true,
+		Action:  service.ContentModerationActionError,
 	}
 }
 
@@ -245,7 +241,7 @@ func runSelectedAccountContentModeration(c *gin.Context, reqLog *zap.Logger, svc
 		if reqLog != nil {
 			reqLog.Warn("content_moderation.account_attempt_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		}
-		return &service.ContentModerationGateResult{Decision: contentModerationCheckErrorDecision(), Disposition: service.ContentModerationDispositionProviderErrorClosed}
+		return &service.ContentModerationGateResult{Decision: contentModerationCheckErrorDecision(), Disposition: service.ContentModerationDispositionProviderErrorOpen}
 	}
 	c.Set(selectedAccountModerationStateContextKey, result.NextState)
 	return result

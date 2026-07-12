@@ -12,19 +12,19 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestContentModerationCheckErrorDecisionBlocksRequest(t *testing.T) {
+func TestContentModerationCheckErrorDecisionAllowsRequest(t *testing.T) {
 	decision := contentModerationCheckErrorDecision()
 
 	require.NotNil(t, decision)
-	require.False(t, decision.Allowed)
-	require.True(t, decision.Blocked)
-	require.True(t, decision.Flagged)
-	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.False(t, decision.Flagged)
+	require.Zero(t, decision.StatusCode)
 	require.Equal(t, service.ContentModerationActionError, decision.Action)
-	require.Equal(t, "内容安全模块暂时不可用，请稍后重试", decision.Message)
+	require.Empty(t, decision.Message)
 }
 
-func TestOpenAIContentModerationNilServiceFailsClosed(t *testing.T) {
+func TestOpenAIContentModerationNilServiceFailsOpen(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -41,7 +41,8 @@ func TestOpenAIContentModerationNilServiceFailsClosed(t *testing.T) {
 	)
 
 	require.NotNil(t, decision)
-	require.True(t, decision.Blocked)
-	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Zero(t, decision.StatusCode)
 	require.Equal(t, service.ContentModerationActionError, decision.Action)
 }

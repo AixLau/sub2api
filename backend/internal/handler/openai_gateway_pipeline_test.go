@@ -74,7 +74,7 @@ func TestOpenAIGatewayPipelineCheckModerationReturnsBlockedDecision(t *testing.T
 	require.Len(t, guard.calls, 1)
 }
 
-func TestOpenAIGatewayPipelineCheckModerationNilGuardFailsClosed(t *testing.T) {
+func TestOpenAIGatewayPipelineCheckModerationNilGuardFailsOpen(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	pipeline := newOpenAIGatewayPipeline(nil)
 
@@ -90,8 +90,9 @@ func TestOpenAIGatewayPipelineCheckModerationNilGuardFailsClosed(t *testing.T) {
 		})
 
 		require.NotNil(t, decision)
-		require.True(t, decision.Blocked)
-		require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+		require.True(t, decision.Allowed)
+		require.False(t, decision.Blocked)
+		require.Zero(t, decision.StatusCode)
 		require.Equal(t, service.ContentModerationActionError, decision.Action)
 	})
 }

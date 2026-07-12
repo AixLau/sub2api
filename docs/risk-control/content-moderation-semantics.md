@@ -1,14 +1,14 @@
 # Content Moderation Safety Semantics
 
-This document records the safety contract for the content moderation gateway. It is intended to prevent future changes from accidentally weakening the fail-closed and local-rule behavior.
+This document records the safety contract for the content moderation gateway. It is intended to prevent future changes from accidentally weakening deterministic rule blocking or changing the availability behavior of the moderation pipeline.
 
 ## Failure Strategy
 
-- `fail_strategy.default` defaults to `closed`.
-- `trusted_group_ids` only applies to moderation system failures, such as initialization failure, config load failure, missing external moderation API keys when an external API is required, or moderation API errors.
-- `trusted_group_ids` must not bypass explicit local rule hits, hash blocklist hits, or any other deterministic block decision.
-- Public groups and newly registered users should use fail-closed behavior.
-- Fail-closed decisions return HTTP 503 and action `error`, with message `内容安全模块暂时不可用，请稍后重试`.
+- `fail_strategy` remains accepted for compatibility with existing configuration and status responses.
+- Moderation system failures always fail open so a broken audit dependency does not interrupt user traffic. This includes initialization, config or risk-switch reads, missing required audit keys, content extraction failures, semantic review failures, and ordinary moderation API errors.
+- A fail-open system failure returns `Allowed=true` with action `error`, records logs/metrics, and continues forwarding. It is not treated as a normal moderation pass.
+- Fail-open behavior must never bypass a successful deterministic decision. In `rule_only`/`keyword_only`, a local blocking rule or hash hit still blocks immediately.
+- A successful ordinary moderation or semantic review rejection still blocks according to the active pre-block mode.
 
 ## Engine Modes
 
@@ -25,10 +25,10 @@ This document records the safety contract for the content moderation gateway. It
 
 ## Semantic Review
 
-- When `semantic_review.enabled=true`, cyber/jailbreak local candidates are sent through the configured internal model router before the ordinary moderation classifier.
+- When `semantic_review.enabled=true`, cyber/jailbreak candidates are sent through the configured internal model router. For a hybrid keyword hit, the ordinary moderation API is always called first; the semantic result is applied only after that API allows the request.
 - The default primary model is `gpt-5.3-codex-spark` with `gpt-5-mini` as fallback; account selection, OAuth headers, quota refresh, and retries remain in the existing OpenAI gateway service.
-- A semantic `reject` is a terminal 403 in pre-block mode. A semantic `allow` or `review` continues to the ordinary moderation API, so `keyword_and_api` never turns a local hit into an unreviewed direct block.
-- If semantic review is enabled but unavailable, pre-block requests follow `fail_strategy`; public closed strategy returns 503 rather than silently allowing the candidate.
+- For a hybrid keyword hit, a semantic `reject` is a terminal 403 in pre-block mode only after the required ordinary API call. A semantic `allow` or `review` does not bypass the ordinary API, so `keyword_and_api` never turns a local hit into an unreviewed direct block.
+- If semantic review is enabled but unavailable, hybrid candidates continue to the ordinary moderation API. If that API is also unavailable, the request is fail-opened with action `error`.
 
 ## Rule Actions
 

@@ -87,7 +87,7 @@ func TestOpenAIGatewayHandlerCheckWithModerationGuardNilPipelineFallsBackToHandl
 	require.Equal(t, input, guard.calls[0])
 }
 
-func TestOpenAIGatewayHandlerCheckWithModerationGuardNilPipelineFailsClosedWithoutGuard(t *testing.T) {
+func TestOpenAIGatewayHandlerCheckWithModerationGuardNilPipelineFailsOpenWithoutGuard(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -105,9 +105,9 @@ func TestOpenAIGatewayHandlerCheckWithModerationGuardNilPipelineFailsClosedWitho
 	})
 
 	require.NotNil(t, decision)
-	require.True(t, decision.Blocked)
-	require.False(t, decision.Allowed)
-	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.False(t, decision.Blocked)
+	require.True(t, decision.Allowed)
+	require.Zero(t, decision.StatusCode)
 	require.Equal(t, service.ContentModerationActionError, decision.Action)
 }
 

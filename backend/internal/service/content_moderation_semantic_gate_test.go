@@ -23,7 +23,7 @@ func (s *contentModerationSemanticReviewRouterStub) Review(_ context.Context, _ 
 	return s.result, s.err
 }
 
-func TestContentModerationCheck_HybridCyberKeywordUsesSemanticReviewBeforeModeration(t *testing.T) {
+func TestContentModerationCheck_HybridCyberKeywordUsesOrdinaryModerationAndSemanticReview(t *testing.T) {
 	moderationCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		moderationCalled = true
@@ -85,14 +85,23 @@ func TestContentModerationCheck_HybridCyberKeywordUsesSemanticReviewBeforeModera
 	require.False(t, decision.Blocked)
 	require.Equal(t, 1, router.calls)
 	require.Contains(t, router.input.Text, "exploit")
-	require.True(t, moderationCalled, "a hybrid keyword hit must continue to the ordinary moderation API after semantic allow")
+	require.True(t, moderationCalled, "a hybrid keyword hit must call the ordinary moderation API")
 }
 
-func TestContentModerationCheck_HybridCyberKeywordBlocksOnSemanticReject(t *testing.T) {
+func TestContentModerationCheck_HybridCyberKeywordBlocksOnSemanticRejectAfterOrdinaryModeration(t *testing.T) {
+	moderationCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		moderationCalled = true
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{Results: []moderationAPIResult{{CategoryScores: map[string]float64{"sexual": 0.1}}}})
+	}))
+	defer server.Close()
+
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
-	cfg.APIKeys = nil
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.RetryCount = 0
 	cfg.KeywordRules = []ContentModerationKeywordRule{{
 		Keyword:  "reverse engineer",
 		Category: ContentModerationKeywordCategoryCyber,
@@ -145,6 +154,7 @@ func TestContentModerationCheck_HybridCyberKeywordBlocksOnSemanticReject(t *test
 	require.Equal(t, ContentModerationActionSemanticReviewReject, decision.Action)
 	require.Equal(t, "reverse_engineering", decision.HighestCategory)
 	require.Equal(t, 1, router.calls)
+	require.True(t, moderationCalled, "ordinary moderation must run before semantic reject is applied")
 	require.Len(t, repo.snapshotLogs(), 1)
 	require.Equal(t, ContentModerationActionSemanticReviewReject, repo.snapshotLogs()[0].Action)
 }

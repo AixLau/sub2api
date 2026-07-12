@@ -1618,7 +1618,7 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 	allow := &ContentModerationDecision{Allowed: true, Action: ContentModerationActionAllow}
 	if s == nil || s.settingRepo == nil || s.repo == nil {
 		return &ContentModerationGateResult{
-			Disposition: ContentModerationDispositionProviderErrorClosed,
+			Disposition: ContentModerationDispositionProviderErrorOpen,
 			Decision:    contentModerationFailureDecision(defaultContentModerationConfig()),
 		}, nil
 	}
@@ -1629,7 +1629,7 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 		if riskErr != nil {
 			slog.Warn("content_moderation.risk_switch_read_failed", "error", riskErr)
 			return &ContentModerationGateResult{
-				Disposition: ContentModerationDispositionProviderErrorClosed,
+				Disposition: ContentModerationDispositionProviderErrorOpen,
 				Decision:    contentModerationFailureDecision(defaultContentModerationConfig()),
 			}, nil
 		}
@@ -1637,7 +1637,7 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 	cfg, err := s.loadConfig(ctx)
 	if err != nil {
 		return &ContentModerationGateResult{
-			Disposition: ContentModerationDispositionProviderErrorClosed,
+			Disposition: ContentModerationDispositionProviderErrorOpen,
 			Decision:    contentModerationFailureDecision(defaultContentModerationConfig()),
 		}, nil
 	}
@@ -1713,14 +1713,11 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 	disposition := ContentModerationDispositionAllowed
 	reusable := true
 	switch {
-	case decision != nil && decision.Blocked && decision.Action == ContentModerationActionError:
-		disposition = ContentModerationDispositionProviderErrorClosed
+	case decision != nil && decision.Action == ContentModerationActionError:
+		disposition = ContentModerationDispositionProviderErrorOpen
 		reusable = false
 	case decision != nil && decision.Blocked:
 		disposition = ContentModerationDispositionBlocked
-		reusable = false
-	case decision != nil && decision.Action == ContentModerationActionError:
-		disposition = ContentModerationDispositionProviderErrorOpen
 		reusable = false
 	case !riskEnabled || !cfg.Enabled || cfg.Mode == ContentModerationModeOff || content.IsEmpty() || len(cfg.apiKeys()) == 0 || !cfg.externalModerationRequired():
 		disposition = ContentModerationDispositionDeterministicAllow
@@ -1756,7 +1753,7 @@ func contentModerationPolicyRevision(riskEnabled bool, cfg *ContentModerationCon
 func (s *ContentModerationService) Check(ctx context.Context, input ContentModerationCheckInput) (*ContentModerationDecision, error) {
 	allow := &ContentModerationDecision{Allowed: true, Action: ContentModerationActionAllow}
 	if s == nil || s.settingRepo == nil || s.repo == nil {
-		slog.Warn("content_moderation.unavailable_fail_closed",
+		slog.Warn("content_moderation.unavailable_fail_open",
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,
 			"group_id", contentModerationLogGroupID(input.GroupID),
@@ -1766,7 +1763,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	}
 	riskEnabled, riskErr := s.isRiskControlEnabled(ctx)
 	if riskErr != nil {
-		slog.Warn("content_moderation.risk_switch_read_failed",
+		slog.Warn("content_moderation.risk_switch_read_failed_fail_open",
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,
 			"group_id", contentModerationLogGroupID(input.GroupID),
@@ -1883,9 +1880,9 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"endpoint", input.Endpoint,
 			"protocol", input.Protocol,
 			"body_bytes", len(input.Body))
-		if cfg.Mode == ContentModerationModePreBlock && cfg.shouldFailClosed(input) && isUnexpectedEmptyModerationInput(input.Protocol, input.Body) {
+		if cfg.Mode == ContentModerationModePreBlock && isUnexpectedEmptyModerationInput(input.Protocol, input.Body) {
 			s.recordPreBlockSyncMetric(0, ContentModerationActionError)
-			slog.Warn("content_moderation.empty_extraction_fail_closed",
+			slog.Warn("content_moderation.empty_extraction_fail_open",
 				"user_id", input.UserID,
 				"api_key_id", input.APIKeyID,
 				"group_id", contentModerationLogGroupID(input.GroupID),
@@ -1905,9 +1902,9 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		"protocol", input.Protocol,
 		"text_runes", len([]rune(content.Text)),
 		"image_count", len(content.Images))
-	if cfg.Mode == ContentModerationModePreBlock && cfg.shouldFailClosed(input) && content.hasOversizedEncodedPayloadSkipped() {
+	if cfg.Mode == ContentModerationModePreBlock && content.hasOversizedEncodedPayloadSkipped() {
 		s.recordPreBlockSyncMetric(0, ContentModerationActionError)
-		slog.Warn("content_moderation.oversized_encoded_payload_fail_closed",
+		slog.Warn("content_moderation.oversized_encoded_payload_fail_open",
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,
 			"group_id", contentModerationLogGroupID(input.GroupID),
@@ -1952,17 +1949,17 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			}, nil
 		}
 	}
+	var localKeywordMatch *ContentModerationKeywordRule
 	if cfg.Mode == ContentModerationModePreBlock {
 		localRuleMatched := false
-		var localKeywordMatch *ContentModerationKeywordRule
 		if cfg.shouldRunLocalRules() {
 			if keywordMatch, hit := matchContentModerationLocalRuleInput(content, cfg.keywordRules()); hit {
 				if !cfg.externalModerationRequired() {
 					return s.keywordDecision(ctx, input, cfg, content, hashText, keywordMatch), nil
 				}
 				// Hybrid mode uses local rules only as candidate detection. Every
-				// local hit must reach the configured moderation API for the final
-				// decision; semantic review may run before that API for cyber intent.
+				// local hit must reach the configured moderation API before any
+				// optional semantic decision is applied.
 				localRuleMatched = true
 				matchedRule := keywordMatch
 				localKeywordMatch = &matchedRule
@@ -1993,13 +1990,6 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 				return classifierDecision, nil
 			}
 		}
-		if localKeywordMatch != nil {
-			if candidate, ok := contentModerationSemanticGateCandidateForKeyword(cfg, content, *localKeywordMatch, s.semanticReviewRouter); ok {
-				if semanticDecision, terminal := s.semanticReviewGate(ctx, input, cfg, content, hashText, candidate); terminal {
-					return semanticDecision, nil
-				}
-			}
-		}
 		if !cfg.externalModerationRequired() {
 			s.recordPreBlockSyncMetric(0, ContentModerationActionAllow)
 			slog.Info("content_moderation.skip_external_moderation_rule_only",
@@ -2023,8 +2013,8 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"protocol", input.Protocol,
 			"engine_mode", cfg.EngineMode,
 			"external_required", externalRequired,
-			"fail_closed", cfg.shouldFailClosed(input))
-		if externalRequired && cfg.Mode == ContentModerationModePreBlock && cfg.shouldFailClosed(input) {
+			"fail_open", externalRequired && cfg.Mode == ContentModerationModePreBlock)
+		if externalRequired && cfg.Mode == ContentModerationModePreBlock {
 			s.recordPreBlockSyncMetric(0, ContentModerationActionError)
 			return contentModerationFailureDecision(cfg), nil
 		}
@@ -2042,7 +2032,15 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		return allow, nil
 	}
 
-	return s.checkSync(ctx, input, cfg, content, hashText, nil, true), nil
+	decision := s.checkSync(ctx, input, cfg, content, hashText, nil, true)
+	if localKeywordMatch != nil && decision != nil && !decision.Blocked && decision.Action != ContentModerationActionError {
+		if candidate, ok := contentModerationSemanticGateCandidateForKeyword(cfg, content, *localKeywordMatch, s.semanticReviewRouter); ok {
+			if semanticDecision, terminal := s.semanticReviewGate(ctx, input, cfg, content, hashText, candidate); terminal {
+				return semanticDecision, nil
+			}
+		}
+	}
+	return decision, nil
 }
 
 func (s *ContentModerationService) checkSync(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string, queueDelay *int, allowBlock bool) *ContentModerationDecision {
@@ -2100,7 +2098,7 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 			log := s.buildLog(input, cfg, ContentModerationActionError, false, "", 0, nil, content.ExcerptText(), &latency, queueDelay, err.Error())
 			_ = s.repo.CreateLog(ctx, log)
 		}
-		if allowBlock && cfg.Mode == ContentModerationModePreBlock && cfg.shouldFailClosed(input) {
+		if allowBlock && cfg.Mode == ContentModerationModePreBlock {
 			return contentModerationFailureDecision(cfg)
 		}
 		return allow
@@ -5205,29 +5203,13 @@ func (cfg *ContentModerationConfig) includesModel(model string) bool {
 	}
 }
 
-func (cfg *ContentModerationConfig) shouldFailClosed(input ContentModerationCheckInput) bool {
-	if cfg == nil {
-		return true
-	}
-	strategy := normalizeContentModerationFailStrategy(cfg.FailStrategy)
-	if input.GroupID != nil && int64SliceContains(strategy.TrustedGroupIDs, *input.GroupID) {
-		return false
-	}
-	return strategy.Default != ContentModerationFailStrategyOpen
-}
-
-func contentModerationFailureDecision(cfg *ContentModerationConfig) *ContentModerationDecision {
-	status := http.StatusServiceUnavailable
-	if cfg != nil && cfg.BlockStatus >= 500 && cfg.BlockStatus <= 599 {
-		status = cfg.BlockStatus
-	}
+// contentModerationFailureDecision keeps the request available when the
+// moderation system cannot produce a verdict. Successful deterministic and
+// provider decisions still use their normal blocking behavior.
+func contentModerationFailureDecision(_ *ContentModerationConfig) *ContentModerationDecision {
 	return &ContentModerationDecision{
-		Allowed:    false,
-		Blocked:    true,
-		Flagged:    true,
-		Message:    "内容安全模块暂时不可用，请稍后重试",
-		StatusCode: status,
-		Action:     ContentModerationActionError,
+		Allowed: true,
+		Action:  ContentModerationActionError,
 	}
 }
 
@@ -6061,15 +6043,6 @@ func contentModerationModelListContains(models []string, model string) bool {
 	}
 	for _, candidate := range models {
 		if strings.ToLower(strings.TrimSpace(candidate)) == model {
-			return true
-		}
-	}
-	return false
-}
-
-func int64SliceContains(values []int64, needle int64) bool {
-	for _, value := range values {
-		if value == needle {
 			return true
 		}
 	}

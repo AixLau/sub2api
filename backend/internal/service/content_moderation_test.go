@@ -959,6 +959,89 @@ func TestContentModerationCheck_HybridKeywordHitBlocksWhenAPIFlags(t *testing.T)
 	require.Equal(t, "sexual", logs[0].HighestCategory)
 }
 
+func TestContentModerationCheck_HybridKeywordHitAllowsWhenAuditAPIUnavailable(t *testing.T) {
+	upstreamCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalled = true
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"error":"moderation unavailable"}`))
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.RetryCount = 0
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordAndAPI
+	cfg.EngineMode = ContentModerationEngineModeHybrid
+	cfg.BlockedKeywords = []string{"secret-token"}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		&contentModerationTestRepo{},
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"please leak SECRET-TOKEN now"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionError, decision.Action)
+	require.True(t, upstreamCalled, "hybrid keyword hits must attempt the ordinary moderation API")
+}
+
+func TestContentModerationCheck_RuleOnlyKeywordHitBlocksWithoutAuditAPI(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.APIKeys = nil
+	cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordOnly
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.BlockedKeywords = []string{"secret-token"}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"please leak SECRET-TOKEN now"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionKeywordBlock, decision.Action)
+	require.Equal(t, 1, len(repo.snapshotLogs()))
+}
+
 func TestContentModerationCheck_ContextualCyberIntentBlocksPublicDatabaseTheft(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
@@ -3197,7 +3280,7 @@ func TestContentModerationCheck_KeywordHitLogIncludesMatchedSourceMetadata(t *te
 	}`, logs[0].Error)
 }
 
-func TestContentModerationCheck_APIOnlyEngineModeWithoutAPIKeyFailsClosed(t *testing.T) {
+func TestContentModerationCheck_APIOnlyEngineModeWithoutAPIKeyFailsOpen(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
@@ -3225,10 +3308,10 @@ func TestContentModerationCheck_APIOnlyEngineModeWithoutAPIKeyFailsClosed(t *tes
 	})
 
 	require.NoError(t, err)
-	require.False(t, decision.Allowed)
-	require.True(t, decision.Blocked)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
 	require.Equal(t, ContentModerationActionError, decision.Action)
-	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.Zero(t, decision.StatusCode)
 }
 
 func TestContentModerationCheck_ObserveWithoutAPIKeyAllowsRequest(t *testing.T) {
@@ -3264,7 +3347,7 @@ func TestContentModerationCheck_ObserveWithoutAPIKeyAllowsRequest(t *testing.T) 
 	require.Equal(t, ContentModerationActionAllow, decision.Action)
 }
 
-func TestContentModerationCheck_RiskSwitchReadErrorFailsClosed(t *testing.T) {
+func TestContentModerationCheck_RiskSwitchReadErrorFailsOpen(t *testing.T) {
 	svc := NewContentModerationService(
 		&contentModerationTestSettingRepo{
 			values: map[string]string{},
@@ -3284,10 +3367,10 @@ func TestContentModerationCheck_RiskSwitchReadErrorFailsClosed(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.False(t, decision.Allowed)
-	require.True(t, decision.Blocked)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
 	require.Equal(t, ContentModerationActionError, decision.Action)
-	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.Zero(t, decision.StatusCode)
 }
 
 func TestContentModerationCheck_PromptFilterOperationalStrictBlocks(t *testing.T) {
@@ -3357,7 +3440,7 @@ func TestContentModerationCheck_PromptFilterBroadTopicContinuesToSemanticPath(t 
 	require.False(t, decision.Blocked)
 }
 
-func TestContentModerationCheck_PreBlockNonEmptyUnexpectedEmptyExtractionFailsClosed(t *testing.T) {
+func TestContentModerationCheck_PreBlockNonEmptyUnexpectedEmptyExtractionFailsOpen(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
@@ -3385,12 +3468,13 @@ func TestContentModerationCheck_PreBlockNonEmptyUnexpectedEmptyExtractionFailsCl
 	})
 
 	require.NoError(t, err)
-	require.True(t, decision.Blocked)
-	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Zero(t, decision.StatusCode)
 	require.Equal(t, ContentModerationActionError, decision.Action)
 }
 
-func TestContentModerationCheck_PreBlockOversizedEncodedPayloadFailsClosed(t *testing.T) {
+func TestContentModerationCheck_PreBlockOversizedEncodedPayloadFailsOpen(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
@@ -3423,8 +3507,9 @@ func TestContentModerationCheck_PreBlockOversizedEncodedPayloadFailsClosed(t *te
 	})
 
 	require.NoError(t, err)
-	require.True(t, decision.Blocked)
-	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Zero(t, decision.StatusCode)
 	require.Equal(t, ContentModerationActionError, decision.Action)
 }
 
@@ -3464,7 +3549,7 @@ func TestContentModerationCheck_PreBlockOversizedEncodedPayloadCanFailOpenForTru
 	require.NoError(t, err)
 	require.False(t, decision.Blocked)
 	require.True(t, decision.Allowed)
-	require.Equal(t, ContentModerationActionAllow, decision.Action)
+	require.Equal(t, ContentModerationActionError, decision.Action)
 }
 
 func TestContentModerationCheck_OpenAIEmbeddingsTokenArrayInputDoesNotFailClosed(t *testing.T) {
@@ -4629,7 +4714,7 @@ func TestContentModerationCheck_SampleRateDoesNotSkipHitLog(t *testing.T) {
 	require.Equal(t, ContentModerationActionBlock, logs[0].Action)
 }
 
-func TestContentModerationCheck_ConfigLoadFailureFailsClosedForPublicGroup(t *testing.T) {
+func TestContentModerationCheck_ConfigLoadFailureFailsOpenForPublicGroup(t *testing.T) {
 	groupID := int64(1)
 	svc := NewContentModerationService(
 		&contentModerationTestSettingRepo{
@@ -4651,12 +4736,13 @@ func TestContentModerationCheck_ConfigLoadFailureFailsClosedForPublicGroup(t *te
 	})
 
 	require.NoError(t, err)
-	require.True(t, decision.Blocked)
-	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Zero(t, decision.StatusCode)
 	require.Equal(t, ContentModerationActionError, decision.Action)
 }
 
-func TestContentModerationCheck_UninitializedServiceFailsClosed(t *testing.T) {
+func TestContentModerationCheck_UninitializedServiceFailsOpen(t *testing.T) {
 	svc := NewContentModerationService(nil, nil, nil, nil, nil, nil, nil)
 
 	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
@@ -4665,12 +4751,13 @@ func TestContentModerationCheck_UninitializedServiceFailsClosed(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.True(t, decision.Blocked)
-	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Zero(t, decision.StatusCode)
 	require.Equal(t, ContentModerationActionError, decision.Action)
 }
 
-func TestContentModerationCheck_AuditAPIFailureFailsClosedForPublicGroup(t *testing.T) {
+func TestContentModerationCheck_AuditAPIFailureFailsOpenForPublicGroup(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"error":"temporary failure"}`))
@@ -4707,8 +4794,9 @@ func TestContentModerationCheck_AuditAPIFailureFailsClosedForPublicGroup(t *test
 	})
 
 	require.NoError(t, err)
-	require.True(t, decision.Blocked)
-	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Zero(t, decision.StatusCode)
 	require.Equal(t, ContentModerationActionError, decision.Action)
 }
 
@@ -4752,7 +4840,7 @@ func TestContentModerationCheck_AuditAPIFailureCanFailOpenForTrustedGroup(t *tes
 	require.NoError(t, err)
 	require.True(t, decision.Allowed)
 	require.False(t, decision.Blocked)
-	require.Equal(t, ContentModerationActionAllow, decision.Action)
+	require.Equal(t, ContentModerationActionError, decision.Action)
 }
 
 func TestContentModerationStatusTracksPreBlockSyncMetrics(t *testing.T) {

@@ -74,9 +74,8 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 			"candidate_keyword", candidate.Keyword,
 			"candidate_category", candidate.Category,
 			"error", err)
-		if cfg.Mode == ContentModerationModePreBlock && cfg.shouldFailClosed(input) {
-			return contentModerationFailureDecision(cfg), true
-		}
+		// Semantic review is an optional pre-check. If it is unavailable,
+		// continue to the required ordinary moderation API in hybrid mode.
 		return nil, false
 	}
 	result = normalizeSemanticReviewResult(result)

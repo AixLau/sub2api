@@ -22,6 +22,25 @@ func newAccountGateTestService(t *testing.T, cfg *ContentModerationConfig) *Cont
 	)
 }
 
+func TestCheckAccountAttemptUnavailableFailsOpen(t *testing.T) {
+	svc := NewContentModerationService(nil, nil, nil, nil, nil, nil, nil)
+
+	result, err := svc.CheckAccountAttempt(context.Background(), ContentModerationCheckInput{
+		AccountID:   9,
+		AccountType: AccountTypeOAuth,
+		Model:       "gpt-5",
+		Protocol:    ContentModerationProtocolOpenAIChat,
+		Body:        []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	}, nil)
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationDispositionProviderErrorOpen, result.Disposition)
+	require.NotNil(t, result.Decision)
+	require.True(t, result.Decision.Allowed)
+	require.False(t, result.Decision.Blocked)
+	require.Equal(t, ContentModerationActionError, result.Decision.Action)
+}
+
 func TestCheckAccountAttemptSkipsOutOfScopeAccount(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
