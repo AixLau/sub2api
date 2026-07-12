@@ -837,7 +837,59 @@
                 <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ modeDescription(configForm.mode) }}</p>
               </div>
               <div>
-				<label class="input-label">{{ t('admin.riskControl.provider') }}</label>
+                <label class="input-label">{{ t('admin.riskControl.promptFilterMode') }}</label>
+                <Select v-model="configForm.prompt_filter_mode" :options="promptFilterModeOptions" />
+                <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.promptFilterModeHint') }}</p>
+                <p v-if="promptFilterSourceRevision" class="mt-1 break-all text-[11px] leading-4 text-gray-400 dark:text-gray-500">
+                  {{ t('admin.riskControl.promptFilterSource', { author: promptFilterSourceAuthor, revision: promptFilterSourceRevision }) }}
+                  <a v-if="promptFilterSourceURL" :href="promptFilterSourceURL" target="_blank" rel="noreferrer" class="ml-1 text-primary-600 hover:underline dark:text-primary-400">{{ t('admin.riskControl.promptFilterSourceLink') }}</a>
+                </p>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="input-label">{{ t('admin.riskControl.promptFilterThreshold') }}</label>
+                  <input v-model.number="configForm.prompt_filter_threshold" type="number" min="1" max="500" class="input" />
+                </div>
+                <div>
+                  <label class="input-label">{{ t('admin.riskControl.promptFilterStrictThreshold') }}</label>
+                  <input v-model.number="configForm.prompt_filter_strict_threshold" type="number" min="1" max="1000" class="input" />
+                </div>
+              </div>
+              <div class="rounded-lg border border-gray-100 p-4 dark:border-dark-700 lg:col-span-2">
+                <div class="flex items-start justify-between gap-4">
+                  <div>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.semanticReviewEnabled') }}</p>
+                    <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.semanticReviewHint') }}</p>
+                  </div>
+                  <Toggle v-model="configForm.semantic_review_enabled" />
+                </div>
+                <div v-if="configForm.semantic_review_enabled" class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <label class="input-label">{{ t('admin.riskControl.semanticReviewTrigger') }}</label>
+                    <Select v-model="configForm.semantic_review_trigger" :options="semanticReviewTriggerOptions" />
+                  </div>
+                  <div>
+                    <label class="input-label">{{ t('admin.riskControl.semanticReviewPrimaryModel') }}</label>
+                    <Select v-model="configForm.semantic_review_primary_model" :options="semanticReviewModelOptions" />
+                  </div>
+                  <div>
+                    <label class="input-label">{{ t('admin.riskControl.semanticReviewFallbackModels') }}</label>
+                    <textarea v-model="configForm.semantic_review_fallback_models_text" class="input min-h-20 resize-y font-mono text-sm" :placeholder="t('admin.riskControl.semanticReviewFallbackModelsPlaceholder')"></textarea>
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="input-label">{{ t('admin.riskControl.semanticReviewTimeout') }}</label>
+                      <input v-model.number="configForm.semantic_review_timeout_ms" type="number" min="1000" max="60000" class="input" />
+                    </div>
+                    <div>
+                      <label class="input-label">{{ t('admin.riskControl.semanticReviewMaxInput') }}</label>
+                      <input v-model.number="configForm.semantic_review_max_input_runes" type="number" min="256" max="12000" class="input" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div>
+					<label class="input-label">{{ t('admin.riskControl.provider') }}</label>
 				<Select v-model="configForm.provider" :options="providerOptions" @update:modelValue="onProviderChange" />
 			  </div>
 			  <div>
@@ -1847,6 +1899,8 @@ import type {
   ContentModerationPipelineRouteCoverageStatus,
   ContentModerationPipelineRouteStageCoverageStatus,
   ContentModerationPipelineStageCoverageStatus,
+	  ContentModerationPromptFilterMode,
+	  ContentModerationSemanticReviewConfig,
   ContentModerationRuntimeStatus,
   ContentModerationTestAuditResult,
   KeywordBlockingMode,
@@ -1970,6 +2024,9 @@ const apiKeyRowsExpanded = ref<boolean>(false)
 const moderationTestPrompt = ref('')
 const moderationTestImages = ref<string[]>([])
 const moderationTestResult = ref<ContentModerationTestAuditResult | null>(null)
+const promptFilterSourceRevision = ref('')
+const promptFilterSourceURL = ref('')
+const promptFilterSourceAuthor = ref('')
 const keywordTestPrompt = ref('')
 const keywordTestResult = ref<TestContentModerationKeywordsResponse | null>(null)
 const inputDetailRow = ref<ContentModerationLog | null>(null)
@@ -1991,8 +2048,17 @@ const configForm = reactive({
 	request_audit_timeout_ms: 30000,
 	resource_protection_status: null as ContentModerationConfig['resource_protection_status'] | null,
   enabled: false,
-  mode: 'pre_block' as ModerationMode,
-  provider: 'openai' as ModerationProvider,
+	  mode: 'pre_block' as ModerationMode,
+	  prompt_filter_mode: 'observe' as ContentModerationPromptFilterMode,
+	  prompt_filter_threshold: 50,
+	  prompt_filter_strict_threshold: 90,
+	  semantic_review_enabled: false,
+	  semantic_review_trigger: 'local_review',
+	  semantic_review_primary_model: 'gpt-5.3-codex-spark',
+  semantic_review_fallback_models_text: 'gpt-5-mini',
+	  semantic_review_timeout_ms: 20000,
+	  semantic_review_max_input_runes: 4000,
+	  provider: 'openai' as ModerationProvider,
   base_url: 'https://api.openai.com',
   model: 'omni-moderation-latest',
   pass_cache_enabled: false,
@@ -2115,6 +2181,23 @@ const keywordBlockingModeOptions = computed<Array<{ value: KeywordBlockingMode; 
   },
 ])
 
+const promptFilterModeOptions = computed<SelectOption[]>(() => [
+  { value: 'observe', label: t('admin.riskControl.promptFilterModeObserve') },
+  { value: 'warn', label: t('admin.riskControl.promptFilterModeWarn') },
+  { value: 'block', label: t('admin.riskControl.promptFilterModeBlock') },
+  { value: 'off', label: t('admin.riskControl.promptFilterModeOff') },
+])
+
+const semanticReviewTriggerOptions = computed<SelectOption[]>(() => [
+  { value: 'local_review', label: t('admin.riskControl.semanticReviewTriggerLocal') },
+  { value: 'all', label: t('admin.riskControl.semanticReviewTriggerAll') },
+])
+
+const semanticReviewModelOptions = computed<SelectOption[]>(() => [
+  { value: 'gpt-5.3-codex-spark', label: 'gpt-5.3-codex-spark' },
+  { value: 'gpt-5-mini', label: 'gpt-5-mini' },
+])
+
 const auditScopeOptions = computed<SelectOption[]>(() => [
   { value: 'all_context', label: t('admin.riskControl.auditScopeAllContext') },
   { value: 'user_and_tool', label: t('admin.riskControl.auditScopeUserAndTool') },
@@ -2184,6 +2267,13 @@ const keywordNotice = computed<KeywordNoticeView>(() => {
       ...keywordNoticeTones.info,
       title: t('admin.riskControl.keywordModeKeywordOnlyNotice'),
       description: t('admin.riskControl.keywordModeKeywordOnlyDesc'),
+    }
+  }
+  if (strategy === 'keyword_and_api') {
+    return {
+      ...keywordNoticeTones.info,
+      title: t('admin.riskControl.keywordModeKeywordAndApiNotice'),
+      description: t('admin.riskControl.keywordModeKeywordAndApiDesc'),
     }
   }
   return {
@@ -3051,6 +3141,26 @@ function applyConfig(config: ContentModerationConfig) {
 	configForm.resource_protection_status = config.resource_protection_status || null
   configForm.enabled = config.enabled
   configForm.mode = config.mode
+	configForm.prompt_filter_mode = (config.prompt_filter_mode === 'off' || config.prompt_filter_mode === 'warn' || config.prompt_filter_mode === 'block' ? config.prompt_filter_mode : 'observe')
+	configForm.prompt_filter_threshold = config.prompt_filter_threshold || 50
+	configForm.prompt_filter_strict_threshold = config.prompt_filter_strict_threshold || 90
+	const semanticReview: ContentModerationSemanticReviewConfig = config.semantic_review || {
+		enabled: false,
+		trigger: 'local_review',
+		primary_model: 'gpt-5.3-codex-spark',
+			fallback_models: ['gpt-5-mini'],
+		timeout_ms: 20000,
+		max_input_runes: 4000,
+	}
+	configForm.semantic_review_enabled = semanticReview.enabled ?? false
+	configForm.semantic_review_trigger = semanticReview.trigger === 'all' ? 'all' : 'local_review'
+	configForm.semantic_review_primary_model = semanticReview.primary_model || 'gpt-5.3-codex-spark'
+	configForm.semantic_review_fallback_models_text = Array.isArray(semanticReview.fallback_models) ? semanticReview.fallback_models.join('\n') : ''
+	configForm.semantic_review_timeout_ms = semanticReview.timeout_ms || 20000
+	configForm.semantic_review_max_input_runes = semanticReview.max_input_runes || 4000
+	promptFilterSourceRevision.value = config.prompt_filter_source_revision || ''
+	promptFilterSourceURL.value = config.prompt_filter_source_url || ''
+	promptFilterSourceAuthor.value = config.prompt_filter_source_author || ''
 	configForm.provider = config.provider || 'openai'
   configForm.base_url = config.base_url || 'https://api.openai.com'
   configForm.model = config.model || 'omni-moderation-latest'
@@ -3203,7 +3313,21 @@ async function saveConfig() {
 	  request_audit_timeout_ms: Number(configForm.request_audit_timeout_ms),
       enabled: configForm.enabled,
       mode: configForm.mode,
-	  provider: configForm.provider,
+	      prompt_filter_mode: configForm.prompt_filter_mode,
+	      prompt_filter_threshold: Number(configForm.prompt_filter_threshold) || 50,
+	      prompt_filter_strict_threshold: Number(configForm.prompt_filter_strict_threshold) || 90,
+	      semantic_review: {
+	        enabled: configForm.semantic_review_enabled,
+	        trigger: configForm.semantic_review_trigger,
+	        primary_model: configForm.semantic_review_primary_model.trim() || 'gpt-5.3-codex-spark',
+	        fallback_models: configForm.semantic_review_fallback_models_text
+	          .split(/[\n,]/)
+	          .map((model) => model.trim())
+	          .filter(Boolean),
+	        timeout_ms: Number(configForm.semantic_review_timeout_ms) || 20000,
+	        max_input_runes: Number(configForm.semantic_review_max_input_runes) || 4000,
+	      },
+	      provider: configForm.provider,
       base_url: configForm.base_url,
       model: configForm.model,
 	  pass_cache_enabled: configForm.pass_cache_enabled,

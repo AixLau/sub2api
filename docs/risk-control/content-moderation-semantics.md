@@ -12,9 +12,9 @@ This document records the safety contract for the content moderation gateway. It
 
 ## Engine Modes
 
-- `engine_mode=rule_only` means local rules run and external moderation API keys are not required.
-- `engine_mode=api_only` means local keyword rules are skipped and an external moderation API is required.
-- `engine_mode=hybrid` means local rules run first; if they do not block, the external moderation API is required.
+- `engine_mode=rule_only` means local rules are authoritative; a blocking hit terminates the request and misses are allowed without an external moderation API.
+- `engine_mode=api_only` means local keyword rules are skipped and an external moderation API is required for every request.
+- `engine_mode=hybrid` means local rules run first as candidate detection, but every request, including a local keyword hit, must be sent to the external moderation API for the final decision.
 - If `engine_mode` is explicitly configured and conflicts with legacy `keyword_blocking_mode`, `engine_mode` wins.
 - If `engine_mode` is empty, it is derived from legacy `keyword_blocking_mode`.
 - Config updates write both fields so older admin clients and newer API clients stay compatible.
@@ -22,6 +22,13 @@ This document records the safety contract for the content moderation gateway. It
   - `keyword_only` maps to `rule_only`.
   - `api_only` maps to `api_only`.
   - `keyword_and_api` maps to `hybrid`.
+
+## Semantic Review
+
+- When `semantic_review.enabled=true`, cyber/jailbreak local candidates are sent through the configured internal model router before the ordinary moderation classifier.
+- The default primary model is `gpt-5.3-codex-spark` with `gpt-5-mini` as fallback; account selection, OAuth headers, quota refresh, and retries remain in the existing OpenAI gateway service.
+- A semantic `reject` is a terminal 403 in pre-block mode. A semantic `allow` or `review` continues to the ordinary moderation API, so `keyword_and_api` never turns a local hit into an unreviewed direct block.
+- If semantic review is enabled but unavailable, pre-block requests follow `fail_strategy`; public closed strategy returns 503 rather than silently allowing the candidate.
 
 ## Rule Actions
 

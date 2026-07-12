@@ -254,7 +254,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	contentModerationHashCache := repository.NewContentModerationHashCache(redisClient)
 	contentModerationPassCache := repository.NewContentModerationPassCache(redisClient)
 	moderationFeedbackEpochRepository := repository.NewModerationFeedbackEpochRepository(db)
-	contentModerationService := service.ProvideContentModerationService(settingRepository, contentModerationRepository, contentModerationOutboxRepository, contentModerationHashCache, groupRepository, accountRepository, userRepository, apiKeyAuthCacheInvalidator, emailService, contentModerationPassCache, moderationFeedbackEpochRepository, secretEncryptor, configConfig, serviceBuildInfo)
+	contentModerationService := service.ProvideContentModerationService(settingRepository, contentModerationRepository, contentModerationOutboxRepository, contentModerationHashCache, groupRepository, accountRepository, userRepository, apiKeyAuthCacheInvalidator, emailService, contentModerationPassCache, moderationFeedbackEpochRepository, secretEncryptor, openAIGatewayService, openAIQuotaService, configConfig, serviceBuildInfo)
 	batchImagePublicService := service.NewBatchImagePublicService(batchImageRepository, accountRepository, groupRepository, userGroupRateRepository, batchImageQueue, batchImageModelPricingResolver, usageBillingRepository, apiKeyAuthCacheInvalidator, contentModerationService, configConfig)
 	contentModerationHandler := admin.NewContentModerationHandler(contentModerationService)
 	paymentHandler := admin.NewPaymentHandler(paymentService, paymentConfigService)

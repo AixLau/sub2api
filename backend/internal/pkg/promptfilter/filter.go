@@ -1,0 +1,322 @@
+package promptfilter
+
+import (
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"sort"
+	"strings"
+	"sync"
+	"unicode/utf8"
+)
+
+const (
+	// BuiltinSourceRevision identifies the exact upstream rule set used here.
+	BuiltinSourceRevision = "codex2api@6793e0b09fe170895878f73f256a3d7ee7e5a08b"
+	BuiltinSourceURL      = "https://github.com/james-6-23/codex2api/tree/6793e0b09fe170895878f73f256a3d7ee7e5a08b/security/promptfilter"
+	BuiltinSourceAuthor   = "james-6-23/codex2api"
+	// The upstream rule set is redistributed in this derivative with permission from its author.
+	BuiltinSourcePermission = "redistributed with permission from the upstream author"
+)
+
+const (
+	ModeOff     = "off"
+	ModeObserve = "observe"
+	ModeWarn    = "warn"
+	ModeBlock   = "block"
+
+	DefaultThreshold       = 50
+	DefaultStrictThreshold = 90
+	DefaultMaxTextLength   = 80 * 1024
+	defaultHeadScanLength  = 64 * 1024
+	defaultTailScanLength  = 16 * 1024
+
+	ActionAllow   = "allow"
+	ActionObserve = "observe"
+	ActionWarn    = "warn"
+	ActionReview  = "review"
+	ActionBlock   = "block"
+)
+
+type PatternConfig struct {
+	Name           string `json:"name"`
+	Regex          string `json:"regex,omitempty"`
+	Weight         int    `json:"weight"`
+	Category       string `json:"category,omitempty"`
+	Strict         bool   `json:"strict,omitempty"`
+	Enabled        *bool  `json:"enabled,omitempty"`
+	SourceRevision string `json:"source_revision,omitempty"`
+	// Pattern is accepted for compatibility with older in-process callers. New rules use Regex.
+	Pattern string `json:"pattern,omitempty"`
+}
+
+type Config struct {
+	Mode             string          `json:"mode"`
+	Threshold        int             `json:"threshold"`
+	StrictThreshold  int             `json:"strict_threshold"`
+	MaxTextLength    int             `json:"max_text_length"`
+	CustomPatterns   []PatternConfig `json:"custom_patterns,omitempty"`
+	DisabledPatterns []string        `json:"disabled_patterns,omitempty"`
+}
+
+type Match struct {
+	Name           string `json:"name"`
+	Weight         int    `json:"weight"`
+	Category       string `json:"category,omitempty"`
+	Strict         bool   `json:"strict,omitempty"`
+	Operational    bool   `json:"operational,omitempty"`
+	SourceRevision string `json:"source_revision,omitempty"`
+}
+
+type Verdict struct {
+	Action          string  `json:"action"`
+	Score           int     `json:"score"`
+	RawScore        int     `json:"raw_score"`
+	StrictScore     int     `json:"strict_score"`
+	Threshold       int     `json:"threshold"`
+	StrictThreshold int     `json:"strict_threshold"`
+	StrictHit       bool    `json:"strict_hit"`
+	OperationalHit  bool    `json:"operational_hit"`
+	ReviewRequired  bool    `json:"review_required"`
+	Matches         []Match `json:"matches,omitempty"`
+	TextPreview     string  `json:"text_preview,omitempty"`
+	ExtractedRunes  int     `json:"extracted_runes"`
+	SourceRevision  string  `json:"source_revision"`
+}
+
+type compiledPattern struct {
+	cfg         PatternConfig
+	re          *regexp.Regexp
+	operational bool
+}
+
+type Engine struct {
+	cfg      Config
+	patterns []compiledPattern
+}
+
+var engineCache sync.Map // map[string]*Engine
+
+func BuiltinPatternConfigs() []PatternConfig {
+	out := make([]PatternConfig, len(defaultPatternConfigs))
+	copy(out, defaultPatternConfigs)
+	for idx := range out {
+		if out[idx].Regex == "" {
+			out[idx].Regex = out[idx].Pattern
+		}
+		out[idx].Pattern = ""
+		out[idx].SourceRevision = BuiltinSourceRevision
+	}
+	return out
+}
+
+// NewEngine compiles the pinned built-in set plus optional administrator rules.
+func NewEngine(cfg Config) (*Engine, error) {
+	cfg = normalizeConfig(cfg)
+	keyBytes, _ := json.Marshal(cfg)
+	cacheKey := string(keyBytes)
+	if cached, ok := engineCache.Load(cacheKey); ok {
+		return cached.(*Engine), nil
+	}
+	disabled := make(map[string]struct{}, len(cfg.DisabledPatterns))
+	for _, name := range cfg.DisabledPatterns {
+		disabled[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
+	}
+	merged := make([]PatternConfig, 0, len(defaultPatternConfigs)+len(cfg.CustomPatterns))
+	for _, pattern := range defaultPatternConfigs {
+		pattern.SourceRevision = BuiltinSourceRevision
+		if pattern.Regex == "" {
+			pattern.Regex = pattern.Pattern
+		}
+		pattern.Pattern = ""
+		merged = append(merged, pattern)
+	}
+	for _, pattern := range cfg.CustomPatterns {
+		if strings.TrimSpace(pattern.SourceRevision) == "" {
+			pattern.SourceRevision = "custom"
+		}
+		merged = append(merged, pattern)
+	}
+	patterns := make([]compiledPattern, 0, len(merged))
+	for _, pattern := range merged {
+		pattern.Name = strings.TrimSpace(pattern.Name)
+		pattern.Regex = strings.TrimSpace(pattern.Regex)
+		pattern.Pattern = strings.TrimSpace(pattern.Pattern)
+		if pattern.Regex == "" {
+			pattern.Regex = pattern.Pattern
+		}
+		pattern.Category = strings.TrimSpace(pattern.Category)
+		pattern.SourceRevision = strings.TrimSpace(pattern.SourceRevision)
+		if pattern.Name == "" || pattern.Regex == "" || pattern.Weight <= 0 {
+			continue
+		}
+		if _, ok := disabled[strings.ToLower(pattern.Name)]; ok {
+			continue
+		}
+		if pattern.Enabled != nil && !*pattern.Enabled {
+			continue
+		}
+		re, err := regexp.Compile(pattern.Regex)
+		if err != nil {
+			return nil, fmt.Errorf("compile prompt filter pattern %q: %w", pattern.Name, err)
+		}
+		patterns = append(patterns, compiledPattern{
+			cfg:         pattern,
+			re:          re,
+			operational: operationalPattern(pattern.Name),
+		})
+	}
+	engine := &Engine{cfg: cfg, patterns: patterns}
+	actual, _ := engineCache.LoadOrStore(cacheKey, engine)
+	return actual.(*Engine), nil
+}
+
+// Inspect applies local evidence scoring. It never calls an external model.
+func Inspect(text string, cfg Config) Verdict {
+	cfg = normalizeConfig(cfg)
+	verdict := Verdict{
+		Action:          ActionAllow,
+		Threshold:       cfg.Threshold,
+		StrictThreshold: cfg.StrictThreshold,
+		ExtractedRunes:  utf8.RuneCountInString(text),
+		SourceRevision:  BuiltinSourceRevision,
+	}
+	if cfg.Mode == ModeOff || strings.TrimSpace(text) == "" {
+		return verdict
+	}
+	engine, err := NewEngine(cfg)
+	if err != nil {
+		verdict.Action = ActionReview
+		verdict.ReviewRequired = true
+		return verdict
+	}
+	return engine.inspect(text)
+}
+
+func (e *Engine) inspect(text string) Verdict {
+	cfg := e.cfg
+	verdict := Verdict{
+		Action:          ActionAllow,
+		Threshold:       cfg.Threshold,
+		StrictThreshold: cfg.StrictThreshold,
+		ExtractedRunes:  utf8.RuneCountInString(text),
+		SourceRevision:  BuiltinSourceRevision,
+	}
+	scanText := normalizeForScan(limitScanText(text, cfg.MaxTextLength))
+	if utf8.RuneCountInString(scanText) < 3 {
+		return verdict
+	}
+	matchesByName := make(map[string]Match)
+	for _, pattern := range e.patterns {
+		if pattern.re.FindStringIndex(scanText) == nil {
+			continue
+		}
+		matchesByName[pattern.cfg.Name] = Match{
+			Name:           pattern.cfg.Name,
+			Weight:         pattern.cfg.Weight,
+			Category:       pattern.cfg.Category,
+			Strict:         pattern.cfg.Strict,
+			Operational:    pattern.operational,
+			SourceRevision: pattern.cfg.SourceRevision,
+		}
+	}
+	if len(matchesByName) == 0 {
+		return verdict
+	}
+	for _, match := range matchesByName {
+		verdict.Matches = append(verdict.Matches, match)
+		verdict.RawScore += match.Weight
+		if match.Strict {
+			verdict.StrictScore += match.Weight
+		}
+		if match.Strict && match.Operational {
+			verdict.OperationalHit = true
+		}
+	}
+	sort.Slice(verdict.Matches, func(i, j int) bool {
+		if verdict.Matches[i].Weight == verdict.Matches[j].Weight {
+			return verdict.Matches[i].Name < verdict.Matches[j].Name
+		}
+		return verdict.Matches[i].Weight > verdict.Matches[j].Weight
+	})
+	verdict.Score = verdict.RawScore
+	verdict.StrictHit = verdict.StrictScore >= cfg.StrictThreshold
+	verdict.ReviewRequired = !verdict.OperationalHit || !verdict.StrictHit
+	if verdict.OperationalHit {
+		verdict.ReviewRequired = false
+	}
+	switch cfg.Mode {
+	case ModeBlock:
+		if verdict.OperationalHit {
+			verdict.Action = ActionBlock
+		} else {
+			verdict.Action = ActionReview
+		}
+	case ModeWarn:
+		verdict.Action = ActionWarn
+	case ModeObserve:
+		verdict.Action = ActionObserve
+	default:
+		verdict.Action = ActionAllow
+	}
+	return verdict
+}
+
+func normalizeConfig(cfg Config) Config {
+	if cfg.Mode == "" {
+		cfg.Mode = ModeObserve
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Mode)) {
+	case ModeOff:
+		cfg.Mode = ModeOff
+	case ModeBlock:
+		cfg.Mode = ModeBlock
+	case ModeWarn:
+		cfg.Mode = ModeWarn
+	default:
+		cfg.Mode = ModeObserve
+	}
+	if cfg.Threshold <= 0 {
+		cfg.Threshold = DefaultThreshold
+	}
+	if cfg.StrictThreshold <= 0 {
+		cfg.StrictThreshold = DefaultStrictThreshold
+	}
+	if cfg.StrictThreshold < cfg.Threshold {
+		cfg.StrictThreshold = cfg.Threshold
+	}
+	if cfg.MaxTextLength <= 0 || cfg.MaxTextLength > 1024*1024 {
+		cfg.MaxTextLength = DefaultMaxTextLength
+	}
+	return cfg
+}
+
+func limitScanText(text string, maxRunes int) string {
+	runes := []rune(text)
+	if maxRunes <= 0 || len(runes) <= maxRunes {
+		return text
+	}
+	head := defaultHeadScanLength
+	tail := defaultTailScanLength
+	if maxRunes < head+tail {
+		head = maxRunes / 2
+		tail = maxRunes - head
+	}
+	return string(runes[:head]) + "\n[...prompt-filter-truncated...]\n" + string(runes[len(runes)-tail:])
+}
+
+func normalizeForScan(text string) string {
+	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(text)), " "))
+}
+
+func operationalPattern(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "credential_theft", "evasion", "operational_remote_access_request", "operational_exploit_request",
+		"reverse_engineering_secret_extraction", "reverse_engineering_license_bypass", "reverse_engineering_anti_debug_bypass",
+		"frida_hook_abuse", "license_cracking", "data_exfiltration", "ransomware_deployment", "credential_dumping",
+		"token_theft", "mass_exploitation":
+		return true
+	default:
+		return false
+	}
+}

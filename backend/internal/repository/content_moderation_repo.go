@@ -255,6 +255,7 @@ WHERE user_id = $1
   AND flagged = TRUE
   AND action <> 'hash_block'
   AND action <> 'keyword_review'
+  AND action NOT IN ('prompt_filter_observe', 'prompt_filter_warn', 'prompt_filter_review')
   AND ($3::bool IS FALSE OR action <> 'cyber_policy')
   AND created_at >= $2
   AND created_at > COALESCE((SELECT at FROM last_auto_ban), '-infinity'::timestamptz)
@@ -551,7 +552,7 @@ func buildContentModerationLogWhere(filter service.ContentModerationLogFilter) (
 	case "hit", "flagged":
 		where = append(where, "l.flagged = TRUE")
 	case "blocked", "block":
-		where = append(where, "l.action IN ('block', 'keyword_block', 'hash_block', 'cyber_policy', 'cyber_policy_session_blocked')")
+		where = append(where, "l.action IN ('block', 'keyword_block', 'hash_block', 'prompt_filter_block', 'cyber_policy', 'cyber_policy_session_blocked')")
 	case "review", "keyword_review":
 		where = append(where, "l.action = 'keyword_review'")
 	case "pass", "allow":

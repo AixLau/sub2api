@@ -96,16 +96,13 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 		out.Extraction.TruncateReasons = append([]string(nil), out.TruncateReasons...)
 		out.Text = trimRunes(out.Text, maxModerationInputRunes)
 	}
-	if protocol == ContentModerationProtocolOpenAIResponses && isCodexInternalPromptText(out.Text) {
-		return ContentModerationInput{Extraction: ModerationExtraction{Complete: true}}
-	}
 	return out
 }
 
 func legacyModerationTextFromParts(parts []string) string {
 	legacy := make([]string, 0, len(parts))
 	for _, part := range parts {
-		if text := stripKnownSystemReminderBlocks(part); text != "" {
+		if text := normalizeContentModerationText(part); text != "" {
 			legacy = append(legacy, text)
 		}
 	}
@@ -551,11 +548,6 @@ func isUnexpectedEmptyModerationInput(protocol string, body []byte) bool {
 	if protocol == ContentModerationProtocolOpenAIEmbeddings && isOpenAIEmbeddingsTokenInput(body) {
 		return false
 	}
-	if protocol == ContentModerationProtocolOpenAIResponses {
-		if input := ExtractContentModerationInput(protocol, body); input.IsEmpty() && isCodexInternalScaffoldPayload(body) {
-			return false
-		}
-	}
 	switch protocol {
 	case ContentModerationProtocolOpenAIChat,
 		ContentModerationProtocolOpenAIMessages,
@@ -620,9 +612,6 @@ func collectResponsesTopLevelModelContext(body []byte, parts *[]string, images *
 
 func collectModelVisibleField(value gjson.Result, source string, role string, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState) {
 	if !value.Exists() {
-		return
-	}
-	if shouldSkipKnownAgentInternalModelVisibleField(source, value) {
 		return
 	}
 	before := len(*parts)
@@ -763,10 +752,8 @@ func collectAnthropicInput(body []byte, parts *[]string, images *[]string, sourc
 	before := len(*parts)
 	if shouldIncludeModerationRole("system", "", auditScope) {
 		system := gjson.GetBytes(body, "system")
-		if !isAnthropicAgentInternalSystemPrompt(system) {
-			collectAnthropicContentValue(system, parts, images, toolState)
-			appendModerationSources(sources, "anthropic.system", "system", *parts, before)
-		}
+		collectAnthropicContentValue(system, parts, images, toolState)
+		appendModerationSources(sources, "anthropic.system", "system", *parts, before)
 	}
 	if shouldIncludeTopLevelModelContext(auditScope) {
 		collectModelVisibleField(gjson.GetBytes(body, "tools"), "anthropic.tools", "system", parts, images, sources, toolState)
@@ -1541,7 +1528,7 @@ func normalizeModerationImages(images []string) []string {
 }
 
 func addModerationText(parts *[]string, text string) {
-	text = stripKnownSystemReminderBlocks(text)
+	text = normalizeContentModerationText(text)
 	if text == "" {
 		return
 	}

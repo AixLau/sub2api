@@ -51,6 +51,8 @@ func ProvideContentModerationService(
 	passCache ContentModerationPassCache,
 	feedbackEpochRepo ModerationFeedbackEpochRepository,
 	encryptor SecretEncryptor,
+	openAIGatewayService *OpenAIGatewayService,
+	openAIQuotaService *OpenAIQuotaService,
 	cfg *config.Config,
 	buildInfo BuildInfo,
 ) *ContentModerationService {
@@ -65,6 +67,10 @@ func ProvideContentModerationService(
 	)
 	svc.SetModerationMetrics(NewContentModerationMetrics())
 	svc.SetOutboxRepository(outboxRepo)
+	svc.SetSemanticReviewRouter(NewOpenAIContentModerationSemanticReviewRouter(
+		openAIGatewayService,
+		NewOpenAIContentModerationSemanticReviewQuotaRefresher(openAIQuotaService, accountRepo),
+	))
 	if rawStore, ok := repo.(ContentModerationRawRequestSnapshotStore); ok {
 		svc.SetRawRequestSnapshotStore(rawStore, encryptor)
 	}

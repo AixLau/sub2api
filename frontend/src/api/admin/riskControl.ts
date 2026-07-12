@@ -4,6 +4,7 @@ export type ModerationMode = 'off' | 'observe' | 'pre_block'
 export type ModerationProvider = 'openai' | 'zhipu'
 export type KeywordBlockingMode = 'keyword_only' | 'keyword_and_api' | 'api_only'
 export type ContentModerationEngineMode = 'rule_only' | 'api_only' | 'hybrid'
+export type ContentModerationPromptFilterMode = 'off' | 'observe' | 'warn' | 'block'
 export type ContentModerationAuditScope = 'user_only' | 'user_and_tool' | 'all_context'
 export type ContentModerationAccountScope = 'all' | 'oauth' | 'selected'
 export type ContentModerationModelFilterType = 'all' | 'include' | 'exclude'
@@ -38,6 +39,15 @@ export interface ContentModerationKeywordRule {
   severity: ContentModerationKeywordSeverity | string
   action: ContentModerationKeywordAction | string
   enabled: boolean
+}
+
+export interface ContentModerationSemanticReviewConfig {
+  enabled: boolean
+  trigger: 'local_review' | 'all' | string
+  primary_model: string
+  fallback_models: string[]
+  timeout_ms: number
+  max_input_runes: number
 }
 
 export interface ContentModerationConfig {
@@ -90,6 +100,14 @@ export interface ContentModerationConfig {
   keyword_rules: ContentModerationKeywordRule[]
   keyword_blocking_mode: KeywordBlockingMode
   engine_mode: ContentModerationEngineMode | string
+  prompt_filter_mode?: ContentModerationPromptFilterMode | string
+  prompt_filter_threshold?: number
+  prompt_filter_strict_threshold?: number
+  prompt_filter_source_revision?: string
+  prompt_filter_source_url?: string
+  prompt_filter_source_author?: string
+  prompt_filter_source_permission?: string
+  semantic_review?: ContentModerationSemanticReviewConfig
   model_filter: ContentModerationModelFilter
   fail_strategy?: ContentModerationFailStrategy
   cyber_policy_exclude_from_ban_count: boolean
@@ -217,6 +235,10 @@ export interface UpdateContentModerationConfig {
   keyword_rules?: ContentModerationKeywordRule[]
   keyword_blocking_mode?: KeywordBlockingMode
   engine_mode?: ContentModerationEngineMode | string
+  prompt_filter_mode?: ContentModerationPromptFilterMode | string
+  prompt_filter_threshold?: number
+  prompt_filter_strict_threshold?: number
+  semantic_review?: ContentModerationSemanticReviewConfig
   model_filter?: ContentModerationModelFilter
   fail_strategy?: ContentModerationFailStrategy
   cyber_policy_exclude_from_ban_count?: boolean

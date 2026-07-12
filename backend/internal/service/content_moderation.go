@@ -28,6 +28,7 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/promptfilter"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -45,6 +46,12 @@ const (
 	ContentModerationActionKeywordBlock              = "keyword_block"
 	ContentModerationActionKeywordReview             = "keyword_review"
 	ContentModerationActionError                     = "error"
+	ContentModerationActionPromptFilterObserve       = "prompt_filter_observe"
+	ContentModerationActionPromptFilterWarn          = "prompt_filter_warn"
+	ContentModerationActionPromptFilterReview        = "prompt_filter_review"
+	ContentModerationActionPromptFilterBlock         = "prompt_filter_block"
+	ContentModerationActionSemanticReviewReject      = "semantic_review_reject"
+	ContentModerationActionSemanticReviewReview      = "semantic_review_review"
 	ContentModerationActionCyberPolicy               = "cyber_policy" // cyber_policy 硬阻断的风控日志 action（封号计数排除按此值过滤）
 	ContentModerationActionCyberPolicySessionBlocked = "cyber_policy_session_blocked"
 
@@ -223,45 +230,49 @@ func ContentModerationCategories() []string {
 
 type ContentModerationConfig struct {
 	ResourceProtectionConfig
-	Enabled              bool                                   `json:"enabled"`
-	Mode                 string                                 `json:"mode"`
-	Provider             string                                 `json:"provider,omitempty"`
-	BaseURL              string                                 `json:"base_url"`
-	Model                string                                 `json:"model"`
-	PassCacheEnabled     bool                                   `json:"pass_cache_enabled,omitempty"`
-	PassCacheTTLSeconds  int                                    `json:"pass_cache_ttl_seconds,omitempty"`
-	APIKey               string                                 `json:"api_key,omitempty"`
-	APIKeys              []string                               `json:"api_keys,omitempty"`
-	TimeoutMS            int                                    `json:"timeout_ms"`
-	SampleRate           int                                    `json:"sample_rate"`
-	AllGroups            bool                                   `json:"all_groups"`
-	GroupIDs             []int64                                `json:"group_ids"`
-	AccountScope         string                                 `json:"account_scope,omitempty"`
-	AccountIDs           []int64                                `json:"account_ids,omitempty"`
-	RecordNonHits        bool                                   `json:"record_non_hits"`
-	AuditScope           string                                 `json:"audit_scope,omitempty"`
-	StoreInputExcerpt    bool                                   `json:"store_input_excerpt"`
-	SearchInputExcerpt   bool                                   `json:"search_input_excerpt"`
-	Thresholds           map[string]float64                     `json:"thresholds"`
-	WorkerCount          int                                    `json:"worker_count"`
-	QueueSize            int                                    `json:"queue_size"`
-	BlockStatus          int                                    `json:"block_status"`
-	BlockMessage         string                                 `json:"block_message"`
-	EmailOnHit           bool                                   `json:"email_on_hit"`
-	AutoBanEnabled       bool                                   `json:"auto_ban_enabled"`
-	BanThreshold         int                                    `json:"ban_threshold"`
-	ViolationWindowHours int                                    `json:"violation_window_hours"`
-	RetryCount           int                                    `json:"retry_count"`
-	HitRetentionDays     int                                    `json:"hit_retention_days"`
-	NonHitRetentionDays  int                                    `json:"non_hit_retention_days"`
-	PreHashCheckEnabled  bool                                   `json:"pre_hash_check_enabled"`
-	BlockedKeywords      []string                               `json:"blocked_keywords"`
-	KeywordRules         []ContentModerationKeywordRule         `json:"keyword_rules,omitempty"`
-	KeywordBlockingMode  string                                 `json:"keyword_blocking_mode"`
-	EngineMode           string                                 `json:"engine_mode,omitempty"`
-	LocalClassifier      ContentModerationLocalClassifierConfig `json:"local_classifier,omitempty"`
-	ModelFilter          ContentModerationModelFilter           `json:"model_filter"`
-	FailStrategy         ContentModerationFailStrategy          `json:"fail_strategy"`
+	Enabled                     bool                                   `json:"enabled"`
+	Mode                        string                                 `json:"mode"`
+	Provider                    string                                 `json:"provider,omitempty"`
+	BaseURL                     string                                 `json:"base_url"`
+	Model                       string                                 `json:"model"`
+	PassCacheEnabled            bool                                   `json:"pass_cache_enabled,omitempty"`
+	PassCacheTTLSeconds         int                                    `json:"pass_cache_ttl_seconds,omitempty"`
+	APIKey                      string                                 `json:"api_key,omitempty"`
+	APIKeys                     []string                               `json:"api_keys,omitempty"`
+	TimeoutMS                   int                                    `json:"timeout_ms"`
+	SampleRate                  int                                    `json:"sample_rate"`
+	AllGroups                   bool                                   `json:"all_groups"`
+	GroupIDs                    []int64                                `json:"group_ids"`
+	AccountScope                string                                 `json:"account_scope,omitempty"`
+	AccountIDs                  []int64                                `json:"account_ids,omitempty"`
+	RecordNonHits               bool                                   `json:"record_non_hits"`
+	AuditScope                  string                                 `json:"audit_scope,omitempty"`
+	StoreInputExcerpt           bool                                   `json:"store_input_excerpt"`
+	SearchInputExcerpt          bool                                   `json:"search_input_excerpt"`
+	Thresholds                  map[string]float64                     `json:"thresholds"`
+	WorkerCount                 int                                    `json:"worker_count"`
+	QueueSize                   int                                    `json:"queue_size"`
+	BlockStatus                 int                                    `json:"block_status"`
+	BlockMessage                string                                 `json:"block_message"`
+	EmailOnHit                  bool                                   `json:"email_on_hit"`
+	AutoBanEnabled              bool                                   `json:"auto_ban_enabled"`
+	BanThreshold                int                                    `json:"ban_threshold"`
+	ViolationWindowHours        int                                    `json:"violation_window_hours"`
+	RetryCount                  int                                    `json:"retry_count"`
+	HitRetentionDays            int                                    `json:"hit_retention_days"`
+	NonHitRetentionDays         int                                    `json:"non_hit_retention_days"`
+	PreHashCheckEnabled         bool                                   `json:"pre_hash_check_enabled"`
+	BlockedKeywords             []string                               `json:"blocked_keywords"`
+	KeywordRules                []ContentModerationKeywordRule         `json:"keyword_rules,omitempty"`
+	KeywordBlockingMode         string                                 `json:"keyword_blocking_mode"`
+	EngineMode                  string                                 `json:"engine_mode,omitempty"`
+	PromptFilterMode            string                                 `json:"prompt_filter_mode,omitempty"`
+	PromptFilterThreshold       int                                    `json:"prompt_filter_threshold,omitempty"`
+	PromptFilterStrictThreshold int                                    `json:"prompt_filter_strict_threshold,omitempty"`
+	SemanticReview              ContentModerationSemanticReviewConfig  `json:"semantic_review,omitempty"`
+	LocalClassifier             ContentModerationLocalClassifierConfig `json:"local_classifier,omitempty"`
+	ModelFilter                 ContentModerationModelFilter           `json:"model_filter"`
+	FailStrategy                ContentModerationFailStrategy          `json:"fail_strategy"`
 	// CyberPolicyExcludeFromBanCount 为 true 时，cyber_policy 命中不参与自动封号计数：
 	// 当次不判定封号，且历史 cyber 行在 CountFlaggedByUserSince 中被排除。
 	// 默认 false（计入，与历史行为一致；旧配置 JSON 无此字段时反序列化为 false）。
@@ -310,6 +321,14 @@ type ContentModerationConfigView struct {
 	KeywordRules                   []ContentModerationKeywordRule         `json:"keyword_rules"`
 	KeywordBlockingMode            string                                 `json:"keyword_blocking_mode"`
 	EngineMode                     string                                 `json:"engine_mode"`
+	PromptFilterMode               string                                 `json:"prompt_filter_mode"`
+	PromptFilterThreshold          int                                    `json:"prompt_filter_threshold"`
+	PromptFilterStrictThreshold    int                                    `json:"prompt_filter_strict_threshold"`
+	PromptFilterSourceRevision     string                                 `json:"prompt_filter_source_revision"`
+	PromptFilterSourceURL          string                                 `json:"prompt_filter_source_url"`
+	PromptFilterSourceAuthor       string                                 `json:"prompt_filter_source_author"`
+	PromptFilterSourcePermission   string                                 `json:"prompt_filter_source_permission"`
+	SemanticReview                 ContentModerationSemanticReviewConfig  `json:"semantic_review"`
 	LocalClassifier                ContentModerationLocalClassifierConfig `json:"local_classifier"`
 	ModelFilter                    ContentModerationModelFilter           `json:"model_filter"`
 	FailStrategy                   ContentModerationFailStrategy          `json:"fail_strategy"`
@@ -331,6 +350,20 @@ type ContentModerationLocalClassifierConfig struct {
 	MaxConcurrency  int     `json:"max_concurrency"`
 	BlockThreshold  float64 `json:"block_threshold"`
 	ReviewThreshold float64 `json:"review_threshold"`
+}
+
+// ContentModerationSemanticReviewConfig controls the asynchronous, internal
+// model review that runs after deterministic rules. It is deliberately
+// separate from the external moderation API configuration: the latter is
+// optimized for sexual/violence classifiers, while this path handles
+// jailbreak, reverse-engineering abuse, credential theft, and similar intent.
+type ContentModerationSemanticReviewConfig struct {
+	Enabled        bool     `json:"enabled"`
+	Trigger        string   `json:"trigger"`
+	PrimaryModel   string   `json:"primary_model"`
+	FallbackModels []string `json:"fallback_models"`
+	TimeoutMS      int      `json:"timeout_ms"`
+	MaxInputRunes  int      `json:"max_input_runes"`
 }
 
 type ContentModerationFailStrategy struct {
@@ -443,6 +476,10 @@ type UpdateContentModerationConfigInput struct {
 	KeywordRules                   *[]ContentModerationKeywordRule         `json:"keyword_rules"`
 	KeywordBlockingMode            *string                                 `json:"keyword_blocking_mode"`
 	EngineMode                     *string                                 `json:"engine_mode"`
+	PromptFilterMode               *string                                 `json:"prompt_filter_mode"`
+	PromptFilterThreshold          *int                                    `json:"prompt_filter_threshold"`
+	PromptFilterStrictThreshold    *int                                    `json:"prompt_filter_strict_threshold"`
+	SemanticReview                 *ContentModerationSemanticReviewConfig  `json:"semantic_review"`
 	LocalClassifier                *ContentModerationLocalClassifierConfig `json:"local_classifier"`
 	ModelFilter                    *ContentModerationModelFilter           `json:"model_filter"`
 	FailStrategy                   *ContentModerationFailStrategy          `json:"fail_strategy"`
@@ -528,7 +565,7 @@ func (in *ContentModerationInput) Normalize() {
 	if in == nil {
 		return
 	}
-	in.Text = trimRunes(stripKnownSystemReminderBlocks(in.Text), maxModerationInputRunes)
+	in.Text = trimRunes(normalizeContentModerationText(in.Text), maxModerationInputRunes)
 	in.Images = normalizeModerationImages(in.Images)
 	in.Sources = normalizeContentModerationInputSources(in.Sources)
 	in.TruncateReasons = normalizeContentModerationTruncateReasons(in.TruncateReasons)
@@ -1006,6 +1043,7 @@ type ContentModerationService struct {
 	passCache                 ContentModerationPassCache
 	feedbackEpochRepo         ModerationFeedbackEpochRepository
 	restrictedClientFactory   RestrictedModerationClientFactory
+	semanticReviewRouter      ContentModerationSemanticReviewRouter
 	moderationCacheHMACKey    []byte
 	moderationCacheKeyVersion uint64
 	metrics                   *ContentModerationMetrics
@@ -1210,6 +1248,20 @@ func (s *ContentModerationService) SetModerationMetrics(metrics *ContentModerati
 	}
 }
 
+// SetSemanticReviewRouter injects the internal-model reviewer. It must be
+// called before Start so the reliable outbox worker can process semantic jobs.
+func (s *ContentModerationService) SetSemanticReviewRouter(router ContentModerationSemanticReviewRouter) {
+	if s == nil {
+		return
+	}
+	s.runtimeMu.Lock()
+	defer s.runtimeMu.Unlock()
+	if s.runtimeStarted || s.runtimeClosed {
+		return
+	}
+	s.semanticReviewRouter = router
+}
+
 func (s *ContentModerationService) ModerationMetricsHandler() http.Handler {
 	if s == nil || s.metrics == nil {
 		return http.NotFoundHandler()
@@ -1346,6 +1398,18 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 		if input.KeywordBlockingMode == nil {
 			cfg.KeywordBlockingMode = ""
 		}
+	}
+	if input.PromptFilterMode != nil {
+		cfg.PromptFilterMode = strings.TrimSpace(*input.PromptFilterMode)
+	}
+	if input.PromptFilterThreshold != nil {
+		cfg.PromptFilterThreshold = *input.PromptFilterThreshold
+	}
+	if input.PromptFilterStrictThreshold != nil {
+		cfg.PromptFilterStrictThreshold = *input.PromptFilterStrictThreshold
+	}
+	if input.SemanticReview != nil {
+		cfg.SemanticReview = *input.SemanticReview
 	}
 	if input.LocalClassifier != nil {
 		cfg.LocalClassifier = *input.LocalClassifier
@@ -1558,7 +1622,18 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 			Decision:    contentModerationFailureDecision(defaultContentModerationConfig()),
 		}, nil
 	}
-	riskEnabled := s != nil && s.isRiskControlEnabled(ctx)
+	riskEnabled := false
+	if s != nil {
+		var riskErr error
+		riskEnabled, riskErr = s.isRiskControlEnabled(ctx)
+		if riskErr != nil {
+			slog.Warn("content_moderation.risk_switch_read_failed", "error", riskErr)
+			return &ContentModerationGateResult{
+				Disposition: ContentModerationDispositionProviderErrorClosed,
+				Decision:    contentModerationFailureDecision(defaultContentModerationConfig()),
+			}, nil
+		}
+	}
 	cfg, err := s.loadConfig(ctx)
 	if err != nil {
 		return &ContentModerationGateResult{
@@ -1610,7 +1685,8 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 			NextState:      prior,
 		}, nil
 	}
-	if riskEnabled && cfg.Enabled && cfg.Mode == ContentModerationModeObserve && !content.IsEmpty() && len(cfg.apiKeys()) > 0 {
+	if riskEnabled && cfg.Enabled && cfg.Mode == ContentModerationModeObserve && !content.IsEmpty() && (len(cfg.apiKeys()) > 0 || cfg.SemanticReview.Enabled) {
+		s.enqueueSemanticReviewAfterRules(ctx, input, cfg, content, inputHash, allow)
 		disposition := ContentModerationDispositionObserveDropped
 		result := &ContentModerationGateResult{
 			Disposition: disposition, Decision: allow, InputHash: inputHash, PolicyRevision: policyRevision,
@@ -1633,6 +1709,7 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 	if err != nil {
 		return nil, err
 	}
+	s.enqueueSemanticReviewAfterRules(ctx, input, cfg, content, inputHash, decision)
 	disposition := ContentModerationDispositionAllowed
 	reusable := true
 	switch {
@@ -1687,7 +1764,17 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"protocol", input.Protocol)
 		return contentModerationFailureDecision(defaultContentModerationConfig()), nil
 	}
-	riskEnabled := s.isRiskControlEnabled(ctx)
+	riskEnabled, riskErr := s.isRiskControlEnabled(ctx)
+	if riskErr != nil {
+		slog.Warn("content_moderation.risk_switch_read_failed",
+			"user_id", input.UserID,
+			"api_key_id", input.APIKeyID,
+			"group_id", contentModerationLogGroupID(input.GroupID),
+			"endpoint", input.Endpoint,
+			"protocol", input.Protocol,
+			"error", riskErr)
+		return contentModerationFailureDecision(defaultContentModerationConfig()), nil
+	}
 	var snapshot contentModerationPolicySnapshot
 	if value, ok := ctx.Value(contentModerationPolicySnapshotContextKey{}).(contentModerationPolicySnapshot); ok {
 		snapshot = value
@@ -1866,15 +1953,52 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		}
 	}
 	if cfg.Mode == ContentModerationModePreBlock {
+		localRuleMatched := false
+		var localKeywordMatch *ContentModerationKeywordRule
 		if cfg.shouldRunLocalRules() {
 			if keywordMatch, hit := matchContentModerationLocalRuleInput(content, cfg.keywordRules()); hit {
-				return s.keywordDecision(ctx, input, cfg, content, hashText, keywordMatch), nil
+				if !cfg.externalModerationRequired() {
+					return s.keywordDecision(ctx, input, cfg, content, hashText, keywordMatch), nil
+				}
+				// Hybrid mode uses local rules only as candidate detection. Every
+				// local hit must reach the configured moderation API for the final
+				// decision; semantic review may run before that API for cyber intent.
+				localRuleMatched = true
+				matchedRule := keywordMatch
+				localKeywordMatch = &matchedRule
+				slog.Info("content_moderation.local_rule_hit_deferred_to_api",
+					"user_id", input.UserID,
+					"api_key_id", input.APIKeyID,
+					"group_id", contentModerationLogGroupID(input.GroupID),
+					"endpoint", input.Endpoint,
+					"protocol", input.Protocol,
+					"engine_mode", cfg.EngineMode,
+					"keyword_blocking_mode", cfg.KeywordBlockingMode,
+					"keyword", keywordMatch.Keyword,
+					"keyword_category", keywordMatch.Category)
 			}
-		} else if keywordMatch, hit := matchContextualBuiltInRiskRuleInput(content); hit {
-			return s.keywordDecision(ctx, input, cfg, content, hashText, keywordMatch), nil
+			if !localRuleMatched {
+				if promptDecision, terminal := s.promptFilterDecision(ctx, input, cfg, content, hashText); terminal {
+					return promptDecision, nil
+				}
+				if candidate, ok := contentModerationSemanticGateCandidateForPromptFilter(cfg, content, s.semanticReviewRouter); ok {
+					if semanticDecision, terminal := s.semanticReviewGate(ctx, input, cfg, content, hashText, candidate); terminal {
+						return semanticDecision, nil
+					}
+				}
+			}
 		}
-		if classifierDecision, decided := s.localClassifierDecision(ctx, input, cfg, content, hashText); decided {
-			return classifierDecision, nil
+		if !localRuleMatched {
+			if classifierDecision, decided := s.localClassifierDecision(ctx, input, cfg, content, hashText); decided {
+				return classifierDecision, nil
+			}
+		}
+		if localKeywordMatch != nil {
+			if candidate, ok := contentModerationSemanticGateCandidateForKeyword(cfg, content, *localKeywordMatch, s.semanticReviewRouter); ok {
+				if semanticDecision, terminal := s.semanticReviewGate(ctx, input, cfg, content, hashText, candidate); terminal {
+					return semanticDecision, nil
+				}
+			}
 		}
 		if !cfg.externalModerationRequired() {
 			s.recordPreBlockSyncMetric(0, ContentModerationActionAllow)
@@ -1890,12 +2014,20 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		}
 	}
 	if len(cfg.apiKeys()) == 0 {
-		slog.Info("content_moderation.skip_no_audit_api_keys",
+		externalRequired := cfg.externalModerationRequired()
+		slog.Warn("content_moderation.external_api_key_missing",
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,
 			"group_id", contentModerationLogGroupID(input.GroupID),
 			"endpoint", input.Endpoint,
-			"protocol", input.Protocol)
+			"protocol", input.Protocol,
+			"engine_mode", cfg.EngineMode,
+			"external_required", externalRequired,
+			"fail_closed", cfg.shouldFailClosed(input))
+		if externalRequired && cfg.Mode == ContentModerationModePreBlock && cfg.shouldFailClosed(input) {
+			s.recordPreBlockSyncMetric(0, ContentModerationActionError)
+			return contentModerationFailureDecision(cfg), nil
+		}
 		return allow, nil
 	}
 	if cfg.Mode == ContentModerationModeObserve {
@@ -2099,7 +2231,7 @@ func (s *ContentModerationService) recordPreBlockSyncMetric(latencyMS int, actio
 	}
 	s.preBlockLatencyTotalMS.Add(int64(latencyMS))
 	switch action {
-	case ContentModerationActionBlock, ContentModerationActionHashBlock, ContentModerationActionKeywordBlock:
+	case ContentModerationActionBlock, ContentModerationActionHashBlock, ContentModerationActionKeywordBlock, ContentModerationActionPromptFilterBlock, ContentModerationActionSemanticReviewReject:
 		s.preBlockBlocked.Add(1)
 	case ContentModerationActionError:
 		s.preBlockErrors.Add(1)
@@ -2136,6 +2268,96 @@ func (s *ContentModerationService) keywordDecision(ctx context.Context, input Co
 	applyContentModerationKeywordMetadata(log, keywordDecision)
 	s.enqueueRecord(ctx, input, cfg, log, hashText, false, keywordDecision.blocked)
 	return contentModerationDecisionFromKeyword(cfg, keywordDecision, scores)
+}
+
+// promptFilterDecision records local cyber evidence and only terminates the
+// request for explicit operational Strict patterns in block mode. Broad topic
+// matches continue to the existing semantic provider path.
+func (s *ContentModerationService) promptFilterDecision(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string) (*ContentModerationDecision, bool) {
+	if cfg == nil || normalizeContentModerationPromptFilterMode(cfg.PromptFilterMode) == promptfilter.ModeOff || strings.TrimSpace(content.Text) == "" {
+		return nil, false
+	}
+	verdict := promptfilter.Inspect(content.Text, cfg.promptFilterConfig())
+	if len(verdict.Matches) == 0 {
+		return nil, false
+	}
+	first := verdict.Matches[0]
+	category := strings.TrimSpace(first.Category)
+	if category == "" {
+		category = "prompt_filter"
+	}
+	categoryScores := map[string]float64{"prompt_filter": float64(verdict.Score) / 100}
+	action := ContentModerationActionPromptFilterObserve
+	switch verdict.Action {
+	case promptfilter.ActionBlock:
+		action = ContentModerationActionPromptFilterBlock
+	case promptfilter.ActionWarn:
+		action = ContentModerationActionPromptFilterWarn
+	case promptfilter.ActionReview:
+		action = ContentModerationActionPromptFilterReview
+	}
+	metadata := contentModerationPromptFilterLogMetadata(cfg, content, input.Protocol, verdict)
+	log := s.buildLog(input, cfg, action, true, category, float64(verdict.Score)/100, categoryScores, content.ExcerptText(), nil, nil, metadata)
+	log.MatchedKeyword = first.Name
+	log.KeywordCategory = category
+	log.KeywordSeverity = promptFilterSeverity(verdict)
+	log.KeywordAction = action
+	log.EffectiveKeywordAction = action
+	log.RiskContextType = ContentModerationRiskContextActualRequest
+	log.RiskContextReason = "codex2api_pattern_match"
+	if action == ContentModerationActionPromptFilterReview {
+		log.ReviewStatus = ContentModerationReviewStatusPending
+	}
+	hardBlock := action == ContentModerationActionPromptFilterBlock && verdict.OperationalHit
+	s.enqueueRecord(ctx, input, cfg, log, hashText, hardBlock, hardBlock)
+	if !hardBlock {
+		return nil, false
+	}
+	return &ContentModerationDecision{
+		Allowed:                false,
+		Blocked:                true,
+		Flagged:                true,
+		Message:                cfg.BlockMessage,
+		StatusCode:             cfg.BlockStatus,
+		HighestCategory:        category,
+		HighestScore:           float64(verdict.Score) / 100,
+		CategoryScores:         categoryScores,
+		Action:                 ContentModerationActionPromptFilterBlock,
+		MatchedKeyword:         first.Name,
+		KeywordCategory:        category,
+		KeywordSeverity:        promptFilterSeverity(verdict),
+		KeywordAction:          action,
+		EffectiveKeywordAction: action,
+		RiskContextType:        ContentModerationRiskContextActualRequest,
+		RiskContextReason:      "codex2api_operational_strict_match",
+	}, true
+}
+
+func promptFilterSeverity(verdict promptfilter.Verdict) string {
+	if verdict.OperationalHit || verdict.StrictHit {
+		return ContentModerationKeywordSeverityCritical
+	}
+	return ContentModerationKeywordSeverityHigh
+}
+
+func contentModerationPromptFilterLogMetadata(cfg *ContentModerationConfig, content ContentModerationInput, protocol string, verdict promptfilter.Verdict) string {
+	metadata := map[string]any{}
+	base := contentModerationHitLogMetadata(cfg, content, contentModerationPrimarySource(protocol, content))
+	if strings.TrimSpace(base) != "" {
+		_ = json.Unmarshal([]byte(base), &metadata)
+	}
+	metadata["prompt_filter_source_revision"] = verdict.SourceRevision
+	metadata["prompt_filter_score"] = verdict.Score
+	metadata["prompt_filter_raw_score"] = verdict.RawScore
+	metadata["prompt_filter_strict_score"] = verdict.StrictScore
+	metadata["prompt_filter_strict_hit"] = verdict.StrictHit
+	metadata["prompt_filter_operational_hit"] = verdict.OperationalHit
+	metadata["prompt_filter_matches"] = verdict.Matches
+	raw, err := json.Marshal(metadata)
+	if err != nil {
+		return base
+	}
+	return string(raw)
 }
 
 func (s *ContentModerationService) keywordReviewDecision(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string, keywordMatch ContentModerationKeywordRule, reason string) *ContentModerationDecision {
@@ -2479,7 +2701,7 @@ func (s *ContentModerationService) persistBlockedLogForVisibility(ctx context.Co
 
 func contentModerationActionIsBlocking(action string) bool {
 	switch strings.TrimSpace(action) {
-	case ContentModerationActionBlock, ContentModerationActionHashBlock, ContentModerationActionKeywordBlock:
+	case ContentModerationActionBlock, ContentModerationActionHashBlock, ContentModerationActionKeywordBlock, ContentModerationActionPromptFilterBlock, ContentModerationActionSemanticReviewReject:
 		return true
 	default:
 		return false
@@ -2746,7 +2968,10 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 	if err != nil {
 		return nil, err
 	}
-	riskEnabled := s.isRiskControlEnabled(ctx)
+	riskEnabled, err := s.isRiskControlEnabled(ctx)
+	if err != nil {
+		return nil, err
+	}
 	active := int(s.asyncActive.Load())
 	if active < 0 {
 		active = 0
@@ -3525,8 +3750,15 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 	externalAPIConfigured := len(cfg.apiKeys()) > 0
 	externalAPIHealth := s.contentModerationExternalAPIHealth(cfg)
 	externalAPIHealthy := externalAPIConfigured && externalAPIHealth.healthy
-	externalAPIRequiredForStrongProtection := cfg.EngineMode == ContentModerationEngineModeAPIOnly
+	// Hybrid pre-block still requires an audit key: otherwise broad local
+	// evidence would silently become an allow path when semantic review is
+	// unavailable. Rule-only remains self-contained.
+	externalAPIRequiredForStrongProtection := cfg.Mode == ContentModerationModePreBlock && cfg.externalModerationRequired()
 	highRiskRulesBlocking, highRiskRulesPresent := contentModerationHighRiskRulesBlocking(cfg.keywordRules())
+	if normalizeContentModerationPromptFilterMode(cfg.PromptFilterMode) == promptfilter.ModeBlock {
+		highRiskRulesPresent = true
+		highRiskRulesBlocking = true
+	}
 	hashBlockingPolicyPresent := contentModerationHashBlockingPolicyPresent(cfg, flaggedHashCount)
 	deterministicPolicyPresent := contentModerationDeterministicPolicyPresent(cfg) || hashBlockingPolicyPresent
 	baselineStatus := s.contentModerationSecurityBaselineStatus()
@@ -3794,12 +4026,12 @@ func (s *ContentModerationService) loadConfig(ctx context.Context) (*ContentMode
 	return cfg, nil
 }
 
-func (s *ContentModerationService) isRiskControlEnabled(ctx context.Context) bool {
+func (s *ContentModerationService) isRiskControlEnabled(ctx context.Context) (bool, error) {
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyRiskControlEnabled)
 	if err != nil {
-		return false
+		return false, fmt.Errorf("read risk control switch: %w", err)
 	}
-	return raw == "true"
+	return raw == "true", nil
 }
 
 func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *ContentModerationConfig) error {
@@ -3814,6 +4046,11 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 	case ContentModerationModeOff, ContentModerationModeObserve, ContentModerationModePreBlock:
 	default:
 		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_MODE", "内容审计模式无效")
+	}
+	switch normalizeContentModerationPromptFilterMode(cfg.PromptFilterMode) {
+	case promptfilter.ModeOff, promptfilter.ModeObserve, promptfilter.ModeWarn, promptfilter.ModeBlock:
+	default:
+		return infraerrors.BadRequest("INVALID_PROMPT_FILTER_MODE", "网络安全提示词规则模式无效")
 	}
 	if cfg.Provider != "openai" && cfg.Provider != "zhipu" {
 		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_PROVIDER", "内容审计服务商无效")
@@ -4284,7 +4521,7 @@ func normalizeContentModerationInputSources(sources []ContentModerationInputSour
 	out := make([]ContentModerationInputSource, 0, len(sources))
 	for _, source := range sources {
 		name := source.Source
-		text := trimRunes(stripKnownSystemReminderBlocks(source.Text), maxModerationInputRunes)
+		text := trimRunes(normalizeContentModerationText(source.Text), maxModerationInputRunes)
 		if strings.TrimSpace(name) == "" || text == "" {
 			continue
 		}
@@ -4513,42 +4750,46 @@ func (s *ContentModerationService) siteName(ctx context.Context) string {
 
 func defaultContentModerationConfig() *ContentModerationConfig {
 	return &ContentModerationConfig{
-		ResourceProtectionConfig: DefaultResourceProtectionConfig(),
-		Enabled:                  false,
-		Mode:                     ContentModerationModePreBlock,
-		Provider:                 "openai",
-		BaseURL:                  defaultContentModerationBaseURL,
-		Model:                    defaultContentModerationModel,
-		PassCacheEnabled:         false,
-		PassCacheTTLSeconds:      24 * 60 * 60,
-		TimeoutMS:                defaultContentModerationTimeoutMS,
-		SampleRate:               100,
-		AllGroups:                true,
-		GroupIDs:                 []int64{},
-		AccountScope:             ContentModerationAccountScopeAll,
-		AccountIDs:               []int64{},
-		RecordNonHits:            false,
-		AuditScope:               ContentModerationAuditScopeAllContext,
-		StoreInputExcerpt:        true,
-		SearchInputExcerpt:       false,
-		Thresholds:               ContentModerationDefaultThresholds(),
-		WorkerCount:              defaultContentModerationWorkerCount,
-		QueueSize:                defaultContentModerationQueueSize,
-		BlockStatus:              defaultContentModerationBlockHTTPStatus,
-		BlockMessage:             defaultContentModerationBlockMessage,
-		EmailOnHit:               true,
-		AutoBanEnabled:           true,
-		BanThreshold:             defaultContentModerationBanThreshold,
-		ViolationWindowHours:     defaultContentModerationViolationWindowHours,
-		RetryCount:               defaultContentModerationRetryCount,
-		HitRetentionDays:         defaultContentModerationHitRetentionDays,
-		NonHitRetentionDays:      defaultContentModerationNonHitRetentionDays,
-		PreHashCheckEnabled:      false,
-		BlockedKeywords:          []string{},
-		KeywordRules:             []ContentModerationKeywordRule{},
-		KeywordBlockingMode:      ContentModerationKeywordModeKeywordAndAPI,
-		EngineMode:               "",
-		LocalClassifier:          defaultContentModerationLocalClassifierConfig(),
+		ResourceProtectionConfig:    DefaultResourceProtectionConfig(),
+		Enabled:                     false,
+		Mode:                        ContentModerationModePreBlock,
+		Provider:                    "openai",
+		BaseURL:                     defaultContentModerationBaseURL,
+		Model:                       defaultContentModerationModel,
+		PassCacheEnabled:            false,
+		PassCacheTTLSeconds:         24 * 60 * 60,
+		TimeoutMS:                   defaultContentModerationTimeoutMS,
+		SampleRate:                  100,
+		AllGroups:                   true,
+		GroupIDs:                    []int64{},
+		AccountScope:                ContentModerationAccountScopeAll,
+		AccountIDs:                  []int64{},
+		RecordNonHits:               false,
+		AuditScope:                  ContentModerationAuditScopeAllContext,
+		StoreInputExcerpt:           true,
+		SearchInputExcerpt:          false,
+		Thresholds:                  ContentModerationDefaultThresholds(),
+		WorkerCount:                 defaultContentModerationWorkerCount,
+		QueueSize:                   defaultContentModerationQueueSize,
+		BlockStatus:                 defaultContentModerationBlockHTTPStatus,
+		BlockMessage:                defaultContentModerationBlockMessage,
+		EmailOnHit:                  true,
+		AutoBanEnabled:              true,
+		BanThreshold:                defaultContentModerationBanThreshold,
+		ViolationWindowHours:        defaultContentModerationViolationWindowHours,
+		RetryCount:                  defaultContentModerationRetryCount,
+		HitRetentionDays:            defaultContentModerationHitRetentionDays,
+		NonHitRetentionDays:         defaultContentModerationNonHitRetentionDays,
+		PreHashCheckEnabled:         false,
+		BlockedKeywords:             []string{},
+		KeywordRules:                []ContentModerationKeywordRule{},
+		KeywordBlockingMode:         ContentModerationKeywordModeKeywordAndAPI,
+		EngineMode:                  "",
+		PromptFilterMode:            promptfilter.ModeObserve,
+		PromptFilterThreshold:       promptfilter.DefaultThreshold,
+		PromptFilterStrictThreshold: promptfilter.DefaultStrictThreshold,
+		SemanticReview:              defaultContentModerationSemanticReviewConfig(),
+		LocalClassifier:             defaultContentModerationLocalClassifierConfig(),
 		ModelFilter: ContentModerationModelFilter{
 			Type:   ContentModerationModelFilterAll,
 			Models: []string{},
@@ -4572,6 +4813,10 @@ func cloneContentModerationConfig(cfg *ContentModerationConfig) *ContentModerati
 	clone.AccountIDs = append([]int64(nil), cfg.AccountIDs...)
 	clone.BlockedKeywords = append([]string(nil), cfg.BlockedKeywords...)
 	clone.KeywordRules = cloneContentModerationKeywordRules(cfg.KeywordRules)
+	clone.PromptFilterMode = cfg.PromptFilterMode
+	clone.PromptFilterThreshold = cfg.PromptFilterThreshold
+	clone.PromptFilterStrictThreshold = cfg.PromptFilterStrictThreshold
+	clone.SemanticReview = normalizeContentModerationSemanticReviewConfig(cfg.SemanticReview)
 	clone.Thresholds = cloneFloatMap(cfg.Thresholds)
 	clone.LocalClassifier = normalizeContentModerationLocalClassifierConfig(cfg.LocalClassifier)
 	clone.ModelFilter = ContentModerationModelFilter{
@@ -4688,9 +4933,82 @@ func (cfg *ContentModerationConfig) normalize() {
 	cfg.BlockedKeywords = normalizeBlockedKeywords(cfg.BlockedKeywords)
 	cfg.KeywordRules = normalizeContentModerationKeywordRules(cfg.KeywordRules)
 	cfg.KeywordBlockingMode, cfg.EngineMode = normalizeModerationEngineAndKeywordModes(cfg.EngineMode, cfg.KeywordBlockingMode)
+	cfg.PromptFilterMode = normalizeContentModerationPromptFilterMode(cfg.PromptFilterMode)
+	if cfg.PromptFilterThreshold <= 0 {
+		cfg.PromptFilterThreshold = promptfilter.DefaultThreshold
+	}
+	if cfg.PromptFilterStrictThreshold <= 0 {
+		cfg.PromptFilterStrictThreshold = promptfilter.DefaultStrictThreshold
+	}
+	if cfg.PromptFilterStrictThreshold < cfg.PromptFilterThreshold {
+		cfg.PromptFilterStrictThreshold = cfg.PromptFilterThreshold
+	}
+	cfg.SemanticReview = normalizeContentModerationSemanticReviewConfig(cfg.SemanticReview)
 	cfg.LocalClassifier = normalizeContentModerationLocalClassifierConfig(cfg.LocalClassifier)
 	cfg.ModelFilter = normalizeContentModerationModelFilter(cfg.ModelFilter)
 	cfg.FailStrategy = normalizeContentModerationFailStrategy(cfg.FailStrategy)
+}
+
+func defaultContentModerationSemanticReviewConfig() ContentModerationSemanticReviewConfig {
+	return ContentModerationSemanticReviewConfig{
+		Enabled:        false,
+		Trigger:        ContentModerationSemanticReviewTriggerLocalReview,
+		PrimaryModel:   ContentModerationSemanticReviewPrimaryModel,
+		FallbackModels: []string{ContentModerationSemanticReviewFallbackModel},
+		TimeoutMS:      ContentModerationSemanticReviewDefaultTimeoutMS,
+		MaxInputRunes:  ContentModerationSemanticReviewDefaultMaxInputRunes,
+	}
+}
+
+func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanticReviewConfig) ContentModerationSemanticReviewConfig {
+	cfg.Trigger = normalizeContentModerationSemanticReviewTrigger(cfg.Trigger)
+	if normalized := normalizeContentModerationSemanticReviewModel(cfg.PrimaryModel); normalized != "" {
+		cfg.PrimaryModel = normalized
+	} else {
+		cfg.PrimaryModel = ContentModerationSemanticReviewPrimaryModel
+	}
+	models := make([]string, 0, len(cfg.FallbackModels))
+	seen := map[string]struct{}{strings.ToLower(cfg.PrimaryModel): {}}
+	for _, model := range cfg.FallbackModels {
+		model = normalizeContentModerationSemanticReviewModel(model)
+		if model == "" {
+			continue
+		}
+		key := strings.ToLower(model)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		models = append(models, model)
+	}
+	if len(models) == 0 && strings.EqualFold(cfg.PrimaryModel, ContentModerationSemanticReviewPrimaryModel) {
+		models = []string{ContentModerationSemanticReviewFallbackModel}
+	}
+	cfg.FallbackModels = models
+	if cfg.TimeoutMS <= 0 {
+		cfg.TimeoutMS = ContentModerationSemanticReviewDefaultTimeoutMS
+	}
+	if cfg.TimeoutMS > ContentModerationSemanticReviewMaxTimeoutMS {
+		cfg.TimeoutMS = ContentModerationSemanticReviewMaxTimeoutMS
+	}
+	if cfg.MaxInputRunes <= 0 {
+		cfg.MaxInputRunes = ContentModerationSemanticReviewDefaultMaxInputRunes
+	}
+	if cfg.MaxInputRunes > maxModerationInputRunes {
+		cfg.MaxInputRunes = maxModerationInputRunes
+	}
+	return cfg
+}
+
+func normalizeContentModerationSemanticReviewModel(model string) string {
+	switch strings.ToLower(strings.TrimSpace(model)) {
+	case strings.ToLower(ContentModerationSemanticReviewPrimaryModel):
+		return ContentModerationSemanticReviewPrimaryModel
+	case strings.ToLower(ContentModerationSemanticReviewFallbackModel):
+		return ContentModerationSemanticReviewFallbackModel
+	default:
+		return ""
+	}
 }
 
 func defaultContentModerationLocalClassifierConfig() ContentModerationLocalClassifierConfig {
@@ -4794,6 +5112,17 @@ func (cfg *ContentModerationConfig) externalModerationRequired() bool {
 		return true
 	default:
 		return normalizeKeywordBlockingMode(cfg.KeywordBlockingMode) != ContentModerationKeywordModeKeywordOnly
+	}
+}
+
+func (cfg *ContentModerationConfig) promptFilterConfig() promptfilter.Config {
+	if cfg == nil {
+		return promptfilter.Config{Mode: promptfilter.ModeOff}
+	}
+	return promptfilter.Config{
+		Mode:            normalizeContentModerationPromptFilterMode(cfg.PromptFilterMode),
+		Threshold:       cfg.PromptFilterThreshold,
+		StrictThreshold: cfg.PromptFilterStrictThreshold,
 	}
 }
 
@@ -5110,6 +5439,14 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		KeywordRules:                   cloneContentModerationKeywordRules(cfg.KeywordRules),
 		KeywordBlockingMode:            cfg.KeywordBlockingMode,
 		EngineMode:                     cfg.EngineMode,
+		PromptFilterMode:               cfg.PromptFilterMode,
+		PromptFilterThreshold:          cfg.PromptFilterThreshold,
+		PromptFilterStrictThreshold:    cfg.PromptFilterStrictThreshold,
+		PromptFilterSourceRevision:     promptfilter.BuiltinSourceRevision,
+		PromptFilterSourceURL:          promptfilter.BuiltinSourceURL,
+		PromptFilterSourceAuthor:       promptfilter.BuiltinSourceAuthor,
+		PromptFilterSourcePermission:   promptfilter.BuiltinSourcePermission,
+		SemanticReview:                 normalizeContentModerationSemanticReviewConfig(cfg.SemanticReview),
 		LocalClassifier:                normalizeContentModerationLocalClassifierConfig(cfg.LocalClassifier),
 		ModelFilter:                    cloneContentModerationModelFilter(cfg.ModelFilter),
 		FailStrategy:                   cloneContentModerationFailStrategy(cfg.FailStrategy),
@@ -5599,6 +5936,21 @@ func normalizeModerationEngineAndKeywordModes(engineMode string, keywordMode str
 	return keywordBlockingModeFromEngineMode(normalizedEngineMode), normalizedEngineMode
 }
 
+func normalizeContentModerationPromptFilterMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case promptfilter.ModeOff:
+		return promptfilter.ModeOff
+	case promptfilter.ModeBlock:
+		return promptfilter.ModeBlock
+	case promptfilter.ModeWarn:
+		return promptfilter.ModeWarn
+	case promptfilter.ModeObserve:
+		return promptfilter.ModeObserve
+	default:
+		return promptfilter.ModeObserve
+	}
+}
+
 func engineModeFromKeywordBlockingMode(mode string) string {
 	switch normalizeKeywordBlockingMode(mode) {
 	case ContentModerationKeywordModeKeywordOnly:
@@ -5769,9 +6121,6 @@ func classifyContentModerationKeywordContext(text string, rule ContentModeration
 	normalized := normalizeKeywordComparable(text)
 	if normalized == "" {
 		return contentModerationRiskContext{Type: ContentModerationRiskContextUnknown, Reason: "empty_text"}
-	}
-	if isCodexInternalPromptText(text) {
-		return contentModerationRiskContext{Type: ContentModerationRiskContextCodexInternal, Reason: "codex_internal_prompt_marker"}
 	}
 	metaMarkers := []string{
 		"审计关键词", "关键词", "规则列表", "违规行为列表", "风控规则", "拦截规则", "审核规则", "误杀",
@@ -7089,7 +7438,13 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 	if s == nil || s.repo == nil {
 		return
 	}
-	if !s.isRiskControlEnabled(ctx) {
+	riskEnabled, riskErr := s.isRiskControlEnabled(ctx)
+	if riskErr != nil {
+		// A read failure must not silently discard a hard upstream cyber event.
+		slog.Warn("content_moderation.cyber_risk_switch_read_failed", "error", riskErr)
+		riskEnabled = true
+	}
+	if !riskEnabled {
 		return
 	}
 	cfg, err := s.loadConfig(ctx)
@@ -7178,7 +7533,12 @@ func (s *ContentModerationService) RecordCyberSessionBlockedEvent(ctx context.Co
 	if s == nil || s.repo == nil {
 		return
 	}
-	if !s.isRiskControlEnabled(ctx) {
+	riskEnabled, riskErr := s.isRiskControlEnabled(ctx)
+	if riskErr != nil {
+		slog.Warn("content_moderation.cyber_session_risk_switch_read_failed", "error", riskErr)
+		riskEnabled = true
+	}
+	if !riskEnabled {
 		return
 	}
 	var userID *int64

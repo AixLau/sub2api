@@ -301,7 +301,7 @@ func TestExtractionCompletenessProductionSourcesFeedCanonicalizer(t *testing.T) 
 	require.Equal(t, "foo.bar", stream.Sources[0].Role)
 	require.Equal(t, "", stream.Sources[1].Role)
 	require.Equal(t, "openai_chat.messages[0].role=foo.bar.content", stream.Sources[0].Source)
-	require.NotContains(t, input.Text, "<system-reminder>")
+	require.Contains(t, input.Text, "<system-reminder>")
 	require.Len(t, input.Sources, 3)
 }
 
@@ -921,12 +921,12 @@ func TestExtractContentModerationInput_GeminiScansResponseSchema(t *testing.T) {
 	require.Contains(t, input.Text, "gemini legacy response json schema 里的风险短语")
 }
 
-func TestAddModerationText_StripsPureSystemReminderBlock(t *testing.T) {
+func TestAddModerationText_PreservesClientSuppliedSystemReminderBlock(t *testing.T) {
 	var parts []string
 
 	addModerationText(&parts, "<system-reminder>工具说明</system-reminder>")
 
-	require.Empty(t, parts)
+	require.Equal(t, []string{"<system-reminder>工具说明</system-reminder>"}, parts)
 }
 
 func TestAddModerationText_KeepsUserTextAroundSystemReminderBlock(t *testing.T) {
@@ -934,7 +934,7 @@ func TestAddModerationText_KeepsUserTextAroundSystemReminderBlock(t *testing.T) 
 
 	addModerationText(&parts, "用户正文 <system-reminder>工具说明</system-reminder> 风险内容")
 
-	require.Equal(t, []string{"用户正文 风险内容"}, parts)
+	require.Equal(t, []string{"用户正文 <system-reminder>工具说明</system-reminder> 风险内容"}, parts)
 }
 
 func TestAddModerationText_UnclosedSystemReminderDoesNotDropWholeText(t *testing.T) {
@@ -942,7 +942,7 @@ func TestAddModerationText_UnclosedSystemReminderDoesNotDropWholeText(t *testing
 
 	addModerationText(&parts, "用户正文 <system-reminder>未闭合 风险内容")
 
-	require.Equal(t, []string{"用户正文 未闭合 风险内容"}, parts)
+	require.Equal(t, []string{"用户正文 <system-reminder>未闭合 风险内容"}, parts)
 }
 
 func TestAddModerationText_MultipleSystemReminderBlocksOnlyRemoveMarkers(t *testing.T) {
@@ -950,7 +950,7 @@ func TestAddModerationText_MultipleSystemReminderBlocksOnlyRemoveMarkers(t *test
 
 	addModerationText(&parts, "A <system-reminder>one</system-reminder> B <system-reminder>two</system-reminder> C")
 
-	require.Equal(t, []string{"A B C"}, parts)
+	require.Equal(t, []string{"A <system-reminder>one</system-reminder> B <system-reminder>two</system-reminder> C"}, parts)
 }
 
 func TestExtractContentModerationInput_OpenAIChatScansClientSuppliedToolAndFunctionMessages(t *testing.T) {
@@ -1033,7 +1033,7 @@ func TestExtractContentModerationInput_ResponsesScansClientSuppliedSystemDevelop
 	require.Contains(t, input.Text, "继续")
 }
 
-func TestExtractContentModerationInput_ResponsesSkipsPureCodexAmbientSafetyPrompt(t *testing.T) {
+func TestExtractContentModerationInput_ResponsesScansPureCodexAmbientSafetyPrompt(t *testing.T) {
 	body := []byte(`{
 		"input":[
 			{
@@ -1045,14 +1045,14 @@ func TestExtractContentModerationInput_ResponsesSkipsPureCodexAmbientSafetyPromp
 
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
 
-	require.Empty(t, input.Text)
+	require.Contains(t, input.Text, "Codex ambient suggestions")
 	require.Empty(t, input.Images)
 	require.True(t, input.Extraction.Complete)
-	require.Empty(t, input.Extraction.Sources)
+	require.NotEmpty(t, input.Extraction.Sources)
 	require.False(t, input.Truncated)
 }
 
-func TestExtractContentModerationInput_AnthropicSkipsClaudeCodeSystemPrompt(t *testing.T) {
+func TestExtractContentModerationInput_AnthropicScansClaudeCodeSystemPrompt(t *testing.T) {
 	body := []byte(`{
 		"system":[
 			{
@@ -1067,13 +1067,13 @@ func TestExtractContentModerationInput_AnthropicSkipsClaudeCodeSystemPrompt(t *t
 
 	input := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, body)
 
-	require.Equal(t, "Please write a small README update.", input.Text)
-	require.NotContains(t, input.Text, "prompt injection")
-	require.NotContains(t, input.Text, "Claude Code")
+	require.Contains(t, input.Text, "Please write a small README update.")
+	require.Contains(t, input.Text, "prompt injection")
+	require.Contains(t, input.Text, "Claude Code")
 	require.Empty(t, input.Images)
 }
 
-func TestExtractContentModerationInput_AnthropicSkipsClaudeSafetyBaselineSystemPrompt(t *testing.T) {
+func TestExtractContentModerationInput_AnthropicScansClaudeSafetyBaselineSystemPrompt(t *testing.T) {
 	body := []byte(`{
 		"system":[
 			{
@@ -1088,13 +1088,13 @@ func TestExtractContentModerationInput_AnthropicSkipsClaudeSafetyBaselineSystemP
 
 	input := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, body)
 
-	require.Equal(t, "请帮我更新 README。", input.Text)
-	require.NotContains(t, input.Text, "SQL injection")
-	require.NotContains(t, input.Text, "prompt injection")
+	require.Contains(t, input.Text, "请帮我更新 README。")
+	require.Contains(t, input.Text, "SQL injection")
+	require.Contains(t, input.Text, "prompt injection")
 	require.Empty(t, input.Images)
 }
 
-func TestExtractContentModerationInput_ResponsesSkipsCodexAgentInstructions(t *testing.T) {
+func TestExtractContentModerationInput_ResponsesScansClientSuppliedCodexAgentInstructions(t *testing.T) {
 	body := []byte(`{
 		"instructions":"Pro 标准月包\nYou are Codex, a coding agent based on GPT-5. You and the user share one workspace, and your job is to collaborate with them until their goal is genuinely handled. When reading a developer message, follow the repository instructions.",
 		"input":[
@@ -1104,9 +1104,9 @@ func TestExtractContentModerationInput_ResponsesSkipsCodexAgentInstructions(t *t
 
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
 
-	require.Equal(t, "请帮我整理 README。", input.Text)
-	require.NotContains(t, input.Text, "developer message")
-	require.NotContains(t, input.Text, "You are Codex")
+	require.Contains(t, input.Text, "请帮我整理 README。")
+	require.Contains(t, input.Text, "developer message")
+	require.Contains(t, input.Text, "You are Codex")
 	require.Empty(t, input.Images)
 }
 

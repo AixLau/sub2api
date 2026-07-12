@@ -63,17 +63,21 @@ type contentModerationConfigRequest struct {
 	ViolationWindowHours     *int                `json:"violation_window_hours"`
 	// cyber_policy 命中是否排除出自动封号计数；前端 RiskControlView 已发送该字段，
 	// service.UpdateContentModerationConfigInput 已支持，此前 handler 层缺透传导致开关静默失效。
-	CyberPolicyExcludeFromBanCount *bool                                   `json:"cyber_policy_exclude_from_ban_count"`
-	RetryCount                     *int                                    `json:"retry_count"`
-	HitRetentionDays               *int                                    `json:"hit_retention_days"`
-	NonHitRetentionDays            *int                                    `json:"non_hit_retention_days"`
-	PreHashCheckEnabled            *bool                                   `json:"pre_hash_check_enabled"`
-	BlockedKeywords                *[]string                               `json:"blocked_keywords"`
-	KeywordRules                   *[]service.ContentModerationKeywordRule `json:"keyword_rules"`
-	KeywordBlockingMode            *string                                 `json:"keyword_blocking_mode"`
-	EngineMode                     *string                                 `json:"engine_mode"`
-	ModelFilter                    *service.ContentModerationModelFilter   `json:"model_filter"`
-	FailStrategy                   *service.ContentModerationFailStrategy  `json:"fail_strategy"`
+	CyberPolicyExcludeFromBanCount *bool                                          `json:"cyber_policy_exclude_from_ban_count"`
+	RetryCount                     *int                                           `json:"retry_count"`
+	HitRetentionDays               *int                                           `json:"hit_retention_days"`
+	NonHitRetentionDays            *int                                           `json:"non_hit_retention_days"`
+	PreHashCheckEnabled            *bool                                          `json:"pre_hash_check_enabled"`
+	BlockedKeywords                *[]string                                      `json:"blocked_keywords"`
+	KeywordRules                   *[]service.ContentModerationKeywordRule        `json:"keyword_rules"`
+	KeywordBlockingMode            *string                                        `json:"keyword_blocking_mode"`
+	EngineMode                     *string                                        `json:"engine_mode"`
+	PromptFilterMode               *string                                        `json:"prompt_filter_mode"`
+	PromptFilterThreshold          *int                                           `json:"prompt_filter_threshold"`
+	PromptFilterStrictThreshold    *int                                           `json:"prompt_filter_strict_threshold"`
+	SemanticReview                 *service.ContentModerationSemanticReviewConfig `json:"semantic_review"`
+	ModelFilter                    *service.ContentModerationModelFilter          `json:"model_filter"`
+	FailStrategy                   *service.ContentModerationFailStrategy         `json:"fail_strategy"`
 }
 
 type contentModerationAPIKeyTestRequest struct {
@@ -164,6 +168,10 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		KeywordRules:                   req.KeywordRules,
 		KeywordBlockingMode:            req.KeywordBlockingMode,
 		EngineMode:                     req.EngineMode,
+		PromptFilterMode:               req.PromptFilterMode,
+		PromptFilterThreshold:          req.PromptFilterThreshold,
+		PromptFilterStrictThreshold:    req.PromptFilterStrictThreshold,
+		SemanticReview:                 req.SemanticReview,
 		ModelFilter:                    req.ModelFilter,
 		FailStrategy:                   req.FailStrategy,
 	})

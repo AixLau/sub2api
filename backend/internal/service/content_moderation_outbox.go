@@ -18,6 +18,7 @@ const (
 	ContentModerationOutboxEventHashBlock      = "hash_block_record"
 	ContentModerationOutboxEventEmail          = "email_notification"
 	ContentModerationOutboxEventAdminAlert     = "admin_alert"
+	ContentModerationOutboxEventSemanticReview = "semantic_review"
 
 	ContentModerationOutboxPriorityStrong = "strong"
 	ContentModerationOutboxPriorityWeak   = "weak"
@@ -77,10 +78,11 @@ type ContentModerationOutboxStatus struct {
 }
 
 type contentModerationOutboxPayload struct {
-	Log       *ContentModerationLog    `json:"log,omitempty"`
-	Config    *ContentModerationConfig `json:"config,omitempty"`
-	InputHash string                   `json:"input_hash,omitempty"`
-	EmailKind string                   `json:"email_kind,omitempty"`
+	Log            *ContentModerationLog                         `json:"log,omitempty"`
+	Config         *ContentModerationConfig                      `json:"config,omitempty"`
+	InputHash      string                                        `json:"input_hash,omitempty"`
+	EmailKind      string                                        `json:"email_kind,omitempty"`
+	SemanticReview *contentModerationSemanticReviewOutboxPayload `json:"semantic_review,omitempty"`
 }
 
 // SetOutboxRepository configures outbox processing before Start is called.
@@ -200,6 +202,10 @@ func contentModerationRandomToken() string {
 }
 
 func contentModerationOutboxPayloadMap(payload contentModerationOutboxPayload) map[string]any {
+	// Outbox records survive process restarts and are visible to operators. The
+	// moderation API keys are not needed by any outbox side effect, so never
+	// serialize them into JSONB.
+	payload.Config = safeContentModerationConfigForOutbox(payload.Config)
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return map[string]any{}
@@ -423,6 +429,8 @@ func (s *ContentModerationService) processContentModerationOutboxEvent(ctx conte
 			return err
 		}
 		return s.sendContentModerationAdminAlert(ctx, payload)
+	case ContentModerationOutboxEventSemanticReview:
+		return s.processContentModerationSemanticReviewEvent(ctx, payload)
 	default:
 		return fmt.Errorf("unknown content moderation outbox event type %q", event.EventType)
 	}
