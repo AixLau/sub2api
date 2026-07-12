@@ -87,9 +87,6 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 	// Text is the bounded legacy/display projection. Extraction retains the
 	// complete source stream used by incremental moderation and chunking.
 	out.Text = trimRunes(out.Text, maxModerationInputRunes)
-	if protocol == ContentModerationProtocolOpenAIResponses && isCodexInternalPromptText(out.Text) {
-		return ContentModerationInput{Extraction: ModerationExtraction{Complete: true}}
-	}
 	return out
 }
 
