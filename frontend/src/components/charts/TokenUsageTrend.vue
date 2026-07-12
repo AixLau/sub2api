@@ -52,15 +52,6 @@ type TokenSeriesPoint = {
 }
 
 const chartColors = computed(() => ({
-  background: '#ffffff',
-  title: '#111827',
-  body: '#374151',
-  border: '#e5e7eb',
-  tooltipBackground: '#111827',
-  tooltipTitle: '#9ca3af',
-  tooltipBody: '#d1d5db',
-  tooltipValue: '#f9fafb',
-  tooltipBorder: 'rgba(255, 255, 255, 0.1)',
   input: '#2563eb',
   output: '#059669',
   cacheCreation: '#f97316',
@@ -199,7 +190,7 @@ const dateToTime = (value: unknown): number | null => {
 const buildTooltipHtml = (title: unknown): string => {
   const data = findTrendPoint(title)
   if (!data) {
-    return `<div style="color: ${chartColors.value.body};">${escapeHtml(String(title))}</div>`
+    return `<div class="token-trend-tooltip__fallback">${escapeHtml(String(title))}</div>`
   }
 
   const rows = [
@@ -216,20 +207,20 @@ const buildTooltipHtml = (title: unknown): string => {
   ]
 
   return `
-    <div style="min-width: 212px; font-size: 12px; line-height: 1.35; color: ${chartColors.value.tooltipBody}; background: ${chartColors.value.tooltipBackground}; border: 1px solid ${chartColors.value.tooltipBorder}; border-radius: 7px; box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28); padding: 10px 12px;">
-      <div style="margin-bottom: 8px; font-size: 12px; font-weight: 600; color: ${chartColors.value.tooltipTitle};">${escapeHtml(data.date)}</div>
-      <div style="display: grid; gap: 6px;">
+    <div class="token-trend-tooltip">
+      <div class="token-trend-tooltip__title">${escapeHtml(data.date)}</div>
+      <div class="token-trend-tooltip__rows">
         ${rows.map((row) => `
-          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
-            <span style="display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: ${chartColors.value.tooltipBody};">
-              <span style="width: 7px; height: 7px; flex: 0 0 auto; border-radius: 999px; background: ${row.color}; display: inline-block;"></span>
+          <div class="token-trend-tooltip__row">
+            <span class="token-trend-tooltip__label">
+              <span class="token-trend-tooltip__marker" style="--token-trend-marker: ${row.color}"></span>
               <span>${escapeHtml(row.label)}</span>
             </span>
-            <span style="font-weight: 700; color: ${chartColors.value.tooltipValue};">${escapeHtml(row.value)}</span>
+            <span class="token-trend-tooltip__value">${escapeHtml(row.value)}</span>
           </div>
         `).join('')}
       </div>
-      <div style="margin-top: 9px; border-top: 1px solid ${chartColors.value.tooltipBorder}; padding-top: 8px; display: grid; gap: 4px; color: ${chartColors.value.tooltipValue}; font-weight: 700;">
+      <div class="token-trend-tooltip__summary">
         ${summaryRows.map((row) => `<div>${escapeHtml(row)}</div>`).join('')}
       </div>
     </div>

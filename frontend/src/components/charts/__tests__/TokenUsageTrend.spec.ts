@@ -168,11 +168,16 @@ describe('TokenUsageTrend', () => {
     const wrapper = mountTrend()
     const tooltipHtml = (getChart(wrapper).props('tooltipHtml') as (title: string) => string)('2026-05-08')
 
-    expect(tooltipHtml).toContain('background: #111827')
-    expect(tooltipHtml).toContain('min-width: 212px')
-    expect(tooltipHtml).toContain('font-size: 12px')
-    expect(tooltipHtml).toContain('padding: 10px 12px')
-    expect(tooltipHtml).toContain('box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28)')
+    expect(tooltipHtml).toContain('class="token-trend-tooltip"')
+    expect(tooltipHtml).toContain('class="token-trend-tooltip__title"')
+    expect(tooltipHtml).toContain('class="token-trend-tooltip__rows"')
+    expect(tooltipHtml).toContain('class="token-trend-tooltip__row"')
+    expect(tooltipHtml).toContain('class="token-trend-tooltip__label"')
+    expect(tooltipHtml).toContain('class="token-trend-tooltip__marker"')
+    expect(tooltipHtml).toContain('class="token-trend-tooltip__value"')
+    expect(tooltipHtml).toContain('class="token-trend-tooltip__summary"')
+    expect(tooltipHtml).toContain('--token-trend-marker: #2563eb')
+    expect(tooltipHtml).not.toContain('background: #111827')
     expect(tooltipHtml).toContain('总使用: 1.05K')
     expect(tooltipHtml).not.toContain('$')
     expect(tooltipHtml).not.toContain('消费')
@@ -189,6 +194,16 @@ describe('TokenUsageTrend', () => {
     expect(tooltipHtml).not.toContain('实际消费')
     expect(tooltipHtml).not.toContain('Standard')
     expect(tooltipHtml).not.toContain('标准')
+  })
+
+  it('escapes dynamic tooltip text while keeping semantic markup', () => {
+    const wrapper = mountTrend({
+      trendData: [{ ...trendPoint, date: '<script>&"\'' }],
+    })
+    const tooltipHtml = (getChart(wrapper).props('tooltipHtml') as (title: string) => string)('<script>&"\'')
+
+    expect(tooltipHtml).toContain('&lt;script&gt;&amp;&quot;&#039;')
+    expect(tooltipHtml).not.toContain('<script>')
   })
 
   it('allows callers to enlarge the chart height', () => {

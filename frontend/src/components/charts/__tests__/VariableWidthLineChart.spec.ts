@@ -1,6 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 import VariableWidthLineChart from '../VariableWidthLineChart.vue'
 
@@ -15,6 +17,7 @@ const { chartInstances, ChartMock } = vi.hoisted(() => {
     const instance = {
       options: vi.fn(),
       render: vi.fn(() => Promise.resolve()),
+      forceFit: vi.fn(() => Promise.resolve()),
       destroy: vi.fn(),
     }
     instances.push(instance)
@@ -54,15 +57,32 @@ const mountChart = (props: Record<string, unknown> = {}) => mount(VariableWidthL
   },
 })
 
+const defaultRect = {
+  x: 0,
+  y: 0,
+  top: 0,
+  right: 400,
+  bottom: 320,
+  left: 0,
+  width: 400,
+  height: 320,
+  toJSON: () => ({}),
+} as DOMRect
+
 const extractLeftPercent = (style: string | undefined): number => {
   const match = style?.match(/left:\s*([0-9.]+)%/)
   return match ? Number(match[1]) : Number.NaN
 }
 
 describe('VariableWidthLineChart', () => {
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(defaultRect)
+  })
+
   afterEach(() => {
     ChartMock.mockClear()
     chartInstances.splice(0)
+    vi.restoreAllMocks()
   })
 
   it('renders a blue-highlighted title and custom Vue legend', async () => {
@@ -103,18 +123,7 @@ describe('VariableWidthLineChart', () => {
 
     expect(options.children).toHaveLength(3)
     const mainLayer = options.children[2]
-    expect(mainLayer.axis).toMatchObject({
-      x: expect.objectContaining({
-        line: false,
-        tick: false,
-        gridLineDash: [4, 8],
-      }),
-      y: expect.objectContaining({
-        line: false,
-        tick: false,
-        gridLineDash: [4, 8],
-      }),
-    })
+    expect(mainLayer.axis).toBe(false)
     expect(options.children[0]).toMatchObject({
       type: 'line',
       encode: {
@@ -146,6 +155,25 @@ describe('VariableWidthLineChart', () => {
     expect(highVisualSize / lowVisualSize).toBeLessThan(400 / 200)
     expect(options.children.some((child: Record<string, unknown>) => child.type === 'point')).toBe(false)
     expect(chartInstances[0].render).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses custom HTML overlays as the only axis renderer and shares the plot layout', async () => {
+    const wrapper = mountChart()
+    await nextTick()
+
+    const options = chartInstances[0].options.mock.calls[0][0]
+    expect(options.children.every((child: Record<string, unknown>) => child.axis === false)).toBe(true)
+    expect(wrapper.find('.vw-line__body').attributes('style')).toContain('--vw-plot-left')
+    expect(wrapper.find('.vw-line__x-label--start').exists()).toBe(true)
+    expect(wrapper.find('.vw-line__x-label--end').exists()).toBe(true)
+  })
+
+  it('owns semantic Token tooltip styles in the shared themed surface', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/components/charts/VariableWidthLineChart.vue'), 'utf8')
+
+    expect(source).toContain(':deep(.token-trend-tooltip__row)')
+    expect(source).toContain(':deep(.token-trend-tooltip__marker)')
+    expect(source).toContain('background: var(--token-trend-marker)')
   })
 
   it('can render endpoint dots when explicitly enabled', async () => {
@@ -257,7 +285,7 @@ describe('VariableWidthLineChart', () => {
     expect(options.children[0].tooltip).toBe(false)
     expect(options.interaction).toEqual({})
 
-    await wrapper.find('.vw-line__body').trigger('mousemove', {
+    await wrapper.find('.vw-line__body').trigger('pointermove', {
       clientX: 60,
       clientY: 120,
     })
@@ -268,7 +296,7 @@ describe('VariableWidthLineChart', () => {
     expect(wrapper.find('.vw-line__tooltip-crosshair').exists()).toBe(true)
     expect(tooltipHtml).toHaveBeenCalledWith('2026-05-08')
 
-    await wrapper.find('.vw-line__body').trigger('mouseleave')
+    await wrapper.find('.vw-line__body').trigger('pointerleave')
     await nextTick()
 
     expect(wrapper.find('.vw-line__tooltip').exists()).toBe(false)
@@ -284,7 +312,12 @@ describe('VariableWidthLineChart', () => {
         { date: '2026-07-09T22:00:00', value: 40, category: '输入' },
       ],
       xField: (datum: Record<string, unknown>) => new Date(String(datum.date)),
-      xTicks: undefined,
+      xTicks: [
+        new Date('2026-07-09T00:00:00'),
+        new Date('2026-07-09T20:00:00'),
+        new Date('2026-07-09T21:00:00'),
+        new Date('2026-07-09T22:00:00'),
+      ],
     })
     await nextTick()
 
@@ -324,7 +357,7 @@ describe('VariableWidthLineChart', () => {
     })
     await nextTick()
 
-    await wrapper.find('.vw-line__body').trigger('mousemove', {
+    await wrapper.find('.vw-line__body').trigger('pointermove', {
       clientX: 184,
       clientY: 120,
     })
@@ -332,7 +365,7 @@ describe('VariableWidthLineChart', () => {
 
     const title = tooltipHtml.mock.calls[0][0]
     expect(title).toEqual(new Date('2026-07-09T00:00:00'))
-    expect(wrapper.find('.vw-line__tooltip-crosshair').attributes('style')).toContain('left: 56px')
+    expect(wrapper.find('.vw-line__tooltip-crosshair').attributes('style')).toContain('left: 48px')
 
     rectSpy.mockRestore()
   })
@@ -355,6 +388,66 @@ describe('VariableWidthLineChart', () => {
 
     wrapper.unmount()
     expect(chartInstances[1].destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('refits within a breakpoint and rebuilds then fits when crossing 480px', async () => {
+    let width = 520
+    let notifyResize: ((entries: ResizeObserverEntry[]) => void) | undefined
+    class TestResizeObserver {
+      observe = vi.fn()
+      disconnect = vi.fn()
+
+      constructor(callback: (entries: ResizeObserverEntry[]) => void) {
+        notifyResize = callback
+      }
+    }
+
+    vi.stubGlobal('ResizeObserver', TestResizeObserver)
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({
+      ...defaultRect,
+      width,
+      right: width,
+    }))
+    const wrapper = mountChart()
+    await nextTick()
+
+    const firstInstance = chartInstances[0]
+    width = 540
+    notifyResize?.([{ contentRect: { width, height: 320 } } as ResizeObserverEntry])
+    await new Promise((resolve) => setTimeout(resolve, 32))
+    await nextTick()
+
+    expect(firstInstance.forceFit).toHaveBeenCalled()
+
+    width = 400
+    notifyResize?.([{ contentRect: { width, height: 320 } } as ResizeObserverEntry])
+    await new Promise((resolve) => setTimeout(resolve, 32))
+    await nextTick()
+
+    expect(chartInstances).toHaveLength(2)
+    expect(chartInstances[1].forceFit).toHaveBeenCalled()
+    rectSpy.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('clears an active tooltip before domain changes rerender the chart', async () => {
+    const tooltipHtml = vi.fn((title: unknown) => `<div>${String(title)}</div>`)
+    const wrapper = mountChart({ tooltipHtml })
+    await nextTick()
+
+    await wrapper.find('.vw-line__body').trigger('pointermove', {
+      clientX: 160,
+      clientY: 120,
+    })
+    await nextTick()
+    expect(wrapper.find('.vw-line__tooltip-crosshair').exists()).toBe(true)
+
+    await wrapper.setProps({ yDomain: [0, 1000] })
+    await nextTick()
+
+    expect(wrapper.find('.vw-line__tooltip-crosshair').exists()).toBe(false)
+    expect(wrapper.find('.vw-line__tooltip').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('does not create a G2 chart when there is no data', async () => {

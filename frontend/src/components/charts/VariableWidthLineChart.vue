@@ -21,12 +21,13 @@
     </header>
 
     <div
+      ref="bodyRef"
       class="vw-line__body"
-      :style="{ height: `${height}px` }"
-      @mousemove="handleTooltipMove"
-      @mouseleave="hideTooltip"
+      :style="bodyStyle"
+      @pointermove="handleTooltipMove"
+      @pointerleave="hideTooltip"
     >
-      <div v-if="!isEmpty" class="vw-line__grid" aria-hidden="true">
+      <div v-if="!isEmpty && layoutSnapshot.renderable" class="vw-line__grid" aria-hidden="true">
         <div
           v-for="item in gridTickItems"
           :key="item.key"
@@ -40,11 +41,11 @@
 
       <div ref="containerRef" class="vw-line__chart" />
 
-      <div v-if="!isEmpty" class="vw-line__x-axis" aria-hidden="true">
+      <div v-if="!isEmpty && layoutSnapshot.renderable" class="vw-line__x-axis" aria-hidden="true">
         <span
           v-for="item in xTickItems"
           :key="item.key"
-          class="vw-line__x-label"
+          :class="['vw-line__x-label', `vw-line__x-label--${item.align}`]"
           :style="{ left: `${item.left}%` }"
         >
           {{ item.label }}
@@ -60,8 +61,10 @@
 
       <div
         v-if="tooltipState.visible && tooltipContent"
+        ref="tooltipRef"
         class="vw-line__tooltip"
-        :style="{ left: `${tooltipState.left}px`, top: `${tooltipState.top}px` }"
+        :style="tooltipStyle"
+        @pointermove.stop
         v-html="tooltipContent"
       />
 
@@ -83,6 +86,17 @@ import {
   shallowRef,
   watch,
 } from 'vue'
+import {
+  createPlotLayout,
+  createXCoordinateModel,
+  findNearestXValue,
+  getXPositionPercent,
+  isSameXValue,
+  placeTooltip,
+  selectAutomaticXTicks,
+  type PlotLayout,
+  type XCoordinateModel,
+} from './variableWidthLineChartGeometry'
 
 defineOptions({
   name: 'VariableWidthLineChart',
@@ -111,11 +125,6 @@ const Y_KEY = '__vw_y__'
 const SIZE_KEY = '__vw_visual_size__'
 const COLOR_KEY = '__vw_color__'
 const SERIES_KEY = '__vw_series__'
-const PLOT_PADDING_LEFT = 56
-const PLOT_PADDING_RIGHT = 24
-const PLOT_PADDING_TOP = 12
-const PLOT_PADDING_BOTTOM = 42
-const TOOLTIP_WIDTH = 236
 
 const DEFAULT_COLORS = [
   '#2563eb',
@@ -163,15 +172,25 @@ const props = withDefaults(defineProps<{
   emptyText: '暂无数据',
 })
 
+const bodyRef = ref<HTMLDivElement | null>(null)
 const containerRef = ref<HTMLDivElement | null>(null)
 const chartRef = shallowRef<Chart | null>(null)
+const tooltipRef = ref<HTMLDivElement | null>(null)
+const layoutSnapshot = ref<PlotLayout>(createPlotLayout(0, props.height))
+const lastRenderableLayout = ref<PlotLayout | null>(null)
 const tooltipState = ref({
   visible: false,
   x: 0,
   left: 0,
   top: 0,
+  maxWidth: 0,
+  maxHeight: 0,
   title: undefined as unknown,
 })
+let tooltipTicket = 0
+let resizeFrame: number | null = null
+let resizeObserver: ResizeObserver | null = null
+let renderTicket = 0
 
 const getFieldValue = (datum: RawDatum, field: FieldGetter, index: number): unknown =>
   typeof field === 'function' ? field(datum, index) : datum[field]
@@ -235,6 +254,21 @@ const tooltipContent = computed(() => {
   if (!tooltipState.value.visible || !props.tooltipHtml) return ''
   return props.tooltipHtml(tooltipState.value.title)
 })
+
+const bodyStyle = computed(() => ({
+  height: `${props.height}px`,
+  '--vw-plot-left': `${layoutSnapshot.value.padding.left}px`,
+  '--vw-plot-right': `${layoutSnapshot.value.padding.right}px`,
+  '--vw-plot-top': `${layoutSnapshot.value.padding.top}px`,
+  '--vw-plot-bottom': `${layoutSnapshot.value.padding.bottom}px`,
+}))
+
+const tooltipStyle = computed(() => ({
+  left: `${tooltipState.value.left}px`,
+  top: `${tooltipState.value.top}px`,
+  maxWidth: `${tooltipState.value.maxWidth}px`,
+  maxHeight: `${tooltipState.value.maxHeight}px`,
+}))
 
 const seriesNames = computed(() => {
   const seen = new Set<string>()
@@ -360,87 +394,74 @@ const xValues = computed(() => {
   return values
 })
 
-const xComparableScale = computed(() => {
-  const items = xValues.value.map((value, index) => ({
-    value,
-    index,
-    comparable: toInterpolatableX(value),
-  }))
-
-  if (!items.length || items.some((item) => item.comparable === null)) {
-    return null
-  }
-
-  const comparableItems = items as Array<{
-    value: unknown
-    index: number
-    comparable: ComparableX
-  }>
-  const positions = comparableItems.map((item) => item.comparable.value)
-  const min = Math.min(...positions)
-  const max = Math.max(...positions)
-
-  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) {
-    return null
-  }
-
-  return {
-    items: comparableItems,
-    min,
-    max,
-    span: max - min,
-    scaleType: comparableItems.some((item) => item.comparable.kind !== 'number') ? 'time' : 'linear',
-  }
-})
+const xCoordinateModel = computed<XCoordinateModel>(() =>
+  createXCoordinateModel(xValues.value, props.xScaleType),
+)
 
 const xDisplayTicks = computed(() => {
   if (props.xTicks?.length) return props.xTicks
 
-  const values = xValues.value
-  if (values.length <= 6) return values
-
-  const lastIndex = values.length - 1
-  const indexes = new Set<number>([0, Math.floor(lastIndex / 2), lastIndex])
-  return Array.from(indexes).sort((a, b) => a - b).map((index) => values[index])
+  return selectAutomaticXTicks(xValues.value, layoutSnapshot.value.narrow)
 })
-
-const getXPositionPercent = (value: unknown, fallbackIndex: number): number => {
-  const scale = xComparableScale.value
-  const comparable = toInterpolatableX(value)
-
-  if (scale && comparable) {
-    return clamp(((comparable.value - scale.min) / scale.span) * 100, 0, 100)
-  }
-
-  const denominator = Math.max(xValues.value.length - 1, 1)
-  return (fallbackIndex / denominator) * 100
-}
 
 const xTickItems = computed(() => {
   const allValues = xValues.value
 
   return xDisplayTicks.value.map((value, index) => {
     const foundIndex = allValues.findIndex((candidate) => isSameXValue(candidate, value))
-    const valueIndex = foundIndex >= 0 ? foundIndex : index
+    const left = foundIndex >= 0
+      ? getXPositionPercent(xCoordinateModel.value, value)
+      : (index / Math.max(xDisplayTicks.value.length - 1, 1)) * 100
 
     return {
       key: xTickKey(value, index),
       label: props.formatX ? props.formatX(value) : String(value),
-      left: getXPositionPercent(value, valueIndex),
+      left,
+      align: index === 0 ? 'start' : index === xDisplayTicks.value.length - 1 ? 'end' : 'middle',
     }
   })
 })
 
-const isSameXValue = (a: unknown, b: unknown): boolean => {
-  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime()
-  return String(a) === String(b)
-}
-
 const xTickKey = (value: unknown, index: number): string =>
   `${value instanceof Date ? value.getTime() : String(value)}-${index}`
 
-const handleTooltipMove = (event: MouseEvent) => {
-  if (!props.tooltipHtml || isEmpty.value) return
+const invalidateTooltip = () => {
+  tooltipTicket += 1
+  tooltipState.value = {
+    ...tooltipState.value,
+    visible: false,
+  }
+}
+
+const positionTooltip = async (ticket: number, bodyRect: DOMRect) => {
+  await nextTick()
+
+  if (ticket !== tooltipTicket || !tooltipState.value.visible || !tooltipRef.value) return
+
+  const tooltipRect = tooltipRef.value.getBoundingClientRect()
+  const placement = placeTooltip({
+    bodyWidth: bodyRect.width,
+    bodyHeight: bodyRect.height,
+    anchorX: tooltipState.value.x,
+    anchorY: tooltipState.value.top,
+    tooltipWidth: tooltipRect.width || tooltipRef.value.offsetWidth,
+    tooltipHeight: tooltipRect.height || tooltipRef.value.offsetHeight,
+  })
+
+  if (ticket !== tooltipTicket) return
+
+  tooltipState.value = {
+    ...tooltipState.value,
+    visible: placement.visible,
+    left: placement.left,
+    top: placement.top,
+    maxWidth: placement.maxWidth,
+    maxHeight: placement.maxHeight,
+  }
+}
+
+const handleTooltipMove = (event: PointerEvent) => {
+  if (!props.tooltipHtml || isEmpty.value || !layoutSnapshot.value.renderable) return
 
   const target = event.currentTarget
   if (!(target instanceof HTMLElement)) return
@@ -449,51 +470,37 @@ const handleTooltipMove = (event: MouseEvent) => {
   if (!values.length) return
 
   const rect = target.getBoundingClientRect()
-  const plotWidth = Math.max(rect.width - PLOT_PADDING_LEFT - PLOT_PADDING_RIGHT, 1)
-  const plotHeight = Math.max(rect.height - PLOT_PADDING_TOP - PLOT_PADDING_BOTTOM, 1)
-  const localX = clamp(event.clientX - rect.left, PLOT_PADDING_LEFT, rect.width - PLOT_PADDING_RIGHT)
-  const localY = clamp(event.clientY - rect.top, PLOT_PADDING_TOP, rect.height - PLOT_PADDING_BOTTOM)
-  const progress = values.length <= 1 ? 0 : clamp((localX - PLOT_PADDING_LEFT) / plotWidth, 0, 1)
-  const scale = xComparableScale.value
-  const title = scale
-    ? findNearestComparableXValue(scale.min + progress * scale.span)
+  const layout = layoutSnapshot.value
+  const localX = clamp(event.clientX - rect.left, layout.plotLeft, layout.plotRight)
+  const localY = clamp(event.clientY - rect.top, layout.plotTop, layout.plotBottom)
+  const progress = layout.plotWidth > 0
+    ? clamp((localX - layout.plotLeft) / layout.plotWidth, 0, 1)
+    : 0
+  const model = xCoordinateModel.value
+  const title = model.kind === 'continuous'
+    ? findNearestXValue(model, model.min + progress * (model.max - model.min))
     : values[clamp(Math.round(progress * (values.length - 1)), 0, values.length - 1)]
-  const titleIndex = values.findIndex((candidate) => isSameXValue(candidate, title))
-  const snappedX = PLOT_PADDING_LEFT + (
-    getXPositionPercent(title, titleIndex >= 0 ? titleIndex : Math.round(progress * (values.length - 1))) / 100
-  ) * plotWidth
-  const preferredLeft = snappedX + 12
-  const left = preferredLeft + TOOLTIP_WIDTH > rect.width
-    ? snappedX - TOOLTIP_WIDTH - 12
-    : preferredLeft
-  const maxLeft = Math.max(8, rect.width - TOOLTIP_WIDTH - 8)
-  const top = clamp(localY - 80, 8, plotHeight + PLOT_PADDING_TOP - 24)
+  const snappedX = layout.plotLeft + (
+    getXPositionPercent(model, title) / 100
+  ) * layout.plotWidth
+  const ticket = ++tooltipTicket
 
   tooltipState.value = {
+    ...tooltipState.value,
     visible: true,
     x: snappedX,
-    left: clamp(left, 8, maxLeft),
-    top,
+    left: snappedX + 12,
+    top: localY,
+    maxWidth: Math.max(0, rect.width - 16),
+    maxHeight: Math.max(0, rect.height - 16),
     title,
   }
-}
 
-const findNearestComparableXValue = (target: number): unknown => {
-  const scale = xComparableScale.value
-  if (!scale?.items.length) return xValues.value[0]
-
-  return scale.items.reduce((nearest, item) => {
-    const currentDistance = Math.abs(item.comparable.value - target)
-    const nearestDistance = Math.abs(nearest.comparable.value - target)
-    return currentDistance < nearestDistance ? item : nearest
-  }, scale.items[0]).value
+  void positionTooltip(ticket, rect)
 }
 
 const hideTooltip = () => {
-  tooltipState.value = {
-    ...tooltipState.value,
-    visible: false,
-  }
+  invalidateTooltip()
 }
 
 const buildStaccatoData = (data: InnerDatum[]): InnerDatum[] => {
@@ -593,6 +600,7 @@ const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max)
 
 const buildViewScale = () => {
+  const xModel = xCoordinateModel.value
   const scale: Record<string, unknown> = {
     color: {
       domain: seriesNames.value,
@@ -602,6 +610,19 @@ const buildViewScale = () => {
       domain: [yExtent.value.min, yExtent.value.max],
       nice: false,
     },
+    x: xModel.kind === 'continuous'
+      ? {
+          type: xModel.scaleType,
+          domain: xModel.g2Domain,
+          nice: false,
+        }
+      : {
+          type: xModel.scaleType,
+          domain: xModel.g2Domain,
+          ...(xModel.scaleType === 'band'
+            ? { paddingInner: 0, paddingOuter: 0 }
+            : { padding: 0 }),
+        },
   }
 
   if (props.yTicks?.length) {
@@ -611,62 +632,7 @@ const buildViewScale = () => {
     }
   }
 
-  const comparableScale = xComparableScale.value
-
-  if (props.xScaleType || props.xTicks?.length || comparableScale) {
-    scale.x = {}
-
-    if (props.xScaleType) {
-      ;(scale.x as Record<string, unknown>).type = props.xScaleType
-    } else if (comparableScale) {
-      ;(scale.x as Record<string, unknown>).type = comparableScale.scaleType
-    }
-
-    const xScaleType = (scale.x as Record<string, unknown>).type
-    if (
-      comparableScale &&
-      (xScaleType === 'time' || xScaleType === 'linear')
-    ) {
-      ;(scale.x as Record<string, unknown>).domain = comparableScale.scaleType === 'time'
-        ? [new Date(comparableScale.min), new Date(comparableScale.max)]
-        : [comparableScale.min, comparableScale.max]
-      ;(scale.x as Record<string, unknown>).nice = false
-    }
-
-    if (props.xTicks?.length) {
-      ;(scale.x as Record<string, unknown>).tickMethod = () => props.xTicks
-    }
-  }
-
   return scale
-}
-
-const buildAxis = () => {
-  const commonAxis = {
-    title: false,
-    line: false,
-    tick: false,
-    label: true,
-    labelFill: '#6b7280',
-    labelFontSize: 11,
-    grid: true,
-    gridStroke: '#e5e7eb',
-    gridLineWidth: 1,
-    gridLineDash: [4, 8],
-  }
-
-  return {
-    x: {
-      ...commonAxis,
-      labelFormatter: (value: unknown) =>
-        props.formatX ? props.formatX(value) : String(value),
-    },
-    y: {
-      ...commonAxis,
-      labelFormatter: (value: unknown) =>
-        props.formatY ? props.formatY(value) : String(value),
-    },
-  }
 }
 
 const buildLineScale = (
@@ -692,12 +658,10 @@ const createTrailLayer = ({
   minWidthOffset = 0,
   maxWidthOffset = 0,
   opacity = 1,
-  showAxis = false,
 }: {
   minWidthOffset?: number
   maxWidthOffset?: number
   opacity?: number
-  showAxis?: boolean
 } = {}) => ({
   type: 'line',
   encode: {
@@ -709,7 +673,7 @@ const createTrailLayer = ({
     shape: 'trail',
   },
   scale: buildLineScale(minWidthOffset, maxWidthOffset),
-  axis: showAxis ? buildAxis() : false,
+  axis: false,
   style: {
     lineCap: 'round',
     lineJoin: 'round',
@@ -730,8 +694,6 @@ const destroyChart = () => {
   chartRef.value = null
 }
 
-let renderTicket = 0
-
 const renderChart = async () => {
   const currentTicket = ++renderTicket
 
@@ -745,16 +707,16 @@ const renderChart = async () => {
   destroyChart()
   container.innerHTML = ''
 
-  if (isEmpty.value) return
+  if (isEmpty.value || !layoutSnapshot.value.renderable) return
 
   const children: any[] = props.brushEffect
-    ? [
+      ? [
         createTrailLayer({ minWidthOffset: 2, maxWidthOffset: 2.4, opacity: 0.08 }),
         createTrailLayer({ minWidthOffset: 0.9, maxWidthOffset: 1.1, opacity: 0.16 }),
-        createTrailLayer({ opacity: 0.94, showAxis: true }),
+        createTrailLayer({ opacity: 0.94 }),
       ]
     : [
-        createTrailLayer({ showAxis: true }),
+        createTrailLayer(),
       ]
 
   if (props.showEndDot) {
@@ -810,10 +772,10 @@ const renderChart = async () => {
     autoFit: true,
     height: props.height,
     data: renderData.value,
-    paddingLeft: PLOT_PADDING_LEFT,
-    paddingRight: PLOT_PADDING_RIGHT,
-    paddingTop: PLOT_PADDING_TOP,
-    paddingBottom: PLOT_PADDING_BOTTOM,
+    paddingLeft: layoutSnapshot.value.padding.left,
+    paddingRight: layoutSnapshot.value.padding.right,
+    paddingTop: layoutSnapshot.value.padding.top,
+    paddingBottom: layoutSnapshot.value.padding.bottom,
     scale: buildViewScale(),
     axis: false,
     legend: false,
@@ -827,8 +789,73 @@ const renderChart = async () => {
   await chart.render()
 }
 
+let layoutTicket = 0
+
+const readBodyRect = (): DOMRect | null => {
+  const body = bodyRef.value
+  if (!body) return null
+  return body.getBoundingClientRect()
+}
+
+const applyMeasuredLayout = async (width: number, height: number) => {
+  const ticket = ++layoutTicket
+  invalidateTooltip()
+
+  const nextLayout = createPlotLayout(width, height || props.height)
+  const previousRenderable = lastRenderableLayout.value
+  layoutSnapshot.value = nextLayout
+
+  if (!nextLayout.renderable) {
+    destroyChart()
+    return
+  }
+
+  const needsRebuild = !chartRef.value || previousRenderable?.narrow !== nextLayout.narrow
+  lastRenderableLayout.value = nextLayout
+
+  if (needsRebuild) {
+    await renderChart()
+    if (ticket !== layoutTicket) return
+    if (chartRef.value) {
+      await chartRef.value.forceFit()
+      if (ticket !== layoutTicket) return
+    }
+  } else if (chartRef.value) {
+    await nextTick()
+    if (ticket !== layoutTicket) return
+    await chartRef.value.forceFit()
+    if (ticket !== layoutTicket) return
+  }
+}
+
+const measureBody = () => {
+  const rect = readBodyRect()
+  if (!rect) return
+  void applyMeasuredLayout(rect.width, rect.height)
+}
+
+const scheduleLayoutUpdate = () => {
+  invalidateTooltip()
+  if (resizeFrame !== null) {
+    cancelAnimationFrame(resizeFrame)
+  }
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = null
+    measureBody()
+  })
+}
+
 onMounted(() => {
-  void renderChart()
+  measureBody()
+
+  if (typeof ResizeObserver !== 'undefined' && bodyRef.value) {
+    resizeObserver = new ResizeObserver(() => {
+      scheduleLayoutUpdate()
+    })
+    resizeObserver.observe(bodyRef.value)
+  } else {
+    window.addEventListener('resize', scheduleLayoutUpdate)
+  }
 })
 
 watch(
@@ -851,6 +878,7 @@ watch(
     props.formatY,
   ],
   () => {
+    invalidateTooltip()
     void renderChart()
   },
   { deep: true }
@@ -858,6 +886,15 @@ watch(
 
 onBeforeUnmount(() => {
   renderTicket += 1
+  layoutTicket += 1
+  invalidateTooltip()
+  if (resizeFrame !== null) {
+    cancelAnimationFrame(resizeFrame)
+    resizeFrame = null
+  }
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  window.removeEventListener('resize', scheduleLayoutUpdate)
   destroyChart()
 })
 </script>
@@ -865,7 +902,32 @@ onBeforeUnmount(() => {
 <style scoped>
 .vw-line {
   width: 100%;
-  background: #ffffff;
+  min-width: 0;
+  max-width: 100%;
+  background: transparent;
+  --vw-title-text: #111827;
+  --vw-title-surface: #dbeafe;
+  --vw-body-text: #374151;
+  --vw-muted-text: #6b7280;
+  --vw-grid: #e5e7eb;
+  --vw-crosshair: rgba(17, 24, 39, 0.48);
+  --vw-tooltip-surface: #ffffff;
+  --vw-tooltip-border: #d1d5db;
+  --vw-tooltip-text: #374151;
+  --vw-tooltip-value: #111827;
+}
+
+:global(.dark) .vw-line {
+  --vw-title-text: #dbeafe;
+  --vw-title-surface: rgba(37, 99, 235, 0.24);
+  --vw-body-text: #d1d5db;
+  --vw-muted-text: #9ca3af;
+  --vw-grid: #374151;
+  --vw-crosshair: rgba(209, 213, 219, 0.48);
+  --vw-tooltip-surface: #111827;
+  --vw-tooltip-border: #374151;
+  --vw-tooltip-text: #d1d5db;
+  --vw-tooltip-value: #f9fafb;
 }
 
 .vw-line__header {
@@ -876,8 +938,8 @@ onBeforeUnmount(() => {
   display: inline-block;
   margin: 0;
   padding: 3px 8px;
-  color: #111827;
-  background: #dbeafe;
+  color: var(--vw-title-text);
+  background: var(--vw-title-surface);
   border-radius: 4px;
   font-size: 14px;
   font-weight: 700;
@@ -896,7 +958,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #374151;
+  color: var(--vw-body-text);
   font-size: 12px;
   line-height: 1;
   white-space: nowrap;
@@ -911,21 +973,23 @@ onBeforeUnmount(() => {
 .vw-line__body {
   position: relative;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .vw-line__tooltip-crosshair {
   position: absolute;
-  top: 12px;
-  bottom: 42px;
+  top: var(--vw-plot-top);
+  bottom: var(--vw-plot-bottom);
   z-index: 3;
   width: 1px;
-  background: rgba(17, 24, 39, 0.48);
+  background: var(--vw-crosshair);
   pointer-events: none;
 }
 
 .vw-line__grid {
   position: absolute;
-  inset: 12px 24px 42px 56px;
+  inset: var(--vw-plot-top) var(--vw-plot-right) var(--vw-plot-bottom) var(--vw-plot-left);
   z-index: 0;
   pointer-events: none;
 }
@@ -942,7 +1006,7 @@ onBeforeUnmount(() => {
 .vw-line__grid-label {
   position: absolute;
   right: calc(100% + 8px);
-  color: #9ca3af;
+  color: var(--vw-muted-text);
   font-size: 11px;
   line-height: 1;
   white-space: nowrap;
@@ -950,7 +1014,7 @@ onBeforeUnmount(() => {
 
 .vw-line__grid-line {
   width: 100%;
-  border-top: 1px dashed #e5e7eb;
+  border-top: 1px dashed var(--vw-grid);
 }
 
 .vw-line__chart {
@@ -958,13 +1022,15 @@ onBeforeUnmount(() => {
   z-index: 1;
   width: 100%;
   height: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .vw-line__x-axis {
   position: absolute;
-  right: 24px;
+  right: var(--vw-plot-right);
   bottom: 12px;
-  left: 56px;
+  left: var(--vw-plot-left);
   z-index: 2;
   height: 18px;
   pointer-events: none;
@@ -972,18 +1038,97 @@ onBeforeUnmount(() => {
 
 .vw-line__x-label {
   position: absolute;
-  color: #9ca3af;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--vw-muted-text);
   font-size: 11px;
   line-height: 1;
   white-space: nowrap;
   transform: translateX(-50%);
 }
 
+.vw-line__x-label--start {
+  transform: translateX(0);
+}
+
+.vw-line__x-label--end {
+  transform: translateX(-100%);
+}
+
 .vw-line__tooltip {
   position: absolute;
   z-index: 4;
+  box-sizing: border-box;
   width: max-content;
-  pointer-events: none;
+  overflow-y: auto;
+  background: var(--vw-tooltip-surface);
+  border: 1px solid var(--vw-tooltip-border);
+  border-radius: 7px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+  color: var(--vw-tooltip-text);
+  padding: 10px 12px;
+  pointer-events: auto;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+:deep(.token-trend-tooltip) {
+  min-width: 0;
+}
+
+:deep(.token-trend-tooltip__title) {
+  margin-bottom: 8px;
+  color: var(--vw-muted-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+:deep(.token-trend-tooltip__rows) {
+  display: grid;
+  gap: 6px;
+}
+
+:deep(.token-trend-tooltip__row) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+:deep(.token-trend-tooltip__label) {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--vw-tooltip-text);
+}
+
+:deep(.token-trend-tooltip__marker) {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--token-trend-marker);
+}
+
+:deep(.token-trend-tooltip__value) {
+  flex: 0 0 auto;
+  color: var(--vw-tooltip-value);
+  font-weight: 700;
+}
+
+:deep(.token-trend-tooltip__summary) {
+  display: grid;
+  gap: 4px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid var(--vw-tooltip-border);
+  color: var(--vw-tooltip-value);
+  font-weight: 700;
+}
+
+:deep(.token-trend-tooltip__fallback) {
+  color: var(--vw-tooltip-text);
 }
 
 .vw-line__empty {
@@ -992,7 +1137,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #9ca3af;
+  color: var(--vw-muted-text);
   font-size: 14px;
   pointer-events: none;
 }
