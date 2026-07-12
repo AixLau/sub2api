@@ -125,6 +125,30 @@ type errReadCloser struct {
 func (r errReadCloser) Read([]byte) (int, error) { return 0, r.err }
 func (r errReadCloser) Close() error             { return nil }
 
+type textThenErrReadCloser struct {
+	r   *strings.Reader
+	err error
+}
+
+func (r *textThenErrReadCloser) Read(p []byte) (int, error) {
+	if r.r != nil && r.r.Len() > 0 {
+		return r.r.Read(p)
+	}
+	return 0, r.err
+}
+
+func (r *textThenErrReadCloser) Close() error { return nil }
+
+func extractLastSSEDataForTest(body string) string {
+	last := ""
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, "data: ") {
+			last = strings.TrimPrefix(line, "data: ")
+		}
+	}
+	return last
+}
+
 type failingGinWriter struct {
 	gin.ResponseWriter
 	failAfter int
@@ -1500,6 +1524,48 @@ func TestOpenAIStreamingResponseFailedAfterOutputSanitizesVerboseResponseForClie
 	require.NotContains(t, body, `"instructions"`)
 	require.NotContains(t, body, `"output"`)
 	require.NotContains(t, body, `"usage"`)
+}
+
+func TestOpenAIStreamingReadErrorAfterOutputEmitsResponsesFailedEvent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			StreamDataIntervalTimeout: 0,
+			StreamKeepaliveInterval:   0,
+			MaxLineSize:               defaultMaxLineSize,
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	body := strings.Join([]string{
+		"event: response.created",
+		`data: {"type":"response.created","response":{"id":"resp_stream_broke"}}`,
+		"",
+		"event: response.output_text.delta",
+		`data: {"type":"response.output_text.delta","delta":"partial"}`,
+		"",
+	}, "\n")
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       &textThenErrReadCloser{r: strings.NewReader(body), err: io.ErrUnexpectedEOF},
+		Header:     http.Header{"X-Request-Id": []string{"rid-output-then-eof"}},
+	}
+
+	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "acc"}, time.Now(), "gpt-5.5", "gpt-5.5")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "stream read error")
+
+	out := rec.Body.String()
+	require.Contains(t, out, "event: response.output_text.delta")
+	require.Contains(t, out, "event: response.failed")
+	require.NotContains(t, out, "event: error")
+	require.Equal(t, "response.failed", gjson.Get(extractLastSSEDataForTest(out), "type").String())
+	require.Equal(t, "stream_read_error", gjson.Get(extractLastSSEDataForTest(out), "response.error.code").String())
+	require.Equal(t, "resp_stream_broke", gjson.Get(extractLastSSEDataForTest(out), "response.id").String())
 }
 
 func TestOpenAIStreamingContextWindowResponseFailedBeforeOutputPassesThrough(t *testing.T) {

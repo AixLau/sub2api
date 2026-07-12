@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -130,8 +131,17 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			return
 		}
 		errorEventSent = true
+		eventName := "error"
 		payload := `{"type":"error","sequence_number":0,"error":{"type":"upstream_error","message":` + strconv.Quote(reason) + `,"code":` + strconv.Quote(reason) + `}}`
+		if openAIStreamingRequestIsResponses(c) {
+			eventName = "response.failed"
+			payload = buildOpenAIResponsesStreamFailurePayload(responseID, originalModel, "upstream_error", reason)
+		}
 		if err := flushBuffered(); err != nil {
+			clientDisconnected = true
+			return
+		}
+		if _, err := bufferedWriter.WriteString("event: " + eventName + "\n"); err != nil {
 			clientDisconnected = true
 			return
 		}
@@ -472,6 +482,89 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		}
 	}
 
+}
+
+func openAIStreamingRequestIsResponses(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+	path := strings.TrimRight(strings.TrimSpace(c.Request.URL.Path), "/")
+	if path == "" {
+		path = "/"
+	}
+	switch {
+	case path == "/v1/responses" || strings.HasPrefix(path, "/v1/responses/"):
+		return true
+	case path == "/openai/v1/responses" || strings.HasPrefix(path, "/openai/v1/responses/"):
+		return true
+	case path == "/responses" || strings.HasPrefix(path, "/responses/"):
+		return true
+	case path == "/backend-api/codex/responses" || strings.HasPrefix(path, "/backend-api/codex/responses/"):
+		return true
+	default:
+		return false
+	}
+}
+
+func buildOpenAIResponsesStreamFailurePayload(responseID, model, errType, message string) string {
+	responseID = strings.TrimSpace(responseID)
+	if responseID == "" {
+		responseID = "resp_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	}
+	errType = strings.TrimSpace(errType)
+	if errType == "" {
+		errType = "upstream_error"
+	}
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "stream_read_error"
+	}
+
+	response := gin.H{
+		"id":     responseID,
+		"object": "response",
+		"status": "failed",
+		"output": []any{},
+		"error": gin.H{
+			"type":    errType,
+			"code":    mapOpenAIResponsesStreamErrorCode(errType, message),
+			"message": message,
+		},
+	}
+	if model = strings.TrimSpace(model); model != "" {
+		response["model"] = model
+	}
+	payload, err := json.Marshal(gin.H{
+		"type":     "response.failed",
+		"response": response,
+	})
+	if err != nil {
+		return `{"type":"response.failed","response":{"id":` + strconv.Quote(responseID) + `,"object":"response","status":"failed","output":[],"error":{"type":"upstream_error","code":"upstream_error","message":"stream_read_error"}}}`
+	}
+	return string(payload)
+}
+
+func mapOpenAIResponsesStreamErrorCode(errType, message string) string {
+	switch strings.TrimSpace(errType) {
+	case "rate_limit_error":
+		return "rate_limit_exceeded"
+	case "invalid_request_error":
+		return "invalid_request"
+	case "permission_error":
+		return "permission_denied"
+	case "authentication_error":
+		return "authentication_failed"
+	case "api_error", "server_error":
+		return "server_error"
+	}
+	message = strings.ToLower(strings.TrimSpace(message))
+	if strings.Contains(message, "timeout") {
+		return "stream_timeout"
+	}
+	if strings.Contains(message, "stream_read_error") || strings.Contains(message, "disconnected") {
+		return "stream_read_error"
+	}
+	return "upstream_error"
 }
 
 // extractOpenAISSEDataLine 低开销提取 SSE `data:` 行内容。
