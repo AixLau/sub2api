@@ -193,6 +193,11 @@ func (s *OpsService) GetConcurrencyStats(
 			account[acc.ID] = info
 		}
 
+		// Only accounts that can receive a new request contribute to the
+		// aggregate capacity. Keep the account row above so Ops can still show
+		// disabled and failed accounts in the account-level view.
+		isAvailable := isAccountAvailableForOps(&acc, collectedAt)
+
 		// Platform aggregation.
 		if acc.Platform != "" {
 			if _, ok := platform[acc.Platform]; !ok {
@@ -201,9 +206,11 @@ func (s *OpsService) GetConcurrencyStats(
 				}
 			}
 			p := platform[acc.Platform]
-			p.MaxCapacity += int64(acc.Concurrency)
-			p.CurrentInUse += currentInUse
-			p.WaitingInQueue += waiting
+			if isAvailable {
+				p.MaxCapacity += int64(acc.Concurrency)
+				p.CurrentInUse += currentInUse
+				p.WaitingInQueue += waiting
+			}
 		}
 
 		// Group aggregation (one account may contribute to multiple groups).
@@ -224,9 +231,11 @@ func (s *OpsService) GetConcurrencyStats(
 				// Groups are expected to be platform-scoped. If mismatch is observed, avoid misleading labels.
 				g.Platform = ""
 			}
-			g.MaxCapacity += int64(acc.Concurrency)
-			g.CurrentInUse += currentInUse
-			g.WaitingInQueue += waiting
+			if isAvailable {
+				g.MaxCapacity += int64(acc.Concurrency)
+				g.CurrentInUse += currentInUse
+				g.WaitingInQueue += waiting
+			}
 		} else {
 			for _, grp := range acc.Groups {
 				if grp == nil || grp.ID <= 0 {
@@ -247,9 +256,11 @@ func (s *OpsService) GetConcurrencyStats(
 					// Groups are expected to be platform-scoped. If mismatch is observed, avoid misleading labels.
 					g.Platform = ""
 				}
-				g.MaxCapacity += int64(acc.Concurrency)
-				g.CurrentInUse += currentInUse
-				g.WaitingInQueue += waiting
+				if isAvailable {
+					g.MaxCapacity += int64(acc.Concurrency)
+					g.CurrentInUse += currentInUse
+					g.WaitingInQueue += waiting
+				}
 			}
 		}
 	}

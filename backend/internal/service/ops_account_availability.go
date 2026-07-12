@@ -6,6 +6,24 @@ import (
 	"time"
 )
 
+// isAccountAvailableForOps keeps concurrency capacity aligned with the
+// availability metrics shown on the Ops dashboard.
+func isAccountAvailableForOps(acc *Account, now time.Time) bool {
+	if acc == nil || acc.Status != StatusActive || !acc.Schedulable {
+		return false
+	}
+	if acc.RateLimitResetAt != nil && now.Before(*acc.RateLimitResetAt) {
+		return false
+	}
+	if acc.OverloadUntil != nil && now.Before(*acc.OverloadUntil) {
+		return false
+	}
+	if acc.TempUnschedulableUntil != nil && now.Before(*acc.TempUnschedulableUntil) {
+		return false
+	}
+	return true
+}
+
 // GetAccountAvailabilityStats returns current account availability stats.
 //
 // Query-level filtering is intentionally limited to platform/group to match the dashboard scope.
@@ -65,7 +83,7 @@ func (s *OpsService) GetAccountAvailabilityStats(ctx context.Context, platformFi
 			isOverloaded = false
 		}
 
-		isAvailable := acc.Status == StatusActive && acc.Schedulable && !isRateLimited && !isOverloaded && !isTempUnsched
+		isAvailable := isAccountAvailableForOps(&acc, now)
 
 		if acc.Platform != "" {
 			if _, ok := platform[acc.Platform]; !ok {
