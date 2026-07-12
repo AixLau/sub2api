@@ -382,20 +382,40 @@ const formatLocalDate = (date: Date): string => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
-const getLast24HoursRangeDates = (): { start: string; end: string } => {
+interface DashboardRangeParams {
+  start_date: string
+  end_date: string
+  start_time?: string
+  end_time?: string
+}
+
+const getLast24HoursRange = (): DashboardRangeParams => {
   const end = new Date()
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
   return {
-    start: formatLocalDate(start),
-    end: formatLocalDate(end)
+    start_date: formatLocalDate(start),
+    end_date: formatLocalDate(end),
+    start_time: start.toISOString(),
+    end_time: end.toISOString()
   }
 }
 
 // Date range
 const granularity = ref<'day' | 'hour'>('hour')
-const defaultRange = getLast24HoursRangeDates()
-const startDate = ref(defaultRange.start)
-const endDate = ref(defaultRange.end)
+const defaultRange = getLast24HoursRange()
+const startDate = ref(defaultRange.start_date)
+const endDate = ref(defaultRange.end_date)
+const rangePreset = ref<string | null>('last24Hours')
+
+const getDashboardRangeParams = (): DashboardRangeParams => {
+  if (rangePreset.value === 'last24Hours') {
+    return getLast24HoursRange()
+  }
+  return {
+    start_date: startDate.value,
+    end_date: endDate.value
+  }
+}
 
 // Granularity options for Select component
 const granularityOptions = computed(() => [
@@ -461,6 +481,8 @@ const onDateRangeChange = (range: {
   endDate: string
   preset: string | null
 }) => {
+  rangePreset.value = range.preset
+
   // Auto-select granularity based on date range
   const start = new Date(range.startDate)
   const end = new Date(range.endDate)
@@ -477,7 +499,7 @@ const onDateRangeChange = (range: {
 }
 
 // Load data
-const loadDashboardSnapshot = async (includeStats: boolean) => {
+const loadDashboardSnapshot = async (includeStats: boolean, range: DashboardRangeParams) => {
   const currentSeq = ++chartLoadSeq
   if (includeStats && !stats.value) {
     loading.value = true
@@ -485,8 +507,7 @@ const loadDashboardSnapshot = async (includeStats: boolean) => {
   chartsLoading.value = true
   try {
     const response = await adminAPI.dashboard.getSnapshotV2({
-      start_date: startDate.value,
-      end_date: endDate.value,
+      ...range,
       granularity: granularity.value,
       include_stats: includeStats,
       include_trend: true,
@@ -512,13 +533,12 @@ const loadDashboardSnapshot = async (includeStats: boolean) => {
   }
 }
 
-const loadActiveUsersTrend = async () => {
+const loadActiveUsersTrend = async (range: DashboardRangeParams) => {
   const currentSeq = ++activeUsersTrendLoadSeq
   activeUsersTrendLoading.value = true
   try {
     const response = await adminAPI.dashboard.getActiveUsersTrend({
-      start_date: startDate.value,
-      end_date: endDate.value,
+      ...range,
       granularity: granularity.value
     })
     if (currentSeq !== activeUsersTrendLoadSeq) return
@@ -534,14 +554,13 @@ const loadActiveUsersTrend = async () => {
   }
 }
 
-const loadUserSpendingRanking = async () => {
+const loadUserSpendingRanking = async (range: DashboardRangeParams) => {
   const currentSeq = ++rankingLoadSeq
   rankingLoading.value = true
   rankingError.value = false
   try {
     const response = await adminAPI.dashboard.getUserSpendingRanking({
-      start_date: startDate.value,
-      end_date: endDate.value,
+      ...range,
       limit: rankingLimit
     })
     if (currentSeq !== rankingLoadSeq) return
@@ -565,18 +584,20 @@ const loadUserSpendingRanking = async () => {
 }
 
 const loadDashboardStats = async () => {
+  const range = getDashboardRangeParams()
   await Promise.all([
-    loadDashboardSnapshot(true),
-    loadActiveUsersTrend(),
-    loadUserSpendingRanking()
+    loadDashboardSnapshot(true, range),
+    loadActiveUsersTrend(range),
+    loadUserSpendingRanking(range)
   ])
 }
 
 const loadChartData = async () => {
+  const range = getDashboardRangeParams()
   await Promise.all([
-    loadDashboardSnapshot(false),
-    loadActiveUsersTrend(),
-    loadUserSpendingRanking()
+    loadDashboardSnapshot(false, range),
+    loadActiveUsersTrend(range),
+    loadUserSpendingRanking(range)
   ])
 }
 

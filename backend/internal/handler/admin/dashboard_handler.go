@@ -31,11 +31,15 @@ func NewDashboardHandler(dashboardService *service.DashboardService, aggregation
 	}
 }
 
-// parseTimeRange parses start_date, end_date query parameters
+// parseTimeRange parses precise timestamps when provided, otherwise it keeps
+// the inclusive-day behavior of start_date/end_date.
 // Uses user's timezone if provided, otherwise falls back to server timezone
 func parseTimeRange(c *gin.Context) (time.Time, time.Time) {
 	userTZ := c.Query("timezone") // Get user's timezone from request
 	now := timezone.NowInUserLocation(userTZ)
+	if startTime, endTime, ok := parseExplicitTimeRange(c); ok {
+		return startTime, endTime
+	}
 	startDate := c.Query("start_date")
 	endDate := c.Query("end_date")
 
@@ -62,6 +66,34 @@ func parseTimeRange(c *gin.Context) (time.Time, time.Time) {
 	}
 
 	return startTime, endTime
+}
+
+// parseExplicitTimeRange handles precise ranges such as the dashboard's
+// "last 24 hours" preset. Date-only parameters intentionally keep their
+// inclusive-day behavior for the date picker and older API clients.
+func parseExplicitTimeRange(c *gin.Context) (time.Time, time.Time, bool) {
+	startRaw := strings.TrimSpace(c.Query("start_time"))
+	endRaw := strings.TrimSpace(c.Query("end_time"))
+	if startRaw == "" || endRaw == "" {
+		return time.Time{}, time.Time{}, false
+	}
+
+	parseTimestamp := func(raw string) (time.Time, error) {
+		if value, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+			return value, nil
+		}
+		return time.Parse(time.RFC3339, raw)
+	}
+
+	startTime, err := parseTimestamp(startRaw)
+	if err != nil {
+		return time.Time{}, time.Time{}, false
+	}
+	endTime, err := parseTimestamp(endRaw)
+	if err != nil || !startTime.Before(endTime) {
+		return time.Time{}, time.Time{}, false
+	}
+	return startTime, endTime, true
 }
 
 // GetStats handles getting dashboard statistics

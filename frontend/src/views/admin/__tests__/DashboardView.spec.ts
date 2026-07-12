@@ -151,6 +151,11 @@ describe('admin DashboardView', () => {
       end_date: formatLocalDate(now),
       granularity: 'hour'
     }))
+
+    const range = getSnapshotV2.mock.calls[0][0] as { start_time?: string; end_time?: string }
+    expect(range.start_time).toEqual(expect.any(String))
+    expect(range.end_time).toEqual(expect.any(String))
+    expect(new Date(range.end_time!).getTime() - new Date(range.start_time!).getTime()).toBe(24 * 60 * 60 * 1000)
   })
 
   it('does not load recent usage trend and enlarges token usage trend', async () => {
