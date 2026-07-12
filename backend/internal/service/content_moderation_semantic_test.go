@@ -281,6 +281,7 @@ func TestEnqueueSemanticReviewEncryptsInputAndStripsAPIKeys(t *testing.T) {
 		semanticReviewRouter: semanticReviewRouterStub{},
 	}
 	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
 	cfg.SemanticReview = semanticReviewTestConfig()
 	cfg.SemanticReview.Trigger = ContentModerationSemanticReviewTriggerAll
 	cfg.APIKey = "sk-secret-key"
@@ -354,6 +355,7 @@ func TestEnqueueSemanticReviewEncryptsCandidateExcerptOnly(t *testing.T) {
 		},
 	}
 
+	cfg.Enabled = true
 	require.True(t, svc.enqueueSemanticReviewAfterRules(context.Background(), ContentModerationCheckInput{RequestID: "candidate-only"}, cfg, content, "hash", &ContentModerationDecision{Allowed: true}))
 	events := outbox.snapshotEvents()
 	require.Len(t, events, 1)

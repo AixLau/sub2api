@@ -50,6 +50,7 @@ const (
 	ContentModerationActionPromptFilterWarn          = "prompt_filter_warn"
 	ContentModerationActionPromptFilterReview        = "prompt_filter_review"
 	ContentModerationActionPromptFilterBlock         = "prompt_filter_block"
+	ContentModerationActionSemanticReviewAllow       = "semantic_review_allow"
 	ContentModerationActionSemanticReviewReject      = "semantic_review_reject"
 	ContentModerationActionSemanticReviewReview      = "semantic_review_review"
 	ContentModerationActionCyberPolicy               = "cyber_policy" // cyber_policy 硬阻断的风控日志 action（封号计数排除按此值过滤）
@@ -545,6 +546,12 @@ type contentModerationPolicySnapshot struct {
 }
 
 type contentModerationPolicySnapshotContextKey struct{}
+
+type contentModerationSemanticReviewStateContextKey struct{}
+
+type contentModerationSemanticReviewState struct {
+	Completed bool
+}
 
 type ContentModerationInput struct {
 	Text            string
@@ -1686,13 +1693,24 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 			NextState:      prior,
 		}, nil
 	}
-	if riskEnabled && cfg.Enabled && cfg.Mode == ContentModerationModeObserve && !content.IsEmpty() && (len(cfg.apiKeys()) > 0 || cfg.SemanticReview.Enabled) {
-		s.enqueueSemanticReviewAfterRules(ctx, input, cfg, content, inputHash, allow)
+	observeProviderFallback := cfg.externalModerationRequired() && s.semanticReviewRouter != nil && len(cfg.apiKeys()) == 0
+	if riskEnabled && cfg.Enabled && cfg.Mode == ContentModerationModeObserve && !content.IsEmpty() && (len(cfg.apiKeys()) > 0 || cfg.SemanticReview.Enabled || observeProviderFallback) {
+		semanticEnqueued := false
+		focusKeyword := contentModerationLocalFocusKeyword(cfg, content)
+		if observeProviderFallback {
+			semanticEnqueued = s.enqueueSemanticReviewAfterProviderFailure(ctx, input, cfg, content, inputHash, focusKeyword)
+		} else {
+			semanticEnqueued = s.enqueueSemanticReviewAfterRules(ctx, input, cfg, content, inputHash, allow)
+		}
 		disposition := ContentModerationDispositionObserveDropped
 		result := &ContentModerationGateResult{
 			Disposition: disposition, Decision: allow, InputHash: inputHash, PolicyRevision: policyRevision,
 		}
-		if s.enqueueAsync(input, cfg, content, inputHash) {
+		auditEnqueued := semanticEnqueued
+		if len(cfg.apiKeys()) > 0 {
+			auditEnqueued = s.enqueueAsync(input, cfg, content, inputHash) || auditEnqueued
+		}
+		if auditEnqueued {
 			disposition = ContentModerationDispositionObserveEnqueued
 			result.Disposition = disposition
 			result.NextState = &ContentModerationAttemptState{
@@ -1702,15 +1720,19 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 		return result, nil
 	}
 
+	semanticReviewState := &contentModerationSemanticReviewState{}
 	snapshotCtx := context.WithValue(ctx, contentModerationPolicySnapshotContextKey{}, contentModerationPolicySnapshot{
 		riskEnabled: riskEnabled,
 		config:      cloneContentModerationConfig(cfg),
 	})
+	snapshotCtx = context.WithValue(snapshotCtx, contentModerationSemanticReviewStateContextKey{}, semanticReviewState)
 	decision, err := s.Check(snapshotCtx, input)
 	if err != nil {
 		return nil, err
 	}
-	s.enqueueSemanticReviewAfterRules(ctx, input, cfg, content, inputHash, decision)
+	if riskEnabled && cfg.Enabled && !semanticReviewState.Completed {
+		s.enqueueSemanticReviewAfterRules(ctx, input, cfg, content, inputHash, decision)
+	}
 	disposition := ContentModerationDispositionAllowed
 	reusable := true
 	switch {
@@ -2013,6 +2035,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	}
 	if len(cfg.apiKeys()) == 0 {
 		externalRequired := cfg.externalModerationRequired()
+		focusKeyword := contentModerationLocalFocusKeyword(cfg, content)
 		slog.Warn("content_moderation.external_api_key_missing",
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,
@@ -2022,7 +2045,22 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"engine_mode", cfg.EngineMode,
 			"external_required", externalRequired,
 			"fail_open", externalRequired && cfg.Mode == ContentModerationModePreBlock)
+		if externalRequired && cfg.Mode == ContentModerationModeObserve && s.semanticReviewRouter != nil {
+			fallbackContent := content
+			if !content.Extraction.Complete {
+				fallbackContent = contentModerationBestEffortInput(content)
+			}
+			_ = s.enqueueSemanticReviewAfterProviderFailure(ctx, input, cfg, fallbackContent, hashText, focusKeyword)
+			return allow, nil
+		}
 		if externalRequired && cfg.Mode == ContentModerationModePreBlock {
+			fallbackContent := content
+			if !content.Extraction.Complete {
+				fallbackContent = contentModerationBestEffortInput(content)
+			}
+			if fallbackDecision, handled := s.semanticReviewProviderFallback(ctx, input, cfg, fallbackContent, hashText, focusKeyword, errors.New("ordinary moderation API key unavailable"), true); handled {
+				return fallbackDecision, nil
+			}
 			s.recordPreBlockSyncMetric(0, ContentModerationActionError)
 			return contentModerationFailureDecision(cfg), nil
 		}
@@ -2040,8 +2078,13 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		return allow, nil
 	}
 
-	decision := s.checkSync(ctx, input, cfg, content, hashText, nil, true)
-	if decision != nil && !decision.Blocked && decision.Action != ContentModerationActionError {
+	focusKeyword := ""
+	if localKeywordMatch != nil {
+		focusKeyword = strings.TrimSpace(localKeywordMatch.Keyword)
+	}
+	decision := s.checkSyncWithFocusKeyword(ctx, input, cfg, content, hashText, nil, true, focusKeyword)
+	if decision != nil && !decision.Blocked && decision.Action != ContentModerationActionError &&
+		decision.Action != ContentModerationActionSemanticReviewAllow && decision.Action != ContentModerationActionSemanticReviewReview {
 		var candidate contentModerationSemanticGateCandidate
 		var ok bool
 		if localKeywordMatch != nil {
@@ -2059,6 +2102,21 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 }
 
 func (s *ContentModerationService) checkSync(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string, queueDelay *int, allowBlock bool) *ContentModerationDecision {
+	return s.checkSyncWithFocusKeyword(ctx, input, cfg, content, hashText, queueDelay, allowBlock, "")
+}
+
+func contentModerationLocalFocusKeyword(cfg *ContentModerationConfig, content ContentModerationInput) string {
+	if cfg == nil || !cfg.shouldRunLocalRules() || strings.TrimSpace(content.Text) == "" {
+		return ""
+	}
+	match, hit := matchContentModerationLocalRuleInput(content, cfg.keywordRules())
+	if !hit {
+		return ""
+	}
+	return strings.TrimSpace(match.Keyword)
+}
+
+func (s *ContentModerationService) checkSyncWithFocusKeyword(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string, queueDelay *int, allowBlock bool, focusKeyword string) *ContentModerationDecision {
 	allow := &ContentModerationDecision{Allowed: true, Action: ContentModerationActionAllow}
 	trackPreBlock := queueDelay == nil && allowBlock && cfg != nil && cfg.Mode == ContentModerationModePreBlock
 	if trackPreBlock {
@@ -2072,9 +2130,10 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 	providerLevel := ModerationLevel("")
 	providerRiskTypes := []string(nil)
 	var err error
-	if s.incrementalModerationAvailable(content) && content.Extraction.Complete {
+	auditContent := contentModerationKeywordFocusedInput(content, focusKeyword)
+	if s.incrementalModerationAvailable(auditContent) && auditContent.Extraction.Complete {
 		var aggregated AggregatedModerationBatch
-		aggregated, err = s.runIncrementalModeration(auditCtx, input, cfg, content)
+		aggregated, err = s.runIncrementalModeration(auditCtx, input, cfg, auditContent)
 		if err == nil {
 			providerLevel = aggregated.Level
 			providerRiskTypes = aggregated.RiskTypes
@@ -2088,19 +2147,25 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 			}
 		}
 	} else {
-		if !content.Extraction.Complete {
+		if !auditContent.Extraction.Complete {
 			slog.Warn("content_moderation.incomplete_extraction_best_effort",
 				"user_id", input.UserID,
 				"api_key_id", input.APIKeyID,
 				"endpoint", input.Endpoint,
 				"protocol", input.Protocol,
 				"truncate_reasons", content.Extraction.TruncateReasons)
-			content = contentModerationBestEffortInput(content)
+			auditContent = contentModerationBestEffortInput(auditContent)
 		}
-		result, err = s.callModerationContent(auditCtx, cfg, content, trackPreBlock)
+		result, err = s.callModerationContent(auditCtx, cfg, auditContent, trackPreBlock)
 	}
 	latency := int(time.Since(start).Milliseconds())
 	if err != nil {
+		if fallbackDecision, handled := s.semanticReviewProviderFallback(ctx, input, cfg, content, hashText, focusKeyword, err, allowBlock); handled {
+			return fallbackDecision
+		}
+		if cfg.externalModerationRequired() {
+			_ = s.enqueueSemanticReviewAfterProviderFailure(ctx, input, cfg, content, hashText, focusKeyword)
+		}
 		if trackPreBlock {
 			s.recordPreBlockSyncMetric(latency, ContentModerationActionError)
 		}
@@ -2202,22 +2267,63 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 }
 
 func contentModerationBestEffortInput(content ContentModerationInput) ContentModerationInput {
-	for index := len(content.Extraction.Sources) - 1; index >= 0; index-- {
-		source := content.Extraction.Sources[index]
-		role := strings.ToLower(strings.TrimSpace(source.Role))
-		if role != "user" && role != "" {
+	// Extraction already bounds each source. Put the latest user source first so
+	// the bounded provider input keeps the active request, then append older and
+	// non-user context within the remaining budget.
+	type bestEffortSource struct {
+		role string
+		text string
+	}
+	sources := make([]bestEffortSource, 0, len(content.Sources))
+	if len(content.Extraction.Sources) > 0 {
+		sources = make([]bestEffortSource, 0, len(content.Extraction.Sources))
+		for _, source := range content.Extraction.Sources {
+			sources = append(sources, bestEffortSource{role: source.Role, text: source.Text})
+		}
+	} else {
+		for _, source := range content.Sources {
+			sources = append(sources, bestEffortSource{role: source.Role, text: source.Text})
+		}
+	}
+	ordered := make([]bestEffortSource, 0, len(sources))
+	latestUser := -1
+	for index := len(sources) - 1; index >= 0; index-- {
+		role := strings.ToLower(strings.TrimSpace(sources[index].role))
+		if role == "user" || role == "" {
+			latestUser = index
+			break
+		}
+	}
+	if latestUser >= 0 {
+		ordered = append(ordered, sources[latestUser])
+	}
+	for index := len(sources) - 1; index >= 0; index-- {
+		if index == latestUser {
 			continue
 		}
-		if text := strings.TrimSpace(source.Text); text != "" {
-			return ContentModerationInput{Text: trimRunes(text, maxModerationInputRunes)}
+		ordered = append(ordered, sources[index])
+	}
+	parts := make([]string, 0, len(ordered))
+	remaining := maxModerationInputRunes
+	for _, source := range ordered {
+		text := trimRunes(normalizeContentModerationText(source.text), remaining)
+		if text == "" {
+			continue
+		}
+		parts = append(parts, text)
+		remaining -= len([]rune(text))
+		if remaining <= 0 {
+			break
 		}
 	}
-	for index := len(content.Extraction.Sources) - 1; index >= 0; index-- {
-		if text := strings.TrimSpace(content.Extraction.Sources[index].Text); text != "" {
-			return ContentModerationInput{Text: trimRunes(text, maxModerationInputRunes)}
-		}
+	if len(parts) > 0 {
+		content.Text = trimRunes(normalizeContentModerationText(strings.Join(parts, "\n")), maxModerationInputRunes)
+	} else {
+		content.Text = trimRunes(normalizeContentModerationText(content.Text), maxModerationInputRunes)
 	}
-	return ContentModerationInput{Text: content.Text, Images: content.Images}
+	content.Images = append([]string(nil), content.Images...)
+	content.Sources = append([]ContentModerationInputSource(nil), content.Sources...)
+	return content
 }
 
 func (s *ContentModerationService) callModerationContent(ctx context.Context, cfg *ContentModerationConfig, content ContentModerationInput, track bool) (*moderationAPIResult, error) {
@@ -2799,7 +2905,7 @@ func (s *ContentModerationService) worker(runtimeCtx context.Context, id int, id
 				s.asyncProcessed.Add(1)
 				return
 			}
-			if !cfg.Enabled || cfg.Mode == ContentModerationModeOff || len(cfg.apiKeys()) == 0 {
+			if !cfg.Enabled || cfg.Mode == ContentModerationModeOff {
 				return
 			}
 			if !cfg.includesGroup(task.input.GroupID) {
@@ -2808,10 +2914,22 @@ func (s *ContentModerationService) worker(runtimeCtx context.Context, id int, id
 			if !cfg.includesModel(task.input.Model) {
 				return
 			}
+			if len(cfg.apiKeys()) == 0 {
+				if cfg.externalModerationRequired() && s.semanticReviewRouter != nil {
+					fallbackContent := task.content
+					if !fallbackContent.Extraction.Complete {
+						fallbackContent = contentModerationBestEffortInput(fallbackContent)
+					}
+					focusKeyword := contentModerationLocalFocusKeyword(cfg, fallbackContent)
+					_ = s.enqueueSemanticReviewAfterProviderFailure(ctx, task.input, cfg, fallbackContent, task.inputHash, focusKeyword)
+				}
+				return
+			}
 			s.asyncActive.Add(1)
 			defer s.asyncActive.Add(-1)
 			queueDelay := int(time.Since(task.enqueuedAt).Milliseconds())
-			_ = s.checkSync(ctx, task.input, cfg, task.content, task.inputHash, &queueDelay, false)
+			focusKeyword := contentModerationLocalFocusKeyword(cfg, task.content)
+			_ = s.checkSyncWithFocusKeyword(ctx, task.input, cfg, task.content, task.inputHash, &queueDelay, false, focusKeyword)
 			s.asyncProcessed.Add(1)
 		}()
 	}

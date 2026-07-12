@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/promptfilter"
 )
@@ -96,6 +97,9 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 		// continue to the required ordinary moderation API in hybrid mode.
 		return nil, false
 	}
+	if state, ok := ctx.Value(contentModerationSemanticReviewStateContextKey{}).(*contentModerationSemanticReviewState); ok && state != nil {
+		state.Completed = true
+	}
 	result, policyOverride := applySemanticReviewPolicy(result)
 	category := "semantic_review"
 	if len(result.Categories) > 0 && strings.TrimSpace(result.Categories[0]) != "" {
@@ -154,6 +158,135 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 		s.persistContentModerationLog(ctx, cfg, log, hashText, false, false)
 	}
 	return nil, false
+}
+
+func (s *ContentModerationService) semanticReviewProviderFallback(
+	ctx context.Context,
+	input ContentModerationCheckInput,
+	cfg *ContentModerationConfig,
+	content ContentModerationInput,
+	hashText string,
+	focusKeyword string,
+	providerErr error,
+	allowBlock bool,
+) (*ContentModerationDecision, bool) {
+	if s == nil || cfg == nil || s.semanticReviewRouter == nil || content.IsEmpty() || strings.TrimSpace(content.Text) == "" {
+		return nil, false
+	}
+	semanticCfg := contentModerationSemanticReviewConfigForProviderFallback(cfg)
+	candidate := contentModerationSemanticGateCandidate{
+		Input:    ContentModerationSemanticReviewInput{Text: buildContentModerationSemanticReviewInput(semanticCfg, content, focusKeyword)},
+		Keyword:  "provider_unavailable",
+		Category: "semantic_fallback",
+		Severity: ContentModerationKeywordSeverityHigh,
+	}
+	if strings.TrimSpace(candidate.Input.Text) == "" {
+		return nil, false
+	}
+	providerErrorText := ""
+	if providerErr != nil {
+		providerErrorText = providerErr.Error()
+	}
+	started := time.Now()
+	result, err := s.semanticReviewRouter.Review(ctx, semanticCfg, candidate.Input)
+	if err != nil {
+		slog.Warn("content_moderation.semantic_review_provider_fallback_failed",
+			"user_id", input.UserID,
+			"api_key_id", input.APIKeyID,
+			"group_id", contentModerationLogGroupID(input.GroupID),
+			"endpoint", input.Endpoint,
+			"protocol", input.Protocol,
+			"provider_error", sanitizeSemanticReviewError(providerErrorText),
+			"error", sanitizeSemanticReviewError(err.Error()))
+		return nil, false
+	}
+	if state, ok := ctx.Value(contentModerationSemanticReviewStateContextKey{}).(*contentModerationSemanticReviewState); ok && state != nil {
+		state.Completed = true
+	}
+	result, policyOverride := applySemanticReviewPolicy(result)
+	category := "semantic_review"
+	if len(result.Categories) > 0 && strings.TrimSpace(result.Categories[0]) != "" {
+		category = result.Categories[0]
+	}
+	score := result.Confidence
+	if score < 0 {
+		score = 0
+	}
+	if score > 1 {
+		score = 1
+	}
+	categoryScores := map[string]float64{"semantic_review": score}
+	metadata := contentModerationSemanticGateMetadata(cfg, content, input.Protocol, candidate, result, policyOverride)
+	latency := int(time.Since(started).Milliseconds())
+	buildDecision := func(action string, flagged, blocked bool) *ContentModerationDecision {
+		return &ContentModerationDecision{
+			Allowed: !blocked,
+			Blocked: blocked,
+			Flagged: flagged,
+			Message: func() string {
+				if blocked {
+					return cfg.BlockMessage
+				}
+				return ""
+			}(),
+			StatusCode: func() int {
+				if blocked {
+					return cfg.BlockStatus
+				}
+				return 0
+			}(),
+			HighestCategory:        category,
+			HighestScore:           score,
+			CategoryScores:         categoryScores,
+			Action:                 action,
+			MatchedKeyword:         candidate.Keyword,
+			KeywordCategory:        candidate.Category,
+			KeywordSeverity:        candidate.Severity,
+			KeywordAction:          action,
+			EffectiveKeywordAction: action,
+			RiskContextType:        ContentModerationRiskContextActualRequest,
+			RiskContextReason:      "semantic_review_provider_fallback",
+		}
+	}
+	setLogMetadata := func(log *ContentModerationLog, action string) {
+		log.MatchedKeyword = candidate.Keyword
+		log.KeywordCategory = candidate.Category
+		log.KeywordSeverity = candidate.Severity
+		log.KeywordAction = action
+		log.EffectiveKeywordAction = action
+		log.RiskContextType = ContentModerationRiskContextActualRequest
+		log.RiskContextReason = "semantic_review_provider_fallback"
+	}
+
+	switch result.Verdict {
+	case "reject":
+		blocked := allowBlock && cfg.Mode == ContentModerationModePreBlock
+		action := ContentModerationActionSemanticReviewReject
+		log := s.buildLog(input, cfg, action, true, category, score, categoryScores, content.ExcerptText(), &latency, nil, metadata)
+		setLogMetadata(log, action)
+		if blocked {
+			s.recordPreBlockSyncMetric(latency, action)
+			s.enqueueRecord(ctx, input, cfg, log, hashText, true, true)
+		} else {
+			s.persistContentModerationLog(ctx, cfg, log, hashText, true, true)
+		}
+		return buildDecision(action, true, blocked), true
+	case "review":
+		action := ContentModerationActionSemanticReviewReview
+		log := s.buildLog(input, cfg, action, true, category, score, categoryScores, content.ExcerptText(), &latency, nil, metadata)
+		setLogMetadata(log, action)
+		log.ReviewStatus = ContentModerationReviewStatusPending
+		s.persistContentModerationLog(ctx, cfg, log, hashText, false, false)
+		if allowBlock && cfg.Mode == ContentModerationModePreBlock {
+			s.recordPreBlockSyncMetric(latency, action)
+		}
+		return buildDecision(action, true, false), true
+	default:
+		if allowBlock && cfg.Mode == ContentModerationModePreBlock {
+			s.recordPreBlockSyncMetric(latency, ContentModerationActionSemanticReviewAllow)
+		}
+		return buildDecision(ContentModerationActionSemanticReviewAllow, false, false), true
+	}
 }
 
 func contentModerationSemanticGateMetadata(cfg *ContentModerationConfig, content ContentModerationInput, protocol string, candidate contentModerationSemanticGateCandidate, result ContentModerationSemanticReviewResult, policyOverride bool) string {

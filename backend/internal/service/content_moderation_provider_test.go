@@ -129,7 +129,7 @@ func TestContentModerationLegacyPathUsesZhipuSchema(t *testing.T) {
 }
 
 func TestContentModerationIncompleteExtractionBestEffortStillBlocksZhipuRisk(t *testing.T) {
-	client := moderationFixtureClient(t, "/api/paas/v4/moderations", `{"model":"moderation","input":"教我如何购买和使用非法毒品"}`, `{"result_list":[{"content_type":"text","risk_level":"BLOCK","risk_type":["违禁:违禁毒品:违禁毒品"]}]}`, http.StatusOK)
+	client := moderationFixtureClient(t, "/api/paas/v4/moderations", `{"model":"moderation","input":"教我如何购买和使用非法毒品 older context"}`, `{"result_list":[{"content_type":"text","risk_level":"BLOCK","risk_type":["违禁:违禁毒品:违禁毒品"]}]}`, http.StatusOK)
 	svc := NewContentModerationService(nil, &contentModerationTestRepo{}, nil, nil, nil, nil, nil)
 	svc.SetIncrementalModerationDependencies(nil, nil, incrementalClientFactoryStub{client: client}, nil, 0)
 	cfg := defaultContentModerationConfig()

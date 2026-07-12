@@ -26,6 +26,25 @@ func TestExtractionCompletenessUnsafeToolSuffix(t *testing.T) {
 	require.NotContains(t, got.Text, strings.Repeat("x", maxToolResultTextStringRunes+1))
 }
 
+func TestContentModerationBestEffortInputPreservesExtractedContext(t *testing.T) {
+	input := ContentModerationInput{
+		Text:            "system context user request",
+		Images:          []string{"https://example.com/image.png"},
+		Sources:         []ContentModerationInputSource{{Source: "system", Role: "system", Text: "system context"}, {Source: "user", Role: "user", Text: "user request"}},
+		Truncated:       true,
+		TruncateReasons: []string{"max_depth"},
+	}
+
+	got := contentModerationBestEffortInput(input)
+
+	require.Contains(t, got.Text, "system context")
+	require.Contains(t, got.Text, "user request")
+	require.True(t, strings.Index(got.Text, "user request") < strings.Index(got.Text, "system context"))
+	require.Equal(t, input.Images, got.Images)
+	require.Equal(t, input.Sources, got.Sources)
+	require.Equal(t, input.TruncateReasons, got.TruncateReasons)
+}
+
 func TestExtractionCompletenessSupportedProtocolsAndOrderedSources(t *testing.T) {
 	tests := []struct {
 		name, protocol, body string

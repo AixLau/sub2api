@@ -115,6 +115,21 @@ func safeContentModerationConfigForOutbox(cfg *ContentModerationConfig) *Content
 	return safe
 }
 
+func contentModerationSemanticReviewConfigForProviderFallback(cfg *ContentModerationConfig) ContentModerationSemanticReviewConfig {
+	if cfg == nil {
+		fallback := defaultContentModerationSemanticReviewConfig()
+		fallback.Enabled = true
+		fallback.Trigger = ContentModerationSemanticReviewTriggerAll
+		return fallback
+	}
+	fallback := normalizeContentModerationSemanticReviewConfig(cfg.SemanticReview)
+	// Provider failover is an availability path, so it remains active even when
+	// routine semantic review has been disabled in the moderation settings.
+	fallback.Enabled = true
+	fallback.Trigger = ContentModerationSemanticReviewTriggerAll
+	return fallback
+}
+
 func contentModerationSemanticReviewOutboxInputFromCheck(input ContentModerationCheckInput) contentModerationSemanticReviewOutboxInput {
 	return contentModerationSemanticReviewOutboxInput{
 		RequestID: input.RequestID, UserID: input.UserID, UserEmail: input.UserEmail,
@@ -143,7 +158,7 @@ func (s *ContentModerationService) enqueueSemanticReviewAfterRules(
 	inputHash string,
 	decision *ContentModerationDecision,
 ) bool {
-	if s == nil || cfg == nil || !cfg.SemanticReview.Enabled || s.semanticReviewRouter == nil || content.IsEmpty() || strings.TrimSpace(content.Text) == "" {
+	if s == nil || cfg == nil || !cfg.Enabled || !cfg.SemanticReview.Enabled || s.semanticReviewRouter == nil || content.IsEmpty() || strings.TrimSpace(content.Text) == "" {
 		return false
 	}
 	if cfg.Mode == ContentModerationModeOff || decision != nil && decision.Blocked {
@@ -152,12 +167,42 @@ func (s *ContentModerationService) enqueueSemanticReviewAfterRules(
 	if !shouldEnqueueSemanticReview(cfg.SemanticReview, content.Text) {
 		return false
 	}
+	return s.enqueueSemanticReviewEvent(ctx, input, cfg, content, inputHash, "")
+}
+
+func (s *ContentModerationService) enqueueSemanticReviewAfterProviderFailure(
+	ctx context.Context,
+	input ContentModerationCheckInput,
+	cfg *ContentModerationConfig,
+	content ContentModerationInput,
+	inputHash string,
+	focusKeyword string,
+) bool {
+	if s == nil || cfg == nil || !cfg.Enabled || cfg.Mode == ContentModerationModeOff || s.semanticReviewRouter == nil || content.IsEmpty() || strings.TrimSpace(content.Text) == "" {
+		return false
+	}
+	fallbackCfg := cloneContentModerationConfig(cfg)
+	fallbackCfg.SemanticReview = contentModerationSemanticReviewConfigForProviderFallback(cfg)
+	return s.enqueueSemanticReviewEvent(ctx, input, fallbackCfg, content, inputHash, focusKeyword)
+}
+
+func (s *ContentModerationService) enqueueSemanticReviewEvent(
+	ctx context.Context,
+	input ContentModerationCheckInput,
+	cfg *ContentModerationConfig,
+	content ContentModerationInput,
+	inputHash string,
+	focusKeyword string,
+) bool {
+	if s == nil || cfg == nil || !cfg.Enabled || !cfg.SemanticReview.Enabled || s.semanticReviewRouter == nil || content.IsEmpty() || strings.TrimSpace(content.Text) == "" {
+		return false
+	}
 	outboxRepo := s.contentModerationOutboxRepository()
 	if outboxRepo == nil || s.rawRequestEncryptor == nil {
 		slog.Warn("content_moderation.semantic_review_enqueue_unavailable", "request_id", input.RequestID, "reason", "encrypted_outbox_unavailable")
 		return false
 	}
-	textToReview := buildContentModerationSemanticReviewInput(cfg.SemanticReview, content, "")
+	textToReview := buildContentModerationSemanticReviewInput(cfg.SemanticReview, content, focusKeyword)
 	if strings.TrimSpace(textToReview) == "" {
 		return false
 	}
@@ -225,9 +270,52 @@ func buildContentModerationSemanticReviewInput(cfg ContentModerationSemanticRevi
 	return trimRunes(b.String(), cfg.MaxInputRunes)
 }
 
+// contentModerationKeywordFocusedInput keeps the ordinary moderation API and
+// semantic review on the same bounded keyword context when a local rule hit is
+// available. Images remain unchanged so the ordinary API can still inspect
+// them separately.
+func contentModerationKeywordFocusedInput(content ContentModerationInput, keyword string) ContentModerationInput {
+	if strings.TrimSpace(keyword) == "" {
+		return content
+	}
+	cfg := defaultContentModerationSemanticReviewConfig()
+	cfg.Enabled = true
+	focusedText := buildContentModerationSemanticReviewInput(cfg, content, keyword)
+	if strings.TrimSpace(focusedText) == "" {
+		return content
+	}
+	focused := content
+	focused.Text = focusedText
+	focused.Sources = nil
+	focused.Extraction = ModerationExtraction{}
+	focused.Truncated = false
+	focused.TruncateReasons = nil
+	focused.Images = append([]string(nil), content.Images...)
+	return focused
+}
+
 func selectContentModerationSemanticReviewSources(cfg ContentModerationSemanticReviewConfig, content ContentModerationInput, keyword string) []ContentModerationInputSource {
 	if len(content.Sources) == 0 {
 		return nil
+	}
+	if strings.TrimSpace(keyword) != "" {
+		selected := make([]ContentModerationInputSource, 0, contentModerationSemanticReviewMaxSources)
+		for _, source := range content.Sources {
+			matched := strings.Contains(strings.ToLower(source.Text), strings.ToLower(keyword))
+			if !matched {
+				verdict := promptfilter.Inspect(source.Text, promptfilter.Config{Mode: promptfilter.ModeObserve, Threshold: promptfilter.DefaultThreshold, StrictThreshold: promptfilter.DefaultStrictThreshold})
+				matched = len(verdict.Matches) > 0 && verdict.ReviewRequired
+			}
+			if matched {
+				selected = append(selected, source)
+				if len(selected) == contentModerationSemanticReviewMaxSources {
+					break
+				}
+			}
+		}
+		if len(selected) > 0 {
+			return selected
+		}
 	}
 	if normalizeContentModerationSemanticReviewTrigger(cfg.Trigger) == ContentModerationSemanticReviewTriggerAll {
 		selected := make([]ContentModerationInputSource, 0, 2)
