@@ -133,6 +133,8 @@ sudo systemctl reload caddy
 
 React 官网项目位于本仓库 `react-frontend/`。该目录只保留当前线上使用的 React/Vite 首页和认证入口代码；不要在其中维护第二套 Vue/Tailwind 首页实现。构建产物必须使用 `landing-assets` 作为资源目录，避免和 Sub2API Vue 控制台的 `/assets/*` 冲突。
 
+> SEO 发布要求：凡修改 `react-frontend/index.html`、`react-frontend/src/lib/seo.ts` 或 `react-frontend/public/` 下的 SEO 文件，都必须重新构建并上传整个 React `dist/`。只部署 Sub2API Docker 镜像不会更新官网首页的 title、canonical、Open Graph 或官网静态资源。
+
 ```bash
 cd /path/to/sub2api/react-frontend
 npm test
@@ -150,6 +152,24 @@ tar -C dist -czf - . | ssh sub2api-server \
 curl -fsSL https://aixlau.me/ | rg -o 'landing-assets/[^" ]+'
 curl -I https://aixlau.me/landing-assets/index-*.js
 curl -I https://aixlau.me/register
+```
+
+SEO 相关发布还要检查首页 head 和抓取入口：
+
+```bash
+curl -fsSL https://aixlau.me/ | rg -n 'GPT API 中转站|canonical|application/ld\+json'
+curl -fsSL https://aixlau.me/robots.txt
+curl -fsSL https://aixlau.me/sitemap.xml
+curl -fsSL https://aixlau.me/llms.txt
+curl -fsSI https://aixlau.me/og-image.png
+```
+
+如果本次修改包含 `docs/install/index.html`，该文档由 Caddy 单独托管，也要单独覆盖上传：
+
+```bash
+tar -C docs/install -czf - . | ssh sub2api-server \
+  'mkdir -p /var/www/aixlau.me/docs/install && tar -C /var/www/aixlau.me/docs/install -xzf -'
+curl -fsSL https://aixlau.me/docs/install/ | rg -n 'canonical|TechArticle|FAQPage'
 ```
 
 如果需要清理旧的 hashed 静态资源，只能在确认当前 HTML 引用的新资源可访问后，人工列出待删文件并按删除安全流程执行。不要用自动同步删除命令直接覆盖生产静态目录。
