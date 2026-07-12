@@ -352,11 +352,12 @@ type ContentModerationLocalClassifierConfig struct {
 	ReviewThreshold float64 `json:"review_threshold"`
 }
 
-// ContentModerationSemanticReviewConfig controls the asynchronous, internal
-// model review that runs after deterministic rules. It is deliberately
-// separate from the external moderation API configuration: the latter is
-// optimized for sexual/violence classifiers, while this path handles
-// jailbreak, reverse-engineering abuse, credential theft, and similar intent.
+// ContentModerationSemanticReviewConfig controls the internal model review
+// that supplements deterministic rules in pre-block mode and runs as a
+// post-audit in observe mode. It is deliberately separate from the external
+// moderation API configuration: the latter is optimized for sexual/violence
+// classifiers, while this path handles jailbreak, reverse-engineering abuse,
+// credential theft, and similar intent.
 type ContentModerationSemanticReviewConfig struct {
 	Enabled        bool     `json:"enabled"`
 	Trigger        string   `json:"trigger"`
