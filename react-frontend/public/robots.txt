@@ -1,0 +1,17 @@
+User-agent: *
+Allow: /
+Allow: /docs/install/
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /change-password
+Disallow: /dashboard
+Disallow: /admin/
+Disallow: /api/
+Disallow: /v1/
+Disallow: /auth/
+Disallow: /payment/
+Disallow: /legal/
+
+Sitemap: https://aixlau.me/sitemap.xml

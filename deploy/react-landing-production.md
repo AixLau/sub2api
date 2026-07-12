@@ -68,6 +68,15 @@ aixlau.me {
 		file_server
 	}
 
+	@seo_static {
+		path /robots.txt /sitemap.xml /llms.txt /og-image.png
+	}
+	header @seo_static Cache-Control "public, max-age=3600"
+	handle @seo_static {
+		root * /var/www/aixlau.me/landing
+		file_server
+	}
+
 	@react_landing {
 		path / /home /login /register /forgot-password /reset-password /change-password
 	}
