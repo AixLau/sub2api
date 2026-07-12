@@ -26,6 +26,7 @@ This document records the safety contract for the content moderation gateway. It
 ## Semantic Review
 
 - When `semantic_review.enabled=true`, local high-risk candidates are sent through the configured internal model router. `trigger=all` also evaluates in-scope pre-block text without requiring a configured keyword. For a hybrid keyword hit, the ordinary moderation API is always called first; the semantic result is applied only after that API allows the request.
+- Prompt Filter regexes are evaluated per extracted input source, never across a flattened request. In `hybrid`, every Prompt Filter match is a review candidate rather than a regex-only terminal block. Only an explicit `rule_only` configuration may locally block a strict operational match from a direct user source; system, developer, tool, and known Codex wrapper context are non-terminal.
 - The default primary model is `gpt-5.3-codex-spark` with `gpt-5-mini` as fallback; account selection, OAuth headers, quota refresh, and retries remain in the existing OpenAI gateway service.
 - For a hybrid keyword hit, a semantic `reject` is a terminal 403 in pre-block mode only after the required ordinary API call. A semantic `allow` or `review` does not bypass the ordinary API, so `keyword_and_api` never turns a local hit into an unreviewed direct block.
 - If semantic review is enabled but unavailable, hybrid candidates continue to the ordinary moderation API. If that API is also unavailable, the request is fail-opened with action `error`.

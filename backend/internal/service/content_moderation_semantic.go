@@ -164,7 +164,7 @@ func (s *ContentModerationService) enqueueSemanticReviewAfterRules(
 	if cfg.Mode == ContentModerationModeOff || decision != nil && decision.Blocked {
 		return false
 	}
-	if !shouldEnqueueSemanticReview(cfg.SemanticReview, content.Text) {
+	if !shouldEnqueueSemanticReview(cfg, content) {
 		return false
 	}
 	return s.enqueueSemanticReviewEvent(ctx, input, cfg, content, inputHash, "")
@@ -304,7 +304,7 @@ func selectContentModerationSemanticReviewSources(cfg ContentModerationSemanticR
 			matched := strings.Contains(strings.ToLower(source.Text), strings.ToLower(keyword))
 			if !matched {
 				verdict := promptfilter.Inspect(source.Text, promptfilter.Config{Mode: promptfilter.ModeObserve, Threshold: promptfilter.DefaultThreshold, StrictThreshold: promptfilter.DefaultStrictThreshold})
-				matched = len(verdict.Matches) > 0 && verdict.ReviewRequired
+				matched = len(verdict.Matches) > 0
 			}
 			if matched {
 				selected = append(selected, source)
@@ -340,7 +340,7 @@ func selectContentModerationSemanticReviewSources(cfg ContentModerationSemanticR
 		matched := strings.TrimSpace(keyword) != "" && strings.Contains(strings.ToLower(source.Text), strings.ToLower(keyword))
 		if !matched {
 			verdict := promptfilter.Inspect(source.Text, promptfilter.Config{Mode: promptfilter.ModeObserve, Threshold: promptfilter.DefaultThreshold, StrictThreshold: promptfilter.DefaultStrictThreshold})
-			matched = len(verdict.Matches) > 0 && verdict.ReviewRequired
+			matched = len(verdict.Matches) > 0
 		}
 		if matched {
 			selected = append(selected, source)
@@ -380,17 +380,21 @@ func semanticReviewExcerptAroundKeyword(text, keyword string, maxRunes int) stri
 	return string(runes[startRune:endRune])
 }
 
-func shouldEnqueueSemanticReview(cfg ContentModerationSemanticReviewConfig, text string) bool {
-	switch normalizeContentModerationSemanticReviewTrigger(cfg.Trigger) {
+func shouldEnqueueSemanticReview(cfg *ContentModerationConfig, content ContentModerationInput) bool {
+	if cfg == nil {
+		return false
+	}
+	switch normalizeContentModerationSemanticReviewTrigger(cfg.SemanticReview.Trigger) {
 	case ContentModerationSemanticReviewTriggerAll:
 		return true
 	default:
-		verdict := promptfilter.Inspect(text, promptfilter.Config{
-			Mode:            promptfilter.ModeObserve,
-			Threshold:       promptfilter.DefaultThreshold,
-			StrictThreshold: promptfilter.DefaultStrictThreshold,
-		})
-		return len(verdict.Matches) > 0 && verdict.ReviewRequired
+		filterCfg := cfg.promptFilterConfig()
+		if filterCfg.Mode == promptfilter.ModeOff {
+			return false
+		}
+		filterCfg.Mode = promptfilter.ModeObserve
+		_, hit := contentModerationPromptFilterHitForInput(content, filterCfg)
+		return hit
 	}
 }
 

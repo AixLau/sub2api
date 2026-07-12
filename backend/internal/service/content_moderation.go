@@ -1998,13 +1998,15 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 					"keyword_category", keywordMatch.Category)
 			}
 			if !localRuleMatched {
-				if promptDecision, terminal := s.promptFilterDecision(ctx, input, cfg, content, hashText); terminal {
-					return promptDecision, nil
-				}
-				if normalizeContentModerationSemanticReviewTrigger(cfg.SemanticReview.Trigger) != ContentModerationSemanticReviewTriggerAll {
-					if candidate, ok := contentModerationSemanticGateCandidateForPromptFilter(cfg, content, s.semanticReviewRouter); ok {
-						if semanticDecision, terminal := s.semanticReviewGate(ctx, input, cfg, content, hashText, candidate); terminal {
-							return semanticDecision, nil
+				if promptFilterHit, hit := contentModerationPromptFilterHitForInput(content, cfg.promptFilterConfig()); hit {
+					if promptDecision, terminal := s.promptFilterDecision(ctx, input, cfg, content, hashText, promptFilterHit); terminal {
+						return promptDecision, nil
+					}
+					if normalizeContentModerationSemanticReviewTrigger(cfg.SemanticReview.Trigger) != ContentModerationSemanticReviewTriggerAll {
+						if candidate, ok := contentModerationSemanticGateCandidateForPromptFilter(cfg, content, promptFilterHit, s.semanticReviewRouter); ok {
+							if semanticDecision, terminal := s.semanticReviewGate(ctx, input, cfg, content, hashText, candidate); terminal {
+								return semanticDecision, nil
+							}
 						}
 					}
 				}
@@ -2425,17 +2427,14 @@ func (s *ContentModerationService) keywordDecision(ctx context.Context, input Co
 	return contentModerationDecisionFromKeyword(cfg, keywordDecision, scores)
 }
 
-// promptFilterDecision records local cyber evidence and only terminates the
-// request for explicit operational Strict patterns in block mode. Broad topic
-// matches continue to the existing semantic provider path.
-func (s *ContentModerationService) promptFilterDecision(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string) (*ContentModerationDecision, bool) {
-	if cfg == nil || normalizeContentModerationPromptFilterMode(cfg.PromptFilterMode) == promptfilter.ModeOff || strings.TrimSpace(content.Text) == "" {
+// promptFilterDecision records local cyber evidence. A regex-only terminal
+// block is reserved for explicit rule_only mode and direct user input; hybrid
+// mode always turns a strict match into a review candidate first.
+func (s *ContentModerationService) promptFilterDecision(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string, hit contentModerationPromptFilterHit) (*ContentModerationDecision, bool) {
+	if cfg == nil || len(hit.Verdict.Matches) == 0 {
 		return nil, false
 	}
-	verdict := promptfilter.Inspect(content.Text, cfg.promptFilterConfig())
-	if len(verdict.Matches) == 0 {
-		return nil, false
-	}
+	verdict := hit.Verdict
 	first := verdict.Matches[0]
 	category := strings.TrimSpace(first.Category)
 	if category == "" {
@@ -2451,19 +2450,27 @@ func (s *ContentModerationService) promptFilterDecision(ctx context.Context, inp
 	case promptfilter.ActionReview:
 		action = ContentModerationActionPromptFilterReview
 	}
-	metadata := contentModerationPromptFilterLogMetadata(cfg, content, input.Protocol, verdict)
-	log := s.buildLog(input, cfg, action, true, category, float64(verdict.Score)/100, categoryScores, content.ExcerptText(), nil, nil, metadata)
+	hardBlock := action == ContentModerationActionPromptFilterBlock &&
+		verdict.OperationalHit &&
+		cfg.EngineMode == ContentModerationEngineModeRuleOnly &&
+		contentModerationPromptFilterSourceCanHardBlock(hit.Source)
+	if action == ContentModerationActionPromptFilterBlock && !hardBlock {
+		action = ContentModerationActionPromptFilterReview
+	}
+	metadata := contentModerationPromptFilterLogMetadata(cfg, content, hit, verdict)
+	// A local candidate is audit evidence, not a confirmed policy violation.
+	// Only a rule_only terminal block may enter violation counting directly.
+	log := s.buildLog(input, cfg, action, hardBlock, category, float64(verdict.Score)/100, categoryScores, content.ExcerptText(), nil, nil, metadata)
 	log.MatchedKeyword = first.Name
 	log.KeywordCategory = category
 	log.KeywordSeverity = promptFilterSeverity(verdict)
 	log.KeywordAction = action
 	log.EffectiveKeywordAction = action
 	log.RiskContextType = ContentModerationRiskContextActualRequest
-	log.RiskContextReason = "codex2api_pattern_match"
+	log.RiskContextReason = "codex2api_pattern_candidate"
 	if action == ContentModerationActionPromptFilterReview {
 		log.ReviewStatus = ContentModerationReviewStatusPending
 	}
-	hardBlock := action == ContentModerationActionPromptFilterBlock && verdict.OperationalHit
 	s.enqueueRecord(ctx, input, cfg, log, hashText, hardBlock, hardBlock)
 	if !hardBlock {
 		return nil, false
@@ -2488,6 +2495,106 @@ func (s *ContentModerationService) promptFilterDecision(ctx context.Context, inp
 	}, true
 }
 
+type contentModerationPromptFilterHit struct {
+	Source  ContentModerationInputSource
+	Verdict promptfilter.Verdict
+}
+
+// contentModerationPromptFilterHitForInput evaluates one parsed input source
+// at a time. Joining sources before matching lets bounded regular expressions
+// combine unrelated system, tool, and user fragments into a false positive.
+func contentModerationPromptFilterHitForInput(content ContentModerationInput, cfg promptfilter.Config) (contentModerationPromptFilterHit, bool) {
+	sources := content.Sources
+	if len(sources) == 0 && strings.TrimSpace(content.Text) != "" {
+		sources = []ContentModerationInputSource{{Role: "user", Text: content.Text}}
+	}
+	var selected contentModerationPromptFilterHit
+	found := false
+	for _, source := range sources {
+		if strings.TrimSpace(source.Text) == "" {
+			continue
+		}
+		verdict := promptfilter.Inspect(source.Text, cfg)
+		if len(verdict.Matches) == 0 {
+			continue
+		}
+		candidate := contentModerationPromptFilterHit{Source: source, Verdict: verdict}
+		if !found || contentModerationPromptFilterHitPreferred(candidate, selected) {
+			selected = candidate
+			found = true
+		}
+	}
+	return selected, found
+}
+
+func contentModerationPromptFilterHitPreferred(candidate contentModerationPromptFilterHit, current contentModerationPromptFilterHit) bool {
+	candidateTerminal := contentModerationPromptFilterSourceCanHardBlock(candidate.Source)
+	currentTerminal := contentModerationPromptFilterSourceCanHardBlock(current.Source)
+	if candidateTerminal != currentTerminal {
+		return candidateTerminal
+	}
+	if candidate.Verdict.OperationalHit != current.Verdict.OperationalHit {
+		return candidate.Verdict.OperationalHit
+	}
+	if candidate.Verdict.StrictHit != current.Verdict.StrictHit {
+		return candidate.Verdict.StrictHit
+	}
+	if candidate.Verdict.Score != current.Verdict.Score {
+		return candidate.Verdict.Score > current.Verdict.Score
+	}
+	return candidate.Verdict.StrictScore > current.Verdict.StrictScore
+}
+
+func contentModerationPromptFilterSourceCanHardBlock(source ContentModerationInputSource) bool {
+	if !strings.EqualFold(strings.TrimSpace(source.Role), "user") {
+		return false
+	}
+	return !isContentModerationPromptFilterNonTerminalContext(source.Text)
+}
+
+func isContentModerationPromptFilterNonTerminalContext(text string) bool {
+	if isKnownAgentInternalPromptText(text) {
+		return true
+	}
+	normalized := strings.ToLower(normalizeContentModerationText(text))
+	for _, marker := range []string{
+		"<environment_context>",
+		"<recommended_plugins>",
+		"<app-context>",
+		"<collaboration_mode>",
+		"<skills_instructions>",
+		"# agents.md",
+		"agents.md instructions",
+	} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func contentModerationPromptFilterSemanticReviewContent(content ContentModerationInput, hit contentModerationPromptFilterHit) ContentModerationInput {
+	if contentModerationPromptFilterSourceCanHardBlock(hit.Source) {
+		return content
+	}
+	userSources := make([]ContentModerationInputSource, 0, len(content.Sources))
+	parts := make([]string, 0, len(content.Sources))
+	for _, source := range content.Sources {
+		if !contentModerationPromptFilterSourceCanHardBlock(source) {
+			continue
+		}
+		userSources = append(userSources, source)
+		parts = append(parts, source.Text)
+	}
+	if len(userSources) == 0 {
+		return ContentModerationInput{}
+	}
+	return ContentModerationInput{
+		Text:    legacyModerationTextFromParts(parts),
+		Sources: userSources,
+	}
+}
+
 func promptFilterSeverity(verdict promptfilter.Verdict) string {
 	if verdict.OperationalHit || verdict.StrictHit {
 		return ContentModerationKeywordSeverityCritical
@@ -2495,9 +2602,9 @@ func promptFilterSeverity(verdict promptfilter.Verdict) string {
 	return ContentModerationKeywordSeverityHigh
 }
 
-func contentModerationPromptFilterLogMetadata(cfg *ContentModerationConfig, content ContentModerationInput, protocol string, verdict promptfilter.Verdict) string {
+func contentModerationPromptFilterLogMetadata(cfg *ContentModerationConfig, content ContentModerationInput, hit contentModerationPromptFilterHit, verdict promptfilter.Verdict) string {
 	metadata := map[string]any{}
-	base := contentModerationHitLogMetadata(cfg, content, contentModerationPrimarySource(protocol, content))
+	base := contentModerationHitLogMetadata(cfg, content, strings.TrimSpace(hit.Source.Source))
 	if strings.TrimSpace(base) != "" {
 		_ = json.Unmarshal([]byte(base), &metadata)
 	}
@@ -2508,6 +2615,8 @@ func contentModerationPromptFilterLogMetadata(cfg *ContentModerationConfig, cont
 	metadata["prompt_filter_strict_hit"] = verdict.StrictHit
 	metadata["prompt_filter_operational_hit"] = verdict.OperationalHit
 	metadata["prompt_filter_matches"] = verdict.Matches
+	metadata["prompt_filter_source_role"] = strings.TrimSpace(hit.Source.Role)
+	metadata["prompt_filter_terminal_eligible"] = contentModerationPromptFilterSourceCanHardBlock(hit.Source)
 	raw, err := json.Marshal(metadata)
 	if err != nil {
 		return base

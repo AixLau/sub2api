@@ -7,15 +7,16 @@ import (
 	"log/slog"
 	"strings"
 	"time"
-
-	"github.com/Wei-Shaw/sub2api/internal/pkg/promptfilter"
 )
 
 type contentModerationSemanticGateCandidate struct {
-	Input    ContentModerationSemanticReviewInput
-	Keyword  string
-	Category string
-	Severity string
+	Input              ContentModerationSemanticReviewInput
+	Keyword            string
+	Category           string
+	Severity           string
+	MatchedSource      string
+	MatchedSourceRole  string
+	NonTerminalContext bool
 }
 
 func contentModerationSemanticGateCandidateForKeyword(cfg *ContentModerationConfig, content ContentModerationInput, rule ContentModerationKeywordRule, router ContentModerationSemanticReviewRouter) (contentModerationSemanticGateCandidate, bool) {
@@ -54,27 +55,30 @@ func contentModerationSemanticGateCandidateForAll(cfg *ContentModerationConfig, 
 	}, true
 }
 
-func contentModerationSemanticGateCandidateForPromptFilter(cfg *ContentModerationConfig, content ContentModerationInput, router ContentModerationSemanticReviewRouter) (contentModerationSemanticGateCandidate, bool) {
-	if cfg == nil || !cfg.SemanticReview.Enabled || router == nil || strings.TrimSpace(content.Text) == "" {
+func contentModerationSemanticGateCandidateForPromptFilter(cfg *ContentModerationConfig, content ContentModerationInput, hit contentModerationPromptFilterHit, router ContentModerationSemanticReviewRouter) (contentModerationSemanticGateCandidate, bool) {
+	if cfg == nil || !cfg.SemanticReview.Enabled || router == nil || len(hit.Verdict.Matches) == 0 {
 		return contentModerationSemanticGateCandidate{}, false
 	}
-	if !shouldEnqueueSemanticReview(cfg.SemanticReview, content.Text) {
+	if normalizeContentModerationSemanticReviewTrigger(cfg.SemanticReview.Trigger) == ContentModerationSemanticReviewTriggerAll {
 		return contentModerationSemanticGateCandidate{}, false
 	}
-	verdict := promptfilter.Inspect(content.Text, promptfilter.Config{
-		Mode:            promptfilter.ModeObserve,
-		Threshold:       promptfilter.DefaultThreshold,
-		StrictThreshold: promptfilter.DefaultStrictThreshold,
-	})
-	keyword := "semantic_review"
-	if len(verdict.Matches) > 0 {
-		keyword = verdict.Matches[0].Name
+	reviewContent := contentModerationPromptFilterSemanticReviewContent(content, hit)
+	if strings.TrimSpace(reviewContent.Text) == "" {
+		return contentModerationSemanticGateCandidate{}, false
+	}
+	keyword := hit.Verdict.Matches[0].Name
+	category := strings.TrimSpace(hit.Verdict.Matches[0].Category)
+	if category == "" {
+		category = "cyber"
 	}
 	return contentModerationSemanticGateCandidate{
-		Input:    ContentModerationSemanticReviewInput{Text: buildContentModerationSemanticReviewInput(cfg.SemanticReview, content, keyword)},
-		Keyword:  keyword,
-		Category: "cyber",
-		Severity: ContentModerationKeywordSeverityHigh,
+		Input:              ContentModerationSemanticReviewInput{Text: buildContentModerationSemanticReviewInput(cfg.SemanticReview, reviewContent, keyword)},
+		Keyword:            keyword,
+		Category:           category,
+		Severity:           promptFilterSeverity(hit.Verdict),
+		MatchedSource:      strings.TrimSpace(hit.Source.Source),
+		MatchedSourceRole:  strings.TrimSpace(hit.Source.Role),
+		NonTerminalContext: !contentModerationPromptFilterSourceCanHardBlock(hit.Source),
 	}, true
 }
 
@@ -291,7 +295,11 @@ func (s *ContentModerationService) semanticReviewProviderFallback(
 
 func contentModerationSemanticGateMetadata(cfg *ContentModerationConfig, content ContentModerationInput, protocol string, candidate contentModerationSemanticGateCandidate, result ContentModerationSemanticReviewResult, policyOverride bool) string {
 	metadata := map[string]any{}
-	base := contentModerationHitLogMetadata(cfg, content, contentModerationMatchedSource(protocol, candidate.Keyword, content))
+	matchedSource := strings.TrimSpace(candidate.MatchedSource)
+	if matchedSource == "" {
+		matchedSource = contentModerationMatchedSource(protocol, candidate.Keyword, content)
+	}
+	base := contentModerationHitLogMetadata(cfg, content, matchedSource)
 	if strings.TrimSpace(base) != "" {
 		_ = json.Unmarshal([]byte(base), &metadata)
 	}
@@ -308,6 +316,11 @@ func contentModerationSemanticGateMetadata(cfg *ContentModerationConfig, content
 	metadata["semantic_review_reason_codes"] = result.ReasonCodes
 	metadata["semantic_review_policy_override"] = policyOverride
 	metadata["semantic_review_candidate"] = candidate.Keyword
+	if strings.TrimSpace(candidate.MatchedSource) != "" {
+		metadata["semantic_review_candidate_source"] = candidate.MatchedSource
+		metadata["semantic_review_candidate_source_role"] = candidate.MatchedSourceRole
+		metadata["semantic_review_candidate_non_terminal_context"] = candidate.NonTerminalContext
+	}
 	raw, err := json.Marshal(metadata)
 	if err != nil {
 		return base
