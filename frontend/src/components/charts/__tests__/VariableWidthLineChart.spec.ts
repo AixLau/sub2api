@@ -107,6 +107,8 @@ describe('VariableWidthLineChart', () => {
     const options = chartInstances[0].options.mock.calls[0][0]
     expect(options).toMatchObject({
       type: 'view',
+      margin: 0,
+      inset: 0,
       legend: false,
       scale: {
         color: {
@@ -174,6 +176,7 @@ describe('VariableWidthLineChart', () => {
     expect(source).toContain(':deep(.token-trend-tooltip__row)')
     expect(source).toContain(':deep(.token-trend-tooltip__marker)')
     expect(source).toContain('background: var(--token-trend-marker)')
+    expect(source).toMatch(/\.vw-line__tooltip\s*\{[\s\S]*?pointer-events: none;/)
   })
 
   it('can render endpoint dots when explicitly enabled', async () => {

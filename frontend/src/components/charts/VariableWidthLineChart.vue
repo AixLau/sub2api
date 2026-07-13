@@ -772,6 +772,11 @@ const renderChart = async () => {
     autoFit: true,
     height: props.height,
     data: renderData.value,
+    // G2 applies a 16px theme margin by default. Keep every part of this
+    // component on the explicit PlotLayout so lines, ticks and hover overlays
+    // share exactly the same coordinate system (including both endpoints).
+    margin: 0,
+    inset: 0,
     paddingLeft: layoutSnapshot.value.padding.left,
     paddingRight: layoutSnapshot.value.padding.right,
     paddingTop: layoutSnapshot.value.padding.top,
@@ -1067,7 +1072,9 @@ onBeforeUnmount(() => {
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
   color: var(--vw-tooltip-text);
   padding: 10px 12px;
-  pointer-events: auto;
+  /* The tooltip is visual-only. Let pointer moves continue to reach the chart
+     body even when the tooltip happens to pass underneath the cursor. */
+  pointer-events: none;
   font-size: 12px;
   line-height: 1.35;
 }
