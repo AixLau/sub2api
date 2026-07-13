@@ -17,7 +17,9 @@ docs/install/
 │   ├── 01-api-keys.webp         # 备用：星链 AI Hub 登录/自动授权提示图
 │   ├── 02-mac-terminal.webp     # macOS 终端自动授权流程
 │   ├── 03-win-powershell.webp   # Windows PowerShell 自动授权流程
-│   └── 04-win-tray-quit.webp    # Windows 托盘退出 Codex 示意图
+│   ├── 04-win-tray-quit.webp    # Windows 托盘退出 Codex 示意图
+│   ├── 05-codex-api-key-login.webp  # Codex 首次登录页
+│   └── 06-copy-codex-api-key.webp   # API 密钥复制位置
 └── README.md           # 本说明文件
 ```
 
@@ -94,6 +96,8 @@ cwebp -q 85 output.png -o 02-mac-terminal.webp
 - **02-mac-terminal.webp**：1774×887（接近 2K 横屏），展示 macOS 终端选择客户端后自动授权成功
 - **03-win-powershell.webp**：约 1600×900，展示 Windows PowerShell 选择客户端后自动授权成功
 - **04-win-tray-quit.webp**：约 1600×900，托盘特写，使用真实 Codex 图标（蓝紫渐变花瓣 + `>_` 符号）
+- **05-codex-api-key-login.webp**：Codex 首次打开仍显示登录页的处理示意图
+- **06-copy-codex-api-key.webp**：星链 AI Hub「API 密钥」页面中复制 `codex` 密钥的位置
 
 所有图片 `max-width: 900px` 居中显示，确保大屏不会过大。
 
@@ -141,3 +145,7 @@ cwebp -q 85 output.png -o 02-mac-terminal.webp
   - 一键脚本通过浏览器授权自动创建 API Key 并写入配置
   - 更新 macOS / Windows 终端截图和登录授权示意图
   - 教程强调 Codex APP 增强模式，保留官方插件、手机远程操作等功能
+- **2026-07-13**：补充 Codex 桌面端首次登录处理
+  - 说明脚本完成后仍出现「登录 ChatGPT」页面并不代表配置失败
+  - 增加「使用其他方式登录」和复制脚本自动创建的 `codex` API Key 操作步骤
+  - 增加对应页面截图与常见问题说明

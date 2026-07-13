@@ -38,7 +38,7 @@
             "description": "使用一键脚本或 CC Switch，把 Codex 与 Claude Code 接入星链 AI Hub。",
             "url": "https://aixlau.me/docs/install/",
             "inLanguage": "zh-CN",
-            "dateModified": "2026-06-20",
+            "dateModified": "2026-07-13",
             "author": { "@type": "Organization", "name": "星链 AI", "url": "https://aixlau.me/" },
             "publisher": { "@type": "Organization", "name": "星链 AI", "url": "https://aixlau.me/" }
           },
@@ -67,6 +67,14 @@
                 "acceptedAnswer": {
                   "@type": "Answer",
                   "text": "普通一键脚本流程不需要手动创建，脚本会在注册并登录后自动创建专用 API Key。"
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "运行脚本后打开 Codex 仍显示登录 ChatGPT 怎么办？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "点击“使用其他方式登录”，选择 API Key 登录；回到星链 AI 的“API 密钥”页面，点击密钥旁的复制按钮，粘贴到 Codex 页面后即可。"
                 }
               }
             ]
@@ -808,6 +816,49 @@
         </div>
         </div> <!-- .os-panels-container -->
 
+        <article class="step" id="codex-login-help">
+          <div class="step-header">
+            <span class="number">!</span>
+            <h2>运行脚本后，Codex 仍显示「登录 ChatGPT」怎么办？</h2>
+          </div>
+          <p>
+            这是 Codex 桌面端的首次登录页，<strong>不代表一键脚本配置失败</strong>。脚本已经把星链的服务地址和 API Key 写入本机，但首次打开桌面端时，仍可能需要手动确认一次 API Key 登录方式。
+          </p>
+          <figure class="screenshot">
+            <img
+              src="/docs/install/assets/05-codex-api-key-login.webp"
+              alt="Codex 桌面端显示登录 ChatGPT，并提供使用其他方式登录按钮"
+              loading="lazy"
+            />
+          </figure>
+          <div class="caption">看到这个页面时，不要点「继续登录」，请点「使用其他方式登录」。</div>
+          <ol>
+            <li>点击 <strong>「使用其他方式登录」</strong>，选择使用 <strong>API Key</strong> 登录；</li>
+            <li>
+              回到
+              <a href="https://aixlau.me" target="_blank" rel="noopener noreferrer">星链 AI Hub</a>
+              的「API 密钥」页面，找到脚本自动创建的 <strong>codex</strong> 密钥；
+            </li>
+            <li>点击密钥右侧的复制图标，粘贴到 Codex 的 API Key 输入框，再点「继续」；</li>
+            <li>进入 Codex 后即可使用。后续正常退出、重新打开，不需要重复输入。</li>
+          </ol>
+          <figure class="screenshot">
+            <img
+              src="/docs/install/assets/06-copy-codex-api-key.webp"
+              alt="星链 AI Hub API 密钥页面中 codex 密钥旁的复制按钮"
+              loading="lazy"
+            />
+          </figure>
+          <div class="caption">在「API 密钥」页面找到 codex 这一行，点击密钥旁的复制图标。</div>
+          <div class="note warn">
+            <strong>注意：</strong>API Key 相当于账号密码，只粘贴到 Codex 登录框，不要发给其他人。如果页面里没有 <strong>codex</strong> 密钥，请重新运行一键脚本并完成浏览器授权。
+          </div>
+          <div class="note">
+            OpenAI 官方也说明桌面端可在退出登录页面选择其他登录方式并输入 API Key。详见
+            <a href="https://learn.chatgpt.com/docs/auth#sign-in-with-an-api-key" target="_blank" rel="noopener noreferrer">Codex 身份验证说明</a>。
+          </div>
+        </article>
+
         <!-- 通用 FAQ -->
         <article class="step">
           <div class="step-header">
@@ -820,6 +871,8 @@
           <p>不会丢。每个被改动的文件都会先备份成 <code>xxx.bak.YYYYMMDD-HHMMSS</code> 留在原目录，需要回退直接把 <code>.bak.*</code> 改回原名即可。</p>
           <p style="margin-top:16px"><strong>Q：我还需要自己创建 API Key 吗？</strong></p>
           <p>不需要。普通一键脚本流程只要求你注册并登录 星链 AI Hub，脚本会自动创建一个专用 API Key 并写入本机配置。</p>
+          <p style="margin-top:16px"><strong>Q：脚本完成后打开 Codex，为什么还是「登录 ChatGPT」页面？</strong></p>
+          <p>这是桌面端的首次登录确认，不是脚本失败。点「使用其他方式登录」→ 使用 API Key，再到 星链 AI Hub 的「API 密钥」页面复制脚本自动创建的 <code>codex</code> 密钥并粘贴即可。</p>
           <p style="margin-top:16px"><strong>Q：想恢复成官方 Codex/Claude？</strong></p>
           <p>把对应的备份文件 <code>.bak.*</code> 改回原文件名，或直接删掉脚本生成的配置块（<code>config.toml</code> 里有 <code># BEGIN SUB2API MANAGED BLOCK</code> 标记区段）。</p>
         </article>
@@ -924,7 +977,7 @@
       </section>
 
       <footer>
-        最后更新：2026-06-20 · 文档地址：<a href="https://aixlau.me/docs/install/">https://aixlau.me/docs/install/</a>
+        最后更新：2026-07-13 · 文档地址：<a href="https://aixlau.me/docs/install/">https://aixlau.me/docs/install/</a>
       </footer>
     </main>
 
