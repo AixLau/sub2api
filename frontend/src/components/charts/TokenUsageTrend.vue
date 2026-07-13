@@ -19,8 +19,8 @@
       show-legend
       :brush-effect="false"
       stroke-effect="smooth"
-      :min-line-width="2.2"
-      :max-line-width="3.4"
+      :min-line-width="1.2"
+      :max-line-width="8"
     />
   </div>
 </template>

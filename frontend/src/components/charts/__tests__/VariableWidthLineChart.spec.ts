@@ -95,7 +95,7 @@ describe('VariableWidthLineChart', () => {
     expect(wrapper.find('.vw-line__legend-marker').attributes('style')).toContain('background-color: rgb(37, 99, 235)')
   })
 
-  it('creates a native G2 trail line with compressed dynamic width derived from the y field', async () => {
+  it('creates a native G2 trail line with linear dynamic width derived from the y field', async () => {
     mountChart()
     await nextTick()
 
@@ -154,7 +154,7 @@ describe('VariableWidthLineChart', () => {
     const lowVisualSize = Number(inputPoints[0].__vw_visual_size__)
     const highVisualSize = Number(inputPoints[1].__vw_visual_size__)
     expect(highVisualSize).toBeGreaterThan(lowVisualSize)
-    expect(highVisualSize / lowVisualSize).toBeLessThan(400 / 200)
+    expect(highVisualSize / lowVisualSize).toBe(400 / 200)
     expect(options.children.some((child: Record<string, unknown>) => child.type === 'point')).toBe(false)
     expect(chartInstances[0].render).toHaveBeenCalledTimes(1)
   })

@@ -119,8 +119,8 @@ describe('TokenUsageTrend', () => {
       showLegend: true,
       brushEffect: false,
       strokeEffect: 'smooth',
-      minLineWidth: 2.2,
-      maxLineWidth: 3.4,
+      minLineWidth: 1.2,
+      maxLineWidth: 8,
     })
     expect(chart.props('xField')).toEqual(expect.any(Function))
     expect(chart.props('formatX')).toEqual(expect.any(Function))

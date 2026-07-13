@@ -331,7 +331,7 @@ const yExtent = computed(() => {
 })
 
 const toVisualSize = (value: number): number =>
-  Math.pow(Math.max(value, 0), 0.62)
+  Math.max(value, 0)
 
 const sizeExtent = computed(() => {
   if (props.yDomain) {
