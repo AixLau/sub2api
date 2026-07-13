@@ -182,13 +182,24 @@ function Set-JsonProperty {
     }
 }
 
+function Write-Utf8NoBom {
+    param(
+        [string]$Path,
+        [string]$Content
+    )
+
+    $Encoding = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, $Content, $Encoding)
+}
+
 function Write-JsonObject {
     param(
         [string]$Path,
         [object]$Object
     )
 
-    $Object | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $Path -Encoding UTF8
+    $Json = $Object | ConvertTo-Json -Depth 20
+    Write-Utf8NoBom -Path $Path -Content $Json
 }
 
 function ConvertTo-TomlString {
@@ -226,7 +237,7 @@ function Write-CodexConfig {
     $Out.Add('wire_api = "responses"') | Out-Null
     $Out.Add("requires_openai_auth = true") | Out-Null
 
-    Set-Content -LiteralPath $Path -Value ($Out -join [Environment]::NewLine) -Encoding UTF8
+    Write-Utf8NoBom -Path $Path -Content ($Out -join [Environment]::NewLine)
 }
 
 function Write-ClaudeSettings {
