@@ -74,7 +74,7 @@
                 "name": "运行脚本后打开 Codex 仍显示登录 ChatGPT 怎么办？",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "点击“使用其他方式登录”，选择 API Key 登录；回到星链 AI 的“API 密钥”页面，点击密钥旁的复制按钮，粘贴到 Codex 页面后即可。"
+                  "text": "点击“使用其他方式登录”，选择 API Key 登录；回到星链 AI 的“API 密钥”页面，点击图中黑色箭头指向的复制按钮，再把密钥粘贴到 Codex 的 API Key 输入框并继续即可。"
                 }
               }
             ]
@@ -821,9 +821,6 @@
             <span class="number">!</span>
             <h2>运行脚本后，Codex 仍显示「登录 ChatGPT」怎么办？</h2>
           </div>
-          <p>
-            这是 Codex 桌面端的首次登录页，<strong>不代表一键脚本配置失败</strong>。脚本已经把星链的服务地址和 API Key 写入本机，但首次打开桌面端时，仍可能需要手动确认一次 API Key 登录方式。
-          </p>
           <figure class="screenshot">
             <img
               src="/docs/install/assets/05-codex-api-key-login.webp"
@@ -839,17 +836,18 @@
               <a href="https://aixlau.me" target="_blank" rel="noopener noreferrer">星链 AI Hub</a>
               的「API 密钥」页面，找到脚本自动创建的 <strong>codex</strong> 密钥；
             </li>
-            <li>点击密钥右侧的复制图标，粘贴到 Codex 的 API Key 输入框，再点「继续」；</li>
+            <li>点击下图黑色箭头指向的复制图标，复制这条密钥；</li>
+            <li>返回 Codex，把密钥粘贴到 API Key 输入框，再点「继续」；</li>
             <li>进入 Codex 后即可使用。后续正常退出、重新打开，不需要重复输入。</li>
           </ol>
           <figure class="screenshot">
             <img
               src="/docs/install/assets/06-copy-codex-api-key.webp"
-              alt="星链 AI Hub API 密钥页面中 codex 密钥旁的复制按钮"
+              alt="星链 AI Hub API 密钥页面中黑色箭头指向 codex 密钥复制按钮"
               loading="lazy"
             />
           </figure>
-          <div class="caption">在「API 密钥」页面找到 codex 这一行，点击密钥旁的复制图标。</div>
+          <div class="caption">黑色箭头指向的就是复制按钮，点击后再返回 Codex 粘贴密钥。</div>
           <div class="note warn">
             <strong>注意：</strong>API Key 相当于账号密码，只粘贴到 Codex 登录框，不要发给其他人。如果页面里没有 <strong>codex</strong> 密钥，请重新运行一键脚本并完成浏览器授权。
           </div>

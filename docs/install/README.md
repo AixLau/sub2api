@@ -97,7 +97,7 @@ cwebp -q 85 output.png -o 02-mac-terminal.webp
 - **03-win-powershell.webp**：约 1600×900，展示 Windows PowerShell 选择客户端后自动授权成功
 - **04-win-tray-quit.webp**：约 1600×900，托盘特写，使用真实 Codex 图标（蓝紫渐变花瓣 + `>_` 符号）
 - **05-codex-api-key-login.webp**：Codex 首次打开仍显示登录页的处理示意图
-- **06-copy-codex-api-key.webp**：星链 AI Hub「API 密钥」页面中复制 `codex` 密钥的位置
+- **06-copy-codex-api-key.webp**：用黑色箭头标出星链 AI Hub「API 密钥」页面中复制 `codex` 密钥的位置
 
 所有图片 `max-width: 900px` 居中显示，确保大屏不会过大。
 
