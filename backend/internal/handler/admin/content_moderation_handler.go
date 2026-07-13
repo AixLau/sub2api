@@ -245,10 +245,11 @@ func (h *ContentModerationHandler) ListLogs(c *gin.Context) {
 			PageSize:  pageSize,
 			SortOrder: pagination.SortOrderDesc,
 		},
-		Result:       c.Query("result"),
-		ReviewStatus: c.Query("review_status"),
-		Endpoint:     c.Query("endpoint"),
-		Search:       c.Query("search"),
+		Result:         c.Query("result"),
+		DecisionSource: c.Query("decision_source"),
+		ReviewStatus:   c.Query("review_status"),
+		Endpoint:       c.Query("endpoint"),
+		Search:         c.Query("search"),
 	}
 	if raw := strings.TrimSpace(c.Query("group_id")); raw != "" {
 		groupID, err := strconv.ParseInt(raw, 10, 64)

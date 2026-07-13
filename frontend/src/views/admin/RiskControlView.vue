@@ -27,8 +27,7 @@
           class="rounded-lg border px-5 py-4 shadow-sm"
           :class="protectionStatusCardClass"
         >
-          <div class="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(560px,1fr)] xl:items-center">
-            <div class="flex min-w-0 gap-3">
+          <div class="flex min-w-0 gap-3">
               <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg" :class="protectionStatusIconClass">
                 <Icon name="shield" size="md" />
               </div>
@@ -40,6 +39,10 @@
                   </span>
                 </div>
                 <p class="mt-1 text-sm" :class="protectionStatusDescriptionClass">{{ protectionStatusDescription }}</p>
+                <p class="mt-2 text-xs text-gray-600 dark:text-gray-300">
+                  <span class="text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.adminSummary.auditService') }}:</span>
+                  {{ protectionExternalAPIText }}
+                </p>
                 <div v-if="protectionUnsafeReasonLabels.length > 0" class="mt-3 flex flex-wrap gap-1.5">
                   <span
                     v-for="reason in protectionUnsafeReasonLabels"
@@ -50,94 +53,73 @@
                   </span>
                 </div>
               </div>
-            </div>
-            <div class="grid grid-cols-2 gap-3 border-t border-current/10 pt-4 text-sm xl:border-l xl:border-t-0 xl:pl-5 xl:pt-0">
-              <div class="min-w-0">
-                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.adminSummary.enforcement') }}</p>
-                <p class="mt-1 truncate font-semibold text-gray-900 dark:text-white">{{ modeLabel(status?.mode ?? configForm.mode) }}</p>
-              </div>
-              <div class="min-w-0">
-                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.adminSummary.scope') }}</p>
-                <p class="mt-1 truncate font-semibold text-gray-900 dark:text-white">{{ adminScopeSummary }}</p>
-              </div>
-              <div class="min-w-0">
-                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.adminSummary.response') }}</p>
-                <p class="mt-1 truncate font-semibold text-gray-900 dark:text-white">{{ adminResponseSummary }}</p>
-              </div>
-              <div class="min-w-0">
-                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.adminSummary.auditService') }}</p>
-                <p class="mt-1 truncate font-semibold text-gray-900 dark:text-white">{{ protectionExternalAPIText }}</p>
-              </div>
-            </div>
           </div>
         </div>
 
-        <section data-test="admin-risk-summary" class="space-y-3">
-          <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.adminSummary.title') }}</h2>
-              <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.adminSummary.hint') }}</p>
-            </div>
-            <span class="text-xs text-gray-400 dark:text-gray-500">{{ t('admin.riskControl.adminSummary.retentionWindow') }}</span>
-          </div>
+        <section data-test="admin-risk-summary">
           <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <button
               v-for="item in adminMetricItems"
               :key="item.key"
               :data-test="`admin-metric-${item.key}`"
               type="button"
-              class="group min-h-[164px] rounded-lg border bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:bg-dark-800 sm:p-4"
+              class="group rounded-lg border bg-white p-3 text-left shadow-sm transition hover:border-gray-300 hover:shadow dark:bg-dark-800 sm:p-4"
               :class="item.cardClass"
               @click="applyAdminMetricFilter(item.key)"
             >
-              <div class="flex items-start justify-between gap-3">
-                <div class="flex h-10 w-10 items-center justify-center rounded-lg" :class="item.iconClass">
-                  <Icon :name="item.icon" size="sm" />
+              <div class="flex items-center justify-between gap-3">
+                <p class="text-sm font-medium text-gray-600 dark:text-gray-300">{{ item.label }}</p>
+                <div class="flex h-8 w-8 items-center justify-center rounded-lg" :class="item.iconClass">
+                  <Icon :name="item.icon" size="xs" />
                 </div>
-                <Icon name="arrowRight" size="xs" class="mt-1 text-gray-300 transition group-hover:translate-x-0.5 group-hover:text-gray-500" />
               </div>
-              <p class="mt-4 text-2xl font-semibold text-gray-900 dark:text-white">{{ item.value }}</p>
-              <p class="mt-1 text-sm font-medium text-gray-700 dark:text-gray-200">{{ item.label }}</p>
-              <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ item.meta }}</p>
+              <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ item.value }}</p>
             </button>
           </div>
         </section>
 
-        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
-          <div class="card p-5">
-            <div class="flex items-start justify-between gap-4">
+        <section data-test="semantic-review-usage" class="card overflow-hidden">
+          <div class="flex flex-col gap-3 border-b border-gray-100 px-5 py-4 dark:border-dark-700 sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex min-w-0 items-start gap-3">
+              <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600 dark:bg-violet-900/20 dark:text-violet-300">
+                <Icon name="chart" size="sm" />
+              </div>
               <div>
-                <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.adminSummary.attentionTitle') }}</h2>
-                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.adminSummary.attentionHint') }}</p>
+                <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.semanticUsage.title') }}</h2>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.semanticUsage.hint') }}</p>
               </div>
-              <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-medium" :class="adminAttentionBadgeClass">{{ adminAttentionBadge }}</span>
             </div>
-            <div class="mt-4 space-y-2">
-              <div v-for="item in adminAttentionItems" :key="item.key" class="flex gap-3 rounded-lg border border-gray-100 px-3 py-3 dark:border-dark-700">
-                <Icon :name="item.icon" size="sm" class="mt-0.5 flex-shrink-0" :class="item.iconClass" />
-                <div class="min-w-0">
-                  <p class="text-sm font-medium text-gray-900 dark:text-white">{{ item.title }}</p>
-                  <p class="mt-0.5 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ item.description }}</p>
-                </div>
-              </div>
+            <span class="inline-flex w-fit rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+              {{ t('admin.riskControl.semanticUsage.window', { hours: semanticReviewUsage.window_hours }) }}
+            </span>
+          </div>
+          <div class="grid grid-cols-2 divide-x divide-y divide-gray-100 dark:divide-dark-700 lg:grid-cols-4 lg:divide-y-0">
+            <div class="p-4 sm:p-5">
+              <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.semanticUsage.totalCalls') }}</p>
+              <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ semanticUsageNumber(semanticReviewUsage.total_calls) }}</p>
+            </div>
+            <div class="p-4 sm:p-5">
+              <p class="truncate text-xs text-gray-500 dark:text-gray-400">gpt-5.3-codex-spark</p>
+              <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ semanticUsageNumber(semanticReviewUsage.primary_calls) }}</p>
+              <p class="mt-1 text-xs text-gray-400">{{ t('admin.riskControl.semanticUsage.primary') }}</p>
+            </div>
+            <div class="p-4 sm:p-5">
+              <p class="truncate text-xs text-gray-500 dark:text-gray-400">gpt-5.4-mini</p>
+              <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ semanticUsageNumber(semanticReviewUsage.fallback_calls) }}</p>
+              <p class="mt-1 text-xs text-gray-400">{{ t('admin.riskControl.semanticUsage.fallbackRate', { rate: semanticFallbackRate }) }}</p>
+            </div>
+            <div class="p-4 sm:p-5">
+              <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.semanticUsage.avgLatency') }}</p>
+              <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ semanticUsageLatency }}</p>
             </div>
           </div>
-
-          <div class="card p-5">
-            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.adminSummary.policyTitle') }}</h2>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.adminSummary.policyHint') }}</p>
-            <dl class="mt-4 divide-y divide-gray-100 text-sm dark:divide-dark-700">
-              <div v-for="item in adminPolicyItems" :key="item.label" class="flex items-center justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
-                <dt class="text-gray-500 dark:text-gray-400">{{ item.label }}</dt>
-                <dd class="max-w-[65%] truncate text-right font-medium text-gray-900 dark:text-white">{{ item.value }}</dd>
-              </div>
-            </dl>
-            <button type="button" class="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400" @click="openSettings">
-              {{ t('admin.riskControl.adminSummary.reviewPolicy') }}
-              <Icon name="arrowRight" size="xs" />
+          <div class="flex flex-col gap-3 border-t border-gray-100 bg-gray-50/70 px-5 py-3 text-xs text-gray-500 dark:border-dark-700 dark:bg-dark-900/30 dark:text-gray-400 sm:flex-row sm:items-center sm:justify-between">
+            <p>{{ t('admin.riskControl.semanticUsage.tokens', { input: semanticUsageNumber(semanticReviewUsage.input_tokens), output: semanticUsageNumber(semanticReviewUsage.output_tokens) }) }}</p>
+            <button type="button" class="font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400" @click="applySemanticReviewFilter">
+              {{ t('admin.riskControl.semanticUsage.viewRecords') }}
             </button>
           </div>
-        </div>
+        </section>
 
         <div
           v-if="pipelineCoverageMatrixVisible"
@@ -631,10 +613,28 @@
                 <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.records') }}</h2>
                 <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.recordsHint') }}</p>
               </div>
-              <button type="button" class="btn btn-secondary inline-flex items-center gap-2" :disabled="logsLoading" @click="loadLogs">
-                <Icon name="refresh" size="sm" :class="logsLoading ? 'animate-spin' : ''" />
-                {{ t('admin.riskControl.refresh') }}
-              </button>
+              <div class="flex items-center gap-2">
+                <details class="relative">
+                  <summary class="btn btn-secondary inline-flex cursor-pointer list-none items-center gap-2">
+                    <Icon name="cog" size="sm" />
+                    {{ t('admin.riskControl.columnSettings') }}
+                  </summary>
+                  <div class="absolute right-0 z-20 mt-2 w-64 rounded-lg border border-gray-200 bg-white p-3 shadow-xl dark:border-dark-700 dark:bg-dark-800">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.columnSettingsHint') }}</p>
+                    <div class="mt-3 grid grid-cols-2 gap-2">
+                      <label v-for="column in logColumnOptions" :key="column.key" class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-dark-700">
+                        <input type="checkbox" :checked="isLogColumnVisible(column.key)" @change="toggleLogColumn(column.key)" />
+                        <span>{{ column.label }}</span>
+                      </label>
+                    </div>
+                    <button type="button" class="mt-3 text-xs font-medium text-primary-600 dark:text-primary-400" @click="resetLogColumns">{{ t('admin.riskControl.resetColumns') }}</button>
+                  </div>
+                </details>
+                <button type="button" class="btn btn-secondary inline-flex items-center gap-2" :disabled="logsLoading" @click="loadLogs">
+                  <Icon name="refresh" size="sm" :class="logsLoading ? 'animate-spin' : ''" />
+                  {{ t('admin.riskControl.refresh') }}
+                </button>
+              </div>
             </div>
 
             <div class="flex flex-col gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 dark:border-dark-700 dark:bg-dark-900/30 sm:flex-row sm:items-center sm:justify-between">
@@ -657,8 +657,9 @@
               </div>
             </div>
 
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-7">
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
               <Select v-model="filters.result" :options="resultOptions" @change="reloadLogsFromFirstPage" />
+              <Select v-model="filters.decision_source" :options="decisionSourceOptions" @change="reloadLogsFromFirstPage" />
               <Select v-model="filters.review_status" :options="reviewStatusOptions" @change="reloadLogsFromFirstPage" />
               <Select v-model="filters.group_id" :options="groupFilterOptions" @change="reloadLogsFromFirstPage" />
               <Select v-model="filters.endpoint" :options="endpointOptions" @change="reloadLogsFromFirstPage" />
@@ -672,56 +673,61 @@
             <table class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
               <thead class="bg-gray-50 dark:bg-dark-800">
                 <tr>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.time') }}</th>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.group') }}</th>
-				  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.upstreamAccount') }}</th>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.user') }}</th>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.apiKey') }}</th>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.endpoint') }}</th>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.result') }}</th>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.highest') }}</th>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.actionMeta') }}</th>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.latency') }}</th>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.input') }}</th>
+                  <th v-if="isLogColumnVisible('time')" class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.time') }}</th>
+                  <th v-if="isLogColumnVisible('group')" class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.group') }}</th>
+				  <th v-if="isLogColumnVisible('account')" class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.upstreamAccount') }}</th>
+                  <th v-if="isLogColumnVisible('user')" class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.user') }}</th>
+                  <th v-if="isLogColumnVisible('apiKey')" class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.apiKey') }}</th>
+                  <th v-if="isLogColumnVisible('endpoint')" class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.endpoint') }}</th>
+                  <th v-if="isLogColumnVisible('result')" class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.result') }}</th>
+                  <th v-if="isLogColumnVisible('highest')" class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.highest') }}</th>
+                  <th v-if="isLogColumnVisible('source')" class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.decisionSource') }}</th>
+                  <th v-if="isLogColumnVisible('action')" class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.actionMeta') }}</th>
+                  <th v-if="isLogColumnVisible('latency')" class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.latency') }}</th>
+                  <th v-if="isLogColumnVisible('input')" class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.input') }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-100 bg-white dark:divide-dark-800 dark:bg-dark-800">
                 <tr v-if="logsLoading">
-				  <td colspan="11" class="px-5 py-12 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('common.loading') }}</td>
+				  <td :colspan="visibleLogColumnCount" class="px-5 py-12 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('common.loading') }}</td>
                 </tr>
                 <tr v-else-if="logs.length === 0">
-				  <td colspan="11" class="px-5 py-12 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.emptyLogs') }}</td>
+				  <td :colspan="visibleLogColumnCount" class="px-5 py-12 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.emptyLogs') }}</td>
                 </tr>
                 <template v-else>
                   <tr v-for="row in logs" :key="row.id" class="hover:bg-gray-50 dark:hover:bg-dark-700/60">
-                    <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(row.created_at) }}</td>
-                    <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">{{ row.group_name || '-' }}</td>
-					<td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
+                    <td v-if="isLogColumnVisible('time')" class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(row.created_at) }}</td>
+                    <td v-if="isLogColumnVisible('group')" class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">{{ row.group_name || '-' }}</td>
+					<td v-if="isLogColumnVisible('account')" class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
 						<div>{{ row.account_name || '-' }}</div>
 						<div v-if="row.account_id" class="text-xs text-gray-400">#{{ row.account_id }} · {{ row.account_type || '-' }}</div>
 					</td>
-                    <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
+                    <td v-if="isLogColumnVisible('user')" class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
                       <div>{{ row.user_email || '-' }}</div>
                       <div v-if="row.user_id" class="text-xs text-gray-400">UID {{ row.user_id }}</div>
                     </td>
-                    <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">{{ row.api_key_name || '-' }}</td>
-                    <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
+                    <td v-if="isLogColumnVisible('apiKey')" class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">{{ row.api_key_name || '-' }}</td>
+                    <td v-if="isLogColumnVisible('endpoint')" class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
                       <div>{{ row.endpoint || '-' }}</div>
                       <div class="text-xs text-gray-400">{{ row.provider || '-' }} / {{ row.model || '-' }}</div>
                     </td>
-                    <td class="whitespace-nowrap px-5 py-4">
+                    <td v-if="isLogColumnVisible('result')" class="whitespace-nowrap px-5 py-4">
                       <span class="inline-flex rounded-md px-2 py-1 text-xs font-medium" :class="resultBadgeClass(row)">
                         {{ resultLabel(row) }}
                       </span>
                     </td>
-                    <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
+                    <td v-if="isLogColumnVisible('highest')" class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
                       <div>{{ moderationCategoryLabel(row.highest_category) }}</div>
                       <div class="text-xs text-gray-400">{{ percent(row.highest_score) }}</div>
                       <div v-if="row.matched_keyword" class="mt-0.5 text-xs font-medium text-red-600 dark:text-red-300" :title="t('admin.riskControl.matchedKeyword') + ': ' + candidateKeywordLabel(row.matched_keyword)">
                         {{ t('admin.riskControl.matchedKeyword') }}: {{ candidateKeywordLabel(row.matched_keyword) }}
                       </div>
                     </td>
-                    <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
+                    <td v-if="isLogColumnVisible('source')" class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
+                      <div>{{ decisionSourceLabel(row.decision_source || '') }}</div>
+                      <div v-if="row.moderation_model" class="max-w-[180px] truncate text-xs text-gray-400">{{ row.moderation_model }}</div>
+                    </td>
+                    <td v-if="isLogColumnVisible('action')" class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
                       <div>{{ violationCountText(row) }}</div>
                       <div class="text-xs text-gray-400">
                         {{ row.email_sent ? t('admin.riskControl.emailSent') : t('admin.riskControl.emailNotSent') }}
@@ -773,13 +779,13 @@
                         {{ unbanningUserID === row.user_id ? t('common.processing') : t('admin.riskControl.unbanUser') }}
                       </button>
                     </td>
-                    <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
+                    <td v-if="isLogColumnVisible('latency')" class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
                       <div>{{ latencyText(row.upstream_latency_ms) }}</div>
                       <div v-if="row.queue_delay_ms !== null && row.queue_delay_ms !== undefined" class="text-xs text-gray-400">
                         {{ t('admin.riskControl.queueDelay', { ms: row.queue_delay_ms }) }}
                       </div>
                     </td>
-                    <td class="w-[320px] max-w-sm px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
+                    <td v-if="isLogColumnVisible('input')" class="w-[320px] max-w-sm px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
                       <button
                         type="button"
                         class="group flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-gray-100 dark:hover:bg-dark-700"
@@ -1764,10 +1770,6 @@
                 {{ moderationCategoryLabel(inputDetailRow.highest_category) }} / {{ percent(inputDetailRow.highest_score) }}
               </p>
             </div>
-            <div v-if="inputDetailRow.matched_keyword" class="rounded-lg border border-red-100 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-900/20">
-              <p class="text-xs font-medium text-red-500 dark:text-red-300">{{ t('admin.riskControl.matchedKeyword') }}</p>
-              <p class="mt-1 truncate text-sm font-semibold text-red-700 dark:text-red-200" :title="candidateKeywordLabel(inputDetailRow.matched_keyword)">{{ candidateKeywordLabel(inputDetailRow.matched_keyword) }}</p>
-            </div>
           </div>
 
 			  <div v-if="inputDetailRow.matched_keyword" class="rounded-xl border border-amber-100 bg-amber-50 p-4 shadow-sm dark:border-amber-900/40 dark:bg-amber-900/10">
@@ -1824,11 +1826,31 @@
 					<p class="mt-1 break-words font-mono text-sm font-semibold text-sky-900 dark:text-sky-50">{{ inputDetailRow.selected_source || '-' }} ({{ sourceRoleLabel(inputDetailRow.selected_source_role) }})</p>
 				  </div>
 				  <div>
-					<p class="text-xs font-medium text-sky-700/80 dark:text-sky-200/80">{{ t('admin.riskControl.reviewDelivery') }}</p>
-					<p class="mt-1 break-words font-mono text-sm font-semibold text-sky-900 dark:text-sky-50">{{ inputDetailRow.selected_fragment_runes || 0 }} · {{ inputDetailRow.duplicate_retry_count || 0 }}</p>
+					<p class="text-xs font-medium text-sky-700/80 dark:text-sky-200/80">{{ t('admin.riskControl.reviewPayloadStats') }}</p>
+					<p class="mt-1 break-words text-sm font-semibold text-sky-900 dark:text-sky-50">{{ t('admin.riskControl.reviewPayloadStatsValue', { runes: inputDetailRow.selected_fragment_runes || 0, retries: inputDetailRow.duplicate_retry_count || 0 }) }}</p>
 				  </div>
 				</div>
 			  </div>
+
+              <div v-if="semanticReviewOutput" class="rounded-xl border border-violet-100 bg-violet-50 p-4 shadow-sm dark:border-violet-900/40 dark:bg-violet-900/10">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p class="text-sm font-semibold text-violet-900 dark:text-violet-100">{{ t('admin.riskControl.modelResponse') }}</p>
+                    <p class="mt-1 text-xs text-violet-700/70 dark:text-violet-200/70">{{ t('admin.riskControl.modelResponseHint') }}</p>
+                  </div>
+                  <span class="rounded-full bg-white/80 px-2.5 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-900/40 dark:text-violet-200">{{ semanticReviewOutput.verdict || '-' }}</span>
+                </div>
+                <dl class="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm lg:grid-cols-4">
+                  <div v-for="item in semanticReviewSummaryItems" :key="item.label">
+                    <dt class="text-xs text-violet-700/70 dark:text-violet-200/70">{{ item.label }}</dt>
+                    <dd class="mt-1 break-words font-medium text-violet-950 dark:text-violet-50">{{ item.value }}</dd>
+                  </div>
+                </dl>
+                <details class="mt-4">
+                  <summary class="cursor-pointer text-xs font-medium text-violet-700 dark:text-violet-200">{{ t('admin.riskControl.viewStructuredResponse') }}</summary>
+                  <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-violet-950 p-3 text-xs leading-5 text-violet-50">{{ semanticReviewOutputText }}</pre>
+                </details>
+              </div>
 
 			  <div v-if="inputDetailRow.truncate_reasons?.length" class="rounded-xl border border-orange-100 bg-orange-50 p-4 shadow-sm dark:border-orange-900/40 dark:bg-orange-900/10">
 				<p class="text-sm font-semibold text-orange-800 dark:text-orange-100">{{ t('admin.riskControl.truncationReasons') }}</p>
@@ -1963,21 +1985,14 @@ type PipelineOperatorSummaryItem = {
   valueClass?: string
 }
 type AdminMetricKey = 'blocked' | 'hit' | 'pending' | 'error'
+type LogColumnKey = 'time' | 'group' | 'account' | 'user' | 'apiKey' | 'endpoint' | 'result' | 'highest' | 'source' | 'action' | 'latency' | 'input'
 type AdminMetricItem = {
   key: AdminMetricKey
   label: string
   value: string
-  meta: string
   icon: 'shield' | 'exclamationTriangle' | 'clock' | 'exclamationCircle'
   iconClass: string
   cardClass: string
-}
-type AdminAttentionItem = {
-  key: string
-  title: string
-  description: string
-  icon: 'checkCircle' | 'exclamationTriangle' | 'exclamationCircle' | 'clock'
-  iconClass: string
 }
 type ModerationScoreRow = {
   category: string
@@ -2083,7 +2098,7 @@ const configForm = reactive({
   semantic_review_fallback_timeout_ms: 3000,
   semantic_review_max_attempts_per_model: 1,
   semantic_review_max_output_tokens: 512,
-  semantic_review_reasoning_effort: 'low' as 'minimal' | 'low',
+  semantic_review_reasoning_effort: 'low' as const,
 	  provider: 'openai' as ModerationProvider,
   base_url: 'https://api.openai.com',
   model: 'omni-moderation-latest',
@@ -2136,6 +2151,7 @@ const pagination = reactive({
 
 const filters = reactive({
   result: '',
+  decision_source: '',
   review_status: '',
   group_id: 0,
   endpoint: '',
@@ -2143,6 +2159,61 @@ const filters = reactive({
   from: '',
   to: '',
 })
+
+const defaultLogColumns: LogColumnKey[] = ['time', 'user', 'result', 'highest', 'source', 'action', 'input']
+const visibleLogColumns = ref<LogColumnKey[]>(loadStoredLogColumns())
+const logColumnOptions = computed<Array<{ key: LogColumnKey; label: string }>>(() => [
+  { key: 'time', label: t('admin.riskControl.table.time') },
+  { key: 'group', label: t('admin.riskControl.table.group') },
+  { key: 'account', label: t('admin.riskControl.upstreamAccount') },
+  { key: 'user', label: t('admin.riskControl.table.user') },
+  { key: 'apiKey', label: t('admin.riskControl.table.apiKey') },
+  { key: 'endpoint', label: t('admin.riskControl.table.endpoint') },
+  { key: 'result', label: t('admin.riskControl.table.result') },
+  { key: 'highest', label: t('admin.riskControl.table.highest') },
+  { key: 'source', label: t('admin.riskControl.table.decisionSource') },
+  { key: 'action', label: t('admin.riskControl.table.actionMeta') },
+  { key: 'latency', label: t('admin.riskControl.table.latency') },
+  { key: 'input', label: t('admin.riskControl.table.input') },
+])
+const visibleLogColumnCount = computed(() => Math.max(1, visibleLogColumns.value.length))
+
+function loadStoredLogColumns(): LogColumnKey[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem('risk-control-log-columns') || '[]')
+    if (Array.isArray(stored) && stored.length > 0) return stored as LogColumnKey[]
+  } catch {
+    // Fall back to the product default when local preferences are unavailable.
+  }
+  return [...defaultLogColumns]
+}
+
+function isLogColumnVisible(key: LogColumnKey): boolean {
+  return visibleLogColumns.value.includes(key)
+}
+
+function persistLogColumns() {
+  try {
+    localStorage.setItem('risk-control-log-columns', JSON.stringify(visibleLogColumns.value))
+  } catch {
+    // Column preferences are optional and must not block the records table.
+  }
+}
+
+function toggleLogColumn(key: LogColumnKey) {
+  if (isLogColumnVisible(key)) {
+    if (visibleLogColumns.value.length === 1) return
+    visibleLogColumns.value = visibleLogColumns.value.filter((item) => item !== key)
+  } else {
+    visibleLogColumns.value = [...visibleLogColumns.value, key]
+  }
+  persistLogColumns()
+}
+
+function resetLogColumns() {
+  visibleLogColumns.value = [...defaultLogColumns]
+  persistLogColumns()
+}
 
 const settingsTabs = computed<Array<{ id: SettingsTab; label: string }>>(() => [
   { id: 'basic', label: t('admin.riskControl.tabs.basic') },
@@ -2201,7 +2272,6 @@ const semanticReviewModelOptions = computed<SelectOption[]>(() => [
 ])
 
 const semanticReviewReasoningOptions = computed<SelectOption[]>(() => [
-  { value: 'minimal', label: 'minimal' },
   { value: 'low', label: 'low' },
 ])
 
@@ -2269,6 +2339,14 @@ const resultOptions = computed<SelectOption[]>(() => [
   { value: 'review', label: t('admin.riskControl.result.review') },
   { value: 'pass', label: t('admin.riskControl.result.pass') },
   { value: 'error', label: t('admin.riskControl.result.error') },
+])
+
+const decisionSourceOptions = computed<SelectOption[]>(() => [
+  { value: '', label: t('admin.riskControl.decisionSourceFilter.all') },
+  { value: 'semantic_review', label: t('admin.riskControl.decisionSourceFilter.platform') },
+  { value: 'ordinary_api', label: t('admin.riskControl.decisionSourceFilter.moderationApi') },
+  { value: 'local_extraction', label: t('admin.riskControl.decisionSourceFilter.local') },
+  { value: 'infrastructure', label: t('admin.riskControl.decisionSourceFilter.infrastructure') },
 ])
 
 const reviewStatusOptions = computed<SelectOption[]>(() => [
@@ -2820,28 +2898,11 @@ const overviewItems = computed<OverviewItem[]>(() => [
   },
 ])
 
-const adminScopeSummary = computed(() => {
-  const groupsText = configForm.all_groups
-    ? t('admin.riskControl.allGroups')
-    : t('admin.riskControl.selectedGroupCount', { count: configForm.group_ids.length })
-  return `${groupsText} · ${modelFilterSummary.value}`
-})
-
-const adminResponseSummary = computed(() => {
-  if (!configForm.auto_ban_enabled) {
-    return configForm.email_on_hit
-      ? t('admin.riskControl.adminSummary.notifyOnly')
-      : t('admin.riskControl.adminSummary.blockOnly')
-  }
-  return t('admin.riskControl.adminSummary.autoBanAfter', { count: configForm.ban_threshold })
-})
-
 const adminMetricItems = computed<AdminMetricItem[]>(() => [
   {
     key: 'blocked',
     label: t('admin.riskControl.adminSummary.blocked24h'),
     value: formatNumber(adminSummary.blocked),
-    meta: t('admin.riskControl.adminSummary.blocked24hHint'),
     icon: 'shield',
     iconClass: 'bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-300',
     cardClass: 'border-rose-100 hover:border-rose-200 dark:border-rose-900/30',
@@ -2850,7 +2911,6 @@ const adminMetricItems = computed<AdminMetricItem[]>(() => [
     key: 'hit',
     label: t('admin.riskControl.adminSummary.hits24h'),
     value: formatNumber(adminSummary.hit),
-    meta: t('admin.riskControl.adminSummary.hits24hHint'),
     icon: 'exclamationTriangle',
     iconClass: 'bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-300',
     cardClass: 'border-amber-100 hover:border-amber-200 dark:border-amber-900/30',
@@ -2859,7 +2919,6 @@ const adminMetricItems = computed<AdminMetricItem[]>(() => [
     key: 'pending',
     label: t('admin.riskControl.adminSummary.pendingReview'),
     value: formatNumber(adminSummary.pending),
-    meta: t('admin.riskControl.adminSummary.pendingReviewHint'),
     icon: 'clock',
     iconClass: 'bg-sky-50 text-sky-600 dark:bg-sky-900/20 dark:text-sky-300',
     cardClass: 'border-sky-100 hover:border-sky-200 dark:border-sky-900/30',
@@ -2868,82 +2927,38 @@ const adminMetricItems = computed<AdminMetricItem[]>(() => [
     key: 'error',
     label: t('admin.riskControl.adminSummary.errors24h'),
     value: formatNumber(adminSummary.error),
-    meta: t('admin.riskControl.adminSummary.errors24hHint'),
     icon: 'exclamationCircle',
     iconClass: 'bg-violet-50 text-violet-600 dark:bg-violet-900/20 dark:text-violet-300',
     cardClass: 'border-violet-100 hover:border-violet-200 dark:border-violet-900/30',
   },
 ])
 
-const adminAttentionItems = computed<AdminAttentionItem[]>(() => {
-  const items: AdminAttentionItem[] = []
-  if (protectionStatusTone.value !== 'strong') {
-    items.push({
-      key: 'protection',
-      title: t('admin.riskControl.adminSummary.protectionAttention'),
-      description: protectionStatusDescription.value,
-      icon: 'exclamationTriangle',
-      iconClass: 'text-rose-500',
-    })
-  }
-  if (adminSummary.pending > 0) {
-    items.push({
-      key: 'pending',
-      title: t('admin.riskControl.adminSummary.pendingAttention', { count: adminSummary.pending }),
-      description: t('admin.riskControl.adminSummary.pendingAttentionHint'),
-      icon: 'clock',
-      iconClass: 'text-sky-500',
-    })
-  }
-  if (adminSummary.error > 0 || pipelineExecutionErrorCount.value > 0) {
-    items.push({
-      key: 'errors',
-      title: t('admin.riskControl.adminSummary.errorAttention', { count: adminSummary.error }),
-      description: t('admin.riskControl.adminSummary.errorAttentionHint'),
-      icon: 'exclamationCircle',
-      iconClass: 'text-violet-500',
-    })
-  }
-  if (adminSummary.blocked > 0) {
-    items.push({
-      key: 'blocked',
-      title: t('admin.riskControl.adminSummary.blockedAttention', { count: adminSummary.blocked }),
-      description: t('admin.riskControl.adminSummary.blockedAttentionHint'),
-      icon: 'exclamationTriangle',
-      iconClass: 'text-amber-500',
-    })
-  }
-  if (items.length === 0) {
-    items.push({
-      key: 'clear',
-      title: t('admin.riskControl.adminSummary.noAttention'),
-      description: t('admin.riskControl.adminSummary.noAttentionHint'),
-      icon: 'checkCircle',
-      iconClass: 'text-emerald-500',
-    })
-  }
-  return items.slice(0, 3)
+const semanticReviewUsage = computed(() => status.value?.semantic_review_usage ?? {
+  available: false,
+  window_hours: 24,
+  total_calls: 0,
+  primary_calls: 0,
+  fallback_calls: 0,
+  other_calls: 0,
+  input_tokens: 0,
+  output_tokens: 0,
+  avg_latency_ms: 0,
 })
 
-const adminAttentionBadge = computed(() => (
-  adminAttentionItems.value[0]?.key === 'clear'
-    ? t('admin.riskControl.adminSummary.normal')
-    : t('admin.riskControl.adminSummary.itemCount', { count: adminAttentionItems.value.length })
+const semanticFallbackRate = computed(() => {
+  if (!semanticReviewUsage.value.available || semanticReviewUsage.value.total_calls <= 0) return '0.0%'
+  return `${(semanticReviewUsage.value.fallback_calls * 100 / semanticReviewUsage.value.total_calls).toFixed(1)}%`
+})
+
+const semanticUsageLatency = computed(() => (
+  semanticReviewUsage.value.available
+    ? `${formatNumber(semanticReviewUsage.value.avg_latency_ms)} ms`
+    : '-'
 ))
 
-const adminAttentionBadgeClass = computed(() => (
-  adminAttentionItems.value[0]?.key === 'clear'
-    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
-    : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
-))
-
-const adminPolicyItems = computed(() => [
-  { label: t('admin.riskControl.adminSummary.policyMode'), value: modeLabel(configForm.mode) },
-  { label: t('admin.riskControl.adminSummary.policyScope'), value: adminScopeSummary.value },
-  { label: t('admin.riskControl.adminSummary.policyRule'), value: t('admin.riskControl.adminSummary.ruleCount', { count: enabledKeywordRuleCount.value + legacyBlockedKeywordCount.value }) },
-  { label: t('admin.riskControl.adminSummary.policyResponse'), value: adminResponseSummary.value },
-  { label: t('admin.riskControl.adminSummary.policyRetention'), value: t('admin.riskControl.adminSummary.retentionDays', { count: configForm.hit_retention_days }) },
-])
+function semanticUsageNumber(value: number): string {
+  return semanticReviewUsage.value.available ? formatNumber(value) : '-'
+}
 
 const adminOperationsSummary = computed(() => {
   const mode = status.value?.mode ?? configForm.mode
@@ -2989,6 +3004,41 @@ const inputDetailText = computed(() => {
   if (evidence.value?.log_id === inputDetailRow.value.id) return evidence.value.payload || '-'
   if (rawRequestBodyLogID.value === inputDetailRow.value.id && rawRequestBody.value) return rawRequestBody.value
   return inputDetailRow.value.input_excerpt || inputDetailRow.value.error || '-'
+})
+
+const semanticReviewOutput = computed<Record<string, unknown> | null>(() => {
+  const row = inputDetailRow.value
+  if (!row || row.decision_source !== 'semantic_review' || !row.error) return null
+  try {
+    const metadata = JSON.parse(row.error) as Record<string, unknown>
+    const output: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(metadata)) {
+      if (key.startsWith('semantic_review_')) output[key.slice('semantic_review_'.length)] = value
+    }
+    return Object.keys(output).length > 0 ? output : null
+  } catch {
+    return null
+  }
+})
+
+const semanticReviewOutputText = computed(() => (
+  semanticReviewOutput.value ? JSON.stringify(semanticReviewOutput.value, null, 2) : '-'
+))
+
+const semanticReviewSummaryItems = computed(() => {
+  const output = semanticReviewOutput.value
+  if (!output) return []
+  const text = (value: unknown) => Array.isArray(value) ? value.join('、') || '-' : String(value ?? '-')
+  return [
+    { label: t('admin.riskControl.modelResponseFields.intent'), value: text(output.intent) },
+    { label: t('admin.riskControl.modelResponseFields.target'), value: text(output.target) },
+    { label: t('admin.riskControl.modelResponseFields.authorization'), value: text(output.authorization) },
+    { label: t('admin.riskControl.modelResponseFields.confidence'), value: typeof output.confidence === 'number' ? percent(output.confidence) : text(output.confidence) },
+    { label: t('admin.riskControl.modelResponseFields.severity'), value: text(output.severity) },
+    { label: t('admin.riskControl.modelResponseFields.categories'), value: text(output.categories) },
+    { label: t('admin.riskControl.modelResponseFields.reasonCodes'), value: text(output.reason_codes) },
+    { label: t('admin.riskControl.modelResponseFields.policyOverride'), value: output.policy_override ? t('common.yes') : t('common.no') },
+  ]
 })
 
 const rawRequestMetaText = computed(() => {
@@ -3147,7 +3197,7 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.semantic_review_fallback_timeout_ms = semanticReview.fallback_timeout_ms || 3000
   configForm.semantic_review_max_attempts_per_model = semanticReview.max_attempts_per_model || 1
   configForm.semantic_review_max_output_tokens = semanticReview.max_output_tokens || 512
-  configForm.semantic_review_reasoning_effort = semanticReview.reasoning_effort === 'minimal' ? 'minimal' : 'low'
+  configForm.semantic_review_reasoning_effort = 'low'
 	promptFilterSourceRevision.value = config.prompt_filter_source_revision || ''
 	promptFilterSourceURL.value = config.prompt_filter_source_url || ''
 	promptFilterSourceAuthor.value = config.prompt_filter_source_author || ''
@@ -3392,6 +3442,7 @@ async function loadLogs() {
       page: pagination.page,
       page_size: pagination.page_size,
       result: filters.result || undefined,
+      decision_source: filters.decision_source || undefined,
       review_status: filters.review_status || undefined,
       group_id: filters.group_id || undefined,
       endpoint: filters.endpoint || undefined,
@@ -3436,8 +3487,22 @@ function applyAdminMetricFilter(key: AdminMetricKey) {
     ? ''
     : formatDateTimeLocalInput(Math.floor(Date.now() / 1000) - 24 * 60 * 60)
   filters.to = ''
+  filters.decision_source = ''
   filters.review_status = key === 'pending' ? 'pending' : ''
   filters.result = key === 'pending' ? '' : key
+  void loadLogs()
+  requestAnimationFrame(() => {
+    document.querySelector('[data-test="risk-records"]')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+  })
+}
+
+function applySemanticReviewFilter() {
+  pagination.page = 1
+  filters.from = formatDateTimeLocalInput(Math.floor(Date.now() / 1000) - 24 * 60 * 60)
+  filters.to = ''
+  filters.result = ''
+  filters.review_status = ''
+  filters.decision_source = 'semantic_review'
   void loadLogs()
   requestAnimationFrame(() => {
     document.querySelector('[data-test="risk-records"]')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })

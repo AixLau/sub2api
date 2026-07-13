@@ -1136,10 +1136,7 @@ func (s *OpenAIGatewayService) ReviewSemanticContent(
 	if maxOutputTokens <= 0 || maxOutputTokens > ContentModerationSemanticReviewMaxOutputTokens {
 		maxOutputTokens = ContentModerationSemanticReviewDefaultOutputTokens
 	}
-	reasoningEffort := strings.ToLower(strings.TrimSpace(input.ReasoningEffort))
-	if reasoningEffort != "minimal" && reasoningEffort != "low" {
-		reasoningEffort = ContentModerationSemanticReviewDefaultReasoning
-	}
+	reasoningEffort := ContentModerationSemanticReviewDefaultReasoning
 	requestBody := map[string]any{
 		"model":             upstreamModel,
 		"instructions":      semanticReviewInstructions,
@@ -1172,7 +1169,10 @@ func (s *OpenAIGatewayService) ReviewSemanticContent(
 	}
 	requestCtx := ctx
 	targetURL := chatgptCodexURL
-	userAgent := ""
+	userAgent := DefaultOpenAICodexUserAgent
+	if s.settingService != nil {
+		userAgent = s.settingService.GetOpenAICodexUserAgent(requestCtx)
+	}
 	if !oauth {
 		baseURL := account.GetOpenAIBaseURL()
 		if baseURL == "" {
@@ -1192,22 +1192,26 @@ func (s *OpenAIGatewayService) ReviewSemanticContent(
 	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", userAgent)
 	if oauth {
 		req.Host = "chatgpt.com"
 		req.Header.Set("Accept", "text/event-stream")
 		req.Header.Set("OpenAI-Beta", "responses=experimental")
 		req.Header.Set("Originator", "codex-tui")
 		req.Header.Set("Version", codexCLIVersion)
-		userAgent = resolveOpenAICodexUpstreamUserAgent(requestCtx, credentialAccount, s.settingService)
-		req.Header.Set("User-Agent", userAgent)
 		if err := resolveAndSetOpenAIChatGPTAccountHeaders(requestCtx, s.accountRepo, req.Header, account); err != nil {
 			return ContentModerationSemanticReviewResult{}, &ContentModerationSemanticReviewUpstreamError{Code: "account_headers", Message: err.Error(), Retryable: true}
 		}
-		enforceCodexIdentityHeaders(req.Header)
 	} else {
 		req.Header.Set("Accept", "application/json")
 	}
 	credentialAccount.ApplyHeaderOverrides(req.Header)
+	// Content moderation is a system request: its identity follows the global
+	// User-Agent setting and cannot be replaced by account-level overrides.
+	req.Header.Set("User-Agent", userAgent)
+	if oauth {
+		enforceCodexIdentityHeaders(req.Header)
+	}
 	proxyURL := ""
 	if credentialAccount.Proxy != nil {
 		proxyURL = credentialAccount.Proxy.URL()

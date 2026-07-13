@@ -22,6 +22,13 @@ func TestBuildContentModerationLogWhere_BlockedIncludesAllBlockActions(t *testin
 	require.NotContains(t, sql, "l.action = 'block'")
 }
 
+func TestBuildContentModerationLogWhere_FiltersDecisionSource(t *testing.T) {
+	where, args := buildContentModerationLogWhere(service.ContentModerationLogFilter{DecisionSource: "semantic_review"})
+
+	require.Equal(t, []any{"semantic_review"}, args)
+	require.Contains(t, strings.Join(where, " AND "), "l.decision_source = $1")
+}
+
 func TestBuildContentModerationLogWhere_SearchIncludesKeywordMetadata(t *testing.T) {
 	where, args := buildContentModerationLogWhere(service.ContentModerationLogFilter{Search: "privacy"})
 
@@ -272,5 +279,30 @@ func TestContentModerationRepositoryListLogsIncludesRawRequestMetadata(t *testin
 	require.Equal(t, int64(77), *items[0].AccountID)
 	require.Equal(t, "oauth-primary", items[0].AccountName)
 	require.Equal(t, service.AccountTypeOAuth, items[0].AccountType)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestContentModerationRepositorySemanticReviewUsageStats(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := &contentModerationRepository{db: db}
+	since := time.Now().UTC().Add(-24 * time.Hour)
+	mock.ExpectQuery(`(?s)SELECT\s+COUNT\(\*\).*FROM usage_logs.*source = 'content_moderation'`).
+		WithArgs(since, service.ContentModerationSemanticReviewPrimaryModel, service.ContentModerationSemanticReviewFallbackModel).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"total_calls", "primary_calls", "fallback_calls", "other_calls", "input_tokens", "output_tokens", "avg_latency_ms",
+		}).AddRow(12, 9, 3, 0, 4800, 600, 742))
+
+	stats, err := repo.GetSemanticReviewUsageStats(context.Background(), since)
+	require.NoError(t, err)
+	require.True(t, stats.Available)
+	require.Equal(t, int64(12), stats.TotalCalls)
+	require.Equal(t, int64(9), stats.PrimaryCalls)
+	require.Equal(t, int64(3), stats.FallbackCalls)
+	require.Equal(t, int64(4800), stats.InputTokens)
+	require.Equal(t, int64(600), stats.OutputTokens)
+	require.Equal(t, int64(742), stats.AvgLatencyMS)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

@@ -153,6 +153,14 @@ func TestNormalizeContentModerationSemanticReviewConfigAppliesBoundedInferenceDe
 	require.Equal(t, ContentModerationSemanticReviewDefaultReasoning, cfg.ReasoningEffort)
 }
 
+func TestNormalizeContentModerationSemanticReviewConfigForcesLowReasoning(t *testing.T) {
+	cfg := normalizeContentModerationSemanticReviewConfig(ContentModerationSemanticReviewConfig{
+		ReasoningEffort: "minimal",
+	})
+
+	require.Equal(t, "low", cfg.ReasoningEffort)
+}
+
 func TestNormalizeContentModerationSemanticReviewConfigPreservesExplicitTwentySecondBudget(t *testing.T) {
 	cfg := normalizeContentModerationSemanticReviewConfig(ContentModerationSemanticReviewConfig{
 		TimeoutMS:           ContentModerationSemanticReviewLegacyTimeoutMS,
@@ -418,7 +426,11 @@ func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
 			"usage":{"input_tokens":44,"output_tokens":5}
 		}`)),
 	}}
-	svc := &OpenAIGatewayService{httpUpstream: upstream, cfg: &config.Config{}}
+	svc := &OpenAIGatewayService{
+		httpUpstream:   upstream,
+		cfg:            &config.Config{},
+		settingService: newOpenAICodexUASettingService("codex_vscode/9.9.9"),
+	}
 	account := &Account{
 		ID:       51,
 		Platform: PlatformOpenAI,
@@ -429,7 +441,7 @@ func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
 		},
 	}
 
-	result, err := svc.ReviewSemanticContent(context.Background(), account, "gpt-5.4-mini", ContentModerationSemanticReviewInput{Text: "candidate"})
+	result, err := svc.ReviewSemanticContent(context.Background(), account, "gpt-5.4-mini", ContentModerationSemanticReviewInput{Text: "candidate", ReasoningEffort: "minimal"})
 
 	require.NoError(t, err)
 	require.Equal(t, "allow", result.Verdict)
@@ -439,6 +451,7 @@ func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
 	require.NotNil(t, upstream.lastReq)
 	require.Equal(t, openaiPlatformAPIURL, upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer semantic-api-key", upstream.lastReq.Header.Get("Authorization"))
+	require.Equal(t, "codex_vscode/9.9.9", upstream.lastReq.Header.Get("User-Agent"))
 	var requestBody map[string]any
 	require.NoError(t, json.Unmarshal(upstream.lastBody, &requestBody))
 	require.Equal(t, "gpt-5.4-mini-upstream", requestBody["model"])

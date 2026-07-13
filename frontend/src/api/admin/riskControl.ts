@@ -52,7 +52,7 @@ export interface ContentModerationSemanticReviewConfig {
   max_attempts_per_model: number
   max_input_runes: number
   max_output_tokens: number
-  reasoning_effort: 'minimal' | 'low'
+  reasoning_effort: 'low'
 }
 
 export interface ContentModerationConfig {
@@ -306,6 +306,19 @@ export interface ContentModerationRuntimeStatus {
   last_cleanup_at?: string
   last_cleanup_deleted_hit: number
   last_cleanup_deleted_non_hit: number
+  semantic_review_usage?: ContentModerationSemanticReviewUsageStats
+}
+
+export interface ContentModerationSemanticReviewUsageStats {
+  available: boolean
+  window_hours: number
+  total_calls: number
+  primary_calls: number
+  fallback_calls: number
+  other_calls: number
+  input_tokens: number
+  output_tokens: number
+  avg_latency_ms: number
 }
 
 export interface ContentModerationBuildStatus {
@@ -535,6 +548,7 @@ export interface ListContentModerationLogsParams {
   page?: number
   page_size?: number
   result?: string
+  decision_source?: string
   review_status?: string
   group_id?: number
   endpoint?: string

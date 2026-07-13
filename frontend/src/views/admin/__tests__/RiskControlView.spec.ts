@@ -351,6 +351,51 @@ describe('admin RiskControlView', () => {
     expect(wrapper.text()).not.toContain('admin.riskControl.protectionExternalNotConfigured')
   })
 
+  it('shows semantic reviewer calls and filters platform review records', async () => {
+    getStatus.mockResolvedValue({
+      ...runtimeStatus(),
+      semantic_review_usage: {
+        available: true,
+        window_hours: 24,
+        total_calls: 12,
+        primary_calls: 9,
+        fallback_calls: 3,
+        other_calls: 0,
+        input_tokens: 4800,
+        output_tokens: 600,
+        avg_latency_ms: 742,
+      },
+    })
+
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+    await flushPromises()
+
+    const usage = wrapper.get('[data-test="semantic-review-usage"]')
+    expect(usage.text()).toContain('12')
+    expect(usage.text()).toContain('gpt-5.3-codex-spark')
+    expect(usage.text()).toContain('gpt-5.4-mini')
+    expect(usage.text()).toContain('742 ms')
+
+    await findButtonByText(wrapper, 'admin.riskControl.semanticUsage.viewRecords').trigger('click')
+    await flushPromises()
+    expect(listLogs).toHaveBeenLastCalledWith(expect.objectContaining({
+      decision_source: 'semantic_review',
+      from: expect.any(String),
+    }))
+  })
+
   it('shows actionable admin risk totals and filters records from a metric', async () => {
     listLogs.mockImplementation(async (params: Record<string, unknown>) => {
       let total = 0
@@ -390,6 +435,56 @@ describe('admin RiskControlView', () => {
       result: 'blocked',
       from: expect.any(String),
     }))
+  })
+
+  it('shows normalized semantic reviewer output in record details', async () => {
+    listLogs.mockResolvedValue({
+      items: [{
+        id: 91,
+        created_at: '2026-07-14T01:00:54Z',
+        user_email: 'admin@example.com',
+        action: 'semantic_review_allow',
+        flagged: false,
+        highest_category: 'benign_task_generation_guidance',
+        highest_score: 0.99,
+        input_excerpt: 'semantic excerpt',
+        decision_source: 'semantic_review',
+        moderation_provider: 'platform_openai',
+        moderation_model: 'gpt-5.3-codex-spark',
+        error: JSON.stringify({
+          semantic_review_verdict: 'allow',
+          semantic_review_intent: 'benign',
+          semantic_review_confidence: 0.99,
+          semantic_review_categories: ['benign_task_generation_guidance'],
+        }),
+      }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'semantic excerpt').trigger('click')
+
+    expect(wrapper.text()).toContain('admin.riskControl.modelResponse')
+    expect(wrapper.text()).toContain('admin.riskControl.modelResponseFields.intent')
+    expect(wrapper.text()).toContain('benign')
+    expect(wrapper.text()).toContain('99.0%')
   })
 
   it('renders keyword metadata in records and input detail', async () => {

@@ -21,6 +21,37 @@ func NewContentModerationRepository(db *sql.DB) service.ContentModerationReposit
 	return &contentModerationRepository{db: db}
 }
 
+func (r *contentModerationRepository) GetSemanticReviewUsageStats(ctx context.Context, since time.Time) (*service.ContentModerationSemanticReviewUsageStats, error) {
+	stats := &service.ContentModerationSemanticReviewUsageStats{WindowHours: 24}
+	if err := r.db.QueryRowContext(ctx, `
+SELECT
+    COUNT(*),
+    COUNT(*) FILTER (WHERE model = $2),
+    COUNT(*) FILTER (WHERE model = $3),
+    COUNT(*) FILTER (WHERE model NOT IN ($2, $3)),
+    COALESCE(SUM(input_tokens + cache_creation_tokens + cache_read_tokens), 0),
+    COALESCE(SUM(output_tokens), 0),
+    COALESCE(ROUND(AVG(duration_ms)), 0)::BIGINT
+FROM usage_logs
+WHERE source = 'content_moderation' AND created_at >= $1`,
+		since,
+		service.ContentModerationSemanticReviewPrimaryModel,
+		service.ContentModerationSemanticReviewFallbackModel,
+	).Scan(
+		&stats.TotalCalls,
+		&stats.PrimaryCalls,
+		&stats.FallbackCalls,
+		&stats.OtherCalls,
+		&stats.InputTokens,
+		&stats.OutputTokens,
+		&stats.AvgLatencyMS,
+	); err != nil {
+		return nil, fmt.Errorf("get semantic review usage stats: %w", err)
+	}
+	stats.Available = true
+	return stats, nil
+}
+
 func (r *contentModerationRepository) CreateLog(ctx context.Context, log *service.ContentModerationLog) error {
 	if log == nil {
 		return nil
@@ -700,6 +731,9 @@ func buildContentModerationLogWhere(filter service.ContentModerationLogFilter) (
 		where = append(where, "l.flagged = FALSE AND l.error = ''")
 	case "error":
 		where = append(where, "l.error <> ''")
+	}
+	if decisionSource := strings.TrimSpace(filter.DecisionSource); decisionSource != "" {
+		add("l.decision_source = $%d", decisionSource)
 	}
 	if reviewStatus := strings.TrimSpace(filter.ReviewStatus); reviewStatus != "" {
 		add("l.review_status = $%d", reviewStatus)

@@ -775,6 +775,7 @@ type ContentModerationRawRequestView struct {
 type ContentModerationLogFilter struct {
 	Pagination         pagination.PaginationParams
 	Result             string
+	DecisionSource     string
 	ReviewStatus       string
 	GroupID            *int64
 	Endpoint           string
@@ -952,6 +953,23 @@ type ContentModerationRuntimeStatus struct {
 	LastCleanupDeletedHit        int64                                      `json:"last_cleanup_deleted_hit"`
 	LastCleanupDeletedNonHit     int64                                      `json:"last_cleanup_deleted_non_hit"`
 	Outbox                       ContentModerationOutboxStatus              `json:"outbox"`
+	SemanticReviewUsage          ContentModerationSemanticReviewUsageStats  `json:"semantic_review_usage"`
+}
+
+type ContentModerationSemanticReviewUsageStats struct {
+	Available     bool  `json:"available"`
+	WindowHours   int   `json:"window_hours"`
+	TotalCalls    int64 `json:"total_calls"`
+	PrimaryCalls  int64 `json:"primary_calls"`
+	FallbackCalls int64 `json:"fallback_calls"`
+	OtherCalls    int64 `json:"other_calls"`
+	InputTokens   int64 `json:"input_tokens"`
+	OutputTokens  int64 `json:"output_tokens"`
+	AvgLatencyMS  int64 `json:"avg_latency_ms"`
+}
+
+type ContentModerationSemanticReviewUsageStatsRepository interface {
+	GetSemanticReviewUsageStats(ctx context.Context, since time.Time) (*ContentModerationSemanticReviewUsageStats, error)
 }
 
 type ContentModerationUnbanUserResult struct {
@@ -3375,6 +3393,16 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 	pipelineCoverage := contentModerationPipelineCoverageStatusFromEntries(coverageEntries)
 	pipelineExecution := moderationcoverage.PipelineExecutionObserverSnapshot()
 	outboxStatus := s.contentModerationOutboxStatus(ctx)
+	semanticUsage := ContentModerationSemanticReviewUsageStats{WindowHours: 24}
+	if statsRepo, ok := s.repo.(ContentModerationSemanticReviewUsageStatsRepository); ok {
+		if stats, statsErr := statsRepo.GetSemanticReviewUsageStats(ctx, time.Now().UTC().Add(-24*time.Hour)); statsErr != nil {
+			slog.Warn("content_moderation.semantic_usage_stats_failed", "error", statsErr)
+		} else if stats != nil {
+			semanticUsage = *stats
+			semanticUsage.Available = true
+			semanticUsage.WindowHours = 24
+		}
+	}
 	return &ContentModerationRuntimeStatus{
 		Build:                        s.buildStatus(),
 		SecurityBaseline:             s.contentModerationSecurityBaselineStatus(),
@@ -3427,6 +3455,7 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 		LastCleanupDeletedHit:        s.lastCleanupDeletedHit.Load(),
 		LastCleanupDeletedNonHit:     s.lastCleanupDeletedNonHit.Load(),
 		Outbox:                       outboxStatus,
+		SemanticReviewUsage:          semanticUsage,
 	}, nil
 }
 
@@ -5488,12 +5517,10 @@ func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanti
 	if cfg.MaxOutputTokens > ContentModerationSemanticReviewMaxOutputTokens {
 		cfg.MaxOutputTokens = ContentModerationSemanticReviewMaxOutputTokens
 	}
-	switch strings.ToLower(strings.TrimSpace(cfg.ReasoningEffort)) {
-	case "minimal", "low":
-		cfg.ReasoningEffort = strings.ToLower(strings.TrimSpace(cfg.ReasoningEffort))
-	default:
-		cfg.ReasoningEffort = ContentModerationSemanticReviewDefaultReasoning
-	}
+	// The built-in semantic reviewers use a fixed low reasoning budget. Keeping
+	// this invariant server-side prevents stale settings from changing the
+	// latency and cost profile of content moderation.
+	cfg.ReasoningEffort = ContentModerationSemanticReviewDefaultReasoning
 	return cfg
 }
 
