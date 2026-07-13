@@ -835,14 +835,14 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 	}
 	if err != nil {
 		fields := append(openAIAccountScheduleDecisionLogFields(scheduleDecision),
-			zap.Error(err),
+			zap.Error(openAICompatibleSelectionErrorForLog(err, s.RequestPlatform)),
 			zap.Int("excluded_account_count", len(failedAccountIDs)),
 		)
 		reqLog.Warn(logPrefix+".account_select_failed", fields...)
-		return s.handleOpenAIHTTPRoutingSelectionError(c, err, len(failedAccountIDs) == 0, displayModel)
+		return s.handleOpenAIHTTPRoutingSelectionError(c, err, len(failedAccountIDs) == 0, s.RequestedModel, displayModel)
 	}
 	if selection == nil || selection.Account == nil {
-		s.handleOpenAIHTTPRoutingNoAccount(c, displayModel)
+		s.handleOpenAIHTTPRoutingNoAccount(c, s.RequestedModel, displayModel)
 		return ExecutableStageResult{Stop: true}
 	}
 	if s.PreviousResponseID != "" {
@@ -925,14 +925,14 @@ func openAIAccountScheduleDecisionLogFields(decision service.OpenAIAccountSchedu
 	}
 }
 
-func (s OpenAIHTTPRoutingStage) handleOpenAIHTTPRoutingSelectionError(c *gin.Context, err error, firstAttempt bool, displayModel string) ExecutableStageResult {
+func (s OpenAIHTTPRoutingStage) handleOpenAIHTTPRoutingSelectionError(c *gin.Context, err error, firstAttempt bool, requestedModel, displayModel string) ExecutableStageResult {
 	if firstAttempt {
 		if errors.Is(err, service.ErrNoAvailableCompactAccounts) {
 			markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 			s.writeOpenAIHTTPRoutingError(c, http.StatusServiceUnavailable, "compact_not_supported", "No available OpenAI accounts support /responses/compact")
 			return ExecutableStageResult{Stop: true, Err: err}
 		}
-		cls := classifyNoAccountErrorFromGin(c, s.Handler.gatewayService, s.APIKey, displayModel, displayModel, service.PlatformOpenAI)
+		cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, s.Handler.gatewayService, s.APIKey, requestedModel, displayModel)
 		if !cls.ModelNotFound {
 			markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 		}
@@ -947,8 +947,8 @@ func (s OpenAIHTTPRoutingStage) handleOpenAIHTTPRoutingSelectionError(c *gin.Con
 	return ExecutableStageResult{Stop: true, Err: err}
 }
 
-func (s OpenAIHTTPRoutingStage) handleOpenAIHTTPRoutingNoAccount(c *gin.Context, displayModel string) {
-	cls := classifyNoAccountErrorFromGin(c, s.Handler.gatewayService, s.APIKey, displayModel, displayModel, service.PlatformOpenAI)
+func (s OpenAIHTTPRoutingStage) handleOpenAIHTTPRoutingNoAccount(c *gin.Context, requestedModel, displayModel string) {
+	cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, s.Handler.gatewayService, s.APIKey, requestedModel, displayModel)
 	if !cls.ModelNotFound {
 		markOpsRoutingCapacityLimited(c)
 	}
@@ -1145,6 +1145,7 @@ const (
 	OpenAIHTTPForwardMessages        OpenAIHTTPForwardKind = "messages"
 	OpenAIHTTPForwardImages          OpenAIHTTPForwardKind = "images"
 	OpenAIHTTPForwardEmbeddings      OpenAIHTTPForwardKind = "embeddings"
+	OpenAIHTTPForwardAlphaSearch     OpenAIHTTPForwardKind = "alpha_search"
 )
 
 type OpenAIHTTPForwardStage struct {
@@ -1194,6 +1195,8 @@ func (s OpenAIHTTPForwardStage) RunForward(c *gin.Context) ExecutableStageResult
 		result, err = s.GatewayService.ForwardImages(ctx, c, s.Account, s.Body, s.ParsedImagesRequest, s.ChannelMappedModel)
 	case OpenAIHTTPForwardEmbeddings:
 		result, err = s.GatewayService.ForwardEmbeddings(ctx, c, s.Account, s.Body, s.DefaultMappedModel)
+	case OpenAIHTTPForwardAlphaSearch:
+		result, err = s.GatewayService.ForwardAlphaSearch(ctx, c, s.Account, s.Body)
 	default:
 		result, err = s.GatewayService.Forward(ctx, c, s.Account, s.Body)
 	}
@@ -1584,7 +1587,7 @@ func (s OpenAIWebSocketRoutingStage) RunRouting(c *gin.Context) ExecutableStageR
 		s.SubjectUserID,
 	)
 	if err != nil {
-		reqLog.Warn("openai.websocket_account_select_failed", zap.Error(err), zap.Int("excluded_account_count", len(failedAccountIDs)))
+		reqLog.Warn("openai.websocket_account_select_failed", zap.Error(openAICompatibleSelectionErrorForLog(err, s.RequestPlatform)), zap.Int("excluded_account_count", len(failedAccountIDs)))
 		s.closeOpenAIWebSocketRoutingNoAccount(err)
 		return ExecutableStageResult{Stop: true, Err: err}
 	}
@@ -1805,7 +1808,7 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 	}
 	h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account.ID, scheduleSuccess, s.Result.FirstTokenMs)
 	inboundEndpoint := GetInboundEndpoint(c)
-	upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, s.Account)
+	upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, s.Account, s.Result)
 	cyberBlocked := service.GetOpsCyberPolicy(c) != nil
 	quotaPlatform := s.QuotaPlatform
 	if quotaPlatform == "" {

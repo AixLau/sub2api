@@ -1002,7 +1002,7 @@ func TestOpenAIHTTPModerationStageRunsBeforeCyberStage(t *testing.T) {
 func TestOpenAIHTTPHandlersUseUnifiedPreForwardPipeline(t *testing.T) {
 	stageCoverage := openAIHTTPStageCoverageFromHandlerSources(t)
 
-	for _, handlerName := range []string{"OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.Embeddings", "OpenAIGatewayHandler.Messages"} {
+	for _, handlerName := range []string{"OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.AlphaSearch", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.Embeddings", "OpenAIGatewayHandler.Messages"} {
 		coverage, ok := stageCoverage[handlerName]
 		require.True(t, ok, "OpenAI HTTP handler %s should be present in source coverage scan", handlerName)
 		require.True(t, coverage.HasHTTPPreForwardPipeline,
@@ -1028,6 +1028,8 @@ func TestOpenAIHTTPModeratedRouteRegistrarExposesPipelineStages(t *testing.T) {
 	entries := openAIHTTPPipelineEntriesFromRegistrar(GatewayModeratedRouteCoverageEntries())
 
 	require.Equal(t, []string{
+		"POST /alpha/search",
+		"POST /backend-api/codex/alpha/search",
 		"POST /backend-api/codex/responses",
 		"POST /backend-api/codex/responses/*subpath",
 		"POST /chat/completions",
@@ -1036,6 +1038,7 @@ func TestOpenAIHTTPModeratedRouteRegistrarExposesPipelineStages(t *testing.T) {
 		"POST /images/generations",
 		"POST /responses",
 		"POST /responses/*subpath",
+		"POST /v1/alpha/search",
 		"POST /v1/chat/completions",
 		"POST /v1/embeddings",
 		"POST /v1/images/edits",
@@ -1061,7 +1064,7 @@ func TestOpenAIHTTPModeratedRouteRegistrarExposesPipelineStages(t *testing.T) {
 		case "OpenAIGatewayHandler.ChatCompletions":
 			requireStageRequiredAndCovered(t, entry, moderationcoverage.StageCyber)
 			requireStageNotRequired(t, entry, moderationcoverage.StageImage)
-		case "OpenAIGatewayHandler.Responses":
+		case "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.AlphaSearch":
 			requireStageRequiredAndCovered(t, entry, moderationcoverage.StageCyber)
 			requireStageRequiredAndCovered(t, entry, moderationcoverage.StageImage)
 		case "OpenAIGatewayHandler.Images":
@@ -1237,7 +1240,7 @@ func postRouteCanReachUpstreamContent(path string) bool {
 		return false
 	}
 	switch path {
-	case "/responses", "/responses/*subpath",
+	case "/responses", "/responses/*subpath", "/alpha/search",
 		"/chat/completions",
 		"/embeddings",
 		"/images/generations", "/images/edits",
@@ -1505,6 +1508,7 @@ func openAIHTTPStageCoverageFromHandlerSources(t *testing.T) map[string]openAIHT
 	repoRoot := repoRootFromTestFile(t)
 	handlerDir := filepath.Join(repoRoot, "backend", "internal", "handler")
 	files := []string{
+		filepath.Join(handlerDir, "openai_alpha_search.go"),
 		filepath.Join(handlerDir, "openai_chat_completions.go"),
 		filepath.Join(handlerDir, "openai_embeddings.go"),
 		filepath.Join(handlerDir, "openai_gateway_handler.go"),
@@ -1651,6 +1655,15 @@ func mergeOpenAIHTTPGatewayEntrypointStageCoverage(t *testing.T, coverageByHandl
 			coverage.ModerationLocations = append(coverage.ModerationLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
 			coverage.CyberLocations = append(coverage.CyberLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
 			coverageByHandler["OpenAIGatewayHandler.Responses"] = coverage
+			alphaCoverage := coverageByHandler["OpenAIGatewayHandler.AlphaSearch"]
+			alphaCoverage.Protocol = protocol
+			alphaCoverage.HasHTTPPreForwardPipeline = true
+			alphaCoverage.HasModerationStage = true
+			alphaCoverage.HasCyberStage = true
+			alphaCoverage.HasImageStage = true
+			alphaCoverage.ModerationLocations = append(alphaCoverage.ModerationLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
+			alphaCoverage.CyberLocations = append(alphaCoverage.CyberLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
+			coverageByHandler["OpenAIGatewayHandler.AlphaSearch"] = alphaCoverage
 		case "openai_images":
 			coverage := coverageByHandler["OpenAIGatewayHandler.Images"]
 			coverage.Protocol = protocol
@@ -1699,7 +1712,7 @@ func gatewayPreForwardHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) 
 
 func openAIHTTPHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
 	switch fn.Name.Name {
-	case "ChatCompletions", "Responses", "Images", "GrokVideoGeneration", "Embeddings", "Messages":
+	case "ChatCompletions", "Responses", "AlphaSearch", "Images", "GrokVideoGeneration", "Embeddings", "Messages":
 	default:
 		return "", false
 	}
@@ -1714,7 +1727,7 @@ func openAIHTTPHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
 
 func isOpenAIHTTPModeratedHandler(handler string) bool {
 	switch strings.TrimSpace(handler) {
-	case "OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Messages", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.Embeddings":
+	case "OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Messages", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.AlphaSearch", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.Embeddings":
 		return true
 	default:
 		return false

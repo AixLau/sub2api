@@ -102,6 +102,36 @@ func TestGatewayModerationCoverageManifestMatchesRegisteredUpstreamRoutes(t *tes
 		"covered moderation manifest routes must have explicit critical-route test proof")
 }
 
+func TestGatewayRoutesOpenAIAlphaSearchPathsAreRegistered(t *testing.T) {
+	router := newGatewayRoutesTestRouter()
+	registered := make(map[string]bool)
+	for _, route := range router.Routes() {
+		if route.Method == http.MethodPost {
+			registered[route.Path] = true
+		}
+	}
+
+	for _, path := range []string{
+		"/v1/alpha/search",
+		"/alpha/search",
+		"/backend-api/codex/alpha/search",
+	} {
+		require.True(t, registered[path], "POST %s should be registered", path)
+	}
+}
+
+func TestGatewayRoutesAlphaSearchRejectsNonOpenAIGroup(t *testing.T) {
+	router := newGatewayRoutesTestRouter(service.PlatformGrok)
+	req := httptest.NewRequest(http.MethodPost, "/v1/alpha/search", strings.NewReader(`{"model":"gpt-5.6-sol"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusNotFound, w.Code)
+	require.Contains(t, w.Body.String(), "only available for OpenAI groups")
+}
+
 func TestGatewayRoutesOpenAIImagesPathsAreRegistered(t *testing.T) {
 	router := newGatewayRoutesTestRouter()
 
@@ -268,7 +298,7 @@ func gatewayPostRouteCanCarryUpstreamUserContent(path string) bool {
 		return false
 	}
 	switch path {
-	case "/responses", "/responses/*subpath",
+	case "/responses", "/responses/*subpath", "/alpha/search",
 		"/chat/completions",
 		"/embeddings",
 		"/images/generations", "/images/edits",
@@ -308,12 +338,15 @@ func gatewayModerationCriticalRouteCoverageProofRoutes() []string {
 		"POST /chat/completions":                       {},
 		"POST /v1/responses":                           {},
 		"POST /v1/responses/*subpath":                  {},
+		"POST /v1/alpha/search":                        {},
 		"POST /responses":                              {},
 		"POST /responses/*subpath":                     {},
+		"POST /alpha/search":                           {},
 		"GET /v1/responses":                            {},
 		"GET /responses":                               {},
 		"POST /backend-api/codex/responses":            {},
 		"POST /backend-api/codex/responses/*subpath":   {},
+		"POST /backend-api/codex/alpha/search":         {},
 		"GET /backend-api/codex/responses":             {},
 		"POST /v1/embeddings":                          {},
 		"POST /embeddings":                             {},

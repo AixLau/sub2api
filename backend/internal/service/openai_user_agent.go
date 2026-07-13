@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
 
 // resolveOpenAICodexUpstreamUserAgent returns the User-Agent used for Codex
@@ -18,6 +20,26 @@ func resolveOpenAICodexUpstreamUserAgent(ctx context.Context, account *Account, 
 		if systemUA := strings.TrimSpace(settingService.GetOpenAICodexUserAgent(ctx)); systemUA != "" {
 			return systemUA
 		}
+	}
+	return DefaultOpenAICodexUserAgent
+}
+
+// Messages bridge requests preserve a valid official client identity when no
+// account or system override is configured. Explicit local configuration keeps
+// priority over the inbound client identity.
+func resolveOpenAIMessagesBridgeUserAgent(ctx context.Context, account *Account, settingService *SettingService, clientUserAgent string) string {
+	if account != nil {
+		if customUA := strings.TrimSpace(account.GetOpenAIUserAgent()); customUA != "" {
+			return customUA
+		}
+	}
+	if settingService != nil {
+		if systemUA := strings.TrimSpace(settingService.GetOpenAICodexUserAgent(ctx)); systemUA != "" {
+			return systemUA
+		}
+	}
+	if _, pairedUA, ok := openai.PairCodexClientIdentity(clientUserAgent); ok {
+		return pairedUA
 	}
 	return DefaultOpenAICodexUserAgent
 }

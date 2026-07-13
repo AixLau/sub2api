@@ -442,7 +442,7 @@ func OpenAIHTTPPipelineStagesForRoute(handlerName, protocol string) []PipelineSt
 		stages = append(stages, CoveredPipelineStage(StageCyber))
 	case "OpenAIGatewayHandler.Messages":
 		stages = append(stages, CoveredPipelineStage(StageCyber))
-	case "OpenAIGatewayHandler.Responses":
+	case "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.AlphaSearch":
 		stages = append(stages,
 			CoveredPipelineStage(StageCyber),
 			CoveredPipelineStage(StageImage),
@@ -602,6 +602,7 @@ func StageAdapterDescriptorsForRoute(handlerName, protocol string) []RouteAdapte
 	case "OpenAIGatewayHandler.ChatCompletions",
 		"OpenAIGatewayHandler.Messages",
 		"OpenAIGatewayHandler.Responses",
+		"OpenAIGatewayHandler.AlphaSearch",
 		"OpenAIGatewayHandler.Images",
 		"OpenAIGatewayHandler.GrokVideoGeneration",
 		"OpenAIGatewayHandler.Embeddings":

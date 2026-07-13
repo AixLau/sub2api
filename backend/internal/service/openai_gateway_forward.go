@@ -49,7 +49,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	originalModel := reqModel
 
 	if account.Platform == PlatformGrok {
-		_ = promptCacheKey
 		return s.forwardGrokResponses(ctx, c, account, body, originalModel, reqStream, startTime)
 	}
 
@@ -895,8 +894,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 			}
 		}
 	}
+	compatMessagesBridge := false
 	if account.Type == AccountTypeOAuth {
-		compatMessagesBridge := isOpenAICompatMessagesBridgeContext(c) || isOpenAICompatMessagesBridgeBody(body)
+		compatMessagesBridge = isOpenAICompatMessagesBridgeContext(c) || isOpenAICompatMessagesBridgeBody(body)
 		// 清除客户端透传的 session 头，后续用隔离后的值重新设置，防止跨用户会话碰撞。
 		clientConversationID := strings.TrimSpace(req.Header.Get("conversation_id"))
 		req.Header.Del("conversation_id")
@@ -943,7 +943,11 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// applies the same policy to other OpenAI account types. Account-level
 	// configuration remains higher priority than the global system setting.
 	if account.Type == AccountTypeOAuth || (s.cfg != nil && s.cfg.Gateway.ForceCodexCLI) {
-		req.Header.Set("user-agent", resolveOpenAICodexUpstreamUserAgent(ctx, account, s.settingService))
+		userAgent := resolveOpenAICodexUpstreamUserAgent(ctx, account, s.settingService)
+		if compatMessagesBridge {
+			userAgent = resolveOpenAIMessagesBridgeUserAgent(ctx, account, s.settingService, c.GetHeader("User-Agent"))
+		}
+		req.Header.Set("user-agent", userAgent)
 	}
 
 	// 终态收口：originator 必须与最终 User-Agent 首段配套且为官方身份，否则上游 404（issue #3901）。

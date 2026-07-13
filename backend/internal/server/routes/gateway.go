@@ -208,6 +208,12 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.Responses(c)
 		})
+		moderatedGateway.POST("/alpha/search", coveredOpenAIHTTPRoute(
+			"/v1/alpha/search",
+			"OpenAIGatewayHandler.AlphaSearch",
+			service.ContentModerationProtocolOpenAIResponses,
+			"Codex standalone search input is moderated before account selection and upstream forwarding.",
+		), h.OpenAIGateway.AlphaSearch)
 		moderatedGateway.GET("/responses", coveredOpenAIWebSocketRoute(
 			"/v1/responses",
 			"OpenAIGatewayHandler.ResponsesWebSocket",
@@ -425,6 +431,12 @@ func RegisterGatewayRoutes(
 		service.ContentModerationProtocolOpenAIResponses,
 		"Root Responses subpath alias for non-OpenAI groups uses the shared Gateway pre-forward pipeline before upstream forwarding.",
 	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, responsesSubpathHandler)
+	moderatedRoot.POST("/alpha/search", coveredOpenAIHTTPRoute(
+		"/alpha/search",
+		"OpenAIGatewayHandler.AlphaSearch",
+		service.ContentModerationProtocolOpenAIResponses,
+		"Root Codex standalone search input is moderated before account selection and upstream forwarding.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.OpenAIGateway.AlphaSearch)
 	moderatedRoot.GET("/responses", coveredOpenAIWebSocketRoute(
 		"/responses",
 		"OpenAIGatewayHandler.ResponsesWebSocket",
@@ -485,6 +497,12 @@ func RegisterGatewayRoutes(
 			service.ContentModerationProtocolOpenAIResponses,
 			"Codex direct Responses subpaths for non-OpenAI groups use the shared Gateway pre-forward pipeline before upstream forwarding.",
 		), codexResponsesSubpathHandler)
+		moderatedCodexDirect.POST("/alpha/search", coveredOpenAIHTTPRoute(
+			"/backend-api/codex/alpha/search",
+			"OpenAIGatewayHandler.AlphaSearch",
+			service.ContentModerationProtocolOpenAIResponses,
+			"Codex direct standalone search input is moderated before account selection and upstream forwarding.",
+		), h.OpenAIGateway.AlphaSearch)
 		moderatedCodexDirect.GET("/responses", coveredOpenAIWebSocketRoute(
 			"/backend-api/codex/responses",
 			"OpenAIGatewayHandler.ResponsesWebSocket",

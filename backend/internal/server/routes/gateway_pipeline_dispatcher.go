@@ -141,6 +141,8 @@ func openAIHTTPAdmissionSupported(platform string, meta ModeratedRouteMeta) bool
 			return protocol == service.ContentModerationProtocolOpenAIMessages
 		case "OpenAIGatewayHandler.Responses":
 			return protocol == service.ContentModerationProtocolOpenAIResponses
+		case "OpenAIGatewayHandler.AlphaSearch":
+			return protocol == service.ContentModerationProtocolOpenAIResponses
 		case "OpenAIGatewayHandler.Images":
 			return protocol == service.ContentModerationProtocolOpenAIImages
 		case "OpenAIGatewayHandler.Embeddings":

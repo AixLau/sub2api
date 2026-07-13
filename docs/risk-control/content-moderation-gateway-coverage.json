@@ -1,7 +1,85 @@
 {
   "schema_version": 1,
-  "manifest_version": "2026-06-29.11",
+  "manifest_version": "2026-07-13.12",
   "entries": [
+    {
+      "route": {
+        "method": "POST",
+        "path": "/v1/alpha/search",
+        "handler": "OpenAIGatewayHandler.AlphaSearch",
+        "protocol": "openai_responses"
+      },
+      "method": "POST",
+      "path": "/v1/alpha/search",
+      "handler": "OpenAIGatewayHandler.AlphaSearch",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        { "stage": "moderation", "required": true, "covered": true },
+        { "stage": "cyber", "required": true, "covered": true },
+        { "stage": "image", "required": true, "covered": true },
+        { "stage": "billing", "required": true, "covered": true },
+        { "stage": "routing", "required": true, "covered": true },
+        { "stage": "forward", "required": true, "covered": true },
+        { "stage": "usage", "required": true, "covered": true }
+      ],
+      "status": "covered",
+      "review_reason": "Codex standalone search input is moderated before account selection and upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/alpha/search",
+        "handler": "OpenAIGatewayHandler.AlphaSearch",
+        "protocol": "openai_responses"
+      },
+      "method": "POST",
+      "path": "/alpha/search",
+      "handler": "OpenAIGatewayHandler.AlphaSearch",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        { "stage": "moderation", "required": true, "covered": true },
+        { "stage": "cyber", "required": true, "covered": true },
+        { "stage": "image", "required": true, "covered": true },
+        { "stage": "billing", "required": true, "covered": true },
+        { "stage": "routing", "required": true, "covered": true },
+        { "stage": "forward", "required": true, "covered": true },
+        { "stage": "usage", "required": true, "covered": true }
+      ],
+      "status": "covered",
+      "review_reason": "Root Codex standalone search input is moderated before account selection and upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/backend-api/codex/alpha/search",
+        "handler": "OpenAIGatewayHandler.AlphaSearch",
+        "protocol": "openai_responses"
+      },
+      "method": "POST",
+      "path": "/backend-api/codex/alpha/search",
+      "handler": "OpenAIGatewayHandler.AlphaSearch",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        { "stage": "moderation", "required": true, "covered": true },
+        { "stage": "cyber", "required": true, "covered": true },
+        { "stage": "image", "required": true, "covered": true },
+        { "stage": "billing", "required": true, "covered": true },
+        { "stage": "routing", "required": true, "covered": true },
+        { "stage": "forward", "required": true, "covered": true },
+        { "stage": "usage", "required": true, "covered": true }
+      ],
+      "status": "covered",
+      "review_reason": "Codex direct standalone search input is moderated before account selection and upstream forwarding."
+    },
     {
       "route": {
         "method": "POST",
