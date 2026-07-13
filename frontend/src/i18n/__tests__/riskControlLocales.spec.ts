@@ -60,6 +60,24 @@ describe('risk control locale copy', () => {
     expect(en.admin.riskControl.inputDetailContent).not.toContain('Full')
   })
 
+  it('localizes extraction failure reasons for administrators', () => {
+    expect(zh.admin.riskControl.truncationReason.unsupportedRequiredValue).toBe('请求结构包含不支持的字段类型或值')
+    expect(zh.admin.riskControl.truncationReason.other).toBe('其他提取异常')
+    expect(en.admin.riskControl.truncationReason.unsupportedRequiredValue).toBe('Unsupported field type or value in request structure')
+    expect(en.admin.riskControl.truncationReason.other).toBe('Other extraction error')
+  })
+
+  it('localizes audit decision codes and built-in candidate keywords', () => {
+    expect(zh.admin.riskControl.moderationCategories.semanticReview).toBe('语义审核')
+    expect(zh.admin.riskControl.keywordCategories.accountAbuse).toBe('账号滥用')
+    expect(zh.admin.riskControl.keywordSeverities.critical).toBe('严重')
+    expect(zh.admin.riskControl.candidateKeywords.reverseEngineeringOperationalRequest).toBe('逆向工程操作请求')
+    expect(zh.admin.riskControl.decisionSources.semanticReview).toBe('语义审核')
+    expect(en.admin.riskControl.moderationCategories.semanticReview).toBe('Semantic review')
+    expect(en.admin.riskControl.candidateKeywords.reverseEngineeringOperationalRequest).toBe('Reverse-engineering operation request')
+    expect(en.admin.riskControl.decisionSources.semanticReview).toBe('Semantic review')
+  })
+
   it('describes candidate review as a single bounded user fragment', () => {
     expect(zh.admin.riskControl.promptFilterModeHint).toContain('一个用户上下文片段')
     expect(zh.admin.riskControl.promptFilterModeHint).not.toContain('混合模式')

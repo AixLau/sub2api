@@ -458,8 +458,8 @@ describe('admin RiskControlView', () => {
 
     expect(wrapper.text()).toContain('admin.riskControl.matchedKeyword')
     expect(wrapper.text()).toContain('sell api key')
-    expect(wrapper.text()).toContain('account_abuse')
-    expect(wrapper.text()).toContain('critical')
+    expect(wrapper.text()).toContain('admin.riskControl.keywordCategories.accountAbuse')
+    expect(wrapper.text()).toContain('admin.riskControl.keywordSeverities.critical')
 
     await findButtonByText(wrapper, 'please sell api key').trigger('click')
     await flushPromises()
@@ -553,7 +553,8 @@ describe('admin RiskControlView', () => {
 
     expect(wrapper.text()).toContain('admin.riskControl.viewRawRequest')
     expect(wrapper.text()).toContain('admin.riskControl.truncationReasons')
-    expect(wrapper.text()).toContain('max_total_runes')
+    expect(wrapper.text()).toContain('admin.riskControl.truncationReason.maxTotalRunes')
+    expect(wrapper.text()).not.toContain('max_total_runes')
     expect(wrapper.text()).toContain('admin.riskControl.rawRequestMeta')
 
     await findButtonByText(wrapper, 'admin.riskControl.viewRawRequest').trigger('click')
@@ -602,9 +603,9 @@ describe('admin RiskControlView', () => {
     expect(updateConfig).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('admin.riskControl.keywordTestMatched')
     expect(wrapper.text()).toContain('sell api key')
-    expect(wrapper.text()).toContain('account_abuse')
-    expect(wrapper.text()).toContain('critical')
-    expect(wrapper.text()).toContain('block')
+    expect(wrapper.text()).toContain('admin.riskControl.keywordCategories.accountAbuse')
+    expect(wrapper.text()).toContain('admin.riskControl.keywordSeverities.critical')
+    expect(wrapper.text()).toContain('admin.riskControl.action.block')
     expect(wrapper.text()).toContain('please sell api key now')
   })
 
@@ -734,12 +735,12 @@ describe('admin RiskControlView', () => {
     expect(wrapper.text()).toContain('admin.riskControl.legacyBlockedKeywordCount')
     expect(wrapper.text()).not.toContain('admin.riskControl.blockedKeywordCount')
     expect(wrapper.text()).toContain('child sexual abuse material')
-    expect(wrapper.text()).toContain('minor_safety')
-    expect(wrapper.text()).toContain('critical')
+    expect(wrapper.text()).toContain('admin.riskControl.keywordCategories.minorSafety')
+    expect(wrapper.text()).toContain('admin.riskControl.keywordSeverities.critical')
     expect(wrapper.text()).not.toContain('admin.riskControl.keywordAction')
     expect(wrapper.text()).toContain('admin.riskControl.keywordRuleEnabled')
     expect(wrapper.text()).toContain('suicide method')
-    expect(wrapper.text()).toContain('self_harm')
+    expect(wrapper.text()).toContain('admin.riskControl.keywordCategories.selfHarm')
     expect(wrapper.text()).toContain('admin.riskControl.keywordRuleDisabled')
 
     await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')

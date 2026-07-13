@@ -715,10 +715,10 @@
                       </span>
                     </td>
                     <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
-                      <div>{{ row.highest_category || '-' }}</div>
+                      <div>{{ moderationCategoryLabel(row.highest_category) }}</div>
                       <div class="text-xs text-gray-400">{{ percent(row.highest_score) }}</div>
-                      <div v-if="row.matched_keyword" class="mt-0.5 text-xs font-medium text-red-600 dark:text-red-300" :title="t('admin.riskControl.matchedKeyword') + ': ' + row.matched_keyword">
-                        {{ t('admin.riskControl.matchedKeyword') }}: {{ row.matched_keyword }}
+                      <div v-if="row.matched_keyword" class="mt-0.5 text-xs font-medium text-red-600 dark:text-red-300" :title="t('admin.riskControl.matchedKeyword') + ': ' + candidateKeywordLabel(row.matched_keyword)">
+                        {{ t('admin.riskControl.matchedKeyword') }}: {{ candidateKeywordLabel(row.matched_keyword) }}
                       </div>
                     </td>
                     <td class="whitespace-nowrap px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
@@ -728,9 +728,9 @@
                         <span v-if="row.auto_banned"> / {{ t('admin.riskControl.autoBanned') }}</span>
                       </div>
                       <div v-if="row.matched_keyword" class="mt-2 max-w-[220px] space-y-1 rounded-md bg-amber-50 px-2 py-1.5 text-xs leading-5 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
-                        <div class="truncate font-medium">{{ t('admin.riskControl.matchedKeyword') }}: {{ row.matched_keyword }}</div>
+                        <div class="truncate font-medium">{{ t('admin.riskControl.matchedKeyword') }}: {{ candidateKeywordLabel(row.matched_keyword) }}</div>
                         <div class="truncate text-amber-600/80 dark:text-amber-200/80">
-                          {{ row.keyword_category || '-' }} / {{ row.keyword_severity || '-' }}
+                          {{ keywordCategoryLabel(row.keyword_category) }} / {{ keywordSeverityLabel(row.keyword_severity) }}
                         </div>
                         <div class="truncate text-amber-600/80 dark:text-amber-200/80">
                           {{ t('admin.riskControl.keywordAction') }}: {{ keywordActionText(row) }}
@@ -1167,7 +1167,7 @@
                       <div>
                         <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.auditTestResult') }}</p>
                         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                          {{ t('admin.riskControl.auditTestHighest', { category: moderationTestResult.highest_category || '-', score: percent(moderationTestResult.highest_score) }) }}
+                          {{ t('admin.riskControl.auditTestHighest', { category: moderationCategoryLabel(moderationTestResult.highest_category), score: percent(moderationTestResult.highest_score) }) }}
                         </p>
                       </div>
                       <span class="inline-flex rounded-full px-2 py-1 text-xs font-medium" :class="moderationTestResult.flagged ? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'">
@@ -1574,13 +1574,13 @@
                   <tbody class="divide-y divide-gray-100 bg-white dark:divide-dark-700 dark:bg-dark-800">
                     <tr v-for="rule in keywordRuleList" :key="`${rule.keyword}:${rule.category}:${rule.severity}`">
                       <td class="max-w-[360px] px-4 py-3">
-                        <span class="block break-words font-mono text-xs font-semibold text-gray-900 dark:text-white">{{ rule.keyword }}</span>
+                        <span class="block break-words font-mono text-xs font-semibold text-gray-900 dark:text-white">{{ candidateKeywordLabel(rule.keyword) }}</span>
                       </td>
                       <td class="px-4 py-3">
-                        <span class="inline-flex rounded-md bg-sky-50 px-2 py-1 font-mono text-xs font-medium text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">{{ rule.category || '-' }}</span>
+                        <span class="inline-flex rounded-md bg-sky-50 px-2 py-1 font-mono text-xs font-medium text-sky-700 dark:bg-sky-900/20 dark:text-sky-300">{{ keywordCategoryLabel(rule.category) }}</span>
                       </td>
                       <td class="px-4 py-3">
-                        <span class="inline-flex rounded-md bg-amber-50 px-2 py-1 font-mono text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{{ rule.severity || '-' }}</span>
+                        <span class="inline-flex rounded-md bg-amber-50 px-2 py-1 font-mono text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">{{ keywordSeverityLabel(rule.severity) }}</span>
                       </td>
                       <td class="px-4 py-3">
                         <span
@@ -1655,23 +1655,23 @@
                   <div class="grid grid-cols-2 gap-2 text-xs">
                     <div class="rounded-md bg-gray-50 p-2 dark:bg-dark-700/60">
                       <p class="text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.matchedKeyword') }}</p>
-                      <p class="mt-1 break-words font-mono font-semibold text-gray-900 dark:text-white">{{ keywordTestResult.matched_keyword || '-' }}</p>
+                      <p class="mt-1 break-words font-mono font-semibold text-gray-900 dark:text-white">{{ candidateKeywordLabel(keywordTestResult.matched_keyword) }}</p>
                     </div>
                     <div class="rounded-md bg-gray-50 p-2 dark:bg-dark-700/60">
                       <p class="text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.keywordCategory') }}</p>
-                      <p class="mt-1 break-words font-mono font-semibold text-gray-900 dark:text-white">{{ keywordTestResult.keyword_category || '-' }}</p>
+                      <p class="mt-1 break-words font-mono font-semibold text-gray-900 dark:text-white">{{ keywordCategoryLabel(keywordTestResult.keyword_category) }}</p>
                     </div>
                     <div class="rounded-md bg-gray-50 p-2 dark:bg-dark-700/60">
                       <p class="text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.keywordSeverity') }}</p>
-                      <p class="mt-1 break-words font-mono font-semibold text-gray-900 dark:text-white">{{ keywordTestResult.keyword_severity || '-' }}</p>
+                      <p class="mt-1 break-words font-mono font-semibold text-gray-900 dark:text-white">{{ keywordSeverityLabel(keywordTestResult.keyword_severity) }}</p>
                     </div>
                     <div class="rounded-md bg-gray-50 p-2 dark:bg-dark-700/60">
                       <p class="text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.keywordAction') }}</p>
-                      <p class="mt-1 break-words font-mono font-semibold text-gray-900 dark:text-white">{{ keywordTestResult.keyword_action || '-' }}</p>
+                      <p class="mt-1 break-words font-mono font-semibold text-gray-900 dark:text-white">{{ actionLabel(keywordTestResult.keyword_action) }}</p>
                     </div>
                     <div class="rounded-md bg-gray-50 p-2 dark:bg-dark-700/60">
                       <p class="text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.effectiveKeywordAction') }}</p>
-                      <p class="mt-1 break-words font-mono font-semibold text-gray-900 dark:text-white">{{ keywordTestResult.effective_keyword_action || '-' }}</p>
+                      <p class="mt-1 break-words font-mono font-semibold text-gray-900 dark:text-white">{{ actionLabel(keywordTestResult.effective_keyword_action) }}</p>
                     </div>
                     <div class="rounded-md bg-gray-50 p-2 dark:bg-dark-700/60">
                       <p class="text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.riskContext') }}</p>
@@ -1741,12 +1741,12 @@
             <div class="rounded-lg border border-gray-100 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800/70">
               <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.highest') }}</p>
               <p class="mt-1 truncate text-sm font-semibold text-gray-900 dark:text-white">
-                {{ inputDetailRow.highest_category || '-' }} / {{ percent(inputDetailRow.highest_score) }}
+                {{ moderationCategoryLabel(inputDetailRow.highest_category) }} / {{ percent(inputDetailRow.highest_score) }}
               </p>
             </div>
             <div v-if="inputDetailRow.matched_keyword" class="rounded-lg border border-red-100 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-900/20">
               <p class="text-xs font-medium text-red-500 dark:text-red-300">{{ t('admin.riskControl.matchedKeyword') }}</p>
-              <p class="mt-1 truncate text-sm font-semibold text-red-700 dark:text-red-200" :title="inputDetailRow.matched_keyword">{{ inputDetailRow.matched_keyword }}</p>
+              <p class="mt-1 truncate text-sm font-semibold text-red-700 dark:text-red-200" :title="candidateKeywordLabel(inputDetailRow.matched_keyword)">{{ candidateKeywordLabel(inputDetailRow.matched_keyword) }}</p>
             </div>
           </div>
 
@@ -1755,15 +1755,15 @@
             <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
                 <p class="text-xs font-medium text-amber-700/80 dark:text-amber-200/80">{{ t('admin.riskControl.matchedKeyword') }}</p>
-                <p class="mt-1 break-words font-mono text-sm font-semibold text-amber-900 dark:text-amber-50">{{ inputDetailRow.matched_keyword }}</p>
+                <p class="mt-1 break-words font-mono text-sm font-semibold text-amber-900 dark:text-amber-50">{{ candidateKeywordLabel(inputDetailRow.matched_keyword) }}</p>
               </div>
               <div>
                 <p class="text-xs font-medium text-amber-700/80 dark:text-amber-200/80">{{ t('admin.riskControl.keywordCategory') }}</p>
-                <p class="mt-1 break-words font-mono text-sm font-semibold text-amber-900 dark:text-amber-50">{{ inputDetailRow.keyword_category || '-' }}</p>
+                <p class="mt-1 break-words font-mono text-sm font-semibold text-amber-900 dark:text-amber-50">{{ keywordCategoryLabel(inputDetailRow.keyword_category) }}</p>
               </div>
               <div>
                 <p class="text-xs font-medium text-amber-700/80 dark:text-amber-200/80">{{ t('admin.riskControl.keywordSeverity') }}</p>
-                <p class="mt-1 break-words font-mono text-sm font-semibold text-amber-900 dark:text-amber-50">{{ inputDetailRow.keyword_severity || '-' }}</p>
+                <p class="mt-1 break-words font-mono text-sm font-semibold text-amber-900 dark:text-amber-50">{{ keywordSeverityLabel(inputDetailRow.keyword_severity) }}</p>
               </div>
               <div>
                 <p class="text-xs font-medium text-amber-700/80 dark:text-amber-200/80">{{ t('admin.riskControl.keywordAction') }}</p>
@@ -1779,7 +1779,7 @@
               </div>
               <div class="sm:col-span-3">
                 <p class="text-xs font-medium text-amber-700/80 dark:text-amber-200/80">{{ t('admin.riskControl.riskContextReason') }}</p>
-                <p class="mt-1 break-words font-mono text-sm font-semibold text-amber-900 dark:text-amber-50">{{ inputDetailRow.risk_context_reason || '-' }}</p>
+                <p class="mt-1 break-words font-mono text-sm font-semibold text-amber-900 dark:text-amber-50">{{ riskContextReasonLabel(inputDetailRow.risk_context_reason) }}</p>
               </div>
               <div v-if="inputDetailRow.review_note" class="sm:col-span-3">
                 <p class="text-xs font-medium text-amber-700/80 dark:text-amber-200/80">{{ t('admin.riskControl.reviewNote') }}</p>
@@ -1793,7 +1793,7 @@
 				<div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
 				  <div>
 					<p class="text-xs font-medium text-sky-700/80 dark:text-sky-200/80">{{ t('admin.riskControl.decisionSource') }}</p>
-					<p class="mt-1 break-words font-mono text-sm font-semibold text-sky-900 dark:text-sky-50">{{ inputDetailRow.decision_source }}</p>
+					<p class="mt-1 break-words font-mono text-sm font-semibold text-sky-900 dark:text-sky-50">{{ decisionSourceLabel(inputDetailRow.decision_source) }}</p>
 				  </div>
 				  <div>
 					<p class="text-xs font-medium text-sky-700/80 dark:text-sky-200/80">{{ t('admin.riskControl.reviewerModel') }}</p>
@@ -1801,7 +1801,7 @@
 				  </div>
 				  <div>
 					<p class="text-xs font-medium text-sky-700/80 dark:text-sky-200/80">{{ t('admin.riskControl.selectedSource') }}</p>
-					<p class="mt-1 break-words font-mono text-sm font-semibold text-sky-900 dark:text-sky-50">{{ inputDetailRow.selected_source || '-' }} ({{ inputDetailRow.selected_source_role || '-' }})</p>
+					<p class="mt-1 break-words font-mono text-sm font-semibold text-sky-900 dark:text-sky-50">{{ inputDetailRow.selected_source || '-' }} ({{ sourceRoleLabel(inputDetailRow.selected_source_role) }})</p>
 				  </div>
 				  <div>
 					<p class="text-xs font-medium text-sky-700/80 dark:text-sky-200/80">{{ t('admin.riskControl.reviewDelivery') }}</p>
@@ -1818,7 +1818,7 @@
 					:key="reason"
 					class="break-all rounded-md bg-orange-100 px-2.5 py-1 font-mono text-xs font-medium text-orange-900 dark:bg-orange-900/40 dark:text-orange-100"
 				  >
-					{{ reason }}
+					{{ truncationReasonLabel(reason) }}
 				  </span>
 				</div>
 			  </div>
@@ -3744,6 +3744,13 @@ function resultLabel(row: ContentModerationLog): string {
   if (row.action === 'cyber_policy_session_blocked') return t('admin.riskControl.action.cyberPolicySessionBlocked')
   if (row.action === 'keyword_block') return t('admin.riskControl.action.keywordBlock')
   if (row.action === 'keyword_review') return t('admin.riskControl.action.keywordReview')
+  if (row.action === 'semantic_review_allow') return t('admin.riskControl.action.semanticReviewAllow')
+  if (row.action === 'semantic_review_reject') return t('admin.riskControl.action.semanticReviewReject')
+  if (row.action === 'semantic_review_review') return t('admin.riskControl.action.semanticReviewReview')
+  if (row.action === 'prompt_filter_block') return t('admin.riskControl.action.promptFilterBlock')
+  if (row.action === 'prompt_filter_review') return t('admin.riskControl.action.promptFilterReview')
+  if (row.action === 'prompt_filter_warn') return t('admin.riskControl.action.promptFilterWarn')
+  if (row.action === 'prompt_filter_observe') return t('admin.riskControl.action.promptFilterObserve')
   if (row.action === 'block') return t('admin.riskControl.action.block')
   if (row.action === 'error' || row.error) return t('admin.riskControl.action.error')
   if (row.flagged) return t('admin.riskControl.result.hit')
@@ -3758,11 +3765,204 @@ function resultBadgeClass(row: ContentModerationLog): string {
   return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
 }
 
+function moderationCategoryLabel(value?: string): string {
+  const key = String(value || '').trim().toLowerCase()
+  const labels: Record<string, string> = {
+    semantic_review: t('admin.riskControl.moderationCategories.semanticReview'),
+    keyword: t('admin.riskControl.moderationCategories.keyword'),
+    cyber_policy_session_blocked: t('admin.riskControl.moderationCategories.cyberPolicySessionBlocked'),
+    harassment: t('admin.riskControl.moderationCategories.harassment'),
+    'harassment/threatening': t('admin.riskControl.moderationCategories.harassmentThreatening'),
+    hate: t('admin.riskControl.moderationCategories.hate'),
+    'hate/threatening': t('admin.riskControl.moderationCategories.hateThreatening'),
+    illicit: t('admin.riskControl.moderationCategories.illicit'),
+    'illicit/violent': t('admin.riskControl.moderationCategories.illicitViolent'),
+    'self-harm': t('admin.riskControl.moderationCategories.selfHarm'),
+    'self-harm/intent': t('admin.riskControl.moderationCategories.selfHarmIntent'),
+    'self-harm/instructions': t('admin.riskControl.moderationCategories.selfHarmInstructions'),
+    sexual: t('admin.riskControl.moderationCategories.sexual'),
+    'sexual/minors': t('admin.riskControl.moderationCategories.sexualMinors'),
+    violence: t('admin.riskControl.moderationCategories.violence'),
+    'violence/graphic': t('admin.riskControl.moderationCategories.violenceGraphic'),
+  }
+  return labels[key] || value || '-'
+}
+
+function keywordCategoryLabel(value?: string): string {
+  const key = String(value || '').trim().toLowerCase()
+  const labels: Record<string, string> = {
+    custom: t('admin.riskControl.keywordCategories.custom'),
+    jailbreak: t('admin.riskControl.keywordCategories.jailbreak'),
+    cyber: t('admin.riskControl.keywordCategories.cyber'),
+    minor_safety: t('admin.riskControl.keywordCategories.minorSafety'),
+    self_harm: t('admin.riskControl.keywordCategories.selfHarm'),
+    violence: t('admin.riskControl.keywordCategories.violence'),
+    weapons: t('admin.riskControl.keywordCategories.weapons'),
+    privacy: t('admin.riskControl.keywordCategories.privacy'),
+    fraud: t('admin.riskControl.keywordCategories.fraud'),
+    account_abuse: t('admin.riskControl.keywordCategories.accountAbuse'),
+    political: t('admin.riskControl.keywordCategories.political'),
+    high_impact_decision: t('admin.riskControl.keywordCategories.highImpactDecision'),
+    regulated_advice: t('admin.riskControl.keywordCategories.regulatedAdvice'),
+    copyright: t('admin.riskControl.keywordCategories.copyright'),
+    biometric: t('admin.riskControl.keywordCategories.biometric'),
+    prompt_injection: t('admin.riskControl.keywordCategories.promptInjection'),
+    prompt_evasion: t('admin.riskControl.keywordCategories.promptEvasion'),
+    agent_abuse: t('admin.riskControl.keywordCategories.agentAbuse'),
+    ctf: t('admin.riskControl.keywordCategories.ctf'),
+    web_exploitation: t('admin.riskControl.keywordCategories.webExploitation'),
+    web_payload: t('admin.riskControl.keywordCategories.webPayload'),
+    binary_exploitation: t('admin.riskControl.keywordCategories.binaryExploitation'),
+    crypto_attack: t('admin.riskControl.keywordCategories.cryptoAttack'),
+    reverse_engineering: t('admin.riskControl.keywordCategories.reverseEngineering'),
+    pentest_tooling: t('admin.riskControl.keywordCategories.pentestTooling'),
+    credential_attack: t('admin.riskControl.keywordCategories.credentialAttack'),
+    malicious: t('admin.riskControl.keywordCategories.malicious'),
+    malware: t('admin.riskControl.keywordCategories.malware'),
+    evasion: t('admin.riskControl.keywordCategories.evasion'),
+    post_exploitation: t('admin.riskControl.keywordCategories.postExploitation'),
+    remote_access: t('admin.riskControl.keywordCategories.remoteAccess'),
+    exploit: t('admin.riskControl.keywordCategories.exploit'),
+    tooling: t('admin.riskControl.keywordCategories.tooling'),
+    scanning: t('admin.riskControl.keywordCategories.scanning'),
+    vulnerability: t('admin.riskControl.keywordCategories.vulnerability'),
+    license_cracking: t('admin.riskControl.keywordCategories.licenseCracking'),
+    data_theft: t('admin.riskControl.keywordCategories.dataTheft'),
+    network_attack: t('admin.riskControl.keywordCategories.networkAttack'),
+    resource_abuse: t('admin.riskControl.keywordCategories.resourceAbuse'),
+    social_engineering: t('admin.riskControl.keywordCategories.socialEngineering'),
+    supply_chain: t('admin.riskControl.keywordCategories.supplyChain'),
+    container_security: t('admin.riskControl.keywordCategories.containerSecurity'),
+    cloud_security: t('admin.riskControl.keywordCategories.cloudSecurity'),
+    web_attack: t('admin.riskControl.keywordCategories.webAttack'),
+    wireless_attack: t('admin.riskControl.keywordCategories.wirelessAttack'),
+    iot_security: t('admin.riskControl.keywordCategories.iotSecurity'),
+    blockchain_security: t('admin.riskControl.keywordCategories.blockchainSecurity'),
+    api_security: t('admin.riskControl.keywordCategories.apiSecurity'),
+    physical_attack: t('admin.riskControl.keywordCategories.physicalAttack'),
+    other: t('admin.riskControl.keywordCategories.other'),
+  }
+  return labels[key] || moderationCategoryLabel(value)
+}
+
+function keywordSeverityLabel(value?: string): string {
+  const key = String(value || '').trim().toLowerCase()
+  const labels: Record<string, string> = {
+    low: t('admin.riskControl.keywordSeverities.low'),
+    medium: t('admin.riskControl.keywordSeverities.medium'),
+    high: t('admin.riskControl.keywordSeverities.high'),
+    critical: t('admin.riskControl.keywordSeverities.critical'),
+  }
+  return labels[key] || value || '-'
+}
+
+function actionLabel(value?: string): string {
+  const key = String(value || '').trim().toLowerCase()
+  const labels: Record<string, string> = {
+    allow: t('admin.riskControl.action.allow'),
+    block: t('admin.riskControl.action.block'),
+    hash_block: t('admin.riskControl.action.hashBlock'),
+    keyword_block: t('admin.riskControl.action.keywordBlock'),
+    keyword_review: t('admin.riskControl.action.keywordReview'),
+    observe: t('admin.riskControl.action.observe'),
+    warn: t('admin.riskControl.action.warn'),
+    error: t('admin.riskControl.action.error'),
+    prompt_filter_observe: t('admin.riskControl.action.promptFilterObserve'),
+    prompt_filter_warn: t('admin.riskControl.action.promptFilterWarn'),
+    prompt_filter_review: t('admin.riskControl.action.promptFilterReview'),
+    prompt_filter_block: t('admin.riskControl.action.promptFilterBlock'),
+    semantic_review_allow: t('admin.riskControl.action.semanticReviewAllow'),
+    semantic_review_reject: t('admin.riskControl.action.semanticReviewReject'),
+    semantic_review_review: t('admin.riskControl.action.semanticReviewReview'),
+    cyber_policy: t('admin.riskControl.action.cyberPolicy'),
+    cyber_policy_session_blocked: t('admin.riskControl.action.cyberPolicySessionBlocked'),
+  }
+  return labels[key] || value || '-'
+}
+
+function candidateKeywordLabel(value?: string): string {
+  const key = String(value || '').trim()
+  const labels: Record<string, string> = {
+    jailbreak_operational_request: t('admin.riskControl.candidateKeywords.jailbreakOperationalRequest'),
+    jailbreak_topic: t('admin.riskControl.candidateKeywords.jailbreakTopic'),
+    prompt_injection_override: t('admin.riskControl.candidateKeywords.promptInjectionOverride'),
+    system_prompt_extraction: t('admin.riskControl.candidateKeywords.systemPromptExtraction'),
+    prompt_obfuscation_evasion: t('admin.riskControl.candidateKeywords.promptObfuscationEvasion'),
+    agent_tool_permission_bypass: t('admin.riskControl.candidateKeywords.agentToolPermissionBypass'),
+    ctf_security_challenge: t('admin.riskControl.candidateKeywords.ctfSecurityChallenge'),
+    web_exploitation_technique: t('admin.riskControl.candidateKeywords.webExploitationTechnique'),
+    web_exploitation_operational_request: t('admin.riskControl.candidateKeywords.webExploitationOperationalRequest'),
+    web_payload_marker: t('admin.riskControl.candidateKeywords.webPayloadMarker'),
+    binary_exploitation_technique: t('admin.riskControl.candidateKeywords.binaryExploitationTechnique'),
+    binary_exploitation_operational_request: t('admin.riskControl.candidateKeywords.binaryExploitationOperationalRequest'),
+    ctf_crypto_technique: t('admin.riskControl.candidateKeywords.ctfCryptoTechnique'),
+    crypto_key_recovery_request: t('admin.riskControl.candidateKeywords.cryptoKeyRecoveryRequest'),
+    reverse_engineering_toolchain: t('admin.riskControl.candidateKeywords.reverseEngineeringToolchain'),
+    reverse_engineering_operational_request: t('admin.riskControl.candidateKeywords.reverseEngineeringOperationalRequest'),
+    pentest_tooling: t('admin.riskControl.candidateKeywords.pentestTooling'),
+    pentest_operational_request: t('admin.riskControl.candidateKeywords.pentestOperationalRequest'),
+    credential_attack_operational_request: t('admin.riskControl.candidateKeywords.credentialAttackOperationalRequest'),
+    malware_family: t('admin.riskControl.candidateKeywords.malwareFamily'),
+    reverse_engineering: t('admin.riskControl.candidateKeywords.reverseEngineering'),
+    reverse_engineering_secret_extraction: t('admin.riskControl.candidateKeywords.reverseEngineeringSecretExtraction'),
+    reverse_engineering_license_bypass: t('admin.riskControl.candidateKeywords.reverseEngineeringLicenseBypass'),
+    reverse_engineering_anti_debug_bypass: t('admin.riskControl.candidateKeywords.reverseEngineeringAntiDebugBypass'),
+    frida_hook_abuse: t('admin.riskControl.candidateKeywords.fridaHookAbuse'),
+    license_cracking: t('admin.riskControl.candidateKeywords.licenseCracking'),
+    credential_theft: t('admin.riskControl.candidateKeywords.credentialTheft'),
+    scan: t('admin.riskControl.candidateKeywords.scan'),
+  }
+  return labels[key] || value || '-'
+}
+
+function decisionSourceLabel(value?: string): string {
+  const key = String(value || '').trim().toLowerCase()
+  const labels: Record<string, string> = {
+    local_extraction: t('admin.riskControl.decisionSources.localExtraction'),
+    semantic_review: t('admin.riskControl.decisionSources.semanticReview'),
+    ordinary_api: t('admin.riskControl.decisionSources.ordinaryAPI'),
+    infrastructure: t('admin.riskControl.decisionSources.infrastructure'),
+  }
+  return labels[key] || value || '-'
+}
+
+function sourceRoleLabel(value?: string): string {
+  const key = String(value || '').trim().toLowerCase()
+  const labels: Record<string, string> = {
+    user: t('admin.riskControl.sourceRoles.user'),
+    assistant: t('admin.riskControl.sourceRoles.assistant'),
+    developer: t('admin.riskControl.sourceRoles.developer'),
+    system: t('admin.riskControl.sourceRoles.system'),
+    tool: t('admin.riskControl.sourceRoles.tool'),
+    function: t('admin.riskControl.sourceRoles.function'),
+  }
+  return labels[key] || value || '-'
+}
+
+function riskContextReasonLabel(value?: string): string {
+  const key = String(value || '').trim().toLowerCase()
+  const labels: Record<string, string> = {
+    candidate_selected_user_fragment: t('admin.riskControl.riskContextReasons.candidateSelectedUserFragment'),
+    candidate_semantic_review: t('admin.riskControl.riskContextReasons.candidateSemanticReview'),
+    candidate_ordinary_moderation: t('admin.riskControl.riskContextReasons.candidateOrdinaryModeration'),
+    candidate_extraction_incomplete: t('admin.riskControl.riskContextReasons.candidateExtractionIncomplete'),
+    candidate_reviewer_unavailable: t('admin.riskControl.riskContextReasons.candidateReviewerUnavailable'),
+    semantic_review_reject: t('admin.riskControl.riskContextReasons.semanticReviewReject'),
+    semantic_review_review: t('admin.riskControl.riskContextReasons.semanticReviewReview'),
+    semantic_review_provider_fallback: t('admin.riskControl.riskContextReasons.semanticReviewProviderFallback'),
+    openai_cyber_policy_session_block: t('admin.riskControl.riskContextReasons.openAICyberPolicySessionBlock'),
+    policy_or_keyword_rule_discussion: t('admin.riskControl.riskContextReasons.policyOrKeywordRuleDiscussion'),
+    request_intent_marker: t('admin.riskControl.riskContextReasons.requestIntentMarker'),
+    codex2api_pattern_candidate: t('admin.riskControl.riskContextReasons.codexPatternCandidate'),
+  }
+  return labels[key] || value || '-'
+}
+
 function keywordActionText(row: Pick<ContentModerationLog, 'keyword_action' | 'effective_keyword_action'>): string {
   const action = row.keyword_action || '-'
   const effective = row.effective_keyword_action || action
-  if (!action || action === '-' || effective === action) return action
-  return `${action} -> ${effective}`
+  if (!action || action === '-' || effective === action) return actionLabel(action)
+  return `${actionLabel(action)} -> ${actionLabel(effective)}`
 }
 
 function riskContextLabel(value?: string): string {
@@ -3783,6 +3983,22 @@ function reviewStatusLabel(value?: string): string {
     confirmed_violation: t('admin.riskControl.reviewStatus.confirmedViolation'),
   }
   return labels[value || ''] || value || '-'
+}
+
+function truncationReasonLabel(value?: string): string {
+  const labels: Record<string, string> = {
+    invalid_utf8: t('admin.riskControl.truncationReason.invalidUtf8'),
+    invalid_json: t('admin.riskControl.truncationReason.invalidJson'),
+    unsupported_required_value: t('admin.riskControl.truncationReason.unsupportedRequiredValue'),
+    max_strings: t('admin.riskControl.truncationReason.maxStrings'),
+    max_total_runes: t('admin.riskControl.truncationReason.maxTotalRunes'),
+    max_depth: t('admin.riskControl.truncationReason.maxDepth'),
+    max_object_keys: t('admin.riskControl.truncationReason.maxObjectKeys'),
+    max_string_runes: t('admin.riskControl.truncationReason.maxStringRunes'),
+    oversized_base64_skipped: t('admin.riskControl.truncationReason.oversizedBase64Skipped'),
+    oversized_base64_decoded_skipped: t('admin.riskControl.truncationReason.oversizedBase64DecodedSkipped'),
+  }
+  return labels[value || ''] || t('admin.riskControl.truncationReason.other')
 }
 
 function workerSlotClass(state: WorkerSlotState): string {

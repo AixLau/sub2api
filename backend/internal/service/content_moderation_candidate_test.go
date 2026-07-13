@@ -166,6 +166,64 @@ func TestCandidateExtractionFailureStoresSelectedSourceAndReasons(t *testing.T) 
 	require.Equal(t, "danger-marker request", logs[0].InputExcerpt)
 }
 
+func TestCandidateExtractionFailureCollapsesRepeatedRetriesIntoOneAudit(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword:  "danger-marker",
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}}
+	repo := &candidateRetryDedupeRepo{}
+	svc := candidateTestService(repo)
+	content := ContentModerationInput{Sources: []ContentModerationInputSource{{
+		Source:          "responses.input[0].role=user.content",
+		Role:            "user",
+		Text:            "danger-marker request",
+		Truncated:       true,
+		TruncateReasons: []string{"unsupported_required_value"},
+	}}}
+	input := ContentModerationCheckInput{UserID: 17, APIKeyID: 29, Endpoint: "/v1/responses", Protocol: ContentModerationProtocolOpenAIResponses}
+
+	first := svc.checkCandidateOnly(context.Background(), input, cfg, content)
+	second := svc.checkCandidateOnly(context.Background(), input, cfg, content)
+
+	require.True(t, first.Allowed)
+	require.True(t, second.Allowed)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, "candidate_extraction_incomplete", logs[0].Error)
+	require.Equal(t, int64(1), repo.duplicateRetries.Load())
+}
+
+func TestCandidateExtractionFailureDoesNotCollapseDifferentSourceText(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword:  "danger-marker",
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}}
+	repo := &candidateRetryDedupeRepo{}
+	svc := candidateTestService(repo)
+	input := ContentModerationCheckInput{UserID: 17, APIKeyID: 29, Endpoint: "/v1/responses", Protocol: ContentModerationProtocolOpenAIResponses}
+
+	for _, text := range []string{"danger-marker request A", "danger-marker request B"} {
+		content := ContentModerationInput{Sources: []ContentModerationInputSource{{
+			Source:          "responses.input[0].role=user.content",
+			Role:            "user",
+			Text:            text,
+			Truncated:       true,
+			TruncateReasons: []string{"unsupported_required_value"},
+		}}}
+		svc.checkCandidateOnly(context.Background(), input, cfg, content)
+	}
+
+	require.Len(t, repo.snapshotLogs(), 2)
+}
+
 func TestCandidateSelectionUsesValidationReasonsFromSelectedSourceOnly(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.KeywordRules = []ContentModerationKeywordRule{{

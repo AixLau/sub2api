@@ -177,7 +177,7 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 		}
 		typ := strings.ToLower(strings.TrimSpace(value.Get("type").String()))
 		switch typ {
-		case "", "text", "input_text", "output_text", "message", "image_url", "input_image", "image", "tool_result", "tool_use":
+		case "", "text", "input_text", "output_text", "refusal", "summary_text", "message", "image_url", "input_image", "image", "tool_result", "tool_use":
 		default:
 			state.markTruncated("unsupported_required_value")
 			return
@@ -231,6 +231,9 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 		if text := value.Get("text"); text.Exists() && text.Type != gjson.String {
 			state.markTruncated("unsupported_required_value")
 		}
+		if refusal := value.Get("refusal"); refusal.Exists() && refusal.Type != gjson.String {
+			state.markTruncated("unsupported_required_value")
+		}
 		if content := value.Get("content"); content.Exists() {
 			if typ == "tool_result" {
 				validateToolRoot(content)
@@ -240,6 +243,12 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 		}
 		if typ == "tool_result" && !value.Get("content").Exists() {
 			state.markTruncated("unsupported_required_value")
+		}
+		if typ == "refusal" {
+			requirePresentString(value.Get("refusal"))
+		}
+		if typ == "summary_text" {
+			requirePresentString(value.Get("text"))
 		}
 		if typ == "tool_use" {
 			requirePresentString(value.Get("name"))
@@ -851,9 +860,12 @@ func collectAnthropicContentValue(value gjson.Result, parts *[]string, images *[
 	case value.IsObject():
 		typ := strings.ToLower(strings.TrimSpace(value.Get("type").String()))
 		switch typ {
-		case "", "text", "input_text", "output_text", "message":
+		case "", "text", "input_text", "output_text", "refusal", "summary_text", "message":
 			if value.Get("text").Exists() {
 				addModerationRawText(parts, value.Get("text").String())
+			}
+			if value.Get("refusal").Exists() {
+				addModerationRawText(parts, value.Get("refusal").String())
 			}
 			if value.Get("content").Exists() {
 				collectAnthropicContentValue(value.Get("content"), parts, images, toolState)
@@ -946,7 +958,7 @@ func responseItemHasModerationText(item gjson.Result) bool {
 
 func isResponsesClientSuppliedToolOutputItem(item gjson.Result) bool {
 	typ := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
-	if strings.Contains(typ, "tool_result") || strings.Contains(typ, "call_output") {
+	if isResponsesToolOutputType(typ) {
 		return true
 	}
 	return strings.ToLower(strings.TrimSpace(item.Get("role").String())) == "tool"
@@ -954,7 +966,33 @@ func isResponsesClientSuppliedToolOutputItem(item gjson.Result) bool {
 
 func isResponsesFunctionOrToolCallItem(item gjson.Result) bool {
 	typ := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
-	return !strings.Contains(typ, "call_output") && (strings.Contains(typ, "function_call") || strings.Contains(typ, "tool_call"))
+	return isResponsesToolCallInputType(typ)
+}
+
+// Responses has several tool families that use different payload field names,
+// but they all have the same moderation treatment: call inputs are assistant
+// context and call outputs are tool context. Keep this vocabulary in one place
+// so extraction, validation, and audit-scope filtering cannot drift apart.
+func isResponsesToolOutputType(typ string) bool {
+	typ = strings.ToLower(strings.TrimSpace(typ))
+	switch typ {
+	case "tool_result", "tool_search_output":
+		return true
+	}
+	if !strings.HasSuffix(typ, "_call_output") {
+		return false
+	}
+	callType := strings.TrimSuffix(typ, "_output")
+	return isResponsesToolCallInputType(callType) || isResponsesKnownCallType(callType)
+}
+
+func isResponsesToolCallInputType(typ string) bool {
+	switch strings.ToLower(strings.TrimSpace(typ)) {
+	case "function_call", "custom_tool_call", "tool_search_call", "mcp_tool_call", "tool_call":
+		return true
+	default:
+		return false
+	}
 }
 
 func isResponsesKnownCallItem(item gjson.Result) bool {
@@ -1060,9 +1098,12 @@ func collectContentValue(value gjson.Result, parts *[]string, images *[]string) 
 		addModerationImage(images, value.Get("data").String())
 		addModerationImage(images, value.Get("base64").String())
 		switch typ {
-		case "", "text", "input_text", "output_text", "message":
+		case "", "text", "input_text", "output_text", "refusal", "summary_text", "message":
 			if value.Get("text").Exists() {
 				addModerationRawText(parts, value.Get("text").String())
+			}
+			if value.Get("refusal").Exists() {
+				addModerationRawText(parts, value.Get("refusal").String())
 			}
 			if value.Get("content").Exists() {
 				collectContentValue(value.Get("content"), parts, images)
@@ -1543,10 +1584,8 @@ func responsesInputItemSource(index string, item gjson.Result) string {
 	typ := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
 	role := strings.ToLower(strings.TrimSpace(item.Get("role").String()))
 	switch {
-	case strings.Contains(typ, "function_call_output"):
-		return fmt.Sprintf("responses.input[%s].function_call_output", index)
-	case strings.Contains(typ, "tool_result"):
-		return fmt.Sprintf("responses.input[%s].tool_result", index)
+	case isResponsesToolOutputType(typ):
+		return fmt.Sprintf("responses.input[%s].%s", index, typ)
 	case role != "":
 		return fmt.Sprintf("responses.input[%s].role=%s.content", index, role)
 	default:
@@ -1560,9 +1599,9 @@ func responsesInputItemRole(item gjson.Result) string {
 	}
 	typ := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
 	switch {
-	case strings.Contains(typ, "function_call_output"), strings.Contains(typ, "tool_result"):
+	case isResponsesToolOutputType(typ):
 		return "tool"
-	case strings.Contains(typ, "function_call"), strings.Contains(typ, "tool_call"):
+	case isResponsesToolCallInputType(typ):
 		return "assistant"
 	case isResponsesKnownCallType(typ):
 		return "assistant"
@@ -1588,10 +1627,8 @@ func shouldIncludeModerationRole(role string, typ string, auditScope string) boo
 }
 
 func isResponsesToolItemType(typ string) bool {
-	return strings.Contains(typ, "tool_result") ||
-		strings.Contains(typ, "function_call_output") ||
-		strings.Contains(typ, "function_call") ||
-		strings.Contains(typ, "tool_call") ||
+	return isResponsesToolOutputType(typ) ||
+		isResponsesToolCallInputType(typ) ||
 		isResponsesKnownCallType(typ)
 }
 

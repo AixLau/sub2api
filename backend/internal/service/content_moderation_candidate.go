@@ -374,16 +374,37 @@ func contentModerationOrdinaryProviderSupportsCategory(provider, category string
 
 func (s *ContentModerationService) candidateDecisionCacheKey(cfg *ContentModerationConfig, input ContentModerationCheckInput, selection contentModerationCandidateSelection) string {
 	policyRevision := contentModerationPolicyRevision(true, cfg)
-	payload := strings.Join([]string{
-		"candidate-decision-v1",
+	parts := []string{
+		"candidate-decision-v2",
 		policyRevision,
 		fmtInt64(input.UserID),
 		fmtInt64(input.APIKeyID),
 		fmtInt64(contentModerationLogGroupID(input.GroupID)),
+		strings.TrimSpace(input.Endpoint),
+		strings.TrimSpace(input.Protocol),
+		strings.TrimSpace(input.Provider),
+		strings.TrimSpace(input.Model),
 		selection.Source.Source,
 		selection.Source.Role,
+		selection.Kind,
+		selection.Rule.Keyword,
+		selection.Rule.Category,
+		selection.Rule.Severity,
+		selection.Route,
 		selection.Fragment,
-	}, "\n")
+	}
+	// An incomplete extraction has no provider payload to identify it. Include
+	// the bounded source text and its reasons so two different malformed user
+	// turns cannot collapse into the same audit row merely because their
+	// selected fragments happen to match.
+	if contentModerationCandidateExtractionIncomplete(selection) {
+		parts = append(parts,
+			selection.Source.Text,
+			strconv.FormatBool(selection.Source.Truncated),
+			strings.Join(normalizeContentModerationTruncateReasons(selection.Source.TruncateReasons), ","),
+		)
+	}
+	payload := strings.Join(parts, "\n")
 	if key := s.candidateDecisionHMACKey(); len(key) == sha256.Size {
 		mac := hmac.New(sha256.New, key)
 		_, _ = mac.Write([]byte(payload))
@@ -703,7 +724,15 @@ func (s *ContentModerationService) checkCandidateOnly(ctx context.Context, input
 		return allow
 	}
 	if contentModerationCandidateExtractionIncomplete(selection) {
-		return s.candidateExtractionFailureDecision(ctx, input, cfg, content, &selection)
+		outcome := s.executeCandidateDecision(ctx, cfg, input, selection, func(reviewCtx context.Context) contentModerationCandidateOutcome {
+			return s.candidateExtractionFailureOutcome(reviewCtx, input, cfg, content, &selection)
+		})
+		if outcome.Decision == nil {
+			return contentModerationFailureDecision(cfg)
+		}
+		decision := cloneContentModerationDecision(*outcome.Decision)
+		decision.candidateDecisionID = outcome.DecisionID
+		return &decision
 	}
 	if strings.TrimSpace(selection.Fragment) == "" {
 		return allow
@@ -1131,7 +1160,7 @@ func contentModerationCandidateExtractionIncomplete(selection contentModerationC
 	return selection.Source.Truncated || len(selection.Source.TruncateReasons) > 0
 }
 
-func (s *ContentModerationService) candidateExtractionFailureDecision(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, selection *contentModerationCandidateSelection) *ContentModerationDecision {
+func (s *ContentModerationService) candidateExtractionFailureOutcome(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, selection *contentModerationCandidateSelection) contentModerationCandidateOutcome {
 	reasons := append([]string(nil), content.TruncateReasons...)
 	selectedSource := ""
 	selectedRole := ""
@@ -1175,7 +1204,10 @@ func (s *ContentModerationService) candidateExtractionFailureDecision(ctx contex
 	if cfg != nil && cfg.Mode == ContentModerationModePreBlock {
 		s.recordPreBlockSyncMetric(0, ContentModerationActionError)
 	}
-	decision := contentModerationFailureDecision(cfg)
-	decision.candidateDecisionID = log.DecisionID
-	return decision
+	return contentModerationCandidateOutcome{
+		Decision:   contentModerationFailureDecision(cfg),
+		DecisionID: log.DecisionID,
+		Cacheable:  true,
+		CacheTTL:   s.candidateDecisionTTL(cfg),
+	}
 }

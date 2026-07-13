@@ -205,6 +205,8 @@ func TestExtractionCompletenessAcceptsKnownMediaLeafVariants(t *testing.T) {
 func TestExtractionCompletenessRequiresToolAndMediaFields(t *testing.T) {
 	tests := []struct{ name, protocol, body string }{
 		{"responses output missing payload", ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"function_call_output"}]}`},
+		{"responses tool search output missing payload", ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"tool_search_output"}]}`},
+		{"responses MCP output missing payload", ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"mcp_tool_call_output"}]}`},
 		{"responses result missing payload", ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"tool_result"}]}`},
 		{"responses call missing payload", ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"function_call"}]}`},
 		{"responses tool call missing payload", ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"tool_call"}]}`},
@@ -419,6 +421,57 @@ func TestExtractContentModerationInput_CodexKnownCallItemsRemainComplete(t *test
 	require.True(t, got.Extraction.Complete)
 	require.Contains(t, got.Text, "unsafe query")
 	require.Contains(t, got.Text, "请处理用户请求")
+}
+
+func TestExtractContentModerationInput_ResponsesCodexToolFamilyVariantsRemainComplete(t *testing.T) {
+	body := []byte(`{"input":[
+		{"type":"tool_search_call","call_id":"call_search","arguments":{"query":"搜索结果里的风险短语"}},
+		{"type":"tool_search_output","call_id":"call_search","output":{"groups":["工具搜索输出里的风险短语"]}},
+		{"type":"mcp_tool_call","call_id":"call_mcp","name":"lookup","arguments":"{\"query\":\"MCP 调用参数里的风险短语\"}"},
+		{"type":"mcp_tool_call_output","call_id":"call_mcp","output":"MCP 工具输出里的风险短语"},
+		{"type":"local_shell_call_output","call_id":"call_shell","output":"本地 Shell 输出里的风险短语"},
+		{"type":"computer_call_output","call_id":"call_computer","output":{"note":"计算机工具输出里的风险短语"}},
+		{"type":"message","role":"user","content":[{"type":"input_text","text":"用户请求"}]}
+	]}`)
+
+	got := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeAllContext)
+
+	require.False(t, got.Truncated, got.TruncateReasons)
+	require.True(t, got.Extraction.Complete)
+	for _, marker := range []string{
+		"搜索结果里的风险短语",
+		"工具搜索输出里的风险短语",
+		"MCP 调用参数里的风险短语",
+		"MCP 工具输出里的风险短语",
+		"本地 Shell 输出里的风险短语",
+		"计算机工具输出里的风险短语",
+		"用户请求",
+	} {
+		require.Contains(t, got.Text, marker)
+	}
+
+	rolesBySource := make(map[string]string, len(got.Sources))
+	for _, source := range got.Sources {
+		rolesBySource[source.Source] = source.Role
+	}
+	require.Equal(t, "tool", rolesBySource["responses.input[1].tool_search_output"])
+	require.Equal(t, "tool", rolesBySource["responses.input[3].mcp_tool_call_output"])
+	require.Equal(t, "tool", rolesBySource["responses.input[4].local_shell_call_output"])
+	require.Equal(t, "tool", rolesBySource["responses.input[5].computer_call_output"])
+}
+
+func TestExtractContentModerationInput_ResponsesRefusalContentRemainsComplete(t *testing.T) {
+	body := []byte(`{"input":[
+		{"type":"message","role":"assistant","content":[{"type":"refusal","refusal":"拒绝内容里的安全说明"}]},
+		{"type":"message","role":"user","content":[{"type":"input_text","text":"用户请求"}]}
+	]}`)
+
+	got := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+
+	require.False(t, got.Truncated, got.TruncateReasons)
+	require.True(t, got.Extraction.Complete)
+	require.Contains(t, got.Text, "拒绝内容里的安全说明")
+	require.Contains(t, got.Text, "用户请求")
 }
 
 func TestExtractContentModerationInput_AnthropicAgentToolLoopScansClientToolResult(t *testing.T) {
@@ -1087,6 +1140,21 @@ func TestExtractContentModerationInput_UserOnlyExcludesLargeResponsesToolOutput(
 	require.Len(t, input.Sources, 1)
 	require.Equal(t, "user", input.Sources[0].Role)
 	require.NotContains(t, input.Text, "tool-output")
+}
+
+func TestExtractContentModerationInput_UserOnlyExcludesResponsesToolSearchOutput(t *testing.T) {
+	body := []byte(`{"input":[
+		{"type":"tool_search_output","call_id":"call_search","output":"工具搜索输出里的风险短语"},
+		{"type":"message","role":"user","content":[{"type":"input_text","text":"用户请求"}]}
+	]}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeUserOnly)
+
+	require.False(t, input.Truncated, input.TruncateReasons)
+	require.Equal(t, "用户请求", input.Text)
+	require.Len(t, input.Sources, 1)
+	require.Equal(t, "user", input.Sources[0].Role)
+	require.NotContains(t, input.Text, "工具搜索输出")
 }
 
 func TestModerationSourceCaptureKeepsTruncationReasonsLocal(t *testing.T) {
