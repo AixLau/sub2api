@@ -82,6 +82,29 @@ func TestAdminUsageListInvalidStream(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
+func TestAdminUsageListPlatformAuditSource(t *testing.T) {
+	repo := &adminUsageRepoCapture{}
+	router := newAdminUsageRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/usage?source=content_moderation", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, string(service.UsageSourceContentModeration), repo.listFilters.Source)
+}
+
+func TestAdminUsageListInvalidSource(t *testing.T) {
+	repo := &adminUsageRepoCapture{}
+	router := newAdminUsageRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/usage?source=audit", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
 func TestAdminUsageListExactTotalTrue(t *testing.T) {
 	repo := &adminUsageRepoCapture{}
 	router := newAdminUsageRequestTypeTestRouter(repo)
@@ -151,4 +174,16 @@ func TestAdminUsageStatsInvalidStream(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestAdminUsageStatsPlatformAuditSource(t *testing.T) {
+	repo := &adminUsageRepoCapture{}
+	router := newAdminUsageRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/usage/stats?source=content_moderation", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, string(service.UsageSourceContentModeration), repo.statsFilters.Source)
 }

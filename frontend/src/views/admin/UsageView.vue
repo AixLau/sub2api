@@ -22,7 +22,14 @@
             </div>
           </div>
         </div>
-        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div
+          v-if="filters.source"
+          data-testid="usage-source-analytics-hint"
+          class="card border border-violet-100 bg-violet-50/70 p-4 text-sm text-violet-800 dark:border-violet-900/30 dark:bg-violet-900/10 dark:text-violet-200"
+        >
+          {{ t('admin.usage.sourceAnalyticsHint') }}
+        </div>
+        <div v-else class="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <ModelDistributionChart
             v-model:source="modelDistributionSource"
             v-model:metric="modelDistributionMetric"
@@ -46,7 +53,7 @@
             :filters="breakdownFilters"
           />
         </div>
-        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div v-if="!filters.source" class="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <EndpointDistributionChart
             v-model:source="endpointDistributionSource"
             v-model:metric="endpointDistributionMetric"
@@ -298,6 +305,7 @@ const getGranularityForRange = (start: string, end: string): 'day' | 'hour' => {
 const defaultRange = getLast24HoursRangeDates()
 const startDate = ref(defaultRange.start); const endDate = ref(defaultRange.end)
 const filters = ref<AdminUsageQueryParams>({ user_id: undefined, model: undefined, group_id: undefined, request_type: undefined, billing_type: null, start_date: startDate.value, end_date: endDate.value })
+const hasSourceFilter = computed(() => Boolean(filters.value.source))
 const pagination = reactive({ page: 1, page_size: getPersistedPageSize(), total: 0 })
 const sortState = reactive({
   sort_by: 'created_at',
@@ -418,9 +426,9 @@ const loadStats = async (force = false) => {
     })
     if (seq !== statsReqSeq) return
     usageStats.value = s
-    inboundEndpointStats.value = s.endpoints || []
-    upstreamEndpointStats.value = s.upstream_endpoints || []
-    endpointPathStats.value = s.endpoint_paths || []
+    inboundEndpointStats.value = hasSourceFilter.value ? [] : (s.endpoints || [])
+    upstreamEndpointStats.value = hasSourceFilter.value ? [] : (s.upstream_endpoints || [])
+    endpointPathStats.value = hasSourceFilter.value ? [] : (s.endpoint_paths || [])
   } catch (error) {
     if (seq !== statsReqSeq) return
     console.error('Failed to load usage stats:', error)
@@ -440,6 +448,7 @@ const invalidateModelStatsCache = () => {
 }
 
 const loadModelStats = async (source: ModelDistributionSource, force = false) => {
+  if (hasSourceFilter.value) return
   if (!force && loadedModelSources[source]) {
     return
   }
@@ -493,6 +502,7 @@ const loadModelStats = async (source: ModelDistributionSource, force = false) =>
 }
 
 const loadChartData = async () => {
+  if (hasSourceFilter.value) return
   const seq = ++chartReqSeq
   chartsLoading.value = true
   try {
@@ -527,8 +537,16 @@ const applyFilters = () => {
   invalidateModelStatsCache()
   loadLogs()
   loadStats()
-  loadModelStats(modelDistributionSource.value, true)
-  loadChartData()
+  if (hasSourceFilter.value) {
+    requestedModelStats.value = []
+    upstreamModelStats.value = []
+    mappingModelStats.value = []
+    groupStats.value = []
+    trendData.value = []
+  } else {
+    loadModelStats(modelDistributionSource.value, true)
+    loadChartData()
+  }
   errPage.value = 1
   if (activeTab.value === 'errors') {
     loadAdminErrors()
@@ -540,8 +558,10 @@ const refreshData = () => {
   invalidateModelStatsCache()
   loadLogs()
   loadStats(true)
-  loadModelStats(modelDistributionSource.value, true)
-  loadChartData()
+  if (!hasSourceFilter.value) {
+    loadModelStats(modelDistributionSource.value, true)
+    loadChartData()
+  }
   if (activeTab.value === 'errors') loadAdminErrors()
   if (rankingMounted.value) rankingRef.value?.reload()
 }
@@ -549,7 +569,7 @@ const resetFilters = () => {
   const range = getLast24HoursRangeDates()
   startDate.value = range.start
   endDate.value = range.end
-  filters.value = { start_date: startDate.value, end_date: endDate.value, request_type: undefined, billing_type: null, billing_mode: undefined }
+  filters.value = { start_date: startDate.value, end_date: endDate.value, request_type: undefined, billing_type: null, billing_mode: undefined, source: null }
   granularity.value = getGranularityForRange(startDate.value, endDate.value)
   applyFilters()
 }
@@ -866,7 +886,7 @@ onMounted(() => {
 onUnmounted(() => { abortController?.abort(); exportAbortController?.abort(); document.removeEventListener('click', handleColumnClickOutside) })
 
 watch(modelDistributionSource, (source) => {
-  void loadModelStats(source)
+  if (!hasSourceFilter.value) void loadModelStats(source)
 })
 
 defineExpose({ requestedModelStats, refreshData })

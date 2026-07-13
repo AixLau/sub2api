@@ -4,7 +4,7 @@
  */
 
 import { apiClient } from '../client'
-import type { AdminUsageLog, UsageQueryParams, PaginatedResponse, UsageRequestType } from '@/types'
+import type { AdminUsageLog, UsageQueryParams, PaginatedResponse, UsageRequestType, UsageLogSource } from '@/types'
 import type { EndpointStat } from '@/types'
 
 // ==================== Types ====================
@@ -84,6 +84,7 @@ export interface AdminUsageQueryParams extends UsageQueryParams {
   user_id?: number
   exact_total?: boolean
   billing_mode?: string
+  source?: UsageLogSource | null
   sort_by?: string
   sort_order?: 'asc' | 'desc'
   // 错误请求 tab 专属筛选(仅传给错误列表接口;共用同一 filters 对象)
@@ -128,6 +129,7 @@ export async function getStats(params: {
   end_date?: string
   timezone?: string
   exclude_user_ids?: number[] | string
+  source?: UsageLogSource | null
   nocache?: number
 }): Promise<AdminUsageStatsResponse> {
   const { data } = await apiClient.get<AdminUsageStatsResponse>('/admin/usage/stats', {

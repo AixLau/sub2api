@@ -163,6 +163,12 @@
           <Select v-model="filters.request_type" :options="requestTypeOptions" @change="emitChange" />
         </div>
 
+        <!-- Record Source Filter (usage details only) -->
+        <div v-if="mode === 'usage'" class="w-full sm:w-auto sm:min-w-[200px]">
+          <label class="input-label">{{ t('admin.usage.source') }}</label>
+          <Select data-testid="usage-source-filter" v-model="filters.source" :options="sourceOptions" @change="emitChange" />
+        </div>
+
         <!-- Billing Type Filter (usage only) -->
         <div v-if="mode !== 'errors'" class="w-full sm:w-auto sm:min-w-[200px]">
           <label class="input-label">{{ t('admin.usage.billingType') }}</label>
@@ -309,6 +315,13 @@ const requestTypeOptions = ref<SelectOption[]>([
   { value: 'stream', label: t('usage.stream') },
   { value: 'sync', label: t('usage.sync') },
   { value: 'cyber', label: t('usage.cyber') }
+])
+
+const sourceOptions = computed<SelectOption[]>(() => [
+  { value: null, label: t('admin.usage.allSources') },
+  { value: 'gateway', label: t('admin.usage.sourceGateway') },
+  { value: 'content_moderation', label: t('admin.usage.sourcePlatformAudit') },
+  { value: 'account_test', label: t('admin.usage.sourceAccountTest') },
 ])
 
 const billingTypeOptions = ref<SelectOption[]>([

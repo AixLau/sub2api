@@ -20,6 +20,7 @@ type usageStatsCacheKeyData struct {
 	GroupID        int64   `json:"group_id"`
 	Model          string  `json:"model"`
 	BillingMode    string  `json:"billing_mode"`
+	Source         string  `json:"source"`
 	RequestType    *int16  `json:"request_type"`
 	Stream         *bool   `json:"stream"`
 	BillingType    *int8   `json:"billing_type"`
@@ -44,6 +45,7 @@ func usageStatsCacheKey(filters usagestats.UsageLogFilters) string {
 		GroupID:        filters.GroupID,
 		Model:          filters.Model,
 		BillingMode:    filters.BillingMode,
+		Source:         filters.Source,
 		RequestType:    filters.RequestType,
 		Stream:         filters.Stream,
 		BillingType:    filters.BillingType,

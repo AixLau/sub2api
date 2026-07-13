@@ -23,39 +23,6 @@
           </div>
         </div>
 
-        <div
-          class="rounded-lg border px-5 py-4 shadow-sm"
-          :class="protectionStatusCardClass"
-        >
-          <div class="flex min-w-0 gap-3">
-              <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg" :class="protectionStatusIconClass">
-                <Icon name="shield" size="md" />
-              </div>
-              <div class="min-w-0">
-                <div class="flex flex-wrap items-center gap-2">
-                  <h2 class="text-base font-semibold" :class="protectionStatusTitleClass">{{ protectionStatusTitle }}</h2>
-                  <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium" :class="protectionStatusBadgeClass">
-                    {{ protectionStatusBadge }}
-                  </span>
-                </div>
-                <p class="mt-1 text-sm" :class="protectionStatusDescriptionClass">{{ protectionStatusDescription }}</p>
-                <p class="mt-2 text-xs text-gray-600 dark:text-gray-300">
-                  <span class="text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.adminSummary.auditService') }}:</span>
-                  {{ protectionExternalAPIText }}
-                </p>
-                <div v-if="protectionUnsafeReasonLabels.length > 0" class="mt-3 flex flex-wrap gap-1.5">
-                  <span
-                    v-for="reason in protectionUnsafeReasonLabels"
-                    :key="reason"
-                    class="inline-flex max-w-[240px] truncate rounded-md bg-white/70 px-2 py-1 text-xs font-medium text-gray-700 dark:bg-dark-900/40 dark:text-gray-200"
-                  >
-                    {{ reason }}
-                  </span>
-                </div>
-              </div>
-          </div>
-        </div>
-
         <section data-test="admin-risk-summary">
           <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <button
@@ -2520,56 +2487,6 @@ const protectionStatusTone = computed<ProtectionStatusTone>(() => {
   return status.value.effective_protection.effective_blocking ? 'strong' : 'unsafe'
 })
 
-const protectionStatusBadge = computed(() => {
-  if (protectionStatusTone.value === 'strong') return t('admin.riskControl.protectionStrong')
-  if (protectionStatusTone.value === 'unsafe') return t('admin.riskControl.protectionUnsafe')
-  return t('admin.riskControl.protectionUnknown')
-})
-
-const protectionStatusTitle = computed(() => t('admin.riskControl.protectionTitle'))
-
-const protectionStatusDescription = computed(() => {
-  if (protectionStatusTone.value === 'strong') return t('admin.riskControl.protectionStrongDescription')
-  if (protectionStatusTone.value === 'unsafe') return t('admin.riskControl.protectionUnsafeDescription')
-  return t('admin.riskControl.protectionUnknownDescription')
-})
-
-const protectionStatusCardClass = computed(() => {
-  if (protectionStatusTone.value === 'strong') return 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-900/15'
-  if (protectionStatusTone.value === 'unsafe') return 'border-rose-200 bg-rose-50 dark:border-rose-900/40 dark:bg-rose-900/15'
-  return 'border-gray-200 bg-gray-50 dark:border-dark-700 dark:bg-dark-800'
-})
-
-const protectionStatusIconClass = computed(() => {
-  if (protectionStatusTone.value === 'strong') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200'
-  if (protectionStatusTone.value === 'unsafe') return 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-200'
-  return 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'
-})
-
-const protectionStatusTitleClass = computed(() => {
-  if (protectionStatusTone.value === 'strong') return 'text-emerald-900 dark:text-emerald-100'
-  if (protectionStatusTone.value === 'unsafe') return 'text-rose-900 dark:text-rose-100'
-  return 'text-gray-900 dark:text-white'
-})
-
-const protectionStatusDescriptionClass = computed(() => {
-  if (protectionStatusTone.value === 'strong') return 'text-emerald-700 dark:text-emerald-200'
-  if (protectionStatusTone.value === 'unsafe') return 'text-rose-700 dark:text-rose-200'
-  return 'text-gray-600 dark:text-gray-300'
-})
-
-const protectionStatusBadgeClass = computed(() => {
-  if (protectionStatusTone.value === 'strong') return 'bg-emerald-600 text-white'
-  if (protectionStatusTone.value === 'unsafe') return 'bg-rose-600 text-white'
-  return 'bg-gray-600 text-white'
-})
-
-const protectionUnsafeReasonLabels = computed(() => (
-  (status.value?.effective_protection?.unsafe_reasons ?? [])
-    .slice(0, 8)
-    .map((reason) => protectionUnsafeReasonLabel(reason))
-))
-
 const protectionBuildCommit = computed(() => status.value?.build?.commit || '-')
 
 const protectionBaselineText = computed(() => {
@@ -2577,22 +2494,6 @@ const protectionBaselineText = computed(() => {
   if (!baseline) return '-'
   const state = baseline.baseline_satisfied ? t('admin.riskControl.protectionSatisfied') : t('admin.riskControl.protectionUnsatisfied')
   return `${state} · ${baseline.baseline_satisfaction_method || '-'}`
-})
-
-const protectionExternalAPIText = computed(() => {
-  const effective = status.value?.effective_protection
-  if (!effective) return '-'
-  if (effective.engine_mode === 'candidate_only' && !effective.external_api_configured) {
-    return t('admin.riskControl.protectionExternalSemanticFallback')
-  }
-  if (effective.engine_mode === 'candidate_only') {
-    const state = effective.external_api_healthy ? t('admin.riskControl.protectionHealthy') : t('admin.riskControl.protectionUnhealthy')
-    return `${state} · ${formatNumber(effective.external_api_usable_key_count)} · ${t('admin.riskControl.protectionExternalSemanticFallback')}`
-  }
-  if (effective.engine_mode === 'rule_only') return t('admin.riskControl.protectionExternalLocalAudit')
-  if (!effective.external_api_configured) return t('admin.riskControl.protectionExternalNotConfigured')
-  const state = effective.external_api_healthy ? t('admin.riskControl.protectionHealthy') : t('admin.riskControl.protectionUnhealthy')
-  return `${state} · ${formatNumber(effective.external_api_usable_key_count)}`
 })
 
 const protectionRouteCoverageText = computed(() => {
@@ -4201,42 +4102,6 @@ function apiKeyStatusLabel(statusValue: ContentModerationAPIKeyStatus['status'])
     unknown: t('admin.riskControl.apiKeyStatusUnknown'),
   }
   return labels[statusValue] ?? labels.unknown
-}
-
-function protectionUnsafeReasonLabel(reason: string): string {
-  const labels: Record<string, string> = {
-    risk_control_disabled: t('admin.riskControl.protectionReason.riskControlDisabled'),
-    moderation_disabled: t('admin.riskControl.protectionReason.moderationDisabled'),
-    mode_not_pre_block: t('admin.riskControl.protectionReason.modeNotPreBlock'),
-    audit_scope_not_all_context: t('admin.riskControl.protectionReason.auditScopeNotAllContext'),
-    public_fail_open: t('admin.riskControl.protectionReason.publicFailOpen'),
-    group_scope_not_all: t('admin.riskControl.protectionReason.groupScopeNotAll'),
-    model_filter_not_all: t('admin.riskControl.protectionReason.modelFilterNotAll'),
-    external_api_not_configured: t('admin.riskControl.protectionReason.externalAPINotConfigured'),
-    external_api_no_usable_key: t('admin.riskControl.protectionReason.externalAPINoUsableKey'),
-    external_api_all_keys_frozen: t('admin.riskControl.protectionReason.externalAPIAllKeysFrozen'),
-    external_api_health_unknown: t('admin.riskControl.protectionReason.externalAPIHealthUnknown'),
-    external_api_last_test_failed: t('admin.riskControl.protectionReason.externalAPILastTestFailed'),
-    high_risk_rules_not_blocking: t('admin.riskControl.protectionReason.highRiskRulesNotBlocking'),
-    rule_only_without_blocking_rules: t('admin.riskControl.protectionReason.ruleOnlyWithoutBlockingRules'),
-    no_deterministic_high_risk_policy: t('admin.riskControl.protectionReason.noDeterministicHighRiskPolicy'),
-    api_only_without_healthy_external_api: t('admin.riskControl.protectionReason.apiOnlyWithoutHealthyExternalAPI'),
-    hybrid_external_api_unhealthy: t('admin.riskControl.protectionReason.hybridExternalAPIUnhealthy'),
-		candidate_semantic_reviewer_unavailable: t('admin.riskControl.semanticReviewUnavailable'),
-    build_commit_unknown: t('admin.riskControl.protectionReason.buildCommitUnknown'),
-    build_commit_placeholder: t('admin.riskControl.protectionReason.buildCommitPlaceholder'),
-    build_commit_invalid: t('admin.riskControl.protectionReason.buildCommitInvalid'),
-    build_attestation_without_valid_commit: t('admin.riskControl.protectionReason.buildAttestationWithoutValidCommit'),
-    build_baseline_unverified: t('admin.riskControl.protectionReason.buildBaselineUnverified'),
-    build_below_security_baseline: t('admin.riskControl.protectionReason.buildBelowSecurityBaseline'),
-    route_coverage_unknown: t('admin.riskControl.protectionReason.routeCoverageUnknown'),
-    route_manifest_mismatch: t('admin.riskControl.protectionReason.routeManifestMismatch'),
-    uncovered_upstream_routes: t('admin.riskControl.protectionReason.uncoveredUpstreamRoutes'),
-    pipeline_coverage_unknown: t('admin.riskControl.protectionReason.pipelineCoverageUnknown'),
-    pipeline_coverage_mismatch: t('admin.riskControl.protectionReason.pipelineCoverageMismatch'),
-    uncovered_pipeline_routes: t('admin.riskControl.protectionReason.uncoveredPipelineRoutes'),
-  }
-  return labels[reason] ?? reason
 }
 
 function apiKeyStatusBadgeClass(statusValue: ContentModerationAPIKeyStatus['status']): string {

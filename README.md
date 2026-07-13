@@ -293,7 +293,7 @@ sudo systemctl start sub2api
 sudo systemctl enable sub2api
 
 # 3. Open Setup Wizard in browser
-# http://47.80.24.161:8080
+# http://47.89.175.5:8080
 ```
 
 The Setup Wizard will guide you through:
@@ -440,7 +440,7 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 
 #### Access
 
-Open `http://47.80.24.161:8080` in your browser.
+Open `http://47.89.175.5:8080` in your browser.
 
 If admin password was auto-generated, find it in logs:
 ```bash

@@ -1390,8 +1390,10 @@ export interface UsageLogAccountSummary {
   name: string
 }
 
+export type UsageLogSource = 'gateway' | 'account_test' | 'content_moderation'
+
 export interface AdminUsageLog extends UsageLog {
-  source?: 'gateway' | 'account_test' | 'content_moderation'
+  source?: UsageLogSource
   upstream_model?: string | null
   model_mapping_chain?: string | null
 
@@ -1783,6 +1785,7 @@ export interface UsageQueryParams {
   billing_type?: number | null
   exclude_user_ids?: number[] | string
   billing_mode?: string | null
+  source?: UsageLogSource | null
   start_date?: string
   end_date?: string
   timezone?: string

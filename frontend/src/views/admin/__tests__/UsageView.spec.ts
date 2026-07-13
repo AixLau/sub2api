@@ -188,6 +188,37 @@ describe('admin UsageView distribution metric toggles', () => {
     expect((wrapper.vm as any).requestedModelStats).toEqual([{ model: 'B', total_tokens: 20 }])
   })
 
+  it('forwards platform audit source to records and summary without loading unsupported charts', async () => {
+    const wrapper = mount(UsageView, {
+      global: { stubs: {
+        AppLayout: AppLayoutStub, UsageStatsCards: true, UsageFilters: UsageFiltersStub,
+        UsageTable: true, UsageExportProgress: true, UsageCleanupDialog: true,
+        UserBalanceHistoryModal: true, Pagination: true, Select: true,
+        DateRangePicker: true, Icon: true, TokenUsageTrend: true,
+        ModelDistributionChart: true, GroupDistributionChart: true,
+        EndpointDistributionChart: true, UserTokenRanking: true,
+      } },
+    })
+    vi.advanceTimersByTime(120)
+    await flushPromises()
+
+    list.mockClear()
+    getStats.mockClear()
+    getSnapshotV2.mockClear()
+    getModelStats.mockClear()
+
+    const vm = wrapper.vm as any
+    vm.filters.source = 'content_moderation'
+    vm.refreshData()
+    await flushPromises()
+
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ source: 'content_moderation' }), expect.anything())
+    expect(getStats).toHaveBeenCalledWith(expect.objectContaining({ source: 'content_moderation' }))
+    expect(getSnapshotV2).not.toHaveBeenCalled()
+    expect(getModelStats).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="usage-source-analytics-hint"]').exists()).toBe(true)
+  })
+
   it('shows reasoning effort by default in admin usage columns', async () => {
     const wrapper = mount(UsageView, {
       global: { stubs: {

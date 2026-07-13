@@ -25,4 +25,8 @@ func TestUsageStatsCacheKey_StableAndDistinct(t *testing.T) {
 	withUser := base
 	withUser.UserID = 7
 	require.NotEqual(t, k1, usageStatsCacheKey(withUser), "different user must change key")
+
+	withSource := base
+	withSource.Source = "content_moderation"
+	require.NotEqual(t, k1, usageStatsCacheKey(withSource), "different source must change key")
 }

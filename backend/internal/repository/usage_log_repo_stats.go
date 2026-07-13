@@ -684,6 +684,7 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 		args = append(args, int16(*filters.BillingType))
 	}
 	conditions, args = appendUsageLogBillingModeWhereCondition(conditions, args, filters.BillingMode)
+	conditions, args = appendUsageLogSourceWhereCondition(conditions, args, filters.Source)
 	if filters.StartTime != nil {
 		conditions = append(conditions, fmt.Sprintf("created_at >= $%d", len(args)+1))
 		args = append(args, *filters.StartTime)

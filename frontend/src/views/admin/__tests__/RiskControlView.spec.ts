@@ -307,7 +307,7 @@ describe('admin RiskControlView', () => {
     }))
   })
 
-  it('describes platform semantic fallback when ordinary moderation is not configured', async () => {
+  it('does not render the upstream protection status card', async () => {
     getStatus.mockResolvedValue({
       ...runtimeStatus(),
       effective_protection: {
@@ -347,8 +347,8 @@ describe('admin RiskControlView', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('admin.riskControl.protectionExternalSemanticFallback')
-    expect(wrapper.text()).not.toContain('admin.riskControl.protectionExternalNotConfigured')
+    expect(wrapper.text()).not.toContain('admin.riskControl.protectionTitle')
+    expect(wrapper.text()).not.toContain('admin.riskControl.protectionExternalSemanticFallback')
   })
 
   it('shows semantic reviewer calls and filters platform review records', async () => {

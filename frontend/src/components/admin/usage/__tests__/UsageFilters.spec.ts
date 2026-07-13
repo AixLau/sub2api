@@ -18,6 +18,11 @@ const messages: Record<string, string> = {
   'admin.usage.searchAccountPlaceholder': 'Search account...',
   'usage.type': 'Type',
   'admin.usage.allTypes': 'All Types',
+  'admin.usage.source': 'Record Source',
+  'admin.usage.allSources': 'All Sources',
+  'admin.usage.sourceGateway': 'User Requests',
+  'admin.usage.sourcePlatformAudit': 'Platform Audit',
+  'admin.usage.sourceAccountTest': 'Account Tests',
   'usage.ws': 'WS',
   'usage.stream': 'Stream',
   'usage.sync': 'Sync',
@@ -77,6 +82,7 @@ const defaultFilters = () => ({
   request_type: null,
   billing_type: null,
   billing_mode: null,
+  source: null,
   group_id: null,
   start_date: '',
   end_date: '',
@@ -164,6 +170,17 @@ describe('UsageFilters — user search dropdown', () => {
     // Also confirm user_id was set by checking the emitted change came through
     // (the component uses toRef so modelValue is mutated in place and 'change' is emitted)
     expect(wrapper.props('modelValue').user_id).toBe(1)
+  })
+})
+
+describe('UsageFilters — record source', () => {
+  it('offers platform audit as an independent source filter', () => {
+    const wrapper = mountFilters()
+    const sourceFilter = wrapper.getComponent('[data-testid="usage-source-filter"]')
+
+    expect(sourceFilter.props('options')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: 'content_moderation', label: 'Platform Audit' }),
+    ]))
   })
 })
 

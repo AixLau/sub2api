@@ -125,6 +125,7 @@ func (r *usageLogRepository) ListWithFilters(ctx context.Context, params paginat
 		args = append(args, int16(*filters.BillingType))
 	}
 	conditions, args = appendUsageLogBillingModeWhereCondition(conditions, args, filters.BillingMode)
+	conditions, args = appendUsageLogSourceWhereCondition(conditions, args, filters.Source)
 	if filters.StartTime != nil {
 		conditions = append(conditions, fmt.Sprintf("created_at >= $%d", len(args)+1))
 		args = append(args, *filters.StartTime)
@@ -160,7 +161,7 @@ func shouldUseFastUsageLogTotal(filters UsageLogFilters) bool {
 		return false
 	}
 	// 强选择过滤下记录集通常较小，保留精确总数。
-	return filters.UserID == 0 && len(filters.ExcludeUserIDs) == 0 && filters.APIKeyID == 0 && filters.AccountID == 0
+	return filters.UserID == 0 && len(filters.ExcludeUserIDs) == 0 && filters.APIKeyID == 0 && filters.AccountID == 0 && filters.Source == ""
 }
 
 func (r *usageLogRepository) listUsageLogsWithPagination(ctx context.Context, whereClause string, args []any, params pagination.PaginationParams) ([]service.UsageLog, *pagination.PaginationResult, error) {

@@ -74,6 +74,16 @@ func appendUsageLogBillingModeWhereCondition(conditions []string, args []any, bi
 	return appendUsageLogBillingModeWhereConditionWithAlias(conditions, args, billingMode, "")
 }
 
+func appendUsageLogSourceWhereCondition(conditions []string, args []any, source string) ([]string, []any) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return conditions, args
+	}
+	conditions = append(conditions, fmt.Sprintf("source = $%d", len(args)+1))
+	args = append(args, source)
+	return conditions, args
+}
+
 func appendUsageLogBillingModeWhereConditionWithAlias(conditions []string, args []any, billingMode string, alias string) ([]string, []any) {
 	mode := strings.TrimSpace(billingMode)
 	if mode == "" {

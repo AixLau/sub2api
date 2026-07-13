@@ -65,6 +65,16 @@ func TestSafeDateFormat(t *testing.T) {
 	}
 }
 
+func TestAppendUsageLogSourceWhereCondition(t *testing.T) {
+	conditions, args := appendUsageLogSourceWhereCondition(nil, nil, "content_moderation")
+	require.Equal(t, []string{"source = $1"}, conditions)
+	require.Equal(t, []any{"content_moderation"}, args)
+
+	conditions, args = appendUsageLogSourceWhereCondition([]string{"user_id = $1"}, []any{int64(7)}, "")
+	require.Equal(t, []string{"user_id = $1"}, conditions)
+	require.Equal(t, []any{int64(7)}, args)
+}
+
 func TestUsageLogRepositoryGetActiveUsersTrendUsesGatewayAPIUsers(t *testing.T) {
 	db, mock := newSQLMock(t)
 	repo := &usageLogRepository{sql: db}

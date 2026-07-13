@@ -72,6 +72,18 @@ func parseAdminUsageExcludeUserIDs(c *gin.Context) ([]int64, error) {
 	return ids, nil
 }
 
+func parseAdminUsageSource(c *gin.Context) (string, error) {
+	source := strings.TrimSpace(c.Query("source"))
+	switch service.UsageSource(source) {
+	case "":
+		return "", nil
+	case service.UsageSourceGateway, service.UsageSourceAccountTest, service.UsageSourceContentModeration:
+		return source, nil
+	default:
+		return "", fmt.Errorf("invalid source, allowed values: gateway, account_test, content_moderation")
+	}
+}
+
 // CreateUsageCleanupTaskRequest represents cleanup task creation request
 type CreateUsageCleanupTaskRequest struct {
 	StartDate   string  `json:"start_date"`
@@ -146,6 +158,11 @@ func (h *UsageHandler) List(c *gin.Context) {
 
 	model := c.Query("model")
 	billingMode := strings.TrimSpace(c.Query("billing_mode"))
+	source, err := parseAdminUsageSource(c)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 
 	var requestType *int16
 	var stream *bool
@@ -217,6 +234,7 @@ func (h *UsageHandler) List(c *gin.Context) {
 		Stream:         stream,
 		BillingType:    billingType,
 		BillingMode:    billingMode,
+		Source:         source,
 		StartTime:      startTime,
 		EndTime:        endTime,
 		ExactTotal:     exactTotal,
@@ -283,6 +301,11 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 
 	model := c.Query("model")
 	billingMode := strings.TrimSpace(c.Query("billing_mode"))
+	source, err := parseAdminUsageSource(c)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 
 	var requestType *int16
 	var stream *bool
@@ -363,6 +386,7 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 		Stream:         stream,
 		BillingType:    billingType,
 		BillingMode:    billingMode,
+		Source:         source,
 		StartTime:      &startTime,
 		EndTime:        &endTime,
 	}
