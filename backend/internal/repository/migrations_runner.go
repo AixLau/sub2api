@@ -57,6 +57,8 @@ const schedulerOutboxPendingDedupKeyMigration = "153_scheduler_outbox_pending_de
 const schedulerOutboxPendingDedupKeyIndex = "idx_scheduler_outbox_pending_dedup_key"
 const usageLogsAdminVisibleMigration = "173b_account_test_usage_admin_index_notx.sql"
 const usageLogsAdminVisibleIndex = "idx_usage_logs_admin_visible_id"
+const latestAPIKeyIPIndexMigration = "174_add_usage_logs_api_key_latest_ip_index_notx.sql"
+const latestAPIKeyIPIndex = "idx_usage_logs_api_key_latest_ip"
 
 type migrationChecksumCompatibilityRule struct {
 	fileChecksum       string
@@ -268,6 +270,8 @@ func prepareNonTransactionalMigration(ctx context.Context, db *sql.DB, name stri
 		return dropInvalidIndexIfPresent(ctx, db, schedulerOutboxPendingDedupKeyIndex)
 	case usageLogsAdminVisibleMigration:
 		return dropInvalidIndexIfPresent(ctx, db, usageLogsAdminVisibleIndex)
+	case latestAPIKeyIPIndexMigration:
+		return dropInvalidIndexIfPresent(ctx, db, latestAPIKeyIPIndex)
 	default:
 		return nil
 	}

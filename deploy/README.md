@@ -1,6 +1,6 @@
 # Sub2API 部署指南
 
-本目录是 Sub2API 部署文件的权威入口。生产环境优先使用 Docker Compose；需要直接管理进程时再使用 systemd 二进制安装。
+本目录是 Sub2API 部署文件的权威入口。生产环境优先使用 Docker Compose；Apple silicon Mac 本地运行可使用 Apple `container`；需要直接管理进程时再使用 systemd 二进制安装。
 
 ## 选择部署方式
 
@@ -8,6 +8,7 @@
 | --- | --- | --- | --- |
 | 新服务器，一体化部署 | `docker-deploy.sh` + `docker-compose.local.yml` | 当前目录 | 推荐，便于备份和迁移 |
 | 简单的一体化部署 | `docker-compose.yml` | Docker 命名卷 | 数据由 Docker 管理 |
+| Apple silicon Mac 本地运行 | `apple-container.sh` | Apple 命名卷 | 需要 macOS 26 和 Apple `container` 1.1.0 或更高版本 |
 | 已有 PostgreSQL/Redis | `docker-compose.standalone.yml` | 应用命名卷 | 只启动 Sub2API |
 | 本地容器开发 | `docker-compose.dev.yml` | 当前目录 | 从本地源码构建 |
 | 裸机/systemd | `install.sh` | `/opt/sub2api` | 不使用 Docker |
@@ -25,6 +26,8 @@
 | `docker-compose.standalone.yml` | 连接外部 PostgreSQL 和 Redis |
 | `docker-compose.dev.yml` | 本地源码构建与调试 |
 | `docker-deploy.sh` | 首次部署准备，生成 `.env` 和数据目录 |
+| `apple-container.sh` | Apple `container` 初始化、启动、停止和状态管理脚本 |
+| `APPLE_CONTAINER.md` | Apple `container` 配置、升级、持久化、网络和限制说明 |
 | `remote-compose-deploy.sh` | 本地构建并发布到已有远端 Compose 实例 |
 | `build_image.sh` | 本地快速构建 `sub2api:latest` |
 | `install.sh` | 二进制安装、升级和卸载 |
@@ -33,6 +36,23 @@
 | `react-landing-production.md` | React 官网与 Sub2API 双服务路由说明 |
 
 运行数据、`.env`、备份和构建产物不得提交到 Git。
+
+## Apple container 部署
+
+Apple silicon Mac 在 macOS 26 上安装 Apple `container` 1.1.0 或更高版本后，可以在本机运行完整的 Sub2API、PostgreSQL 和 Redis 服务栈：
+
+```bash
+./apple-container.sh init
+./apple-container.sh up
+./apple-container.sh status
+./apple-container.sh logs app -f
+```
+
+脚本使用 Apple 命名卷持久化数据，按依赖顺序启动服务，并执行实时就绪检查。它不提供持续运行的重启守护；宿主机重启后需要再次运行 `./apple-container.sh up`。生产环境仍推荐使用 Docker Compose。
+
+配置、升级、持久化、网络行为和限制详见 [Apple container 部署与运维指南](./APPLE_CONTAINER.md)。
+
+---
 
 ## 首次 Docker Compose 部署
 

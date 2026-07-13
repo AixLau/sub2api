@@ -85,7 +85,22 @@ func RegisterGatewayRoutes(
 			},
 		})
 	}
-
+	videoEditHandler := func(c *gin.Context) {
+		if getGroupPlatform(c) == service.PlatformGrok {
+			h.OpenAIGateway.GrokVideoEdit(c)
+			return
+		}
+		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+		c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Videos API is not supported for this platform"}})
+	}
+	videoExtensionHandler := func(c *gin.Context) {
+		if getGroupPlatform(c) == service.PlatformGrok {
+			h.OpenAIGateway.GrokVideoExtension(c)
+			return
+		}
+		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+		c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Videos API is not supported for this platform"}})
+	}
 	// API网关（Claude API兼容）
 	gateway := r.Group("/v1")
 	globalGatewayPipelineEntrypoint := NewGatewayPipelineEntrypointDispatcherForHandlers(h, getGroupPlatform, isOpenAIGatewayPlatform)
@@ -297,6 +312,46 @@ func RegisterGatewayRoutes(
 				return
 			}
 			videoGenerationHandler(c)
+		})
+		openAIVideoEditRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
+			"/v1/videos/edits",
+			"OpenAIGatewayHandler.GrokVideoEdit",
+			service.ContentModerationProtocolOpenAIImages,
+			"Grok video edit prompt and source media metadata are moderated before permission checks, scheduling, and upstream forwarding.",
+		))
+		moderatedGateway.POST("/videos/edits", intentionalNoAuditRoute(
+			"/v1/videos/edits",
+			"OpenAIGatewayHandler.GrokVideoEdit",
+			"Non-Grok groups are rejected before upstream content handling; Grok groups enter the OpenAI HTTP moderation branch.",
+		), func(c *gin.Context) {
+			if getGroupPlatform(c) != service.PlatformGrok {
+				videoEditHandler(c)
+				return
+			}
+			if enterModeratedRouteBranchPipeline(c, moderatedGateway, openAIVideoEditRouteMeta).Stop {
+				return
+			}
+			videoEditHandler(c)
+		})
+		openAIVideoExtensionRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
+			"/v1/videos/extensions",
+			"OpenAIGatewayHandler.GrokVideoExtension",
+			service.ContentModerationProtocolOpenAIImages,
+			"Grok video extension prompt and source video metadata are moderated before permission checks, scheduling, and upstream forwarding.",
+		))
+		moderatedGateway.POST("/videos/extensions", intentionalNoAuditRoute(
+			"/v1/videos/extensions",
+			"OpenAIGatewayHandler.GrokVideoExtension",
+			"Non-Grok groups are rejected before upstream content handling; Grok groups enter the OpenAI HTTP moderation branch.",
+		), func(c *gin.Context) {
+			if getGroupPlatform(c) != service.PlatformGrok {
+				videoExtensionHandler(c)
+				return
+			}
+			if enterModeratedRouteBranchPipeline(c, moderatedGateway, openAIVideoExtensionRouteMeta).Stop {
+				return
+			}
+			videoExtensionHandler(c)
 		})
 		moderatedGateway.GETNoAudit("/videos/:request_id", intentionalNoAuditRoute(
 			"/v1/videos/:request_id",
@@ -592,6 +647,46 @@ func RegisterGatewayRoutes(
 			return
 		}
 		videoGenerationHandler(c)
+	})
+	rootOpenAIVideoEditRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
+		"/videos/edits",
+		"OpenAIGatewayHandler.GrokVideoEdit",
+		service.ContentModerationProtocolOpenAIImages,
+		"Root Grok video edit alias reaches the shared Grok media moderation hook before upstream forwarding.",
+	))
+	moderatedRoot.POST("/videos/edits", intentionalNoAuditRoute(
+		"/videos/edits",
+		"OpenAIGatewayHandler.GrokVideoEdit",
+		"Non-Grok groups are rejected before upstream content handling; Grok groups enter the OpenAI HTTP moderation branch.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
+		if getGroupPlatform(c) != service.PlatformGrok {
+			videoEditHandler(c)
+			return
+		}
+		if enterModeratedRouteBranchPipeline(c, moderatedRoot, rootOpenAIVideoEditRouteMeta).Stop {
+			return
+		}
+		videoEditHandler(c)
+	})
+	rootOpenAIVideoExtensionRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
+		"/videos/extensions",
+		"OpenAIGatewayHandler.GrokVideoExtension",
+		service.ContentModerationProtocolOpenAIImages,
+		"Root Grok video extension alias reaches the shared Grok media moderation hook before upstream forwarding.",
+	))
+	moderatedRoot.POST("/videos/extensions", intentionalNoAuditRoute(
+		"/videos/extensions",
+		"OpenAIGatewayHandler.GrokVideoExtension",
+		"Non-Grok groups are rejected before upstream content handling; Grok groups enter the OpenAI HTTP moderation branch.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
+		if getGroupPlatform(c) != service.PlatformGrok {
+			videoExtensionHandler(c)
+			return
+		}
+		if enterModeratedRouteBranchPipeline(c, moderatedRoot, rootOpenAIVideoExtensionRouteMeta).Stop {
+			return
+		}
+		videoExtensionHandler(c)
 	})
 	moderatedRoot.GETNoAudit("/videos/:request_id", intentionalNoAuditRoute(
 		"/videos/:request_id",

@@ -1002,7 +1002,7 @@ func TestOpenAIHTTPModerationStageRunsBeforeCyberStage(t *testing.T) {
 func TestOpenAIHTTPHandlersUseUnifiedPreForwardPipeline(t *testing.T) {
 	stageCoverage := openAIHTTPStageCoverageFromHandlerSources(t)
 
-	for _, handlerName := range []string{"OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.AlphaSearch", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.Embeddings", "OpenAIGatewayHandler.Messages"} {
+	for _, handlerName := range []string{"OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.AlphaSearch", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.GrokVideoEdit", "OpenAIGatewayHandler.GrokVideoExtension", "OpenAIGatewayHandler.Embeddings", "OpenAIGatewayHandler.Messages"} {
 		coverage, ok := stageCoverage[handlerName]
 		require.True(t, ok, "OpenAI HTTP handler %s should be present in source coverage scan", handlerName)
 		require.True(t, coverage.HasHTTPPreForwardPipeline,
@@ -1046,7 +1046,11 @@ func TestOpenAIHTTPModeratedRouteRegistrarExposesPipelineStages(t *testing.T) {
 		"POST /v1/messages",
 		"POST /v1/responses",
 		"POST /v1/responses/*subpath",
+		"POST /v1/videos/edits",
+		"POST /v1/videos/extensions",
 		"POST /v1/videos/generations",
+		"POST /videos/edits",
+		"POST /videos/extensions",
 		"POST /videos/generations",
 	}, moderatedRoutePathKeysFromEntries(entries))
 
@@ -1070,7 +1074,7 @@ func TestOpenAIHTTPModeratedRouteRegistrarExposesPipelineStages(t *testing.T) {
 		case "OpenAIGatewayHandler.Images":
 			requireStageNotRequired(t, entry, moderationcoverage.StageCyber)
 			requireStageRequiredAndCovered(t, entry, moderationcoverage.StageImage)
-		case "OpenAIGatewayHandler.GrokVideoGeneration":
+		case "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.GrokVideoEdit", "OpenAIGatewayHandler.GrokVideoExtension":
 			requireStageNotRequired(t, entry, moderationcoverage.StageCyber)
 			requireStageRequiredAndCovered(t, entry, moderationcoverage.StageImage)
 		case "OpenAIGatewayHandler.Embeddings":
@@ -1244,7 +1248,7 @@ func postRouteCanReachUpstreamContent(path string) bool {
 		"/chat/completions",
 		"/embeddings",
 		"/images/generations", "/images/edits",
-		"/videos/generations":
+		"/videos/generations", "/videos/edits", "/videos/extensions":
 		return true
 	}
 	return strings.HasPrefix(path, "/v1/") ||
@@ -1672,17 +1676,19 @@ func mergeOpenAIHTTPGatewayEntrypointStageCoverage(t *testing.T, coverageByHandl
 			coverage.HasImageStage = true
 			coverage.ModerationLocations = append(coverage.ModerationLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
 			coverageByHandler["OpenAIGatewayHandler.Images"] = coverage
-			videoCoverage := coverageByHandler["OpenAIGatewayHandler.GrokVideoGeneration"]
-			videoCoverage.Protocol = protocol
-			videoCoverage.HasHTTPPreForwardPipeline = true
-			videoCoverage.HasModerationStage = true
-			videoCoverage.HasImageStage = true
-			videoCoverage.HasBillingStage = true
-			videoCoverage.HasRoutingStage = true
-			videoCoverage.HasForwardStage = true
-			videoCoverage.HasUsageStage = true
-			videoCoverage.ModerationLocations = append(videoCoverage.ModerationLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
-			coverageByHandler["OpenAIGatewayHandler.GrokVideoGeneration"] = videoCoverage
+			for _, handlerName := range []string{"OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.GrokVideoEdit", "OpenAIGatewayHandler.GrokVideoExtension"} {
+				videoCoverage := coverageByHandler[handlerName]
+				videoCoverage.Protocol = protocol
+				videoCoverage.HasHTTPPreForwardPipeline = true
+				videoCoverage.HasModerationStage = true
+				videoCoverage.HasImageStage = true
+				videoCoverage.HasBillingStage = true
+				videoCoverage.HasRoutingStage = true
+				videoCoverage.HasForwardStage = true
+				videoCoverage.HasUsageStage = true
+				videoCoverage.ModerationLocations = append(videoCoverage.ModerationLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
+				coverageByHandler[handlerName] = videoCoverage
+			}
 		case "openai_embeddings":
 			coverage := coverageByHandler["OpenAIGatewayHandler.Embeddings"]
 			coverage.Protocol = protocol
@@ -1712,7 +1718,7 @@ func gatewayPreForwardHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) 
 
 func openAIHTTPHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
 	switch fn.Name.Name {
-	case "ChatCompletions", "Responses", "AlphaSearch", "Images", "GrokVideoGeneration", "Embeddings", "Messages":
+	case "ChatCompletions", "Responses", "AlphaSearch", "Images", "GrokVideoGeneration", "GrokVideoEdit", "GrokVideoExtension", "Embeddings", "Messages":
 	default:
 		return "", false
 	}
@@ -1727,7 +1733,7 @@ func openAIHTTPHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
 
 func isOpenAIHTTPModeratedHandler(handler string) bool {
 	switch strings.TrimSpace(handler) {
-	case "OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Messages", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.AlphaSearch", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.Embeddings":
+	case "OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Messages", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.AlphaSearch", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.GrokVideoEdit", "OpenAIGatewayHandler.GrokVideoExtension", "OpenAIGatewayHandler.Embeddings":
 		return true
 	default:
 		return false

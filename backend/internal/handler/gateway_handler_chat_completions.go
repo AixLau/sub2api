@@ -275,7 +275,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 					h.handleCCFailoverExhausted(c, failoverErr, true)
 					return
 				}
-				action := fs.HandleFailoverErrorForUser(c.Request.Context(), h.gatewayService, subject.UserID, account.ID, account.Platform, failoverErr)
+				action := fs.HandleFailoverErrorForUser(c.Request.Context(), h.gatewayService, subject.UserID, account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 				switch action {
 				case FailoverContinue:
 					continue

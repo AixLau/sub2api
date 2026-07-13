@@ -256,7 +256,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 					h.handleResponsesFailoverExhausted(c, failoverErr, true)
 					return
 				}
-				action := fs.HandleFailoverErrorForUser(requestCtx, h.gatewayService, subject.UserID, account.ID, account.Platform, failoverErr)
+				action := fs.HandleFailoverErrorForUser(requestCtx, h.gatewayService, subject.UserID, account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 				switch action {
 				case FailoverContinue:
 					continue

@@ -160,6 +160,10 @@ func TestGatewayRoutesGrokImagesAndVideosPathsAreRegistered(t *testing.T) {
 		"/images/edits",
 		"/v1/videos/generations",
 		"/videos/generations",
+		"/v1/videos/edits",
+		"/videos/edits",
+		"/v1/videos/extensions",
+		"/videos/extensions",
 	} {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"grok-imagine","prompt":"draw a cat"}`))
 		req.Header.Set("Content-Type", "application/json")
@@ -193,6 +197,10 @@ func TestGatewayRoutesNonGrokVideosAreRejectedAtPlatformGate(t *testing.T) {
 	}{
 		{http.MethodPost, "/v1/videos/generations", `{"model":"grok-imagine-video-1.5","prompt":"waves"}`},
 		{http.MethodPost, "/videos/generations", `{"model":"grok-imagine-video-1.5","prompt":"waves"}`},
+		{http.MethodPost, "/v1/videos/edits", `{"model":"grok-imagine-video","prompt":"waves","video":{"url":"https://example.com/in.mp4"}}`},
+		{http.MethodPost, "/videos/edits", `{"model":"grok-imagine-video","prompt":"waves","video":{"url":"https://example.com/in.mp4"}}`},
+		{http.MethodPost, "/v1/videos/extensions", `{"model":"grok-imagine-video","prompt":"waves","video":{"url":"https://example.com/in.mp4"}}`},
+		{http.MethodPost, "/videos/extensions", `{"model":"grok-imagine-video","prompt":"waves","video":{"url":"https://example.com/in.mp4"}}`},
 		{http.MethodGet, "/v1/videos/request-123", ""},
 		{http.MethodGet, "/videos/request-123", ""},
 	} {
@@ -302,7 +310,7 @@ func gatewayPostRouteCanCarryUpstreamUserContent(path string) bool {
 		"/chat/completions",
 		"/embeddings",
 		"/images/generations", "/images/edits",
-		"/videos/generations":
+		"/videos/generations", "/videos/edits", "/videos/extensions":
 		return true
 	}
 	return strings.HasPrefix(path, "/v1/") ||
@@ -356,7 +364,11 @@ func gatewayModerationCriticalRouteCoverageProofRoutes() []string {
 		"POST /images/generations":                     {},
 		"POST /images/edits":                           {},
 		"POST /v1/videos/generations":                  {},
+		"POST /v1/videos/edits":                        {},
+		"POST /v1/videos/extensions":                   {},
 		"POST /videos/generations":                     {},
+		"POST /videos/edits":                           {},
+		"POST /videos/extensions":                      {},
 		"POST /v1beta/models/*modelAction":             {},
 		"POST /antigravity/v1beta/models/*modelAction": {},
 	}
