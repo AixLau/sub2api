@@ -121,14 +121,19 @@ const baseConfig = (): ContentModerationConfig => ({
   decision_cache_enabled: true,
   decision_cache_ttl_seconds: 600,
   candidate_fragment_runes: 2000,
-  semantic_review: {
-    enabled: true,
-    trigger: 'local_review',
-    primary_model: 'gpt-5.3-codex-spark',
-    fallback_models: ['gpt-5.4-mini'],
-    timeout_ms: 20000,
-    max_input_runes: 2000,
-  },
+	semantic_review: {
+	  enabled: true,
+	  trigger: 'local_review',
+	  primary_model: 'gpt-5.3-codex-spark',
+	  fallback_models: ['gpt-5.4-mini'],
+	  timeout_ms: 8000,
+	  primary_timeout_ms: 5000,
+	  fallback_timeout_ms: 3000,
+	  max_attempts_per_model: 1,
+	  max_input_runes: 2000,
+	  max_output_tokens: 512,
+	  reasoning_effort: 'low',
+	},
   thresholds: {
     harassment: 0.98,
     sexual: 0.65,
@@ -752,11 +757,17 @@ describe('admin RiskControlView', () => {
       keyword_blocking_mode: 'keyword_and_api',
       record_non_hits: false,
       audit_scope: 'user_only',
-      semantic_review: expect.objectContaining({
-        enabled: true,
-        trigger: 'local_review',
-        max_input_runes: 2000,
-      }),
+	      semantic_review: expect.objectContaining({
+	        enabled: true,
+	        trigger: 'local_review',
+	        timeout_ms: 8000,
+	        primary_timeout_ms: 5000,
+	        fallback_timeout_ms: 3000,
+	        max_attempts_per_model: 1,
+	        max_input_runes: 2000,
+	        max_output_tokens: 512,
+	        reasoning_effort: 'low',
+	      }),
     }))
   })
 

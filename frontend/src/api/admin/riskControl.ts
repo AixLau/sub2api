@@ -47,7 +47,12 @@ export interface ContentModerationSemanticReviewConfig {
   primary_model: string
   fallback_models: string[]
   timeout_ms: number
+  primary_timeout_ms: number
+  fallback_timeout_ms: number
+  max_attempts_per_model: number
   max_input_runes: number
+  max_output_tokens: number
+  reasoning_effort: 'minimal' | 'low'
 }
 
 export interface ContentModerationConfig {

@@ -873,6 +873,26 @@
                     <label class="input-label">{{ t('admin.riskControl.semanticReviewTimeout') }}</label>
                     <input v-model.number="configForm.semantic_review_timeout_ms" type="number" min="1000" max="60000" class="input" />
                   </div>
+                  <div>
+                    <label class="input-label">{{ t('admin.riskControl.semanticReviewPrimaryTimeout') }}</label>
+                    <input v-model.number="configForm.semantic_review_primary_timeout_ms" type="number" min="500" max="60000" class="input" />
+                  </div>
+                  <div>
+                    <label class="input-label">{{ t('admin.riskControl.semanticReviewFallbackTimeout') }}</label>
+                    <input v-model.number="configForm.semantic_review_fallback_timeout_ms" type="number" min="500" max="60000" class="input" />
+                  </div>
+                  <div>
+                    <label class="input-label">{{ t('admin.riskControl.semanticReviewMaxAttempts') }}</label>
+                    <input v-model.number="configForm.semantic_review_max_attempts_per_model" type="number" min="1" max="2" class="input" />
+                  </div>
+                  <div>
+                    <label class="input-label">{{ t('admin.riskControl.semanticReviewMaxOutputTokens') }}</label>
+                    <input v-model.number="configForm.semantic_review_max_output_tokens" type="number" min="128" max="2048" step="64" class="input" />
+                  </div>
+                  <div>
+                    <label class="input-label">{{ t('admin.riskControl.semanticReviewReasoningEffort') }}</label>
+                    <Select v-model="configForm.semantic_review_reasoning_effort" :options="semanticReviewReasoningOptions" />
+                  </div>
                 </div>
               </div>
               <div>
@@ -2056,9 +2076,14 @@ const configForm = reactive({
 	  prompt_filter_mode: 'observe' as ContentModerationPromptFilterMode,
 	  prompt_filter_threshold: 50,
 	  prompt_filter_strict_threshold: 90,
-	  semantic_review_primary_model: 'gpt-5.3-codex-spark',
-	  semantic_review_fallback_models_text: 'gpt-5.4-mini',
-	  semantic_review_timeout_ms: 20000,
+  semantic_review_primary_model: 'gpt-5.3-codex-spark',
+  semantic_review_fallback_models_text: 'gpt-5.4-mini',
+  semantic_review_timeout_ms: 8000,
+  semantic_review_primary_timeout_ms: 5000,
+  semantic_review_fallback_timeout_ms: 3000,
+  semantic_review_max_attempts_per_model: 1,
+  semantic_review_max_output_tokens: 512,
+  semantic_review_reasoning_effort: 'low' as 'minimal' | 'low',
 	  provider: 'openai' as ModerationProvider,
   base_url: 'https://api.openai.com',
   model: 'omni-moderation-latest',
@@ -2173,6 +2198,11 @@ const promptFilterModeOptions = computed<SelectOption[]>(() => [
 const semanticReviewModelOptions = computed<SelectOption[]>(() => [
   { value: 'gpt-5.3-codex-spark', label: 'gpt-5.3-codex-spark' },
   { value: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
+])
+
+const semanticReviewReasoningOptions = computed<SelectOption[]>(() => [
+  { value: 'minimal', label: 'minimal' },
+  { value: 'low', label: 'low' },
 ])
 
 const modelFilterOptions = computed<Array<{ value: ContentModerationModelFilterType; label: string; description: string }>>(() => [
@@ -3097,17 +3127,27 @@ function applyConfig(config: ContentModerationConfig) {
 	configForm.prompt_filter_mode = (config.prompt_filter_mode === 'off' || config.prompt_filter_mode === 'warn' || config.prompt_filter_mode === 'block' ? config.prompt_filter_mode : 'observe')
 	configForm.prompt_filter_threshold = config.prompt_filter_threshold || 50
 	configForm.prompt_filter_strict_threshold = config.prompt_filter_strict_threshold || 90
-	const semanticReview: ContentModerationSemanticReviewConfig = config.semantic_review || {
-		enabled: true,
-		trigger: 'local_review',
-		primary_model: 'gpt-5.3-codex-spark',
-		fallback_models: ['gpt-5.4-mini'],
-		timeout_ms: 20000,
-		max_input_runes: 2000,
-	}
-	configForm.semantic_review_primary_model = semanticReview.primary_model || 'gpt-5.3-codex-spark'
-	configForm.semantic_review_fallback_models_text = Array.isArray(semanticReview.fallback_models) ? semanticReview.fallback_models.join('\n') : ''
-	configForm.semantic_review_timeout_ms = semanticReview.timeout_ms || 20000
+  const semanticReview: ContentModerationSemanticReviewConfig = config.semantic_review || {
+    enabled: true,
+    trigger: 'local_review',
+    primary_model: 'gpt-5.3-codex-spark',
+    fallback_models: ['gpt-5.4-mini'],
+    timeout_ms: 8000,
+    primary_timeout_ms: 5000,
+    fallback_timeout_ms: 3000,
+    max_attempts_per_model: 1,
+    max_input_runes: 2000,
+    max_output_tokens: 512,
+    reasoning_effort: 'low',
+  }
+  configForm.semantic_review_primary_model = semanticReview.primary_model || 'gpt-5.3-codex-spark'
+  configForm.semantic_review_fallback_models_text = Array.isArray(semanticReview.fallback_models) ? semanticReview.fallback_models.join('\n') : ''
+  configForm.semantic_review_timeout_ms = semanticReview.timeout_ms || 8000
+  configForm.semantic_review_primary_timeout_ms = semanticReview.primary_timeout_ms || 5000
+  configForm.semantic_review_fallback_timeout_ms = semanticReview.fallback_timeout_ms || 3000
+  configForm.semantic_review_max_attempts_per_model = semanticReview.max_attempts_per_model || 1
+  configForm.semantic_review_max_output_tokens = semanticReview.max_output_tokens || 512
+  configForm.semantic_review_reasoning_effort = semanticReview.reasoning_effort === 'minimal' ? 'minimal' : 'low'
 	promptFilterSourceRevision.value = config.prompt_filter_source_revision || ''
 	promptFilterSourceURL.value = config.prompt_filter_source_url || ''
 	promptFilterSourceAuthor.value = config.prompt_filter_source_author || ''
@@ -3273,9 +3313,14 @@ async function saveConfig() {
 	          .split(/[\n,]/)
 	          .map((model) => model.trim())
 	          .filter(Boolean),
-	        timeout_ms: Number(configForm.semantic_review_timeout_ms) || 20000,
-	        max_input_runes: 2000,
-	      },
+          timeout_ms: Number(configForm.semantic_review_timeout_ms) || 8000,
+          primary_timeout_ms: Number(configForm.semantic_review_primary_timeout_ms) || 5000,
+          fallback_timeout_ms: Number(configForm.semantic_review_fallback_timeout_ms) || 3000,
+          max_attempts_per_model: Number(configForm.semantic_review_max_attempts_per_model) || 1,
+          max_input_runes: 2000,
+          max_output_tokens: Number(configForm.semantic_review_max_output_tokens) || 512,
+          reasoning_effort: configForm.semantic_review_reasoning_effort,
+        },
 	      provider: configForm.provider,
       base_url: configForm.base_url,
       model: configForm.model,

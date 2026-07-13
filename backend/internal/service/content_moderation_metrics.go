@@ -19,6 +19,9 @@ type ContentModerationMetrics struct {
 	correlation       *prometheus.CounterVec
 	forwardedEvidence *prometheus.CounterVec
 	forcedFresh       *prometheus.CounterVec
+	semanticReview    *prometheus.CounterVec
+	semanticLatency   *prometheus.HistogramVec
+	semanticTokens    *prometheus.CounterVec
 	pendingReviewAge  prometheus.Gauge
 	highSeverityMiss  prometheus.Counter
 }
@@ -36,11 +39,43 @@ func NewContentModerationMetrics() *ContentModerationMetrics {
 		correlation:       prometheus.NewCounterVec(prometheus.CounterOpts{Name: "sub2api_moderation_correlation_total", Help: "Cyber-policy correlation outcomes."}, []string{"result"}),
 		forwardedEvidence: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "sub2api_moderation_forwarded_evidence_total", Help: "Audit evidence state for forwarded requests."}, []string{"state"}),
 		forcedFresh:       prometheus.NewCounterVec(prometheus.CounterOpts{Name: "sub2api_moderation_forced_fresh_total", Help: "Observe-mode forced-fresh comparisons."}, []string{"result"}),
+		semanticReview:    prometheus.NewCounterVec(prometheus.CounterOpts{Name: "sub2api_moderation_semantic_review_total", Help: "Platform semantic review outcomes."}, []string{"model", "result"}),
+		semanticLatency:   prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "sub2api_moderation_semantic_review_duration_seconds", Help: "Platform semantic review end-to-end latency.", Buckets: []float64{.25, .5, .75, 1, 1.5, 2, 3, 5, 8}}, []string{"model", "result"}),
+		semanticTokens:    prometheus.NewCounterVec(prometheus.CounterOpts{Name: "sub2api_moderation_semantic_review_tokens_total", Help: "Platform semantic review token usage."}, []string{"model", "direction"}),
 		pendingReviewAge:  prometheus.NewGauge(prometheus.GaugeOpts{Name: "sub2api_moderation_oldest_pending_review_seconds", Help: "Age of the oldest pending correlated review."}),
 		highSeverityMiss:  prometheus.NewCounter(prometheus.CounterOpts{Name: "sub2api_moderation_confirmed_high_severity_misses_total", Help: "Confirmed high-severity correlated misses."}),
 	}
-	registry.MustRegister(m.requests, m.requestLatency, m.chunks, m.cache, m.providerCalls, m.batch, m.correlation, m.forwardedEvidence, m.forcedFresh, m.pendingReviewAge, m.highSeverityMiss)
+	registry.MustRegister(m.requests, m.requestLatency, m.chunks, m.cache, m.providerCalls, m.batch, m.correlation, m.forwardedEvidence, m.forcedFresh, m.semanticReview, m.semanticLatency, m.semanticTokens, m.pendingReviewAge, m.highSeverityMiss)
 	return m
+}
+
+func (m *ContentModerationMetrics) observeSemanticReview(model, result string, started time.Time, usage OpenAIUsage) {
+	if m == nil {
+		return
+	}
+	model = boundedSemanticReviewModel(model)
+	switch result {
+	case "allow", "review", "reject":
+	default:
+		result = "error"
+	}
+	m.semanticReview.WithLabelValues(model, result).Inc()
+	m.semanticLatency.WithLabelValues(model, result).Observe(time.Since(started).Seconds())
+	if usage.InputTokens > 0 {
+		m.semanticTokens.WithLabelValues(model, "input").Add(float64(usage.InputTokens))
+	}
+	if usage.OutputTokens > 0 {
+		m.semanticTokens.WithLabelValues(model, "output").Add(float64(usage.OutputTokens))
+	}
+}
+
+func boundedSemanticReviewModel(model string) string {
+	switch model {
+	case ContentModerationSemanticReviewPrimaryModel, ContentModerationSemanticReviewFallbackModel:
+		return model
+	default:
+		return "other"
+	}
 }
 
 func (m *ContentModerationMetrics) Handler() http.Handler {

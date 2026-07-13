@@ -64,6 +64,22 @@ func TestCandidateModeEnforcesBoundedReviewerInvariants(t *testing.T) {
 	require.Equal(t, maxContentModerationCandidateRunes, cfg.SemanticReview.MaxInputRunes)
 }
 
+func TestCandidateAdaptiveWindowUsesPreferredSizeForOrdinaryContext(t *testing.T) {
+	text := strings.Repeat("前文", 700) + " danger-marker " + strings.Repeat("后文", 700)
+
+	got := contentModerationCandidateAdaptiveRunes(text, maxContentModerationCandidateRunes)
+
+	require.Equal(t, contentModerationCandidatePreferredRunes, got)
+}
+
+func TestCandidateAdaptiveWindowKeepsFullBudgetForAuthorizationContext(t *testing.T) {
+	text := strings.Repeat("前文", 700) + " 已获授权的测试环境 danger-marker " + strings.Repeat("后文", 700)
+
+	got := contentModerationCandidateAdaptiveRunes(text, maxContentModerationCandidateRunes)
+
+	require.Equal(t, maxContentModerationCandidateRunes, got)
+}
+
 func TestCandidateSelectionUsesMatchedUserSourceOnly(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.KeywordRules = []ContentModerationKeywordRule{{

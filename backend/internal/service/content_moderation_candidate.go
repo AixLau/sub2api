@@ -31,6 +31,7 @@ const (
 
 	contentModerationCandidateFailureCacheTTL      = 15 * time.Second
 	contentModerationDecisionCacheOperationTimeout = 2 * time.Second
+	contentModerationCandidatePreferredRunes       = 1_200
 )
 
 type contentModerationCandidateSelection struct {
@@ -106,6 +107,7 @@ func contentModerationCandidateSelectionFromRuleAt(cfg *ContentModerationConfig,
 	if cfg != nil && cfg.CandidateFragmentRunes > 0 {
 		maxRunes = cfg.CandidateFragmentRunes
 	}
+	maxRunes = contentModerationCandidateAdaptiveRunes(source.Text, maxRunes)
 	fragment := contentModerationCandidateFragment(source.Text, rule.Keyword, maxRunes)
 	if startByte >= 0 && endByte > startByte {
 		fragment = contentModerationCandidateFragmentAroundByteSpan(source.Text, startByte, endByte, maxRunes)
@@ -120,6 +122,26 @@ func contentModerationCandidateSelectionFromRuleAt(cfg *ContentModerationConfig,
 		MatchStartByte: startByte,
 		MatchEndByte:   endByte,
 	}
+}
+
+func contentModerationCandidateAdaptiveRunes(text string, configuredMax int) int {
+	if configuredMax <= 0 || configuredMax > maxContentModerationCandidateRunes {
+		configuredMax = maxContentModerationCandidateRunes
+	}
+	if configuredMax <= contentModerationCandidatePreferredRunes {
+		return configuredMax
+	}
+	comparable := normalizeKeywordComparable(text)
+	for _, marker := range []string{
+		"authorized", "authorization", "permission", "self-owned", "self owned",
+		"ctf", "capture the flag", "sandbox", "lab", "third party", "third-party",
+		"授权", "未经授权", "已获许可", "自有", "自己的系统", "靶场", "第三方", "测试环境",
+	} {
+		if strings.Contains(comparable, normalizeKeywordComparable(marker)) {
+			return configuredMax
+		}
+	}
+	return contentModerationCandidatePreferredRunes
 }
 
 func contentModerationCandidateSelectionForSource(cfg *ContentModerationConfig, source ContentModerationInputSource) (contentModerationCandidateSelection, bool) {
@@ -950,6 +972,9 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 	result, err := s.semanticReviewRouter.Review(ctx, semanticCfg, semanticInput)
 	latency := int(time.Since(started).Milliseconds())
 	if err != nil {
+		if s.metrics != nil {
+			s.metrics.observeSemanticReview(semanticCfg.PrimaryModel, "error", started, OpenAIUsage{})
+		}
 		slog.Warn("content_moderation.candidate_semantic_review_failed", "candidate_category", selection.Rule.Category, "error", err)
 		return s.candidateUnavailableOutcome(
 			ctx,
@@ -961,6 +986,9 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 			semanticCfg.PrimaryModel,
 			sanitizeSemanticReviewError(err.Error()),
 		)
+	}
+	if s.metrics != nil {
+		s.metrics.observeSemanticReview(result.Model, result.Verdict, started, result.Usage)
 	}
 	result, policyOverride := applySemanticReviewPolicy(result)
 	category := "semantic_review"

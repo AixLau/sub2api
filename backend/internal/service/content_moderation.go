@@ -374,12 +374,17 @@ type ContentModerationLocalClassifierConfig struct {
 // classifiers, while this path handles jailbreak, reverse-engineering abuse,
 // credential theft, and similar intent.
 type ContentModerationSemanticReviewConfig struct {
-	Enabled        bool     `json:"enabled"`
-	Trigger        string   `json:"trigger"`
-	PrimaryModel   string   `json:"primary_model"`
-	FallbackModels []string `json:"fallback_models"`
-	TimeoutMS      int      `json:"timeout_ms"`
-	MaxInputRunes  int      `json:"max_input_runes"`
+	Enabled             bool     `json:"enabled"`
+	Trigger             string   `json:"trigger"`
+	PrimaryModel        string   `json:"primary_model"`
+	FallbackModels      []string `json:"fallback_models"`
+	TimeoutMS           int      `json:"timeout_ms"`
+	PrimaryTimeoutMS    int      `json:"primary_timeout_ms"`
+	FallbackTimeoutMS   int      `json:"fallback_timeout_ms"`
+	MaxAttemptsPerModel int      `json:"max_attempts_per_model"`
+	MaxInputRunes       int      `json:"max_input_runes"`
+	MaxOutputTokens     int      `json:"max_output_tokens"`
+	ReasoningEffort     string   `json:"reasoning_effort"`
 }
 
 type ContentModerationFailStrategy struct {
@@ -5402,16 +5407,25 @@ func (cfg *ContentModerationConfig) normalize() {
 
 func defaultContentModerationSemanticReviewConfig() ContentModerationSemanticReviewConfig {
 	return ContentModerationSemanticReviewConfig{
-		Enabled:        false,
-		Trigger:        ContentModerationSemanticReviewTriggerLocalReview,
-		PrimaryModel:   ContentModerationSemanticReviewPrimaryModel,
-		FallbackModels: []string{ContentModerationSemanticReviewFallbackModel},
-		TimeoutMS:      ContentModerationSemanticReviewDefaultTimeoutMS,
-		MaxInputRunes:  ContentModerationSemanticReviewDefaultMaxInputRunes,
+		Enabled:             false,
+		Trigger:             ContentModerationSemanticReviewTriggerLocalReview,
+		PrimaryModel:        ContentModerationSemanticReviewPrimaryModel,
+		FallbackModels:      []string{ContentModerationSemanticReviewFallbackModel},
+		TimeoutMS:           ContentModerationSemanticReviewDefaultTimeoutMS,
+		PrimaryTimeoutMS:    ContentModerationSemanticReviewPrimaryTimeoutMS,
+		FallbackTimeoutMS:   ContentModerationSemanticReviewFallbackTimeoutMS,
+		MaxAttemptsPerModel: ContentModerationSemanticReviewDefaultModelAttempts,
+		MaxInputRunes:       ContentModerationSemanticReviewDefaultMaxInputRunes,
+		MaxOutputTokens:     ContentModerationSemanticReviewDefaultOutputTokens,
+		ReasoningEffort:     ContentModerationSemanticReviewDefaultReasoning,
 	}
 }
 
 func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanticReviewConfig) ContentModerationSemanticReviewConfig {
+	legacyBudgetConfig := cfg.TimeoutMS == ContentModerationSemanticReviewLegacyTimeoutMS &&
+		cfg.PrimaryTimeoutMS <= 0 && cfg.FallbackTimeoutMS <= 0 &&
+		cfg.MaxAttemptsPerModel <= 0 && cfg.MaxOutputTokens <= 0 &&
+		strings.TrimSpace(cfg.ReasoningEffort) == ""
 	cfg.Trigger = normalizeContentModerationSemanticReviewTrigger(cfg.Trigger)
 	if normalized := normalizeContentModerationSemanticReviewModel(cfg.PrimaryModel); normalized != "" {
 		cfg.PrimaryModel = normalized
@@ -5436,17 +5450,49 @@ func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanti
 		models = []string{ContentModerationSemanticReviewFallbackModel}
 	}
 	cfg.FallbackModels = models
-	if cfg.TimeoutMS <= 0 {
+	// Migrate the previous default, which represented a per-attempt timeout, to
+	// the bounded end-to-end review budget introduced by semantic-review-v2.
+	if cfg.TimeoutMS <= 0 || legacyBudgetConfig {
 		cfg.TimeoutMS = ContentModerationSemanticReviewDefaultTimeoutMS
 	}
 	if cfg.TimeoutMS > ContentModerationSemanticReviewMaxTimeoutMS {
 		cfg.TimeoutMS = ContentModerationSemanticReviewMaxTimeoutMS
+	}
+	if cfg.PrimaryTimeoutMS <= 0 {
+		cfg.PrimaryTimeoutMS = ContentModerationSemanticReviewPrimaryTimeoutMS
+	}
+	if cfg.PrimaryTimeoutMS > cfg.TimeoutMS {
+		cfg.PrimaryTimeoutMS = cfg.TimeoutMS
+	}
+	if cfg.FallbackTimeoutMS <= 0 {
+		cfg.FallbackTimeoutMS = ContentModerationSemanticReviewFallbackTimeoutMS
+	}
+	if cfg.FallbackTimeoutMS > cfg.TimeoutMS {
+		cfg.FallbackTimeoutMS = cfg.TimeoutMS
+	}
+	if cfg.MaxAttemptsPerModel <= 0 {
+		cfg.MaxAttemptsPerModel = ContentModerationSemanticReviewDefaultModelAttempts
+	}
+	if cfg.MaxAttemptsPerModel > ContentModerationSemanticReviewMaxModelAttempts {
+		cfg.MaxAttemptsPerModel = ContentModerationSemanticReviewMaxModelAttempts
 	}
 	if cfg.MaxInputRunes <= 0 {
 		cfg.MaxInputRunes = ContentModerationSemanticReviewDefaultMaxInputRunes
 	}
 	if cfg.MaxInputRunes > maxModerationInputRunes {
 		cfg.MaxInputRunes = maxModerationInputRunes
+	}
+	if cfg.MaxOutputTokens <= 0 {
+		cfg.MaxOutputTokens = ContentModerationSemanticReviewDefaultOutputTokens
+	}
+	if cfg.MaxOutputTokens > ContentModerationSemanticReviewMaxOutputTokens {
+		cfg.MaxOutputTokens = ContentModerationSemanticReviewMaxOutputTokens
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.ReasoningEffort)) {
+	case "minimal", "low":
+		cfg.ReasoningEffort = strings.ToLower(strings.TrimSpace(cfg.ReasoningEffort))
+	default:
+		cfg.ReasoningEffort = ContentModerationSemanticReviewDefaultReasoning
 	}
 	return cfg
 }

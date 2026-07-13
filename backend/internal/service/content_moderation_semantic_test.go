@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,7 +20,7 @@ type semanticReviewBackendStub struct {
 	selectCalls     []string
 	selectGroupIDs  []*int64
 	reviewCalls     []string
-	review          func(*Account, string) (ContentModerationSemanticReviewResult, error)
+	review          func(context.Context, *Account, string) (ContentModerationSemanticReviewResult, error)
 }
 
 func (s *semanticReviewBackendStub) SelectSemanticReviewAccount(_ context.Context, groupID *int64, model string, excludedIDs map[int64]struct{}) (*AccountSelectionResult, error) {
@@ -34,18 +35,30 @@ func (s *semanticReviewBackendStub) SelectSemanticReviewAccount(_ context.Contex
 	return nil, nil
 }
 
-func (s *semanticReviewBackendStub) ReviewSemanticContent(_ context.Context, account *Account, model string, _ ContentModerationSemanticReviewInput) (ContentModerationSemanticReviewResult, error) {
+func (s *semanticReviewBackendStub) ReviewSemanticContent(ctx context.Context, account *Account, model string, _ ContentModerationSemanticReviewInput) (ContentModerationSemanticReviewResult, error) {
 	s.reviewCalls = append(s.reviewCalls, model)
 	if s.review != nil {
-		return s.review(account, model)
+		return s.review(ctx, account, model)
 	}
 	return ContentModerationSemanticReviewResult{Verdict: "allow", Confidence: 0.99}, nil
 }
 
 type semanticReviewQuotaStub struct {
 	updates map[int64]map[string]any
+	mu      sync.Mutex
 	calls   []int64
 	err     error
+}
+
+type blockingSemanticReviewQuotaStub struct {
+	started chan int64
+	release chan struct{}
+}
+
+func (s *blockingSemanticReviewQuotaStub) RefreshSemanticReviewQuota(_ context.Context, accountID int64) (map[string]any, error) {
+	s.started <- accountID
+	<-s.release
+	return nil, nil
 }
 
 type semanticReviewUsageRecorderStub struct {
@@ -59,11 +72,19 @@ func (s *semanticReviewUsageRecorderStub) Record(_ context.Context, record Platf
 }
 
 func (s *semanticReviewQuotaStub) RefreshSemanticReviewQuota(_ context.Context, accountID int64) (map[string]any, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.calls = append(s.calls, accountID)
 	if s.err != nil {
 		return nil, s.err
 	}
 	return s.updates[accountID], nil
+}
+
+func (s *semanticReviewQuotaStub) snapshotCalls() []int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]int64(nil), s.calls...)
 }
 
 type semanticReviewRouterStub struct{}
@@ -119,6 +140,36 @@ func TestNormalizeContentModerationSemanticReviewConfigReplacesLegacyMini(t *tes
 	require.Equal(t, []string{ContentModerationSemanticReviewFallbackModel}, cfg.FallbackModels)
 }
 
+func TestNormalizeContentModerationSemanticReviewConfigAppliesBoundedInferenceDefaults(t *testing.T) {
+	cfg := normalizeContentModerationSemanticReviewConfig(ContentModerationSemanticReviewConfig{
+		TimeoutMS: ContentModerationSemanticReviewLegacyTimeoutMS,
+	})
+
+	require.Equal(t, ContentModerationSemanticReviewDefaultTimeoutMS, cfg.TimeoutMS)
+	require.Equal(t, ContentModerationSemanticReviewPrimaryTimeoutMS, cfg.PrimaryTimeoutMS)
+	require.Equal(t, ContentModerationSemanticReviewFallbackTimeoutMS, cfg.FallbackTimeoutMS)
+	require.Equal(t, ContentModerationSemanticReviewDefaultModelAttempts, cfg.MaxAttemptsPerModel)
+	require.Equal(t, ContentModerationSemanticReviewDefaultOutputTokens, cfg.MaxOutputTokens)
+	require.Equal(t, ContentModerationSemanticReviewDefaultReasoning, cfg.ReasoningEffort)
+}
+
+func TestNormalizeContentModerationSemanticReviewConfigPreservesExplicitTwentySecondBudget(t *testing.T) {
+	cfg := normalizeContentModerationSemanticReviewConfig(ContentModerationSemanticReviewConfig{
+		TimeoutMS:           ContentModerationSemanticReviewLegacyTimeoutMS,
+		PrimaryTimeoutMS:    12_000,
+		FallbackTimeoutMS:   8_000,
+		MaxAttemptsPerModel: 1,
+		MaxOutputTokens:     99_999,
+		ReasoningEffort:     "high",
+	})
+
+	require.Equal(t, ContentModerationSemanticReviewLegacyTimeoutMS, cfg.TimeoutMS)
+	require.Equal(t, 12_000, cfg.PrimaryTimeoutMS)
+	require.Equal(t, 8_000, cfg.FallbackTimeoutMS)
+	require.Equal(t, ContentModerationSemanticReviewMaxOutputTokens, cfg.MaxOutputTokens)
+	require.Equal(t, ContentModerationSemanticReviewDefaultReasoning, cfg.ReasoningEffort)
+}
+
 func TestContentModerationUpdateConfigNormalizesSemanticReviewModels(t *testing.T) {
 	initial, err := json.Marshal(defaultContentModerationConfig())
 	require.NoError(t, err)
@@ -144,7 +195,7 @@ func TestContentModerationUpdateConfigNormalizesSemanticReviewModels(t *testing.
 	require.Equal(t, ContentModerationSemanticReviewPrimaryModel, saved.SemanticReview.PrimaryModel)
 }
 
-func TestSemanticReviewRouterRefreshesStaleSparkQuotaBeforeRequest(t *testing.T) {
+func TestSemanticReviewRouterRefreshesStaleSparkQuotaOffRequestPath(t *testing.T) {
 	spark := &Account{ID: 11, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	mini := freshSemanticReviewAccount(12)
 	backend := &semanticReviewBackendStub{
@@ -166,12 +217,44 @@ func TestSemanticReviewRouterRefreshesStaleSparkQuotaBeforeRequest(t *testing.T)
 
 	require.NoError(t, err)
 	require.Equal(t, "allow", result.Verdict)
-	require.Equal(t, ContentModerationSemanticReviewFallbackModel, result.Model)
-	require.Equal(t, []int64{11}, quota.calls)
-	require.Equal(t, []string{ContentModerationSemanticReviewFallbackModel}, backend.reviewCalls)
+	require.Equal(t, ContentModerationSemanticReviewPrimaryModel, result.Model)
+	require.Equal(t, []string{ContentModerationSemanticReviewPrimaryModel}, backend.reviewCalls)
+	require.Eventually(t, func() bool {
+		return len(quota.snapshotCalls()) == 1
+	}, time.Second, 10*time.Millisecond)
+	require.Equal(t, []int64{11}, quota.snapshotCalls())
 }
 
-func TestSemanticReviewRouterSwitchesAccountOn429BeforeModelFallback(t *testing.T) {
+func TestSemanticReviewRouterBoundsBackgroundQuotaRefreshConcurrency(t *testing.T) {
+	quota := &blockingSemanticReviewQuotaStub{
+		started: make(chan int64, 10),
+		release: make(chan struct{}),
+	}
+	router := NewOpenAIContentModerationSemanticReviewRouter(&semanticReviewBackendStub{}, quota, nil).(*openAIContentModerationSemanticReviewRouter)
+
+	for accountID := int64(1); accountID <= 10; accountID++ {
+		router.refreshSemanticReviewQuotaAsync(accountID)
+	}
+
+	for i := 0; i < contentModerationSemanticReviewQuotaRefreshWorkers; i++ {
+		select {
+		case <-quota.started:
+		case <-time.After(time.Second):
+			t.Fatal("background quota refresh did not start")
+		}
+	}
+	select {
+	case accountID := <-quota.started:
+		t.Fatalf("unexpected unbounded quota refresh for account %d", accountID)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(quota.release)
+	require.Eventually(t, func() bool {
+		return len(router.refreshSlots) == 0
+	}, time.Second, 10*time.Millisecond)
+}
+
+func TestSemanticReviewRouterFallsBackAfterOnePrimaryAccountAttempt(t *testing.T) {
 	first := freshSemanticReviewAccount(21)
 	second := freshSemanticReviewAccount(22)
 	backend := &semanticReviewBackendStub{
@@ -179,7 +262,7 @@ func TestSemanticReviewRouterSwitchesAccountOn429BeforeModelFallback(t *testing.
 			ContentModerationSemanticReviewPrimaryModel:  {first, second},
 			ContentModerationSemanticReviewFallbackModel: {freshSemanticReviewAccount(23)},
 		},
-		review: func(account *Account, _ string) (ContentModerationSemanticReviewResult, error) {
+		review: func(_ context.Context, account *Account, _ string) (ContentModerationSemanticReviewResult, error) {
 			if account.ID == first.ID {
 				return ContentModerationSemanticReviewResult{}, &ContentModerationSemanticReviewUpstreamError{
 					HTTPStatus: httpStatusTooManyRequestsForTest, Code: "quota_exhausted", QuotaExhausted: true, Retryable: true,
@@ -194,10 +277,13 @@ func TestSemanticReviewRouterSwitchesAccountOn429BeforeModelFallback(t *testing.
 	result, err := router.Review(context.Background(), semanticReviewTestConfig(), ContentModerationSemanticReviewInput{Text: "test"})
 
 	require.NoError(t, err)
-	require.Equal(t, second.ID, result.AccountID)
-	require.Equal(t, ContentModerationSemanticReviewPrimaryModel, result.Model)
-	require.Equal(t, []int64{first.ID}, quota.calls)
-	require.Equal(t, []string{ContentModerationSemanticReviewPrimaryModel, ContentModerationSemanticReviewPrimaryModel}, backend.reviewCalls)
+	require.Equal(t, int64(23), result.AccountID)
+	require.Equal(t, ContentModerationSemanticReviewFallbackModel, result.Model)
+	require.Eventually(t, func() bool {
+		return len(quota.snapshotCalls()) == 1
+	}, time.Second, 10*time.Millisecond)
+	require.Equal(t, []int64{first.ID}, quota.snapshotCalls())
+	require.Equal(t, []string{ContentModerationSemanticReviewPrimaryModel, ContentModerationSemanticReviewFallbackModel}, backend.reviewCalls)
 }
 
 func TestSemanticReviewRouterRejectDoesNotDowngradeToFallbackModel(t *testing.T) {
@@ -206,7 +292,7 @@ func TestSemanticReviewRouterRejectDoesNotDowngradeToFallbackModel(t *testing.T)
 			ContentModerationSemanticReviewPrimaryModel:  {freshSemanticReviewAccount(31)},
 			ContentModerationSemanticReviewFallbackModel: {freshSemanticReviewAccount(32)},
 		},
-		review: func(_ *Account, _ string) (ContentModerationSemanticReviewResult, error) {
+		review: func(_ context.Context, _ *Account, _ string) (ContentModerationSemanticReviewResult, error) {
 			return ContentModerationSemanticReviewResult{Verdict: "reject", Confidence: 0.98}, nil
 		},
 	}
@@ -229,6 +315,37 @@ func TestSemanticReviewRouterReturnsUnavailableWhenAllModelsHaveNoAccount(t *tes
 
 	var unavailable *ContentModerationSemanticReviewUnavailableError
 	require.ErrorAs(t, err, &unavailable)
+}
+
+func TestSemanticReviewRouterSharesOneBudgetAcrossPrimaryAndFallback(t *testing.T) {
+	backend := &semanticReviewBackendStub{
+		accountsByModel: map[string][]*Account{
+			ContentModerationSemanticReviewPrimaryModel:  {freshSemanticReviewAccount(33)},
+			ContentModerationSemanticReviewFallbackModel: {freshSemanticReviewAccount(34)},
+		},
+		review: func(ctx context.Context, _ *Account, model string) (ContentModerationSemanticReviewResult, error) {
+			if model == ContentModerationSemanticReviewFallbackModel {
+				return ContentModerationSemanticReviewResult{Verdict: "allow"}, nil
+			}
+			<-ctx.Done()
+			return ContentModerationSemanticReviewResult{}, ctx.Err()
+		},
+	}
+	cfg := semanticReviewTestConfig()
+	cfg.TimeoutMS = 120
+	cfg.PrimaryTimeoutMS = 70
+	cfg.FallbackTimeoutMS = 50
+	router := NewOpenAIContentModerationSemanticReviewRouter(backend, nil, nil)
+
+	started := time.Now()
+	result, err := router.Review(context.Background(), cfg, ContentModerationSemanticReviewInput{Text: "test"})
+	elapsed := time.Since(started)
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationSemanticReviewFallbackModel, result.Model)
+	require.Less(t, elapsed, 200*time.Millisecond)
+	require.GreaterOrEqual(t, elapsed, 60*time.Millisecond)
+	require.Equal(t, []string{ContentModerationSemanticReviewPrimaryModel, ContentModerationSemanticReviewFallbackModel}, backend.reviewCalls)
 }
 
 func TestSemanticReviewRouterKeepsRequestGroupDuringAccountSelection(t *testing.T) {
@@ -256,7 +373,7 @@ func TestSemanticReviewRouterRecordsPlatformUsage(t *testing.T) {
 		accountsByModel: map[string][]*Account{
 			ContentModerationSemanticReviewPrimaryModel: {account},
 		},
-		review: func(_ *Account, _ string) (ContentModerationSemanticReviewResult, error) {
+		review: func(_ context.Context, _ *Account, _ string) (ContentModerationSemanticReviewResult, error) {
 			return ContentModerationSemanticReviewResult{
 				Verdict:       "allow",
 				UpstreamModel: "gpt-5.3-codex-spark-upstream",
@@ -325,6 +442,17 @@ func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
 	var requestBody map[string]any
 	require.NoError(t, json.Unmarshal(upstream.lastBody, &requestBody))
 	require.Equal(t, "gpt-5.4-mini-upstream", requestBody["model"])
+	require.Equal(t, float64(ContentModerationSemanticReviewDefaultOutputTokens), requestBody["max_output_tokens"])
+	reasoning, ok := requestBody["reasoning"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, ContentModerationSemanticReviewDefaultReasoning, reasoning["effort"])
+	textConfig, ok := requestBody["text"].(map[string]any)
+	require.True(t, ok)
+	format, ok := textConfig["format"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "json_schema", format["type"])
+	require.Equal(t, "semantic_review_v2", format["name"])
+	require.Equal(t, true, format["strict"])
 }
 
 func TestParseSemanticReviewJSONAndSSE(t *testing.T) {
@@ -350,6 +478,18 @@ data: [DONE]
 	doneResult, err := parseSemanticReviewModelOutput(doneText)
 	require.NoError(t, err)
 	require.Equal(t, "review", doneResult.Verdict)
+}
+
+func TestParseSemanticReviewSSECapturesFirstOutputTokenLatency(t *testing.T) {
+	started := time.Now().Add(-50 * time.Millisecond)
+	response, err := parseSemanticReviewSSE(strings.NewReader(`data: {"type":"response.output_text.delta","delta":"{\"verdict\":\"allow\"}"}
+
+data: [DONE]
+`), started)
+
+	require.NoError(t, err)
+	require.NotNil(t, response.FirstTokenMS)
+	require.GreaterOrEqual(t, *response.FirstTokenMS, 40)
 }
 
 func TestParseSemanticReviewRiskDimensions(t *testing.T) {
