@@ -37,6 +37,10 @@ type activeUsersTrendFetcher interface {
 	GetActiveUsersTrend(ctx context.Context, startTime, endTime time.Time, granularity string) ([]usagestats.ActiveUsersTrendPoint, error)
 }
 
+type userGrowthRetentionFetcher interface {
+	GetUserGrowthRetention(ctx context.Context, startTime, endTime time.Time) (*usagestats.UserGrowthRetention, error)
+}
+
 type dashboardStatsCacheEntry struct {
 	Stats     *usagestats.DashboardStats `json:"stats"`
 	UpdatedAt int64                      `json:"updated_at"`
@@ -371,6 +375,18 @@ func (s *DashboardService) GetActiveUsersTrend(ctx context.Context, startTime, e
 		return nil, fmt.Errorf("get active users trend: %w", err)
 	}
 	return trend, nil
+}
+
+func (s *DashboardService) GetUserGrowthRetention(ctx context.Context, startTime, endTime time.Time) (*usagestats.UserGrowthRetention, error) {
+	fetcher, ok := s.usageRepo.(userGrowthRetentionFetcher)
+	if !ok {
+		return nil, fmt.Errorf("usage repository does not support user growth retention")
+	}
+	result, err := fetcher.GetUserGrowthRetention(ctx, startTime, endTime)
+	if err != nil {
+		return nil, fmt.Errorf("get user growth retention: %w", err)
+	}
+	return result, nil
 }
 
 func (s *DashboardService) GetUserSpendingRanking(ctx context.Context, startTime, endTime time.Time, limit int) (*usagestats.UserSpendingRankingResponse, error) {

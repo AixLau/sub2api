@@ -295,6 +295,44 @@ export async function getActiveUsersTrend(
   return data
 }
 
+export interface UserRetentionPoint {
+  date: string
+  registrations: number
+  d1_retained: number
+  d7_retained: number
+  d30_retained: number
+  paid_users: number
+  repeat_buyers: number
+  d1_rate: number | null
+  d7_rate: number | null
+  d30_rate: number | null
+  paid_rate: number | null
+  repeat_buy_rate: number | null
+}
+
+export interface UserRetentionSummary {
+  d1_rate: number | null
+  d7_rate: number | null
+  d30_rate: number | null
+  paid_rate: number | null
+  repeat_buy_rate: number | null
+}
+
+export interface UserGrowthRetentionResponse {
+  cohorts: UserRetentionPoint[]
+  summary: UserRetentionSummary
+  start_date: string
+  end_date: string
+}
+
+export async function getUserGrowthRetention(days = 60): Promise<UserGrowthRetentionResponse> {
+  const { data } = await apiClient.get<UserGrowthRetentionResponse>(
+    '/admin/dashboard/user-growth-retention',
+    { params: { days } }
+  )
+  return data
+}
+
 /**
  * Get user spending ranking data
  * @param params - Query parameters for filtering
@@ -375,6 +413,7 @@ export const dashboardAPI = {
   getApiKeyUsageTrend,
   getUserUsageTrend,
   getActiveUsersTrend,
+  getUserGrowthRetention,
   getUserSpendingRanking,
   getBatchUsersUsage,
   getBatchApiKeysUsage

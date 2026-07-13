@@ -5,10 +5,11 @@ import { createPinia, setActivePinia } from 'pinia'
 import type { DashboardStats } from '@/types'
 import DashboardView from '../DashboardView.vue'
 
-const { getSnapshotV2, getUserUsageTrend, getActiveUsersTrend, getUserSpendingRanking } = vi.hoisted(() => ({
+const { getSnapshotV2, getUserUsageTrend, getActiveUsersTrend, getUserGrowthRetention, getUserSpendingRanking } = vi.hoisted(() => ({
   getSnapshotV2: vi.fn(),
   getUserUsageTrend: vi.fn(),
   getActiveUsersTrend: vi.fn(),
+  getUserGrowthRetention: vi.fn(),
   getUserSpendingRanking: vi.fn()
 }))
 
@@ -18,6 +19,7 @@ vi.mock('@/api/admin', () => ({
       getSnapshotV2,
       getUserUsageTrend,
       getActiveUsersTrend,
+      getUserGrowthRetention,
       getUserSpendingRanking
     }
   }
@@ -95,6 +97,7 @@ describe('admin DashboardView', () => {
     getSnapshotV2.mockReset()
     getUserUsageTrend.mockReset()
     getActiveUsersTrend.mockReset()
+    getUserGrowthRetention.mockReset()
     getUserSpendingRanking.mockReset()
 
     getSnapshotV2.mockResolvedValue({
@@ -113,6 +116,18 @@ describe('admin DashboardView', () => {
       start_date: '',
       end_date: '',
       granularity: 'hour'
+    })
+    getUserGrowthRetention.mockResolvedValue({
+      cohorts: [],
+      summary: {
+        d1_rate: null,
+        d7_rate: null,
+        d30_rate: null,
+        paid_rate: null,
+        repeat_buy_rate: null
+      },
+      start_date: '',
+      end_date: ''
     })
     getUserSpendingRanking.mockResolvedValue({
       ranking: [],

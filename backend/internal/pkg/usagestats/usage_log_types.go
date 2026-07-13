@@ -168,6 +168,37 @@ type ActiveUsersTrendPoint struct {
 	ActiveUsers int64  `json:"active_users"`
 }
 
+// UserRetentionPoint represents a registration cohort and its exact-day retention.
+// Nil rates indicate that the cohort has not reached the corresponding observation day.
+type UserRetentionPoint struct {
+	Date          string   `json:"date"`
+	Registrations int64    `json:"registrations"`
+	D1Retained    int64    `json:"d1_retained"`
+	D7Retained    int64    `json:"d7_retained"`
+	D30Retained   int64    `json:"d30_retained"`
+	PaidUsers     int64    `json:"paid_users"`
+	RepeatBuyers  int64    `json:"repeat_buyers"`
+	D1Rate        *float64 `json:"d1_rate"`
+	D7Rate        *float64 `json:"d7_rate"`
+	D30Rate       *float64 `json:"d30_rate"`
+	PaidRate      *float64 `json:"paid_rate"`
+	RepeatBuyRate *float64 `json:"repeat_buy_rate"`
+}
+
+// UserRetentionSummary contains weighted rates across cohorts old enough to observe.
+type UserRetentionSummary struct {
+	D1Rate        *float64 `json:"d1_rate"`
+	D7Rate        *float64 `json:"d7_rate"`
+	D30Rate       *float64 `json:"d30_rate"`
+	PaidRate      *float64 `json:"paid_rate"`
+	RepeatBuyRate *float64 `json:"repeat_buy_rate"`
+}
+
+type UserGrowthRetention struct {
+	Cohorts []UserRetentionPoint `json:"cohorts"`
+	Summary UserRetentionSummary `json:"summary"`
+}
+
 // UserBreakdownItem represents per-user usage breakdown within a dimension (group, model, endpoint).
 type UserBreakdownItem struct {
 	UserID       int64   `json:"user_id"`

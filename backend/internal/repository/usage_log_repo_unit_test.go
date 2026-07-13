@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/google/uuid"
@@ -77,6 +78,40 @@ func TestUsageLogRepositoryGetActiveUsersTrendUsesGatewayAPIUsers(t *testing.T) 
 	trend, err := repo.GetActiveUsersTrend(context.Background(), start, end, "day")
 	require.NoError(t, err)
 	require.Equal(t, []usagestats.ActiveUsersTrendPoint{{Date: "2025-01-01", ActiveUsers: 2}}, trend)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUsageLogRepositoryGetUserGrowthRetentionUsesMatureCohorts(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+
+	today := timezone.Today()
+	start := today.AddDate(0, 0, -40)
+	end := today.AddDate(0, 0, 1)
+	mock.ExpectQuery("WITH cohort_dates AS").
+		WithArgs(start, end, timezone.Name()).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"date", "registrations", "d1_retained", "d7_retained", "d30_retained", "paid_users", "repeat_buyers",
+		}).
+			AddRow(today.AddDate(0, 0, -31).Format("2006-01-02"), int64(10), int64(8), int64(5), int64(2), int64(4), int64(2)).
+			AddRow(today.AddDate(0, 0, -8).Format("2006-01-02"), int64(5), int64(3), int64(2), int64(0), int64(1), int64(1)).
+			AddRow(today.AddDate(0, 0, -1).Format("2006-01-02"), int64(4), int64(1), int64(0), int64(0), int64(1), int64(0)).
+			AddRow(today.AddDate(0, 0, -2).Format("2006-01-02"), int64(0), int64(0), int64(0), int64(0), int64(0), int64(0)))
+
+	result, err := repo.GetUserGrowthRetention(context.Background(), start, end)
+	require.NoError(t, err)
+	require.Len(t, result.Cohorts, 4)
+	require.InDelta(t, 80, *result.Cohorts[0].D1Rate, 0.001)
+	require.InDelta(t, 40, *result.Cohorts[1].D7Rate, 0.001)
+	require.Nil(t, result.Cohorts[1].D30Rate)
+	require.Nil(t, result.Cohorts[2].D1Rate, "today's partial D1 observation must not be included")
+	require.Nil(t, result.Cohorts[3].D1Rate, "empty cohorts have no retention rate")
+	require.InDelta(t, 11.0/15.0*100, *result.Summary.D1Rate, 0.001)
+	require.InDelta(t, 7.0/15.0*100, *result.Summary.D7Rate, 0.001)
+	require.InDelta(t, 20, *result.Summary.D30Rate, 0.001)
+	require.InDelta(t, 40, *result.Summary.PaidRate, 0.001)
+	require.InDelta(t, 50, *result.Summary.RepeatBuyRate, 0.001)
+	require.Nil(t, result.Cohorts[1].PaidRate, "immature 30-day payment cohorts must be excluded")
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

@@ -27,6 +27,11 @@ export default {
   },
   dashboard: {
     activeUsersTrend: 'API Active Users Trend',
+    userGrowthRetention: 'User Registration and Retention',
+    registrations: 'Registrations',
+    retentionDefinition: 'Retention uses gateway API activity on day 1, 7, or 30; conversion and repeat purchase use successful payments within 30 days of signup.',
+    paidConversion: 'Paid conversion',
+    repeatPurchase: 'Repeat purchase',
   },
   ops: {
     runtime: {

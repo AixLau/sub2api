@@ -323,6 +323,12 @@
             show-cost
           />
 
+          <UserGrowthRetention
+            :cohorts="userRetentionCohorts"
+            :summary="userRetentionSummary"
+            :loading="userRetentionLoading"
+          />
+
         </div>
       </template>
     </div>
@@ -343,7 +349,11 @@ import type {
   ModelStat,
   UserSpendingRankingItem
 } from '@/types'
-import type { ActiveUsersTrendPoint } from '@/api/admin/dashboard'
+import type {
+  ActiveUsersTrendPoint,
+  UserRetentionPoint,
+  UserRetentionSummary
+} from '@/api/admin/dashboard'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -352,6 +362,7 @@ import Select from '@/components/common/Select.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import ActiveUsersTrend from '@/components/charts/ActiveUsersTrend.vue'
+import UserGrowthRetention from '@/components/charts/UserGrowthRetention.vue'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
 
 const appStore = useAppStore()
@@ -361,6 +372,7 @@ const stats = ref<DashboardStats | null>(null)
 const loading = ref(false)
 const chartsLoading = ref(false)
 const activeUsersTrendLoading = ref(false)
+const userRetentionLoading = ref(false)
 const rankingLoading = ref(false)
 const rankingError = ref(false)
 
@@ -368,6 +380,8 @@ const rankingError = ref(false)
 const trendData = ref<TrendDataPoint[]>([])
 const modelStats = ref<ModelStat[]>([])
 const activeUsersTrend = ref<ActiveUsersTrendPoint[]>([])
+const userRetentionCohorts = ref<UserRetentionPoint[]>([])
+const userRetentionSummary = ref<UserRetentionSummary | null>(null)
 const rankingItems = ref<UserSpendingRankingItem[]>([])
 const rankingTotalActualCost = ref(0)
 const rankingTotalRequests = ref(0)
@@ -554,6 +568,21 @@ const loadActiveUsersTrend = async (range: DashboardRangeParams) => {
   }
 }
 
+const loadUserGrowthRetention = async () => {
+  userRetentionLoading.value = true
+  try {
+    const response = await adminAPI.dashboard.getUserGrowthRetention(60)
+    userRetentionCohorts.value = response.cohorts || []
+    userRetentionSummary.value = response.summary || null
+  } catch (error) {
+    console.error('Error loading user growth and retention:', error)
+    userRetentionCohorts.value = []
+    userRetentionSummary.value = null
+  } finally {
+    userRetentionLoading.value = false
+  }
+}
+
 const loadUserSpendingRanking = async (range: DashboardRangeParams) => {
   const currentSeq = ++rankingLoadSeq
   rankingLoading.value = true
@@ -603,7 +632,7 @@ const loadChartData = async () => {
 
 onMounted(() => {
   void refreshBatchImageAccess()
-  loadDashboardStats()
+  void Promise.all([loadDashboardStats(), loadUserGrowthRetention()])
 })
 </script>
 

@@ -28,6 +28,11 @@ export default {
   dashboard: {
     active: '活跃',
     activeUsersTrend: '活跃用户趋势',
+    userGrowthRetention: '用户注册与留存',
+    registrations: '注册用户',
+    retentionDefinition: '留存按注册后第 1/7/30 个自然日使用网关 API 计算；付费与复购按注册后 30 天内成功支付计算',
+    paidConversion: '付费转化',
+    repeatPurchase: '复购率',
     create: '创建',
     err: '异常',
     newUsersToday: '今日新增用户',
