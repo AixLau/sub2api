@@ -118,6 +118,8 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 	requireColumn(t, tx, "content_moderation_logs", "account_id", "bigint", 0, true)
 	requireColumn(t, tx, "content_moderation_logs", "account_name", "character varying", 255, true)
 	requireColumn(t, tx, "content_moderation_logs", "account_type", "character varying", 32, true)
+	requireColumn(t, tx, "content_moderation_logs", "truncate_reasons", "jsonb", 0, false)
+	requireIndex(t, tx, "content_moderation_logs", "idx_content_moderation_logs_truncate_reasons")
 	requireIndex(t, tx, "content_moderation_logs", "idx_content_moderation_logs_decision_id")
 	requireColumn(t, tx, "content_moderation_outbox", "decision_id", "character varying", 128, false)
 	requireColumn(t, tx, "content_moderation_outbox", "event_type", "character varying", 64, false)
@@ -233,6 +235,23 @@ WHERE id = $1
 	require.False(t, apiKeyID.Valid, "api_key_id should remain SQL NULL")
 	require.Equal(t, "account_test", source)
 
+	var moderationSource string
+	err = tx.QueryRowContext(ctx, `
+INSERT INTO usage_logs (
+	user_id,
+	api_key_id,
+	account_id,
+	request_id,
+	model,
+	source,
+	actual_cost
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING source
+`, nil, nil, accountID, "migration-176-content-moderation", "gpt-5.4-mini", "content_moderation", 0).Scan(&moderationSource)
+	require.NoError(t, err, "insert actorless content moderation usage")
+	require.Equal(t, "content_moderation", moderationSource)
+
 	var gatewayUserID int64
 	err = tx.QueryRowContext(ctx, `
 INSERT INTO users (email, password_hash, role, status, balance, concurrency)
@@ -309,7 +328,8 @@ WHERE ns.nspname = 'public'
 	require.NoError(t, err, "query account test usage partial index")
 	require.True(t, isPartial, "expected idx_usage_logs_admin_visible_id to be partial")
 	require.Contains(t, indexDef, "(id DESC)")
-	require.Equal(t, "((actual_cost > (0)::numeric) OR ((source)::text = 'account_test'::text))", predicate)
+	require.Contains(t, predicate, "account_test")
+	require.Contains(t, predicate, "content_moderation")
 }
 
 func requireIndex(t *testing.T, tx *sql.Tx, table, index string) {

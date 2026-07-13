@@ -1076,6 +1076,36 @@ func TestExtractContentModerationInput_ResponsesScansClientSuppliedToolOutputs(t
 	require.Contains(t, input.Text, "工具输出里的风险短语")
 }
 
+func TestExtractContentModerationInput_UserOnlyExcludesLargeResponsesToolOutput(t *testing.T) {
+	largeToolOutput := strings.Repeat("tool-output ", maxModerationInputRunes)
+	body := []byte(`{"input":[{"type":"function_call_output","output":"` + largeToolOutput + `"},{"type":"message","role":"user","content":[{"type":"input_text","text":"用户请求"}]}]}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeUserOnly)
+
+	require.False(t, input.Truncated, input.TruncateReasons)
+	require.Equal(t, "用户请求", input.Text)
+	require.Len(t, input.Sources, 1)
+	require.Equal(t, "user", input.Sources[0].Role)
+	require.NotContains(t, input.Text, "tool-output")
+}
+
+func TestModerationSourceCaptureKeepsTruncationReasonsLocal(t *testing.T) {
+	state := &toolResultTextState{}
+	first := captureModerationSource(state)
+	state.markTruncated("max_depth")
+
+	truncated, reasons := first.truncatedSince("source")
+	require.True(t, truncated)
+	require.Equal(t, []string{"max_depth"}, reasons)
+
+	second := captureModerationSource(state)
+	state.markTruncated("max_total_runes")
+
+	truncated, reasons = second.truncatedSince("source")
+	require.True(t, truncated)
+	require.Equal(t, []string{"max_total_runes"}, reasons)
+}
+
 func TestExtractContentModerationInput_ResponsesScansClientSuppliedSystemDeveloperAndAssistantMessages(t *testing.T) {
 	body := []byte(`{
 		"input":[

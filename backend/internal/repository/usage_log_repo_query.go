@@ -104,7 +104,7 @@ func (r *usageLogRepository) ListWithFilters(ctx context.Context, params paginat
 		conditions = append(conditions, fmt.Sprintf("user_id = $%d", len(args)+1))
 		args = append(args, filters.UserID)
 	}
-	conditions = append(conditions, "(actual_cost > 0 OR source = 'account_test')")
+	conditions = append(conditions, "(actual_cost > 0 OR source IN ('account_test', 'content_moderation'))")
 	conditions, args = appendUsageLogExcludeUserIDsWhereCondition(conditions, args, "user_id", filters.ExcludeUserIDs)
 	if filters.APIKeyID > 0 {
 		conditions = append(conditions, fmt.Sprintf("api_key_id = $%d", len(args)+1))

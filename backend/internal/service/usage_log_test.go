@@ -138,6 +138,10 @@ func TestUsageLogValidateActors(t *testing.T) {
 			log:  &UsageLog{Source: UsageSourceAccountTest, AccountID: 7},
 		},
 		{
+			name: "content moderation is actorless",
+			log:  &UsageLog{Source: UsageSourceContentModeration, AccountID: 8},
+		},
+		{
 			name:    "account test rejects user",
 			log:     &UsageLog{Source: UsageSourceAccountTest, UserID: 1, AccountID: 7},
 			wantErr: "account_test",
@@ -146,6 +150,11 @@ func TestUsageLogValidateActors(t *testing.T) {
 			name:    "account test rejects api key",
 			log:     &UsageLog{Source: UsageSourceAccountTest, APIKeyID: 2, AccountID: 7},
 			wantErr: "account_test",
+		},
+		{
+			name:    "content moderation rejects user",
+			log:     &UsageLog{Source: UsageSourceContentModeration, UserID: 1, AccountID: 8},
+			wantErr: "content_moderation",
 		},
 		{
 			name:    "account test requires account",

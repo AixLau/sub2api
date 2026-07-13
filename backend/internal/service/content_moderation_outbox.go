@@ -542,6 +542,7 @@ func cloneContentModerationLog(log *ContentModerationLog) *ContentModerationLog 
 	out.GroupID = cloneInt64Ptr(log.GroupID)
 	out.CategoryScores = cloneFloatMap(log.CategoryScores)
 	out.ThresholdSnapshot = cloneFloatMap(log.ThresholdSnapshot)
+	out.TruncateReasons = append([]string(nil), log.TruncateReasons...)
 	if log.UpstreamLatencyMS != nil {
 		v := *log.UpstreamLatencyMS
 		out.UpstreamLatencyMS = &v

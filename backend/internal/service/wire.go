@@ -54,6 +54,9 @@ func ProvideContentModerationService(
 	encryptor SecretEncryptor,
 	openAIGatewayService *OpenAIGatewayService,
 	openAIQuotaService *OpenAIQuotaService,
+	usageLogRepo UsageLogRepository,
+	billingService *BillingService,
+	pricingResolver *ModelPricingResolver,
 	cfg *config.Config,
 	buildInfo BuildInfo,
 ) *ContentModerationService {
@@ -74,6 +77,7 @@ func ProvideContentModerationService(
 	svc.SetSemanticReviewRouter(NewOpenAIContentModerationSemanticReviewRouter(
 		openAIGatewayService,
 		NewOpenAIContentModerationSemanticReviewQuotaRefresher(openAIQuotaService, accountRepo),
+		NewPlatformUsageRecorder(usageLogRepo, billingService, pricingResolver),
 	))
 	if rawStore, ok := repo.(ContentModerationRawRequestSnapshotStore); ok {
 		svc.SetRawRequestSnapshotStore(rawStore, encryptor)

@@ -24,9 +24,11 @@ var (
 )
 
 type ModerationTextSource struct {
-	Source string
-	Role   string
-	Text   string
+	Source          string
+	Role            string
+	Text            string
+	Truncated       bool
+	TruncateReasons []string
 }
 
 type ModerationExtraction struct {

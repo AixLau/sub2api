@@ -1810,6 +1810,19 @@
 				</div>
 			  </div>
 
+			  <div v-if="inputDetailRow.truncate_reasons?.length" class="rounded-xl border border-orange-100 bg-orange-50 p-4 shadow-sm dark:border-orange-900/40 dark:bg-orange-900/10">
+				<p class="text-sm font-semibold text-orange-800 dark:text-orange-100">{{ t('admin.riskControl.truncationReasons') }}</p>
+				<div class="mt-3 flex flex-wrap gap-2">
+				  <span
+					v-for="reason in inputDetailRow.truncate_reasons"
+					:key="reason"
+					class="break-all rounded-md bg-orange-100 px-2.5 py-1 font-mono text-xs font-medium text-orange-900 dark:bg-orange-900/40 dark:text-orange-100"
+				  >
+					{{ reason }}
+				  </span>
+				</div>
+			  </div>
+
 			  <div class="rounded-xl border border-gray-100 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-800">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -2044,7 +2057,7 @@ const configForm = reactive({
 	  prompt_filter_threshold: 50,
 	  prompt_filter_strict_threshold: 90,
 	  semantic_review_primary_model: 'gpt-5.3-codex-spark',
-  semantic_review_fallback_models_text: 'gpt-5-mini',
+	  semantic_review_fallback_models_text: 'gpt-5.4-mini',
 	  semantic_review_timeout_ms: 20000,
 	  provider: 'openai' as ModerationProvider,
   base_url: 'https://api.openai.com',
@@ -2159,7 +2172,7 @@ const promptFilterModeOptions = computed<SelectOption[]>(() => [
 
 const semanticReviewModelOptions = computed<SelectOption[]>(() => [
   { value: 'gpt-5.3-codex-spark', label: 'gpt-5.3-codex-spark' },
-  { value: 'gpt-5-mini', label: 'gpt-5-mini' },
+  { value: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
 ])
 
 const modelFilterOptions = computed<Array<{ value: ContentModerationModelFilterType; label: string; description: string }>>(() => [
@@ -3088,7 +3101,7 @@ function applyConfig(config: ContentModerationConfig) {
 		enabled: true,
 		trigger: 'local_review',
 		primary_model: 'gpt-5.3-codex-spark',
-		fallback_models: ['gpt-5-mini'],
+		fallback_models: ['gpt-5.4-mini'],
 		timeout_ms: 20000,
 		max_input_runes: 2000,
 	}

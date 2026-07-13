@@ -8,7 +8,7 @@ export default {
       activeApiKeys: '活跃密钥',
       users: '用户',
       totalUsers: '用户总数',
-      activeUsers: 'API 活跃用户',
+      activeUsers: '活跃用户',
       accounts: '账号',
       totalAccounts: '账号总数',
       activeAccounts: '活跃账号',

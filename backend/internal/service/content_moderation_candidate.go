@@ -697,13 +697,13 @@ func (s *ContentModerationService) recordCandidateDuplicateRetry(ctx context.Con
 
 func (s *ContentModerationService) checkCandidateOnly(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput) *ContentModerationDecision {
 	allow := &ContentModerationDecision{Allowed: true, Action: ContentModerationActionAllow}
-	if contentModerationCandidateExtractionIncomplete(content) {
-		return s.candidateExtractionFailureDecision(ctx, input, cfg, content)
-	}
 	selection, found := contentModerationCandidateSelectionForInput(cfg, content)
 	if !found {
 		s.recordPreBlockSyncMetric(0, ContentModerationActionAllow)
 		return allow
+	}
+	if contentModerationCandidateExtractionIncomplete(selection) {
+		return s.candidateExtractionFailureDecision(ctx, input, cfg, content, &selection)
 	}
 	if strings.TrimSpace(selection.Fragment) == "" {
 		return allow
@@ -912,7 +912,11 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 	}
 	semanticCfg := contentModerationSemanticReviewConfigForProviderFallback(cfg)
 	semanticCfg.MaxInputRunes = maxContentModerationCandidateRunes
-	semanticInput := ContentModerationSemanticReviewInput{Text: contentModerationCandidateSemanticInput(selection)}
+	semanticInput := contentModerationSemanticReviewInputForCheck(
+		input,
+		contentModerationCandidateSemanticInput(selection),
+		semanticReviewDecisionID(input, s.candidateDecisionCacheKey(cfg, input, selection)),
+	)
 	started := time.Now()
 	result, err := s.semanticReviewRouter.Review(ctx, semanticCfg, semanticInput)
 	latency := int(time.Since(started).Milliseconds())
@@ -1123,15 +1127,27 @@ func (s *ContentModerationService) candidateFailureCacheTTL(cfg *ContentModerati
 	return ttl
 }
 
-func contentModerationCandidateExtractionIncomplete(content ContentModerationInput) bool {
-	return content.Truncated || len(content.TruncateReasons) > 0 ||
-		(len(content.Extraction.Sources) > 0 && !content.Extraction.Complete)
+func contentModerationCandidateExtractionIncomplete(selection contentModerationCandidateSelection) bool {
+	return selection.Source.Truncated || len(selection.Source.TruncateReasons) > 0
 }
 
-func (s *ContentModerationService) candidateExtractionFailureDecision(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput) *ContentModerationDecision {
+func (s *ContentModerationService) candidateExtractionFailureDecision(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, selection *contentModerationCandidateSelection) *ContentModerationDecision {
+	reasons := append([]string(nil), content.TruncateReasons...)
+	selectedSource := ""
+	selectedRole := ""
+	selectedFragment := ""
+	if selection != nil {
+		selectedSource = selection.Source.Source
+		selectedRole = selection.Source.Role
+		selectedFragment = selection.Fragment
+		reasons = append([]string(nil), selection.Source.TruncateReasons...)
+	}
+	reasons = normalizeContentModerationTruncateReasons(reasons)
 	metadata := map[string]any{
 		"extraction_complete": false,
-		"truncate_reasons":    append([]string(nil), content.TruncateReasons...),
+		"truncate_reasons":    reasons,
+		"selected_source":     selectedSource,
+		"selected_role":       selectedRole,
 	}
 	log := s.buildLog(
 		input,
@@ -1141,7 +1157,7 @@ func (s *ContentModerationService) candidateExtractionFailureDecision(ctx contex
 		"",
 		0,
 		nil,
-		"",
+		selectedFragment,
 		nil,
 		nil,
 		marshalContentModerationMetadata(metadata),
@@ -1149,6 +1165,10 @@ func (s *ContentModerationService) candidateExtractionFailureDecision(ctx contex
 	log.DecisionSource = contentModerationDecisionSourceExtraction
 	log.ModerationProvider = "local_extractor"
 	log.Error = "candidate_extraction_incomplete"
+	log.TruncateReasons = reasons
+	log.SelectedSource = selectedSource
+	log.SelectedSourceRole = selectedRole
+	log.SelectedFragmentRunes = len([]rune(selectedFragment))
 	log.RiskContextType = ContentModerationRiskContextUnknown
 	log.RiskContextReason = "candidate_extraction_incomplete"
 	s.persistContentModerationLog(ctx, cfg, log, "", false, false)

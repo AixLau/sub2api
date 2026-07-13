@@ -113,6 +113,83 @@ func TestCandidateSelectionDoesNotLetWrapperMarkersBypassUserContent(t *testing.
 	require.Contains(t, selection.Fragment, "danger-marker")
 }
 
+func TestCandidateModeIgnoresLargeResponsesToolOutputInUserOnlyScope(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.EngineMode = ContentModerationEngineModeCandidateOnly
+	cfg.AuditScope = ContentModerationAuditScopeUserOnly
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword:  "danger-marker",
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}}
+	body := []byte(`{"input":[{"type":"function_call_output","output":"` + strings.Repeat("danger-marker ", maxModerationInputRunes) + `"},{"type":"message","role":"user","content":"safe request"}]}`)
+	content := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeUserOnly)
+	repo := &contentModerationTestRepo{}
+	svc := candidateTestService(repo)
+
+	decision := svc.checkCandidateOnly(context.Background(), ContentModerationCheckInput{Protocol: ContentModerationProtocolOpenAIResponses, Body: body}, cfg, content)
+
+	require.True(t, decision.Allowed)
+	require.Empty(t, repo.snapshotLogs())
+}
+
+func TestCandidateExtractionFailureStoresSelectedSourceAndReasons(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword:  "danger-marker",
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}}
+	repo := &contentModerationTestRepo{}
+	svc := candidateTestService(repo)
+	content := ContentModerationInput{Sources: []ContentModerationInputSource{{
+		Source:          "responses.input[0].role=user.content",
+		Role:            "user",
+		Text:            "danger-marker request",
+		Truncated:       true,
+		TruncateReasons: []string{"max_total_runes"},
+	}}}
+
+	decision := svc.checkCandidateOnly(context.Background(), ContentModerationCheckInput{Protocol: ContentModerationProtocolOpenAIResponses}, cfg, content)
+
+	require.True(t, decision.Allowed)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, "candidate_extraction_incomplete", logs[0].Error)
+	require.Equal(t, []string{"max_total_runes"}, logs[0].TruncateReasons)
+	require.Equal(t, "responses.input[0].role=user.content", logs[0].SelectedSource)
+	require.Equal(t, "user", logs[0].SelectedSourceRole)
+	require.Equal(t, "danger-marker request", logs[0].InputExcerpt)
+}
+
+func TestCandidateSelectionUsesValidationReasonsFromSelectedSourceOnly(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword:  "danger-marker",
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}}
+	body := []byte(`{"messages":[{"role":"user","content":[{"type":"text","text":"safe history"},{"future":"malformed history tail"}]},{"role":"user","content":"danger-marker latest request"}]}`)
+	content := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body, ContentModerationAuditScopeUserOnly)
+
+	require.True(t, content.Truncated)
+	require.Len(t, content.Sources, 2)
+	require.True(t, content.Sources[0].Truncated)
+	require.Contains(t, content.Sources[0].TruncateReasons, "unsupported_required_value")
+	require.False(t, content.Sources[1].Truncated)
+
+	selection, found := contentModerationCandidateSelectionForInput(cfg, content)
+	require.True(t, found)
+	require.Equal(t, "danger-marker latest request", selection.Fragment)
+	require.False(t, contentModerationCandidateExtractionIncomplete(selection))
+}
+
 func TestCandidateSelectionKeepsTailPromptFilterMatchInBoundedPayload(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.PromptFilterMode = promptfilter.ModeObserve

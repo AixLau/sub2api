@@ -100,13 +100,10 @@ func TestContentModerationRepositoryCreateLog_UsesValidUpsertReturningSQL(t *tes
 		if expectedSQL != "content_moderation_create_log" {
 			return sqlmock.QueryMatcherRegexp.Match(expectedSQL, actualSQL)
 		}
-		if strings.Contains(actualSQL, "EXCLUDED.duplicate_retry_count\n) RETURNING") {
-			return fmt.Errorf("unexpected closing parenthesis before RETURNING: %s", actualSQL)
-		}
 		if !strings.Contains(actualSQL, "ON CONFLICT (decision_id) WHERE decision_id <> '' DO UPDATE SET") {
 			return fmt.Errorf("expected partial-index upsert clause, got: %s", actualSQL)
 		}
-		if !strings.Contains(actualSQL, "EXCLUDED.duplicate_retry_count)\nRETURNING id, created_at") {
+		if !strings.Contains(actualSQL, "truncate_reasons = CASE") || !strings.Contains(actualSQL, "END\nRETURNING id, created_at") {
 			return fmt.Errorf("expected RETURNING to follow the final assignment, got: %s", actualSQL)
 		}
 		return nil
@@ -148,6 +145,7 @@ func TestContentModerationRepositoryCreateLog_UsesValidUpsertReturningSQL(t *tes
 		CategoryScores:         map[string]float64{"keyword": 1},
 		ThresholdSnapshot:      map[string]float64{"keyword": 1},
 		InputExcerpt:           "developer message",
+		TruncateReasons:        []string{"max_total_runes"},
 		UpstreamLatencyMS:      &latency,
 		Error:                  "blocked",
 		MatchedKeyword:         "developer message",
@@ -178,7 +176,7 @@ func TestContentModerationRepositoryCreateLog_UsesValidUpsertReturningSQL(t *tes
 			log.ViolationCount, log.AutoBanned, log.EmailSent, queueDelay,
 			log.DecisionSource, log.ModerationProvider, log.ModerationModel, log.SourceOrigin,
 			log.SelectedSource, log.SelectedSourceRole, log.SelectedFragmentRunes,
-			log.DecisionCacheHit, log.DuplicateRetryCount, log.UserViolationEligible,
+			log.DecisionCacheHit, log.DuplicateRetryCount, log.UserViolationEligible, `["max_total_runes"]`,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(42), now))
 
@@ -248,7 +246,7 @@ func TestContentModerationRepositoryListLogsIncludesRawRequestMetadata(t *testin
 			"violation_count", "auto_banned", "email_sent", "user_status", "queue_delay_ms",
 			"raw_request_available", "raw_request_bytes", "raw_request_truncated",
 			"decision_source", "moderation_provider", "moderation_model", "source_origin", "selected_source", "selected_source_role",
-			"selected_fragment_runes", "decision_cache_hit", "duplicate_retry_count", "user_violation_eligible", "evidence_available", "created_at",
+			"selected_fragment_runes", "decision_cache_hit", "duplicate_retry_count", "user_violation_eligible", "truncate_reasons", "evidence_available", "created_at",
 		}).AddRow(
 			int64(42), "req-raw", nil, "u@example.com", nil, "H", nil, "Default",
 			int64(77), "oauth-primary", service.AccountTypeOAuth,
@@ -259,7 +257,7 @@ func TestContentModerationRepositoryListLogsIncludesRawRequestMetadata(t *testin
 			0, false, false, "active", nil,
 			true, 128, true,
 			"ordinary_api", "openai", "omni-moderation-latest", "user_turn", "responses.input", "user",
-			240, true, 2, true, true, now,
+			240, true, 2, true, []byte(`["max_total_runes"]`), true, now,
 		))
 
 	items, page, err := repo.ListLogs(context.Background(), service.ContentModerationLogFilter{})
@@ -269,6 +267,7 @@ func TestContentModerationRepositoryListLogsIncludesRawRequestMetadata(t *testin
 	require.True(t, items[0].RawRequestAvailable)
 	require.Equal(t, 128, items[0].RawRequestBytes)
 	require.True(t, items[0].RawRequestTruncated)
+	require.Equal(t, []string{"max_total_runes"}, items[0].TruncateReasons)
 	require.NotNil(t, items[0].AccountID)
 	require.Equal(t, int64(77), *items[0].AccountID)
 	require.Equal(t, "oauth-primary", items[0].AccountName)

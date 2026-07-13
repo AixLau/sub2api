@@ -247,6 +247,9 @@ func TestContentModerationRuntime_WireProviderStartsRuntime(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
+		nil,
+		nil,
 		&config.Config{Moderation: config.ModerationSecurityConfig{
 			CacheHMACKeyVersion: 1,
 			AllowedHosts:        []string{"api.openai.com", "open.bigmodel.cn"},

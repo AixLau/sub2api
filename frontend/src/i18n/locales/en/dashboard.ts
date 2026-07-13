@@ -252,6 +252,8 @@ export default {
     standardCost: 'Standard',
     actualCost: 'Actual',
     accountTest: 'Account test',
+    contentModeration: 'Content moderation',
+    platform: 'Platform',
     modelCost: 'Model cost',
     accountCost: 'Cost',
     userBilled: 'User billed',

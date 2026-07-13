@@ -36,6 +36,7 @@
             >
               {{ row.user.email }}
             </button>
+            <span v-else-if="isPlatformOperation(row)" class="font-medium text-cyan-700 dark:text-cyan-300">{{ t('usage.platform') }}</span>
             <span v-else class="font-medium text-gray-900 dark:text-white">-</span>
             <span v-if="row.user?.deleted_at" class="ml-1 inline-flex items-center rounded px-1 py-px text-[10px] font-medium leading-tight bg-rose-100 text-rose-600 ring-1 ring-inset ring-rose-200 dark:bg-rose-500/20 dark:text-rose-400 dark:ring-rose-500/30">
               {{ t('admin.usage.userDeletedBadge') }}
@@ -56,6 +57,9 @@
           <div class="space-y-1">
             <span v-if="row.source === 'account_test'" class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200">
               {{ t('usage.accountTest') }}
+            </span>
+            <span v-else-if="row.source === 'content_moderation'" class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+              {{ t('usage.contentModeration') }}
             </span>
             <div v-if="row.model_mapping_chain && row.model_mapping_chain.includes('→')" class="space-y-0.5 text-xs">
               <div v-for="(step, i) in row.model_mapping_chain.split('→')" :key="i"
@@ -172,7 +176,7 @@
         <template #cell-cost="{ row }">
           <div class="text-sm">
             <div class="flex items-center gap-1.5">
-              <span v-if="row.source === 'account_test'" class="font-medium text-cyan-700 dark:text-cyan-300">
+              <span v-if="isPlatformOperation(row)" class="font-medium text-cyan-700 dark:text-cyan-300">
                 {{ t('usage.modelCost') }} ${{ row.total_cost?.toFixed(6) || '0.000000' }}
               </span>
               <span v-else class="font-medium text-green-600 dark:text-green-400">${{ row.actual_cost?.toFixed(6) || '0.000000' }}</span>
@@ -187,7 +191,7 @@
                 </div>
               </div>
             </div>
-            <div v-if="row.source !== 'account_test' && showAccountBilling && row.account_rate_multiplier != null" class="mt-0.5 text-[11px] text-orange-500 dark:text-orange-400">
+            <div v-if="!isPlatformOperation(row) && showAccountBilling && row.account_rate_multiplier != null" class="mt-0.5 text-[11px] text-orange-500 dark:text-orange-400">
               A ${{ accountBilled(row).toFixed(6) }}
             </div>
           </div>
@@ -521,6 +525,10 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 const showAccountBilling = props.showAccountBilling
+
+function isPlatformOperation(row: AdminUsageLog): boolean {
+  return row.source === 'account_test' || row.source === 'content_moderation'
+}
 const showUpstreamEndpoint = props.showUpstreamEndpoint
 const ipGeoBatchLoading = ref(false)
 

@@ -154,7 +154,7 @@ func (r *usageLogRepository) Create(ctx context.Context, log *service.UsageLog) 
 	if tx := dbent.TxFromContext(ctx); tx != nil {
 		return r.createSingle(ctx, tx.Client(), log)
 	}
-	if log.Source == service.UsageSourceAccountTest {
+	if log.Source.Normalize().IsPlatformOperation() {
 		return r.createSingle(ctx, r.sql, log)
 	}
 	requestID := strings.TrimSpace(log.RequestID)
@@ -1230,7 +1230,7 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 
 	var userIDArg any = log.UserID
 	var apiKeyIDArg any = log.APIKeyID
-	if source == service.UsageSourceAccountTest {
+	if source.IsPlatformOperation() {
 		userIDArg = nil
 		apiKeyIDArg = nil
 	}

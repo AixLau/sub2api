@@ -125,7 +125,7 @@ const baseConfig = (): ContentModerationConfig => ({
     enabled: true,
     trigger: 'local_review',
     primary_model: 'gpt-5.3-codex-spark',
-    fallback_models: ['gpt-5-mini'],
+    fallback_models: ['gpt-5.4-mini'],
     timeout_ms: 20000,
     max_input_runes: 2000,
   },
@@ -508,6 +508,7 @@ describe('admin RiskControlView', () => {
           raw_request_truncated: false,
           upstream_latency_ms: null,
           error: 'cyber_policy_session_blocked',
+          truncate_reasons: ['max_total_runes'],
           violation_count: 0,
           auto_banned: false,
           email_sent: false,
@@ -551,6 +552,8 @@ describe('admin RiskControlView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('admin.riskControl.viewRawRequest')
+    expect(wrapper.text()).toContain('admin.riskControl.truncationReasons')
+    expect(wrapper.text()).toContain('max_total_runes')
     expect(wrapper.text()).toContain('admin.riskControl.rawRequestMeta')
 
     await findButtonByText(wrapper, 'admin.riskControl.viewRawRequest').trigger('click')

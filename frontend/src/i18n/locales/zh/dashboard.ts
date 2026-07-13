@@ -257,6 +257,8 @@ export default {
     standardCost: '标准',
     actualCost: '实际',
     accountTest: '账号测试',
+    contentModeration: '内容审计',
+    platform: '平台',
     modelCost: '模型成本',
     accountCost: '成本',
     userBilled: '用户扣费',

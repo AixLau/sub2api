@@ -191,6 +191,9 @@ func TestUsageLogFromServiceAdminIncludesAccountTestSource(t *testing.T) {
 
 	dto := UsageLogFromServiceAdmin(&service.UsageLog{Source: service.UsageSourceAccountTest})
 	require.Equal(t, string(service.UsageSourceAccountTest), dto.Source)
+
+	moderationDTO := UsageLogFromServiceAdmin(&service.UsageLog{Source: service.UsageSourceContentModeration})
+	require.Equal(t, string(service.UsageSourceContentModeration), moderationDTO.Source)
 }
 
 func TestUsageLogFromService_IncludesImageBillingMetadataForUserAndAdmin(t *testing.T) {

@@ -66,6 +66,6 @@ describe('risk control locale copy', () => {
     expect(zh.admin.riskControl.semanticReviewHint).toContain('gpt-5.3-codex-spark')
     expect(en.admin.riskControl.promptFilterModeHint).toContain('one user-context fragment')
     expect(en.admin.riskControl.promptFilterModeHint).not.toContain('hybrid mode')
-    expect(en.admin.riskControl.semanticReviewHint).toContain('gpt-5-mini')
+    expect(en.admin.riskControl.semanticReviewHint).toContain('gpt-5.4-mini')
   })
 })

@@ -27,7 +27,7 @@ export default {
   },
   dashboard: {
     active: '活跃',
-    activeUsersTrend: 'API 活跃用户趋势',
+    activeUsersTrend: '活跃用户趋势',
     create: '创建',
     err: '异常',
     newUsersToday: '今日新增用户',

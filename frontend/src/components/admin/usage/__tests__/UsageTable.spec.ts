@@ -52,6 +52,8 @@ const messages: Record<string, string> = {
   'admin.usage.billingModePerRequest': 'Per request',
   'admin.usage.billingModeImage': 'Image',
   'usage.accountTest': 'Account test',
+  'usage.contentModeration': 'Content moderation',
+  'usage.platform': 'Platform',
   'usage.modelCost': 'Model cost',
 }
 
@@ -212,7 +214,7 @@ describe('admin UsageTable tooltip', () => {
     expect(text).toContain('claude-sonnet-4-20250514')
   })
 
-  it('labels account-test rows with actor placeholders and model cost', () => {
+  it('labels account-test rows as platform operations with model cost', () => {
     const row = {
       request_id: 'account-test-1',
       source: 'account_test',
@@ -249,9 +251,51 @@ describe('admin UsageTable tooltip', () => {
 
     const text = wrapper.text()
     expect(text).toContain('Account test')
+    expect(text).toContain('Platform')
     expect(text).toContain('Model cost')
     expect(text).toContain('$0.012345')
     expect(text).not.toContain('#0')
+  })
+
+  it('labels content-moderation rows as platform operations', () => {
+    const row = {
+      request_id: 'content-moderation-1',
+      source: 'content_moderation',
+      user_id: 0,
+      api_key_id: 0,
+      model: 'gpt-5.3-codex-spark',
+      actual_cost: 0,
+      total_cost: 0.012345,
+      account_rate_multiplier: 1,
+      rate_multiplier: 1,
+      input_cost: 0.002,
+      output_cost: 0.010345,
+      cache_creation_cost: 0,
+      cache_read_cost: 0,
+      input_tokens: 100,
+      output_tokens: 20,
+    }
+
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [row],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('Content moderation')
+    expect(text).toContain('Platform')
+    expect(text).toContain('Model cost')
   })
 
   it.each([

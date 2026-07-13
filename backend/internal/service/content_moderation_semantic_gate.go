@@ -86,6 +86,11 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 	if s == nil || cfg == nil || s.semanticReviewRouter == nil {
 		return nil, false
 	}
+	candidate.Input = contentModerationSemanticReviewInputForCheck(
+		input,
+		candidate.Input.Text,
+		semanticReviewDecisionID(input, hashText),
+	)
 	result, err := s.semanticReviewRouter.Review(ctx, cfg.SemanticReview, candidate.Input)
 	if err != nil {
 		slog.Warn("content_moderation.semantic_review_gate_failed",
@@ -187,6 +192,11 @@ func (s *ContentModerationService) semanticReviewProviderFallback(
 	if strings.TrimSpace(candidate.Input.Text) == "" {
 		return nil, false
 	}
+	candidate.Input = contentModerationSemanticReviewInputForCheck(
+		input,
+		candidate.Input.Text,
+		semanticReviewDecisionID(input, hashText),
+	)
 	providerErrorText := ""
 	if providerErr != nil {
 		providerErrorText = providerErr.Error()

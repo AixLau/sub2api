@@ -225,103 +225,38 @@ func (s *AccountTestService) recordOpenAIAccountTest(ctx context.Context, metric
 	if result == nil || result.account == nil {
 		return errors.New("account test usage context is incomplete")
 	}
+	if s.usageLogWriter == nil {
+		return errors.New("account test usage recorder is unavailable")
+	}
 
-	requestID := strings.TrimSpace(result.requestID)
-	if requestID == "" {
-		requestID = "account-test-" + uuid.NewString()
-	}
-	inputTokens := result.usage.InputTokens - result.usage.CacheReadInputTokens - result.usage.CacheCreationInputTokens
-	if inputTokens < 0 {
-		inputTokens = 0
-	}
-	rateMultiplier := 1.0
-	logEntry := &UsageLog{
-		Source:              UsageSourceAccountTest,
-		AccountID:           result.account.ID,
-		RequestID:           requestID,
-		Model:               result.model,
-		RequestedModel:      result.model,
-		InputTokens:         inputTokens,
-		OutputTokens:        result.usage.OutputTokens,
-		CacheCreationTokens: result.usage.CacheCreationInputTokens,
-		CacheReadTokens:     result.usage.CacheReadInputTokens,
-		ImageOutputTokens:   result.usage.ImageOutputTokens,
-		RateMultiplier:      rateMultiplier,
-		ActualCost:          0,
-		ImageCount:          result.imageCount,
-		CreatedAt:           time.Now().UTC(),
-	}
+	requestType := RequestTypeSync
 	if result.stream {
-		logEntry.RequestType = RequestTypeStream
-	} else {
-		logEntry.RequestType = RequestTypeSync
+		requestType = RequestTypeStream
 	}
-	logEntry.SyncRequestTypeAndLegacyFields()
-	if result.userAgent != "" {
-		userAgent := result.userAgent
-		logEntry.UserAgent = &userAgent
-	}
-	if result.upstreamEndpoint != "" {
-		upstreamEndpoint := result.upstreamEndpoint
-		logEntry.UpstreamEndpoint = &upstreamEndpoint
-	}
-	inboundEndpoint := "/api/v1/admin/accounts/:id/test"
-	logEntry.InboundEndpoint = &inboundEndpoint
-	if result.imageSize != "" {
-		imageSize := result.imageSize
-		logEntry.ImageSize = &imageSize
-	}
+	var durationMS *int
+	var firstTokenMS *int
 	if metrics != nil {
 		duration := int(time.Since(metrics.startedAt).Milliseconds())
-		logEntry.DurationMs = &duration
-		logEntry.FirstTokenMs = metrics.firstToken
+		durationMS = &duration
+		firstTokenMS = metrics.firstToken
 	}
-	logEntry.AccountRateMultiplier = &rateMultiplier
-
-	if s.billingService != nil {
-		requestCount := result.imageCount
-		if requestCount <= 0 {
-			requestCount = 1
-		}
-		cost, err := s.billingService.CalculateCostUnified(CostInput{
-			Ctx:   ctx,
-			Model: result.model,
-			Tokens: UsageTokens{
-				InputTokens:         inputTokens,
-				OutputTokens:        result.usage.OutputTokens,
-				CacheCreationTokens: result.usage.CacheCreationInputTokens,
-				CacheReadTokens:     result.usage.CacheReadInputTokens,
-				ImageOutputTokens:   result.usage.ImageOutputTokens,
-			},
-			RequestCount:   requestCount,
-			SizeTier:       result.imageSize,
-			RateMultiplier: rateMultiplier,
-			Resolver:       s.pricingResolver,
-		})
-		if err != nil {
-			log.Printf("Account test pricing unavailable for model %s: %v", result.model, err)
-		} else if cost != nil {
-			logEntry.InputCost = cost.InputCost
-			logEntry.OutputCost = cost.OutputCost
-			logEntry.CacheCreationCost = cost.CacheCreationCost
-			logEntry.CacheReadCost = cost.CacheReadCost
-			logEntry.ImageOutputCost = cost.ImageOutputCost
-			logEntry.TotalCost = cost.TotalCost
-			if cost.BillingMode != "" {
-				billingMode := cost.BillingMode
-				logEntry.BillingMode = &billingMode
-			}
-		}
-	}
-
-	inserted, err := s.usageLogWriter.Create(ctx, logEntry)
-	if err != nil {
-		return err
-	}
-	if !inserted {
-		return errors.New("usage record was not inserted")
-	}
-	return nil
+	inboundEndpoint := "/api/v1/admin/accounts/:id/test"
+	return NewPlatformUsageRecorder(s.usageLogWriter, s.billingService, s.pricingResolver).Record(ctx, PlatformUsageRecord{
+		Source:           UsageSourceAccountTest,
+		Account:          result.account,
+		RequestID:        strings.TrimSpace(result.requestID),
+		Model:            result.model,
+		RequestedModel:   result.model,
+		Usage:            result.usage,
+		RequestType:      requestType,
+		DurationMS:       durationMS,
+		FirstTokenMS:     firstTokenMS,
+		UserAgent:        platformUsageStringPtr(result.userAgent),
+		InboundEndpoint:  &inboundEndpoint,
+		UpstreamEndpoint: platformUsageStringPtr(result.upstreamEndpoint),
+		ImageCount:       result.imageCount,
+		ImageSize:        result.imageSize,
+	})
 }
 
 // generateSessionString generates a Claude Code style session string.

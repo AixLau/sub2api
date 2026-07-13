@@ -584,10 +584,12 @@ type ContentModerationInput struct {
 }
 
 type ContentModerationInputSource struct {
-	Source   string
-	Role     string
-	Text     string
-	rawParts []string
+	Source          string
+	Role            string
+	Text            string
+	Truncated       bool
+	TruncateReasons []string
+	rawParts        []string
 }
 
 func (in *ContentModerationInput) Normalize() {
@@ -709,6 +711,7 @@ type ContentModerationLog struct {
 	CategoryScores         map[string]float64 `json:"category_scores"`
 	ThresholdSnapshot      map[string]float64 `json:"threshold_snapshot"`
 	InputExcerpt           string             `json:"input_excerpt"`
+	TruncateReasons        []string           `json:"truncate_reasons,omitempty"`
 	UpstreamLatencyMS      *int               `json:"upstream_latency_ms,omitempty"`
 	Error                  string             `json:"error"`
 	MatchedKeyword         string             `json:"matched_keyword"`
@@ -1966,8 +1969,9 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	}
 	content := ExtractContentModerationInput(input.Protocol, input.Body, auditScope)
 	if content.IsEmpty() {
-		if cfg.candidateOnly() && contentModerationCandidateExtractionIncomplete(content) {
-			return s.candidateExtractionFailureDecision(ctx, input, cfg, content), nil
+		if cfg.candidateOnly() {
+			s.recordPreBlockSyncMetric(0, ContentModerationActionAllow)
+			return allow, nil
 		}
 		slog.Info("content_moderation.skip_empty_input",
 			"user_id", input.UserID,
@@ -1998,10 +2002,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		"protocol", input.Protocol,
 		"text_runes", len([]rune(content.Text)),
 		"image_count", len(content.Images))
-	if cfg.Mode == ContentModerationModePreBlock && content.hasOversizedEncodedPayloadSkipped() {
-		if cfg.candidateOnly() {
-			return s.candidateExtractionFailureDecision(ctx, input, cfg, content), nil
-		}
+	if cfg.Mode == ContentModerationModePreBlock && !cfg.candidateOnly() && content.hasOversizedEncodedPayloadSkipped() {
 		s.recordPreBlockSyncMetric(0, ContentModerationActionError)
 		slog.Warn("content_moderation.oversized_encoded_payload_fail_open",
 			"user_id", input.UserID,
@@ -4951,7 +4952,13 @@ func normalizeContentModerationInputSources(sources []ContentModerationInputSour
 		if strings.TrimSpace(name) == "" || text == "" {
 			continue
 		}
-		out = append(out, ContentModerationInputSource{Source: name, Role: strings.ToLower(strings.TrimSpace(source.Role)), Text: text})
+		out = append(out, ContentModerationInputSource{
+			Source:          name,
+			Role:            strings.ToLower(strings.TrimSpace(source.Role)),
+			Text:            text,
+			Truncated:       source.Truncated,
+			TruncateReasons: append([]string(nil), source.TruncateReasons...),
+		})
 	}
 	return out
 }

@@ -4,22 +4,27 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
 type semanticReviewBackendStub struct {
 	accountsByModel map[string][]*Account
 	selectCalls     []string
+	selectGroupIDs  []*int64
 	reviewCalls     []string
 	review          func(*Account, string) (ContentModerationSemanticReviewResult, error)
 }
 
-func (s *semanticReviewBackendStub) SelectSemanticReviewAccount(_ context.Context, model string, excludedIDs map[int64]struct{}) (*AccountSelectionResult, error) {
+func (s *semanticReviewBackendStub) SelectSemanticReviewAccount(_ context.Context, groupID *int64, model string, excludedIDs map[int64]struct{}) (*AccountSelectionResult, error) {
 	s.selectCalls = append(s.selectCalls, model)
+	s.selectGroupIDs = append(s.selectGroupIDs, cloneInt64Ptr(groupID))
 	for _, account := range s.accountsByModel[model] {
 		if _, excluded := excludedIDs[account.ID]; excluded {
 			continue
@@ -41,6 +46,16 @@ type semanticReviewQuotaStub struct {
 	updates map[int64]map[string]any
 	calls   []int64
 	err     error
+}
+
+type semanticReviewUsageRecorderStub struct {
+	records []PlatformUsageRecord
+	err     error
+}
+
+func (s *semanticReviewUsageRecorderStub) Record(_ context.Context, record PlatformUsageRecord) error {
+	s.records = append(s.records, record)
+	return s.err
 }
 
 func (s *semanticReviewQuotaStub) RefreshSemanticReviewQuota(_ context.Context, accountID int64) (map[string]any, error) {
@@ -95,6 +110,15 @@ func TestNormalizeContentModerationSemanticReviewConfigKeepsBuiltInModelsOnly(t 
 	require.Equal(t, []string{ContentModerationSemanticReviewFallbackModel}, cfg.FallbackModels)
 }
 
+func TestNormalizeContentModerationSemanticReviewConfigReplacesLegacyMini(t *testing.T) {
+	cfg := normalizeContentModerationSemanticReviewConfig(ContentModerationSemanticReviewConfig{
+		PrimaryModel:   ContentModerationSemanticReviewPrimaryModel,
+		FallbackModels: []string{"gpt-5-mini"},
+	})
+
+	require.Equal(t, []string{ContentModerationSemanticReviewFallbackModel}, cfg.FallbackModels)
+}
+
 func TestContentModerationUpdateConfigNormalizesSemanticReviewModels(t *testing.T) {
 	initial, err := json.Marshal(defaultContentModerationConfig())
 	require.NoError(t, err)
@@ -136,7 +160,7 @@ func TestSemanticReviewRouterRefreshesStaleSparkQuotaBeforeRequest(t *testing.T)
 			"codex_usage_updated_at": time.Now().Format(time.RFC3339),
 		},
 	}}
-	router := NewOpenAIContentModerationSemanticReviewRouter(backend, quota)
+	router := NewOpenAIContentModerationSemanticReviewRouter(backend, quota, nil)
 
 	result, err := router.Review(context.Background(), semanticReviewTestConfig(), ContentModerationSemanticReviewInput{Text: "test"})
 
@@ -165,7 +189,7 @@ func TestSemanticReviewRouterSwitchesAccountOn429BeforeModelFallback(t *testing.
 		},
 	}
 	quota := &semanticReviewQuotaStub{}
-	router := NewOpenAIContentModerationSemanticReviewRouter(backend, quota)
+	router := NewOpenAIContentModerationSemanticReviewRouter(backend, quota, nil)
 
 	result, err := router.Review(context.Background(), semanticReviewTestConfig(), ContentModerationSemanticReviewInput{Text: "test"})
 
@@ -186,7 +210,7 @@ func TestSemanticReviewRouterRejectDoesNotDowngradeToFallbackModel(t *testing.T)
 			return ContentModerationSemanticReviewResult{Verdict: "reject", Confidence: 0.98}, nil
 		},
 	}
-	router := NewOpenAIContentModerationSemanticReviewRouter(backend, nil)
+	router := NewOpenAIContentModerationSemanticReviewRouter(backend, nil, nil)
 
 	result, err := router.Review(context.Background(), semanticReviewTestConfig(), ContentModerationSemanticReviewInput{Text: "reverse"})
 
@@ -199,12 +223,108 @@ func TestSemanticReviewRouterRejectDoesNotDowngradeToFallbackModel(t *testing.T)
 
 func TestSemanticReviewRouterReturnsUnavailableWhenAllModelsHaveNoAccount(t *testing.T) {
 	backend := &semanticReviewBackendStub{accountsByModel: map[string][]*Account{}}
-	router := NewOpenAIContentModerationSemanticReviewRouter(backend, nil)
+	router := NewOpenAIContentModerationSemanticReviewRouter(backend, nil, nil)
 
 	_, err := router.Review(context.Background(), semanticReviewTestConfig(), ContentModerationSemanticReviewInput{Text: "test"})
 
 	var unavailable *ContentModerationSemanticReviewUnavailableError
 	require.ErrorAs(t, err, &unavailable)
+}
+
+func TestSemanticReviewRouterKeepsRequestGroupDuringAccountSelection(t *testing.T) {
+	groupID := int64(17)
+	backend := &semanticReviewBackendStub{accountsByModel: map[string][]*Account{
+		ContentModerationSemanticReviewPrimaryModel: {freshSemanticReviewAccount(41)},
+	}}
+	router := NewOpenAIContentModerationSemanticReviewRouter(backend, nil, nil)
+
+	_, err := router.Review(context.Background(), semanticReviewTestConfig(), ContentModerationSemanticReviewInput{
+		Text:    "review this candidate",
+		GroupID: &groupID,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, backend.selectGroupIDs, 1)
+	require.NotNil(t, backend.selectGroupIDs[0])
+	require.Equal(t, groupID, *backend.selectGroupIDs[0])
+}
+
+func TestSemanticReviewRouterRecordsPlatformUsage(t *testing.T) {
+	groupID := int64(23)
+	account := freshSemanticReviewAccount(42)
+	backend := &semanticReviewBackendStub{
+		accountsByModel: map[string][]*Account{
+			ContentModerationSemanticReviewPrimaryModel: {account},
+		},
+		review: func(_ *Account, _ string) (ContentModerationSemanticReviewResult, error) {
+			return ContentModerationSemanticReviewResult{
+				Verdict:       "allow",
+				UpstreamModel: "gpt-5.3-codex-spark-upstream",
+				Usage: OpenAIUsage{
+					InputTokens:              120,
+					OutputTokens:             12,
+					CacheReadInputTokens:     20,
+					CacheCreationInputTokens: 10,
+				},
+			}, nil
+		},
+	}
+	recorder := &semanticReviewUsageRecorderStub{}
+	router := NewOpenAIContentModerationSemanticReviewRouter(backend, nil, recorder)
+
+	_, err := router.Review(context.Background(), semanticReviewTestConfig(), ContentModerationSemanticReviewInput{
+		Text:          "candidate",
+		GroupID:       &groupID,
+		UsageRecordID: "usage-cm-decision-42",
+	})
+
+	require.NoError(t, err)
+	require.Len(t, recorder.records, 1)
+	record := recorder.records[0]
+	require.Equal(t, UsageSourceContentModeration, record.Source)
+	require.Same(t, account, record.Account)
+	require.Equal(t, "usage-cm-decision-42", record.RequestID)
+	require.Equal(t, ContentModerationSemanticReviewPrimaryModel, record.Model)
+	require.Equal(t, "gpt-5.3-codex-spark-upstream", record.UpstreamModel)
+	require.NotNil(t, record.GroupID)
+	require.Equal(t, groupID, *record.GroupID)
+	require.Equal(t, 120, record.Usage.InputTokens)
+}
+
+func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(strings.NewReader(`{
+			"id":"resp_semantic_api_key",
+			"output_text":"{\"verdict\":\"allow\"}",
+			"usage":{"input_tokens":44,"output_tokens":5}
+		}`)),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream, cfg: &config.Config{}}
+	account := &Account{
+		ID:       51,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":       "semantic-api-key",
+			"model_mapping": map[string]any{"gpt-5.4-mini": "gpt-5.4-mini-upstream"},
+		},
+	}
+
+	result, err := svc.ReviewSemanticContent(context.Background(), account, "gpt-5.4-mini", ContentModerationSemanticReviewInput{Text: "candidate"})
+
+	require.NoError(t, err)
+	require.Equal(t, "allow", result.Verdict)
+	require.Equal(t, "gpt-5.4-mini-upstream", result.UpstreamModel)
+	require.Equal(t, "resp_semantic_api_key", result.RequestID)
+	require.Equal(t, 44, result.Usage.InputTokens)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, openaiPlatformAPIURL, upstream.lastReq.URL.String())
+	require.Equal(t, "Bearer semantic-api-key", upstream.lastReq.Header.Get("Authorization"))
+	var requestBody map[string]any
+	require.NoError(t, json.Unmarshal(upstream.lastBody, &requestBody))
+	require.Equal(t, "gpt-5.4-mini-upstream", requestBody["model"])
 }
 
 func TestParseSemanticReviewJSONAndSSE(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/google/wire"
+	"github.com/redis/go-redis/v9"
 )
 
 // ProvideAdminHandlers creates the AdminHandlers struct
@@ -142,13 +143,20 @@ func ProvideHandlers(
 	}
 }
 
+// ProvideClientSetupHandler adapts concrete runtime dependencies to the
+// handler-local interfaces used by ClientSetupHandler.
+func ProvideClientSetupHandler(redisClient *redis.Client, apiKeyService *service.APIKeyService) *ClientSetupHandler {
+	return NewClientSetupHandler(redisClient, apiKeyService)
+}
+
 // ProviderSet is the Wire provider set for all handlers
 var ProviderSet = wire.NewSet(
+	ProvideClientSetupHandler,
+
 	// Top-level handlers
 	NewAuthHandler,
 	NewUserHandler,
 	NewAPIKeyHandler,
-	NewClientSetupHandler,
 	NewUsageHandler,
 	NewRedeemHandler,
 	NewSubscriptionHandler,

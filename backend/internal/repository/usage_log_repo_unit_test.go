@@ -119,6 +119,18 @@ func TestPrepareUsageLogInsertAccountTestActors(t *testing.T) {
 	require.Equal(t, service.UsageSourceAccountTest, accountTest.args[len(accountTest.args)-2])
 	require.Equal(t, createdAt, accountTest.args[len(accountTest.args)-1])
 
+	contentModeration := prepareUsageLogInsert(&service.UsageLog{
+		Source:    service.UsageSourceContentModeration,
+		AccountID: 8,
+		RequestID: uuid.NewString(),
+		Model:     "gpt-5.4-mini",
+		CreatedAt: createdAt,
+	})
+	require.Nil(t, contentModeration.args[0])
+	require.Nil(t, contentModeration.args[1])
+	require.Equal(t, int64(8), contentModeration.args[2])
+	require.Equal(t, service.UsageSourceContentModeration, contentModeration.args[len(contentModeration.args)-2])
+
 	gateway := prepareUsageLogInsert(&service.UsageLog{
 		Source:    service.UsageSourceGateway,
 		UserID:    1,
