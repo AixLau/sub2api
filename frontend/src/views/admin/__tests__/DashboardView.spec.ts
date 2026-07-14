@@ -87,7 +87,8 @@ const createDashboardStats = (): DashboardStats => ({
   average_duration_ms: 0,
   uptime: 0,
   rpm: 0,
-  tpm: 0
+  tpm: 0,
+  recent_5m_active_users: 3
 })
 
 describe('admin DashboardView', () => {
@@ -139,7 +140,7 @@ describe('admin DashboardView', () => {
     })
   })
 
-  it('uses last 24 hours as default dashboard range', async () => {
+  it('uses today as default dashboard range', async () => {
     mount(DashboardView, {
       global: {
         stubs: {
@@ -157,20 +158,18 @@ describe('admin DashboardView', () => {
 
     await flushPromises()
 
-    const now = new Date()
-    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+    const today = formatLocalDate(new Date())
 
     expect(getSnapshotV2).toHaveBeenCalledTimes(1)
     expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
-      start_date: formatLocalDate(yesterday),
-      end_date: formatLocalDate(now),
+      start_date: today,
+      end_date: today,
       granularity: 'hour'
     }))
 
     const range = getSnapshotV2.mock.calls[0][0] as { start_time?: string; end_time?: string }
-    expect(range.start_time).toEqual(expect.any(String))
-    expect(range.end_time).toEqual(expect.any(String))
-    expect(new Date(range.end_time!).getTime() - new Date(range.start_time!).getTime()).toBe(24 * 60 * 60 * 1000)
+    expect(range.start_time).toBeUndefined()
+    expect(range.end_time).toBeUndefined()
   })
 
   it('does not load recent usage trend and enlarges token usage trend', async () => {
@@ -200,5 +199,8 @@ describe('admin DashboardView', () => {
     expect(getUserUsageTrend).not.toHaveBeenCalled()
     expect(wrapper.text()).not.toContain('admin.dashboard.recentUsage')
     expect(wrapper.find('[data-testid="token-usage-trend"]').attributes('data-height')).toBe('h-80')
+    const recentActiveUsers = wrapper.find('[data-testid="recent-5m-active-users"]')
+    expect(recentActiveUsers.text()).toContain('3')
+    expect(recentActiveUsers.text()).toContain('admin.dashboard.recent5mActiveUsers')
   })
 })

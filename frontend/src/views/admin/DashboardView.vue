@@ -191,6 +191,14 @@
                   </p>
                   <span class="text-xs text-gray-500 dark:text-gray-400">TPM</span>
                 </div>
+                <div data-testid="recent-5m-active-users" class="flex items-baseline gap-2">
+                  <p class="text-sm font-semibold text-cyan-600 dark:text-cyan-400">
+                    {{ formatNumber(stats.recent_5m_active_users) }}
+                  </p>
+                  <span class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.dashboard.recent5mActiveUsers') }}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -406,6 +414,14 @@ interface DashboardRangeParams {
   end_time?: string
 }
 
+const getTodayRange = (): DashboardRangeParams => {
+  const today = formatLocalDate(new Date())
+  return {
+    start_date: today,
+    end_date: today
+  }
+}
+
 const getLast24HoursRange = (): DashboardRangeParams => {
   const end = new Date()
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
@@ -419,10 +435,10 @@ const getLast24HoursRange = (): DashboardRangeParams => {
 
 // Date range
 const granularity = ref<'day' | 'hour'>('hour')
-const defaultRange = getLast24HoursRange()
+const defaultRange = getTodayRange()
 const startDate = ref(defaultRange.start_date)
 const endDate = ref(defaultRange.end_date)
-const rangePreset = ref<string | null>('last24Hours')
+const rangePreset = ref<string | null>('today')
 
 const getDashboardRangeParams = (): DashboardRangeParams => {
   if (rangePreset.value === 'last24Hours') {

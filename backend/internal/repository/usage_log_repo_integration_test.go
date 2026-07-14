@@ -910,10 +910,11 @@ func (s *UsageLogRepoSuite) TestDashboardStats_TodayTotalsAndPerformance() {
 	s.Require().GreaterOrEqual(stats.TodayCost, 0.0, "expected TodayCost >= 0")
 	s.Require().GreaterOrEqual(stats.TodayAccountCost, 0.0, "expected TodayAccountCost >= 0")
 
-	wantRpm, wantTpm, err := s.repo.getPerformanceStats(s.ctx, 0)
+	wantRpm, wantTpm, wantRecentActiveUsers, err := s.repo.getPerformanceStats(s.ctx, 0)
 	s.Require().NoError(err, "getPerformanceStats")
 	s.Require().Equal(wantRpm, stats.Rpm, "Rpm mismatch")
 	s.Require().Equal(wantTpm, stats.Tpm, "Tpm mismatch")
+	s.Require().Equal(wantRecentActiveUsers, stats.Recent5mActiveUsers, "Recent5mActiveUsers mismatch")
 }
 
 func (s *UsageLogRepoSuite) TestDashboardStatsWithRange_Fallback() {

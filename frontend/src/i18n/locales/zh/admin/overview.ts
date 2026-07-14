@@ -26,6 +26,7 @@ export default {
       output: '输出',
       cacheToday: '今日缓存',
       performance: '性能指标',
+      recent5mActiveUsers: '近 5 分钟用户',
       avgResponse: '平均响应',
       averageTime: '平均时间',
       active: '活跃',

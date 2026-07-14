@@ -22,6 +22,7 @@ export default {
       output: 'Output',
       cacheToday: 'Cache (Today)',
       performance: 'Performance',
+      recent5mActiveUsers: 'users in last 5 min',
       avgResponse: 'Avg Response',
       averageTime: 'Average Time',
       active: 'active',

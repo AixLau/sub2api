@@ -1568,6 +1568,7 @@ export interface DashboardStats {
   // 性能指标
   rpm: number // 近5分钟平均每分钟请求数
   tpm: number // 近5分钟平均每分钟Token数
+  recent_5m_active_users: number // 近5分钟调用网关 API 的用户数
 }
 
 export interface UsageStatsResponse {
