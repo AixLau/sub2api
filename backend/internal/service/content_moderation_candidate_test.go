@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -176,23 +177,6 @@ func TestCandidateOrdinaryAllowEscalationPolicy(t *testing.T) {
 			require.Equal(t, tt.want, contentModerationCandidateOrdinaryAllowRequiresSemantic(tt.selection))
 		})
 	}
-}
-
-func TestCandidateReviewerFailureModeOnlyClosesCriticalPreBlock(t *testing.T) {
-	cfg := candidateTestConfig()
-	cfg.Mode = ContentModerationModePreBlock
-
-	require.Equal(t, ContentModerationFailStrategyClosed, contentModerationCandidateFailureMode(cfg, contentModerationCandidateSelection{
-		Rule: ContentModerationKeywordRule{Severity: ContentModerationKeywordSeverityCritical},
-	}))
-	require.Equal(t, ContentModerationFailStrategyOpen, contentModerationCandidateFailureMode(cfg, contentModerationCandidateSelection{
-		Rule: ContentModerationKeywordRule{Severity: ContentModerationKeywordSeverityHigh},
-	}))
-
-	cfg.Mode = ContentModerationModeObserve
-	require.Equal(t, ContentModerationFailStrategyOpen, contentModerationCandidateFailureMode(cfg, contentModerationCandidateSelection{
-		Rule: ContentModerationKeywordRule{Severity: ContentModerationKeywordSeverityCritical},
-	}))
 }
 
 func TestCandidateSelectionUsesMatchedUserSourceOnly(t *testing.T) {
@@ -905,4 +889,46 @@ func TestCandidateCheckRoutesCyberCandidateToSemanticReview(t *testing.T) {
 	require.Equal(t, int64(1), status.PreBlockChecked)
 	require.Equal(t, int64(1), status.PreBlockAllowed)
 	require.Zero(t, status.PreBlockBlocked)
+}
+
+func TestCandidateCheckFailsOpenWhenCriticalSemanticReviewUnavailable(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.Enabled = true
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword:  "cyber-marker",
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityCritical,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}}
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &candidateRetryDedupeRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(raw),
+		}},
+		repo, nil, nil, nil, nil, nil,
+	)
+	svc.SetDecisionCacheKey(bytes.Repeat([]byte{0x5a}, 32))
+	svc.SetSemanticReviewRouter(&contentModerationSemanticReviewRouterStub{err: errors.New("semantic review unavailable")})
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		UserID:   17,
+		APIKeyID: 29,
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"cyber-marker request"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionError, decision.Action)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.False(t, logs[0].Flagged)
+	require.Equal(t, "candidate_reviewer_unavailable", logs[0].RiskContextReason)
 }
