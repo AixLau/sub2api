@@ -84,17 +84,17 @@ describe('UserGrowthRetention', () => {
     expect(chart.props('data').datasets).toHaveLength(2)
     expect(chart.props('data').datasets.map((dataset: { label: string }) => dataset.label)).toEqual([
       'admin.dashboard.registrations',
-      'admin.dashboard.rechargeConversion'
+      'admin.dashboard.rechargedUsers'
     ])
   })
 
-  it('shows three comparison signals and handles missing mature cohorts', () => {
+  it('shows three comparison signals and keeps recent cohorts in the trend', () => {
     const immature = cohorts.map((cohort) => ({ ...cohort, paid_rate: null, repeat_buy_rate: null }))
     const wrapper = mountComponent(immature)
 
     expect(wrapper.findAll('aside [class*="py-4"]')).toHaveLength(3)
-    expect(wrapper.find('[data-testid="conversion-chart"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('admin.dashboard.noMatureCohorts')
+    expect(wrapper.find('[data-testid="conversion-chart"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('admin.dashboard.noMatureCohorts')
   })
 
   it('emits a selected time range without exposing calculation details', async () => {

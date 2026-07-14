@@ -44,14 +44,14 @@ export default {
     primaryLossMessage: '{from} to {to} lost {count} users ({rate}); investigate friction at this stage first.',
     conversionTrend: 'Recharge conversion trend',
     matureCohortHint: 'Recharge performance for recent registration cohorts',
-    conversionTrendHint: 'Registrations and recharge conversion rate',
+    conversionTrendHint: 'By registration date: registrations and users recharged so far',
     rechargeConversion: 'Recharge conversion',
     needsAttention: 'Needs attention',
     registrationTrend: 'New registrations',
     rechargeTrend: 'Recharge conversion',
     repurchaseTrend: 'Repeat-purchase conversion',
     comparedWithPreviousCohorts: 'vs. previous 7 cohorts',
-    noMatureCohorts: 'No registration cohorts have completed the 30-day observation window yet',
+    noMatureCohorts: 'Not enough historical data yet',
   },
   ops: {
     runtime: {

@@ -235,7 +235,9 @@ const repeatRate = computed(() => rate(totalRepeatBuyers.value, totalPaidUsers.v
 const registrationLoss = computed<LossMetric>(() => loss(totalRegistrations.value, totalPaidUsers.value))
 const repeatLoss = computed<LossMetric>(() => loss(totalPaidUsers.value, totalRepeatBuyers.value))
 const matureCohorts = computed(() => props.cohorts.filter((cohort) => cohort.paid_rate != null))
-const trendCohorts = computed(() => matureCohorts.value.slice(-30))
+// Keep recent cohorts visible: paid_users is the cumulative count observed so far,
+// so a cohort can grow as users recharge later today or on a future day.
+const trendCohorts = computed(() => props.cohorts.slice(-30))
 
 const primaryLossMessage = computed(() => {
   const registrationIsPrimary = registrationLoss.value.rate == null
@@ -344,15 +346,15 @@ const chartData = computed(() => {
       },
       {
         type: 'line' as const,
-        label: t('admin.dashboard.rechargeConversion'),
-        data: trendCohorts.value.map((point) => point.paid_rate),
+        label: t('admin.dashboard.rechargedUsers'),
+        data: trendCohorts.value.map((point) => point.paid_users),
         borderColor: '#7c3aed',
         backgroundColor: '#7c3aed',
         pointRadius: 2,
         pointHoverRadius: 4,
         borderWidth: 2,
         tension: 0.25,
-        yAxisID: 'rate'
+        yAxisID: 'users'
       }
     ]
   }
@@ -370,9 +372,13 @@ const chartOptions = computed(() => ({
     },
     tooltip: {
       callbacks: {
-        label: (context: any) => context.dataset.yAxisID === 'rate'
-          ? `${context.dataset.label}: ${formatRate(context.raw)}`
-          : `${context.dataset.label}: ${Number(context.raw).toLocaleString(locale.value)}`
+        label: (context: any) => {
+          const cohort = trendCohorts.value[context.dataIndex]
+          if (context.dataset.yAxisID === 'users' && cohort) {
+            return `${context.dataset.label}: ${Number(context.raw).toLocaleString(locale.value)} (${formatRate(rate(cohort.paid_users, cohort.registrations))})`
+          }
+          return `${context.dataset.label}: ${Number(context.raw).toLocaleString(locale.value)}`
+        }
       }
     }
   },
@@ -387,13 +393,11 @@ const chartOptions = computed(() => ({
       grid: { color: colors.value.grid },
       ticks: { color: colors.value.muted, precision: 0 }
     },
-    rate: {
+    users: {
       position: 'right' as const,
       beginAtZero: true,
-      min: 0,
-      max: 100,
       grid: { drawOnChartArea: false },
-      ticks: { color: colors.value.muted, callback: (value: string | number) => `${value}%` }
+      ticks: { color: colors.value.muted, precision: 0 }
     }
   }
 }))
