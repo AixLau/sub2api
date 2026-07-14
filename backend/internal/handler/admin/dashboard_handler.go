@@ -542,8 +542,8 @@ func (h *DashboardHandler) GetActiveUsersTrend(c *gin.Context) {
 // GET /api/v1/admin/dashboard/user-growth-retention?days=60
 func (h *DashboardHandler) GetUserGrowthRetention(c *gin.Context) {
 	days, err := strconv.Atoi(c.DefaultQuery("days", "60"))
-	if err != nil || days < 31 || days > 180 {
-		response.BadRequest(c, "days must be between 31 and 180")
+	if err != nil || days < 30 || days > 180 {
+		response.BadRequest(c, "days must be between 30 and 180")
 		return
 	}
 

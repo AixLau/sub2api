@@ -62,7 +62,7 @@ const mountComponent = (items = cohorts) => mount(UserGrowthRetention, {
       repeat_buy_rate: 33.3
     }
   },
-  global: { stubs: { LoadingSpinner: true } }
+  global: { stubs: { LoadingSpinner: true, Select: { name: 'Select', template: '<div />' } } }
 })
 
 describe('UserGrowthRetention', () => {
@@ -95,5 +95,14 @@ describe('UserGrowthRetention', () => {
     expect(wrapper.findAll('aside [class*="py-4"]')).toHaveLength(3)
     expect(wrapper.find('[data-testid="conversion-chart"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('admin.dashboard.noMatureCohorts')
+  })
+
+  it('emits a selected time range without exposing calculation details', async () => {
+    const wrapper = mountComponent()
+    const select = wrapper.findComponent({ name: 'Select' })
+
+    expect(wrapper.text()).not.toContain('30-day observation')
+    await select.vm.$emit('update:modelValue', 90)
+    expect(wrapper.emitted('range-change')).toEqual([[90]])
   })
 })

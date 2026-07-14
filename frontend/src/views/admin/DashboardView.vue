@@ -326,7 +326,9 @@
           <UserGrowthRetention
             :cohorts="userRetentionCohorts"
             :summary="userRetentionSummary"
+            :days="userRetentionDays"
             :loading="userRetentionLoading"
+            @range-change="onUserRetentionRangeChange"
           />
 
         </div>
@@ -373,6 +375,7 @@ const loading = ref(false)
 const chartsLoading = ref(false)
 const activeUsersTrendLoading = ref(false)
 const userRetentionLoading = ref(false)
+const userRetentionDays = ref(60)
 const rankingLoading = ref(false)
 const rankingError = ref(false)
 
@@ -568,10 +571,10 @@ const loadActiveUsersTrend = async (range: DashboardRangeParams) => {
   }
 }
 
-const loadUserGrowthRetention = async () => {
+const loadUserGrowthRetention = async (days = userRetentionDays.value) => {
   userRetentionLoading.value = true
   try {
-    const response = await adminAPI.dashboard.getUserGrowthRetention(60)
+    const response = await adminAPI.dashboard.getUserGrowthRetention(days)
     userRetentionCohorts.value = response.cohorts || []
     userRetentionSummary.value = response.summary || null
   } catch (error) {
@@ -581,6 +584,11 @@ const loadUserGrowthRetention = async () => {
   } finally {
     userRetentionLoading.value = false
   }
+}
+
+const onUserRetentionRangeChange = (days: number) => {
+  userRetentionDays.value = days
+  void loadUserGrowthRetention(days)
 }
 
 const loadUserSpendingRanking = async (range: DashboardRangeParams) => {

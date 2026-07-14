@@ -10,9 +10,16 @@
             {{ t('admin.dashboard.retentionDefinition') }}
           </p>
         </div>
-        <span class="shrink-0 text-xs font-medium text-gray-500 dark:text-gray-400">
-          {{ t('admin.dashboard.lastDays', { days: 60 }) }}
-        </span>
+        <div class="w-32 shrink-0">
+          <Select
+            :model-value="days"
+            :options="rangeOptions"
+            value-key="value"
+            label-key="label"
+            :aria-label="t('admin.dashboard.timeRange')"
+            @update:model-value="onDaysChange"
+          />
+        </div>
       </div>
     </header>
 
@@ -31,7 +38,7 @@
               {{ formatNumber(totalRegistrations) }}
             </p>
             <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-              {{ t('admin.dashboard.periodCohort') }}
+              {{ t('admin.dashboard.periodCohort', { days }) }}
             </p>
           </div>
 
@@ -112,7 +119,7 @@
               {{ t('admin.dashboard.conversionTrend') }}
             </h4>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.dashboard.matureCohortHint') }}
+              {{ t('admin.dashboard.conversionTrendHint') }}
             </p>
           </div>
           <div v-if="chartData" class="mt-4 h-64">
@@ -168,6 +175,7 @@ import {
 } from 'chart.js'
 import { Chart } from 'vue-chartjs'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import Select from '@/components/common/Select.vue'
 import type { UserRetentionPoint, UserRetentionSummary } from '@/api/admin/dashboard'
 
 ChartJS.register(
@@ -199,8 +207,25 @@ const { t, locale } = useI18n()
 const props = defineProps<{
   cohorts: UserRetentionPoint[]
   summary: UserRetentionSummary | null
+  days?: number
   loading?: boolean
 }>()
+const emit = defineEmits<{
+  (event: 'range-change', days: number): void
+}>()
+
+const days = computed(() => props.days ?? 60)
+const rangeOptions = computed(() => [30, 60, 90, 180].map((value) => ({
+  value,
+  label: t('admin.dashboard.lastDays', { days: value })
+})))
+
+const onDaysChange = (value: string | number | boolean | null) => {
+  const nextDays = Number(value)
+  if ([30, 60, 90, 180].includes(nextDays) && nextDays !== days.value) {
+    emit('range-change', nextDays)
+  }
+}
 
 const totalRegistrations = computed(() => props.cohorts.reduce((sum, cohort) => sum + cohort.registrations, 0))
 const totalPaidUsers = computed(() => props.cohorts.reduce((sum, cohort) => sum + cohort.paid_users, 0))
