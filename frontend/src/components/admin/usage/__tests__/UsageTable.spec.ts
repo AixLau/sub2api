@@ -53,6 +53,7 @@ const messages: Record<string, string> = {
   'admin.usage.billingModeImage': 'Image',
   'usage.accountTest': 'Account test',
   'usage.contentModeration': 'Content moderation',
+  'usage.failedUpstreamUsage': 'Failed upstream usage',
   'usage.platform': 'Platform',
   'usage.modelCost': 'Model cost',
 }

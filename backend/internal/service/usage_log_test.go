@@ -180,3 +180,15 @@ func TestUsageLogValidateActors(t *testing.T) {
 		})
 	}
 }
+
+func TestUsageSourceFailedUpstreamIsGatewayActorUsage(t *testing.T) {
+	source := UsageSourceFailedUpstream
+	require.Equal(t, UsageSourceFailedUpstream, source.Normalize())
+	require.False(t, source.IsPlatformOperation())
+	require.NoError(t, (&UsageLog{
+		Source:    source,
+		UserID:    1,
+		APIKeyID:  2,
+		AccountID: 3,
+	}).ValidateActors())
+}

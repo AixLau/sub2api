@@ -525,6 +525,7 @@ export default {
       source: 'Record Source',
       allSources: 'All Sources',
       sourceGateway: 'User Requests',
+      sourceFailedUpstream: 'Failed Upstream Usage',
       sourcePlatformAudit: 'Platform Audit',
       sourceAccountTest: 'Account Tests',
       sourceAnalyticsHint: 'Source filtering applies to usage details and summary cards. Trend and distribution charts are hidden to avoid mixing other sources.',

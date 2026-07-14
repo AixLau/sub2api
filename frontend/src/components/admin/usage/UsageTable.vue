@@ -61,6 +61,9 @@
             <span v-else-if="row.source === 'content_moderation'" class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
               {{ t('usage.contentModeration') }}
             </span>
+            <span v-else-if="row.source === 'failed_upstream_usage'" class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200">
+              {{ t('usage.failedUpstreamUsage') }}
+            </span>
             <div v-if="row.model_mapping_chain && row.model_mapping_chain.includes('→')" class="space-y-0.5 text-xs">
               <div v-for="(step, i) in row.model_mapping_chain.split('→')" :key="i"
                    class="break-all"

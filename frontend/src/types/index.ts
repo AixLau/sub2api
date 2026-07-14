@@ -1425,7 +1425,7 @@ export interface UsageLogAccountSummary {
   name: string
 }
 
-export type UsageLogSource = 'gateway' | 'account_test' | 'content_moderation'
+export type UsageLogSource = 'gateway' | 'failed_upstream_usage' | 'account_test' | 'content_moderation'
 
 export interface AdminUsageLog extends UsageLog {
   source?: UsageLogSource

@@ -100,13 +100,14 @@ type UsageSource string
 
 const (
 	UsageSourceGateway           UsageSource = "gateway"
+	UsageSourceFailedUpstream    UsageSource = "failed_upstream_usage"
 	UsageSourceAccountTest       UsageSource = "account_test"
 	UsageSourceContentModeration UsageSource = "content_moderation"
 )
 
 func (s UsageSource) Normalize() UsageSource {
 	switch s {
-	case UsageSourceAccountTest, UsageSourceContentModeration:
+	case UsageSourceFailedUpstream, UsageSourceAccountTest, UsageSourceContentModeration:
 		return s
 	default:
 		return UsageSourceGateway

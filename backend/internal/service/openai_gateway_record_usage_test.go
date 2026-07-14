@@ -92,6 +92,55 @@ func TestOpenAIGatewayServiceRecordUsage_RejectsNilInput(t *testing.T) {
 	require.Error(t, svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{}))
 }
 
+func TestOpenAIForwardResultHasBillableUsage(t *testing.T) {
+	tests := []struct {
+		name   string
+		result *OpenAIForwardResult
+		want   bool
+	}{
+		{name: "nil result", result: nil, want: false},
+		{name: "empty usage", result: &OpenAIForwardResult{}, want: false},
+		{name: "input tokens", result: &OpenAIForwardResult{Usage: OpenAIUsage{InputTokens: 1}}, want: true},
+		{name: "output tokens", result: &OpenAIForwardResult{Usage: OpenAIUsage{OutputTokens: 1}}, want: true},
+		{name: "cache read tokens", result: &OpenAIForwardResult{Usage: OpenAIUsage{CacheReadInputTokens: 1}}, want: true},
+		{name: "image unit", result: &OpenAIForwardResult{ImageCount: 1}, want: true},
+		{name: "video unit", result: &OpenAIForwardResult{VideoCount: 1}, want: true},
+		{name: "search unit", result: &OpenAIForwardResult{WebSearchCalls: 1}, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, tt.result.HasBillableUsage())
+		})
+	}
+}
+
+func TestOpenAIGatewayServiceRecordUsage_PersistsFailedUpstreamSource(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, userRepo, subRepo, nil)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Source: UsageSourceFailedUpstream,
+		Result: &OpenAIForwardResult{
+			RequestID: "resp_failed_with_usage",
+			Model:     "gpt-5.1",
+			Usage:     OpenAIUsage{InputTokens: 10, OutputTokens: 3},
+			Duration:  time.Second,
+		},
+		APIKey:  &APIKey{ID: 2},
+		User:    &User{ID: 1},
+		Account: &Account{ID: 3},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, usageRepo.calls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, UsageSourceFailedUpstream, usageRepo.lastLog.Source)
+	require.Equal(t, 13, usageRepo.lastLog.TotalTokens())
+}
+
 func TestRecordCyberPolicyUsageLog_BillsRealUpstreamTokens(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	userRepo := &openAIRecordUsageUserRepoStub{}

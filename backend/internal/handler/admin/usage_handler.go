@@ -77,10 +77,10 @@ func parseAdminUsageSource(c *gin.Context) (string, error) {
 	switch service.UsageSource(source) {
 	case "":
 		return "", nil
-	case service.UsageSourceGateway, service.UsageSourceAccountTest, service.UsageSourceContentModeration:
+	case service.UsageSourceGateway, service.UsageSourceFailedUpstream, service.UsageSourceAccountTest, service.UsageSourceContentModeration:
 		return source, nil
 	default:
-		return "", fmt.Errorf("invalid source, allowed values: gateway, account_test, content_moderation")
+		return "", fmt.Errorf("invalid source, allowed values: gateway, failed_upstream_usage, account_test, content_moderation")
 	}
 }
 

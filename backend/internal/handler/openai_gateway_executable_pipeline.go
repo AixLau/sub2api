@@ -1219,6 +1219,20 @@ func (h *OpenAIGatewayHandler) runOpenAIHTTPUsageStage(c *gin.Context, adapter U
 	)
 }
 
+// runOpenAIHTTPFailedUsageStage records only failed forwarding attempts that
+// carry explicit, positive upstream usage. It deliberately uses the mandatory
+// submit path because a retry may start immediately after this call.
+func (h *OpenAIGatewayHandler) runOpenAIHTTPFailedUsageStage(c *gin.Context, stage OpenAIHTTPUsageStage) bool {
+	if stage.Result == nil || !stage.Result.HasBillableUsage() || service.GetOpsCyberPolicy(c) != nil {
+		return false
+	}
+	stage.Source = service.UsageSourceFailedUpstream
+	stage.ForwardErrored = true
+	stage.Mandatory = true
+	h.runOpenAIHTTPUsageStage(c, stage)
+	return true
+}
+
 func (h *OpenAIGatewayHandler) openAIHTTPUsageStageFromRouteDescriptor(c *gin.Context, fallback UsageStage) UsageStage {
 	routeMeta, ok := moderationcoverage.RouteMetaFromContext(c)
 	if !ok {
@@ -1281,6 +1295,7 @@ type OpenAIHTTPUsageStage struct {
 	Handler            *OpenAIGatewayHandler
 	RequestContext     context.Context
 	Result             *service.OpenAIForwardResult
+	Source             service.UsageSource
 	APIKey             *service.APIKey
 	Account            *service.Account
 	Subscription       *service.UserSubscription
@@ -1324,7 +1339,17 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 		}
 		h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account.ID, *s.ScheduleSuccess, firstTokenMs)
 	}
-	h.recordCyberPolicyIfMarked(c, s.APIKey, s.Account, s.Subscription, s.LogModel, s.ForwardErrored, s.CyberBlockKey, s.ChannelUsageFields, s.RequestPayloadHash, s.RequestBody)
+	failedUpstreamUsage := s.Source.Normalize() == service.UsageSourceFailedUpstream
+	if failedUpstreamUsage {
+		// Cyber failures have their own usage recorder. Recording both paths would
+		// charge the same upstream failure twice with different token breakdowns.
+		if service.GetOpsCyberPolicy(c) != nil || s.Result == nil || !s.Result.HasBillableUsage() {
+			return ExecutableStageResult{}
+		}
+		s.Mandatory = true
+	} else {
+		h.recordCyberPolicyIfMarked(c, s.APIKey, s.Account, s.Subscription, s.LogModel, s.ForwardErrored, s.CyberBlockKey, s.ChannelUsageFields, s.RequestPayloadHash, s.RequestBody)
+	}
 	if s.Result == nil {
 		return ExecutableStageResult{}
 	}
@@ -1335,6 +1360,7 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 	record := func(taskCtx context.Context) {
 		if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
 			Result:             s.Result,
+			Source:             s.Source,
 			APIKey:             s.APIKey,
 			User:               s.APIKey.User,
 			Account:            s.Account,
@@ -1784,15 +1810,17 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 		*s.CyberBlockedThisConn = true
 	}
 	if s.TurnErr != nil {
-		if s.Result == nil || s.Result.ImageCount <= 0 {
+		if s.Result == nil || !s.Result.HasBillableUsage() {
 			return ExecutableStageResult{}
 		}
 		// Cyber-hit usage is already written by recordCyberPolicyIfMarked(forwardErrored=true).
 		if service.GetOpsCyberPolicy(c) != nil {
 			return ExecutableStageResult{}
 		}
-		reqLog.Warn("openai.websocket_partial_error_with_image_result",
+		reqLog.Warn("openai.websocket_failed_with_billable_usage",
 			zap.Int64("account_id", s.Account.ID),
+			zap.Int("input_tokens", s.Result.Usage.InputTokens),
+			zap.Int("output_tokens", s.Result.Usage.OutputTokens),
 			zap.Int("image_count", s.Result.ImageCount),
 			zap.Error(s.TurnErr),
 		)
@@ -1818,9 +1846,14 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 	if quotaPlatform == "" {
 		quotaPlatform = service.QuotaPlatform(c.Request.Context(), s.APIKey)
 	}
-	h.submitOpenAIUsageRecordTask(ctx, s.Result, func(taskCtx context.Context) {
+	record := func(taskCtx context.Context) {
+		source := service.UsageSourceGateway
+		if s.TurnErr != nil {
+			source = service.UsageSourceFailedUpstream
+		}
 		if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
 			Result:             s.Result,
+			Source:             source,
 			APIKey:             s.APIKey,
 			User:               s.APIKey.User,
 			Account:            s.Account,
@@ -1841,7 +1874,12 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 				zap.Error(err),
 			)
 		}
-	})
+	}
+	if s.TurnErr != nil {
+		h.submitMandatoryUsageRecordTask(ctx, record)
+	} else {
+		h.submitOpenAIUsageRecordTask(ctx, s.Result, record)
+	}
 	return ExecutableStageResult{}
 }
 

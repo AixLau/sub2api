@@ -260,6 +260,7 @@ export default {
     actualCost: 'Actual',
     accountTest: 'Account test',
     contentModeration: 'Content moderation',
+    failedUpstreamUsage: 'Failed upstream usage',
     platform: 'Platform',
     modelCost: 'Model cost',
     accountCost: 'Cost',

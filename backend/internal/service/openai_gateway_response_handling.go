@@ -1044,7 +1044,13 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			if msg == "" {
 				msg = "Upstream compact response failed"
 			}
-			return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
+			usage = s.parseSSEUsageFromBody(bodyText)
+			partial := &openaiNonStreamingResult{
+				OpenAIUsage: usage,
+				usage:       usage,
+				responseID:  extractOpenAIResponseIDFromJSONBytes(terminalPayload),
+			}
+			return partial, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
 		}
 		usage = s.parseSSEUsageFromBody(bodyText)
 		if originalModel != mappedModel {

@@ -212,6 +212,17 @@ type OpenAIUsage struct {
 	ImageOutputTokens        int `json:"image_output_tokens,omitempty"`
 }
 
+// HasBillableUsage reports whether the upstream explicitly returned usage that
+// can produce a charge. Zero-value usage is treated as absent, so transport,
+// authentication, rate-limit, and ordinary 5xx failures remain free locally.
+func (u OpenAIUsage) HasBillableUsage() bool {
+	return u.InputTokens > 0 ||
+		u.OutputTokens > 0 ||
+		u.CacheCreationInputTokens > 0 ||
+		u.CacheReadInputTokens > 0 ||
+		u.ImageOutputTokens > 0
+}
+
 // OpenAIForwardResult represents the result of forwarding
 type OpenAIForwardResult struct {
 	RequestID  string
@@ -258,6 +269,15 @@ type OpenAIForwardResult struct {
 
 	wsReplayInput       []json.RawMessage
 	wsReplayInputExists bool
+}
+
+// HasBillableUsage includes token usage and the non-token units supported by
+// the unified OpenAI billing path.
+func (r *OpenAIForwardResult) HasBillableUsage() bool {
+	if r == nil {
+		return false
+	}
+	return r.Usage.HasBillableUsage() || r.ImageCount > 0 || r.VideoCount > 0 || r.WebSearchCalls > 0
 }
 
 // SetActualOpenAIUpstreamEndpoint records the endpoint selected by the current

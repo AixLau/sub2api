@@ -182,6 +182,26 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			return
 		}
 
+		h.runOpenAIHTTPFailedUsageStage(c, OpenAIHTTPUsageStage{
+			Handler:            h,
+			RequestContext:     c.Request.Context(),
+			Result:             result,
+			APIKey:             apiKey,
+			Account:            account,
+			Subscription:       subscription,
+			InboundEndpoint:    GetInboundEndpoint(c),
+			UpstreamEndpoint:   resolveOpenAIUpstreamEndpoint(c, account, result),
+			UserAgent:          c.GetHeader("User-Agent"),
+			ClientIP:           ip.GetClientIP(c),
+			RequestPayloadHash: service.HashUsageRequestPayload(body),
+			QuotaPlatform:      service.QuotaPlatform(c.Request.Context(), apiKey),
+			ChannelUsageFields: channelMapping.ToUsageFields(requestedModel, resultUpstreamModel(result)),
+			LogComponent:       "handler.openai_gateway.alpha_search",
+			LogMessage:         "openai_alpha_search.failed_upstream_usage_record_failed",
+			LogUserID:          subject.UserID,
+			LogModel:           requestedModel,
+		})
+
 		var failoverErr *service.UpstreamFailoverError
 		if !errors.As(err, &failoverErr) {
 			h.runOpenAIHTTPScheduleResultStage(c, account, false, nil)

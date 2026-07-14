@@ -522,6 +522,7 @@ export default {
       source: '记录来源',
       allSources: '全部来源',
       sourceGateway: '用户请求',
+      sourceFailedUpstream: '上游失败用量',
       sourcePlatformAudit: '平台审计',
       sourceAccountTest: '账号测试',
       sourceAnalyticsHint: '来源筛选仅统计使用明细与顶部汇总；趋势和分布图暂不展示，避免混入其他来源。',

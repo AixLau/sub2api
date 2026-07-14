@@ -208,12 +208,36 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
 		if err != nil {
+			requestPayloadHash := service.HashUsageRequestPayload(body)
+			if parsed.Multipart {
+				requestPayloadHash = service.HashUsageRequestPayload([]byte(parsed.StickySessionSeed()))
+			}
+			h.runOpenAIHTTPFailedUsageStage(c, OpenAIHTTPUsageStage{
+				Handler:            h,
+				RequestContext:     requestCtx,
+				Result:             result,
+				APIKey:             apiKey,
+				Account:            account,
+				Subscription:       subscription,
+				InboundEndpoint:    GetInboundEndpoint(c),
+				UpstreamEndpoint:   resolveOpenAIUpstreamEndpoint(c, account, result),
+				UserAgent:          c.GetHeader("User-Agent"),
+				ClientIP:           ip.GetClientIP(c),
+				RequestPayloadHash: requestPayloadHash,
+				QuotaPlatform:      service.QuotaPlatform(c.Request.Context(), apiKey),
+				ChannelUsageFields: channelMapping.ToUsageFields(requestModel, resultUpstreamModel(result)),
+				LogComponent:       "handler.openai_gateway.images",
+				LogMessage:         "openai.images.failed_upstream_usage_record_failed",
+				LogUserID:          subject.UserID,
+				LogModel:           requestModel,
+			})
 			if result != nil && result.ImageCount > 0 {
 				reqLog.Warn("openai.images.forward_partial_error_with_image_result",
 					zap.Int64("account_id", account.ID),
 					zap.Int("image_count", result.ImageCount),
 					zap.Error(err),
 				)
+				return
 			} else {
 				var imageUpstreamErr *service.OpenAIImagesUpstreamError
 				if errors.As(err, &imageUpstreamErr) {

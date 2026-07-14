@@ -265,6 +265,7 @@ export default {
     actualCost: '实际',
     accountTest: '账号测试',
     contentModeration: '内容审计',
+    failedUpstreamUsage: '上游失败用量',
     platform: '平台',
     modelCost: '模型成本',
     accountCost: '成本',

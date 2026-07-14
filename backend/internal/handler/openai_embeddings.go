@@ -173,6 +173,25 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		service.SetOpsLatencyMs(c, service.OpsResponseLatencyMsKey, responseLatencyMs)
 
 		if err != nil {
+			h.runOpenAIHTTPFailedUsageStage(c, OpenAIHTTPUsageStage{
+				Handler:            h,
+				RequestContext:     c.Request.Context(),
+				Result:             result,
+				APIKey:             apiKey,
+				Account:            account,
+				Subscription:       subscription,
+				InboundEndpoint:    GetInboundEndpoint(c),
+				UpstreamEndpoint:   resolveOpenAIUpstreamEndpoint(c, account, result),
+				UserAgent:          c.GetHeader("User-Agent"),
+				ClientIP:           ip.GetClientIP(c),
+				RequestPayloadHash: service.HashUsageRequestPayload(body),
+				QuotaPlatform:      service.QuotaPlatform(c.Request.Context(), apiKey),
+				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, resultUpstreamModel(result)),
+				LogComponent:       "handler.openai_gateway.embeddings",
+				LogMessage:         "openai_embeddings.failed_upstream_usage_record_failed",
+				LogUserID:          subject.UserID,
+				LogModel:           reqModel,
+			})
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				if c.Writer.Size() != writerSizeBeforeForward {

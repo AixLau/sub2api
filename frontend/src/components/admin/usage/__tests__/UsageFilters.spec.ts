@@ -21,6 +21,7 @@ const messages: Record<string, string> = {
   'admin.usage.source': 'Record Source',
   'admin.usage.allSources': 'All Sources',
   'admin.usage.sourceGateway': 'User Requests',
+  'admin.usage.sourceFailedUpstream': 'Failed Upstream Usage',
   'admin.usage.sourcePlatformAudit': 'Platform Audit',
   'admin.usage.sourceAccountTest': 'Account Tests',
   'usage.ws': 'WS',
@@ -179,6 +180,7 @@ describe('UsageFilters — record source', () => {
     const sourceFilter = wrapper.getComponent('[data-testid="usage-source-filter"]')
 
     expect(sourceFilter.props('options')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: 'failed_upstream_usage', label: 'Failed Upstream Usage' }),
       expect.objectContaining({ value: 'content_moderation', label: 'Platform Audit' }),
     ]))
   })
