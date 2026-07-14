@@ -341,7 +341,7 @@ func clientSetupTargetPlatform(client string) string {
 	case "codex":
 		return service.PlatformOpenAI
 	case "claude":
-		return service.PlatformAntigravity
+		return service.PlatformAnthropic
 	default:
 		return ""
 	}

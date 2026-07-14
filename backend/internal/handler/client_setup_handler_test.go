@@ -281,6 +281,42 @@ func TestClientSetupApproveBindsCodexDefaultHighSpeedGroupWhenNoSubscription(t *
 	require.Equal(t, int64(2), *creator.lastReq.GroupID)
 }
 
+func TestClientSetupApproveBindsClaudeAnthropicGroup(t *testing.T) {
+	creator := &clientSetupAPIKeyCreatorStub{
+		availableGroups: []service.Group{
+			{
+				ID:               8,
+				Name:             "Antigravity",
+				Platform:         service.PlatformAntigravity,
+				SubscriptionType: service.SubscriptionTypeStandard,
+				Status:           service.StatusActive,
+			},
+			{
+				ID:               9,
+				Name:             "Claude",
+				Platform:         service.PlatformAnthropic,
+				SubscriptionType: service.SubscriptionTypeStandard,
+				Status:           service.StatusActive,
+			},
+		},
+	}
+	router := newClientSetupTestRouter(t, newClientSetupTestStore(), creator)
+
+	create := postJSON(t, router, "/api/v1/client-setup/sessions", map[string]any{
+		"client": "claude",
+	})
+	require.Equal(t, http.StatusOK, create.Code, create.Body.String())
+	createData := responseData(t, create)
+
+	approve := postJSON(t, router, "/api/v1/client-setup/sessions/"+createData["setup_id"].(string)+"/approve", map[string]any{
+		"device_code": createData["device_code"].(string),
+		"client":      "claude",
+	})
+	require.Equal(t, http.StatusOK, approve.Code, approve.Body.String())
+	require.NotNil(t, creator.lastReq.GroupID)
+	require.Equal(t, int64(9), *creator.lastReq.GroupID)
+}
+
 func TestClientSetupApproveRejectsWrongDeviceCode(t *testing.T) {
 	router := newClientSetupTestRouter(t, newClientSetupTestStore(), &clientSetupAPIKeyCreatorStub{})
 

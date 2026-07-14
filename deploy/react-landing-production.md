@@ -86,6 +86,12 @@ aixlau.me {
 		file_server
 	}
 
+	redir /docs/install /docs/install/ 308
+	handle_path /docs/install/* {
+		root * /var/www/aixlau.me/docs/install
+		file_server
+	}
+
 	@api {
 		path /v1/*
 		path /api/v1/*
