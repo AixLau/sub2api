@@ -42,6 +42,7 @@ func (r *usageLogRepository) GetUserGrowthRetention(ctx context.Context, startTi
 			FROM cohorts c
 			LEFT JOIN payment_orders po
 			  ON po.user_id = c.id
+			 AND po.order_type = 'balance'
 			 AND po.status IN ('PAID', 'RECHARGING', 'COMPLETED')
 			 AND po.paid_at >= c.created_at
 			 AND po.paid_at < c.created_at + interval '30 days'
