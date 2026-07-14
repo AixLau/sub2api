@@ -19,7 +19,13 @@ docs/install/
 │   ├── 03-win-powershell.webp   # Windows PowerShell 自动授权流程
 │   ├── 04-win-tray-quit.webp    # Windows 托盘退出 Codex 示意图
 │   ├── 05-codex-api-key-login.webp  # Codex 首次登录页
-│   └── 06-copy-codex-api-key.webp   # API 密钥复制位置
+│   ├── 06-copy-codex-api-key.webp   # API 密钥复制位置
+│   ├── ccswitch-01-create-key.webp  # 创建 Codex API Key
+│   ├── ccswitch-02-import-action.webp  # 一键导入到 CCS
+│   ├── ccswitch-03-copy-and-import.webp # 手动配置前复制 API Key
+│   ├── ccswitch-04-select-codex.webp # CC Switch 选择 Codex 并新增供应商
+│   ├── ccswitch-05-provider-list.webp # 选择自定义供应商
+│   └── ccswitch-06-manual-config.webp # 手动填写供应商配置
 └── README.md           # 本说明文件
 ```
 
@@ -98,6 +104,7 @@ cwebp -q 85 output.png -o 02-mac-terminal.webp
 - **04-win-tray-quit.webp**：约 1600×900，托盘特写，使用真实 Codex 图标（蓝紫渐变花瓣 + `>_` 符号）
 - **05-codex-api-key-login.webp**：Codex 首次打开仍显示登录页的处理示意图
 - **06-copy-codex-api-key.webp**：用黑色箭头标出星链 AI Hub「API 密钥」页面中复制 `codex` 密钥的位置
+- **ccswitch-01 ～ 06**：CC Switch 配置流程；先尝试从密钥列表一键导入，失败时复制 API Key，并在 Codex 供应商中手动填写 `https://aixlau.me`
 
 所有图片 `max-width: 900px` 居中显示，确保大屏不会过大。
 
@@ -149,3 +156,7 @@ cwebp -q 85 output.png -o 02-mac-terminal.webp
   - 说明脚本完成后仍出现「登录 ChatGPT」页面并不代表配置失败
   - 增加「使用其他方式登录」和复制脚本自动创建的 `codex` API Key 操作步骤
   - 增加对应页面截图与常见问题说明
+- **2026-07-14**：更新 CC Switch 配置流程
+  - 替换为新版星链 AI Hub 和 CC Switch 操作截图
+  - 优先引导使用「导入到 CCS」一键导入
+  - 增加一键导入失败后的 Codex 供应商手动配置步骤

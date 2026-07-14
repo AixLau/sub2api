@@ -135,6 +135,10 @@ deploy/docker-compose.override.yml
 .superpowers/
 vite.config.js
 docs/*
+!docs/install/
+!docs/install/assets/
+docs/install/assets/*.png
+!docs/install/assets/ccswitch-*.webp
 !docs/deployment/
 docs/deployment/*
 !docs/deployment/README.md
