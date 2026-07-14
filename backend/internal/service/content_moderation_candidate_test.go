@@ -133,6 +133,68 @@ func TestCandidateAuthorizedSecurityResearchStillUsesSemanticReview(t *testing.T
 	require.Equal(t, contentModerationCandidateRouteSemantic, selection.Route)
 }
 
+func TestCandidateOrdinaryAllowEscalationPolicy(t *testing.T) {
+	tests := []struct {
+		name      string
+		selection contentModerationCandidateSelection
+		want      bool
+	}{
+		{
+			name: "critical operational candidate",
+			selection: contentModerationCandidateSelection{
+				Kind: contentModerationCandidateKindKeyword,
+				Rule: ContentModerationKeywordRule{Keyword: "operational", Severity: ContentModerationKeywordSeverityCritical},
+			},
+			want: true,
+		},
+		{
+			name: "high recall candidate pattern",
+			selection: contentModerationCandidateSelection{
+				Kind: contentModerationCandidateKindPromptFilter,
+				Rule: ContentModerationKeywordRule{Keyword: "candidate_self_harm", Severity: ContentModerationKeywordSeverityHigh},
+			},
+			want: true,
+		},
+		{
+			name: "ordinary configured keyword",
+			selection: contentModerationCandidateSelection{
+				Kind: contentModerationCandidateKindKeyword,
+				Rule: ContentModerationKeywordRule{Keyword: "讨论", Severity: ContentModerationKeywordSeverityHigh},
+			},
+		},
+		{
+			name: "existing topic prompt filter",
+			selection: contentModerationCandidateSelection{
+				Kind: contentModerationCandidateKindPromptFilter,
+				Rule: ContentModerationKeywordRule{Keyword: "jailbreak_topic", Severity: ContentModerationKeywordSeverityHigh},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, contentModerationCandidateOrdinaryAllowRequiresSemantic(tt.selection))
+		})
+	}
+}
+
+func TestCandidateReviewerFailureModeOnlyClosesCriticalPreBlock(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.Mode = ContentModerationModePreBlock
+
+	require.Equal(t, ContentModerationFailStrategyClosed, contentModerationCandidateFailureMode(cfg, contentModerationCandidateSelection{
+		Rule: ContentModerationKeywordRule{Severity: ContentModerationKeywordSeverityCritical},
+	}))
+	require.Equal(t, ContentModerationFailStrategyOpen, contentModerationCandidateFailureMode(cfg, contentModerationCandidateSelection{
+		Rule: ContentModerationKeywordRule{Severity: ContentModerationKeywordSeverityHigh},
+	}))
+
+	cfg.Mode = ContentModerationModeObserve
+	require.Equal(t, ContentModerationFailStrategyOpen, contentModerationCandidateFailureMode(cfg, contentModerationCandidateSelection{
+		Rule: ContentModerationKeywordRule{Severity: ContentModerationKeywordSeverityCritical},
+	}))
+}
+
 func TestCandidateSelectionUsesMatchedUserSourceOnly(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.KeywordRules = []ContentModerationKeywordRule{{

@@ -541,7 +541,7 @@ func (s *ContentModerationService) executeCandidateDecision(
 		return s.cacheCandidateDecisionOutcome(cfg, key, outcome)
 	})
 	if !completed {
-		return contentModerationCandidateOutcome{Decision: contentModerationFailureDecision(cfg)}
+		return contentModerationCandidateOutcome{Decision: contentModerationCandidateFailureDecision(cfg, selection)}
 	}
 	return s.finishCandidateDecisionOutcome(ctx, outcome, joined)
 }
@@ -911,6 +911,9 @@ func (s *ContentModerationService) runCandidateOrdinaryReview(ctx context.Contex
 	if result.ProviderLevel == ModerationLevelReject {
 		flagged = true
 	}
+	if !flagged && contentModerationCandidateOrdinaryAllowRequiresSemantic(selection) {
+		return s.runCandidateSemanticReview(ctx, input, cfg, selection, "ordinary_moderation_high_risk_allow")
+	}
 	action := ContentModerationActionAllow
 	blocked := false
 	if flagged && cfg.Mode == ContentModerationModePreBlock {
@@ -1153,13 +1156,15 @@ func (s *ContentModerationService) candidateUnavailableOutcome(
 	metadata["availability_failure"] = reason
 	metadata["reviewer_provider"] = provider
 	metadata["reviewer_model"] = model
+	failureMode := contentModerationCandidateFailureMode(cfg, selection)
+	blocked := failureMode == ContentModerationFailStrategyClosed
 	log := s.buildCandidateLog(
 		input,
 		cfg,
 		selection,
 		decisionSource,
 		ContentModerationActionError,
-		false,
+		blocked,
 		"",
 		0,
 		nil,
@@ -1170,16 +1175,56 @@ func (s *ContentModerationService) candidateUnavailableOutcome(
 	log.ModerationModel = strings.TrimSpace(model)
 	log.Error = reason
 	log.RiskContextReason = "candidate_reviewer_unavailable"
-	decisionID := s.persistCandidateAudit(ctx, input, cfg, selection, log, false)
+	if blocked {
+		log.RiskContextReason = "critical_candidate_reviewer_unavailable"
+	}
+	decisionID := s.persistCandidateAudit(ctx, input, cfg, selection, log, blocked)
 	if cfg != nil && cfg.Mode == ContentModerationModePreBlock {
 		s.recordPreBlockSyncMetric(0, ContentModerationActionError)
 	}
 	return contentModerationCandidateOutcome{
-		Decision:   contentModerationFailureDecision(cfg),
+		Decision:   contentModerationCandidateFailureDecision(cfg, selection),
 		DecisionID: decisionID,
 		Cacheable:  true,
 		CacheTTL:   s.candidateFailureCacheTTL(cfg),
 	}
+}
+
+func contentModerationCandidateOrdinaryAllowRequiresSemantic(selection contentModerationCandidateSelection) bool {
+	if normalizeContentModerationKeywordSeverity(selection.Rule.Severity) == ContentModerationKeywordSeverityCritical {
+		return true
+	}
+	return selection.Kind == contentModerationCandidateKindPromptFilter &&
+		strings.HasPrefix(strings.ToLower(strings.TrimSpace(selection.Rule.Keyword)), "candidate_")
+}
+
+func contentModerationCandidateFailureDecision(cfg *ContentModerationConfig, selection contentModerationCandidateSelection) *ContentModerationDecision {
+	if contentModerationCandidateFailureMode(cfg, selection) != ContentModerationFailStrategyClosed {
+		return contentModerationFailureDecision(cfg)
+	}
+	return &ContentModerationDecision{
+		Allowed:                false,
+		Blocked:                true,
+		Flagged:                true,
+		Message:                cfg.BlockMessage,
+		StatusCode:             cfg.BlockStatus,
+		Action:                 ContentModerationActionError,
+		MatchedKeyword:         selection.Rule.Keyword,
+		KeywordCategory:        selection.Rule.Category,
+		KeywordSeverity:        selection.Rule.Severity,
+		KeywordAction:          ContentModerationKeywordActionBlock,
+		EffectiveKeywordAction: ContentModerationKeywordActionBlock,
+		RiskContextType:        ContentModerationRiskContextActualRequest,
+		RiskContextReason:      "critical_candidate_reviewer_unavailable",
+	}
+}
+
+func contentModerationCandidateFailureMode(cfg *ContentModerationConfig, selection contentModerationCandidateSelection) string {
+	if cfg != nil && cfg.Mode == ContentModerationModePreBlock &&
+		normalizeContentModerationKeywordSeverity(selection.Rule.Severity) == ContentModerationKeywordSeverityCritical {
+		return ContentModerationFailStrategyClosed
+	}
+	return ContentModerationFailStrategyOpen
 }
 
 func (s *ContentModerationService) candidateFailureCacheTTL(cfg *ContentModerationConfig) time.Duration {
