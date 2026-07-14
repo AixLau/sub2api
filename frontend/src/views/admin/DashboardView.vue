@@ -170,34 +170,41 @@
           </div>
 
           <!-- Performance (RPM/TPM) -->
-          <div class="card p-4">
+          <div class="card relative p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-violet-100 p-2 dark:bg-violet-900/30">
+              <div class="absolute right-3 top-3 rounded-lg bg-violet-100 p-2 dark:bg-violet-900/30 sm:static">
                 <Icon name="bolt" size="md" class="text-violet-600 dark:text-violet-400" :stroke-width="2" />
               </div>
-              <div class="flex-1">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+              <div class="min-w-0 flex-1">
+                <p class="pr-10 text-xs font-medium text-gray-500 dark:text-gray-400 sm:pr-0">
                   {{ t('admin.dashboard.performance') }}
                 </p>
-                <div class="flex items-baseline gap-2">
+                <div class="flex items-baseline gap-1 whitespace-nowrap">
                   <p class="text-xl font-bold text-gray-900 dark:text-white">
                     {{ formatTokens(stats.rpm) }}
                   </p>
                   <span class="text-xs text-gray-500 dark:text-gray-400">RPM</span>
+                  <span
+                    data-testid="recent-5m-active-users"
+                    class="ml-1 inline-flex min-w-0 items-baseline gap-1 border-l border-gray-200 pl-2 text-cyan-600 dark:border-dark-600 dark:text-cyan-400"
+                    :title="t('admin.dashboard.recent5mActiveUsers')"
+                  >
+                    <span class="text-xs font-semibold sm:hidden">
+                      {{ t('admin.dashboard.recent5mActiveUsersCompact', { count: formatNumber(stats.recent_5m_active_users) }) }}
+                    </span>
+                    <span class="hidden text-sm font-semibold sm:inline">
+                      {{ formatNumber(stats.recent_5m_active_users) }}
+                    </span>
+                    <span class="hidden text-xs text-gray-500 dark:text-gray-400 sm:inline">
+                      {{ t('admin.dashboard.recent5mActiveUsers') }}
+                    </span>
+                  </span>
                 </div>
                 <div class="flex items-baseline gap-2">
                   <p class="text-sm font-semibold text-violet-600 dark:text-violet-400">
                     {{ formatTokens(stats.tpm) }}
                   </p>
                   <span class="text-xs text-gray-500 dark:text-gray-400">TPM</span>
-                </div>
-                <div data-testid="recent-5m-active-users" class="flex items-baseline gap-2">
-                  <p class="text-sm font-semibold text-cyan-600 dark:text-cyan-400">
-                    {{ formatNumber(stats.recent_5m_active_users) }}
-                  </p>
-                  <span class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ t('admin.dashboard.recent5mActiveUsers') }}
-                  </span>
                 </div>
               </div>
             </div>

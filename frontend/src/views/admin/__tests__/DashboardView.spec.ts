@@ -204,5 +204,6 @@ describe('admin DashboardView', () => {
     const recentActiveUsers = wrapper.find('[data-testid="recent-5m-active-users"]')
     expect(recentActiveUsers.text()).toContain('3')
     expect(recentActiveUsers.text()).toContain('admin.dashboard.recent5mActiveUsers')
+    expect(recentActiveUsers.element.parentElement?.textContent).toContain('RPM')
   })
 })

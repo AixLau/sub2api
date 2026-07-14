@@ -1,4 +1,4 @@
-import { shallowMount } from '@vue/test-utils'
+import { flushPromises, shallowMount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AppHeader from '../AppHeader.vue'
@@ -55,20 +55,39 @@ describe('AppHeader contact support entry', () => {
     mocks.copyToClipboard.mockClear()
   })
 
-  it('shows configured contact info and copies it when clicked', async () => {
+  it('opens a beginner-friendly guide before copying contact info', async () => {
     const wrapper = shallowMount(AppHeader, {
       global: {
-        stubs: { RouterLink: true }
+        stubs: {
+          RouterLink: true,
+          BaseDialog: {
+            props: ['show', 'title'],
+            template: '<div v-if="show" data-testid="support-dialog"><h2>{{ title }}</h2><slot /><slot name="footer" /></div>'
+          }
+        }
       }
     })
 
     const supportButton = wrapper.get('[data-testid="header-contact-support"]')
-    expect(supportButton.text()).toContain('common.contactSupport')
-    expect(supportButton.text()).toContain('youngPupss')
+    expect(supportButton.text()).toContain('common.getSupport')
+    expect(wrapper.find('[data-testid="support-dialog"]').exists()).toBe(false)
 
     await supportButton.trigger('click')
 
-    expect(mocks.copyToClipboard).toHaveBeenCalledWith('youngPupss')
+    expect(mocks.copyToClipboard).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="support-dialog"]').text()).toContain('common.supportDialogTitle')
+    expect(wrapper.get('[data-testid="support-contact-info"]').text()).toBe('youngPupss')
+
+    await wrapper.get('[data-testid="copy-support-contact"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.copyToClipboard).toHaveBeenCalledWith(
+      'youngPupss',
+      'common.supportCopiedNextStep'
+    )
+    expect(wrapper.get('[data-testid="support-copy-next-step"]').text()).toContain(
+      'common.supportCopiedNextStep'
+    )
   })
 
   it('does not render the entry when contact info is not configured', () => {
