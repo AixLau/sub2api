@@ -8,7 +8,7 @@ import (
 
 func TestBuiltinPatternsPinnedAndComplete(t *testing.T) {
 	patterns := BuiltinPatternConfigs()
-	require.Len(t, patterns, 85)
+	require.Len(t, patterns, 85+len(candidatePatternConfigs))
 	strict := 0
 	supplemental := 0
 	for _, pattern := range patterns {
@@ -17,7 +17,7 @@ func TestBuiltinPatternsPinnedAndComplete(t *testing.T) {
 		if pattern.SourceRevision == supplementalSourceRevision {
 			supplemental++
 		} else {
-			require.Equal(t, BuiltinSourceRevision, pattern.SourceRevision)
+			require.Contains(t, []string{BuiltinSourceRevision, candidateSourceRevision}, pattern.SourceRevision)
 		}
 		if pattern.Strict {
 			strict++

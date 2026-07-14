@@ -15,7 +15,7 @@ const (
 	BuiltinSourceRevision = "codex2api@6793e0b09fe170895878f73f256a3d7ee7e5a08b"
 	// BuiltinRuleSetRevision identifies the upstream rules plus local supplemental
 	// cyber and prompt-injection rules maintained in this repository.
-	BuiltinRuleSetRevision = BuiltinSourceRevision + "+" + supplementalSourceRevision
+	BuiltinRuleSetRevision = BuiltinSourceRevision + "+" + supplementalSourceRevision + "+" + candidateSourceRevision
 	BuiltinSourceURL       = "https://github.com/james-6-23/codex2api/tree/6793e0b09fe170895878f73f256a3d7ee7e5a08b/security/promptfilter"
 	BuiltinSourceAuthor    = "james-6-23/codex2api"
 	// The upstream rule set is redistributed in this derivative with permission from its author.
@@ -121,12 +121,19 @@ func BuiltinPatternConfigs() []PatternConfig {
 }
 
 func builtinPatternConfigs() []PatternConfig {
-	out := make([]PatternConfig, 0, len(defaultPatternConfigs)+len(supplementalPatternConfigs))
+	out := make([]PatternConfig, 0, len(defaultPatternConfigs)+len(supplementalPatternConfigs)+len(candidatePatternConfigs))
 	out = append(out, defaultPatternConfigs...)
 	out = append(out, supplementalPatternConfigs...)
 	for idx := len(defaultPatternConfigs); idx < len(out); idx++ {
 		if strings.TrimSpace(out[idx].SourceRevision) == "" {
 			out[idx].SourceRevision = supplementalSourceRevision
+		}
+	}
+	candidateStart := len(out)
+	out = append(out, candidatePatternConfigs...)
+	for idx := candidateStart; idx < len(out); idx++ {
+		if strings.TrimSpace(out[idx].SourceRevision) == "" {
+			out[idx].SourceRevision = candidateSourceRevision
 		}
 	}
 	return out
