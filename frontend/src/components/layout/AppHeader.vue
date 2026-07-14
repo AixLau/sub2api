@@ -21,8 +21,36 @@
         </div>
       </div>
 
-      <!-- Right: Announcements + Docs + Language + Subscriptions + Balance + User Dropdown -->
+      <!-- Right: Support + Announcements + Docs + Language + Subscriptions + Balance + User Dropdown -->
       <div class="flex items-center gap-3">
+        <!-- Prominent support entry for new users -->
+        <button
+          v-if="contactInfo"
+          type="button"
+          data-testid="header-contact-support"
+          class="group flex h-9 min-w-9 items-center justify-center gap-2 rounded-lg border border-primary-200 bg-primary-50 px-2.5 text-primary-700 shadow-sm transition-colors hover:border-primary-300 hover:bg-primary-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:border-primary-800 dark:bg-primary-900/30 dark:text-primary-200 dark:hover:bg-primary-900/50 dark:focus:ring-offset-dark-900"
+          :aria-label="`${t('common.contactSupport')}: ${contactInfo}`"
+          :title="`${t('common.contactSupport')}: ${contactInfo}`"
+          @click="copyContactInfo"
+        >
+          <span class="relative flex flex-shrink-0">
+            <Icon :name="copied ? 'check' : 'chat'" size="sm" :stroke-width="2" />
+            <span
+              v-if="!copied"
+              class="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-amber-500 ring-2 ring-primary-50 dark:ring-primary-950"
+              aria-hidden="true"
+            ></span>
+          </span>
+          <span class="hidden whitespace-nowrap text-sm font-semibold xl:inline">
+            {{ t('common.contactSupport') }}
+          </span>
+          <span
+            class="hidden max-w-40 truncate border-l border-primary-200 pl-2 text-sm font-medium text-primary-900 dark:border-primary-700 dark:text-primary-100 2xl:inline"
+          >
+            {{ contactInfo }}
+          </span>
+        </button>
+
         <!-- Announcement Bell -->
         <AnnouncementBell v-if="user" />
 
@@ -249,6 +277,7 @@ import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { useClipboard } from '@/composables/useClipboard'
 import { sanitizeUrl } from '@/utils/url'
 
 const router = useRouter()
@@ -258,6 +287,7 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
 const onboardingStore = useOnboardingStore()
+const { copied, copyToClipboard } = useClipboard()
 
 const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
@@ -331,6 +361,10 @@ function toggleDropdown() {
 
 function closeDropdown() {
   dropdownOpen.value = false
+}
+
+function copyContactInfo() {
+  void copyToClipboard(contactInfo.value)
 }
 
 async function handleLogout() {
