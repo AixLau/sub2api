@@ -414,14 +414,6 @@ interface DashboardRangeParams {
   end_time?: string
 }
 
-const getTodayRange = (): DashboardRangeParams => {
-  const today = formatLocalDate(new Date())
-  return {
-    start_date: today,
-    end_date: today
-  }
-}
-
 const getLast24HoursRange = (): DashboardRangeParams => {
   const end = new Date()
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
@@ -435,10 +427,10 @@ const getLast24HoursRange = (): DashboardRangeParams => {
 
 // Date range
 const granularity = ref<'day' | 'hour'>('hour')
-const defaultRange = getTodayRange()
+const defaultRange = getLast24HoursRange()
 const startDate = ref(defaultRange.start_date)
 const endDate = ref(defaultRange.end_date)
-const rangePreset = ref<string | null>('today')
+const rangePreset = ref<string | null>('last24Hours')
 
 const getDashboardRangeParams = (): DashboardRangeParams => {
   if (rangePreset.value === 'last24Hours') {

@@ -288,9 +288,13 @@ const formatLD = (d: Date) => {
   const day = String(d.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
-const getTodayRangeDates = (): { start: string; end: string } => {
-  const today = formatLD(new Date())
-  return { start: today, end: today }
+const getLast24HoursRangeDates = (): { start: string; end: string } => {
+  const end = new Date()
+  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
+  return {
+    start: formatLD(start),
+    end: formatLD(end)
+  }
 }
 const getGranularityForRange = (start: string, end: string): 'day' | 'hour' => {
   const startTime = new Date(`${start}T00:00:00`).getTime()
@@ -298,7 +302,7 @@ const getGranularityForRange = (start: string, end: string): 'day' | 'hour' => {
   const daysDiff = Math.ceil((endTime - startTime) / (1000 * 60 * 60 * 24))
   return daysDiff <= 1 ? 'hour' : 'day'
 }
-const defaultRange = getTodayRangeDates()
+const defaultRange = getLast24HoursRangeDates()
 const startDate = ref(defaultRange.start); const endDate = ref(defaultRange.end)
 const filters = ref<AdminUsageQueryParams>({ user_id: undefined, model: undefined, group_id: undefined, request_type: undefined, billing_type: null, start_date: startDate.value, end_date: endDate.value })
 const hasSourceFilter = computed(() => Boolean(filters.value.source))
@@ -562,7 +566,7 @@ const refreshData = () => {
   if (rankingMounted.value) rankingRef.value?.reload()
 }
 const resetFilters = () => {
-  const range = getTodayRangeDates()
+  const range = getLast24HoursRangeDates()
   startDate.value = range.start
   endDate.value = range.end
   filters.value = { start_date: startDate.value, end_date: endDate.value, request_type: undefined, billing_type: null, billing_mode: undefined, source: null }
