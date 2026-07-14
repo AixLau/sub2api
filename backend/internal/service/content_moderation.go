@@ -29,6 +29,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/promptfilter"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -1215,7 +1216,7 @@ func NewContentModerationService(
 		userRepo:                 userRepo,
 		authCacheInvalidator:     authCacheInvalidator,
 		emailService:             emailService,
-		httpClient:               &http.Client{},
+		httpClient:               servertiming.InstrumentClient(nil),
 		workerCount:              maxContentModerationWorkerCount,
 		asyncQueue:               make(chan contentModerationTask, maxContentModerationQueueSize),
 		keyHealth:                make(map[string]*contentModerationKeyHealth),

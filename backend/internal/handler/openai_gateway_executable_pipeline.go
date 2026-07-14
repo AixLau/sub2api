@@ -1176,7 +1176,11 @@ func (s OpenAIHTTPForwardStage) RunForward(c *gin.Context) ExecutableStageResult
 		ctx = c.Request.Context()
 	}
 	if s.WriterSizeBeforeForward != nil {
-		*s.WriterSizeBeforeForward = service.OpenAICompactKeepaliveAdjustedWrittenSize(c)
+		if s.Kind == OpenAIHTTPForwardImages {
+			*s.WriterSizeBeforeForward = service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c)
+		} else {
+			*s.WriterSizeBeforeForward = service.OpenAICompactKeepaliveAdjustedWrittenSize(c)
+		}
 	}
 	defer func() {
 		if s.ReleaseFunc != nil {
