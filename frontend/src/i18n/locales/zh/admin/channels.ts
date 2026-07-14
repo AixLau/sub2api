@@ -373,6 +373,8 @@ export default {
 		intent: '意图',
 		target: '目标',
 		authorization: '授权情况',
+		informationAccess: '信息访问范围',
+		harmMechanism: '实际伤害机制',
 		confidence: '置信度',
 		severity: '风险等级',
 		categories: '风险分类',

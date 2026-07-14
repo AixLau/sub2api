@@ -5,7 +5,7 @@ package promptfilter
 // are intentionally narrower and are eligible for the existing hard block.
 // Sources: https://genai.owasp.org/llmrisk/llm01-prompt-injection/ and
 // https://ctf101.org/.
-const supplementalSourceRevision = "local-content-audit@2026-07-12"
+const supplementalSourceRevision = "local-content-audit@2026-07-14"
 
 var supplementalPatternConfigs = []PatternConfig{
 	{
@@ -88,7 +88,7 @@ var supplementalPatternConfigs = []PatternConfig{
 	},
 	{
 		Name:     "ctf_crypto_technique",
-		Regex:    `(?i)\b(?:single[-\s]?byte\s+xor|repeating[-\s]?key\s+xor|known[-\s]?plaintext|crib[-\s]?dragging|frequency\s+analysis|vigen(?:e|è)re|padding\s+oracles?|cbc\s+bit[-\s]?flipping|ecb\s+oracles?|length\s+extension|hash\s+collisions?|md5\s+collisions?|rsa|common\s+modulus|low[-\s]?exponent|wiener(?:'s)?\s+attack|hastad|discrete\s+log(?:arithm)?|weak\s+prng|nonce\s+reuse|ecdsa\s+nonce|hashcat|john(?:\s+the\s+ripper)?|rainbow\s+table|password\s+hash)\b|(?:单字节XOR|重复密钥XOR|已知明文|频率分析|填充预言机|CBC位翻转|ECB预言机|长度扩展|哈希碰撞|MD5碰撞|RSA|共模|低指数|Wiener|Håstad|离散对数|弱随机数|nonce复用|ECDSA随机数|哈希破解|密码哈希|彩虹表)`,
+		Regex:    `(?i)\b(?:single[-\s]?byte\s+xor|repeating[-\s]?key\s+xor|known[-\s]?plaintext|crib[-\s]?dragging|frequency\s+analysis|vigen(?:e|è)re|padding\s+oracles?|cbc\s+bit[-\s]?flipping|ecb\s+oracles?|length\s+extension|hash\s+collisions?|md5\s+collisions?|rsa[-\s]+(?:cryptography|encryption|cipher|keys?|signatures?|modulus|padding|attacks?|challenges?)|common\s+modulus|low[-\s]?exponent|wiener(?:'s)?\s+attack|hastad|discrete\s+log(?:arithm)?|weak\s+prng|nonce\s+reuse|ecdsa\s+nonce|hashcat|john(?:\s+the\s+ripper)?|rainbow\s+table|password\s+hash)\b|(?:单字节XOR|重复密钥XOR|已知明文|频率分析|填充预言机|CBC位翻转|ECB预言机|长度扩展|哈希碰撞|MD5碰撞|RSA(?:加密|密码|密钥|签名|模数|填充|攻击|题目)|共模|低指数|Wiener|Håstad|离散对数|弱随机数|nonce复用|ECDSA随机数|哈希破解|密码哈希|彩虹表)`,
 		Weight:   25,
 		Category: "crypto_attack",
 	},

@@ -397,7 +397,7 @@ func contentModerationOrdinaryProviderSupportsCategory(provider, category string
 func (s *ContentModerationService) candidateDecisionCacheKey(cfg *ContentModerationConfig, input ContentModerationCheckInput, selection contentModerationCandidateSelection) string {
 	policyRevision := contentModerationPolicyRevision(true, cfg)
 	parts := []string{
-		"candidate-decision-v2",
+		"candidate-decision-v3",
 		policyRevision,
 		fmtInt64(input.UserID),
 		fmtInt64(input.APIKeyID),
@@ -1076,6 +1076,8 @@ func contentModerationCandidateSemanticMetadata(selection contentModerationCandi
 	metadata["semantic_review_intent"] = result.Intent
 	metadata["semantic_review_target"] = result.Target
 	metadata["semantic_review_authorization"] = result.Authorization
+	metadata["semantic_review_information_access"] = result.InformationAccess
+	metadata["semantic_review_harm_mechanism"] = result.HarmMechanism
 	metadata["semantic_review_categories"] = result.Categories
 	metadata["semantic_review_confidence"] = result.Confidence
 	metadata["semantic_review_severity"] = result.Severity

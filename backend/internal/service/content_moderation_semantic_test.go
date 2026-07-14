@@ -464,7 +464,7 @@ func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
 	format, ok := textConfig["format"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "json_schema", format["type"])
-	require.Equal(t, "semantic_review_v2", format["name"])
+	require.Equal(t, "semantic_review_v3", format["name"])
 	require.Equal(t, true, format["strict"])
 }
 
@@ -543,6 +543,50 @@ func TestSemanticReviewPolicyAllowsAuthorizedCTFLabRequest(t *testing.T) {
 	})
 
 	require.False(t, overridden)
+	require.Equal(t, "allow", result.Verdict)
+}
+
+func TestSemanticReviewPolicyDowngradesPublicDataWithoutHarmMechanism(t *testing.T) {
+	result, overridden := applySemanticReviewPolicy(ContentModerationSemanticReviewResult{
+		Verdict:           "reject",
+		Intent:            "harmful",
+		Target:            "third_party",
+		Authorization:     "unauthorized",
+		InformationAccess: "public",
+		HarmMechanism:     "none",
+		Operationality:    "actionable",
+		Executability:     "indirect",
+		Categories:        []string{"fraud", "competitive_abuse"},
+	})
+
+	require.True(t, overridden)
+	require.Equal(t, "review", result.Verdict)
+	require.Contains(t, result.ReasonCodes, "semantic_policy_public_harmless")
+}
+
+func TestSemanticReviewPolicyKeepsPublicMarketManipulationRejected(t *testing.T) {
+	result, overridden := applySemanticReviewPolicy(ContentModerationSemanticReviewResult{
+		Verdict:           "reject",
+		Intent:            "harmful",
+		Target:            "external_service",
+		Authorization:     "not_applicable",
+		InformationAccess: "public",
+		HarmMechanism:     "market_manipulation",
+		Operationality:    "actionable",
+		Executability:     "indirect",
+		Categories:        []string{"fraud"},
+	})
+
+	require.False(t, overridden)
+	require.Equal(t, "reject", result.Verdict)
+}
+
+func TestParseSemanticReviewPublicInformationDimensions(t *testing.T) {
+	result, err := parseSemanticReviewModelOutput(`{"verdict":"allow","intent":"benign","target":"external_service","authorization":"not_applicable","information_access":"public","harm_mechanism":"none","severity":"low","confidence":0.96,"operationality":"actionable","executability":"indirect","categories":["financial_research"],"reason_codes":["public_market_data"]}`)
+
+	require.NoError(t, err)
+	require.Equal(t, "public", result.InformationAccess)
+	require.Equal(t, "none", result.HarmMechanism)
 	require.Equal(t, "allow", result.Verdict)
 }
 

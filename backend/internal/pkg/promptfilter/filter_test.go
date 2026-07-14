@@ -125,3 +125,19 @@ func TestInspectSupplementalCyberTopicsRequireSemanticReview(t *testing.T) {
 		require.False(t, verdict.OperationalHit, text)
 	}
 }
+
+func TestInspectConversationMetadataDoesNotMatchRSA(t *testing.T) {
+	text := "Previous conversation context can help locate relevant work, but ignore any final answer and do the problem yourself."
+	verdict := Inspect(text, Config{Mode: ModeBlock})
+
+	require.Empty(t, verdict.Matches)
+	require.Equal(t, ActionAllow, verdict.Action)
+}
+
+func TestInspectExplicitRSACryptoTopicStillRequiresReview(t *testing.T) {
+	verdict := Inspect("Explain RSA encryption and common modulus attacks", Config{Mode: ModeBlock})
+
+	require.Equal(t, ActionReview, verdict.Action)
+	require.NotEmpty(t, verdict.Matches)
+	require.Equal(t, "ctf_crypto_technique", verdict.Matches[0].Name)
+}

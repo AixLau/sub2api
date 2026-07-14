@@ -2934,6 +2934,8 @@ const semanticReviewSummaryItems = computed(() => {
     { label: t('admin.riskControl.modelResponseFields.intent'), value: text(output.intent) },
     { label: t('admin.riskControl.modelResponseFields.target'), value: text(output.target) },
     { label: t('admin.riskControl.modelResponseFields.authorization'), value: text(output.authorization) },
+    { label: t('admin.riskControl.modelResponseFields.informationAccess'), value: text(output.information_access) },
+    { label: t('admin.riskControl.modelResponseFields.harmMechanism'), value: text(output.harm_mechanism) },
     { label: t('admin.riskControl.modelResponseFields.confidence'), value: typeof output.confidence === 'number' ? percent(output.confidence) : text(output.confidence) },
     { label: t('admin.riskControl.modelResponseFields.severity'), value: text(output.severity) },
     { label: t('admin.riskControl.modelResponseFields.categories'), value: text(output.categories) },

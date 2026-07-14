@@ -373,6 +373,8 @@ export default {
 		intent: 'Intent',
 		target: 'Target',
 		authorization: 'Authorization',
+		informationAccess: 'Information Access',
+		harmMechanism: 'Harm Mechanism',
 		confidence: 'Confidence',
 		severity: 'Severity',
 		categories: 'Categories',
