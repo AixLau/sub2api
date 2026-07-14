@@ -153,6 +153,7 @@ export async function registerWithSub2Api(
   email: string,
   password: string,
   verifyCode?: string,
+  affiliateCode?: string,
 ): Promise<AuthResult> {
   try {
     const body: Record<string, unknown> = {
@@ -162,6 +163,10 @@ export async function registerWithSub2Api(
 
     if (verifyCode?.trim()) {
       body.verify_code = verifyCode.trim()
+    }
+
+    if (affiliateCode?.trim()) {
+      body.aff_code = affiliateCode.trim()
     }
 
     const data = await postJson<AuthResponse>('/auth/register', body)

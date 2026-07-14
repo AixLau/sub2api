@@ -245,6 +245,57 @@ describe('星链 landing page', () => {
     })
   })
 
+  it.each([
+    ['/register?aff=%20AFF123%20', 'AFF123'],
+    ['/register?aff_code=AFF456', 'AFF456'],
+  ])('binds the affiliate invitation from %s during registration', async (path, affCode) => {
+    window.history.pushState({}, '', path)
+    const fetchMock = mockFetchWithResponse(() =>
+      new Response(
+        JSON.stringify({
+          code: 0,
+          data: {
+            access_token: 'access-token',
+            user: {
+              id: 1,
+              username: 'demo',
+              email: 'demo@example.com',
+              role: 'user',
+            },
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    const assignMock = vi.fn()
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, assign: assignMock },
+    })
+
+    render(<App />)
+
+    fireEvent.change(await screen.findByLabelText('邮箱'), { target: { value: 'demo@example.com' } })
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'secret123' } })
+    fireEvent.change(screen.getByLabelText('邮箱验证码'), { target: { value: '123456' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建账号' }))
+
+    await waitFor(() => expect(assignMock).toHaveBeenCalledWith('/dashboard'))
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/register', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: 'demo@example.com',
+        password: 'secret123',
+        verify_code: '123456',
+        aff_code: affCode,
+      }),
+    })
+  })
+
   it('shows a helpful Chinese prompt when Sub2API requires email verification', async () => {
     window.history.pushState({}, '', '/register')
     mockFetchWithResponse(() =>

@@ -116,6 +116,7 @@ export function AuthPage({ mode }: AuthPageProps) {
   const searchParams = new URLSearchParams(window.location.search)
   const resetEmail = searchParams.get('email') || ''
   const resetToken = searchParams.get('token') || ''
+  const affiliateCode = searchParams.get('aff') || searchParams.get('aff_code') || ''
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [verifyCode, setVerifyCode] = useState('')
@@ -327,7 +328,7 @@ export function AuthPage({ mode }: AuthPageProps) {
       const result = isLogin
         ? await loginWithSub2Api(email, password)
         : isRegister
-          ? await registerWithSub2Api(email, password, verifyCode)
+          ? await registerWithSub2Api(email, password, verifyCode, affiliateCode)
           : isResetWithToken
             ? await resetSub2ApiPassword(resetEmail, resetToken, newPassword)
             : await requestPasswordReset(email)
