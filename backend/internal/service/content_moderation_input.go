@@ -400,8 +400,16 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 					switch typ {
 					case "", "message", "input_text", "output_text", "reasoning", "item_reference", "compaction":
 					default:
-						state.markTruncated("unsupported_required_value")
-						return
+						// Codex and other Responses clients can introduce new
+						// top-level message envelope types before the public
+						// vocabulary is updated. If the envelope's content is
+						// already fully representable by the known content schema,
+						// validate and scan it instead of treating the whole request
+						// as incomplete. Unknown direct content blocks remain strict.
+						if !isExtractableUnknownResponsesMessageEnvelope(item) {
+							state.markTruncated("unsupported_required_value")
+							return
+						}
 					}
 					validateContent(item.Get("content"))
 				}
@@ -954,6 +962,14 @@ func responseItemHasModerationText(item gjson.Result) bool {
 		collectContentValue(item, &parts, &images)
 	}
 	return normalizeContentModerationText(strings.Join(parts, "\n")) != "" || len(images) > 0
+}
+
+func isExtractableUnknownResponsesMessageEnvelope(item gjson.Result) bool {
+	content := item.Get("content")
+	if !content.Exists() || (content.Type != gjson.String && !content.IsArray() && !content.IsObject()) {
+		return false
+	}
+	return responseItemHasModerationText(item)
 }
 
 func isResponsesClientSuppliedToolOutputItem(item gjson.Result) bool {

@@ -264,6 +264,25 @@ func TestCandidateSelectionUsesValidationReasonsFromSelectedSourceOnly(t *testin
 	require.False(t, contentModerationCandidateExtractionIncomplete(selection))
 }
 
+func TestCandidateSelectionAcceptsUnknownResponsesMessageEnvelope(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword:  "danger-marker",
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}}
+	body := []byte(`{"input":[{"type":"agent_message","role":"user","content":[{"type":"input_text","text":"Message Type: FINAL_ANSWER Payload: danger-marker request"}]}]}`)
+	content := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeUserOnly)
+
+	selection, found := contentModerationCandidateSelectionForInput(cfg, content)
+
+	require.True(t, found)
+	require.Equal(t, "responses.input[0].role=user.content", selection.Source.Source)
+	require.False(t, contentModerationCandidateExtractionIncomplete(selection))
+}
+
 func TestCandidateSelectionKeepsTailPromptFilterMatchInBoundedPayload(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.PromptFilterMode = promptfilter.ModeObserve

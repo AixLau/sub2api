@@ -150,6 +150,37 @@ func TestExtractionCompletenessRejectsUnknownContentShapes(t *testing.T) {
 	}
 }
 
+func TestResponsesExtractionAcceptsUnknownMessageEnvelopeWithKnownContent(t *testing.T) {
+	body := []byte(`{
+		"input":[{
+			"type":"agent_message",
+			"role":"user",
+			"content":[{
+				"type":"input_text",
+				"text":"Message Type: FINAL_ANSWER Task name: /root Sender: /root Payload: 已完成事件级连接管理"
+			}]
+		}]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeUserOnly)
+
+	require.False(t, input.Truncated, input.TruncateReasons)
+	require.Contains(t, input.Text, "Message Type: FINAL_ANSWER")
+	require.Len(t, input.Sources, 1)
+	require.Equal(t, "responses.input[0].role=user.content", input.Sources[0].Source)
+	require.Equal(t, "user", input.Sources[0].Role)
+}
+
+func TestResponsesExtractionKeepsUnknownDirectContentBlockStrict(t *testing.T) {
+	body := []byte(`{"input":[{"type":"future_text","role":"user","text":"unsafe direct content"}]}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeUserOnly)
+
+	require.True(t, input.Truncated)
+	require.Contains(t, input.TruncateReasons, "unsupported_required_value")
+	require.Empty(t, input.Text)
+}
+
 func TestExtractionCompletenessAcceptsEveryKnownContentShape(t *testing.T) {
 	tests := []struct{ name, protocol, body string }{
 		{"chat text and image", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":[{"type":"text","text":"ok"},{"type":"image_url","image_url":{"url":"https://example.test/a.png"}}]}]}`},
