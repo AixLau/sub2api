@@ -243,6 +243,23 @@ func TestDashboardService_CacheDisabled_SkipsCache(t *testing.T) {
 	require.Equal(t, int32(0), atomic.LoadInt32(&cache.setCalls))
 }
 
+func TestDashboardService_GetDashboardStatsWithRangeUsesExactWindow(t *testing.T) {
+	start := time.Date(2026, 7, 14, 3, 4, 5, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	want := &usagestats.DashboardStats{TotalTokens: 1234}
+	repo := &usageRepoStub{rangeStats: want}
+	svc := NewDashboardService(repo, nil, nil, nil)
+
+	got, err := svc.GetDashboardStatsWithRange(context.Background(), start, end)
+
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+	require.Equal(t, int32(1), atomic.LoadInt32(&repo.rangeCalls))
+	require.Equal(t, int32(0), atomic.LoadInt32(&repo.calls))
+	require.Equal(t, start, repo.rangeStart)
+	require.Equal(t, end, repo.rangeEnd)
+}
+
 func TestDashboardService_CacheHitStale_TriggersAsyncRefresh(t *testing.T) {
 	staleStats := &usagestats.DashboardStats{
 		TotalUsers:     11,
