@@ -114,6 +114,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 	failedAccountIDs := make(map[int64]struct{})
 	var lastFailoverErr *service.UpstreamFailoverError
 	switchCount := 0
+	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	routingStart := time.Now()
 
 	for {
@@ -217,6 +218,13 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			h.handleFailoverExhausted(c, failoverErr, true)
 			return
 		}
+		if failoverClientGone(c) {
+			reqLog.Info("openai_alpha_search.failover_aborted_client_disconnected",
+				zap.Int64("account_id", account.ID),
+				zap.Int("upstream_status", failoverErr.StatusCode),
+			)
+			return
+		}
 		h.gatewayService.RecordOpenAIAccountSwitch()
 		failedAccountIDs[account.ID] = struct{}{}
 		lastFailoverErr = failoverErr
@@ -225,7 +233,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			return
 		}
 		switchCount++
-		if h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount) {
+		if h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount, &oauth429FailoverState) {
 			h.handleFailoverExhausted(c, failoverErr, false)
 			return
 		}

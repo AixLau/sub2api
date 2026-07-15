@@ -1168,6 +1168,14 @@ func (t contentModerationRuntimeTimings) normalized() contentModerationRuntimeTi
 	return t
 }
 
+type contentModerationRuntimeSnapshot struct {
+	riskControlEnabled bool
+	config             *ContentModerationConfig
+	keywordMatcher     *contentModerationKeywordMatcher
+	configDigest       [sha256.Size]byte
+	loadedAt           time.Time
+}
+
 type contentModerationTask struct {
 	input            ContentModerationCheckInput
 	content          ContentModerationInput
@@ -4407,16 +4415,21 @@ func (s *ContentModerationService) runCleanupOnce(parent context.Context) {
 }
 
 func (s *ContentModerationService) loadConfig(ctx context.Context) (*ContentModerationConfig, error) {
-	cfg := defaultContentModerationConfig()
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyContentModerationConfig)
 	if err != nil {
 		if errors.Is(err, ErrSettingNotFound) {
+			cfg := defaultContentModerationConfig()
 			cfg.normalize()
 			normalizeContentModerationCandidateOnlyInvariants(cfg)
 			return cfg, nil
 		}
 		return nil, fmt.Errorf("get content moderation config: %w", err)
 	}
+	return parseContentModerationConfig(raw)
+}
+
+func parseContentModerationConfig(raw string) (*ContentModerationConfig, error) {
+	cfg := defaultContentModerationConfig()
 	if strings.TrimSpace(raw) == "" {
 		cfg.normalize()
 		normalizeContentModerationCandidateOnlyInvariants(cfg)
