@@ -120,7 +120,7 @@ var exactMessages = map[string]string{
 	"Too many API key IDs (maximum 100 allowed)":                   "API Key ID 过多（最多 100 个）",
 	"Billing error":                                                "计费校验失败，请稍后重试或联系管理员",
 	"Billing service temporarily unavailable. Please retry later.": "计费服务暂时不可用，请稍后重试",
-	"insufficient balance":                                         "当前账户余额不足，请充值后重试",
+	"insufficient balance":                                         "当前账户余额不足，请充值后重试，充值地址：https://aixlau.me/purchase",
 	"group requests-per-minute limit exceeded":                     "当前分组请求频率过高，请稍后重试",
 	"user requests-per-minute limit exceeded":                      "当前用户请求频率过高，请稍后重试",
 	"Daily usage quota exhausted for this platform.":               "当前平台今日用量额度已用完，请在额度重置后重试",

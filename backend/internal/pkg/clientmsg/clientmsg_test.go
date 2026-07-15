@@ -51,7 +51,7 @@ func TestLocalize(t *testing.T) {
 		{
 			name: "local billing balance",
 			in:   "insufficient balance",
-			want: "当前账户余额不足，请充值后重试",
+			want: "当前账户余额不足，请充值后重试，充值地址：https://aixlau.me/purchase",
 		},
 		{
 			name: "local billing unavailable",

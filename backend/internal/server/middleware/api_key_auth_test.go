@@ -865,7 +865,7 @@ func TestAPIKeyAuthInsufficientBalanceUsesLocalizedClientMessage(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusForbidden, w.Code)
-	requireAPIKeyAuthError(t, w, "INSUFFICIENT_BALANCE", "当前账户余额不足，请充值后重试")
+	requireAPIKeyAuthError(t, w, "INSUFFICIENT_BALANCE", "当前账户余额不足，请充值后重试，充值地址：https://aixlau.me/purchase")
 }
 
 func TestAPIKeyAuthErrorsSetOpsDiagnostic(t *testing.T) {
@@ -1479,7 +1479,57 @@ func TestAPIKeyAuthRejectsExhaustedBalance(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusForbidden, w.Code)
-	requireAPIKeyAuthError(t, w, "INSUFFICIENT_BALANCE", "当前账户余额不足，请充值后重试")
+	requireAPIKeyAuthError(t, w, "INSUFFICIENT_BALANCE", "当前账户余额不足，请充值后重试，充值地址：https://aixlau.me/purchase")
+}
+
+func TestAPIKeyAuthFallsBackFromBalanceToSubscription(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Now()
+	limit := 10.0
+	standardGroup := &service.Group{ID: 201, Name: "standard", Platform: service.PlatformAnthropic, Status: service.StatusActive, Hydrated: true, SubscriptionType: service.SubscriptionTypeStandard}
+	fallbackGroup := &service.Group{ID: 202, Name: "subscription", Platform: service.PlatformAnthropic, Status: service.StatusActive, Hydrated: true, SubscriptionType: service.SubscriptionTypeSubscription, MonthlyLimitUSD: &limit}
+	override := 3
+	user := &service.User{ID: 301, Role: service.RoleUser, Status: service.StatusActive, Balance: 0, Concurrency: 2, UserGroupRPMOverride: &override}
+	apiKey := &service.APIKey{ID: 401, UserID: user.ID, Key: "balance-fallback-key", Status: service.StatusActive, User: user, Group: standardGroup}
+	apiKey.GroupID = &standardGroup.ID
+	fallbackSub := service.UserSubscription{
+		ID: 501, UserID: user.ID, GroupID: fallbackGroup.ID, Status: service.SubscriptionStatusActive,
+		ExpiresAt: now.Add(24 * time.Hour), DailyWindowStart: &now, WeeklyWindowStart: &now, MonthlyWindowStart: &now,
+		Group: fallbackGroup,
+	}
+
+	apiKeyRepo := &stubApiKeyRepo{getByKey: func(context.Context, string) (*service.APIKey, error) {
+		clone := *apiKey
+		userClone := *user
+		clone.User = &userClone
+		return &clone, nil
+	}}
+	subRepo := &stubUserSubscriptionRepo{listActive: func(context.Context, int64) ([]service.UserSubscription, error) {
+		return []service.UserSubscription{fallbackSub}, nil
+	}}
+	cfg := &config.Config{RunMode: config.RunModeStandard}
+	apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, subRepo, nil, nil, cfg)
+	subscriptionService := service.NewSubscriptionService(nil, subRepo, nil, nil, cfg)
+
+	router := gin.New()
+	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, subscriptionService, cfg)))
+	router.GET("/t", func(c *gin.Context) {
+		resolvedKey, ok := GetAPIKeyFromContext(c)
+		require.True(t, ok)
+		resolvedSub, ok := GetSubscriptionFromContext(c)
+		require.True(t, ok)
+		require.Equal(t, fallbackGroup.ID, *resolvedKey.GroupID)
+		require.Equal(t, fallbackGroup, resolvedKey.Group)
+		require.Equal(t, fallbackSub.ID, resolvedSub.ID)
+		require.Nil(t, resolvedKey.User.UserGroupRPMOverride)
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/t", nil)
+	req.Header.Set("x-api-key", apiKey.Key)
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
 }
 
 func newAuthTestRouter(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config) *gin.Engine {
@@ -1608,6 +1658,7 @@ func (r *stubApiKeyRepo) GetRateLimitData(ctx context.Context, id int64) (*servi
 type stubUserSubscriptionRepo struct {
 	getByID        func(ctx context.Context, id int64) (*service.UserSubscription, error)
 	getActive      func(ctx context.Context, userID, groupID int64) (*service.UserSubscription, error)
+	listActive     func(ctx context.Context, userID int64) ([]service.UserSubscription, error)
 	updateStatus   func(ctx context.Context, subscriptionID int64, status string) error
 	activateWindow func(ctx context.Context, id int64, start time.Time) error
 	resetDaily     func(ctx context.Context, id int64, start time.Time) error
@@ -1693,6 +1744,9 @@ func (r *stubUserSubscriptionRepo) ListByUserID(ctx context.Context, userID int6
 }
 
 func (r *stubUserSubscriptionRepo) ListActiveByUserID(ctx context.Context, userID int64) ([]service.UserSubscription, error) {
+	if r.listActive != nil {
+		return r.listActive(ctx, userID)
+	}
 	return nil, errors.New("not implemented")
 }
 

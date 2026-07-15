@@ -60,7 +60,7 @@ func TestBillingErrorDetails_UnknownErrorFallsBackTo403(t *testing.T) {
 
 func TestBillingErrorDetails_LocalMessagesAreLocalizedForClients(t *testing.T) {
 	_, _, msg, _ := billingErrorDetails(service.ErrInsufficientBalance)
-	require.Equal(t, "当前账户余额不足，请充值后重试", clientmsg.Localize(msg))
+	require.Equal(t, "当前账户余额不足，请充值后重试，充值地址：https://aixlau.me/purchase", clientmsg.Localize(msg))
 
 	_, _, msg, _ = billingErrorDetails(service.ErrGroupRPMExceeded)
 	require.Equal(t, "当前分组请求频率过高，请稍后重试", clientmsg.Localize(msg))

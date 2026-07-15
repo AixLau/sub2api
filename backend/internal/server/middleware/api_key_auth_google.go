@@ -58,15 +58,15 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 		// user/group/platform。
 		SetOpsFallbackAPIKey(c, apiKey)
 
-			// disabled / 未知状态 → 无条件拦截（expired 和 quota_exhausted 留给计费阶段，
-			// 与主中间件 api_key_auth.go 保持一致）。
-			if !apiKey.IsActive() &&
-				apiKey.Status != service.StatusAPIKeyExpired &&
-				apiKey.Status != service.StatusAPIKeyQuotaExhausted {
-				markOpsAPIKeyAuthDiagnostic(c, "API_KEY_DISABLED", "api_key_disabled", apiKey, nil)
-				abortWithGoogleError(c, 401, localizedAPIKeyAuthMessage("API_KEY_DISABLED"))
-				return
-			}
+		// disabled / 未知状态 → 无条件拦截（expired 和 quota_exhausted 留给计费阶段，
+		// 与主中间件 api_key_auth.go 保持一致）。
+		if !apiKey.IsActive() &&
+			apiKey.Status != service.StatusAPIKeyExpired &&
+			apiKey.Status != service.StatusAPIKeyQuotaExhausted {
+			markOpsAPIKeyAuthDiagnostic(c, "API_KEY_DISABLED", "api_key_disabled", apiKey, nil)
+			abortWithGoogleError(c, 401, localizedAPIKeyAuthMessage("API_KEY_DISABLED"))
+			return
+		}
 
 		// 检查 IP 限制（白名单/黑名单）。与主中间件保持一致，避免 Gemini 端点绕过 Key 的 IP ACL。
 		if len(apiKey.IPWhitelist) > 0 || len(apiKey.IPBlacklist) > 0 {
@@ -143,35 +143,49 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 		}
 
 		isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
+		var subscription *service.UserSubscription
+		var billingErr error
 		if isSubscriptionType && subscriptionService != nil {
-			subscription, err := subscriptionService.GetActiveSubscription(
+			subscription, billingErr = subscriptionService.GetActiveSubscription(
 				c.Request.Context(),
 				apiKey.User.ID,
 				apiKey.Group.ID,
 			)
-			if err != nil {
-				markOpsAPIKeyAuthDiagnostic(c, "SUBSCRIPTION_NOT_FOUND", "subscription_not_found", apiKey, map[string]string{
-					"raw_error": strings.TrimSpace(err.Error()),
-				})
-				abortWithGoogleError(c, 403, localizedAPIKeyAuthMessage("SUBSCRIPTION_NOT_FOUND"))
-				return
+			if billingErr == nil {
+				subscription, billingErr = validateRequestSubscription(c.Request.Context(), subscriptionService, subscription, apiKey.Group)
 			}
+		} else if apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
+			billingErr = service.ErrInsufficientBalance
+		}
 
-			needsMaintenance, err := subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
-			if needsMaintenance {
-				refreshed, maintenanceErr := subscriptionService.EnsureWindowMaintenance(c.Request.Context(), subscription)
-				if maintenanceErr != nil {
-					abortWithGoogleError(c, 500, "Failed to maintain subscription usage windows")
+		if billingErr != nil && (errors.Is(billingErr, service.ErrInsufficientBalance) || canFallbackFromSubscriptionError(billingErr)) {
+			excludedGroupID := int64(0)
+			if apiKey.Group != nil && apiKey.Group.IsSubscriptionType() {
+				excludedGroupID = apiKey.Group.ID
+			}
+			fallbackKey, fallbackSub, fallbackErr := findFallbackSubscription(c.Request.Context(), subscriptionService, apiKey, excludedGroupID)
+			if fallbackErr == nil {
+				apiKey = fallbackKey
+				subscription = fallbackSub
+				isSubscriptionType = true
+				billingErr = nil
+				SetOpsFallbackAPIKey(c, apiKey)
+			}
+		}
+
+		if billingErr != nil {
+			if isSubscriptionType {
+				if errors.Is(billingErr, service.ErrSubscriptionNotFound) {
+					markOpsAPIKeyAuthDiagnostic(c, "SUBSCRIPTION_NOT_FOUND", "subscription_not_found", apiKey, map[string]string{
+						"raw_error": strings.TrimSpace(billingErr.Error()),
+					})
+					abortWithGoogleError(c, 403, localizedAPIKeyAuthMessage("SUBSCRIPTION_NOT_FOUND"))
 					return
 				}
-				subscription = refreshed
-				_, err = subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
-			}
-			if err != nil {
 				status := 403
-				if errors.Is(err, service.ErrDailyLimitExceeded) ||
-					errors.Is(err, service.ErrWeeklyLimitExceeded) ||
-					errors.Is(err, service.ErrMonthlyLimitExceeded) {
+				if errors.Is(billingErr, service.ErrDailyLimitExceeded) ||
+					errors.Is(billingErr, service.ErrWeeklyLimitExceeded) ||
+					errors.Is(billingErr, service.ErrMonthlyLimitExceeded) {
 					status = 429
 				}
 				code := "SUBSCRIPTION_INVALID"
@@ -179,19 +193,18 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 					code = "USAGE_LIMIT_EXCEEDED"
 				}
 				markOpsAPIKeyAuthDiagnostic(c, code, strings.ToLower(code), apiKey, map[string]string{
-					"raw_error": strings.TrimSpace(err.Error()),
+					"raw_error": strings.TrimSpace(billingErr.Error()),
 				})
-				abortWithGoogleError(c, status, localizedSubscriptionErrorMessage(err))
+				abortWithGoogleError(c, status, localizedSubscriptionErrorMessage(billingErr))
 				return
 			}
+			markOpsAPIKeyAuthDiagnostic(c, "INSUFFICIENT_BALANCE", "insufficient_balance", apiKey, nil)
+			abortWithGoogleError(c, 403, localizedAPIKeyAuthMessage("INSUFFICIENT_BALANCE"))
+			return
+		}
 
+		if subscription != nil {
 			c.Set(string(ContextKeySubscription), subscription)
-		} else {
-				if apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
-					markOpsAPIKeyAuthDiagnostic(c, "INSUFFICIENT_BALANCE", "insufficient_balance", apiKey, nil)
-					abortWithGoogleError(c, 403, localizedAPIKeyAuthMessage("INSUFFICIENT_BALANCE"))
-					return
-				}
 		}
 
 		c.Set(string(ContextKeyAPIKey), apiKey)

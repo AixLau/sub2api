@@ -174,6 +174,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 
 		var subscription *service.UserSubscription
 		isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
+		var subscriptionLoadErr error
 
 		if isSubscriptionType && subscriptionService != nil {
 			sub, subErr := subscriptionService.GetActiveSubscription(
@@ -182,14 +183,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 				apiKey.Group.ID,
 			)
 			if subErr != nil {
-				if !skipBilling {
-					markOpsAPIKeyAuthDiagnostic(c, "SUBSCRIPTION_NOT_FOUND", "subscription_not_found", apiKey, map[string]string{
-						"raw_error": strings.TrimSpace(subErr.Error()),
-					})
-					AbortWithError(c, 403, "SUBSCRIPTION_NOT_FOUND", localizedAPIKeyAuthMessage("SUBSCRIPTION_NOT_FOUND"))
-					return
-				}
-				// skipBilling: 订阅不存在也放行，handler 会返回可用的数据
+				subscriptionLoadErr = subErr
 			} else {
 				subscription = sub
 			}
@@ -222,19 +216,47 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 				return
 			}
 
-			// 订阅模式：验证订阅限额
-			if subscription != nil {
-				needsMaintenance, validateErr := subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
-				if needsMaintenance {
-					refreshed, maintenanceErr := subscriptionService.EnsureWindowMaintenance(c.Request.Context(), subscription)
-					if maintenanceErr != nil {
-						AbortWithError(c, 500, "SUBSCRIPTION_MAINTENANCE_FAILED", "Failed to maintain subscription usage windows")
+			var billingErr error
+			if isSubscriptionType {
+				if subscriptionService == nil {
+					if apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
+						billingErr = service.ErrInsufficientBalance
+					}
+				} else {
+					billingErr = subscriptionLoadErr
+				}
+				if billingErr == nil && subscriptionService != nil {
+					subscription, billingErr = validateRequestSubscription(c.Request.Context(), subscriptionService, subscription, apiKey.Group)
+				}
+			} else if apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
+				billingErr = service.ErrInsufficientBalance
+			}
+
+			if billingErr != nil && (errors.Is(billingErr, service.ErrInsufficientBalance) || canFallbackFromSubscriptionError(billingErr)) {
+				excludedGroupID := int64(0)
+				if apiKey.Group != nil && apiKey.Group.IsSubscriptionType() {
+					excludedGroupID = apiKey.Group.ID
+				}
+				fallbackKey, fallbackSub, fallbackErr := findFallbackSubscription(c.Request.Context(), subscriptionService, apiKey, excludedGroupID)
+				if fallbackErr == nil {
+					apiKey = fallbackKey
+					subscription = fallbackSub
+					isSubscriptionType = true
+					billingErr = nil
+					SetOpsFallbackAPIKey(c, apiKey)
+				}
+			}
+
+			if billingErr != nil {
+				if isSubscriptionType {
+					validateErr := billingErr
+					if errors.Is(validateErr, service.ErrSubscriptionNotFound) {
+						markOpsAPIKeyAuthDiagnostic(c, "SUBSCRIPTION_NOT_FOUND", "subscription_not_found", apiKey, map[string]string{
+							"raw_error": strings.TrimSpace(validateErr.Error()),
+						})
+						AbortWithError(c, 403, "SUBSCRIPTION_NOT_FOUND", localizedAPIKeyAuthMessage("SUBSCRIPTION_NOT_FOUND"))
 						return
 					}
-					subscription = refreshed
-					_, validateErr = subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
-				}
-				if validateErr != nil {
 					code := "SUBSCRIPTION_INVALID"
 					status := 403
 					if errors.Is(validateErr, service.ErrDailyLimitExceeded) ||
@@ -249,13 +271,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 					AbortWithError(c, status, code, localizedSubscriptionErrorMessage(validateErr))
 					return
 				}
-			} else {
-				// 非订阅模式 或 订阅模式但 subscriptionService 未注入：回退到余额检查
-					if apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
-						markOpsAPIKeyAuthDiagnostic(c, "INSUFFICIENT_BALANCE", "insufficient_balance", apiKey, nil)
-						AbortWithError(c, 403, "INSUFFICIENT_BALANCE", localizedAPIKeyAuthMessage("INSUFFICIENT_BALANCE"))
-						return
-					}
+				markOpsAPIKeyAuthDiagnostic(c, "INSUFFICIENT_BALANCE", "insufficient_balance", apiKey, nil)
+				AbortWithError(c, 403, "INSUFFICIENT_BALANCE", localizedAPIKeyAuthMessage("INSUFFICIENT_BALANCE"))
+				return
 			}
 		}
 
@@ -520,7 +538,7 @@ func localizedAPIKeyAuthMessage(code string) string {
 	case "SUBSCRIPTION_NOT_FOUND":
 		return "当前分组没有可用订阅，请联系管理员开通或续费"
 	case "INSUFFICIENT_BALANCE":
-		return "当前账户余额不足，请充值后重试"
+		return "当前账户余额不足，请充值后重试，充值地址：https://aixlau.me/purchase"
 	case "GROUP_NOT_ALLOWED":
 		return "API Key 所属专属分组不再允许当前用户使用"
 	default:
