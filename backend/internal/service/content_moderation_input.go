@@ -398,7 +398,7 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 					validateToolRoot(item)
 				default:
 					switch typ {
-					case "", "message", "input_text", "output_text", "reasoning", "item_reference", "compaction":
+					case "", "message", "input_text", "output_text", "reasoning", "item_reference", "compaction", "compaction_trigger":
 					default:
 						// Codex and other Responses clients can introduce new
 						// top-level message envelope types before the public

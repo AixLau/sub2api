@@ -72,6 +72,17 @@ func TestExtractionCompletenessSupportedProtocolsAndOrderedSources(t *testing.T)
 	}
 }
 
+func TestExtractionCompletenessAcceptsResponsesCompactionTrigger(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","input":[{"type":"message","role":"user","content":"hello"},{"type":"compaction_trigger"}]}`)
+
+	got := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+
+	require.False(t, got.Truncated, got.TruncateReasons)
+	require.Equal(t, "hello", got.Text)
+	require.Len(t, got.Sources, 1)
+	require.Equal(t, "responses.input[0].role=user.content", got.Sources[0].Source)
+}
+
 func TestExtractionCompletenessUnsupportedRequiredValues(t *testing.T) {
 	tests := []struct{ protocol, body string }{
 		{ContentModerationProtocolOpenAIChat, `{"messages":42}`},
