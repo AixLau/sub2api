@@ -14,8 +14,10 @@ var _ OpsRepository = (*stubOpsRepo)(nil)
 
 type stubOpsRepo struct {
 	OpsRepository
-	overview *OpsDashboardOverview
-	err      error
+	overview              *OpsDashboardOverview
+	err                   error
+	pendingReviewAge      float64
+	pendingReviewAgeError error
 }
 
 func (s *stubOpsRepo) GetDashboardOverview(ctx context.Context, filter *OpsDashboardFilter) (*OpsDashboardOverview, error) {
@@ -26,6 +28,33 @@ func (s *stubOpsRepo) GetDashboardOverview(ctx context.Context, filter *OpsDashb
 		return s.overview, nil
 	}
 	return &OpsDashboardOverview{}, nil
+}
+
+func (s *stubOpsRepo) GetOldestPendingContentModerationReviewAgeSeconds(context.Context) (float64, error) {
+	return s.pendingReviewAge, s.pendingReviewAgeError
+}
+
+func TestComputeRuleMetricContentModerationPendingReviewAge(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	rule := &OpsAlertRule{MetricType: "content_moderation_pending_review_age_seconds"}
+
+	t.Run("returns oldest pending age", func(t *testing.T) {
+		t.Parallel()
+		svc := &OpsAlertEvaluatorService{opsRepo: &stubOpsRepo{pendingReviewAge: 90001}}
+		got, ok := svc.computeRuleMetric(context.Background(), rule, nil, now.Add(-time.Minute), now, "", nil)
+		require.True(t, ok)
+		require.Equal(t, 90001.0, got)
+	})
+
+	t.Run("repository failure skips evaluation", func(t *testing.T) {
+		t.Parallel()
+		svc := &OpsAlertEvaluatorService{opsRepo: &stubOpsRepo{pendingReviewAgeError: context.DeadlineExceeded}}
+		got, ok := svc.computeRuleMetric(context.Background(), rule, nil, now.Add(-time.Minute), now, "", nil)
+		require.False(t, ok)
+		require.Zero(t, got)
+	})
 }
 
 func TestComputeGroupAvailableRatio(t *testing.T) {

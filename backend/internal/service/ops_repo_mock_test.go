@@ -114,6 +114,10 @@ func (m *opsRepoMock) GetLatestSystemMetrics(ctx context.Context, windowMinutes 
 	return &OpsSystemMetricsSnapshot{}, nil
 }
 
+func (m *opsRepoMock) GetOldestPendingContentModerationReviewAgeSeconds(ctx context.Context) (float64, error) {
+	return 0, nil
+}
+
 func (m *opsRepoMock) UpsertJobHeartbeat(ctx context.Context, input *OpsUpsertJobHeartbeatInput) error {
 	return nil
 }

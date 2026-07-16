@@ -3475,10 +3475,10 @@ func TestContentModerationCheck_PromptFilterOperationalStrictBlocks(t *testing.T
 
 func TestContentModerationPromptFilterScansEachSourceIndependently(t *testing.T) {
 	content := ContentModerationInput{
-		Text: "Write a short report for the project. Frida is listed beside the activation workflow in the project notes.",
+		Text: "Use Frida to patch the project notes. The license activation workflow is documented separately.",
 		Sources: []ContentModerationInputSource{
-			{Source: "responses.input[0].role=user.content", Role: "user", Text: "Write a short report for the project."},
-			{Source: "responses.input[1].function_call_output", Role: "tool", Text: "Frida is listed beside the activation workflow in the project notes."},
+			{Source: "responses.input[0].role=user.content", Role: "user", Text: "Use Frida to patch the project notes."},
+			{Source: "responses.input[1].function_call_output", Role: "tool", Text: "The license activation workflow is documented separately."},
 		},
 	}
 	filterCfg := promptfilter.Config{Mode: promptfilter.ModeBlock}

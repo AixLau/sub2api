@@ -9,6 +9,27 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
+func (r *opsRepository) GetOldestPendingContentModerationReviewAgeSeconds(ctx context.Context) (float64, error) {
+	if r == nil || r.db == nil {
+		return 0, fmt.Errorf("nil ops repository")
+	}
+	var ageSeconds float64
+	err := r.db.QueryRowContext(ctx, `
+SELECT COALESCE(
+  EXTRACT(EPOCH FROM (NOW() - MIN(created_at))),
+  0
+)
+FROM content_moderation_logs
+WHERE review_status = 'pending'`).Scan(&ageSeconds)
+	if err != nil {
+		return 0, fmt.Errorf("get oldest pending content moderation review age: %w", err)
+	}
+	if ageSeconds < 0 {
+		return 0, nil
+	}
+	return ageSeconds, nil
+}
+
 func (r *opsRepository) InsertSystemMetrics(ctx context.Context, input *service.OpsInsertSystemMetricsInput) error {
 	if r == nil || r.db == nil {
 		return fmt.Errorf("nil ops repository")

@@ -166,6 +166,15 @@ const metricDefinitions = computed(() => {
       recommendedOperator: '>',
       recommendedThreshold: 10
     },
+    {
+      type: 'content_moderation_pending_review_age_seconds',
+      group: 'system',
+      label: t('admin.ops.alertRules.metrics.contentModerationPendingReviewAge'),
+      description: t('admin.ops.alertRules.metricDescriptions.contentModerationPendingReviewAge'),
+      recommendedOperator: '>',
+      recommendedThreshold: 86400,
+      unit: 's'
+    },
 
     // Group-level metrics (requires group_id filter)
     {

@@ -326,6 +326,7 @@ func contentModerationSemanticGateMetadata(cfg *ContentModerationConfig, content
 	metadata["semantic_review_operationality"] = result.Operationality
 	metadata["semantic_review_executability"] = result.Executability
 	metadata["semantic_review_reason_codes"] = result.ReasonCodes
+	metadata["semantic_review_reason_details"] = result.ReasonDetails
 	metadata["semantic_review_policy_override"] = policyOverride
 	metadata["semantic_review_candidate"] = candidate.Keyword
 	if strings.TrimSpace(candidate.MatchedSource) != "" {

@@ -83,6 +83,7 @@ type ContentModerationSemanticReviewResult struct {
 	Operationality    string      `json:"operationality"`
 	Executability     string      `json:"executability,omitempty"`
 	ReasonCodes       []string    `json:"reason_codes"`
+	ReasonDetails     []string    `json:"-"`
 	Model             string      `json:"model,omitempty"`
 	AccountID         int64       `json:"account_id,omitempty"`
 	UpstreamModel     string      `json:"-"`
@@ -889,6 +890,9 @@ func sanitizeSemanticReviewError(value string) string {
 }
 
 func normalizeSemanticReviewResult(result ContentModerationSemanticReviewResult) ContentModerationSemanticReviewResult {
+	if len(result.ReasonDetails) == 0 {
+		result.ReasonDetails = normalizeSemanticReviewReasonDetails(result.ReasonCodes)
+	}
 	result.Verdict = normalizeSemanticReviewVerdict(result.Verdict)
 	result.Severity = normalizeSemanticReviewSeverity(result.Severity, result.Verdict)
 	result.Operationality = normalizeSemanticReviewOperationality(result.Operationality)
@@ -909,7 +913,7 @@ func normalizeSemanticReviewResult(result ContentModerationSemanticReviewResult)
 	}
 	result.Categories = normalizeSemanticReviewStrings(result.Categories, 8)
 	result.ReasonCodes = normalizeSemanticReviewStrings(result.ReasonCodes, 8)
-	return result
+	return normalizeSemanticReviewTaxonomy(result)
 }
 
 // applySemanticReviewPolicy prevents an explicit harmful, directly executable
@@ -1439,8 +1443,11 @@ func parseSemanticReviewSSE(reader io.Reader, started time.Time) (semanticReview
 			continue
 		}
 		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		if data == "" || data == "[DONE]" {
+		if data == "" {
 			continue
+		}
+		if data == "[DONE]" {
+			return semanticReviewSSEOutput(deltas.String(), completed, usage, requestID, firstTokenMS)
 		}
 		var event map[string]any
 		if json.Unmarshal([]byte(data), &event) != nil {
@@ -1466,12 +1473,19 @@ func parseSemanticReviewSSE(reader io.Reader, started time.Time) (semanticReview
 			}
 			completed = value
 		}
+		if strings.TrimSpace(fmt.Sprint(event["type"])) == "response.completed" {
+			return semanticReviewSSEOutput(deltas.String(), completed, usage, requestID, firstTokenMS)
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		return semanticReviewResponse{}, err
 	}
-	if deltas.Len() > 0 {
-		return semanticReviewResponse{Text: deltas.String(), Usage: usage, RequestID: requestID, FirstTokenMS: firstTokenMS}, nil
+	return semanticReviewSSEOutput(deltas.String(), completed, usage, requestID, firstTokenMS)
+}
+
+func semanticReviewSSEOutput(deltas, completed string, usage OpenAIUsage, requestID string, firstTokenMS *int) (semanticReviewResponse, error) {
+	if deltas != "" {
+		return semanticReviewResponse{Text: deltas, Usage: usage, RequestID: requestID, FirstTokenMS: firstTokenMS}, nil
 	}
 	if completed != "" {
 		return semanticReviewResponse{Text: completed, Usage: usage, RequestID: requestID, FirstTokenMS: firstTokenMS}, nil

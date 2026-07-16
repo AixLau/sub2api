@@ -117,6 +117,20 @@ func (semanticReviewRouterStub) Review(context.Context, ContentModerationSemanti
 	return ContentModerationSemanticReviewResult{Verdict: "allow"}, nil
 }
 
+type semanticReviewTerminalReader struct {
+	data []byte
+	err  error
+}
+
+func (r *semanticReviewTerminalReader) Read(p []byte) (int, error) {
+	if len(r.data) > 0 {
+		n := copy(p, r.data)
+		r.data = r.data[n:]
+		return n, nil
+	}
+	return 0, r.err
+}
+
 func freshSemanticReviewAccount(id int64) *Account {
 	return &Account{
 		ID:       id,
@@ -579,6 +593,32 @@ data: [DONE]
 	require.NoError(t, err)
 	require.NotNil(t, response.FirstTokenMS)
 	require.GreaterOrEqual(t, *response.FirstTokenMS, 40)
+}
+
+func TestParseSemanticReviewSSEReturnsAtDoneWithoutWaitingForEOF(t *testing.T) {
+	reader := &semanticReviewTerminalReader{
+		data: []byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"{\\\"verdict\\\":\\\"allow\\\"}\"}\n\ndata: [DONE]\n\n"),
+		err:  context.DeadlineExceeded,
+	}
+
+	response, err := parseSemanticReviewSSE(reader, time.Time{})
+
+	require.NoError(t, err)
+	require.Equal(t, `{"verdict":"allow"}`, response.Text)
+}
+
+func TestParseSemanticReviewSSEReturnsAtCompletedWithoutWaitingForEOF(t *testing.T) {
+	reader := &semanticReviewTerminalReader{
+		data: []byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_completed\",\"output_text\":\"{\\\"verdict\\\":\\\"review\\\"}\",\"usage\":{\"input_tokens\":7,\"output_tokens\":3}}}\n\n"),
+		err:  context.DeadlineExceeded,
+	}
+
+	response, err := parseSemanticReviewSSE(reader, time.Time{})
+
+	require.NoError(t, err)
+	require.Equal(t, `{"verdict":"review"}`, response.Text)
+	require.Equal(t, "resp_completed", response.RequestID)
+	require.Equal(t, 7, response.Usage.InputTokens)
 }
 
 func TestParseSemanticReviewRiskDimensions(t *testing.T) {

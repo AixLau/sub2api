@@ -67,3 +67,22 @@ func TestMigration177PersistsContentModerationTruncationReasons(t *testing.T) {
 	require.Contains(t, sql, "VALIDATE CONSTRAINT content_moderation_logs_truncate_reasons_array_check")
 	require.Contains(t, sql, "idx_content_moderation_logs_truncate_reasons")
 }
+
+func TestMigration178AddsPendingReviewSLAAlertAndOnlineIndex(t *testing.T) {
+	alertContent, err := FS.ReadFile("178_content_moderation_pending_review_sla_alert.sql")
+	require.NoError(t, err)
+
+	alertSQL := string(alertContent)
+	require.Contains(t, alertSQL, "content_moderation_pending_review_age_seconds")
+	require.Contains(t, alertSQL, "86400")
+	require.Contains(t, alertSQL, "ON CONFLICT (name) DO NOTHING")
+	require.NotContains(t, alertSQL, "CREATE INDEX")
+
+	indexContent, err := FS.ReadFile("178a_content_moderation_pending_review_index_notx.sql")
+	require.NoError(t, err)
+
+	indexSQL := string(indexContent)
+	require.Contains(t, indexSQL, "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_content_moderation_logs_pending_review_created_at")
+	require.Contains(t, indexSQL, "ON content_moderation_logs (created_at)")
+	require.Contains(t, indexSQL, "WHERE review_status = 'pending'")
+}

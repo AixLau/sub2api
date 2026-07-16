@@ -34,6 +34,7 @@ type OpsRepository interface {
 
 	InsertSystemMetrics(ctx context.Context, input *OpsInsertSystemMetricsInput) error
 	GetLatestSystemMetrics(ctx context.Context, windowMinutes int) (*OpsSystemMetricsSnapshot, error)
+	GetOldestPendingContentModerationReviewAgeSeconds(ctx context.Context) (float64, error)
 
 	UpsertJobHeartbeat(ctx context.Context, input *OpsUpsertJobHeartbeatInput) error
 	ListJobHeartbeats(ctx context.Context) ([]*OpsJobHeartbeat, error)

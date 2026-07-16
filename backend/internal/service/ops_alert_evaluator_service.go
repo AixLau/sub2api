@@ -460,6 +460,15 @@ func (s *OpsAlertEvaluatorService) computeRuleMetric(
 			return float64(*systemMetrics.ConcurrencyQueueDepth), true
 		}
 		return 0, false
+	case "content_moderation_pending_review_age_seconds":
+		if s == nil || s.opsRepo == nil {
+			return 0, false
+		}
+		ageSeconds, err := s.opsRepo.GetOldestPendingContentModerationReviewAgeSeconds(ctx)
+		if err != nil {
+			return 0, false
+		}
+		return ageSeconds, true
 	case "group_available_accounts":
 		if groupID == nil || *groupID <= 0 {
 			return 0, false

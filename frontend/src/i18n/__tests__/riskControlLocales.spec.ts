@@ -72,9 +72,13 @@ describe('risk control locale copy', () => {
     expect(zh.admin.riskControl.keywordCategories.accountAbuse).toBe('账号滥用')
     expect(zh.admin.riskControl.keywordSeverities.critical).toBe('严重')
     expect(zh.admin.riskControl.candidateKeywords.reverseEngineeringOperationalRequest).toBe('逆向工程操作请求')
+    expect(zh.admin.riskControl.candidateKeywords.webExploitationUnauthorizedHarmRequest).toContain('未授权')
+    expect(zh.admin.riskControl.candidateKeywords.reverseEngineeringSensitiveCandidate).toBe('敏感逆向工程候选')
     expect(zh.admin.riskControl.decisionSources.semanticReview).toBe('语义审核')
     expect(en.admin.riskControl.moderationCategories.semanticReview).toBe('Semantic review')
     expect(en.admin.riskControl.candidateKeywords.reverseEngineeringOperationalRequest).toBe('Reverse-engineering operation request')
+    expect(en.admin.riskControl.candidateKeywords.pentestUnauthorizedHarmRequest).toContain('Unauthorized')
+    expect(en.admin.riskControl.candidateKeywords.persistence).toBe('Persistence topic')
     expect(en.admin.riskControl.decisionSources.semanticReview).toBe('Semantic review')
   })
 
