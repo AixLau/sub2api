@@ -151,6 +151,21 @@ func TestUserUsageListAdvancedFilters(t *testing.T) {
 	require.NotNil(t, repo.listFilters.EndTime)
 }
 
+func TestUserUsageListUsesExplicitTimeRange(t *testing.T) {
+	repo := &userUsageRepoCapture{}
+	router := newUserUsageRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/usage?start_time=2026-07-15T13:00:00Z&end_time=2026-07-16T13:00:00Z&start_date=bad&end_date=bad", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, repo.listFilters.StartTime)
+	require.NotNil(t, repo.listFilters.EndTime)
+	require.Equal(t, time.Date(2026, 7, 15, 13, 0, 0, 0, time.UTC), *repo.listFilters.StartTime)
+	require.Equal(t, 24*time.Hour, repo.listFilters.EndTime.Sub(*repo.listFilters.StartTime))
+}
+
 func TestUserUsageListInvalidBillingMode(t *testing.T) {
 	repo := &userUsageRepoCapture{}
 	router := newUserUsageRequestTypeTestRouter(repo)
@@ -262,6 +277,21 @@ func TestUserUsageStatsUsesScopedFilters(t *testing.T) {
 	require.NotContains(t, rec.Body.String(), "total_account_cost")
 	require.NotContains(t, rec.Body.String(), "upstream_endpoints")
 	require.NotContains(t, rec.Body.String(), "endpoint_paths")
+}
+
+func TestUserUsageStatsUsesExplicitTimeRange(t *testing.T) {
+	repo := &userUsageRepoCapture{}
+	router := newUserUsageRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/usage/stats?start_time=2026-07-15T13:00:00Z&end_time=2026-07-16T13:00:00Z&start_date=bad&end_date=bad", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, repo.statsFilters.StartTime)
+	require.NotNil(t, repo.statsFilters.EndTime)
+	require.Equal(t, time.Date(2026, 7, 15, 13, 0, 0, 0, time.UTC), *repo.statsFilters.StartTime)
+	require.Equal(t, 24*time.Hour, repo.statsFilters.EndTime.Sub(*repo.statsFilters.StartTime))
 }
 
 func TestUserUsageDashboardModelsOmitsAccountCost(t *testing.T) {

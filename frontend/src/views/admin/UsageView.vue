@@ -246,6 +246,8 @@ const balanceHistoryUser = ref<AdminUser | null>(null)
 
 const breakdownFilters = computed(() => {
   const f: Record<string, any> = {}
+  if (filters.value.start_time) f.start_time = filters.value.start_time
+  if (filters.value.end_time) f.end_time = filters.value.end_time
   if (filters.value.user_id) f.user_id = filters.value.user_id
   if (filters.value.api_key_id) f.api_key_id = filters.value.api_key_id
   if (filters.value.account_id) f.account_id = filters.value.account_id
@@ -288,12 +290,21 @@ const formatLD = (d: Date) => {
   const day = String(d.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
-const getLast24HoursRangeDates = (): { start: string; end: string } => {
+interface UsageRangeParams {
+  start_date: string
+  end_date: string
+  start_time?: string
+  end_time?: string
+}
+
+const getLast24HoursRange = (): UsageRangeParams => {
   const end = new Date()
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
   return {
-    start: formatLD(start),
-    end: formatLD(end)
+    start_date: formatLD(start),
+    end_date: formatLD(end),
+    start_time: start.toISOString(),
+    end_time: end.toISOString()
   }
 }
 const getGranularityForRange = (start: string, end: string): 'day' | 'hour' => {
@@ -302,9 +313,9 @@ const getGranularityForRange = (start: string, end: string): 'day' | 'hour' => {
   const daysDiff = Math.ceil((endTime - startTime) / (1000 * 60 * 60 * 24))
   return daysDiff <= 1 ? 'hour' : 'day'
 }
-const defaultRange = getLast24HoursRangeDates()
-const startDate = ref(defaultRange.start); const endDate = ref(defaultRange.end)
-const filters = ref<AdminUsageQueryParams>({ user_id: undefined, model: undefined, group_id: undefined, request_type: undefined, billing_type: null, start_date: startDate.value, end_date: endDate.value })
+const defaultRange = getLast24HoursRange()
+const startDate = ref(defaultRange.start_date); const endDate = ref(defaultRange.end_date)
+const filters = ref<AdminUsageQueryParams>({ user_id: undefined, model: undefined, group_id: undefined, request_type: undefined, billing_type: null, ...defaultRange })
 const hasSourceFilter = computed(() => Boolean(filters.value.source))
 const pagination = reactive({ page: 1, page_size: getPersistedPageSize(), total: 0 })
 const sortState = reactive({
@@ -354,6 +365,7 @@ const applyRouteQueryFilters = () => {
   const queryStartDate = getSingleQueryValue(route.query.start_date)
   const queryEndDate = getSingleQueryValue(route.query.end_date)
   const queryUserId = getNumericQueryValue(route.query.user_id)
+  const hasRouteDateRange = Boolean(queryStartDate || queryEndDate)
 
   if (queryStartDate) {
     startDate.value = queryStartDate
@@ -367,20 +379,26 @@ const applyRouteQueryFilters = () => {
     exclude_user_ids: serializeExcludeUserIDs(filters.value.exclude_user_ids),
     user_id: queryUserId,
     start_date: startDate.value,
-    end_date: endDate.value
+    end_date: endDate.value,
+    start_time: hasRouteDateRange ? undefined : filters.value.start_time,
+    end_time: hasRouteDateRange ? undefined : filters.value.end_time
   }
   granularity.value = getGranularityForRange(startDate.value, endDate.value)
 }
 
 const onDateRangeChange = (range: { startDate: string; endDate: string; preset: string | null }) => {
-  startDate.value = range.startDate
-  endDate.value = range.endDate
+  const nextRange: UsageRangeParams = range.preset === 'last24Hours'
+    ? getLast24HoursRange()
+    : { start_date: range.startDate, end_date: range.endDate }
+  startDate.value = nextRange.start_date
+  endDate.value = nextRange.end_date
   filters.value = {
     ...filters.value,
-    start_date: range.startDate,
-    end_date: range.endDate
+    ...nextRange,
+    start_time: nextRange.start_time,
+    end_time: nextRange.end_time
   }
-  granularity.value = getGranularityForRange(range.startDate, range.endDate)
+  granularity.value = getGranularityForRange(nextRange.start_date, nextRange.end_date)
   applyFilters()
 }
 
@@ -461,6 +479,8 @@ const loadModelStats = async (source: ModelDistributionSource, force = false) =>
     const baseParams = {
       start_date: filters.value.start_date || startDate.value,
       end_date: filters.value.end_date || endDate.value,
+      start_time: filters.value.start_time,
+      end_time: filters.value.end_time,
       user_id: filters.value.user_id,
       model: filters.value.model,
       api_key_id: filters.value.api_key_id,
@@ -511,6 +531,8 @@ const loadChartData = async () => {
     const snapshot = await adminAPI.dashboard.getSnapshotV2({
       start_date: filters.value.start_date || startDate.value,
       end_date: filters.value.end_date || endDate.value,
+      start_time: filters.value.start_time,
+      end_time: filters.value.end_time,
       granularity: granularity.value,
       user_id: filters.value.user_id,
       model: filters.value.model,
@@ -566,10 +588,10 @@ const refreshData = () => {
   if (rankingMounted.value) rankingRef.value?.reload()
 }
 const resetFilters = () => {
-  const range = getLast24HoursRangeDates()
-  startDate.value = range.start
-  endDate.value = range.end
-  filters.value = { start_date: startDate.value, end_date: endDate.value, request_type: undefined, billing_type: null, billing_mode: undefined, source: null }
+  const range = getLast24HoursRange()
+  startDate.value = range.start_date
+  endDate.value = range.end_date
+  filters.value = { ...range, request_type: undefined, billing_type: null, billing_mode: undefined, source: null }
   granularity.value = getGranularityForRange(startDate.value, endDate.value)
   applyFilters()
 }
@@ -829,8 +851,8 @@ const loadAdminErrors = async () => {
       page: errPage.value,
       page_size: errPageSize.value,
       view: 'all',
-      start_time: toRFC3339(filters.value.start_date),
-      end_time: toRFC3339(filters.value.end_date, true),
+      start_time: filters.value.start_time ?? toRFC3339(filters.value.start_date),
+      end_time: filters.value.end_time ?? toRFC3339(filters.value.end_date, true),
       user_id: filters.value.user_id ?? undefined,
       api_key_id: filters.value.api_key_id ?? undefined,
       account_id: filters.value.account_id ?? undefined,

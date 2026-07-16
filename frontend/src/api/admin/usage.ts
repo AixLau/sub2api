@@ -127,6 +127,8 @@ export async function getStats(params: {
   period?: string
   start_date?: string
   end_date?: string
+  start_time?: string
+  end_time?: string
   timezone?: string
   exclude_user_ids?: number[] | string
   source?: UsageLogSource | null

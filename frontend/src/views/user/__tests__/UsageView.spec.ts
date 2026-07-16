@@ -114,6 +114,10 @@ const endpointDistributionChartStub = {
   props: ['showCost', 'showStandardCost', 'metric'],
   template: '<div class="endpoint-distribution-chart" :data-show-cost="String(showCost)" :data-metric="String(metric)" :data-show-standard-cost="String(showStandardCost)" />',
 }
+const calendarDateRangePickerStub = {
+  emits: ['change'],
+  template: `<button data-test="calendar-range" @click="$emit('change', { startDate: '2026-07-01', endDate: '2026-07-02', preset: 'today' })">calendar</button>`,
+}
 
 const usageLog = {
   id: 1,
@@ -218,12 +222,57 @@ describe('user UsageView', () => {
     expect(getStats).toHaveBeenCalled()
     expect(getDashboardModels).toHaveBeenCalled()
     expect(getDashboardSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
+      start_time: expect.any(String),
+      end_time: expect.any(String),
       include_trend: true,
       include_model_stats: false,
       include_group_stats: true,
     }))
+    const snapshotRange = getDashboardSnapshotV2.mock.calls[0][0] as { start_time: string; end_time: string }
+    expect(new Date(snapshotRange.end_time).getTime() - new Date(snapshotRange.start_time).getTime()).toBe(24 * 60 * 60 * 1000)
+    const exactRange = { start_time: snapshotRange.start_time, end_time: snapshotRange.end_time }
+    expect(query).toHaveBeenCalledWith(expect.objectContaining(exactRange), expect.anything())
+    expect(getStats).toHaveBeenCalledWith(expect.objectContaining(exactRange))
+    expect(getDashboardModels).toHaveBeenCalledWith(expect.objectContaining(exactRange))
     expect(list).toHaveBeenCalledWith(1, 100)
     expect(getAvailable).toHaveBeenCalled()
+  })
+
+  it('clears exact timestamps when switching to a calendar range', async () => {
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: simpleStub,
+          Pagination: true,
+          Select: true,
+          DateRangePicker: calendarDateRangePickerStub,
+          Icon: true,
+          UsageStatsCards: usageStatsCardsStub,
+          UsageTable: usageTableStub,
+          ModelDistributionChart: distributionChartStub,
+          GroupDistributionChart: distributionChartStub,
+          TokenUsageTrend: tokenUsageTrendStub,
+        },
+      },
+    })
+    await flushPromises()
+    query.mockClear()
+    getStats.mockClear()
+    getDashboardModels.mockClear()
+    getDashboardSnapshotV2.mockClear()
+
+    await wrapper.find('[data-test="calendar-range"]').trigger('click')
+    await flushPromises()
+
+    expect(query).toHaveBeenCalledWith(expect.objectContaining({
+      start_date: '2026-07-01',
+      end_date: '2026-07-02',
+      start_time: undefined,
+      end_time: undefined,
+    }), expect.anything())
+    expect(getStats).toHaveBeenCalledWith(expect.objectContaining({ start_time: undefined, end_time: undefined }))
+    expect(getDashboardModels).toHaveBeenCalledWith(expect.objectContaining({ start_time: undefined, end_time: undefined }))
+    expect(getDashboardSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({ start_time: undefined, end_time: undefined }))
   })
 
   it('shows user total consumption while hiding account and standard cost comparisons', async () => {

@@ -310,10 +310,22 @@ let modelStatsReqSeq = 0
 const formatLocalDate = (date: Date): string =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
-const getLast24HoursRangeDates = () => {
+interface UsageRangeParams {
+  start_date: string
+  end_date: string
+  start_time?: string
+  end_time?: string
+}
+
+const getLast24HoursRange = (): UsageRangeParams => {
   const end = new Date()
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
-  return { start: formatLocalDate(start), end: formatLocalDate(end) }
+  return {
+    start_date: formatLocalDate(start),
+    end_date: formatLocalDate(end),
+    start_time: start.toISOString(),
+    end_time: end.toISOString(),
+  }
 }
 
 const getGranularityForRange = (start: string, end: string): 'day' | 'hour' => {
@@ -322,9 +334,9 @@ const getGranularityForRange = (start: string, end: string): 'day' | 'hour' => {
   return Math.ceil((endTime - startTime) / (1000 * 60 * 60 * 24)) <= 1 ? 'hour' : 'day'
 }
 
-const defaultRange = getLast24HoursRangeDates()
-const startDate = ref(defaultRange.start)
-const endDate = ref(defaultRange.end)
+const defaultRange = getLast24HoursRange()
+const startDate = ref(defaultRange.start_date)
+const endDate = ref(defaultRange.end_date)
 const granularity = ref<'day' | 'hour'>(getGranularityForRange(startDate.value, endDate.value))
 
 const modelDistributionMetric = ref<DistributionMetric>('tokens')
@@ -333,8 +345,7 @@ const activeTab = ref<'usage' | 'errors'>('usage')
 const errorViewEnabled = computed(() => appStore.cachedPublicSettings?.allow_user_view_error_requests ?? false)
 
 const filters = ref<UsageQueryParams>({
-  start_date: startDate.value,
-  end_date: endDate.value,
+  ...defaultRange,
   request_type: undefined,
   billing_type: null,
   billing_mode: null,
@@ -515,17 +526,16 @@ const refreshData = () => {
 }
 
 const resetFilters = () => {
-  const range = getLast24HoursRangeDates()
-  startDate.value = range.start
-  endDate.value = range.end
+  const range = getLast24HoursRange()
+  startDate.value = range.start_date
+  endDate.value = range.end_date
   filters.value = {
-    start_date: range.start,
-    end_date: range.end,
+    ...range,
     request_type: undefined,
     billing_type: null,
     billing_mode: null,
   }
-  granularity.value = getGranularityForRange(range.start, range.end)
+  granularity.value = getGranularityForRange(range.start_date, range.end_date)
   applyFilters()
   if (activeTab.value === 'errors') {
     errorFilter.value = { model: '', category: '', api_key_id: null, status_code: null }
@@ -534,11 +544,18 @@ const resetFilters = () => {
 }
 
 const onDateRangeChange = (range: { startDate: string; endDate: string; preset: string | null }) => {
-  startDate.value = range.startDate
-  endDate.value = range.endDate
-  filters.value.start_date = range.startDate
-  filters.value.end_date = range.endDate
-  granularity.value = getGranularityForRange(range.startDate, range.endDate)
+  const nextRange: UsageRangeParams = range.preset === 'last24Hours'
+    ? getLast24HoursRange()
+    : { start_date: range.startDate, end_date: range.endDate }
+  startDate.value = nextRange.start_date
+  endDate.value = nextRange.end_date
+  filters.value = {
+    ...filters.value,
+    ...nextRange,
+    start_time: nextRange.start_time,
+    end_time: nextRange.end_time,
+  }
+  granularity.value = getGranularityForRange(nextRange.start_date, nextRange.end_date)
   applyFilters()
 }
 
@@ -797,6 +814,8 @@ const loadErrors = async () => {
       page_size: errorPageSize.value,
       start_date: startDate.value,
       end_date: endDate.value,
+      start_time: filters.value.start_time,
+      end_time: filters.value.end_time,
       model: (errorFilter.value.model ?? '').trim() || undefined,
       category: errorFilter.value.category || undefined,
       api_key_id: errorFilter.value.api_key_id ?? undefined,

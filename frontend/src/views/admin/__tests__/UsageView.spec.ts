@@ -120,6 +120,10 @@ const GroupDistributionChartStub = {
     </div>
   `,
 }
+const CalendarDateRangePickerStub = {
+  emits: ['change'],
+  template: `<button data-test="calendar-range" @click="$emit('change', { startDate: '2026-07-01', endDate: '2026-07-02', preset: 'today' })">calendar</button>`,
+}
 
 describe('admin UsageView distribution metric toggles', () => {
   beforeEach(() => {
@@ -270,7 +274,19 @@ describe('admin UsageView distribution metric toggles', () => {
     expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
       start_date: formatLocalDate(yesterday),
       end_date: formatLocalDate(now),
+      start_time: expect.any(String),
+      end_time: expect.any(String),
       granularity: 'hour'
+    }))
+    const snapshotRange = getSnapshotV2.mock.calls[0][0] as { start_time: string; end_time: string }
+    expect(new Date(snapshotRange.end_time).getTime() - new Date(snapshotRange.start_time).getTime()).toBe(24 * 60 * 60 * 1000)
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({
+      start_time: snapshotRange.start_time,
+      end_time: snapshotRange.end_time,
+    }), expect.anything())
+    expect(getStats).toHaveBeenCalledWith(expect.objectContaining({
+      start_time: snapshotRange.start_time,
+      end_time: snapshotRange.end_time,
     }))
 
     const modelChart = wrapper.find('[data-test="model-chart"]')
@@ -292,6 +308,55 @@ describe('admin UsageView distribution metric toggles', () => {
     expect(modelChart.find('.metric').text()).toBe('actual_cost')
     expect(groupChart.find('.metric').text()).toBe('actual_cost')
     expect(getSnapshotV2).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears exact timestamps when switching from last 24 hours to a calendar range', async () => {
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          UsageStatsCards: true,
+          UsageFilters: UsageFiltersStub,
+          UsageTable: true,
+          UsageExportProgress: true,
+          UsageCleanupDialog: true,
+          UserBalanceHistoryModal: true,
+          Pagination: true,
+          Select: true,
+          DateRangePicker: CalendarDateRangePickerStub,
+          Icon: true,
+          TokenUsageTrend: true,
+          ModelDistributionChart: true,
+          GroupDistributionChart: true,
+          EndpointDistributionChart: true,
+          UserTokenRanking: true,
+        },
+      },
+    })
+
+    vi.advanceTimersByTime(120)
+    await flushPromises()
+    list.mockClear()
+    getStats.mockClear()
+    getSnapshotV2.mockClear()
+
+    await wrapper.find('[data-test="calendar-range"]').trigger('click')
+    await flushPromises()
+
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({
+      start_date: '2026-07-01',
+      end_date: '2026-07-02',
+      start_time: undefined,
+      end_time: undefined,
+    }), expect.anything())
+    expect(getStats).toHaveBeenCalledWith(expect.objectContaining({
+      start_time: undefined,
+      end_time: undefined,
+    }))
+    expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
+      start_time: undefined,
+      end_time: undefined,
+    }))
   })
 })
 

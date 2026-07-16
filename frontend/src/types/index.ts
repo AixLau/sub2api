@@ -1845,6 +1845,8 @@ export interface UserErrorListParams {
   page_size?: number
   start_date?: string
   end_date?: string
+  start_time?: string
+  end_time?: string
   timezone?: string
   model?: string
   status_code?: number
@@ -1871,6 +1873,8 @@ export interface UsageQueryParams {
   source?: UsageLogSource | null
   start_date?: string
   end_date?: string
+  start_time?: string
+  end_time?: string
   timezone?: string
   sort_by?: string
   sort_order?: 'asc' | 'desc'

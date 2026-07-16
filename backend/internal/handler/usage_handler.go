@@ -150,7 +150,12 @@ func (h *UsageHandler) parseUserUsageFilters(c *gin.Context, requireRange bool) 
 	startDateStr := strings.TrimSpace(c.Query("start_date"))
 	endDateStr := strings.TrimSpace(c.Query("end_date"))
 
-	if startDateStr != "" {
+	if explicitStart, explicitEnd, ok := parseUsageExplicitTimeRange(c); ok {
+		startTime = explicitStart
+		endTime = explicitEnd
+		startPtr = &startTime
+		endPtr = &endTime
+	} else if startDateStr != "" {
 		t, err := timezone.ParseInUserLocation("2006-01-02", startDateStr, userTZ)
 		if err != nil {
 			response.BadRequest(c, "Invalid start_date format, use YYYY-MM-DD")
@@ -159,7 +164,7 @@ func (h *UsageHandler) parseUserUsageFilters(c *gin.Context, requireRange bool) 
 		startTime = t
 		startPtr = &startTime
 	}
-	if endDateStr != "" {
+	if endPtr == nil && endDateStr != "" {
 		t, err := timezone.ParseInUserLocation("2006-01-02", endDateStr, userTZ)
 		if err != nil {
 			response.BadRequest(c, "Invalid end_date format, use YYYY-MM-DD")
@@ -210,6 +215,31 @@ func (h *UsageHandler) parseUserUsageFilters(c *gin.Context, requireRange bool) 
 		StartTime: derefTime(startPtr),
 		EndTime:   derefTime(endPtr),
 	}, true
+}
+
+func parseUsageExplicitTimeRange(c *gin.Context) (time.Time, time.Time, bool) {
+	startRaw := strings.TrimSpace(c.Query("start_time"))
+	endRaw := strings.TrimSpace(c.Query("end_time"))
+	if startRaw == "" || endRaw == "" {
+		return time.Time{}, time.Time{}, false
+	}
+
+	parseTimestamp := func(raw string) (time.Time, error) {
+		if value, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+			return value, nil
+		}
+		return time.Parse(time.RFC3339, raw)
+	}
+
+	startTime, err := parseTimestamp(startRaw)
+	if err != nil {
+		return time.Time{}, time.Time{}, false
+	}
+	endTime, err := parseTimestamp(endRaw)
+	if err != nil || !startTime.Before(endTime) {
+		return time.Time{}, time.Time{}, false
+	}
+	return startTime, endTime, true
 }
 
 func derefTime(value *time.Time) time.Time {
@@ -276,7 +306,10 @@ func (h *UsageHandler) ListErrors(c *gin.Context) {
 
 	// Date range (half-open [start, end)), reuse usage-list semantics.
 	userTZ := c.Query("timezone")
-	if startDateStr := c.Query("start_date"); startDateStr != "" {
+	if explicitStart, explicitEnd, ok := parseUsageExplicitTimeRange(c); ok {
+		filter.StartTime = &explicitStart
+		filter.EndTime = &explicitEnd
+	} else if startDateStr := c.Query("start_date"); startDateStr != "" {
 		t, err := timezone.ParseInUserLocation("2006-01-02", startDateStr, userTZ)
 		if err != nil {
 			response.BadRequest(c, "Invalid start_date format, use YYYY-MM-DD")
@@ -284,14 +317,16 @@ func (h *UsageHandler) ListErrors(c *gin.Context) {
 		}
 		filter.StartTime = &t
 	}
-	if endDateStr := c.Query("end_date"); endDateStr != "" {
-		t, err := timezone.ParseInUserLocation("2006-01-02", endDateStr, userTZ)
-		if err != nil {
-			response.BadRequest(c, "Invalid end_date format, use YYYY-MM-DD")
-			return
+	if filter.EndTime == nil {
+		if endDateStr := c.Query("end_date"); endDateStr != "" {
+			t, err := timezone.ParseInUserLocation("2006-01-02", endDateStr, userTZ)
+			if err != nil {
+				response.BadRequest(c, "Invalid end_date format, use YYYY-MM-DD")
+				return
+			}
+			t = t.AddDate(0, 0, 1)
+			filter.EndTime = &t
 		}
-		t = t.AddDate(0, 0, 1)
-		filter.EndTime = &t
 	}
 
 	filter.Model = strings.TrimSpace(c.Query("model"))
