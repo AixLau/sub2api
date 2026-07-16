@@ -3,6 +3,8 @@ package service
 import (
 	"net/url"
 	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 )
 
 const openAIMaxOutputTokensSupportKey = "openai_responses_max_output_tokens_supported"
@@ -13,6 +15,9 @@ func shouldStripOpenAIAPIKeyMaxOutputTokens(account *Account) bool {
 	}
 	if account.Extra != nil {
 		if supported, ok := account.Extra[openAIMaxOutputTokensSupportKey].(bool); ok && supported {
+			return false
+		}
+		if supported, ok := account.Extra[openai_compat.ExtraKeyResponsesSupported].(bool); ok && supported {
 			return false
 		}
 	}

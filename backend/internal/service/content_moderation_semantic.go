@@ -1197,6 +1197,7 @@ func (s *OpenAIGatewayService) SelectSemanticReviewAccount(ctx context.Context, 
 		OpenAIEndpointCapabilityChatCompletions,
 		false,
 		false,
+		false,
 		PlatformOpenAI,
 	)
 	return selection, err

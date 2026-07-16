@@ -85,18 +85,19 @@ import { buildSubscriptionPlanDisplay, buildSubscriptionPlanDisplayLabels } from
 const props = defineProps<{ plan: SubscriptionPlan; activeSubscriptions?: UserSubscription[] }>()
 const emit = defineEmits<{ select: [plan: SubscriptionPlan] }>()
 const { t } = useI18n()
+const platform = computed(() => props.plan.group_platform || '')
 
 const isRenewal = computed(() =>
   props.activeSubscriptions?.some(s => s.group_id === props.plan.group_id && s.status === 'active') ?? false
 )
 
 // Derived color classes from central config
-const discountClass = computed(() => platformDiscountClass(props.plan.group_platform || ''))
+const discountClass = computed(() => platformDiscountClass(platform.value))
 const planDisplay = computed(() => buildSubscriptionPlanDisplay(props.plan, buildSubscriptionPlanDisplayLabels(t)))
 
-const formattedPrice = computed(() => formatPaymentAmount(props.plan.price, 'CNY'))
+const formattedPrice = computed(() => formatPaymentAmount(props.plan.price, props.plan.currency))
 const formattedOriginalPrice = computed(() =>
-  props.plan.original_price ? formatPaymentAmount(props.plan.original_price, 'CNY') : ''
+  props.plan.original_price ? formatPaymentAmount(props.plan.original_price, props.plan.currency) : ''
 )
 
 const discountText = computed(() => {

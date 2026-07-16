@@ -6,6 +6,7 @@ import ops from './ops'
 import settings from './settings'
 import extensions from './extensions'
 import { mergeLocaleMessages } from '../../merge'
+import audit from './audit'
 
 export default mergeLocaleMessages({
   ...overview,
@@ -14,4 +15,5 @@ export default mergeLocaleMessages({
   ...resources,
   ...ops,
   ...settings,
+  ...audit,
 }, extensions)

@@ -89,6 +89,10 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			return
 		}
 	}
+	if service.IsGPTImageGenerationModel(reqModel) {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "This model is not supported on the Chat Completions endpoint")
+		return
+	}
 
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
 
@@ -142,25 +146,26 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		var accountReleaseFunc func()
 		routingRetry := false
 		if routingStage := h.runOpenAIHTTPRoutingStage(c, OpenAIHTTPRoutingStage{
-			Handler:            h,
-			ReqLog:             reqLog,
-			APIKey:             apiKey,
-			SubjectUserID:      subject.UserID,
-			RequestedModel:     reqModel,
-			SessionHash:        &sessionHash,
-			FailedAccountIDs:   failedAccountIDs,
-			RequiredTransport:  service.OpenAIUpstreamTransportAny,
-			RequiredCapability: service.OpenAIEndpointCapabilityChatCompletions,
-			RequestPlatform:    requestPlatform,
-			Stream:             reqStream,
-			StreamStarted:      &streamStarted,
-			MaxAccountSwitches: maxAccountSwitches,
-			SwitchCount:        &switchCount,
-			LastFailoverErr:    lastFailoverErr,
-			LogPrefix:          "openai_chat_completions",
-			Account:            &account,
-			AccountReleaseFunc: &accountReleaseFunc,
-			Retry:              &routingRetry,
+			Handler:              h,
+			ReqLog:               reqLog,
+			APIKey:               apiKey,
+			SubjectUserID:        subject.UserID,
+			RequestedModel:       reqModel,
+			SessionHash:          &sessionHash,
+			FailedAccountIDs:     failedAccountIDs,
+			RequiredTransport:    service.OpenAIUpstreamTransportAny,
+			RequiredCapability:   service.OpenAIEndpointCapabilityChatCompletions,
+			UseUpstreamTokenCost: true,
+			RequestPlatform:      requestPlatform,
+			Stream:               reqStream,
+			StreamStarted:        &streamStarted,
+			MaxAccountSwitches:   maxAccountSwitches,
+			SwitchCount:          &switchCount,
+			LastFailoverErr:      lastFailoverErr,
+			LogPrefix:            "openai_chat_completions",
+			Account:              &account,
+			AccountReleaseFunc:   &accountReleaseFunc,
+			Retry:                &routingRetry,
 		}); routingStage.Stop {
 			return
 		}
@@ -256,7 +261,13 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, true)
 						return
 					}
-					h.runOpenAIHTTPScheduleResultStage(c, account, false, nil)
+					if failoverErr.ShouldReportAccountScheduleFailure() {
+						h.runOpenAIHTTPScheduleResultStage(c, account, reqModel, false, nil)
+					}
+					if !failoverErr.ShouldRetryNextAccount() {
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
 					// Pool mode: retry on the same account
 					if failoverErr.RetryableOnSameAccount {
 						retryLimit := account.GetPoolModeRetryCount()
@@ -297,7 +308,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					)
 					continue
 				}
-				h.runOpenAIHTTPScheduleResultStage(c, account, false, nil)
+				h.runOpenAIHTTPScheduleResultStage(c, account, reqModel, false, nil)
 				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {

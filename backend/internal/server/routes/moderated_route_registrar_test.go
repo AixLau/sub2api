@@ -1035,14 +1035,18 @@ func TestOpenAIHTTPModeratedRouteRegistrarExposesPipelineStages(t *testing.T) {
 		"POST /chat/completions",
 		"POST /embeddings",
 		"POST /images/edits",
+		"POST /images/edits/async",
 		"POST /images/generations",
+		"POST /images/generations/async",
 		"POST /responses",
 		"POST /responses/*subpath",
 		"POST /v1/alpha/search",
 		"POST /v1/chat/completions",
 		"POST /v1/embeddings",
 		"POST /v1/images/edits",
+		"POST /v1/images/edits/async",
 		"POST /v1/images/generations",
+		"POST /v1/images/generations/async",
 		"POST /v1/messages",
 		"POST /v1/responses",
 		"POST /v1/responses/*subpath",
@@ -1248,6 +1252,7 @@ func postRouteCanReachUpstreamContent(path string) bool {
 		"/chat/completions",
 		"/embeddings",
 		"/images/generations", "/images/edits",
+		"/images/generations/async", "/images/edits/async",
 		"/videos/generations", "/videos/edits", "/videos/extensions":
 		return true
 	}

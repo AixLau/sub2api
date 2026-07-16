@@ -119,6 +119,7 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		service.OpenAIEndpointCapabilityChatCompletions,
 		false,
 		false,
+		false,
 		openAICompatibleRequestPlatform(apiKey),
 		subject.UserID,
 	)

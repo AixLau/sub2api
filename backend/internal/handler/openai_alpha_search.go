@@ -121,21 +121,22 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		var account *service.Account
 		var accountRelease func()
 		if routingStage := h.runOpenAIHTTPRoutingStage(c, OpenAIHTTPRoutingStage{
-			Handler:            h,
-			ReqLog:             reqLog,
-			APIKey:             apiKey,
-			SubjectUserID:      subject.UserID,
-			RequestedModel:     requestedModel,
-			SessionHash:        &sessionHash,
-			FailedAccountIDs:   failedAccountIDs,
-			RequiredTransport:  service.OpenAIUpstreamTransportHTTPSSE,
-			RequiredCapability: service.OpenAIEndpointCapabilityChatCompletions,
-			RequestPlatform:    service.PlatformOpenAI,
-			StreamStarted:      &streamStarted,
-			LastFailoverErr:    lastFailoverErr,
-			LogPrefix:          "openai_alpha_search",
-			Account:            &account,
-			AccountReleaseFunc: &accountRelease,
+			Handler:              h,
+			ReqLog:               reqLog,
+			APIKey:               apiKey,
+			SubjectUserID:        subject.UserID,
+			RequestedModel:       requestedModel,
+			SessionHash:          &sessionHash,
+			FailedAccountIDs:     failedAccountIDs,
+			RequiredTransport:    service.OpenAIUpstreamTransportHTTPSSE,
+			RequiredCapability:   service.OpenAIEndpointCapabilityAlphaSearch,
+			UseUpstreamTokenCost: false,
+			RequestPlatform:      service.PlatformOpenAI,
+			StreamStarted:        &streamStarted,
+			LastFailoverErr:      lastFailoverErr,
+			LogPrefix:            "openai_alpha_search",
+			Account:              &account,
+			AccountReleaseFunc:   &accountRelease,
 		}); routingStage.Stop {
 			return
 		}
@@ -205,7 +206,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 
 		var failoverErr *service.UpstreamFailoverError
 		if !errors.As(err, &failoverErr) {
-			h.runOpenAIHTTPScheduleResultStage(c, account, false, nil)
+			h.runOpenAIHTTPScheduleResultStage(c, account, requestedModel, false, nil)
 			if c.Writer.Size() == writerSizeBeforeForward {
 				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
 			}
@@ -213,7 +214,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			return
 		}
 
-		h.runOpenAIHTTPScheduleResultStage(c, account, false, nil)
+		h.runOpenAIHTTPScheduleResultStage(c, account, requestedModel, false, nil)
 		if c.Writer.Size() != writerSizeBeforeForward {
 			h.handleFailoverExhausted(c, failoverErr, true)
 			return

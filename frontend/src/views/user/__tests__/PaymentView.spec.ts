@@ -1005,7 +1005,7 @@ describe('PaymentView payment recovery', () => {
           PaymentStatusPanel: {
             template: '<button data-test="payment-done" @click="$emit(\'done\')" />',
           },
-          PaymentMethodSelector: {
+          RechargeMethodSelector: {
             props: ['selected'],
             template: '<div data-test="method-selector">{{ selected }}</div>',
           },

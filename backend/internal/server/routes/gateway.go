@@ -120,6 +120,11 @@ func RegisterGatewayRoutes(
 	gateway.Use(opsErrorLogger)
 	gateway.Use(endpointNorm)
 	gateway.Use(gin.HandlerFunc(apiKeyAuth))
+	moderatedGateway.GETNoAudit("/sub2api/billing", intentionalNoAuditRoute(
+		"/v1/sub2api/billing",
+		"GatewayHandler.KeyBillingInfo",
+		"API-key billing lookup reads local billing state and does not submit model-visible content upstream.",
+	), h.Gateway.KeyBillingInfo)
 	gateway.Use(requireGroupAnthropic)
 	{
 		openAIMessagesRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
@@ -300,6 +305,23 @@ func RegisterGatewayRoutes(
 		), func(c *gin.Context) {
 			imagesHandler(c)
 		})
+		moderatedGateway.POST("/images/generations/async", coveredOpenAIHTTPRoute(
+			"/v1/images/generations/async",
+			"OpenAIGatewayHandler.Images",
+			service.ContentModerationProtocolOpenAIImages,
+			"Async image generation uses the same permission and moderation pipeline before task creation.",
+		), h.AsyncImage.Submit)
+		moderatedGateway.POST("/images/edits/async", coveredOpenAIHTTPRoute(
+			"/v1/images/edits/async",
+			"OpenAIGatewayHandler.Images",
+			service.ContentModerationProtocolOpenAIImages,
+			"Async image edits use the same permission and moderation pipeline before task creation.",
+		), h.AsyncImage.Submit)
+		moderatedGateway.GETNoAudit("/images/tasks/:task_id", intentionalNoAuditRoute(
+			"/v1/images/tasks/:task_id",
+			"AsyncImageHandler.Get",
+			"Async image task lookup reads existing task state and does not submit new model-visible content.",
+		), h.AsyncImage.Get)
 		openAIVideoGenerationRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
 			"/v1/videos/generations",
 			"OpenAIGatewayHandler.GrokVideoGeneration",
@@ -511,7 +533,11 @@ func RegisterGatewayRoutes(
 		}
 		h.OpenAIGateway.ResponsesWebSocket(c)
 	})
-	r.GET("/models", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, modelsHandler)
+	moderatedRoot.GETNoAudit("/models", intentionalNoAuditRoute(
+		"/models",
+		"GatewayHandler.Models",
+		"Root model listing does not submit model-visible user content to upstream moderation-sensitive paths.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, modelsHandler)
 	codexDirect := r.Group("/backend-api/codex")
 	moderatedCodexDirect := NewGatewayPipelineRegistrar(codexDirect, openAIHTTPPipelineEntrypoints)
 	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic)
@@ -628,6 +654,23 @@ func RegisterGatewayRoutes(
 	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
 		imagesHandler(c)
 	})
+	moderatedRoot.POST("/images/generations/async", coveredOpenAIHTTPRoute(
+		"/images/generations/async",
+		"OpenAIGatewayHandler.Images",
+		service.ContentModerationProtocolOpenAIImages,
+		"Root async image generation alias uses the same permission and moderation pipeline before task creation.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.AsyncImage.Submit)
+	moderatedRoot.POST("/images/edits/async", coveredOpenAIHTTPRoute(
+		"/images/edits/async",
+		"OpenAIGatewayHandler.Images",
+		service.ContentModerationProtocolOpenAIImages,
+		"Root async image edit alias uses the same permission and moderation pipeline before task creation.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.AsyncImage.Submit)
+	moderatedRoot.GETNoAudit("/images/tasks/:task_id", intentionalNoAuditRoute(
+		"/images/tasks/:task_id",
+		"AsyncImageHandler.Get",
+		"Root async image task lookup reads existing task state and does not submit new model-visible content.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.AsyncImage.Get)
 	moderatedRoot.POST("/images/edits", coveredOpenAIHTTPRoute(
 		"/images/edits",
 		"OpenAIGatewayHandler.Images",

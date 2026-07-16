@@ -129,6 +129,32 @@ func (h *OpenAIGatewayHandler) writeOpenAIHTTPModerationError(c *gin.Context, fo
 // OpenAI HTTP routes that can produce generated images.
 type OpenAIHTTPImagePermissionStage struct{}
 
+// openAIResponsesImageIntentForPlatform keeps platform-specific Responses
+// classification shared by the route-owned image stage and direct-invocation
+// compatibility paths.
+func openAIResponsesImageIntentForPlatform(apiKey *service.APIKey, model string, body []byte) bool {
+	return service.IsImageGenerationIntentForPlatform("/v1/responses", model, body, openAICompatibleRequestPlatform(apiKey))
+}
+
+// rejectDirectOpenAIResponsesImagePermission is a compatibility guard for
+// internal callers that invoke Responses without the registrar. Production
+// routes carry route metadata and remain owned exclusively by the pre-forward
+// pipeline, including slot acquisition and cleanup.
+func (h *OpenAIGatewayHandler) rejectDirectOpenAIResponsesImagePermission(c *gin.Context, apiKey *service.APIKey, imageIntent bool) bool {
+	if _, registered := moderationcoverage.RouteMetaFromContext(c); registered || !imageIntent {
+		return false
+	}
+	var group *service.Group
+	if apiKey != nil {
+		group = apiKey.Group
+	}
+	if service.GroupAllowsImageGeneration(group) {
+		return false
+	}
+	h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
+	return true
+}
+
 func (OpenAIHTTPImagePermissionStage) Name() string {
 	return "image_permission"
 }

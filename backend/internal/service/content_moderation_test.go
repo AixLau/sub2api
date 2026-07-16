@@ -5222,7 +5222,7 @@ func TestContentModerationStatusIncludesRouteCoverage(t *testing.T) {
 
 	status, err := svc.GetStatus(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, "2026-07-13.12", status.RouteCoverage.ManifestVersion)
+	require.Equal(t, "2026-07-16.1", status.RouteCoverage.ManifestVersion)
 	require.Equal(t, expectedCoverage.manifestVersion, status.RouteCoverage.ManifestVersion)
 	require.NotEmpty(t, status.RouteCoverage.ManifestHash)
 	require.Equal(t, moderationcoverage.HashFromEntries(expectedCoverage.entries), status.RouteCoverage.ManifestHash)
@@ -6144,7 +6144,7 @@ func loadContentModerationGatewayCoverageForStatus(t *testing.T) struct {
 	var manifest contentModerationGatewayCoverageForStatus
 	require.NoError(t, json.Unmarshal(data, &manifest))
 	require.Equal(t, 1, manifest.SchemaVersion)
-	require.Equal(t, "2026-07-13.12", manifest.ManifestVersion)
+	require.Equal(t, "2026-07-16.1", manifest.ManifestVersion)
 
 	result := struct {
 		manifestVersion string

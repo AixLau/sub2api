@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "manifest_version": "2026-07-13.12",
+  "manifest_version": "2026-07-16.1",
   "entries": [
     {
       "route": {
@@ -1491,6 +1491,86 @@
       ],
       "status": "covered",
       "review_reason": "Image edit permission is checked before moderation; prompt and image metadata are then moderated before scheduling and upstream forwarding."
+    },
+    {
+      "route": { "method": "POST", "path": "/v1/images/generations/async", "handler": "OpenAIGatewayHandler.Images", "protocol": "openai_images" },
+      "method": "POST",
+      "path": "/v1/images/generations/async",
+      "handler": "OpenAIGatewayHandler.Images",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_images",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        { "stage": "moderation", "required": true, "covered": true },
+        { "stage": "image", "required": true, "covered": true },
+        { "stage": "billing", "required": true, "covered": true },
+        { "stage": "routing", "required": true, "covered": true },
+        { "stage": "forward", "required": true, "covered": true },
+        { "stage": "usage", "required": true, "covered": true }
+      ],
+      "status": "covered",
+      "review_reason": "Async image generation uses the same permission and moderation pipeline before task creation."
+    },
+    {
+      "route": { "method": "POST", "path": "/v1/images/edits/async", "handler": "OpenAIGatewayHandler.Images", "protocol": "openai_images" },
+      "method": "POST",
+      "path": "/v1/images/edits/async",
+      "handler": "OpenAIGatewayHandler.Images",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_images",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        { "stage": "moderation", "required": true, "covered": true },
+        { "stage": "image", "required": true, "covered": true },
+        { "stage": "billing", "required": true, "covered": true },
+        { "stage": "routing", "required": true, "covered": true },
+        { "stage": "forward", "required": true, "covered": true },
+        { "stage": "usage", "required": true, "covered": true }
+      ],
+      "status": "covered",
+      "review_reason": "Async image edits use the same permission and moderation pipeline before task creation."
+    },
+    {
+      "route": { "method": "POST", "path": "/images/generations/async", "handler": "OpenAIGatewayHandler.Images", "protocol": "openai_images" },
+      "method": "POST",
+      "path": "/images/generations/async",
+      "handler": "OpenAIGatewayHandler.Images",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_images",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        { "stage": "moderation", "required": true, "covered": true },
+        { "stage": "image", "required": true, "covered": true },
+        { "stage": "billing", "required": true, "covered": true },
+        { "stage": "routing", "required": true, "covered": true },
+        { "stage": "forward", "required": true, "covered": true },
+        { "stage": "usage", "required": true, "covered": true }
+      ],
+      "status": "covered",
+      "review_reason": "Root async image generation alias uses the same permission and moderation pipeline before task creation."
+    },
+    {
+      "route": { "method": "POST", "path": "/images/edits/async", "handler": "OpenAIGatewayHandler.Images", "protocol": "openai_images" },
+      "method": "POST",
+      "path": "/images/edits/async",
+      "handler": "OpenAIGatewayHandler.Images",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_images",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        { "stage": "moderation", "required": true, "covered": true },
+        { "stage": "image", "required": true, "covered": true },
+        { "stage": "billing", "required": true, "covered": true },
+        { "stage": "routing", "required": true, "covered": true },
+        { "stage": "forward", "required": true, "covered": true },
+        { "stage": "usage", "required": true, "covered": true }
+      ],
+      "status": "covered",
+      "review_reason": "Root async image edit alias uses the same permission and moderation pipeline before task creation."
     },
     {
       "route": {

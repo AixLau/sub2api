@@ -119,23 +119,24 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		var accountReleaseFunc func()
 		routingRetry := false
 		if routingStage := h.runOpenAIHTTPRoutingStage(c, OpenAIHTTPRoutingStage{
-			Handler:            h,
-			ReqLog:             reqLog,
-			APIKey:             apiKey,
-			SubjectUserID:      subject.UserID,
-			RequestedModel:     reqModel,
-			FailedAccountIDs:   failedAccountIDs,
-			RequiredTransport:  service.OpenAIUpstreamTransportHTTPSSE,
-			RequiredCapability: service.OpenAIEndpointCapabilityEmbeddings,
-			RequestPlatform:    requestPlatform,
-			MaxAccountSwitches: maxAccountSwitches,
-			SwitchCount:        &switchCount,
-			LastFailoverErr:    lastFailoverErr,
-			ErrorFormat:        openAIHTTPRoutingErrorEmbeddings,
-			LogPrefix:          "openai_embeddings",
-			Account:            &account,
-			AccountReleaseFunc: &accountReleaseFunc,
-			Retry:              &routingRetry,
+			Handler:              h,
+			ReqLog:               reqLog,
+			APIKey:               apiKey,
+			SubjectUserID:        subject.UserID,
+			RequestedModel:       reqModel,
+			FailedAccountIDs:     failedAccountIDs,
+			RequiredTransport:    service.OpenAIUpstreamTransportHTTPSSE,
+			RequiredCapability:   service.OpenAIEndpointCapabilityEmbeddings,
+			UseUpstreamTokenCost: true,
+			RequestPlatform:      requestPlatform,
+			MaxAccountSwitches:   maxAccountSwitches,
+			SwitchCount:          &switchCount,
+			LastFailoverErr:      lastFailoverErr,
+			ErrorFormat:          openAIHTTPRoutingErrorEmbeddings,
+			LogPrefix:            "openai_embeddings",
+			Account:              &account,
+			AccountReleaseFunc:   &accountReleaseFunc,
+			Retry:                &routingRetry,
 		}); routingStage.Stop {
 			return
 		}
@@ -198,7 +199,14 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 					h.handleFailoverExhausted(c, failoverErr, true)
 					return
 				}
-				h.runOpenAIHTTPScheduleResultStage(c, account, false, nil)
+				h.runOpenAIHTTPScheduleResultStage(c, account, reqModel, false, nil)
+				if failoverClientGone(c) {
+					reqLog.Info("openai_embeddings.failover_aborted_client_disconnected",
+						zap.Int64("account_id", account.ID),
+						zap.Int("upstream_status", failoverErr.StatusCode),
+					)
+					return
+				}
 				h.gatewayService.RecordOpenAIAccountSwitch()
 				failedAccountIDs[account.ID] = struct{}{}
 				h.gatewayService.CooldownUserAccount(c.Request.Context(), subject.UserID, account.ID, h.gatewayService.UserAccountCooldownTTL(c.Request.Context()))
@@ -216,7 +224,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 				)
 				continue
 			}
-			h.runOpenAIHTTPScheduleResultStage(c, account, false, nil)
+			h.runOpenAIHTTPScheduleResultStage(c, account, reqModel, false, nil)
 			if c.Writer.Size() == writerSizeBeforeForward {
 				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
 			}
