@@ -134,9 +134,7 @@ func TestExtractionCompletenessUnsupportedNestedRequiredValues(t *testing.T) {
 func TestExtractionCompletenessRejectsUnknownContentShapes(t *testing.T) {
 	tests := []struct{ name, protocol, body string }{
 		{"chat future block", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":[{"type":"future_text","text":"unsafe"}]}]}`},
-		{"responses future block", ContentModerationProtocolOpenAIResponses, `{"input":[{"role":"user","content":[{"type":"future_text","text":"unsafe"}]}]}`},
 		{"anthropic future block", ContentModerationProtocolAnthropicMessages, `{"messages":[{"role":"user","content":[{"type":"future_text","text":"unsafe"}]}]}`},
-		{"responses future item", ContentModerationProtocolOpenAIResponses, `{"input":[{"type":"future_text","text":"unsafe"}]}`},
 		{"chat tool call missing function", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":"safe","tool_calls":[{"type":"function"}]}]}`},
 		{"chat function call missing arguments", ContentModerationProtocolOpenAIChat, `{"messages":[{"role":"user","content":"safe","function_call":{"name":"run"}}]}`},
 		{"gemini camel response scalar", ContentModerationProtocolGemini, `{"contents":[{"role":"user","parts":[{"functionResponse":42}]}]}`},
@@ -182,8 +180,26 @@ func TestResponsesExtractionAcceptsUnknownMessageEnvelopeWithKnownContent(t *tes
 	require.Equal(t, "user", input.Sources[0].Role)
 }
 
-func TestResponsesExtractionKeepsUnknownDirectContentBlockStrict(t *testing.T) {
+func TestResponsesExtractionAcceptsUnknownDirectTextItem(t *testing.T) {
 	body := []byte(`{"input":[{"type":"future_text","role":"user","text":"unsafe direct content"}]}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeUserOnly)
+
+	require.False(t, input.Truncated, input.TruncateReasons)
+	require.Equal(t, "unsafe direct content", input.Text)
+}
+
+func TestResponsesExtractionAcceptsUnknownNestedTextBlock(t *testing.T) {
+	body := []byte(`{"input":[{"type":"message","role":"user","content":[{"type":"future_text","text":"unsafe nested content"}]}]}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeUserOnly)
+
+	require.False(t, input.Truncated, input.TruncateReasons)
+	require.Equal(t, "unsafe nested content", input.Text)
+}
+
+func TestResponsesExtractionKeepsUnextractableUnknownItemStrict(t *testing.T) {
+	body := []byte(`{"input":[{"type":"future_binary","role":"user","payload":42}]}`)
 
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeUserOnly)
 
@@ -1469,6 +1485,31 @@ func TestExtractContentModerationInput_DeduplicatesRepeatedSourceTextWithinReque
 
 	require.Equal(t, "重复文本 新的文本", input.Text)
 	require.Len(t, input.Sources, 2)
+}
+
+func TestDeduplicateContentModerationInputMergesTruncationForSameRole(t *testing.T) {
+	input := ContentModerationInput{Sources: []ContentModerationInputSource{
+		{Source: "responses.input[0]", Role: "user", Text: "same text"},
+		{Source: "responses.input[1]", Role: "user", Text: "same text", Truncated: true, TruncateReasons: []string{"unsupported_required_value"}},
+	}}
+
+	deduplicateContentModerationInput(&input)
+
+	require.Len(t, input.Sources, 1)
+	require.True(t, input.Sources[0].Truncated)
+	require.Equal(t, []string{"unsupported_required_value"}, input.Sources[0].TruncateReasons)
+}
+
+func TestDeduplicateContentModerationInputPreservesDifferentRoles(t *testing.T) {
+	input := ContentModerationInput{Sources: []ContentModerationInputSource{
+		{Source: "responses.input[0]", Role: "tool", Text: "same text"},
+		{Source: "responses.input[1]", Role: "user", Text: "same text"},
+	}}
+
+	deduplicateContentModerationInput(&input)
+
+	require.Len(t, input.Sources, 2)
+	require.Equal(t, []string{"tool", "user"}, []string{input.Sources[0].Role, input.Sources[1].Role})
 }
 
 func TestExtractContentModerationInput_ScansJSONToolResultTextValues(t *testing.T) {

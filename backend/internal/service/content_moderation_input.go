@@ -179,8 +179,10 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 		switch typ {
 		case "", "text", "input_text", "output_text", "refusal", "summary_text", "message", "image_url", "input_image", "image", "tool_result", "tool_use":
 		default:
-			state.markTruncated("unsupported_required_value")
-			return
+			if protocol != ContentModerationProtocolOpenAIResponses || !responsesContentValueHasModerationData(value) {
+				state.markTruncated("unsupported_required_value")
+				return
+			}
 		}
 		requireString := func(field gjson.Result) {
 			if field.Exists() && field.Type != gjson.String {
@@ -935,9 +937,9 @@ func collectResponsesInputItem(item gjson.Result, parts *[]string, images *[]str
 		return
 	}
 	if isResponsesUserTextItem(item) {
-		collectContentValue(item.Get("content"), parts, images)
+		collectResponsesContentValue(item.Get("content"), parts, images)
 		if item.Get("type").String() == "input_text" || item.Get("text").Exists() {
-			collectContentValue(item, parts, images)
+			collectResponsesContentValue(item, parts, images)
 		}
 	}
 }
@@ -957,19 +959,58 @@ func isResponsesUserTextItem(item gjson.Result) bool {
 func responseItemHasModerationText(item gjson.Result) bool {
 	var parts []string
 	var images []string
-	collectContentValue(item.Get("content"), &parts, &images)
+	collectResponsesContentValue(item.Get("content"), &parts, &images)
 	if item.Get("type").String() == "input_text" || item.Get("text").Exists() {
-		collectContentValue(item, &parts, &images)
+		collectResponsesContentValue(item, &parts, &images)
 	}
 	return normalizeContentModerationText(strings.Join(parts, "\n")) != "" || len(images) > 0
 }
 
 func isExtractableUnknownResponsesMessageEnvelope(item gjson.Result) bool {
-	content := item.Get("content")
-	if !content.Exists() || (content.Type != gjson.String && !content.IsArray() && !content.IsObject()) {
-		return false
-	}
 	return responseItemHasModerationText(item)
+}
+
+func responsesContentValueHasModerationData(value gjson.Result) bool {
+	var parts []string
+	var images []string
+	collectResponsesContentValue(value, &parts, &images)
+	return normalizeContentModerationText(strings.Join(parts, "\n")) != "" || len(images) > 0
+}
+
+func collectResponsesContentValue(value gjson.Result, parts *[]string, images *[]string) {
+	switch {
+	case !value.Exists():
+		return
+	case value.Type == gjson.String:
+		addModerationRawText(parts, value.String())
+	case value.IsArray():
+		value.ForEach(func(_, item gjson.Result) bool {
+			collectResponsesContentValue(item, parts, images)
+			return true
+		})
+	case value.IsObject():
+		addModerationImage(images, value.Get("image_url.url").String())
+		addModerationImage(images, value.Get("image_url").String())
+		addModerationImage(images, value.Get("url").String())
+		addModerationImage(images, value.Get("source.url").String())
+		addModerationImageData(images, value.Get("source.media_type").String(), value.Get("source.data").String())
+		addModerationImageData(images, value.Get("source.mediaType").String(), value.Get("source.data").String())
+		addModerationImageData(images, value.Get("media_type").String(), value.Get("data").String())
+		addModerationImageData(images, value.Get("mime_type").String(), value.Get("data").String())
+		addModerationImageData(images, value.Get("mimeType").String(), value.Get("data").String())
+		addModerationImage(images, value.Get("source.data").String())
+		addModerationImage(images, value.Get("data").String())
+		addModerationImage(images, value.Get("base64").String())
+		if text := value.Get("text"); text.Type == gjson.String {
+			addModerationRawText(parts, text.String())
+		}
+		if refusal := value.Get("refusal"); refusal.Type == gjson.String {
+			addModerationRawText(parts, refusal.String())
+		}
+		if content := value.Get("content"); content.Exists() {
+			collectResponsesContentValue(content, parts, images)
+		}
+	}
 }
 
 func isResponsesClientSuppliedToolOutputItem(item gjson.Result) bool {
@@ -1656,7 +1697,7 @@ func deduplicateContentModerationInput(input *ContentModerationInput) {
 	if input == nil || len(input.Sources) == 0 {
 		return
 	}
-	seen := make(map[string]struct{}, len(input.Sources))
+	seen := make(map[string]int, len(input.Sources))
 	out := make([]ContentModerationInputSource, 0, len(input.Sources))
 	parts := make([]string, 0, len(input.Sources))
 	for _, source := range input.Sources {
@@ -1664,17 +1705,22 @@ func deduplicateContentModerationInput(input *ContentModerationInput) {
 		if text == "" {
 			continue
 		}
-		key := normalizeKeywordComparable(text)
-		if _, ok := seen[key]; ok {
+		role := strings.ToLower(strings.TrimSpace(source.Role))
+		key := role + "\x00" + normalizeKeywordComparable(text)
+		if existingIndex, ok := seen[key]; ok {
+			existing := &out[existingIndex]
+			existing.TruncateReasons = normalizeContentModerationTruncateReasons(append(existing.TruncateReasons, source.TruncateReasons...))
+			existing.Truncated = existing.Truncated || source.Truncated || len(existing.TruncateReasons) > 0
 			continue
 		}
-		seen[key] = struct{}{}
+		reasons := normalizeContentModerationTruncateReasons(source.TruncateReasons)
+		seen[key] = len(out)
 		out = append(out, ContentModerationInputSource{
 			Source:          source.Source,
-			Role:            source.Role,
+			Role:            role,
 			Text:            text,
-			Truncated:       source.Truncated,
-			TruncateReasons: append([]string(nil), source.TruncateReasons...),
+			Truncated:       source.Truncated || len(reasons) > 0,
+			TruncateReasons: reasons,
 		})
 		parts = append(parts, text)
 	}

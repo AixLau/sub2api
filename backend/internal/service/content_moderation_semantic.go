@@ -39,6 +39,7 @@ const (
 	ContentModerationSemanticReviewDefaultMaxInputRunes = 4_000
 	contentModerationSemanticReviewMaxSources           = 3
 	contentModerationSemanticReviewExcerptRunes         = 1_200
+	contentModerationSemanticReviewQuotaSyncTimeout     = 500 * time.Millisecond
 	contentModerationSemanticReviewQuotaRefreshTimeout  = 5 * time.Second
 	contentModerationSemanticReviewQuotaRefreshWorkers  = 2
 	contentModerationSemanticReviewMaxResponseBytes     = 1 << 20
@@ -109,13 +110,9 @@ type ContentModerationSemanticReviewRouter interface {
 type contentModerationSemanticReviewOutboxInput struct {
 	RequestID   string `json:"request_id,omitempty"`
 	UserID      int64  `json:"user_id,omitempty"`
-	UserEmail   string `json:"user_email,omitempty"`
 	APIKeyID    int64  `json:"api_key_id,omitempty"`
-	APIKeyName  string `json:"api_key_name,omitempty"`
 	GroupID     *int64 `json:"group_id,omitempty"`
-	GroupName   string `json:"group_name,omitempty"`
 	AccountID   int64  `json:"account_id,omitempty"`
-	AccountName string `json:"account_name,omitempty"`
 	AccountType string `json:"account_type,omitempty"`
 	Endpoint    string `json:"endpoint,omitempty"`
 	Provider    string `json:"provider,omitempty"`
@@ -157,9 +154,9 @@ func contentModerationSemanticReviewConfigForProviderFallback(cfg *ContentModera
 
 func contentModerationSemanticReviewOutboxInputFromCheck(input ContentModerationCheckInput) contentModerationSemanticReviewOutboxInput {
 	return contentModerationSemanticReviewOutboxInput{
-		RequestID: input.RequestID, UserID: input.UserID, UserEmail: input.UserEmail,
-		APIKeyID: input.APIKeyID, APIKeyName: input.APIKeyName, GroupID: cloneInt64Ptr(input.GroupID),
-		GroupName: input.GroupName, AccountID: input.AccountID, AccountName: input.AccountName,
+		RequestID: input.RequestID, UserID: input.UserID,
+		APIKeyID: input.APIKeyID, GroupID: cloneInt64Ptr(input.GroupID),
+		AccountID:   input.AccountID,
 		AccountType: input.AccountType, Endpoint: input.Endpoint, Provider: input.Provider,
 		Model: input.Model, Protocol: input.Protocol,
 	}
@@ -167,9 +164,9 @@ func contentModerationSemanticReviewOutboxInputFromCheck(input ContentModeration
 
 func (in contentModerationSemanticReviewOutboxInput) checkInput() ContentModerationCheckInput {
 	return ContentModerationCheckInput{
-		RequestID: in.RequestID, UserID: in.UserID, UserEmail: in.UserEmail,
-		APIKeyID: in.APIKeyID, APIKeyName: in.APIKeyName, GroupID: cloneInt64Ptr(in.GroupID),
-		GroupName: in.GroupName, AccountID: in.AccountID, AccountName: in.AccountName,
+		RequestID: in.RequestID, UserID: in.UserID,
+		APIKeyID: in.APIKeyID, GroupID: cloneInt64Ptr(in.GroupID),
+		AccountID:   in.AccountID,
 		AccountType: in.AccountType, Endpoint: in.Endpoint, Provider: in.Provider,
 		Model: in.Model, Protocol: in.Protocol,
 	}
@@ -465,29 +462,26 @@ func (s *ContentModerationService) processContentModerationSemanticReviewEvent(c
 		s.metrics.observeSemanticReview(result.Model, result.Verdict, started, result.Usage)
 	}
 	result, _ = applySemanticReviewPolicy(result)
-	if result.Verdict == "allow" {
-		return nil
-	}
 	content := ContentModerationInput{Text: textToReview}
 	content.Normalize()
-	categoryScores := make(map[string]float64, len(result.Categories))
-	for _, category := range result.Categories {
-		categoryScores[category] = result.Confidence
-	}
-	if len(categoryScores) == 0 {
-		categoryScores["semantic_review"] = result.Confidence
-	}
-	highestCategory := "semantic_review"
-	if len(result.Categories) > 0 {
-		highestCategory = result.Categories[0]
-	}
-	action := ContentModerationActionSemanticReviewReview
-	if result.Verdict == "reject" {
+	highestCategory, confidence, categoryScores := semanticReviewCategorySummary(result)
+	action := ContentModerationActionSemanticReviewAllow
+	flagged := false
+	if result.Verdict == "review" {
+		action = ContentModerationActionSemanticReviewReview
+		flagged = true
+	} else if result.Verdict == "reject" {
 		action = ContentModerationActionSemanticReviewReject
+		flagged = true
 	}
-	log := s.buildLog(input, cfg, action, true, highestCategory, result.Confidence, categoryScores, content.Text, nil, nil, "")
+	log := s.buildLog(input, cfg, action, flagged, highestCategory, confidence, categoryScores, content.Text, nil, nil, "")
 	log.DecisionID = payload.SemanticReview.DecisionID
-	log.ReviewStatus = ContentModerationReviewStatusPending
+	log.DecisionSource = contentModerationDecisionSourceSemantic
+	log.ModerationProvider = "platform_openai"
+	log.ModerationModel = strings.TrimSpace(result.Model)
+	if flagged {
+		log.ReviewStatus = ContentModerationReviewStatusPending
+	}
 	log.RiskContextType = "semantic_review"
 	log.RiskContextReason = semanticReviewLogReason(result)
 	log.KeywordCategory = highestCategory
@@ -498,6 +492,22 @@ func (s *ContentModerationService) processContentModerationSemanticReviewEvent(c
 	s.persistContentModerationLog(ctx, cfg, log, payload.SemanticReview.InputHash, false, false)
 	s.asyncProcessed.Add(1)
 	return nil
+}
+
+func semanticReviewCategorySummary(result ContentModerationSemanticReviewResult) (string, float64, map[string]float64) {
+	result = normalizeSemanticReviewResult(result)
+	category := "semantic_review"
+	if len(result.Categories) > 0 {
+		category = result.Categories[0]
+	}
+	scores := make(map[string]float64, max(1, len(result.Categories)))
+	for _, item := range result.Categories {
+		scores[item] = result.Confidence
+	}
+	if len(scores) == 0 {
+		scores[category] = result.Confidence
+	}
+	return category, result.Confidence, scores
 }
 
 func semanticReviewLogReason(result ContentModerationSemanticReviewResult) string {
@@ -577,7 +587,9 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 			}
 			account := selection.Account
 			if account.Type == AccountTypeOAuth && isCodexSparkModel(model) && semanticReviewQuotaSnapshotStale(account, time.Now()) {
-				r.refreshSemanticReviewQuotaAsync(account.ID)
+				if updates, refreshErr := r.refreshSemanticReviewQuotaSync(reviewCtx, account.ID); refreshErr == nil {
+					account = semanticReviewAccountSnapshotWithExtra(account, updates)
+				}
 			}
 			if account.Type == AccountTypeOAuth && semanticReviewQuotaExhausted(account, model, time.Now()) {
 				excluded[account.ID] = struct{}{}
@@ -711,6 +723,45 @@ func (r *openAIContentModerationSemanticReviewRouter) refreshSemanticReviewQuota
 	}
 	updates, _ := value.(map[string]any)
 	return updates, nil
+}
+
+func (r *openAIContentModerationSemanticReviewRouter) refreshSemanticReviewQuotaSync(ctx context.Context, accountID int64) (map[string]any, error) {
+	if r == nil || r.quota == nil || accountID <= 0 {
+		return nil, errors.New("semantic review quota refresher is unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, contentModerationSemanticReviewQuotaSyncTimeout)
+	defer cancel()
+	result := r.refresh.DoChan(fmt.Sprintf("%d", accountID), func() (any, error) {
+		refreshCtx, refreshCancel := context.WithTimeout(context.Background(), contentModerationSemanticReviewQuotaSyncTimeout)
+		defer refreshCancel()
+		return r.quota.RefreshSemanticReviewQuota(refreshCtx, accountID)
+	})
+	select {
+	case <-waitCtx.Done():
+		return nil, waitCtx.Err()
+	case refreshed := <-result:
+		if refreshed.Err != nil {
+			return nil, refreshed.Err
+		}
+		updates, _ := refreshed.Val.(map[string]any)
+		return updates, nil
+	}
+}
+
+func semanticReviewAccountSnapshotWithExtra(account *Account, updates map[string]any) *Account {
+	if account == nil || len(updates) == 0 {
+		return account
+	}
+	snapshot := *account
+	snapshot.Extra = make(map[string]any, len(account.Extra)+len(updates))
+	for key, value := range account.Extra {
+		snapshot.Extra[key] = value
+	}
+	mergeAccountExtra(&snapshot, updates)
+	return &snapshot
 }
 
 func (r *openAIContentModerationSemanticReviewRouter) refreshSemanticReviewQuotaAsync(accountID int64) {
@@ -1056,7 +1107,7 @@ func normalizeSemanticReviewStrings(values []string, max int) []string {
 	seen := make(map[string]struct{}, len(values))
 	out := make([]string, 0, min(len(values), max))
 	for _, value := range values {
-		value = strings.TrimSpace(strings.ToLower(value))
+		value = trimRunes(strings.TrimSpace(strings.ToLower(value)), 64)
 		if value == "" {
 			continue
 		}

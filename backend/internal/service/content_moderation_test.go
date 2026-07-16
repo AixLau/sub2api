@@ -2996,6 +2996,7 @@ func TestContentModerationOutboxPersistsBlockedSideEffects(t *testing.T) {
 		nil,
 	)
 	svc.SetOutboxRepository(outbox)
+	svc.SetRawRequestSnapshotStore(nil, contentModerationTestEncryptor{})
 
 	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
 		RequestID: "req-outbox-1",
@@ -3019,6 +3020,15 @@ func TestContentModerationOutboxPersistsBlockedSideEffects(t *testing.T) {
 	for _, event := range events {
 		eventTypes = append(eventTypes, event.EventType+":"+event.Priority)
 		require.NotEmpty(t, event.DecisionID)
+		rawPayload, marshalErr := json.Marshal(event.Payload)
+		require.NoError(t, marshalErr)
+		require.Contains(t, string(rawPayload), "record_encrypted")
+		require.Contains(t, string(rawPayload), contentModerationOutboxRecordEncoding)
+		require.NotContains(t, string(rawPayload), "user@example.com")
+		require.NotContains(t, string(rawPayload), "forbidden content")
+		require.NotContains(t, string(rawPayload), "input_excerpt")
+		require.NotContains(t, string(rawPayload), "api_key_name")
+		require.NotContains(t, event.Payload, "input_hash")
 	}
 	require.ElementsMatch(t, []string{
 		ContentModerationOutboxEventLogWrite + ":" + ContentModerationOutboxPriorityStrong,
@@ -3037,6 +3047,50 @@ func TestContentModerationOutboxPersistsBlockedSideEffects(t *testing.T) {
 	require.True(t, logs[0].AutoBanned)
 	require.Equal(t, StatusDisabled, userRepo.user.Status)
 	require.Len(t, outbox.snapshotSucceeded(), 5)
+}
+
+func TestContentModerationOutboxEncryptsInputHashInsideRecord(t *testing.T) {
+	svc := &ContentModerationService{rawRequestEncryptor: contentModerationTestEncryptor{}}
+	payload, err := svc.encryptedContentModerationOutboxPayload(
+		&ContentModerationLog{DecisionID: "decision-encrypted-hash"},
+		nil,
+		"sensitive-input-hash",
+	)
+	require.NoError(t, err)
+	require.NotContains(t, contentModerationOutboxPayloadMap(payload), "input_hash")
+
+	decoded, err := svc.decryptContentModerationOutboxPayload(payload)
+	require.NoError(t, err)
+	require.Equal(t, "sensitive-input-hash", decoded.InputHash)
+}
+
+func TestContentModerationOutboxProcessesLegacyPlainPayload(t *testing.T) {
+	repo := &contentModerationTestRepo{}
+	outbox := &contentModerationTestOutboxRepo{}
+	svc := NewContentModerationService(nil, repo, nil, nil, nil, nil, nil)
+	svc.SetOutboxRepository(outbox)
+	log := &ContentModerationLog{
+		DecisionID:      "legacy-outbox-decision",
+		RequestID:       "legacy-outbox-request",
+		Action:          ContentModerationActionAllow,
+		HighestCategory: "legacy_category",
+		CategoryScores:  map[string]float64{"legacy_category": 0.2},
+	}
+	payload := contentModerationOutboxPayloadMap(contentModerationOutboxPayload{
+		Log:    log,
+		Config: defaultContentModerationConfig(),
+	})
+	require.NoError(t, outbox.EnqueueEvents(context.Background(), []ContentModerationOutboxEvent{{
+		DecisionID: "legacy-outbox-decision",
+		EventType:  ContentModerationOutboxEventLogWrite,
+		Priority:   ContentModerationOutboxPriorityStrong,
+		Payload:    payload,
+	}}))
+
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(context.Background(), 1))
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, "legacy-outbox-decision", logs[0].DecisionID)
 }
 
 func TestContentModerationOutboxRetriesStrongAndDeadLettersWeakEvents(t *testing.T) {

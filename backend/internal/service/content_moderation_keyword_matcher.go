@@ -1,14 +1,11 @@
 package service
 
-import (
-	"strings"
-)
-
 type contentModerationKeywordMatcher struct {
 	nodes           []contentModerationKeywordNode
 	edges           []contentModerationKeywordEdge
 	rootTransitions [256]int32
 	keywords        []string
+	normalized      []string
 }
 
 type contentModerationKeywordNode struct {
@@ -37,28 +34,23 @@ func newContentModerationKeywordMatcher(keywords []string) *contentModerationKey
 	buildNodes := []contentModerationKeywordNode{newContentModerationKeywordNode()}
 	buildEdges := make([]contentModerationKeywordBuildEdge, 0)
 	originalKeywords := append([]string(nil), keywords...)
+	normalizedKeywords := make([]string, len(keywords))
 
 	for keywordIndex, keyword := range keywords {
-		if keyword == "" {
+		normalizedKeyword := normalizeKeywordComparable(keyword)
+		normalizedKeywords[keywordIndex] = normalizedKeyword
+		if normalizedKeyword == "" {
 			continue
 		}
-		state := int32(0)
-		for _, label := range []byte(strings.ToLower(keyword)) {
-			next := contentModerationKeywordBuildTransition(buildNodes, buildEdges, state, label)
-			if next < 0 {
-				next = int32(len(buildNodes))
-				buildNodes = append(buildNodes, newContentModerationKeywordNode())
-				buildEdges = append(buildEdges, contentModerationKeywordBuildEdge{
-					target:      next,
-					nextSibling: contentModerationKeywordBuildFirstEdge(buildNodes[state]),
-					label:       label,
-				})
-				buildNodes[state].edgeStart = uint32(len(buildEdges))
+		patterns := []string{normalizedKeyword}
+		if shouldUseCompactKeywordMatch(normalizedKeyword) {
+			compactKeyword := compactKeywordComparable(normalizedKeyword)
+			if compactKeyword != "" && compactKeyword != normalizedKeyword {
+				patterns = append(patterns, compactKeyword)
 			}
-			state = next
 		}
-		if current := buildNodes[state].bestKeyword; current < 0 || int32(keywordIndex) < current {
-			buildNodes[state].bestKeyword = int32(keywordIndex)
+		for _, pattern := range patterns {
+			contentModerationKeywordBuildPattern(&buildNodes, &buildEdges, pattern, int32(keywordIndex))
 		}
 	}
 
@@ -123,6 +115,33 @@ func newContentModerationKeywordMatcher(keywords []string) *contentModerationKey
 		edges:           edges,
 		rootTransitions: rootTransitions,
 		keywords:        originalKeywords,
+		normalized:      normalizedKeywords,
+	}
+}
+
+func contentModerationKeywordBuildPattern(
+	nodes *[]contentModerationKeywordNode,
+	edges *[]contentModerationKeywordBuildEdge,
+	pattern string,
+	keywordIndex int32,
+) {
+	state := int32(0)
+	for _, label := range []byte(pattern) {
+		next := contentModerationKeywordBuildTransition(*nodes, *edges, state, label)
+		if next < 0 {
+			next = int32(len(*nodes))
+			*nodes = append(*nodes, newContentModerationKeywordNode())
+			*edges = append(*edges, contentModerationKeywordBuildEdge{
+				target:      next,
+				nextSibling: contentModerationKeywordBuildFirstEdge((*nodes)[state]),
+				label:       label,
+			})
+			(*nodes)[state].edgeStart = uint32(len(*edges))
+		}
+		state = next
+	}
+	if current := (*nodes)[state].bestKeyword; current < 0 || keywordIndex < current {
+		(*nodes)[state].bestKeyword = keywordIndex
 	}
 }
 
@@ -168,11 +187,41 @@ func (m *contentModerationKeywordMatcher) Match(text string) (string, bool) {
 	if m == nil || text == "" || len(m.nodes) == 0 || len(m.keywords) == 0 {
 		return "", false
 	}
-	lower := strings.ToLower(text)
+	normalizedText := normalizeKeywordComparable(text)
+	if normalizedText == "" {
+		return "", false
+	}
+	compactText := compactKeywordComparable(normalizedText)
+	if !m.hasCandidate(normalizedText) && (compactText == normalizedText || !m.hasCandidate(compactText)) {
+		return "", false
+	}
+
+	// The automaton keeps the common no-match path linear in the input size. A
+	// candidate is confirmed in configured order because boundary checks can
+	// invalidate an earlier overlapping automaton output.
+	for index, normalizedKeyword := range m.normalized {
+		if normalizedKeyword == "" {
+			continue
+		}
+		if _, _, hit := findKeywordComparableSpanWithBoundary(normalizedText, normalizedKeyword); hit {
+			return m.keywords[index], true
+		}
+		if shouldUseCompactKeywordMatch(normalizedKeyword) {
+			compactKeyword := compactKeywordComparable(normalizedKeyword)
+			if compactKeyword != "" {
+				if _, _, hit := findCompactKeywordComparableSpanWithBoundary(normalizedText, compactText, compactKeyword); hit {
+					return m.keywords[index], true
+				}
+			}
+		}
+	}
+	return "", false
+}
+
+func (m *contentModerationKeywordMatcher) hasCandidate(text string) bool {
 	state := int32(0)
-	bestKeyword := int32(-1)
-	for index := 0; index < len(lower); index++ {
-		label := lower[index]
+	for index := 0; index < len(text); index++ {
+		label := text[index]
 		for {
 			next := m.next(state, label)
 			if next != 0 {
@@ -184,15 +233,11 @@ func (m *contentModerationKeywordMatcher) Match(text string) (string, bool) {
 			}
 			state = m.nodes[state].failure
 		}
-		bestKeyword = minKeywordIndex(bestKeyword, m.nodes[state].bestKeyword)
-		if bestKeyword == 0 {
-			return m.keywords[0], true
+		if m.nodes[state].bestKeyword >= 0 {
+			return true
 		}
 	}
-	if bestKeyword < 0 || int(bestKeyword) >= len(m.keywords) {
-		return "", false
-	}
-	return m.keywords[bestKeyword], true
+	return false
 }
 
 func (m *contentModerationKeywordMatcher) next(state int32, label byte) int32 {

@@ -332,10 +332,22 @@
       "action": "risk_control.config.update",
       "target_type": "content_moderation_config",
       "risk_level": "critical",
-      "status": "planned",
+      "status": "covered",
       "event_phases": ["attempt", "success", "failure"],
-      "sensitive_fields": ["api_key", "blocked_keywords", "trusted_group_ids"],
-      "implementation": ""
+      "sensitive_fields": ["api_key", "api_keys", "blocked_keywords", "keyword_rules", "block_message"],
+      "implementation": "ContentModerationHandler.UpdateConfig -> emitContentModerationAdminAudit (changed field names only)"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/admin/risk-control/logs/:id/review",
+      "handler": "ContentModerationHandler.ReviewLog",
+      "action": "risk_control.logs.review",
+      "target_type": "content_moderation_log",
+      "risk_level": "high",
+      "status": "covered",
+      "event_phases": ["attempt", "success", "failure"],
+      "sensitive_fields": ["review_note", "input_excerpt", "prompt", "user_email"],
+      "implementation": "ContentModerationHandler.ReviewLog -> emitContentModerationAdminAudit (status and note-presence only)"
     },
     {
       "method": "POST",
@@ -344,10 +356,10 @@
       "action": "risk_control.users.unban",
       "target_type": "content_moderation_user_ban",
       "risk_level": "high",
-      "status": "planned",
+      "status": "covered",
       "event_phases": ["attempt", "success", "failure"],
       "sensitive_fields": ["user_email"],
-      "implementation": ""
+      "implementation": "ContentModerationHandler.UnbanUser -> emitContentModerationAdminAudit"
     },
     {
       "method": "DELETE",
@@ -356,10 +368,10 @@
       "action": "risk_control.hash.delete",
       "target_type": "content_moderation_hash",
       "risk_level": "high",
-      "status": "planned",
+      "status": "covered",
       "event_phases": ["attempt", "success", "failure"],
       "sensitive_fields": ["hash_value"],
-      "implementation": ""
+      "implementation": "ContentModerationHandler.DeleteFlaggedHash -> emitContentModerationAdminAudit (hash value omitted)"
     },
     {
       "method": "DELETE",
@@ -368,10 +380,34 @@
       "action": "risk_control.hash.clear_all",
       "target_type": "content_moderation_hash",
       "risk_level": "critical",
-      "status": "planned",
+      "status": "covered",
       "event_phases": ["attempt", "success", "failure"],
       "sensitive_fields": [],
-      "implementation": ""
+      "implementation": "ContentModerationHandler.ClearFlaggedHashes -> emitContentModerationAdminAudit"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/risk-control/outbox/dead-letters/:id/replay",
+      "handler": "ContentModerationHandler.ReplayOutboxDeadLetter",
+      "action": "risk_control.outbox.replay",
+      "target_type": "content_moderation_outbox_event",
+      "risk_level": "high",
+      "status": "covered",
+      "event_phases": ["attempt", "success", "failure"],
+      "sensitive_fields": ["payload", "input_excerpt", "user_email", "api_key_name"],
+      "implementation": "ContentModerationHandler.ReplayOutboxDeadLetter -> emitContentModerationAdminAudit (event id and result only)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/risk-control/outbox/cleanup",
+      "handler": "ContentModerationHandler.CleanupOutbox",
+      "action": "risk_control.outbox.cleanup",
+      "target_type": "content_moderation_outbox",
+      "risk_level": "critical",
+      "status": "covered",
+      "event_phases": ["attempt", "success", "failure"],
+      "sensitive_fields": ["payload", "input_excerpt", "user_email", "api_key_name"],
+      "implementation": "ContentModerationHandler.CleanupOutbox -> emitContentModerationAdminAudit (deleted count only)"
     },
     {
       "method": "PUT",

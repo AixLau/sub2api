@@ -13,6 +13,7 @@ import (
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -24,6 +25,23 @@ type contentModerationHandlerReviewRepo struct {
 	mu   sync.Mutex
 	logs []service.ContentModerationLog
 	raw  map[int64]service.ContentModerationRawRequestSnapshot
+}
+
+type contentModerationAdminAuditCapture struct {
+	mu     sync.Mutex
+	events []*logger.LogEvent
+}
+
+func (s *contentModerationAdminAuditCapture) WriteLogEvent(event *logger.LogEvent) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = append(s.events, event)
+}
+
+func (s *contentModerationAdminAuditCapture) snapshot() []*logger.LogEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]*logger.LogEvent(nil), s.events...)
 }
 
 func (r *contentModerationHandlerReviewRepo) CreateLog(ctx context.Context, log *service.ContentModerationLog) error {
@@ -107,6 +125,9 @@ func (r *contentModerationHandlerReviewRepo) GetRawRequestSnapshotByLogID(ctx co
 
 func TestContentModerationHandlerReviewLog(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	auditSink := &contentModerationAdminAuditCapture{}
+	logger.SetSink(auditSink)
+	t.Cleanup(func() { logger.SetSink(nil) })
 	repo := &contentModerationHandlerReviewRepo{logs: []service.ContentModerationLog{{
 		ID:           42,
 		Action:       service.ContentModerationActionKeywordReview,
@@ -140,6 +161,65 @@ func TestContentModerationHandlerReviewLog(t *testing.T) {
 	require.NotNil(t, payload.Data.ReviewedBy)
 	require.Equal(t, int64(7), *payload.Data.ReviewedBy)
 	require.NotNil(t, payload.Data.ReviewedAt)
+
+	events := auditSink.snapshot()
+	require.Len(t, events, 2)
+	require.Equal(t, "attempt", events[0].Fields["result"])
+	require.Equal(t, "success", events[1].Fields["result"])
+	for _, event := range events {
+		require.Equal(t, "risk_control.logs.review", event.Fields["action"])
+		require.Equal(t, "42", event.Fields["target_id"])
+		require.Equal(t, int64(7), event.Fields["operator_id"])
+		require.NotContains(t, event.Fields, "note")
+		after, ok := event.Fields["after"].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, true, after["review_note_supplied"])
+		require.NotContains(t, after, "review_note")
+		require.NotContains(t, after, "input_excerpt")
+	}
+}
+
+func TestContentModerationHandlerReviewLogFailureEmitsFailedAudit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	auditSink := &contentModerationAdminAuditCapture{}
+	logger.SetSink(auditSink)
+	t.Cleanup(func() { logger.SetSink(nil) })
+
+	repo := &contentModerationHandlerReviewRepo{}
+	h := NewContentModerationHandler(service.NewContentModerationService(nil, repo, nil, nil, nil, nil, nil))
+	router := gin.New()
+	router.PATCH("/admin/risk-control/logs/:id/review", h.ReviewLog)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/admin/risk-control/logs/404/review", strings.NewReader(`{"status":"confirmed_violation","note":"must not leak"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	events := auditSink.snapshot()
+	require.Len(t, events, 2)
+	require.Equal(t, "attempt", events[0].Fields["result"])
+	require.Equal(t, "failed", events[1].Fields["result"])
+	require.Equal(t, "CONTENT_MODERATION_LOG_NOT_FOUND", events[1].Fields["error_code"])
+	encoded, err := json.Marshal(events)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "must not leak")
+}
+
+func TestContentModerationConfigChangedFieldsOmitsValues(t *testing.T) {
+	apiKey := "secret-key"
+	keywords := []string{"sensitive prompt phrase"}
+	enabled := true
+	fields := contentModerationConfigChangedFields(contentModerationConfigRequest{
+		Enabled:         &enabled,
+		APIKey:          &apiKey,
+		BlockedKeywords: &keywords,
+	})
+
+	require.ElementsMatch(t, []string{"enabled", "api_key", "blocked_keywords"}, fields)
+	encoded, err := json.Marshal(fields)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), apiKey)
+	require.NotContains(t, string(encoded), keywords[0])
 }
 
 func TestContentModerationHandlerGetRawRequestSnapshot(t *testing.T) {

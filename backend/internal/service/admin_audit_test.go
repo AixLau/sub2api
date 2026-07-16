@@ -136,6 +136,12 @@ func TestEmitAdminAudit_RedactsSensitiveFieldNamesWithPrefixes(t *testing.T) {
 	}
 }
 
+func TestNormalizeAdminAuditResultPreservesAttempt(t *testing.T) {
+	if got := normalizeAdminAuditResult("attempt"); got != "attempt" {
+		t.Fatalf("normalizeAdminAuditResult(attempt) = %q, want attempt", got)
+	}
+}
+
 func drainOpsSystemLogSinkQueue(sink *OpsSystemLogSink) []*logger.LogEvent {
 	var out []*logger.LogEvent
 	for {

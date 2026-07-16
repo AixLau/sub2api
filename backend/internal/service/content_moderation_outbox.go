@@ -1,10 +1,15 @@
 package service
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -33,6 +38,8 @@ const (
 	contentModerationOutboxCleanupBatch       = 5000
 	contentModerationOutboxSucceededKeepDays  = 7
 	contentModerationOutboxDeadLetterKeepDays = 90
+	contentModerationOutboxRecordMaxBytes     = 2 * 1024 * 1024
+	contentModerationOutboxRecordEncoding     = "gzip_base64"
 )
 
 type ContentModerationOutboxRepository interface {
@@ -78,11 +85,20 @@ type ContentModerationOutboxStatus struct {
 }
 
 type contentModerationOutboxPayload struct {
-	Log            *ContentModerationLog                         `json:"log,omitempty"`
-	Config         *ContentModerationConfig                      `json:"config,omitempty"`
-	InputHash      string                                        `json:"input_hash,omitempty"`
-	EmailKind      string                                        `json:"email_kind,omitempty"`
-	SemanticReview *contentModerationSemanticReviewOutboxPayload `json:"semantic_review,omitempty"`
+	SchemaVersion   int                                           `json:"schema_version,omitempty"`
+	Log             *ContentModerationLog                         `json:"log,omitempty"`
+	Config          *ContentModerationConfig                      `json:"config,omitempty"`
+	RecordEncrypted string                                        `json:"record_encrypted,omitempty"`
+	RecordEncoding  string                                        `json:"record_encoding,omitempty"`
+	InputHash       string                                        `json:"input_hash,omitempty"`
+	EmailKind       string                                        `json:"email_kind,omitempty"`
+	SemanticReview  *contentModerationSemanticReviewOutboxPayload `json:"semantic_review,omitempty"`
+}
+
+type contentModerationOutboxRecord struct {
+	Log       *ContentModerationLog    `json:"log"`
+	Config    *ContentModerationConfig `json:"config,omitempty"`
+	InputHash string                   `json:"input_hash,omitempty"`
 }
 
 // SetOutboxRepository configures outbox processing before Start is called.
@@ -115,10 +131,10 @@ func (s *ContentModerationService) enqueueModerationOutboxRecord(input ContentMo
 	if strings.TrimSpace(log.DecisionID) == "" {
 		log.DecisionID = contentModerationDecisionID(input, log, inputHash)
 	}
-	payload := contentModerationOutboxPayload{
-		Log:       cloneContentModerationLog(log),
-		Config:    cloneContentModerationConfig(cfg),
-		InputHash: inputHash,
+	payload, err := s.encryptedContentModerationOutboxPayload(log, cfg, inputHash)
+	if err != nil {
+		slog.Warn("content_moderation.outbox_encrypt_failed", "decision_id", log.DecisionID, "error", err)
+		return false
 	}
 	events := []ContentModerationOutboxEvent{
 		newContentModerationOutboxEvent(log.DecisionID, ContentModerationOutboxEventLogWrite, "", ContentModerationOutboxPriorityStrong, payload),
@@ -152,6 +168,74 @@ func (s *ContentModerationService) enqueueModerationOutboxRecord(input ContentMo
 		return false
 	}
 	return true
+}
+
+func (s *ContentModerationService) encryptedContentModerationOutboxPayload(log *ContentModerationLog, cfg *ContentModerationConfig, inputHash string) (contentModerationOutboxPayload, error) {
+	if s == nil || s.rawRequestEncryptor == nil {
+		return contentModerationOutboxPayload{}, errors.New("content moderation outbox encryptor is unavailable")
+	}
+	record := contentModerationOutboxRecord{
+		Log:       cloneContentModerationLog(log),
+		Config:    safeContentModerationConfigForOutbox(cfg),
+		InputHash: inputHash,
+	}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		return contentModerationOutboxPayload{}, fmt.Errorf("marshal content moderation outbox record: %w", err)
+	}
+	encoded, err := encodeContentModerationOutboxRecord(raw)
+	if err != nil {
+		return contentModerationOutboxPayload{}, err
+	}
+	encrypted, err := s.rawRequestEncryptor.Encrypt(encoded)
+	if err != nil {
+		return contentModerationOutboxPayload{}, fmt.Errorf("encrypt content moderation outbox record: %w", err)
+	}
+	return contentModerationOutboxPayload{
+		SchemaVersion:   2,
+		RecordEncrypted: encrypted,
+		RecordEncoding:  contentModerationOutboxRecordEncoding,
+	}, nil
+}
+
+func encodeContentModerationOutboxRecord(raw []byte) (string, error) {
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := writer.Write(raw); err != nil {
+		_ = writer.Close()
+		return "", fmt.Errorf("compress content moderation outbox record: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return "", fmt.Errorf("close content moderation outbox compressor: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(compressed.Bytes()), nil
+}
+
+func decodeContentModerationOutboxRecord(value, encoding string) ([]byte, error) {
+	if strings.TrimSpace(encoding) == "" {
+		return []byte(value), nil
+	}
+	if encoding != contentModerationOutboxRecordEncoding {
+		return nil, fmt.Errorf("unsupported content moderation outbox record encoding %q", encoding)
+	}
+	compressed, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		return nil, fmt.Errorf("decode content moderation outbox record: %w", err)
+	}
+	reader, err := gzip.NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		return nil, fmt.Errorf("open content moderation outbox record: %w", err)
+	}
+	defer reader.Close()
+	limited := io.LimitReader(reader, contentModerationOutboxRecordMaxBytes+1)
+	raw, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, fmt.Errorf("decompress content moderation outbox record: %w", err)
+	}
+	if len(raw) > contentModerationOutboxRecordMaxBytes {
+		return nil, errors.New("content moderation outbox record exceeds decompressed size limit")
+	}
+	return raw, nil
 }
 
 func newContentModerationOutboxEvent(decisionID, eventType, eventKey, priority string, payload contentModerationOutboxPayload) ContentModerationOutboxEvent {
@@ -366,6 +450,10 @@ func (s *ContentModerationService) processContentModerationOutboxEvent(ctx conte
 	if err != nil {
 		return err
 	}
+	payload, err = s.decryptContentModerationOutboxPayload(payload)
+	if err != nil {
+		return err
+	}
 	switch event.EventType {
 	case ContentModerationOutboxEventLogWrite:
 		return s.ensureContentModerationOutboxLog(ctx, payload)
@@ -405,6 +493,10 @@ func (s *ContentModerationService) processContentModerationOutboxEvent(ctx conte
 		if autoBanJustApplied && payload.Config != nil && payload.Log != nil && strings.TrimSpace(payload.Log.UserEmail) != "" {
 			emailPayload := payload
 			emailPayload.EmailKind = "account_disabled"
+			if strings.TrimSpace(emailPayload.RecordEncrypted) != "" {
+				emailPayload.Log = nil
+				emailPayload.Config = nil
+			}
 			if err := outboxRepo.EnqueueEvents(ctx, []ContentModerationOutboxEvent{
 				newContentModerationOutboxEvent(payload.Log.DecisionID, ContentModerationOutboxEventEmail, "account_disabled", ContentModerationOutboxPriorityWeak, emailPayload),
 			}); err != nil {
@@ -434,6 +526,33 @@ func (s *ContentModerationService) processContentModerationOutboxEvent(ctx conte
 	default:
 		return fmt.Errorf("unknown content moderation outbox event type %q", event.EventType)
 	}
+}
+
+func (s *ContentModerationService) decryptContentModerationOutboxPayload(payload contentModerationOutboxPayload) (contentModerationOutboxPayload, error) {
+	if strings.TrimSpace(payload.RecordEncrypted) == "" {
+		return payload, nil
+	}
+	if s == nil || s.rawRequestEncryptor == nil {
+		return contentModerationOutboxPayload{}, errors.New("content moderation outbox decryptor is unavailable")
+	}
+	plain, err := s.rawRequestEncryptor.Decrypt(payload.RecordEncrypted)
+	if err != nil {
+		return contentModerationOutboxPayload{}, fmt.Errorf("decrypt content moderation outbox record: %w", err)
+	}
+	raw, err := decodeContentModerationOutboxRecord(plain, payload.RecordEncoding)
+	if err != nil {
+		return contentModerationOutboxPayload{}, err
+	}
+	var record contentModerationOutboxRecord
+	if err := json.Unmarshal(raw, &record); err != nil {
+		return contentModerationOutboxPayload{}, fmt.Errorf("decode content moderation outbox record: %w", err)
+	}
+	payload.Log = record.Log
+	payload.Config = record.Config
+	if strings.TrimSpace(record.InputHash) != "" {
+		payload.InputHash = record.InputHash
+	}
+	return payload, nil
 }
 
 func (s *ContentModerationService) ensureContentModerationOutboxLog(ctx context.Context, payload contentModerationOutboxPayload) error {

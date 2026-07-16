@@ -87,6 +87,12 @@ func TestAdminAuditCoverageManifestDefinesP0AdminWriteSurface(t *testing.T) {
 		"accounts.delete",
 		"accounts.credentials.batch_update",
 		"risk_control.config.update",
+		"risk_control.logs.review",
+		"risk_control.users.unban",
+		"risk_control.hash.delete",
+		"risk_control.hash.clear_all",
+		"risk_control.outbox.replay",
+		"risk_control.outbox.cleanup",
 		"payment.config.update",
 		"payment.orders.cancel",
 		"payment.orders.retry",
@@ -127,6 +133,34 @@ func TestAdminAuditCoverageManifestDefinesP0AdminWriteSurface(t *testing.T) {
 	if byAction["settings.update"].Status != "covered" {
 		t.Fatalf("settings.update status = %q, want covered", byAction["settings.update"].Status)
 	}
+	for _, action := range []string{
+		"risk_control.config.update",
+		"risk_control.logs.review",
+		"risk_control.users.unban",
+		"risk_control.hash.delete",
+		"risk_control.hash.clear_all",
+		"risk_control.outbox.replay",
+		"risk_control.outbox.cleanup",
+	} {
+		entry := byAction[action]
+		if entry.Status != "covered" {
+			t.Fatalf("%s status = %q, want covered", action, entry.Status)
+		}
+		for _, phase := range []string{"attempt", "success", "failure"} {
+			if !containsAdminAuditPhase(entry.EventPhases, phase) {
+				t.Fatalf("%s missing %s phase: %v", action, phase, entry.EventPhases)
+			}
+		}
+	}
+}
+
+func containsAdminAuditPhase(phases []string, want string) bool {
+	for _, phase := range phases {
+		if strings.TrimSpace(phase) == want {
+			return true
+		}
+	}
+	return false
 }
 
 func loadAdminAuditCoverageManifest(t *testing.T) adminAuditCoverageManifest {

@@ -61,6 +61,30 @@ func (s *blockingSemanticReviewQuotaStub) RefreshSemanticReviewQuota(_ context.C
 	return nil, nil
 }
 
+type contextBlockingSemanticReviewQuotaStub struct {
+	started chan int64
+	calls   int
+	mu      sync.Mutex
+}
+
+func (s *contextBlockingSemanticReviewQuotaStub) RefreshSemanticReviewQuota(ctx context.Context, accountID int64) (map[string]any, error) {
+	s.mu.Lock()
+	s.calls++
+	s.mu.Unlock()
+	select {
+	case s.started <- accountID:
+	default:
+	}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (s *contextBlockingSemanticReviewQuotaStub) snapshotCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls
+}
+
 type semanticReviewUsageRecorderStub struct {
 	records []PlatformUsageRecord
 	err     error
@@ -203,7 +227,7 @@ func TestContentModerationUpdateConfigNormalizesSemanticReviewModels(t *testing.
 	require.Equal(t, ContentModerationSemanticReviewPrimaryModel, saved.SemanticReview.PrimaryModel)
 }
 
-func TestSemanticReviewRouterRefreshesStaleSparkQuotaOffRequestPath(t *testing.T) {
+func TestSemanticReviewRouterRefreshesStaleSparkQuotaBeforeRequest(t *testing.T) {
 	spark := &Account{ID: 11, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	mini := freshSemanticReviewAccount(12)
 	backend := &semanticReviewBackendStub{
@@ -225,12 +249,64 @@ func TestSemanticReviewRouterRefreshesStaleSparkQuotaOffRequestPath(t *testing.T
 
 	require.NoError(t, err)
 	require.Equal(t, "allow", result.Verdict)
+	require.Equal(t, ContentModerationSemanticReviewFallbackModel, result.Model)
+	require.Equal(t, []string{ContentModerationSemanticReviewFallbackModel}, backend.reviewCalls)
+	require.Equal(t, []int64{11}, quota.snapshotCalls())
+}
+
+func TestSemanticReviewRouterUsesStaleSnapshotWhenSynchronousQuotaRefreshFails(t *testing.T) {
+	spark := &Account{ID: 13, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	backend := &semanticReviewBackendStub{accountsByModel: map[string][]*Account{
+		ContentModerationSemanticReviewPrimaryModel: {spark},
+	}}
+	quota := &semanticReviewQuotaStub{err: errors.New("quota service unavailable")}
+	router := NewOpenAIContentModerationSemanticReviewRouter(backend, quota, nil)
+
+	result, err := router.Review(context.Background(), semanticReviewTestConfig(), ContentModerationSemanticReviewInput{Text: "test"})
+
+	require.NoError(t, err)
 	require.Equal(t, ContentModerationSemanticReviewPrimaryModel, result.Model)
 	require.Equal(t, []string{ContentModerationSemanticReviewPrimaryModel}, backend.reviewCalls)
-	require.Eventually(t, func() bool {
-		return len(quota.snapshotCalls()) == 1
-	}, time.Second, 10*time.Millisecond)
-	require.Equal(t, []int64{11}, quota.snapshotCalls())
+	require.Equal(t, []int64{spark.ID}, quota.snapshotCalls())
+}
+
+func TestSemanticReviewRouterBoundsSynchronousQuotaRefreshTimeout(t *testing.T) {
+	spark := &Account{ID: 14, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	backend := &semanticReviewBackendStub{accountsByModel: map[string][]*Account{
+		ContentModerationSemanticReviewPrimaryModel: {spark},
+	}}
+	quota := &contextBlockingSemanticReviewQuotaStub{started: make(chan int64, 1)}
+	router := NewOpenAIContentModerationSemanticReviewRouter(backend, quota, nil)
+
+	started := time.Now()
+	result, err := router.Review(context.Background(), semanticReviewTestConfig(), ContentModerationSemanticReviewInput{Text: "test"})
+	elapsed := time.Since(started)
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationSemanticReviewPrimaryModel, result.Model)
+	require.GreaterOrEqual(t, elapsed, contentModerationSemanticReviewQuotaSyncTimeout-50*time.Millisecond)
+	require.Less(t, elapsed, contentModerationSemanticReviewQuotaSyncTimeout+300*time.Millisecond)
+	require.Equal(t, 1, quota.snapshotCalls())
+}
+
+func TestSemanticReviewRouterSingleflightsConcurrentSynchronousQuotaRefresh(t *testing.T) {
+	quota := &contextBlockingSemanticReviewQuotaStub{started: make(chan int64, 2)}
+	router := NewOpenAIContentModerationSemanticReviewRouter(&semanticReviewBackendStub{}, quota, nil).(*openAIContentModerationSemanticReviewRouter)
+	results := make(chan error, 2)
+	go func() {
+		_, err := router.refreshSemanticReviewQuotaSync(context.Background(), 15)
+		results <- err
+	}()
+	require.Equal(t, int64(15), <-quota.started)
+	go func() {
+		_, err := router.refreshSemanticReviewQuotaSync(context.Background(), 15)
+		results <- err
+	}()
+
+	for i := 0; i < 2; i++ {
+		require.ErrorIs(t, <-results, context.DeadlineExceeded)
+	}
+	require.Equal(t, 1, quota.snapshotCalls())
 }
 
 func TestSemanticReviewRouterBoundsBackgroundQuotaRefreshConcurrency(t *testing.T) {
@@ -613,7 +689,47 @@ func TestEnqueueSemanticReviewEncryptsInputAndStripsAPIKeys(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, string(raw), "sk-secret-key")
 	require.NotContains(t, string(raw), content.Text)
+	require.NotContains(t, string(raw), "user_email")
+	require.NotContains(t, string(raw), "api_key_name")
 	require.Contains(t, string(raw), "text_encrypted")
+}
+
+func TestProcessSemanticReviewAllowPersistsAuditableCategory(t *testing.T) {
+	repo := &contentModerationTestRepo{}
+	encryptor := contentModerationTestEncryptor{}
+	encrypted, err := encryptor.Encrypt("bounded review text")
+	require.NoError(t, err)
+	svc := NewContentModerationService(nil, repo, nil, nil, nil, nil, nil)
+	svc.rawRequestEncryptor = encryptor
+	svc.semanticReviewRouter = &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict:    "allow",
+		Model:      "review-model",
+		Confidence: 0.91,
+		Categories: []string{"benign_context"},
+	}}
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.SemanticReview = semanticReviewTestConfig()
+	payload := contentModerationOutboxPayload{
+		Config: cfg,
+		SemanticReview: &contentModerationSemanticReviewOutboxPayload{
+			DecisionID:    "decision-allow-audit",
+			InputHash:     "hash-allow-audit",
+			Input:         contentModerationSemanticReviewOutboxInput{RequestID: "request-allow-audit", UserID: 17},
+			TextEncrypted: encrypted,
+		},
+	}
+
+	require.NoError(t, svc.processContentModerationSemanticReviewEvent(context.Background(), payload))
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionSemanticReviewAllow, logs[0].Action)
+	require.False(t, logs[0].Flagged)
+	require.Equal(t, "benign_context", logs[0].HighestCategory)
+	require.Equal(t, 0.91, logs[0].CategoryScores[logs[0].HighestCategory])
+	require.Equal(t, contentModerationDecisionSourceSemantic, logs[0].DecisionSource)
+	require.Equal(t, "platform_openai", logs[0].ModerationProvider)
+	require.Equal(t, "review-model", logs[0].ModerationModel)
 }
 
 func TestBuildSemanticReviewInputLocalReviewIncludesOnlyMatchedSources(t *testing.T) {

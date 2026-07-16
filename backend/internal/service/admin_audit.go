@@ -55,6 +55,8 @@ func EmitAdminAudit(ctx context.Context, event AdminAuditEvent) {
 
 func normalizeAdminAuditResult(result string) string {
 	switch strings.ToLower(strings.TrimSpace(result)) {
+	case "attempt":
+		return "attempt"
 	case "failed", "failure", "error":
 		return "failed"
 	default:

@@ -121,6 +121,8 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	auditAfter := map[string]any{"changed_fields": contentModerationConfigChangedFields(req)}
+	emitContentModerationAdminAudit(c, "risk_control.config.update", "content_moderation_config", "global", "attempt", auditAfter, nil)
 	cfg, err := h.service.UpdateConfig(c.Request.Context(), service.UpdateContentModerationConfigInput{
 		MaxRequestBodyMiB:              req.MaxRequestBodyMiB,
 		InflightMemoryBudgetMiB:        req.InflightMemoryBudgetMiB,
@@ -182,9 +184,11 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		FailStrategy:                   req.FailStrategy,
 	})
 	if err != nil {
+		emitContentModerationAdminAudit(c, "risk_control.config.update", "content_moderation_config", "global", "failed", auditAfter, err)
 		response.ErrorFrom(c, err)
 		return
 	}
+	emitContentModerationAdminAudit(c, "risk_control.config.update", "content_moderation_config", "global", "success", auditAfter, nil)
 	response.Success(c, cfg)
 }
 
@@ -292,11 +296,15 @@ func (h *ContentModerationHandler) UnbanUser(c *gin.Context) {
 		response.BadRequest(c, "Invalid user_id")
 		return
 	}
+	targetID := strconv.FormatInt(userID, 10)
+	emitContentModerationAdminAudit(c, "risk_control.users.unban", "content_moderation_user_ban", targetID, "attempt", nil, nil)
 	result, err := h.service.UnbanUser(c.Request.Context(), userID)
 	if err != nil {
+		emitContentModerationAdminAudit(c, "risk_control.users.unban", "content_moderation_user_ban", targetID, "failed", nil, err)
 		response.ErrorFrom(c, err)
 		return
 	}
+	emitContentModerationAdminAudit(c, "risk_control.users.unban", "content_moderation_user_ban", targetID, "success", map[string]any{"status": result.Status}, nil)
 	response.Success(c, result)
 }
 
@@ -311,6 +319,12 @@ func (h *ContentModerationHandler) ReviewLog(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	targetID := strconv.FormatInt(logID, 10)
+	auditAfter := map[string]any{
+		"review_status":        strings.TrimSpace(req.Status),
+		"review_note_supplied": strings.TrimSpace(req.Note) != "",
+	}
+	emitContentModerationAdminAudit(c, "risk_control.logs.review", "content_moderation_log", targetID, "attempt", auditAfter, nil)
 	var reviewerID int64
 	if subject, ok := middleware.GetAuthSubjectFromContext(c); ok {
 		reviewerID = subject.UserID
@@ -321,9 +335,11 @@ func (h *ContentModerationHandler) ReviewLog(c *gin.Context) {
 		ReviewedBy: reviewerID,
 	})
 	if err != nil {
+		emitContentModerationAdminAudit(c, "risk_control.logs.review", "content_moderation_log", targetID, "failed", auditAfter, err)
 		response.ErrorFrom(c, err)
 		return
 	}
+	emitContentModerationAdminAudit(c, "risk_control.logs.review", "content_moderation_log", targetID, "success", auditAfter, nil)
 	response.Success(c, result)
 }
 
@@ -361,20 +377,26 @@ func (h *ContentModerationHandler) DeleteFlaggedHash(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	emitContentModerationAdminAudit(c, "risk_control.hash.delete", "content_moderation_hash", "single", "attempt", nil, nil)
 	result, err := h.service.DeleteFlaggedInputHash(c.Request.Context(), req.InputHash)
 	if err != nil {
+		emitContentModerationAdminAudit(c, "risk_control.hash.delete", "content_moderation_hash", "single", "failed", nil, err)
 		response.ErrorFrom(c, err)
 		return
 	}
+	emitContentModerationAdminAudit(c, "risk_control.hash.delete", "content_moderation_hash", "single", "success", map[string]any{"deleted": result.Deleted}, nil)
 	response.Success(c, result)
 }
 
 func (h *ContentModerationHandler) ClearFlaggedHashes(c *gin.Context) {
+	emitContentModerationAdminAudit(c, "risk_control.hash.clear_all", "content_moderation_hash", "all", "attempt", nil, nil)
 	result, err := h.service.ClearFlaggedInputHashes(c.Request.Context())
 	if err != nil {
+		emitContentModerationAdminAudit(c, "risk_control.hash.clear_all", "content_moderation_hash", "all", "failed", nil, err)
 		response.ErrorFrom(c, err)
 		return
 	}
+	emitContentModerationAdminAudit(c, "risk_control.hash.clear_all", "content_moderation_hash", "all", "success", map[string]any{"deleted_count": result.Deleted}, nil)
 	response.Success(c, result)
 }
 
@@ -402,20 +424,27 @@ func (h *ContentModerationHandler) ReplayOutboxDeadLetter(c *gin.Context) {
 		response.BadRequest(c, "Invalid dead-letter id")
 		return
 	}
+	targetID := strconv.FormatInt(id, 10)
+	emitContentModerationAdminAudit(c, "risk_control.outbox.replay", "content_moderation_outbox_event", targetID, "attempt", nil, nil)
 	replayed, err := h.service.ReplayContentModerationOutboxDeadLetter(c.Request.Context(), id)
 	if err != nil {
+		emitContentModerationAdminAudit(c, "risk_control.outbox.replay", "content_moderation_outbox_event", targetID, "failed", nil, err)
 		response.ErrorFrom(c, err)
 		return
 	}
+	emitContentModerationAdminAudit(c, "risk_control.outbox.replay", "content_moderation_outbox_event", targetID, "success", map[string]any{"replayed": replayed}, nil)
 	response.Success(c, gin.H{"replayed": replayed})
 }
 
 func (h *ContentModerationHandler) CleanupOutbox(c *gin.Context) {
+	emitContentModerationAdminAudit(c, "risk_control.outbox.cleanup", "content_moderation_outbox", "expired_succeeded", "attempt", nil, nil)
 	deleted, err := h.service.CleanupContentModerationOutbox(c.Request.Context())
 	if err != nil {
+		emitContentModerationAdminAudit(c, "risk_control.outbox.cleanup", "content_moderation_outbox", "expired_succeeded", "failed", nil, err)
 		response.ErrorFrom(c, err)
 		return
 	}
+	emitContentModerationAdminAudit(c, "risk_control.outbox.cleanup", "content_moderation_outbox", "expired_succeeded", "success", map[string]any{"deleted_count": deleted}, nil)
 	response.Success(c, gin.H{"deleted": deleted})
 }
 

@@ -937,8 +937,8 @@ func (s *ContentModerationService) runCandidateOrdinaryReview(ctx context.Contex
 		MatchedKeyword:         selection.Rule.Keyword,
 		KeywordCategory:        selection.Rule.Category,
 		KeywordSeverity:        selection.Rule.Severity,
-		KeywordAction:          ContentModerationActionBlock,
-		EffectiveKeywordAction: ContentModerationActionBlock,
+		KeywordAction:          normalizeContentModerationKeywordAction(selection.Rule.Action),
+		EffectiveKeywordAction: normalizeContentModerationKeywordAction(selection.Rule.Action),
 		RiskContextType:        ContentModerationRiskContextActualRequest,
 		RiskContextReason:      "candidate_ordinary_moderation",
 	}
@@ -994,18 +994,7 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		s.metrics.observeSemanticReview(result.Model, result.Verdict, started, result.Usage)
 	}
 	result, policyOverride := applySemanticReviewPolicy(result)
-	category := "semantic_review"
-	if len(result.Categories) > 0 && strings.TrimSpace(result.Categories[0]) != "" {
-		category = result.Categories[0]
-	}
-	score := result.Confidence
-	if score < 0 {
-		score = 0
-	}
-	if score > 1 {
-		score = 1
-	}
-	scores := map[string]float64{"semantic_review": score}
+	category, score, scores := semanticReviewCategorySummary(result)
 	buildDecision := func(action string, flagged, blocked bool) *ContentModerationDecision {
 		decision := &ContentModerationDecision{
 			Allowed:                !blocked,
@@ -1018,8 +1007,8 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 			MatchedKeyword:         selection.Rule.Keyword,
 			KeywordCategory:        selection.Rule.Category,
 			KeywordSeverity:        selection.Rule.Severity,
-			KeywordAction:          action,
-			EffectiveKeywordAction: action,
+			KeywordAction:          normalizeContentModerationKeywordAction(selection.Rule.Action),
+			EffectiveKeywordAction: normalizeContentModerationKeywordAction(selection.Rule.Action),
 			RiskContextType:        ContentModerationRiskContextActualRequest,
 			RiskContextReason:      "candidate_semantic_review",
 		}
@@ -1106,8 +1095,8 @@ func (s *ContentModerationService) buildCandidateLog(input ContentModerationChec
 	log.MatchedKeyword = selection.Rule.Keyword
 	log.KeywordCategory = selection.Rule.Category
 	log.KeywordSeverity = selection.Rule.Severity
-	log.KeywordAction = ContentModerationKeywordActionBlock
-	log.EffectiveKeywordAction = ContentModerationKeywordActionBlock
+	log.KeywordAction = normalizeContentModerationKeywordAction(selection.Rule.Action)
+	log.EffectiveKeywordAction = normalizeContentModerationKeywordAction(selection.Rule.Action)
 	log.RiskContextType = ContentModerationRiskContextActualRequest
 	log.RiskContextReason = "candidate_selected_user_fragment"
 	log.UserViolationEligible = selection.Origin == contentModerationSourceOriginUserTurn
@@ -1246,6 +1235,9 @@ func (s *ContentModerationService) candidateExtractionFailureOutcome(ctx context
 	log.RiskContextType = ContentModerationRiskContextUnknown
 	log.RiskContextReason = "candidate_extraction_incomplete"
 	s.persistContentModerationLog(ctx, cfg, log, "", false, false)
+	if selection != nil {
+		s.storeCandidateEvidence(ctx, log, *selection, s.candidatePayloadHMAC(selection.Fragment))
+	}
 	if cfg != nil && cfg.Mode == ContentModerationModePreBlock {
 		s.recordPreBlockSyncMetric(0, ContentModerationActionError)
 	}

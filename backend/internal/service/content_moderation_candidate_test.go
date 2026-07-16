@@ -261,6 +261,8 @@ func TestCandidateExtractionFailureStoresSelectedSourceAndReasons(t *testing.T) 
 	}}
 	repo := &contentModerationTestRepo{}
 	svc := candidateTestService(repo)
+	evidence := &candidateEvidenceStore{}
+	svc.SetEvidenceStore(evidence, contentModerationTestEncryptor{})
 	content := ContentModerationInput{Sources: []ContentModerationInputSource{{
 		Source:          "responses.input[0].role=user.content",
 		Role:            "user",
@@ -279,6 +281,10 @@ func TestCandidateExtractionFailureStoresSelectedSourceAndReasons(t *testing.T) 
 	require.Equal(t, "responses.input[0].role=user.content", logs[0].SelectedSource)
 	require.Equal(t, "user", logs[0].SelectedSourceRole)
 	require.Equal(t, "danger-marker request", logs[0].InputExcerpt)
+	view, err := svc.GetEvidenceSnapshot(context.Background(), logs[0].ID)
+	require.NoError(t, err)
+	require.Equal(t, "danger-marker request", view.Payload)
+	require.Equal(t, []string{"max_total_runes"}, view.Selection["truncate_reasons"])
 }
 
 func TestCandidateExtractionFailureCollapsesRepeatedRetriesIntoOneAudit(t *testing.T) {
@@ -656,6 +662,27 @@ func TestCandidateAuditStoresExactReviewerPayloadEvidence(t *testing.T) {
 	metadata, err := json.Marshal(view.Selection)
 	require.NoError(t, err)
 	require.NotContains(t, string(metadata), "system")
+}
+
+func TestBuildCandidateLogPreservesConfiguredKeywordAction(t *testing.T) {
+	svc := candidateTestService(&contentModerationTestRepo{})
+	cfg := candidateTestConfig()
+	selection := contentModerationCandidateSelection{
+		Source: ContentModerationInputSource{Source: "responses.input[0]", Role: "user", Text: "candidate context"},
+		Rule: ContentModerationKeywordRule{
+			Keyword:  "candidate",
+			Category: ContentModerationKeywordCategoryCyber,
+			Severity: ContentModerationKeywordSeverityMedium,
+			Action:   ContentModerationKeywordActionWarn,
+			Enabled:  true,
+		},
+		Fragment: "candidate context",
+	}
+
+	log := svc.buildCandidateLog(ContentModerationCheckInput{}, cfg, selection, contentModerationDecisionSourceSemantic, ContentModerationActionSemanticReviewAllow, false, "benign_context", 0.9, map[string]float64{"benign_context": 0.9}, nil, "")
+
+	require.Equal(t, ContentModerationKeywordActionWarn, log.KeywordAction)
+	require.Equal(t, ContentModerationKeywordActionWarn, log.EffectiveKeywordAction)
 }
 
 func TestCandidateAccountRetryReusesPriorCandidateDecision(t *testing.T) {
