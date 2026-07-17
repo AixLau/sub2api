@@ -2,7 +2,7 @@
 
 本文档记录当前推荐的双服务部署方式：React 官网负责品牌首页和登录/注册入口，Sub2API 保持原有 Vue 控制台、后端 API、数据库和 Redis。不要为了接入官网而给 Sub2API 增加 `/console` 前缀。
 
-Sub2API 前端只有在构建时设置 `VITE_REACT_LANDING_ROUTES=true` 才会把 `/`、`/home`、`/login`、`/register`、`/forgot-password`、`/reset-password` 留给 React 官网。默认不设置该变量时，Sub2API 仍按单服务部署方式由 Vue 自己提供这些入口页。
+Sub2API 前端只有在构建时设置 `VITE_REACT_LANDING_ROUTES=true` 才会把官网和认证入口留给 React。默认不设置该变量时，Sub2API 仍按单服务部署方式由 Vue 自己提供原有入口页。React 新增公开页面还必须在 Caddy 的 `@react_landing` 中逐条声明，不能依赖兜底路由。
 
 ## 当前拓扑
 
@@ -21,6 +21,7 @@ Sub2API 前端只有在构建时设置 `VITE_REACT_LANDING_ROUTES=true` 才会�
 | 路径 | 归属 |
 |------|------|
 | `/`, `/home` | React 官网 |
+| `/model-market`, `/services`, `/service-status`, `/faq` | React 官网独立业务页面 |
 | `/login`, `/register`, `/forgot-password`, `/reset-password`, `/change-password` | React 官网认证入口 |
 | `/landing-assets/*` | React 官网构建资源 |
 | `/dashboard`, `/keys`, `/usage`, `/profile`, `/admin/*` | Sub2API Vue 控制台 |
@@ -78,7 +79,7 @@ aixlau.me {
 	}
 
 	@react_landing {
-		path / /home /login /register /forgot-password /reset-password /change-password
+		path / /home /model-market /services /service-status /faq /login /register /forgot-password /reset-password /change-password
 	}
 	handle @react_landing {
 		root * /var/www/aixlau.me/landing
@@ -157,6 +158,8 @@ tar -C dist -czf - . | ssh sub2api-server \
 ```bash
 curl -fsSL https://aixlau.me/ | rg -o 'landing-assets/[^" ]+'
 curl -I https://aixlau.me/landing-assets/index-*.js
+curl -I https://aixlau.me/model-market
+curl -I https://aixlau.me/faq
 curl -I https://aixlau.me/register
 ```
 
@@ -230,12 +233,12 @@ docker compose -f docker-compose.local.yml logs --tail=120 sub2api
 
 ## Cloudflare 建议
 
-当前 React 官网页面是纯静态 HTML。若 Cloudflare 对 `/`、`/login`、`/register`、`/reset-password` 返回 `cf-cache-status: DYNAMIC`，首包时间会受回源链路和防护脚本影响。
+当前 React 官网页面是纯静态 HTML。若 Cloudflare 对官网公开页或认证入口返回 `cf-cache-status: DYNAMIC`，首包时间会受回源链路和防护脚本影响。
 
 建议：
 
 - 对 `/landing-assets/*` 使用长期缓存，已由 Caddy 设置 `Cache-Control: public, max-age=31536000, immutable`。
-- 对 `/`、`/home`、`/login`、`/register`、`/forgot-password`、`/reset-password`、`/change-password` 配置 Cloudflare Cache Rule，例如 `Cache Everything`，但必须排除 `/api/*`、`/v1/*`、`/dashboard*`、`/admin*` 等动态/API 路径。
+- 对 Caddy `@react_landing` 中明确列出的 React 路径配置 Cloudflare Cache Rule，例如 `Cache Everything`，但必须排除 `/api/*`、`/v1/*`、`/dashboard*`、`/admin*` 等动态/API 路径。
 - 官网入口如果启用了 Bot Fight Mode、Managed Challenge 或 JavaScript Detection，可能注入 `/cdn-cgi/challenge-platform/scripts/jsd/main.js`，会增加首屏请求和执行成本。可按安全策略对纯静态官网路径降低挑战强度，API 和控制台路径保持严格策略。
 
 ## 常见问题

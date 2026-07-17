@@ -5,6 +5,10 @@
 ## 官方入口
 
 - 首页: https://aixlau.me/
+- 模型广场与价格: https://aixlau.me/model-market
+- 服务能力: https://aixlau.me/services
+- 服务状态说明: https://aixlau.me/service-status
+- 常见问题: https://aixlau.me/faq
 - 客户端配置教程: https://aixlau.me/docs/install/
 - 注册: https://aixlau.me/register
 - 登录: https://aixlau.me/login
@@ -18,12 +22,6 @@
 - 在模型 API 工作台查看调用记录和用量信息，帮助团队了解服务使用情况。
 - 支持通过一键脚本或 CC Switch 配置 Codex、Claude Code 等客户端，具体步骤以官方教程为准。
 
-## 接入流程
-
-1. 注册星链 AI 账号。
-2. 创建 API Key。
-3. 按照客户端配置教程完成接入并开始调用。
-
 ## 内容边界
 
-本文档只描述星链 AI 官网公开的产品定位和接入路径。模型可用性、价格、额度、计费分组和上游服务以登录后的工作台、服务条款及官方文档为准。
+本文档只描述星链 AI 官网公开的产品定位和使用入口。模型范围、价格、额度和可用性以登录后的工作台、服务条款及官方文档为准。

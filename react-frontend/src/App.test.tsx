@@ -1,9 +1,9 @@
 import '@testing-library/jest-dom/vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import App from './App'
+import App, { publicPageRoutes } from './App'
 import { HERO_BACKGROUND_IMAGE } from './data/alwayzz'
 
 const originalLocation = window.location
@@ -45,26 +45,90 @@ afterEach(() => {
 })
 
 describe('星链 landing page', () => {
-  it('renders the AI model API product hero, navigation, calls to action, and capability marquee', () => {
+  it('keeps the Git HEAD homepage while exposing business pages through the menu', () => {
     render(<App />)
 
-    expect(screen.getByLabelText('星链 home')).toHaveTextContent('星链')
+    expect(screen.getAllByLabelText('星链 home')).toHaveLength(1)
+    expect(screen.getAllByLabelText('星链 home')[0]).toHaveTextContent('星链')
     expect(screen.getByRole('button', { name: '菜单' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
       '让模型 API 接入，像光一样自然。',
     )
     expect(screen.getByText(/稳定的 API 服务/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '开始接入' })).toHaveAttribute('href', '/login')
-    expect(screen.getByRole('link', { name: '查看服务能力' })).toHaveAttribute('href', '/dashboard')
-    expect(screen.getByRole('link', { name: '登录' })).toHaveAttribute('href', '/login')
-    expect(screen.getByRole('link', { name: '注册' })).toHaveAttribute('href', '/register')
-    expect(screen.getAllByText('模型统一接入')).toHaveLength(4)
-    expect(screen.getByText('统一接入 / 稳定调用')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '查看接入文档' })).toHaveAttribute(
+      'href',
+      '/docs/install/',
+    )
+    expect(screen.getAllByRole('link', { name: '登录' })).toHaveLength(1)
+    screen.getAllByRole('link', { name: '登录' }).forEach((link) => {
+      expect(link).toHaveAttribute('href', '/login')
+    })
+    expect(screen.getAllByRole('link', { name: '注册' })).toHaveLength(1)
+    screen.getAllByRole('link', { name: '注册' }).forEach((link) => {
+      expect(link).toHaveAttribute('href', '/register')
+    })
+    expect(screen.getByText('Codex 配置 / 使用指南')).toBeInTheDocument()
     expect(screen.queryByText(/GPT-like/i)).not.toBeInTheDocument()
     expect(screen.queryByText('商业可用')).not.toBeInTheDocument()
     expect(screen.getByText('Partnered with top-tier companies globally')).toBeInTheDocument()
-    expect(screen.getAllByText('Airbnb')).toHaveLength(4)
-    expect(screen.getAllByText('Stripe')).toHaveLength(4)
+    expect(screen.queryByRole('navigation', { name: '产品页面' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '复杂能力，保持简单。' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '模型与价格，接入前就看清。' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '三步开始调用。' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '按使用方式选择。' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '状态与用量，都有迹可循。' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '接入前，先了解这些。' })).not.toBeInTheDocument()
+    expect(screen.queryByText('当前为官网原型')).not.toBeInTheDocument()
+    expect(screen.getAllByText('Airbnb').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Stripe').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '菜单' }))
+    expect(document.querySelector('.drawer-links a[href="/model-market"]')).toBeInTheDocument()
+    expect(document.querySelector('.drawer-links a[href="/services"]')).toBeInTheDocument()
+    expect(document.querySelector('.drawer-links a[href="/getting-started"]')).not.toBeInTheDocument()
+    expect(document.querySelector('.drawer-links a[href="/pricing"]')).not.toBeInTheDocument()
+    expect(document.querySelector('.drawer-links a[href="/service-status"]')).toBeInTheDocument()
+    expect(document.querySelector('.drawer-links a[href="/faq"]')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['/services', '复杂能力，保持简单。', '/services'],
+    ['/service-status', '状态与用量，都有迹可循。', '/service-status'],
+    ['/faq', '接入前，先了解这些。', '/faq'],
+  ])('renders %s as an isolated public page', (path, heading, activeHref) => {
+    window.history.pushState({}, '', path)
+    render(<App />)
+
+    expect(screen.getByRole('main')).toHaveClass('public-page-main')
+    expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '让模型 API 接入，像光一样自然。' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '需要的信息，各有入口。' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '菜单' }))
+    expect(document.querySelector(`.drawer-links a[href="${activeHref}"]`)).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+  })
+
+  it.each(['/getting-started', '/pricing'])('removes the retired public route %s', (path) => {
+    window.history.pushState({}, '', path)
+    render(<App />)
+
+    expect(screen.getByRole('heading', { name: '这个页面不存在。' })).toBeInTheDocument()
+    expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument()
+  })
+
+  it('renders an explicit 404 instead of falling back to the homepage', () => {
+    window.history.pushState({}, '', '/not-a-public-page')
+    render(<App />)
+
+    expect(screen.getByRole('heading', { name: '这个页面不存在。' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '让模型 API 接入，像光一样自然。' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '返回首页' })).toHaveAttribute('href', '/')
   })
 
   it('keeps account forms on dedicated pages instead of the homepage', () => {
@@ -72,6 +136,221 @@ describe('星链 landing page', () => {
 
     expect(screen.queryByRole('heading', { name: '登录星链' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '创建账号' })).not.toBeInTheDocument()
+  })
+
+  it('keeps every public homepage link on a real anchor or an owned application route', () => {
+    const { container } = render(<App />)
+    const vueRoutes = readFileSync(join(process.cwd(), '../frontend/src/router/index.ts'), 'utf8')
+    const reactRoutes = readFileSync(join(process.cwd(), 'src/App.tsx'), 'utf8')
+    const links = Array.from(container.querySelectorAll<HTMLAnchorElement>('a[href]'))
+
+    for (const link of links) {
+      const href = link.getAttribute('href')
+      expect(href, `链接“${link.textContent?.trim()}”缺少 href`).toBeTruthy()
+
+      if (!href) continue
+
+      if (href.startsWith('#')) {
+        expect(document.querySelector(href), `锚点 ${href} 不存在`).not.toBeNull()
+        continue
+      }
+
+      if (href === '/') {
+        expect(window.location.pathname).toBe('/')
+        continue
+      }
+
+      if (href.startsWith('https://')) {
+        const url = new URL(href)
+        expect(['developers.openai.com', 'platform.claude.com']).toContain(url.hostname)
+        expect(link).toHaveAttribute('target', '_blank')
+        expect(link).toHaveAttribute('rel', 'noreferrer')
+        continue
+      }
+
+      if (href === '/docs/install/') {
+        expect(existsSync(join(process.cwd(), '../docs/install/index.html'))).toBe(true)
+        continue
+      }
+
+      if (href.startsWith('/legal/')) {
+        expect(vueRoutes).toContain("path: '/legal/:documentId'")
+        continue
+      }
+
+      if (href === '/monitor') {
+        expect(vueRoutes).toContain("path: '/monitor'")
+        continue
+      }
+
+      if (href === '/dashboard') {
+        expect(vueRoutes).toContain("path: '/dashboard'")
+        continue
+      }
+
+      expect(reactRoutes, `React 未声明公开路由 ${href}`).toContain(`'${href}'`)
+    }
+  })
+
+  it('publishes every public business route through sitemap and the production Caddy matcher', () => {
+    const sitemap = readFileSync(join(process.cwd(), 'public/sitemap.xml'), 'utf8')
+    const runbook = readFileSync(
+      join(process.cwd(), '../deploy/react-landing-production.md'),
+      'utf8',
+    )
+    const caddyMatcher = runbook.match(/@react_landing \{(?<body>[\s\S]*?)\n\t\}/)?.groups?.body ?? ''
+
+    for (const route of publicPageRoutes) {
+      expect(sitemap).toContain(`<loc>https://aixlau.me${route}</loc>`)
+      expect(caddyMatcher).toContain(route)
+    }
+    expect(sitemap).not.toContain('/getting-started')
+    expect(sitemap).not.toContain('/pricing')
+    expect(caddyMatcher).not.toContain('/getting-started')
+    expect(caddyMatcher).not.toContain('/pricing')
+  })
+
+  it('renders the system model catalog and converts per-token prices to per-million prices', async () => {
+    window.history.pushState({}, '', '/model-market')
+    const fetchMock = vi.spyOn(window, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: 0,
+          data: {
+            models: [
+              {
+                name: 'gpt-5.5',
+                platform: 'openai',
+                pricing: {
+                  billing_mode: 'token',
+                  input_price: 0.000005,
+                  output_price: 0.00003,
+                  cache_write_price: 0,
+                  cache_read_price: 0.0000005,
+                  image_input_price: null,
+                  image_output_price: null,
+                  per_request_price: null,
+                  intervals: [],
+                },
+              },
+              {
+                name: 'claude-sonnet-5',
+                platform: 'anthropic',
+                pricing: {
+                  billing_mode: 'token',
+                  input_price: 0.000003,
+                  output_price: 0.000015,
+                  cache_write_price: 0.00000375,
+                  cache_read_price: 0.0000003,
+                  image_input_price: null,
+                  image_output_price: null,
+                  per_request_price: null,
+                  intervals: [],
+                },
+              },
+              {
+                name: 'gemini-3.1-pro',
+                platform: 'gemini',
+                pricing: {
+                  billing_mode: 'token',
+                  input_price: 0.000002,
+                  output_price: 0.000012,
+                  cache_write_price: null,
+                  cache_read_price: 0.0000002,
+                  image_input_price: null,
+                  image_output_price: null,
+                  per_request_price: null,
+                  intervals: [],
+                },
+              },
+            ],
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+
+    render(<App />)
+
+    expect(screen.getByRole('main')).toHaveClass('public-page-main')
+    expect(screen.queryByRole('heading', { name: '让模型 API 接入，像光一样自然。' })).not.toBeInTheDocument()
+    const gpt55Card = (await screen.findByText('gpt-5.5')).closest('article')
+    expect(gpt55Card).toBeInTheDocument()
+    expect(gpt55Card).toHaveTextContent(/缓存创建 \/ 1M tokens\s*免费/)
+    expect(gpt55Card).toHaveTextContent(/输入 \/ 1M tokens\s*\$5/)
+    expect(gpt55Card).toHaveTextContent(/输出 \/ 1M tokens\s*\$30/)
+    expect(gpt55Card).toHaveTextContent(/缓存读取 \/ 1M tokens\s*\$0.5/)
+    expect(screen.getByText('claude-sonnet-5')).toBeInTheDocument()
+    expect(screen.getByText('gemini-3.1-pro')).toBeInTheDocument()
+    expect(screen.getByText('3 个模型')).toBeInTheDocument()
+    expect(screen.queryByText('支持调用')).not.toBeInTheDocument()
+    expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/models/public', {
+      signal: expect.any(AbortSignal),
+      headers: { Accept: 'application/json' },
+    })
+    expect(screen.queryByText(/页面展示基础起价/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('官方模型参考')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Claude' }))
+    expect(screen.queryByText('gpt-5.5')).not.toBeInTheDocument()
+    expect(screen.getByText('claude-sonnet-5')).toBeInTheDocument()
+    expect(screen.getByText('1 个模型')).toBeInTheDocument()
+  })
+
+  it('keeps search empty state usable for the system model catalog', async () => {
+    window.history.pushState({}, '', '/model-market')
+    vi.spyOn(window, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: 0,
+          data: {
+            models: [{ name: 'gpt-5.5', platform: 'openai', pricing: null }],
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    render(<App />)
+
+    expect(await screen.findByText('gpt-5.5')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText('搜索模型名称'), {
+      target: { value: 'not-a-model' },
+    })
+    expect(screen.getByText('没有找到匹配模型')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '清除筛选' }))
+    expect(screen.getByText('gpt-5.5')).toBeInTheDocument()
+  })
+
+  it('offers a retry when the system model catalog request fails', async () => {
+    window.history.pushState({}, '', '/model-market')
+    const fetchMock = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: 500, message: 'unavailable' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 0,
+            data: { models: [{ name: 'gpt-5.5', platform: 'openai', pricing: null }] },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+
+    render(<App />)
+
+    expect(await screen.findByText('模型目录暂时无法加载')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '重新加载' }))
+
+    expect(await screen.findByText('gpt-5.5')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('renders a dedicated registration page with the two-column account layout', async () => {
@@ -594,7 +873,7 @@ describe('星链 landing page', () => {
     expect(localStorage.getItem('auth_token')).toBeNull()
   })
 
-  it('keeps the hero height responsive so trusted brands can appear near the first viewport', () => {
+  it('keeps the hero height responsive so compatibility information appears near the first viewport', () => {
     const css = readFileSync(join(process.cwd(), 'src/styles/alwayzz.css'), 'utf8')
     const heroBlock = css.match(/\.hero-section\s*{(?<body>[\s\S]*?)\n}/)?.groups?.body ?? ''
 
@@ -603,23 +882,24 @@ describe('星链 landing page', () => {
     expect(heroBlock).not.toContain('min-height: 850px')
   })
 
-  it('keeps the homepage hero and trusted brands inside a single viewport layout', () => {
+  it('restores the fixed viewport homepage layout from Git HEAD', () => {
     render(<App />)
 
     expect(screen.getByRole('main')).toHaveClass('home-main')
 
     const css = readFileSync(join(process.cwd(), 'src/styles/alwayzz.css'), 'utf8')
-    const appShellBlock = css.match(/\.app-shell\s*{(?<body>[\s\S]*?)\n}/)?.groups?.body ?? ''
+    const homeShellBlock = css.match(/\.app-shell--home\s*{(?<body>[\s\S]*?)\n}/)?.groups?.body ?? ''
     const homeMainBlock = css.match(/\.home-main\s*{(?<body>[\s\S]*?)\n}/)?.groups?.body ?? ''
     const homeHeroBlock =
       css.match(/\.home-main \.hero-section\s*{(?<body>[\s\S]*?)\n}/)?.groups?.body ?? ''
 
-    expect(appShellBlock).toContain('height: 100svh')
-    expect(appShellBlock).toContain('overflow: hidden')
-    expect(homeMainBlock).toContain('grid-template-rows: minmax(0, 1fr) auto')
+    expect(homeShellBlock).toContain('height: 100svh')
+    expect(homeShellBlock).toContain('overflow: hidden')
+    expect(homeMainBlock).toContain('display: grid')
     expect(homeMainBlock).toContain('height: 100%')
     expect(homeMainBlock).toContain('overflow: hidden')
     expect(homeHeroBlock).toContain('min-height: 0')
+    expect(homeHeroBlock).toContain('height: 100%')
   })
 
   it('keeps the auth card light and uses a clean text brand mark', () => {

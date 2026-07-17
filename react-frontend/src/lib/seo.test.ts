@@ -25,6 +25,23 @@ describe('SEO metadata', () => {
     expect(metadata.schema).toBeUndefined()
   })
 
+  it('returns a distinct canonical and title for each public business page', () => {
+    const metadata = getPageMetadata('/model-market')
+
+    expect(metadata.title).toBe('模型广场与 API 价格 - 星链 AI')
+    expect(metadata.robots).toContain('index,follow')
+    expect(metadata.canonical).toBe('https://aixlau.me/model-market')
+    expect(metadata.schema).toBeUndefined()
+  })
+
+  it('keeps the home alias canonical and marks unknown routes as noindex', () => {
+    expect(getPageMetadata('/home').canonical).toBe('https://aixlau.me/')
+    expect(getPageMetadata('/missing').robots).toBe('noindex,nofollow,noarchive')
+    expect(getPageMetadata('/missing').title).toBe('页面不存在 - 星链 AI')
+    expect(getPageMetadata('/getting-started').robots).toBe('noindex,nofollow,noarchive')
+    expect(getPageMetadata('/pricing').robots).toBe('noindex,nofollow,noarchive')
+  })
+
   it('updates document metadata without touching page content', () => {
     const content = document.createElement('main')
     content.textContent = 'existing page content'

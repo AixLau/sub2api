@@ -31,12 +31,12 @@ export function HeroSection() {
           <a className="primary-button" href="/login">
             开始接入
           </a>
-          <a className="booking-button service-button" href="/dashboard" aria-label="查看服务能力">
+          <a className="booking-button service-button" href="/docs/install/" aria-label="查看接入文档">
             <span className="booking-copy">
-              <span className="booking-title">查看服务能力</span>
+              <span className="booking-title">查看接入文档</span>
               <span className="booking-meta">
                 <span className="availability-dot" aria-hidden="true" />
-                统一接入 / 稳定调用
+                Codex 配置 / 使用指南
               </span>
             </span>
           </a>

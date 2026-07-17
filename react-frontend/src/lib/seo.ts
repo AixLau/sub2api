@@ -47,6 +47,27 @@ const authTitles: Record<string, string> = {
   '/change-password': '修改密码 - 星链 AI',
 }
 
+const indexableRobots = 'index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1'
+
+const publicPageMetadata: Record<string, Omit<PageMetadata, 'canonical' | 'robots'>> = {
+  '/model-market': {
+    title: '模型广场与 API 价格 - 星链 AI',
+    description: '查看星链 AI 当前公开的 GPT、Claude、Gemini 等可售模型、基础 Token 价格与官方模型系列参考。',
+  },
+  '/services': {
+    title: '服务能力 - 星链 AI',
+    description: '了解星链 AI 的统一模型接入、用量查看与 API Key 管理能力。',
+  },
+  '/service-status': {
+    title: '服务状态与用量 - 星链 AI',
+    description: '了解星链 AI 提供的服务状态、调用记录、Token 费用与 API Key 额度查看能力。',
+  },
+  '/faq': {
+    title: '常见问题 - 星链 AI',
+    description: '查看星链 AI 的适用场景、Codex 接入、费用计算、调用明细和模型可用性说明。',
+  },
+}
+
 export function getPageMetadata(pathname: string): PageMetadata {
   if (authTitles[pathname]) {
     return {
@@ -57,12 +78,29 @@ export function getPageMetadata(pathname: string): PageMetadata {
     }
   }
 
+  if (publicPageMetadata[pathname]) {
+    return {
+      ...publicPageMetadata[pathname],
+      canonical: `${siteUrl}${pathname}`,
+      robots: indexableRobots,
+    }
+  }
+
+  if (pathname !== '/' && pathname !== '/home') {
+    return {
+      title: '页面不存在 - 星链 AI',
+      description: '未找到请求的星链 AI 页面。',
+      canonical: `${siteUrl}${pathname}`,
+      robots: 'noindex,nofollow,noarchive',
+    }
+  }
+
   return {
     title: '星链 AI｜GPT API 中转站与统一模型 API 平台',
     description:
       '星链 AI 面向开发者提供 GPT、Claude、Gemini 等模型 API 的统一接入与中转服务，支持 OpenAI 兼容 API、API Key 管理、Codex / Claude Code 配置和调用用量查看。',
     canonical: `${siteUrl}/`,
-    robots: 'index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1',
+    robots: indexableRobots,
     schema: homeSchema,
   }
 }

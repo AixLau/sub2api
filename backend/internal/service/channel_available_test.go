@@ -217,6 +217,22 @@ func TestSynthesizePricingFromLiteLLM_TokenMode(t *testing.T) {
 	require.NotNil(t, got.CacheReadPrice)
 }
 
+func TestSynthesizePricingFromLiteLLM_FreeCacheCreation(t *testing.T) {
+	lp := &LiteLLMModelPricing{
+		Mode:                    "chat",
+		InputCostPerToken:       5e-6,
+		OutputCostPerToken:      3e-5,
+		CacheReadInputTokenCost: 5e-7,
+		SupportsPromptCaching:   true,
+	}
+
+	got := synthesizePricingFromLiteLLM(lp, nil)
+	require.NotNil(t, got)
+	require.NotNil(t, got.CacheWritePrice)
+	require.Zero(t, *got.CacheWritePrice)
+	require.NotNil(t, got.CacheReadPrice)
+}
+
 func TestSynthesizePricingFromLiteLLM_ImageGenerationMode(t *testing.T) {
 	// LiteLLM mode=image_generation 且渠道未声明模式时，按 image 合成。
 	lp := &LiteLLMModelPricing{

@@ -16,6 +16,9 @@ func RegisterUserRoutes(
 	auditLog middleware.AuditLogMiddleware,
 	settingService *service.SettingService,
 ) {
+	// 公开模型目录（无需认证）：只返回已启用渠道中公开分组可用的模型与展示价格。
+	v1.GET("/models/public", h.AvailableChannel.ListPublic)
+
 	authenticated := v1.Group("")
 	authenticated.Use(gin.HandlerFunc(jwtAuth))
 	authenticated.Use(middleware.BackendModeUserGuard(settingService))

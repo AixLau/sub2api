@@ -191,10 +191,27 @@ func synthesizePricingFromLiteLLM(lp *LiteLLMModelPricing, existing *ChannelMode
 		BillingMode:      mode,
 		InputPrice:       nonZeroPtr(lp.InputCostPerToken),
 		OutputPrice:      nonZeroPtr(lp.OutputCostPerToken),
-		CacheWritePrice:  nonZeroPtr(lp.CacheCreationInputTokenCost),
+		CacheWritePrice:  cacheWritePriceFromLiteLLM(lp),
 		CacheReadPrice:   nonZeroPtr(lp.CacheReadInputTokenCost),
 		ImageOutputPrice: nonZeroPtr(lp.OutputCostPerImageToken),
 	}
+}
+
+// cacheWritePriceFromLiteLLM 保留“支持提示缓存但没有额外创建费用”的零价格语义。
+// LiteLLM 的数值结构无法区分缺失和 0；同时具备缓存读取价与 supports_prompt_caching
+// 时，0 表示缓存创建不额外收费，而不是价格未知。
+func cacheWritePriceFromLiteLLM(lp *LiteLLMModelPricing) *float64 {
+	if lp == nil {
+		return nil
+	}
+	if lp.CacheCreationInputTokenCost != 0 {
+		return nonZeroPtr(lp.CacheCreationInputTokenCost)
+	}
+	if lp.SupportsPromptCaching && lp.CacheReadInputTokenCost > 0 {
+		zero := 0.0
+		return &zero
+	}
+	return nil
 }
 
 func nonZeroPtr(v float64) *float64 {

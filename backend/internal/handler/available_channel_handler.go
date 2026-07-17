@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"math"
 	"sort"
+	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -114,6 +116,108 @@ type userAvailableChannel struct {
 	Name        string                       `json:"name"`
 	Description string                       `json:"description"`
 	Platforms   []userChannelPlatformSection `json:"platforms"`
+}
+
+// publicModelCatalogResponse 是注册前模型广场使用的最小公开响应。
+// 不暴露渠道、分组、倍率、内部 ID 或调度信息；同平台同名模型仅保留一个最低基础价条目。
+type publicModelCatalogResponse struct {
+	Models []userSupportedModel `json:"models"`
+}
+
+// ListPublic 返回无需登录即可浏览的公开模型目录。
+// GET /api/v1/models/public
+func (h *AvailableChannelHandler) ListPublic(c *gin.Context) {
+	channels, err := h.channelService.ListAvailable(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	c.Header("Cache-Control", "public, max-age=60")
+	response.Success(c, publicModelCatalogResponse{Models: buildPublicModelCatalog(channels)})
+}
+
+// buildPublicModelCatalog 只收录至少关联一个公开分组的活跃渠道模型，并按平台 + 名称去重。
+// 若多个公开渠道提供同一模型，保留基础展示价最低的条目；真实结算仍由分组倍率和计费链路决定。
+func buildPublicModelCatalog(channels []service.AvailableChannel) []userSupportedModel {
+	byKey := make(map[string]userSupportedModel)
+	for _, ch := range channels {
+		if ch.Status != service.StatusActive {
+			continue
+		}
+
+		publicPlatforms := make(map[string]struct{})
+		for _, group := range ch.Groups {
+			if group.IsExclusive || group.Platform == "" {
+				continue
+			}
+			publicPlatforms[group.Platform] = struct{}{}
+		}
+		if len(publicPlatforms) == 0 {
+			continue
+		}
+
+		for _, model := range toUserSupportedModels(ch.SupportedModels, publicPlatforms) {
+			key := strings.ToLower(model.Platform + "\x00" + model.Name)
+			current, exists := byKey[key]
+			if !exists || publicPricingScore(model.Pricing) < publicPricingScore(current.Pricing) {
+				byKey[key] = model
+			}
+		}
+	}
+
+	models := make([]userSupportedModel, 0, len(byKey))
+	for _, model := range byKey {
+		models = append(models, model)
+	}
+	sort.SliceStable(models, func(i, j int) bool {
+		if models[i].Platform != models[j].Platform {
+			return models[i].Platform < models[j].Platform
+		}
+		return strings.ToLower(models[i].Name) < strings.ToLower(models[j].Name)
+	})
+	return models
+}
+
+func publicPricingScore(pricing *userSupportedModelPricing) float64 {
+	if pricing == nil {
+		return math.Inf(1)
+	}
+	if pricing.PerRequestPrice != nil {
+		return *pricing.PerRequestPrice
+	}
+	if pricing.ImageOutputPrice != nil && pricing.BillingMode == string(service.BillingModeImage) {
+		return *pricing.ImageOutputPrice
+	}
+
+	score := 0.0
+	hasPrice := false
+	for _, value := range []*float64{pricing.InputPrice, pricing.OutputPrice} {
+		if value != nil {
+			score += *value
+			hasPrice = true
+		}
+	}
+	if !hasPrice {
+		for _, interval := range pricing.Intervals {
+			intervalScore := 0.0
+			intervalHasPrice := false
+			for _, value := range []*float64{interval.InputPrice, interval.OutputPrice, interval.PerRequestPrice} {
+				if value != nil {
+					intervalScore += *value
+					intervalHasPrice = true
+				}
+			}
+			if intervalHasPrice && (!hasPrice || intervalScore < score) {
+				score = intervalScore
+				hasPrice = true
+			}
+		}
+	}
+	if !hasPrice {
+		return math.Inf(1)
+	}
+	return score
 }
 
 // List 列出当前用户可见的「可用渠道」。

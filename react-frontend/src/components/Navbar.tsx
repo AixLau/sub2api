@@ -4,6 +4,7 @@ import { brandName, navLinks } from '../data/alwayzz'
 
 export function Navbar() {
   const [isOpen, setIsOpen] = useState(false)
+  const pathname = window.location.pathname
 
   return (
     <header className="site-header">
@@ -45,14 +46,20 @@ export function Navbar() {
           关闭
         </button>
         <div className="drawer-inner">
-          <div className="drawer-links" role="list">
+          <ul className="drawer-links">
             {navLinks.map((link) => (
-              <a href={`#${link.toLowerCase().replace(/\s+/g, '-')}`} key={link} role="listitem">
-                {link}
-              </a>
+              <li key={link.href}>
+                <a
+                  href={link.href}
+                  aria-current={pathname === link.href ? 'page' : undefined}
+                  onClick={() => setIsOpen(false)}
+                >
+                  {link.label}
+                </a>
+              </li>
             ))}
-          </div>
-          <p className="drawer-footer">© 2026 星链. 模型 API 服务层，当前为官网原型。</p>
+          </ul>
+          <p className="drawer-footer">© 2026 星链 · 模型 API 服务</p>
         </div>
       </div>
     </header>
