@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -137,6 +138,36 @@ func TestOpsErrorLoggerMiddleware_DoesNotBreakOuterMiddlewares(t *testing.T) {
 		r.ServeHTTP(rec, req)
 	})
 	require.Equal(t, http.StatusNoContent, rec.Code)
+}
+
+func TestOpsErrorLoggerMiddleware_ClassifiesCanceledBodyUploadAsClientRequest(t *testing.T) {
+	setupOpsErrorLogTestQueue(t, 1)
+
+	gin.SetMode(gin.TestMode)
+	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := gin.New()
+	r.Use(OpsErrorLoggerMiddleware(ops))
+	r.POST("/v1/responses", func(c *gin.Context) {
+		markOpsRequestBodyReadError(c, context.Canceled)
+		c.Status(statusClientClosedRequest)
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	req.ContentLength = 35962130
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, statusClientClosedRequest, rec.Code)
+	require.Equal(t, int64(1), OpsErrorLogQueueLength())
+	job := <-opsErrorLogQueue
+	require.NotNil(t, job.entry)
+	require.Equal(t, "request", job.entry.ErrorPhase)
+	require.Equal(t, "client", job.entry.ErrorOwner)
+	require.Equal(t, "client_request", job.entry.ErrorSource)
+	require.False(t, job.entry.IsBusinessLimited)
+	require.Equal(t, "客户端在请求体上传完成前取消连接", job.entry.ErrorMessage)
+	require.NotNil(t, job.entry.UpstreamErrorDetail)
+	require.Contains(t, *job.entry.UpstreamErrorDetail, `"reason":"client_upload_canceled"`)
 }
 
 // setupOpsErrorLogTestQueue 阻止 enqueueOpsErrorLog 启动真实 worker，改用可检查的测试队列。

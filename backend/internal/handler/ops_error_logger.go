@@ -896,6 +896,10 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 
 		body := w.buf.Bytes()
 		parsed := parseOpsErrorResponse(body)
+		errorMessage := strings.TrimSpace(parsed.Message)
+		if errorMessage == "" {
+			errorMessage = opsDiagnosticMessage(c)
+		}
 
 		// Skip logging if a passthrough rule with skip_monitoring=true matched.
 		if v, ok := c.Get(service.OpsSkipPassthroughKey); ok {
@@ -905,7 +909,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 		}
 
 		// Skip logging if the error should be filtered based on settings
-		if shouldSkipOpsErrorLog(c.Request.Context(), ops, parsed.Message, string(body), c.Request.URL.Path) {
+		if shouldSkipOpsErrorLog(c.Request.Context(), ops, errorMessage, string(body), c.Request.URL.Path) {
 			return
 		}
 
@@ -940,7 +944,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 
 		normalizedType := normalizeOpsErrorType(parsed.ErrorType, parsed.Code)
 
-		phase, isBusinessLimited, errorOwner, errorSource := classifyOpsErrorLog(c, normalizedType, parsed.Message, parsed.Code, status)
+		phase, isBusinessLimited, errorOwner, errorSource := classifyOpsErrorLog(c, normalizedType, errorMessage, parsed.Code, status)
 
 		entry := &service.OpsInsertErrorLogInput{
 			RequestID:       requestID,
@@ -988,7 +992,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			IsBusinessLimited: isBusinessLimited,
 			IsCountTokens:     isCountTokensRequest(c),
 
-			ErrorMessage: parsed.Message,
+			ErrorMessage: errorMessage,
 			// Keep the full captured error body (capture is already capped at 64KB) so the
 			// service layer can sanitize JSON before truncating for storage.
 			ErrorBody:   string(body),
@@ -1540,6 +1544,10 @@ func classifyOpsSeverity(errType string, status int) string {
 }
 
 func classifyOpsErrorLog(c *gin.Context, errType, message, code string, status int) (phase string, isBusinessLimited bool, errorOwner string, errorSource string) {
+	if isOpsClientRequestInterrupted(c, message, status) {
+		return "request", false, "client", "client_request"
+	}
+
 	phase = classifyOpsPhase(errType, message, code)
 	routingCapacityLimited := isOpsRoutingCapacityLimited(c)
 	clientBusinessLimited := service.HasOpsClientBusinessLimited(c)
@@ -1563,6 +1571,50 @@ func classifyOpsErrorLog(c *gin.Context, errType, message, code string, status i
 	errorOwner = classifyOpsErrorOwner(phase, message)
 	errorSource = classifyOpsErrorSource(phase, message)
 	return phase, isBusinessLimited, errorOwner, errorSource
+}
+
+func opsDiagnosticMessage(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	v, ok := c.Get(service.OpsDiagnosticMessageKey)
+	if !ok {
+		return ""
+	}
+	message, _ := v.(string)
+	return strings.TrimSpace(message)
+}
+
+func isOpsClientRequestInterrupted(c *gin.Context, message string, status int) bool {
+	if status == statusClientClosedRequest && strings.Contains(strings.ToLower(message), opsErrContextCanceled) {
+		return true
+	}
+	if c == nil {
+		return false
+	}
+	v, ok := c.Get(service.OpsDiagnosticDetailKey)
+	if !ok {
+		return false
+	}
+	detail, _ := v.(string)
+	if strings.TrimSpace(detail) == "" {
+		return false
+	}
+	var diagnostic struct {
+		Reason   string `json:"reason"`
+		RawError string `json:"raw_error"`
+	}
+	if err := json.Unmarshal([]byte(detail), &diagnostic); err != nil {
+		return false
+	}
+	switch strings.TrimSpace(diagnostic.Reason) {
+	case "client_upload_canceled", "client_upload_interrupted", "client_request_canceled":
+		return true
+	case "request_body_read_failed":
+		return strings.Contains(strings.ToLower(diagnostic.RawError), opsErrContextCanceled)
+	default:
+		return false
+	}
 }
 
 func classifyOpsIsBusinessLimited(errType, phase, code string, status int, message string, localClientAuthError ...bool) bool {

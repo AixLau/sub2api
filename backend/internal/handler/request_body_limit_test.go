@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -43,6 +44,31 @@ func TestRequestBodyLimitTooLarge(t *testing.T) {
 
 	require.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
 	require.Contains(t, recorder.Body.String(), buildBodyTooLargeMessage(limit))
+}
+
+func TestMarkOpsRequestBodyReadError_ContextCanceled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	req.ContentLength = 35962130
+	c.Request = req
+
+	markOpsRequestBodyReadError(c, context.Canceled)
+
+	gotMsg, ok := c.Get(service.OpsDiagnosticMessageKey)
+	require.True(t, ok)
+	require.Equal(t, "客户端在请求体上传完成前取消连接", gotMsg)
+
+	gotDetail, ok := c.Get(service.OpsDiagnosticDetailKey)
+	require.True(t, ok)
+	require.JSONEq(t, `{
+		"source":"request_body_reader",
+		"reason":"client_upload_canceled",
+		"message":"客户端在请求体上传完成前取消连接",
+		"raw_error":"context canceled",
+		"content_length":"35962130"
+	}`, gotDetail.(string))
 }
 
 func TestMarkOpsRequestBodyReadError_UnexpectedEOF(t *testing.T) {

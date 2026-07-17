@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,7 +43,10 @@ func markOpsRequestBodyReadError(c *gin.Context, err error) {
 	rawErr := strings.TrimSpace(err.Error())
 	reason := "request_body_read_failed"
 	message := "读取请求体失败"
-	if errors.Is(err, io.ErrUnexpectedEOF) || strings.Contains(strings.ToLower(rawErr), "unexpected eof") {
+	if errors.Is(err, context.Canceled) || strings.Contains(strings.ToLower(rawErr), "context canceled") {
+		reason = "client_upload_canceled"
+		message = "客户端在请求体上传完成前取消连接"
+	} else if errors.Is(err, io.ErrUnexpectedEOF) || strings.Contains(strings.ToLower(rawErr), "unexpected eof") {
 		reason = "client_upload_interrupted"
 		message = "请求体上传未完成：客户端在请求体传输完成前断开连接"
 	}
