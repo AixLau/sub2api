@@ -21,7 +21,7 @@ export default {
       standard: '标准',
       accountCost: '成本',
       todayTokens: '今日 Token',
-      totalTokens: '总 Token',
+      totalTokens: '累计 Token',
       input: '输入',
       output: '输出',
       cacheToday: '今日缓存',

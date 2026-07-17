@@ -17,7 +17,7 @@ export default {
       totalCost: 'Total Cost',
       newUsersToday: 'New Users Today',
       todayTokens: 'Today Tokens',
-      totalTokens: 'Total Tokens',
+      totalTokens: 'Accumulated Tokens',
       input: 'Input',
       output: 'Output',
       cacheToday: 'Cache (Today)',

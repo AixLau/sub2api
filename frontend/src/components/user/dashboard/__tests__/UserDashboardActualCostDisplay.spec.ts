@@ -159,6 +159,26 @@ const recentUsage = (): UsageLog[] => [
 ]
 
 describe('user dashboard cost visibility', () => {
+  it('formats accumulated tokens in billions', () => {
+    const stats = dashboardStats()
+    stats.total_tokens = 6_750_000_000
+
+    const wrapper = mount(UserDashboardStats, {
+      props: {
+        stats,
+        balance: 0,
+        isSimple: false,
+      },
+      global: {
+        stubs: {
+          Icon: IconStub,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('6.75B')
+  })
+
   it('shows user actual consumption in the summary cards without standard cost', () => {
     const wrapper = mount(UserDashboardStats, {
       props: {
