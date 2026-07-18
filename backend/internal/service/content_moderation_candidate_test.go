@@ -1018,6 +1018,48 @@ func TestCandidateCheckRoutesCyberCandidateToSemanticReview(t *testing.T) {
 	require.Zero(t, status.PreBlockBlocked)
 }
 
+func TestCandidateSemanticReviewAutoRejectsHighConfidenceHighRiskCandidate(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.Enabled = true
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword:  "cyber-marker",
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}}
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	repo := &candidateRetryDedupeRepo{}
+	svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyRiskControlEnabled:      "true",
+		SettingKeyContentModerationConfig: string(raw),
+	}}, repo, nil, nil, nil, nil, nil)
+	svc.SetDecisionCacheKey(bytes.Repeat([]byte{0x5a}, 32))
+	svc.SetSemanticReviewRouter(&contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict:    "review",
+		Categories: []string{"other"},
+		Confidence: 0.90,
+		Intent:     "ambiguous",
+	}})
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		UserID:   17,
+		APIKeyID: 29,
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"cyber-marker request"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionSemanticReviewReject, decision.Action)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, contentModerationDecisionSourceSemantic, logs[0].DecisionSource)
+	require.Equal(t, ContentModerationActionSemanticReviewReject, logs[0].Action)
+}
+
 func TestPromptInjectionV2PreBlockOutcomeMatrixIsFailClosedWithoutViolation(t *testing.T) {
 	tests := []struct {
 		name       string

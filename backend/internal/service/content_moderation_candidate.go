@@ -1176,11 +1176,13 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 	var policyOverride bool
 	if semanticInput.ReviewKind == contentModerationReviewKindPromptInjection {
 		result, policyOverride = applyPromptInjectionReviewPolicy(result, semanticInput.EvidenceComplete)
-		if s.metrics != nil {
-			s.metrics.observePromptInjectionReview(result.Verdict, semanticInput.EvidenceComplete, len([]rune(semanticInput.Text)))
-		}
 	} else {
 		result, policyOverride = applySemanticReviewPolicy(result)
+	}
+	result, candidatePolicyOverride := applyCandidateSemanticReviewPolicy(result, selection, semanticInput.EvidenceComplete)
+	policyOverride = policyOverride || candidatePolicyOverride
+	if semanticInput.ReviewKind == contentModerationReviewKindPromptInjection && s.metrics != nil {
+		s.metrics.observePromptInjectionReview(result.Verdict, semanticInput.EvidenceComplete, len([]rune(semanticInput.Text)))
 	}
 	category, score, scores := semanticReviewCategorySummary(result)
 	buildDecision := func(action string, flagged, blocked bool) *ContentModerationDecision {
@@ -1265,6 +1267,37 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		}
 		return contentModerationCandidateOutcome{Decision: buildDecision(ContentModerationActionSemanticReviewAllow, false, false), DecisionID: decisionID, Cacheable: true}
 	}
+}
+
+const candidateSemanticReviewAutoRejectConfidence = 0.85
+
+// applyCandidateSemanticReviewPolicy uses the local candidate as corroborating
+// evidence. A high-confidence review from a general reviewer is still
+// conservative for high-risk candidates, while explicit benign/defensive
+// classifications remain reviewable instead of being rejected blindly.
+func applyCandidateSemanticReviewPolicy(
+	result ContentModerationSemanticReviewResult,
+	selection contentModerationCandidateSelection,
+	evidenceComplete bool,
+) (ContentModerationSemanticReviewResult, bool) {
+	result = normalizeSemanticReviewResult(result)
+	if result.Verdict != "review" || !evidenceComplete || result.Confidence < candidateSemanticReviewAutoRejectConfidence {
+		return result, false
+	}
+	if result.Intent == "benign" || result.Intent == "defensive" {
+		return result, false
+	}
+	category := normalizeContentModerationKeywordCategory(selection.Rule.Category)
+	highRiskCandidate := contentModerationCategoryRequiresSemanticReview(category) ||
+		normalizeContentModerationKeywordSeverity(selection.Rule.Severity) == ContentModerationKeywordSeverityHigh ||
+		normalizeContentModerationKeywordSeverity(selection.Rule.Severity) == ContentModerationKeywordSeverityCritical
+	if !highRiskCandidate {
+		return result, false
+	}
+	result.Verdict = "reject"
+	result.Severity = ContentModerationKeywordSeverityHigh
+	result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "semantic_policy_high_risk_candidate")
+	return result, true
 }
 
 func promptInjectionFailClosedActive(cfg *ContentModerationConfig, selection contentModerationCandidateSelection) bool {
