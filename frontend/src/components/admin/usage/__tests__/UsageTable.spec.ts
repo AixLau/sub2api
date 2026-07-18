@@ -247,7 +247,7 @@ describe('admin UsageTable tooltip', () => {
     expect(text).toContain('claude-sonnet-4-20250514')
   })
 
-  it('labels account-test rows as platform operations with model cost', () => {
+  it('labels account-test rows as platform operations without the model-cost prefix', () => {
     const row = {
       request_id: 'account-test-1',
       source: 'account_test',
@@ -285,12 +285,12 @@ describe('admin UsageTable tooltip', () => {
     const text = wrapper.text()
     expect(text).toContain('Account test')
     expect(text).toContain('Platform')
-    expect(text).toContain('Model cost')
+    expect(text).not.toContain('Model cost')
     expect(text).toContain('$0.012345')
     expect(text).not.toContain('#0')
   })
 
-  it('labels content-moderation rows as platform operations', () => {
+  it('hides the content-moderation label and model-cost prefix for platform audit rows', () => {
     const row = {
       request_id: 'content-moderation-1',
       source: 'content_moderation',
@@ -326,9 +326,10 @@ describe('admin UsageTable tooltip', () => {
     })
 
     const text = wrapper.text()
-    expect(text).toContain('Content moderation')
     expect(text).toContain('Platform')
-    expect(text).toContain('Model cost')
+    expect(text).not.toContain('Content moderation')
+    expect(text).not.toContain('Model cost')
+    expect(text).toContain('$0.012345')
   })
 
   it.each([

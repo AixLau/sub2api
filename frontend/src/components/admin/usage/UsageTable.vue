@@ -58,9 +58,6 @@
             <span v-if="row.source === 'account_test'" class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200">
               {{ t('usage.accountTest') }}
             </span>
-            <span v-else-if="row.source === 'content_moderation'" class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
-              {{ t('usage.contentModeration') }}
-            </span>
             <span v-else-if="row.source === 'failed_upstream_usage'" class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200">
               {{ t('usage.failedUpstreamUsage') }}
             </span>
@@ -186,7 +183,7 @@
           <div class="text-sm">
             <div class="flex items-center gap-1.5">
 			  <span v-if="isPlatformOperation(row)" class="font-medium text-cyan-700 dark:text-cyan-300">
-				{{ t('usage.modelCost') }} ${{ row.total_cost?.toFixed(6) || '0.000000' }}
+				${{ row.total_cost?.toFixed(6) || '0.000000' }}
 			  </span>
 			  <span v-else class="font-medium text-green-600 dark:text-green-400">${{ row.actual_cost?.toFixed(6) || '0.000000' }}</span>
 			  <span
