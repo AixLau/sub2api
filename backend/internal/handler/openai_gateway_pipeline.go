@@ -129,11 +129,11 @@ func (h *OpenAIGatewayHandler) writeOpenAIHTTPModerationError(c *gin.Context, fo
 // OpenAI HTTP routes that can produce generated images.
 type OpenAIHTTPImagePermissionStage struct{}
 
-// openAIResponsesImageIntentForPlatform keeps platform-specific Responses
-// classification shared by the route-owned image stage and direct-invocation
-// compatibility paths.
-func openAIResponsesImageIntentForPlatform(apiKey *service.APIKey, model string, body []byte) bool {
-	return service.IsImageGenerationIntentForPlatform("/v1/responses", model, body, openAICompatibleRequestPlatform(apiKey))
+// openAIResponsesImageIntentForPlatform keeps Responses classification shared
+// by route-owned and direct-invocation compatibility paths. Passive tool
+// namespace declarations do not constitute an image-generation request.
+func openAIResponsesImageIntentForPlatform(_ *service.APIKey, model string, body []byte) bool {
+	return service.IsExplicitImageGenerationIntent("/v1/responses", model, body)
 }
 
 // rejectDirectOpenAIResponsesImagePermission is a compatibility guard for
@@ -203,6 +203,9 @@ func openAIHTTPGatewayImageIntent(input openAIHTTPPreForwardPipelineInput) bool 
 	imageEndpoint := input.ImageEndpoint
 	if imageEndpoint == "" {
 		imageEndpoint = "/v1/responses"
+	}
+	if imageEndpoint == "/v1/responses" {
+		return service.IsExplicitImageGenerationIntent(imageEndpoint, input.Model, input.Body)
 	}
 	return service.IsImageGenerationIntent(imageEndpoint, input.Model, input.Body)
 }
@@ -432,6 +435,9 @@ func openAIWebSocketGatewayImageIntent(input openAIWebSocketPipelineInput) bool 
 	imageEndpoint := input.ImageEndpoint
 	if imageEndpoint == "" {
 		imageEndpoint = "/v1/responses"
+	}
+	if imageEndpoint == "/v1/responses" {
+		return service.IsExplicitImageGenerationIntent(imageEndpoint, input.Model, input.Body)
 	}
 	return service.IsImageGenerationIntent(imageEndpoint, input.Model, input.Body)
 }

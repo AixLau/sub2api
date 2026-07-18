@@ -61,7 +61,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 	requestCtx := c.Request.Context()
-	if service.IsImageGenerationIntentForPlatform("/v1/responses", reqModel, body, openAICompatibleRequestPlatform(apiKey)) {
+	if service.IsExplicitImageGenerationIntent("/v1/responses", reqModel, body) {
 		requestCtx = service.WithOpenAIImageGenerationIntent(requestCtx)
 	}
 
@@ -77,6 +77,11 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 	if apiKey.Group != nil && apiKey.Group.ClaudeCodeOnly {
 		h.responsesErrorResponse(c, http.StatusForbidden, "permission_error",
 			"This group is restricted to Claude Code clients (/v1/messages only)")
+		return
+	}
+
+	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, reqModel, body); decision != nil && !decision.AllowNextStage {
+		h.responsesSecurityAuditError(c, decision)
 		return
 	}
 
