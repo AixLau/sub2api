@@ -985,7 +985,8 @@ func (s *UsageLogRepoSuite) TestDashboardStatsWithRange_Fallback() {
 	s.Require().Equal(int64(26), stats.TotalOutputTokens)
 	s.Require().Equal(int64(1), stats.TotalCacheCreationTokens)
 	s.Require().Equal(int64(3), stats.TotalCacheReadTokens)
-	s.Require().Equal(int64(45), stats.TotalTokens)
+	// TotalTokens is cumulative across all history, including the log outside the selected range.
+	s.Require().Equal(int64(60), stats.TotalTokens)
 	s.Require().Equal(1.5, stats.TotalCost)
 	s.Require().Equal(1.4, stats.TotalActualCost)
 	// account_cost = COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1) = total_cost

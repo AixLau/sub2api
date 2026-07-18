@@ -310,6 +310,15 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 			COALESCE(SUM(total_cost) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_cost,
 			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_actual_cost,
 			COALESCE(SUM(account_cost) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_account_cost,
+			(
+				SELECT COALESCE(SUM(
+					COALESCE(input_tokens, 0)
+					+ COALESCE(output_tokens, 0)
+					+ COALESCE(cache_creation_tokens, 0)
+					+ COALESCE(cache_read_tokens, 0)
+				), 0)
+				FROM usage_logs
+			) AS accumulated_total_tokens,
 			COALESCE(SUM(duration_ms) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_duration_ms,
 			COUNT(*) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz) AS today_requests,
 			COALESCE(SUM(input_tokens) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_input_tokens,
@@ -321,7 +330,7 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 			COALESCE(SUM(account_cost) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_account_cost
 		FROM scoped
 	`
-	var totalDurationMs int64
+	var accumulatedTotalTokens, totalDurationMs int64
 	if err := scanSingleRow(
 		ctx,
 		r.sql,
@@ -335,6 +344,7 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 		&stats.TotalCost,
 		&stats.TotalActualCost,
 		&stats.TotalAccountCost,
+		&accumulatedTotalTokens,
 		&totalDurationMs,
 		&stats.TodayRequests,
 		&stats.TodayInputTokens,
@@ -347,7 +357,9 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 	); err != nil {
 		return err
 	}
-	stats.TotalTokens = stats.TotalInputTokens + stats.TotalOutputTokens + stats.TotalCacheCreationTokens + stats.TotalCacheReadTokens
+	// "累计 Token" is intentionally independent of the selected dashboard range.
+	// Input tokens are stored excluding cache tokens, so all four components are additive.
+	stats.TotalTokens = accumulatedTotalTokens
 	if stats.TotalRequests > 0 {
 		stats.AverageDurationMs = float64(totalDurationMs) / float64(stats.TotalRequests)
 	}
