@@ -42,6 +42,9 @@ func TestOpenAIResponsesWebSocket_SubsequentFrameUsesModerationGuardAndBlocksBef
 		writeCtx, cancelWrite := context.WithTimeout(r.Context(), 3*time.Second)
 		_ = conn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.created","response":{"id":"resp_ws_guard_first","model":"gpt-5.1"}}`))
 		cancelWrite()
+		writeCtx, cancelWrite = context.WithTimeout(r.Context(), 3*time.Second)
+		_ = conn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.completed","response":{"id":"resp_ws_guard_first","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":1}}}`))
+		cancelWrite()
 
 		readCtx, cancelRead = context.WithTimeout(r.Context(), 500*time.Millisecond)
 		_, secondPayload, readErr := conn.Read(readCtx)
@@ -162,6 +165,12 @@ func TestOpenAIResponsesWebSocket_SubsequentFrameUsesModerationGuardAndBlocksBef
 	cancelRead()
 	require.NoError(t, err)
 	require.Equal(t, "response.created", gjson.GetBytes(event, "type").String())
+
+	readCtx, cancelRead = context.WithTimeout(context.Background(), 3*time.Second)
+	_, event, err = clientConn.Read(readCtx)
+	cancelRead()
+	require.NoError(t, err)
+	require.Equal(t, "response.completed", gjson.GetBytes(event, "type").String())
 
 	followupPayload := []byte(`{"type":"response.create","model":"gpt-5.2","input":"guard-risk"}`)
 	writeCtx, cancelWrite = context.WithTimeout(context.Background(), 3*time.Second)

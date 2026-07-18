@@ -33,6 +33,7 @@
 | `install.sh` | 二进制安装、升级和卸载 |
 | `DOCKER.md` | 已发布 Docker 镜像的使用说明 |
 | `DATAMANAGEMENTD_CN.md` | 宿主机数据管理进程说明 |
+| `EDGE_SECURITY.md` | 反向代理、CDN/WAF、可信代理与入口安全加固说明 |
 | `react-landing-production.md` | React 官网与 Sub2API 双服务路由说明 |
 
 运行数据、`.env`、备份和构建产物不得提交到 Git。

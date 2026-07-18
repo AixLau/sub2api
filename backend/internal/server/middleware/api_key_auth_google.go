@@ -24,8 +24,20 @@ func APIKeyAuthGoogle(apiKeyService *service.APIKeyService, cfg *config.Config) 
 // It is intended for Gemini native endpoints (/v1beta) to match Gemini SDK expectations.
 func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if rejectInvalidAuthAbuse(c, apiKeyService) {
+			abortWithGoogleError(c, 429, "Too many invalid authentication attempts; retry later")
+			return
+		}
+		if apiKeyHeadersTooLarge(c) {
+			recordInvalidAuthFailure(c, apiKeyService)
+			MarkIngressRejected(c, IngressRejectInvalidAPIKey)
+			abortWithGoogleError(c, 401, "Invalid API key")
+			return
+		}
 		if v := strings.TrimSpace(c.Query("api_key")); v != "" {
 			markOpsAPIKeyAuthDiagnostic(c, "api_key_in_query_deprecated", "api_key_in_query", nil, map[string]string{"parameter": "api_key"})
+			recordInvalidAuthFailure(c, apiKeyService)
+			MarkIngressRejected(c, IngressRejectQueryAPIKeyDeprecated)
 			abortWithGoogleError(c, 400, localizedAPIKeyAuthMessage("api_key_in_query_deprecated"))
 			return
 		}
@@ -34,7 +46,19 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			markOpsAPIKeyAuthDiagnostic(c, "API_KEY_REQUIRED", "missing_api_key", nil, map[string]string{
 				"accepted_headers": "x-goog-api-key,Authorization Bearer,x-api-key",
 			})
+			recordInvalidAuthFailure(c, apiKeyService)
+			if hasAPIKeyCredentialInput(c) {
+				MarkIngressRejected(c, IngressRejectInvalidAPIKey)
+			} else {
+				MarkIngressRejected(c, IngressRejectAPIKeyRequired)
+			}
 			abortWithGoogleError(c, 401, localizedAPIKeyAuthMessage("API_KEY_REQUIRED"))
+			return
+		}
+		if len(apiKeyString) > service.MaxAPIKeyCredentialBytes {
+			recordInvalidAuthFailure(c, apiKeyService)
+			MarkIngressRejected(c, IngressRejectInvalidAPIKey)
+			abortWithGoogleError(c, 401, "Invalid API key")
 			return
 		}
 
@@ -44,7 +68,14 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 				markOpsAPIKeyAuthDiagnostic(c, "INVALID_API_KEY", "api_key_not_found", nil, map[string]string{
 					"attempted_key_prefix": apiKeyPrefixForOps(apiKeyString),
 				})
+				recordInvalidAuthFailure(c, apiKeyService)
+				MarkIngressRejected(c, IngressRejectInvalidAPIKey)
 				abortWithGoogleError(c, 401, localizedAPIKeyAuthMessage("INVALID_API_KEY"))
+				return
+			}
+			if errors.Is(err, service.ErrAPIKeyAuthOverloaded) {
+				MarkIngressRejected(c, IngressRejectAPIKeyAuthOverloaded)
+				abortWithGoogleError(c, 503, "API key authentication is temporarily unavailable")
 				return
 			}
 			markOpsAPIKeyAuthDiagnostic(c, "INTERNAL_ERROR", "api_key_lookup_failed", nil, map[string]string{
@@ -64,6 +95,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			apiKey.Status != service.StatusAPIKeyExpired &&
 			apiKey.Status != service.StatusAPIKeyQuotaExhausted {
 			markOpsAPIKeyAuthDiagnostic(c, "API_KEY_DISABLED", "api_key_disabled", apiKey, nil)
+			MarkIngressRejected(c, IngressRejectAPIKeyDisabled)
 			abortWithGoogleError(c, 401, localizedAPIKeyAuthMessage("API_KEY_DISABLED"))
 			return
 		}
@@ -77,6 +109,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 					clientIP = "unknown"
 				}
 				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonIPRestriction)
+				MarkIngressRejected(c, IngressRejectIPRestricted)
 				abortWithGoogleError(c, 403, fmt.Sprintf("Access denied. Your IP is %s", clientIP))
 				return
 			}
@@ -89,18 +122,25 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 		}
 		if !apiKey.User.IsActive() {
 			markOpsAPIKeyAuthDiagnostic(c, "USER_INACTIVE", "user_inactive", apiKey, nil)
+			MarkIngressRejected(c, IngressRejectUserInactive)
 			abortWithGoogleError(c, 401, localizedAPIKeyAuthMessage("USER_INACTIVE"))
 			return
 		}
 		if code, message, ok := validateAPIKeyGroupAvailable(apiKey); !ok {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonAPIKeyGroupUnavailable)
 			markOpsAPIKeyAuthDiagnostic(c, code, strings.ToLower(code), apiKey, nil)
+			if code == "GROUP_DELETED" {
+				MarkIngressRejected(c, IngressRejectGroupDeleted)
+			} else {
+				MarkIngressRejected(c, IngressRejectGroupDisabled)
+			}
 			abortWithGoogleError(c, 403, message)
 			return
 		}
 		// 专属分组授权校验：用户对该专属分组的授权被撤销后应拒绝（与主中间件一致，防止越权）。
 		if !validateAPIKeyGroupAllowed(apiKey) {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonAPIKeyGroupUnavailable)
+			MarkIngressRejected(c, IngressRejectGroupNotAllowed)
 			abortWithGoogleError(c, 403, "API Key 所属专属分组不再允许当前用户使用")
 			return
 		}

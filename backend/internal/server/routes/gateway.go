@@ -24,6 +24,7 @@ func RegisterGatewayRoutes(
 	cfg *config.Config,
 ) {
 	bodyLimit := middleware.RequestBodyLimit(cfg.Gateway.MaxBodySize)
+	textBodyLimit := middleware.RequestBodyLimit(cfg.Gateway.TextMaxBodySize)
 	clientRequestID := middleware.ClientRequestID()
 	opsErrorLogger := handler.OpsErrorLoggerMiddleware(opsService)
 	endpointNorm := handler.InboundEndpointMiddleware()
@@ -82,6 +83,19 @@ func RegisterGatewayRoutes(
 	videoStatusHandler := func(c *gin.Context) {
 		if getGroupPlatform(c) == service.PlatformGrok {
 			h.OpenAIGateway.GrokVideoStatus(c)
+			return
+		}
+		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": gin.H{
+				"type":    "not_found_error",
+				"message": "Videos API is not supported for this platform",
+			},
+		})
+	}
+	videoContentHandler := func(c *gin.Context) {
+		if getGroupPlatform(c) == service.PlatformGrok {
+			h.OpenAIGateway.GrokVideoContent(c)
 			return
 		}
 		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
@@ -240,7 +254,7 @@ func RegisterGatewayRoutes(
 			"OpenAIGatewayHandler.AlphaSearch",
 			service.ContentModerationProtocolOpenAIResponses,
 			"Codex standalone search input is moderated before account selection and upstream forwarding.",
-		), h.OpenAIGateway.AlphaSearch)
+		), textBodyLimit, h.OpenAIGateway.AlphaSearch)
 		moderatedGateway.GET("/responses", coveredOpenAIWebSocketRoute(
 			"/v1/responses",
 			"OpenAIGatewayHandler.ResponsesWebSocket",
@@ -276,7 +290,7 @@ func RegisterGatewayRoutes(
 			"OpenAIGatewayHandler.Embeddings",
 			service.ContentModerationProtocolOpenAIEmbeddings,
 			"Embeddings input can be submitted to upstream policy systems, so input is moderated before channel mapping, scheduling, and forwarding.",
-		), func(c *gin.Context) {
+		), textBodyLimit, func(c *gin.Context) {
 			if getGroupPlatform(c) != service.PlatformOpenAI {
 				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 				c.JSON(http.StatusNotFound, gin.H{
@@ -387,6 +401,11 @@ func RegisterGatewayRoutes(
 			"OpenAIGatewayHandler.GrokVideoStatus",
 			"Grok video status lookup uses an upstream request id and does not submit new model-visible user content.",
 		), videoStatusHandler)
+		moderatedGateway.GETNoAudit("/videos/:request_id/content", intentionalNoAuditRoute(
+			"/v1/videos/:request_id/content",
+			"OpenAIGatewayHandler.GrokVideoContent",
+			"Grok video content lookup proxies already-generated output and does not submit new model-visible user content.",
+		), videoContentHandler)
 		moderatedGateway.POST("/images/batches", coveredModeratedRoute(
 			"/v1/images/batches",
 			"BatchImageHandler.Submit",
@@ -520,7 +539,7 @@ func RegisterGatewayRoutes(
 		"OpenAIGatewayHandler.AlphaSearch",
 		service.ContentModerationProtocolOpenAIResponses,
 		"Root Codex standalone search input is moderated before account selection and upstream forwarding.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.OpenAIGateway.AlphaSearch)
+	), textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.OpenAIGateway.AlphaSearch)
 	moderatedRoot.GET("/responses", coveredOpenAIWebSocketRoute(
 		"/responses",
 		"OpenAIGatewayHandler.ResponsesWebSocket",
@@ -591,7 +610,7 @@ func RegisterGatewayRoutes(
 			"OpenAIGatewayHandler.AlphaSearch",
 			service.ContentModerationProtocolOpenAIResponses,
 			"Codex direct standalone search input is moderated before account selection and upstream forwarding.",
-		), h.OpenAIGateway.AlphaSearch)
+		), textBodyLimit, h.OpenAIGateway.AlphaSearch)
 		moderatedCodexDirect.GET("/responses", coveredOpenAIWebSocketRoute(
 			"/backend-api/codex/responses",
 			"OpenAIGatewayHandler.ResponsesWebSocket",
@@ -633,7 +652,7 @@ func RegisterGatewayRoutes(
 		"OpenAIGatewayHandler.Embeddings",
 		service.ContentModerationProtocolOpenAIEmbeddings,
 		"Root embeddings alias reaches the same Embeddings handler and moderation hook.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
+	), textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) != service.PlatformOpenAI {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 			c.JSON(http.StatusNotFound, gin.H{
@@ -744,6 +763,11 @@ func RegisterGatewayRoutes(
 		"OpenAIGatewayHandler.GrokVideoStatus",
 		"Root Grok video status lookup uses an upstream request id and does not submit new model-visible user content.",
 	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, videoStatusHandler)
+	moderatedRoot.GETNoAudit("/videos/:request_id/content", intentionalNoAuditRoute(
+		"/videos/:request_id/content",
+		"OpenAIGatewayHandler.GrokVideoContent",
+		"Root Grok video content lookup proxies already-generated output and does not submit new model-visible user content.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, videoContentHandler)
 
 	// Antigravity 模型列表
 	moderatedRoot.GETNoAudit("/antigravity/models", intentionalNoAuditRoute(
