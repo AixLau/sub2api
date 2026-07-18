@@ -558,6 +558,70 @@ func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
 	require.Equal(t, true, format["strict"])
 }
 
+func TestReviewSemanticContentHonorsEffectiveInputLimitAcrossTransports(t *testing.T) {
+	tests := []struct {
+		name           string
+		accountType    string
+		contentType    string
+		response       string
+		effectiveLimit int
+	}{
+		{
+			name:           "api-key-json",
+			accountType:    AccountTypeAPIKey,
+			contentType:    "application/json",
+			response:       `{"id":"resp_json","output_text":"{\"verdict\":\"allow\"}"}`,
+			effectiveLimit: 6_000,
+		},
+		{
+			name:           "oauth-sse",
+			accountType:    AccountTypeOAuth,
+			contentType:    "text/event-stream",
+			response:       "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_sse\",\"output_text\":\"{\\\"verdict\\\":\\\"allow\\\"}\"}}\n\n",
+			effectiveLimit: 12_000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prefix, suffix := "head-canary ", " tail-canary"
+			longText := prefix + strings.Repeat("界", tt.effectiveLimit-len([]rune(prefix))-len([]rune(suffix))) + suffix
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{tt.contentType}},
+				Body:       io.NopCloser(strings.NewReader(tt.response)),
+			}}
+			svc := &OpenAIGatewayService{httpUpstream: upstream, cfg: &config.Config{}}
+			account := &Account{
+				ID:       52,
+				Platform: PlatformOpenAI,
+				Type:     tt.accountType,
+				Credentials: map[string]any{
+					"api_key":       "semantic-api-key",
+					"access_token":  "semantic-oauth-token",
+					"model_mapping": map[string]any{"review-model": "review-model-upstream"},
+				},
+			}
+
+			_, err := svc.ReviewSemanticContent(context.Background(), account, "review-model", ContentModerationSemanticReviewInput{
+				Text:          longText,
+				MaxInputRunes: tt.effectiveLimit,
+			})
+
+			require.NoError(t, err)
+			var requestBody map[string]any
+			require.NoError(t, json.Unmarshal(upstream.lastBody, &requestBody))
+			inputItems := requestBody["input"].([]any)
+			content := inputItems[0].(map[string]any)["content"].([]any)
+			sentText := content[0].(map[string]any)["text"].(string)
+			require.Equal(t, longText, sentText)
+			require.Contains(t, sentText, "head-canary")
+			require.Contains(t, sentText, "tail-canary")
+			require.Equal(t, tt.accountType == AccountTypeOAuth, requestBody["stream"])
+		})
+	}
+}
+
 func TestParseSemanticReviewJSONAndSSE(t *testing.T) {
 	jsonText, err := semanticReviewResponseText([]byte(`{"output_text":"{\"verdict\":\"reject\",\"confidence\":0.9}"}`), "application/json")
 	require.NoError(t, err)

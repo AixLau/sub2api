@@ -5,8 +5,9 @@ This document records the safety contract for the content moderation gateway. It
 ## Failure Strategy
 
 - `fail_strategy` remains accepted for compatibility with existing configuration and status responses.
-- Moderation system failures always fail open so a broken audit dependency does not interrupt user traffic. This includes initialization, config or risk-switch reads, missing required audit keys, content extraction failures, semantic review failures, and ordinary moderation API errors.
+- Ordinary moderation system failures remain fail-open so a broken general-purpose audit dependency does not interrupt user traffic. This includes initialization, config or risk-switch reads, missing required audit keys, and ordinary moderation API errors.
 - A fail-open system failure returns `Allowed=true` with action `error`, records logs/metrics, and continues forwarding. It is not treated as a normal moderation pass.
+- Prompt-injection candidates use a separate opt-in contract. When `mode=pre_block`, `semantic_review.prompt_injection_reviewer_enabled=true`, and `semantic_review.prompt_injection_fail_closed=true`, reviewer `review`, unavailable/invalid output, or incomplete evidence returns HTTP 503 and never reaches upstream. These outcomes use `semantic_review_deferred`, `semantic_review_unavailable`, or `semantic_review_incomplete`; they do not increment violation count, auto-ban, or send a violation email.
 - Fail-open behavior must never bypass a successful deterministic decision. In `rule_only`/`keyword_only`, a local blocking rule or hash hit still blocks immediately.
 - A successful ordinary moderation or semantic review rejection still blocks according to the active pre-block mode.
 
@@ -31,6 +32,9 @@ This document records the safety contract for the content moderation gateway. It
 - For a hybrid keyword hit, a semantic `reject` is a terminal 403 in pre-block mode only after the required ordinary API call. A semantic `allow` or `review` does not bypass the ordinary API, so `keyword_and_api` never turns a local hit into an unreviewed direct block.
 - If semantic review is enabled but unavailable, hybrid candidates continue to the ordinary moderation API. If that API is also unavailable, the request is fail-opened with action `error`.
 - Semantic review evaluates `intent`, `target`, `authorization`, `operationality`, and `executability`. An explicit harmful, actionable, directly executable, unauthorized tuple is deterministically upgraded to `reject`; unclear authorization remains `review` for manual handling.
+- Prompt injection is reviewed by a dedicated strict schema. Its required fields are `verdict`, `active_override`, `presentation`, `targets`, `confidence`, and `reason_codes`. A direct active hierarchy override with confidence at least 0.80 is upgraded to `reject`; `allow` is valid only with complete evidence.
+- The prompt-injection baseline runs before group/model/account scope whenever global risk control is enabled. A no-hit request does not call a semantic model or write a full audit record.
+- The dedicated reviewer receives the complete current source up to 12K runes. Larger sources are represented by one valid JSON evidence envelope containing head, all coverable hit windows, and tail. If every high-risk occurrence cannot fit, evidence is marked incomplete and cannot produce a final allow.
 
 ## Rule Actions
 
@@ -62,6 +66,9 @@ This document records the safety contract for the content moderation gateway. It
 - `/v1/embeddings` and `/embeddings` are moderated with protocol `openai_embeddings`; embeddings input is still upstream-submitted content and must not bypass pre-block checks.
 - `/v1/messages/count_tokens` is moderated with protocol `anthropic_messages` because Anthropic token counting can submit client context to upstream.
 - `TestGatewayModerationCoverageManifestDefinesCriticalUpstreamEntrypoints` is the CI guard for this inventory. When adding a new gateway route or alias, update the coverage manifest in the same change.
+- Successful forwarding additionally requires a request-local moderation receipt with `LocalScanDone=true` and `ForwardAllowed=true`. An entrypoint marker alone is not sufficient.
+- WebSocket handshake only records entrypoint entry. The initial request frame and each later `response.create` frame require independent receipts; a prior frame's receipt cannot authorize a later frame.
+- Selected-account checks first issue `deferred_selected_account`, then replace it with a completed receipt after `CheckAccountAttempt`; the deferred state cannot reach a forward adapter.
 
 ## Privacy
 

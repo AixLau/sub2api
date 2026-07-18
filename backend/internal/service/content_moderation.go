@@ -54,6 +54,9 @@ const (
 	ContentModerationActionSemanticReviewAllow       = "semantic_review_allow"
 	ContentModerationActionSemanticReviewReject      = "semantic_review_reject"
 	ContentModerationActionSemanticReviewReview      = "semantic_review_review"
+	ContentModerationActionSemanticReviewDeferred    = "semantic_review_deferred"
+	ContentModerationActionSemanticReviewUnavailable = "semantic_review_unavailable"
+	ContentModerationActionSemanticReviewIncomplete  = "semantic_review_incomplete"
 	ContentModerationActionCyberPolicy               = "cyber_policy" // cyber_policy 硬阻断的风控日志 action（封号计数排除按此值过滤）
 	ContentModerationActionCyberPolicySessionBlocked = "cyber_policy_session_blocked"
 
@@ -191,7 +194,7 @@ const (
 	contentModerationPolicySchemaVersion           = "2026-06-29.1"
 	contentModerationExtractorVersion              = "v4"
 	contentModerationMinimumSecurityBaselineCommit = "9216c848"
-	contentModerationRouteManifestVersion          = "2026-07-16.1"
+	contentModerationRouteManifestVersion          = "2026-07-17.2"
 	contentModerationPipelineCoverageVersion       = "gateway-pipeline-coverage-v1"
 	minContentModerationBuildCommitPrefixLen       = 7
 )
@@ -375,17 +378,20 @@ type ContentModerationLocalClassifierConfig struct {
 // classifiers, while this path handles jailbreak, reverse-engineering abuse,
 // credential theft, and similar intent.
 type ContentModerationSemanticReviewConfig struct {
-	Enabled             bool     `json:"enabled"`
-	Trigger             string   `json:"trigger"`
-	PrimaryModel        string   `json:"primary_model"`
-	FallbackModels      []string `json:"fallback_models"`
-	TimeoutMS           int      `json:"timeout_ms"`
-	PrimaryTimeoutMS    int      `json:"primary_timeout_ms"`
-	FallbackTimeoutMS   int      `json:"fallback_timeout_ms"`
-	MaxAttemptsPerModel int      `json:"max_attempts_per_model"`
-	MaxInputRunes       int      `json:"max_input_runes"`
-	MaxOutputTokens     int      `json:"max_output_tokens"`
-	ReasoningEffort     string   `json:"reasoning_effort"`
+	Enabled                        bool     `json:"enabled"`
+	Trigger                        string   `json:"trigger"`
+	PrimaryModel                   string   `json:"primary_model"`
+	FallbackModels                 []string `json:"fallback_models"`
+	TimeoutMS                      int      `json:"timeout_ms"`
+	PrimaryTimeoutMS               int      `json:"primary_timeout_ms"`
+	FallbackTimeoutMS              int      `json:"fallback_timeout_ms"`
+	MaxAttemptsPerModel            int      `json:"max_attempts_per_model"`
+	MaxInputRunes                  int      `json:"max_input_runes"`
+	MaxOutputTokens                int      `json:"max_output_tokens"`
+	ReasoningEffort                string   `json:"reasoning_effort"`
+	PromptInjectionReviewerEnabled bool     `json:"prompt_injection_reviewer_enabled"`
+	PromptInjectionMaxInputRunes   int      `json:"prompt_injection_max_input_runes"`
+	PromptInjectionFailClosed      bool     `json:"prompt_injection_fail_closed"`
 }
 
 type ContentModerationFailStrategy struct {
@@ -690,6 +696,7 @@ type ContentModerationDecision struct {
 	EffectiveKeywordAction string             `json:"effective_keyword_action,omitempty"`
 	RiskContextType        string             `json:"risk_context_type,omitempty"`
 	RiskContextReason      string             `json:"risk_context_reason,omitempty"`
+	PolicyRevision         string             `json:"policy_revision,omitempty"`
 	candidateDecisionID    string
 }
 
@@ -1744,6 +1751,15 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 	inGroupScope := cfg.includesGroup(input.GroupID)
 	inAccountScope := cfg.includesAccount(input.AccountID, input.AccountType)
 	inModelScope := cfg.includesModel(input.Model)
+	if riskEnabled && cfg.Enabled && cfg.Mode != ContentModerationModeOff &&
+		(!cfg.candidateOnly() || !inGroupScope || !inAccountScope || !inModelScope) {
+		if baselineDecision, handled := s.checkPromptInjectionBaseline(ctx, input, cfg); handled && baselineDecision != nil && baselineDecision.Blocked {
+			return &ContentModerationGateResult{
+				Disposition: ContentModerationDispositionBlocked, Decision: baselineDecision,
+				PolicyRevision: policyRevision,
+			}, nil
+		}
+	}
 	if !inGroupScope || !inAccountScope || !inModelScope {
 		event := "content_moderation.skip_scope_out_of_scope"
 		if !inAccountScope {
@@ -1874,7 +1890,13 @@ func contentModerationPolicyRevision(riskEnabled bool, cfg *ContentModerationCon
 	return hex.EncodeToString(hash[:])
 }
 
-func (s *ContentModerationService) Check(ctx context.Context, input ContentModerationCheckInput) (*ContentModerationDecision, error) {
+func (s *ContentModerationService) Check(ctx context.Context, input ContentModerationCheckInput) (out *ContentModerationDecision, checkErr error) {
+	effectivePolicyRevision := ""
+	defer func() {
+		if out != nil && out.PolicyRevision == "" {
+			out.PolicyRevision = effectivePolicyRevision
+		}
+	}()
 	allow := &ContentModerationDecision{Allowed: true, Action: ContentModerationActionAllow}
 	if s == nil || s.settingRepo == nil || s.repo == nil {
 		slog.Warn("content_moderation.unavailable_fail_open",
@@ -1927,6 +1949,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"error", err)
 		return contentModerationFailureDecision(defaultContentModerationConfig()), nil
 	}
+	effectivePolicyRevision = contentModerationPolicyRevision(riskEnabled, cfg)
 	inGroupScope := cfg.includesGroup(input.GroupID)
 	inModelScope := cfg.includesModel(input.Model)
 	slog.Info("content_moderation.config_loaded",
@@ -1969,6 +1992,11 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"endpoint", input.Endpoint,
 			"protocol", input.Protocol)
 		return allow, nil
+	}
+	if !cfg.candidateOnly() || !inGroupScope || !inModelScope {
+		if baselineDecision, handled := s.checkPromptInjectionBaseline(ctx, input, cfg); handled && baselineDecision != nil && baselineDecision.Blocked {
+			return baselineDecision, nil
+		}
 	}
 	if !inGroupScope {
 		slog.Info("content_moderation.skip_group_out_of_scope",
@@ -2500,7 +2528,10 @@ func (s *ContentModerationService) recordPreBlockSyncMetric(latencyMS int, actio
 	}
 	s.preBlockLatencyTotalMS.Add(int64(latencyMS))
 	switch action {
-	case ContentModerationActionBlock, ContentModerationActionHashBlock, ContentModerationActionKeywordBlock, ContentModerationActionPromptFilterBlock, ContentModerationActionSemanticReviewReject:
+	case ContentModerationActionBlock, ContentModerationActionHashBlock, ContentModerationActionKeywordBlock,
+		ContentModerationActionPromptFilterBlock, ContentModerationActionSemanticReviewReject,
+		ContentModerationActionSemanticReviewDeferred, ContentModerationActionSemanticReviewUnavailable,
+		ContentModerationActionSemanticReviewIncomplete:
 		s.preBlockBlocked.Add(1)
 	case ContentModerationActionError:
 		s.preBlockErrors.Add(1)
@@ -2726,9 +2757,10 @@ func contentModerationPromptFilterLogMetadata(cfg *ContentModerationConfig, cont
 	metadata["prompt_filter_strict_score"] = verdict.StrictScore
 	metadata["prompt_filter_strict_hit"] = verdict.StrictHit
 	metadata["prompt_filter_operational_hit"] = verdict.OperationalHit
+	metadata["prompt_filter_signal_families"] = verdict.SignalFamilies
 	metadata["prompt_filter_matches"] = verdict.Matches
 	metadata["prompt_filter_source_role"] = strings.TrimSpace(hit.Source.Role)
-	metadata["prompt_filter_terminal_eligible"] = contentModerationPromptFilterSourceCanHardBlock(hit.Source)
+	metadata["prompt_filter_terminal_eligible"] = verdict.TerminalEligible && contentModerationPromptFilterSourceCanHardBlock(hit.Source)
 	raw, err := json.Marshal(metadata)
 	if err != nil {
 		return base
@@ -4464,7 +4496,6 @@ func normalizeContentModerationCandidateOnlyInvariants(cfg *ContentModerationCon
 		cfg.CandidateFragmentRunes = maxContentModerationCandidateRunes
 		cfg.SemanticReview.Enabled = true
 		cfg.SemanticReview.Trigger = ContentModerationSemanticReviewTriggerLocalReview
-		cfg.SemanticReview.MaxInputRunes = maxContentModerationCandidateRunes
 	}
 }
 
@@ -4488,6 +4519,12 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 	case ContentModerationModeOff, ContentModerationModeObserve, ContentModerationModePreBlock:
 	default:
 		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_MODE", "内容审计模式无效")
+	}
+	if cfg.SemanticReview.PromptInjectionFailClosed && cfg.Mode != ContentModerationModePreBlock {
+		return infraerrors.BadRequest(
+			"INVALID_PROMPT_INJECTION_FAIL_CLOSED_MODE",
+			"Prompt Injection fail-closed 仅可在 pre_block 模式启用",
+		)
 	}
 	switch normalizeContentModerationPromptFilterMode(cfg.PromptFilterMode) {
 	case promptfilter.ModeOff, promptfilter.ModeObserve, promptfilter.ModeWarn, promptfilter.ModeBlock:
@@ -4996,7 +5033,15 @@ func normalizeContentModerationInputSources(sources []ContentModerationInputSour
 	out := make([]ContentModerationInputSource, 0, len(sources))
 	for _, source := range sources {
 		name := source.Source
-		text := trimRunes(normalizeContentModerationText(source.Text), maxModerationInputRunes)
+		text := normalizeContentModerationText(source.Text)
+		truncated := source.Truncated
+		reasons := append([]string(nil), source.TruncateReasons...)
+		if len([]rune(text)) > maxModerationInputRunes {
+			text = trimRunes(text, maxModerationInputRunes)
+			truncated = true
+			reasons = append(reasons, "source_max_runes")
+		}
+		reasons = normalizeContentModerationTruncateReasons(reasons)
 		if strings.TrimSpace(name) == "" || text == "" {
 			continue
 		}
@@ -5004,8 +5049,8 @@ func normalizeContentModerationInputSources(sources []ContentModerationInputSour
 			Source:          name,
 			Role:            strings.ToLower(strings.TrimSpace(source.Role)),
 			Text:            text,
-			Truncated:       source.Truncated,
-			TruncateReasons: append([]string(nil), source.TruncateReasons...),
+			Truncated:       truncated,
+			TruncateReasons: reasons,
 		})
 	}
 	return out
@@ -5450,17 +5495,20 @@ func (cfg *ContentModerationConfig) normalize() {
 
 func defaultContentModerationSemanticReviewConfig() ContentModerationSemanticReviewConfig {
 	return ContentModerationSemanticReviewConfig{
-		Enabled:             false,
-		Trigger:             ContentModerationSemanticReviewTriggerLocalReview,
-		PrimaryModel:        ContentModerationSemanticReviewPrimaryModel,
-		FallbackModels:      []string{ContentModerationSemanticReviewFallbackModel},
-		TimeoutMS:           ContentModerationSemanticReviewDefaultTimeoutMS,
-		PrimaryTimeoutMS:    ContentModerationSemanticReviewPrimaryTimeoutMS,
-		FallbackTimeoutMS:   ContentModerationSemanticReviewFallbackTimeoutMS,
-		MaxAttemptsPerModel: ContentModerationSemanticReviewDefaultModelAttempts,
-		MaxInputRunes:       ContentModerationSemanticReviewDefaultMaxInputRunes,
-		MaxOutputTokens:     ContentModerationSemanticReviewDefaultOutputTokens,
-		ReasoningEffort:     ContentModerationSemanticReviewDefaultReasoning,
+		Enabled:                        false,
+		Trigger:                        ContentModerationSemanticReviewTriggerLocalReview,
+		PrimaryModel:                   ContentModerationSemanticReviewPrimaryModel,
+		FallbackModels:                 []string{ContentModerationSemanticReviewFallbackModel},
+		TimeoutMS:                      ContentModerationSemanticReviewDefaultTimeoutMS,
+		PrimaryTimeoutMS:               ContentModerationSemanticReviewPrimaryTimeoutMS,
+		FallbackTimeoutMS:              ContentModerationSemanticReviewFallbackTimeoutMS,
+		MaxAttemptsPerModel:            ContentModerationSemanticReviewDefaultModelAttempts,
+		MaxInputRunes:                  ContentModerationSemanticReviewDefaultMaxInputRunes,
+		MaxOutputTokens:                ContentModerationSemanticReviewDefaultOutputTokens,
+		ReasoningEffort:                ContentModerationSemanticReviewDefaultReasoning,
+		PromptInjectionReviewerEnabled: false,
+		PromptInjectionMaxInputRunes:   maxModerationInputRunes,
+		PromptInjectionFailClosed:      false,
 	}
 }
 
@@ -5524,6 +5572,15 @@ func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanti
 	}
 	if cfg.MaxInputRunes > maxModerationInputRunes {
 		cfg.MaxInputRunes = maxModerationInputRunes
+	}
+	if cfg.PromptInjectionMaxInputRunes <= 0 {
+		cfg.PromptInjectionMaxInputRunes = maxModerationInputRunes
+	}
+	if cfg.PromptInjectionMaxInputRunes < maxContentModerationCandidateRunes {
+		cfg.PromptInjectionMaxInputRunes = maxContentModerationCandidateRunes
+	}
+	if cfg.PromptInjectionMaxInputRunes > maxModerationInputRunes {
+		cfg.PromptInjectionMaxInputRunes = maxModerationInputRunes
 	}
 	if cfg.MaxOutputTokens <= 0 {
 		cfg.MaxOutputTokens = ContentModerationSemanticReviewDefaultOutputTokens

@@ -324,6 +324,11 @@ func TestGatewayPipelineEntrypointDispatcherRouteCapabilityMatrix(t *testing.T) 
 
 			require.Equal(t, 1, totalCalls, "every supported moderation-required text route must enter exactly one pipeline")
 			require.Equal(t, 1, calls[tt.wantPipeline])
+			if tt.wantPipeline == moderationcoverage.PipelineOpenAIWebSocket {
+				_, admitted := moderationcoverage.PipelineAdmissionFromContext(c)
+				require.False(t, admitted, "WebSocket handshake is only an entrypoint; response.create frames own moderation admission")
+				return
+			}
 			admission, admitted := moderationcoverage.PipelineAdmissionFromContext(c)
 			require.True(t, admitted)
 			require.True(t, admission.Admitted)

@@ -10,6 +10,8 @@
 
 后置复核发生在请求内容已经被允许之后，不能撤回已经转发给上游的请求。`pre_block` 模式下，命中本地高风险候选（cyber/jailbreak、block 动作或 high/critical 严重度）时可以进入语义模型的同步候选复核；配置 `trigger=all` 时，即使没有关键词也会对纳入范围的文本进行同步复核；`observe` 模式只做后置复核，不影响当前请求。
 
+Prompt Injection 使用独立的同步 reviewer。启用 `prompt_injection_reviewer_enabled` 后，它不再复用通用安全分类 schema；启用 `prompt_injection_fail_closed` 时必须同时使用 `mode=pre_block`。高风险候选的 `review`、reviewer 不可用/非法响应以及 evidence 不完整均返回 503，且不计作用户违规。
+
 ## 处理流程
 
 ```mermaid
@@ -41,7 +43,10 @@ flowchart TD
     "primary_model": "gpt-5.3-codex-spark",
     "fallback_models": ["gpt-5-mini"],
     "timeout_ms": 20000,
-    "max_input_runes": 4000
+    "max_input_runes": 4000,
+    "prompt_injection_reviewer_enabled": false,
+    "prompt_injection_max_input_runes": 12000,
+    "prompt_injection_fail_closed": false
   }
 }
 ```
@@ -62,6 +67,29 @@ Spark 账号使用仓库已有的 OpenAI 调度器。Spark 额度窗口刷新复
 ## 输入成本控制
 
 语义模型不接收完整对话历史。`local_review` 抽取本地高风险候选 source，并截取关键词附近文本；候选包括 cyber/jailbreak、block 动作或 high/critical 严重度规则。`all` 在同步 `pre_block` 路径中对符合范围的文本进行语义复核，即使没有配置关键词；异步路径仅抽取最近一条 user source 和最近一条 tool/function source。system、developer 和 assistant 历史默认不发送，除非其自身触发本地规则。每段最多约 1200 字符、最多 3 段，并受 `max_input_runes` 总预算硬限制；缺少结构化 source 的旧协议才回退到截断后的聚合文本。
+
+上述 1200 字符片段预算只适用于通用 reviewer。Prompt Injection reviewer 使用当前命中的完整 user source：12K 以内发送脱敏后的完整 source；超过 12K 时构造单个合法 JSON envelope，包含 head、命中窗口和 tail。窗口必须覆盖所有高风险 occurrence；覆盖不全、source/scan 截断或 span 无法映射时设置 `EvidenceComplete=false`，模型即使返回 `allow` 也会被收敛为 `review`。
+
+本地 detector 同时扫描 NFKC 规范化视图与可映射的 compact 视图，识别零宽、全角、大小写和空白/标点拆分；重复 occurrence 只增加证据，不重复累计规则分数。完整规范化 source 的 keyed HMAC、policy/model route、instructions/schema/evidence revision 均参与 V4 cache key，避免相同前 2K、不同危险尾部复用旧 allow。
+
+## Prompt Injection 专用结构化结果
+
+```json
+{
+  "verdict": "allow|review|reject",
+  "active_override": true,
+  "presentation": "direct_instruction|quoted_analysis|benign_discussion|unknown",
+  "targets": ["system", "developer", "tool", "policy", "model"],
+  "confidence": 0.94,
+  "reason_codes": ["hierarchy_override"]
+}
+```
+
+解析器要求单个、无 Markdown 包裹、无额外字段的严格 JSON。`active_override=true`、`presentation=direct_instruction` 且置信度不低于 0.80 时确定性升级为 `reject`；只有 complete evidence 的 `allow` 才能放行。
+
+## 执行凭据
+
+每次实际进入上游前的 HTTP 请求或 WebSocket `response.create` 帧必须产生不含原文的 receipt：`RequestID`、`Protocol`、`PolicyRevision`、`LocalScanDone`、`SemanticCalled`、`Outcome`、`ForwardAllowed`。no-hit 只写轻量 receipt，不调用 reviewer、不写完整审核记录。forward adapter 发现 receipt 缺失、未完成或不可转发时立即停止并增加固定低基数冲突指标。
 
 ## 结构化结果
 
@@ -95,7 +123,7 @@ Spark 账号使用仓库已有的 OpenAI 调度器。Spark 额度窗口刷新复
 - 发送前复用现有内容脱敏，凭证、token、邮箱和长标识符不会原样进入审计文本。
 - outbox 只保存加密文本和最小请求元数据；配置副本会清除 `api_key`/`api_keys`。
 - outbox 使用幂等 `decision_id`，支持进程重启后的重试、dead letter 和人工 replay。
-- 语义模型不可用时，组合模式继续进入普通审计 API；普通审计 API 也不可用时放行并记录 `action=error`。仅关键词/规则模式的本地规则命中仍然直接拦截，不受语义模型可用性影响。
+- 通用语义模型不可用时，组合模式继续进入普通审计 API；普通审计 API 也不可用时放行并记录 `action=error`。专用 Prompt Injection fail-closed 模式不回退到通用 reviewer，不可用时返回 `semantic_review_unavailable` 和 503。
 - 审计日志默认记录分类、置信度、模型、账号和原因码；原始内容仍受现有 excerpt 开关和脱敏策略控制。
 
 ## 上线建议

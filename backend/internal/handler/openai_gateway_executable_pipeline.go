@@ -29,6 +29,8 @@ type ExecutableStageResult struct {
 	Err  error
 }
 
+var errModerationReceiptNotForwardable = errors.New("moderation receipt is missing or not forwardable")
+
 type GatewayPipeline struct {
 	Pipeline string
 	Source   string
@@ -537,6 +539,10 @@ func ExecutableForwardStage(adapter ForwardStage) ExecutableStage {
 	return ExecutableStage{
 		Name: adapter.StageName(),
 		RunWithContext: func(c *gin.Context) ExecutableStageResult {
+			if moderationReceiptRequiredAndMissing(c) {
+				recordContentModerationForwardConflict(c)
+				return ExecutableStageResult{Stop: true, Err: errModerationReceiptNotForwardable}
+			}
 			return adapter.RunForward(c)
 		},
 	}
@@ -573,9 +579,21 @@ func executableForwardStageWithContext(c *gin.Context, adapter ForwardStage) Exe
 	return ExecutableStage{
 		Name: adapter.StageName(),
 		RunWithContext: func(*gin.Context) ExecutableStageResult {
+			if moderationReceiptRequiredAndMissing(c) {
+				recordContentModerationForwardConflict(c)
+				return ExecutableStageResult{Stop: true, Err: errModerationReceiptNotForwardable}
+			}
 			return adapter.RunForward(c)
 		},
 	}
+}
+
+func moderationReceiptRequiredAndMissing(c *gin.Context) bool {
+	meta, ok := moderationcoverage.RouteMetaFromContext(c)
+	if !ok || !meta.Upstream || !meta.ModerationRequired {
+		return false
+	}
+	return !moderationcoverage.ModerationReceiptAllowsForward(c)
 }
 
 func executableBillingStageWithContext(c *gin.Context, adapter BillingStage) ExecutableStage {

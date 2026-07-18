@@ -10,16 +10,25 @@ import (
 )
 
 type contentModerationSelectionMetadata struct {
-	SchemaVersion         int
-	CandidateKind         string
-	CandidateKeyword      string
-	CandidateCategory     string
-	CandidateSeverity     string
-	Route                 string
-	SourceOrigin          string
-	SelectedSource        string
-	SelectedSourceRole    string
-	SelectedFragmentRunes int
+	SchemaVersion          int
+	CandidateKind          string
+	CandidateKeyword       string
+	CandidateCategory      string
+	CandidateSeverity      string
+	Route                  string
+	SourceOrigin           string
+	SelectedSource         string
+	SelectedSourceRole     string
+	SelectedFragmentRunes  int
+	ReviewKind             string
+	EvidenceComplete       bool
+	EvidenceRunes          int
+	EvidenceRevision       string
+	EvidenceDigest         string
+	EvidenceWindowed       bool
+	EvidenceWindows        int
+	EvidenceMatchesTotal   int
+	EvidenceMatchesCovered int
 }
 
 func (metadata contentModerationSelectionMetadata) mapValue() map[string]any {
@@ -34,6 +43,15 @@ func (metadata contentModerationSelectionMetadata) mapValue() map[string]any {
 		"selected_source":          metadata.SelectedSource,
 		"selected_source_role":     metadata.SelectedSourceRole,
 		"selected_fragment_runes":  metadata.SelectedFragmentRunes,
+		"review_kind":              metadata.ReviewKind,
+		"evidence_complete":        metadata.EvidenceComplete,
+		"evidence_runes":           metadata.EvidenceRunes,
+		"evidence_revision":        metadata.EvidenceRevision,
+		"evidence_digest":          metadata.EvidenceDigest,
+		"evidence_windowed":        metadata.EvidenceWindowed,
+		"evidence_windows":         metadata.EvidenceWindows,
+		"evidence_matches_total":   metadata.EvidenceMatchesTotal,
+		"evidence_matches_covered": metadata.EvidenceMatchesCovered,
 	}
 }
 
@@ -91,6 +109,11 @@ func (s *ContentModerationService) storeCandidateEvidence(ctx context.Context, l
 		return
 	}
 	payload := strings.TrimSpace(selection.Fragment)
+	if log.DecisionSource == contentModerationDecisionSourceSemantic &&
+		selection.ReviewKind == contentModerationReviewKindPromptInjection &&
+		strings.TrimSpace(selection.ReviewText) != "" {
+		payload = strings.TrimSpace(redactContentModerationSecrets(selection.ReviewText))
+	}
 	if payload == "" {
 		return
 	}

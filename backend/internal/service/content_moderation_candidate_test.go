@@ -7,6 +7,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -62,7 +64,19 @@ func TestCandidateModeEnforcesBoundedReviewerInvariants(t *testing.T) {
 	require.Equal(t, maxContentModerationCandidateRunes, cfg.CandidateFragmentRunes)
 	require.True(t, cfg.SemanticReview.Enabled)
 	require.Equal(t, ContentModerationSemanticReviewTriggerLocalReview, cfg.SemanticReview.Trigger)
-	require.Equal(t, maxContentModerationCandidateRunes, cfg.SemanticReview.MaxInputRunes)
+	require.Equal(t, 12_000, cfg.SemanticReview.MaxInputRunes)
+}
+
+func TestPromptInjectionFailClosedRequiresPreBlockMode(t *testing.T) {
+	svc := candidateTestService(&contentModerationTestRepo{})
+	cfg := candidateTestConfig()
+	cfg.Mode = ContentModerationModeObserve
+	cfg.SemanticReview.PromptInjectionFailClosed = true
+
+	err := svc.validateConfig(context.Background(), cfg)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "INVALID_PROMPT_INJECTION_FAIL_CLOSED_MODE")
 }
 
 func TestCandidateAdaptiveWindowUsesPreferredSizeForOrdinaryContext(t *testing.T) {
@@ -414,6 +428,33 @@ func TestCandidateSelectionKeepsTailPromptFilterMatchInBoundedPayload(t *testing
 	require.Contains(t, strings.ToLower(selection.Fragment), "jailbreak")
 	require.NotContains(t, selection.Fragment, "ordinary-marker")
 	require.Equal(t, selection.Fragment, contentModerationCandidateSemanticInput(selection))
+	require.Equal(t, text, selection.ReviewText)
+	require.True(t, selection.EvidenceComplete)
+	require.Equal(t, len([]rune(text)), selection.EvidenceRunes)
+}
+
+func TestCandidateSelectionMarksBoundedSourceEvidenceIncompleteWithoutChangingLegacyDecision(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword:  "danger-marker",
+		Category: ContentModerationKeywordCategoryJailbreak,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Enabled:  true,
+	}}
+	content := ContentModerationInput{Sources: []ContentModerationInputSource{{
+		Source: "responses.input[0]",
+		Role:   "user",
+		Text:   "danger-marker " + strings.Repeat("界", maxModerationInputRunes),
+	}}}
+	content.Normalize()
+
+	selection, found := contentModerationCandidateSelectionForInput(cfg, content)
+
+	require.True(t, found)
+	require.True(t, selection.Source.Truncated)
+	require.Contains(t, selection.Source.TruncateReasons, "source_max_runes")
+	require.False(t, selection.EvidenceComplete)
+	require.False(t, contentModerationCandidateExtractionIncomplete(selection))
 }
 
 func TestCandidateSelectionPrefersTheLatestHighestSeverityKeywordFragment(t *testing.T) {
@@ -500,6 +541,65 @@ func TestCandidateDecisionCacheSuppressesRepeatedModelExecutionAndSideEffects(t 
 	require.True(t, second.CacheHit)
 	require.Equal(t, int64(1), executions.Load())
 	require.Equal(t, int64(1), repo.duplicateRetries.Load())
+}
+
+func TestCandidateDecisionCacheV4SeparatesDifferentPromptInjectionTails(t *testing.T) {
+	svc := candidateTestService(&candidateRetryDedupeRepo{})
+	cfg := candidateTestConfig()
+	base := contentModerationCandidateSelection{
+		Source:           ContentModerationInputSource{Source: "responses.input[0]", Role: "user"},
+		Origin:           contentModerationSourceOriginUserTurn,
+		Kind:             contentModerationCandidateKindPromptFilter,
+		Rule:             ContentModerationKeywordRule{Keyword: "prompt_injection_override", Category: ContentModerationKeywordCategoryJailbreak},
+		Fragment:         "same bounded fragment",
+		ReviewKind:       contentModerationReviewKindPromptInjection,
+		EvidenceComplete: true,
+		EvidenceRevision: contentModerationCandidateEvidenceRevision,
+		Route:            contentModerationCandidateRouteSemantic,
+	}
+	first := base
+	first.Source.Text = "same bounded fragment\nbenign tail"
+	first.ReviewText = first.Source.Text
+	first.EvidenceRunes = len([]rune(first.ReviewText))
+	second := base
+	second.Source.Text = "same bounded fragment\ndangerous override tail"
+	second.ReviewText = second.Source.Text
+	second.EvidenceRunes = len([]rune(second.ReviewText))
+	input := ContentModerationCheckInput{UserID: 17, APIKeyID: 29, Protocol: ContentModerationProtocolOpenAIResponses}
+
+	legacyFirst := svc.candidateDecisionCacheKey(cfg, input, first)
+	legacySecond := svc.candidateDecisionCacheKey(cfg, input, second)
+	require.Equal(t, legacyFirst, legacySecond)
+
+	cfg.SemanticReview.PromptInjectionReviewerEnabled = true
+	v4First := svc.candidateDecisionCacheKey(cfg, input, first)
+	v4Second := svc.candidateDecisionCacheKey(cfg, input, second)
+	require.NotEqual(t, v4First, v4Second)
+}
+
+func TestCandidateDecisionCacheV4IsolatesEvidenceRevision(t *testing.T) {
+	svc := candidateTestService(&candidateRetryDedupeRepo{})
+	cfg := candidateTestConfig()
+	cfg.SemanticReview.PromptInjectionReviewerEnabled = true
+	selection := contentModerationCandidateSelection{
+		Source:           ContentModerationInputSource{Source: "responses.input[0]", Role: "user", Text: "full prompt-injection evidence"},
+		Origin:           contentModerationSourceOriginUserTurn,
+		Kind:             contentModerationCandidateKindPromptFilter,
+		Rule:             ContentModerationKeywordRule{Keyword: "prompt_injection_override", Category: ContentModerationKeywordCategoryJailbreak},
+		Fragment:         "bounded fragment",
+		ReviewText:       "full prompt-injection evidence",
+		ReviewKind:       contentModerationReviewKindPromptInjection,
+		EvidenceComplete: true,
+		EvidenceRunes:    30,
+		EvidenceRevision: "evidence-revision-a",
+		EvidenceDigest:   "digest",
+		Route:            contentModerationCandidateRouteSemantic,
+	}
+	input := ContentModerationCheckInput{Protocol: ContentModerationProtocolOpenAIResponses}
+	first := svc.candidateDecisionCacheKey(cfg, input, selection)
+	selection.EvidenceRevision = "evidence-revision-b"
+	second := svc.candidateDecisionCacheKey(cfg, input, selection)
+	require.NotEqual(t, first, second)
 }
 
 func TestCandidateDecisionCoordinatorCollapsesConcurrentRetries(t *testing.T) {
@@ -916,6 +1016,188 @@ func TestCandidateCheckRoutesCyberCandidateToSemanticReview(t *testing.T) {
 	require.Equal(t, int64(1), status.PreBlockChecked)
 	require.Equal(t, int64(1), status.PreBlockAllowed)
 	require.Zero(t, status.PreBlockBlocked)
+}
+
+func TestPromptInjectionV2PreBlockOutcomeMatrixIsFailClosedWithoutViolation(t *testing.T) {
+	tests := []struct {
+		name       string
+		result     ContentModerationSemanticReviewResult
+		reviewErr  error
+		bodyText   string
+		wantAction string
+	}{
+		{
+			name: "review", result: ContentModerationSemanticReviewResult{
+				Verdict: "review", Presentation: "unknown", Confidence: 0.7,
+			}, bodyText: "override-marker request", wantAction: ContentModerationActionSemanticReviewDeferred,
+		},
+		{
+			name: "unavailable", reviewErr: errors.New("reviewer timeout"),
+			bodyText: "override-marker request", wantAction: ContentModerationActionSemanticReviewUnavailable,
+		},
+		{
+			name: "incomplete_allow", result: ContentModerationSemanticReviewResult{
+				Verdict: "allow", Presentation: "quoted_analysis", Confidence: 0.95,
+			}, bodyText: "override-marker " + strings.Repeat("界", maxModerationInputRunes), wantAction: ContentModerationActionSemanticReviewIncomplete,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := candidateTestConfig()
+			cfg.Enabled = true
+			cfg.SemanticReview.PromptInjectionReviewerEnabled = true
+			cfg.SemanticReview.PromptInjectionFailClosed = true
+			cfg.SemanticReview.PromptInjectionMaxInputRunes = maxModerationInputRunes
+			cfg.KeywordRules = []ContentModerationKeywordRule{{
+				Keyword: "override-marker", Category: ContentModerationKeywordCategoryJailbreak,
+				Severity: ContentModerationKeywordSeverityHigh, Action: ContentModerationKeywordActionBlock, Enabled: true,
+			}}
+			raw, err := json.Marshal(cfg)
+			require.NoError(t, err)
+			repo := &candidateRetryDedupeRepo{}
+			svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{
+				SettingKeyRiskControlEnabled: "true", SettingKeyContentModerationConfig: string(raw),
+			}}, repo, nil, nil, nil, nil, nil)
+			svc.SetDecisionCacheKey(bytes.Repeat([]byte{0x5a}, 32))
+			svc.SetSemanticReviewRouter(&contentModerationSemanticReviewRouterStub{result: tt.result, err: tt.reviewErr})
+			body, err := json.Marshal(map[string]any{"messages": []map[string]string{{"role": "user", "content": tt.bodyText}}})
+			require.NoError(t, err)
+
+			decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+				UserID: 17, APIKeyID: 29, Protocol: ContentModerationProtocolOpenAIChat, Body: body,
+			})
+
+			require.NoError(t, err)
+			require.False(t, decision.Allowed)
+			require.True(t, decision.Blocked)
+			require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+			require.Equal(t, tt.wantAction, decision.Action)
+			require.NotEmpty(t, decision.PolicyRevision)
+			logs := repo.snapshotLogs()
+			require.Len(t, logs, 1)
+			require.Zero(t, logs[0].ViolationCount)
+			require.False(t, logs[0].AutoBanned)
+			require.False(t, logs[0].EmailSent)
+			require.False(t, logs[0].UserViolationEligible)
+		})
+	}
+}
+
+func TestPromptInjectionV2Real5KAndCompactVariantsNeverAllowAcross30Runs(t *testing.T) {
+	rawFixture, err := os.ReadFile("testdata/prompt_injection_real_5k.txt")
+	require.NoError(t, err)
+	original := strings.TrimSpace(string(rawFixture))
+	compact := strings.NewReplacer(" ", "", "\n", "", "\r", "", "\t", "").Replace(original)
+
+	cfg := candidateTestConfig()
+	cfg.Enabled = true
+	cfg.PromptFilterMode = promptfilter.ModeObserve
+	cfg.SemanticReview.PromptInjectionReviewerEnabled = true
+	cfg.SemanticReview.PromptInjectionFailClosed = true
+	cfg.SemanticReview.PromptInjectionMaxInputRunes = maxModerationInputRunes
+	rawConfig, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	repo := &candidateRetryDedupeRepo{}
+	svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyRiskControlEnabled: "true", SettingKeyContentModerationConfig: string(rawConfig),
+	}}, repo, nil, nil, nil, nil, nil)
+	svc.SetDecisionCacheKey(bytes.Repeat([]byte{0x6b}, 32))
+	router := &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "review", Presentation: "direct_instruction", Confidence: 0.94,
+		ActiveOverride: true, Targets: []string{"system"}, ReasonCodes: []string{"hierarchy_override"},
+	}}
+	svc.SetSemanticReviewRouter(router)
+
+	for variantName, fixture := range map[string]string{"original": original, "compact": compact} {
+		t.Run(variantName, func(t *testing.T) {
+			for run := 0; run < 30; run++ {
+				text := fixture + "\nrequest-variant-" + variantName + "-" + strconv.Itoa(run)
+				body, marshalErr := json.Marshal(map[string]any{"input": text})
+				require.NoError(t, marshalErr)
+				decision, checkErr := svc.Check(context.Background(), ContentModerationCheckInput{
+					RequestID: "real-5k-" + variantName + "-" + strconv.Itoa(run),
+					Protocol:  ContentModerationProtocolOpenAIResponses,
+					Body:      body,
+				})
+				require.NoError(t, checkErr)
+				require.False(t, decision.Allowed)
+				require.True(t, decision.Blocked)
+				require.Contains(t, []string{ContentModerationActionSemanticReviewReject, ContentModerationActionSemanticReviewDeferred}, decision.Action)
+			}
+		})
+	}
+	require.Equal(t, 60, router.calls)
+}
+
+func TestPromptInjectionV2FailClosedNeverFallsBackToGeneralReviewer(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.Enabled = true
+	cfg.SemanticReview.PromptInjectionReviewerEnabled = false
+	cfg.SemanticReview.PromptInjectionFailClosed = true
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword: "override-marker", Category: ContentModerationKeywordCategoryJailbreak,
+		Severity: ContentModerationKeywordSeverityHigh, Enabled: true,
+	}}
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	repo := &candidateRetryDedupeRepo{}
+	svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyRiskControlEnabled: "true", SettingKeyContentModerationConfig: string(raw),
+	}}, repo, nil, nil, nil, nil, nil)
+	router := &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{Verdict: "allow"}}
+	svc.SetSemanticReviewRouter(router)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"override-marker request"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionSemanticReviewUnavailable, decision.Action)
+	require.Zero(t, router.calls)
+	require.Zero(t, repo.snapshotLogs()[0].ViolationCount)
+}
+
+func TestPromptInjectionV2GlobalBaselineRunsBeforeGroupScopeAndNoHitSkipsReviewer(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.Enabled = true
+	cfg.AllGroups = false
+	cfg.GroupIDs = []int64{42}
+	cfg.SemanticReview.PromptInjectionReviewerEnabled = true
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword: "override-marker", Category: ContentModerationKeywordCategoryJailbreak,
+		Severity: ContentModerationKeywordSeverityHigh, Enabled: true,
+	}}
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	repo := &candidateRetryDedupeRepo{}
+	svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyRiskControlEnabled: "true", SettingKeyContentModerationConfig: string(raw),
+	}}, repo, nil, nil, nil, nil, nil)
+	router := &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "reject", ActiveOverride: true, Presentation: "direct_instruction", Confidence: 0.99,
+	}}
+	svc.SetSemanticReviewRouter(router)
+	groupID := int64(99)
+
+	noHit, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		GroupID: &groupID, Protocol: ContentModerationProtocolOpenAIChat,
+		Body: []byte(`{"messages":[{"role":"user","content":"summarize this ordinary paragraph"}]}`),
+	})
+	require.NoError(t, err)
+	require.True(t, noHit.Allowed)
+	require.Zero(t, router.calls)
+
+	blocked, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		GroupID: &groupID, Protocol: ContentModerationProtocolOpenAIChat,
+		Body: []byte(`{"messages":[{"role":"user","content":"override-marker request"}]}`),
+	})
+	require.NoError(t, err)
+	require.True(t, blocked.Blocked)
+	require.Equal(t, ContentModerationActionSemanticReviewReject, blocked.Action)
+	require.Equal(t, 1, router.calls)
 }
 
 func TestCandidateCheckFailsOpenWhenCriticalSemanticReviewUnavailable(t *testing.T) {

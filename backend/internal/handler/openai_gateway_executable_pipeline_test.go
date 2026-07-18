@@ -15,6 +15,45 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestExecutableForwardStageRejectsDeferredModerationReceipt(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+		Method:             http.MethodPost,
+		Path:               "/v1/responses",
+		Handler:            "OpenAIGatewayHandler.Responses",
+		Upstream:           true,
+		ModerationRequired: true,
+		Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
+	})
+	moderationcoverage.MarkModerationReceipt(c, moderationcoverage.ModerationExecutionReceipt{
+		LocalScanDone:  true,
+		Outcome:        "deferred",
+		ForwardAllowed: false,
+	})
+
+	forwarded := false
+	stage := ExecutableForwardStage(ForwardStageAdapter{Forward: func(*gin.Context) ExecutableStageResult {
+		forwarded = true
+		return ExecutableStageResult{}
+	}})
+	result := stage.RunWithContext(c)
+
+	require.False(t, forwarded)
+	require.True(t, result.Stop)
+	require.ErrorIs(t, result.Err, errModerationReceiptNotForwardable)
+}
+
+func markForwardableModerationReceipt(c *gin.Context, protocol string) {
+	moderationcoverage.MarkModerationReceipt(c, moderationcoverage.ModerationExecutionReceipt{
+		Protocol:       protocol,
+		LocalScanDone:  true,
+		Outcome:        "no_hit",
+		ForwardAllowed: true,
+	})
+}
+
 func TestOpenAIHTTPExecutableStagesRunInOrderAndRecordExecutions(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -290,6 +329,7 @@ func TestOpenAIWebSocketStageRunnerRunsAllAdapterTypes(t *testing.T) {
 			"openai_responses",
 		),
 	})
+	markForwardableModerationReceipt(c, "openai_responses")
 
 	var calls []string
 	handler := &OpenAIGatewayHandler{}

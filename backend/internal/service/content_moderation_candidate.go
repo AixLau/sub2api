@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -32,18 +33,31 @@ const (
 	contentModerationCandidateFailureCacheTTL      = 15 * time.Second
 	contentModerationDecisionCacheOperationTimeout = 2 * time.Second
 	contentModerationCandidatePreferredRunes       = 1_200
+	contentModerationCandidateEvidenceRevision     = "candidate-evidence-v2"
+	contentModerationReviewKindGeneral             = "general"
+	contentModerationReviewKindPromptInjection     = "prompt_injection"
 )
 
 type contentModerationCandidateSelection struct {
-	Source         ContentModerationInputSource
-	Origin         string
-	Kind           string
-	Rule           ContentModerationKeywordRule
-	Fragment       string
-	Route          string
-	MatchStartByte int
-	MatchEndByte   int
-	PromptHit      *contentModerationPromptFilterHit
+	Source                 ContentModerationInputSource
+	Origin                 string
+	Kind                   string
+	Rule                   ContentModerationKeywordRule
+	Fragment               string
+	ReviewText             string
+	ReviewKind             string
+	EvidenceComplete       bool
+	EvidenceRunes          int
+	EvidenceRevision       string
+	EvidenceDigest         string
+	EvidenceWindowed       bool
+	EvidenceWindows        int
+	EvidenceMatchesTotal   int
+	EvidenceMatchesCovered int
+	Route                  string
+	MatchStartByte         int
+	MatchEndByte           int
+	PromptHit              *contentModerationPromptFilterHit
 }
 
 func (selection contentModerationCandidateSelection) input() ContentModerationInput {
@@ -61,16 +75,25 @@ func (selection contentModerationCandidateSelection) hash() string {
 
 func (selection contentModerationCandidateSelection) metadata() contentModerationSelectionMetadata {
 	return contentModerationSelectionMetadata{
-		SchemaVersion:         1,
-		CandidateKind:         selection.Kind,
-		CandidateKeyword:      selection.Rule.Keyword,
-		CandidateCategory:     selection.Rule.Category,
-		CandidateSeverity:     selection.Rule.Severity,
-		Route:                 selection.Route,
-		SourceOrigin:          selection.Origin,
-		SelectedSource:        selection.Source.Source,
-		SelectedSourceRole:    selection.Source.Role,
-		SelectedFragmentRunes: len([]rune(selection.Fragment)),
+		SchemaVersion:          1,
+		CandidateKind:          selection.Kind,
+		CandidateKeyword:       selection.Rule.Keyword,
+		CandidateCategory:      selection.Rule.Category,
+		CandidateSeverity:      selection.Rule.Severity,
+		Route:                  selection.Route,
+		SourceOrigin:           selection.Origin,
+		SelectedSource:         selection.Source.Source,
+		SelectedSourceRole:     selection.Source.Role,
+		SelectedFragmentRunes:  len([]rune(selection.Fragment)),
+		ReviewKind:             selection.ReviewKind,
+		EvidenceComplete:       selection.EvidenceComplete,
+		EvidenceRunes:          selection.EvidenceRunes,
+		EvidenceRevision:       selection.EvidenceRevision,
+		EvidenceDigest:         selection.EvidenceDigest,
+		EvidenceWindowed:       selection.EvidenceWindowed,
+		EvidenceWindows:        selection.EvidenceWindows,
+		EvidenceMatchesTotal:   selection.EvidenceMatchesTotal,
+		EvidenceMatchesCovered: selection.EvidenceMatchesCovered,
 	}
 }
 
@@ -82,6 +105,9 @@ func (selection contentModerationCandidateSelection) metadata() contentModeratio
 func contentModerationCandidateSelectionForInput(cfg *ContentModerationConfig, content ContentModerationInput) (contentModerationCandidateSelection, bool) {
 	for index := len(content.Sources) - 1; index >= 0; index-- {
 		source := content.Sources[index]
+		if cfg != nil && (cfg.SemanticReview.PromptInjectionReviewerEnabled || cfg.SemanticReview.PromptInjectionFailClosed) {
+			source = contentModerationCandidateFullReviewSource(content, source)
+		}
 		if !contentModerationSourceIsActionableUserTurn(source) {
 			continue
 		}
@@ -91,6 +117,24 @@ func contentModerationCandidateSelectionForInput(cfg *ContentModerationConfig, c
 	}
 
 	return contentModerationCandidateSelection{}, false
+}
+
+func contentModerationCandidateFullReviewSource(content ContentModerationInput, source ContentModerationInputSource) ContentModerationInputSource {
+	for index := len(content.Extraction.Sources) - 1; index >= 0; index-- {
+		extracted := content.Extraction.Sources[index]
+		if strings.TrimSpace(extracted.Source) != strings.TrimSpace(source.Source) ||
+			strings.ToLower(strings.TrimSpace(extracted.Role)) != strings.ToLower(strings.TrimSpace(source.Role)) {
+			continue
+		}
+		source.Text = normalizeContentModerationText(extracted.Text)
+		source.Truncated = extracted.Truncated || !content.Extraction.Complete
+		source.TruncateReasons = normalizeContentModerationTruncateReasons(append(
+			append([]string(nil), extracted.TruncateReasons...),
+			content.Extraction.TruncateReasons...,
+		))
+		return source
+	}
+	return source
 }
 
 func contentModerationCandidateSelectionFromRule(cfg *ContentModerationConfig, source ContentModerationInputSource, origin string, rule ContentModerationKeywordRule, kind string) contentModerationCandidateSelection {
@@ -112,16 +156,41 @@ func contentModerationCandidateSelectionFromRuleAt(cfg *ContentModerationConfig,
 	if startByte >= 0 && endByte > startByte {
 		fragment = contentModerationCandidateFragmentAroundByteSpan(source.Text, startByte, endByte, maxRunes)
 	}
-	return contentModerationCandidateSelection{
-		Source:         source,
-		Origin:         origin,
-		Kind:           kind,
-		Rule:           rule,
-		Fragment:       fragment,
-		Route:          contentModerationCandidateRouteFor(cfg, rule.Category),
-		MatchStartByte: startByte,
-		MatchEndByte:   endByte,
+	reviewKind := contentModerationReviewKindGeneral
+	if contentModerationCandidateIsPromptInjection(kind, rule) {
+		reviewKind = contentModerationReviewKindPromptInjection
 	}
+	return contentModerationCandidateSelection{
+		Source:           source,
+		Origin:           origin,
+		Kind:             kind,
+		Rule:             rule,
+		Fragment:         fragment,
+		ReviewText:       source.Text,
+		ReviewKind:       reviewKind,
+		EvidenceComplete: !source.Truncated && len(source.TruncateReasons) == 0,
+		EvidenceRunes:    len([]rune(source.Text)),
+		EvidenceRevision: contentModerationCandidateEvidenceRevision,
+		Route:            contentModerationCandidateRouteFor(cfg, rule.Category),
+		MatchStartByte:   startByte,
+		MatchEndByte:     endByte,
+	}
+}
+
+func contentModerationCandidateIsPromptInjection(kind string, rule ContentModerationKeywordRule) bool {
+	if normalizeContentModerationKeywordCategory(rule.Category) == ContentModerationKeywordCategoryJailbreak {
+		return true
+	}
+	if kind != contentModerationCandidateKindPromptFilter {
+		return false
+	}
+	name := strings.ToLower(strings.TrimSpace(rule.Keyword))
+	for _, marker := range []string{"jailbreak", "prompt_injection", "system_prompt", "prompt_obfuscation", "agent_tool_permission"} {
+		if strings.Contains(name, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func contentModerationCandidateAdaptiveRunes(text string, configuredMax int) int {
@@ -213,7 +282,47 @@ func contentModerationCandidateSelectionForSource(cfg *ContentModerationConfig, 
 			selected = candidate
 		}
 	}
+	if selected.ReviewKind == contentModerationReviewKindPromptInjection &&
+		(cfg.SemanticReview.PromptInjectionReviewerEnabled || cfg.SemanticReview.PromptInjectionFailClosed) {
+		selected = contentModerationCandidateBuildPromptInjectionEvidence(cfg, selected)
+	}
 	return selected, true
+}
+
+func contentModerationCandidateBuildPromptInjectionEvidence(cfg *ContentModerationConfig, selection contentModerationCandidateSelection) contentModerationCandidateSelection {
+	matches := []promptfilter.Match(nil)
+	scanComplete := true
+	if selection.PromptHit != nil {
+		matches = selection.PromptHit.Verdict.Matches
+		scanComplete = selection.PromptHit.Verdict.ScanComplete
+	}
+	maxRunes := maxModerationInputRunes
+	if cfg != nil && cfg.SemanticReview.PromptInjectionMaxInputRunes > 0 {
+		maxRunes = cfg.SemanticReview.PromptInjectionMaxInputRunes
+	}
+	evidence, err := buildContentModerationPromptInjectionEvidence(contentModerationPromptInjectionEvidenceInput{
+		SourceText:     selection.Source.Text,
+		Matches:        matches,
+		MaxRunes:       maxRunes,
+		SourceComplete: selection.EvidenceComplete && scanComplete,
+	})
+	if err != nil {
+		selection.ReviewText = redactContentModerationSecrets(selection.Fragment)
+		selection.EvidenceComplete = false
+		selection.EvidenceRunes = len([]rune(selection.ReviewText))
+		selection.EvidenceRevision = contentModerationPromptInjectionEvidenceRevision
+		return selection
+	}
+	selection.ReviewText = evidence.Text
+	selection.EvidenceComplete = evidence.Complete
+	selection.EvidenceRunes = evidence.Runes
+	selection.EvidenceRevision = evidence.Revision
+	selection.EvidenceDigest = evidence.Digest
+	selection.EvidenceWindowed = evidence.Windowed
+	selection.EvidenceWindows = evidence.WindowCount
+	selection.EvidenceMatchesTotal = evidence.MatchesTotal
+	selection.EvidenceMatchesCovered = evidence.MatchesCovered
+	return selection
 }
 
 func contentModerationCandidatePromptFilterMatch(matches []promptfilter.Match) (promptfilter.Match, bool) {
@@ -396,8 +505,14 @@ func contentModerationOrdinaryProviderSupportsCategory(provider, category string
 
 func (s *ContentModerationService) candidateDecisionCacheKey(cfg *ContentModerationConfig, input ContentModerationCheckInput, selection contentModerationCandidateSelection) string {
 	policyRevision := contentModerationPolicyRevision(true, cfg)
+	namespace := "candidate-decision-v3"
+	evidenceIdentity := selection.Fragment
+	if cfg != nil && cfg.SemanticReview.PromptInjectionReviewerEnabled && selection.ReviewKind == contentModerationReviewKindPromptInjection {
+		namespace = "candidate-decision-v4"
+		evidenceIdentity = selection.Source.Text
+	}
 	parts := []string{
-		"candidate-decision-v3",
+		namespace,
 		policyRevision,
 		fmtInt64(input.UserID),
 		fmtInt64(input.APIKeyID),
@@ -413,7 +528,18 @@ func (s *ContentModerationService) candidateDecisionCacheKey(cfg *ContentModerat
 		selection.Rule.Category,
 		selection.Rule.Severity,
 		selection.Route,
-		selection.Fragment,
+		evidenceIdentity,
+	}
+	if namespace == "candidate-decision-v4" {
+		parts = append(parts,
+			selection.ReviewKind,
+			promptInjectionReviewerInstructionsRevision,
+			promptInjectionReviewerSchemaRevision,
+			selection.EvidenceRevision,
+			selection.EvidenceDigest,
+			strconv.FormatBool(selection.EvidenceComplete),
+			strconv.Itoa(selection.EvidenceRunes),
+		)
 	}
 	// An incomplete extraction has no provider payload to identify it. Include
 	// the bounded source text and its reasons so two different malformed user
@@ -771,6 +897,37 @@ func (s *ContentModerationService) checkCandidateOnly(ctx context.Context, input
 	return &decision
 }
 
+// checkPromptInjectionBaseline runs before ordinary group/model/account scope.
+// It only evaluates prompt-injection candidates from actionable user sources;
+// ordinary moderation remains governed by the configured scope.
+func (s *ContentModerationService) checkPromptInjectionBaseline(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig) (*ContentModerationDecision, bool) {
+	if s == nil || cfg == nil || cfg.Mode == ContentModerationModeOff ||
+		(!cfg.SemanticReview.PromptInjectionReviewerEnabled && !cfg.SemanticReview.PromptInjectionFailClosed) {
+		return nil, false
+	}
+	baselineCfg := cloneContentModerationConfig(cfg)
+	baselineCfg.AuditScope = ContentModerationAuditScopeUserOnly
+	baselineCfg.PromptFilterMode = promptfilter.ModeObserve
+	content := ExtractContentModerationInput(input.Protocol, input.Body, ContentModerationAuditScopeUserOnly)
+	content.Normalize()
+	selection, found := contentModerationCandidateSelectionForInput(baselineCfg, content)
+	if !found || selection.ReviewKind != contentModerationReviewKindPromptInjection {
+		return nil, false
+	}
+	outcome := s.executeCandidateDecision(ctx, baselineCfg, input, selection, func(reviewCtx context.Context) contentModerationCandidateOutcome {
+		if contentModerationCandidateExtractionIncomplete(selection) {
+			return s.candidateExtractionFailureOutcome(reviewCtx, input, baselineCfg, content, &selection)
+		}
+		return s.runCandidateSelection(reviewCtx, input, baselineCfg, selection)
+	})
+	if outcome.Decision == nil {
+		return contentModerationFailureDecision(baselineCfg), true
+	}
+	decision := cloneContentModerationDecision(*outcome.Decision)
+	decision.candidateDecisionID = outcome.DecisionID
+	return &decision, true
+}
+
 // checkCandidateOnlyAccountAttempt intentionally avoids the legacy async
 // semantic enqueue path. Account selection can retry the same gateway request
 // several times; candidate mode must reuse the bounded synchronous decision,
@@ -952,6 +1109,13 @@ func (s *ContentModerationService) runCandidateOrdinaryReview(ctx context.Contex
 }
 
 func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, selection contentModerationCandidateSelection, ordinaryReason string) contentModerationCandidateOutcome {
+	if promptInjectionFailClosedActive(cfg, selection) && !cfg.SemanticReview.PromptInjectionReviewerEnabled {
+		return s.candidateUnavailableOutcome(
+			ctx, input, cfg, selection, contentModerationDecisionSourceSemantic,
+			"platform_openai", ContentModerationSemanticReviewPrimaryModel,
+			"prompt_injection_reviewer_disabled",
+		)
+	}
 	if s == nil || s.semanticReviewRouter == nil {
 		return s.candidateUnavailableOutcome(
 			ctx,
@@ -965,12 +1129,28 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		)
 	}
 	semanticCfg := contentModerationSemanticReviewConfigForProviderFallback(cfg)
-	semanticCfg.MaxInputRunes = maxContentModerationCandidateRunes
+	semanticReviewText := contentModerationCandidateSemanticInput(selection)
+	if semanticCfg.PromptInjectionReviewerEnabled && selection.ReviewKind == contentModerationReviewKindPromptInjection {
+		semanticReviewText = selection.ReviewText
+	}
 	semanticInput := contentModerationSemanticReviewInputForCheck(
 		input,
-		contentModerationCandidateSemanticInput(selection),
+		semanticReviewText,
 		semanticReviewDecisionID(input, s.candidateDecisionCacheKey(cfg, input, selection)),
 	)
+	// Phase 0 keeps the legacy candidate payload and 2K behavior explicit while
+	// allowing the transport to honor larger effective limits for future
+	// prompt-injection evidence. candidate_fragment_runes remains display-only.
+	semanticInput.MaxInputRunes = maxContentModerationCandidateRunes
+	semanticInput.ReviewKind = contentModerationReviewKindGeneral
+	semanticInput.EvidenceComplete = true
+	semanticInput.EvidenceRevision = "legacy-candidate-evidence-v1"
+	if semanticCfg.PromptInjectionReviewerEnabled && selection.ReviewKind == contentModerationReviewKindPromptInjection {
+		semanticInput.ReviewKind = selection.ReviewKind
+		semanticInput.MaxInputRunes = semanticCfg.PromptInjectionMaxInputRunes
+		semanticInput.EvidenceComplete = selection.EvidenceComplete
+		semanticInput.EvidenceRevision = selection.EvidenceRevision
+	}
 	started := time.Now()
 	result, err := s.semanticReviewRouter.Review(ctx, semanticCfg, semanticInput)
 	latency := int(time.Since(started).Milliseconds())
@@ -993,7 +1173,15 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 	if s.metrics != nil {
 		s.metrics.observeSemanticReview(result.Model, result.Verdict, started, result.Usage)
 	}
-	result, policyOverride := applySemanticReviewPolicy(result)
+	var policyOverride bool
+	if semanticInput.ReviewKind == contentModerationReviewKindPromptInjection {
+		result, policyOverride = applyPromptInjectionReviewPolicy(result, semanticInput.EvidenceComplete)
+		if s.metrics != nil {
+			s.metrics.observePromptInjectionReview(result.Verdict, semanticInput.EvidenceComplete, len([]rune(semanticInput.Text)))
+		}
+	} else {
+		result, policyOverride = applySemanticReviewPolicy(result)
+	}
 	category, score, scores := semanticReviewCategorySummary(result)
 	buildDecision := func(action string, flagged, blocked bool) *ContentModerationDecision {
 		decision := &ContentModerationDecision{
@@ -1033,6 +1221,13 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		return contentModerationCandidateOutcome{Decision: buildDecision(action, true, blocked), DecisionID: decisionID, Cacheable: true}
 	case "review":
 		action := ContentModerationActionSemanticReviewReview
+		failClosed := promptInjectionFailClosedActive(cfg, selection)
+		if failClosed {
+			action = ContentModerationActionSemanticReviewDeferred
+			if !semanticInput.EvidenceComplete {
+				action = ContentModerationActionSemanticReviewIncomplete
+			}
+		}
 		if cfg.Mode == ContentModerationModePreBlock {
 			s.recordPreBlockSyncMetric(latency, action)
 		}
@@ -1040,7 +1235,25 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		log.ModerationProvider = "platform_openai"
 		log.ModerationModel = result.Model
 		log.ReviewStatus = ContentModerationReviewStatusPending
+		if failClosed {
+			// A fail-closed transport decision protects the request boundary, but is
+			// not a confirmed user violation and must not feed enforcement counters.
+			log.UserViolationEligible = false
+		}
 		decisionID := s.persistCandidateAudit(ctx, input, cfg, selection, log, false)
+		if failClosed {
+			decision := buildDecision(action, true, true)
+			decision.StatusCode = http.StatusServiceUnavailable
+			decision.Message = promptInjectionDeferredMessage(action)
+			if s.metrics != nil {
+				reason := "review"
+				if action == ContentModerationActionSemanticReviewIncomplete {
+					reason = "incomplete"
+				}
+				s.metrics.observePromptInjectionFailClosed(reason)
+			}
+			return contentModerationCandidateOutcome{Decision: decision, DecisionID: decisionID, Cacheable: true, CacheTTL: s.candidateFailureCacheTTL(cfg)}
+		}
 		return contentModerationCandidateOutcome{Decision: buildDecision(action, true, false), DecisionID: decisionID, Cacheable: true}
 	default:
 		log := s.buildCandidateLog(input, cfg, selection, contentModerationDecisionSourceSemantic, ContentModerationActionSemanticReviewAllow, false, category, score, scores, &latency, metadata)
@@ -1054,10 +1267,24 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 	}
 }
 
+func promptInjectionFailClosedActive(cfg *ContentModerationConfig, selection contentModerationCandidateSelection) bool {
+	return cfg != nil && cfg.Mode == ContentModerationModePreBlock &&
+		cfg.SemanticReview.PromptInjectionFailClosed &&
+		selection.ReviewKind == contentModerationReviewKindPromptInjection
+}
+
+func promptInjectionDeferredMessage(action string) string {
+	switch action {
+	case ContentModerationActionSemanticReviewIncomplete:
+		return "内容审核证据不完整，请缩短请求后重试"
+	case ContentModerationActionSemanticReviewUnavailable:
+		return "内容审核暂时不可用，请稍后重试"
+	default:
+		return "内容审核需要进一步复核，请稍后重试"
+	}
+}
+
 func contentModerationCandidateSemanticInput(selection contentModerationCandidateSelection) string {
-	// Both reviewer classes receive the exact same payload. Metadata stays in
-	// the immutable audit record and the model's fixed instructions, never in a
-	// synthetic user message that could exceed the 2,000-rune input boundary.
 	return selection.Fragment
 }
 
@@ -1077,6 +1304,13 @@ func contentModerationCandidateSemanticMetadata(selection contentModerationCandi
 	metadata["semantic_review_executability"] = result.Executability
 	metadata["semantic_review_reason_codes"] = result.ReasonCodes
 	metadata["semantic_review_reason_details"] = result.ReasonDetails
+	metadata["semantic_review_active_override"] = result.ActiveOverride
+	metadata["semantic_review_presentation"] = result.Presentation
+	metadata["semantic_review_targets"] = result.Targets
+	if selection.ReviewKind == contentModerationReviewKindPromptInjection {
+		metadata["semantic_review_instructions_revision"] = promptInjectionReviewerInstructionsRevision
+		metadata["semantic_review_schema_revision"] = promptInjectionReviewerSchemaRevision
+	}
 	metadata["semantic_review_policy_override"] = policyOverride
 	if ordinaryReason != "" {
 		metadata["ordinary_moderation_reason"] = ordinaryReason
@@ -1124,7 +1358,11 @@ func (s *ContentModerationService) persistCandidateAudit(
 	} else {
 		s.persistContentModerationLog(ctx, cfg, log, selection.hash(), false, false)
 	}
-	s.storeCandidateEvidence(ctx, log, selection, s.candidatePayloadHMAC(selection.Fragment))
+	payloadForHMAC := selection.Fragment
+	if selection.ReviewKind == contentModerationReviewKindPromptInjection && strings.TrimSpace(selection.Source.Text) != "" {
+		payloadForHMAC = selection.Source.Text
+	}
+	s.storeCandidateEvidence(ctx, log, selection, s.candidatePayloadHMAC(payloadForHMAC))
 	return log.DecisionID
 }
 
@@ -1159,13 +1397,49 @@ func (s *ContentModerationService) candidateUnavailableOutcome(
 		nil,
 		marshalContentModerationMetadata(metadata),
 	)
+	failClosed := promptInjectionFailClosedActive(cfg, selection)
+	if failClosed {
+		log.Action = ContentModerationActionSemanticReviewUnavailable
+		log.Flagged = true
+		log.ReviewStatus = ContentModerationReviewStatusPending
+		log.UserViolationEligible = false
+	}
 	log.ModerationProvider = strings.TrimSpace(provider)
 	log.ModerationModel = strings.TrimSpace(model)
 	log.Error = reason
 	log.RiskContextReason = "candidate_reviewer_unavailable"
 	decisionID := s.persistCandidateAudit(ctx, input, cfg, selection, log, false)
 	if cfg != nil && cfg.Mode == ContentModerationModePreBlock {
-		s.recordPreBlockSyncMetric(0, ContentModerationActionError)
+		action := ContentModerationActionError
+		if failClosed {
+			action = ContentModerationActionSemanticReviewUnavailable
+		}
+		s.recordPreBlockSyncMetric(0, action)
+	}
+	if failClosed {
+		if s.metrics != nil {
+			s.metrics.observePromptInjectionReview("error", selection.EvidenceComplete, selection.EvidenceRunes)
+			reasonLabel := "unavailable"
+			if reason == "prompt_injection_reviewer_disabled" {
+				reasonLabel = "disabled"
+			}
+			s.metrics.observePromptInjectionFailClosed(reasonLabel)
+		}
+		return contentModerationCandidateOutcome{
+			Decision: &ContentModerationDecision{
+				Allowed: false, Blocked: true, Flagged: true,
+				Message:        promptInjectionDeferredMessage(ContentModerationActionSemanticReviewUnavailable),
+				StatusCode:     http.StatusServiceUnavailable,
+				Action:         ContentModerationActionSemanticReviewUnavailable,
+				MatchedKeyword: selection.Rule.Keyword, KeywordCategory: selection.Rule.Category,
+				KeywordSeverity: selection.Rule.Severity, RiskContextType: ContentModerationRiskContextActualRequest,
+				RiskContextReason: "candidate_reviewer_unavailable",
+			},
+			DecisionID: decisionID, Cacheable: true, CacheTTL: s.candidateFailureCacheTTL(cfg),
+		}
+	}
+	if selection.ReviewKind == contentModerationReviewKindPromptInjection && s.metrics != nil {
+		s.metrics.observePromptInjectionReview("error", selection.EvidenceComplete, selection.EvidenceRunes)
 	}
 	return contentModerationCandidateOutcome{
 		Decision:   contentModerationFailureDecision(cfg),
@@ -1192,7 +1466,16 @@ func (s *ContentModerationService) candidateFailureCacheTTL(cfg *ContentModerati
 }
 
 func contentModerationCandidateExtractionIncomplete(selection contentModerationCandidateSelection) bool {
-	return selection.Source.Truncated || len(selection.Source.TruncateReasons) > 0
+	reasons := normalizeContentModerationTruncateReasons(selection.Source.TruncateReasons)
+	for _, reason := range reasons {
+		if reason != "source_max_runes" {
+			return true
+		}
+	}
+	// A source_max_runes marker describes the bounded candidate view. The raw
+	// extraction remains available to existing moderation paths, so Phase 0
+	// records incomplete V2 evidence without changing the legacy decision.
+	return selection.Source.Truncated && len(reasons) == 0
 }
 
 func (s *ContentModerationService) candidateExtractionFailureOutcome(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, selection *contentModerationCandidateSelection) contentModerationCandidateOutcome {
@@ -1235,12 +1518,46 @@ func (s *ContentModerationService) candidateExtractionFailureOutcome(ctx context
 	log.SelectedFragmentRunes = len([]rune(selectedFragment))
 	log.RiskContextType = ContentModerationRiskContextUnknown
 	log.RiskContextReason = "candidate_extraction_incomplete"
+	failClosed := selection != nil && promptInjectionFailClosedActive(cfg, *selection)
+	if failClosed {
+		log.Action = ContentModerationActionSemanticReviewIncomplete
+		log.Flagged = true
+		log.ReviewStatus = ContentModerationReviewStatusPending
+		log.UserViolationEligible = false
+	}
 	s.persistContentModerationLog(ctx, cfg, log, "", false, false)
 	if selection != nil {
-		s.storeCandidateEvidence(ctx, log, *selection, s.candidatePayloadHMAC(selection.Fragment))
+		payload := selection.Fragment
+		if strings.TrimSpace(selection.Source.Text) != "" {
+			payload = selection.Source.Text
+		}
+		s.storeCandidateEvidence(ctx, log, *selection, s.candidatePayloadHMAC(payload))
 	}
 	if cfg != nil && cfg.Mode == ContentModerationModePreBlock {
-		s.recordPreBlockSyncMetric(0, ContentModerationActionError)
+		action := ContentModerationActionError
+		if failClosed {
+			action = ContentModerationActionSemanticReviewIncomplete
+		}
+		s.recordPreBlockSyncMetric(0, action)
+	}
+	if failClosed {
+		if s.metrics != nil {
+			s.metrics.observePromptInjectionReview("error", false, selection.EvidenceRunes)
+			s.metrics.observePromptInjectionFailClosed("incomplete")
+		}
+		return contentModerationCandidateOutcome{
+			Decision: &ContentModerationDecision{
+				Allowed: false, Blocked: true, Flagged: true,
+				Message:        promptInjectionDeferredMessage(ContentModerationActionSemanticReviewIncomplete),
+				StatusCode:     http.StatusServiceUnavailable,
+				Action:         ContentModerationActionSemanticReviewIncomplete,
+				MatchedKeyword: selection.Rule.Keyword, KeywordCategory: selection.Rule.Category,
+				KeywordSeverity:   selection.Rule.Severity,
+				RiskContextType:   ContentModerationRiskContextUnknown,
+				RiskContextReason: "candidate_extraction_incomplete",
+			},
+			DecisionID: log.DecisionID, Cacheable: true, CacheTTL: s.candidateFailureCacheTTL(cfg),
+		}
 	}
 	return contentModerationCandidateOutcome{
 		Decision:   contentModerationFailureDecision(cfg),

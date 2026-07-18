@@ -867,6 +867,20 @@
                     <Select v-model="configForm.semantic_review_reasoning_effort" :options="semanticReviewReasoningOptions" />
                   </div>
                 </div>
+                <dl data-test="prompt-injection-reviewer-status" class="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 border-t border-gray-100 pt-4 text-sm dark:border-dark-700 md:grid-cols-3">
+                  <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.promptInjectionReviewerStatus') }}</dt>
+                    <dd class="mt-1 font-medium text-gray-900 dark:text-white">{{ configForm.prompt_injection_reviewer_enabled ? t('admin.riskControl.semanticStatusEnabled') : t('admin.riskControl.semanticStatusDisabled') }}</dd>
+                  </div>
+                  <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.promptInjectionFailClosedStatus') }}</dt>
+                    <dd class="mt-1 font-medium text-gray-900 dark:text-white">{{ configForm.prompt_injection_fail_closed ? t('admin.riskControl.semanticStatusEnabled') : t('admin.riskControl.semanticStatusDisabled') }}</dd>
+                  </div>
+                  <div>
+                    <dt class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.promptInjectionMaxInput') }}</dt>
+                    <dd class="mt-1 font-medium text-gray-900 dark:text-white">{{ formatNumber(configForm.prompt_injection_max_input_runes) }}</dd>
+                  </div>
+                </dl>
               </div>
               <div>
 					<label class="input-label">{{ t('admin.riskControl.provider') }}</label>
@@ -2066,6 +2080,9 @@ const configForm = reactive({
   semantic_review_max_attempts_per_model: 1,
   semantic_review_max_output_tokens: 512,
   semantic_review_reasoning_effort: 'low' as const,
+  prompt_injection_reviewer_enabled: false,
+  prompt_injection_max_input_runes: 12000,
+  prompt_injection_fail_closed: false,
 	  provider: 'openai' as ModerationProvider,
   base_url: 'https://api.openai.com',
   model: 'omni-moderation-latest',
@@ -3092,6 +3109,9 @@ function applyConfig(config: ContentModerationConfig) {
     max_input_runes: 2000,
     max_output_tokens: 512,
     reasoning_effort: 'low',
+    prompt_injection_reviewer_enabled: false,
+    prompt_injection_max_input_runes: 12000,
+    prompt_injection_fail_closed: false,
   }
   configForm.semantic_review_primary_model = semanticReview.primary_model || 'gpt-5.3-codex-spark'
   configForm.semantic_review_fallback_models_text = Array.isArray(semanticReview.fallback_models) ? semanticReview.fallback_models.join('\n') : ''
@@ -3101,6 +3121,9 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.semantic_review_max_attempts_per_model = semanticReview.max_attempts_per_model || 1
   configForm.semantic_review_max_output_tokens = semanticReview.max_output_tokens || 512
   configForm.semantic_review_reasoning_effort = 'low'
+	configForm.prompt_injection_reviewer_enabled = semanticReview.prompt_injection_reviewer_enabled ?? false
+	configForm.prompt_injection_max_input_runes = semanticReview.prompt_injection_max_input_runes || 12000
+	configForm.prompt_injection_fail_closed = semanticReview.prompt_injection_fail_closed ?? false
 	promptFilterSourceRevision.value = config.prompt_filter_source_revision || ''
 	promptFilterSourceURL.value = config.prompt_filter_source_url || ''
 	promptFilterSourceAuthor.value = config.prompt_filter_source_author || ''
@@ -3273,6 +3296,9 @@ async function saveConfig() {
           max_input_runes: 2000,
           max_output_tokens: Number(configForm.semantic_review_max_output_tokens) || 512,
           reasoning_effort: configForm.semantic_review_reasoning_effort,
+          prompt_injection_reviewer_enabled: configForm.prompt_injection_reviewer_enabled,
+          prompt_injection_max_input_runes: configForm.prompt_injection_max_input_runes,
+          prompt_injection_fail_closed: configForm.prompt_injection_fail_closed,
         },
 	      provider: configForm.provider,
       base_url: configForm.base_url,

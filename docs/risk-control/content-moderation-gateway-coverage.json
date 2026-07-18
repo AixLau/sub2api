@@ -1,6 +1,12 @@
 {
   "schema_version": 1,
-  "manifest_version": "2026-07-16.1",
+  "manifest_version": "2026-07-17.2",
+  "receipt_contract": {
+    "production_admission_requires": ["local_scan_done", "forward_allowed"],
+    "selected_account_deferred_must_complete": true,
+    "websocket_handshake_is_admission": false,
+    "websocket_frames_require_independent_receipts": true
+  },
   "entries": [
     {
       "route": {

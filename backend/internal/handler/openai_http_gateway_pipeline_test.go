@@ -64,6 +64,12 @@ func TestOpenAIHTTPGatewayPipelineReturnsCleanupWhenAllStagesAllow(t *testing.T)
 	pipeline := &OpenAIGatewayPipeline{
 		httpPreForwardStages: []openAIHTTPGatewayStage{
 			openAIHTTPGatewayPipelineTestStage{
+				name: "moderation",
+				run: func(*openAIHTTPGatewayStageContext) openAIHTTPGatewayStageResult {
+					return openAIHTTPGatewayStageResult{}
+				},
+			},
+			openAIHTTPGatewayPipelineTestStage{
 				name: "image",
 				run: func(*openAIHTTPGatewayStageContext) openAIHTTPGatewayStageResult {
 					return openAIHTTPGatewayStageResult{Cleanup: func() { releaseCalls++ }}

@@ -246,7 +246,7 @@ func enforceModeratedRoutePipelineAdmission(c *gin.Context, meta ModeratedRouteM
 		return
 	}
 	admission, ok := moderationcoverage.PipelineAdmissionFromContext(c)
-	if ok && admission.Admitted && admission.Pipeline == meta.Pipeline {
+	if ok && admission.Admitted && admission.ModerationCompleted && admission.Pipeline == meta.Pipeline {
 		return
 	}
 	if !c.Writer.Written() {

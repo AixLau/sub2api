@@ -133,6 +133,9 @@ const baseConfig = (): ContentModerationConfig => ({
 	  max_input_runes: 2000,
 	  max_output_tokens: 512,
 	  reasoning_effort: 'low',
+	  prompt_injection_reviewer_enabled: true,
+	  prompt_injection_max_input_runes: 12000,
+	  prompt_injection_fail_closed: true,
 	},
   thresholds: {
     harassment: 0.98,
@@ -694,6 +697,10 @@ describe('admin RiskControlView', () => {
     await flushPromises()
 
     await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    const promptInjectionStatus = wrapper.get('[data-test="prompt-injection-reviewer-status"]')
+    expect(promptInjectionStatus.text()).toContain('admin.riskControl.promptInjectionReviewerStatus')
+    expect(promptInjectionStatus.text()).toContain('admin.riskControl.promptInjectionFailClosedStatus')
+    expect(promptInjectionStatus.text()).toContain('12,000')
     await findButtonByText(wrapper, 'admin.riskControl.tabs.keywords').trigger('click')
     await wrapper.get('[data-test="keyword-test-prompt"]').setValue('please s e l l api key now')
     await findButtonByText(wrapper, 'admin.riskControl.runKeywordTest').trigger('click')
@@ -862,6 +869,9 @@ describe('admin RiskControlView', () => {
 	        max_input_runes: 2000,
 	        max_output_tokens: 512,
 	        reasoning_effort: 'low',
+	        prompt_injection_reviewer_enabled: true,
+	        prompt_injection_max_input_runes: 12000,
+	        prompt_injection_fail_closed: true,
 	      }),
     }))
   })

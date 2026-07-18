@@ -4,10 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"regexp/syntax"
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 const (
@@ -15,11 +19,15 @@ const (
 	BuiltinSourceRevision = "codex2api@6793e0b09fe170895878f73f256a3d7ee7e5a08b"
 	// BuiltinRuleSetRevision identifies the upstream rules plus local supplemental
 	// cyber and prompt-injection rules maintained in this repository.
-	BuiltinRuleSetRevision = BuiltinSourceRevision + "+" + supplementalSourceRevision + "+" + candidateSourceRevision
+	BuiltinRuleSetRevision = BuiltinSourceRevision + "+" + supplementalSourceRevision + "+" + candidateSourceRevision + "+" + DetectorRevision
 	BuiltinSourceURL       = "https://github.com/james-6-23/codex2api/tree/6793e0b09fe170895878f73f256a3d7ee7e5a08b/security/promptfilter"
 	BuiltinSourceAuthor    = "james-6-23/codex2api"
 	// The upstream rule set is redistributed in this derivative with permission from its author.
 	BuiltinSourcePermission = "redistributed with permission from the upstream author"
+	// DetectorRevision changes whenever normalization, occurrence mapping, or
+	// signal-family semantics change. It is part of the moderation policy/cache
+	// revision and deliberately independent of the pinned pattern sources.
+	DetectorRevision = "promptfilter-detector-v3"
 )
 
 const (
@@ -39,6 +47,18 @@ const (
 	ActionWarn    = "warn"
 	ActionReview  = "review"
 	ActionBlock   = "block"
+
+	ScanChannelCanonical = "canonical"
+	ScanChannelCompact   = "compact"
+
+	SignalFamilyHierarchyOverride        = "hierarchy_override"
+	SignalFamilyIdentityOverride         = "identity_override"
+	SignalFamilySafetyOverride           = "safety_refusal_suppression"
+	SignalFamilyAuthorizationFabrication = "authorization_fabrication"
+	SignalFamilyToolPermissionBypass     = "tool_permission_bypass"
+	SignalFamilySecretExtraction         = "secret_extraction"
+	SignalFamilyOutputContractOverride   = "output_contract_override"
+	SignalFamilyObfuscationEvasion       = "obfuscation_evasion"
 )
 
 type PatternConfig struct {
@@ -47,6 +67,7 @@ type PatternConfig struct {
 	Weight         int    `json:"weight"`
 	Category       string `json:"category,omitempty"`
 	Strict         bool   `json:"strict,omitempty"`
+	SignalFamily   string `json:"signal_family,omitempty"`
 	Enabled        *bool  `json:"enabled,omitempty"`
 	SourceRevision string `json:"source_revision,omitempty"`
 	// Pattern is accepted for compatibility with older in-process callers. New rules use Regex.
@@ -68,6 +89,9 @@ type Match struct {
 	Category       string `json:"category,omitempty"`
 	Strict         bool   `json:"strict,omitempty"`
 	Operational    bool   `json:"operational,omitempty"`
+	SignalFamily   string `json:"signal_family,omitempty"`
+	Occurrence     int    `json:"occurrence,omitempty"`
+	ScanChannel    string `json:"scan_channel,omitempty"`
 	SourceRevision string `json:"source_revision,omitempty"`
 	// StartByte and EndByte identify the raw user-text region that triggered the
 	// pattern. They are intentionally excluded from serialized diagnostics: the
@@ -78,25 +102,32 @@ type Match struct {
 }
 
 type Verdict struct {
-	Action          string  `json:"action"`
-	Score           int     `json:"score"`
-	RawScore        int     `json:"raw_score"`
-	StrictScore     int     `json:"strict_score"`
-	Threshold       int     `json:"threshold"`
-	StrictThreshold int     `json:"strict_threshold"`
-	StrictHit       bool    `json:"strict_hit"`
-	OperationalHit  bool    `json:"operational_hit"`
-	ReviewRequired  bool    `json:"review_required"`
-	Matches         []Match `json:"matches,omitempty"`
-	TextPreview     string  `json:"text_preview,omitempty"`
-	ExtractedRunes  int     `json:"extracted_runes"`
-	SourceRevision  string  `json:"source_revision"`
+	Action           string   `json:"action"`
+	Score            int      `json:"score"`
+	RawScore         int      `json:"raw_score"`
+	StrictScore      int      `json:"strict_score"`
+	Threshold        int      `json:"threshold"`
+	StrictThreshold  int      `json:"strict_threshold"`
+	StrictHit        bool     `json:"strict_hit"`
+	OperationalHit   bool     `json:"operational_hit"`
+	TerminalEligible bool     `json:"terminal_eligible"`
+	SignalFamilies   []string `json:"signal_families,omitempty"`
+	ReviewRequired   bool     `json:"review_required"`
+	Matches          []Match  `json:"matches,omitempty"`
+	TextPreview      string   `json:"text_preview,omitempty"`
+	ExtractedRunes   int      `json:"extracted_runes"`
+	ScannedRunes     int      `json:"scanned_runes"`
+	ScanComplete     bool     `json:"scan_complete"`
+	DetectorRevision string   `json:"detector_revision"`
+	SourceRevision   string   `json:"source_revision"`
 }
 
 type compiledPattern struct {
-	cfg         PatternConfig
-	re          *regexp.Regexp
-	operational bool
+	cfg          PatternConfig
+	re           *regexp.Regexp
+	operational  bool
+	signalFamily string
+	requiredText []string
 }
 
 type Engine struct {
@@ -193,9 +224,11 @@ func NewEngine(cfg Config) (*Engine, error) {
 			return nil, fmt.Errorf("compile prompt filter pattern %q: %w", pattern.Name, err)
 		}
 		patterns = append(patterns, compiledPattern{
-			cfg:         pattern,
-			re:          re,
-			operational: operationalPattern(pattern.Name),
+			cfg:          pattern,
+			re:           re,
+			operational:  operationalPattern(pattern.Name),
+			signalFamily: signalFamilyForPattern(pattern),
+			requiredText: requiredPatternText(pattern.Regex),
 		})
 	}
 	engine := &Engine{cfg: cfg, patterns: patterns}
@@ -207,11 +240,14 @@ func NewEngine(cfg Config) (*Engine, error) {
 func Inspect(text string, cfg Config) Verdict {
 	cfg = normalizeConfig(cfg)
 	verdict := Verdict{
-		Action:          ActionAllow,
-		Threshold:       cfg.Threshold,
-		StrictThreshold: cfg.StrictThreshold,
-		ExtractedRunes:  utf8.RuneCountInString(text),
-		SourceRevision:  BuiltinRuleSetRevision,
+		Action:           ActionAllow,
+		Threshold:        cfg.Threshold,
+		StrictThreshold:  cfg.StrictThreshold,
+		ExtractedRunes:   utf8.RuneCountInString(text),
+		ScannedRunes:     utf8.RuneCountInString(text),
+		ScanComplete:     true,
+		DetectorRevision: DetectorRevision,
+		SourceRevision:   BuiltinRuleSetRevision,
 	}
 	if cfg.Mode == ModeOff || strings.TrimSpace(text) == "" {
 		return verdict
@@ -227,44 +263,101 @@ func Inspect(text string, cfg Config) Verdict {
 
 func (e *Engine) inspect(text string) Verdict {
 	cfg := e.cfg
+	segments, scanComplete, scannedRunes := buildScanSegments(text, cfg.MaxTextLength)
 	verdict := Verdict{
-		Action:          ActionAllow,
-		Threshold:       cfg.Threshold,
-		StrictThreshold: cfg.StrictThreshold,
-		ExtractedRunes:  utf8.RuneCountInString(text),
-		SourceRevision:  BuiltinRuleSetRevision,
+		Action:           ActionAllow,
+		Threshold:        cfg.Threshold,
+		StrictThreshold:  cfg.StrictThreshold,
+		ExtractedRunes:   utf8.RuneCountInString(text),
+		ScannedRunes:     scannedRunes,
+		ScanComplete:     scanComplete,
+		DetectorRevision: DetectorRevision,
+		SourceRevision:   BuiltinRuleSetRevision,
 	}
-	scanText := normalizeForScan(limitScanText(text, cfg.MaxTextLength))
-	if utf8.RuneCountInString(scanText) < 3 {
+	if verdict.ScannedRunes < 3 {
 		return verdict
 	}
-	matchesByName := make(map[string]Match)
-	for _, pattern := range e.patterns {
-		if pattern.re.FindStringIndex(scanText) == nil {
+	views := make([]mappedScanView, 0, len(segments)*2)
+	for _, segment := range segments {
+		canonical := canonicalMappedScanView(segment)
+		if canonical.text == "" {
 			continue
 		}
-		match := Match{
-			Name:           pattern.cfg.Name,
-			Weight:         pattern.cfg.Weight,
-			Category:       pattern.cfg.Category,
-			Strict:         pattern.cfg.Strict,
-			Operational:    pattern.operational,
-			SourceRevision: pattern.cfg.SourceRevision,
+		views = append(views, canonical)
+		compact := compactMappedScanView(canonical)
+		if compact.text != "" && compact.text != canonical.text {
+			views = append(views, compact)
 		}
-		// scanText is whitespace-normalized for stable scoring, so its offsets
-		// cannot safely be projected back to the request. A second raw lookup is
-		// used only to locate the context window sent to the reviewer.
-		if rawSpan := pattern.re.FindStringIndex(text); len(rawSpan) == 2 {
-			match.StartByte = rawSpan[0]
-			match.EndByte = rawSpan[1]
-		}
-		matchesByName[pattern.cfg.Name] = match
 	}
-	if len(matchesByName) == 0 {
+	if len(views) == 0 {
 		return verdict
 	}
-	for _, match := range matchesByName {
-		verdict.Matches = append(verdict.Matches, match)
+	type occurrenceKey struct {
+		name       string
+		start, end int
+	}
+	occurrenceIndexes := make(map[occurrenceKey]int)
+	scoreMatchesByName := make(map[string]Match)
+	for _, pattern := range e.patterns {
+		patternMatched := false
+		var scoreMatch Match
+		for _, view := range views {
+			if view.channel == ScanChannelCompact && !isPromptInjectionPattern(pattern.cfg.Name, pattern.signalFamily) {
+				continue
+			}
+			if len(pattern.requiredText) > 0 && !containsAnyRequiredPatternText(view.text, pattern.requiredText) {
+				continue
+			}
+			for _, normalizedSpan := range pattern.re.FindAllStringIndex(view.text, -1) {
+				if len(normalizedSpan) != 2 || normalizedSpan[1] <= normalizedSpan[0] {
+					continue
+				}
+				startByte, endByte, ok := view.rawSpan(normalizedSpan[0], normalizedSpan[1])
+				if !ok || endByte <= startByte {
+					continue
+				}
+				match := Match{
+					Name:           pattern.cfg.Name,
+					Weight:         pattern.cfg.Weight,
+					Category:       pattern.cfg.Category,
+					Strict:         pattern.cfg.Strict,
+					Operational:    pattern.operational,
+					SignalFamily:   pattern.signalFamily,
+					ScanChannel:    view.channel,
+					SourceRevision: pattern.cfg.SourceRevision,
+					StartByte:      startByte,
+					EndByte:        endByte,
+				}
+				key := occurrenceKey{name: match.Name, start: startByte, end: endByte}
+				if idx, exists := occurrenceIndexes[key]; exists {
+					// Later same-name pattern definitions retain the legacy override
+					// semantics, while canonical evidence wins over a duplicate compact
+					// projection of the same raw span.
+					if verdict.Matches[idx].ScanChannel == ScanChannelCanonical && match.ScanChannel == ScanChannelCompact {
+						match.ScanChannel = ScanChannelCanonical
+					}
+					verdict.Matches[idx] = match
+				} else {
+					occurrenceIndexes[key] = len(verdict.Matches)
+					verdict.Matches = append(verdict.Matches, match)
+				}
+				if !patternMatched {
+					scoreMatch = match
+				}
+				patternMatched = true
+			}
+		}
+		if patternMatched {
+			// Repeated occurrences are evidence, not additional score. Scoring once
+			// per rule name preserves existing thresholds and prevents keyword
+			// flooding from manufacturing a terminal verdict.
+			scoreMatchesByName[pattern.cfg.Name] = scoreMatch
+		}
+	}
+	if len(verdict.Matches) == 0 {
+		return verdict
+	}
+	for _, match := range scoreMatchesByName {
 		verdict.RawScore += match.Weight
 		if match.Strict {
 			verdict.StrictScore += match.Weight
@@ -275,12 +368,26 @@ func (e *Engine) inspect(text string) Verdict {
 	}
 	sort.Slice(verdict.Matches, func(i, j int) bool {
 		if verdict.Matches[i].Weight == verdict.Matches[j].Weight {
+			if verdict.Matches[i].Name == verdict.Matches[j].Name {
+				if verdict.Matches[i].StartByte == verdict.Matches[j].StartByte {
+					return verdict.Matches[i].EndByte < verdict.Matches[j].EndByte
+				}
+				return verdict.Matches[i].StartByte < verdict.Matches[j].StartByte
+			}
 			return verdict.Matches[i].Name < verdict.Matches[j].Name
 		}
 		return verdict.Matches[i].Weight > verdict.Matches[j].Weight
 	})
+	occurrencesByName := make(map[string]int)
+	for idx := range verdict.Matches {
+		occurrencesByName[verdict.Matches[idx].Name]++
+		verdict.Matches[idx].Occurrence = occurrencesByName[verdict.Matches[idx].Name]
+	}
 	verdict.Score = verdict.RawScore
 	verdict.StrictHit = verdict.StrictScore >= cfg.StrictThreshold
+	verdict.SignalFamilies = promptInjectionSignalFamilies(verdict.Matches)
+	verdict.TerminalEligible = verdict.ScanComplete && verdict.StrictHit && verdict.OperationalHit &&
+		len(verdict.SignalFamilies) >= 2 && hasProtectedHierarchySignal(verdict.SignalFamilies)
 	verdict.ReviewRequired = !verdict.OperationalHit || !verdict.StrictHit
 	if verdict.OperationalHit {
 		verdict.ReviewRequired = false
@@ -300,6 +407,148 @@ func (e *Engine) inspect(text string) Verdict {
 		verdict.Action = ActionAllow
 	}
 	return verdict
+}
+
+func promptInjectionSignalFamilies(matches []Match) []string {
+	seen := make(map[string]struct{})
+	for _, match := range matches {
+		if !IsPromptInjectionMatch(match) {
+			continue
+		}
+		family := strings.TrimSpace(match.SignalFamily)
+		if family == "" {
+			continue
+		}
+		seen[family] = struct{}{}
+	}
+	families := make([]string, 0, len(seen))
+	for family := range seen {
+		families = append(families, family)
+	}
+	sort.Strings(families)
+	return families
+}
+
+func hasProtectedHierarchySignal(families []string) bool {
+	for _, family := range families {
+		switch family {
+		case SignalFamilyHierarchyOverride, SignalFamilyIdentityOverride,
+			SignalFamilySafetyOverride, SignalFamilyToolPermissionBypass,
+			SignalFamilySecretExtraction, SignalFamilyOutputContractOverride:
+			return true
+		}
+	}
+	return false
+}
+
+// requiredPatternText extracts only literals that are provably required by
+// every successful path through a regexp. It is therefore safe as a negative
+// prefilter: expressions that cannot prove a required literal return nil and
+// still execute normally. Alternations contribute one requirement per branch;
+// concatenations choose the strongest provable child requirement.
+func requiredPatternText(expression string) []string {
+	parsed, err := syntax.Parse(expression, syntax.Perl)
+	if err != nil {
+		return nil
+	}
+	needles, guaranteed := requiredRegexpText(parsed.Simplify())
+	if !guaranteed {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(needles))
+	out := make([]string, 0, len(needles))
+	for _, needle := range needles {
+		needle = strings.ToLower(strings.TrimSpace(needle))
+		if utf8.RuneCountInString(needle) < 2 {
+			continue
+		}
+		if _, ok := seen[needle]; ok {
+			continue
+		}
+		seen[needle] = struct{}{}
+		out = append(out, needle)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func requiredRegexpText(expression *syntax.Regexp) ([]string, bool) {
+	if expression == nil {
+		return nil, false
+	}
+	switch expression.Op {
+	case syntax.OpLiteral:
+		if len(expression.Rune) < 2 {
+			return nil, false
+		}
+		return []string{strings.ToLower(string(expression.Rune))}, true
+	case syntax.OpCapture:
+		if len(expression.Sub) != 1 {
+			return nil, false
+		}
+		return requiredRegexpText(expression.Sub[0])
+	case syntax.OpConcat:
+		var best []string
+		bestStrength := 0
+		for _, child := range expression.Sub {
+			needles, guaranteed := requiredRegexpText(child)
+			if !guaranteed {
+				continue
+			}
+			strength := shortestRequiredTextRunes(needles)
+			if strength > bestStrength {
+				best, bestStrength = needles, strength
+			}
+		}
+		return best, len(best) > 0
+	case syntax.OpAlternate:
+		if len(expression.Sub) == 0 {
+			return nil, false
+		}
+		out := make([]string, 0, len(expression.Sub))
+		for _, child := range expression.Sub {
+			needles, guaranteed := requiredRegexpText(child)
+			if !guaranteed {
+				return nil, false
+			}
+			out = append(out, needles...)
+		}
+		return out, len(out) > 0
+	case syntax.OpPlus:
+		if len(expression.Sub) != 1 {
+			return nil, false
+		}
+		return requiredRegexpText(expression.Sub[0])
+	case syntax.OpRepeat:
+		if expression.Min < 1 || len(expression.Sub) != 1 {
+			return nil, false
+		}
+		return requiredRegexpText(expression.Sub[0])
+	default:
+		return nil, false
+	}
+}
+
+func shortestRequiredTextRunes(needles []string) int {
+	shortest := 0
+	for _, needle := range needles {
+		length := utf8.RuneCountInString(needle)
+		if shortest == 0 || length < shortest {
+			shortest = length
+		}
+	}
+	return shortest
+}
+
+func containsAnyRequiredPatternText(text string, needles []string) bool {
+	for _, needle := range needles {
+		if strings.Contains(text, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeConfig(cfg Config) Config {
@@ -346,7 +595,202 @@ func limitScanText(text string, maxRunes int) string {
 }
 
 func normalizeForScan(text string) string {
-	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(text)), " "))
+	segments, _, _ := buildScanSegments(text, utf8.RuneCountInString(text))
+	if len(segments) == 0 {
+		return ""
+	}
+	return canonicalMappedScanView(segments[0]).text
+}
+
+type scanSegment struct {
+	text     string
+	rawStart int
+	runes    int
+}
+
+type mappedScanUnit struct {
+	viewStart int
+	viewEnd   int
+	rawStart  int
+	rawEnd    int
+}
+
+type mappedScanView struct {
+	text    string
+	channel string
+	units   []mappedScanUnit
+}
+
+func buildScanSegments(text string, maxRunes int) ([]scanSegment, bool, int) {
+	runes := []rune(text)
+	if len(runes) == 0 {
+		return nil, true, 0
+	}
+	if maxRunes <= 0 || len(runes) <= maxRunes {
+		return []scanSegment{{text: text, runes: len(runes)}}, true, len(runes)
+	}
+	headRunes := maxRunes * 4 / 5
+	if headRunes <= 0 {
+		headRunes = 1
+	}
+	tailRunes := maxRunes - headRunes
+	headText := string(runes[:headRunes])
+	segments := []scanSegment{{text: headText, runes: headRunes}}
+	if tailRunes > 0 {
+		tailText := string(runes[len(runes)-tailRunes:])
+		segments = append(segments, scanSegment{
+			text:     tailText,
+			rawStart: len(text) - len(tailText),
+			runes:    tailRunes,
+		})
+	}
+	return segments, false, maxRunes
+}
+
+func canonicalMappedScanView(segment scanSegment) mappedScanView {
+	view := mappedScanView{channel: ScanChannelCanonical}
+	var builder strings.Builder
+	builder.Grow(len(segment.text))
+	var iter norm.Iter
+	iter.InitString(norm.NFKC, segment.text)
+	previousRawEnd := 0
+	pendingSpace := false
+	pendingSpaceStart := 0
+	pendingSpaceEnd := 0
+	appendRune := func(r rune, rawStart, rawEnd int) {
+		start := builder.Len()
+		builder.WriteRune(r)
+		view.units = append(view.units, mappedScanUnit{
+			viewStart: start,
+			viewEnd:   builder.Len(),
+			rawStart:  rawStart,
+			rawEnd:    rawEnd,
+		})
+	}
+	for !iter.Done() {
+		normalized := iter.Next()
+		rawEnd := iter.Pos()
+		rawStart := previousRawEnd
+		previousRawEnd = rawEnd
+		for len(normalized) > 0 {
+			r, size := utf8.DecodeRune(normalized)
+			normalized = normalized[size:]
+			if isPromptFilterZeroWidth(r) {
+				continue
+			}
+			if unicode.IsSpace(r) {
+				if len(view.units) > 0 {
+					if !pendingSpace {
+						pendingSpaceStart = segment.rawStart + rawStart
+					}
+					pendingSpace = true
+					pendingSpaceEnd = segment.rawStart + rawEnd
+				}
+				continue
+			}
+			if pendingSpace {
+				appendRune(' ', pendingSpaceStart, pendingSpaceEnd)
+				pendingSpace = false
+			}
+			appendRune(unicode.ToLower(r), segment.rawStart+rawStart, segment.rawStart+rawEnd)
+		}
+	}
+	view.text = builder.String()
+	return view
+}
+
+func compactMappedScanView(canonical mappedScanView) mappedScanView {
+	view := mappedScanView{channel: ScanChannelCompact}
+	var builder strings.Builder
+	builder.Grow(len(canonical.text))
+	unitIndex := 0
+	for _, r := range canonical.text {
+		if unitIndex >= len(canonical.units) {
+			break
+		}
+		unit := canonical.units[unitIndex]
+		unitIndex++
+		if unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r) || unicode.IsControl(r) {
+			continue
+		}
+		start := builder.Len()
+		builder.WriteRune(r)
+		view.units = append(view.units, mappedScanUnit{
+			viewStart: start,
+			viewEnd:   builder.Len(),
+			rawStart:  unit.rawStart,
+			rawEnd:    unit.rawEnd,
+		})
+	}
+	view.text = builder.String()
+	return view
+}
+
+func (view mappedScanView) rawSpan(start, end int) (int, int, bool) {
+	if start < 0 || end <= start || end > len(view.text) || len(view.units) == 0 {
+		return 0, 0, false
+	}
+	first := sort.Search(len(view.units), func(idx int) bool {
+		return view.units[idx].viewEnd > start
+	})
+	lastExclusive := sort.Search(len(view.units), func(idx int) bool {
+		return view.units[idx].viewStart >= end
+	})
+	if first >= len(view.units) || lastExclusive <= first {
+		return 0, 0, false
+	}
+	last := lastExclusive - 1
+	return view.units[first].rawStart, view.units[last].rawEnd, true
+}
+
+func isPromptFilterZeroWidth(r rune) bool {
+	switch r {
+	case '\u034f', '\u061c', '\u180e', '\u200b', '\u200c', '\u200d', '\u200e', '\u200f',
+		'\u202a', '\u202b', '\u202c', '\u202d', '\u202e', '\u2060', '\u2061', '\u2062', '\u2063',
+		'\u2064', '\u2066', '\u2067', '\u2068', '\u2069', '\ufeff':
+		return true
+	default:
+		return false
+	}
+}
+
+func signalFamilyForPattern(pattern PatternConfig) string {
+	if family := strings.ToLower(strings.TrimSpace(pattern.SignalFamily)); family != "" {
+		return family
+	}
+	switch strings.ToLower(strings.TrimSpace(pattern.Name)) {
+	case "prompt_injection_override":
+		return SignalFamilyHierarchyOverride
+	case "jailbreak_operational_request":
+		return SignalFamilySafetyOverride
+	case "system_prompt_extraction":
+		return SignalFamilySecretExtraction
+	case "agent_tool_permission_bypass":
+		return SignalFamilyToolPermissionBypass
+	case "prompt_obfuscation_evasion":
+		return SignalFamilyObfuscationEvasion
+	default:
+		return ""
+	}
+}
+
+// IsPromptInjectionMatch reports whether a match is part of the control-plane
+// prompt-injection detector rather than an unrelated cyber/content rule.
+func IsPromptInjectionMatch(match Match) bool {
+	return isPromptInjectionPattern(match.Name, match.SignalFamily)
+}
+
+func isPromptInjectionPattern(name, signalFamily string) bool {
+	if strings.TrimSpace(signalFamily) != "" {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "jailbreak_operational_request", "jailbreak_topic", "prompt_injection_override",
+		"system_prompt_extraction", "prompt_obfuscation_evasion", "agent_tool_permission_bypass":
+		return true
+	default:
+		return false
+	}
 }
 
 func operationalPattern(name string) bool {

@@ -53,6 +53,9 @@ export interface ContentModerationSemanticReviewConfig {
   max_input_runes: number
   max_output_tokens: number
   reasoning_effort: 'low'
+  prompt_injection_reviewer_enabled: boolean
+  prompt_injection_max_input_runes: number
+  prompt_injection_fail_closed: boolean
 }
 
 export interface ContentModerationConfig {

@@ -282,7 +282,14 @@ func openAIHTTPPreForwardExecutableStages(ctx *openAIHTTPGatewayStageContext, st
 		executableStages = append(executableStages, ExecutableStage{
 			Name: openAIHTTPPreForwardExecutableStageName(stage.Name()),
 			Run: func() ExecutableStageResult {
+				receiptCountBefore := 0
+				if ctx != nil {
+					receiptCountBefore = len(moderationcoverage.ModerationReceiptsFromContext(ctx.c))
+				}
 				stageResult := stage.Run(ctx)
+				if !stageResult.Blocked && openAIHTTPPreForwardExecutableStageName(stage.Name()) == moderationcoverage.StageModeration && ctx != nil {
+					ensureContentModerationReceipt(ctx.c, ctx.input.Protocol, receiptCountBefore)
+				}
 				if cleanup != nil {
 					*cleanup = combineOpenAIHTTPGatewayCleanup(*cleanup, stageResult.Cleanup)
 				}
@@ -300,7 +307,7 @@ func openAIHTTPPreForwardExecutableStages(ctx *openAIHTTPGatewayStageContext, st
 		Name: moderationcoverage.StagePreForward,
 		Run: func() ExecutableStageResult {
 			if ctx != nil {
-				moderationcoverage.MarkPipelineAdmitted(ctx.c, moderationcoverage.PipelineOpenAIHTTP, moderationcoverage.StagePreForward, moderationcoverage.SourceOpenAIHTTPPreForward)
+				moderationcoverage.MarkPipelineAdmittedAfterModeration(ctx.c, moderationcoverage.PipelineOpenAIHTTP, moderationcoverage.StagePreForward, moderationcoverage.SourceOpenAIHTTPPreForward)
 			}
 			return ExecutableStageResult{}
 		},
@@ -520,7 +527,14 @@ func openAIWebSocketExecutableStages(ctx *openAIWebSocketGatewayStageContext, st
 		executableStages = append(executableStages, ExecutableStage{
 			Name: openAIWebSocketExecutableStageName(stage.Name()),
 			Run: func() ExecutableStageResult {
+				receiptCountBefore := 0
+				if ctx != nil {
+					receiptCountBefore = len(moderationcoverage.ModerationReceiptsFromContext(ctx.c))
+				}
 				stageResult := stage.Run(ctx).Result
+				if !stageResult.Blocked && openAIWebSocketExecutableStageName(stage.Name()) == moderationcoverage.StageModeration && ctx != nil {
+					ensureContentModerationReceipt(ctx.c, ctx.input.Protocol, receiptCountBefore)
+				}
 				if result != nil && stageResult.CyberBlockKey != "" {
 					result.CyberBlockKey = stageResult.CyberBlockKey
 				}
@@ -541,7 +555,7 @@ func openAIWebSocketExecutableStages(ctx *openAIWebSocketGatewayStageContext, st
 		Name: moderationcoverage.StagePreForward,
 		Run: func() ExecutableStageResult {
 			if ctx != nil {
-				moderationcoverage.MarkPipelineAdmitted(ctx.c, moderationcoverage.PipelineOpenAIWebSocket, moderationcoverage.StagePreForward, source)
+				moderationcoverage.MarkPipelineAdmittedAfterModeration(ctx.c, moderationcoverage.PipelineOpenAIWebSocket, moderationcoverage.StagePreForward, source)
 			}
 			return ExecutableStageResult{}
 		},

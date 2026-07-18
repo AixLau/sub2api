@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,7 @@ import (
 )
 
 const selectedAccountModerationStateContextKey = "selected_account_moderation_state"
+const contentModerationForwardConflictRecorderContextKey = "content_moderation_forward_conflict_recorder"
 
 func (h *GatewayHandler) checkContentModeration(c *gin.Context, reqLog *zap.Logger, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol string, model string, body []byte) *service.ContentModerationDecision {
 	if h == nil || h.contentModerationService == nil {
@@ -28,6 +30,9 @@ func (h *GatewayHandler) checkContentModeration(c *gin.Context, reqLog *zap.Logg
 }
 
 func contentModerationStatus(decision *service.ContentModerationDecision) int {
+	if contentModerationIsNonViolationDeferred(decision) {
+		return http.StatusServiceUnavailable
+	}
 	if decision == nil || decision.StatusCode < 400 || decision.StatusCode > 599 {
 		return http.StatusForbidden
 	}
@@ -35,7 +40,31 @@ func contentModerationStatus(decision *service.ContentModerationDecision) int {
 }
 
 func contentModerationErrorCode(decision *service.ContentModerationDecision) string {
+	if decision != nil {
+		switch strings.TrimSpace(decision.Action) {
+		case service.ContentModerationActionSemanticReviewDeferred:
+			return "content_review_required"
+		case service.ContentModerationActionSemanticReviewUnavailable:
+			return "content_review_unavailable"
+		case service.ContentModerationActionSemanticReviewIncomplete:
+			return "content_review_incomplete"
+		}
+	}
 	return "content_policy_violation"
+}
+
+func contentModerationIsNonViolationDeferred(decision *service.ContentModerationDecision) bool {
+	if decision == nil {
+		return false
+	}
+	switch strings.TrimSpace(decision.Action) {
+	case service.ContentModerationActionSemanticReviewDeferred,
+		service.ContentModerationActionSemanticReviewUnavailable,
+		service.ContentModerationActionSemanticReviewIncomplete:
+		return true
+	default:
+		return false
+	}
 }
 
 func markOpsContentModerationDiagnostic(c *gin.Context, decision *service.ContentModerationDecision) {
@@ -43,7 +72,9 @@ func markOpsContentModerationDiagnostic(c *gin.Context, decision *service.Conten
 		return
 	}
 	message := "内容审计拦截：命中风险规则"
-	if keyword := strings.TrimSpace(decision.MatchedKeyword); keyword != "" {
+	if contentModerationIsNonViolationDeferred(decision) {
+		message = "内容审计暂缓：审核未形成可放行结论"
+	} else if keyword := strings.TrimSpace(decision.MatchedKeyword); keyword != "" {
 		message = "内容审计拦截：命中关键词 " + keyword
 	} else if category := strings.TrimSpace(decision.HighestCategory); category != "" {
 		message = "内容审计拦截：最高风险分类 " + category
@@ -151,7 +182,9 @@ func runContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.Conte
 		if reqLog != nil {
 			reqLog.Warn("content_moderation.service_unavailable")
 		}
-		return contentModerationCheckErrorDecision()
+		decision := contentModerationCheckErrorDecision()
+		markContentModerationReceipt(c, protocol, "", decision, false)
+		return decision
 	}
 	input := buildContentModerationInput(c, apiKey, subject, protocol, model, body)
 	if reqLog != nil {
@@ -174,8 +207,10 @@ func runContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.Conte
 		if reqLog != nil {
 			reqLog.Warn("content_moderation.check_failed", zap.Error(err))
 		}
-		return contentModerationCheckErrorDecision()
+		decision = contentModerationCheckErrorDecision()
 	}
+	markContentModerationReceipt(c, protocol, "", decision, false)
+	recordContentModerationReceiptMetric(svc, c, "")
 	if reqLog != nil && decision != nil {
 		reqLog.Info("content_moderation.gateway_check_done",
 			zap.String("request_id", input.RequestID),
@@ -189,6 +224,62 @@ func runContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.Conte
 		)
 	}
 	return decision
+}
+
+func markContentModerationReceipt(c *gin.Context, protocol, policyRevision string, decision *service.ContentModerationDecision, selectedAccountPending bool) {
+	if c == nil {
+		return
+	}
+	receipt := moderationcoverage.ModerationExecutionReceipt{
+		Protocol:       protocol,
+		PolicyRevision: policyRevision,
+		LocalScanDone:  !selectedAccountPending,
+		Outcome:        "error",
+		ForwardAllowed: false,
+	}
+	if c.Request != nil {
+		receipt.RequestID = contentModerationRequestID(c.Request.Context())
+	}
+	if selectedAccountPending {
+		receipt.Outcome = "deferred_selected_account"
+		moderationcoverage.MarkModerationReceipt(c, receipt)
+		return
+	}
+	if decision != nil {
+		action := strings.TrimSpace(decision.Action)
+		if receipt.PolicyRevision == "" {
+			receipt.PolicyRevision = strings.TrimSpace(decision.PolicyRevision)
+		}
+		receipt.SemanticCalled = strings.HasPrefix(action, "semantic_review_")
+		switch {
+		case contentModerationIsNonViolationDeferred(decision):
+			receipt.Outcome = "deferred"
+			receipt.ForwardAllowed = false
+		case decision.Blocked:
+			receipt.Outcome = "reject"
+			receipt.ForwardAllowed = false
+		case action == service.ContentModerationActionError:
+			receipt.Outcome = "error"
+			receipt.ForwardAllowed = decision.Allowed
+		case action == service.ContentModerationActionSemanticReviewAllow:
+			receipt.Outcome = "allow"
+			receipt.ForwardAllowed = decision.Allowed
+		default:
+			receipt.Outcome = "no_hit"
+			receipt.ForwardAllowed = decision.Allowed && !decision.Blocked
+		}
+	}
+	moderationcoverage.MarkModerationReceipt(c, receipt)
+}
+
+func ensureContentModerationReceipt(c *gin.Context, protocol string, receiptCountBefore int) {
+	if c == nil || len(moderationcoverage.ModerationReceiptsFromContext(c)) != receiptCountBefore {
+		return
+	}
+	markContentModerationReceipt(c, protocol, "", &service.ContentModerationDecision{
+		Allowed: true,
+		Action:  service.ContentModerationActionAllow,
+	}, false)
 }
 
 func buildContentModerationInput(c *gin.Context, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol string, model string, body []byte) service.ContentModerationCheckInput {
@@ -241,10 +332,72 @@ func runSelectedAccountContentModeration(c *gin.Context, reqLog *zap.Logger, svc
 		if reqLog != nil {
 			reqLog.Warn("content_moderation.account_attempt_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		}
-		return &service.ContentModerationGateResult{Decision: contentModerationCheckErrorDecision(), Disposition: service.ContentModerationDispositionProviderErrorOpen}
+		result := &service.ContentModerationGateResult{Decision: contentModerationCheckErrorDecision(), Disposition: service.ContentModerationDispositionProviderErrorOpen}
+		markContentModerationReceipt(c, protocol, "", result.Decision, false)
+		recordContentModerationReceiptMetric(svc, c, "selected_account")
+		markSelectedAccountPipelineAdmission(c)
+		return result
 	}
 	c.Set(selectedAccountModerationStateContextKey, result.NextState)
+	if result != nil {
+		markContentModerationReceipt(c, protocol, result.PolicyRevision, result.Decision, false)
+		recordContentModerationReceiptMetric(svc, c, "selected_account")
+		markSelectedAccountPipelineAdmission(c)
+	}
 	return result
+}
+
+func recordContentModerationReceiptMetric(svc *service.ContentModerationService, c *gin.Context, pipeline string) {
+	if svc == nil || c == nil {
+		return
+	}
+	receipt, ok := moderationcoverage.ModerationReceiptFromContext(c)
+	if !ok {
+		return
+	}
+	if pipeline == "" {
+		if meta, metaOK := moderationcoverage.RouteMetaFromContext(c); metaOK {
+			pipeline = meta.Pipeline
+		}
+	}
+	svc.RecordModerationReceipt(pipeline, receipt.Outcome)
+	c.Set(contentModerationForwardConflictRecorderContextKey, func(decision string) {
+		svc.RecordModerationForwardConflict(decision)
+	})
+}
+
+func recordContentModerationForwardConflict(c *gin.Context) {
+	if c == nil {
+		return
+	}
+	decision := "missing"
+	if receipt, ok := moderationcoverage.ModerationReceiptFromContext(c); ok {
+		switch receipt.Outcome {
+		case "deferred", "deferred_selected_account":
+			decision = "deferred"
+		default:
+			decision = "blocked"
+		}
+	}
+	value, ok := c.Get(contentModerationForwardConflictRecorderContextKey)
+	if !ok {
+		return
+	}
+	record, ok := value.(func(string))
+	if ok && record != nil {
+		record(decision)
+	}
+}
+
+func markSelectedAccountPipelineAdmission(c *gin.Context) {
+	if c == nil || !moderationcoverage.ModerationReceiptAllowsForward(c) {
+		return
+	}
+	meta, ok := moderationcoverage.RouteMetaFromContext(c)
+	if !ok || meta.Pipeline == "" {
+		return
+	}
+	moderationcoverage.MarkPipelineAdmittedAfterModeration(c, meta.Pipeline, moderationcoverage.StagePreForward, "ContentModeration.CheckAccountAttempt")
 }
 
 func contentModerationProvider(apiKey *service.APIKey) string {

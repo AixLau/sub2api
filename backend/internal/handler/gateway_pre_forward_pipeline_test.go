@@ -277,6 +277,7 @@ func TestGatewayForwardStageExecutionIncludesRouteMetadata(t *testing.T) {
 		Status:                  moderationcoverage.StatusCovered,
 		StageAdapterDescriptors: moderationcoverage.StageAdapterDescriptorsForRoute("GatewayHandler.CountTokens", service.ContentModerationProtocolAnthropicMessages),
 	})
+	markForwardableModerationReceipt(c, service.ContentModerationProtocolAnthropicMessages)
 
 	calls := 0
 	result := (&GatewayHandler{}).runGatewayForwardStage(c, ForwardStageAdapter{
@@ -320,6 +321,7 @@ func TestGatewayForwardStageUsesRouteDescriptorRegistry(t *testing.T) {
 		Pipeline:           moderationcoverage.PipelineGatewayPreForward,
 		Status:             moderationcoverage.StatusCovered,
 	})
+	markForwardableModerationReceipt(c, service.ContentModerationProtocolAnthropicMessages)
 
 	calls := []string{}
 	registered := ForwardStageAdapter{
@@ -673,6 +675,7 @@ func TestGatewayForwardStageDoesNotCacheRequestFallback(t *testing.T) {
 			Pipeline:           moderationcoverage.PipelineGatewayPreForward,
 			Status:             moderationcoverage.StatusCovered,
 		})
+		markForwardableModerationReceipt(c, service.ContentModerationProtocolAnthropicMessages)
 		result := handler.runGatewayForwardStage(c, ForwardStageAdapter{
 			Name: "GatewayCountTokensForwardStage",
 			Forward: func(*gin.Context) ExecutableStageResult {

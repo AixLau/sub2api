@@ -430,6 +430,8 @@ func TestExtractionCompletenessPreservesContentBeyondLegacyTextLimit(t *testing.
 	got := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
 	require.False(t, got.Truncated, got.TruncateReasons)
 	require.True(t, got.Extraction.Complete)
+	require.True(t, got.Sources[0].Truncated)
+	require.Contains(t, got.Sources[0].TruncateReasons, "source_max_runes")
 	require.Equal(t, len([]rune(oversized)), got.Extraction.TotalRunes)
 	require.LessOrEqual(t, utf8.RuneCountInString(got.Text), maxModerationInputRunes)
 	stream, err := CanonicalizeModerationExtraction(got.Extraction)

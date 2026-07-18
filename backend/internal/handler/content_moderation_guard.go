@@ -509,9 +509,13 @@ func (g *contentModerationGuard) Check(c *gin.Context, reqLog *zap.Logger, input
 		if reqLog != nil {
 			reqLog.Warn("content_moderation.service_unavailable")
 		}
-		return contentModerationCheckErrorDecision()
+		decision := contentModerationCheckErrorDecision()
+		markContentModerationReceipt(c, input.Protocol, "", decision, false)
+		return decision
 	}
 	if c != nil && c.Request != nil && g.service.RequiresSelectedAccount(c.Request.Context()) {
+		markContentModerationReceipt(c, input.Protocol, "", nil, true)
+		recordContentModerationReceiptMetric(g.service, c, "selected_account")
 		return &service.ContentModerationDecision{Allowed: true, Action: service.ContentModerationActionAllow}
 	}
 	return runContentModeration(c, reqLog, g.service, input.APIKey, input.Subject, input.Protocol, input.Model, input.Body)

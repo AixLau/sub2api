@@ -1515,7 +1515,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	cyberBlockKey := initialPipelineResult.CyberBlockKey
 	if initialPipelineResult.Blocked {
 		closeReason := h.writeOpenAIWebSocketPipelineBlock(ctx, c, wsConn, apiKey, reqModel, initialPipelineResult)
-		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, closeReason)
+		closeOpenAIClientWS(wsConn, openAIWebSocketPipelineCloseStatus(initialPipelineResult), closeReason)
 		return
 	}
 	cyberBlockedThisConn := false
@@ -1696,7 +1696,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				Message:            gate.Decision.Message,
 			}
 			closeReason := h.writeOpenAIWebSocketPipelineBlock(ctx, c, wsConn, apiKey, reqModel, pipelineResult)
-			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, closeReason)
+			closeOpenAIClientWS(wsConn, openAIWebSocketPipelineCloseStatus(pipelineResult), closeReason)
 			return
 		}
 
@@ -1730,7 +1730,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				})
 				if pipelineResult.Blocked {
 					closeReason := h.writeOpenAIWebSocketPipelineBlock(ctx, c, wsConn, apiKey, model, pipelineResult)
-					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, closeReason, nil)
+					return service.NewOpenAIWSClientCloseError(openAIWebSocketPipelineCloseStatus(pipelineResult), closeReason, nil)
 				}
 				if gate := runSelectedAccountContentModeration(c, reqLog, h.contentModerationService, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, model, payload, account); gate != nil && gate.Decision != nil && gate.Decision.Blocked {
 					pipelineResult := openAIWebSocketPipelineResult{
@@ -1740,7 +1740,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 						Message:            gate.Decision.Message,
 					}
 					closeReason := h.writeOpenAIWebSocketPipelineBlock(ctx, c, wsConn, apiKey, model, pipelineResult)
-					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, closeReason, nil)
+					return service.NewOpenAIWSClientCloseError(openAIWebSocketPipelineCloseStatus(pipelineResult), closeReason, nil)
 				}
 				return nil
 			},
@@ -2585,11 +2585,17 @@ func writeContentModerationWSError(ctx context.Context, conn *coderws.Conn, deci
 	if message == "" {
 		message = "content moderation blocked this request"
 	}
+	eventID := "evt_content_moderation_blocked"
+	errorType := "invalid_request_error"
+	if contentModerationIsNonViolationDeferred(decision) {
+		eventID = "evt_content_review_deferred"
+		errorType = "server_error"
+	}
 	payload, err := json.Marshal(gin.H{
-		"event_id": "evt_content_moderation_blocked",
+		"event_id": eventID,
 		"type":     "error",
 		"error": gin.H{
-			"type":    "invalid_request_error",
+			"type":    errorType,
 			"code":    contentModerationErrorCode(decision),
 			"message": message,
 		},
@@ -2631,6 +2637,14 @@ func (h *OpenAIGatewayHandler) writeOpenAIWebSocketPipelineBlock(ctx context.Con
 		}
 	}
 	return message
+}
+
+func openAIWebSocketPipelineCloseStatus(result openAIWebSocketPipelineResult) coderws.StatusCode {
+	if result.BlockReason == openAIWebSocketPipelineBlockReasonModeration &&
+		contentModerationIsNonViolationDeferred(result.ModerationDecision) {
+		return coderws.StatusTryAgainLater
+	}
+	return coderws.StatusPolicyViolation
 }
 
 // writeCyberSessionBlockedWSError sends an error frame telling the client this

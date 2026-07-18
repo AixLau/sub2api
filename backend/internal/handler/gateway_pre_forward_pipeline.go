@@ -1001,7 +1001,14 @@ func gatewayPreForwardExecutableStages(ctx *gatewayPreForwardStageContext, stage
 		executableStages = append(executableStages, ExecutableStage{
 			Name: stage.Name(),
 			Run: func() ExecutableStageResult {
+				receiptCountBefore := 0
+				if ctx != nil {
+					receiptCountBefore = len(moderationcoverage.ModerationReceiptsFromContext(ctx.c))
+				}
 				result := stage.Run(ctx)
+				if !result.Blocked && stage.Name() == moderationcoverage.StageModeration && ctx != nil {
+					ensureContentModerationReceipt(ctx.c, ctx.input.Protocol, receiptCountBefore)
+				}
 				return ExecutableStageResult{Stop: result.Blocked}
 			},
 		})
@@ -1010,7 +1017,7 @@ func gatewayPreForwardExecutableStages(ctx *gatewayPreForwardStageContext, stage
 		Name: moderationcoverage.StagePreForward,
 		Run: func() ExecutableStageResult {
 			if ctx != nil {
-				moderationcoverage.MarkPipelineAdmitted(ctx.c, moderationcoverage.PipelineGatewayPreForward, moderationcoverage.StagePreForward, moderationcoverage.SourceGatewayPreForward)
+				moderationcoverage.MarkPipelineAdmittedAfterModeration(ctx.c, moderationcoverage.PipelineGatewayPreForward, moderationcoverage.StagePreForward, moderationcoverage.SourceGatewayPreForward)
 			}
 			return ExecutableStageResult{}
 		},

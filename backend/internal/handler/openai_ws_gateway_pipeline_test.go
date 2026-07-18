@@ -157,7 +157,7 @@ func TestOpenAIWebSocketPipelineMarksAdmissionWhenStagesAllow(t *testing.T) {
 			run:    (*OpenAIGatewayPipeline).RunWebSocketFollowupFrame,
 			configure: func(p *OpenAIGatewayPipeline) {
 				p.wsFollowupFrameStages = []openAIWebSocketGatewayStage{
-					openAIWebSocketGatewayPipelineTestStage{name: "followup_moderation", run: func(*openAIWebSocketGatewayStageContext) openAIWebSocketGatewayStageResult {
+					openAIWebSocketGatewayPipelineTestStage{name: "moderation", run: func(*openAIWebSocketGatewayStageContext) openAIWebSocketGatewayStageResult {
 						return openAIWebSocketGatewayStageResult{}
 					}},
 				}
@@ -189,6 +189,21 @@ func TestOpenAIWebSocketPipelineMarksAdmissionWhenStagesAllow(t *testing.T) {
 			require.True(t, moderationcoverage.PipelineAdmittedFromContext(c))
 		})
 	}
+}
+
+func TestOpenAIWebSocketDeferredReviewUsesRetryableCloseStatus(t *testing.T) {
+	result := openAIWebSocketPipelineResult{
+		Blocked:     true,
+		BlockReason: openAIWebSocketPipelineBlockReasonModeration,
+		ModerationDecision: &service.ContentModerationDecision{
+			Blocked: true,
+			Action:  service.ContentModerationActionSemanticReviewDeferred,
+		},
+	}
+	require.Equal(t, coderws.StatusTryAgainLater, openAIWebSocketPipelineCloseStatus(result))
+
+	result.ModerationDecision.Action = service.ContentModerationActionSemanticReviewReject
+	require.Equal(t, coderws.StatusPolicyViolation, openAIWebSocketPipelineCloseStatus(result))
 }
 
 func TestOpenAIWebSocketPipelineRecordsPreForwardStageExecution(t *testing.T) {

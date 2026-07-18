@@ -91,7 +91,6 @@ func (d *GatewayPipelineEntrypointDispatcher) enterOpenAIWebSocket(c *gin.Contex
 	}
 	const source = "GatewayPipelineRegistrar.OpenAIWebSocket"
 	moderationcoverage.MarkPipelineEntrypointEntered(c, moderationcoverage.PipelineOpenAIWebSocket, source)
-	moderationcoverage.MarkPipelineAdmitted(c, moderationcoverage.PipelineOpenAIWebSocket, moderationcoverage.StagePreForward, source)
 	return GatewayPipelineEntryResult{}
 }
 

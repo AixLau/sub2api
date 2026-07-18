@@ -37,6 +37,8 @@ const (
 	PipelineAdmittedContextKey        = "pipeline_admitted"
 	PipelineAdmissionContextKey       = "moderationcoverage.pipeline_admission"
 	PipelineStageExecutionsContextKey = "moderationcoverage.pipeline_stage_executions"
+	ModerationReceiptContextKey       = "moderationcoverage.execution_receipt"
+	ModerationReceiptsContextKey      = "moderationcoverage.execution_receipts"
 
 	SourceOpenAIHTTPPreForward           = "OpenAIGatewayPipeline.RunHTTPPreForward"
 	SourceOpenAIHTTPExecutableStage      = "OpenAIGatewayPipeline.RunHTTPExecutableStage"
@@ -77,10 +79,25 @@ type Entry struct {
 }
 
 type PipelineAdmission struct {
-	Admitted bool
-	Pipeline string
-	Stage    string
-	Source   string
+	Admitted            bool
+	Pipeline            string
+	Stage               string
+	Source              string
+	ModerationCompleted bool
+	ReceiptOutcome      string
+}
+
+// ModerationExecutionReceipt is the content-free proof that a request or
+// WebSocket frame completed its moderation gate before it was forwarded.
+// It intentionally contains no user-controlled source text or identifiers.
+type ModerationExecutionReceipt struct {
+	RequestID      string
+	Protocol       string
+	PolicyRevision string
+	LocalScanDone  bool
+	SemanticCalled bool
+	Outcome        string
+	ForwardAllowed bool
 }
 
 type PipelineEntrypoint struct {
@@ -160,13 +177,106 @@ func MarkPipelineAdmitted(c *gin.Context, pipeline, stage, source string) {
 		return
 	}
 	admission := PipelineAdmission{
-		Admitted: true,
+		Admitted:            true,
+		Pipeline:            NormalizePipeline(pipeline),
+		Stage:               NormalizeStage(stage),
+		Source:              strings.TrimSpace(source),
+		ModerationCompleted: true,
+		ReceiptOutcome:      "legacy_attested",
+	}
+	if receipt, ok := ModerationReceiptFromContext(c); ok {
+		admission.ModerationCompleted = receipt.LocalScanDone
+		admission.ReceiptOutcome = receipt.Outcome
+		admission.Admitted = receipt.LocalScanDone && receipt.ForwardAllowed
+	}
+	if !admission.Admitted {
+		c.Set(PipelineAdmittedContextKey, false)
+		c.Set(PipelineAdmissionContextKey, admission)
+		return
+	}
+	c.Set(PipelineAdmittedContextKey, true)
+	c.Set(PipelineAdmissionContextKey, admission)
+}
+
+// MarkPipelineAdmittedAfterModeration is the production admission path. In
+// contrast to the legacy metadata helper above, it cannot admit a request
+// without a completed, forwardable receipt.
+func MarkPipelineAdmittedAfterModeration(c *gin.Context, pipeline, stage, source string) {
+	if c == nil {
+		return
+	}
+	receipt, ok := ModerationReceiptFromContext(c)
+	admission := PipelineAdmission{
 		Pipeline: NormalizePipeline(pipeline),
 		Stage:    NormalizeStage(stage),
 		Source:   strings.TrimSpace(source),
 	}
-	c.Set(PipelineAdmittedContextKey, true)
+	if ok {
+		admission.ModerationCompleted = receipt.LocalScanDone
+		admission.ReceiptOutcome = receipt.Outcome
+		admission.Admitted = receipt.LocalScanDone && receipt.ForwardAllowed
+	}
+	c.Set(PipelineAdmittedContextKey, admission.Admitted)
 	c.Set(PipelineAdmissionContextKey, admission)
+}
+
+// MarkModerationReceipt replaces the current-frame receipt and appends an
+// immutable copy to the request history. WebSocket callers use the history to
+// prove that every response.create frame was independently checked.
+func MarkModerationReceipt(c *gin.Context, receipt ModerationExecutionReceipt) {
+	if c == nil {
+		return
+	}
+	receipt = normalizeModerationReceipt(receipt)
+	c.Set(ModerationReceiptContextKey, receipt)
+	history := ModerationReceiptsFromContext(c)
+	history = append(history, receipt)
+	c.Set(ModerationReceiptsContextKey, history)
+}
+
+func ModerationReceiptFromContext(c *gin.Context) (ModerationExecutionReceipt, bool) {
+	if c == nil {
+		return ModerationExecutionReceipt{}, false
+	}
+	value, ok := c.Get(ModerationReceiptContextKey)
+	if !ok {
+		return ModerationExecutionReceipt{}, false
+	}
+	switch receipt := value.(type) {
+	case ModerationExecutionReceipt:
+		return normalizeModerationReceipt(receipt), true
+	case *ModerationExecutionReceipt:
+		if receipt == nil {
+			return ModerationExecutionReceipt{}, false
+		}
+		return normalizeModerationReceipt(*receipt), true
+	default:
+		return ModerationExecutionReceipt{}, false
+	}
+}
+
+func ModerationReceiptsFromContext(c *gin.Context) []ModerationExecutionReceipt {
+	if c == nil {
+		return nil
+	}
+	value, ok := c.Get(ModerationReceiptsContextKey)
+	if !ok {
+		return nil
+	}
+	history, ok := value.([]ModerationExecutionReceipt)
+	if !ok {
+		return nil
+	}
+	result := make([]ModerationExecutionReceipt, len(history))
+	for i := range history {
+		result[i] = normalizeModerationReceipt(history[i])
+	}
+	return result
+}
+
+func ModerationReceiptAllowsForward(c *gin.Context) bool {
+	receipt, ok := ModerationReceiptFromContext(c)
+	return ok && receipt.LocalScanDone && receipt.ForwardAllowed
 }
 
 func PipelineAdmittedFromContext(c *gin.Context) bool {
@@ -754,7 +864,19 @@ func normalizePipelineAdmission(admission PipelineAdmission) PipelineAdmission {
 	admission.Pipeline = NormalizePipeline(admission.Pipeline)
 	admission.Stage = NormalizeStage(admission.Stage)
 	admission.Source = NormalizeSource(admission.Source)
+	admission.ReceiptOutcome = strings.TrimSpace(strings.ToLower(admission.ReceiptOutcome))
 	return admission
+}
+
+func normalizeModerationReceipt(receipt ModerationExecutionReceipt) ModerationExecutionReceipt {
+	receipt.RequestID = strings.TrimSpace(receipt.RequestID)
+	receipt.Protocol = strings.TrimSpace(strings.ToLower(receipt.Protocol))
+	receipt.PolicyRevision = strings.TrimSpace(receipt.PolicyRevision)
+	receipt.Outcome = strings.TrimSpace(strings.ToLower(receipt.Outcome))
+	if !receipt.LocalScanDone {
+		receipt.ForwardAllowed = false
+	}
+	return receipt
 }
 
 func normalizePipelineStageExecution(execution PipelineStageExecution) PipelineStageExecution {

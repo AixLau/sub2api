@@ -2320,6 +2320,7 @@ func TestOpenAIResponses_APIKeyPassthroughPool5xxRetriesThenExhaustsMaxSwitches(
 		Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
 		Status:             moderationcoverage.StatusCovered,
 	}))
+	markForwardableModerationReceipt(c, service.ContentModerationProtocolOpenAIResponses)
 
 	h.Responses(c)
 

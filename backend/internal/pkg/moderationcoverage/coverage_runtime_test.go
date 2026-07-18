@@ -49,7 +49,50 @@ func TestPipelineAdmissionHelpersSetBooleanFlagAndMetadata(t *testing.T) {
 	require.Equal(t, PipelineOpenAIHTTP, admission.Pipeline)
 	require.Equal(t, StagePreForward, admission.Stage)
 	require.Equal(t, "source", admission.Source)
+	require.True(t, admission.ModerationCompleted)
+	require.Equal(t, "legacy_attested", admission.ReceiptOutcome)
 	require.Empty(t, PipelineStageExecutionsFromContext(c))
+}
+
+func TestPipelineAdmissionAfterModerationRejectsDeferredReceipt(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	MarkModerationReceipt(c, ModerationExecutionReceipt{
+		RequestID:      "req-1",
+		Protocol:       "openai_responses",
+		LocalScanDone:  false,
+		Outcome:        "deferred_selected_account",
+		ForwardAllowed: true,
+	})
+	MarkPipelineAdmittedAfterModeration(c, PipelineOpenAIHTTP, StagePreForward, "selected-account-preguard")
+
+	require.False(t, PipelineAdmittedFromContext(c))
+	admission, ok := PipelineAdmissionFromContext(c)
+	require.True(t, ok)
+	require.False(t, admission.Admitted)
+	require.False(t, admission.ModerationCompleted)
+	require.Equal(t, "deferred_selected_account", admission.ReceiptOutcome)
+}
+
+func TestModerationReceiptHistoryKeepsIndependentWebSocketFrames(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	for _, outcome := range []string{"no_hit", "allow"} {
+		MarkModerationReceipt(c, ModerationExecutionReceipt{
+			Protocol:       "openai_responses",
+			LocalScanDone:  true,
+			Outcome:        outcome,
+			ForwardAllowed: true,
+		})
+	}
+
+	history := ModerationReceiptsFromContext(c)
+	require.Len(t, history, 2)
+	require.Equal(t, "no_hit", history[0].Outcome)
+	require.Equal(t, "allow", history[1].Outcome)
+	require.True(t, ModerationReceiptAllowsForward(c))
 }
 
 func TestPipelineEntrypointHelpersSetAndMatchPipeline(t *testing.T) {

@@ -19,7 +19,35 @@ import (
 var (
 	contentModerationBenchmarkInputSink ContentModerationInput
 	contentModerationBenchmarkRuleSink  ContentModerationKeywordRule
+	contentModerationBenchmarkBoolSink  bool
 )
+
+func BenchmarkContentModerationNoHit(b *testing.B) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.EngineMode = ContentModerationEngineModeCandidateOnly
+	cfg.PromptFilterMode = "observe"
+	cfg.SemanticReview.PromptInjectionReviewerEnabled = true
+	cfg.SemanticReview.PromptInjectionMaxInputRunes = maxModerationInputRunes
+	body, err := json.Marshal(map[string]any{
+		"messages": []map[string]string{{
+			"role":    "user",
+			"content": strings.Repeat("ordinary product documentation paragraph. ", 40),
+		}},
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	content := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
+	if _, hit := contentModerationCandidateSelectionForInput(cfg, content); hit {
+		b.Fatal("unexpected prompt-injection candidate in no-hit fixture")
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, contentModerationBenchmarkBoolSink = contentModerationCandidateSelectionForInput(cfg, content)
+	}
+}
 
 func TestValidateContentModerationBenchmarkExtraction(t *testing.T) {
 	tests := []struct {
