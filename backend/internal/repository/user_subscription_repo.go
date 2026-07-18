@@ -207,8 +207,7 @@ func (r *userSubscriptionRepository) ListActiveByUserIDPlatformSubscriptionType(
 	subs, err := client.UserSubscription.Query().
 		Where(
 			usersubscription.UserIDEQ(userID),
-			usersubscription.StatusEQ(service.SubscriptionStatusActive),
-			usersubscription.ExpiresAtGT(time.Now()),
+			usersubscription.StatusIn(service.SubscriptionStatusActive, service.SubscriptionStatusExpired),
 			usersubscription.HasGroupWith(
 				group.PlatformEQ(platform),
 				group.SubscriptionTypeEQ(subscriptionType),

@@ -751,6 +751,9 @@ func (s *PaymentService) ensurePaymentSubscriptionAssigned(ctx context.Context, 
 				PlanPrice:    o.Amount,
 				AssignedBy:   0,
 				Notes:        orderNote,
+				PlanID:       o.PlanID,
+				SourceType:   "payment_order",
+				SourceID:     strconv.FormatInt(o.ID, 10),
 			}, true)
 			if err != nil {
 				return nil, fmt.Errorf("assign subscription: %w", err)

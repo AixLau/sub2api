@@ -44,6 +44,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionrenewal"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -120,6 +121,8 @@ type Client struct {
 	Setting *SettingClient
 	// SubscriptionPlan is the client for interacting with the SubscriptionPlan builders.
 	SubscriptionPlan *SubscriptionPlanClient
+	// SubscriptionRenewal is the client for interacting with the SubscriptionRenewal builders.
+	SubscriptionRenewal *SubscriptionRenewalClient
 	// TLSFingerprintProfile is the client for interacting with the TLSFingerprintProfile builders.
 	TLSFingerprintProfile *TLSFingerprintProfileClient
 	// UsageCleanupTask is the client for interacting with the UsageCleanupTask builders.
@@ -178,6 +181,7 @@ func (c *Client) init() {
 	c.SecuritySecret = NewSecuritySecretClient(c.config)
 	c.Setting = NewSettingClient(c.config)
 	c.SubscriptionPlan = NewSubscriptionPlanClient(c.config)
+	c.SubscriptionRenewal = NewSubscriptionRenewalClient(c.config)
 	c.TLSFingerprintProfile = NewTLSFingerprintProfileClient(c.config)
 	c.UsageCleanupTask = NewUsageCleanupTaskClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
@@ -308,6 +312,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		SecuritySecret:                NewSecuritySecretClient(cfg),
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
+		SubscriptionRenewal:           NewSubscriptionRenewalClient(cfg),
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
@@ -365,6 +370,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		SecuritySecret:                NewSecuritySecretClient(cfg),
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
+		SubscriptionRenewal:           NewSubscriptionRenewalClient(cfg),
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
@@ -411,8 +417,8 @@ func (c *Client) Use(hooks ...Hook) {
 		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
 		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
 		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
-		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
-		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.SubscriptionRenewal, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
+		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Use(hooks...)
@@ -431,8 +437,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
 		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
 		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
-		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
-		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.SubscriptionRenewal, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
+		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
@@ -500,6 +506,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Setting.mutate(ctx, m)
 	case *SubscriptionPlanMutation:
 		return c.SubscriptionPlan.mutate(ctx, m)
+	case *SubscriptionRenewalMutation:
+		return c.SubscriptionRenewal.mutate(ctx, m)
 	case *TLSFingerprintProfileMutation:
 		return c.TLSFingerprintProfile.mutate(ctx, m)
 	case *UsageCleanupTaskMutation:
@@ -5043,6 +5051,139 @@ func (c *SubscriptionPlanClient) mutate(ctx context.Context, m *SubscriptionPlan
 	}
 }
 
+// SubscriptionRenewalClient is a client for the SubscriptionRenewal schema.
+type SubscriptionRenewalClient struct {
+	config
+}
+
+// NewSubscriptionRenewalClient returns a client for the SubscriptionRenewal from the given config.
+func NewSubscriptionRenewalClient(c config) *SubscriptionRenewalClient {
+	return &SubscriptionRenewalClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `subscriptionrenewal.Hooks(f(g(h())))`.
+func (c *SubscriptionRenewalClient) Use(hooks ...Hook) {
+	c.hooks.SubscriptionRenewal = append(c.hooks.SubscriptionRenewal, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `subscriptionrenewal.Intercept(f(g(h())))`.
+func (c *SubscriptionRenewalClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SubscriptionRenewal = append(c.inters.SubscriptionRenewal, interceptors...)
+}
+
+// Create returns a builder for creating a SubscriptionRenewal entity.
+func (c *SubscriptionRenewalClient) Create() *SubscriptionRenewalCreate {
+	mutation := newSubscriptionRenewalMutation(c.config, OpCreate)
+	return &SubscriptionRenewalCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SubscriptionRenewal entities.
+func (c *SubscriptionRenewalClient) CreateBulk(builders ...*SubscriptionRenewalCreate) *SubscriptionRenewalCreateBulk {
+	return &SubscriptionRenewalCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SubscriptionRenewalClient) MapCreateBulk(slice any, setFunc func(*SubscriptionRenewalCreate, int)) *SubscriptionRenewalCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SubscriptionRenewalCreateBulk{err: fmt.Errorf("calling to SubscriptionRenewalClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SubscriptionRenewalCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SubscriptionRenewalCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SubscriptionRenewal.
+func (c *SubscriptionRenewalClient) Update() *SubscriptionRenewalUpdate {
+	mutation := newSubscriptionRenewalMutation(c.config, OpUpdate)
+	return &SubscriptionRenewalUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SubscriptionRenewalClient) UpdateOne(_m *SubscriptionRenewal) *SubscriptionRenewalUpdateOne {
+	mutation := newSubscriptionRenewalMutation(c.config, OpUpdateOne, withSubscriptionRenewal(_m))
+	return &SubscriptionRenewalUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SubscriptionRenewalClient) UpdateOneID(id int64) *SubscriptionRenewalUpdateOne {
+	mutation := newSubscriptionRenewalMutation(c.config, OpUpdateOne, withSubscriptionRenewalID(id))
+	return &SubscriptionRenewalUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SubscriptionRenewal.
+func (c *SubscriptionRenewalClient) Delete() *SubscriptionRenewalDelete {
+	mutation := newSubscriptionRenewalMutation(c.config, OpDelete)
+	return &SubscriptionRenewalDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SubscriptionRenewalClient) DeleteOne(_m *SubscriptionRenewal) *SubscriptionRenewalDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SubscriptionRenewalClient) DeleteOneID(id int64) *SubscriptionRenewalDeleteOne {
+	builder := c.Delete().Where(subscriptionrenewal.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SubscriptionRenewalDeleteOne{builder}
+}
+
+// Query returns a query builder for SubscriptionRenewal.
+func (c *SubscriptionRenewalClient) Query() *SubscriptionRenewalQuery {
+	return &SubscriptionRenewalQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSubscriptionRenewal},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SubscriptionRenewal entity by its id.
+func (c *SubscriptionRenewalClient) Get(ctx context.Context, id int64) (*SubscriptionRenewal, error) {
+	return c.Query().Where(subscriptionrenewal.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SubscriptionRenewalClient) GetX(ctx context.Context, id int64) *SubscriptionRenewal {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *SubscriptionRenewalClient) Hooks() []Hook {
+	return c.hooks.SubscriptionRenewal
+}
+
+// Interceptors returns the client interceptors.
+func (c *SubscriptionRenewalClient) Interceptors() []Interceptor {
+	return c.inters.SubscriptionRenewal
+}
+
+func (c *SubscriptionRenewalClient) mutate(ctx context.Context, m *SubscriptionRenewalMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SubscriptionRenewalCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SubscriptionRenewalUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SubscriptionRenewalUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SubscriptionRenewalDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SubscriptionRenewal mutation op: %q", m.Op())
+	}
+}
+
 // TLSFingerprintProfileClient is a client for the TLSFingerprintProfile schema.
 type TLSFingerprintProfileClient struct {
 	config
@@ -6672,9 +6813,10 @@ type (
 		ChannelMonitorRequestTemplate, ErrorPassthroughRule, Group, IdempotencyRecord,
 		IdentityAdoptionDecision, PaymentAuditLog, PaymentOrder,
 		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
-		RedeemCode, SecuritySecret, Setting, SubscriptionPlan, TLSFingerprintProfile,
-		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
-		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Hook
+		RedeemCode, SecuritySecret, Setting, SubscriptionPlan, SubscriptionRenewal,
+		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
+		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
+		UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
@@ -6683,9 +6825,10 @@ type (
 		ChannelMonitorRequestTemplate, ErrorPassthroughRule, Group, IdempotencyRecord,
 		IdentityAdoptionDecision, PaymentAuditLog, PaymentOrder,
 		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
-		RedeemCode, SecuritySecret, Setting, SubscriptionPlan, TLSFingerprintProfile,
-		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
-		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Interceptor
+		RedeemCode, SecuritySecret, Setting, SubscriptionPlan, SubscriptionRenewal,
+		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
+		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
+		UserSubscription []ent.Interceptor
 	}
 )
 

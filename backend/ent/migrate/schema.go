@@ -1484,6 +1484,46 @@ var (
 			},
 		},
 	}
+	// SubscriptionRenewalsColumns holds the columns for the "subscription_renewals" table.
+	SubscriptionRenewalsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "subscription_id", Type: field.TypeInt64},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "target_group_id", Type: field.TypeInt64},
+		{Name: "plan_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "source_type", Type: field.TypeString, Size: 20},
+		{Name: "source_id", Type: field.TypeString, Size: 64},
+		{Name: "validity_days", Type: field.TypeInt},
+		{Name: "monthly_limit_usd", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,10)"}},
+		{Name: "status", Type: field.TypeString, Size: 20, Default: "pending"},
+		{Name: "activated_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "notes", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+	}
+	// SubscriptionRenewalsTable holds the schema information for the "subscription_renewals" table.
+	SubscriptionRenewalsTable = &schema.Table{
+		Name:       "subscription_renewals",
+		Columns:    SubscriptionRenewalsColumns,
+		PrimaryKey: []*schema.Column{SubscriptionRenewalsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "subscriptionrenewal_source_type_source_id",
+				Unique:  true,
+				Columns: []*schema.Column{SubscriptionRenewalsColumns[7], SubscriptionRenewalsColumns[8]},
+			},
+			{
+				Name:    "subscriptionrenewal_subscription_id_status_id",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionRenewalsColumns[3], SubscriptionRenewalsColumns[11], SubscriptionRenewalsColumns[0]},
+			},
+			{
+				Name:    "subscriptionrenewal_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionRenewalsColumns[4], SubscriptionRenewalsColumns[1]},
+			},
+		},
+	}
 	// TLSFingerprintProfilesColumns holds the columns for the "tls_fingerprint_profiles" table.
 	TLSFingerprintProfilesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -2029,6 +2069,7 @@ var (
 		SecuritySecretsTable,
 		SettingsTable,
 		SubscriptionPlansTable,
+		SubscriptionRenewalsTable,
 		TLSFingerprintProfilesTable,
 		UsageCleanupTasksTable,
 		UsageLogsTable,
@@ -2150,6 +2191,9 @@ func init() {
 	}
 	SubscriptionPlansTable.Annotation = &entsql.Annotation{
 		Table: "subscription_plans",
+	}
+	SubscriptionRenewalsTable.Annotation = &entsql.Annotation{
+		Table: "subscription_renewals",
 	}
 	TLSFingerprintProfilesTable.Annotation = &entsql.Annotation{
 		Table: "tls_fingerprint_profiles",

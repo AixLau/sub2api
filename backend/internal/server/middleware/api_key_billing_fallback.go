@@ -20,6 +20,12 @@ func validateRequestSubscription(ctx context.Context, subscriptionService *servi
 			return nil, maintenanceErr
 		}
 		sub = refreshed
+		if sub.Group != nil && sub.GroupID != group.ID {
+			// FIFO renewal activation may switch tiers. The caller passes the API
+			// key's group pointer, so updating it keeps this triggering request on
+			// the newly activated tier after the DB/API-key migration commits.
+			*group = *sub.Group
+		}
 		_, err = subscriptionService.ValidateAndCheckLimits(sub, group)
 	}
 	if err != nil {

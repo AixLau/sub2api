@@ -613,10 +613,11 @@ type UserSubscription struct {
 	WeeklyWindowStart  *time.Time `json:"weekly_window_start"`
 	MonthlyWindowStart *time.Time `json:"monthly_window_start"`
 
-	DailyUsageUSD   float64 `json:"daily_usage_usd"`
-	WeeklyUsageUSD  float64 `json:"weekly_usage_usd"`
-	MonthlyUsageUSD float64 `json:"monthly_usage_usd"`
-	MonthlyBonusUSD float64 `json:"monthly_bonus_usd"`
+	DailyUsageUSD       float64 `json:"daily_usage_usd"`
+	WeeklyUsageUSD      float64 `json:"weekly_usage_usd"`
+	MonthlyUsageUSD     float64 `json:"monthly_usage_usd"`
+	MonthlyBonusUSD     float64 `json:"monthly_bonus_usd"`
+	PendingRenewalCount int     `json:"pending_renewal_count"`
 
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`

@@ -15,14 +15,14 @@ type UserSubscription struct {
 	WeeklyWindowStart  *time.Time
 	MonthlyWindowStart *time.Time
 
-	DailyUsageUSD   float64
-	WeeklyUsageUSD  float64
-	MonthlyUsageUSD float64
-	MonthlyBonusUSD float64
-
-	AssignedBy *int64
-	AssignedAt time.Time
-	Notes      string
+	DailyUsageUSD       float64
+	WeeklyUsageUSD      float64
+	MonthlyUsageUSD     float64
+	MonthlyBonusUSD     float64
+	PendingRenewalCount int
+	AssignedBy          *int64
+	AssignedAt          time.Time
+	Notes               string
 
 	CreatedAt time.Time
 	UpdatedAt time.Time

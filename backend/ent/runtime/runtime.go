@@ -35,6 +35,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionrenewal"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -1766,6 +1767,43 @@ func init() {
 	subscriptionplan.DefaultUpdatedAt = subscriptionplanDescUpdatedAt.Default.(func() time.Time)
 	// subscriptionplan.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	subscriptionplan.UpdateDefaultUpdatedAt = subscriptionplanDescUpdatedAt.UpdateDefault.(func() time.Time)
+	subscriptionrenewalMixin := schema.SubscriptionRenewal{}.Mixin()
+	subscriptionrenewalMixinFields0 := subscriptionrenewalMixin[0].Fields()
+	_ = subscriptionrenewalMixinFields0
+	subscriptionrenewalFields := schema.SubscriptionRenewal{}.Fields()
+	_ = subscriptionrenewalFields
+	// subscriptionrenewalDescCreatedAt is the schema descriptor for created_at field.
+	subscriptionrenewalDescCreatedAt := subscriptionrenewalMixinFields0[0].Descriptor()
+	// subscriptionrenewal.DefaultCreatedAt holds the default value on creation for the created_at field.
+	subscriptionrenewal.DefaultCreatedAt = subscriptionrenewalDescCreatedAt.Default.(func() time.Time)
+	// subscriptionrenewalDescUpdatedAt is the schema descriptor for updated_at field.
+	subscriptionrenewalDescUpdatedAt := subscriptionrenewalMixinFields0[1].Descriptor()
+	// subscriptionrenewal.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	subscriptionrenewal.DefaultUpdatedAt = subscriptionrenewalDescUpdatedAt.Default.(func() time.Time)
+	// subscriptionrenewal.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	subscriptionrenewal.UpdateDefaultUpdatedAt = subscriptionrenewalDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// subscriptionrenewalDescSourceType is the schema descriptor for source_type field.
+	subscriptionrenewalDescSourceType := subscriptionrenewalFields[4].Descriptor()
+	// subscriptionrenewal.SourceTypeValidator is a validator for the "source_type" field. It is called by the builders before save.
+	subscriptionrenewal.SourceTypeValidator = subscriptionrenewalDescSourceType.Validators[0].(func(string) error)
+	// subscriptionrenewalDescSourceID is the schema descriptor for source_id field.
+	subscriptionrenewalDescSourceID := subscriptionrenewalFields[5].Descriptor()
+	// subscriptionrenewal.SourceIDValidator is a validator for the "source_id" field. It is called by the builders before save.
+	subscriptionrenewal.SourceIDValidator = subscriptionrenewalDescSourceID.Validators[0].(func(string) error)
+	// subscriptionrenewalDescValidityDays is the schema descriptor for validity_days field.
+	subscriptionrenewalDescValidityDays := subscriptionrenewalFields[6].Descriptor()
+	// subscriptionrenewal.ValidityDaysValidator is a validator for the "validity_days" field. It is called by the builders before save.
+	subscriptionrenewal.ValidityDaysValidator = subscriptionrenewalDescValidityDays.Validators[0].(func(int) error)
+	// subscriptionrenewalDescMonthlyLimitUsd is the schema descriptor for monthly_limit_usd field.
+	subscriptionrenewalDescMonthlyLimitUsd := subscriptionrenewalFields[7].Descriptor()
+	// subscriptionrenewal.DefaultMonthlyLimitUsd holds the default value on creation for the monthly_limit_usd field.
+	subscriptionrenewal.DefaultMonthlyLimitUsd = subscriptionrenewalDescMonthlyLimitUsd.Default.(float64)
+	// subscriptionrenewalDescStatus is the schema descriptor for status field.
+	subscriptionrenewalDescStatus := subscriptionrenewalFields[8].Descriptor()
+	// subscriptionrenewal.DefaultStatus holds the default value on creation for the status field.
+	subscriptionrenewal.DefaultStatus = subscriptionrenewalDescStatus.Default.(string)
+	// subscriptionrenewal.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	subscriptionrenewal.StatusValidator = subscriptionrenewalDescStatus.Validators[0].(func(string) error)
 	tlsfingerprintprofileMixin := schema.TLSFingerprintProfile{}.Mixin()
 	tlsfingerprintprofileMixinFields0 := tlsfingerprintprofileMixin[0].Fields()
 	_ = tlsfingerprintprofileMixinFields0

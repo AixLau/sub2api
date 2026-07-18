@@ -71,7 +71,6 @@ func (UserSubscription) Fields() []ent.Field {
 		field.Float("monthly_bonus_usd").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,10)"}).
 			Default(0),
-
 		field.Int64("assigned_by").
 			Optional().
 			Nillable(),

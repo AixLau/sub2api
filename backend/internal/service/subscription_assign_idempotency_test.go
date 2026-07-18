@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -258,9 +259,11 @@ func (s *subscriptionUserSubRepoStub) GetActiveByUserIDAndGroupID(_ context.Cont
 
 func (s *subscriptionUserSubRepoStub) ListActiveByUserIDPlatformSubscriptionType(_ context.Context, userID int64, platform, subscriptionType string) ([]UserSubscription, error) {
 	var out []UserSubscription
-	now := time.Now()
 	for _, sub := range s.byID {
-		if sub == nil || sub.UserID != userID || sub.Status != SubscriptionStatusActive || !sub.ExpiresAt.After(now) || sub.Group == nil {
+		if sub == nil || sub.UserID != userID || sub.Group == nil {
+			continue
+		}
+		if sub.Status != SubscriptionStatusActive && sub.Status != SubscriptionStatusExpired {
 			continue
 		}
 		if sub.Group.Platform != platform || sub.Group.SubscriptionType != subscriptionType {
@@ -288,6 +291,148 @@ func (s *subscriptionUserSubRepoStub) Create(_ context.Context, sub *UserSubscri
 	s.byID[cp.ID] = &cp
 	s.byUserGroup[s.key(cp.UserID, cp.GroupID)] = &cp
 	return nil
+}
+
+func (s *subscriptionUserSubRepoStub) Delete(_ context.Context, id int64) error {
+	sub := s.byID[id]
+	if sub == nil {
+		return ErrSubscriptionNotFound
+	}
+	delete(s.byID, id)
+	delete(s.byUserGroup, s.key(sub.UserID, sub.GroupID))
+	return nil
+}
+
+type renewalStoreStubRow struct {
+	ID     int64
+	Req    subscriptionRenewalRequest
+	Status string
+}
+
+type subscriptionRenewalStoreStub struct {
+	mu         sync.Mutex
+	nextID     int64
+	rows       []renewalStoreStubRow
+	subRepo    *subscriptionUserSubRepoStub
+	groups     map[int64]*Group
+	activated  []int64
+	reassigned []struct {
+		OldIDs []int64
+		NewID  int64
+	}
+}
+
+func newSubscriptionRenewalStoreStub(subRepo *subscriptionUserSubRepoStub, groups map[int64]*Group) *subscriptionRenewalStoreStub {
+	return &subscriptionRenewalStoreStub{
+		nextID:  1,
+		subRepo: subRepo,
+		groups:  groups,
+	}
+}
+
+func (s *subscriptionRenewalStoreStub) Enqueue(_ context.Context, req subscriptionRenewalRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	row := renewalStoreStubRow{
+		ID:     s.nextID,
+		Req:    req,
+		Status: subscriptionRenewalPending,
+	}
+	s.nextID++
+	s.rows = append(s.rows, row)
+	return nil
+}
+
+func (s *subscriptionRenewalStoreStub) PendingCount(_ context.Context, subscriptionID int64) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	count := 0
+	for _, row := range s.rows {
+		if row.Req.SubscriptionID == subscriptionID && row.Status == subscriptionRenewalPending {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (s *subscriptionRenewalStoreStub) ActivateNext(ctx context.Context, subscriptionID int64, startsAt, windowStart time.Time) (*subscriptionRenewalActivation, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.rows {
+		row := &s.rows[i]
+		if row.Req.SubscriptionID != subscriptionID || row.Status != subscriptionRenewalPending {
+			continue
+		}
+		sub, err := s.subRepo.GetByID(ctx, subscriptionID)
+		if err != nil {
+			return nil, err
+		}
+		oldGroupID := sub.GroupID
+		expiresAt := startsAt.AddDate(0, 0, row.Req.ValidityDays)
+		sub.GroupID = row.Req.TargetGroupID
+		if group := s.groups[row.Req.TargetGroupID]; group != nil {
+			groupCopy := *group
+			sub.Group = &groupCopy
+		}
+		sub.StartsAt = startsAt
+		sub.ExpiresAt = expiresAt
+		sub.Status = SubscriptionStatusActive
+		sub.DailyWindowStart = &windowStart
+		sub.WeeklyWindowStart = &windowStart
+		sub.MonthlyWindowStart = &windowStart
+		sub.DailyUsageUSD = 0
+		sub.WeeklyUsageUSD = 0
+		sub.MonthlyUsageUSD = 0
+		sub.MonthlyBonusUSD = 0
+		if err := s.subRepo.Update(ctx, sub); err != nil {
+			return nil, err
+		}
+		row.Status = subscriptionRenewalActivated
+		s.activated = append(s.activated, row.ID)
+		return &subscriptionRenewalActivation{
+			RenewalID:    row.ID,
+			UserID:       sub.UserID,
+			OldGroupID:   oldGroupID,
+			NewGroupID:   row.Req.TargetGroupID,
+			ValidityDays: row.Req.ValidityDays,
+		}, nil
+	}
+	return nil, nil
+}
+
+func (s *subscriptionRenewalStoreStub) ReassignPending(_ context.Context, oldSubscriptionIDs []int64, newSubscriptionID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	oldSet := make(map[int64]struct{}, len(oldSubscriptionIDs))
+	for _, id := range oldSubscriptionIDs {
+		oldSet[id] = struct{}{}
+	}
+	for i := range s.rows {
+		if s.rows[i].Status != subscriptionRenewalPending {
+			continue
+		}
+		if _, ok := oldSet[s.rows[i].Req.SubscriptionID]; ok {
+			s.rows[i].Req.SubscriptionID = newSubscriptionID
+		}
+	}
+	copiedOldIDs := append([]int64(nil), oldSubscriptionIDs...)
+	s.reassigned = append(s.reassigned, struct {
+		OldIDs []int64
+		NewID  int64
+	}{OldIDs: copiedOldIDs, NewID: newSubscriptionID})
+	return nil
+}
+
+func (s *subscriptionRenewalStoreStub) pendingRows(subscriptionID int64) []renewalStoreStubRow {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []renewalStoreStubRow
+	for _, row := range s.rows {
+		if row.Req.SubscriptionID == subscriptionID && row.Status == subscriptionRenewalPending {
+			out = append(out, row)
+		}
+	}
+	return out
 }
 
 func (s *subscriptionUserSubRepoStub) GetByID(_ context.Context, id int64) (*UserSubscription, error) {
@@ -498,9 +643,9 @@ func TestAssignSubscriptionGroupTypeValidation(t *testing.T) {
 	require.Equal(t, infraerrors.Code(ErrGroupNotSubscriptionType), infraerrors.Code(err))
 }
 
-func TestAssignOrMergeSubscriptionPurchaseSameTierAddsRemainingQuotaAndDays(t *testing.T) {
+func TestAssignOrMergeSubscriptionPurchaseSameTierQueuesRenewal(t *testing.T) {
 	now := time.Now()
-	monthlyStart := startOfDay(now)
+	monthlyStart := startOfDay(now.AddDate(0, 0, -20))
 	group := &Group{
 		ID:               11,
 		Platform:         PlatformOpenAI,
@@ -522,23 +667,96 @@ func TestAssignOrMergeSubscriptionPurchaseSameTierAddsRemainingQuotaAndDays(t *t
 	})
 
 	svc := NewSubscriptionService(groupRepo, subRepo, nil, nil, nil)
+	renewalStore := newSubscriptionRenewalStoreStub(subRepo, groupRepo.groups)
+	svc.renewalStore = renewalStore
+	planID := int64(501)
 	result, err := svc.AssignOrMergeSubscriptionPurchase(context.Background(), &AssignSubscriptionInput{
 		UserID:       9001,
 		GroupID:      11,
 		ValidityDays: 30,
 		Notes:        "same tier purchase",
+		PlanID:       &planID,
+		SourceType:   "payment_order",
+		SourceID:     "order-same-tier",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.True(t, result.Reused)
+	require.True(t, result.Queued)
 	require.Equal(t, int64(101), result.Subscription.ID)
 	require.Equal(t, int64(11), result.Subscription.GroupID)
 	require.False(t, result.ShouldMigrateAPIKeys)
 	require.InDelta(t, 60, result.PreservedMonthlyRemainingUSD, 0.001)
 	require.InDelta(t, 100, result.PurchasedMonthlyLimitUSD, 0.001)
-	require.InDelta(t, 60, result.Subscription.MonthlyBonusUSD, 0.001)
+	require.InDelta(t, 0, result.Subscription.MonthlyBonusUSD, 0.001)
+	require.InDelta(t, 40, result.Subscription.MonthlyUsageUSD, 0.001)
+	require.WithinDuration(t, monthlyStart, *result.Subscription.MonthlyWindowStart, time.Second)
+	require.WithinDuration(t, now.AddDate(0, 0, 10), result.Subscription.ExpiresAt, time.Second)
+	require.Equal(t, 1, result.Subscription.PendingRenewalCount)
+	require.Len(t, renewalStore.activated, 0)
+	pending := renewalStore.pendingRows(101)
+	require.Len(t, pending, 1)
+	require.Equal(t, int64(11), pending[0].Req.TargetGroupID)
+	require.Equal(t, 30, pending[0].Req.ValidityDays)
+	require.InDelta(t, 100, pending[0].Req.MonthlyLimitUSD, 0.001)
+	require.Equal(t, &planID, pending[0].Req.PlanID)
+	require.Equal(t, "payment_order", pending[0].Req.SourceType)
+	require.Equal(t, "order-same-tier", pending[0].Req.SourceID)
+	require.Equal(t, 0, subRepo.createCalls)
+}
+
+func TestAssignOrMergeSubscriptionPurchaseExhaustedSameTierRestartsTerm(t *testing.T) {
+	now := time.Now()
+	oldWindowStart := startOfDay(now.AddDate(0, 0, -27))
+	group := &Group{
+		ID:               12,
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  testFloat64Ptr(100),
+	}
+	groupRepo := &subscriptionGroupRepoMapStub{groups: map[int64]*Group{12: group}}
+	subRepo := newSubscriptionUserSubRepoStub()
+	subRepo.seed(&UserSubscription{
+		ID:                 102,
+		UserID:             9004,
+		GroupID:            12,
+		StartsAt:           now.AddDate(0, 0, -20),
+		ExpiresAt:          now.AddDate(0, 0, 10),
+		Status:             SubscriptionStatusActive,
+		DailyWindowStart:   &oldWindowStart,
+		WeeklyWindowStart:  &oldWindowStart,
+		MonthlyWindowStart: &oldWindowStart,
+		DailyUsageUSD:      12,
+		WeeklyUsageUSD:     34,
+		MonthlyUsageUSD:    100,
+		Group:              group,
+	})
+
+	svc := NewSubscriptionService(groupRepo, subRepo, nil, nil, nil)
+	renewalStore := newSubscriptionRenewalStoreStub(subRepo, groupRepo.groups)
+	svc.renewalStore = renewalStore
+	result, err := svc.AssignOrMergeSubscriptionPurchase(context.Background(), &AssignSubscriptionInput{
+		UserID:       9004,
+		GroupID:      12,
+		ValidityDays: 30,
+		Notes:        "exhausted same tier purchase",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Reused)
+	require.False(t, result.Queued)
+	require.Equal(t, int64(12), result.Subscription.GroupID)
+	require.InDelta(t, 0, result.PreservedMonthlyRemainingUSD, 0.001)
+	require.InDelta(t, 0, result.Subscription.MonthlyBonusUSD, 0.001)
+	require.InDelta(t, 0, result.Subscription.DailyUsageUSD, 0.001)
+	require.InDelta(t, 0, result.Subscription.WeeklyUsageUSD, 0.001)
 	require.InDelta(t, 0, result.Subscription.MonthlyUsageUSD, 0.001)
-	require.GreaterOrEqual(t, int(time.Until(result.Subscription.ExpiresAt).Hours()/24), 39)
+	require.WithinDuration(t, startOfDay(time.Now()), *result.Subscription.DailyWindowStart, time.Second)
+	require.WithinDuration(t, startOfDay(time.Now()), *result.Subscription.WeeklyWindowStart, time.Second)
+	require.WithinDuration(t, startOfDay(time.Now()), *result.Subscription.MonthlyWindowStart, time.Second)
+	require.InDelta(t, 30*24, time.Until(result.Subscription.ExpiresAt).Hours(), 0.1)
+	require.Equal(t, 0, result.Subscription.PendingRenewalCount)
+	require.Len(t, renewalStore.activated, 1)
 	require.Equal(t, 0, subRepo.createCalls)
 }
 
@@ -572,6 +790,8 @@ func TestAssignOrMergeSubscriptionPurchaseUpgradeCarriesQuotaAndRequestsKeyMigra
 	})
 
 	svc := NewSubscriptionService(groupRepo, subRepo, nil, nil, nil)
+	renewalStore := newSubscriptionRenewalStoreStub(subRepo, groupRepo.groups)
+	svc.renewalStore = renewalStore
 	result, err := svc.AssignOrMergeSubscriptionPurchase(context.Background(), &AssignSubscriptionInput{
 		UserID:       9002,
 		GroupID:      22,
@@ -590,14 +810,15 @@ func TestAssignOrMergeSubscriptionPurchaseUpgradeCarriesQuotaAndRequestsKeyMigra
 	require.InDelta(t, 300, result.PurchasedMonthlyLimitUSD, 0.001)
 	require.InDelta(t, 60, result.Subscription.MonthlyBonusUSD, 0.001)
 	require.InDelta(t, 0, result.Subscription.MonthlyUsageUSD, 0.001)
-	require.GreaterOrEqual(t, int(time.Until(result.Subscription.ExpiresAt).Hours()/24), 39)
+	require.InDelta(t, 30*24, time.Until(result.Subscription.ExpiresAt).Hours(), 0.1)
+	require.Len(t, renewalStore.activated, 0)
 	require.Equal(t, 0, subRepo.createCalls)
 
 	_, err = subRepo.GetByUserIDAndGroupID(context.Background(), 9002, 21)
 	require.ErrorIs(t, err, ErrSubscriptionNotFound)
 }
 
-func TestAssignOrMergeSubscriptionPurchaseHigherTierDoesNotDowngrade(t *testing.T) {
+func TestAssignOrMergeSubscriptionPurchaseLowerTierQueuesDowngrade(t *testing.T) {
 	now := time.Now()
 	monthlyStart := startOfDay(now)
 	basic := &Group{
@@ -627,6 +848,8 @@ func TestAssignOrMergeSubscriptionPurchaseHigherTierDoesNotDowngrade(t *testing.
 	})
 
 	svc := NewSubscriptionService(groupRepo, subRepo, nil, nil, nil)
+	renewalStore := newSubscriptionRenewalStoreStub(subRepo, groupRepo.groups)
+	svc.renewalStore = renewalStore
 	result, err := svc.AssignOrMergeSubscriptionPurchase(context.Background(), &AssignSubscriptionInput{
 		UserID:       9003,
 		GroupID:      31,
@@ -638,13 +861,236 @@ func TestAssignOrMergeSubscriptionPurchaseHigherTierDoesNotDowngrade(t *testing.
 	require.True(t, result.Reused)
 	require.Equal(t, int64(301), result.Subscription.ID)
 	require.Equal(t, int64(32), result.Subscription.GroupID)
+	require.True(t, result.Queued)
 	require.False(t, result.ShouldMigrateAPIKeys)
 	require.InDelta(t, 260, result.PreservedMonthlyRemainingUSD, 0.001)
 	require.InDelta(t, 100, result.PurchasedMonthlyLimitUSD, 0.001)
-	require.InDelta(t, 60, result.Subscription.MonthlyBonusUSD, 0.001)
-	require.InDelta(t, 0, result.Subscription.MonthlyUsageUSD, 0.001)
-	require.GreaterOrEqual(t, int(time.Until(result.Subscription.ExpiresAt).Hours()/24), 39)
+	require.InDelta(t, 0, result.Subscription.MonthlyBonusUSD, 0.001)
+	require.InDelta(t, 40, result.Subscription.MonthlyUsageUSD, 0.001)
+	require.WithinDuration(t, monthlyStart, *result.Subscription.MonthlyWindowStart, time.Second)
+	require.WithinDuration(t, now.AddDate(0, 0, 10), result.Subscription.ExpiresAt, time.Second)
+	require.Equal(t, 1, result.Subscription.PendingRenewalCount)
+	require.Len(t, renewalStore.activated, 0)
+	pending := renewalStore.pendingRows(301)
+	require.Len(t, pending, 1)
+	require.Equal(t, int64(31), pending[0].Req.TargetGroupID)
+	require.InDelta(t, 100, pending[0].Req.MonthlyLimitUSD, 0.001)
 	require.Equal(t, 0, subRepo.createCalls)
+}
+
+func TestAssignOrMergeSubscriptionPurchaseMultipleQueuedPurchasesActivateFIFO(t *testing.T) {
+	now := time.Now()
+	monthlyStart := startOfDay(now)
+	basic := &Group{
+		ID:               41,
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  testFloat64Ptr(100),
+	}
+	pro := &Group{
+		ID:               42,
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  testFloat64Ptr(300),
+	}
+	groupRepo := &subscriptionGroupRepoMapStub{groups: map[int64]*Group{41: basic, 42: pro}}
+	subRepo := newSubscriptionUserSubRepoStub()
+	subRepo.seed(&UserSubscription{
+		ID:                 401,
+		UserID:             9005,
+		GroupID:            42,
+		StartsAt:           now.AddDate(0, 0, -10),
+		ExpiresAt:          now.AddDate(0, 0, 20),
+		Status:             SubscriptionStatusActive,
+		MonthlyWindowStart: &monthlyStart,
+		MonthlyUsageUSD:    25,
+		Group:              pro,
+	})
+	svc := NewSubscriptionService(groupRepo, subRepo, nil, nil, nil)
+	renewalStore := newSubscriptionRenewalStoreStub(subRepo, groupRepo.groups)
+	svc.renewalStore = renewalStore
+
+	first, err := svc.AssignOrMergeSubscriptionPurchase(context.Background(), &AssignSubscriptionInput{
+		UserID:       9005,
+		GroupID:      41,
+		ValidityDays: 15,
+		Notes:        "first queued downgrade",
+		SourceType:   "payment_order",
+		SourceID:     "fifo-1",
+	})
+	require.NoError(t, err)
+	require.True(t, first.Queued)
+	second, err := svc.AssignOrMergeSubscriptionPurchase(context.Background(), &AssignSubscriptionInput{
+		UserID:       9005,
+		GroupID:      42,
+		ValidityDays: 45,
+		Notes:        "second queued renewal",
+		SourceType:   "payment_order",
+		SourceID:     "fifo-2",
+	})
+	require.NoError(t, err)
+	require.True(t, second.Queued)
+
+	pending := renewalStore.pendingRows(401)
+	require.Len(t, pending, 2)
+	require.Equal(t, int64(41), pending[0].Req.TargetGroupID)
+	require.Equal(t, 15, pending[0].Req.ValidityDays)
+	require.Equal(t, "fifo-1", pending[0].Req.SourceID)
+	require.Equal(t, int64(42), pending[1].Req.TargetGroupID)
+	require.Equal(t, 45, pending[1].Req.ValidityDays)
+	require.Equal(t, "fifo-2", pending[1].Req.SourceID)
+
+	stored := subRepo.byID[401]
+	stored.MonthlyUsageUSD = 300
+	activatedFirst, err := svc.EnsureWindowMaintenance(context.Background(), stored)
+	require.NoError(t, err)
+	require.Equal(t, int64(41), activatedFirst.GroupID)
+	require.InDelta(t, 15*24, time.Until(activatedFirst.ExpiresAt).Hours(), 0.1)
+	require.InDelta(t, 0, activatedFirst.MonthlyUsageUSD, 0.001)
+	require.Equal(t, 1, activatedFirst.PendingRenewalCount)
+
+	stored = subRepo.byID[401]
+	stored.MonthlyUsageUSD = 100
+	activatedSecond, err := svc.EnsureWindowMaintenance(context.Background(), stored)
+	require.NoError(t, err)
+	require.Equal(t, int64(42), activatedSecond.GroupID)
+	require.InDelta(t, 45*24, time.Until(activatedSecond.ExpiresAt).Hours(), 0.1)
+	require.Equal(t, 0, activatedSecond.PendingRenewalCount)
+	require.Equal(t, []int64{1, 2}, renewalStore.activated)
+}
+
+func TestGetActiveSubscriptionAllowsExpiredTermWithPendingRenewal(t *testing.T) {
+	now := time.Now()
+	group := &Group{
+		ID:               51,
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  testFloat64Ptr(100),
+	}
+	groupRepo := &subscriptionGroupRepoMapStub{groups: map[int64]*Group{51: group}}
+	subRepo := newSubscriptionUserSubRepoStub()
+	subRepo.seed(&UserSubscription{
+		ID:        501,
+		UserID:    9006,
+		GroupID:   51,
+		StartsAt:  now.AddDate(0, 0, -31),
+		ExpiresAt: now.AddDate(0, 0, -1),
+		Status:    SubscriptionStatusActive,
+		Group:     group,
+	})
+	svc := NewSubscriptionService(groupRepo, subRepo, nil, nil, nil)
+	renewalStore := newSubscriptionRenewalStoreStub(subRepo, groupRepo.groups)
+	svc.renewalStore = renewalStore
+
+	_, err := svc.GetActiveSubscription(context.Background(), 9006, 51)
+	require.ErrorIs(t, err, ErrSubscriptionNotFound)
+
+	require.NoError(t, renewalStore.Enqueue(context.Background(), subscriptionRenewalRequest{
+		SubscriptionID:  501,
+		UserID:          9006,
+		TargetGroupID:   51,
+		SourceType:      "payment_order",
+		SourceID:        "expired-loadable",
+		ValidityDays:    30,
+		MonthlyLimitUSD: 100,
+	}))
+	sub, err := svc.GetActiveSubscription(context.Background(), 9006, 51)
+	require.NoError(t, err)
+	require.Equal(t, int64(501), sub.ID)
+	require.Equal(t, 1, sub.PendingRenewalCount)
+	require.True(t, sub.ExpiresAt.Before(now))
+}
+
+func TestAssignOrMergeSubscriptionPurchaseUpgradeReassignsPendingRenewals(t *testing.T) {
+	now := time.Now()
+	monthlyStart := startOfDay(now)
+	basic := &Group{
+		ID:               61,
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  testFloat64Ptr(100),
+	}
+	pro := &Group{
+		ID:               62,
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  testFloat64Ptr(300),
+	}
+	ultra := &Group{
+		ID:               63,
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  testFloat64Ptr(500),
+	}
+	groupRepo := &subscriptionGroupRepoMapStub{groups: map[int64]*Group{61: basic, 62: pro, 63: ultra}}
+	subRepo := newSubscriptionUserSubRepoStub()
+	subRepo.seed(&UserSubscription{
+		ID:                 601,
+		UserID:             9007,
+		GroupID:            61,
+		StartsAt:           now.AddDate(0, 0, -5),
+		ExpiresAt:          now.AddDate(0, 0, 25),
+		Status:             SubscriptionStatusActive,
+		MonthlyWindowStart: &monthlyStart,
+		MonthlyUsageUSD:    20,
+		Group:              basic,
+	})
+	subRepo.seed(&UserSubscription{
+		ID:                 602,
+		UserID:             9007,
+		GroupID:            62,
+		StartsAt:           now.AddDate(0, 0, -3),
+		ExpiresAt:          now.AddDate(0, 0, 27),
+		Status:             SubscriptionStatusActive,
+		MonthlyWindowStart: &monthlyStart,
+		MonthlyUsageUSD:    40,
+		Group:              pro,
+	})
+	svc := NewSubscriptionService(groupRepo, subRepo, nil, nil, nil)
+	renewalStore := newSubscriptionRenewalStoreStub(subRepo, groupRepo.groups)
+	svc.renewalStore = renewalStore
+	require.NoError(t, renewalStore.Enqueue(context.Background(), subscriptionRenewalRequest{
+		SubscriptionID:  601,
+		UserID:          9007,
+		TargetGroupID:   61,
+		SourceType:      "payment_order",
+		SourceID:        "queued-before-upgrade-1",
+		ValidityDays:    30,
+		MonthlyLimitUSD: 100,
+	}))
+	require.NoError(t, renewalStore.Enqueue(context.Background(), subscriptionRenewalRequest{
+		SubscriptionID:  602,
+		UserID:          9007,
+		TargetGroupID:   62,
+		SourceType:      "payment_order",
+		SourceID:        "queued-before-upgrade-2",
+		ValidityDays:    30,
+		MonthlyLimitUSD: 300,
+	}))
+
+	result, err := svc.AssignOrMergeSubscriptionPurchase(context.Background(), &AssignSubscriptionInput{
+		UserID:       9007,
+		GroupID:      63,
+		ValidityDays: 30,
+		Notes:        "upgrade after queued renewals",
+		SourceType:   "payment_order",
+		SourceID:     "upgrade-after-queue",
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(602), result.Subscription.ID)
+	require.Equal(t, int64(63), result.Subscription.GroupID)
+	require.True(t, result.ShouldMigrateAPIKeys)
+	require.InDelta(t, 340, result.PreservedMonthlyRemainingUSD, 0.001)
+
+	_, err = subRepo.GetByID(context.Background(), 601)
+	require.ErrorIs(t, err, ErrSubscriptionNotFound)
+	pending := renewalStore.pendingRows(602)
+	require.Len(t, pending, 2)
+	require.Equal(t, "queued-before-upgrade-1", pending[0].Req.SourceID)
+	require.Equal(t, "queued-before-upgrade-2", pending[1].Req.SourceID)
+	require.Len(t, renewalStore.reassigned, 1)
+	require.ElementsMatch(t, []int64{601, 602}, renewalStore.reassigned[0].OldIDs)
+	require.Equal(t, int64(602), renewalStore.reassigned[0].NewID)
 }
 
 func strconvFormatInt(v int64) string {

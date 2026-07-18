@@ -705,6 +705,19 @@ func ProvideAPIKeyService(
 	return svc
 }
 
+func ProvideSubscriptionService(
+	groupRepo GroupRepository,
+	userSubRepo UserSubscriptionRepository,
+	billingCacheService *BillingCacheService,
+	entClient *dbent.Client,
+	cfg *config.Config,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+) *SubscriptionService {
+	svc := NewSubscriptionService(groupRepo, userSubRepo, billingCacheService, entClient, cfg)
+	svc.SetRenewalAuthCacheInvalidator(authCacheInvalidator)
+	return svc
+}
+
 func ProvideRedeemService(
 	redeemRepo RedeemCodeRepository,
 	userRepo UserRepository,
@@ -787,7 +800,7 @@ var ProviderSet = wire.NewSet(
 	NewNotificationEmailService,
 	ProvideEmailQueueService,
 	NewTurnstileService,
-	NewSubscriptionService,
+	ProvideSubscriptionService,
 	wire.Bind(new(DefaultSubscriptionAssigner), new(*SubscriptionService)),
 	ProvideConcurrencyService,
 	ProvideUserMessageQueueService,

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -44,10 +45,12 @@ var (
 
 // SubscriptionService 订阅服务
 type SubscriptionService struct {
-	groupRepo           GroupRepository
-	userSubRepo         UserSubscriptionRepository
-	billingCacheService *BillingCacheService
-	entClient           *dbent.Client
+	groupRepo            GroupRepository
+	userSubRepo          UserSubscriptionRepository
+	billingCacheService  *BillingCacheService
+	entClient            *dbent.Client
+	renewalStore         subscriptionRenewalStore
+	authCacheInvalidator APIKeyAuthCacheInvalidator
 
 	// L1 缓存：加速中间件热路径的订阅查询
 	subCacheL1     *ristretto.Cache
@@ -65,11 +68,16 @@ func NewSubscriptionService(groupRepo GroupRepository, userSubRepo UserSubscript
 		userSubRepo:         userSubRepo,
 		billingCacheService: billingCacheService,
 		entClient:           entClient,
+		renewalStore:        newEntSubscriptionRenewalStore(entClient),
 	}
 	svc.initSubCache(cfg)
 	svc.initMaintenanceQueue(cfg)
 	svc.StartSubCacheInvalidationSubscriber(context.Background())
 	return svc
+}
+
+func (s *SubscriptionService) SetRenewalAuthCacheInvalidator(invalidator APIKeyAuthCacheInvalidator) {
+	s.authCacheInvalidator = invalidator
 }
 
 func (s *SubscriptionService) initMaintenanceQueue(cfg *config.Config) {
@@ -196,12 +204,16 @@ type AssignSubscriptionInput struct {
 	PlanPrice    float64
 	AssignedBy   int64
 	Notes        string
+	PlanID       *int64
+	SourceType   string
+	SourceID     string
 }
 
 // AssignSubscriptionResult describes the outcome of a purchase-style assignment.
 type AssignSubscriptionResult struct {
 	Subscription *UserSubscription
 	Reused       bool
+	Queued       bool
 
 	PreservedMonthlyRemainingUSD float64
 	PurchasedMonthlyLimitUSD     float64
@@ -369,8 +381,9 @@ func (s *SubscriptionService) assignOrMergeSubscriptionPurchase(ctx context.Cont
 		Price: input.PlanPrice,
 	}
 	var targetSub *UserSubscription
+	var highestExistingSub *UserSubscription
+	var highestExistingTier subscriptionTier
 	totalRemaining := 0.0
-	totalRemainingDays := 0
 	oldGroupIDs := make(map[int64]struct{})
 	for i := range existingSubs {
 		sub := existingSubs[i]
@@ -382,16 +395,21 @@ func (s *SubscriptionService) assignOrMergeSubscriptionPurchase(ctx context.Cont
 			sub.Group = group
 		}
 		oldGroupIDs[sub.GroupID] = struct{}{}
-		totalRemaining += subscriptionMonthlyRemainingUSD(&sub)
-		totalRemainingDays += subscriptionRemainingDays(now, &sub)
+		if sub.Status == SubscriptionStatusActive && sub.ExpiresAt.After(now) {
+			totalRemaining += subscriptionMonthlyRemainingUSD(&sub)
+		}
 		existingTier := subscriptionTier{Group: sub.Group}
+		if highestExistingSub == nil || subscriptionTierHigher(existingTier, highestExistingTier) {
+			highestExistingTier = existingTier
+			highestExistingSub = &existingSubs[i]
+		}
 		if subscriptionTierHigher(existingTier, targetTier) {
 			targetTier = existingTier
 			targetSub = &existingSubs[i]
 		}
 	}
 	if targetSub == nil {
-		targetSub = &existingSubs[0]
+		targetSub = highestExistingSub
 		for i := range existingSubs {
 			if existingSubs[i].GroupID == input.GroupID {
 				targetSub = &existingSubs[i]
@@ -401,45 +419,102 @@ func (s *SubscriptionService) assignOrMergeSubscriptionPurchase(ctx context.Cont
 	}
 
 	purchasedLimit := groupMonthlyLimitUSD(targetGroup)
-	totalRemaining += purchasedLimit
-	totalRemainingDays += validityDays
-	if totalRemainingDays > MaxValidityDays {
-		totalRemainingDays = MaxValidityDays
+	currentLimit := groupMonthlyLimitUSD(targetSub.Group)
+	isUpgrade := purchasedLimit > currentLimit+1e-9
+	if !isUpgrade {
+		if s.renewalStore == nil {
+			return nil, errors.New("subscription renewal store is unavailable")
+		}
+		sourceType := strings.TrimSpace(input.SourceType)
+		if sourceType == "" {
+			sourceType = "assignment"
+		}
+		sourceID := strings.TrimSpace(input.SourceID)
+		if sourceID == "" {
+			sourceID = fmt.Sprintf("%d:%d:%d", input.UserID, input.GroupID, now.UnixNano())
+		}
+		queuedSub := *targetSub
+		queuedSub.Notes = appendSubscriptionNotes(queuedSub.Notes, input.Notes)
+		var activation *subscriptionRenewalActivation
+		if err := s.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
+			if err := s.renewalStore.Enqueue(txCtx, subscriptionRenewalRequest{
+				SubscriptionID:  queuedSub.ID,
+				UserID:          input.UserID,
+				TargetGroupID:   input.GroupID,
+				PlanID:          input.PlanID,
+				SourceType:      sourceType,
+				SourceID:        sourceID,
+				ValidityDays:    validityDays,
+				MonthlyLimitUSD: purchasedLimit,
+				Notes:           input.Notes,
+			}); err != nil {
+				return fmt.Errorf("queue subscription renewal: %w", err)
+			}
+			if err := s.userSubRepo.Update(txCtx, &queuedSub); err != nil {
+				return fmt.Errorf("record queued subscription note: %w", err)
+			}
+			if !queuedSub.ExpiresAt.After(now) || totalRemaining <= 1e-9 {
+				var err error
+				activation, err = s.renewalStore.ActivateNext(txCtx, queuedSub.ID, now, startOfDay(now))
+				return err
+			}
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+		refreshed, err := s.userSubRepo.GetByID(ctx, queuedSub.ID)
+		if err != nil {
+			return nil, err
+		}
+		pendingCount, err := s.renewalStore.PendingCount(ctx, refreshed.ID)
+		if err != nil {
+			return nil, err
+		}
+		refreshed.PendingRenewalCount = pendingCount
+		result := &AssignSubscriptionResult{
+			Subscription:                 refreshed,
+			Reused:                       true,
+			Queued:                       activation == nil,
+			PreservedMonthlyRemainingUSD: totalRemaining,
+			PurchasedMonthlyLimitUSD:     purchasedLimit,
+			MigrateAPIKeysToGroupID:      refreshed.GroupID,
+		}
+		if activation != nil && activation.OldGroupID != activation.NewGroupID {
+			result.ShouldMigrateAPIKeys = true
+			result.MigrateAPIKeysFromGroupID = activation.OldGroupID
+			result.MigrateAPIKeysFromGroupIDs = []int64{activation.OldGroupID}
+			result.MigrateAPIKeysToGroupID = activation.NewGroupID
+		}
+		if !deferCacheInvalidation {
+			s.invalidateSubscriptionCachesAsync(input.UserID, targetSub.GroupID)
+			s.invalidateSubscriptionCachesAsync(input.UserID, refreshed.GroupID)
+		}
+		return result, nil
 	}
 
-	targetLimit := groupMonthlyLimitUSD(targetTier.Group)
-	targetBonus := totalRemaining - targetLimit
-	if targetBonus < 0 {
-		targetBonus = 0
-	}
-
-	newExpiresAt := now.AddDate(0, 0, totalRemainingDays)
+	// Upgrades take effect immediately. The old remaining quota is carried as a
+	// temporary bonus, while the term itself restarts from the purchase time.
+	newExpiresAt := now.AddDate(0, 0, validityDays)
 	if newExpiresAt.After(MaxExpiresAt) {
 		newExpiresAt = MaxExpiresAt
 	}
 
 	finalSub := *targetSub
 	finalSub.UserID = input.UserID
-	finalSub.GroupID = targetTier.Group.ID
-	finalSub.Group = targetTier.Group
+	finalSub.GroupID = targetGroup.ID
+	finalSub.Group = targetGroup
 	finalSub.StartsAt = now
 	finalSub.ExpiresAt = newExpiresAt
 	finalSub.Status = SubscriptionStatusActive
 	finalSub.MonthlyUsageUSD = 0
-	finalSub.MonthlyBonusUSD = targetBonus
+	finalSub.MonthlyBonusUSD = totalRemaining
 	finalSub.Notes = appendSubscriptionNotes(finalSub.Notes, input.Notes)
-	if finalSub.DailyWindowStart == nil {
-		windowStart := startOfDay(now)
-		finalSub.DailyWindowStart = &windowStart
-	}
-	if finalSub.WeeklyWindowStart == nil {
-		windowStart := startOfDay(now)
-		finalSub.WeeklyWindowStart = &windowStart
-	}
-	if finalSub.MonthlyWindowStart == nil {
-		windowStart := startOfDay(now)
-		finalSub.MonthlyWindowStart = &windowStart
-	}
+	windowStart := startOfDay(now)
+	finalSub.DailyUsageUSD = 0
+	finalSub.WeeklyUsageUSD = 0
+	finalSub.DailyWindowStart = &windowStart
+	finalSub.WeeklyWindowStart = &windowStart
+	finalSub.MonthlyWindowStart = &windowStart
 
 	if err := s.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
 		if err := s.userSubRepo.Update(txCtx, &finalSub); err != nil {
@@ -452,6 +527,15 @@ func (s *SubscriptionService) assignOrMergeSubscriptionPurchase(ctx context.Cont
 			}
 			if err := s.userSubRepo.Delete(txCtx, sub.ID); err != nil {
 				return fmt.Errorf("delete merged duplicate subscription: %w", err)
+			}
+		}
+		if s.renewalStore != nil {
+			oldSubscriptionIDs := make([]int64, 0, len(existingSubs))
+			for i := range existingSubs {
+				oldSubscriptionIDs = append(oldSubscriptionIDs, existingSubs[i].ID)
+			}
+			if err := s.renewalStore.ReassignPending(txCtx, oldSubscriptionIDs, finalSub.ID); err != nil {
+				return fmt.Errorf("reassign queued subscription renewals: %w", err)
 			}
 		}
 		return nil
@@ -479,7 +563,7 @@ func (s *SubscriptionService) assignOrMergeSubscriptionPurchase(ctx context.Cont
 	result := &AssignSubscriptionResult{
 		Subscription:                 refreshed,
 		Reused:                       true,
-		PreservedMonthlyRemainingUSD: totalRemaining - purchasedLimit,
+		PreservedMonthlyRemainingUSD: totalRemaining,
 		PurchasedMonthlyLimitUSD:     purchasedLimit,
 		MigrateAPIKeysToGroupID:      finalSub.GroupID,
 		MigrateAPIKeysFromGroupIDs:   migrateFromGroupIDs,
@@ -999,7 +1083,21 @@ func (s *SubscriptionService) GetActiveSubscription(ctx context.Context, userID,
 	value, err, _ := s.subCacheGroup.Do(key, func() (any, error) {
 		sub, err := s.userSubRepo.GetActiveByUserIDAndGroupID(ctx, userID, groupID)
 		if err != nil {
-			return nil, err // 直接透传 repo 已翻译的错误（NotFound → ErrSubscriptionNotFound，其他错误原样返回）
+			if !errors.Is(err, ErrSubscriptionNotFound) {
+				return nil, err
+			}
+			// An expired current term remains request-loadable while a paid renewal
+			// is queued, so the request can atomically activate the next FIFO item.
+			sub, err = s.userSubRepo.GetByUserIDAndGroupID(ctx, userID, groupID)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if err := s.populatePendingRenewalCount(ctx, sub); err != nil {
+			return nil, err
+		}
+		if !sub.ExpiresAt.After(time.Now()) && sub.PendingRenewalCount == 0 {
+			return nil, ErrSubscriptionNotFound
 		}
 		// 写入 L1 缓存
 		if s.subCacheL1 != nil {
@@ -1025,6 +1123,11 @@ func (s *SubscriptionService) ListUserSubscriptions(ctx context.Context, userID 
 	if err != nil {
 		return nil, err
 	}
+	for i := range subs {
+		if err := s.populatePendingRenewalCount(ctx, &subs[i]); err != nil {
+			return nil, err
+		}
+	}
 	normalizeExpiredWindows(subs)
 	normalizeSubscriptionStatus(subs)
 	return subs, nil
@@ -1032,12 +1135,26 @@ func (s *SubscriptionService) ListUserSubscriptions(ctx context.Context, userID 
 
 // ListActiveUserSubscriptions 获取用户的所有有效订阅
 func (s *SubscriptionService) ListActiveUserSubscriptions(ctx context.Context, userID int64) ([]UserSubscription, error) {
-	subs, err := s.userSubRepo.ListActiveByUserID(ctx, userID)
+	subs, err := s.userSubRepo.ListByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	normalizeExpiredWindows(subs)
-	return subs, nil
+	active := make([]UserSubscription, 0, len(subs))
+	now := time.Now()
+	for i := range subs {
+		sub := &subs[i]
+		if sub.Status == SubscriptionStatusSuspended || sub.Status == SubscriptionStatusRevoked {
+			continue
+		}
+		if err := s.populatePendingRenewalCount(ctx, sub); err != nil {
+			return nil, err
+		}
+		if sub.ExpiresAt.After(now) || sub.PendingRenewalCount > 0 {
+			active = append(active, *sub)
+		}
+	}
+	normalizeExpiredWindows(active)
+	return active, nil
 }
 
 // ListGroupSubscriptions 获取分组的所有订阅
@@ -1198,6 +1315,23 @@ func (s *SubscriptionService) EnsureWindowMaintenance(ctx context.Context, sub *
 	if sub == nil {
 		return nil, ErrSubscriptionNilInput
 	}
+	fresh, err := s.userSubRepo.GetByID(ctx, sub.ID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.populatePendingRenewalCount(ctx, fresh); err != nil {
+		return nil, err
+	}
+	if pendingRenewalDue(fresh, fresh.Group, time.Now()) {
+		activated, activateErr := s.activatePendingRenewal(ctx, fresh)
+		if activateErr != nil {
+			return nil, activateErr
+		}
+		if activated != nil {
+			return activated, nil
+		}
+	}
+	sub = fresh
 	if !sub.IsWindowActivated() {
 		if err := s.CheckAndActivateWindow(ctx, sub); err != nil {
 			return nil, err
@@ -1236,6 +1370,9 @@ func (s *SubscriptionService) CheckUsageLimits(ctx context.Context, sub *UserSub
 // 仅做内存检查，不触发 DB 写入。调用方必须在放行请求前同步完成窗口维护。
 // 返回 needsMaintenance 表示是否需要执行窗口维护并回读数据库快照。
 func (s *SubscriptionService) ValidateAndCheckLimits(sub *UserSubscription, group *Group) (needsMaintenance bool, err error) {
+	if pendingRenewalDue(sub, group, time.Now()) {
+		return true, nil
+	}
 	// 1. 验证订阅状态
 	if sub.Status == SubscriptionStatusExpired {
 		return false, ErrSubscriptionExpired
@@ -1278,6 +1415,66 @@ func (s *SubscriptionService) ValidateAndCheckLimits(sub *UserSubscription, grou
 	}
 
 	return needsMaintenance, nil
+}
+
+func pendingRenewalDue(sub *UserSubscription, group *Group, now time.Time) bool {
+	if sub == nil || sub.PendingRenewalCount <= 0 || sub.Status == SubscriptionStatusSuspended {
+		return false
+	}
+	if !sub.ExpiresAt.After(now) {
+		return true
+	}
+	limit := effectiveMonthlyLimit(group, sub)
+	return limit > 0 && sub.MonthlyUsageUSD >= limit
+}
+
+func (s *SubscriptionService) activatePendingRenewal(ctx context.Context, sub *UserSubscription) (*UserSubscription, error) {
+	if sub == nil || sub.PendingRenewalCount <= 0 || s.renewalStore == nil {
+		return nil, nil
+	}
+	now := time.Now()
+	activation, err := s.renewalStore.ActivateNext(ctx, sub.ID, now, startOfDay(now))
+	if err != nil {
+		return nil, err
+	}
+	if activation == nil {
+		return s.userSubRepo.GetByID(ctx, sub.ID)
+	}
+	refreshed, err := s.userSubRepo.GetByID(ctx, sub.ID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.populatePendingRenewalCount(ctx, refreshed); err != nil {
+		return nil, err
+	}
+	s.InvalidateSubCacheSync(activation.UserID, activation.OldGroupID)
+	s.InvalidateSubCacheSync(activation.UserID, activation.NewGroupID)
+	if s.billingCacheService != nil {
+		if err := s.billingCacheService.InvalidateSubscription(ctx, activation.UserID, activation.OldGroupID); err != nil {
+			return nil, err
+		}
+		if activation.NewGroupID != activation.OldGroupID {
+			if err := s.billingCacheService.InvalidateSubscription(ctx, activation.UserID, activation.NewGroupID); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if s.authCacheInvalidator != nil && activation.NewGroupID != activation.OldGroupID {
+		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, activation.UserID)
+	}
+	return refreshed, nil
+}
+
+func (s *SubscriptionService) populatePendingRenewalCount(ctx context.Context, sub *UserSubscription) error {
+	if sub == nil || s.renewalStore == nil {
+		return nil
+	}
+	count, err := s.renewalStore.PendingCount(ctx, sub.ID)
+	if err != nil {
+		return err
+	}
+	sub.PendingRenewalCount = count
+	return nil
 }
 
 // DoWindowMaintenance 异步执行窗口维护（激活+重置）

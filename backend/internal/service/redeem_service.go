@@ -503,6 +503,8 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 				ValidityDays: validityDays,
 				AssignedBy:   0, // 系统分配
 				Notes:        fmt.Sprintf("通过兑换码 %s 兑换", redeemCode.Code),
+				SourceType:   "redeem_code",
+				SourceID:     redeemCode.Code,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("assign or extend subscription: %w", err)

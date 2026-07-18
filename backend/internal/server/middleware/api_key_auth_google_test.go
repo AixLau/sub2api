@@ -144,6 +144,9 @@ func (f fakeGoogleSubscriptionRepo) Restore(ctx context.Context, subscriptionID 
 	return nil, errors.New("not implemented")
 }
 func (f fakeGoogleSubscriptionRepo) ListByUserID(ctx context.Context, userID int64) ([]service.UserSubscription, error) {
+	if f.listActive != nil {
+		return f.listActive(ctx, userID)
+	}
 	return nil, errors.New("not implemented")
 }
 func (f fakeGoogleSubscriptionRepo) ListActiveByUserID(ctx context.Context, userID int64) ([]service.UserSubscription, error) {

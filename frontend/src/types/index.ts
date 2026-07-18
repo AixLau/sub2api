@@ -1764,6 +1764,7 @@ export interface UserSubscription {
   weekly_usage_usd: number
   monthly_usage_usd: number
   monthly_bonus_usd: number
+  pending_renewal_count: number
   daily_window_start: string | null
   weekly_window_start: string | null
   monthly_window_start: string | null
