@@ -24,7 +24,7 @@ export function HeroSection() {
         </h1>
 
         <p className="hero-subtitle">
-          通过一套稳定的 API 服务，接入主流模型能力，减少复杂配置，让团队把注意力留给产品体验。
+          星链AI 提供稳定的 GPT API 中转服务，统一接入 OpenAI、Claude、Gemini 等主流模型，减少复杂配置，让团队把注意力留给产品体验。
         </p>
 
         <div className="hero-actions" aria-label="首页操作">

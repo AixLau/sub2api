@@ -1,4 +1,4 @@
-export const brandName = '星链'
+export const brandName = '星链AI'
 
 export type NavLink = {
   label: string
@@ -160,9 +160,9 @@ export const pricingOptions: PricingOption[] = [
 
 export const faqItems: FaqItem[] = [
   {
-    question: '星链可以用于哪些场景？',
+    question: 'GPT API 中转站可以用于哪些场景？',
     answer:
-      '可用于 Codex 等 AI 开发工具，也可以通过 OpenAI、Anthropic 或 Gemini 兼容接口接入程序、脚本与内部应用。具体可用模型以登录后的控制台为准。',
+      '星链AI 可作为 GPT API 中转站，用于 Codex、Claude Code 等 AI 开发工具，也可以通过 OpenAI、Anthropic 或 Gemini 兼容接口接入程序、脚本与内部应用。具体可用模型以登录后的控制台为准。',
   },
   {
     question: 'Codex 如何接入？',

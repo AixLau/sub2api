@@ -59,7 +59,7 @@ export function Navbar() {
               </li>
             ))}
           </ul>
-          <p className="drawer-footer">© 2026 星链 · 模型 API 服务</p>
+          <p className="drawer-footer">© 2026 星链AI · 模型 API 服务</p>
         </div>
       </div>
     </header>

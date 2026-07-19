@@ -48,13 +48,13 @@ describe('星链 landing page', () => {
   it('keeps the Git HEAD homepage while exposing business pages through the menu', () => {
     render(<App />)
 
-    expect(screen.getAllByLabelText('星链 home')).toHaveLength(1)
-    expect(screen.getAllByLabelText('星链 home')[0]).toHaveTextContent('星链')
+    expect(screen.getAllByLabelText('星链AI home')).toHaveLength(1)
+    expect(screen.getAllByLabelText('星链AI home')[0]).toHaveTextContent('星链AI')
     expect(screen.getByRole('button', { name: '菜单' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
       '让模型 API 接入，像光一样自然。',
     )
-    expect(screen.getByText(/稳定的 API 服务/)).toBeInTheDocument()
+    expect(screen.getByText(/GPT API 中转服务/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '开始接入' })).toHaveAttribute('href', '/login')
     expect(screen.getByRole('link', { name: '查看接入文档' })).toHaveAttribute(
       'href',
@@ -358,7 +358,7 @@ describe('星链 landing page', () => {
     const { container } = render(<App />)
 
     expect(await screen.findByRole('link', { name: '返回首页' })).toHaveAttribute('href', '/')
-    expect(screen.getByRole('link', { name: '星链 home' })).toHaveAttribute('href', '/')
+    expect(screen.getByRole('link', { name: '星链AI home' })).toHaveAttribute('href', '/')
     expect(screen.getByRole('heading', { name: '创建账号' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '接入从账号开始' })).toBeInTheDocument()
     expect(screen.getByText('统一身份入口')).toBeInTheDocument()

@@ -204,8 +204,8 @@ export function SiteFooter() {
     <footer className="site-footer">
       <div className="footer-inner">
         <div className="footer-brand">
-          <a className="logo" href="/" aria-label="星链 home">
-            星链
+          <a className="logo" href="/" aria-label="星链AI home">
+            星链AI
           </a>
           <p>统一模型 API 服务，让开发工具与应用更简单地接入主流模型能力。</p>
         </div>
@@ -222,7 +222,7 @@ export function SiteFooter() {
           <a href="/legal/usage-policy">使用政策</a>
         </nav>
 
-        <p className="footer-meta">© 2026 星链 · 模型、套餐与可用性以控制台为准</p>
+        <p className="footer-meta">© 2026 星链AI · 模型、套餐与可用性以控制台为准</p>
       </div>
     </footer>
   )
