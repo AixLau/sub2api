@@ -3,29 +3,32 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>星链 AI Hub 客户端配置教程 · 一键脚本 / CC Switch</title>
+    <title>Codex API 中转站配置教程｜Claude Code、CC Switch - 星链AI</title>
     <meta
       name="description"
-      content="星链 AI Hub 客户端傻瓜式配置教程：一键脚本（macOS / Windows 双平台）和 CC Switch 两种方式，把 Codex 与 Claude Code 接入 星链 AI Hub。"
+      content="Codex API 中转站配置教程：支持 macOS、Linux、Windows 一键脚本，以及 CC Switch 手动配置，把 Codex、Codex CLI 与 Claude Code 接入星链AI。"
     />
     <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
     <link rel="canonical" href="https://aixlau.me/docs/install/" />
     <link rel="alternate" type="text/plain" href="https://aixlau.me/llms.txt" title="AI-readable site summary" />
     <meta property="og:type" content="article" />
     <meta property="og:locale" content="zh_CN" />
-    <meta property="og:site_name" content="星链 AI" />
-    <meta property="og:title" content="星链 AI Hub 客户端配置教程" />
+    <meta property="og:site_name" content="星链AI" />
+    <meta property="og:title" content="Codex API 中转站配置教程｜Claude Code、CC Switch" />
     <meta
       property="og:description"
-      content="使用一键脚本或 CC Switch，把 Codex 与 Claude Code 接入星链 AI Hub。"
+      content="使用 macOS、Linux、Windows 一键脚本或 CC Switch，把 Codex、Codex CLI 与 Claude Code 接入星链AI API 中转服务。"
     />
     <meta property="og:url" content="https://aixlau.me/docs/install/" />
     <meta property="og:image" content="https://aixlau.me/og-image.png" />
+    <meta property="og:image:alt" content="Codex API 中转站与 Claude Code 配置教程" />
+    <meta property="article:published_time" content="2026-07-07" />
+    <meta property="article:modified_time" content="2026-07-19" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="星链 AI Hub 客户端配置教程" />
+    <meta name="twitter:title" content="Codex API 中转站配置教程｜Claude Code、CC Switch" />
     <meta
       name="twitter:description"
-      content="使用一键脚本或 CC Switch，把 Codex 与 Claude Code 接入星链 AI Hub。"
+      content="使用一键脚本或 CC Switch，把 Codex、Codex CLI 与 Claude Code 接入星链AI API 中转服务。"
     />
     <meta name="twitter:image" content="https://aixlau.me/og-image.png" />
     <script type="application/ld+json">
@@ -34,17 +37,96 @@
         "@graph": [
           {
             "@type": "TechArticle",
-            "headline": "把 Codex 和 Claude Code 接到星链 AI Hub",
-            "description": "使用一键脚本或 CC Switch，把 Codex 与 Claude Code 接入星链 AI Hub。",
+            "@id": "https://aixlau.me/docs/install/#article",
+            "headline": "Codex API 中转站配置教程：Claude Code 与 CC Switch 接入指南",
+            "alternativeHeadline": "macOS、Linux、Windows 一键配置 Codex 和 Claude Code API 中转服务",
+            "description": "使用一键脚本或 CC Switch，把 Codex、Codex CLI 与 Claude Code 接入星链AI API 中转服务。",
             "url": "https://aixlau.me/docs/install/",
+            "mainEntityOfPage": "https://aixlau.me/docs/install/",
+            "image": "https://aixlau.me/og-image.png",
+            "keywords": "Codex API 中转站,Codex 中转站配置,Claude Code 中转,CC Switch 配置,API Key 登录,OpenAI API 中转",
             "inLanguage": "zh-CN",
-            "dateModified": "2026-07-13",
-            "author": { "@type": "Organization", "name": "星链 AI", "url": "https://aixlau.me/" },
-            "publisher": { "@type": "Organization", "name": "星链 AI", "url": "https://aixlau.me/" }
+            "datePublished": "2026-07-07",
+            "dateModified": "2026-07-19",
+            "author": { "@type": "Organization", "name": "星链AI", "alternateName": "星链 AI Hub", "url": "https://aixlau.me/" },
+            "publisher": { "@type": "Organization", "name": "星链AI", "alternateName": "星链 AI Hub", "url": "https://aixlau.me/" }
+          },
+          {
+            "@type": "HowTo",
+            "@id": "https://aixlau.me/docs/install/#howto",
+            "name": "如何配置 Codex 和 Claude Code API 中转站",
+            "description": "通过一键脚本在 macOS、Linux 或 Windows 上配置 Codex、Codex CLI 与 Claude Code。",
+            "totalTime": "PT10M",
+            "step": [
+              {
+                "@type": "HowToStep",
+                "position": 1,
+                "name": "登录星链AI",
+                "text": "访问 aixlau.me 注册并登录，准备完成浏览器授权。"
+              },
+              {
+                "@type": "HowToStep",
+                "position": 2,
+                "name": "打开终端或 PowerShell",
+                "text": "macOS 或 Linux 打开终端，Windows 打开 PowerShell。"
+              },
+              {
+                "@type": "HowToStep",
+                "position": 3,
+                "name": "运行一键配置命令",
+                "text": "复制页面中对应系统的一键脚本命令并运行。"
+              },
+              {
+                "@type": "HowToStep",
+                "position": 4,
+                "name": "选择 Codex 或 Claude Code",
+                "text": "在脚本中选择客户端并在浏览器完成授权，系统会创建 API Key 并写入配置。"
+              },
+              {
+                "@type": "HowToStep",
+                "position": 5,
+                "name": "重启客户端",
+                "text": "完全退出并重新打开 Codex、Codex CLI 或 Claude Code，使 API 中转配置生效。"
+              }
+            ]
+          },
+          {
+            "@type": "BreadcrumbList",
+            "@id": "https://aixlau.me/docs/install/#breadcrumb",
+            "itemListElement": [
+              {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "星链AI",
+                "item": "https://aixlau.me/"
+              },
+              {
+                "@type": "ListItem",
+                "position": 2,
+                "name": "Codex API 中转站配置教程",
+                "item": "https://aixlau.me/docs/install/"
+              }
+            ]
           },
           {
             "@type": "FAQPage",
             "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Codex API 中转站怎么配置？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "登录星链AI 后，在 macOS、Linux 或 Windows 上运行页面提供的一键脚本，选择 Codex 并完成浏览器授权；脚本会自动创建 API Key、备份旧配置并写入新的 API 中转配置。也可以使用 CC Switch 手动添加供应商。"
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Claude Code 如何接入 API 中转服务？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "运行一键脚本时选择 Claude Code，完成浏览器授权后，脚本会备份并更新 Claude Code 配置。重新执行 claude 启动后即可使用。"
+                }
+              },
               {
                 "@type": "Question",
                 "name": "跑脚本前我需要装什么？",
@@ -74,7 +156,7 @@
                 "name": "运行脚本后打开 Codex 仍显示登录 ChatGPT 怎么办？",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "点击“使用其他方式登录”，选择 API Key 登录；回到星链 AI 的“API 密钥”页面，点击图中黑色箭头指向的复制按钮，再把密钥粘贴到 Codex 的 API Key 输入框并继续即可。"
+                  "text": "点击“使用其他方式登录”，选择 API Key 登录；回到星链AI 的“API 密钥”页面，点击图中黑色箭头指向的复制按钮，再把密钥粘贴到 Codex 的 API Key 输入框并继续即可。"
                 }
               }
             ]
@@ -563,12 +645,13 @@
   <body>
     <main class="page">
       <section class="hero">
-        <span class="eyebrow">星链 AI Hub · 客户端接入指南</span>
-        <h1>把 Codex 和 Claude Code 接到 星链 AI Hub</h1>
+        <span class="eyebrow">星链AI · API 中转接入指南</span>
+        <h1>Codex 与 Claude Code API 中转站配置教程</h1>
         <p class="lead">
-          两种配置方式任选其一：<span class="accent">一键脚本</span>
+          把 Codex、Codex CLI 或 Claude Code 接入星链AI，可任选
+          <span class="accent">一键脚本</span>
           自动写入本地配置（推荐），<span class="accent">CC Switch</span>
-          可视化管理多份配置。Codex 支持应用增强模式：接入第三方 API 的同时，保留官方插件、手机远程操作等 Codex APP 能力。
+          可视化管理多份 API 中转配置。Codex 支持应用增强模式：接入第三方 API 的同时，保留官方插件、手机远程操作等 Codex APP 能力。
         </p>
       </section>
 
@@ -864,6 +947,10 @@
             <span class="number">?</span>
             <h2>常见问题</h2>
           </div>
+          <p><strong>Q：Codex API 中转站怎么配置？</strong></p>
+          <p>登录星链AI 后，在 macOS、Linux 或 Windows 上运行本页的一键脚本，选择 Codex 并完成浏览器授权。脚本会自动创建 API Key、备份旧配置并写入 API 中转配置；也可以切换到 CC Switch 教程手动添加供应商。</p>
+          <p style="margin-top:16px"><strong>Q：Claude Code 如何接入 API 中转服务？</strong></p>
+          <p>运行一键脚本时选择 Claude Code，完成浏览器授权后，脚本会备份并更新 Claude Code 配置。重新执行 <code>claude</code> 启动即可使用。</p>
           <p><strong>Q：跑脚本前我需要装什么？</strong></p>
           <p>macOS 自带 <code>curl</code> 和 <code>bash</code>，不需要额外装。Windows 用 PowerShell 5.1 及以上即可（Win10/11 自带）。Codex 和 Claude Code 客户端要自己装好，脚本只负责写配置文件。</p>
           <p style="margin-top:16px"><strong>Q：脚本会把我原来的配置覆盖掉吗？</strong></p>
@@ -1002,7 +1089,7 @@
       </section>
 
       <footer>
-        最后更新：2026-07-14 · 文档地址：<a href="https://aixlau.me/docs/install/">https://aixlau.me/docs/install/</a>
+        最后更新：2026-07-19 · 文档地址：<a href="https://aixlau.me/docs/install/">https://aixlau.me/docs/install/</a>
       </footer>
     </main>
 
