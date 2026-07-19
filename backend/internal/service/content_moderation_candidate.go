@@ -850,14 +850,28 @@ func (s *ContentModerationService) recordCandidateDuplicateRetry(ctx context.Con
 	if s == nil || strings.TrimSpace(decisionID) == "" {
 		return
 	}
+	if s.enqueueDuplicateRetry(decisionID) {
+		return
+	}
+	s.runtimeMu.Lock()
+	running := s.runtimeStarted && !s.runtimeClosed
+	s.runtimeMu.Unlock()
+	if running {
+		slog.Warn("content_moderation.duplicate_retry_queue_full", "decision_id", decisionID)
+		return
+	}
+	s.recordCandidateDuplicateRetrySync(ctx, decisionID)
+}
+
+func (s *ContentModerationService) recordCandidateDuplicateRetrySync(ctx context.Context, decisionID string) {
+	if s == nil || strings.TrimSpace(decisionID) == "" {
+		return
+	}
 	repo, ok := s.repo.(ContentModerationRetryDedupeRepository)
 	if !ok {
 		return
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), contentModerationDecisionCacheOperationTimeout)
+	recordCtx, cancel := contentModerationDetachedContext(ctx, contentModerationPersistenceTimeout)
 	defer cancel()
 	if err := repo.IncrementDuplicateRetryCount(recordCtx, decisionID); err != nil {
 		slog.Warn("content_moderation.duplicate_retry_increment_failed", "decision_id", decisionID, "error", err)
@@ -979,6 +993,10 @@ func (s *ContentModerationService) checkCandidateOnlyAccountAttempt(
 			PolicyRevision:      policyRevision,
 			Reusable:            true,
 			candidateDecisionID: candidateDecisionID,
+			policySnapshot: &contentModerationPolicySnapshot{
+				riskEnabled: riskEnabled,
+				config:      cloneContentModerationConfig(cfg),
+			},
 		}
 	}
 	return result, nil

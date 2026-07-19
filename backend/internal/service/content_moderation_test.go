@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -44,6 +45,9 @@ func (r *contentModerationTestSettingRepo) Get(ctx context.Context, key string) 
 }
 
 func (r *contentModerationTestSettingRepo) GetValue(ctx context.Context, key string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if err, ok := r.errors[key]; ok {
@@ -113,6 +117,18 @@ type contentModerationTestRepo struct {
 	autoBannedByDecision     map[string]bool
 	emailSentByDecision      map[string]bool
 	nextID                   int64
+}
+
+type contentModerationDetachedPersistenceRepo struct {
+	contentModerationTestRepo
+	sawActiveContext atomic.Bool
+}
+
+func (r *contentModerationDetachedPersistenceRepo) CreateLog(ctx context.Context, log *ContentModerationLog) error {
+	if ctx.Err() == nil {
+		r.sawActiveContext.Store(true)
+	}
+	return r.contentModerationTestRepo.CreateLog(ctx, log)
 }
 
 func (r *contentModerationTestRepo) CreateLog(ctx context.Context, log *ContentModerationLog) error {
@@ -6955,6 +6971,21 @@ func TestContentModerationCheck_HashBlockLogsDoNotIncreaseNextViolationCount(t *
 		logs = repo.snapshotLogs()
 		return len(logs) == 2 && logs[1].ViolationCount == 1
 	}, time.Second, 10*time.Millisecond)
+}
+
+func TestPersistContentModerationLogDetachesFromCanceledRequest(t *testing.T) {
+	repo := &contentModerationDetachedPersistenceRepo{}
+	svc := &ContentModerationService{repo: repo}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	svc.persistContentModerationLog(ctx, defaultContentModerationConfig(), &ContentModerationLog{
+		Action:     ContentModerationActionSemanticReviewAllow,
+		DecisionID: "detached-persistence",
+	}, "", false, false)
+
+	require.True(t, repo.sawActiveContext.Load())
+	require.Len(t, repo.logs, 1)
 }
 
 func TestContentModerationAutoBanSkipsAdminAccount(t *testing.T) {

@@ -191,6 +191,18 @@ func TestNormalizeContentModerationSemanticReviewConfigAppliesBoundedInferenceDe
 	require.Equal(t, ContentModerationSemanticReviewDefaultReasoning, cfg.ReasoningEffort)
 }
 
+func TestNormalizeContentModerationSemanticReviewConfigMigratesPreviousDefaults(t *testing.T) {
+	cfg := normalizeContentModerationSemanticReviewConfig(ContentModerationSemanticReviewConfig{
+		TimeoutMS:         8_000,
+		PrimaryTimeoutMS:  5_000,
+		FallbackTimeoutMS: 3_000,
+	})
+
+	require.Equal(t, ContentModerationSemanticReviewDefaultTimeoutMS, cfg.TimeoutMS)
+	require.Equal(t, ContentModerationSemanticReviewPrimaryTimeoutMS, cfg.PrimaryTimeoutMS)
+	require.Equal(t, ContentModerationSemanticReviewFallbackTimeoutMS, cfg.FallbackTimeoutMS)
+}
+
 func TestNormalizeContentModerationSemanticReviewConfigForcesLowReasoning(t *testing.T) {
 	cfg := normalizeContentModerationSemanticReviewConfig(ContentModerationSemanticReviewConfig{
 		ReasoningEffort: "minimal",

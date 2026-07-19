@@ -149,6 +149,72 @@ func TestCheckAccountAttemptDoesNotReuseDisabledPolicyAfterEnablement(t *testing
 	require.NotEqual(t, first.PolicyRevision, second.PolicyRevision)
 }
 
+func TestCheckAccountAttemptReusesEnabledPolicyAcrossFailover(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.AccountScope = ContentModerationAccountScopeAll
+	cfg.normalize()
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	settings := &contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyRiskControlEnabled:      "true",
+		SettingKeyContentModerationConfig: string(raw),
+	}}
+	svc := &ContentModerationService{settingRepo: settings, repo: &contentModerationTestRepo{}}
+	input := ContentModerationCheckInput{
+		AccountID: 1, AccountType: AccountTypeAPIKey, Model: "gpt-5",
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	}
+
+	first, err := svc.CheckAccountAttempt(context.Background(), input, nil)
+	require.NoError(t, err)
+	require.NotNil(t, first.NextState)
+	settings.values[SettingKeyRiskControlEnabled] = "false"
+
+	second, err := svc.CheckAccountAttempt(context.Background(), input, first.NextState)
+	require.NoError(t, err)
+	require.True(t, second.Reused)
+	require.Equal(t, first.PolicyRevision, second.PolicyRevision)
+}
+
+func TestCheckAccountAttemptLoadsPolicyAfterRequestCancellation(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	svc := newAccountGateTestService(t, cfg)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result, err := svc.CheckAccountAttempt(ctx, ContentModerationCheckInput{
+		AccountID: 1, AccountType: AccountTypeAPIKey, Model: "gpt-5",
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	}, nil)
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationDispositionDeterministicAllow, result.Disposition)
+}
+
+func TestCheckLoadsPolicyAfterRequestCancellation(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	svc := newAccountGateTestService(t, cfg)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	decision, err := svc.Check(ctx, ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
+}
+
 func TestCheckAccountAttemptObserveDropClearsPriorReusableState(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true

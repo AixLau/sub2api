@@ -38,6 +38,9 @@ const (
 	ContentModerationModeObserve  = "observe"
 	ContentModerationModePreBlock = "pre_block"
 
+	contentModerationControlPlaneTimeout = 3 * time.Second
+	contentModerationPersistenceTimeout  = 5 * time.Second
+
 	contentModerationAPIKeysModeAppend  = "append"
 	contentModerationAPIKeysModeReplace = "replace"
 
@@ -558,6 +561,10 @@ type ContentModerationAttemptState struct {
 	InputHash      string
 	PolicyRevision string
 	Reusable       bool
+	// policySnapshot is process-private and lets account failover reuse the
+	// exact policy loaded for the first attempt instead of amplifying every
+	// upstream retry into another pair of settings queries.
+	policySnapshot *contentModerationPolicySnapshot
 	// candidateDecisionID is deliberately process-private. It lets account
 	// failover record a retry against the original candidate decision without
 	// exposing an internal audit identifier in the gateway response.
@@ -1191,6 +1198,7 @@ type contentModerationTask struct {
 	config           *ContentModerationConfig
 	recordHash       bool
 	applySideEffects bool
+	duplicateRetryID string
 	enqueuedAt       time.Time
 }
 
@@ -1728,26 +1736,22 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 			Decision:    contentModerationFailureDecision(defaultContentModerationConfig()),
 		}, nil
 	}
-	riskEnabled := false
-	if s != nil {
-		var riskErr error
-		riskEnabled, riskErr = s.isRiskControlEnabled(ctx)
-		if riskErr != nil {
-			slog.Warn("content_moderation.risk_switch_read_failed", "error", riskErr)
-			return &ContentModerationGateResult{
-				Disposition: ContentModerationDispositionProviderErrorOpen,
-				Decision:    contentModerationFailureDecision(defaultContentModerationConfig()),
-			}, nil
-		}
-	}
-	cfg, err := s.loadConfig(ctx)
+	riskEnabled, cfg, err := s.loadAttemptPolicy(ctx, prior)
 	if err != nil {
+		slog.Warn("content_moderation.policy_snapshot_load_failed", "error", err)
 		return &ContentModerationGateResult{
 			Disposition: ContentModerationDispositionProviderErrorOpen,
 			Decision:    contentModerationFailureDecision(defaultContentModerationConfig()),
 		}, nil
 	}
+	policySnapshot := &contentModerationPolicySnapshot{
+		riskEnabled: riskEnabled,
+		config:      cloneContentModerationConfig(cfg),
+	}
 	policyRevision := contentModerationPolicyRevision(riskEnabled, cfg)
+	if prior != nil && prior.policySnapshot != nil && prior.policySnapshot.riskEnabled && prior.PolicyRevision != "" {
+		policyRevision = prior.PolicyRevision
+	}
 	inGroupScope := cfg.includesGroup(input.GroupID)
 	inAccountScope := cfg.includesAccount(input.AccountID, input.AccountType)
 	inModelScope := cfg.includesModel(input.Model)
@@ -1832,6 +1836,7 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 			result.Disposition = disposition
 			result.NextState = &ContentModerationAttemptState{
 				Disposition: disposition, Decision: allow, InputHash: inputHash, PolicyRevision: policyRevision, Reusable: true,
+				policySnapshot: policySnapshot,
 			}
 		}
 		return result, nil
@@ -1875,6 +1880,7 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 			InputHash:      inputHash,
 			PolicyRevision: policyRevision,
 			Reusable:       true,
+			policySnapshot: policySnapshot,
 		}
 	}
 	return result, nil
@@ -1888,6 +1894,33 @@ func contentModerationPolicyRevision(riskEnabled bool, cfg *ContentModerationCon
 	}{Version: 1, RiskEnabled: riskEnabled, Config: cfg})
 	hash := sha256.Sum256(payload)
 	return hex.EncodeToString(hash[:])
+}
+
+func (s *ContentModerationService) loadAttemptPolicy(ctx context.Context, prior *ContentModerationAttemptState) (bool, *ContentModerationConfig, error) {
+	if prior != nil && prior.policySnapshot != nil && prior.policySnapshot.riskEnabled && prior.policySnapshot.config != nil {
+		return prior.policySnapshot.riskEnabled, cloneContentModerationConfig(prior.policySnapshot.config), nil
+	}
+	controlCtx, cancel := contentModerationDetachedContext(ctx, contentModerationControlPlaneTimeout)
+	defer cancel()
+	riskEnabled, err := s.isRiskControlEnabled(controlCtx)
+	if err != nil {
+		return false, nil, err
+	}
+	cfg, err := s.loadConfig(controlCtx)
+	if err != nil {
+		return false, nil, err
+	}
+	return riskEnabled, cfg, nil
+}
+
+func contentModerationDetachedContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	if timeout <= 0 {
+		timeout = contentModerationPersistenceTimeout
+	}
+	return context.WithTimeout(context.WithoutCancel(parent), timeout)
 }
 
 func (s *ContentModerationService) Check(ctx context.Context, input ContentModerationCheckInput) (out *ContentModerationDecision, checkErr error) {
@@ -1907,21 +1940,29 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"protocol", input.Protocol)
 		return contentModerationFailureDecision(defaultContentModerationConfig()), nil
 	}
-	riskEnabled, riskErr := s.isRiskControlEnabled(ctx)
-	if riskErr != nil {
-		slog.Warn("content_moderation.risk_switch_read_failed_fail_open",
-			"user_id", input.UserID,
-			"api_key_id", input.APIKeyID,
-			"group_id", contentModerationLogGroupID(input.GroupID),
-			"endpoint", input.Endpoint,
-			"protocol", input.Protocol,
-			"error", riskErr)
-		return contentModerationFailureDecision(defaultContentModerationConfig()), nil
-	}
 	var snapshot contentModerationPolicySnapshot
-	if value, ok := ctx.Value(contentModerationPolicySnapshotContextKey{}).(contentModerationPolicySnapshot); ok {
+	value, hasSnapshot := ctx.Value(contentModerationPolicySnapshotContextKey{}).(contentModerationPolicySnapshot)
+	riskEnabled := false
+	policyCtx := ctx
+	var cancelPolicy context.CancelFunc
+	if hasSnapshot {
 		snapshot = value
 		riskEnabled = value.riskEnabled
+	} else {
+		policyCtx, cancelPolicy = contentModerationDetachedContext(ctx, contentModerationControlPlaneTimeout)
+		defer cancelPolicy()
+		var riskErr error
+		riskEnabled, riskErr = s.isRiskControlEnabled(policyCtx)
+		if riskErr != nil {
+			slog.Warn("content_moderation.risk_switch_read_failed_fail_open",
+				"user_id", input.UserID,
+				"api_key_id", input.APIKeyID,
+				"group_id", contentModerationLogGroupID(input.GroupID),
+				"endpoint", input.Endpoint,
+				"protocol", input.Protocol,
+				"error", riskErr)
+			return contentModerationFailureDecision(defaultContentModerationConfig()), nil
+		}
 	}
 	if !riskEnabled {
 		slog.Info("content_moderation.skip_feature_disabled",
@@ -1937,7 +1978,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	if snapshot.config != nil {
 		cfg = cloneContentModerationConfig(snapshot.config)
 	} else {
-		cfg, err = s.loadConfig(ctx)
+		cfg, err = s.loadConfig(policyCtx)
 	}
 	if err != nil {
 		slog.Warn("content_moderation.skip_config_load_failed",
@@ -3088,14 +3129,34 @@ func (s *ContentModerationService) enqueueRecord(ctx context.Context, input Cont
 	}
 }
 
+func (s *ContentModerationService) enqueueDuplicateRetry(decisionID string) bool {
+	if s == nil || s.asyncQueue == nil || strings.TrimSpace(decisionID) == "" {
+		return false
+	}
+	s.runtimeMu.Lock()
+	running := s.runtimeStarted && !s.runtimeClosed
+	s.runtimeMu.Unlock()
+	if !running {
+		return false
+	}
+	task := contentModerationTask{duplicateRetryID: strings.TrimSpace(decisionID), enqueuedAt: time.Now()}
+	select {
+	case s.asyncQueue <- task:
+		s.asyncEnqueued.Add(1)
+		return true
+	default:
+		s.asyncDropped.Add(1)
+		return false
+	}
+}
+
 func (s *ContentModerationService) persistBlockedLogForVisibility(ctx context.Context, log *ContentModerationLog) {
 	if s == nil || s.repo == nil || log == nil || !contentModerationActionIsBlocking(log.Action) {
 		return
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if err := s.repo.CreateLog(ctx, log); err != nil {
+	persistCtx, cancel := contentModerationDetachedContext(ctx, contentModerationPersistenceTimeout)
+	defer cancel()
+	if err := s.repo.CreateLog(persistCtx, log); err != nil {
 		slog.Warn("content_moderation.create_block_log_failed",
 			"user_id", contentModerationEmailUserID(log),
 			"endpoint", log.Endpoint,
@@ -3155,6 +3216,11 @@ func (s *ContentModerationService) worker(runtimeCtx context.Context, id int, id
 					taskCfg = cfg
 				}
 				s.persistContentModerationLog(ctx, taskCfg, task.log, task.inputHash, task.recordHash, task.applySideEffects)
+				s.asyncProcessed.Add(1)
+				return
+			}
+			if task.duplicateRetryID != "" {
+				s.recordCandidateDuplicateRetrySync(ctx, task.duplicateRetryID)
 				s.asyncProcessed.Add(1)
 				return
 			}
@@ -4950,6 +5016,9 @@ func (s *ContentModerationService) persistContentModerationLog(ctx context.Conte
 	if s == nil || log == nil {
 		return
 	}
+	persistCtx, cancel := contentModerationDetachedContext(ctx, contentModerationPersistenceTimeout)
+	defer cancel()
+	ctx = persistCtx
 	if recordHash && s.hashCache != nil {
 		if err := s.hashCache.RecordFlaggedInputHash(ctx, hashText); err != nil {
 			slog.Warn("content_moderation.record_hash_failed", "user_id", contentModerationEmailUserID(log), "endpoint", log.Endpoint, "error", err)
@@ -5517,6 +5586,9 @@ func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanti
 		cfg.PrimaryTimeoutMS <= 0 && cfg.FallbackTimeoutMS <= 0 &&
 		cfg.MaxAttemptsPerModel <= 0 && cfg.MaxOutputTokens <= 0 &&
 		strings.TrimSpace(cfg.ReasoningEffort) == ""
+	legacyDefaultBudgetConfig := cfg.TimeoutMS == 8_000 &&
+		cfg.PrimaryTimeoutMS == 5_000 &&
+		cfg.FallbackTimeoutMS == 3_000
 	cfg.Trigger = normalizeContentModerationSemanticReviewTrigger(cfg.Trigger)
 	if normalized := normalizeContentModerationSemanticReviewModel(cfg.PrimaryModel); normalized != "" {
 		cfg.PrimaryModel = normalized
@@ -5543,19 +5615,19 @@ func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanti
 	cfg.FallbackModels = models
 	// Migrate the previous default, which represented a per-attempt timeout, to
 	// the bounded end-to-end review budget introduced by semantic-review-v2.
-	if cfg.TimeoutMS <= 0 || legacyBudgetConfig {
+	if cfg.TimeoutMS <= 0 || legacyBudgetConfig || legacyDefaultBudgetConfig {
 		cfg.TimeoutMS = ContentModerationSemanticReviewDefaultTimeoutMS
 	}
 	if cfg.TimeoutMS > ContentModerationSemanticReviewMaxTimeoutMS {
 		cfg.TimeoutMS = ContentModerationSemanticReviewMaxTimeoutMS
 	}
-	if cfg.PrimaryTimeoutMS <= 0 {
+	if cfg.PrimaryTimeoutMS <= 0 || legacyDefaultBudgetConfig {
 		cfg.PrimaryTimeoutMS = ContentModerationSemanticReviewPrimaryTimeoutMS
 	}
 	if cfg.PrimaryTimeoutMS > cfg.TimeoutMS {
 		cfg.PrimaryTimeoutMS = cfg.TimeoutMS
 	}
-	if cfg.FallbackTimeoutMS <= 0 {
+	if cfg.FallbackTimeoutMS <= 0 || legacyDefaultBudgetConfig {
 		cfg.FallbackTimeoutMS = ContentModerationSemanticReviewFallbackTimeoutMS
 	}
 	if cfg.FallbackTimeoutMS > cfg.TimeoutMS {

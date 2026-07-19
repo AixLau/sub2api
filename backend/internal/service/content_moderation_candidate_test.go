@@ -828,6 +828,32 @@ func TestCandidateAccountRetryReusesPriorCandidateDecision(t *testing.T) {
 	require.Equal(t, int64(1), repo.duplicateRetries.Load())
 }
 
+func TestCandidateDuplicateRetryIsRecordedAfterRequestCancellation(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.Enabled = true
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	repo := &candidateRetryDedupeRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(raw),
+		}},
+		repo, nil, nil, nil, nil, nil,
+	)
+	svc.workerCount = 1
+	svc.Start(context.Background())
+	t.Cleanup(svc.Close)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	svc.recordCandidateDuplicateRetry(ctx, "decision-1")
+
+	require.Eventually(t, func() bool {
+		return repo.duplicateRetries.Load() == 1
+	}, time.Second, 10*time.Millisecond)
+}
+
 func TestCandidateCheckAllowsMissWithoutCallingReviewers(t *testing.T) {
 	var ordinaryCalls atomic.Int64
 	ordinary := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {

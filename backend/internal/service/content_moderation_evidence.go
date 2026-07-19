@@ -138,7 +138,9 @@ func (s *ContentModerationService) storeCandidateEvidence(ctx context.Context, l
 		PayloadRunes:     len([]rune(payload)),
 		CreatedAt:        time.Now(),
 	}
-	if err := s.evidenceStore.CreateEvidenceSnapshot(ctx, snapshot); err != nil {
+	storeCtx, cancel := contentModerationDetachedContext(ctx, contentModerationPersistenceTimeout)
+	defer cancel()
+	if err := s.evidenceStore.CreateEvidenceSnapshot(storeCtx, snapshot); err != nil {
 		slog.Warn("content_moderation.evidence_store_failed", "log_id", log.ID, "error", err)
 		return
 	}
