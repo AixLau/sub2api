@@ -39,6 +39,38 @@ func TestOpenAISelectAccountForModelWithExclusions_ChannelMappedRestrictionRejec
 	require.Contains(t, err.Error(), "channel pricing restriction")
 }
 
+func TestOpenAISelectAccountForModelWithExclusions_SemanticReviewSystemRoutingBypassesChannelRestriction(t *testing.T) {
+	t.Parallel()
+
+	channelSvc := newTestChannelService(makeStandardRepo(Channel{
+		ID:                 1,
+		Status:             StatusActive,
+		GroupIDs:           []int64{10},
+		RestrictModels:     true,
+		BillingModelSource: BillingModelSourceChannelMapped,
+		ModelPricing: []ChannelModelPricing{
+			{Platform: PlatformOpenAI, Models: []string{"gpt-4o"}},
+		},
+		ModelMapping: map[string]map[string]string{
+			PlatformOpenAI: {"gpt-4.1": "o3-mini"},
+		},
+	}, map[int64]string{10: PlatformOpenAI}))
+
+	svc := &OpenAIGatewayService{
+		accountRepo: stubOpenAIAccountRepo{accounts: []Account{
+			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1},
+		}},
+		channelService: channelSvc,
+	}
+
+	groupID := int64(10)
+	account, err := svc.SelectAccountForModelWithExclusions(withSemanticReviewSystemRouting(context.Background()), &groupID, "", "gpt-4.1", nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, int64(1), account.ID)
+}
+
 func TestOpenAISelectAccountForModelWithExclusions_UpstreamRestrictionSkipsDisallowedAccount(t *testing.T) {
 	t.Parallel()
 

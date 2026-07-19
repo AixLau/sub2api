@@ -476,6 +476,169 @@ func TestSemanticReviewRouterKeepsRequestGroupDuringAccountSelection(t *testing.
 	require.Equal(t, groupID, *backend.selectGroupIDs[0])
 }
 
+func TestSemanticReviewFallbackGroupIDsCrossesBusinessGroups(t *testing.T) {
+	preferredGroupID := int64(9)
+	accounts := []Account{
+		{ID: 1, GroupIDs: []int64{17}, Credentials: map[string]any{"model_mapping": map[string]any{ContentModerationSemanticReviewPrimaryModel: ContentModerationSemanticReviewPrimaryModel}}},
+		{ID: 2, AccountGroups: []AccountGroup{{GroupID: 12}}, Credentials: map[string]any{"model_mapping": map[string]any{ContentModerationSemanticReviewPrimaryModel: ContentModerationSemanticReviewPrimaryModel}}},
+		{ID: 3, GroupIDs: []int64{9}, Credentials: map[string]any{"model_mapping": map[string]any{ContentModerationSemanticReviewPrimaryModel: ContentModerationSemanticReviewPrimaryModel}}},
+		{ID: 4, Credentials: map[string]any{"model_mapping": map[string]any{ContentModerationSemanticReviewPrimaryModel: ContentModerationSemanticReviewPrimaryModel}}},
+	}
+
+	groupIDs := semanticReviewFallbackGroupIDs(&preferredGroupID, ContentModerationSemanticReviewPrimaryModel, accounts, nil)
+
+	require.Len(t, groupIDs, 3)
+	require.Equal(t, int64(12), *groupIDs[0])
+	require.Equal(t, int64(17), *groupIDs[1])
+	require.Nil(t, groupIDs[2])
+}
+
+func TestSemanticReviewFallbackGroupIDsHonorsModelAndExclusions(t *testing.T) {
+	preferredGroupID := int64(9)
+	accounts := []Account{
+		{ID: 1, GroupIDs: []int64{12}, Credentials: map[string]any{"model_mapping": map[string]any{ContentModerationSemanticReviewPrimaryModel: ContentModerationSemanticReviewPrimaryModel}}},
+		{ID: 2, GroupIDs: []int64{17}, Credentials: map[string]any{"model_mapping": map[string]any{"other-model": "other-model"}}},
+		{ID: 3, GroupIDs: []int64{21}, Credentials: map[string]any{"model_mapping": map[string]any{ContentModerationSemanticReviewPrimaryModel: ContentModerationSemanticReviewPrimaryModel}}},
+	}
+
+	groupIDs := semanticReviewFallbackGroupIDs(&preferredGroupID, ContentModerationSemanticReviewPrimaryModel, accounts, map[int64]struct{}{1: {}})
+
+	require.Len(t, groupIDs, 1)
+	require.Equal(t, int64(21), *groupIDs[0])
+}
+
+func TestSemanticReviewFallbackGroupIDsDoesNotRetryUngroupedScope(t *testing.T) {
+	accounts := []Account{{
+		ID:          1,
+		Credentials: map[string]any{"model_mapping": map[string]any{ContentModerationSemanticReviewPrimaryModel: ContentModerationSemanticReviewPrimaryModel}},
+	}}
+
+	require.Empty(t, semanticReviewFallbackGroupIDs(nil, ContentModerationSemanticReviewPrimaryModel, accounts, nil))
+}
+
+func TestSelectSemanticReviewAccountFallsBackAcrossBusinessGroups(t *testing.T) {
+	businessGroupID := int64(9)
+	auditGroupID := int64(17)
+	account := Account{
+		ID:            71,
+		Platform:      PlatformOpenAI,
+		Type:          AccountTypeAPIKey,
+		Status:        StatusActive,
+		Schedulable:   true,
+		Concurrency:   1,
+		AccountGroups: []AccountGroup{{GroupID: auditGroupID}},
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{ContentModerationSemanticReviewPrimaryModel: ContentModerationSemanticReviewPrimaryModel},
+		},
+	}
+	repo := groupAwareStubOpenAIAccountRepo{stubOpenAIAccountRepo{accounts: []Account{account}}}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+
+	selection, err := svc.SelectSemanticReviewAccount(context.Background(), &businessGroupID, ContentModerationSemanticReviewPrimaryModel, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, account.ID, selection.Account.ID)
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
+}
+
+func TestSelectSemanticReviewAccountFallsBackToUngroupedAccount(t *testing.T) {
+	businessGroupID := int64(9)
+	account := Account{
+		ID:          72,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{ContentModerationSemanticReviewPrimaryModel: ContentModerationSemanticReviewPrimaryModel},
+		},
+	}
+	repo := groupAwareStubOpenAIAccountRepo{stubOpenAIAccountRepo{accounts: []Account{account}}}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+
+	selection, err := svc.SelectSemanticReviewAccount(context.Background(), &businessGroupID, ContentModerationSemanticReviewPrimaryModel, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, account.ID, selection.Account.ID)
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
+}
+
+func TestSelectSemanticReviewAccountKeepsExclusionsAcrossGroups(t *testing.T) {
+	businessGroupID := int64(9)
+	auditGroupID := int64(17)
+	account := Account{
+		ID:            73,
+		Platform:      PlatformOpenAI,
+		Type:          AccountTypeAPIKey,
+		Status:        StatusActive,
+		Schedulable:   true,
+		Concurrency:   1,
+		AccountGroups: []AccountGroup{{GroupID: auditGroupID}},
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{ContentModerationSemanticReviewPrimaryModel: ContentModerationSemanticReviewPrimaryModel},
+		},
+	}
+	repo := groupAwareStubOpenAIAccountRepo{stubOpenAIAccountRepo{accounts: []Account{account}}}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+
+	selection, err := svc.SelectSemanticReviewAccount(
+		context.Background(),
+		&businessGroupID,
+		ContentModerationSemanticReviewPrimaryModel,
+		map[int64]struct{}{account.ID: {}},
+	)
+
+	require.ErrorIs(t, err, ErrNoAvailableAccounts)
+	require.Nil(t, selection)
+}
+
+func TestSelectSemanticReviewAccountDoesNotConsumeConcurrency(t *testing.T) {
+	businessGroupID := int64(9)
+	auditGroupID := int64(17)
+	account := Account{
+		ID:            74,
+		Platform:      PlatformOpenAI,
+		Type:          AccountTypeAPIKey,
+		Status:        StatusActive,
+		Schedulable:   true,
+		Concurrency:   1,
+		AccountGroups: []AccountGroup{{GroupID: auditGroupID}},
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{ContentModerationSemanticReviewPrimaryModel: ContentModerationSemanticReviewPrimaryModel},
+		},
+	}
+	repo := groupAwareStubOpenAIAccountRepo{stubOpenAIAccountRepo{accounts: []Account{account}}}
+	concurrencyCache := stubConcurrencyCache{
+		acquireResults: map[int64]bool{account.ID: false},
+		loadMap: map[int64]*AccountLoadInfo{
+			account.ID: {AccountID: account.ID, CurrentConcurrency: 1, LoadRate: 1},
+		},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo:        repo,
+		concurrencyService: NewConcurrencyService(concurrencyCache),
+	}
+
+	selection, err := svc.SelectSemanticReviewAccount(context.Background(), &businessGroupID, ContentModerationSemanticReviewPrimaryModel, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, account.ID, selection.Account.ID)
+	require.True(t, selection.Acquired)
+	require.NotNil(t, selection.ReleaseFunc)
+	selection.ReleaseFunc()
+}
+
 func TestSemanticReviewRouterRecordsPlatformUsage(t *testing.T) {
 	groupID := int64(23)
 	account := freshSemanticReviewAccount(42)

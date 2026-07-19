@@ -566,7 +566,7 @@ func (s *OpenAIGatewayService) isCodexImageGenerationBridgeEnabled(ctx context.C
 }
 
 func (s *OpenAIGatewayService) checkChannelPricingRestriction(ctx context.Context, groupID *int64, requestedModel string) bool {
-	if groupID == nil || s.channelService == nil || requestedModel == "" {
+	if isSemanticReviewSystemRouting(ctx) || groupID == nil || s.channelService == nil || requestedModel == "" {
 		return false
 	}
 	mapping := s.channelService.ResolveChannelMapping(ctx, *groupID, requestedModel)
@@ -578,7 +578,7 @@ func (s *OpenAIGatewayService) checkChannelPricingRestriction(ctx context.Contex
 }
 
 func (s *OpenAIGatewayService) isUpstreamModelRestrictedByChannel(ctx context.Context, groupID int64, account *Account, requestedModel string, requireCompact bool) bool {
-	if s.channelService == nil {
+	if isSemanticReviewSystemRouting(ctx) || s.channelService == nil {
 		return false
 	}
 	upstreamModel := resolveOpenAIAccountUpstreamModelForRequest(account, requestedModel, requireCompact)
