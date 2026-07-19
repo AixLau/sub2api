@@ -24,7 +24,7 @@ const homeSchema = {
       url: `${siteUrl}/`,
       name: '星链AI',
       alternateName: '星链 AI',
-      description: '面向开发者的 GPT API 中转站，提供 OpenAI、Claude、Gemini API 统一中转与兼容接入',
+      description: '面向开发者的 Codex 接入与 GPT API 中转站，提供 OpenAI、Claude、Gemini API 统一中转与兼容接入',
       inLanguage: 'zh-CN',
       publisher: { '@id': `${siteUrl}/#organization` },
     },
@@ -107,9 +107,9 @@ export function getPageMetadata(pathname: string): PageMetadata {
   }
 
   return {
-    title: '星链AI｜GPT API 中转站与统一模型 API 平台',
+    title: '星链AI｜Codex 接入与 GPT API 中转站',
     description:
-      '星链AI 是面向开发者的 GPT API 中转站，提供 OpenAI、Claude、Gemini API 统一中转与兼容接入，支持 API Key 管理、Codex / Claude Code 配置和调用用量查看。',
+      '星链AI 提供 Codex 接入与 GPT API 中转服务，统一兼容 OpenAI、Claude、Gemini API，支持 API Key 管理、Codex / Claude Code 配置和调用用量查看。',
     canonical: `${siteUrl}/`,
     robots: indexableRobots,
     schema: homeSchema,

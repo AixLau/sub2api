@@ -20,20 +20,20 @@ export function HeroSection() {
         />
 
         <h1 className="hero-title hero-title--cn" id="hero-title">
-          让模型 API 接入，像光一样自然。
+          Codex 与模型 API 接入，像光一样自然。
         </h1>
 
         <p className="hero-subtitle">
-          星链AI 提供稳定的 GPT API 中转服务，统一接入 OpenAI、Claude、Gemini 等主流模型，减少复杂配置，让团队把注意力留给产品体验。
+          星链AI 提供稳定的 Codex 接入与 GPT API 中转服务，统一兼容 OpenAI、Claude、Gemini 等主流模型，减少复杂配置，让团队把注意力留给产品体验。
         </p>
 
         <div className="hero-actions" aria-label="首页操作">
           <a className="primary-button" href="/login">
             开始接入
           </a>
-          <a className="booking-button service-button" href="/docs/install/" aria-label="查看接入文档">
+          <a className="booking-button service-button" href="/docs/install/" aria-label="Codex API 中转站配置教程">
             <span className="booking-copy">
-              <span className="booking-title">查看接入文档</span>
+              <span className="booking-title">Codex 接入教程</span>
               <span className="booking-meta">
                 <span className="availability-dot" aria-hidden="true" />
                 Codex 配置 / 使用指南

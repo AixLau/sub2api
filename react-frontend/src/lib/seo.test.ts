@@ -10,7 +10,7 @@ describe('SEO metadata', () => {
   it('returns indexable metadata and schema for the homepage', () => {
     const metadata = getPageMetadata('/')
 
-    expect(metadata.title).toBe('星链AI｜GPT API 中转站与统一模型 API 平台')
+    expect(metadata.title).toBe('星链AI｜Codex 接入与 GPT API 中转站')
     expect(metadata.robots).toContain('index,follow')
     expect(metadata.canonical).toBe('https://aixlau.me/')
     expect(metadata.schema).toMatchObject({ '@context': 'https://schema.org' })
@@ -50,7 +50,7 @@ describe('SEO metadata', () => {
 
     applySeoMetadata(getPageMetadata('/'))
 
-    expect(document.title).toBe('星链AI｜GPT API 中转站与统一模型 API 平台')
+    expect(document.title).toBe('星链AI｜Codex 接入与 GPT API 中转站')
     expect(document.querySelector('meta[name="robots"]')).toHaveAttribute(
       'content',
       'index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1',

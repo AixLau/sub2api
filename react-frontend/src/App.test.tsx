@@ -52,11 +52,11 @@ describe('星链 landing page', () => {
     expect(screen.getAllByLabelText('星链AI home')[0]).toHaveTextContent('星链AI')
     expect(screen.getByRole('button', { name: '菜单' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
-      '让模型 API 接入，像光一样自然。',
+      'Codex 与模型 API 接入，像光一样自然。',
     )
     expect(screen.getByText(/GPT API 中转服务/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '开始接入' })).toHaveAttribute('href', '/login')
-    expect(screen.getByRole('link', { name: '查看接入文档' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Codex API 中转站配置教程' })).toHaveAttribute(
       'href',
       '/docs/install/',
     )
@@ -103,7 +103,7 @@ describe('星链 landing page', () => {
 
     expect(screen.getByRole('main')).toHaveClass('public-page-main')
     expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '让模型 API 接入，像光一样自然。' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Codex 与模型 API 接入，像光一样自然。' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '需要的信息，各有入口。' })).not.toBeInTheDocument()
     expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument()
 
@@ -127,7 +127,7 @@ describe('星链 landing page', () => {
     render(<App />)
 
     expect(screen.getByRole('heading', { name: '这个页面不存在。' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '让模型 API 接入，像光一样自然。' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Codex 与模型 API 接入，像光一样自然。' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: '返回首页' })).toHaveAttribute('href', '/')
   })
 
@@ -273,7 +273,7 @@ describe('星链 landing page', () => {
     render(<App />)
 
     expect(screen.getByRole('main')).toHaveClass('public-page-main')
-    expect(screen.queryByRole('heading', { name: '让模型 API 接入，像光一样自然。' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Codex 与模型 API 接入，像光一样自然。' })).not.toBeInTheDocument()
     const gpt55Card = (await screen.findByText('gpt-5.5')).closest('article')
     expect(gpt55Card).toBeInTheDocument()
     expect(gpt55Card).toHaveTextContent(/缓存创建 \/ 1M tokens\s*免费/)
