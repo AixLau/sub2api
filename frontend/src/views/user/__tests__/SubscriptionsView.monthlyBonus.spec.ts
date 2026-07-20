@@ -81,6 +81,8 @@ function makeSubscription(overrides: Partial<UserSubscription> = {}): UserSubscr
     weekly_usage_usd: 0,
     monthly_usage_usd: 50,
     monthly_bonus_usd: 100,
+    pending_renewal_count: 0,
+    pending_renewals: [],
     daily_window_start: null,
     weekly_window_start: null,
     monthly_window_start: now.toISOString(),
@@ -111,5 +113,52 @@ describe('user SubscriptionsView monthly bonus quota', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('$50.00 / $200.00')
+  })
+
+  it('shows queued renewals in payment order', async () => {
+    getMySubscriptions.mockResolvedValue([
+      makeSubscription({
+        pending_renewal_count: 2,
+        pending_renewals: [
+          {
+            id: 1,
+            position: 1,
+            target_group_id: 30,
+            target_group_name: 'Pro',
+            plan_id: 1,
+            plan_name: 'Pro Monthly',
+            validity_days: 30,
+            monthly_limit_usd: 540,
+            purchased_at: '2026-07-05T13:44:41Z'
+          },
+          {
+            id: 2,
+            position: 2,
+            target_group_id: 30,
+            target_group_name: 'Pro',
+            plan_id: 1,
+            plan_name: 'Pro Monthly',
+            validity_days: 30,
+            monthly_limit_usd: 540,
+            purchased_at: '2026-07-12T10:41:49Z'
+          }
+        ]
+      })
+    ])
+
+    const wrapper = mount(SubscriptionsView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          Icon: { template: '<span />' }
+        }
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('userSubscriptions.pendingRenewals:{"count":2}')
+    expect(wrapper.text()).toContain('userSubscriptions.pendingRenewalTotalDays:{"days":60}')
+    expect(wrapper.text()).toContain('#1 Pro Monthly')
+    expect(wrapper.text()).toContain('#2 Pro Monthly')
   })
 })

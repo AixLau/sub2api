@@ -345,7 +345,7 @@
             </div>
           </template>
 
-          <template #cell-expires_at="{ value }">
+          <template #cell-expires_at="{ value, row }">
             <div v-if="value">
               <span
                 class="text-sm"
@@ -359,6 +359,28 @@
               </span>
               <div v-if="getDaysRemaining(value) !== null" class="text-xs text-gray-500">
                 {{ getDaysRemaining(value) }} {{ t('admin.subscriptions.daysRemaining') }}
+              </div>
+              <div
+                v-if="row.pending_renewals?.length"
+                class="mt-2 border-l-2 border-amber-400 pl-2"
+              >
+                <div class="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                  {{ t('admin.subscriptions.pendingRenewals', {
+                    count: row.pending_renewal_count,
+                    days: pendingRenewalDays(row)
+                  }) }}
+                </div>
+                <div class="mt-1 space-y-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                  <div v-for="renewal in row.pending_renewals" :key="renewal.id">
+                    #{{ renewal.position }}
+                    {{ renewal.plan_name || renewal.target_group_name }}
+                    · ${{ renewal.monthly_limit_usd.toFixed(2) }}
+                    · {{ renewal.validity_days }} {{ t('admin.subscriptions.days') }}
+                  </div>
+                </div>
+                <div class="mt-1 text-[11px] text-amber-700/80 dark:text-amber-300/80">
+                  {{ t('admin.subscriptions.pendingRenewalRule') }}
+                </div>
               </div>
             </div>
             <span v-else class="text-sm text-gray-500">{{
@@ -1372,6 +1394,12 @@ const getDaysRemaining = (expiresAt: string): number | null => {
   if (diff < 0) return null
   return Math.ceil(diff / (1000 * 60 * 60 * 24))
 }
+
+const pendingRenewalDays = (subscription: UserSubscription): number =>
+  (subscription.pending_renewals || []).reduce(
+    (total, renewal) => total + renewal.validity_days,
+    0
+  )
 
 const isExpiringSoon = (expiresAt: string): boolean => {
   const days = getDaysRemaining(expiresAt)

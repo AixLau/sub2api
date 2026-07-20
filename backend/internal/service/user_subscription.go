@@ -20,6 +20,7 @@ type UserSubscription struct {
 	MonthlyUsageUSD     float64
 	MonthlyBonusUSD     float64
 	PendingRenewalCount int
+	PendingRenewals     []SubscriptionRenewal
 	AssignedBy          *int64
 	AssignedAt          time.Time
 	Notes               string
@@ -31,6 +32,18 @@ type UserSubscription struct {
 	User           *User
 	Group          *Group
 	AssignedByUser *User
+}
+
+type SubscriptionRenewal struct {
+	ID              int64
+	Position        int
+	TargetGroupID   int64
+	TargetGroupName string
+	PlanID          *int64
+	PlanName        string
+	ValidityDays    int
+	MonthlyLimitUSD float64
+	PurchasedAt     time.Time
 }
 
 func (s *UserSubscription) IsActive() bool {

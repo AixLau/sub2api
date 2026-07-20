@@ -21,6 +21,18 @@
         </span>
       </div>
     </div>
+    <div
+      v-if="subscription.pendingCount > 0"
+      class="mt-4 flex flex-col gap-1 border-t border-amber-200 pt-4 text-sm sm:flex-row sm:items-center sm:justify-between"
+    >
+      <span class="font-semibold text-amber-800">
+        {{ t('userSubscriptions.pendingRenewals', { count: subscription.pendingCount }) }}
+        · {{ t('userSubscriptions.pendingRenewalTotalDays', { days: subscription.pendingDays }) }}
+      </span>
+      <span class="text-xs text-slate-600">
+        {{ t('userSubscriptions.pendingRenewalRule') }}
+      </span>
+    </div>
   </section>
 </template>
 
@@ -33,6 +45,8 @@ defineProps<{
     planName: string
     platform: string
     remainingText: string
+    pendingCount: number
+    pendingDays: number
   }
 }>()
 

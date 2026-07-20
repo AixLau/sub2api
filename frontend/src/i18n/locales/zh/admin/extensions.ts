@@ -449,6 +449,9 @@ export default {
     monthlyBonusApplied: '本月额外额度 +${amount}',
     monthlyBonusHint: '仅对该订阅当前月窗口生效，月用量窗口重置时自动清零。',
     monthlyBonusPlaceholder: '0.00',
+    pendingRenewals: '待生效 {count} 笔，共 {days} 天',
+    pendingRenewalRule: '当前额度耗尽或到期后依次生效',
+    days: '天',
   },
   usage: {
     excludeUsers: '排除用户',

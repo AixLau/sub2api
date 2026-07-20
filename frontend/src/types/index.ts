@@ -1766,6 +1766,7 @@ export interface UserSubscription {
   monthly_usage_usd: number
   monthly_bonus_usd: number
   pending_renewal_count: number
+  pending_renewals: SubscriptionRenewal[]
   daily_window_start: string | null
   weekly_window_start: string | null
   monthly_window_start: string | null
@@ -1775,6 +1776,18 @@ export interface UserSubscription {
   expires_at: string | null
   user?: User
   group?: Group
+}
+
+export interface SubscriptionRenewal {
+  id: number
+  position: number
+  target_group_id: number
+  target_group_name: string
+  plan_id?: number
+  plan_name: string
+  validity_days: number
+  monthly_limit_usd: number
+  purchased_at: string
 }
 
 export interface SubscriptionProgress {

@@ -81,6 +81,7 @@ const DataTableStub = defineComponent({
     <div data-test="data-table">
       <div v-for="row in data" :key="row.id" data-test="subscription-row">
         <slot name="cell-usage" :row="row" />
+        <slot name="cell-expires_at" :value="row.expires_at" :row="row" />
         <slot name="cell-actions" :row="row" />
       </div>
     </div>
@@ -167,6 +168,8 @@ function makeSubscription(overrides: Partial<UserSubscription> = {}): UserSubscr
     weekly_usage_usd: 0,
     monthly_usage_usd: 50,
     monthly_bonus_usd: 100,
+    pending_renewal_count: 0,
+    pending_renewals: [],
     daily_window_start: null,
     weekly_window_start: null,
     monthly_window_start: now.toISOString(),
@@ -234,6 +237,38 @@ describe('admin SubscriptionsView monthly bonus quota', () => {
     expect(wrapper.text()).toContain('$50.00')
     expect(wrapper.text()).toContain('$200.00')
     expect(wrapper.text()).toContain('admin.subscriptions.monthlyBonusApplied')
+  })
+
+  it('shows queued renewal details alongside the current expiry', async () => {
+    listSubscriptions.mockResolvedValue({
+      items: [
+        makeSubscription({
+          pending_renewal_count: 1,
+          pending_renewals: [{
+            id: 1,
+            position: 1,
+            target_group_id: 30,
+            target_group_name: 'Pro',
+            plan_id: 1,
+            plan_name: 'Pro Monthly',
+            validity_days: 30,
+            monthly_limit_usd: 540,
+            purchased_at: '2026-07-05T13:44:41Z'
+          }]
+        })
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.subscriptions.pendingRenewals:{"count":1,"days":30}')
+    expect(wrapper.text()).toContain('#1 Pro Monthly · $540.00 · 30')
+    expect(wrapper.text()).toContain('admin.subscriptions.pendingRenewalRule')
   })
 
   it('can add bonus quota without extending the subscription time', async () => {

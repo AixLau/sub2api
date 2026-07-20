@@ -100,6 +100,43 @@
               }}</span>
             </div>
 
+            <div
+              v-if="subscription.pending_renewals?.length"
+              class="border-y border-amber-200 bg-amber-50/70 px-3 py-3 dark:border-amber-800/60 dark:bg-amber-950/20"
+            >
+              <div class="flex items-start gap-2">
+                <Icon name="clock" size="sm" class="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-baseline justify-between gap-2">
+                    <span class="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                      {{ t('userSubscriptions.pendingRenewals', { count: subscription.pending_renewal_count }) }}
+                    </span>
+                    <span class="text-xs text-amber-700 dark:text-amber-300">
+                      {{ t('userSubscriptions.pendingRenewalTotalDays', { days: pendingRenewalDays(subscription) }) }}
+                    </span>
+                  </div>
+                  <p class="mt-1 text-xs text-amber-800/80 dark:text-amber-300/80">
+                    {{ t('userSubscriptions.pendingRenewalRule') }}
+                  </p>
+                  <div class="mt-2 divide-y divide-amber-200/80 dark:divide-amber-800/60">
+                    <div
+                      v-for="renewal in subscription.pending_renewals"
+                      :key="renewal.id"
+                      class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2 text-xs"
+                    >
+                      <span class="font-medium text-gray-800 dark:text-gray-200">
+                        #{{ renewal.position }} {{ renewal.plan_name || renewal.target_group_name }}
+                      </span>
+                      <span class="text-gray-600 dark:text-gray-400">
+                        ${{ renewal.monthly_limit_usd.toFixed(2) }} ·
+                        {{ t('userSubscriptions.validityDays', { days: renewal.validity_days }) }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- Daily Usage -->
             <div v-if="subscription.group?.daily_limit_usd" class="space-y-2">
               <div class="flex items-center justify-between">
@@ -340,6 +377,13 @@ function getExpirationClass(expiresAt: string): string {
   if (days <= 3) return 'text-red-600 dark:text-red-400'
   if (days <= 7) return 'text-orange-600 dark:text-orange-400'
   return 'text-gray-700 dark:text-gray-300'
+}
+
+function pendingRenewalDays(subscription: UserSubscription): number {
+  return (subscription.pending_renewals || []).reduce(
+    (total, renewal) => total + renewal.validity_days,
+    0
+  )
 }
 
 function formatDurationParts(parts: RemainingDurationParts): string {

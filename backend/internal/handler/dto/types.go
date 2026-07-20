@@ -613,11 +613,12 @@ type UserSubscription struct {
 	WeeklyWindowStart  *time.Time `json:"weekly_window_start"`
 	MonthlyWindowStart *time.Time `json:"monthly_window_start"`
 
-	DailyUsageUSD       float64 `json:"daily_usage_usd"`
-	WeeklyUsageUSD      float64 `json:"weekly_usage_usd"`
-	MonthlyUsageUSD     float64 `json:"monthly_usage_usd"`
-	MonthlyBonusUSD     float64 `json:"monthly_bonus_usd"`
-	PendingRenewalCount int     `json:"pending_renewal_count"`
+	DailyUsageUSD       float64               `json:"daily_usage_usd"`
+	WeeklyUsageUSD      float64               `json:"weekly_usage_usd"`
+	MonthlyUsageUSD     float64               `json:"monthly_usage_usd"`
+	MonthlyBonusUSD     float64               `json:"monthly_bonus_usd"`
+	PendingRenewalCount int                   `json:"pending_renewal_count"`
+	PendingRenewals     []SubscriptionRenewal `json:"pending_renewals"`
 
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
@@ -625,6 +626,18 @@ type UserSubscription struct {
 
 	User  *User  `json:"user,omitempty"`
 	Group *Group `json:"group,omitempty"`
+}
+
+type SubscriptionRenewal struct {
+	ID              int64     `json:"id"`
+	Position        int       `json:"position"`
+	TargetGroupID   int64     `json:"target_group_id"`
+	TargetGroupName string    `json:"target_group_name"`
+	PlanID          *int64    `json:"plan_id,omitempty"`
+	PlanName        string    `json:"plan_name"`
+	ValidityDays    int       `json:"validity_days"`
+	MonthlyLimitUSD float64   `json:"monthly_limit_usd"`
+	PurchasedAt     time.Time `json:"purchased_at"`
 }
 
 // AdminUserSubscription 是管理员接口使用的订阅 DTO（包含分配信息/备注等字段）。

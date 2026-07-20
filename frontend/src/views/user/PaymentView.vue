@@ -861,6 +861,11 @@ const currentSubscriptionSummary = computed(() => {
     remainingText: subscription.expires_at
       ? t('userSubscriptions.daysRemaining', { days: getDaysRemaining(subscription.expires_at) })
       : t('userSubscriptions.noExpiration'),
+    pendingCount: subscription.pending_renewal_count || 0,
+    pendingDays: (subscription.pending_renewals || []).reduce(
+      (total, renewal) => total + renewal.validity_days,
+      0
+    ),
   }
 })
 const effectiveMinAmount = computed(() => globalMinAmount.value > 0 ? globalMinAmount.value : DEFAULT_MIN_RECHARGE_AMOUNT)

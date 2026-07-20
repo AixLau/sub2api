@@ -39,6 +39,7 @@ type subscriptionRenewalActivation struct {
 type subscriptionRenewalStore interface {
 	Enqueue(context.Context, subscriptionRenewalRequest) error
 	PendingCount(context.Context, int64) (int, error)
+	ListPending(context.Context, int64) ([]SubscriptionRenewal, error)
 	ActivateNext(context.Context, int64, time.Time, time.Time) (*subscriptionRenewalActivation, error)
 	ReassignPending(context.Context, []int64, int64) error
 }
@@ -86,6 +87,63 @@ func (s *entSubscriptionRenewalStore) PendingCount(ctx context.Context, subscrip
 			subscriptionrenewal.StatusEQ(subscriptionRenewalPending),
 		).
 		Count(ctx)
+}
+
+func (s *entSubscriptionRenewalStore) ListPending(ctx context.Context, subscriptionID int64) ([]SubscriptionRenewal, error) {
+	client := s.clientForContext(ctx)
+	rows, err := client.SubscriptionRenewal.Query().
+		Where(
+			subscriptionrenewal.SubscriptionIDEQ(subscriptionID),
+			subscriptionrenewal.StatusEQ(subscriptionRenewalPending),
+		).
+		Order(dbent.Asc(subscriptionrenewal.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	groupNames := make(map[int64]string)
+	planNames := make(map[int64]string)
+	result := make([]SubscriptionRenewal, 0, len(rows))
+	for i, row := range rows {
+		groupName, ok := groupNames[row.TargetGroupID]
+		if !ok {
+			group, getErr := client.Group.Get(ctx, row.TargetGroupID)
+			if getErr != nil {
+				return nil, fmt.Errorf("get queued renewal group: %w", getErr)
+			}
+			groupName = group.Name
+			groupNames[row.TargetGroupID] = groupName
+		}
+
+		planName := ""
+		if row.PlanID != nil {
+			planName, ok = planNames[*row.PlanID]
+			if !ok {
+				plan, getErr := client.SubscriptionPlan.Get(ctx, *row.PlanID)
+				if getErr != nil && !dbent.IsNotFound(getErr) {
+					return nil, fmt.Errorf("get queued renewal plan: %w", getErr)
+				}
+				if getErr == nil {
+					planName = plan.Name
+				}
+				planNames[*row.PlanID] = planName
+			}
+		}
+
+		result = append(result, SubscriptionRenewal{
+			ID:              row.ID,
+			Position:        i + 1,
+			TargetGroupID:   row.TargetGroupID,
+			TargetGroupName: groupName,
+			PlanID:          row.PlanID,
+			PlanName:        planName,
+			ValidityDays:    row.ValidityDays,
+			MonthlyLimitUSD: row.MonthlyLimitUsd,
+			PurchasedAt:     row.CreatedAt,
+		})
+	}
+	return result, nil
 }
 
 func (s *entSubscriptionRenewalStore) ActivateNext(ctx context.Context, subscriptionID int64, startsAt, windowStart time.Time) (*subscriptionRenewalActivation, error) {

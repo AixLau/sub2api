@@ -356,6 +356,8 @@ function activeSubscriptionFixture(overrides: Partial<UserSubscription> = {}): U
     weekly_usage_usd: 0,
     monthly_usage_usd: 0,
     monthly_bonus_usd: 0,
+    pending_renewal_count: 0,
+    pending_renewals: [],
     daily_window_start: null,
     weekly_window_start: null,
     monthly_window_start: null,
@@ -842,6 +844,65 @@ describe('PaymentView recharge liquid glass selection', () => {
     expect(wrapper.find('[data-testid="subscription-layout"]').text()).not.toContain('demo-user')
     expect(wrapper.find('[data-testid="subscription-layout"]').text()).not.toContain('demo@example.com')
     expect(wrapper.text().match(/payment.activeSubscription/g)).toHaveLength(1)
+  })
+
+  it('shows the queued renewal summary on the purchase page', async () => {
+    const wrapper = await mountRechargeView({
+      plans: [{
+        id: 7,
+        group_id: 3,
+        name: 'Starter',
+        description: '',
+        price: 128,
+        original_price: 0,
+        validity_days: 30,
+        validity_unit: 'day',
+        rate_multiplier: 1,
+        daily_limit_usd: null,
+        weekly_limit_usd: null,
+        monthly_limit_usd: 540,
+        features: [],
+        group_platform: 'openai',
+        sort_order: 1,
+        for_sale: true,
+        group_name: 'OpenAI',
+      }],
+    }, {
+      activeSubscriptions: [activeSubscriptionFixture({
+        pending_renewal_count: 2,
+        pending_renewals: [
+          {
+            id: 1,
+            position: 1,
+            target_group_id: 3,
+            target_group_name: 'Pro 套餐',
+            plan_id: 7,
+            plan_name: 'Pro 月包',
+            validity_days: 30,
+            monthly_limit_usd: 540,
+            purchased_at: '2026-07-05T13:44:41Z',
+          },
+          {
+            id: 2,
+            position: 2,
+            target_group_id: 3,
+            target_group_name: 'Pro 套餐',
+            plan_id: 7,
+            plan_name: 'Pro 月包',
+            validity_days: 30,
+            monthly_limit_usd: 540,
+            purchased_at: '2026-07-12T10:41:49Z',
+          },
+        ],
+      })],
+    })
+
+    await wrapper.find('[data-testid="purchase-mode-subscription"]').trigger('click')
+
+    const subscriptionCard = wrapper.find('[data-testid="current-subscription-card"]')
+    expect(subscriptionCard.text()).toContain('userSubscriptions.pendingRenewals')
+    expect(subscriptionCard.text()).toContain('userSubscriptions.pendingRenewalTotalDays')
+    expect(subscriptionCard.text()).toContain('userSubscriptions.pendingRenewalRule')
   })
 
   it('does not render the current subscription summary when the API returns no active subscription', async () => {

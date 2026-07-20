@@ -775,12 +775,31 @@ func userSubscriptionFromServiceBase(sub *service.UserSubscription) UserSubscrip
 		MonthlyUsageUSD:     sub.MonthlyUsageUSD,
 		MonthlyBonusUSD:     sub.MonthlyBonusUSD,
 		PendingRenewalCount: sub.PendingRenewalCount,
+		PendingRenewals:     subscriptionRenewalsFromService(sub.PendingRenewals),
 		CreatedAt:           sub.CreatedAt,
 		UpdatedAt:           sub.UpdatedAt,
 		RevokedAt:           sub.DeletedAt,
 		User:                UserFromServiceShallow(sub.User),
 		Group:               GroupFromServiceShallow(sub.Group),
 	}
+}
+
+func subscriptionRenewalsFromService(renewals []service.SubscriptionRenewal) []SubscriptionRenewal {
+	result := make([]SubscriptionRenewal, 0, len(renewals))
+	for _, renewal := range renewals {
+		result = append(result, SubscriptionRenewal{
+			ID:              renewal.ID,
+			Position:        renewal.Position,
+			TargetGroupID:   renewal.TargetGroupID,
+			TargetGroupName: renewal.TargetGroupName,
+			PlanID:          renewal.PlanID,
+			PlanName:        renewal.PlanName,
+			ValidityDays:    renewal.ValidityDays,
+			MonthlyLimitUSD: renewal.MonthlyLimitUSD,
+			PurchasedAt:     renewal.PurchasedAt,
+		})
+	}
+	return result
 }
 
 func BulkAssignResultFromService(r *service.BulkAssignResult) *BulkAssignResult {

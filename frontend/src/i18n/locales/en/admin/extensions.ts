@@ -434,6 +434,9 @@ export default {
     monthlyBonusApplied: 'Current month bonus +${amount}',
     monthlyBonusHint: 'Temporary extra quota for this subscription only. It resets with the monthly usage window.',
     monthlyBonusPlaceholder: '0.00',
+    pendingRenewals: '{count} queued, {days} days total',
+    pendingRenewalRule: 'Activates in order after quota exhaustion or expiry',
+    days: 'days',
   },
   usage: {
     excludeUsers: 'Exclude Users',

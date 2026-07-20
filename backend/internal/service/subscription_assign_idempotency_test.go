@@ -355,6 +355,28 @@ func (s *subscriptionRenewalStoreStub) PendingCount(_ context.Context, subscript
 	return count, nil
 }
 
+func (s *subscriptionRenewalStoreStub) ListPending(_ context.Context, subscriptionID int64) ([]SubscriptionRenewal, error) {
+	rows := s.pendingRows(subscriptionID)
+	result := make([]SubscriptionRenewal, 0, len(rows))
+	for i, row := range rows {
+		group := s.groups[row.Req.TargetGroupID]
+		groupName := ""
+		if group != nil {
+			groupName = group.Name
+		}
+		result = append(result, SubscriptionRenewal{
+			ID:              int64(i + 1),
+			Position:        i + 1,
+			TargetGroupID:   row.Req.TargetGroupID,
+			TargetGroupName: groupName,
+			PlanID:          row.Req.PlanID,
+			ValidityDays:    row.Req.ValidityDays,
+			MonthlyLimitUSD: row.Req.MonthlyLimitUSD,
+		})
+	}
+	return result, nil
+}
+
 func (s *subscriptionRenewalStoreStub) ActivateNext(ctx context.Context, subscriptionID int64, startsAt, windowStart time.Time) (*subscriptionRenewalActivation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

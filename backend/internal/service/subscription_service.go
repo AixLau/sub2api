@@ -1079,7 +1079,14 @@ func (s *SubscriptionService) AdminAddMonthlyBonus(ctx context.Context, subscrip
 
 // GetByID 根据ID获取订阅
 func (s *SubscriptionService) GetByID(ctx context.Context, id int64) (*UserSubscription, error) {
-	return s.userSubRepo.GetByID(ctx, id)
+	sub, err := s.userSubRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.populatePendingRenewals(ctx, sub); err != nil {
+		return nil, err
+	}
+	return sub, nil
 }
 
 // GetActiveSubscription 获取用户对特定分组的有效订阅
@@ -1143,7 +1150,7 @@ func (s *SubscriptionService) ListUserSubscriptions(ctx context.Context, userID 
 		return nil, err
 	}
 	for i := range subs {
-		if err := s.populatePendingRenewalCount(ctx, &subs[i]); err != nil {
+		if err := s.populatePendingRenewals(ctx, &subs[i]); err != nil {
 			return nil, err
 		}
 	}
@@ -1165,7 +1172,7 @@ func (s *SubscriptionService) ListActiveUserSubscriptions(ctx context.Context, u
 		if sub.Status == SubscriptionStatusSuspended || sub.Status == SubscriptionStatusRevoked {
 			continue
 		}
-		if err := s.populatePendingRenewalCount(ctx, sub); err != nil {
+		if err := s.populatePendingRenewals(ctx, sub); err != nil {
 			return nil, err
 		}
 		if sub.ExpiresAt.After(now) || sub.PendingRenewalCount > 0 {
@@ -1183,6 +1190,11 @@ func (s *SubscriptionService) ListGroupSubscriptions(ctx context.Context, groupI
 	if err != nil {
 		return nil, nil, err
 	}
+	for i := range subs {
+		if err := s.populatePendingRenewals(ctx, &subs[i]); err != nil {
+			return nil, nil, err
+		}
+	}
 	normalizeExpiredWindows(subs)
 	normalizeSubscriptionStatus(subs)
 	return subs, pag, nil
@@ -1194,6 +1206,11 @@ func (s *SubscriptionService) List(ctx context.Context, page, pageSize int, user
 	subs, pag, err := s.userSubRepo.List(ctx, params, userID, groupID, status, platform, sortBy, sortOrder)
 	if err != nil {
 		return nil, nil, err
+	}
+	for i := range subs {
+		if err := s.populatePendingRenewals(ctx, &subs[i]); err != nil {
+			return nil, nil, err
+		}
 	}
 	normalizeExpiredWindows(subs)
 	normalizeSubscriptionStatus(subs)
@@ -1493,6 +1510,19 @@ func (s *SubscriptionService) populatePendingRenewalCount(ctx context.Context, s
 		return err
 	}
 	sub.PendingRenewalCount = count
+	return nil
+}
+
+func (s *SubscriptionService) populatePendingRenewals(ctx context.Context, sub *UserSubscription) error {
+	if sub == nil || s.renewalStore == nil {
+		return nil
+	}
+	renewals, err := s.renewalStore.ListPending(ctx, sub.ID)
+	if err != nil {
+		return err
+	}
+	sub.PendingRenewals = renewals
+	sub.PendingRenewalCount = len(renewals)
 	return nil
 }
 
