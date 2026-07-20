@@ -44,6 +44,16 @@ func RegisterGatewayRoutes(
 	isOpenAIGatewayPlatform := func(c *gin.Context) bool {
 		return getGroupPlatform(c) == service.PlatformOpenAI
 	}
+	countTokensHandler := func(c *gin.Context) {
+		switch getGroupPlatform(c) {
+		case service.PlatformOpenAI:
+			h.OpenAIGateway.CountTokens(c)
+		case service.PlatformGrok:
+			h.OpenAIGateway.GrokCountTokens(c)
+		default:
+			h.Gateway.CountTokens(c)
+		}
+	}
 	modelsHandler := func(c *gin.Context) {
 		if isOpenAIGatewayPlatform(c) && c.Query("client_version") != "" {
 			h.OpenAIGateway.CodexModels(c)
@@ -163,44 +173,19 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.Messages(c)
 		})
-		// /v1/messages/count_tokens: OpenAI uses Anthropic-compatible bridge; Grok remains unsupported.
+		// /v1/messages/count_tokens: OpenAI bridges upstream, Grok estimates
+		// locally, and Anthropic-compatible platforms retain their existing path.
 		moderatedGateway.POST("/messages/count_tokens", coveredModeratedRoute(
 			"/v1/messages/count_tokens",
 			"GatewayHandler.CountTokens",
 			service.ContentModerationProtocolAnthropicMessages,
 			"Anthropic count_tokens can forward client context to upstream, so it is moderated after model validation and before billing, scheduling, and forwarding.",
-		), func(c *gin.Context) {
-			if isOpenAIGatewayPlatform(c) {
-				h.OpenAIGateway.CountTokens(c)
-				return
-			}
-			if getGroupPlatform(c) == service.PlatformGrok {
-				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-				c.JSON(http.StatusNotFound, gin.H{
-					"type": "error",
-					"error": gin.H{
-						"type":    "not_found_error",
-						"message": "Token counting is not supported for this platform",
-					},
-				})
-				return
-			}
-			h.Gateway.CountTokens(c)
-		})
+		), countTokensHandler)
 		moderatedGateway.GETNoAudit("/models", intentionalNoAuditRoute(
 			"/v1/models",
 			"GatewayHandler.Models",
 			"Model listing does not submit model-visible user content to upstream moderation-sensitive paths.",
-		), func(c *gin.Context) {
-			// Codex CLI / Codex app refresh their model picker from the provider's
-			// /models endpoint with a client_version query and expect the ChatGPT
-			// Codex manifest format; other clients keep the OpenAI-style list.
-			if isOpenAIGatewayPlatform(c) && c.Query("client_version") != "" {
-				h.OpenAIGateway.CodexModels(c)
-				return
-			}
-			h.Gateway.Models(c)
-		})
+		), modelsHandler)
 		moderatedGateway.GETNoAudit("/usage", intentionalNoAuditRoute(
 			"/v1/usage",
 			"GatewayHandler.Usage",
@@ -557,6 +542,12 @@ func RegisterGatewayRoutes(
 		"GatewayHandler.Models",
 		"Root model listing does not submit model-visible user content to upstream moderation-sensitive paths.",
 	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, modelsHandler)
+	moderatedRoot.POST("/messages/count_tokens", coveredModeratedRoute(
+		"/messages/count_tokens",
+		"GatewayHandler.CountTokens",
+		service.ContentModerationProtocolAnthropicMessages,
+		"Root count_tokens can forward client context to upstream, so it is moderated after model validation and before billing, scheduling, and forwarding.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, countTokensHandler)
 	codexDirect := r.Group("/backend-api/codex")
 	moderatedCodexDirect := NewGatewayPipelineRegistrar(codexDirect, openAIHTTPPipelineEntrypoints)
 	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic)

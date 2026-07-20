@@ -238,7 +238,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			switch apiKey.Status {
 			case service.StatusAPIKeyQuotaExhausted:
 				markOpsAPIKeyAuthDiagnostic(c, "API_KEY_QUOTA_EXHAUSTED", "api_key_quota_exhausted", apiKey, nil)
-				AbortWithError(c, 429, "API_KEY_QUOTA_EXHAUSTED", "API key 额度已用完")
+				abortWithAPIKeyQuotaError(c)
 				return
 			case service.StatusAPIKeyExpired:
 				markOpsAPIKeyAuthDiagnostic(c, "API_KEY_EXPIRED", "api_key_expired", apiKey, nil)
@@ -254,7 +254,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			}
 			if apiKey.IsQuotaExhausted() {
 				markOpsAPIKeyAuthDiagnostic(c, "API_KEY_QUOTA_EXHAUSTED", "api_key_quota_exhausted", apiKey, nil)
-				AbortWithError(c, 429, "API_KEY_QUOTA_EXHAUSTED", "API key 额度已用完")
+				abortWithAPIKeyQuotaError(c)
 				return
 			}
 
@@ -355,6 +355,34 @@ func hasAPIKeyCredentialInput(c *gin.Context) bool {
 	return c.GetHeader("Authorization") != "" ||
 		c.GetHeader("x-api-key") != "" ||
 		c.GetHeader("x-goog-api-key") != ""
+}
+
+func abortWithAPIKeyQuotaError(c *gin.Context) {
+	const message = "API key 额度已用完"
+	if isOpenAICompatibleAPIKeyRequest(c) {
+		abortWithOpenAIQuotaError(c, http.StatusTooManyRequests, message)
+		return
+	}
+	AbortWithError(c, http.StatusTooManyRequests, "API_KEY_QUOTA_EXHAUSTED", message)
+}
+
+func isOpenAICompatibleAPIKeyRequest(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+
+	path := strings.TrimRight(c.Request.URL.Path, "/")
+	for _, root := range []string{
+		"/v1/responses",
+		"/openai/v1/responses",
+		"/responses",
+		"/backend-api/codex/responses",
+	} {
+		if path == root || strings.HasPrefix(path, root+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func isAsyncImageTaskRead(method, path string) bool {

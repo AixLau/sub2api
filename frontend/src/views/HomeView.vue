@@ -91,8 +91,7 @@ onMounted(() => {
           <div
             class="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-cyan-600"
           >
-            <img v-if="siteLogo" :src="siteLogo" :alt="siteName" class="h-5 w-5" />
-            <span v-else class="font-bold text-white">AI</span>
+            <img :src="siteLogo || '/logo.svg'" :alt="siteName" class="h-5 w-5" />
           </div>
           <span class="text-lg font-bold text-slate-900 dark:text-white">{{ siteName }}</span>
         </router-link>

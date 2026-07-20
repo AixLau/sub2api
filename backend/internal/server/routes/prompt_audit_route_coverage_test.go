@@ -45,7 +45,7 @@ func TestEveryGatewayPOSTRouteIsClassifiedForPromptAuditCoverage(t *testing.T) {
 		"/models/*modelAction":      {"gemini_v1beta_handler.go"},
 	}
 	excluded := map[string]string{
-		"/messages/count_tokens":     "tokenization only; it does not execute a model request",
+		"/messages/count_tokens":     "the gateway pre-forward registrar audits the request and the handler consumes the audited body without running a duplicate Coordinator check",
 		"/images/batches/:id/cancel": "control-plane cancellation with no user prompt",
 	}
 

@@ -243,10 +243,16 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 # 只重启应用
 docker compose -f docker-compose.local.yml restart sub2api
 
+# 非破坏性更新应用镜像
+docker compose -f docker-compose.local.yml pull sub2api
+docker compose -f docker-compose.local.yml up -d --no-deps sub2api
+
 # 检查依赖服务
 docker compose -f docker-compose.local.yml exec postgres pg_isready
 docker compose -f docker-compose.local.yml exec redis redis-cli ping
 ```
+
+可选的 `UPDATE_GITHUB_TOKEN` 仅用于访问 `api.github.com` 检查版本，发布资产下载仍保持匿名。令牌应只写入服务器 `.env`，不要提交到仓库或输出到日志。
 
 ### 备份与迁移
 

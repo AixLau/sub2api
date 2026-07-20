@@ -280,6 +280,50 @@
     {
       "route": {
         "method": "POST",
+        "path": "/messages/count_tokens",
+        "handler": "GatewayHandler.CountTokens",
+        "protocol": "anthropic_messages"
+      },
+      "method": "POST",
+      "path": "/messages/count_tokens",
+      "handler": "GatewayHandler.CountTokens",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "anthropic_messages",
+      "pipeline": "gateway_pre_forward",
+      "stage_coverage": [
+        {
+          "stage": "moderation",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "pre_forward",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "billing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "routing",
+          "required": true,
+          "covered": true
+        },
+        {
+          "stage": "forward",
+          "required": true,
+          "covered": true
+        }
+      ],
+      "status": "covered",
+      "review_reason": "The root count_tokens alias shares the platform-aware handler and can forward client context upstream, so it uses the same moderation pipeline as /v1/messages/count_tokens."
+    },
+    {
+      "route": {
+        "method": "POST",
         "path": "/antigravity/v1/messages/count_tokens",
         "handler": "GatewayHandler.CountTokens",
         "protocol": "anthropic_messages"

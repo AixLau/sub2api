@@ -66,6 +66,7 @@ func TestGatewayModerationCoverageManifestDefinesCriticalUpstreamEntrypoints(t *
 		"POST /v1/messages openai_messages":            "openai_messages",
 		"POST /antigravity/v1/messages":                "anthropic_messages",
 		"POST /v1/messages/count_tokens":               "anthropic_messages",
+		"POST /messages/count_tokens":                  "anthropic_messages",
 		"POST /antigravity/v1/messages/count_tokens":   "anthropic_messages",
 		"POST /v1/chat/completions":                    "openai_chat_completions",
 		"POST /chat/completions":                       "openai_chat_completions",

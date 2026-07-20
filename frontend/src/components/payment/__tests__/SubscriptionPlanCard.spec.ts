@@ -2,6 +2,7 @@ import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 import { createPinia } from "pinia";
 import { createI18n } from "vue-i18n";
+import type { SubscriptionPlan } from "@/types/payment";
 import SubscriptionPlanCard from "../SubscriptionPlanCard.vue";
 
 const i18n = createI18n({
@@ -30,7 +31,7 @@ const i18n = createI18n({
   },
 });
 
-const mountPlanCard = (groupPlatform: string, overrides = {}) =>
+const mountPlanCard = (groupPlatform: string, overrides: Partial<SubscriptionPlan> = {}) =>
   mount(SubscriptionPlanCard, {
     props: {
       plan: {
@@ -120,5 +121,14 @@ describe("SubscriptionPlanCard", () => {
     expect(antigravityText).not.toContain("Claude");
     expect(antigravityText).not.toContain("Gemini");
     expect(antigravityText).not.toContain("Imagen");
+  });
+
+  it("uses the configured currency symbol while preserving USD for legacy plans", () => {
+    const cnyPlan = mountPlanCard("openai", { currency: "CNY", original_price: 20 });
+    const usdPlan = mountPlanCard("openai", { currency: "USD" });
+
+    expect(cnyPlan.find("[data-testid='subscription-plan-price']").text()).toBe("¥10.00");
+    expect(cnyPlan.text()).toContain("¥20.00");
+    expect(usdPlan.find("[data-testid='subscription-plan-price']").text()).toBe("$10.00");
   });
 });

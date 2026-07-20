@@ -902,6 +902,12 @@ func TestGatewayPreForwardRouteHelpersAttachPipelineMetadata(t *testing.T) {
 			protocol: "anthropic_messages",
 		},
 		{
+			name:     "root anthropic count tokens",
+			path:     "/messages/count_tokens",
+			handler:  "GatewayHandler.CountTokens",
+			protocol: "anthropic_messages",
+		},
+		{
 			name:     "gemini model actions",
 			path:     "/v1beta/models/*modelAction",
 			handler:  "GatewayHandler.GeminiV1BetaModels",
@@ -1244,7 +1250,8 @@ func postRouteCanReachUpstreamContent(path string) bool {
 		return false
 	}
 	switch path {
-	case "/responses", "/responses/*subpath", "/alpha/search",
+	case "/messages/count_tokens",
+		"/responses", "/responses/*subpath", "/alpha/search",
 		"/chat/completions",
 		"/embeddings",
 		"/images/generations", "/images/edits",
