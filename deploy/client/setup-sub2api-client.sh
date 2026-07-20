@@ -421,7 +421,7 @@ write_codex_config() {
     printf 'preferred_auth_method = "apikey"\n'
     printf '\n'
     printf '[model_providers.xinglian]\n'
-    printf 'name = "XingLian"\n'
+    printf 'name = "星链 AI"\n'
     printf 'base_url = "%s"\n' "$GATEWAY_URL"
     printf 'wire_api = "responses"\n'
     printf 'requires_openai_auth = true\n'

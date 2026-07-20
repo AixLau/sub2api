@@ -232,7 +232,7 @@ function Write-CodexConfig {
     $Out.Add('preferred_auth_method = "apikey"') | Out-Null
     $Out.Add("") | Out-Null
     $Out.Add('[model_providers.xinglian]') | Out-Null
-    $Out.Add('name = "XingLian"') | Out-Null
+    $Out.Add('name = "星链 AI"') | Out-Null
     $Out.Add("base_url = `"$GatewayUrl`"") | Out-Null
     $Out.Add('wire_api = "responses"') | Out-Null
     $Out.Add("requires_openai_auth = true") | Out-Null

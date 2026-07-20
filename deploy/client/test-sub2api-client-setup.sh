@@ -93,6 +93,7 @@ test_codex_config_creation_only() {
   [ ! -e "$home_dir/.claude/settings.json" ] || fail "Claude settings should not be created for codex client"
   assert_contains "$home_dir/.codex/config.toml" 'model_provider = "xinglian"'
   assert_contains "$home_dir/.codex/config.toml" '[model_providers.xinglian]'
+  assert_contains "$home_dir/.codex/config.toml" 'name = "星链 AI"'
   assert_contains "$home_dir/.codex/config.toml" "base_url = \"$GATEWAY_URL\""
   assert_contains "$home_dir/.codex/config.toml" 'wire_api = "responses"'
   assert_contains "$home_dir/.codex/config.toml" 'requires_openai_auth = true'
