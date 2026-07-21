@@ -491,23 +491,25 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 	if s.resolver != nil && apiKey.Group != nil {
 		gid := apiKey.Group.ID
 		return s.billingService.CalculateCostUnified(CostInput{
-			Ctx:                       ctx,
-			Model:                     billingModel,
-			GroupID:                   &gid,
-			Tokens:                    tokens,
-			RequestCount:              1,
-			RateMultiplier:            multiplier,
-			ServiceTier:               serviceTier,
-			Resolver:                  s.resolver,
-			LongContextBillingEnabled: &longContextBillingEnabled,
+			Ctx:                        ctx,
+			Model:                      billingModel,
+			GroupID:                    &gid,
+			Tokens:                     tokens,
+			RequestCount:               1,
+			RateMultiplier:             multiplier,
+			ServiceTier:                serviceTier,
+			PriorityMultiplierOverride: openAIFastBillingMultiplier,
+			Resolver:                   s.resolver,
+			LongContextBillingEnabled:  &longContextBillingEnabled,
 		})
 	}
-	return s.billingService.calculateCostWithServiceTierPolicy(
+	return s.billingService.calculateCostWithServiceTierPolicyAndOverride(
 		billingModel,
 		tokens,
 		multiplier,
 		serviceTier,
 		longContextBillingEnabled,
+		openAIFastBillingMultiplier,
 	)
 }
 

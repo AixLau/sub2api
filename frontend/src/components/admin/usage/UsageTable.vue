@@ -187,10 +187,10 @@
 			  </span>
 			  <span v-else class="font-medium text-green-600 dark:text-green-400">${{ row.actual_cost?.toFixed(6) || '0.000000' }}</span>
 			  <span
-                v-if="row.long_context_billing_applied"
-                data-testid="long-context-billing-marker"
+                v-if="normalizeUsageServiceTier(row.service_tier) === 'priority' && !row.long_context_billing_applied"
+                data-testid="fast-billing-marker"
 				class="inline-flex items-center rounded px-1 py-px text-[10px] font-semibold leading-tight bg-amber-100 text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:ring-amber-500/30"
-			  >x2</span>
+			  >x2.5</span>
               <!-- Cost Detail Tooltip -->
               <div
                 class="group relative"
@@ -478,7 +478,7 @@ import { useI18n } from 'vue-i18n'
 import { formatDateTime, formatReasoningEffort } from '@/utils/format'
 import { formatCacheTokens, formatMultiplier } from '@/utils/formatters'
 import { formatTokenPricePerMillion } from '@/utils/usagePricing'
-import { getUsageServiceTierLabel } from '@/utils/usageServiceTier'
+import { getUsageServiceTierLabel, normalizeUsageServiceTier } from '@/utils/usageServiceTier'
 import { resolveUsageRequestType } from '@/utils/usageRequestType'
 import {
   LATENCY_BAR_CLASSES,

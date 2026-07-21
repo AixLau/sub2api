@@ -127,7 +127,7 @@ describe('admin UsageTable tooltip', () => {
     } as DOMRect)
   })
 
-  it('marks only usage rows that actually applied long-context billing', () => {
+  it('shows the x2.5 marker only for fast-tier rows, excluding long-context billing', () => {
     const wrapper = mount(UsageTable, {
       props: {
         data: [
@@ -135,11 +135,25 @@ describe('admin UsageTable tooltip', () => {
             ...baseImageRow,
             request_id: 'req-long-context-enabled',
             long_context_billing_applied: true,
+            service_tier: 'priority',
           },
           {
             ...baseImageRow,
             request_id: 'req-long-context-disabled',
             long_context_billing_applied: false,
+            service_tier: 'priority',
+          },
+          {
+            ...baseImageRow,
+            request_id: 'req-fast-alias',
+            long_context_billing_applied: false,
+            service_tier: 'fast',
+          },
+          {
+            ...baseImageRow,
+            request_id: 'req-standard',
+            long_context_billing_applied: false,
+            service_tier: 'standard',
           },
         ],
         loading: false,
@@ -155,8 +169,9 @@ describe('admin UsageTable tooltip', () => {
       },
     })
 
-    expect(wrapper.findAll('[data-testid="long-context-billing-marker"]')).toHaveLength(1)
-    expect(wrapper.get('[data-testid="long-context-billing-marker"]').text()).toBe('x2')
+    expect(wrapper.findAll('[data-testid="fast-billing-marker"]')).toHaveLength(2)
+    expect(wrapper.findAll('[data-testid="fast-billing-marker"]')[0].text()).toBe('x2.5')
+    expect(wrapper.findAll('[data-testid="fast-billing-marker"]')[1].text()).toBe('x2.5')
   })
 
   it('shows service tier and billing breakdown in cost tooltip', async () => {

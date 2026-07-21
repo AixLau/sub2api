@@ -60,6 +60,35 @@ func TestCalculateCostUnified_TokenMode(t *testing.T) {
 	require.Equal(t, string(BillingModeToken), cost.BillingMode)
 }
 
+func TestCalculateCostUnified_OpenAIFastOverrideUsesTwoPointFiveMultiplier(t *testing.T) {
+	bs := newTestBillingService()
+	resolver := NewModelPricingResolver(nil, bs)
+	tokens := UsageTokens{InputTokens: 1000, OutputTokens: 500}
+
+	standard, err := bs.CalculateCostUnified(CostInput{
+		Ctx:            context.Background(),
+		Model:          "gpt-5.4",
+		Tokens:         tokens,
+		RateMultiplier: 1,
+		Resolver:       resolver,
+	})
+	require.NoError(t, err)
+
+	fast, err := bs.CalculateCostUnified(CostInput{
+		Ctx:                        context.Background(),
+		Model:                      "gpt-5.4",
+		Tokens:                     tokens,
+		RateMultiplier:             1,
+		ServiceTier:                "fast",
+		PriorityMultiplierOverride: openAIFastBillingMultiplier,
+		Resolver:                   resolver,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, standard.InputCost*2.5, fast.InputCost, 1e-12)
+	require.InDelta(t, standard.OutputCost*2.5, fast.OutputCost, 1e-12)
+	require.InDelta(t, standard.TotalCost*2.5, fast.TotalCost, 1e-12)
+}
+
 func TestCalculateCostUnified_ChannelPricingAppliesServiceTierMultipliers(t *testing.T) {
 	groupID := int64(1)
 	cs := newTestChannelServiceWithCache(t, &channelCache{
