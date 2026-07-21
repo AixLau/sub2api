@@ -3613,6 +3613,7 @@ interface Props {
   show: boolean
   proxies: Proxy[]
   groups: AdminGroup[]
+  initialProxyId?: number | null
 }
 
 const props = defineProps<Props>()
@@ -4119,6 +4120,7 @@ watch(
   () => props.show,
   (newVal) => {
     if (newVal) {
+      form.proxy_id = props.initialProxyId ?? null
       // Load TLS fingerprint profiles
       adminAPI.tlsFingerprintProfiles.list()
         .then(profiles => { tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name })) })

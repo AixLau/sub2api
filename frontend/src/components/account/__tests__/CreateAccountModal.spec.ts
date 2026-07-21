@@ -84,9 +84,15 @@ const OAuthAuthorizationFlowStub = defineComponent({
   `,
 })
 
-function mountModal() {
+const ProxySelectorStub = defineComponent({
+  name: 'ProxySelector',
+  props: { modelValue: { type: Number, default: null } },
+  template: '<div data-testid="selected-proxy-id">{{ modelValue ?? "none" }}</div>',
+})
+
+function mountModal(extraProps: Record<string, unknown> = {}) {
   return mount(CreateAccountModal, {
-    props: { show: true, proxies: [], groups: [] },
+    props: { show: true, proxies: [], groups: [], ...extraProps },
     global: {
       stubs: {
         BaseDialog: BaseDialogStub,
@@ -95,7 +101,7 @@ function mountModal() {
         Select: true,
         Icon: true,
         PlatformIcon: true,
-        ProxySelector: true,
+        ProxySelector: ProxySelectorStub,
         ProxyAdBanner: true,
         GroupSelector: true,
         ModelWhitelistSelector: true,
@@ -158,6 +164,14 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
       warnings: [],
     })
     createOpenAICodexPATMock.mockReset().mockResolvedValue({})
+  })
+
+  it('preselects the requested proxy whenever the modal opens', async () => {
+    const wrapper = mountModal({ show: false, initialProxyId: 17 })
+
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.get('[data-testid="selected-proxy-id"]').text()).toBe('17')
   })
 
   it('sends false explicitly for normal OpenAI account creation by default', async () => {

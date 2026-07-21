@@ -156,6 +156,8 @@ export default {
       accountName: '账号名称',
       accountPlatform: '所属平台',
       accountNotes: '备注',
+      addAccount: '添加账号',
+      accountFormLoadFailed: '加载账号表单失败',
       // Batch import
       standardAdd: '标准添加',
       batchAdd: '快捷添加',

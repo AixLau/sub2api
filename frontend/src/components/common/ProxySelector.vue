@@ -64,102 +64,94 @@
           </button>
         </div>
 
-        <!-- Options list -->
-        <div class="select-options">
-          <!-- No Proxy option -->
-          <div
-            @click="selectOption(null)"
-            :class="['select-option', modelValue === null && 'select-option-selected']"
-          >
-            <span class="select-option-label">{{ t('admin.accounts.noProxy') }}</span>
-            <Icon v-if="modelValue === null" name="check" size="sm" class="text-primary-500" />
-          </div>
+        <div
+          @click="selectOption(null)"
+          :class="['select-option border-b border-gray-100 dark:border-dark-700', modelValue === null && 'select-option-selected']"
+        >
+          <span class="select-option-label">{{ t('admin.accounts.noProxy') }}</span>
+          <Icon v-if="modelValue === null" name="check" size="sm" class="text-primary-500" />
+        </div>
 
-          <!-- Proxy options -->
-          <div
-            v-for="proxy in filteredProxies"
-            :key="proxy.id"
-            @click="selectOption(proxy.id)"
-            :class="['select-option', modelValue === proxy.id && 'select-option-selected']"
-          >
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <span class="truncate font-medium">{{ proxy.name }}</span>
-                <!-- Account count badge -->
-                <span
-                  v-if="proxy.account_count !== undefined"
-                  class="inline-flex flex-shrink-0 items-center rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-dark-600 dark:text-gray-400"
-                >
-                  {{ proxy.account_count }}
-                </span>
-                <!-- Test result badges -->
-                <template v-if="testResults[proxy.id]">
-                  <span
-                    v-if="testResults[proxy.id].success"
-                    class="inline-flex flex-shrink-0 items-center gap-1 rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                  >
-                    <span v-if="testResults[proxy.id].country">{{
-                      testResults[proxy.id].country
-                    }}</span>
-                    <span v-if="testResults[proxy.id].latency_ms"
-                      >{{ testResults[proxy.id].latency_ms }}ms</span
-                    >
-                  </span>
-                  <span
-                    v-else
-                    class="inline-flex flex-shrink-0 items-center rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                  >
-                    {{ t('admin.proxies.testFailed') }}
-                  </span>
-                </template>
-              </div>
-              <div class="truncate text-xs text-gray-500 dark:text-gray-400">
-                {{ proxy.protocol }}://{{ proxy.host }}:{{ proxy.port }}
-              </div>
-            </div>
-
-            <!-- Individual test button -->
-            <button
-              type="button"
-              @click.stop="handleTestProxy(proxy)"
-              :disabled="testingProxyIds.has(proxy.id)"
-              class="test-btn"
-              :title="t('admin.proxies.testConnection')"
+        <!-- Virtualized options list: only visible rows are mounted for large proxy pools. -->
+        <div ref="optionsScrollRef" class="select-options" @scroll="handleOptionsScroll">
+          <div v-if="filteredProxies.length > 0" class="relative" :style="{ height: `${virtualTotalHeight}px` }">
+            <div
+              v-for="proxy in visibleProxies"
+              :key="proxy.id"
+              class="absolute left-0 top-0 w-full"
+              :style="{ transform: `translateY(${proxyVirtualOffset(proxy.id)}px)` }"
+              @click="selectOption(proxy.id)"
+              :class="['select-option', modelValue === proxy.id && 'select-option-selected']"
             >
-              <svg
-                v-if="testingProxyIds.has(proxy.id)"
-                class="h-3.5 w-3.5 animate-spin"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  class="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  stroke-width="4"
-                ></circle>
-                <path
-                  class="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                ></path>
-              </svg>
-              <Icon v-else name="play" size="xs" />
-            </button>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <span class="truncate font-medium">{{ proxy.name }}</span>
+                  <!-- Account count badge -->
+                  <span
+                    v-if="proxy.account_count !== undefined"
+                    class="inline-flex flex-shrink-0 items-center rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-dark-600 dark:text-gray-400"
+                  >
+                    {{ proxy.account_count }}
+                  </span>
+                  <!-- Persisted test results are shown immediately; fresh tests override them. -->
+                  <template v-if="proxyDisplayStatus(proxy)">
+                    <span
+                      v-if="proxyDisplayStatus(proxy)?.success"
+                      class="inline-flex flex-shrink-0 items-center gap-1 rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                    >
+                      <span v-if="proxyLocation(proxy)">{{ proxyLocation(proxy) }}</span>
+                      <span v-if="proxyLatency(proxy) != null">{{ proxyLatency(proxy) }}ms</span>
+                    </span>
+                    <span
+                      v-else
+                      class="inline-flex flex-shrink-0 items-center rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                    >
+                      {{ t('admin.proxies.testFailed') }}
+                    </span>
+                  </template>
+                </div>
+                <div class="truncate text-xs text-gray-500 dark:text-gray-400">
+                  {{ proxy.protocol }}://{{ proxy.host }}:{{ proxy.port }}
+                  <span v-if="proxyIPAddress(proxy)"> · {{ proxyIPAddress(proxy) }}</span>
+                </div>
+              </div>
 
-            <Icon
-              v-if="modelValue === proxy.id"
-              name="check"
-              size="sm"
-              class="flex-shrink-0 text-primary-500"
-            />
+              <!-- Individual test button -->
+              <button
+                type="button"
+                @click.stop="handleTestProxy(proxy)"
+                :disabled="testingProxyIds.has(proxy.id)"
+                class="test-btn"
+                :title="t('admin.proxies.testConnection')"
+              >
+                <svg
+                  v-if="testingProxyIds.has(proxy.id)"
+                  class="h-3.5 w-3.5 animate-spin"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path
+                    class="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                <Icon v-else name="play" size="xs" />
+              </button>
+
+              <Icon
+                v-if="modelValue === proxy.id"
+                name="check"
+                size="sm"
+                class="flex-shrink-0 text-primary-500"
+              />
+            </div>
           </div>
 
           <!-- Empty state -->
-          <div v-if="filteredProxies.length === 0 && searchQuery" class="select-empty">
-            {{ t('common.noOptionsFound') }}
+          <div v-else class="select-empty">
+            {{ searchQuery ? t('common.noOptionsFound') : t('admin.proxies.noProxiesYet') }}
           </div>
         </div>
       </div>
@@ -168,7 +160,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import Icon from '@/components/icons/Icon.vue'
@@ -204,6 +196,12 @@ const isOpen = ref(false)
 const searchQuery = ref('')
 const containerRef = ref<HTMLElement | null>(null)
 const searchInputRef = ref<HTMLInputElement | null>(null)
+const optionsScrollRef = ref<HTMLElement | null>(null)
+const optionsScrollTop = ref(0)
+
+const OPTION_HEIGHT = 60
+const VISIBLE_OPTION_COUNT = 6
+const VIRTUAL_OVERSCAN = 3
 
 // Test state
 const testResults = reactive<Record<number, ProxyTestResult>>({})
@@ -229,10 +227,73 @@ const filteredProxies = computed(() => {
   }
   const query = searchQuery.value.toLowerCase()
   return props.proxies.filter((proxy) => {
-    const name = proxy.name.toLowerCase()
-    const host = proxy.host.toLowerCase()
-    return name.includes(query) || host.includes(query)
+    const searchable = [
+      proxy.name,
+      proxy.host,
+      proxy.ip_address,
+      proxy.country,
+      proxy.region,
+      proxy.city
+    ].filter(Boolean).join(' ').toLowerCase()
+    return searchable.includes(query)
   })
+})
+
+const visibleStartIndex = computed(() => Math.max(
+  0,
+  Math.floor(optionsScrollTop.value / OPTION_HEIGHT) - VIRTUAL_OVERSCAN
+))
+
+const visibleEndIndex = computed(() => Math.min(
+  filteredProxies.value.length,
+  visibleStartIndex.value + VISIBLE_OPTION_COUNT + VIRTUAL_OVERSCAN * 2
+))
+
+const visibleProxies = computed(() => filteredProxies.value.slice(
+  visibleStartIndex.value,
+  visibleEndIndex.value
+))
+
+const virtualTotalHeight = computed(() => filteredProxies.value.length * OPTION_HEIGHT)
+
+const proxyVirtualOffset = (proxyId: number) => {
+  const localIndex = visibleProxies.value.findIndex((proxy) => proxy.id === proxyId)
+  return (visibleStartIndex.value + Math.max(localIndex, 0)) * OPTION_HEIGHT
+}
+
+const proxyDisplayStatus = (proxy: Proxy): ProxyTestResult | null => {
+  const fresh = testResults[proxy.id]
+  if (fresh) return fresh
+  if (!proxy.latency_status && proxy.latency_ms == null && !proxy.country && !proxy.region && !proxy.city) {
+    return null
+  }
+  return {
+    success: proxy.latency_status !== 'failed',
+    message: proxy.latency_message || '',
+    latency_ms: proxy.latency_ms,
+    ip_address: proxy.ip_address,
+    country: proxy.country,
+    region: proxy.region,
+    city: proxy.city
+  }
+}
+
+const proxyLocation = (proxy: Proxy) => {
+  const status = proxyDisplayStatus(proxy)
+  if (!status) return ''
+  return Array.from(new Set([status.country, status.region, status.city].filter(Boolean))).join(' · ')
+}
+
+const proxyLatency = (proxy: Proxy) => proxyDisplayStatus(proxy)?.latency_ms
+const proxyIPAddress = (proxy: Proxy) => proxyDisplayStatus(proxy)?.ip_address || proxy.ip_address
+
+const handleOptionsScroll = (event: Event) => {
+  optionsScrollTop.value = (event.currentTarget as HTMLElement).scrollTop
+}
+
+watch(searchQuery, () => {
+  optionsScrollTop.value = 0
+  if (optionsScrollRef.value) optionsScrollRef.value.scrollTop = 0
 })
 
 const toggle = () => {
@@ -273,23 +334,27 @@ const handleBatchTest = async () => {
 
   batchTesting.value = true
 
-  // Test all proxies in parallel
-  const testPromises = props.proxies.map(async (proxy) => {
-    testingProxyIds.add(proxy.id)
-    try {
-      const result = await adminAPI.proxies.testProxy(proxy.id)
-      testResults[proxy.id] = result
-    } catch (error: any) {
-      testResults[proxy.id] = {
-        success: false,
-        message: error.response?.data?.detail || 'Test failed'
+  const queue = [...props.proxies]
+  const workers = Array.from({ length: Math.min(4, queue.length) }, async () => {
+    while (queue.length > 0) {
+      const proxy = queue.shift()
+      if (!proxy) return
+      testingProxyIds.add(proxy.id)
+      try {
+        const result = await adminAPI.proxies.testProxy(proxy.id)
+        testResults[proxy.id] = result
+      } catch (error: any) {
+        testResults[proxy.id] = {
+          success: false,
+          message: error.response?.data?.detail || 'Test failed'
+        }
+      } finally {
+        testingProxyIds.delete(proxy.id)
       }
-    } finally {
-      testingProxyIds.delete(proxy.id)
     }
   })
 
-  await Promise.all(testPromises)
+  await Promise.all(workers)
   batchTesting.value = false
 }
 
@@ -389,6 +454,8 @@ onUnmounted(() => {
   @apply text-gray-700 dark:text-gray-300;
   @apply cursor-pointer transition-colors duration-150;
   @apply hover:bg-gray-50 dark:hover:bg-dark-700;
+  height: 60px;
+  overflow: hidden;
 }
 
 .select-option-selected {

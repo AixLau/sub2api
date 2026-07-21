@@ -290,12 +290,12 @@ function buildOpenAISetupTokenAccount() {
   } as any
 }
 
-function mountModal(account = buildAccount()) {
+function mountModal(account = buildAccount(), proxies: any[] = []) {
   return mount(EditAccountModal, {
     props: {
       show: true,
       account,
-      proxies: [],
+      proxies,
       groups: []
     },
     global: {
@@ -314,6 +314,26 @@ function mountModal(account = buildAccount()) {
 describe('EditAccountModal', () => {
   beforeEach(() => {
     authIsSimpleMode.value = true
+  })
+
+  it('shows the selected proxy geographic location and exit IP', () => {
+    const account = buildAccount()
+    account.proxy_id = 9
+    const wrapper = mountModal(account, [{
+      id: 9,
+      name: 'Tokyo proxy',
+      protocol: 'http',
+      host: 'proxy.example.com',
+      port: 8080,
+      country: 'Japan',
+      region: 'Tokyo',
+      city: 'Tokyo',
+      ip_address: '203.0.113.9'
+    }])
+
+    const location = wrapper.get('[data-testid="account-proxy-location"]')
+    expect(location.text()).toContain('Japan · Tokyo')
+    expect(location.text()).toContain('203.0.113.9')
   })
 
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {

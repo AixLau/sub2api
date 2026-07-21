@@ -326,6 +326,13 @@
                 <span class="text-xs">{{ t('admin.proxies.qualityCheck') }}</span>
               </button>
               <button
+                @click="openCreateAccount(row)"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-primary-50 hover:text-primary-600 dark:hover:bg-primary-900/20 dark:hover:text-primary-400"
+              >
+                <Icon name="userPlus" size="sm" />
+                <span class="text-xs">{{ t('admin.proxies.addAccount') }}</span>
+              </button>
+              <button
                 @click="handleEdit(row)"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
               >
@@ -960,6 +967,14 @@
         </div>
       </template>
     </BaseDialog>
+    <CreateAccountModal
+      :show="showCreateAccountModal"
+      :proxies="accountProxies"
+      :groups="accountGroups"
+      :initial-proxy-id="accountProxy?.id ?? null"
+      @close="closeCreateAccount"
+      @created="handleAccountCreated"
+    />
   </AppLayout>
 </template>
 
@@ -968,7 +983,7 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
-import type { Proxy, ProxyAccountSummary, ProxyProtocol, ProxyQualityCheckResult } from '@/types'
+import type { AdminGroup, Proxy, ProxyAccountSummary, ProxyProtocol, ProxyQualityCheckResult } from '@/types'
 import type { Column } from '@/components/common/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
@@ -982,6 +997,7 @@ import Select from '@/components/common/Select.vue'
 import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import Icon from '@/components/icons/Icon.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
+import CreateAccountModal from '@/components/account/CreateAccountModal.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { useSwipeSelect } from '@/composables/useSwipeSelect'
 import { useTableSelection } from '@/composables/useTableSelection'
@@ -1067,6 +1083,7 @@ const showDeleteDialog = ref(false)
 const showBatchDeleteDialog = ref(false)
 const showExportDataDialog = ref(false)
 const showAccountsModal = ref(false)
+const showCreateAccountModal = ref(false)
 const submitting = ref(false)
 const exportingData = ref(false)
 const testingProxyIds = ref<Set<number>>(new Set())
@@ -1096,6 +1113,9 @@ useSwipeSelect(proxyTableRef, {
   batchUpdate
 })
 const accountsProxy = ref<Proxy | null>(null)
+const accountProxy = ref<Proxy | null>(null)
+const accountProxies = ref<Proxy[]>([])
+const accountGroups = ref<AdminGroup[]>([])
 const proxyAccounts = ref<ProxyAccountSummary[]>([])
 const accountsLoading = ref(false)
 const editingProxy = ref<Proxy | null>(null)
@@ -2007,6 +2027,33 @@ const closeAccountsModal = () => {
   showAccountsModal.value = false
   accountsProxy.value = null
   proxyAccounts.value = []
+}
+
+const openCreateAccount = async (proxy: Proxy) => {
+  accountProxy.value = proxy
+  try {
+    const [allProxies, groups] = await Promise.all([
+      adminAPI.proxies.getAllWithCount(),
+      adminAPI.groups.getAll()
+    ])
+    accountProxies.value = allProxies
+    accountGroups.value = groups
+    showCreateAccountModal.value = true
+  } catch (error) {
+    appStore.showError(t('admin.proxies.accountFormLoadFailed'))
+    console.error('Failed to load account form options:', error)
+    accountProxy.value = null
+  }
+}
+
+const closeCreateAccount = () => {
+  showCreateAccountModal.value = false
+  accountProxy.value = null
+}
+
+const handleAccountCreated = () => {
+  closeCreateAccount()
+  void loadProxies()
 }
 
 // ── Proxy URL copy ──

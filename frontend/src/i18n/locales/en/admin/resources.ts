@@ -139,6 +139,8 @@ export default {
       accountName: 'Account',
       accountPlatform: 'Platform',
       accountNotes: 'Notes',
+      addAccount: 'Add Account',
+      accountFormLoadFailed: 'Failed to load account form',
       name: 'Name',
       protocol: 'Protocol',
       host: 'Host',

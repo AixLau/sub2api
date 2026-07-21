@@ -1413,6 +1413,14 @@
           <ProxyAdBanner />
         </div>
         <ProxySelector v-model="form.proxy_id" :proxies="proxies" />
+        <div
+          v-if="selectedProxy"
+          data-testid="account-proxy-location"
+          class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400"
+        >
+          <span>{{ t('admin.proxies.columns.location') }}: {{ selectedProxyLocation || '-' }}</span>
+          <code v-if="selectedProxy.ip_address" class="code text-xs">{{ selectedProxy.ip_address }}</code>
+        </div>
       </div>
 
       <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -3144,6 +3152,18 @@ const form = reactive({
   status: 'active' as 'active' | 'inactive' | 'error',
   group_ids: [] as number[],
   expires_at: null as number | null
+})
+
+const selectedProxy = computed(() => {
+  if (form.proxy_id == null) return null
+  return props.proxies.find((proxy) => proxy.id === form.proxy_id) ?? null
+})
+
+const selectedProxyLocation = computed(() => {
+  if (!selectedProxy.value) return ''
+  return Array.from(
+    new Set([selectedProxy.value.country, selectedProxy.value.region, selectedProxy.value.city].filter(Boolean))
+  ).join(' · ')
 })
 
 const statusOptions = computed(() => {
