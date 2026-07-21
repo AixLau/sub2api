@@ -805,7 +805,10 @@ func TestCandidateAccountRetryReusesPriorCandidateDecision(t *testing.T) {
 		repo, nil, nil, nil, nil, nil,
 	)
 	svc.SetDecisionCacheKey(bytes.Repeat([]byte{0x5a}, 32))
-	router := &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{Verdict: "allow"}}
+	router := &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "allow", Intent: "defensive", Target: "authorized_lab", Authorization: "authorized",
+		HarmMechanism: "none", Operationality: "actionable", Executability: "indirect",
+	}}
 	svc.SetSemanticReviewRouter(router)
 	input := ContentModerationCheckInput{
 		UserID:      17,
@@ -1012,10 +1015,15 @@ func TestCandidateCheckRoutesCyberCandidateToSemanticReview(t *testing.T) {
 	)
 	svc.SetDecisionCacheKey(bytes.Repeat([]byte{0x5a}, 32))
 	router := &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
-		Verdict:        "review",
+		Verdict:        "allow",
+		Intent:         "defensive",
+		Target:         "authorized_lab",
+		Authorization:  "authorized",
+		HarmMechanism:  "none",
 		Categories:     []string{"cyber"},
 		Confidence:     0.8,
 		Operationality: "actionable",
+		Executability:  "indirect",
 	}}
 	svc.SetSemanticReviewRouter(router)
 
@@ -1029,7 +1037,7 @@ func TestCandidateCheckRoutesCyberCandidateToSemanticReview(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, decision.Allowed)
 	require.False(t, decision.Blocked)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, decision.Action)
+	require.Equal(t, ContentModerationActionSemanticReviewAllow, decision.Action)
 	require.Equal(t, 1, router.calls)
 	require.Zero(t, ordinaryCalls.Load())
 	logs := repo.snapshotLogs()
@@ -1044,11 +1052,11 @@ func TestCandidateCheckRoutesCyberCandidateToSemanticReview(t *testing.T) {
 	require.Zero(t, status.PreBlockBlocked)
 }
 
-func TestCandidateSemanticReviewAutoRejectsHighConfidenceHighRiskCandidate(t *testing.T) {
+func TestCandidateSemanticReviewDefersAmbiguousHighRiskCandidate(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.Enabled = true
 	cfg.KeywordRules = []ContentModerationKeywordRule{{
-		Keyword:  "cyber-marker",
+		Keyword:  "reverse-engineer-marker",
 		Category: ContentModerationKeywordCategoryCyber,
 		Severity: ContentModerationKeywordSeverityHigh,
 		Action:   ContentModerationKeywordActionBlock,
@@ -1064,7 +1072,7 @@ func TestCandidateSemanticReviewAutoRejectsHighConfidenceHighRiskCandidate(t *te
 	svc.SetDecisionCacheKey(bytes.Repeat([]byte{0x5a}, 32))
 	svc.SetSemanticReviewRouter(&contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
 		Verdict:    "review",
-		Categories: []string{"other"},
+		Categories: []string{"reverse_engineering"},
 		Confidence: 0.90,
 		Intent:     "ambiguous",
 	}})
@@ -1073,17 +1081,93 @@ func TestCandidateSemanticReviewAutoRejectsHighConfidenceHighRiskCandidate(t *te
 		UserID:   17,
 		APIKeyID: 29,
 		Protocol: ContentModerationProtocolOpenAIChat,
-		Body:     []byte(`{"messages":[{"role":"user","content":"cyber-marker request"}]}`),
+		Body:     []byte(`{"messages":[{"role":"user","content":"reverse-engineer-marker request"}]}`),
 	})
 
 	require.NoError(t, err)
 	require.False(t, decision.Allowed)
 	require.True(t, decision.Blocked)
-	require.Equal(t, ContentModerationActionSemanticReviewReject, decision.Action)
+	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.Equal(t, ContentModerationActionSemanticReviewDeferred, decision.Action)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
 	require.Equal(t, contentModerationDecisionSourceSemantic, logs[0].DecisionSource)
-	require.Equal(t, ContentModerationActionSemanticReviewReject, logs[0].Action)
+	require.Equal(t, ContentModerationActionSemanticReviewDeferred, logs[0].Action)
+	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.False(t, logs[0].UserViolationEligible)
+	require.Zero(t, logs[0].ViolationCount)
+	require.False(t, logs[0].AutoBanned)
+	require.False(t, logs[0].EmailSent)
+}
+
+func TestCandidateSemanticReviewLowCustomReviewIsNotDeferred(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.Enabled = true
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword:  "custom-review-marker",
+		Category: ContentModerationKeywordCategoryCustom,
+		Severity: ContentModerationKeywordSeverityMedium,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}}
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	repo := &candidateRetryDedupeRepo{}
+	svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyRiskControlEnabled:      "true",
+		SettingKeyContentModerationConfig: string(raw),
+	}}, repo, nil, nil, nil, nil, nil)
+	svc.SetDecisionCacheKey(bytes.Repeat([]byte{0x5a}, 32))
+	svc.SetSemanticReviewRouter(&contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "review", Intent: "ambiguous", Target: "unknown", Authorization: "unclear",
+		HarmMechanism: "other", Severity: "low", Confidence: 0.6,
+		Operationality: "conceptual", Executability: "indirect", Categories: []string{"other"},
+	}})
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		UserID:   17,
+		APIKeyID: 29,
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"custom-review-marker request"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, decision.Action)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
+	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+}
+
+func TestHighRiskCandidateReviewDeferredScope(t *testing.T) {
+	highRisk := contentModerationCandidateSelection{Rule: ContentModerationKeywordRule{
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh,
+	}}
+	lowRisk := contentModerationCandidateSelection{Rule: ContentModerationKeywordRule{
+		Category: ContentModerationKeywordCategoryCustom,
+		Severity: ContentModerationKeywordSeverityMedium,
+	}}
+	lowResult := ContentModerationSemanticReviewResult{
+		Verdict: "review", Severity: "low", HarmMechanism: "other", Categories: []string{"other"},
+	}
+	highResult := ContentModerationSemanticReviewResult{
+		Verdict: "review", Severity: "high", HarmMechanism: "credential_theft", Categories: []string{"credential_theft"},
+	}
+	cfg := candidateTestConfig()
+
+	require.True(t, highRiskCandidateReviewDeferredActive(cfg, highRisk, lowResult))
+	require.False(t, highRiskCandidateReviewDeferredActive(cfg, lowRisk, lowResult))
+	require.True(t, highRiskCandidateReviewDeferredActive(cfg, lowRisk, highResult))
+
+	cfg.Mode = ContentModerationModeObserve
+	require.False(t, highRiskCandidateReviewDeferredActive(cfg, highRisk, highResult))
+
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeHybrid
+	require.True(t, highRiskCandidateReviewDeferredActive(cfg, highRisk, lowResult))
 }
 
 func TestPromptInjectionV2PreBlockOutcomeMatrixIsFailClosedWithoutViolation(t *testing.T) {

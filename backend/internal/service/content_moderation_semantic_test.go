@@ -90,6 +90,28 @@ type semanticReviewUsageRecorderStub struct {
 	err     error
 }
 
+type semanticReviewCooldownRepo struct {
+	AccountRepository
+	contextErr error
+	calls      []semanticReviewModelRateLimitCall
+}
+
+type semanticReviewModelRateLimitCall struct {
+	accountID int64
+	scope     string
+	reason    string
+}
+
+func (r *semanticReviewCooldownRepo) SetModelRateLimit(ctx context.Context, id int64, scope string, _ time.Time, reason ...string) error {
+	r.contextErr = ctx.Err()
+	call := semanticReviewModelRateLimitCall{accountID: id, scope: scope}
+	if len(reason) > 0 {
+		call.reason = reason[0]
+	}
+	r.calls = append(r.calls, call)
+	return nil
+}
+
 func (s *semanticReviewUsageRecorderStub) Record(_ context.Context, record PlatformUsageRecord) error {
 	s.records = append(s.records, record)
 	return s.err
@@ -296,6 +318,40 @@ func TestSemanticReviewRouterUsesStaleSnapshotWhenSynchronousQuotaRefreshFails(t
 	require.Equal(t, []int64{spark.ID}, quota.snapshotCalls())
 }
 
+func TestSemanticReviewRouterRefreshesIndependentSparkQuotaForGloballyRateLimitedAccount(t *testing.T) {
+	resetAt := time.Now().Add(time.Hour)
+	spark := freshSemanticReviewAccount(15)
+	spark.RateLimitResetAt = &resetAt
+	spark.Extra["codex_5h_used_percent"] = 100.0
+	spark.Extra["codex_5h_reset_at"] = resetAt.Format(time.RFC3339)
+	spark.Extra["codex_usage_dimension"] = "global"
+	backend := &semanticReviewBackendStub{accountsByModel: map[string][]*Account{
+		ContentModerationSemanticReviewPrimaryModel: {spark},
+	}}
+	quota := &semanticReviewQuotaStub{updates: map[int64]map[string]any{
+		spark.ID: {
+			"codex_5h_used_percent":  25.0,
+			"codex_5h_reset_at":      resetAt.Format(time.RFC3339),
+			"codex_usage_updated_at": time.Now().Format(time.RFC3339),
+			"codex_usage_dimension":  "spark",
+		},
+	}}
+	router := NewOpenAIContentModerationSemanticReviewRouter(backend, quota, nil)
+
+	result, err := router.Review(context.Background(), semanticReviewTestConfig(), ContentModerationSemanticReviewInput{Text: "test"})
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationSemanticReviewPrimaryModel, result.Model)
+	require.Equal(t, []string{ContentModerationSemanticReviewPrimaryModel}, backend.reviewCalls)
+	require.Equal(t, []int64{spark.ID}, quota.snapshotCalls())
+
+	mergeAccountExtra(spark, quota.updates[spark.ID])
+	_, err = router.Review(context.Background(), semanticReviewTestConfig(), ContentModerationSemanticReviewInput{Text: "test again"})
+
+	require.NoError(t, err)
+	require.Equal(t, []int64{spark.ID}, quota.snapshotCalls(), "fresh spark quota snapshot should be reused")
+}
+
 func TestSemanticReviewRouterBoundsSynchronousQuotaRefreshTimeout(t *testing.T) {
 	spark := &Account{ID: 14, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	backend := &semanticReviewBackendStub{accountsByModel: map[string][]*Account{
@@ -394,6 +450,63 @@ func TestSemanticReviewRouterFallsBackAfterOnePrimaryAccountAttempt(t *testing.T
 	}, time.Second, 10*time.Millisecond)
 	require.Equal(t, []int64{first.ID}, quota.snapshotCalls())
 	require.Equal(t, []string{ContentModerationSemanticReviewPrimaryModel, ContentModerationSemanticReviewFallbackModel}, backend.reviewCalls)
+}
+
+func TestSemanticReviewRouterFallsBackWhenPrimaryModelIsUnsupported(t *testing.T) {
+	backend := &semanticReviewBackendStub{
+		accountsByModel: map[string][]*Account{
+			ContentModerationSemanticReviewPrimaryModel:  {freshSemanticReviewAccount(24)},
+			ContentModerationSemanticReviewFallbackModel: {freshSemanticReviewAccount(25)},
+		},
+		review: func(_ context.Context, _ *Account, model string) (ContentModerationSemanticReviewResult, error) {
+			if model == ContentModerationSemanticReviewPrimaryModel {
+				return ContentModerationSemanticReviewResult{}, &ContentModerationSemanticReviewUpstreamError{
+					HTTPStatus: http.StatusBadRequest,
+					Code:       "model_unsupported",
+					Message:    "model is not supported when using Codex with a ChatGPT account",
+				}
+			}
+			return ContentModerationSemanticReviewResult{Verdict: "allow"}, nil
+		},
+	}
+	router := NewOpenAIContentModerationSemanticReviewRouter(backend, nil, nil)
+
+	result, err := router.Review(context.Background(), semanticReviewTestConfig(), ContentModerationSemanticReviewInput{Text: "test"})
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationSemanticReviewFallbackModel, result.Model)
+	require.Equal(t, []string{ContentModerationSemanticReviewPrimaryModel, ContentModerationSemanticReviewFallbackModel}, backend.reviewCalls)
+}
+
+func TestSemanticReviewRouterTriesAnotherPrimaryAccountWhenModelIsUnsupported(t *testing.T) {
+	first := freshSemanticReviewAccount(26)
+	second := freshSemanticReviewAccount(27)
+	backend := &semanticReviewBackendStub{
+		accountsByModel: map[string][]*Account{
+			ContentModerationSemanticReviewPrimaryModel:  {first, second},
+			ContentModerationSemanticReviewFallbackModel: {freshSemanticReviewAccount(28)},
+		},
+		review: func(_ context.Context, account *Account, _ string) (ContentModerationSemanticReviewResult, error) {
+			if account.ID == first.ID {
+				return ContentModerationSemanticReviewResult{}, &ContentModerationSemanticReviewUpstreamError{
+					HTTPStatus: http.StatusBadRequest,
+					Code:       "model_unsupported",
+					Message:    "model is not supported when using Codex with a ChatGPT account",
+				}
+			}
+			return ContentModerationSemanticReviewResult{Verdict: "allow"}, nil
+		},
+	}
+	cfg := semanticReviewTestConfig()
+	cfg.MaxAttemptsPerModel = 2
+	router := NewOpenAIContentModerationSemanticReviewRouter(backend, nil, nil)
+
+	result, err := router.Review(context.Background(), cfg, ContentModerationSemanticReviewInput{Text: "test"})
+
+	require.NoError(t, err)
+	require.Equal(t, second.ID, result.AccountID)
+	require.Equal(t, ContentModerationSemanticReviewPrimaryModel, result.Model)
+	require.Equal(t, []string{ContentModerationSemanticReviewPrimaryModel, ContentModerationSemanticReviewPrimaryModel}, backend.reviewCalls)
 }
 
 func TestSemanticReviewRouterRejectDoesNotDowngradeToFallbackModel(t *testing.T) {
@@ -540,6 +653,37 @@ func TestSelectSemanticReviewAccountFallsBackAcrossBusinessGroups(t *testing.T) 
 	require.NotNil(t, selection)
 	require.NotNil(t, selection.Account)
 	require.Equal(t, account.ID, selection.Account.ID)
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
+}
+
+func TestSelectSemanticReviewAccountUsesNormalOAuthSparkQuotaDuringGlobal429(t *testing.T) {
+	groupID := int64(29)
+	resetAt := time.Now().Add(time.Hour)
+	account := Account{
+		ID:               75,
+		Platform:         PlatformOpenAI,
+		Type:             AccountTypeOAuth,
+		Status:           StatusActive,
+		Schedulable:      true,
+		Concurrency:      1,
+		RateLimitResetAt: &resetAt,
+		AccountGroups:    []AccountGroup{{GroupID: groupID}},
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{ContentModerationSemanticReviewPrimaryModel: ContentModerationSemanticReviewPrimaryModel},
+		},
+	}
+	repo := groupAwareStubOpenAIAccountRepo{stubOpenAIAccountRepo{accounts: []Account{account}}}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+
+	selection, err := svc.SelectSemanticReviewAccount(context.Background(), &groupID, ContentModerationSemanticReviewPrimaryModel, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, account.ID, selection.Account.ID)
+	require.False(t, selection.Account.IsShadow())
 	if selection.ReleaseFunc != nil {
 		selection.ReleaseFunc()
 	}
@@ -860,6 +1004,90 @@ func TestParseSemanticReviewSSEReturnsAtCompletedWithoutWaitingForEOF(t *testing
 	require.Equal(t, 7, response.Usage.InputTokens)
 }
 
+func TestParseSemanticReviewSSEReturnsUnsupportedModelFailureWithoutWaitingForEOF(t *testing.T) {
+	reader := &semanticReviewTerminalReader{
+		data: []byte("data: {\"type\":\"response.failed\",\"response\":{\"error\":{\"code\":\"invalid_request_error\",\"message\":\"The 'gpt-5.3-codex-spark' model is not supported when using Codex with a ChatGPT account.\"}}}\n\n"),
+		err:  context.DeadlineExceeded,
+	}
+
+	_, err := parseSemanticReviewSSE(reader, time.Time{})
+
+	var upstreamErr *ContentModerationSemanticReviewUpstreamError
+	require.ErrorAs(t, err, &upstreamErr)
+	require.Equal(t, "model_unsupported", upstreamErr.Code)
+	require.False(t, upstreamErr.Retryable)
+}
+
+func TestParseSemanticReviewSSEReturnsIncompleteWithoutWaitingForEOF(t *testing.T) {
+	reader := &semanticReviewTerminalReader{
+		data: []byte("data: {\"type\":\"response.incomplete\",\"response\":{\"incomplete_details\":{\"reason\":\"max_output_tokens\"}}}\n\n"),
+		err:  context.DeadlineExceeded,
+	}
+
+	_, err := parseSemanticReviewSSE(reader, time.Time{})
+
+	var upstreamErr *ContentModerationSemanticReviewUpstreamError
+	require.ErrorAs(t, err, &upstreamErr)
+	require.Equal(t, "incomplete_response", upstreamErr.Code)
+	require.True(t, upstreamErr.Retryable)
+}
+
+func TestParseSemanticReviewSSEClassifiesDeterministicAndTransientFailures(t *testing.T) {
+	tests := []struct {
+		name      string
+		code      string
+		retryable bool
+	}{
+		{name: "invalid request", code: "invalid_request_error", retryable: false},
+		{name: "invalid schema", code: "invalid_schema", retryable: false},
+		{name: "invalid parameter", code: "invalid_parameter", retryable: false},
+		{name: "server error", code: "server_error", retryable: true},
+		{name: "rate limit", code: "rate_limit_exceeded", retryable: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			event := map[string]any{
+				"type": "response.failed",
+				"response": map[string]any{
+					"error": map[string]any{"code": tt.code, "message": "upstream failure"},
+				},
+			}
+			payload, err := json.Marshal(event)
+			require.NoError(t, err)
+
+			_, err = parseSemanticReviewSSE(strings.NewReader("data: "+string(payload)+"\n\n"), time.Time{})
+
+			var upstreamErr *ContentModerationSemanticReviewUpstreamError
+			require.ErrorAs(t, err, &upstreamErr)
+			require.Equal(t, tt.retryable, upstreamErr.Retryable)
+			if tt.retryable {
+				require.Zero(t, upstreamErr.HTTPStatus)
+			} else {
+				require.Equal(t, http.StatusBadRequest, upstreamErr.HTTPStatus)
+			}
+		})
+	}
+}
+
+func TestSemanticReviewUnsupportedModelCooldownSurvivesAttemptDeadline(t *testing.T) {
+	repo := &semanticReviewCooldownRepo{}
+	svc := &OpenAIGatewayService{rateLimitService: &RateLimitService{accountRepo: repo}}
+	account := freshSemanticReviewAccount(29)
+	attemptCtx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancel()
+	<-attemptCtx.Done()
+	body := []byte(`{"detail":"The 'gpt-5.3-codex-spark' model is not supported when using Codex with a ChatGPT account."}`)
+
+	svc.persistSemanticReviewUnsupportedModelCooldown(attemptCtx, account, http.StatusBadRequest, http.Header{}, body, ContentModerationSemanticReviewPrimaryModel)
+
+	require.NoError(t, repo.contextErr)
+	require.Len(t, repo.calls, 1)
+	require.Equal(t, account.ID, repo.calls[0].accountID)
+	require.Equal(t, ContentModerationSemanticReviewPrimaryModel, repo.calls[0].scope)
+	require.Equal(t, upstreamCodexPlanGatedModelReason, repo.calls[0].reason)
+}
+
 func TestParseSemanticReviewRiskDimensions(t *testing.T) {
 	result, err := parseSemanticReviewModelOutput(`{"verdict":"review","intent":"harmful","target":"third_party","authorization":"unauthorized","severity":"critical","confidence":0.97,"operationality":"actionable","executability":"direct","categories":["unauthorized_access"],"reason_codes":["no_authorization"]}`)
 	require.NoError(t, err)
@@ -876,6 +1104,7 @@ func TestSemanticReviewPolicyRejectsExplicitUnauthorizedExecutableAbuse(t *testi
 		Intent:         "harmful",
 		Target:         "third_party",
 		Authorization:  "unauthorized",
+		HarmMechanism:  "unauthorized_access",
 		Operationality: "actionable",
 		Executability:  "direct",
 		Categories:     []string{"unauthorized_access"},
@@ -886,12 +1115,137 @@ func TestSemanticReviewPolicyRejectsExplicitUnauthorizedExecutableAbuse(t *testi
 	require.Contains(t, result.ReasonCodes, "semantic_policy_reject")
 }
 
+func TestSemanticReviewPolicyCapsInconsistentRejects(t *testing.T) {
+	tests := []struct {
+		name     string
+		result   ContentModerationSemanticReviewResult
+		expected string
+	}{
+		{
+			name:     "unclear authorization",
+			result:   ContentModerationSemanticReviewResult{Verdict: "reject", Intent: "harmful", Target: "third_party", Authorization: "unclear", HarmMechanism: "unauthorized_access", Operationality: "actionable", Executability: "direct"},
+			expected: "review",
+		},
+		{
+			name:     "ambiguous intent",
+			result:   ContentModerationSemanticReviewResult{Verdict: "reject", Intent: "ambiguous", Target: "third_party", Authorization: "unauthorized", HarmMechanism: "unauthorized_access", Operationality: "actionable", Executability: "direct"},
+			expected: "review",
+		},
+		{
+			name:     "no harm mechanism",
+			result:   ContentModerationSemanticReviewResult{Verdict: "reject", Intent: "harmful", Target: "third_party", Authorization: "unauthorized", HarmMechanism: "none", Operationality: "actionable", Executability: "direct"},
+			expected: "review",
+		},
+		{
+			name:     "generic other harm mechanism",
+			result:   ContentModerationSemanticReviewResult{Verdict: "reject", Intent: "harmful", Target: "third_party", Authorization: "unauthorized", HarmMechanism: "other", Operationality: "actionable", Executability: "direct"},
+			expected: "review",
+		},
+		{
+			name:     "missing harm mechanism",
+			result:   ContentModerationSemanticReviewResult{Verdict: "reject", Intent: "harmful", Target: "third_party", Authorization: "unauthorized", Operationality: "actionable", Executability: "direct"},
+			expected: "review",
+		},
+		{
+			name:     "self owned operations",
+			result:   ContentModerationSemanticReviewResult{Verdict: "reject", Intent: "defensive", Target: "self_owned", Authorization: "authorized", HarmMechanism: "none", Operationality: "actionable", Executability: "direct"},
+			expected: "allow",
+		},
+		{
+			name:     "reason says no request",
+			result:   ContentModerationSemanticReviewResult{Verdict: "reject", Intent: "harmful", Target: "third_party", Authorization: "unauthorized", HarmMechanism: "unauthorized_access", Operationality: "actionable", Executability: "direct", ReasonCodes: []string{"no_user_request_provided"}},
+			expected: "review",
+		},
+		{
+			name:     "reason and dimensions say no request",
+			result:   ContentModerationSemanticReviewResult{Verdict: "reject", Intent: "benign", Target: "none", Authorization: "not_applicable", HarmMechanism: "none", Operationality: "none", Executability: "none", ReasonCodes: []string{"no_user_request_provided"}},
+			expected: "allow",
+		},
+		{
+			name:     "defensive label conflicts with unauthorized harm",
+			result:   ContentModerationSemanticReviewResult{Verdict: "reject", Intent: "defensive", Target: "self_owned", Authorization: "unauthorized", HarmMechanism: "credential_theft", Operationality: "actionable", Executability: "direct", ReasonCodes: []string{"benign_context"}},
+			expected: "review",
+		},
+		{
+			name:     "authorized defensive testing remains allowed",
+			result:   ContentModerationSemanticReviewResult{Verdict: "reject", Intent: "defensive", Target: "authorized_lab", Authorization: "authorized", HarmMechanism: "none", Operationality: "actionable", Executability: "direct", ReasonCodes: []string{"authorized_testing"}},
+			expected: "allow",
+		},
+		{
+			name:     "authorized self owned target conflicts with credential theft",
+			result:   ContentModerationSemanticReviewResult{Verdict: "reject", Intent: "defensive", Target: "self_owned", Authorization: "authorized", HarmMechanism: "credential_theft", Operationality: "actionable", Executability: "direct", ReasonCodes: []string{"authorized_testing"}},
+			expected: "review",
+		},
+		{
+			name:     "authorized lab conflicts with exploit delivery",
+			result:   ContentModerationSemanticReviewResult{Verdict: "reject", Intent: "defensive", Target: "authorized_lab", Authorization: "authorized", HarmMechanism: "exploit_delivery", Operationality: "actionable", Executability: "direct", ReasonCodes: []string{"authorized_testing"}},
+			expected: "review",
+		},
+		{
+			name:     "authorized label does not excuse third party credential theft",
+			result:   ContentModerationSemanticReviewResult{Verdict: "reject", Intent: "defensive", Target: "third_party", Authorization: "authorized", HarmMechanism: "credential_theft", Operationality: "actionable", Executability: "direct", ReasonCodes: []string{"authorized_testing"}},
+			expected: "review",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, overridden := applySemanticReviewPolicy(tt.result)
+			require.True(t, overridden)
+			require.Equal(t, tt.expected, result.Verdict)
+			require.Contains(t, result.ReasonCodes, "semantic_policy_reject_inconsistent")
+		})
+	}
+}
+
+func TestSemanticReviewPolicyCapsInconsistentAllows(t *testing.T) {
+	tests := []struct {
+		name   string
+		result ContentModerationSemanticReviewResult
+	}{
+		{
+			name: "unclear authorization with credential theft",
+			result: ContentModerationSemanticReviewResult{
+				Verdict: "allow", Intent: "harmful", Target: "third_party", Authorization: "unclear",
+				HarmMechanism: "credential_theft", Severity: "critical",
+				Operationality: "actionable", Executability: "direct", Categories: []string{"credential_theft"},
+			},
+		},
+		{
+			name: "harmless reason conflicts with harmful dimensions",
+			result: ContentModerationSemanticReviewResult{
+				Verdict: "allow", Intent: "harmful", Target: "third_party", Authorization: "unauthorized",
+				HarmMechanism: "exploit_delivery", Severity: "high",
+				Operationality: "actionable", Executability: "direct", Categories: []string{"exploit_delivery"},
+				ReasonCodes: []string{"benign_context"},
+			},
+		},
+		{
+			name: "generic harm does not support allow",
+			result: ContentModerationSemanticReviewResult{
+				Verdict: "allow", Intent: "benign", Target: "none", Authorization: "not_applicable",
+				HarmMechanism: "other", Severity: "low", Operationality: "none", Executability: "none",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, overridden := applySemanticReviewPolicy(tt.result)
+			require.True(t, overridden)
+			require.Equal(t, "review", result.Verdict)
+			require.Contains(t, result.ReasonCodes, "semantic_policy_allow_inconsistent")
+		})
+	}
+}
+
 func TestSemanticReviewPolicyAllowsAuthorizedCTFLabRequest(t *testing.T) {
 	result, overridden := applySemanticReviewPolicy(ContentModerationSemanticReviewResult{
 		Verdict:        "allow",
 		Intent:         "defensive",
 		Target:         "authorized_lab",
 		Authorization:  "authorized",
+		HarmMechanism:  "none",
 		Operationality: "actionable",
 		Executability:  "direct",
 		Categories:     []string{"cyber"},
@@ -919,7 +1273,7 @@ func TestSemanticReviewPolicyDowngradesPublicDataWithoutHarmMechanism(t *testing
 	require.Contains(t, result.ReasonCodes, "semantic_policy_public_harmless")
 }
 
-func TestSemanticReviewPolicyKeepsPublicMarketManipulationRejected(t *testing.T) {
+func TestSemanticReviewPolicyDowngradesIndirectPublicMarketManipulation(t *testing.T) {
 	result, overridden := applySemanticReviewPolicy(ContentModerationSemanticReviewResult{
 		Verdict:           "reject",
 		Intent:            "harmful",
@@ -932,8 +1286,9 @@ func TestSemanticReviewPolicyKeepsPublicMarketManipulationRejected(t *testing.T)
 		Categories:        []string{"fraud"},
 	})
 
-	require.False(t, overridden)
-	require.Equal(t, "reject", result.Verdict)
+	require.True(t, overridden)
+	require.Equal(t, "review", result.Verdict)
+	require.Contains(t, result.ReasonCodes, "semantic_policy_reject_inconsistent")
 }
 
 func TestParseSemanticReviewPublicInformationDimensions(t *testing.T) {
@@ -981,10 +1336,16 @@ func TestProcessSemanticReviewAllowPersistsAuditableCategory(t *testing.T) {
 	svc := NewContentModerationService(nil, repo, nil, nil, nil, nil, nil)
 	svc.rawRequestEncryptor = encryptor
 	svc.semanticReviewRouter = &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
-		Verdict:    "allow",
-		Model:      "review-model",
-		Confidence: 0.91,
-		Categories: []string{"benign_context"},
+		Verdict:           "allow",
+		Model:             "review-model",
+		Confidence:        0.91,
+		Intent:            "defensive",
+		Target:            "self_owned",
+		Authorization:     "authorized",
+		InformationAccess: "provided_by_user",
+		HarmMechanism:     "none",
+		Categories:        []string{"benign_context"},
+		ReasonCodes:       []string{"authorized_testing"},
 	}}
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
@@ -1009,6 +1370,54 @@ func TestProcessSemanticReviewAllowPersistsAuditableCategory(t *testing.T) {
 	require.Equal(t, contentModerationDecisionSourceSemantic, logs[0].DecisionSource)
 	require.Equal(t, "platform_openai", logs[0].ModerationProvider)
 	require.Equal(t, "review-model", logs[0].ModerationModel)
+	var metadata map[string]any
+	require.NoError(t, json.Unmarshal([]byte(logs[0].Error), &metadata))
+	require.Equal(t, "defensive", metadata["semantic_review_intent"])
+	require.Equal(t, "authorized", metadata["semantic_review_authorization"])
+	require.Equal(t, "provided_by_user", metadata["semantic_review_information_access"])
+	require.Equal(t, "none", metadata["semantic_review_harm_mechanism"])
+	require.Equal(t, false, metadata["semantic_review_policy_override"])
+	require.Len(t, metadata["reviewed_text_sha256"], 64)
+	require.NotContains(t, logs[0].Error, "bounded review text")
+}
+
+func TestProcessSemanticReviewContextOnlyRejectRemainsPendingWithoutViolation(t *testing.T) {
+	repo := &contentModerationTestRepo{}
+	encryptor := contentModerationTestEncryptor{}
+	encrypted, err := encryptor.Encrypt("[source=responses.input[0] role=tool evidence=context_only]\nhistorical credential theft evidence")
+	require.NoError(t, err)
+	svc := NewContentModerationService(nil, repo, nil, nil, nil, nil, nil)
+	svc.rawRequestEncryptor = encryptor
+	svc.semanticReviewRouter = &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "reject", Intent: "harmful", Target: "external_service", Authorization: "unauthorized",
+		HarmMechanism: "credential_theft", Severity: "critical", Confidence: 0.98,
+		Operationality: "actionable", Executability: "direct", Categories: []string{"credential_theft"},
+	}}
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.SemanticReview = semanticReviewTestConfig()
+	payload := contentModerationOutboxPayload{
+		Config: cfg,
+		SemanticReview: &contentModerationSemanticReviewOutboxPayload{
+			DecisionID:    "decision-context-only",
+			InputHash:     "hash-context-only",
+			Input:         contentModerationSemanticReviewOutboxInput{RequestID: "request-context-only", UserID: 17},
+			TextEncrypted: encrypted,
+			ContextOnly:   true,
+		},
+	}
+
+	require.NoError(t, svc.processContentModerationSemanticReviewEvent(context.Background(), payload))
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
+	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.False(t, logs[0].UserViolationEligible)
+	require.Zero(t, logs[0].ViolationCount)
+	require.False(t, logs[0].AutoBanned)
+	require.False(t, logs[0].EmailSent)
+	require.Contains(t, logs[0].Error, `"evidence_context_only":true`)
+	require.Contains(t, logs[0].Error, "semantic_policy_context_only")
 }
 
 func TestBuildSemanticReviewInputLocalReviewIncludesOnlyMatchedSources(t *testing.T) {
@@ -1032,7 +1441,7 @@ func TestBuildSemanticReviewInputLocalReviewIncludesOnlyMatchedSources(t *testin
 	require.LessOrEqual(t, len([]rune(got)), cfg.MaxInputRunes)
 }
 
-func TestBuildSemanticReviewInputAllUsesLatestUserAndToolOnly(t *testing.T) {
+func TestBuildSemanticReviewInputAllUsesLatestUserOnly(t *testing.T) {
 	cfg := semanticReviewTestConfig()
 	cfg.Trigger = ContentModerationSemanticReviewTriggerAll
 	content := ContentModerationInput{Sources: []ContentModerationInputSource{
@@ -1045,11 +1454,25 @@ func TestBuildSemanticReviewInputAllUsesLatestUserAndToolOnly(t *testing.T) {
 
 	got := buildContentModerationSemanticReviewInput(cfg, content, "")
 
-	require.Contains(t, got, "latest tool result")
 	require.Contains(t, got, "latest user request")
+	require.NotContains(t, got, "latest tool result")
 	require.NotContains(t, got, "old user request")
 	require.NotContains(t, got, "private system context")
 	require.NotContains(t, got, "assistant response")
+}
+
+func TestBuildSemanticReviewInputAllSkipsAmbientContextWithoutUserRequest(t *testing.T) {
+	cfg := semanticReviewTestConfig()
+	cfg.Trigger = ContentModerationSemanticReviewTriggerAll
+	content := ContentModerationInput{
+		Text: "browser state tool output assistant handoff",
+		Sources: []ContentModerationInputSource{
+			{Source: "messages[0]", Role: "assistant", Text: "assistant handoff"},
+			{Source: "messages[1]", Role: "tool", Text: "browser state tool output"},
+		},
+	}
+
+	require.Empty(t, buildContentModerationSemanticReviewInput(cfg, content, ""))
 }
 
 func TestEnqueueSemanticReviewEncryptsCandidateExcerptOnly(t *testing.T) {
@@ -1082,12 +1505,52 @@ func TestEnqueueSemanticReviewEncryptsCandidateExcerptOnly(t *testing.T) {
 	require.NotContains(t, plain, "hidden history")
 }
 
+func TestEnqueueSemanticReviewToolOnlyEvidenceCarriesContextOnlyProvenance(t *testing.T) {
+	outbox := &contentModerationTestOutboxRepo{}
+	encryptor := contentModerationTestEncryptor{}
+	svc := &ContentModerationService{outboxRepo: outbox, rawRequestEncryptor: encryptor, semanticReviewRouter: semanticReviewRouterStub{}}
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.SemanticReview = semanticReviewTestConfig()
+	cfg.SemanticReview.Trigger = ContentModerationSemanticReviewTriggerAll
+	content := ExtractContentModerationInput(
+		ContentModerationProtocolOpenAIResponses,
+		[]byte(`{"input":[{"type":"function_call_output","call_id":"call_1","output":"deployment complete"}]}`),
+	)
+
+	require.True(t, svc.enqueueSemanticReviewAfterRules(
+		context.Background(),
+		ContentModerationCheckInput{RequestID: "tool-only"},
+		cfg,
+		content,
+		"hash-tool-only",
+		&ContentModerationDecision{Allowed: true},
+	))
+	events := outbox.snapshotEvents()
+	require.Len(t, events, 1)
+	raw, err := json.Marshal(events[0].Payload)
+	require.NoError(t, err)
+	var payload contentModerationOutboxPayload
+	require.NoError(t, json.Unmarshal(raw, &payload))
+	require.NotNil(t, payload.SemanticReview)
+	require.True(t, payload.SemanticReview.ContextOnly)
+}
+
 func TestSemanticReviewUpstreamErrorClassification(t *testing.T) {
 	err := classifySemanticReviewUpstreamHTTPError(httpStatusTooManyRequestsForTest, []byte(`{"error":"insufficient_quota"}`))
 	var upstreamErr *ContentModerationSemanticReviewUpstreamError
 	require.True(t, errors.As(err, &upstreamErr))
 	require.True(t, upstreamErr.Retryable)
 	require.True(t, upstreamErr.QuotaExhausted)
+}
+
+func TestSemanticReviewUpstreamErrorClassifiesCodexPlanGatedModel(t *testing.T) {
+	err := classifySemanticReviewUpstreamHTTPError(http.StatusBadRequest, []byte(`{"detail":"The 'gpt-5.3-codex-spark' model is not supported when using Codex with a ChatGPT account."}`))
+
+	var upstreamErr *ContentModerationSemanticReviewUpstreamError
+	require.ErrorAs(t, err, &upstreamErr)
+	require.Equal(t, "model_unsupported", upstreamErr.Code)
+	require.False(t, upstreamErr.Retryable)
 }
 
 const httpStatusTooManyRequestsForTest = 429

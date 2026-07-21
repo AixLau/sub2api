@@ -1241,7 +1241,9 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		return contentModerationCandidateOutcome{Decision: buildDecision(action, true, blocked), DecisionID: decisionID, Cacheable: true}
 	case "review":
 		action := ContentModerationActionSemanticReviewReview
-		failClosed := promptInjectionFailClosedActive(cfg, selection)
+		promptInjectionFailClosed := promptInjectionFailClosedActive(cfg, selection)
+		highRiskDeferred := highRiskCandidateReviewDeferredActive(cfg, selection, result)
+		failClosed := promptInjectionFailClosed || highRiskDeferred
 		if failClosed {
 			action = ContentModerationActionSemanticReviewDeferred
 			if !semanticInput.EvidenceComplete {
@@ -1265,7 +1267,7 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 			decision := buildDecision(action, true, true)
 			decision.StatusCode = http.StatusServiceUnavailable
 			decision.Message = promptInjectionDeferredMessage(action)
-			if s.metrics != nil {
+			if promptInjectionFailClosed && s.metrics != nil {
 				reason := "review"
 				if action == ContentModerationActionSemanticReviewIncomplete {
 					reason = "incomplete"
@@ -1305,17 +1307,57 @@ func applyCandidateSemanticReviewPolicy(
 	if result.Intent == "benign" || result.Intent == "defensive" {
 		return result, false
 	}
+	// Candidate severity is corroborating evidence, not a substitute for the
+	// semantic dimensions required to reject. In particular, ambiguity or an
+	// absent harm mechanism must remain reviewable.
+	if !semanticReviewPolicyRejectEligible(result) {
+		return result, false
+	}
 	category := normalizeContentModerationKeywordCategory(selection.Rule.Category)
-	highRiskCandidate := contentModerationCategoryRequiresSemanticReview(category) ||
-		normalizeContentModerationKeywordSeverity(selection.Rule.Severity) == ContentModerationKeywordSeverityHigh ||
-		normalizeContentModerationKeywordSeverity(selection.Rule.Severity) == ContentModerationKeywordSeverityCritical
-	if !highRiskCandidate {
+	if !contentModerationCandidateIsHighRisk(selection, category) {
 		return result, false
 	}
 	result.Verdict = "reject"
 	result.Severity = ContentModerationKeywordSeverityHigh
 	result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "semantic_policy_high_risk_candidate")
 	return result, true
+}
+
+func highRiskCandidateReviewDeferredActive(
+	cfg *ContentModerationConfig,
+	selection contentModerationCandidateSelection,
+	result ContentModerationSemanticReviewResult,
+) bool {
+	if cfg == nil || cfg.Mode != ContentModerationModePreBlock {
+		return false
+	}
+	category := normalizeContentModerationKeywordCategory(selection.Rule.Category)
+	return contentModerationCandidateIsHighRisk(selection, category) ||
+		semanticReviewResultIsHighRisk(result)
+}
+
+func contentModerationCandidateIsHighRisk(selection contentModerationCandidateSelection, normalizedCategory string) bool {
+	severity := normalizeContentModerationKeywordSeverity(selection.Rule.Severity)
+	return severity == ContentModerationKeywordSeverityHigh ||
+		severity == ContentModerationKeywordSeverityCritical ||
+		contentModerationDeferredHighRiskCategory(normalizedCategory)
+}
+
+func contentModerationDeferredHighRiskCategory(category string) bool {
+	switch normalizeContentModerationKeywordCategory(category) {
+	case ContentModerationKeywordCategoryJailbreak,
+		ContentModerationKeywordCategoryCyber,
+		ContentModerationKeywordCategoryMinorSafety,
+		ContentModerationKeywordCategorySelfHarm,
+		ContentModerationKeywordCategoryViolence,
+		ContentModerationKeywordCategoryWeapons,
+		ContentModerationKeywordCategoryPrivacy,
+		ContentModerationKeywordCategoryFraud,
+		ContentModerationKeywordCategoryAccountAbuse:
+		return true
+	default:
+		return false
+	}
 }
 
 func promptInjectionFailClosedActive(cfg *ContentModerationConfig, selection contentModerationCandidateSelection) bool {

@@ -102,6 +102,57 @@ func TestContentModerationRepositoryCountFlaggedByUserSince_ExcludesCyberPolicyW
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestContentModerationRepositoryCountFlaggedByUserSince_ExcludesUnconfirmedReviews(t *testing.T) {
+	queryMatcher := sqlmock.QueryMatcherFunc(func(expectedSQL, actualSQL string) error {
+		if expectedSQL != "content_moderation_count_confirmed_violations" {
+			return sqlmock.QueryMatcherRegexp.Match(expectedSQL, actualSQL)
+		}
+		required := []string{
+			"AND (action <> 'semantic_review_deferred' OR review_status = 'confirmed_violation')",
+			"AND COALESCE(review_status, '') NOT IN ('pending', 'false_positive')",
+		}
+		for _, fragment := range required {
+			if !strings.Contains(actualSQL, fragment) {
+				return fmt.Errorf("expected query to contain %q, got: %s", fragment, actualSQL)
+			}
+		}
+		return nil
+	})
+
+	tests := []struct {
+		name  string
+		count int
+	}{
+		{name: "pending review excluded", count: 0},
+		{name: "false positive excluded", count: 0},
+		{name: "deferred pending review excluded", count: 0},
+		{name: "deferred legacy empty status excluded", count: 0},
+		{name: "deferred confirmed violation retained", count: 1},
+		{name: "ordinary confirmed violation retained", count: 1},
+		{name: "legacy empty review status retained", count: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(queryMatcher))
+			require.NoError(t, err)
+			defer func() { _ = db.Close() }()
+
+			repo := NewContentModerationRepository(db)
+			since := time.Now().Add(-time.Hour)
+			mock.ExpectQuery("content_moderation_count_confirmed_violations").
+				WithArgs(int64(1001), since, false).
+				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(tt.count))
+
+			count, err := repo.CountFlaggedByUserSince(context.Background(), 1001, since, false)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.count, count)
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestContentModerationRepositoryCreateLog_UsesValidUpsertReturningSQL(t *testing.T) {
 	queryMatcher := sqlmock.QueryMatcherFunc(func(expectedSQL, actualSQL string) error {
 		if expectedSQL != "content_moderation_create_log" {

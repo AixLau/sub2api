@@ -591,6 +591,7 @@ func buildCodexSparkWindowExtraUpdates(usage *OpenAIQuotaUsage, now time.Time) m
 		return nil
 	}
 	updates["codex_usage_updated_at"] = now.Format(time.RFC3339)
+	updates["codex_usage_dimension"] = "spark"
 	return updates
 }
 

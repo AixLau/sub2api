@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   onboardingStore: {
     replay: vi.fn()
   },
+  routerPush: vi.fn(),
   copyToClipboard: vi.fn().mockResolvedValue(true)
 }))
 
@@ -40,7 +41,7 @@ vi.mock('@/composables/useClipboard', () => ({
 }))
 
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: mocks.routerPush }),
   useRoute: () => ({ name: 'Profile', meta: {}, params: {} })
 }))
 
@@ -52,7 +53,36 @@ vi.mock('vue-i18n', async (importOriginal) => ({
 describe('AppHeader contact support entry', () => {
   beforeEach(() => {
     mocks.appStore.contactInfo = 'youngPupss'
+    mocks.authStore.user = null
+    mocks.routerPush.mockReset()
     mocks.copyToClipboard.mockClear()
+  })
+
+  it('opens the wallet panel and routes the primary recharge action', async () => {
+    mocks.authStore.user = {
+      username: 'demo',
+      email: 'demo@example.com',
+      role: 'user',
+      balance: 2,
+      frozen_balance: 0
+    }
+
+    const wrapper = shallowMount(AppHeader, {
+      global: {
+        stubs: {
+          RouterLink: true,
+          BaseDialog: true,
+          Transition: false
+        }
+      }
+    })
+
+    expect(wrapper.find('[data-testid="wallet-panel"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="wallet-trigger"]').trigger('click')
+    expect(wrapper.get('[data-testid="wallet-panel"]').text()).toContain('$2.00')
+
+    await wrapper.get('[data-testid="wallet-recharge"]').trigger('click')
+    expect(mocks.routerPush).toHaveBeenCalledWith('/purchase')
   })
 
   it('opens a beginner-friendly guide before copying contact info', async () => {

@@ -80,6 +80,28 @@ func (r stubOpenAIAccountRepo) ListSchedulableUngroupedByPlatform(ctx context.Co
 	return r.ListSchedulableByPlatform(ctx, platform)
 }
 
+func (r stubOpenAIAccountRepo) ListModelAvailabilityCandidates(_ context.Context, groupID *int64, platforms []string, includeGrouped bool) ([]Account, error) {
+	allowedPlatforms := make(map[string]struct{}, len(platforms))
+	for _, platform := range platforms {
+		allowedPlatforms[platform] = struct{}{}
+	}
+	var result []Account
+	for _, account := range r.accounts {
+		if _, ok := allowedPlatforms[account.Platform]; !ok || !account.IsActive() || !account.Schedulable {
+			continue
+		}
+		if groupID != nil {
+			if !openAIStickyAccountMatchesGroup(&account, groupID) {
+				continue
+			}
+		} else if !includeGrouped && !openAIStickyAccountMatchesGroup(&account, nil) {
+			continue
+		}
+		result = append(result, account)
+	}
+	return result, nil
+}
+
 type groupAwareStubOpenAIAccountRepo struct {
 	stubOpenAIAccountRepo
 }

@@ -314,6 +314,7 @@ func (r *contentModerationRepository) CountFlaggedByUserSince(ctx context.Contex
 		return 0, nil
 	}
 	// SQL 中的 'cyber_policy' 字面量须与 service.ContentModerationActionCyberPolicy 保持一致。
+	// pending/false_positive 不是已确认违规；空 review_status 是旧日志，仍沿用原计数语义。
 	var count int
 	err := r.db.QueryRowContext(ctx, `
 WITH last_auto_ban AS (
@@ -327,7 +328,9 @@ WHERE user_id = $1
   AND flagged = TRUE
   AND action <> 'hash_block'
   AND action <> 'keyword_review'
+  AND (action <> 'semantic_review_deferred' OR review_status = 'confirmed_violation')
   AND action NOT IN ('prompt_filter_observe', 'prompt_filter_warn', 'prompt_filter_review')
+  AND COALESCE(review_status, '') NOT IN ('pending', 'false_positive')
   AND ($3::bool IS FALSE OR action <> 'cyber_policy')
   AND created_at >= $2
   AND created_at > COALESCE((SELECT at FROM last_auto_ban), '-infinity'::timestamptz)

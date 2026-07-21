@@ -848,12 +848,59 @@ func collectAnthropicMessages(messages gjson.Result, parts *[]string, images *[]
 		if !shouldIncludeModerationRole(role, "", auditScope) {
 			return true
 		}
+		content := item.Get("content")
+		if role == "user" && anthropicContentHasToolResult(content) {
+			collectAnthropicUserContentWithToolAttribution(index.String(), content, parts, images, sources, toolState, auditScope)
+			return true
+		}
 		before := len(*parts)
 		capture := captureModerationSource(toolState)
-		collectAnthropicContentValue(item.Get("content"), parts, images, toolState)
+		collectAnthropicContentValue(content, parts, images, toolState)
 		appendModerationSources(sources, fmt.Sprintf("anthropic.messages[%s].role=%s.content", index.String(), sourceRoleName(role)), role, *parts, before, capture)
 		return true
 	})
+}
+
+func anthropicContentHasToolResult(content gjson.Result) bool {
+	if content.IsObject() {
+		return strings.EqualFold(strings.TrimSpace(content.Get("type").String()), "tool_result")
+	}
+	found := false
+	content.ForEach(func(_, block gjson.Result) bool {
+		if block.IsObject() && strings.EqualFold(strings.TrimSpace(block.Get("type").String()), "tool_result") {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+func collectAnthropicUserContentWithToolAttribution(index string, content gjson.Result, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {
+	collectBlock := func(blockIndex string, block gjson.Result) {
+		toolResult := block.IsObject() && strings.EqualFold(strings.TrimSpace(block.Get("type").String()), "tool_result")
+		role := "user"
+		source := fmt.Sprintf("anthropic.messages[%s].role=user.content[%s]", index, blockIndex)
+		if toolResult {
+			role = "tool"
+			source = fmt.Sprintf("anthropic.messages[%s].content[%s].tool_result", index, blockIndex)
+		}
+		if !shouldIncludeModerationRole(role, "", auditScope) {
+			return
+		}
+		before := len(*parts)
+		capture := captureModerationSource(toolState)
+		collectAnthropicContentValue(block, parts, images, toolState)
+		appendModerationSources(sources, source, role, *parts, before, capture)
+	}
+	if content.IsArray() {
+		content.ForEach(func(blockIndex, block gjson.Result) bool {
+			collectBlock(blockIndex.String(), block)
+			return true
+		})
+		return
+	}
+	collectBlock("0", content)
 }
 
 func collectAnthropicContentValue(value gjson.Result, parts *[]string, images *[]string, toolState *toolResultTextState) {
@@ -1076,6 +1123,10 @@ func collectGeminiContents(contents gjson.Result, parts *[]string, images *[]str
 		if !shouldIncludeModerationRole(role, "", auditScope) {
 			return true
 		}
+		if arr := item.Get("parts"); role == "user" && geminiPartsHaveFunctionResponse(arr) {
+			collectGeminiUserPartsWithToolAttribution(index.String(), arr, parts, images, sources, toolState, auditScope)
+			return true
+		}
 		before := len(*parts)
 		capture := captureModerationSource(toolState)
 		if arr := item.Get("parts"); arr.IsArray() {
@@ -1090,6 +1141,43 @@ func collectGeminiContents(contents gjson.Result, parts *[]string, images *[]str
 			})
 		}
 		appendModerationSources(sources, fmt.Sprintf("gemini.contents[%s].role=%s.parts", index.String(), sourceRoleName(role)), role, *parts, before, capture)
+		return true
+	})
+}
+
+func geminiPartsHaveFunctionResponse(parts gjson.Result) bool {
+	found := false
+	parts.ForEach(func(_, part gjson.Result) bool {
+		if part.Get("functionResponse").Exists() || part.Get("function_response").Exists() {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+func collectGeminiUserPartsWithToolAttribution(index string, value gjson.Result, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {
+	value.ForEach(func(partIndex, part gjson.Result) bool {
+		functionResponse := part.Get("functionResponse").Exists() || part.Get("function_response").Exists()
+		role := "user"
+		source := fmt.Sprintf("gemini.contents[%s].role=user.parts[%s]", index, partIndex.String())
+		if functionResponse {
+			role = "tool"
+			source = fmt.Sprintf("gemini.contents[%s].parts[%s].function_response", index, partIndex.String())
+		}
+		if !shouldIncludeModerationRole(role, "", auditScope) {
+			return true
+		}
+		before := len(*parts)
+		capture := captureModerationSource(toolState)
+		addModerationRawText(parts, part.Get("text").String())
+		collectGeminiFunctionResponseText(parts, part.Get("functionResponse"), toolState)
+		collectGeminiFunctionResponseText(parts, part.Get("function_response"), toolState)
+		collectGeminiFunctionCallText(parts, part.Get("functionCall"), toolState)
+		collectGeminiFunctionCallText(parts, part.Get("function_call"), toolState)
+		addGeminiModerationImage(images, part)
+		appendModerationSources(sources, source, role, *parts, before, capture)
 		return true
 	})
 }
