@@ -1305,6 +1305,68 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 	return cloneStringSlice(models)
 }
 
+// SystemAvailableModelSet describes the models exposed by schedulable accounts
+// for one platform. When Models is empty, the platform has schedulable accounts
+// but none of them defines a model_mapping, so callers should use that
+// platform's built-in default model list.
+type SystemAvailableModelSet struct {
+	Platform string
+	Models   []string
+}
+
+// ListSystemAvailableModelSets returns the system-wide model availability used
+// by public discovery surfaces. Availability comes only from schedulable
+// accounts and their model_mapping configuration; channel model definitions and
+// channel pricing are deliberately not consulted.
+func (s *GatewayService) ListSystemAvailableModelSets(ctx context.Context) ([]SystemAvailableModelSet, error) {
+	accounts, err := s.accountRepo.ListSchedulable(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	type platformModels struct {
+		models        map[string]struct{}
+		hasAnyMapping bool
+	}
+	byPlatform := make(map[string]*platformModels)
+	for i := range accounts {
+		platform := strings.TrimSpace(accounts[i].Platform)
+		if platform == "" {
+			continue
+		}
+		entry := byPlatform[platform]
+		if entry == nil {
+			entry = &platformModels{models: make(map[string]struct{})}
+			byPlatform[platform] = entry
+		}
+		mapping := accounts[i].GetModelMapping()
+		if len(mapping) == 0 {
+			continue
+		}
+		entry.hasAnyMapping = true
+		for model := range mapping {
+			model = strings.TrimSpace(model)
+			if model != "" {
+				entry.models[model] = struct{}{}
+			}
+		}
+	}
+
+	result := make([]SystemAvailableModelSet, 0, len(byPlatform))
+	for platform, entry := range byPlatform {
+		models := make([]string, 0, len(entry.models))
+		if entry.hasAnyMapping {
+			for model := range entry.models {
+				models = append(models, model)
+			}
+			sort.Strings(models)
+		}
+		result = append(result, SystemAvailableModelSet{Platform: platform, Models: models})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Platform < result[j].Platform })
+	return result, nil
+}
+
 func (s *GatewayService) InvalidateAvailableModelsCache(groupID *int64, platform string) {
 	if s == nil || s.modelsListCache == nil {
 		return

@@ -156,58 +156,20 @@ func TestBuildPlatformSections_GroupsByPlatform(t *testing.T) {
 	require.Equal(t, "claude-sonnet-4-6", sections[0].SupportedModels[0].Name)
 }
 
-func TestBuildPublicModelCatalog_OnlyPublicActiveModelsAndLowestPrice(t *testing.T) {
-	lowInput := 0.000002
-	lowOutput := 0.000010
-	highInput := 0.000003
-	highOutput := 0.000015
-	channels := []service.AvailableChannel{
-		{
-			Name:            "disabled",
-			Status:          service.StatusDisabled,
-			Groups:          []service.AvailableGroupRef{{ID: 1, Platform: "openai"}},
-			SupportedModels: []service.SupportedModel{{Name: "gpt-disabled", Platform: "openai"}},
-		},
-		{
-			Name:            "exclusive",
-			Status:          service.StatusActive,
-			Groups:          []service.AvailableGroupRef{{ID: 2, Platform: "anthropic", IsExclusive: true}},
-			SupportedModels: []service.SupportedModel{{Name: "claude-private", Platform: "anthropic"}},
-		},
-		{
-			Name:   "public-high",
-			Status: service.StatusActive,
-			Groups: []service.AvailableGroupRef{{ID: 3, Platform: "anthropic"}},
-			SupportedModels: []service.SupportedModel{{
-				Name:     "claude-sonnet-5",
-				Platform: "anthropic",
-				Pricing: &service.ChannelModelPricing{
-					BillingMode: service.BillingModeToken,
-					InputPrice:  &highInput,
-					OutputPrice: &highOutput,
-				},
-			}},
-		},
-		{
-			Name:   "public-low",
-			Status: service.StatusActive,
-			Groups: []service.AvailableGroupRef{{ID: 4, Platform: "anthropic"}},
-			SupportedModels: []service.SupportedModel{{
-				Name:     "claude-sonnet-5",
-				Platform: "anthropic",
-				Pricing: &service.ChannelModelPricing{
-					BillingMode: service.BillingModeToken,
-					InputPrice:  &lowInput,
-					OutputPrice: &lowOutput,
-				},
-			}},
-		},
-	}
+func TestToSystemModelPricing_ImagePricesComeFromSystemPreset(t *testing.T) {
+	pricing := toSystemModelPricing(&service.LiteLLMModelPricing{
+		Mode:                    "image_generation",
+		InputCostPerImageToken:  0.000001,
+		OutputCostPerImageToken: 0.000002,
+		OutputCostPerImage:      0.04,
+		TokenPricingAbsent:      true,
+	})
 
-	models := buildPublicModelCatalog(channels)
-	require.Len(t, models, 1)
-	require.Equal(t, "claude-sonnet-5", models[0].Name)
-	require.NotNil(t, models[0].Pricing)
-	require.Equal(t, lowInput, *models[0].Pricing.InputPrice)
-	require.Equal(t, lowOutput, *models[0].Pricing.OutputPrice)
+	require.Equal(t, string(service.BillingModeImage), pricing.BillingMode)
+	require.Equal(t, 0.000001, *pricing.ImageInputPrice)
+	require.Equal(t, 0.000002, *pricing.ImageOutputPrice)
+	require.Equal(t, 0.04, *pricing.PerRequestPrice)
+	require.Nil(t, pricing.InputPrice)
+	require.Nil(t, pricing.OutputPrice)
+	require.Empty(t, pricing.Intervals)
 }

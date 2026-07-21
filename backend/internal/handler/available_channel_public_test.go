@@ -7,41 +7,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBuildPublicModelCatalog_PublicContract(t *testing.T) {
-	inputPrice := 0.000003
-	outputPrice := 0.000015
-	cacheWritePrice := 0.0
-	cacheReadPrice := 0.0000003
-	channels := []service.AvailableChannel{
-		{
-			Status: service.StatusActive,
-			Groups: []service.AvailableGroupRef{{Platform: "anthropic"}},
-			SupportedModels: []service.SupportedModel{{
-				Name:     "claude-sonnet-5",
-				Platform: "anthropic",
-				Pricing: &service.ChannelModelPricing{
-					BillingMode:     service.BillingModeToken,
-					InputPrice:      &inputPrice,
-					OutputPrice:     &outputPrice,
-					CacheWritePrice: &cacheWritePrice,
-					CacheReadPrice:  &cacheReadPrice,
-				},
-			}},
+func TestBuildSystemPublicModelCatalog_PublicContract(t *testing.T) {
+	pricing := &publicPricingStub{byModel: map[string]*service.LiteLLMModelPricing{
+		"gpt-5.5": {
+			InputCostPerToken:       0.000005,
+			OutputCostPerToken:      0.00003,
+			CacheReadInputTokenCost: 0.0000005,
+			SupportsPromptCaching:   true,
 		},
-		{
-			Status:          service.StatusActive,
-			Groups:          []service.AvailableGroupRef{{Platform: "openai", IsExclusive: true}},
-			SupportedModels: []service.SupportedModel{{Name: "gpt-private", Platform: "openai"}},
-		},
+	}}
+	sets := []service.SystemAvailableModelSet{
+		{Platform: "openai", Models: []string{"gpt-5.5", "unknown-model", "gpt-5.5"}},
 	}
 
-	models := buildPublicModelCatalog(channels)
-	require.Len(t, models, 1)
-	require.Equal(t, "claude-sonnet-5", models[0].Name)
-	require.Equal(t, "anthropic", models[0].Platform)
-	require.Equal(t, inputPrice, *models[0].Pricing.InputPrice)
-	require.Equal(t, outputPrice, *models[0].Pricing.OutputPrice)
+	models := buildSystemPublicModelCatalog(sets, pricing)
+	require.Len(t, models, 2)
+	require.Equal(t, "gpt-5.5", models[0].Name)
+	require.Equal(t, "openai", models[0].Platform)
+	require.Equal(t, 0.000005, *models[0].Pricing.InputPrice)
+	require.Equal(t, 0.00003, *models[0].Pricing.OutputPrice)
 	require.NotNil(t, models[0].Pricing.CacheWritePrice)
 	require.Zero(t, *models[0].Pricing.CacheWritePrice)
-	require.Equal(t, cacheReadPrice, *models[0].Pricing.CacheReadPrice)
+	require.Equal(t, 0.0000005, *models[0].Pricing.CacheReadPrice)
+	require.Nil(t, models[1].Pricing)
+}
+
+type publicPricingStub struct {
+	byModel map[string]*service.LiteLLMModelPricing
+}
+
+func (s *publicPricingStub) GetModelPricing(modelName string) *service.LiteLLMModelPricing {
+	return s.byModel[modelName]
 }

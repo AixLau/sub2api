@@ -588,6 +588,50 @@ func TestGetAvailableModels_ErrorAndGlobalListBranches(t *testing.T) {
 	require.Equal(t, int64(1), okRepo.listAllCalls.Load())
 }
 
+func TestListSystemAvailableModelSets_GroupsSchedulableAccountsByPlatform(t *testing.T) {
+	repo := &modelsListAccountRepoStub{
+		all: []Account{
+			{
+				ID:       1,
+				Platform: PlatformOpenAI,
+				Credentials: map[string]any{"model_mapping": map[string]any{
+					"gpt-5.5": "gpt-5.5",
+					"gpt-5.4": "gpt-5.4",
+				}},
+			},
+			{
+				ID:          2,
+				Platform:    PlatformOpenAI,
+				Credentials: map[string]any{},
+			},
+			{
+				ID:          3,
+				Platform:    PlatformAnthropic,
+				Credentials: map[string]any{},
+			},
+			{ID: 4, Platform: ""},
+		},
+	}
+	svc := &GatewayService{accountRepo: repo}
+
+	sets, err := svc.ListSystemAvailableModelSets(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []SystemAvailableModelSet{
+		{Platform: PlatformAnthropic, Models: []string{}},
+		{Platform: PlatformOpenAI, Models: []string{"gpt-5.4", "gpt-5.5"}},
+	}, sets)
+	require.Equal(t, int64(1), repo.listAllCalls.Load())
+}
+
+func TestListSystemAvailableModelSets_PropagatesRepositoryError(t *testing.T) {
+	wantErr := errors.New("db error")
+	svc := &GatewayService{accountRepo: &modelsListAccountRepoStub{err: wantErr}}
+
+	sets, err := svc.ListSystemAvailableModelSets(context.Background())
+	require.ErrorIs(t, err, wantErr)
+	require.Nil(t, sets)
+}
+
 func TestGatewayHotpathHelpers_CacheTTLAndStickyContext(t *testing.T) {
 	t.Run("resolve_user_group_rate_cache_ttl", func(t *testing.T) {
 		require.Equal(t, defaultUserGroupRateCacheTTL, resolveUserGroupRateCacheTTL(nil))
