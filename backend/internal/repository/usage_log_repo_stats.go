@@ -1075,22 +1075,22 @@ func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID
 	}
 
 	summary := AccountUsageSummary{
-		Days:              daysCount,
-		ActualDaysUsed:    actualDaysUsed,
-		TotalCost:         totalAccountCost,
-		TotalUserCost:     totalUserCost,
-		TotalStandardCost: totalStandardCost,
-		TotalRequests:     totalRequests,
-		TotalInputTokens:  totalInputTokens,
+		Days:                     daysCount,
+		ActualDaysUsed:           actualDaysUsed,
+		TotalCost:                totalAccountCost,
+		TotalUserCost:            totalUserCost,
+		TotalStandardCost:        totalStandardCost,
+		TotalRequests:            totalRequests,
+		TotalInputTokens:         totalInputTokens,
 		TotalCacheCreationTokens: totalCacheCreationTokens,
 		TotalCacheReadTokens:     totalCacheReadTokens,
-		TotalTokens:       totalTokens,
-		CacheHitRate:      cacheHitRate,
-		AvgDailyCost:      totalAccountCost / float64(actualDaysUsed),
-		AvgDailyUserCost:  totalUserCost / float64(actualDaysUsed),
-		AvgDailyRequests:  float64(totalRequests) / float64(actualDaysUsed),
-		AvgDailyTokens:    float64(totalTokens) / float64(actualDaysUsed),
-		AvgDurationMs:     avgDuration,
+		TotalTokens:              totalTokens,
+		CacheHitRate:             cacheHitRate,
+		AvgDailyCost:             totalAccountCost / float64(actualDaysUsed),
+		AvgDailyUserCost:         totalUserCost / float64(actualDaysUsed),
+		AvgDailyRequests:         float64(totalRequests) / float64(actualDaysUsed),
+		AvgDailyTokens:           float64(totalTokens) / float64(actualDaysUsed),
+		AvgDurationMs:            avgDuration,
 	}
 
 	todayStr := timezone.Now().Format("2006-01-02")

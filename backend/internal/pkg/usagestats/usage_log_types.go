@@ -382,23 +382,23 @@ type AccountUsageHistory struct {
 
 // AccountUsageSummary represents summary statistics for an account
 type AccountUsageSummary struct {
-	Days              int     `json:"days"`
-	ActualDaysUsed    int     `json:"actual_days_used"`
-	TotalCost         float64 `json:"total_cost"`      // 账号口径费用
-	TotalUserCost     float64 `json:"total_user_cost"` // 用户口径费用
-	TotalStandardCost float64 `json:"total_standard_cost"`
-	TotalRequests     int64   `json:"total_requests"`
-	TotalInputTokens  int64   `json:"total_input_tokens"`
-	TotalCacheCreationTokens int64 `json:"total_cache_creation_tokens"`
-	TotalCacheReadTokens     int64 `json:"total_cache_read_tokens"`
-	TotalTokens       int64   `json:"total_tokens"`
-	CacheHitRate      float64 `json:"cache_hit_rate"`
-	AvgDailyCost      float64 `json:"avg_daily_cost"` // 账号口径日均
-	AvgDailyUserCost  float64 `json:"avg_daily_user_cost"`
-	AvgDailyRequests  float64 `json:"avg_daily_requests"`
-	AvgDailyTokens    float64 `json:"avg_daily_tokens"`
-	AvgDurationMs     float64 `json:"avg_duration_ms"`
-	Today             *struct {
+	Days                     int     `json:"days"`
+	ActualDaysUsed           int     `json:"actual_days_used"`
+	TotalCost                float64 `json:"total_cost"`      // 账号口径费用
+	TotalUserCost            float64 `json:"total_user_cost"` // 用户口径费用
+	TotalStandardCost        float64 `json:"total_standard_cost"`
+	TotalRequests            int64   `json:"total_requests"`
+	TotalInputTokens         int64   `json:"total_input_tokens"`
+	TotalCacheCreationTokens int64   `json:"total_cache_creation_tokens"`
+	TotalCacheReadTokens     int64   `json:"total_cache_read_tokens"`
+	TotalTokens              int64   `json:"total_tokens"`
+	CacheHitRate             float64 `json:"cache_hit_rate"`
+	AvgDailyCost             float64 `json:"avg_daily_cost"` // 账号口径日均
+	AvgDailyUserCost         float64 `json:"avg_daily_user_cost"`
+	AvgDailyRequests         float64 `json:"avg_daily_requests"`
+	AvgDailyTokens           float64 `json:"avg_daily_tokens"`
+	AvgDurationMs            float64 `json:"avg_duration_ms"`
+	Today                    *struct {
 		Date     string  `json:"date"`
 		Cost     float64 `json:"cost"`
 		UserCost float64 `json:"user_cost"`

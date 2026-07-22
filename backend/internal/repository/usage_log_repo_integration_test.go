@@ -1508,33 +1508,33 @@ func (s *UsageLogRepoSuite) TestGetUserModelStats() {
 
 	// Create logs with different models
 	log1 := &service.UsageLog{
-		UserID:       user.ID,
-		APIKeyID:     apiKey.ID,
-		AccountID:    account.ID,
-		Model:        "claude-3-opus",
-		InputTokens:  100,
-		OutputTokens: 200,
+		UserID:              user.ID,
+		APIKeyID:            apiKey.ID,
+		AccountID:           account.ID,
+		Model:               "claude-3-opus",
+		InputTokens:         100,
+		OutputTokens:        200,
 		CacheCreationTokens: 20,
-		CacheReadTokens: 30,
-		TotalCost:    0.5,
-		ActualCost:   0.5,
-		CreatedAt:    base,
+		CacheReadTokens:     30,
+		TotalCost:           0.5,
+		ActualCost:          0.5,
+		CreatedAt:           base,
 	}
 	_, err := s.repo.Create(s.ctx, log1)
 	s.Require().NoError(err)
 
 	log2 := &service.UsageLog{
-		UserID:       user.ID,
-		APIKeyID:     apiKey.ID,
-		AccountID:    account.ID,
-		Model:        "claude-3-sonnet",
-		InputTokens:  50,
-		OutputTokens: 100,
+		UserID:              user.ID,
+		APIKeyID:            apiKey.ID,
+		AccountID:           account.ID,
+		Model:               "claude-3-sonnet",
+		InputTokens:         50,
+		OutputTokens:        100,
 		CacheCreationTokens: 10,
-		CacheReadTokens: 40,
-		TotalCost:    0.2,
-		ActualCost:   0.2,
-		CreatedAt:    base.Add(1 * time.Hour),
+		CacheReadTokens:     40,
+		TotalCost:           0.2,
+		ActualCost:          0.2,
+		CreatedAt:           base.Add(1 * time.Hour),
 	}
 	_, err = s.repo.Create(s.ctx, log2)
 	s.Require().NoError(err)
