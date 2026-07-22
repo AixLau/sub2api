@@ -476,6 +476,7 @@ import ModelDistributionChart from '@/components/charts/ModelDistributionChart.v
 import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api/admin'
+import { calculateCacheHitRate } from '@/utils/cacheHitRate'
 import type { Account, AccountUsageStatsResponse } from '@/types'
 
 ChartJS.register(
@@ -548,12 +549,33 @@ const trendChartData = computed(() => {
         fill: false,
         tension: 0.3,
         yAxisID: 'y1'
+      },
+      {
+        label: t('admin.accounts.stats.tokenUsage'),
+        data: stats.value.history.map((h) => h.tokens),
+        borderColor: '#8b5cf6',
+        backgroundColor: 'rgba(139, 92, 246, 0.08)',
+        fill: false,
+        tension: 0.3,
+        yAxisID: 'y2'
+      },
+      {
+        label: t('admin.accounts.stats.cacheHitRate'),
+        data: stats.value.history.map((h) =>
+          calculateCacheHitRate(h.input_tokens, h.cache_creation_tokens, h.cache_read_tokens)
+        ),
+        borderColor: '#db2777',
+        backgroundColor: 'rgba(219, 39, 119, 0.08)',
+        fill: false,
+        tension: 0.3,
+        borderDash: [2, 3],
+        yAxisID: 'y3'
       }
     ]
   }
 })
 
-// Line chart options with dual Y-axis
+// Line chart options with independent metric axes
 const lineChartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
@@ -579,6 +601,13 @@ const lineChartOptions = computed(() => ({
         label: (context: any) => {
           const label = context.dataset.label || ''
           const value = context.raw
+          const axisId = context.dataset.yAxisID
+          if (axisId === 'y2') {
+            return `${label}: ${formatTokens(Number(value))}`
+          }
+          if (axisId === 'y3') {
+            return `${label}: ${formatPercentage(Number(value))}`
+          }
           if (label.includes('USD')) {
             return `${label}: $${formatCost(value)}`
           }
@@ -642,6 +671,56 @@ const lineChartOptions = computed(() => ({
         display: true,
         text: t('admin.accounts.stats.requests'),
         color: '#f97316',
+        font: {
+          size: 11
+        }
+      }
+    },
+    y2: {
+      type: 'linear' as const,
+      display: true,
+      position: 'right' as const,
+      offset: true,
+      grid: {
+        drawOnChartArea: false
+      },
+      ticks: {
+        color: '#8b5cf6',
+        font: {
+          size: 10
+        },
+        callback: (value: string | number) => formatTokens(Number(value))
+      },
+      title: {
+        display: true,
+        text: t('admin.accounts.stats.tokenUsage'),
+        color: '#8b5cf6',
+        font: {
+          size: 11
+        }
+      }
+    },
+    y3: {
+      type: 'linear' as const,
+      display: true,
+      position: 'right' as const,
+      offset: true,
+      min: 0,
+      max: 100,
+      grid: {
+        drawOnChartArea: false
+      },
+      ticks: {
+        color: '#db2777',
+        font: {
+          size: 10
+        },
+        callback: (value: string | number) => formatPercentage(Number(value))
+      },
+      title: {
+        display: true,
+        text: t('admin.accounts.stats.cacheHitRate'),
+        color: '#db2777',
         font: {
           size: 11
         }

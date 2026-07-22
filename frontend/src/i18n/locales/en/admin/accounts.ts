@@ -1249,6 +1249,7 @@ export default {
         basedOnActualDays: 'Based on {days} actual usage days',
         avgDailyRequests: 'Daily Avg Requests',
         avgDailyUsage: 'Average daily usage',
+        tokenUsage: 'Token Usage',
         todayOverview: 'Today Overview',
         cost: 'Cost',
         requests: 'Requests',
@@ -1267,7 +1268,7 @@ export default {
         todayRequests: 'Today Requests',
         todayTokens: 'Today Tokens',
         todayCost: 'Today Cost',
-        usageTrend: '30-Day Cost & Request Trend',
+        usageTrend: '30-Day Cost, Request, Token & Cache Rate Trend',
         noData: 'No usage data available for this account'
       },
       usageWindow: {

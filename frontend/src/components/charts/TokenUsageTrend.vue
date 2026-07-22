@@ -30,6 +30,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import VariableWidthLineChart from '@/components/charts/VariableWidthLineChart.vue'
+import { calculateCacheHitRate } from '@/utils/cacheHitRate'
 import type { TrendDataPoint } from '@/types'
 
 const { t } = useI18n()
@@ -138,8 +139,7 @@ const formatAxisDate = (value: unknown): string => {
 }
 
 const getCacheHitRate = (data: TrendDataPoint): number => {
-  const totalPromptTokens = data.input_tokens + data.cache_read_tokens + data.cache_creation_tokens
-  return totalPromptTokens > 0 ? (data.cache_read_tokens / totalPromptTokens) * 100 : 0
+  return calculateCacheHitRate(data.input_tokens, data.cache_creation_tokens, data.cache_read_tokens)
 }
 
 const totalUsageTokens = (data: TrendDataPoint): number =>

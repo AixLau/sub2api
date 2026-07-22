@@ -1291,6 +1291,7 @@ export default {
         basedOnActualDays: '基于 {days} 天实际使用',
         avgDailyRequests: '日均请求',
         avgDailyUsage: '平均每日调用',
+        tokenUsage: 'Token 使用量',
         todayOverview: '今日概览',
         cost: '费用',
         requests: '请求',
@@ -1309,7 +1310,7 @@ export default {
         todayRequests: '今日请求',
         todayTokens: '今日 Token',
         todayCost: '今日费用',
-        usageTrend: '30天费用与请求趋势',
+        usageTrend: '30天费用、请求、Token与缓存率趋势',
         noData: '该账号暂无使用数据'
       }
     },
