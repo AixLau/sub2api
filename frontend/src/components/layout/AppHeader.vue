@@ -22,13 +22,13 @@
       </div>
 
       <!-- Right: Support + Announcements + Docs + Language + Subscriptions + Balance + User Dropdown -->
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 xl:gap-3">
         <!-- Prominent support entry for new users -->
         <button
           v-if="contactInfo"
           type="button"
           data-testid="header-contact-support"
-          class="group flex h-9 min-w-9 items-center justify-center gap-2 rounded-lg border border-primary-200 bg-primary-50 px-2.5 text-primary-700 shadow-sm transition-colors hover:border-primary-300 hover:bg-primary-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:border-primary-800 dark:bg-primary-900/30 dark:text-primary-200 dark:hover:bg-primary-900/50 dark:focus:ring-offset-dark-900"
+          class="group hidden h-9 min-w-9 items-center justify-center gap-2 rounded-lg border border-primary-200 bg-primary-50 px-2.5 text-primary-700 shadow-sm transition-colors hover:border-primary-300 hover:bg-primary-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:border-primary-800 dark:bg-primary-900/30 dark:text-primary-200 dark:hover:bg-primary-900/50 dark:focus:ring-offset-dark-900 xl:flex"
           :aria-label="t('common.getSupport')"
           @click="openSupportDialog"
         >
@@ -55,7 +55,7 @@
           :href="docUrl"
           target="_blank"
           rel="noopener noreferrer"
-          class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+          class="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white xl:flex"
         >
           <Icon name="book" size="sm" />
           <span class="hidden sm:inline">{{ t('nav.docs') }}</span>
@@ -68,27 +68,34 @@
         <SubscriptionProgressMini v-if="user" />
 
         <!-- Wallet -->
-        <div v-if="user" ref="walletRef" class="relative hidden lg:block">
-          <div class="flex h-12 items-center gap-1 rounded-[22px] border border-gray-200/80 bg-white p-1 shadow-sm dark:border-dark-700 dark:bg-dark-800">
+        <div
+          v-if="user"
+          ref="walletRef"
+          data-testid="wallet-control"
+          class="relative hidden md:block"
+          @mouseenter="openWallet"
+          @mouseleave="handleWalletMouseLeave"
+        >
+          <div class="flex h-10 items-center gap-0.5 rounded-full border border-gray-200/80 bg-white p-0.5 shadow-sm dark:border-dark-700 dark:bg-dark-800 xl:h-12 xl:gap-1 xl:rounded-[22px] xl:p-1">
             <button
               type="button"
               data-testid="wallet-trigger"
-              class="flex h-10 items-center gap-2 rounded-full px-2.5 text-left transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:hover:bg-dark-700"
+              class="flex h-9 items-center gap-1.5 rounded-full px-2 text-left transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:hover:bg-dark-700 xl:h-10 xl:gap-2 xl:px-2.5"
               :aria-expanded="walletOpen"
               aria-haspopup="dialog"
-              @click="toggleWallet"
+              @click="pinWallet"
             >
-              <span class="flex h-7 w-7 items-center justify-center rounded-full bg-primary-600 text-white" aria-hidden="true">
+              <span class="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary-600 text-white xl:h-7 xl:w-7" aria-hidden="true">
                 <Icon name="creditCard" size="sm" :stroke-width="2" />
               </span>
-              <span class="min-w-0 leading-none">
-                <span class="block text-[10px] font-medium text-gray-500 dark:text-dark-300">{{ walletText }}</span>
-                <span class="mt-1 block text-sm font-semibold text-gray-950 dark:text-white">{{ formatHeaderMoney(availableBalance) }}</span>
+              <span class="min-w-0 whitespace-nowrap leading-none">
+                <span class="hidden text-[10px] font-medium text-gray-500 dark:text-dark-300 xl:block">{{ walletText }}</span>
+                <span class="text-sm font-semibold text-gray-950 dark:text-white xl:mt-1 xl:block">{{ formatHeaderMoney(availableBalance) }}</span>
               </span>
               <Icon
                 name="chevronDown"
                 size="xs"
-                class="ml-0.5 text-gray-400 transition-transform"
+                class="ml-0.5 hidden text-gray-400 transition-transform xl:block"
                 :class="{ 'rotate-180': walletOpen }"
               />
             </button>
@@ -96,7 +103,7 @@
             <button
               type="button"
               data-testid="wallet-recharge-top"
-              class="flex h-10 items-center gap-1.5 rounded-full bg-[#17191c] px-3.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-black focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100 dark:focus:ring-white dark:focus:ring-offset-dark-900"
+              class="flex h-9 items-center gap-1 rounded-full bg-[#17191c] px-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-black focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100 dark:focus:ring-white dark:focus:ring-offset-dark-900 xl:h-10 xl:gap-1.5 xl:px-3.5"
               @click="goToRecharge"
             >
               <Icon name="plus" size="sm" :stroke-width="2.25" />
@@ -164,7 +171,7 @@
               >
               <span v-else>{{ userInitials }}</span>
             </div>
-            <div class="hidden text-left md:block">
+            <div class="hidden text-left xl:block">
               <div class="text-sm font-medium text-gray-900 dark:text-white">
                 {{ displayName }}
               </div>
@@ -172,7 +179,7 @@
                 {{ user.role }}
               </div>
             </div>
-            <Icon name="chevronDown" size="sm" class="hidden text-gray-400 md:block" />
+            <Icon name="chevronDown" size="sm" class="hidden text-gray-400 xl:block" />
           </button>
 
           <!-- Dropdown Menu -->
@@ -365,6 +372,7 @@ const { copyToClipboard } = useClipboard()
 const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
 const walletOpen = ref(false)
+const walletPinned = ref(false)
 const supportDialogOpen = ref(false)
 const contactCopied = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
@@ -441,13 +449,26 @@ function closeDropdown() {
   dropdownOpen.value = false
 }
 
-function toggleWallet() {
+function openWallet() {
   dropdownOpen.value = false
-  walletOpen.value = !walletOpen.value
+  walletOpen.value = true
+}
+
+function pinWallet() {
+  dropdownOpen.value = false
+  walletOpen.value = true
+  walletPinned.value = true
+}
+
+function handleWalletMouseLeave() {
+  if (!walletPinned.value) {
+    closeWallet()
+  }
 }
 
 function closeWallet() {
   walletOpen.value = false
+  walletPinned.value = false
 }
 
 async function navigateFromWallet(path: string) {

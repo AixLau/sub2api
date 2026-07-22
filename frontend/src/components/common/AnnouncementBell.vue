@@ -1,13 +1,13 @@
 <template>
   <div>
-    <!-- 铃铛按钮 -->
     <button
       @click="openModal"
-      class="relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 transition-all hover:bg-gray-100 hover:scale-105 dark:text-gray-400 dark:hover:bg-dark-800"
+      class="relative flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:text-gray-400 dark:hover:bg-dark-800 dark:hover:text-white dark:focus:ring-offset-dark-900"
       :class="{ 'text-blue-600 dark:text-blue-400': unreadCount > 0 }"
       :aria-label="t('announcements.title')"
     >
       <Icon name="bell" size="md" />
+      <span class="hidden md:inline">{{ t('announcements.title') }}</span>
       <!-- 未读红点 -->
       <span
         v-if="unreadCount > 0"
@@ -23,138 +23,84 @@
       <Transition name="modal-fade">
         <div
           v-if="isModalOpen"
-          class="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-gradient-to-br from-black/70 via-black/60 to-black/70 p-4 pt-[8vh] backdrop-blur-md"
+          class="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/55 p-4 pt-[8vh] backdrop-blur-sm"
           @click="closeModal"
         >
           <div
-            class="w-full max-w-[620px] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
+            class="w-full max-w-[580px] overflow-hidden rounded-[24px] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.28)] ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
             @click.stop
           >
-            <!-- Header with Gradient -->
-            <div class="relative overflow-hidden border-b border-gray-100/80 bg-gradient-to-br from-blue-50/50 to-indigo-50/30 px-6 py-5 dark:border-dark-700/50 dark:from-blue-900/10 dark:to-indigo-900/5">
-              <div class="relative z-10 flex items-start justify-between">
-                <div>
+            <div class="border-b border-gray-100 bg-gray-50/80 px-5 py-4 dark:border-dark-700 dark:bg-dark-800">
+              <div class="flex items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                  <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-white shadow-sm">
+                    <Icon name="bell" size="sm" />
+                  </div>
+                  <div>
                   <div class="flex items-center gap-2">
-                    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30">
-                      <Icon name="bell" size="sm" />
-                    </div>
-                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                    <h2 class="text-base font-semibold text-gray-900 dark:text-white">
                       {{ t('announcements.title') }}
                     </h2>
                   </div>
-                  <p v-if="unreadCount > 0" class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                    <span class="font-medium text-blue-600 dark:text-blue-400">{{ unreadCount }}</span>
-                    {{ t('announcements.unread') }}
+                  <p v-if="unreadCount > 0" class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('announcements.newCount', { count: unreadCount }) }}
                   </p>
+                  </div>
                 </div>
                 <div class="flex items-center gap-2">
                   <button
                     v-if="unreadCount > 0"
                     @click="markAllAsRead"
                     :disabled="loading"
-                    class="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white shadow-lg shadow-blue-500/30 transition-all hover:bg-blue-700 hover:shadow-xl disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
+                    class="rounded-lg px-2 py-1.5 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-50 disabled:opacity-50 dark:text-primary-400 dark:hover:bg-primary-900/20"
                   >
                     {{ t('announcements.markAllRead') }}
                   </button>
                   <button
                     @click="closeModal"
-                    class="flex h-9 w-9 items-center justify-center rounded-lg bg-white/50 text-gray-500 backdrop-blur-sm transition-all hover:bg-white hover:text-gray-700 dark:bg-dark-700/50 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-gray-300"
+                    class="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-white hover:text-gray-700 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-gray-300"
                     :aria-label="t('common.close')"
                   >
                     <Icon name="x" size="sm" />
                   </button>
                 </div>
               </div>
-              <!-- Decorative gradient -->
-              <div class="absolute right-0 top-0 h-full w-48 bg-gradient-to-l from-indigo-100/20 to-transparent dark:from-indigo-900/10"></div>
             </div>
 
             <!-- Body -->
             <div class="max-h-[65vh] overflow-y-auto">
               <!-- Loading -->
               <div v-if="loading" class="flex items-center justify-center py-16">
-                <div class="relative">
-                  <div class="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600 dark:border-dark-600 dark:border-t-blue-400"></div>
-                  <div class="absolute inset-0 h-12 w-12 animate-pulse rounded-full border-4 border-blue-400/30"></div>
-                </div>
+                <div class="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-primary-600 dark:border-dark-600 dark:border-t-primary-400"></div>
               </div>
 
               <!-- Announcements List -->
               <div v-else-if="announcements.length > 0">
-                <div
+                <button
                   v-for="item in announcements"
                   :key="item.id"
-                  class="group relative flex items-center gap-4 border-b border-gray-100 px-6 py-4 transition-all hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700/30"
-                  :class="{ 'bg-blue-50/30 dark:bg-blue-900/5': !item.read_at }"
-                  style="min-height: 72px"
+                  type="button"
+                  class="group flex w-full items-center gap-3 border-b border-gray-100 px-5 py-4 text-left transition-colors last:border-b-0 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700/30"
+                  :class="{ 'bg-primary-50/40 dark:bg-primary-900/5': !item.read_at }"
                   @click="openDetail(item)"
                 >
-                  <!-- Status Indicator -->
-                  <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center">
-                    <div
-                      v-if="!item.read_at"
-                      class="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30"
-                    >
-                      <!-- Pulse ring -->
-                      <span class="absolute inline-flex h-full w-full animate-ping rounded-xl bg-blue-400 opacity-75"></span>
-                      <!-- Icon -->
-                      <svg class="relative z-10 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div
-                      v-else
-                      class="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100 text-gray-400 dark:bg-dark-700 dark:text-gray-600"
-                    >
-                      <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                  </div>
-
-                  <!-- Content -->
-                  <div class="flex min-w-0 flex-1 items-center justify-between gap-4">
-                    <div class="min-w-0 flex-1">
-                      <h3 class="truncate text-sm font-medium text-gray-900 dark:text-white">
-                        {{ item.title }}
-                      </h3>
-                      <div class="mt-1 flex items-center gap-2">
-                        <time class="text-xs text-gray-500 dark:text-gray-400">
-                          {{ formatRelativeTime(item.created_at) }}
-                        </time>
-                        <span
-                          v-if="!item.read_at"
-                          class="inline-flex items-center gap-1 rounded-md bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
-                        >
-                          <span class="relative flex h-1.5 w-1.5">
-                            <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-500 opacity-75"></span>
-                            <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-blue-600"></span>
-                          </span>
-                          {{ t('announcements.unread') }}
-                        </span>
-                      </div>
-                    </div>
-
-                    <!-- Arrow -->
-                    <div class="flex-shrink-0">
-                      <svg
-                        class="h-5 w-5 text-gray-400 transition-transform group-hover:translate-x-1 dark:text-gray-600"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        stroke-width="2"
-                      >
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-                      </svg>
-                    </div>
-                  </div>
-
-                  <!-- Unread indicator bar -->
                   <div
-                    v-if="!item.read_at"
-                    class="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-blue-500 to-indigo-600"
-                  ></div>
-                </div>
+                    class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl"
+                    :class="item.read_at ? 'bg-gray-100 text-gray-400 dark:bg-dark-700 dark:text-dark-400' : 'bg-primary-50 text-primary-600 dark:bg-primary-900/25 dark:text-primary-400'"
+                  >
+                    <Icon :name="item.read_at ? 'checkCircle' : 'bell'" size="sm" :stroke-width="2" />
+                  </div>
+
+                  <div class="min-w-0 flex-1">
+                    <h3 class="truncate text-sm font-medium text-gray-900 dark:text-white">
+                        {{ item.title }}
+                    </h3>
+                    <time class="mt-1 block text-xs text-gray-500 dark:text-gray-400">
+                      {{ formatRelativeTime(item.created_at) }}
+                    </time>
+                  </div>
+                  <Icon name="chevronRight" size="sm" class="flex-shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 dark:text-dark-500" />
+                </button>
               </div>
 
               <!-- Empty State -->

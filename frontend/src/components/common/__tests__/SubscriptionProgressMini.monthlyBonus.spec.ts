@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -101,9 +102,27 @@ describe('SubscriptionProgressMini monthly bonus quota', () => {
       }
     })
 
-    await wrapper.find('button').trigger('click')
+    expect(wrapper.text()).toContain('subscriptionProgress.title')
+    await wrapper.get('[data-testid="subscription-control"]').trigger('mouseenter')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
 
     expect(wrapper.text()).toContain('$243.00/$2400.00')
     expect(wrapper.text()).not.toContain('$243.00/$1.00')
+
+    const control = wrapper.get('[data-testid="subscription-control"]')
+    const trigger = control.get('button')
+    await trigger.trigger('click')
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+
+    await control.trigger('mouseleave')
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await nextTick()
+    expect(trigger.attributes('aria-expanded')).toBe('false')
+
+    await control.trigger('mouseenter')
+    await wrapper.get('[data-testid="subscription-close"]').trigger('click')
+    expect(trigger.attributes('aria-expanded')).toBe('false')
   })
 })

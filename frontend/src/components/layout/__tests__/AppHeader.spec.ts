@@ -58,7 +58,7 @@ describe('AppHeader contact support entry', () => {
     mocks.copyToClipboard.mockClear()
   })
 
-  it('opens the wallet panel and routes the primary recharge action', async () => {
+  it('opens the wallet panel on hover and routes the primary recharge action', async () => {
     mocks.authStore.user = {
       username: 'demo',
       email: 'demo@example.com',
@@ -82,10 +82,21 @@ describe('AppHeader contact support entry', () => {
     expect(mocks.routerPush).toHaveBeenCalledWith('/purchase')
 
     mocks.routerPush.mockReset()
-    await wrapper.get('[data-testid="wallet-trigger"]').trigger('click')
+    await wrapper.get('[data-testid="wallet-control"]').trigger('mouseenter')
     expect(wrapper.get('[data-testid="wallet-panel"]').text()).toContain('$2.00')
     expect(wrapper.get('[data-testid="wallet-artwork"]').attributes('src')).toContain('wallet-fluid-blue-violet.png')
     expect(wrapper.get('[data-testid="wallet-panel"]').text()).not.toContain('总余额')
+
+    const walletControl = wrapper.get('[data-testid="wallet-control"]')
+    const walletTrigger = wrapper.get('[data-testid="wallet-trigger"]')
+    await walletTrigger.trigger('click')
+    await walletControl.trigger('mouseleave')
+    expect(walletTrigger.attributes('aria-expanded')).toBe('true')
+
+    await wrapper.get('[aria-label="common.close"]').trigger('click')
+    expect(walletTrigger.attributes('aria-expanded')).toBe('false')
+
+    await walletControl.trigger('mouseenter')
 
     await wrapper.get('[data-testid="wallet-recharge"]').trigger('click')
     expect(mocks.routerPush).toHaveBeenCalledWith('/purchase')
