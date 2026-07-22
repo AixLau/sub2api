@@ -41,11 +41,11 @@
             {{ planDisplay.quotaSummary }}
           </p>
           <p
-            v-if="planDisplay.validitySummary"
+            v-if="validitySummary"
             data-testid="subscription-plan-validity-summary"
             class="mt-1 text-sm font-semibold text-slate-500"
           >
-            {{ planDisplay.validitySummary }}
+            {{ validitySummary }}
           </p>
         </div>
         <div class="min-w-0">
@@ -76,9 +76,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { SubscriptionPlan } from '@/types/payment'
 import type { UserSubscription } from '@/types'
-import { formatPaymentAmount, currencySymbol } from '@/components/payment/currency'
-import { useAppStore } from '@/stores/app'
-import { hasPeakRate as groupHasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
+import { formatPaymentAmount } from '@/components/payment/currency'
 import { planValiditySuffix } from './validity'
 import {
   platformDiscountClass,
@@ -109,32 +107,9 @@ const discountText = computed(() => {
   return pct > 0 ? `-${pct}%` : ''
 })
 
-const rateDisplay = computed(() => {
-  const rate = props.plan.rate_multiplier ?? 1
-  return `×${Number(rate.toPrecision(10))}`
+const validitySummary = computed(() => {
+  const unit = String(props.plan.validity_unit || 'day').trim().toLowerCase()
+  if (unit === 'day') return planDisplay.value.validitySummary
+  return `/ ${planValiditySuffix(props.plan, t)}`
 })
-
-const appStore = useAppStore()
-const planCurrencySymbol = computed(() => currencySymbol(props.plan.currency || 'USD'))
-
-const hasPeakRate = computed(() => groupHasPeakRate(props.plan))
-
-const peakRateDisplay = computed(() => {
-  return formatPeakRateWindow(props.plan, serverTimezoneLabel(appStore.cachedPublicSettings?.server_utc_offset))
-})
-
-const MODEL_SCOPE_LABELS: Record<string, string> = {
-  claude: 'Claude',
-  gemini_text: 'Gemini',
-  gemini_image: 'Imagen',
-}
-
-const modelScopeLabels = computed(() => {
-  if (platform.value !== 'antigravity') return []
-  const scopes = props.plan.supported_model_scopes
-  if (!scopes || scopes.length === 0) return []
-  return scopes.map(s => MODEL_SCOPE_LABELS[s] || s)
-})
-
-const validitySuffix = computed(() => planValiditySuffix(props.plan, t))
 </script>

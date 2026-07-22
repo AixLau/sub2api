@@ -295,8 +295,8 @@
                             <p v-if="selectedPlanDisplay.quotaSummary" class="text-2xl font-extrabold tracking-normal text-slate-950">
                               {{ selectedPlanDisplay.quotaSummary }}
                             </p>
-                            <p v-if="selectedPlanDisplay.validitySummary" class="mt-1 text-sm font-semibold text-slate-500">
-                              {{ selectedPlanDisplay.validitySummary }}
+                            <p v-if="selectedPlanValiditySummary" class="mt-1 text-sm font-semibold text-slate-500">
+                              {{ selectedPlanValiditySummary }}
                             </p>
                           </div>
                           <div class="min-w-0">
@@ -1085,9 +1085,11 @@ const selectedPlanDisplay = computed<SubscriptionPlanDisplay>(() => {
   return buildSubscriptionPlanDisplay(selectedPlan.value, buildSubscriptionPlanDisplayLabels(t))
 })
 
-const planValiditySuffix = computed(() => {
+const selectedPlanValiditySummary = computed(() => {
   if (!selectedPlan.value) return ''
-  return validitySuffixOf(selectedPlan.value, t)
+  const unit = String(selectedPlan.value.validity_unit || 'day').trim().toLowerCase()
+  if (unit === 'day') return selectedPlanDisplay.value.validitySummary
+  return `/ ${validitySuffixOf(selectedPlan.value, t)}`
 })
 
 function selectPlan(plan: SubscriptionPlan) {
