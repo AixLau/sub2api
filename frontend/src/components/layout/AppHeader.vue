@@ -2,7 +2,7 @@
   <header class="glass sticky top-0 z-30 border-b border-gray-200/50 dark:border-dark-700/50">
     <div class="flex h-16 items-center justify-between px-4 md:px-6">
       <!-- Left: Mobile Menu Toggle + Page Title -->
-      <div class="flex items-center gap-4">
+      <div class="flex min-w-0 flex-1 items-center gap-4">
         <button
           @click="toggleMobileSidebar"
           class="btn-ghost btn-icon lg:hidden"
@@ -11,18 +11,18 @@
           <Icon name="menu" size="md" />
         </button>
 
-        <div class="hidden lg:block">
-          <h1 class="text-lg font-semibold text-gray-900 dark:text-white">
+        <div class="hidden min-w-0 lg:block">
+          <h1 class="truncate text-lg font-semibold text-gray-900 dark:text-white">
             {{ pageTitle }}
           </h1>
-          <p v-if="pageDescription" class="text-xs text-gray-500 dark:text-dark-400">
+          <p v-if="pageDescription" class="truncate text-xs text-gray-500 dark:text-dark-400">
             {{ pageDescription }}
           </p>
         </div>
       </div>
 
       <!-- Right: Support + Announcements + Docs + Language + Subscriptions + Balance + User Dropdown -->
-      <div class="flex items-center gap-2 xl:gap-3">
+      <div class="ml-4 flex flex-shrink-0 items-center gap-2 xl:gap-3">
         <!-- Prominent support entry for new users -->
         <button
           v-if="contactInfo"
@@ -72,7 +72,7 @@
           v-if="user"
           ref="walletRef"
           data-testid="wallet-control"
-          class="relative hidden md:block"
+          class="relative hidden flex-shrink-0 md:block"
           @mouseenter="openWallet"
           @mouseleave="handleWalletMouseLeave"
         >
@@ -117,9 +117,9 @@
               data-testid="wallet-panel"
               role="dialog"
               :aria-label="balanceAvailableText"
-              class="absolute right-0 top-full z-50 mt-2 w-[304px] overflow-hidden rounded-[26px] border border-black/5 bg-white shadow-[0_22px_60px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-dark-900"
+              class="absolute right-0 top-full z-50 mt-2 w-[268px] overflow-hidden rounded-[20px] border border-black/5 bg-white shadow-[0_18px_44px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-dark-900"
             >
-              <div class="relative h-[104px] overflow-hidden bg-[#3154d8]">
+              <div class="relative h-[82px] overflow-hidden bg-[#3154d8]">
                 <img
                   :src="walletArtwork"
                   alt=""
@@ -128,7 +128,7 @@
                 >
                 <button
                   type="button"
-                  class="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-black/15 text-white backdrop-blur-md transition-colors hover:bg-black/25 focus:outline-none focus:ring-2 focus:ring-white"
+                  class="absolute right-2.5 top-2.5 flex h-7 w-7 items-center justify-center rounded-full border border-white/20 bg-black/15 text-white backdrop-blur-md transition-colors hover:bg-black/25 focus:outline-none focus:ring-2 focus:ring-white"
                   :aria-label="t('common.close')"
                   @click="closeWallet"
                 >
@@ -136,15 +136,15 @@
                 </button>
               </div>
 
-              <div class="px-6 pb-6 pt-5 text-center">
+              <div class="px-5 pb-5 pt-4 text-center">
                 <p class="text-xs font-medium text-gray-500 dark:text-dark-300">{{ balanceAvailableText }}</p>
-                <p class="mt-1.5 text-[28px] font-bold leading-none text-gray-950 dark:text-white">
+                <p class="mt-1 text-2xl font-bold leading-none text-gray-950 dark:text-white">
                   {{ formatHeaderMoney(availableBalance) }}
                 </p>
                 <button
                   type="button"
                   data-testid="wallet-recharge"
-                  class="mx-auto mt-5 flex h-10 items-center justify-center gap-1.5 rounded-full bg-[#17191c] px-5 text-sm font-semibold text-white transition-colors hover:bg-black focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100 dark:focus:ring-white dark:focus:ring-offset-dark-900"
+                  class="mx-auto mt-4 flex h-9 items-center justify-center gap-1.5 rounded-full bg-[#17191c] px-4 text-sm font-semibold text-white transition-colors hover:bg-black focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100 dark:focus:ring-white dark:focus:ring-offset-dark-900"
                   @click="goToRecharge"
                 >
                   <Icon name="plus" size="sm" :stroke-width="2.25" />
@@ -156,7 +156,7 @@
         </div>
 
         <!-- User Dropdown -->
-        <div v-if="user" class="relative" ref="dropdownRef">
+        <div v-if="user" class="relative flex-shrink-0" ref="dropdownRef">
           <button
             @click="toggleDropdown"
             class="flex items-center gap-2 rounded-xl p-1.5 transition-colors hover:bg-gray-100 dark:hover:bg-dark-800"

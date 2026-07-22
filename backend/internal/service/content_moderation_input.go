@@ -177,7 +177,7 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 		}
 		typ := strings.ToLower(strings.TrimSpace(value.Get("type").String()))
 		switch typ {
-		case "", "text", "input_text", "output_text", "refusal", "summary_text", "message", "image_url", "input_image", "image", "tool_result", "tool_use":
+		case "", "text", "input_text", "output_text", "refusal", "summary_text", "message", "image_url", "input_image", "image", "input_file", "file", "tool_result", "tool_use":
 		default:
 			if protocol != ContentModerationProtocolOpenAIResponses || !responsesContentValueHasModerationData(value) {
 				state.markTruncated("unsupported_required_value")
@@ -228,6 +228,9 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 			}
 		}
 		for _, field := range []string{"url", "media_type", "mime_type", "mimeType", "data", "base64"} {
+			requireString(value.Get(field))
+		}
+		for _, field := range []string{"filename", "file_name", "file_id", "mime_type", "mimeType"} {
 			requireString(value.Get(field))
 		}
 		if text := value.Get("text"); text.Exists() && text.Type != gjson.String {
@@ -400,7 +403,7 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 					validateToolRoot(item)
 				default:
 					switch typ {
-					case "", "message", "input_text", "output_text", "reasoning", "item_reference", "compaction", "compaction_trigger":
+					case "", "message", "input_text", "output_text", "input_file", "file", "reasoning", "item_reference", "compaction", "compaction_trigger":
 					default:
 						// Codex and other Responses clients can introduce new
 						// top-level message envelope types before the public
@@ -927,7 +930,7 @@ func collectAnthropicContentValue(value gjson.Result, parts *[]string, images *[
 			if value.Get("content").Exists() {
 				collectAnthropicContentValue(value.Get("content"), parts, images, toolState)
 			}
-		case "image_url", "input_image", "image":
+		case "image_url", "input_image", "image", "input_file", "file":
 			collectContentValue(value, parts, images)
 		case "tool_result":
 			collectToolResultTextValue(value.Get("content"), parts, images, 0, toolState)
@@ -984,7 +987,12 @@ func collectResponsesInputItem(item gjson.Result, parts *[]string, images *[]str
 		return
 	}
 	if isResponsesUserTextItem(item) {
+		if isModerationFileItem(item) {
+			collectModerationFileMetadata(item, parts)
+			return
+		}
 		collectResponsesContentValue(item.Get("content"), parts, images)
+		collectModerationFileMetadata(item, parts)
 		if item.Get("type").String() == "input_text" || item.Get("text").Exists() {
 			collectResponsesContentValue(item, parts, images)
 		}
@@ -1006,7 +1014,12 @@ func isResponsesUserTextItem(item gjson.Result) bool {
 func responseItemHasModerationText(item gjson.Result) bool {
 	var parts []string
 	var images []string
+	if isModerationFileItem(item) {
+		collectModerationFileMetadata(item, &parts)
+		return normalizeContentModerationText(strings.Join(parts, "\n")) != ""
+	}
 	collectResponsesContentValue(item.Get("content"), &parts, &images)
+	collectModerationFileMetadata(item, &parts)
 	if item.Get("type").String() == "input_text" || item.Get("text").Exists() {
 		collectResponsesContentValue(item, &parts, &images)
 	}
@@ -1036,6 +1049,10 @@ func collectResponsesContentValue(value gjson.Result, parts *[]string, images *[
 			return true
 		})
 	case value.IsObject():
+		collectModerationFileMetadata(value, parts)
+		if isModerationFileItem(value) {
+			return
+		}
 		addModerationImage(images, value.Get("image_url.url").String())
 		addModerationImage(images, value.Get("image_url").String())
 		addModerationImage(images, value.Get("url").String())
@@ -1056,6 +1073,38 @@ func collectResponsesContentValue(value gjson.Result, parts *[]string, images *[
 		}
 		if content := value.Get("content"); content.Exists() {
 			collectResponsesContentValue(content, parts, images)
+		}
+	}
+}
+
+func isModerationFileItem(value gjson.Result) bool {
+	if !value.IsObject() {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(value.Get("type").String())) {
+	case "input_file", "file":
+		return true
+	default:
+		return false
+	}
+}
+
+// collectModerationFileMetadata projects only safe, user-visible file metadata.
+// Never recurse into file_data/data/content here: those fields may contain the
+// complete document or an encoded payload and are intentionally excluded.
+func collectModerationFileMetadata(value gjson.Result, parts *[]string) {
+	if !value.IsObject() || parts == nil {
+		return
+	}
+	typ := strings.ToLower(strings.TrimSpace(value.Get("type").String()))
+	if typ != "input_file" && typ != "file" && !value.Get("file_id").Exists() && !value.Get("filename").Exists() && !value.Get("file_name").Exists() {
+		return
+	}
+	for _, field := range []string{"filename", "file_name", "mime_type", "mimeType", "file_id"} {
+		if leaf := value.Get(field); leaf.Type == gjson.String {
+			if text := strings.TrimSpace(leaf.String()); text != "" {
+				addModerationRawText(parts, text)
+			}
 		}
 	}
 }
@@ -1230,6 +1279,7 @@ func collectContentValue(value gjson.Result, parts *[]string, images *[]string) 
 		})
 	case value.IsObject():
 		typ := strings.ToLower(strings.TrimSpace(value.Get("type").String()))
+		collectModerationFileMetadata(value, parts)
 		addModerationImage(images, value.Get("image_url.url").String())
 		addModerationImage(images, value.Get("image_url").String())
 		addModerationImage(images, value.Get("url").String())
@@ -1253,7 +1303,7 @@ func collectContentValue(value gjson.Result, parts *[]string, images *[]string) 
 			if value.Get("content").Exists() {
 				collectContentValue(value.Get("content"), parts, images)
 			}
-		case "image_url", "input_image", "image":
+		case "image_url", "input_image", "image", "input_file", "file":
 		}
 	}
 }

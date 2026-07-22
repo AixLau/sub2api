@@ -1,8 +1,8 @@
 <template>
-  <div>
+  <div class="flex-shrink-0">
     <button
       @click="openModal"
-      class="relative flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:text-gray-400 dark:hover:bg-dark-800 dark:hover:text-white dark:focus:ring-offset-dark-900"
+      class="relative flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:text-gray-400 dark:hover:bg-dark-800 dark:hover:text-white dark:focus:ring-offset-dark-900"
       :class="{ 'text-blue-600 dark:text-blue-400': unreadCount > 0 }"
       :aria-label="t('announcements.title')"
     >

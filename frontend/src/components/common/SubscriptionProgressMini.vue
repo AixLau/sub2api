@@ -3,13 +3,13 @@
     v-if="hasActiveSubscriptions"
     ref="containerRef"
     data-testid="subscription-control"
-    class="relative"
+    class="relative flex-shrink-0"
     @mouseenter="openTooltip"
     @mouseleave="handleTooltipMouseLeave"
   >
     <button
       @click="pinTooltip"
-      class="flex h-9 items-center gap-1.5 rounded-full border border-violet-100 bg-violet-50 px-2 text-left transition-colors hover:bg-violet-100 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:border-violet-900/60 dark:bg-violet-900/20 dark:hover:bg-violet-900/30 dark:focus:ring-offset-dark-900 md:gap-2 md:px-3"
+      class="flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-violet-100 bg-violet-50 px-2.5 text-left transition-colors hover:bg-violet-100 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:border-violet-900/60 dark:bg-violet-900/20 dark:hover:bg-violet-900/30 dark:focus:ring-offset-dark-900"
       :title="t('subscriptionProgress.viewDetails')"
       :aria-expanded="tooltipOpen"
       aria-haspopup="dialog"
@@ -21,9 +21,6 @@
       <span class="hidden text-sm font-semibold text-violet-900 dark:text-violet-100 md:inline">
         {{ t('subscriptionProgress.title') }}
       </span>
-      <span class="flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1 text-[11px] font-bold text-violet-700 shadow-sm dark:bg-dark-800 dark:text-violet-200">
-        {{ activeSubscriptions.length }}
-      </span>
     </button>
 
     <transition name="dropdown">
@@ -31,22 +28,22 @@
         v-if="tooltipOpen"
         role="dialog"
         :aria-label="t('subscriptionProgress.title')"
-        class="absolute right-0 z-50 mt-2 w-[360px] overflow-hidden rounded-[22px] border border-gray-200/90 bg-white shadow-[0_18px_44px_rgba(15,23,42,0.16)] dark:border-dark-700 dark:bg-dark-800"
+        class="absolute right-0 z-50 mt-2 w-[316px] overflow-hidden rounded-[18px] border border-gray-200/90 bg-white shadow-[0_16px_36px_rgba(15,23,42,0.14)] dark:border-dark-700 dark:bg-dark-800"
       >
-        <div class="border-b border-gray-100 px-5 py-4 dark:border-dark-700">
-          <div class="flex items-start justify-between gap-4">
+        <div class="border-b border-gray-100 px-4 py-3 dark:border-dark-700">
+          <div class="flex items-start justify-between gap-3">
             <div>
-              <h3 class="text-base font-semibold text-gray-950 dark:text-white">
+              <h3 class="text-sm font-semibold text-gray-950 dark:text-white">
                 {{ t('subscriptionProgress.title') }}
               </h3>
-              <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">
+              <p class="mt-0.5 text-xs text-gray-500 dark:text-dark-400">
                 {{ t('subscriptionProgress.activeCount', { count: activeSubscriptions.length }) }}
               </p>
             </div>
             <button
               type="button"
               data-testid="subscription-close"
-              class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:hover:bg-dark-700 dark:hover:text-dark-100"
+              class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:hover:bg-dark-700 dark:hover:text-dark-100"
               :aria-label="t('common.close')"
               @click="closeTooltip"
             >
@@ -55,29 +52,29 @@
           </div>
         </div>
 
-        <div class="max-h-72 overflow-y-auto">
+        <div class="max-h-60 overflow-y-auto">
           <div
             v-for="subscription in displaySubscriptions"
             :key="subscription.id"
-            class="border-b border-gray-100 px-5 py-4 last:border-b-0 dark:border-dark-700"
+            class="border-b border-gray-100 px-4 py-3 last:border-b-0 dark:border-dark-700"
           >
-            <div class="mb-3 flex items-center justify-between gap-3">
+            <div class="mb-2 flex items-center justify-between gap-3">
               <span class="min-w-0 truncate text-sm font-semibold text-gray-900 dark:text-white">
                 {{ subscription.group?.name || `Group #${subscription.group_id}` }}
               </span>
               <span
                 v-if="subscription.expires_at"
-                class="flex-shrink-0 text-sm"
+                class="flex-shrink-0 text-xs"
                 :class="getDaysRemainingClass(subscription.expires_at)"
               >
                 {{ formatDaysRemaining(subscription.expires_at) }}
               </span>
             </div>
 
-            <div class="space-y-2">
+            <div class="space-y-1.5">
               <div
                 v-if="isUnlimited(subscription)"
-                class="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 dark:bg-emerald-900/20"
+                class="flex items-center gap-2 rounded-lg bg-emerald-50 px-2.5 py-1.5 dark:bg-emerald-900/20"
               >
                 <span class="text-base text-emerald-600 dark:text-emerald-400">∞</span>
                 <span class="text-sm font-medium text-emerald-700 dark:text-emerald-300">
@@ -177,7 +174,7 @@
           </div>
         </div>
 
-        <div class="border-t border-gray-100 px-5 py-3 dark:border-dark-700">
+        <div class="border-t border-gray-100 px-4 py-2.5 dark:border-dark-700">
           <router-link
             to="/subscriptions"
             @click="closeTooltip"

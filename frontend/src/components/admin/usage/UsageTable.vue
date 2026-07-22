@@ -36,7 +36,7 @@
             >
               {{ row.user.email }}
             </button>
-            <span v-else-if="isPlatformOperation(row)" class="font-medium text-cyan-700 dark:text-cyan-300">{{ t('usage.platform') }}</span>
+            <span v-else-if="isPlatformOperation(row)" class="font-medium text-cyan-700 dark:text-cyan-300">{{ platformOperationLabel(row) }}</span>
             <span v-else class="font-medium text-gray-900 dark:text-white">-</span>
             <span v-if="row.user?.deleted_at" class="ml-1 inline-flex items-center rounded px-1 py-px text-[10px] font-medium leading-tight bg-rose-100 text-rose-600 ring-1 ring-inset ring-rose-200 dark:bg-rose-500/20 dark:text-rose-400 dark:ring-rose-500/30">
               {{ t('admin.usage.userDeletedBadge') }}
@@ -558,6 +558,12 @@ const showAccountBilling = props.showAccountBilling
 
 function isPlatformOperation(row: AdminUsageLog): boolean {
   return row.source === 'account_test' || row.source === 'content_moderation'
+}
+
+function platformOperationLabel(row: AdminUsageLog): string {
+  return row.source === 'content_moderation'
+    ? t('usage.platformAudit')
+    : t('usage.platformTest')
 }
 const showUpstreamEndpoint = props.showUpstreamEndpoint
 const ipGeoBatchLoading = ref(false)

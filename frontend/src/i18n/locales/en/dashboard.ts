@@ -275,6 +275,8 @@ export default {
     contentModeration: 'Content moderation',
     failedUpstreamUsage: 'Failed upstream usage',
     platform: 'Platform',
+    platformAudit: 'Platform audit',
+    platformTest: 'Platform test',
     modelCost: 'Model cost',
     accountCost: 'Cost',
     userBilled: 'User billed',

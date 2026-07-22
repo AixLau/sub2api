@@ -2,7 +2,7 @@ export default {
 
   // Subscription Progress (Header component)
   subscriptionProgress: {
-    title: '我的订阅',
+    title: '订阅',
     viewDetails: '查看订阅详情',
     activeCount: '{count} 个有效订阅',
     daily: '每日',

@@ -180,6 +180,19 @@ func TestResponsesExtractionAcceptsUnknownMessageEnvelopeWithKnownContent(t *tes
 	require.Equal(t, "user", input.Sources[0].Role)
 }
 
+func TestResponsesExtractionProjectsInputFileMetadataWithoutPayload(t *testing.T) {
+	body := []byte(`{"input":[{"type":"input_file","file_id":"file_123","filename":"FastLink订阅加密分析报告(1).pdf","mime_type":"application/pdf","file_data":"data:application/pdf;base64,SHOULD_NOT_BE_SCANNED","content":"document body must not be scanned"}]}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeUserOnly)
+
+	require.False(t, input.Truncated, input.TruncateReasons)
+	require.Contains(t, input.Text, "FastLink订阅加密分析报告(1).pdf")
+	require.Contains(t, input.Text, "application/pdf")
+	require.Contains(t, input.Text, "file_123")
+	require.NotContains(t, input.Text, "SHOULD_NOT_BE_SCANNED")
+	require.NotContains(t, input.Text, "document body must not be scanned")
+}
+
 func TestResponsesExtractionAcceptsUnknownDirectTextItem(t *testing.T) {
 	body := []byte(`{"input":[{"type":"future_text","role":"user","text":"unsafe direct content"}]}`)
 

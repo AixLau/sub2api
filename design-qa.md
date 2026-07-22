@@ -30,7 +30,7 @@
 
 ## Interaction And Browser Checks
 
-- Wallet trigger opens the panel.
+- Hovering the wallet or subscription control opens its panel temporarily. Clicking its trigger keeps the panel open until the user clicks outside or selects its close control.
 - Close button hides the panel.
 - The top-level `充值` shortcut is visible beside the wallet trigger and routes directly to `/purchase`.
 - Recharge button closes the panel and calls the existing `/purchase` route; the focused Vitest assertion confirms the route value.

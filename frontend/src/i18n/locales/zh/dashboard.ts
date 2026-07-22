@@ -280,6 +280,8 @@ export default {
     contentModeration: '内容审计',
     failedUpstreamUsage: '上游失败用量',
     platform: '平台',
+    platformAudit: '平台审计',
+    platformTest: '平台测试',
     modelCost: '模型成本',
     accountCost: '成本',
     userBilled: '用户扣费',

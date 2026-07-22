@@ -3,7 +3,7 @@ package promptfilter
 // Candidate rules are deliberately non-strict and non-operational. They widen
 // local recall for candidate_only, but only a downstream reviewer can decide
 // whether the request is allowed or blocked.
-const candidateSourceRevision = "local-candidate-recall@2026-07-14"
+const candidateSourceRevision = "local-candidate-recall@2026-07-22"
 
 var candidatePatternConfigs = []PatternConfig{
 	{
@@ -65,5 +65,17 @@ var candidatePatternConfigs = []PatternConfig{
 		Regex:    `(?i)\b(?:build|make|assemble|construct|manufacture|modify)\b.{0,100}\b(?:bomb|improvised\s+explosive|ied|detonator|explosive\s+device|ghost\s+gun|untraceable\s+firearm|automatic\s+weapon|silencer)\b|(?:制造|制作|组装|改装).{0,80}(?:炸弹|简易爆炸装置|起爆器|爆炸物|幽灵枪|无序列号枪支|自动武器|消音器)`,
 		Weight:   80,
 		Category: "weapons",
+	},
+	{
+		Name:     "candidate_subscription_crypto_extraction",
+		Regex:    `(?i)(?:\b(?:blutter|flutter|dart\s+snapshot)\b|订阅加密|subscription\s+encryption).{0,220}(?:\b(?:extract|dump|recover|derive|decrypt|analy[sz]e)\b|提取|导出|恢复|推导|解密|分析).{0,140}(?:\b(?:key\s*(?:and|&|/|和)\s*iv|key/iv|initiali[sz]ation\s+vector|crypto(?:graphic)?\s+key)\b|密钥.{0,20}(?:iv|初始化向量)|初始化向量)|(?:\b(?:extract|dump|recover|derive|decrypt|analy[sz]e)\b|提取|导出|恢复|推导|解密|分析).{0,140}(?:\b(?:key\s*(?:and|&|/|和)\s*iv|key/iv|initiali[sz]ation\s+vector|crypto(?:graphic)?\s+key)\b|密钥.{0,20}(?:iv|初始化向量)|初始化向量).{0,220}(?:\b(?:blutter|flutter|dart\s+snapshot)\b|订阅加密|subscription\s+encryption)`,
+		Weight:   65,
+		Category: "cyber",
+	},
+	{
+		Name:     "candidate_key_iv_extraction",
+		Regex:    `(?i)(?:\b(?:extract|dump|recover|derive|decrypt|find|obtain)\b|提取|导出|恢复|推导|解密|查找|获取).{0,100}(?:\b(?:key\s*(?:and|&|/|和)\s*iv|key/iv|initiali[sz]ation\s+vector|crypto(?:graphic)?\s+key)\b|密钥|密码|令牌|token|私钥|初始化向量)|(?:\b(?:key\s*(?:and|&|/|和)\s*iv|key/iv|initiali[sz]ation\s+vector|crypto(?:graphic)?\s+key)\b|密钥|密码|令牌|token|私钥|初始化向量).{0,100}(?:\b(?:extract|dump|recover|derive|decrypt|find|obtain)\b|提取|导出|恢复|推导|解密|查找|获取)`,
+		Weight:   55,
+		Category: "cyber",
 	},
 }

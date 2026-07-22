@@ -55,6 +55,8 @@ const messages: Record<string, string> = {
   'usage.contentModeration': 'Content moderation',
   'usage.failedUpstreamUsage': 'Failed upstream usage',
   'usage.platform': 'Platform',
+  'usage.platformAudit': 'Platform audit',
+  'usage.platformTest': 'Platform test',
   'usage.modelCost': 'Model cost',
 }
 
@@ -299,7 +301,7 @@ describe('admin UsageTable tooltip', () => {
 
     const text = wrapper.text()
     expect(text).toContain('Account test')
-    expect(text).toContain('Platform')
+    expect(text).toContain('Platform test')
     expect(text).not.toContain('Model cost')
     expect(text).toContain('$0.012345')
     expect(text).not.toContain('#0')
@@ -341,7 +343,7 @@ describe('admin UsageTable tooltip', () => {
     })
 
     const text = wrapper.text()
-    expect(text).toContain('Platform')
+    expect(text).toContain('Platform audit')
     expect(text).not.toContain('Content moderation')
     expect(text).not.toContain('Model cost')
     expect(text).toContain('$0.012345')
