@@ -70,17 +70,17 @@
         <!-- Wallet -->
         <div v-if="user" ref="walletRef" class="relative hidden lg:block">
           <div
-            class="flex h-12 items-center rounded-lg border border-primary-200/80 bg-white p-1 shadow-sm transition-shadow hover:shadow-md dark:border-primary-800/80 dark:bg-dark-800"
+            class="flex h-12 items-center rounded-2xl border border-primary-200/80 bg-white p-1 shadow-sm transition-shadow hover:shadow-md dark:border-primary-800/80 dark:bg-dark-800"
           >
             <button
               type="button"
               data-testid="wallet-trigger"
-              class="flex h-10 items-center gap-2 rounded-md px-2.5 text-left transition-colors hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:hover:bg-primary-900/20"
+              class="flex h-10 items-center gap-2 rounded-xl px-2.5 text-left transition-colors hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:hover:bg-primary-900/20"
               :aria-expanded="walletOpen"
               aria-haspopup="dialog"
               @click="toggleWallet"
             >
-              <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-white shadow-sm" aria-hidden="true">
+              <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-primary-600 text-white shadow-sm" aria-hidden="true">
                 <Icon name="creditCard" size="sm" :stroke-width="2" />
               </span>
               <span class="min-w-0 leading-none">
@@ -98,7 +98,7 @@
             <button
               type="button"
               data-testid="wallet-recharge"
-              class="ml-1 flex h-9 items-center gap-1.5 rounded-md bg-gray-950 px-3 text-sm font-semibold text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-primary-100 dark:focus:ring-offset-dark-900"
+              class="ml-1 flex h-9 items-center gap-1.5 rounded-xl bg-gray-950 px-3 text-sm font-semibold text-white transition-colors hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-primary-100 dark:focus:ring-offset-dark-900"
               @click="goToRecharge"
             >
               <Icon name="plus" size="sm" :stroke-width="2.25" />
@@ -111,66 +111,41 @@
               v-if="walletOpen"
               data-testid="wallet-panel"
               role="dialog"
-              :aria-label="walletBalanceText"
-              class="absolute right-0 top-full z-50 mt-2 w-[min(34rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-indigo-400/40 bg-gradient-to-br from-blue-700 via-indigo-700 to-blue-600 p-5 text-white shadow-2xl"
+              :aria-label="balanceAvailableText"
+              class="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-[28px] border border-white/25 bg-gradient-to-br from-[#1769d6] via-[#3649d2] to-[#5937bb] p-5 text-white shadow-[0_20px_52px_rgba(28,53,145,0.32)]"
             >
               <div class="flex items-start justify-between gap-4">
                 <div>
-                  <p class="text-sm font-semibold text-blue-100">{{ walletBalanceText }}</p>
-                  <p class="mt-1 text-4xl font-bold leading-tight">{{ formatHeaderMoney(availableBalance) }}</p>
-                  <p class="mt-2 text-sm font-medium text-blue-100">
-                    {{ balanceAvailableText }} {{ formatHeaderMoney(availableBalance) }}
-                  </p>
+                  <p class="text-sm font-semibold text-white/75">{{ balanceAvailableText }}</p>
+                  <p class="mt-1 text-3xl font-bold leading-tight tracking-normal">{{ formatHeaderMoney(availableBalance) }}</p>
                 </div>
                 <button
                   type="button"
-                  class="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg border border-white/25 bg-white/10 text-white transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white"
+                  class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl border border-white/20 bg-white/10 text-white backdrop-blur-sm transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white"
                   :aria-label="rechargeText"
                   @click="goToRecharge"
                 >
-                  <Icon name="plus" size="lg" :stroke-width="2" />
+                  <Icon name="plus" size="md" :stroke-width="2" />
                 </button>
               </div>
 
-              <div class="mt-5 grid grid-cols-3 gap-2.5">
-                <div class="rounded-lg border border-white/60 bg-white/5 p-3">
-                  <p class="text-xs font-semibold text-blue-100">{{ balanceAvailableText }}</p>
-                  <p class="mt-2 text-sm font-bold">{{ formatHeaderMoney(availableBalance) }}</p>
-                </div>
-                <div class="rounded-lg border border-white/40 bg-white/5 p-3">
-                  <p class="text-xs font-semibold text-blue-100">{{ balanceFrozenText }}</p>
-                  <p class="mt-2 text-sm font-bold text-amber-200">{{ formatHeaderMoney(frozenBalance) }}</p>
-                </div>
-                <div class="rounded-lg border border-white/60 bg-white/5 p-3">
-                  <p class="text-xs font-semibold text-blue-100">{{ balanceTotalText }}</p>
-                  <p class="mt-2 text-sm font-bold">{{ formatHeaderMoney(totalBalance) }}</p>
-                </div>
+              <div class="mt-4 flex items-center justify-between border-y border-white/20 py-3 text-sm">
+                <span class="text-white/70">{{ balanceFrozenText }}</span>
+                <span class="font-semibold text-amber-100">{{ formatHeaderMoney(frozenBalance) }}</span>
+              </div>
+              <div class="flex items-center justify-between pt-3 text-sm">
+                <span class="text-white/70">{{ balanceTotalText }}</span>
+                <span class="font-semibold">{{ formatHeaderMoney(totalBalance) }}</span>
               </div>
 
-              <div class="mt-4 grid grid-cols-3 gap-2.5">
+              <div class="mt-4">
                 <button
                   type="button"
-                  class="flex h-11 items-center justify-center gap-1.5 rounded-lg bg-white px-3 text-sm font-bold text-indigo-800 transition-colors hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-white"
+                  class="flex h-11 w-full items-center justify-center gap-1.5 rounded-2xl bg-white px-3 text-sm font-bold text-[#293eaa] transition-colors hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-white"
                   @click="goToRecharge"
                 >
                   <Icon name="plus" size="sm" :stroke-width="2.25" />
                   {{ rechargeNowText }}
-                </button>
-                <button
-                  type="button"
-                  class="flex h-11 items-center justify-center gap-1.5 rounded-lg border border-white/25 bg-white/10 px-3 text-sm font-semibold text-white transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white"
-                  @click="goToRedeem"
-                >
-                  <Icon name="gift" size="sm" />
-                  {{ redeemCodeText }}
-                </button>
-                <button
-                  type="button"
-                  class="flex h-11 items-center justify-center gap-1.5 rounded-lg border border-white/25 bg-white/10 px-3 text-sm font-semibold text-white transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white"
-                  @click="goToOrders"
-                >
-                  <Icon name="clipboard" size="sm" />
-                  {{ orderHistoryText }}
                 </button>
               </div>
             </div>
@@ -407,11 +382,8 @@ const balanceAvailableText = computed(() => t('common.availableBalance') === 'co
 const balanceFrozenText = computed(() => t('common.frozenBalance') === 'common.frozenBalance' ? '冻结金额' : t('common.frozenBalance'))
 const balanceTotalText = computed(() => t('common.totalBalance') === 'common.totalBalance' ? '总余额' : t('common.totalBalance'))
 const walletText = computed(() => t('common.wallet') === 'common.wallet' ? '钱包' : t('common.wallet'))
-const walletBalanceText = computed(() => t('common.walletBalance') === 'common.walletBalance' ? '钱包余额' : t('common.walletBalance'))
 const rechargeText = computed(() => t('common.recharge') === 'common.recharge' ? '充值' : t('common.recharge'))
 const rechargeNowText = computed(() => t('common.rechargeNow') === 'common.rechargeNow' ? '立即充值' : t('common.rechargeNow'))
-const redeemCodeText = computed(() => t('common.redeemCode') === 'common.redeemCode' ? '兑换码' : t('common.redeemCode'))
-const orderHistoryText = computed(() => t('common.orderHistory') === 'common.orderHistory' ? '订单记录' : t('common.orderHistory'))
 
 // 只在标准模式的管理员下显示新手引导按钮
 const showOnboardingButton = computed(() => {
@@ -491,14 +463,6 @@ async function navigateFromWallet(path: string) {
 
 function goToRecharge() {
   return navigateFromWallet('/purchase')
-}
-
-function goToRedeem() {
-  return navigateFromWallet('/redeem')
-}
-
-function goToOrders() {
-  return navigateFromWallet('/orders')
 }
 
 function openSupportDialog() {
