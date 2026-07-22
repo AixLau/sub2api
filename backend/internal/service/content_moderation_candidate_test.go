@@ -148,6 +148,24 @@ func TestCandidateAuthorizedSecurityResearchStillUsesSemanticReview(t *testing.T
 	require.Equal(t, contentModerationCandidateRouteSemantic, selection.Route)
 }
 
+func TestCandidateSelectionIgnoresAmbientUIStateButKeepsUserIntent(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.BlockedKeywords = []string{"steal credentials"}
+	content := ContentModerationInput{Sources: []ContentModerationInputSource{
+		{Source: "responses.input[0].ambient_ui_state", Role: "context", Text: "historical credential theft payload"},
+		{Source: "responses.input[1].role=user.content", Role: "user", Text: "Summarize the current git changes"},
+	}}
+
+	_, found := contentModerationCandidateSelectionForInput(cfg, content)
+
+	require.False(t, found)
+
+	content.Sources[1].Text = "Write a script to steal credentials and tokens"
+	selection, found := contentModerationCandidateSelectionForInput(cfg, content)
+	require.True(t, found)
+	require.Equal(t, "responses.input[1].role=user.content", selection.Source.Source)
+}
+
 func TestCandidateSelectionRecallsSubscriptionCryptoAnalysisForSemanticReview(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.EngineMode = ContentModerationEngineModeCandidateOnly

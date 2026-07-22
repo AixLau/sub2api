@@ -1301,6 +1301,7 @@ export default {
         accumulatedTokens: '累计 Token',
         totalTokens: '30天总计',
         dailyAvgTokens: '日均 Token',
+        cacheHitRate: '缓存命中率',
         performance: '性能',
         avgResponseTime: '平均响应',
         daysActive: '活跃天数',

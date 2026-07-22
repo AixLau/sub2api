@@ -62,10 +62,27 @@ const mountComponent = (items = cohorts) => mount(UserGrowthRetention, {
       repeat_buy_rate: 33.3
     }
   },
-  global: { stubs: { LoadingSpinner: true, Select: { name: 'Select', template: '<div />' } } }
+  global: {
+    stubs: {
+      LoadingSpinner: true,
+      Select: {
+        name: 'Select',
+        props: ['modelValue', 'options'],
+        template: '<div />'
+      }
+    }
+  }
 })
 
 describe('UserGrowthRetention', () => {
+  it('defaults to a 7-day range and offers it as the minimum option', () => {
+    const wrapper = mountComponent()
+    const select = wrapper.findComponent({ name: 'Select' })
+
+    expect(select.props('modelValue')).toBe(7)
+    expect(select.props('options').map((option: { value: number }) => option.value)).toEqual([7, 30, 60, 90, 180])
+  })
+
   it('presents the registration, recharge, and repeat-purchase funnel first', () => {
     const wrapper = mountComponent()
 
@@ -73,7 +90,7 @@ describe('UserGrowthRetention', () => {
     expect(wrapper.find('[data-testid="recharge-stage"]').text()).toContain('250')
     expect(wrapper.find('[data-testid="repeat-stage"]').text()).toContain('86')
     expect(wrapper.find('[data-testid="registration-loss"]').text()).toContain('1,350')
-    expect(wrapper.find('[data-testid="primary-loss-alert"]').text()).toContain('84.4%')
+    expect(wrapper.find('[data-testid="primary-loss-alert"]').exists()).toBe(false)
     expect(wrapper.find('table').exists()).toBe(false)
   })
 

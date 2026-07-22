@@ -214,6 +214,9 @@ func highRiskSemanticGateReviewDeferredActive(
 	candidate contentModerationSemanticGateCandidate,
 	result ContentModerationSemanticReviewResult,
 ) bool {
+	if candidate.ContextOnly {
+		return false
+	}
 	if !candidate.SyntheticAll {
 		return highRiskCandidateReviewDeferredActive(cfg, contentModerationCandidateSelection{Rule: ContentModerationKeywordRule{
 			Category: candidate.Category,
@@ -354,7 +357,7 @@ func (s *ContentModerationService) semanticReviewProviderFallback(
 		return buildDecision(action, true, blocked), true
 	case "review":
 		action := ContentModerationActionSemanticReviewReview
-		deferred := allowBlock && highRiskSemanticReviewResultReviewDeferredActive(cfg, result)
+		deferred := allowBlock && !candidate.ContextOnly && highRiskSemanticReviewResultReviewDeferredActive(cfg, result)
 		if deferred {
 			action = ContentModerationActionSemanticReviewDeferred
 		}

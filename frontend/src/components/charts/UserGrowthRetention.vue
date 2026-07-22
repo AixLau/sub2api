@@ -6,9 +6,6 @@
           <h3 class="text-base font-semibold text-gray-900 dark:text-white">
             {{ t('admin.dashboard.userGrowthRetention') }}
           </h3>
-          <p class="mt-1 max-w-3xl text-xs leading-5 text-gray-500 dark:text-gray-400">
-            {{ t('admin.dashboard.retentionDefinition') }}
-          </p>
         </div>
         <div class="w-32 shrink-0">
           <Select
@@ -93,20 +90,6 @@
               <span class="font-semibold tabular-nums text-teal-600 dark:text-teal-400">
                 {{ formatRate(repeatRate) }}
               </span>
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div class="border-y border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/60 dark:bg-amber-950/20 sm:px-6" data-testid="primary-loss-alert">
-        <div class="flex items-start gap-3">
-          <span class="mt-1 h-2 w-2 shrink-0 rounded-full bg-amber-500" />
-          <div class="min-w-0">
-            <p class="text-sm font-semibold text-gray-900 dark:text-white">
-              {{ t('admin.dashboard.primaryLoss') }}
-            </p>
-            <p class="mt-0.5 text-xs leading-5 text-gray-600 dark:text-gray-300">
-              {{ primaryLossMessage }}
             </p>
           </div>
         </div>
@@ -214,15 +197,15 @@ const emit = defineEmits<{
   (event: 'range-change', days: number): void
 }>()
 
-const days = computed(() => props.days ?? 60)
-const rangeOptions = computed(() => [30, 60, 90, 180].map((value) => ({
+const days = computed(() => props.days ?? 7)
+const rangeOptions = computed(() => [7, 30, 60, 90, 180].map((value) => ({
   value,
   label: t('admin.dashboard.lastDays', { days: value })
 })))
 
 const onDaysChange = (value: string | number | boolean | null) => {
   const nextDays = Number(value)
-  if ([30, 60, 90, 180].includes(nextDays) && nextDays !== days.value) {
+  if ([7, 30, 60, 90, 180].includes(nextDays) && nextDays !== days.value) {
     emit('range-change', nextDays)
   }
 }
@@ -238,19 +221,6 @@ const matureCohorts = computed(() => props.cohorts.filter((cohort) => cohort.pai
 // Keep recent cohorts visible: paid_users is the cumulative count observed so far,
 // so a cohort can grow as users recharge later today or on a future day.
 const trendCohorts = computed(() => props.cohorts.slice(-30))
-
-const primaryLossMessage = computed(() => {
-  const registrationIsPrimary = registrationLoss.value.rate == null
-    || repeatLoss.value.rate == null
-    || registrationLoss.value.rate >= repeatLoss.value.rate
-  const metric = registrationIsPrimary ? registrationLoss.value : repeatLoss.value
-  return t('admin.dashboard.primaryLossMessage', {
-    from: t(registrationIsPrimary ? 'admin.dashboard.registeredUsers' : 'admin.dashboard.rechargedUsers'),
-    to: t(registrationIsPrimary ? 'admin.dashboard.rechargedUsers' : 'admin.dashboard.repeatBuyers'),
-    count: formatNumber(metric.count),
-    rate: formatRate(metric.rate)
-  })
-})
 
 const registrationDelta = computed(() => compareTotals(props.cohorts, (cohort) => cohort.registrations))
 const rechargeDelta = computed(() => compareWeightedRates(matureCohorts.value, 'paid_users', 'registrations'))

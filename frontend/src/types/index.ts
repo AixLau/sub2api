@@ -1913,6 +1913,9 @@ export interface AccountUsageHistory {
   date: string
   label: string
   requests: number
+  input_tokens: number
+  cache_creation_tokens: number
+  cache_read_tokens: number
   tokens: number
   cost: number
   actual_cost: number // Account cost (account multiplier)
@@ -1926,7 +1929,11 @@ export interface AccountUsageSummary {
   total_user_cost: number
   total_standard_cost: number
   total_requests: number
+  total_input_tokens: number
+  total_cache_creation_tokens: number
+  total_cache_read_tokens: number
   total_tokens: number
+  cache_hit_rate: number
   avg_daily_cost: number // Account cost
   avg_daily_user_cost: number
   avg_daily_requests: number

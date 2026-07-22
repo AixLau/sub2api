@@ -540,11 +540,11 @@ func (h *DashboardHandler) GetActiveUsersTrend(c *gin.Context) {
 }
 
 // GetUserGrowthRetention returns daily registration cohorts and D1/D7/D30 API retention.
-// GET /api/v1/admin/dashboard/user-growth-retention?days=60
+// GET /api/v1/admin/dashboard/user-growth-retention?days=7
 func (h *DashboardHandler) GetUserGrowthRetention(c *gin.Context) {
-	days, err := strconv.Atoi(c.DefaultQuery("days", "60"))
-	if err != nil || days < 30 || days > 180 {
-		response.BadRequest(c, "days must be between 30 and 180")
+	days, err := strconv.Atoi(c.DefaultQuery("days", "7"))
+	if err != nil || days < 7 || days > 180 {
+		response.BadRequest(c, "days must be between 7 and 180")
 		return
 	}
 

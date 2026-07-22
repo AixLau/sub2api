@@ -390,7 +390,7 @@ const loading = ref(false)
 const chartsLoading = ref(false)
 const activeUsersTrendLoading = ref(false)
 const userRetentionLoading = ref(false)
-const userRetentionDays = ref(60)
+const userRetentionDays = ref(7)
 const rankingLoading = ref(false)
 const rankingError = ref(false)
 

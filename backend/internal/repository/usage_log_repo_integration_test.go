@@ -1514,6 +1514,8 @@ func (s *UsageLogRepoSuite) TestGetUserModelStats() {
 		Model:        "claude-3-opus",
 		InputTokens:  100,
 		OutputTokens: 200,
+		CacheCreationTokens: 20,
+		CacheReadTokens: 30,
 		TotalCost:    0.5,
 		ActualCost:   0.5,
 		CreatedAt:    base,
@@ -1528,6 +1530,8 @@ func (s *UsageLogRepoSuite) TestGetUserModelStats() {
 		Model:        "claude-3-sonnet",
 		InputTokens:  50,
 		OutputTokens: 100,
+		CacheCreationTokens: 10,
+		CacheReadTokens: 40,
 		TotalCost:    0.2,
 		ActualCost:   0.2,
 		CreatedAt:    base.Add(1 * time.Hour),
@@ -1695,7 +1699,11 @@ func (s *UsageLogRepoSuite) TestGetAccountUsageStats() {
 
 	s.Require().Len(resp.History, 2, "expected 2 days of history")
 	s.Require().Equal(int64(2), resp.Summary.TotalRequests)
-	s.Require().Equal(int64(450), resp.Summary.TotalTokens)
+	s.Require().Equal(int64(550), resp.Summary.TotalTokens)
+	s.Require().Equal(int64(150), resp.Summary.TotalInputTokens)
+	s.Require().Equal(int64(30), resp.Summary.TotalCacheCreationTokens)
+	s.Require().Equal(int64(70), resp.Summary.TotalCacheReadTokens)
+	s.Require().InDelta(28.0, resp.Summary.CacheHitRate, 0.0001)
 	s.Require().Len(resp.Models, 2)
 }
 
@@ -1711,6 +1719,7 @@ func (s *UsageLogRepoSuite) TestGetAccountUsageStats_EmptyRange() {
 
 	s.Require().Len(resp.History, 0)
 	s.Require().Equal(int64(0), resp.Summary.TotalRequests)
+	s.Require().Zero(resp.Summary.CacheHitRate)
 }
 
 // --- GetUserUsageTrend ---

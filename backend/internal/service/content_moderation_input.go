@@ -948,7 +948,13 @@ func collectResponsesInput(input gjson.Result, parts *[]string, images *[]string
 	case input.Type == gjson.String:
 		before := len(*parts)
 		addModerationRawText(parts, input.String())
-		appendModerationSources(sources, "responses.input", "user", *parts, before)
+		role := "user"
+		source := "responses.input"
+		if isResponsesAmbientUIContextText(input.String()) {
+			role = "context"
+			source = "responses.input.ambient_ui_state"
+		}
+		appendModerationSources(sources, source, role, *parts, before)
 	case input.IsArray():
 		input.ForEach(func(index, item gjson.Result) bool {
 			before := len(*parts)
@@ -1781,6 +1787,8 @@ func responsesInputItemSource(index string, item gjson.Result) string {
 	switch {
 	case isResponsesToolOutputType(typ):
 		return fmt.Sprintf("responses.input[%s].%s", index, typ)
+	case isResponsesAmbientUIContextItem(item):
+		return fmt.Sprintf("responses.input[%s].ambient_ui_state", index)
 	case role != "":
 		return fmt.Sprintf("responses.input[%s].role=%s.content", index, role)
 	default:
@@ -1789,6 +1797,9 @@ func responsesInputItemSource(index string, item gjson.Result) string {
 }
 
 func responsesInputItemRole(item gjson.Result) string {
+	if isResponsesAmbientUIContextItem(item) {
+		return "context"
+	}
 	if role := strings.ToLower(strings.TrimSpace(item.Get("role").String())); role != "" {
 		return role
 	}
@@ -1803,6 +1814,44 @@ func responsesInputItemRole(item gjson.Result) string {
 	default:
 		return "user"
 	}
+}
+
+// Codex injects the current browser state as a standalone Responses message.
+// It is useful review context, but it is not a user instruction and therefore
+// must not independently establish user intent. Require the complete wrapper
+// so ordinary user text that merely mentions the tag remains actionable.
+func isResponsesAmbientUIContextItem(item gjson.Result) bool {
+	if !item.IsObject() || isResponsesToolItemType(strings.ToLower(strings.TrimSpace(item.Get("type").String()))) {
+		return false
+	}
+	var parts []string
+	var images []string
+	collectResponsesContentValue(item.Get("content"), &parts, &images)
+	if item.Get("type").String() == "input_text" || item.Get("text").Exists() {
+		collectResponsesContentValue(item, &parts, &images)
+	}
+	if len(images) > 0 {
+		return false
+	}
+	text := normalizeContentModerationText(strings.Join(parts, "\n"))
+	return isResponsesAmbientUIContextText(text)
+}
+
+func isResponsesAmbientUIContextText(value string) bool {
+	text := strings.TrimSpace(value)
+	lower := strings.ToLower(text)
+	const opening = "<in-app-browser-context"
+	const closing = "</in-app-browser-context>"
+	if !strings.HasPrefix(lower, opening) || !strings.HasSuffix(lower, closing) {
+		return false
+	}
+	openEnd := strings.IndexByte(lower, '>')
+	if openEnd < len(opening) {
+		return false
+	}
+	attributes := lower[len(opening):openEnd]
+	return strings.Contains(attributes, `source="ambient-ui-state"`) ||
+		strings.Contains(attributes, `source='ambient-ui-state'`)
 }
 
 func shouldIncludeModerationRole(role string, typ string, auditScope string) bool {

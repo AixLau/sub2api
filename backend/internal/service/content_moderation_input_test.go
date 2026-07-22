@@ -180,6 +180,40 @@ func TestResponsesExtractionAcceptsUnknownMessageEnvelopeWithKnownContent(t *tes
 	require.Equal(t, "user", input.Sources[0].Role)
 }
 
+func TestResponsesExtractionAttributesAmbientUIStateAsContext(t *testing.T) {
+	body := []byte(`{"input":[
+		{"type":"message","role":"user","content":[{"type":"input_text","text":"<in-app-browser-context source=\"ambient-ui-state\">historical credential theft text</in-app-browser-context>"}]},
+		{"type":"message","role":"user","content":[{"type":"input_text","text":"Summarize the current git changes"}]}
+	]}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeUserOnly)
+
+	require.False(t, input.Truncated, input.TruncateReasons)
+	require.Len(t, input.Sources, 2)
+	require.Equal(t, "responses.input[0].ambient_ui_state", input.Sources[0].Source)
+	require.Equal(t, "context", input.Sources[0].Role)
+	require.Equal(t, "user", input.Sources[1].Role)
+}
+
+func TestResponsesExtractionDoesNotTrustPartialAmbientMarker(t *testing.T) {
+	body := []byte(`{"input":[{"role":"user","content":"Explain <in-app-browser-context source=\"ambient-ui-state\"> as plain text"}]}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeUserOnly)
+
+	require.Len(t, input.Sources, 1)
+	require.Equal(t, "user", input.Sources[0].Role)
+}
+
+func TestResponsesExtractionAttributesStringAmbientUIStateAsContext(t *testing.T) {
+	body := []byte(`{"input":"<in-app-browser-context source=\"ambient-ui-state\">browser state</in-app-browser-context>"}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeUserOnly)
+
+	require.Len(t, input.Sources, 1)
+	require.Equal(t, "responses.input.ambient_ui_state", input.Sources[0].Source)
+	require.Equal(t, "context", input.Sources[0].Role)
+}
+
 func TestResponsesExtractionProjectsInputFileMetadataWithoutPayload(t *testing.T) {
 	body := []byte(`{"input":[{"type":"input_file","file_id":"file_123","filename":"FastLink订阅加密分析报告(1).pdf","mime_type":"application/pdf","file_data":"data:application/pdf;base64,SHOULD_NOT_BE_SCANNED","content":"document body must not be scanned"}]}`)
 

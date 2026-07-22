@@ -316,6 +316,14 @@
                   formatTokens(Math.round(stats.summary.avg_daily_tokens))
                 }}</span>
               </div>
+              <div class="flex items-center justify-between">
+                <span class="text-xs text-gray-500 dark:text-gray-400">{{
+                  t('admin.accounts.stats.cacheHitRate')
+                }}</span>
+                <span class="text-sm font-semibold text-teal-600 dark:text-teal-400">
+                  {{ formatPercentage(stats.summary.cache_hit_rate) }}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -710,4 +718,6 @@ const formatDuration = (ms: number): string => {
   }
   return `${Math.round(ms)}ms`
 }
+
+const formatPercentage = (value: number): string => `${value.toFixed(1)}%`
 </script>

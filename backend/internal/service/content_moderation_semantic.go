@@ -322,6 +322,8 @@ func buildContentModerationSemanticReviewInput(cfg ContentModerationSemanticRevi
 		role := strings.ToLower(strings.TrimSpace(source.Role))
 		if role == "tool" || role == "function" {
 			header = fmt.Sprintf("[source=%s role=tool evidence=context_only]\n", strings.TrimSpace(source.Source))
+		} else if role == "context" {
+			header = fmt.Sprintf("[source=%s role=context evidence=context_only]\n", strings.TrimSpace(source.Source))
 		}
 		remaining := cfg.MaxInputRunes - len([]rune(b.String())) - len([]rune(header))
 		if remaining <= 0 {
@@ -406,7 +408,7 @@ func selectContentModerationSemanticReviewSources(cfg ContentModerationSemanticR
 		}
 		if len(selected) == 0 {
 			for i := len(content.Sources) - 1; i >= 0; i-- {
-				if isSemanticReviewProtocolToolEvidence(content.Sources[i]) {
+				if isSemanticReviewProtocolContextEvidence(content.Sources[i]) {
 					selected = append(selected, content.Sources[i])
 					break
 				}
@@ -483,8 +485,11 @@ func semanticReviewSplitUserTurn(source string) string {
 	return ""
 }
 
-func isSemanticReviewProtocolToolEvidence(source ContentModerationInputSource) bool {
+func isSemanticReviewProtocolContextEvidence(source ContentModerationInputSource) bool {
 	role := strings.ToLower(strings.TrimSpace(source.Role))
+	if role == "context" {
+		return true
+	}
 	if role != "tool" && role != "function" {
 		return false
 	}

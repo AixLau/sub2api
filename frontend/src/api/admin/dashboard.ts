@@ -325,7 +325,7 @@ export interface UserGrowthRetentionResponse {
   end_date: string
 }
 
-export async function getUserGrowthRetention(days = 60): Promise<UserGrowthRetentionResponse> {
+export async function getUserGrowthRetention(days = 7): Promise<UserGrowthRetentionResponse> {
   const { data } = await apiClient.get<UserGrowthRetentionResponse>(
     '/admin/dashboard/user-growth-retention',
     { params: { days } }

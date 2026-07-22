@@ -239,7 +239,7 @@ func TestContentModerationCheck_TriggerAllHighRiskReviewIsDeferredWithoutViolati
 	require.False(t, logs[0].EmailSent)
 }
 
-func TestContentModerationCheck_TriggerAllToolOnlyRejectIsDeferredWithoutViolation(t *testing.T) {
+func TestContentModerationCheck_TriggerAllToolOnlyRejectIsRecordedWithoutBlocking(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
@@ -279,14 +279,13 @@ func TestContentModerationCheck_TriggerAllToolOnlyRejectIsDeferredWithoutViolati
 	})
 
 	require.NoError(t, err)
-	require.False(t, decision.Allowed)
-	require.True(t, decision.Blocked)
-	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
-	require.Equal(t, ContentModerationActionSemanticReviewDeferred, decision.Action)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
 	require.Contains(t, router.input.Text, "evidence=context_only")
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewDeferred, logs[0].Action)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
 	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
 	require.False(t, logs[0].UserViolationEligible)
 	require.Zero(t, logs[0].ViolationCount)
@@ -294,6 +293,50 @@ func TestContentModerationCheck_TriggerAllToolOnlyRejectIsDeferredWithoutViolati
 	require.False(t, logs[0].EmailSent)
 	require.Contains(t, logs[0].Error, `"semantic_review_candidate_context_only":true`)
 	require.Contains(t, logs[0].Error, "semantic_policy_context_only")
+}
+
+func TestContentModerationCheck_TriggerAllAmbientUIRejectIsRecordedWithoutBlocking(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	cfg.SemanticReview = ContentModerationSemanticReviewConfig{
+		Enabled: true, Trigger: ContentModerationSemanticReviewTriggerAll,
+		PrimaryModel: ContentModerationSemanticReviewPrimaryModel,
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	router := &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "reject", Intent: "harmful", Target: "external_service", Authorization: "unauthorized",
+		HarmMechanism: "credential_theft", Severity: "critical", Confidence: 0.98,
+		Operationality: "actionable", Executability: "direct", Categories: []string{"credential_theft"},
+	}}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled: "true", SettingKeyContentModerationConfig: string(rawCfg),
+		}}, repo, nil, nil, nil, nil, nil,
+	)
+	svc.SetSemanticReviewRouter(router)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		UserID: 17, APIKeyID: 29, Endpoint: "/v1/responses", Provider: "openai",
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"<in-app-browser-context source=\"ambient-ui-state\">historical credential theft evidence</in-app-browser-context>"}]}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
+	require.Contains(t, router.input.Text, "role=context evidence=context_only")
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
+	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.False(t, logs[0].UserViolationEligible)
+	require.Zero(t, logs[0].ViolationCount)
 }
 
 func TestContentModerationProviderFailureFallsBackToSemanticReview(t *testing.T) {

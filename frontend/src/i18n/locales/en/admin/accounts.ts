@@ -1259,6 +1259,7 @@ export default {
         accumulatedTokens: 'Accumulated Tokens',
         totalTokens: '30-Day Total',
         dailyAvgTokens: 'Daily Average',
+        cacheHitRate: 'Cache Hit Rate',
         performance: 'Performance',
         avgResponseTime: 'Avg Response',
         daysActive: 'Days Active',
