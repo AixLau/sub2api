@@ -258,6 +258,16 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	// 失败仍走 JSON+状态码链路；未标记客户端流式或间隔为 0 时是 no-op。
 	stopCompactKeepalive := service.StartOpenAICompactSSEKeepalive(c, h.openAICompactKeepaliveInterval())
 	defer stopCompactKeepalive()
+	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformOpenAI {
+		if cappedBody, changed := service.ApplyOpenAIReasoningEffortPolicy(body, apiKey.Group.MaxReasoningEffort, apiKey.Group.ReasoningEffortMappings); changed {
+			body = cappedBody
+		}
+	}
+	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformOpenAI {
+		if cappedBody, changed := service.ApplyOpenAIReasoningEffortPolicy(body, apiKey.Group.MaxReasoningEffort, apiKey.Group.ReasoningEffortMappings); changed {
+			body = cappedBody
+		}
+	}
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
 
 	setOpsRequestContext(c, reqModel, reqStream)
@@ -1486,7 +1496,6 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "invalid JSON payload")
 		return
 	}
-
 	reqModel := strings.TrimSpace(gjson.GetBytes(firstMessage, "model").String())
 	if reqModel == "" {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "model is required in first response.create payload")
@@ -1719,9 +1728,17 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			return
 		}
 
+		maxReasoningEffort := ""
+		var reasoningEffortMappings []service.ReasoningEffortMapping
+		if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformOpenAI {
+			maxReasoningEffort = apiKey.Group.MaxReasoningEffort
+			reasoningEffortMappings = apiKey.Group.ReasoningEffortMappings
+		}
 		var requestPayloadHash string
 		hooks := &service.OpenAIWSIngressHooks{
-			InitialRequestModel: reqModel,
+			InitialRequestModel:     reqModel,
+			MaxReasoningEffort:      maxReasoningEffort,
+			ReasoningEffortMappings: reasoningEffortMappings,
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
 				if turn == 1 {
 					return nil

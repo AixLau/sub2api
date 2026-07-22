@@ -459,6 +459,7 @@ import PaymentStatusPanel from '@/components/payment/PaymentStatusPanel.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { DEFAULT_PAYMENT_CURRENCY, formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import { buildSubscriptionPlanDisplay, buildSubscriptionPlanDisplayLabels, type SubscriptionPlanDisplay } from '@/components/payment/subscriptionPlanDisplay'
+import { planValiditySuffix as validitySuffixOf } from '@/components/payment/validity'
 import type { PaymentMethodOption } from '@/components/payment/PaymentMethodSelector.vue'
 import { buildPaymentErrorToastMessage, describePaymentScenarioError } from './paymentUx'
 import { hasWechatResumeQuery, parseWechatResumeRoute, stripWechatResumeQuery } from './paymentWechatResume'
@@ -1082,6 +1083,11 @@ const selectedPlanDisplay = computed<SubscriptionPlanDisplay>(() => {
     return { description: '', quotaSummary: '', validitySummary: '' }
   }
   return buildSubscriptionPlanDisplay(selectedPlan.value, buildSubscriptionPlanDisplayLabels(t))
+})
+
+const planValiditySuffix = computed(() => {
+  if (!selectedPlan.value) return ''
+  return validitySuffixOf(selectedPlan.value, t)
 })
 
 function selectPlan(plan: SubscriptionPlan) {
