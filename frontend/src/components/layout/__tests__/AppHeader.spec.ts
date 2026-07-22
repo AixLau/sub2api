@@ -78,8 +78,14 @@ describe('AppHeader contact support entry', () => {
     })
 
     expect(wrapper.find('[data-testid="wallet-panel"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="wallet-recharge-top"]').trigger('click')
+    expect(mocks.routerPush).toHaveBeenCalledWith('/purchase')
+
+    mocks.routerPush.mockReset()
     await wrapper.get('[data-testid="wallet-trigger"]').trigger('click')
     expect(wrapper.get('[data-testid="wallet-panel"]').text()).toContain('$2.00')
+    expect(wrapper.get('[data-testid="wallet-artwork"]').attributes('src')).toContain('wallet-fluid-blue-violet.png')
+    expect(wrapper.get('[data-testid="wallet-panel"]').text()).not.toContain('总余额')
 
     await wrapper.get('[data-testid="wallet-recharge"]').trigger('click')
     expect(mocks.routerPush).toHaveBeenCalledWith('/purchase')
