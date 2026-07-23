@@ -56,12 +56,17 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 			return
 		}
 	}
+	ensureCompositeTargetPlatform(c, apiKey, reqModel)
+	if !compositeTargetPlatformResolved(c, apiKey, reqModel) {
+		h.responsesErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by composite groups")
+		return
+	}
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
 
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 	requestCtx := c.Request.Context()
-	if service.IsExplicitImageGenerationIntent("/v1/responses", reqModel, body) {
+	if service.IsImageGenerationIntentForPlatform("/v1/responses", reqModel, body, openAICompatibleRequestPlatform(c.Request.Context(), apiKey)) {
 		requestCtx = service.WithOpenAIImageGenerationIntent(requestCtx)
 	}
 
@@ -160,7 +165,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		err := routingStage.Err
 		if err != nil {
 			if len(fs.FailedAccountIDs) == 0 {
-				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, service.PlatformAnthropic)
+				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, effectiveAPIKeyPlatform(c, apiKey))
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}
@@ -312,7 +317,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 			ClientIP:           clientIP,
 			RequestPayloadHash: requestPayloadHash,
 			APIKeyService:      h.apiKeyService,
-			ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+			ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel),
 			LogComponent:       "gateway.responses.record_usage",
 			LogMessage:         "gateway.responses.record_usage_failed",
 			LogUserID:          subject.UserID,

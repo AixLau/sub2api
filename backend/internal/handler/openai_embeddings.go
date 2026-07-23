@@ -76,6 +76,12 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		}
 		reqModel = modelResult.String()
 	}
+
+	ensureCompositeTargetPlatform(c, apiKey, reqModel)
+	if !compositeTargetPlatformAllowed(c, apiKey, reqModel, service.PlatformOpenAI) {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
+		return
+	}
 	reqLog = reqLog.With(zap.String("model", reqModel))
 	setOpsRequestContext(c, reqModel, false)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
@@ -87,7 +93,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
-	requestPlatform := openAICompatibleRequestPlatform(apiKey)
+	requestPlatform := openAICompatibleRequestPlatform(c.Request.Context(), apiKey)
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 
 	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, false, &streamStarted, reqLog)
@@ -191,7 +197,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 				ClientIP:           ip.GetClientIP(c),
 				RequestPayloadHash: service.HashUsageRequestPayload(body),
 				QuotaPlatform:      service.QuotaPlatform(c.Request.Context(), apiKey),
-				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, resultUpstreamModel(result)),
+				ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, reqModel, resultUpstreamModel(result)),
 				LogComponent:       "handler.openai_gateway.embeddings",
 				LogMessage:         "openai_embeddings.failed_upstream_usage_record_failed",
 				LogUserID:          subject.UserID,
@@ -259,7 +265,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			ClientIP:           clientIP,
 			QuotaPlatform:      quotaPlatform,
 			ScheduleSuccess:    &scheduleSucceeded,
-			ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+			ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel),
 			LogComponent:       "handler.openai_gateway.embeddings",
 			LogMessage:         "openai_embeddings.record_usage_failed",
 			LogUserID:          subject.UserID,

@@ -1109,11 +1109,8 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	} else {
 		req.Header.Set("Authorization", "Bearer "+authToken)
 	}
-	req.Header.Set("OpenAI-Beta", "responses=experimental")
-	req.Header.Set("Originator", "codex_cli_rs")
-	req.Header.Set("User-Agent", resolveOpenAICodexUpstreamUserAgent(ctx, account, s.settingService))
-	req.Header.Set("Version", codexCLIVersion)
-	enforceCodexIdentityHeaders(req.Header)
+	// Compact capability probes are synthetic requests. Use the stable probe
+	// identity instead of inheriting the configurable production client UA.
 	applyOpenAICodexProbeHeaders(req.Header)
 	probeSessionID := compactProbeSessionID(account.ID)
 	req.Header.Set("Session_ID", probeSessionID)
@@ -1126,7 +1123,12 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	account.ApplyHeaderOverrides(req.Header)
-	userAgent := s.forceOpenAIAccountTestIdentity(ctx, req.Header)
+	// Compact capability probes are synthetic requests. Keep their identity
+	// stable instead of inheriting the configurable regular test identity.
+	req.Header.Set("User-Agent", codexCLIUserAgent)
+	req.Header.Set("Originator", "codex_cli_rs")
+	enforceCodexIdentityHeaders(req.Header)
+	userAgent := req.Header.Get("User-Agent")
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {

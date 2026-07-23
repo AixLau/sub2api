@@ -94,6 +94,11 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			}
 		}
 	}
+	ensureCompositeTargetPlatform(c, apiKey, reqModel)
+	if !openAICompatibleTextTargetAllowed(c, apiKey, reqModel) {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
+		return
+	}
 	if service.IsGPTImageGenerationModel(reqModel) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "This model is not supported on the Chat Completions endpoint")
 		return
@@ -117,7 +122,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	}
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
-	requestPlatform := openAICompatibleRequestPlatform(apiKey)
+	requestPlatform := openAICompatibleRequestPlatform(c.Request.Context(), apiKey)
 
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	routingStart := time.Now()
@@ -215,7 +220,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			Model:              reqModel,
 			ForwardErrored:     err != nil,
 			CyberBlockKey:      cyberBlockKeyChat,
-			ChannelUsageFields: channelMapping.ToUsageFields(reqModel, ""),
+			ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, reqModel, ""),
 			RequestPayloadHash: service.HashUsageRequestPayload(body),
 			RequestBody:        body,
 		})
@@ -244,7 +249,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 				ClientIP:           ip.GetClientIP(c),
 				RequestPayloadHash: service.HashUsageRequestPayload(body),
 				QuotaPlatform:      service.QuotaPlatform(c.Request.Context(), apiKey),
-				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, resultUpstreamModel(result)),
+				ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, reqModel, resultUpstreamModel(result)),
 				LogComponent:       "handler.openai_gateway.chat_completions",
 				LogMessage:         "openai_chat_completions.failed_upstream_usage_record_failed",
 				LogUserID:          subject.UserID,
@@ -356,7 +361,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			UserAgent:          userAgent,
 			ClientIP:           clientIP,
 			QuotaPlatform:      quotaPlatform,
-			ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+			ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel),
 			CyberBlocked:       cyberBlocked,
 			ScheduleSuccess:    &scheduleSucceeded,
 			LogComponent:       "handler.openai_gateway.chat_completions",

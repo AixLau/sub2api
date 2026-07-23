@@ -82,9 +82,20 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		return
 	}
 	requestModel := parsed.Model
+	ensureCompositeTargetPlatform(c, apiKey, requestModel)
+	clientRequestModel := clientRequestedModel(c, requestModel)
+	routingModel := requestModel
+	if resolvedModel, ok := service.ResolvedUpstreamModelFromContext(c.Request.Context()); ok {
+		routingModel = resolvedModel
+	}
+	if !compositeTargetPlatformAllowed(c, apiKey, requestModel, service.PlatformOpenAI) {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
+		return
+	}
 
 	reqLog = reqLog.With(
-		zap.String("model", requestModel),
+		zap.String("model", clientRequestModel),
+		zap.String("routing_model", routingModel),
 		zap.Bool("stream", parsed.Stream),
 		zap.Bool("multipart", parsed.Multipart),
 		zap.String("capability", string(parsed.RequiredCapability)),
@@ -109,14 +120,10 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		defer imageReleaseFunc()
 	}
 
-	if parsed.Multipart {
-		setOpsRequestContext(c, requestModel, parsed.Stream)
-	} else {
-		setOpsRequestContext(c, requestModel, parsed.Stream)
-	}
+	setOpsRequestContext(c, clientRequestModel, parsed.Stream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(parsed.Stream, false)))
 
-	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, requestModel)
+	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, routingModel)
 
 	if h.errorPassthroughService != nil {
 		service.BindErrorPassthroughService(c, h.errorPassthroughService)
@@ -241,7 +248,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				ClientIP:           ip.GetClientIP(c),
 				RequestPayloadHash: requestPayloadHash,
 				QuotaPlatform:      service.QuotaPlatform(c.Request.Context(), apiKey),
-				ChannelUsageFields: channelMapping.ToUsageFields(requestModel, resultUpstreamModel(result)),
+				ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, requestModel, resultUpstreamModel(result)),
 				LogComponent:       "handler.openai_gateway.images",
 				LogMessage:         "openai.images.failed_upstream_usage_record_failed",
 				LogUserID:          subject.UserID,
@@ -384,7 +391,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			ClientIP:           clientIP,
 			RequestPayloadHash: requestPayloadHash,
 			QuotaPlatform:      quotaPlatform,
-			ChannelUsageFields: channelMapping.ToUsageFields(requestModel, upstreamModel),
+			ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, requestModel, upstreamModel),
 			ScheduleSuccess:    &scheduleSucceeded,
 			Mandatory:          true,
 			LogComponent:       "handler.openai_gateway.images",
