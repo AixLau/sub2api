@@ -734,6 +734,7 @@ type ContentModerationLog struct {
 	TruncateReasons        []string           `json:"truncate_reasons,omitempty"`
 	UpstreamLatencyMS      *int               `json:"upstream_latency_ms,omitempty"`
 	Error                  string             `json:"error"`
+	Metadata               json.RawMessage    `json:"metadata"`
 	MatchedKeyword         string             `json:"matched_keyword"`
 	KeywordCategory        string             `json:"keyword_category"`
 	KeywordSeverity        string             `json:"keyword_severity"`
@@ -2367,7 +2368,8 @@ func (s *ContentModerationService) checkSyncWithFocusKeyword(ctx context.Context
 			s.asyncErrors.Add(1)
 		}
 		if cfg.RecordNonHits {
-			log := s.buildLog(input, cfg, ContentModerationActionError, false, "", 0, nil, content.ExcerptText(), &latency, queueDelay, err.Error())
+			log := s.buildLog(input, cfg, ContentModerationActionError, false, "", 0, nil, content.ExcerptText(), &latency, queueDelay, "")
+			log.Error = err.Error()
 			_ = s.repo.CreateLog(ctx, log)
 		}
 		if allowBlock && cfg.Mode == ContentModerationModePreBlock {
@@ -2414,7 +2416,7 @@ func (s *ContentModerationService) checkSyncWithFocusKeyword(ctx context.Context
 		"queue_delay_ms", queueDelay)
 	shouldRecordNonHit := cfg.RecordNonHits && (flagged || cfg.shouldRecordNonHit(hashText))
 	if flagged || shouldRecordNonHit {
-		logMetadata := ""
+		var logMetadata contentModerationMetadata
 		if flagged {
 			logMetadata = contentModerationHitLogMetadata(cfg, content, contentModerationPrimarySource(input.Protocol, content))
 		}
@@ -2786,10 +2788,10 @@ func promptFilterSeverity(verdict promptfilter.Verdict) string {
 	return ContentModerationKeywordSeverityHigh
 }
 
-func contentModerationPromptFilterLogMetadata(cfg *ContentModerationConfig, content ContentModerationInput, hit contentModerationPromptFilterHit, verdict promptfilter.Verdict) string {
+func contentModerationPromptFilterLogMetadata(cfg *ContentModerationConfig, content ContentModerationInput, hit contentModerationPromptFilterHit, verdict promptfilter.Verdict) contentModerationMetadata {
 	metadata := map[string]any{}
 	base := contentModerationHitLogMetadata(cfg, content, strings.TrimSpace(hit.Source.Source))
-	if strings.TrimSpace(base) != "" {
+	if strings.TrimSpace(string(base)) != "" {
 		_ = json.Unmarshal([]byte(base), &metadata)
 	}
 	metadata["prompt_filter_source_revision"] = verdict.SourceRevision
@@ -2806,7 +2808,7 @@ func contentModerationPromptFilterLogMetadata(cfg *ContentModerationConfig, cont
 	if err != nil {
 		return base
 	}
-	return string(raw)
+	return contentModerationMetadata(raw)
 }
 
 func (s *ContentModerationService) keywordReviewDecision(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string, keywordMatch ContentModerationKeywordRule, reason string) *ContentModerationDecision {
@@ -4785,7 +4787,7 @@ func (s *ContentModerationService) callModerationOnceWithInput(ctx context.Conte
 	return &out.Results[0], nil
 }
 
-func (s *ContentModerationService) buildLog(input ContentModerationCheckInput, cfg *ContentModerationConfig, action string, flagged bool, highestCategory string, highestScore float64, scores map[string]float64, text string, latency *int, queueDelay *int, errText string) *ContentModerationLog {
+func (s *ContentModerationService) buildLog(input ContentModerationCheckInput, cfg *ContentModerationConfig, action string, flagged bool, highestCategory string, highestScore float64, scores map[string]float64, text string, latency *int, queueDelay *int, metadata contentModerationMetadata) *ContentModerationLog {
 	var userID *int64
 	if input.UserID > 0 {
 		userID = &input.UserID
@@ -4823,8 +4825,16 @@ func (s *ContentModerationService) buildLog(input ContentModerationCheckInput, c
 		InputExcerpt:      contentModerationInputExcerptForLog(cfg, text),
 		UpstreamLatencyMS: latency,
 		QueueDelayMS:      queueDelay,
-		Error:             errText,
+		Metadata:          contentModerationMetadataRaw(metadata),
 	}
+}
+
+func contentModerationMetadataRaw(metadata contentModerationMetadata) json.RawMessage {
+	metadataText := strings.TrimSpace(string(metadata))
+	if metadataText == "" {
+		return json.RawMessage(`{}`)
+	}
+	return json.RawMessage(metadataText)
 }
 
 func contentModerationInputExcerptForLog(cfg *ContentModerationConfig, text string) string {
@@ -5050,7 +5060,7 @@ func (s *ContentModerationService) persistContentModerationLog(ctx context.Conte
 	}
 }
 
-func contentModerationHitLogMetadata(cfg *ContentModerationConfig, content ContentModerationInput, matchedSource string) string {
+func contentModerationHitLogMetadata(cfg *ContentModerationConfig, content ContentModerationInput, matchedSource string) contentModerationMetadata {
 	metadata := map[string]any{}
 	if cfg != nil {
 		metadata["engine_mode"] = cfg.EngineMode
@@ -5072,7 +5082,7 @@ func contentModerationHitLogMetadata(cfg *ContentModerationConfig, content Conte
 	if err != nil {
 		return ""
 	}
-	return string(raw)
+	return contentModerationMetadata(raw)
 }
 
 func normalizeContentModerationTruncateReasons(reasons []string) []string {

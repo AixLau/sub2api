@@ -440,7 +440,7 @@ describe('admin RiskControlView', () => {
     }))
   })
 
-  it('shows normalized semantic reviewer output in record details', async () => {
+	it('shows normalized semantic reviewer output from metadata in record details', async () => {
     listLogs.mockResolvedValue({
       items: [{
         id: 91,
@@ -454,12 +454,13 @@ describe('admin RiskControlView', () => {
         decision_source: 'semantic_review',
         moderation_provider: 'platform_openai',
         moderation_model: 'gpt-5.3-codex-spark',
-        error: JSON.stringify({
+        error: '',
+        metadata: {
           semantic_review_verdict: 'allow',
           semantic_review_intent: 'benign',
           semantic_review_confidence: 0.99,
           semantic_review_categories: ['benign_task_generation_guidance'],
-        }),
+        },
       }],
       total: 1,
       page: 1,

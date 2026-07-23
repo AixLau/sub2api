@@ -29,6 +29,15 @@ func TestBuildContentModerationLogWhere_FiltersDecisionSource(t *testing.T) {
 	require.Contains(t, strings.Join(where, " AND "), "l.decision_source = $1")
 }
 
+func TestBuildContentModerationLogWhere_ErrorUsesFailureColumnOnly(t *testing.T) {
+	where, args := buildContentModerationLogWhere(service.ContentModerationLogFilter{Result: "error"})
+
+	require.Empty(t, args)
+	sql := strings.Join(where, " AND ")
+	require.Contains(t, sql, "l.error <> ''")
+	require.NotContains(t, sql, "metadata")
+}
+
 func TestBuildContentModerationLogWhere_SearchIncludesKeywordMetadata(t *testing.T) {
 	where, args := buildContentModerationLogWhere(service.ContentModerationLogFilter{Search: "privacy"})
 
@@ -228,7 +237,7 @@ func TestContentModerationRepositoryCreateLog_UsesValidUpsertReturningSQL(t *tes
 			log.DecisionID, log.RequestID, userID, log.UserEmail, apiKeyID, log.APIKeyName, groupID, log.GroupName,
 			accountID, log.AccountName, log.AccountType,
 			log.Endpoint, log.Provider, log.Model, log.Mode, log.Action, log.Flagged, log.HighestCategory, log.HighestScore,
-			`{"keyword":1}`, `{"keyword":1}`, log.InputExcerpt, latency, log.Error,
+			`{"keyword":1}`, `{"keyword":1}`, log.InputExcerpt, latency, log.Error, `{}`,
 			log.MatchedKeyword, log.KeywordCategory, log.KeywordSeverity, log.KeywordAction, log.EffectiveKeywordAction,
 			log.RiskContextType, log.RiskContextReason, log.ReviewStatus, log.ReviewNote, reviewedBy, reviewedAt,
 			log.ViolationCount, log.AutoBanned, log.EmailSent, queueDelay,
@@ -298,7 +307,7 @@ func TestContentModerationRepositoryListLogsIncludesRawRequestMetadata(t *testin
 			"id", "request_id", "user_id", "user_email", "api_key_id", "api_key_name", "group_id", "group_name",
 			"account_id", "account_name", "account_type",
 			"endpoint", "provider", "model", "mode", "action", "flagged", "highest_category", "highest_score",
-			"category_scores", "threshold_snapshot", "input_excerpt", "upstream_latency_ms", "error",
+			"category_scores", "threshold_snapshot", "input_excerpt", "upstream_latency_ms", "error", "metadata",
 			"matched_keyword", "keyword_category", "keyword_severity", "keyword_action", "effective_keyword_action",
 			"risk_context_type", "risk_context_reason", "review_status", "review_note", "reviewed_by", "reviewed_at",
 			"violation_count", "auto_banned", "email_sent", "user_status", "queue_delay_ms",
@@ -309,7 +318,7 @@ func TestContentModerationRepositoryListLogsIncludesRawRequestMetadata(t *testin
 			int64(42), "req-raw", nil, "u@example.com", nil, "H", nil, "Default",
 			int64(77), "oauth-primary", service.AccountTypeOAuth,
 			"/v1/responses", "openai", "gpt-5", "post_upstream", "cyber_policy", true, "cyber_policy", 1.0,
-			[]byte(`{}`), []byte(`{}`), "", nil, "flagged",
+			[]byte(`{}`), []byte(`{}`), "", nil, "flagged", []byte(`{}`),
 			"", "", "", "", "",
 			"", "", "", "", nil, nil,
 			0, false, false, "active", nil,

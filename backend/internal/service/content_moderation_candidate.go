@@ -1381,7 +1381,7 @@ func contentModerationCandidateSemanticInput(selection contentModerationCandidat
 	return selection.Fragment
 }
 
-func contentModerationCandidateSemanticMetadata(selection contentModerationCandidateSelection, result ContentModerationSemanticReviewResult, policyOverride bool, ordinaryReason string) string {
+func contentModerationCandidateSemanticMetadata(selection contentModerationCandidateSelection, result ContentModerationSemanticReviewResult, policyOverride bool, ordinaryReason string) contentModerationMetadata {
 	metadata := selection.metadata().mapValue()
 	metadata["semantic_review_model"] = result.Model
 	metadata["semantic_review_verdict"] = result.Verdict
@@ -1411,7 +1411,7 @@ func contentModerationCandidateSemanticMetadata(selection contentModerationCandi
 	return marshalContentModerationMetadata(metadata)
 }
 
-func (s *ContentModerationService) buildCandidateLog(input ContentModerationCheckInput, cfg *ContentModerationConfig, selection contentModerationCandidateSelection, decisionSource, action string, flagged bool, category string, score float64, scores map[string]float64, latency *int, metadata string) *ContentModerationLog {
+func (s *ContentModerationService) buildCandidateLog(input ContentModerationCheckInput, cfg *ContentModerationConfig, selection contentModerationCandidateSelection, decisionSource, action string, flagged bool, category string, score float64, scores map[string]float64, latency *int, metadata contentModerationMetadata) *ContentModerationLog {
 	log := s.buildLog(input, cfg, action, flagged, category, score, scores, selection.Fragment, latency, nil, metadata)
 	log.DecisionSource = decisionSource
 	log.ModerationProvider = cfg.Provider

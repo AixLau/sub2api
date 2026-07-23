@@ -748,6 +748,26 @@ func TestBuildContentModerationLog_RedactsInputExcerpt(t *testing.T) {
 	require.Contains(t, log.InputExcerpt, "[已脱敏]")
 }
 
+func TestBuildContentModerationLogStoresMetadataSeparateFromError(t *testing.T) {
+	metadata := contentModerationMetadata(`{"semantic_review_verdict":"allow","semantic_review_confidence":0.97}`)
+	log := (&ContentModerationService{}).buildLog(
+		ContentModerationCheckInput{},
+		defaultContentModerationConfig(),
+		ContentModerationActionSemanticReviewAllow,
+		false,
+		"benign_context",
+		0.97,
+		map[string]float64{"benign_context": 0.97},
+		"candidate",
+		nil,
+		nil,
+		metadata,
+	)
+
+	require.Empty(t, log.Error)
+	require.JSONEq(t, string(metadata), string(log.Metadata))
+}
+
 func TestBuildContentModerationLog_RespectsStoreInputExcerptDisabled(t *testing.T) {
 	svc := &ContentModerationService{}
 	cfg := defaultContentModerationConfig()

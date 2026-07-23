@@ -375,6 +375,7 @@ export default {
 	  modelResponse: 'Model Response',
 	  modelResponseHint: 'The structured reviewer output used to verify the decision and policy action.',
 	  viewStructuredResponse: 'View full structured response',
+	  errorReason: 'Moderation Failure Reason',
 	  modelResponseFields: {
 		intent: 'Intent',
 		target: 'Target',

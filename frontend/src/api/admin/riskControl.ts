@@ -515,6 +515,7 @@ export interface ContentModerationLog {
   truncate_reasons?: string[]
   upstream_latency_ms: number | null
   error: string
+  metadata: Record<string, unknown>
   violation_count: number
   auto_banned: boolean
   email_sent: boolean

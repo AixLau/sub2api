@@ -55,7 +55,9 @@ func (metadata contentModerationSelectionMetadata) mapValue() map[string]any {
 	}
 }
 
-func marshalContentModerationMetadata(metadata map[string]any) string {
+type contentModerationMetadata string
+
+func marshalContentModerationMetadata(metadata map[string]any) contentModerationMetadata {
 	if len(metadata) == 0 {
 		return ""
 	}
@@ -63,7 +65,7 @@ func marshalContentModerationMetadata(metadata map[string]any) string {
 	if err != nil {
 		return ""
 	}
-	return string(raw)
+	return contentModerationMetadata(raw)
 }
 
 // ContentModerationEvidenceSnapshot contains the exact bounded payload sent

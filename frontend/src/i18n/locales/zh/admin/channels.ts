@@ -375,6 +375,7 @@ export default {
 	  modelResponse: '模型回复',
 	  modelResponseHint: '审核模型返回的结构化判断，用于复核结论与策略执行是否一致。',
 	  viewStructuredResponse: '查看完整结构化回复',
+	  errorReason: '审核失败原因',
 	  modelResponseFields: {
 		intent: '意图',
 		target: '目标',

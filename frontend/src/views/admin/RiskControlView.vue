@@ -1813,6 +1813,11 @@
 				</div>
 			  </div>
 
+              <div v-if="inputDetailRow.error" class="rounded-xl border border-rose-100 bg-rose-50 p-4 shadow-sm dark:border-rose-900/40 dark:bg-rose-900/10">
+                <p class="text-sm font-semibold text-rose-800 dark:text-rose-100">{{ t('admin.riskControl.errorReason') }}</p>
+                <pre class="mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-rose-950 p-3 text-xs leading-5 text-rose-50">{{ inputDetailRow.error }}</pre>
+              </div>
+
               <div v-if="semanticReviewOutput" class="rounded-xl border border-violet-100 bg-violet-50 p-4 shadow-sm dark:border-violet-900/40 dark:bg-violet-900/10">
                 <div class="flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -2921,22 +2926,17 @@ const inputDetailText = computed(() => {
   if (!inputDetailRow.value) return '-'
   if (evidence.value?.log_id === inputDetailRow.value.id) return evidence.value.payload || '-'
   if (rawRequestBodyLogID.value === inputDetailRow.value.id && rawRequestBody.value) return rawRequestBody.value
-  return inputDetailRow.value.input_excerpt || inputDetailRow.value.error || '-'
+  return inputDetailRow.value.input_excerpt || '-'
 })
 
 const semanticReviewOutput = computed<Record<string, unknown> | null>(() => {
   const row = inputDetailRow.value
-  if (!row || row.decision_source !== 'semantic_review' || !row.error) return null
-  try {
-    const metadata = JSON.parse(row.error) as Record<string, unknown>
-    const output: Record<string, unknown> = {}
-    for (const [key, value] of Object.entries(metadata)) {
-      if (key.startsWith('semantic_review_')) output[key.slice('semantic_review_'.length)] = value
-    }
-    return Object.keys(output).length > 0 ? output : null
-  } catch {
-    return null
+  if (!row || row.decision_source !== 'semantic_review') return null
+  const output: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(row.metadata || {})) {
+    if (key.startsWith('semantic_review_')) output[key.slice('semantic_review_'.length)] = value
   }
+  return Object.keys(output).length > 0 ? output : null
 })
 
 const semanticReviewOutputText = computed(() => (
@@ -3443,7 +3443,7 @@ function canUnbanRow(row: ContentModerationLog): boolean {
 }
 
 function inputSummaryText(row: ContentModerationLog): string {
-  return row.input_excerpt || row.error || '-'
+	return row.input_excerpt || '-'
 }
 
 function openInputDetail(row: ContentModerationLog) {

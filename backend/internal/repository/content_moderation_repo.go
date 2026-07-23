@@ -72,6 +72,14 @@ func (r *contentModerationRepository) CreateLog(ctx context.Context, log *servic
 	if err != nil {
 		return fmt.Errorf("marshal moderation truncate reasons: %w", err)
 	}
+	metadata := log.Metadata
+	if len(metadata) == 0 {
+		metadata = json.RawMessage(`{}`)
+	}
+	var metadataObject map[string]any
+	if err := json.Unmarshal(metadata, &metadataObject); err != nil || metadataObject == nil {
+		return fmt.Errorf("invalid moderation metadata JSON")
+	}
 	var userID any
 	if log.UserID != nil {
 		userID = *log.UserID
@@ -97,7 +105,7 @@ INSERT INTO content_moderation_logs (
     decision_id, request_id, user_id, user_email, api_key_id, api_key_name, group_id, group_name,
     account_id, account_name, account_type,
     endpoint, provider, model, mode, action, flagged, highest_category, highest_score,
-    category_scores, threshold_snapshot, input_excerpt, upstream_latency_ms, error,
+    category_scores, threshold_snapshot, input_excerpt, upstream_latency_ms, error, metadata,
     matched_keyword, keyword_category, keyword_severity, keyword_action, effective_keyword_action,
     risk_context_type, risk_context_reason, review_status, review_note, reviewed_by, reviewed_at,
     violation_count, auto_banned, email_sent, queue_delay_ms,
@@ -108,11 +116,11 @@ INSERT INTO content_moderation_logs (
     $1, $2, $3, $4, $5, $6, $7, $8,
     $9, $10, $11,
     $12, $13, $14, $15, $16, $17, $18, $19,
-    $20::jsonb, $21::jsonb, $22, $23, $24,
-    $25, $26, $27, $28, $29,
-    $30, $31, $32, $33, $34, $35,
-    $36, $37, $38, $39,
-	    $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50::jsonb
+    $20::jsonb, $21::jsonb, $22, $23, $24, $25::jsonb,
+    $26, $27, $28, $29, $30,
+    $31, $32, $33, $34, $35, $36,
+    $37, $38, $39, $40,
+    $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51::jsonb
 ) ON CONFLICT (decision_id) WHERE decision_id <> '' DO UPDATE SET
     queue_delay_ms = COALESCE(EXCLUDED.queue_delay_ms, content_moderation_logs.queue_delay_ms),
     violation_count = GREATEST(content_moderation_logs.violation_count, EXCLUDED.violation_count),
@@ -128,7 +136,7 @@ RETURNING id, created_at`,
 		log.DecisionID, log.RequestID, userID, log.UserEmail, apiKeyID, log.APIKeyName, groupID, log.GroupName,
 		accountID, log.AccountName, log.AccountType,
 		log.Endpoint, log.Provider, log.Model, log.Mode, log.Action, log.Flagged, log.HighestCategory, log.HighestScore,
-		string(categoryScores), string(thresholdSnapshot), log.InputExcerpt, latency, log.Error,
+		string(categoryScores), string(thresholdSnapshot), log.InputExcerpt, latency, log.Error, string(metadata),
 		log.MatchedKeyword, log.KeywordCategory, log.KeywordSeverity, log.KeywordAction, log.EffectiveKeywordAction,
 		log.RiskContextType, log.RiskContextReason, log.ReviewStatus, log.ReviewNote, nullableInt64Ptr(log.ReviewedBy), log.ReviewedAt,
 		log.ViolationCount, log.AutoBanned, log.EmailSent, nullableIntPtr(log.QueueDelayMS),
@@ -168,7 +176,7 @@ SELECT
     l.id, l.request_id, l.user_id, l.user_email, l.api_key_id, l.api_key_name, l.group_id, l.group_name,
     l.account_id, l.account_name, l.account_type,
     l.endpoint, l.provider, l.model, l.mode, l.action, l.flagged, l.highest_category, l.highest_score,
-    l.category_scores, l.threshold_snapshot, l.input_excerpt, l.upstream_latency_ms, l.error,
+    l.category_scores, l.threshold_snapshot, l.input_excerpt, l.upstream_latency_ms, l.error, l.metadata,
     COALESCE(l.matched_keyword, ''), COALESCE(l.keyword_category, ''), COALESCE(l.keyword_severity, ''),
     COALESCE(l.keyword_action, ''), COALESCE(l.effective_keyword_action, ''),
     COALESCE(l.risk_context_type, ''), COALESCE(l.risk_context_reason, ''),
@@ -200,7 +208,7 @@ LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 		var userID, apiKeyID, groupID, accountID, latency, queueDelay, reviewedBy sql.NullInt64
 		var accountName, accountType sql.NullString
 		var reviewedAt sql.NullTime
-		var scoresRaw, thresholdsRaw, truncateReasonsRaw []byte
+		var scoresRaw, thresholdsRaw, metadataRaw, truncateReasonsRaw []byte
 		if err := rows.Scan(
 			&item.ID,
 			&item.RequestID,
@@ -226,6 +234,7 @@ LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 			&item.InputExcerpt,
 			&latency,
 			&item.Error,
+			&metadataRaw,
 			&item.MatchedKeyword,
 			&item.KeywordCategory,
 			&item.KeywordSeverity,
@@ -299,6 +308,10 @@ LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 		_ = json.Unmarshal(scoresRaw, &item.CategoryScores)
 		item.ThresholdSnapshot = map[string]float64{}
 		_ = json.Unmarshal(thresholdsRaw, &item.ThresholdSnapshot)
+		item.Metadata = append(json.RawMessage(nil), metadataRaw...)
+		if len(item.Metadata) == 0 {
+			item.Metadata = json.RawMessage(`{}`)
+		}
 		item.TruncateReasons = []string{}
 		_ = json.Unmarshal(truncateReasonsRaw, &item.TruncateReasons)
 		items = append(items, item)
@@ -537,7 +550,7 @@ WITH updated AS (
 SELECT
     l.id, l.request_id, l.user_id, l.user_email, l.api_key_id, l.api_key_name, l.group_id, l.group_name,
     l.endpoint, l.provider, l.model, l.mode, l.action, l.flagged, l.highest_category, l.highest_score,
-    l.category_scores, l.threshold_snapshot, l.input_excerpt, l.upstream_latency_ms, l.error,
+    l.category_scores, l.threshold_snapshot, l.input_excerpt, l.upstream_latency_ms, l.error, l.metadata,
     COALESCE(l.matched_keyword, ''), COALESCE(l.keyword_category, ''), COALESCE(l.keyword_severity, ''),
     COALESCE(l.keyword_action, ''), COALESCE(l.effective_keyword_action, ''),
     COALESCE(l.risk_context_type, ''), COALESCE(l.risk_context_reason, ''),
@@ -575,7 +588,7 @@ func scanContentModerationLogRows(rows *sql.Rows) ([]service.ContentModerationLo
 		var item service.ContentModerationLog
 		var userID, apiKeyID, groupID, latency, queueDelay, reviewedBy sql.NullInt64
 		var reviewedAt sql.NullTime
-		var scoresRaw, thresholdsRaw, truncateReasonsRaw []byte
+		var scoresRaw, thresholdsRaw, metadataRaw, truncateReasonsRaw []byte
 		if err := rows.Scan(
 			&item.ID,
 			&item.RequestID,
@@ -598,6 +611,7 @@ func scanContentModerationLogRows(rows *sql.Rows) ([]service.ContentModerationLo
 			&item.InputExcerpt,
 			&latency,
 			&item.Error,
+			&metadataRaw,
 			&item.MatchedKeyword,
 			&item.KeywordCategory,
 			&item.KeywordSeverity,
@@ -665,6 +679,10 @@ func scanContentModerationLogRows(rows *sql.Rows) ([]service.ContentModerationLo
 		_ = json.Unmarshal(scoresRaw, &item.CategoryScores)
 		item.ThresholdSnapshot = map[string]float64{}
 		_ = json.Unmarshal(thresholdsRaw, &item.ThresholdSnapshot)
+		item.Metadata = append(json.RawMessage(nil), metadataRaw...)
+		if len(item.Metadata) == 0 {
+			item.Metadata = json.RawMessage(`{}`)
+		}
 		item.TruncateReasons = []string{}
 		_ = json.Unmarshal(truncateReasonsRaw, &item.TruncateReasons)
 		items = append(items, item)

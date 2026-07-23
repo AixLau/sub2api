@@ -385,14 +385,14 @@ func (s *ContentModerationService) semanticReviewProviderFallback(
 	}
 }
 
-func contentModerationSemanticGateMetadata(cfg *ContentModerationConfig, content ContentModerationInput, protocol string, candidate contentModerationSemanticGateCandidate, result ContentModerationSemanticReviewResult, policyOverride bool) string {
+func contentModerationSemanticGateMetadata(cfg *ContentModerationConfig, content ContentModerationInput, protocol string, candidate contentModerationSemanticGateCandidate, result ContentModerationSemanticReviewResult, policyOverride bool) contentModerationMetadata {
 	metadata := map[string]any{}
 	matchedSource := strings.TrimSpace(candidate.MatchedSource)
 	if matchedSource == "" {
 		matchedSource = contentModerationMatchedSource(protocol, candidate.Keyword, content)
 	}
 	base := contentModerationHitLogMetadata(cfg, content, matchedSource)
-	if strings.TrimSpace(base) != "" {
+	if strings.TrimSpace(string(base)) != "" {
 		_ = json.Unmarshal([]byte(base), &metadata)
 	}
 	metadata["semantic_review_model"] = result.Model
@@ -426,7 +426,7 @@ func contentModerationSemanticGateMetadata(cfg *ContentModerationConfig, content
 	if err != nil {
 		return base
 	}
-	return string(raw)
+	return contentModerationMetadata(raw)
 }
 
 func semanticReviewRouterUnavailableError() error {
