@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -174,9 +175,13 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 	}
 
 	if includeTrend {
+		trendStartTime := startTime
+		if granularity == "hour" {
+			trendStartTime = timezone.StartOfHour(startTime)
+		}
 		trend, _, err := h.getUsageTrendCached(
 			ctx,
-			startTime,
+			trendStartTime,
 			endTime,
 			granularity,
 			filters.UserID,

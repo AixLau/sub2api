@@ -22,6 +22,12 @@ type userUsageRepoCapture struct {
 	statsFilters usagestats.UsageLogFilters
 	trendFilters usagestats.UsageLogFilters
 	groupFilters usagestats.UsageLogFilters
+	trendStart   time.Time
+	trendEnd     time.Time
+	modelStart   time.Time
+	modelEnd     time.Time
+	groupStart   time.Time
+	groupEnd     time.Time
 	listRows     []service.UsageLog
 	stats        *usagestats.UsageStats
 	modelStats   []usagestats.ModelStat
@@ -48,6 +54,8 @@ func (s *userUsageRepoCapture) GetStatsWithFilters(ctx context.Context, filters 
 }
 
 func (s *userUsageRepoCapture) GetUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8, excludeUserIDs ...int64) ([]usagestats.TrendDataPoint, error) {
+	s.trendStart = startTime
+	s.trendEnd = endTime
 	s.trendFilters = usagestats.UsageLogFilters{
 		UserID:      userID,
 		APIKeyID:    apiKeyID,
@@ -62,10 +70,14 @@ func (s *userUsageRepoCapture) GetUsageTrendWithFilters(ctx context.Context, sta
 }
 
 func (s *userUsageRepoCapture) GetModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8, excludeUserIDs ...int64) ([]usagestats.ModelStat, error) {
+	s.modelStart = startTime
+	s.modelEnd = endTime
 	return s.modelStats, nil
 }
 
 func (s *userUsageRepoCapture) GetGroupStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8, excludeUserIDs ...int64) ([]usagestats.GroupStat, error) {
+	s.groupStart = startTime
+	s.groupEnd = endTime
 	s.groupFilters = usagestats.UsageLogFilters{
 		UserID:      userID,
 		APIKeyID:    apiKeyID,
@@ -348,6 +360,27 @@ func TestUserUsageSnapshotUsesScopedFilters(t *testing.T) {
 	require.Equal(t, int64(42), repo.groupFilters.UserID)
 	require.Equal(t, int64(11), repo.groupFilters.GroupID)
 	require.NotContains(t, rec.Body.String(), "account_cost")
+}
+
+func TestUserUsageSnapshotRoundsOnlyHourlyTrendStart(t *testing.T) {
+	repo := &userUsageRepoCapture{}
+	router := newUserUsageRequestTypeTestRouter(repo)
+
+	start := time.Date(2026, 7, 22, 12, 50, 0, 0, time.UTC)
+	end := time.Date(2026, 7, 23, 12, 50, 0, 0, time.UTC)
+	url := "/usage/dashboard/snapshot-v2?include_trend=true&include_model_stats=true&include_group_stats=true&granularity=hour" +
+		"&start_time=" + start.Format(time.RFC3339) + "&end_time=" + end.Format(time.RFC3339)
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.True(t, repo.trendStart.Equal(start.Add(-50*time.Minute)))
+	require.Equal(t, end, repo.trendEnd)
+	require.Equal(t, start, repo.modelStart)
+	require.Equal(t, end, repo.modelEnd)
+	require.Equal(t, start, repo.groupStart)
+	require.Equal(t, end, repo.groupEnd)
 }
 
 func TestUserUsageSnapshotRejectsInvalidIncludeFlags(t *testing.T) {

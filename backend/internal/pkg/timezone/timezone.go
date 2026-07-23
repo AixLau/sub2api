@@ -93,6 +93,13 @@ func StartOfDay(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc)
 }
 
+// StartOfHour returns the start of the local clock hour containing t.
+func StartOfHour(t time.Time) time.Time {
+	loc := Location()
+	t = t.In(loc)
+	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), 0, 0, 0, loc)
+}
+
 // Today returns the start of today (00:00:00) in the configured timezone.
 func Today() time.Time {
 	return StartOfDay(Now())

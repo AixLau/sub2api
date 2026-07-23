@@ -95,6 +95,19 @@ func TestStartOfDay(t *testing.T) {
 	}
 }
 
+func TestStartOfHour(t *testing.T) {
+	if err := Init("Asia/Shanghai"); err != nil {
+		t.Fatalf("Init failed with Asia/Shanghai: %v", err)
+	}
+	t.Cleanup(func() { _ = Init("UTC") })
+
+	input := time.Date(2026, 7, 23, 12, 50, 45, 123456789, time.UTC)
+	want := time.Date(2026, 7, 23, 20, 0, 0, 0, Location())
+	if got := StartOfHour(input); !got.Equal(want) {
+		t.Fatalf("StartOfHour(%v) = %v, want %v", input, got, want)
+	}
+}
+
 func TestTruncateVsStartOfDay(t *testing.T) {
 	// This test demonstrates why Truncate(24*time.Hour) can be problematic
 	// and why StartOfDay is more reliable for timezone-aware code

@@ -571,7 +571,11 @@ func (h *UsageHandler) DashboardSnapshotV2(c *gin.Context) {
 	}
 
 	if includeTrend {
-		trend, err := h.usageService.GetUsageTrendWithFilters(c.Request.Context(), parsed.StartTime, parsed.EndTime, granularity, parsed.Filters)
+		trendStartTime := parsed.StartTime
+		if granularity == "hour" {
+			trendStartTime = timezone.StartOfHour(parsed.StartTime)
+		}
+		trend, err := h.usageService.GetUsageTrendWithFilters(c.Request.Context(), trendStartTime, parsed.EndTime, granularity, parsed.Filters)
 		if err != nil {
 			response.ErrorFrom(c, err)
 			return

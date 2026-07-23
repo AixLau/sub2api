@@ -17,8 +17,12 @@ type dashboardUsageRepoCapture struct {
 	service.UsageLogRepository
 	trendRequestType      *int16
 	trendStream           *bool
+	trendStart            time.Time
+	trendEnd              time.Time
 	modelRequestType      *int16
 	modelStream           *bool
+	modelStart            time.Time
+	modelEnd              time.Time
 	userBreakdownDim      usagestats.UserBreakdownDimension
 	userBreakdownLimit    int
 	userBreakdownCaptured bool
@@ -38,6 +42,8 @@ func (s *dashboardUsageRepoCapture) GetUsageTrendWithFilters(
 	billingType *int8,
 	excludeUserIDs ...int64,
 ) ([]usagestats.TrendDataPoint, error) {
+	s.trendStart = startTime
+	s.trendEnd = endTime
 	s.trendRequestType = requestType
 	s.trendStream = stream
 	return []usagestats.TrendDataPoint{}, nil
@@ -52,6 +58,8 @@ func (s *dashboardUsageRepoCapture) GetModelStatsWithFilters(
 	billingType *int8,
 	excludeUserIDs ...int64,
 ) ([]usagestats.ModelStat, error) {
+	s.modelStart = startTime
+	s.modelEnd = endTime
 	s.modelRequestType = requestType
 	s.modelStream = stream
 	return []usagestats.ModelStat{}, nil
@@ -90,6 +98,7 @@ func newDashboardRequestTypeTestRouter(repo *dashboardUsageRepoCapture) *gin.Eng
 	router := gin.New()
 	router.GET("/admin/dashboard/trend", handler.GetUsageTrend)
 	router.GET("/admin/dashboard/models", handler.GetModelStats)
+	router.GET("/admin/dashboard/snapshot-v2", handler.GetSnapshotV2)
 	router.GET("/admin/dashboard/user-breakdown", handler.GetUserBreakdown)
 	router.GET("/admin/dashboard/users-ranking", handler.GetUserSpendingRanking)
 	return router
@@ -154,6 +163,27 @@ func TestDashboardModelStatsInvalidRequestType(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestDashboardSnapshotRoundsOnlyHourlyTrendStart(t *testing.T) {
+	t.Cleanup(resetDashboardReadCachesForTest)
+	resetDashboardReadCachesForTest()
+	repo := &dashboardUsageRepoCapture{}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	start := time.Date(2026, 7, 22, 12, 50, 0, 0, time.UTC)
+	end := time.Date(2026, 7, 23, 12, 50, 0, 0, time.UTC)
+	url := "/admin/dashboard/snapshot-v2?include_stats=false&include_trend=true&include_model_stats=true&include_group_stats=false&granularity=hour" +
+		"&start_time=" + start.Format(time.RFC3339) + "&end_time=" + end.Format(time.RFC3339)
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.True(t, repo.trendStart.Equal(start.Add(-50*time.Minute)))
+	require.Equal(t, end, repo.trendEnd)
+	require.Equal(t, start, repo.modelStart)
+	require.Equal(t, end, repo.modelEnd)
 }
 
 func TestDashboardUserBreakdownExcludeUserIDs(t *testing.T) {
