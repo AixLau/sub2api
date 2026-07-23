@@ -310,6 +310,33 @@ describe('admin UsageView distribution metric toggles', () => {
     expect(getSnapshotV2).toHaveBeenCalledTimes(1)
   })
 
+  it('moves the rolling 24-hour window forward when refreshing', async () => {
+    vi.setSystemTime(new Date('2026-07-23T12:36:57.950Z'))
+    const wrapper = mount(UsageView, {
+      global: { stubs: {
+        AppLayout: AppLayoutStub, UsageStatsCards: true, UsageFilters: UsageFiltersStub,
+        UsageTable: true, UsageExportProgress: true, UsageCleanupDialog: true,
+        UserBalanceHistoryModal: true, Pagination: true, Select: true,
+        DateRangePicker: true, Icon: true, TokenUsageTrend: true,
+        ModelDistributionChart: true, GroupDistributionChart: true,
+        EndpointDistributionChart: true, UserTokenRanking: true,
+      } },
+    })
+
+    vi.advanceTimersByTime(120)
+    await flushPromises()
+    list.mockClear()
+
+    vi.setSystemTime(new Date('2026-07-23T13:00:00.000Z'))
+    ;(wrapper.vm as any).refreshData()
+    await flushPromises()
+
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({
+      start_time: '2026-07-22T13:00:00.000Z',
+      end_time: '2026-07-23T13:00:00.000Z',
+    }), expect.anything())
+  })
+
   it('clears exact timestamps when switching from last 24 hours to a calendar range', async () => {
     const wrapper = mount(UsageView, {
       global: {

@@ -576,7 +576,19 @@ const applyFilters = () => {
     errRows.value = []
   }
 }
+const isRolling24HoursRange = (): boolean => {
+  const start = filters.value.start_time ? new Date(filters.value.start_time).getTime() : NaN
+  const end = filters.value.end_time ? new Date(filters.value.end_time).getTime() : NaN
+  return Number.isFinite(start) && Number.isFinite(end) && end - start === 24 * 60 * 60 * 1000
+}
 const refreshData = () => {
+  // Keep the rolling 24-hour view current when refresh is clicked.
+  if (isRolling24HoursRange()) {
+    const range = getLast24HoursRange()
+    startDate.value = range.start_date
+    endDate.value = range.end_date
+    filters.value = { ...filters.value, ...range }
+  }
   invalidateModelStatsCache()
   loadLogs()
   loadStats(true)
