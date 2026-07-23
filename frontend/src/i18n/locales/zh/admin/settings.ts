@@ -1171,6 +1171,10 @@ export default {
         label: '允许用户查看自己的错误请求',
         description: '开启后，用户可在用量页查看自己失败请求的精简信息（不含内部/上游错误细节）。需运维监控开启才有数据。',
       },
+      user_usage_ranking: {
+        label: '展示用户使用排行',
+        description: '开启后，用户可在使用记录中查看按总 Token 排序的 Top 20；其他用户身份将脱敏。',
+      },
       saveSettings: '保存设置',
       saving: '保存中...',
       settingsSaved: '设置保存成功',

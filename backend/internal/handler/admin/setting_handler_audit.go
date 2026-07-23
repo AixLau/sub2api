@@ -666,6 +666,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.RiskControlEnabled != after.RiskControlEnabled {
 		changed = append(changed, "risk_control_enabled")
 	}
+	if before.ShowUserUsageRanking != after.ShowUserUsageRanking {
+		changed = append(changed, service.SettingKeyShowUserUsageRanking)
+	}
 	if before.CyberSessionBlockEnabled != after.CyberSessionBlockEnabled {
 		changed = append(changed, "cyber_session_block_enabled")
 	}

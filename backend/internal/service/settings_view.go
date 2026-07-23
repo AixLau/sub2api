@@ -268,6 +268,9 @@ type SystemSettings struct {
 
 	// 允许终端用户在用量页查看自己的失败请求
 	AllowUserViewErrorRequests bool
+
+	// 向终端用户展示脱敏后的 Top 20 用量排行
+	ShowUserUsageRanking bool
 }
 
 type DefaultSubscriptionSetting struct {
@@ -342,6 +345,9 @@ type PublicSettings struct {
 
 	// 允许终端用户在用量页查看自己的失败请求
 	AllowUserViewErrorRequests bool `json:"allow_user_view_error_requests"`
+
+	// 向终端用户展示脱敏后的 Top 20 用量排行
+	ShowUserUsageRanking bool `json:"show_user_usage_ranking"`
 }
 
 type LoginAgreementDocument struct {

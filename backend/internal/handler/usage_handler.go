@@ -447,6 +447,33 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 	response.Success(c, stats)
 }
 
+// Ranking returns the privacy-safe, fixed Top 20 usage ranking.
+// GET /api/v1/usage/ranking
+func (h *UsageHandler) Ranking(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	if h.settingService == nil || !h.settingService.IsUserUsageRankingVisible(c.Request.Context()) {
+		response.Forbidden(c, "User usage ranking is disabled")
+		return
+	}
+
+	parsed, ok := h.parseUserUsageFilters(c, true)
+	if !ok {
+		return
+	}
+	items, err := h.usageService.GetUserUsageRanking(
+		c.Request.Context(), subject.UserID, parsed.StartTime, parsed.EndTime,
+	)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"ranking": items})
+}
+
 const (
 	defaultAPIKeyDailyUsageDays = 30
 	maxAPIKeyDailyUsageDays     = 90

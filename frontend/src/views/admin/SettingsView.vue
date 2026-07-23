@@ -5350,7 +5350,7 @@
           <div class="space-y-4 p-6">
             <!-- User error requests visibility -->
             <div class="flex items-center justify-between">
-              <div>
+              <div class="pr-6">
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {{ t('admin.settings.user_error_view.label') }}
                 </label>
@@ -5358,8 +5358,22 @@
                   {{ t('admin.settings.user_error_view.description') }}
                 </p>
               </div>
-              <label class="toggle">
+              <label class="toggle shrink-0">
                 <input v-model="form.allow_user_view_error_requests" type="checkbox" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700">
+              <div class="pr-6">
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.user_usage_ranking.label') }}
+                </label>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.user_usage_ranking.description') }}
+                </p>
+              </div>
+              <label class="toggle shrink-0">
+                <input v-model="form.show_user_usage_ranking" type="checkbox" />
                 <span class="toggle-slider"></span>
               </label>
             </div>
@@ -8710,8 +8724,9 @@ const form = reactive<SettingsForm>({
   available_channels_enabled: false,
   // Affiliate (邀请返利) feature switch
   affiliate_enabled: false,
-  // Allow user view error requests
+  // Usage records visibility
   allow_user_view_error_requests: false,
+  show_user_usage_ranking: false,
 });
 
 type OpenAIAdvancedSchedulerOverrideKey =
@@ -10255,6 +10270,7 @@ async function saveSettings() {
       // Affiliate (邀请返利) feature switch
       affiliate_enabled: form.affiliate_enabled,
       allow_user_view_error_requests: form.allow_user_view_error_requests,
+      show_user_usage_ranking: form.show_user_usage_ranking,
     };
 
     // 仅当 openai_fast_policy_settings 已成功从后端加载时才回写，

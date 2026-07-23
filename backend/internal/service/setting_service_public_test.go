@@ -104,6 +104,19 @@ func TestSettingService_GetPublicSettings_ExposesAllowUserViewErrorRequests(t *t
 	require.True(t, settings.AllowUserViewErrorRequests)
 }
 
+func TestSettingService_GetPublicSettings_ExposesShowUserUsageRanking(t *testing.T) {
+	repo := &settingPublicRepoStub{
+		values: map[string]string{
+			SettingKeyShowUserUsageRanking: "true",
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	settings, err := svc.GetPublicSettings(context.Background())
+	require.NoError(t, err)
+	require.True(t, settings.ShowUserUsageRanking)
+}
+
 func TestSettingService_GetPublicSettings_ExposesBalanceRechargeMultiplier(t *testing.T) {
 	repo := &settingPublicRepoStub{
 		values: map[string]string{

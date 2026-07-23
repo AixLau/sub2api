@@ -395,6 +395,17 @@ export default {
       detailCoordinates: '坐标',
     },
     tabs: { usage: '用量明细', errors: '错误请求', ranking: '用户排行' },
+    ranking: {
+      title: '用户排行',
+      description: '当前时间范围内按总 Token 排序的 Top 20',
+      rank: '排名',
+      user: '用户',
+      totalTokens: '总 Token',
+      requests: '请求数',
+      me: '我',
+      empty: '该时间范围内暂无排行数据',
+      failedToLoad: '用户排行加载失败',
+    },
     errors: {
       time: '时间', model: '模型', endpoint: '端点', status: '状态码',
       category: '分类', platform: '平台', message: '错误信息',

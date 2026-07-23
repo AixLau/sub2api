@@ -29,3 +29,14 @@ func TestAllowUserViewErrorRequests_PersistsToDB(t *testing.T) {
 	require.True(t, ok, "updates map 中应包含 SettingKeyAllowUserViewErrorRequests，但未找到（bug：buildSystemSettingsUpdates 漏写）")
 	require.Equal(t, "true", val)
 }
+
+func TestShowUserUsageRankingPersistsToDB(t *testing.T) {
+	repo := &bmUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		ShowUserUsageRanking: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "true", repo.updates[SettingKeyShowUserUsageRanking])
+}

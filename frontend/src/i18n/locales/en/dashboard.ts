@@ -390,6 +390,17 @@ export default {
       detailCoordinates: 'Coordinates',
     },
     tabs: { usage: 'Usage', errors: 'Error Requests', ranking: 'User Ranking' },
+    ranking: {
+      title: 'User Ranking',
+      description: 'Top 20 by total tokens in the selected time range',
+      rank: 'Rank',
+      user: 'User',
+      totalTokens: 'Total Tokens',
+      requests: 'Requests',
+      me: 'Me',
+      empty: 'No ranking data for this time range',
+      failedToLoad: 'Failed to load user ranking',
+    },
     errors: {
       time: 'Time', model: 'Model', endpoint: 'Endpoint', status: 'Status',
       category: 'Category', platform: 'Platform', message: 'Message',

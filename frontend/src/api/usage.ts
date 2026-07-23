@@ -119,6 +119,25 @@ export interface UsageDashboardSnapshotV2Response {
   groups?: GroupStat[]
 }
 
+export interface UserUsageRankingItem {
+  rank: number
+  display_name: string
+  requests: number
+  total_tokens: number
+  is_current: boolean
+}
+
+export interface UserUsageRankingResponse {
+  ranking: UserUsageRankingItem[]
+}
+
+export async function getUserRanking(
+  params: Pick<TrendParams, 'start_date' | 'end_date' | 'start_time' | 'end_time' | 'timezone'>
+): Promise<UserUsageRankingResponse> {
+  const { data } = await apiClient.get<UserUsageRankingResponse>('/usage/ranking', { params })
+  return data
+}
+
 /**
  * List usage logs with optional filters
  * @param page - Page number (default: 1)
@@ -386,6 +405,7 @@ export const usageAPI = {
   getMyApiKeyDailyUsage,
   getDashboardSnapshotV2,
   getDashboardApiKeysUsage,
+  getUserRanking,
   // Error requests
   listMyErrorRequests,
   getMyErrorDetail

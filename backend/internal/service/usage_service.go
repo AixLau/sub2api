@@ -2,9 +2,13 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -54,6 +58,18 @@ type UsageStats struct {
 	AverageDurationMs        float64 `json:"average_duration_ms"`
 }
 
+const UserUsageRankingLimit = 20
+
+// UserUsageRankingItem is the privacy-safe shape returned to end users.
+// It intentionally excludes raw user IDs, costs, and participant totals.
+type UserUsageRankingItem struct {
+	Rank        int    `json:"rank"`
+	DisplayName string `json:"display_name"`
+	Requests    int64  `json:"requests"`
+	TotalTokens int64  `json:"total_tokens"`
+	IsCurrent   bool   `json:"is_current"`
+}
+
 // UsageService 使用统计服务
 type UsageService struct {
 	usageRepo            UsageLogRepository
@@ -70,6 +86,63 @@ func NewUsageService(usageRepo UsageLogRepository, userRepo UserRepository, entC
 		entClient:            entClient,
 		authCacheInvalidator: authCacheInvalidator,
 	}
+}
+
+// GetUserUsageRanking returns a fixed Top 20 ranking ordered by total tokens.
+// The current user is identifiable only when they are already in that Top 20.
+func (s *UsageService) GetUserUsageRanking(ctx context.Context, currentUserID int64, startTime, endTime time.Time) ([]UserUsageRankingItem, error) {
+	items, err := s.usageRepo.GetUserBreakdownStats(ctx, startTime, endTime, usagestats.UserBreakdownDimension{
+		SortBy: "total_tokens",
+	}, UserUsageRankingLimit)
+	if err != nil {
+		return nil, fmt.Errorf("get user usage ranking: %w", err)
+	}
+	return BuildUserUsageRanking(items, currentUserID), nil
+}
+
+// BuildUserUsageRanking removes private fields before data leaves the service layer.
+func BuildUserUsageRanking(items []usagestats.UserBreakdownItem, currentUserID int64) []UserUsageRankingItem {
+	if len(items) > UserUsageRankingLimit {
+		items = items[:UserUsageRankingLimit]
+	}
+	out := make([]UserUsageRankingItem, 0, len(items))
+	for index, item := range items {
+		isCurrent := item.UserID == currentUserID
+		displayName := maskUserRankingEmail(item.Email, item.UserID)
+		if isCurrent {
+			displayName = strings.TrimSpace(item.Email)
+			if displayName == "" {
+				displayName = "User"
+			}
+		}
+		out = append(out, UserUsageRankingItem{
+			Rank:        index + 1,
+			DisplayName: displayName,
+			Requests:    item.Requests,
+			TotalTokens: item.TotalTokens,
+			IsCurrent:   isCurrent,
+		})
+	}
+	return out
+}
+
+func maskUserRankingEmail(email string, userID int64) string {
+	email = strings.TrimSpace(email)
+	local, domain, ok := strings.Cut(email, "@")
+	if !ok || local == "" || domain == "" {
+		digest := sha256.Sum256([]byte(strconv.FormatInt(userID, 10)))
+		return fmt.Sprintf("User %X", digest[:3])
+	}
+
+	localRunes := []rune(local)
+	maskedLocal := string(localRunes[0]) + "***"
+	labels := strings.Split(domain, ".")
+	if len(labels) == 0 || labels[0] == "" || !utf8.ValidString(labels[0]) {
+		return maskedLocal + "@***"
+	}
+	firstLabel := []rune(labels[0])
+	labels[0] = string(firstLabel[0]) + "***"
+	return maskedLocal + "@" + strings.Join(labels, ".")
 }
 
 // Create 创建使用日志

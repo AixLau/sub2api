@@ -56,7 +56,7 @@
         </div>
       </div>
 
-      <div class="card p-6" data-usage-dashboard="records">
+      <div v-if="activeTab !== 'ranking'" class="card p-6" data-usage-dashboard="records">
         <div class="flex flex-wrap items-end justify-between gap-4">
           <div v-if="activeTab === 'errors'" class="flex flex-1 flex-wrap items-end gap-4">
             <div class="w-full sm:w-auto sm:min-w-[220px]">
@@ -151,12 +151,15 @@
         </div>
       </div>
 
-      <div v-if="errorViewEnabled" class="flex gap-2 border-b border-gray-200 dark:border-dark-700">
+      <div v-if="errorViewEnabled || rankingViewEnabled" class="flex gap-2 border-b border-gray-200 dark:border-dark-700">
         <button class="tab" :class="{ 'tab-active': activeTab === 'usage' }" @click="activeTab = 'usage'">
           {{ t('usage.tabs.usage') }}
         </button>
-        <button class="tab" :class="{ 'tab-active': activeTab === 'errors' }" @click="switchToErrors">
+        <button v-if="errorViewEnabled" class="tab" :class="{ 'tab-active': activeTab === 'errors' }" @click="switchToErrors">
           {{ t('usage.tabs.errors') }}
+        </button>
+        <button v-if="rankingViewEnabled" class="tab" :class="{ 'tab-active': activeTab === 'ranking' }" @click="activeTab = 'ranking'">
+          {{ t('usage.tabs.ranking') }}
         </button>
       </div>
 
@@ -185,7 +188,7 @@
       </template>
 
       <UserErrorRequestsTable
-        v-else-if="errorViewEnabled"
+        v-else-if="activeTab === 'errors' && errorViewEnabled"
         :rows="errorRows"
         :total="errorTotal"
         :loading="errorLoading"
@@ -197,13 +200,21 @@
         @update:pageSize="onErrorPageSize"
         @ipGeoBatchFailed="handleIpGeoBatchFailed"
       />
+
+      <UserUsageRanking
+        v-else-if="activeTab === 'ranking' && rankingViewEnabled"
+        :start-date="startDate"
+        :end-date="endDate"
+        :start-time="filters.start_time"
+        :end-time="filters.end_time"
+      />
     </div>
   </AppLayout>
 
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { keysAPI, usageAPI, userGroupsAPI } from '@/api'
@@ -218,6 +229,7 @@ import GroupDistributionChart from '@/components/charts/GroupDistributionChart.v
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import Icon from '@/components/icons/Icon.vue'
 import UserErrorRequestsTable from '@/components/user/UserErrorRequestsTable.vue'
+import UserUsageRanking from '@/components/user/UserUsageRanking.vue'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { formatReasoningEffort } from '@/utils/format'
 import { BILLING_MODE_IMAGE, getBillingModeLabel } from '@/utils/billingMode'
@@ -341,8 +353,14 @@ const granularity = ref<'day' | 'hour'>(getGranularityForRange(startDate.value, 
 
 const modelDistributionMetric = ref<DistributionMetric>('tokens')
 const groupDistributionMetric = ref<DistributionMetric>('tokens')
-const activeTab = ref<'usage' | 'errors'>('usage')
+const activeTab = ref<'usage' | 'errors' | 'ranking'>('usage')
 const errorViewEnabled = computed(() => appStore.cachedPublicSettings?.allow_user_view_error_requests ?? false)
+const rankingViewEnabled = computed(() => appStore.cachedPublicSettings?.show_user_usage_ranking ?? false)
+
+watch([errorViewEnabled, rankingViewEnabled], ([errorsEnabled, rankingEnabled]) => {
+  if (activeTab.value === 'errors' && !errorsEnabled) activeTab.value = 'usage'
+  if (activeTab.value === 'ranking' && !rankingEnabled) activeTab.value = 'usage'
+})
 
 const filters = ref<UsageQueryParams>({
   ...defaultRange,

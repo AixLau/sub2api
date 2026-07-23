@@ -119,6 +119,11 @@ export const FeatureFlags = {
     mode: 'opt-in',
     label: 'Affiliate',
   }),
+  userUsageRanking: defineFlag({
+    key: 'show_user_usage_ranking',
+    mode: 'opt-in',
+    label: 'User Usage Ranking',
+  }),
 } as const
 
 export type RegisteredFeatureFlag = keyof typeof FeatureFlags

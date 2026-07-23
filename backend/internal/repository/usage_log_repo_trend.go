@@ -706,7 +706,7 @@ func (r *usageLogRepository) GetUserBreakdownStats(ctx context.Context, startTim
 	case "total_tokens", "input_tokens", "output_tokens", "cache_tokens", "requests", "cost", "actual_cost":
 		orderBy = dim.SortBy
 	}
-	query += " GROUP BY ul.user_id, u.email ORDER BY " + orderBy + " DESC"
+	query += " GROUP BY ul.user_id, u.email ORDER BY " + orderBy + " DESC, requests DESC, ul.user_id ASC"
 	if limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", limit)
 	}

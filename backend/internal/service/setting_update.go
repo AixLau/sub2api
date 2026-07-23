@@ -433,6 +433,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	}
 
 	updates[SettingKeyAllowUserViewErrorRequests] = strconv.FormatBool(settings.AllowUserViewErrorRequests)
+	updates[SettingKeyShowUserUsageRanking] = strconv.FormatBool(settings.ShowUserUsageRanking)
 
 	return updates, nil
 }

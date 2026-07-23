@@ -661,8 +661,9 @@ export interface SystemSettings {
   // OpenAI fast/flex policy
   openai_fast_policy_settings?: OpenAIFastPolicySettings;
 
-  // Allow user view error requests
+  // Usage records visibility
   allow_user_view_error_requests: boolean;
+  show_user_usage_ranking: boolean;
 }
 
 export interface UpdateSettingsRequest {
@@ -932,6 +933,7 @@ export interface UpdateSettingsRequest {
   openai_fast_policy_settings?: OpenAIFastPolicySettings;
 
   allow_user_view_error_requests?: boolean;
+  show_user_usage_ranking?: boolean;
 }
 
 /**
