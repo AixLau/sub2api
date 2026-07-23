@@ -1811,6 +1811,8 @@ func responsesInputItemRole(item gjson.Result) string {
 		return "assistant"
 	case isResponsesKnownCallType(typ):
 		return "assistant"
+	case isResponsesAssistantContextType(typ):
+		return "assistant"
 	default:
 		return "user"
 	}
@@ -1859,7 +1861,8 @@ func shouldIncludeModerationRole(role string, typ string, auditScope string) boo
 	typ = strings.ToLower(strings.TrimSpace(typ))
 	auditScope = normalizeContentModerationAuditScope(auditScope)
 	isTool := role == "tool" || role == "function" || isResponsesToolItemType(typ)
-	isUser := !isTool && (role == "user" || role == "")
+	isAssistantContext := role == "" && isResponsesAssistantContextType(typ)
+	isUser := !isTool && !isAssistantContext && (role == "user" || role == "")
 	switch auditScope {
 	case ContentModerationAuditScopeUserOnly:
 		return isUser
@@ -1867,6 +1870,15 @@ func shouldIncludeModerationRole(role string, typ string, auditScope string) boo
 		return isUser || isTool
 	default:
 		return true
+	}
+}
+
+func isResponsesAssistantContextType(typ string) bool {
+	switch strings.ToLower(strings.TrimSpace(typ)) {
+	case "reasoning", "item_reference", "compaction", "compaction_trigger":
+		return true
+	default:
+		return false
 	}
 }
 

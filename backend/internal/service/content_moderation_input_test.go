@@ -83,6 +83,35 @@ func TestExtractionCompletenessAcceptsResponsesCompactionTrigger(t *testing.T) {
 	require.Equal(t, "responses.input[0].role=user.content", got.Sources[0].Source)
 }
 
+func TestExtractionCompletenessUserOnlyIgnoresResponsesAssistantContextWithNullContent(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","input":[
+		{"type":"reasoning","summary":[],"content":null,"encrypted_content":"ciphertext"},
+		{"type":"compaction","content":null,"encrypted_content":"compact-ciphertext"},
+		{"type":"agent_message","content":[{"type":"input_text","text":"Message Type: NEW_TASK Task name: /root/implement_peft_distributed Sender: /root Payload:"}]}
+	]}`)
+
+	got := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeUserOnly)
+
+	require.False(t, got.Truncated, got.TruncateReasons)
+	require.Equal(t, "Message Type: NEW_TASK Task name: /root/implement_peft_distributed Sender: /root Payload:", got.Text)
+	require.Len(t, got.Sources, 1)
+	require.Equal(t, "responses.input[2]", got.Sources[0].Source)
+	require.Equal(t, "user", got.Sources[0].Role)
+}
+
+func TestResponsesAssistantContextRoleAttribution(t *testing.T) {
+	body := []byte(`{"input":[
+		{"type":"reasoning","content":"assistant reasoning context"},
+		{"type":"message","role":"user","content":"user request"}
+	]}`)
+
+	got := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeAllContext)
+
+	require.Len(t, got.Sources, 2)
+	require.Equal(t, "assistant", got.Sources[0].Role)
+	require.Equal(t, "user", got.Sources[1].Role)
+}
+
 func TestExtractionCompletenessUnsupportedRequiredValues(t *testing.T) {
 	tests := []struct{ protocol, body string }{
 		{ContentModerationProtocolOpenAIChat, `{"messages":42}`},
