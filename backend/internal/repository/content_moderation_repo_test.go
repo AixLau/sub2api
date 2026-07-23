@@ -18,8 +18,20 @@ func TestBuildContentModerationLogWhere_BlockedIncludesAllBlockActions(t *testin
 
 	require.Empty(t, args)
 	sql := strings.Join(where, " AND ")
-	require.Contains(t, sql, "l.action IN ('block', 'keyword_block', 'hash_block', 'prompt_filter_block', 'cyber_policy', 'cyber_policy_session_blocked')")
+	require.Contains(t, sql, "l.action IN ('block', 'hash_block', 'keyword_block', 'prompt_filter_block', 'semantic_review_reject', 'semantic_review_deferred', 'semantic_review_unavailable', 'semantic_review_incomplete', 'cyber_policy', 'cyber_policy_session_blocked')")
 	require.NotContains(t, sql, "l.action = 'block'")
+}
+
+func TestBuildContentModerationLogWhere_HitExcludesBlockedAndPendingReview(t *testing.T) {
+	where, args := buildContentModerationLogWhere(service.ContentModerationLogFilter{Result: "hit"})
+
+	require.Empty(t, args)
+	sql := strings.Join(where, " AND ")
+	require.Contains(t, sql, "l.flagged = TRUE")
+	require.Contains(t, sql, "l.action NOT IN ('block', 'hash_block', 'keyword_block', 'prompt_filter_block', 'semantic_review_reject', 'semantic_review_deferred', 'semantic_review_unavailable', 'semantic_review_incomplete', 'cyber_policy', 'cyber_policy_session_blocked')")
+	require.Contains(t, sql, "l.action NOT IN ('keyword_review', 'prompt_filter_review', 'semantic_review_review')")
+	require.Contains(t, sql, "COALESCE(l.review_status, '') <> 'pending'")
+	require.Contains(t, sql, "l.error = ''")
 }
 
 func TestBuildContentModerationLogWhere_FiltersDecisionSource(t *testing.T) {
@@ -29,13 +41,27 @@ func TestBuildContentModerationLogWhere_FiltersDecisionSource(t *testing.T) {
 	require.Contains(t, strings.Join(where, " AND "), "l.decision_source = $1")
 }
 
-func TestBuildContentModerationLogWhere_ErrorUsesFailureColumnOnly(t *testing.T) {
+func TestBuildContentModerationLogWhere_ErrorExcludesBlockedAndPendingReview(t *testing.T) {
 	where, args := buildContentModerationLogWhere(service.ContentModerationLogFilter{Result: "error"})
 
 	require.Empty(t, args)
 	sql := strings.Join(where, " AND ")
 	require.Contains(t, sql, "l.error <> ''")
+	require.Contains(t, sql, "l.action NOT IN ('block', 'hash_block', 'keyword_block', 'prompt_filter_block', 'semantic_review_reject', 'semantic_review_deferred', 'semantic_review_unavailable', 'semantic_review_incomplete', 'cyber_policy', 'cyber_policy_session_blocked')")
+	require.Contains(t, sql, "l.action NOT IN ('keyword_review', 'prompt_filter_review', 'semantic_review_review')")
+	require.Contains(t, sql, "COALESCE(l.review_status, '') <> 'pending'")
 	require.NotContains(t, sql, "metadata")
+}
+
+func TestBuildContentModerationLogWhere_PassExcludesBlockedAndPendingReview(t *testing.T) {
+	where, args := buildContentModerationLogWhere(service.ContentModerationLogFilter{Result: "pass"})
+
+	require.Empty(t, args)
+	sql := strings.Join(where, " AND ")
+	require.Contains(t, sql, "l.flagged = FALSE AND l.error = ''")
+	require.Contains(t, sql, "l.action NOT IN ('block', 'hash_block', 'keyword_block', 'prompt_filter_block', 'semantic_review_reject', 'semantic_review_deferred', 'semantic_review_unavailable', 'semantic_review_incomplete', 'cyber_policy', 'cyber_policy_session_blocked')")
+	require.Contains(t, sql, "l.action NOT IN ('keyword_review', 'prompt_filter_review', 'semantic_review_review')")
+	require.Contains(t, sql, "COALESCE(l.review_status, '') <> 'pending'")
 }
 
 func TestBuildContentModerationLogWhere_SearchIncludesKeywordMetadata(t *testing.T) {
@@ -52,7 +78,7 @@ func TestBuildContentModerationLogWhere_SearchIncludesKeywordMetadata(t *testing
 	require.Contains(t, sql, "l.review_status ILIKE")
 }
 
-func TestBuildContentModerationLogWhere_ReviewFiltersKeywordReviews(t *testing.T) {
+func TestBuildContentModerationLogWhere_ReviewIncludesSemanticReviews(t *testing.T) {
 	where, args := buildContentModerationLogWhere(service.ContentModerationLogFilter{
 		Result:       "review",
 		ReviewStatus: service.ContentModerationReviewStatusPending,
@@ -60,8 +86,20 @@ func TestBuildContentModerationLogWhere_ReviewFiltersKeywordReviews(t *testing.T
 
 	require.Equal(t, []any{service.ContentModerationReviewStatusPending}, args)
 	sql := strings.Join(where, " AND ")
-	require.Contains(t, sql, "l.action = 'keyword_review'")
+	require.Contains(t, sql, "l.action IN ('keyword_review', 'prompt_filter_review', 'semantic_review_review')")
+	require.Contains(t, sql, "l.review_status = 'pending'")
+	require.Contains(t, sql, "l.action NOT IN ('block', 'hash_block', 'keyword_block', 'prompt_filter_block', 'semantic_review_reject', 'semantic_review_deferred', 'semantic_review_unavailable', 'semantic_review_incomplete', 'cyber_policy', 'cyber_policy_session_blocked')")
 	require.Contains(t, sql, "l.review_status = $1")
+}
+
+func TestBuildContentModerationLogWhere_KeywordReviewAliasRemainsNarrow(t *testing.T) {
+	where, args := buildContentModerationLogWhere(service.ContentModerationLogFilter{Result: "keyword_review"})
+
+	require.Empty(t, args)
+	sql := strings.Join(where, " AND ")
+	require.Contains(t, sql, "l.action = 'keyword_review'")
+	require.NotContains(t, sql, "prompt_filter_review")
+	require.NotContains(t, sql, "semantic_review_review")
 }
 
 func TestBuildContentModerationLogWhere_SearchCanIncludeInputExcerpt(t *testing.T) {

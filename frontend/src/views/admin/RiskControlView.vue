@@ -715,7 +715,7 @@
                           {{ t('admin.riskControl.reviewStatusLabel') }}: {{ reviewStatusLabel(row.review_status) }}
                         </div>
                       </div>
-                      <div v-if="row.action === 'keyword_review'" class="mt-2 flex flex-wrap gap-1.5">
+                      <div v-if="isReviewableLog(row)" class="mt-2 flex flex-wrap gap-1.5">
                         <button
                           type="button"
                           class="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-900/60 dark:bg-emerald-900/20 dark:text-emerald-300"
@@ -3781,11 +3781,15 @@ function modeDescription(mode: ModerationMode): string {
 function resultLabel(row: ContentModerationLog): string {
   if (row.action === 'cyber_policy') return t('admin.riskControl.action.cyberPolicy')
   if (row.action === 'cyber_policy_session_blocked') return t('admin.riskControl.action.cyberPolicySessionBlocked')
+  if (row.action === 'hash_block') return t('admin.riskControl.action.hashBlock')
   if (row.action === 'keyword_block') return t('admin.riskControl.action.keywordBlock')
   if (row.action === 'keyword_review') return t('admin.riskControl.action.keywordReview')
   if (row.action === 'semantic_review_allow') return t('admin.riskControl.action.semanticReviewAllow')
   if (row.action === 'semantic_review_reject') return t('admin.riskControl.action.semanticReviewReject')
   if (row.action === 'semantic_review_review') return t('admin.riskControl.action.semanticReviewReview')
+  if (row.action === 'semantic_review_deferred') return t('admin.riskControl.action.semanticReviewDeferred')
+  if (row.action === 'semantic_review_unavailable') return t('admin.riskControl.action.semanticReviewUnavailable')
+  if (row.action === 'semantic_review_incomplete') return t('admin.riskControl.action.semanticReviewIncomplete')
   if (row.action === 'prompt_filter_block') return t('admin.riskControl.action.promptFilterBlock')
   if (row.action === 'prompt_filter_review') return t('admin.riskControl.action.promptFilterReview')
   if (row.action === 'prompt_filter_warn') return t('admin.riskControl.action.promptFilterWarn')
@@ -3797,11 +3801,32 @@ function resultLabel(row: ContentModerationLog): string {
 }
 
 function resultBadgeClass(row: ContentModerationLog): string {
-  if (row.action === 'block' || row.action === 'keyword_block' || row.action === 'cyber_policy' || row.action === 'cyber_policy_session_blocked') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-  if (row.action === 'keyword_review') return 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
+  if (isBlockedLog(row)) return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+  if (isReviewableLog(row)) return 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
   if (row.action === 'error' || row.error) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
   if (row.flagged) return 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300'
   return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+}
+
+const BLOCKED_LOG_ACTIONS = new Set([
+  'block',
+  'hash_block',
+  'keyword_block',
+  'prompt_filter_block',
+  'semantic_review_reject',
+  'semantic_review_deferred',
+  'semantic_review_unavailable',
+  'semantic_review_incomplete',
+  'cyber_policy',
+  'cyber_policy_session_blocked',
+])
+
+function isBlockedLog(row: Pick<ContentModerationLog, 'action'>): boolean {
+  return BLOCKED_LOG_ACTIONS.has(row.action)
+}
+
+function isReviewableLog(row: Pick<ContentModerationLog, 'review_status'>): boolean {
+  return row.review_status === 'pending'
 }
 
 function moderationCategoryLabel(value?: string): string {

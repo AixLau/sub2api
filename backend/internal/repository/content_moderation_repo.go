@@ -737,21 +737,29 @@ func nullableInt64Ptr(value *int64) any {
 func buildContentModerationLogWhere(filter service.ContentModerationLogFilter) ([]string, []any) {
 	where := []string{"l.id IS NOT NULL"}
 	args := make([]any, 0)
+	// Result filters are intentionally mutually exclusive. A flagged row can
+	// also be blocked or awaiting review, but those are more actionable states
+	// than the generic "hit" bucket.
+	blockedActions := "'block', 'hash_block', 'keyword_block', 'prompt_filter_block', 'semantic_review_reject', 'semantic_review_deferred', 'semantic_review_unavailable', 'semantic_review_incomplete', 'cyber_policy', 'cyber_policy_session_blocked'"
+	reviewActions := "'keyword_review', 'prompt_filter_review', 'semantic_review_review'"
+	notBlockedOrReview := "l.action NOT IN (" + blockedActions + ") AND l.action NOT IN (" + reviewActions + ") AND COALESCE(l.review_status, '') <> 'pending'"
 	add := func(expr string, value any) {
 		args = append(args, value)
 		where = append(where, fmt.Sprintf(expr, len(args)))
 	}
 	switch strings.ToLower(strings.TrimSpace(filter.Result)) {
 	case "hit", "flagged":
-		where = append(where, "l.flagged = TRUE")
+		where = append(where, "l.flagged = TRUE AND l.error = '' AND "+notBlockedOrReview)
 	case "blocked", "block":
-		where = append(where, "l.action IN ('block', 'keyword_block', 'hash_block', 'prompt_filter_block', 'cyber_policy', 'cyber_policy_session_blocked')")
-	case "review", "keyword_review":
+		where = append(where, "l.action IN ("+blockedActions+")")
+	case "review":
+		where = append(where, "(l.action IN ("+reviewActions+") OR l.review_status = 'pending') AND l.action NOT IN ("+blockedActions+")")
+	case "keyword_review":
 		where = append(where, "l.action = 'keyword_review'")
 	case "pass", "allow":
-		where = append(where, "l.flagged = FALSE AND l.error = ''")
+		where = append(where, "l.flagged = FALSE AND l.error = '' AND "+notBlockedOrReview)
 	case "error":
-		where = append(where, "l.error <> ''")
+		where = append(where, "l.error <> '' AND "+notBlockedOrReview)
 	}
 	if decisionSource := strings.TrimSpace(filter.DecisionSource); decisionSource != "" {
 		add("l.decision_source = $%d", decisionSource)

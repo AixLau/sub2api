@@ -430,6 +430,25 @@ describe('admin RiskControlView', () => {
     expect(wrapper.get('[data-test="admin-metric-pending"]').text()).toContain('3')
     expect(wrapper.get('[data-test="admin-metric-error"]').text()).toContain('2')
 
+    expect(listLogs).toHaveBeenCalledWith(expect.objectContaining({
+      page_size: 1,
+      review_status: 'pending',
+    }))
+    expect(listLogs).not.toHaveBeenCalledWith(expect.objectContaining({
+      page_size: 1,
+      result: 'review',
+      review_status: 'pending',
+    }))
+
+    await wrapper.get('[data-test="admin-metric-pending"]').trigger('click')
+    await flushPromises()
+
+    expect(listLogs).toHaveBeenCalledWith(expect.objectContaining({
+      page_size: 20,
+      result: undefined,
+      review_status: 'pending',
+    }))
+
     await wrapper.get('[data-test="admin-metric-blocked"]').trigger('click')
     await flushPromises()
 
@@ -717,7 +736,7 @@ describe('admin RiskControlView', () => {
     expect(wrapper.text()).toContain('please sell api key now')
   })
 
-  it('marks keyword review records as false positives', async () => {
+  it('allows pending blocked semantic records to be reviewed', async () => {
     listLogs.mockResolvedValue({
       items: [
         {
@@ -733,9 +752,9 @@ describe('admin RiskControlView', () => {
           provider: 'openai',
           model: 'gpt-5',
           mode: 'pre_block',
-          action: 'keyword_review',
-          flagged: false,
-          highest_category: 'keyword',
+          action: 'semantic_review_deferred',
+          flagged: true,
+          highest_category: 'prompt_injection',
           highest_score: 1,
           category_scores: {},
           threshold_snapshot: {},
@@ -786,7 +805,7 @@ describe('admin RiskControlView', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('admin.riskControl.action.keywordReview')
+    expect(wrapper.text()).toContain('admin.riskControl.action.semanticReviewDeferred')
     expect(wrapper.text()).toContain('admin.riskControl.reviewStatusLabel')
     await findButtonByText(wrapper, 'admin.riskControl.markFalsePositive').trigger('click')
     await flushPromises()
