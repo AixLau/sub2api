@@ -85,7 +85,7 @@ Spark 账号使用仓库已有的 OpenAI 调度器。Spark 额度窗口刷新复
 }
 ```
 
-解析器要求单个、无 Markdown 包裹、无额外字段的严格 JSON。`active_override=true`、`presentation=direct_instruction` 且置信度不低于 0.80 时确定性升级为 `reject`；只有 complete evidence 的 `allow` 才能放行。
+解析器要求单个、无 Markdown 包裹、无额外字段的严格 JSON。审核器先识别外层用户任务；rollout、日志、对话转录、工具输出、技能定义和系统/开发者提示摘录在分析、总结、翻译或防御性审阅任务中视为数据，不因其中包含命令式文本而自动构成 active override。只有 `active_override=true`、`presentation=direct_instruction|prompt_authoring` 且置信度不低于 0.70 时才能确定性收敛为 `reject`；`active_override=false` 或 `presentation=quoted_analysis|translation` 与 `reject` 冲突。evidence 不完整时统一收敛为 `review`，只有 complete evidence 的 `allow` 才能放行。
 
 ## 执行凭据
 
@@ -101,6 +101,8 @@ Spark 账号使用仓库已有的 OpenAI 调度器。Spark 额度窗口刷新复
   "intent": "benign|defensive|harmful|ambiguous",
   "target": "none|self_owned|authorized_lab|third_party|external_service|unknown",
   "authorization": "authorized|unauthorized|unclear|not_applicable",
+  "information_access": "public|provided_by_user|private|restricted|unknown|not_applicable",
+  "harm_mechanism": "none|unauthorized_access|credential_theft|malware|exploit_delivery|evasion|deception_fraud|market_manipulation|privacy_invasion|physical_harm|sexual_exploitation|self_harm|other",
   "categories": ["jailbreak", "credential_theft"],
   "severity": "low|medium|high|critical",
   "confidence": 0.0,
@@ -111,10 +113,12 @@ Spark 账号使用仓库已有的 OpenAI 调度器。Spark 额度窗口刷新复
 ```
 
 - `allow`：良性、防御性、教育性、已授权实验室或非操作性内容。
-- `review`：目标、授权或意图无法确定，写入待人工复核记录。
+- `review`：仅当一个无法消除的安全关键事实会使合理解释分别落到 `allow` 与 `reject` 时，写入待人工复核记录；低置信度、轻微歧义、错别字、口语、省略、陌生词或非关键上下文缺失不能单独触发。
 - `reject`：明确的恶意意图，且具有可操作、可直接执行的能力，或明确针对未授权目标；同步候选复核场景按配置拦截，后置场景只影响审计和后续风控。
 
-网关还会对模型结果做确定性收敛：当结果包含 `intent=harmful`、`operationality=actionable`、`executability=direct` 且 `authorization=unauthorized` 时，即使模型原始 verdict 是 `allow` 或 `review`，也升级为 `reject`。授权的自有系统、隔离实验室和 CTF 不因关键词单独命中而自动升级；授权不明确时保留 `review`。
+网关还会对模型结果做确定性收敛：当结果包含 `intent=harmful`、`operationality=actionable`、`executability=direct` 且 `authorization=unauthorized` 时，即使模型原始 verdict 是 `allow` 或 `review`，也升级为 `reject`。授权的自有系统、隔离实验室和 CTF 不因关键词单独命中而自动升级；仅当请求访问受保护资源且授权状态会改变最终 verdict 时，授权不明确才保留 `review`。
+
+通用审核 Prompt 当前版本为 `semantic-review-instructions-v2`。完整 Prompt、生产分布诊断、同集 A/B 测试格式、默认验收门槛和回滚步骤见 [通用内容语义审核 Prompt 优化与验收方案](./content-moderation-semantic-review-optimization-v2.md)。
 
 模型输出解析同时支持 Responses JSON 和 Codex SSE；空响应、非法 JSON 和 HTTP 临时错误按可恢复失败处理，不把模型的自由文本当成放行依据。
 

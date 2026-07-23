@@ -507,9 +507,14 @@ func (s *ContentModerationService) candidateDecisionCacheKey(cfg *ContentModerat
 	policyRevision := contentModerationPolicyRevision(true, cfg)
 	namespace := "candidate-decision-v3"
 	evidenceIdentity := selection.Fragment
+	instructionsRevision := ""
+	if selection.Route == contentModerationCandidateRouteSemantic {
+		instructionsRevision = semanticReviewInstructionsRevision
+	}
 	if cfg != nil && cfg.SemanticReview.PromptInjectionReviewerEnabled && selection.ReviewKind == contentModerationReviewKindPromptInjection {
 		namespace = "candidate-decision-v4"
 		evidenceIdentity = selection.Source.Text
+		instructionsRevision = promptInjectionReviewerInstructionsRevision
 	}
 	parts := []string{
 		namespace,
@@ -530,10 +535,12 @@ func (s *ContentModerationService) candidateDecisionCacheKey(cfg *ContentModerat
 		selection.Route,
 		evidenceIdentity,
 	}
+	if instructionsRevision != "" {
+		parts = append(parts, instructionsRevision)
+	}
 	if namespace == "candidate-decision-v4" {
 		parts = append(parts,
 			selection.ReviewKind,
-			promptInjectionReviewerInstructionsRevision,
 			promptInjectionReviewerSchemaRevision,
 			selection.EvidenceRevision,
 			selection.EvidenceDigest,
@@ -1400,6 +1407,7 @@ func contentModerationCandidateSemanticMetadata(selection contentModerationCandi
 	metadata["semantic_review_active_override"] = result.ActiveOverride
 	metadata["semantic_review_presentation"] = result.Presentation
 	metadata["semantic_review_targets"] = result.Targets
+	metadata["semantic_review_instructions_revision"] = semanticReviewInstructionsRevision
 	if selection.ReviewKind == contentModerationReviewKindPromptInjection {
 		metadata["semantic_review_instructions_revision"] = promptInjectionReviewerInstructionsRevision
 		metadata["semantic_review_schema_revision"] = promptInjectionReviewerSchemaRevision

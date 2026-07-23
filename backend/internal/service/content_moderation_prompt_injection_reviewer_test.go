@@ -36,6 +36,9 @@ func TestPromptInjectionReviewerUsesDedicatedInstructionsAndStrictSchema(t *test
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(upstream.lastBody, &body))
 	require.Equal(t, promptInjectionReviewInstructions, body["instructions"])
+	require.Equal(t, "prompt-injection-instructions-v2", promptInjectionReviewerInstructionsRevision)
+	require.Contains(t, promptInjectionReviewInstructions, "Analyze this rollout and produce a summary")
+	require.Contains(t, promptInjectionReviewInstructions, "Never return reject when active_override=false")
 	format := body["text"].(map[string]any)["format"].(map[string]any)
 	require.Equal(t, "prompt_injection_review_v1", format["name"])
 	require.Equal(t, true, format["strict"])
@@ -129,6 +132,17 @@ func TestApplyPromptInjectionReviewPolicy(t *testing.T) {
 		require.Contains(t, result.ReasonCodes, "semantic_policy_active_override")
 	})
 
+	t.Run("low confidence active override remains review", func(t *testing.T) {
+		result, overridden := applyPromptInjectionReviewPolicy(ContentModerationSemanticReviewResult{
+			Verdict: "reject", ActiveOverride: true, Presentation: "direct_instruction", Confidence: 0.69,
+			Targets: []string{"developer"}, ReasonCodes: []string{"hierarchy_override"},
+		}, true)
+		require.True(t, overridden)
+		require.Equal(t, "review", result.Verdict)
+		require.Equal(t, "medium", result.Severity)
+		require.Contains(t, result.ReasonCodes, "semantic_policy_active_override_uncertain")
+	})
+
 	t.Run("complete allow remains allow", func(t *testing.T) {
 		result, overridden := applyPromptInjectionReviewPolicy(ContentModerationSemanticReviewResult{
 			Verdict: "allow", Presentation: "quoted_analysis", Confidence: 0.95, ReasonCodes: []string{"quoted_analysis"},
@@ -137,14 +151,35 @@ func TestApplyPromptInjectionReviewPolicy(t *testing.T) {
 		require.Equal(t, "allow", result.Verdict)
 	})
 
-	t.Run("complete high confidence quotation resolves review to allow", func(t *testing.T) {
+	t.Run("complete quotation resolves review to allow", func(t *testing.T) {
 		result, overridden := applyPromptInjectionReviewPolicy(ContentModerationSemanticReviewResult{
-			Verdict: "review", Presentation: "quoted_analysis", Confidence: 0.90,
+			Verdict: "review", Presentation: "quoted_analysis", Confidence: 0.60,
 			Targets: []string{"system"}, ReasonCodes: []string{"quoted_analysis"},
 		}, true)
 		require.True(t, overridden)
 		require.Equal(t, "allow", result.Verdict)
 		require.Contains(t, result.ReasonCodes, "semantic_policy_quoted_evidence")
+	})
+
+	t.Run("complete quoted reject is corrected to allow", func(t *testing.T) {
+		result, overridden := applyPromptInjectionReviewPolicy(ContentModerationSemanticReviewResult{
+			Verdict: "reject", ActiveOverride: false, Presentation: "quoted_analysis", Confidence: 0.97,
+			Targets: []string{"system", "developer"}, ReasonCodes: []string{"quoted_analysis"},
+		}, true)
+		require.True(t, overridden)
+		require.Equal(t, "allow", result.Verdict)
+		require.Equal(t, "low", result.Severity)
+		require.Contains(t, result.ReasonCodes, "semantic_policy_quoted_evidence")
+	})
+
+	t.Run("inactive direct reject becomes review", func(t *testing.T) {
+		result, overridden := applyPromptInjectionReviewPolicy(ContentModerationSemanticReviewResult{
+			Verdict: "reject", ActiveOverride: false, Presentation: "direct_instruction", Confidence: 0.97,
+			Targets: []string{"tool_permission"}, ReasonCodes: []string{"tool_permission_bypass"},
+		}, true)
+		require.True(t, overridden)
+		require.Equal(t, "review", result.Verdict)
+		require.Contains(t, result.ReasonCodes, "semantic_policy_reject_inconsistent")
 	})
 
 	t.Run("incomplete allow becomes review", func(t *testing.T) {
@@ -154,6 +189,27 @@ func TestApplyPromptInjectionReviewPolicy(t *testing.T) {
 		require.True(t, overridden)
 		require.Equal(t, "review", result.Verdict)
 		require.Contains(t, result.ReasonCodes, "semantic_policy_incomplete_evidence")
+	})
+
+	t.Run("incomplete reject becomes review", func(t *testing.T) {
+		result, overridden := applyPromptInjectionReviewPolicy(ContentModerationSemanticReviewResult{
+			Verdict: "reject", ActiveOverride: true, Presentation: "direct_instruction", Confidence: 0.99,
+			Targets: []string{"system"}, ReasonCodes: []string{"hierarchy_override"},
+		}, false)
+		require.True(t, overridden)
+		require.Equal(t, "review", result.Verdict)
+		require.Equal(t, "medium", result.Severity)
+		require.Contains(t, result.ReasonCodes, "semantic_policy_incomplete_evidence")
+	})
+
+	t.Run("active override presented as quotation becomes review", func(t *testing.T) {
+		result, overridden := applyPromptInjectionReviewPolicy(ContentModerationSemanticReviewResult{
+			Verdict: "reject", ActiveOverride: true, Presentation: "quoted_analysis", Confidence: 0.99,
+			Targets: []string{"developer"}, ReasonCodes: []string{"quoted_analysis"},
+		}, true)
+		require.True(t, overridden)
+		require.Equal(t, "review", result.Verdict)
+		require.Contains(t, result.ReasonCodes, "semantic_policy_active_override_inconsistent")
 	})
 }
 

@@ -865,6 +865,12 @@ func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
 	require.NoError(t, json.Unmarshal(upstream.lastBody, &requestBody))
 	require.Equal(t, "gpt-5.4-mini-upstream", requestBody["model"])
 	require.Equal(t, float64(ContentModerationSemanticReviewDefaultOutputTokens), requestBody["max_output_tokens"])
+	require.Equal(t, semanticReviewInstructions, requestBody["instructions"])
+	require.Equal(t, "semantic-review-instructions-v2", semanticReviewInstructionsRevision)
+	require.Contains(t, semanticReviewInstructions, "Use review only as the final fallback")
+	require.Contains(t, semanticReviewInstructions, "Review is forbidden solely because of low confidence")
+	require.Contains(t, semanticReviewInstructions, "Otherwise set authorization=not_applicable")
+	require.Contains(t, semanticReviewInstructions, "Insufficient evidence of a violation is not by itself a reason to review or reject")
 	reasoning, ok := requestBody["reasoning"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, ContentModerationSemanticReviewDefaultReasoning, reasoning["effort"])
@@ -1253,6 +1259,41 @@ func TestSemanticReviewPolicyAllowsAuthorizedCTFLabRequest(t *testing.T) {
 
 	require.False(t, overridden)
 	require.Equal(t, "allow", result.Verdict)
+}
+
+func TestSemanticReviewPolicyAllowsBenignExternalServiceWithoutAuthorization(t *testing.T) {
+	result, overridden := applySemanticReviewPolicy(ContentModerationSemanticReviewResult{
+		Verdict:           "allow",
+		Intent:            "benign",
+		Target:            "external_service",
+		Authorization:     "not_applicable",
+		InformationAccess: "public",
+		HarmMechanism:     "none",
+		Confidence:        0.42,
+		Operationality:    "actionable",
+		Executability:     "direct",
+		Categories:        []string{"software_development"},
+	})
+
+	require.False(t, overridden)
+	require.Equal(t, "allow", result.Verdict)
+}
+
+func TestSemanticReviewPolicyPreservesOutcomeChangingAuthorizationReview(t *testing.T) {
+	result, overridden := applySemanticReviewPolicy(ContentModerationSemanticReviewResult{
+		Verdict:        "review",
+		Intent:         "harmful",
+		Target:         "third_party",
+		Authorization:  "unclear",
+		HarmMechanism:  "unauthorized_access",
+		Confidence:     0.98,
+		Operationality: "actionable",
+		Executability:  "direct",
+		Categories:     []string{"unauthorized_access"},
+	})
+
+	require.False(t, overridden)
+	require.Equal(t, "review", result.Verdict)
 }
 
 func TestSemanticReviewPolicyDowngradesPublicDataWithoutHarmMechanism(t *testing.T) {
