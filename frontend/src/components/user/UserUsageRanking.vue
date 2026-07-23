@@ -5,9 +5,6 @@
         <h2 class="text-sm font-semibold text-gray-900 dark:text-white">
           {{ t('usage.ranking.title') }}
         </h2>
-        <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-          {{ t('usage.ranking.description') }}
-        </p>
       </div>
       <button
         type="button"

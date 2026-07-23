@@ -397,7 +397,6 @@ export default {
     tabs: { usage: '用量明细', errors: '错误请求', ranking: '用户排行' },
     ranking: {
       title: '用户排行',
-      description: '当前时间范围内按总 Token 排序的 Top 20',
       rank: '排名',
       user: '用户',
       totalTokens: '总 Token',

@@ -392,7 +392,6 @@ export default {
     tabs: { usage: 'Usage', errors: 'Error Requests', ranking: 'User Ranking' },
     ranking: {
       title: 'User Ranking',
-      description: 'Top 20 by total tokens in the selected time range',
       rank: 'Rank',
       user: 'User',
       totalTokens: 'Total Tokens',
