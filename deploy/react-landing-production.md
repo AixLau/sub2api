@@ -2,7 +2,7 @@
 
 本文档记录当前推荐的双服务部署方式：React 官网负责品牌首页和登录/注册入口，Sub2API 保持原有 Vue 控制台、后端 API、数据库和 Redis。不要为了接入官网而给 Sub2API 增加 `/console` 前缀。
 
-Sub2API 前端只有在构建时设置 `VITE_REACT_LANDING_ROUTES=true` 才会把官网和认证入口留给 React。默认不设置该变量时，Sub2API 仍按单服务部署方式由 Vue 自己提供原有入口页。React 新增公开页面还必须在 Caddy 的 `@react_landing` 中逐条声明，不能依赖兜底路由。
+Sub2API 前端只有在构建时设置 `VITE_REACT_LANDING_ROUTES=true` 才会把官网和认证入口留给 React。使用 Docker 构建时传入 `--build-arg VITE_REACT_LANDING_ROUTES=true`；只在容器运行时设置同名环境变量无效，因为 Vue 路由归属已在 Vite 构建阶段固化。默认不设置该变量时，Sub2API 仍按单服务部署方式由 Vue 自己提供原有入口页。React 新增公开页面还必须在 Caddy 的 `@react_landing` 中逐条声明，不能依赖兜底路由。
 
 ## 当前拓扑
 
@@ -186,6 +186,17 @@ curl -fsSL https://aixlau.me/docs/install/ | rg -n 'canonical|TechArticle|FAQPag
 ## Sub2API 镜像发布流程
 
 生产环境使用 Docker Compose，并复用现有 PostgreSQL 和 Redis 数据目录。
+
+构建 aixlau.me 使用的双站点镜像时必须带上 React 路由参数：
+
+```bash
+docker buildx build \
+  --platform linux/amd64 \
+  --build-arg VITE_REACT_LANDING_ROUTES=true \
+  -t sub2api:<commit>-amd64 \
+  -f Dockerfile . \
+  --load
+```
 
 ```bash
 ssh sub2api-server
