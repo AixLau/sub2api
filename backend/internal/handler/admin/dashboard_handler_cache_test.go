@@ -16,8 +16,17 @@ import (
 
 type dashboardUsageRepoCacheProbe struct {
 	service.UsageLogRepository
-	trendCalls      atomic.Int32
-	usersTrendCalls atomic.Int32
+	trendCalls           atomic.Int32
+	usersTrendCalls      atomic.Int32
+	growthRetentionCalls atomic.Int32
+}
+
+func (r *dashboardUsageRepoCacheProbe) GetUserGrowthRetention(
+	ctx context.Context,
+	startTime, endTime time.Time,
+) (*usagestats.UserGrowthRetention, error) {
+	r.growthRetentionCalls.Add(1)
+	return &usagestats.UserGrowthRetention{}, nil
 }
 
 func (r *dashboardUsageRepoCacheProbe) GetUsageTrendWithFilters(
@@ -66,6 +75,59 @@ func resetDashboardReadCachesForTest() {
 	dashboardModelStatsCache = newSnapshotCache(30 * time.Second)
 	dashboardGroupStatsCache = newSnapshotCache(30 * time.Second)
 	dashboardSnapshotV2Cache = newSnapshotCache(30 * time.Second)
+	dashboardUserGrowthRetentionCache = newSnapshotCache(5 * time.Minute)
+}
+
+func TestDashboardHandler_GetSnapshotV2_NormalizesCacheKeyToMinute(t *testing.T) {
+	t.Cleanup(resetDashboardReadCachesForTest)
+	resetDashboardReadCachesForTest()
+
+	gin.SetMode(gin.TestMode)
+	repo := &dashboardUsageRepoCacheProbe{}
+	dashboardSvc := service.NewDashboardService(repo, nil, nil, nil)
+	handler := NewDashboardHandler(dashboardSvc, nil)
+	router := gin.New()
+	router.GET("/admin/dashboard/snapshot-v2", handler.GetSnapshotV2)
+
+	baseURL := "/admin/dashboard/snapshot-v2?include_stats=false&include_trend=true&include_model_stats=false&include_group_stats=false&include_users_trend=false&granularity=hour"
+	req1 := httptest.NewRequest(http.MethodGet, baseURL+"&start_time=2026-03-11T10:00:05.123Z&end_time=2026-03-11T11:00:05.123Z", nil)
+	rec1 := httptest.NewRecorder()
+	router.ServeHTTP(rec1, req1)
+	require.Equal(t, http.StatusOK, rec1.Code)
+	require.Equal(t, "miss", rec1.Header().Get("X-Snapshot-Cache"))
+
+	req2 := httptest.NewRequest(http.MethodGet, baseURL+"&start_time=2026-03-11T10:00:49.999Z&end_time=2026-03-11T11:00:49.999Z", nil)
+	rec2 := httptest.NewRecorder()
+	router.ServeHTTP(rec2, req2)
+	require.Equal(t, http.StatusOK, rec2.Code)
+	require.Equal(t, "hit", rec2.Header().Get("X-Snapshot-Cache"))
+	require.Equal(t, int32(1), repo.trendCalls.Load())
+}
+
+func TestDashboardHandler_GetUserGrowthRetention_UsesCache(t *testing.T) {
+	t.Cleanup(resetDashboardReadCachesForTest)
+	resetDashboardReadCachesForTest()
+
+	gin.SetMode(gin.TestMode)
+	repo := &dashboardUsageRepoCacheProbe{}
+	dashboardSvc := service.NewDashboardService(repo, nil, nil, nil)
+	handler := NewDashboardHandler(dashboardSvc, nil)
+	router := gin.New()
+	router.GET("/admin/dashboard/user-growth-retention", handler.GetUserGrowthRetention)
+
+	requestURL := "/admin/dashboard/user-growth-retention?days=31"
+	req1 := httptest.NewRequest(http.MethodGet, requestURL, nil)
+	rec1 := httptest.NewRecorder()
+	router.ServeHTTP(rec1, req1)
+	require.Equal(t, http.StatusOK, rec1.Code)
+	require.Equal(t, "miss", rec1.Header().Get("X-Snapshot-Cache"))
+
+	req2 := httptest.NewRequest(http.MethodGet, requestURL, nil)
+	rec2 := httptest.NewRecorder()
+	router.ServeHTTP(rec2, req2)
+	require.Equal(t, http.StatusOK, rec2.Code)
+	require.Equal(t, "hit", rec2.Header().Get("X-Snapshot-Cache"))
+	require.Equal(t, int32(1), repo.growthRetentionCalls.Load())
 }
 
 func TestDashboardHandler_GetUsageTrend_UsesCache(t *testing.T) {

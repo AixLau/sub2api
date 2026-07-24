@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -14,6 +15,7 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
+	"golang.org/x/sync/singleflight"
 )
 
 var (
@@ -76,7 +78,16 @@ type UsageService struct {
 	userRepo             UserRepository
 	entClient            *dbent.Client
 	authCacheInvalidator APIKeyAuthCacheInvalidator
+	dashboardStatsCache  sync.Map
+	dashboardStatsGroup  singleflight.Group
 }
+
+type userDashboardStatsCacheEntry struct {
+	stats     usagestats.UserDashboardStats
+	expiresAt time.Time
+}
+
+const userDashboardStatsCacheTTL = 30 * time.Second
 
 // NewUsageService 创建使用统计服务实例
 func NewUsageService(usageRepo UsageLogRepository, userRepo UserRepository, entClient *dbent.Client, authCacheInvalidator APIKeyAuthCacheInvalidator) *UsageService {
@@ -364,11 +375,41 @@ func (s *UsageService) Delete(ctx context.Context, id int64) error {
 
 // GetUserDashboardStats returns per-user dashboard summary stats.
 func (s *UsageService) GetUserDashboardStats(ctx context.Context, userID int64) (*usagestats.UserDashboardStats, error) {
-	stats, err := s.usageRepo.GetUserDashboardStats(ctx, userID)
+	cacheKey := strconv.FormatInt(userID, 10)
+	if cached, ok := s.dashboardStatsCache.Load(cacheKey); ok {
+		entry := cached.(userDashboardStatsCacheEntry)
+		if time.Now().Before(entry.expiresAt) {
+			stats := entry.stats
+			return &stats, nil
+		}
+		s.dashboardStatsCache.Delete(cacheKey)
+	}
+
+	loaded, err, _ := s.dashboardStatsGroup.Do(cacheKey, func() (any, error) {
+		if cached, ok := s.dashboardStatsCache.Load(cacheKey); ok {
+			entry := cached.(userDashboardStatsCacheEntry)
+			if time.Now().Before(entry.expiresAt) {
+				return entry.stats, nil
+			}
+			s.dashboardStatsCache.Delete(cacheKey)
+		}
+
+		stats, loadErr := s.usageRepo.GetUserDashboardStats(ctx, userID)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		entry := userDashboardStatsCacheEntry{
+			stats:     *stats,
+			expiresAt: time.Now().Add(userDashboardStatsCacheTTL),
+		}
+		s.dashboardStatsCache.Store(cacheKey, entry)
+		return entry.stats, nil
+	})
 	if err != nil {
 		return nil, fmt.Errorf("get user dashboard stats: %w", err)
 	}
-	return stats, nil
+	stats := loaded.(usagestats.UserDashboardStats)
+	return &stats, nil
 }
 
 // GetAPIKeyDashboardStats returns dashboard summary stats filtered by API Key.

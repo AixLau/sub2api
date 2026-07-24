@@ -541,6 +541,8 @@ func (h *DashboardHandler) GetActiveUsersTrend(c *gin.Context) {
 
 // GetUserGrowthRetention returns daily registration cohorts and D1/D7/D30 API retention.
 // GET /api/v1/admin/dashboard/user-growth-retention?days=7
+var dashboardUserGrowthRetentionCache = newSnapshotCache(5 * time.Minute)
+
 func (h *DashboardHandler) GetUserGrowthRetention(c *gin.Context) {
 	days, err := strconv.Atoi(c.DefaultQuery("days", "7"))
 	if err != nil || days < 7 || days > 180 {
@@ -550,18 +552,33 @@ func (h *DashboardHandler) GetUserGrowthRetention(c *gin.Context) {
 
 	endTime := timezone.Today().AddDate(0, 0, 1)
 	startTime := endTime.AddDate(0, 0, -days)
-	result, err := h.dashboardService.GetUserGrowthRetention(c.Request.Context(), startTime, endTime)
+	keyRaw, _ := json.Marshal(struct {
+		Start string `json:"start"`
+		End   string `json:"end"`
+	}{
+		Start: startTime.UTC().Format(time.RFC3339),
+		End:   endTime.UTC().Format(time.RFC3339),
+	})
+
+	cached, hit, err := dashboardUserGrowthRetentionCache.GetOrLoad(string(keyRaw), func() (any, error) {
+		result, loadErr := h.dashboardService.GetUserGrowthRetention(c.Request.Context(), startTime, endTime)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		return gin.H{
+			"cohorts":    result.Cohorts,
+			"summary":    result.Summary,
+			"start_date": startTime.Format("2006-01-02"),
+			"end_date":   endTime.AddDate(0, 0, -1).Format("2006-01-02"),
+		}, nil
+	})
 	if err != nil {
 		response.Error(c, 500, "Failed to get user growth and retention")
 		return
 	}
 
-	response.Success(c, gin.H{
-		"cohorts":    result.Cohorts,
-		"summary":    result.Summary,
-		"start_date": startTime.Format("2006-01-02"),
-		"end_date":   endTime.AddDate(0, 0, -1).Format("2006-01-02"),
-	})
+	c.Header("X-Snapshot-Cache", cacheStatusValue(hit))
+	response.Success(c, cached.Payload)
 }
 
 // BatchUsersUsageRequest represents the request body for batch user usage stats

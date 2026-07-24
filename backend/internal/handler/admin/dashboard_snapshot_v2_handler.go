@@ -96,8 +96,8 @@ func (h *DashboardHandler) GetSnapshotV2(c *gin.Context) {
 	}
 
 	keyRaw, _ := json.Marshal(dashboardSnapshotV2CacheKey{
-		StartTime:         startTime.UTC().Format(time.RFC3339),
-		EndTime:           endTime.UTC().Format(time.RFC3339),
+		StartTime:         startTime.UTC().Truncate(time.Minute).Format(time.RFC3339),
+		EndTime:           endTime.UTC().Truncate(time.Minute).Format(time.RFC3339),
 		Granularity:       granularity,
 		UserID:            filters.UserID,
 		ExcludeUserIDs:    filters.ExcludeUserIDs,
