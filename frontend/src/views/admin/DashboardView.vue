@@ -189,15 +189,10 @@
                     class="ml-1 inline-flex min-w-0 items-baseline gap-1 border-l border-gray-200 pl-2 text-cyan-600 dark:border-dark-600 dark:text-cyan-400"
                     :title="t('admin.dashboard.recent5mActiveUsers')"
                   >
-                    <span class="text-xs font-semibold sm:hidden">
-                      {{ t('admin.dashboard.recent5mActiveUsersCompact', { count: formatNumber(stats.recent_5m_active_users) }) }}
-                    </span>
-                    <span class="hidden text-sm font-semibold sm:inline">
+                    <span class="text-xl font-bold">
                       {{ formatNumber(stats.recent_5m_active_users) }}
                     </span>
-                    <span class="hidden text-xs text-gray-500 dark:text-gray-400 sm:inline">
-                      {{ t('admin.dashboard.recent5mActiveUsers') }}
-                    </span>
+                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.recent5mActiveUsersUnit') }}</span>
                   </span>
                 </div>
                 <div class="flex items-baseline gap-2">
