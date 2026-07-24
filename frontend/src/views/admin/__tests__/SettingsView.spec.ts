@@ -357,6 +357,8 @@ const baseSettingsResponse = {
   site_subtitle: "",
   api_base_url: "",
   contact_info: "",
+  support_qq_group_qr_code: "",
+  support_wechat_group_qr_code: "",
   doc_url: "",
   home_content: "",
   hide_ccs_import_button: false,

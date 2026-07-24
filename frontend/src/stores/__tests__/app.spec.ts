@@ -31,6 +31,8 @@ function createPublicSettings(overrides: Partial<PublicSettings> = {}): PublicSe
     site_subtitle: '',
     api_base_url: '',
     contact_info: '',
+    support_qq_group_qr_code: '',
+    support_wechat_group_qr_code: '',
     doc_url: '',
     home_content: '',
     hide_ccs_import_button: false,
@@ -400,6 +402,8 @@ describe('useAppStore', () => {
         site_logo: '/logo.png',
         version: '1.0.0',
         contact_info: 'test@test.com',
+        support_qq_group_qr_code: 'data:image/png;base64,qq',
+        support_wechat_group_qr_code: 'data:image/png;base64,wechat',
         api_base_url: 'https://api.test.com',
         doc_url: 'https://docs.test.com',
       }
@@ -411,6 +415,8 @@ describe('useAppStore', () => {
       expect(store.siteName).toBe('TestSite')
       expect(store.siteLogo).toBe('/logo.png')
       expect(store.siteVersion).toBe('1.0.0')
+      expect(store.supportQQGroupQRCode).toBe('data:image/png;base64,qq')
+      expect(store.supportWeChatGroupQRCode).toBe('data:image/png;base64,wechat')
       expect(store.publicSettingsLoaded).toBe(true)
     })
 

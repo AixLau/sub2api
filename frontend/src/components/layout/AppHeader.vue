@@ -25,24 +25,19 @@
       <div class="ml-4 flex flex-shrink-0 items-center gap-2 xl:gap-3">
         <!-- Prominent support entry for new users -->
         <button
-          v-if="contactInfo"
+          v-if="hasSupportGroup"
           type="button"
           data-testid="header-contact-support"
-          class="group hidden h-9 min-w-9 items-center justify-center gap-2 rounded-lg border border-primary-200 bg-primary-50 px-2.5 text-primary-700 shadow-sm transition-colors hover:border-primary-300 hover:bg-primary-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:border-primary-800 dark:bg-primary-900/30 dark:text-primary-200 dark:hover:bg-primary-900/50 dark:focus:ring-offset-dark-900 xl:flex"
-          :aria-label="t('common.getSupport')"
+          class="hidden h-9 min-w-9 items-center justify-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white dark:focus:ring-offset-dark-900 md:flex"
+          :aria-label="t('common.contactSupport')"
           @click="openSupportDialog"
         >
           <span class="relative flex flex-shrink-0" aria-hidden="true">
             <Icon name="chat" size="sm" :stroke-width="2" />
-            <span class="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-amber-500 ring-2 ring-primary-50 dark:ring-primary-950"></span>
+            <span class="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-amber-500 ring-2 ring-white dark:ring-dark-900"></span>
           </span>
-          <span class="whitespace-nowrap text-xs font-semibold sm:text-sm">
-            {{ t('common.getSupport') }}
-          </span>
-          <span
-            class="hidden max-w-40 truncate border-l border-primary-200 pl-2 text-sm font-medium text-primary-900 dark:border-primary-700 dark:text-primary-100 2xl:inline"
-          >
-            {{ contactInfo }}
+          <span class="whitespace-nowrap">
+            {{ t('common.contactSupport') }}
           </span>
         </button>
 
@@ -247,10 +242,10 @@
 
               <!-- Contact Support (only show if configured) -->
               <button
-                v-if="contactInfo"
+                v-if="hasSupportGroup"
                 type="button"
                 data-testid="menu-contact-support"
-                class="flex w-full items-center gap-2 border-t border-gray-100 px-4 py-2.5 text-left text-xs text-gray-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:border-dark-700 dark:text-gray-300 dark:hover:bg-primary-900/20 dark:hover:text-primary-200"
+                class="flex w-full items-center gap-2 border-t border-gray-100 px-4 py-2.5 text-left text-xs text-gray-600 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:border-dark-700 dark:text-gray-300 dark:hover:bg-primary-900/20 dark:hover:text-primary-200 md:hidden"
                 @click="openSupportDialog"
               >
                 <Icon name="chat" size="sm" />
@@ -296,52 +291,107 @@
       </div>
     </div>
 
-    <BaseDialog
-      :show="supportDialogOpen"
-      :title="t('common.supportDialogTitle')"
-      width="narrow"
-      @close="closeSupportDialog"
-    >
-      <div class="space-y-4" data-testid="support-guide">
-        <p class="text-sm leading-6 text-gray-600 dark:text-gray-300">
-          {{ t('common.supportDialogIntro') }}
-        </p>
-
-        <div class="rounded-lg border border-primary-200 bg-primary-50 p-3 dark:border-primary-800 dark:bg-primary-900/20">
-          <p class="text-xs font-medium text-primary-700 dark:text-primary-300">
-            {{ t('common.supportContactLabel') }}
-          </p>
-          <p data-testid="support-contact-info" class="mt-1 select-all break-words text-base font-bold text-gray-900 dark:text-white">
-            {{ contactInfo }}
-          </p>
-        </div>
-
-        <ol class="space-y-3 text-sm text-gray-700 dark:text-gray-200">
-          <li class="flex gap-3"><span class="font-bold text-primary-600">1.</span><span>{{ t('common.supportStepCopy') }}</span></li>
-          <li class="flex gap-3"><span class="font-bold text-primary-600">2.</span><span>{{ t('common.supportStepOpenApp') }}</span></li>
-          <li class="flex gap-3"><span class="font-bold text-primary-600">3.</span><span>{{ t('common.supportStepPaste') }}</span></li>
-        </ol>
-
+    <Teleport to="body">
+      <Transition name="support-modal">
         <div
-          v-if="contactCopied"
-          data-testid="support-copy-next-step"
-          class="flex gap-2 rounded-lg bg-green-50 p-3 text-sm font-medium leading-5 text-green-800 dark:bg-green-900/20 dark:text-green-200"
+          v-if="supportDialogOpen"
+          class="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm"
+          data-testid="support-overlay"
+          @click.self="closeSupportDialog"
         >
-          <Icon name="check" size="sm" class="mt-0.5 flex-shrink-0" />
-          <span>{{ t('common.supportCopiedNextStep') }}</span>
-        </div>
-      </div>
+          <section
+            role="dialog"
+            aria-modal="true"
+            :aria-label="t('common.supportCommunityTitle')"
+            data-testid="support-dialog"
+            class="w-[304px] max-w-[calc(100vw-32px)] overflow-hidden rounded-[26px] border border-black/5 bg-white shadow-[0_22px_60px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-dark-900"
+          >
+            <div class="flex items-start justify-between gap-3 px-6 pb-3 pt-5">
+              <div class="min-w-0">
+                <h2 class="text-base font-semibold text-gray-950 dark:text-white">
+                  {{ t('common.supportCommunityTitle') }}
+                </h2>
+                <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-dark-300">
+                  {{ t('common.supportCommunityIntro') }}
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="support-close"
+                class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:hover:bg-dark-700 dark:hover:text-white"
+                :aria-label="t('common.close')"
+                @click="closeSupportDialog"
+              >
+                <Icon name="x" size="sm" :stroke-width="2" />
+              </button>
+            </div>
 
-      <template #footer>
-        <button type="button" class="btn btn-secondary" @click="closeSupportDialog">
-          {{ t('common.close') }}
-        </button>
-        <button type="button" data-testid="copy-support-contact" class="btn btn-primary" @click="copyContactInfo">
-          <Icon :name="contactCopied ? 'check' : 'copy'" size="sm" />
-          {{ contactCopied ? t('common.supportCopied') : t('common.copySupportContact') }}
-        </button>
-      </template>
-    </BaseDialog>
+            <div class="px-5">
+              <div
+                role="tablist"
+                :aria-label="t('common.supportCommunityTitle')"
+                class="grid grid-cols-2 rounded-full bg-gray-100 p-1 dark:bg-dark-800"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  data-testid="support-tab-qq"
+                  :aria-selected="activeSupportTab === 'qq'"
+                  class="h-8 rounded-full text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                  :class="activeSupportTab === 'qq' ? 'bg-[#17191c] text-white shadow-sm dark:bg-white dark:text-gray-950' : 'text-gray-500 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'"
+                  @click="activeSupportTab = 'qq'"
+                >
+                  {{ t('common.supportQQTab') }}
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  data-testid="support-tab-wechat"
+                  :aria-selected="activeSupportTab === 'wechat'"
+                  class="h-8 rounded-full text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                  :class="activeSupportTab === 'wechat' ? 'bg-[#17191c] text-white shadow-sm dark:bg-white dark:text-gray-950' : 'text-gray-500 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'"
+                  @click="activeSupportTab = 'wechat'"
+                >
+                  {{ t('common.supportWeChatTab') }}
+                </button>
+              </div>
+            </div>
+
+            <div class="px-6 pb-6 pt-5 text-center">
+              <div
+                class="flex h-[208px] w-full items-center justify-center overflow-hidden rounded-[18px] border p-3"
+                :class="activeSupportQRCode ? 'border-gray-200 bg-white' : 'border-dashed border-gray-300 bg-gray-50 dark:border-dark-600 dark:bg-dark-800'"
+              >
+                <img
+                  v-if="activeSupportQRCode"
+                  :src="activeSupportQRCode"
+                  :alt="t('common.supportQRCodeAlt', { platform: activeSupportPlatform })"
+                  data-testid="support-qr-image"
+                  class="h-full w-full object-contain"
+                >
+                <div v-else data-testid="support-qr-empty" class="px-3 text-center">
+                  <span class="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 text-gray-400 dark:bg-dark-700 dark:text-dark-300">
+                    <Icon name="chat" size="lg" :stroke-width="1.75" />
+                  </span>
+                  <p class="mt-3 text-sm font-semibold text-gray-800 dark:text-white">
+                    {{ t('common.supportQRCodeEmptyTitle', { platform: activeSupportPlatform }) }}
+                  </p>
+                  <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-dark-300">
+                    {{ t('common.supportQRCodeEmptyDescription') }}
+                  </p>
+                </div>
+              </div>
+              <p
+                class="mt-3 h-4 text-xs text-gray-500 dark:text-dark-300"
+                :class="{ invisible: !activeSupportQRCode }"
+              >
+                {{ t('common.supportQRCodeHint', { platform: activeSupportPlatform }) }}
+              </p>
+            </div>
+          </section>
+        </div>
+      </Transition>
+    </Teleport>
   </header>
 </template>
 
@@ -354,9 +404,7 @@ import { useAdminSettingsStore } from '@/stores/adminSettings'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
-import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { useClipboard } from '@/composables/useClipboard'
 import { sanitizeUrl } from '@/utils/url'
 import walletArtwork from '@/assets/wallet-fluid-blue-violet.png'
 
@@ -367,17 +415,20 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
 const onboardingStore = useOnboardingStore()
-const { copyToClipboard } = useClipboard()
 
 const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
 const walletOpen = ref(false)
 const walletPinned = ref(false)
 const supportDialogOpen = ref(false)
-const contactCopied = ref(false)
+const activeSupportTab = ref<'qq' | 'wechat'>('qq')
 const dropdownRef = ref<HTMLElement | null>(null)
 const walletRef = ref<HTMLElement | null>(null)
-const contactInfo = computed(() => appStore.contactInfo)
+const supportQQGroupQRCode = computed(() => appStore.supportQQGroupQRCode?.trim() || '')
+const supportWeChatGroupQRCode = computed(() => appStore.supportWeChatGroupQRCode?.trim() || '')
+const hasSupportGroup = computed(() => Boolean(supportQQGroupQRCode.value || supportWeChatGroupQRCode.value))
+const activeSupportQRCode = computed(() => activeSupportTab.value === 'qq' ? supportQQGroupQRCode.value : supportWeChatGroupQRCode.value)
+const activeSupportPlatform = computed(() => activeSupportTab.value === 'qq' ? t('common.supportQQTab') : t('common.supportWeChatTab'))
 const docUrl = computed(() => sanitizeUrl(appStore.docUrl))
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const availableBalance = computed(() => Number(user.value?.balance || 0))
@@ -483,19 +534,13 @@ function goToRecharge() {
 
 function openSupportDialog() {
   closeDropdown()
-  contactCopied.value = false
+  closeWallet()
+  activeSupportTab.value = supportQQGroupQRCode.value ? 'qq' : 'wechat'
   supportDialogOpen.value = true
 }
 
 function closeSupportDialog() {
   supportDialogOpen.value = false
-}
-
-async function copyContactInfo() {
-  contactCopied.value = await copyToClipboard(
-    contactInfo.value,
-    t('common.supportCopiedNextStep')
-  )
 }
 
 async function handleLogout() {
@@ -528,12 +573,20 @@ function handleClickOutside(event: MouseEvent) {
   }
 }
 
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && supportDialogOpen.value) {
+    closeSupportDialog()
+  }
+}
+
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
+  document.addEventListener('keydown', handleKeydown)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside)
+  document.removeEventListener('keydown', handleKeydown)
 })
 </script>
 
@@ -547,5 +600,26 @@ onBeforeUnmount(() => {
 .dropdown-leave-to {
   opacity: 0;
   transform: scale(0.95) translateY(-4px);
+}
+
+.support-modal-enter-active,
+.support-modal-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.support-modal-enter-active section,
+.support-modal-leave-active section {
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.support-modal-enter-from,
+.support-modal-leave-to {
+  opacity: 0;
+}
+
+.support-modal-enter-from section,
+.support-modal-leave-to section {
+  opacity: 0;
+  transform: scale(0.96) translateY(6px);
 }
 </style>

@@ -46,6 +46,8 @@ export const useAppStore = defineStore('app', () => {
   const siteLogo = ref<string>('')
   const siteVersion = ref<string>('')
   const contactInfo = ref<string>('')
+  const supportQQGroupQRCode = ref<string>('')
+  const supportWeChatGroupQRCode = ref<string>('')
   const apiBaseUrl = ref<string>('')
   const docUrl = ref<string>(DEFAULT_DOC_URL)
   const cachedPublicSettings = ref<PublicSettings | null>(null)
@@ -319,6 +321,8 @@ export const useAppStore = defineStore('app', () => {
     siteLogo.value = config.site_logo || ''
     siteVersion.value = config.version || ''
     contactInfo.value = config.contact_info || ''
+    supportQQGroupQRCode.value = config.support_qq_group_qr_code || ''
+    supportWeChatGroupQRCode.value = config.support_wechat_group_qr_code || ''
     apiBaseUrl.value = config.api_base_url || ''
     docUrl.value = normalizedDocUrl
     publicSettingsLoaded.value = true
@@ -361,6 +365,8 @@ export const useAppStore = defineStore('app', () => {
         site_subtitle: '',
         api_base_url: apiBaseUrl.value,
         contact_info: contactInfo.value,
+        support_qq_group_qr_code: supportQQGroupQRCode.value,
+        support_wechat_group_qr_code: supportWeChatGroupQRCode.value,
         doc_url: docUrl.value,
         home_content: '',
         hide_ccs_import_button: false,
@@ -462,6 +468,8 @@ export const useAppStore = defineStore('app', () => {
     siteLogo,
     siteVersion,
     contactInfo,
+    supportQQGroupQRCode,
+    supportWeChatGroupQRCode,
     apiBaseUrl,
     docUrl,
     cachedPublicSettings,

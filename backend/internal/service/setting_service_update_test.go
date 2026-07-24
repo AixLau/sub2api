@@ -217,6 +217,19 @@ func TestSettingService_AffiliateAdminRechargeSetting(t *testing.T) {
 	})
 }
 
+func TestSettingService_UpdateSettings_PersistsSupportGroupQRCodesIndependently(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		SupportQQGroupQRCode:     "data:image/png;base64,qq",
+		SupportWeChatGroupQRCode: "data:image/png;base64,wechat",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "data:image/png;base64,qq", repo.updates[SettingKeySupportQQGroupQRCode])
+	require.Equal(t, "data:image/png;base64,wechat", repo.updates[SettingKeySupportWeChatGroupQRCode])
+}
+
 func (s *defaultSubGroupReaderStub) GetByID(ctx context.Context, id int64) (*Group, error) {
 	s.calls = append(s.calls, id)
 	if err, ok := s.errBy[id]; ok {

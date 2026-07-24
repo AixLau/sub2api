@@ -5664,6 +5664,46 @@
                 </p>
               </div>
 
+              <!-- Support Group QR Codes -->
+              <div>
+                <div class="mb-3">
+                  <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t("admin.settings.site.supportGroupQRCodes") }}
+                  </h4>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.site.supportGroupQRCodesHint") }}
+                  </p>
+                </div>
+                <div class="grid gap-5 sm:grid-cols-2">
+                  <div>
+                    <label class="mb-2 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                      {{ t("admin.settings.site.qqGroupQRCode") }}
+                    </label>
+                    <ImageUpload
+                      v-model="form.support_qq_group_qr_code"
+                      mode="image"
+                      :upload-label="t('admin.settings.site.uploadImage')"
+                      :remove-label="t('admin.settings.site.remove')"
+                      :hint="t('admin.settings.site.groupQRCodeHint')"
+                      :max-size="300 * 1024"
+                    />
+                  </div>
+                  <div>
+                    <label class="mb-2 block text-xs font-medium text-gray-600 dark:text-gray-400">
+                      {{ t("admin.settings.site.wechatGroupQRCode") }}
+                    </label>
+                    <ImageUpload
+                      v-model="form.support_wechat_group_qr_code"
+                      mode="image"
+                      :upload-label="t('admin.settings.site.uploadImage')"
+                      :remove-label="t('admin.settings.site.remove')"
+                      :hint="t('admin.settings.site.groupQRCodeHint')"
+                      :max-size="300 * 1024"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <!-- Doc URL -->
               <div>
                 <label
@@ -8514,6 +8554,8 @@ const form = reactive<SettingsForm>({
   site_subtitle: "Subscription to API Conversion Platform",
   api_base_url: "",
   contact_info: "",
+  support_qq_group_qr_code: "",
+  support_wechat_group_qr_code: "",
   doc_url: "",
   home_content: "",
   backend_mode_enabled: false,
@@ -10034,6 +10076,8 @@ async function saveSettings() {
       site_subtitle: form.site_subtitle,
       api_base_url: form.api_base_url,
       contact_info: form.contact_info,
+      support_qq_group_qr_code: form.support_qq_group_qr_code,
+      support_wechat_group_qr_code: form.support_wechat_group_qr_code,
       doc_url: form.doc_url,
       home_content: form.home_content,
       backend_mode_enabled: form.backend_mode_enabled,

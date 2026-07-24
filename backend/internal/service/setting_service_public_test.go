@@ -78,6 +78,21 @@ func TestSettingService_GetPublicSettings_ExposesTablePreferences(t *testing.T) 
 	require.Equal(t, []int{20, 50, 100}, settings.TablePageSizeOptions)
 }
 
+func TestSettingService_GetPublicSettings_ExposesSupportGroupQRCodes(t *testing.T) {
+	repo := &settingPublicRepoStub{
+		values: map[string]string{
+			SettingKeySupportQQGroupQRCode:     "data:image/png;base64,qq",
+			SettingKeySupportWeChatGroupQRCode: "data:image/png;base64,wechat",
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	settings, err := svc.GetPublicSettings(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "data:image/png;base64,qq", settings.SupportQQGroupQRCode)
+	require.Equal(t, "data:image/png;base64,wechat", settings.SupportWeChatGroupQRCode)
+}
+
 func TestSettingService_GetPublicSettings_ExposesForceEmailOnThirdPartySignup(t *testing.T) {
 	repo := &settingPublicRepoStub{
 		values: map[string]string{

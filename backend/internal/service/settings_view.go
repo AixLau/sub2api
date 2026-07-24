@@ -136,6 +136,8 @@ type SystemSettings struct {
 	SiteSubtitle                string
 	APIBaseURL                  string
 	ContactInfo                 string
+	SupportQQGroupQRCode        string
+	SupportWeChatGroupQRCode    string
 	DocURL                      string
 	HomeContent                 string
 	HideCcsImportButton         bool
@@ -299,6 +301,8 @@ type PublicSettings struct {
 	SiteSubtitle                     string
 	APIBaseURL                       string
 	ContactInfo                      string
+	SupportQQGroupQRCode             string
+	SupportWeChatGroupQRCode         string
 	DocURL                           string
 	HomeContent                      string
 	HideCcsImportButton              bool

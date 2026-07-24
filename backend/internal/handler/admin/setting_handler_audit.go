@@ -425,6 +425,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.ContactInfo != after.ContactInfo {
 		changed = append(changed, "contact_info")
 	}
+	if before.SupportQQGroupQRCode != after.SupportQQGroupQRCode {
+		changed = append(changed, "support_qq_group_qr_code")
+	}
+	if before.SupportWeChatGroupQRCode != after.SupportWeChatGroupQRCode {
+		changed = append(changed, "support_wechat_group_qr_code")
+	}
 	if before.DocURL != after.DocURL {
 		changed = append(changed, "doc_url")
 	}
