@@ -1,4 +1,4 @@
-# Wallet Header Design QA
+# Header Card Design QA
 
 - Source visual truth: `/Users/lushiwu/Desktop/微信图片_20260718000258_4_769.jpg`
 - Browser-rendered implementation: `/Users/lushiwu/.codex/visualizations/2026/07/21/019f84db-4622-7af3-825e-b0e971c475f8/wallet-desktop-open-v3.png`
@@ -42,5 +42,24 @@
 - Earlier P1: the panel used a code-native blue-indigo gradient instead of the reference's fluid image treatment, so it did not carry the selected visual style.
 - Fix: generated and integrated a dedicated blue-violet fluid raster asset, rebuilt the panel as a compact image-and-white-content card, added the image close control, removed repeated balance details, and restored a high-contrast top-level recharge shortcut after review feedback.
 - Post-fix evidence: `wallet-comparison-v5.png` confirms the full component context; `wallet-focus-comparison.png` confirms the artwork, rounded silhouette, content hierarchy, and CTA treatment at readable scale.
+
+## Support Community Card QA
+
+- Source visual truth: `/var/folders/j_/wj8mmnfx46zccr8bvxj1wklh0000gn/T/codex-clipboard-51e4571d-5111-458a-a751-1ac24b0bd847.png`
+- Browser-rendered implementation: `/Users/lushiwu/.codex/visualizations/2026/07/22/019f89ce-0974-79d3-b435-38555dec5d10/support-preview-enlarged-390.png`
+- Source pixels: 796 x 896; the source is a tightly cropped card reference with unknown device density.
+- Implementation pixels and CSS viewport: 1280 x 720 at device scale factor 1.
+- Implementation dialog: 344 x 434 CSS pixels; QR frame: 296 x 240 CSS pixels.
+- Responsive checks: 344 x 434 at 390 x 844 with no page overflow; 288 x 454 at 320 x 700 with no page overflow.
+- State: authenticated mock user, support dialog open, QQ tab selected, light theme.
+- Full-view comparison evidence: the source and implementation were opened together at original pixel dimensions. A separate focused crop was unnecessary because the complete dialog is fully legible in both images.
+- Fonts and typography: the implementation retains the source hierarchy, weights, line heights, and neutral system sans-serif styling without introducing new wrapping at desktop width.
+- Spacing and layout rhythm: the dialog width increases from 304 to 344 CSS pixels and the QR frame height from 208 to 240 CSS pixels while preserving the 26px outer radius, 18px QR-frame radius, centered alignment, and existing padding rhythm.
+- Colors and visual tokens: white surface, neutral border, dark selected tab, subdued secondary text, backdrop, and shadow remain unchanged from the accepted card style.
+- Image quality and asset fidelity: the QR image continues to use the configured bitmap with `object-contain`, so it remains sharp and uncropped as the frame grows. The preview QR is black-and-white test data; production color depends on the independently configured image.
+- Copy and content: title, helper text, QQ/WeChat tabs, and scan hint are unchanged.
+- Interaction and browser checks: QQ is selected by default, the dialog opens from the header support button, the enlarged card stays centered, and a clean preview load produced no console errors.
+- Findings: no actionable P0/P1/P2 differences. The larger dimensions are intentional and directly address the requested scan-area increase.
+- Comparison history: the earlier implementation measured 304 x 422 CSS pixels with a 208px QR frame. It was widened to 344px and the QR frame increased to 240px; post-fix desktop, 390px, and 320px measurements confirm the card remains centered and overflow-free.
 
 final result: passed

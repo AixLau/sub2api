@@ -304,7 +304,7 @@
             aria-modal="true"
             :aria-label="t('common.supportCommunityTitle')"
             data-testid="support-dialog"
-            class="w-[304px] max-w-[calc(100vw-32px)] overflow-hidden rounded-[26px] border border-black/5 bg-white shadow-[0_22px_60px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-dark-900"
+            class="w-[344px] max-w-[calc(100vw-32px)] overflow-hidden rounded-[26px] border border-black/5 bg-white shadow-[0_22px_60px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-dark-900"
           >
             <div class="flex items-start justify-between gap-3 px-6 pb-3 pt-5">
               <div class="min-w-0">
@@ -359,7 +359,7 @@
 
             <div class="px-6 pb-6 pt-5 text-center">
               <div
-                class="flex h-[208px] w-full items-center justify-center overflow-hidden rounded-[18px] border p-3"
+                class="flex h-[240px] w-full items-center justify-center overflow-hidden rounded-[18px] border p-3"
                 :class="activeSupportQRCode ? 'border-gray-200 bg-white' : 'border-dashed border-gray-300 bg-gray-50 dark:border-dark-600 dark:bg-dark-800'"
               >
                 <img
