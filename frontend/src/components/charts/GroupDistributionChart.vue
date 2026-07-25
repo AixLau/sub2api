@@ -35,8 +35,19 @@
       <LoadingSpinner />
     </div>
     <div v-else-if="displayGroupStats.length > 0 && chartData" class="flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
-      <div class="h-48 w-48 shrink-0">
+      <div class="relative h-48 w-48 shrink-0">
         <Doughnut :data="chartData" :options="doughnutOptions" />
+        <div
+          data-testid="group-ring-center"
+          class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center"
+        >
+          <strong class="font-mono text-lg font-semibold tabular-nums text-gray-900 dark:text-white">
+            {{ chartCenterValue }}
+          </strong>
+          <span class="mt-1 text-[10px] font-medium text-gray-500 dark:text-gray-400">
+            {{ chartCenterLabel }}
+          </span>
+        </div>
       </div>
       <div class="max-h-48 w-full min-w-0 flex-1 overflow-auto">
         <table class="w-full text-xs">
@@ -186,16 +197,16 @@ const toggleBreakdown = async (type: string, id: number | string) => {
 }
 
 const chartColors = [
-  '#3b82f6',
-  '#10b981',
-  '#f59e0b',
-  '#ef4444',
-  '#8b5cf6',
-  '#ec4899',
-  '#14b8a6',
-  '#f97316',
-  '#6366f1',
-  '#84cc16'
+  '#4f7cff',
+  '#20d9a0',
+  '#ffb84d',
+  '#ff6174',
+  '#8b6eff',
+  '#28c7c0',
+  '#f377c5',
+  '#ff8d67',
+  '#6e8cff',
+  '#8bd450'
 ]
 
 const displayGroupStats = computed(() => {
@@ -214,15 +225,37 @@ const chartData = computed(() => {
       {
         data: displayGroupStats.value.map((g) => toFiniteNumber(effectiveMetric.value === 'actual_cost' ? g.actual_cost : g.total_tokens)),
         backgroundColor: chartColors.slice(0, displayGroupStats.value.length),
-        borderWidth: 0
+        borderWidth: 0,
+        borderRadius: 8,
+        spacing: 2,
+        hoverOffset: 4
       }
     ]
   }
 })
 
+const chartTotal = computed(() => displayGroupStats.value.reduce((sum, item) => (
+  sum + toFiniteNumber(effectiveMetric.value === 'actual_cost' ? item.actual_cost : item.total_tokens)
+), 0))
+const chartCenterValue = computed(() => effectiveMetric.value === 'actual_cost'
+  ? `$${formatCost(chartTotal.value)}`
+  : formatTokens(chartTotal.value))
+const chartCenterLabel = computed(() => effectiveMetric.value === 'actual_cost'
+  ? t('admin.dashboard.metricActualCost')
+  : t('admin.dashboard.metricTokens'))
+
 const doughnutOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
+  cutout: '72%',
+  rotation: -90,
+  layout: {
+    padding: 4
+  },
+  animation: {
+    duration: 700,
+    easing: 'easeOutQuart' as const
+  },
   plugins: {
     legend: {
       display: false

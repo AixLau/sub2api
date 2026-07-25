@@ -79,12 +79,20 @@ describe('GroupDistributionChart', () => {
     const chartData = JSON.parse(wrapper.find('.chart-data').text())
     expect(chartData.labels).toEqual(['group-a', 'group-b'])
     expect(chartData.datasets[0].data).toEqual([1200, 600])
+    expect(chartData.datasets[0]).toMatchObject({
+      borderRadius: 8,
+      spacing: 2,
+      hoverOffset: 4,
+    })
+    expect(wrapper.get('[data-testid="group-ring-center"]').text()).toContain('1.80K')
 
     const rows = wrapper.findAll('tbody tr')
     expect(rows[0].text()).toContain('group-a')
     expect(rows[1].text()).toContain('group-b')
 
     const options = (wrapper.vm as any).$?.setupState.doughnutOptions
+    expect(options.cutout).toBe('72%')
+    expect(options.animation.duration).toBe(700)
     const label = options.plugins.tooltip.callbacks.label({
       label: 'group-a',
       raw: 1200,

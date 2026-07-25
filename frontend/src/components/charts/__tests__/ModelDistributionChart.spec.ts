@@ -93,12 +93,20 @@ describe('ModelDistributionChart', () => {
     const chartData = JSON.parse(wrapper.find('.chart-data').text())
     expect(chartData.labels).toEqual(['model-a', 'model-b'])
     expect(chartData.datasets[0].data).toEqual([1000, 500])
+    expect(chartData.datasets[0]).toMatchObject({
+      borderRadius: 8,
+      spacing: 2,
+      hoverOffset: 4,
+    })
+    expect(wrapper.get('[data-testid="model-ring-center"]').text()).toContain('1.50K')
 
     const rows = wrapper.findAll('tbody tr')
     expect(rows[0].text()).toContain('model-a')
     expect(rows[1].text()).toContain('model-b')
 
     const options = (wrapper.vm as any).$?.setupState.doughnutOptions
+    expect(options.cutout).toBe('72%')
+    expect(options.animation.duration).toBe(700)
     const label = options.plugins.tooltip.callbacks.label({
       label: 'model-a',
       raw: 1000,
@@ -186,9 +194,10 @@ describe('ModelDistributionChart', () => {
       'Others',
     ])
     expect(chartData.datasets[0].data).toEqual([12, 8, 10])
-    expect(chartData.datasets[0].backgroundColor[0]).toBe('#3b82f6')
+    expect(chartData.datasets[0].backgroundColor[0]).toBe('#4f7cff')
     expect(chartData.datasets[0].backgroundColor[2]).toBe('#94a3b8')
     expect(chartData.datasets[0].backgroundColor[2]).not.toBe(chartData.datasets[0].backgroundColor[0])
+    expect(wrapper.get('[data-testid="ranking-ring-center"]').text()).toContain('$30.00')
 
     const rows = wrapper.findAll('tbody tr')
     expect(rows).toHaveLength(3)
