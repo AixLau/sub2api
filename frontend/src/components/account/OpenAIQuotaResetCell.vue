@@ -147,6 +147,10 @@ const props = defineProps<{
   account: Account
 }>()
 
+const emit = defineEmits<{
+  reset: []
+}>()
+
 const { t } = useI18n()
 
 // Visible only for OpenAI OAuth accounts.
@@ -303,6 +307,7 @@ const confirmReset = async () => {
     resetMessage.value = t('admin.accounts.openaiQuotaReset.resetSuccess', {
       windows: result.windows_reset
     })
+    emit('reset')
   } catch (e) {
     error.value = extractErrorMessage(e)
   } finally {

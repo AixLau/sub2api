@@ -27,7 +27,19 @@ import (
 // stubQuotaAccountRepo 是多账号 AccountRepository stub，仅实现 GetByID。
 type stubQuotaAccountRepo struct {
 	AccountRepository
-	accounts map[int64]*Account
+	accounts            map[int64]*Account
+	clearRateLimitCalls []int64
+	clearRateLimitErr   error
+}
+
+type quotaRuntimeBlocker struct {
+	clearedIDs []int64
+}
+
+func (b *quotaRuntimeBlocker) BlockAccountScheduling(_ *Account, _ time.Time, _ string) {}
+
+func (b *quotaRuntimeBlocker) ClearAccountSchedulingBlock(accountID int64) {
+	b.clearedIDs = append(b.clearedIDs, accountID)
 }
 
 func (r *stubQuotaAccountRepo) GetByID(_ context.Context, id int64) (*Account, error) {
@@ -44,6 +56,21 @@ func (r *stubQuotaAccountRepo) UpdateCredentials(_ context.Context, id int64, cr
 		return fmt.Errorf("account %d not found", id)
 	}
 	acc.Credentials = credentials
+	return nil
+}
+
+func (r *stubQuotaAccountRepo) ClearRateLimit(_ context.Context, id int64) error {
+	r.clearRateLimitCalls = append(r.clearRateLimitCalls, id)
+	if r.clearRateLimitErr != nil {
+		return r.clearRateLimitErr
+	}
+	acc, ok := r.accounts[id]
+	if !ok {
+		return fmt.Errorf("account %d not found", id)
+	}
+	acc.RateLimitedAt = nil
+	acc.RateLimitResetAt = nil
+	acc.OverloadUntil = nil
 	return nil
 }
 
@@ -174,6 +201,82 @@ func TestResetCreditShadowRejected(t *testing.T) {
 	// 外审 F6:必须是结构化 409(而非裸 error→500)。
 	require.Equal(t, http.StatusConflict, infraerrors.Code(err),
 		"shadow ResetCredit 应映射为 409 Conflict 而非 500")
+}
+
+func TestResetCreditSuccessClearsLocal429State(t *testing.T) {
+	now := time.Now()
+	resetAt := now.Add(time.Hour)
+	overloadUntil := now.Add(5 * time.Minute)
+	account := &Account{
+		ID:               201,
+		Platform:         PlatformOpenAI,
+		Type:             AccountTypeOAuth,
+		RateLimitedAt:    &now,
+		RateLimitResetAt: &resetAt,
+		OverloadUntil:    &overloadUntil,
+		Credentials: map[string]any{
+			"chatgpt_account_id": "account-reset-local-state",
+		},
+	}
+	repo := &stubQuotaAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	tokenCache := &stubQuotaTokenCache{tokens: map[string]string{
+		OpenAITokenCacheKey(account): "fake-token",
+	}}
+	tokenProvider := NewOpenAITokenProvider(repo, tokenCache, nil)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"code":"ok","windows_reset":2}`))
+	}))
+	defer srv.Close()
+
+	blocker := &quotaRuntimeBlocker{}
+	svc := NewOpenAIQuotaService(repo, nil, tokenProvider, newQuotaRedirectingFactory(srv))
+	svc.runtimeBlocker = blocker
+
+	result, err := svc.ResetCredit(context.Background(), account.ID)
+	require.NoError(t, err)
+	require.Equal(t, 2, result.WindowsReset)
+	require.Equal(t, []int64{account.ID}, repo.clearRateLimitCalls)
+	require.Nil(t, account.RateLimitedAt)
+	require.Nil(t, account.RateLimitResetAt)
+	require.Nil(t, account.OverloadUntil)
+	require.Equal(t, []int64{account.ID}, blocker.clearedIDs)
+}
+
+func TestResetCreditUpstreamFailurePreservesLocal429State(t *testing.T) {
+	now := time.Now()
+	resetAt := now.Add(time.Hour)
+	account := &Account{
+		ID:               202,
+		Platform:         PlatformOpenAI,
+		Type:             AccountTypeOAuth,
+		RateLimitedAt:    &now,
+		RateLimitResetAt: &resetAt,
+		Credentials: map[string]any{
+			"chatgpt_account_id": "account-reset-upstream-failure",
+		},
+	}
+	repo := &stubQuotaAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	tokenCache := &stubQuotaTokenCache{tokens: map[string]string{
+		OpenAITokenCacheKey(account): "fake-token",
+	}}
+	tokenProvider := NewOpenAITokenProvider(repo, tokenCache, nil)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":"still rate limited"}`))
+	}))
+	defer srv.Close()
+
+	blocker := &quotaRuntimeBlocker{}
+	svc := NewOpenAIQuotaService(repo, nil, tokenProvider, newQuotaRedirectingFactory(srv))
+	svc.runtimeBlocker = blocker
+
+	_, err := svc.ResetCredit(context.Background(), account.ID)
+	require.Error(t, err)
+	require.Empty(t, repo.clearRateLimitCalls)
+	require.NotNil(t, account.RateLimitedAt)
+	require.NotNil(t, account.RateLimitResetAt)
+	require.Empty(t, blocker.clearedIDs)
 }
 
 func TestResetCreditAgentIdentityUsesAssertionAndRecoversInvalidTaskOnce(t *testing.T) {

@@ -117,6 +117,7 @@ type OpenAIQuotaService struct {
 	proxyRepo            ProxyRepository
 	tokenProvider        *OpenAITokenProvider
 	privacyClientFactory PrivacyClientFactory
+	runtimeBlocker       AccountRuntimeBlocker
 	agentIdentityTaskMu  sync.Mutex
 	agentIdentityWS      agentIdentityWSConnectionInvalidator
 }
@@ -316,6 +317,17 @@ func (s *OpenAIQuotaService) ResetCredit(ctx context.Context, accountID int64) (
 		"code", payload.Code,
 		"windows_reset", payload.WindowsReset,
 	)
+	// A successful upstream reset makes the persisted global 429 cooldown stale.
+	// Clear it immediately so both repository-backed scheduling and the gateway's
+	// in-memory fast path can select the account again.
+	if err := s.accountRepo.ClearRateLimit(ctx, accountID); err != nil {
+		// The credit has already been consumed, so returning an error could cause a
+		// retry to consume another credit. Preserve the upstream success and surface
+		// the reconciliation failure through logs instead.
+		slog.Error("openai_quota_reset_local_rate_limit_clear_failed", "account_id", accountID, "error", err)
+	} else if s.runtimeBlocker != nil {
+		s.runtimeBlocker.ClearAccountSchedulingBlock(accountID)
+	}
 	return &payload, nil
 }
 
