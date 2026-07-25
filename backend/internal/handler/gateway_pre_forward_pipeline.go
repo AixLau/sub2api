@@ -93,6 +93,7 @@ func (h *GatewayHandler) EnterGatewayPreForwardPipeline(c *gin.Context, meta mod
 			} else {
 				var sizeErr *service.RequestBodyTooLargeError
 				if errors.As(err, &sizeErr) {
+					markOpsRequestBodyTooLarge(c, sizeErr.Limit, nil, false)
 					writeGatewayPreForwardEntrypointError(c, meta.Protocol, http.StatusRequestEntityTooLarge, "request_body_too_large", buildBodyTooLargeMessage(sizeErr.Limit))
 				} else {
 					writeGatewayPreForwardEntrypointError(c, meta.Protocol, http.StatusBadRequest, "invalid_request_error", err.Error())
