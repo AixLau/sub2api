@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"net/url"
@@ -20,9 +21,600 @@ const (
 	maxToolResultTextStringRunes            = ModerationChunkMaxRunes + (ModerationChunkMaxCount-1)*ModerationChunkStride
 	maxToolResultTextTotalRunes             = maxToolResultTextStringRunes
 	maxToolResultObjectKeys                 = 8192
+	maxToolResultScannedObjectKeys          = 16 * 1024
 	maxBase64DecodeInputBytes               = 256 * 1024
 	maxBase64DecodeOutputBytes              = 128 * 1024
+	maxResponsesContentDepth                = 64
+	maxResponsesJSONDepth                   = maxResponsesContentDepth + 8
+	maxResponsesScanNodes                   = 16 * 1024
+	maxResponsesContentStrings              = maxToolResultTextStrings
+	maxResponsesContentRunes                = maxToolResultTextTotalRunes
+	maxModerationCollectedImages            = 2048
+	minResponsesScanWorkBytes               = 8 * 1024 * 1024
+	maxResponsesScanWorkBytes               = 64 * 1024 * 1024
+	responsesScanWorkBodyMultiplier         = 4
 )
+
+type responsesObjectField uint8
+
+const (
+	responsesFieldType responsesObjectField = iota
+	responsesFieldRole
+	responsesFieldContent
+	responsesFieldOutput
+	responsesFieldArguments
+	responsesFieldInput
+	responsesFieldParameters
+	responsesFieldText
+	responsesFieldRefusal
+	responsesFieldImageURL
+	responsesFieldImageURLURL
+	responsesFieldURL
+	responsesFieldSource
+	responsesFieldSourceURL
+	responsesFieldSourceMediaType
+	responsesFieldSourceMediaTypeCamel
+	responsesFieldSourceData
+	responsesFieldMediaType
+	responsesFieldMimeType
+	responsesFieldMimeTypeCamel
+	responsesFieldData
+	responsesFieldBase64
+	responsesFieldFilename
+	responsesFieldFileName
+	responsesFieldFileID
+	responsesFieldInstructions
+	responsesFieldDeveloper
+	responsesFieldSystem
+	responsesFieldTools
+	responsesFieldToolChoice
+	responsesFieldResponseFormat
+	responsesFieldTextFormat
+	responsesFieldName
+	responsesFieldCount
+)
+
+type responsesObjectFieldMask uint64
+
+const (
+	responsesAllObjectFields  responsesObjectFieldMask = (1 << responsesFieldCount) - 1
+	responsesRootObjectFields responsesObjectFieldMask = 1<<responsesFieldInput |
+		1<<responsesFieldInstructions |
+		1<<responsesFieldDeveloper |
+		1<<responsesFieldSystem |
+		1<<responsesFieldTools |
+		1<<responsesFieldToolChoice |
+		1<<responsesFieldResponseFormat |
+		1<<responsesFieldTextFormat
+	responsesContentExtractionObjectFields responsesObjectFieldMask = 1<<responsesFieldType |
+		1<<responsesFieldContent |
+		1<<responsesFieldText |
+		1<<responsesFieldRefusal |
+		1<<responsesFieldImageURL |
+		1<<responsesFieldImageURLURL |
+		1<<responsesFieldURL |
+		1<<responsesFieldSourceURL |
+		1<<responsesFieldSourceMediaType |
+		1<<responsesFieldSourceMediaTypeCamel |
+		1<<responsesFieldSourceData |
+		1<<responsesFieldMediaType |
+		1<<responsesFieldMimeType |
+		1<<responsesFieldMimeTypeCamel |
+		1<<responsesFieldData |
+		1<<responsesFieldBase64 |
+		1<<responsesFieldFilename |
+		1<<responsesFieldFileName |
+		1<<responsesFieldFileID
+	responsesContentValidationObjectFields = responsesContentExtractionObjectFields |
+		1<<responsesFieldSource |
+		1<<responsesFieldInput |
+		1<<responsesFieldName
+	responsesMessageBaseObjectFields responsesObjectFieldMask = 1<<responsesFieldContent |
+		1<<responsesFieldText |
+		1<<responsesFieldFilename |
+		1<<responsesFieldFileName |
+		1<<responsesFieldFileID
+	responsesMessageAmbientObjectFields responsesObjectFieldMask = 1<<responsesFieldContent |
+		1<<responsesFieldText
+	responsesFileMIMEObjectFields responsesObjectFieldMask = 1<<responsesFieldMimeType |
+		1<<responsesFieldMimeTypeCamel
+	responsesToolOutputObjectFields responsesObjectFieldMask = 1<<responsesFieldContent |
+		1<<responsesFieldOutput
+	responsesToolCallObjectFields responsesObjectFieldMask = 1<<responsesFieldArguments |
+		1<<responsesFieldInput |
+		1<<responsesFieldParameters
+)
+
+// responsesObjectView preserves gjson.Get's first-match behavior while making
+// all hot-path field reads share one object traversal. Full-path fields have
+// independent seen bits because duplicate containers may satisfy different
+// nested paths.
+type responsesObjectView struct {
+	values [responsesFieldCount]gjson.Result
+	seen   uint64
+}
+
+func newResponsesObjectView(value gjson.Result) responsesObjectView {
+	var view responsesObjectView
+	view.addFields(value, responsesAllObjectFields)
+	return view
+}
+
+func newResponsesObjectViewForFields(value gjson.Result, fields responsesObjectFieldMask) responsesObjectView {
+	var view responsesObjectView
+	view.addFields(value, fields)
+	return view
+}
+
+func (view *responsesObjectView) addFields(value gjson.Result, fields responsesObjectFieldMask) {
+	if view == nil || fields == 0 {
+		return
+	}
+	if !value.IsObject() {
+		return
+	}
+	// The request has already passed gjson.ValidBytes. Walk the validated raw
+	// object so ignored escaped strings are skipped without being unescaped;
+	// gjson.ForEach eagerly decodes every string before invoking its callback.
+	raw := value.Raw
+	index := 0
+	for index < len(raw) && raw[index] != '{' {
+		index++
+	}
+	index++
+	for index < len(raw) {
+		for index < len(raw) && (raw[index] <= ' ' || raw[index] == ',') {
+			index++
+		}
+		if index >= len(raw) || raw[index] == '}' {
+			break
+		}
+		keyStart := index
+		keyEnd, keyEscaped := skipResponsesJSONString(raw, keyStart)
+		if !responsesJSONStringClosed(raw, keyStart, keyEnd) {
+			break
+		}
+		key := raw[keyStart+1 : keyEnd-1]
+		if keyEscaped {
+			key = gjson.Parse(raw[keyStart:keyEnd]).String()
+		}
+		index = keyEnd
+		for index < len(raw) && (raw[index] <= ' ' || raw[index] == ':') {
+			index++
+		}
+		valueStart := index
+		valueEnd, valueEscaped, valueComplete := skipResponsesJSONValue(raw, valueStart)
+		if !valueComplete || valueEnd <= valueStart {
+			break
+		}
+		index = valueEnd
+		remaining := responsesObjectViewFieldMask(key) & fields &^ responsesObjectFieldMask(view.seen)
+		if remaining == 0 {
+			continue
+		}
+		nested := responsesObjectFieldMask(0)
+		switch key {
+		case "text":
+			nested = 1 << responsesFieldTextFormat
+		case "image_url":
+			nested = 1 << responsesFieldImageURLURL
+		case "source":
+			nested = 1<<responsesFieldSourceURL |
+				1<<responsesFieldSourceMediaType |
+				1<<responsesFieldSourceMediaTypeCamel |
+				1<<responsesFieldSourceData
+		}
+		if remaining&^nested == 0 && raw[valueStart] != '{' {
+			continue
+		}
+		item := responsesResultFromRaw(raw[valueStart:valueEnd], valueEscaped)
+		switch key {
+		case "type":
+			view.set(responsesFieldType, item)
+		case "role":
+			view.set(responsesFieldRole, item)
+		case "content":
+			view.set(responsesFieldContent, item)
+		case "output":
+			view.set(responsesFieldOutput, item)
+		case "arguments":
+			view.set(responsesFieldArguments, item)
+		case "input":
+			view.set(responsesFieldInput, item)
+		case "parameters":
+			view.set(responsesFieldParameters, item)
+		case "text":
+			if remaining&(1<<responsesFieldText) != 0 {
+				view.set(responsesFieldText, item)
+			}
+			view.setTextNested(item, remaining)
+		case "refusal":
+			view.set(responsesFieldRefusal, item)
+		case "image_url":
+			if remaining&(1<<responsesFieldImageURL) != 0 {
+				view.set(responsesFieldImageURL, item)
+			}
+			view.setImageURLNested(item, remaining)
+		case "url":
+			view.set(responsesFieldURL, item)
+		case "source":
+			if remaining&(1<<responsesFieldSource) != 0 {
+				view.set(responsesFieldSource, item)
+			}
+			view.setSourceNested(item, remaining)
+		case "media_type":
+			view.set(responsesFieldMediaType, item)
+		case "mime_type":
+			view.set(responsesFieldMimeType, item)
+		case "mimeType":
+			view.set(responsesFieldMimeTypeCamel, item)
+		case "data":
+			view.set(responsesFieldData, item)
+		case "base64":
+			view.set(responsesFieldBase64, item)
+		case "filename":
+			view.set(responsesFieldFilename, item)
+		case "file_name":
+			view.set(responsesFieldFileName, item)
+		case "file_id":
+			view.set(responsesFieldFileID, item)
+		case "instructions":
+			view.set(responsesFieldInstructions, item)
+		case "developer":
+			view.set(responsesFieldDeveloper, item)
+		case "system":
+			view.set(responsesFieldSystem, item)
+		case "tools":
+			view.set(responsesFieldTools, item)
+		case "tool_choice":
+			view.set(responsesFieldToolChoice, item)
+		case "response_format":
+			view.set(responsesFieldResponseFormat, item)
+		case "name":
+			view.set(responsesFieldName, item)
+		}
+		if fields&^responsesObjectFieldMask(view.seen) == 0 {
+			return
+		}
+	}
+}
+
+func responsesObjectViewFieldMask(name string) responsesObjectFieldMask {
+	switch name {
+	case "type":
+		return 1 << responsesFieldType
+	case "role":
+		return 1 << responsesFieldRole
+	case "content":
+		return 1 << responsesFieldContent
+	case "output":
+		return 1 << responsesFieldOutput
+	case "arguments":
+		return 1 << responsesFieldArguments
+	case "input":
+		return 1 << responsesFieldInput
+	case "parameters":
+		return 1 << responsesFieldParameters
+	case "text":
+		return 1<<responsesFieldText | 1<<responsesFieldTextFormat
+	case "refusal":
+		return 1 << responsesFieldRefusal
+	case "image_url":
+		return 1<<responsesFieldImageURL | 1<<responsesFieldImageURLURL
+	case "url":
+		return 1 << responsesFieldURL
+	case "source":
+		return 1<<responsesFieldSource |
+			1<<responsesFieldSourceURL |
+			1<<responsesFieldSourceMediaType |
+			1<<responsesFieldSourceMediaTypeCamel |
+			1<<responsesFieldSourceData
+	case "media_type":
+		return 1 << responsesFieldMediaType
+	case "mime_type":
+		return 1 << responsesFieldMimeType
+	case "mimeType":
+		return 1 << responsesFieldMimeTypeCamel
+	case "data":
+		return 1 << responsesFieldData
+	case "base64":
+		return 1 << responsesFieldBase64
+	case "filename":
+		return 1 << responsesFieldFilename
+	case "file_name":
+		return 1 << responsesFieldFileName
+	case "file_id":
+		return 1 << responsesFieldFileID
+	case "instructions":
+		return 1 << responsesFieldInstructions
+	case "developer":
+		return 1 << responsesFieldDeveloper
+	case "system":
+		return 1 << responsesFieldSystem
+	case "tools":
+		return 1 << responsesFieldTools
+	case "tool_choice":
+		return 1 << responsesFieldToolChoice
+	case "response_format":
+		return 1 << responsesFieldResponseFormat
+	case "name":
+		return 1 << responsesFieldName
+	default:
+		return 0
+	}
+}
+
+func skipResponsesJSONString(raw string, start int) (int, bool) {
+	if start < 0 || start >= len(raw) || raw[start] != '"' {
+		return start, false
+	}
+	escaped := false
+	search := start + 1
+	for search < len(raw) {
+		relative := strings.IndexByte(raw[search:], '"')
+		if relative < 0 {
+			return len(raw), escaped || strings.IndexByte(raw[search:], '\\') >= 0
+		}
+		quote := search + relative
+		if !escaped && strings.IndexByte(raw[search:quote], '\\') >= 0 {
+			escaped = true
+		}
+		backslashes := 0
+		for index := quote - 1; index > start && raw[index] == '\\'; index-- {
+			backslashes++
+		}
+		if backslashes%2 == 0 {
+			return quote + 1, escaped
+		}
+		escaped = true
+		search = quote + 1
+	}
+	return len(raw), escaped
+}
+
+func responsesJSONStringClosed(raw string, start int, end int) bool {
+	return start >= 0 && end >= start+2 && end <= len(raw) && raw[start] == '"' && raw[end-1] == '"'
+}
+
+func skipResponsesJSONValue(raw string, start int) (int, bool, bool) {
+	if start < 0 || start >= len(raw) {
+		return start, false, false
+	}
+	if raw[start] == '"' {
+		end, escaped := skipResponsesJSONString(raw, start)
+		return end, escaped, responsesJSONStringClosed(raw, start, end)
+	}
+	if raw[start] != '{' && raw[start] != '[' {
+		index := start
+		for index < len(raw) && raw[index] > ' ' && raw[index] != ',' && raw[index] != '}' && raw[index] != ']' {
+			index++
+		}
+		return index, false, index > start
+	}
+	depth := 0
+	for index := start; index < len(raw); index++ {
+		switch raw[index] {
+		case '"':
+			end, _ := skipResponsesJSONString(raw, index)
+			if !responsesJSONStringClosed(raw, index, end) {
+				return len(raw), false, false
+			}
+			index = end - 1
+		case '{', '[':
+			depth++
+		case '}', ']':
+			depth--
+			if depth == 0 {
+				return index + 1, false, true
+			}
+			if depth < 0 {
+				return index, false, false
+			}
+		}
+	}
+	return len(raw), false, false
+}
+
+func skipJSONStringBytes(raw []byte, start int) int {
+	if start < 0 || start >= len(raw) || raw[start] != '"' {
+		return start
+	}
+	search := start + 1
+	for search < len(raw) {
+		relative := bytes.IndexByte(raw[search:], '"')
+		if relative < 0 {
+			return len(raw)
+		}
+		quote := search + relative
+		backslashes := 0
+		for index := quote - 1; index > start && raw[index] == '\\'; index-- {
+			backslashes++
+		}
+		if backslashes%2 == 0 {
+			return quote + 1
+		}
+		search = quote + 1
+	}
+	return len(raw)
+}
+
+// GJSON's validators recurse through nested containers. Bound depth with an
+// iterative scan first so adversarial JSON cannot grow the validator stack.
+func jsonBytesNestingWithinLimit(body []byte, limit int) bool {
+	if limit <= 0 {
+		return false
+	}
+	depth := 0
+	for index := 0; index < len(body); index++ {
+		switch body[index] {
+		case '"':
+			index = skipJSONStringBytes(body, index) - 1
+		case '{', '[':
+			depth++
+			if depth > limit {
+				return false
+			}
+		case '}', ']':
+			if depth > 0 {
+				depth--
+			}
+		}
+	}
+	return true
+}
+
+func jsonStringNestingWithinLimit(body string, limit int) bool {
+	if limit <= 0 {
+		return false
+	}
+	depth := 0
+	for index := 0; index < len(body); index++ {
+		switch body[index] {
+		case '"':
+			end, _ := skipResponsesJSONString(body, index)
+			index = end - 1
+		case '{', '[':
+			depth++
+			if depth > limit {
+				return false
+			}
+		case '}', ']':
+			if depth > 0 {
+				depth--
+			}
+		}
+	}
+	return true
+}
+
+func responsesResultFromRaw(raw string, escaped bool) gjson.Result {
+	if raw == "" {
+		return gjson.Result{}
+	}
+	switch raw[0] {
+	case '{', '[':
+		return gjson.Result{Type: gjson.JSON, Raw: raw}
+	case '"':
+		if !escaped && responsesJSONStringClosed(raw, 0, len(raw)) {
+			return gjson.Result{Type: gjson.String, Raw: raw, Str: raw[1 : len(raw)-1]}
+		}
+	}
+	return gjson.Parse(raw)
+}
+
+func (view *responsesObjectView) set(field responsesObjectField, value gjson.Result) {
+	bit := uint64(1) << field
+	if view.seen&bit != 0 {
+		return
+	}
+	view.values[field] = value
+	view.seen |= bit
+}
+
+func (view *responsesObjectView) setTextNested(container gjson.Result, fields responsesObjectFieldMask) {
+	if fields&(1<<responsesFieldTextFormat) == 0 || view.has(responsesFieldTextFormat) || !container.IsObject() {
+		return
+	}
+	if item := container.Get("format"); item.Exists() {
+		view.set(responsesFieldTextFormat, item)
+	}
+}
+
+func (view *responsesObjectView) setImageURLNested(container gjson.Result, fields responsesObjectFieldMask) {
+	if fields&(1<<responsesFieldImageURLURL) == 0 || view.has(responsesFieldImageURLURL) || !container.IsObject() {
+		return
+	}
+	if item := container.Get("url"); item.Exists() {
+		view.set(responsesFieldImageURLURL, item)
+	}
+}
+
+func (view *responsesObjectView) setSourceNested(container gjson.Result, fields responsesObjectFieldMask) {
+	if !container.IsObject() {
+		return
+	}
+	for _, field := range []struct {
+		name  string
+		field responsesObjectField
+	}{
+		{name: "url", field: responsesFieldSourceURL},
+		{name: "media_type", field: responsesFieldSourceMediaType},
+		{name: "mediaType", field: responsesFieldSourceMediaTypeCamel},
+		{name: "data", field: responsesFieldSourceData},
+	} {
+		if fields&(1<<field.field) == 0 || view.has(field.field) {
+			continue
+		}
+		if item := container.Get(field.name); item.Exists() {
+			view.set(field.field, item)
+		}
+	}
+}
+
+func (view *responsesObjectView) has(field responsesObjectField) bool {
+	return view.seen&(uint64(1)<<field) != 0
+}
+
+func (view *responsesObjectView) get(field responsesObjectField) gjson.Result {
+	return view.values[field]
+}
+
+func (view *responsesObjectView) getByName(name string) gjson.Result {
+	switch name {
+	case "type":
+		return view.get(responsesFieldType)
+	case "role":
+		return view.get(responsesFieldRole)
+	case "content":
+		return view.get(responsesFieldContent)
+	case "output":
+		return view.get(responsesFieldOutput)
+	case "arguments":
+		return view.get(responsesFieldArguments)
+	case "input":
+		return view.get(responsesFieldInput)
+	case "parameters":
+		return view.get(responsesFieldParameters)
+	case "text":
+		return view.get(responsesFieldText)
+	case "refusal":
+		return view.get(responsesFieldRefusal)
+	case "image_url":
+		return view.get(responsesFieldImageURL)
+	case "url":
+		return view.get(responsesFieldURL)
+	case "source":
+		return view.get(responsesFieldSource)
+	case "media_type":
+		return view.get(responsesFieldMediaType)
+	case "mime_type":
+		return view.get(responsesFieldMimeType)
+	case "mimeType":
+		return view.get(responsesFieldMimeTypeCamel)
+	case "data":
+		return view.get(responsesFieldData)
+	case "base64":
+		return view.get(responsesFieldBase64)
+	case "filename":
+		return view.get(responsesFieldFilename)
+	case "file_name":
+		return view.get(responsesFieldFileName)
+	case "file_id":
+		return view.get(responsesFieldFileID)
+	case "name":
+		return view.get(responsesFieldName)
+	default:
+		return gjson.Result{}
+	}
+}
+
+func newResponsesRootView(root gjson.Result, auditScope string) responsesObjectView {
+	fields := responsesObjectFieldMask(1 << responsesFieldInput)
+	if !shouldIncludeTopLevelModelContext(auditScope) {
+		return newResponsesObjectViewForFields(root, fields)
+	}
+	return newResponsesObjectViewForFields(root, responsesRootObjectFields)
+}
 
 func ExtractContentModerationText(protocol string, body []byte) string {
 	return ExtractContentModerationInput(protocol, body).Text
@@ -35,6 +627,9 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 	if len(body) == 0 {
 		return ContentModerationInput{}
 	}
+	if protocol == ContentModerationProtocolOpenAIResponses && !jsonBytesNestingWithinLimit(body, maxResponsesJSONDepth) {
+		return incompleteContentModerationInput("max_depth")
+	}
 	if !gjson.ValidBytes(body) {
 		return incompleteContentModerationInput("invalid_json")
 	}
@@ -46,7 +641,17 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 	var images []string
 	var sources []ContentModerationInputSource
 	toolState := &toolResultTextState{}
-	validateModerationProtocolShape(protocol, body, auditScope, toolState)
+	var validationScan *moderationScanBudget
+	if protocol == ContentModerationProtocolOpenAIResponses {
+		validationScan = newModerationScanBudget(len(body), toolState)
+		toolState.scanBudget = newModerationScanBudget(len(body), toolState)
+	}
+	root := gjson.ParseBytes(body)
+	var responsesRoot responsesObjectView
+	if protocol == ContentModerationProtocolOpenAIResponses {
+		responsesRoot = newResponsesRootView(root, auditScope)
+	}
+	validateModerationProtocolShape(protocol, root, &responsesRoot, auditScope, toolState, validationScan)
 	switch protocol {
 	case ContentModerationProtocolAnthropicMessages, ContentModerationProtocolOpenAIMessages:
 		collectAnthropicInput(body, &parts, &images, &sources, toolState, auditScope)
@@ -54,8 +659,8 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 		collectOpenAIChatTopLevelModelContext(body, &parts, &images, &sources, toolState, auditScope)
 		collectOpenAIChatMessages(gjson.GetBytes(body, "messages"), &parts, &images, &sources, toolState, auditScope)
 	case ContentModerationProtocolOpenAIResponses:
-		collectResponsesTopLevelModelContext(body, &parts, &images, &sources, toolState, auditScope)
-		collectResponsesInput(gjson.GetBytes(body, "input"), &parts, &images, &sources, toolState, auditScope)
+		collectResponsesTopLevelModelContext(&responsesRoot, &parts, &images, &sources, toolState, auditScope)
+		collectResponsesInput(responsesRoot.get(responsesFieldInput), &parts, &images, &sources, toolState, auditScope)
 	case ContentModerationProtocolGemini:
 		collectGeminiInput(body, &parts, &images, &sources, toolState, auditScope)
 	case ContentModerationProtocolOpenAIImages:
@@ -87,6 +692,9 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 	// Text is the bounded legacy/display projection. Extraction retains the
 	// complete source stream used by incremental moderation and chunking.
 	out.Text = trimRunes(out.Text, maxModerationInputRunes)
+	if protocol == ContentModerationProtocolOpenAIResponses {
+		detachContentModerationInputStrings(&out)
+	}
 	return out
 }
 
@@ -118,6 +726,26 @@ func legacyContentModerationSources(sources []ContentModerationInputSource) []Co
 	return out
 }
 
+func detachContentModerationInputStrings(input *ContentModerationInput) {
+	if input == nil {
+		return
+	}
+	input.Text = strings.Clone(input.Text)
+	for index := range input.Images {
+		input.Images[index] = strings.Clone(input.Images[index])
+	}
+	for index := range input.Sources {
+		input.Sources[index].Source = strings.Clone(input.Sources[index].Source)
+		input.Sources[index].Role = strings.Clone(input.Sources[index].Role)
+		input.Sources[index].Text = strings.Clone(input.Sources[index].Text)
+	}
+	for index := range input.Extraction.Sources {
+		input.Extraction.Sources[index].Source = strings.Clone(input.Extraction.Sources[index].Source)
+		input.Extraction.Sources[index].Role = strings.Clone(input.Extraction.Sources[index].Role)
+		input.Extraction.Sources[index].Text = strings.Clone(input.Extraction.Sources[index].Text)
+	}
+}
+
 func incompleteContentModerationInput(reason string) ContentModerationInput {
 	reasons := []string{reason}
 	return ContentModerationInput{Extraction: ModerationExtraction{Complete: false, TruncateReasons: reasons}, Truncated: true, TruncateReasons: reasons}
@@ -138,8 +766,7 @@ func moderationExtractionFromInputSources(sources []ContentModerationInputSource
 	return extraction
 }
 
-func validateModerationProtocolShape(protocol string, body []byte, auditScope string, state *toolResultTextState) {
-	root := gjson.ParseBytes(body)
+func validateModerationProtocolShape(protocol string, root gjson.Result, responsesRoot *responsesObjectView, auditScope string, state *toolResultTextState, validationScan *moderationScanBudget) {
 	auditScope = normalizeContentModerationAuditScope(auditScope)
 	markUnsupported := func(value gjson.Result, allowed ...string) {
 		if !value.Exists() {
@@ -153,21 +780,38 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 		state.markTruncated("unsupported_required_value")
 	}
 	var validateContent func(gjson.Result)
+	var validateContentAtDepth func(gjson.Result, int)
+	validateContent = func(value gjson.Result) {
+		validateContentAtDepth(value, 0)
+	}
 	validateToolRoot := func(value gjson.Result) {
 		markUnsupported(value, "string", "array", "object")
 	}
-	validateContent = func(value gjson.Result) {
-		if !value.Exists() || value.Type == gjson.String {
+	validateContentAtDepth = func(value gjson.Result, depth int) {
+		if protocol == ContentModerationProtocolOpenAIResponses && depth > maxResponsesContentDepth {
+			state.markTruncated("max_depth")
+			return
+		}
+		if !value.Exists() {
+			return
+		}
+		if protocol == ContentModerationProtocolOpenAIResponses && !validationScan.consume(value) {
+			return
+		}
+		if value.Type == gjson.String {
 			return
 		}
 		if value.IsArray() {
 			value.ForEach(func(_, child gjson.Result) bool {
 				if child.Type != gjson.String && !child.IsArray() && !child.IsObject() {
+					if !validationScan.consumeNode() {
+						return false
+					}
 					state.markTruncated("unsupported_required_value")
 					return true
 				}
-				validateContent(child)
-				return true
+				validateContentAtDepth(child, depth+1)
+				return validationScan == nil || !validationScan.exhausted
 			})
 			return
 		}
@@ -175,11 +819,31 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 			state.markTruncated("unsupported_required_value")
 			return
 		}
-		typ := strings.ToLower(strings.TrimSpace(value.Get("type").String()))
+		get := value.Get
+		typ := strings.ToLower(strings.TrimSpace(get("type").String()))
+		if protocol == ContentModerationProtocolOpenAIResponses && typ != "input_file" && typ != "file" {
+			fields := newResponsesObjectViewForFields(value, responsesContentValidationObjectFields)
+			get = fields.getByName
+		}
+		contentPrevalidated := false
 		switch typ {
 		case "", "text", "input_text", "output_text", "refusal", "summary_text", "message", "image_url", "input_image", "image", "input_file", "file", "tool_result", "tool_use":
 		default:
-			if protocol != ContentModerationProtocolOpenAIResponses || !responsesContentValueHasModerationData(value) {
+			if protocol == ContentModerationProtocolOpenAIResponses {
+				depthStart := state.truncationReasonCount("max_depth")
+				scanStart := state.truncationReasonCount("max_scan_work")
+				validateContentAtDepth(get("content"), depth+1)
+				contentPrevalidated = true
+				if state.truncationReasonCount("max_depth") > depthStart ||
+					state.truncationReasonCount("max_scan_work") > scanStart {
+					return
+				}
+			}
+			start := state.truncationReasonCount("max_scan_work")
+			if protocol != ContentModerationProtocolOpenAIResponses || !responsesContentValueHasModerationData(value, validationScan) {
+				if state.truncationReasonCount("max_scan_work") > start {
+					return
+				}
 				state.markTruncated("unsupported_required_value")
 				return
 			}
@@ -194,25 +858,25 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 				state.markTruncated("unsupported_required_value")
 			}
 		}
-		recognizedUntyped := value.Get("text").Exists() || value.Get("content").Exists()
+		recognizedUntyped := get("text").Exists() || get("content").Exists()
 		for _, path := range []string{"image_url", "url", "source", "media_type", "mime_type", "mimeType", "data", "base64"} {
-			recognizedUntyped = recognizedUntyped || value.Get(path).Exists()
+			recognizedUntyped = recognizedUntyped || get(path).Exists()
 		}
 		if typ == "" && !recognizedUntyped {
 			state.markTruncated("unsupported_required_value")
 		}
-		if source := value.Get("source"); source.Exists() && !source.IsObject() {
+		if source := get("source"); source.Exists() && !source.IsObject() {
 			state.markTruncated("unsupported_required_value")
 		}
-		if imageURL := value.Get("image_url"); imageURL.Exists() && imageURL.Type != gjson.String && !imageURL.IsObject() {
+		if imageURL := get("image_url"); imageURL.Exists() && imageURL.Type != gjson.String && !imageURL.IsObject() {
 			state.markTruncated("unsupported_required_value")
 		}
-		if imageURL := value.Get("image_url"); imageURL.IsObject() {
+		if imageURL := get("image_url"); imageURL.IsObject() {
 			requirePresentString(imageURL.Get("url"))
 		} else if imageURL.Exists() {
 			requirePresentString(imageURL)
 		}
-		if source := value.Get("source"); source.IsObject() {
+		if source := get("source"); source.IsObject() {
 			for _, field := range []string{"type", "media_type", "mediaType", "data", "url"} {
 				requireString(source.Get(field))
 			}
@@ -228,54 +892,54 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 			}
 		}
 		for _, field := range []string{"url", "media_type", "mime_type", "mimeType", "data", "base64"} {
-			requireString(value.Get(field))
+			requireString(get(field))
 		}
 		for _, field := range []string{"filename", "file_name", "file_id", "mime_type", "mimeType"} {
-			requireString(value.Get(field))
+			requireString(get(field))
 		}
-		if text := value.Get("text"); text.Exists() && text.Type != gjson.String {
+		if text := get("text"); text.Exists() && text.Type != gjson.String {
 			state.markTruncated("unsupported_required_value")
 		}
-		if refusal := value.Get("refusal"); refusal.Exists() && refusal.Type != gjson.String {
+		if refusal := get("refusal"); refusal.Exists() && refusal.Type != gjson.String {
 			state.markTruncated("unsupported_required_value")
 		}
-		if content := value.Get("content"); content.Exists() {
+		if content := get("content"); content.Exists() {
 			if typ == "tool_result" {
 				validateToolRoot(content)
-			} else {
-				validateContent(content)
+			} else if !contentPrevalidated {
+				validateContentAtDepth(content, depth+1)
 			}
 		}
-		if typ == "tool_result" && !value.Get("content").Exists() {
+		if typ == "tool_result" && !get("content").Exists() {
 			state.markTruncated("unsupported_required_value")
 		}
 		if typ == "refusal" {
-			requirePresentString(value.Get("refusal"))
+			requirePresentString(get("refusal"))
 		}
 		if typ == "summary_text" {
-			requirePresentString(value.Get("text"))
+			requirePresentString(get("text"))
 		}
 		if typ == "tool_use" {
-			requirePresentString(value.Get("name"))
-			input := value.Get("input")
+			requirePresentString(get("name"))
+			input := get("input")
 			if !input.IsObject() {
 				state.markTruncated("unsupported_required_value")
 			}
 		}
-		if (typ == "image_url" || typ == "input_image") && !value.Get("image_url").Exists() {
+		if (typ == "image_url" || typ == "input_image") && !get("image_url").Exists() {
 			state.markTruncated("unsupported_required_value")
 		}
 		if typ == "image" {
 			mediaPaths := []string{"source", "image_url", "url", "data", "base64"}
 			hasMedia := false
 			for _, path := range mediaPaths {
-				hasMedia = hasMedia || value.Get(path).Exists()
+				hasMedia = hasMedia || get(path).Exists()
 			}
 			if !hasMedia {
 				state.markTruncated("unsupported_required_value")
 			}
 			for _, path := range []string{"url", "data", "base64"} {
-				if leaf := value.Get(path); leaf.Exists() {
+				if leaf := get(path); leaf.Exists() {
 					requirePresentString(leaf)
 				}
 			}
@@ -360,15 +1024,32 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 		}
 		validateMessages("messages")
 	case ContentModerationProtocolOpenAIResponses:
+		responseFields := responsesRoot
+		var fallbackResponseFields responsesObjectView
+		if responseFields == nil {
+			fallbackResponseFields = newResponsesObjectViewForFields(root, responsesRootObjectFields)
+			responseFields = &fallbackResponseFields
+		}
 		if shouldIncludeTopLevelModelContext(auditScope) {
-			for _, path := range []string{"instructions", "developer", "system", "tools", "tool_choice", "text.format", "response_format"} {
-				path := path
-				state.withValidationSource("responses."+path, func() {
-					validateToolRoot(root.Get(path))
+			for _, field := range []struct {
+				name  string
+				value gjson.Result
+			}{
+				{name: "instructions", value: responseFields.get(responsesFieldInstructions)},
+				{name: "developer", value: responseFields.get(responsesFieldDeveloper)},
+				{name: "system", value: responseFields.get(responsesFieldSystem)},
+				{name: "tools", value: responseFields.get(responsesFieldTools)},
+				{name: "tool_choice", value: responseFields.get(responsesFieldToolChoice)},
+				{name: "text.format", value: responseFields.get(responsesFieldTextFormat)},
+				{name: "response_format", value: responseFields.get(responsesFieldResponseFormat)},
+			} {
+				field := field
+				state.withValidationSource("responses."+field.name, func() {
+					validateToolRoot(field.value)
 				})
 			}
 		}
-		input := root.Get("input")
+		input := responseFields.get(responsesFieldInput)
 		markUnsupported(input, "string", "array", "object")
 		validateResponseItem := func(index string, item gjson.Result) {
 			if item.Type == gjson.String {
@@ -379,27 +1060,71 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 				return
 			}
 			typ := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
-			role := strings.ToLower(strings.TrimSpace(item.Get("role").String()))
+			role := ""
+			roleLoaded := false
+			if auditScope != ContentModerationAuditScopeAllContext {
+				toolItem := isResponsesToolItemType(typ)
+				if auditScope == ContentModerationAuditScopeUserOnly && toolItem {
+					return
+				}
+				if !toolItem {
+					role = strings.ToLower(strings.TrimSpace(item.Get("role").String()))
+					roleLoaded = true
+					if !shouldIncludeModerationRole(role, typ, auditScope) {
+						return
+					}
+				}
+			}
+			if !roleLoaded {
+				role = strings.ToLower(strings.TrimSpace(item.Get("role").String()))
+			}
 			if !shouldIncludeModerationRole(role, typ, auditScope) {
 				return
 			}
-			source := responsesInputItemSource(index, item)
-			state.withValidationSource(source, func() {
+			if !validationScan.consumeRaw(item) {
+				return
+			}
+			if (typ == "input_file" || typ == "file") && role != "tool" {
+				state.withLazyValidationSources(func() []string {
+					return responsesValidationItemSources(index, item, typ, role, validationScan)
+				}, func() {
+					validateContent(item.Get("content"))
+				})
+				return
+			}
+			fieldMask := responsesObjectFieldMask(1 << responsesFieldContent)
+			switch {
+			case isResponsesToolOutputType(typ) || role == "tool":
+				fieldMask = responsesToolOutputObjectFields
+			case isResponsesToolCallInputType(typ):
+				fieldMask = responsesToolCallObjectFields
+			case isResponsesKnownCallType(typ):
+				fieldMask = 0
+			}
+			fields := newResponsesObjectViewForFields(item, fieldMask)
+			state.withLazyValidationSources(func() []string {
+				return responsesValidationItemSources(index, item, typ, role, validationScan)
+			}, func() {
 				switch {
-				case isResponsesClientSuppliedToolOutputItem(item):
-					if !item.Get("output").Exists() && !item.Get("content").Exists() {
+				case isResponsesToolOutputType(typ) || role == "tool":
+					output := fields.get(responsesFieldOutput)
+					content := fields.get(responsesFieldContent)
+					if !output.Exists() && !content.Exists() {
 						state.markTruncated("unsupported_required_value")
 					}
-					validateToolRoot(item.Get("output"))
-					validateToolRoot(item.Get("content"))
-				case isResponsesFunctionOrToolCallItem(item):
-					if !item.Get("arguments").Exists() && !item.Get("input").Exists() && !item.Get("parameters").Exists() {
+					validateToolRoot(output)
+					validateToolRoot(content)
+				case isResponsesToolCallInputType(typ):
+					arguments := fields.get(responsesFieldArguments)
+					input := fields.get(responsesFieldInput)
+					parameters := fields.get(responsesFieldParameters)
+					if !arguments.Exists() && !input.Exists() && !parameters.Exists() {
 						state.markTruncated("unsupported_required_value")
 					}
-					validateToolRoot(item.Get("arguments"))
-					validateToolRoot(item.Get("input"))
-					validateToolRoot(item.Get("parameters"))
-				case isResponsesKnownCallItem(item):
+					validateToolRoot(arguments)
+					validateToolRoot(input)
+					validateToolRoot(parameters)
+				case isResponsesKnownCallType(typ):
 					validateToolRoot(item)
 				default:
 					switch typ {
@@ -411,22 +1136,40 @@ func validateModerationProtocolShape(protocol string, body []byte, auditScope st
 						// already fully representable by the known content schema,
 						// validate and scan it instead of treating the whole request
 						// as incomplete. Unknown direct content blocks remain strict.
-						if !isExtractableUnknownResponsesMessageEnvelope(item) {
+						content := fields.get(responsesFieldContent)
+						depthStart := state.truncationReasonCount("max_depth")
+						scanStart := state.truncationReasonCount("max_scan_work")
+						validateContent(content)
+						if state.truncationReasonCount("max_depth") > depthStart ||
+							state.truncationReasonCount("max_scan_work") > scanStart {
+							return
+						}
+						scanStart = state.truncationReasonCount("max_scan_work")
+						if !isExtractableUnknownResponsesMessageEnvelope(item, validationScan) {
+							if state.truncationReasonCount("max_scan_work") > scanStart {
+								return
+							}
 							state.markTruncated("unsupported_required_value")
 							return
 						}
+						return
 					}
-					validateContent(item.Get("content"))
+					validateContent(fields.get(responsesFieldContent))
 				}
 			})
 		}
 		if input.IsArray() {
 			input.ForEach(func(index, item gjson.Result) bool {
+				if !validationScan.consumeNode() {
+					return false
+				}
 				validateResponseItem(index.String(), item)
-				return true
+				return validationScan == nil || !validationScan.exhausted
 			})
 		} else if input.IsObject() {
-			validateResponseItem("0", input)
+			if validationScan.consumeNode() {
+				validateResponseItem("0", input)
+			}
 		}
 	case ContentModerationProtocolGemini:
 		if shouldIncludeTopLevelModelContext(auditScope) {
@@ -673,17 +1416,17 @@ func collectOpenAIChatTopLevelModelContext(body []byte, parts *[]string, images 
 	collectModelVisibleField(gjson.GetBytes(body, "response_format"), "openai_chat.response_format", "system", parts, images, sources, toolState)
 }
 
-func collectResponsesTopLevelModelContext(body []byte, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {
+func collectResponsesTopLevelModelContext(root *responsesObjectView, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {
 	if !shouldIncludeTopLevelModelContext(auditScope) {
 		return
 	}
-	collectModelVisibleField(gjson.GetBytes(body, "instructions"), "responses.instructions", "developer", parts, images, sources, toolState)
-	collectModelVisibleField(gjson.GetBytes(body, "developer"), "responses.developer", "developer", parts, images, sources, toolState)
-	collectModelVisibleField(gjson.GetBytes(body, "system"), "responses.system", "system", parts, images, sources, toolState)
-	collectModelVisibleField(gjson.GetBytes(body, "tools"), "responses.tools", "system", parts, images, sources, toolState)
-	collectModelVisibleField(gjson.GetBytes(body, "tool_choice"), "responses.tool_choice", "system", parts, images, sources, toolState)
-	collectModelVisibleField(gjson.GetBytes(body, "text.format"), "responses.text.format", "system", parts, images, sources, toolState)
-	collectModelVisibleField(gjson.GetBytes(body, "response_format"), "responses.response_format", "system", parts, images, sources, toolState)
+	collectModelVisibleField(root.get(responsesFieldInstructions), "responses.instructions", "developer", parts, images, sources, toolState)
+	collectModelVisibleField(root.get(responsesFieldDeveloper), "responses.developer", "developer", parts, images, sources, toolState)
+	collectModelVisibleField(root.get(responsesFieldSystem), "responses.system", "system", parts, images, sources, toolState)
+	collectModelVisibleField(root.get(responsesFieldTools), "responses.tools", "system", parts, images, sources, toolState)
+	collectModelVisibleField(root.get(responsesFieldToolChoice), "responses.tool_choice", "system", parts, images, sources, toolState)
+	collectModelVisibleField(root.get(responsesFieldTextFormat), "responses.text.format", "system", parts, images, sources, toolState)
+	collectModelVisibleField(root.get(responsesFieldResponseFormat), "responses.response_format", "system", parts, images, sources, toolState)
 }
 
 func collectModelVisibleField(value gjson.Result, source string, role string, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState) {
@@ -815,6 +1558,20 @@ func collectToolCallArgumentsValue(value gjson.Result, parts *[]string, images *
 	}
 	if value.Type == gjson.String {
 		text := strings.TrimSpace(value.String())
+		if !jsonStringNestingWithinLimit(text, maxResponsesJSONDepth) {
+			toolState.markTruncated("max_depth")
+			// GJSON parses the outer container without recursive validation. Keep
+			// the over-depth projection shallow so adversarial nested padding cannot
+			// multiply scans of the same large suffix.
+			parsed := gjson.Parse(text)
+			projectionAllowed := toolState == nil || toolState.scanBudget.consume(parsed)
+			if (parsed.IsObject() || parsed.IsArray()) && projectionAllowed {
+				collectOverDepthToolArgumentsProjection(parsed, parts, images, toolState)
+			}
+			// Keep the raw value auditable for content beyond the collector limit.
+			collectToolResultTextValue(value, parts, images, 0, toolState)
+			return
+		}
 		if gjson.Valid(text) {
 			parsed := gjson.Parse(text)
 			if parsed.IsObject() || parsed.IsArray() {
@@ -824,6 +1581,47 @@ func collectToolCallArgumentsValue(value gjson.Result, parts *[]string, images *
 		}
 	}
 	collectToolResultTextValue(value, parts, images, 0, toolState)
+}
+
+func collectOverDepthToolArgumentsProjection(value gjson.Result, parts *[]string, images *[]string, state *toolResultTextState) {
+	projectObject := func(item gjson.Result) {
+		if !item.IsObject() {
+			return
+		}
+		fields := newResponsesObjectViewForFields(item, responsesContentExtractionObjectFields)
+		addModerationImagesFromResponsesView(&fields, images, state)
+		for _, field := range []responsesObjectField{responsesFieldText, responsesFieldRefusal, responsesFieldContent} {
+			if text := fields.get(field); text.Type == gjson.String {
+				addStringOrDecodedBase64Text(parts, text.String(), state)
+			}
+		}
+		for _, field := range []responsesObjectField{responsesFieldSourceData, responsesFieldData, responsesFieldBase64} {
+			if payload := fields.get(field); payload.Type == gjson.String {
+				if decoded, ok := decodeTextPayload(payload.String(), state); ok {
+					addLimitedToolResultText(parts, decoded, state)
+				}
+			}
+		}
+	}
+
+	if value.IsObject() {
+		projectObject(value)
+		return
+	}
+	value.ForEach(func(_, item gjson.Result) bool {
+		if !state.scanBudget.consume(item) {
+			return false
+		}
+		switch {
+		case item.IsObject():
+			projectObject(item)
+		case item.Type == gjson.String:
+			addStringOrDecodedBase64Text(parts, item.String(), state)
+		}
+		return state.strings < maxToolResultTextStrings &&
+			state.totalRunes < maxToolResultTextTotalRunes &&
+			(state.scanBudget == nil || !state.scanBudget.exhausted)
+	})
 }
 
 func collectAnthropicInput(body []byte, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {
@@ -942,145 +1740,368 @@ func collectAnthropicContentValue(value gjson.Result, parts *[]string, images *[
 }
 
 func collectResponsesInput(input gjson.Result, parts *[]string, images *[]string, sources *[]ContentModerationInputSource, toolState *toolResultTextState, auditScope string) {
+	contentState := newSharedResponsesContentCollectionState(toolState.scanBudget, toolState)
 	switch {
 	case !input.Exists():
 		return
 	case input.Type == gjson.String:
 		before := len(*parts)
-		addModerationRawText(parts, input.String())
+		capture := captureModerationSource(toolState)
+		text := input.String()
+		contentState.addText(parts, text)
 		role := "user"
 		source := "responses.input"
-		if isResponsesAmbientUIContextText(input.String()) {
+		if isResponsesAmbientUIContextText(text) {
 			role = "context"
 			source = "responses.input.ambient_ui_state"
 		}
-		appendModerationSources(sources, source, role, *parts, before)
+		appendModerationSources(sources, source, role, *parts, before, capture)
 	case input.IsArray():
 		input.ForEach(func(index, item gjson.Result) bool {
+			if !toolState.scanBudget.consumeNode() {
+				return false
+			}
 			before := len(*parts)
 			capture := captureModerationSource(toolState)
-			collectResponsesInputItem(item, parts, images, toolState, auditScope)
-			appendModerationSources(sources, responsesInputItemSource(index.String(), item), responsesInputItemRole(item), *parts, before, capture)
-			return true
+			attribution := collectResponsesInputItem(item, parts, images, toolState, contentState, auditScope)
+			if len(*parts) == before {
+				return !contentState.stopped && (toolState.scanBudget == nil || !toolState.scanBudget.exhausted)
+			}
+			appendModerationSources(sources, attribution.source(index.String()), attribution.sourceRole(), *parts, before, capture)
+			return !contentState.stopped && (toolState.scanBudget == nil || !toolState.scanBudget.exhausted)
 		})
 	case input.IsObject():
-		before := len(*parts)
-		capture := captureModerationSource(toolState)
-		collectResponsesInputItem(input, parts, images, toolState, auditScope)
-		appendModerationSources(sources, responsesInputItemSource("0", input), responsesInputItemRole(input), *parts, before, capture)
-	}
-}
-
-func collectResponsesInputItem(item gjson.Result, parts *[]string, images *[]string, toolState *toolResultTextState, auditScope string) {
-	role := strings.ToLower(strings.TrimSpace(item.Get("role").String()))
-	typ := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
-	if !shouldIncludeModerationRole(role, typ, auditScope) {
-		return
-	}
-	if isResponsesClientSuppliedToolOutputItem(item) {
-		collectToolResultTextValue(item.Get("content"), parts, images, 0, toolState)
-		collectToolResultTextValue(item.Get("output"), parts, images, 0, toolState)
-		return
-	}
-	if isResponsesFunctionOrToolCallItem(item) {
-		collectToolCallArgumentsValue(item.Get("arguments"), parts, images, toolState)
-		collectToolResultTextValue(item.Get("input"), parts, images, 0, toolState)
-		collectToolResultTextValue(item.Get("parameters"), parts, images, 0, toolState)
-		return
-	}
-	if isResponsesKnownCallItem(item) {
-		collectToolResultTextValue(item, parts, images, 0, toolState)
-		return
-	}
-	if isResponsesUserTextItem(item) {
-		if isModerationFileItem(item) {
-			collectModerationFileMetadata(item, parts)
+		if !toolState.scanBudget.consumeNode() {
 			return
 		}
-		collectResponsesContentValue(item.Get("content"), parts, images)
-		collectModerationFileMetadata(item, parts)
-		if item.Get("type").String() == "input_text" || item.Get("text").Exists() {
-			collectResponsesContentValue(item, parts, images)
+		before := len(*parts)
+		capture := captureModerationSource(toolState)
+		attribution := collectResponsesInputItem(input, parts, images, toolState, contentState, auditScope)
+		if len(*parts) == before {
+			return
+		}
+		appendModerationSources(sources, attribution.source("0"), attribution.sourceRole(), *parts, before, capture)
+	}
+}
+
+type responsesInputItemAttribution struct {
+	typ     string
+	role    string
+	ambient bool
+}
+
+func (attribution responsesInputItemAttribution) source(index string) string {
+	switch {
+	case isResponsesToolOutputType(attribution.typ):
+		return fmt.Sprintf("responses.input[%s].%s", index, attribution.typ)
+	case attribution.ambient:
+		return fmt.Sprintf("responses.input[%s].ambient_ui_state", index)
+	case attribution.role != "":
+		return fmt.Sprintf("responses.input[%s].role=%s.content", index, attribution.role)
+	default:
+		return fmt.Sprintf("responses.input[%s]", index)
+	}
+}
+
+func (attribution responsesInputItemAttribution) sourceRole() string {
+	if attribution.ambient {
+		return "context"
+	}
+	if attribution.role != "" {
+		return attribution.role
+	}
+	switch {
+	case isResponsesToolOutputType(attribution.typ):
+		return "tool"
+	case isResponsesToolCallInputType(attribution.typ), isResponsesKnownCallType(attribution.typ), isResponsesAssistantContextType(attribution.typ):
+		return "assistant"
+	default:
+		return "user"
+	}
+}
+
+func responsesValidationItemSources(index string, _ gjson.Result, typ string, role string, _ *moderationScanBudget) []string {
+	attribution := responsesInputItemAttribution{typ: typ, role: role}
+	fileMetadataOnly := (typ == "input_file" || typ == "file") && role != "tool"
+	if fileMetadataOnly || isResponsesToolItemType(typ) {
+		return []string{attribution.source(index)}
+	}
+	// Validation and extraction deliberately have independent work budgets and
+	// can therefore stop at different points. Record both possible aliases so a
+	// validation reason follows whichever attribution extraction can establish;
+	// unused aliases never appear in the returned source list.
+	normalSource := attribution.source(index)
+	attribution.ambient = true
+	ambientSource := attribution.source(index)
+	if normalSource == ambientSource {
+		return []string{normalSource}
+	}
+	return []string{normalSource, ambientSource}
+}
+
+func collectResponsesInputItem(item gjson.Result, parts *[]string, images *[]string, toolState *toolResultTextState, contentState *responsesContentCollectionState, auditScope string) responsesInputItemAttribution {
+	var attribution responsesInputItemAttribution
+	if !item.IsObject() {
+		return attribution
+	}
+	attribution.typ = strings.ToLower(strings.TrimSpace(item.Get("type").String()))
+	scope := normalizeContentModerationAuditScope(auditScope)
+	roleLoaded := false
+	if scope != ContentModerationAuditScopeAllContext {
+		toolItem := isResponsesToolItemType(attribution.typ)
+		if scope == ContentModerationAuditScopeUserOnly && toolItem {
+			return attribution
+		}
+		if !toolItem {
+			attribution.role = strings.ToLower(strings.TrimSpace(item.Get("role").String()))
+			roleLoaded = true
+			if !shouldIncludeModerationRole(attribution.role, attribution.typ, scope) {
+				return attribution
+			}
 		}
 	}
-}
-
-func isResponsesUserTextItem(item gjson.Result) bool {
-	role := strings.ToLower(strings.TrimSpace(item.Get("role").String()))
-	switch role {
-	case "system", "developer", "user", "assistant":
-		return responseItemHasModerationText(item)
-	case "":
-		return responseItemHasModerationText(item)
-	default:
-		return responseItemHasModerationText(item)
+	if !roleLoaded {
+		attribution.role = strings.ToLower(strings.TrimSpace(item.Get("role").String()))
 	}
+	if !shouldIncludeModerationRole(attribution.role, attribution.typ, auditScope) {
+		return attribution
+	}
+	if !toolState.scanBudget.consumeRaw(item) {
+		return attribution
+	}
+	if (attribution.typ == "input_file" || attribution.typ == "file") && attribution.role != "tool" {
+		fields := newResponsesObjectViewForFields(item, responsesMessageBaseObjectFields|responsesFileMIMEObjectFields|1<<responsesFieldType)
+		collectModerationFileMetadataFromResponsesView(&fields, parts, contentState)
+		return attribution
+	}
+
+	switch {
+	case isResponsesToolOutputType(attribution.typ) || attribution.role == "tool":
+		fields := newResponsesObjectViewForFields(item, responsesToolOutputObjectFields)
+		collectToolResultTextValue(fields.get(responsesFieldContent), parts, images, 0, toolState)
+		collectToolResultTextValue(fields.get(responsesFieldOutput), parts, images, 0, toolState)
+		if attribution.role == "tool" && !isResponsesToolItemType(attribution.typ) {
+			attribution.ambient = isResponsesAmbientUIContextItem(item, toolState.scanBudget)
+		}
+		return attribution
+	case isResponsesToolCallInputType(attribution.typ):
+		fields := newResponsesObjectViewForFields(item, responsesToolCallObjectFields)
+		collectToolCallArgumentsValue(fields.get(responsesFieldArguments), parts, images, toolState)
+		collectToolResultTextValue(fields.get(responsesFieldInput), parts, images, 0, toolState)
+		collectToolResultTextValue(fields.get(responsesFieldParameters), parts, images, 0, toolState)
+		return attribution
+	case isResponsesKnownCallType(attribution.typ):
+		collectToolResultTextValue(item, parts, images, 0, toolState)
+		return attribution
+	}
+
+	fields := newResponsesObjectViewForFields(item, responsesMessageBaseObjectFields)
+	directContent := attribution.typ == "input_text" || fields.has(responsesFieldText)
+	if directContent {
+		fields.addFields(item, responsesContentExtractionObjectFields)
+	} else if responsesViewHasFileMetadataMarker(&fields) {
+		fields.addFields(item, responsesFileMIMEObjectFields)
+	}
+	beforeParts := len(*parts)
+	beforeImages := len(*images)
+	contentStart := len(*parts)
+	collectResponsesContentValue(fields.get(responsesFieldContent), parts, images, contentState)
+	contentEnd := len(*parts)
+	metadataStart := len(*parts)
+	collectModerationFileMetadataFromResponsesView(&fields, parts, contentState)
+	metadataEnd := len(*parts)
+	directStart := len(*parts)
+	if directContent {
+		appendModerationPartRange(parts, metadataStart, metadataEnd)
+		collectResponsesContentObjectDirectFields(&fields, parts, images, contentState)
+		appendModerationPartRange(parts, contentStart, contentEnd)
+	}
+	directEnd := len(*parts)
+	if len(*parts) > beforeParts && len(*images) == beforeImages {
+		attribution.ambient = isResponsesAmbientUIContextPartRanges(*parts, contentStart, contentEnd, directStart, directEnd)
+	}
+	return attribution
 }
 
-func responseItemHasModerationText(item gjson.Result) bool {
+func responseItemHasModerationText(item gjson.Result, scan *moderationScanBudget) bool {
 	var parts []string
 	var images []string
-	if isModerationFileItem(item) {
+	if !scan.consume(item) {
+		return false
+	}
+	contentState := newResponsesContentCollectionForScan(scan)
+	typ := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
+	if typ == "input_file" || typ == "file" {
 		collectModerationFileMetadata(item, &parts)
 		return normalizeContentModerationText(strings.Join(parts, "\n")) != ""
 	}
-	collectResponsesContentValue(item.Get("content"), &parts, &images)
-	collectModerationFileMetadata(item, &parts)
-	if item.Get("type").String() == "input_text" || item.Get("text").Exists() {
-		collectResponsesContentValue(item, &parts, &images)
+	fields := newResponsesObjectViewForFields(item, responsesMessageBaseObjectFields)
+	directContent := typ == "input_text" || fields.has(responsesFieldText)
+	if directContent {
+		fields.addFields(item, responsesContentExtractionObjectFields)
+	} else if responsesViewHasFileMetadataMarker(&fields) {
+		fields.addFields(item, responsesFileMIMEObjectFields)
+	}
+	contentStart := len(parts)
+	collectResponsesContentValue(fields.get(responsesFieldContent), &parts, &images, contentState)
+	contentEnd := len(parts)
+	metadataStart := len(parts)
+	collectModerationFileMetadataFromResponsesView(&fields, &parts, contentState)
+	metadataEnd := len(parts)
+	if directContent {
+		appendModerationPartRange(&parts, metadataStart, metadataEnd)
+		collectResponsesContentObjectDirectFields(&fields, &parts, &images, contentState)
+		appendModerationPartRange(&parts, contentStart, contentEnd)
 	}
 	return normalizeContentModerationText(strings.Join(parts, "\n")) != "" || len(images) > 0
 }
 
-func isExtractableUnknownResponsesMessageEnvelope(item gjson.Result) bool {
-	return responseItemHasModerationText(item)
+func isExtractableUnknownResponsesMessageEnvelope(item gjson.Result, scan *moderationScanBudget) bool {
+	return responseItemHasModerationText(item, scan)
 }
 
-func responsesContentValueHasModerationData(value gjson.Result) bool {
+func responsesContentValueHasModerationData(value gjson.Result, scan *moderationScanBudget) bool {
 	var parts []string
 	var images []string
-	collectResponsesContentValue(value, &parts, &images)
+	contentState := newResponsesContentCollectionForScan(scan)
+	collectResponsesContentValue(value, &parts, &images, contentState)
 	return normalizeContentModerationText(strings.Join(parts, "\n")) != "" || len(images) > 0
 }
 
-func collectResponsesContentValue(value gjson.Result, parts *[]string, images *[]string) {
-	switch {
-	case !value.Exists():
-		return
-	case value.Type == gjson.String:
-		addModerationRawText(parts, value.String())
-	case value.IsArray():
-		value.ForEach(func(_, item gjson.Result) bool {
-			collectResponsesContentValue(item, parts, images)
-			return true
-		})
-	case value.IsObject():
-		collectModerationFileMetadata(value, parts)
-		if isModerationFileItem(value) {
+func collectResponsesContentValue(value gjson.Result, parts *[]string, images *[]string, state *responsesContentCollectionState) {
+	collectResponsesContentValueAtDepth(value, parts, images, 0, state)
+}
+
+func collectResponsesContentValueAtDepth(value gjson.Result, parts *[]string, images *[]string, depth int, state *responsesContentCollectionState) {
+	for {
+		if depth > maxResponsesContentDepth || (state != nil && state.stopped) {
 			return
 		}
-		addModerationImage(images, value.Get("image_url.url").String())
-		addModerationImage(images, value.Get("image_url").String())
-		addModerationImage(images, value.Get("url").String())
-		addModerationImage(images, value.Get("source.url").String())
-		addModerationImageData(images, value.Get("source.media_type").String(), value.Get("source.data").String())
-		addModerationImageData(images, value.Get("source.mediaType").String(), value.Get("source.data").String())
-		addModerationImageData(images, value.Get("media_type").String(), value.Get("data").String())
-		addModerationImageData(images, value.Get("mime_type").String(), value.Get("data").String())
-		addModerationImageData(images, value.Get("mimeType").String(), value.Get("data").String())
-		addModerationImage(images, value.Get("source.data").String())
-		addModerationImage(images, value.Get("data").String())
-		addModerationImage(images, value.Get("base64").String())
-		if text := value.Get("text"); text.Type == gjson.String {
-			addModerationRawText(parts, text.String())
+		if !value.Exists() {
+			return
 		}
-		if refusal := value.Get("refusal"); refusal.Type == gjson.String {
-			addModerationRawText(parts, refusal.String())
+		if !state.consume(value) {
+			return
 		}
-		if content := value.Get("content"); content.Exists() {
-			collectResponsesContentValue(content, parts, images)
+		switch {
+		case value.Type == gjson.String:
+			state.addText(parts, value.String())
+			return
+		case value.IsArray():
+			value.ForEach(func(_, item gjson.Result) bool {
+				collectResponsesContentValueAtDepth(item, parts, images, depth+1, state)
+				return state == nil || (!state.stopped && (state.scan == nil || !state.scan.exhausted))
+			})
+			return
+		case value.IsObject():
+			value = collectResponsesContentObjectValue(value, parts, images, state)
+			depth++
+		default:
+			return
 		}
 	}
+}
+
+func collectResponsesContentObjectValue(value gjson.Result, parts *[]string, images *[]string, state *responsesContentCollectionState) gjson.Result {
+	fields := newResponsesObjectViewForFields(value, responsesContentExtractionObjectFields)
+	return collectResponsesContentObjectFields(&fields, parts, images, state)
+}
+
+func collectResponsesContentObjectFields(fields *responsesObjectView, parts *[]string, images *[]string, state *responsesContentCollectionState) gjson.Result {
+	collectModerationFileMetadataFromResponsesView(fields, parts, state)
+	if typ := strings.ToLower(strings.TrimSpace(fields.get(responsesFieldType).String())); typ == "input_file" || typ == "file" {
+		return gjson.Result{}
+	}
+	collectResponsesContentObjectDirectFields(fields, parts, images, state)
+	return fields.get(responsesFieldContent)
+}
+
+func collectResponsesContentObjectDirectFields(fields *responsesObjectView, parts *[]string, images *[]string, state *responsesContentCollectionState) {
+	state.addImagesFromView(fields, images)
+	if text := fields.get(responsesFieldText); text.Type == gjson.String {
+		state.addText(parts, text.String())
+	}
+	if refusal := fields.get(responsesFieldRefusal); refusal.Type == gjson.String {
+		state.addText(parts, refusal.String())
+	}
+}
+
+func appendModerationPartRange(parts *[]string, start int, end int) {
+	if parts == nil || start < 0 || start >= end || end > len(*parts) {
+		return
+	}
+	for index := start; index < end; index++ {
+		*parts = append(*parts, (*parts)[index])
+	}
+}
+
+func (state *responsesContentCollectionState) addImagesFromView(fields *responsesObjectView, images *[]string) {
+	if state == nil {
+		addModerationImagesFromResponsesView(fields, images)
+		return
+	}
+	state.addImage(images, fields.get(responsesFieldImageURLURL).String())
+	state.addImage(images, fields.get(responsesFieldImageURL).String())
+	state.addImage(images, fields.get(responsesFieldURL).String())
+	state.addImage(images, fields.get(responsesFieldSourceURL).String())
+	state.addImageData(images, fields.get(responsesFieldSourceMediaType).String(), fields.get(responsesFieldSourceData).String())
+	state.addImageData(images, fields.get(responsesFieldSourceMediaTypeCamel).String(), fields.get(responsesFieldSourceData).String())
+	state.addImageData(images, fields.get(responsesFieldMediaType).String(), fields.get(responsesFieldData).String())
+	state.addImageData(images, fields.get(responsesFieldMimeType).String(), fields.get(responsesFieldData).String())
+	state.addImageData(images, fields.get(responsesFieldMimeTypeCamel).String(), fields.get(responsesFieldData).String())
+	state.addImage(images, fields.get(responsesFieldSourceData).String())
+	state.addImage(images, fields.get(responsesFieldData).String())
+	state.addImage(images, fields.get(responsesFieldBase64).String())
+}
+
+func addModerationImagesFromResponsesView(fields *responsesObjectView, images *[]string, states ...*toolResultTextState) {
+	var state *toolResultTextState
+	if len(states) > 0 {
+		state = states[0]
+	}
+	state.addImage(images, fields.get(responsesFieldImageURLURL).String())
+	state.addImage(images, fields.get(responsesFieldImageURL).String())
+	state.addImage(images, fields.get(responsesFieldURL).String())
+	state.addImage(images, fields.get(responsesFieldSourceURL).String())
+	state.addImageData(images, fields.get(responsesFieldSourceMediaType).String(), fields.get(responsesFieldSourceData).String())
+	state.addImageData(images, fields.get(responsesFieldSourceMediaTypeCamel).String(), fields.get(responsesFieldSourceData).String())
+	state.addImageData(images, fields.get(responsesFieldMediaType).String(), fields.get(responsesFieldData).String())
+	state.addImageData(images, fields.get(responsesFieldMimeType).String(), fields.get(responsesFieldData).String())
+	state.addImageData(images, fields.get(responsesFieldMimeTypeCamel).String(), fields.get(responsesFieldData).String())
+	state.addImage(images, fields.get(responsesFieldSourceData).String())
+	state.addImage(images, fields.get(responsesFieldData).String())
+	state.addImage(images, fields.get(responsesFieldBase64).String())
+}
+
+func collectModerationFileMetadataFromResponsesView(fields *responsesObjectView, parts *[]string, states ...*responsesContentCollectionState) {
+	if parts == nil {
+		return
+	}
+	var state *responsesContentCollectionState
+	if len(states) > 0 {
+		state = states[0]
+	}
+	typ := strings.ToLower(strings.TrimSpace(fields.get(responsesFieldType).String()))
+	if typ != "input_file" && typ != "file" && !fields.get(responsesFieldFileID).Exists() && !fields.get(responsesFieldFilename).Exists() && !fields.get(responsesFieldFileName).Exists() {
+		return
+	}
+	for _, field := range []responsesObjectField{
+		responsesFieldFilename,
+		responsesFieldFileName,
+		responsesFieldMimeType,
+		responsesFieldMimeTypeCamel,
+		responsesFieldFileID,
+	} {
+		if leaf := fields.get(field); leaf.Type == gjson.String {
+			if text := strings.TrimSpace(leaf.String()); text != "" {
+				state.addText(parts, text)
+			}
+		}
+	}
+}
+
+func responsesViewHasFileMetadataMarker(fields *responsesObjectView) bool {
+	return fields != nil && (fields.has(responsesFieldFileID) || fields.has(responsesFieldFilename) || fields.has(responsesFieldFileName))
 }
 
 func isModerationFileItem(value gjson.Result) bool {
@@ -1335,12 +2356,258 @@ type toolResultTextState struct {
 	strings                int
 	totalRunes             int
 	objectKeys             int
+	images                 int
+	imageSet               map[string]struct{}
+	imageDataSet           map[moderationImageDataKey]struct{}
 	truncated              bool
 	truncationEvents       int
 	truncationEventReasons []string
+	truncationContextStart int
+	truncationReasonCounts map[string]int
 	truncateReasons        []string
 	validationSource       string
 	validationReasons      map[string][]string
+	scanBudget             *moderationScanBudget
+}
+
+type moderationScanBudget struct {
+	remaining int64
+	nodes     int
+	exhausted bool
+	state     *toolResultTextState
+}
+
+type moderationImageDataKey struct {
+	mediaType string
+	data      string
+}
+
+type responsesContentCollectionState struct {
+	scan         *moderationScanBudget
+	report       *toolResultTextState
+	shared       *toolResultTextState
+	strings      int
+	totalRunes   int
+	images       int
+	imageSet     map[string]struct{}
+	imageDataSet map[moderationImageDataKey]struct{}
+	stopped      bool
+}
+
+func newResponsesContentCollectionState(scan *moderationScanBudget, report *toolResultTextState) *responsesContentCollectionState {
+	return &responsesContentCollectionState{scan: scan, report: report}
+}
+
+func newSharedResponsesContentCollectionState(scan *moderationScanBudget, state *toolResultTextState) *responsesContentCollectionState {
+	return &responsesContentCollectionState{scan: scan, report: state, shared: state}
+}
+
+func newResponsesContentCollectionForScan(scan *moderationScanBudget) *responsesContentCollectionState {
+	var report *toolResultTextState
+	if scan != nil {
+		report = scan.state
+	}
+	return newResponsesContentCollectionState(scan, report)
+}
+
+func (state *responsesContentCollectionState) stop(reason string) {
+	if state == nil {
+		return
+	}
+	state.stopped = true
+	state.report.markTruncated(reason)
+}
+
+func (state *responsesContentCollectionState) consume(value gjson.Result) bool {
+	if state == nil {
+		return true
+	}
+	if state.stopped {
+		return false
+	}
+	return state.scan.consume(value)
+}
+
+func (state *responsesContentCollectionState) addText(parts *[]string, value string) {
+	if state == nil {
+		addModerationRawText(parts, value)
+		return
+	}
+	if state.stopped || strings.TrimSpace(value) == "" {
+		return
+	}
+	stringCount := state.strings
+	totalRunes := state.totalRunes
+	if state.shared != nil {
+		stringCount = state.shared.strings
+		totalRunes = state.shared.totalRunes
+	}
+	if stringCount >= maxResponsesContentStrings {
+		state.stop("max_strings")
+		return
+	}
+	remaining := maxResponsesContentRunes - totalRunes
+	if remaining <= 0 {
+		state.stop("max_total_runes")
+		return
+	}
+	runes := utf8.RuneCountInString(value)
+	if runes > remaining {
+		value = trimUTF8PrefixByRunes(value, remaining)
+		runes = remaining
+		state.stop("max_total_runes")
+	}
+	addModerationRawText(parts, value)
+	if state.shared != nil {
+		state.shared.strings++
+		state.shared.totalRunes += runes
+	} else {
+		state.strings++
+		state.totalRunes += runes
+	}
+}
+
+func (state *responsesContentCollectionState) addImage(images *[]string, value string) {
+	if state == nil {
+		addModerationImage(images, value)
+		return
+	}
+	if state.stopped {
+		return
+	}
+	if state.shared != nil {
+		if !state.shared.addImage(images, value) {
+			state.stopped = true
+		}
+		return
+	}
+	value = strings.TrimSpace(value)
+	if value == "" || (!strings.HasPrefix(value, "data:") && !strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://")) {
+		return
+	}
+	if state.imageSet == nil {
+		state.imageSet = make(map[string]struct{})
+	}
+	if _, exists := state.imageSet[value]; exists {
+		return
+	}
+	if state.images >= maxModerationCollectedImages {
+		state.stop("max_images")
+		return
+	}
+	*images = append(*images, value)
+	state.imageSet[value] = struct{}{}
+	if key, ok := moderationImageDataKeyFromURI(value); ok {
+		if state.imageDataSet == nil {
+			state.imageDataSet = make(map[moderationImageDataKey]struct{})
+		}
+		state.imageDataSet[key] = struct{}{}
+	}
+	state.images++
+}
+
+func (state *responsesContentCollectionState) addImageData(images *[]string, mediaType string, data string) {
+	if state == nil {
+		addModerationImageData(images, mediaType, data)
+		return
+	}
+	if state.stopped {
+		return
+	}
+	mediaType = strings.TrimSpace(mediaType)
+	data = strings.TrimSpace(data)
+	if mediaType == "" || data == "" {
+		return
+	}
+	if state.shared != nil {
+		if !state.shared.addImageData(images, mediaType, data) {
+			state.stopped = true
+		}
+		return
+	}
+	key := moderationImageDataKey{mediaType: mediaType, data: data}
+	if _, exists := state.imageDataSet[key]; exists {
+		return
+	}
+	if state.images >= maxModerationCollectedImages {
+		state.stop("max_images")
+		return
+	}
+	state.addImage(images, fmt.Sprintf("data:%s;base64,%s", mediaType, data))
+}
+
+func moderationImageDataKeyFromURI(image string) (moderationImageDataKey, bool) {
+	if !strings.HasPrefix(image, "data:") {
+		return moderationImageDataKey{}, false
+	}
+	comma := strings.IndexByte(image, ',')
+	if comma <= len("data:") || comma == len(image)-1 {
+		return moderationImageDataKey{}, false
+	}
+	metadata := image[len("data:"):comma]
+	const base64Suffix = ";base64"
+	if len(metadata) <= len(base64Suffix) || !strings.EqualFold(metadata[len(metadata)-len(base64Suffix):], base64Suffix) {
+		return moderationImageDataKey{}, false
+	}
+	return moderationImageDataKey{
+		mediaType: metadata[:len(metadata)-len(base64Suffix)],
+		data:      image[comma+1:],
+	}, true
+}
+
+func newModerationScanBudget(bodyBytes int, state *toolResultTextState) *moderationScanBudget {
+	limit := int64(bodyBytes) * responsesScanWorkBodyMultiplier
+	if limit < minResponsesScanWorkBytes {
+		limit = minResponsesScanWorkBytes
+	}
+	if limit > maxResponsesScanWorkBytes {
+		limit = maxResponsesScanWorkBytes
+	}
+	return &moderationScanBudget{remaining: limit, state: state}
+}
+
+func (budget *moderationScanBudget) consume(value gjson.Result) bool {
+	if budget == nil || !value.Exists() {
+		return true
+	}
+	if !budget.consumeNode() {
+		return false
+	}
+	return budget.consumeRaw(value)
+}
+
+func (budget *moderationScanBudget) consumeNode() bool {
+	if budget == nil {
+		return true
+	}
+	if budget.exhausted {
+		return false
+	}
+	if budget.nodes >= maxResponsesScanNodes {
+		budget.exhausted = true
+		budget.state.markTruncated("max_scan_work")
+		return false
+	}
+	budget.nodes++
+	return true
+}
+
+func (budget *moderationScanBudget) consumeRaw(value gjson.Result) bool {
+	if budget == nil || !value.Exists() {
+		return true
+	}
+	if budget.exhausted {
+		return false
+	}
+	work := int64(len(value.Raw))
+	if work <= budget.remaining {
+		budget.remaining -= work
+		return true
+	}
+	budget.remaining = 0
+	budget.exhausted = true
+	budget.state.markTruncated("max_scan_work")
+	return false
 }
 
 type toolResultTextStateSnapshot struct {
@@ -1356,6 +2623,7 @@ func captureModerationSource(state *toolResultTextState) moderationSourceCapture
 	if state == nil {
 		return moderationSourceCapture{}
 	}
+	state.truncationContextStart = state.truncationEvents
 	return moderationSourceCapture{state: state, before: toolResultTextStateSnapshot{truncationEvents: state.truncationEvents}}
 }
 
@@ -1364,9 +2632,47 @@ func (state *toolResultTextState) withValidationSource(source string, fn func())
 		return
 	}
 	previous := state.validationSource
+	previousContextStart := state.truncationContextStart
 	state.validationSource = strings.TrimSpace(source)
+	state.truncationContextStart = state.truncationEvents
 	fn()
 	state.validationSource = previous
+	state.truncationContextStart = previousContextStart
+}
+
+func (state *toolResultTextState) withLazyValidationSources(sources func() []string, fn func()) {
+	if state == nil || sources == nil || fn == nil {
+		return
+	}
+	previous := state.validationSource
+	previousContextStart := state.truncationContextStart
+	start := state.truncationEvents
+	state.validationSource = ""
+	state.truncationContextStart = start
+	fn()
+	validationEnd := state.truncationEvents
+	state.truncationContextStart = validationEnd
+	if validationEnd <= start {
+		state.validationSource = previous
+		state.truncationContextStart = previousContextStart
+		return
+	}
+	resolvedSources := sources()
+	end := min(state.truncationEvents, len(state.truncationEventReasons))
+	state.validationSource = previous
+	state.truncationContextStart = previousContextStart
+	for _, source := range resolvedSources {
+		resolved := strings.TrimSpace(source)
+		if resolved == "" {
+			continue
+		}
+		if state.validationReasons == nil {
+			state.validationReasons = make(map[string][]string)
+		}
+		for _, reason := range state.truncationEventReasons[start:end] {
+			state.validationReasons[resolved] = appendUniqueTruncationReason(state.validationReasons[resolved], reason)
+		}
+	}
 }
 
 func (capture moderationSourceCapture) truncatedSince(source string) (bool, []string) {
@@ -1413,9 +2719,13 @@ func collectToolResultTextValueWithState(value gjson.Result, parts *[]string, im
 		state.markTruncated("max_depth")
 		return
 	}
-	switch {
-	case !value.Exists():
+	if !value.Exists() {
 		return
+	}
+	if !state.scanBudget.consume(value) {
+		return
+	}
+	switch {
 	case value.Type == gjson.String:
 		addStringOrDecodedBase64Text(parts, value.String(), state)
 	case value.IsArray():
@@ -1429,45 +2739,35 @@ func collectToolResultTextValueWithState(value gjson.Result, parts *[]string, im
 				return false
 			}
 			collectToolResultTextValueWithState(item, parts, images, depth+1, state)
-			return true
+			return state.scanBudget == nil || !state.scanBudget.exhausted
 		})
 	case value.IsObject():
+		fields := newResponsesObjectViewForFields(value, responsesContentExtractionObjectFields)
+		addModerationImagesFromResponsesView(&fields, images, state)
 		remainingObjectKeys := maxToolResultObjectKeys - state.objectKeys
-		objectKeys := 0
-		value.ForEach(func(_, _ gjson.Result) bool {
-			objectKeys++
-			return objectKeys <= remainingObjectKeys
-		})
-		if objectKeys > remainingObjectKeys {
-			state.markTruncated("max_object_keys")
-		}
-		addModerationImage(images, value.Get("image_url.url").String())
-		addModerationImage(images, value.Get("image_url").String())
-		addModerationImage(images, value.Get("url").String())
-		addModerationImage(images, value.Get("source.url").String())
-		addModerationImageData(images, value.Get("source.media_type").String(), value.Get("source.data").String())
-		addModerationImageData(images, value.Get("source.mediaType").String(), value.Get("source.data").String())
-		addModerationImageData(images, value.Get("media_type").String(), value.Get("data").String())
-		addModerationImageData(images, value.Get("mime_type").String(), value.Get("data").String())
-		addModerationImageData(images, value.Get("mimeType").String(), value.Get("data").String())
-		addModerationImage(images, value.Get("source.data").String())
-		addModerationImage(images, value.Get("data").String())
-		addModerationImage(images, value.Get("base64").String())
+		scannedObjectKeys := 0
 		value.ForEach(func(key, item gjson.Result) bool {
+			scannedObjectKeys++
+			if scannedObjectKeys > remainingObjectKeys {
+				state.markTruncated("max_object_keys")
+			}
+			if scannedObjectKeys > maxToolResultScannedObjectKeys {
+				return false
+			}
 			if state.strings >= maxToolResultTextStrings {
 				state.markTruncated("max_strings")
-				return false
+				return true
 			}
 			if state.totalRunes >= maxToolResultTextTotalRunes {
 				state.markTruncated("max_total_runes")
-				return false
+				return true
 			}
 			if state.objectKeys >= maxToolResultObjectKeys {
 				state.markTruncated("max_object_keys")
 				return false
 			}
 			keyText := key.String()
-			if shouldSkipToolResultTextField(keyText, item, value, state) {
+			if shouldSkipToolResultTextField(keyText, item, value, state, depth+1) {
 				return true
 			}
 			if state.objectKeys < maxToolResultObjectKeys {
@@ -1477,7 +2777,7 @@ func collectToolResultTextValueWithState(value gjson.Result, parts *[]string, im
 				state.markTruncated("max_object_keys")
 			}
 			collectToolResultTextValueWithState(item, parts, images, depth+1, state)
-			return true
+			return state.scanBudget == nil || !state.scanBudget.exhausted
 		})
 	}
 }
@@ -1486,25 +2786,94 @@ func addLimitedToolResultText(parts *[]string, text string, state *toolResultTex
 	if state == nil || state.strings >= maxToolResultTextStrings || state.totalRunes >= maxToolResultTextTotalRunes {
 		return
 	}
-	if len([]rune(text)) > maxToolResultTextStringRunes {
+	runeCount := utf8.RuneCountInString(text)
+	if runeCount > maxToolResultTextStringRunes {
 		state.markTruncated("max_string_runes")
+		text = trimUTF8PrefixByRunes(text, maxToolResultTextStringRunes)
+		runeCount = maxToolResultTextStringRunes
 	}
-	text = trimRunes(text, maxToolResultTextStringRunes)
 	remainingRunes := maxToolResultTextTotalRunes - state.totalRunes
 	if remainingRunes <= 0 {
 		state.markTruncated("max_total_runes")
 		return
 	}
-	if len([]rune(text)) > remainingRunes {
+	if runeCount > remainingRunes {
 		state.markTruncated("max_total_runes")
+		text = trimUTF8PrefixByRunes(text, remainingRunes)
+		runeCount = remainingRunes
 	}
-	text = trimRunes(text, remainingRunes)
 	before := len(*parts)
 	addModerationRawText(parts, text)
 	if len(*parts) > before {
 		state.strings++
-		state.totalRunes += len([]rune((*parts)[len(*parts)-1]))
+		state.totalRunes += runeCount
 	}
+}
+
+func trimUTF8PrefixByRunes(text string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	count := 0
+	for index := range text {
+		if count == limit {
+			return text[:index]
+		}
+		count++
+	}
+	return text
+}
+
+func (state *toolResultTextState) addImage(images *[]string, image string) bool {
+	if state == nil {
+		addModerationImage(images, image)
+		return true
+	}
+	image = strings.TrimSpace(image)
+	if image == "" || (!strings.HasPrefix(image, "data:") && !strings.HasPrefix(image, "http://") && !strings.HasPrefix(image, "https://")) {
+		return true
+	}
+	if state.imageSet == nil {
+		state.imageSet = make(map[string]struct{})
+	}
+	if _, exists := state.imageSet[image]; exists {
+		return true
+	}
+	if state.images >= maxModerationCollectedImages {
+		state.markTruncated("max_images")
+		return false
+	}
+	*images = append(*images, image)
+	state.imageSet[image] = struct{}{}
+	if key, ok := moderationImageDataKeyFromURI(image); ok {
+		if state.imageDataSet == nil {
+			state.imageDataSet = make(map[moderationImageDataKey]struct{})
+		}
+		state.imageDataSet[key] = struct{}{}
+	}
+	state.images++
+	return true
+}
+
+func (state *toolResultTextState) addImageData(images *[]string, mediaType string, data string) bool {
+	if state == nil {
+		addModerationImageData(images, mediaType, data)
+		return true
+	}
+	mediaType = strings.TrimSpace(mediaType)
+	data = strings.TrimSpace(data)
+	if mediaType == "" || data == "" {
+		return true
+	}
+	key := moderationImageDataKey{mediaType: mediaType, data: data}
+	if _, exists := state.imageDataSet[key]; exists {
+		return true
+	}
+	if state.images >= maxModerationCollectedImages {
+		state.markTruncated("max_images")
+		return false
+	}
+	return state.addImage(images, fmt.Sprintf("data:%s;base64,%s", mediaType, data))
 }
 
 func (state *toolResultTextState) markTruncated(reason string) {
@@ -1516,32 +2885,65 @@ func (state *toolResultTextState) markTruncated(reason string) {
 		return
 	}
 	state.truncated = true
-	state.truncationEvents++
-	state.truncationEventReasons = append(state.truncationEventReasons, reason)
+	if state.truncationReasonCounts == nil {
+		state.truncationReasonCounts = make(map[string]int)
+	}
+	state.truncationReasonCounts[reason]++
+	contextStart := max(0, state.truncationContextStart)
+	contextStart = min(contextStart, len(state.truncationEventReasons))
+	if !slicesContainString(state.truncationEventReasons[contextStart:], reason) {
+		state.truncationEventReasons = append(state.truncationEventReasons, reason)
+		state.truncationEvents = len(state.truncationEventReasons)
+	}
 	if source := strings.TrimSpace(state.validationSource); source != "" {
 		if state.validationReasons == nil {
 			state.validationReasons = make(map[string][]string)
 		}
-		state.validationReasons[source] = append(state.validationReasons[source], reason)
+		state.validationReasons[source] = appendUniqueTruncationReason(state.validationReasons[source], reason)
 	}
-	for _, existing := range state.truncateReasons {
-		if existing == reason {
-			return
-		}
-	}
-	state.truncateReasons = append(state.truncateReasons, reason)
+	state.truncateReasons = appendUniqueTruncationReason(state.truncateReasons, reason)
 }
 
-func shouldSkipToolResultTextField(key string, item gjson.Result, parent gjson.Result, state *toolResultTextState) bool {
+func appendUniqueTruncationReason(reasons []string, reason string) []string {
+	if slicesContainString(reasons, reason) {
+		return reasons
+	}
+	return append(reasons, reason)
+}
+
+func slicesContainString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func (state *toolResultTextState) truncationReasonCount(reason string) int {
+	if state == nil || reason == "" {
+		return 0
+	}
+	return state.truncationReasonCounts[reason]
+}
+
+func shouldSkipToolResultTextField(key string, item gjson.Result, parent gjson.Result, state *toolResultTextState, depth int) bool {
 	switch strings.ToLower(strings.TrimSpace(key)) {
 	case "image", "images", "image_url", "input_image", "inline_data", "inlinedata", "base64", "bytes", "file", "files", "data":
-		return shouldSkipLikelyBinaryPayloadField(item, parent, state)
+		return shouldSkipLikelyBinaryPayloadField(item, parent, state, depth)
 	default:
 		return false
 	}
 }
 
-func shouldSkipLikelyBinaryPayloadField(item gjson.Result, parent gjson.Result, state *toolResultTextState) bool {
+func shouldSkipLikelyBinaryPayloadField(item gjson.Result, parent gjson.Result, state *toolResultTextState, depth int) bool {
+	if depth > maxToolResultTextDepth {
+		state.markTruncated("max_depth")
+		return false
+	}
+	if state != nil && !state.scanBudget.consume(item) {
+		return false
+	}
 	switch {
 	case item.Type == gjson.String:
 		if _, ok := decodeTextPayload(item.String(), state); ok {
@@ -1564,7 +2966,7 @@ func shouldSkipLikelyBinaryPayloadField(item gjson.Result, parent gjson.Result, 
 		allMedia := true
 		item.ForEach(func(_, child gjson.Result) bool {
 			seen = true
-			if !shouldSkipLikelyBinaryPayloadField(child, gjson.Result{}, state) {
+			if !shouldSkipLikelyBinaryPayloadField(child, gjson.Result{}, state, depth+1) {
 				allMedia = false
 				return false
 			}
@@ -1822,38 +3224,125 @@ func responsesInputItemRole(item gjson.Result) string {
 // It is useful review context, but it is not a user instruction and therefore
 // must not independently establish user intent. Require the complete wrapper
 // so ordinary user text that merely mentions the tag remains actionable.
-func isResponsesAmbientUIContextItem(item gjson.Result) bool {
-	if !item.IsObject() || isResponsesToolItemType(strings.ToLower(strings.TrimSpace(item.Get("type").String()))) {
+func isResponsesAmbientUIContextItem(item gjson.Result, scans ...*moderationScanBudget) bool {
+	var scan *moderationScanBudget
+	if len(scans) > 0 {
+		scan = scans[0]
+	}
+	if !scan.consume(item) {
 		return false
+	}
+	typ := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
+	if !item.IsObject() || isResponsesToolItemType(typ) {
+		return false
+	}
+	fields := newResponsesObjectViewForFields(item, responsesMessageAmbientObjectFields)
+	directContent := typ == "input_text" || fields.has(responsesFieldText)
+	fileItem := typ == "input_file" || typ == "file"
+	if directContent && !fileItem {
+		fields.addFields(item, responsesContentExtractionObjectFields)
 	}
 	var parts []string
 	var images []string
-	collectResponsesContentValue(item.Get("content"), &parts, &images)
-	if item.Get("type").String() == "input_text" || item.Get("text").Exists() {
-		collectResponsesContentValue(item, &parts, &images)
+	contentState := newResponsesContentCollectionForScan(scan)
+	contentStart := len(parts)
+	collectResponsesContentValue(fields.get(responsesFieldContent), &parts, &images, contentState)
+	contentEnd := len(parts)
+	directStart := len(parts)
+	if directContent {
+		if fileItem {
+			collectModerationFileMetadata(item, &parts)
+		} else {
+			collectModerationFileMetadataFromResponsesView(&fields, &parts, contentState)
+			collectResponsesContentObjectDirectFields(&fields, &parts, &images, contentState)
+			appendModerationPartRange(&parts, contentStart, contentEnd)
+		}
 	}
 	if len(images) > 0 {
 		return false
 	}
-	text := normalizeContentModerationText(strings.Join(parts, "\n"))
-	return isResponsesAmbientUIContextText(text)
+	return isResponsesAmbientUIContextPartRanges(parts, contentStart, contentEnd, directStart, len(parts))
+}
+
+func isResponsesAmbientUIContextPartRanges(parts []string, firstStart int, firstEnd int, secondStart int, secondEnd int) bool {
+	ranges := [][2]int{{firstStart, firstEnd}, {secondStart, secondEnd}}
+	var first string
+	var last string
+	count := 0
+	for _, itemRange := range ranges {
+		start := max(0, itemRange[0])
+		end := min(len(parts), itemRange[1])
+		if start >= end {
+			continue
+		}
+		for _, part := range parts[start:end] {
+			if strings.TrimSpace(part) == "" {
+				continue
+			}
+			if count == 0 {
+				first = part
+			}
+			last = part
+			count++
+		}
+	}
+	if count == 0 || !hasASCIIFoldPrefix(strings.TrimSpace(first), "<in-app-browser-context") || !hasASCIIFoldSuffix(strings.TrimSpace(last), "</in-app-browser-context>") {
+		return false
+	}
+	if count == 1 {
+		return isResponsesAmbientUIContextText(first)
+	}
+	var builder strings.Builder
+	for _, itemRange := range ranges {
+		start := max(0, itemRange[0])
+		end := min(len(parts), itemRange[1])
+		if start >= end {
+			continue
+		}
+		for _, part := range parts[start:end] {
+			if strings.TrimSpace(part) == "" {
+				continue
+			}
+			if builder.Len() > 0 {
+				builder.WriteByte('\n')
+			}
+			builder.WriteString(part)
+		}
+	}
+	return isResponsesAmbientUIContextText(normalizeContentModerationText(builder.String()))
 }
 
 func isResponsesAmbientUIContextText(value string) bool {
 	text := strings.TrimSpace(value)
-	lower := strings.ToLower(text)
 	const opening = "<in-app-browser-context"
 	const closing = "</in-app-browser-context>"
-	if !strings.HasPrefix(lower, opening) || !strings.HasSuffix(lower, closing) {
+	if !hasASCIIFoldPrefix(text, opening) || !hasASCIIFoldSuffix(text, closing) {
 		return false
 	}
-	openEnd := strings.IndexByte(lower, '>')
+	openEnd := strings.IndexByte(text, '>')
 	if openEnd < len(opening) {
 		return false
 	}
-	attributes := lower[len(opening):openEnd]
-	return strings.Contains(attributes, `source="ambient-ui-state"`) ||
-		strings.Contains(attributes, `source='ambient-ui-state'`)
+	attributes := text[len(opening):openEnd]
+	return containsASCIIFold(attributes, `source="ambient-ui-state"`) ||
+		containsASCIIFold(attributes, `source='ambient-ui-state'`)
+}
+
+func hasASCIIFoldPrefix(value string, prefix string) bool {
+	return len(value) >= len(prefix) && strings.EqualFold(value[:len(prefix)], prefix)
+}
+
+func hasASCIIFoldSuffix(value string, suffix string) bool {
+	return len(value) >= len(suffix) && strings.EqualFold(value[len(value)-len(suffix):], suffix)
+}
+
+func containsASCIIFold(value string, target string) bool {
+	for index := 0; index+len(target) <= len(value); index++ {
+		if strings.EqualFold(value[index:index+len(target)], target) {
+			return true
+		}
+	}
+	return false
 }
 
 func shouldIncludeModerationRole(role string, typ string, auditScope string) bool {

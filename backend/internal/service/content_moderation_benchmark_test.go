@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -154,6 +155,144 @@ func BenchmarkContentModerationExtraction(b *testing.B) {
 				contentModerationBenchmarkInputSink = ExtractContentModerationInput(fixture.protocol, fixture.body)
 			}
 			b.ReportMetric(float64(len(fixture.body)), "input-bytes/op")
+		})
+	}
+}
+
+func BenchmarkContentModerationResponsesExtraction(b *testing.B) {
+	type fixture struct {
+		name         string
+		body         []byte
+		auditScope   string
+		expectedText string
+		excludedText string
+	}
+	longText := strings.Repeat("ordinary responses benchmark content ", (1<<20)/37)
+	latePadding := strings.Repeat("irrelevant-padding-", (1<<20)/19)
+	excludedToolOutput := strings.Repeat("excluded-tool-payload-", (4<<20)/22)
+	excludedEscapedContext := strings.Repeat(`\u4e2d`, (1<<20)/6)
+	overDepthArguments := `{"base64":"YmVuY2htYXJrIGRlY29kZWQgbWFya2Vy","image_url":"https://example.test/benchmark.png","pad":` +
+		strings.Repeat("[", 10_001) + strings.Repeat(" ", 1<<20) + "0" + strings.Repeat("]", 10_001) + `}`
+	fixtures := []fixture{
+		{
+			name: "KnownMessage1MiB",
+			body: []byte(`{"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":` +
+				strconv.Quote(longText) + `}]}]}`),
+			expectedText: "ordinary responses benchmark content",
+		},
+		{
+			name: "LateRootKeys1MiB",
+			body: []byte(`{"padding":` + strconv.Quote(latePadding) +
+				`,"input":[{"content":[{"text":"late responses benchmark marker","type":"input_text"}],"role":"user","type":"message"}]}`),
+			expectedText: "late responses benchmark marker",
+		},
+		{
+			name: "UserOnlySkipsToolOutput4MiB",
+			body: []byte(`{"input":[{"type":"function_call_output","call_id":"call_bench","output":` +
+				strconv.Quote(excludedToolOutput) + `},{"type":"message","role":"user","content":[{"type":"input_text","text":"included user marker"}]}]}`),
+			auditScope:   ContentModerationAuditScopeUserOnly,
+			expectedText: "included user marker",
+			excludedText: "excluded-tool-payload",
+		},
+		{
+			name: "UserOnlySkipsEscapedTopLevel1MiB",
+			body: []byte(`{"instructions":"` + excludedEscapedContext +
+				`","input":[{"type":"message","role":"user","content":"included user marker"}]}`),
+			auditScope:   ContentModerationAuditScopeUserOnly,
+			expectedText: "included user marker",
+			excludedText: "中",
+		},
+		{
+			name: "AllContextUnknownEscapedPadding1MiB",
+			body: []byte(`{"padding":"` + excludedEscapedContext +
+				`","input":[{"type":"message","role":"user","content":"included user marker"}]}`),
+			expectedText: "included user marker",
+			excludedText: "中",
+		},
+		{
+			name: "AllContextUnknownEscapedItemPadding1MiB",
+			body: []byte(`{"input":[{"padding":"` + excludedEscapedContext +
+				`","type":"message","role":"user","content":"included user marker"}]}`),
+			expectedText: "included user marker",
+			excludedText: "中",
+		},
+		{
+			name: "AllContextUnknownEscapedContentPadding1MiB",
+			body: []byte(`{"input":[{"type":"message","role":"user","content":[{"padding":"` + excludedEscapedContext +
+				`","type":"input_text","text":"included user marker"}]}]}`),
+			expectedText: "included user marker",
+			excludedText: "中",
+		},
+		{
+			name: "AllContextIgnoredRootOutputEscaped1MiB",
+			body: []byte(`{"output":"` + excludedEscapedContext +
+				`","input":[{"type":"message","role":"user","content":"included user marker"}]}`),
+			expectedText: "included user marker",
+			excludedText: "中",
+		},
+		{
+			name: "AllContextIgnoredMessageArgumentsEscaped1MiB",
+			body: []byte(`{"input":[{"arguments":"` + excludedEscapedContext +
+				`","type":"message","role":"user","content":"included user marker"}]}`),
+			expectedText: "included user marker",
+			excludedText: "中",
+		},
+		{
+			name: "AllContextIgnoredMessageDataEscaped1MiB",
+			body: []byte(`{"input":[{"data":"` + excludedEscapedContext +
+				`","type":"message","role":"user","content":"included user marker"}]}`),
+			expectedText: "included user marker",
+			excludedText: "中",
+		},
+		{
+			name: "AllContextIgnoredMessageMIMEEscaped1MiB",
+			body: []byte(`{"input":[{"mime_type":"` + excludedEscapedContext +
+				`","type":"message","role":"user","content":"included user marker"}]}`),
+			expectedText: "included user marker",
+			excludedText: "中",
+		},
+		{
+			name: "AllContextIgnoredContentOutputEscaped1MiB",
+			body: []byte(`{"input":[{"type":"message","role":"user","content":[{"output":"` +
+				excludedEscapedContext + `","type":"input_text","text":"included user marker"}]}]}`),
+			expectedText: "included user marker",
+			excludedText: "中",
+		},
+		{
+			name: "UserOnlySkipsEscapedAssistant1MiB",
+			body: []byte(`{"input":[{"type":"message","role":"assistant","content":"` + excludedEscapedContext +
+				`"},{"type":"message","role":"user","content":"included user marker"}]}`),
+			auditScope:   ContentModerationAuditScopeUserOnly,
+			expectedText: "included user marker",
+			excludedText: "中",
+		},
+		{
+			name:         "OverDepthToolArguments1MiB",
+			body:         []byte(`{"input":[{"type":"function_call","arguments":` + strconv.Quote(overDepthArguments) + `}]}`),
+			expectedText: "benchmark decoded marker",
+		},
+	}
+
+	for _, fixture := range fixtures {
+		fixture := fixture
+		b.Run(fixture.name, func(b *testing.B) {
+			input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, fixture.body, fixture.auditScope)
+			if err := validateContentModerationBenchmarkExtraction(input, fixture.expectedText); err != nil {
+				b.Fatal(err)
+			}
+			if fixture.excludedText != "" && strings.Contains(input.Text, fixture.excludedText) {
+				b.Fatalf("extraction included excluded text %q", fixture.excludedText)
+			}
+			b.ReportAllocs()
+			b.SetBytes(int64(len(fixture.body)))
+			b.ResetTimer()
+			for b.Loop() {
+				contentModerationBenchmarkInputSink = ExtractContentModerationInput(
+					ContentModerationProtocolOpenAIResponses,
+					fixture.body,
+					fixture.auditScope,
+				)
+			}
 		})
 	}
 }
