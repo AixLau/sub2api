@@ -47,6 +47,14 @@ func candidateTestService(repo ContentModerationRepository) *ContentModerationSe
 	return svc
 }
 
+func candidateAllowSemanticRouter() *contentModerationSemanticReviewRouterStub {
+	return &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "allow", Intent: "benign", Target: "none", Authorization: "not_applicable",
+		HarmMechanism: "none", Severity: "low", Confidence: 0.98, Operationality: "none", Executability: "none",
+		Model: ContentModerationSemanticReviewPrimaryModel,
+	}}
+}
+
 func TestCandidateModeEnforcesBoundedReviewerInvariants(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.EngineMode = ContentModerationEngineModeCandidateOnly
@@ -306,7 +314,7 @@ func TestCandidateModeIgnoresLargeResponsesToolOutputInUserOnlyScope(t *testing.
 	require.Empty(t, repo.snapshotLogs())
 }
 
-func TestCandidateExtractionFailureStoresSelectedSourceAndReasons(t *testing.T) {
+func TestCandidateIncompleteExtractionReviewsAvailableEvidence(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.KeywordRules = []ContentModerationKeywordRule{{
 		Keyword:  "danger-marker",
@@ -317,6 +325,8 @@ func TestCandidateExtractionFailureStoresSelectedSourceAndReasons(t *testing.T) 
 	}}
 	repo := &contentModerationTestRepo{}
 	svc := candidateTestService(repo)
+	router := candidateAllowSemanticRouter()
+	svc.semanticReviewRouter = router
 	evidence := &candidateEvidenceStore{}
 	svc.SetEvidenceStore(evidence, contentModerationTestEncryptor{})
 	content := ContentModerationInput{Sources: []ContentModerationInputSource{{
@@ -332,18 +342,23 @@ func TestCandidateExtractionFailureStoresSelectedSourceAndReasons(t *testing.T) 
 	require.True(t, decision.Allowed)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, "candidate_extraction_incomplete", logs[0].Error)
+	require.Empty(t, logs[0].Error)
+	require.Equal(t, ContentModerationActionSemanticReviewAllow, logs[0].Action)
+	require.Equal(t, contentModerationDecisionSourceSemantic, logs[0].DecisionSource)
 	require.Equal(t, []string{"max_total_runes"}, logs[0].TruncateReasons)
 	require.Equal(t, "responses.input[0].role=user.content", logs[0].SelectedSource)
 	require.Equal(t, "user", logs[0].SelectedSourceRole)
 	require.Equal(t, "danger-marker request", logs[0].InputExcerpt)
+	require.Equal(t, 1, router.calls)
+	require.False(t, router.input.EvidenceComplete)
+	require.Equal(t, "danger-marker request", router.input.Text)
 	view, err := svc.GetEvidenceSnapshot(context.Background(), logs[0].ID)
 	require.NoError(t, err)
 	require.Equal(t, "danger-marker request", view.Payload)
 	require.Equal(t, []string{"max_total_runes"}, view.Selection["truncate_reasons"])
 }
 
-func TestCandidateExtractionFailureCollapsesRepeatedRetriesIntoOneAudit(t *testing.T) {
+func TestCandidateIncompleteExtractionCollapsesRepeatedRetriesIntoOneAudit(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.KeywordRules = []ContentModerationKeywordRule{{
 		Keyword:  "danger-marker",
@@ -354,6 +369,8 @@ func TestCandidateExtractionFailureCollapsesRepeatedRetriesIntoOneAudit(t *testi
 	}}
 	repo := &candidateRetryDedupeRepo{}
 	svc := candidateTestService(repo)
+	router := candidateAllowSemanticRouter()
+	svc.semanticReviewRouter = router
 	content := ContentModerationInput{Sources: []ContentModerationInputSource{{
 		Source:          "responses.input[0].role=user.content",
 		Role:            "user",
@@ -370,11 +387,13 @@ func TestCandidateExtractionFailureCollapsesRepeatedRetriesIntoOneAudit(t *testi
 	require.True(t, second.Allowed)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, "candidate_extraction_incomplete", logs[0].Error)
+	require.Empty(t, logs[0].Error)
+	require.Equal(t, ContentModerationActionSemanticReviewAllow, logs[0].Action)
+	require.Equal(t, 1, router.calls)
 	require.Equal(t, int64(1), repo.duplicateRetries.Load())
 }
 
-func TestCandidateExtractionFailureDoesNotCollapseDifferentSourceText(t *testing.T) {
+func TestCandidateIncompleteExtractionDoesNotCollapseDifferentSourceText(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.KeywordRules = []ContentModerationKeywordRule{{
 		Keyword:  "danger-marker",
@@ -385,6 +404,8 @@ func TestCandidateExtractionFailureDoesNotCollapseDifferentSourceText(t *testing
 	}}
 	repo := &candidateRetryDedupeRepo{}
 	svc := candidateTestService(repo)
+	router := candidateAllowSemanticRouter()
+	svc.semanticReviewRouter = router
 	input := ContentModerationCheckInput{UserID: 17, APIKeyID: 29, Endpoint: "/v1/responses", Protocol: ContentModerationProtocolOpenAIResponses}
 
 	for _, text := range []string{"danger-marker request A", "danger-marker request B"} {
@@ -399,6 +420,53 @@ func TestCandidateExtractionFailureDoesNotCollapseDifferentSourceText(t *testing
 	}
 
 	require.Len(t, repo.snapshotLogs(), 2)
+	require.Equal(t, 2, router.calls)
+}
+
+func TestCandidateUnknownResponsesValueReviewsExtractedUserText(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.PromptFilterMode = promptfilter.ModeObserve
+	repo := &contentModerationTestRepo{}
+	svc := candidateTestService(repo)
+	router := candidateAllowSemanticRouter()
+	svc.semanticReviewRouter = router
+	body := []byte(`{"input":[{"type":"message","content":[{"type":"input_text","text":"explain this exploit in a defensive report"},false]}]}`)
+	content := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body, ContentModerationAuditScopeUserOnly)
+
+	require.True(t, content.Truncated)
+	require.Contains(t, content.TruncateReasons, "unsupported_required_value")
+	require.Len(t, content.Sources, 1)
+	decision := svc.checkCandidateOnly(context.Background(), ContentModerationCheckInput{
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     body,
+	}, cfg, content)
+
+	require.True(t, decision.Allowed)
+	require.Equal(t, 1, router.calls)
+	require.False(t, router.input.EvidenceComplete)
+	require.Contains(t, router.input.Text, "exploit")
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionSemanticReviewAllow, logs[0].Action)
+	require.Empty(t, logs[0].Error)
+	require.Equal(t, []string{"unsupported_required_value"}, logs[0].TruncateReasons)
+	require.False(t, logs[0].UserViolationEligible)
+}
+
+func TestIncompleteCandidateEvidenceCannotPromoteReviewToReject(t *testing.T) {
+	result := ContentModerationSemanticReviewResult{
+		Verdict: "review", Intent: "harmful", Target: "third_party", Authorization: "unauthorized",
+		HarmMechanism: "credential_theft", Severity: "high", Confidence: 0.99,
+		Operationality: "actionable", Executability: "direct", Categories: []string{"cyber"},
+	}
+
+	incomplete, overridden := applySemanticReviewPolicyWithPromotion(result, false)
+	require.False(t, overridden)
+	require.Equal(t, "review", incomplete.Verdict)
+
+	complete, overridden := applySemanticReviewPolicyWithPromotion(result, true)
+	require.True(t, overridden)
+	require.Equal(t, "reject", complete.Verdict)
 }
 
 func TestCandidateSelectionUsesValidationReasonsFromSelectedSourceOnly(t *testing.T) {

@@ -1122,6 +1122,10 @@ func normalizeSemanticReviewResult(result ContentModerationSemanticReviewResult)
 // output may identify risk, but cannot reject when its own dimensions describe
 // ambiguous intent, unclear authorization, or no concrete harm mechanism.
 func applySemanticReviewPolicy(result ContentModerationSemanticReviewResult) (ContentModerationSemanticReviewResult, bool) {
+	return applySemanticReviewPolicyWithPromotion(result, true)
+}
+
+func applySemanticReviewPolicyWithPromotion(result ContentModerationSemanticReviewResult, allowPromotion bool) (ContentModerationSemanticReviewResult, bool) {
 	result = normalizeSemanticReviewResult(result)
 	eligible := semanticReviewPolicyRejectEligible(result)
 	if result.Verdict == "allow" && !semanticReviewPolicyDimensionsSupportAllow(result) {
@@ -1137,7 +1141,7 @@ func applySemanticReviewPolicy(result ContentModerationSemanticReviewResult) (Co
 		}
 		return result, true
 	}
-	if result.Verdict != "reject" && eligible {
+	if result.Verdict != "reject" && eligible && allowPromotion {
 		result.Verdict = "reject"
 		result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "semantic_policy_reject")
 		return result, true

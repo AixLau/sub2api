@@ -889,7 +889,7 @@ func (s *ContentModerationService) checkCandidateOnly(ctx context.Context, input
 		s.recordPreBlockSyncMetric(0, ContentModerationActionAllow)
 		return allow
 	}
-	if contentModerationCandidateExtractionIncomplete(selection) {
+	if contentModerationCandidateExtractionIncomplete(selection) && !contentModerationCandidateHasReviewableEvidence(selection) {
 		outcome := s.executeCandidateDecision(ctx, cfg, input, selection, func(reviewCtx context.Context) contentModerationCandidateOutcome {
 			return s.candidateExtractionFailureOutcome(reviewCtx, input, cfg, content, &selection)
 		})
@@ -933,7 +933,7 @@ func (s *ContentModerationService) checkPromptInjectionBaseline(ctx context.Cont
 		return nil, false
 	}
 	outcome := s.executeCandidateDecision(ctx, baselineCfg, input, selection, func(reviewCtx context.Context) contentModerationCandidateOutcome {
-		if contentModerationCandidateExtractionIncomplete(selection) {
+		if contentModerationCandidateExtractionIncomplete(selection) && !contentModerationCandidateHasReviewableEvidence(selection) {
 			return s.candidateExtractionFailureOutcome(reviewCtx, input, baselineCfg, content, &selection)
 		}
 		return s.runCandidateSelection(reviewCtx, input, baselineCfg, selection)
@@ -1017,6 +1017,13 @@ func (s *ContentModerationService) checkCandidateOnlyAccountAttempt(
 }
 
 func (s *ContentModerationService) runCandidateSelection(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, selection contentModerationCandidateSelection) contentModerationCandidateOutcome {
+	if contentModerationCandidateExtractionIncomplete(selection) {
+		// A malformed or bounded sibling value does not invalidate text that was
+		// already extracted from the selected user source. Review that evidence
+		// semantically, but preserve EvidenceComplete=false so policy cannot turn
+		// an ambiguous review into an automatic rejection.
+		return s.runCandidateSemanticReview(ctx, input, cfg, selection, "candidate_extraction_incomplete_best_effort")
+	}
 	if selection.Kind == contentModerationCandidateKindLocalClassifier {
 		resolved, decision := s.resolveLocalClassifierCandidate(ctx, input, cfg, selection)
 		if decision != nil {
@@ -1177,6 +1184,10 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 	semanticInput.ReviewKind = contentModerationReviewKindGeneral
 	semanticInput.EvidenceComplete = true
 	semanticInput.EvidenceRevision = "legacy-candidate-evidence-v1"
+	if !selection.EvidenceComplete {
+		semanticInput.EvidenceComplete = false
+		semanticInput.EvidenceRevision = selection.EvidenceRevision
+	}
 	if semanticCfg.PromptInjectionReviewerEnabled && selection.ReviewKind == contentModerationReviewKindPromptInjection {
 		semanticInput.ReviewKind = selection.ReviewKind
 		semanticInput.MaxInputRunes = semanticCfg.PromptInjectionMaxInputRunes
@@ -1209,7 +1220,7 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 	if semanticInput.ReviewKind == contentModerationReviewKindPromptInjection {
 		result, policyOverride = applyPromptInjectionReviewPolicy(result, semanticInput.EvidenceComplete)
 	} else {
-		result, policyOverride = applySemanticReviewPolicy(result)
+		result, policyOverride = applySemanticReviewPolicyWithPromotion(result, semanticInput.EvidenceComplete)
 	}
 	result, candidatePolicyOverride := applyCandidateSemanticReviewPolicy(result, selection, semanticInput.EvidenceComplete)
 	policyOverride = policyOverride || candidatePolicyOverride
@@ -1442,7 +1453,8 @@ func (s *ContentModerationService) buildCandidateLog(input ContentModerationChec
 	log.EffectiveKeywordAction = normalizeContentModerationKeywordAction(selection.Rule.Action)
 	log.RiskContextType = ContentModerationRiskContextActualRequest
 	log.RiskContextReason = "candidate_selected_user_fragment"
-	log.UserViolationEligible = selection.Origin == contentModerationSourceOriginUserTurn
+	log.TruncateReasons = normalizeContentModerationTruncateReasons(selection.Source.TruncateReasons)
+	log.UserViolationEligible = selection.Origin == contentModerationSourceOriginUserTurn && selection.EvidenceComplete
 	return log
 }
 
@@ -1584,6 +1596,10 @@ func contentModerationCandidateExtractionIncomplete(selection contentModerationC
 	// extraction remains available to existing moderation paths, so Phase 0
 	// records incomplete V2 evidence without changing the legacy decision.
 	return selection.Source.Truncated && len(reasons) == 0
+}
+
+func contentModerationCandidateHasReviewableEvidence(selection contentModerationCandidateSelection) bool {
+	return strings.TrimSpace(selection.Source.Text) != "" && strings.TrimSpace(selection.Fragment) != ""
 }
 
 func (s *ContentModerationService) candidateExtractionFailureOutcome(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, selection *contentModerationCandidateSelection) contentModerationCandidateOutcome {
