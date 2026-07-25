@@ -107,6 +107,11 @@ export default defineConfig(({ mode }) => {
     outDir: '../backend/internal/web/dist',
     emptyOutDir: true,
     rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        dashboardComponentsPreview: resolve(__dirname, 'dashboard-components-preview.html'),
+        platformGaugePreview: resolve(__dirname, 'platform-gauge-preview.html'),
+      },
       output: {
         /**
          * 手动分包配置
