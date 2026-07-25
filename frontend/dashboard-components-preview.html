@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#07101f" />
+    <title>仪表盘组件方向预览</title>
+  </head>
+  <body>
+    <main class="page-shell">
+      <header class="page-header">
+        <div>
+          <div class="eyebrow">DASHBOARD SYSTEM / PREVIEW</div>
+          <h1>数据组件方向</h1>
+        </div>
+        <div class="surface-tabs" role="tablist" aria-label="预览页面">
+          <button type="button" role="tab" data-surface="admin" class="is-active" aria-selected="true">管理概览</button>
+          <button type="button" role="tab" data-surface="usage" aria-selected="false">用量分析</button>
+        </div>
+      </header>
+
+      <section class="surface is-active" data-surface-panel="admin">
+        <div class="summary-grid">
+          <article class="summary-item">
+            <span>今日请求</span>
+            <strong>72,642</strong>
+            <small class="positive">较昨日 +12.4%</small>
+          </article>
+          <article class="summary-item">
+            <span>今日实际消费</span>
+            <strong>$723.04</strong>
+            <small class="positive">较昨日 +8.2%</small>
+          </article>
+          <article class="summary-item">
+            <span>活跃用户</span>
+            <strong>284</strong>
+            <small class="positive">较昨日 +18</small>
+          </article>
+          <article class="summary-item">
+            <span>平均响应</span>
+            <strong>1.58s</strong>
+            <small class="negative">较昨日 +0.21s</small>
+          </article>
+        </div>
+
+        <div class="admin-grid">
+          <section class="panel resource-panel">
+            <div class="panel-heading">
+              <div>
+                <div class="eyebrow">RESOURCE HEALTH</div>
+                <h2>资源健康</h2>
+              </div>
+              <span class="status-label"><i></i>整体稳定</span>
+            </div>
+            <div class="ring-pair">
+              <article class="ring-unit">
+                <div class="ring-stage">
+                  <canvas id="api-key-ring" aria-label="API 密钥启用率 91%"></canvas>
+                  <div class="ring-center"><strong>91%</strong><span>启用率</span></div>
+                </div>
+                <div class="ring-caption">
+                  <strong>API 密钥</strong>
+                  <span>9 启用 / 1 停用</span>
+                </div>
+              </article>
+              <article class="ring-unit">
+                <div class="ring-stage">
+                  <canvas id="account-health-ring" aria-label="服务账号健康状态"></canvas>
+                  <div class="ring-center"><strong>82%</strong><span>正常率</span></div>
+                </div>
+                <div class="ring-caption">
+                  <strong>服务账号</strong>
+                  <span>41 正常 / 9 需关注</span>
+                </div>
+              </article>
+            </div>
+            <div class="health-legend">
+              <span><i class="normal"></i>正常 41</span>
+              <span><i class="error"></i>异常 4</span>
+              <span><i class="limited"></i>限流 3</span>
+              <span><i class="overload"></i>过载 2</span>
+            </div>
+          </section>
+
+          <section class="panel token-panel">
+            <div class="panel-heading">
+              <div>
+                <div class="eyebrow">TOKEN COMPOSITION</div>
+                <h2>Token 构成</h2>
+              </div>
+              <div class="period-switcher" role="tablist" aria-label="Token 周期">
+                <button type="button" role="tab" data-token-period="today" class="is-active" aria-selected="true">今日</button>
+                <button type="button" role="tab" data-token-period="total" aria-selected="false">累计</button>
+              </div>
+            </div>
+            <div class="token-layout">
+              <div class="ring-stage token-ring-stage">
+                <canvas id="token-ring" aria-label="Token 构成"></canvas>
+                <div class="ring-center"><strong id="token-total">360.5M</strong><span>总 Token</span></div>
+              </div>
+              <div class="token-legend" id="token-legend"></div>
+            </div>
+          </section>
+        </div>
+
+        <section class="panel alert-panel">
+          <div class="panel-heading">
+            <div>
+              <div class="eyebrow">ATTENTION REQUIRED</div>
+              <h2>需要关注</h2>
+            </div>
+            <span class="muted-label">最近 5 分钟</span>
+          </div>
+          <div class="alert-grid">
+            <article><span class="severity critical">高</span><div><strong>4 个账号连接异常</strong><small>较上一周期增加 2 个</small></div><b>4</b></article>
+            <article><span class="severity warning">中</span><div><strong>3 个账号触发限流</strong><small>OpenAI 平台占 67%</small></div><b>3</b></article>
+            <article><span class="severity info">低</span><div><strong>平均响应时间升高</strong><small>过去 15 分钟增加 14%</small></div><b>+14%</b></article>
+          </div>
+        </section>
+      </section>
+
+      <section class="surface" data-surface-panel="usage">
+        <div class="efficiency-strip">
+          <article><span>每百万 Token 成本</span><strong>$1.24</strong><small class="positive">较上期 -6.8%</small></article>
+          <article><span>平均 Token / 请求</span><strong>135.2K</strong><small class="positive">较上期 +4.1%</small></article>
+          <article><span>缓存命中率</span><strong>68.4%</strong><small class="positive">较上期 +7.2%</small></article>
+          <article><span>每次请求成本</span><strong>$0.0099</strong><small class="negative">较上期 +2.3%</small></article>
+        </div>
+
+        <div class="usage-grid">
+          <section class="panel group-panel">
+            <div class="panel-heading">
+              <div>
+                <div class="eyebrow">GROUP COMPOSITION</div>
+                <h2>分组使用分布</h2>
+              </div>
+              <div class="data-switcher" role="tablist" aria-label="分组数据状态">
+                <button type="button" role="tab" data-group-state="many" class="is-active" aria-selected="true">多个</button>
+                <button type="button" role="tab" data-group-state="one" aria-selected="false">一个</button>
+                <button type="button" role="tab" data-group-state="empty" aria-selected="false">无数据</button>
+              </div>
+            </div>
+            <div id="group-content"></div>
+          </section>
+
+          <section class="panel driver-panel">
+            <div class="panel-heading">
+              <div>
+                <div class="eyebrow">COST DRIVERS</div>
+                <h2>主要消耗来源</h2>
+              </div>
+              <span class="muted-label">当前周期</span>
+            </div>
+            <div class="driver-list">
+              <article>
+                <span>最高消费分组</span>
+                <strong>Production</strong>
+                <div class="driver-value"><b>$8,942.16</b><small>59.8%</small></div>
+              </article>
+              <article>
+                <span>最活跃 API Key</span>
+                <strong>prod-gateway</strong>
+                <div class="driver-value"><b>38,426 请求</b><small>37.7%</small></div>
+              </article>
+              <article>
+                <span>缓存贡献</span>
+                <strong>Cache Read</strong>
+                <div class="driver-value"><b>3.18B Token</b><small>节省 21.4%</small></div>
+              </article>
+            </div>
+          </section>
+        </div>
+
+        <section class="panel comparison-panel">
+          <div class="panel-heading">
+            <div>
+              <div class="eyebrow">PERIOD COMPARISON</div>
+              <h2>同期变化</h2>
+            </div>
+            <span class="muted-label">本期对比上一周期</span>
+          </div>
+          <div class="comparison-grid">
+            <article><span>实际消费</span><strong>$14,960</strong><div class="comparison-track"><i style="--value:72%"></i></div><small>上一周期 $13,824</small></article>
+            <article><span>总 Token</span><strong>14.26B</strong><div class="comparison-track"><i style="--value:64%"></i></div><small>上一周期 13.70B</small></article>
+            <article><span>总请求</span><strong>101,984</strong><div class="comparison-track"><i style="--value:81%"></i></div><small>上一周期 92,418</small></article>
+          </div>
+        </section>
+      </section>
+    </main>
+    <script type="module" src="/src/previews/dashboard-components-preview.ts"></script>
+  </body>
+</html>

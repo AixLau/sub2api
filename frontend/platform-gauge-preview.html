@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#07101f" />
+    <title>平台用量仪表盘预览</title>
+  </head>
+  <body>
+    <main class="preview-shell">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">CONTROL CENTER / USAGE</div>
+          <h1>平台用量</h1>
+        </div>
+        <div class="header-status">
+          <span class="live-dot" aria-hidden="true"></span>
+          <span>数据已同步</span>
+          <time id="sync-time">--:--:--</time>
+        </div>
+      </header>
+
+      <section class="summary-strip" aria-label="用量汇总">
+        <article>
+          <span>累计消费</span>
+          <strong>$14,960.32</strong>
+          <small>3 个平台</small>
+        </article>
+        <article>
+          <span>今日消费</span>
+          <strong>$723.04</strong>
+          <small>较昨日 +8.2%</small>
+        </article>
+        <article>
+          <span>累计请求</span>
+          <strong>101,984</strong>
+          <small>今日 2,898</small>
+        </article>
+        <article>
+          <span>累计 Token</span>
+          <strong class="accent-text">14.26B</strong>
+          <small>输入 11.8B / 输出 2.46B</small>
+        </article>
+      </section>
+
+      <section class="quota-panel">
+        <div class="panel-heading">
+          <div>
+            <div class="eyebrow">PLATFORM BREAKDOWN</div>
+            <h2>按平台拆分</h2>
+          </div>
+          <div class="panel-actions">
+            <div class="window-switcher" role="tablist" aria-label="统计指标">
+              <button type="button" role="tab" data-metric="spend" class="is-active" aria-selected="true">消费</button>
+              <button type="button" role="tab" data-metric="requests">请求</button>
+              <button type="button" role="tab" data-metric="tokens">Token</button>
+            </div>
+            <button type="button" class="refresh-button" id="refresh-button">
+              <span class="refresh-glyph" aria-hidden="true">↻</span>
+              刷新
+            </button>
+          </div>
+        </div>
+
+        <div class="gauge-grid" id="gauge-grid"></div>
+      </section>
+
+      <section class="model-panel">
+        <div class="model-heading">
+          <div>
+            <div class="eyebrow">MODEL CONSUMPTION</div>
+            <h2>模型消耗</h2>
+          </div>
+          <label class="model-count-control">
+            <span>展示数量</span>
+            <select id="model-count" aria-label="模型展示数量">
+              <option value="3" selected>Top 3</option>
+              <option value="5">Top 5</option>
+              <option value="10">Top 10</option>
+            </select>
+          </label>
+        </div>
+        <div class="model-table">
+          <div class="model-table-head">
+            <span>模型</span>
+            <span>平台</span>
+            <span>请求</span>
+            <span>Token</span>
+            <span>实际消费</span>
+          </div>
+          <div id="model-list"></div>
+        </div>
+        <div class="model-footer">
+          <span id="model-count-caption">展示 3 / 共 6 个已使用模型</span>
+          <span>按实际消费排序</span>
+        </div>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite">平台数据已刷新</div>
+    <script type="module" src="/src/previews/platform-gauge-preview.ts"></script>
+  </body>
+</html>
