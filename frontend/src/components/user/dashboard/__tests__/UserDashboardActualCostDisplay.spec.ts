@@ -230,6 +230,14 @@ describe('user dashboard cost visibility', () => {
     expect(text).not.toContain('$19.1348')
     expect(text).not.toContain('Standard')
     expect(wrapper.find('.token-usage-trend').attributes('data-show-cost')).toBe('true')
+
+    const chartData = JSON.parse(wrapper.get('.chart-data').text())
+    expect(chartData.datasets[0]).toMatchObject({
+      borderRadius: 8,
+      spacing: 2,
+      hoverOffset: 4,
+    })
+    expect(wrapper.get('[data-testid="user-model-ring-center"]').text()).toContain('300')
   })
 
   it('shows user actual consumption in recent usage records without standard cost', () => {

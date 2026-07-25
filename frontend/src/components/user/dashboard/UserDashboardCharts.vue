@@ -28,9 +28,21 @@
         </div>
         <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">{{ t('dashboard.modelDistribution') }}</h3>
         <div class="flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
-          <div class="h-48 w-48 shrink-0">
+          <div class="relative h-48 w-48 shrink-0">
             <Doughnut v-if="modelData" :data="modelData" :options="doughnutOptions" />
             <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">{{ t('dashboard.noDataAvailable') }}</div>
+            <div
+              v-if="modelData"
+              data-testid="user-model-ring-center"
+              class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center"
+            >
+              <strong class="font-mono text-lg font-semibold tabular-nums text-gray-900 dark:text-white">
+                {{ formatTokens(totalModelTokens) }}
+              </strong>
+              <span class="mt-1 text-[10px] font-medium text-gray-500 dark:text-gray-400">
+                {{ t('dashboard.tokens') }}
+              </span>
+            </div>
           </div>
           <div class="max-h-48 w-full min-w-0 flex-1 overflow-auto">
             <table class="w-full text-xs">
@@ -82,13 +94,28 @@ const modelData = computed(() => !props.models?.length ? null : {
   labels: props.models.map((m: ModelStat) => m.model),
   datasets: [{
     data: props.models.map((m: ModelStat) => m.total_tokens),
-    backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16']
+    backgroundColor: ['#4f7cff', '#20d9a0', '#ffb84d', '#ff6174', '#8b6eff', '#28c7c0', '#f377c5', '#8bd450'],
+    borderWidth: 0,
+    borderRadius: 8,
+    spacing: 2,
+    hoverOffset: 4
   }]
 })
+
+const totalModelTokens = computed(() => props.models.reduce((sum, model) => sum + Number(model.total_tokens || 0), 0))
 
 const doughnutOptions = {
   responsive: true,
   maintainAspectRatio: false,
+  cutout: '72%',
+  rotation: -90,
+  layout: {
+    padding: 4
+  },
+  animation: {
+    duration: 700,
+    easing: 'easeOutQuart' as const
+  },
   plugins: {
     legend: { display: false },
     tooltip: {
