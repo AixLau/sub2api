@@ -9,6 +9,7 @@ import { Navbar } from './components/Navbar'
 import { ModelCatalogSection } from './components/ModelCatalogSection'
 import { TrustedBySection } from './components/TrustedBySection'
 import { applySeoMetadata, getPageMetadata } from './lib/seo'
+import { getPersistedDashboardPath } from './lib/authSession'
 
 const AuthPage = lazy(() =>
   import('./components/AuthPage').then((module) => ({ default: module.AuthPage })),
@@ -84,9 +85,19 @@ function PublicBusinessPage({ pathname }: { pathname: string }) {
   }
 }
 
+function DashboardRedirect({ to }: { to: '/admin/dashboard' | '/dashboard' }) {
+  useEffect(() => {
+    window.location.replace(to)
+  }, [to])
+
+  return null
+}
+
 export default function App() {
   const pathname = window.location.pathname
   const authMode = authRoutes[pathname as keyof typeof authRoutes]
+  const isHomeRoute = pathname === '/' || pathname === '/home'
+  const dashboardPath = isHomeRoute ? getPersistedDashboardPath() : null
 
   useEffect(() => {
     applySeoMetadata(getPageMetadata(pathname))
@@ -100,7 +111,11 @@ export default function App() {
     )
   }
 
-  if (pathname !== '/' && pathname !== '/home') {
+  if (dashboardPath) {
+    return <DashboardRedirect to={dashboardPath} />
+  }
+
+  if (!isHomeRoute) {
     return <PublicBusinessPage pathname={pathname} />
   }
 

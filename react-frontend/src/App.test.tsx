@@ -45,6 +45,40 @@ afterEach(() => {
 })
 
 describe('星链 landing page', () => {
+  it.each([
+    ['user', '/dashboard'],
+    ['admin', '/admin/dashboard'],
+  ] as const)('已登录的 %s 访问首页时跳转到对应控制台', async (role, expectedPath) => {
+    localStorage.setItem('auth_token', 'access-token')
+    localStorage.setItem('auth_user', JSON.stringify({
+      id: 1,
+      username: 'demo',
+      email: 'demo@example.com',
+      role,
+    }))
+    const replaceMock = vi.fn()
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, replace: replaceMock },
+    })
+
+    render(<App />)
+
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith(expectedPath))
+    expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument()
+  })
+
+  it('登录用户数据损坏时仍保持首页可访问', () => {
+    localStorage.setItem('auth_token', 'access-token')
+    localStorage.setItem('auth_user', '{invalid-json')
+
+    render(<App />)
+
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      'Codex 与模型 API 接入，像光一样自然。',
+    )
+  })
+
   it('keeps the Git HEAD homepage while exposing business pages through the menu', () => {
     render(<App />)
 
