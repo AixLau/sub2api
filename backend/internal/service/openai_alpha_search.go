@@ -309,6 +309,17 @@ func buildOpenAIAlphaSearchResponsesWebSearchBody(alphaBody []byte, model string
 	return json.Marshal(payload)
 }
 
+// OpenAIAlphaSearchModerationBody converts the model-visible Alpha Search
+// commands and settings into the Responses shape shared by both audit engines.
+func OpenAIAlphaSearchModerationBody(alphaBody []byte) []byte {
+	model := strings.TrimSpace(gjson.GetBytes(alphaBody, "model").String())
+	body, err := buildOpenAIAlphaSearchResponsesWebSearchBody(alphaBody, model)
+	if err != nil {
+		return alphaBody
+	}
+	return body
+}
+
 func openAIAlphaSearchResponsesWebSearchPrompt(alphaBody []byte) string {
 	var b strings.Builder
 	_, _ = b.WriteString("Execute this Codex standalone web.run request for another model.\n")

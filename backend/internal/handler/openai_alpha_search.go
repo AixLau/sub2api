@@ -50,9 +50,11 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 	}
 
 	var body []byte
+	var moderationBody []byte
 	var requestedModel string
 	if preForwardRequest, ok := openAIHTTPPreForwardRequestFromContext(c, service.ContentModerationProtocolOpenAIResponses); ok {
 		body = preForwardRequest.Body
+		moderationBody = preForwardRequest.contentModerationBody()
 		requestedModel = strings.TrimSpace(preForwardRequest.Model)
 	} else {
 		var err error
@@ -80,11 +82,12 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			return
 		}
 		requestedModel = strings.TrimSpace(modelResult.String())
+		moderationBody = service.OpenAIAlphaSearchModerationBody(body)
 	}
 	reqLog = reqLog.With(zap.String("model", requestedModel))
 	setOpsRequestContext(c, requestedModel, false)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
-	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, "openai_alpha_search", requestedModel, body); decision != nil && !decision.AllowNextStage {
+	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, requestedModel, moderationBody); decision != nil && !decision.AllowNextStage {
 		h.openAISecurityAuditError(c, decision)
 		return
 	}

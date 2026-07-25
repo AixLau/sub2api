@@ -1570,6 +1570,41 @@ func TestOpenAIEmbeddings_GatewayPipelineEntrypointRunsPreForwardAndCachesReques
 	require.JSONEq(t, body, string(restored))
 }
 
+func TestOpenAIAlphaSearch_GatewayPipelineSeparatesModerationAndCyberBodies(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	guard := &moderationGuardSpy{decision: &service.ContentModerationDecision{
+		Allowed: true,
+		Action:  service.ContentModerationActionAllow,
+	}}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	body := `{"model":"gpt-5.6-sol","prompt_cache_key":"alpha-session","commands":{"search_query":[{"q":"latest release"}]},"settings":{"external_web_access":true}}`
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/alpha/search", strings.NewReader(body))
+	setGatewayAuthContextForModerationTest(c)
+	h := &OpenAIGatewayHandler{moderationGuard: guard, gatewayService: &service.OpenAIGatewayService{}}
+
+	result := h.EnterOpenAIHTTPGatewayPipeline(c, moderationcoverage.Entry{
+		Method:             http.MethodPost,
+		Path:               "/v1/alpha/search",
+		Handler:            "OpenAIGatewayHandler.AlphaSearch",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolOpenAIResponses,
+		Pipeline:           moderationcoverage.PipelineOpenAIHTTP,
+	})
+
+	require.False(t, result.Stop)
+	require.Len(t, guard.calls, 1)
+	require.Contains(t, gjson.GetBytes(guard.calls[0].Body, "input.0.content.0.text").String(), "latest release")
+	cached, ok := openAIHTTPPreForwardRequestFromContext(c, service.ContentModerationProtocolOpenAIResponses)
+	require.True(t, ok)
+	require.JSONEq(t, body, string(cached.Body))
+	require.JSONEq(t, body, string(cached.CyberBody))
+	require.Equal(t, "alpha-session", gjson.GetBytes(cached.CyberBody, "prompt_cache_key").String())
+	require.NotEqual(t, string(cached.Body), string(cached.contentModerationBody()))
+}
+
 func TestOpenAIEmbeddings_SkipsPreForwardWhenGatewayPipelineEntrypointAlreadyRan(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	guard := &moderationGuardSpy{decision: &service.ContentModerationDecision{

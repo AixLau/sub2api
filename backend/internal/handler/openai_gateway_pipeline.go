@@ -394,13 +394,19 @@ func (OpenAIWebSocketModerationStage) Run(ctx *openAIWebSocketGatewayStageContex
 		pipeline = newOpenAIGatewayPipeline(nil)
 	}
 	input := ctx.input
-	decision := pipeline.CheckModeration(ctx.c, ctx.reqLog, moderationGuardInput{
-		APIKey:   input.APIKey,
-		Subject:  input.Subject,
-		Protocol: input.Protocol,
-		Model:    input.Model,
-		Body:     input.Body,
-	})
+	if selectedAccountModerationRequired(ctx.c, input.Protocol, input.Model, input.Body) {
+		return openAIWebSocketGatewayStageResult{}
+	}
+	decision, completed := contentModerationDecisionFromCache(ctx.c, input.Protocol, input.Model, input.Body)
+	if !completed {
+		decision = pipeline.CheckModeration(ctx.c, ctx.reqLog, moderationGuardInput{
+			APIKey:   input.APIKey,
+			Subject:  input.Subject,
+			Protocol: input.Protocol,
+			Model:    input.Model,
+			Body:     input.Body,
+		})
+	}
 	if decision == nil || !decision.Blocked {
 		return openAIWebSocketGatewayStageResult{}
 	}

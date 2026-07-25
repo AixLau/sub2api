@@ -894,7 +894,7 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 	if value, ok := c.Get(openAIHTTPPreForwardRequestContextKey); ok {
 		if request, requestOK := value.(openAIHTTPPreForwardRequest); requestOK {
 			subject, _ := middleware2.GetAuthSubjectFromContext(c)
-			gate := runSelectedAccountContentModeration(c, reqLog, h.contentModerationService, s.APIKey, subject, request.Protocol, request.Model, request.Body, refreshedAccount)
+			gate := runSelectedAccountContentModeration(c, reqLog, h.contentModerationService, s.APIKey, subject, request.Protocol, request.Model, request.contentModerationBody(), refreshedAccount)
 			if gate != nil && gate.Decision != nil && gate.Decision.Blocked {
 				if releaseFunc != nil {
 					releaseFunc()

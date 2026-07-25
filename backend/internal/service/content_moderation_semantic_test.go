@@ -972,6 +972,154 @@ data: [DONE]
 	require.Equal(t, "review", doneResult.Verdict)
 }
 
+func TestParseSemanticReviewResponseExtractsFieldsFromJSONRoot(t *testing.T) {
+	tests := []struct {
+		name              string
+		body              string
+		wantText          string
+		wantRequestID     string
+		wantInputTokens   int
+		wantOutputTokens  int
+		wantCachedTokens  int
+		wantCreatedTokens int
+	}{
+		{
+			name: "root response fields with legacy token names",
+			body: `{
+				"id":"resp_root",
+				"output_text":"{\"verdict\":\"allow\"}",
+				"usage":{
+					"prompt_tokens":11,
+					"completion_tokens":4,
+					"prompt_tokens_details":{"cached_tokens":3,"cache_write_tokens":2}
+				}
+			}`,
+			wantText:          `{"verdict":"allow"}`,
+			wantRequestID:     "resp_root",
+			wantInputTokens:   11,
+			wantOutputTokens:  4,
+			wantCachedTokens:  3,
+			wantCreatedTokens: 2,
+		},
+		{
+			name: "nested response output parts",
+			body: `{
+				"type":"response.completed",
+				"response":{
+					"id":"resp_nested",
+					"output":[
+						{"content":[{"type":"output_text","text":"{\"verdict\":"}]},
+						{"content":[{"type":"output_text","text":"\"review\"}"}]}
+					],
+					"usage":{"input_tokens":7,"output_tokens":2}
+				}
+			}`,
+			wantText:         `{"verdict":"review"}`,
+			wantRequestID:    "resp_nested",
+			wantInputTokens:  7,
+			wantOutputTokens: 2,
+		},
+		{
+			name:     "typed output text event",
+			body:     `{"type":"response.output_text.done","text":"{\"verdict\":\"reject\"}"}`,
+			wantText: `{"verdict":"reject"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			response, err := parseSemanticReviewResponse([]byte(tt.body), "application/json")
+
+			require.NoError(t, err)
+			require.Equal(t, tt.wantText, response.Text)
+			require.Equal(t, tt.wantRequestID, response.RequestID)
+			require.Equal(t, tt.wantInputTokens, response.Usage.InputTokens)
+			require.Equal(t, tt.wantOutputTokens, response.Usage.OutputTokens)
+			require.Equal(t, tt.wantCachedTokens, response.Usage.CacheReadInputTokens)
+			require.Equal(t, tt.wantCreatedTokens, response.Usage.CacheCreationInputTokens)
+		})
+	}
+}
+
+func TestParseSemanticReviewResponseRejectsMalformedJSON(t *testing.T) {
+	_, err := parseSemanticReviewResponse([]byte(`{"output_text":"ok"`), "application/json")
+
+	require.EqualError(t, err, "parse semantic review response: invalid JSON")
+}
+
+func TestParseSemanticReviewResponseRejectsNonArrayOutputContent(t *testing.T) {
+	_, err := parseSemanticReviewResponse([]byte(`{"output":[{"content":{"nested":{"text":"unexpected"}}}]}`), "application/json")
+
+	require.EqualError(t, err, "semantic review response contained no text")
+}
+
+func TestParseSemanticReviewSSEReusesFrameFields(t *testing.T) {
+	response, err := parseSemanticReviewSSE(strings.NewReader(`data: {not-json}
+
+data: {"type":"response.output_text.delta","id":"resp_delta","delta":"{\"verdict\":","usage":{"prompt_tokens":5,"completion_tokens":1}}
+
+data: {"type":"response.output_text.delta","delta":"\"allow\"}"}
+
+data: {"type":"response.completed","response":{"id":"resp_completed","output_text":"ignored because deltas take precedence","usage":{"input_tokens":8,"output_tokens":3}}}
+
+`), time.Time{})
+
+	require.NoError(t, err)
+	require.Equal(t, `{"verdict":"allow"}`, response.Text)
+	require.Equal(t, "resp_completed", response.RequestID)
+	require.Equal(t, 8, response.Usage.InputTokens)
+	require.Equal(t, 3, response.Usage.OutputTokens)
+}
+
+func TestParseSemanticReviewSSEReadsRootErrorFields(t *testing.T) {
+	_, err := parseSemanticReviewSSE(strings.NewReader(`data: {"type":"error","error":{"type":"invalid_parameter","message":"bad schema"}}
+
+`), time.Time{})
+
+	var upstreamErr *ContentModerationSemanticReviewUpstreamError
+	require.ErrorAs(t, err, &upstreamErr)
+	require.Equal(t, http.StatusBadRequest, upstreamErr.HTTPStatus)
+	require.Equal(t, "bad schema", upstreamErr.Message)
+	require.False(t, upstreamErr.Retryable)
+}
+
+func BenchmarkParseSemanticReviewResponse(b *testing.B) {
+	tests := []struct {
+		name        string
+		contentType string
+		body        []byte
+	}{
+		{
+			name:        "json",
+			contentType: "application/json",
+			body:        []byte(`{"id":"resp_bench","output":[{"type":"message","content":[{"type":"output_text","text":"{\"verdict\":\"allow\",\"confidence\":0.99}"}]}],"usage":{"input_tokens":128,"output_tokens":24,"input_tokens_details":{"cached_tokens":64}}}`),
+		},
+		{
+			name:        "sse",
+			contentType: "text/event-stream",
+			body: []byte(`data: {"type":"response.output_text.delta","delta":"{\"verdict\":\"allow\","}
+
+data: {"type":"response.output_text.delta","delta":"\"confidence\":0.99}"}
+
+data: {"type":"response.completed","response":{"id":"resp_bench","usage":{"input_tokens":128,"output_tokens":24,"input_tokens_details":{"cached_tokens":64}}}}
+
+`),
+		},
+	}
+
+	for _, tt := range tests {
+		b.Run(tt.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				response, err := parseSemanticReviewResponse(tt.body, tt.contentType)
+				if err != nil || response.Text == "" || response.RequestID != "resp_bench" {
+					b.Fatalf("unexpected parse result: response=%+v err=%v", response, err)
+				}
+			}
+		})
+	}
+}
+
 func TestParseSemanticReviewSSECapturesFirstOutputTokenLatency(t *testing.T) {
 	started := time.Now().Add(-50 * time.Millisecond)
 	response, err := parseSemanticReviewSSE(strings.NewReader(`data: {"type":"response.output_text.delta","delta":"{\"verdict\":\"allow\"}"}
@@ -984,7 +1132,7 @@ data: [DONE]
 	require.GreaterOrEqual(t, *response.FirstTokenMS, 40)
 }
 
-func TestParseSemanticReviewSSEReturnsAtDoneWithoutWaitingForEOF(t *testing.T) {
+func TestParseSemanticReviewSSEReturnsAtDoneSentinelWithoutWaitingForEOF(t *testing.T) {
 	reader := &semanticReviewTerminalReader{
 		data: []byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"{\\\"verdict\\\":\\\"allow\\\"}\"}\n\ndata: [DONE]\n\n"),
 		err:  context.DeadlineExceeded,
@@ -1008,6 +1156,20 @@ func TestParseSemanticReviewSSEReturnsAtCompletedWithoutWaitingForEOF(t *testing
 	require.Equal(t, `{"verdict":"review"}`, response.Text)
 	require.Equal(t, "resp_completed", response.RequestID)
 	require.Equal(t, 7, response.Usage.InputTokens)
+}
+
+func TestParseSemanticReviewSSEReturnsAtDoneWithoutWaitingForEOF(t *testing.T) {
+	reader := &semanticReviewTerminalReader{
+		data: []byte("data: {\"type\":\"response.done\",\"response\":{\"id\":\"resp_done\",\"output_text\":\"{\\\"verdict\\\":\\\"allow\\\"}\",\"usage\":{\"input_tokens\":5,\"output_tokens\":2}}}\n\n"),
+		err:  context.DeadlineExceeded,
+	}
+
+	response, err := parseSemanticReviewSSE(reader, time.Time{})
+
+	require.NoError(t, err)
+	require.Equal(t, `{"verdict":"allow"}`, response.Text)
+	require.Equal(t, "resp_done", response.RequestID)
+	require.Equal(t, 5, response.Usage.InputTokens)
 }
 
 func TestParseSemanticReviewSSEReturnsUnsupportedModelFailureWithoutWaitingForEOF(t *testing.T) {

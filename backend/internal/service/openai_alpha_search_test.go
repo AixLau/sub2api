@@ -93,6 +93,16 @@ func TestForwardAlphaSearchOAuthPreservesWire(t *testing.T) {
 	require.JSONEq(t, string(body), string(upstream.lastBody))
 }
 
+func TestOpenAIAlphaSearchModerationBodyIncludesCommandOnlyQuery(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","commands":{"search_query":[{"q":"command-only credential theft instructions"}]},"settings":{"external_web_access":true}}`)
+
+	moderationBody := OpenAIAlphaSearchModerationBody(body)
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, moderationBody)
+
+	require.Contains(t, input.Text, "command-only credential theft instructions")
+	require.Contains(t, input.Text, `"external_web_access":true`)
+}
+
 func TestForwardAlphaSearchPATUsesResponsesWebSearchFallback(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{

@@ -291,8 +291,8 @@ func TestContentModerationCheck_TriggerAllToolOnlyRejectIsRecordedWithoutBlockin
 	require.Zero(t, logs[0].ViolationCount)
 	require.False(t, logs[0].AutoBanned)
 	require.False(t, logs[0].EmailSent)
-	require.Contains(t, logs[0].Error, `"semantic_review_candidate_context_only":true`)
-	require.Contains(t, logs[0].Error, "semantic_policy_context_only")
+	require.Contains(t, string(logs[0].Metadata), `"semantic_review_candidate_context_only":true`)
+	require.Contains(t, string(logs[0].Metadata), "semantic_policy_context_only")
 }
 
 func TestContentModerationCheck_TriggerAllAmbientUIRejectIsRecordedWithoutBlocking(t *testing.T) {

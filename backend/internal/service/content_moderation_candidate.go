@@ -218,13 +218,7 @@ func contentModerationCandidateSelectionForSource(cfg *ContentModerationConfig, 
 		return contentModerationCandidateSelection{}, false
 	}
 	candidates := make([]contentModerationCandidateSelection, 0, 4)
-	for _, rule := range normalizeContentModerationKeywordRules(cfg.keywordRules()) {
-		if !rule.Enabled {
-			continue
-		}
-		if _, hit := matchContentModerationKeyword(source.Text, []ContentModerationKeywordRule{rule}); !hit {
-			continue
-		}
+	for _, rule := range cfg.keywordRuleSet().Matches(source.Text) {
 		startByte, endByte := -1, -1
 		if start, end, found := findDisplayKeywordSpanWithBoundary(source.Text, rule.Keyword); found {
 			startByte, endByte = start, end
@@ -504,7 +498,10 @@ func contentModerationOrdinaryProviderSupportsCategory(provider, category string
 }
 
 func (s *ContentModerationService) candidateDecisionCacheKey(cfg *ContentModerationConfig, input ContentModerationCheckInput, selection contentModerationCandidateSelection) string {
-	policyRevision := contentModerationPolicyRevision(true, cfg)
+	policyRevision := strings.TrimSpace(input.policyRevision)
+	if policyRevision == "" {
+		policyRevision = contentModerationPolicyRevision(true, cfg)
+	}
 	namespace := "candidate-decision-v3"
 	evidenceIdentity := selection.Fragment
 	instructionsRevision := ""
@@ -926,11 +923,11 @@ func (s *ContentModerationService) checkPromptInjectionBaseline(ctx context.Cont
 		(!cfg.SemanticReview.PromptInjectionReviewerEnabled && !cfg.SemanticReview.PromptInjectionFailClosed) {
 		return nil, false
 	}
-	baselineCfg := cloneContentModerationConfig(cfg)
+	baselineCfgValue := *cfg
+	baselineCfg := &baselineCfgValue
 	baselineCfg.AuditScope = ContentModerationAuditScopeUserOnly
 	baselineCfg.PromptFilterMode = promptfilter.ModeObserve
-	content := ExtractContentModerationInput(input.Protocol, input.Body, ContentModerationAuditScopeUserOnly)
-	content.Normalize()
+	content := extractContentModerationInputCached(ctx, input.Protocol, input.Body, ContentModerationAuditScopeUserOnly)
 	selection, found := contentModerationCandidateSelectionForInput(baselineCfg, content)
 	if !found || selection.ReviewKind != contentModerationReviewKindPromptInjection {
 		return nil, false
@@ -961,14 +958,23 @@ func (s *ContentModerationService) checkCandidateOnlyAccountAttempt(
 	content ContentModerationInput,
 	inputHash string,
 	policyRevision string,
+	baselineDecision *ContentModerationDecision,
 ) (*ContentModerationGateResult, error) {
-	snapshotCtx := context.WithValue(ctx, contentModerationPolicySnapshotContextKey{}, contentModerationPolicySnapshot{
-		riskEnabled: riskEnabled,
-		config:      cloneContentModerationConfig(cfg),
-	})
-	decision, err := s.Check(snapshotCtx, input)
-	if err != nil {
-		return nil, err
+	decision := baselineDecision
+	if decision != nil {
+		cloned := cloneContentModerationDecision(*decision)
+		decision = &cloned
+	} else {
+		snapshotCtx := context.WithValue(ctx, contentModerationPolicySnapshotContextKey{}, contentModerationPolicySnapshot{
+			riskEnabled: riskEnabled,
+			config:      cfg,
+			revision:    policyRevision,
+		})
+		var err error
+		decision, err = s.Check(snapshotCtx, input)
+		if err != nil {
+			return nil, err
+		}
 	}
 	disposition := ContentModerationDispositionAllowed
 	reusable := true
@@ -1002,7 +1008,8 @@ func (s *ContentModerationService) checkCandidateOnlyAccountAttempt(
 			candidateDecisionID: candidateDecisionID,
 			policySnapshot: &contentModerationPolicySnapshot{
 				riskEnabled: riskEnabled,
-				config:      cloneContentModerationConfig(cfg),
+				config:      cfg,
+				revision:    policyRevision,
 			},
 		}
 	}

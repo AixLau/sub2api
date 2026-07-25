@@ -65,3 +65,171 @@ func TestContentModerationKeywordMatcherRandomizedParity(t *testing.T) {
 		require.Equal(t, wantKeyword, gotKeyword, "iteration %d", iteration)
 	}
 }
+
+func TestContentModerationPreparedRuleSetRandomizedSlowParity(t *testing.T) {
+	rng := rand.New(rand.NewSource(20260724))
+	runes := []rune("abcXYZ019 .-_/%敏感词ＡＰＩ\u200b")
+	for iteration := 0; iteration < 1000; iteration++ {
+		rules := make([]ContentModerationKeywordRule, 1+rng.Intn(20))
+		for index := range rules {
+			var keyword strings.Builder
+			for range 1 + rng.Intn(8) {
+				keyword.WriteRune(runes[rng.Intn(len(runes))])
+			}
+			rules[index] = ContentModerationKeywordRule{
+				Keyword: keyword.String(), Enabled: rng.Intn(4) != 0,
+				Category: ContentModerationKeywordCategoryCustom,
+				Severity: ContentModerationKeywordSeverityHigh,
+				Action:   ContentModerationKeywordActionBlock,
+			}
+		}
+		var text strings.Builder
+		for range 20 + rng.Intn(100) {
+			text.WriteRune(runes[rng.Intn(len(runes))])
+		}
+		value := text.String()
+		want := slowContentModerationKeywordMatches(value, rules)
+		set := newContentModerationPreparedRuleSet(rules)
+		got := set.Matches(value)
+
+		require.Equal(t, want, got, "iteration %d", iteration)
+		first, hit := set.Match(value)
+		require.Equal(t, len(want) > 0, hit, "iteration %d", iteration)
+		if len(want) > 0 {
+			require.Equal(t, want[0], first, "iteration %d", iteration)
+		}
+	}
+}
+
+func TestContentModerationPreparedRuleSetDirectedSlowParity(t *testing.T) {
+	tests := []struct {
+		name  string
+		text  string
+		rules []ContentModerationKeywordRule
+	}{
+		{
+			name: "compact collision",
+			text: "ab",
+			rules: []ContentModerationKeywordRule{
+				{Keyword: "a b", Enabled: true},
+				{Keyword: "ab", Enabled: true},
+			},
+		},
+		{
+			name: "boundary rejection followed by valid occurrence",
+			text: "xapikey api key",
+			rules: []ContentModerationKeywordRule{
+				{Keyword: "api key", Enabled: true},
+				{Keyword: "apikey", Enabled: true},
+			},
+		},
+		{
+			name: "nested suffix outputs",
+			text: "敏感世界",
+			rules: []ContentModerationKeywordRule{
+				{Keyword: "世界", Enabled: true},
+				{Keyword: "敏感世界", Enabled: true},
+				{Keyword: "感世界", Enabled: true},
+			},
+		},
+		{
+			name: "numeric compact disabled",
+			text: "release 12 34",
+			rules: []ContentModerationKeywordRule{
+				{Keyword: "1234", Enabled: true},
+			},
+		},
+		{
+			name: "nfkc zero width and unicode punctuation",
+			text: "ＳＥ\u200bＣ—ＲＥＴ",
+			rules: []ContentModerationKeywordRule{
+				{Keyword: "secret", Enabled: true},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			want := slowContentModerationKeywordMatches(tt.text, tt.rules)
+			set := newContentModerationPreparedRuleSet(tt.rules)
+			require.Equal(t, want, set.Matches(tt.text))
+			first, hit := set.Match(tt.text)
+			require.Equal(t, len(want) > 0, hit)
+			if len(want) > 0 {
+				require.Equal(t, want[0], first)
+			}
+		})
+	}
+}
+
+func TestContentModerationPreparedRuleSetExpandsCompactCollisionOnce(t *testing.T) {
+	rules := contentModerationCompactCollisionRules(1024)
+	set := newContentModerationPreparedRuleSet(rules)
+	matches := set.Matches("abcdefghijklmno")
+
+	require.Len(t, matches, len(rules))
+	for index := range matches {
+		require.Equal(t, rules[index].Keyword, matches[index].Keyword)
+	}
+}
+
+func TestContentModerationKeywordMatcherEarlyExitUsesMinimumEnabledIndex(t *testing.T) {
+	matcher := newContentModerationKeywordMatcher([]string{"", "needle", "later"})
+	require.Equal(t, int32(1), matcher.minimumKeyword)
+
+	keyword, hit := matcher.Match("needle " + strings.Repeat("ordinary ", 1000))
+
+	require.True(t, hit)
+	require.Equal(t, "needle", keyword)
+}
+
+func contentModerationCompactCollisionRules(count int) []ContentModerationKeywordRule {
+	const base = "abcdefghijklmno"
+	maximum := 1 << (len(base) - 1)
+	if count > maximum {
+		count = maximum
+	}
+	rules := make([]ContentModerationKeywordRule, 0, count)
+	for mask := 0; mask < count; mask++ {
+		var keyword strings.Builder
+		keyword.Grow(len(base) * 2)
+		for index := 0; index < len(base); index++ {
+			if index > 0 && mask&(1<<(index-1)) != 0 {
+				keyword.WriteByte(' ')
+			}
+			keyword.WriteByte(base[index])
+		}
+		rules = append(rules, ContentModerationKeywordRule{Keyword: keyword.String(), Enabled: true})
+	}
+	return rules
+}
+
+func slowContentModerationKeywordMatches(text string, rules []ContentModerationKeywordRule) []ContentModerationKeywordRule {
+	normalizedText := normalizeKeywordComparable(text)
+	if normalizedText == "" {
+		return nil
+	}
+	compactText := compactKeywordComparable(normalizedText)
+	var matches []ContentModerationKeywordRule
+	for _, rule := range normalizeContentModerationKeywordRules(rules) {
+		if !rule.Enabled {
+			continue
+		}
+		normalizedKeyword := normalizeKeywordComparable(rule.Keyword)
+		if normalizedKeyword == "" {
+			continue
+		}
+		_, _, direct := findKeywordComparableSpanWithBoundary(normalizedText, normalizedKeyword)
+		compact := false
+		if !direct && shouldUseCompactKeywordMatch(normalizedKeyword) {
+			compactKeyword := compactKeywordComparable(normalizedKeyword)
+			if compactKeyword != "" {
+				_, _, compact = findCompactKeywordComparableSpanWithBoundary(normalizedText, compactText, compactKeyword)
+			}
+		}
+		if direct || compact {
+			matches = append(matches, rule)
+		}
+	}
+	return matches
+}

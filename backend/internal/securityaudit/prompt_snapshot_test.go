@@ -20,6 +20,7 @@ func TestExtractPromptSnapshotProtocols(t *testing.T) {
 		{"openai_chat_completions", `{"messages":[{"role":"user","content":"old"},{"role":"assistant","content":"assistant turn"},{"role":"user","content":[{"type":"text","text":"最新😀"}]}]}`, "最新😀", 3},
 		{"openai_responses", `{"input":[{"role":"user","content":[{"type":"input_text","text":"response text"}]}]}`, "response text", 1},
 		{"anthropic_messages", `{"messages":[{"role":"user","content":[{"type":"text","text":"claude"}]}]}`, "claude", 1},
+		{"openai_messages", `{"system":"system policy","messages":[{"role":"user","content":[{"type":"text","text":"claude"}]}]}`, "claude", 2},
 		{"gemini", `{"contents":[{"role":"user","parts":[{"text":"gemini"},{"inline_data":{"data":"BASE64"}}]}]}`, "gemini", 1},
 		{"openai_images", `{"prompt":"draw a cat","image":"BASE64SECRET"}`, "draw a cat", 1},
 		{"responses_websocket", `{"type":"response.create","response":{"input":"turn two"}}`, "turn two", 1},

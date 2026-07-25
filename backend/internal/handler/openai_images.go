@@ -46,10 +46,12 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	}
 
 	var body []byte
+	var moderationBody []byte
 	var parsed *service.OpenAIImagesRequest
 	var imageReleaseFunc func()
 	if preForwardRequest, ok := openAIHTTPPreForwardRequestFromContext(c, service.ContentModerationProtocolOpenAIImages); ok {
 		body = preForwardRequest.Body
+		moderationBody = preForwardRequest.contentModerationBody()
 		parsed = preForwardRequest.ImagesRequest
 		imageReleaseFunc = preForwardRequest.ImageReleaseFunc
 	} else {
@@ -76,6 +78,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 			return
 		}
+		moderationBody = parsed.ModerationBody()
 	}
 	if parsed == nil {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
@@ -105,7 +108,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
 		return
 	}
-	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIImages, requestModel, parsed.ModerationBody()); decision != nil && !decision.AllowNextStage {
+	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIImages, requestModel, moderationBody); decision != nil && !decision.AllowNextStage {
 		h.openAISecurityAuditError(c, decision)
 		return
 	}

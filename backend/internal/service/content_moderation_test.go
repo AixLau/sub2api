@@ -3381,7 +3381,7 @@ func TestContentModerationCheck_KeywordHitLogIncludesMatchedSourceMetadata(t *te
 		"engine_mode":"rule_only",
 		"keyword_blocking_mode":"keyword_only",
 		"matched_source":"openai_chat.messages[0].role=assistant.content"
-	}`, logs[0].Error)
+	}`, string(logs[0].Metadata))
 }
 
 func TestContentModerationCheck_APIOnlyEngineModeWithoutAPIKeyFailsOpen(t *testing.T) {

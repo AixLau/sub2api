@@ -181,13 +181,12 @@ func (s *ContentModerationService) AcquireRequestResources(ctx context.Context, 
 	if s == nil {
 		return ctx, errors.New("resource protection service unavailable")
 	}
+	ctx = withContentModerationInputCache(ctx)
 	if s.resourceProtection == nil {
 		s.resourceProtection = NewResourceProtectionManager(DefaultResourceProtectionConfig())
 	}
 	if s.settingRepo != nil {
-		if cfg, err := s.loadConfig(ctx); err == nil {
-			_ = s.resourceProtection.Update(cfg.ResourceProtectionConfig)
-		}
+		_, _ = s.loadConfig(ctx)
 	}
 	cfg := s.resourceProtection.Snapshot()
 	r, err := s.resourceProtection.Acquire(ctx, contentLength, contentEncoding != "" && contentEncoding != "identity")

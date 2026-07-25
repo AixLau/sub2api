@@ -27,8 +27,19 @@ func NewCoordinator(legacy LegacyEngine, prompt PromptEngine) *Coordinator {
 }
 
 func (c *Coordinator) Check(ctx context.Context, req Request) Decision {
+	return c.check(ctx, req, nil, false)
+}
+
+// CheckWithLegacy reuses a legacy moderation result already produced by an
+// earlier stage of the same gateway request. A nil result deliberately means
+// the legacy pass was deferred, while prompt auditing still runs normally.
+func (c *Coordinator) CheckWithLegacy(ctx context.Context, req Request, legacy *LegacyDecision) Decision {
+	return c.check(ctx, req, legacy, true)
+}
+
+func (c *Coordinator) check(ctx context.Context, req Request, legacy *LegacyDecision, legacyProvided bool) Decision {
 	if c == nil {
-		return allowDecision(nil, nil)
+		return allowDecision(legacy, nil)
 	}
 	mode := ModeOff
 	if c.prompt != nil {
@@ -39,25 +50,33 @@ func (c *Coordinator) Check(ctx context.Context, req Request) Decision {
 		// Enqueue is deliberately best-effort. The implementation owns a bounded
 		// context and copies request memory before it can outlive the Handler.
 		_ = c.prompt.Enqueue(ctx, req.Clone())
-		legacy, _ := c.checkLegacy(ctx, req)
+		if !legacyProvided {
+			legacy, _ = c.checkLegacy(ctx, req)
+		}
 		return prioritize(legacy, nil)
 	case ModeBlocking:
-		return c.checkBlocking(ctx, req)
+		return c.checkBlocking(ctx, req, legacy, legacyProvided)
 	default:
-		legacy, _ := c.checkLegacy(ctx, req)
+		if !legacyProvided {
+			legacy, _ = c.checkLegacy(ctx, req)
+		}
 		return prioritize(legacy, nil)
 	}
 }
 
-func (c *Coordinator) checkBlocking(ctx context.Context, req Request) Decision {
+func (c *Coordinator) checkBlocking(ctx context.Context, req Request, legacy *LegacyDecision, legacyProvided bool) Decision {
 	var wg sync.WaitGroup
-	wg.Add(2)
-	var legacy *LegacyDecision
+	wg.Add(1)
+	if !legacyProvided {
+		wg.Add(1)
+	}
 	var prompt *PromptDecision
-	go func() {
-		defer wg.Done()
-		legacy, _ = c.checkLegacy(ctx, req)
-	}()
+	if !legacyProvided {
+		go func() {
+			defer wg.Done()
+			legacy, _ = c.checkLegacy(ctx, req)
+		}()
+	}
 	go func() {
 		defer wg.Done()
 		if c.prompt == nil {

@@ -1394,6 +1394,47 @@ func TestPromptInjectionV2GlobalBaselineRunsBeforeGroupScopeAndNoHitSkipsReviewe
 	require.Equal(t, 1, router.calls)
 }
 
+func TestSelectedAccountBaselineDecisionIsReusedByCandidateAttempt(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.Enabled = true
+	cfg.AccountScope = ContentModerationAccountScopeSelected
+	cfg.AccountIDs = []int64{9}
+	cfg.SemanticReview.PromptInjectionReviewerEnabled = true
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword: "override-marker", Category: ContentModerationKeywordCategoryJailbreak,
+		Severity: ContentModerationKeywordSeverityHigh, Enabled: true,
+	}}
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	repo := &candidateRetryDedupeRepo{}
+	svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyRiskControlEnabled: "true", SettingKeyContentModerationConfig: string(raw),
+	}}, repo, nil, nil, nil, nil, nil)
+	svc.SetDecisionCacheKey(bytes.Repeat([]byte{0x71}, 32))
+	router := &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "allow", Presentation: "quoted_analysis", Confidence: 0.99,
+	}}
+	svc.SetSemanticReviewRouter(router)
+	input := ContentModerationCheckInput{
+		UserID: 17, APIKeyID: 29, AccountID: 9, AccountType: AccountTypeAPIKey,
+		Model: "gpt-5", Protocol: ContentModerationProtocolOpenAIChat,
+		Body: []byte(`{"messages":[{"role":"user","content":"override-marker request"}]}`),
+	}
+	ctx := withContentModerationInputCache(context.Background())
+
+	baseline := svc.CheckSelectedAccountBaseline(ctx, input)
+	require.True(t, baseline.Completed)
+	require.NotNil(t, baseline.Decision)
+	require.Equal(t, 1, router.calls)
+	input.PromptInjectionBaseline = &baseline
+	result, err := svc.CheckAccountAttempt(ctx, input, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, result.Decision)
+	require.Equal(t, baseline.Decision.Action, result.Decision.Action)
+	require.Equal(t, 1, router.calls, "the account attempt must reuse the baseline semantic verdict")
+}
+
 func TestCandidateCheckFailsOpenWhenCriticalSemanticReviewUnavailable(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.Enabled = true

@@ -56,13 +56,15 @@ type OpenAIHTTPGatewayPipelineEntryResult struct {
 }
 
 type openAIHTTPPreForwardRequest struct {
-	Protocol         string
-	Model            string
-	Body             []byte
-	CyberBody        []byte
-	Stream           bool
-	ImageReleaseFunc func()
-	ImagesRequest    *service.OpenAIImagesRequest
+	Protocol           string
+	Model              string
+	Body               []byte
+	CyberBody          []byte
+	Stream             bool
+	ImageReleaseFunc   func()
+	ImagesRequest      *service.OpenAIImagesRequest
+	ModerationBody     []byte
+	UsesModerationBody bool
 }
 
 const openAIHTTPPreForwardRequestContextKey = "openai_http_pre_forward_request"
@@ -103,8 +105,13 @@ func newContentModerationGuard(svc *service.ContentModerationService) moderation
 }
 
 func (h *OpenAIGatewayHandler) checkWithModerationGuard(c *gin.Context, reqLog *zap.Logger, input moderationGuardInput) *service.ContentModerationDecision {
+	if cached, ok := contentModerationDecisionFromCache(c, input.Protocol, input.Model, input.Body); ok {
+		return cached
+	}
 	if h == nil {
-		return newOpenAIGatewayPipeline(nil).CheckModeration(c, reqLog, input)
+		decision := newOpenAIGatewayPipeline(nil).CheckModeration(c, reqLog, input)
+		cacheContentModerationDecision(c, input.Protocol, input.Model, input.Body, decision)
+		return decision
 	}
 	pipeline := h.pipeline
 	if pipeline == nil {
@@ -114,7 +121,11 @@ func (h *OpenAIGatewayHandler) checkWithModerationGuard(c *gin.Context, reqLog *
 		}
 		pipeline = newOpenAIGatewayPipeline(guard)
 	}
-	return pipeline.CheckModeration(c, reqLog, input)
+	decision := pipeline.CheckModeration(c, reqLog, input)
+	if !selectedAccountModerationRequired(c, input.Protocol, input.Model, input.Body) {
+		cacheContentModerationDecision(c, input.Protocol, input.Model, input.Body, decision)
+	}
+	return decision
 }
 
 func (h *OpenAIGatewayHandler) runOpenAIHTTPPreForwardPipeline(c *gin.Context, reqLog *zap.Logger, input openAIHTTPPreForwardPipelineInput) openAIHTTPPreForwardPipelineResult {
@@ -210,6 +221,7 @@ func (h *OpenAIGatewayHandler) EnterOpenAIHTTPGatewayPipeline(c *gin.Context, me
 		Model:    model,
 		Body:     body,
 	}
+	usesModerationBody := false
 	switch meta.Protocol {
 	case service.ContentModerationProtocolOpenAIChat:
 		pipelineInput.CyberFormat = cyberBlockFormatChat
@@ -231,8 +243,13 @@ func (h *OpenAIGatewayHandler) EnterOpenAIHTTPGatewayPipeline(c *gin.Context, me
 		pipelineInput.SkipCyberStage = true
 		pipelineInput.EnableImageStage = true
 		pipelineInput.ImagePermissionBeforeModeration = true
+		usesModerationBody = true
 	case service.ContentModerationProtocolOpenAIEmbeddings:
 		pipelineInput.SkipCyberStage = true
+	}
+	if meta.Handler == "OpenAIGatewayHandler.AlphaSearch" {
+		pipelineInput.Body = service.OpenAIAlphaSearchModerationBody(body)
+		usesModerationBody = true
 	}
 
 	pipelineResult := h.runOpenAIHTTPPreForwardPipeline(c, reqLog, pipelineInput)
@@ -240,14 +257,20 @@ func (h *OpenAIGatewayHandler) EnterOpenAIHTTPGatewayPipeline(c *gin.Context, me
 		return OpenAIHTTPGatewayPipelineEntryResult{Stop: true}
 	}
 
+	var moderationBody []byte
+	if usesModerationBody {
+		moderationBody = pipelineInput.Body
+	}
 	setOpenAIHTTPPreForwardRequest(c, openAIHTTPPreForwardRequest{
-		Protocol:         meta.Protocol,
-		Model:            model,
-		Body:             body,
-		CyberBody:        cyberBody,
-		Stream:           stream,
-		ImageReleaseFunc: pipelineResult.ImageReleaseFunc,
-		ImagesRequest:    imagesRequest,
+		Protocol:           meta.Protocol,
+		Model:              model,
+		Body:               body,
+		CyberBody:          cyberBody,
+		Stream:             stream,
+		ImageReleaseFunc:   pipelineResult.ImageReleaseFunc,
+		ImagesRequest:      imagesRequest,
+		ModerationBody:     moderationBody,
+		UsesModerationBody: usesModerationBody,
 	})
 	restoreRequestBody(c, body)
 	return OpenAIHTTPGatewayPipelineEntryResult{}
@@ -434,6 +457,7 @@ func setOpenAIHTTPPreForwardRequest(c *gin.Context, request openAIHTTPPreForward
 	request.Model = strings.TrimSpace(request.Model)
 	request.Body = append([]byte(nil), request.Body...)
 	request.CyberBody = append([]byte(nil), request.CyberBody...)
+	request.ModerationBody = append([]byte(nil), request.ModerationBody...)
 	c.Set(openAIHTTPPreForwardRequestContextKey, request)
 }
 
@@ -452,9 +476,16 @@ func openAIHTTPPreForwardRequestFromContext(c *gin.Context, protocol string) (op
 	if strings.TrimSpace(request.Protocol) != strings.TrimSpace(protocol) || len(request.Body) == 0 || strings.TrimSpace(request.Model) == "" {
 		return openAIHTTPPreForwardRequest{}, false
 	}
-	request.Body = append([]byte(nil), request.Body...)
-	request.CyberBody = append([]byte(nil), request.CyberBody...)
+	// The setter owns one isolated copy. Consumers treat these request-scoped
+	// byte slices as immutable so large multipart moderation bodies stay zero-copy.
 	return request, true
+}
+
+func (r openAIHTTPPreForwardRequest) contentModerationBody() []byte {
+	if r.UsesModerationBody {
+		return r.ModerationBody
+	}
+	return r.Body
 }
 
 func restoreRequestBody(c *gin.Context, body []byte) {
@@ -513,7 +544,21 @@ func (g *contentModerationGuard) Check(c *gin.Context, reqLog *zap.Logger, input
 		markContentModerationReceipt(c, input.Protocol, "", decision, false)
 		return decision
 	}
+	if selectedAccountModerationRequired(c, input.Protocol, input.Model, input.Body) {
+		return &service.ContentModerationDecision{Allowed: true, Action: service.ContentModerationActionAllow}
+	}
 	if c != nil && c.Request != nil && g.service.RequiresSelectedAccount(c.Request.Context()) {
+		baselineInput := buildContentModerationInput(c, input.APIKey, input.Subject, input.Protocol, input.Model, input.Body)
+		baseline := g.service.CheckSelectedAccountBaseline(c.Request.Context(), baselineInput)
+		markPromptInjectionBaselineCompleted(c, input.Protocol, input.Model, input.Body, baseline)
+		baselineDecision := baseline.Decision
+		if baselineDecision != nil && baselineDecision.Blocked {
+			cacheContentModerationDecision(c, input.Protocol, input.Model, input.Body, baselineDecision)
+			markContentModerationReceipt(c, input.Protocol, baselineDecision.PolicyRevision, baselineDecision, false)
+			recordContentModerationReceiptMetric(g.service, c, "selected_account_baseline")
+			return baselineDecision
+		}
+		markSelectedAccountModerationRequired(c, input.Protocol, input.Model, input.Body)
 		markContentModerationReceipt(c, input.Protocol, "", nil, true)
 		recordContentModerationReceiptMetric(g.service, c, "selected_account")
 		return &service.ContentModerationDecision{Allowed: true, Action: service.ContentModerationActionAllow}

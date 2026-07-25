@@ -38,8 +38,10 @@ const (
 	ContentModerationModeObserve  = "observe"
 	ContentModerationModePreBlock = "pre_block"
 
-	contentModerationControlPlaneTimeout = 3 * time.Second
-	contentModerationPersistenceTimeout  = 5 * time.Second
+	contentModerationControlPlaneTimeout  = 3 * time.Second
+	contentModerationPersistenceTimeout   = 5 * time.Second
+	contentModerationConfigCacheTTL       = time.Second
+	contentModerationConfigRefreshTimeout = 5 * time.Second
 
 	contentModerationAPIKeysModeAppend  = "append"
 	contentModerationAPIKeysModeReplace = "replace"
@@ -296,6 +298,11 @@ type ContentModerationConfig struct {
 	// 当次不判定封号，且历史 cyber 行在 CountFlaggedByUserSince 中被排除。
 	// 默认 false（计入，与历史行为一致；旧配置 JSON 无此字段时反序列化为 false）。
 	CyberPolicyExcludeFromBanCount bool `json:"cyber_policy_exclude_from_ban_count"`
+	preparedKeywordRules           *contentModerationPreparedRuleSet
+	preparedBlockedKeywordCount    int
+	preparedBlockedKeywordFirst    *string
+	preparedKeywordRuleCount       int
+	preparedKeywordRuleFirst       *ContentModerationKeywordRule
 }
 
 type ContentModerationConfigView struct {
@@ -538,21 +545,29 @@ type ContentModerationModelFilter struct {
 }
 
 type ContentModerationCheckInput struct {
-	RequestID   string
-	UserID      int64
-	UserEmail   string
-	APIKeyID    int64
-	APIKeyName  string
-	GroupID     *int64
-	GroupName   string
-	AccountID   int64
-	AccountName string
-	AccountType string
-	Endpoint    string
-	Provider    string
-	Model       string
-	Protocol    string
-	Body        []byte
+	RequestID               string
+	UserID                  int64
+	UserEmail               string
+	APIKeyID                int64
+	APIKeyName              string
+	GroupID                 *int64
+	GroupName               string
+	AccountID               int64
+	AccountName             string
+	AccountType             string
+	Endpoint                string
+	Provider                string
+	Model                   string
+	Protocol                string
+	Body                    []byte
+	PromptInjectionBaseline *ContentModerationBaselineResult
+	policyRevision          string
+}
+
+type ContentModerationBaselineResult struct {
+	Decision       *ContentModerationDecision
+	PolicyRevision string
+	Completed      bool
 }
 
 type ContentModerationAttemptState struct {
@@ -583,9 +598,11 @@ type ContentModerationGateResult struct {
 type contentModerationPolicySnapshot struct {
 	riskEnabled bool
 	config      *ContentModerationConfig
+	revision    string
 }
 
 type contentModerationPolicySnapshotContextKey struct{}
+type contentModerationPromptInjectionBaselineCompletedContextKey struct{}
 
 type contentModerationSemanticReviewStateContextKey struct{}
 
@@ -1091,6 +1108,10 @@ type ModerationFeedbackEpochRepository interface {
 type ContentModerationService struct {
 	resourceProtection        *ResourceProtectionManager
 	configUpdateMu            sync.Mutex
+	configSnapshot            atomic.Pointer[contentModerationConfigSnapshot]
+	configRefreshMu           sync.Mutex
+	configCacheTTL            time.Duration
+	configRefreshRetryAt      atomic.Int64
 	settingRepo               SettingRepository
 	repo                      ContentModerationRepository
 	rawRequestSnapshotStore   ContentModerationRawRequestSnapshotStore
@@ -1382,7 +1403,7 @@ func (s *ContentModerationService) SetRawRequestSnapshotStore(store ContentModer
 }
 
 func (s *ContentModerationService) GetConfig(ctx context.Context) (*ContentModerationConfigView, error) {
-	cfg, err := s.loadConfig(ctx)
+	cfg, err := s.loadConfigFresh(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1400,10 +1421,47 @@ func (s *ContentModerationService) RequiresSelectedAccount(ctx context.Context) 
 	return normalizeContentModerationAccountScope(cfg.AccountScope) != ContentModerationAccountScopeAll
 }
 
+// CheckSelectedAccountBaseline runs the account-independent prompt-injection
+// baseline before routing consumes an account slot.
+func (s *ContentModerationService) CheckSelectedAccountBaseline(ctx context.Context, input ContentModerationCheckInput) ContentModerationBaselineResult {
+	allow := &ContentModerationDecision{Allowed: true, Action: ContentModerationActionAllow}
+	if s == nil || s.settingRepo == nil || s.repo == nil {
+		return ContentModerationBaselineResult{Decision: contentModerationFailureDecision(defaultContentModerationConfig())}
+	}
+	ctx = withContentModerationInputCache(ctx)
+	controlCtx, cancel := contentModerationDetachedContext(ctx, contentModerationControlPlaneTimeout)
+	defer cancel()
+	riskEnabled, err := s.isRiskControlEnabled(controlCtx)
+	if err != nil {
+		slog.Warn("content_moderation.selected_account_baseline_risk_switch_failed", "error", err)
+		return ContentModerationBaselineResult{Decision: contentModerationFailureDecision(defaultContentModerationConfig())}
+	}
+	if !riskEnabled {
+		return ContentModerationBaselineResult{Decision: allow}
+	}
+	cfg, policyRevision, err := s.loadConfigWithRevision(controlCtx, riskEnabled)
+	if err != nil {
+		slog.Warn("content_moderation.selected_account_baseline_config_failed", "error", err)
+		return ContentModerationBaselineResult{Decision: contentModerationFailureDecision(defaultContentModerationConfig())}
+	}
+	if !cfg.Enabled || cfg.Mode == ContentModerationModeOff {
+		return ContentModerationBaselineResult{Decision: allow, PolicyRevision: policyRevision, Completed: true}
+	}
+	input.policyRevision = policyRevision
+	decision, handled := s.checkPromptInjectionBaseline(ctx, input, cfg)
+	if !handled || decision == nil {
+		return ContentModerationBaselineResult{PolicyRevision: policyRevision, Completed: true}
+	}
+	if decision.PolicyRevision == "" {
+		decision.PolicyRevision = policyRevision
+	}
+	return ContentModerationBaselineResult{Decision: decision, PolicyRevision: policyRevision, Completed: true}
+}
+
 func (s *ContentModerationService) UpdateConfig(ctx context.Context, input UpdateContentModerationConfigInput) (*ContentModerationConfigView, error) {
 	s.configUpdateMu.Lock()
 	defer s.configUpdateMu.Unlock()
-	cfg, err := s.loadConfig(ctx)
+	cfg, err := s.loadConfigFresh(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1601,14 +1659,14 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if err := s.settingRepo.Set(ctx, SettingKeyContentModerationConfig, string(raw)); err != nil {
 		return nil, fmt.Errorf("save content moderation config: %w", err)
 	}
-	if s.resourceProtection != nil {
-		_ = s.resourceProtection.Update(cfg.ResourceProtectionConfig)
+	if err := s.publishConfigSnapshot(cfg, raw); err != nil {
+		return nil, fmt.Errorf("publish content moderation config: %w", err)
 	}
 	return s.configView(cfg), nil
 }
 
 func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestContentModerationAPIKeysInput) (*TestContentModerationAPIKeysResult, error) {
-	cfg, err := s.loadConfig(ctx)
+	cfg, err := s.loadConfigFresh(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1714,7 +1772,7 @@ func (s *ContentModerationService) TestKeywords(ctx context.Context, prompt stri
 		Matched:           false,
 		NormalizedExcerpt: trimRunes(normalized, maxModerationExcerptRunes),
 	}
-	if match, hit := matchContentModerationLocalRule(prompt, cfg.keywordRules()); hit {
+	if match, hit := matchContentModerationLocalRuleSet(prompt, cfg.keywordRuleSet()); hit {
 		decision := decideContentModerationKeyword(prompt, match)
 		result.Matched = true
 		result.MatchedKeyword = match.Keyword
@@ -1737,7 +1795,8 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 			Decision:    contentModerationFailureDecision(defaultContentModerationConfig()),
 		}, nil
 	}
-	riskEnabled, cfg, err := s.loadAttemptPolicy(ctx, prior)
+	ctx = withContentModerationInputCache(ctx)
+	riskEnabled, cfg, policyRevision, err := s.loadAttemptPolicy(ctx, prior)
 	if err != nil {
 		slog.Warn("content_moderation.policy_snapshot_load_failed", "error", err)
 		return &ContentModerationGateResult{
@@ -1747,23 +1806,27 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 	}
 	policySnapshot := &contentModerationPolicySnapshot{
 		riskEnabled: riskEnabled,
-		config:      cloneContentModerationConfig(cfg),
+		config:      cfg,
+		revision:    policyRevision,
 	}
-	policyRevision := contentModerationPolicyRevision(riskEnabled, cfg)
-	if prior != nil && prior.policySnapshot != nil && prior.policySnapshot.riskEnabled && prior.PolicyRevision != "" {
-		policyRevision = prior.PolicyRevision
-	}
+	input.policyRevision = policyRevision
 	inGroupScope := cfg.includesGroup(input.GroupID)
 	inAccountScope := cfg.includesAccount(input.AccountID, input.AccountType)
 	inModelScope := cfg.includesModel(input.Model)
+	baselineCompleted := input.PromptInjectionBaseline != nil && input.PromptInjectionBaseline.Completed &&
+		input.PromptInjectionBaseline.PolicyRevision == policyRevision
 	if riskEnabled && cfg.Enabled && cfg.Mode != ContentModerationModeOff &&
-		(!cfg.candidateOnly() || !inGroupScope || !inAccountScope || !inModelScope) {
+		!baselineCompleted && (!cfg.candidateOnly() || !inGroupScope || !inAccountScope || !inModelScope) {
+		baselineCompleted = true
 		if baselineDecision, handled := s.checkPromptInjectionBaseline(ctx, input, cfg); handled && baselineDecision != nil && baselineDecision.Blocked {
 			return &ContentModerationGateResult{
 				Disposition: ContentModerationDispositionBlocked, Decision: baselineDecision,
 				PolicyRevision: policyRevision,
 			}, nil
 		}
+	}
+	if baselineCompleted {
+		ctx = context.WithValue(ctx, contentModerationPromptInjectionBaselineCompletedContextKey{}, true)
 	}
 	if !inGroupScope || !inAccountScope || !inModelScope {
 		event := "content_moderation.skip_scope_out_of_scope"
@@ -1796,8 +1859,7 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 	if cfg.candidateOnly() {
 		auditScope = ContentModerationAuditScopeUserOnly
 	}
-	content := ExtractContentModerationInput(input.Protocol, input.Body, auditScope)
-	content.Normalize()
+	content := extractContentModerationInputCached(ctx, input.Protocol, input.Body, auditScope)
 	inputHash := content.Hash()
 	if prior != nil && prior.Reusable && prior.InputHash == inputHash && prior.PolicyRevision == policyRevision {
 		if cfg.candidateOnly() && prior.candidateDecisionID != "" {
@@ -1813,7 +1875,11 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 		}, nil
 	}
 	if cfg.candidateOnly() {
-		return s.checkCandidateOnlyAccountAttempt(ctx, input, cfg, riskEnabled, content, inputHash, policyRevision)
+		var baselineDecision *ContentModerationDecision
+		if baselineCompleted && input.PromptInjectionBaseline != nil {
+			baselineDecision = input.PromptInjectionBaseline.Decision
+		}
+		return s.checkCandidateOnlyAccountAttempt(ctx, input, cfg, riskEnabled, content, inputHash, policyRevision, baselineDecision)
 	}
 	observeProviderFallback := cfg.externalModerationRequired() && s.semanticReviewRouter != nil && len(cfg.apiKeys()) == 0
 	if riskEnabled && cfg.Enabled && cfg.Mode == ContentModerationModeObserve && !content.IsEmpty() && (len(cfg.apiKeys()) > 0 || cfg.SemanticReview.Enabled || observeProviderFallback) {
@@ -1846,7 +1912,8 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 	semanticReviewState := &contentModerationSemanticReviewState{}
 	snapshotCtx := context.WithValue(ctx, contentModerationPolicySnapshotContextKey{}, contentModerationPolicySnapshot{
 		riskEnabled: riskEnabled,
-		config:      cloneContentModerationConfig(cfg),
+		config:      cfg,
+		revision:    policyRevision,
 	})
 	snapshotCtx = context.WithValue(snapshotCtx, contentModerationSemanticReviewStateContextKey{}, semanticReviewState)
 	decision, err := s.Check(snapshotCtx, input)
@@ -1897,21 +1964,25 @@ func contentModerationPolicyRevision(riskEnabled bool, cfg *ContentModerationCon
 	return hex.EncodeToString(hash[:])
 }
 
-func (s *ContentModerationService) loadAttemptPolicy(ctx context.Context, prior *ContentModerationAttemptState) (bool, *ContentModerationConfig, error) {
+func (s *ContentModerationService) loadAttemptPolicy(ctx context.Context, prior *ContentModerationAttemptState) (bool, *ContentModerationConfig, string, error) {
 	if prior != nil && prior.policySnapshot != nil && prior.policySnapshot.riskEnabled && prior.policySnapshot.config != nil {
-		return prior.policySnapshot.riskEnabled, cloneContentModerationConfig(prior.policySnapshot.config), nil
+		revision := prior.policySnapshot.revision
+		if revision == "" {
+			revision = prior.PolicyRevision
+		}
+		return prior.policySnapshot.riskEnabled, prior.policySnapshot.config, revision, nil
 	}
 	controlCtx, cancel := contentModerationDetachedContext(ctx, contentModerationControlPlaneTimeout)
 	defer cancel()
 	riskEnabled, err := s.isRiskControlEnabled(controlCtx)
 	if err != nil {
-		return false, nil, err
+		return false, nil, "", err
 	}
-	cfg, err := s.loadConfig(controlCtx)
+	cfg, revision, err := s.loadConfigWithRevision(controlCtx, riskEnabled)
 	if err != nil {
-		return false, nil, err
+		return false, nil, "", err
 	}
-	return riskEnabled, cfg, nil
+	return riskEnabled, cfg, revision, nil
 }
 
 func contentModerationDetachedContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
@@ -1941,6 +2012,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"protocol", input.Protocol)
 		return contentModerationFailureDecision(defaultContentModerationConfig()), nil
 	}
+	ctx = withContentModerationInputCache(ctx)
 	var snapshot contentModerationPolicySnapshot
 	value, hasSnapshot := ctx.Value(contentModerationPolicySnapshotContextKey{}).(contentModerationPolicySnapshot)
 	riskEnabled := false
@@ -1977,9 +2049,13 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	var cfg *ContentModerationConfig
 	var err error
 	if snapshot.config != nil {
-		cfg = cloneContentModerationConfig(snapshot.config)
+		cfg = snapshot.config
+		effectivePolicyRevision = snapshot.revision
+		if effectivePolicyRevision == "" {
+			effectivePolicyRevision = contentModerationPolicyRevision(riskEnabled, cfg)
+		}
 	} else {
-		cfg, err = s.loadConfig(policyCtx)
+		cfg, effectivePolicyRevision, err = s.loadConfigWithRevision(policyCtx, riskEnabled)
 	}
 	if err != nil {
 		slog.Warn("content_moderation.skip_config_load_failed",
@@ -1991,7 +2067,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"error", err)
 		return contentModerationFailureDecision(defaultContentModerationConfig()), nil
 	}
-	effectivePolicyRevision = contentModerationPolicyRevision(riskEnabled, cfg)
+	input.policyRevision = effectivePolicyRevision
 	inGroupScope := cfg.includesGroup(input.GroupID)
 	inModelScope := cfg.includesModel(input.Model)
 	slog.Info("content_moderation.config_loaded",
@@ -2035,7 +2111,8 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"protocol", input.Protocol)
 		return allow, nil
 	}
-	if !cfg.candidateOnly() || !inGroupScope || !inModelScope {
+	baselineCompleted, _ := ctx.Value(contentModerationPromptInjectionBaselineCompletedContextKey{}).(bool)
+	if !baselineCompleted && (!cfg.candidateOnly() || !inGroupScope || !inModelScope) {
 		if baselineDecision, handled := s.checkPromptInjectionBaseline(ctx, input, cfg); handled && baselineDecision != nil && baselineDecision.Blocked {
 			return baselineDecision, nil
 		}
@@ -2069,7 +2146,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	if cfg.candidateOnly() {
 		auditScope = ContentModerationAuditScopeUserOnly
 	}
-	content := ExtractContentModerationInput(input.Protocol, input.Body, auditScope)
+	content := extractContentModerationInputCached(ctx, input.Protocol, input.Body, auditScope)
 	if content.IsEmpty() {
 		if cfg.candidateOnly() {
 			s.recordPreBlockSyncMetric(0, ContentModerationActionAllow)
@@ -2095,7 +2172,6 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		}
 		return allow, nil
 	}
-	content.Normalize()
 	slog.Info("content_moderation.input_extracted",
 		"user_id", input.UserID,
 		"api_key_id", input.APIKeyID,
@@ -2158,7 +2234,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	if cfg.Mode == ContentModerationModePreBlock {
 		localRuleMatched := false
 		if cfg.shouldRunLocalRules() {
-			if keywordMatch, hit := matchContentModerationLocalRuleInput(content, cfg.keywordRules()); hit {
+			if keywordMatch, hit := matchContentModerationLocalRuleInputSet(content, cfg.keywordRuleSet()); hit {
 				if !cfg.externalModerationRequired() {
 					return s.keywordDecision(ctx, input, cfg, content, hashText, keywordMatch), nil
 				}
@@ -2293,7 +2369,7 @@ func contentModerationLocalFocusKeyword(cfg *ContentModerationConfig, content Co
 	if cfg == nil || !cfg.shouldRunLocalRules() || strings.TrimSpace(content.Text) == "" {
 		return ""
 	}
-	match, hit := matchContentModerationLocalRuleInput(content, cfg.keywordRules())
+	match, hit := matchContentModerationLocalRuleInputSet(content, cfg.keywordRuleSet())
 	if !hit {
 		return ""
 	}
@@ -4514,20 +4590,6 @@ func (s *ContentModerationService) runCleanupOnce(parent context.Context) {
 	s.cleanupContentModerationOutbox(ctx, now)
 }
 
-func (s *ContentModerationService) loadConfig(ctx context.Context) (*ContentModerationConfig, error) {
-	raw, err := s.settingRepo.GetValue(ctx, SettingKeyContentModerationConfig)
-	if err != nil {
-		if errors.Is(err, ErrSettingNotFound) {
-			cfg := defaultContentModerationConfig()
-			cfg.normalize()
-			normalizeContentModerationCandidateOnlyInvariants(cfg)
-			return cfg, nil
-		}
-		return nil, fmt.Errorf("get content moderation config: %w", err)
-	}
-	return parseContentModerationConfig(raw)
-}
-
 func parseContentModerationConfig(raw string) (*ContentModerationConfig, error) {
 	cfg := defaultContentModerationConfig()
 	if strings.TrimSpace(raw) == "" {
@@ -5415,6 +5477,7 @@ func cloneContentModerationConfig(cfg *ContentModerationConfig) *ContentModerati
 	if cfg == nil {
 		return nil
 	}
+	preparedRulesCurrent := cfg.preparedKeywordRulesCurrent()
 	clone := *cfg
 	clone.APIKeys = append([]string(nil), cfg.APIKeys...)
 	clone.GroupIDs = append([]int64(nil), cfg.GroupIDs...)
@@ -5432,6 +5495,11 @@ func cloneContentModerationConfig(cfg *ContentModerationConfig) *ContentModerati
 		Models: append([]string(nil), cfg.ModelFilter.Models...),
 	}
 	clone.FailStrategy = cloneContentModerationFailStrategy(cfg.FailStrategy)
+	if preparedRulesCurrent {
+		clone.capturePreparedKeywordRuleSource()
+	} else {
+		clone.clearPreparedKeywordRules()
+	}
 	return &clone
 }
 
@@ -5570,6 +5638,8 @@ func (cfg *ContentModerationConfig) normalize() {
 	cfg.LocalClassifier = normalizeContentModerationLocalClassifierConfig(cfg.LocalClassifier)
 	cfg.ModelFilter = normalizeContentModerationModelFilter(cfg.ModelFilter)
 	cfg.FailStrategy = normalizeContentModerationFailStrategy(cfg.FailStrategy)
+	cfg.preparedKeywordRules = newContentModerationPreparedRuleSet(buildContentModerationKeywordRules(cfg))
+	cfg.capturePreparedKeywordRuleSource()
 }
 
 func defaultContentModerationSemanticReviewConfig() ContentModerationSemanticReviewConfig {
@@ -5808,6 +5878,71 @@ func (cfg *ContentModerationConfig) promptFilterConfig() promptfilter.Config {
 }
 
 func (cfg *ContentModerationConfig) keywordRules() []ContentModerationKeywordRule {
+	if cfg == nil {
+		return []ContentModerationKeywordRule{}
+	}
+	if cfg.preparedKeywordRulesCurrent() {
+		return cfg.preparedKeywordRules.rules
+	}
+	return buildContentModerationKeywordRules(cfg)
+}
+
+func (cfg *ContentModerationConfig) keywordRuleSet() *contentModerationPreparedRuleSet {
+	if cfg == nil {
+		return nil
+	}
+	if cfg.preparedKeywordRulesCurrent() {
+		return cfg.preparedKeywordRules
+	}
+	return newContentModerationPreparedRuleSet(buildContentModerationKeywordRules(cfg))
+}
+
+func (cfg *ContentModerationConfig) preparedKeywordRulesCurrent() bool {
+	if cfg == nil || cfg.preparedKeywordRules == nil ||
+		cfg.preparedBlockedKeywordCount != len(cfg.BlockedKeywords) ||
+		cfg.preparedKeywordRuleCount != len(cfg.KeywordRules) {
+		return false
+	}
+	return cfg.preparedBlockedKeywordFirst == firstContentModerationBlockedKeyword(cfg.BlockedKeywords) &&
+		cfg.preparedKeywordRuleFirst == firstContentModerationKeywordRule(cfg.KeywordRules)
+}
+
+func (cfg *ContentModerationConfig) capturePreparedKeywordRuleSource() {
+	if cfg == nil {
+		return
+	}
+	cfg.preparedBlockedKeywordCount = len(cfg.BlockedKeywords)
+	cfg.preparedBlockedKeywordFirst = firstContentModerationBlockedKeyword(cfg.BlockedKeywords)
+	cfg.preparedKeywordRuleCount = len(cfg.KeywordRules)
+	cfg.preparedKeywordRuleFirst = firstContentModerationKeywordRule(cfg.KeywordRules)
+}
+
+func (cfg *ContentModerationConfig) clearPreparedKeywordRules() {
+	if cfg == nil {
+		return
+	}
+	cfg.preparedKeywordRules = nil
+	cfg.preparedBlockedKeywordCount = 0
+	cfg.preparedBlockedKeywordFirst = nil
+	cfg.preparedKeywordRuleCount = 0
+	cfg.preparedKeywordRuleFirst = nil
+}
+
+func firstContentModerationBlockedKeyword(values []string) *string {
+	if len(values) == 0 {
+		return nil
+	}
+	return &values[0]
+}
+
+func firstContentModerationKeywordRule(values []ContentModerationKeywordRule) *ContentModerationKeywordRule {
+	if len(values) == 0 {
+		return nil
+	}
+	return &values[0]
+}
+
+func buildContentModerationKeywordRules(cfg *ContentModerationConfig) []ContentModerationKeywordRule {
 	if cfg == nil {
 		return []ContentModerationKeywordRule{}
 	}
@@ -6934,19 +7069,26 @@ func matchBlockedKeyword(text string, keywords []string) (string, bool) {
 }
 
 func matchContentModerationLocalRule(text string, rules []ContentModerationKeywordRule) (ContentModerationKeywordRule, bool) {
-	if match, hit := matchContentModerationKeyword(text, rules); hit {
+	return matchContentModerationLocalRuleSet(text, newContentModerationPreparedRuleSet(rules))
+}
+
+func matchContentModerationLocalRuleSet(text string, rules *contentModerationPreparedRuleSet) (ContentModerationKeywordRule, bool) {
+	if match, hit := rules.Match(text); hit {
 		return match, true
 	}
 	return matchContextualBuiltInRiskRule(text)
 }
 
 func matchContentModerationLocalRuleInput(content ContentModerationInput, rules []ContentModerationKeywordRule) (ContentModerationKeywordRule, bool) {
-	normalizedRules := normalizeContentModerationKeywordRules(rules)
-	if len(normalizedRules) > 0 {
+	return matchContentModerationLocalRuleInputSet(content, newContentModerationPreparedRuleSet(rules))
+}
+
+func matchContentModerationLocalRuleInputSet(content ContentModerationInput, rules *contentModerationPreparedRuleSet) (ContentModerationKeywordRule, bool) {
+	if rules != nil && len(rules.rules) > 0 {
 		skippedSourceHit := false
 		if len(content.Sources) > 0 {
 			for _, source := range content.Sources {
-				match, hit := matchContentModerationKeyword(source.Text, normalizedRules)
+				match, hit := rules.Match(source.Text)
 				if !hit {
 					continue
 				}
@@ -6958,7 +7100,7 @@ func matchContentModerationLocalRuleInput(content ContentModerationInput, rules 
 			}
 		}
 		if !skippedSourceHit {
-			if match, hit := matchContentModerationKeyword(content.Text, normalizedRules); hit {
+			if match, hit := rules.Match(content.Text); hit {
 				return match, true
 			}
 		}
@@ -6967,33 +7109,7 @@ func matchContentModerationLocalRuleInput(content ContentModerationInput, rules 
 }
 
 func matchContentModerationKeyword(text string, rules []ContentModerationKeywordRule) (ContentModerationKeywordRule, bool) {
-	if text == "" || len(rules) == 0 {
-		return ContentModerationKeywordRule{}, false
-	}
-	normalizedText := normalizeKeywordComparable(text)
-	compactText := compactKeywordComparable(normalizedText)
-	if normalizedText == "" {
-		return ContentModerationKeywordRule{}, false
-	}
-	for _, rule := range normalizeContentModerationKeywordRules(rules) {
-		if !rule.Enabled {
-			continue
-		}
-		normalizedKeyword := normalizeKeywordComparable(rule.Keyword)
-		if normalizedKeyword == "" {
-			continue
-		}
-		compactKeyword := compactKeywordComparable(normalizedKeyword)
-		if _, _, hit := findKeywordComparableSpanWithBoundary(normalizedText, normalizedKeyword); hit {
-			return rule, true
-		}
-		if shouldUseCompactKeywordMatch(normalizedKeyword) && compactKeyword != "" {
-			if _, _, hit := findCompactKeywordComparableSpanWithBoundary(normalizedText, compactText, compactKeyword); hit {
-				return rule, true
-			}
-		}
-	}
-	return ContentModerationKeywordRule{}, false
+	return newContentModerationPreparedRuleSet(rules).Match(text)
 }
 
 func matchContextualBuiltInRiskRuleInput(content ContentModerationInput) (ContentModerationKeywordRule, bool) {
@@ -7837,35 +7953,38 @@ func findKeywordComparableSpanWithBoundary(normalizedText, normalizedKeyword str
 }
 
 func findCompactKeywordComparableSpanWithBoundary(normalizedText, compactText, compactKeyword string) (int, int, bool) {
-	compactToNormalized := make([]int, 0, len(compactText))
-	for idx, r := range normalizedText {
-		if r == ' ' {
-			continue
-		}
-		for i := 0; i < utf8.RuneLen(r); i++ {
-			compactToNormalized = append(compactToNormalized, idx)
-		}
-	}
-	if len(compactToNormalized) != len(compactText) {
+	if normalizedText == "" || compactKeyword == "" || len(compactText) < len(compactKeyword) ||
+		!strings.Contains(compactText, compactKeyword) {
 		return 0, 0, false
 	}
-	start := 0
-	for {
-		idx := strings.Index(compactText[start:], compactKeyword)
-		if idx < 0 {
-			return 0, 0, false
+	for start := 0; start < len(normalizedText); {
+		_, size := utf8.DecodeRuneInString(normalizedText[start:])
+		if size <= 0 {
+			size = 1
 		}
-		compactIdx := start + idx
-		compactEndIdx := compactIdx + len(compactKeyword)
-		normalizedStartIdx := compactToNormalized[compactIdx]
-		lastCompactIdx := compactEndIdx - 1
-		_, lastSize := utf8.DecodeRuneInString(normalizedText[compactToNormalized[lastCompactIdx]:])
-		normalizedEndIdx := compactToNormalized[lastCompactIdx] + lastSize
-		if keywordComparableStartBoundaryAt(normalizedText, normalizedStartIdx) && keywordComparableEndBoundaryAt(normalizedText, normalizedEndIdx) {
-			return normalizedStartIdx, normalizedEndIdx, true
+		if normalizedText[start] != ' ' && keywordComparableStartBoundaryAt(normalizedText, start) {
+			if end, ok := matchCompactKeywordAt(normalizedText, start, compactKeyword); ok &&
+				keywordComparableEndBoundaryAt(normalizedText, end) {
+				return start, end, true
+			}
 		}
-		start = compactIdx + 1
+		start += size
 	}
+	return 0, 0, false
+}
+
+func matchCompactKeywordAt(normalizedText string, start int, compactKeyword string) (int, bool) {
+	normalizedOffset := start
+	for keywordOffset := 0; keywordOffset < len(compactKeyword); keywordOffset++ {
+		for normalizedOffset < len(normalizedText) && normalizedText[normalizedOffset] == ' ' {
+			normalizedOffset++
+		}
+		if normalizedOffset >= len(normalizedText) || normalizedText[normalizedOffset] != compactKeyword[keywordOffset] {
+			return 0, false
+		}
+		normalizedOffset++
+	}
+	return normalizedOffset, true
 }
 
 func keywordComparableStartBoundaryAt(value string, idx int) bool {
@@ -7892,10 +8011,15 @@ func normalizeKeywordComparable(value string) string {
 		}
 		break
 	}
+	if isCanonicalKeywordComparable(value) {
+		return value
+	}
 	value = norm.NFKC.String(value)
 	var builder strings.Builder
+	builder.Grow(len(value))
 	previousSpace := false
-	for _, r := range strings.ToLower(value) {
+	for _, r := range value {
+		r = unicode.ToLower(r)
 		switch {
 		case r == '\u200b' || r == '\u200c' || r == '\u200d' || r == '\ufeff':
 			continue
@@ -7914,7 +8038,26 @@ func normalizeKeywordComparable(value string) string {
 			}
 		}
 	}
-	return strings.TrimSpace(builder.String())
+	return strings.TrimSuffix(builder.String(), " ")
+}
+
+func isCanonicalKeywordComparable(value string) bool {
+	if value == "" || value[0] == ' ' || value[len(value)-1] == ' ' {
+		return false
+	}
+	previousSpace := false
+	for index := 0; index < len(value); index++ {
+		ch := value[index]
+		switch {
+		case ch >= 'a' && ch <= 'z', ch >= '0' && ch <= '9':
+			previousSpace = false
+		case ch == ' ' && !previousSpace:
+			previousSpace = true
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func compactKeywordComparable(value string) string {

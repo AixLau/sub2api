@@ -71,7 +71,7 @@ func extractProtocolSegments(protocol string, document any) []promptSegment {
 	switch protocol {
 	case "openai_chat_completions", "openai_chat", "chat_completions":
 		return extractChatLikeSegments(root)
-	case "anthropic_messages", "claude_messages", "messages":
+	case "anthropic_messages", "openai_messages", "claude_messages", "messages":
 		return append(extractAnthropicSystem(root["system"]), extractMessages(root["messages"], clientInstructionRoles...)...)
 	case "gemini", "gemini_generate_content":
 		return extractGeminiRoot(root)

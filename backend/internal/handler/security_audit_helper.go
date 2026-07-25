@@ -57,6 +57,15 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 		}
 	}
 	if coordinator == nil {
+		if selectedAccountModerationRequired(c, protocol, model, body) {
+			decision := securityaudit.Decision{
+				Kind: securityaudit.DecisionAllow, HTTPStatus: http.StatusOK, AllowNextStage: true,
+			}
+			if cacheCompletion {
+				c.Set(securityAuditCompletedContextKey, true)
+			}
+			return &decision
+		}
 		legacyDecision := runContentModeration(c, reqLog, legacy, apiKey, subject, protocol, model, body)
 		if legacyDecision == nil {
 			return nil
@@ -84,7 +93,14 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 			zap.String("protocol", request.Protocol), zap.String("model", request.Model), zap.String("stage", request.Stage),
 			zap.Int("body_bytes", len(body)))
 	}
-	decision := coordinator.Check(c.Request.Context(), request)
+	var decision securityaudit.Decision
+	if selectedAccountModerationRequired(c, protocol, model, body) {
+		decision = coordinator.CheckWithLegacy(c.Request.Context(), request, nil)
+	} else if cached, ok := contentModerationDecisionFromCache(c, protocol, model, body); ok {
+		decision = coordinator.CheckWithLegacy(c.Request.Context(), request, securityAuditLegacyDecision(cached))
+	} else {
+		decision = coordinator.Check(c.Request.Context(), request)
+	}
 	if decision.AllowNextStage && cacheCompletion {
 		c.Set(securityAuditCompletedContextKey, true)
 	}
@@ -95,6 +111,17 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 			zap.String("stage", request.Stage))
 	}
 	return &decision
+}
+
+func securityAuditLegacyDecision(decision *service.ContentModerationDecision) *securityaudit.LegacyDecision {
+	if decision == nil {
+		return nil
+	}
+	return &securityaudit.LegacyDecision{
+		Allowed: decision.Allowed, Blocked: decision.Blocked, Flagged: decision.Flagged,
+		Message: decision.Message, StatusCode: decision.StatusCode,
+		ErrorCode: "content_policy_violation", Action: decision.Action,
+	}
 }
 
 func buildSecurityAuditRequest(c *gin.Context, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol, model string, body []byte, stage string) securityaudit.Request {

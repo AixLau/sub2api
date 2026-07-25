@@ -18,6 +18,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/promptfilter"
+	"github.com/tidwall/gjson"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -1880,16 +1881,19 @@ func parseSemanticReviewResponse(body []byte, contentType string) (semanticRevie
 	if strings.Contains(strings.ToLower(contentType), "text/event-stream") || bytes.Contains(body, []byte("data:")) {
 		return parseSemanticReviewSSE(bytes.NewReader(body), time.Time{})
 	}
-	var payload map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return semanticReviewResponse{}, fmt.Errorf("parse semantic review response: %w", err)
+	if !json.Valid(body) {
+		return semanticReviewResponse{}, errors.New("parse semantic review response: invalid JSON")
+	}
+	payload := gjson.ParseBytes(body)
+	if !payload.IsObject() {
+		return semanticReviewResponse{}, errors.New("parse semantic review response: expected JSON object")
 	}
 	if text := semanticReviewJSONText(payload); text != "" {
-		usage, _ := extractOpenAIUsageFromJSONBytes(body)
+		usage, _ := semanticReviewUsage(payload)
 		return semanticReviewResponse{
 			Text:      text,
 			Usage:     usage,
-			RequestID: extractOpenAIResponseIDFromJSONBytes(body),
+			RequestID: semanticReviewResponseID(payload),
 		}, nil
 	}
 	return semanticReviewResponse{}, errors.New("semantic review response contained no text")
@@ -1904,33 +1908,39 @@ func parseSemanticReviewSSE(reader io.Reader, started time.Time) (semanticReview
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 4096), contentModerationSemanticReviewMaxResponseBytes)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if !strings.HasPrefix(line, "data:") {
+		line := bytes.TrimSpace(scanner.Bytes())
+		if !bytes.HasPrefix(line, []byte("data:")) {
 			continue
 		}
-		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		if data == "" {
+		data := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
+		if len(data) == 0 {
 			continue
 		}
-		if data == "[DONE]" {
+		if bytes.Equal(data, []byte("[DONE]")) {
 			return semanticReviewSSEOutput(deltas.String(), completed, usage, requestID, firstTokenMS)
 		}
-		var event map[string]any
-		if json.Unmarshal([]byte(data), &event) != nil {
+		if !json.Valid(data) {
 			continue
 		}
-		if parsedUsage, ok := extractOpenAIUsageFromJSONBytes([]byte(data)); ok {
+		event := gjson.ParseBytes(data)
+		if !event.IsObject() {
+			continue
+		}
+		if parsedUsage, ok := semanticReviewUsage(event); ok {
 			usage = parsedUsage
 		}
-		if id := extractOpenAIResponseIDFromJSONBytes([]byte(data)); id != "" {
+		if id := semanticReviewResponseID(event); id != "" {
 			requestID = id
 		}
-		if delta, ok := event["delta"].(string); ok && strings.TrimSpace(fmt.Sprint(event["type"])) == "response.output_text.delta" {
-			if delta != "" && firstTokenMS == nil && !started.IsZero() {
+		eventType := strings.TrimSpace(event.Get("type").String())
+		delta := event.Get("delta")
+		if delta.Type == gjson.String && eventType == "response.output_text.delta" {
+			deltaText := delta.String()
+			if deltaText != "" && firstTokenMS == nil && !started.IsZero() {
 				value := int(time.Since(started).Milliseconds())
 				firstTokenMS = &value
 			}
-			deltas.WriteString(delta)
+			deltas.WriteString(deltaText)
 		}
 		if value := semanticReviewJSONText(event); value != "" {
 			if firstTokenMS == nil && !started.IsZero() {
@@ -1939,7 +1949,6 @@ func parseSemanticReviewSSE(reader io.Reader, started time.Time) (semanticReview
 			}
 			completed = value
 		}
-		eventType := strings.TrimSpace(fmt.Sprint(event["type"]))
 		if eventType == "response.failed" || eventType == "error" {
 			return semanticReviewResponse{}, semanticReviewSSEUpstreamError(event)
 		}
@@ -1950,7 +1959,7 @@ func parseSemanticReviewSSE(reader io.Reader, started time.Time) (semanticReview
 				Retryable: true,
 			}
 		}
-		if eventType == "response.completed" {
+		if eventType == "response.completed" || eventType == "response.done" {
 			return semanticReviewSSEOutput(deltas.String(), completed, usage, requestID, firstTokenMS)
 		}
 	}
@@ -1960,7 +1969,7 @@ func parseSemanticReviewSSE(reader io.Reader, started time.Time) (semanticReview
 	return semanticReviewSSEOutput(deltas.String(), completed, usage, requestID, firstTokenMS)
 }
 
-func semanticReviewSSEUpstreamError(event map[string]any) error {
+func semanticReviewSSEUpstreamError(event gjson.Result) error {
 	message := semanticReviewSSEErrorMessage(event)
 	if isOpenAICodexPlanGatedModelError(http.StatusBadRequest, []byte(message)) {
 		return &ContentModerationSemanticReviewUpstreamError{HTTPStatus: http.StatusBadRequest, Code: "model_unsupported", Message: message}
@@ -1973,15 +1982,15 @@ func semanticReviewSSEUpstreamError(event map[string]any) error {
 	return &ContentModerationSemanticReviewUpstreamError{HTTPStatus: status, Code: "stream_failed", Message: message, Retryable: retryable}
 }
 
-func semanticReviewSSEDeterministicClientError(event map[string]any) bool {
+func semanticReviewSSEDeterministicClientError(event gjson.Result) bool {
 	for _, field := range []string{"code", "type"} {
-		for _, candidate := range []any{
-			semanticReviewNestedValue(event, "response", "error", field),
-			semanticReviewNestedValue(event, "error", field),
-			event[field],
+		for _, candidate := range []gjson.Result{
+			event.Get("response.error." + field),
+			event.Get("error." + field),
+			event.Get(field),
 		} {
-			value := strings.ToLower(strings.TrimSpace(fmt.Sprint(candidate)))
-			if value == "" || value == "<nil>" {
+			value := strings.ToLower(strings.TrimSpace(candidate.String()))
+			if value == "" {
 				continue
 			}
 			if strings.Contains(value, "invalid_request") ||
@@ -1998,29 +2007,17 @@ func semanticReviewSSEDeterministicClientError(event map[string]any) bool {
 	return false
 }
 
-func semanticReviewSSEErrorMessage(event map[string]any) string {
-	for _, candidate := range []any{
-		semanticReviewNestedValue(event, "response", "error", "message"),
-		semanticReviewNestedValue(event, "error", "message"),
-		event["message"],
+func semanticReviewSSEErrorMessage(event gjson.Result) string {
+	for _, candidate := range []gjson.Result{
+		event.Get("response.error.message"),
+		event.Get("error.message"),
+		event.Get("message"),
 	} {
-		if message := strings.TrimSpace(fmt.Sprint(candidate)); message != "" && message != "<nil>" {
+		if message := strings.TrimSpace(candidate.String()); message != "" {
 			return sanitizeSemanticReviewError(message)
 		}
 	}
 	return "semantic review stream terminated without a completed response"
-}
-
-func semanticReviewNestedValue(value map[string]any, path ...string) any {
-	var current any = value
-	for _, key := range path {
-		object, ok := current.(map[string]any)
-		if !ok {
-			return nil
-		}
-		current = object[key]
-	}
-	return current
 }
 
 func semanticReviewSSEOutput(deltas, completed string, usage OpenAIUsage, requestID string, firstTokenMS *int) (semanticReviewResponse, error) {
@@ -2065,43 +2062,62 @@ func semanticReviewUsageRecordID(input ContentModerationSemanticReviewInput) str
 	return "cm-semantic-" + digest[:32]
 }
 
-func semanticReviewJSONText(value map[string]any) string {
-	if value == nil {
+func semanticReviewJSONText(value gjson.Result) string {
+	if !value.IsObject() {
 		return ""
 	}
-	if text, ok := value["output_text"].(string); ok && strings.TrimSpace(text) != "" {
-		return text
+	if text := value.Get("output_text"); text.Type == gjson.String && strings.TrimSpace(text.String()) != "" {
+		return text.String()
 	}
-	if text, ok := value["text"].(string); ok && strings.Contains(strings.ToLower(fmt.Sprint(value["type"])), "output_text") && strings.TrimSpace(text) != "" {
-		return text
+	if text := value.Get("text"); text.Type == gjson.String && strings.Contains(strings.ToLower(value.Get("type").String()), "output_text") && strings.TrimSpace(text.String()) != "" {
+		return text.String()
 	}
-	if nested, ok := value["response"].(map[string]any); ok {
+	if nested := value.Get("response"); nested.IsObject() {
 		if text := semanticReviewJSONText(nested); text != "" {
 			return text
 		}
 	}
-	if output, ok := value["output"].([]any); ok {
-		var parts []string
-		for _, item := range output {
-			itemMap, ok := item.(map[string]any)
-			if !ok {
-				continue
+	if output := value.Get("output"); output.IsArray() {
+		var text strings.Builder
+		output.ForEach(func(_, item gjson.Result) bool {
+			content := item.Get("content")
+			if !content.IsArray() {
+				return true
 			}
-			if content, ok := itemMap["content"].([]any); ok {
-				for _, part := range content {
-					partMap, ok := part.(map[string]any)
-					if !ok {
-						continue
-					}
-					if text, ok := partMap["text"].(string); ok && text != "" {
-						parts = append(parts, text)
-					}
+			content.ForEach(func(_, part gjson.Result) bool {
+				if !part.IsObject() {
+					return true
 				}
-			}
-		}
-		return strings.Join(parts, "")
+				partText := part.Get("text")
+				if partText.Type == gjson.String {
+					text.WriteString(partText.String())
+				}
+				return true
+			})
+			return true
+		})
+		return text.String()
 	}
 	return ""
+}
+
+func semanticReviewUsage(value gjson.Result) (OpenAIUsage, bool) {
+	if usage, ok := openAIUsageFromGJSON(value.Get("usage")); ok {
+		mergeHostedImageGenToolUsage(value.Get("tool_usage.image_gen"), &usage)
+		return usage, true
+	}
+	if usage, ok := openAIUsageFromGJSON(value.Get("response.usage")); ok {
+		mergeHostedImageGenToolUsage(value.Get("response.tool_usage.image_gen"), &usage)
+		return usage, true
+	}
+	return OpenAIUsage{}, false
+}
+
+func semanticReviewResponseID(value gjson.Result) string {
+	if id := strings.TrimSpace(value.Get("id").String()); id != "" {
+		return id
+	}
+	return strings.TrimSpace(value.Get("response.id").String())
 }
 
 type openAIContentModerationSemanticReviewQuotaRefresher struct {

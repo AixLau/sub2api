@@ -248,8 +248,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	var reqModel string
 	var reqStream bool
 	var imageReleaseFunc func()
+	var moderationBody []byte
 	if preForwardRequest, ok := openAIHTTPPreForwardRequestFromContext(c, service.ContentModerationProtocolOpenAIResponses); ok {
 		body = preForwardRequest.Body
+		moderationBody = preForwardRequest.contentModerationBody()
 		sessionHashBody = preForwardRequest.CyberBody
 		if len(sessionHashBody) == 0 {
 			sessionHashBody = body
@@ -262,7 +264,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if !ok {
 			return
 		}
+		moderationBody = body
 	}
+	// Reasoning policy may rewrite the forwarded JSON. Moderation state is
+	// keyed to the original client payload produced by the pre-forward guard.
 	// body-signal compact：上游 unary 等待期间向下游发 SSE 注释行心跳，防止
 	// 反向代理空闲超时掐断长压缩连接（#3887）。首拍延迟一个心跳间隔，快速
 	// 失败仍走 JSON+状态码链路；未标记客户端流式或间隔为 0 时是 no-op。
@@ -284,7 +289,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 
-	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, reqModel, body); decision != nil && !decision.AllowNextStage {
+	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, reqModel, moderationBody); decision != nil && !decision.AllowNextStage {
 		h.openAISecurityAuditError(c, decision)
 		return
 	}
@@ -859,7 +864,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 
-	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, service.ContentModerationProtocolAnthropicMessages, reqModel, body); decision != nil && !decision.AllowNextStage {
+	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIMessages, reqModel, body); decision != nil && !decision.AllowNextStage {
 		h.anthropicSecurityAuditError(c, decision)
 		return
 	}
@@ -1545,6 +1550,19 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, true)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeWSV2))
 
+	beginContentModerationFrame(c, ctx)
+	if moderationDecision := h.checkWithModerationGuard(c, reqLog, moderationGuardInput{
+		APIKey: apiKey, Subject: subject, Protocol: service.ContentModerationProtocolOpenAIResponses,
+		Model: reqModel, Body: firstMessage,
+	}); moderationDecision != nil && moderationDecision.Blocked {
+		pipelineResult := openAIWebSocketPipelineResult{
+			Blocked: true, BlockReason: openAIWebSocketPipelineBlockReasonModeration,
+			ModerationDecision: moderationDecision, Message: moderationDecision.Message,
+		}
+		closeReason := h.writeOpenAIWebSocketPipelineBlock(ctx, c, wsConn, apiKey, reqModel, pipelineResult)
+		closeOpenAIClientWS(wsConn, openAIWebSocketPipelineCloseStatus(pipelineResult), closeReason)
+		return
+	}
 	if decision := h.checkSecurityAuditStage(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, reqModel, firstMessage, "first_turn"); decision != nil && !decision.AllowNextStage {
 		writeSecurityAuditWSError(ctx, wsConn, decision)
 		closeOpenAIClientWS(wsConn, securityAuditWSCloseStatus(decision), securityAuditWSCloseReason(decision))
@@ -1780,6 +1798,19 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if model == "" {
 					model = reqModel
 				}
+				frameCtx := context.WithValue(ctx, ctxkey.RequestedPublicModel, model)
+				beginContentModerationFrame(c, frameCtx)
+				if moderationDecision := h.checkWithModerationGuard(c, reqLog, moderationGuardInput{
+					APIKey: apiKey, Subject: subject, Protocol: service.ContentModerationProtocolOpenAIResponses,
+					Model: model, Body: payload,
+				}); moderationDecision != nil && moderationDecision.Blocked {
+					pipelineResult := openAIWebSocketPipelineResult{
+						Blocked: true, BlockReason: openAIWebSocketPipelineBlockReasonModeration,
+						ModerationDecision: moderationDecision, Message: moderationDecision.Message,
+					}
+					closeReason := h.writeOpenAIWebSocketPipelineBlock(ctx, c, wsConn, apiKey, model, pipelineResult)
+					return service.NewOpenAIWSClientCloseError(openAIWebSocketPipelineCloseStatus(pipelineResult), closeReason, nil)
+				}
 				if decision := h.checkSecurityAuditStage(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, model, payload, "subsequent_turn"); decision != nil && !decision.AllowNextStage {
 					writeSecurityAuditWSError(ctx, wsConn, decision)
 					return service.NewOpenAIWSClientCloseError(securityAuditWSCloseStatus(decision), securityAuditWSCloseReason(decision), nil)
@@ -1843,9 +1874,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return nil
 			},
 			AfterTurn: func(turn int, result *service.OpenAIForwardResult, turnErr error) {
-				// Reuse is bounded to one pending frame. Once a turn is forwarded,
-				// blocked, or abandoned, an identical later frame must be moderated anew.
-				c.Set(selectedAccountModerationStateContextKey, (*service.ContentModerationAttemptState)(nil))
+				completeContentModerationFrame(c, turn, turnErr)
 				_ = h.runOpenAIWebSocketStage(c, OpenAIWebSocketUsageStage{
 					Handler:              h,
 					RequestContext:       ctx,

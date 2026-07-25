@@ -19,6 +19,7 @@ import (
 var (
 	contentModerationBenchmarkInputSink ContentModerationInput
 	contentModerationBenchmarkRuleSink  ContentModerationKeywordRule
+	contentModerationBenchmarkRulesSink []ContentModerationKeywordRule
 	contentModerationBenchmarkBoolSink  bool
 )
 
@@ -169,14 +170,236 @@ func BenchmarkContentModerationRuleMatching(b *testing.B) {
 			Enabled:  true,
 		}
 	}
+	prepared := newContentModerationPreparedRuleSet(rules)
 	b.ReportAllocs()
+	b.SetBytes(int64(len(text)))
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		var hit bool
-		contentModerationBenchmarkRuleSink, hit = matchContentModerationKeyword(text, rules)
+		contentModerationBenchmarkRuleSink, hit = prepared.Match(text)
 		if hit {
 			b.Fatal("unexpected keyword match")
 		}
+	}
+}
+
+func TestContentModerationPreparedRuleSetMatchesAllocations(t *testing.T) {
+	tests := []struct {
+		name      string
+		prepare   func() (*contentModerationPreparedRuleSet, string)
+		wantCount int
+		maxAllocs float64
+		allocRuns int
+	}{
+		{
+			name: "miss 10k",
+			prepare: func() (*contentModerationPreparedRuleSet, string) {
+				return newContentModerationPreparedRuleSet(contentModerationBenchmarkUnrelatedRules(10_000)),
+					strings.Repeat("ordinary content ", maxModerationInputRunes/17)
+			},
+			maxAllocs: 0,
+			allocRuns: 100,
+		},
+		{
+			name: "single hit 10k",
+			prepare: func() (*contentModerationPreparedRuleSet, string) {
+				rules := contentModerationBenchmarkUnrelatedRules(10_000)
+				rules[0].Keyword = "needle"
+				return newContentModerationPreparedRuleSet(rules),
+					"needle " + strings.Repeat("ordinary content ", maxModerationInputRunes/17)
+			},
+			wantCount: 1,
+			maxAllocs: 1,
+			allocRuns: 100,
+		},
+		{
+			name: "multiple hits",
+			prepare: func() (*contentModerationPreparedRuleSet, string) {
+				rules := []ContentModerationKeywordRule{
+					{Keyword: "gamma", Enabled: true},
+					{Keyword: "alpha", Enabled: true},
+					{Keyword: "beta", Enabled: true},
+				}
+				return newContentModerationPreparedRuleSet(rules), "alpha beta gamma"
+			},
+			wantCount: 3,
+			maxAllocs: 1,
+			allocRuns: 100,
+		},
+		{
+			name: "compact collision 10k",
+			prepare: func() (*contentModerationPreparedRuleSet, string) {
+				return newContentModerationPreparedRuleSet(contentModerationCompactCollisionRules(10_000)),
+					"abcdefghijklmno"
+			},
+			wantCount: 10_000,
+			maxAllocs: 2,
+			allocRuns: 5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prepared, text := tt.prepare()
+			if matches := prepared.Matches(text); len(matches) != tt.wantCount {
+				t.Fatalf("Matches() count = %d, want %d", len(matches), tt.wantCount)
+			}
+			allocs := testing.AllocsPerRun(tt.allocRuns, func() {
+				contentModerationBenchmarkRulesSink = prepared.Matches(text)
+			})
+			if allocs > tt.maxAllocs {
+				t.Fatalf("Matches() allocations = %.0f, want <= %.0f", allocs, tt.maxAllocs)
+			}
+		})
+	}
+}
+
+func BenchmarkContentModerationPreparedRuleSetMatches(b *testing.B) {
+	benchmarks := []struct {
+		name      string
+		prepare   func() (*contentModerationPreparedRuleSet, string)
+		wantCount int
+	}{
+		{
+			name: "Miss10K",
+			prepare: func() (*contentModerationPreparedRuleSet, string) {
+				return newContentModerationPreparedRuleSet(contentModerationBenchmarkUnrelatedRules(10_000)),
+					strings.Repeat("ordinary content ", maxModerationInputRunes/17)
+			},
+		},
+		{
+			name: "SingleHit10K",
+			prepare: func() (*contentModerationPreparedRuleSet, string) {
+				rules := contentModerationBenchmarkUnrelatedRules(10_000)
+				rules[0].Keyword = "needle"
+				return newContentModerationPreparedRuleSet(rules),
+					"needle " + strings.Repeat("ordinary content ", maxModerationInputRunes/17)
+			},
+			wantCount: 1,
+		},
+		{
+			name: "MultipleHits",
+			prepare: func() (*contentModerationPreparedRuleSet, string) {
+				rules := []ContentModerationKeywordRule{
+					{Keyword: "gamma", Enabled: true},
+					{Keyword: "alpha", Enabled: true},
+					{Keyword: "beta", Enabled: true},
+				}
+				return newContentModerationPreparedRuleSet(rules), "alpha beta gamma"
+			},
+			wantCount: 3,
+		},
+		{
+			name: "CompactCollision10K",
+			prepare: func() (*contentModerationPreparedRuleSet, string) {
+				return newContentModerationPreparedRuleSet(contentModerationCompactCollisionRules(10_000)),
+					"abcdefghijklmno"
+			},
+			wantCount: 10_000,
+		},
+	}
+
+	for _, benchmark := range benchmarks {
+		b.Run(benchmark.name, func(b *testing.B) {
+			prepared, text := benchmark.prepare()
+			if matches := prepared.Matches(text); len(matches) != benchmark.wantCount {
+				b.Fatalf("Matches() count = %d, want %d", len(matches), benchmark.wantCount)
+			}
+			b.ReportAllocs()
+			b.SetBytes(int64(len(text)))
+			b.ResetTimer()
+			for range b.N {
+				contentModerationBenchmarkRulesSink = prepared.Matches(text)
+			}
+		})
+	}
+}
+
+func contentModerationBenchmarkUnrelatedRules(count int) []ContentModerationKeywordRule {
+	rules := make([]ContentModerationKeywordRule, count)
+	for index := range rules {
+		rules[index] = ContentModerationKeywordRule{
+			Keyword: fmt.Sprintf("unrelated%05d", index), Enabled: true,
+		}
+	}
+	return rules
+}
+
+func BenchmarkContentModerationKeywordFalseCandidate10K(b *testing.B) {
+	rules := make([]ContentModerationKeywordRule, maxContentModerationBlockedKeywords)
+	rules[0] = ContentModerationKeywordRule{Keyword: "apikey", Enabled: true}
+	for index := 1; index < len(rules); index++ {
+		rules[index] = ContentModerationKeywordRule{
+			Keyword: fmt.Sprintf("unrelated%05d", index), Enabled: true,
+		}
+	}
+	prepared := newContentModerationPreparedRuleSet(rules)
+	text := strings.Repeat("xapi key ", maxModerationInputRunes/9)
+	if _, hit := prepared.Match(text); hit {
+		b.Fatal("unexpected keyword match")
+	}
+	b.ReportAllocs()
+	b.SetBytes(int64(len(text)))
+	b.ResetTimer()
+	for range b.N {
+		contentModerationBenchmarkRuleSink, contentModerationBenchmarkBoolSink = prepared.Match(text)
+	}
+}
+
+func BenchmarkContentModerationKeywordCompactCollision10K(b *testing.B) {
+	prepared := newContentModerationPreparedRuleSet(contentModerationCompactCollisionRules(10_000))
+	text := strings.Repeat("xabcdefghijklmno ", maxModerationInputRunes/17)
+	if _, hit := prepared.Match(text); hit {
+		b.Fatal("unexpected keyword match")
+	}
+	b.ReportAllocs()
+	b.SetBytes(int64(len(text)))
+	b.ResetTimer()
+	for range b.N {
+		contentModerationBenchmarkRuleSink, contentModerationBenchmarkBoolSink = prepared.Match(text)
+	}
+}
+
+func BenchmarkContentModerationKeywordNestedSuffix200(b *testing.B) {
+	rules := make([]ContentModerationKeywordRule, maxContentModerationBlockedKeywordRunes)
+	for index := range rules {
+		rules[index] = ContentModerationKeywordRule{
+			Keyword: strings.Repeat("a", index+1), Enabled: true,
+		}
+	}
+	prepared := newContentModerationPreparedRuleSet(rules)
+	text := "x" + strings.Repeat("a", maxModerationInputRunes-1)
+	if _, hit := prepared.Match(text); hit {
+		b.Fatal("unexpected keyword match")
+	}
+	b.ReportAllocs()
+	b.SetBytes(int64(len(text)))
+	b.ResetTimer()
+	for range b.N {
+		contentModerationBenchmarkRuleSink, contentModerationBenchmarkBoolSink = prepared.Match(text)
+	}
+}
+
+func BenchmarkFindCompactKeywordComparableSpanBoundaryReject(b *testing.B) {
+	for _, size := range []int{1_000, 2_000, 4_000, 8_000} {
+		b.Run(fmt.Sprintf("Compact/%d", size), func(b *testing.B) {
+			normalized := strings.Repeat("xapikey", size)
+			compact := compactKeywordComparable(normalized)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				_, _, contentModerationBenchmarkBoolSink = findCompactKeywordComparableSpanWithBoundary(normalized, compact, "apikey")
+			}
+		})
+		b.Run(fmt.Sprintf("Spaced/%d", size), func(b *testing.B) {
+			normalized := strings.Repeat("xapi key ", size)
+			compact := compactKeywordComparable(normalized)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				_, _, contentModerationBenchmarkBoolSink = findCompactKeywordComparableSpanWithBoundary(normalized, compact, "apikey")
+			}
+		})
 	}
 }
 

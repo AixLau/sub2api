@@ -83,6 +83,37 @@ func TestCoordinatorDoesNotMutateRequestBody(t *testing.T) {
 	require.Equal(t, original, body)
 }
 
+func TestCoordinatorReusesLegacyDecisionWithoutSkippingPromptEngine(t *testing.T) {
+	legacy := &fakeLegacyEngine{decision: &LegacyDecision{Blocked: true}}
+	prompt := &fakePromptEngine{
+		mode:     ModeBlocking,
+		decision: &PromptDecision{Kind: DecisionAllow, AllowNextStage: true},
+	}
+	precomputed := &LegacyDecision{Allowed: true, Action: "allow"}
+
+	decision := NewCoordinator(legacy, prompt).CheckWithLegacy(context.Background(), Request{}, precomputed)
+
+	require.Same(t, precomputed, decision.Legacy)
+	require.True(t, decision.AllowNextStage)
+	require.Zero(t, legacy.calls.Load())
+	require.Equal(t, int64(1), prompt.evaluates.Load())
+}
+
+func TestCoordinatorNilPrecomputedLegacyStillRunsPromptEngine(t *testing.T) {
+	legacy := &fakeLegacyEngine{decision: &LegacyDecision{Blocked: true}}
+	prompt := &fakePromptEngine{
+		mode:     ModeBlocking,
+		decision: &PromptDecision{Kind: DecisionAllow, AllowNextStage: true},
+	}
+
+	decision := NewCoordinator(legacy, prompt).CheckWithLegacy(context.Background(), Request{}, nil)
+
+	require.Nil(t, decision.Legacy)
+	require.True(t, decision.AllowNextStage)
+	require.Zero(t, legacy.calls.Load())
+	require.Equal(t, int64(1), prompt.evaluates.Load())
+}
+
 func TestCoordinatorBlockingPriorityCoversBothEngineDecisionMatrix(t *testing.T) {
 	legacyCases := []struct {
 		name     string

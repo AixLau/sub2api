@@ -2,7 +2,9 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -18,6 +20,40 @@ import (
 
 const selectedAccountModerationStateContextKey = "selected_account_moderation_state"
 const contentModerationForwardConflictRecorderContextKey = "content_moderation_forward_conflict_recorder"
+const contentModerationDecisionCacheContextKey = "content_moderation_decision_cache"
+const selectedAccountModerationRequirementContextKey = "selected_account_moderation_requirement"
+const promptInjectionBaselineCompletedContextKey = "prompt_injection_baseline_completed"
+
+type contentModerationDecisionCacheEntry struct {
+	protocol    string
+	model       string
+	bodyDigest  [sha256.Size]byte
+	decision    service.ContentModerationDecision
+	hasDecision bool
+}
+
+type selectedAccountModerationRequirement struct {
+	protocol   string
+	model      string
+	bodyDigest [sha256.Size]byte
+}
+
+type promptInjectionBaselineCacheEntry struct {
+	requirement selectedAccountModerationRequirement
+	result      service.ContentModerationBaselineResult
+}
+
+func newSelectedAccountModerationRequirement(protocol, model string, body []byte) selectedAccountModerationRequirement {
+	return selectedAccountModerationRequirement{
+		protocol:   strings.TrimSpace(protocol),
+		model:      strings.TrimSpace(model),
+		bodyDigest: sha256.Sum256(body),
+	}
+}
+
+func (r selectedAccountModerationRequirement) matches(protocol, model string, body []byte) bool {
+	return r == newSelectedAccountModerationRequirement(protocol, model, body)
+}
 
 func (h *GatewayHandler) checkContentModeration(c *gin.Context, reqLog *zap.Logger, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol string, model string, body []byte) *service.ContentModerationDecision {
 	if h == nil || h.contentModerationService == nil {
@@ -202,6 +238,9 @@ func runContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.Conte
 		return decision
 	}
 	input := buildContentModerationInput(c, apiKey, subject, protocol, model, body)
+	if cached, ok := contentModerationDecisionFromCache(c, protocol, model, body); ok {
+		return cached
+	}
 	if reqLog != nil {
 		reqLog.Info("content_moderation.gateway_check_start",
 			zap.String("request_id", input.RequestID),
@@ -224,6 +263,7 @@ func runContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.Conte
 		}
 		decision = contentModerationCheckErrorDecision()
 	}
+	cacheContentModerationDecision(c, protocol, model, body, decision)
 	markContentModerationReceipt(c, protocol, "", decision, false)
 	recordContentModerationReceiptMetric(svc, c, "")
 	if reqLog != nil && decision != nil {
@@ -239,6 +279,111 @@ func runContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.Conte
 		)
 	}
 	return decision
+}
+
+func markSelectedAccountModerationRequired(c *gin.Context, protocol, model string, body []byte) {
+	if c == nil {
+		return
+	}
+	c.Set(selectedAccountModerationRequirementContextKey, newSelectedAccountModerationRequirement(protocol, model, body))
+}
+
+func selectedAccountModerationRequired(c *gin.Context, protocol, model string, body []byte) bool {
+	if c == nil {
+		return false
+	}
+	value, ok := c.Get(selectedAccountModerationRequirementContextKey)
+	if !ok {
+		return false
+	}
+	requirement, ok := value.(selectedAccountModerationRequirement)
+	return ok && requirement.matches(protocol, model, body)
+}
+
+func markPromptInjectionBaselineCompleted(c *gin.Context, protocol, model string, body []byte, result service.ContentModerationBaselineResult) {
+	if c != nil && result.Completed {
+		c.Set(promptInjectionBaselineCompletedContextKey, promptInjectionBaselineCacheEntry{
+			requirement: newSelectedAccountModerationRequirement(protocol, model, body),
+			result:      result,
+		})
+	}
+}
+
+func promptInjectionBaselineResult(c *gin.Context, protocol, model string, body []byte) *service.ContentModerationBaselineResult {
+	if c == nil {
+		return nil
+	}
+	value, ok := c.Get(promptInjectionBaselineCompletedContextKey)
+	if !ok {
+		return nil
+	}
+	entry, ok := value.(promptInjectionBaselineCacheEntry)
+	if !ok || !entry.requirement.matches(protocol, model, body) || !entry.result.Completed {
+		return nil
+	}
+	result := entry.result
+	return &result
+}
+
+func beginContentModerationFrame(c *gin.Context, parent context.Context) {
+	if c == nil || c.Request == nil {
+		return
+	}
+	c.Request = c.Request.WithContext(service.WithFreshContentModerationInputCache(parent))
+	c.Set(contentModerationDecisionCacheContextKey, nil)
+	c.Set(selectedAccountModerationRequirementContextKey, nil)
+	c.Set(selectedAccountModerationStateContextKey, (*service.ContentModerationAttemptState)(nil))
+	c.Set(promptInjectionBaselineCompletedContextKey, nil)
+	c.Set(moderationcoverage.ModerationReceiptContextKey, nil)
+	c.Set(moderationcoverage.PipelineAdmittedContextKey, nil)
+	c.Set(moderationcoverage.PipelineAdmissionContextKey, nil)
+}
+
+func completeContentModerationFrame(c *gin.Context, turn int, turnErr error) {
+	if c == nil {
+		return
+	}
+	var failoverErr *service.UpstreamFailoverError
+	if turn == 1 && errors.As(turnErr, &failoverErr) && failoverErr.ShouldRetryNextAccount() {
+		// The outer handler will retry the same first frame on another account.
+		return
+	}
+	c.Set(selectedAccountModerationStateContextKey, (*service.ContentModerationAttemptState)(nil))
+}
+
+func cacheContentModerationDecision(c *gin.Context, protocol, model string, body []byte, decision *service.ContentModerationDecision) {
+	if c == nil {
+		return
+	}
+	entry := contentModerationDecisionCacheEntry{
+		protocol:   strings.TrimSpace(protocol),
+		model:      strings.TrimSpace(model),
+		bodyDigest: sha256.Sum256(body),
+	}
+	if decision != nil {
+		entry.decision = *decision
+		entry.hasDecision = true
+	}
+	c.Set(contentModerationDecisionCacheContextKey, entry)
+}
+
+func contentModerationDecisionFromCache(c *gin.Context, protocol, model string, body []byte) (*service.ContentModerationDecision, bool) {
+	if c == nil {
+		return nil, false
+	}
+	value, ok := c.Get(contentModerationDecisionCacheContextKey)
+	if !ok {
+		return nil, false
+	}
+	entry, ok := value.(contentModerationDecisionCacheEntry)
+	if !ok || entry.protocol != strings.TrimSpace(protocol) || entry.model != strings.TrimSpace(model) || entry.bodyDigest != sha256.Sum256(body) {
+		return nil, false
+	}
+	if !entry.hasDecision {
+		return nil, true
+	}
+	decision := entry.decision
+	return &decision, true
 }
 
 func markContentModerationReceipt(c *gin.Context, protocol, policyRevision string, decision *service.ContentModerationDecision, selectedAccountPending bool) {
@@ -291,6 +436,9 @@ func ensureContentModerationReceipt(c *gin.Context, protocol string, receiptCoun
 	if c == nil || len(moderationcoverage.ModerationReceiptsFromContext(c)) != receiptCountBefore {
 		return
 	}
+	if _, ok := moderationcoverage.ModerationReceiptFromContext(c); ok {
+		return
+	}
 	markContentModerationReceipt(c, protocol, "", &service.ContentModerationDecision{
 		Allowed: true,
 		Action:  service.ContentModerationActionAllow,
@@ -334,10 +482,11 @@ func buildContentModerationInput(c *gin.Context, apiKey *service.APIKey, subject
 }
 
 func runSelectedAccountContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.ContentModerationService, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol, model string, body []byte, account *service.Account) *service.ContentModerationGateResult {
-	if svc == nil || account == nil || c == nil || c.Request == nil || !svc.RequiresSelectedAccount(c.Request.Context()) {
+	if svc == nil || account == nil || c == nil || c.Request == nil || !selectedAccountModerationRequired(c, protocol, model, body) {
 		return nil
 	}
 	input := buildContentModerationInput(c, apiKey, subject, protocol, model, body)
+	input.PromptInjectionBaseline = promptInjectionBaselineResult(c, protocol, model, body)
 	input.AccountID = account.ID
 	input.AccountName = account.Name
 	input.AccountType = account.Type
