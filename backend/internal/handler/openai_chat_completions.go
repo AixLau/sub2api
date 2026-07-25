@@ -346,6 +346,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account, result)
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+		sessionID := service.ExtractClientSessionID(c)
 
 		cyberBlocked := service.GetOpsCyberPolicy(c) != nil
 		scheduleSucceeded := true
@@ -360,6 +361,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			UpstreamEndpoint:   upstreamEndpoint,
 			UserAgent:          userAgent,
 			ClientIP:           clientIP,
+			SessionID:          sessionID,
 			QuotaPlatform:      quotaPlatform,
 			ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel),
 			CyberBlocked:       cyberBlocked,

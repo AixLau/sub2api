@@ -830,6 +830,7 @@ type GatewayUsageStage struct {
 	UpstreamEndpoint      string
 	UserAgent             string
 	ClientIP              string
+	SessionID             string
 	RequestPayloadHash    string
 	ForceCacheBilling     bool
 	APIKeyService         *service.APIKeyService
@@ -870,6 +871,7 @@ func (s GatewayUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 				UpstreamEndpoint:      s.UpstreamEndpoint,
 				UserAgent:             s.UserAgent,
 				IPAddress:             s.ClientIP,
+				SessionID:             s.SessionID,
 				RequestPayloadHash:    s.RequestPayloadHash,
 				LongContextThreshold:  s.LongContextThreshold,
 				LongContextMultiplier: s.LongContextMultiplier,
@@ -889,6 +891,7 @@ func (s GatewayUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 				UpstreamEndpoint:   s.UpstreamEndpoint,
 				UserAgent:          s.UserAgent,
 				IPAddress:          s.ClientIP,
+				SessionID:          s.SessionID,
 				RequestPayloadHash: s.RequestPayloadHash,
 				ForceCacheBilling:  s.ForceCacheBilling,
 				APIKeyService:      s.APIKeyService,

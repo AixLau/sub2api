@@ -335,6 +335,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 			UpstreamEndpoint:   upstreamEndpoint,
 			UserAgent:          userAgent,
 			ClientIP:           clientIP,
+			SessionID:          service.ExtractClientSessionID(c),
 			RequestPayloadHash: requestPayloadHash,
 			APIKeyService:      h.apiKeyService,
 			ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel),

@@ -199,7 +199,7 @@ const (
 	contentModerationPolicySchemaVersion           = "2026-06-29.1"
 	contentModerationExtractorVersion              = "v4"
 	contentModerationMinimumSecurityBaselineCommit = "9216c848"
-	contentModerationRouteManifestVersion          = "2026-07-17.2"
+	contentModerationRouteManifestVersion          = "2026-07-25.1"
 	contentModerationPipelineCoverageVersion       = "gateway-pipeline-coverage-v1"
 	minContentModerationBuildCommitPrefixLen       = 7
 )

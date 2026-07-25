@@ -214,6 +214,17 @@ func RegisterGatewayRoutes(
 			"GatewayHandler.Usage",
 			"Usage lookup does not submit model-visible user content to upstream moderation-sensitive paths.",
 		), h.Gateway.Usage)
+		moderatedGateway.POST("/live", coveredModeratedRoute(
+			"/v1/live",
+			"OpenAIGatewayHandler.Live",
+			service.ContentModerationProtocolOpenAIResponses,
+			"OpenAI Live session creation audits model-visible session instructions before account selection and upstream forwarding.",
+		), h.OpenAIGateway.Live)
+		moderatedGateway.GETNoAudit("/live/:call_id", intentionalNoAuditRoute(
+			"/v1/live/:call_id",
+			"OpenAIGatewayHandler.LiveSideband",
+			"OpenAI Live sideband attaches to an existing audited call and does not submit a new session request.",
+		), h.OpenAIGateway.LiveSideband)
 		// OpenAI Responses API: auto-route based on group platform
 		openAIResponsesRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
 			"/v1/responses",
@@ -576,6 +587,17 @@ func RegisterGatewayRoutes(
 	moderatedCodexDirect := NewGatewayPipelineRegistrar(codexDirect, openAIHTTPPipelineEntrypoints)
 	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic)
 	{
+		moderatedCodexDirect.POST("/realtime/calls", coveredModeratedRoute(
+			"/backend-api/codex/realtime/calls",
+			"OpenAIGatewayHandler.Live",
+			service.ContentModerationProtocolOpenAIResponses,
+			"Codex Live session creation audits model-visible session instructions before account selection and upstream forwarding.",
+		), h.OpenAIGateway.Live)
+		moderatedCodexDirect.GETNoAudit("/:call_id", intentionalNoAuditRoute(
+			"/backend-api/codex/:call_id",
+			"OpenAIGatewayHandler.LiveSideband",
+			"Codex Live sideband attaches to an existing audited call and does not submit a new session request.",
+		), h.OpenAIGateway.LiveSideband)
 		codexOpenAIResponsesRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
 			"/backend-api/codex/responses",
 			"OpenAIGatewayHandler.Responses",

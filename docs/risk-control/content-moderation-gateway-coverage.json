@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "manifest_version": "2026-07-17.2",
+  "manifest_version": "2026-07-25.1",
   "receipt_contract": {
     "production_admission_requires": ["local_scan_done", "forward_allowed"],
     "selected_account_deferred_must_complete": true,
@@ -85,6 +85,42 @@
       ],
       "status": "covered",
       "review_reason": "Codex direct standalone search input is moderated before account selection and upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/v1/live",
+        "handler": "OpenAIGatewayHandler.Live",
+        "protocol": "openai_responses"
+      },
+      "method": "POST",
+      "path": "/v1/live",
+      "handler": "OpenAIGatewayHandler.Live",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "pipeline": "",
+      "stage_coverage": [],
+      "status": "covered",
+      "review_reason": "OpenAI Live session creation audits model-visible session instructions before account selection and upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/backend-api/codex/realtime/calls",
+        "handler": "OpenAIGatewayHandler.Live",
+        "protocol": "openai_responses"
+      },
+      "method": "POST",
+      "path": "/backend-api/codex/realtime/calls",
+      "handler": "OpenAIGatewayHandler.Live",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "pipeline": "",
+      "stage_coverage": [],
+      "status": "covered",
+      "review_reason": "Codex Live session creation audits model-visible session instructions before account selection and upstream forwarding."
     },
     {
       "route": {

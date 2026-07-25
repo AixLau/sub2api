@@ -1324,6 +1324,7 @@ type OpenAIHTTPUsageStage struct {
 	UpstreamEndpoint   string
 	UserAgent          string
 	ClientIP           string
+	SessionID          string
 	RequestPayloadHash string
 	RequestBody        []byte
 	QuotaPlatform      string
@@ -1399,6 +1400,7 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 			UpstreamEndpoint:   s.UpstreamEndpoint,
 			UserAgent:          s.UserAgent,
 			IPAddress:          s.ClientIP,
+			SessionID:          s.SessionID,
 			RequestPayloadHash: s.RequestPayloadHash,
 			APIKeyService:      h.apiKeyService,
 			QuotaPlatform:      quotaPlatform,
@@ -1817,6 +1819,7 @@ type OpenAIWebSocketUsageStage struct {
 	ScheduleSuccess      *bool
 	UserAgent            string
 	ClientIP             string
+	SessionID            string
 }
 
 func (OpenAIWebSocketUsageStage) StageName() string {
@@ -1902,6 +1905,7 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 			UpstreamEndpoint:   upstreamEndpoint,
 			UserAgent:          s.UserAgent,
 			IPAddress:          s.ClientIP,
+			SessionID:          s.SessionID,
 			RequestPayloadHash: s.RequestPayloadHash,
 			APIKeyService:      h.apiKeyService,
 			QuotaPlatform:      quotaPlatform,

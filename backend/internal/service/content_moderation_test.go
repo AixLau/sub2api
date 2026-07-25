@@ -310,6 +310,10 @@ func (r *contentModerationTestUserRepo) Create(ctx context.Context, user *User) 
 	panic("unexpected Create call")
 }
 
+func (r *contentModerationTestUserRepo) CreateWithEmailAliasGuard(ctx context.Context, user *User) error {
+	panic("unexpected CreateWithEmailAliasGuard call")
+}
+
 func (r *contentModerationTestUserRepo) GetByID(ctx context.Context, id int64) (*User, error) {
 	if r.user == nil {
 		return nil, ErrUserNotFound
@@ -401,6 +405,10 @@ func (r *contentModerationTestUserRepo) BatchUpdateLimits(ctx context.Context, u
 
 func (r *contentModerationTestUserRepo) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	panic("unexpected ExistsByEmail call")
+}
+
+func (r *contentModerationTestUserRepo) ExistsByEmailAlias(ctx context.Context, email string) (bool, error) {
+	panic("unexpected ExistsByEmailAlias call")
 }
 
 func (r *contentModerationTestUserRepo) RemoveGroupFromAllowedGroups(ctx context.Context, groupID int64) (int64, error) {
@@ -5261,7 +5269,7 @@ func TestContentModerationStatusIncludesRouteCoverage(t *testing.T) {
 
 	status, err := svc.GetStatus(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, "2026-07-17.2", status.RouteCoverage.ManifestVersion)
+	require.Equal(t, "2026-07-25.1", status.RouteCoverage.ManifestVersion)
 	require.Equal(t, expectedCoverage.manifestVersion, status.RouteCoverage.ManifestVersion)
 	require.NotEmpty(t, status.RouteCoverage.ManifestHash)
 	require.Equal(t, moderationcoverage.HashFromEntries(expectedCoverage.entries), status.RouteCoverage.ManifestHash)
@@ -6183,7 +6191,7 @@ func loadContentModerationGatewayCoverageForStatus(t *testing.T) struct {
 	var manifest contentModerationGatewayCoverageForStatus
 	require.NoError(t, json.Unmarshal(data, &manifest))
 	require.Equal(t, 1, manifest.SchemaVersion)
-	require.Equal(t, "2026-07-17.2", manifest.ManifestVersion)
+	require.Equal(t, "2026-07-25.1", manifest.ManifestVersion)
 
 	result := struct {
 		manifestVersion string
