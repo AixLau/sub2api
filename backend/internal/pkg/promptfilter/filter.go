@@ -123,16 +123,17 @@ type Verdict struct {
 }
 
 type compiledPattern struct {
-	cfg          PatternConfig
-	re           *regexp.Regexp
-	operational  bool
-	signalFamily string
-	requiredText []string
+	cfg               PatternConfig
+	re                *regexp.Regexp
+	operational       bool
+	signalFamily      string
+	requiredCondition *requiredLiteralCondition
 }
 
 type Engine struct {
-	cfg      Config
-	patterns []compiledPattern
+	cfg       Config
+	patterns  []compiledPattern
+	prefilter *literalPrefilter
 }
 
 var engineCache sync.Map // map[string]*Engine
@@ -201,6 +202,7 @@ func NewEngine(cfg Config) (*Engine, error) {
 		merged = append(merged, pattern)
 	}
 	patterns := make([]compiledPattern, 0, len(merged))
+	prefilterBuilder := newLiteralPrefilterBuilder()
 	for _, pattern := range merged {
 		pattern.Name = strings.TrimSpace(pattern.Name)
 		pattern.Regex = strings.TrimSpace(pattern.Regex)
@@ -224,14 +226,14 @@ func NewEngine(cfg Config) (*Engine, error) {
 			return nil, fmt.Errorf("compile prompt filter pattern %q: %w", pattern.Name, err)
 		}
 		patterns = append(patterns, compiledPattern{
-			cfg:          pattern,
-			re:           re,
-			operational:  operationalPattern(pattern.Name),
-			signalFamily: signalFamilyForPattern(pattern),
-			requiredText: requiredPatternText(pattern.Regex),
+			cfg:               pattern,
+			re:                re,
+			operational:       operationalPattern(pattern.Name),
+			signalFamily:      signalFamilyForPattern(pattern),
+			requiredCondition: prefilterBuilder.addCondition(requiredPatternTextCondition(pattern.Regex)),
 		})
 	}
-	engine := &Engine{cfg: cfg, patterns: patterns}
+	engine := &Engine{cfg: cfg, patterns: patterns, prefilter: prefilterBuilder.build()}
 	actual, _ := engineCache.LoadOrStore(cacheKey, engine)
 	return actual.(*Engine), nil
 }
@@ -239,36 +241,40 @@ func NewEngine(cfg Config) (*Engine, error) {
 // Inspect applies local evidence scoring. It never calls an external model.
 func Inspect(text string, cfg Config) Verdict {
 	cfg = normalizeConfig(cfg)
+	inactive := cfg.Mode == ModeOff || strings.TrimSpace(text) == ""
+	if !inactive {
+		engine, err := NewEngine(cfg)
+		if err == nil {
+			return engine.inspect(text)
+		}
+	}
+	runes := utf8.RuneCountInString(text)
 	verdict := Verdict{
 		Action:           ActionAllow,
 		Threshold:        cfg.Threshold,
 		StrictThreshold:  cfg.StrictThreshold,
-		ExtractedRunes:   utf8.RuneCountInString(text),
-		ScannedRunes:     utf8.RuneCountInString(text),
+		ExtractedRunes:   runes,
+		ScannedRunes:     runes,
 		ScanComplete:     true,
 		DetectorRevision: DetectorRevision,
 		SourceRevision:   BuiltinRuleSetRevision,
 	}
-	if cfg.Mode == ModeOff || strings.TrimSpace(text) == "" {
+	if inactive {
 		return verdict
 	}
-	engine, err := NewEngine(cfg)
-	if err != nil {
-		verdict.Action = ActionReview
-		verdict.ReviewRequired = true
-		return verdict
-	}
-	return engine.inspect(text)
+	verdict.Action = ActionReview
+	verdict.ReviewRequired = true
+	return verdict
 }
 
 func (e *Engine) inspect(text string) Verdict {
 	cfg := e.cfg
-	segments, scanComplete, scannedRunes := buildScanSegments(text, cfg.MaxTextLength)
+	segments, scanComplete, scannedRunes, extractedRunes := buildScanSegments(text, cfg.MaxTextLength)
 	verdict := Verdict{
 		Action:           ActionAllow,
 		Threshold:        cfg.Threshold,
 		StrictThreshold:  cfg.StrictThreshold,
-		ExtractedRunes:   utf8.RuneCountInString(text),
+		ExtractedRunes:   extractedRunes,
 		ScannedRunes:     scannedRunes,
 		ScanComplete:     scanComplete,
 		DetectorRevision: DetectorRevision,
@@ -277,7 +283,7 @@ func (e *Engine) inspect(text string) Verdict {
 	if verdict.ScannedRunes < 3 {
 		return verdict
 	}
-	views := make([]mappedScanView, 0, len(segments)*2)
+	views := make([]*mappedScanView, 0, len(segments)*2)
 	for _, segment := range segments {
 		canonical := canonicalMappedScanView(segment)
 		if canonical.text == "" {
@@ -292,6 +298,9 @@ func (e *Engine) inspect(text string) Verdict {
 	if len(views) == 0 {
 		return verdict
 	}
+	for _, view := range views {
+		view.literalHits = e.prefilter.match(view.text)
+	}
 	type occurrenceKey struct {
 		name       string
 		start, end int
@@ -305,7 +314,7 @@ func (e *Engine) inspect(text string) Verdict {
 			if view.channel == ScanChannelCompact && !isPromptInjectionPattern(pattern.cfg.Name, pattern.signalFamily) {
 				continue
 			}
-			if len(pattern.requiredText) > 0 && !containsAnyRequiredPatternText(view.text, pattern.requiredText) {
+			if pattern.requiredCondition != nil && !pattern.requiredCondition.matches(view.literalHits) {
 				continue
 			}
 			for _, normalizedSpan := range pattern.re.FindAllStringIndex(view.text, -1) {
@@ -474,6 +483,84 @@ func requiredPatternText(expression string) []string {
 	return out
 }
 
+type requiredTextCondition struct {
+	literal  string
+	all      bool
+	children []*requiredTextCondition
+}
+
+func requiredPatternTextCondition(expression string) *requiredTextCondition {
+	parsed, err := syntax.Parse(expression, syntax.Perl)
+	if err != nil {
+		return nil
+	}
+	condition, guaranteed := requiredRegexpTextCondition(parsed.Simplify())
+	if !guaranteed {
+		return nil
+	}
+	return condition
+}
+
+func requiredRegexpTextCondition(expression *syntax.Regexp) (*requiredTextCondition, bool) {
+	if expression == nil {
+		return nil, false
+	}
+	switch expression.Op {
+	case syntax.OpLiteral:
+		literal := strings.ToLower(strings.TrimSpace(string(expression.Rune)))
+		if !usefulRequiredPatternText(literal) {
+			return nil, false
+		}
+		return &requiredTextCondition{literal: literal}, true
+	case syntax.OpCapture:
+		if len(expression.Sub) != 1 {
+			return nil, false
+		}
+		return requiredRegexpTextCondition(expression.Sub[0])
+	case syntax.OpConcat:
+		children := make([]*requiredTextCondition, 0, len(expression.Sub))
+		for _, child := range expression.Sub {
+			condition, guaranteed := requiredRegexpTextCondition(child)
+			if guaranteed {
+				children = append(children, condition)
+			}
+		}
+		return combineRequiredTextConditions(true, children)
+	case syntax.OpAlternate:
+		children := make([]*requiredTextCondition, 0, len(expression.Sub))
+		for _, child := range expression.Sub {
+			condition, guaranteed := requiredRegexpTextCondition(child)
+			if !guaranteed {
+				return nil, false
+			}
+			children = append(children, condition)
+		}
+		return combineRequiredTextConditions(false, children)
+	case syntax.OpPlus:
+		if len(expression.Sub) != 1 {
+			return nil, false
+		}
+		return requiredRegexpTextCondition(expression.Sub[0])
+	case syntax.OpRepeat:
+		if expression.Min < 1 || len(expression.Sub) != 1 {
+			return nil, false
+		}
+		return requiredRegexpTextCondition(expression.Sub[0])
+	default:
+		return nil, false
+	}
+}
+
+func combineRequiredTextConditions(all bool, children []*requiredTextCondition) (*requiredTextCondition, bool) {
+	if len(children) == 0 {
+		return nil, false
+	}
+	if len(children) == 1 {
+		return children[0], true
+	}
+	return &requiredTextCondition{all: all, children: children}, true
+}
+
 func requiredRegexpText(expression *syntax.Regexp) ([]string, bool) {
 	if expression == nil {
 		return nil, false
@@ -531,6 +618,18 @@ func requiredRegexpText(expression *syntax.Regexp) ([]string, bool) {
 	}
 }
 
+func usefulRequiredPatternText(text string) bool {
+	runeCount := utf8.RuneCountInString(text)
+	if runeCount >= 2 {
+		return true
+	}
+	if runeCount != 1 {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(text)
+	return r > unicode.MaxASCII || (!unicode.IsLetter(r) && !unicode.IsSpace(r) && !unicode.IsControl(r))
+}
+
 func shortestRequiredTextRunes(needles []string) int {
 	shortest := 0
 	for _, needle := range needles {
@@ -540,15 +639,6 @@ func shortestRequiredTextRunes(needles []string) int {
 		}
 	}
 	return shortest
-}
-
-func containsAnyRequiredPatternText(text string, needles []string) bool {
-	for _, needle := range needles {
-		if strings.Contains(text, needle) {
-			return true
-		}
-	}
-	return false
 }
 
 func normalizeConfig(cfg Config) Config {
@@ -581,8 +671,8 @@ func normalizeConfig(cfg Config) Config {
 }
 
 func limitScanText(text string, maxRunes int) string {
-	runes := []rune(text)
-	if maxRunes <= 0 || len(runes) <= maxRunes {
+	totalRunes := utf8.RuneCountInString(text)
+	if maxRunes <= 0 || totalRunes <= maxRunes {
 		return text
 	}
 	head := defaultHeadScanLength
@@ -591,11 +681,13 @@ func limitScanText(text string, maxRunes int) string {
 		head = maxRunes / 2
 		tail = maxRunes - head
 	}
-	return string(runes[:head]) + "\n[...prompt-filter-truncated...]\n" + string(runes[len(runes)-tail:])
+	headEnd := byteIndexAfterRunes(text, head)
+	tailStart := byteIndexBeforeLastRunes(text, tail)
+	return text[:headEnd] + "\n[...prompt-filter-truncated...]\n" + text[tailStart:]
 }
 
 func normalizeForScan(text string) string {
-	segments, _, _ := buildScanSegments(text, utf8.RuneCountInString(text))
+	segments, _, _, _ := buildScanSegments(text, utf8.RuneCountInString(text))
 	if len(segments) == 0 {
 		return ""
 	}
@@ -609,48 +701,86 @@ type scanSegment struct {
 }
 
 type mappedScanUnit struct {
-	viewStart int
-	viewEnd   int
-	rawStart  int
-	rawEnd    int
+	viewEnd  int
+	rawStart int
+	rawEnd   int
 }
 
 type mappedScanView struct {
-	text    string
-	channel string
-	units   []mappedScanUnit
+	text        string
+	channel     string
+	segment     scanSegment
+	canonical   *mappedScanView
+	units       []mappedScanUnit
+	unitsReady  bool
+	literalHits []bool
 }
 
-func buildScanSegments(text string, maxRunes int) ([]scanSegment, bool, int) {
-	runes := []rune(text)
-	if len(runes) == 0 {
-		return nil, true, 0
+func buildScanSegments(text string, maxRunes int) ([]scanSegment, bool, int, int) {
+	totalRunes := utf8.RuneCountInString(text)
+	if totalRunes == 0 {
+		return nil, true, 0, 0
 	}
-	if maxRunes <= 0 || len(runes) <= maxRunes {
-		return []scanSegment{{text: text, runes: len(runes)}}, true, len(runes)
+	if maxRunes <= 0 || totalRunes <= maxRunes {
+		return []scanSegment{{text: text, runes: totalRunes}}, true, totalRunes, totalRunes
 	}
 	headRunes := maxRunes * 4 / 5
 	if headRunes <= 0 {
 		headRunes = 1
 	}
 	tailRunes := maxRunes - headRunes
-	headText := string(runes[:headRunes])
+	headEnd := byteIndexAfterRunes(text, headRunes)
+	headText := text[:headEnd]
 	segments := []scanSegment{{text: headText, runes: headRunes}}
 	if tailRunes > 0 {
-		tailText := string(runes[len(runes)-tailRunes:])
+		tailStart := byteIndexBeforeLastRunes(text, tailRunes)
+		tailText := text[tailStart:]
 		segments = append(segments, scanSegment{
 			text:     tailText,
-			rawStart: len(text) - len(tailText),
+			rawStart: tailStart,
 			runes:    tailRunes,
 		})
 	}
-	return segments, false, maxRunes
+	return segments, false, maxRunes, totalRunes
 }
 
-func canonicalMappedScanView(segment scanSegment) mappedScanView {
-	view := mappedScanView{channel: ScanChannelCanonical}
+func byteIndexAfterRunes(text string, count int) int {
+	if count <= 0 {
+		return 0
+	}
+	seen := 0
+	for index := range text {
+		if seen == count {
+			return index
+		}
+		seen++
+	}
+	return len(text)
+}
+
+func byteIndexBeforeLastRunes(text string, count int) int {
+	index := len(text)
+	for count > 0 && index > 0 {
+		_, size := utf8.DecodeLastRuneInString(text[:index])
+		index -= size
+		count--
+	}
+	return index
+}
+
+func canonicalMappedScanView(segment scanSegment) *mappedScanView {
+	text, _ := buildCanonicalScanView(segment, false)
+	return &mappedScanView{
+		text:    text,
+		channel: ScanChannelCanonical,
+		segment: segment,
+	}
+}
+
+func buildCanonicalScanView(segment scanSegment, includeMapping bool) (string, []mappedScanUnit) {
 	var builder strings.Builder
 	builder.Grow(len(segment.text))
+	var units []mappedScanUnit
 	var iter norm.Iter
 	iter.InitString(norm.NFKC, segment.text)
 	previousRawEnd := 0
@@ -658,14 +788,14 @@ func canonicalMappedScanView(segment scanSegment) mappedScanView {
 	pendingSpaceStart := 0
 	pendingSpaceEnd := 0
 	appendRune := func(r rune, rawStart, rawEnd int) {
-		start := builder.Len()
 		builder.WriteRune(r)
-		view.units = append(view.units, mappedScanUnit{
-			viewStart: start,
-			viewEnd:   builder.Len(),
-			rawStart:  rawStart,
-			rawEnd:    rawEnd,
-		})
+		if includeMapping {
+			units = append(units, mappedScanUnit{
+				viewEnd:  builder.Len(),
+				rawStart: rawStart,
+				rawEnd:   rawEnd,
+			})
+		}
 	}
 	for !iter.Done() {
 		normalized := iter.Next()
@@ -679,7 +809,7 @@ func canonicalMappedScanView(segment scanSegment) mappedScanView {
 				continue
 			}
 			if unicode.IsSpace(r) {
-				if len(view.units) > 0 {
+				if builder.Len() > 0 {
 					if !pendingSpace {
 						pendingSpaceStart = segment.rawStart + rawStart
 					}
@@ -695,51 +825,75 @@ func canonicalMappedScanView(segment scanSegment) mappedScanView {
 			appendRune(unicode.ToLower(r), segment.rawStart+rawStart, segment.rawStart+rawEnd)
 		}
 	}
-	view.text = builder.String()
-	return view
+	return builder.String(), units
 }
 
-func compactMappedScanView(canonical mappedScanView) mappedScanView {
-	view := mappedScanView{channel: ScanChannelCompact}
+func compactMappedScanView(canonical *mappedScanView) *mappedScanView {
 	var builder strings.Builder
 	builder.Grow(len(canonical.text))
-	unitIndex := 0
 	for _, r := range canonical.text {
-		if unitIndex >= len(canonical.units) {
+		if unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r) || unicode.IsControl(r) {
+			continue
+		}
+		builder.WriteRune(r)
+	}
+	return &mappedScanView{
+		text:      builder.String(),
+		channel:   ScanChannelCompact,
+		canonical: canonical,
+	}
+}
+
+func (view *mappedScanView) ensureUnits() {
+	if view == nil || view.unitsReady {
+		return
+	}
+	view.unitsReady = true
+	if view.channel == ScanChannelCanonical {
+		_, view.units = buildCanonicalScanView(view.segment, true)
+		return
+	}
+	if view.canonical == nil {
+		return
+	}
+	view.canonical.ensureUnits()
+	unitIndex := 0
+	view.units = make([]mappedScanUnit, 0, len(view.canonical.units))
+	for _, r := range view.canonical.text {
+		if unitIndex >= len(view.canonical.units) {
 			break
 		}
-		unit := canonical.units[unitIndex]
+		unit := view.canonical.units[unitIndex]
 		unitIndex++
 		if unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r) || unicode.IsControl(r) {
 			continue
 		}
-		start := builder.Len()
-		builder.WriteRune(r)
+		start := 0
+		if len(view.units) > 0 {
+			start = view.units[len(view.units)-1].viewEnd
+		}
 		view.units = append(view.units, mappedScanUnit{
-			viewStart: start,
-			viewEnd:   builder.Len(),
-			rawStart:  unit.rawStart,
-			rawEnd:    unit.rawEnd,
+			viewEnd:  start + utf8.RuneLen(r),
+			rawStart: unit.rawStart,
+			rawEnd:   unit.rawEnd,
 		})
 	}
-	view.text = builder.String()
-	return view
 }
 
-func (view mappedScanView) rawSpan(start, end int) (int, int, bool) {
+func (view *mappedScanView) rawSpan(start, end int) (int, int, bool) {
+	view.ensureUnits()
 	if start < 0 || end <= start || end > len(view.text) || len(view.units) == 0 {
 		return 0, 0, false
 	}
 	first := sort.Search(len(view.units), func(idx int) bool {
 		return view.units[idx].viewEnd > start
 	})
-	lastExclusive := sort.Search(len(view.units), func(idx int) bool {
-		return view.units[idx].viewStart >= end
+	last := sort.Search(len(view.units), func(idx int) bool {
+		return view.units[idx].viewEnd >= end
 	})
-	if first >= len(view.units) || lastExclusive <= first {
+	if first >= len(view.units) || last >= len(view.units) || last < first {
 		return 0, 0, false
 	}
-	last := lastExclusive - 1
 	return view.units[first].rawStart, view.units[last].rawEnd, true
 }
 
