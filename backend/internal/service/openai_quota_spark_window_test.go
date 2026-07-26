@@ -174,6 +174,32 @@ func TestBuildCodexSparkWindowExtraUpdates_NoBengalfox(t *testing.T) {
 	require.Nil(t, buildCodexSparkWindowExtraUpdates(usage, time.Now()))
 }
 
+func TestBuildCodexGlobalWindowExtraUpdates(t *testing.T) {
+	now := time.Date(2026, 7, 26, 4, 0, 0, 0, time.UTC)
+	usage := &OpenAIQuotaUsage{
+		RateLimit: &OpenAIRateLimit{
+			Allowed: true,
+			PrimaryWindow: &OpenAIRateLimitWindow{
+				UsedPercent:        15,
+				LimitWindowSeconds: 7 * 24 * 60 * 60,
+				ResetAfterSeconds:  3600,
+			},
+			SecondaryWindow: &OpenAIRateLimitWindow{
+				UsedPercent:        5,
+				LimitWindowSeconds: 5 * 60 * 60,
+				ResetAfterSeconds:  600,
+			},
+		},
+	}
+
+	updates := buildCodexGlobalWindowExtraUpdates(usage, now)
+
+	require.Equal(t, "global", updates["codex_usage_dimension"])
+	require.InDelta(t, 5, updates["codex_5h_used_percent"], 1e-9)
+	require.InDelta(t, 15, updates["codex_7d_used_percent"], 1e-9)
+	require.Equal(t, now.Format(time.RFC3339), updates["codex_usage_updated_at"])
+}
+
 // ── Part C: ResetCredit 影子拒绝 ───────────────────────────────────────────
 
 // TestResetCreditShadowRejected 验证:

@@ -9,8 +9,11 @@ import (
 
 type accountUsageCodexProbeRepo struct {
 	stubOpenAIAccountRepo
-	updateExtraCh chan map[string]any
-	rateLimitCh   chan time.Time
+	updateExtraCh          chan map[string]any
+	rateLimitCh            chan time.Time
+	clearRateLimitIDs      []int64
+	recoveryCandidateIDs   []int64
+	recoveryCandidateAfter []int64
 }
 
 func (r *accountUsageCodexProbeRepo) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
@@ -29,6 +32,194 @@ func (r *accountUsageCodexProbeRepo) SetRateLimited(_ context.Context, _ int64, 
 		r.rateLimitCh <- resetAt
 	}
 	return nil
+}
+
+func (r *accountUsageCodexProbeRepo) ClearRateLimit(_ context.Context, accountID int64) error {
+	r.clearRateLimitIDs = append(r.clearRateLimitIDs, accountID)
+	return nil
+}
+
+func (r *accountUsageCodexProbeRepo) ListOpenAIRateLimitRecoveryCandidateIDs(_ context.Context, afterID int64, limit int) ([]int64, error) {
+	r.recoveryCandidateAfter = append(r.recoveryCandidateAfter, afterID)
+	out := make([]int64, 0, limit)
+	for _, id := range r.recoveryCandidateIDs {
+		if id <= afterID {
+			continue
+		}
+		out = append(out, id)
+		if len(out) == limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+type accountUsageRuntimeBlocker struct {
+	clearedIDs []int64
+}
+
+func (b *accountUsageRuntimeBlocker) BlockAccountScheduling(_ *Account, _ time.Time, _ string) {}
+
+func (b *accountUsageRuntimeBlocker) ClearAccountSchedulingBlock(accountID int64) {
+	b.clearedIDs = append(b.clearedIDs, accountID)
+}
+
+func TestOpenAIQuotaShowsAvailableRequiresExplicitAllowedState(t *testing.T) {
+	t.Parallel()
+
+	if !openAIQuotaShowsAvailable(&OpenAIQuotaUsage{
+		RateLimit: &OpenAIRateLimit{Allowed: true},
+	}) {
+		t.Fatal("expected explicit allowed quota state to prove account availability")
+	}
+	if openAIQuotaShowsAvailable(&OpenAIQuotaUsage{
+		RateLimit: &OpenAIRateLimit{Allowed: true, LimitReached: true},
+	}) {
+		t.Fatal("limit_reached quota state must not recover the account")
+	}
+}
+
+func TestAccountUsageService_SuccessfulProbeClearsGlobal429State(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	resetAt := now.Add(time.Hour)
+	account := &Account{
+		ID:               456,
+		Platform:         PlatformOpenAI,
+		Type:             AccountTypeOAuth,
+		RateLimitedAt:    &now,
+		RateLimitResetAt: &resetAt,
+	}
+	repo := &accountUsageCodexProbeRepo{}
+	blocker := &accountUsageRuntimeBlocker{}
+	svc := &AccountUsageService{
+		accountRepo:    repo,
+		runtimeBlocker: blocker,
+	}
+
+	svc.recoverOpenAIGlobalRateLimitAfterProbe(context.Background(), account)
+
+	if len(repo.clearRateLimitIDs) != 1 || repo.clearRateLimitIDs[0] != account.ID {
+		t.Fatalf("ClearRateLimit calls = %v, want [%d]", repo.clearRateLimitIDs, account.ID)
+	}
+	if account.RateLimitedAt != nil || account.RateLimitResetAt != nil {
+		t.Fatalf("expected in-memory 429 state to be cleared, got limited=%v reset=%v", account.RateLimitedAt, account.RateLimitResetAt)
+	}
+	if len(blocker.clearedIDs) != 1 || blocker.clearedIDs[0] != account.ID {
+		t.Fatalf("runtime blocker clears = %v, want [%d]", blocker.clearedIDs, account.ID)
+	}
+}
+
+func TestAccountUsageService_RateLimitRecoveryCyclePagesAndWraps(t *testing.T) {
+	now := time.Now()
+	resetAt := now.Add(time.Hour)
+	repo := &accountUsageCodexProbeRepo{
+		stubOpenAIAccountRepo: stubOpenAIAccountRepo{accounts: []Account{
+			{ID: 10, Platform: PlatformOpenAI, Type: AccountTypeOAuth, RateLimitResetAt: &resetAt},
+			{ID: 20, Platform: PlatformOpenAI, Type: AccountTypeOAuth, RateLimitResetAt: &resetAt},
+		}},
+		recoveryCandidateIDs: []int64{10, 20},
+	}
+	cache := NewUsageCache()
+	cache.openAIProbeCache.Store(int64(10), now.Add(openAIProbeMaxInterval))
+	cache.openAIProbeCache.Store(int64(20), now.Add(openAIProbeMaxInterval))
+	svc := &AccountUsageService{accountRepo: repo, cache: cache}
+
+	svc.runOpenAIRateLimitRecoveryCycle()
+	if svc.openAIRecoveryCursor != 20 {
+		t.Fatalf("recovery cursor = %d, want 20", svc.openAIRecoveryCursor)
+	}
+	svc.runOpenAIRateLimitRecoveryCycle()
+	if svc.openAIRecoveryCursor != 0 {
+		t.Fatalf("wrapped recovery cursor = %d, want 0", svc.openAIRecoveryCursor)
+	}
+	if len(repo.recoveryCandidateAfter) != 2 || repo.recoveryCandidateAfter[0] != 0 || repo.recoveryCandidateAfter[1] != 20 {
+		t.Fatalf("candidate cursors = %v, want [0 20]", repo.recoveryCandidateAfter)
+	}
+}
+
+func TestRandomOpenAIProbeIntervalWithinRange(t *testing.T) {
+	t.Parallel()
+
+	for range 100 {
+		interval := randomOpenAIProbeInterval()
+		if interval < openAIProbeMinInterval || interval > openAIProbeMaxInterval {
+			t.Fatalf(
+				"random probe interval = %s, want within [%s, %s]",
+				interval,
+				openAIProbeMinInterval,
+				openAIProbeMaxInterval,
+			)
+		}
+	}
+}
+
+func TestShouldProbeOpenAICodexSnapshotUsesRandomNextProbeTime(t *testing.T) {
+	t.Parallel()
+
+	const accountID = int64(987)
+	now := time.Now()
+	cache := NewUsageCache()
+	svc := &AccountUsageService{cache: cache}
+
+	if !svc.shouldProbeOpenAICodexSnapshot(accountID, now) {
+		t.Fatal("expected first probe to be allowed")
+	}
+	cached, ok := cache.openAIProbeCache.Load(accountID)
+	if !ok {
+		t.Fatal("expected next probe time to be cached")
+	}
+	nextAt, ok := cached.(time.Time)
+	if !ok {
+		t.Fatalf("cached next probe value has type %T, want time.Time", cached)
+	}
+	interval := nextAt.Sub(now)
+	if interval < openAIProbeMinInterval || interval > openAIProbeMaxInterval {
+		t.Fatalf(
+			"cached probe interval = %s, want within [%s, %s]",
+			interval,
+			openAIProbeMinInterval,
+			openAIProbeMaxInterval,
+		)
+	}
+	if svc.shouldProbeOpenAICodexSnapshot(accountID, nextAt.Add(-time.Nanosecond)) {
+		t.Fatal("expected probe before next scheduled time to be blocked")
+	}
+	if !svc.shouldProbeOpenAICodexSnapshot(accountID, nextAt) {
+		t.Fatal("expected probe at next scheduled time to be allowed")
+	}
+}
+
+func TestShouldProbeOpenAICodexSnapshotForceReschedules(t *testing.T) {
+	t.Parallel()
+
+	const accountID = int64(988)
+	now := time.Now()
+	cache := NewUsageCache()
+	cache.openAIProbeCache.Store(accountID, now.Add(time.Hour))
+	svc := &AccountUsageService{cache: cache}
+
+	if !svc.shouldProbeOpenAICodexSnapshot(accountID, now, true) {
+		t.Fatal("expected forced probe to bypass existing schedule")
+	}
+	cached, ok := cache.openAIProbeCache.Load(accountID)
+	if !ok {
+		t.Fatal("expected forced probe to cache a new schedule")
+	}
+	nextAt, ok := cached.(time.Time)
+	if !ok {
+		t.Fatalf("cached next probe value has type %T, want time.Time", cached)
+	}
+	interval := nextAt.Sub(now)
+	if interval < openAIProbeMinInterval || interval > openAIProbeMaxInterval {
+		t.Fatalf(
+			"forced probe interval = %s, want within [%s, %s]",
+			interval,
+			openAIProbeMinInterval,
+			openAIProbeMaxInterval,
+		)
+	}
 }
 
 func TestShouldRefreshOpenAICodexSnapshot(t *testing.T) {

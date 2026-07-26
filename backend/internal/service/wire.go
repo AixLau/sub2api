@@ -222,7 +222,8 @@ func ProvideAccountUsageService(
 		identityCache,
 		tlsFPProfileService,
 	)
-	service.agentIdentityWS = openAIGatewayService
+	service.runtimeBlocker = openAIGatewayService
+	service.StartOpenAIRateLimitRecovery()
 	return service
 }
 

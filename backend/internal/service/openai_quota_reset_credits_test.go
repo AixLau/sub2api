@@ -186,3 +186,43 @@ func TestQueryUsageResetCreditCountPrecedence(t *testing.T) {
 		})
 	}
 }
+
+func TestQueryUsageWithoutResetCreditDetailsUsesSingleImpersonatedClientCall(t *testing.T) {
+	account := &Account{
+		ID:       901,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"chatgpt_account_id": "account-background-recovery",
+		},
+	}
+	repo := &stubQuotaAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	tokenCache := &stubQuotaTokenCache{tokens: map[string]string{
+		OpenAITokenCacheKey(account): "fake-token",
+	}}
+	tokenProvider := NewOpenAITokenProvider(repo, tokenCache, nil)
+	usageCalls := 0
+	detailCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		switch r.URL.Path {
+		case "/backend-api/wham/usage":
+			usageCalls++
+			_, _ = w.Write([]byte(`{"rate_limit":{"allowed":true,"limit_reached":false}}`))
+		case "/backend-api/wham/rate-limit-reset-credits":
+			detailCalls++
+			_, _ = w.Write([]byte(`{"available_count":1}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	svc := NewOpenAIQuotaService(repo, nil, tokenProvider, newQuotaRedirectingFactory(srv))
+	usage, err := svc.queryUsage(context.Background(), account.ID, false)
+
+	require.NoError(t, err)
+	require.True(t, usage.RateLimit.Allowed)
+	require.Equal(t, 1, usageCalls)
+	require.Zero(t, detailCalls)
+}

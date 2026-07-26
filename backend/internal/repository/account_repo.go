@@ -1197,6 +1197,25 @@ func (r *accountRepository) ListByPlatform(ctx context.Context, platform string)
 	return r.accountsToService(ctx, accounts)
 }
 
+func (r *accountRepository) ListOpenAIRateLimitRecoveryCandidateIDs(ctx context.Context, afterID int64, limit int) ([]int64, error) {
+	if limit <= 0 {
+		return []int64{}, nil
+	}
+	return r.client.Account.Query().
+		Where(
+			dbaccount.IDGT(afterID),
+			dbaccount.PlatformEQ(service.PlatformOpenAI),
+			dbaccount.TypeEQ(service.AccountTypeOAuth),
+			dbaccount.StatusEQ(service.StatusActive),
+			dbaccount.SchedulableEQ(true),
+			dbaccount.ParentAccountIDIsNil(),
+			dbaccount.RateLimitResetAtGT(time.Now()),
+		).
+		Order(dbent.Asc(dbaccount.FieldID)).
+		Limit(limit).
+		IDs(ctx)
+}
+
 func (r *accountRepository) UpdateLastUsed(ctx context.Context, id int64) error {
 	now := time.Now()
 	_, err := r.client.Account.Update().

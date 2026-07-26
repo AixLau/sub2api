@@ -144,7 +144,7 @@
           refresh button is rendered via the pre-actions slot so the user sees a
           single row of related buttons instead of two stacked rows.
         -->
-        <OpenAIQuotaResetCell :account="account" @reset="emit('quota-reset')">
+        <OpenAIQuotaResetCell :account="account" @reset="emit('account-updated')">
           <template #pre-actions>
             <button
               type="button"
@@ -186,7 +186,7 @@
       <div v-else>
         <div class="text-xs text-gray-400">-</div>
         <!-- Always allow on-demand upstream quota query, even before local data exists. -->
-        <OpenAIQuotaResetCell :account="account" class="mt-1" @reset="emit('quota-reset')" />
+        <OpenAIQuotaResetCell :account="account" class="mt-1" @reset="emit('account-updated')" />
       </div>
     </template>
 
@@ -655,7 +655,7 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  'quota-reset': []
+  'account-updated': []
 }>()
 
 const { t } = useI18n()
@@ -1355,6 +1355,9 @@ const loadActiveUsage = async () => {
   activeQueryLoading.value = true
   try {
     usageInfo.value = await adminAPI.accounts.getUsage(props.account.id, 'active', true)
+    if (props.account.platform === 'openai') {
+      emit('account-updated')
+    }
   } catch (e: any) {
     console.error('Failed to load active usage:', e)
   } finally {
