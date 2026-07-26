@@ -5,6 +5,11 @@ export default {
     clearAll: 'Clear All',
     empty: 'No audit logs yet',
     loadFailed: 'Failed to load audit logs',
+    view: {
+      toggle: 'View mode',
+      table: 'Table view',
+      timeline: 'Timeline view'
+    },
     filters: {
       all: 'All',
       q: 'Keyword',

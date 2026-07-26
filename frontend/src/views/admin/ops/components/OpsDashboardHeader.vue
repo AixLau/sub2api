@@ -5,6 +5,7 @@ import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
+import NumberTicker from '@/components/inspira/NumberTicker.vue'
 import { adminAPI } from '@/api'
 import { opsAPI, type OpsDashboardOverview, type OpsMetricThresholds, type OpsRealtimeTrafficSummary } from '@/api/admin/ops'
 import type { OpsRequestDetailsPreset } from './OpsRequestDetailsModal.vue'
@@ -853,6 +854,11 @@ function openJobsDetails() {
   showJobsDetails.value = true
 }
 
+// Preserve the original raw ms rendering (no thousands separators) for NumberTicker.
+function formatMsTicker(n: number): string {
+  return String(Math.round(n))
+}
+
 function handleToolbarRefresh() {
   loadRealtimeTrafficSummary()
   emit('refresh')
@@ -1079,7 +1085,9 @@ function handleToolbarRefresh() {
 
               <div class="absolute flex flex-col items-center">
                 <span :class="[props.fullscreen ? 'text-5xl' : 'text-3xl', 'font-black', healthScoreClass]">
-                  {{ isSystemIdle ? t('admin.ops.idleStatus') : (overview.health_score ?? '--') }}
+                  <template v-if="isSystemIdle">{{ t('admin.ops.idleStatus') }}</template>
+                  <NumberTicker v-else-if="healthScoreValue != null" :value="healthScoreValue" />
+                  <template v-else>--</template>
                 </span>
                 <span :class="[props.fullscreen ? 'text-xs' : 'text-[10px]', 'font-bold uppercase tracking-wider text-gray-400']">{{ t('admin.ops.health') }}</span>
               </div>
@@ -1137,11 +1145,11 @@ function handleToolbarRefresh() {
                 <div :class="[props.fullscreen ? 'text-xs' : 'text-[10px]', 'font-bold uppercase text-gray-400']">{{ t('admin.ops.current') }}</div>
                 <div class="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-2">
                   <div class="flex items-baseline gap-1.5">
-                    <span :class="[props.fullscreen ? 'text-4xl' : 'text-xl sm:text-2xl', 'font-black text-gray-900 dark:text-white']">{{ displayRealTimeQps.toFixed(1) }}</span>
+                    <span :class="[props.fullscreen ? 'text-4xl' : 'text-xl sm:text-2xl', 'font-black text-gray-900 dark:text-white']"><NumberTicker :value="displayRealTimeQps" :decimal-places="1" /></span>
                     <span :class="[props.fullscreen ? 'text-sm' : 'text-xs', 'font-bold text-gray-500']">QPS</span>
                   </div>
                   <div class="flex items-baseline gap-1.5">
-                    <span :class="[props.fullscreen ? 'text-4xl' : 'text-xl sm:text-2xl', 'font-black text-gray-900 dark:text-white']">{{ displayRealTimeTps.toFixed(1) }}</span>
+                    <span :class="[props.fullscreen ? 'text-4xl' : 'text-xl sm:text-2xl', 'font-black text-gray-900 dark:text-white']"><NumberTicker :value="displayRealTimeTps" :decimal-places="1" /></span>
                     <span :class="[props.fullscreen ? 'text-sm' : 'text-xs', 'font-bold text-gray-500']">{{ t('admin.ops.tps') }}</span>
                   </div>
                 </div>
@@ -1263,7 +1271,8 @@ function handleToolbarRefresh() {
             </button>
           </div>
           <div class="mt-2 text-3xl font-black" :class="getThresholdColorClass(getSLAThresholdLevel(slaPercent))">
-            {{ slaPercent == null ? '-' : `${slaPercent.toFixed(3)}%` }}
+            <template v-if="slaPercent == null">-</template>
+            <NumberTicker v-else :value="slaPercent" :decimal-places="3" suffix="%" />
           </div>
           <div class="mt-3 h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700">
             <div class="h-full transition-all" :class="getSLAThresholdLevel(slaPercent) === 'critical' ? 'bg-red-500' : getSLAThresholdLevel(slaPercent) === 'warning' ? 'bg-yellow-500' : 'bg-green-500'" :style="{ width: `${Math.max((slaPercent ?? 0) - 90, 0) * 10}%` }"></div>
@@ -1294,7 +1303,8 @@ function handleToolbarRefresh() {
           </div>
           <div class="mt-2 flex items-baseline gap-2">
             <div class="text-3xl font-black text-gray-900 dark:text-white">
-              {{ durationP99Ms ?? '-' }}
+              <template v-if="durationP99Ms == null">-</template>
+              <NumberTicker v-else :value="durationP99Ms" :format-fn="formatMsTicker" />
             </div>
             <span class="text-xs font-bold text-gray-400">ms (P99)</span>
           </div>
@@ -1345,7 +1355,8 @@ function handleToolbarRefresh() {
           </div>
           <div class="mt-2 flex items-baseline gap-2">
             <div class="text-3xl font-black" :class="getThresholdColorClass(getTTFTThresholdLevel(ttftP99Ms))">
-              {{ ttftP99Ms ?? '-' }}
+              <template v-if="ttftP99Ms == null">-</template>
+              <NumberTicker v-else :value="ttftP99Ms" :format-fn="formatMsTicker" />
             </div>
             <span class="text-xs font-bold text-gray-400">ms (P99)</span>
           </div>
@@ -1390,7 +1401,8 @@ function handleToolbarRefresh() {
             </button>
           </div>
           <div class="mt-2 text-3xl font-black" :class="getThresholdColorClass(getRequestErrorRateThresholdLevel(errorRatePercent))">
-            {{ errorRatePercent == null ? '-' : `${errorRatePercent.toFixed(2)}%` }}
+            <template v-if="errorRatePercent == null">-</template>
+            <NumberTicker v-else :value="errorRatePercent" :decimal-places="2" suffix="%" />
           </div>
           <div class="mt-3 space-y-1 text-xs">
             <div class="flex justify-between">
@@ -1416,7 +1428,8 @@ function handleToolbarRefresh() {
             </button>
           </div>
           <div class="mt-2 text-3xl font-black" :class="getThresholdColorClass(getUpstreamErrorRateThresholdLevel(upstreamErrorRatePercent))">
-            {{ upstreamErrorRatePercent == null ? '-' : `${upstreamErrorRatePercent.toFixed(2)}%` }}
+            <template v-if="upstreamErrorRatePercent == null">-</template>
+            <NumberTicker v-else :value="upstreamErrorRatePercent" :decimal-places="2" suffix="%" />
           </div>
           <div class="mt-3 space-y-1 text-xs">
             <div class="flex justify-between">

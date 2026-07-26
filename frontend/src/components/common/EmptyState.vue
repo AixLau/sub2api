@@ -2,7 +2,7 @@
   <div class="empty-state">
     <!-- Icon -->
     <div
-      class="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-gray-100 dark:bg-dark-800"
+      class="empty-state-icon-wrap mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-gray-100 dark:bg-dark-800"
     >
       <slot name="icon">
         <component v-if="icon" :is="icon" class="empty-state-icon h-10 w-10" aria-hidden="true" />
@@ -78,3 +78,27 @@ const displayTitle = computed(() => props.title || t('common.noData'))
 
 defineEmits(['action'])
 </script>
+
+<style scoped>
+/* 图标容器的克制呼吸微动效:幅度小、周期长 */
+.empty-state-icon-wrap {
+  animation: empty-state-breathe 5s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes empty-state-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.03);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .empty-state-icon-wrap {
+    animation: none;
+  }
+}
+</style>

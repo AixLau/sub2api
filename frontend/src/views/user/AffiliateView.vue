@@ -15,7 +15,7 @@
               {{ t('affiliate.stats.rebateRate') }}
             </p>
             <p class="mt-2 text-2xl font-semibold text-primary-600 dark:text-primary-400">
-              {{ formattedRebateRate }}<span class="ml-0.5 text-base font-medium">%</span>
+              <NumberTicker :value="rebateRateValue" :format-fn="formatRebateRate" /><span class="ml-0.5 text-base font-medium">%</span>
             </p>
             <p class="mt-1 text-xs text-gray-400 dark:text-dark-500">
               {{ t('affiliate.stats.rebateRateHint') }}
@@ -24,19 +24,19 @@
           <div class="card p-5">
             <p class="text-sm text-gray-500 dark:text-dark-400">{{ t('affiliate.stats.invitedUsers') }}</p>
             <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
-              {{ formatCount(detail.aff_count) }}
+              <NumberTicker :value="detail.aff_count" :format-fn="formatCountTicker" />
             </p>
           </div>
           <div class="card p-5">
             <p class="text-sm text-gray-500 dark:text-dark-400">{{ t('affiliate.stats.availableQuota') }}</p>
             <p class="mt-2 text-2xl font-semibold text-emerald-600 dark:text-emerald-400">
-              {{ formatCurrency(detail.aff_quota) }}
+              <NumberTicker :value="detail.aff_quota" :format-fn="formatCurrency" />
             </p>
           </div>
           <div class="card p-5">
             <p class="text-sm text-gray-500 dark:text-dark-400">{{ t('affiliate.stats.totalQuota') }}</p>
             <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
-              {{ formatCurrency(detail.aff_history_quota) }}
+              <NumberTicker :value="detail.aff_history_quota" :format-fn="formatCurrency" />
             </p>
             <p v-if="detail.aff_frozen_quota > 0" class="mt-1 text-xs text-amber-600 dark:text-amber-400">
               {{ t('affiliate.stats.frozenQuota') }}: {{ formatCurrency(detail.aff_frozen_quota) }}
@@ -144,6 +144,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
+import NumberTicker from '@/components/inspira/NumberTicker.vue'
 import userAPI from '@/api/user'
 import type { UserAffiliateDetail } from '@/types'
 import { useAppStore } from '@/stores/app'
@@ -169,15 +170,21 @@ const inviteLink = computed(() => {
 
 // Rebate rate is a percentage in the range [0, 100]; backend already clamps it.
 // We trim trailing zeros (e.g. 20.00 → "20", 12.50 → "12.5") for a cleaner UI.
-const formattedRebateRate = computed(() => {
-  const v = detail.value?.effective_rebate_rate_percent ?? 0
-  const rounded = Math.round(v * 100) / 100
+const formatRebateRate = (value: number): string => {
+  const rounded = Math.round(value * 100) / 100
   return Number.isInteger(rounded) ? String(rounded) : rounded.toString()
-})
+}
+
+const rebateRateValue = computed(() => detail.value?.effective_rebate_rate_percent ?? 0)
+
+const formattedRebateRate = computed(() => formatRebateRate(rebateRateValue.value))
 
 function formatCount(value: number): string {
   return value.toLocaleString()
 }
+
+// NumberTicker 动画中间值为小数,取整后走原展示逻辑
+const formatCountTicker = (value: number): string => formatCount(Math.round(value))
 
 async function loadAffiliateDetail(silent = false): Promise<void> {
   if (!silent) {

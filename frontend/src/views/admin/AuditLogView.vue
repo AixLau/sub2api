@@ -82,9 +82,47 @@
         </div>
       </template>
 
-      <!-- Table -->
+      <!-- Table / Timeline -->
       <template #table>
-        <DataTable :columns="columns" :data="logs" :loading="loading" row-key="id">
+        <!-- View mode toggle -->
+        <div class="mb-3 flex justify-end">
+          <div
+            class="inline-flex items-center gap-0.5 rounded-lg border border-gray-200 bg-white p-0.5 dark:border-dark-700 dark:bg-dark-800"
+            role="group"
+            :aria-label="t('admin.audit.view.toggle')"
+          >
+            <button
+              type="button"
+              class="view-mode-btn"
+              :class="{ 'view-mode-btn-active': viewMode === 'table' }"
+              :aria-pressed="viewMode === 'table'"
+              :title="t('admin.audit.view.table')"
+              @click="viewMode = 'table'"
+            >
+              <Icon name="menu" size="sm" />
+              <span class="sr-only">{{ t('admin.audit.view.table') }}</span>
+            </button>
+            <button
+              type="button"
+              class="view-mode-btn"
+              :class="{ 'view-mode-btn-active': viewMode === 'timeline' }"
+              :aria-pressed="viewMode === 'timeline'"
+              :title="t('admin.audit.view.timeline')"
+              @click="viewMode = 'timeline'"
+            >
+              <Icon name="clock" size="sm" />
+              <span class="sr-only">{{ t('admin.audit.view.timeline') }}</span>
+            </button>
+          </div>
+        </div>
+
+        <DataTable
+          v-if="viewMode === 'table'"
+          :columns="columns"
+          :data="logs"
+          :loading="loading"
+          row-key="id"
+        >
           <template #cell-created_at="{ value }">
             <span class="whitespace-nowrap text-gray-600 dark:text-gray-300">{{ formatTime(value) }}</span>
           </template>
@@ -144,6 +182,18 @@
             </div>
           </template>
         </DataTable>
+
+        <!-- Timeline view (same page of logs, same pagination/filters) -->
+        <div v-else class="card p-4 sm:p-6">
+          <div v-if="loading" class="flex items-center justify-center py-12">
+            <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-primary-600"></div>
+          </div>
+          <div v-else-if="logs.length === 0" class="flex flex-col items-center py-8">
+            <Icon name="shield" size="xl" class="mb-4 h-12 w-12 text-gray-300 dark:text-dark-600" />
+            <p class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ t('admin.audit.empty') }}</p>
+          </div>
+          <Timeline v-else :items="timelineItems" />
+        </div>
       </template>
 
       <!-- Pagination -->
@@ -365,10 +415,15 @@ import Select from '@/components/common/Select.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
+import Timeline, { type TimelineItem } from '@/components/inspira/Timeline.vue'
 import { useAppStore } from '@/stores'
 
 const { t } = useI18n()
 const appStore = useAppStore()
+
+// 视图模式：表格（默认）/ 时间线。仅影响当前页数据的呈现方式，
+// 分页与筛选逻辑两种模式完全复用。
+const viewMode = ref<'table' | 'timeline'>('table')
 
 const loading = ref(false)
 const logs = ref<AuditLog[]>([])
@@ -681,5 +736,31 @@ function statusDotClass(status: number): string {
   return 'bg-green-500'
 }
 
+function statusTone(status: number): TimelineItem['tone'] {
+  if (status >= 500) return 'danger'
+  if (status >= 400) return 'warning'
+  return 'success'
+}
+
+const timelineItems = computed<TimelineItem[]>(() =>
+  logs.value.map((row) => ({
+    time: formatTime(row.created_at),
+    title: `${row.actor_email || '—'} · ${row.action}`,
+    description: `${row.method} ${row.path}`,
+    badge: String(row.status_code),
+    tone: statusTone(row.status_code)
+  }))
+)
+
 onMounted(fetchLogs)
 </script>
+
+<style scoped>
+.view-mode-btn {
+  @apply inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-400 outline-none transition-colors duration-150 hover:text-gray-600 focus-visible:ring-2 focus-visible:ring-primary-500/40 dark:text-gray-500 dark:hover:text-gray-300;
+}
+
+.view-mode-btn-active {
+  @apply bg-primary-50 text-primary-600 hover:text-primary-600 dark:bg-primary-400/10 dark:text-primary-300 dark:hover:text-primary-300;
+}
+</style>

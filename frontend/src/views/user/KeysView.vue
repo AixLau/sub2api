@@ -1144,6 +1144,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
 import { formatDateTime } from '@/utils/format'
+import { fireCelebration } from '@/components/inspira/confetti'
 import { maskApiKey } from '@/utils/maskApiKey'
 import {
   buildCcSwitchImportDeeplink,
@@ -1735,6 +1736,8 @@ const handleSubmit = async () => {
       await keysAPI.update(selectedKey.value.id, updates)
       appStore.showSuccess(t('keys.keyUpdatedSuccess'))
     } else {
+      // 彩蛋:创建前列表为空(无任何 Key)时,视为用户的第一把 Key
+      const wasEmptyBeforeCreate = pagination.value.total === 0
       const customKey = formData.value.use_custom_key ? formData.value.custom_key : undefined
       await keysAPI.create(
         formData.value.name,
@@ -1747,6 +1750,10 @@ const handleSubmit = async () => {
         rateLimitData
       )
       appStore.showSuccess(t('keys.keyCreatedSuccess'))
+      // 第一把 API Key 创建成功:撒花庆祝(仅此一次,由创建前的真实状态判定)
+      if (wasEmptyBeforeCreate) {
+        fireCelebration()
+      }
       // Only advance tour if active, on submit step, and creation succeeded
       if (onboardingStore.isCurrentStep('[data-tour="key-form-submit"]')) {
         onboardingStore.nextStep(500)

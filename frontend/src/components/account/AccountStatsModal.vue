@@ -69,7 +69,7 @@
               </div>
             </div>
             <p class="text-2xl font-bold text-gray-900 dark:text-white">
-              ${{ formatCost(stats.summary.total_cost) }}
+              <NumberTicker :value="stats.summary.total_cost" prefix="$" :format-fn="formatCost" />
             </p>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.stats.accumulatedCost') }}
@@ -95,7 +95,7 @@
               </div>
             </div>
             <p class="text-2xl font-bold text-gray-900 dark:text-white">
-              {{ formatNumber(stats.summary.total_requests) }}
+              <NumberTicker :value="stats.summary.total_requests" :format-fn="formatNumber" />
             </p>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.stats.totalCalls') }}
@@ -120,7 +120,7 @@
               </div>
             </div>
             <p class="text-2xl font-bold text-gray-900 dark:text-white">
-              ${{ formatCost(stats.summary.avg_daily_cost) }}
+              <NumberTicker :value="stats.summary.avg_daily_cost" prefix="$" :format-fn="formatCost" />
             </p>
              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
               {{
@@ -159,7 +159,7 @@
               </div>
             </div>
             <p class="text-2xl font-bold text-gray-900 dark:text-white">
-              {{ formatNumber(Math.round(stats.summary.avg_daily_requests)) }}
+              <NumberTicker :value="Math.round(stats.summary.avg_daily_requests)" :format-fn="formatNumber" />
             </p>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.stats.avgDailyUsage') }}
@@ -373,9 +373,18 @@
                 <span class="text-xs text-gray-500 dark:text-gray-400">{{
                   t('admin.accounts.stats.daysActive')
                 }}</span>
-                <span class="text-sm font-semibold text-gray-900 dark:text-white"
-                  >{{ stats.summary.actual_days_used }} / {{ stats.summary.days }}</span
-                >
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-semibold text-gray-900 dark:text-white"
+                    >{{ stats.summary.actual_days_used }} / {{ stats.summary.days }}</span
+                  >
+                  <AnimatedCircularProgress
+                    :value="daysActivePercent"
+                    :size="36"
+                    :stroke-width="4"
+                    :show-value="false"
+                    color="#14b8a6"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -503,6 +512,8 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
 import Icon from '@/components/icons/Icon.vue'
+import NumberTicker from '@/components/inspira/NumberTicker.vue'
+import AnimatedCircularProgress from '@/components/inspira/AnimatedCircularProgress.vue'
 import { adminAPI } from '@/api/admin'
 import type { Account, AccountUsageStatsResponse } from '@/types'
 
@@ -530,6 +541,13 @@ const emit = defineEmits<{
 
 const loading = ref(false)
 const stats = ref<AccountUsageStatsResponse | null>(null)
+
+// Days-active ratio for the circular progress in the Performance card
+const daysActivePercent = computed(() => {
+  const days = stats.value?.summary.days || 0
+  if (days <= 0) return 0
+  return ((stats.value?.summary.actual_days_used || 0) / days) * 100
+})
 
 // Dark mode detection
 const isDarkMode = computed(() => {

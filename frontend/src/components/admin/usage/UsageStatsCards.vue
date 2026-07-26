@@ -6,7 +6,7 @@
       </div>
       <div>
         <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('usage.totalRequests') }}</p>
-        <p :class="valueClass">{{ stats?.total_requests?.toLocaleString() || '0' }}</p>
+        <p :class="valueClass"><NumberTicker :value="stats?.total_requests || 0" :format-fn="formatCount" /></p>
         <p class="text-xs text-gray-400">{{ t('usage.inSelectedRange') }}</p>
       </div>
     </div>
@@ -14,7 +14,7 @@
       <div class="rounded-lg bg-amber-50 p-2 text-amber-600 ring-1 ring-amber-500/10 dark:bg-amber-400/10 dark:text-amber-400 dark:ring-amber-400/20"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" /></svg></div>
       <div>
         <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('usage.totalTokens') }}</p>
-        <p :class="valueClass">{{ formatTokens(stats?.total_tokens || 0) }}</p>
+        <p :class="valueClass"><NumberTicker :value="stats?.total_tokens || 0" :format-fn="formatTokens" /></p>
         <p class="flex flex-wrap items-center gap-x-1 text-xs text-gray-500">
           <span>{{ t('usage.in') }}: {{ formatTokens(stats?.total_input_tokens || 0) }}</span>
           <span>/</span>
@@ -65,7 +65,7 @@
       <div class="min-w-0 flex-1">
         <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('usage.totalCost') }}</p>
         <p :class="[valueClass, 'text-emerald-600 dark:text-emerald-400']">
-          ${{ (stats?.total_actual_cost || 0).toFixed(4) }}
+          <NumberTicker :value="stats?.total_actual_cost || 0" prefix="$" :format-fn="formatCost" />
         </p>
         <p v-if="showAccountCost || showStandardCost" class="text-xs text-gray-400">
           <template v-if="showAccountCost && totalAccountCost != null">
@@ -83,7 +83,7 @@
       <div class="rounded-lg bg-violet-50 p-2 text-violet-600 ring-1 ring-violet-500/10 dark:bg-violet-400/10 dark:text-violet-400 dark:ring-violet-400/20">
         <Icon name="clock" size="md" />
       </div>
-      <div><p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('usage.avgDuration') }}</p><p :class="valueClass">{{ formatDuration(stats?.average_duration_ms || 0) }}</p></div>
+      <div><p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('usage.avgDuration') }}</p><p :class="valueClass"><NumberTicker :value="stats?.average_duration_ms || 0" :format-fn="formatDuration" /></p></div>
     </div>
   </div>
 </template>
@@ -94,6 +94,7 @@ import { useI18n } from 'vue-i18n'
 import type { AdminUsageStatsResponse } from '@/api/admin/usage'
 import type { UsageStatsResponse } from '@/types'
 import Icon from '@/components/icons/Icon.vue'
+import NumberTicker from '@/components/inspira/NumberTicker.vue'
 
 const props = withDefaults(defineProps<{
   stats: (AdminUsageStatsResponse | UsageStatsResponse) | null
@@ -136,6 +137,10 @@ const formatTokens = (value: number) => {
   if (value >= 1e3) return (value / 1e3).toFixed(2) + 'K'
   return value.toLocaleString()
 }
+
+// NumberTicker 动画中间值为小数,取整后再走原展示逻辑,保证动画帧格式与最终值一致
+const formatCount = (value: number) => Math.round(value).toLocaleString()
+const formatCost = (value: number) => value.toFixed(4)
 
 const cacheLabel = () => t('usage.cacheTotal')
 const cacheDetailLabel = () => t('usage.cacheBreakdown')

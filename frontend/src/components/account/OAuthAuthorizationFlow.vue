@@ -577,6 +577,14 @@
             {{ oauthFollowSteps }}
           </p>
 
+          <!-- Progress overview -->
+          <MultiStepLoader
+            class="rounded-lg border border-blue-200 bg-white/60 p-3 dark:border-blue-700 dark:bg-gray-800/60"
+            :steps="manualFlowSteps"
+            :current="manualFlowCurrent"
+            :error="Boolean(error)"
+          />
+
           <!-- Step 1: Generate Auth URL -->
           <div
             class="rounded-lg border border-blue-300 bg-white/80 p-4 dark:border-blue-600 dark:bg-gray-800/80"
@@ -814,6 +822,7 @@ import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useClipboard } from '@/composables/useClipboard'
 import Icon from '@/components/icons/Icon.vue'
+import MultiStepLoader from '@/components/inspira/MultiStepLoader.vue'
 import type { AddMethod, AuthInputMethod } from '@/composables/useAccountOAuth'
 import type { AccountPlatform } from '@/types'
 
@@ -910,6 +919,18 @@ const oauthImportantNotice = computed(() => {
   if (props.platform === 'antigravity') return t('admin.accounts.oauth.antigravity.importantNotice')
   if (props.platform === 'grok') return t('admin.accounts.oauth.grok.importantNotice')
   return ''
+})
+
+// Manual flow progress (mirrors the 3-step manual authorization UI; no business logic)
+const manualFlowSteps = computed(() => [
+  { title: oauthStep1GenerateUrl.value },
+  { title: oauthStep2OpenUrl.value },
+  { title: oauthStep3EnterCode.value }
+])
+const manualFlowCurrent = computed(() => {
+  if (!props.authUrl) return 0
+  if (!authCodeInput.value.trim()) return 1
+  return 2
 })
 
 // Local state

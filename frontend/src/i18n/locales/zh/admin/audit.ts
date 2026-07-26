@@ -5,6 +5,11 @@ export default {
     clearAll: '全部清理',
     empty: '暂无操作日志',
     loadFailed: '加载操作日志失败',
+    view: {
+      toggle: '视图切换',
+      table: '表格视图',
+      timeline: '时间线视图'
+    },
     filters: {
       all: '全部',
       q: '关键字',

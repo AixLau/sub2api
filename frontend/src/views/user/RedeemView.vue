@@ -78,14 +78,20 @@
         </div>
       </div>
 
-      <!-- Success Message -->
+      <!-- Success Message (scratch to reveal) -->
       <transition name="fade">
-        <div
+        <ScratchToReveal
           v-if="redeemResult"
-          class="card border-emerald-200 bg-emerald-50 dark:border-emerald-800/50 dark:bg-emerald-900/20"
+          :key="resultKey"
+          :cover-text="t('redeem.scratchToReveal')"
+          class="min-h-[10rem] overflow-hidden rounded-2xl"
+          @complete="onScratchComplete"
         >
-          <div class="p-6">
-            <div class="flex items-start gap-4">
+          <div
+            class="card min-h-[10rem] border-emerald-200 bg-emerald-50 dark:border-emerald-800/50 dark:bg-emerald-900/20"
+          >
+            <div class="p-6">
+              <div class="flex items-start gap-4">
               <div
                 class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/30"
               >
@@ -128,8 +134,9 @@
                 </div>
               </div>
             </div>
+            </div>
           </div>
-        </div>
+        </ScratchToReveal>
       </transition>
 
       <!-- Error Message -->
@@ -350,6 +357,7 @@ import { useSubscriptionStore } from '@/stores/subscriptions'
 import { redeemAPI, authAPI, type RedeemHistoryItem } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
+import ScratchToReveal from '@/components/inspira/ScratchToReveal.vue'
 import { fireCelebration } from '@/components/inspira/confetti'
 import { formatDateTime } from '@/utils/format'
 
@@ -372,6 +380,13 @@ const redeemResult = ref<{
   validity_days?: number
 } | null>(null)
 const errorMessage = ref('')
+/** 每次兑换成功递增，强制重建刮刮乐覆盖层 */
+const resultKey = ref(0)
+
+/** 刮开完成后再喷彩带，避免与成功 toast 时重复触发 */
+const onScratchComplete = () => {
+  fireCelebration()
+}
 
 // History data
 const history = ref<RedeemHistoryItem[]>([])
@@ -446,6 +461,7 @@ const handleRedeem = async () => {
     const result = await redeemAPI.redeem(redeemCode.value.trim())
 
     redeemResult.value = result
+    resultKey.value++
 
     // Refresh user data to get updated balance/concurrency
     await authStore.refreshUser()
@@ -466,9 +482,8 @@ const handleRedeem = async () => {
     // Refresh history
     await fetchHistory()
 
-    // Show success toast
+    // Show success toast (彩带在刮开结果卡后触发，见 onScratchComplete)
     appStore.showSuccess(t('redeem.codeRedeemSuccess'))
-    fireCelebration()
   } catch (error: any) {
     errorMessage.value = error.response?.data?.detail || t('redeem.failedToRedeem')
 

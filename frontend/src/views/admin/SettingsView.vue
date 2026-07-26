@@ -18,6 +18,11 @@
             :aria-label="t('admin.settings.title')"
           >
             <div class="settings-tabs">
+              <span
+                class="settings-tab-indicator"
+                :style="settingsTabIndicatorStyle"
+                aria-hidden="true"
+              ></span>
               <button
                 v-for="tab in settingsTabs"
                 :key="tab.key"
@@ -7805,7 +7810,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from "vue";
+import { ref, reactive, computed, onMounted, watch, nextTick } from "vue";
+import { useEventListener } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { adminAPI } from "@/api";
 import {
@@ -7937,6 +7943,47 @@ function selectSettingsTab(tab: SettingsTab): void {
   activeTab.value = tab;
 }
 
+/* ---- Sliding tab indicator (Inspira-style) ---- */
+const settingsTabIndicatorStyle = ref<Record<string, string>>({
+  opacity: "0",
+});
+
+function updateSettingsTabIndicator(): void {
+  const el = document.getElementById(`settings-tab-${activeTab.value}`);
+  if (!el) {
+    settingsTabIndicatorStyle.value = { opacity: "0" };
+    return;
+  }
+  // Underline spans the tab minus its 0.75rem inner padding on each side,
+  // mirroring the previous static `.settings-tab-active::after` metrics.
+  const inset = 12;
+  const width = Math.max(el.offsetWidth - inset * 2, 0);
+  settingsTabIndicatorStyle.value = {
+    opacity: "1",
+    width: `${width}px`,
+    transform: `translateX(${el.offsetLeft + inset}px)`,
+  };
+}
+
+watch(activeTab, () => {
+  void nextTick(updateSettingsTabIndicator);
+});
+
+watch(
+  () => locale.value,
+  () => {
+    // Tab label widths change with language.
+    void nextTick(updateSettingsTabIndicator);
+  },
+);
+
+useEventListener(
+  typeof window === "undefined" ? null : window,
+  "resize",
+  updateSettingsTabIndicator,
+  { passive: true },
+);
+
 function focusSettingsTab(tab: SettingsTab): void {
   window.requestAnimationFrame(() => {
     document.getElementById(`settings-tab-${tab}`)?.focus();
@@ -7977,6 +8024,15 @@ function handleSettingsTabKeydown(event: KeyboardEvent, tab: SettingsTab): void 
 const { copyToClipboard } = useClipboard();
 
 const loading = ref(true);
+// Tabs only render once loading finishes; position the indicator then.
+watch(
+  () => loading.value,
+  (isLoading) => {
+    if (!isLoading) {
+      void nextTick(updateSettingsTabIndicator);
+    }
+  },
+);
 const loadFailed = ref(false);
 const saving = ref(false);
 const testingSmtp = ref(false);
@@ -11788,7 +11844,7 @@ watch(
 }
 
 .settings-tabs {
-  @apply flex min-w-max items-center gap-1;
+  @apply relative flex min-w-max items-center gap-1;
 }
 
 .settings-tab {
@@ -11835,15 +11891,26 @@ watch(
   opacity: 0;
 }
 
-.settings-tab-active::after {
+/* Shared sliding underline indicator (replaces the old per-tab ::after). */
+.settings-tab-indicator {
   position: absolute;
-  right: 0.75rem;
   bottom: 0.25rem;
-  left: 0.75rem;
+  left: 0;
   height: 2px;
   border-radius: 9999px;
-  content: "";
   background: linear-gradient(90deg, #14b8a6, #0ea5e9);
+  pointer-events: none;
+  transition:
+    transform 300ms cubic-bezier(0.4, 0, 0.2, 1),
+    width 300ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 200ms ease-out;
+  will-change: transform, width;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-tab-indicator {
+    transition: none;
+  }
 }
 
 .settings-tab-icon {
