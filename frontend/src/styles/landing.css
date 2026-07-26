@@ -579,22 +579,8 @@
 }
 
 .trusted-inner {
-  display: grid;
-  grid-template-columns: minmax(132px, 180px) minmax(0, 1fr);
-  gap: 48px;
   max-width: 1200px;
   margin: 0 auto;
-  align-items: center;
-}
-
-.trusted-label {
-  max-width: 180px;
-  margin: 0;
-  color: var(--muted);
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1.22;
-  letter-spacing: -0.02em;
 }
 
 .trusted-marquee {
@@ -2629,15 +2615,6 @@
 
   .trusted-section {
     padding: 16px 24px 34px;
-  }
-
-  .trusted-inner {
-    grid-template-columns: 1fr;
-    gap: 24px;
-  }
-
-  .trusted-label {
-    max-width: 260px;
   }
 
   .content-section {

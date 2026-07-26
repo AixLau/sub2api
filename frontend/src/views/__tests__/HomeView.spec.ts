@@ -84,7 +84,7 @@ describe('HomeView visual baseline', () => {
     expect(html).toContain('hero-section')
     expect(text).toContain('Codex 与模型 API 接入，像光一样自然。')
     expect(text).toContain('开始接入')
-    expect(text).toContain('Partnered with top-tier companies globally')
+    expect(text).not.toContain('Partnered with top-tier companies globally')
   })
 
   it('redirects authenticated users to their dashboard like the live landing', async () => {
