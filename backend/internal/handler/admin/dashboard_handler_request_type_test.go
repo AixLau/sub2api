@@ -29,6 +29,29 @@ type dashboardUsageRepoCapture struct {
 	rankingLimit          int
 	ranking               []usagestats.UserSpendingRankingItem
 	rankingTotal          float64
+	dashboardStats        *usagestats.DashboardStats
+	globalStatsCalls      int
+	rangeStatsCalls       int
+	rangeStatsStart       time.Time
+	rangeStatsEnd         time.Time
+}
+
+func (s *dashboardUsageRepoCapture) GetDashboardStats(context.Context) (*usagestats.DashboardStats, error) {
+	s.globalStatsCalls++
+	if s.dashboardStats != nil {
+		return s.dashboardStats, nil
+	}
+	return &usagestats.DashboardStats{}, nil
+}
+
+func (s *dashboardUsageRepoCapture) GetDashboardStatsWithRange(_ context.Context, start, end time.Time) (*usagestats.DashboardStats, error) {
+	s.rangeStatsCalls++
+	s.rangeStatsStart = start
+	s.rangeStatsEnd = end
+	if s.dashboardStats != nil {
+		return s.dashboardStats, nil
+	}
+	return &usagestats.DashboardStats{}, nil
 }
 
 func (s *dashboardUsageRepoCapture) GetUsageTrendWithFilters(
@@ -184,6 +207,40 @@ func TestDashboardSnapshotRoundsOnlyHourlyTrendStart(t *testing.T) {
 	require.Equal(t, end, repo.trendEnd)
 	require.Equal(t, start, repo.modelStart)
 	require.Equal(t, end, repo.modelEnd)
+}
+
+func TestDashboardSnapshotUsesGlobalStatsForAccumulatedSummary(t *testing.T) {
+	t.Cleanup(resetDashboardReadCachesForTest)
+	resetDashboardReadCachesForTest()
+	repo := &dashboardUsageRepoCapture{
+		dashboardStats: &usagestats.DashboardStats{
+			TotalTokens:      78_580_000_000,
+			TotalActualCost:  5_960,
+			TotalAccountCost: 2_540,
+			TotalCost:        3_440,
+		},
+	}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/admin/dashboard/snapshot-v2?include_stats=true&include_trend=false&include_model_stats=false"+
+			"&start_time=2026-07-22T12:00:00Z&end_time=2026-07-23T12:00:00Z",
+		nil,
+	)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	// With aggregation disabled in this test service, global stats use the
+	// complete raw-log retention window instead of the request's chart range.
+	require.Zero(t, repo.globalStatsCalls)
+	require.Equal(t, 1, repo.rangeStatsCalls)
+	require.True(t, repo.rangeStatsStart.Before(time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)))
+	require.True(t, repo.rangeStatsEnd.After(time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)))
+	require.Contains(t, rec.Body.String(), `"total_tokens":78580000000`)
+	require.Contains(t, rec.Body.String(), `"total_actual_cost":5960`)
+	require.Contains(t, rec.Body.String(), `"total_account_cost":2540`)
+	require.Contains(t, rec.Body.String(), `"total_cost":3440`)
 }
 
 func TestDashboardUserBreakdownExcludeUserIDs(t *testing.T) {

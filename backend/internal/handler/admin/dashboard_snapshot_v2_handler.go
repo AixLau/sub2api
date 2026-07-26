@@ -164,7 +164,10 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 	}
 
 	if includeStats {
-		stats, err := h.dashboardService.GetDashboardStatsWithRange(ctx, startTime, endTime)
+		// The summary cards show today and accumulated values. Keep them on the
+		// global stats source so tokens, costs, and requests share one time scope;
+		// the selected range only applies to the charts below.
+		stats, err := h.dashboardService.GetDashboardStats(ctx)
 		if err != nil {
 			return nil, errors.New("failed to get dashboard statistics")
 		}
