@@ -14,6 +14,7 @@ export default {
     create: '创建',
     update: '更新',
     confirm: '确认',
+    retry: '重试',
     reset: '重置',
     search: '搜索',
     filter: '筛选',

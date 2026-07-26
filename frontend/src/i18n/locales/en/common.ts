@@ -14,6 +14,7 @@ export default {
     create: 'Create',
     update: 'Update',
     confirm: 'Confirm',
+    retry: 'Retry',
     reset: 'Reset',
     search: 'Search',
     filter: 'Filter',
