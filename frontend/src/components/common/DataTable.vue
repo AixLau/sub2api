@@ -90,14 +90,15 @@
     </template>
   </div>
 
+  <div v-else class="dt-scroll-shell">
   <div
-    v-else
     ref="tableWrapperRef"
     class="table-wrapper"
     :class="{
       'actions-expanded': actionsExpanded,
       'is-scrollable': isScrollable
     }"
+    @scroll.passive="scheduleEdgeFadeUpdate"
   >
     <table class="w-full min-w-max divide-y divide-gray-200 dark:divide-dark-700">
       <thead class="table-header bg-gray-50 dark:bg-dark-800">
@@ -216,8 +217,10 @@
             class="hover:bg-gray-50 dark:hover:bg-dark-800"
             :class="{
               'cursor-pointer': clickableRows,
-              'bg-primary-50/40 dark:bg-primary-900/10': selectable && isRowSelected(item.row, item.index)
+              'bg-primary-50/40 dark:bg-primary-900/10': selectable && isRowSelected(item.row, item.index),
+              'dt-row-entrance': hasRowEntrance(item.index)
             }"
+            :style="rowEntranceStyle(item.index)"
             @click="clickableRows && emit('rowClick', item.row)"
           >
             <td v-if="selectable" class="w-11 min-w-11 px-3 py-4 text-center">
@@ -259,6 +262,20 @@
         </template>
       </tbody>
     </table>
+  </div>
+  <!-- 横向滚动边缘渐隐提示：某一侧未滚到头时显示一条窄渐变，提示该侧还有内容 -->
+  <div
+    class="dt-edge-fade dt-edge-fade-left"
+    :class="{ 'dt-edge-fade-visible': canScrollLeft }"
+    :style="edgeFadeLeftStyle"
+    aria-hidden="true"
+  ></div>
+  <div
+    class="dt-edge-fade dt-edge-fade-right"
+    :class="{ 'dt-edge-fade-visible': canScrollRight }"
+    :style="edgeFadeRightStyle"
+    aria-hidden="true"
+  ></div>
   </div>
 </template>
 
@@ -314,7 +331,92 @@ const checkScrollable = () => {
   if (tableWrapperRef.value) {
     isScrollable.value = tableWrapperRef.value.scrollWidth > tableWrapperRef.value.clientWidth
   }
+  updateEdgeFades()
 }
+
+// --- 横向滚动边缘渐隐提示（Inspira「渐进模糊」思路的轻量版） ---
+// 内容可横向滚动且某一侧未滚到头时，在该侧叠加一条窄的渐变淡出（向内容方向渐隐），
+// 提示"这一侧还有内容"；滚到头后通过 opacity 过渡淡出。渐变层是 .table-wrapper 的
+// 兄弟节点（pointer-events:none、aria-hidden），不参与滚动/点击，也不进入 wrapper
+// 内部的层叠上下文，因此不影响 sticky 表头/列、行点击与虚拟滚动。
+// 渐变层通过测量到的 inset 避开 sticky 列与滚动条占用的区域，绝不覆盖 sticky 单元格。
+const canScrollLeft = ref(false)
+const canScrollRight = ref(false)
+const edgeFadeInsets = ref({ left: 0, right: 0, bottom: 0 })
+let edgeFadeRafId: number | null = null
+
+// 1px 容差：吸收亚像素滚动位置，避免边缘处渐变闪烁
+const EDGE_FADE_EPSILON = 1
+
+const updateEdgeFades = () => {
+  const el = tableWrapperRef.value
+  if (!el) {
+    canScrollLeft.value = false
+    canScrollRight.value = false
+    return
+  }
+  const maxScrollLeft = el.scrollWidth - el.clientWidth
+  const scrollable = maxScrollLeft > EDGE_FADE_EPSILON
+  canScrollLeft.value = scrollable && el.scrollLeft > EDGE_FADE_EPSILON
+  canScrollRight.value = scrollable && el.scrollLeft < maxScrollLeft - EDGE_FADE_EPSILON
+  if (!scrollable) return
+
+  // 计算渐变层的 inset：左侧避开 sticky 首列（渐变贴在 sticky 列内侧，
+  // 即隐藏内容从 sticky 列下方滑出的位置），右侧避开 sticky 操作列与纵向滚动条，
+  // 底部避开横向滚动条，避免白色渐变盖住滚动条/固定列内容。
+  const wrapRect = el.getBoundingClientRect()
+  let left = 0
+  if (props.stickyFirstColumn) {
+    el.querySelectorAll<HTMLElement>(
+      'thead th.sticky-col-left, thead th.sticky-col-left-first, thead th.sticky-col-left-second'
+    ).forEach((cell) => {
+      left = Math.max(left, cell.getBoundingClientRect().right - wrapRect.left)
+    })
+  }
+  // offsetWidth - clientWidth = 纵向滚动条宽度（本组件无边框/内边距）
+  let right = Math.max(el.offsetWidth - el.clientWidth, 0)
+  if (props.stickyActionsColumn) {
+    const actionsCell = el.querySelector<HTMLElement>('thead th.sticky-col-right')
+    if (actionsCell) {
+      right = Math.max(right, wrapRect.right - actionsCell.getBoundingClientRect().left)
+    }
+  }
+  edgeFadeInsets.value = {
+    left: Math.max(Math.round(left), 0),
+    right: Math.max(Math.round(right), 0),
+    bottom: Math.max(el.offsetHeight - el.clientHeight, 0)
+  }
+}
+
+// scroll 事件按 rAF 节流；不支持 rAF 的环境直接同步更新
+const scheduleEdgeFadeUpdate = () => {
+  if (typeof requestAnimationFrame !== 'function') {
+    updateEdgeFades()
+    return
+  }
+  if (edgeFadeRafId !== null) return
+  edgeFadeRafId = requestAnimationFrame(() => {
+    edgeFadeRafId = null
+    updateEdgeFades()
+  })
+}
+
+const cancelEdgeFadeUpdate = () => {
+  if (edgeFadeRafId !== null) {
+    if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(edgeFadeRafId)
+    edgeFadeRafId = null
+  }
+}
+
+const edgeFadeLeftStyle = computed(() => ({
+  left: `${edgeFadeInsets.value.left}px`,
+  bottom: `${edgeFadeInsets.value.bottom}px`
+}))
+
+const edgeFadeRightStyle = computed(() => ({
+  right: `${edgeFadeInsets.value.right}px`,
+  bottom: `${edgeFadeInsets.value.bottom}px`
+}))
 
 // 检查操作列是否需要展开
 const checkActionsColumnWidth = () => {
@@ -380,6 +482,10 @@ const detachDesktopTableTracking = () => {
     window.removeEventListener('resize', resizeHandler)
     resizeHandler = null
   }
+  // 边缘渐隐提示的挂尾清理：取消未执行的 rAF，并复位状态（切到移动端卡片视图时）
+  cancelEdgeFadeUpdate()
+  canScrollLeft.value = false
+  canScrollRight.value = false
 }
 
 const attachDesktopTableTracking = () => {
@@ -471,6 +577,12 @@ interface Props {
   selectedKeys?: Array<string | number>
   /** Accessible label for a row selection checkbox. */
   selectionLabel?: string | ((row: any) => string)
+  /**
+   * Staggered fade/rise entrance for table rows when the data set changes
+   * (initial load, pagination, filtering). Sorting, selection changes and
+   * virtual scrolling never replay it. Set false to disable on heavy tables.
+   */
+  animateRows?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -481,7 +593,8 @@ const props = withDefaults(defineProps<Props>(), {
   defaultSortOrder: 'asc',
   serverSideSort: false,
   selectable: false,
-  selectedKeys: () => []
+  selectedKeys: () => [],
+  animateRows: true
 })
 
 const sortKey = ref<string>('')
@@ -750,6 +863,63 @@ const toggleAllVisible = (checked: boolean) => {
   emitSelection(next)
 }
 
+// --- Row entrance animation ---
+// 行入场动画:数据集变化(首载/翻页/筛选,由下方 rowIdentityKeys watcher 判定)后开启一个
+// 短暂的「入场窗口」,窗口内挂载的前 N 行播放淡入+上移的错峰动画,窗口结束后行为完全复原:
+// 纯排序(同一行集合重排)、勾选等无关更新、虚拟滚动挂载的行都不会重放动画。
+const ROW_ENTRANCE_MAX_ROWS = 15
+const ROW_ENTRANCE_STAGGER_MS = 25
+const ROW_ENTRANCE_DURATION_MS = 240
+// 窗口时长 = 最后一行的延迟 + 动画时长 + 余量,到点后移除动画类(动画已结束,无视觉跳变)
+const ROW_ENTRANCE_WINDOW_MS =
+  (ROW_ENTRANCE_MAX_ROWS - 1) * ROW_ENTRANCE_STAGGER_MS + ROW_ENTRANCE_DURATION_MS + 110
+
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined'
+  && typeof window.matchMedia === 'function'
+  && (window.matchMedia('(prefers-reduced-motion: reduce)')?.matches ?? false)
+
+// 初始即求值:挂载时已有数据的场景,首帧就带动画类,避免「先渲染再加类」的闪烁
+const rowEntranceActive = ref(
+  props.animateRows && (props.data?.length ?? 0) > 0 && !prefersReducedMotion()
+)
+let rowEntranceTimer: ReturnType<typeof setTimeout> | null = null
+
+const clearRowEntranceTimer = () => {
+  if (rowEntranceTimer !== null) {
+    clearTimeout(rowEntranceTimer)
+    rowEntranceTimer = null
+  }
+}
+
+const armRowEntrance = () => {
+  clearRowEntranceTimer()
+  if (!props.animateRows || prefersReducedMotion()) {
+    rowEntranceActive.value = false
+    return
+  }
+  rowEntranceActive.value = true
+  rowEntranceTimer = setTimeout(() => {
+    rowEntranceActive.value = false
+    rowEntranceTimer = null
+  }, ROW_ENTRANCE_WINDOW_MS)
+}
+
+const hasRowEntrance = (rowIndex: number) =>
+  rowEntranceActive.value && rowIndex < ROW_ENTRANCE_MAX_ROWS
+
+const rowEntranceStyle = (rowIndex: number) =>
+  hasRowEntrance(rowIndex)
+    ? { animationDelay: `${rowIndex * ROW_ENTRANCE_STAGGER_MS}ms` }
+    : undefined
+
+onMounted(() => {
+  // 启动入场窗口的关闭计时;数据为空时保持关闭,等 rowIdentityKeys watcher 在数据到达时再开启
+  if (rowEntranceActive.value) armRowEntrance()
+})
+
+onUnmounted(clearRowEntranceTimer)
+
 // --- Virtual scrolling ---
 // 是否启用虚拟化:仅桌面端且行数超过阈值时开启。小列表全量渲染,彻底绕开虚拟器的
 // 估算/测量/滚动补偿链路,消除可变行高导致的滚动抖动。
@@ -825,6 +995,9 @@ watch(
   rowIdentityKeys,
   (current, previous) => {
     if (hasSameRowIdentitySet(current, previous)) return
+
+    // New page/filter result (never pure reordering): replay the row entrance.
+    armRowEntrance()
 
     // The virtualizer owns caches across option updates. A new page/filter result
     // must release detached rows and sizes, while pure reordering keeps them.
@@ -951,6 +1124,73 @@ defineExpose({
 </script>
 
 <style scoped>
+/* 边缘渐隐提示的外壳：接管 .table-wrapper 原先在父级 flex 链中的角色
+   （flex:1 / min-height:0，见 TablePageLayout 的 .table-scroll-container 滚动链），
+   自身 relative 以承载左右渐变层；内部仍是 flex 列，.table-wrapper 继续 flex:1 填满，
+   因此滚动容器的尺寸/滚动行为与改动前完全一致。 */
+.dt-scroll-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0%;
+  min-height: 0;
+}
+
+/* 横向滚动边缘渐隐层：常驻 DOM，仅以 opacity 过渡显隐（静态提示，无动画） */
+.dt-edge-fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1; /* 盖过 .table-wrapper（isolation:isolate 的独立层叠上下文） */
+  width: 28px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.dt-edge-fade-visible {
+  opacity: 1;
+}
+
+.dt-edge-fade-left {
+  left: 0;
+  background: linear-gradient(
+    to right,
+    rgb(255 255 255 / 0.9),
+    rgb(255 255 255 / 0.5) 45%,
+    rgb(255 255 255 / 0)
+  );
+}
+
+.dt-edge-fade-right {
+  right: 0;
+  background: linear-gradient(
+    to left,
+    rgb(255 255 255 / 0.9),
+    rgb(255 255 255 / 0.5) 45%,
+    rgb(255 255 255 / 0)
+  );
+}
+
+/* 暗色模式：以表体背景色 dark-900 (rgb(17 24 39)) 渐隐 */
+.dark .dt-edge-fade-left {
+  background: linear-gradient(
+    to right,
+    rgb(17 24 39 / 0.9),
+    rgb(17 24 39 / 0.5) 45%,
+    rgb(17 24 39 / 0)
+  );
+}
+
+.dark .dt-edge-fade-right {
+  background: linear-gradient(
+    to left,
+    rgb(17 24 39 / 0.9),
+    rgb(17 24 39 / 0.5) 45%,
+    rgb(17 24 39 / 0)
+  );
+}
+
 /* 表格横向滚动 */
 .table-wrapper {
   --select-col-width: 52px; /* 勾选列宽度：px-6 (24px*2) + checkbox (16px) */
@@ -1089,6 +1329,29 @@ tbody tr:hover .sticky-col {
 
 .dark .is-scrollable .sticky-col-right::before {
   background: linear-gradient(to left, rgba(0, 0, 0, 0.2), transparent);
+}
+
+/* 行入场动画:淡入 + 轻微上移。只动 opacity/transform,不产生布局位移;
+   backwards 让延迟期间保持起始态(不可见),避免错峰行先闪现再重播 */
+@keyframes dt-row-entrance {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dt-row-entrance {
+  animation: dt-row-entrance 240ms ease-out backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dt-row-entrance {
+    animation: none;
+  }
 }
 </style>
 

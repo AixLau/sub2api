@@ -4,9 +4,12 @@
     <div v-if="!success" class="flex flex-col items-center space-y-4">
       <!-- QR Code mode -->
       <template v-if="qrUrl">
-        <div class="rounded-2xl bg-white p-4 shadow-sm dark:bg-dark-800">
-          <canvas ref="qrCanvas" class="mx-auto"></canvas>
-        </div>
+        <Lens>
+          <div class="rounded-2xl bg-white p-4 shadow-sm dark:bg-dark-800">
+            <img v-if="qrDataUrl" :src="qrDataUrl" alt="" width="220" height="220" class="mx-auto block" />
+            <div v-else class="mx-auto h-[220px] w-[220px]"></div>
+          </div>
+        </Lens>
         <p v-if="scanHint" class="text-center text-sm text-gray-500 dark:text-gray-400">
           {{ scanHint }}
         </p>
@@ -71,9 +74,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import Lens from '@/components/inspira/Lens.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { usePaymentStore } from '@/stores/payment'
 import { useAppStore } from '@/stores'
@@ -105,8 +109,10 @@ const { t } = useI18n()
 const paymentStore = usePaymentStore()
 const appStore = useAppStore()
 
-const qrCanvas = ref<HTMLCanvasElement | null>(null)
 const qrUrl = ref('')
+// 二维码绘制到离屏 canvas 后导出 dataURL,用 <img> 展示:
+// 声明式内容才能被 Lens 的双份插槽渲染复制(canvas 的命令式绘制无法复制)
+const qrDataUrl = ref('')
 const remainingSeconds = ref(0)
 const expired = ref(false)
 const cancelling = ref(false)
@@ -163,35 +169,49 @@ function reopenPopup() {
 }
 
 async function renderQR() {
-  await nextTick()
-  if (!qrCanvas.value || !qrUrl.value) return
+  if (!qrUrl.value) {
+    qrDataUrl.value = ''
+    return
+  }
   const logoSrc = getLogoForType()
-  await QRCode.toCanvas(qrCanvas.value, qrUrl.value, {
-    width: 220,
-    margin: 2,
-    errorCorrectionLevel: logoSrc ? 'M' : 'L',
-  })
-  if (!logoSrc) return
-  const canvas = qrCanvas.value
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
-  const img = new Image()
-  img.src = logoSrc
-  img.onload = () => {
-    const logoSize = 40
-    const x = (canvas.width - logoSize) / 2
-    const y = (canvas.height - logoSize) / 2
-    const pad = 4
-    ctx.fillStyle = '#FFFFFF'
-    ctx.beginPath()
-    const r = 5
-    ctx.moveTo(x - pad + r, y - pad)
-    ctx.arcTo(x + logoSize + pad, y - pad, x + logoSize + pad, y + logoSize + pad, r)
-    ctx.arcTo(x + logoSize + pad, y + logoSize + pad, x - pad, y + logoSize + pad, r)
-    ctx.arcTo(x - pad, y + logoSize + pad, x - pad, y - pad, r)
-    ctx.arcTo(x - pad, y - pad, x + logoSize + pad, y - pad, r)
-    ctx.fill()
-    ctx.drawImage(img, x, y, logoSize, logoSize)
+  try {
+    const canvas = document.createElement('canvas')
+    await QRCode.toCanvas(canvas, qrUrl.value, {
+      width: 220,
+      margin: 2,
+      errorCorrectionLevel: logoSrc ? 'M' : 'L',
+    })
+    if (logoSrc) {
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        await new Promise<void>((resolve) => {
+          const img = new Image()
+          img.onload = () => {
+            const logoSize = 40
+            const x = (canvas.width - logoSize) / 2
+            const y = (canvas.height - logoSize) / 2
+            const pad = 4
+            ctx.fillStyle = '#FFFFFF'
+            ctx.beginPath()
+            const r = 5
+            ctx.moveTo(x - pad + r, y - pad)
+            ctx.arcTo(x + logoSize + pad, y - pad, x + logoSize + pad, y + logoSize + pad, r)
+            ctx.arcTo(x + logoSize + pad, y + logoSize + pad, x - pad, y + logoSize + pad, r)
+            ctx.arcTo(x - pad, y + logoSize + pad, x - pad, y - pad, r)
+            ctx.arcTo(x - pad, y - pad, x + logoSize + pad, y - pad, r)
+            ctx.fill()
+            ctx.drawImage(img, x, y, logoSize, logoSize)
+            resolve()
+          }
+          img.onerror = () => resolve()
+          img.src = logoSrc
+        })
+      }
+    }
+    qrDataUrl.value = canvas.toDataURL()
+  } catch {
+    // jsdom 无 canvas 实现 / toDataURL 不可用时静默降级(不展示二维码图片)
+    qrDataUrl.value = ''
   }
 }
 

@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import DataTable from '../DataTable.vue'
 
@@ -356,5 +356,208 @@ describe('DataTable', () => {
     await wrapper.get('[data-test="select-all-mobile"]').setValue(true)
 
     expect(wrapper.emitted('update:selectedKeys')?.at(-1)?.[0]).toEqual([99, 1, 2])
+  })
+
+  describe('row entrance animation', () => {
+    // Desktop viewport, but prefers-reduced-motion does NOT match (motion allowed).
+    const stubMotionSafeDesktopMatchMedia = () => {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        value: vi.fn().mockImplementation((query: string) => ({
+          matches: !query.includes('prefers-reduced-motion'),
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          dispatchEvent: vi.fn()
+        }))
+      })
+    }
+
+    const makeRows = (count: number, offset = 0) =>
+      Array.from({ length: count }, (_, i) => ({ id: offset + i + 1, name: `Row ${offset + i + 1}` }))
+
+    const mountTable = (data: Array<Record<string, unknown>>, extraProps: Record<string, unknown> = {}) =>
+      mount(DataTable, {
+        props: {
+          columns: [{ key: 'name', label: 'Name', sortable: true }],
+          data,
+          rowKey: 'id',
+          ...extraProps
+        }
+      })
+
+    const dataRows = (wrapper: ReturnType<typeof mount>) => wrapper.findAll('tbody tr[data-index]')
+    const animatedRows = (wrapper: ReturnType<typeof mount>) =>
+      dataRows(wrapper).filter((row) => row.classes().includes('dt-row-entrance'))
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('staggers row entrance on initial load, capped at the first 15 rows', async () => {
+      stubMotionSafeDesktopMatchMedia()
+      const wrapper = mountTable(makeRows(20))
+      await wrapper.vm.$nextTick()
+
+      const rows = dataRows(wrapper)
+      expect(rows).toHaveLength(20)
+      expect(rows[0].classes()).toContain('dt-row-entrance')
+      expect(rows[1].attributes('style')).toContain('animation-delay: 25ms')
+      expect(rows[14].classes()).toContain('dt-row-entrance')
+      expect(rows[14].attributes('style')).toContain('animation-delay: 350ms')
+      // Rows beyond the cap appear instantly.
+      expect(rows[15].classes()).not.toContain('dt-row-entrance')
+      expect(rows[15].attributes('style') ?? '').not.toContain('animation-delay')
+
+      wrapper.unmount()
+    })
+
+    it('does not replay the entrance on sort or selection changes', async () => {
+      vi.useFakeTimers()
+      stubMotionSafeDesktopMatchMedia()
+      const wrapper = mountTable(makeRows(5), { selectable: true, selectedKeys: [] })
+      await wrapper.vm.$nextTick()
+      expect(animatedRows(wrapper).length).toBeGreaterThan(0)
+
+      // Entrance window expires; rows return to their inert state.
+      vi.advanceTimersByTime(2000)
+      await wrapper.vm.$nextTick()
+      expect(animatedRows(wrapper)).toHaveLength(0)
+
+      // Client-side sort reorders the same identity set: must stay instant.
+      await wrapper.findAll('th')[1].trigger('click')
+      await wrapper.vm.$nextTick()
+      expect(animatedRows(wrapper)).toHaveLength(0)
+
+      // Selection toggle is an unrelated reactive update: must stay instant.
+      await wrapper.findAll('[data-test="select-row"]')[0].setValue(true)
+      await wrapper.setProps({ selectedKeys: [1] })
+      await wrapper.vm.$nextTick()
+      expect(animatedRows(wrapper)).toHaveLength(0)
+
+      wrapper.unmount()
+    })
+
+    it('replays the entrance when pagination swaps the row identity set', async () => {
+      vi.useFakeTimers()
+      stubMotionSafeDesktopMatchMedia()
+      const wrapper = mountTable(makeRows(5))
+      await wrapper.vm.$nextTick()
+
+      vi.advanceTimersByTime(2000)
+      await wrapper.vm.$nextTick()
+      expect(animatedRows(wrapper)).toHaveLength(0)
+
+      await wrapper.setProps({ data: makeRows(5, 100) })
+      await wrapper.vm.$nextTick()
+      await wrapper.vm.$nextTick()
+
+      const rows = dataRows(wrapper)
+      expect(rows[0].classes()).toContain('dt-row-entrance')
+      expect(rows[2].attributes('style')).toContain('animation-delay: 50ms')
+
+      wrapper.unmount()
+    })
+
+    it('renders rows instantly when animateRows is false', async () => {
+      stubMotionSafeDesktopMatchMedia()
+      const wrapper = mountTable(makeRows(5), { animateRows: false })
+      await wrapper.vm.$nextTick()
+
+      expect(dataRows(wrapper)).toHaveLength(5)
+      expect(animatedRows(wrapper)).toHaveLength(0)
+
+      await wrapper.setProps({ data: makeRows(5, 100) })
+      await wrapper.vm.$nextTick()
+      await wrapper.vm.$nextTick()
+      expect(animatedRows(wrapper)).toHaveLength(0)
+
+      wrapper.unmount()
+    })
+
+    it('renders rows instantly under prefers-reduced-motion', async () => {
+      // Outer beforeEach stubs matchMedia with matches: true for every query,
+      // so prefers-reduced-motion matches: the JS guard must disable the entrance.
+      const wrapper = mountTable(makeRows(5))
+      await wrapper.vm.$nextTick()
+
+      expect(dataRows(wrapper)).toHaveLength(5)
+      expect(animatedRows(wrapper)).toHaveLength(0)
+
+      await wrapper.setProps({ data: makeRows(5, 100) })
+      await wrapper.vm.$nextTick()
+      await wrapper.vm.$nextTick()
+      expect(animatedRows(wrapper)).toHaveLength(0)
+
+      wrapper.unmount()
+    })
+  })
+
+  describe('horizontal scroll edge fade hints', () => {
+    const columns = [
+      { key: 'name', label: 'Name' },
+      { key: 'status', label: 'Status' }
+    ]
+    const data = [
+      { id: 1, name: 'Alpha', status: 'ok' },
+      { id: 2, name: 'Beta', status: 'ok' }
+    ]
+
+    const nextFrame = () =>
+      new Promise((resolve) => {
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve(null))
+        else setTimeout(resolve, 0)
+      })
+
+    it('keeps both edge fades hidden when content does not overflow', async () => {
+      const wrapper = mount(DataTable, { props: { columns, data, rowKey: 'id' } })
+      await wrapper.vm.$nextTick()
+      await wrapper.vm.$nextTick()
+
+      // 渐变层常驻 DOM（靠 opacity 过渡显隐），但内容不溢出时不得带可见类
+      expect(wrapper.findAll('.dt-edge-fade')).toHaveLength(2)
+      expect(wrapper.find('.dt-edge-fade-visible').exists()).toBe(false)
+
+      wrapper.unmount()
+    })
+
+    it('shows the matching fade for the scroll position when content overflows', async () => {
+      const wrapper = mount(DataTable, { props: { columns, data, rowKey: 'id' } })
+      await wrapper.vm.$nextTick()
+
+      const scroller = wrapper.get('.table-wrapper')
+      const el = scroller.element as HTMLElement
+      Object.defineProperty(el, 'scrollWidth', { value: 600, configurable: true })
+      Object.defineProperty(el, 'clientWidth', { value: 300, configurable: true })
+      Object.defineProperty(el, 'scrollLeft', { value: 0, writable: true, configurable: true })
+
+      // 在最左端：只有右侧提示可见
+      await scroller.trigger('scroll')
+      await nextFrame()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.get('.dt-edge-fade-right').classes()).toContain('dt-edge-fade-visible')
+      expect(wrapper.get('.dt-edge-fade-left').classes()).not.toContain('dt-edge-fade-visible')
+
+      // 滚到中间：两侧提示都可见
+      el.scrollLeft = 150
+      await scroller.trigger('scroll')
+      await nextFrame()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.get('.dt-edge-fade-left').classes()).toContain('dt-edge-fade-visible')
+      expect(wrapper.get('.dt-edge-fade-right').classes()).toContain('dt-edge-fade-visible')
+
+      // 滚到最右端：右侧提示淡出，只剩左侧
+      el.scrollLeft = 300
+      await scroller.trigger('scroll')
+      await nextFrame()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.get('.dt-edge-fade-left').classes()).toContain('dt-edge-fade-visible')
+      expect(wrapper.get('.dt-edge-fade-right').classes()).not.toContain('dt-edge-fade-visible')
+
+      wrapper.unmount()
+    })
   })
 })

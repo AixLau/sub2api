@@ -29,6 +29,8 @@
 |---|---|---|
 | `BorderBeam` | `size=200` · `duration=12`(s) · `delay=0` · `borderWidth=1.5` · `colorFrom` · `colorTo` | 沿边框环游的光束。**父容器需 `relative` + 圆角**;通过 mask 裁剪到边框环,依赖 `offset-path: rect()`(不支持的浏览器自动隐藏) |
 | `CardSpotlight` | `gradientSize=280` · `gradientColor?` | 鼠标跟随径向高光的包装容器(有默认插槽),hover 淡入;触屏无副作用 |
+| `DirectionAwareHover` | `color?`(默认 teal 淡色) | 方向感知悬停:高光层从鼠标进入方向滑入、向离开方向滑出(hover-dir 象限判定);触屏不生效,reduced-motion 退化为淡入淡出 |
+| `Lens` | `zoom=1.8` · `size=140`(镜面直径 px) | 圆形放大镜跟随鼠标(clip-path circle + 以鼠标点为 origin 的 scale);触屏与 reduced-motion 下不启用 |
 | `ScratchToReveal` | `coverColor?`(缺省随亮/暗色自动) · `coverText?` · `threshold=0.5` · `radius=24`;emit `complete` | 刮刮乐:canvas 覆盖层拖动擦除,刮开面积达阈值后淡出并触发 `complete`;键盘 Enter/Space 或双击可直接揭示(可访问性);无 canvas / reduced-motion 时内容直接可见并立即 `complete` |
 
 ### 背景层(absolute 铺满父容器,父容器需 `relative`,无插槽)
@@ -64,6 +66,9 @@
 - **AnimatedList**:仪表盘最近调用记录
 - **ScratchToReveal + fireCelebration**:兑换结果(`RedeemView`);另有支付成功、安装完成、首把 API Key 创建触发彩带
 - **Timeline**:审计日志时间线视图(表格默认)
+- **DirectionAwareHover**:仪表盘快捷操作(`UserDashboardQuickActions`,按各按钮 accent 配色)
+- **Lens**:支付二维码弹窗悬停放大(`PaymentQRDialog`)
+- 相关非 inspira 增强:`LoadingSpinner` 的 `variant="orbit"` 轨道加载变体(两个仪表盘整页加载态)、`DataTable` 横向滚动边缘渐隐提示、`PaymentMethodSelector` 选中态呼吸光晕
 - **FlickeringGrid**:登录页背景;**Aurora/CardSpotlight/Marquee/ShimmerButton/GlitchText**:落地页与 404
 
 ## 测试
