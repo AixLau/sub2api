@@ -43,7 +43,7 @@ function NotFoundPage() {
   return (
     <PublicPageLayout>
       <section className="not-found-section" aria-labelledby="not-found-title">
-        <p>404</p>
+        <p className="fx-glitch" data-text="404">404</p>
         <h1 id="not-found-title">这个页面不存在。</h1>
         <span>请返回首页，或从菜单查看模型、服务状态与常见问题。</span>
         <a className="inline-action inline-action--dark" href="/">

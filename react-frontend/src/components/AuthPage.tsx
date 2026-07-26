@@ -396,6 +396,7 @@ export function AuthPage({ mode }: AuthPageProps) {
 
       <section className="auth-panel" aria-labelledby="auth-title">
         <div className="auth-card auth-reveal auth-reveal--delay">
+          <span className="fx-border-beam" aria-hidden="true" />
           <div className="auth-mobile-top">
             <a className="auth-back-link" href="/">
               <ArrowLeft aria-hidden="true" size={16} />

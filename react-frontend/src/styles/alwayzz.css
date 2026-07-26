@@ -2997,3 +2997,154 @@ button {
   }
 
 }
+
+/* ===== Motion effects (Inspira-style, tuned to the alwayzz palette) ===== */
+
+.primary-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.primary-button::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  transform: translateX(-100%) skewX(-16deg);
+  background: linear-gradient(90deg, transparent 38%, rgba(255, 255, 255, 0.14) 50%, transparent 62%);
+  animation: fx-shimmer-sweep 4.2s ease-in-out infinite;
+}
+
+@keyframes fx-shimmer-sweep {
+  0% {
+    transform: translateX(-100%) skewX(-16deg);
+  }
+
+  55%,
+  100% {
+    transform: translateX(100%) skewX(-16deg);
+  }
+}
+
+.fx-border-beam {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  padding: 1.5px;
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+@supports (offset-path: rect(0px auto auto 0px)) {
+  .fx-border-beam::before {
+    position: absolute;
+    width: 160px;
+    aspect-ratio: 1;
+    content: '';
+    background: linear-gradient(to left, rgba(23, 201, 100, 0.55), rgba(138, 230, 219, 0.85), transparent);
+    offset-anchor: 90% 50%;
+    offset-path: rect(0 auto auto 0 round 160px);
+    animation: fx-border-beam-move 14s linear infinite;
+  }
+}
+
+@keyframes fx-border-beam-move {
+  to {
+    offset-distance: 100%;
+  }
+}
+
+.fx-glitch {
+  position: relative;
+  display: inline-block;
+}
+
+.fx-glitch::before,
+.fx-glitch::after {
+  position: absolute;
+  inset: 0;
+  content: attr(data-text);
+  overflow: hidden;
+  color: inherit;
+}
+
+.fx-glitch::before {
+  left: 2px;
+  text-shadow: -2px 0 rgba(138, 230, 219, 0.9);
+  animation: fx-glitch-a 2.6s linear infinite alternate-reverse;
+}
+
+.fx-glitch::after {
+  left: -2px;
+  text-shadow: 2px 0 rgba(23, 201, 100, 0.6);
+  animation: fx-glitch-b 3.1s linear infinite alternate-reverse;
+}
+
+@keyframes fx-glitch-a {
+  0% {
+    clip-path: inset(20% 0 60% 0);
+  }
+
+  25% {
+    clip-path: inset(75% 0 8% 0);
+  }
+
+  50% {
+    clip-path: inset(38% 0 42% 0);
+  }
+
+  75% {
+    clip-path: inset(8% 0 78% 0);
+  }
+
+  100% {
+    clip-path: inset(52% 0 26% 0);
+  }
+}
+
+@keyframes fx-glitch-b {
+  0% {
+    clip-path: inset(64% 0 12% 0);
+  }
+
+  25% {
+    clip-path: inset(14% 0 72% 0);
+  }
+
+  50% {
+    clip-path: inset(56% 0 22% 0);
+  }
+
+  75% {
+    clip-path: inset(4% 0 84% 0);
+  }
+
+  100% {
+    clip-path: inset(32% 0 48% 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primary-button::after {
+    display: none;
+    animation: none;
+  }
+
+  .fx-border-beam::before {
+    content: none;
+  }
+
+  .fx-glitch::before,
+  .fx-glitch::after {
+    content: none;
+    animation: none;
+  }
+}
