@@ -506,6 +506,7 @@ import { buildGatewayUrl } from '@/api/client'
 import Select from '@/components/common/Select.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { fireCelebration } from '@/components/inspira/confetti'
 
 const { t } = useI18n()
 
@@ -632,6 +633,7 @@ async function performInstall() {
   try {
     await install(formData)
     installSuccess.value = true
+    fireCelebration()
     // Start polling for service restart
     waitForServiceRestart()
   } catch (error: unknown) {

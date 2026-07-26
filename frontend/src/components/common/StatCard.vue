@@ -6,7 +6,14 @@
     <div class="min-w-0 flex-1">
       <p class="stat-label truncate">{{ title }}</p>
       <div class="mt-1 flex items-baseline gap-2">
-        <p class="stat-value" :title="String(formattedValue)">{{ formattedValue }}</p>
+        <p class="stat-value" :title="String(formattedValue)">
+          <NumberTicker
+            v-if="typeof value === 'number'"
+            :value="value"
+            :format-fn="formatValue"
+          />
+          <template v-else>{{ formattedValue }}</template>
+        </p>
         <span v-if="change !== undefined" :class="['stat-trend', trendClass]">
           <Icon
             v-if="changeType !== 'neutral'"
@@ -25,6 +32,7 @@
 import { computed } from 'vue'
 import type { Component } from 'vue'
 import Icon from '@/components/icons/Icon.vue'
+import NumberTicker from '@/components/inspira/NumberTicker.vue'
 
 type ChangeType = 'up' | 'down' | 'neutral'
 type IconVariant = 'primary' | 'success' | 'warning' | 'danger'

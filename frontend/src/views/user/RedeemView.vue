@@ -350,6 +350,7 @@ import { useSubscriptionStore } from '@/stores/subscriptions'
 import { redeemAPI, authAPI, type RedeemHistoryItem } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { fireCelebration } from '@/components/inspira/confetti'
 import { formatDateTime } from '@/utils/format'
 
 const { t } = useI18n()
@@ -467,6 +468,7 @@ const handleRedeem = async () => {
 
     // Show success toast
     appStore.showSuccess(t('redeem.codeRedeemSuccess'))
+    fireCelebration()
   } catch (error: any) {
     errorMessage.value = error.response?.data?.detail || t('redeem.failedToRedeem')
 

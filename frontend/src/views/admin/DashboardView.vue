@@ -20,7 +20,7 @@
                   {{ t('admin.dashboard.apiKeys') }}
                 </p>
                 <p class="text-xl font-bold text-gray-900 dark:text-white">
-                  {{ stats.total_api_keys }}
+                  <NumberTicker :value="stats.total_api_keys" />
                 </p>
                 <p class="text-xs text-green-600 dark:text-green-400">
                   {{ stats.active_api_keys }} {{ t('common.active') }}
@@ -40,7 +40,7 @@
                   {{ t('admin.dashboard.accounts') }}
                 </p>
                 <p class="text-xl font-bold text-gray-900 dark:text-white">
-                  {{ stats.total_accounts }}
+                  <NumberTicker :value="stats.total_accounts" />
                 </p>
                 <p class="text-xs">
                   <span class="text-green-600 dark:text-green-400"
@@ -65,7 +65,7 @@
                   {{ t('admin.dashboard.todayRequests') }}
                 </p>
                 <p class="text-xl font-bold text-gray-900 dark:text-white">
-                  {{ stats.today_requests }}
+                  <NumberTicker :value="stats.today_requests" />
                 </p>
                 <p class="text-xs text-gray-500 dark:text-gray-400">
                   {{ t('common.total') }}: {{ formatNumber(stats.total_requests) }}
@@ -85,7 +85,7 @@
                   {{ t('admin.dashboard.users') }}
                 </p>
                 <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                  +{{ stats.today_new_users }}
+                  <NumberTicker :value="stats.today_new_users" prefix="+" />
                 </p>
                 <p class="text-xs text-gray-500 dark:text-gray-400">
                   {{ t('common.total') }}: {{ formatNumber(stats.total_users) }}
@@ -108,7 +108,7 @@
                   {{ t('admin.dashboard.todayTokens') }}
                 </p>
                 <p class="text-xl font-bold text-gray-900 dark:text-white">
-                  {{ formatTokens(stats.today_tokens) }}
+                  <NumberTicker :value="stats.today_tokens" :format-fn="formatTokens" />
                 </p>
                 <p class="text-xs">
                   <span
@@ -144,7 +144,7 @@
                   {{ t('admin.dashboard.totalTokens') }}
                 </p>
                 <p class="text-xl font-bold text-gray-900 dark:text-white">
-                  {{ formatTokens(stats.total_tokens) }}
+                  <NumberTicker :value="stats.total_tokens" :format-fn="formatTokens" />
                 </p>
                 <p class="text-xs">
                   <span
@@ -181,7 +181,7 @@
                 </p>
                 <div class="flex items-baseline gap-1 whitespace-nowrap">
                   <p class="text-xl font-bold text-gray-900 dark:text-white">
-                    {{ formatTokens(stats.rpm) }}
+                    <NumberTicker :value="stats.rpm" :format-fn="formatTokens" />
                   </p>
                   <span class="text-xs text-gray-500 dark:text-gray-400">RPM</span>
                   <span
@@ -190,14 +190,14 @@
                     :title="t('admin.dashboard.recent5mActiveUsers')"
                   >
                     <span class="text-xl font-bold">
-                      {{ formatNumber(stats.recent_5m_active_users) }}
+                      <NumberTicker :value="stats.recent_5m_active_users" :format-fn="formatNumber" />
                     </span>
                     <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.recent5mActiveUsersUnit') }}</span>
                   </span>
                 </div>
                 <div class="flex items-baseline gap-2">
                   <p class="text-sm font-semibold text-violet-600 dark:text-violet-400">
-                    {{ formatTokens(stats.tpm) }}
+                    <NumberTicker :value="stats.tpm" :format-fn="formatTokens" />
                   </p>
                   <span class="text-xs text-gray-500 dark:text-gray-400">TPM</span>
                 </div>
@@ -216,7 +216,7 @@
                   {{ t('admin.dashboard.avgResponse') }}
                 </p>
                 <p class="text-xl font-bold text-gray-900 dark:text-white">
-                  {{ formatDuration(stats.average_duration_ms) }}
+                  <NumberTicker :value="stats.average_duration_ms" :format-fn="formatDuration" />
                 </p>
                 <p class="text-xs text-gray-500 dark:text-gray-400">
                   {{ stats.active_users }} {{ t('admin.dashboard.activeUsers') }}
@@ -369,6 +369,7 @@ import type {
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Icon from '@/components/icons/Icon.vue'
+import NumberTicker from '@/components/inspira/NumberTicker.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import Select from '@/components/common/Select.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'

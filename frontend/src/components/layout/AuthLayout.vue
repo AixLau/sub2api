@@ -14,14 +14,9 @@
       <div
         class="absolute -bottom-40 -left-40 h-80 w-80 rounded-full bg-primary-500/15 blur-3xl"
       ></div>
-      <div
-        class="absolute left-1/2 top-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary-300/10 blur-3xl"
-      ></div>
 
-      <!-- Grid Pattern -->
-      <div
-        class="absolute inset-0 bg-[linear-gradient(rgba(20,184,166,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(20,184,166,0.03)_1px,transparent_1px)] bg-[size:64px_64px]"
-      ></div>
+      <!-- Flickering Grid (Inspira UI) -->
+      <FlickeringGrid :square-size="3" :grid-gap="8" :max-opacity="0.14" :flicker-chance="0.25" />
     </div>
 
     <!-- Content Container -->
@@ -45,7 +40,8 @@
       </div>
 
       <!-- Card Container -->
-      <div class="card-glass rounded-2xl p-8 shadow-glass">
+      <div class="card-glass relative rounded-2xl p-8 shadow-glass">
+        <BorderBeam :size="160" :duration="14" :border-width="1.5" />
         <slot />
       </div>
 
@@ -66,6 +62,8 @@
 import { computed, onMounted } from 'vue'
 import { useAppStore } from '@/stores'
 import { sanitizeUrl } from '@/utils/url'
+import BorderBeam from '@/components/inspira/BorderBeam.vue'
+import FlickeringGrid from '@/components/inspira/FlickeringGrid.vue'
 
 const appStore = useAppStore()
 

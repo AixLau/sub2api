@@ -4,6 +4,12 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore, useAppStore } from '@/stores'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
+import AuroraBackground from '@/components/inspira/AuroraBackground.vue'
+import BorderBeam from '@/components/inspira/BorderBeam.vue'
+import CardSpotlight from '@/components/inspira/CardSpotlight.vue'
+import Marquee from '@/components/inspira/Marquee.vue'
+import NumberTicker from '@/components/inspira/NumberTicker.vue'
+import ShimmerButton from '@/components/inspira/ShimmerButton.vue'
 import { sanitizeUrl } from '@/utils/url'
 
 const { t } = useI18n()
@@ -31,15 +37,19 @@ const dashboardPath = computed(() => (isAdmin.value ? '/admin/dashboard' : '/das
 const currentYear = computed(() => new Date().getFullYear())
 
 const stats = [
-  { value: '36B', label: 'Tokens 处理 / 日' },
-  { value: '45', label: 'P50 延迟 (ms)' },
-  { value: '99.9%', label: '可用性 (%)' },
+  { value: 36, suffix: 'B', decimalPlaces: 0, label: 'Tokens 处理 / 日' },
+  { value: 45, suffix: '', decimalPlaces: 0, label: 'P50 延迟 (ms)' },
+  { value: 99.9, suffix: '%', decimalPlaces: 1, label: '可用性 (%)' },
 ]
 
 const models = [
   { name: 'Claude', gradient: 'from-[#d97757] to-[#cc785c]' },
   { name: 'GPT', gradient: 'from-[#10a37f] to-[#1a7f64]' },
   { name: 'Gemini', gradient: 'from-[#4285f4] to-[#1a73e8]' },
+  { name: 'DeepSeek', gradient: 'from-[#4d6bfe] to-[#2f4ad0]' },
+  { name: 'Qwen', gradient: 'from-[#7c3aed] to-[#5b21b6]' },
+  { name: 'Grok', gradient: 'from-[#374151] to-[#111827]' },
+  { name: 'Kimi', gradient: 'from-[#0ea5e9] to-[#0369a1]' },
 ]
 
 function toggleTheme() {
@@ -149,6 +159,7 @@ onMounted(() => {
 
     <main class="pt-16">
       <section class="relative overflow-hidden bg-white px-6 py-16 dark:bg-slate-900 md:py-20">
+        <AuroraBackground />
         <div class="relative mx-auto max-w-5xl text-center">
           <span
             class="inline-block rounded-full bg-gradient-to-r from-blue-100 to-cyan-100 px-4 py-1.5 text-sm font-medium text-blue-700 ring-1 ring-blue-200 dark:from-blue-900/30 dark:to-cyan-900/30 dark:text-blue-300 dark:ring-blue-800/50"
@@ -175,11 +186,13 @@ onMounted(() => {
           </p>
 
           <div class="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <router-link
-              :to="isAuthenticated ? dashboardPath : '/login'"
-              class="h-12 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 px-8 text-base font-semibold leading-[48px] text-white no-underline shadow-xl shadow-blue-500/30 transition-colors hover:from-blue-700 hover:to-cyan-700"
-            >
-              {{ isAuthenticated ? '进入控制台' : '免费开始' }} →
+            <router-link :to="isAuthenticated ? dashboardPath : '/login'" class="no-underline">
+              <ShimmerButton
+                as="span"
+                class="h-12 rounded-xl px-8 text-base font-semibold text-white shadow-xl shadow-blue-500/30 transition-transform hover:scale-[1.02]"
+              >
+                {{ isAuthenticated ? '进入控制台' : '免费开始' }} →
+              </ShimmerButton>
             </router-link>
             <a
               v-if="docUrl"
@@ -201,7 +214,12 @@ onMounted(() => {
               <div
                 class="bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text font-mono text-4xl font-bold text-transparent"
               >
-                {{ stat.value }}
+                <NumberTicker
+                  :value="stat.value"
+                  :suffix="stat.suffix"
+                  :decimal-places="stat.decimalPlaces"
+                  :duration="2000"
+                />
               </div>
               <div class="mt-2 text-sm text-slate-600 dark:text-slate-400">{{ stat.label }}</div>
             </div>
@@ -224,8 +242,9 @@ onMounted(() => {
 
           <div class="mt-16 grid grid-cols-1 gap-6 md:grid-cols-3">
             <div
-              class="rounded-2xl bg-white p-8 ring-1 ring-slate-200 backdrop-blur-sm dark:bg-slate-800 dark:ring-slate-700 md:col-span-2"
+              class="relative rounded-2xl bg-white p-8 ring-1 ring-slate-200 backdrop-blur-sm dark:bg-slate-800 dark:ring-slate-700 md:col-span-2"
             >
+              <BorderBeam :size="180" :duration="10" />
               <div class="flex items-center gap-3">
                 <div
                   class="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600"
@@ -254,7 +273,7 @@ onMounted(() => {
               </div>
             </div>
 
-            <div class="rounded-2xl bg-white p-8 ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
+            <CardSpotlight class="rounded-2xl bg-white p-8 ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
               <div
                 class="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-cyan-600"
               >
@@ -264,9 +283,9 @@ onMounted(() => {
               <p class="mt-3 text-slate-600 dark:text-slate-300">
                 P50 延迟低于 50ms，边缘优化加速全球访问。
               </p>
-            </div>
+            </CardSpotlight>
 
-            <div
+            <CardSpotlight
               class="rounded-2xl bg-white p-8 ring-1 ring-slate-200 backdrop-blur-sm dark:bg-slate-800 dark:ring-slate-700"
             >
               <div class="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/20">
@@ -276,9 +295,9 @@ onMounted(() => {
               <p class="mt-3 text-slate-600 dark:text-slate-300">
                 多上游自动切换、负载均衡，99.9% 可用性保障。
               </p>
-            </div>
+            </CardSpotlight>
 
-            <div
+            <CardSpotlight
               class="rounded-2xl bg-white p-8 ring-1 ring-slate-200 backdrop-blur-sm dark:bg-slate-800 dark:ring-slate-700 md:col-span-2"
             >
               <div class="flex items-center gap-3">
@@ -300,7 +319,7 @@ onMounted(() => {
                   :style="{ height: `${height}%` }"
                 ></div>
               </div>
-            </div>
+            </CardSpotlight>
           </div>
         </div>
       </section>
@@ -312,19 +331,21 @@ onMounted(() => {
           <h2 class="text-3xl font-bold text-slate-900 dark:text-white md:text-4xl">
             已接入主流模型
           </h2>
-          <div class="mt-10 flex flex-wrap items-center justify-center gap-4">
-            <span
-              v-for="model in models"
-              :key="model.name"
-              :class="`rounded-full bg-gradient-to-r ${model.gradient} px-8 py-3 text-lg font-bold text-white shadow-lg transition-shadow hover:shadow-xl`"
-            >
-              {{ model.name }}
-            </span>
-            <span
-              class="rounded-full bg-gradient-to-r from-blue-600 to-cyan-600 px-8 py-3 text-lg font-bold text-white shadow-lg transition-shadow hover:shadow-xl"
-            >
-              更多接入中…
-            </span>
+          <div class="mt-10">
+            <Marquee :duration="22" class="py-2">
+              <span
+                v-for="model in models"
+                :key="model.name"
+                :class="`shrink-0 whitespace-nowrap rounded-full bg-gradient-to-r ${model.gradient} px-8 py-3 text-lg font-bold text-white shadow-lg`"
+              >
+                {{ model.name }}
+              </span>
+              <span
+                class="shrink-0 whitespace-nowrap rounded-full bg-gradient-to-r from-blue-600 to-cyan-600 px-8 py-3 text-lg font-bold text-white shadow-lg"
+              >
+                更多接入中…
+              </span>
+            </Marquee>
           </div>
         </div>
       </section>

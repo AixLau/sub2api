@@ -16,9 +16,10 @@
       <!-- 404 Display -->
       <div class="mb-8">
         <div class="relative inline-block">
-          <span class="text-[12rem] font-bold leading-none text-gray-100 dark:text-dark-800"
-            >404</span
-          >
+          <GlitchText
+            text="404"
+            class="text-[12rem] font-bold leading-none text-gray-100 dark:text-dark-800"
+          />
           <div class="absolute inset-0 flex items-center justify-center">
             <div
               class="flex h-24 w-24 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 shadow-lg shadow-primary-500/30"
@@ -81,6 +82,7 @@
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import Icon from '@/components/icons/Icon.vue'
+import GlitchText from '@/components/inspira/GlitchText.vue'
 
 const { t } = useI18n()
 const router = useRouter()

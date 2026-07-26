@@ -5,6 +5,7 @@
       'hover:-translate-y-0.5',
     ]"
   >
+    <BorderBeam v-if="showHighlightBeam" :size="150" :duration="12" :border-width="1.5" />
     <div class="flex min-h-[190px] flex-1 flex-col p-4 sm:p-5">
       <div>
         <div class="min-w-0">
@@ -82,11 +83,22 @@ import {
   platformDiscountClass,
 } from '@/utils/platformColors'
 import { buildSubscriptionPlanDisplay, buildSubscriptionPlanDisplayLabels } from '@/components/payment/subscriptionPlanDisplay'
+import BorderBeam from '@/components/inspira/BorderBeam.vue'
 
-const props = defineProps<{ plan: SubscriptionPlan; activeSubscriptions?: UserSubscription[] }>()
+const props = defineProps<{
+  plan: SubscriptionPlan
+  activeSubscriptions?: UserSubscription[]
+  /** Force the animated border on/off; defaults to on for discounted plans */
+  highlight?: boolean
+}>()
 const emit = defineEmits<{ select: [plan: SubscriptionPlan] }>()
 const { t } = useI18n()
 const platform = computed(() => props.plan.group_platform || '')
+
+const showHighlightBeam = computed(() => {
+  if (props.highlight !== undefined) return props.highlight
+  return !!(props.plan.original_price && props.plan.original_price > props.plan.price)
+})
 
 const isRenewal = computed(() =>
   props.activeSubscriptions?.some(s => s.group_id === props.plan.group_id && s.status === 'active') ?? false

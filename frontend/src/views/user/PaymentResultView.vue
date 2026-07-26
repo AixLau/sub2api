@@ -97,7 +97,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
+import { ref, computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import OrderStatusBadge from '@/components/payment/OrderStatusBadge.vue'
@@ -111,6 +111,7 @@ import { paymentAPI } from '@/api/payment'
 import type { PublicOrderVerifyResult } from '@/api/payment'
 import type { OrderStatus, PaymentOrder } from '@/types/payment'
 import { formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
+import { fireCelebration } from '@/components/inspira/confetti'
 import { normalizePaymentMethodForDisplay, paymentMethodI18nKey } from './paymentUx'
 
 const i18n = useI18n()
@@ -169,6 +170,19 @@ const localeCode = computed(() => {
 const isSuccess = computed(() => {
   return isSuccessStatus(order.value?.status)
 })
+
+// 支付成功首次展示时撒彩带（仅触发一次）
+let celebrationFired = false
+watch(
+  isSuccess,
+  (ok) => {
+    if (ok && !celebrationFired) {
+      celebrationFired = true
+      fireCelebration()
+    }
+  },
+  { immediate: true }
+)
 
 const isPending = computed(() => {
   return isPendingStatus(order.value?.status)
