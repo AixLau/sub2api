@@ -6,6 +6,7 @@ import i18n, { initI18n } from './i18n'
 import { useAppStore } from '@/stores/app'
 import { updateFavicon } from '@/utils/branding'
 import { isIOSDevice } from '@/utils/device'
+import { installRipple } from '@/utils/ripple'
 import './style.css'
 
 function initIOSViewportZoomFix() {
@@ -34,6 +35,7 @@ async function bootstrap() {
   // Apply theme class globally before app mount to keep all routes consistent.
   initThemeClass()
   initIOSViewportZoomFix()
+  installRipple()
 
   const app = createApp(App)
   const pinia = createPinia()

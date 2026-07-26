@@ -151,3 +151,76 @@ onUnmounted(() => {
   document.body.classList.remove('modal-open')
 })
 </script>
+
+<style scoped>
+/*
+ * Inspira「Animated Modal」风格进出场动画
+ * 增强全局 .modal-* transition class(style.css),scoped 属性选择器优先级更高。
+ * 进场:遮罩淡入 + backdrop-blur 0 → sm(~200ms);面板 scale 0.95→1 + translateY 8px→0 + 淡入(~220ms,轻微过冲)
+ * 出场:遮罩淡出;面板 scale→0.97 + 快速淡出(~150ms)
+ */
+.modal-enter-active {
+  transition:
+    opacity 200ms ease-out,
+    -webkit-backdrop-filter 200ms ease-out,
+    backdrop-filter 200ms ease-out;
+}
+
+.modal-leave-active {
+  transition:
+    opacity 150ms ease-in,
+    -webkit-backdrop-filter 150ms ease-in,
+    backdrop-filter 150ms ease-in;
+}
+
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+  -webkit-backdrop-filter: blur(0);
+  backdrop-filter: blur(0);
+}
+
+.modal-enter-active .modal-content {
+  /* back-out 曲线带来轻微过冲 */
+  transition:
+    transform 220ms cubic-bezier(0.22, 1.25, 0.42, 1),
+    opacity 220ms ease-out;
+}
+
+.modal-leave-active .modal-content {
+  transition:
+    transform 150ms ease-in,
+    opacity 150ms ease-in;
+}
+
+.modal-enter-from .modal-content {
+  transform: scale(0.95) translateY(8px);
+  opacity: 0;
+}
+
+.modal-leave-to .modal-content {
+  transform: scale(0.97) translateY(0);
+  opacity: 0;
+}
+
+.modal-enter-to .modal-content,
+.modal-leave-from .modal-content {
+  transform: scale(1) translateY(0);
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 减弱动效:去掉过渡,直接显隐 */
+  .modal-enter-active,
+  .modal-leave-active,
+  .modal-enter-active .modal-content,
+  .modal-leave-active .modal-content {
+    transition: none;
+  }
+
+  .modal-enter-from .modal-content,
+  .modal-leave-to .modal-content {
+    transform: none;
+  }
+}
+</style>

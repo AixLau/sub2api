@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
@@ -9,6 +9,12 @@ function getTooltipElement(): HTMLDivElement {
     throw new Error('tooltip element not found')
   }
   return tooltip
+}
+
+// The tooltip hides via a <Transition> leave animation, so display: none is
+// applied asynchronously after the leave finishes rather than on next tick.
+async function expectHidden(tooltip: HTMLDivElement) {
+  await vi.waitFor(() => expect(tooltip.style.display).toBe('none'))
 }
 
 describe('HelpTooltip', () => {
@@ -34,8 +40,7 @@ describe('HelpTooltip', () => {
     expect(tooltip.style.display).not.toBe('none')
 
     await trigger.trigger('mouseleave')
-    await nextTick()
-    expect(tooltip.style.display).toBe('none')
+    await expectHidden(tooltip)
 
     wrapper.unmount()
   })
@@ -64,16 +69,14 @@ describe('HelpTooltip', () => {
       throw new Error('close button not found')
     }
     closeButton.click()
-    await nextTick()
-    expect(tooltip.style.display).toBe('none')
+    await expectHidden(tooltip)
 
     await trigger.trigger('click')
     await nextTick()
     expect(tooltip.style.display).not.toBe('none')
 
     document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    await nextTick()
-    expect(tooltip.style.display).toBe('none')
+    await expectHidden(tooltip)
 
     wrapper.unmount()
   })

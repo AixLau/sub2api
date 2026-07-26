@@ -68,6 +68,8 @@
   .btn {
     @apply inline-flex items-center justify-center gap-2;
     @apply rounded-xl px-4 py-2.5 text-sm font-medium;
+    /* 涟漪效果的 containing block 与裁剪边界(见 utils/ripple.ts) */
+    @apply relative overflow-hidden;
     @apply transition-all duration-200 ease-out;
     @apply focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:ring-offset-2;
     @apply disabled:transform-none disabled:cursor-not-allowed disabled:opacity-50;
@@ -156,6 +158,24 @@
 
   .btn-icon {
     @apply rounded-xl p-2.5;
+  }
+
+  /* ============ 按钮点击涟漪(Inspira UI 风格,由 utils/ripple.ts 注入) ============ */
+  .ripple-wave {
+    position: absolute;
+    border-radius: 9999px;
+    pointer-events: none;
+    background-color: currentColor;
+    opacity: 0.35;
+    transform: scale(0);
+    animation: btn-ripple-wave 450ms ease-out forwards;
+  }
+
+  @keyframes btn-ripple-wave {
+    to {
+      transform: scale(1);
+      opacity: 0;
+    }
   }
 
   /* ============ 输入框样式 ============ */

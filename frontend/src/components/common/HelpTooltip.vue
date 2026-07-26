@@ -10,6 +10,11 @@ const props = withDefaults(defineProps<{
   widthClass: 'w-64',
 })
 
+const prefersReducedMotion =
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? (window.matchMedia('(prefers-reduced-motion: reduce)')?.matches ?? false)
+    : false
+
 const show = ref(false)
 const triggerRef = useTemplateRef<HTMLElement>('trigger')
 const tooltipRef = useTemplateRef<HTMLElement>('tooltip')
@@ -116,6 +121,7 @@ onBeforeUnmount(() => {
 
     <!-- Teleport to body to escape modal overflow clipping -->
     <Teleport to="body">
+      <Transition name="tooltip-pop" :css="!prefersReducedMotion">
       <div
         ref="tooltip"
         v-show="show"
@@ -140,6 +146,52 @@ onBeforeUnmount(() => {
         <slot>{{ content }}</slot>
         <div class="absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-gray-900 dark:bg-gray-800"></div>
       </div>
+      </Transition>
     </Teleport>
   </div>
 </template>
+
+<style scoped>
+/*
+ * Inspira-style pop animation for the tooltip bubble.
+ * The tooltip is positioned above the trigger via translate(-50%, -100%),
+ * so the keyframes carry that translate and the transform-origin sits at
+ * the bottom (the arrow side) for a natural "grow out of the trigger" feel.
+ */
+.tooltip-pop-enter-active {
+  animation: help-tooltip-pop-in 180ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transform-origin: bottom center;
+}
+
+.tooltip-pop-leave-active {
+  animation: help-tooltip-fade-out 120ms ease-out both;
+  transform-origin: bottom center;
+}
+
+@keyframes help-tooltip-pop-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-100% + 5px)) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -100%) scale(1);
+  }
+}
+
+@keyframes help-tooltip-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tooltip-pop-enter-active,
+  .tooltip-pop-leave-active {
+    animation: none;
+  }
+}
+</style>
