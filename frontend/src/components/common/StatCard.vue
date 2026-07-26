@@ -1,15 +1,21 @@
 <template>
-  <div class="stat-card">
-    <div :class="['stat-icon', iconClass]">
-      <component v-if="icon" :is="icon" class="h-6 w-6" aria-hidden="true" />
+  <div :class="rootClass">
+    <div :class="resolvedIconClass">
+      <slot name="icon">
+        <component v-if="icon" :is="icon" :class="compact ? 'h-5 w-5' : 'h-6 w-6'" aria-hidden="true" />
+      </slot>
     </div>
     <div class="min-w-0 flex-1">
-      <p class="stat-label truncate">{{ title }}</p>
+      <p :class="compact ? 'text-xs font-medium text-gray-500 dark:text-gray-400' : 'stat-label truncate'">
+        {{ title }}
+      </p>
       <div class="mt-1 flex items-baseline gap-2">
-        <p class="stat-value" :title="String(formattedValue)">
+        <p :class="resolvedValueClass" :title="String(formattedValue)">
           <NumberTicker
             v-if="typeof value === 'number'"
             :value="value"
+            :prefix="prefix"
+            :suffix="suffix"
             :format-fn="formatValue"
           />
           <template v-else>{{ formattedValue }}</template>
@@ -24,6 +30,7 @@
           {{ formattedChange }}
         </span>
       </div>
+      <slot name="footer" />
     </div>
   </div>
 </template>
@@ -44,16 +51,28 @@ interface Props {
   iconVariant?: IconVariant
   change?: number
   changeType?: ChangeType
-  formatValue?: (value: number | string) => string
+  formatValue?: (value: number) => string
+  prefix?: string
+  suffix?: string
+  compact?: boolean
+  cardClass?: string
+  iconClass?: string
+  valueClass?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   changeType: 'neutral',
-  iconVariant: 'primary'
+  iconVariant: 'primary',
+  prefix: '',
+  suffix: '',
+  compact: false,
+  cardClass: '',
+  iconClass: '',
+  valueClass: ''
 })
 
 const formattedValue = computed(() => {
-  if (props.formatValue) {
+  if (props.formatValue && typeof props.value === 'number') {
     return props.formatValue(props.value)
   }
   if (typeof props.value === 'number') {
@@ -68,7 +87,7 @@ const formattedChange = computed(() => {
   return `${absChange}%`
 })
 
-const iconClass = computed(() => {
+const variantClass = computed(() => {
   const classes: Record<IconVariant, string> = {
     primary: 'stat-icon-primary',
     success: 'stat-icon-success',
@@ -76,6 +95,25 @@ const iconClass = computed(() => {
     danger: 'stat-icon-danger'
   }
   return classes[props.iconVariant]
+})
+
+const rootClass = computed(() => {
+  if (props.cardClass) return props.cardClass
+  return props.compact ? 'card flex items-center gap-3 p-4' : 'stat-card'
+})
+
+const resolvedIconClass = computed(() => {
+  if (props.iconClass) return props.iconClass
+  return props.compact
+    ? `rounded-lg p-2 ${variantClass.value}`
+    : `stat-icon ${variantClass.value}`
+})
+
+const resolvedValueClass = computed(() => {
+  if (props.valueClass) return props.valueClass
+  return props.compact
+    ? 'text-xl font-bold text-gray-900 dark:text-white'
+    : 'stat-value'
 })
 
 const trendClass = computed(() => {

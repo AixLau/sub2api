@@ -37,7 +37,10 @@
           <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
             <div v-for="metric in guardMetricItems" :key="metric.label" class="rounded-lg bg-gray-50 px-2.5 py-2 dark:bg-dark-900/60">
               <p class="text-[11px] text-gray-500 dark:text-dark-400">{{ metric.label }}</p>
-              <p class="mt-0.5 text-sm font-semibold tabular-nums text-gray-900 dark:text-white">{{ metric.value }}</p>
+              <p class="mt-0.5 text-sm font-semibold tabular-nums text-gray-900 dark:text-white">
+                <NumberTicker v-if="typeof metric.value === 'number'" :value="metric.value" />
+                <template v-else>{{ metric.value }}</template>
+              </p>
             </div>
           </div>
           <p class="mt-3 text-xs leading-5 text-gray-500 dark:text-dark-400">
@@ -74,6 +77,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import NumberTicker from '@/components/inspira/NumberTicker.vue'
 import type { PromptAuditRuntime } from '../types'
 
 const props = defineProps<{ runtime: PromptAuditRuntime | null; loading: boolean; error: string }>()

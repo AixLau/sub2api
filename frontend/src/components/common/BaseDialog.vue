@@ -1,6 +1,7 @@
 <template>
   <Teleport to="body">
-    <Transition name="modal">
+    <!-- appear:支持父组件用 v-if 挂载并同时 show=true 的用法,首帧也播放进场动画 -->
+    <Transition name="modal" appear>
       <div
         v-if="show"
         class="modal-overlay"
@@ -64,6 +65,8 @@ interface Props {
   closeOnClickOutside?: boolean
   showCloseButton?: boolean
   zIndex?: number
+  /** 打开时自动聚焦第一个可聚焦元素;含自定义聚焦逻辑的内容(如 OTP 输入格)可关闭 */
+  autoFocus?: boolean
 }
 
 interface Emits {
@@ -75,7 +78,8 @@ const props = withDefaults(defineProps<Props>(), {
   closeOnEscape: true,
   closeOnClickOutside: false,
   showCloseButton: true,
-  zIndex: 50
+  zIndex: 50,
+  autoFocus: true
 })
 
 const emit = defineEmits<Emits>()
@@ -123,7 +127,7 @@ watch(
 
       // 等待DOM更新后设置焦点到对话框
       await nextTick()
-      if (dialogRef.value) {
+      if (dialogRef.value && props.autoFocus) {
         const firstFocusable = dialogRef.value.querySelector<HTMLElement>(
           'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
         )

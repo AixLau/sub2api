@@ -1,18 +1,18 @@
 <template>
-  <div class="fixed inset-0 z-50 overflow-y-auto" @click.self="$emit('close')">
-    <div class="flex min-h-full items-center justify-center p-4">
-      <div class="fixed inset-0 bg-black/50 transition-opacity" @click="$emit('close')"></div>
-
-      <div class="relative w-full max-w-md transform rounded-xl bg-white p-6 shadow-xl transition-all dark:bg-dark-800">
-        <!-- Header -->
-        <div class="mb-6 text-center">
-          <h3 class="text-xl font-semibold text-gray-900 dark:text-white">
-            {{ t('profile.totp.setupTitle') }}
-          </h3>
-          <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            {{ stepDescription }}
-          </p>
-        </div>
+  <BaseDialog
+    show
+    :title="t('profile.totp.setupTitle')"
+    width="narrow"
+    :close-on-escape="false"
+    :show-close-button="false"
+    :auto-focus="false"
+    close-on-click-outside
+    @close="$emit('close')"
+  >
+        <!-- Step description -->
+        <p class="mb-6 text-center text-sm text-gray-500 dark:text-gray-400">
+          {{ stepDescription }}
+        </p>
 
         <!-- Step 0: Identity Verification -->
         <div v-if="step === 0" class="space-y-6">
@@ -161,9 +161,7 @@
             </div>
           </form>
         </div>
-      </div>
-    </div>
-  </div>
+  </BaseDialog>
 </template>
 
 <script setup lang="ts">
@@ -171,6 +169,7 @@ import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { totpAPI } from '@/api'
+import BaseDialog from '@/components/common/BaseDialog.vue'
 import type { TotpSetupResponse } from '@/types'
 import QRCode from 'qrcode'
 

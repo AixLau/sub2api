@@ -2,115 +2,97 @@
   <AppLayout>
     <div class="space-y-6">
       <!-- Loading State -->
-      <div v-if="loading" class="flex items-center justify-center py-12">
-        <LoadingSpinner variant="orbit" />
-      </div>
+      <AdminDashboardSkeleton v-if="loading" />
 
       <template v-else-if="stats">
         <!-- Row 1: Core Stats -->
         <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <!-- Total API Keys -->
-          <div class="card p-4">
-            <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
-                <Icon name="key" size="md" class="text-blue-600 dark:text-blue-400" :stroke-width="2" />
-              </div>
-              <div>
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t('admin.dashboard.apiKeys') }}
-                </p>
-                <p class="text-xl font-bold text-gray-900 dark:text-white">
-                  <NumberTicker :value="stats.total_api_keys" />
-                </p>
-                <p class="text-xs text-green-600 dark:text-green-400">
-                  {{ stats.active_api_keys }} {{ t('common.active') }}
-                </p>
-              </div>
-            </div>
-          </div>
+          <StatCard
+            compact
+            :title="t('admin.dashboard.apiKeys')"
+            :value="stats.total_api_keys"
+            icon-class="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30"
+          >
+            <template #icon>
+              <Icon name="key" size="md" class="text-blue-600 dark:text-blue-400" :stroke-width="2" />
+            </template>
+            <template #footer>
+              <p class="text-xs text-green-600 dark:text-green-400">
+                {{ stats.active_api_keys }} {{ t('common.active') }}
+              </p>
+            </template>
+          </StatCard>
 
-          <!-- Service Accounts -->
-          <div class="card p-4">
-            <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30">
-                <Icon name="server" size="md" class="text-purple-600 dark:text-purple-400" :stroke-width="2" />
-              </div>
-              <div>
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t('admin.dashboard.accounts') }}
-                </p>
-                <p class="text-xl font-bold text-gray-900 dark:text-white">
-                  <NumberTicker :value="stats.total_accounts" />
-                </p>
-                <p class="text-xs">
+          <StatCard
+            compact
+            :title="t('admin.dashboard.accounts')"
+            :value="stats.total_accounts"
+            icon-class="rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30"
+          >
+            <template #icon>
+              <Icon name="server" size="md" class="text-purple-600 dark:text-purple-400" :stroke-width="2" />
+            </template>
+            <template #footer>
+              <p class="text-xs">
                   <span class="text-green-600 dark:text-green-400"
                     >{{ stats.normal_accounts }} {{ t('common.active') }}</span
                   >
                   <span v-if="stats.error_accounts > 0" class="ml-1 text-red-500"
                     >{{ stats.error_accounts }} {{ t('common.error') }}</span
                   >
-                </p>
-              </div>
-            </div>
-          </div>
+              </p>
+            </template>
+          </StatCard>
 
-          <!-- Today Requests -->
-          <div class="card p-4">
-            <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-green-100 p-2 dark:bg-green-900/30">
-                <Icon name="chart" size="md" class="text-green-600 dark:text-green-400" :stroke-width="2" />
-              </div>
-              <div>
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t('admin.dashboard.todayRequests') }}
-                </p>
-                <p class="text-xl font-bold text-gray-900 dark:text-white">
-                  <NumberTicker :value="stats.today_requests" />
-                </p>
-                <p class="text-xs text-gray-500 dark:text-gray-400">
-                  {{ t('common.total') }}: {{ formatNumber(stats.total_requests) }}
-                </p>
-              </div>
-            </div>
-          </div>
+          <StatCard
+            compact
+            :title="t('admin.dashboard.todayRequests')"
+            :value="stats.today_requests"
+            icon-class="rounded-lg bg-green-100 p-2 dark:bg-green-900/30"
+          >
+            <template #icon>
+              <Icon name="chart" size="md" class="text-green-600 dark:text-green-400" :stroke-width="2" />
+            </template>
+            <template #footer>
+              <p class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t('common.total') }}: {{ formatNumber(stats.total_requests) }}
+              </p>
+            </template>
+          </StatCard>
 
-          <!-- New Users Today -->
-          <div class="card p-4">
-            <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30">
-                <Icon name="userPlus" size="md" class="text-emerald-600 dark:text-emerald-400" :stroke-width="2" />
-              </div>
-              <div>
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t('admin.dashboard.users') }}
-                </p>
-                <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                  <NumberTicker :value="stats.today_new_users" prefix="+" />
-                </p>
-                <p class="text-xs text-gray-500 dark:text-gray-400">
-                  {{ t('common.total') }}: {{ formatNumber(stats.total_users) }}
-                </p>
-              </div>
-            </div>
-          </div>
+          <StatCard
+            compact
+            :title="t('admin.dashboard.users')"
+            :value="stats.today_new_users"
+            prefix="+"
+            icon-class="rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30"
+            value-class="text-xl font-bold text-emerald-600 dark:text-emerald-400"
+          >
+            <template #icon>
+              <Icon name="userPlus" size="md" class="text-emerald-600 dark:text-emerald-400" :stroke-width="2" />
+            </template>
+            <template #footer>
+              <p class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t('common.total') }}: {{ formatNumber(stats.total_users) }}
+              </p>
+            </template>
+          </StatCard>
         </div>
 
         <!-- Row 2: Token Stats -->
         <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <!-- Today Tokens -->
-          <div class="card p-4">
-            <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30">
-                <Icon name="cube" size="md" class="text-amber-600 dark:text-amber-400" :stroke-width="2" />
-              </div>
-              <div>
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t('admin.dashboard.todayTokens') }}
-                </p>
-                <p class="text-xl font-bold text-gray-900 dark:text-white">
-                  <NumberTicker :value="stats.today_tokens" :format-fn="formatTokens" />
-                </p>
-                <p class="text-xs">
+          <StatCard
+            compact
+            :title="t('admin.dashboard.todayTokens')"
+            :value="stats.today_tokens"
+            :format-value="formatTokens"
+            icon-class="rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30"
+          >
+            <template #icon>
+              <Icon name="cube" size="md" class="text-amber-600 dark:text-amber-400" :stroke-width="2" />
+            </template>
+            <template #footer>
+              <p class="text-xs">
                   <span
                     class="text-green-600 dark:text-green-400"
                     :title="t('admin.dashboard.actual')"
@@ -128,25 +110,22 @@
                     :title="t('admin.dashboard.standard')"
                     >${{ formatCost(stats.today_cost) }}</span
                   >
-                </p>
-              </div>
-            </div>
-          </div>
+              </p>
+            </template>
+          </StatCard>
 
-          <!-- Total Tokens -->
-          <div class="card p-4">
-            <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-indigo-100 p-2 dark:bg-indigo-900/30">
-                <Icon name="database" size="md" class="text-indigo-600 dark:text-indigo-400" :stroke-width="2" />
-              </div>
-              <div>
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t('admin.dashboard.totalTokens') }}
-                </p>
-                <p class="text-xl font-bold text-gray-900 dark:text-white">
-                  <NumberTicker :value="stats.total_tokens" :format-fn="formatTokens" />
-                </p>
-                <p class="text-xs">
+          <StatCard
+            compact
+            :title="t('admin.dashboard.totalTokens')"
+            :value="stats.total_tokens"
+            :format-value="formatTokens"
+            icon-class="rounded-lg bg-indigo-100 p-2 dark:bg-indigo-900/30"
+          >
+            <template #icon>
+              <Icon name="database" size="md" class="text-indigo-600 dark:text-indigo-400" :stroke-width="2" />
+            </template>
+            <template #footer>
+              <p class="text-xs">
                   <span
                     class="text-green-600 dark:text-green-400"
                     :title="t('admin.dashboard.actual')"
@@ -164,10 +143,9 @@
                     :title="t('admin.dashboard.standard')"
                     >${{ formatCost(stats.total_cost) }}</span
                   >
-                </p>
-              </div>
-            </div>
-          </div>
+              </p>
+            </template>
+          </StatCard>
 
           <!-- Performance (RPM/TPM) -->
           <div class="card relative p-4">
@@ -205,25 +183,22 @@
             </div>
           </div>
 
-          <!-- Avg Response Time -->
-          <div class="card p-4">
-            <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-rose-100 p-2 dark:bg-rose-900/30">
-                <Icon name="clock" size="md" class="text-rose-600 dark:text-rose-400" :stroke-width="2" />
-              </div>
-              <div>
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t('admin.dashboard.avgResponse') }}
-                </p>
-                <p class="text-xl font-bold text-gray-900 dark:text-white">
-                  <NumberTicker :value="stats.average_duration_ms" :format-fn="formatDuration" />
-                </p>
-                <p class="text-xs text-gray-500 dark:text-gray-400">
-                  {{ stats.active_users }} {{ t('admin.dashboard.activeUsers') }}
-                </p>
-              </div>
-            </div>
-          </div>
+          <StatCard
+            compact
+            :title="t('admin.dashboard.avgResponse')"
+            :value="stats.average_duration_ms"
+            :format-value="formatDuration"
+            icon-class="rounded-lg bg-rose-100 p-2 dark:bg-rose-900/30"
+          >
+            <template #icon>
+              <Icon name="clock" size="md" class="text-rose-600 dark:text-rose-400" :stroke-width="2" />
+            </template>
+            <template #footer>
+              <p class="text-xs text-gray-500 dark:text-gray-400">
+                {{ stats.active_users }} {{ t('admin.dashboard.activeUsers') }}
+              </p>
+            </template>
+          </StatCard>
         </div>
 
         <!-- Quick Actions -->
@@ -367,7 +342,8 @@ import type {
   UserRetentionSummary
 } from '@/api/admin/dashboard'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import AdminDashboardSkeleton from '@/components/admin/dashboard/AdminDashboardSkeleton.vue'
+import StatCard from '@/components/common/StatCard.vue'
 import Icon from '@/components/icons/Icon.vue'
 import NumberTicker from '@/components/inspira/NumberTicker.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'

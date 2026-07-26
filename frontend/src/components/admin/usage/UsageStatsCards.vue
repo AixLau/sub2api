@@ -1,20 +1,34 @@
 <template>
   <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-    <div :class="statCardClass">
-      <div class="rounded-lg bg-blue-50 p-2 text-blue-600 ring-1 ring-blue-500/10 dark:bg-blue-400/10 dark:text-blue-400 dark:ring-blue-400/20">
+    <StatCard
+      compact
+      :card-class="statCardClass"
+      :title="t('usage.totalRequests')"
+      :value="stats?.total_requests || 0"
+      :format-value="formatCount"
+      :value-class="valueClass"
+      icon-class="rounded-lg bg-blue-50 p-2 text-blue-600 ring-1 ring-blue-500/10 dark:bg-blue-400/10 dark:text-blue-400 dark:ring-blue-400/20"
+    >
+      <template #icon>
         <Icon name="document" size="md" />
-      </div>
-      <div>
-        <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('usage.totalRequests') }}</p>
-        <p :class="valueClass"><NumberTicker :value="stats?.total_requests || 0" :format-fn="formatCount" /></p>
+      </template>
+      <template #footer>
         <p class="text-xs text-gray-400">{{ t('usage.inSelectedRange') }}</p>
-      </div>
-    </div>
-    <div :class="statCardClass">
-      <div class="rounded-lg bg-amber-50 p-2 text-amber-600 ring-1 ring-amber-500/10 dark:bg-amber-400/10 dark:text-amber-400 dark:ring-amber-400/20"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" /></svg></div>
-      <div>
-        <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('usage.totalTokens') }}</p>
-        <p :class="valueClass"><NumberTicker :value="stats?.total_tokens || 0" :format-fn="formatTokens" /></p>
+      </template>
+    </StatCard>
+    <StatCard
+      compact
+      :card-class="statCardClass"
+      :title="t('usage.totalTokens')"
+      :value="stats?.total_tokens || 0"
+      :format-value="formatTokens"
+      :value-class="valueClass"
+      icon-class="rounded-lg bg-amber-50 p-2 text-amber-600 ring-1 ring-amber-500/10 dark:bg-amber-400/10 dark:text-amber-400 dark:ring-amber-400/20"
+    >
+      <template #icon>
+        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" /></svg>
+      </template>
+      <template #footer>
         <p class="flex flex-wrap items-center gap-x-1 text-xs text-gray-500">
           <span>{{ t('usage.in') }}: {{ formatTokens(stats?.total_input_tokens || 0) }}</span>
           <span>/</span>
@@ -56,17 +70,23 @@
             </span>
           </span>
         </p>
-      </div>
-    </div>
-    <div v-if="showCost" :class="statCardClass">
-      <div class="rounded-lg bg-emerald-50 p-2 text-emerald-600 ring-1 ring-emerald-500/10 dark:bg-emerald-400/10 dark:text-emerald-400 dark:ring-emerald-400/20">
+      </template>
+    </StatCard>
+    <StatCard
+      v-if="showCost"
+      compact
+      :card-class="statCardClass"
+      :title="t('usage.totalCost')"
+      :value="stats?.total_actual_cost || 0"
+      prefix="$"
+      :format-value="formatCost"
+      :value-class="[valueClass, 'text-emerald-600 dark:text-emerald-400'].join(' ')"
+      icon-class="rounded-lg bg-emerald-50 p-2 text-emerald-600 ring-1 ring-emerald-500/10 dark:bg-emerald-400/10 dark:text-emerald-400 dark:ring-emerald-400/20"
+    >
+      <template #icon>
         <Icon name="dollar" size="md" />
-      </div>
-      <div class="min-w-0 flex-1">
-        <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('usage.totalCost') }}</p>
-        <p :class="[valueClass, 'text-emerald-600 dark:text-emerald-400']">
-          <NumberTicker :value="stats?.total_actual_cost || 0" prefix="$" :format-fn="formatCost" />
-        </p>
+      </template>
+      <template #footer>
         <p v-if="showAccountCost || showStandardCost" class="text-xs text-gray-400">
           <template v-if="showAccountCost && totalAccountCost != null">
             <span class="text-orange-500">{{ t('usage.accountCost') }} ${{ totalAccountCost.toFixed(4) }}</span>
@@ -77,14 +97,21 @@
             <span :class="{ 'line-through': strikeStandardCost }">${{ (stats?.total_cost || 0).toFixed(4) }}</span>
           </span>
         </p>
-      </div>
-    </div>
-    <div :class="statCardClass">
-      <div class="rounded-lg bg-violet-50 p-2 text-violet-600 ring-1 ring-violet-500/10 dark:bg-violet-400/10 dark:text-violet-400 dark:ring-violet-400/20">
+      </template>
+    </StatCard>
+    <StatCard
+      compact
+      :card-class="statCardClass"
+      :title="t('usage.avgDuration')"
+      :value="stats?.average_duration_ms || 0"
+      :format-value="formatDuration"
+      :value-class="valueClass"
+      icon-class="rounded-lg bg-violet-50 p-2 text-violet-600 ring-1 ring-violet-500/10 dark:bg-violet-400/10 dark:text-violet-400 dark:ring-violet-400/20"
+    >
+      <template #icon>
         <Icon name="clock" size="md" />
-      </div>
-      <div><p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('usage.avgDuration') }}</p><p :class="valueClass"><NumberTicker :value="stats?.average_duration_ms || 0" :format-fn="formatDuration" /></p></div>
-    </div>
+      </template>
+    </StatCard>
   </div>
 </template>
 
@@ -94,7 +121,7 @@ import { useI18n } from 'vue-i18n'
 import type { AdminUsageStatsResponse } from '@/api/admin/usage'
 import type { UsageStatsResponse } from '@/types'
 import Icon from '@/components/icons/Icon.vue'
-import NumberTicker from '@/components/inspira/NumberTicker.vue'
+import StatCard from '@/components/common/StatCard.vue'
 
 const props = withDefaults(defineProps<{
   stats: (AdminUsageStatsResponse | UsageStatsResponse) | null
