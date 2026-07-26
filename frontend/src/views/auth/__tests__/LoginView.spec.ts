@@ -107,7 +107,9 @@ describe('LoginView visual baseline', () => {
       global: {
         stubs: {
           AuthLayout: {
-            template: '<div><slot /><slot name="footer" /></div>',
+            props: ['eyebrow', 'title', 'subtitle'],
+            template:
+              '<div><p>{{ eyebrow }}</p><h2>{{ title }}</h2><span>{{ subtitle }}</span><slot /><slot name="footer" /></div>',
           },
           RouterLink: {
             template: '<a><slot /></a>',
@@ -132,7 +134,7 @@ describe('LoginView visual baseline', () => {
     })
   }
 
-  it('renders the restored white-and-blue split login layout', async () => {
+  it('renders the Starlink auth card body with the black-pill submit', async () => {
     const wrapper = mountLoginView()
 
     await flushPromises()
@@ -140,10 +142,12 @@ describe('LoginView visual baseline', () => {
     const html = wrapper.html()
     const text = wrapper.text()
 
-    expect(html).toContain('bg-gradient-to-br from-blue-600 via-cyan-600 to-blue-700')
-    expect(html).toContain('lg:w-1/2')
-    expect(text).toContain('统一 API 密钥管理')
-    expect(text).toContain('返回首页')
+    expect(text).toContain('登录星链')
+    expect(html).toContain('auth-form')
+    expect(html).toContain('auth-submit')
+    expect(html).toContain('auth-secondary-link')
+    expect(text).toContain('邮箱')
+    expect(text).toContain('还没有账户？')
   })
 
   it('blocks backend login until the current login agreement revision is accepted', async () => {

@@ -1,5 +1,12 @@
 # AGENTS.md - 星链 Homepage Direction
 
+> **DEPRECATED（2026-07-26，维护者决定）**：星链落地页与认证页已迁移进 `frontend/`（Vue 主站），
+> 样式基座为 `frontend/src/styles/landing.css`，组件在 `frontend/src/components/landing/`，
+> 认证外壳为 `frontend/src/components/layout/AuthLayout.vue`，路由默认由 Vue 应用直接提供
+> （`VITE_REACT_LANDING_ROUTES` 保持未设置即可）。新的落地页改动请在 `frontend/` 进行；
+> 本包仅供仍在使用双服务部署（`VITE_REACT_LANDING_ROUTES=true`）的环境过渡，删除时机由维护者决定。
+> 下文的 "Do not migrate to Vue" 约定已被本次决定取代。
+
 ## Project
 
 Build and maintain the current 星链 website prototype.

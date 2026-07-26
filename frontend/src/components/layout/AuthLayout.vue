@@ -1,86 +1,110 @@
 <template>
-  <div class="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
-    <!-- Background -->
-    <div
-      class="absolute inset-0 bg-gradient-to-br from-gray-50 via-primary-50/30 to-gray-100 dark:from-dark-950 dark:via-dark-900 dark:to-dark-950"
-    ></div>
+  <div class="landing-shell">
+    <main class="auth-shell" :style="authStyle">
+      <HeroCurveLines />
 
-    <!-- Decorative Elements -->
-    <div class="pointer-events-none absolute inset-0 overflow-hidden">
-      <!-- Gradient Orbs -->
-      <div
-        class="absolute -right-40 -top-40 h-80 w-80 rounded-full bg-primary-400/20 blur-3xl"
-      ></div>
-      <div
-        class="absolute -bottom-40 -left-40 h-80 w-80 rounded-full bg-primary-500/15 blur-3xl"
-      ></div>
+      <section class="auth-visual" aria-label="星链账号服务">
+        <img class="auth-visual-image" :src="HERO_BACKGROUND_IMAGE" alt="" />
+        <div class="auth-visual-content auth-reveal">
+          <router-link class="auth-brand" to="/" :aria-label="`${brandName} home`">
+            <span class="auth-brand-word">{{ brandName }}</span>
+            <span class="auth-brand-submark">API</span>
+          </router-link>
 
-      <!-- Flickering Grid (Inspira UI) -->
-      <FlickeringGrid :square-size="3" :grid-gap="8" :max-opacity="0.14" :flicker-chance="0.25" />
-    </div>
-
-    <!-- Content Container -->
-    <div class="relative z-10 w-full max-w-md">
-      <!-- Logo/Brand -->
-      <div class="mb-8 text-center">
-        <!-- Custom Logo or Default Logo -->
-        <template v-if="settingsLoaded">
-          <div
-            class="mb-4 inline-flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl shadow-lg shadow-primary-500/30"
-          >
-            <img :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
+          <div class="auth-visual-copy">
+            <p>{{ side.eyebrow }}</p>
+            <h1>{{ side.title }}</h1>
+            <span>{{ side.subtitle }}</span>
           </div>
-          <h1 class="text-gradient mb-2 text-3xl font-bold">
-            {{ siteName }}
-          </h1>
-          <p class="text-sm text-gray-500 dark:text-dark-400">
-            {{ siteSubtitle }}
-          </p>
-        </template>
-      </div>
 
-      <!-- Card Container -->
-      <div class="card-glass relative rounded-2xl p-8 shadow-glass">
-        <BorderBeam :size="160" :duration="14" :border-width="1.5" />
-        <slot />
-      </div>
+          <div class="auth-feature-list" aria-label="服务能力">
+            <span v-for="feature in side.features" :key="feature" class="auth-feature-pill">
+              {{ feature }}
+            </span>
+          </div>
+        </div>
+      </section>
 
-      <!-- Footer Links -->
-      <div class="mt-6 text-center text-sm">
-        <slot name="footer" />
-      </div>
+      <section class="auth-panel" :aria-labelledby="title ? 'auth-title' : undefined">
+        <div class="auth-card auth-reveal auth-reveal--delay">
+          <span class="fx-border-beam" aria-hidden="true" />
 
-      <!-- Copyright -->
-      <div class="mt-8 text-center text-xs text-gray-400 dark:text-dark-500">
-        &copy; {{ currentYear }} {{ siteName }}. All rights reserved.
-      </div>
-    </div>
+          <div class="auth-mobile-top">
+            <router-link class="auth-back-link" to="/">
+              <svg
+                aria-hidden="true"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="m12 19-7-7 7-7" />
+                <path d="M19 12H5" />
+              </svg>
+              返回首页
+            </router-link>
+            <span class="auth-mobile-brand">{{ brandName }}</span>
+          </div>
+
+          <div v-if="eyebrow || title || subtitle" class="auth-header">
+            <p v-if="eyebrow">{{ eyebrow }}</p>
+            <h2 v-if="title" id="auth-title">{{ title }}</h2>
+            <span v-if="subtitle">{{ subtitle }}</span>
+          </div>
+
+          <slot />
+
+          <div v-if="$slots.footer" class="auth-footer-link">
+            <slot name="footer" />
+          </div>
+        </div>
+      </section>
+    </main>
   </div>
 </template>
 
 <script setup lang="ts">
+import '@/styles/landing.css'
 import { computed, onMounted } from 'vue'
-import { useAppStore } from '@/stores'
-import { sanitizeUrl } from '@/utils/url'
-import BorderBeam from '@/components/inspira/BorderBeam.vue'
-import FlickeringGrid from '@/components/inspira/FlickeringGrid.vue'
+import { useRoute } from 'vue-router'
+import HeroCurveLines from '@/components/landing/HeroCurveLines.vue'
+import { authSideCopy, brandName, HERO_BACKGROUND_IMAGE } from '@/data/landing'
+import { applyLandingSeo } from '@/utils/landingSeo'
+import { useLandingLightTheme } from '@/composables/useLandingTheme'
 
-const appStore = useAppStore()
+defineProps<{
+  /** 卡片头部：小标（如 Welcome back）。缺省时由插槽内容自带标题。 */
+  eyebrow?: string
+  title?: string
+  subtitle?: string
+}>()
 
-const siteName = computed(() => appStore.siteName || 'Sub2API')
-const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
-const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || 'Subscription to API Conversion Platform')
-const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
+const route = useRoute()
 
-const currentYear = computed(() => new Date().getFullYear())
+useLandingLightTheme()
+
+// 左侧视觉面板文案按路由选择；回调页 / 邮箱验证等使用登录文案
+const side = computed(() => {
+  if (route.path === '/register') return authSideCopy.register
+  if (route.path === '/forgot-password' || route.path === '/reset-password') {
+    return authSideCopy['reset-password']
+  }
+  return authSideCopy.login
+})
+
+const authStyle = {
+  '--auth-bg-image': `url("${HERO_BACKGROUND_IMAGE}")`
+}
+
+const SEO_PATHS = ['/login', '/register', '/forgot-password', '/reset-password']
 
 onMounted(() => {
-  appStore.fetchPublicSettings()
+  if (SEO_PATHS.includes(route.path)) {
+    applyLandingSeo(route.path)
+  }
 })
 </script>
-
-<style scoped>
-.text-gradient {
-  @apply bg-gradient-to-r from-primary-600 to-primary-500 bg-clip-text text-transparent;
-}
-</style>

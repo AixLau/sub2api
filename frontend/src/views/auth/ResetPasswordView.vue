@@ -69,7 +69,7 @@
       </div>
 
       <!-- Form State -->
-      <form v-else @submit.prevent="handleSubmit" class="space-y-5">
+      <form v-else @submit.prevent="handleSubmit" class="auth-form space-y-5">
         <!-- Email (readonly) -->
         <div>
           <label for="email" class="input-label">
@@ -156,7 +156,7 @@
         <button
           type="submit"
           :disabled="isLoading"
-          class="btn btn-primary w-full"
+          class="auth-submit w-full"
         >
           <svg
             v-if="isLoading"

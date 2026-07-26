@@ -18,12 +18,9 @@ describe('doc_url sanitization', () => {
     expect(headerSource).toContain('sanitizeUrl(appStore.docUrl)')
   })
 
-  it('HomeView imports sanitizeUrl', () => {
-    expect(homeViewSource).toContain("import { sanitizeUrl } from '@/utils/url'")
-  })
-
-  it('HomeView applies sanitizeUrl to docUrl', () => {
-    expect(homeViewSource).toContain('sanitizeUrl(appStore.cachedPublicSettings?.doc_url || appStore.docUrl')
+  it('HomeView no longer renders admin-configurable doc_url (星链落地页数据为静态)', () => {
+    expect(homeViewSource).not.toContain('doc_url')
+    expect(homeViewSource).not.toContain('docUrl')
   })
 
   it('KeyUsageView imports sanitizeUrl', () => {

@@ -61,6 +61,12 @@ declare module 'vue-router' {
     titleKey?: string
 
     /**
+     * 落地页完整文档标题（星链AI SEO 标题，原样使用、不追加站点名后缀）。
+     * 设置后优先级高于 title/titleKey。
+     */
+    landingTitle?: string
+
+    /**
      * i18n key for the page description
      */
     descriptionKey?: string

@@ -23,7 +23,8 @@ const vueOwnedPublicEntryRoutes: RouteRecordRaw[] = [
     component: () => import('@/views/HomeView.vue'),
     meta: {
       requiresAuth: false,
-      title: 'Home'
+      title: 'Home',
+      landingTitle: '星链AI｜Codex 接入与 GPT API 中转站'
     }
   },
   {
@@ -65,6 +66,47 @@ const vueOwnedPublicEntryRoutes: RouteRecordRaw[] = [
       title: 'Reset Password'
     }
   },
+  // 星链AI 落地页业务子页（自 react-frontend 移植；文档标题由 landingSeo 在挂载后覆盖）
+  {
+    path: '/model-market',
+    name: 'ModelMarket',
+    component: () => import('@/views/landing/ModelMarketView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'Model Market',
+      landingTitle: 'GPT、Claude、Gemini API 模型与价格 - 星链AI'
+    }
+  },
+  {
+    path: '/services',
+    name: 'LandingServices',
+    component: () => import('@/views/landing/ServicesView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'Services',
+      landingTitle: 'AI API 中转站服务能力 - 星链AI'
+    }
+  },
+  {
+    path: '/service-status',
+    name: 'LandingServiceStatus',
+    component: () => import('@/views/landing/ServiceStatusView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'Service Status',
+      landingTitle: 'API 中转服务状态与用量 - 星链AI'
+    }
+  },
+  {
+    path: '/faq',
+    name: 'LandingFaq',
+    component: () => import('@/views/landing/FaqView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'FAQ',
+      landingTitle: 'GPT API 中转站常见问题 - 星链AI'
+    }
+  },
 ]
 
 /**
@@ -85,8 +127,10 @@ const routes: RouteRecordRaw[] = [
   // ==================== Public Routes ====================
   // In dual-service deployments, VITE_REACT_LANDING_ROUTES=true lets the
   // branded React landing app own '/', '/home', '/login', '/register',
-  // '/forgot-password', and '/reset-password'. Default single-service
-  // deployments keep the Vue public entry routes registered.
+  // '/forgot-password', '/reset-password', '/model-market', '/services',
+  // '/service-status', and '/faq'. Default single-service deployments keep
+  // the Vue public entry routes registered (the 星链AI landing now lives in
+  // this app under src/components/landing + src/views/landing).
   ...(!reactLandingRoutesEnabled ? vueOwnedPublicEntryRoutes : []),
   {
     path: '/email-verify',

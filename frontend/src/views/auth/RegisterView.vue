@@ -1,150 +1,9 @@
 <template>
-  <div class="registration-console min-h-screen bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-white">
-    <nav
-      class="fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-slate-50/90 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/85 lg:border-white/10 lg:bg-transparent lg:dark:bg-transparent"
-    >
-      <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-        <router-link to="/" class="flex items-center gap-3 no-underline">
-          <div
-            class="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 shadow-lg shadow-blue-900/20 ring-1 ring-white/20"
-          >
-            <img v-if="siteLogo" :src="siteLogo" :alt="siteName" class="h-5 w-5" />
-            <span v-else class="font-bold text-white">AI</span>
-          </div>
-          <span class="text-lg font-bold text-slate-900 dark:text-white">{{ siteName }}</span>
-        </router-link>
-
-        <div class="flex items-center gap-3">
-          <LocaleSwitcher />
-
-          <a
-            v-if="docUrl"
-            :href="docUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="rounded-lg p-2 text-slate-500 transition-colors hover:bg-white hover:text-blue-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
-            :title="t('home.viewDocs')"
-          >
-            <Icon name="book" size="md" />
-          </a>
-
-          <button
-            class="rounded-lg p-2 text-slate-500 transition-colors hover:bg-white hover:text-blue-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
-            :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
-            @click="toggleTheme"
-          >
-            <Icon v-if="isDark" name="sun" size="md" />
-            <Icon v-else name="moon" size="md" />
-          </button>
-
-          <router-link
-            to="/login"
-            class="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white no-underline shadow-lg shadow-blue-600/25 transition-colors hover:bg-blue-700"
-          >
-            {{ t('auth.signIn') }}
-          </router-link>
-        </div>
-      </div>
-    </nav>
-
-    <main class="pt-16">
-      <section class="relative min-h-[calc(100vh-4rem)] overflow-hidden bg-slate-50 px-4 py-12 dark:bg-slate-950 sm:px-6 md:py-16">
-        <div
-          class="absolute inset-y-0 left-0 hidden bg-gradient-to-br from-blue-600 via-cyan-600 to-blue-700 lg:block lg:w-[calc(50%+9rem)]"
-        ></div>
-        <div class="relative mx-auto max-w-7xl">
-          <div class="grid min-h-[calc(100vh-10rem)] items-center gap-12 lg:grid-cols-[minmax(0,0.98fr)_minmax(420px,520px)] lg:gap-14">
-            <div class="order-2 pt-4 lg:order-1 lg:pt-10 lg:text-white">
-              <span
-                class="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-4 py-1.5 text-sm font-medium text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 lg:border-white/20 lg:bg-white/10 lg:text-blue-100"
-              >
-                <Icon name="terminal" size="sm" />
-                {{ t('auth.registerHeroKicker') }}
-              </span>
-
-              <h1
-                class="mt-6 max-w-4xl text-4xl font-black leading-[1.08] tracking-tight text-slate-950 dark:text-white lg:text-white md:text-6xl"
-              >
-                {{ t('auth.registerHeroTitle') }}
-              </h1>
-
-              <p class="mt-6 max-w-xl text-base leading-7 text-slate-600 dark:text-slate-400 lg:text-blue-100 md:text-lg">
-                {{ t('auth.registerHeroDescription') }}
-              </p>
-
-              <div class="mt-10 grid gap-4 sm:grid-cols-3">
-                <div
-                  class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:border-white/15 lg:bg-white/10 lg:shadow-none"
-                >
-                  <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 lg:bg-white/15 lg:text-blue-100">
-                    <Icon name="key" size="md" />
-                  </div>
-                  <div class="mt-4 text-sm font-semibold text-slate-950 dark:text-white lg:text-white">
-                    {{ t('auth.registerFeatureKeysTitle') }}
-                  </div>
-                  <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400 lg:text-blue-100">
-                    {{ t('auth.registerFeatureKeysDesc') }}
-                  </p>
-                </div>
-                <div
-                  class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:border-white/15 lg:bg-white/10 lg:shadow-none"
-                >
-                  <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 lg:bg-white/15 lg:text-indigo-100">
-                    <Icon name="server" size="md" />
-                  </div>
-                  <div class="mt-4 text-sm font-semibold text-slate-950 dark:text-white lg:text-white">
-                    {{ t('auth.registerFeatureRoutingTitle') }}
-                  </div>
-                  <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400 lg:text-blue-100">
-                    {{ t('auth.registerFeatureRoutingDesc') }}
-                  </p>
-                </div>
-                <div
-                  class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:border-white/15 lg:bg-white/10 lg:shadow-none"
-                >
-                  <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 lg:bg-white/15 lg:text-amber-100">
-                    <Icon name="shield" size="md" />
-                  </div>
-                  <div class="mt-4 text-sm font-semibold text-slate-950 dark:text-white lg:text-white">
-                    {{ t('auth.registerFeatureControlTitle') }}
-                  </div>
-                  <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400 lg:text-blue-100">
-                    {{ t('auth.registerFeatureControlDesc') }}
-                  </p>
-                </div>
-              </div>
-
-              <div
-                class="mt-6 flex flex-wrap gap-2 rounded-2xl border border-blue-100 bg-white p-3 text-xs font-medium text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:border-white/15 lg:bg-slate-950/20 lg:text-blue-100 lg:shadow-none"
-              >
-                <span class="rounded-full bg-blue-50 px-3 py-1 text-blue-700 dark:bg-blue-950 dark:text-blue-300 lg:bg-white/10 lg:text-blue-100">
-                  {{ t('auth.registerSignalGateway') }}
-                </span>
-                <span class="rounded-full bg-indigo-50 px-3 py-1 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 lg:bg-white/10 lg:text-indigo-100">
-                  {{ t('auth.registerSignalRouting') }}
-                </span>
-                <span class="rounded-full bg-slate-100 px-3 py-1 text-slate-700 dark:bg-slate-800 dark:text-slate-200 lg:bg-white/10 lg:text-slate-100">
-                  {{ t('auth.registerSignalUsage') }}
-                </span>
-              </div>
-            </div>
-
-            <div class="relative order-1 lg:order-2">
-              <div
-                class="rounded-2xl bg-white p-5 shadow-2xl shadow-slate-900/10 ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800 sm:p-6 md:p-8"
-              >
-                <div class="mb-6">
-                  <p class="text-sm font-semibold text-blue-600 dark:text-blue-400">
-                    {{ t('auth.registerPanelKicker') }}
-                  </p>
-                  <h2 class="mt-2 text-3xl font-black text-slate-950 dark:text-white">
-                    {{ t('auth.createAccount') }}
-                  </h2>
-                  <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
-                    {{ t('auth.signUpToStart', { siteName }) }}
-                  </p>
-                </div>
-
+  <AuthLayout
+    eyebrow="Create access"
+    title="创建账号"
+    subtitle="填写基础信息，开始接入稳定的模型 API 服务层。"
+  >
                 <div
                   v-if="!registrationEnabled && settingsLoaded"
                   class="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-900/20"
@@ -169,7 +28,7 @@
                 <form
                   v-if="registrationEnabled || !settingsLoaded"
                   @submit.prevent="handleRegister"
-                  class="space-y-5"
+                  class="auth-form space-y-5"
                 >
         <!-- Email Input -->
         <div>
@@ -347,7 +206,7 @@
         <button
           type="submit"
           :disabled="registrationActionDisabled || (turnstileEnabled && !turnstileToken)"
-          class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-lg shadow-blue-600/25 transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none dark:focus:ring-offset-slate-900 dark:disabled:bg-slate-700"
+          class="auth-submit w-full gap-2"
         >
           <span
             v-if="isLoading"
@@ -402,29 +261,18 @@
           :show-divider="false"
         />
       </div>
-                <div class="mt-8 text-center text-sm text-slate-600 dark:text-slate-400">
-                  {{ t('auth.alreadyHaveAccount') }}
-                  <router-link
-                    to="/login"
-                    class="ml-1 font-semibold text-blue-600 no-underline transition-colors hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-                  >
-                    {{ t('auth.signIn') }}
-                  </router-link>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-    </main>
-  </div>
+    <template #footer>
+      {{ t('auth.alreadyHaveAccount') }}
+      <router-link to="/login">{{ t('auth.signIn') }}</router-link>
+    </template>
+  </AuthLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
+import { AuthLayout } from '@/components/layout'
 import LinuxDoOAuthSection from '@/components/auth/LinuxDoOAuthSection.vue'
 import OidcOAuthSection from '@/components/auth/OidcOAuthSection.vue'
 import WechatOAuthSection from '@/components/auth/WechatOAuthSection.vue'
@@ -468,7 +316,6 @@ const isLoading = ref<boolean>(false)
 const settingsLoaded = ref<boolean>(false)
 const errorMessage = ref<string>('')
 const showPassword = ref<boolean>(false)
-const isDark = ref(document.documentElement.classList.contains('dark'))
 
 // Public settings
 const registrationEnabled = ref<boolean>(true)
@@ -478,8 +325,6 @@ const invitationCodeEnabled = ref<boolean>(false)
 const turnstileEnabled = ref<boolean>(false)
 const turnstileSiteKey = ref<string>('')
 const siteName = ref<string>('Sub2API')
-const siteLogo = ref<string>('')
-const docUrl = ref<string>('')
 const linuxdoOAuthEnabled = ref<boolean>(false)
 const wechatOAuthEnabled = ref<boolean>(false)
 const oidcOAuthEnabled = ref<boolean>(false)
@@ -574,27 +419,9 @@ function syncAffiliateReferralCode(): string {
   return code
 }
 
-function toggleTheme() {
-  isDark.value = !isDark.value
-  document.documentElement.classList.toggle('dark', isDark.value)
-  localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
-}
-
-function initTheme() {
-  const savedTheme = localStorage.getItem('theme')
-  if (
-    savedTheme === 'dark' ||
-    (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)
-  ) {
-    isDark.value = true
-    document.documentElement.classList.add('dark')
-  }
-}
-
 // ==================== Lifecycle ====================
 
 onMounted(async () => {
-  initTheme()
   syncAffiliateReferralCode()
 
   try {
@@ -606,8 +433,6 @@ onMounted(async () => {
     turnstileEnabled.value = settings.turnstile_enabled
     turnstileSiteKey.value = settings.turnstile_site_key || ''
     siteName.value = settings.site_name || 'Sub2API'
-    siteLogo.value = settings.site_logo || ''
-    docUrl.value = settings.doc_url || ''
     linuxdoOAuthEnabled.value = settings.linuxdo_oauth_enabled
     wechatOAuthEnabled.value = isWeChatWebOAuthEnabled(settings)
     oidcOAuthEnabled.value = settings.oidc_oauth_enabled

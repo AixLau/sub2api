@@ -28,6 +28,12 @@ export function resolveRouteDocumentTitle(
   siteName: string | undefined,
   customMenuItems: CustomMenuItem[] = [],
 ): string {
+  // 落地页路由使用完整 SEO 标题（与 utils/landingSeo.ts 一致），不追加站点名
+  const landingTitle = route.meta.landingTitle
+  if (typeof landingTitle === 'string' && landingTitle.trim()) {
+    return landingTitle
+  }
+
   const id = typeof route.params.id === 'string' ? route.params.id : ''
   const menuItem = route.name === 'CustomPage' && id
     ? customMenuItems.find((item) => item.id === id)

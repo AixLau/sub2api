@@ -118,12 +118,16 @@ describe('RegisterView visual baseline', () => {
     })
   })
 
-  it('renders a blue developer-console registration entry', async () => {
+  it('renders the Starlink registration card', async () => {
     const wrapper = mount(RegisterView, {
       global: {
         stubs: {
           RouterLink: { template: '<a><slot /></a>' },
-          AuthLayout: { template: '<div><slot /><slot name="footer" /></div>' },
+          AuthLayout: {
+            props: ['eyebrow', 'title', 'subtitle'],
+            template:
+              '<div><p>{{ eyebrow }}</p><h2>{{ title }}</h2><span>{{ subtitle }}</span><slot /><slot name="footer" /></div>',
+          },
           Icon: true,
           TurnstileWidget: true,
           EmailOAuthButtons: true,
@@ -140,13 +144,11 @@ describe('RegisterView visual baseline', () => {
     const html = wrapper.html()
     const text = wrapper.text()
 
-    expect(html).toContain('from-blue-600')
-    expect(html).toContain('via-cyan-600')
-    expect(html).toContain('to-blue-700')
-    expect(html).toContain('lg:w-[calc(50%+9rem)]')
-    expect(text).toContain('开发者控制台入口')
-    expect(text).toContain('统一 API 网关')
-    expect(text).toContain('多模型路由')
-    expect(text).toContain('创建账户')
+    expect(text).toContain('创建账号')
+    expect(text).toContain('填写基础信息，开始接入稳定的模型 API 服务层。')
+    expect(html).toContain('auth-form')
+    expect(html).toContain('auth-submit')
+    expect(text).toContain('邮箱')
+    expect(text).toContain('已经有账户？')
   })
 })
