@@ -268,6 +268,7 @@ export interface BalanceHistoryItem {
   used_by: number | null
   used_at: string | null
   created_at: string
+  expires_at?: string | null
   group_id: number | null
   validity_days: number
   notes: string
@@ -281,7 +282,7 @@ export interface BalanceHistoryResponse extends PaginatedResponse<BalanceHistory
 }
 
 /**
- * Get user's balance/concurrency change history
+ * Get user's balance, concurrency, and subscription history
  * @param id - User ID
  * @param page - Page number
  * @param pageSize - Items per page

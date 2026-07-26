@@ -358,13 +358,18 @@ func (r *redeemCodeRepository) ListByUser(ctx context.Context, userID int64, lim
 }
 
 // ListByUserPaginated returns paginated balance/concurrency history for a user.
-// Supports optional type filter (e.g. "balance", "admin_balance", "concurrency", "admin_concurrency", "subscription").
+// Prefix a type with "!" to exclude it from the result.
 func (r *redeemCodeRepository) ListByUserPaginated(ctx context.Context, userID int64, params pagination.PaginationParams, codeType string) ([]service.RedeemCode, *pagination.PaginationResult, error) {
 	q := r.client.RedeemCode.Query().
 		Where(redeemcode.UsedByEQ(userID))
 
 	// Optional type filter
-	if codeType != "" {
+	if strings.HasPrefix(codeType, "!") {
+		excludedType := strings.TrimPrefix(codeType, "!")
+		if excludedType != "" {
+			q = q.Where(redeemcode.TypeNEQ(excludedType))
+		}
+	} else if codeType != "" {
 		q = q.Where(redeemcode.TypeEQ(codeType))
 	}
 

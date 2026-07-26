@@ -121,7 +121,7 @@
       <div v-else class="max-h-[28rem] space-y-3 overflow-y-auto">
         <div
           v-for="item in history"
-          :key="item.id"
+          :key="`${item.type}-${item.id}`"
           class="rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-600 dark:bg-dark-800"
         >
           <div class="flex items-start justify-between">
@@ -163,6 +163,14 @@
               >
                 {{ t('redeem.adminAdjustment') }}
               </p>
+              <template v-else-if="isSubscriptionType(item.type)">
+                <p class="text-xs text-gray-500 dark:text-dark-400">
+                  {{ getSubscriptionStatusLabel(item.status) }}
+                </p>
+                <p v-if="item.expires_at" class="text-xs text-gray-400 dark:text-dark-500">
+                  {{ t('admin.users.subscriptionExpiresAt', { date: formatDateTime(item.expires_at) }) }}
+                </p>
+              </template>
               <p
                 v-else
                 class="font-mono text-xs text-gray-400 dark:text-dark-500"
@@ -377,11 +385,19 @@ const formatValue = (item: BalanceHistoryItem) => {
   if (isSubscriptionType(item.type)) {
     const days = item.validity_days || Math.round(item.value)
     const groupName = item.group?.name || ''
-    return groupName ? `${days}d - ${groupName}` : `${days}d`
+    const duration = t('admin.users.subscriptionDuration', { days })
+    return groupName ? `${groupName} - ${duration}` : duration
   }
   // concurrency types
   const sign = item.value >= 0 ? '+' : ''
   return `${sign}${item.value}`
+}
+
+const getSubscriptionStatusLabel = (status: string) => {
+  const knownStatuses = new Set(['active', 'expired', 'revoked', 'suspended'])
+  return knownStatuses.has(status)
+    ? t(`admin.subscriptions.status.${status}`)
+    : status
 }
 
 const formatCost = (value: number) => value.toFixed(2)

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -723,11 +724,23 @@ func userUsageStatsWindow(period string) (string, time.Time, time.Time) {
 	}
 }
 
-// GetUserBalanceHistory returns paginated balance/concurrency change records for a user.
+// GetUserBalanceHistory returns paginated balance, concurrency, and subscription records for a user.
 func (s *adminServiceImpl) GetUserBalanceHistory(ctx context.Context, userID int64, page, pageSize int, codeType string) ([]RedeemCode, int64, float64, error) {
 	params := pagination.PaginationParams{Page: page, PageSize: pageSize}
 	if codeType == RedeemTypeAffiliateBalance {
 		codes, total, err := s.listAffiliateBalanceHistory(ctx, userID, params)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		return codes, total, totalRecharged, nil
+	}
+
+	if codeType == RedeemTypeSubscription {
+		codes, total, err := s.listUserSubscriptionHistory(ctx, userID, params)
 		if err != nil {
 			return nil, 0, 0, err
 		}
@@ -769,13 +782,17 @@ func (s *adminServiceImpl) getAllUserBalanceHistory(ctx context.Context, userID 
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	codes := mergeBalanceHistoryCodes(redeemCodes, affiliateCodes, params)
+	subscriptionCodes, subscriptionTotal, err := s.listUserSubscriptionHistoryForMerge(ctx, userID, needed)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	codes := mergeUserHistoryCodes(params, redeemCodes, affiliateCodes, subscriptionCodes)
 
 	totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	return codes, redeemTotal + affiliateTotal, totalRecharged, nil
+	return codes, redeemTotal + affiliateTotal + subscriptionTotal, totalRecharged, nil
 }
 
 func (s *adminServiceImpl) listRedeemBalanceHistoryForMerge(ctx context.Context, userID int64, needed int) ([]RedeemCode, int64, error) {
@@ -789,7 +806,7 @@ func (s *adminServiceImpl) listRedeemBalanceHistoryForMerge(ctx context.Context,
 	)
 	for page := 1; len(out) < needed; page++ {
 		params := pagination.PaginationParams{Page: page, PageSize: 1000}
-		codes, result, err := s.redeemCodeRepo.ListByUserPaginated(ctx, userID, params, "")
+		codes, result, err := s.redeemCodeRepo.ListByUserPaginated(ctx, userID, params, "!"+RedeemTypeSubscription)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -805,6 +822,92 @@ func (s *adminServiceImpl) listRedeemBalanceHistoryForMerge(ctx context.Context,
 		out = out[:needed]
 	}
 	return out, total, nil
+}
+
+func (s *adminServiceImpl) listUserSubscriptionHistoryForMerge(ctx context.Context, userID int64, needed int) ([]RedeemCode, int64, error) {
+	if needed <= 0 {
+		return nil, 0, nil
+	}
+
+	var (
+		out   []RedeemCode
+		total int64
+	)
+	for page := 1; len(out) < needed; page++ {
+		codes, currentTotal, err := s.listUserSubscriptionHistory(ctx, userID, pagination.PaginationParams{
+			Page:     page,
+			PageSize: 1000,
+		})
+		if err != nil {
+			return nil, 0, err
+		}
+		total = currentTotal
+		out = append(out, codes...)
+		if len(codes) < 1000 || int64(len(out)) >= total {
+			break
+		}
+	}
+	if len(out) > needed {
+		out = out[:needed]
+	}
+	return out, total, nil
+}
+
+func (s *adminServiceImpl) listUserSubscriptionHistory(ctx context.Context, userID int64, params pagination.PaginationParams) ([]RedeemCode, int64, error) {
+	if s == nil || s.userSubRepo == nil || userID <= 0 {
+		return nil, 0, nil
+	}
+
+	subs, result, err := s.userSubRepo.List(ctx, params, &userID, nil, "", "", "created_at", "desc")
+	if err != nil {
+		return nil, 0, err
+	}
+
+	codes := make([]RedeemCode, 0, len(subs))
+	for i := range subs {
+		codes = append(codes, userSubscriptionHistoryCode(&subs[i]))
+	}
+	var total int64
+	if result != nil {
+		total = result.Total
+	}
+	return codes, total, nil
+}
+
+func userSubscriptionHistoryCode(sub *UserSubscription) RedeemCode {
+	assignedAt := sub.AssignedAt
+	if assignedAt.IsZero() {
+		assignedAt = sub.CreatedAt
+	}
+	validityDays := int(math.Ceil(sub.ExpiresAt.Sub(sub.StartsAt).Hours() / 24))
+	if validityDays < 0 {
+		validityDays = 0
+	}
+	groupID := sub.GroupID
+	userID := sub.UserID
+	expiresAt := sub.ExpiresAt
+	status := sub.Status
+	if sub.DeletedAt != nil {
+		status = SubscriptionStatusRevoked
+	} else if status == SubscriptionStatusActive && !expiresAt.After(time.Now()) {
+		status = SubscriptionStatusExpired
+	}
+
+	return RedeemCode{
+		ID:           sub.ID,
+		Code:         fmt.Sprintf("SUB-%d", sub.ID),
+		Type:         RedeemTypeSubscription,
+		Value:        float64(validityDays),
+		Status:       status,
+		UsedBy:       &userID,
+		UsedAt:       &assignedAt,
+		Notes:        sub.Notes,
+		CreatedAt:    sub.CreatedAt,
+		ExpiresAt:    &expiresAt,
+		GroupID:      &groupID,
+		ValidityDays: validityDays,
+		Group:        sub.Group,
+	}
 }
 
 func (s *adminServiceImpl) listAffiliateBalanceHistoryForMerge(ctx context.Context, userID int64, needed int) ([]RedeemCode, int64, error) {
@@ -913,7 +1016,14 @@ WHERE user_id = $1
 }
 
 func mergeBalanceHistoryCodes(redeemCodes, affiliateCodes []RedeemCode, params pagination.PaginationParams) []RedeemCode {
-	combined := append(append([]RedeemCode{}, redeemCodes...), affiliateCodes...)
+	return mergeUserHistoryCodes(params, redeemCodes, affiliateCodes)
+}
+
+func mergeUserHistoryCodes(params pagination.PaginationParams, sources ...[]RedeemCode) []RedeemCode {
+	var combined []RedeemCode
+	for _, source := range sources {
+		combined = append(combined, source...)
+	}
 	sort.SliceStable(combined, func(i, j int) bool {
 		return redeemCodeHistoryTime(combined[i]).After(redeemCodeHistoryTime(combined[j]))
 	})

@@ -34,6 +34,10 @@ const messages: Record<string, string> = {
   'admin.users.typeConcurrency': 'Concurrency',
   'admin.users.typeAdminConcurrency': 'Admin Concurrency',
   'admin.users.typeSubscription': 'Subscription',
+  'admin.users.subscriptionDuration': '{days} days',
+  'admin.users.subscriptionExpiresAt': 'Expires: {date}',
+  'admin.subscriptions.status.active': 'Active',
+  'redeem.subscriptionAssigned': 'Subscription Assigned',
   'admin.users.noBalanceHistory': 'No history',
 }
 
@@ -135,5 +139,45 @@ describe('UserBalanceHistoryModal', () => {
     expect(text).toContain('13.4M')
     expect(text).not.toContain('13,353,354')
     expect(text).not.toContain('In 100 / Out 50 / Cache 10')
+  })
+
+  it('renders subscriptions from the unified history with status and expiration', async () => {
+    apiMocks.getUserBalanceHistory.mockResolvedValue({
+      items: [{
+        id: 7,
+        code: 'SUB-7',
+        type: 'subscription',
+        value: 30,
+        status: 'active',
+        used_by: 99,
+        used_at: '2026-07-01T08:00:00Z',
+        created_at: '2026-07-01T08:00:00Z',
+        expires_at: '2026-07-31T08:00:00Z',
+        group_id: 3,
+        validity_days: 30,
+        notes: 'Paid plan',
+        group: { id: 3, name: 'Pro' },
+      }],
+      total: 1,
+      total_recharged: 25,
+    })
+
+    const wrapper = mount(UserBalanceHistoryModal, {
+      props: {
+        show: false,
+        user: user as any,
+      },
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('Subscription Assigned')
+    expect(text).toContain('Pro - 30 days')
+    expect(text).toContain('Active')
+    expect(text).toContain('Expires:')
+    expect(text).toContain('Paid plan')
+    expect(text).not.toContain('SUB-7')
   })
 })
