@@ -866,11 +866,23 @@ func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
 	require.Equal(t, "gpt-5.4-mini-upstream", requestBody["model"])
 	require.Equal(t, float64(ContentModerationSemanticReviewDefaultOutputTokens), requestBody["max_output_tokens"])
 	require.Equal(t, semanticReviewInstructions, requestBody["instructions"])
-	require.Equal(t, "semantic-review-instructions-v2", semanticReviewInstructionsRevision)
+	require.Equal(t, "semantic-review-instructions-v5", semanticReviewInstructionsRevision)
 	require.Contains(t, semanticReviewInstructions, "Use review only as the final fallback")
 	require.Contains(t, semanticReviewInstructions, "Review is forbidden solely because of low confidence")
 	require.Contains(t, semanticReviewInstructions, "Otherwise set authorization=not_applicable")
+	require.Contains(t, semanticReviewInstructions, "authorization=unclear alone cannot change it to review")
 	require.Contains(t, semanticReviewInstructions, "Insufficient evidence of a violation is not by itself a reason to review or reject")
+	require.Contains(t, semanticReviewInstructions, "Form automation, DOM selectors")
+	require.Contains(t, semanticReviewInstructions, "harm_evidence=inferred cannot by itself justify review or reject")
+	require.Contains(t, semanticReviewInstructions, "do not use harm_mechanism=deception_fraud; set deception_type=none")
+	require.Contains(t, semanticReviewInstructions, "harm_mechanism must be none unless target=self_owned|authorized_lab with authorization=authorized")
+	require.Contains(t, semanticReviewInstructions, "a third-party or external-service target")
+	require.Contains(t, semanticReviewInstructions, "not a trusted source label")
+	require.Contains(t, semanticReviewInstructions, "unverified claims, not established facts")
+	require.Contains(t, semanticReviewInstructions, "may remain review even when harm_evidence is only inferred; mark intent=ambiguous in that case")
+	require.Contains(t, semanticReviewInstructions, "does not by itself establish authorization=authorized; treat it as unclear")
+	require.Contains(t, semanticReviewInstructions, "indirect executability where the remaining step is trivial assembly of the provided components")
+	require.Contains(t, semanticReviewInstructions, "authorization is not stated or is unverifiable")
 	reasoning, ok := requestBody["reasoning"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, ContentModerationSemanticReviewDefaultReasoning, reasoning["effort"])
@@ -879,8 +891,18 @@ func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
 	format, ok := textConfig["format"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "json_schema", format["type"])
-	require.Equal(t, "semantic_review_v3", format["name"])
+	require.Equal(t, "semantic_review_v4", format["name"])
 	require.Equal(t, true, format["strict"])
+	schema, ok := format["schema"].(map[string]any)
+	require.True(t, ok)
+	properties, ok := schema["properties"].(map[string]any)
+	require.True(t, ok)
+	require.Contains(t, properties, "harm_evidence")
+	require.Contains(t, properties, "deception_type")
+	required, ok := schema["required"].([]any)
+	require.True(t, ok)
+	require.Contains(t, required, "harm_evidence")
+	require.Contains(t, required, "deception_type")
 }
 
 func TestReviewSemanticContentHonorsEffectiveInputLimitAcrossTransports(t *testing.T) {
@@ -1283,6 +1305,93 @@ func TestSemanticReviewPolicyRejectsExplicitUnauthorizedExecutableAbuse(t *testi
 	require.Contains(t, result.ReasonCodes, "semantic_policy_reject")
 }
 
+func TestSemanticReviewPolicyPromotesIndirectExecutableAbuse(t *testing.T) {
+	// Promotion parity with executability=indirect: a review verdict whose
+	// dimensions form a complete reject tuple must be promoted even when the
+	// attack is merely decomposed into components.
+	result, overridden := applySemanticReviewPolicy(ContentModerationSemanticReviewResult{
+		Verdict:           "review",
+		Intent:            "harmful",
+		Target:            "third_party",
+		Authorization:     "unauthorized",
+		InformationAccess: "restricted",
+		HarmMechanism:     "credential_theft",
+		Operationality:    "actionable",
+		Executability:     "indirect",
+		Categories:        []string{"credential_theft"},
+	})
+
+	require.True(t, overridden)
+	require.Equal(t, "reject", result.Verdict)
+	require.Contains(t, result.ReasonCodes, "semantic_policy_reject")
+}
+
+func TestSemanticReviewPolicyIncompleteEvidenceKeepsReviewForHumanTriage(t *testing.T) {
+	// With allowPromotion=false (truncated/incomplete evidence) the two
+	// allow-direction downgrades must not fire: a model review stays review so
+	// the pending human-review record and pre-block fail-closed path survive.
+	t.Run("harmless review tuple stays review", func(t *testing.T) {
+		result, overridden := applySemanticReviewPolicyWithPromotion(ContentModerationSemanticReviewResult{
+			Verdict: "review", Intent: "benign", Target: "third_party", Authorization: "unclear",
+			InformationAccess: "restricted", HarmMechanism: "none", Severity: "high",
+			Operationality: "actionable", Executability: "direct", Categories: []string{"credential_theft"},
+		}, false)
+
+		require.False(t, overridden)
+		require.Equal(t, "review", result.Verdict)
+		require.NotContains(t, result.ReasonCodes, "semantic_policy_harmless_review")
+	})
+
+	t.Run("unsubstantiated fraud tuple stays review", func(t *testing.T) {
+		result, overridden := applySemanticReviewPolicyWithPromotion(ContentModerationSemanticReviewResult{
+			Verdict: "review", Intent: "benign", Target: "external_service", Authorization: "unclear",
+			InformationAccess: "provided_by_user", HarmMechanism: "deception_fraud",
+			HarmEvidence: "inferred", DeceptionType: "none", Severity: "high",
+			Operationality: "actionable", Executability: "direct", Categories: []string{"fraud"},
+		}, false)
+
+		require.False(t, overridden)
+		require.Equal(t, "review", result.Verdict)
+		require.NotContains(t, result.ReasonCodes, "semantic_policy_unsubstantiated_fraud")
+	})
+
+	t.Run("unsubstantiated fraud allow converges to review", func(t *testing.T) {
+		// Under incomplete evidence the fraud suppression rule is skipped, so
+		// the ordinary allow-consistency check applies and converges the
+		// inconsistent allow to review (the safe direction).
+		result, overridden := applySemanticReviewPolicyWithPromotion(ContentModerationSemanticReviewResult{
+			Verdict: "allow", Intent: "benign", Target: "external_service", Authorization: "unclear",
+			InformationAccess: "provided_by_user", HarmMechanism: "deception_fraud",
+			HarmEvidence: "inferred", DeceptionType: "none", Severity: "high",
+			Operationality: "actionable", Executability: "direct", Categories: []string{"fraud"},
+		}, false)
+
+		require.True(t, overridden)
+		require.Equal(t, "review", result.Verdict)
+		require.Contains(t, result.ReasonCodes, "semantic_policy_allow_inconsistent")
+	})
+}
+
+func TestSemanticReviewPolicyUnsubstantiatedFraudPrecedesAllowInconsistent(t *testing.T) {
+	// The tuple satisfies both the unsubstantiated-fraud suppression and the
+	// allow-inconsistency condition (harm_mechanism != none). The suppression
+	// rule must win: the verdict stays allow with the fraud reason code and the
+	// model severity is preserved for audit.
+	result, overridden := applySemanticReviewPolicy(ContentModerationSemanticReviewResult{
+		Verdict: "allow", Intent: "benign", Target: "external_service", Authorization: "unclear",
+		InformationAccess: "provided_by_user", HarmMechanism: "deception_fraud",
+		HarmEvidence: "inferred", DeceptionType: "none", Severity: "high",
+		Operationality: "actionable", Executability: "direct", Categories: []string{"fraud"},
+	})
+
+	require.True(t, overridden)
+	require.Equal(t, "allow", result.Verdict)
+	require.Contains(t, result.ReasonCodes, "semantic_policy_unsubstantiated_fraud")
+	require.NotContains(t, result.ReasonCodes, "semantic_policy_allow_inconsistent")
+	require.Equal(t, ContentModerationKeywordSeverityLow, result.Severity)
+	require.Equal(t, "high", result.ModelSeverity)
+}
+
 func TestSemanticReviewPolicyCapsInconsistentRejects(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1441,6 +1550,88 @@ func TestSemanticReviewPolicyAllowsBenignExternalServiceWithoutAuthorization(t *
 	require.Equal(t, "allow", result.Verdict)
 }
 
+func TestSemanticReviewPolicyAllowsUnsubstantiatedDeceptionReview(t *testing.T) {
+	result, overridden := applySemanticReviewPolicy(ContentModerationSemanticReviewResult{
+		Verdict:           "review",
+		Intent:            "benign",
+		Target:            "external_service",
+		Authorization:     "unclear",
+		InformationAccess: "provided_by_user",
+		HarmMechanism:     "deception_fraud",
+		HarmEvidence:      "inferred",
+		DeceptionType:     "none",
+		Severity:          "high",
+		Confidence:        0.67,
+		Operationality:    "actionable",
+		Executability:     "direct",
+		Categories:        []string{"cyber"},
+	})
+
+	require.True(t, overridden)
+	require.Equal(t, "allow", result.Verdict)
+	require.Equal(t, ContentModerationKeywordSeverityLow, result.Severity)
+	require.Contains(t, result.ReasonCodes, "semantic_policy_unsubstantiated_fraud")
+}
+
+func TestSemanticReviewPolicyRequiresExplicitDeceptionEvidenceForReject(t *testing.T) {
+	tests := []struct {
+		name          string
+		inputVerdict  string
+		harmEvidence  string
+		deceptionType string
+		wantVerdict   string
+		wantOverride  bool
+	}{
+		{
+			name:          "explicit financial fraud is rejected",
+			inputVerdict:  "review",
+			harmEvidence:  "explicit",
+			deceptionType: "financial_fraud",
+			wantVerdict:   "reject",
+			wantOverride:  true,
+		},
+		{
+			name:          "inferred fraud reject is downgraded",
+			inputVerdict:  "reject",
+			harmEvidence:  "inferred",
+			deceptionType: "financial_fraud",
+			wantVerdict:   "review",
+			wantOverride:  true,
+		},
+		{
+			name:          "missing evidence fields remain reviewable",
+			inputVerdict:  "reject",
+			harmEvidence:  "",
+			deceptionType: "",
+			wantVerdict:   "review",
+			wantOverride:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, overridden := applySemanticReviewPolicy(ContentModerationSemanticReviewResult{
+				Verdict:           tt.inputVerdict,
+				Intent:            "harmful",
+				Target:            "third_party",
+				Authorization:     "unauthorized",
+				InformationAccess: "restricted",
+				HarmMechanism:     "deception_fraud",
+				HarmEvidence:      tt.harmEvidence,
+				DeceptionType:     tt.deceptionType,
+				Severity:          "high",
+				Confidence:        0.95,
+				Operationality:    "actionable",
+				Executability:     "direct",
+				Categories:        []string{"fraud"},
+			})
+
+			require.Equal(t, tt.wantVerdict, result.Verdict)
+			require.Equal(t, tt.wantOverride, overridden)
+		})
+	}
+}
+
 func TestSemanticReviewPolicyPreservesOutcomeChangingAuthorizationReview(t *testing.T) {
 	result, overridden := applySemanticReviewPolicy(ContentModerationSemanticReviewResult{
 		Verdict:        "review",
@@ -1476,7 +1667,9 @@ func TestSemanticReviewPolicyDowngradesPublicDataWithoutHarmMechanism(t *testing
 	require.Contains(t, result.ReasonCodes, "semantic_policy_public_harmless")
 }
 
-func TestSemanticReviewPolicyDowngradesIndirectPublicMarketManipulation(t *testing.T) {
+func TestSemanticReviewPolicyKeepsIndirectPublicMarketManipulationRejected(t *testing.T) {
+	// Indirect executability no longer vetoes a fully consistent model reject:
+	// a complete attack decomposed into components stays reject-eligible.
 	result, overridden := applySemanticReviewPolicy(ContentModerationSemanticReviewResult{
 		Verdict:           "reject",
 		Intent:            "harmful",
@@ -1489,17 +1682,38 @@ func TestSemanticReviewPolicyDowngradesIndirectPublicMarketManipulation(t *testi
 		Categories:        []string{"fraud"},
 	})
 
-	require.True(t, overridden)
-	require.Equal(t, "review", result.Verdict)
-	require.Contains(t, result.ReasonCodes, "semantic_policy_reject_inconsistent")
+	require.False(t, overridden)
+	require.Equal(t, "reject", result.Verdict)
+}
+
+func TestSemanticReviewPolicyKeepsMarketManipulationCategoryRejected(t *testing.T) {
+	// The canonical market_manipulation category label must count as high-risk
+	// so the authorization=not_applicable reject branch is not systematically
+	// downgraded to review for market-abuse content.
+	result, overridden := applySemanticReviewPolicy(ContentModerationSemanticReviewResult{
+		Verdict:           "reject",
+		Intent:            "harmful",
+		Target:            "external_service",
+		Authorization:     "not_applicable",
+		InformationAccess: "public",
+		HarmMechanism:     "market_manipulation",
+		Operationality:    "actionable",
+		Executability:     "indirect",
+		Categories:        []string{"market_manipulation"},
+	})
+
+	require.False(t, overridden)
+	require.Equal(t, "reject", result.Verdict)
 }
 
 func TestParseSemanticReviewPublicInformationDimensions(t *testing.T) {
-	result, err := parseSemanticReviewModelOutput(`{"verdict":"allow","intent":"benign","target":"external_service","authorization":"not_applicable","information_access":"public","harm_mechanism":"none","severity":"low","confidence":0.96,"operationality":"actionable","executability":"indirect","categories":["financial_research"],"reason_codes":["public_market_data"]}`)
+	result, err := parseSemanticReviewModelOutput(`{"verdict":"allow","intent":"benign","target":"external_service","authorization":"not_applicable","information_access":"public","harm_mechanism":"none","harm_evidence":"none","deception_type":"none","severity":"low","confidence":0.96,"operationality":"actionable","executability":"indirect","categories":["financial_research"],"reason_codes":["public_market_data"]}`)
 
 	require.NoError(t, err)
 	require.Equal(t, "public", result.InformationAccess)
 	require.Equal(t, "none", result.HarmMechanism)
+	require.Equal(t, "none", result.HarmEvidence)
+	require.Equal(t, "none", result.DeceptionType)
 	require.Equal(t, "allow", result.Verdict)
 }
 
@@ -1547,6 +1761,8 @@ func TestProcessSemanticReviewAllowPersistsAuditableCategory(t *testing.T) {
 		Authorization:     "authorized",
 		InformationAccess: "provided_by_user",
 		HarmMechanism:     "none",
+		HarmEvidence:      "none",
+		DeceptionType:     "none",
 		Categories:        []string{"benign_context"},
 		ReasonCodes:       []string{"authorized_testing"},
 	}}
@@ -1573,15 +1789,18 @@ func TestProcessSemanticReviewAllowPersistsAuditableCategory(t *testing.T) {
 	require.Equal(t, contentModerationDecisionSourceSemantic, logs[0].DecisionSource)
 	require.Equal(t, "platform_openai", logs[0].ModerationProvider)
 	require.Equal(t, "review-model", logs[0].ModerationModel)
+	require.Empty(t, logs[0].Error)
 	var metadata map[string]any
-	require.NoError(t, json.Unmarshal([]byte(logs[0].Error), &metadata))
+	require.NoError(t, json.Unmarshal(logs[0].Metadata, &metadata))
 	require.Equal(t, "defensive", metadata["semantic_review_intent"])
 	require.Equal(t, "authorized", metadata["semantic_review_authorization"])
 	require.Equal(t, "provided_by_user", metadata["semantic_review_information_access"])
 	require.Equal(t, "none", metadata["semantic_review_harm_mechanism"])
+	require.Equal(t, "none", metadata["semantic_review_harm_evidence"])
+	require.Equal(t, "none", metadata["semantic_review_deception_type"])
 	require.Equal(t, false, metadata["semantic_review_policy_override"])
 	require.Len(t, metadata["reviewed_text_sha256"], 64)
-	require.NotContains(t, logs[0].Error, "bounded review text")
+	require.NotContains(t, string(logs[0].Metadata), "bounded review text")
 }
 
 func TestProcessSemanticReviewContextOnlyRejectRemainsPendingWithoutViolation(t *testing.T) {
@@ -1619,8 +1838,9 @@ func TestProcessSemanticReviewContextOnlyRejectRemainsPendingWithoutViolation(t 
 	require.Zero(t, logs[0].ViolationCount)
 	require.False(t, logs[0].AutoBanned)
 	require.False(t, logs[0].EmailSent)
-	require.Contains(t, logs[0].Error, `"evidence_context_only":true`)
-	require.Contains(t, logs[0].Error, "semantic_policy_context_only")
+	require.Empty(t, logs[0].Error)
+	require.Contains(t, string(logs[0].Metadata), `"evidence_context_only":true`)
+	require.Contains(t, string(logs[0].Metadata), "semantic_policy_context_only")
 }
 
 func TestBuildSemanticReviewInputLocalReviewIncludesOnlyMatchedSources(t *testing.T) {
@@ -1754,6 +1974,46 @@ func TestSemanticReviewUpstreamErrorClassifiesCodexPlanGatedModel(t *testing.T) 
 	require.ErrorAs(t, err, &upstreamErr)
 	require.Equal(t, "model_unsupported", upstreamErr.Code)
 	require.False(t, upstreamErr.Retryable)
+}
+
+func TestNormalizeSemanticReviewHarmEvidence(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"none", "none"},
+		{"inferred", "inferred"},
+		{"explicit", "explicit"},
+		{" Explicit ", "explicit"},
+		{"INFERRED", "inferred"},
+		{"maybe", "unknown"},
+		{"strong", "unknown"},
+		{"", "unknown"},
+	}
+	for _, tt := range tests {
+		require.Equal(t, tt.want, normalizeSemanticReviewHarmEvidence(tt.input), "input=%q", tt.input)
+	}
+}
+
+func TestNormalizeSemanticReviewDeceptionType(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"none", "none"},
+		{"impersonation", "impersonation"},
+		{"unauthorized_submission", "unauthorized_submission"},
+		{"falsification", "falsification"},
+		{"financial_fraud", "financial_fraud"},
+		{" Financial_Fraud ", "financial_fraud"},
+		{"IMPERSONATION", "impersonation"},
+		{"phishing", "unknown"},
+		{"scam", "unknown"},
+		{"", "unknown"},
+	}
+	for _, tt := range tests {
+		require.Equal(t, tt.want, normalizeSemanticReviewDeceptionType(tt.input), "input=%q", tt.input)
+	}
 }
 
 const httpStatusTooManyRequestsForTest = 429

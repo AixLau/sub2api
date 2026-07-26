@@ -22,6 +22,54 @@ func TestSemanticReviewFalsePositivePolicyBoundaries(t *testing.T) {
 			wantVerdict: "allow",
 		},
 		{
+			name: "authorized private external service operation is allowed",
+			result: ContentModerationSemanticReviewResult{
+				Verdict: "allow", Intent: "benign", Target: "external_service", Authorization: "authorized",
+				InformationAccess: "private", HarmMechanism: "none", Operationality: "actionable",
+				Executability: "direct", Categories: []string{"other"},
+			},
+			wantVerdict: "allow",
+		},
+		{
+			name: "harmless operational review with unclear authorization is allowed",
+			result: ContentModerationSemanticReviewResult{
+				Verdict: "review", Intent: "defensive", Target: "external_service", Authorization: "unclear",
+				InformationAccess: "restricted", HarmMechanism: "none", Operationality: "actionable",
+				Executability: "direct", Categories: []string{"other"},
+			},
+			wantVerdict: "allow",
+		},
+		{
+			// Prompt v5 authorized-scope exemption: an allow for authorized
+			// CTF/lab work may carry a non-none harm mechanism and must not be
+			// flipped to review as allow_inconsistent.
+			name: "authorized lab exploit delivery allow is preserved",
+			result: ContentModerationSemanticReviewResult{
+				Verdict: "allow", Intent: "defensive", Target: "authorized_lab", Authorization: "authorized",
+				InformationAccess: "provided_by_user", HarmMechanism: "exploit_delivery", Operationality: "actionable",
+				Executability: "direct", Categories: []string{"cyber"},
+			},
+			wantVerdict: "allow",
+		},
+		{
+			name: "self owned target with credential theft mechanism allow is preserved",
+			result: ContentModerationSemanticReviewResult{
+				Verdict: "allow", Intent: "benign", Target: "self_owned", Authorization: "authorized",
+				InformationAccess: "provided_by_user", HarmMechanism: "credential_theft", Operationality: "actionable",
+				Executability: "direct", Categories: []string{"cyber"},
+			},
+			wantVerdict: "allow",
+		},
+		{
+			name: "explicit unauthorized signal remains reviewable",
+			result: ContentModerationSemanticReviewResult{
+				Verdict: "allow", Intent: "benign", Target: "third_party", Authorization: "unauthorized",
+				InformationAccess: "restricted", HarmMechanism: "none", Operationality: "actionable",
+				Executability: "direct", Categories: []string{"unauthorized_access"},
+			},
+			wantVerdict: "review",
+		},
+		{
 			name: "missing authorization statement remains reviewable",
 			result: ContentModerationSemanticReviewResult{
 				Verdict: "reject", Intent: "ambiguous", Target: "unknown", Authorization: "unclear",
@@ -47,6 +95,45 @@ func TestSemanticReviewFalsePositivePolicyBoundaries(t *testing.T) {
 				Executability: "direct", Categories: []string{"credential_theft"},
 			},
 			wantVerdict: "reject",
+		},
+		{
+			name: "benign form automation with inferred deception is allowed",
+			result: ContentModerationSemanticReviewResult{
+				Verdict: "review", Intent: "benign", Target: "external_service", Authorization: "unclear",
+				InformationAccess: "provided_by_user", HarmMechanism: "deception_fraud",
+				HarmEvidence: "inferred", DeceptionType: "none", Operationality: "actionable",
+				Executability: "direct", Categories: []string{"cyber"},
+			},
+			wantVerdict: "allow",
+		},
+		{
+			name: "ambiguous form automation with inferred deception stays reviewable",
+			result: ContentModerationSemanticReviewResult{
+				Verdict: "review", Intent: "ambiguous", Target: "external_service", Authorization: "unclear",
+				InformationAccess: "provided_by_user", HarmMechanism: "deception_fraud",
+				HarmEvidence: "inferred", DeceptionType: "none", Operationality: "actionable",
+				Executability: "direct", Categories: []string{"cyber"},
+			},
+			wantVerdict: "review",
+		},
+		{
+			name: "legacy fraud result without evidence fields remains reviewable",
+			result: ContentModerationSemanticReviewResult{
+				Verdict: "review", Intent: "ambiguous", Target: "external_service", Authorization: "unclear",
+				InformationAccess: "provided_by_user", HarmMechanism: "deception_fraud",
+				Operationality: "actionable", Executability: "direct", Categories: []string{"fraud"},
+			},
+			wantVerdict: "review",
+		},
+		{
+			name: "explicit deception remains reviewable when intent is ambiguous",
+			result: ContentModerationSemanticReviewResult{
+				Verdict: "review", Intent: "ambiguous", Target: "external_service", Authorization: "unclear",
+				InformationAccess: "provided_by_user", HarmMechanism: "deception_fraud",
+				HarmEvidence: "explicit", DeceptionType: "unauthorized_submission",
+				Operationality: "actionable", Executability: "direct", Categories: []string{"fraud"},
+			},
+			wantVerdict: "review",
 		},
 	}
 

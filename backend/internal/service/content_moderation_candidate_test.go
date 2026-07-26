@@ -1210,6 +1210,104 @@ func TestCandidateSemanticReviewDefersAmbiguousHighRiskCandidate(t *testing.T) {
 	require.False(t, logs[0].EmailSent)
 }
 
+func TestCandidateSemanticReviewAllowsHarmlessHighRiskCandidate(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.Enabled = true
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword:  "remote-diagnostic-marker",
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}}
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	repo := &candidateRetryDedupeRepo{}
+	svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyRiskControlEnabled:      "true",
+		SettingKeyContentModerationConfig: string(raw),
+	}}, repo, nil, nil, nil, nil, nil)
+	svc.SetDecisionCacheKey(bytes.Repeat([]byte{0x5a}, 32))
+	svc.SetSemanticReviewRouter(&contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "review", Intent: "defensive", Target: "external_service", Authorization: "unclear",
+		InformationAccess: "restricted", HarmMechanism: "none", Severity: "low", Confidence: 0.98,
+		Operationality: "actionable", Executability: "direct", Categories: []string{"other"},
+		ReasonCodes: []string{"remote_read_only_diagnostics", "no_concrete_harm_mechanism"},
+	}})
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		UserID:   17,
+		APIKeyID: 29,
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"remote-diagnostic-marker inspect container status and logs"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionSemanticReviewAllow, decision.Action)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionSemanticReviewAllow, logs[0].Action)
+	require.Empty(t, logs[0].ReviewStatus)
+	require.Empty(t, logs[0].Error)
+	require.Contains(t, string(logs[0].Metadata), `"semantic_review_policy_override":true`)
+	require.Contains(t, string(logs[0].Metadata), "semantic_policy_harmless_review")
+	require.Zero(t, logs[0].ViolationCount)
+	require.False(t, logs[0].AutoBanned)
+	require.False(t, logs[0].EmailSent)
+}
+
+func TestCandidateSemanticReviewAllowsInferredDeceptionHighRiskCandidate(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.Enabled = true
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword:  "web-payload-marker",
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}}
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	repo := &candidateRetryDedupeRepo{}
+	svc := NewContentModerationService(&contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyRiskControlEnabled:      "true",
+		SettingKeyContentModerationConfig: string(raw),
+	}}, repo, nil, nil, nil, nil, nil)
+	svc.SetDecisionCacheKey(bytes.Repeat([]byte{0x5a}, 32))
+	svc.SetSemanticReviewRouter(&contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "review", Intent: "benign", Target: "external_service", Authorization: "unclear",
+		InformationAccess: "provided_by_user", HarmMechanism: "deception_fraud",
+		HarmEvidence: "inferred", DeceptionType: "none", Severity: "high", Confidence: 0.67,
+		Operationality: "actionable", Executability: "direct", Categories: []string{"cyber"},
+		ReasonCodes: []string{"ambiguous_context"},
+	}})
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		UserID:   17,
+		APIKeyID: 29,
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"web-payload-marker automate this form with the supplied fields"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionSemanticReviewAllow, decision.Action)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionSemanticReviewAllow, logs[0].Action)
+	require.Empty(t, logs[0].ReviewStatus)
+	require.Contains(t, string(logs[0].Metadata), `"semantic_review_policy_override":true`)
+	require.Contains(t, string(logs[0].Metadata), `"semantic_review_harm_evidence":"inferred"`)
+	require.Contains(t, string(logs[0].Metadata), `"semantic_review_deception_type":"none"`)
+	require.Contains(t, string(logs[0].Metadata), "semantic_policy_unsubstantiated_fraud")
+	require.Zero(t, logs[0].ViolationCount)
+	require.False(t, logs[0].AutoBanned)
+	require.False(t, logs[0].EmailSent)
+}
+
 func TestCandidateSemanticReviewLowCustomReviewIsNotDeferred(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.Enabled = true

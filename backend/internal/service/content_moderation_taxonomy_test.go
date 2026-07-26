@@ -41,4 +41,9 @@ func TestNormalizeSemanticReviewTaxonomyKeepsDetailsAcrossRepeatedNormalization(
 func TestCanonicalSemanticReviewLabelNormalizesUnicodeAndSeparators(t *testing.T) {
 	require.Equal(t, "credential_theft", canonicalSemanticReviewCategory("ＣＲＥＤＥＮＴＩＡＬ—ＴＨＥＦＴ"))
 	require.Equal(t, "market_manipulation", canonicalSemanticReviewReasonCode("market/manipulation"))
+	require.Equal(t, "semantic_policy_harmless_review", canonicalSemanticReviewReasonCode("semantic_policy_harmless_review"))
+	require.Equal(t, "semantic_policy_unsubstantiated_fraud", canonicalSemanticReviewReasonCode("semantic_policy_unsubstantiated_fraud"))
+	// ambiguous_context is the reason code the prompt instructs the model to
+	// emit for review verdicts; it must survive normalization unchanged.
+	require.Equal(t, "ambiguous_context", canonicalSemanticReviewReasonCode("ambiguous_context"))
 }

@@ -129,7 +129,7 @@ func canonicalSemanticReviewReasonCode(value string) string {
 	}
 	// Keep application-generated codes stable and backwards compatible.
 	switch key {
-	case "semantic_policy_public_harmless", "semantic_policy_reject", "semantic_policy_reject_inconsistent", "semantic_policy_allow_inconsistent", "semantic_policy_context_only", "unstructured_model_output", "invalid_model_output_json":
+	case "semantic_policy_public_harmless", "semantic_policy_reject", "semantic_policy_reject_inconsistent", "semantic_policy_allow_inconsistent", "semantic_policy_harmless_review", "semantic_policy_unsubstantiated_fraud", "semantic_policy_context_only", "unstructured_model_output", "invalid_model_output_json":
 		return key
 	case "no_authorization", "unauthorized_access", "unauthorised_access", "without_permission":
 		return "unauthorized_access"
@@ -159,7 +159,7 @@ func canonicalSemanticReviewReasonCode(value string) string {
 		return "hate"
 	case "benign_context", "benign", "safe", "public_market_data", "authorized_testing", "no_harmful_content", "no_actionable_request", "no_user_request", "no_user_request_provided", "harmless_context":
 		return "benign_context"
-	case "ambiguous", "unclear", "insufficient_context":
+	case "ambiguous_context", "ambiguous", "unclear", "insufficient_context":
 		return "ambiguous_context"
 	default:
 		return "model_reason_other"

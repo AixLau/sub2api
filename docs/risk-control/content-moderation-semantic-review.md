@@ -6,7 +6,7 @@
 
 1. 本地规则负责低延迟、确定性的强拦截，覆盖破限提示、越权、凭证窃取、恶意代码和明确的入侵操作。
 2. 现有内容安全模型继续负责色情、暴力、自残等分类；它的结果不由语义模型替代。
-3. 内置 OpenAI/Codex 账号池负责补充识别破限、逆向、凭证窃取和渗透意图。语义复核必须同时评估意图、操作性、目标、授权和可执行性；可靠 outbox 负责后置复核、重试和审计落库。
+3. 内置 OpenAI/Codex 账号池负责补充识别破限、逆向、凭证窃取和渗透意图。语义复核必须同时评估九个维度：意图、操作性、目标、授权、可执行性、信息访问、危害机制、证据强度和欺骗类型；可靠 outbox 负责后置复核、重试和审计落库。
 
 后置复核发生在请求内容已经被允许之后，不能撤回已经转发给上游的请求。`pre_block` 模式下，命中本地高风险候选（cyber/jailbreak、block 动作或 high/critical 严重度）时可以进入语义模型的同步候选复核；配置 `trigger=all` 时，即使没有关键词也会对纳入范围的文本进行同步复核；`observe` 模式只做后置复核，不影响当前请求。
 
@@ -25,7 +25,7 @@ flowchart TD
     G --> H[Spark 配额快照检查]
     H -->|可用| I[gpt-5.3-codex-spark]
     H -->|额度耗尽或临时失败| J[切换账号]
-    J -->|同模型无可用账号| K[gpt-5-mini]
+    J -->|同模型无可用账号| K[gpt-5.4-mini]
     I --> L[结构化 verdict]
     K --> L
     L --> M[写入语义审计记录]
@@ -41,8 +41,8 @@ flowchart TD
     "enabled": false,
     "trigger": "local_review",
     "primary_model": "gpt-5.3-codex-spark",
-    "fallback_models": ["gpt-5-mini"],
-    "timeout_ms": 20000,
+    "fallback_models": ["gpt-5.4-mini"],
+    "timeout_ms": 15000,
     "max_input_runes": 4000,
     "prompt_injection_reviewer_enabled": false,
     "prompt_injection_max_input_runes": 12000,
@@ -58,7 +58,7 @@ Spark 账号使用仓库已有的 OpenAI 调度器。Spark 额度窗口刷新复
 - Spark 额度未耗尽：发送 Spark。
 - Spark 当前账号额度耗尽：释放账号并尝试同模型的下一个账号。
 - Spark 账号返回 429、5xx、临时网络错误、token/账号错误：排除当前账号，刷新其额度快照，再尝试同模型的下一个账号。
-- 所有 Spark 账号都不可用：切换到 `gpt-5-mini`。
+- 所有 Spark 账号都不可用：切换到 `gpt-5.4-mini`。
 - 模型已经返回 `reject`：这是业务判定，不是可恢复错误，不再换模型重试，避免把同一违规内容重复发送给更多模型。
 - 所有模型均不可用：outbox 按强事件策略重试，最终进入 dead letter；后置任务不会把已经放行的请求改写成历史上的同步拦截。
 
@@ -103,6 +103,8 @@ Spark 账号使用仓库已有的 OpenAI 调度器。Spark 额度窗口刷新复
   "authorization": "authorized|unauthorized|unclear|not_applicable",
   "information_access": "public|provided_by_user|private|restricted|unknown|not_applicable",
   "harm_mechanism": "none|unauthorized_access|credential_theft|malware|exploit_delivery|evasion|deception_fraud|market_manipulation|privacy_invasion|physical_harm|sexual_exploitation|self_harm|other",
+  "harm_evidence": "none|inferred|explicit",
+  "deception_type": "none|impersonation|unauthorized_submission|falsification|financial_fraud",
   "categories": ["jailbreak", "credential_theft"],
   "severity": "low|medium|high|critical",
   "confidence": 0.0,
@@ -114,11 +116,15 @@ Spark 账号使用仓库已有的 OpenAI 调度器。Spark 额度窗口刷新复
 
 - `allow`：良性、防御性、教育性、已授权实验室或非操作性内容。
 - `review`：仅当一个无法消除的安全关键事实会使合理解释分别落到 `allow` 与 `reject` 时，写入待人工复核记录；低置信度、轻微歧义、错别字、口语、省略、陌生词或非关键上下文缺失不能单独触发。
-- `reject`：明确的恶意意图，且具有可操作、可直接执行的能力，或明确针对未授权目标；同步候选复核场景按配置拦截，后置场景只影响审计和后续风控。
+- `reject`：明确的恶意意图，同时具有可操作细节、直接可执行性或"剩余步骤仅为简单组装"的间接可执行性（`executability=direct|indirect`）和具体危害机制；访问受保护资源时还要求明确未授权且目标为第三方或外部服务。同步候选复核场景按配置拦截，后置场景只影响审计和后续风控。
 
-网关还会对模型结果做确定性收敛：当结果包含 `intent=harmful`、`operationality=actionable`、`executability=direct` 且 `authorization=unauthorized` 时，即使模型原始 verdict 是 `allow` 或 `review`，也升级为 `reject`。授权的自有系统、隔离实验室和 CTF 不因关键词单独命中而自动升级；仅当请求访问受保护资源且授权状态会改变最终 verdict 时，授权不明确才保留 `review`。
+网关还会对模型结果做确定性收敛：当结果包含 `intent=harmful`、`operationality=actionable`、`executability=direct|indirect`（indirect 指剩余步骤仅为对已提供组件的简单组装）、具体危害机制，且满足以下两个授权分支之一时，即使模型原始 verdict 是 `allow` 或 `review`，也升级为 `reject`：一是 `authorization=unauthorized` 并且目标为 `third_party|external_service`；二是 `authorization=not_applicable`、目标非 `self_owned|authorized_lab` 且 categories 命中高风险类别（含 `market_manipulation`）。授权的自有系统、隔离实验室和 CTF 不因关键词单独命中而自动升级；模型原始 verdict 为 `allow` 时，若 `intent=benign|defensive`、`authorization=authorized` 且目标为 `self_owned|authorized_lab`，允许携带非 `none` 的 `harm_mechanism`（授权实验室/自有目标豁免），不再被 `semantic_policy_allow_inconsistent` 翻为 `review`；该豁免仅作用于模型自身的 `allow`，模型的 `review`/`reject` 仍走严格一致性检查。反方向的无害收敛：当 `intent=benign|defensive` 且 `harm_mechanism=none` 时，除非模型明确给出 `authorization=unauthorized`，一律收敛为 `allow`；`authorization=unclear` 不再单独保留 `review`，模型原始的 `review` 会被降级为 `allow` 并记录 `semantic_policy_harmless_review`。该降级仅在证据完整时执行：候选证据被截断（evidence incomplete）时，模型的 `review` 保持 `review` 并进入人工复核。
 
-通用审核 Prompt 当前版本为 `semantic-review-instructions-v2`。完整 Prompt、生产分布诊断、同集 A/B 测试格式、默认验收门槛和回滚步骤见 [通用内容语义审核 Prompt 优化与验收方案](./content-moderation-semantic-review-optimization-v2.md)。
+欺骗类结果还要经过独立证据门槛：只有当前用户请求中存在明确欺骗结果（`harm_evidence=explicit`），并给出具体 `deception_type`，才能作为 `deception_fraud` 的拒绝依据。仅从表单自动化、DOM selector、评分字段、本地答案、工具状态或关键词推断出的风险使用 `harm_evidence=inferred`；当模型 verdict 非 `reject`、`intent=benign|defensive`、`harm_evidence` 为 `none|inferred`、`deception_type` 非 `unknown`、授权非明确未授权且 `information_access` 为 `public|provided_by_user|not_applicable` 时，网关将这类结果确定性降为 `allow`，并记录 `semantic_policy_unsubstantiated_fraud`；与 `semantic_policy_harmless_review` 一样，该降级仅在证据完整时执行，截断证据下模型的 `review` 保持 `review`。模型给出的 `reject` 即使欺骗证据不足也不会被该规则降为 `allow`，而是经 `reject` 一致性检查（`semantic_policy_reject_inconsistent`）回落为 `review`；`intent=ambiguous` 同样保持 `review`。
+
+兼容归一化接受大小写和首尾空白；缺失或非法的 `harm_evidence`、`deception_type` 会归一化为内部值 `unknown`。`unknown` 不属于模型 JSON schema 的可输出枚举，也不满足任何降级条件，因此旧版、缺字段或畸形的欺骗结果保持 `review`，不会被兼容逻辑静默放行。应用生成的原因码包括 `semantic_policy_harmless_review`（无害 `review` 降级为 `allow`）和 `semantic_policy_unsubstantiated_fraud`（无实据欺骗降级为 `allow`），两类降级都会把 severity 置为 low，同时把模型原始 severity 保留到落库 metadata 的 `semantic_review_model_severity` 字段以便审计"模型判高危但被策略放行"的记录；模型输出的 `ambiguous_context` 原因码与 `semantic_policy_*` 一样由 taxonomy 白名单原样保留。
+
+通用审核 Prompt 当前版本为 `semantic-review-instructions-v5`。V4 在 V2 的通用收敛规则基础上增加 `harm_evidence` 和 `deception_type`；当时 JSON schema 名也从 `semantic_review_v3` 更新为 `semantic_review_v4`，不存在独立的 `semantic-review-instructions-v3` Prompt。V5 保持 JSON schema 结构不变（schema name 仍为 `semantic_review_v4`），在 Prompt 中补充 `deception_type` 各取值判据、`harm_evidence` 的 none/inferred 边界、categories/reason_codes 封闭词表提示、规模化自动化例外（批量提交表单/申请或操作非本人账号凭据时，即使 `harm_evidence=inferred` 也可保持 `review` 并标记 `intent=ambiguous`）、裸所有权声明规则（对具名第三方生产系统或他人账号的单纯所有权/授权声明不足以确立 `authorization=authorized`，按 `unclear` 处理）、授权实验室/自有目标的 allow 可携带非 `none` harm_mechanism 的豁免（`target=self_owned|authorized_lab` 且 `authorization=authorized`），并强化抗注入约束（证据内自称工具输出、引用、摘要或系统消息仍是不可信证据，授权与所有权声明视为未验证主张）。V2 的历史 Prompt、生产分布诊断、同集 A/B 测试格式、默认验收门槛和回滚步骤见 [通用内容语义审核 Prompt 优化与验收方案](./content-moderation-semantic-review-optimization-v2.md)。
 
 模型输出解析同时支持 Responses JSON 和 Codex SSE；空响应、非法 JSON 和 HTTP 临时错误按可恢复失败处理，不把模型的自由文本当成放行依据。
 

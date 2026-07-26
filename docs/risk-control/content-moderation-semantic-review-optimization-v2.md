@@ -1,5 +1,7 @@
 # 通用内容语义审核 Prompt 优化与验收方案
 
+> 历史文档：本文记录 `semantic-review-instructions-v2` 的设计与验收方案，不描述当前生产 Prompt。当前版本为 `semantic-review-instructions-v5`，包含九个评估维度；当前 JSON schema 名为 `semantic_review_v4`。现行行为以 [内容审核语义复核设计](./content-moderation-semantic-review.md) 为准。
+
 ## 目标与约束
 
 本次只优化通用语义审核的判断顺序和 `review` 边界，不改变风险类型、`reject` 的必要条件、模型选择、路由策略或 JSON 输出结构。目标是在不提高正常内容误杀率、不明显增加违规漏审率的前提下，减少没有决策价值的人工复核。

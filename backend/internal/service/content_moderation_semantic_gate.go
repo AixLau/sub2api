@@ -402,9 +402,14 @@ func contentModerationSemanticGateMetadata(cfg *ContentModerationConfig, content
 	metadata["semantic_review_authorization"] = result.Authorization
 	metadata["semantic_review_information_access"] = result.InformationAccess
 	metadata["semantic_review_harm_mechanism"] = result.HarmMechanism
+	metadata["semantic_review_harm_evidence"] = result.HarmEvidence
+	metadata["semantic_review_deception_type"] = result.DeceptionType
 	metadata["semantic_review_categories"] = result.Categories
 	metadata["semantic_review_confidence"] = result.Confidence
 	metadata["semantic_review_severity"] = result.Severity
+	if result.ModelSeverity != "" {
+		metadata["semantic_review_model_severity"] = result.ModelSeverity
+	}
 	metadata["semantic_review_operationality"] = result.Operationality
 	metadata["semantic_review_executability"] = result.Executability
 	metadata["semantic_review_reason_codes"] = result.ReasonCodes
