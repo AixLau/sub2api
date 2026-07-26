@@ -176,7 +176,8 @@ const formatTokens = (t: number) => {
   if (t >= 1_000_000_000) return `${(t / 1_000_000_000).toFixed(2)}B`
   if (t >= 1_000_000) return `${(t / 1_000_000).toFixed(1)}M`
   if (t >= 1000) return `${(t / 1000).toFixed(1)}K`
-  return t.toString()
+  // NumberTicker 动画中间帧会传入非整数,取整避免闪出长小数
+  return Math.round(t).toString()
 }
 const formatDuration = (ms: number) => ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms.toFixed(0)}ms`
 </script>

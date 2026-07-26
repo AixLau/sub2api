@@ -29,7 +29,7 @@
 |---|---|---|
 | `BorderBeam` | `size=200` · `duration=12`(s) · `delay=0` · `borderWidth=1.5` · `colorFrom` · `colorTo` | 沿边框环游的光束。**父容器需 `relative` + 圆角**;通过 mask 裁剪到边框环,依赖 `offset-path: rect()`(不支持的浏览器自动隐藏) |
 | `CardSpotlight` | `gradientSize=280` · `gradientColor?` | 鼠标跟随径向高光的包装容器(有默认插槽),hover 淡入;触屏无副作用 |
-| `ScratchToReveal` | `coverColor='#cbd5e1'` · `coverText?` · `threshold=0.5` · `radius=24`;emit `complete` | 刮刮乐:canvas 覆盖层拖动擦除,刮开面积达阈值后淡出并触发 `complete`;无 canvas / reduced-motion 时内容直接可见并立即 `complete` |
+| `ScratchToReveal` | `coverColor?`(缺省随亮/暗色自动) · `coverText?` · `threshold=0.5` · `radius=24`;emit `complete` | 刮刮乐:canvas 覆盖层拖动擦除,刮开面积达阈值后淡出并触发 `complete`;键盘 Enter/Space 或双击可直接揭示(可访问性);无 canvas / reduced-motion 时内容直接可见并立即 `complete` |
 
 ### 背景层(absolute 铺满父容器,父容器需 `relative`,无插槽)
 

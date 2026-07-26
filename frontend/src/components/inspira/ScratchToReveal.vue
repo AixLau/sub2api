@@ -6,11 +6,17 @@
       ref="canvasRef"
       class="scratch-cover absolute inset-0 z-10 h-full w-full cursor-pointer rounded-[inherit]"
       :class="{ 'scratch-cover--revealed': revealed }"
+      tabindex="0"
+      role="button"
+      :aria-label="coverText || 'Reveal'"
       @pointerdown="onPointerDown"
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
       @pointercancel="onPointerUp"
       @pointerleave="onPointerUp"
+      @dblclick="reveal"
+      @keydown.enter.prevent="reveal"
+      @keydown.space.prevent="reveal"
       @transitionend="onCoverTransitionEnd"
     ></canvas>
   </div>
@@ -31,7 +37,8 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  coverColor: '#cbd5e1',
+  // 缺省时按亮/暗色模式自动取值（见 drawCover）
+  coverColor: '',
   threshold: 0.5,
   radius: 24
 })
@@ -49,6 +56,7 @@ const revealed = ref(false)
 let ctx: CanvasRenderingContext2D | null = null
 let resizeObserver: ResizeObserver | null = null
 let scratching = false
+let hasScratched = false
 let completed = false
 let dpr = 1
 let lastX = 0
@@ -68,6 +76,14 @@ function prefersReducedMotion(): boolean {
   }
 }
 
+function isDarkMode(): boolean {
+  try {
+    return typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+  } catch {
+    return false
+  }
+}
+
 function drawCover() {
   const canvas = canvasRef.value
   const container = containerRef.value
@@ -77,11 +93,12 @@ function drawCover() {
   const height = Math.max(1, container.clientHeight)
   canvas.width = Math.floor(width * dpr)
   canvas.height = Math.floor(height * dpr)
+  const dark = isDarkMode()
   ctx.globalCompositeOperation = 'source-over'
-  ctx.fillStyle = props.coverColor
+  ctx.fillStyle = props.coverColor || (dark ? '#334155' : '#cbd5e1')
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   if (props.coverText) {
-    ctx.fillStyle = 'rgba(71, 85, 105, 0.9)'
+    ctx.fillStyle = dark ? 'rgba(226, 232, 240, 0.9)' : 'rgba(71, 85, 105, 0.9)'
     ctx.font = `600 ${Math.round(14 * dpr)}px system-ui, sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
@@ -150,6 +167,7 @@ function onCoverTransitionEnd() {
 function onPointerDown(event: PointerEvent) {
   if (completed) return
   scratching = true
+  hasScratched = true
   try {
     (event.target as HTMLElement | null)?.setPointerCapture?.(event.pointerId)
   } catch {
@@ -202,7 +220,13 @@ onMounted(async () => {
   drawCover()
   if (typeof ResizeObserver === 'function' && containerRef.value) {
     resizeObserver = new ResizeObserver(() => {
-      if (!completed) drawCover()
+      if (completed) return
+      // 重画会清掉已刮进度；已经开刮时尺寸变化直接揭示,避免进度归零的挫败感
+      if (hasScratched) {
+        reveal()
+      } else {
+        drawCover()
+      }
     })
     resizeObserver.observe(containerRef.value)
   }

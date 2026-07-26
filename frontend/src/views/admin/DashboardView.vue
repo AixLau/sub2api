@@ -461,7 +461,8 @@ const formatTokens = (value: number | undefined): string => {
   } else if (value >= 1_000) {
     return `${(value / 1_000).toFixed(2)}K`
   }
-  return value.toLocaleString()
+  // NumberTicker 动画中间帧会传入非整数,取整避免闪出长小数
+  return Math.round(value).toLocaleString()
 }
 
 const toFiniteNumber = (value: unknown): number => {
@@ -470,7 +471,7 @@ const toFiniteNumber = (value: unknown): number => {
 }
 
 const formatNumber = (value: number | null | undefined): string => {
-  return toFiniteNumber(value).toLocaleString()
+  return Math.round(toFiniteNumber(value)).toLocaleString()
 }
 
 const formatCost = (value: number | null | undefined): string => {

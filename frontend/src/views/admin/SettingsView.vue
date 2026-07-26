@@ -7810,7 +7810,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch, nextTick } from "vue";
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } from "vue";
 import { useEventListener } from "@vueuse/core";
 import { useI18n } from "vue-i18n";
 import { adminAPI } from "@/api";
@@ -7983,6 +7983,23 @@ useEventListener(
   updateSettingsTabIndicator,
   { passive: true },
 );
+
+// 容器宽度还会因侧边栏折叠/字体异步加载而变化(无 window resize 事件),
+// 用 ResizeObserver 观察 tabs 容器兜底。
+let settingsTabsResizeObserver: ResizeObserver | null = null;
+
+onMounted(() => {
+  if (typeof ResizeObserver !== "function") return;
+  const tabs = document.querySelector(".settings-tabs");
+  if (!tabs) return;
+  settingsTabsResizeObserver = new ResizeObserver(() => updateSettingsTabIndicator());
+  settingsTabsResizeObserver.observe(tabs);
+});
+
+onBeforeUnmount(() => {
+  settingsTabsResizeObserver?.disconnect();
+  settingsTabsResizeObserver = null;
+});
 
 function focusSettingsTab(tab: SettingsTab): void {
   window.requestAnimationFrame(() => {

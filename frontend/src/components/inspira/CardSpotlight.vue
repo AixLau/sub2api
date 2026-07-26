@@ -3,8 +3,8 @@
     ref="cardRef"
     class="relative overflow-hidden"
     @mousemove="onMouseMove"
-    @mouseenter="visible = true"
-    @mouseleave="visible = false"
+    @mouseenter="onMouseEnter"
+    @mouseleave="onMouseLeave"
   >
     <div
       class="spotlight-layer"
@@ -38,9 +38,24 @@ const visible = ref(false)
 const x = ref(0)
 const y = ref(0)
 
+// 每次 mousemove 都读 getBoundingClientRect 会触发布局读取,
+// 在 mouseenter 时缓存一次(悬停期间滚动导致的偏差可接受)。
+let cachedRect: DOMRect | null = null
+
+function onMouseEnter() {
+  visible.value = true
+  cachedRect = cardRef.value?.getBoundingClientRect() ?? null
+}
+
+function onMouseLeave() {
+  visible.value = false
+  cachedRect = null
+}
+
 function onMouseMove(event: MouseEvent) {
-  const rect = cardRef.value?.getBoundingClientRect()
+  const rect = cachedRect ?? cardRef.value?.getBoundingClientRect() ?? null
   if (!rect) return
+  cachedRect = rect
   x.value = event.clientX - rect.left
   y.value = event.clientY - rect.top
 }

@@ -171,14 +171,26 @@ const isSuccess = computed(() => {
   return isSuccessStatus(order.value?.status)
 })
 
-// 支付成功首次展示时撒彩带（仅触发一次）
+// 支付成功撒彩带：每个订单在本会话内只庆祝一次
+// （刷新页面/从订单历史再次进入成功页不重复触发；storage 不可用时退化为每次挂载一次）
 let celebrationFired = false
+function celebrateOnce() {
+  const o = order.value as Record<string, unknown> | null
+  const key = `payment-celebrated:${String(o?.out_trade_no ?? o?.id ?? 'order')}`
+  try {
+    if (sessionStorage.getItem(key)) return
+    sessionStorage.setItem(key, '1')
+  } catch {
+    /* ignore */
+  }
+  fireCelebration()
+}
 watch(
   isSuccess,
   (ok) => {
     if (ok && !celebrationFired) {
       celebrationFired = true
-      fireCelebration()
+      celebrateOnce()
     }
   },
   { immediate: true }

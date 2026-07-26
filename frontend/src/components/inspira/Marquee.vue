@@ -63,6 +63,12 @@ withDefaults(defineProps<Props>(), {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* 停止滚动后,去掉边缘遮罩并允许横向滚动,保证排不下的内容仍可达 */
+  .marquee {
+    overflow-x: auto;
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
   .marquee-track {
     animation: none;
   }

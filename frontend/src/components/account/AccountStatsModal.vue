@@ -744,7 +744,8 @@ const formatNumber = (value: number): string => {
   } else if (value >= 1_000) {
     return (value / 1_000).toFixed(2) + 'K'
   }
-  return value.toLocaleString()
+  // NumberTicker 动画中间帧会传入非整数,取整避免闪出小数
+  return Math.round(value).toLocaleString()
 }
 
 const formatTokens = (value: number): string => {
@@ -755,7 +756,7 @@ const formatTokens = (value: number): string => {
   } else if (value >= 1_000) {
     return `${(value / 1_000).toFixed(2)}K`
   }
-  return value.toLocaleString()
+  return Math.round(value).toLocaleString()
 }
 
 const formatDuration = (ms: number): string => {

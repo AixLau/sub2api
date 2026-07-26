@@ -159,6 +159,11 @@ function processFile(file: File) {
 
   const reader = new FileReader()
   if (props.mode === 'svg') {
+    // The file input enforces accept=".svg", but drag-and-drop bypasses it.
+    if (file.type !== 'image/svg+xml' && !file.name.toLowerCase().endsWith('.svg')) {
+      error.value = 'Please select an SVG file'
+      return
+    }
     reader.onload = (e) => {
       const text = e.target?.result as string
       if (text) emit('update:modelValue', text.trim())

@@ -1,6 +1,7 @@
 <template>
   <component
     :is="as"
+    :type="as === 'button' ? 'button' : undefined"
     class="relative inline-flex items-center justify-center overflow-hidden whitespace-nowrap"
     :style="styleVars"
   >
