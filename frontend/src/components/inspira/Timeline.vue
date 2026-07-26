@@ -67,6 +67,8 @@
 </template>
 
 <script setup lang="ts">
+import { usePrefersReducedMotion } from '@/composables/usePrefersReducedMotion'
+
 export interface TimelineItem {
   time: string
   title: string
@@ -88,10 +90,7 @@ withDefaults(defineProps<Props>(), {
 /** stagger 叠加的最大项数，之后统一用最大延迟，避免长列表尾部等待过久 */
 const MAX_STAGGER_ITEMS = 8
 
-const prefersReducedMotion =
-  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-    ? (window.matchMedia('(prefers-reduced-motion: reduce)')?.matches ?? false)
-    : false
+const { prefersReducedMotion } = usePrefersReducedMotion()
 
 type Tone = TimelineItem['tone']
 

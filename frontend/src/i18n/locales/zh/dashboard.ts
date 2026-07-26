@@ -674,6 +674,13 @@ export default {
     passwordTooShort: '密码至少需要 8 个字符',
     passwordChangeSuccess: '密码修改成功',
     passwordChangeFailed: '密码修改失败',
+    motion: {
+      title: '动效偏好',
+      description: '独立于设备设置调整本站的界面动画。',
+      reduceMotion: '减弱界面动效',
+      reduceMotionHint: '在此浏览器中停止装饰动画，并改用即时切换。',
+      systemPreferenceActive: '设备已启用减弱动态效果；即使关闭此开关，本站仍会遵循系统偏好。'
+    },
     // TOTP 2FA
     totp: {
       title: '双因素认证 (2FA)',

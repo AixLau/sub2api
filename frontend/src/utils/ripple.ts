@@ -6,6 +6,8 @@
  * 动画结束后移除节点。样式见 src/style.css 中的 .ripple-wave / @keyframes。
  */
 
+import { isReducedMotionPreferred } from '@/composables/usePrefersReducedMotion'
+
 const RIPPLE_CLASS = 'ripple-wave'
 const RIPPLE_DURATION_MS = 450
 /** animationend 不触发(如动画被禁用)时的兜底移除延迟,略大于动画时长 */
@@ -53,7 +55,7 @@ function spawnRipple(btn: HTMLElement, clientX: number, clientY: number): void {
  * 安装全局涟漪监听。返回卸载函数(便于测试与 HMR)。
  *
  * - SSR / 无 document 环境:直接 no-op
- * - prefers-reduced-motion: reduce:不挂监听(matchMedia 缺失时视作未开启)
+ * - 系统或应用内开启 reduced-motion 时点击直接 no-op
  * - disabled / aria-disabled 按钮不产生涟漪
  */
 export function installRipple(): () => void {
@@ -61,15 +63,8 @@ export function installRipple(): () => void {
     return () => {}
   }
 
-  const reducedMotion =
-    typeof window.matchMedia === 'function'
-      ? window.matchMedia('(prefers-reduced-motion: reduce)')
-      : null
-  if (reducedMotion?.matches) {
-    return () => {}
-  }
-
   const onClick = (event: MouseEvent): void => {
+    if (isReducedMotionPreferred()) return
     const target = event.target
     if (!(target instanceof Element)) return
     const btn = target.closest<HTMLElement>('.btn')

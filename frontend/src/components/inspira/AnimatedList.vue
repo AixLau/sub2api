@@ -26,6 +26,8 @@
 </template>
 
 <script setup lang="ts">
+import { usePrefersReducedMotion } from '@/composables/usePrefersReducedMotion'
+
 interface Props {
   /** 渲染的根元素标签 */
   tag?: string
@@ -41,13 +43,10 @@ const props = withDefaults(defineProps<Props>(), {
 /** stagger 叠加的最大项数，之后统一用最大延迟，避免长列表尾部等待过久 */
 const MAX_STAGGER_ITEMS = 8
 
-const prefersReducedMotion =
-  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-    ? (window.matchMedia('(prefers-reduced-motion: reduce)')?.matches ?? false)
-    : false
+const { prefersReducedMotion } = usePrefersReducedMotion()
 
 function onEnter(el: Element) {
-  if (prefersReducedMotion) return
+  if (prefersReducedMotion.value) return
   const parent = el.parentElement
   const index = parent ? Array.prototype.indexOf.call(parent.children, el) : 0
   const capped = Math.min(Math.max(index, 0), MAX_STAGGER_ITEMS - 1)

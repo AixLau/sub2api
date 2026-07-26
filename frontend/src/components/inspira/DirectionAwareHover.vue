@@ -12,6 +12,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
+import { isReducedMotionPreferred } from '@/composables/usePrefersReducedMotion'
 
 /**
  * DirectionAwareHover — 方向感知悬停高光
@@ -49,7 +50,6 @@ function safeMatchMedia(query: string): boolean {
   return window.matchMedia(query)?.matches ?? false
 }
 
-const prefersReducedMotion = () => safeMatchMedia('(prefers-reduced-motion: reduce)')
 /** 触屏 / 无 hover 能力设备:整个效果不生效 */
 const isTouchLike = () => safeMatchMedia('(hover: none)')
 
@@ -80,7 +80,7 @@ function cancelPendingFrame() {
 function onMouseEnter(event: MouseEvent) {
   if (isTouchLike()) return
 
-  if (prefersReducedMotion()) {
+  if (isReducedMotionPreferred()) {
     fadeOnly.value = true
     visible.value = true
     return
@@ -114,7 +114,7 @@ function onMouseLeave(event: MouseEvent) {
   if (isTouchLike()) return
   cancelPendingFrame()
 
-  if (fadeOnly.value || prefersReducedMotion()) {
+  if (fadeOnly.value || isReducedMotionPreferred()) {
     visible.value = false
     return
   }

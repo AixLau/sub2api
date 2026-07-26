@@ -50,7 +50,8 @@
  * 性能:mouseenter 时缓存一次 getBoundingClientRect,
  * mousemove 只做减法,不触发布局读取(与 CardSpotlight 同策略)。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { usePrefersReducedMotion } from '@/composables/usePrefersReducedMotion'
 
 interface Props {
   /** 放大倍数 */
@@ -69,9 +70,9 @@ function matchesMedia(query: string): boolean {
   return window.matchMedia(query).matches
 }
 
-// 挂载时判定一次即可:输入方式与动效偏好在会话内几乎不变
-const enabled =
-  !matchesMedia('(pointer: coarse)') && !matchesMedia('(prefers-reduced-motion: reduce)')
+const { prefersReducedMotion } = usePrefersReducedMotion()
+const coarsePointer = matchesMedia('(pointer: coarse)')
+const enabled = computed(() => !coarsePointer && !prefersReducedMotion.value)
 
 const containerRef = ref<HTMLDivElement | null>(null)
 const active = ref(false)
@@ -88,19 +89,19 @@ function updatePosition(event: MouseEvent) {
 }
 
 function onMouseEnter(event: MouseEvent) {
-  if (!enabled) return
+  if (!enabled.value) return
   cachedRect = containerRef.value?.getBoundingClientRect() ?? null
   updatePosition(event)
   active.value = true
 }
 
 function onMouseMove(event: MouseEvent) {
-  if (!enabled) return
+  if (!enabled.value) return
   updatePosition(event)
 }
 
 function onMouseLeave() {
-  if (!enabled) return
+  if (!enabled.value) return
   active.value = false
   cachedRect = null
 }
@@ -111,6 +112,13 @@ const rootStyle = computed(() => ({
   '--lens-r': `${props.size / 2}px`,
   '--lens-zoom': String(props.zoom)
 }))
+
+watch(enabled, (isEnabled) => {
+  if (!isEnabled) {
+    active.value = false
+    cachedRect = null
+  }
+})
 </script>
 
 <style scoped>

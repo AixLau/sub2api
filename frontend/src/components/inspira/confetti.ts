@@ -6,21 +6,10 @@
  * - jsdom / canvas 不可用时静默失败，不影响业务流程
  */
 import type confetti from 'canvas-confetti'
+import { isReducedMotionPreferred } from '@/composables/usePrefersReducedMotion'
 
 /** 项目主题色系 */
 const THEME_COLORS = ['#14b8a6', '#06b6d4', '#3b82f6', '#f59e0b']
-
-/** 检测是否偏好减少动效；matchMedia 不存在（jsdom）时视为不偏好 */
-function prefersReducedMotion(): boolean {
-  try {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-      return false
-    }
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches === true
-  } catch {
-    return false
-  }
-}
 
 type ConfettiFn = typeof confetti
 
@@ -59,7 +48,7 @@ function safeFire(fn: ConfettiFn, options?: confetti.Options): void {
  */
 export function fireConfetti(options?: confetti.Options): void {
   try {
-    if (prefersReducedMotion()) return
+    if (isReducedMotionPreferred()) return
     void loadConfetti().then((fn) => {
       if (fn) safeFire(fn, options)
     })
@@ -74,7 +63,7 @@ export function fireConfetti(options?: confetti.Options): void {
  */
 export function fireCelebration(): void {
   try {
-    if (prefersReducedMotion()) return
+    if (isReducedMotionPreferred()) return
     void loadConfetti().then((fn) => {
       if (!fn) return
 

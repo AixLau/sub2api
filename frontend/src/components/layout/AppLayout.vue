@@ -16,7 +16,11 @@
 
       <!-- Main Content -->
       <main class="p-4 md:p-6 lg:p-8">
-        <slot />
+        <Transition name="console-page" :css="!prefersReducedMotion" appear>
+          <div :key="route.path">
+            <slot />
+          </div>
+        </Transition>
       </main>
     </div>
   </div>
@@ -25,15 +29,19 @@
 <script setup lang="ts">
 import '@/styles/onboarding.css'
 import { computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAppStore } from '@/stores'
 import { useAuthStore } from '@/stores/auth'
 import { useOnboardingTour } from '@/composables/useOnboardingTour'
+import { usePrefersReducedMotion } from '@/composables/usePrefersReducedMotion'
 import { useOnboardingStore } from '@/stores/onboarding'
 import AppSidebar from './AppSidebar.vue'
 import AppHeader from './AppHeader.vue'
 
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const route = useRoute()
+const { prefersReducedMotion } = usePrefersReducedMotion()
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
 const isAdmin = computed(() => authStore.user?.role === 'admin')
 
@@ -50,3 +58,27 @@ onMounted(() => {
 
 defineExpose({ replayTour })
 </script>
+
+<style scoped>
+.console-page-enter-active {
+  transition:
+    opacity 150ms ease-out,
+    transform 150ms ease-out;
+}
+
+.console-page-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .console-page-enter-active {
+    transition: none;
+  }
+
+  .console-page-enter-from {
+    opacity: 1;
+    transform: none;
+  }
+}
+</style>

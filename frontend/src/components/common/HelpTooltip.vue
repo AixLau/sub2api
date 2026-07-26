@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, useTemplateRef, nextTick } from 'vue'
+import { usePrefersReducedMotion } from '@/composables/usePrefersReducedMotion'
 
 const props = withDefaults(defineProps<{
   content?: string
@@ -10,10 +11,7 @@ const props = withDefaults(defineProps<{
   widthClass: 'w-64',
 })
 
-const prefersReducedMotion =
-  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-    ? (window.matchMedia('(prefers-reduced-motion: reduce)')?.matches ?? false)
-    : false
+const { prefersReducedMotion } = usePrefersReducedMotion()
 
 const show = ref(false)
 const triggerRef = useTemplateRef<HTMLElement>('trigger')

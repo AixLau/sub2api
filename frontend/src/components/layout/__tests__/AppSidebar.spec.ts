@@ -42,6 +42,30 @@ describe('AppSidebar scroll position persistence', () => {
   })
 })
 
+describe('AppSidebar active indicator', () => {
+  it('measures the active link and animates a vertical indicator', () => {
+    expect(componentSource).toContain('class="sidebar-active-indicator"')
+    expect(componentSource).toContain("querySelector<HTMLElement>('.sidebar-link-active')")
+    expect(componentSource).toContain('activeItem.offsetTop + 4')
+    expect(componentSource).toContain('activeItem.offsetHeight - 8')
+    expect(componentSource).toContain('transform 250ms')
+    expect(componentSource).toContain('previousIndicatorTop')
+    expect(componentSource).toContain('previousIndicatorHeight')
+  })
+
+  it('remeasures after route, collapse, group, and container-size changes', () => {
+    expect(componentSource).toContain('() => route.path')
+    expect(componentSource).toContain('sidebarCollapsed,')
+    expect(componentSource).toContain('() => Array.from(expandedGroups.value)')
+    expect(componentSource).toContain('new ResizeObserver')
+  })
+
+  it('removes motion for reduced-motion users', () => {
+    expect(componentSource).toContain('@media (prefers-reduced-motion: reduce)')
+    expect(componentSource).toContain('transition: none;')
+  })
+})
+
 describe('AppSidebar header styles', () => {
   it('does not clip the version badge dropdown', () => {
     const sidebarHeaderBlockMatch = styleSource.match(/\.sidebar-header\s*\{[\s\S]*?\n {2}\}/)

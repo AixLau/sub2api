@@ -5,7 +5,8 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { usePrefersReducedMotion } from '@/composables/usePrefersReducedMotion'
 
 interface Props {
   squareSize?: number
@@ -37,6 +38,8 @@ let rows = 0
 let dpr = 1
 let opacities = new Float32Array(0)
 let lastTime = 0
+let intersecting = false
+const { prefersReducedMotion } = usePrefersReducedMotion()
 
 function hexToRgb(hex: string): string {
   const match = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex.trim())
@@ -45,18 +48,6 @@ function hexToRgb(hex: string): string {
 }
 
 const colorRgb = hexToRgb(props.color)
-
-function prefersReducedMotion(): boolean {
-  try {
-    return (
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    )
-  } catch {
-    return false
-  }
-}
 
 function setupGrid() {
   const container = containerRef.value
@@ -107,7 +98,7 @@ function tick(now: number) {
 
 function start() {
   if (running || !ctx) return
-  if (prefersReducedMotion() || typeof requestAnimationFrame !== 'function') return
+  if (prefersReducedMotion.value || typeof requestAnimationFrame !== 'function') return
   running = true
   lastTime = typeof performance !== 'undefined' ? performance.now() : 0
   rafId = requestAnimationFrame(tick)
@@ -143,13 +134,24 @@ onMounted(() => {
     intersectionObserver = new IntersectionObserver((entries) => {
       const entry = entries[0]
       if (entry && entry.isIntersecting) {
+        intersecting = true
         start()
       } else {
+        intersecting = false
         stop()
       }
     })
     intersectionObserver.observe(container)
   } else {
+    intersecting = true
+    start()
+  }
+})
+
+watch(prefersReducedMotion, (reduced) => {
+  if (reduced) {
+    stop()
+  } else if (intersecting) {
     start()
   }
 })

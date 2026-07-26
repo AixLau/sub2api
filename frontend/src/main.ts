@@ -7,6 +7,7 @@ import { useAppStore } from '@/stores/app'
 import { updateFavicon } from '@/utils/branding'
 import { isIOSDevice } from '@/utils/device'
 import { installRipple } from '@/utils/ripple'
+import { initializeMotionPreference } from '@/composables/usePrefersReducedMotion'
 import './style.css'
 
 function initIOSViewportZoomFix() {
@@ -34,6 +35,7 @@ function initThemeClass() {
 async function bootstrap() {
   // Apply theme class globally before app mount to keep all routes consistent.
   initThemeClass()
+  initializeMotionPreference()
   initIOSViewportZoomFix()
   installRipple()
 

@@ -23,7 +23,8 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { usePrefersReducedMotion } from '@/composables/usePrefersReducedMotion'
 
 interface Props {
   /** 覆盖层颜色 */
@@ -63,18 +64,7 @@ let lastX = 0
 let lastY = 0
 /** 采样节流：每擦除若干笔采样一次透明比例 */
 let strokesSinceSample = 0
-
-function prefersReducedMotion(): boolean {
-  try {
-    return (
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    )
-  } catch {
-    return false
-  }
-}
+const { prefersReducedMotion } = usePrefersReducedMotion()
 
 function isDarkMode(): boolean {
   try {
@@ -193,7 +183,7 @@ function onPointerUp() {
 }
 
 onMounted(async () => {
-  if (prefersReducedMotion()) {
+  if (prefersReducedMotion.value) {
     // 减少动效偏好：不覆盖，直接显示内容并视为已揭示
     coverActive.value = false
     reveal()
@@ -229,6 +219,13 @@ onMounted(async () => {
       }
     })
     resizeObserver.observe(containerRef.value)
+  }
+})
+
+watch(prefersReducedMotion, (reduced) => {
+  if (reduced && coverActive.value) {
+    coverActive.value = false
+    reveal()
   }
 })
 

@@ -285,6 +285,7 @@ import { useVirtualizer, observeElementRect as observeElementRectDefault } from 
 import { useI18n } from 'vue-i18n'
 import type { Column } from './types'
 import Icon from '@/components/icons/Icon.vue'
+import { isReducedMotionPreferred } from '@/composables/usePrefersReducedMotion'
 
 const { t } = useI18n()
 
@@ -874,10 +875,7 @@ const ROW_ENTRANCE_DURATION_MS = 240
 const ROW_ENTRANCE_WINDOW_MS =
   (ROW_ENTRANCE_MAX_ROWS - 1) * ROW_ENTRANCE_STAGGER_MS + ROW_ENTRANCE_DURATION_MS + 110
 
-const prefersReducedMotion = () =>
-  typeof window !== 'undefined'
-  && typeof window.matchMedia === 'function'
-  && (window.matchMedia('(prefers-reduced-motion: reduce)')?.matches ?? false)
+const prefersReducedMotion = () => isReducedMotionPreferred()
 
 // 初始即求值:挂载时已有数据的场景,首帧就带动画类,避免「先渲染再加类」的闪烁
 const rowEntranceActive = ref(

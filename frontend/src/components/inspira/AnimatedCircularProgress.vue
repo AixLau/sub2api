@@ -48,6 +48,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { usePrefersReducedMotion } from '@/composables/usePrefersReducedMotion'
 import NumberTicker from './NumberTicker.vue'
 
 interface Props {
@@ -89,22 +90,11 @@ const resolvedColor = computed(() => {
 /** Animated fraction 0..1 driven by rAF */
 const animatedFraction = ref(0)
 let rafId: number | null = null
+const { prefersReducedMotion } = usePrefersReducedMotion()
 
 const dashOffset = computed(
   () => circumference.value * (1 - animatedFraction.value)
 )
-
-function prefersReducedMotion(): boolean {
-  try {
-    return (
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    )
-  } catch {
-    return false
-  }
-}
 
 function stopAnimation() {
   if (rafId !== null && typeof cancelAnimationFrame === 'function') {
@@ -120,7 +110,7 @@ function animateTo(targetPercent: number) {
     typeof requestAnimationFrame === 'function' &&
     typeof performance !== 'undefined' &&
     props.duration > 0 &&
-    !prefersReducedMotion()
+    !prefersReducedMotion.value
   if (!canAnimate) {
     animatedFraction.value = target
     return
@@ -141,7 +131,9 @@ function animateTo(targetPercent: number) {
   rafId = requestAnimationFrame(step)
 }
 
-watch(() => props.value, animateTo, { immediate: true })
+watch([() => props.value, prefersReducedMotion], ([value]) => animateTo(value), {
+  immediate: true
+})
 
 onBeforeUnmount(stopAnimation)
 </script>

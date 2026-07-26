@@ -31,6 +31,13 @@
 
     <!-- Navigation -->
     <nav ref="sidebarNavRef" class="sidebar-nav scrollbar-hide">
+      <span
+        aria-hidden="true"
+        class="sidebar-active-indicator"
+        :class="{ 'sidebar-active-indicator-ready': indicatorReady && !prefersReducedMotion }"
+        :style="indicatorStyle"
+      ></span>
+
       <!-- Admin View: Admin menu first, then personal menu -->
       <template v-if="isAdmin">
         <!-- Admin Section -->
@@ -187,6 +194,11 @@
   </transition>
 </template>
 
+<script lang="ts">
+let previousIndicatorTop: number | null = null
+let previousIndicatorHeight = 0
+</script>
+
 <script setup lang="ts">
 import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -197,6 +209,7 @@ import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+import { usePrefersReducedMotion } from '@/composables/usePrefersReducedMotion'
 
 interface NavItem {
   path: string
@@ -243,12 +256,25 @@ const authStore = useAuthStore()
 const onboardingStore = useOnboardingStore()
 const adminSettingsStore = useAdminSettingsStore()
 const { canUseBatchImage, refreshBatchImageAccess } = useBatchImageAccess()
+const { prefersReducedMotion } = usePrefersReducedMotion()
 
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
 const mobileOpen = computed(() => appStore.mobileOpen)
 const isAdmin = computed(() => authStore.isAdmin)
 const sidebarNavRef = ref<HTMLElement | null>(null)
 const isDark = ref(document.documentElement.classList.contains('dark'))
+const indicatorTop = ref(0)
+const indicatorHeight = ref(0)
+const indicatorVisible = ref(false)
+const indicatorReady = ref(false)
+let indicatorFrame: number | null = null
+let navResizeObserver: ResizeObserver | null = null
+
+const indicatorStyle = computed(() => ({
+  height: `${indicatorHeight.value}px`,
+  opacity: indicatorVisible.value ? '1' : '0',
+  transform: `translate3d(0, ${indicatorTop.value}px, 0)`
+}))
 
 const homePath = computed(() => (isAdmin.value ? '/admin/dashboard' : '/dashboard'))
 
@@ -912,6 +938,53 @@ function handleGroupClick(item: NavItem) {
   }
 }
 
+function scheduleIndicatorMeasurement(animate = true) {
+  if (indicatorFrame !== null) {
+    cancelAnimationFrame(indicatorFrame)
+  }
+
+  void nextTick(() => {
+    indicatorFrame = requestAnimationFrame(() => {
+      indicatorFrame = null
+      const nav = sidebarNavRef.value
+      const activeItem = nav?.querySelector<HTMLElement>('.sidebar-link-active')
+
+      if (!nav || !activeItem || activeItem.offsetParent === null) {
+        indicatorVisible.value = false
+        return
+      }
+
+      const nextTop = activeItem.offsetTop + 4
+      const nextHeight = Math.max(activeItem.offsetHeight - 8, 16)
+
+      if (!animate) {
+        indicatorReady.value = false
+        if (previousIndicatorTop !== null && previousIndicatorTop !== nextTop) {
+          indicatorTop.value = previousIndicatorTop
+          indicatorHeight.value = previousIndicatorHeight || nextHeight
+          indicatorVisible.value = true
+          requestAnimationFrame(() => {
+            indicatorReady.value = true
+            indicatorTop.value = nextTop
+            indicatorHeight.value = nextHeight
+          })
+          return
+        }
+      }
+
+      indicatorTop.value = nextTop
+      indicatorHeight.value = nextHeight
+      indicatorVisible.value = true
+
+      if (!animate) {
+        requestAnimationFrame(() => {
+          indicatorReady.value = true
+        })
+      }
+    })
+  })
+}
+
 // Initialize theme
 const savedTheme = localStorage.getItem('theme')
 if (
@@ -933,6 +1006,18 @@ watch(
   { immediate: true }
 )
 
+watch(
+  [
+    () => route.path,
+    sidebarCollapsed,
+    () => Array.from(expandedGroups.value),
+    () => adminNavItems.value.length,
+    () => personalNavItems.value.length,
+    () => userNavItems.value.length
+  ],
+  () => scheduleIndicatorMeasurement()
+)
+
 onMounted(() => {
   void refreshBatchImageAccess()
   if (isAdmin.value) {
@@ -946,16 +1031,64 @@ onMounted(() => {
       }
     })
   }
+
+  scheduleIndicatorMeasurement(false)
+  if (typeof ResizeObserver !== 'undefined' && sidebarNavRef.value) {
+    navResizeObserver = new ResizeObserver(() => scheduleIndicatorMeasurement())
+    navResizeObserver.observe(sidebarNavRef.value)
+  }
 })
 
 onBeforeUnmount(() => {
   if (sidebarNavRef.value) {
     appStore.sidebarScrollTop = sidebarNavRef.value.scrollTop
   }
+  if (indicatorFrame !== null) {
+    cancelAnimationFrame(indicatorFrame)
+  }
+  if (indicatorVisible.value) {
+    previousIndicatorTop = indicatorTop.value
+    previousIndicatorHeight = indicatorHeight.value
+  }
+  navResizeObserver?.disconnect()
 })
 </script>
 
 <style scoped>
+.sidebar-nav {
+  position: relative;
+}
+
+.sidebar-active-indicator {
+  position: absolute;
+  z-index: 1;
+  left: 0.25rem;
+  width: 3px;
+  border-radius: 9999px;
+  background: rgb(13 148 136);
+  box-shadow: 0 0 8px rgb(13 148 136 / 35%);
+  pointer-events: none;
+  will-change: transform, height, opacity;
+}
+
+.sidebar-active-indicator-ready {
+  transition:
+    transform 250ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 200ms ease,
+    opacity 120ms ease;
+}
+
+.dark .sidebar-active-indicator {
+  background: rgb(45 212 191);
+  box-shadow: 0 0 10px rgb(45 212 191 / 40%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-active-indicator-ready {
+    transition: none;
+  }
+}
+
 .sidebar-logo {
   flex: 0 0 2.25rem;
   min-width: 2.25rem;

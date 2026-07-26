@@ -4,6 +4,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { usePrefersReducedMotion } from '@/composables/usePrefersReducedMotion'
 
 interface Props {
   value: number
@@ -25,18 +26,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const displayed = ref(0)
 let rafId: number | null = null
-
-function prefersReducedMotion(): boolean {
-  try {
-    return (
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    )
-  } catch {
-    return false
-  }
-}
+const { prefersReducedMotion } = usePrefersReducedMotion()
 
 const displayText = computed(() => {
   const body = props.formatFn
@@ -61,7 +51,7 @@ function animateTo(target: number) {
     typeof requestAnimationFrame === 'function' &&
     typeof performance !== 'undefined' &&
     props.duration > 0 &&
-    !prefersReducedMotion()
+    !prefersReducedMotion.value
   if (!canAnimate) {
     displayed.value = target
     return
@@ -82,7 +72,9 @@ function animateTo(target: number) {
   rafId = requestAnimationFrame(step)
 }
 
-watch(() => props.value, animateTo, { immediate: true })
+watch([() => props.value, prefersReducedMotion], ([value]) => animateTo(value), {
+  immediate: true
+})
 
 onBeforeUnmount(stopAnimation)
 </script>

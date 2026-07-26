@@ -669,6 +669,13 @@ export default {
     passwordTooShort: 'Password must be at least 8 characters long',
     passwordChangeSuccess: 'Password changed successfully',
     passwordChangeFailed: 'Failed to change password',
+    motion: {
+      title: 'Motion Preferences',
+      description: 'Adjust interface animation independently from your device settings.',
+      reduceMotion: 'Reduce interface motion',
+      reduceMotionHint: 'Stops decorative animation and uses immediate transitions in this browser.',
+      systemPreferenceActive: 'Your device already requests reduced motion. Interface motion remains reduced even when this switch is off.'
+    },
     // TOTP 2FA
     totp: {
       title: 'Two-Factor Authentication (2FA)',
