@@ -237,6 +237,18 @@ describe('useAuthStore', () => {
   })
 
   describe('pending auth session', () => {
+    it('persists a server-issued welcome reward after registration', async () => {
+      const store = useAuthStore()
+      mockRegister.mockResolvedValue({ ...fakeAuthResponse, welcome_reward: 4 })
+
+      await store.register({ email: 'new@example.com', password: 'secret-123' })
+
+      expect(JSON.parse(localStorage.getItem('pending_welcome_reward') || 'null')).toEqual({
+        amount: 4,
+        user_id: fakeUser.id
+      })
+    })
+
     it('persists and clears pending auth session state', () => {
       const store = useAuthStore()
 

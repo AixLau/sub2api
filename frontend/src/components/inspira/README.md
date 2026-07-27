@@ -31,7 +31,7 @@
 | `CardSpotlight` | `gradientSize=280` · `gradientColor?` | 鼠标跟随径向高光的包装容器(有默认插槽),hover 淡入;触屏无副作用 |
 | `DirectionAwareHover` | `color?`(默认 teal 淡色) | 方向感知悬停:高光层从鼠标进入方向滑入、向离开方向滑出(hover-dir 象限判定);触屏不生效,reduced-motion 退化为淡入淡出 |
 | `Lens` | `zoom=1.8` · `size=140`(镜面直径 px) | 圆形放大镜跟随鼠标(clip-path circle + 以鼠标点为 origin 的 scale);触屏与 reduced-motion 下不启用 |
-| `ScratchToReveal` | `coverColor?`(缺省随亮/暗色自动) · `coverText?` · `threshold=0.5` · `radius=24`;emit `complete` | 刮刮乐:canvas 覆盖层拖动擦除,刮开面积达阈值后淡出并触发 `complete`;键盘 Enter/Space 或双击可直接揭示(可访问性);无 canvas / reduced-motion 时内容直接可见并立即 `complete` |
+| `ScratchToReveal` | `coverColor?`(缺省随亮/暗色自动) · `coverImage?`(失败时回退颜色) · `coverText?` · `threshold=0.5` · `radius=24`;emit `complete` | 刮刮乐:canvas 覆盖层支持图片换肤并可拖动擦除,刮开面积达阈值后淡出并触发 `complete`;键盘 Enter/Space 或双击可直接揭示(可访问性);无 canvas / reduced-motion 时内容直接可见并立即 `complete` |
 
 ### 背景层(absolute 铺满父容器,父容器需 `relative`,无插槽)
 

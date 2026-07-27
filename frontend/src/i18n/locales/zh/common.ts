@@ -453,5 +453,16 @@ export default {
     adminApiKeyForbidden: '管理 API Key 无法执行此操作，请使用已通过二次验证的管理员会话。'
   },
 
+  welcomeReward: {
+    title: '注册成功，送你一份见面礼',
+    scratchHint: '用鼠标或手指刮开蓝色区域，看看你的新用户奖励。',
+    revealedHint: '恭喜中奖！奖励已经到账，可以开始使用了。',
+    coverText: '刮开领取 1～5 元',
+    won: '新用户专享奖励',
+    credited: '已存入账户余额',
+    gestureHint: '按住并左右滑动刮开涂层',
+    continue: '开始使用'
+  },
+
   // Dashboard
 }

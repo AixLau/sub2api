@@ -16,6 +16,7 @@ type AuthResponse = {
   access_token: string
   refresh_token?: string
   expires_in?: number
+  welcome_reward?: number
   user: Sub2ApiUser
 }
 
@@ -80,6 +81,17 @@ function persistAuth(response: AuthResponse): string {
 
   if (response.expires_in) {
     localStorage.setItem('token_expires_at', String(Date.now() + response.expires_in * 1000))
+  }
+
+  if (
+    typeof response.welcome_reward === 'number' &&
+    response.welcome_reward >= 1 &&
+    response.welcome_reward <= 5
+  ) {
+    localStorage.setItem(
+      'pending_welcome_reward',
+      JSON.stringify({ amount: response.welcome_reward, user_id: response.user.id }),
+    )
   }
 
   return response.user.role === 'admin' ? '/admin/dashboard' : '/dashboard'

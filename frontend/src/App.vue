@@ -1,14 +1,20 @@
 <script setup lang="ts">
 import { RouterView, useRouter, useRoute } from 'vue-router'
-import { onMounted, onBeforeUnmount, watch } from 'vue'
+import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import Toast from '@/components/common/Toast.vue'
 import NavigationProgress from '@/components/common/NavigationProgress.vue'
 import AdminComplianceDialog from '@/components/admin/AdminComplianceDialog.vue'
+import WelcomeRewardDialog from '@/components/auth/WelcomeRewardDialog.vue'
 import { resolveRouteDocumentTitle } from '@/router/title'
 import AnnouncementPopup from '@/components/common/AnnouncementPopup.vue'
 import { useAppStore, useAuthStore, useSubscriptionStore, useAnnouncementStore, useAdminComplianceStore, useAdminSettingsStore } from '@/stores'
 import { getSetupStatus } from '@/api/setup'
 import { updateFavicon } from '@/utils/branding'
+import {
+  isWelcomeRewardSkinId,
+  pickWelcomeRewardSkinId,
+  type WelcomeRewardSkinId
+} from '@/components/auth/welcomeRewardSkins'
 
 const router = useRouter()
 const route = useRoute()
@@ -18,6 +24,50 @@ const subscriptionStore = useSubscriptionStore()
 const announcementStore = useAnnouncementStore()
 const adminComplianceStore = useAdminComplianceStore()
 const adminSettingsStore = useAdminSettingsStore()
+interface PendingWelcomeReward {
+  amount: number
+  skinId: WelcomeRewardSkinId
+}
+
+const pendingWelcomeReward = ref<PendingWelcomeReward | null>(null)
+const pendingWelcomeRewardKey = 'pending_welcome_reward'
+
+function loadPendingWelcomeReward() {
+  const raw = localStorage.getItem(pendingWelcomeRewardKey)
+  try {
+    const reward = raw
+      ? JSON.parse(raw) as { amount?: unknown; user_id?: unknown; skin_id?: unknown }
+      : null
+    const amount = reward?.amount
+    if (
+      typeof amount === 'number' &&
+      Number.isInteger(amount) &&
+      amount >= 1 &&
+      amount <= 5 &&
+      reward?.user_id === authStore.user?.id
+    ) {
+      const skinId = isWelcomeRewardSkinId(reward?.skin_id)
+        ? reward.skin_id
+        : pickWelcomeRewardSkinId()
+      pendingWelcomeReward.value = { amount, skinId }
+      if (reward?.skin_id !== skinId) {
+        localStorage.setItem(
+          pendingWelcomeRewardKey,
+          JSON.stringify({ ...reward, skin_id: skinId })
+        )
+      }
+      return
+    }
+  } catch {
+    // Invalid or stale reward markers are cleared below.
+  }
+  localStorage.removeItem(pendingWelcomeRewardKey)
+}
+
+function finishWelcomeReward() {
+  localStorage.removeItem(pendingWelcomeRewardKey)
+  pendingWelcomeReward.value = null
+}
 
 function updateDocumentTitle() {
   const customMenuItems = [
@@ -105,6 +155,7 @@ watch(
 // Route change trigger (throttled by store)
 router.afterEach(() => {
   if (authStore.isAuthenticated) {
+    loadPendingWelcomeReward()
     announcementStore.fetchAnnouncements()
   }
 })
@@ -115,6 +166,7 @@ onBeforeUnmount(() => {
 })
 
 onMounted(async () => {
+  loadPendingWelcomeReward()
   window.addEventListener('admin-compliance-required', onAdminComplianceRequired)
 
   // Check if setup is needed
@@ -142,4 +194,11 @@ onMounted(async () => {
   <Toast />
   <AnnouncementPopup />
   <AdminComplianceDialog />
+  <WelcomeRewardDialog
+    v-if="pendingWelcomeReward !== null && authStore.isAuthenticated && !authStore.isAdmin"
+    :show="true"
+    :amount="pendingWelcomeReward.amount"
+    :skin-id="pendingWelcomeReward.skinId"
+    @finish="finishWelcomeReward"
+  />
 </template>

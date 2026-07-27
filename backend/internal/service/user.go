@@ -20,10 +20,13 @@ type User struct {
 	Role           string
 	Balance        float64
 	FrozenBalance  float64
-	Concurrency    int
-	Status         string
-	AllowedGroups  []int64
-	TokenVersion   int64 // Incremented on password change to invalidate existing tokens
+	// WelcomeReward is returned only for the registration response. It is
+	// already included in Balance and is not persisted as a separate field.
+	WelcomeReward float64
+	Concurrency   int
+	Status        string
+	AllowedGroups []int64
+	TokenVersion  int64 // Incremented on password change to invalidate existing tokens
 	// TokenVersionResolved indicates TokenVersion already contains the fingerprint-derived
 	// value expected in JWT claims and refresh-token state.
 	TokenVersionResolved bool

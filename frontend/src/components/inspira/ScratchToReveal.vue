@@ -29,6 +29,10 @@ import { usePrefersReducedMotion } from '@/composables/usePrefersReducedMotion'
 interface Props {
   /** 覆盖层颜色 */
   coverColor?: string
+  /** 覆盖层图片；加载失败时回退到 coverColor */
+  coverImage?: string
+  /** 覆盖层提示文字颜色 */
+  coverTextColor?: string
   /** 覆盖层提示文案 */
   coverText?: string
   /** 刮开面积比例阈值（0~1），达到后自动揭示 */
@@ -64,6 +68,8 @@ let lastX = 0
 let lastY = 0
 /** 采样节流：每擦除若干笔采样一次透明比例 */
 let strokesSinceSample = 0
+let loadedCoverImage: HTMLImageElement | null = null
+let coverImageRequest = 0
 const { prefersReducedMotion } = usePrefersReducedMotion()
 
 function isDarkMode(): boolean {
@@ -87,13 +93,73 @@ function drawCover() {
   ctx.globalCompositeOperation = 'source-over'
   ctx.fillStyle = props.coverColor || (dark ? '#334155' : '#cbd5e1')
   ctx.fillRect(0, 0, canvas.width, canvas.height)
+  if (loadedCoverImage) {
+    drawCoverImage(loadedCoverImage, canvas.width, canvas.height)
+  }
   if (props.coverText) {
-    ctx.fillStyle = dark ? 'rgba(226, 232, 240, 0.9)' : 'rgba(71, 85, 105, 0.9)'
+    ctx.fillStyle =
+      props.coverTextColor ||
+      (dark ? 'rgba(226, 232, 240, 0.9)' : 'rgba(71, 85, 105, 0.9)')
     ctx.font = `600 ${Math.round(14 * dpr)}px system-ui, sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
+    ctx.shadowColor = dark ? 'rgba(15, 23, 42, 0.55)' : 'rgba(255, 255, 255, 0.7)'
+    ctx.shadowBlur = 4 * dpr
     ctx.fillText(props.coverText, canvas.width / 2, canvas.height / 2)
+    ctx.shadowColor = 'transparent'
+    ctx.shadowBlur = 0
   }
+}
+
+function drawCoverImage(image: HTMLImageElement, canvasWidth: number, canvasHeight: number) {
+  if (!ctx || image.naturalWidth <= 0 || image.naturalHeight <= 0) return
+  const imageRatio = image.naturalWidth / image.naturalHeight
+  const canvasRatio = canvasWidth / canvasHeight
+  let sourceX = 0
+  let sourceY = 0
+  let sourceWidth = image.naturalWidth
+  let sourceHeight = image.naturalHeight
+
+  if (imageRatio > canvasRatio) {
+    sourceWidth = image.naturalHeight * canvasRatio
+    sourceX = (image.naturalWidth - sourceWidth) / 2
+  } else {
+    sourceHeight = image.naturalWidth / canvasRatio
+    sourceY = (image.naturalHeight - sourceHeight) / 2
+  }
+
+  ctx.drawImage(
+    image,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    0,
+    0,
+    canvasWidth,
+    canvasHeight
+  )
+}
+
+function loadCoverImage() {
+  const source = props.coverImage
+  loadedCoverImage = null
+  coverImageRequest++
+  const request = coverImageRequest
+  if (!source || typeof Image !== 'function') return
+
+  const image = new Image()
+  image.decoding = 'async'
+  image.onload = () => {
+    if (request !== coverImageRequest || completed || hasScratched) return
+    loadedCoverImage = image
+    drawCover()
+  }
+  image.onerror = () => {
+    if (request !== coverImageRequest) return
+    loadedCoverImage = null
+  }
+  image.src = source
 }
 
 function scratchAt(x: number, y: number, connect: boolean) {
@@ -208,6 +274,7 @@ onMounted(async () => {
     return
   }
   drawCover()
+  loadCoverImage()
   if (typeof ResizeObserver === 'function' && containerRef.value) {
     resizeObserver = new ResizeObserver(() => {
       if (completed) return
@@ -230,6 +297,7 @@ watch(prefersReducedMotion, (reduced) => {
 })
 
 onBeforeUnmount(() => {
+  coverImageRequest++
   resizeObserver?.disconnect()
   resizeObserver = null
 })

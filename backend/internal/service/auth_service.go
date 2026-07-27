@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/mail"
 	"strconv"
 	"strings"
@@ -44,6 +45,16 @@ var (
 	ErrInvitationCodeInvalid   = infraerrors.BadRequest("INVITATION_CODE_INVALID", "invalid or used invitation code")
 	ErrOAuthInvitationRequired = infraerrors.Forbidden("OAUTH_INVITATION_REQUIRED", "invitation code required to complete oauth registration")
 )
+
+const welcomeRewardVariants = 5
+
+func generateWelcomeReward() (float64, error) {
+	value, err := rand.Int(rand.Reader, big.NewInt(welcomeRewardVariants))
+	if err != nil {
+		return 0, err
+	}
+	return float64(value.Int64() + 1), nil
+}
 
 // maxTokenLength 限制 token 大小，避免超长 header 触发解析时的异常内存分配。
 const maxTokenLength = 8192
@@ -206,6 +217,11 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	}
 
 	grantPlan := s.resolveSignupGrantPlan(ctx, "email")
+	welcomeReward, err := generateWelcomeReward()
+	if err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to generate welcome reward: %v", err)
+		return "", nil, ErrServiceUnavailable
+	}
 
 	// 新用户默认 RPM（0 = 不限制）。注册时写入，后续作为用户级兜底。
 	var defaultRPMLimit int
@@ -215,13 +231,14 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 
 	// 创建用户
 	user := &User{
-		Email:        email,
-		PasswordHash: hashedPassword,
-		Role:         RoleUser,
-		Balance:      grantPlan.Balance,
-		Concurrency:  grantPlan.Concurrency,
-		RPMLimit:     defaultRPMLimit,
-		Status:       StatusActive,
+		Email:         email,
+		PasswordHash:  hashedPassword,
+		Role:          RoleUser,
+		Balance:       grantPlan.Balance + welcomeReward,
+		WelcomeReward: welcomeReward,
+		Concurrency:   grantPlan.Concurrency,
+		RPMLimit:      defaultRPMLimit,
+		Status:        StatusActive,
 	}
 
 	if err := s.userRepo.CreateWithEmailAliasGuard(ctx, user); err != nil {
@@ -263,6 +280,7 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		} else {
 			// 重新获取用户信息以获取更新后的余额
 			if updatedUser, err := s.userRepo.GetByID(ctx, user.ID); err == nil {
+				updatedUser.WelcomeReward = welcomeReward
 				user = updatedUser
 			}
 		}

@@ -13,6 +13,7 @@ const AUTH_USER_KEY = 'auth_user'
 const REFRESH_TOKEN_KEY = 'refresh_token'
 const TOKEN_EXPIRES_AT_KEY = 'token_expires_at' // 存储过期时间戳而非有效期
 const PENDING_AUTH_SESSION_KEY = 'pending_auth_session'
+const PENDING_WELCOME_REWARD_KEY = 'pending_welcome_reward'
 const AUTO_REFRESH_INTERVAL = 60 * 1000 // 60 seconds for user data refresh
 const TOKEN_REFRESH_BUFFER = 120 * 1000 // 120 seconds before expiry to refresh token
 
@@ -323,6 +324,12 @@ export const useAuthStore = defineStore('auth', () => {
 
       // Use the common helper to set auth state
       setAuthFromResponse(response)
+      if (response.welcome_reward && response.welcome_reward >= 1 && response.welcome_reward <= 5) {
+        localStorage.setItem(
+          PENDING_WELCOME_REWARD_KEY,
+          JSON.stringify({ amount: response.welcome_reward, user_id: response.user.id })
+        )
+      }
 
       return user.value!
     } catch (error) {

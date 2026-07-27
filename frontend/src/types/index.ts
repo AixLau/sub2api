@@ -253,6 +253,7 @@ export interface AuthResponse {
   expires_in?: number     // New: Access Token expiry time in seconds
   token_type: string
   user: User & { run_mode?: 'standard' | 'simple' }
+  welcome_reward?: number
 }
 
 export interface CurrentUserResponse extends User {

@@ -519,6 +519,7 @@ describe('星链 landing page', () => {
           code: 0,
           data: {
             access_token: 'access-token',
+            welcome_reward: 3,
             user: {
               id: 1,
               username: 'demo',
@@ -544,6 +545,10 @@ describe('星链 landing page', () => {
     fireEvent.click(screen.getByRole('button', { name: '创建账号' }))
 
     await waitFor(() => expect(assignMock).toHaveBeenCalledWith('/dashboard'))
+    expect(JSON.parse(localStorage.getItem('pending_welcome_reward') || 'null')).toEqual({
+      amount: 3,
+      user_id: 1,
+    })
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/register', {
       method: 'POST',
       credentials: 'include',

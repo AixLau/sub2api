@@ -454,5 +454,16 @@ export default {
     adminApiKeyForbidden: 'Admin API keys cannot perform this operation. Use a two-factor verified admin session.'
   },
 
+  welcomeReward: {
+    title: 'Welcome gift unlocked',
+    scratchHint: 'Scratch the blue area with your mouse or finger to reveal your new-user reward.',
+    revealedHint: 'You won! The reward is already in your account.',
+    coverText: 'Scratch to reveal ¥1–¥5',
+    won: 'New-user reward',
+    credited: 'Added to your account balance',
+    gestureHint: 'Press and swipe left and right to scratch',
+    continue: 'Get started'
+  },
+
   // Dashboard
 }
