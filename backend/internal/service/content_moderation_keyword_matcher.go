@@ -54,10 +54,13 @@ func (s *contentModerationPreparedRuleSet) Match(text string) (ContentModeration
 }
 
 func (s *contentModerationPreparedRuleSet) Matches(text string) []ContentModerationKeywordRule {
-	if s == nil || s.matcher == nil || text == "" || len(s.prepared) == 0 {
+	return s.MatchesNormalized(normalizeKeywordComparable(text))
+}
+
+func (s *contentModerationPreparedRuleSet) MatchesNormalized(normalizedText string) []ContentModerationKeywordRule {
+	if s == nil || s.matcher == nil || normalizedText == "" || len(s.prepared) == 0 {
 		return nil
 	}
-	normalizedText := normalizeKeywordComparable(text)
 	accumulator := contentModerationKeywordMatchAccumulator{
 		best:       -1,
 		collectAll: true,

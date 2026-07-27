@@ -98,19 +98,20 @@ func (s *ContentModerationService) configSnapshotTTL() time.Duration {
 }
 
 func (s *ContentModerationService) triggerConfigSnapshotRefresh() {
-	if s == nil || s.configRefreshDeferred() || !s.configRefreshMu.TryLock() {
+	if s == nil || s.configRefreshDeferred() || !s.configRefreshInFlight.CompareAndSwap(false, true) {
 		return
 	}
 	if s.configRefreshDeferred() {
-		s.configRefreshMu.Unlock()
+		s.configRefreshInFlight.Store(false)
 		return
 	}
+	generation := s.configSnapshotGeneration.Load()
 	go func() {
-		defer s.configRefreshMu.Unlock()
+		defer s.configRefreshInFlight.Store(false)
 		ctx, cancel := context.WithTimeout(context.Background(), contentModerationConfigRefreshTimeout)
 		defer cancel()
-		if _, err := s.refreshConfigSnapshot(ctx); err != nil {
-			s.configRefreshRetryAt.Store(time.Now().Add(s.configSnapshotTTL()).UnixNano())
+		if _, err := s.refreshConfigSnapshotIfCurrent(ctx, generation); err != nil {
+			s.deferConfigSnapshotRefreshAfterFailure(generation)
 			slog.Warn("content_moderation.config_snapshot_refresh_failed", "error", err)
 		}
 	}()
@@ -120,19 +121,56 @@ func (s *ContentModerationService) configRefreshDeferred() bool {
 	return s != nil && time.Now().UnixNano() < s.configRefreshRetryAt.Load()
 }
 
+func (s *ContentModerationService) deferConfigSnapshotRefreshAfterFailure(generation uint64) {
+	s.configRefreshMu.Lock()
+	defer s.configRefreshMu.Unlock()
+	if s.configSnapshotGeneration.Load() == generation {
+		s.configRefreshRetryAt.Store(time.Now().Add(s.configSnapshotTTL()).UnixNano())
+	}
+}
+
 func (s *ContentModerationService) refreshConfigSnapshot(ctx context.Context) (*ContentModerationConfig, error) {
+	raw, err := s.loadConfigSnapshotRaw(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.applyConfigSnapshotRaw(raw)
+}
+
+func (s *ContentModerationService) refreshConfigSnapshotIfCurrent(ctx context.Context, generation uint64) (*ContentModerationConfig, error) {
+	raw, err := s.loadConfigSnapshotRaw(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.configRefreshMu.Lock()
+	defer s.configRefreshMu.Unlock()
+	if s.configSnapshotGeneration.Load() != generation {
+		if current := s.configSnapshot.Load(); current != nil {
+			return current.config, nil
+		}
+		return nil, errors.New("content moderation config snapshot changed during refresh")
+	}
+	return s.applyConfigSnapshotRaw(raw)
+}
+
+func (s *ContentModerationService) loadConfigSnapshotRaw(ctx context.Context) (string, error) {
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyContentModerationConfig)
 	if err != nil {
 		if !errors.Is(err, ErrSettingNotFound) {
-			return nil, fmt.Errorf("get content moderation config: %w", err)
+			return "", fmt.Errorf("get content moderation config: %w", err)
 		}
 		raw = ""
 	}
+	return raw, nil
+}
+
+func (s *ContentModerationService) applyConfigSnapshotRaw(raw string) (*ContentModerationConfig, error) {
 	digest := sha256.Sum256([]byte(raw))
 	if current := s.configSnapshot.Load(); current != nil && current.digest == digest {
 		refreshed := *current
 		refreshed.loadedAt = time.Now()
 		s.configSnapshot.Store(&refreshed)
+		s.configSnapshotGeneration.Add(1)
 		s.configRefreshRetryAt.Store(0)
 		return current.config, nil
 	}
@@ -166,6 +204,7 @@ func (s *ContentModerationService) storeConfigSnapshot(snapshot *contentModerati
 		}
 	}
 	s.configSnapshot.Store(snapshot)
+	s.configSnapshotGeneration.Add(1)
 	s.configRefreshRetryAt.Store(0)
 	return nil
 }

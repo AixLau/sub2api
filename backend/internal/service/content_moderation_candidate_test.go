@@ -712,6 +712,25 @@ func TestCandidateDecisionCacheV4IsolatesEvidenceRevision(t *testing.T) {
 	require.NotEqual(t, first, second)
 }
 
+func TestCandidateDecisionCacheSeparatesGeneralSemanticSchemaRevisions(t *testing.T) {
+	svc := candidateTestService(&candidateRetryDedupeRepo{})
+	cfg := candidateTestConfig()
+	selection := contentModerationCandidateSelection{
+		Source:   ContentModerationInputSource{Source: "responses.input[0]", Role: "user", Text: "semantic candidate"},
+		Origin:   contentModerationSourceOriginUserTurn,
+		Kind:     contentModerationCandidateKindKeyword,
+		Rule:     ContentModerationKeywordRule{Keyword: "candidate", Category: ContentModerationKeywordCategoryOther},
+		Fragment: "semantic candidate",
+		Route:    contentModerationCandidateRouteSemantic,
+	}
+	input := ContentModerationCheckInput{Protocol: ContentModerationProtocolOpenAIResponses}
+
+	first := svc.candidateDecisionCacheKeyWithSemanticSchemaRevision(cfg, input, selection, "semantic-review-schema-a")
+	second := svc.candidateDecisionCacheKeyWithSemanticSchemaRevision(cfg, input, selection, "semantic-review-schema-b")
+
+	require.NotEqual(t, first, second)
+}
+
 func TestCandidateDecisionCoordinatorCollapsesConcurrentRetries(t *testing.T) {
 	repo := &candidateRetryDedupeRepo{}
 	svc := candidateTestService(repo)

@@ -47,6 +47,7 @@ const (
 	contentModerationSemanticReviewQuotaRefreshWorkers  = 2
 	contentModerationSemanticReviewMaxResponseBytes     = 1 << 20
 	semanticReviewInstructionsRevision                  = "semantic-review-instructions-v5"
+	semanticReviewSchemaRevision                        = "semantic-review-schema-v4"
 )
 
 type semanticReviewRoutingContextKey struct{}

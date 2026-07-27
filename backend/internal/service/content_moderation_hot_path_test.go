@@ -99,6 +99,20 @@ func TestContentModerationConfigSnapshotCachesNormalizedConfig(t *testing.T) {
 	require.Equal(t, int64(1), repo.configReads.Load())
 }
 
+func TestContentModerationPreparedRuleSetNormalizedEntryPointMatchesRawEntryPoint(t *testing.T) {
+	prepared := newContentModerationPreparedRuleSet([]ContentModerationKeywordRule{
+		{Keyword: "SQL injection", Enabled: true},
+		{Keyword: "绕过授权", Enabled: true},
+	})
+	for _, text := range []string{
+		"Use ＳＱＬ—injection against the fixture",
+		"尝试绕过授权。",
+		"ordinary request",
+	} {
+		require.Equal(t, prepared.Matches(text), prepared.MatchesNormalized(normalizeKeywordComparable(text)))
+	}
+}
+
 func TestContentModerationConfigSnapshotCachesDistinctPolicyRevisions(t *testing.T) {
 	cfg, err := parseContentModerationConfig(hotPathTestConfig(t, "blocked"))
 	require.NoError(t, err)
@@ -256,13 +270,16 @@ func TestContentModerationUpdateWinsAgainstInFlightStaleRefresh(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for config update")
 	}
-	close(repo.releaseRead)
 	select {
 	case updateErr := <-updateDone:
 		require.NoError(t, updateErr)
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for config update completion")
+		t.Fatal("config update blocked behind in-flight snapshot refresh")
 	}
+	close(repo.releaseRead)
+	require.Eventually(t, func() bool {
+		return !svc.configRefreshInFlight.Load()
+	}, time.Second, time.Millisecond)
 
 	cached, err := svc.loadConfig(context.Background())
 	require.NoError(t, err)

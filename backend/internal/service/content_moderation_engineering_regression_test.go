@@ -271,11 +271,15 @@ func BenchmarkContentModerationEngineeringCandidateSelection(b *testing.B) {
 	}}}
 
 	b.Run("hit", func(b *testing.B) {
+		b.ReportAllocs()
+		b.SetBytes(int64(len(hit.Sources[0].Text)))
 		for b.Loop() {
 			_, _ = contentModerationCandidateSelectionForInput(cfg, hit)
 		}
 	})
 	b.Run("miss", func(b *testing.B) {
+		b.ReportAllocs()
+		b.SetBytes(int64(len(miss.Sources[0].Text)))
 		for b.Loop() {
 			_, _ = contentModerationCandidateSelectionForInput(cfg, miss)
 		}

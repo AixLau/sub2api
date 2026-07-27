@@ -1110,6 +1110,8 @@ type ContentModerationService struct {
 	configUpdateMu            sync.Mutex
 	configSnapshot            atomic.Pointer[contentModerationConfigSnapshot]
 	configRefreshMu           sync.Mutex
+	configRefreshInFlight     atomic.Bool
+	configSnapshotGeneration  atomic.Uint64
 	configCacheTTL            time.Duration
 	configRefreshRetryAt      atomic.Int64
 	settingRepo               SettingRepository
@@ -7167,7 +7169,10 @@ func shouldUseCompactKeywordMatch(normalizedKeyword string) bool {
 }
 
 func matchContextualBuiltInRiskRule(text string) (ContentModerationKeywordRule, bool) {
-	normalized := normalizeKeywordComparable(text)
+	return matchContextualBuiltInRiskRuleNormalized(text, normalizeKeywordComparable(text))
+}
+
+func matchContextualBuiltInRiskRuleNormalized(text string, normalized string) (ContentModerationKeywordRule, bool) {
 	if normalized == "" {
 		return ContentModerationKeywordRule{}, false
 	}
@@ -7215,11 +7220,21 @@ func contextualCyberIntentRule(keyword string) ContentModerationKeywordRule {
 }
 
 type contentModerationRiskScoreMarker struct {
-	Keyword string
-	Score   int
+	Keyword           string
+	normalizedKeyword string
+	Score             int
 }
 
-var contentModerationJailbreakInstructionScoreGroups = [][]contentModerationRiskScoreMarker{
+func prepareContentModerationRiskScoreGroups(groups [][]contentModerationRiskScoreMarker) [][]contentModerationRiskScoreMarker {
+	for groupIndex := range groups {
+		for markerIndex := range groups[groupIndex] {
+			groups[groupIndex][markerIndex].normalizedKeyword = normalizeKeywordComparable(groups[groupIndex][markerIndex].Keyword)
+		}
+	}
+	return groups
+}
+
+var contentModerationJailbreakInstructionScoreGroups = prepareContentModerationRiskScoreGroups([][]contentModerationRiskScoreMarker{
 	{
 		{Keyword: "codex-keysmith", Score: 40},
 		{Keyword: "model_instructions_file", Score: 30},
@@ -7288,9 +7303,9 @@ var contentModerationJailbreakInstructionScoreGroups = [][]contentModerationRisk
 		{Keyword: "generate freely", Score: 25},
 		{Keyword: "do not censor warn or moralize", Score: 35},
 	},
-}
+})
 
-var contentModerationSexualScoreGroups = [][]contentModerationRiskScoreMarker{
+var contentModerationSexualScoreGroups = prepareContentModerationRiskScoreGroups([][]contentModerationRiskScoreMarker{
 	{
 		{Keyword: "擦边", Score: 45},
 		{Keyword: "开车", Score: 45},
@@ -7323,9 +7338,9 @@ var contentModerationSexualScoreGroups = [][]contentModerationRiskScoreMarker{
 		{Keyword: "不要露骨", Score: 35},
 		{Keyword: "不能直说", Score: 30},
 	},
-}
+})
 
-var contentModerationPoliticalScoreGroups = [][]contentModerationRiskScoreMarker{
+var contentModerationPoliticalScoreGroups = prepareContentModerationRiskScoreGroups([][]contentModerationRiskScoreMarker{
 	{
 		{Keyword: "时政", Score: 40},
 		{Keyword: "敏感话题", Score: 45},
@@ -7350,7 +7365,7 @@ var contentModerationPoliticalScoreGroups = [][]contentModerationRiskScoreMarker
 		{Keyword: "不要太明显", Score: 30},
 		{Keyword: "不能直说", Score: 30},
 	},
-}
+})
 
 func scoredContentModerationRiskKeyword(normalized string, threshold int, markerGroups ...[]contentModerationRiskScoreMarker) (string, bool) {
 	if threshold <= 0 {
@@ -7365,7 +7380,10 @@ func scoreContentModerationRiskKeyword(normalized string, markerGroups ...[]cont
 	firstKeyword := ""
 	for _, markers := range markerGroups {
 		for _, marker := range markers {
-			normalizedMarker := normalizeKeywordComparable(marker.Keyword)
+			normalizedMarker := marker.normalizedKeyword
+			if normalizedMarker == "" {
+				normalizedMarker = normalizeKeywordComparable(marker.Keyword)
+			}
 			if marker.Score <= 0 || normalizedMarker == "" {
 				continue
 			}
@@ -7385,7 +7403,10 @@ func contextualJailbreakInstructionKeyword(normalized string) (string, bool) {
 }
 
 func contentModerationLocalClassifierCandidateForText(text string) (contentModerationLocalClassifierCandidate, bool) {
-	normalized := normalizeKeywordComparable(text)
+	return contentModerationLocalClassifierCandidateForNormalizedText(normalizeKeywordComparable(text))
+}
+
+func contentModerationLocalClassifierCandidateForNormalizedText(normalized string) (contentModerationLocalClassifierCandidate, bool) {
 	if normalized == "" {
 		return contentModerationLocalClassifierCandidate{}, false
 	}
@@ -7902,6 +7923,16 @@ func isContentModerationDomainLabel(label string) bool {
 func hasAnyContentModerationMarker(normalized string, markers []string) bool {
 	_, ok := firstContentModerationMarker(normalized, markers)
 	return ok
+}
+
+func normalizeContentModerationMarkers(markers []string) []string {
+	normalized := make([]string, 0, len(markers))
+	for _, marker := range markers {
+		if marker = normalizeKeywordComparable(marker); marker != "" {
+			normalized = append(normalized, marker)
+		}
+	}
+	return normalized
 }
 
 func firstContentModerationMarker(normalized string, markers []string) (string, bool) {

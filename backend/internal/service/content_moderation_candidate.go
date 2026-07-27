@@ -138,20 +138,28 @@ func contentModerationCandidateFullReviewSource(content ContentModerationInput, 
 }
 
 func contentModerationCandidateSelectionFromRule(cfg *ContentModerationConfig, source ContentModerationInputSource, origin string, rule ContentModerationKeywordRule, kind string) contentModerationCandidateSelection {
+	return contentModerationCandidateSelectionFromRuleNormalized(cfg, source, normalizeKeywordComparable(source.Text), origin, rule, kind)
+}
+
+func contentModerationCandidateSelectionFromRuleNormalized(cfg *ContentModerationConfig, source ContentModerationInputSource, normalizedText string, origin string, rule ContentModerationKeywordRule, kind string) contentModerationCandidateSelection {
 	startByte, endByte := -1, -1
 	if start, end, found := findDisplayKeywordSpanWithBoundary(source.Text, rule.Keyword); found {
 		startByte, endByte = start, end
 	}
-	return contentModerationCandidateSelectionFromRuleAt(cfg, source, origin, rule, kind, startByte, endByte)
+	return contentModerationCandidateSelectionFromRuleAtNormalized(cfg, source, normalizedText, origin, rule, kind, startByte, endByte)
 }
 
 func contentModerationCandidateSelectionFromRuleAt(cfg *ContentModerationConfig, source ContentModerationInputSource, origin string, rule ContentModerationKeywordRule, kind string, startByte, endByte int) contentModerationCandidateSelection {
+	return contentModerationCandidateSelectionFromRuleAtNormalized(cfg, source, normalizeKeywordComparable(source.Text), origin, rule, kind, startByte, endByte)
+}
+
+func contentModerationCandidateSelectionFromRuleAtNormalized(cfg *ContentModerationConfig, source ContentModerationInputSource, normalizedText string, origin string, rule ContentModerationKeywordRule, kind string, startByte, endByte int) contentModerationCandidateSelection {
 	rule = normalizeContentModerationKeywordRules([]ContentModerationKeywordRule{rule})[0]
 	maxRunes := maxContentModerationCandidateRunes
 	if cfg != nil && cfg.CandidateFragmentRunes > 0 {
 		maxRunes = cfg.CandidateFragmentRunes
 	}
-	maxRunes = contentModerationCandidateAdaptiveRunes(source.Text, maxRunes)
+	maxRunes = contentModerationCandidateAdaptiveRunesNormalized(normalizedText, maxRunes)
 	fragment := contentModerationCandidateFragment(source.Text, rule.Keyword, maxRunes)
 	if startByte >= 0 && endByte > startByte {
 		fragment = contentModerationCandidateFragmentAroundByteSpan(source.Text, startByte, endByte, maxRunes)
@@ -194,19 +202,24 @@ func contentModerationCandidateIsPromptInjection(kind string, rule ContentModera
 }
 
 func contentModerationCandidateAdaptiveRunes(text string, configuredMax int) int {
+	return contentModerationCandidateAdaptiveRunesNormalized(normalizeKeywordComparable(text), configuredMax)
+}
+
+var contentModerationCandidateAdaptiveMarkers = normalizeContentModerationMarkers([]string{
+	"authorized", "authorization", "permission", "self-owned", "self owned",
+	"ctf", "capture the flag", "sandbox", "lab", "third party", "third-party",
+	"授权", "未经授权", "已获许可", "自有", "自己的系统", "靶场", "第三方", "测试环境",
+})
+
+func contentModerationCandidateAdaptiveRunesNormalized(normalizedText string, configuredMax int) int {
 	if configuredMax <= 0 || configuredMax > maxContentModerationCandidateRunes {
 		configuredMax = maxContentModerationCandidateRunes
 	}
 	if configuredMax <= contentModerationCandidatePreferredRunes {
 		return configuredMax
 	}
-	comparable := normalizeKeywordComparable(text)
-	for _, marker := range []string{
-		"authorized", "authorization", "permission", "self-owned", "self owned",
-		"ctf", "capture the flag", "sandbox", "lab", "third party", "third-party",
-		"授权", "未经授权", "已获许可", "自有", "自己的系统", "靶场", "第三方", "测试环境",
-	} {
-		if strings.Contains(comparable, normalizeKeywordComparable(marker)) {
+	for _, marker := range contentModerationCandidateAdaptiveMarkers {
+		if strings.Contains(normalizedText, marker) {
 			return configuredMax
 		}
 	}
@@ -217,15 +230,17 @@ func contentModerationCandidateSelectionForSource(cfg *ContentModerationConfig, 
 	if cfg == nil || !contentModerationSourceIsActionableUserTurn(source) {
 		return contentModerationCandidateSelection{}, false
 	}
+	normalizedText := normalizeKeywordComparable(source.Text)
 	candidates := make([]contentModerationCandidateSelection, 0, 4)
-	for _, rule := range cfg.keywordRuleSet().Matches(source.Text) {
+	for _, rule := range cfg.keywordRuleSet().MatchesNormalized(normalizedText) {
 		startByte, endByte := -1, -1
 		if start, end, found := findDisplayKeywordSpanWithBoundary(source.Text, rule.Keyword); found {
 			startByte, endByte = start, end
 		}
-		candidates = append(candidates, contentModerationCandidateSelectionFromRuleAt(
+		candidates = append(candidates, contentModerationCandidateSelectionFromRuleAtNormalized(
 			cfg,
 			source,
+			normalizedText,
 			contentModerationSourceOriginUserTurn,
 			rule,
 			contentModerationCandidateKindKeyword,
@@ -233,8 +248,8 @@ func contentModerationCandidateSelectionForSource(cfg *ContentModerationConfig, 
 			endByte,
 		))
 	}
-	if rule, hit := matchContextualBuiltInRiskRule(source.Text); hit {
-		candidates = append(candidates, contentModerationCandidateSelectionFromRule(cfg, source, contentModerationSourceOriginUserTurn, rule, contentModerationCandidateKindKeyword))
+	if rule, hit := matchContextualBuiltInRiskRuleNormalized(source.Text, normalizedText); hit {
+		candidates = append(candidates, contentModerationCandidateSelectionFromRuleNormalized(cfg, source, normalizedText, contentModerationSourceOriginUserTurn, rule, contentModerationCandidateKindKeyword))
 	}
 
 	verdict := promptfilter.Inspect(source.Text, cfg.promptFilterConfig())
@@ -250,13 +265,13 @@ func contentModerationCandidateSelectionForSource(cfg *ContentModerationConfig, 
 			Action:   ContentModerationKeywordActionBlock,
 			Enabled:  true,
 		}
-		selection := contentModerationCandidateSelectionFromRuleAt(cfg, source, contentModerationSourceOriginUserTurn, rule, contentModerationCandidateKindPromptFilter, match.StartByte, match.EndByte)
+		selection := contentModerationCandidateSelectionFromRuleAtNormalized(cfg, source, normalizedText, contentModerationSourceOriginUserTurn, rule, contentModerationCandidateKindPromptFilter, match.StartByte, match.EndByte)
 		selection.PromptHit = &contentModerationPromptFilterHit{Source: source, Verdict: verdict}
 		candidates = append(candidates, selection)
 	}
 
 	if cfg.LocalClassifier.Enabled {
-		if candidate, hit := contentModerationLocalClassifierCandidateForText(source.Text); hit {
+		if candidate, hit := contentModerationLocalClassifierCandidateForNormalizedText(normalizedText); hit {
 			rule := ContentModerationKeywordRule{
 				Keyword:  candidate.Keyword,
 				Category: candidate.Category,
@@ -264,7 +279,7 @@ func contentModerationCandidateSelectionForSource(cfg *ContentModerationConfig, 
 				Action:   ContentModerationKeywordActionBlock,
 				Enabled:  true,
 			}
-			candidates = append(candidates, contentModerationCandidateSelectionFromRule(cfg, source, contentModerationSourceOriginUserTurn, rule, contentModerationCandidateKindLocalClassifier))
+			candidates = append(candidates, contentModerationCandidateSelectionFromRuleNormalized(cfg, source, normalizedText, contentModerationSourceOriginUserTurn, rule, contentModerationCandidateKindLocalClassifier))
 		}
 	}
 	if len(candidates) == 0 {
@@ -498,6 +513,10 @@ func contentModerationOrdinaryProviderSupportsCategory(provider, category string
 }
 
 func (s *ContentModerationService) candidateDecisionCacheKey(cfg *ContentModerationConfig, input ContentModerationCheckInput, selection contentModerationCandidateSelection) string {
+	return s.candidateDecisionCacheKeyWithSemanticSchemaRevision(cfg, input, selection, semanticReviewSchemaRevision)
+}
+
+func (s *ContentModerationService) candidateDecisionCacheKeyWithSemanticSchemaRevision(cfg *ContentModerationConfig, input ContentModerationCheckInput, selection contentModerationCandidateSelection, semanticSchemaRevision string) string {
 	policyRevision := strings.TrimSpace(input.policyRevision)
 	if policyRevision == "" {
 		policyRevision = contentModerationPolicyRevision(true, cfg)
@@ -505,13 +524,16 @@ func (s *ContentModerationService) candidateDecisionCacheKey(cfg *ContentModerat
 	namespace := "candidate-decision-v3"
 	evidenceIdentity := selection.Fragment
 	instructionsRevision := ""
+	schemaRevision := ""
 	if selection.Route == contentModerationCandidateRouteSemantic {
 		instructionsRevision = semanticReviewInstructionsRevision
+		schemaRevision = strings.TrimSpace(semanticSchemaRevision)
 	}
 	if cfg != nil && cfg.SemanticReview.PromptInjectionReviewerEnabled && selection.ReviewKind == contentModerationReviewKindPromptInjection {
 		namespace = "candidate-decision-v4"
 		evidenceIdentity = selection.Source.Text
 		instructionsRevision = promptInjectionReviewerInstructionsRevision
+		schemaRevision = promptInjectionReviewerSchemaRevision
 	}
 	parts := []string{
 		namespace,
@@ -535,10 +557,12 @@ func (s *ContentModerationService) candidateDecisionCacheKey(cfg *ContentModerat
 	if instructionsRevision != "" {
 		parts = append(parts, instructionsRevision)
 	}
+	if schemaRevision != "" {
+		parts = append(parts, schemaRevision)
+	}
 	if namespace == "candidate-decision-v4" {
 		parts = append(parts,
 			selection.ReviewKind,
-			promptInjectionReviewerSchemaRevision,
 			selection.EvidenceRevision,
 			selection.EvidenceDigest,
 			strconv.FormatBool(selection.EvidenceComplete),
