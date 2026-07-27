@@ -38,7 +38,7 @@ func grokBaseURLValidator(account *Account, cfg *config.Config) (xai.BaseURLVali
 }
 
 // grokOperatorPolicyValidator 按全局出站 URL 安全策略校验自定义 base_url：
-// 白名单开启时强制 UpstreamHosts；关闭时仅做格式校验（HTTP 允许与否跟随配置）。
+// 白名单开启时强制 UpstreamHosts；HTTP 允许与否始终跟随全局配置。
 func grokOperatorPolicyValidator(cfg *config.Config) xai.BaseURLValidator {
 	if cfg == nil {
 		return xai.ValidateBaseURL
@@ -49,7 +49,7 @@ func grokOperatorPolicyValidator(cfg *config.Config) xai.BaseURLValidator {
 		}
 	}
 	return func(raw string) (string, error) {
-		return urlvalidator.ValidateHTTPSURL(raw, urlvalidator.ValidationOptions{
+		return urlvalidator.ValidateHTTPURL(raw, cfg.Security.URLAllowlist.AllowInsecureHTTP, urlvalidator.ValidationOptions{
 			AllowedHosts:     cfg.Security.URLAllowlist.UpstreamHosts,
 			RequireAllowlist: true,
 			AllowPrivate:     cfg.Security.URLAllowlist.AllowPrivateHosts,

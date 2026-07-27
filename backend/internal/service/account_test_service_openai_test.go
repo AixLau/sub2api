@@ -101,6 +101,22 @@ func (r *openAIAccountTestRepo) SetError(_ context.Context, id int64, errorMsg s
 	return nil
 }
 
+func TestAccountTestService_ValidateUpstreamBaseURLAllowsConfiguredHTTPWithAllowlist(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = true
+	cfg.Security.URLAllowlist.UpstreamHosts = []string{"api.example.test"}
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+
+	svc := &AccountTestService{cfg: cfg}
+	normalized, err := svc.validateUpstreamBaseURL("http://api.example.test/v1/")
+	require.NoError(t, err)
+	require.Equal(t, "http://api.example.test/v1", normalized)
+
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = false
+	_, err = svc.validateUpstreamBaseURL("http://api.example.test/v1")
+	require.Error(t, err)
+}
+
 func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, recorder := newTestContext()

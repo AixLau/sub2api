@@ -2744,8 +2744,9 @@ func TestOpenAIValidateUpstreamBaseURLEnabledEnforcesAllowlist(t *testing.T) {
 	cfg := &config.Config{
 		Security: config.SecurityConfig{
 			URLAllowlist: config.URLAllowlistConfig{
-				Enabled:       true,
-				UpstreamHosts: []string{"example.com"},
+				Enabled:           true,
+				UpstreamHosts:     []string{"example.com"},
+				AllowInsecureHTTP: true,
 			},
 		},
 	}
@@ -2754,8 +2755,30 @@ func TestOpenAIValidateUpstreamBaseURLEnabledEnforcesAllowlist(t *testing.T) {
 	if _, err := svc.validateUpstreamBaseURL("https://example.com"); err != nil {
 		t.Fatalf("expected allowlisted host to pass, got %v", err)
 	}
+	if normalized, err := svc.validateUpstreamBaseURL("http://example.com"); err != nil {
+		t.Fatalf("expected allowlisted http host to pass when allow_insecure_http is true, got %v", err)
+	} else if normalized != "http://example.com" {
+		t.Fatalf("expected normalized http url, got %q", normalized)
+	}
 	if _, err := svc.validateUpstreamBaseURL("https://evil.com"); err == nil {
 		t.Fatalf("expected non-allowlisted host to fail")
+	}
+}
+
+func TestOpenAIValidateUpstreamBaseURLEnabledRejectsHTTPWhenDisabled(t *testing.T) {
+	cfg := &config.Config{
+		Security: config.SecurityConfig{
+			URLAllowlist: config.URLAllowlistConfig{
+				Enabled:           true,
+				UpstreamHosts:     []string{"example.com"},
+				AllowInsecureHTTP: false,
+			},
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	if _, err := svc.validateUpstreamBaseURL("http://example.com"); err == nil {
+		t.Fatal("expected http to be rejected when allow_insecure_http is false")
 	}
 }
 
