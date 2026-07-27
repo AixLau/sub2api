@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { DEFAULT_DOC_URL, useAppStore } from '@/stores/app'
+import { DEFAULT_DOC_URL, PUBLIC_BRAND_CACHE_KEY, useAppStore } from '@/stores/app'
 import { getPublicSettings } from '@/api/auth'
 import type { PublicSettings } from '@/types'
 
@@ -227,6 +227,36 @@ describe('useAppStore', () => {
 
       store.toggleMobileSidebar()
       expect(store.mobileOpen).toBe(false)
+    })
+  })
+
+  describe('首屏品牌回退', () => {
+    it('无注入配置时同步恢复上次成功加载的品牌', () => {
+      localStorage.setItem(PUBLIC_BRAND_CACHE_KEY, JSON.stringify({
+        siteName: 'Cached Site',
+        siteLogo: '/cached-logo.svg',
+      }))
+
+      const store = useAppStore()
+
+      expect(store.siteName).toBe('Cached Site')
+      expect(store.siteLogo).toBe('/cached-logo.svg')
+      expect(store.publicSettingsLoaded).toBe(false)
+    })
+
+    it('成功加载公开配置后刷新品牌缓存', async () => {
+      vi.mocked(getPublicSettings).mockResolvedValue(createPublicSettings({
+        site_name: 'Fresh Site',
+        site_logo: '/fresh-logo.svg',
+      }))
+      const store = useAppStore()
+
+      await store.fetchPublicSettings()
+
+      expect(JSON.parse(localStorage.getItem(PUBLIC_BRAND_CACHE_KEY) || '{}')).toEqual({
+        siteName: 'Fresh Site',
+        siteLogo: '/fresh-logo.svg',
+      })
     })
   })
 

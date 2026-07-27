@@ -21,6 +21,56 @@ import { getPublicSettings as fetchPublicSettingsAPI } from '@/api/auth'
  * to the hosted install documentation.
  */
 export const DEFAULT_DOC_URL = 'https://aixlau.me/install'
+export const PUBLIC_BRAND_CACHE_KEY = 'sub2api:public-brand'
+
+interface CachedPublicBrand {
+  siteName: string
+  siteLogo: string
+}
+
+function readInitialPublicBrand(): CachedPublicBrand {
+  const injectedName = window.__APP_CONFIG__?.site_name?.trim()
+  if (injectedName) {
+    return {
+      siteName: injectedName,
+      siteLogo: window.__APP_CONFIG__?.site_logo?.trim() ?? ''
+    }
+  }
+
+  try {
+    const cached = JSON.parse(localStorage.getItem(PUBLIC_BRAND_CACHE_KEY) || 'null') as Partial<CachedPublicBrand> | null
+    const cachedName = cached?.siteName?.trim()
+    if (cachedName) {
+      return {
+        siteName: cachedName,
+        siteLogo: cached?.siteLogo?.trim() ?? ''
+      }
+    }
+  } catch {
+    try {
+      localStorage.removeItem(PUBLIC_BRAND_CACHE_KEY)
+    } catch {
+      // Storage may be unavailable in privacy-restricted contexts.
+    }
+  }
+
+  const metadataName = document
+    .querySelector<HTMLMetaElement>('meta[property="og:site_name"]')
+    ?.content.trim()
+
+  return {
+    siteName: metadataName || 'Sub2API',
+    siteLogo: ''
+  }
+}
+
+function cachePublicBrand(siteName: string, siteLogo: string): void {
+  try {
+    localStorage.setItem(PUBLIC_BRAND_CACHE_KEY, JSON.stringify({ siteName, siteLogo }))
+  } catch {
+    // Branding cache is only a first-paint optimization.
+  }
+}
 
 function normalizeDocUrl(docUrl: string | undefined): string {
   const trimmed = docUrl?.trim() ?? ''
@@ -32,6 +82,7 @@ function normalizeDocUrl(docUrl: string | undefined): string {
 
 export const useAppStore = defineStore('app', () => {
   // ==================== State ====================
+  const initialPublicBrand = readInitialPublicBrand()
 
   const sidebarCollapsed = ref<boolean>(false)
   const mobileOpen = ref<boolean>(false)
@@ -42,8 +93,8 @@ export const useAppStore = defineStore('app', () => {
   // Public settings cache state
   const publicSettingsLoaded = ref<boolean>(false)
   const publicSettingsLoading = ref<boolean>(false)
-  const siteName = ref<string>('Sub2API')
-  const siteLogo = ref<string>('')
+  const siteName = ref<string>(initialPublicBrand.siteName)
+  const siteLogo = ref<string>(initialPublicBrand.siteLogo)
   const siteVersion = ref<string>('')
   const contactInfo = ref<string>('')
   const supportQQGroupQRCode = ref<string>('')
@@ -319,6 +370,7 @@ export const useAppStore = defineStore('app', () => {
     cachedPublicSettings.value = normalizedConfig
     siteName.value = config.site_name || 'Sub2API'
     siteLogo.value = config.site_logo || ''
+    cachePublicBrand(siteName.value, siteLogo.value)
     siteVersion.value = config.version || ''
     contactInfo.value = config.contact_info || ''
     supportQQGroupQRCode.value = config.support_qq_group_qr_code || ''

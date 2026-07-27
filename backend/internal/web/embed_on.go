@@ -4,6 +4,7 @@ package web
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"embed"
 	"encoding/json"
@@ -14,12 +15,32 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/gin-gonic/gin"
 )
+
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	writer *gzip.Writer
+}
+
+func (w *gzipResponseWriter) WriteHeader(statusCode int) {
+	if statusCode != http.StatusNoContent && statusCode != http.StatusNotModified {
+		w.Header().Del("Content-Length")
+		w.Header().Set("Content-Encoding", "gzip")
+	}
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *gzipResponseWriter) Write(data []byte) (int, error) {
+	w.Header().Del("Content-Length")
+	w.Header().Set("Content-Encoding", "gzip")
+	return w.writer.Write(data)
+}
 
 const (
 	// NonceHTMLPlaceholder is the placeholder for nonce in HTML script tags
@@ -123,9 +144,97 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 
 		// Serve static files normally (hashed assets get long-lived cache headers)
 		applyStaticAssetCacheHeaders(c.Writer.Header(), cleanPath)
+		if isCompressibleFrontendPath(cleanPath) {
+			addVaryAcceptEncoding(c.Writer.Header())
+		}
+		if shouldCompressFrontendResponse(c.Request, cleanPath) {
+			writer, err := gzip.NewWriterLevel(c.Writer, gzip.BestSpeed)
+			if err == nil {
+				s.fileServer.ServeHTTP(&gzipResponseWriter{
+					ResponseWriter: c.Writer,
+					writer:         writer,
+				}, c.Request)
+				_ = writer.Close()
+				c.Abort()
+				return
+			}
+		}
 		s.fileServer.ServeHTTP(c.Writer, c.Request)
 		c.Abort()
 	}
+}
+
+func acceptsGzip(header string) bool {
+	wildcardAccepted := false
+	for _, part := range strings.Split(header, ",") {
+		fields := strings.Split(strings.TrimSpace(part), ";")
+		encoding := strings.ToLower(strings.TrimSpace(fields[0]))
+		accepted := true
+		for _, parameter := range fields[1:] {
+			name, value, found := strings.Cut(strings.TrimSpace(parameter), "=")
+			if found && strings.EqualFold(strings.TrimSpace(name), "q") {
+				quality, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+				if err == nil && quality <= 0 {
+					accepted = false
+					break
+				}
+			}
+		}
+		if encoding == "gzip" {
+			return accepted
+		}
+		if encoding == "*" {
+			wildcardAccepted = accepted
+		}
+	}
+	return wildcardAccepted
+}
+
+func shouldCompressFrontendResponse(request *http.Request, path string) bool {
+	if request.Method != http.MethodGet || request.Header.Get("Range") != "" || !acceptsGzip(request.Header.Get("Accept-Encoding")) {
+		return false
+	}
+	return isCompressibleFrontendPath(path)
+}
+
+func isCompressibleFrontendPath(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".css", ".html", ".js", ".json", ".map", ".svg", ".txt", ".wasm", ".xml":
+		return true
+	default:
+		return false
+	}
+}
+
+func addVaryAcceptEncoding(header http.Header) {
+	for _, value := range header.Values("Vary") {
+		for _, token := range strings.Split(value, ",") {
+			if strings.EqualFold(strings.TrimSpace(token), "Accept-Encoding") {
+				return
+			}
+		}
+	}
+	header.Add("Vary", "Accept-Encoding")
+}
+
+func writeHTMLResponse(c *gin.Context, content []byte) {
+	addVaryAcceptEncoding(c.Writer.Header())
+	if shouldCompressFrontendResponse(c.Request, "index.html") {
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.Header("Content-Encoding", "gzip")
+		c.Writer.Header().Del("Content-Length")
+		c.Status(http.StatusOK)
+		writer, err := gzip.NewWriterLevel(c.Writer, gzip.BestSpeed)
+		if err == nil {
+			_, _ = writer.Write(content)
+			_ = writer.Close()
+			c.Abort()
+			return
+		}
+		c.Header("Content-Encoding", "")
+	}
+	c.Data(http.StatusOK, "text/html; charset=utf-8", content)
+	c.Abort()
 }
 
 func (s *FrontendServer) fileExists(path string) bool {
@@ -172,8 +281,7 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 
 		c.Header("ETag", cached.ETag)
 		c.Header("Cache-Control", "no-cache") // Must revalidate
-		c.Data(http.StatusOK, "text/html; charset=utf-8", content)
-		c.Abort()
+		writeHTMLResponse(c, content)
 		return
 	}
 
@@ -184,16 +292,14 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 	settings, err := s.settings.GetPublicSettingsForInjection(ctx)
 	if err != nil {
 		// Fallback: serve without injection
-		c.Data(http.StatusOK, "text/html; charset=utf-8", s.baseHTML)
-		c.Abort()
+		writeHTMLResponse(c, s.baseHTML)
 		return
 	}
 
 	settingsJSON, err := json.Marshal(settings)
 	if err != nil {
 		// Fallback: serve without injection
-		c.Data(http.StatusOK, "text/html; charset=utf-8", s.baseHTML)
-		c.Abort()
+		writeHTMLResponse(c, s.baseHTML)
 		return
 	}
 
@@ -208,8 +314,7 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 		c.Header("ETag", cached.ETag)
 	}
 	c.Header("Cache-Control", "no-cache")
-	c.Data(http.StatusOK, "text/html; charset=utf-8", content)
-	c.Abort()
+	writeHTMLResponse(c, content)
 }
 
 func (s *FrontendServer) injectSettings(settingsJSON []byte) []byte {

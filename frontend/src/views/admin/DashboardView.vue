@@ -264,7 +264,12 @@
                   @change="onDateRangeChange"
                 />
               </div>
-              <button @click="loadDashboardStats" :disabled="chartsLoading" class="btn btn-secondary">
+              <button
+                data-testid="admin-dashboard-chart-refresh"
+                @click="loadChartData"
+                :disabled="chartsLoading"
+                class="btn btn-secondary"
+              >
                 {{ t('common.refresh') }}
               </button>
               <div class="ml-auto flex items-center gap-2">

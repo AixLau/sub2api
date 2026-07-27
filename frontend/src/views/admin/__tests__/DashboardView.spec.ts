@@ -195,6 +195,37 @@ describe('admin DashboardView', () => {
     expect(new Date(range.end_time!).getTime() - new Date(range.start_time!).getTime()).toBe(24 * 60 * 60 * 1000)
   })
 
+  it('refreshes chart data without reloading global summary cards', async () => {
+    const wrapper = mount(DashboardView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          Icon: true,
+          DateRangePicker: true,
+          Select: true,
+          ModelDistributionChart: true,
+          TokenUsageTrend: true,
+          ActiveUsersTrend: true,
+          UserGrowthRetention: true
+        }
+      }
+    })
+
+    await flushPromises()
+    expect(getSnapshotV2).toHaveBeenCalledTimes(1)
+    expect(getSnapshotV2.mock.calls[0][0]).toEqual(expect.objectContaining({
+      include_stats: true
+    }))
+
+    await wrapper.get('[data-testid="admin-dashboard-chart-refresh"]').trigger('click')
+    await flushPromises()
+
+    expect(getSnapshotV2).toHaveBeenCalledTimes(2)
+    expect(getSnapshotV2.mock.calls[1][0]).toEqual(expect.objectContaining({
+      include_stats: false
+    }))
+  })
+
   it('does not load recent usage trend and enlarges token usage trend', async () => {
     const TokenUsageTrendStub = {
       props: ['trendData', 'loading', 'showCost', 'chartHeightClass'],

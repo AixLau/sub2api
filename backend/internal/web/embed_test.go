@@ -4,7 +4,9 @@ package web
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +20,93 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestFrontendCompression(t *testing.T) {
+	t.Run("compresses JavaScript for gzip clients", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
+		request.Header.Set("Accept-Encoding", "br, gzip")
+
+		require.True(t, shouldCompressFrontendResponse(request, "assets/app.js"))
+
+		request.Header.Set("Accept-Encoding", "gzip;q=0.0, br")
+		require.False(t, shouldCompressFrontendResponse(request, "assets/app.js"))
+	})
+
+	t.Run("skips ranges and already compressed assets", func(t *testing.T) {
+		rangeRequest := httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
+		rangeRequest.Header.Set("Accept-Encoding", "gzip")
+		rangeRequest.Header.Set("Range", "bytes=0-100")
+		require.False(t, shouldCompressFrontendResponse(rangeRequest, "assets/app.js"))
+
+		imageRequest := httptest.NewRequest(http.MethodGet, "/assets/logo.png", nil)
+		imageRequest.Header.Set("Accept-Encoding", "gzip")
+		require.False(t, shouldCompressFrontendResponse(imageRequest, "assets/logo.png"))
+	})
+
+	t.Run("writes compressed HTML with matching headers", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		context.Request.Header.Set("Accept-Encoding", "gzip")
+
+		writeHTMLResponse(context, []byte("<html><body>compressed</body></html>"))
+
+		require.Equal(t, "gzip", recorder.Header().Get("Content-Encoding"))
+		require.Contains(t, recorder.Header().Values("Vary"), "Accept-Encoding")
+		reader, err := gzip.NewReader(recorder.Body)
+		require.NoError(t, err)
+		decompressed, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		require.NoError(t, reader.Close())
+		require.Equal(t, "<html><body>compressed</body></html>", string(decompressed))
+	})
+
+	t.Run("varies uncompressed HTML by accepted encoding", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+
+		writeHTMLResponse(context, []byte("<html></html>"))
+
+		require.Empty(t, recorder.Header().Get("Content-Encoding"))
+		require.Contains(t, recorder.Header().Values("Vary"), "Accept-Encoding")
+	})
+
+	t.Run("serves embedded JavaScript through gzip middleware", func(t *testing.T) {
+		server, err := NewFrontendServer(&mockSettingsProvider{
+			settings: map[string]string{"site_name": "Test"},
+		})
+		require.NoError(t, err)
+
+		var assetPath string
+		require.NoError(t, fs.WalkDir(server.distFS, "assets", func(path string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if assetPath == "" && !entry.IsDir() && strings.HasSuffix(path, ".js") {
+				assetPath = path
+			}
+			return nil
+		}))
+		require.NotEmpty(t, assetPath)
+
+		router := gin.New()
+		router.Use(server.Middleware())
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/"+assetPath, nil)
+		request.Header.Set("Accept-Encoding", "gzip")
+		router.ServeHTTP(recorder, request)
+
+		require.Equal(t, http.StatusOK, recorder.Code)
+		require.Equal(t, "gzip", recorder.Header().Get("Content-Encoding"))
+		reader, err := gzip.NewReader(recorder.Body)
+		require.NoError(t, err)
+		decompressed, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		require.NoError(t, reader.Close())
+		require.NotEmpty(t, decompressed)
+	})
+}
 
 func init() {
 	gin.SetMode(gin.TestMode)

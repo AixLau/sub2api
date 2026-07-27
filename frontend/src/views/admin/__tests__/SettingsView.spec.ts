@@ -4,6 +4,14 @@ import { flushPromises, mount } from "@vue/test-utils";
 
 import SettingsView from "../SettingsView.vue";
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 const {
   getSettings,
   updateSettings,
@@ -672,6 +680,23 @@ describe("admin SettingsView payment visible method controls", () => {
 
     expect(wrapper.text()).not.toContain("可见方式");
     expect(wrapper.text()).not.toContain("支付来源");
+  });
+
+  it("renders the settings form without waiting for optional web search config", async () => {
+    const webSearchRequest = createDeferred<{
+      enabled: boolean;
+      providers: never[];
+    }>();
+    getWebSearchEmulationConfig.mockReturnValueOnce(webSearchRequest.promise);
+
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(getWebSearchEmulationConfig).toHaveBeenCalledOnce();
+    expect(wrapper.text()).toContain("admin.settings.site.title");
+
+    webSearchRequest.resolve({ enabled: false, providers: [] });
+    await flushPromises();
   });
 
   it("loads, edits, validates, and saves forwarded client-IP headers", async () => {

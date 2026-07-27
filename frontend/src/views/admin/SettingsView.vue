@@ -9901,8 +9901,9 @@ async function loadSettings() {
       openaiFastPolicyLoaded.value = true;
     }
 
-    // Load web search emulation config separately
-    await loadWebSearchConfig();
+    // This optional panel has its own error handling and must not keep the
+    // entire settings page behind the initial loading state.
+    void loadWebSearchConfig();
   } catch (error: unknown) {
     loadFailed.value = true;
     appStore.showError(

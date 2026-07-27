@@ -42,6 +42,13 @@ describe('AppSidebar scroll position persistence', () => {
   })
 })
 
+describe('AppSidebar mobile drawer lifecycle', () => {
+  it('connects the shared keyboard and scroll-lock lifecycle', () => {
+    expect(componentSource).toContain("import { useMobileDrawerLifecycle } from '@/composables/useMobileDrawerLifecycle'")
+    expect(componentSource).toContain('useMobileDrawerLifecycle(mobileOpen, closeMobile)')
+  })
+})
+
 describe('AppSidebar active indicator', () => {
   it('measures the active link and animates a vertical indicator', () => {
     expect(componentSource).toContain('class="sidebar-active-indicator"')

@@ -209,6 +209,7 @@ import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+import { useMobileDrawerLifecycle } from '@/composables/useMobileDrawerLifecycle'
 import { usePrefersReducedMotion } from '@/composables/usePrefersReducedMotion'
 
 interface NavItem {
@@ -874,6 +875,8 @@ function toggleTheme() {
 function closeMobile() {
   appStore.setMobileOpen(false)
 }
+
+useMobileDrawerLifecycle(mobileOpen, closeMobile)
 
 function handleMenuItemClick(itemPath: string) {
   if (mobileOpen.value) {
