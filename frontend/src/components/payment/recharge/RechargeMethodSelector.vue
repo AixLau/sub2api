@@ -16,10 +16,14 @@
         type="button"
         :data-testid="`payment-method-${method.type}`"
         class="recharge-method-card"
-        :class="{
-          'recharge-method-card-selected': selected === method.type,
-          'recharge-method-card-disabled': !method.available,
-        }"
+        :class="[
+          {
+            'recharge-method-card-selected': selected === method.type,
+            'recharge-method-selected-glow': method.available && selected === method.type,
+            'recharge-method-card-disabled': !method.available,
+          },
+          selected === method.type ? methodSelectedBrandClass(method.type) : '',
+        ]"
         role="radio"
         :aria-checked="selected === method.type"
         :disabled="!method.available"
@@ -125,7 +129,74 @@ function methodToneClass(type: string): string {
   return 'recharge-method-icon-alipay'
 }
 
+function methodSelectedBrandClass(type: string): string {
+  if (type.includes('wxpay')) return 'recharge-method-selected-wxpay'
+  if (type === 'stripe') return 'recharge-method-selected-stripe'
+  if (type === 'airwallex') return 'recharge-method-selected-airwallex'
+  if (type.includes('alipay') || type === 'nineplus' || type === 'haozpay') {
+    return 'recharge-method-selected-alipay'
+  }
+  return 'recharge-method-selected-default'
+}
+
 function isRecommended(type: string): boolean {
   return type === props.methods[0]?.type || type === 'alipay' || type === 'nineplus'
 }
 </script>
+
+<style scoped>
+.recharge-method-selected-glow {
+  position: relative;
+  isolation: isolate;
+}
+
+.recharge-method-selected-glow::after {
+  position: absolute;
+  z-index: 0;
+  inset: -2px;
+  border-radius: inherit;
+  box-shadow:
+    0 0 8px 1px rgba(20, 184, 166, 0.34),
+    0 0 22px 6px rgba(20, 184, 166, 0.18);
+  content: '';
+  pointer-events: none;
+  animation: recharge-method-glow-breathe 3s ease-in-out infinite;
+}
+
+.recharge-method-selected-alipay {
+  border-color: #02a9f1 !important;
+}
+
+.recharge-method-selected-wxpay {
+  border-color: #09bb07 !important;
+}
+
+.recharge-method-selected-stripe {
+  border-color: #676be5 !important;
+}
+
+.recharge-method-selected-airwallex {
+  border-color: #ff6b3d !important;
+}
+
+.recharge-method-selected-default {
+  border-color: #2563eb !important;
+}
+
+@keyframes recharge-method-glow-breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recharge-method-selected-glow::after {
+    animation: none;
+    opacity: 0.8;
+  }
+}
+</style>

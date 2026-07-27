@@ -1,11 +1,10 @@
 <template>
   <div
     :class="[
-      // shimmer 扫光:渐变底 + 200% 背景宽,由 tailwind 配置的 shimmer keyframe 驱动;
-      // 减弱动效时退回 animate-pulse
+      // shimmer 扫光仅在允许动效时启用;减弱动效时保持静态占位。
       'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200 bg-[length:200%_100%]',
       'dark:from-dark-700 dark:via-dark-600 dark:to-dark-700',
-      'motion-safe:animate-shimmer motion-reduce:animate-pulse',
+      'motion-safe:animate-shimmer',
       variant === 'circle' ? 'rounded-full' : 'rounded-lg',
       customClass
     ]"

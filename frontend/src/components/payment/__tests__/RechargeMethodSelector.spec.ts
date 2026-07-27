@@ -31,4 +31,14 @@ describe('RechargeMethodSelector', () => {
     expect(alipay.text()).not.toContain('payment.rechargeUi.instantArrival')
     expect(wxpay.text()).toContain('payment.rechargeUi.methodUnavailable')
   })
+
+  it('adds the teal glow and payment brand border classes to the selected method', () => {
+    const wrapper = mountSelector()
+    const alipay = wrapper.find('[data-testid="payment-method-alipay"]')
+    const wxpay = wrapper.find('[data-testid="payment-method-wxpay"]')
+
+    expect(alipay.classes()).toContain('recharge-method-selected-glow')
+    expect(alipay.classes()).toContain('recharge-method-selected-alipay')
+    expect(wxpay.classes()).not.toContain('recharge-method-selected-glow')
+  })
 })

@@ -43,6 +43,7 @@ vi.mock('qrcode', () => ({
 }))
 
 import PaymentStatusPanel from '../PaymentStatusPanel.vue'
+import Lens from '@/components/inspira/Lens.vue'
 
 const orderFactory = (status: string) => ({
   id: 42,
@@ -67,6 +68,7 @@ describe('PaymentStatusPanel', () => {
     verifyOrder.mockReset()
     showError.mockReset()
     toCanvas.mockReset().mockResolvedValue(undefined)
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,test-qr')
   })
 
   afterEach(() => {
@@ -121,6 +123,8 @@ describe('PaymentStatusPanel', () => {
 
     await flushPromises()
     expect(wrapper.text()).toContain('payment.qr.openPayWindow')
+    expect(wrapper.findComponent(Lens).exists()).toBe(true)
+    expect(wrapper.find('[data-test="payment-qr-image"]').attributes('src')).toBe('data:image/png;base64,test-qr')
 
     const reopenBtn = wrapper.findAll('button').find(b => b.text().includes('payment.qr.openPayWindow'))
     expect(reopenBtn).toBeTruthy()

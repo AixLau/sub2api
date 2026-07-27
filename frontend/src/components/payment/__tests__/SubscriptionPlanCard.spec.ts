@@ -34,7 +34,11 @@ const i18n = createI18n({
   },
 });
 
-const mountPlanCard = (groupPlatform: string, overrides: Partial<SubscriptionPlan> = {}) =>
+const mountPlanCard = (
+  groupPlatform: string,
+  overrides: Partial<SubscriptionPlan> = {},
+  highlight?: boolean,
+) =>
   mount(SubscriptionPlanCard, {
     props: {
       plan: {
@@ -56,6 +60,7 @@ const mountPlanCard = (groupPlatform: string, overrides: Partial<SubscriptionPla
         is_active: true,
         ...overrides,
       },
+      ...(highlight === undefined ? {} : { highlight }),
     },
     global: { plugins: [i18n, createPinia()] },
   });
@@ -143,5 +148,21 @@ describe("SubscriptionPlanCard", () => {
     expect(cnyPlan.find("[data-testid='subscription-plan-price']").text()).toBe("¥10.00");
     expect(cnyPlan.text()).toContain("¥20.00");
     expect(usdPlan.find("[data-testid='subscription-plan-price']").text()).toBe("$10.00");
+  });
+
+  it("automatically renders the border beam only for discounted plans", () => {
+    const discountedPlan = mountPlanCard("openai", { original_price: 20 });
+    const regularPlan = mountPlanCard("openai");
+
+    expect(discountedPlan.find(".border-beam").exists()).toBe(true);
+    expect(regularPlan.find(".border-beam").exists()).toBe(false);
+  });
+
+  it("allows the border beam auto-detection to be explicitly overridden", () => {
+    const forcedOn = mountPlanCard("openai", {}, true);
+    const forcedOff = mountPlanCard("openai", { original_price: 20 }, false);
+
+    expect(forcedOn.find(".border-beam").exists()).toBe(true);
+    expect(forcedOff.find(".border-beam").exists()).toBe(false);
   });
 });

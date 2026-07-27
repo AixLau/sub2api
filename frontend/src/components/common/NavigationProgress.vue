@@ -93,17 +93,13 @@ const isVisible = computed(() => isLoading.value)
 /* 减少动画模式 */
 @media (prefers-reduced-motion: reduce) {
   .navigation-progress-bar {
-    animation: progress-pulse 2s ease-in-out infinite;
+    animation: none;
+    transform: none;
   }
 
-  @keyframes progress-pulse {
-    0%,
-    100% {
-      opacity: 0.4;
-    }
-    50% {
-      opacity: 1;
-    }
+  .progress-fade-enter-active,
+  .progress-fade-leave-active {
+    transition: none;
   }
 }
 </style>

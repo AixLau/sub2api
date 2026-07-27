@@ -140,6 +140,27 @@ describe('admin DashboardView', () => {
     })
   })
 
+  it('renders the admin dashboard skeleton in the first frame while data is pending', () => {
+    getSnapshotV2.mockReturnValue(new Promise(() => {}))
+
+    const wrapper = mount(DashboardView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          Icon: true,
+          DateRangePicker: true,
+          Select: true,
+          ModelDistributionChart: true,
+          TokenUsageTrend: true,
+          ActiveUsersTrend: true,
+          UserGrowthRetention: true
+        }
+      }
+    })
+
+    expect(wrapper.find('[data-testid="admin-dashboard-skeleton"]').exists()).toBe(true)
+  })
+
   it('uses last 24 hours as default dashboard range', async () => {
     mount(DashboardView, {
       global: {

@@ -1,6 +1,6 @@
 <template>
   <!-- 布局与管理员 DashboardView 对齐:两行统计卡 → 图表区 → 双栏面板 -->
-  <div class="space-y-6" aria-busy="true">
+  <div data-testid="admin-dashboard-skeleton" class="space-y-6" aria-busy="true">
     <div v-for="row in 2" :key="row" class="grid grid-cols-2 gap-4 lg:grid-cols-4">
       <div v-for="i in 4" :key="i" class="card flex items-center gap-3 p-4">
         <Skeleton variant="circle" :width="36" :height="36" />

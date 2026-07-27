@@ -4,7 +4,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { ref } from 'vue'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import NavigationProgress from '../../common/NavigationProgress.vue'
+
+const componentSource = readFileSync(
+  resolve(process.cwd(), 'src/components/common/NavigationProgress.vue'),
+  'utf8'
+)
 
 // Mock useNavigationLoadingState
 const mockIsLoading = ref(false)
@@ -57,6 +64,13 @@ describe('NavigationProgress', () => {
 
     const bar = wrapper.find('.navigation-progress-bar')
     expect(bar.exists()).toBe(true)
+  })
+
+  it('减弱动效时停止进度条动画和过渡', () => {
+    expect(componentSource).toMatch(
+      /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*animation: none[\s\S]*transition: none/
+    )
+    expect(componentSource).not.toContain('progress-pulse')
   })
 
   it('应该正确响应 isLoading 状态变化', async () => {

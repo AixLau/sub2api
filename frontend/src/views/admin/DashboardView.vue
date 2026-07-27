@@ -358,7 +358,9 @@ const appStore = useAppStore()
 const router = useRouter()
 const { canUseBatchImage, refreshBatchImageAccess } = useBatchImageAccess()
 const stats = ref<DashboardStats | null>(null)
-const loading = ref(false)
+// Start in the loading state so the first rendered frame contains the dashboard
+// skeleton instead of an empty container before onMounted starts the request.
+const loading = ref(true)
 const chartsLoading = ref(false)
 const activeUsersTrendLoading = ref(false)
 const userRetentionLoading = ref(false)

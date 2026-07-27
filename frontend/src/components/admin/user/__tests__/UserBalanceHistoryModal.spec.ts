@@ -35,6 +35,9 @@ const messages: Record<string, string> = {
   'admin.users.typeAdminConcurrency': 'Admin Concurrency',
   'admin.users.typeSubscription': 'Subscription',
   'admin.users.subscriptionDuration': '{days} days',
+  'admin.users.subscriptionGroup': 'Group',
+  'admin.users.subscriptionNotes': 'Notes',
+  'admin.users.subscriptionNotesEmpty': '-',
   'admin.users.subscriptionExpiresAt': 'Expires: {date}',
   'admin.subscriptions.status.active': 'Active',
   'redeem.subscriptionAssigned': 'Subscription Assigned',
@@ -174,10 +177,48 @@ describe('UserBalanceHistoryModal', () => {
 
     const text = wrapper.text()
     expect(text).toContain('Subscription Assigned')
-    expect(text).toContain('Pro - 30 days')
+    expect(text).toContain('30 days')
+    expect(text).toContain('Group: Pro')
+    expect(text).toContain('Notes: Paid plan')
     expect(text).toContain('Active')
     expect(text).toContain('Expires:')
-    expect(text).toContain('Paid plan')
     expect(text).not.toContain('SUB-7')
+  })
+
+  it('keeps subscription group and notes visible when optional details are missing', async () => {
+    apiMocks.getUserBalanceHistory.mockResolvedValue({
+      items: [{
+        id: 8,
+        code: 'SUB-8',
+        type: 'subscription',
+        value: 14,
+        status: 'active',
+        used_by: 99,
+        used_at: '2026-07-02T08:00:00Z',
+        created_at: '2026-07-02T08:00:00Z',
+        expires_at: '2026-07-16T08:00:00Z',
+        group_id: 4,
+        validity_days: 14,
+        notes: '   ',
+        group: null,
+      }],
+      total: 1,
+      total_recharged: 25,
+    })
+
+    const wrapper = mount(UserBalanceHistoryModal, {
+      props: {
+        show: false,
+        user: user as any,
+      },
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('Group: #4')
+    expect(text).toContain('Notes: -')
+    expect(text).toContain('14 days')
   })
 })

@@ -139,9 +139,26 @@
                 <p class="text-sm font-medium text-gray-900 dark:text-white">
                   {{ getItemTitle(item) }}
                 </p>
+                <template v-if="isSubscriptionType(item.type)">
+                  <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
+                    {{ t('admin.users.subscriptionGroup') }}:
+                    <span class="font-medium text-gray-700 dark:text-gray-200">
+                      {{ getSubscriptionGroupLabel(item) }}
+                    </span>
+                  </p>
+                  <p
+                    class="mt-0.5 text-xs text-gray-500 dark:text-dark-400"
+                    :title="item.notes || ''"
+                  >
+                    {{ t('admin.users.subscriptionNotes') }}:
+                    <span class="text-gray-700 dark:text-gray-200">
+                      {{ getSubscriptionNotesLabel(item) }}
+                    </span>
+                  </p>
+                </template>
                 <!-- Notes (admin adjustment reason) -->
                 <p
-                  v-if="item.notes"
+                  v-else-if="item.notes"
                   class="mt-0.5 text-xs text-gray-500 dark:text-dark-400"
                   :title="item.notes"
                 >
@@ -384,13 +401,23 @@ const formatValue = (item: BalanceHistoryItem) => {
   }
   if (isSubscriptionType(item.type)) {
     const days = item.validity_days || Math.round(item.value)
-    const groupName = item.group?.name || ''
-    const duration = t('admin.users.subscriptionDuration', { days })
-    return groupName ? `${groupName} - ${duration}` : duration
+    return t('admin.users.subscriptionDuration', { days })
   }
   // concurrency types
   const sign = item.value >= 0 ? '+' : ''
   return `${sign}${item.value}`
+}
+
+const getSubscriptionGroupLabel = (item: BalanceHistoryItem) => {
+  if (item.group?.name) return item.group.name
+  if (item.group_id) return `#${item.group_id}`
+  return '-'
+}
+
+const getSubscriptionNotesLabel = (item: BalanceHistoryItem) => {
+  const notes = item.notes.trim()
+  if (!notes) return t('admin.users.subscriptionNotesEmpty')
+  return notes.length > 60 ? `${notes.substring(0, 55)}...` : notes
 }
 
 const getSubscriptionStatusLabel = (status: string) => {

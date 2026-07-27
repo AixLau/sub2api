@@ -134,14 +134,17 @@
                 <span class="font-semibold tabular-nums text-gray-900 dark:text-white">{{ countdownDisplay }}</span>
               </div>
             </div>
-            <div :class="['relative rounded-lg border-2 p-4', qrBorderClass]">
-              <canvas ref="qrCanvas" class="mx-auto"></canvas>
-              <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <span :class="['rounded-full p-2 shadow ring-2 ring-white', qrLogoBgClass]">
-                  <img :src="qrLogoIcon" alt="" class="h-5 w-5 brightness-0 invert" />
-                </span>
+            <Lens>
+              <div :class="['relative rounded-lg border-2 p-4', qrBorderClass]">
+                <img v-if="qrDataUrl" :src="qrDataUrl" alt="" width="220" height="220" class="mx-auto block" />
+                <div v-else class="h-[220px] w-[220px]"></div>
+                <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <span :class="['rounded-full p-2 shadow ring-2 ring-white', qrLogoBgClass]">
+                    <img :src="qrLogoIcon" alt="" class="h-5 w-5 brightness-0 invert" />
+                  </span>
+                </div>
               </div>
-            </div>
+            </Lens>
             <p class="text-center text-sm leading-6 text-gray-600 dark:text-gray-300">
               {{ t('payment.qr.alipaySaveAndScanHint') }}
             </p>
@@ -196,15 +199,26 @@
             <div :class="['absolute -right-1.5 -top-1.5 h-5 w-5 rounded-tr-md border-r-2 border-t-2', brandCornerClass]"></div>
             <div :class="['absolute -bottom-1.5 -left-1.5 h-5 w-5 rounded-bl-md border-b-2 border-l-2', brandCornerClass]"></div>
             <div :class="['absolute -bottom-1.5 -right-1.5 h-5 w-5 rounded-br-md border-b-2 border-r-2', brandCornerClass]"></div>
-            <div class="rounded-xl bg-white p-3">
-              <canvas ref="qrCanvas" class="block"></canvas>
-              <!-- Brand logo overlay -->
-              <div v-if="isAlipay || isWxpay" class="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <span class="flex h-11 w-11 items-center justify-center rounded-xl bg-white shadow-md ring-1 ring-black/5">
-                  <img :src="brandIcon" alt="" class="h-7 w-7" />
-                </span>
+            <Lens>
+              <div class="relative rounded-xl bg-white p-3">
+                <img
+                  v-if="qrDataUrl"
+                  data-test="payment-qr-image"
+                  :src="qrDataUrl"
+                  alt=""
+                  width="220"
+                  height="220"
+                  class="block"
+                />
+                <div v-else class="h-[220px] w-[220px]"></div>
+                <!-- Brand logo overlay -->
+                <div v-if="isAlipay || isWxpay" class="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <span class="flex h-11 w-11 items-center justify-center rounded-xl bg-white shadow-md ring-1 ring-black/5">
+                    <img :src="brandIcon" alt="" class="h-7 w-7" />
+                  </span>
+                </div>
               </div>
-            </div>
+            </Lens>
           </div>
 
           <p v-if="scanHint" class="mt-5 max-w-[16rem] text-center text-sm leading-relaxed text-gray-500 dark:text-gray-400">{{ scanHint }}</p>
@@ -272,6 +286,7 @@ import { getPaymentPopupFeatures, isBuiltInAlipayMethod, isBuiltInWxpayMethod } 
 import { currencySymbol, formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import type { PaymentOrder } from '@/types/payment'
 import Icon from '@/components/icons/Icon.vue'
+import Lens from '@/components/inspira/Lens.vue'
 import QRCode from 'qrcode'
 import alipayIcon from '@/assets/icons/alipay.svg'
 import wxpayIcon from '@/assets/icons/wxpay.svg'
@@ -305,8 +320,8 @@ const { t } = i18n
 const paymentStore = usePaymentStore()
 const appStore = useAppStore()
 
-const qrCanvas = ref<HTMLCanvasElement | null>(null)
 const qrUrl = ref('')
+const qrDataUrl = ref('')
 const remainingSeconds = ref(0)
 const cancelling = ref(false)
 const paidOrder = ref<PaymentOrder | null>(null)
@@ -439,11 +454,20 @@ function setOutcome(next: PaymentOutcome) {
 
 async function renderQR() {
   await nextTick()
-  if (!showQRCode.value || !qrCanvas.value || !qrUrl.value) return
-  await QRCode.toCanvas(qrCanvas.value, qrUrl.value, {
-    width: 220, margin: 1,
-    errorCorrectionLevel: 'M',
-  })
+  if (!showQRCode.value || !qrUrl.value) {
+    qrDataUrl.value = ''
+    return
+  }
+  try {
+    const canvas = document.createElement('canvas')
+    await QRCode.toCanvas(canvas, qrUrl.value, {
+      width: 220, margin: 1,
+      errorCorrectionLevel: 'M',
+    })
+    qrDataUrl.value = canvas.toDataURL('image/png')
+  } catch {
+    qrDataUrl.value = ''
+  }
 }
 
 function updateDeepLinkState(state: AlipayDeepLinkState) {
@@ -461,10 +485,9 @@ function reopenAlipay() {
 }
 
 function saveQRCode() {
-  const canvas = qrCanvas.value
-  if (!canvas) return
+  if (!qrDataUrl.value) return
   const link = document.createElement('a')
-  link.href = canvas.toDataURL('image/png')
+  link.href = qrDataUrl.value
   link.download = `alipay-${props.outTradeNo || props.orderId}.png`
   document.body.appendChild(link)
   link.click()

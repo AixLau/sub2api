@@ -85,12 +85,14 @@ import {
 import { buildSubscriptionPlanDisplay, buildSubscriptionPlanDisplayLabels } from '@/components/payment/subscriptionPlanDisplay'
 import BorderBeam from '@/components/inspira/BorderBeam.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   plan: SubscriptionPlan
   activeSubscriptions?: UserSubscription[]
   /** Force the animated border on/off; defaults to on for discounted plans */
   highlight?: boolean
-}>()
+}>(), {
+  highlight: undefined,
+})
 const emit = defineEmits<{ select: [plan: SubscriptionPlan] }>()
 const { t } = useI18n()
 const platform = computed(() => props.plan.group_platform || '')
