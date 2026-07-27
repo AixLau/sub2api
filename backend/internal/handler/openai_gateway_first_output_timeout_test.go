@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -28,13 +29,28 @@ func TestOpenAIForwardMayFailoverOnlyAfterNonSemanticWrite(t *testing.T) {
 }
 
 func TestOpenAIFirstOutputFailoverStopsAfterOneAccountSwitch(t *testing.T) {
-	failoverErr := &service.UpstreamFailoverError{SafeToFailoverAfterWrite: true}
+	failoverErr := &service.UpstreamFailoverError{
+		StatusCode:               http.StatusGatewayTimeout,
+		SafeToFailoverAfterWrite: true,
+	}
 	count := 0
 
 	require.False(t, openAIFirstOutputFailoverExhausted(failoverErr, &count))
 	require.Equal(t, 1, count)
 	require.True(t, openAIFirstOutputFailoverExhausted(failoverErr, &count))
 	require.Equal(t, 1, count)
+}
+
+func TestOpenAIFirstOutputFailoverLimitDoesNotConsumeCapacityRetries(t *testing.T) {
+	failoverErr := &service.UpstreamFailoverError{
+		StatusCode:               http.StatusBadGateway,
+		RetryableOnSameAccount:   true,
+		SafeToFailoverAfterWrite: true,
+	}
+	count := 0
+
+	require.False(t, openAIFirstOutputFailoverExhausted(failoverErr, &count))
+	require.Zero(t, count)
 }
 
 func TestOpenAIRequestAllowsFailoverReplayStopsCanceledClient(t *testing.T) {

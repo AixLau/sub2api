@@ -956,9 +956,12 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 			"message": message,
 		},
 	})
+	retryableOnSameAccount := isOpenAITransientProcessingError(http.StatusBadRequest, message, payload)
 	return &UpstreamFailoverError{
-		StatusCode:   http.StatusBadGateway,
-		ResponseBody: body,
+		StatusCode:               http.StatusBadGateway,
+		ResponseBody:             body,
+		RetryableOnSameAccount:   retryableOnSameAccount,
+		SafeToFailoverAfterWrite: true,
 	}
 }
 

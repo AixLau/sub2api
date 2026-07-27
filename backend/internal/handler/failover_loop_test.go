@@ -317,6 +317,30 @@ func TestHandleFailoverErrorForUser_UsesConfiguredCooldownTTL(t *testing.T) {
 	require.Equal(t, 17*time.Second, mock.cooldownCalls[0].ttl)
 }
 
+func TestHandleFailoverErrorForUser_RetriesBeforePerUserCooldownAndSwitch(t *testing.T) {
+	mock := &mockFailoverCooldownService{cooldownTTL: 17 * time.Second}
+	fs := NewFailoverState(3, false)
+	err := newTestFailoverErr(http.StatusBadGateway, true, false)
+
+	action := fs.HandleFailoverErrorForUser(context.Background(), mock, 42, 100, "openai", 1, err)
+	require.Equal(t, FailoverContinue, action)
+	require.Equal(t, 1, fs.SameAccountRetryCount[100])
+	require.Zero(t, fs.SwitchCount)
+	require.Empty(t, fs.FailedAccountIDs)
+	require.Empty(t, mock.cooldownCalls)
+
+	action = fs.HandleFailoverErrorForUser(context.Background(), mock, 42, 100, "openai", 1, err)
+	require.Equal(t, FailoverContinue, action)
+	require.Equal(t, 1, fs.SwitchCount)
+	require.Contains(t, fs.FailedAccountIDs, int64(100))
+	require.Len(t, mock.cooldownCalls, 1)
+	require.Equal(t, userAccountCooldownCall{
+		userID:    42,
+		accountID: 100,
+		ttl:       17 * time.Second,
+	}, mock.cooldownCalls[0])
+}
+
 // ---------------------------------------------------------------------------
 // HandleFailoverError — 缓存计费 (ForceCacheBilling)
 // ---------------------------------------------------------------------------
