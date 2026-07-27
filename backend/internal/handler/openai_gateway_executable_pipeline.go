@@ -1808,6 +1808,7 @@ type OpenAIWebSocketUsageStage struct {
 	Account              *service.Account
 	Subscription         *service.UserSubscription
 	Model                string
+	UpstreamModel        string
 	TurnErr              error
 	Result               *service.OpenAIForwardResult
 	CyberBlockKey        string
@@ -1845,7 +1846,11 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 		reqLog = zap.NewNop()
 	}
 
-	h.recordCyberPolicyIfMarked(c, s.APIKey, s.Account, s.Subscription, s.Model, s.TurnErr != nil, s.CyberBlockKey, s.ChannelMapping.ToUsageFields(s.Model, ""), s.RequestPayloadHash, nil)
+	upstreamModel := strings.TrimSpace(s.UpstreamModel)
+	if upstreamModel == "" && s.Result != nil {
+		upstreamModel = strings.TrimSpace(s.Result.UpstreamModel)
+	}
+	h.recordCyberPolicyIfMarked(c, s.APIKey, s.Account, s.Subscription, s.Model, s.TurnErr != nil, s.CyberBlockKey, s.ChannelMapping.ToUsageFields(s.Model, upstreamModel), s.RequestPayloadHash, nil)
 	if service.GetOpsCyberPolicy(c) != nil && s.CyberBlockedThisConn != nil {
 		*s.CyberBlockedThisConn = true
 	}
@@ -1881,7 +1886,11 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 	if scheduleSuccess {
 		scheduleSuccess = s.Result.SucceededForScheduling()
 	}
-	h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account.ID, s.Account.GetMappedModel(s.Model), scheduleSuccess, s.Result.FirstTokenMs)
+	scheduleModel := upstreamModel
+	if scheduleModel == "" {
+		scheduleModel = s.Account.GetMappedModel(s.Model)
+	}
+	h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account.ID, scheduleModel, scheduleSuccess, s.Result.FirstTokenMs)
 	inboundEndpoint := GetInboundEndpoint(c)
 	upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, s.Account, s.Result)
 	cyberBlocked := service.GetOpsCyberPolicy(c) != nil
@@ -1909,7 +1918,7 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 			RequestPayloadHash: s.RequestPayloadHash,
 			APIKeyService:      h.apiKeyService,
 			QuotaPlatform:      quotaPlatform,
-			ChannelUsageFields: s.ChannelMapping.ToUsageFields(s.Model, s.Result.UpstreamModel),
+			ChannelUsageFields: s.ChannelMapping.ToUsageFields(s.Model, upstreamModel),
 			CyberBlocked:       cyberBlocked,
 		}); err != nil {
 			reqLog.Error("openai.websocket_record_usage_failed",

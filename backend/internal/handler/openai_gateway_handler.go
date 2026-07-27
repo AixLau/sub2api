@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -49,6 +50,49 @@ type OpenAIGatewayHandler struct {
 	imageUserLimiters          map[int64]*imageConcurrencyLimiter
 	maxAccountSwitches         int
 	cfg                        *config.Config
+}
+
+type openAIWSTurnChannelMappingSnapshot struct {
+	turn    int
+	mapping service.ChannelMappingResult
+}
+
+var errOpenAIWSUnsupportedModelSwitch = errors.New("selected account does not support websocket model switch")
+
+func newOpenAIWSUnsupportedModelSwitchError(model string) error {
+	cause := fmt.Errorf("%w: model %q", errOpenAIWSUnsupportedModelSwitch, strings.TrimSpace(model))
+	return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "model switch requires reconnect", cause)
+}
+
+func shouldReportOpenAIWSProxyAccountFailure(err error) bool {
+	return err != nil && !errors.Is(err, errOpenAIWSUnsupportedModelSwitch)
+}
+
+func openAIWSTurnBillingModel(result *service.OpenAIForwardResult, mapping service.ChannelMappingResult, requestedModel, upstreamModel string) string {
+	billingModel := ""
+	if result != nil {
+		billingModel = strings.TrimSpace(result.BillingModel)
+	}
+	if billingModel == "" {
+		billingModel = strings.TrimSpace(upstreamModel)
+	}
+	if billingModel == "" {
+		billingModel = strings.TrimSpace(requestedModel)
+	}
+
+	requestedModel = strings.TrimSpace(requestedModel)
+	switch mapping.BillingModelSource {
+	case service.BillingModelSourceRequested:
+		if requestedModel != "" {
+			billingModel = requestedModel
+		}
+	case service.BillingModelSourceChannelMapped:
+		mappedModel := strings.TrimSpace(mapping.MappedModel)
+		if mappedModel != "" && mappedModel != requestedModel {
+			billingModel = mappedModel
+		}
+	}
+	return billingModel
 }
 
 type grokMediaEligibilityProber interface {
@@ -366,6 +410,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	firstOutputTimeoutSwitchCount := 0
+	var passthroughFailoverState openAIPassthroughFailoverState
 
 	// 生图意图的 /v1/responses 请求必须调度到确实支持 Responses API 的账号，否则
 	// 会在 forward 阶段被静默降级为无法生图的 Chat Completions 直转（#4417）。
@@ -414,6 +459,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		// Forward request
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 		forwardStart := time.Now()
+		attemptBody := h.deriveOpenAIForwardAttemptBody(reqLog, forwardBody, account, &passthroughFailoverState)
 		var writerSizeBeforeForward int
 		var result *service.OpenAIForwardResult
 		var err error
@@ -421,7 +467,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			GatewayService:          h.gatewayService,
 			Kind:                    OpenAIHTTPForwardResponses,
 			Account:                 account,
-			Body:                    forwardBody,
+			Body:                    attemptBody,
 			ReleaseFunc:             accountReleaseFunc,
 			WriterSizeBeforeForward: &writerSizeBeforeForward,
 			Result:                  &result,
@@ -1547,7 +1593,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	previousResponseCanMove := !firstMessageToolCoverage.HasFunctionCallOutput || firstMessageToolCoverage.ContextCoversAllCallIDs
 	reqLog = reqLog.With(
 		zap.Bool("ws_ingress", true),
-		zap.String("model", reqModel),
+		zap.String("session_initial_model", reqModel),
 		zap.Bool("has_previous_response_id", previousResponseID != ""),
 		zap.String("previous_response_id_kind", previousResponseIDKind),
 	)
@@ -1784,6 +1830,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			reasoningEffortMappings = apiKey.Group.ReasoningEffortMappings
 		}
 		var requestPayloadHash string
+		// Passthrough rejects overlapping response.create frames, so one immutable
+		// turn-tagged slot preserves the exact mapping used for the in-flight request.
+		var turnChannelMapping atomic.Pointer[openAIWSTurnChannelMappingSnapshot]
+		turnChannelMapping.Store(&openAIWSTurnChannelMappingSnapshot{turn: 1, mapping: channelMappingWS})
 		hooks := &service.OpenAIWSIngressHooks{
 			InitialRequestModel:     reqModel,
 			MaxReasoningEffort:      maxReasoningEffort,
@@ -1842,6 +1892,22 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				}
 				return nil
 			},
+			MapRequestModel: func(turn int, originalModel string) (string, error) {
+				model := strings.TrimSpace(originalModel)
+				if model == "" {
+					model = reqModel
+				}
+				mapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(ctx, apiKey.GroupID, model)
+				mappedModelUnchanged := false
+				if previous := turnChannelMapping.Load(); previous != nil && previous.turn < turn {
+					mappedModelUnchanged = strings.TrimSpace(previous.mapping.MappedModel) == strings.TrimSpace(mapping.MappedModel)
+				}
+				if turn > 1 && !mappedModelUnchanged && !account.IsModelSupported(model) && !account.IsModelSupported(mapping.MappedModel) {
+					return "", newOpenAIWSUnsupportedModelSwitchError(mapping.MappedModel)
+				}
+				turnChannelMapping.Store(&openAIWSTurnChannelMappingSnapshot{turn: turn, mapping: mapping})
+				return mapping.MappedModel, nil
+			},
 			BeforeTurn: func(turn int) error {
 				// turn==1 的会话屏蔽已由握手层检查覆盖；连接内 flag 只拦截后续 turn。
 				if cyberBlockedThisConn {
@@ -1879,6 +1945,28 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			},
 			AfterTurn: func(turn int, result *service.OpenAIForwardResult, turnErr error) {
 				completeContentModerationFrame(c, turn, turnErr)
+				turnRequestedModel := reqModel
+				turnUpstreamModel := ""
+				if result != nil && turn > 1 {
+					if model := strings.TrimSpace(result.Model); model != "" {
+						turnRequestedModel = model
+					}
+				}
+				if result != nil {
+					turnUpstreamModel = strings.TrimSpace(result.UpstreamModel)
+				}
+				var turnMapping service.ChannelMappingResult
+				if snapshot := turnChannelMapping.Load(); snapshot != nil && snapshot.turn == turn {
+					turnMapping = snapshot.mapping
+				} else {
+					turnMapping, _ = h.gatewayService.ResolveChannelMappingAndRestrict(ctx, apiKey.GroupID, turnRequestedModel)
+				}
+				if turnUpstreamModel == "" {
+					turnUpstreamModel = turnRequestedModel
+				}
+				if result != nil {
+					result.BillingModel = openAIWSTurnBillingModel(result, turnMapping, turnRequestedModel, turnUpstreamModel)
+				}
 				_ = h.runOpenAIWebSocketStage(c, OpenAIWebSocketUsageStage{
 					Handler:              h,
 					RequestContext:       ctx,
@@ -1886,11 +1974,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					APIKey:               apiKey,
 					Account:              account,
 					Subscription:         subscription,
-					Model:                reqModel,
+					Model:                turnRequestedModel,
+					UpstreamModel:        turnUpstreamModel,
 					TurnErr:              turnErr,
 					Result:               result,
 					CyberBlockKey:        cyberBlockKey,
-					ChannelMapping:       channelMappingWS,
+					ChannelMapping:       turnMapping,
 					RequestPayloadHash:   requestPayloadHash,
 					ReleaseTurnSlots:     releaseTurnSlots,
 					CyberBlockedThisConn: &cyberBlockedThisConn,
@@ -1901,11 +1990,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			},
 		}
 
-		// 应用渠道模型映射到 WebSocket 首条消息
 		wsFirstMessage := firstMessage
-		if channelMappingWS.Mapped {
-			wsFirstMessage = h.gatewayService.ReplaceModelInBody(firstMessage, channelMappingWS.MappedModel)
-		}
 		// 切组/会话失配防护：previous_response_id 未在当前分组命中粘连账号（StickyPreviousHit=false），
 		// 说明该会话链不属于本次调度到的账号，原样转发会触发上游会话链鉴权失败（“鉴权失败，请检查 API Key”）。
 		// 故剥离首包里的 previous_response_id，改用首包内 input 重建上下文；带 function_call_output 的
@@ -1960,26 +2045,39 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return
 			}
 
-			scheduleFailed := false
-			_ = h.runOpenAIWebSocketStage(c, OpenAIWebSocketUsageStage{
-				Handler:         h,
-				RequestContext:  ctx,
-				ReqLog:          reqLog,
-				APIKey:          apiKey,
-				Account:         account,
-				Subscription:    subscription,
-				Model:           reqModel,
-				TurnErr:         proxyErr,
-				ChannelMapping:  channelMappingWS,
-				ScheduleSuccess: &scheduleFailed,
-			})
+			if shouldReportOpenAIWSProxyAccountFailure(proxyErr) {
+				scheduleFailed := false
+				_ = h.runOpenAIWebSocketStage(c, OpenAIWebSocketUsageStage{
+					Handler:         h,
+					RequestContext:  ctx,
+					ReqLog:          reqLog,
+					APIKey:          apiKey,
+					Account:         account,
+					Subscription:    subscription,
+					Model:           reqModel,
+					TurnErr:         proxyErr,
+					ChannelMapping:  channelMappingWS,
+					ScheduleSuccess: &scheduleFailed,
+				})
+			}
 			closeStatus, closeReason := summarizeWSCloseErrorForLog(proxyErr)
-			reqLog.Warn("openai.websocket_proxy_failed",
+			proxyFailedFields := []zap.Field{
 				zap.Int64("account_id", account.ID),
 				zap.Error(proxyErr),
 				zap.String("close_status", closeStatus),
 				zap.String("close_reason", closeReason),
-			)
+			}
+			if account.Proxy != nil {
+				proxyFailedFields = append(proxyFailedFields,
+					zap.Int64("proxy_id", account.Proxy.ID),
+					zap.String("proxy_name", account.Proxy.Name),
+					zap.String("proxy_host", account.Proxy.Host),
+					zap.Int("proxy_port", account.Proxy.Port),
+				)
+			} else if account.ProxyID != nil {
+				proxyFailedFields = append(proxyFailedFields, zap.Int64p("proxy_id", account.ProxyID))
+			}
+			reqLog.Warn("openai.websocket_proxy_failed", proxyFailedFields...)
 			if errors.As(proxyErr, &closeErr) {
 				closeOpenAIClientWS(wsConn, closeErr.StatusCode(), closeErr.Reason())
 				return
@@ -2364,7 +2462,9 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 }
 
 func credentialFailoverClientResponse(failoverErr *service.UpstreamFailoverError) (int, string) {
-	_ = failoverErr
+	if failoverErr != nil && failoverErr.Reason == service.AntigravityCredentialRejectedReason {
+		return http.StatusBadGateway, service.AntigravityCredentialRejectedClientMessage
+	}
 	return http.StatusServiceUnavailable, service.GrokCredentialUnavailableClientMessage
 }
 

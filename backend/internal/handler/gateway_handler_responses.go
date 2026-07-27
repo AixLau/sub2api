@@ -248,13 +248,22 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)
 		}
 		var result *service.ForwardResult
+		setActualUpstreamEndpoint(c, "")
+		if shouldUseAntigravityCompat(account) && h.antigravityGatewayService == nil {
+			h.responsesErrorResponse(c, http.StatusBadGateway, "upstream_error", "Antigravity compatibility service is not configured")
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
+			}
+			return
+		}
 		stageResult := h.runGatewayForwardStage(c, GatewayResponsesForwardStage{
-			GatewayService: h.gatewayService,
-			RequestContext: requestCtx,
-			Account:        account,
-			ParsedRequest:  parsedReq,
-			Body:           forwardBody,
-			Result:         &result,
+			GatewayService:            h.gatewayService,
+			AntigravityGatewayService: h.antigravityGatewayService,
+			RequestContext:            requestCtx,
+			Account:                   account,
+			ParsedRequest:             parsedReq,
+			Body:                      forwardBody,
+			Result:                    &result,
 		})
 		err = stageResult.Err
 

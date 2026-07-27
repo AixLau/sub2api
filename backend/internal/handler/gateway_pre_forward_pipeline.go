@@ -487,13 +487,14 @@ func (s GatewayMessagesForwardStage) RunForward(c *gin.Context) ExecutableStageR
 }
 
 type GatewayChatCompletionsForwardStage struct {
-	GatewayService      *service.GatewayService
-	GeminiCompatService *service.GeminiMessagesCompatService
-	RequestContext      context.Context
-	Account             *service.Account
-	ParsedRequest       *service.ParsedRequest
-	Body                []byte
-	Result              **service.ForwardResult
+	GatewayService            *service.GatewayService
+	GeminiCompatService       *service.GeminiMessagesCompatService
+	AntigravityGatewayService *service.AntigravityGatewayService
+	RequestContext            context.Context
+	Account                   *service.Account
+	ParsedRequest             *service.ParsedRequest
+	Body                      []byte
+	Result                    **service.ForwardResult
 }
 
 func (GatewayChatCompletionsForwardStage) StageName() string {
@@ -512,6 +513,12 @@ func (s GatewayChatCompletionsForwardStage) RunForward(c *gin.Context) Executabl
 			return ExecutableStageResult{Err: errors.New("gemini compatibility service is not configured")}
 		}
 		result, err = s.GeminiCompatService.ForwardAsChatCompletions(ctx, c, s.Account, s.Body)
+	} else if shouldUseAntigravityCompat(s.Account) {
+		if s.AntigravityGatewayService == nil {
+			return ExecutableStageResult{Err: errors.New("antigravity compatibility service is not configured")}
+		}
+		setActualUpstreamEndpoint(c, EndpointAntigravityGenerateContent)
+		result, err = s.AntigravityGatewayService.ForwardAsChatCompletions(ctx, c, s.Account, s.Body, s.ParsedRequest)
 	} else {
 		result, err = s.GatewayService.ForwardAsChatCompletions(ctx, c, s.Account, s.Body, s.ParsedRequest)
 	}
@@ -522,12 +529,13 @@ func (s GatewayChatCompletionsForwardStage) RunForward(c *gin.Context) Executabl
 }
 
 type GatewayResponsesForwardStage struct {
-	GatewayService *service.GatewayService
-	RequestContext context.Context
-	Account        *service.Account
-	ParsedRequest  *service.ParsedRequest
-	Body           []byte
-	Result         **service.ForwardResult
+	GatewayService            *service.GatewayService
+	AntigravityGatewayService *service.AntigravityGatewayService
+	RequestContext            context.Context
+	Account                   *service.Account
+	ParsedRequest             *service.ParsedRequest
+	Body                      []byte
+	Result                    **service.ForwardResult
 }
 
 func (GatewayResponsesForwardStage) StageName() string {
@@ -542,7 +550,17 @@ func (s GatewayResponsesForwardStage) RunForward(c *gin.Context) ExecutableStage
 	if ctx == nil {
 		ctx = c.Request.Context()
 	}
-	result, err := s.GatewayService.ForwardAsResponses(ctx, c, s.Account, s.Body, s.ParsedRequest)
+	var result *service.ForwardResult
+	var err error
+	if shouldUseAntigravityCompat(s.Account) {
+		if s.AntigravityGatewayService == nil {
+			return ExecutableStageResult{Err: errors.New("antigravity compatibility service is not configured")}
+		}
+		setActualUpstreamEndpoint(c, EndpointAntigravityGenerateContent)
+		result, err = s.AntigravityGatewayService.ForwardAsResponses(ctx, c, s.Account, s.Body, s.ParsedRequest)
+	} else {
+		result, err = s.GatewayService.ForwardAsResponses(ctx, c, s.Account, s.Body, s.ParsedRequest)
+	}
 	if s.Result != nil {
 		*s.Result = result
 	}

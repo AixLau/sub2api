@@ -259,6 +259,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)
 		}
 		var result *service.ForwardResult
+		setActualUpstreamEndpoint(c, "")
 		if account.Platform == service.PlatformGemini {
 			if h.geminiCompatService == nil {
 				h.chatCompletionsErrorResponse(c, http.StatusBadGateway, "upstream_error", "Gemini compatibility service is not configured")
@@ -268,14 +269,22 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 				return
 			}
 		}
+		if shouldUseAntigravityCompat(account) && h.antigravityGatewayService == nil {
+			h.chatCompletionsErrorResponse(c, http.StatusBadGateway, "upstream_error", "Antigravity compatibility service is not configured")
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
+			}
+			return
+		}
 		stageResult := h.runGatewayForwardStage(c, GatewayChatCompletionsForwardStage{
-			GatewayService:      h.gatewayService,
-			GeminiCompatService: h.geminiCompatService,
-			RequestContext:      c.Request.Context(),
-			Account:             account,
-			ParsedRequest:       parsedReq,
-			Body:                forwardBody,
-			Result:              &result,
+			GatewayService:            h.gatewayService,
+			GeminiCompatService:       h.geminiCompatService,
+			AntigravityGatewayService: h.antigravityGatewayService,
+			RequestContext:            c.Request.Context(),
+			Account:                   account,
+			ParsedRequest:             parsedReq,
+			Body:                      forwardBody,
+			Result:                    &result,
 		})
 		err = stageResult.Err
 
