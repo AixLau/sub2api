@@ -10,6 +10,8 @@ import { isReducedMotionPreferred } from '@/composables/usePrefersReducedMotion'
 
 /** 项目主题色系 */
 const THEME_COLORS = ['#14b8a6', '#06b6d4', '#3b82f6', '#f59e0b']
+/** Must remain above onboarding overlays/popovers (99,999,998 / 99,999,999). */
+const CELEBRATION_Z_INDEX = 100_000_100
 
 type ConfettiFn = typeof confetti
 
@@ -73,7 +75,7 @@ export function fireCelebration(): void {
         startVelocity: 55,
         ticks: 120,
         colors: THEME_COLORS,
-        zIndex: 9999
+        zIndex: CELEBRATION_Z_INDEX
       }
 
       // 0 ~ 1.5s 内左右两侧交替喷射

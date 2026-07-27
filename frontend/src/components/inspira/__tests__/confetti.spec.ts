@@ -53,6 +53,8 @@ describe('confetti', () => {
 
     // 等懒加载 promise 完成后推进定时器，确保延时喷射也不抛错
     await vi.advanceTimersByTimeAsync(2000)
-    expect(confettiMock).toHaveBeenCalled()
+    expect(confettiMock).toHaveBeenCalledWith(
+      expect.objectContaining({ zIndex: 100_000_100 })
+    )
   })
 })

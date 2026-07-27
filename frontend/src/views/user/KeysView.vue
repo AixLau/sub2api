@@ -1120,6 +1120,7 @@
 	import { ref, reactive, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
+	import { useAuthStore } from '@/stores/auth'
 	import { useOnboardingStore } from '@/stores/onboarding'
 	import { useClipboard } from '@/composables/useClipboard'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
@@ -1173,6 +1174,7 @@ interface GroupOption {
 }
 
 const appStore = useAppStore()
+const authStore = useAuthStore()
 const onboardingStore = useOnboardingStore()
 const { copyToClipboard: clipboardCopy } = useClipboard()
 
@@ -1274,6 +1276,7 @@ const apiKeys = ref<ApiKey[]>([])
 const groups = ref<Group[]>([])
 const loading = ref(false)
 const submitting = ref(false)
+const hasEverHadApiKey = ref<boolean | null>(null)
 const now = ref(new Date())
 let resetTimer: ReturnType<typeof setInterval> | null = null
 const usageStats = ref<Record<string, BatchApiKeyUsageStats>>({})
@@ -1313,6 +1316,34 @@ const columnDropdownRef = ref<HTMLElement | null>(null)
 const dropdownPosition = ref<{ top?: number; bottom?: number; left: number } | null>(null)
 const groupButtonRefs = ref<Map<number, HTMLElement>>(new Map())
 let abortController: AbortController | null = null
+
+const FIRST_KEY_CELEBRATED_STORAGE_PREFIX = 'sub2api-first-api-key-celebrated'
+
+const getFirstKeyCelebrationStorageKey = () => {
+  const userId = authStore.user?.id
+  return userId == null ? null : `${FIRST_KEY_CELEBRATED_STORAGE_PREFIX}:${userId}`
+}
+
+const hasPersistedFirstKeyCelebration = () => {
+  const storageKey = getFirstKeyCelebrationStorageKey()
+  if (!storageKey) return false
+  try {
+    return localStorage.getItem(storageKey) === 'true'
+  } catch {
+    return false
+  }
+}
+
+const markFirstKeyCelebrationHandled = () => {
+  hasEverHadApiKey.value = true
+  const storageKey = getFirstKeyCelebrationStorageKey()
+  if (!storageKey) return
+  try {
+    localStorage.setItem(storageKey, 'true')
+  } catch {
+    // In-memory state still prevents duplicate celebrations for this page lifetime.
+  }
+}
 
 // Get the currently selected key for group change
 const selectedKeyForGroup = computed(() => {
@@ -1480,6 +1511,21 @@ const loadApiKeys = async () => {
     apiKeys.value = response.items
     pagination.value.total = response.total
     pagination.value.pages = response.pages
+
+    // Only an unfiltered first page can establish whether this user has ever had a Key.
+    // Filtered empty results must not re-enable the first-create celebration.
+    const isUnfilteredFirstPage =
+      pagination.value.page === 1 &&
+      !filterSearch.value &&
+      !filterStatus.value &&
+      filterGroupId.value === ''
+    if (isUnfilteredFirstPage) {
+      if (response.total > 0) {
+        markFirstKeyCelebrationHandled()
+      } else if (hasEverHadApiKey.value === null) {
+        hasEverHadApiKey.value = false
+      }
+    }
 
     // Load usage stats for all API keys in the list
     if (response.items.length > 0) {
@@ -1736,8 +1782,7 @@ const handleSubmit = async () => {
       await keysAPI.update(selectedKey.value.id, updates)
       appStore.showSuccess(t('keys.keyUpdatedSuccess'))
     } else {
-      // 彩蛋:创建前列表为空(无任何 Key)时,视为用户的第一把 Key
-      const wasEmptyBeforeCreate = pagination.value.total === 0
+      const shouldCelebrateFirstKey = hasEverHadApiKey.value === false
       const customKey = formData.value.use_custom_key ? formData.value.custom_key : undefined
       await keysAPI.create(
         formData.value.name,
@@ -1750,8 +1795,9 @@ const handleSubmit = async () => {
         rateLimitData
       )
       appStore.showSuccess(t('keys.keyCreatedSuccess'))
-      // 第一把 API Key 创建成功:撒花庆祝(仅此一次,由创建前的真实状态判定)
-      if (wasEmptyBeforeCreate) {
+      // Mark before firing so retries, reloads, or an empty filtered list cannot replay it.
+      markFirstKeyCelebrationHandled()
+      if (shouldCelebrateFirstKey) {
         fireCelebration()
       }
       // Only advance tour if active, on submit step, and creation succeeded
@@ -1962,6 +2008,9 @@ function formatResetTime(resetAt: string | null): string {
 
 onMounted(() => {
   loadSavedColumns()
+  if (hasPersistedFirstKeyCelebration()) {
+    hasEverHadApiKey.value = true
+  }
   loadApiKeys()
   loadGroups()
   loadUserGroupRates()

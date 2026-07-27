@@ -3128,8 +3128,7 @@
 @media (prefers-reduced-motion: no-preference) {
   /* 首页 hero 分层入场：ticker → 标题 → 副标题 → 操作区 */
   .hero-content > * {
-    opacity: 0;
-    animation: fx-rise-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    animation: fx-rise-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
   .hero-content > :nth-child(1) {
@@ -3149,14 +3148,12 @@
   }
 
   .trusted-inner {
-    opacity: 0;
-    animation: fx-rise-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.5s forwards;
+    animation: fx-rise-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.5s both;
   }
 
   /* 业务子页（服务/状态/FAQ/模型广场）内容整体入场 */
   .public-page-main .content-section .content-inner {
-    opacity: 0;
-    animation: fx-rise-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.08s forwards;
+    animation: fx-rise-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.08s both;
   }
 
   /* 认证页：左侧视觉面板滑入 + 长周期漂浮（原 gsap.to yoyo） */
@@ -3177,8 +3174,7 @@
   .auth-shell .auth-brand,
   .auth-shell .auth-visual-copy,
   .auth-shell .auth-feature-list {
-    opacity: 0;
-    animation: fx-rise-in 0.52s ease-out forwards;
+    animation: fx-rise-in 0.52s ease-out both;
   }
 
   .auth-shell .auth-brand {
@@ -3197,8 +3193,7 @@
   .auth-shell .auth-form,
   .auth-shell .auth-footer-link,
   .auth-shell .auth-secondary-link {
-    opacity: 0;
-    animation: fx-rise-in 0.5s ease-out forwards;
+    animation: fx-rise-in 0.5s ease-out both;
   }
 
   .auth-shell .auth-header {
@@ -3259,5 +3254,30 @@
 
   to {
     transform: translateY(-4px);
+  }
+}
+
+/*
+ * Safari/WebKit fallback: critical landing and auth content must never depend
+ * on a reveal animation to become visible. Some WebKit builds keep elements at
+ * an animation's backwards-filled first frame after route restoration. Disable
+ * decorative entrance/floating animations there and render the final state.
+ */
+@supports (background: -webkit-named-image(i)) {
+  .hero-content > *,
+  .trusted-inner,
+  .public-page-main .content-section .content-inner,
+  .auth-shell .auth-visual,
+  .auth-shell .auth-card.auth-reveal,
+  .auth-shell .auth-brand,
+  .auth-shell .auth-visual-copy,
+  .auth-shell .auth-feature-list,
+  .auth-shell .auth-header,
+  .auth-shell .auth-form,
+  .auth-shell .auth-footer-link,
+  .auth-shell .auth-secondary-link {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
   }
 }

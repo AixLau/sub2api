@@ -5,8 +5,8 @@
  * 即同时命中 reduced-motion 与 (hover: none)（触屏）分支。测试方向滑入路径时
  * 需局部覆写 matchMedia 按 query 返回，并在 afterEach 还原。
  *
- * jsdom 中 getBoundingClientRect 全为 0，元素中心即 (0, 0)，
- * 因此用带符号的 clientX/clientY 即可模拟从四个象限进入。
+ * jsdom 中 getBoundingClientRect 默认为 0；方向测试会覆盖为一个宽卡片矩形，
+ * 再使用四条边上的坐标验证最近边缘判定。
  */
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
@@ -46,9 +46,21 @@ afterEach(() => {
 function mountWithMouse() {
   mockMatchMedia({}) // reduced-motion 与 (hover: none) 均为 false
   useSyncRaf()
-  return mount(DirectionAwareHover, {
+  const wrapper = mount(DirectionAwareHover, {
     slots: { default: '<span class="content">hi</span>' }
   })
+  vi.spyOn(wrapper.element, 'getBoundingClientRect').mockReturnValue({
+    x: 100,
+    y: 200,
+    left: 100,
+    top: 200,
+    right: 400,
+    bottom: 300,
+    width: 300,
+    height: 100,
+    toJSON: () => ({})
+  } as DOMRect)
+  return wrapper
 }
 
 describe('DirectionAwareHover', () => {
@@ -63,10 +75,10 @@ describe('DirectionAwareHover', () => {
   })
 
   it.each([
-    ['top', { clientX: 0, clientY: -10 }],
-    ['right', { clientX: 10, clientY: 0 }],
-    ['bottom', { clientX: 0, clientY: 10 }],
-    ['left', { clientX: -10, clientY: 0 }]
+    ['top', { clientX: 250, clientY: 200 }],
+    ['right', { clientX: 400, clientY: 250 }],
+    ['bottom', { clientX: 250, clientY: 300 }],
+    ['left', { clientX: 100, clientY: 250 }]
   ] as const)('从 %s 进入时高光层带 dah-from-%s 且滑入可见', async (dir, coords) => {
     const wrapper = mountWithMouse()
     await wrapper.trigger('mouseenter', coords)
@@ -80,11 +92,11 @@ describe('DirectionAwareHover', () => {
 
   it('mouseleave 时方向更新为离开方向并隐藏（向该方向滑出）', async () => {
     const wrapper = mountWithMouse()
-    await wrapper.trigger('mouseenter', { clientX: 0, clientY: -10 })
+    await wrapper.trigger('mouseenter', { clientX: 250, clientY: 200 })
     await nextTick()
     expect(wrapper.find('.dah-layer').classes()).toContain('dah-from-top')
 
-    await wrapper.trigger('mouseleave', { clientX: 10, clientY: 0 })
+    await wrapper.trigger('mouseleave', { clientX: 400, clientY: 250 })
     const layer = wrapper.find('.dah-layer')
     expect(layer.classes()).toContain('dah-from-right')
     expect(layer.classes()).not.toContain('dah-visible')

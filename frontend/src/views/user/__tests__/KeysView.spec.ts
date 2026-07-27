@@ -7,6 +7,7 @@ import KeysView from '../KeysView.vue'
 
 const {
   listKeys,
+  createKey,
   getPublicSettings,
   getDashboardApiKeysUsage,
   getAvailableGroups,
@@ -16,8 +17,10 @@ const {
   copyToClipboard,
   isCurrentStep,
   nextStep,
+  fireCelebration,
 } = vi.hoisted(() => ({
   listKeys: vi.fn(),
+  createKey: vi.fn(),
   getPublicSettings: vi.fn(),
   getDashboardApiKeysUsage: vi.fn(),
   getAvailableGroups: vi.fn(),
@@ -27,6 +30,7 @@ const {
   copyToClipboard: vi.fn(),
   isCurrentStep: vi.fn(),
   nextStep: vi.fn(),
+  fireCelebration: vi.fn(),
 }))
 
 const messages: Record<string, string> = {
@@ -58,7 +62,7 @@ const messages: Record<string, string> = {
 vi.mock('@/api', () => ({
   keysAPI: {
     list: listKeys,
-    create: vi.fn(),
+    create: createKey,
     update: vi.fn(),
     delete: vi.fn(),
     toggleStatus: vi.fn(),
@@ -75,11 +79,21 @@ vi.mock('@/api', () => ({
   },
 }))
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    user: { id: 101 },
+  }),
+}))
+
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
     showError,
     showSuccess,
   }),
+}))
+
+vi.mock('@/components/inspira/confetti', () => ({
+  fireCelebration,
 }))
 
 vi.mock('@/stores/onboarding', () => ({
@@ -215,6 +229,12 @@ const IconStub = {
   template: '<span data-test="icon">{{ name }}</span>',
 }
 
+const BaseDialogStub = {
+  name: 'BaseDialog',
+  props: ['show', 'title'],
+  template: '<div v-if="show"><slot /><slot name="footer" /></div>',
+}
+
 const mountView = async () => {
   const wrapper = mount(KeysView, {
     global: {
@@ -223,7 +243,7 @@ const mountView = async () => {
         TablePageLayout: TablePageLayoutStub,
         DataTable: DataTableStub,
         Pagination: PaginationStub,
-        BaseDialog: true,
+        BaseDialog: BaseDialogStub,
         ConfirmDialog: true,
         EmptyState: true,
         Select: SelectStub,
@@ -261,6 +281,7 @@ describe('user KeysView column settings', () => {
     localStorage.clear()
 
     listKeys.mockReset()
+    createKey.mockReset()
     getPublicSettings.mockReset()
     getDashboardApiKeysUsage.mockReset()
     getAvailableGroups.mockReset()
@@ -270,6 +291,7 @@ describe('user KeysView column settings', () => {
     copyToClipboard.mockReset()
     isCurrentStep.mockReset()
     nextStep.mockReset()
+    fireCelebration.mockReset()
 
     listKeys.mockResolvedValue({
       items: [createApiKey()],
@@ -283,6 +305,89 @@ describe('user KeysView column settings', () => {
     getAvailableGroups.mockResolvedValue([])
     getUserGroupRates.mockResolvedValue({})
     isCurrentStep.mockReturnValue(false)
+    createKey.mockResolvedValue(createApiKey())
+  })
+
+  it('celebrates exactly once after a new user creates the first API key', async () => {
+    listKeys
+      .mockResolvedValueOnce({
+        items: [],
+        total: 0,
+        page: 1,
+        page_size: 20,
+        pages: 0,
+      })
+      .mockResolvedValue({
+        items: [createApiKey()],
+        total: 1,
+        page: 1,
+        page_size: 20,
+        pages: 1,
+      })
+    getAvailableGroups.mockResolvedValue([
+      {
+        id: 42,
+        name: 'Default',
+        description: null,
+        rate_multiplier: 1,
+        subscription_type: 'standard',
+        platform: 'openai',
+      },
+    ])
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-tour="keys-create-btn"]').trigger('click')
+    await wrapper.get('#key-form input[type="text"]').setValue('first-key')
+    const formSelect = wrapper.findAllComponents({ name: 'Select' }).at(-1)
+    await formSelect?.vm.$emit('update:modelValue', 42)
+    await wrapper.get('#key-form').trigger('submit')
+    await flushPromises()
+
+    expect(createKey).toHaveBeenCalledOnce()
+    expect(fireCelebration).toHaveBeenCalledOnce()
+    expect(localStorage.getItem('sub2api-first-api-key-celebrated:101')).toBe('true')
+
+    await wrapper.get('[data-tour="keys-create-btn"]').trigger('click')
+    await wrapper.get('#key-form input[type="text"]').setValue('second-key')
+    const secondFormSelect = wrapper.findAllComponents({ name: 'Select' }).at(-1)
+    await secondFormSelect?.vm.$emit('update:modelValue', 42)
+    await wrapper.get('#key-form').trigger('submit')
+    await flushPromises()
+
+    expect(createKey).toHaveBeenCalledTimes(2)
+    expect(fireCelebration).toHaveBeenCalledOnce()
+  })
+
+  it('does not replay the first-key celebration after the user has handled it', async () => {
+    localStorage.setItem('sub2api-first-api-key-celebrated:101', 'true')
+    listKeys.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 20,
+      pages: 0,
+    })
+    getAvailableGroups.mockResolvedValue([
+      {
+        id: 42,
+        name: 'Default',
+        description: null,
+        rate_multiplier: 1,
+        subscription_type: 'standard',
+        platform: 'openai',
+      },
+    ])
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-tour="keys-create-btn"]').trigger('click')
+    await wrapper.get('#key-form input[type="text"]').setValue('recreated-key')
+    const formSelect = wrapper.findAllComponents({ name: 'Select' }).at(-1)
+    await formSelect?.vm.$emit('update:modelValue', 42)
+    await wrapper.get('#key-form').trigger('submit')
+    await flushPromises()
+
+    expect(createKey).toHaveBeenCalledOnce()
+    expect(fireCelebration).not.toHaveBeenCalled()
   })
 
   it('uses the default API key columns with low-frequency columns hidden', async () => {

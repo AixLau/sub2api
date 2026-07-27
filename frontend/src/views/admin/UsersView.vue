@@ -7,7 +7,7 @@
           <!-- Left: Search + Active Filters -->
           <div class="flex flex-1 flex-wrap items-center gap-3">
             <!-- Search Box -->
-            <div class="relative w-full md:w-64">
+            <div class="search-glow relative w-full md:w-64">
               <Icon
                 name="search"
                 size="md"

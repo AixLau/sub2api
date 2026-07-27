@@ -17,8 +17,8 @@ import { isReducedMotionPreferred } from '@/composables/usePrefersReducedMotion'
 /**
  * DirectionAwareHover — 方向感知悬停高光
  *
- * 包装容器(默认插槽):mouseenter 时根据鼠标进入位置(经典 hover-dir 算法,
- * 相对中心的角度分四象限)让一层淡色高光从该方向滑入,mouseleave 时向离开方向滑出。
+ * 包装容器(默认插槽):mouseenter 时根据鼠标到四条边的距离让一层淡色高光
+ * 从最近的方向滑入,mouseleave 时向最近边缘方向滑出。
  *
  * - 高光层 pointer-events:none,渲染在插槽内容之上(半透明色 wash),不影响交互。
  * - 触屏((hover: none))无副作用;reduced-motion 时高光只淡入淡出、不滑动。
@@ -54,18 +54,21 @@ function safeMatchMedia(query: string): boolean {
 const isTouchLike = () => safeMatchMedia('(hover: none)')
 
 /**
- * 经典方向判定:鼠标相对元素中心的坐标按宽高比归一化后取角度,
- * 每 90° 一个象限 → 0=top / 1=right / 2=bottom / 3=left。
+ * 方向判定使用鼠标到四条边的最短距离。mouseenter/mouseleave 的坐标会落在
+ * 元素边界附近，这种算法不受卡片宽高比影响，也避免角落处的象限舍入误判。
  */
 function getDirection(event: MouseEvent): Direction {
   const rect = rootRef.value?.getBoundingClientRect()
   if (!rect) return 'top'
-  const w = rect.width
-  const h = rect.height
-  const x = (event.clientX - rect.left - w / 2) * (w > h && h > 0 ? h / w : 1)
-  const y = (event.clientY - rect.top - h / 2) * (h > w && w > 0 ? w / h : 1)
-  const index = (Math.round((Math.atan2(y, x) * (180 / Math.PI) + 180) / 90) + 3) % 4
-  return DIRECTIONS[index]
+  const distances: Record<Direction, number> = {
+    top: Math.abs(event.clientY - rect.top),
+    right: Math.abs(rect.right - event.clientX),
+    bottom: Math.abs(rect.bottom - event.clientY),
+    left: Math.abs(event.clientX - rect.left)
+  }
+  return DIRECTIONS.reduce((closest, candidate) =>
+    distances[candidate] < distances[closest] ? candidate : closest
+  )
 }
 
 let rafId: number | null = null

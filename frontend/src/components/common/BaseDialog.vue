@@ -12,7 +12,7 @@
         @click.self="handleClose"
       >
         <!-- Modal panel -->
-        <div ref="dialogRef" :class="['modal-content', widthClasses]" @click.stop>
+        <div ref="dialogRef" :class="['modal-content', widthClasses]" tabindex="-1" @click.stop>
           <!-- Header -->
           <div class="modal-header">
             <h3 :id="dialogId" class="modal-title">
@@ -76,7 +76,7 @@ interface Emits {
 const props = withDefaults(defineProps<Props>(), {
   width: 'normal',
   closeOnEscape: true,
-  closeOnClickOutside: false,
+  closeOnClickOutside: true,
   showCloseButton: true,
   zIndex: 50,
   autoFocus: true
@@ -109,9 +109,44 @@ const handleClose = () => {
   }
 }
 
-const handleEscape = (event: KeyboardEvent) => {
-  if (props.show && props.closeOnEscape && event.key === 'Escape') {
+const focusableSelector =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+const getFocusableElements = () => {
+  if (!dialogRef.value) return []
+  return Array.from(dialogRef.value.querySelectorAll<HTMLElement>(focusableSelector)).filter(element => {
+    const style = window.getComputedStyle(element)
+    return style.display !== 'none' && style.visibility !== 'hidden'
+  })
+}
+
+const handleKeydown = (event: KeyboardEvent) => {
+  if (!props.show) return
+
+  if (props.closeOnEscape && event.key === 'Escape') {
     emit('close')
+    return
+  }
+
+  if (event.key !== 'Tab' || !dialogRef.value) return
+
+  const focusable = getFocusableElements()
+  if (focusable.length === 0) {
+    event.preventDefault()
+    dialogRef.value.focus()
+    return
+  }
+
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  const active = document.activeElement
+
+  if (event.shiftKey && (active === first || !dialogRef.value.contains(active))) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault()
+    first.focus()
   }
 }
 
@@ -128,10 +163,8 @@ watch(
       // 等待DOM更新后设置焦点到对话框
       await nextTick()
       if (dialogRef.value && props.autoFocus) {
-        const firstFocusable = dialogRef.value.querySelector<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        )
-        firstFocusable?.focus()
+        const firstFocusable = getFocusableElements()[0]
+        ;(firstFocusable ?? dialogRef.value).focus()
       }
     } else {
       document.body.classList.remove('modal-open')
@@ -146,11 +179,11 @@ watch(
 )
 
 onMounted(() => {
-  document.addEventListener('keydown', handleEscape)
+  document.addEventListener('keydown', handleKeydown)
 })
 
 onUnmounted(() => {
-  document.removeEventListener('keydown', handleEscape)
+  document.removeEventListener('keydown', handleKeydown)
   // 确保组件卸载时移除滚动锁定
   document.body.classList.remove('modal-open')
 })

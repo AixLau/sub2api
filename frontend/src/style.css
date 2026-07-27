@@ -218,6 +218,54 @@
     @apply disabled:cursor-not-allowed disabled:bg-gray-100 dark:disabled:bg-dark-900;
   }
 
+  .search-glow::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: 0.8125rem;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 250ms ease;
+    box-shadow:
+      0 0 0 1px rgb(20 184 166 / 8%),
+      0 0 12px rgb(20 184 166 / 16%),
+      0 0 26px 2px rgb(20 184 166 / 10%);
+  }
+
+  .dark .search-glow::before {
+    box-shadow:
+      0 0 0 1px rgb(20 184 166 / 16%),
+      0 0 14px rgb(20 184 166 / 30%),
+      0 0 30px 2px rgb(20 184 166 / 16%);
+  }
+
+  .search-glow:focus-within::before {
+    opacity: 1;
+    animation: search-glow-breathe 2.8s ease-in-out infinite;
+  }
+
+  @keyframes search-glow-breathe {
+    0%,
+    100% {
+      opacity: 1;
+    }
+
+    50% {
+      opacity: 0.72;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .search-glow::before {
+      transition: none;
+    }
+
+    .search-glow:focus-within::before {
+      animation: none;
+      opacity: 1;
+    }
+  }
+
   .dark .input[type='date'],
   .dark .input[type='time'],
   .dark .input[type='datetime-local'],
