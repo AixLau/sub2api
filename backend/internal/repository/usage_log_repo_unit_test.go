@@ -115,7 +115,7 @@ func TestUsageLogRepositoryGetUserGrowthRetentionUsesMatureCohorts(t *testing.T)
 	today := timezone.Today()
 	start := today.AddDate(0, 0, -40)
 	end := today.AddDate(0, 0, 1)
-	mock.ExpectQuery("(?s)WITH cohort_dates AS.*po\\.order_type = 'balance'").
+	mock.ExpectQuery("(?s)WITH cohort_dates AS.*SUM\\(po\\.pay_amount\\).*po\\.order_type = 'balance'").
 		WithArgs(start, end, timezone.Name()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"date", "registrations", "d1_retained", "d7_retained", "d30_retained", "paid_users", "repeat_buyers", "recharge_amount", "active_users",

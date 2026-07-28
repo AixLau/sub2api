@@ -53,7 +53,7 @@ func (r *usageLogRepository) GetUserGrowthRetention(ctx context.Context, startTi
 			SELECT
 				c.id,
 				COUNT(po.id) AS payment_count,
-				COALESCE(SUM(po.amount), 0) AS recharge_amount
+				COALESCE(SUM(po.pay_amount), 0) AS recharge_amount
 			FROM cohorts c
 			LEFT JOIN payment_orders po
 			  ON po.user_id = c.id
