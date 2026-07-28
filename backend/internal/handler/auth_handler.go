@@ -78,12 +78,12 @@ type LoginRequest struct {
 
 // AuthResponse 认证响应格式（匹配前端期望）
 type AuthResponse struct {
-	AccessToken   string    `json:"access_token"`
-	RefreshToken  string    `json:"refresh_token,omitempty"` // 新增：Refresh Token
-	ExpiresIn     int       `json:"expires_in,omitempty"`    // 新增：Access Token有效期（秒）
-	TokenType     string    `json:"token_type"`
-	User          *dto.User `json:"user"`
-	WelcomeReward float64   `json:"welcome_reward,omitempty"`
+	AccessToken          string    `json:"access_token"`
+	RefreshToken         string    `json:"refresh_token,omitempty"` // 新增：Refresh Token
+	ExpiresIn            int       `json:"expires_in,omitempty"`    // 新增：Access Token有效期（秒）
+	TokenType            string    `json:"token_type"`
+	User                 *dto.User `json:"user"`
+	WelcomeRewardPending bool      `json:"welcome_reward_pending,omitempty"`
 }
 
 func ensureLoginUserActive(user *service.User) error {
@@ -114,20 +114,20 @@ func (h *AuthHandler) respondWithTokenPair(c *gin.Context, user *service.User) {
 			return
 		}
 		response.Success(c, AuthResponse{
-			AccessToken:   token,
-			TokenType:     "Bearer",
-			User:          dto.UserFromService(user),
-			WelcomeReward: user.WelcomeReward,
+			AccessToken:          token,
+			TokenType:            "Bearer",
+			User:                 dto.UserFromService(user),
+			WelcomeRewardPending: user.WelcomeReward >= 1,
 		})
 		return
 	}
 	response.Success(c, AuthResponse{
-		AccessToken:   tokenPair.AccessToken,
-		RefreshToken:  tokenPair.RefreshToken,
-		ExpiresIn:     tokenPair.ExpiresIn,
-		TokenType:     "Bearer",
-		User:          dto.UserFromService(user),
-		WelcomeReward: user.WelcomeReward,
+		AccessToken:          tokenPair.AccessToken,
+		RefreshToken:         tokenPair.RefreshToken,
+		ExpiresIn:            tokenPair.ExpiresIn,
+		TokenType:            "Bearer",
+		User:                 dto.UserFromService(user),
+		WelcomeRewardPending: user.WelcomeReward >= 1,
 	})
 }
 

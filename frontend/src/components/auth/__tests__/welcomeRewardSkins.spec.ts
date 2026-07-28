@@ -9,7 +9,7 @@ describe('welcomeRewardSkins', () => {
   it('defines three distinct image skins', () => {
     expect(welcomeRewardSkins).toHaveLength(3)
     expect(new Set(welcomeRewardSkins.map((skin) => skin.id)).size).toBe(3)
-    expect(welcomeRewardSkins.every((skin) => skin.coverImage.endsWith('.jpg'))).toBe(true)
+    expect(welcomeRewardSkins.every((skin) => skin.coverImage.endsWith('.webp'))).toBe(true)
   })
 
   it('validates persisted skin identifiers', () => {

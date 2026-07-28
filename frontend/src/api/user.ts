@@ -17,6 +17,8 @@ import type {
   UserAffiliateDetail,
   AffiliateTransferResponse,
   PlatformQuotasResponse,
+  SurpriseRewardStatusResponse,
+  WelcomeRewardClaimResponse,
 } from '@/types'
 
 /**
@@ -25,6 +27,21 @@ import type {
  */
 export async function getProfile(): Promise<User> {
   const { data } = await apiClient.get<User>('/user/profile')
+  return data
+}
+
+export async function claimWelcomeReward(): Promise<WelcomeRewardClaimResponse> {
+  const { data } = await apiClient.post<WelcomeRewardClaimResponse>('/user/welcome-reward/claim')
+  return data
+}
+
+export async function checkSurpriseReward(): Promise<SurpriseRewardStatusResponse> {
+  const { data } = await apiClient.post<SurpriseRewardStatusResponse>('/user/surprise-reward/check')
+  return data
+}
+
+export async function claimSurpriseReward(): Promise<WelcomeRewardClaimResponse> {
+  const { data } = await apiClient.post<WelcomeRewardClaimResponse>('/user/surprise-reward/claim')
   return data
 }
 
@@ -196,6 +213,9 @@ export async function getMyPlatformQuotas(): Promise<PlatformQuotasResponse> {
 
 export const userAPI = {
   getProfile,
+  claimWelcomeReward,
+  checkSurpriseReward,
+  claimSurpriseReward,
   updateProfile,
   changePassword,
   sendNotifyEmailCode,

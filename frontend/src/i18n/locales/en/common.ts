@@ -456,13 +456,26 @@ export default {
 
   welcomeReward: {
     title: 'Welcome gift unlocked',
-    scratchHint: 'Scratch the blue area with your mouse or finger to reveal your new-user reward.',
+    scratchHint: 'Scratch the cover with your mouse or finger to claim your new-user reward.',
     revealedHint: 'You won! The reward is already in your account.',
-    coverText: 'Scratch to reveal ¥1–¥5',
+    coverText: 'Scratch to reveal your welcome gift',
     won: 'New-user reward',
     credited: 'Added to your account balance',
     gestureHint: 'Press and swipe left and right to scratch',
-    continue: 'Get started'
+    continue: 'Get started',
+    claimFailed: 'Reward claim failed. Please try again.'
+  },
+
+  surpriseReward: {
+    title: 'A surprise just for you',
+    scratchHint: 'Thanks for being an active user. Scratch the cover to reveal today’s surprise.',
+    revealedHint: 'You won! Your surprise reward is now in your account.',
+    coverText: 'Scratch to reveal your surprise',
+    won: 'Active-user surprise',
+    credited: 'Added to your account balance',
+    gestureHint: 'Press and swipe left and right to scratch',
+    continue: 'Enjoy the reward',
+    claimFailed: 'Surprise reward claim failed. Please try again.'
   },
 
   // Dashboard

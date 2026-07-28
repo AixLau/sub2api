@@ -369,6 +369,12 @@ func (r *redeemCodeRepository) ListByUserPaginated(ctx context.Context, userID i
 		if excludedType != "" {
 			q = q.Where(redeemcode.TypeNEQ(excludedType))
 		}
+	} else if codeType == service.RedeemTypeBalance {
+		q = q.Where(redeemcode.TypeIn(
+			service.RedeemTypeBalance,
+			service.RedeemTypeWelcomeScratch,
+			service.RedeemTypeSurpriseScratch,
+		))
 	} else if codeType != "" {
 		q = q.Where(redeemcode.TypeEQ(codeType))
 	}

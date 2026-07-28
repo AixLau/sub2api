@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -17,6 +18,7 @@ import (
 	"image/jpeg"
 	_ "image/png"
 	"log/slog"
+	"math/big"
 	"net/url"
 	"sort"
 	"strconv"
@@ -42,6 +44,14 @@ var (
 		"IDENTITY_UNBIND_LAST_METHOD",
 		"bind another sign-in method before unbinding this provider",
 	)
+	ErrWelcomeRewardUnavailable = infraerrors.Conflict(
+		"WELCOME_REWARD_UNAVAILABLE",
+		"welcome reward is not available or has already been claimed",
+	)
+	ErrSurpriseRewardUnavailable = infraerrors.Conflict(
+		"SURPRISE_REWARD_UNAVAILABLE",
+		"surprise reward is not available or has already been claimed",
+	)
 )
 
 const (
@@ -56,6 +66,10 @@ const (
 	defaultUserIdentityRedirect = "/settings/profile"
 	userLastActiveMinTouch      = 10 * time.Minute
 	userLastActiveFailBackoff   = 30 * time.Second
+	SurpriseRewardActiveWindow  = 7 * 24 * time.Hour
+	SurpriseRewardMinimumAge    = 7 * 24 * time.Hour
+	SurpriseRewardCooldown      = 30 * 24 * time.Hour
+	surpriseRewardChance        = 10
 )
 
 var (
@@ -137,6 +151,15 @@ type UserRepository interface {
 type RedeemUserAdjustmentRepository interface {
 	ApplyRedeemBalanceAdjustment(ctx context.Context, id int64, delta float64) error
 	ApplyRedeemConcurrencyAdjustment(ctx context.Context, id int64, delta int) error
+}
+
+type WelcomeRewardRepository interface {
+	ClaimWelcomeReward(ctx context.Context, id int64) (amount float64, balance float64, err error)
+}
+
+type SurpriseRewardRepository interface {
+	CheckSurpriseReward(ctx context.Context, id int64, now time.Time, shouldAward bool, amount float64) (bool, error)
+	ClaimSurpriseReward(ctx context.Context, id int64, now time.Time) (amount float64, balance float64, err error)
 }
 
 type UserAuthIdentityRecord struct {
@@ -1103,6 +1126,102 @@ func (s *UserService) UpdateBalance(ctx context.Context, userID int64, amount fl
 		}()
 	}
 	return nil
+}
+
+func (s *UserService) ClaimWelcomeReward(ctx context.Context, userID int64) (float64, float64, error) {
+	repo, ok := s.userRepo.(WelcomeRewardRepository)
+	if !ok {
+		return 0, 0, infraerrors.ServiceUnavailable(
+			"WELCOME_REWARD_SERVICE_UNAVAILABLE",
+			"welcome reward service is unavailable",
+		)
+	}
+
+	amount, balance, err := repo.ClaimWelcomeReward(ctx, userID)
+	if err != nil {
+		return 0, 0, err
+	}
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
+	}
+	if s.billingCache != nil {
+		if err := s.billingCache.InvalidateUserBalance(ctx, userID); err != nil {
+			slog.Error("invalidate welcome reward balance cache failed", "user_id", userID, "error", err)
+		}
+	}
+	return amount, balance, nil
+}
+
+func (s *UserService) CheckSurpriseReward(ctx context.Context, userID int64) (bool, error) {
+	repo, ok := s.userRepo.(SurpriseRewardRepository)
+	if !ok {
+		return false, infraerrors.ServiceUnavailable(
+			"SURPRISE_REWARD_SERVICE_UNAVAILABLE",
+			"surprise reward service is unavailable",
+		)
+	}
+
+	roll, err := cryptoRandomInt(100)
+	if err != nil {
+		return false, fmt.Errorf("generate surprise reward roll: %w", err)
+	}
+	amount, err := cryptoRandomInt(5)
+	if err != nil {
+		return false, fmt.Errorf("generate surprise reward amount: %w", err)
+	}
+	return repo.CheckSurpriseReward(
+		ctx,
+		userID,
+		time.Now().UTC(),
+		roll < surpriseRewardChance,
+		float64(amount+1),
+	)
+}
+
+func IsSurpriseRewardEligible(user *User, now time.Time) bool {
+	if user == nil || user.Role != RoleUser || user.Status != StatusActive {
+		return false
+	}
+	if user.CreatedAt.After(now.Add(-SurpriseRewardMinimumAge)) {
+		return false
+	}
+	if user.LastActiveAt == nil || user.LastActiveAt.Before(now.Add(-SurpriseRewardActiveWindow)) {
+		return false
+	}
+	return user.SurpriseRewardAwardedAt == nil ||
+		!user.SurpriseRewardAwardedAt.After(now.Add(-SurpriseRewardCooldown))
+}
+
+func (s *UserService) ClaimSurpriseReward(ctx context.Context, userID int64) (float64, float64, error) {
+	repo, ok := s.userRepo.(SurpriseRewardRepository)
+	if !ok {
+		return 0, 0, infraerrors.ServiceUnavailable(
+			"SURPRISE_REWARD_SERVICE_UNAVAILABLE",
+			"surprise reward service is unavailable",
+		)
+	}
+
+	amount, balance, err := repo.ClaimSurpriseReward(ctx, userID, time.Now().UTC())
+	if err != nil {
+		return 0, 0, err
+	}
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
+	}
+	if s.billingCache != nil {
+		if err := s.billingCache.InvalidateUserBalance(ctx, userID); err != nil {
+			slog.Error("invalidate surprise reward balance cache failed", "user_id", userID, "error", err)
+		}
+	}
+	return amount, balance, nil
+}
+
+func cryptoRandomInt(limit int64) (int64, error) {
+	value, err := rand.Int(rand.Reader, big.NewInt(limit))
+	if err != nil {
+		return 0, err
+	}
+	return value.Int64(), nil
 }
 
 // UpdateConcurrency 更新用户并发数（管理员功能）

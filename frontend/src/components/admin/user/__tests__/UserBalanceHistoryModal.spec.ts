@@ -31,6 +31,8 @@ const messages: Record<string, string> = {
   'admin.users.typeBalance': 'Balance',
   'admin.users.typeAffiliateBalance': 'Affiliate Balance',
   'admin.users.typeAdminBalance': 'Admin Balance',
+  'admin.users.typeWelcomeScratch': 'Welcome Scratch',
+  'admin.users.typeSurpriseScratch': 'Surprise Scratch',
   'admin.users.typeConcurrency': 'Concurrency',
   'admin.users.typeAdminConcurrency': 'Admin Concurrency',
   'admin.users.typeSubscription': 'Subscription',
@@ -39,8 +41,11 @@ const messages: Record<string, string> = {
   'admin.users.subscriptionNotes': 'Notes',
   'admin.users.subscriptionNotesEmpty': '-',
   'admin.users.subscriptionExpiresAt': 'Expires: {date}',
+  'admin.users.scratchRewardRecord': 'Granted after scratching',
   'admin.subscriptions.status.active': 'Active',
   'redeem.subscriptionAssigned': 'Subscription Assigned',
+  'redeem.welcomeScratchReward': 'Welcome Gift Scratch Card',
+  'redeem.surpriseScratchReward': 'Active-user Surprise Scratch Card',
   'admin.users.noBalanceHistory': 'No history',
 }
 
@@ -183,6 +188,60 @@ describe('UserBalanceHistoryModal', () => {
     expect(text).toContain('Active')
     expect(text).toContain('Expires:')
     expect(text).not.toContain('SUB-7')
+  })
+
+  it('renders the scratch-card source type and credited amount', async () => {
+    apiMocks.getUserBalanceHistory.mockResolvedValue({
+      items: [
+        {
+          id: 10,
+          code: 'WELCOME-REWARD-RECORD',
+          type: 'welcome_scratch',
+          value: 3,
+          status: 'used',
+          used_by: 99,
+          used_at: '2026-07-28T08:00:00Z',
+          created_at: '2026-07-28T08:00:00Z',
+          group_id: null,
+          validity_days: 30,
+          notes: '',
+        },
+        {
+          id: 11,
+          code: 'SURPRISE-REWARD-RECORD',
+          type: 'surprise_scratch',
+          value: 5,
+          status: 'used',
+          used_by: 99,
+          used_at: '2026-07-29T08:00:00Z',
+          created_at: '2026-07-29T08:00:00Z',
+          group_id: null,
+          validity_days: 30,
+          notes: '',
+        },
+      ],
+      total: 2,
+      total_recharged: 25,
+    })
+
+    const wrapper = mount(UserBalanceHistoryModal, {
+      props: {
+        show: false,
+        user: user as any,
+      },
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('Welcome Gift Scratch Card')
+    expect(text).toContain('Active-user Surprise Scratch Card')
+    expect(text).toContain('+$3.00')
+    expect(text).toContain('+$5.00')
+    expect(text).toContain('Granted after scratching')
+    expect(text).not.toContain('WELCOME')
+    expect(text).not.toContain('SURPRISE-')
   })
 
   it('keeps subscription group and notes visible when optional details are missing', async () => {

@@ -11,6 +11,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
+	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/suite"
@@ -33,6 +34,7 @@ func (s *UserRepoSuite) SetupTest() {
 	_, _ = integrationDB.ExecContext(s.ctx, "DELETE FROM auth_identities")
 	_, _ = integrationDB.ExecContext(s.ctx, "DELETE FROM user_subscriptions")
 	_, _ = integrationDB.ExecContext(s.ctx, "DELETE FROM user_allowed_groups")
+	_, _ = integrationDB.ExecContext(s.ctx, "DELETE FROM redeem_codes")
 	_, _ = integrationDB.ExecContext(s.ctx, "DELETE FROM users")
 }
 
@@ -112,6 +114,92 @@ func (s *UserRepoSuite) TestCreate() {
 	got, err := s.repo.GetByID(s.ctx, user.ID)
 	s.Require().NoError(err, "GetByID")
 	s.Require().Equal("create@test.com", got.Email)
+}
+
+func (s *UserRepoSuite) TestClaimWelcomeRewardCreatesTypedHistoryRecord() {
+	user := s.mustCreateUser(&service.User{
+		Email:         "welcome-scratch-history@test.com",
+		Balance:       10,
+		WelcomeReward: 3,
+	})
+
+	amount, balance, err := s.repo.ClaimWelcomeReward(s.ctx, user.ID)
+	s.Require().NoError(err)
+	s.Equal(3.0, amount)
+	s.Equal(13.0, balance)
+
+	record, err := s.client.RedeemCode.Query().
+		Where(
+			redeemcode.UsedByEQ(user.ID),
+			redeemcode.TypeEQ(service.RedeemTypeWelcomeScratch),
+		).
+		Only(s.ctx)
+	s.Require().NoError(err)
+	s.Equal(3.0, record.Value)
+	s.Equal(service.StatusUsed, record.Status)
+	s.NotNil(record.UsedAt)
+
+	historyRepo := NewRedeemCodeRepository(s.client)
+	balanceHistory, result, err := historyRepo.ListByUserPaginated(
+		s.ctx,
+		user.ID,
+		pagination.PaginationParams{Page: 1, PageSize: 20},
+		service.RedeemTypeBalance,
+	)
+	s.Require().NoError(err)
+	s.Require().NotNil(result)
+	s.Equal(int64(1), result.Total)
+	s.Require().Len(balanceHistory, 1)
+	s.Equal(service.RedeemTypeWelcomeScratch, balanceHistory[0].Type)
+
+	totalRecharged, err := historyRepo.SumPositiveBalanceByUser(s.ctx, user.ID)
+	s.Require().NoError(err)
+	s.Zero(totalRecharged, "scratch rewards must not inflate paid recharge totals")
+
+	_, _, err = s.repo.ClaimWelcomeReward(s.ctx, user.ID)
+	s.ErrorIs(err, service.ErrWelcomeRewardUnavailable)
+	s.Equal(1, s.client.RedeemCode.Query().
+		Where(redeemcode.UsedByEQ(user.ID)).
+		CountX(s.ctx))
+}
+
+func (s *UserRepoSuite) TestClaimSurpriseRewardCreatesTypedHistoryRecord() {
+	user := s.mustCreateUser(&service.User{
+		Email:          "surprise-scratch-history@test.com",
+		Balance:        20,
+		SurpriseReward: 4,
+	})
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	amount, balance, err := s.repo.ClaimSurpriseReward(s.ctx, user.ID, now)
+	s.Require().NoError(err)
+	s.Equal(4.0, amount)
+	s.Equal(24.0, balance)
+
+	record, err := s.client.RedeemCode.Query().
+		Where(
+			redeemcode.UsedByEQ(user.ID),
+			redeemcode.TypeEQ(service.RedeemTypeSurpriseScratch),
+		).
+		Only(s.ctx)
+	s.Require().NoError(err)
+	s.Equal(4.0, record.Value)
+	s.Equal(service.StatusUsed, record.Status)
+	s.Require().NotNil(record.UsedAt)
+	s.WithinDuration(now, *record.UsedAt, time.Microsecond)
+
+	historyRepo := NewRedeemCodeRepository(s.client)
+	surpriseHistory, result, err := historyRepo.ListByUserPaginated(
+		s.ctx,
+		user.ID,
+		pagination.PaginationParams{Page: 1, PageSize: 20},
+		service.RedeemTypeSurpriseScratch,
+	)
+	s.Require().NoError(err)
+	s.Require().NotNil(result)
+	s.Equal(int64(1), result.Total)
+	s.Require().Len(surpriseHistory, 1)
+	s.Equal(service.RedeemTypeSurpriseScratch, surpriseHistory[0].Type)
 }
 
 func (s *UserRepoSuite) TestGetByID_NotFound() {

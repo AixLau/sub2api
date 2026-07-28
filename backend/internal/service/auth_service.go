@@ -234,7 +234,7 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		Email:         email,
 		PasswordHash:  hashedPassword,
 		Role:          RoleUser,
-		Balance:       grantPlan.Balance + welcomeReward,
+		Balance:       grantPlan.Balance,
 		WelcomeReward: welcomeReward,
 		Concurrency:   grantPlan.Concurrency,
 		RPMLimit:      defaultRPMLimit,

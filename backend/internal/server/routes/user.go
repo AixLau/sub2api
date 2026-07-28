@@ -32,6 +32,9 @@ func RegisterUserRoutes(
 		user := authenticated.Group("/user")
 		{
 			user.GET("/profile", h.User.GetProfile)
+			user.POST("/welcome-reward/claim", h.User.ClaimWelcomeReward)
+			user.POST("/surprise-reward/check", h.User.CheckSurpriseReward)
+			user.POST("/surprise-reward/claim", h.User.ClaimSurpriseReward)
 			user.PUT("/password", h.User.ChangePassword)
 			user.PUT("", h.User.UpdateProfile)
 			user.GET("/aff", h.User.GetAffiliate)

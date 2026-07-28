@@ -29,6 +29,14 @@ const (
 	FieldRole = "role"
 	// FieldBalance holds the string denoting the balance field in the database.
 	FieldBalance = "balance"
+	// FieldWelcomeRewardAmount holds the string denoting the welcome_reward_amount field in the database.
+	FieldWelcomeRewardAmount = "welcome_reward_amount"
+	// FieldSurpriseRewardAmount holds the string denoting the surprise_reward_amount field in the database.
+	FieldSurpriseRewardAmount = "surprise_reward_amount"
+	// FieldSurpriseRewardCheckedAt holds the string denoting the surprise_reward_checked_at field in the database.
+	FieldSurpriseRewardCheckedAt = "surprise_reward_checked_at"
+	// FieldSurpriseRewardAwardedAt holds the string denoting the surprise_reward_awarded_at field in the database.
+	FieldSurpriseRewardAwardedAt = "surprise_reward_awarded_at"
 	// FieldFrozenBalance holds the string denoting the frozen_balance field in the database.
 	FieldFrozenBalance = "frozen_balance"
 	// FieldConcurrency holds the string denoting the concurrency field in the database.
@@ -201,6 +209,10 @@ var Columns = []string{
 	FieldPasswordHash,
 	FieldRole,
 	FieldBalance,
+	FieldWelcomeRewardAmount,
+	FieldSurpriseRewardAmount,
+	FieldSurpriseRewardCheckedAt,
+	FieldSurpriseRewardAwardedAt,
 	FieldFrozenBalance,
 	FieldConcurrency,
 	FieldStatus,
@@ -260,6 +272,14 @@ var (
 	RoleValidator func(string) error
 	// DefaultBalance holds the default value on creation for the "balance" field.
 	DefaultBalance float64
+	// DefaultWelcomeRewardAmount holds the default value on creation for the "welcome_reward_amount" field.
+	DefaultWelcomeRewardAmount float64
+	// WelcomeRewardAmountValidator is a validator for the "welcome_reward_amount" field. It is called by the builders before save.
+	WelcomeRewardAmountValidator func(float64) error
+	// DefaultSurpriseRewardAmount holds the default value on creation for the "surprise_reward_amount" field.
+	DefaultSurpriseRewardAmount float64
+	// SurpriseRewardAmountValidator is a validator for the "surprise_reward_amount" field. It is called by the builders before save.
+	SurpriseRewardAmountValidator func(float64) error
 	// DefaultFrozenBalance holds the default value on creation for the "frozen_balance" field.
 	DefaultFrozenBalance float64
 	// DefaultConcurrency holds the default value on creation for the "concurrency" field.
@@ -333,6 +353,26 @@ func ByRole(opts ...sql.OrderTermOption) OrderOption {
 // ByBalance orders the results by the balance field.
 func ByBalance(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBalance, opts...).ToFunc()
+}
+
+// ByWelcomeRewardAmount orders the results by the welcome_reward_amount field.
+func ByWelcomeRewardAmount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldWelcomeRewardAmount, opts...).ToFunc()
+}
+
+// BySurpriseRewardAmount orders the results by the surprise_reward_amount field.
+func BySurpriseRewardAmount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSurpriseRewardAmount, opts...).ToFunc()
+}
+
+// BySurpriseRewardCheckedAt orders the results by the surprise_reward_checked_at field.
+func BySurpriseRewardCheckedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSurpriseRewardCheckedAt, opts...).ToFunc()
+}
+
+// BySurpriseRewardAwardedAt orders the results by the surprise_reward_awarded_at field.
+func BySurpriseRewardAwardedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSurpriseRewardAwardedAt, opts...).ToFunc()
 }
 
 // ByFrozenBalance orders the results by the frozen_balance field.

@@ -5,7 +5,10 @@
       v-if="coverActive"
       ref="canvasRef"
       class="scratch-cover absolute inset-0 z-10 h-full w-full cursor-pointer rounded-[inherit]"
-      :class="{ 'scratch-cover--revealed': revealed }"
+      :class="{
+        'scratch-cover--loading': !coverReady,
+        'scratch-cover--revealed': revealed
+      }"
       tabindex="0"
       role="button"
       :aria-label="coverText || 'Reveal'"
@@ -57,6 +60,8 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 const coverActive = ref(true)
 /** 达到阈值后置 true，触发整层淡出 */
 const revealed = ref(false)
+/** 图片或回退色已经绘制完成，可开始交互 */
+const coverReady = ref(false)
 
 let ctx: CanvasRenderingContext2D | null = null
 let resizeObserver: ResizeObserver | null = null
@@ -141,25 +146,28 @@ function drawCoverImage(image: HTMLImageElement, canvasWidth: number, canvasHeig
   )
 }
 
-function loadCoverImage() {
+function loadCoverImage(): Promise<void> {
   const source = props.coverImage
   loadedCoverImage = null
   coverImageRequest++
   const request = coverImageRequest
-  if (!source || typeof Image !== 'function') return
+  if (!source || typeof Image !== 'function') return Promise.resolve()
 
-  const image = new Image()
-  image.decoding = 'async'
-  image.onload = () => {
-    if (request !== coverImageRequest || completed || hasScratched) return
-    loadedCoverImage = image
-    drawCover()
-  }
-  image.onerror = () => {
-    if (request !== coverImageRequest) return
-    loadedCoverImage = null
-  }
-  image.src = source
+  return new Promise((resolve) => {
+    const image = new Image()
+    image.decoding = 'async'
+    image.onload = () => {
+      if (request === coverImageRequest && !completed && !hasScratched) {
+        loadedCoverImage = image
+      }
+      resolve()
+    }
+    image.onerror = () => {
+      if (request === coverImageRequest) loadedCoverImage = null
+      resolve()
+    }
+    image.src = source
+  })
 }
 
 function scratchAt(x: number, y: number, connect: boolean) {
@@ -221,7 +229,7 @@ function onCoverTransitionEnd() {
 }
 
 function onPointerDown(event: PointerEvent) {
-  if (completed) return
+  if (!coverReady.value || completed) return
   scratching = true
   hasScratched = true
   try {
@@ -273,8 +281,10 @@ onMounted(async () => {
     reveal()
     return
   }
+  await loadCoverImage()
+  if (completed || !ctx) return
   drawCover()
-  loadCoverImage()
+  coverReady.value = true
   if (typeof ResizeObserver === 'function' && containerRef.value) {
     resizeObserver = new ResizeObserver(() => {
       if (completed) return
@@ -308,6 +318,15 @@ onBeforeUnmount(() => {
   touch-action: none;
   opacity: 1;
   transition: opacity 0.5s ease;
+}
+
+.scratch-cover--loading {
+  cursor: wait;
+  background: #f3f4f6;
+}
+
+:global(.dark) .scratch-cover--loading {
+  background: #1f2937;
 }
 
 .scratch-cover--revealed {

@@ -48486,6 +48486,12 @@ type UserMutation struct {
 	role                          *string
 	balance                       *float64
 	addbalance                    *float64
+	welcome_reward_amount         *float64
+	addwelcome_reward_amount      *float64
+	surprise_reward_amount        *float64
+	addsurprise_reward_amount     *float64
+	surprise_reward_checked_at    *time.Time
+	surprise_reward_awarded_at    *time.Time
 	frozen_balance                *float64
 	addfrozen_balance             *float64
 	concurrency                   *int
@@ -48934,6 +48940,216 @@ func (m *UserMutation) AddedBalance() (r float64, exists bool) {
 func (m *UserMutation) ResetBalance() {
 	m.balance = nil
 	m.addbalance = nil
+}
+
+// SetWelcomeRewardAmount sets the "welcome_reward_amount" field.
+func (m *UserMutation) SetWelcomeRewardAmount(f float64) {
+	m.welcome_reward_amount = &f
+	m.addwelcome_reward_amount = nil
+}
+
+// WelcomeRewardAmount returns the value of the "welcome_reward_amount" field in the mutation.
+func (m *UserMutation) WelcomeRewardAmount() (r float64, exists bool) {
+	v := m.welcome_reward_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWelcomeRewardAmount returns the old "welcome_reward_amount" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldWelcomeRewardAmount(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWelcomeRewardAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWelcomeRewardAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWelcomeRewardAmount: %w", err)
+	}
+	return oldValue.WelcomeRewardAmount, nil
+}
+
+// AddWelcomeRewardAmount adds f to the "welcome_reward_amount" field.
+func (m *UserMutation) AddWelcomeRewardAmount(f float64) {
+	if m.addwelcome_reward_amount != nil {
+		*m.addwelcome_reward_amount += f
+	} else {
+		m.addwelcome_reward_amount = &f
+	}
+}
+
+// AddedWelcomeRewardAmount returns the value that was added to the "welcome_reward_amount" field in this mutation.
+func (m *UserMutation) AddedWelcomeRewardAmount() (r float64, exists bool) {
+	v := m.addwelcome_reward_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetWelcomeRewardAmount resets all changes to the "welcome_reward_amount" field.
+func (m *UserMutation) ResetWelcomeRewardAmount() {
+	m.welcome_reward_amount = nil
+	m.addwelcome_reward_amount = nil
+}
+
+// SetSurpriseRewardAmount sets the "surprise_reward_amount" field.
+func (m *UserMutation) SetSurpriseRewardAmount(f float64) {
+	m.surprise_reward_amount = &f
+	m.addsurprise_reward_amount = nil
+}
+
+// SurpriseRewardAmount returns the value of the "surprise_reward_amount" field in the mutation.
+func (m *UserMutation) SurpriseRewardAmount() (r float64, exists bool) {
+	v := m.surprise_reward_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSurpriseRewardAmount returns the old "surprise_reward_amount" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldSurpriseRewardAmount(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSurpriseRewardAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSurpriseRewardAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSurpriseRewardAmount: %w", err)
+	}
+	return oldValue.SurpriseRewardAmount, nil
+}
+
+// AddSurpriseRewardAmount adds f to the "surprise_reward_amount" field.
+func (m *UserMutation) AddSurpriseRewardAmount(f float64) {
+	if m.addsurprise_reward_amount != nil {
+		*m.addsurprise_reward_amount += f
+	} else {
+		m.addsurprise_reward_amount = &f
+	}
+}
+
+// AddedSurpriseRewardAmount returns the value that was added to the "surprise_reward_amount" field in this mutation.
+func (m *UserMutation) AddedSurpriseRewardAmount() (r float64, exists bool) {
+	v := m.addsurprise_reward_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSurpriseRewardAmount resets all changes to the "surprise_reward_amount" field.
+func (m *UserMutation) ResetSurpriseRewardAmount() {
+	m.surprise_reward_amount = nil
+	m.addsurprise_reward_amount = nil
+}
+
+// SetSurpriseRewardCheckedAt sets the "surprise_reward_checked_at" field.
+func (m *UserMutation) SetSurpriseRewardCheckedAt(t time.Time) {
+	m.surprise_reward_checked_at = &t
+}
+
+// SurpriseRewardCheckedAt returns the value of the "surprise_reward_checked_at" field in the mutation.
+func (m *UserMutation) SurpriseRewardCheckedAt() (r time.Time, exists bool) {
+	v := m.surprise_reward_checked_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSurpriseRewardCheckedAt returns the old "surprise_reward_checked_at" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldSurpriseRewardCheckedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSurpriseRewardCheckedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSurpriseRewardCheckedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSurpriseRewardCheckedAt: %w", err)
+	}
+	return oldValue.SurpriseRewardCheckedAt, nil
+}
+
+// ClearSurpriseRewardCheckedAt clears the value of the "surprise_reward_checked_at" field.
+func (m *UserMutation) ClearSurpriseRewardCheckedAt() {
+	m.surprise_reward_checked_at = nil
+	m.clearedFields[user.FieldSurpriseRewardCheckedAt] = struct{}{}
+}
+
+// SurpriseRewardCheckedAtCleared returns if the "surprise_reward_checked_at" field was cleared in this mutation.
+func (m *UserMutation) SurpriseRewardCheckedAtCleared() bool {
+	_, ok := m.clearedFields[user.FieldSurpriseRewardCheckedAt]
+	return ok
+}
+
+// ResetSurpriseRewardCheckedAt resets all changes to the "surprise_reward_checked_at" field.
+func (m *UserMutation) ResetSurpriseRewardCheckedAt() {
+	m.surprise_reward_checked_at = nil
+	delete(m.clearedFields, user.FieldSurpriseRewardCheckedAt)
+}
+
+// SetSurpriseRewardAwardedAt sets the "surprise_reward_awarded_at" field.
+func (m *UserMutation) SetSurpriseRewardAwardedAt(t time.Time) {
+	m.surprise_reward_awarded_at = &t
+}
+
+// SurpriseRewardAwardedAt returns the value of the "surprise_reward_awarded_at" field in the mutation.
+func (m *UserMutation) SurpriseRewardAwardedAt() (r time.Time, exists bool) {
+	v := m.surprise_reward_awarded_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSurpriseRewardAwardedAt returns the old "surprise_reward_awarded_at" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldSurpriseRewardAwardedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSurpriseRewardAwardedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSurpriseRewardAwardedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSurpriseRewardAwardedAt: %w", err)
+	}
+	return oldValue.SurpriseRewardAwardedAt, nil
+}
+
+// ClearSurpriseRewardAwardedAt clears the value of the "surprise_reward_awarded_at" field.
+func (m *UserMutation) ClearSurpriseRewardAwardedAt() {
+	m.surprise_reward_awarded_at = nil
+	m.clearedFields[user.FieldSurpriseRewardAwardedAt] = struct{}{}
+}
+
+// SurpriseRewardAwardedAtCleared returns if the "surprise_reward_awarded_at" field was cleared in this mutation.
+func (m *UserMutation) SurpriseRewardAwardedAtCleared() bool {
+	_, ok := m.clearedFields[user.FieldSurpriseRewardAwardedAt]
+	return ok
+}
+
+// ResetSurpriseRewardAwardedAt resets all changes to the "surprise_reward_awarded_at" field.
+func (m *UserMutation) ResetSurpriseRewardAwardedAt() {
+	m.surprise_reward_awarded_at = nil
+	delete(m.clearedFields, user.FieldSurpriseRewardAwardedAt)
 }
 
 // SetFrozenBalance sets the "frozen_balance" field.
@@ -50450,7 +50666,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 24)
+	fields := make([]string, 0, 28)
 	if m.created_at != nil {
 		fields = append(fields, user.FieldCreatedAt)
 	}
@@ -50471,6 +50687,18 @@ func (m *UserMutation) Fields() []string {
 	}
 	if m.balance != nil {
 		fields = append(fields, user.FieldBalance)
+	}
+	if m.welcome_reward_amount != nil {
+		fields = append(fields, user.FieldWelcomeRewardAmount)
+	}
+	if m.surprise_reward_amount != nil {
+		fields = append(fields, user.FieldSurpriseRewardAmount)
+	}
+	if m.surprise_reward_checked_at != nil {
+		fields = append(fields, user.FieldSurpriseRewardCheckedAt)
+	}
+	if m.surprise_reward_awarded_at != nil {
+		fields = append(fields, user.FieldSurpriseRewardAwardedAt)
 	}
 	if m.frozen_balance != nil {
 		fields = append(fields, user.FieldFrozenBalance)
@@ -50545,6 +50773,14 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.Role()
 	case user.FieldBalance:
 		return m.Balance()
+	case user.FieldWelcomeRewardAmount:
+		return m.WelcomeRewardAmount()
+	case user.FieldSurpriseRewardAmount:
+		return m.SurpriseRewardAmount()
+	case user.FieldSurpriseRewardCheckedAt:
+		return m.SurpriseRewardCheckedAt()
+	case user.FieldSurpriseRewardAwardedAt:
+		return m.SurpriseRewardAwardedAt()
 	case user.FieldFrozenBalance:
 		return m.FrozenBalance()
 	case user.FieldConcurrency:
@@ -50602,6 +50838,14 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldRole(ctx)
 	case user.FieldBalance:
 		return m.OldBalance(ctx)
+	case user.FieldWelcomeRewardAmount:
+		return m.OldWelcomeRewardAmount(ctx)
+	case user.FieldSurpriseRewardAmount:
+		return m.OldSurpriseRewardAmount(ctx)
+	case user.FieldSurpriseRewardCheckedAt:
+		return m.OldSurpriseRewardCheckedAt(ctx)
+	case user.FieldSurpriseRewardAwardedAt:
+		return m.OldSurpriseRewardAwardedAt(ctx)
 	case user.FieldFrozenBalance:
 		return m.OldFrozenBalance(ctx)
 	case user.FieldConcurrency:
@@ -50693,6 +50937,34 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetBalance(v)
+		return nil
+	case user.FieldWelcomeRewardAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWelcomeRewardAmount(v)
+		return nil
+	case user.FieldSurpriseRewardAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSurpriseRewardAmount(v)
+		return nil
+	case user.FieldSurpriseRewardCheckedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSurpriseRewardCheckedAt(v)
+		return nil
+	case user.FieldSurpriseRewardAwardedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSurpriseRewardAwardedAt(v)
 		return nil
 	case user.FieldFrozenBalance:
 		v, ok := value.(float64)
@@ -50824,6 +51096,12 @@ func (m *UserMutation) AddedFields() []string {
 	if m.addbalance != nil {
 		fields = append(fields, user.FieldBalance)
 	}
+	if m.addwelcome_reward_amount != nil {
+		fields = append(fields, user.FieldWelcomeRewardAmount)
+	}
+	if m.addsurprise_reward_amount != nil {
+		fields = append(fields, user.FieldSurpriseRewardAmount)
+	}
 	if m.addfrozen_balance != nil {
 		fields = append(fields, user.FieldFrozenBalance)
 	}
@@ -50849,6 +51127,10 @@ func (m *UserMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case user.FieldBalance:
 		return m.AddedBalance()
+	case user.FieldWelcomeRewardAmount:
+		return m.AddedWelcomeRewardAmount()
+	case user.FieldSurpriseRewardAmount:
+		return m.AddedSurpriseRewardAmount()
 	case user.FieldFrozenBalance:
 		return m.AddedFrozenBalance()
 	case user.FieldConcurrency:
@@ -50874,6 +51156,20 @@ func (m *UserMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddBalance(v)
+		return nil
+	case user.FieldWelcomeRewardAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddWelcomeRewardAmount(v)
+		return nil
+	case user.FieldSurpriseRewardAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSurpriseRewardAmount(v)
 		return nil
 	case user.FieldFrozenBalance:
 		v, ok := value.(float64)
@@ -50921,6 +51217,12 @@ func (m *UserMutation) ClearedFields() []string {
 	if m.FieldCleared(user.FieldDeletedAt) {
 		fields = append(fields, user.FieldDeletedAt)
 	}
+	if m.FieldCleared(user.FieldSurpriseRewardCheckedAt) {
+		fields = append(fields, user.FieldSurpriseRewardCheckedAt)
+	}
+	if m.FieldCleared(user.FieldSurpriseRewardAwardedAt) {
+		fields = append(fields, user.FieldSurpriseRewardAwardedAt)
+	}
 	if m.FieldCleared(user.FieldTotpSecretEncrypted) {
 		fields = append(fields, user.FieldTotpSecretEncrypted)
 	}
@@ -50952,6 +51254,12 @@ func (m *UserMutation) ClearField(name string) error {
 	switch name {
 	case user.FieldDeletedAt:
 		m.ClearDeletedAt()
+		return nil
+	case user.FieldSurpriseRewardCheckedAt:
+		m.ClearSurpriseRewardCheckedAt()
+		return nil
+	case user.FieldSurpriseRewardAwardedAt:
+		m.ClearSurpriseRewardAwardedAt()
 		return nil
 	case user.FieldTotpSecretEncrypted:
 		m.ClearTotpSecretEncrypted()
@@ -50996,6 +51304,18 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldBalance:
 		m.ResetBalance()
+		return nil
+	case user.FieldWelcomeRewardAmount:
+		m.ResetWelcomeRewardAmount()
+		return nil
+	case user.FieldSurpriseRewardAmount:
+		m.ResetSurpriseRewardAmount()
+		return nil
+	case user.FieldSurpriseRewardCheckedAt:
+		m.ResetSurpriseRewardCheckedAt()
+		return nil
+	case user.FieldSurpriseRewardAwardedAt:
+		m.ResetSurpriseRewardAwardedAt()
 		return nil
 	case user.FieldFrozenBalance:
 		m.ResetFrozenBalance()

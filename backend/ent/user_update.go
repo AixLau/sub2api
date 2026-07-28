@@ -129,6 +129,88 @@ func (_u *UserUpdate) AddBalance(v float64) *UserUpdate {
 	return _u
 }
 
+// SetWelcomeRewardAmount sets the "welcome_reward_amount" field.
+func (_u *UserUpdate) SetWelcomeRewardAmount(v float64) *UserUpdate {
+	_u.mutation.ResetWelcomeRewardAmount()
+	_u.mutation.SetWelcomeRewardAmount(v)
+	return _u
+}
+
+// SetNillableWelcomeRewardAmount sets the "welcome_reward_amount" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableWelcomeRewardAmount(v *float64) *UserUpdate {
+	if v != nil {
+		_u.SetWelcomeRewardAmount(*v)
+	}
+	return _u
+}
+
+// AddWelcomeRewardAmount adds value to the "welcome_reward_amount" field.
+func (_u *UserUpdate) AddWelcomeRewardAmount(v float64) *UserUpdate {
+	_u.mutation.AddWelcomeRewardAmount(v)
+	return _u
+}
+
+// SetSurpriseRewardAmount sets the "surprise_reward_amount" field.
+func (_u *UserUpdate) SetSurpriseRewardAmount(v float64) *UserUpdate {
+	_u.mutation.ResetSurpriseRewardAmount()
+	_u.mutation.SetSurpriseRewardAmount(v)
+	return _u
+}
+
+// SetNillableSurpriseRewardAmount sets the "surprise_reward_amount" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableSurpriseRewardAmount(v *float64) *UserUpdate {
+	if v != nil {
+		_u.SetSurpriseRewardAmount(*v)
+	}
+	return _u
+}
+
+// AddSurpriseRewardAmount adds value to the "surprise_reward_amount" field.
+func (_u *UserUpdate) AddSurpriseRewardAmount(v float64) *UserUpdate {
+	_u.mutation.AddSurpriseRewardAmount(v)
+	return _u
+}
+
+// SetSurpriseRewardCheckedAt sets the "surprise_reward_checked_at" field.
+func (_u *UserUpdate) SetSurpriseRewardCheckedAt(v time.Time) *UserUpdate {
+	_u.mutation.SetSurpriseRewardCheckedAt(v)
+	return _u
+}
+
+// SetNillableSurpriseRewardCheckedAt sets the "surprise_reward_checked_at" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableSurpriseRewardCheckedAt(v *time.Time) *UserUpdate {
+	if v != nil {
+		_u.SetSurpriseRewardCheckedAt(*v)
+	}
+	return _u
+}
+
+// ClearSurpriseRewardCheckedAt clears the value of the "surprise_reward_checked_at" field.
+func (_u *UserUpdate) ClearSurpriseRewardCheckedAt() *UserUpdate {
+	_u.mutation.ClearSurpriseRewardCheckedAt()
+	return _u
+}
+
+// SetSurpriseRewardAwardedAt sets the "surprise_reward_awarded_at" field.
+func (_u *UserUpdate) SetSurpriseRewardAwardedAt(v time.Time) *UserUpdate {
+	_u.mutation.SetSurpriseRewardAwardedAt(v)
+	return _u
+}
+
+// SetNillableSurpriseRewardAwardedAt sets the "surprise_reward_awarded_at" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableSurpriseRewardAwardedAt(v *time.Time) *UserUpdate {
+	if v != nil {
+		_u.SetSurpriseRewardAwardedAt(*v)
+	}
+	return _u
+}
+
+// ClearSurpriseRewardAwardedAt clears the value of the "surprise_reward_awarded_at" field.
+func (_u *UserUpdate) ClearSurpriseRewardAwardedAt() *UserUpdate {
+	_u.mutation.ClearSurpriseRewardAwardedAt()
+	return _u
+}
+
 // SetFrozenBalance sets the "frozen_balance" field.
 func (_u *UserUpdate) SetFrozenBalance(v float64) *UserUpdate {
 	_u.mutation.ResetFrozenBalance()
@@ -964,6 +1046,16 @@ func (_u *UserUpdate) check() error {
 			return &ValidationError{Name: "role", err: fmt.Errorf(`ent: validator failed for field "User.role": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.WelcomeRewardAmount(); ok {
+		if err := user.WelcomeRewardAmountValidator(v); err != nil {
+			return &ValidationError{Name: "welcome_reward_amount", err: fmt.Errorf(`ent: validator failed for field "User.welcome_reward_amount": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SurpriseRewardAmount(); ok {
+		if err := user.SurpriseRewardAmountValidator(v); err != nil {
+			return &ValidationError{Name: "surprise_reward_amount", err: fmt.Errorf(`ent: validator failed for field "User.surprise_reward_amount": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := user.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "User.status": %w`, err)}
@@ -1017,6 +1109,30 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedBalance(); ok {
 		_spec.AddField(user.FieldBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.WelcomeRewardAmount(); ok {
+		_spec.SetField(user.FieldWelcomeRewardAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedWelcomeRewardAmount(); ok {
+		_spec.AddField(user.FieldWelcomeRewardAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.SurpriseRewardAmount(); ok {
+		_spec.SetField(user.FieldSurpriseRewardAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedSurpriseRewardAmount(); ok {
+		_spec.AddField(user.FieldSurpriseRewardAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.SurpriseRewardCheckedAt(); ok {
+		_spec.SetField(user.FieldSurpriseRewardCheckedAt, field.TypeTime, value)
+	}
+	if _u.mutation.SurpriseRewardCheckedAtCleared() {
+		_spec.ClearField(user.FieldSurpriseRewardCheckedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.SurpriseRewardAwardedAt(); ok {
+		_spec.SetField(user.FieldSurpriseRewardAwardedAt, field.TypeTime, value)
+	}
+	if _u.mutation.SurpriseRewardAwardedAtCleared() {
+		_spec.ClearField(user.FieldSurpriseRewardAwardedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.FrozenBalance(); ok {
 		_spec.SetField(user.FieldFrozenBalance, field.TypeFloat64, value)
@@ -1802,6 +1918,88 @@ func (_u *UserUpdateOne) SetNillableBalance(v *float64) *UserUpdateOne {
 // AddBalance adds value to the "balance" field.
 func (_u *UserUpdateOne) AddBalance(v float64) *UserUpdateOne {
 	_u.mutation.AddBalance(v)
+	return _u
+}
+
+// SetWelcomeRewardAmount sets the "welcome_reward_amount" field.
+func (_u *UserUpdateOne) SetWelcomeRewardAmount(v float64) *UserUpdateOne {
+	_u.mutation.ResetWelcomeRewardAmount()
+	_u.mutation.SetWelcomeRewardAmount(v)
+	return _u
+}
+
+// SetNillableWelcomeRewardAmount sets the "welcome_reward_amount" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableWelcomeRewardAmount(v *float64) *UserUpdateOne {
+	if v != nil {
+		_u.SetWelcomeRewardAmount(*v)
+	}
+	return _u
+}
+
+// AddWelcomeRewardAmount adds value to the "welcome_reward_amount" field.
+func (_u *UserUpdateOne) AddWelcomeRewardAmount(v float64) *UserUpdateOne {
+	_u.mutation.AddWelcomeRewardAmount(v)
+	return _u
+}
+
+// SetSurpriseRewardAmount sets the "surprise_reward_amount" field.
+func (_u *UserUpdateOne) SetSurpriseRewardAmount(v float64) *UserUpdateOne {
+	_u.mutation.ResetSurpriseRewardAmount()
+	_u.mutation.SetSurpriseRewardAmount(v)
+	return _u
+}
+
+// SetNillableSurpriseRewardAmount sets the "surprise_reward_amount" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableSurpriseRewardAmount(v *float64) *UserUpdateOne {
+	if v != nil {
+		_u.SetSurpriseRewardAmount(*v)
+	}
+	return _u
+}
+
+// AddSurpriseRewardAmount adds value to the "surprise_reward_amount" field.
+func (_u *UserUpdateOne) AddSurpriseRewardAmount(v float64) *UserUpdateOne {
+	_u.mutation.AddSurpriseRewardAmount(v)
+	return _u
+}
+
+// SetSurpriseRewardCheckedAt sets the "surprise_reward_checked_at" field.
+func (_u *UserUpdateOne) SetSurpriseRewardCheckedAt(v time.Time) *UserUpdateOne {
+	_u.mutation.SetSurpriseRewardCheckedAt(v)
+	return _u
+}
+
+// SetNillableSurpriseRewardCheckedAt sets the "surprise_reward_checked_at" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableSurpriseRewardCheckedAt(v *time.Time) *UserUpdateOne {
+	if v != nil {
+		_u.SetSurpriseRewardCheckedAt(*v)
+	}
+	return _u
+}
+
+// ClearSurpriseRewardCheckedAt clears the value of the "surprise_reward_checked_at" field.
+func (_u *UserUpdateOne) ClearSurpriseRewardCheckedAt() *UserUpdateOne {
+	_u.mutation.ClearSurpriseRewardCheckedAt()
+	return _u
+}
+
+// SetSurpriseRewardAwardedAt sets the "surprise_reward_awarded_at" field.
+func (_u *UserUpdateOne) SetSurpriseRewardAwardedAt(v time.Time) *UserUpdateOne {
+	_u.mutation.SetSurpriseRewardAwardedAt(v)
+	return _u
+}
+
+// SetNillableSurpriseRewardAwardedAt sets the "surprise_reward_awarded_at" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableSurpriseRewardAwardedAt(v *time.Time) *UserUpdateOne {
+	if v != nil {
+		_u.SetSurpriseRewardAwardedAt(*v)
+	}
+	return _u
+}
+
+// ClearSurpriseRewardAwardedAt clears the value of the "surprise_reward_awarded_at" field.
+func (_u *UserUpdateOne) ClearSurpriseRewardAwardedAt() *UserUpdateOne {
+	_u.mutation.ClearSurpriseRewardAwardedAt()
 	return _u
 }
 
@@ -2653,6 +2851,16 @@ func (_u *UserUpdateOne) check() error {
 			return &ValidationError{Name: "role", err: fmt.Errorf(`ent: validator failed for field "User.role": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.WelcomeRewardAmount(); ok {
+		if err := user.WelcomeRewardAmountValidator(v); err != nil {
+			return &ValidationError{Name: "welcome_reward_amount", err: fmt.Errorf(`ent: validator failed for field "User.welcome_reward_amount": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.SurpriseRewardAmount(); ok {
+		if err := user.SurpriseRewardAmountValidator(v); err != nil {
+			return &ValidationError{Name: "surprise_reward_amount", err: fmt.Errorf(`ent: validator failed for field "User.surprise_reward_amount": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := user.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "User.status": %w`, err)}
@@ -2723,6 +2931,30 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	}
 	if value, ok := _u.mutation.AddedBalance(); ok {
 		_spec.AddField(user.FieldBalance, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.WelcomeRewardAmount(); ok {
+		_spec.SetField(user.FieldWelcomeRewardAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedWelcomeRewardAmount(); ok {
+		_spec.AddField(user.FieldWelcomeRewardAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.SurpriseRewardAmount(); ok {
+		_spec.SetField(user.FieldSurpriseRewardAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedSurpriseRewardAmount(); ok {
+		_spec.AddField(user.FieldSurpriseRewardAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.SurpriseRewardCheckedAt(); ok {
+		_spec.SetField(user.FieldSurpriseRewardCheckedAt, field.TypeTime, value)
+	}
+	if _u.mutation.SurpriseRewardCheckedAtCleared() {
+		_spec.ClearField(user.FieldSurpriseRewardCheckedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.SurpriseRewardAwardedAt(); ok {
+		_spec.SetField(user.FieldSurpriseRewardAwardedAt, field.TypeTime, value)
+	}
+	if _u.mutation.SurpriseRewardAwardedAtCleared() {
+		_spec.ClearField(user.FieldSurpriseRewardAwardedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.FrozenBalance(); ok {
 		_spec.SetField(user.FieldFrozenBalance, field.TypeFloat64, value)

@@ -9,6 +9,9 @@ const mockLogout = vi.fn()
 const mockGetCurrentUser = vi.fn()
 const mockRegister = vi.fn()
 const mockRefreshToken = vi.fn()
+const mockClaimWelcomeReward = vi.fn()
+const mockCheckSurpriseReward = vi.fn()
+const mockClaimSurpriseReward = vi.fn()
 
 vi.mock('@/api', () => ({
   authAPI: {
@@ -18,6 +21,11 @@ vi.mock('@/api', () => ({
     getCurrentUser: (...args: any[]) => mockGetCurrentUser(...args),
     register: (...args: any[]) => mockRegister(...args),
     refreshToken: (...args: any[]) => mockRefreshToken(...args),
+  },
+  userAPI: {
+    claimWelcomeReward: (...args: any[]) => mockClaimWelcomeReward(...args),
+    checkSurpriseReward: (...args: any[]) => mockCheckSurpriseReward(...args),
+    claimSurpriseReward: (...args: any[]) => mockClaimSurpriseReward(...args),
   },
   isTotp2FARequired: (response: any) => response?.requires_2fa === true,
 }))
@@ -90,6 +98,18 @@ describe('useAuthStore', () => {
       expect(store.token).toBeNull()
       expect(store.user).toBeNull()
       expect(store.isAuthenticated).toBe(false)
+    })
+
+    it('restores the pending scratch reward from the login response', async () => {
+      mockLogin.mockResolvedValue({ ...fakeAuthResponse, welcome_reward_pending: true })
+      const store = useAuthStore()
+
+      await store.login({ email: 'test@example.com', password: '123456' })
+
+      expect(store.pendingWelcomeRewardUserID).toBe(fakeUser.id)
+      expect(JSON.parse(localStorage.getItem('pending_welcome_reward') || 'null')).toEqual({
+        user_id: fakeUser.id
+      })
     })
 
     it('需要 2FA 时返回响应但不设置认证状态', async () => {
@@ -239,14 +259,43 @@ describe('useAuthStore', () => {
   describe('pending auth session', () => {
     it('persists a server-issued welcome reward after registration', async () => {
       const store = useAuthStore()
-      mockRegister.mockResolvedValue({ ...fakeAuthResponse, welcome_reward: 4 })
+      mockRegister.mockResolvedValue({ ...fakeAuthResponse, welcome_reward_pending: true })
 
       await store.register({ email: 'new@example.com', password: 'secret-123' })
 
       expect(JSON.parse(localStorage.getItem('pending_welcome_reward') || 'null')).toEqual({
-        amount: 4,
         user_id: fakeUser.id
       })
+      expect(store.pendingWelcomeRewardUserID).toBe(fakeUser.id)
+    })
+
+    it('credits the balance only after claiming the scratched reward', async () => {
+      const store = useAuthStore()
+      mockRegister.mockResolvedValue({ ...fakeAuthResponse, welcome_reward_pending: true })
+      mockClaimWelcomeReward.mockResolvedValue({ amount: 4, balance: 104 })
+
+      await store.register({ email: 'new@example.com', password: 'secret-123' })
+      expect(store.user?.balance).toBe(100)
+
+      const result = await store.claimWelcomeReward()
+
+      expect(result).toEqual({ amount: 4, balance: 104 })
+      expect(store.user?.balance).toBe(104)
+      expect(store.pendingWelcomeRewardUserID).toBeNull()
+      expect(localStorage.getItem('pending_welcome_reward')).toBeNull()
+    })
+
+    it('checks and claims an active-user surprise reward', async () => {
+      const store = useAuthStore()
+      mockLogin.mockResolvedValue(fakeAuthResponse)
+      mockCheckSurpriseReward.mockResolvedValue({ pending: true })
+      mockClaimSurpriseReward.mockResolvedValue({ amount: 2, balance: 102 })
+
+      await store.login({ email: 'test@example.com', password: 'secret-123' })
+
+      await expect(store.checkSurpriseReward()).resolves.toBe(true)
+      await expect(store.claimSurpriseReward()).resolves.toEqual({ amount: 2, balance: 102 })
+      expect(store.user?.balance).toBe(102)
     })
 
     it('persists and clears pending auth session state', () => {

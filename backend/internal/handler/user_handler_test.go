@@ -20,9 +20,45 @@ import (
 )
 
 type userHandlerRepoStub struct {
-	user       *service.User
-	identities []service.UserAuthIdentityRecord
-	unbound    []string
+	user           *service.User
+	identities     []service.UserAuthIdentityRecord
+	unbound        []string
+	welcomeReward  float64
+	surpriseReward float64
+}
+
+func (s *userHandlerRepoStub) ClaimWelcomeReward(context.Context, int64) (float64, float64, error) {
+	if s.welcomeReward < 1 {
+		return 0, 0, service.ErrWelcomeRewardUnavailable
+	}
+	amount := s.welcomeReward
+	s.welcomeReward = 0
+	s.user.Balance += amount
+	return amount, s.user.Balance, nil
+}
+
+func (s *userHandlerRepoStub) CheckSurpriseReward(
+	context.Context,
+	int64,
+	time.Time,
+	bool,
+	float64,
+) (bool, error) {
+	return s.surpriseReward >= 1, nil
+}
+
+func (s *userHandlerRepoStub) ClaimSurpriseReward(
+	_ context.Context,
+	_ int64,
+	_ time.Time,
+) (float64, float64, error) {
+	if s.surpriseReward < 1 {
+		return 0, 0, service.ErrSurpriseRewardUnavailable
+	}
+	amount := s.surpriseReward
+	s.surpriseReward = 0
+	s.user.Balance += amount
+	return amount, s.user.Balance, nil
 }
 
 func (s *userHandlerRepoStub) Create(context.Context, *service.User) error { return nil }
@@ -184,6 +220,61 @@ func TestUserHandlerUpdateProfileReturnsAvatarURL(t *testing.T) {
 	require.Equal(t, 0, resp.Code)
 	require.Equal(t, "https://cdn.example.com/avatar.png", resp.Data.AvatarURL)
 	require.Equal(t, "handler-avatar", resp.Data.Username)
+}
+
+func TestUserHandlerClaimWelcomeReward(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &userHandlerRepoStub{
+		user:          &service.User{ID: 11, Balance: 20},
+		welcomeReward: 3,
+	}
+	handler := NewUserHandler(service.NewUserService(repo, nil, nil, nil), nil, nil, nil, nil, nil)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/user/welcome-reward/claim", nil)
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 11})
+
+	handler.ClaimWelcomeReward(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			Amount  float64 `json:"amount"`
+			Balance float64 `json:"balance"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.Equal(t, 3.0, resp.Data.Amount)
+	require.Equal(t, 23.0, resp.Data.Balance)
+}
+
+func TestUserHandlerCheckAndClaimSurpriseReward(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &userHandlerRepoStub{
+		user:           &service.User{ID: 11, Balance: 20},
+		surpriseReward: 2,
+	}
+	handler := NewUserHandler(service.NewUserService(repo, nil, nil, nil), nil, nil, nil, nil, nil)
+
+	checkRecorder := httptest.NewRecorder()
+	checkContext, _ := gin.CreateTestContext(checkRecorder)
+	checkContext.Request = httptest.NewRequest(http.MethodPost, "/api/v1/user/surprise-reward/check", nil)
+	checkContext.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 11})
+	handler.CheckSurpriseReward(checkContext)
+
+	require.Equal(t, http.StatusOK, checkRecorder.Code)
+	require.Contains(t, checkRecorder.Body.String(), `"pending":true`)
+
+	claimRecorder := httptest.NewRecorder()
+	claimContext, _ := gin.CreateTestContext(claimRecorder)
+	claimContext.Request = httptest.NewRequest(http.MethodPost, "/api/v1/user/surprise-reward/claim", nil)
+	claimContext.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 11})
+	handler.ClaimSurpriseReward(claimContext)
+
+	require.Equal(t, http.StatusOK, claimRecorder.Code)
+	require.Contains(t, claimRecorder.Body.String(), `"amount":2`)
+	require.Contains(t, claimRecorder.Body.String(), `"balance":22`)
 }
 
 func TestUserHandlerGetProfileReturnsIdentitySummaries(t *testing.T) {

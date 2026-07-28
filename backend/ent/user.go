@@ -31,6 +31,14 @@ type User struct {
 	Role string `json:"role,omitempty"`
 	// Balance holds the value of the "balance" field.
 	Balance float64 `json:"balance,omitempty"`
+	// WelcomeRewardAmount holds the value of the "welcome_reward_amount" field.
+	WelcomeRewardAmount float64 `json:"welcome_reward_amount,omitempty"`
+	// SurpriseRewardAmount holds the value of the "surprise_reward_amount" field.
+	SurpriseRewardAmount float64 `json:"surprise_reward_amount,omitempty"`
+	// SurpriseRewardCheckedAt holds the value of the "surprise_reward_checked_at" field.
+	SurpriseRewardCheckedAt *time.Time `json:"surprise_reward_checked_at,omitempty"`
+	// SurpriseRewardAwardedAt holds the value of the "surprise_reward_awarded_at" field.
+	SurpriseRewardAwardedAt *time.Time `json:"surprise_reward_awarded_at,omitempty"`
 	// FrozenBalance holds the value of the "frozen_balance" field.
 	FrozenBalance float64 `json:"frozen_balance,omitempty"`
 	// Concurrency holds the value of the "concurrency" field.
@@ -239,13 +247,13 @@ func (*User) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case user.FieldTotpEnabled, user.FieldBalanceNotifyEnabled:
 			values[i] = new(sql.NullBool)
-		case user.FieldBalance, user.FieldFrozenBalance, user.FieldBalanceNotifyThreshold, user.FieldTotalRecharged:
+		case user.FieldBalance, user.FieldWelcomeRewardAmount, user.FieldSurpriseRewardAmount, user.FieldFrozenBalance, user.FieldBalanceNotifyThreshold, user.FieldTotalRecharged:
 			values[i] = new(sql.NullFloat64)
 		case user.FieldID, user.FieldConcurrency, user.FieldRpmLimit:
 			values[i] = new(sql.NullInt64)
 		case user.FieldEmail, user.FieldPasswordHash, user.FieldRole, user.FieldStatus, user.FieldUsername, user.FieldNotes, user.FieldTotpSecretEncrypted, user.FieldSignupSource, user.FieldBalanceNotifyThresholdType, user.FieldBalanceNotifyExtraEmails:
 			values[i] = new(sql.NullString)
-		case user.FieldCreatedAt, user.FieldUpdatedAt, user.FieldDeletedAt, user.FieldTotpEnabledAt, user.FieldLastLoginAt, user.FieldLastActiveAt:
+		case user.FieldCreatedAt, user.FieldUpdatedAt, user.FieldDeletedAt, user.FieldSurpriseRewardCheckedAt, user.FieldSurpriseRewardAwardedAt, user.FieldTotpEnabledAt, user.FieldLastLoginAt, user.FieldLastActiveAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -310,6 +318,32 @@ func (_m *User) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field balance", values[i])
 			} else if value.Valid {
 				_m.Balance = value.Float64
+			}
+		case user.FieldWelcomeRewardAmount:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field welcome_reward_amount", values[i])
+			} else if value.Valid {
+				_m.WelcomeRewardAmount = value.Float64
+			}
+		case user.FieldSurpriseRewardAmount:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field surprise_reward_amount", values[i])
+			} else if value.Valid {
+				_m.SurpriseRewardAmount = value.Float64
+			}
+		case user.FieldSurpriseRewardCheckedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field surprise_reward_checked_at", values[i])
+			} else if value.Valid {
+				_m.SurpriseRewardCheckedAt = new(time.Time)
+				*_m.SurpriseRewardCheckedAt = value.Time
+			}
+		case user.FieldSurpriseRewardAwardedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field surprise_reward_awarded_at", values[i])
+			} else if value.Valid {
+				_m.SurpriseRewardAwardedAt = new(time.Time)
+				*_m.SurpriseRewardAwardedAt = value.Time
 			}
 		case user.FieldFrozenBalance:
 			if value, ok := values[i].(*sql.NullFloat64); !ok {
@@ -546,6 +580,22 @@ func (_m *User) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("balance=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Balance))
+	builder.WriteString(", ")
+	builder.WriteString("welcome_reward_amount=")
+	builder.WriteString(fmt.Sprintf("%v", _m.WelcomeRewardAmount))
+	builder.WriteString(", ")
+	builder.WriteString("surprise_reward_amount=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SurpriseRewardAmount))
+	builder.WriteString(", ")
+	if v := _m.SurpriseRewardCheckedAt; v != nil {
+		builder.WriteString("surprise_reward_checked_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.SurpriseRewardAwardedAt; v != nil {
+		builder.WriteString("surprise_reward_awarded_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("frozen_balance=")
 	builder.WriteString(fmt.Sprintf("%v", _m.FrozenBalance))

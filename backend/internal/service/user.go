@@ -20,13 +20,18 @@ type User struct {
 	Role           string
 	Balance        float64
 	FrozenBalance  float64
-	// WelcomeReward is returned only for the registration response. It is
-	// already included in Balance and is not persisted as a separate field.
+	// WelcomeReward is persisted until the user scratches and claims it.
+	// It is not included in Balance before a successful claim.
 	WelcomeReward float64
-	Concurrency   int
-	Status        string
-	AllowedGroups []int64
-	TokenVersion  int64 // Incremented on password change to invalidate existing tokens
+	// SurpriseReward is generated for eligible active users and remains pending
+	// until the scratch interaction successfully claims it.
+	SurpriseReward          float64
+	SurpriseRewardCheckedAt *time.Time
+	SurpriseRewardAwardedAt *time.Time
+	Concurrency             int
+	Status                  string
+	AllowedGroups           []int64
+	TokenVersion            int64 // Incremented on password change to invalidate existing tokens
 	// TokenVersionResolved indicates TokenVersion already contains the fingerprint-derived
 	// value expected in JWT claims and refresh-token state.
 	TokenVersionResolved bool

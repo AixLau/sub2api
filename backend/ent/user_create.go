@@ -116,6 +116,62 @@ func (_c *UserCreate) SetNillableBalance(v *float64) *UserCreate {
 	return _c
 }
 
+// SetWelcomeRewardAmount sets the "welcome_reward_amount" field.
+func (_c *UserCreate) SetWelcomeRewardAmount(v float64) *UserCreate {
+	_c.mutation.SetWelcomeRewardAmount(v)
+	return _c
+}
+
+// SetNillableWelcomeRewardAmount sets the "welcome_reward_amount" field if the given value is not nil.
+func (_c *UserCreate) SetNillableWelcomeRewardAmount(v *float64) *UserCreate {
+	if v != nil {
+		_c.SetWelcomeRewardAmount(*v)
+	}
+	return _c
+}
+
+// SetSurpriseRewardAmount sets the "surprise_reward_amount" field.
+func (_c *UserCreate) SetSurpriseRewardAmount(v float64) *UserCreate {
+	_c.mutation.SetSurpriseRewardAmount(v)
+	return _c
+}
+
+// SetNillableSurpriseRewardAmount sets the "surprise_reward_amount" field if the given value is not nil.
+func (_c *UserCreate) SetNillableSurpriseRewardAmount(v *float64) *UserCreate {
+	if v != nil {
+		_c.SetSurpriseRewardAmount(*v)
+	}
+	return _c
+}
+
+// SetSurpriseRewardCheckedAt sets the "surprise_reward_checked_at" field.
+func (_c *UserCreate) SetSurpriseRewardCheckedAt(v time.Time) *UserCreate {
+	_c.mutation.SetSurpriseRewardCheckedAt(v)
+	return _c
+}
+
+// SetNillableSurpriseRewardCheckedAt sets the "surprise_reward_checked_at" field if the given value is not nil.
+func (_c *UserCreate) SetNillableSurpriseRewardCheckedAt(v *time.Time) *UserCreate {
+	if v != nil {
+		_c.SetSurpriseRewardCheckedAt(*v)
+	}
+	return _c
+}
+
+// SetSurpriseRewardAwardedAt sets the "surprise_reward_awarded_at" field.
+func (_c *UserCreate) SetSurpriseRewardAwardedAt(v time.Time) *UserCreate {
+	_c.mutation.SetSurpriseRewardAwardedAt(v)
+	return _c
+}
+
+// SetNillableSurpriseRewardAwardedAt sets the "surprise_reward_awarded_at" field if the given value is not nil.
+func (_c *UserCreate) SetNillableSurpriseRewardAwardedAt(v *time.Time) *UserCreate {
+	if v != nil {
+		_c.SetSurpriseRewardAwardedAt(*v)
+	}
+	return _c
+}
+
 // SetFrozenBalance sets the "frozen_balance" field.
 func (_c *UserCreate) SetFrozenBalance(v float64) *UserCreate {
 	_c.mutation.SetFrozenBalance(v)
@@ -608,6 +664,14 @@ func (_c *UserCreate) defaults() error {
 		v := user.DefaultBalance
 		_c.mutation.SetBalance(v)
 	}
+	if _, ok := _c.mutation.WelcomeRewardAmount(); !ok {
+		v := user.DefaultWelcomeRewardAmount
+		_c.mutation.SetWelcomeRewardAmount(v)
+	}
+	if _, ok := _c.mutation.SurpriseRewardAmount(); !ok {
+		v := user.DefaultSurpriseRewardAmount
+		_c.mutation.SetSurpriseRewardAmount(v)
+	}
 	if _, ok := _c.mutation.FrozenBalance(); !ok {
 		v := user.DefaultFrozenBalance
 		_c.mutation.SetFrozenBalance(v)
@@ -693,6 +757,22 @@ func (_c *UserCreate) check() error {
 	}
 	if _, ok := _c.mutation.Balance(); !ok {
 		return &ValidationError{Name: "balance", err: errors.New(`ent: missing required field "User.balance"`)}
+	}
+	if _, ok := _c.mutation.WelcomeRewardAmount(); !ok {
+		return &ValidationError{Name: "welcome_reward_amount", err: errors.New(`ent: missing required field "User.welcome_reward_amount"`)}
+	}
+	if v, ok := _c.mutation.WelcomeRewardAmount(); ok {
+		if err := user.WelcomeRewardAmountValidator(v); err != nil {
+			return &ValidationError{Name: "welcome_reward_amount", err: fmt.Errorf(`ent: validator failed for field "User.welcome_reward_amount": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.SurpriseRewardAmount(); !ok {
+		return &ValidationError{Name: "surprise_reward_amount", err: errors.New(`ent: missing required field "User.surprise_reward_amount"`)}
+	}
+	if v, ok := _c.mutation.SurpriseRewardAmount(); ok {
+		if err := user.SurpriseRewardAmountValidator(v); err != nil {
+			return &ValidationError{Name: "surprise_reward_amount", err: fmt.Errorf(`ent: validator failed for field "User.surprise_reward_amount": %w`, err)}
+		}
 	}
 	if _, ok := _c.mutation.FrozenBalance(); !ok {
 		return &ValidationError{Name: "frozen_balance", err: errors.New(`ent: missing required field "User.frozen_balance"`)}
@@ -799,6 +879,22 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Balance(); ok {
 		_spec.SetField(user.FieldBalance, field.TypeFloat64, value)
 		_node.Balance = value
+	}
+	if value, ok := _c.mutation.WelcomeRewardAmount(); ok {
+		_spec.SetField(user.FieldWelcomeRewardAmount, field.TypeFloat64, value)
+		_node.WelcomeRewardAmount = value
+	}
+	if value, ok := _c.mutation.SurpriseRewardAmount(); ok {
+		_spec.SetField(user.FieldSurpriseRewardAmount, field.TypeFloat64, value)
+		_node.SurpriseRewardAmount = value
+	}
+	if value, ok := _c.mutation.SurpriseRewardCheckedAt(); ok {
+		_spec.SetField(user.FieldSurpriseRewardCheckedAt, field.TypeTime, value)
+		_node.SurpriseRewardCheckedAt = &value
+	}
+	if value, ok := _c.mutation.SurpriseRewardAwardedAt(); ok {
+		_spec.SetField(user.FieldSurpriseRewardAwardedAt, field.TypeTime, value)
+		_node.SurpriseRewardAwardedAt = &value
 	}
 	if value, ok := _c.mutation.FrozenBalance(); ok {
 		_spec.SetField(user.FieldFrozenBalance, field.TypeFloat64, value)
@@ -1216,6 +1312,78 @@ func (u *UserUpsert) AddBalance(v float64) *UserUpsert {
 	return u
 }
 
+// SetWelcomeRewardAmount sets the "welcome_reward_amount" field.
+func (u *UserUpsert) SetWelcomeRewardAmount(v float64) *UserUpsert {
+	u.Set(user.FieldWelcomeRewardAmount, v)
+	return u
+}
+
+// UpdateWelcomeRewardAmount sets the "welcome_reward_amount" field to the value that was provided on create.
+func (u *UserUpsert) UpdateWelcomeRewardAmount() *UserUpsert {
+	u.SetExcluded(user.FieldWelcomeRewardAmount)
+	return u
+}
+
+// AddWelcomeRewardAmount adds v to the "welcome_reward_amount" field.
+func (u *UserUpsert) AddWelcomeRewardAmount(v float64) *UserUpsert {
+	u.Add(user.FieldWelcomeRewardAmount, v)
+	return u
+}
+
+// SetSurpriseRewardAmount sets the "surprise_reward_amount" field.
+func (u *UserUpsert) SetSurpriseRewardAmount(v float64) *UserUpsert {
+	u.Set(user.FieldSurpriseRewardAmount, v)
+	return u
+}
+
+// UpdateSurpriseRewardAmount sets the "surprise_reward_amount" field to the value that was provided on create.
+func (u *UserUpsert) UpdateSurpriseRewardAmount() *UserUpsert {
+	u.SetExcluded(user.FieldSurpriseRewardAmount)
+	return u
+}
+
+// AddSurpriseRewardAmount adds v to the "surprise_reward_amount" field.
+func (u *UserUpsert) AddSurpriseRewardAmount(v float64) *UserUpsert {
+	u.Add(user.FieldSurpriseRewardAmount, v)
+	return u
+}
+
+// SetSurpriseRewardCheckedAt sets the "surprise_reward_checked_at" field.
+func (u *UserUpsert) SetSurpriseRewardCheckedAt(v time.Time) *UserUpsert {
+	u.Set(user.FieldSurpriseRewardCheckedAt, v)
+	return u
+}
+
+// UpdateSurpriseRewardCheckedAt sets the "surprise_reward_checked_at" field to the value that was provided on create.
+func (u *UserUpsert) UpdateSurpriseRewardCheckedAt() *UserUpsert {
+	u.SetExcluded(user.FieldSurpriseRewardCheckedAt)
+	return u
+}
+
+// ClearSurpriseRewardCheckedAt clears the value of the "surprise_reward_checked_at" field.
+func (u *UserUpsert) ClearSurpriseRewardCheckedAt() *UserUpsert {
+	u.SetNull(user.FieldSurpriseRewardCheckedAt)
+	return u
+}
+
+// SetSurpriseRewardAwardedAt sets the "surprise_reward_awarded_at" field.
+func (u *UserUpsert) SetSurpriseRewardAwardedAt(v time.Time) *UserUpsert {
+	u.Set(user.FieldSurpriseRewardAwardedAt, v)
+	return u
+}
+
+// UpdateSurpriseRewardAwardedAt sets the "surprise_reward_awarded_at" field to the value that was provided on create.
+func (u *UserUpsert) UpdateSurpriseRewardAwardedAt() *UserUpsert {
+	u.SetExcluded(user.FieldSurpriseRewardAwardedAt)
+	return u
+}
+
+// ClearSurpriseRewardAwardedAt clears the value of the "surprise_reward_awarded_at" field.
+func (u *UserUpsert) ClearSurpriseRewardAwardedAt() *UserUpsert {
+	u.SetNull(user.FieldSurpriseRewardAwardedAt)
+	return u
+}
+
 // SetFrozenBalance sets the "frozen_balance" field.
 func (u *UserUpsert) SetFrozenBalance(v float64) *UserUpsert {
 	u.Set(user.FieldFrozenBalance, v)
@@ -1620,6 +1788,90 @@ func (u *UserUpsertOne) AddBalance(v float64) *UserUpsertOne {
 func (u *UserUpsertOne) UpdateBalance() *UserUpsertOne {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateBalance()
+	})
+}
+
+// SetWelcomeRewardAmount sets the "welcome_reward_amount" field.
+func (u *UserUpsertOne) SetWelcomeRewardAmount(v float64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetWelcomeRewardAmount(v)
+	})
+}
+
+// AddWelcomeRewardAmount adds v to the "welcome_reward_amount" field.
+func (u *UserUpsertOne) AddWelcomeRewardAmount(v float64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.AddWelcomeRewardAmount(v)
+	})
+}
+
+// UpdateWelcomeRewardAmount sets the "welcome_reward_amount" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateWelcomeRewardAmount() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateWelcomeRewardAmount()
+	})
+}
+
+// SetSurpriseRewardAmount sets the "surprise_reward_amount" field.
+func (u *UserUpsertOne) SetSurpriseRewardAmount(v float64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetSurpriseRewardAmount(v)
+	})
+}
+
+// AddSurpriseRewardAmount adds v to the "surprise_reward_amount" field.
+func (u *UserUpsertOne) AddSurpriseRewardAmount(v float64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.AddSurpriseRewardAmount(v)
+	})
+}
+
+// UpdateSurpriseRewardAmount sets the "surprise_reward_amount" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateSurpriseRewardAmount() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateSurpriseRewardAmount()
+	})
+}
+
+// SetSurpriseRewardCheckedAt sets the "surprise_reward_checked_at" field.
+func (u *UserUpsertOne) SetSurpriseRewardCheckedAt(v time.Time) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetSurpriseRewardCheckedAt(v)
+	})
+}
+
+// UpdateSurpriseRewardCheckedAt sets the "surprise_reward_checked_at" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateSurpriseRewardCheckedAt() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateSurpriseRewardCheckedAt()
+	})
+}
+
+// ClearSurpriseRewardCheckedAt clears the value of the "surprise_reward_checked_at" field.
+func (u *UserUpsertOne) ClearSurpriseRewardCheckedAt() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearSurpriseRewardCheckedAt()
+	})
+}
+
+// SetSurpriseRewardAwardedAt sets the "surprise_reward_awarded_at" field.
+func (u *UserUpsertOne) SetSurpriseRewardAwardedAt(v time.Time) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetSurpriseRewardAwardedAt(v)
+	})
+}
+
+// UpdateSurpriseRewardAwardedAt sets the "surprise_reward_awarded_at" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateSurpriseRewardAwardedAt() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateSurpriseRewardAwardedAt()
+	})
+}
+
+// ClearSurpriseRewardAwardedAt clears the value of the "surprise_reward_awarded_at" field.
+func (u *UserUpsertOne) ClearSurpriseRewardAwardedAt() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearSurpriseRewardAwardedAt()
 	})
 }
 
@@ -2237,6 +2489,90 @@ func (u *UserUpsertBulk) AddBalance(v float64) *UserUpsertBulk {
 func (u *UserUpsertBulk) UpdateBalance() *UserUpsertBulk {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateBalance()
+	})
+}
+
+// SetWelcomeRewardAmount sets the "welcome_reward_amount" field.
+func (u *UserUpsertBulk) SetWelcomeRewardAmount(v float64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetWelcomeRewardAmount(v)
+	})
+}
+
+// AddWelcomeRewardAmount adds v to the "welcome_reward_amount" field.
+func (u *UserUpsertBulk) AddWelcomeRewardAmount(v float64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.AddWelcomeRewardAmount(v)
+	})
+}
+
+// UpdateWelcomeRewardAmount sets the "welcome_reward_amount" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateWelcomeRewardAmount() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateWelcomeRewardAmount()
+	})
+}
+
+// SetSurpriseRewardAmount sets the "surprise_reward_amount" field.
+func (u *UserUpsertBulk) SetSurpriseRewardAmount(v float64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetSurpriseRewardAmount(v)
+	})
+}
+
+// AddSurpriseRewardAmount adds v to the "surprise_reward_amount" field.
+func (u *UserUpsertBulk) AddSurpriseRewardAmount(v float64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.AddSurpriseRewardAmount(v)
+	})
+}
+
+// UpdateSurpriseRewardAmount sets the "surprise_reward_amount" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateSurpriseRewardAmount() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateSurpriseRewardAmount()
+	})
+}
+
+// SetSurpriseRewardCheckedAt sets the "surprise_reward_checked_at" field.
+func (u *UserUpsertBulk) SetSurpriseRewardCheckedAt(v time.Time) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetSurpriseRewardCheckedAt(v)
+	})
+}
+
+// UpdateSurpriseRewardCheckedAt sets the "surprise_reward_checked_at" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateSurpriseRewardCheckedAt() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateSurpriseRewardCheckedAt()
+	})
+}
+
+// ClearSurpriseRewardCheckedAt clears the value of the "surprise_reward_checked_at" field.
+func (u *UserUpsertBulk) ClearSurpriseRewardCheckedAt() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearSurpriseRewardCheckedAt()
+	})
+}
+
+// SetSurpriseRewardAwardedAt sets the "surprise_reward_awarded_at" field.
+func (u *UserUpsertBulk) SetSurpriseRewardAwardedAt(v time.Time) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetSurpriseRewardAwardedAt(v)
+	})
+}
+
+// UpdateSurpriseRewardAwardedAt sets the "surprise_reward_awarded_at" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateSurpriseRewardAwardedAt() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateSurpriseRewardAwardedAt()
+	})
+}
+
+// ClearSurpriseRewardAwardedAt clears the value of the "surprise_reward_awarded_at" field.
+func (u *UserUpsertBulk) ClearSurpriseRewardAwardedAt() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearSurpriseRewardAwardedAt()
 	})
 }
 

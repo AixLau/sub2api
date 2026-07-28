@@ -24,49 +24,92 @@ const subscriptionStore = useSubscriptionStore()
 const announcementStore = useAnnouncementStore()
 const adminComplianceStore = useAdminComplianceStore()
 const adminSettingsStore = useAdminSettingsStore()
-interface PendingWelcomeReward {
-  amount: number
-  skinId: WelcomeRewardSkinId
-}
-
-const pendingWelcomeReward = ref<PendingWelcomeReward | null>(null)
+const pendingWelcomeRewardSkin = ref<WelcomeRewardSkinId | null>(null)
+const pendingSurpriseRewardSkin = ref<WelcomeRewardSkinId | null>(null)
 const pendingWelcomeRewardKey = 'pending_welcome_reward'
+const pendingSurpriseRewardKey = 'pending_surprise_reward'
+let surpriseRewardCheckedUserID: number | null = null
 
-function loadPendingWelcomeReward() {
+function openPendingWelcomeReward() {
+  if (
+    !authStore.isAuthenticated ||
+    authStore.isAdmin ||
+    authStore.pendingWelcomeRewardUserID !== authStore.user?.id
+  ) {
+    return
+  }
   const raw = localStorage.getItem(pendingWelcomeRewardKey)
   try {
-    const reward = raw
-      ? JSON.parse(raw) as { amount?: unknown; user_id?: unknown; skin_id?: unknown }
-      : null
-    const amount = reward?.amount
-    if (
-      typeof amount === 'number' &&
-      Number.isInteger(amount) &&
-      amount >= 1 &&
-      amount <= 5 &&
-      reward?.user_id === authStore.user?.id
-    ) {
-      const skinId = isWelcomeRewardSkinId(reward?.skin_id)
-        ? reward.skin_id
-        : pickWelcomeRewardSkinId()
-      pendingWelcomeReward.value = { amount, skinId }
-      if (reward?.skin_id !== skinId) {
-        localStorage.setItem(
-          pendingWelcomeRewardKey,
-          JSON.stringify({ ...reward, skin_id: skinId })
-        )
-      }
-      return
+    const reward = raw ? JSON.parse(raw) as { user_id?: unknown; skin_id?: unknown } : null
+    const skinId = isWelcomeRewardSkinId(reward?.skin_id)
+      ? reward.skin_id
+      : pickWelcomeRewardSkinId()
+    pendingWelcomeRewardSkin.value = skinId
+    if (reward?.skin_id !== skinId) {
+      localStorage.setItem(
+        pendingWelcomeRewardKey,
+        JSON.stringify({ ...reward, user_id: authStore.user?.id, skin_id: skinId })
+      )
     }
   } catch {
-    // Invalid or stale reward markers are cleared below.
+    const skinId = pickWelcomeRewardSkinId()
+    pendingWelcomeRewardSkin.value = skinId
+    localStorage.setItem(
+      pendingWelcomeRewardKey,
+      JSON.stringify({ user_id: authStore.user?.id, skin_id: skinId })
+    )
   }
-  localStorage.removeItem(pendingWelcomeRewardKey)
 }
 
 function finishWelcomeReward() {
-  localStorage.removeItem(pendingWelcomeRewardKey)
-  pendingWelcomeReward.value = null
+  pendingWelcomeRewardSkin.value = null
+}
+
+function getPersistedRewardSkin(key: string, userID: number): WelcomeRewardSkinId {
+  const raw = localStorage.getItem(key)
+  try {
+    const reward = raw ? JSON.parse(raw) as { user_id?: unknown; skin_id?: unknown } : null
+    if (reward?.user_id === userID && isWelcomeRewardSkinId(reward.skin_id)) {
+      return reward.skin_id
+    }
+  } catch {
+    // Replace malformed local state with a valid skin below.
+  }
+  return pickWelcomeRewardSkinId()
+}
+
+async function checkSurpriseReward() {
+  const userID = authStore.user?.id ?? null
+  if (!authStore.isAuthenticated || authStore.isAdmin || userID === null) {
+    return
+  }
+  if (surpriseRewardCheckedUserID === userID) {
+    return
+  }
+
+  surpriseRewardCheckedUserID = userID
+  try {
+    const pending = await authStore.checkSurpriseReward()
+    if (!pending) {
+      localStorage.removeItem(pendingSurpriseRewardKey)
+      pendingSurpriseRewardSkin.value = null
+      return
+    }
+    const skinId = getPersistedRewardSkin(pendingSurpriseRewardKey, userID)
+    pendingSurpriseRewardSkin.value = skinId
+    localStorage.setItem(
+      pendingSurpriseRewardKey,
+      JSON.stringify({ user_id: userID, skin_id: skinId })
+    )
+  } catch (error) {
+    surpriseRewardCheckedUserID = null
+    console.error('Failed to check surprise reward:', error)
+  }
+}
+
+function finishSurpriseReward() {
+  pendingSurpriseRewardSkin.value = null
+  localStorage.removeItem(pendingSurpriseRewardKey)
 }
 
 function updateDocumentTitle() {
@@ -106,6 +149,7 @@ watch(
 function onVisibilityChange() {
   if (document.visibilityState === 'visible' && authStore.isAuthenticated) {
     announcementStore.fetchAnnouncements()
+    checkSurpriseReward()
   }
 }
 
@@ -143,6 +187,9 @@ watch(
       document.addEventListener('visibilitychange', onVisibilityChange)
     } else {
       // User logged out: clear data and stop polling
+      pendingWelcomeRewardSkin.value = null
+      pendingSurpriseRewardSkin.value = null
+      surpriseRewardCheckedUserID = null
       subscriptionStore.clear()
       announcementStore.reset()
       adminComplianceStore.reset()
@@ -155,7 +202,6 @@ watch(
 // Route change trigger (throttled by store)
 router.afterEach(() => {
   if (authStore.isAuthenticated) {
-    loadPendingWelcomeReward()
     announcementStore.fetchAnnouncements()
   }
 })
@@ -165,8 +211,29 @@ onBeforeUnmount(() => {
   window.removeEventListener('admin-compliance-required', onAdminComplianceRequired)
 })
 
+watch(
+  [
+    () => authStore.pendingWelcomeRewardUserID,
+    () => authStore.user?.id,
+    () => authStore.isAuthenticated
+  ],
+  openPendingWelcomeReward,
+  { immediate: true }
+)
+
+watch(
+  [
+    () => authStore.user?.id,
+    () => authStore.isAuthenticated,
+    () => authStore.isAdmin
+  ],
+  () => {
+    void checkSurpriseReward()
+  },
+  { immediate: true }
+)
+
 onMounted(async () => {
-  loadPendingWelcomeReward()
   window.addEventListener('admin-compliance-required', onAdminComplianceRequired)
 
   // Check if setup is needed
@@ -195,10 +262,21 @@ onMounted(async () => {
   <AnnouncementPopup />
   <AdminComplianceDialog />
   <WelcomeRewardDialog
-    v-if="pendingWelcomeReward !== null && authStore.isAuthenticated && !authStore.isAdmin"
+    v-if="pendingWelcomeRewardSkin !== null && authStore.isAuthenticated && !authStore.isAdmin"
     :show="true"
-    :amount="pendingWelcomeReward.amount"
-    :skin-id="pendingWelcomeReward.skinId"
+    :skin-id="pendingWelcomeRewardSkin"
     @finish="finishWelcomeReward"
+  />
+  <WelcomeRewardDialog
+    v-if="
+      pendingWelcomeRewardSkin === null &&
+      pendingSurpriseRewardSkin !== null &&
+      authStore.isAuthenticated &&
+      !authStore.isAdmin
+    "
+    :show="true"
+    :skin-id="pendingSurpriseRewardSkin"
+    variant="surprise"
+    @finish="finishSurpriseReward"
   />
 </template>

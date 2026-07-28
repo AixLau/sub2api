@@ -175,7 +175,13 @@
                 {{ formatValue(item) }}
               </p>
               <p
-                v-if="isAdminType(item.type)"
+                v-if="isScratchType(item.type)"
+                class="text-xs text-gray-400 dark:text-dark-500"
+              >
+                {{ t('admin.users.scratchRewardRecord') }}
+              </p>
+              <p
+                v-else-if="isAdminType(item.type)"
                 class="text-xs text-gray-400 dark:text-dark-500"
               >
                 {{ t('redeem.adminAdjustment') }}
@@ -264,6 +270,8 @@ const typeOptions = computed(() => [
   { value: 'balance', label: t('admin.users.typeBalance') },
   { value: 'affiliate_balance', label: t('admin.users.typeAffiliateBalance') },
   { value: 'admin_balance', label: t('admin.users.typeAdminBalance') },
+  { value: 'welcome_scratch', label: t('admin.users.typeWelcomeScratch') },
+  { value: 'surprise_scratch', label: t('admin.users.typeSurpriseScratch') },
   { value: 'concurrency', label: t('admin.users.typeConcurrency') },
   { value: 'admin_concurrency', label: t('admin.users.typeAdminConcurrency') },
   { value: 'subscription', label: t('admin.users.typeSubscription') }
@@ -321,14 +329,22 @@ const loadHistory = async (page: number) => {
 // Helper: check if admin type
 const isAdminType = (type: string) => type === 'admin_balance' || type === 'admin_concurrency'
 
+const isScratchType = (type: string) =>
+  type === 'welcome_scratch' || type === 'surprise_scratch'
+
 // Helper: check if balance type (includes admin_balance)
-const isBalanceType = (type: string) => type === 'balance' || type === 'admin_balance' || type === 'affiliate_balance'
+const isBalanceType = (type: string) =>
+  type === 'balance' ||
+  type === 'admin_balance' ||
+  type === 'affiliate_balance' ||
+  isScratchType(type)
 
 // Helper: check if subscription type
 const isSubscriptionType = (type: string) => type === 'subscription'
 
 // Icon name based on type
 const getIconName = (item: BalanceHistoryItem) => {
+  if (isScratchType(item.type)) return 'gift'
   if (isBalanceType(item.type)) return 'dollar'
   if (isSubscriptionType(item.type)) return 'badge'
   return 'bolt' // concurrency
@@ -336,6 +352,8 @@ const getIconName = (item: BalanceHistoryItem) => {
 
 // Icon background color
 const getIconBg = (item: BalanceHistoryItem) => {
+  if (item.type === 'welcome_scratch') return 'bg-cyan-100 dark:bg-cyan-900/30'
+  if (item.type === 'surprise_scratch') return 'bg-amber-100 dark:bg-amber-900/30'
   if (isBalanceType(item.type)) {
     return item.value >= 0
       ? 'bg-emerald-100 dark:bg-emerald-900/30'
@@ -349,6 +367,8 @@ const getIconBg = (item: BalanceHistoryItem) => {
 
 // Icon text color
 const getIconColor = (item: BalanceHistoryItem) => {
+  if (item.type === 'welcome_scratch') return 'text-cyan-600 dark:text-cyan-400'
+  if (item.type === 'surprise_scratch') return 'text-amber-600 dark:text-amber-400'
   if (isBalanceType(item.type)) {
     return item.value >= 0
       ? 'text-emerald-600 dark:text-emerald-400'
@@ -362,6 +382,8 @@ const getIconColor = (item: BalanceHistoryItem) => {
 
 // Value text color
 const getValueColor = (item: BalanceHistoryItem) => {
+  if (item.type === 'welcome_scratch') return 'text-cyan-600 dark:text-cyan-400'
+  if (item.type === 'surprise_scratch') return 'text-amber-600 dark:text-amber-400'
   if (isBalanceType(item.type)) {
     return item.value >= 0
       ? 'text-emerald-600 dark:text-emerald-400'
@@ -382,6 +404,10 @@ const getItemTitle = (item: BalanceHistoryItem) => {
       return t('redeem.balanceAddedAffiliate')
     case 'admin_balance':
       return item.value >= 0 ? t('redeem.balanceAddedAdmin') : t('redeem.balanceDeductedAdmin')
+    case 'welcome_scratch':
+      return t('redeem.welcomeScratchReward')
+    case 'surprise_scratch':
+      return t('redeem.surpriseScratchReward')
     case 'concurrency':
       return t('redeem.concurrencyAddedRedeem')
     case 'admin_concurrency':

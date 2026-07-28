@@ -1,6 +1,6 @@
-import energyGiftImage from '@/assets/welcome-reward/energy-gift.jpg'
-import luckyPassageImage from '@/assets/welcome-reward/lucky-passage.jpg'
-import starlinkExplorerImage from '@/assets/welcome-reward/starlink-explorer.jpg'
+import energyGiftImage from '@/assets/welcome-reward/energy-gift.webp'
+import luckyPassageImage from '@/assets/welcome-reward/lucky-passage.webp'
+import starlinkExplorerImage from '@/assets/welcome-reward/starlink-explorer.webp'
 
 export const welcomeRewardSkins = [
   {

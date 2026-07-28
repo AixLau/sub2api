@@ -273,7 +273,9 @@ export default {
         invitation: '邀请码',
         // 管理员在用户管理页面调整余额/并发时产生的记录
         admin_balance: '余额（管理员）',
-        admin_concurrency: '并发数（管理员）'
+        admin_concurrency: '并发数（管理员）',
+        welcome_scratch: '刮刮乐（新用户礼金）',
+        surprise_scratch: '刮刮乐（活跃用户惊喜）'
       },
       // 用于选择器和筛选器的直接键
       balance: '余额',

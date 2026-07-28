@@ -49,6 +49,24 @@ func (User) Fields() []ent.Field {
 		field.Float("balance").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0),
+		field.Float("welcome_reward_amount").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
+			Min(0).
+			Max(5).
+			Default(0),
+		field.Float("surprise_reward_amount").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
+			Min(0).
+			Max(5).
+			Default(0),
+		field.Time("surprise_reward_checked_at").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+		field.Time("surprise_reward_awarded_at").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
 		field.Float("frozen_balance").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0),

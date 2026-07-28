@@ -33,6 +33,8 @@ type userRepository struct {
 }
 
 var _ service.RedeemUserAdjustmentRepository = (*userRepository)(nil)
+var _ service.WelcomeRewardRepository = (*userRepository)(nil)
+var _ service.SurpriseRewardRepository = (*userRepository)(nil)
 
 func NewUserRepository(client *dbent.Client, sqlDB *sql.DB) service.UserRepository {
 	return newUserRepositoryWithSQL(client, sqlDB)
@@ -116,6 +118,10 @@ func (r *userRepository) create(ctx context.Context, userIn *service.User, guard
 		SetPasswordHash(userIn.PasswordHash).
 		SetRole(userIn.Role).
 		SetBalance(userIn.Balance).
+		SetWelcomeRewardAmount(userIn.WelcomeReward).
+		SetSurpriseRewardAmount(userIn.SurpriseReward).
+		SetNillableSurpriseRewardCheckedAt(userIn.SurpriseRewardCheckedAt).
+		SetNillableSurpriseRewardAwardedAt(userIn.SurpriseRewardAwardedAt).
 		SetConcurrency(userIn.Concurrency).
 		SetStatus(userIn.Status).
 		SetSignupSource(userSignupSourceOrDefault(userIn.SignupSource)).
@@ -778,6 +784,258 @@ func (r *userRepository) UpdateBalance(ctx context.Context, id int64, amount flo
 	return nil
 }
 
+func (r *userRepository) ClaimWelcomeReward(ctx context.Context, id int64) (float64, float64, error) {
+	recordCode, err := service.GenerateRedeemCode()
+	if err != nil {
+		return 0, 0, fmt.Errorf("generate welcome scratch record code: %w", err)
+	}
+
+	var amount, balance float64
+	now := time.Now().UTC()
+	err = r.withRewardClaimTransaction(ctx, func(txCtx context.Context, client *dbent.Client) error {
+		current, err := client.User.Query().
+			Where(dbuser.IDEQ(id)).
+			Select(dbuser.FieldWelcomeRewardAmount).
+			Only(txCtx)
+		if err != nil {
+			return translatePersistenceError(err, service.ErrUserNotFound, nil)
+		}
+
+		amount = current.WelcomeRewardAmount
+		if amount < 1 || amount > 5 {
+			return service.ErrWelcomeRewardUnavailable
+		}
+
+		updated, err := client.User.Update().
+			Where(
+				dbuser.IDEQ(id),
+				dbuser.WelcomeRewardAmountEQ(amount),
+			).
+			AddBalance(amount).
+			SetWelcomeRewardAmount(0).
+			Save(txCtx)
+		if err != nil {
+			return translatePersistenceError(err, service.ErrUserNotFound, nil)
+		}
+		if updated != 1 {
+			return service.ErrWelcomeRewardUnavailable
+		}
+		if err := createScratchRewardRecord(
+			txCtx,
+			client,
+			recordCode,
+			service.RedeemTypeWelcomeScratch,
+			id,
+			amount,
+			now,
+		); err != nil {
+			return err
+		}
+
+		userEntity, err := client.User.Query().
+			Where(dbuser.IDEQ(id)).
+			Select(dbuser.FieldBalance).
+			Only(txCtx)
+		if err != nil {
+			return translatePersistenceError(err, service.ErrUserNotFound, nil)
+		}
+		balance = userEntity.Balance
+		return nil
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	return amount, balance, nil
+}
+
+func (r *userRepository) CheckSurpriseReward(
+	ctx context.Context,
+	id int64,
+	now time.Time,
+	shouldAward bool,
+	amount float64,
+) (bool, error) {
+	client := clientFromContext(ctx, r.client)
+	current, err := client.User.Query().
+		Where(dbuser.IDEQ(id)).
+		Select(
+			dbuser.FieldRole,
+			dbuser.FieldStatus,
+			dbuser.FieldSurpriseRewardAmount,
+			dbuser.FieldSurpriseRewardCheckedAt,
+			dbuser.FieldSurpriseRewardAwardedAt,
+			dbuser.FieldLastActiveAt,
+			dbuser.FieldCreatedAt,
+		).
+		Only(ctx)
+	if err != nil {
+		return false, translatePersistenceError(err, service.ErrUserNotFound, nil)
+	}
+	if current.SurpriseRewardAmount >= 1 && current.SurpriseRewardAmount <= 5 {
+		return true, nil
+	}
+
+	if !service.IsSurpriseRewardEligible(&service.User{
+		Role:                    current.Role,
+		Status:                  current.Status,
+		CreatedAt:               current.CreatedAt,
+		LastActiveAt:            current.LastActiveAt,
+		SurpriseRewardAwardedAt: current.SurpriseRewardAwardedAt,
+	}, now) {
+		return false, nil
+	}
+
+	startOfDay := now.UTC().Truncate(24 * time.Hour)
+	if current.SurpriseRewardCheckedAt != nil &&
+		!current.SurpriseRewardCheckedAt.Before(startOfDay) {
+		return false, nil
+	}
+
+	where := []predicate.User{
+		dbuser.IDEQ(id),
+		dbuser.SurpriseRewardAmountEQ(0),
+	}
+	if current.SurpriseRewardCheckedAt == nil {
+		where = append(where, dbuser.SurpriseRewardCheckedAtIsNil())
+	} else {
+		where = append(where, dbuser.SurpriseRewardCheckedAtEQ(*current.SurpriseRewardCheckedAt))
+	}
+
+	update := client.User.Update().
+		Where(where...).
+		SetSurpriseRewardCheckedAt(now)
+	if shouldAward {
+		update = update.SetSurpriseRewardAmount(amount)
+	}
+	updated, err := update.Save(ctx)
+	if err != nil {
+		return false, translatePersistenceError(err, service.ErrUserNotFound, nil)
+	}
+	if updated == 1 {
+		return shouldAward, nil
+	}
+
+	latest, err := client.User.Query().
+		Where(dbuser.IDEQ(id)).
+		Select(dbuser.FieldSurpriseRewardAmount).
+		Only(ctx)
+	if err != nil {
+		return false, translatePersistenceError(err, service.ErrUserNotFound, nil)
+	}
+	return latest.SurpriseRewardAmount >= 1 && latest.SurpriseRewardAmount <= 5, nil
+}
+
+func (r *userRepository) ClaimSurpriseReward(
+	ctx context.Context,
+	id int64,
+	now time.Time,
+) (float64, float64, error) {
+	recordCode, err := service.GenerateRedeemCode()
+	if err != nil {
+		return 0, 0, fmt.Errorf("generate surprise scratch record code: %w", err)
+	}
+
+	var amount, balance float64
+	err = r.withRewardClaimTransaction(ctx, func(txCtx context.Context, client *dbent.Client) error {
+		current, err := client.User.Query().
+			Where(dbuser.IDEQ(id)).
+			Select(dbuser.FieldSurpriseRewardAmount).
+			Only(txCtx)
+		if err != nil {
+			return translatePersistenceError(err, service.ErrUserNotFound, nil)
+		}
+
+		amount = current.SurpriseRewardAmount
+		if amount < 1 || amount > 5 {
+			return service.ErrSurpriseRewardUnavailable
+		}
+		updated, err := client.User.Update().
+			Where(
+				dbuser.IDEQ(id),
+				dbuser.SurpriseRewardAmountEQ(amount),
+			).
+			AddBalance(amount).
+			SetSurpriseRewardAmount(0).
+			SetSurpriseRewardAwardedAt(now).
+			Save(txCtx)
+		if err != nil {
+			return translatePersistenceError(err, service.ErrUserNotFound, nil)
+		}
+		if updated != 1 {
+			return service.ErrSurpriseRewardUnavailable
+		}
+		if err := createScratchRewardRecord(
+			txCtx,
+			client,
+			recordCode,
+			service.RedeemTypeSurpriseScratch,
+			id,
+			amount,
+			now,
+		); err != nil {
+			return err
+		}
+
+		userEntity, err := client.User.Query().
+			Where(dbuser.IDEQ(id)).
+			Select(dbuser.FieldBalance).
+			Only(txCtx)
+		if err != nil {
+			return translatePersistenceError(err, service.ErrUserNotFound, nil)
+		}
+		balance = userEntity.Balance
+		return nil
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	return amount, balance, nil
+}
+
+func (r *userRepository) withRewardClaimTransaction(
+	ctx context.Context,
+	fn func(context.Context, *dbent.Client) error,
+) error {
+	tx, err := r.client.Tx(ctx)
+	if errors.Is(err, dbent.ErrTxStarted) {
+		return fn(ctx, clientFromContext(ctx, r.client))
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	txCtx := dbent.NewTxContext(ctx, tx)
+	if err := fn(txCtx, tx.Client()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func createScratchRewardRecord(
+	ctx context.Context,
+	client *dbent.Client,
+	code string,
+	rewardType string,
+	userID int64,
+	amount float64,
+	usedAt time.Time,
+) error {
+	_, err := client.RedeemCode.Create().
+		SetCode(code).
+		SetType(rewardType).
+		SetValue(amount).
+		SetStatus(service.StatusUsed).
+		SetUsedBy(userID).
+		SetUsedAt(usedAt).
+		SetCreatedAt(usedAt).
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf("create %s reward record: %w", rewardType, err)
+	}
+	return nil
+}
+
 func (r *userRepository) ApplyRedeemBalanceAdjustment(ctx context.Context, id int64, delta float64) error {
 	const updateSQL = `
 		UPDATE users
@@ -1214,6 +1472,10 @@ func applyUserEntityToService(dst *service.User, src *dbent.User) {
 		return
 	}
 	dst.ID = src.ID
+	dst.WelcomeReward = src.WelcomeRewardAmount
+	dst.SurpriseReward = src.SurpriseRewardAmount
+	dst.SurpriseRewardCheckedAt = src.SurpriseRewardCheckedAt
+	dst.SurpriseRewardAwardedAt = src.SurpriseRewardAwardedAt
 	dst.SignupSource = src.SignupSource
 	dst.LastLoginAt = src.LastLoginAt
 	dst.LastActiveAt = src.LastActiveAt

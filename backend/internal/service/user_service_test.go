@@ -23,6 +23,9 @@ import (
 // --- mock: UserRepository ---
 
 type mockUserRepo struct {
+	claimWelcomeRewardFn    func(ctx context.Context, id int64) (float64, float64, error)
+	checkSurpriseRewardFn   func(ctx context.Context, id int64, now time.Time, shouldAward bool, amount float64) (bool, error)
+	claimSurpriseRewardFn   func(ctx context.Context, id int64, now time.Time) (float64, float64, error)
 	updateBalanceErr        error
 	updateBalanceFn         func(ctx context.Context, id int64, amount float64) error
 	deductBalanceFn         func(ctx context.Context, id int64, amount float64) error
@@ -42,6 +45,37 @@ type mockUserRepo struct {
 	deleteAvatarIDs         []int64
 	getAvatarFn             func(ctx context.Context, userID int64) (*UserAvatar, error)
 	txCalls                 int
+}
+
+func (m *mockUserRepo) ClaimWelcomeReward(ctx context.Context, id int64) (float64, float64, error) {
+	if m.claimWelcomeRewardFn == nil {
+		return 0, 0, ErrWelcomeRewardUnavailable
+	}
+	return m.claimWelcomeRewardFn(ctx, id)
+}
+
+func (m *mockUserRepo) CheckSurpriseReward(
+	ctx context.Context,
+	id int64,
+	now time.Time,
+	shouldAward bool,
+	amount float64,
+) (bool, error) {
+	if m.checkSurpriseRewardFn == nil {
+		return false, nil
+	}
+	return m.checkSurpriseRewardFn(ctx, id, now, shouldAward, amount)
+}
+
+func (m *mockUserRepo) ClaimSurpriseReward(
+	ctx context.Context,
+	id int64,
+	now time.Time,
+) (float64, float64, error) {
+	if m.claimSurpriseRewardFn == nil {
+		return 0, 0, ErrSurpriseRewardUnavailable
+	}
+	return m.claimSurpriseRewardFn(ctx, id, now)
 }
 
 type mockUserRepoTxKey struct{}
@@ -378,6 +412,113 @@ func TestUpdateBalance_Success(t *testing.T) {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 	require.Equal(t, []int64{42}, cache.invalidatedUserIDs, "应对 userID=42 失效缓存")
+}
+
+func TestClaimWelcomeReward_CreditsOnlyAfterClaim(t *testing.T) {
+	repo := &mockUserRepo{
+		claimWelcomeRewardFn: func(_ context.Context, id int64) (float64, float64, error) {
+			require.Equal(t, int64(42), id)
+			return 4, 104, nil
+		},
+	}
+	cache := &mockBillingCache{}
+	svc := NewUserService(repo, nil, nil, cache)
+
+	amount, balance, err := svc.ClaimWelcomeReward(context.Background(), 42)
+
+	require.NoError(t, err)
+	require.Equal(t, 4.0, amount)
+	require.Equal(t, 104.0, balance)
+	require.Equal(t, int64(1), cache.invalidateCallCount.Load())
+}
+
+func TestClaimWelcomeReward_AlreadyClaimed(t *testing.T) {
+	repo := &mockUserRepo{
+		claimWelcomeRewardFn: func(context.Context, int64) (float64, float64, error) {
+			return 0, 0, ErrWelcomeRewardUnavailable
+		},
+	}
+	svc := NewUserService(repo, nil, nil, nil)
+
+	_, _, err := svc.ClaimWelcomeReward(context.Background(), 42)
+
+	require.ErrorIs(t, err, ErrWelcomeRewardUnavailable)
+}
+
+func TestIsSurpriseRewardEligible(t *testing.T) {
+	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	recentActivity := now.Add(-24 * time.Hour)
+	oldAward := now.Add(-31 * 24 * time.Hour)
+	base := User{
+		Role:                    RoleUser,
+		Status:                  StatusActive,
+		CreatedAt:               now.Add(-60 * 24 * time.Hour),
+		LastActiveAt:            &recentActivity,
+		SurpriseRewardAwardedAt: &oldAward,
+	}
+
+	require.True(t, IsSurpriseRewardEligible(&base, now))
+
+	newUser := base
+	newUser.CreatedAt = now.Add(-6 * 24 * time.Hour)
+	require.False(t, IsSurpriseRewardEligible(&newUser, now))
+
+	inactiveUser := base
+	staleActivity := now.Add(-8 * 24 * time.Hour)
+	inactiveUser.LastActiveAt = &staleActivity
+	require.False(t, IsSurpriseRewardEligible(&inactiveUser, now))
+
+	cooldownUser := base
+	recentAward := now.Add(-29 * 24 * time.Hour)
+	cooldownUser.SurpriseRewardAwardedAt = &recentAward
+	require.False(t, IsSurpriseRewardEligible(&cooldownUser, now))
+
+	admin := base
+	admin.Role = RoleAdmin
+	require.False(t, IsSurpriseRewardEligible(&admin, now))
+}
+
+func TestCheckSurpriseRewardUsesBoundedServerRandomValues(t *testing.T) {
+	repo := &mockUserRepo{
+		checkSurpriseRewardFn: func(
+			_ context.Context,
+			id int64,
+			now time.Time,
+			_ bool,
+			amount float64,
+		) (bool, error) {
+			require.Equal(t, int64(42), id)
+			require.False(t, now.IsZero())
+			require.GreaterOrEqual(t, amount, 1.0)
+			require.LessOrEqual(t, amount, 5.0)
+			return true, nil
+		},
+	}
+	svc := NewUserService(repo, nil, nil, nil)
+
+	pending, err := svc.CheckSurpriseReward(context.Background(), 42)
+
+	require.NoError(t, err)
+	require.True(t, pending)
+}
+
+func TestClaimSurpriseRewardCreditsBalance(t *testing.T) {
+	repo := &mockUserRepo{
+		claimSurpriseRewardFn: func(_ context.Context, id int64, now time.Time) (float64, float64, error) {
+			require.Equal(t, int64(42), id)
+			require.False(t, now.IsZero())
+			return 3, 103, nil
+		},
+	}
+	cache := &mockBillingCache{}
+	svc := NewUserService(repo, nil, nil, cache)
+
+	amount, balance, err := svc.ClaimSurpriseReward(context.Background(), 42)
+
+	require.NoError(t, err)
+	require.Equal(t, 3.0, amount)
+	require.Equal(t, 103.0, balance)
+	require.Equal(t, int64(1), cache.invalidateCallCount.Load())
 }
 
 func TestGetProfileIdentitySummaries_AllowsUnbindWhenAnotherLoginMethodRemains(t *testing.T) {

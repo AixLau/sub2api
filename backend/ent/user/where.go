@@ -90,6 +90,26 @@ func Balance(v float64) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldBalance, v))
 }
 
+// WelcomeRewardAmount applies equality check predicate on the "welcome_reward_amount" field. It's identical to WelcomeRewardAmountEQ.
+func WelcomeRewardAmount(v float64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldWelcomeRewardAmount, v))
+}
+
+// SurpriseRewardAmount applies equality check predicate on the "surprise_reward_amount" field. It's identical to SurpriseRewardAmountEQ.
+func SurpriseRewardAmount(v float64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldSurpriseRewardAmount, v))
+}
+
+// SurpriseRewardCheckedAt applies equality check predicate on the "surprise_reward_checked_at" field. It's identical to SurpriseRewardCheckedAtEQ.
+func SurpriseRewardCheckedAt(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldSurpriseRewardCheckedAt, v))
+}
+
+// SurpriseRewardAwardedAt applies equality check predicate on the "surprise_reward_awarded_at" field. It's identical to SurpriseRewardAwardedAtEQ.
+func SurpriseRewardAwardedAt(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldSurpriseRewardAwardedAt, v))
+}
+
 // FrozenBalance applies equality check predicate on the "frozen_balance" field. It's identical to FrozenBalanceEQ.
 func FrozenBalance(v float64) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldFrozenBalance, v))
@@ -538,6 +558,186 @@ func BalanceLT(v float64) predicate.User {
 // BalanceLTE applies the LTE predicate on the "balance" field.
 func BalanceLTE(v float64) predicate.User {
 	return predicate.User(sql.FieldLTE(FieldBalance, v))
+}
+
+// WelcomeRewardAmountEQ applies the EQ predicate on the "welcome_reward_amount" field.
+func WelcomeRewardAmountEQ(v float64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldWelcomeRewardAmount, v))
+}
+
+// WelcomeRewardAmountNEQ applies the NEQ predicate on the "welcome_reward_amount" field.
+func WelcomeRewardAmountNEQ(v float64) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldWelcomeRewardAmount, v))
+}
+
+// WelcomeRewardAmountIn applies the In predicate on the "welcome_reward_amount" field.
+func WelcomeRewardAmountIn(vs ...float64) predicate.User {
+	return predicate.User(sql.FieldIn(FieldWelcomeRewardAmount, vs...))
+}
+
+// WelcomeRewardAmountNotIn applies the NotIn predicate on the "welcome_reward_amount" field.
+func WelcomeRewardAmountNotIn(vs ...float64) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldWelcomeRewardAmount, vs...))
+}
+
+// WelcomeRewardAmountGT applies the GT predicate on the "welcome_reward_amount" field.
+func WelcomeRewardAmountGT(v float64) predicate.User {
+	return predicate.User(sql.FieldGT(FieldWelcomeRewardAmount, v))
+}
+
+// WelcomeRewardAmountGTE applies the GTE predicate on the "welcome_reward_amount" field.
+func WelcomeRewardAmountGTE(v float64) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldWelcomeRewardAmount, v))
+}
+
+// WelcomeRewardAmountLT applies the LT predicate on the "welcome_reward_amount" field.
+func WelcomeRewardAmountLT(v float64) predicate.User {
+	return predicate.User(sql.FieldLT(FieldWelcomeRewardAmount, v))
+}
+
+// WelcomeRewardAmountLTE applies the LTE predicate on the "welcome_reward_amount" field.
+func WelcomeRewardAmountLTE(v float64) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldWelcomeRewardAmount, v))
+}
+
+// SurpriseRewardAmountEQ applies the EQ predicate on the "surprise_reward_amount" field.
+func SurpriseRewardAmountEQ(v float64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldSurpriseRewardAmount, v))
+}
+
+// SurpriseRewardAmountNEQ applies the NEQ predicate on the "surprise_reward_amount" field.
+func SurpriseRewardAmountNEQ(v float64) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldSurpriseRewardAmount, v))
+}
+
+// SurpriseRewardAmountIn applies the In predicate on the "surprise_reward_amount" field.
+func SurpriseRewardAmountIn(vs ...float64) predicate.User {
+	return predicate.User(sql.FieldIn(FieldSurpriseRewardAmount, vs...))
+}
+
+// SurpriseRewardAmountNotIn applies the NotIn predicate on the "surprise_reward_amount" field.
+func SurpriseRewardAmountNotIn(vs ...float64) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldSurpriseRewardAmount, vs...))
+}
+
+// SurpriseRewardAmountGT applies the GT predicate on the "surprise_reward_amount" field.
+func SurpriseRewardAmountGT(v float64) predicate.User {
+	return predicate.User(sql.FieldGT(FieldSurpriseRewardAmount, v))
+}
+
+// SurpriseRewardAmountGTE applies the GTE predicate on the "surprise_reward_amount" field.
+func SurpriseRewardAmountGTE(v float64) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldSurpriseRewardAmount, v))
+}
+
+// SurpriseRewardAmountLT applies the LT predicate on the "surprise_reward_amount" field.
+func SurpriseRewardAmountLT(v float64) predicate.User {
+	return predicate.User(sql.FieldLT(FieldSurpriseRewardAmount, v))
+}
+
+// SurpriseRewardAmountLTE applies the LTE predicate on the "surprise_reward_amount" field.
+func SurpriseRewardAmountLTE(v float64) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldSurpriseRewardAmount, v))
+}
+
+// SurpriseRewardCheckedAtEQ applies the EQ predicate on the "surprise_reward_checked_at" field.
+func SurpriseRewardCheckedAtEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldSurpriseRewardCheckedAt, v))
+}
+
+// SurpriseRewardCheckedAtNEQ applies the NEQ predicate on the "surprise_reward_checked_at" field.
+func SurpriseRewardCheckedAtNEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldSurpriseRewardCheckedAt, v))
+}
+
+// SurpriseRewardCheckedAtIn applies the In predicate on the "surprise_reward_checked_at" field.
+func SurpriseRewardCheckedAtIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldIn(FieldSurpriseRewardCheckedAt, vs...))
+}
+
+// SurpriseRewardCheckedAtNotIn applies the NotIn predicate on the "surprise_reward_checked_at" field.
+func SurpriseRewardCheckedAtNotIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldSurpriseRewardCheckedAt, vs...))
+}
+
+// SurpriseRewardCheckedAtGT applies the GT predicate on the "surprise_reward_checked_at" field.
+func SurpriseRewardCheckedAtGT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGT(FieldSurpriseRewardCheckedAt, v))
+}
+
+// SurpriseRewardCheckedAtGTE applies the GTE predicate on the "surprise_reward_checked_at" field.
+func SurpriseRewardCheckedAtGTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldSurpriseRewardCheckedAt, v))
+}
+
+// SurpriseRewardCheckedAtLT applies the LT predicate on the "surprise_reward_checked_at" field.
+func SurpriseRewardCheckedAtLT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLT(FieldSurpriseRewardCheckedAt, v))
+}
+
+// SurpriseRewardCheckedAtLTE applies the LTE predicate on the "surprise_reward_checked_at" field.
+func SurpriseRewardCheckedAtLTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldSurpriseRewardCheckedAt, v))
+}
+
+// SurpriseRewardCheckedAtIsNil applies the IsNil predicate on the "surprise_reward_checked_at" field.
+func SurpriseRewardCheckedAtIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldSurpriseRewardCheckedAt))
+}
+
+// SurpriseRewardCheckedAtNotNil applies the NotNil predicate on the "surprise_reward_checked_at" field.
+func SurpriseRewardCheckedAtNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldSurpriseRewardCheckedAt))
+}
+
+// SurpriseRewardAwardedAtEQ applies the EQ predicate on the "surprise_reward_awarded_at" field.
+func SurpriseRewardAwardedAtEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldSurpriseRewardAwardedAt, v))
+}
+
+// SurpriseRewardAwardedAtNEQ applies the NEQ predicate on the "surprise_reward_awarded_at" field.
+func SurpriseRewardAwardedAtNEQ(v time.Time) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldSurpriseRewardAwardedAt, v))
+}
+
+// SurpriseRewardAwardedAtIn applies the In predicate on the "surprise_reward_awarded_at" field.
+func SurpriseRewardAwardedAtIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldIn(FieldSurpriseRewardAwardedAt, vs...))
+}
+
+// SurpriseRewardAwardedAtNotIn applies the NotIn predicate on the "surprise_reward_awarded_at" field.
+func SurpriseRewardAwardedAtNotIn(vs ...time.Time) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldSurpriseRewardAwardedAt, vs...))
+}
+
+// SurpriseRewardAwardedAtGT applies the GT predicate on the "surprise_reward_awarded_at" field.
+func SurpriseRewardAwardedAtGT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGT(FieldSurpriseRewardAwardedAt, v))
+}
+
+// SurpriseRewardAwardedAtGTE applies the GTE predicate on the "surprise_reward_awarded_at" field.
+func SurpriseRewardAwardedAtGTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldSurpriseRewardAwardedAt, v))
+}
+
+// SurpriseRewardAwardedAtLT applies the LT predicate on the "surprise_reward_awarded_at" field.
+func SurpriseRewardAwardedAtLT(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLT(FieldSurpriseRewardAwardedAt, v))
+}
+
+// SurpriseRewardAwardedAtLTE applies the LTE predicate on the "surprise_reward_awarded_at" field.
+func SurpriseRewardAwardedAtLTE(v time.Time) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldSurpriseRewardAwardedAt, v))
+}
+
+// SurpriseRewardAwardedAtIsNil applies the IsNil predicate on the "surprise_reward_awarded_at" field.
+func SurpriseRewardAwardedAtIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldSurpriseRewardAwardedAt))
+}
+
+// SurpriseRewardAwardedAtNotNil applies the NotNil predicate on the "surprise_reward_awarded_at" field.
+func SurpriseRewardAwardedAtNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldSurpriseRewardAwardedAt))
 }
 
 // FrozenBalanceEQ applies the EQ predicate on the "frozen_balance" field.

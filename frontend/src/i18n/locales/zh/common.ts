@@ -455,13 +455,26 @@ export default {
 
   welcomeReward: {
     title: '注册成功，送你一份见面礼',
-    scratchHint: '用鼠标或手指刮开蓝色区域，看看你的新用户奖励。',
+    scratchHint: '用鼠标或手指刮开涂层，领取你的新用户奖励。',
     revealedHint: '恭喜中奖！奖励已经到账，可以开始使用了。',
-    coverText: '刮开领取 1～5 元',
+    coverText: '刮开领取新用户礼金',
     won: '新用户专享奖励',
     credited: '已存入账户余额',
     gestureHint: '按住并左右滑动刮开涂层',
-    continue: '开始使用'
+    continue: '开始使用',
+    claimFailed: '奖励领取失败，请重试。'
+  },
+
+  surpriseReward: {
+    title: '今天有份意外惊喜',
+    scratchHint: '感谢你一直以来的使用，亲手刮开看看今天的好运。',
+    revealedHint: '恭喜中奖！惊喜奖励已经到账。',
+    coverText: '刮开领取随机惊喜',
+    won: '活跃用户惊喜奖励',
+    credited: '已存入账户余额',
+    gestureHint: '按住并左右滑动刮开涂层',
+    continue: '收下惊喜',
+    claimFailed: '惊喜奖励领取失败，请重试。'
   },
 
   // Dashboard

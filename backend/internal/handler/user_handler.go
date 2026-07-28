@@ -83,6 +83,60 @@ type UpdateProfileRequest struct {
 	BalanceNotifyThreshold *float64 `json:"balance_notify_threshold"`
 }
 
+type welcomeRewardClaimResponse struct {
+	Amount  float64 `json:"amount"`
+	Balance float64 `json:"balance"`
+}
+
+type surpriseRewardStatusResponse struct {
+	Pending bool `json:"pending"`
+}
+
+func (h *UserHandler) ClaimWelcomeReward(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	amount, balance, err := h.userService.ClaimWelcomeReward(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, welcomeRewardClaimResponse{Amount: amount, Balance: balance})
+}
+
+func (h *UserHandler) CheckSurpriseReward(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	pending, err := h.userService.CheckSurpriseReward(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, surpriseRewardStatusResponse{Pending: pending})
+}
+
+func (h *UserHandler) ClaimSurpriseReward(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	amount, balance, err := h.userService.ClaimSurpriseReward(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, welcomeRewardClaimResponse{Amount: amount, Balance: balance})
+}
+
 type userProfileResponse struct {
 	dto.User
 	AvatarURL         string                                 `json:"avatar_url,omitempty"`
