@@ -314,7 +314,7 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).toContain('7d|36|900')
   })
 
-  it('OpenAI OAuth 主动查询成功后通知账号列表刷新429状态', async () => {
+  it('OpenAI OAuth 主动查询只更新当前账号用量窗口', async () => {
     getUsage.mockResolvedValue({
       five_hour: {
         utilization: 12,
@@ -356,7 +356,7 @@ describe('AccountUsageCell', () => {
     await flushPromises()
 
     expect(getUsage).toHaveBeenCalledWith(2005, 'active', true)
-    expect(wrapper.emitted('account-updated')).toHaveLength(1)
+    expect(wrapper.emitted('account-updated')).toBeUndefined()
   })
 
   it('OpenAI OAuth 有现成快照时，手动刷新信号会触发 usage 重拉', async () => {
