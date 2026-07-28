@@ -84,6 +84,14 @@ describe('WelcomeRewardDialog', () => {
     vi.unstubAllGlobals()
   })
 
+  it('does not show a claim failure before the scratch completes', async () => {
+    const wrapper = mountDialog()
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('welcomeReward.claimFailed')
+    expect(claimWelcomeRewardMock).not.toHaveBeenCalled()
+  })
+
   it('requires the user to reveal the reward before finishing', async () => {
     const wrapper = mountDialog()
     await flushPromises()

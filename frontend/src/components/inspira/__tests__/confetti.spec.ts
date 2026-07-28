@@ -33,6 +33,7 @@ beforeEach(() => {
 afterEach(() => {
   window.matchMedia = originalMatchMedia
   confettiMock.mockClear()
+  document.querySelectorAll('[data-confetti-celebration]').forEach((element) => element.remove())
   vi.useRealTimers()
 })
 
@@ -47,14 +48,16 @@ describe('confetti', () => {
     })
   })
 
-  it('fireCelebration 在 jsdom 下调用不抛错', async () => {
+  it('fireCelebration 创建可见的独立庆祝图层并自动清理', async () => {
     vi.useFakeTimers()
     expect(() => fireCelebration()).not.toThrow()
 
-    // 等懒加载 promise 完成后推进定时器，确保延时喷射也不抛错
-    await vi.advanceTimersByTimeAsync(2000)
-    expect(confettiMock).toHaveBeenCalledWith(
-      expect.objectContaining({ zIndex: 100_000_100 })
-    )
+    const layer = document.querySelector<HTMLElement>('[data-confetti-celebration]')
+    expect(layer).not.toBeNull()
+    expect(layer?.style.zIndex).toBe('100000100')
+    expect(layer?.children).toHaveLength(96)
+
+    await vi.advanceTimersByTimeAsync(3100)
+    expect(document.querySelector('[data-confetti-celebration]')).toBeNull()
   })
 })

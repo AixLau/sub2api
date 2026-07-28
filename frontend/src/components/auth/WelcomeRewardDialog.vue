@@ -56,7 +56,7 @@
             {{ t(`${copyPrefix}.credited`) }}
           </p>
         </template>
-        <template v-else>
+        <template v-else-if="claimFailed">
           <p class="text-sm font-medium text-red-600 dark:text-red-400">
             {{ t(`${copyPrefix}.claimFailed`) }}
           </p>
@@ -64,6 +64,13 @@
             {{ t('common.retry') }}
           </button>
         </template>
+        <div
+          v-else
+          class="flex h-14 w-14 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-300"
+          aria-hidden="true"
+        >
+          <Icon name="gift" size="lg" />
+        </div>
       </div>
     </ScratchToReveal>
 
@@ -112,6 +119,7 @@ const copyPrefix = computed(() =>
 )
 const amount = ref<number | null>(null)
 const claiming = ref(false)
+const claimFailed = ref(false)
 const skinReady = ref(false)
 let skinLoadRequest = 0
 const skin = computed(
@@ -152,6 +160,7 @@ onBeforeUnmount(() => {
 async function revealReward() {
   if (claiming.value || amount.value !== null) return
   claiming.value = true
+  claimFailed.value = false
   try {
     const result = props.variant === 'surprise'
       ? await authStore.claimSurpriseReward()
@@ -160,6 +169,7 @@ async function revealReward() {
     fireCelebration()
   } catch {
     amount.value = null
+    claimFailed.value = true
   } finally {
     claiming.value = false
   }

@@ -99,6 +99,42 @@ describe('ScratchToReveal', () => {
     expect(wrapper.find('canvas').exists()).toBe(true)
     wrapper.unmount()
   })
+
+  it('少量刮动后 ResizeObserver 回调不会提前完成', async () => {
+    const context = createCanvasContext(vi.fn())
+    context.getImageData = vi.fn(() => ({
+      data: new Uint8ClampedArray([0, 0, 0, 255])
+    })) as unknown as CanvasRenderingContext2D['getImageData']
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context)
+
+    let resizeCallback: ResizeObserverCallback | null = null
+    vi.stubGlobal('ResizeObserver', class ResizeObserverMock {
+      constructor(callback: ResizeObserverCallback) {
+        resizeCallback = callback
+      }
+
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    })
+
+    const wrapper = mount(ScratchToReveal, {
+      props: { threshold: 0.42 },
+      slots: { default: '<span>content</span>' }
+    })
+    await flushPromises()
+
+    await wrapper.get('canvas').trigger('pointerdown', {
+      clientX: 1,
+      clientY: 1,
+      pointerId: 1
+    })
+    resizeCallback?.([], {} as ResizeObserver)
+    await nextTick()
+
+    expect(wrapper.emitted('complete')).toBeUndefined()
+    wrapper.unmount()
+  })
 })
 
 function createCanvasContext(drawImage: ReturnType<typeof vi.fn>) {

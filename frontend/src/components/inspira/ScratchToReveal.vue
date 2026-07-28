@@ -288,12 +288,18 @@ onMounted(async () => {
   if (typeof ResizeObserver === 'function' && containerRef.value) {
     resizeObserver = new ResizeObserver(() => {
       if (completed) return
-      // 重画会清掉已刮进度；已经开刮时尺寸变化直接揭示,避免进度归零的挫败感
-      if (hasScratched) {
-        reveal()
-      } else {
-        drawCover()
-      }
+      const canvas = canvasRef.value
+      const container = containerRef.value
+      if (!canvas || !container) return
+      const nextDpr =
+        typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1
+      const nextWidth = Math.floor(Math.max(1, container.clientWidth) * nextDpr)
+      const nextHeight = Math.floor(Math.max(1, container.clientHeight) * nextDpr)
+
+      // ResizeObserver 注册后会异步执行一次初始回调。开始刮动后不重绘，
+      // 否则初始回调可能把少量刮动误判为完成，真实尺寸变化也会清空进度。
+      if (hasScratched || (canvas.width === nextWidth && canvas.height === nextHeight)) return
+      drawCover()
     })
     resizeObserver.observe(containerRef.value)
   }
