@@ -739,7 +739,12 @@ func openAIStreamClientOutputStarted(c *gin.Context, localStarted bool) bool {
 
 func openAIStreamEventIsPreamble(eventType string) bool {
 	switch strings.TrimSpace(eventType) {
-	case "response.created", "response.in_progress":
+	case "response.created",
+		"response.queued",
+		"response.in_progress",
+		"response.output_item.added",
+		"response.content_part.added",
+		"response.reasoning_summary_part.added":
 		return true
 	default:
 		return false
