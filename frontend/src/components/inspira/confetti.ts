@@ -13,7 +13,7 @@ const THEME_COLORS = ['#14b8a6', '#06b6d4', '#3b82f6', '#f59e0b']
 /** Must remain above onboarding overlays/popovers (99,999,998 / 99,999,999). */
 const CELEBRATION_Z_INDEX = 100_000_100
 const CELEBRATION_PARTICLE_COUNT = 96
-const CELEBRATION_DURATION = 2800
+const CELEBRATION_DURATION = 6500
 
 type ConfettiFn = typeof confetti
 
@@ -88,62 +88,50 @@ function fireCelebrationLayer(): void {
   const height = Math.max(window.innerHeight, 480)
 
   for (let index = 0; index < CELEBRATION_PARTICLE_COUNT; index++) {
-    const particle = document.createElement('i')
+    const particle = document.createElement('span')
     const color = THEME_COLORS[index % THEME_COLORS.length]
     const startX = randomBetween(-24, width + 24)
     const drift = randomBetween(-180, 180)
-    const startY = randomBetween(-height * 0.5, -20)
+    // 粒子创建时就分布在首屏上半部，避免动画合成首帧为空。
+    const startY = randomBetween(-40, height * 0.62)
     const endY = height + randomBetween(60, 220)
-    const duration = randomBetween(1900, CELEBRATION_DURATION)
-    const delay = -randomBetween(0, 850)
+    const duration = randomBetween(4600, CELEBRATION_DURATION)
     const size = randomBetween(7, 13)
     const isRibbon = index % 5 === 0
+    const startRotation = randomBetween(0, 360)
 
     Object.assign(particle.style, {
       position: 'absolute',
-      left: '0',
-      top: '0',
+      left: `${startX}px`,
+      top: `${startY}px`,
       display: 'block',
       width: `${isRibbon ? size * 0.55 : size}px`,
       height: `${isRibbon ? size * 3.2 : size * 1.45}px`,
       borderRadius: isRibbon ? '999px' : '2px',
       background: color,
       opacity: '1',
+      transform: `rotate(${startRotation}deg)`,
+      boxShadow: '0 1px 1px rgba(15, 23, 42, 0.16)',
       willChange: 'transform, opacity'
     })
     layer.appendChild(particle)
 
-    try {
-      particle.animate(
-        [
-          {
-            transform: `translate3d(${startX}px, ${startY}px, 0) rotate(0deg)`,
-            opacity: 1
-          },
-          {
-            transform: `translate3d(${startX + drift * 0.45}px, ${height * 0.45}px, 0) rotate(${randomBetween(240, 600)}deg)`,
-            opacity: 1,
-            offset: 0.55
-          },
-          {
-            transform: `translate3d(${startX + drift}px, ${endY}px, 0) rotate(${randomBetween(720, 1320)}deg)`,
-            opacity: 0
-          }
-        ],
-        {
-          duration,
-          delay,
-          easing: 'cubic-bezier(0.16, 0.72, 0.34, 1)',
-          fill: 'both'
-        }
-      )
-    } catch {
-      particle.style.transform = `translate3d(${startX}px, ${height * 0.45}px, 0)`
-    }
+    window.setTimeout(() => {
+      particle.style.transition = [
+        `top ${duration}ms cubic-bezier(0.16, 0.72, 0.34, 1)`,
+        `left ${duration}ms ease-in-out`,
+        `transform ${duration}ms linear`,
+        `opacity ${duration}ms ease-in`
+      ].join(', ')
+      particle.style.left = `${startX + drift}px`
+      particle.style.top = `${endY}px`
+      particle.style.transform = `rotate(${startRotation + randomBetween(720, 1320)}deg)`
+      particle.style.opacity = '0'
+    }, 40)
   }
 
   document.body.appendChild(layer)
-  window.setTimeout(() => layer.remove(), CELEBRATION_DURATION + 250)
+  window.setTimeout(() => layer.remove(), CELEBRATION_DURATION + 400)
 }
 
 /**

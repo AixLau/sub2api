@@ -57,7 +57,7 @@ describe('confetti', () => {
     expect(layer?.style.zIndex).toBe('100000100')
     expect(layer?.children).toHaveLength(96)
 
-    await vi.advanceTimersByTimeAsync(3100)
+    await vi.advanceTimersByTimeAsync(7000)
     expect(document.querySelector('[data-confetti-celebration]')).toBeNull()
   })
 })
