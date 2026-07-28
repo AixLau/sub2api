@@ -95,7 +95,7 @@
         </div>
       </div>
 
-      <div class="grid lg:grid-cols-[minmax(0,2fr)_minmax(16rem,0.8fr)]">
+      <div>
         <div class="px-4 py-5 sm:px-6">
           <div>
             <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
@@ -112,26 +112,6 @@
             {{ t('admin.dashboard.noMatureCohorts') }}
           </div>
         </div>
-
-        <aside class="border-t border-gray-100 px-4 py-5 dark:border-dark-700 sm:px-6 lg:border-l lg:border-t-0">
-          <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
-            {{ t('admin.dashboard.needsAttention') }}
-          </h4>
-          <div class="mt-3 divide-y divide-gray-100 dark:divide-dark-700">
-            <div v-for="signal in signals" :key="signal.label" class="flex items-center gap-3 py-4 first:pt-2">
-              <span class="h-2 w-2 shrink-0 rounded-full" :class="signal.dotClass" />
-              <div class="min-w-0 flex-1">
-                <p class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ signal.label }}</p>
-                <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                  {{ t('admin.dashboard.comparedWithPreviousCohorts') }}
-                </p>
-              </div>
-              <span class="shrink-0 text-sm font-semibold tabular-nums" :class="signal.valueClass">
-                {{ formatDelta(signal.delta, signal.unit) }}
-              </span>
-            </div>
-          </div>
-        </aside>
       </div>
     </template>
 
@@ -178,14 +158,6 @@ interface LossMetric {
   rate: number | null
 }
 
-interface TrendSignal {
-  label: string
-  delta: number | null
-  unit: 'percent' | 'point'
-  dotClass: string
-  valueClass: string
-}
-
 const { t, locale } = useI18n()
 const props = defineProps<{
   cohorts: UserRetentionPoint[]
@@ -217,19 +189,9 @@ const rechargeRate = computed(() => rate(totalPaidUsers.value, totalRegistration
 const repeatRate = computed(() => rate(totalRepeatBuyers.value, totalPaidUsers.value))
 const registrationLoss = computed<LossMetric>(() => loss(totalRegistrations.value, totalPaidUsers.value))
 const repeatLoss = computed<LossMetric>(() => loss(totalPaidUsers.value, totalRepeatBuyers.value))
-const matureCohorts = computed(() => props.cohorts.filter((cohort) => cohort.paid_rate != null))
 // Keep recent cohorts visible: paid_users is the cumulative count observed so far,
 // so a cohort can grow as users recharge later today or on a future day.
 const trendCohorts = computed(() => props.cohorts.slice(-30))
-
-const registrationDelta = computed(() => compareTotals(props.cohorts, (cohort) => cohort.registrations))
-const rechargeDelta = computed(() => compareWeightedRates(matureCohorts.value, 'paid_users', 'registrations'))
-const repeatDelta = computed(() => compareWeightedRates(matureCohorts.value, 'repeat_buyers', 'paid_users'))
-const signals = computed<TrendSignal[]>(() => [
-  buildSignal(t('admin.dashboard.registrationTrend'), registrationDelta.value, 'percent'),
-  buildSignal(t('admin.dashboard.rechargeTrend'), rechargeDelta.value, 'point'),
-  buildSignal(t('admin.dashboard.repurchaseTrend'), repeatDelta.value, 'point')
-])
 
 function rate(numerator: number, denominator: number): number | null {
   return denominator > 0 ? numerator * 100 / denominator : null
@@ -240,55 +202,12 @@ function loss(from: number, to: number): LossMetric {
   return { count, rate: rate(count, from) }
 }
 
-function splitComparison<T>(items: T[]): [T[], T[]] {
-  const recent = items.slice(-7)
-  const previous = items.slice(-14, -7)
-  return [recent, previous]
-}
-
-function compareTotals(items: UserRetentionPoint[], value: (item: UserRetentionPoint) => number): number | null {
-  const [recent, previous] = splitComparison(items)
-  const recentTotal = recent.reduce((sum, item) => sum + value(item), 0)
-  const previousTotal = previous.reduce((sum, item) => sum + value(item), 0)
-  return previousTotal > 0 ? (recentTotal - previousTotal) * 100 / previousTotal : null
-}
-
-function compareWeightedRates(
-  items: UserRetentionPoint[],
-  numeratorKey: 'paid_users' | 'repeat_buyers',
-  denominatorKey: 'registrations' | 'paid_users'
-): number | null {
-  const [recent, previous] = splitComparison(items)
-  const weightedRate = (cohorts: UserRetentionPoint[]) => rate(
-    cohorts.reduce((sum, cohort) => sum + cohort[numeratorKey], 0),
-    cohorts.reduce((sum, cohort) => sum + cohort[denominatorKey], 0)
-  )
-  const recentRate = weightedRate(recent)
-  const previousRate = weightedRate(previous)
-  return recentRate != null && previousRate != null ? recentRate - previousRate : null
-}
-
-function buildSignal(label: string, delta: number | null, unit: TrendSignal['unit']): TrendSignal {
-  const negative = delta != null && delta < 0
-  return {
-    label,
-    delta,
-    unit,
-    dotClass: negative ? 'bg-red-500' : delta == null ? 'bg-gray-400' : 'bg-emerald-500',
-    valueClass: negative
-      ? 'text-red-600 dark:text-red-400'
-      : delta == null
-        ? 'text-gray-400 dark:text-gray-500'
-        : 'text-emerald-600 dark:text-emerald-400'
-  }
-}
-
 const formatNumber = (value: number) => value.toLocaleString(locale.value)
 const formatRate = (value: number | null | undefined) => value == null ? '--' : `${value.toFixed(1)}%`
-const formatDelta = (value: number | null, unit: TrendSignal['unit']) => {
-  if (value == null) return '--'
-  const sign = value > 0 ? '+' : ''
-  return unit === 'point' ? `${sign}${value.toFixed(1)}pt` : `${sign}${value.toFixed(1)}%`
+const formatAmount = (value: number | null | undefined) => {
+  const amount = Number(value)
+  if (!Number.isFinite(amount)) return '$0'
+  return `$${amount.toLocaleString(locale.value, { maximumFractionDigits: 2 })}`
 }
 
 const isDarkMode = computed(() => document.documentElement.classList.contains('dark'))
@@ -312,7 +231,7 @@ const chartData = computed(() => {
         borderWidth: 1,
         borderRadius: 2,
         maxBarThickness: 20,
-        yAxisID: 'registrations'
+        yAxisID: 'users'
       },
       {
         type: 'line' as const,
@@ -320,6 +239,30 @@ const chartData = computed(() => {
         data: trendCohorts.value.map((point) => point.paid_users),
         borderColor: '#7c3aed',
         backgroundColor: '#7c3aed',
+        pointRadius: 2,
+        pointHoverRadius: 4,
+        borderWidth: 2,
+        tension: 0.25,
+        yAxisID: 'users'
+      },
+      {
+        type: 'line' as const,
+        label: t('admin.dashboard.rechargeAmount'),
+        data: trendCohorts.value.map((point) => point.recharge_amount),
+        borderColor: '#059669',
+        backgroundColor: '#059669',
+        pointRadius: 2,
+        pointHoverRadius: 4,
+        borderWidth: 2,
+        tension: 0.25,
+        yAxisID: 'amount'
+      },
+      {
+        type: 'line' as const,
+        label: t('admin.dashboard.apiActiveUsers'),
+        data: trendCohorts.value.map((point) => point.active_users),
+        borderColor: '#0f766e',
+        backgroundColor: '#0f766e',
         pointRadius: 2,
         pointHoverRadius: 4,
         borderWidth: 2,
@@ -344,7 +287,10 @@ const chartOptions = computed(() => ({
       callbacks: {
         label: (context: any) => {
           const cohort = trendCohorts.value[context.dataIndex]
-          if (context.dataset.yAxisID === 'users' && cohort) {
+          if (context.dataset.yAxisID === 'amount') {
+            return `${context.dataset.label}: ${formatAmount(Number(context.raw))}`
+          }
+          if (context.dataset.label === t('admin.dashboard.rechargedUsers') && cohort) {
             return `${context.dataset.label}: ${Number(context.raw).toLocaleString(locale.value)} (${formatRate(rate(cohort.paid_users, cohort.registrations))})`
           }
           return `${context.dataset.label}: ${Number(context.raw).toLocaleString(locale.value)}`
@@ -357,17 +303,20 @@ const chartOptions = computed(() => ({
       grid: { display: false },
       ticks: { color: colors.value.muted, maxTicksLimit: 7, maxRotation: 0 }
     },
-    registrations: {
+    users: {
       position: 'left' as const,
       beginAtZero: true,
       grid: { color: colors.value.grid },
       ticks: { color: colors.value.muted, precision: 0 }
     },
-    users: {
+    amount: {
       position: 'right' as const,
       beginAtZero: true,
       grid: { drawOnChartArea: false },
-      ticks: { color: colors.value.muted, precision: 0 }
+      ticks: {
+        color: colors.value.muted,
+        callback: (value: string | number) => formatAmount(Number(value))
+      }
     }
   }
 }))

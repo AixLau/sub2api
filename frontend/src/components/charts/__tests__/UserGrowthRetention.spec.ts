@@ -28,15 +28,19 @@ const createCohort = (
   date: string,
   registrations: number,
   paidUsers: number,
-  repeatBuyers: number
+  repeatBuyers: number,
+  activeUsers: number,
+  rechargeAmount: number
 ) => ({
   date,
   registrations,
+  active_users: activeUsers,
   d1_retained: 0,
   d7_retained: 0,
   d30_retained: 0,
   paid_users: paidUsers,
   repeat_buyers: repeatBuyers,
+  recharge_amount: rechargeAmount,
   d1_rate: 0,
   d7_rate: 0,
   d30_rate: 0,
@@ -48,7 +52,9 @@ const cohorts = Array.from({ length: 16 }, (_, index) => createCohort(
   `2026-06-${String(index + 1).padStart(2, '0')}`,
   100,
   index < 7 ? 10 : 20,
-  index < 7 ? 2 : 8
+  index < 7 ? 2 : 8,
+  index < 7 ? 5 : 12,
+  index < 7 ? 50 : 120
 ))
 
 const mountComponent = (items = cohorts) => mount(UserGrowthRetention, {
@@ -94,22 +100,25 @@ describe('UserGrowthRetention', () => {
     expect(wrapper.find('table').exists()).toBe(false)
   })
 
-  it('keeps the trend to registrations and recharge conversion only', () => {
+  it('shows registrations, recharge users, recharge amount, and API users', () => {
     const wrapper = mountComponent()
     const chart = wrapper.findComponent({ name: 'Chart' })
 
-    expect(chart.props('data').datasets).toHaveLength(2)
+    expect(chart.props('data').datasets).toHaveLength(4)
     expect(chart.props('data').datasets.map((dataset: { label: string }) => dataset.label)).toEqual([
       'admin.dashboard.registrations',
-      'admin.dashboard.rechargedUsers'
+      'admin.dashboard.rechargedUsers',
+      'admin.dashboard.rechargeAmount',
+      'admin.dashboard.apiActiveUsers'
     ])
   })
 
-  it('shows three comparison signals and keeps recent cohorts in the trend', () => {
+  it('removes the needs-attention panel and keeps recent cohorts in the trend', () => {
     const immature = cohorts.map((cohort) => ({ ...cohort, paid_rate: null, repeat_buy_rate: null }))
     const wrapper = mountComponent(immature)
 
-    expect(wrapper.findAll('aside [class*="py-4"]')).toHaveLength(3)
+    expect(wrapper.find('aside').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('admin.dashboard.needsAttention')
     expect(wrapper.find('[data-testid="conversion-chart"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('admin.dashboard.noMatureCohorts')
   })

@@ -298,11 +298,13 @@ export async function getActiveUsersTrend(
 export interface UserRetentionPoint {
   date: string
   registrations: number
+  active_users: number
   d1_retained: number
   d7_retained: number
   d30_retained: number
   paid_users: number
   repeat_buyers: number
+  recharge_amount: number
   d1_rate: number | null
   d7_rate: number | null
   d30_rate: number | null

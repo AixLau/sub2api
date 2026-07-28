@@ -8,7 +8,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 )
 
-// GetUserGrowthRetention measures exact-day API retention for daily registration cohorts.
+// GetUserGrowthRetention measures API activity and payment conversion for daily registration cohorts.
 func (r *usageLogRepository) GetUserGrowthRetention(ctx context.Context, startTime, endTime time.Time) (result *usagestats.UserGrowthRetention, err error) {
 	query := `
 		WITH cohort_dates AS (
@@ -37,8 +37,23 @@ func (r *usageLogRepository) GetUserGrowthRetention(ctx context.Context, startTi
 			 AND ul.created_at >= (c.cohort_date::timestamp AT TIME ZONE $3) + interval '1 day'
 			 AND ul.created_at < (c.cohort_date::timestamp AT TIME ZONE $3) + interval '31 days'
 			GROUP BY c.cohort_date, c.id
+		), api_activity AS (
+			SELECT
+				c.id,
+				COUNT(ul.user_id) > 0 AS active_user
+			FROM cohorts c
+			LEFT JOIN usage_logs ul
+			  ON ul.user_id = c.id
+			 AND ul.source = 'gateway'
+			 AND ul.api_key_id IS NOT NULL
+			 AND ul.created_at >= c.created_at
+			 AND ul.created_at < $2
+			GROUP BY c.id
 		), payment_by_user AS (
-			SELECT c.id, COUNT(po.id) AS payment_count
+			SELECT
+				c.id,
+				COUNT(po.id) AS payment_count,
+				COALESCE(SUM(po.amount), 0) AS recharge_amount
 			FROM cohorts c
 			LEFT JOIN payment_orders po
 			  ON po.user_id = c.id
@@ -55,9 +70,12 @@ func (r *usageLogRepository) GetUserGrowthRetention(ctx context.Context, startTi
 				COUNT(*) FILTER (WHERE ca.retained_d7) AS d7_retained,
 				COUNT(*) FILTER (WHERE ca.retained_d30) AS d30_retained,
 				COUNT(*) FILTER (WHERE p.payment_count >= 1) AS paid_users,
-				COUNT(*) FILTER (WHERE p.payment_count >= 2) AS repeat_buyers
+				COUNT(*) FILTER (WHERE p.payment_count >= 2) AS repeat_buyers,
+				COALESCE(SUM(p.recharge_amount), 0) AS recharge_amount,
+				COUNT(*) FILTER (WHERE a.active_user) AS active_users
 			FROM cohort_activity ca
 			JOIN payment_by_user p ON p.id = ca.id
+			JOIN api_activity a ON a.id = ca.id
 			GROUP BY ca.cohort_date
 		)
 		SELECT
@@ -67,7 +85,9 @@ func (r *usageLogRepository) GetUserGrowthRetention(ctx context.Context, startTi
 			COALESCE(s.d7_retained, 0),
 			COALESCE(s.d30_retained, 0),
 			COALESCE(s.paid_users, 0),
-			COALESCE(s.repeat_buyers, 0)
+			COALESCE(s.repeat_buyers, 0),
+			COALESCE(s.recharge_amount, 0),
+			COALESCE(s.active_users, 0)
 		FROM cohort_dates d
 		LEFT JOIN cohort_stats s USING (cohort_date)
 		ORDER BY d.cohort_date ASC`
@@ -98,6 +118,8 @@ func (r *usageLogRepository) GetUserGrowthRetention(ctx context.Context, startTi
 			&point.D30Retained,
 			&point.PaidUsers,
 			&point.RepeatBuyers,
+			&point.RechargeAmount,
+			&point.ActiveUsers,
 		); err != nil {
 			return nil, err
 		}

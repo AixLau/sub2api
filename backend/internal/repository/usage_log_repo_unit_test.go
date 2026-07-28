@@ -118,16 +118,18 @@ func TestUsageLogRepositoryGetUserGrowthRetentionUsesMatureCohorts(t *testing.T)
 	mock.ExpectQuery("(?s)WITH cohort_dates AS.*po\\.order_type = 'balance'").
 		WithArgs(start, end, timezone.Name()).
 		WillReturnRows(sqlmock.NewRows([]string{
-			"date", "registrations", "d1_retained", "d7_retained", "d30_retained", "paid_users", "repeat_buyers",
+			"date", "registrations", "d1_retained", "d7_retained", "d30_retained", "paid_users", "repeat_buyers", "recharge_amount", "active_users",
 		}).
-			AddRow(today.AddDate(0, 0, -31).Format("2006-01-02"), int64(10), int64(8), int64(5), int64(2), int64(4), int64(2)).
-			AddRow(today.AddDate(0, 0, -8).Format("2006-01-02"), int64(5), int64(3), int64(2), int64(0), int64(1), int64(1)).
-			AddRow(today.AddDate(0, 0, -1).Format("2006-01-02"), int64(4), int64(1), int64(0), int64(0), int64(1), int64(0)).
-			AddRow(today.AddDate(0, 0, -2).Format("2006-01-02"), int64(0), int64(0), int64(0), int64(0), int64(0), int64(0)))
+			AddRow(today.AddDate(0, 0, -31).Format("2006-01-02"), int64(10), int64(8), int64(5), int64(2), int64(4), int64(2), 120.5, int64(7)).
+			AddRow(today.AddDate(0, 0, -8).Format("2006-01-02"), int64(5), int64(3), int64(2), int64(0), int64(1), int64(1), 50.0, int64(2)).
+			AddRow(today.AddDate(0, 0, -1).Format("2006-01-02"), int64(4), int64(1), int64(0), int64(0), int64(1), int64(0), 10.0, int64(3)).
+			AddRow(today.AddDate(0, 0, -2).Format("2006-01-02"), int64(0), int64(0), int64(0), int64(0), int64(0), int64(0), 0.0, int64(0)))
 
 	result, err := repo.GetUserGrowthRetention(context.Background(), start, end)
 	require.NoError(t, err)
 	require.Len(t, result.Cohorts, 4)
+	require.Equal(t, int64(7), result.Cohorts[0].ActiveUsers)
+	require.InDelta(t, 120.5, result.Cohorts[0].RechargeAmount, 0.001)
 	require.InDelta(t, 80, *result.Cohorts[0].D1Rate, 0.001)
 	require.InDelta(t, 40, *result.Cohorts[1].D7Rate, 0.001)
 	require.Nil(t, result.Cohorts[1].D30Rate)

@@ -539,7 +539,7 @@ func (h *DashboardHandler) GetActiveUsersTrend(c *gin.Context) {
 	})
 }
 
-// GetUserGrowthRetention returns daily registration cohorts and D1/D7/D30 API retention.
+// GetUserGrowthRetention returns daily registration cohorts, API activity, recharge amounts, and D1/D7/D30 retention.
 // GET /api/v1/admin/dashboard/user-growth-retention?days=7
 var dashboardUserGrowthRetentionCache = newSnapshotCache(5 * time.Minute)
 
