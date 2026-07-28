@@ -284,7 +284,13 @@ describe('user UsageView', () => {
     expect(summary.attributes('data-show-account-cost')).toBe('false')
     expect(summary.attributes('data-show-standard-cost')).toBe('false')
 
-    for (const chart of wrapper.findAll('.distribution-chart')) {
+    const distributionCharts = wrapper.findAll('.distribution-chart')
+    expect(distributionCharts.map((chart) => chart.attributes('data-metric'))).toEqual([
+      'tokens',
+      'actual_cost',
+    ])
+
+    for (const chart of distributionCharts) {
       expect(chart.attributes('data-show-cost')).toBe('true')
       expect(chart.attributes('data-show-account-cost')).toBe('false')
       expect(chart.attributes('data-show-standard-cost')).toBe('false')

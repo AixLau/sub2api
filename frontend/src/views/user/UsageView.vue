@@ -352,7 +352,7 @@ const endDate = ref(defaultRange.end_date)
 const granularity = ref<'day' | 'hour'>(getGranularityForRange(startDate.value, endDate.value))
 
 const modelDistributionMetric = ref<DistributionMetric>('tokens')
-const groupDistributionMetric = ref<DistributionMetric>('tokens')
+const groupDistributionMetric = ref<DistributionMetric>('actual_cost')
 const activeTab = ref<'usage' | 'errors' | 'ranking'>('usage')
 const errorViewEnabled = computed(() => appStore.cachedPublicSettings?.allow_user_view_error_requests ?? false)
 const rankingViewEnabled = computed(() => appStore.cachedPublicSettings?.show_user_usage_ranking ?? false)

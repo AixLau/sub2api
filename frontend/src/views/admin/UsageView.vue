@@ -227,7 +227,7 @@ const loadedModelSources = reactive<Record<ModelDistributionSource, boolean>>({
   upstream: false,
   mapping: false,
 })
-const groupDistributionMetric = ref<DistributionMetric>('tokens')
+const groupDistributionMetric = ref<DistributionMetric>('actual_cost')
 const endpointDistributionMetric = ref<DistributionMetric>('tokens')
 const endpointDistributionSource = ref<EndpointSource>('inbound')
 const inboundEndpointStats = ref<EndpointStat[]>([])

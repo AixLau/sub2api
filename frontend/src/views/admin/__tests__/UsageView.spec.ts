@@ -419,13 +419,13 @@ describe('admin UsageView distribution metric toggles', () => {
     const groupChart = wrapper.find('[data-test="group-chart"]')
 
     expect(modelChart.find('.metric').text()).toBe('tokens')
-    expect(groupChart.find('.metric').text()).toBe('tokens')
+    expect(groupChart.find('.metric').text()).toBe('actual_cost')
 
     await modelChart.find('.switch-metric').trigger('click')
     await flushPromises()
 
     expect(modelChart.find('.metric').text()).toBe('actual_cost')
-    expect(groupChart.find('.metric').text()).toBe('tokens')
+    expect(groupChart.find('.metric').text()).toBe('actual_cost')
     expect(getSnapshotV2).toHaveBeenCalledTimes(1)
 
     await groupChart.find('.switch-metric').trigger('click')
