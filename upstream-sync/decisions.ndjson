@@ -1,0 +1,1 @@
+{"schema_version":1,"record_type":"schema","note":"Append decisions with `tools/upstream-sync record decision`; semantic reuse is advisory and never auto-approves high-risk merges."}

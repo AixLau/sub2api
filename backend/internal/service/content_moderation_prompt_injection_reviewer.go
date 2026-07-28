@@ -233,6 +233,9 @@ func normalizePromptInjectionReviewResult(result ContentModerationSemanticReview
 func applyPromptInjectionReviewPolicy(result ContentModerationSemanticReviewResult, evidenceComplete bool) (ContentModerationSemanticReviewResult, bool) {
 	result = normalizePromptInjectionReviewResult(result)
 	if !evidenceComplete {
+		if result.Verdict == "reject" {
+			result.ModelSeverity = result.Severity
+		}
 		if result.Verdict != "review" {
 			result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "semantic_policy_incomplete_evidence")
 		}

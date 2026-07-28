@@ -131,8 +131,8 @@ func newServerContentModerationOutboxRepo() *serverContentModerationOutboxRepo {
 	}
 }
 
-func (r *serverContentModerationOutboxRepo) EnqueueEvents(context.Context, []service.ContentModerationOutboxEvent) error {
-	return nil
+func (r *serverContentModerationOutboxRepo) EnqueueEvents(_ context.Context, events []service.ContentModerationOutboxEvent) (int, error) {
+	return len(events), nil
 }
 
 func (r *serverContentModerationOutboxRepo) ClaimDueEvents(ctx context.Context, _ time.Time, _ int, _ time.Duration) ([]service.ContentModerationOutboxEvent, error) {
@@ -150,15 +150,15 @@ func (r *serverContentModerationOutboxRepo) ClaimDueEvents(ctx context.Context, 
 	return nil, ctx.Err()
 }
 
-func (r *serverContentModerationOutboxRepo) MarkEventSucceeded(context.Context, int64) error {
+func (r *serverContentModerationOutboxRepo) MarkEventSucceeded(context.Context, int64, time.Time) error {
 	return nil
 }
 
-func (r *serverContentModerationOutboxRepo) ScheduleEventRetry(context.Context, int64, int, time.Time, string) error {
+func (r *serverContentModerationOutboxRepo) ScheduleEventRetry(context.Context, int64, time.Time, int, time.Time, string) error {
 	return nil
 }
 
-func (r *serverContentModerationOutboxRepo) MarkEventDeadLetter(context.Context, int64, string) error {
+func (r *serverContentModerationOutboxRepo) MarkEventDeadLetter(context.Context, int64, time.Time, string) error {
 	return nil
 }
 

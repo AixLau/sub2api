@@ -22,8 +22,6 @@ ARG NPM_CONFIG_REGISTRY=
 # it on the native host arch instead of under QEMU emulation for the target.
 FROM --platform=${BUILDPLATFORM} ${NODE_IMAGE} AS frontend-builder
 ARG NPM_CONFIG_REGISTRY
-ARG VITE_REACT_LANDING_ROUTES=false
-ENV VITE_REACT_LANDING_ROUTES=${VITE_REACT_LANDING_ROUTES}
 
 WORKDIR /app/frontend
 

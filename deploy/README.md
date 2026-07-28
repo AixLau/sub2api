@@ -2,6 +2,8 @@
 
 本目录是 Sub2API 部署文件的权威入口。生产环境优先使用 Docker Compose；Apple silicon Mac 本地运行可使用 Apple `container`；需要直接管理进程时再使用 systemd 二进制安装。
 
+当前版本只保留仓库 `frontend/` 中的 Vue 前端。首页、登录、注册、找回密码和其他公开页面均由 Sub2API 内嵌的 Vue 应用提供；React 官网及其双服务兼容代码已经移除。
+
 ## 选择部署方式
 
 | 场景 | 入口 | 数据存储 | 说明 |
@@ -34,9 +36,18 @@
 | `DOCKER.md` | 已发布 Docker 镜像的使用说明 |
 | `DATAMANAGEMENTD_CN.md` | 宿主机数据管理进程说明 |
 | `EDGE_SECURITY.md` | 反向代理、CDN/WAF、可信代理与入口安全加固说明 |
-| `react-landing-production.md` | React 官网与 Sub2API 双服务路由说明 |
+| `react-landing-production.md` | 已移除方案的迁移记录，仅供存量环境切换到 Vue 参考 |
 
 运行数据、`.env`、备份和构建产物不得提交到 Git。
+
+## 前端部署约定
+
+- Vue 始终注册并提供 `/`、`/home`、`/login`、`/register`、`/forgot-password`、`/reset-password`、`/model-market`、`/services`、`/service-status` 和 `/faq`。
+- React 路由构建开关已经移除，所有镜像均按 Vue 单服务模式构建。
+- Docker 镜像已包含构建后的 Vue 前端，不需要在 Caddy/Nginx 中为首页或认证页面配置单独的静态站点。反向代理应将这些请求交给 Sub2API 服务。
+- 首页、登录页及其他公开页面的后续修改统一在 `frontend/` 中进行。
+
+仍在运行 React 双服务方案的环境，迁移步骤见 [React 双服务历史迁移说明](./react-landing-production.md)。
 
 ## Apple container 部署
 
@@ -305,5 +316,5 @@ curl -v http://127.0.0.1:8080/health
 
 - [Docker 镜像说明](./DOCKER.md)
 - [数据管理进程](./DATAMANAGEMENTD_CN.md)
-- [React 官网双服务部署](./react-landing-production.md)
+- [旧双服务迁移到 Vue 的记录](./react-landing-production.md)
 - [部署文档索引](../docs/deployment/README.md)

@@ -1,5 +1,5 @@
 /**
- * 落地页 SEO 元信息管理，移植自 react-frontend/src/lib/seo.ts。
+ * Vue 落地页 SEO 元信息管理。
  * 仅在落地页 / 认证页挂载时调用；canonical 域名改为运行时 origin，
  * 生产环境（aixlau.me）行为与原 React 版一致。
  */

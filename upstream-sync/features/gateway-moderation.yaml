@@ -1,0 +1,55 @@
+schema_version: 1
+id: RISK-MOD-001
+name: Gateway content and semantic moderation
+purpose: Audit every model-visible request at the declared stage and fail closed where policy requires it.
+risk: critical
+paths:
+  - backend/internal/handler/content_moderation_guard.go
+  - backend/internal/service/content_moderation*.go
+  - backend/internal/server/routes/gateway.go
+  - docs/risk-control/content-moderation-gateway-coverage.json
+symbols:
+  - contentModerationGuard.Check
+  - OpenAIGatewayHandler.EnterOpenAIHTTPGatewayPipeline
+  - OpenAIGatewayHandler.runOpenAIWebSocketInitialFramePipeline
+  - ContentModerationService
+routes:
+  - POST /v1/responses
+  - POST /v1/messages
+  - POST /v1/embeddings
+  - POST /v1/images/generations
+config_keys:
+  - content_moderation
+  - semantic_review
+environment:
+  - CONTENT_MODERATION_ENABLED
+json_fields:
+  - moderation_required
+  - protocol
+  - semantic_review
+database_fields:
+  - content_moderation_records.decision
+  - content_moderation_records.request_id
+api_fields:
+  - review_reason
+  - audit_scope
+invariants:
+  - Every upstream route carrying model-visible user content is classified as covered or intentional_no_audit.
+  - Blocking moderation executes before account selection or upstream forwarding for the declared protocol.
+  - Deferred or unavailable semantic review never increments violation count.
+tests:
+  - kind: go
+    files:
+      - backend/internal/server/routes/gateway_test.go
+      - backend/internal/handler/openai_moderation_guard_coverage_test.go
+    command: "cd backend && GOMAXPROCS=2 go test -p 2 ./internal/server/routes ./internal/handler ./internal/service -run 'Moderation|PromptAudit|Gateway.*Coverage' -count=1"
+introduced_by:
+  - 2cb2006a9031c2f370d459776159534ed4f3b64d
+  - ceb656a6eb31d393c8bd2188092254fa57d0a94f
+merge_strategy: preserve_local_policy_and_combine_upstream_protocols
+watch:
+  - middleware_order
+  - route_addition
+  - route_rename
+  - fail_open
+  - body_parser

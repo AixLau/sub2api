@@ -1,4 +1,4 @@
-.PHONY: build build-backend build-frontend test test-backend test-frontend test-frontend-critical
+.PHONY: build build-backend build-frontend test test-backend test-frontend test-frontend-critical upstream-sync-lint upstream-sync-preflight
 
 FRONTEND_CRITICAL_VITEST := \
 	src/views/auth/__tests__/LinuxDoCallbackView.spec.ts \
@@ -32,3 +32,10 @@ test-frontend:
 
 test-frontend-critical:
 	@pnpm --dir frontend exec vitest run $(FRONTEND_CRITICAL_VITEST)
+
+upstream-sync-lint:
+	@tools/upstream-sync catalog lint
+	@cd backend && GOMAXPROCS=2 go test -p 2 ./cmd/upstream-sync
+
+upstream-sync-preflight:
+	@tools/upstream-sync preflight --target upstream/main

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -149,6 +150,40 @@ func TestContentModerationRepositoryCountFlaggedByUserSince_ExcludesCyberPolicyW
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestContentModerationRepositoryCountFlaggedByUserSince_RequiresCandidateViolationEligibility(t *testing.T) {
+	queryMatcher := sqlmock.QueryMatcherFunc(func(expectedSQL, actualSQL string) error {
+		if expectedSQL != "content_moderation_count_candidate_eligible_violations" {
+			return sqlmock.QueryMatcherRegexp.Match(expectedSQL, actualSQL)
+		}
+		normalizedSQL := strings.Join(strings.Fields(actualSQL), " ")
+		eligibilityClause := "COALESCE(source_origin, '') = '' OR user_violation_eligible = TRUE OR review_status = 'confirmed_violation'"
+		if count := strings.Count(normalizedSQL, eligibilityClause); count != 2 {
+			return fmt.Errorf("expected candidate eligibility clause in both last_auto_ban and main count, found %d occurrences in: %s", count, actualSQL)
+		}
+		observeClause := "COALESCE(mode, '') <> 'observe' OR review_status = 'confirmed_violation'"
+		if count := strings.Count(normalizedSQL, observeClause); count != 2 {
+			return fmt.Errorf("expected observe exclusion in both last_auto_ban and main count, found %d occurrences in: %s", count, actualSQL)
+		}
+		return nil
+	})
+
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(queryMatcher))
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := NewContentModerationRepository(db)
+	since := time.Now().Add(-time.Hour)
+	mock.ExpectQuery("content_moderation_count_candidate_eligible_violations").
+		WithArgs(int64(1001), since, false).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(3))
+
+	count, err := repo.CountFlaggedByUserSince(context.Background(), 1001, since, false)
+
+	require.NoError(t, err)
+	require.Equal(t, 3, count)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestContentModerationRepositoryCountFlaggedByUserSince_ExcludesUnconfirmedReviews(t *testing.T) {
 	queryMatcher := sqlmock.QueryMatcherFunc(func(expectedSQL, actualSQL string) error {
 		if expectedSQL != "content_moderation_count_confirmed_violations" {
@@ -198,6 +233,161 @@ func TestContentModerationRepositoryCountFlaggedByUserSince_ExcludesUnconfirmedR
 			require.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
+}
+
+func TestContentModerationRepositoryViolationUpdatesAreMonotonic(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := NewContentModerationRepository(db)
+	mock.ExpectExec(regexp.QuoteMeta("SET violation_count = GREATEST(COALESCE(violation_count, 0), $1)")).
+		WithArgs(7, "decision-count").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(regexp.QuoteMeta("auto_banned = COALESCE(auto_banned, FALSE) OR $2")).
+		WithArgs(9, false, "decision-ban").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	require.NoError(t, repo.UpdateLogViolationCountByDecisionID(context.Background(), "decision-count", 7))
+	require.NoError(t, repo.UpdateLogAccountActionByDecisionID(context.Background(), "decision-ban", 9, false))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestContentModerationRepositoryDecisionUpdatesRequireExistingAudit(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := NewContentModerationRepository(db)
+	mock.ExpectExec(regexp.QuoteMeta("SET violation_count = GREATEST(COALESCE(violation_count, 0), $1)")).
+		WithArgs(7, "missing-count").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(regexp.QuoteMeta("auto_banned = COALESCE(auto_banned, FALSE) OR $2")).
+		WithArgs(9, true, "missing-ban").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(regexp.QuoteMeta("SET email_sent = $1 WHERE decision_id = $2")).
+		WithArgs(true, "missing-email").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	require.ErrorContains(t, repo.UpdateLogViolationCountByDecisionID(context.Background(), "missing-count", 7), "expected 1 row")
+	require.ErrorContains(t, repo.UpdateLogAccountActionByDecisionID(context.Background(), "missing-ban", 9, true), "expected 1 row")
+	require.ErrorContains(t, repo.UpdateLogEmailSentByDecisionID(context.Background(), "missing-email", true), "expected 1 row")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestContentModerationRepositoryGetsAutoBanStateByDecisionID(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := NewContentModerationRepository(db)
+	mock.ExpectQuery(regexp.QuoteMeta("WHERE decision_id = $1")).
+		WithArgs("decision-ban-state").
+		WillReturnRows(sqlmock.NewRows([]string{"auto_banned"}).AddRow(true))
+
+	autoBanned, err := repo.(*contentModerationRepository).GetLogAutoBannedByDecisionID(context.Background(), "decision-ban-state")
+
+	require.NoError(t, err)
+	require.True(t, autoBanned)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestContentModerationRepositoryTracksNotificationDeliveryByKind(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := NewContentModerationRepository(db).(*contentModerationRepository)
+	mock.ExpectQuery(regexp.QuoteMeta("metadata->'notification_deliveries'->>$2")).
+		WithArgs("decision-notification", "email_account_disabled").
+		WillReturnRows(sqlmock.NewRows([]string{"delivered"}).AddRow(true))
+	mock.ExpectExec(regexp.QuoteMeta("jsonb_build_object($1, TRUE)")).
+		WithArgs("email_account_disabled", true, "decision-notification").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	delivered, err := repo.GetLogNotificationDeliveredByDecisionID(context.Background(), "decision-notification", "email_account_disabled")
+	require.NoError(t, err)
+	require.True(t, delivered)
+	require.NoError(t, repo.MarkLogNotificationDeliveredByDecisionID(context.Background(), "decision-notification", "email_account_disabled", true))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestContentModerationRepositoryNormalizesMalformedNotificationDeliveryMetadata(t *testing.T) {
+	queryMatcher := sqlmock.QueryMatcherFunc(func(expectedSQL, actualSQL string) error {
+		if expectedSQL != "content_moderation_notification_delivery_jsonb_guards" {
+			return sqlmock.QueryMatcherRegexp.Match(expectedSQL, actualSQL)
+		}
+		normalized := strings.Join(strings.Fields(actualSQL), " ")
+		for _, clause := range []string{
+			"WHEN jsonb_typeof(metadata) = 'object' THEN metadata",
+			"WHEN jsonb_typeof(metadata->'notification_deliveries') = 'object'",
+		} {
+			if !strings.Contains(normalized, clause) {
+				return fmt.Errorf("expected query to contain %q, got: %s", clause, actualSQL)
+			}
+		}
+		return nil
+	})
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(queryMatcher))
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := NewContentModerationRepository(db)
+	mock.ExpectExec("content_moderation_notification_delivery_jsonb_guards").
+		WithArgs("admin_alert", false, "decision-malformed-metadata").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	require.NoError(t, repo.(*contentModerationRepository).MarkLogNotificationDeliveredByDecisionID(
+		context.Background(),
+		"decision-malformed-metadata",
+		"admin_alert",
+		false,
+	))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestContentModerationRepositoryReplacesOnlySemanticDeadLetterAudit(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := NewContentModerationRepository(db).(*contentModerationRepository)
+	now := time.Now()
+	latency := 24
+	log := &service.ContentModerationLog{
+		DecisionID:            "decision-semantic-replay",
+		Action:                service.ContentModerationActionSemanticReviewAllow,
+		HighestCategory:       "benign_context",
+		HighestScore:          0.96,
+		CategoryScores:        map[string]float64{"benign_context": 0.96},
+		ThresholdSnapshot:     map[string]float64{},
+		InputExcerpt:          "bounded text",
+		UpstreamLatencyMS:     &latency,
+		Metadata:              json.RawMessage(`{"semantic_review_verdict":"allow"}`),
+		RiskContextType:       "semantic_review",
+		RiskContextReason:     "model=review-model;intent=defensive",
+		DecisionSource:        "semantic_review",
+		ModerationProvider:    "platform_openai",
+		ModerationModel:       "review-model",
+		UserViolationEligible: true,
+	}
+	casPattern := `(?s)review_status = CASE WHEN reviewed_at IS NULL THEN \$16 ELSE review_status END.*AND action = 'error'.*AND decision_source = 'semantic_review'.*AND reviewed_at IS NULL`
+	mock.ExpectQuery(casPattern).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(77), now))
+
+	replaced, err := repo.ReplaceSemanticReviewDeadLetterByDecisionID(context.Background(), log)
+	require.NoError(t, err)
+	require.True(t, replaced)
+	require.Equal(t, int64(77), log.ID)
+	require.Equal(t, now, log.CreatedAt)
+
+	log.DecisionID = "decision-already-successful"
+	mock.ExpectQuery(casPattern).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}))
+	replaced, err = repo.ReplaceSemanticReviewDeadLetterByDecisionID(context.Background(), log)
+	require.NoError(t, err)
+	require.False(t, replaced)
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestContentModerationRepositoryCreateLog_UsesValidUpsertReturningSQL(t *testing.T) {

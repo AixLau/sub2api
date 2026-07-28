@@ -1,0 +1,48 @@
+schema_version: 1
+id: GW-ROUTE-001
+name: Model routing, account scheduling, and retry
+purpose: Preserve channel mapping, account eligibility, sticky scheduling, and retry boundaries across providers.
+risk: critical
+paths:
+  - backend/internal/service/gateway_service*.go
+  - backend/internal/service/channel_service.go
+  - backend/internal/service/openai_gateway*.go
+  - backend/internal/server/routes/gateway*.go
+symbols:
+  - GatewayService
+  - OpenAIGatewayService.Forward
+  - ChannelMappingResult
+  - UpstreamFailoverError
+routes:
+  - POST /v1/chat/completions
+  - POST /v1/responses
+config_keys:
+  - model_routing_enabled
+  - sticky_session
+environment: []
+json_fields:
+  - model
+  - channel_id
+  - mapped_model
+database_fields:
+  - groups.model_routing_enabled
+  - channels.model_mapping
+api_fields:
+  - requested_model
+  - upstream_model
+invariants:
+  - Mapping and eligibility are evaluated before forwarding and remain consistent across retries.
+  - A retry never double bills or reuses an account marked unavailable by the preceding attempt.
+tests:
+  - kind: go
+    files:
+      - backend/internal/service/gateway_service_antigravity_whitelist_test.go
+    command: "cd backend && GOMAXPROCS=2 go test -p 2 ./internal/service -run 'GatewayService|Failover|Model.*Routing|Channel.*Mapping' -count=1"
+introduced_by:
+  - 0ac9d6ad5b4397847760800fdd6b1f0d704bf3c2
+merge_strategy: combine
+watch:
+  - call_order
+  - eligibility
+  - retry_boundary
+  - model_mapping

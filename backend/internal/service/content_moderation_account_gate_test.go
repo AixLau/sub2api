@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -197,6 +199,37 @@ func TestCheckAccountAttemptLoadsPolicyAfterRequestCancellation(t *testing.T) {
 	require.Equal(t, ContentModerationDispositionDeterministicAllow, result.Disposition)
 }
 
+func TestCheckAccountAttemptPolicyLoadFailurePersistsError(t *testing.T) {
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{
+			values: map[string]string{},
+			errors: map[string]error{SettingKeyRiskControlEnabled: errors.New("settings unavailable")},
+		},
+		repo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	result, err := svc.CheckAccountAttempt(context.Background(), ContentModerationCheckInput{
+		UserID:    17,
+		AccountID: 9,
+		Protocol:  ContentModerationProtocolOpenAIChat,
+		Body:      []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	}, nil)
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationDispositionProviderErrorOpen, result.Disposition)
+	require.Equal(t, ContentModerationActionError, result.Decision.Action)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Contains(t, logs[0].Error, "load moderation policy")
+	require.Empty(t, logs[0].InputExcerpt)
+}
+
 func TestCheckLoadsPolicyAfterRequestCancellation(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
@@ -245,4 +278,174 @@ func TestCheckAccountAttemptObserveDropClearsPriorReusableState(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ContentModerationDispositionObserveDropped, result.Disposition)
 	require.Nil(t, result.NextState)
+}
+
+func TestCheckAccountAttemptObserveMissingProviderKeyPersistsError(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModeObserve
+	cfg.EngineMode = ContentModerationEngineModeHybrid
+	cfg.APIKey = ""
+	cfg.APIKeys = nil
+	cfg.SemanticReview.Enabled = false
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	outbox := &contentModerationTestOutboxRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(raw),
+		}},
+		repo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc.SetSemanticReviewRouter(&contentModerationSemanticReviewRouterStub{})
+	svc.SetOutboxRepository(outbox)
+	svc.SetRawRequestSnapshotStore(nil, contentModerationTestEncryptor{})
+
+	result, err := svc.CheckAccountAttempt(context.Background(), ContentModerationCheckInput{
+		UserID:      17,
+		AccountID:   9,
+		AccountType: AccountTypeOAuth,
+		Model:       "gpt-5",
+		Protocol:    ContentModerationProtocolOpenAIChat,
+		Body:        []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	}, nil)
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationDispositionProviderErrorOpen, result.Disposition)
+	require.Equal(t, ContentModerationActionError, result.Decision.Action)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.Contains(t, logs[0].Error, "ordinary moderation API key unavailable")
+	events := outbox.snapshotEvents()
+	require.Len(t, events, 1)
+	require.Equal(t, ContentModerationOutboxEventSemanticReview, events[0].EventType)
+}
+
+func TestCheckAccountAttemptObserveMissingProviderKeyPersistsErrorWithoutSemanticRouter(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModeObserve
+	cfg.EngineMode = ContentModerationEngineModeHybrid
+	cfg.APIKey = ""
+	cfg.APIKeys = nil
+	cfg.SemanticReview.Enabled = true
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(raw),
+		}},
+		repo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	result, err := svc.CheckAccountAttempt(context.Background(), ContentModerationCheckInput{
+		UserID:      17,
+		AccountID:   9,
+		AccountType: AccountTypeOAuth,
+		Model:       "gpt-5",
+		Protocol:    ContentModerationProtocolOpenAIChat,
+		Body:        []byte(`{"messages":[{"role":"user","content":"hello"}]}`),
+	}, nil)
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationDispositionProviderErrorOpen, result.Disposition)
+	require.Equal(t, ContentModerationActionError, result.Decision.Action)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.Contains(t, logs[0].Error, "ordinary moderation API key unavailable")
+}
+
+func TestCheckAccountAttemptObserveUnexpectedEmptyExtractionReportsProviderError(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModeObserve
+	cfg.EngineMode = ContentModerationEngineModeRuleOnly
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(raw),
+		}},
+		repo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	result, err := svc.CheckAccountAttempt(context.Background(), ContentModerationCheckInput{
+		UserID:    17,
+		AccountID: 9,
+		Protocol:  ContentModerationProtocolOpenAIChat,
+		Body:      []byte(`{"unknown_text_field":"unsupported content"}`),
+	}, nil)
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationDispositionProviderErrorOpen, result.Disposition)
+	require.Equal(t, ContentModerationActionError, result.Decision.Action)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Contains(t, logs[0].Error, "no auditable content")
+}
+
+func TestCheckAccountAttemptObserveCandidateOversizedPayloadWritesSingleError(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModeObserve
+	cfg.EngineMode = ContentModerationEngineModeCandidateOnly
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(raw),
+		}},
+		repo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	body := []byte(`{"messages":[
+		{"role":"user","content":"ordinary text","tool_calls":[{"type":"function","function":{"name":"lookup","arguments":"{\"base64\":\"` + strings.Repeat("A", maxBase64DecodeInputBytes+4) + `\"}"}}]}
+	]}`)
+
+	result, err := svc.CheckAccountAttempt(context.Background(), ContentModerationCheckInput{
+		UserID:    17,
+		AccountID: 9,
+		Protocol:  ContentModerationProtocolOpenAIChat,
+		Body:      body,
+	}, nil)
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationDispositionProviderErrorOpen, result.Disposition)
+	require.Equal(t, ContentModerationActionError, result.Decision.Action)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Contains(t, logs[0].Error, "oversized encoded payload skipped")
 }

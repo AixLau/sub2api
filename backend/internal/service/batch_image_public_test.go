@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
@@ -173,6 +174,31 @@ func TestBatchImagePublicService_Submit(t *testing.T) {
 		require.Empty(t, queue.enqueued)
 		require.Empty(t, gemini.submits)
 		require.Empty(t, svc.BillingRepo.(*fakeBatchImageBillingRepo).reserves)
+	})
+
+	t.Run("uses generated batch id as moderation request identity", func(t *testing.T) {
+		svc, _, _, _, _ := newTestBatchImagePublicService(true)
+		gate := &fakeBatchImageModerationGate{}
+		svc.Moderation = gate
+
+		got, err := svc.Submit(ctx, testBatchImageOwner(), validBatchImageSubmitRequest(), "")
+
+		require.NoError(t, err)
+		require.Len(t, gate.inputs, 1)
+		require.Equal(t, got.ID, gate.inputs[0].RequestID)
+	})
+
+	t.Run("prefers request id from context for moderation identity", func(t *testing.T) {
+		svc, _, _, _, _ := newTestBatchImagePublicService(true)
+		gate := &fakeBatchImageModerationGate{}
+		svc.Moderation = gate
+		requestCtx := context.WithValue(ctx, ctxkey.RequestID, "batch-http-request")
+
+		_, err := svc.Submit(requestCtx, testBatchImageOwner(), validBatchImageSubmitRequest(), "")
+
+		require.NoError(t, err)
+		require.Len(t, gate.inputs, 1)
+		require.Equal(t, "batch-http-request", gate.inputs[0].RequestID)
 	})
 
 	t.Run("group batch image disabled rejects before provider submit", func(t *testing.T) {

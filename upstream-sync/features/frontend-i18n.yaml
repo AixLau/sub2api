@@ -1,0 +1,42 @@
+schema_version: 1
+id: FRONTEND-I18N-001
+name: Localized product terminology and extension keys
+purpose: Preserve local Chinese and English terminology and prevent missing keys in local views and components.
+risk: high
+paths:
+  - frontend/src/i18n/**
+  - frontend/src/components/charts/TokenUsageTrend.vue
+  - frontend/src/views/admin/UsageView.vue
+  - frontend/src/views/user/PaymentView.vue
+  - frontend/src/views/user/UsageView.vue
+symbols:
+  - mergeLocaleMessages
+routes: []
+config_keys: []
+environment: []
+json_fields: []
+database_fields: []
+api_fields: []
+i18n_keys:
+  - admin.usage.excludeUsers
+  - usage.trend.input
+  - usage.trend.output
+  - usage.trend.cacheCreation
+  - usage.trend.cacheRead
+invariants:
+  - Local extension keys exist in both supported primary locales.
+  - The local account recharge terminology is not silently replaced by upstream subscription wording.
+tests:
+  - kind: vue
+    files:
+      - frontend/src/i18n/__tests__/localesNoKeyCollision.spec.ts
+      - frontend/src/i18n/__tests__/usedLocaleKeys.spec.ts
+    command: "pnpm --dir frontend exec vitest run --maxWorkers=2 src/i18n"
+introduced_by:
+  - 73005528a0efaf28b32755ce4b0500a03e0516a0
+merge_strategy: preserve_local_wording_and_merge_new_upstream_keys
+watch:
+  - i18n_key
+  - missing_translation
+  - wording
+  - locale_merge

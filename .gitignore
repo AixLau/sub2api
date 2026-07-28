@@ -156,3 +156,7 @@ docs/deployment/*
 frontend/coverage/
 aicodex
 output/
+
+# Upstream sync audit outputs are temporary; durable intent lives in
+# upstream-sync/*.yaml and upstream-sync/decisions.ndjson.
+upstream-sync/out/

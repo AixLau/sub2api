@@ -1,0 +1,60 @@
+schema_version: 1
+
+levels:
+  none:
+    description: No path, symbol, dependency, route, configuration, or data-contract intersection.
+    codex_review: false
+  low:
+    description: Same file or generated derivative, but no shared symbol or declared contract.
+    codex_review: false
+  review:
+    description: Direct symbol dependency or shared route, configuration, DTO, API, or data contract.
+    codex_review: true
+  blocker:
+    description: Conflict, shared symbol edit, removed anchor, incompatible contract, invariant risk, or failed required test.
+    codex_review: true
+
+blocker_categories:
+  - git_conflict
+  - shared_symbol
+  - deleted_anchor
+  - renamed_anchor
+  - route_contract
+  - middleware_order
+  - json_contract
+  - database_contract
+  - config_contract
+  - gateway_order
+  - billing_invariant
+  - payment_invariant
+  - authorization_invariant
+  - required_test_failure
+
+classifications:
+  generated:
+    - backend/ent/**
+    - backend/cmd/server/wire_gen.go
+    - backend/internal/web/dist/**
+  dependency:
+    - backend/go.mod
+    - backend/go.sum
+    - frontend/package.json
+    - frontend/pnpm-lock.yaml
+    - react-frontend/package.json
+    - react-frontend/pnpm-lock.yaml
+  lock:
+    - "**/go.sum"
+    - "**/pnpm-lock.yaml"
+    - "**/package-lock.json"
+  documentation:
+    - "**/*.md"
+    - docs/**
+    - LICENSE
+  internationalization:
+    - frontend/src/i18n/**
+
+context_limits:
+  overview_bytes: 8192
+  feature_bytes: 40960
+  diff_bytes_per_file: 8192
+  snippet_lines: 80

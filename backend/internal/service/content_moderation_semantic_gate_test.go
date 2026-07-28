@@ -51,6 +51,224 @@ func TestContentModerationSemanticCandidateAllDoesNotRequireKeyword(t *testing.T
 	require.True(t, candidate.SyntheticAll)
 }
 
+func TestSemanticReviewGateDowngradesRejectWhenEvidenceIsTruncated(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.SemanticReview.Enabled = true
+	cfg.SemanticReview.Trigger = ContentModerationSemanticReviewTriggerAll
+	content := ContentModerationInput{
+		Text:            "authorized diagnostic context followed by a dangerous-looking command",
+		Truncated:       true,
+		TruncateReasons: []string{"source_max_runes"},
+	}
+	router := &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "reject", Intent: "harmful", Target: "third_party", Authorization: "unauthorized",
+		HarmMechanism: "unauthorized_access", Severity: "high", Confidence: 0.98,
+		Operationality: "actionable", Executability: "direct", Categories: []string{"unauthorized_access"},
+	}}
+	candidate, ok := contentModerationSemanticGateCandidateForAll(cfg, content, router)
+	require.True(t, ok)
+	require.False(t, candidate.Input.EvidenceComplete)
+
+	repo := &contentModerationTestRepo{}
+	hashCache := &contentModerationTestHashCache{}
+	svc := NewContentModerationService(nil, repo, hashCache, nil, nil, nil, nil)
+	svc.SetSemanticReviewRouter(router)
+
+	decision, terminal := svc.semanticReviewGate(
+		context.Background(),
+		ContentModerationCheckInput{UserID: 17, Protocol: ContentModerationProtocolOpenAIResponses},
+		cfg,
+		content,
+		strings.Repeat("a", 64),
+		candidate,
+	)
+
+	require.False(t, terminal)
+	require.Nil(t, decision)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
+	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.Contains(t, string(logs[0].Metadata), "semantic_policy_incomplete_evidence")
+	require.Empty(t, hashCache.snapshotRecorded())
+}
+
+func TestSemanticReviewGatePersistsSanitizedRouterError(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.SemanticReview.Enabled = true
+	cfg.SemanticReview.PrimaryModel = ContentModerationSemanticReviewPrimaryModel
+	content := ContentModerationInput{
+		Text:            "authorized diagnostic request",
+		TruncateReasons: []string{"source_max_runes"},
+		Sources: []ContentModerationInputSource{{
+			Text:            "authorized diagnostic request",
+			TruncateReasons: []string{"source_fragment_max_runes"},
+		}},
+	}
+	routerErr := errors.New(strings.Repeat("semantic reviewer unavailable ", 20))
+	router := &contentModerationSemanticReviewRouterStub{err: routerErr}
+	repo := &contentModerationTestRepo{}
+	hashCache := &contentModerationTestHashCache{}
+	svc := NewContentModerationService(nil, repo, hashCache, nil, nil, nil, nil)
+	svc.SetSemanticReviewRouter(router)
+
+	decision, terminal := svc.semanticReviewGate(
+		context.Background(),
+		ContentModerationCheckInput{UserID: 17, APIKeyID: 29, RequestID: "semantic-gate-error"},
+		cfg,
+		content,
+		strings.Repeat("a", 64),
+		contentModerationSemanticGateCandidate{
+			Input:    ContentModerationSemanticReviewInput{Text: content.Text, EvidenceComplete: false},
+			Keyword:  "diagnostic",
+			Category: "cyber",
+			Severity: ContentModerationKeywordSeverityHigh,
+		},
+	)
+
+	require.False(t, terminal)
+	require.Nil(t, decision)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.Equal(t, contentModerationDecisionSourceSemantic, logs[0].DecisionSource)
+	require.Equal(t, "platform_openai", logs[0].ModerationProvider)
+	require.Equal(t, ContentModerationSemanticReviewPrimaryModel, logs[0].ModerationModel)
+	require.Equal(t, "semantic_review_gate_failed", logs[0].RiskContextReason)
+	require.Len(t, logs[0].Error, 240)
+	require.Equal(t, []string{"source_max_runes", "source_fragment_max_runes"}, logs[0].TruncateReasons)
+	require.Empty(t, hashCache.snapshotRecorded())
+}
+
+func TestSemanticReviewEvidenceMarksClippedSourceExcerptIncomplete(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.SemanticReview.Enabled = true
+	cfg.SemanticReview.Trigger = ContentModerationSemanticReviewTriggerAll
+	longUserTurn := strings.Repeat("authorized diagnostic context ", 60) + "dangerous-looking command"
+	content := ContentModerationInput{
+		Text: longUserTurn,
+		Sources: []ContentModerationInputSource{{
+			Source: "responses.input[0].role=user.content",
+			Role:   "user",
+			Text:   longUserTurn,
+		}},
+	}
+
+	candidate, ok := contentModerationSemanticGateCandidateForAll(cfg, content, &contentModerationSemanticReviewRouterStub{})
+
+	require.True(t, ok)
+	require.LessOrEqual(t, len([]rune(candidate.Input.Text)), cfg.SemanticReview.MaxInputRunes)
+	require.False(t, candidate.Input.EvidenceComplete)
+}
+
+func TestSemanticReviewEvidenceMarksSourceSelectionOverflowIncomplete(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.SemanticReview.Enabled = true
+	cfg.SemanticReview.Trigger = ContentModerationSemanticReviewTriggerLocalReview
+	content := ContentModerationInput{
+		Text: "danger-marker old\ndanger-marker latest user\ndanger-marker tool three\ndanger-marker tool four\ndanger-marker tool five",
+		Sources: []ContentModerationInputSource{
+			{Source: "messages[0]", Role: "user", Text: "danger-marker old"},
+			{Source: "messages[1]", Role: "user", Text: "danger-marker latest user"},
+			{Source: "messages[2]", Role: "tool", Text: "danger-marker tool three"},
+			{Source: "messages[3]", Role: "tool", Text: "danger-marker tool four"},
+			{Source: "messages[4]", Role: "tool", Text: "danger-marker tool five"},
+		},
+	}
+
+	candidate, ok := contentModerationSemanticGateCandidateForKeyword(cfg, content, ContentModerationKeywordRule{
+		Keyword:  "danger-marker",
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}, &contentModerationSemanticReviewRouterStub{})
+
+	require.True(t, ok)
+	require.False(t, candidate.Input.EvidenceComplete)
+	require.False(t, candidate.ContextOnly)
+	require.Contains(t, candidate.Input.Text, "danger-marker latest user")
+	require.Contains(t, candidate.Input.Text, "danger-marker tool five")
+	require.NotContains(t, candidate.Input.Text, "danger-marker old")
+	require.NotContains(t, candidate.Input.Text, "danger-marker tool three")
+}
+
+func TestSemanticReviewEvidenceMarksHeaderBudgetOmissionIncomplete(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.SemanticReview.Enabled = true
+	cfg.SemanticReview.Trigger = ContentModerationSemanticReviewTriggerLocalReview
+	cfg.SemanticReview.MaxInputRunes = 50
+	content := ContentModerationInput{
+		Text: "danger-marker one\ndanger-marker two",
+		Sources: []ContentModerationInputSource{
+			{Source: "a", Role: "user", Text: "danger-marker"},
+			{Source: strings.Repeat("b", 80), Role: "user", Text: "danger-marker"},
+		},
+	}
+
+	candidate, ok := contentModerationSemanticGateCandidateForKeyword(cfg, content, ContentModerationKeywordRule{
+		Keyword:  "danger-marker",
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}, &contentModerationSemanticReviewRouterStub{})
+
+	require.True(t, ok)
+	require.Less(t, len([]rune(candidate.Input.Text)), cfg.SemanticReview.MaxInputRunes)
+	require.False(t, candidate.Input.EvidenceComplete)
+}
+
+func TestSemanticReviewGateDowngradesRejectForClippedSourceLessKeywordExcerpt(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.SemanticReview.Enabled = true
+	cfg.SemanticReview.Trigger = ContentModerationSemanticReviewTriggerLocalReview
+	content := ContentModerationInput{
+		Text: strings.Repeat("authorized setup ", 90) + "danger-marker" + strings.Repeat(" diagnostic context", 90),
+	}
+	router := &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "reject", Intent: "harmful", Target: "third_party", Authorization: "unauthorized",
+		HarmMechanism: "unauthorized_access", Severity: "high", Confidence: 0.98,
+		Operationality: "actionable", Executability: "direct", Categories: []string{"unauthorized_access"},
+	}}
+	candidate, ok := contentModerationSemanticGateCandidateForKeyword(cfg, content, ContentModerationKeywordRule{
+		Keyword:  "danger-marker",
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}, router)
+	require.True(t, ok)
+	require.False(t, candidate.Input.EvidenceComplete)
+
+	repo := &contentModerationTestRepo{}
+	hashCache := &contentModerationTestHashCache{}
+	svc := NewContentModerationService(nil, repo, hashCache, nil, nil, nil, nil)
+	svc.SetSemanticReviewRouter(router)
+	decision, terminal := svc.semanticReviewGate(
+		context.Background(),
+		ContentModerationCheckInput{UserID: 17},
+		cfg,
+		content,
+		strings.Repeat("d", 64),
+		candidate,
+	)
+
+	require.False(t, terminal)
+	require.Nil(t, decision)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
+	require.Contains(t, string(logs[0].Metadata), "semantic_policy_incomplete_evidence")
+	require.Empty(t, hashCache.snapshotRecorded())
+}
+
 func TestContentModerationSemanticCandidatePromptFilterKeepsCodexContextNonTerminal(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.PromptFilterMode = "block"
@@ -186,7 +404,7 @@ func TestContentModerationCheck_TriggerAllLowRiskReviewRemainsPendingWithoutBloc
 	require.False(t, logs[0].EmailSent)
 }
 
-func TestContentModerationCheck_TriggerAllHighRiskReviewIsDeferredWithoutViolation(t *testing.T) {
+func TestContentModerationCheck_TriggerAllHighRiskReviewRemainsPendingWithoutBlocking(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
@@ -225,15 +443,14 @@ func TestContentModerationCheck_TriggerAllHighRiskReviewIsDeferredWithoutViolati
 	})
 
 	require.NoError(t, err)
-	require.False(t, decision.Allowed)
-	require.True(t, decision.Blocked)
-	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
-	require.Equal(t, ContentModerationActionSemanticReviewDeferred, decision.Action)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Zero(t, decision.StatusCode)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewDeferred, logs[0].Action)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
 	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
-	require.False(t, logs[0].UserViolationEligible)
 	require.Zero(t, logs[0].ViolationCount)
 	require.False(t, logs[0].AutoBanned)
 	require.False(t, logs[0].EmailSent)
@@ -401,10 +618,14 @@ func TestContentModerationProviderFailureFallsBackToSemanticReview(t *testing.T)
 	require.Equal(t, ContentModerationSemanticReviewPrimaryModel, router.config.PrimaryModel)
 	require.Equal(t, []string{ContentModerationSemanticReviewFallbackModel}, router.config.FallbackModels)
 	require.Contains(t, router.input.Text, "unauthorized intrusion")
-	require.Len(t, repo.snapshotLogs(), 1)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 2)
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.Contains(t, logs[0].Error, "moderation api status 503")
+	require.Equal(t, ContentModerationActionSemanticReviewReject, logs[1].Action)
 }
 
-func TestContentModerationProviderFailureHighRiskReviewIsDeferredWithoutViolation(t *testing.T) {
+func TestContentModerationProviderFailureHighRiskReviewRemainsPendingWithoutBlocking(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
@@ -447,18 +668,118 @@ func TestContentModerationProviderFailureHighRiskReviewIsDeferredWithoutViolatio
 	})
 
 	require.NoError(t, err)
-	require.False(t, decision.Allowed)
-	require.True(t, decision.Blocked)
-	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
-	require.Equal(t, ContentModerationActionSemanticReviewDeferred, decision.Action)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Zero(t, decision.StatusCode)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, decision.Action)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 2)
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.Contains(t, logs[0].Error, "moderation api status 503")
+	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[1].Action)
+	require.Equal(t, ContentModerationReviewStatusPending, logs[1].ReviewStatus)
+	require.Zero(t, logs[1].ViolationCount)
+	require.False(t, logs[1].AutoBanned)
+	require.False(t, logs[1].EmailSent)
+}
+
+func TestSemanticProviderFallbackRejectInObserveModeHasNoEnforcementSideEffects(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModeObserve
+	cfg.AutoBanEnabled = true
+	cfg.BanThreshold = 1
+	cfg.EmailOnHit = true
+	repo := &contentModerationTestRepo{}
+	hashCache := &contentModerationTestHashCache{}
+	userRepo := &contentModerationTestUserRepo{
+		user: &User{ID: 17, Email: "user@example.com", Role: RoleUser, Status: StatusActive},
+	}
+	emailProbe := &contentModerationEmailSideEffectProbe{}
+	svc := NewContentModerationService(
+		nil,
+		repo,
+		hashCache,
+		nil,
+		userRepo,
+		nil,
+		NewEmailService(emailProbe, nil),
+	)
+	svc.SetSemanticReviewRouter(&contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "reject", Intent: "harmful", Target: "third_party", Authorization: "unauthorized",
+		HarmMechanism: "credential_theft", Severity: "high", Confidence: 0.97,
+		Operationality: "actionable", Executability: "direct", Categories: []string{"credential_theft"},
+	}})
+
+	decision, handled := svc.semanticReviewProviderFallback(
+		context.Background(),
+		ContentModerationCheckInput{UserID: 17, UserEmail: "user@example.com"},
+		cfg,
+		ContentModerationInput{Text: "dangerous-looking request"},
+		strings.Repeat("b", 64),
+		"",
+		errors.New("ordinary moderation unavailable"),
+		false,
+	)
+
+	require.True(t, handled)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.True(t, decision.Flagged)
+	require.Equal(t, ContentModerationActionSemanticReviewReject, decision.Action)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewDeferred, logs[0].Action)
-	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
-	require.False(t, logs[0].UserViolationEligible)
 	require.Zero(t, logs[0].ViolationCount)
 	require.False(t, logs[0].AutoBanned)
 	require.False(t, logs[0].EmailSent)
+	require.Empty(t, hashCache.snapshotRecorded())
+	require.Empty(t, userRepo.updated)
+	require.Equal(t, StatusActive, userRepo.user.Status)
+	require.Zero(t, emailProbe.getMultipleCalls.Load())
+}
+
+func TestSemanticReviewProviderFallbackPersistsSanitizedRouterError(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.SemanticReview.PrimaryModel = ContentModerationSemanticReviewPrimaryModel
+	content := ContentModerationInput{
+		Text: "authorized diagnostic request",
+		Extraction: ModerationExtraction{
+			TruncateReasons: []string{"total_max_runes"},
+		},
+	}
+	router := &contentModerationSemanticReviewRouterStub{
+		err: errors.New(strings.Repeat("fallback reviewer unavailable ", 20)),
+	}
+	repo := &contentModerationTestRepo{}
+	hashCache := &contentModerationTestHashCache{}
+	svc := NewContentModerationService(nil, repo, hashCache, nil, nil, nil, nil)
+	svc.SetSemanticReviewRouter(router)
+
+	decision, handled := svc.semanticReviewProviderFallback(
+		context.Background(),
+		ContentModerationCheckInput{UserID: 17, APIKeyID: 29, RequestID: "semantic-fallback-error"},
+		cfg,
+		content,
+		strings.Repeat("b", 64),
+		"",
+		errors.New("ordinary moderation unavailable"),
+		true,
+	)
+
+	require.False(t, handled)
+	require.Nil(t, decision)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.Equal(t, contentModerationDecisionSourceSemantic, logs[0].DecisionSource)
+	require.Equal(t, "platform_openai", logs[0].ModerationProvider)
+	require.Equal(t, ContentModerationSemanticReviewPrimaryModel, logs[0].ModerationModel)
+	require.Equal(t, "semantic_review_provider_fallback_failed", logs[0].RiskContextReason)
+	require.Len(t, logs[0].Error, 240)
+	require.Equal(t, []string{"total_max_runes"}, logs[0].TruncateReasons)
+	require.Empty(t, hashCache.snapshotRecorded())
 }
 
 func TestContentModerationProviderFailureFallbackUsesKeywordContext(t *testing.T) {
@@ -513,8 +834,11 @@ func TestContentModerationProviderFailureFallbackUsesKeywordContext(t *testing.T
 	})
 
 	require.NoError(t, err)
-	require.True(t, decision.Blocked)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, decision.Action)
 	require.Equal(t, 1, router.calls)
+	require.False(t, router.input.EvidenceComplete)
 	require.Contains(t, router.input.Text, "exploit nearby context")
 	require.NotContains(t, router.input.Text, "prefix-marker")
 	require.NotContains(t, router.input.Text, "suffix-marker")
@@ -906,7 +1230,7 @@ func TestContentModerationCheck_HybridCyberKeywordUsesOrdinaryModerationAndSeman
 	require.True(t, moderationCalled, "a hybrid keyword hit must call the ordinary moderation API")
 }
 
-func TestContentModerationCheck_HybridHighRiskReviewIsDeferredWithoutViolation(t *testing.T) {
+func TestContentModerationCheck_HybridHighRiskReviewRemainsPendingWithoutBlocking(t *testing.T) {
 	moderationCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		moderationCalled = true
@@ -963,15 +1287,14 @@ func TestContentModerationCheck_HybridHighRiskReviewIsDeferredWithoutViolation(t
 
 	require.NoError(t, err)
 	require.True(t, moderationCalled)
-	require.False(t, decision.Allowed)
-	require.True(t, decision.Blocked)
-	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
-	require.Equal(t, ContentModerationActionSemanticReviewDeferred, decision.Action)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Zero(t, decision.StatusCode)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewDeferred, logs[0].Action)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
 	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
-	require.False(t, logs[0].UserViolationEligible)
 	require.Zero(t, logs[0].ViolationCount)
 	require.False(t, logs[0].AutoBanned)
 	require.False(t, logs[0].EmailSent)

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"go.uber.org/zap"
@@ -253,11 +254,15 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 		}
 	}
 
+	batchID, err := NewBatchImageID()
+	if err != nil {
+		return nil, err
+	}
 	provider, account, err := s.selectProviderAndAccount(ctx, owner, normalized.Provider, normalized.Model)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.moderateSelectedAccount(ctx, owner, normalized, provider.Name(), account); err != nil {
+	if err := s.moderateSelectedAccount(ctx, owner, normalized, provider.Name(), account, batchImageModerationRequestID(ctx, batchID)); err != nil {
 		return nil, err
 	}
 	pricingSnapshot, err := s.resolvePricingSnapshot(ctx, owner, normalized, provider.Name(), account)
@@ -273,10 +278,6 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 		if parent.ParentBatchID != nil && strings.TrimSpace(*parent.ParentBatchID) != "" {
 			parentBatchID = batchImageOptionalStringPtr(*parent.ParentBatchID)
 		}
-	}
-	batchID, err := NewBatchImageID()
-	if err != nil {
-		return nil, err
 	}
 	apiKeyID := owner.APIKeyID
 	accountID := account.ID
@@ -426,7 +427,7 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 	return BatchImageJobToPublic(created), nil
 }
 
-func (s *BatchImagePublicService) moderateSelectedAccount(ctx context.Context, owner BatchImageOwner, req BatchImageSubmitRequest, provider string, account *Account) error {
+func (s *BatchImagePublicService) moderateSelectedAccount(ctx context.Context, owner BatchImageOwner, req BatchImageSubmitRequest, provider string, account *Account, requestID string) error {
 	if s == nil || s.Moderation == nil || account == nil {
 		return nil
 	}
@@ -435,6 +436,7 @@ func (s *BatchImagePublicService) moderateSelectedAccount(ctx context.Context, o
 		return &ContentModerationGateError{StatusCode: 500, Code: "CONTENT_MODERATION_INPUT_ERROR", Message: "failed to prepare content moderation input"}
 	}
 	result, err := s.Moderation.CheckAccountAttempt(ctx, ContentModerationCheckInput{
+		RequestID:   requestID,
 		UserID:      owner.UserID,
 		UserEmail:   owner.UserEmail,
 		APIKeyID:    owner.APIKeyID,
@@ -465,6 +467,17 @@ func (s *BatchImagePublicService) moderateSelectedAccount(ctx context.Context, o
 		return &ContentModerationGateError{StatusCode: status, Code: "content_policy_violation", Message: message}
 	}
 	return nil
+}
+
+func batchImageModerationRequestID(ctx context.Context, batchID string) string {
+	if ctx != nil {
+		if requestID, ok := ctx.Value(ctxkey.RequestID).(string); ok {
+			if requestID = strings.TrimSpace(requestID); requestID != "" {
+				return requestID
+			}
+		}
+	}
+	return strings.TrimSpace(batchID)
 }
 
 func (s *BatchImagePublicService) releaseFailedSubmitHold(ctx context.Context, job *BatchImageJob, requestHash string) error {

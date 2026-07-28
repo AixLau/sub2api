@@ -28,17 +28,47 @@ func TestContentModerationOutboxRepositoryEnqueueEventsUsesDecisionEventDedup(t 
 			service.ContentModerationOutboxDefaultMaxRetries(service.ContentModerationOutboxPriorityStrong),
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(regexp.QuoteMeta("ON CONFLICT (decision_id, event_type, event_key) DO NOTHING")).
+		WithArgs(
+			"decision-1",
+			service.ContentModerationOutboxEventLogWrite,
+			"",
+			service.ContentModerationOutboxPriorityStrong,
+			sqlmock.AnyArg(),
+			service.ContentModerationOutboxDefaultMaxRetries(service.ContentModerationOutboxPriorityStrong),
+		).
+		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit()
 
-	err = repo.EnqueueEvents(context.Background(), []service.ContentModerationOutboxEvent{{
+	event := service.ContentModerationOutboxEvent{
 		DecisionID: "decision-1",
 		EventType:  service.ContentModerationOutboxEventLogWrite,
 		Priority:   service.ContentModerationOutboxPriorityStrong,
 		Payload:    map[string]any{"ok": true},
-	}})
+	}
+	inserted, err := repo.EnqueueEvents(context.Background(), []service.ContentModerationOutboxEvent{event, event})
 
 	require.NoError(t, err)
+	require.Equal(t, 1, inserted)
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestContentModerationOutboxRepositoryUnavailableDoesNotReportSuccess(t *testing.T) {
+	repo := NewContentModerationOutboxRepository(nil)
+	event := service.ContentModerationOutboxEvent{
+		DecisionID: "decision-unavailable",
+		EventType:  service.ContentModerationOutboxEventLogWrite,
+		Priority:   service.ContentModerationOutboxPriorityStrong,
+		Payload:    map[string]any{"ok": true},
+	}
+
+	inserted, err := repo.EnqueueEvents(context.Background(), []service.ContentModerationOutboxEvent{event})
+	require.Zero(t, inserted)
+	require.ErrorContains(t, err, "repository is unavailable")
+
+	events, err := repo.ClaimDueEvents(context.Background(), time.Now(), 1, time.Minute)
+	require.Nil(t, events)
+	require.ErrorContains(t, err, "repository is unavailable")
 }
 
 func TestContentModerationOutboxRepositoryClaimDueEventsLocksDueRows(t *testing.T) {
@@ -50,10 +80,11 @@ func TestContentModerationOutboxRepositoryClaimDueEventsLocksDueRows(t *testing.
 	now := time.Now()
 	created := now.Add(-time.Minute)
 	nextRetry := now.Add(-time.Second)
+	leaseUntil := now.Add(2 * time.Minute)
 	mock.ExpectQuery(regexp.QuoteMeta("FOR UPDATE SKIP LOCKED")).
-		WithArgs(now, 10, "120000 milliseconds").
+		WithArgs(10, "120000 milliseconds").
 		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "decision_id", "event_type", "event_key", "priority", "payload", "retry_count", "max_retries", "next_retry_at", "created_at",
+			"id", "decision_id", "event_type", "event_key", "priority", "payload", "retry_count", "max_retries", "next_retry_at", "created_at", "last_error", "locked_until",
 		}).AddRow(
 			int64(7),
 			"decision-1",
@@ -65,6 +96,8 @@ func TestContentModerationOutboxRepositoryClaimDueEventsLocksDueRows(t *testing.
 			5,
 			nextRetry,
 			created,
+			"temporary SMTP failure",
+			leaseUntil,
 		))
 
 	events, err := repo.ClaimDueEvents(context.Background(), now, 10, 2*time.Minute)
@@ -74,6 +107,8 @@ func TestContentModerationOutboxRepositoryClaimDueEventsLocksDueRows(t *testing.
 	require.Equal(t, int64(7), events[0].ID)
 	require.Equal(t, service.ContentModerationOutboxEventEmail, events[0].EventType)
 	require.Equal(t, "violation", events[0].Payload["email_kind"])
+	require.Equal(t, "temporary SMTP failure", events[0].LastError)
+	require.Equal(t, leaseUntil, events[0].LeaseUntil)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -84,15 +119,43 @@ func TestContentModerationOutboxRepositoryRetryAndDeadLetterUpdatesStatus(t *tes
 
 	repo := NewContentModerationOutboxRepository(db)
 	next := time.Now().Add(time.Minute)
+	leaseUntil := time.Now().Add(2 * time.Minute)
 	mock.ExpectExec(regexp.QuoteMeta("SET status = 'retry'")).
-		WithArgs(int64(7), 2, next, "temporary").
+		WithArgs(int64(7), leaseUntil, 2, next, "temporary").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(regexp.QuoteMeta("SET status = 'dead_letter'")).
-		WithArgs(int64(7), "permanent").
+		WithArgs(int64(7), leaseUntil, "permanent").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	require.NoError(t, repo.ScheduleEventRetry(context.Background(), 7, 2, next, "temporary"))
-	require.NoError(t, repo.MarkEventDeadLetter(context.Background(), 7, "permanent"))
+	require.NoError(t, repo.ScheduleEventRetry(context.Background(), 7, leaseUntil, 2, next, "temporary"))
+	require.NoError(t, repo.MarkEventDeadLetter(context.Background(), 7, leaseUntil, "permanent"))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestContentModerationOutboxRepositoryRejectsStaleLeaseUpdates(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := NewContentModerationOutboxRepository(db)
+	leaseUntil := time.Now().Add(2 * time.Minute)
+	next := time.Now().Add(time.Minute)
+	mock.ExpectExec(regexp.QuoteMeta("AND locked_until = $2")).
+		WithArgs(int64(7), leaseUntil).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(regexp.QuoteMeta("AND locked_until = $2")).
+		WithArgs(int64(7), leaseUntil, 2, next, "temporary").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(regexp.QuoteMeta("AND locked_until = $2")).
+		WithArgs(int64(7), leaseUntil, "permanent").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	err = repo.MarkEventSucceeded(context.Background(), 7, leaseUntil)
+	require.ErrorIs(t, err, service.ErrContentModerationOutboxLeaseLost)
+	err = repo.ScheduleEventRetry(context.Background(), 7, leaseUntil, 2, next, "temporary")
+	require.ErrorIs(t, err, service.ErrContentModerationOutboxLeaseLost)
+	err = repo.MarkEventDeadLetter(context.Background(), 7, leaseUntil, "permanent")
+	require.ErrorIs(t, err, service.ErrContentModerationOutboxLeaseLost)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

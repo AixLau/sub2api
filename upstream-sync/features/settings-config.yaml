@@ -1,0 +1,55 @@
+schema_version: 1
+id: SETTINGS-001
+name: Product settings and runtime configuration
+purpose: Preserve local configuration defaults, validation, persistence, secret handling, and admin settings APIs.
+risk: critical
+paths:
+  - backend/internal/config/**
+  - backend/internal/service/setting*.go
+  - backend/internal/handler/admin/setting*.go
+  - frontend/src/views/admin/SettingsView.vue
+  - frontend/src/components/settings/**
+symbols:
+  - Config
+  - SettingService
+  - UpdateSettingsRequest
+routes:
+  - GET /api/v1/admin/settings
+  - PUT /api/v1/admin/settings
+config_keys:
+  - content_moderation
+  - payment
+  - admin_usage_excluded_users
+  - auth_source_defaults
+environment:
+  - CONFIG_FILE
+json_fields:
+  - content_moderation
+  - payment
+  - auth_source_defaults
+database_fields:
+  - settings.key
+  - settings.value
+api_fields:
+  - settings
+invariants:
+  - Missing values use explicit defaults while an explicit false or empty value follows the field contract.
+  - Secrets are never returned in plaintext and an omitted secret preserves the stored value.
+tests:
+  - kind: go
+    files:
+      - backend/internal/service/setting_service_auth_source_defaults_test.go
+    command: "cd backend && GOMAXPROCS=2 go test -p 2 ./internal/config ./internal/service ./internal/handler/admin -run 'Setting|Config|AuthSourceDefault' -count=1"
+  - kind: vue
+    files:
+      - frontend/src/views/admin/__tests__/SettingsView.spec.ts
+    command: "pnpm --dir frontend exec vitest related --run --maxWorkers=2 frontend/src/views/admin/SettingsView.vue"
+introduced_by:
+  - 6d12d35e9b621f50d1c8d8f09ab0da4e4dfe841e
+merge_strategy: combine
+watch:
+  - config_key
+  - environment
+  - default
+  - validation
+  - secret

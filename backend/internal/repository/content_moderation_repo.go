@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -328,12 +329,19 @@ func (r *contentModerationRepository) CountFlaggedByUserSince(ctx context.Contex
 	}
 	// SQL 中的 'cyber_policy' 字面量须与 service.ContentModerationActionCyberPolicy 保持一致。
 	// pending/false_positive 不是已确认违规；空 review_status 是旧日志，仍沿用原计数语义。
+	// candidate 日志仅在证据可归责或经人工确认后计数；空 source_origin 保留旧日志兼容性。
 	var count int
 	err := r.db.QueryRowContext(ctx, `
 WITH last_auto_ban AS (
     SELECT MAX(created_at) AS at
     FROM content_moderation_logs
     WHERE user_id = $1 AND auto_banned = TRUE
+      AND (COALESCE(mode, '') <> 'observe' OR review_status = 'confirmed_violation')
+      AND (
+          COALESCE(source_origin, '') = ''
+          OR user_violation_eligible = TRUE
+          OR review_status = 'confirmed_violation'
+      )
 )
 SELECT COUNT(*)
 FROM content_moderation_logs
@@ -344,6 +352,12 @@ WHERE user_id = $1
   AND (action <> 'semantic_review_deferred' OR review_status = 'confirmed_violation')
   AND action NOT IN ('prompt_filter_observe', 'prompt_filter_warn', 'prompt_filter_review')
   AND COALESCE(review_status, '') NOT IN ('pending', 'false_positive')
+  AND (COALESCE(mode, '') <> 'observe' OR review_status = 'confirmed_violation')
+  AND (
+      COALESCE(source_origin, '') = ''
+      OR user_violation_eligible = TRUE
+      OR review_status = 'confirmed_violation'
+  )
   AND ($3::bool IS FALSE OR action <> 'cyber_policy')
   AND created_at >= $2
   AND created_at > COALESCE((SELECT at FROM last_auto_ban), '-infinity'::timestamptz)
@@ -366,33 +380,225 @@ func (r *contentModerationRepository) UpdateLogViolationCountByDecisionID(ctx co
 	if strings.TrimSpace(decisionID) == "" {
 		return nil
 	}
-	_, err := r.db.ExecContext(ctx, `UPDATE content_moderation_logs SET violation_count = $1 WHERE decision_id = $2`, count, decisionID)
+	result, err := r.db.ExecContext(ctx, `
+UPDATE content_moderation_logs
+SET violation_count = GREATEST(COALESCE(violation_count, 0), $1)
+WHERE decision_id = $2
+`, count, decisionID)
 	if err != nil {
 		return fmt.Errorf("update content moderation log violation_count: %w", err)
 	}
-	return nil
+	return requireSingleContentModerationLogUpdate(result, "update content moderation log violation_count")
 }
 
 func (r *contentModerationRepository) UpdateLogAccountActionByDecisionID(ctx context.Context, decisionID string, violationCount int, autoBanned bool) error {
 	if strings.TrimSpace(decisionID) == "" {
 		return nil
 	}
-	_, err := r.db.ExecContext(ctx, `UPDATE content_moderation_logs SET violation_count = $1, auto_banned = $2 WHERE decision_id = $3`, violationCount, autoBanned, decisionID)
+	result, err := r.db.ExecContext(ctx, `
+UPDATE content_moderation_logs
+SET violation_count = GREATEST(COALESCE(violation_count, 0), $1),
+    auto_banned = COALESCE(auto_banned, FALSE) OR $2
+WHERE decision_id = $3
+`, violationCount, autoBanned, decisionID)
 	if err != nil {
 		return fmt.Errorf("update content moderation log account action: %w", err)
 	}
-	return nil
+	return requireSingleContentModerationLogUpdate(result, "update content moderation log account action")
 }
 
 func (r *contentModerationRepository) UpdateLogEmailSentByDecisionID(ctx context.Context, decisionID string, sent bool) error {
 	if strings.TrimSpace(decisionID) == "" {
 		return nil
 	}
-	_, err := r.db.ExecContext(ctx, `UPDATE content_moderation_logs SET email_sent = $1 WHERE decision_id = $2`, sent, decisionID)
+	result, err := r.db.ExecContext(ctx, `UPDATE content_moderation_logs SET email_sent = $1 WHERE decision_id = $2`, sent, decisionID)
 	if err != nil {
 		return fmt.Errorf("update content moderation log email_sent by decision: %w", err)
 	}
+	return requireSingleContentModerationLogUpdate(result, "update content moderation log email_sent by decision")
+}
+
+func requireSingleContentModerationLogUpdate(result sql.Result, operation string) error {
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("%s result: %w", operation, err)
+	}
+	if affected != 1 {
+		return fmt.Errorf("%s: expected 1 row, updated %d", operation, affected)
+	}
 	return nil
+}
+
+func (r *contentModerationRepository) GetLogAutoBannedByDecisionID(ctx context.Context, decisionID string) (bool, error) {
+	if strings.TrimSpace(decisionID) == "" {
+		return false, nil
+	}
+	var autoBanned bool
+	err := r.db.QueryRowContext(ctx, `
+SELECT auto_banned
+FROM content_moderation_logs
+WHERE decision_id = $1
+`, decisionID).Scan(&autoBanned)
+	if err != nil {
+		return false, fmt.Errorf("get content moderation log auto_banned by decision: %w", err)
+	}
+	return autoBanned, nil
+}
+
+func (r *contentModerationRepository) GetLogNotificationDeliveredByDecisionID(ctx context.Context, decisionID, kind string) (bool, error) {
+	if strings.TrimSpace(decisionID) == "" || strings.TrimSpace(kind) == "" {
+		return false, nil
+	}
+	var delivered bool
+	err := r.db.QueryRowContext(ctx, `
+SELECT COALESCE(metadata->'notification_deliveries'->>$2, '') = 'true'
+FROM content_moderation_logs
+WHERE decision_id = $1
+`, decisionID, kind).Scan(&delivered)
+	if err != nil {
+		return false, fmt.Errorf("get content moderation notification delivery state: %w", err)
+	}
+	return delivered, nil
+}
+
+func (r *contentModerationRepository) MarkLogNotificationDeliveredByDecisionID(ctx context.Context, decisionID, kind string, emailSent bool) error {
+	if strings.TrimSpace(decisionID) == "" || strings.TrimSpace(kind) == "" {
+		return nil
+	}
+	result, err := r.db.ExecContext(ctx, `
+UPDATE content_moderation_logs
+SET metadata = jsonb_set(
+	        CASE
+	            WHEN jsonb_typeof(metadata) = 'object' THEN metadata
+	            ELSE '{}'::jsonb
+	        END,
+	        '{notification_deliveries}',
+	        (
+	            CASE
+	                WHEN jsonb_typeof(metadata->'notification_deliveries') = 'object'
+	                    THEN metadata->'notification_deliveries'
+	                ELSE '{}'::jsonb
+	            END
+	        ) || jsonb_build_object($1, TRUE),
+	        TRUE
+	    ),
+    email_sent = COALESCE(email_sent, FALSE) OR $2
+WHERE decision_id = $3
+`, kind, emailSent, decisionID)
+	if err != nil {
+		return fmt.Errorf("mark content moderation notification delivered: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read content moderation notification delivery update result: %w", err)
+	}
+	if affected != 1 {
+		return fmt.Errorf("mark content moderation notification delivered: decision %q not found", decisionID)
+	}
+	return nil
+}
+
+func (r *contentModerationRepository) ReplaceSemanticReviewDeadLetterByDecisionID(ctx context.Context, log *service.ContentModerationLog) (bool, error) {
+	if log == nil || strings.TrimSpace(log.DecisionID) == "" {
+		return false, nil
+	}
+	categoryScores, err := json.Marshal(log.CategoryScores)
+	if err != nil {
+		return false, fmt.Errorf("marshal moderation category scores: %w", err)
+	}
+	thresholdSnapshot, err := json.Marshal(log.ThresholdSnapshot)
+	if err != nil {
+		return false, fmt.Errorf("marshal moderation thresholds: %w", err)
+	}
+	metadata := log.Metadata
+	if len(metadata) == 0 {
+		metadata = json.RawMessage(`{}`)
+	}
+	var metadataObject map[string]any
+	if err := json.Unmarshal(metadata, &metadataObject); err != nil || metadataObject == nil {
+		return false, fmt.Errorf("invalid moderation metadata JSON")
+	}
+	truncateReasons := log.TruncateReasons
+	if truncateReasons == nil {
+		truncateReasons = []string{}
+	}
+	truncateReasonsJSON, err := json.Marshal(truncateReasons)
+	if err != nil {
+		return false, fmt.Errorf("marshal moderation truncate reasons: %w", err)
+	}
+	err = r.db.QueryRowContext(ctx, `
+UPDATE content_moderation_logs
+SET action = $1,
+    flagged = $2,
+    highest_category = $3,
+    highest_score = $4,
+    category_scores = $5::jsonb,
+    threshold_snapshot = $6::jsonb,
+    input_excerpt = $7,
+    upstream_latency_ms = $8,
+    error = $9,
+    metadata = $10::jsonb,
+    keyword_category = $11,
+    keyword_severity = $12,
+    effective_keyword_action = $13,
+    risk_context_type = $14,
+    risk_context_reason = $15,
+    review_status = CASE WHEN reviewed_at IS NULL THEN $16 ELSE review_status END,
+    decision_source = $17,
+    moderation_provider = $18,
+    moderation_model = $19,
+    source_origin = $20,
+    selected_source = $21,
+    selected_source_role = $22,
+    selected_fragment_runes = $23,
+    user_violation_eligible = $24,
+    truncate_reasons = $25::jsonb,
+    queue_delay_ms = COALESCE($26, queue_delay_ms),
+    decision_cache_hit = decision_cache_hit OR $27,
+    duplicate_retry_count = GREATEST(duplicate_retry_count, $28)
+WHERE decision_id = $29
+  AND action = 'error'
+  AND decision_source = 'semantic_review'
+  AND reviewed_at IS NULL
+RETURNING id, created_at
+`,
+		log.Action,
+		log.Flagged,
+		log.HighestCategory,
+		log.HighestScore,
+		string(categoryScores),
+		string(thresholdSnapshot),
+		log.InputExcerpt,
+		nullableIntPtr(log.UpstreamLatencyMS),
+		log.Error,
+		string(metadata),
+		log.KeywordCategory,
+		log.KeywordSeverity,
+		log.EffectiveKeywordAction,
+		log.RiskContextType,
+		log.RiskContextReason,
+		log.ReviewStatus,
+		log.DecisionSource,
+		log.ModerationProvider,
+		log.ModerationModel,
+		log.SourceOrigin,
+		log.SelectedSource,
+		log.SelectedSourceRole,
+		log.SelectedFragmentRunes,
+		log.UserViolationEligible,
+		string(truncateReasonsJSON),
+		nullableIntPtr(log.QueueDelayMS),
+		log.DecisionCacheHit,
+		log.DuplicateRetryCount,
+		log.DecisionID,
+	).Scan(&log.ID, &log.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("replace semantic review dead-letter log: %w", err)
+	}
+	return true, nil
 }
 
 func (r *contentModerationRepository) CreateRawRequestSnapshot(ctx context.Context, snapshot *service.ContentModerationRawRequestSnapshot) error {

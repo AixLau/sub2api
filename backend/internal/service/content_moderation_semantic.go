@@ -277,19 +277,35 @@ func (s *ContentModerationService) enqueueSemanticReviewEvent(
 	}
 	outboxRepo := s.contentModerationOutboxRepository()
 	if outboxRepo == nil || s.rawRequestEncryptor == nil {
+		s.asyncDropped.Add(1)
+		s.asyncErrors.Add(1)
 		slog.Warn("content_moderation.semantic_review_enqueue_unavailable", "request_id", input.RequestID, "reason", "encrypted_outbox_unavailable")
 		return false
 	}
-	textToReview := buildContentModerationSemanticReviewInput(cfg.SemanticReview, content, focusKeyword)
+	textToReview, evidenceComplete := buildContentModerationSemanticReviewEvidence(cfg.SemanticReview, content, focusKeyword)
 	if strings.TrimSpace(textToReview) == "" {
+		s.asyncDropped.Add(1)
 		return false
 	}
 	encrypted, err := s.rawRequestEncryptor.Encrypt(textToReview)
 	if err != nil {
+		s.asyncDropped.Add(1)
+		s.asyncErrors.Add(1)
 		slog.Warn("content_moderation.semantic_review_encrypt_failed", "request_id", input.RequestID, "error", err)
 		return false
 	}
-	decisionID := semanticReviewDecisionID(input, inputHash)
+	policyRevision := strings.TrimSpace(input.policyRevision)
+	if policyRevision == "" {
+		policyRevision = contentModerationPolicyRevision(true, cfg)
+	}
+	decisionID := semanticReviewDecisionID(
+		input,
+		inputHash,
+		policyRevision,
+		semanticReviewInstructionsRevision,
+		semanticReviewSchemaRevision,
+		"general-semantic-evidence-v2",
+	)
 	payload := contentModerationOutboxPayload{
 		Config:    safeContentModerationConfigForOutbox(cfg),
 		InputHash: inputHash,
@@ -299,8 +315,8 @@ func (s *ContentModerationService) enqueueSemanticReviewEvent(
 			Input:            contentModerationSemanticReviewOutboxInputFromCheck(input),
 			TextEncrypted:    encrypted,
 			ReviewKind:       contentModerationReviewKindGeneral,
-			EvidenceComplete: !content.Truncated && content.Extraction.Complete,
-			EvidenceRevision: "general-semantic-evidence-v1",
+			EvidenceComplete: evidenceComplete,
+			EvidenceRevision: "general-semantic-evidence-v2",
 			ContextOnly:      semanticReviewEvidenceContextOnly(cfg.SemanticReview, content, focusKeyword),
 			MaxInputRunes:    cfg.SemanticReview.MaxInputRunes,
 		},
@@ -308,58 +324,155 @@ func (s *ContentModerationService) enqueueSemanticReviewEvent(
 	event := newContentModerationOutboxEvent(decisionID, ContentModerationOutboxEventSemanticReview, inputHash, ContentModerationOutboxPriorityStrong, payload)
 	enqueueCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if err := outboxRepo.EnqueueEvents(enqueueCtx, []ContentModerationOutboxEvent{event}); err != nil {
+	inserted, err := outboxRepo.EnqueueEvents(enqueueCtx, []ContentModerationOutboxEvent{event})
+	if err != nil {
+		s.asyncDropped.Add(1)
+		s.asyncErrors.Add(1)
 		slog.Warn("content_moderation.semantic_review_enqueue_failed", "request_id", input.RequestID, "error", err)
+		return false
+	}
+	if inserted == 0 {
 		return false
 	}
 	s.asyncEnqueued.Add(1)
 	return true
 }
 
+type contentModerationSemanticReviewBuildResult struct {
+	Text     string
+	Complete bool
+}
+
 func buildContentModerationSemanticReviewInput(cfg ContentModerationSemanticReviewConfig, content ContentModerationInput, keyword string) string {
+	return buildContentModerationSemanticReviewInputResult(cfg, content, keyword).Text
+}
+
+func buildContentModerationSemanticReviewEvidence(cfg ContentModerationSemanticReviewConfig, content ContentModerationInput, keyword string) (string, bool) {
+	result := buildContentModerationSemanticReviewInputResult(cfg, content, keyword)
+	if content.Truncated || len(content.TruncateReasons) > 0 {
+		result.Complete = false
+	}
+	extractionPresent := len(content.Extraction.Sources) > 0 ||
+		len(content.Extraction.TruncateReasons) > 0 ||
+		content.Extraction.TotalRunes > 0
+	if extractionPresent && !content.Extraction.Complete {
+		result.Complete = false
+	}
+	return result.Text, result.Complete
+}
+
+func buildContentModerationSemanticReviewInputResult(cfg ContentModerationSemanticReviewConfig, content ContentModerationInput, keyword string) contentModerationSemanticReviewBuildResult {
 	cfg = normalizeContentModerationSemanticReviewConfig(cfg)
-	sources := selectContentModerationSemanticReviewSources(cfg, content, keyword)
+	sources, sourcesComplete := selectContentModerationSemanticReviewSourcesWithCompleteness(cfg, content, keyword)
+	result := contentModerationSemanticReviewBuildResult{Complete: sourcesComplete}
 	if len(sources) == 0 {
 		if len(content.Sources) > 0 && normalizeContentModerationSemanticReviewTrigger(cfg.Trigger) == ContentModerationSemanticReviewTriggerAll {
-			return ""
+			return result
 		}
 		text := content.Text
 		if strings.TrimSpace(keyword) != "" {
+			if len([]rune(text)) > contentModerationSemanticReviewExcerptRunes {
+				result.Complete = false
+			}
 			text = semanticReviewExcerptAroundKeyword(text, keyword, contentModerationSemanticReviewExcerptRunes)
 		}
-		return trimRunes(redactContentModerationSecrets(text), cfg.MaxInputRunes)
+		text = redactContentModerationSecrets(text)
+		if len([]rune(text)) > cfg.MaxInputRunes {
+			result.Complete = false
+		}
+		result.Text = trimRunes(text, cfg.MaxInputRunes)
+		return result
 	}
 
 	var b strings.Builder
+	writtenRunes := 0
 	for _, source := range sources {
-		header := fmt.Sprintf("[source=%s role=%s]\n", strings.TrimSpace(source.Source), strings.TrimSpace(source.Role))
-		role := strings.ToLower(strings.TrimSpace(source.Role))
-		if role == "tool" || role == "function" {
-			header = fmt.Sprintf("[source=%s role=tool evidence=context_only]\n", strings.TrimSpace(source.Source))
-		} else if role == "context" {
-			header = fmt.Sprintf("[source=%s role=context evidence=context_only]\n", strings.TrimSpace(source.Source))
+		if source.Truncated || len(source.TruncateReasons) > 0 {
+			result.Complete = false
 		}
-		remaining := cfg.MaxInputRunes - len([]rune(b.String())) - len([]rune(header))
-		if remaining <= 0 {
+		separator := ""
+		if b.Len() > 0 {
+			separator = "\n\n"
+		}
+		available := cfg.MaxInputRunes - writtenRunes - len([]rune(separator))
+		if available <= 0 {
+			result.Complete = false
 			break
 		}
 		text := source.Text
+		if len([]rune(text)) > contentModerationSemanticReviewExcerptRunes {
+			result.Complete = false
+		}
 		if strings.TrimSpace(keyword) != "" && strings.Contains(strings.ToLower(text), strings.ToLower(keyword)) {
 			text = semanticReviewExcerptAroundKeyword(text, keyword, contentModerationSemanticReviewExcerptRunes)
 		} else {
 			text = trimRunes(text, contentModerationSemanticReviewExcerptRunes)
 		}
-		text = trimRunes(redactContentModerationSecrets(text), remaining)
+		text = redactContentModerationSecrets(text)
 		if strings.TrimSpace(text) == "" {
+			if strings.TrimSpace(source.Text) != "" {
+				result.Complete = false
+			}
 			continue
 		}
-		if b.Len() > 0 {
-			b.WriteString("\n\n")
+		header, headerComplete := contentModerationSemanticReviewSourceHeader(source)
+		if !headerComplete {
+			result.Complete = false
 		}
+		maxHeaderRunes := available - min(len([]rune(text)), available)
+		if len([]rune(header)) > maxHeaderRunes {
+			// Source metadata is diagnostic; never let client-controlled role or
+			// source labels consume the entire semantic evidence budget.
+			header = ""
+			result.Complete = false
+		}
+		remaining := available - len([]rune(header))
+		if len([]rune(text)) > remaining {
+			result.Complete = false
+		}
+		text = trimRunes(text, remaining)
+		b.WriteString(separator)
 		b.WriteString(header)
 		b.WriteString(text)
+		writtenRunes += len([]rune(separator)) + len([]rune(header)) + len([]rune(text))
 	}
-	return trimRunes(b.String(), cfg.MaxInputRunes)
+	result.Text = b.String()
+	return result
+}
+
+func contentModerationSemanticReviewSourceHeader(source ContentModerationInputSource) (string, bool) {
+	const (
+		maxSourceRunes = 160
+		maxRoleRunes   = 48
+	)
+	sourceName, sourceComplete := contentModerationSemanticReviewHeaderField(source.Source, maxSourceRunes)
+	roleName, roleComplete := contentModerationSemanticReviewHeaderField(source.Role, maxRoleRunes)
+	role := strings.ToLower(roleName)
+	switch role {
+	case "tool", "function":
+		return fmt.Sprintf("[source=%s role=tool evidence=context_only]\n", sourceName), sourceComplete && roleComplete
+	case "context":
+		return fmt.Sprintf("[source=%s role=context evidence=context_only]\n", sourceName), sourceComplete && roleComplete
+	default:
+		return fmt.Sprintf("[source=%s role=%s]\n", sourceName, roleName), sourceComplete && roleComplete
+	}
+}
+
+func contentModerationSemanticReviewHeaderField(value string, maxRunes int) (string, bool) {
+	trimmed := strings.TrimSpace(value)
+	compact := strings.Join(strings.Fields(trimmed), " ")
+	complete := compact == trimmed && len([]rune(compact)) <= maxRunes
+	return trimRunes(compact, maxRunes), complete
+}
+
+func contentModerationSemanticReviewEvidenceComplete(
+	cfg ContentModerationSemanticReviewConfig,
+	content ContentModerationInput,
+	keyword string,
+	reviewText string,
+) bool {
+	builtText, complete := buildContentModerationSemanticReviewEvidence(cfg, content, keyword)
+	return complete && reviewText == builtText
 }
 
 // contentModerationKeywordFocusedInput keeps the ordinary moderation API and
@@ -387,11 +500,16 @@ func contentModerationKeywordFocusedInput(content ContentModerationInput, keywor
 }
 
 func selectContentModerationSemanticReviewSources(cfg ContentModerationSemanticReviewConfig, content ContentModerationInput, keyword string) []ContentModerationInputSource {
+	selected, _ := selectContentModerationSemanticReviewSourcesWithCompleteness(cfg, content, keyword)
+	return selected
+}
+
+func selectContentModerationSemanticReviewSourcesWithCompleteness(cfg ContentModerationSemanticReviewConfig, content ContentModerationInput, keyword string) ([]ContentModerationInputSource, bool) {
 	if len(content.Sources) == 0 {
-		return nil
+		return nil, true
 	}
 	if strings.TrimSpace(keyword) != "" {
-		selected := make([]ContentModerationInputSource, 0, contentModerationSemanticReviewMaxSources)
+		matchedSources := make([]ContentModerationInputSource, 0, len(content.Sources))
 		for _, source := range content.Sources {
 			matched := strings.Contains(strings.ToLower(source.Text), strings.ToLower(keyword))
 			if !matched {
@@ -399,26 +517,28 @@ func selectContentModerationSemanticReviewSources(cfg ContentModerationSemanticR
 				matched = len(verdict.Matches) > 0
 			}
 			if matched {
-				selected = append(selected, source)
-				if len(selected) == contentModerationSemanticReviewMaxSources {
-					break
-				}
+				matchedSources = append(matchedSources, source)
 			}
 		}
-		if len(selected) > 0 {
-			return selected
+		if len(matchedSources) > 0 {
+			return boundedContentModerationSemanticReviewSources(matchedSources)
 		}
 	}
 	if normalizeContentModerationSemanticReviewTrigger(cfg.Trigger) == ContentModerationSemanticReviewTriggerAll {
-		// General semantic review classifies the latest user request. Tool output
-		// is ambient evidence and must not independently establish user intent.
+		// General semantic review classifies the latest direct client request.
+		// Unknown client-supplied roles are untrusted user evidence; known
+		// assistant/tool/system context must not independently establish intent.
 		selected := make([]ContentModerationInputSource, 0, 1)
 		for i := len(content.Sources) - 1; i >= 0; i-- {
-			role := strings.ToLower(strings.TrimSpace(content.Sources[i].Role))
-			if role == "user" {
-				selected = append(selected, semanticReviewLatestUserTurnSource(content.Sources, i))
-				break
+			if !isSemanticReviewDirectUserEvidence(content.Sources[i]) {
+				continue
 			}
+			if strings.EqualFold(strings.TrimSpace(content.Sources[i].Role), "user") {
+				selected = append(selected, semanticReviewLatestUserTurnSource(content.Sources, i))
+			} else {
+				selected = append(selected, content.Sources[i])
+			}
+			break
 		}
 		if len(selected) == 0 {
 			for i := len(content.Sources) - 1; i >= 0; i-- {
@@ -428,10 +548,10 @@ func selectContentModerationSemanticReviewSources(cfg ContentModerationSemanticR
 				}
 			}
 		}
-		return selected
+		return selected, true
 	}
 
-	selected := make([]ContentModerationInputSource, 0, contentModerationSemanticReviewMaxSources)
+	matchedSources := make([]ContentModerationInputSource, 0, len(content.Sources))
 	for _, source := range content.Sources {
 		matched := strings.TrimSpace(keyword) != "" && strings.Contains(strings.ToLower(source.Text), strings.ToLower(keyword))
 		if !matched {
@@ -439,13 +559,45 @@ func selectContentModerationSemanticReviewSources(cfg ContentModerationSemanticR
 			matched = len(verdict.Matches) > 0
 		}
 		if matched {
-			selected = append(selected, source)
-			if len(selected) == contentModerationSemanticReviewMaxSources {
+			matchedSources = append(matchedSources, source)
+		}
+	}
+	return boundedContentModerationSemanticReviewSources(matchedSources)
+}
+
+func boundedContentModerationSemanticReviewSources(sources []ContentModerationInputSource) ([]ContentModerationInputSource, bool) {
+	if len(sources) <= contentModerationSemanticReviewMaxSources {
+		return append([]ContentModerationInputSource(nil), sources...), true
+	}
+
+	selectedIndexes := make(map[int]struct{}, contentModerationSemanticReviewMaxSources)
+	for index := len(sources) - 1; index >= 0 && len(selectedIndexes) < contentModerationSemanticReviewMaxSources; index-- {
+		selectedIndexes[index] = struct{}{}
+	}
+	latestDirectUserIndex := -1
+	for index := len(sources) - 1; index >= 0; index-- {
+		if isSemanticReviewDirectUserEvidence(sources[index]) {
+			latestDirectUserIndex = index
+			break
+		}
+	}
+	if _, selected := selectedIndexes[latestDirectUserIndex]; latestDirectUserIndex >= 0 && !selected {
+		for index := 0; index < len(sources); index++ {
+			if _, selected := selectedIndexes[index]; selected {
+				delete(selectedIndexes, index)
 				break
 			}
 		}
+		selectedIndexes[latestDirectUserIndex] = struct{}{}
 	}
-	return selected
+
+	selected := make([]ContentModerationInputSource, 0, contentModerationSemanticReviewMaxSources)
+	for index, source := range sources {
+		if _, ok := selectedIndexes[index]; ok {
+			selected = append(selected, source)
+		}
+	}
+	return selected, false
 }
 
 func semanticReviewEvidenceContextOnly(cfg ContentModerationSemanticReviewConfig, content ContentModerationInput, keyword string) bool {
@@ -454,11 +606,25 @@ func semanticReviewEvidenceContextOnly(cfg ContentModerationSemanticReviewConfig
 		return false
 	}
 	for _, source := range sources {
-		if strings.EqualFold(strings.TrimSpace(source.Role), "user") {
+		if isSemanticReviewDirectUserEvidence(source) {
 			return false
 		}
 	}
 	return true
+}
+
+func isSemanticReviewDirectUserEvidence(source ContentModerationInputSource) bool {
+	switch strings.ToLower(strings.TrimSpace(source.Role)) {
+	case "", "user":
+		return true
+	case "system", "developer", "assistant", "model", "tool", "function", "context":
+		return false
+	default:
+		// Extraction only contains client-supplied sources. Treating an unknown
+		// role as ambient context would let callers bypass trigger=all review by
+		// renaming the active user role.
+		return true
+	}
 }
 
 func semanticReviewLatestUserTurnSource(sources []ContentModerationInputSource, latest int) ContentModerationInputSource {
@@ -560,16 +726,24 @@ func shouldEnqueueSemanticReview(cfg *ContentModerationConfig, content ContentMo
 	}
 }
 
+type contentModerationSemanticReviewDeadLetterRepository interface {
+	ReplaceSemanticReviewDeadLetterByDecisionID(ctx context.Context, log *ContentModerationLog) (bool, error)
+}
+
 func (s *ContentModerationService) processContentModerationSemanticReviewEvent(ctx context.Context, payload contentModerationOutboxPayload) error {
-	if s == nil || s.semanticReviewRouter == nil || payload.SemanticReview == nil {
-		return errors.New("semantic review router is unavailable")
+	if s == nil {
+		return errors.New("content moderation service is unavailable")
+	}
+	fail := func(err error) error { return err }
+	if s.semanticReviewRouter == nil || payload.SemanticReview == nil {
+		return fail(errors.New("semantic review router is unavailable"))
 	}
 	if s.rawRequestEncryptor == nil {
-		return errors.New("semantic review decryptor is unavailable")
+		return fail(errors.New("semantic review decryptor is unavailable"))
 	}
 	textToReview, err := s.rawRequestEncryptor.Decrypt(payload.SemanticReview.TextEncrypted)
 	if err != nil {
-		return fmt.Errorf("decrypt semantic review input: %w", err)
+		return fail(fmt.Errorf("decrypt semantic review input: %w", err))
 	}
 	cfg := payload.Config
 	if cfg == nil {
@@ -591,7 +765,7 @@ func (s *ContentModerationService) processContentModerationSemanticReviewEvent(c
 		if s.metrics != nil {
 			s.metrics.observeSemanticReview(cfg.SemanticReview.PrimaryModel, "error", started, OpenAIUsage{})
 		}
-		return err
+		return fail(err)
 	}
 	if s.metrics != nil {
 		s.metrics.observeSemanticReview(result.Model, result.Verdict, started, result.Usage)
@@ -600,7 +774,7 @@ func (s *ContentModerationService) processContentModerationSemanticReviewEvent(c
 	if normalizeContentModerationReviewKind(semanticInput.ReviewKind) == contentModerationReviewKindPromptInjection {
 		result, policyOverride = applyPromptInjectionReviewPolicy(result, semanticInput.EvidenceComplete)
 	} else {
-		result, policyOverride = applySemanticReviewPolicy(result)
+		result, policyOverride = applySemanticReviewPolicyWithPromotion(result, semanticInput.EvidenceComplete)
 	}
 	result, attributionOverride := applySemanticReviewAttributionPolicy(result, payload.SemanticReview.ContextOnly)
 	policyOverride = policyOverride || attributionOverride
@@ -667,8 +841,81 @@ func (s *ContentModerationService) processContentModerationSemanticReviewEvent(c
 	log.EffectiveKeywordAction = action
 	latency := int(time.Since(started).Milliseconds())
 	log.UpstreamLatencyMS = &latency
-	s.persistContentModerationLog(ctx, cfg, log, payload.SemanticReview.InputHash, false, false)
-	s.asyncProcessed.Add(1)
+	if s.repo == nil {
+		return fail(errors.New("content moderation repository is unavailable"))
+	}
+	persistCtx, cancel := contentModerationDetachedContext(ctx, contentModerationPersistenceTimeout)
+	defer cancel()
+	replayRepo, ok := s.repo.(contentModerationSemanticReviewDeadLetterRepository)
+	if !ok {
+		return fail(errors.New("semantic review recovery repository is unavailable"))
+	}
+	replaced, err := replayRepo.ReplaceSemanticReviewDeadLetterByDecisionID(persistCtx, log)
+	if err != nil {
+		return fail(fmt.Errorf("replace semantic review dead-letter log: %w", err))
+	}
+	if !replaced {
+		if err := s.repo.CreateLog(persistCtx, log); err != nil {
+			return fail(fmt.Errorf("persist semantic review log: %w", err))
+		}
+	}
+	log.persisted = true
+	return nil
+}
+
+func (s *ContentModerationService) persistSemanticReviewDeadLetterLog(ctx context.Context, event ContentModerationOutboxEvent, processErr error) error {
+	if s == nil || s.repo == nil {
+		return errors.New("content moderation repository is unavailable")
+	}
+	if processErr == nil {
+		return errors.New("semantic review dead-letter error is missing")
+	}
+	payload, payloadErr := contentModerationOutboxPayloadFromMap(event.Payload)
+	if payloadErr != nil || payload.SemanticReview == nil {
+		if payloadErr != nil {
+			return fmt.Errorf("decode semantic review dead-letter payload: %w", payloadErr)
+		}
+		return errors.New("semantic review dead-letter payload is missing")
+	}
+	cfg := payload.Config
+	if cfg == nil {
+		cfg = defaultContentModerationConfig()
+	}
+	cfg.normalize()
+	input := payload.SemanticReview.Input.checkInput()
+	content := ContentModerationInput{}
+	if s.rawRequestEncryptor != nil {
+		if text, err := s.rawRequestEncryptor.Decrypt(payload.SemanticReview.TextEncrypted); err == nil {
+			content = ContentModerationInput{Text: text}
+			content.Normalize()
+		}
+	}
+	sanitizedErr := sanitizeSemanticReviewError(processErr.Error())
+	if sanitizedErr == "" {
+		sanitizedErr = "semantic review task failed"
+	}
+	log := s.buildContentModerationErrorLog(input, cfg, content, nil, nil, errors.New(sanitizedErr))
+	log.DecisionID = payload.SemanticReview.DecisionID
+	log.DecisionSource = contentModerationDecisionSourceSemantic
+	log.ModerationProvider = "platform_openai"
+	log.ModerationModel = strings.TrimSpace(cfg.SemanticReview.PrimaryModel)
+	if log.ModerationModel == "" {
+		log.ModerationModel = ContentModerationSemanticReviewPrimaryModel
+	}
+	log.RiskContextType = "semantic_review"
+	log.RiskContextReason = "semantic_review_dead_letter"
+	log.UserViolationEligible = false
+	log.Metadata = contentModerationMetadataRaw(marshalContentModerationMetadata(map[string]any{
+		"evidence_complete":  payload.SemanticReview.EvidenceComplete,
+		"evidence_revision":  payload.SemanticReview.EvidenceRevision,
+		"outbox_event_id":    event.ID,
+		"outbox_retry_count": event.RetryCount + 1,
+		"outbox_max_retries": event.MaxRetries,
+	}))
+	if err := s.repo.CreateLog(ctx, log); err != nil {
+		return fmt.Errorf("persist semantic review dead-letter log: %w", err)
+	}
+	log.persisted = true
 	return nil
 }
 
@@ -747,7 +994,7 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 	input.MaxOutputTokens = cfg.MaxOutputTokens
 	input.ReasoningEffort = cfg.ReasoningEffort
 	if strings.TrimSpace(input.Text) == "" {
-		return ContentModerationSemanticReviewResult{Verdict: "allow", Severity: "low"}, nil
+		return ContentModerationSemanticReviewResult{}, errors.New("semantic review input is empty")
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -1099,10 +1346,7 @@ func (e *ContentModerationSemanticReviewUpstreamError) Error() string {
 
 func sanitizeSemanticReviewError(value string) string {
 	value = redactContentModerationSecrets(strings.TrimSpace(value))
-	if len(value) > 240 {
-		return value[:240]
-	}
-	return value
+	return trimRunes(value, 240)
 }
 
 func normalizeSemanticReviewResult(result ContentModerationSemanticReviewResult) ContentModerationSemanticReviewResult {
@@ -1143,6 +1387,15 @@ func applySemanticReviewPolicy(result ContentModerationSemanticReviewResult) (Co
 
 func applySemanticReviewPolicyWithPromotion(result ContentModerationSemanticReviewResult, allowPromotion bool) (ContentModerationSemanticReviewResult, bool) {
 	result = normalizeSemanticReviewResult(result)
+	// A generic reviewer cannot make a terminal rejection from truncated or
+	// otherwise incomplete evidence. Keep the original severity visible in
+	// audit metadata and route the result to human review instead.
+	if !allowPromotion && result.Verdict == "reject" {
+		result.ModelSeverity = result.Severity
+		result.Verdict = "review"
+		result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "semantic_policy_incomplete_evidence")
+		return result, true
+	}
 	eligible := semanticReviewPolicyRejectEligible(result)
 	// Allow-direction downgrades share the allowPromotion evidence gate: when
 	// evidence is incomplete (e.g. truncated candidate text), a model review
@@ -1262,12 +1515,20 @@ func semanticReviewHasExplicitDeceptionEvidence(result ContentModerationSemantic
 }
 
 func applySemanticReviewAttributionPolicy(result ContentModerationSemanticReviewResult, contextOnly bool) (ContentModerationSemanticReviewResult, bool) {
-	if !contextOnly || result.Verdict != "reject" {
+	if !contextOnly {
 		return result, false
 	}
-	result.Verdict = "review"
-	result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "semantic_policy_context_only")
-	return result, true
+	switch result.Verdict {
+	case "reject":
+		result.Verdict = "review"
+		result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "semantic_policy_context_only")
+		return result, true
+	case "review":
+		result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "semantic_policy_context_only")
+		return result, true
+	default:
+		return result, false
+	}
 }
 
 func semanticReviewPolicySafeFallbackVerdict(result ContentModerationSemanticReviewResult) string {
@@ -2277,13 +2538,17 @@ func NewOpenAIContentModerationSemanticReviewQuotaRefresher(
 	return &openAIContentModerationSemanticReviewQuotaRefresher{quota: quota, accountRepo: accountRepo}
 }
 
-func semanticReviewDecisionID(input ContentModerationCheckInput, inputHash string) string {
+func semanticReviewDecisionID(input ContentModerationCheckInput, inputHash string, policyIdentity ...string) string {
 	h := sha256.New()
 	_, _ = h.Write([]byte(strings.TrimSpace(input.RequestID)))
 	_, _ = h.Write([]byte("\x00"))
 	_, _ = h.Write([]byte(fmt.Sprint(input.UserID)))
 	_, _ = h.Write([]byte("\x00"))
 	_, _ = h.Write([]byte(inputHash))
+	for _, identity := range policyIdentity {
+		_, _ = h.Write([]byte("\x00"))
+		_, _ = h.Write([]byte(strings.TrimSpace(identity)))
+	}
 	digest := hex.EncodeToString(h.Sum(nil))
 	return "cm_semantic_" + digest[:32]
 }

@@ -1,5 +1,5 @@
 /**
- * 星链AI 落地页静态数据与文案，移植自 react-frontend/src/data/alwayzz.ts。
+ * 星链AI Vue 落地页静态数据与文案。
  * 落地页整体为该部署的品牌营销内容，文案保持与线上 React 版一致（中文硬编码）。
  */
 

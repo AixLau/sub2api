@@ -1,0 +1,42 @@
+schema_version: 1
+id: DEPLOY-001
+name: Deployment, reverse proxy, and runtime parameters
+purpose: Preserve local production topology, proxy behavior, health checks, and safe configuration examples.
+risk: high
+paths:
+  - deploy/**
+  - Dockerfile
+  - docker-compose*.yml
+  - backend/config.example.yaml
+symbols: []
+routes:
+  - /health
+  - /api
+config_keys:
+  - server
+  - redis
+  - database
+environment:
+  - CONFIG_FILE
+  - DATABASE_URL
+  - REDIS_URL
+json_fields: []
+database_fields: []
+api_fields: []
+invariants:
+  - Production secrets and runtime data are never copied into tracked examples or audit artifacts.
+  - Reverse proxy upgrades, streaming, request size, and health routes remain compatible with gateway traffic.
+tests:
+  - kind: shell
+    files:
+      - deploy/test-caddyfile-cache.sh
+    command: "/bin/sh deploy/test-caddyfile-cache.sh"
+introduced_by:
+  - e9008524d
+merge_strategy: preserve_local_runtime_overrides_and_merge_upstream_examples
+watch:
+  - proxy
+  - websocket
+  - streaming
+  - environment
+  - volume

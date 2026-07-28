@@ -1,0 +1,47 @@
+schema_version: 1
+id: REVENUE-001
+name: Net revenue and multi-currency statistics
+purpose: Report revenue by currency after gateway fees without mixing incompatible monetary units.
+risk: critical
+paths:
+  - backend/internal/service/payment_stats.go
+  - backend/internal/service/payment_service.go
+  - backend/internal/handler/admin/payment*.go
+  - frontend/src/views/admin/orders/AdminPaymentDashboardView.vue
+  - frontend/src/components/admin/payment/**
+symbols:
+  - PaymentService.GetDashboardStats
+  - computeBasicStats
+  - DashboardStats
+routes:
+  - GET /api/v1/admin/dashboard
+config_keys: []
+environment: []
+json_fields:
+  - currency
+  - pay_amount
+  - gateway_fee
+  - principal_amount
+database_fields:
+  - payment_orders.currency
+  - payment_orders.pay_amount
+  - payment_orders.gateway_fee
+api_fields:
+  - revenue_by_currency
+  - principal_amount
+invariants:
+  - Revenue subtracts gateway fees using the stored order currency.
+  - Amounts in different currencies are never added into one unlabeled total.
+tests:
+  - kind: go
+    files:
+      - backend/internal/service/dashboard_service_test.go
+    command: "cd backend && GOMAXPROCS=2 go test -p 2 ./internal/service ./internal/repository -run 'Dashboard|Revenue|Currency|Principal' -count=1"
+introduced_by:
+  - 9ad959a641c489ea4badcb37434e253350885489
+merge_strategy: preserve_net_revenue_and_combine_upstream_dimensions
+watch:
+  - aggregation
+  - currency
+  - gateway_fee
+  - dto_field

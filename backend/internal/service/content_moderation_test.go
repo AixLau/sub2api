@@ -116,12 +116,33 @@ type contentModerationTestRepo struct {
 	violationCountByDecision map[string]int
 	autoBannedByDecision     map[string]bool
 	emailSentByDecision      map[string]bool
+	deliveredByDecision      map[string]map[string]bool
 	nextID                   int64
 }
 
 type contentModerationDetachedPersistenceRepo struct {
 	contentModerationTestRepo
 	sawActiveContext atomic.Bool
+}
+
+type contentModerationFailingPersistenceRepo struct {
+	contentModerationTestRepo
+	createCalls atomic.Int64
+}
+
+func (r *contentModerationFailingPersistenceRepo) CreateLog(ctx context.Context, log *ContentModerationLog) error {
+	r.createCalls.Add(1)
+	return errors.New("audit log unavailable")
+}
+
+type contentModerationEmailSideEffectProbe struct {
+	contentModerationTestSettingRepo
+	getMultipleCalls atomic.Int64
+}
+
+func (r *contentModerationEmailSideEffectProbe) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
+	r.getMultipleCalls.Add(1)
+	return r.contentModerationTestSettingRepo.GetMultiple(ctx, keys)
 }
 
 func (r *contentModerationDetachedPersistenceRepo) CreateLog(ctx context.Context, log *ContentModerationLog) error {
@@ -144,6 +165,8 @@ func (r *contentModerationTestRepo) CreateLog(ctx context.Context, log *ContentM
 		}
 		for i := range r.logs {
 			if log.DecisionID != "" && r.logs[i].DecisionID == log.DecisionID {
+				log.ID = r.logs[i].ID
+				log.CreatedAt = r.logs[i].CreatedAt
 				if log.QueueDelayMS != nil {
 					r.logs[i].QueueDelayMS = log.QueueDelayMS
 				}
@@ -160,6 +183,37 @@ func (r *contentModerationTestRepo) CreateLog(ctx context.Context, log *ContentM
 	return nil
 }
 
+func (r *contentModerationTestRepo) ReplaceSemanticReviewDeadLetterByDecisionID(ctx context.Context, log *ContentModerationLog) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if log == nil {
+		return false, nil
+	}
+	for i := range r.logs {
+		existing := r.logs[i]
+		if existing.DecisionID != log.DecisionID ||
+			existing.Action != ContentModerationActionError ||
+			existing.DecisionSource != contentModerationDecisionSourceSemantic ||
+			existing.ReviewedAt != nil {
+			continue
+		}
+		log.ID = existing.ID
+		log.CreatedAt = existing.CreatedAt
+		log.ViolationCount = max(log.ViolationCount, existing.ViolationCount)
+		log.AutoBanned = log.AutoBanned || existing.AutoBanned
+		log.EmailSent = log.EmailSent || existing.EmailSent
+		if existing.ReviewedAt != nil {
+			log.ReviewStatus = existing.ReviewStatus
+			log.ReviewNote = existing.ReviewNote
+			log.ReviewedBy = existing.ReviewedBy
+			log.ReviewedAt = existing.ReviewedAt
+		}
+		r.logs[i] = *log
+		return true, nil
+	}
+	return false, nil
+}
+
 func (r *contentModerationTestRepo) ListLogs(ctx context.Context, filter ContentModerationLogFilter) ([]ContentModerationLog, *pagination.PaginationResult, error) {
 	return nil, nil, nil
 }
@@ -170,6 +224,24 @@ func (r *contentModerationTestRepo) CountFlaggedByUserSince(ctx context.Context,
 	count := 0
 	for _, log := range r.logs {
 		if log.UserID == nil || *log.UserID != userID || !log.Flagged || log.Action == ContentModerationActionHashBlock {
+			continue
+		}
+		if log.Action == ContentModerationActionKeywordReview ||
+			log.Action == ContentModerationActionPromptFilterObserve ||
+			log.Action == ContentModerationActionPromptFilterWarn ||
+			log.Action == ContentModerationActionPromptFilterReview {
+			continue
+		}
+		if log.Action == ContentModerationActionSemanticReviewDeferred && log.ReviewStatus != ContentModerationReviewStatusConfirmedViolation {
+			continue
+		}
+		if log.ReviewStatus == ContentModerationReviewStatusPending || log.ReviewStatus == ContentModerationReviewStatusFalsePositive {
+			continue
+		}
+		if log.Mode == ContentModerationModeObserve && log.ReviewStatus != ContentModerationReviewStatusConfirmedViolation {
+			continue
+		}
+		if log.SourceOrigin != "" && !log.UserViolationEligible && log.ReviewStatus != ContentModerationReviewStatusConfirmedViolation {
 			continue
 		}
 		if excludeCyberPolicy && log.Action == ContentModerationActionCyberPolicy {
@@ -215,15 +287,63 @@ func (r *contentModerationTestRepo) UpdateLogAccountActionByDecisionID(ctx conte
 	if r.autoBannedByDecision == nil {
 		r.autoBannedByDecision = map[string]bool{}
 	}
-	r.violationCountByDecision[decisionID] = violationCount
-	r.autoBannedByDecision[decisionID] = autoBanned
+	if violationCount > r.violationCountByDecision[decisionID] {
+		r.violationCountByDecision[decisionID] = violationCount
+	}
+	r.autoBannedByDecision[decisionID] = r.autoBannedByDecision[decisionID] || autoBanned
 	for i := range r.logs {
 		if r.logs[i].DecisionID == decisionID {
-			r.logs[i].ViolationCount = violationCount
-			r.logs[i].AutoBanned = autoBanned
+			if violationCount > r.logs[i].ViolationCount {
+				r.logs[i].ViolationCount = violationCount
+			}
+			r.logs[i].AutoBanned = r.logs[i].AutoBanned || autoBanned
 		}
 	}
 	return nil
+}
+
+func (r *contentModerationTestRepo) GetLogAutoBannedByDecisionID(ctx context.Context, decisionID string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.logs {
+		if r.logs[i].DecisionID == decisionID {
+			return r.logs[i].AutoBanned, nil
+		}
+	}
+	return false, errors.New("content moderation log not found")
+}
+
+func (r *contentModerationTestRepo) GetLogNotificationDeliveredByDecisionID(ctx context.Context, decisionID, kind string) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if byKind := r.deliveredByDecision[decisionID]; byKind != nil {
+		return byKind[kind], nil
+	}
+	for i := range r.logs {
+		if r.logs[i].DecisionID == decisionID {
+			return false, nil
+		}
+	}
+	return false, errors.New("content moderation log not found")
+}
+
+func (r *contentModerationTestRepo) MarkLogNotificationDeliveredByDecisionID(ctx context.Context, decisionID, kind string, emailSent bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.deliveredByDecision == nil {
+		r.deliveredByDecision = map[string]map[string]bool{}
+	}
+	if r.deliveredByDecision[decisionID] == nil {
+		r.deliveredByDecision[decisionID] = map[string]bool{}
+	}
+	r.deliveredByDecision[decisionID][kind] = true
+	for i := range r.logs {
+		if r.logs[i].DecisionID == decisionID {
+			r.logs[i].EmailSent = r.logs[i].EmailSent || emailSent
+			return nil
+		}
+	}
+	return errors.New("content moderation log not found")
 }
 
 func (r *contentModerationTestRepo) UpdateLogEmailSentByDecisionID(ctx context.Context, decisionID string, sent bool) error {
@@ -549,11 +669,123 @@ type contentModerationTestOutboxRepo struct {
 	succeeded []int64
 	retried   []int64
 	dead      []int64
+	claims    []int
 }
 
-func (r *contentModerationTestOutboxRepo) EnqueueEvents(ctx context.Context, events []ContentModerationOutboxEvent) error {
+type contentModerationStateContextOutboxRepo struct {
+	*contentModerationTestOutboxRepo
+	invalidStateContexts atomic.Int64
+}
+
+type contentModerationFailingAckOutboxRepo struct {
+	*contentModerationTestOutboxRepo
+}
+
+type contentModerationFailingOnceAckOutboxRepo struct {
+	*contentModerationTestOutboxRepo
+	failed atomic.Bool
+}
+
+type contentModerationFailingAccountDisabledEnqueueOutboxRepo struct {
+	*contentModerationTestOutboxRepo
+	failed atomic.Bool
+}
+
+type contentModerationFailingAccountActionWriteRepo struct {
+	contentModerationTestRepo
+	failed atomic.Bool
+}
+
+func (r *contentModerationFailingAccountActionWriteRepo) UpdateLogAccountActionByDecisionID(ctx context.Context, decisionID string, violationCount int, autoBanned bool) error {
+	if r.failed.CompareAndSwap(false, true) {
+		return errors.New("account action audit write unavailable")
+	}
+	return r.contentModerationTestRepo.UpdateLogAccountActionByDecisionID(ctx, decisionID, violationCount, autoBanned)
+}
+
+type contentModerationFailingNotificationDeliveryWriteRepo struct {
+	contentModerationTestRepo
+	failed atomic.Bool
+}
+
+func (r *contentModerationFailingNotificationDeliveryWriteRepo) MarkLogNotificationDeliveredByDecisionID(ctx context.Context, decisionID, kind string, emailSent bool) error {
+	if r.failed.CompareAndSwap(false, true) {
+		return errors.New("notification delivery audit write unavailable")
+	}
+	return r.contentModerationTestRepo.MarkLogNotificationDeliveredByDecisionID(ctx, decisionID, kind, emailSent)
+}
+
+func (r *contentModerationFailingAccountDisabledEnqueueOutboxRepo) EnqueueEvents(ctx context.Context, events []ContentModerationOutboxEvent) (int, error) {
+	for _, event := range events {
+		if event.EventType == ContentModerationOutboxEventEmail &&
+			event.EventKey == "account_disabled" &&
+			r.failed.CompareAndSwap(false, true) {
+			return 0, errors.New("account disabled email enqueue unavailable")
+		}
+	}
+	return r.contentModerationTestOutboxRepo.EnqueueEvents(ctx, events)
+}
+
+func (r *contentModerationFailingAckOutboxRepo) MarkEventSucceeded(context.Context, int64, time.Time) error {
+	return errors.New("outbox ack unavailable")
+}
+
+func (r *contentModerationFailingOnceAckOutboxRepo) MarkEventSucceeded(ctx context.Context, id int64, leaseUntil time.Time) error {
+	if r.failed.CompareAndSwap(false, true) {
+		return errors.New("outbox ack unavailable")
+	}
+	return r.contentModerationTestOutboxRepo.MarkEventSucceeded(ctx, id, leaseUntil)
+}
+
+func (r *contentModerationStateContextOutboxRepo) MarkEventSucceeded(ctx context.Context, id int64, leaseUntil time.Time) error {
+	if err := ctx.Err(); err != nil {
+		r.invalidStateContexts.Add(1)
+		return err
+	}
+	return r.contentModerationTestOutboxRepo.MarkEventSucceeded(ctx, id, leaseUntil)
+}
+
+func (r *contentModerationStateContextOutboxRepo) ScheduleEventRetry(ctx context.Context, id int64, leaseUntil time.Time, retryCount int, nextRetryAt time.Time, lastError string) error {
+	if err := ctx.Err(); err != nil {
+		r.invalidStateContexts.Add(1)
+		return err
+	}
+	return r.contentModerationTestOutboxRepo.ScheduleEventRetry(ctx, id, leaseUntil, retryCount, nextRetryAt, lastError)
+}
+
+func (r *contentModerationStateContextOutboxRepo) MarkEventDeadLetter(ctx context.Context, id int64, leaseUntil time.Time, lastError string) error {
+	if err := ctx.Err(); err != nil {
+		r.invalidStateContexts.Add(1)
+		return err
+	}
+	return r.contentModerationTestOutboxRepo.MarkEventDeadLetter(ctx, id, leaseUntil, lastError)
+}
+
+type contentModerationBlockingPersistenceRepo struct {
+	contentModerationTestRepo
+}
+
+func (r *contentModerationBlockingPersistenceRepo) CreateLog(ctx context.Context, log *ContentModerationLog) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+type contentModerationCancelingPersistenceRepo struct {
+	contentModerationTestRepo
+	cancel context.CancelFunc
+}
+
+func (r *contentModerationCancelingPersistenceRepo) CreateLog(ctx context.Context, log *ContentModerationLog) error {
+	if r.cancel != nil {
+		r.cancel()
+	}
+	return r.contentModerationTestRepo.CreateLog(ctx, log)
+}
+
+func (r *contentModerationTestOutboxRepo) EnqueueEvents(ctx context.Context, events []ContentModerationOutboxEvent) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	inserted := 0
 	for _, event := range events {
 		duplicate := false
 		for _, existing := range r.events {
@@ -571,8 +803,9 @@ func (r *contentModerationTestOutboxRepo) EnqueueEvents(ctx context.Context, eve
 			event.MaxRetries = ContentModerationOutboxDefaultMaxRetries(event.Priority)
 		}
 		r.events = append(r.events, event)
+		inserted++
 	}
-	return nil
+	return inserted, nil
 }
 
 func (r *contentModerationTestOutboxRepo) ClaimDueEvents(ctx context.Context, now time.Time, limit int, lockFor time.Duration) ([]ContentModerationOutboxEvent, error) {
@@ -581,6 +814,10 @@ func (r *contentModerationTestOutboxRepo) ClaimDueEvents(ctx context.Context, no
 	if limit <= 0 {
 		limit = len(r.events)
 	}
+	if lockFor <= 0 {
+		lockFor = contentModerationOutboxLockDuration
+	}
+	r.claims = append(r.claims, limit)
 	succeeded := map[int64]struct{}{}
 	for _, id := range r.succeeded {
 		succeeded[id] = struct{}{}
@@ -590,13 +827,22 @@ func (r *contentModerationTestOutboxRepo) ClaimDueEvents(ctx context.Context, no
 		dead[id] = struct{}{}
 	}
 	out := make([]ContentModerationOutboxEvent, 0, limit)
-	for _, event := range r.events {
+	for i := range r.events {
+		event := r.events[i]
 		if _, ok := succeeded[event.ID]; ok {
 			continue
 		}
 		if _, ok := dead[event.ID]; ok {
 			continue
 		}
+		if !event.NextRetryAt.IsZero() && event.NextRetryAt.After(now) {
+			continue
+		}
+		if !event.LeaseUntil.IsZero() && event.LeaseUntil.After(now) {
+			continue
+		}
+		event.LeaseUntil = now.Add(lockFor)
+		r.events[i].LeaseUntil = event.LeaseUntil
 		out = append(out, event)
 		if len(out) >= limit {
 			break
@@ -605,36 +851,82 @@ func (r *contentModerationTestOutboxRepo) ClaimDueEvents(ctx context.Context, no
 	return out, nil
 }
 
-func (r *contentModerationTestOutboxRepo) MarkEventSucceeded(ctx context.Context, id int64) error {
+func (r *contentModerationTestOutboxRepo) snapshotClaimLimits() []int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return append([]int(nil), r.claims...)
+}
+
+func (r *contentModerationTestOutboxRepo) MarkEventSucceeded(ctx context.Context, id int64, leaseUntil time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.hasContentModerationOutboxLeaseLocked(id, leaseUntil) {
+		return ErrContentModerationOutboxLeaseLost
+	}
 	r.succeeded = append(r.succeeded, id)
+	for i := range r.events {
+		if r.events[i].ID == id {
+			r.events[i].LastError = ""
+			break
+		}
+	}
+	r.clearContentModerationOutboxLeaseLocked(id)
 	return nil
 }
 
-func (r *contentModerationTestOutboxRepo) ScheduleEventRetry(ctx context.Context, id int64, retryCount int, nextRetryAt time.Time, lastError string) error {
+func (r *contentModerationTestOutboxRepo) ScheduleEventRetry(ctx context.Context, id int64, leaseUntil time.Time, retryCount int, nextRetryAt time.Time, lastError string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if !r.hasContentModerationOutboxLeaseLocked(id, leaseUntil) {
+		return ErrContentModerationOutboxLeaseLost
+	}
 	r.retried = append(r.retried, id)
 	for i := range r.events {
 		if r.events[i].ID == id {
 			r.events[i].RetryCount = retryCount
 			r.events[i].NextRetryAt = nextRetryAt
+			r.events[i].LastError = lastError
+			r.events[i].LeaseUntil = time.Time{}
 		}
 	}
 	return nil
 }
 
-func (r *contentModerationTestOutboxRepo) MarkEventDeadLetter(ctx context.Context, id int64, lastError string) error {
+func (r *contentModerationTestOutboxRepo) MarkEventDeadLetter(ctx context.Context, id int64, leaseUntil time.Time, lastError string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if !r.hasContentModerationOutboxLeaseLocked(id, leaseUntil) {
+		return ErrContentModerationOutboxLeaseLost
+	}
 	r.dead = append(r.dead, id)
 	for i := range r.events {
 		if r.events[i].ID == id {
 			r.events[i].LastError = lastError
+			r.events[i].LeaseUntil = time.Time{}
 		}
 	}
 	return nil
+}
+
+func (r *contentModerationTestOutboxRepo) hasContentModerationOutboxLeaseLocked(id int64, leaseUntil time.Time) bool {
+	if id <= 0 || leaseUntil.IsZero() {
+		return false
+	}
+	for i := range r.events {
+		if r.events[i].ID == id {
+			return r.events[i].LeaseUntil.Equal(leaseUntil)
+		}
+	}
+	return false
+}
+
+func (r *contentModerationTestOutboxRepo) clearContentModerationOutboxLeaseLocked(id int64) {
+	for i := range r.events {
+		if r.events[i].ID == id {
+			r.events[i].LeaseUntil = time.Time{}
+			return
+		}
+	}
 }
 
 func (r *contentModerationTestOutboxRepo) GetStatus(ctx context.Context, now time.Time) (*ContentModerationOutboxStatus, error) {
@@ -692,6 +984,14 @@ func (r *contentModerationTestOutboxRepo) ReplayDeadLetter(ctx context.Context, 
 	for _, deadID := range r.dead {
 		if deadID == id {
 			replayed = true
+			for i := range r.events {
+				if r.events[i].ID == id {
+					r.events[i].RetryCount = 0
+					r.events[i].NextRetryAt = time.Time{}
+					r.events[i].LeaseUntil = time.Time{}
+					break
+				}
+			}
 			continue
 		}
 		out = append(out, deadID)
@@ -1030,12 +1330,13 @@ func TestContentModerationCheck_HybridKeywordHitAllowsWhenAuditAPIUnavailable(t 
 	rawCfg, err := json.Marshal(cfg)
 	require.NoError(t, err)
 
+	repo := &contentModerationTestRepo{}
 	svc := NewContentModerationService(
 		&contentModerationTestSettingRepo{values: map[string]string{
 			SettingKeyRiskControlEnabled:      "true",
 			SettingKeyContentModerationConfig: string(rawCfg),
 		}},
-		&contentModerationTestRepo{},
+		repo,
 		&contentModerationTestHashCache{},
 		nil,
 		nil,
@@ -3093,7 +3394,184 @@ func TestContentModerationOutboxPersistsBlockedSideEffects(t *testing.T) {
 	require.Equal(t, 1, logs[0].ViolationCount)
 	require.True(t, logs[0].AutoBanned)
 	require.Equal(t, StatusDisabled, userRepo.user.Status)
-	require.Len(t, outbox.snapshotSucceeded(), 5)
+	require.Len(t, outbox.snapshotSucceeded(), 6)
+}
+
+func TestContentModerationOutboxSuppressesEnforcementForIneligibleCandidate(t *testing.T) {
+	repo := &contentModerationTestRepo{}
+	hashCache := &contentModerationTestHashCache{}
+	outbox := &contentModerationTestOutboxRepo{}
+	svc := NewContentModerationService(nil, repo, hashCache, nil, nil, nil, nil)
+	svc.SetOutboxRepository(outbox)
+	svc.SetRawRequestSnapshotStore(nil, contentModerationTestEncryptor{})
+	userID := int64(17)
+	log := &ContentModerationLog{
+		DecisionID:            "ineligible-candidate-outbox",
+		UserID:                &userID,
+		Action:                ContentModerationActionSemanticReviewReject,
+		Flagged:               true,
+		SourceOrigin:          contentModerationSourceOriginUserTurn,
+		UserViolationEligible: false,
+	}
+
+	require.True(t, svc.enqueueModerationOutboxRecord(
+		ContentModerationCheckInput{UserID: userID},
+		defaultContentModerationConfig(),
+		log,
+		strings.Repeat("c", 64),
+		true,
+		true,
+	))
+	events := outbox.snapshotEvents()
+	require.Len(t, events, 1)
+	require.Equal(t, ContentModerationOutboxEventLogWrite, events[0].EventType)
+
+	hashEvent := events[0]
+	hashEvent.EventType = ContentModerationOutboxEventHashBlock
+	require.NoError(t, svc.processContentModerationOutboxEvent(context.Background(), outbox, hashEvent))
+	require.Empty(t, hashCache.snapshotRecorded())
+	require.Len(t, repo.snapshotLogs(), 1)
+}
+
+func TestContentModerationOutboxSuppressesReplayedObserveEnforcementEvents(t *testing.T) {
+	repo := &contentModerationTestRepo{}
+	hashCache := &contentModerationTestHashCache{}
+	outbox := &contentModerationTestOutboxRepo{}
+	userID := int64(17)
+	userRepo := &contentModerationTestUserRepo{
+		user:  &User{ID: userID, Email: "user@example.com", Role: RoleUser, Status: StatusActive},
+		admin: &User{ID: 1, Email: "admin@example.com", Role: RoleAdmin, Status: StatusActive},
+	}
+	emailProbe := &contentModerationEmailSideEffectProbe{}
+	svc := NewContentModerationService(
+		nil,
+		repo,
+		hashCache,
+		nil,
+		userRepo,
+		nil,
+		NewEmailService(emailProbe, nil),
+	)
+	svc.SetRawRequestSnapshotStore(nil, contentModerationTestEncryptor{})
+	cfg := defaultContentModerationConfig()
+	cfg.Mode = ContentModerationModeObserve
+	cfg.AutoBanEnabled = true
+	cfg.BanThreshold = 1
+	cfg.EmailOnHit = true
+	log := &ContentModerationLog{
+		DecisionID:            "observe-replayed-side-effects",
+		UserID:                &userID,
+		UserEmail:             "user@example.com",
+		Mode:                  ContentModerationModeObserve,
+		Action:                ContentModerationActionAllow,
+		Flagged:               true,
+		UserViolationEligible: true,
+	}
+	payload, err := svc.encryptedContentModerationOutboxPayload(log, cfg, strings.Repeat("e", 64))
+	require.NoError(t, err)
+	payload.EmailKind = "violation"
+
+	for _, eventType := range []string{
+		ContentModerationOutboxEventHashBlock,
+		ContentModerationOutboxEventViolationCount,
+		ContentModerationOutboxEventUserAutoBan,
+		ContentModerationOutboxEventEmail,
+		ContentModerationOutboxEventAdminAlert,
+	} {
+		event := newContentModerationOutboxEvent(log.DecisionID, eventType, "", ContentModerationOutboxPriorityStrong, payload)
+		require.NoError(t, svc.processContentModerationOutboxEvent(context.Background(), outbox, event), eventType)
+	}
+
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Zero(t, logs[0].ViolationCount)
+	require.False(t, logs[0].AutoBanned)
+	require.False(t, logs[0].EmailSent)
+	require.Empty(t, hashCache.snapshotRecorded())
+	require.Empty(t, userRepo.updated)
+	require.Equal(t, StatusActive, userRepo.user.Status)
+	require.Zero(t, emailProbe.getMultipleCalls.Load())
+}
+
+func TestContentModerationOutboxRequiresAuditRepositoryBeforeSideEffects(t *testing.T) {
+	hashCache := &contentModerationTestHashCache{}
+	userID := int64(17)
+	userRepo := &contentModerationTestUserRepo{
+		user:  &User{ID: userID, Email: "user@example.com", Role: RoleUser, Status: StatusActive},
+		admin: &User{ID: 1, Email: "admin@example.com", Role: RoleAdmin, Status: StatusActive},
+	}
+	emailProbe := &contentModerationEmailSideEffectProbe{}
+	svc := NewContentModerationService(
+		nil,
+		nil,
+		hashCache,
+		nil,
+		userRepo,
+		nil,
+		NewEmailService(emailProbe, nil),
+	)
+	cfg := defaultContentModerationConfig()
+	cfg.AutoBanEnabled = true
+	cfg.BanThreshold = 1
+	cfg.EmailOnHit = true
+	log := &ContentModerationLog{
+		DecisionID:            "outbox-requires-audit-repository",
+		UserID:                &userID,
+		UserEmail:             "user@example.com",
+		Mode:                  ContentModerationModePreBlock,
+		Action:                ContentModerationActionBlock,
+		Flagged:               true,
+		UserViolationEligible: true,
+	}
+	payload := contentModerationOutboxPayload{
+		Config:    cfg,
+		Log:       log,
+		InputHash: strings.Repeat("f", 64),
+		EmailKind: "violation",
+	}
+	outbox := &contentModerationTestOutboxRepo{}
+
+	for _, eventType := range []string{
+		ContentModerationOutboxEventHashBlock,
+		ContentModerationOutboxEventViolationCount,
+		ContentModerationOutboxEventUserAutoBan,
+		ContentModerationOutboxEventEmail,
+		ContentModerationOutboxEventAdminAlert,
+	} {
+		event := newContentModerationOutboxEvent(log.DecisionID, eventType, "", ContentModerationOutboxPriorityStrong, payload)
+		err := svc.processContentModerationOutboxEvent(context.Background(), outbox, event)
+		require.ErrorContains(t, err, "content moderation repository is unavailable", eventType)
+	}
+
+	require.Empty(t, hashCache.snapshotRecorded())
+	require.Empty(t, userRepo.updated)
+	require.Equal(t, StatusActive, userRepo.user.Status)
+	require.Zero(t, emailProbe.getMultipleCalls.Load())
+	require.Empty(t, outbox.snapshotEvents())
+}
+
+func TestContentModerationEnqueueAsyncSnapshotsPolicy(t *testing.T) {
+	svc := &ContentModerationService{asyncQueue: make(chan contentModerationTask, 1)}
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModeObserve
+	cfg.APIKeys = []string{"audit-key"}
+
+	require.True(t, svc.enqueueAsync(
+		ContentModerationCheckInput{UserID: 17},
+		cfg,
+		ContentModerationInput{Text: "request"},
+		strings.Repeat("a", 64),
+	))
+	cfg.Enabled = false
+	cfg.Mode = ContentModerationModeOff
+	cfg.APIKeys[0] = "mutated-key"
+
+	task := <-svc.asyncQueue
+	require.NotNil(t, task.config)
+	require.True(t, task.config.Enabled)
+	require.Equal(t, ContentModerationModeObserve, task.config.Mode)
+	require.Equal(t, []string{"audit-key"}, task.config.APIKeys)
 }
 
 func TestContentModerationOutboxEncryptsInputHashInsideRecord(t *testing.T) {
@@ -3127,12 +3605,13 @@ func TestContentModerationOutboxProcessesLegacyPlainPayload(t *testing.T) {
 		Log:    log,
 		Config: defaultContentModerationConfig(),
 	})
-	require.NoError(t, outbox.EnqueueEvents(context.Background(), []ContentModerationOutboxEvent{{
+	_, err := outbox.EnqueueEvents(context.Background(), []ContentModerationOutboxEvent{{
 		DecisionID: "legacy-outbox-decision",
 		EventType:  ContentModerationOutboxEventLogWrite,
 		Priority:   ContentModerationOutboxPriorityStrong,
 		Payload:    payload,
-	}}))
+	}})
+	require.NoError(t, err)
 
 	require.NoError(t, svc.ProcessContentModerationOutboxOnce(context.Background(), 1))
 	logs := repo.snapshotLogs()
@@ -3140,11 +3619,289 @@ func TestContentModerationOutboxProcessesLegacyPlainPayload(t *testing.T) {
 	require.Equal(t, "legacy-outbox-decision", logs[0].DecisionID)
 }
 
+func TestContentModerationOutboxClaimsEventsOneAtATime(t *testing.T) {
+	repo := &contentModerationTestRepo{}
+	outbox := &contentModerationTestOutboxRepo{}
+	svc := NewContentModerationService(nil, repo, nil, nil, nil, nil, nil)
+	svc.SetOutboxRepository(outbox)
+	events := make([]ContentModerationOutboxEvent, 0, 2)
+	for _, decisionID := range []string{"lease-safe-1", "lease-safe-2"} {
+		events = append(events, ContentModerationOutboxEvent{
+			DecisionID: decisionID,
+			EventType:  ContentModerationOutboxEventLogWrite,
+			Priority:   ContentModerationOutboxPriorityStrong,
+			Payload: contentModerationOutboxPayloadMap(contentModerationOutboxPayload{
+				Log:    &ContentModerationLog{DecisionID: decisionID, Action: ContentModerationActionAllow},
+				Config: defaultContentModerationConfig(),
+			}),
+		})
+	}
+	inserted, err := outbox.EnqueueEvents(context.Background(), events)
+	require.NoError(t, err)
+	require.Equal(t, 2, inserted)
+
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(context.Background(), 2))
+
+	require.Len(t, outbox.snapshotSucceeded(), 2)
+	require.Equal(t, []int{1, 1}, outbox.snapshotClaimLimits())
+	require.Len(t, repo.snapshotLogs(), 2)
+}
+
+func TestContentModerationOutboxRetriesAccountDisabledEmailEnqueue(t *testing.T) {
+	userID := int64(1001)
+	repo := &contentModerationTestRepo{}
+	userRepo := &contentModerationTestUserRepo{
+		user: &User{ID: userID, Email: "user@example.com", Role: RoleUser, Status: StatusActive},
+	}
+	baseOutbox := &contentModerationTestOutboxRepo{}
+	outbox := &contentModerationFailingAccountDisabledEnqueueOutboxRepo{contentModerationTestOutboxRepo: baseOutbox}
+	svc := NewContentModerationService(nil, repo, nil, nil, userRepo, nil, nil)
+	svc.SetOutboxRepository(outbox)
+	cfg := defaultContentModerationConfig()
+	cfg.AutoBanEnabled = true
+	cfg.BanThreshold = 1
+	log := &ContentModerationLog{
+		DecisionID:            "account-disabled-email-recovery",
+		UserID:                &userID,
+		UserEmail:             "user@example.com",
+		Mode:                  ContentModerationModePreBlock,
+		Action:                ContentModerationActionBlock,
+		Flagged:               true,
+		UserViolationEligible: true,
+	}
+	inserted, err := outbox.EnqueueEvents(context.Background(), []ContentModerationOutboxEvent{
+		newContentModerationOutboxEvent(
+			log.DecisionID,
+			ContentModerationOutboxEventUserAutoBan,
+			"",
+			ContentModerationOutboxPriorityStrong,
+			contentModerationOutboxPayload{Config: cfg, Log: log},
+		),
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, inserted)
+
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(context.Background(), 1))
+	require.Equal(t, StatusDisabled, userRepo.user.Status)
+	require.Len(t, baseOutbox.snapshotRetried(), 1)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.True(t, logs[0].AutoBanned)
+
+	baseOutbox.mu.Lock()
+	baseOutbox.events[0].NextRetryAt = time.Time{}
+	baseOutbox.mu.Unlock()
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(context.Background(), 1))
+
+	events := baseOutbox.snapshotEvents()
+	require.Len(t, events, 2)
+	require.Equal(t, ContentModerationOutboxEventEmail, events[1].EventType)
+	require.Equal(t, "account_disabled", events[1].EventKey)
+	require.Len(t, baseOutbox.snapshotSucceeded(), 1)
+	require.Len(t, userRepo.updated, 1)
+}
+
+func TestContentModerationOutboxRecoversAutoBanAfterAuditStateWriteFailure(t *testing.T) {
+	userID := int64(1002)
+	repo := &contentModerationFailingAccountActionWriteRepo{}
+	userRepo := &contentModerationTestUserRepo{
+		user: &User{ID: userID, Email: "recover@example.com", Role: RoleUser, Status: StatusActive},
+	}
+	outbox := &contentModerationTestOutboxRepo{}
+	svc := NewContentModerationService(nil, repo, nil, nil, userRepo, nil, nil)
+	svc.SetOutboxRepository(outbox)
+	cfg := defaultContentModerationConfig()
+	cfg.AutoBanEnabled = true
+	cfg.BanThreshold = 1
+	log := &ContentModerationLog{
+		DecisionID:            "auto-ban-audit-state-recovery",
+		UserID:                &userID,
+		UserEmail:             "recover@example.com",
+		Mode:                  ContentModerationModePreBlock,
+		Action:                ContentModerationActionBlock,
+		Flagged:               true,
+		UserViolationEligible: true,
+	}
+	_, err := outbox.EnqueueEvents(context.Background(), []ContentModerationOutboxEvent{
+		newContentModerationOutboxEvent(
+			log.DecisionID,
+			ContentModerationOutboxEventUserAutoBan,
+			"",
+			ContentModerationOutboxPriorityStrong,
+			contentModerationOutboxPayload{Config: cfg, Log: log},
+		),
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(context.Background(), 1))
+	require.Equal(t, StatusDisabled, userRepo.user.Status)
+	require.Len(t, userRepo.updated, 1)
+	require.Len(t, outbox.snapshotRetried(), 1)
+	events := outbox.snapshotEvents()
+	require.Len(t, events, 1)
+	require.Contains(t, events[0].LastError, contentModerationOutboxAutoBanRecovery)
+
+	outbox.mu.Lock()
+	outbox.events[0].NextRetryAt = time.Time{}
+	outbox.mu.Unlock()
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(context.Background(), 1))
+
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.True(t, logs[0].AutoBanned)
+	events = outbox.snapshotEvents()
+	require.Len(t, events, 2)
+	require.Equal(t, ContentModerationOutboxEventEmail, events[1].EventType)
+	require.Equal(t, "account_disabled", events[1].EventKey)
+	require.Len(t, outbox.snapshotSucceeded(), 1)
+	require.Len(t, userRepo.updated, 1, "recovery must not disable the user twice")
+}
+
+func TestContentModerationOutboxRecoversNotificationAfterAuditStateWriteFailure(t *testing.T) {
+	ctx := context.Background()
+	settings := newNotificationEmailMemorySettingRepo()
+	smtpServer := startNotificationEmailTestSMTPServer(t)
+	require.NoError(t, settings.SetMultiple(ctx, smtpServer.settings()))
+
+	userID := int64(1003)
+	repo := &contentModerationFailingNotificationDeliveryWriteRepo{}
+	outbox := &contentModerationTestOutboxRepo{}
+	svc := NewContentModerationService(nil, repo, nil, nil, nil, nil, NewEmailService(settings, nil))
+	svc.SetOutboxRepository(outbox)
+	cfg := defaultContentModerationConfig()
+	log := &ContentModerationLog{
+		DecisionID:            "notification-audit-state-recovery",
+		UserID:                &userID,
+		UserEmail:             "notify-recover@example.com",
+		Mode:                  ContentModerationModePreBlock,
+		Action:                ContentModerationActionBlock,
+		Flagged:               true,
+		UserViolationEligible: true,
+	}
+	_, err := outbox.EnqueueEvents(ctx, []ContentModerationOutboxEvent{
+		newContentModerationOutboxEvent(
+			log.DecisionID,
+			ContentModerationOutboxEventEmail,
+			"violation",
+			ContentModerationOutboxPriorityWeak,
+			contentModerationOutboxPayload{Config: cfg, Log: log, EmailKind: "violation"},
+		),
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(ctx, 1))
+	require.Equal(t, int64(1), smtpServer.messageCount())
+	require.Len(t, outbox.snapshotRetried(), 1)
+	events := outbox.snapshotEvents()
+	require.Len(t, events, 1)
+	require.Contains(t, events[0].LastError, contentModerationOutboxDeliveryRecoveryMarker("email_violation"))
+
+	outbox.mu.Lock()
+	outbox.events[0].NextRetryAt = time.Time{}
+	outbox.mu.Unlock()
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(ctx, 1))
+
+	require.Equal(t, int64(1), smtpServer.messageCount(), "recovery must not resend an accepted SMTP message")
+	delivered, err := repo.GetLogNotificationDeliveredByDecisionID(ctx, log.DecisionID, "email_violation")
+	require.NoError(t, err)
+	require.True(t, delivered)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.True(t, logs[0].EmailSent)
+	require.Len(t, outbox.snapshotSucceeded(), 1)
+}
+
+func TestContentModerationOutboxRetryPreservesNotificationRecoveryMarker(t *testing.T) {
+	ctx := context.Background()
+	outbox := &contentModerationTestOutboxRepo{}
+	svc := &ContentModerationService{}
+	recoveryMarker := contentModerationOutboxDeliveryRecoveryMarker("email_violation")
+	_, err := outbox.EnqueueEvents(ctx, []ContentModerationOutboxEvent{{
+		DecisionID: "notification-recovery-marker-retry",
+		EventType:  ContentModerationOutboxEventEmail,
+		EventKey:   "violation",
+		Priority:   ContentModerationOutboxPriorityWeak,
+		Payload:    map[string]any{},
+		LastError:  recoveryMarker + ": notification delivery audit write unavailable",
+	}})
+	require.NoError(t, err)
+
+	claimed, err := outbox.ClaimDueEvents(ctx, time.Now(), 1, time.Minute)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+
+	svc.handleContentModerationOutboxEventFailure(
+		ctx,
+		outbox,
+		claimed[0],
+		errors.New("temporary downstream failure"),
+	)
+
+	require.Len(t, outbox.snapshotRetried(), 1)
+	events := outbox.snapshotEvents()
+	require.Len(t, events, 1)
+	require.Equal(t, 1, events[0].RetryCount)
+	require.Contains(t, events[0].LastError, recoveryMarker)
+	require.Contains(t, events[0].LastError, "temporary downstream failure")
+}
+
+func TestContentModerationOutboxSkipsAdminAlertAfterAckFailure(t *testing.T) {
+	ctx := context.Background()
+	settings := newNotificationEmailMemorySettingRepo()
+	smtpServer := startNotificationEmailTestSMTPServer(t)
+	require.NoError(t, settings.SetMultiple(ctx, smtpServer.settings()))
+
+	repo := &contentModerationTestRepo{}
+	baseOutbox := &contentModerationTestOutboxRepo{}
+	outbox := &contentModerationFailingOnceAckOutboxRepo{contentModerationTestOutboxRepo: baseOutbox}
+	userRepo := &contentModerationTestUserRepo{
+		admin: &User{ID: 1, Email: "admin-alert@example.com", Role: RoleAdmin, Status: StatusActive},
+	}
+	svc := NewContentModerationService(nil, repo, nil, nil, userRepo, nil, NewEmailService(settings, nil))
+	svc.SetOutboxRepository(outbox)
+	log := &ContentModerationLog{
+		DecisionID:            "admin-alert-ack-recovery",
+		UserEmail:             "flagged-user@example.com",
+		Endpoint:              "/v1/responses",
+		Mode:                  ContentModerationModePreBlock,
+		Action:                ContentModerationActionBlock,
+		Flagged:               true,
+		HighestCategory:       "cyber",
+		HighestScore:          0.99,
+		UserViolationEligible: true,
+	}
+	_, err := outbox.EnqueueEvents(ctx, []ContentModerationOutboxEvent{
+		newContentModerationOutboxEvent(
+			log.DecisionID,
+			ContentModerationOutboxEventAdminAlert,
+			"",
+			ContentModerationOutboxPriorityWeak,
+			contentModerationOutboxPayload{Config: defaultContentModerationConfig(), Log: log},
+		),
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(ctx, 1))
+	require.Equal(t, int64(1), smtpServer.messageCount())
+	require.Empty(t, baseOutbox.snapshotSucceeded())
+
+	baseOutbox.mu.Lock()
+	baseOutbox.events[0].LeaseUntil = time.Time{}
+	baseOutbox.mu.Unlock()
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(ctx, 1))
+
+	require.Equal(t, int64(1), smtpServer.messageCount(), "ack recovery must not resend the admin alert")
+	delivered, err := repo.GetLogNotificationDeliveredByDecisionID(ctx, log.DecisionID, "admin_alert")
+	require.NoError(t, err)
+	require.True(t, delivered)
+	require.Len(t, baseOutbox.snapshotSucceeded(), 1)
+}
+
 func TestContentModerationOutboxRetriesStrongAndDeadLettersWeakEvents(t *testing.T) {
 	outbox := &contentModerationTestOutboxRepo{}
 	svc := NewContentModerationService(nil, nil, nil, nil, nil, nil, nil)
 	svc.SetOutboxRepository(outbox)
-	require.NoError(t, outbox.EnqueueEvents(context.Background(), []ContentModerationOutboxEvent{
+	_, err := outbox.EnqueueEvents(context.Background(), []ContentModerationOutboxEvent{
 		{
 			DecisionID: "decision-retry",
 			EventType:  "unknown_strong_event",
@@ -3159,7 +3916,8 @@ func TestContentModerationOutboxRetriesStrongAndDeadLettersWeakEvents(t *testing
 			RetryCount: ContentModerationOutboxDefaultMaxRetries(ContentModerationOutboxPriorityWeak) - 1,
 			MaxRetries: ContentModerationOutboxDefaultMaxRetries(ContentModerationOutboxPriorityWeak),
 		},
-	}))
+	})
+	require.NoError(t, err)
 
 	require.NoError(t, svc.ProcessContentModerationOutboxOnce(context.Background(), 10))
 
@@ -3167,18 +3925,80 @@ func TestContentModerationOutboxRetriesStrongAndDeadLettersWeakEvents(t *testing
 	require.Len(t, outbox.snapshotDead(), 1)
 }
 
+func TestContentModerationOutboxSchedulesRetryAfterProcessingTimeout(t *testing.T) {
+	baseOutbox := &contentModerationTestOutboxRepo{}
+	outbox := &contentModerationStateContextOutboxRepo{contentModerationTestOutboxRepo: baseOutbox}
+	repo := &contentModerationBlockingPersistenceRepo{}
+	svc := NewContentModerationService(nil, repo, nil, nil, nil, nil, nil)
+	svc.SetOutboxRepository(outbox)
+	_, err := outbox.EnqueueEvents(context.Background(), []ContentModerationOutboxEvent{
+		{
+			DecisionID: "processing-timeout-retry",
+			EventType:  ContentModerationOutboxEventLogWrite,
+			Priority:   ContentModerationOutboxPriorityStrong,
+			Payload: contentModerationOutboxPayloadMap(contentModerationOutboxPayload{
+				Log:    &ContentModerationLog{DecisionID: "processing-timeout-retry", Action: ContentModerationActionAllow},
+				Config: defaultContentModerationConfig(),
+			}),
+		},
+	})
+	require.NoError(t, err)
+	processCtx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(processCtx, 1))
+
+	require.ErrorIs(t, processCtx.Err(), context.DeadlineExceeded)
+	require.Equal(t, int64(0), outbox.invalidStateContexts.Load())
+	require.Empty(t, outbox.snapshotSucceeded())
+	require.Len(t, outbox.snapshotRetried(), 1)
+	events := outbox.snapshotEvents()
+	require.Len(t, events, 1)
+	require.Equal(t, 1, events[0].RetryCount)
+	require.False(t, events[0].NextRetryAt.IsZero())
+}
+
+func TestContentModerationOutboxAckUsesDetachedContextAfterProcessingCancellation(t *testing.T) {
+	baseOutbox := &contentModerationTestOutboxRepo{}
+	outbox := &contentModerationStateContextOutboxRepo{contentModerationTestOutboxRepo: baseOutbox}
+	processCtx, cancel := context.WithCancel(context.Background())
+	repo := &contentModerationCancelingPersistenceRepo{cancel: cancel}
+	svc := NewContentModerationService(nil, repo, nil, nil, nil, nil, nil)
+	svc.SetOutboxRepository(outbox)
+	_, err := outbox.EnqueueEvents(context.Background(), []ContentModerationOutboxEvent{
+		{
+			DecisionID: "processing-canceled-ack",
+			EventType:  ContentModerationOutboxEventLogWrite,
+			Priority:   ContentModerationOutboxPriorityStrong,
+			Payload: contentModerationOutboxPayloadMap(contentModerationOutboxPayload{
+				Log:    &ContentModerationLog{DecisionID: "processing-canceled-ack", Action: ContentModerationActionAllow},
+				Config: defaultContentModerationConfig(),
+			}),
+		},
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(processCtx, 1))
+
+	require.ErrorIs(t, processCtx.Err(), context.Canceled)
+	require.Equal(t, int64(0), outbox.invalidStateContexts.Load())
+	require.Len(t, outbox.snapshotSucceeded(), 1)
+	require.Empty(t, outbox.snapshotRetried())
+}
+
 func TestContentModerationOutboxStatusReplayAndCleanup(t *testing.T) {
 	outbox := &contentModerationTestOutboxRepo{}
 	svc := NewContentModerationService(nil, nil, nil, nil, nil, nil, nil)
 	svc.SetOutboxRepository(outbox)
-	require.NoError(t, outbox.EnqueueEvents(context.Background(), []ContentModerationOutboxEvent{{
+	_, err := outbox.EnqueueEvents(context.Background(), []ContentModerationOutboxEvent{{
 		DecisionID: "decision-dead",
 		EventType:  "unknown_weak_event",
 		Priority:   ContentModerationOutboxPriorityWeak,
 		Payload:    map[string]any{},
 		RetryCount: ContentModerationOutboxDefaultMaxRetries(ContentModerationOutboxPriorityWeak) - 1,
 		MaxRetries: ContentModerationOutboxDefaultMaxRetries(ContentModerationOutboxPriorityWeak),
-	}}))
+	}})
+	require.NoError(t, err)
 	require.NoError(t, svc.ProcessContentModerationOutboxOnce(context.Background(), 10))
 
 	status := svc.contentModerationOutboxStatus(context.Background())
@@ -3435,12 +4255,13 @@ func TestContentModerationCheck_ObserveWithoutAPIKeyAllowsRequest(t *testing.T) 
 	rawCfg, err := json.Marshal(cfg)
 	require.NoError(t, err)
 
+	repo := &contentModerationTestRepo{}
 	svc := NewContentModerationService(
 		&contentModerationTestSettingRepo{values: map[string]string{
 			SettingKeyRiskControlEnabled:      "true",
 			SettingKeyContentModerationConfig: string(rawCfg),
 		}},
-		&contentModerationTestRepo{},
+		repo,
 		&contentModerationTestHashCache{},
 		nil,
 		nil,
@@ -3456,16 +4277,20 @@ func TestContentModerationCheck_ObserveWithoutAPIKeyAllowsRequest(t *testing.T) 
 	require.NoError(t, err)
 	require.True(t, decision.Allowed)
 	require.False(t, decision.Blocked)
-	require.Equal(t, ContentModerationActionAllow, decision.Action)
+	require.Equal(t, ContentModerationActionError, decision.Action)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Contains(t, logs[0].Error, "ordinary moderation API key unavailable")
 }
 
 func TestContentModerationCheck_RiskSwitchReadErrorFailsOpen(t *testing.T) {
+	repo := &contentModerationTestRepo{}
 	svc := NewContentModerationService(
 		&contentModerationTestSettingRepo{
 			values: map[string]string{},
 			errors: map[string]error{SettingKeyRiskControlEnabled: errors.New("settings unavailable")},
 		},
-		&contentModerationTestRepo{},
+		repo,
 		&contentModerationTestHashCache{},
 		nil,
 		nil,
@@ -3483,6 +4308,11 @@ func TestContentModerationCheck_RiskSwitchReadErrorFailsOpen(t *testing.T) {
 	require.False(t, decision.Blocked)
 	require.Equal(t, ContentModerationActionError, decision.Action)
 	require.Zero(t, decision.StatusCode)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.Contains(t, logs[0].Error, "read risk control switch")
+	require.Empty(t, logs[0].InputExcerpt)
 }
 
 func TestContentModerationCheck_PromptFilterOperationalStrictBlocks(t *testing.T) {
@@ -3616,12 +4446,13 @@ func TestContentModerationCheck_PreBlockNonEmptyUnexpectedEmptyExtractionFailsOp
 	rawCfg, err := json.Marshal(cfg)
 	require.NoError(t, err)
 
+	repo := &contentModerationTestRepo{}
 	svc := NewContentModerationService(
 		&contentModerationTestSettingRepo{values: map[string]string{
 			SettingKeyRiskControlEnabled:      "true",
 			SettingKeyContentModerationConfig: string(rawCfg),
 		}},
-		&contentModerationTestRepo{},
+		repo,
 		&contentModerationTestHashCache{},
 		nil,
 		nil,
@@ -3639,6 +4470,10 @@ func TestContentModerationCheck_PreBlockNonEmptyUnexpectedEmptyExtractionFailsOp
 	require.False(t, decision.Blocked)
 	require.Zero(t, decision.StatusCode)
 	require.Equal(t, ContentModerationActionError, decision.Action)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.Contains(t, logs[0].Error, "no auditable content")
 }
 
 func TestContentModerationCheck_PreBlockOversizedEncodedPayloadFailsOpen(t *testing.T) {
@@ -3651,12 +4486,13 @@ func TestContentModerationCheck_PreBlockOversizedEncodedPayloadFailsOpen(t *test
 	require.NoError(t, err)
 
 	groupID := int64(1)
+	repo := &contentModerationTestRepo{}
 	svc := NewContentModerationService(
 		&contentModerationTestSettingRepo{values: map[string]string{
 			SettingKeyRiskControlEnabled:      "true",
 			SettingKeyContentModerationConfig: string(rawCfg),
 		}},
-		&contentModerationTestRepo{},
+		repo,
 		&contentModerationTestHashCache{},
 		nil,
 		nil,
@@ -3678,6 +4514,69 @@ func TestContentModerationCheck_PreBlockOversizedEncodedPayloadFailsOpen(t *test
 	require.False(t, decision.Blocked)
 	require.Zero(t, decision.StatusCode)
 	require.Equal(t, ContentModerationActionError, decision.Action)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.Contains(t, logs[0].Error, "oversized encoded payload skipped")
+	require.Contains(t, logs[0].TruncateReasons, "oversized_base64_skipped")
+}
+
+func TestContentModerationCheck_CandidateOnlyExtractionFailuresAreAudited(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      []byte
+		wantError string
+	}{
+		{
+			name:      "unexpected empty extraction",
+			body:      []byte(`{"unknown_text_field":"risk hidden in unsupported schema"}`),
+			wantError: "no auditable content",
+		},
+		{
+			name: "oversized encoded payload",
+			body: []byte(`{"messages":[
+					{"role":"user","content":"ordinary text","tool_calls":[{"type":"function","function":{"name":"lookup","arguments":"{\"base64\":\"` + strings.Repeat("A", maxBase64DecodeInputBytes+4) + `\"}"}}]}
+				]}`),
+			wantError: "oversized encoded payload skipped",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := defaultContentModerationConfig()
+			cfg.Enabled = true
+			cfg.Mode = ContentModerationModePreBlock
+			cfg.APIKeys = nil
+			cfg.EngineMode = ContentModerationEngineModeCandidateOnly
+			rawCfg, err := json.Marshal(cfg)
+			require.NoError(t, err)
+			repo := &contentModerationTestRepo{}
+			svc := NewContentModerationService(
+				&contentModerationTestSettingRepo{values: map[string]string{
+					SettingKeyRiskControlEnabled:      "true",
+					SettingKeyContentModerationConfig: string(rawCfg),
+				}},
+				repo,
+				&contentModerationTestHashCache{},
+				nil,
+				nil,
+				nil,
+				nil,
+			)
+
+			decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+				Protocol: ContentModerationProtocolOpenAIChat,
+				Body:     tt.body,
+			})
+
+			require.NoError(t, err)
+			require.True(t, decision.Allowed)
+			require.Equal(t, ContentModerationActionError, decision.Action)
+			logs := repo.snapshotLogs()
+			require.Len(t, logs, 1)
+			require.Contains(t, logs[0].Error, tt.wantError)
+		})
+	}
 }
 
 func TestContentModerationCheck_PreBlockOversizedEncodedPayloadCanFailOpenForTrustedGroup(t *testing.T) {
@@ -4938,12 +5837,13 @@ func TestContentModerationCheck_SampleRateDoesNotSkipHitLog(t *testing.T) {
 
 func TestContentModerationCheck_ConfigLoadFailureFailsOpenForPublicGroup(t *testing.T) {
 	groupID := int64(1)
+	repo := &contentModerationTestRepo{}
 	svc := NewContentModerationService(
 		&contentModerationTestSettingRepo{
 			values: map[string]string{SettingKeyRiskControlEnabled: "true"},
 			errors: map[string]error{SettingKeyContentModerationConfig: errors.New("database unavailable")},
 		},
-		&contentModerationTestRepo{},
+		repo,
 		&contentModerationTestHashCache{},
 		nil,
 		nil,
@@ -4962,6 +5862,11 @@ func TestContentModerationCheck_ConfigLoadFailureFailsOpenForPublicGroup(t *test
 	require.False(t, decision.Blocked)
 	require.Zero(t, decision.StatusCode)
 	require.Equal(t, ContentModerationActionError, decision.Action)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.Contains(t, logs[0].Error, "load moderation config")
+	require.Empty(t, logs[0].InputExcerpt)
 }
 
 func TestContentModerationCheck_UninitializedServiceFailsOpen(t *testing.T) {
@@ -4993,16 +5898,18 @@ func TestContentModerationCheck_AuditAPIFailureFailsOpenForPublicGroup(t *testin
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
 	cfg.RetryCount = 0
+	cfg.RecordNonHits = false
 	rawCfg, err := json.Marshal(cfg)
 	require.NoError(t, err)
 
 	groupID := int64(1)
+	repo := &contentModerationTestRepo{}
 	svc := NewContentModerationService(
 		&contentModerationTestSettingRepo{values: map[string]string{
 			SettingKeyRiskControlEnabled:      "true",
 			SettingKeyContentModerationConfig: string(rawCfg),
 		}},
-		&contentModerationTestRepo{},
+		repo,
 		&contentModerationTestHashCache{},
 		nil,
 		nil,
@@ -5021,6 +5928,10 @@ func TestContentModerationCheck_AuditAPIFailureFailsOpenForPublicGroup(t *testin
 	require.False(t, decision.Blocked)
 	require.Zero(t, decision.StatusCode)
 	require.Equal(t, ContentModerationActionError, decision.Action)
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.False(t, logs[0].Flagged)
+	require.Contains(t, logs[0].Error, "moderation api status 500")
 }
 
 func TestContentModerationCheck_AuditAPIFailureCanFailOpenForTrustedGroup(t *testing.T) {
@@ -6937,6 +7848,47 @@ func TestContentModerationCheck_PreHashUsesRedisHashCache(t *testing.T) {
 	require.Empty(t, userRepo.updated)
 }
 
+func TestContentModerationCheck_ObserveModeIgnoresBlockingHashCache(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModeObserve
+	cfg.EngineMode = ContentModerationEngineModeHybrid
+	cfg.PreHashCheckEnabled = true
+	cfg.APIKeys = []string{"sk-test"}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	content := ContentModerationInput{Text: "historically blocked prompt"}
+	content.Normalize()
+	hashCache := &contentModerationTestHashCache{
+		hashes: map[string]struct{}{content.Hash(): {}},
+	}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		&contentModerationTestRepo{},
+		hashCache,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		UserID:   1001,
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"historically blocked prompt"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
+	require.Empty(t, hashCache.snapshotChecked())
+}
+
 func TestContentModerationCheck_HashBlockLogsDoNotIncreaseNextViolationCount(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(moderationAPIResponse{
@@ -7014,6 +7966,48 @@ func TestPersistContentModerationLogDetachesFromCanceledRequest(t *testing.T) {
 
 	require.True(t, repo.sawActiveContext.Load())
 	require.Len(t, repo.logs, 1)
+}
+
+func TestPersistContentModerationLogSkipsSideEffectsWithoutPersistedAuditLog(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		repo ContentModerationRepository
+	}{
+		{name: "repository unavailable"},
+		{name: "create log fails", repo: &contentModerationFailingPersistenceRepo{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := defaultContentModerationConfig()
+			cfg.AutoBanEnabled = true
+			cfg.BanThreshold = 1
+			cfg.EmailOnHit = true
+
+			userID := int64(1001)
+			hashCache := &contentModerationTestHashCache{}
+			userRepo := &contentModerationTestUserRepo{
+				user: &User{ID: userID, Email: "user@example.com", Role: RoleUser, Status: StatusActive},
+			}
+			emailProbe := &contentModerationEmailSideEffectProbe{}
+			emailService := NewEmailService(emailProbe, nil)
+			svc := NewContentModerationService(nil, tt.repo, hashCache, nil, userRepo, nil, emailService)
+			log := newContentModerationFlaggedLog(userID)
+			log.DecisionID = "persist-before-side-effects"
+			log.UserEmail = "user@example.com"
+
+			svc.persistContentModerationLog(context.Background(), cfg, log, strings.Repeat("a", 64), true, true)
+
+			require.Empty(t, hashCache.snapshotRecorded())
+			require.Empty(t, userRepo.updated)
+			require.Equal(t, StatusActive, userRepo.user.Status)
+			require.Zero(t, log.ViolationCount)
+			require.False(t, log.AutoBanned)
+			require.False(t, log.EmailSent)
+			require.Zero(t, emailProbe.getMultipleCalls.Load(), "email delivery must not run before audit persistence succeeds")
+			if failingRepo, ok := tt.repo.(*contentModerationFailingPersistenceRepo); ok {
+				require.Equal(t, int64(1), failingRepo.createCalls.Load())
+			}
+		})
+	}
 }
 
 func TestContentModerationAutoBanSkipsAdminAccount(t *testing.T) {
@@ -7225,7 +8219,7 @@ func TestContentModerationClearFlaggedInputHashesAndStatusCount(t *testing.T) {
 	require.Equal(t, int64(0), status.FlaggedHashCount)
 }
 
-func TestContentModerationCheck_AsyncFlaggedWritesRedisHashCache(t *testing.T) {
+func TestContentModerationCheck_ObserveFlaggedLogsWithoutEnforcementSideEffects(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(moderationAPIResponse{
 			Results: []moderationAPIResult{{
@@ -7240,11 +8234,19 @@ func TestContentModerationCheck_AsyncFlaggedWritesRedisHashCache(t *testing.T) {
 	cfg.Mode = ContentModerationModeObserve
 	cfg.BaseURL = server.URL
 	cfg.APIKeys = []string{"sk-test"}
+	cfg.AutoBanEnabled = true
+	cfg.BanThreshold = 1
+	cfg.EmailOnHit = true
 	rawCfg, err := json.Marshal(cfg)
 	require.NoError(t, err)
 
 	repo := &contentModerationTestRepo{}
 	hashCache := &contentModerationTestHashCache{}
+	userRepo := &contentModerationTestUserRepo{
+		user: &User{ID: 1001, Email: "user@example.com", Role: RoleUser, Status: StatusActive},
+	}
+	emailProbe := &contentModerationEmailSideEffectProbe{}
+	emailService := NewEmailService(emailProbe, nil)
 	svc := NewContentModerationService(
 		&contentModerationTestSettingRepo{values: map[string]string{
 			SettingKeyRiskControlEnabled:      "true",
@@ -7253,19 +8255,31 @@ func TestContentModerationCheck_AsyncFlaggedWritesRedisHashCache(t *testing.T) {
 		repo,
 		hashCache,
 		nil,
+		userRepo,
 		nil,
-		nil,
-		nil,
+		emailService,
 	)
 
 	decision := svc.checkSync(context.Background(), ContentModerationCheckInput{
-		Protocol: ContentModerationProtocolOpenAIChat,
-		Body:     []byte(`{"messages":[{"role":"user","content":"bad prompt"}]}`),
+		UserID:    1001,
+		UserEmail: "user@example.com",
+		Protocol:  ContentModerationProtocolOpenAIChat,
+		Body:      []byte(`{"messages":[{"role":"user","content":"bad prompt"}]}`),
 	}, cfg, ContentModerationInput{Text: "bad prompt"}, strings.Repeat("b", 64), contentModerationIntPtr(25), false)
 
+	require.True(t, decision.Allowed)
 	require.False(t, decision.Blocked)
-	requireRecordedHashCount(t, hashCache, 1)
-	requireContentModerationLogCount(t, repo, 1)
+	require.True(t, decision.Flagged)
+	require.Empty(t, hashCache.snapshotRecorded())
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.True(t, logs[0].Flagged)
+	require.Equal(t, ContentModerationActionAllow, logs[0].Action)
+	require.Zero(t, logs[0].ViolationCount)
+	require.False(t, logs[0].AutoBanned)
+	require.False(t, logs[0].EmailSent)
+	require.Empty(t, userRepo.updated)
+	require.Equal(t, StatusActive, userRepo.user.Status)
+	require.Zero(t, emailProbe.getMultipleCalls.Load())
 }
 
 func TestBuildContentModerationAccountDisabledEmailBody_ContainsBanDetails(t *testing.T) {

@@ -168,6 +168,12 @@ func contentModerationCandidateSelectionFromRuleAtNormalized(cfg *ContentModerat
 	if contentModerationCandidateIsPromptInjection(kind, rule) {
 		reviewKind = contentModerationReviewKindPromptInjection
 	}
+	evidenceComplete := !source.Truncated && len(source.TruncateReasons) == 0
+	dedicatedPromptInjectionReview := reviewKind == contentModerationReviewKindPromptInjection && cfg != nil &&
+		(cfg.SemanticReview.PromptInjectionReviewerEnabled || cfg.SemanticReview.PromptInjectionFailClosed)
+	if !dedicatedPromptInjectionReview && fragment != strings.TrimSpace(source.Text) {
+		evidenceComplete = false
+	}
 	return contentModerationCandidateSelection{
 		Source:           source,
 		Origin:           origin,
@@ -176,7 +182,7 @@ func contentModerationCandidateSelectionFromRuleAtNormalized(cfg *ContentModerat
 		Fragment:         fragment,
 		ReviewText:       source.Text,
 		ReviewKind:       reviewKind,
-		EvidenceComplete: !source.Truncated && len(source.TruncateReasons) == 0,
+		EvidenceComplete: evidenceComplete,
 		EvidenceRunes:    len([]rune(source.Text)),
 		EvidenceRevision: contentModerationCandidateEvidenceRevision,
 		Route:            contentModerationCandidateRouteFor(cfg, rule.Category),
@@ -521,7 +527,7 @@ func (s *ContentModerationService) candidateDecisionCacheKeyWithSemanticSchemaRe
 	if policyRevision == "" {
 		policyRevision = contentModerationPolicyRevision(true, cfg)
 	}
-	namespace := "candidate-decision-v3"
+	namespace := "candidate-decision-v5"
 	evidenceIdentity := selection.Fragment
 	instructionsRevision := ""
 	schemaRevision := ""
@@ -567,6 +573,17 @@ func (s *ContentModerationService) candidateDecisionCacheKeyWithSemanticSchemaRe
 			selection.EvidenceDigest,
 			strconv.FormatBool(selection.EvidenceComplete),
 			strconv.Itoa(selection.EvidenceRunes),
+		)
+	} else {
+		// General semantic policy can produce different outcomes for the same
+		// fragment when evidence completeness or its interpretation changes.
+		// Origin is the candidate path's attribution boundary (the analogue of
+		// ContextOnly in full semantic review).
+		parts = append(parts,
+			normalizeContentModerationReviewKind(selection.ReviewKind),
+			strings.TrimSpace(selection.EvidenceRevision),
+			strconv.FormatBool(selection.EvidenceComplete),
+			strings.TrimSpace(selection.Origin),
 		)
 	}
 	// An incomplete extraction has no provider payload to identify it. Include
@@ -1226,7 +1243,7 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 			s.metrics.observeSemanticReview(semanticCfg.PrimaryModel, "error", started, OpenAIUsage{})
 		}
 		slog.Warn("content_moderation.candidate_semantic_review_failed", "candidate_category", selection.Rule.Category, "error", err)
-		return s.candidateUnavailableOutcome(
+		return s.candidateUnavailableOutcomeWithLatency(
 			ctx,
 			input,
 			cfg,
@@ -1235,6 +1252,7 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 			"platform_openai",
 			semanticCfg.PrimaryModel,
 			sanitizeSemanticReviewError(err.Error()),
+			&latency,
 		)
 	}
 	if s.metrics != nil {
@@ -1290,9 +1308,7 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		return contentModerationCandidateOutcome{Decision: buildDecision(action, true, blocked), DecisionID: decisionID, Cacheable: true}
 	case "review":
 		action := ContentModerationActionSemanticReviewReview
-		promptInjectionFailClosed := promptInjectionFailClosedActive(cfg, selection)
-		highRiskDeferred := highRiskCandidateReviewDeferredActive(cfg, selection, result)
-		failClosed := promptInjectionFailClosed || highRiskDeferred
+		failClosed := promptInjectionFailClosedActive(cfg, selection)
 		if failClosed {
 			action = ContentModerationActionSemanticReviewDeferred
 			if !semanticInput.EvidenceComplete {
@@ -1316,7 +1332,7 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 			decision := buildDecision(action, true, true)
 			decision.StatusCode = http.StatusServiceUnavailable
 			decision.Message = promptInjectionDeferredMessage(action)
-			if promptInjectionFailClosed && s.metrics != nil {
+			if s.metrics != nil {
 				reason := "review"
 				if action == ContentModerationActionSemanticReviewIncomplete {
 					reason = "incomplete"
@@ -1370,19 +1386,6 @@ func applyCandidateSemanticReviewPolicy(
 	result.Severity = ContentModerationKeywordSeverityHigh
 	result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "semantic_policy_high_risk_candidate")
 	return result, true
-}
-
-func highRiskCandidateReviewDeferredActive(
-	cfg *ContentModerationConfig,
-	selection contentModerationCandidateSelection,
-	result ContentModerationSemanticReviewResult,
-) bool {
-	if cfg == nil || cfg.Mode != ContentModerationModePreBlock {
-		return false
-	}
-	category := normalizeContentModerationKeywordCategory(selection.Rule.Category)
-	return contentModerationCandidateIsHighRisk(selection, category) ||
-		semanticReviewResultIsHighRisk(result)
 }
 
 func contentModerationCandidateIsHighRisk(selection contentModerationCandidateSelection, normalizedCategory string) bool {
@@ -1502,7 +1505,8 @@ func (s *ContentModerationService) persistCandidateAudit(
 	if s == nil || log == nil {
 		return ""
 	}
-	if blocked {
+	enforcementEligible := blocked && log.UserViolationEligible
+	if enforcementEligible {
 		s.enqueueRecord(ctx, input, cfg, log, selection.hash(), true, true)
 	} else {
 		s.persistContentModerationLog(ctx, cfg, log, selection.hash(), false, false)
@@ -1525,6 +1529,30 @@ func (s *ContentModerationService) candidateUnavailableOutcome(
 	model string,
 	reason string,
 ) contentModerationCandidateOutcome {
+	return s.candidateUnavailableOutcomeWithLatency(
+		ctx,
+		input,
+		cfg,
+		selection,
+		decisionSource,
+		provider,
+		model,
+		reason,
+		nil,
+	)
+}
+
+func (s *ContentModerationService) candidateUnavailableOutcomeWithLatency(
+	ctx context.Context,
+	input ContentModerationCheckInput,
+	cfg *ContentModerationConfig,
+	selection contentModerationCandidateSelection,
+	decisionSource string,
+	provider string,
+	model string,
+	reason string,
+	latencyMS *int,
+) contentModerationCandidateOutcome {
 	reason = sanitizeSemanticReviewError(reason)
 	if reason == "" {
 		reason = "candidate_reviewer_unavailable"
@@ -1543,7 +1571,7 @@ func (s *ContentModerationService) candidateUnavailableOutcome(
 		"",
 		0,
 		nil,
-		nil,
+		latencyMS,
 		marshalContentModerationMetadata(metadata),
 	)
 	failClosed := promptInjectionFailClosedActive(cfg, selection)
@@ -1563,7 +1591,11 @@ func (s *ContentModerationService) candidateUnavailableOutcome(
 		if failClosed {
 			action = ContentModerationActionSemanticReviewUnavailable
 		}
-		s.recordPreBlockSyncMetric(0, action)
+		latency := 0
+		if latencyMS != nil {
+			latency = *latencyMS
+		}
+		s.recordPreBlockSyncMetric(latency, action)
 	}
 	if failClosed {
 		if s.metrics != nil {

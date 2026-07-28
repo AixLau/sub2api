@@ -181,6 +181,23 @@ func (e notificationEmailDeliveryError) Unwrap() error {
 	return e.Err
 }
 
+type notificationEmailAcceptedStateError struct {
+	Err error
+}
+
+func (e notificationEmailAcceptedStateError) Error() string {
+	return e.Err.Error()
+}
+
+func (e notificationEmailAcceptedStateError) Unwrap() error {
+	return e.Err
+}
+
+func notificationEmailDeliveryWasAccepted(err error) bool {
+	var acceptedErr notificationEmailAcceptedStateError
+	return errors.As(err, &acceptedErr)
+}
+
 type notificationEmailUnsubscribeClaims struct {
 	Email string `json:"email"`
 	Event string `json:"event"`
@@ -425,7 +442,7 @@ func (s *NotificationEmailService) Send(ctx context.Context, input NotificationE
 	}
 	if deliveryKey != "" {
 		if err := s.settingRepo.Set(ctx, deliveryKey, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
-			return err
+			return notificationEmailAcceptedStateError{Err: err}
 		}
 	}
 	return nil

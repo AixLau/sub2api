@@ -1,0 +1,44 @@
+schema_version: 1
+id: ADMIN-ROUTE-001
+name: Admin routes and authorization
+purpose: Keep local admin endpoints registered behind the correct authentication, role, step-up, and audit middleware.
+risk: critical
+paths:
+  - backend/internal/server/router.go
+  - backend/internal/server/routes/admin.go
+  - backend/internal/server/middleware/**
+  - backend/internal/handler/admin/**
+symbols:
+  - RegisterAdminRoutes
+  - SetupRouter
+  - EnforceStepUp
+routes:
+  - /api/v1/admin
+config_keys:
+  - admin_2fa
+  - panel_api_rate_limit
+environment: []
+json_fields:
+  - role
+  - permissions
+database_fields:
+  - users.role
+  - audit_logs.action
+api_fields:
+  - error
+invariants:
+  - Every local admin endpoint is protected by admin authentication and its declared step-up or audit middleware.
+  - Route registration order does not bypass rate limiting or authorization.
+tests:
+  - kind: go
+    files:
+      - backend/internal/server/middleware/step_up_test.go
+    command: "cd backend && GOMAXPROCS=2 go test -p 2 ./internal/server/routes ./internal/server/middleware -run 'Admin|StepUp|Route|Permission' -count=1"
+introduced_by:
+  - cfe4e2e2c643e160eb158bdb47e3e3e7524cd73f
+merge_strategy: combine
+watch:
+  - middleware_order
+  - route_addition
+  - authorization
+  - audit

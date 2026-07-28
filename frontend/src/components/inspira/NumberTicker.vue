@@ -18,7 +18,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  duration: 1500,
+  duration: 500,
   decimalPlaces: 0,
   prefix: '',
   suffix: ''

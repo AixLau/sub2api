@@ -199,6 +199,7 @@ func TestApplyPromptInjectionReviewPolicy(t *testing.T) {
 		require.True(t, overridden)
 		require.Equal(t, "review", result.Verdict)
 		require.Equal(t, "medium", result.Severity)
+		require.Equal(t, "high", result.ModelSeverity)
 		require.Contains(t, result.ReasonCodes, "semantic_policy_incomplete_evidence")
 	})
 

@@ -156,7 +156,7 @@
         </div>
 
         <!-- Promo Code Input (Optional) -->
-        <div v-if="promoCodeEnabled">
+        <div v-if="promoCodeEnabled" data-testid="promo-code-field">
           <label for="promo_code" class="input-label">
             {{ t('auth.promoCodeLabel') }}
             <span class="ml-1 text-xs font-normal text-gray-400 dark:text-dark-500">({{ t('common.optional') }})</span>
@@ -341,7 +341,7 @@ const showPassword = ref<boolean>(false)
 // Public settings
 const registrationEnabled = ref<boolean>(true)
 const emailVerifyEnabled = ref<boolean>(false)
-const promoCodeEnabled = ref<boolean>(true)
+const promoCodeEnabled = ref<boolean>(false)
 const invitationCodeEnabled = ref<boolean>(false)
 const affiliateEnabled = ref<boolean>(false)
 const turnstileEnabled = ref<boolean>(false)

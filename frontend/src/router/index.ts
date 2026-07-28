@@ -14,9 +14,7 @@ import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveRouteDocumentTitle } from './title'
 
-export const reactLandingRoutesEnabled = import.meta.env.VITE_REACT_LANDING_ROUTES === 'true'
-
-const vueOwnedPublicEntryRoutes: RouteRecordRaw[] = [
+const publicEntryRoutes: RouteRecordRaw[] = [
   {
     path: '/home',
     name: 'Home',
@@ -66,7 +64,7 @@ const vueOwnedPublicEntryRoutes: RouteRecordRaw[] = [
       title: 'Reset Password'
     }
   },
-  // 星链AI 落地页业务子页（自 react-frontend 移植；文档标题由 landingSeo 在挂载后覆盖）
+  // 星链AI 落地页业务子页；文档标题由 landingSeo 在挂载后覆盖。
   {
     path: '/model-market',
     name: 'ModelMarket',
@@ -125,13 +123,7 @@ const routes: RouteRecordRaw[] = [
   },
 
   // ==================== Public Routes ====================
-  // In dual-service deployments, VITE_REACT_LANDING_ROUTES=true lets the
-  // branded React landing app own '/', '/home', '/login', '/register',
-  // '/forgot-password', '/reset-password', '/model-market', '/services',
-  // '/service-status', and '/faq'. Default single-service deployments keep
-  // the Vue public entry routes registered (the 星链AI landing now lives in
-  // this app under src/components/landing + src/views/landing).
-  ...(!reactLandingRoutesEnabled ? vueOwnedPublicEntryRoutes : []),
+  ...publicEntryRoutes,
   {
     path: '/email-verify',
     name: 'EmailVerify',
@@ -241,10 +233,10 @@ const routes: RouteRecordRaw[] = [
   },
 
   // ==================== User Routes ====================
-  ...(!reactLandingRoutesEnabled ? [{
+  {
     path: '/',
     redirect: '/home'
-  }] : []),
+  },
   {
     path: '/dashboard',
     name: 'Dashboard',
@@ -796,25 +788,7 @@ const router = createRouter({
   }
 })
 
-export function buildReactLoginRedirectUrl(redirectTarget: string): string {
-  const params = new URLSearchParams()
-  if (redirectTarget) {
-    params.set('redirect', redirectTarget)
-  }
-  const query = params.toString()
-  return query ? `/login?${query}` : '/login'
-}
-
-function redirectToReactLogin(redirectTarget: string): void {
-  window.location.assign(buildReactLoginRedirectUrl(redirectTarget))
-}
-
 function redirectToLogin(next: (to?: unknown) => void, redirectTarget: string): void {
-  if (reactLandingRoutesEnabled) {
-    redirectToReactLogin(redirectTarget)
-    next(false)
-    return
-  }
   next({
     path: '/login',
     query: redirectTarget ? { redirect: redirectTarget } : undefined,

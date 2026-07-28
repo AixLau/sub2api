@@ -1,5 +1,5 @@
 /*
- * 星链AI 落地页 / 认证页皮肤，移植自 react-frontend/src/styles/alwayzz.css。
+ * 星链AI Vue 落地页 / 认证页皮肤。
  * 原全局选择器（:root/html/body/a/button/*）统一收敛到 .landing-shell 作用域，
  * 避免污染控制台样式；页面始终浅色（不随 html.dark 变化），与线上落地页一致。
  */
@@ -3123,7 +3123,7 @@
   }
 }
 
-/* ===== Vue 移植新增：纯 CSS 入场与漂浮（替代原 react-frontend 的 GSAP 时间线） ===== */
+/* ===== 纯 CSS 入场与漂浮 ===== */
 
 @media (prefers-reduced-motion: no-preference) {
   /* 首页 hero 分层入场：ticker → 标题 → 副标题 → 操作区 */

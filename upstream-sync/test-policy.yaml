@@ -1,0 +1,27 @@
+schema_version: 1
+
+defaults:
+  serial: true
+  nice: 10
+  max_workers: 2
+  generated_files_are_reviewed_via_sources: true
+
+selectors:
+  go:
+    compile: "cd backend && GOMAXPROCS=2 go test -p 2 -run '^$' {package}"
+    focused: "cd backend && GOMAXPROCS=2 go test -p 2 {package} -run '{pattern}' -count=1"
+  vue:
+    related: "pnpm --dir frontend exec vitest related --run --maxWorkers=2 {files}"
+    typecheck: "pnpm --dir frontend run typecheck"
+  contracts:
+    route: "cd backend && GOMAXPROCS=2 go test -p 2 ./internal/server/routes -run 'Route|Coverage' -count=1"
+    wire: "cd backend && GOMAXPROCS=2 go test -p 2 ./cmd/server -run '^$'"
+    schema: "cd backend && GOMAXPROCS=2 go test -p 2 ./internal/repository -run 'Migration|Schema' -count=1"
+    i18n: "pnpm --dir frontend exec vitest run --maxWorkers=2 src/i18n"
+
+full_validation:
+  cadence: nightly_or_release
+  commands:
+    - "cd backend && GOMAXPROCS=2 make test-unit"
+    - "pnpm --dir frontend run typecheck"
+    - "pnpm --dir frontend exec vitest run --maxWorkers=2"

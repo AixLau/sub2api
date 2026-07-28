@@ -1,0 +1,46 @@
+schema_version: 1
+id: FRONTEND-EXT-001
+name: Frontend navigation, pages, and settings panels
+purpose: Preserve local pages, navigation visibility, settings panels, API contracts, and responsive behavior.
+risk: high
+paths:
+  - frontend/src/router/**
+  - frontend/src/App.vue
+  - frontend/src/layouts/**
+  - frontend/src/components/navigation/**
+  - frontend/src/views/admin/SettingsView.vue
+symbols:
+  - router
+  - SettingsView
+  - customMenuItems
+routes:
+  - /admin/settings
+config_keys: []
+environment:
+  - VITE_API_BASE_URL
+json_fields:
+  - settings
+database_fields: []
+api_fields:
+  - path
+  - permissions
+invariants:
+  - Local pages remain reachable and navigation visibility matches backend permissions.
+  - Settings panels submit only supported API fields and preserve unsaved local state.
+tests:
+  - kind: vue
+    files:
+      - frontend/src/views/admin/__tests__/SettingsView.spec.ts
+    command: "pnpm --dir frontend exec vitest related --run --maxWorkers=2 frontend/src/router frontend/src/views/admin/SettingsView.vue"
+  - kind: vue
+    files: []
+    command: "pnpm --dir frontend run typecheck"
+introduced_by:
+  - 6d12d35e9b621f50d1c8d8f09ab0da4e4dfe841e
+merge_strategy: combine
+watch:
+  - route
+  - navigation
+  - permission
+  - api_field
+  - component_contract

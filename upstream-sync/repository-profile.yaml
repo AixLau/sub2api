@@ -1,0 +1,73 @@
+schema_version: 1
+recorded_at: "2026-07-27T23:55:00+08:00"
+
+git:
+  product_integration_branch: feat/inspira-ui
+  product_head: 906f1f278bcd751ebfb511ea64981c4b075c83d3
+  origin_main: e9008524d
+  upstream_main: 59ce11c78000bde5bdd74930b5885753037a5841
+  branch_tracking_note: feat/inspira-ui has no existing origin tracking ref
+  local_non_merge_commits_vs_upstream: 455
+  local_changed_files_vs_upstream: 923
+  local_added_lines_vs_upstream: 155728
+  local_deleted_lines_vs_upstream: 10686
+
+last_verified_merge:
+  version: v0.1.166
+  merge_commit: 906f1f278bcd751ebfb511ea64981c4b075c83d3
+  product_parent: b5278fb2620366b40fac5608259b634a801462bc
+  upstream_parent: 59ce11c78000bde5bdd74930b5885753037a5841
+  previous_merge: 7b0ea8ccdb132c341f51244f7c3276395ccab486
+  previous_upstream: 2730c1c43b29be003925b033f3f9e645e726bb8c
+  upstream_delta_files: 142
+  post_sync_local_delta_files: 213
+  direct_incremental_overlap_files: 9
+
+legacy_audit:
+  implementation: Codex skill sub2api-upstream-merge
+  default_boundary: merge-base..HEAD
+  latest_historical_local_files: 917
+  latest_historical_local_commits: 455
+  latest_overlap_files: 64
+  latest_conflict_files: 16
+  confirmation_matrix_lines: 11080
+  confirmation_matrix_bytes: 504000
+  limitation: full historical local customization diffs were regenerated for every merge
+
+hotspots:
+  - path: backend/internal/handler/openai_gateway_handler.go
+    repeated_overlap_count: 12
+  - path: backend/internal/server/routes/admin.go
+    repeated_overlap_count: 10
+  - path: backend/cmd/server/wire_gen.go
+    repeated_overlap_count: 10
+  - path: frontend/src/views/admin/SettingsView.vue
+    repeated_overlap_count: 9
+  - path: backend/internal/config/config.go
+    repeated_overlap_count: 8
+  - path: backend/internal/server/router.go
+    repeated_overlap_count: 7
+  - path: backend/internal/server/routes/gateway.go
+    repeated_overlap_count: 6
+
+toolchain:
+  backend: Go 1.26.5, Gin, Ent, Wire, PostgreSQL, Redis
+  frontend: Vue 3, TypeScript, Vite, Pinia, vue-router, vue-i18n, Vitest
+  frontend_package_manager: pnpm 9
+  ci_node: "20"
+
+tests:
+  go_test_files: 1075
+  vue_test_files: 242
+  selection_policy: upstream-sync/test-policy.yaml
+
+generated_sources:
+  ent_source: backend/ent/schema
+  ent_output: backend/ent
+  wire_sources:
+    - backend/internal/repository/wire.go
+    - backend/internal/service/wire.go
+    - backend/internal/handler/wire.go
+    - backend/internal/payment/wire.go
+    - backend/cmd/server/wire.go
+  wire_output: backend/cmd/server/wire_gen.go

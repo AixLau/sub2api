@@ -1,0 +1,52 @@
+schema_version: 1
+id: GW-OPENAI-001
+name: OpenAI request forwarding pipeline
+purpose: Preserve OpenAI HTTP and WebSocket request parsing, model mapping, failover, response streaming, and usage handoff.
+risk: critical
+paths:
+  - backend/internal/handler/openai_gateway_handler.go
+  - backend/internal/handler/openai_gateway_executable_pipeline.go
+  - backend/internal/service/openai_gateway_service.go
+  - backend/internal/service/openai_gateway_*.go
+symbols:
+  - OpenAIGatewayHandler.Responses
+  - OpenAIGatewayHandler.Messages
+  - OpenAIGatewayHandler.ResponsesWebSocket
+  - OpenAIGatewayHandler.submitOpenAIUsageRecordTask
+  - StageAdapterRegistry
+routes:
+  - POST /v1/responses
+  - POST /v1/chat/completions
+  - POST /v1/messages
+  - GET /v1/responses
+config_keys: []
+environment: []
+json_fields:
+  - model
+  - stream
+  - service_tier
+  - usage
+database_fields:
+  - usage_logs.request_id
+api_fields:
+  - requested_model
+  - upstream_model
+invariants:
+  - Client request payload and supported structured-output fields reach the selected upstream without silent loss.
+  - Failover occurs only before an irreversible response boundary and usage is recorded once.
+  - WebSocket model and billing metadata are tracked per turn.
+tests:
+  - kind: go
+    files:
+      - backend/internal/handler/openai_stream_validation_test.go
+      - backend/internal/service/openai_gateway_record_usage_test.go
+    command: "cd backend && GOMAXPROCS=2 go test -p 2 ./internal/handler ./internal/service -run 'OpenAI.*(Forward|Responses|Usage|Stream)|GatewayOpenAI' -count=1"
+introduced_by:
+  - 6597c33d82364fc9249d7f5f09a9a156e3d10b16
+merge_strategy: combine
+watch:
+  - call_order
+  - signature
+  - request_body
+  - response_boundary
+  - retry

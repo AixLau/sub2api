@@ -1,0 +1,54 @@
+schema_version: 1
+id: BILLING-001
+name: Token usage and service-tier billing
+purpose: Keep token accounting, local multipliers, deduplication, and balance deduction correct.
+risk: critical
+paths:
+  - backend/internal/service/billing_service.go
+  - backend/internal/service/openai_gateway_record_usage*.go
+  - backend/internal/service/*billing*.go
+  - backend/internal/service/usage_record_worker_pool.go
+  - backend/resources/model-pricing/**
+symbols:
+  - BillingService
+  - OpenAIGatewayService.RecordUsage
+  - computeTokenBreakdown
+  - UsageRecordTask
+routes: []
+config_keys:
+  - billing
+  - openai_fast
+environment: []
+json_fields:
+  - input_tokens
+  - output_tokens
+  - cache_creation_input_tokens
+  - cache_read_input_tokens
+  - service_tier
+database_fields:
+  - usage_logs.actual_cost
+  - usage_logs.service_tier
+  - usage_billing_dedup.request_id
+api_fields:
+  - actual_cost
+  - total_tokens
+invariants:
+  - A successful usage event deducts the balance exactly once.
+  - OpenAI priority or fast usage uses the local 2.5x pricing policy without changing base model prices.
+  - Cache, image, long-context, and mapped-model tokens retain their declared billing semantics.
+tests:
+  - kind: go
+    files:
+      - backend/internal/service/openai_gateway_record_usage_test.go
+      - backend/internal/service/force_cache_billing_test.go
+    command: "cd backend && GOMAXPROCS=2 go test -p 2 ./internal/service -run 'RecordUsage|Billing|ForceCache|ServiceTier' -count=1"
+introduced_by:
+  - 36a3624fe26e5a8cd00314ae17a8024a38a7725d
+  - e92015560
+merge_strategy: preserve_local_pricing_policy_and_combine_upstream_usage_fields
+watch:
+  - multiplier
+  - token_field
+  - deduplication
+  - transaction_order
+  - model_pricing

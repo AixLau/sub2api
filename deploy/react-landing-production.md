@@ -1,12 +1,32 @@
-# React 官网 + Sub2API 生产部署 Runbook
+# React 官网 + Sub2API 双服务历史迁移说明（已弃用）
 
-本文档记录当前推荐的双服务部署方式：React 官网负责品牌首页和登录/注册入口，Sub2API 保持原有 Vue 控制台、后端 API、数据库和 Redis。不要为了接入官网而给 Sub2API 增加 `/console` 前缀。
+> **移除通知：** React 官网目录、条件路由和构建开关均已从当前代码中移除。首页、登录、注册、找回密码及其他公开页面只由仓库 `frontend/` 中的 Vue 应用提供。新部署请使用 [`deploy/README.md`](./README.md) 中的标准一体化方案。
 
-Sub2API 前端只有在构建时设置 `VITE_REACT_LANDING_ROUTES=true` 才会把官网和认证入口留给 React。使用 Docker 构建时传入 `--build-arg VITE_REACT_LANDING_ROUTES=true`；只在容器运行时设置同名环境变量无效，因为 Vue 路由归属已在 Vite 构建阶段固化。默认不设置该变量时，Sub2API 仍按单服务部署方式由 Vue 自己提供原有入口页。React 新增公开页面还必须在 Caddy 的 `@react_landing` 中逐条声明，不能依赖兜底路由。
+本文档仅保留给仍在运行旧 React 双服务架构的环境，用于识别旧配置并迁移回 Vue 一体化部署。以下 React 构建、发布、路由和回滚命令均为历史信息，不适用于新部署。
 
-## 当前拓扑
+## 迁移到 Vue 一体化部署
 
-| 层级 | 当前约定 |
+1. 使用当前代码重新构建并发布 Sub2API 镜像。当前镜像只包含 Vue 前端，不再接受 React 路由构建参数。
+2. 从 Caddy/Nginx 配置中移除 React 静态目录、`/landing-assets/*` 和 `@react_landing` 等专用处理，让 `/`、`/home`、`/login`、`/register`、`/forgot-password`、`/reset-password`、`/model-market`、`/services`、`/service-status`、`/faq` 回源到 Sub2API。
+3. 保留 `/api/*`、`/v1/*` 等 API 反向代理规则，并按实际部署保留独立文档站等无关路由。
+4. 校验并重载反向代理，随后检查首页、登录页、注册页和健康接口。
+
+```bash
+curl -fsS http://127.0.0.1:8080/health
+curl -fsSI https://example.com/
+curl -fsSI https://example.com/login
+curl -fsSI https://example.com/register
+```
+
+确认 Vue 页面正常后，再按运维流程下线旧 React 静态站。不要在迁移验证完成前清理旧产物。
+
+## 以下为历史方案
+
+旧方案曾由独立 React 静态站接管官网和认证入口，Sub2API Vue 应用只提供控制台等其余页面。该兼容模式已从代码中移除。
+
+## 旧方案拓扑
+
+| 层级 | 历史约定 |
 |------|----------|
 | 公网域名 | `https://aixlau.me` |
 | 反向代理 | Caddy，配置在服务器 `/etc/caddy/Caddyfile` |
@@ -136,9 +156,9 @@ sudo caddy validate --config /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
 
-## React 官网发布流程
+## 旧 React 官网发布流程
 
-React 官网项目位于本仓库 `react-frontend/`。该目录只保留当前线上使用的 React/Vite 首页和认证入口代码；不要在其中维护第二套 Vue/Tailwind 首页实现。构建产物必须使用 `landing-assets` 作为资源目录，避免和 Sub2API Vue 控制台的 `/assets/*` 冲突。
+旧 React 官网项目位于本仓库 `react-frontend/`，仅供尚未完成迁移的环境临时维护。不要在其中继续开发首页或认证页面；相关改动应在 `frontend/` 中进行。旧构建产物使用 `landing-assets` 作为资源目录，以避免和 Sub2API Vue 控制台的 `/assets/*` 冲突。
 
 > SEO 发布要求：凡修改 `react-frontend/index.html`、`react-frontend/src/lib/seo.ts` 或 `react-frontend/public/` 下的 SEO 文件，都必须重新构建并上传整个 React `dist/`。只部署 Sub2API Docker 镜像不会更新官网首页的 title、canonical、Open Graph 或官网静态资源。
 
@@ -183,11 +203,11 @@ curl -fsSL https://aixlau.me/docs/install/ | rg -n 'canonical|TechArticle|FAQPag
 
 如果需要清理旧的 hashed 静态资源，只能在确认当前 HTML 引用的新资源可访问后，人工列出待删文件并按删除安全流程执行。不要用自动同步删除命令直接覆盖生产静态目录。
 
-## Sub2API 镜像发布流程
+## 旧双服务镜像发布流程
 
-生产环境使用 Docker Compose，并复用现有 PostgreSQL 和 Redis 数据目录。
+旧双服务生产环境使用 Docker Compose，并复用现有 PostgreSQL 和 Redis 数据目录。
 
-构建 aixlau.me 使用的双站点镜像时必须带上 React 路由参数：
+以下命令是已经失效的历史记录，当前代码无法再构建双站点兼容镜像：
 
 ```bash
 docker buildx build \
@@ -244,7 +264,7 @@ docker compose -f docker-compose.local.yml logs --tail=120 sub2api
 
 ## Cloudflare 建议
 
-当前 React 官网页面是纯静态 HTML。若 Cloudflare 对官网公开页或认证入口返回 `cf-cache-status: DYNAMIC`，首包时间会受回源链路和防护脚本影响。
+旧 React 官网页面是纯静态 HTML。若 Cloudflare 对官网公开页或认证入口返回 `cf-cache-status: DYNAMIC`，首包时间会受回源链路和防护脚本影响。
 
 建议：
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -18,26 +19,30 @@ func NewContentModerationOutboxRepository(db *sql.DB) service.ContentModerationO
 	return &contentModerationOutboxRepository{db: db}
 }
 
-func (r *contentModerationOutboxRepository) EnqueueEvents(ctx context.Context, events []service.ContentModerationOutboxEvent) error {
-	if r == nil || r.db == nil || len(events) == 0 {
-		return nil
+func (r *contentModerationOutboxRepository) EnqueueEvents(ctx context.Context, events []service.ContentModerationOutboxEvent) (int, error) {
+	if len(events) == 0 {
+		return 0, nil
+	}
+	if r == nil || r.db == nil {
+		return 0, errors.New("content moderation outbox repository is unavailable")
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer func() {
 		_ = tx.Rollback()
 	}()
+	inserted := 0
 	for _, event := range events {
 		payload, err := json.Marshal(event.Payload)
 		if err != nil {
-			return fmt.Errorf("marshal content moderation outbox payload: %w", err)
+			return 0, fmt.Errorf("marshal content moderation outbox payload: %w", err)
 		}
 		if event.MaxRetries <= 0 {
 			event.MaxRetries = service.ContentModerationOutboxDefaultMaxRetries(event.Priority)
 		}
-		_, err = tx.ExecContext(ctx, `
+		result, err := tx.ExecContext(ctx, `
 INSERT INTO content_moderation_outbox (
 	decision_id, event_type, event_key, priority, payload, max_retries
 ) VALUES (
@@ -46,15 +51,23 @@ INSERT INTO content_moderation_outbox (
 ON CONFLICT (decision_id, event_type, event_key) DO NOTHING
 `, event.DecisionID, event.EventType, event.EventKey, event.Priority, string(payload), event.MaxRetries)
 		if err != nil {
-			return fmt.Errorf("insert content moderation outbox event: %w", err)
+			return 0, fmt.Errorf("insert content moderation outbox event: %w", err)
 		}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return 0, fmt.Errorf("read content moderation outbox insert result: %w", err)
+		}
+		inserted += int(rowsAffected)
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return inserted, nil
 }
 
-func (r *contentModerationOutboxRepository) ClaimDueEvents(ctx context.Context, now time.Time, limit int, lockFor time.Duration) ([]service.ContentModerationOutboxEvent, error) {
+func (r *contentModerationOutboxRepository) ClaimDueEvents(ctx context.Context, _ time.Time, limit int, lockFor time.Duration) ([]service.ContentModerationOutboxEvent, error) {
 	if r == nil || r.db == nil {
-		return nil, nil
+		return nil, errors.New("content moderation outbox repository is unavailable")
 	}
 	if limit <= 0 {
 		limit = 20
@@ -67,26 +80,27 @@ WITH selected AS (
 	SELECT id
 	FROM content_moderation_outbox
 	WHERE status IN ('pending', 'retry', 'processing')
-	  AND next_retry_at <= $1
-	  AND (locked_until IS NULL OR locked_until < $1)
+	  AND next_retry_at <= CURRENT_TIMESTAMP
+	  AND (locked_until IS NULL OR locked_until < CURRENT_TIMESTAMP)
 	ORDER BY CASE priority WHEN 'strong' THEN 0 ELSE 1 END, id ASC
-	LIMIT $2
+	LIMIT $1
 	FOR UPDATE SKIP LOCKED
 ), claimed AS (
 	UPDATE content_moderation_outbox o
 	SET status = 'processing',
-	    locked_until = $1 + $3::interval,
+	    locked_until = CURRENT_TIMESTAMP + $2::interval,
 	    updated_at = NOW()
 	FROM selected s
 	WHERE o.id = s.id
 	RETURNING o.id, o.decision_id, o.event_type, o.event_key, o.priority,
-	          o.payload, o.retry_count, o.max_retries, o.next_retry_at, o.created_at
+	          o.payload, o.retry_count, o.max_retries, o.next_retry_at, o.created_at, o.last_error,
+	          o.locked_until
 )
 SELECT id, decision_id, event_type, event_key, priority,
-       payload, retry_count, max_retries, next_retry_at, created_at
+       payload, retry_count, max_retries, next_retry_at, created_at, last_error, locked_until
 FROM claimed
 ORDER BY CASE priority WHEN 'strong' THEN 0 ELSE 1 END, id ASC
-`, now, limit, fmt.Sprintf("%d milliseconds", lockFor.Milliseconds()))
+`, limit, fmt.Sprintf("%d milliseconds", lockFor.Milliseconds()))
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +122,8 @@ ORDER BY CASE priority WHEN 'strong' THEN 0 ELSE 1 END, id ASC
 			&event.MaxRetries,
 			&event.NextRetryAt,
 			&event.CreatedAt,
+			&event.LastError,
+			&event.LeaseUntil,
 		); err != nil {
 			return nil, err
 		}
@@ -217,7 +233,6 @@ SET status = 'retry',
     retry_count = 0,
     next_retry_at = NOW(),
     locked_until = NULL,
-    last_error = '',
     dead_letter_at = NULL,
     updated_at = NOW()
 WHERE id = $1 AND status = 'dead_letter'
@@ -298,50 +313,80 @@ func scanContentModerationOutboxEvents(rows contentModerationOutboxRows, capacit
 	return out, nil
 }
 
-func (r *contentModerationOutboxRepository) MarkEventSucceeded(ctx context.Context, id int64) error {
-	if r == nil || r.db == nil || id <= 0 {
-		return nil
+func (r *contentModerationOutboxRepository) MarkEventSucceeded(ctx context.Context, id int64, leaseUntil time.Time) error {
+	if r == nil || r.db == nil {
+		return errors.New("content moderation outbox repository is unavailable")
 	}
-	_, err := r.db.ExecContext(ctx, `
+	if id <= 0 || leaseUntil.IsZero() {
+		return service.ErrContentModerationOutboxLeaseLost
+	}
+	result, err := r.db.ExecContext(ctx, `
 UPDATE content_moderation_outbox
 SET status = 'succeeded',
     locked_until = NULL,
+    last_error = '',
     succeeded_at = NOW(),
     updated_at = NOW()
 WHERE id = $1
-`, id)
-	return err
+  AND status = 'processing'
+  AND locked_until = $2
+`, id, leaseUntil)
+	return contentModerationOutboxLeaseUpdateResult(result, err)
 }
 
-func (r *contentModerationOutboxRepository) ScheduleEventRetry(ctx context.Context, id int64, retryCount int, nextRetryAt time.Time, lastError string) error {
-	if r == nil || r.db == nil || id <= 0 {
-		return nil
+func (r *contentModerationOutboxRepository) ScheduleEventRetry(ctx context.Context, id int64, leaseUntil time.Time, retryCount int, nextRetryAt time.Time, lastError string) error {
+	if r == nil || r.db == nil {
+		return errors.New("content moderation outbox repository is unavailable")
 	}
-	_, err := r.db.ExecContext(ctx, `
+	if id <= 0 || leaseUntil.IsZero() {
+		return service.ErrContentModerationOutboxLeaseLost
+	}
+	result, err := r.db.ExecContext(ctx, `
 UPDATE content_moderation_outbox
 SET status = 'retry',
-    retry_count = $2,
-    next_retry_at = $3,
+    retry_count = $3,
+    next_retry_at = $4,
     locked_until = NULL,
-    last_error = $4,
+    last_error = $5,
     updated_at = NOW()
 WHERE id = $1
-`, id, retryCount, nextRetryAt, lastError)
-	return err
+  AND status = 'processing'
+  AND locked_until = $2
+`, id, leaseUntil, retryCount, nextRetryAt, lastError)
+	return contentModerationOutboxLeaseUpdateResult(result, err)
 }
 
-func (r *contentModerationOutboxRepository) MarkEventDeadLetter(ctx context.Context, id int64, lastError string) error {
-	if r == nil || r.db == nil || id <= 0 {
-		return nil
+func (r *contentModerationOutboxRepository) MarkEventDeadLetter(ctx context.Context, id int64, leaseUntil time.Time, lastError string) error {
+	if r == nil || r.db == nil {
+		return errors.New("content moderation outbox repository is unavailable")
 	}
-	_, err := r.db.ExecContext(ctx, `
+	if id <= 0 || leaseUntil.IsZero() {
+		return service.ErrContentModerationOutboxLeaseLost
+	}
+	result, err := r.db.ExecContext(ctx, `
 UPDATE content_moderation_outbox
 SET status = 'dead_letter',
     locked_until = NULL,
-    last_error = $2,
+    last_error = $3,
     dead_letter_at = NOW(),
     updated_at = NOW()
 WHERE id = $1
-`, id, lastError)
-	return err
+  AND status = 'processing'
+  AND locked_until = $2
+`, id, leaseUntil, lastError)
+	return contentModerationOutboxLeaseUpdateResult(result, err)
+}
+
+func contentModerationOutboxLeaseUpdateResult(result sql.Result, err error) error {
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return service.ErrContentModerationOutboxLeaseLost
+	}
+	return nil
 }

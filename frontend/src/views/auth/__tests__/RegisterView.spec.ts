@@ -223,3 +223,31 @@ describe('RegisterView invitation layout', () => {
     expect(wrapper.get('#invitation_code').exists()).toBe(true)
   })
 })
+
+describe('RegisterView promo code visibility', () => {
+  beforeEach(() => {
+    getPublicSettingsMock.mockReset()
+  })
+
+  it('does not show the promo code field before settings explicitly enable it', async () => {
+    let resolveSettings!: (settings: typeof invitationPublicSettings) => void
+    getPublicSettingsMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSettings = resolve
+        })
+    )
+
+    const wrapper = mountRegister()
+
+    expect(wrapper.find('[data-testid="promo-code-field"]').exists()).toBe(false)
+
+    resolveSettings({
+      ...invitationPublicSettings,
+      promo_code_enabled: true
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="promo-code-field"]').exists()).toBe(true)
+  })
+})

@@ -144,6 +144,74 @@ type semanticReviewTerminalReader struct {
 	err  error
 }
 
+type semanticReviewFailingOnceDeadLetterAuditRepo struct {
+	contentModerationTestRepo
+	mu          sync.Mutex
+	createCalls int
+}
+
+type semanticReviewFailingReplacementRepo struct {
+	contentModerationTestRepo
+	mu          sync.Mutex
+	createCalls int
+}
+
+func (r *semanticReviewFailingReplacementRepo) CreateLog(ctx context.Context, log *ContentModerationLog) error {
+	r.mu.Lock()
+	r.createCalls++
+	r.mu.Unlock()
+	return r.contentModerationTestRepo.CreateLog(ctx, log)
+}
+
+func (r *semanticReviewFailingReplacementRepo) ReplaceSemanticReviewDeadLetterByDecisionID(context.Context, *ContentModerationLog) (bool, error) {
+	return false, errors.New("semantic replacement unavailable")
+}
+
+func (r *semanticReviewFailingReplacementRepo) snapshotCreateCalls() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.createCalls
+}
+
+func (r *semanticReviewFailingOnceDeadLetterAuditRepo) CreateLog(ctx context.Context, log *ContentModerationLog) error {
+	r.mu.Lock()
+	r.createCalls++
+	fail := r.createCalls == 1
+	r.mu.Unlock()
+	if fail {
+		return errors.New("semantic dead-letter audit unavailable")
+	}
+	return r.contentModerationTestRepo.CreateLog(ctx, log)
+}
+
+func (r *semanticReviewFailingOnceDeadLetterAuditRepo) snapshotCreateCalls() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.createCalls
+}
+
+type semanticReviewImmediateRetryOutboxRepo struct {
+	*contentModerationTestOutboxRepo
+}
+
+func (r *semanticReviewImmediateRetryOutboxRepo) ScheduleEventRetry(
+	ctx context.Context,
+	id int64,
+	leaseUntil time.Time,
+	retryCount int,
+	_ time.Time,
+	lastError string,
+) error {
+	return r.contentModerationTestOutboxRepo.ScheduleEventRetry(
+		ctx,
+		id,
+		leaseUntil,
+		retryCount,
+		time.Time{},
+		lastError,
+	)
+}
+
 func (r *semanticReviewTerminalReader) Read(p []byte) (int, error) {
 	if len(r.data) > 0 {
 		n := copy(p, r.data)
@@ -223,6 +291,30 @@ func TestNormalizeContentModerationSemanticReviewConfigMigratesPreviousDefaults(
 	require.Equal(t, ContentModerationSemanticReviewDefaultTimeoutMS, cfg.TimeoutMS)
 	require.Equal(t, ContentModerationSemanticReviewPrimaryTimeoutMS, cfg.PrimaryTimeoutMS)
 	require.Equal(t, ContentModerationSemanticReviewFallbackTimeoutMS, cfg.FallbackTimeoutMS)
+}
+
+func TestNormalizeContentModerationSemanticReviewConfigMigratesPreviousAttemptBudgets(t *testing.T) {
+	cfg := normalizeContentModerationSemanticReviewConfig(ContentModerationSemanticReviewConfig{
+		TimeoutMS:         ContentModerationSemanticReviewLegacyTimeoutMS,
+		PrimaryTimeoutMS:  5_000,
+		FallbackTimeoutMS: 3_000,
+	})
+
+	require.Equal(t, ContentModerationSemanticReviewLegacyTimeoutMS, cfg.TimeoutMS)
+	require.Equal(t, ContentModerationSemanticReviewPrimaryTimeoutMS, cfg.PrimaryTimeoutMS)
+	require.Equal(t, ContentModerationSemanticReviewFallbackTimeoutMS, cfg.FallbackTimeoutMS)
+}
+
+func TestNormalizeContentModerationSemanticReviewConfigPreservesCustomAttemptBudgets(t *testing.T) {
+	cfg := normalizeContentModerationSemanticReviewConfig(ContentModerationSemanticReviewConfig{
+		TimeoutMS:         30_000,
+		PrimaryTimeoutMS:  5_000,
+		FallbackTimeoutMS: 3_000,
+	})
+
+	require.Equal(t, 30_000, cfg.TimeoutMS)
+	require.Equal(t, 5_000, cfg.PrimaryTimeoutMS)
+	require.Equal(t, 3_000, cfg.FallbackTimeoutMS)
 }
 
 func TestNormalizeContentModerationSemanticReviewConfigForcesLowReasoning(t *testing.T) {
@@ -316,6 +408,14 @@ func TestSemanticReviewRouterUsesStaleSnapshotWhenSynchronousQuotaRefreshFails(t
 	require.Equal(t, ContentModerationSemanticReviewPrimaryModel, result.Model)
 	require.Equal(t, []string{ContentModerationSemanticReviewPrimaryModel}, backend.reviewCalls)
 	require.Equal(t, []int64{spark.ID}, quota.snapshotCalls())
+}
+
+func TestSemanticReviewRouterRejectsEmptyEvidence(t *testing.T) {
+	router := NewOpenAIContentModerationSemanticReviewRouter(&semanticReviewBackendStub{}, nil, nil)
+
+	_, err := router.Review(context.Background(), semanticReviewTestConfig(), ContentModerationSemanticReviewInput{Text: " \n "})
+
+	require.ErrorContains(t, err, "semantic review input is empty")
 }
 
 func TestSemanticReviewRouterRefreshesIndependentSparkQuotaForGloballyRateLimitedAccount(t *testing.T) {
@@ -1370,6 +1470,26 @@ func TestSemanticReviewPolicyIncompleteEvidenceKeepsReviewForHumanTriage(t *test
 		require.Equal(t, "review", result.Verdict)
 		require.Contains(t, result.ReasonCodes, "semantic_policy_allow_inconsistent")
 	})
+
+	t.Run("model reject converges to review with audit evidence", func(t *testing.T) {
+		result, overridden := applySemanticReviewPolicyWithPromotion(ContentModerationSemanticReviewResult{
+			Verdict:           "reject",
+			Intent:            "harmful",
+			Target:            "third_party",
+			Authorization:     "unauthorized",
+			InformationAccess: "restricted",
+			HarmMechanism:     "credential_theft",
+			Severity:          "high",
+			Operationality:    "actionable",
+			Executability:     "direct",
+			Categories:        []string{"credential_theft"},
+		}, false)
+
+		require.True(t, overridden)
+		require.Equal(t, "review", result.Verdict)
+		require.Equal(t, "high", result.ModelSeverity)
+		require.Contains(t, result.ReasonCodes, "semantic_policy_incomplete_evidence")
+	})
 }
 
 func TestSemanticReviewPolicyUnsubstantiatedFraudPrecedesAllowInconsistent(t *testing.T) {
@@ -1745,6 +1865,93 @@ func TestEnqueueSemanticReviewEncryptsInputAndStripsAPIKeys(t *testing.T) {
 	require.Contains(t, string(raw), "text_encrypted")
 }
 
+func TestEnqueueSemanticReviewDoesNotDeduplicateIndependentBatchRequests(t *testing.T) {
+	outbox := &contentModerationTestOutboxRepo{}
+	svc := &ContentModerationService{
+		outboxRepo:           outbox,
+		rawRequestEncryptor:  contentModerationTestEncryptor{},
+		semanticReviewRouter: semanticReviewRouterStub{},
+	}
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.SemanticReview = semanticReviewTestConfig()
+	cfg.SemanticReview.Trigger = ContentModerationSemanticReviewTriggerAll
+	content := ContentModerationInput{Text: "same prompt in two independent batch requests"}
+
+	firstInput := ContentModerationCheckInput{RequestID: "imgbatch-first", UserID: 7, Protocol: ContentModerationProtocolBatchImages}
+	secondInput := ContentModerationCheckInput{RequestID: "imgbatch-second", UserID: 7, Protocol: ContentModerationProtocolBatchImages}
+	require.True(t, svc.enqueueSemanticReviewAfterRules(context.Background(), firstInput, cfg, content, "same-hash", &ContentModerationDecision{Allowed: true}))
+	require.True(t, svc.enqueueSemanticReviewAfterRules(context.Background(), secondInput, cfg, content, "same-hash", &ContentModerationDecision{Allowed: true}))
+
+	events := outbox.snapshotEvents()
+	require.Len(t, events, 2)
+	require.NotEqual(t, events[0].DecisionID, events[1].DecisionID)
+	require.EqualValues(t, 2, svc.asyncEnqueued.Load())
+}
+
+func TestEnqueueSemanticReviewDuplicateDoesNotIncrementEnqueued(t *testing.T) {
+	outbox := &contentModerationTestOutboxRepo{}
+	svc := &ContentModerationService{
+		outboxRepo:           outbox,
+		rawRequestEncryptor:  contentModerationTestEncryptor{},
+		semanticReviewRouter: semanticReviewRouterStub{},
+	}
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.SemanticReview = semanticReviewTestConfig()
+	cfg.SemanticReview.Trigger = ContentModerationSemanticReviewTriggerAll
+	input := ContentModerationCheckInput{RequestID: "stable-request", UserID: 7, Protocol: ContentModerationProtocolBatchImages}
+	content := ContentModerationInput{Text: "same logical request retried"}
+
+	require.True(t, svc.enqueueSemanticReviewAfterRules(context.Background(), input, cfg, content, "same-hash", &ContentModerationDecision{Allowed: true}))
+	require.False(t, svc.enqueueSemanticReviewAfterRules(context.Background(), input, cfg, content, "same-hash", &ContentModerationDecision{Allowed: true}))
+
+	require.Len(t, outbox.snapshotEvents(), 1)
+	require.EqualValues(t, 1, svc.asyncEnqueued.Load())
+	require.Zero(t, svc.asyncDropped.Load())
+	require.Zero(t, svc.asyncErrors.Load())
+}
+
+func TestSemanticReviewDecisionIDIncludesPolicyIdentity(t *testing.T) {
+	input := ContentModerationCheckInput{RequestID: "request-1", UserID: 7}
+
+	first := semanticReviewDecisionID(input, "same-hash", "policy-a")
+	retry := semanticReviewDecisionID(input, "same-hash", "policy-a")
+	updatedPolicy := semanticReviewDecisionID(input, "same-hash", "policy-b")
+
+	require.Equal(t, first, retry)
+	require.NotEqual(t, first, updatedPolicy)
+}
+
+func TestEnqueueSemanticReviewPolicyRevisionChangesIdentity(t *testing.T) {
+	outbox := &contentModerationTestOutboxRepo{}
+	svc := &ContentModerationService{
+		outboxRepo:           outbox,
+		rawRequestEncryptor:  contentModerationTestEncryptor{},
+		semanticReviewRouter: semanticReviewRouterStub{},
+	}
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.SemanticReview = semanticReviewTestConfig()
+	cfg.SemanticReview.Trigger = ContentModerationSemanticReviewTriggerAll
+	input := ContentModerationCheckInput{RequestID: "same-request", UserID: 7, policyRevision: "policy-a"}
+	content := ContentModerationInput{Text: "same request under a revised policy"}
+
+	require.True(t, svc.enqueueSemanticReviewAfterRules(context.Background(), input, cfg, content, "same-hash", &ContentModerationDecision{Allowed: true}))
+	input.policyRevision = "policy-b"
+	require.True(t, svc.enqueueSemanticReviewAfterRules(context.Background(), input, cfg, content, "same-hash", &ContentModerationDecision{Allowed: true}))
+
+	events := outbox.snapshotEvents()
+	require.Len(t, events, 2)
+	require.NotEqual(t, events[0].DecisionID, events[1].DecisionID)
+}
+
+func TestSanitizeSemanticReviewErrorTruncatesOnRuneBoundary(t *testing.T) {
+	got := sanitizeSemanticReviewError(strings.Repeat("错", 300))
+
+	require.Equal(t, strings.Repeat("错", 240), got)
+}
+
 func TestProcessSemanticReviewAllowPersistsAuditableCategory(t *testing.T) {
 	repo := &contentModerationTestRepo{}
 	encryptor := contentModerationTestEncryptor{}
@@ -1843,6 +2050,379 @@ func TestProcessSemanticReviewContextOnlyRejectRemainsPendingWithoutViolation(t 
 	require.Contains(t, string(logs[0].Metadata), "semantic_policy_context_only")
 }
 
+func TestProcessSemanticReviewIncompleteRejectRemainsPending(t *testing.T) {
+	repo := &contentModerationTestRepo{}
+	encryptor := contentModerationTestEncryptor{}
+	encrypted, err := encryptor.Encrypt("truncated user request")
+	require.NoError(t, err)
+	svc := NewContentModerationService(nil, repo, nil, nil, nil, nil, nil)
+	svc.rawRequestEncryptor = encryptor
+	svc.semanticReviewRouter = &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "reject", Intent: "harmful", Target: "third_party", Authorization: "unauthorized",
+		HarmMechanism: "credential_theft", Severity: "high", Confidence: 0.98,
+		Operationality: "actionable", Executability: "direct", Categories: []string{"credential_theft"},
+	}}
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.SemanticReview = semanticReviewTestConfig()
+	payload := contentModerationOutboxPayload{
+		Config: cfg,
+		SemanticReview: &contentModerationSemanticReviewOutboxPayload{
+			DecisionID:       "decision-incomplete",
+			InputHash:        "hash-incomplete",
+			Input:            contentModerationSemanticReviewOutboxInput{RequestID: "request-incomplete", UserID: 17},
+			TextEncrypted:    encrypted,
+			EvidenceComplete: false,
+		},
+	}
+
+	require.NoError(t, svc.processContentModerationSemanticReviewEvent(context.Background(), payload))
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
+	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.False(t, logs[0].UserViolationEligible)
+	require.Contains(t, string(logs[0].Metadata), "semantic_policy_incomplete_evidence")
+	require.Contains(t, string(logs[0].Metadata), `"semantic_review_model_severity":"high"`)
+}
+
+func TestProcessSemanticReviewFailureDefersAsyncErrorUntilTerminalState(t *testing.T) {
+	encryptor := contentModerationTestEncryptor{}
+	encrypted, err := encryptor.Encrypt("review input")
+	require.NoError(t, err)
+	svc := NewContentModerationService(nil, &contentModerationTestRepo{}, nil, nil, nil, nil, nil)
+	svc.rawRequestEncryptor = encryptor
+	svc.semanticReviewRouter = &contentModerationSemanticReviewRouterStub{err: errors.New("semantic upstream timeout")}
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.SemanticReview = semanticReviewTestConfig()
+	payload := contentModerationOutboxPayload{
+		Config: cfg,
+		SemanticReview: &contentModerationSemanticReviewOutboxPayload{
+			DecisionID:    "decision-semantic-error",
+			InputHash:     "hash-semantic-error",
+			Input:         contentModerationSemanticReviewOutboxInput{RequestID: "request-semantic-error", UserID: 17},
+			TextEncrypted: encrypted,
+		},
+	}
+
+	err = svc.processContentModerationSemanticReviewEvent(context.Background(), payload)
+
+	require.ErrorContains(t, err, "semantic upstream timeout")
+	require.Zero(t, svc.asyncErrors.Load())
+	require.Zero(t, svc.asyncProcessed.Load())
+}
+
+func TestProcessSemanticReviewPersistenceFailureReturnsForOutboxRetry(t *testing.T) {
+	encryptor := contentModerationTestEncryptor{}
+	encrypted, err := encryptor.Encrypt("review input")
+	require.NoError(t, err)
+	repo := &contentModerationFailingPersistenceRepo{}
+	svc := NewContentModerationService(nil, repo, nil, nil, nil, nil, nil)
+	svc.rawRequestEncryptor = encryptor
+	svc.semanticReviewRouter = &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "allow", Severity: "low", Confidence: 0.95,
+	}}
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.SemanticReview = semanticReviewTestConfig()
+	payload := contentModerationOutboxPayload{
+		Config: cfg,
+		SemanticReview: &contentModerationSemanticReviewOutboxPayload{
+			DecisionID:    "decision-semantic-persist-error",
+			InputHash:     "hash-semantic-persist-error",
+			Input:         contentModerationSemanticReviewOutboxInput{RequestID: "request-semantic-persist-error", UserID: 17},
+			TextEncrypted: encrypted,
+		},
+	}
+
+	err = svc.processContentModerationSemanticReviewEvent(context.Background(), payload)
+
+	require.ErrorContains(t, err, "persist semantic review log")
+	require.EqualValues(t, 1, repo.createCalls.Load())
+	require.Zero(t, svc.asyncErrors.Load())
+	require.Zero(t, svc.asyncProcessed.Load())
+}
+
+func TestProcessSemanticReviewReplacementFailureDoesNotHalfPersistSuccess(t *testing.T) {
+	encryptor := contentModerationTestEncryptor{}
+	encrypted, err := encryptor.Encrypt("review input")
+	require.NoError(t, err)
+	repo := &semanticReviewFailingReplacementRepo{}
+	svc := NewContentModerationService(nil, repo, nil, nil, nil, nil, nil)
+	svc.rawRequestEncryptor = encryptor
+	svc.semanticReviewRouter = &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "allow", Severity: "low", Confidence: 0.95,
+	}}
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.SemanticReview = semanticReviewTestConfig()
+	payload := contentModerationOutboxPayload{
+		Config: cfg,
+		SemanticReview: &contentModerationSemanticReviewOutboxPayload{
+			DecisionID:    "decision-semantic-replace-error",
+			InputHash:     "hash-semantic-replace-error",
+			Input:         contentModerationSemanticReviewOutboxInput{RequestID: "request-semantic-replace-error", UserID: 17},
+			TextEncrypted: encrypted,
+		},
+	}
+
+	err = svc.processContentModerationSemanticReviewEvent(context.Background(), payload)
+
+	require.ErrorContains(t, err, "replace semantic review dead-letter log")
+	require.Zero(t, repo.snapshotCreateCalls())
+	require.Empty(t, repo.snapshotLogs())
+}
+
+func TestSemanticReviewDeadLetterPersistsSingleErrorAudit(t *testing.T) {
+	encryptor := contentModerationTestEncryptor{}
+	encrypted, err := encryptor.Encrypt("review input")
+	require.NoError(t, err)
+	repo := &contentModerationTestRepo{}
+	outbox := &contentModerationTestOutboxRepo{}
+	svc := NewContentModerationService(nil, repo, nil, nil, nil, nil, nil)
+	svc.SetOutboxRepository(outbox)
+	svc.rawRequestEncryptor = encryptor
+	svc.semanticReviewRouter = &contentModerationSemanticReviewRouterStub{err: errors.New("semantic upstream timeout")}
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.SemanticReview = semanticReviewTestConfig()
+	decisionID := "decision-semantic-dead-letter"
+	payload := contentModerationOutboxPayload{
+		Config: cfg,
+		SemanticReview: &contentModerationSemanticReviewOutboxPayload{
+			DecisionID:       decisionID,
+			InputHash:        "hash-semantic-dead-letter",
+			Input:            contentModerationSemanticReviewOutboxInput{RequestID: "request-semantic-dead-letter", UserID: 17},
+			TextEncrypted:    encrypted,
+			EvidenceComplete: false,
+			EvidenceRevision: "test-evidence-v1",
+		},
+	}
+	_, err = outbox.EnqueueEvents(context.Background(), []ContentModerationOutboxEvent{{
+		DecisionID: decisionID,
+		EventType:  ContentModerationOutboxEventSemanticReview,
+		Priority:   ContentModerationOutboxPriorityStrong,
+		MaxRetries: 1,
+		Payload:    contentModerationOutboxPayloadMap(payload),
+	}})
+	require.NoError(t, err)
+
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(context.Background(), 1))
+
+	require.Len(t, outbox.snapshotDead(), 1)
+	require.EqualValues(t, 1, svc.asyncErrors.Load())
+	require.EqualValues(t, 1, svc.asyncDropped.Load())
+	require.Zero(t, svc.asyncProcessed.Load())
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, decisionID, logs[0].DecisionID)
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.Equal(t, contentModerationDecisionSourceSemantic, logs[0].DecisionSource)
+	require.Equal(t, "platform_openai", logs[0].ModerationProvider)
+	require.Equal(t, "semantic_review_dead_letter", logs[0].RiskContextReason)
+	require.Contains(t, logs[0].Error, "semantic upstream timeout")
+	require.False(t, logs[0].UserViolationEligible)
+}
+
+func TestSemanticReviewDeadLetterAuditPersistenceFailureRetriesBeforeDeadLetter(t *testing.T) {
+	encryptor := contentModerationTestEncryptor{}
+	encrypted, err := encryptor.Encrypt("review input")
+	require.NoError(t, err)
+	repo := &semanticReviewFailingOnceDeadLetterAuditRepo{}
+	baseOutbox := &contentModerationTestOutboxRepo{}
+	outbox := &semanticReviewImmediateRetryOutboxRepo{contentModerationTestOutboxRepo: baseOutbox}
+	svc := NewContentModerationService(nil, repo, nil, nil, nil, nil, nil)
+	svc.SetOutboxRepository(outbox)
+	svc.rawRequestEncryptor = encryptor
+	svc.semanticReviewRouter = &contentModerationSemanticReviewRouterStub{err: errors.New("semantic upstream timeout")}
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.SemanticReview = semanticReviewTestConfig()
+	decisionID := "decision-semantic-dead-letter-audit-retry"
+	payload := contentModerationOutboxPayload{
+		Config: cfg,
+		SemanticReview: &contentModerationSemanticReviewOutboxPayload{
+			DecisionID:       decisionID,
+			InputHash:        "hash-semantic-dead-letter-audit-retry",
+			Input:            contentModerationSemanticReviewOutboxInput{RequestID: "request-semantic-dead-letter-audit-retry", UserID: 17},
+			TextEncrypted:    encrypted,
+			EvidenceComplete: false,
+			EvidenceRevision: "test-evidence-v1",
+		},
+	}
+	_, err = outbox.EnqueueEvents(context.Background(), []ContentModerationOutboxEvent{{
+		DecisionID: decisionID,
+		EventType:  ContentModerationOutboxEventSemanticReview,
+		Priority:   ContentModerationOutboxPriorityStrong,
+		MaxRetries: 1,
+		Payload:    contentModerationOutboxPayloadMap(payload),
+	}})
+	require.NoError(t, err)
+
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(context.Background(), 1))
+
+	require.Empty(t, baseOutbox.snapshotDead())
+	require.Len(t, baseOutbox.snapshotRetried(), 1)
+	require.Empty(t, repo.snapshotLogs())
+	require.Equal(t, 1, repo.snapshotCreateCalls())
+	events := baseOutbox.snapshotEvents()
+	require.Len(t, events, 1)
+	require.Equal(t, 1, events[0].RetryCount)
+	require.Contains(t, events[0].LastError, "semantic_dead_letter_audit_persist_failed")
+	require.Zero(t, svc.asyncErrors.Load())
+	require.Zero(t, svc.asyncDropped.Load())
+
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(context.Background(), 1))
+
+	require.Len(t, baseOutbox.snapshotDead(), 1)
+	require.Len(t, baseOutbox.snapshotRetried(), 1)
+	require.Equal(t, 2, repo.snapshotCreateCalls())
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, decisionID, logs[0].DecisionID)
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.Equal(t, contentModerationDecisionSourceSemantic, logs[0].DecisionSource)
+	require.Equal(t, "semantic_review_dead_letter", logs[0].RiskContextReason)
+	require.Contains(t, logs[0].Error, "semantic upstream timeout")
+	require.False(t, logs[0].UserViolationEligible)
+	require.EqualValues(t, 1, svc.asyncErrors.Load())
+	require.EqualValues(t, 1, svc.asyncDropped.Load())
+	require.Zero(t, svc.asyncProcessed.Load())
+}
+
+func TestSemanticReviewReplayReplacesDeadLetterAuditWithSuccessfulResult(t *testing.T) {
+	encryptor := contentModerationTestEncryptor{}
+	encrypted, err := encryptor.Encrypt("bounded defensive review input")
+	require.NoError(t, err)
+	repo := &contentModerationTestRepo{}
+	outbox := &contentModerationTestOutboxRepo{}
+	svc := NewContentModerationService(nil, repo, nil, nil, nil, nil, nil)
+	svc.SetOutboxRepository(outbox)
+	svc.rawRequestEncryptor = encryptor
+	svc.semanticReviewRouter = &contentModerationSemanticReviewRouterStub{err: errors.New("semantic upstream timeout")}
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.SemanticReview = semanticReviewTestConfig()
+	decisionID := "decision-semantic-dead-letter-replay"
+	payload := contentModerationOutboxPayload{
+		Config: cfg,
+		SemanticReview: &contentModerationSemanticReviewOutboxPayload{
+			DecisionID:       decisionID,
+			InputHash:        "hash-semantic-dead-letter-replay",
+			Input:            contentModerationSemanticReviewOutboxInput{RequestID: "request-semantic-dead-letter-replay", UserID: 18},
+			TextEncrypted:    encrypted,
+			EvidenceComplete: true,
+			EvidenceRevision: "test-evidence-v1",
+		},
+	}
+	_, err = outbox.EnqueueEvents(context.Background(), []ContentModerationOutboxEvent{{
+		DecisionID: decisionID,
+		EventType:  ContentModerationOutboxEventSemanticReview,
+		Priority:   ContentModerationOutboxPriorityStrong,
+		MaxRetries: 1,
+		Payload:    contentModerationOutboxPayloadMap(payload),
+	}})
+	require.NoError(t, err)
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(context.Background(), 1))
+
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.Equal(t, "semantic_review_dead_letter", logs[0].RiskContextReason)
+	originalID := logs[0].ID
+	originalDecisionID := logs[0].DecisionID
+	originalCreatedAt := logs[0].CreatedAt
+	events := outbox.snapshotEvents()
+	require.Len(t, events, 1)
+
+	svc.semanticReviewRouter = &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict:           "allow",
+		Model:             "review-model",
+		Confidence:        0.96,
+		Intent:            "defensive",
+		Target:            "self_owned",
+		Authorization:     "authorized",
+		InformationAccess: "provided_by_user",
+		HarmMechanism:     "none",
+		HarmEvidence:      "none",
+		DeceptionType:     "none",
+		Operationality:    "conceptual",
+		Executability:     "indirect",
+		Categories:        []string{"benign_context"},
+		ReasonCodes:       []string{"authorized_testing"},
+	}}
+	replayed, err := svc.ReplayContentModerationOutboxDeadLetter(context.Background(), events[0].ID)
+	require.NoError(t, err)
+	require.True(t, replayed)
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(context.Background(), 1))
+
+	logs = repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionSemanticReviewAllow, logs[0].Action)
+	require.False(t, logs[0].Flagged)
+	require.Empty(t, logs[0].Error)
+	require.NotEqual(t, "semantic_review_dead_letter", logs[0].RiskContextReason)
+	require.Equal(t, "review-model", logs[0].ModerationModel)
+	require.Equal(t, "benign_context", logs[0].HighestCategory)
+	require.Equal(t, originalID, logs[0].ID)
+	require.Equal(t, originalDecisionID, logs[0].DecisionID)
+	require.Equal(t, originalCreatedAt, logs[0].CreatedAt)
+	var metadata map[string]any
+	require.NoError(t, json.Unmarshal(logs[0].Metadata, &metadata))
+	require.Equal(t, "allow", metadata["semantic_review_verdict"])
+	require.Empty(t, outbox.snapshotDead())
+	require.Len(t, outbox.snapshotSucceeded(), 1)
+	require.EqualValues(t, 1, svc.asyncProcessed.Load())
+
+	svc.persistSemanticReviewDeadLetterLog(context.Background(), events[0], errors.New("late dead-letter writer"))
+	logs = repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionSemanticReviewAllow, logs[0].Action)
+	require.Empty(t, logs[0].Error)
+}
+
+func TestSemanticReviewProcessedCounterRequiresSuccessfulAck(t *testing.T) {
+	encryptor := contentModerationTestEncryptor{}
+	encrypted, err := encryptor.Encrypt("review input")
+	require.NoError(t, err)
+	repo := &contentModerationTestRepo{}
+	baseOutbox := &contentModerationTestOutboxRepo{}
+	outbox := &contentModerationFailingAckOutboxRepo{contentModerationTestOutboxRepo: baseOutbox}
+	svc := NewContentModerationService(nil, repo, nil, nil, nil, nil, nil)
+	svc.SetOutboxRepository(outbox)
+	svc.rawRequestEncryptor = encryptor
+	svc.semanticReviewRouter = &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "allow", Severity: "low", Confidence: 0.95, Model: ContentModerationSemanticReviewPrimaryModel,
+	}}
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.SemanticReview = semanticReviewTestConfig()
+	decisionID := "decision-semantic-ack-failure"
+	payload := contentModerationOutboxPayload{
+		Config: cfg,
+		SemanticReview: &contentModerationSemanticReviewOutboxPayload{
+			DecisionID:    decisionID,
+			InputHash:     "hash-semantic-ack-failure",
+			Input:         contentModerationSemanticReviewOutboxInput{RequestID: "request-semantic-ack-failure", UserID: 17},
+			TextEncrypted: encrypted,
+		},
+	}
+	_, err = outbox.EnqueueEvents(context.Background(), []ContentModerationOutboxEvent{{
+		DecisionID: decisionID,
+		EventType:  ContentModerationOutboxEventSemanticReview,
+		Priority:   ContentModerationOutboxPriorityStrong,
+		Payload:    contentModerationOutboxPayloadMap(payload),
+	}})
+	require.NoError(t, err)
+
+	require.NoError(t, svc.ProcessContentModerationOutboxOnce(context.Background(), 1))
+
+	require.Zero(t, svc.asyncProcessed.Load())
+	require.Empty(t, baseOutbox.snapshotSucceeded())
+	require.Len(t, repo.snapshotLogs(), 1)
+}
+
 func TestBuildSemanticReviewInputLocalReviewIncludesOnlyMatchedSources(t *testing.T) {
 	cfg := semanticReviewTestConfig()
 	cfg.Trigger = ContentModerationSemanticReviewTriggerLocalReview
@@ -1882,6 +2462,46 @@ func TestBuildSemanticReviewInputAllUsesLatestUserOnly(t *testing.T) {
 	require.NotContains(t, got, "old user request")
 	require.NotContains(t, got, "private system context")
 	require.NotContains(t, got, "assistant response")
+}
+
+func TestBuildSemanticReviewInputAllUsesUnknownClientRoleAsDirectEvidence(t *testing.T) {
+	cfg := semanticReviewTestConfig()
+	cfg.Trigger = ContentModerationSemanticReviewTriggerAll
+	content := ContentModerationInput{Sources: []ContentModerationInputSource{
+		{Source: "messages[0]", Role: "assistant", Text: "assistant context"},
+		{Source: "messages[1]", Role: "custom_client_role", Text: "active client request"},
+	}}
+	content.Text = "assistant context\nactive client request"
+
+	text, complete := buildContentModerationSemanticReviewEvidence(cfg, content, "")
+
+	require.True(t, complete)
+	require.Contains(t, text, "active client request")
+	require.NotContains(t, text, "assistant context")
+	require.False(t, semanticReviewEvidenceContextOnly(cfg, content, ""))
+}
+
+func TestBuildSemanticReviewInputPreservesBodyWhenClientRoleMetadataExceedsBudget(t *testing.T) {
+	cfg := semanticReviewTestConfig()
+	cfg.Trigger = ContentModerationSemanticReviewTriggerAll
+	cfg.MaxInputRunes = 80
+	longRole := "custom_" + strings.Repeat("role", 80) + "\r\nforged-header"
+	content := ContentModerationInput{
+		Text: "active client request",
+		Sources: []ContentModerationInputSource{{
+			Source: strings.Repeat("source", 80),
+			Role:   longRole,
+			Text:   "active client request",
+		}},
+	}
+
+	text, complete := buildContentModerationSemanticReviewEvidence(cfg, content, "")
+
+	require.False(t, complete)
+	require.NotEmpty(t, text)
+	require.Contains(t, text, "active client request")
+	require.NotContains(t, text, "forged-header")
+	require.LessOrEqual(t, len([]rune(text)), cfg.MaxInputRunes)
 }
 
 func TestBuildSemanticReviewInputAllSkipsAmbientContextWithoutUserRequest(t *testing.T) {

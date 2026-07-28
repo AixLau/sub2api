@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"html"
 	"strings"
@@ -116,6 +117,21 @@ func defaultContentModerationString(value string, fallback string) string {
 	return strings.TrimSpace(value)
 }
 
+func contentModerationCyberUpstreamMessage(log *ContentModerationLog) string {
+	if log == nil {
+		return ""
+	}
+	var metadata struct {
+		UpstreamMessage string `json:"upstream_message"`
+	}
+	if len(log.Metadata) > 0 && json.Unmarshal(log.Metadata, &metadata) == nil {
+		if message := strings.TrimSpace(metadata.UpstreamMessage); message != "" {
+			return message
+		}
+	}
+	return strings.TrimSpace(log.Error)
+}
+
 // buildCyberPolicyNoticeEmailBody 是 cyber_policy 通知邮件的内置兜底正文，
 // 当 notification email 模板渲染失败时使用（与 sendViolationEmail 的兜底同理）。
 func buildCyberPolicyNoticeEmailBody(siteName string, log *ContentModerationLog) string {
@@ -149,7 +165,7 @@ func buildCyberPolicyNoticeEmailBody(siteName string, log *ContentModerationLog)
 		html.EscapeString(userName),
 		html.EscapeString(log.CreatedAt.Format("2006-01-02 15:04:05")),
 		html.EscapeString(defaultContentModerationString(log.Model, "-")),
-		html.EscapeString(defaultContentModerationString(log.Error, "-")),
+		html.EscapeString(defaultContentModerationString(contentModerationCyberUpstreamMessage(log), "-")),
 		html.EscapeString(siteName),
 	)
 }

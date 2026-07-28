@@ -31,6 +31,8 @@ jobs:
       - name: Verify Go version
         run: |
           go version | grep -q 'go1.26.5'
+      - name: Validate upstream sync catalog
+        run: make upstream-sync-lint
       - name: Unit tests
         working-directory: backend
         run: make test-unit

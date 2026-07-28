@@ -69,7 +69,7 @@ const props = withDefaults(defineProps<Props>(), {
   strokeWidth: 6,
   color: '',
   showValue: true,
-  duration: 1000
+  duration: 500
 })
 
 const center = computed(() => props.size / 2)

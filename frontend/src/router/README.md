@@ -13,7 +13,7 @@ This directory contains the Vue Router configuration for the Sub2API frontend ap
 
 ### Public Routes (No Authentication Required)
 
-By default, single-service deployments keep Vue-owned `/`, `/home`, `/login`, `/register`, `/forgot-password`, and `/reset-password` routes. In the dual-service deployment, set `VITE_REACT_LANDING_ROUTES=true` so the branded React landing app owns those paths and Vue leaves them unregistered.
+The Vue application owns `/`, `/home`, `/login`, `/register`, `/forgot-password`, `/reset-password`, and the other public landing routes in every deployment.
 
 | Path | Component | Description |
 | ---- | --------- | ----------- |
@@ -63,8 +63,7 @@ The router implements a comprehensive navigation guard that:
    - Public Vue routes (`requiresAuth: false`) are accessible without login
    - Protected routes require authentication
    - Redirects to `/login` if not authenticated
-3. **Prevents Double Login**:
-   - React-owned login/register paths are not part of this router only when `VITE_REACT_LANDING_ROUTES=true`
+3. **Prevents Double Login**: Redirects authenticated users away from login and registration routes
 4. **Role-Based Access Control**:
    - Admin routes (`requiresAdmin: true`) require admin role
    - Non-admin users are redirected to `/dashboard`

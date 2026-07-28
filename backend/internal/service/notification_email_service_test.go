@@ -455,6 +455,41 @@ func TestNotificationEmailSendDeduplicatesSubscriptionExpiryReminder(t *testing.
 	require.Equal(t, int64(1), smtpServer.messageCount())
 }
 
+func TestNotificationEmailSendRecognizesSMTPAcceptedWhenDeliveryKeySetFails(t *testing.T) {
+	ctx := context.Background()
+	stateErr := errors.New("delivery state write failed")
+	repo := &notificationEmailFailSetRepo{
+		notificationEmailMemorySettingRepo: newNotificationEmailMemorySettingRepo(),
+		err:                                stateErr,
+	}
+	smtpServer := startNotificationEmailTestSMTPServer(t)
+	require.NoError(t, repo.SetMultiple(ctx, smtpServer.settings()))
+
+	emailSvc := NewEmailService(repo, nil)
+	svc := NewNotificationEmailService(repo, emailSvc)
+	input := NotificationEmailSendInput{
+		Event:          NotificationEmailEventSubscriptionExpiryReminder,
+		RecipientEmail: "User@Example.com",
+		RecipientName:  "User",
+		UserID:         42,
+		SourceType:     "user_subscription",
+		SourceID:       "1234567890",
+		ReminderKey:    "7d",
+		Variables: map[string]string{
+			"subscription_group": "Codex",
+			"expiry_time":        "2026-05-27 12:00",
+			"days_remaining":     "7",
+		},
+	}
+	repo.key = notificationEmailDeliveryKey(input.Event, input.SourceType, input.SourceID, input.RecipientEmail, input.ReminderKey)
+
+	err := svc.Send(ctx, input)
+
+	require.ErrorIs(t, err, stateErr)
+	require.True(t, notificationEmailDeliveryWasAccepted(err))
+	require.Equal(t, int64(1), smtpServer.messageCount())
+}
+
 func TestNotificationEmailSendRespectsLegacyDeliveryKey(t *testing.T) {
 	ctx := context.Background()
 	repo := newNotificationEmailMemorySettingRepo()
@@ -479,6 +514,19 @@ type notificationEmailMemorySettingRepo struct {
 
 func newNotificationEmailMemorySettingRepo() *notificationEmailMemorySettingRepo {
 	return &notificationEmailMemorySettingRepo{values: make(map[string]string)}
+}
+
+type notificationEmailFailSetRepo struct {
+	*notificationEmailMemorySettingRepo
+	key string
+	err error
+}
+
+func (r *notificationEmailFailSetRepo) Set(ctx context.Context, key, value string) error {
+	if key == r.key {
+		return r.err
+	}
+	return r.notificationEmailMemorySettingRepo.Set(ctx, key, value)
 }
 
 func (r *notificationEmailMemorySettingRepo) Get(_ context.Context, key string) (*Setting, error) {

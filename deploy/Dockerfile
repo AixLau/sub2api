@@ -16,8 +16,6 @@ ARG GOSUMDB=sum.golang.google.cn
 # Stage 1: Frontend Builder
 # -----------------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS frontend-builder
-ARG VITE_REACT_LANDING_ROUTES=false
-ENV VITE_REACT_LANDING_ROUTES=${VITE_REACT_LANDING_ROUTES}
 
 WORKDIR /app/frontend
 ENV NODE_OPTIONS=--max-old-space-size=1536

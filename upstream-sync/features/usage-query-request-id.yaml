@@ -1,0 +1,48 @@
+schema_version: 1
+id: USAGE-QUERY-001
+name: Usage query filters and request ID traceability
+purpose: Keep request_id, user exclusions, source, and model filters available across storage and admin/user APIs.
+risk: high
+paths:
+  - backend/internal/repository/usage*.go
+  - backend/internal/service/usage*.go
+  - backend/internal/handler/*usage*.go
+  - frontend/src/api/usage*.ts
+  - frontend/src/views/**/Usage*.vue
+symbols:
+  - UsageLogFilters
+  - UsageLog
+  - usageLogRepository.ListWithFilters
+routes:
+  - GET /api/v1/usage
+  - GET /api/v1/admin/usage
+config_keys:
+  - admin_usage_excluded_users
+environment: []
+json_fields:
+  - request_id
+  - source
+  - user_id
+database_fields:
+  - usage_logs.request_id
+  - usage_logs.source
+api_fields:
+  - request_id
+  - exclude_user_ids
+invariants:
+  - An exact request_id filter reaches the repository query and remains visible in the response.
+  - Configured excluded users do not contribute to admin usage aggregates.
+tests:
+  - kind: go
+    files:
+      - backend/internal/server/middleware/request_access_logger_test.go
+      - backend/internal/service/openai_gateway_record_usage_test.go
+    command: "cd backend && GOMAXPROCS=2 go test -p 2 ./internal/server/middleware ./internal/service ./internal/repository -run 'RequestID|Usage.*Filter|ExcludeUser' -count=1"
+introduced_by:
+  - 48c3328d4525d3ef767ea743f02b2540dc634b76
+merge_strategy: combine
+watch:
+  - query_filter
+  - dto_field
+  - database_index
+  - aggregation

@@ -1,0 +1,28 @@
+schema_version: 1
+required:
+  - id
+  - feature_id
+  - upstream_from
+  - upstream_to
+  - conflict_files
+  - conflict_preimage_fingerprint
+  - upstream_symbol_fingerprint
+  - local_symbol_fingerprint
+  - resolution
+  - rationale
+  - protected_invariants
+  - tests
+  - final_commit
+fingerprint:
+  algorithm: sha256
+  reuse_key:
+    - feature_id
+    - invariant_version
+    - conflict_preimage_fingerprint
+    - upstream_symbol_fingerprint
+    - local_symbol_fingerprint
+    - analyzer_version
+reuse_policy:
+  exact_match: suggest_previous_resolution
+  test_required: true
+  automatic_approval: false

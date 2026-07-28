@@ -43,6 +43,9 @@ func (r *cyberOrderingTestRepo) UpdateLogViolationCountByDecisionID(ctx context.
 }
 
 func (r *cyberOrderingTestRepo) UpdateLogAccountActionByDecisionID(ctx context.Context, decisionID string, violationCount int, autoBanned bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, "update_account_action")
 	return nil
 }
 
@@ -59,6 +62,9 @@ func (r *cyberOrderingTestRepo) ListLogs(ctx context.Context, filter ContentMode
 }
 
 func (r *cyberOrderingTestRepo) CountFlaggedByUserSince(ctx context.Context, userID int64, since time.Time, excludeCyberPolicy bool) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, "count")
 	return 0, nil
 }
 
@@ -140,7 +146,10 @@ func TestRecordCyberPolicyEvent_WritesLogWhenEnabled(t *testing.T) {
 	require.Equal(t, "cyber_policy", log.Action)
 	require.True(t, log.Flagged)
 	require.Equal(t, "cyber_policy", log.HighestCategory)
-	require.Contains(t, log.Error, "flagged")
+	require.Empty(t, log.Error)
+	require.Contains(t, string(log.Metadata), `"upstream_message":"flagged"`)
+	require.Contains(t, string(log.Metadata), `"upstream_body_excerpt"`)
+	require.NotEmpty(t, log.DecisionID)
 	require.False(t, log.AutoBanned)
 	// emailService is nil, so EmailSent must be false
 	require.False(t, log.EmailSent)
@@ -167,9 +176,7 @@ func TestRecordCyberPolicyEvent_WritesLogWhenEnabled(t *testing.T) {
 	// violation count >= 1 (side-effects ran)
 	require.GreaterOrEqual(t, log.ViolationCount, 1)
 
-	// Error field should also contain the upstream body JSON
-	require.True(t, strings.Contains(log.Error, "cyber_policy") || strings.Contains(log.Error, "flagged"),
-		"Error should mention flagged or cyber_policy")
+	require.Equal(t, "flagged", contentModerationCyberUpstreamMessage(&log))
 }
 
 func TestRecordCyberPolicyEvent_StoresEncryptedRawRequestSnapshot(t *testing.T) {
@@ -255,6 +262,9 @@ func TestRecordCyberSessionBlockedEvent_WritesRiskAuditWithoutBanCount(t *testin
 	require.True(t, logs[0].Flagged)
 	require.Equal(t, "pre_upstream", logs[0].Mode)
 	require.Equal(t, "cyber_policy_session_blocked", logs[0].HighestCategory)
+	require.Empty(t, logs[0].Error)
+	require.NotContains(t, string(logs[0].Metadata), "abc123")
+	require.NotEmpty(t, logs[0].DecisionID)
 	require.Equal(t, 0, logs[0].ViolationCount)
 	require.False(t, logs[0].AutoBanned)
 	require.True(t, logs[0].RawRequestAvailable)
@@ -302,8 +312,9 @@ func TestRecordCyberPolicyEvent_CreateLogBeforeEmail(t *testing.T) {
 	})
 
 	calls := repo.snapshot()
-	require.GreaterOrEqual(t, len(calls), 1, "CreateLog must be called")
+	require.GreaterOrEqual(t, len(calls), 2, "CreateLog and violation counting must be called")
 	require.Equal(t, "create", calls[0], "CreateLog must run first (F7: log-before-email)")
+	require.Equal(t, "count", calls[1], "violation counting must run only after the audit log exists")
 
 	// EmailSent must be false when the log is first persisted (new code sets it
 	// false before CreateLog; email result is patched via UpdateLogEmailSent).
@@ -315,6 +326,39 @@ func TestRecordCyberPolicyEvent_CreateLogBeforeEmail(t *testing.T) {
 	// be called (logPersisted && emailSent guard correctly suppresses the patch).
 	require.NotContains(t, calls, "update_email_sent",
 		"UpdateLogEmailSent must not be called when no email was sent")
+}
+
+func TestRecordCyberPolicyEvent_PersistenceFailureSuppressesEnforcement(t *testing.T) {
+	repo := &contentModerationFailingPersistenceRepo{}
+	userRepo := &contentModerationTestUserRepo{
+		user: &User{ID: 7, Email: "u@example.com", Role: RoleUser, Status: StatusActive},
+	}
+	emailProbe := &contentModerationEmailSideEffectProbe{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: `{"auto_ban_enabled":true,"ban_threshold":1}`,
+		}},
+		repo,
+		nil,
+		nil,
+		userRepo,
+		nil,
+		NewEmailService(emailProbe, nil),
+	)
+
+	svc.RecordCyberPolicyEvent(context.Background(), CyberPolicyRecordInput{
+		RequestID:       "cyber-persistence-failure",
+		UserID:          7,
+		UserEmail:       "u@example.com",
+		Model:           "gpt-5",
+		UpstreamMessage: "blocked",
+	})
+
+	require.Equal(t, int64(1), repo.createCalls.Load())
+	require.Empty(t, userRepo.updated)
+	require.Equal(t, StatusActive, userRepo.user.Status)
+	require.Zero(t, emailProbe.getMultipleCalls.Load())
 }
 
 // banCountArgsTestRepo 在 contentModerationTestRepo 基础上记录

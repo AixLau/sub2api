@@ -1,0 +1,50 @@
+schema_version: 1
+id: DATA-WIRE-001
+name: Database schema, migrations, and dependency injection
+purpose: Keep local fields and migrations compatible while ensuring all local providers remain wired.
+risk: critical
+paths:
+  - backend/ent/schema/**
+  - backend/migrations/**
+  - backend/internal/repository/wire.go
+  - backend/internal/service/wire.go
+  - backend/internal/handler/wire.go
+  - backend/internal/payment/wire.go
+  - backend/cmd/server/wire.go
+  - backend/cmd/server/wire_gen.go
+symbols:
+  - ProviderSet
+  - PaymentOrder
+  - UsageLog
+  - Setting
+routes: []
+config_keys: []
+environment: []
+json_fields: []
+database_fields:
+  - payment_orders.currency
+  - payment_orders.gateway_fee
+  - usage_logs.request_id
+  - usage_logs.service_tier
+  - settings.key
+api_fields: []
+invariants:
+  - Forward-only migrations retain unique ordering and remain compatible with existing production data.
+  - Generated Ent and Wire outputs correspond to their source schemas and provider sets.
+  - Every required local service, repository, handler, and payment provider is reachable from the root graph.
+tests:
+  - kind: go
+    files:
+      - backend/internal/repository/migrations_schema_integration_test.go
+    command: "cd backend && GOMAXPROCS=2 go test -p 2 ./internal/repository -run 'Migration|Schema' -count=1"
+  - kind: go
+    files: []
+    command: "cd backend && GOMAXPROCS=2 go test -p 2 ./cmd/server -run '^$'"
+introduced_by:
+  - 9ad959a641c489ea4badcb37434e253350885489
+merge_strategy: combine_sources_then_regenerate
+watch:
+  - schema_field
+  - migration_order
+  - generated_drift
+  - provider_set

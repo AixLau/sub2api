@@ -1,0 +1,61 @@
+schema_version: 1
+id: PAYMENT-001
+name: Payment providers and recharge state machine
+purpose: Preserve NinePlus, HaozPay, Stripe, WeChat, Alipay, Airwallex, and manual recharge flows.
+risk: critical
+paths:
+  - backend/internal/payment/**
+  - backend/internal/service/payment*.go
+  - backend/internal/handler/payment*.go
+  - backend/internal/server/routes/payment.go
+  - frontend/src/components/payment/**
+  - frontend/src/views/user/PaymentView.vue
+symbols:
+  - PaymentService
+  - Provider
+  - PaymentConfigService.GetAvailableMethodLimits
+routes:
+  - POST /api/v1/payments
+  - GET /api/v1/payments/:id
+  - POST /api/v1/payments/callback/:provider
+config_keys:
+  - payment
+  - nineplus
+  - haozpay
+environment: []
+json_fields:
+  - provider
+  - currency
+  - pay_amount
+  - status
+database_fields:
+  - payment_orders.status
+  - payment_orders.currency
+  - payment_orders.pay_amount
+api_fields:
+  - client_secret
+  - payment_url
+  - credited_amount
+invariants:
+  - Provider callbacks transition an order idempotently and credit a completed order once.
+  - Displayed and submitted currency amounts use the provider-specific precision and limits.
+tests:
+  - kind: go
+    files:
+      - backend/internal/service/payment_config_limits_test.go
+      - backend/internal/payment/amount_test.go
+    command: "cd backend && GOMAXPROCS=2 go test -p 2 ./internal/payment ./internal/service -run 'Payment|HaozPay|NinePlus|Currency' -count=1"
+  - kind: vue
+    files:
+      - frontend/src/components/payment/__tests__/paymentFlow.spec.ts
+      - frontend/src/components/payment/__tests__/currency.spec.ts
+    command: "pnpm --dir frontend exec vitest run --maxWorkers=2 src/components/payment"
+introduced_by:
+  - 9ad959a641c489ea4badcb37434e253350885489
+merge_strategy: combine
+watch:
+  - callback
+  - idempotency
+  - status_transition
+  - currency_precision
+  - provider_registry
