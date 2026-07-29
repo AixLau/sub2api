@@ -72,6 +72,19 @@
               />
             </div>
 
+            <div v-if="visibleFilters.has('paidChurn')" class="w-full sm:w-44">
+              <Select
+                v-model="filters.paidChurn"
+                :options="[
+                  { value: '', label: t('payment.admin.allPaidUsers') },
+                  { value: '7_14', label: t('payment.admin.churnDays7To14') },
+                  { value: '15_29', label: t('payment.admin.churnDays15To29') },
+                  { value: '30_plus', label: t('payment.admin.churnDays30Plus') }
+                ]"
+                @change="applyFilter"
+              />
+            </div>
+
             <!-- Dynamic Attribute Filters -->
             <template v-for="(value, attrId) in activeAttributeFilters" :key="attrId">
               <div
@@ -774,6 +787,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { useTableSelection } from '@/composables/useTableSelection'
@@ -812,6 +826,7 @@ import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryM
 import GroupReplaceModal from '@/components/admin/user/GroupReplaceModal.vue'
 
 const appStore = useAppStore()
+const route = useRoute()
 
 // Generate dynamic attribute columns from enabled definitions
 const attributeColumns = computed<Column[]>(() =>
@@ -1110,7 +1125,8 @@ const filters = reactive({
   role: '',
   status: '',
   group: '',  // group name for fuzzy match, '' = all
-  apiKeyGroup: null as number | null  // group id bound to the user's API keys, null = all
+  apiKeyGroup: null as number | null,  // group id bound to the user's API keys, null = all
+  paidChurn: '' as '' | '7_14' | '15_29' | '30_plus'
 })
 const activeAttributeFilters = reactive<Record<number, string>>({})
 
@@ -1140,7 +1156,8 @@ const builtInFilters = computed(() => [
   { key: 'role', name: t('admin.users.columns.role'), type: 'select' as const },
   { key: 'status', name: t('admin.users.columns.status'), type: 'select' as const },
   { key: 'group', name: t('admin.users.authorizedGroupFilter'), type: 'select' as const },
-  { key: 'apiKeyGroup', name: t('admin.users.apiKeyGroupFilter'), type: 'select' as const }
+  { key: 'apiKeyGroup', name: t('admin.users.apiKeyGroupFilter'), type: 'select' as const },
+  { key: 'paidChurn', name: t('payment.admin.paidChurnFilter'), type: 'select' as const }
 ])
 
 // Load saved filters from localStorage
@@ -1160,6 +1177,7 @@ const loadSavedFilters = () => {
       if (parsed.status) filters.status = parsed.status
       if (parsed.group) filters.group = parsed.group
       if (typeof parsed.apiKeyGroup === 'number') filters.apiKeyGroup = parsed.apiKeyGroup
+      if (['7_14', '15_29', '30_plus'].includes(parsed.paidChurn)) filters.paidChurn = parsed.paidChurn
       if (parsed.attributes) {
         Object.assign(activeAttributeFilters, parsed.attributes)
       }
@@ -1180,6 +1198,7 @@ const saveFiltersToStorage = () => {
       status: filters.status,
       group: filters.group,
       apiKeyGroup: filters.apiKeyGroup,
+      paidChurn: filters.paidChurn,
       attributes: activeAttributeFilters
     }
     localStorage.setItem(FILTER_VALUES_KEY, JSON.stringify(values))
@@ -1583,6 +1602,7 @@ const loadUsers = async () => {
         search: searchQuery.value || undefined,
         group_name: filters.group || undefined,
         api_key_group_id: filters.apiKeyGroup ?? undefined,
+        paid_churn: filters.paidChurn || undefined,
         attributes: Object.keys(attrFilters).length > 0 ? attrFilters : undefined,
         // 始终请求 subscriptions：列隐藏时仍需用于 UserPlatformQuotaModal 的 active-subscription 警示 banner
         include_subscriptions: true,
@@ -1674,6 +1694,7 @@ const toggleBuiltInFilter = (key: string) => {
     if (key === 'status') filters.status = ''
     if (key === 'group') filters.group = ''
     if (key === 'apiKeyGroup') filters.apiKeyGroup = null
+    if (key === 'paidChurn') filters.paidChurn = ''
   } else {
     visibleFilters.add(key)
     if (key === 'group') loadAllGroups()
@@ -1834,6 +1855,11 @@ const handleScroll = () => {
 onMounted(async () => {
   await loadAttributeDefinitions()
   loadSavedFilters()
+  const paidChurnQuery = Array.isArray(route.query.paid_churn) ? route.query.paid_churn[0] : route.query.paid_churn
+  if (paidChurnQuery && ['7_14', '15_29', '30_plus'].includes(paidChurnQuery)) {
+    filters.paidChurn = paidChurnQuery as '7_14' | '15_29' | '30_plus'
+    visibleFilters.add('paidChurn')
+  }
   loadSavedColumns()
   loadUsers()
   if (hasVisibleGroupsColumn.value || visibleFilters.has('group')) {

@@ -30,6 +30,7 @@
       </div>
       <template v-else-if="stats">
         <OrderStatsCards :stats="stats" />
+        <PaidUserRetentionPanel :stats="stats.paid_churn" />
         <DailyRevenueChart :data="stats.daily_series || []" :loading="loading" />
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div class="card p-4">
@@ -81,6 +82,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Icon from '@/components/icons/Icon.vue'
 import OrderStatsCards from '@/components/admin/payment/OrderStatsCards.vue'
+import PaidUserRetentionPanel from '@/components/admin/payment/PaidUserRetentionPanel.vue'
 import DailyRevenueChart from '@/components/admin/payment/DailyRevenueChart.vue'
 
 const { t } = useI18n()

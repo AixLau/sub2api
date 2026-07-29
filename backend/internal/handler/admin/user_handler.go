@@ -12,6 +12,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/handler/quotaview"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/paidchurn"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -136,6 +137,9 @@ func (h *UserHandler) List(c *gin.Context) {
 		Search:     search,
 		GroupName:  strings.TrimSpace(c.Query("group_name")),
 		Attributes: parseAttributeFilters(c),
+	}
+	if bucket := strings.TrimSpace(c.Query("paid_churn")); paidchurn.ValidBucket(bucket) {
+		filters.PaidChurnBucket = bucket
 	}
 	if raw := strings.TrimSpace(c.Query("api_key_group_id")); raw != "" {
 		if id, parseErr := strconv.ParseInt(raw, 10, 64); parseErr == nil && id > 0 {

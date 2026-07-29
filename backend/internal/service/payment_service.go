@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/paidchurn"
 )
 
 // --- Order Status Constants ---
@@ -158,6 +159,7 @@ type DashboardStats struct {
 	DailySeries    []DailyStats        `json:"daily_series"`
 	PaymentMethods []PaymentMethodStat `json:"payment_methods"`
 	TopUsers       TopUsersByCurrency  `json:"top_users"`
+	PaidChurn      paidchurn.Stats     `json:"paid_churn"`
 }
 
 // CurrencyAmounts holds payment amounts keyed by their ISO 4217 currency.

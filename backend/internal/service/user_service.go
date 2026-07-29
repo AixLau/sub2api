@@ -87,7 +87,10 @@ type UserListFilters struct {
 	// bound to this group (api_keys.group_id). 0 = no filter. Covers all three
 	// group types since it matches the key's group directly, not allowed_groups.
 	APIKeyGroupID int64
-	Attributes    map[int64]string // Custom attribute filters: attributeID -> value
+	// PaidChurnBucket filters paid users by mutually exclusive time since exhaustion.
+	// Supported values: 7_14, 15_29, 30_plus.
+	PaidChurnBucket string
+	Attributes      map[int64]string // Custom attribute filters: attributeID -> value
 	// IncludeSubscriptions controls whether ListWithFilters should load active subscriptions.
 	// For large datasets this can be expensive; admin list pages should enable it on demand.
 	// nil means not specified (default: load subscriptions for backward compatibility).

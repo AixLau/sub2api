@@ -21,6 +21,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/paidchurn"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
 
@@ -504,6 +505,26 @@ func (r *userRepository) ListWithFilters(ctx context.Context, params pagination.
 			apikey.GroupIDEQ(filters.APIKeyGroupID),
 			apikey.DeletedAtIsNil(),
 		))
+	}
+
+	if filters.PaidChurnBucket != "" {
+		if r.sql == nil {
+			return nil, nil, fmt.Errorf("sql executor is not configured")
+		}
+		paidChurnUserIDs, err := paidchurn.ListUserIDs(
+			ctx,
+			r.sql,
+			r.client.Driver().Dialect(),
+			filters.PaidChurnBucket,
+			time.Now(),
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(paidChurnUserIDs) == 0 {
+			return []service.User{}, paginationResultFromTotal(0, params), nil
+		}
+		q = q.Where(dbuser.IDIn(paidChurnUserIDs...))
 	}
 
 	// If attribute filters are specified, we need to filter by user IDs first

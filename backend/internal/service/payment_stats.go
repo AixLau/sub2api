@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"math"
 	"sort"
@@ -12,6 +13,9 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/paidchurn"
+
+	entsql "entgo.io/ent/dialect/sql"
 )
 
 // --- Dashboard & Analytics ---
@@ -49,6 +53,15 @@ func (s *PaymentService) GetDashboardStats(ctx context.Context, days int) (*Dash
 	st.DailySeries = buildDailySeries(orders, since, days)
 	st.PaymentMethods = buildMethodDistribution(orders)
 	st.TopUsers = buildTopUsers(orders)
+
+	driver, ok := s.entClient.Driver().(*entsql.Driver)
+	if !ok {
+		return nil, fmt.Errorf("payment dashboard: ent driver does not expose sql database")
+	}
+	st.PaidChurn, err = paidchurn.GetStats(ctx, driver.DB(), s.entClient.Driver().Dialect(), now)
+	if err != nil {
+		return nil, err
+	}
 
 	return st, nil
 }

@@ -290,6 +290,13 @@ export interface TopUserPaymentStats {
   amount: number
 }
 
+export interface PaidChurnStats {
+  total_paid_users: number
+  days_7_to_14: number
+  days_15_to_29: number
+  days_30_plus: number
+}
+
 export interface DashboardStats {
   today_amount: CurrencyAmounts
   total_amount: CurrencyAmounts
@@ -299,4 +306,5 @@ export interface DashboardStats {
   daily_series: DailyPaymentStats[]
   payment_methods: PaymentMethodStats[]
   top_users: Record<string, TopUserPaymentStats[]>
+  paid_churn: PaidChurnStats
 }
