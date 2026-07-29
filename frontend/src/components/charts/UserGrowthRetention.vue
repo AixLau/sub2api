@@ -64,6 +64,12 @@
                 {{ formatRate(rechargeRate) }}
               </span>
             </p>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.dashboard.usageToRecharge') }}
+              <span class="font-semibold tabular-nums text-violet-600 dark:text-violet-400">
+                {{ formatRate(usageRechargeRate) }}
+              </span>
+            </p>
           </div>
 
           <div class="flex items-center gap-3 lg:block" data-testid="recharge-loss">
@@ -185,7 +191,10 @@ const onDaysChange = (value: string | number | boolean | null) => {
 const totalRegistrations = computed(() => props.cohorts.reduce((sum, cohort) => sum + cohort.registrations, 0))
 const totalPaidUsers = computed(() => props.cohorts.reduce((sum, cohort) => sum + cohort.paid_users, 0))
 const totalRepeatBuyers = computed(() => props.cohorts.reduce((sum, cohort) => sum + cohort.repeat_buyers, 0))
+const totalActiveUsers = computed(() => props.cohorts.reduce((sum, cohort) => sum + cohort.active_users, 0))
+const totalPaidActiveUsers = computed(() => props.cohorts.reduce((sum, cohort) => sum + cohort.paid_active_users, 0))
 const rechargeRate = computed(() => rate(totalPaidUsers.value, totalRegistrations.value))
+const usageRechargeRate = computed(() => rate(totalPaidActiveUsers.value, totalActiveUsers.value))
 const repeatRate = computed(() => rate(totalRepeatBuyers.value, totalPaidUsers.value))
 const registrationLoss = computed<LossMetric>(() => loss(totalRegistrations.value, totalPaidUsers.value))
 const repeatLoss = computed<LossMetric>(() => loss(totalPaidUsers.value, totalRepeatBuyers.value))
@@ -259,7 +268,7 @@ const chartData = computed(() => {
       },
       {
         type: 'line' as const,
-        label: t('admin.dashboard.apiActiveUsers'),
+        label: t('admin.dashboard.usageUsers'),
         data: trendCohorts.value.map((point) => point.active_users),
         borderColor: '#0f766e',
         backgroundColor: '#0f766e',

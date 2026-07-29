@@ -53,12 +53,13 @@ func (r *usageLogRepository) GetUserGrowthRetention(ctx context.Context, startTi
 			SELECT
 				c.id,
 				COUNT(po.id) AS payment_count,
-				COALESCE(SUM(po.pay_amount), 0) AS recharge_amount
+				-- amount is credited to the user; pay_amount is the external payment amount.
+				COALESCE(SUM(po.amount), 0) AS recharge_amount
 			FROM cohorts c
 			LEFT JOIN payment_orders po
 			  ON po.user_id = c.id
 			 AND po.order_type = 'balance'
-			 AND po.status IN ('PAID', 'RECHARGING', 'COMPLETED')
+			 AND po.status = 'COMPLETED'
 			 AND po.paid_at >= c.created_at
 			 AND po.paid_at < c.created_at + interval '30 days'
 			GROUP BY c.id
@@ -70,6 +71,7 @@ func (r *usageLogRepository) GetUserGrowthRetention(ctx context.Context, startTi
 				COUNT(*) FILTER (WHERE ca.retained_d7) AS d7_retained,
 				COUNT(*) FILTER (WHERE ca.retained_d30) AS d30_retained,
 				COUNT(*) FILTER (WHERE p.payment_count >= 1) AS paid_users,
+				COUNT(*) FILTER (WHERE p.payment_count >= 1 AND a.active_user) AS paid_active_users,
 				COUNT(*) FILTER (WHERE p.payment_count >= 2) AS repeat_buyers,
 				COALESCE(SUM(p.recharge_amount), 0) AS recharge_amount,
 				COUNT(*) FILTER (WHERE a.active_user) AS active_users
@@ -85,6 +87,7 @@ func (r *usageLogRepository) GetUserGrowthRetention(ctx context.Context, startTi
 			COALESCE(s.d7_retained, 0),
 			COALESCE(s.d30_retained, 0),
 			COALESCE(s.paid_users, 0),
+			COALESCE(s.paid_active_users, 0),
 			COALESCE(s.repeat_buyers, 0),
 			COALESCE(s.recharge_amount, 0),
 			COALESCE(s.active_users, 0)
@@ -117,6 +120,7 @@ func (r *usageLogRepository) GetUserGrowthRetention(ctx context.Context, startTi
 			&point.D7Retained,
 			&point.D30Retained,
 			&point.PaidUsers,
+			&point.PaidActiveUsers,
 			&point.RepeatBuyers,
 			&point.RechargeAmount,
 			&point.ActiveUsers,

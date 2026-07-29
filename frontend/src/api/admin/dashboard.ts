@@ -303,6 +303,7 @@ export interface UserRetentionPoint {
   d7_retained: number
   d30_retained: number
   paid_users: number
+  paid_active_users: number
   repeat_buyers: number
   recharge_amount: number
   d1_rate: number | null

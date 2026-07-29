@@ -39,6 +39,7 @@ const createCohort = (
   d7_retained: 0,
   d30_retained: 0,
   paid_users: paidUsers,
+  paid_active_users: Math.min(paidUsers, activeUsers),
   repeat_buyers: repeatBuyers,
   recharge_amount: rechargeAmount,
   d1_rate: 0,
@@ -94,13 +95,14 @@ describe('UserGrowthRetention', () => {
 
     expect(wrapper.find('[data-testid="registration-stage"]').text()).toContain('1,600')
     expect(wrapper.find('[data-testid="recharge-stage"]').text()).toContain('250')
+    expect(wrapper.find('[data-testid="recharge-stage"]').text()).toContain('admin.dashboard.usageToRecharge 100.0%')
     expect(wrapper.find('[data-testid="repeat-stage"]').text()).toContain('86')
     expect(wrapper.find('[data-testid="registration-loss"]').text()).toContain('1,350')
     expect(wrapper.find('[data-testid="primary-loss-alert"]').exists()).toBe(false)
     expect(wrapper.find('table').exists()).toBe(false)
   })
 
-  it('shows registrations, recharge users, recharge amount, and API users', () => {
+  it('shows registrations, recharge users, recharge amount, and usage users', () => {
     const wrapper = mountComponent()
     const chart = wrapper.findComponent({ name: 'Chart' })
 
@@ -109,7 +111,7 @@ describe('UserGrowthRetention', () => {
       'admin.dashboard.registrations',
       'admin.dashboard.rechargedUsers',
       'admin.dashboard.rechargeAmount',
-      'admin.dashboard.apiActiveUsers'
+      'admin.dashboard.usageUsers'
     ])
   })
 
