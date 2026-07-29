@@ -63,3 +63,35 @@
 - Comparison history: the earlier implementation measured 304 x 422 CSS pixels with a 208px QR frame. It was widened to 344px and the QR frame increased to 240px; post-fix desktop, 390px, and 320px measurements confirm the card remains centered and overflow-free.
 
 final result: passed
+
+## Dashboard Components Preview QA
+
+- Preview: `http://127.0.0.1:3000/dashboard-components-preview.html`
+- Source dashboard reference: `/Users/lushiwu/dev/sub2api/frontend/design-qa-assets/source-dashboard.png`
+- Desktop admin view: `/Users/lushiwu/dev/sub2api/frontend/design-qa-assets/dashboard-components-admin.png`
+- Desktop usage view: `/Users/lushiwu/dev/sub2api/frontend/design-qa-assets/dashboard-components-usage.png`
+- Mobile admin view: `/Users/lushiwu/dev/sub2api/frontend/design-qa-assets/dashboard-components-mobile.png`
+- Side-by-side comparison: `/Users/lushiwu/dev/sub2api/frontend/design-qa-assets/dashboard-components-comparison.png`
+
+### Scope
+
+- The preview intentionally excludes the proposed model consumption ranking and user spending ranking.
+- Admin preview includes resource health rings, token composition, and an attention summary.
+- Usage preview includes adaptive group composition, efficiency metrics, cost drivers, and period comparison.
+- This is an isolated frontend preview; existing `/admin/dashboard`, `/usage`, routes, components, and API integrations remain unchanged.
+
+### Responsive And Interaction Checks
+
+- Desktop admin and usage states render without console warnings or errors.
+- Admin/usage switching and Today/Total token switching work.
+- Group composition supports multiple groups, one group, and empty states.
+- At 390 x 844, both preview modes collapse to a single-column layout without horizontal overflow.
+- The mobile usage view reports a 390px document width for a 390px viewport.
+- Targeted ESLint and frontend TypeScript checks pass.
+
+### Findings
+
+- P0/P1/P2: none.
+- The circular charts are reserved for bounded composition and health metrics. Ranking-oriented model and user data is intentionally absent.
+
+final result: passed
