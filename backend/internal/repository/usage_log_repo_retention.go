@@ -49,17 +49,29 @@ func (r *usageLogRepository) GetUserGrowthRetention(ctx context.Context, startTi
 			 AND ul.created_at >= c.created_at
 			 AND ul.created_at < $2
 			GROUP BY c.id
+		), completed_balance_payments AS (
+			SELECT
+				po.id,
+				po.user_id,
+				po.pay_amount,
+				po.paid_at,
+				ROW_NUMBER() OVER (
+					PARTITION BY po.user_id
+					ORDER BY po.paid_at ASC, po.id ASC
+				) AS payment_rank
+			FROM payment_orders po
+			JOIN cohorts payment_cohort ON payment_cohort.id = po.user_id
+			WHERE po.order_type = 'balance'
+			  AND po.status = 'COMPLETED'
+			  AND po.paid_at IS NOT NULL
 		), payment_by_user AS (
 			SELECT
 				c.id,
 				COUNT(po.id) AS payment_count,
-				-- amount is credited to the user; pay_amount is the external payment amount.
-				COALESCE(SUM(po.amount), 0) AS recharge_amount
+				COALESCE(SUM(po.pay_amount) FILTER (WHERE po.payment_rank = 1), 0) AS recharge_amount
 			FROM cohorts c
-			LEFT JOIN payment_orders po
+			LEFT JOIN completed_balance_payments po
 			  ON po.user_id = c.id
-			 AND po.order_type = 'balance'
-			 AND po.status = 'COMPLETED'
 			 AND po.paid_at >= c.created_at
 			 AND po.paid_at < c.created_at + interval '30 days'
 			GROUP BY c.id
