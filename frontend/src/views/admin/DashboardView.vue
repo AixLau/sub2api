@@ -266,7 +266,7 @@
               </div>
               <button
                 data-testid="admin-dashboard-chart-refresh"
-                @click="loadChartData"
+                @click="refreshDashboard"
                 :disabled="chartsLoading"
                 class="btn btn-secondary"
               >
@@ -628,6 +628,15 @@ const loadChartData = async () => {
   const range = getDashboardRangeParams()
   await Promise.all([
     loadDashboardSnapshot(false, range),
+    loadActiveUsersTrend(range),
+    loadUserSpendingRanking(range)
+  ])
+}
+
+const refreshDashboard = async () => {
+  const range = getDashboardRangeParams()
+  await Promise.all([
+    loadDashboardSnapshot(true, range),
     loadActiveUsersTrend(range),
     loadUserSpendingRanking(range)
   ])

@@ -195,7 +195,7 @@ describe('admin DashboardView', () => {
     expect(new Date(range.end_time!).getTime() - new Date(range.start_time!).getTime()).toBe(24 * 60 * 60 * 1000)
   })
 
-  it('refreshes chart data without reloading global summary cards', async () => {
+  it('refreshes summary cards and chart data together', async () => {
     const wrapper = mount(DashboardView, {
       global: {
         stubs: {
@@ -222,7 +222,7 @@ describe('admin DashboardView', () => {
 
     expect(getSnapshotV2).toHaveBeenCalledTimes(2)
     expect(getSnapshotV2.mock.calls[1][0]).toEqual(expect.objectContaining({
-      include_stats: false
+      include_stats: true
     }))
   })
 
