@@ -2,7 +2,8 @@
   <header class="site-header">
     <nav class="navbar" aria-label="主导航">
       <router-link class="logo" to="/" :aria-label="`${brandName} home`">
-        {{ brandName }}
+        <img class="logo-image" src="/logo.png" alt="" />
+        <span>{{ brandName }}</span>
       </router-link>
       <div class="nav-actions">
         <router-link class="nav-account-link" to="/login">登录</router-link>

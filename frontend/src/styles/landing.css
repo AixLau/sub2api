@@ -79,14 +79,21 @@
 
 .logo {
   display: inline-flex;
-  align-items: flex-start;
-  gap: 1px;
+  align-items: center;
+  gap: 9px;
   font-family: 'Source Serif 4', 'Songti SC', 'STSong', serif;
   font-size: 31px;
   font-style: italic;
   font-weight: 600;
   line-height: 0.94;
   letter-spacing: -0.16em;
+}
+
+.logo-image {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  object-fit: contain;
 }
 
 .logo-mark {
@@ -1754,6 +1761,13 @@
 .auth-brand:hover {
   transform: translateY(-1px);
   background: rgba(255, 255, 255, 0.78);
+}
+
+.auth-brand-logo {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  object-fit: contain;
 }
 
 .auth-brand-word {

@@ -7,6 +7,7 @@
         <img class="auth-visual-image" :src="HERO_BACKGROUND_IMAGE" alt="" />
         <div class="auth-visual-content auth-reveal">
           <router-link class="auth-brand" to="/" :aria-label="`${brandName} home`">
+            <img class="auth-brand-logo" src="/logo.png" alt="" />
             <span class="auth-brand-word">{{ brandName }}</span>
             <span class="auth-brand-submark">API</span>
           </router-link>
