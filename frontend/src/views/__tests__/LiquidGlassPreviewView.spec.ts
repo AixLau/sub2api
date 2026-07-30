@@ -18,27 +18,32 @@ describe('LiquidGlassPreviewView', () => {
           LiquidGlass: {
             template: '<div class="preview-liquid-glass-stub"><slot /></div>'
           },
+          LiquidGlassBackdrop: {
+            template: '<div data-testid="liquid-glass-backdrop" />'
+          },
+          SupportContactCardContent: false,
           Icon: true
         }
       }
     })
 
     expect(wrapper.get('[data-testid="liquid-glass-preview"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="liquid-glass-backdrop"]').exists()).toBe(true)
     expect(wrapper.findAll('.preview-liquid-glass-stub')).toHaveLength(1)
     expect(wrapper.get('[data-testid="preview-outer-liquid-glass"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="preview-inner-liquid-glass"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="preview-qq-empty"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="preview-wechat-qr"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="preview-qr-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="preview-qr-image"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="preview-tab-qq"]').attributes('aria-selected')).toBe('true')
 
     await wrapper.get('[data-testid="preview-tab-wechat"]').trigger('click')
 
     expect(wrapper.get('[data-testid="preview-tab-wechat"]').attributes('aria-selected')).toBe('true')
-    expect(wrapper.find('[data-testid="preview-qq-empty"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="preview-wechat-qr"]').attributes('src')).toContain(
+    expect(wrapper.find('[data-testid="preview-qr-empty"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="preview-qr-image"]').attributes('src')).toContain(
       'support-wechat-preview.webp'
     )
-    expect(wrapper.get('[data-testid="preview-wechat-qr"]').attributes('alt')).toBe(
+    expect(wrapper.get('[data-testid="preview-qr-image"]').attributes('alt')).toBe(
       'common.supportQRCodeAlt:common.supportWeChatTab'
     )
   })

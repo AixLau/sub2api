@@ -95,3 +95,62 @@ final result: passed
 - The circular charts are reserved for bounded composition and health metrics. Ranking-oriented model and user data is intentionally absent.
 
 final result: passed
+
+# Liquid Glass Design QA
+
+**Source visual truth**
+
+- URL: https://inspira-ui.com/docs/cn/components/visualization/liquid-glass
+- Capture: in-app browser screenshot of the official Chromium demo.
+- Pixels: 1280 × 720.
+
+**Implementation evidence**
+
+- URL: http://127.0.0.1:3015/support-dialog-preview
+- Capture: in-app browser screenshot of the support-dialog preview using the production component parameters and displacement algorithm.
+- Pixels: 1280 × 720.
+- CSS viewport: 1280 × 720; device density normalized at 1×.
+- State: desktop, light product background, QQ selected, support dialog open.
+
+**Full-view comparison evidence**
+
+- The official and local captures were combined side by side at equal pixel dimensions.
+- Both surfaces show a translucent glass layer, displaced background detail at the perimeter, RGB channel separation, a thin luminous rim, and content that remains unaffected by the backdrop displacement.
+- The local surface is intentionally larger and sits on a lighter background because it is a support dialog rather than the official narrow demo bar. The visual mechanism and tuning values match the reference.
+
+**Focused region comparison evidence**
+
+- A separate crop was not needed: at 1280 × 720 the official bar and the complete 360 px support dialog were both readable in the equal-size side-by-side comparison. The glass rim, displaced dot field, typography, and controls were visible without scaling ambiguity.
+
+**Required fidelity surfaces**
+
+- Fonts and typography: existing product font stack and support-dialog hierarchy are preserved; labels remain legible over the refracted surface.
+- Spacing and layout rhythm: the existing 360 px dialog, 28 px radius, tab spacing, QR frame, and modal centering are preserved.
+- Colors and visual tokens: the component uses the reference `lightness: 50`, `blend: difference`, `alpha: 0.93`, `blur: 11`, `scale: -180`, and `frost: 0.05` values. No white wash or nested blur remains on the supported liquid surface.
+- Image quality and asset fidelity: the production QR image path and rendering behavior are unchanged. The preview uses mock QR content only to validate layout and glass contrast.
+- Copy and content: support title, introduction, tabs, and scan hint are unchanged.
+
+**Findings**
+
+- No actionable P0, P1, or P2 differences remain for the requested liquid-glass behavior.
+- P3: refraction is naturally more noticeable over high-contrast content than over a nearly uniform page background. The local dot field provides enough detail to reveal it without making the modal decorative or noisy.
+
+**Comparison history**
+
+1. Earlier implementation used `scale: -70`, near-white `lightness: 94`, only 1–2 px channel offsets, a 35% white wash, and a blurred overlay. Evidence: it read mainly as gray frosted glass and hid the displacement.
+2. Fixes applied: restored the official -180/-170/-160 channel scales and source-map values, removed overlay pre-blur, removed the white wash and nested blur layers, strengthened the restrained dot field, and used the official multi-layer inset shadow treatment.
+3. Post-fix evidence: equal-size side-by-side browser comparison shows displaced dots and the same edge/color-split behavior as the reference while preserving support-dialog readability.
+
+**Implementation checklist**
+
+- [x] Official displacement parameters applied.
+- [x] Chromium displacement retained; unsupported browsers use a solid white card with no backdrop filter.
+- [x] Support-dialog copy and QR behavior preserved.
+- [x] QQ/WeChat switching verified.
+- [x] Focused tests, ESLint, and TypeScript checks passed.
+
+**Follow-up polish**
+
+- If the production dashboard behind the dialog is unusually uniform, slightly increasing the dot-field opacity can make refraction more obvious without changing the glass component.
+
+final result: passed

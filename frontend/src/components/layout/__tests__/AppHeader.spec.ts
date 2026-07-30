@@ -104,7 +104,9 @@ describe('AppHeader contact support entry', () => {
           RouterLink: true,
           Teleport: true,
           Transition: true,
-          LiquidGlass: { template: '<div data-testid="liquid-glass-shell"><slot /></div>' }
+          LiquidGlass: { template: '<div data-testid="liquid-glass-shell"><slot /></div>' },
+          LiquidGlassBackdrop: { template: '<div data-testid="liquid-glass-backdrop" />' },
+          SupportContactCardContent: false
         }
       }
     })
@@ -117,10 +119,11 @@ describe('AppHeader contact support entry', () => {
     await supportButton.trigger('click')
 
     expect(wrapper.get('[data-testid="liquid-glass-shell"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="support-dot-field"]').attributes('aria-hidden')).toBe('true')
-    expect(wrapper.get('[data-testid="support-dot-field"]').classes()).toContain(
-      'pointer-events-none'
+    expect(wrapper.get('[data-testid="support-overlay"]').classes()).not.toContain('bg-black/30')
+    expect(wrapper.get('[data-testid="support-overlay"]').classes()).not.toContain(
+      'backdrop-blur-sm'
     )
+    expect(wrapper.get('[data-testid="liquid-glass-backdrop"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="support-dialog"]').text()).toContain('common.supportCommunityTitle')
     expect(wrapper.get('[data-testid="support-dialog"]').attributes('role')).toBe('dialog')
     expect(wrapper.get('[data-testid="support-dialog"]').attributes('aria-modal')).toBe('true')
@@ -144,7 +147,9 @@ describe('AppHeader contact support entry', () => {
           RouterLink: true,
           Teleport: true,
           Transition: true,
-          LiquidGlass: { template: '<div><slot /></div>' }
+          LiquidGlass: { template: '<div><slot /></div>' },
+          LiquidGlassBackdrop: true,
+          SupportContactCardContent: false
         }
       }
     })

@@ -72,7 +72,7 @@
               />
             </div>
 
-            <div v-if="visibleFilters.has('paidChurn')" class="w-full sm:w-44">
+            <div v-if="visibleFilters.has('paidChurn')" class="w-full sm:w-36">
               <Select
                 v-model="filters.paidChurn"
                 :options="[

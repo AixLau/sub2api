@@ -1,6 +1,6 @@
 <template>
-  <section class="card p-4" aria-labelledby="paid-user-retention-title">
-    <div class="mb-4 flex flex-wrap items-end justify-between gap-2">
+  <section class="card p-5" aria-labelledby="paid-user-retention-title">
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
       <div>
         <h3 id="paid-user-retention-title" class="text-sm font-semibold text-gray-900 dark:text-white">
           {{ t('payment.admin.paidUserRetention') }}
@@ -9,13 +9,13 @@
           {{ t('payment.admin.paidUserRetentionHint') }}
         </p>
       </div>
-      <p class="text-xs text-gray-500 dark:text-gray-400">
+      <p class="rounded-full bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300">
         {{ t('payment.admin.totalChurned', { count: totalChurned, rate: formatRate(totalChurned) }) }}
       </p>
     </div>
 
-    <div class="grid grid-cols-2 divide-x divide-y divide-gray-200 border-y border-gray-200 dark:divide-dark-600 dark:border-dark-600 lg:grid-cols-4 lg:divide-y-0">
-      <div class="min-w-0 px-3 py-4 first:pl-0 lg:px-5">
+    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div class="min-w-0 rounded-xl border border-primary-100 bg-primary-50/60 px-4 py-4 dark:border-primary-900/40 dark:bg-primary-950/20">
         <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
           {{ t('payment.admin.totalPaidUsers') }}
         </p>
@@ -29,7 +29,7 @@
         v-for="item in churnItems"
         :key="item.bucket"
         type="button"
-        class="group min-w-0 px-3 py-4 text-left transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500 dark:hover:bg-dark-700/50 lg:px-5"
+        class="group min-w-0 rounded-xl border border-gray-200 bg-white px-4 py-4 text-left transition-colors hover:border-primary-200 hover:bg-primary-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:border-dark-600 dark:bg-dark-800 dark:hover:border-primary-800 dark:hover:bg-primary-950/20"
         :data-testid="`paid-churn-${item.bucket}`"
         @click="openUsers(item.bucket)"
       >

@@ -69,23 +69,29 @@ func ListUserIDs(ctx context.Context, q Querier, driverDialect, bucket string, n
 	if !ValidBucket(bucket) {
 		return nil, nil
 	}
-	placeholders := bindVars(driverDialect, 3)
-	var where string
+	var (
+		where string
+		args  []any
+	)
 	switch bucket {
 	case BucketSevenToFourteen:
-		where = fmt.Sprintf("exhausted_at > %s AND exhausted_at <= %s", placeholders[1], placeholders[0])
+		placeholders := bindVars(driverDialect, 2)
+		where = fmt.Sprintf("exhausted_at > %s AND exhausted_at <= %s", placeholders[0], placeholders[1])
+		args = []any{now.AddDate(0, 0, -15), now.AddDate(0, 0, -7)}
 	case BucketFifteenToTwentyNine:
-		where = fmt.Sprintf("exhausted_at > %s AND exhausted_at <= %s", placeholders[2], placeholders[1])
+		placeholders := bindVars(driverDialect, 2)
+		where = fmt.Sprintf("exhausted_at > %s AND exhausted_at <= %s", placeholders[0], placeholders[1])
+		args = []any{now.AddDate(0, 0, -30), now.AddDate(0, 0, -15)}
 	case BucketThirtyPlus:
-		where = fmt.Sprintf("exhausted_at <= %s", placeholders[2])
+		placeholders := bindVars(driverDialect, 1)
+		where = fmt.Sprintf("exhausted_at <= %s", placeholders[0])
+		args = []any{now.AddDate(0, 0, -30)}
 	}
 
 	rows, err := q.QueryContext(
 		ctx,
 		churnCandidatesSQL+" SELECT user_id FROM dedup WHERE "+where+" ORDER BY exhausted_at ASC, user_id ASC",
-		now.AddDate(0, 0, -7),
-		now.AddDate(0, 0, -15),
-		now.AddDate(0, 0, -30),
+		args...,
 	)
 	if err != nil {
 		return nil, err

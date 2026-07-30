@@ -3,10 +3,13 @@ package paidchurn
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"regexp"
 	"testing"
 	"time"
 
 	"entgo.io/ent/dialect"
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 )
@@ -65,4 +68,62 @@ func TestGetStatsUsesMutuallyExclusiveBucketsAndExcludesRepayment(t *testing.T) 
 	ids, err := ListUserIDs(context.Background(), db, dialect.SQLite, BucketFifteenToTwentyNine, now)
 	require.NoError(t, err)
 	require.Equal(t, []int64{3}, ids)
+}
+
+func TestListUserIDsUsesContiguousPostgresParameters(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	now := time.Date(2026, time.July, 29, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name    string
+		bucket  string
+		where   string
+		args    []any
+		userIDs []int64
+	}{
+		{
+			name:    "seven to fourteen",
+			bucket:  BucketSevenToFourteen,
+			where:   "exhausted_at > $1 AND exhausted_at <= $2",
+			args:    []any{now.AddDate(0, 0, -15), now.AddDate(0, 0, -7)},
+			userIDs: []int64{7},
+		},
+		{
+			name:    "fifteen to twenty nine",
+			bucket:  BucketFifteenToTwentyNine,
+			where:   "exhausted_at > $1 AND exhausted_at <= $2",
+			args:    []any{now.AddDate(0, 0, -30), now.AddDate(0, 0, -15)},
+			userIDs: []int64{15},
+		},
+		{
+			name:    "thirty plus",
+			bucket:  BucketThirtyPlus,
+			where:   "exhausted_at <= $1",
+			args:    []any{now.AddDate(0, 0, -30)},
+			userIDs: []int64{30},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			queryPattern := `(?s).*SELECT user_id FROM dedup WHERE ` + regexp.QuoteMeta(tt.where) + ` ORDER BY exhausted_at ASC, user_id ASC`
+			expectedArgs := make([]driver.Value, len(tt.args))
+			for i := range tt.args {
+				expectedArgs[i] = tt.args[i]
+			}
+			rows := sqlmock.NewRows([]string{"user_id"})
+			for _, userID := range tt.userIDs {
+				rows.AddRow(userID)
+			}
+			mock.ExpectQuery(queryPattern).WithArgs(expectedArgs...).WillReturnRows(rows)
+
+			ids, queryErr := ListUserIDs(context.Background(), db, dialect.Postgres, tt.bucket, now)
+			require.NoError(t, queryErr)
+			require.Equal(t, tt.userIDs, ids)
+		})
+	}
+
+	require.NoError(t, mock.ExpectationsWereMet())
 }

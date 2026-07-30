@@ -32,6 +32,8 @@
 | `DirectionAwareHover` | `color?`(默认 teal 淡色) | 方向感知悬停:高光层从鼠标进入方向滑入、向离开方向滑出(hover-dir 象限判定);触屏不生效,reduced-motion 退化为淡入淡出 |
 | `Lens` | `zoom=1.8` · `size=140`(镜面直径 px) | 圆形放大镜跟随鼠标(clip-path circle + 以鼠标点为 origin 的 scale);触屏与 reduced-motion 下不启用 |
 | `LiquidGlass` | `radius=16` · `border=0.07` · `lightness=50` · `alpha=0.93` · `blur=11` · `scale=-180` · `frost=0.05` | SVG 置换滤镜液态玻璃;Chromium 使用折射效果,Safari/Firefox 使用不透明纯白卡片 |
+| `LiquidGlassBackdrop` | 无 | 液态玻璃预览与正式联系客服弹窗共享的中性浅灰渐变与灰色点阵环境背景 |
+| `SupportContactCardContent` | `v-model` · `qqQrCode?` · `wechatQrCode?` · `dialog?` · `dismissible?` | 原预览页与正式联系客服弹窗共享的完整卡片内容、排版、标签页和二维码状态 |
 | `ScratchToReveal` | `coverColor?`(缺省随亮/暗色自动) · `coverImage?`(失败时回退颜色) · `coverText?` · `threshold=0.5` · `radius=24`;emit `complete` | 刮刮乐:canvas 覆盖层支持图片换肤并可拖动擦除,刮开面积达阈值后淡出并触发 `complete`;键盘 Enter/Space 或双击可直接揭示(可访问性);无 canvas / reduced-motion 时内容直接可见并立即 `complete` |
 
 ### 背景层(absolute 铺满父容器,父容器需 `relative`,无插槽)

@@ -18,12 +18,16 @@ describe('LiquidGlassReadabilityPreviewView', () => {
           LiquidGlass: {
             template: '<div class="preview-liquid-glass-stub"><slot /></div>'
           },
+          LiquidGlassBackdrop: {
+            template: '<div data-testid="liquid-glass-backdrop" />'
+          },
           Icon: true
         }
       }
     })
 
     expect(wrapper.get('[data-testid="liquid-glass-readability-preview"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="liquid-glass-backdrop"]').exists()).toBe(true)
     expect(wrapper.findAll('.preview-liquid-glass-stub')).toHaveLength(1)
     expect(wrapper.get('[data-testid="readability-preview-outer-liquid-glass"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="preview-inner-liquid-glass"]').exists()).toBe(false)
