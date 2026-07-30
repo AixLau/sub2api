@@ -4,7 +4,6 @@
     data-testid="liquid-glass-readability-preview"
   >
     <LiquidGlassBackdrop />
-    <span class="preview-calm-zone pointer-events-none" aria-hidden="true"></span>
 
     <LiquidGlass
       data-testid="readability-preview-outer-liquid-glass"
@@ -123,18 +122,6 @@ const activePlatform = computed(() =>
 </script>
 
 <style scoped>
-.preview-calm-zone {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: min(330px, calc(100vw - 56px));
-  height: 360px;
-  transform: translate(-50%, -50%);
-  border-radius: 42%;
-  background: rgb(238 243 248 / 0.68);
-  filter: blur(34px);
-}
-
 .preview-reading-frost {
   position: absolute;
   inset: 0;
@@ -150,5 +137,4 @@ const activePlatform = computed(() =>
     ),
     linear-gradient(180deg, rgb(255 255 255 / 0.22), rgb(255 255 255 / 0.08));
 }
-
 </style>

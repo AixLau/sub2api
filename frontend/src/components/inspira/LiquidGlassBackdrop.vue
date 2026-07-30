@@ -9,13 +9,6 @@
 </template>
 
 <style scoped>
-.liquid-glass-backdrop {
-  background:
-    radial-gradient(circle at 18% 18%, rgb(255 255 255 / 0.92), transparent 32%),
-    radial-gradient(circle at 82% 78%, rgb(226 232 240 / 0.74), transparent 34%),
-    linear-gradient(145deg, #e2e8f0 0%, #f1f5f9 48%, #e2e8f0 100%);
-}
-
 .liquid-glass-backdrop__dots {
   position: absolute;
   inset: 0;
@@ -24,5 +17,4 @@
   mask-image: radial-gradient(ellipse at center, black 10%, transparent 72%);
   -webkit-mask-image: radial-gradient(ellipse at center, black 10%, transparent 72%);
 }
-
 </style>

@@ -11,7 +11,7 @@ vi.mock('vue-i18n', async (importOriginal) => ({
 }))
 
 describe('LiquidGlassReadabilityPreviewView', () => {
-  it('keeps one glass surface with a calm reading field and switches to the WeChat QR code', async () => {
+  it('keeps one glass surface without an extra gray backdrop and switches to WeChat', async () => {
     const wrapper = shallowMount(LiquidGlassReadabilityPreviewView, {
       global: {
         stubs: {
@@ -31,7 +31,7 @@ describe('LiquidGlassReadabilityPreviewView', () => {
     expect(wrapper.findAll('.preview-liquid-glass-stub')).toHaveLength(1)
     expect(wrapper.get('[data-testid="readability-preview-outer-liquid-glass"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="preview-inner-liquid-glass"]').exists()).toBe(false)
-    expect(wrapper.get('.preview-calm-zone').exists()).toBe(true)
+    expect(wrapper.find('.preview-calm-zone').exists()).toBe(false)
     expect(wrapper.get('.preview-reading-frost').exists()).toBe(true)
     expect(wrapper.get('[data-testid="readability-preview-subtitle"]').classes()).toContain(
       'text-gray-800'
