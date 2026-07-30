@@ -14,7 +14,7 @@
       :alpha="0.93"
       :blur="14"
       :scale="-150"
-      :frost="0.16"
+      :frost="0.08"
       container-class="relative z-10 w-[360px] max-w-[calc(100vw-32px)] overflow-hidden"
     >
       <section
@@ -130,11 +130,11 @@ const activePlatform = computed(() =>
   background:
     radial-gradient(
       ellipse 88% 72% at 50% 58%,
-      rgb(255 255 255 / 0.54) 0%,
-      rgb(255 255 255 / 0.42) 48%,
-      rgb(255 255 255 / 0.16) 76%,
+      rgb(255 255 255 / 0.3) 0%,
+      rgb(255 255 255 / 0.22) 48%,
+      rgb(255 255 255 / 0.08) 76%,
       transparent 100%
     ),
-    linear-gradient(180deg, rgb(255 255 255 / 0.22), rgb(255 255 255 / 0.08));
+    linear-gradient(180deg, rgb(255 255 255 / 0.12), rgb(255 255 255 / 0.04));
 }
 </style>

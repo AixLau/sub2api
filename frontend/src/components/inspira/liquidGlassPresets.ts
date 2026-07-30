@@ -6,6 +6,6 @@ export const supportLiquidGlassPreset = Object.freeze({
   alpha: 0.93,
   blur: 11,
   scale: -180,
-  frost: 0.05,
+  frost: 0.03,
   containerClass: 'relative z-10 w-[360px] max-w-[calc(100vw-32px)] overflow-hidden'
 })

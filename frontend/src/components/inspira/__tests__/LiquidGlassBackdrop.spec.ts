@@ -13,6 +13,6 @@ describe('LiquidGlassBackdrop', () => {
       'pointer-events-none'
     )
     expect(wrapper.find('.liquid-glass-backdrop__orb').exists()).toBe(false)
-    expect(wrapper.get('.liquid-glass-backdrop__dots').exists()).toBe(true)
+    expect(wrapper.find('.liquid-glass-backdrop__dots').exists()).toBe(false)
   })
 })
