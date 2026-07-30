@@ -760,7 +760,7 @@ func (s *ContentModerationService) applyContentModerationAutoBan(ctx context.Con
 		return false, count, nil
 	}
 	user.Status = StatusDisabled
-	if err := s.userRepo.Update(ctx, user); err != nil {
+	if err := s.userRepo.Update(ctx, user, UserUpdateFields{Status: true}); err != nil {
 		return false, count, err
 	}
 	if s.authCacheInvalidator != nil {

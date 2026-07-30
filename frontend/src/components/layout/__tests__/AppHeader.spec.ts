@@ -34,6 +34,11 @@ vi.mock('@/stores/adminSettings', () => ({
   useAdminSettingsStore: () => ({ customMenuItems: [] })
 }))
 
+vi.mock('@/utils/featureFlags', () => ({
+  FeatureFlags: { modelPlaza: { key: 'model_plaza_enabled', mode: 'opt-in' } },
+  isFeatureFlagEnabled: () => false
+}))
+
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: mocks.routerPush }),
   useRoute: () => ({ name: 'Profile', meta: {}, params: {} })

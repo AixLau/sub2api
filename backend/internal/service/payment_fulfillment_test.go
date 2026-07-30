@@ -82,7 +82,7 @@ func (s *paymentFulfillmentAPIKeyRepoStub) GetByKey(context.Context, string) (*A
 func (s *paymentFulfillmentAPIKeyRepoStub) GetByKeyForAuth(context.Context, string) (*APIKey, error) {
 	panic("unexpected GetByKeyForAuth")
 }
-func (s *paymentFulfillmentAPIKeyRepoStub) Update(context.Context, *APIKey) error {
+func (s *paymentFulfillmentAPIKeyRepoStub) Update(context.Context, *APIKey, APIKeyUpdateFields) error {
 	panic("unexpected Update")
 }
 func (s *paymentFulfillmentAPIKeyRepoStub) Delete(context.Context, int64) error {

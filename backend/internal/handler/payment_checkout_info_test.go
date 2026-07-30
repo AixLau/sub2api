@@ -41,7 +41,7 @@ func TestGetCheckoutInfoOmitsDeprecatedNinePlusFlag(t *testing.T) {
 	require.NoError(t, err)
 
 	configSvc := service.NewPaymentConfigService(client, &checkoutInfoSettingRepoStub{}, []byte("0123456789abcdef0123456789abcdef"))
-	h := NewPaymentHandler(nil, configSvc, nil)
+	h := NewPaymentHandler(nil, configSvc)
 
 	recorder := httptest.NewRecorder()
 	ginCtx, _ := gin.CreateTestContext(recorder)

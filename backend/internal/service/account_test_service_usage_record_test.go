@@ -160,7 +160,7 @@ func TestAccountTestService_OpenAICompactForcesSystemUAAndRecordsZeroUsage(t *te
 
 	err := svc.testOpenAICompactConnection(c, account, "gpt-5.4")
 	require.NoError(t, err)
-	require.Equal(t, "codex_vscode/1.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.NotNil(t, writer.log)
 	require.Equal(t, "compact_45", writer.log.RequestID)
 	require.Zero(t, writer.log.TotalTokens())
