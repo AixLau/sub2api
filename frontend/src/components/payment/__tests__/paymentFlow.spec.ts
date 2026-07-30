@@ -145,6 +145,7 @@ describe('decidePaymentLaunch', () => {
     const decision = decidePaymentLaunch(createOrderResult({
       pay_url: 'https://pay.example.com/session/abc',
       payment_mode: 'popup',
+      provider_key: 'haozpay',
       resume_token: 'resume-2',
       out_trade_no: 'sub2_abc',
     }), {
@@ -156,6 +157,7 @@ describe('decidePaymentLaunch', () => {
     expect(decision.kind).toBe('redirect_waiting')
     expect(decision.paymentState.payUrl).toBe('https://pay.example.com/session/abc')
     expect(decision.recovery.paymentMode).toBe('popup')
+    expect(decision.recovery.providerKey).toBe('haozpay')
     expect(decision.recovery.outTradeNo).toBe('sub2_abc')
     expect(decision.recovery.resumeToken).toBe('resume-2')
   })
@@ -496,6 +498,7 @@ describe('readPaymentRecoverySnapshot', () => {
 
     expect(restored?.orderId).toBe(44)
     expect(restored?.outTradeNo).toBe('')
+    expect(restored?.providerKey).toBe('')
   })
 
   it('keeps backward compatibility with snapshots written before Airwallex fields existed', () => {

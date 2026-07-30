@@ -112,6 +112,8 @@ export interface PaymentOrder {
   currency?: string
   fee_rate: number
   payment_type: string
+  /** Actual upstream provider selected for this order (for example, HaozPay behind Alipay). */
+  provider_key?: string
   out_trade_no: string
   status: OrderStatus
   order_type: OrderType
@@ -261,6 +263,8 @@ export interface CreateOrderResult {
   expires_at: string
   result_type?: CreateOrderResultType
   payment_type?: string
+  /** Actual upstream provider selected for this order. */
+  provider_key?: string
   out_trade_no?: string
   payment_mode?: string
   resume_token?: string

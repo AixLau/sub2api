@@ -304,6 +304,7 @@ const props = defineProps<{
   qrCode: string
   expiresAt: string
   paymentType: string
+  providerKey?: string
   payUrl?: string
   orderType?: string
   currency?: string
@@ -355,7 +356,13 @@ const VERIFY_RETRY_MAX_ATTEMPTS = 6
 // be scanned in the external wallet instead of opened as an in-app page.
 const isAlipay = computed(() => isBuiltInAlipayMethod(props.paymentType) || props.paymentType === 'nineplus' || props.paymentType === 'haozpay')
 const isWxpay = computed(() => isBuiltInWxpayMethod(props.paymentType))
-const isHostedQrAggregator = computed(() => props.paymentType === 'nineplus' || props.paymentType === 'haozpay')
+const isHostedQrAggregator = computed(() => {
+  const providerKey = String(props.providerKey || '').trim().toLowerCase()
+  return props.paymentType === 'nineplus'
+    || props.paymentType === 'haozpay'
+    || providerKey === 'nineplus'
+    || providerKey === 'haozpay'
+})
 const isMobileAlipayDeepLink = computed(() => props.mobileAlipayDeepLink === true && isBuiltInAlipayMethod(props.paymentType) && !!qrUrl.value)
 const showQRCode = computed(() => !!qrUrl.value && (!isMobileAlipayDeepLink.value || deepLinkFallbackVisible.value))
 
@@ -495,14 +502,21 @@ function saveQRCode() {
 }
 
 async function tryRecoverPendingOrder(order: PaymentOrder): Promise<PaymentOrder> {
-  if (!isWxpay.value && !isHostedQrAggregator.value && !isMobileAlipayDeepLink.value) return order
+  const orderProviderKey = String(order.provider_key || props.providerKey || '').trim().toLowerCase()
+  const orderPaymentType = String(order.payment_type || props.paymentType || '').trim().toLowerCase()
+  const isOrderHostedAggregator = isHostedQrAggregator.value
+    || orderProviderKey === 'nineplus'
+    || orderProviderKey === 'haozpay'
+    || orderPaymentType === 'nineplus'
+    || orderPaymentType === 'haozpay'
+  if (!isWxpay.value && !isOrderHostedAggregator && !isMobileAlipayDeepLink.value) return order
   const outTradeNo = String(order.out_trade_no || '').trim()
   if (!outTradeNo) return order
   const normalizedStatus = String(order.status || '').trim().toUpperCase()
   if (normalizedStatus !== 'PENDING') return order
   const now = Date.now()
-  const reachedMaxAttempts = !isHostedQrAggregator.value && verifyAttempts >= VERIFY_RETRY_MAX_ATTEMPTS
-  const retryInterval = isHostedQrAggregator.value ? NINEPLUS_VERIFY_RETRY_INTERVAL_MS : VERIFY_RETRY_INTERVAL_MS
+  const reachedMaxAttempts = !isOrderHostedAggregator && verifyAttempts >= VERIFY_RETRY_MAX_ATTEMPTS
+  const retryInterval = isOrderHostedAggregator ? NINEPLUS_VERIFY_RETRY_INTERVAL_MS : VERIFY_RETRY_INTERVAL_MS
   if (reachedMaxAttempts || now - lastVerifyAt < retryInterval) {
     return order
   }

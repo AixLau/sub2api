@@ -700,6 +700,7 @@ type PaymentOrderResult struct {
 	FeeRate             float64    `json:"fee_rate"`
 	Currency            string     `json:"currency"`
 	PaymentType         string     `json:"payment_type"`
+	ProviderKey         *string    `json:"provider_key,omitempty"`
 	OutTradeNo          string     `json:"out_trade_no"`
 	Status              string     `json:"status"`
 	OrderType           string     `json:"order_type"`
@@ -738,6 +739,7 @@ func sanitizePaymentOrderForResponse(order *dbent.PaymentOrder) *PaymentOrderRes
 		FeeRate:             order.FeeRate,
 		Currency:            service.PaymentOrderCurrency(order),
 		PaymentType:         order.PaymentType,
+		ProviderKey:         order.ProviderKey,
 		OutTradeNo:          order.OutTradeNo,
 		Status:              order.Status,
 		OrderType:           order.OrderType,

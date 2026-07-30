@@ -228,6 +228,83 @@ describe('PaymentStatusPanel', () => {
     expect(wrapper.emitted('success')).toHaveLength(1)
   })
 
+  it('actively verifies Alipay orders routed through HaozPay', async () => {
+    pollOrderStatus.mockResolvedValue({
+      ...orderFactory('PENDING'),
+      payment_type: 'alipay',
+    })
+    verifyOrder.mockResolvedValue({
+      data: {
+        ...orderFactory('COMPLETED'),
+        payment_type: 'alipay',
+        provider_key: 'haozpay',
+      },
+    })
+
+    const wrapper = mount(PaymentStatusPanel, {
+      props: {
+        orderId: 42,
+        qrCode: 'https://cashier.haozpay.com/cashier-pc?orderNo=HZHT123',
+        expiresAt: '2099-01-01T12:30:00Z',
+        paymentType: 'alipay',
+        providerKey: 'haozpay',
+        orderType: 'balance',
+      },
+      global: {
+        stubs: {
+          Icon: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+
+    expect(pollOrderStatus).toHaveBeenCalledWith(42)
+    expect(verifyOrder).toHaveBeenCalledWith('sub2_20260420abcd1234')
+    expect(wrapper.text()).toContain('payment.result.success')
+    expect(wrapper.emitted('success')).toHaveLength(1)
+  })
+
+  it('recovers legacy checkout state from the provider returned by order polling', async () => {
+    pollOrderStatus.mockResolvedValue({
+      ...orderFactory('PENDING'),
+      payment_type: 'alipay',
+      provider_key: 'haozpay',
+    })
+    verifyOrder.mockResolvedValue({
+      data: {
+        ...orderFactory('COMPLETED'),
+        payment_type: 'alipay',
+        provider_key: 'haozpay',
+      },
+    })
+
+    const wrapper = mount(PaymentStatusPanel, {
+      props: {
+        orderId: 42,
+        qrCode: 'https://cashier.haozpay.com/cashier-pc?orderNo=HZHT123',
+        expiresAt: '2099-01-01T12:30:00Z',
+        paymentType: 'alipay',
+        orderType: 'balance',
+      },
+      global: {
+        stubs: {
+          Icon: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+
+    expect(pollOrderStatus).toHaveBeenCalledWith(42)
+    expect(verifyOrder).toHaveBeenCalledWith('sub2_20260420abcd1234')
+    expect(wrapper.emitted('success')).toHaveLength(1)
+  })
+
   it('keeps verifying nineplus orders after the initial retry window', async () => {
     const pendingOrder = {
       ...orderFactory('PENDING'),

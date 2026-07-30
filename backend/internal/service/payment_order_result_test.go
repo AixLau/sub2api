@@ -103,6 +103,32 @@ func TestBuildCreateOrderResponseDefaultsToOrderCreated(t *testing.T) {
 	}
 }
 
+func TestBuildCreateOrderResponseExposesSelectedProviderKey(t *testing.T) {
+	t.Parallel()
+
+	resp := buildCreateOrderResponse(
+		&dbent.PaymentOrder{
+			ID:         43,
+			Amount:     200,
+			PayAmount:  20,
+			ExpiresAt:  time.Now().Add(time.Hour),
+			OutTradeNo: "20260730-provider-key",
+		},
+		CreateOrderRequest{PaymentType: payment.TypeAlipay},
+		20,
+		&payment.InstanceSelection{ProviderKey: payment.TypeHaozPay, PaymentMode: "qrcode"},
+		&payment.CreatePaymentResponse{QRCode: "https://cashier.haozpay.com/cashier-pc"},
+		payment.CreatePaymentResultOrderCreated,
+	)
+
+	if resp.PaymentType != payment.TypeAlipay {
+		t.Fatalf("payment_type = %q, want %q", resp.PaymentType, payment.TypeAlipay)
+	}
+	if resp.ProviderKey != payment.TypeHaozPay {
+		t.Fatalf("provider_key = %q, want %q", resp.ProviderKey, payment.TypeHaozPay)
+	}
+}
+
 func TestBuildCreateOrderResponseCopiesJSAPIPayload(t *testing.T) {
 	t.Parallel()
 
