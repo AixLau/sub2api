@@ -103,7 +103,8 @@ describe('AppHeader contact support entry', () => {
         stubs: {
           RouterLink: true,
           Teleport: true,
-          Transition: true
+          Transition: true,
+          LiquidGlass: { template: '<div data-testid="liquid-glass-shell"><slot /></div>' }
         }
       }
     })
@@ -115,7 +116,14 @@ describe('AppHeader contact support entry', () => {
 
     await supportButton.trigger('click')
 
+    expect(wrapper.get('[data-testid="liquid-glass-shell"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="support-dot-field"]').attributes('aria-hidden')).toBe('true')
+    expect(wrapper.get('[data-testid="support-dot-field"]').classes()).toContain(
+      'pointer-events-none'
+    )
     expect(wrapper.get('[data-testid="support-dialog"]').text()).toContain('common.supportCommunityTitle')
+    expect(wrapper.get('[data-testid="support-dialog"]').attributes('role')).toBe('dialog')
+    expect(wrapper.get('[data-testid="support-dialog"]').attributes('aria-modal')).toBe('true')
     expect(wrapper.get('[data-testid="support-tab-qq"]').attributes('aria-selected')).toBe('true')
     expect(wrapper.get('[data-testid="support-qr-image"]').attributes('src')).toBe('data:image/png;base64,qq-code')
 
@@ -135,7 +143,8 @@ describe('AppHeader contact support entry', () => {
         stubs: {
           RouterLink: true,
           Teleport: true,
-          Transition: true
+          Transition: true,
+          LiquidGlass: { template: '<div><slot /></div>' }
         }
       }
     })

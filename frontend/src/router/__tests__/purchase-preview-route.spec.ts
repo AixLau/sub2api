@@ -55,7 +55,29 @@ vi.mock('@/composables/useRoutePrefetch', () => ({
   }),
 }))
 
-describe('router purchase preview route', () => {
+describe('router development preview routes', () => {
+  it('registers a development-only liquid glass preview route as public', async () => {
+    const { default: router } = await import('@/router')
+    const route = router.getRoutes().find((record) => record.name === 'LiquidGlassPreview')
+
+    expect(import.meta.env.DEV).toBe(true)
+    expect(route?.path).toBe('/liquid-glass-preview')
+    expect(route?.meta.requiresAuth).toBe(false)
+  })
+
+  it('registers a separate readability experiment without replacing the baseline preview', async () => {
+    const { default: router } = await import('@/router')
+    const baselineRoute = router.getRoutes().find((record) => record.name === 'LiquidGlassPreview')
+    const readabilityRoute = router
+      .getRoutes()
+      .find((record) => record.name === 'LiquidGlassReadabilityPreview')
+
+    expect(import.meta.env.DEV).toBe(true)
+    expect(baselineRoute?.path).toBe('/liquid-glass-preview')
+    expect(readabilityRoute?.path).toBe('/liquid-glass-readability-preview')
+    expect(readabilityRoute?.meta.requiresAuth).toBe(false)
+  })
+
   it('registers a development-only purchase preview route as public', async () => {
     const { default: router } = await import('@/router')
     const route = router.getRoutes().find((record) => record.name === 'PurchasePreview')

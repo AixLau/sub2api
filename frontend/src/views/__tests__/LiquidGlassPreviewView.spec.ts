@@ -1,0 +1,45 @@
+import { shallowMount } from '@vue/test-utils'
+import { describe, expect, it, vi } from 'vitest'
+import LiquidGlassPreviewView from '../LiquidGlassPreviewView.vue'
+
+vi.mock('vue-i18n', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('vue-i18n')>()),
+  useI18n: () => ({
+    t: (key: string, params?: { platform?: string }) =>
+      params?.platform ? `${key}:${params.platform}` : key
+  })
+}))
+
+describe('LiquidGlassPreviewView', () => {
+  it('renders one continuous glass surface and switches to the configured WeChat QR code', async () => {
+    const wrapper = shallowMount(LiquidGlassPreviewView, {
+      global: {
+        stubs: {
+          LiquidGlass: {
+            template: '<div class="preview-liquid-glass-stub"><slot /></div>'
+          },
+          Icon: true
+        }
+      }
+    })
+
+    expect(wrapper.get('[data-testid="liquid-glass-preview"]').exists()).toBe(true)
+    expect(wrapper.findAll('.preview-liquid-glass-stub')).toHaveLength(1)
+    expect(wrapper.get('[data-testid="preview-outer-liquid-glass"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="preview-inner-liquid-glass"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="preview-qq-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="preview-wechat-qr"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="preview-tab-qq"]').attributes('aria-selected')).toBe('true')
+
+    await wrapper.get('[data-testid="preview-tab-wechat"]').trigger('click')
+
+    expect(wrapper.get('[data-testid="preview-tab-wechat"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.find('[data-testid="preview-qq-empty"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="preview-wechat-qr"]').attributes('src')).toContain(
+      'support-wechat-preview.webp'
+    )
+    expect(wrapper.get('[data-testid="preview-wechat-qr"]').attributes('alt')).toBe(
+      'common.supportQRCodeAlt:common.supportWeChatTab'
+    )
+  })
+})

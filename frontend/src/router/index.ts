@@ -751,6 +751,26 @@ const routes: RouteRecordRaw[] = [
   // ==================== 404 Not Found ====================
   ...(import.meta.env.DEV ? [
     {
+      path: '/liquid-glass-preview',
+      name: 'LiquidGlassPreview',
+      component: () => import('@/views/LiquidGlassPreviewView.vue'),
+      meta: {
+        requiresAuth: false,
+        requiresAdmin: false,
+        title: 'Liquid Glass Preview'
+      }
+    } satisfies RouteRecordRaw,
+    {
+      path: '/liquid-glass-readability-preview',
+      name: 'LiquidGlassReadabilityPreview',
+      component: () => import('@/views/LiquidGlassReadabilityPreviewView.vue'),
+      meta: {
+        requiresAuth: false,
+        requiresAdmin: false,
+        title: 'Liquid Glass Readability Preview'
+      }
+    } satisfies RouteRecordRaw,
+    {
       path: '/purchase-preview',
       name: 'PurchasePreview',
       component: () => import('@/views/user/PaymentPreviewView.vue'),

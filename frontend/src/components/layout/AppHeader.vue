@@ -299,96 +299,115 @@
           data-testid="support-overlay"
           @click.self="closeSupportDialog"
         >
-          <section
-            role="dialog"
-            aria-modal="true"
-            :aria-label="t('common.supportCommunityTitle')"
-            data-testid="support-dialog"
-            class="w-[344px] max-w-[calc(100vw-32px)] overflow-hidden rounded-[26px] border border-black/5 bg-white shadow-[0_22px_60px_rgba(15,23,42,0.22)] dark:border-white/10 dark:bg-dark-900"
+          <span
+            class="support-dot-field pointer-events-none absolute inset-0"
+            data-testid="support-dot-field"
+            aria-hidden="true"
+          ></span>
+
+          <LiquidGlass
+            data-support-liquid-shell
+            :radius="26"
+            :border="0.07"
+            :lightness="50"
+            blend="difference"
+            :alpha="0.93"
+            :blur="11"
+            :scale="-180"
+            :frost="0.05"
+            container-class="relative z-10 w-[344px] max-w-[calc(100vw-32px)] overflow-hidden"
           >
-            <div class="flex items-start justify-between gap-3 px-6 pb-3 pt-5">
-              <div class="min-w-0">
-                <h2 class="text-base font-semibold text-gray-950 dark:text-white">
-                  {{ t('common.supportCommunityTitle') }}
-                </h2>
-                <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-dark-300">
-                  {{ t('common.supportCommunityIntro') }}
-                </p>
-              </div>
-              <button
-                type="button"
-                data-testid="support-close"
-                class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:hover:bg-dark-700 dark:hover:text-white"
-                :aria-label="t('common.close')"
-                @click="closeSupportDialog"
-              >
-                <Icon name="x" size="sm" :stroke-width="2" />
-              </button>
-            </div>
-
-            <div class="px-5">
-              <div
-                role="tablist"
-                :aria-label="t('common.supportCommunityTitle')"
-                class="grid grid-cols-2 rounded-full bg-gray-100 p-1 dark:bg-dark-800"
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  data-testid="support-tab-qq"
-                  :aria-selected="activeSupportTab === 'qq'"
-                  class="h-8 rounded-full text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                  :class="activeSupportTab === 'qq' ? 'bg-[#17191c] text-white shadow-sm dark:bg-white dark:text-gray-950' : 'text-gray-500 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'"
-                  @click="activeSupportTab = 'qq'"
-                >
-                  {{ t('common.supportQQTab') }}
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  data-testid="support-tab-wechat"
-                  :aria-selected="activeSupportTab === 'wechat'"
-                  class="h-8 rounded-full text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-                  :class="activeSupportTab === 'wechat' ? 'bg-[#17191c] text-white shadow-sm dark:bg-white dark:text-gray-950' : 'text-gray-500 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'"
-                  @click="activeSupportTab = 'wechat'"
-                >
-                  {{ t('common.supportWeChatTab') }}
-                </button>
-              </div>
-            </div>
-
-            <div class="px-6 pb-6 pt-5 text-center">
-              <div
-                class="flex h-[240px] w-full items-center justify-center overflow-hidden rounded-[18px] border p-3"
-                :class="activeSupportQRCode ? 'border-gray-200 bg-white' : 'border-dashed border-gray-300 bg-gray-50 dark:border-dark-600 dark:bg-dark-800'"
-              >
-                <img
-                  v-if="activeSupportQRCode"
-                  :src="activeSupportQRCode"
-                  :alt="t('common.supportQRCodeAlt', { platform: activeSupportPlatform })"
-                  data-testid="support-qr-image"
-                  class="h-full w-full object-contain"
-                >
-                <div v-else data-testid="support-qr-empty" class="px-3 text-center">
-                  <span class="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 text-gray-400 dark:bg-dark-700 dark:text-dark-300">
-                    <Icon name="chat" size="lg" :stroke-width="1.75" />
-                  </span>
-                  <p class="mt-3 text-sm font-semibold text-gray-800 dark:text-white">
-                    {{ t('common.supportQRCodeEmptyTitle', { platform: activeSupportPlatform }) }}
-                  </p>
-                  <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-dark-300">
-                    {{ t('common.supportQRCodeEmptyDescription') }}
+            <section
+              role="dialog"
+              aria-modal="true"
+              :aria-label="t('common.supportCommunityTitle')"
+              data-testid="support-dialog"
+              class="w-full overflow-hidden rounded-[inherit] text-gray-950"
+            >
+              <div class="flex items-start justify-between gap-3 px-6 pb-3 pt-5">
+                <div class="min-w-0">
+                  <h2 class="text-base font-semibold text-gray-950">
+                    {{ t('common.supportCommunityTitle') }}
+                  </h2>
+                  <p class="mt-1 text-xs leading-5 text-gray-500">
+                    {{ t('common.supportCommunityIntro') }}
                   </p>
                 </div>
+                <button
+                  type="button"
+                  data-testid="support-close"
+                  class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  :aria-label="t('common.close')"
+                  @click="closeSupportDialog"
+                >
+                  <Icon name="x" size="sm" :stroke-width="2" />
+                </button>
               </div>
-              <p
-                class="mt-3 h-4 text-xs text-gray-500 dark:text-dark-300"
-                :class="{ invisible: !activeSupportQRCode }"
-              >
-                {{ t('common.supportQRCodeHint', { platform: activeSupportPlatform }) }}
-              </p>
-            </div>
-          </section>
+
+              <div class="px-5">
+                <div
+                  role="tablist"
+                  :aria-label="t('common.supportCommunityTitle')"
+                  class="grid grid-cols-2 rounded-full bg-gray-100 p-1"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    data-testid="support-tab-qq"
+                    :aria-selected="activeSupportTab === 'qq'"
+                    class="h-8 rounded-full text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    :class="activeSupportTab === 'qq' ? 'bg-[#17191c] text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'"
+                    @click="activeSupportTab = 'qq'"
+                  >
+                    {{ t('common.supportQQTab') }}
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    data-testid="support-tab-wechat"
+                    :aria-selected="activeSupportTab === 'wechat'"
+                    class="h-8 rounded-full text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                    :class="activeSupportTab === 'wechat' ? 'bg-[#17191c] text-white shadow-sm' : 'text-gray-500 hover:text-gray-900'"
+                    @click="activeSupportTab = 'wechat'"
+                  >
+                    {{ t('common.supportWeChatTab') }}
+                  </button>
+                </div>
+              </div>
+
+              <div class="px-6 pb-6 pt-5 text-center">
+                <div
+                  class="flex h-[240px] w-full items-center justify-center overflow-hidden rounded-[18px] border p-3"
+                  :class="activeSupportQRCode ? 'border-gray-200 bg-white' : 'border-dashed border-gray-300 bg-gray-50'"
+                >
+                  <img
+                    v-if="activeSupportQRCode"
+                    :src="activeSupportQRCode"
+                    :alt="t('common.supportQRCodeAlt', { platform: activeSupportPlatform })"
+                    data-testid="support-qr-image"
+                    class="h-full w-full object-contain"
+                  >
+                  <div v-else data-testid="support-qr-empty" class="px-3 text-center">
+                    <span class="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 text-gray-400">
+                      <Icon name="chat" size="lg" :stroke-width="1.75" />
+                    </span>
+                    <p class="mt-3 text-sm font-semibold text-gray-800">
+                      {{ t('common.supportQRCodeEmptyTitle', { platform: activeSupportPlatform }) }}
+                    </p>
+                    <p class="mt-1 text-xs leading-5 text-gray-500">
+                      {{ t('common.supportQRCodeEmptyDescription') }}
+                    </p>
+                  </div>
+                </div>
+                <p
+                  class="mt-3 h-4 text-xs text-gray-500"
+                  :class="{ invisible: !activeSupportQRCode }"
+                >
+                  {{ t('common.supportQRCodeHint', { platform: activeSupportPlatform }) }}
+                </p>
+              </div>
+            </section>
+          </LiquidGlass>
         </div>
       </Transition>
     </Teleport>
@@ -405,6 +424,7 @@ import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import Icon from '@/components/icons/Icon.vue'
+import LiquidGlass from '@/components/inspira/LiquidGlass.vue'
 import { sanitizeUrl } from '@/utils/url'
 import walletArtwork from '@/assets/wallet-fluid-blue-violet.png'
 
@@ -607,8 +627,27 @@ onBeforeUnmount(() => {
   transition: opacity 0.18s ease;
 }
 
-.support-modal-enter-active section,
-.support-modal-leave-active section {
+.support-dot-field {
+  background-image: radial-gradient(circle, rgb(71 85 105 / 0.58) 1.2px, transparent 1.45px);
+  background-size: 18px 18px;
+  mask-image: radial-gradient(
+    ellipse 360px 440px at center,
+    rgb(0 0 0 / 0.28) 0%,
+    rgb(0 0 0 / 0.42) 42%,
+    black 62%,
+    transparent 82%
+  );
+  -webkit-mask-image: radial-gradient(
+    ellipse 360px 440px at center,
+    rgb(0 0 0 / 0.28) 0%,
+    rgb(0 0 0 / 0.42) 42%,
+    black 62%,
+    transparent 82%
+  );
+}
+
+.support-modal-enter-active [data-support-liquid-shell],
+.support-modal-leave-active [data-support-liquid-shell] {
   transition: transform 0.18s ease, opacity 0.18s ease;
 }
 
@@ -617,8 +656,8 @@ onBeforeUnmount(() => {
   opacity: 0;
 }
 
-.support-modal-enter-from section,
-.support-modal-leave-to section {
+.support-modal-enter-from [data-support-liquid-shell],
+.support-modal-leave-to [data-support-liquid-shell] {
   opacity: 0;
   transform: scale(0.96) translateY(6px);
 }
