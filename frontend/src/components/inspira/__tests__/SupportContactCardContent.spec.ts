@@ -23,7 +23,9 @@ describe('SupportContactCardContent', () => {
       global: { stubs: { Icon: true } }
     })
 
-    expect(wrapper.get('[data-testid="support-tab-qq"]').classes()).toContain('bg-white')
+    expect(wrapper.get('[data-testid="support-tab-qq"]').classes()).toContain('bg-gray-950')
+    expect(wrapper.get('[data-testid="support-tab-qq"]').classes()).toContain('text-white')
+    expect(wrapper.get('[data-testid="support-tab-wechat"]').classes()).not.toContain('bg-gray-950')
     expect(wrapper.get('[data-testid="support-contact-content"]').classes()).toContain('h-[256px]')
     expect(wrapper.get('[data-testid="support-qr-image"]').classes()).toContain('h-[216px]')
     expect(wrapper.get('[data-testid="support-qr-image"]').attributes('src')).toBe(

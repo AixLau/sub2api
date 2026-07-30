@@ -39,10 +39,13 @@ describe('LiquidGlassReadabilityPreviewView', () => {
     expect(wrapper.get('[data-testid="preview-qq-empty"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="preview-wechat-qr"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="preview-tab-qq"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('[data-testid="preview-tab-qq"]').classes()).toContain('bg-gray-950')
+    expect(wrapper.get('[data-testid="preview-tab-wechat"]').classes()).not.toContain('bg-gray-950')
 
     await wrapper.get('[data-testid="preview-tab-wechat"]').trigger('click')
 
     expect(wrapper.get('[data-testid="preview-tab-wechat"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('[data-testid="preview-tab-wechat"]').classes()).toContain('bg-gray-950')
     expect(wrapper.find('[data-testid="preview-qq-empty"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="preview-wechat-qr"]').attributes('src')).toContain(
       'support-wechat-preview.webp'

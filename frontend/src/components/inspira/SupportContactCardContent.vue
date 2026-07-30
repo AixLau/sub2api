@@ -47,7 +47,7 @@
           :data-testid="`${testIdPrefix}-tab-qq`"
           :aria-selected="modelValue === 'qq'"
           class="h-8 rounded-full text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-          :class="modelValue === 'qq' ? 'bg-white text-gray-950 shadow-sm' : 'text-gray-600 hover:text-gray-950'"
+          :class="modelValue === 'qq' ? 'bg-gray-950 text-white shadow-sm' : 'text-gray-600 hover:text-gray-950'"
           @click="selectPlatform('qq')"
         >
           {{ t('common.supportQQTab') }}
@@ -58,7 +58,7 @@
           :data-testid="`${testIdPrefix}-tab-wechat`"
           :aria-selected="modelValue === 'wechat'"
           class="h-8 rounded-full text-sm font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
-          :class="modelValue === 'wechat' ? 'bg-white text-gray-950 shadow-sm' : 'text-gray-600 hover:text-gray-950'"
+          :class="modelValue === 'wechat' ? 'bg-gray-950 text-white shadow-sm' : 'text-gray-600 hover:text-gray-950'"
           @click="selectPlatform('wechat')"
         >
           {{ t('common.supportWeChatTab') }}
