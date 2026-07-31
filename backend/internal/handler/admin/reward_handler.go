@@ -258,6 +258,7 @@ func (h *RewardHandler) Grants(c *gin.Context) {
 		ID              string     `json:"id"`
 		GrantID         int64      `json:"grant_id"`
 		UserID          int64      `json:"user_id"`
+		UserEmail       string     `json:"user_email"`
 		CampaignVersion int        `json:"campaign_version"`
 		Source          string     `json:"source"`
 		Status          string     `json:"status"`
@@ -277,7 +278,7 @@ func (h *RewardHandler) Grants(c *gin.Context) {
 			expiresAt = &value
 		}
 		items = append(items, adminGrantResponse{
-			ID: strconv.FormatInt(grant.ID, 10), GrantID: grant.ID, UserID: grant.UserID,
+			ID: strconv.FormatInt(grant.ID, 10), GrantID: grant.ID, UserID: grant.UserID, UserEmail: grant.UserEmail,
 			CampaignVersion: grant.Version, Source: grant.Source, Status: grant.Status,
 			Amount: grant.Amount, ExpiresAt: expiresAt, ViewedAt: grant.ViewedAt,
 			ClaimedAt: grant.ClaimedAt, BalanceAfter: grant.BalanceAfter, CreatedAt: grant.CreatedAt,

@@ -182,6 +182,7 @@ type RewardGrant struct {
 	VersionID     int64                 `json:"campaign_version_id"`
 	Version       int                   `json:"campaign_version"`
 	UserID        int64                 `json:"user_id,omitempty"`
+	UserEmail     string                `json:"-"`
 	CycleKey      string                `json:"cycle_key,omitempty"`
 	Amount        float64               `json:"-"`
 	Status        string                `json:"status"`

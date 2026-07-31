@@ -521,17 +521,28 @@ type rewardScanner interface {
 }
 
 func scanRewardGrant(scanner rewardScanner) (*service.RewardGrant, error) {
+	return scanRewardGrantRecord(scanner, false)
+}
+
+func scanRewardGrantRecord(scanner rewardScanner, includeUserEmail bool) (*service.RewardGrant, error) {
 	var grant service.RewardGrant
 	var systemKey sql.NullString
 	var copyRaw, skinRaw []byte
 	var expiresAt, viewedAt, claimedAt sql.NullTime
 	var balanceAfter sql.NullFloat64
-	err := scanner.Scan(
+	destinations := []any{
 		&grant.ID, &grant.CampaignID, &systemKey, &grant.CampaignTitle, &grant.VersionID, &grant.Version,
-		&grant.UserID, &grant.CycleKey, &grant.Source, &grant.Status, &grant.Amount,
+		&grant.UserID,
+	}
+	if includeUserEmail {
+		destinations = append(destinations, &grant.UserEmail)
+	}
+	destinations = append(destinations,
+		&grant.CycleKey, &grant.Source, &grant.Status, &grant.Amount,
 		&grant.Priority, &copyRaw, &skinRaw, &expiresAt, &viewedAt, &claimedAt,
 		&balanceAfter, &grant.CreatedAt, &grant.UpdatedAt,
 	)
+	err := scanner.Scan(destinations...)
 	if err != nil {
 		return nil, err
 	}
@@ -560,9 +571,17 @@ func scanRewardGrant(scanner rewardScanner) (*service.RewardGrant, error) {
 }
 
 func scanRewardGrantRows(rows *sql.Rows) ([]service.RewardGrant, error) {
+	return scanRewardGrantRowsRecord(rows, false)
+}
+
+func scanRewardGrantRowsWithUserEmail(rows *sql.Rows) ([]service.RewardGrant, error) {
+	return scanRewardGrantRowsRecord(rows, true)
+}
+
+func scanRewardGrantRowsRecord(rows *sql.Rows, includeUserEmail bool) ([]service.RewardGrant, error) {
 	grants := make([]service.RewardGrant, 0)
 	for rows.Next() {
-		grant, err := scanRewardGrant(rows)
+		grant, err := scanRewardGrantRecord(rows, includeUserEmail)
 		if err != nil {
 			return nil, err
 		}

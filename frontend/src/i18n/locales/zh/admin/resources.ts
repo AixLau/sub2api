@@ -275,7 +275,8 @@ export default {
         admin_balance: '余额（管理员）',
         admin_concurrency: '并发数（管理员）',
         welcome_scratch: '刮刮乐（新用户礼金）',
-        surprise_scratch: '刮刮乐（活跃用户惊喜）'
+        surprise_scratch: '刮刮乐（活跃用户惊喜）',
+        campaign_reward: '活动奖励'
       },
       // 用于选择器和筛选器的直接键
       balance: '余额',

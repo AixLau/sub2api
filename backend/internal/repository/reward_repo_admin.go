@@ -717,7 +717,7 @@ WHERE ` + where
 	offsetPlaceholder := len(listArgs)
 	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
 SELECT g.id, g.campaign_id, c.system_key, c.name, g.campaign_version_id, v.version_number, g.user_id,
-       g.cycle_key, g.source, g.status, g.amount, g.priority,
+       u.email, g.cycle_key, g.source, g.status, g.amount, g.priority,
        g.copy_snapshot, g.skin_snapshot, g.expires_at, g.viewed_at,
        g.claimed_at, g.balance_after, g.created_at, g.updated_at
 FROM user_reward_grants g
@@ -732,7 +732,7 @@ LIMIT $%d OFFSET $%d
 		return nil, 0, err
 	}
 	defer rows.Close()
-	grants, err := scanRewardGrantRows(rows)
+	grants, err := scanRewardGrantRowsWithUserEmail(rows)
 	return grants, total, err
 }
 

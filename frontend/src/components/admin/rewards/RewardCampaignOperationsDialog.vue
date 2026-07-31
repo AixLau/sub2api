@@ -134,9 +134,16 @@
               <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
                 <tr v-for="grant in grants" :key="grant.id">
                   <td class="max-w-44 truncate px-4 py-3 font-mono text-xs text-gray-600 dark:text-gray-300" :title="grant.id">{{ grant.id }}</td>
-                  <td class="px-4 py-3">
-                    <span class="font-medium text-gray-900 dark:text-white">#{{ grant.user_id }}</span>
-                    <span v-if="grant.user_email" class="ml-1 text-xs text-gray-500">{{ grant.user_email }}</span>
+                  <td class="max-w-64 px-4 py-3">
+                    <p
+                      class="truncate font-medium text-gray-900 dark:text-white"
+                      :title="grant.user_email || `#${grant.user_id}`"
+                    >
+                      {{ grant.user_email || `#${grant.user_id}` }}
+                    </p>
+                    <p v-if="grant.user_email" class="mt-0.5 text-xs text-gray-500 dark:text-dark-400">
+                      #{{ grant.user_id }}
+                    </p>
                   </td>
                   <td class="px-4 py-3">
                     <span :class="grantBadgeClass(grant.status)">{{ grantStatusLabel(grant.status) }}</span>

@@ -334,7 +334,8 @@ export default {
         admin_balance: 'Balance (Admin)',
         admin_concurrency: 'Concurrency (Admin)',
         welcome_scratch: 'Scratch Card (Welcome Gift)',
-        surprise_scratch: 'Scratch Card (Active-user Surprise)'
+        surprise_scratch: 'Scratch Card (Active-user Surprise)',
+        campaign_reward: 'Campaign Reward'
       },
       selectGroup: 'Select Group',
       selectGroupPlaceholder: 'Choose a subscription group',

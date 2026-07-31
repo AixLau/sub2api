@@ -6,7 +6,12 @@
     :close-on-click-outside="false"
     @close="emit('close')"
   >
-    <form id="reward-campaign-form" class="min-h-[560px]" @submit.prevent="submit(false)">
+    <form
+      id="reward-campaign-form"
+      class="min-h-[560px]"
+      novalidate
+      @submit.prevent="submit(false)"
+    >
       <div class="border-b border-gray-200 dark:border-dark-700">
         <nav class="-mb-px flex gap-1 overflow-x-auto" :aria-label="t('admin.rewards.editor.sectionsLabel')">
           <button
