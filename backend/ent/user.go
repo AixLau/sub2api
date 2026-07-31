@@ -107,11 +107,17 @@ type UserEdges struct {
 	PendingAuthSessions []*PendingAuthSession `json:"pending_auth_sessions,omitempty"`
 	// PlatformQuotas holds the value of the platform_quotas edge.
 	PlatformQuotas []*UserPlatformQuota `json:"platform_quotas,omitempty"`
+	// RewardGrants holds the value of the reward_grants edge.
+	RewardGrants []*UserRewardGrant `json:"reward_grants,omitempty"`
+	// RewardCampaignStates holds the value of the reward_campaign_states edge.
+	RewardCampaignStates []*RewardCampaignUserState `json:"reward_campaign_states,omitempty"`
+	// BehaviorDaily holds the value of the behavior_daily edge.
+	BehaviorDaily []*UserBehaviorDaily `json:"behavior_daily,omitempty"`
 	// UserAllowedGroups holds the value of the user_allowed_groups edge.
 	UserAllowedGroups []*UserAllowedGroup `json:"user_allowed_groups,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [14]bool
+	loadedTypes [17]bool
 }
 
 // APIKeysOrErr returns the APIKeys value or an error if the edge
@@ -231,10 +237,37 @@ func (e UserEdges) PlatformQuotasOrErr() ([]*UserPlatformQuota, error) {
 	return nil, &NotLoadedError{edge: "platform_quotas"}
 }
 
+// RewardGrantsOrErr returns the RewardGrants value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) RewardGrantsOrErr() ([]*UserRewardGrant, error) {
+	if e.loadedTypes[13] {
+		return e.RewardGrants, nil
+	}
+	return nil, &NotLoadedError{edge: "reward_grants"}
+}
+
+// RewardCampaignStatesOrErr returns the RewardCampaignStates value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) RewardCampaignStatesOrErr() ([]*RewardCampaignUserState, error) {
+	if e.loadedTypes[14] {
+		return e.RewardCampaignStates, nil
+	}
+	return nil, &NotLoadedError{edge: "reward_campaign_states"}
+}
+
+// BehaviorDailyOrErr returns the BehaviorDaily value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) BehaviorDailyOrErr() ([]*UserBehaviorDaily, error) {
+	if e.loadedTypes[15] {
+		return e.BehaviorDaily, nil
+	}
+	return nil, &NotLoadedError{edge: "behavior_daily"}
+}
+
 // UserAllowedGroupsOrErr returns the UserAllowedGroups value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) UserAllowedGroupsOrErr() ([]*UserAllowedGroup, error) {
-	if e.loadedTypes[13] {
+	if e.loadedTypes[16] {
 		return e.UserAllowedGroups, nil
 	}
 	return nil, &NotLoadedError{edge: "user_allowed_groups"}
@@ -528,6 +561,21 @@ func (_m *User) QueryPendingAuthSessions() *PendingAuthSessionQuery {
 // QueryPlatformQuotas queries the "platform_quotas" edge of the User entity.
 func (_m *User) QueryPlatformQuotas() *UserPlatformQuotaQuery {
 	return NewUserClient(_m.config).QueryPlatformQuotas(_m)
+}
+
+// QueryRewardGrants queries the "reward_grants" edge of the User entity.
+func (_m *User) QueryRewardGrants() *UserRewardGrantQuery {
+	return NewUserClient(_m.config).QueryRewardGrants(_m)
+}
+
+// QueryRewardCampaignStates queries the "reward_campaign_states" edge of the User entity.
+func (_m *User) QueryRewardCampaignStates() *RewardCampaignUserStateQuery {
+	return NewUserClient(_m.config).QueryRewardCampaignStates(_m)
+}
+
+// QueryBehaviorDaily queries the "behavior_daily" edge of the User entity.
+func (_m *User) QueryBehaviorDaily() *UserBehaviorDailyQuery {
+	return NewUserClient(_m.config).QueryBehaviorDaily(_m)
 }
 
 // QueryUserAllowedGroups queries the "user_allowed_groups" edge of the User entity.

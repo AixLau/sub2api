@@ -18,13 +18,13 @@ defineProps<{ text: string }>()
 
 .glitch::before {
   left: 2px;
-  text-shadow: -2px 0 #06b6d4;
+  text-shadow: -2px 0 rgb(var(--color-accent-400));
   animation: glitch-a 2.5s infinite linear alternate-reverse;
 }
 
 .glitch::after {
   left: -2px;
-  text-shadow: 2px 0 #ec4899;
+  text-shadow: 2px 0 rgb(var(--color-brand-400));
   animation: glitch-b 3s infinite linear alternate-reverse;
 }
 

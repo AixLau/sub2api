@@ -95,6 +95,24 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if account.Type == AccountTypeAPIKey && !openai_compat.ShouldUseResponsesAPI(account.Extra) {
 		return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body)
 	}
+	// A conversation may have been produced by a reasoning-capable
+	// OpenAI-compatible upstream (for example DeepSeek) before it is switched
+	// to GPT. Normalize the replayed Responses reasoning item only after the
+	// raw Chat Completions fallback decision, so DeepSeek's own thinking
+	// payload is never stripped before it reaches that upstream.
+	if account != nil && account.Platform == PlatformOpenAI {
+		normalizedBody, changed, normalizeErr := normalizeOpenAIResponsesReasoningContent(body)
+		if normalizeErr != nil {
+			return nil, fmt.Errorf("normalize OpenAI Responses reasoning content: %w", normalizeErr)
+		}
+		if changed {
+			body = normalizedBody
+			originalBody = normalizedBody
+			requestView = newOpenAIRequestView(normalizedBody)
+			reqModel, reqStream, promptCacheKey = requestView.Model, requestView.Stream, requestView.PromptCacheKey
+			originalModel = reqModel
+		}
+	}
 	if account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey {
 		sanitizedBody, changed, sanitizeErr := sanitizeOpenAIResponsesInputItemIDs(body)
 		if sanitizeErr != nil {

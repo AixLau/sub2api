@@ -17,6 +17,7 @@ func ProvideAdminHandlers(
 	groupHandler *admin.GroupHandler,
 	accountHandler *admin.AccountHandler,
 	announcementHandler *admin.AnnouncementHandler,
+	rewardHandler *admin.RewardHandler,
 	dataManagementHandler *admin.DataManagementHandler,
 	backupHandler *admin.BackupHandler,
 	oauthHandler *admin.OAuthHandler,
@@ -57,6 +58,7 @@ func ProvideAdminHandlers(
 		Group:                  groupHandler,
 		Account:                accountHandler,
 		Announcement:           announcementHandler,
+		Reward:                 rewardHandler,
 		DataManagement:         dataManagementHandler,
 		Backup:                 backupHandler,
 		OAuth:                  oauthHandler,
@@ -175,6 +177,7 @@ func ProvideHandlers(
 	redeemHandler *RedeemHandler,
 	subscriptionHandler *SubscriptionHandler,
 	announcementHandler *AnnouncementHandler,
+	rewardHandler *RewardHandler,
 	channelMonitorUserHandler *ChannelMonitorUserHandler,
 	adminHandlers *AdminHandlers,
 	gatewayHandler *GatewayHandler,
@@ -190,6 +193,7 @@ func ProvideHandlers(
 	batchImageHandler *BatchImageHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
+	_ *service.RewardJobWorker,
 ) *Handlers {
 	return &Handlers{
 		Auth:             authHandler,
@@ -200,6 +204,7 @@ func ProvideHandlers(
 		Redeem:           redeemHandler,
 		Subscription:     subscriptionHandler,
 		Announcement:     announcementHandler,
+		Reward:           rewardHandler,
 		ChannelMonitor:   channelMonitorUserHandler,
 		Admin:            adminHandlers,
 		Gateway:          gatewayHandler,
@@ -222,18 +227,33 @@ func ProvideClientSetupHandler(redisClient *redis.Client, apiKeyService *service
 	return NewClientSetupHandler(redisClient, apiKeyService)
 }
 
+func ProvideUserHandler(
+	userService *service.UserService,
+	authService *service.AuthService,
+	emailService *service.EmailService,
+	emailCache service.EmailCache,
+	affiliateService *service.AffiliateService,
+	userPlatformQuotaRepo service.UserPlatformQuotaRepository,
+	rewardService *service.RewardService,
+) *UserHandler {
+	h := NewUserHandler(userService, authService, emailService, emailCache, affiliateService, userPlatformQuotaRepo)
+	h.SetRewardService(rewardService)
+	return h
+}
+
 // ProviderSet is the Wire provider set for all handlers
 var ProviderSet = wire.NewSet(
 	ProvideClientSetupHandler,
 
 	// Top-level handlers
 	NewAuthHandler,
-	NewUserHandler,
+	ProvideUserHandler,
 	NewAPIKeyHandler,
 	NewUsageHandler,
 	NewRedeemHandler,
 	NewSubscriptionHandler,
 	NewAnnouncementHandler,
+	NewRewardHandler,
 	NewChannelMonitorUserHandler,
 	ProvideGatewayHandler,
 	ProvideOpenAIGatewayHandler,
@@ -253,6 +273,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewGroupHandler,
 	admin.ProvideAccountHandler,
 	admin.NewAnnouncementHandler,
+	admin.NewRewardHandler,
 	admin.NewDataManagementHandler,
 	admin.NewBackupHandler,
 	admin.NewOAuthHandler,

@@ -56,19 +56,19 @@ const handleInput = (event: Event) => {
   pointer-events: none;
   opacity: 0;
   transition: opacity 250ms ease;
-  /* primary-500 #14b8a6 — soft multi-layer diffusion, light mode kept faint */
+  /* Brand focus diffusion; light mode stays deliberately restrained. */
   box-shadow:
-    0 0 0 1px rgb(20 184 166 / 0.08),
-    0 0 12px rgb(20 184 166 / 0.16),
-    0 0 26px 2px rgb(20 184 166 / 0.1);
+    0 0 0 1px rgb(var(--color-brand-500) / 0.08),
+    0 0 12px rgb(var(--color-brand-500) / 0.14),
+    0 0 26px 2px rgb(var(--color-brand-500) / 0.08);
 }
 
 .dark .search-glow::before {
   /* slightly brighter in dark mode, still gentle */
   box-shadow:
-    0 0 0 1px rgb(20 184 166 / 0.16),
-    0 0 14px rgb(20 184 166 / 0.3),
-    0 0 30px 2px rgb(20 184 166 / 0.16);
+    0 0 0 1px rgb(var(--color-brand-400) / 0.18),
+    0 0 14px rgb(var(--color-brand-400) / 0.28),
+    0 0 30px 2px rgb(var(--color-brand-400) / 0.14);
 }
 
 .search-glow:focus-within::before {

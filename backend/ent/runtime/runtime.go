@@ -32,6 +32,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/rewardcampaign"
+	"github.com/Wei-Shaw/sub2api/ent/rewardcampaignjob"
+	"github.com/Wei-Shaw/sub2api/ent/rewardcampaignuserstate"
+	"github.com/Wei-Shaw/sub2api/ent/rewardcampaignversion"
+	"github.com/Wei-Shaw/sub2api/ent/rewardskin"
 	"github.com/Wei-Shaw/sub2api/ent/schema"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
@@ -44,7 +49,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
+	"github.com/Wei-Shaw/sub2api/ent/userbehaviordaily"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
+	"github.com/Wei-Shaw/sub2api/ent/userrewardgrant"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 )
@@ -1720,6 +1727,480 @@ func init() {
 	redeemcodeDescValidityDays := redeemcodeFields[10].Descriptor()
 	// redeemcode.DefaultValidityDays holds the default value on creation for the validity_days field.
 	redeemcode.DefaultValidityDays = redeemcodeDescValidityDays.Default.(int)
+	rewardcampaignMixin := schema.RewardCampaign{}.Mixin()
+	rewardcampaignMixinFields0 := rewardcampaignMixin[0].Fields()
+	_ = rewardcampaignMixinFields0
+	rewardcampaignFields := schema.RewardCampaign{}.Fields()
+	_ = rewardcampaignFields
+	// rewardcampaignDescCreatedAt is the schema descriptor for created_at field.
+	rewardcampaignDescCreatedAt := rewardcampaignMixinFields0[0].Descriptor()
+	// rewardcampaign.DefaultCreatedAt holds the default value on creation for the created_at field.
+	rewardcampaign.DefaultCreatedAt = rewardcampaignDescCreatedAt.Default.(func() time.Time)
+	// rewardcampaignDescUpdatedAt is the schema descriptor for updated_at field.
+	rewardcampaignDescUpdatedAt := rewardcampaignMixinFields0[1].Descriptor()
+	// rewardcampaign.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	rewardcampaign.DefaultUpdatedAt = rewardcampaignDescUpdatedAt.Default.(func() time.Time)
+	// rewardcampaign.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	rewardcampaign.UpdateDefaultUpdatedAt = rewardcampaignDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// rewardcampaignDescSystemKey is the schema descriptor for system_key field.
+	rewardcampaignDescSystemKey := rewardcampaignFields[0].Descriptor()
+	// rewardcampaign.SystemKeyValidator is a validator for the "system_key" field. It is called by the builders before save.
+	rewardcampaign.SystemKeyValidator = rewardcampaignDescSystemKey.Validators[0].(func(string) error)
+	// rewardcampaignDescName is the schema descriptor for name field.
+	rewardcampaignDescName := rewardcampaignFields[1].Descriptor()
+	// rewardcampaign.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	rewardcampaign.NameValidator = func() func(string) error {
+		validators := rewardcampaignDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// rewardcampaignDescDescription is the schema descriptor for description field.
+	rewardcampaignDescDescription := rewardcampaignFields[2].Descriptor()
+	// rewardcampaign.DefaultDescription holds the default value on creation for the description field.
+	rewardcampaign.DefaultDescription = rewardcampaignDescDescription.Default.(string)
+	// rewardcampaignDescStatus is the schema descriptor for status field.
+	rewardcampaignDescStatus := rewardcampaignFields[3].Descriptor()
+	// rewardcampaign.DefaultStatus holds the default value on creation for the status field.
+	rewardcampaign.DefaultStatus = rewardcampaignDescStatus.Default.(string)
+	// rewardcampaign.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	rewardcampaign.StatusValidator = func() func(string) error {
+		validators := rewardcampaignDescStatus.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(status string) error {
+			for _, fn := range fns {
+				if err := fn(status); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// rewardcampaignDescIssuanceMode is the schema descriptor for issuance_mode field.
+	rewardcampaignDescIssuanceMode := rewardcampaignFields[4].Descriptor()
+	// rewardcampaign.DefaultIssuanceMode holds the default value on creation for the issuance_mode field.
+	rewardcampaign.DefaultIssuanceMode = rewardcampaignDescIssuanceMode.Default.(string)
+	// rewardcampaign.IssuanceModeValidator is a validator for the "issuance_mode" field. It is called by the builders before save.
+	rewardcampaign.IssuanceModeValidator = func() func(string) error {
+		validators := rewardcampaignDescIssuanceMode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(issuance_mode string) error {
+			for _, fn := range fns {
+				if err := fn(issuance_mode); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// rewardcampaignDescTimezone is the schema descriptor for timezone field.
+	rewardcampaignDescTimezone := rewardcampaignFields[5].Descriptor()
+	// rewardcampaign.DefaultTimezone holds the default value on creation for the timezone field.
+	rewardcampaign.DefaultTimezone = rewardcampaignDescTimezone.Default.(string)
+	// rewardcampaign.TimezoneValidator is a validator for the "timezone" field. It is called by the builders before save.
+	rewardcampaign.TimezoneValidator = func() func(string) error {
+		validators := rewardcampaignDescTimezone.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(timezone string) error {
+			for _, fn := range fns {
+				if err := fn(timezone); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// rewardcampaignDescPriority is the schema descriptor for priority field.
+	rewardcampaignDescPriority := rewardcampaignFields[8].Descriptor()
+	// rewardcampaign.DefaultPriority holds the default value on creation for the priority field.
+	rewardcampaign.DefaultPriority = rewardcampaignDescPriority.Default.(int)
+	// rewardcampaignDescTotalBudget is the schema descriptor for total_budget field.
+	rewardcampaignDescTotalBudget := rewardcampaignFields[9].Descriptor()
+	// rewardcampaign.DefaultTotalBudget holds the default value on creation for the total_budget field.
+	rewardcampaign.DefaultTotalBudget = rewardcampaignDescTotalBudget.Default.(float64)
+	// rewardcampaign.TotalBudgetValidator is a validator for the "total_budget" field. It is called by the builders before save.
+	rewardcampaign.TotalBudgetValidator = rewardcampaignDescTotalBudget.Validators[0].(func(float64) error)
+	// rewardcampaignDescReservedBudget is the schema descriptor for reserved_budget field.
+	rewardcampaignDescReservedBudget := rewardcampaignFields[10].Descriptor()
+	// rewardcampaign.DefaultReservedBudget holds the default value on creation for the reserved_budget field.
+	rewardcampaign.DefaultReservedBudget = rewardcampaignDescReservedBudget.Default.(float64)
+	// rewardcampaign.ReservedBudgetValidator is a validator for the "reserved_budget" field. It is called by the builders before save.
+	rewardcampaign.ReservedBudgetValidator = rewardcampaignDescReservedBudget.Validators[0].(func(float64) error)
+	// rewardcampaignDescSpentBudget is the schema descriptor for spent_budget field.
+	rewardcampaignDescSpentBudget := rewardcampaignFields[11].Descriptor()
+	// rewardcampaign.DefaultSpentBudget holds the default value on creation for the spent_budget field.
+	rewardcampaign.DefaultSpentBudget = rewardcampaignDescSpentBudget.Default.(float64)
+	// rewardcampaign.SpentBudgetValidator is a validator for the "spent_budget" field. It is called by the builders before save.
+	rewardcampaign.SpentBudgetValidator = rewardcampaignDescSpentBudget.Validators[0].(func(float64) error)
+	// rewardcampaignDescReleasedBudget is the schema descriptor for released_budget field.
+	rewardcampaignDescReleasedBudget := rewardcampaignFields[12].Descriptor()
+	// rewardcampaign.DefaultReleasedBudget holds the default value on creation for the released_budget field.
+	rewardcampaign.DefaultReleasedBudget = rewardcampaignDescReleasedBudget.Default.(float64)
+	// rewardcampaign.ReleasedBudgetValidator is a validator for the "released_budget" field. It is called by the builders before save.
+	rewardcampaign.ReleasedBudgetValidator = rewardcampaignDescReleasedBudget.Validators[0].(func(float64) error)
+	rewardcampaignjobMixin := schema.RewardCampaignJob{}.Mixin()
+	rewardcampaignjobMixinFields0 := rewardcampaignjobMixin[0].Fields()
+	_ = rewardcampaignjobMixinFields0
+	rewardcampaignjobFields := schema.RewardCampaignJob{}.Fields()
+	_ = rewardcampaignjobFields
+	// rewardcampaignjobDescCreatedAt is the schema descriptor for created_at field.
+	rewardcampaignjobDescCreatedAt := rewardcampaignjobMixinFields0[0].Descriptor()
+	// rewardcampaignjob.DefaultCreatedAt holds the default value on creation for the created_at field.
+	rewardcampaignjob.DefaultCreatedAt = rewardcampaignjobDescCreatedAt.Default.(func() time.Time)
+	// rewardcampaignjobDescUpdatedAt is the schema descriptor for updated_at field.
+	rewardcampaignjobDescUpdatedAt := rewardcampaignjobMixinFields0[1].Descriptor()
+	// rewardcampaignjob.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	rewardcampaignjob.DefaultUpdatedAt = rewardcampaignjobDescUpdatedAt.Default.(func() time.Time)
+	// rewardcampaignjob.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	rewardcampaignjob.UpdateDefaultUpdatedAt = rewardcampaignjobDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// rewardcampaignjobDescJobType is the schema descriptor for job_type field.
+	rewardcampaignjobDescJobType := rewardcampaignjobFields[2].Descriptor()
+	// rewardcampaignjob.DefaultJobType holds the default value on creation for the job_type field.
+	rewardcampaignjob.DefaultJobType = rewardcampaignjobDescJobType.Default.(string)
+	// rewardcampaignjob.JobTypeValidator is a validator for the "job_type" field. It is called by the builders before save.
+	rewardcampaignjob.JobTypeValidator = func() func(string) error {
+		validators := rewardcampaignjobDescJobType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(job_type string) error {
+			for _, fn := range fns {
+				if err := fn(job_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// rewardcampaignjobDescIdempotencyKey is the schema descriptor for idempotency_key field.
+	rewardcampaignjobDescIdempotencyKey := rewardcampaignjobFields[3].Descriptor()
+	// rewardcampaignjob.IdempotencyKeyValidator is a validator for the "idempotency_key" field. It is called by the builders before save.
+	rewardcampaignjob.IdempotencyKeyValidator = func() func(string) error {
+		validators := rewardcampaignjobDescIdempotencyKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(idempotency_key string) error {
+			for _, fn := range fns {
+				if err := fn(idempotency_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// rewardcampaignjobDescStatus is the schema descriptor for status field.
+	rewardcampaignjobDescStatus := rewardcampaignjobFields[4].Descriptor()
+	// rewardcampaignjob.DefaultStatus holds the default value on creation for the status field.
+	rewardcampaignjob.DefaultStatus = rewardcampaignjobDescStatus.Default.(string)
+	// rewardcampaignjob.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	rewardcampaignjob.StatusValidator = func() func(string) error {
+		validators := rewardcampaignjobDescStatus.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(status string) error {
+			for _, fn := range fns {
+				if err := fn(status); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// rewardcampaignjobDescCursorUserID is the schema descriptor for cursor_user_id field.
+	rewardcampaignjobDescCursorUserID := rewardcampaignjobFields[5].Descriptor()
+	// rewardcampaignjob.DefaultCursorUserID holds the default value on creation for the cursor_user_id field.
+	rewardcampaignjob.DefaultCursorUserID = rewardcampaignjobDescCursorUserID.Default.(int64)
+	// rewardcampaignjob.CursorUserIDValidator is a validator for the "cursor_user_id" field. It is called by the builders before save.
+	rewardcampaignjob.CursorUserIDValidator = rewardcampaignjobDescCursorUserID.Validators[0].(func(int64) error)
+	// rewardcampaignjobDescMaxUserID is the schema descriptor for max_user_id field.
+	rewardcampaignjobDescMaxUserID := rewardcampaignjobFields[6].Descriptor()
+	// rewardcampaignjob.DefaultMaxUserID holds the default value on creation for the max_user_id field.
+	rewardcampaignjob.DefaultMaxUserID = rewardcampaignjobDescMaxUserID.Default.(int64)
+	// rewardcampaignjob.MaxUserIDValidator is a validator for the "max_user_id" field. It is called by the builders before save.
+	rewardcampaignjob.MaxUserIDValidator = rewardcampaignjobDescMaxUserID.Validators[0].(func(int64) error)
+	// rewardcampaignjobDescLeaseOwner is the schema descriptor for lease_owner field.
+	rewardcampaignjobDescLeaseOwner := rewardcampaignjobFields[7].Descriptor()
+	// rewardcampaignjob.DefaultLeaseOwner holds the default value on creation for the lease_owner field.
+	rewardcampaignjob.DefaultLeaseOwner = rewardcampaignjobDescLeaseOwner.Default.(string)
+	// rewardcampaignjob.LeaseOwnerValidator is a validator for the "lease_owner" field. It is called by the builders before save.
+	rewardcampaignjob.LeaseOwnerValidator = rewardcampaignjobDescLeaseOwner.Validators[0].(func(string) error)
+	// rewardcampaignjobDescAttemptCount is the schema descriptor for attempt_count field.
+	rewardcampaignjobDescAttemptCount := rewardcampaignjobFields[13].Descriptor()
+	// rewardcampaignjob.DefaultAttemptCount holds the default value on creation for the attempt_count field.
+	rewardcampaignjob.DefaultAttemptCount = rewardcampaignjobDescAttemptCount.Default.(int)
+	// rewardcampaignjob.AttemptCountValidator is a validator for the "attempt_count" field. It is called by the builders before save.
+	rewardcampaignjob.AttemptCountValidator = rewardcampaignjobDescAttemptCount.Validators[0].(func(int) error)
+	// rewardcampaignjobDescMaxAttempts is the schema descriptor for max_attempts field.
+	rewardcampaignjobDescMaxAttempts := rewardcampaignjobFields[14].Descriptor()
+	// rewardcampaignjob.DefaultMaxAttempts holds the default value on creation for the max_attempts field.
+	rewardcampaignjob.DefaultMaxAttempts = rewardcampaignjobDescMaxAttempts.Default.(int)
+	// rewardcampaignjob.MaxAttemptsValidator is a validator for the "max_attempts" field. It is called by the builders before save.
+	rewardcampaignjob.MaxAttemptsValidator = rewardcampaignjobDescMaxAttempts.Validators[0].(func(int) error)
+	// rewardcampaignjobDescTotalUsers is the schema descriptor for total_users field.
+	rewardcampaignjobDescTotalUsers := rewardcampaignjobFields[15].Descriptor()
+	// rewardcampaignjob.DefaultTotalUsers holds the default value on creation for the total_users field.
+	rewardcampaignjob.DefaultTotalUsers = rewardcampaignjobDescTotalUsers.Default.(int64)
+	// rewardcampaignjob.TotalUsersValidator is a validator for the "total_users" field. It is called by the builders before save.
+	rewardcampaignjob.TotalUsersValidator = rewardcampaignjobDescTotalUsers.Validators[0].(func(int64) error)
+	// rewardcampaignjobDescScannedUsers is the schema descriptor for scanned_users field.
+	rewardcampaignjobDescScannedUsers := rewardcampaignjobFields[16].Descriptor()
+	// rewardcampaignjob.DefaultScannedUsers holds the default value on creation for the scanned_users field.
+	rewardcampaignjob.DefaultScannedUsers = rewardcampaignjobDescScannedUsers.Default.(int64)
+	// rewardcampaignjob.ScannedUsersValidator is a validator for the "scanned_users" field. It is called by the builders before save.
+	rewardcampaignjob.ScannedUsersValidator = rewardcampaignjobDescScannedUsers.Validators[0].(func(int64) error)
+	// rewardcampaignjobDescMatchedUsers is the schema descriptor for matched_users field.
+	rewardcampaignjobDescMatchedUsers := rewardcampaignjobFields[17].Descriptor()
+	// rewardcampaignjob.DefaultMatchedUsers holds the default value on creation for the matched_users field.
+	rewardcampaignjob.DefaultMatchedUsers = rewardcampaignjobDescMatchedUsers.Default.(int64)
+	// rewardcampaignjob.MatchedUsersValidator is a validator for the "matched_users" field. It is called by the builders before save.
+	rewardcampaignjob.MatchedUsersValidator = rewardcampaignjobDescMatchedUsers.Validators[0].(func(int64) error)
+	// rewardcampaignjobDescGrantedUsers is the schema descriptor for granted_users field.
+	rewardcampaignjobDescGrantedUsers := rewardcampaignjobFields[18].Descriptor()
+	// rewardcampaignjob.DefaultGrantedUsers holds the default value on creation for the granted_users field.
+	rewardcampaignjob.DefaultGrantedUsers = rewardcampaignjobDescGrantedUsers.Default.(int64)
+	// rewardcampaignjob.GrantedUsersValidator is a validator for the "granted_users" field. It is called by the builders before save.
+	rewardcampaignjob.GrantedUsersValidator = rewardcampaignjobDescGrantedUsers.Validators[0].(func(int64) error)
+	// rewardcampaignjobDescSkippedUsers is the schema descriptor for skipped_users field.
+	rewardcampaignjobDescSkippedUsers := rewardcampaignjobFields[19].Descriptor()
+	// rewardcampaignjob.DefaultSkippedUsers holds the default value on creation for the skipped_users field.
+	rewardcampaignjob.DefaultSkippedUsers = rewardcampaignjobDescSkippedUsers.Default.(int64)
+	// rewardcampaignjob.SkippedUsersValidator is a validator for the "skipped_users" field. It is called by the builders before save.
+	rewardcampaignjob.SkippedUsersValidator = rewardcampaignjobDescSkippedUsers.Validators[0].(func(int64) error)
+	// rewardcampaignjobDescFailedUsers is the schema descriptor for failed_users field.
+	rewardcampaignjobDescFailedUsers := rewardcampaignjobFields[20].Descriptor()
+	// rewardcampaignjob.DefaultFailedUsers holds the default value on creation for the failed_users field.
+	rewardcampaignjob.DefaultFailedUsers = rewardcampaignjobDescFailedUsers.Default.(int64)
+	// rewardcampaignjob.FailedUsersValidator is a validator for the "failed_users" field. It is called by the builders before save.
+	rewardcampaignjob.FailedUsersValidator = rewardcampaignjobDescFailedUsers.Validators[0].(func(int64) error)
+	// rewardcampaignjobDescLastError is the schema descriptor for last_error field.
+	rewardcampaignjobDescLastError := rewardcampaignjobFields[21].Descriptor()
+	// rewardcampaignjob.DefaultLastError holds the default value on creation for the last_error field.
+	rewardcampaignjob.DefaultLastError = rewardcampaignjobDescLastError.Default.(string)
+	rewardcampaignuserstateMixin := schema.RewardCampaignUserState{}.Mixin()
+	rewardcampaignuserstateMixinFields0 := rewardcampaignuserstateMixin[0].Fields()
+	_ = rewardcampaignuserstateMixinFields0
+	rewardcampaignuserstateFields := schema.RewardCampaignUserState{}.Fields()
+	_ = rewardcampaignuserstateFields
+	// rewardcampaignuserstateDescCreatedAt is the schema descriptor for created_at field.
+	rewardcampaignuserstateDescCreatedAt := rewardcampaignuserstateMixinFields0[0].Descriptor()
+	// rewardcampaignuserstate.DefaultCreatedAt holds the default value on creation for the created_at field.
+	rewardcampaignuserstate.DefaultCreatedAt = rewardcampaignuserstateDescCreatedAt.Default.(func() time.Time)
+	// rewardcampaignuserstateDescUpdatedAt is the schema descriptor for updated_at field.
+	rewardcampaignuserstateDescUpdatedAt := rewardcampaignuserstateMixinFields0[1].Descriptor()
+	// rewardcampaignuserstate.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	rewardcampaignuserstate.DefaultUpdatedAt = rewardcampaignuserstateDescUpdatedAt.Default.(func() time.Time)
+	// rewardcampaignuserstate.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	rewardcampaignuserstate.UpdateDefaultUpdatedAt = rewardcampaignuserstateDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// rewardcampaignuserstateDescEvaluationCount is the schema descriptor for evaluation_count field.
+	rewardcampaignuserstateDescEvaluationCount := rewardcampaignuserstateFields[7].Descriptor()
+	// rewardcampaignuserstate.DefaultEvaluationCount holds the default value on creation for the evaluation_count field.
+	rewardcampaignuserstate.DefaultEvaluationCount = rewardcampaignuserstateDescEvaluationCount.Default.(int64)
+	// rewardcampaignuserstate.EvaluationCountValidator is a validator for the "evaluation_count" field. It is called by the builders before save.
+	rewardcampaignuserstate.EvaluationCountValidator = rewardcampaignuserstateDescEvaluationCount.Validators[0].(func(int64) error)
+	// rewardcampaignuserstateDescWinCount is the schema descriptor for win_count field.
+	rewardcampaignuserstateDescWinCount := rewardcampaignuserstateFields[8].Descriptor()
+	// rewardcampaignuserstate.DefaultWinCount holds the default value on creation for the win_count field.
+	rewardcampaignuserstate.DefaultWinCount = rewardcampaignuserstateDescWinCount.Default.(int64)
+	// rewardcampaignuserstate.WinCountValidator is a validator for the "win_count" field. It is called by the builders before save.
+	rewardcampaignuserstate.WinCountValidator = rewardcampaignuserstateDescWinCount.Validators[0].(func(int64) error)
+	// rewardcampaignuserstateDescGrantCount is the schema descriptor for grant_count field.
+	rewardcampaignuserstateDescGrantCount := rewardcampaignuserstateFields[9].Descriptor()
+	// rewardcampaignuserstate.DefaultGrantCount holds the default value on creation for the grant_count field.
+	rewardcampaignuserstate.DefaultGrantCount = rewardcampaignuserstateDescGrantCount.Default.(int64)
+	// rewardcampaignuserstate.GrantCountValidator is a validator for the "grant_count" field. It is called by the builders before save.
+	rewardcampaignuserstate.GrantCountValidator = rewardcampaignuserstateDescGrantCount.Validators[0].(func(int64) error)
+	// rewardcampaignuserstateDescClaimCount is the schema descriptor for claim_count field.
+	rewardcampaignuserstateDescClaimCount := rewardcampaignuserstateFields[10].Descriptor()
+	// rewardcampaignuserstate.DefaultClaimCount holds the default value on creation for the claim_count field.
+	rewardcampaignuserstate.DefaultClaimCount = rewardcampaignuserstateDescClaimCount.Default.(int64)
+	// rewardcampaignuserstate.ClaimCountValidator is a validator for the "claim_count" field. It is called by the builders before save.
+	rewardcampaignuserstate.ClaimCountValidator = rewardcampaignuserstateDescClaimCount.Validators[0].(func(int64) error)
+	// rewardcampaignuserstateDescControlGroup is the schema descriptor for control_group field.
+	rewardcampaignuserstateDescControlGroup := rewardcampaignuserstateFields[11].Descriptor()
+	// rewardcampaignuserstate.DefaultControlGroup holds the default value on creation for the control_group field.
+	rewardcampaignuserstate.DefaultControlGroup = rewardcampaignuserstateDescControlGroup.Default.(bool)
+	// rewardcampaignuserstateDescCurrentCycleKey is the schema descriptor for current_cycle_key field.
+	rewardcampaignuserstateDescCurrentCycleKey := rewardcampaignuserstateFields[12].Descriptor()
+	// rewardcampaignuserstate.DefaultCurrentCycleKey holds the default value on creation for the current_cycle_key field.
+	rewardcampaignuserstate.DefaultCurrentCycleKey = rewardcampaignuserstateDescCurrentCycleKey.Default.(string)
+	// rewardcampaignuserstate.CurrentCycleKeyValidator is a validator for the "current_cycle_key" field. It is called by the builders before save.
+	rewardcampaignuserstate.CurrentCycleKeyValidator = rewardcampaignuserstateDescCurrentCycleKey.Validators[0].(func(string) error)
+	rewardcampaignversionFields := schema.RewardCampaignVersion{}.Fields()
+	_ = rewardcampaignversionFields
+	// rewardcampaignversionDescVersionNumber is the schema descriptor for version_number field.
+	rewardcampaignversionDescVersionNumber := rewardcampaignversionFields[1].Descriptor()
+	// rewardcampaignversion.VersionNumberValidator is a validator for the "version_number" field. It is called by the builders before save.
+	rewardcampaignversion.VersionNumberValidator = rewardcampaignversionDescVersionNumber.Validators[0].(func(int) error)
+	// rewardcampaignversionDescConfigHash is the schema descriptor for config_hash field.
+	rewardcampaignversionDescConfigHash := rewardcampaignversionFields[3].Descriptor()
+	// rewardcampaignversion.ConfigHashValidator is a validator for the "config_hash" field. It is called by the builders before save.
+	rewardcampaignversion.ConfigHashValidator = func() func(string) error {
+		validators := rewardcampaignversionDescConfigHash.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(config_hash string) error {
+			for _, fn := range fns {
+				if err := fn(config_hash); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// rewardcampaignversionDescCreatedAt is the schema descriptor for created_at field.
+	rewardcampaignversionDescCreatedAt := rewardcampaignversionFields[5].Descriptor()
+	// rewardcampaignversion.DefaultCreatedAt holds the default value on creation for the created_at field.
+	rewardcampaignversion.DefaultCreatedAt = rewardcampaignversionDescCreatedAt.Default.(func() time.Time)
+	rewardskinMixin := schema.RewardSkin{}.Mixin()
+	rewardskinMixinFields0 := rewardskinMixin[0].Fields()
+	_ = rewardskinMixinFields0
+	rewardskinFields := schema.RewardSkin{}.Fields()
+	_ = rewardskinFields
+	// rewardskinDescCreatedAt is the schema descriptor for created_at field.
+	rewardskinDescCreatedAt := rewardskinMixinFields0[0].Descriptor()
+	// rewardskin.DefaultCreatedAt holds the default value on creation for the created_at field.
+	rewardskin.DefaultCreatedAt = rewardskinDescCreatedAt.Default.(func() time.Time)
+	// rewardskinDescUpdatedAt is the schema descriptor for updated_at field.
+	rewardskinDescUpdatedAt := rewardskinMixinFields0[1].Descriptor()
+	// rewardskin.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	rewardskin.DefaultUpdatedAt = rewardskinDescUpdatedAt.Default.(func() time.Time)
+	// rewardskin.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	rewardskin.UpdateDefaultUpdatedAt = rewardskinDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// rewardskinDescName is the schema descriptor for name field.
+	rewardskinDescName := rewardskinFields[0].Descriptor()
+	// rewardskin.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	rewardskin.NameValidator = func() func(string) error {
+		validators := rewardskinDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// rewardskinDescDescription is the schema descriptor for description field.
+	rewardskinDescDescription := rewardskinFields[1].Descriptor()
+	// rewardskin.DefaultDescription holds the default value on creation for the description field.
+	rewardskin.DefaultDescription = rewardskinDescDescription.Default.(string)
+	// rewardskinDescAltText is the schema descriptor for alt_text field.
+	rewardskinDescAltText := rewardskinFields[2].Descriptor()
+	// rewardskin.DefaultAltText holds the default value on creation for the alt_text field.
+	rewardskin.DefaultAltText = rewardskinDescAltText.Default.(string)
+	// rewardskin.AltTextValidator is a validator for the "alt_text" field. It is called by the builders before save.
+	rewardskin.AltTextValidator = rewardskinDescAltText.Validators[0].(func(string) error)
+	// rewardskinDescStatus is the schema descriptor for status field.
+	rewardskinDescStatus := rewardskinFields[3].Descriptor()
+	// rewardskin.DefaultStatus holds the default value on creation for the status field.
+	rewardskin.DefaultStatus = rewardskinDescStatus.Default.(string)
+	// rewardskin.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	rewardskin.StatusValidator = func() func(string) error {
+		validators := rewardskinDescStatus.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(status string) error {
+			for _, fn := range fns {
+				if err := fn(status); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// rewardskinDescMimeType is the schema descriptor for mime_type field.
+	rewardskinDescMimeType := rewardskinFields[4].Descriptor()
+	// rewardskin.MimeTypeValidator is a validator for the "mime_type" field. It is called by the builders before save.
+	rewardskin.MimeTypeValidator = func() func(string) error {
+		validators := rewardskinDescMimeType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(mime_type string) error {
+			for _, fn := range fns {
+				if err := fn(mime_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// rewardskinDescWidth is the schema descriptor for width field.
+	rewardskinDescWidth := rewardskinFields[5].Descriptor()
+	// rewardskin.WidthValidator is a validator for the "width" field. It is called by the builders before save.
+	rewardskin.WidthValidator = rewardskinDescWidth.Validators[0].(func(int) error)
+	// rewardskinDescHeight is the schema descriptor for height field.
+	rewardskinDescHeight := rewardskinFields[6].Descriptor()
+	// rewardskin.HeightValidator is a validator for the "height" field. It is called by the builders before save.
+	rewardskin.HeightValidator = rewardskinDescHeight.Validators[0].(func(int) error)
+	// rewardskinDescByteSize is the schema descriptor for byte_size field.
+	rewardskinDescByteSize := rewardskinFields[7].Descriptor()
+	// rewardskin.ByteSizeValidator is a validator for the "byte_size" field. It is called by the builders before save.
+	rewardskin.ByteSizeValidator = func() func(int64) error {
+		validators := rewardskinDescByteSize.Validators
+		fns := [...]func(int64) error{
+			validators[0].(func(int64) error),
+			validators[1].(func(int64) error),
+		}
+		return func(byte_size int64) error {
+			for _, fn := range fns {
+				if err := fn(byte_size); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// rewardskinDescSha256 is the schema descriptor for sha256 field.
+	rewardskinDescSha256 := rewardskinFields[8].Descriptor()
+	// rewardskin.Sha256Validator is a validator for the "sha256" field. It is called by the builders before save.
+	rewardskin.Sha256Validator = func() func(string) error {
+		validators := rewardskinDescSha256.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(sha256 string) error {
+			for _, fn := range fns {
+				if err := fn(sha256); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
 	securitysecretMixin := schema.SecuritySecret{}.Mixin()
 	securitysecretMixinFields0 := securitysecretMixin[0].Fields()
 	_ = securitysecretMixinFields0
@@ -2421,6 +2902,36 @@ func init() {
 	userattributevalueDescValue := userattributevalueFields[2].Descriptor()
 	// userattributevalue.DefaultValue holds the default value on creation for the value field.
 	userattributevalue.DefaultValue = userattributevalueDescValue.Default.(string)
+	userbehaviordailyFields := schema.UserBehaviorDaily{}.Fields()
+	_ = userbehaviordailyFields
+	// userbehaviordailyDescRequestCount is the schema descriptor for request_count field.
+	userbehaviordailyDescRequestCount := userbehaviordailyFields[2].Descriptor()
+	// userbehaviordaily.DefaultRequestCount holds the default value on creation for the request_count field.
+	userbehaviordaily.DefaultRequestCount = userbehaviordailyDescRequestCount.Default.(int64)
+	// userbehaviordaily.RequestCountValidator is a validator for the "request_count" field. It is called by the builders before save.
+	userbehaviordaily.RequestCountValidator = userbehaviordailyDescRequestCount.Validators[0].(func(int64) error)
+	// userbehaviordailyDescActualCost is the schema descriptor for actual_cost field.
+	userbehaviordailyDescActualCost := userbehaviordailyFields[3].Descriptor()
+	// userbehaviordaily.DefaultActualCost holds the default value on creation for the actual_cost field.
+	userbehaviordaily.DefaultActualCost = userbehaviordailyDescActualCost.Default.(float64)
+	// userbehaviordaily.ActualCostValidator is a validator for the "actual_cost" field. It is called by the builders before save.
+	userbehaviordaily.ActualCostValidator = userbehaviordailyDescActualCost.Validators[0].(func(float64) error)
+	// userbehaviordailyDescRechargeAmount is the schema descriptor for recharge_amount field.
+	userbehaviordailyDescRechargeAmount := userbehaviordailyFields[4].Descriptor()
+	// userbehaviordaily.DefaultRechargeAmount holds the default value on creation for the recharge_amount field.
+	userbehaviordaily.DefaultRechargeAmount = userbehaviordailyDescRechargeAmount.Default.(float64)
+	// userbehaviordaily.RechargeAmountValidator is a validator for the "recharge_amount" field. It is called by the builders before save.
+	userbehaviordaily.RechargeAmountValidator = userbehaviordailyDescRechargeAmount.Validators[0].(func(float64) error)
+	// userbehaviordailyDescCreatedAt is the schema descriptor for created_at field.
+	userbehaviordailyDescCreatedAt := userbehaviordailyFields[7].Descriptor()
+	// userbehaviordaily.DefaultCreatedAt holds the default value on creation for the created_at field.
+	userbehaviordaily.DefaultCreatedAt = userbehaviordailyDescCreatedAt.Default.(func() time.Time)
+	// userbehaviordailyDescUpdatedAt is the schema descriptor for updated_at field.
+	userbehaviordailyDescUpdatedAt := userbehaviordailyFields[8].Descriptor()
+	// userbehaviordaily.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	userbehaviordaily.DefaultUpdatedAt = userbehaviordailyDescUpdatedAt.Default.(func() time.Time)
+	// userbehaviordaily.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	userbehaviordaily.UpdateDefaultUpdatedAt = userbehaviordailyDescUpdatedAt.UpdateDefault.(func() time.Time)
 	userplatformquotaMixin := schema.UserPlatformQuota{}.Mixin()
 	userplatformquotaMixinHooks1 := userplatformquotaMixin[1].Hooks()
 	userplatformquota.Hooks[0] = userplatformquotaMixinHooks1[0]
@@ -2471,6 +2982,92 @@ func init() {
 	userplatformquotaDescMonthlyUsageUsd := userplatformquotaFields[7].Descriptor()
 	// userplatformquota.DefaultMonthlyUsageUsd holds the default value on creation for the monthly_usage_usd field.
 	userplatformquota.DefaultMonthlyUsageUsd = userplatformquotaDescMonthlyUsageUsd.Default.(float64)
+	userrewardgrantMixin := schema.UserRewardGrant{}.Mixin()
+	userrewardgrantMixinFields0 := userrewardgrantMixin[0].Fields()
+	_ = userrewardgrantMixinFields0
+	userrewardgrantFields := schema.UserRewardGrant{}.Fields()
+	_ = userrewardgrantFields
+	// userrewardgrantDescCreatedAt is the schema descriptor for created_at field.
+	userrewardgrantDescCreatedAt := userrewardgrantMixinFields0[0].Descriptor()
+	// userrewardgrant.DefaultCreatedAt holds the default value on creation for the created_at field.
+	userrewardgrant.DefaultCreatedAt = userrewardgrantDescCreatedAt.Default.(func() time.Time)
+	// userrewardgrantDescUpdatedAt is the schema descriptor for updated_at field.
+	userrewardgrantDescUpdatedAt := userrewardgrantMixinFields0[1].Descriptor()
+	// userrewardgrant.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	userrewardgrant.DefaultUpdatedAt = userrewardgrantDescUpdatedAt.Default.(func() time.Time)
+	// userrewardgrant.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	userrewardgrant.UpdateDefaultUpdatedAt = userrewardgrantDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// userrewardgrantDescCycleKey is the schema descriptor for cycle_key field.
+	userrewardgrantDescCycleKey := userrewardgrantFields[5].Descriptor()
+	// userrewardgrant.CycleKeyValidator is a validator for the "cycle_key" field. It is called by the builders before save.
+	userrewardgrant.CycleKeyValidator = func() func(string) error {
+		validators := userrewardgrantDescCycleKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(cycle_key string) error {
+			for _, fn := range fns {
+				if err := fn(cycle_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// userrewardgrantDescSource is the schema descriptor for source field.
+	userrewardgrantDescSource := userrewardgrantFields[6].Descriptor()
+	// userrewardgrant.SourceValidator is a validator for the "source" field. It is called by the builders before save.
+	userrewardgrant.SourceValidator = func() func(string) error {
+		validators := userrewardgrantDescSource.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(source string) error {
+			for _, fn := range fns {
+				if err := fn(source); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// userrewardgrantDescStatus is the schema descriptor for status field.
+	userrewardgrantDescStatus := userrewardgrantFields[7].Descriptor()
+	// userrewardgrant.DefaultStatus holds the default value on creation for the status field.
+	userrewardgrant.DefaultStatus = userrewardgrantDescStatus.Default.(string)
+	// userrewardgrant.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	userrewardgrant.StatusValidator = func() func(string) error {
+		validators := userrewardgrantDescStatus.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(status string) error {
+			for _, fn := range fns {
+				if err := fn(status); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// userrewardgrantDescAmount is the schema descriptor for amount field.
+	userrewardgrantDescAmount := userrewardgrantFields[8].Descriptor()
+	// userrewardgrant.AmountValidator is a validator for the "amount" field. It is called by the builders before save.
+	userrewardgrant.AmountValidator = userrewardgrantDescAmount.Validators[0].(func(float64) error)
+	// userrewardgrantDescPriority is the schema descriptor for priority field.
+	userrewardgrantDescPriority := userrewardgrantFields[9].Descriptor()
+	// userrewardgrant.DefaultPriority holds the default value on creation for the priority field.
+	userrewardgrant.DefaultPriority = userrewardgrantDescPriority.Default.(int)
+	// userrewardgrantDescClaimReference is the schema descriptor for claim_reference field.
+	userrewardgrantDescClaimReference := userrewardgrantFields[19].Descriptor()
+	// userrewardgrant.DefaultClaimReference holds the default value on creation for the claim_reference field.
+	userrewardgrant.DefaultClaimReference = userrewardgrantDescClaimReference.Default.(string)
+	// userrewardgrant.ClaimReferenceValidator is a validator for the "claim_reference" field. It is called by the builders before save.
+	userrewardgrant.ClaimReferenceValidator = userrewardgrantDescClaimReference.Validators[0].(func(string) error)
 	usersubscriptionMixin := schema.UserSubscription{}.Mixin()
 	usersubscriptionMixinHooks1 := usersubscriptionMixin[1].Hooks()
 	usersubscription.Hooks[0] = usersubscriptionMixinHooks1[0]

@@ -156,31 +156,31 @@ function isRecommended(type: string): boolean {
   inset: -2px;
   border-radius: inherit;
   box-shadow:
-    0 0 8px 1px rgba(20, 184, 166, 0.34),
-    0 0 22px 6px rgba(20, 184, 166, 0.18);
+    0 0 8px 1px rgb(var(--color-brand-500) / 0.3),
+    0 0 22px 6px rgb(var(--color-brand-500) / 0.16);
   content: '';
   pointer-events: none;
   animation: recharge-method-glow-breathe 3s ease-in-out infinite;
 }
 
 .recharge-method-selected-alipay {
-  border-color: #02a9f1 !important;
+  border-color: rgb(var(--color-provider-alipay-selection)) !important;
 }
 
 .recharge-method-selected-wxpay {
-  border-color: #09bb07 !important;
+  border-color: rgb(var(--color-provider-wechat-selection)) !important;
 }
 
 .recharge-method-selected-stripe {
-  border-color: #676be5 !important;
+  border-color: rgb(var(--color-provider-stripe-selection)) !important;
 }
 
 .recharge-method-selected-airwallex {
-  border-color: #ff6b3d !important;
+  border-color: rgb(var(--color-provider-airwallex-selection)) !important;
 }
 
 .recharge-method-selected-default {
-  border-color: #2563eb !important;
+  border-color: rgb(var(--color-brand-500)) !important;
 }
 
 @keyframes recharge-method-glow-breathe {

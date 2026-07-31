@@ -49,7 +49,7 @@
             {{ t(`${copyPrefix}.won`) }}
           </div>
           <p class="mt-3 text-5xl font-bold text-gray-950 dark:text-white">
-            <span class="mr-1 text-2xl font-semibold text-blue-600 dark:text-blue-400">¥</span
+            <span class="mr-1 text-2xl font-semibold text-blue-600 dark:text-blue-400">$</span
             >{{ amount.toFixed(2) }}
           </p>
           <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">

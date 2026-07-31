@@ -394,7 +394,7 @@
     <!-- Renewal Plan Selection Modal -->
     <Teleport to="body">
       <Transition name="modal">
-        <div v-if="showRenewalModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" @click.self="closeRenewalModal">
+        <div v-if="showRenewalModal" class="fixed inset-0 z-50 flex items-center justify-center bg-surface-scrim/60 backdrop-blur-sm p-4" @click.self="closeRenewalModal">
           <div class="relative w-full max-w-lg rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-dark-700 dark:bg-dark-900">
             <!-- Close button -->
             <button class="absolute right-4 top-4 rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-dark-700 dark:hover:text-gray-200" @click="closeRenewalModal">
@@ -411,7 +411,7 @@
     <!-- Image Preview Overlay -->
     <Teleport to="body">
       <Transition name="modal">
-        <div v-if="previewImage" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm" @click="previewImage = ''">
+        <div v-if="previewImage" class="fixed inset-0 z-[60] flex items-center justify-center bg-surface-scrim/75 backdrop-blur-sm" @click="previewImage = ''">
           <img :src="previewImage" alt="" class="max-h-[85vh] max-w-[90vw] rounded-xl object-contain shadow-2xl" />
         </div>
       </Transition>
@@ -1552,9 +1552,13 @@ onMounted(async () => {
   margin: -1rem;
   padding: 1rem;
   background:
-    radial-gradient(circle at 18% 0%, rgba(59, 130, 246, 0.1), transparent 30%),
-    radial-gradient(circle at 88% 8%, rgba(96, 165, 250, 0.14), transparent 26%),
-    linear-gradient(180deg, #f6f9ff 0%, #eef4fb 100%);
+    radial-gradient(circle at 18% 0%, rgb(var(--color-brand-500) / 0.1), transparent 30%),
+    radial-gradient(circle at 88% 8%, rgb(var(--color-accent-400) / 0.12), transparent 26%),
+    linear-gradient(
+      180deg,
+      rgb(var(--color-surface-canvas)) 0%,
+      rgb(var(--color-surface-subtle)) 100%
+    );
 }
 
 .recharge-summary-card {

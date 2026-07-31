@@ -114,6 +114,7 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import { platformBadgeLightClass } from '@/utils/platformColors'
 
 export interface ModelInfo {
   id: string
@@ -159,17 +160,7 @@ const providerInitial = (provider: string): string => {
 }
 
 const providerColorClass = (provider: string): string => {
-  const colors: Record<string, string> = {
-    claude: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-    openai: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-    gemini: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-    anthropic: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
-    google: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-    meta: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-    mistral: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-  }
-  const key = provider.toLowerCase()
-  return colors[key] || 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300'
+  return platformBadgeLightClass(provider)
 }
 
 const statusClass = (status: string): string => {

@@ -40,6 +40,8 @@ const (
 	EdgeUser = "user"
 	// EdgeGroup holds the string denoting the group edge name in mutations.
 	EdgeGroup = "group"
+	// EdgeRewardGrant holds the string denoting the reward_grant edge name in mutations.
+	EdgeRewardGrant = "reward_grant"
 	// Table holds the table name of the redeemcode in the database.
 	Table = "redeem_codes"
 	// UserTable is the table that holds the user relation/edge.
@@ -56,6 +58,13 @@ const (
 	GroupInverseTable = "groups"
 	// GroupColumn is the table column denoting the group relation/edge.
 	GroupColumn = "group_id"
+	// RewardGrantTable is the table that holds the reward_grant relation/edge.
+	RewardGrantTable = "user_reward_grants"
+	// RewardGrantInverseTable is the table name for the UserRewardGrant entity.
+	// It exists in this package in order to avoid circular dependency with the "userrewardgrant" package.
+	RewardGrantInverseTable = "user_reward_grants"
+	// RewardGrantColumn is the table column denoting the reward_grant relation/edge.
+	RewardGrantColumn = "claim_record_id"
 )
 
 // Columns holds all SQL columns for redeemcode fields.
@@ -179,6 +188,13 @@ func ByGroupField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newGroupStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// ByRewardGrantField orders the results by reward_grant field.
+func ByRewardGrantField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newRewardGrantStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newUserStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -191,5 +207,12 @@ func newGroupStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(GroupInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, GroupTable, GroupColumn),
+	)
+}
+func newRewardGrantStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(RewardGrantInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2O, false, RewardGrantTable, RewardGrantColumn),
 	)
 }

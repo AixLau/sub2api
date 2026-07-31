@@ -21,13 +21,18 @@ const mocks = vi.hoisted(() => ({
   onboardingStore: {
     replay: vi.fn()
   },
+  rewardStore: {
+    pendingCount: 0
+  },
   routerPush: vi.fn()
 }))
 
 vi.mock('@/stores', () => ({
   useAppStore: () => mocks.appStore,
   useAuthStore: () => mocks.authStore,
-  useOnboardingStore: () => mocks.onboardingStore
+  useOnboardingStore: () => mocks.onboardingStore,
+  useRewardStore: () => mocks.rewardStore,
+  REWARD_QUEUE_OPEN_EVENT: 'reward-queue-open'
 }))
 
 vi.mock('@/stores/adminSettings', () => ({
@@ -35,8 +40,11 @@ vi.mock('@/stores/adminSettings', () => ({
 }))
 
 vi.mock('@/utils/featureFlags', () => ({
-  FeatureFlags: { modelPlaza: { key: 'model_plaza_enabled', mode: 'opt-in' } },
-  isFeatureFlagEnabled: () => false
+  FeatureFlags: {
+    modelPlaza: { key: 'model_plaza_enabled', mode: 'opt-in' },
+    rewardCampaigns: { key: 'reward_campaigns_enabled', mode: 'opt-in' }
+  },
+  isFeatureFlagEnabled: (flag?: { key?: string }) => flag?.key === 'reward_campaigns_enabled'
 }))
 
 vi.mock('vue-router', () => ({
@@ -55,6 +63,7 @@ describe('AppHeader contact support entry', () => {
     mocks.appStore.supportQQGroupQRCode = 'data:image/png;base64,qq-code'
     mocks.appStore.supportWeChatGroupQRCode = 'data:image/png;base64,wechat-code'
     mocks.authStore.user = null
+    mocks.rewardStore.pendingCount = 0
     mocks.routerPush.mockReset()
   })
 
@@ -129,6 +138,9 @@ describe('AppHeader contact support entry', () => {
       'backdrop-blur-sm'
     )
     expect(wrapper.get('[data-testid="liquid-glass-backdrop"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="liquid-glass-backdrop"]').attributes()).toHaveProperty(
+      'data-support-backdrop'
+    )
     expect(wrapper.get('[data-testid="support-dialog"]').text()).toContain('common.supportCommunityTitle')
     expect(wrapper.get('[data-testid="support-dialog"]').attributes('role')).toBe('dialog')
     expect(wrapper.get('[data-testid="support-dialog"]').attributes('aria-modal')).toBe('true')
@@ -177,5 +189,35 @@ describe('AppHeader contact support entry', () => {
     })
 
     expect(wrapper.find('[data-testid="header-contact-support"]').exists()).toBe(false)
+  })
+
+  it('shows pending reward count and dispatches the queue event', async () => {
+    mocks.authStore.user = {
+      username: 'demo',
+      email: 'demo@example.com',
+      role: 'user',
+      balance: 2,
+      frozen_balance: 0
+    }
+    mocks.rewardStore.pendingCount = 3
+    const listener = vi.fn()
+    window.addEventListener('reward-queue-open', listener)
+    const wrapper = shallowMount(AppHeader, {
+      global: {
+        stubs: {
+          RouterLink: true,
+          BaseDialog: true,
+          Transition: false
+        }
+      }
+    })
+
+    const rewardButton = wrapper.get('[data-testid="header-reward-queue"]')
+    expect(rewardButton.text()).toContain('3')
+    expect(rewardButton.attributes('aria-label')).toContain('rewardQueue.pendingAria')
+
+    await rewardButton.trigger('click')
+    expect(listener).toHaveBeenCalledTimes(1)
+    window.removeEventListener('reward-queue-open', listener)
   })
 })

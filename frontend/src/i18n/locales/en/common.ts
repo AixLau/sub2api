@@ -177,6 +177,7 @@ export default {
   nav: {
     dashboard: 'Dashboard',
     announcements: 'Announcements',
+    rewardCampaigns: 'Reward Campaigns',
     apiKeys: 'API Keys',
     batchImage: 'Batch Images',
     usage: 'Usage',
@@ -481,6 +482,21 @@ export default {
     gestureHint: 'Press and swipe left and right to scratch',
     continue: 'Enjoy the reward',
     claimFailed: 'Surprise reward claim failed. Please try again.'
+  },
+
+  rewardQueue: {
+    titleFallback: 'A reward is waiting for you',
+    hintFallback: 'Scratch the cover to reveal your reward.',
+    revealedHint: 'You won! The reward has been added to your account balance.',
+    coverTextFallback: 'Scratch to claim your reward',
+    won: 'Account balance reward',
+    credited: 'Added to your account balance (USD)',
+    gestureHint: 'Press and swipe left and right to scratch',
+    expiresAt: 'Claim before {time}',
+    later: 'Claim later',
+    continue: 'Enjoy the reward',
+    claimFailed: 'Reward claim failed. Please try again.',
+    pendingAria: '{count} rewards waiting to be claimed'
   },
 
   // Dashboard

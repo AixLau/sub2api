@@ -68,6 +68,16 @@ type Tx struct {
 	Proxy *ProxyClient
 	// RedeemCode is the client for interacting with the RedeemCode builders.
 	RedeemCode *RedeemCodeClient
+	// RewardCampaign is the client for interacting with the RewardCampaign builders.
+	RewardCampaign *RewardCampaignClient
+	// RewardCampaignJob is the client for interacting with the RewardCampaignJob builders.
+	RewardCampaignJob *RewardCampaignJobClient
+	// RewardCampaignUserState is the client for interacting with the RewardCampaignUserState builders.
+	RewardCampaignUserState *RewardCampaignUserStateClient
+	// RewardCampaignVersion is the client for interacting with the RewardCampaignVersion builders.
+	RewardCampaignVersion *RewardCampaignVersionClient
+	// RewardSkin is the client for interacting with the RewardSkin builders.
+	RewardSkin *RewardSkinClient
 	// SecuritySecret is the client for interacting with the SecuritySecret builders.
 	SecuritySecret *SecuritySecretClient
 	// Setting is the client for interacting with the Setting builders.
@@ -90,8 +100,12 @@ type Tx struct {
 	UserAttributeDefinition *UserAttributeDefinitionClient
 	// UserAttributeValue is the client for interacting with the UserAttributeValue builders.
 	UserAttributeValue *UserAttributeValueClient
+	// UserBehaviorDaily is the client for interacting with the UserBehaviorDaily builders.
+	UserBehaviorDaily *UserBehaviorDailyClient
 	// UserPlatformQuota is the client for interacting with the UserPlatformQuota builders.
 	UserPlatformQuota *UserPlatformQuotaClient
+	// UserRewardGrant is the client for interacting with the UserRewardGrant builders.
+	UserRewardGrant *UserRewardGrantClient
 	// UserSubscription is the client for interacting with the UserSubscription builders.
 	UserSubscription *UserSubscriptionClient
 
@@ -252,6 +266,11 @@ func (tx *Tx) init() {
 	tx.PromoCodeUsage = NewPromoCodeUsageClient(tx.config)
 	tx.Proxy = NewProxyClient(tx.config)
 	tx.RedeemCode = NewRedeemCodeClient(tx.config)
+	tx.RewardCampaign = NewRewardCampaignClient(tx.config)
+	tx.RewardCampaignJob = NewRewardCampaignJobClient(tx.config)
+	tx.RewardCampaignUserState = NewRewardCampaignUserStateClient(tx.config)
+	tx.RewardCampaignVersion = NewRewardCampaignVersionClient(tx.config)
+	tx.RewardSkin = NewRewardSkinClient(tx.config)
 	tx.SecuritySecret = NewSecuritySecretClient(tx.config)
 	tx.Setting = NewSettingClient(tx.config)
 	tx.SubscriptionPlan = NewSubscriptionPlanClient(tx.config)
@@ -263,7 +282,9 @@ func (tx *Tx) init() {
 	tx.UserAllowedGroup = NewUserAllowedGroupClient(tx.config)
 	tx.UserAttributeDefinition = NewUserAttributeDefinitionClient(tx.config)
 	tx.UserAttributeValue = NewUserAttributeValueClient(tx.config)
+	tx.UserBehaviorDaily = NewUserBehaviorDailyClient(tx.config)
 	tx.UserPlatformQuota = NewUserPlatformQuotaClient(tx.config)
+	tx.UserRewardGrant = NewUserRewardGrantClient(tx.config)
 	tx.UserSubscription = NewUserSubscriptionClient(tx.config)
 }
 

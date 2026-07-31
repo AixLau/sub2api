@@ -34,6 +34,7 @@ import {
 } from 'chart.js'
 import { Line } from 'vue-chartjs'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import { chartSeriesColors, colorWithAlpha, getChartTheme } from '@/theme/designTokens'
 import type { ActiveUsersTrendPoint } from '@/api/admin/dashboard'
 
 ChartJS.register(
@@ -59,9 +60,8 @@ const isDarkMode = computed(() => {
 })
 
 const chartColors = computed(() => ({
-  text: isDarkMode.value ? '#e5e7eb' : '#374151',
-  grid: isDarkMode.value ? '#374151' : '#e5e7eb',
-  line: '#10b981'
+  ...getChartTheme(isDarkMode.value),
+  line: chartSeriesColors.primary,
 }))
 
 const chartData = computed(() => {
@@ -74,7 +74,7 @@ const chartData = computed(() => {
         label: t('admin.dashboard.activeUsers'),
         data: props.trendData.map((d) => d.active_users),
         borderColor: chartColors.value.line,
-        backgroundColor: `${chartColors.value.line}20`,
+        backgroundColor: colorWithAlpha(chartColors.value.line, 0.12),
         fill: true,
         tension: 0.3
       }

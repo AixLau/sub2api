@@ -7,6 +7,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { usePrefersReducedMotion } from '@/composables/usePrefersReducedMotion'
+import { brandColors } from '@/theme/designTokens'
 
 interface Props {
   squareSize?: number
@@ -21,7 +22,7 @@ const props = withDefaults(defineProps<Props>(), {
   squareSize: 4,
   gridGap: 6,
   flickerChance: 0.3,
-  color: '#14b8a6',
+  color: brandColors['500'],
   maxOpacity: 0.2
 })
 
@@ -43,7 +44,7 @@ const { prefersReducedMotion } = usePrefersReducedMotion()
 
 function hexToRgb(hex: string): string {
   const match = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex.trim())
-  if (!match) return '20, 184, 166'
+  if (!match) return hexToRgb(brandColors['500'])
   return `${parseInt(match[1], 16)}, ${parseInt(match[2], 16)}, ${parseInt(match[3], 16)}`
 }
 

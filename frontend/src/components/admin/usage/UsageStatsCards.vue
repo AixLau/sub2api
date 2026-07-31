@@ -149,7 +149,7 @@ const showStandardCost = computed(() => props.showStandardCost)
 const showCost = computed(() => props.showCost)
 const strikeStandardCost = computed(() => props.strikeStandardCost)
 const statCardClass = computed(() => props.surface === 'tremor'
-  ? 'flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-4 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-gray-900 dark:bg-[#090E1A]'
+  ? 'flex items-center gap-3 rounded-lg border border-line-default bg-surface-panel p-4 text-left shadow-card'
   : 'card p-4 flex items-center gap-3')
 const valueClass = computed(() => props.surface === 'tremor'
   ? 'mt-1 text-2xl font-semibold tracking-normal text-gray-950 dark:text-gray-50'

@@ -12,9 +12,9 @@
           type="button"
           :class="[
             'rounded-xl px-4 py-3 text-center font-medium transition-all',
-            modelValue === amt
-              ? 'bg-[#E5EAFF] text-[#0033FF] shadow-[0_0_0_1.5px_#0033FF] dark:bg-primary-950/40 dark:text-primary-300 dark:shadow-[0_0_0_1.5px_theme(colors.primary.400)]'
-              : 'bg-white text-gray-700 shadow-[0_0_0_1px_#E5EAFF] hover:shadow-[0_0_0_1px_#0033FF] dark:bg-dark-800 dark:text-gray-200 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.1)]',
+          modelValue === amt
+              ? 'bg-status-info-soft text-status-info ring-2 ring-line-focus'
+              : 'bg-surface-panel text-content-secondary ring-1 ring-line-default hover:ring-line-focus',
           ]"
           @click="selectAmount(amt)"
         >
@@ -37,7 +37,7 @@
           inputmode="decimal"
           :value="customText"
           :placeholder="placeholderText"
-          class="w-full rounded-xl border-0 bg-white py-3 pl-8 pr-4 text-gray-900 shadow-[0_0_0_1px_#E5EAFF] transition-all placeholder:text-gray-400 focus:shadow-[0_0_0_1.5px_#0033FF] focus:outline-none dark:bg-dark-800 dark:text-gray-100 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.1)]"
+          class="w-full rounded-xl border-0 bg-surface-panel py-3 pl-8 pr-4 text-content-primary ring-1 ring-line-default transition-all placeholder:text-content-disabled focus:outline-none focus:ring-2 focus:ring-line-focus"
           @input="handleInput"
         />
       </div>

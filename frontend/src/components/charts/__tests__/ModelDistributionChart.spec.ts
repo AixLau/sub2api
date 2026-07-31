@@ -194,8 +194,8 @@ describe('ModelDistributionChart', () => {
       'Others',
     ])
     expect(chartData.datasets[0].data).toEqual([12, 8, 10])
-    expect(chartData.datasets[0].backgroundColor[0]).toBe('#4f7cff')
-    expect(chartData.datasets[0].backgroundColor[2]).toBe('#94a3b8')
+    expect(chartData.datasets[0].backgroundColor[0]).toBe('#0033FF')
+    expect(chartData.datasets[0].backgroundColor[2]).toBe('#98A4B7')
     expect(chartData.datasets[0].backgroundColor[2]).not.toBe(chartData.datasets[0].backgroundColor[0])
     expect(wrapper.get('[data-testid="ranking-ring-center"]').text()).toContain('$30.00')
 

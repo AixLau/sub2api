@@ -20,10 +20,13 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/rewardcampaignuserstate"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
+	"github.com/Wei-Shaw/sub2api/ent/userbehaviordaily"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
+	"github.com/Wei-Shaw/sub2api/ent/userrewardgrant"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 )
 
@@ -709,6 +712,51 @@ func (_u *UserUpdate) AddPlatformQuotas(v ...*UserPlatformQuota) *UserUpdate {
 	return _u.AddPlatformQuotaIDs(ids...)
 }
 
+// AddRewardGrantIDs adds the "reward_grants" edge to the UserRewardGrant entity by IDs.
+func (_u *UserUpdate) AddRewardGrantIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddRewardGrantIDs(ids...)
+	return _u
+}
+
+// AddRewardGrants adds the "reward_grants" edges to the UserRewardGrant entity.
+func (_u *UserUpdate) AddRewardGrants(v ...*UserRewardGrant) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddRewardGrantIDs(ids...)
+}
+
+// AddRewardCampaignStateIDs adds the "reward_campaign_states" edge to the RewardCampaignUserState entity by IDs.
+func (_u *UserUpdate) AddRewardCampaignStateIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddRewardCampaignStateIDs(ids...)
+	return _u
+}
+
+// AddRewardCampaignStates adds the "reward_campaign_states" edges to the RewardCampaignUserState entity.
+func (_u *UserUpdate) AddRewardCampaignStates(v ...*RewardCampaignUserState) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddRewardCampaignStateIDs(ids...)
+}
+
+// AddBehaviorDailyIDs adds the "behavior_daily" edge to the UserBehaviorDaily entity by IDs.
+func (_u *UserUpdate) AddBehaviorDailyIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddBehaviorDailyIDs(ids...)
+	return _u
+}
+
+// AddBehaviorDaily adds the "behavior_daily" edges to the UserBehaviorDaily entity.
+func (_u *UserUpdate) AddBehaviorDaily(v ...*UserBehaviorDaily) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddBehaviorDailyIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (_u *UserUpdate) Mutation() *UserMutation {
 	return _u.mutation
@@ -985,6 +1033,69 @@ func (_u *UserUpdate) RemovePlatformQuotas(v ...*UserPlatformQuota) *UserUpdate 
 		ids[i] = v[i].ID
 	}
 	return _u.RemovePlatformQuotaIDs(ids...)
+}
+
+// ClearRewardGrants clears all "reward_grants" edges to the UserRewardGrant entity.
+func (_u *UserUpdate) ClearRewardGrants() *UserUpdate {
+	_u.mutation.ClearRewardGrants()
+	return _u
+}
+
+// RemoveRewardGrantIDs removes the "reward_grants" edge to UserRewardGrant entities by IDs.
+func (_u *UserUpdate) RemoveRewardGrantIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveRewardGrantIDs(ids...)
+	return _u
+}
+
+// RemoveRewardGrants removes "reward_grants" edges to UserRewardGrant entities.
+func (_u *UserUpdate) RemoveRewardGrants(v ...*UserRewardGrant) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveRewardGrantIDs(ids...)
+}
+
+// ClearRewardCampaignStates clears all "reward_campaign_states" edges to the RewardCampaignUserState entity.
+func (_u *UserUpdate) ClearRewardCampaignStates() *UserUpdate {
+	_u.mutation.ClearRewardCampaignStates()
+	return _u
+}
+
+// RemoveRewardCampaignStateIDs removes the "reward_campaign_states" edge to RewardCampaignUserState entities by IDs.
+func (_u *UserUpdate) RemoveRewardCampaignStateIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveRewardCampaignStateIDs(ids...)
+	return _u
+}
+
+// RemoveRewardCampaignStates removes "reward_campaign_states" edges to RewardCampaignUserState entities.
+func (_u *UserUpdate) RemoveRewardCampaignStates(v ...*RewardCampaignUserState) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveRewardCampaignStateIDs(ids...)
+}
+
+// ClearBehaviorDaily clears all "behavior_daily" edges to the UserBehaviorDaily entity.
+func (_u *UserUpdate) ClearBehaviorDaily() *UserUpdate {
+	_u.mutation.ClearBehaviorDaily()
+	return _u
+}
+
+// RemoveBehaviorDailyIDs removes the "behavior_daily" edge to UserBehaviorDaily entities by IDs.
+func (_u *UserUpdate) RemoveBehaviorDailyIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveBehaviorDailyIDs(ids...)
+	return _u
+}
+
+// RemoveBehaviorDaily removes "behavior_daily" edges to UserBehaviorDaily entities.
+func (_u *UserUpdate) RemoveBehaviorDaily(v ...*UserBehaviorDaily) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveBehaviorDailyIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -1812,6 +1923,141 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.RewardGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.RewardGrantsTable,
+			Columns: []string{user.RewardGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userrewardgrant.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedRewardGrantsIDs(); len(nodes) > 0 && !_u.mutation.RewardGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.RewardGrantsTable,
+			Columns: []string{user.RewardGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userrewardgrant.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RewardGrantsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.RewardGrantsTable,
+			Columns: []string{user.RewardGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userrewardgrant.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.RewardCampaignStatesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.RewardCampaignStatesTable,
+			Columns: []string{user.RewardCampaignStatesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(rewardcampaignuserstate.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedRewardCampaignStatesIDs(); len(nodes) > 0 && !_u.mutation.RewardCampaignStatesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.RewardCampaignStatesTable,
+			Columns: []string{user.RewardCampaignStatesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(rewardcampaignuserstate.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RewardCampaignStatesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.RewardCampaignStatesTable,
+			Columns: []string{user.RewardCampaignStatesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(rewardcampaignuserstate.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.BehaviorDailyCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.BehaviorDailyTable,
+			Columns: []string{user.BehaviorDailyColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userbehaviordaily.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedBehaviorDailyIDs(); len(nodes) > 0 && !_u.mutation.BehaviorDailyCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.BehaviorDailyTable,
+			Columns: []string{user.BehaviorDailyColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userbehaviordaily.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.BehaviorDailyIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.BehaviorDailyTable,
+			Columns: []string{user.BehaviorDailyColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userbehaviordaily.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{user.Label}
@@ -2501,6 +2747,51 @@ func (_u *UserUpdateOne) AddPlatformQuotas(v ...*UserPlatformQuota) *UserUpdateO
 	return _u.AddPlatformQuotaIDs(ids...)
 }
 
+// AddRewardGrantIDs adds the "reward_grants" edge to the UserRewardGrant entity by IDs.
+func (_u *UserUpdateOne) AddRewardGrantIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddRewardGrantIDs(ids...)
+	return _u
+}
+
+// AddRewardGrants adds the "reward_grants" edges to the UserRewardGrant entity.
+func (_u *UserUpdateOne) AddRewardGrants(v ...*UserRewardGrant) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddRewardGrantIDs(ids...)
+}
+
+// AddRewardCampaignStateIDs adds the "reward_campaign_states" edge to the RewardCampaignUserState entity by IDs.
+func (_u *UserUpdateOne) AddRewardCampaignStateIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddRewardCampaignStateIDs(ids...)
+	return _u
+}
+
+// AddRewardCampaignStates adds the "reward_campaign_states" edges to the RewardCampaignUserState entity.
+func (_u *UserUpdateOne) AddRewardCampaignStates(v ...*RewardCampaignUserState) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddRewardCampaignStateIDs(ids...)
+}
+
+// AddBehaviorDailyIDs adds the "behavior_daily" edge to the UserBehaviorDaily entity by IDs.
+func (_u *UserUpdateOne) AddBehaviorDailyIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddBehaviorDailyIDs(ids...)
+	return _u
+}
+
+// AddBehaviorDaily adds the "behavior_daily" edges to the UserBehaviorDaily entity.
+func (_u *UserUpdateOne) AddBehaviorDaily(v ...*UserBehaviorDaily) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddBehaviorDailyIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (_u *UserUpdateOne) Mutation() *UserMutation {
 	return _u.mutation
@@ -2777,6 +3068,69 @@ func (_u *UserUpdateOne) RemovePlatformQuotas(v ...*UserPlatformQuota) *UserUpda
 		ids[i] = v[i].ID
 	}
 	return _u.RemovePlatformQuotaIDs(ids...)
+}
+
+// ClearRewardGrants clears all "reward_grants" edges to the UserRewardGrant entity.
+func (_u *UserUpdateOne) ClearRewardGrants() *UserUpdateOne {
+	_u.mutation.ClearRewardGrants()
+	return _u
+}
+
+// RemoveRewardGrantIDs removes the "reward_grants" edge to UserRewardGrant entities by IDs.
+func (_u *UserUpdateOne) RemoveRewardGrantIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveRewardGrantIDs(ids...)
+	return _u
+}
+
+// RemoveRewardGrants removes "reward_grants" edges to UserRewardGrant entities.
+func (_u *UserUpdateOne) RemoveRewardGrants(v ...*UserRewardGrant) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveRewardGrantIDs(ids...)
+}
+
+// ClearRewardCampaignStates clears all "reward_campaign_states" edges to the RewardCampaignUserState entity.
+func (_u *UserUpdateOne) ClearRewardCampaignStates() *UserUpdateOne {
+	_u.mutation.ClearRewardCampaignStates()
+	return _u
+}
+
+// RemoveRewardCampaignStateIDs removes the "reward_campaign_states" edge to RewardCampaignUserState entities by IDs.
+func (_u *UserUpdateOne) RemoveRewardCampaignStateIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveRewardCampaignStateIDs(ids...)
+	return _u
+}
+
+// RemoveRewardCampaignStates removes "reward_campaign_states" edges to RewardCampaignUserState entities.
+func (_u *UserUpdateOne) RemoveRewardCampaignStates(v ...*RewardCampaignUserState) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveRewardCampaignStateIDs(ids...)
+}
+
+// ClearBehaviorDaily clears all "behavior_daily" edges to the UserBehaviorDaily entity.
+func (_u *UserUpdateOne) ClearBehaviorDaily() *UserUpdateOne {
+	_u.mutation.ClearBehaviorDaily()
+	return _u
+}
+
+// RemoveBehaviorDailyIDs removes the "behavior_daily" edge to UserBehaviorDaily entities by IDs.
+func (_u *UserUpdateOne) RemoveBehaviorDailyIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveBehaviorDailyIDs(ids...)
+	return _u
+}
+
+// RemoveBehaviorDaily removes "behavior_daily" edges to UserBehaviorDaily entities.
+func (_u *UserUpdateOne) RemoveBehaviorDaily(v ...*UserBehaviorDaily) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveBehaviorDailyIDs(ids...)
 }
 
 // Where appends a list predicates to the UserUpdate builder.
@@ -3627,6 +3981,141 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(userplatformquota.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.RewardGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.RewardGrantsTable,
+			Columns: []string{user.RewardGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userrewardgrant.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedRewardGrantsIDs(); len(nodes) > 0 && !_u.mutation.RewardGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.RewardGrantsTable,
+			Columns: []string{user.RewardGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userrewardgrant.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RewardGrantsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.RewardGrantsTable,
+			Columns: []string{user.RewardGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userrewardgrant.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.RewardCampaignStatesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.RewardCampaignStatesTable,
+			Columns: []string{user.RewardCampaignStatesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(rewardcampaignuserstate.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedRewardCampaignStatesIDs(); len(nodes) > 0 && !_u.mutation.RewardCampaignStatesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.RewardCampaignStatesTable,
+			Columns: []string{user.RewardCampaignStatesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(rewardcampaignuserstate.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RewardCampaignStatesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.RewardCampaignStatesTable,
+			Columns: []string{user.RewardCampaignStatesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(rewardcampaignuserstate.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.BehaviorDailyCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.BehaviorDailyTable,
+			Columns: []string{user.BehaviorDailyColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userbehaviordaily.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedBehaviorDailyIDs(); len(nodes) > 0 && !_u.mutation.BehaviorDailyCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.BehaviorDailyTable,
+			Columns: []string{user.BehaviorDailyColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userbehaviordaily.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.BehaviorDailyIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.BehaviorDailyTable,
+			Columns: []string{user.BehaviorDailyColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userbehaviordaily.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

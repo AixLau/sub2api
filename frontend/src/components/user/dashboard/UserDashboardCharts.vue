@@ -81,6 +81,7 @@ import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import Select from '@/components/common/Select.vue'
 import { Doughnut } from 'vue-chartjs'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
+import { categoricalPalette } from '@/theme/designTokens'
 import type { TrendDataPoint, ModelStat } from '@/types'
 import { formatCostFixed as formatCost, formatNumberLocaleString as formatNumber, formatTokensK as formatTokens } from '@/utils/format'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler } from 'chart.js'
@@ -94,7 +95,7 @@ const modelData = computed(() => !props.models?.length ? null : {
   labels: props.models.map((m: ModelStat) => m.model),
   datasets: [{
     data: props.models.map((m: ModelStat) => m.total_tokens),
-    backgroundColor: ['#4f7cff', '#20d9a0', '#ffb84d', '#ff6174', '#8b6eff', '#28c7c0', '#f377c5', '#8bd450'],
+    backgroundColor: categoricalPalette,
     borderWidth: 0,
     borderRadius: 8,
     spacing: 2,

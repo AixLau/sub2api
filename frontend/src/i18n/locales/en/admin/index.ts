@@ -8,6 +8,7 @@ import extensions from './extensions'
 import { mergeLocaleMessages } from '../../merge'
 import audit from './audit'
 import promptAudit from './promptAudit'
+import rewards from './rewards'
 
 export default mergeLocaleMessages({
   ...overview,
@@ -18,4 +19,5 @@ export default mergeLocaleMessages({
   ...settings,
   ...audit,
   ...promptAudit,
+  ...rewards,
 }, extensions)

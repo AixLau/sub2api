@@ -22,6 +22,11 @@ type UserHandler struct {
 	emailCache            service.EmailCache
 	affiliateService      *service.AffiliateService
 	userPlatformQuotaRepo service.UserPlatformQuotaRepository
+	rewardService         *service.RewardService
+}
+
+func (h *UserHandler) SetRewardService(rewardService *service.RewardService) {
+	h.rewardService = rewardService
 }
 
 // NewUserHandler creates a new UserHandler
@@ -92,6 +97,30 @@ type surpriseRewardStatusResponse struct {
 	Pending bool `json:"pending"`
 }
 
+func (h *UserHandler) CheckWelcomeReward(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	var pending bool
+	var err error
+	if h.rewardService != nil {
+		pending, err = h.rewardService.LegacyPending(c.Request.Context(), subject.UserID, service.RewardSystemCampaignWelcome)
+	} else {
+		// Older service implementations only expose the pending amount through
+		// the login response. A missing reward service therefore has no durable
+		// status endpoint to consult.
+		pending = false
+	}
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, surpriseRewardStatusResponse{Pending: pending})
+}
+
 func (h *UserHandler) ClaimWelcomeReward(c *gin.Context) {
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok {
@@ -99,7 +128,17 @@ func (h *UserHandler) ClaimWelcomeReward(c *gin.Context) {
 		return
 	}
 
-	amount, balance, err := h.userService.ClaimWelcomeReward(c.Request.Context(), subject.UserID)
+	var amount, balance float64
+	var err error
+	if h.rewardService != nil {
+		var result *service.RewardClaimResult
+		result, err = h.rewardService.ClaimLegacy(c.Request.Context(), subject.UserID, service.RewardSystemCampaignWelcome)
+		if result != nil {
+			amount, balance = result.Amount, result.Balance
+		}
+	} else {
+		amount, balance, err = h.userService.ClaimWelcomeReward(c.Request.Context(), subject.UserID)
+	}
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -114,7 +153,13 @@ func (h *UserHandler) CheckSurpriseReward(c *gin.Context) {
 		return
 	}
 
-	pending, err := h.userService.CheckSurpriseReward(c.Request.Context(), subject.UserID)
+	var pending bool
+	var err error
+	if h.rewardService != nil {
+		pending, err = h.rewardService.LegacyPending(c.Request.Context(), subject.UserID, service.RewardSystemCampaignSurprise)
+	} else {
+		pending, err = h.userService.CheckSurpriseReward(c.Request.Context(), subject.UserID)
+	}
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -129,7 +174,17 @@ func (h *UserHandler) ClaimSurpriseReward(c *gin.Context) {
 		return
 	}
 
-	amount, balance, err := h.userService.ClaimSurpriseReward(c.Request.Context(), subject.UserID)
+	var amount, balance float64
+	var err error
+	if h.rewardService != nil {
+		var result *service.RewardClaimResult
+		result, err = h.rewardService.ClaimLegacy(c.Request.Context(), subject.UserID, service.RewardSystemCampaignSurprise)
+		if result != nil {
+			amount, balance = result.Amount, result.Balance
+		}
+	} else {
+		amount, balance, err = h.userService.ClaimSurpriseReward(c.Request.Context(), subject.UserID)
+	}
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

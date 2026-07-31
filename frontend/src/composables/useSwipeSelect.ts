@@ -1,5 +1,6 @@
 import { ref, onMounted, onUnmounted, type Ref } from 'vue'
 import type { Virtualizer } from '@tanstack/vue-virtual'
+import { brandColors, colorWithAlpha } from '@/theme/designTokens'
 
 /**
  * WeChat-style swipe/drag to select rows in a DataTable,
@@ -183,10 +184,11 @@ export function useSwipeSelect(
     removeMarquee() // defensive: remove any stale marquee
     marqueeEl = document.createElement('div')
     const isDark = document.documentElement.classList.contains('dark')
+    const marqueeColor = isDark ? brandColors['400'] : brandColors['500']
     Object.assign(marqueeEl.style, {
       position: 'fixed',
-      background: isDark ? 'rgba(96, 165, 250, 0.15)' : 'rgba(59, 130, 246, 0.12)',
-      border: isDark ? '1.5px solid rgba(96, 165, 250, 0.5)' : '1.5px solid rgba(59, 130, 246, 0.4)',
+      background: colorWithAlpha(marqueeColor, isDark ? 0.15 : 0.12),
+      border: `1.5px solid ${colorWithAlpha(marqueeColor, isDark ? 0.5 : 0.4)}`,
       borderRadius: '4px',
       pointerEvents: 'none',
       zIndex: '9999',

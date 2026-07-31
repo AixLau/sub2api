@@ -6,7 +6,7 @@
       </slot>
     </div>
     <div class="min-w-0 flex-1">
-      <p :class="compact ? 'text-xs font-medium text-gray-500 dark:text-gray-400' : 'stat-label truncate'">
+      <p :class="compact ? 'text-xs font-medium text-content-tertiary' : 'stat-label truncate'">
         {{ title }}
       </p>
       <div class="mt-1 flex items-baseline gap-2">
@@ -112,7 +112,7 @@ const resolvedIconClass = computed(() => {
 const resolvedValueClass = computed(() => {
   if (props.valueClass) return props.valueClass
   return props.compact
-    ? 'text-xl font-bold text-gray-900 dark:text-white'
+    ? 'text-xl font-bold text-content-primary'
     : 'stat-value'
 })
 
@@ -120,7 +120,7 @@ const trendClass = computed(() => {
   const classes: Record<ChangeType, string> = {
     up: 'stat-trend-up',
     down: 'stat-trend-down',
-    neutral: 'text-gray-500 dark:text-dark-400'
+    neutral: 'text-content-tertiary'
   }
   return classes[props.changeType]
 })

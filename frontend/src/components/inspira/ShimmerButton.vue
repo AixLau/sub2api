@@ -26,7 +26,8 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   as: 'button',
-  background: 'linear-gradient(to right, #2563eb, #0891b2)',
+  background:
+    'linear-gradient(to right, rgb(var(--color-brand-500)), rgb(var(--color-brand-600)))',
   shimmerColor: 'rgba(255, 255, 255, 0.6)',
   shimmerDuration: 3
 })

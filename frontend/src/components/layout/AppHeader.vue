@@ -1,5 +1,5 @@
 <template>
-  <header class="glass sticky top-0 z-30 border-b border-gray-200/50 dark:border-dark-700/50">
+  <header class="glass sticky top-0 z-30 border-b border-line-subtle/80">
     <div class="flex h-16 items-center justify-between gap-2 px-2 sm:px-4 md:px-6">
       <!-- Left: Mobile Menu Toggle + Page Title -->
       <div class="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
@@ -12,10 +12,10 @@
         </button>
 
         <div class="hidden min-w-0 lg:block">
-          <h1 class="truncate text-lg font-semibold text-gray-900 dark:text-white">
+          <h1 class="truncate text-lg font-semibold text-content-primary">
             {{ pageTitle }}
           </h1>
-          <p v-if="pageDescription" class="truncate text-xs text-gray-500 dark:text-dark-400">
+          <p v-if="pageDescription" class="truncate text-xs text-content-tertiary">
             {{ pageDescription }}
           </p>
         </div>
@@ -38,6 +38,24 @@
           </span>
           <span class="whitespace-nowrap">
             {{ t('common.contactSupport') }}
+          </span>
+        </button>
+
+        <!-- Pending rewards -->
+        <button
+          v-if="user && !authStore.isAdmin && rewardCampaignsEnabled && rewardStore.pendingCount > 0"
+          type="button"
+          data-testid="header-reward-queue"
+          class="relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white dark:focus:ring-offset-dark-900"
+          :aria-label="t('rewardQueue.pendingAria', { count: rewardStore.pendingCount })"
+          @click="openRewardQueue"
+        >
+          <Icon name="gift" size="sm" :stroke-width="2" />
+          <span
+            class="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-white dark:ring-dark-900"
+            aria-hidden="true"
+          >
+            {{ rewardStore.pendingCount > 99 ? '99+' : rewardStore.pendingCount }}
           </span>
         </button>
 
@@ -81,7 +99,7 @@
           @mouseenter="openWallet"
           @mouseleave="handleWalletMouseLeave"
         >
-          <div class="flex h-10 items-center gap-0.5 rounded-full border border-gray-200/80 bg-white p-0.5 shadow-sm dark:border-dark-700 dark:bg-dark-800 xl:h-12 xl:gap-1 xl:rounded-[22px] xl:p-1">
+          <div class="flex h-10 items-center gap-0.5 rounded-full border border-line-default bg-surface-panel p-0.5 shadow-sm xl:h-12 xl:gap-1 xl:rounded-[22px] xl:p-1">
             <button
               type="button"
               data-testid="wallet-trigger"
@@ -108,7 +126,7 @@
             <button
               type="button"
               data-testid="wallet-recharge-top"
-              class="flex h-9 items-center gap-1 rounded-full bg-[#17191c] px-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-black focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100 dark:focus:ring-white dark:focus:ring-offset-dark-900 xl:h-10 xl:gap-1.5 xl:px-3.5"
+              class="flex h-9 items-center gap-1 rounded-full bg-surface-inverse px-2.5 text-sm font-semibold text-content-inverse shadow-sm transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-line-focus focus:ring-offset-2 focus:ring-offset-surface-panel xl:h-10 xl:gap-1.5 xl:px-3.5"
               @click="goToRecharge"
             >
               <Icon name="plus" size="sm" :stroke-width="2.25" />
@@ -122,9 +140,9 @@
               data-testid="wallet-panel"
               role="dialog"
               :aria-label="balanceAvailableText"
-              class="absolute right-0 top-full z-50 mt-2 w-[268px] overflow-hidden rounded-[20px] border border-black/5 bg-white shadow-[0_18px_44px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-dark-900"
+              class="absolute right-0 top-full z-50 mt-2 w-[268px] overflow-hidden rounded-[20px] border border-line-default bg-surface-raised shadow-glass"
             >
-              <div class="relative h-[82px] overflow-hidden bg-[#3154d8]">
+              <div class="relative h-[82px] overflow-hidden bg-primary-500">
                 <img
                   :src="walletArtwork"
                   alt=""
@@ -142,14 +160,14 @@
               </div>
 
               <div class="px-5 pb-5 pt-4 text-center">
-                <p class="text-xs font-medium text-gray-500 dark:text-dark-300">{{ balanceAvailableText }}</p>
-                <p class="mt-1 text-2xl font-bold leading-none text-gray-950 dark:text-white">
+                <p class="text-xs font-medium text-content-tertiary">{{ balanceAvailableText }}</p>
+                <p class="mt-1 text-2xl font-bold leading-none text-content-primary">
                   {{ formatHeaderMoney(availableBalance) }}
                 </p>
                 <button
                   type="button"
                   data-testid="wallet-recharge"
-                  class="mx-auto mt-4 flex h-9 items-center justify-center gap-1.5 rounded-full bg-[#17191c] px-4 text-sm font-semibold text-white transition-colors hover:bg-black focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-100 dark:focus:ring-white dark:focus:ring-offset-dark-900"
+                  class="mx-auto mt-4 flex h-9 items-center justify-center gap-1.5 rounded-full bg-surface-inverse px-4 text-sm font-semibold text-content-inverse transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-line-focus focus:ring-offset-2 focus:ring-offset-surface-raised"
                   @click="goToRecharge"
                 >
                   <Icon name="plus" size="sm" :stroke-width="2.25" />
@@ -309,7 +327,7 @@
           data-testid="support-overlay"
           @click.self="closeSupportDialog"
         >
-          <LiquidGlassBackdrop />
+          <LiquidGlassBackdrop data-support-backdrop />
 
           <LiquidGlass
             data-support-liquid-shell
@@ -335,7 +353,13 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
+import {
+  REWARD_QUEUE_OPEN_EVENT,
+  useAppStore,
+  useAuthStore,
+  useOnboardingStore,
+  useRewardStore,
+} from '@/stores'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
@@ -356,6 +380,7 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
 const onboardingStore = useOnboardingStore()
+const rewardStore = useRewardStore()
 
 const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
@@ -370,6 +395,7 @@ const supportWeChatGroupQRCode = computed(() => appStore.supportWeChatGroupQRCod
 const hasSupportGroup = computed(() => Boolean(supportQQGroupQRCode.value || supportWeChatGroupQRCode.value))
 const docUrl = computed(() => sanitizeUrl(appStore.docUrl))
 const modelPlazaEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.modelPlaza))
+const rewardCampaignsEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.rewardCampaigns))
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const availableBalance = computed(() => Number(user.value?.balance || 0))
 const frozenBalance = computed(() => Number(user.value?.frozen_balance || 0))
@@ -479,6 +505,12 @@ function openSupportDialog() {
   supportDialogOpen.value = true
 }
 
+function openRewardQueue() {
+  closeDropdown()
+  closeWallet()
+  window.dispatchEvent(new CustomEvent(REWARD_QUEUE_OPEN_EVENT))
+}
+
 function closeSupportDialog() {
   supportDialogOpen.value = false
 }
@@ -542,18 +574,25 @@ onBeforeUnmount(() => {
   transform: scale(0.95) translateY(-4px);
 }
 
-.support-modal-enter-active,
-.support-modal-leave-active {
-  transition: opacity 0.18s ease;
+.support-modal-enter-active [data-support-backdrop] {
+  transition: opacity 0.14s ease-out;
 }
 
-.support-modal-enter-active [data-support-liquid-shell],
+.support-modal-leave-active [data-support-backdrop] {
+  transition: opacity 0.16s ease;
+}
+
+.support-modal-enter-active [data-support-liquid-shell] {
+  transition: transform 0.18s ease 0.06s, opacity 0.18s ease 0.06s;
+  pointer-events: none;
+}
+
 .support-modal-leave-active [data-support-liquid-shell] {
   transition: transform 0.18s ease, opacity 0.18s ease;
 }
 
-.support-modal-enter-from,
-.support-modal-leave-to {
+.support-modal-enter-from [data-support-backdrop],
+.support-modal-leave-to [data-support-backdrop] {
   opacity: 0;
 }
 

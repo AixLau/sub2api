@@ -214,6 +214,7 @@ export interface PublicSettings {
   home_content: string
   hide_ccs_import_button: boolean
   payment_enabled: boolean
+  reward_campaigns_enabled?: boolean
   risk_control_enabled: boolean
   table_default_page_size: number
   table_page_size_options: number[]
@@ -266,6 +267,39 @@ export interface WelcomeRewardClaimResponse {
 
 export interface SurpriseRewardStatusResponse {
   pending: boolean
+}
+
+export interface RewardGrantSkin {
+  id?: number
+  name?: string
+  image_url?: string
+  cover_color?: string
+  cover_text_color?: string
+  alt?: string
+}
+
+export interface RewardGrant {
+  grant_id: number
+  campaign_id: number
+  title: string
+  hint: string
+  cover_text: string
+  claim_cta?: string
+  success_message?: string
+  skin: RewardGrantSkin | null
+  priority: number
+  expires_at: string | null
+}
+
+export interface PendingRewardsResponse {
+  items: RewardGrant[]
+}
+
+export interface RewardClaimResponse {
+  grant_id: number
+  amount: number
+  balance: number
+  claimed_at: string
 }
 
 export interface CurrentUserResponse extends User {

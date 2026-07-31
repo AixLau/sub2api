@@ -97,6 +97,12 @@ const (
 	EdgePendingAuthSessions = "pending_auth_sessions"
 	// EdgePlatformQuotas holds the string denoting the platform_quotas edge name in mutations.
 	EdgePlatformQuotas = "platform_quotas"
+	// EdgeRewardGrants holds the string denoting the reward_grants edge name in mutations.
+	EdgeRewardGrants = "reward_grants"
+	// EdgeRewardCampaignStates holds the string denoting the reward_campaign_states edge name in mutations.
+	EdgeRewardCampaignStates = "reward_campaign_states"
+	// EdgeBehaviorDaily holds the string denoting the behavior_daily edge name in mutations.
+	EdgeBehaviorDaily = "behavior_daily"
 	// EdgeUserAllowedGroups holds the string denoting the user_allowed_groups edge name in mutations.
 	EdgeUserAllowedGroups = "user_allowed_groups"
 	// Table holds the table name of the user in the database.
@@ -190,6 +196,27 @@ const (
 	PlatformQuotasInverseTable = "user_platform_quotas"
 	// PlatformQuotasColumn is the table column denoting the platform_quotas relation/edge.
 	PlatformQuotasColumn = "user_id"
+	// RewardGrantsTable is the table that holds the reward_grants relation/edge.
+	RewardGrantsTable = "user_reward_grants"
+	// RewardGrantsInverseTable is the table name for the UserRewardGrant entity.
+	// It exists in this package in order to avoid circular dependency with the "userrewardgrant" package.
+	RewardGrantsInverseTable = "user_reward_grants"
+	// RewardGrantsColumn is the table column denoting the reward_grants relation/edge.
+	RewardGrantsColumn = "user_id"
+	// RewardCampaignStatesTable is the table that holds the reward_campaign_states relation/edge.
+	RewardCampaignStatesTable = "reward_campaign_user_states"
+	// RewardCampaignStatesInverseTable is the table name for the RewardCampaignUserState entity.
+	// It exists in this package in order to avoid circular dependency with the "rewardcampaignuserstate" package.
+	RewardCampaignStatesInverseTable = "reward_campaign_user_states"
+	// RewardCampaignStatesColumn is the table column denoting the reward_campaign_states relation/edge.
+	RewardCampaignStatesColumn = "user_id"
+	// BehaviorDailyTable is the table that holds the behavior_daily relation/edge.
+	BehaviorDailyTable = "user_behavior_daily"
+	// BehaviorDailyInverseTable is the table name for the UserBehaviorDaily entity.
+	// It exists in this package in order to avoid circular dependency with the "userbehaviordaily" package.
+	BehaviorDailyInverseTable = "user_behavior_daily"
+	// BehaviorDailyColumn is the table column denoting the behavior_daily relation/edge.
+	BehaviorDailyColumn = "user_id"
 	// UserAllowedGroupsTable is the table that holds the user_allowed_groups relation/edge.
 	UserAllowedGroupsTable = "user_allowed_groups"
 	// UserAllowedGroupsInverseTable is the table name for the UserAllowedGroup entity.
@@ -642,6 +669,48 @@ func ByPlatformQuotas(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByRewardGrantsCount orders the results by reward_grants count.
+func ByRewardGrantsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newRewardGrantsStep(), opts...)
+	}
+}
+
+// ByRewardGrants orders the results by reward_grants terms.
+func ByRewardGrants(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newRewardGrantsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByRewardCampaignStatesCount orders the results by reward_campaign_states count.
+func ByRewardCampaignStatesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newRewardCampaignStatesStep(), opts...)
+	}
+}
+
+// ByRewardCampaignStates orders the results by reward_campaign_states terms.
+func ByRewardCampaignStates(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newRewardCampaignStatesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByBehaviorDailyCount orders the results by behavior_daily count.
+func ByBehaviorDailyCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newBehaviorDailyStep(), opts...)
+	}
+}
+
+// ByBehaviorDaily orders the results by behavior_daily terms.
+func ByBehaviorDaily(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newBehaviorDailyStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByUserAllowedGroupsCount orders the results by user_allowed_groups count.
 func ByUserAllowedGroupsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -744,6 +813,27 @@ func newPlatformQuotasStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(PlatformQuotasInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, PlatformQuotasTable, PlatformQuotasColumn),
+	)
+}
+func newRewardGrantsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(RewardGrantsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, RewardGrantsTable, RewardGrantsColumn),
+	)
+}
+func newRewardCampaignStatesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(RewardCampaignStatesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, RewardCampaignStatesTable, RewardCampaignStatesColumn),
+	)
+}
+func newBehaviorDailyStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(BehaviorDailyInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, BehaviorDailyTable, BehaviorDailyColumn),
 	)
 }
 func newUserAllowedGroupsStep() *sqlgraph.Step {

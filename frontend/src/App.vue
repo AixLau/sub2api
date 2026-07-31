@@ -1,19 +1,30 @@
 <script setup lang="ts">
 import { RouterView, useRouter, useRoute } from 'vue-router'
-import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import Toast from '@/components/common/Toast.vue'
 import NavigationProgress from '@/components/common/NavigationProgress.vue'
 import AdminComplianceDialog from '@/components/admin/AdminComplianceDialog.vue'
+import RewardGrantDialog from '@/components/auth/RewardGrantDialog.vue'
 import WelcomeRewardDialog from '@/components/auth/WelcomeRewardDialog.vue'
 import { resolveRouteDocumentTitle } from '@/router/title'
 import AnnouncementPopup from '@/components/common/AnnouncementPopup.vue'
-import { useAppStore, useAuthStore, useSubscriptionStore, useAnnouncementStore, useAdminComplianceStore, useAdminSettingsStore } from '@/stores'
+import {
+  REWARD_QUEUE_OPEN_EVENT,
+  useAdminComplianceStore,
+  useAdminSettingsStore,
+  useAnnouncementStore,
+  useAppStore,
+  useAuthStore,
+  useRewardStore,
+  useSubscriptionStore,
+} from '@/stores'
 import { getSetupStatus } from '@/api/setup'
 import { updateFavicon } from '@/utils/branding'
+import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
+import type { RewardClaimResponse } from '@/types'
 import {
-  isWelcomeRewardSkinId,
-  pickWelcomeRewardSkinId,
-  type WelcomeRewardSkinId
+  welcomeRewardSkins,
+  type WelcomeRewardSkinId,
 } from '@/components/auth/welcomeRewardSkins'
 
 const router = useRouter()
@@ -24,92 +35,163 @@ const subscriptionStore = useSubscriptionStore()
 const announcementStore = useAnnouncementStore()
 const adminComplianceStore = useAdminComplianceStore()
 const adminSettingsStore = useAdminSettingsStore()
-const pendingWelcomeRewardSkin = ref<WelcomeRewardSkinId | null>(null)
-const pendingSurpriseRewardSkin = ref<WelcomeRewardSkinId | null>(null)
-const pendingWelcomeRewardKey = 'pending_welcome_reward'
-const pendingSurpriseRewardKey = 'pending_surprise_reward'
-let surpriseRewardCheckedUserID: number | null = null
+const rewardStore = useRewardStore()
+const rewardCampaignsEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.rewardCampaigns))
+let rewardDateBoundaryTimer: ReturnType<typeof setTimeout> | null = null
+let rewardPollTimer: ReturnType<typeof setInterval> | null = null
+let legacyRewardCheck: {
+  userID: number
+  generation: number
+  promise: Promise<void>
+} | null = null
+let legacyRewardGeneration = 0
+const legacyReward = ref<{
+  userID: number
+  variant: 'welcome' | 'surprise'
+  skinID: WelcomeRewardSkinId
+} | null>(null)
+const legacyFallbackSkinID = welcomeRewardSkins[0]!.id
 
-function openPendingWelcomeReward() {
+function invalidateLegacyRewards() {
+  legacyRewardGeneration++
+  legacyRewardCheck = null
+  legacyReward.value = null
+  authStore.clearPendingWelcomeReward()
+}
+
+function isLegacyRewardContextCurrent(userID: number, generation: number): boolean {
+  return (
+    generation === legacyRewardGeneration &&
+    appStore.publicSettingsLoaded &&
+    !rewardCampaignsEnabled.value &&
+    authStore.isAuthenticated &&
+    !authStore.isAdmin &&
+    authStore.user?.id === userID
+  )
+}
+
+async function refreshRewards(force = false): Promise<void> {
+  const userID = authStore.user?.id
   if (
+    !appStore.publicSettingsLoaded ||
+    !rewardCampaignsEnabled.value ||
     !authStore.isAuthenticated ||
     authStore.isAdmin ||
-    authStore.pendingWelcomeRewardUserID !== authStore.user?.id
+    !userID
+  ) {
+    rewardStore.reset()
+    return
+  }
+  try {
+    await rewardStore.fetchPending(userID, force)
+  } catch (error) {
+    console.error('Failed to fetch pending rewards:', error)
+  }
+}
+
+async function refreshLegacyRewards(): Promise<void> {
+  const userID = authStore.user?.id
+  if (
+    !appStore.publicSettingsLoaded ||
+    rewardCampaignsEnabled.value ||
+    !authStore.isAuthenticated ||
+    authStore.isAdmin ||
+    !userID
   ) {
     return
   }
-  const raw = localStorage.getItem(pendingWelcomeRewardKey)
-  try {
-    const reward = raw ? JSON.parse(raw) as { user_id?: unknown; skin_id?: unknown } : null
-    const skinId = isWelcomeRewardSkinId(reward?.skin_id)
-      ? reward.skin_id
-      : pickWelcomeRewardSkinId()
-    pendingWelcomeRewardSkin.value = skinId
-    if (reward?.skin_id !== skinId) {
-      localStorage.setItem(
-        pendingWelcomeRewardKey,
-        JSON.stringify({ ...reward, user_id: authStore.user?.id, skin_id: skinId })
-      )
-    }
-  } catch {
-    const skinId = pickWelcomeRewardSkinId()
-    pendingWelcomeRewardSkin.value = skinId
-    localStorage.setItem(
-      pendingWelcomeRewardKey,
-      JSON.stringify({ user_id: authStore.user?.id, skin_id: skinId })
-    )
-  }
-}
+  if (legacyReward.value?.userID === userID) return
 
-function finishWelcomeReward() {
-  pendingWelcomeRewardSkin.value = null
-}
-
-function getPersistedRewardSkin(key: string, userID: number): WelcomeRewardSkinId {
-  const raw = localStorage.getItem(key)
-  try {
-    const reward = raw ? JSON.parse(raw) as { user_id?: unknown; skin_id?: unknown } : null
-    if (reward?.user_id === userID && isWelcomeRewardSkinId(reward.skin_id)) {
-      return reward.skin_id
-    }
-  } catch {
-    // Replace malformed local state with a valid skin below.
-  }
-  return pickWelcomeRewardSkinId()
-}
-
-async function checkSurpriseReward() {
-  const userID = authStore.user?.id ?? null
-  if (!authStore.isAuthenticated || authStore.isAdmin || userID === null) {
-    return
-  }
-  if (surpriseRewardCheckedUserID === userID) {
+  const generation = legacyRewardGeneration
+  const existingCheck = legacyRewardCheck
+  if (existingCheck?.userID === userID && existingCheck.generation === generation) {
+    await existingCheck.promise
     return
   }
 
-  surpriseRewardCheckedUserID = userID
-  try {
-    const pending = await authStore.checkSurpriseReward()
-    if (!pending) {
-      localStorage.removeItem(pendingSurpriseRewardKey)
-      pendingSurpriseRewardSkin.value = null
-      return
+  const request = (async () => {
+    try {
+      const welcomePending = await authStore.checkWelcomeReward()
+      if (!isLegacyRewardContextCurrent(userID, generation)) return
+      if (welcomePending) {
+        legacyReward.value = { userID, variant: 'welcome', skinID: legacyFallbackSkinID }
+        return
+      }
+
+      const surprisePending = await authStore.checkSurpriseReward()
+      if (!isLegacyRewardContextCurrent(userID, generation)) return
+      if (surprisePending) {
+        legacyReward.value = { userID, variant: 'surprise', skinID: legacyFallbackSkinID }
+      }
+    } catch (error) {
+      if (isLegacyRewardContextCurrent(userID, generation)) {
+        console.error('Failed to check legacy rewards:', error)
+      }
     }
-    const skinId = getPersistedRewardSkin(pendingSurpriseRewardKey, userID)
-    pendingSurpriseRewardSkin.value = skinId
-    localStorage.setItem(
-      pendingSurpriseRewardKey,
-      JSON.stringify({ user_id: userID, skin_id: skinId })
-    )
-  } catch (error) {
-    surpriseRewardCheckedUserID = null
-    console.error('Failed to check surprise reward:', error)
+  })()
+  const check = { userID, generation, promise: request }
+  legacyRewardCheck = check
+  try {
+    await request
+  } finally {
+    if (legacyRewardCheck === check) legacyRewardCheck = null
   }
 }
 
-function finishSurpriseReward() {
-  pendingSurpriseRewardSkin.value = null
-  localStorage.removeItem(pendingSurpriseRewardKey)
+function finishLegacyReward() {
+  const completedVariant = legacyReward.value?.variant
+  legacyReward.value = null
+  if (completedVariant === 'welcome') void refreshLegacyRewards()
+}
+
+function scheduleRewardDateBoundary() {
+  if (rewardDateBoundaryTimer !== null) {
+    clearTimeout(rewardDateBoundaryTimer)
+    rewardDateBoundaryTimer = null
+  }
+  if (
+    !appStore.publicSettingsLoaded ||
+    !rewardCampaignsEnabled.value ||
+    !authStore.isAuthenticated ||
+    authStore.isAdmin
+  ) return
+
+  const now = new Date()
+  const nextDay = new Date(now)
+  nextDay.setHours(24, 0, 1, 0)
+  rewardDateBoundaryTimer = setTimeout(() => {
+    void refreshRewards(true)
+    scheduleRewardDateBoundary()
+  }, Math.max(1_000, nextDay.getTime() - now.getTime()))
+}
+
+function scheduleRewardPolling() {
+  if (rewardPollTimer !== null) clearInterval(rewardPollTimer)
+  rewardPollTimer = null
+  if (
+    !appStore.publicSettingsLoaded ||
+    !authStore.isAuthenticated ||
+    authStore.isAdmin ||
+    !authStore.user?.id
+  ) return
+
+  rewardPollTimer = setInterval(() => {
+    if (rewardCampaignsEnabled.value) {
+      void refreshRewards(true)
+    } else {
+      void refreshLegacyRewards()
+    }
+  }, 5 * 60 * 1000)
+}
+
+function openRewardQueue() {
+  rewardStore.reopen()
+}
+
+function applyClaimedReward(result: RewardClaimResponse) {
+  void authStore.applyRewardBalance(result.balance).catch((error) => {
+    console.error('Failed to refresh balance after claiming reward:', error)
+  })
 }
 
 function updateDocumentTitle() {
@@ -149,7 +231,11 @@ watch(
 function onVisibilityChange() {
   if (document.visibilityState === 'visible' && authStore.isAuthenticated) {
     announcementStore.fetchAnnouncements()
-    checkSurpriseReward()
+    if (appStore.publicSettingsLoaded) {
+      if (rewardCampaignsEnabled.value) void refreshRewards(true)
+      else void refreshLegacyRewards()
+    }
+    scheduleRewardDateBoundary()
   }
 }
 
@@ -187,9 +273,8 @@ watch(
       document.addEventListener('visibilitychange', onVisibilityChange)
     } else {
       // User logged out: clear data and stop polling
-      pendingWelcomeRewardSkin.value = null
-      pendingSurpriseRewardSkin.value = null
-      surpriseRewardCheckedUserID = null
+      rewardStore.reset()
+      invalidateLegacyRewards()
       subscriptionStore.clear()
       announcementStore.reset()
       adminComplianceStore.reset()
@@ -200,41 +285,58 @@ watch(
 )
 
 // Route change trigger (throttled by store)
-router.afterEach(() => {
+const removeRewardRouteHook = router.afterEach(() => {
   if (authStore.isAuthenticated) {
     announcementStore.fetchAnnouncements()
+    if (appStore.publicSettingsLoaded) {
+      if (rewardCampaignsEnabled.value) void refreshRewards()
+      else void refreshLegacyRewards()
+    }
   }
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibilityChange)
   window.removeEventListener('admin-compliance-required', onAdminComplianceRequired)
+  window.removeEventListener(REWARD_QUEUE_OPEN_EVENT, openRewardQueue)
+  removeRewardRouteHook()
+  invalidateLegacyRewards()
+  if (rewardDateBoundaryTimer !== null) clearTimeout(rewardDateBoundaryTimer)
+  if (rewardPollTimer !== null) clearInterval(rewardPollTimer)
 })
-
-watch(
-  [
-    () => authStore.pendingWelcomeRewardUserID,
-    () => authStore.user?.id,
-    () => authStore.isAuthenticated
-  ],
-  openPendingWelcomeReward,
-  { immediate: true }
-)
 
 watch(
   [
     () => authStore.user?.id,
     () => authStore.isAuthenticated,
-    () => authStore.isAdmin
+    () => authStore.isAdmin,
+    () => appStore.publicSettingsLoaded,
+    () => rewardCampaignsEnabled.value,
   ],
   () => {
-    void checkSurpriseReward()
+    rewardStore.reset()
+    invalidateLegacyRewards()
+    if (
+      appStore.publicSettingsLoaded &&
+      authStore.isAuthenticated &&
+      !authStore.isAdmin &&
+      authStore.user?.id
+    ) {
+      if (rewardCampaignsEnabled.value) {
+        void refreshRewards(true)
+      } else {
+        void refreshLegacyRewards()
+      }
+    }
+    scheduleRewardDateBoundary()
+    scheduleRewardPolling()
   },
   { immediate: true }
 )
 
 onMounted(async () => {
   window.addEventListener('admin-compliance-required', onAdminComplianceRequired)
+  window.addEventListener(REWARD_QUEUE_OPEN_EVENT, openRewardQueue)
 
   // Check if setup is needed
   try {
@@ -261,22 +363,33 @@ onMounted(async () => {
   <Toast />
   <AnnouncementPopup />
   <AdminComplianceDialog />
-  <WelcomeRewardDialog
-    v-if="pendingWelcomeRewardSkin !== null && authStore.isAuthenticated && !authStore.isAdmin"
-    :show="true"
-    :skin-id="pendingWelcomeRewardSkin"
-    @finish="finishWelcomeReward"
-  />
-  <WelcomeRewardDialog
+  <RewardGrantDialog
     v-if="
-      pendingWelcomeRewardSkin === null &&
-      pendingSurpriseRewardSkin !== null &&
+      appStore.publicSettingsLoaded &&
+      rewardCampaignsEnabled &&
+      rewardStore.currentGrant &&
       authStore.isAuthenticated &&
       !authStore.isAdmin
     "
+    :key="rewardStore.currentGrant.grant_id"
     :show="true"
-    :skin-id="pendingSurpriseRewardSkin"
-    variant="surprise"
-    @finish="finishSurpriseReward"
+    :grant="rewardStore.currentGrant"
+    @defer="rewardStore.deferCurrent"
+    @claimed="applyClaimedReward"
+    @finish="rewardStore.finishCurrent"
+  />
+  <WelcomeRewardDialog
+    v-if="
+      appStore.publicSettingsLoaded &&
+      !rewardCampaignsEnabled &&
+      legacyReward?.userID === authStore.user?.id &&
+      authStore.isAuthenticated &&
+      !authStore.isAdmin
+    "
+    :key="`${legacyReward?.userID}:${legacyReward?.variant}`"
+    :show="true"
+    :skin-id="legacyReward?.skinID ?? legacyFallbackSkinID"
+    :variant="legacyReward?.variant ?? 'welcome'"
+    @finish="finishLegacyReward"
   />
 </template>

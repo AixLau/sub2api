@@ -323,6 +323,9 @@ type UpdateSettingsRequest struct {
 	// Affiliate (邀请返利) feature switch
 	AffiliateEnabled *bool `json:"affiliate_enabled"`
 
+	// 奖励活动中心功能开关
+	RewardCampaignsEnabled *bool `json:"reward_campaigns_enabled"`
+
 	// 风控中心功能开关
 	RiskControlEnabled *bool `json:"risk_control_enabled"`
 
@@ -1718,6 +1721,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.AffiliateEnabled
 		}(),
+		RewardCampaignsEnabled: func() bool {
+			if req.RewardCampaignsEnabled != nil {
+				return *req.RewardCampaignsEnabled
+			}
+			return previousSettings.RewardCampaignsEnabled
+		}(),
 		RiskControlEnabled: func() bool {
 			if req.RiskControlEnabled != nil {
 				return *req.RiskControlEnabled
@@ -2113,7 +2122,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ModelPlazaRequireAuth: updatedSettings.ModelPlazaRequireAuth,
 		ModelPlazaDescription: updatedSettings.ModelPlazaDescription,
 
-		AffiliateEnabled: updatedSettings.AffiliateEnabled,
+		AffiliateEnabled:       updatedSettings.AffiliateEnabled,
+		RewardCampaignsEnabled: updatedSettings.RewardCampaignsEnabled,
 
 		RiskControlEnabled:          updatedSettings.RiskControlEnabled,
 		CyberSessionBlockEnabled:    updatedSettings.CyberSessionBlockEnabled,

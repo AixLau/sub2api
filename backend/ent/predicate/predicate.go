@@ -87,6 +87,21 @@ type Proxy func(*sql.Selector)
 // RedeemCode is the predicate function for redeemcode builders.
 type RedeemCode func(*sql.Selector)
 
+// RewardCampaign is the predicate function for rewardcampaign builders.
+type RewardCampaign func(*sql.Selector)
+
+// RewardCampaignJob is the predicate function for rewardcampaignjob builders.
+type RewardCampaignJob func(*sql.Selector)
+
+// RewardCampaignUserState is the predicate function for rewardcampaignuserstate builders.
+type RewardCampaignUserState func(*sql.Selector)
+
+// RewardCampaignVersion is the predicate function for rewardcampaignversion builders.
+type RewardCampaignVersion func(*sql.Selector)
+
+// RewardSkin is the predicate function for rewardskin builders.
+type RewardSkin func(*sql.Selector)
+
 // SecuritySecret is the predicate function for securitysecret builders.
 type SecuritySecret func(*sql.Selector)
 
@@ -120,8 +135,14 @@ type UserAttributeDefinition func(*sql.Selector)
 // UserAttributeValue is the predicate function for userattributevalue builders.
 type UserAttributeValue func(*sql.Selector)
 
+// UserBehaviorDaily is the predicate function for userbehaviordaily builders.
+type UserBehaviorDaily func(*sql.Selector)
+
 // UserPlatformQuota is the predicate function for userplatformquota builders.
 type UserPlatformQuota func(*sql.Selector)
+
+// UserRewardGrant is the predicate function for userrewardgrant builders.
+type UserRewardGrant func(*sql.Selector)
 
 // UserSubscription is the predicate function for usersubscription builders.
 type UserSubscription func(*sql.Selector)

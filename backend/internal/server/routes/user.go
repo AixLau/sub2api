@@ -19,6 +19,7 @@ func RegisterUserRoutes(
 ) {
 	// 公开模型目录（无需认证）：只返回已启用渠道中公开分组可用的模型与展示价格。
 	v1.GET("/models/public", h.AvailableChannel.ListPublic)
+	v1.GET("/reward-skins/:id/content", middleware.RewardCampaignFeatureGuard(settingService), h.Reward.SkinContent)
 
 	authenticated := v1.Group("")
 	authenticated.Use(gin.HandlerFunc(jwtAuth))
@@ -32,6 +33,7 @@ func RegisterUserRoutes(
 		user := authenticated.Group("/user")
 		{
 			user.GET("/profile", h.User.GetProfile)
+			user.POST("/welcome-reward/check", h.User.CheckWelcomeReward)
 			user.POST("/welcome-reward/claim", h.User.ClaimWelcomeReward)
 			user.POST("/surprise-reward/check", h.User.CheckSurpriseReward)
 			user.POST("/surprise-reward/claim", h.User.ClaimSurpriseReward)
@@ -45,6 +47,14 @@ func RegisterUserRoutes(
 			user.POST("/auth-identities/bind/start", h.User.StartIdentityBinding)
 			user.GET("/api-keys/:id/usage/daily", panelRateLimiter.Heavy(), h.Usage.GetMyAPIKeyDailyUsage)
 			user.GET("/platform-quotas", h.User.GetMyPlatformQuotas)
+
+			rewards := user.Group("/rewards")
+			rewards.Use(middleware.RewardCampaignFeatureGuard(settingService))
+			{
+				rewards.GET("/pending", h.Reward.Pending)
+				rewards.POST("/:grant_id/view", h.Reward.View)
+				rewards.POST("/:grant_id/claim", h.Reward.Claim)
+			}
 
 			// 通知邮箱管理
 			notifyEmail := user.Group("/notify-email")

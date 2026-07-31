@@ -28,7 +28,7 @@
             autofocus
             autocomplete="email"
             :disabled="authActionDisabled"
-            class="h-12 w-full rounded-xl border border-slate-300 bg-white pl-12 pr-4 text-slate-900"
+            class="h-12 w-full rounded-xl border border-line-default bg-surface-panel pl-12 pr-4 text-content-primary transition-colors placeholder:text-content-disabled hover:border-line-strong focus:border-line-focus focus:outline-none focus:ring-2 focus:ring-line-focus/20 disabled:cursor-not-allowed disabled:bg-surface-subtle disabled:text-content-disabled"
             :placeholder="t('auth.emailPlaceholder', '请输入邮箱')"
           />
         </div>
@@ -52,19 +52,19 @@
             required
             autocomplete="current-password"
             :disabled="authActionDisabled"
-            class="h-12 w-full rounded-xl border border-slate-300 bg-white pl-12 pr-12 text-slate-900"
+            class="h-12 w-full rounded-xl border border-line-default bg-surface-panel pl-12 pr-12 text-content-primary transition-colors placeholder:text-content-disabled hover:border-line-strong focus:border-line-focus focus:outline-none focus:ring-2 focus:ring-line-focus/20 disabled:cursor-not-allowed disabled:bg-surface-subtle disabled:text-content-disabled"
             :placeholder="t('auth.passwordPlaceholder', '请输入密码')"
           />
           <button
             type="button"
-            class="absolute inset-y-0 right-0 flex items-center pr-4"
+            class="absolute inset-y-0 right-0 flex items-center px-4 text-content-disabled transition-colors hover:text-content-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-line-focus/30"
             :disabled="authActionDisabled"
             @click="showPassword = !showPassword"
           >
             <Icon
               :name="showPassword ? 'eyeOff' : 'eye'"
               size="md"
-              class="text-slate-400 hover:text-slate-600"
+              class="text-current"
             />
           </button>
         </div>

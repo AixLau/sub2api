@@ -307,6 +307,9 @@ type SystemSettings struct {
 	// Affiliate (邀请返利) feature switch
 	AffiliateEnabled bool `json:"affiliate_enabled"`
 
+	// 奖励活动中心功能开关
+	RewardCampaignsEnabled bool `json:"reward_campaigns_enabled"`
+
 	// OpenAI fast/flex policy
 	OpenAIFastPolicySettings *OpenAIFastPolicySettings `json:"openai_fast_policy_settings,omitempty"`
 
@@ -391,6 +394,8 @@ type PublicSettings struct {
 	ModelPlazaRequireAuth bool `json:"model_plaza_require_auth"`
 
 	AffiliateEnabled bool `json:"affiliate_enabled"`
+
+	RewardCampaignsEnabled bool `json:"reward_campaigns_enabled"`
 
 	RiskControlEnabled bool `json:"risk_control_enabled"`
 

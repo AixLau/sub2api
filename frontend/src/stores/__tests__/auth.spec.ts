@@ -10,6 +10,7 @@ const mockGetCurrentUser = vi.fn()
 const mockRegister = vi.fn()
 const mockRefreshToken = vi.fn()
 const mockClaimWelcomeReward = vi.fn()
+const mockCheckWelcomeReward = vi.fn()
 const mockCheckSurpriseReward = vi.fn()
 const mockClaimSurpriseReward = vi.fn()
 
@@ -24,6 +25,7 @@ vi.mock('@/api', () => ({
   },
   userAPI: {
     claimWelcomeReward: (...args: any[]) => mockClaimWelcomeReward(...args),
+    checkWelcomeReward: (...args: any[]) => mockCheckWelcomeReward(...args),
     checkSurpriseReward: (...args: any[]) => mockCheckSurpriseReward(...args),
     claimSurpriseReward: (...args: any[]) => mockClaimSurpriseReward(...args),
   },
@@ -100,16 +102,27 @@ describe('useAuthStore', () => {
       expect(store.isAuthenticated).toBe(false)
     })
 
-    it('restores the pending scratch reward from the login response', async () => {
+    it('keeps the pending scratch reward in memory from the login response', async () => {
       mockLogin.mockResolvedValue({ ...fakeAuthResponse, welcome_reward_pending: true })
       const store = useAuthStore()
 
       await store.login({ email: 'test@example.com', password: '123456' })
 
       expect(store.pendingWelcomeRewardUserID).toBe(fakeUser.id)
-      expect(JSON.parse(localStorage.getItem('pending_welcome_reward') || 'null')).toEqual({
-        user_id: fakeUser.id
-      })
+      expect(localStorage.getItem('pending_welcome_reward')).toBeNull()
+    })
+
+    it('clears a previous pending welcome reward when the next auth response does not include it', async () => {
+      mockLogin
+        .mockResolvedValueOnce({ ...fakeAuthResponse, welcome_reward_pending: true })
+        .mockResolvedValueOnce(fakeAuthResponse)
+      const store = useAuthStore()
+
+      await store.login({ email: 'test@example.com', password: '123456' })
+      expect(store.pendingWelcomeRewardUserID).toBe(fakeUser.id)
+
+      await store.login({ email: 'test@example.com', password: '123456' })
+      expect(store.pendingWelcomeRewardUserID).toBeNull()
     })
 
     it('需要 2FA 时返回响应但不设置认证状态', async () => {
@@ -257,15 +270,13 @@ describe('useAuthStore', () => {
   })
 
   describe('pending auth session', () => {
-    it('persists a server-issued welcome reward after registration', async () => {
+    it('does not persist server-issued welcome eligibility after registration', async () => {
       const store = useAuthStore()
       mockRegister.mockResolvedValue({ ...fakeAuthResponse, welcome_reward_pending: true })
 
       await store.register({ email: 'new@example.com', password: 'secret-123' })
 
-      expect(JSON.parse(localStorage.getItem('pending_welcome_reward') || 'null')).toEqual({
-        user_id: fakeUser.id
-      })
+      expect(localStorage.getItem('pending_welcome_reward')).toBeNull()
       expect(store.pendingWelcomeRewardUserID).toBe(fakeUser.id)
     })
 
@@ -296,6 +307,90 @@ describe('useAuthStore', () => {
       await expect(store.checkSurpriseReward()).resolves.toBe(true)
       await expect(store.claimSurpriseReward()).resolves.toEqual({ amount: 2, balance: 102 })
       expect(store.user?.balance).toBe(102)
+    })
+
+    it('checks welcome reward eligibility and clears stale pending state', async () => {
+      const store = useAuthStore()
+      mockLogin.mockResolvedValue(fakeAuthResponse)
+      mockCheckWelcomeReward
+        .mockResolvedValueOnce({ pending: true })
+        .mockResolvedValueOnce({ pending: false })
+      await store.login({ email: 'test@example.com', password: 'secret-123' })
+
+      await expect(store.checkWelcomeReward()).resolves.toBe(true)
+      expect(store.pendingWelcomeRewardUserID).toBe(fakeUser.id)
+
+      await expect(store.checkWelcomeReward()).resolves.toBe(false)
+      expect(store.pendingWelcomeRewardUserID).toBeNull()
+    })
+
+    it('ignores an older welcome check response after a newer check completes', async () => {
+      let resolveFirst!: (value: { pending: boolean }) => void
+      let resolveSecond!: (value: { pending: boolean }) => void
+      const first = new Promise<{ pending: boolean }>((resolve) => {
+        resolveFirst = resolve
+      })
+      const second = new Promise<{ pending: boolean }>((resolve) => {
+        resolveSecond = resolve
+      })
+      const store = useAuthStore()
+      mockLogin.mockResolvedValue(fakeAuthResponse)
+      mockCheckWelcomeReward
+        .mockImplementationOnce(() => first)
+        .mockImplementationOnce(() => second)
+      await store.login({ email: 'test@example.com', password: 'secret-123' })
+
+      const firstCheck = store.checkWelcomeReward()
+      const secondCheck = store.checkWelcomeReward()
+      resolveSecond({ pending: false })
+      await secondCheck
+      resolveFirst({ pending: true })
+      await firstCheck
+
+      expect(store.pendingWelcomeRewardUserID).toBeNull()
+    })
+
+    it('refreshes the authoritative profile instead of applying a stale claim balance snapshot', async () => {
+      const store = useAuthStore()
+      mockLogin.mockResolvedValue(fakeAuthResponse)
+      mockGetCurrentUser.mockResolvedValue({
+        data: { ...fakeUser, balance: 107 },
+      })
+      await store.login({ email: 'test@example.com', password: 'secret-123' })
+
+      await store.applyRewardBalance(104)
+
+      expect(mockGetCurrentUser).toHaveBeenCalledTimes(1)
+      expect(store.user?.balance).toBe(107)
+      expect(JSON.parse(localStorage.getItem('auth_user') || 'null')?.balance).toBe(107)
+    })
+
+    it('keeps the newest balance when profile refreshes finish out of order', async () => {
+      let resolveOlder!: (value: { data: typeof fakeUser }) => void
+      let resolveNewer!: (value: { data: typeof fakeUser }) => void
+      const older = new Promise<{ data: typeof fakeUser }>((resolve) => {
+        resolveOlder = resolve
+      })
+      const newer = new Promise<{ data: typeof fakeUser }>((resolve) => {
+        resolveNewer = resolve
+      })
+      const store = useAuthStore()
+      mockLogin.mockResolvedValue(fakeAuthResponse)
+      mockGetCurrentUser.mockReset()
+      mockGetCurrentUser
+        .mockImplementationOnce(() => older)
+        .mockImplementationOnce(() => newer)
+      await store.login({ email: 'test@example.com', password: 'secret-123' })
+
+      const olderRefresh = store.applyRewardBalance(104)
+      const newerRefresh = store.applyRewardBalance(107)
+      resolveNewer({ data: { ...fakeUser, balance: 107 } })
+      await newerRefresh
+      resolveOlder({ data: { ...fakeUser, balance: 104 } })
+      await olderRefresh
+
+      expect(store.user?.balance).toBe(107)
+      expect(JSON.parse(localStorage.getItem('auth_user') || 'null')?.balance).toBe(107)
     })
 
     it('persists and clears pending auth session state', () => {

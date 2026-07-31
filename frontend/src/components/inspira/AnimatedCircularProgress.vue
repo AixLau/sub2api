@@ -49,6 +49,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { usePrefersReducedMotion } from '@/composables/usePrefersReducedMotion'
+import { brandColors, chartSeriesColors } from '@/theme/designTokens'
 import NumberTicker from './NumberTicker.vue'
 
 interface Props {
@@ -57,7 +58,7 @@ interface Props {
   /** Outer size in px */
   size?: number
   strokeWidth?: number
-  /** Stroke color; when omitted, auto by threshold: <70% teal, 70-90% amber, >=90% rose */
+  /** Stroke color; when omitted, auto by threshold: <70% brand, 70-90% amber, >=90% rose */
   color?: string
   showValue?: boolean
   /** Animation duration in ms */
@@ -82,9 +83,9 @@ const cappedValue = computed(() => Math.min(100, Math.max(0, props.value)))
 const resolvedColor = computed(() => {
   if (props.color) return props.color
   const v = Math.max(0, props.value)
-  if (v >= 90) return '#f43f5e' // rose-500
-  if (v >= 70) return '#f59e0b' // amber-500
-  return '#14b8a6' // teal-500
+  if (v >= 90) return chartSeriesColors.danger
+  if (v >= 70) return chartSeriesColors.warning
+  return brandColors['500']
 })
 
 /** Animated fraction 0..1 driven by rAF */

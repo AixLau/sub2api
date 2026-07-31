@@ -4,15 +4,15 @@
 
     <!-- Success -->
     <template v-if="outcome === 'success'">
-      <div class="rounded-2xl bg-white p-8 shadow-[0_0_0_1px_#E5EAFF] dark:bg-dark-800 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
+      <div class="rounded-2xl bg-surface-panel p-8 ring-1 ring-line-default">
         <div class="flex flex-col items-center text-center">
-          <div class="flex h-16 w-16 items-center justify-center rounded-full bg-[#E5EAFF] dark:bg-primary-950/40">
-            <Icon name="check" size="lg" class="text-[#0033FF] dark:text-primary-300" />
+          <div class="flex h-16 w-16 items-center justify-center rounded-full bg-status-success-soft">
+            <Icon name="check" size="lg" class="text-status-success" />
           </div>
           <p class="mt-5 text-xl font-semibold tracking-tight text-gray-900 dark:text-white">
             {{ props.orderType === 'subscription' ? t('payment.result.subscriptionSuccess') : t('payment.result.success') }}
           </p>
-          <div v-if="paidOrder" class="mt-6 w-full space-y-2.5 rounded-xl bg-[#F8F9FB] p-5 text-sm dark:bg-dark-900/60">
+          <div v-if="paidOrder" class="mt-6 w-full space-y-2.5 rounded-xl bg-surface-subtle p-5 text-sm">
             <div class="flex justify-between">
               <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.orderId') }}</span>
               <span class="font-medium text-gray-900 dark:text-white">#{{ paidOrder.id }}</span>
@@ -30,7 +30,7 @@
               <span class="font-medium text-gray-900 dark:text-white">{{ formatGatewayAmount(paidOrder.pay_amount, paidOrder.currency) }}</span>
             </div>
           </div>
-          <button class="mt-6 w-full rounded-full bg-[#0033FF] py-3 text-base font-medium text-white transition-colors hover:bg-[#0029cc] active:bg-[#0022b0]" @click="handleDone">
+          <button class="mt-6 w-full rounded-full bg-primary-500 py-3 text-base font-medium text-white transition-colors hover:bg-primary-600 active:bg-primary-700" @click="handleDone">
             {{ t('common.confirm') }}
           </button>
         </div>
@@ -39,7 +39,7 @@
 
     <!-- Cancelled -->
     <template v-else-if="outcome === 'cancelled'">
-      <div class="rounded-2xl bg-white p-8 shadow-[0_0_0_1px_#E5EAFF] dark:bg-dark-800 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
+      <div class="rounded-2xl bg-surface-panel p-8 ring-1 ring-line-default">
         <div class="flex flex-col items-center text-center">
           <div class="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 dark:bg-dark-700">
             <svg class="h-8 w-8 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -48,7 +48,7 @@
           </div>
           <p class="mt-5 text-xl font-semibold tracking-tight text-gray-900 dark:text-white">{{ t('payment.qr.cancelled') }}</p>
           <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ t('payment.qr.cancelledDesc') }}</p>
-          <button class="mt-6 w-full rounded-full bg-[#0033FF] py-3 text-base font-medium text-white transition-colors hover:bg-[#0029cc] active:bg-[#0022b0]" @click="handleDone">
+          <button class="mt-6 w-full rounded-full bg-primary-500 py-3 text-base font-medium text-white transition-colors hover:bg-primary-600 active:bg-primary-700" @click="handleDone">
             {{ t('common.confirm') }}
           </button>
         </div>
@@ -57,16 +57,16 @@
 
     <!-- Expired / Failed -->
     <template v-else-if="outcome === 'expired'">
-      <div class="rounded-2xl bg-white p-8 shadow-[0_0_0_1px_#E5EAFF] dark:bg-dark-800 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
+      <div class="rounded-2xl bg-surface-panel p-8 ring-1 ring-line-default">
         <div class="flex flex-col items-center text-center">
-          <div class="flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
-            <svg class="h-8 w-8 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <div class="flex h-16 w-16 items-center justify-center rounded-full bg-status-warning-soft">
+            <svg class="h-8 w-8 text-status-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
           <p class="mt-5 text-xl font-semibold tracking-tight text-gray-900 dark:text-white">{{ t('payment.qr.expired') }}</p>
           <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ t('payment.qr.expiredDesc') }}</p>
-          <button class="mt-6 w-full rounded-full bg-[#0033FF] py-3 text-base font-medium text-white transition-colors hover:bg-[#0029cc] active:bg-[#0022b0]" @click="handleDone">
+          <button class="mt-6 w-full rounded-full bg-primary-500 py-3 text-base font-medium text-white transition-colors hover:bg-primary-600 active:bg-primary-700" @click="handleDone">
             {{ t('common.confirm') }}
           </button>
         </div>
@@ -82,13 +82,13 @@
           <div class="flex flex-col items-center space-y-4 py-4 text-center">
             <div
               v-if="deepLinkState === 'launching'"
-              class="h-10 w-10 animate-spin rounded-full border-4 border-[#00AEEF] border-t-transparent"
+              class="h-10 w-10 animate-spin rounded-full border-4 border-provider-alipay border-t-transparent"
             ></div>
             <div
               v-else
-              class="flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-950/30"
+              class="flex h-12 w-12 items-center justify-center rounded-full bg-provider-alipay/10"
             >
-              <Icon name="checkCircle" size="lg" class="text-[#00AEEF]" />
+              <Icon name="checkCircle" size="lg" class="text-provider-alipay" />
             </div>
             <p class="text-lg font-semibold text-gray-900 dark:text-white">
               {{ deepLinkState === 'backgrounded' ? t('payment.qr.alipayContinueInApp') : t('payment.qr.alipayOpening') }}
@@ -176,7 +176,7 @@
 
     <!-- QR Code Mode -->
     <template v-else-if="qrUrl">
-      <div class="overflow-hidden rounded-2xl bg-white shadow-[0_0_0_1px_#E5EAFF] dark:bg-dark-800 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
+      <div class="overflow-hidden rounded-2xl bg-surface-panel ring-1 ring-line-default">
         <!-- Brand header bar -->
         <div :class="['flex items-center gap-3 px-6 py-4', brandHeaderClass]">
           <span class="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm">
@@ -224,7 +224,7 @@
           <p v-if="scanHint" class="mt-5 max-w-[16rem] text-center text-sm leading-relaxed text-gray-500 dark:text-gray-400">{{ scanHint }}</p>
 
           <!-- Countdown -->
-          <div class="mt-5 flex items-center gap-2 rounded-full bg-[#F8F9FB] px-4 py-2 dark:bg-dark-900/60">
+          <div class="mt-5 flex items-center gap-2 rounded-full bg-surface-subtle px-4 py-2">
             <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
@@ -245,7 +245,7 @@
 
         <!-- Actions -->
         <div class="flex flex-col gap-2 border-t border-gray-100 px-6 py-4 dark:border-dark-700">
-          <button v-if="payUrl" class="rounded-full border-2 border-[#0033FF] py-2.5 text-sm font-medium text-[#0033FF] transition-colors hover:bg-[#E5EAFF] dark:border-primary-400 dark:text-primary-300 dark:hover:bg-primary-950/40" @click="reopenPopup">
+          <button v-if="payUrl" class="rounded-full border-2 border-primary-500 py-2.5 text-sm font-medium text-content-brand transition-colors hover:bg-status-info-soft dark:border-primary-400" @click="reopenPopup">
             {{ t('payment.qr.openPayWindow') }}
           </button>
           <button class="rounded-full py-2.5 text-sm font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-gray-200" :disabled="cancelling" @click="handleCancel">
@@ -257,13 +257,13 @@
 
     <!-- Waiting for Popup/Redirect Mode -->
     <template v-else>
-      <div class="rounded-2xl bg-white p-8 shadow-[0_0_0_1px_#E5EAFF] dark:bg-dark-800 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
+      <div class="rounded-2xl bg-surface-panel p-8 ring-1 ring-line-default">
         <div class="flex flex-col items-center text-center">
-          <div class="h-12 w-12 animate-spin rounded-full border-4 border-[#E5EAFF] border-t-[#0033FF]"></div>
+          <div class="h-12 w-12 animate-spin rounded-full border-4 border-primary-100 border-t-primary-500"></div>
           <p class="mt-5 text-sm text-gray-500 dark:text-gray-400">{{ t('payment.qr.payInNewWindowHint') }}</p>
           <p class="mt-4 text-2xl font-semibold tabular-nums text-gray-900 dark:text-white">{{ countdownDisplay }}</p>
           <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">{{ t('payment.qr.waitingPayment') }}</p>
-          <button v-if="payUrl" class="mt-6 w-full rounded-full border-2 border-[#0033FF] py-2.5 text-sm font-medium text-[#0033FF] transition-colors hover:bg-[#E5EAFF] dark:border-primary-400 dark:text-primary-300 dark:hover:bg-primary-950/40" @click="reopenPopup">
+          <button v-if="payUrl" class="mt-6 w-full rounded-full border-2 border-primary-500 py-2.5 text-sm font-medium text-content-brand transition-colors hover:bg-status-info-soft dark:border-primary-400" @click="reopenPopup">
             {{ t('payment.qr.openPayWindow') }}
           </button>
           <button class="mt-2 w-full rounded-full py-2.5 text-sm font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-gray-200" :disabled="cancelling" @click="handleCancel">
@@ -367,14 +367,14 @@ const isMobileAlipayDeepLink = computed(() => props.mobileAlipayDeepLink === tru
 const showQRCode = computed(() => !!qrUrl.value && (!isMobileAlipayDeepLink.value || deepLinkFallbackVisible.value))
 
 const qrBorderClass = computed(() => {
-  if (isAlipay.value) return 'border-[#00AEEF] bg-blue-50 dark:border-[#00AEEF]/70 dark:bg-blue-950/20'
-  if (isWxpay.value) return 'border-[#2BB741] bg-green-50 dark:border-[#2BB741]/70 dark:bg-green-950/20'
+  if (isAlipay.value) return 'border-provider-alipay-selection bg-provider-alipay/10 dark:border-provider-alipay-selection/70'
+  if (isWxpay.value) return 'border-provider-wechat-selection bg-provider-wechat/10 dark:border-provider-wechat-selection/70'
   return 'border-gray-200 bg-white dark:border-dark-600 dark:bg-dark-800'
 })
 
 const qrLogoBgClass = computed(() => {
-  if (isAlipay.value) return 'bg-[#00AEEF]'
-  if (isWxpay.value) return 'bg-[#2BB741]'
+  if (isAlipay.value) return 'bg-provider-alipay'
+  if (isWxpay.value) return 'bg-provider-wechat'
   return 'bg-gray-400'
 })
 
@@ -387,21 +387,21 @@ const qrLogoIcon = computed(() => {
 const brandIcon = computed(() => (isWxpay.value ? wxpayIcon : alipayIcon))
 
 const brandHeaderClass = computed(() => {
-  if (isAlipay.value) return 'bg-[#00AEEF]'
-  if (isWxpay.value) return 'bg-[#2BB741]'
-  return 'bg-[#0033FF]'
+  if (isAlipay.value) return 'bg-provider-alipay'
+  if (isWxpay.value) return 'bg-provider-wechat'
+  return 'bg-primary-500'
 })
 
 const brandTextClass = computed(() => {
-  if (isAlipay.value) return 'text-[#00AEEF]'
-  if (isWxpay.value) return 'text-[#2BB741]'
-  return 'text-[#0033FF]'
+  if (isAlipay.value) return 'text-provider-alipay'
+  if (isWxpay.value) return 'text-provider-wechat'
+  return 'text-content-brand'
 })
 
 const brandCornerClass = computed(() => {
-  if (isAlipay.value) return 'border-[#00AEEF]'
-  if (isWxpay.value) return 'border-[#2BB741]'
-  return 'border-[#0033FF]'
+  if (isAlipay.value) return 'border-provider-alipay'
+  if (isWxpay.value) return 'border-provider-wechat'
+  return 'border-primary-500'
 })
 
 const scanTitle = computed(() => {

@@ -124,6 +124,11 @@ export const FeatureFlags = {
     mode: 'opt-in',
     label: 'Affiliate',
   }),
+  rewardCampaigns: defineFlag({
+    key: 'reward_campaigns_enabled',
+    mode: 'opt-in',
+    label: 'Reward Campaigns',
+  }),
   userUsageRanking: defineFlag({
     key: 'show_user_usage_ranking',
     mode: 'opt-in',

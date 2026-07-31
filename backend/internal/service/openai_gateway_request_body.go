@@ -45,6 +45,61 @@ func buildOpenAIResponsesURL(base string) string {
 	return buildOpenAIEndpointURL(base, "/v1/responses")
 }
 
+// normalizeOpenAIResponsesReasoningContent removes the non-standard content
+// field from replayed Responses reasoning items. Some clients/upstreams (most
+// notably the ChatGPT/Codex Responses endpoint) model reasoning input items as
+// metadata-only records and validate `content` as an empty list. A previous
+// DeepSeek turn can leave a reasoning item such as
+// `content:[{"type":"reasoning_text",...}]`, which then fails with
+// "input[n].content: array too long" when the conversation is switched to GPT.
+//
+// Keep the reasoning item's encrypted_content/summary/id fields intact: those
+// fields carry the replay metadata used by Codex continuation. This helper is
+// intentionally limited to reasoning items; assistant message output_text
+// content arrays are valid Responses input and must not be flattened.
+func normalizeOpenAIResponsesReasoningContent(body []byte) ([]byte, bool, error) {
+	if len(body) == 0 {
+		return body, false, nil
+	}
+
+	input := gjson.GetBytes(body, "input")
+	if !input.IsArray() {
+		return body, false, nil
+	}
+
+	normalized := body
+	changed := false
+	index := 0
+	var normalizeErr error
+	input.ForEach(func(_, item gjson.Result) bool {
+		currentIndex := index
+		index++
+		if !item.IsObject() || strings.TrimSpace(item.Get("type").String()) != "reasoning" {
+			return true
+		}
+
+		// The field is invalid for Codex reasoning input regardless of whether it
+		// is an array, string, object, or null. Omitting it is accepted by both
+		// the public Responses API and the stricter ChatGPT internal endpoint.
+		if !item.Get("content").Exists() {
+			return true
+		}
+		path := fmt.Sprintf("input.%d.content", currentIndex)
+		next, err := sjson.DeleteBytes(normalized, path)
+		if err != nil {
+			normalizeErr = fmt.Errorf("delete %s: %w", path, err)
+			return false
+		}
+		normalized = next
+		changed = true
+		return true
+	})
+	if normalizeErr != nil {
+		return body, false, normalizeErr
+	}
+	return normalized, changed, nil
+}
+
 func trimOpenAIEncryptedReasoningItems(reqBody map[string]any) bool {
 	if len(reqBody) == 0 {
 		return false

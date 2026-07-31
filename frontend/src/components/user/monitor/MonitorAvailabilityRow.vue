@@ -28,6 +28,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { hslForPct } from '@/composables/useChannelMonitorFormat'
+import { neutralColors } from '@/theme/designTokens'
 
 const props = defineProps<{
   windowLabel: string
@@ -44,6 +45,6 @@ const displayValue = computed(() => {
 
 const colorStyle = computed(() => {
   const colour = hslForPct(props.value)
-  return colour ? { color: colour } : { color: 'rgb(156 163 175)' }
+  return { color: colour || neutralColors['400'] }
 })
 </script>

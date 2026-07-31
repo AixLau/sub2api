@@ -88,12 +88,12 @@
             <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
               {{ t('admin.dashboard.repeatBuyers') }}
             </p>
-            <p class="mt-2 text-3xl font-semibold tabular-nums text-teal-600 dark:text-teal-400">
+            <p class="mt-2 text-3xl font-semibold tabular-nums text-primary-600 dark:text-primary-300">
               {{ formatNumber(totalRepeatBuyers) }}
             </p>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.dashboard.rechargeToRepeat') }}
-              <span class="font-semibold tabular-nums text-teal-600 dark:text-teal-400">
+              <span class="font-semibold tabular-nums text-primary-600 dark:text-primary-300">
                 {{ formatRate(repeatRate) }}
               </span>
             </p>
@@ -145,6 +145,11 @@ import {
 import { Chart } from 'vue-chartjs'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Select from '@/components/common/Select.vue'
+import {
+  categoricalPalette,
+  colorWithAlpha,
+  semanticColors,
+} from '@/theme/designTokens'
 import type { UserRetentionPoint, UserRetentionSummary } from '@/api/admin/dashboard'
 
 ChartJS.register(
@@ -221,9 +226,15 @@ const formatAmount = (value: number | null | undefined) => {
 
 const isDarkMode = computed(() => document.documentElement.classList.contains('dark'))
 const colors = computed(() => ({
-  text: isDarkMode.value ? '#d1d5db' : '#4b5563',
-  muted: isDarkMode.value ? '#9ca3af' : '#6b7280',
-  grid: isDarkMode.value ? '#374151' : '#e5e7eb'
+  text: isDarkMode.value
+    ? semanticColors.dark['content-secondary']
+    : semanticColors.light['content-secondary'],
+  muted: isDarkMode.value
+    ? semanticColors.dark['content-tertiary']
+    : semanticColors.light['content-tertiary'],
+  grid: isDarkMode.value
+    ? semanticColors.dark['line-default']
+    : semanticColors.light['line-default']
 }))
 
 const chartData = computed(() => {
@@ -235,8 +246,8 @@ const chartData = computed(() => {
         type: 'bar' as const,
         label: t('admin.dashboard.registrations'),
         data: trendCohorts.value.map((point) => point.registrations),
-        backgroundColor: isDarkMode.value ? '#3b82f680' : '#60a5fa80',
-        borderColor: '#3b82f6',
+        backgroundColor: colorWithAlpha(categoricalPalette[0], isDarkMode.value ? 0.52 : 0.34),
+        borderColor: categoricalPalette[0],
         borderWidth: 1,
         borderRadius: 2,
         maxBarThickness: 20,
@@ -246,8 +257,8 @@ const chartData = computed(() => {
         type: 'line' as const,
         label: t('admin.dashboard.rechargedUsers'),
         data: trendCohorts.value.map((point) => point.paid_users),
-        borderColor: '#7c3aed',
-        backgroundColor: '#7c3aed',
+        borderColor: categoricalPalette[4],
+        backgroundColor: categoricalPalette[4],
         pointRadius: 2,
         pointHoverRadius: 4,
         borderWidth: 2,
@@ -258,8 +269,8 @@ const chartData = computed(() => {
         type: 'line' as const,
         label: t('admin.dashboard.rechargeAmount'),
         data: trendCohorts.value.map((point) => point.recharge_amount),
-        borderColor: '#059669',
-        backgroundColor: '#059669',
+        borderColor: categoricalPalette[1],
+        backgroundColor: categoricalPalette[1],
         pointRadius: 2,
         pointHoverRadius: 4,
         borderWidth: 2,
@@ -270,8 +281,8 @@ const chartData = computed(() => {
         type: 'line' as const,
         label: t('admin.dashboard.usageUsers'),
         data: trendCohorts.value.map((point) => point.active_users),
-        borderColor: '#0f766e',
-        backgroundColor: '#0f766e',
+        borderColor: categoricalPalette[5],
+        backgroundColor: categoricalPalette[5],
         pointRadius: 2,
         pointHoverRadius: 4,
         borderWidth: 2,

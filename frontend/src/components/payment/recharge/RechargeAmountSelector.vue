@@ -28,7 +28,10 @@
 
       <label
         class="recharge-choice-card col-span-2 flex min-h-[74px] items-center gap-3 px-4 py-3 sm:col-span-1"
-        :class="{ 'recharge-choice-card-selected': isCustomActive }"
+        :class="{
+          'recharge-choice-card-selected': isCustomActive,
+          'recharge-choice-card-error': isCustomActive && !!error,
+        }"
       >
         <span class="shrink-0 text-sm font-semibold text-slate-500">{{ currencyPrefix }}</span>
         <span class="min-w-0 flex-1">
@@ -54,7 +57,7 @@
       v-if="error"
       :id="errorId"
       data-testid="amount-error"
-      class="mt-3 rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-sm text-amber-700"
+      class="mt-3 rounded-xl border border-status-danger-border bg-status-danger-soft px-3 py-2 text-sm text-status-danger"
     >
       {{ error }}
     </p>

@@ -227,6 +227,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyModelPlazaEnabled,
 		SettingKeyModelPlazaRequireAuth,
 		SettingKeyAffiliateEnabled,
+		SettingKeyRewardCampaignsEnabled,
 		SettingKeyRiskControlEnabled,
 		SettingKeyAllowUserViewErrorRequests,
 		SettingKeyShowUserUsageRanking,
@@ -350,6 +351,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ModelPlazaRequireAuth: settings[SettingKeyModelPlazaRequireAuth] == "true",
 
 		AffiliateEnabled: settings[SettingKeyAffiliateEnabled] == "true",
+
+		RewardCampaignsEnabled: settings[SettingKeyRewardCampaignsEnabled] == "true",
 
 		RiskControlEnabled: settings[SettingKeyRiskControlEnabled] == "true",
 
@@ -557,6 +560,7 @@ type PublicSettingsInjectionPayload struct {
 	ModelPlazaEnabled                    bool `json:"model_plaza_enabled"`
 	ModelPlazaRequireAuth                bool `json:"model_plaza_require_auth"`
 	AffiliateEnabled                     bool `json:"affiliate_enabled"`
+	RewardCampaignsEnabled               bool `json:"reward_campaigns_enabled"`
 	RiskControlEnabled                   bool `json:"risk_control_enabled"`
 	AllowUserViewErrorRequests           bool `json:"allow_user_view_error_requests"`
 	ShowUserUsageRanking                 bool `json:"show_user_usage_ranking"`
@@ -629,6 +633,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ModelPlazaEnabled:                    settings.ModelPlazaEnabled,
 		ModelPlazaRequireAuth:                settings.ModelPlazaRequireAuth,
 		AffiliateEnabled:                     settings.AffiliateEnabled,
+		RewardCampaignsEnabled:               settings.RewardCampaignsEnabled,
 		RiskControlEnabled:                   settings.RiskControlEnabled,
 		AllowUserViewErrorRequests:           settings.AllowUserViewErrorRequests,
 		ShowUserUsageRanking:                 settings.ShowUserUsageRanking,

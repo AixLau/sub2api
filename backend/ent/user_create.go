@@ -19,10 +19,13 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/rewardcampaignuserstate"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
+	"github.com/Wei-Shaw/sub2api/ent/userbehaviordaily"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
+	"github.com/Wei-Shaw/sub2api/ent/userrewardgrant"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 )
 
@@ -605,6 +608,51 @@ func (_c *UserCreate) AddPlatformQuotas(v ...*UserPlatformQuota) *UserCreate {
 	return _c.AddPlatformQuotaIDs(ids...)
 }
 
+// AddRewardGrantIDs adds the "reward_grants" edge to the UserRewardGrant entity by IDs.
+func (_c *UserCreate) AddRewardGrantIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddRewardGrantIDs(ids...)
+	return _c
+}
+
+// AddRewardGrants adds the "reward_grants" edges to the UserRewardGrant entity.
+func (_c *UserCreate) AddRewardGrants(v ...*UserRewardGrant) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddRewardGrantIDs(ids...)
+}
+
+// AddRewardCampaignStateIDs adds the "reward_campaign_states" edge to the RewardCampaignUserState entity by IDs.
+func (_c *UserCreate) AddRewardCampaignStateIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddRewardCampaignStateIDs(ids...)
+	return _c
+}
+
+// AddRewardCampaignStates adds the "reward_campaign_states" edges to the RewardCampaignUserState entity.
+func (_c *UserCreate) AddRewardCampaignStates(v ...*RewardCampaignUserState) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddRewardCampaignStateIDs(ids...)
+}
+
+// AddBehaviorDailyIDs adds the "behavior_daily" edge to the UserBehaviorDaily entity by IDs.
+func (_c *UserCreate) AddBehaviorDailyIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddBehaviorDailyIDs(ids...)
+	return _c
+}
+
+// AddBehaviorDaily adds the "behavior_daily" edges to the UserBehaviorDaily entity.
+func (_c *UserCreate) AddBehaviorDaily(v ...*UserBehaviorDaily) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddBehaviorDailyIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (_c *UserCreate) Mutation() *UserMutation {
 	return _c.mutation
@@ -1169,6 +1217,54 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(userplatformquota.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.RewardGrantsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.RewardGrantsTable,
+			Columns: []string{user.RewardGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userrewardgrant.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.RewardCampaignStatesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.RewardCampaignStatesTable,
+			Columns: []string{user.RewardCampaignStatesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(rewardcampaignuserstate.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.BehaviorDailyIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.BehaviorDailyTable,
+			Columns: []string{user.BehaviorDailyColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userbehaviordaily.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

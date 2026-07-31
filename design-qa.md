@@ -64,6 +64,117 @@
 
 final result: passed
 
+# Layered Electric Color System QA
+
+**Findings**
+
+- No actionable P0, P1, or P2 findings remain.
+- P3: the dark dashboard's empty-state label wraps to two lines at 390 px. It remains inside its panel, does not overlap adjacent content, and does not obscure an action, so it is recorded as non-blocking polish.
+
+**Open Questions**
+
+- None. The ten source images are a cross-media brand moodboard rather than one application screen. This QA therefore checks faithful transfer of palette, contrast, hierarchy, line rhythm, depth, and state behavior without claiming a pixel-for-pixel page clone.
+
+**Source Visual Truth**
+
+- Source directory: `/var/folders/j_/wj8mmnfx46zccr8bvxj1wklh0000gn/T/`
+- Source files:
+  - `codex-clipboard-f7a6aa80-12fd-430b-9e5d-abbcb948068f.png`
+  - `codex-clipboard-5c918424-a7e3-4b15-b108-04b0285f7063.png`
+  - `codex-clipboard-922b5d2a-7e1c-4bda-b625-e5b56e1b199b.png`
+  - `codex-clipboard-7d80b95e-dbd2-4510-b2c6-74254a3d1d92.png`
+  - `codex-clipboard-7e10f9ca-0b5b-4041-b975-7720bed308b6.png`
+  - `codex-clipboard-3949c736-e884-4dc9-9ee3-bcafd608bc1c.png`
+  - `codex-clipboard-d452b2c6-7406-4fe0-9ae9-7b5d410a29e9.png`
+  - `codex-clipboard-c5b5846d-5baf-4359-bc3f-ea56326744c1.png`
+  - `codex-clipboard-2ec05120-eff7-4d7f-897e-f10142a11aac.png`
+  - `codex-clipboard-afb44f93-50d7-4e11-beb2-e79cae3fcf25.png`
+- Every source bitmap is 1080 x 1449 px. These are artwork boards, not browser viewports, so CSS viewport and device density do not apply.
+- Normalized source board: `/Users/lushiwu/.codex/visualizations/2026/07/30/019fb41f-b36f-73d0-96aa-414a3c3eeb05/layered-electric-source-moodboard.png` at 1410 x 958 px. Each source was proportionally contain-fitted; no crop or hue adjustment was applied.
+
+**Implementation Evidence**
+
+- Preview: `http://127.0.0.1:4173`
+- Capture density: 1x.
+- Representative captures:
+
+| Route or state | Screenshot | Pixels / CSS viewport |
+| --- | --- | --- |
+| Public home, desktop | `layered-electric-home-desktop.png` | 1440 x 900 / 1440 x 900 |
+| Public home, mobile after overflow fix | `layered-electric-home-mobile-fixed.png` | 390 x 844 / 390 x 844 |
+| Mobile navigation open | `layered-electric-home-menu-mobile.png` | 390 x 844 / 390 x 844 |
+| Login, desktop focus after fix | `layered-electric-login-focus-fixed.png` | 1440 x 900 / 1440 x 900 |
+| Login, mobile | `layered-electric-login-mobile.png` | 382 x 827 content capture / 390 x 844 browser viewport |
+| Recharge, desktop selected state | `layered-electric-purchase-desktop-light.png` | 1272 x 795 content capture / 1280 x 800 browser viewport |
+| Recharge, error and disabled state | `layered-electric-purchase-error-state.png` | 1272 x 795 content capture / 1280 x 800 browser viewport |
+| Subscription, mobile selected state | `layered-electric-subscription-mobile.png` | 382 x 827 content capture / 390 x 844 browser viewport |
+| Dialog, light | `layered-electric-dialog-light.png` | 1280 x 800 / 1280 x 800 |
+| Dashboard, dark | `layered-electric-dashboard-dark.png` | 1280 x 800 / 1280 x 800 |
+| Dashboard, dark mobile | `layered-electric-dashboard-dark-mobile.png` | 390 x 844 / 390 x 844 |
+| Dashboard, empty mobile | `layered-electric-dashboard-empty-mobile.png` | 390 x 844 / 390 x 844 |
+
+All screenshots are under:
+
+`/Users/lushiwu/.codex/visualizations/2026/07/30/019fb41f-b36f-73d0-96aa-414a3c3eeb05/`
+
+**Full-View Comparison Evidence**
+
+- Combined same-canvas comparison: `/Users/lushiwu/.codex/visualizations/2026/07/30/019fb41f-b36f-73d0-96aa-414a3c3eeb05/layered-electric-reference-implementation-comparison.png`
+- Comparison pixels: 1500 x 2753.
+- The source moodboard and representative implementation board were placed on the same near-black canvas and inspected together.
+- The visible transfer is consistent: saturated electric blue carries brand and action emphasis; white and blue-biased neutrals carry content; near-black navy defines dark structure; repeated fine lines and tonal layers provide rhythm; status hues stay recognizably independent.
+- The implementation intentionally uses less blue surface area on operational screens than the brand boards. This preserves scanning density and state clarity while retaining the source's visual center of gravity.
+
+**Focused Region Comparison Evidence**
+
+- Focused same-canvas comparison: `/Users/lushiwu/.codex/visualizations/2026/07/30/019fb41f-b36f-73d0-96aa-414a3c3eeb05/layered-electric-focused-style-comparison.png`
+- Comparison pixels: 1496 x 898.
+- Source crops cover typography/block rhythm, the explicit blue/navy/white palette board, and repeated structural layers.
+- Implementation crops cover the public hero hierarchy, keyboard focus on a quiet light surface, and dark dashboard panel/chart layering.
+- These regions confirm that the transfer is structural and semantic rather than a single sampled blue applied indiscriminately.
+
+**Required Fidelity Surfaces**
+
+- Fonts and typography: existing product font stacks and information density are preserved. The public hero carries the reference's bold editorial contrast; console pages retain compact operational hierarchy. No copy was changed to force a visual match.
+- Spacing and layout rhythm: existing page structures remain intact. The only layout correction adds shrink-safe grid tracks to the mobile home page; desktop composition and content order are unchanged.
+- Colors and tokens: `frontend/design-tokens.json` is the machine-readable source for brand, accent, neutral, navy, semantic state, provider, and chart colors. Tailwind, CSS custom properties, shared components, charts, payment flows, public/auth pages, and operations views consume that source.
+- Image quality and asset fidelity: existing product, provider, and QR assets are unchanged. The reference boards informed color and visual language only; no source artwork was substituted with CSS or inline vector approximations.
+- Copy and content: business copy, labels, data hierarchy, routes, and task flows are unchanged.
+- Icons: existing icon families are retained. Product icon color follows semantic content/status tokens; third-party marks retain scoped identity colors.
+- Accessibility: the primary button is 7.20:1 against white. Light tertiary text is 4.52:1 against a white panel. Dark tertiary text is 6.69:1. Light semantic foregrounds on their soft fills range from 5.20:1 to 6.05:1; dark equivalents range from 8.10:1 to 9.78:1.
+
+**Interaction And Runtime Checks**
+
+- Tested mobile navigation open/close, login keyboard focus, password visibility control, recharge/subscription switching, payment-method selection, amount validation, disabled submission, dialog state, dashboard tabs, chart state, and empty state.
+- At 390 px, the public home, login, recharge, subscription, dialog, and dark dashboard do not introduce horizontal document overflow.
+- The Vite preview emitted no frontend compilation or runtime error. Terminal messages are limited to expected backend-proxy `ECONNREFUSED` notices because the backend was not started for the color-system preview.
+
+**Hard-Coded Color Audit**
+
+- No legacy teal primary values remain in current frontend source, including `#14b8a6`, `#0d9488`, `#2dd4bf`, and their RGB-channel forms.
+- Raw product colors added by this change are limited to token assertions/documentation and optical white layers. Remaining source literals are scoped to third-party/provider identity, model identity, QR black/white output, data-visualization fixtures, reward artwork skins, or black/white transparency and mask treatments.
+- `git diff --check` passes.
+
+**Comparison History**
+
+1. P2, login focus: the browser's default orange outline remained visible around the email field and conflicted with the electric-blue focus language.
+   Fix: the login fields now use semantic panel, line, content, disabled, hover, and focus tokens; focus removes the browser outline and adds `line-focus` plus a 20% two-pixel ring.
+   Post-fix evidence: `layered-electric-login-focus-fixed.png`.
+2. P2, mobile public home: a 390 px viewport inherited an approximately 1236 px implicit grid track, clipping the headline and primary action.
+   Fix: `.home-main` now uses `minmax(0, 1fr)`, direct children can shrink, and the hero is constrained with `width: 100%`, `min-width: 0`, and `max-width: 820px`.
+   Post-fix evidence: `layered-electric-home-mobile-fixed.png` and `layered-electric-home-menu-mobile.png`.
+
+**Implementation Checklist**
+
+- [x] Shared light and dark semantic tokens are the runtime source.
+- [x] Legacy utility names map through the compatibility layer.
+- [x] Public, auth, user, admin, payment, monitoring, chart, dialog, and shared component surfaces are covered.
+- [x] Default, hover, selected, focus, disabled, error, empty, and dark states are visibly distinct.
+- [x] Desktop and mobile captures are overflow-free.
+- [x] Targeted ESLint, TypeScript, focused tests, production build, and diff checks pass.
+
+final result: passed
+
 ## Dashboard Components Preview QA
 
 - Preview: `http://127.0.0.1:3000/dashboard-components-preview.html`
@@ -152,5 +263,17 @@ final result: passed
 **Follow-up polish**
 
 - If the production dashboard behind the dialog is unusually uniform, slightly increasing the dot-field opacity can make refraction more obvious without changing the glass component.
+
+final result: passed
+
+# Layered Electric Final QA Addendum
+
+- Source and implementation comparison: `/Users/lushiwu/.codex/visualizations/2026/07/30/019fb41f-b36f-73d0-96aa-414a3c3eeb05/layered-electric-final-reference-implementation-comparison.png` (1500 x 2840), containing all ten reference images and the rendered home, login, recharge, dark dashboard, and mobile error states on one canvas.
+- Native implementation evidence: `layered-electric-final-production-home.png` and `layered-electric-final-login-focus.png` at 1280 x 800; `layered-electric-final-home-menu-mobile.png` at 390 x 844; `layered-electric-final-purchase-light.png` at 1272 x 795; `layered-electric-final-purchase-mobile-error-fixed.png` at 382 x 827. Captures use 1x density; the 390 px mobile document width matches its CSS viewport.
+- Final P2 correction: invalid custom recharge amounts no longer combine warning yellow with a blue selected check. The amount tile, message, border, fill, text, and `!` marker now use danger semantics, while the selected payment method remains electric blue.
+- Required surfaces checked: typography/copy are preserved; layout rhythm remains stable; light/dark design tokens cover surfaces, content, lines, focus, states, providers, and charts; existing product imagery and icons remain intact; desktop/mobile interaction states are readable and distinct.
+- Verification: recharge selector tests 4/4 passed; targeted ESLint, full `lint:check`, full `typecheck`, production build, and `git diff --check` passed. Build output has only existing import/chunk warnings.
+- Runtime: the in-app browser shows the production preview at 1280 x 800 without document overflow. Console output is limited to expected backend `ECONNREFUSED` proxy messages because the backend is not running; no frontend color-system runtime error was observed.
+- Findings: no actionable P0, P1, or P2 visual issue remains; legacy teal primary values are absent from current frontend source.
 
 final result: passed

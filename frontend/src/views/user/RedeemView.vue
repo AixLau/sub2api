@@ -394,8 +394,14 @@ const loadingHistory = ref(false)
 const contactInfo = ref('')
 
 // Helper functions for history display
+const rewardBalanceTypes = new Set([
+  'campaign_reward',
+  'welcome_scratch',
+  'surprise_scratch'
+])
+
 const isBalanceType = (type: string) => {
-  return type === 'balance' || type === 'admin_balance'
+  return type === 'balance' || type === 'admin_balance' || rewardBalanceTypes.has(type)
 }
 
 const isSubscriptionType = (type: string) => {
@@ -417,6 +423,12 @@ const getHistoryItemTitle = (item: RedeemHistoryItem) => {
     return item.value >= 0 ? t('redeem.concurrencyAddedAdmin') : t('redeem.concurrencyReducedAdmin')
   } else if (item.type === 'subscription') {
     return t('redeem.subscriptionAssigned')
+  } else if (item.type === 'welcome_scratch') {
+    return t('redeem.welcomeScratchReward')
+  } else if (item.type === 'surprise_scratch') {
+    return t('redeem.surpriseScratchReward')
+  } else if (item.type === 'campaign_reward') {
+    return t('redeem.campaignReward')
   }
   return t('common.unknown')
 }

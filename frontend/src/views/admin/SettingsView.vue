@@ -5529,7 +5529,7 @@
           <!-- Web Search Test Dialog -->
           <div
             v-if="wsTestDialogOpen"
-            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-surface-scrim/55"
             @click.self="wsTestDialogOpen = false"
           >
             <div
@@ -6501,6 +6501,39 @@
         <div class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.settings.features.rewardCampaigns.title') }}
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.settings.features.rewardCampaigns.description') }}
+            </p>
+            <p v-if="form.reward_campaigns_enabled" class="mt-1.5 text-xs">
+              <router-link
+                to="/admin/reward-campaigns"
+                class="inline-flex items-center gap-1 text-primary-600 hover:underline dark:text-primary-400"
+              >
+                {{ t('admin.settings.features.rewardCampaigns.configureLink') }}
+                <span aria-hidden="true">→</span>
+              </router-link>
+            </p>
+          </div>
+          <div class="space-y-5 p-6">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.features.rewardCampaigns.enabled') }}
+                </label>
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.features.rewardCampaigns.enabledHint') }}
+                </p>
+              </div>
+              <Toggle v-model="form.reward_campaigns_enabled" />
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
               {{ t('admin.settings.features.availableChannels.title') }}
             </h2>
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -6885,7 +6918,7 @@
         <!-- Affiliate add/edit modal -->
         <div
           v-if="affiliateModal.open"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-surface-scrim/55 p-4"
           @click.self="closeAffiliateModal"
         >
           <div class="w-full max-w-md rounded-lg bg-white p-6 shadow-xl dark:bg-dark-900">
@@ -7010,7 +7043,7 @@
         <!-- Affiliate batch rate modal -->
         <div
           v-if="affiliateBatchModal.open"
-          class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-surface-scrim/55 p-4"
           @click.self="affiliateBatchModal.open = false"
         >
           <div class="w-full max-w-md rounded-lg bg-white p-6 shadow-xl dark:bg-dark-900">
@@ -8967,6 +9000,7 @@ const form = reactive<SettingsForm>({
   backend_mode_enabled: false,
   hide_ccs_import_button: false,
   payment_enabled: false,
+  reward_campaigns_enabled: false,
   risk_control_enabled: false,
   cyber_session_block_enabled: false,
   cyber_session_block_ttl_seconds: 3600,
@@ -10641,6 +10675,7 @@ async function saveSettings() {
       ),
       // Payment configuration
       payment_enabled: form.payment_enabled,
+      reward_campaigns_enabled: form.reward_campaigns_enabled,
       risk_control_enabled: form.risk_control_enabled,
       cyber_session_block_enabled: form.cyber_session_block_enabled,
       cyber_session_block_ttl_seconds:
@@ -12203,11 +12238,11 @@ watch(
 
 /* ============ 系统设置 Tab 导航 ============ */
 .settings-tabs-shell {
-  @apply sticky z-20 -mx-1 rounded-2xl border border-white/80 bg-white/90 p-1.5 backdrop-blur-xl;
+  @apply sticky z-20 -mx-1 rounded-2xl border border-line-subtle bg-surface-raised/90 p-1.5 backdrop-blur-xl;
   top: 4.75rem;
   box-shadow:
-    0 12px 28px rgb(15 23 42 / 0.07),
-    0 1px 0 rgb(255 255 255 / 0.9) inset;
+    0 12px 28px rgb(var(--color-shadow) / 0.07),
+    0 1px 0 rgb(var(--color-surface-raised) / 0.9) inset;
 }
 
 .settings-tabs-scroll {
@@ -12245,7 +12280,11 @@ watch(
 .settings-tab::before {
   @apply absolute inset-0 -z-10 rounded-xl opacity-0 transition-opacity duration-200;
   content: "";
-  background: linear-gradient(135deg, rgb(248 250 252 / 0.95), rgb(241 245 249 / 0.8));
+  background: linear-gradient(
+    135deg,
+    rgb(var(--color-surface-subtle) / 0.95),
+    rgb(var(--color-line-subtle) / 0.8)
+  );
 }
 
 .settings-tab:hover::before,
@@ -12260,8 +12299,8 @@ watch(
 .settings-tab-active {
   @apply border-primary-200/80 bg-white text-primary-700 shadow-sm dark:border-primary-400/30 dark:bg-dark-700/95 dark:text-primary-200;
   box-shadow:
-    0 8px 18px rgb(15 23 42 / 0.08),
-    0 1px 0 rgb(255 255 255 / 0.92) inset;
+    0 8px 18px rgb(var(--color-shadow) / 0.08),
+    0 1px 0 rgb(var(--color-surface-raised) / 0.92) inset;
 }
 
 .settings-tab-active::before {
@@ -12275,7 +12314,11 @@ watch(
   left: 0;
   height: 2px;
   border-radius: 9999px;
-  background: linear-gradient(90deg, #14b8a6, #0ea5e9);
+  background: linear-gradient(
+    90deg,
+    rgb(var(--color-brand-500)),
+    rgb(var(--color-accent-400))
+  );
   pointer-events: none;
   transition:
     transform 300ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -12313,20 +12356,24 @@ watch(
    because Vue's scoped-CSS compiler was dropping the `:global(.dark) ...`
    rules in the production build, leaving inactive tabs unreadable on dark. */
 .dark .settings-tabs-shell {
-  border-color: rgb(51 65 85 / 0.65);
-  background: rgb(15 23 42 / 0.86);
+  border-color: rgb(var(--color-line-default) / 0.65);
+  background: rgb(var(--color-surface-raised) / 0.86);
   box-shadow:
-    0 16px 36px rgb(0 0 0 / 0.28),
-    0 1px 0 rgb(255 255 255 / 0.06) inset;
+    0 16px 36px rgb(var(--color-shadow) / 0.28),
+    0 1px 0 rgb(var(--color-surface-inverse) / 0.06) inset;
 }
 
 .dark .settings-tab::before {
-  background: linear-gradient(135deg, rgb(30 41 59 / 0.9), rgb(51 65 85 / 0.62));
+  background: linear-gradient(
+    135deg,
+    rgb(var(--color-surface-subtle) / 0.9),
+    rgb(var(--color-line-default) / 0.62)
+  );
 }
 
 .dark .settings-tab-active {
   box-shadow:
-    0 12px 26px rgb(0 0 0 / 0.22),
-    0 1px 0 rgb(255 255 255 / 0.08) inset;
+    0 12px 26px rgb(var(--color-shadow) / 0.22),
+    0 1px 0 rgb(var(--color-surface-inverse) / 0.08) inset;
 }
 </style>

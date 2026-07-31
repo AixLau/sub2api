@@ -172,6 +172,15 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if err != nil {
 		return nil, fmt.Errorf("marshal responses request: %w", err)
 	}
+	if account != nil && account.Platform == PlatformOpenAI {
+		normalizedBody, changed, normalizeErr := normalizeOpenAIResponsesReasoningContent(responsesBody)
+		if normalizeErr != nil {
+			return nil, fmt.Errorf("normalize OpenAI Responses reasoning content: %w", normalizeErr)
+		}
+		if changed {
+			responsesBody = normalizedBody
+		}
+	}
 
 	if account.Type == AccountTypeOAuth && account.Platform != PlatformGrok {
 		var reqBody map[string]any

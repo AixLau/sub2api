@@ -77,6 +77,17 @@ func (s *SettingService) IsAffiliateEnabled(ctx context.Context) bool {
 	return value == "true"
 }
 
+// IsRewardCampaignsEnabled reports whether the new reward queue and campaign
+// administration surface are enabled. Legacy welcome/surprise adapters do not
+// use this gate so a staged rollout cannot strand existing rewards.
+func (s *SettingService) IsRewardCampaignsEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyRewardCampaignsEnabled)
+	if err != nil {
+		return false
+	}
+	return value == "true"
+}
+
 // IsAffiliateAdminRechargeEnabled reports whether admin balance
 // deposits should participate in the affiliate rebate program.
 func (s *SettingService) IsAffiliateAdminRechargeEnabled(ctx context.Context) bool {

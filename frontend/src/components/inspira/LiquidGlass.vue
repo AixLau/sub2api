@@ -45,17 +45,22 @@ const props = withDefaults(defineProps<Props>(), {
   containerClass: ''
 })
 
+function isChromiumBrowser() {
+  if (typeof navigator === 'undefined') return false
+  return /(?:Chrome|Chromium|Edg)\//.test(navigator.userAgent)
+}
+
 const liquidGlassRoot = ref<HTMLElement | null>(null)
 const dimensions = reactive({ width: 1, height: 1 })
-const supported = ref(false)
+const supported = ref(isChromiumBrowser())
 const filterId = `liquid-glass-${++liquidGlassInstance}`
 let observer: ResizeObserver | null = null
 
 const rootStyle = computed(() => ({
   borderRadius: `${props.radius}px`,
   backgroundColor: supported.value
-    ? `rgba(255, 255, 255, ${props.frost})`
-    : 'rgb(255, 255, 255)',
+    ? `rgb(var(--color-surface-raised) / ${props.frost})`
+    : 'rgb(var(--color-surface-raised))',
   WebkitBackdropFilter: supported.value ? `url(#${filterId})` : 'none',
   backdropFilter: supported.value ? `url(#${filterId})` : 'none'
 }))
@@ -104,13 +109,7 @@ function measure() {
   dimensions.height = Math.max(1, rect.height)
 }
 
-function isChromiumBrowser() {
-  if (typeof navigator === 'undefined') return false
-  return /(?:Chrome|Chromium|Edg)\//.test(navigator.userAgent)
-}
-
 onMounted(() => {
-  supported.value = isChromiumBrowser()
   if (!supported.value) return
 
   measure()
@@ -217,21 +216,21 @@ onBeforeUnmount(() => observer?.disconnect())
 }
 
 .liquid-glass--supported {
-  border: 1px solid rgb(255 255 255 / 0.62);
+  border: 1px solid rgb(var(--color-surface-raised) / 0.62);
   box-shadow:
-    0 0 2px 1px rgb(15 23 42 / 0.15) inset,
-    0 0 10px 4px rgb(15 23 42 / 0.10) inset,
-    0 4px 16px rgb(17 17 26 / 0.05),
-    0 8px 24px rgb(17 17 26 / 0.05),
-    0 16px 56px rgb(17 17 26 / 0.05),
-    0 4px 16px rgb(17 17 26 / 0.05) inset,
-    0 8px 24px rgb(17 17 26 / 0.05) inset,
-    0 16px 56px rgb(17 17 26 / 0.05) inset;
+    0 0 2px 1px rgb(var(--color-shadow) / 0.15) inset,
+    0 0 10px 4px rgb(var(--color-shadow) / 0.1) inset,
+    0 4px 16px rgb(var(--color-shadow) / 0.05),
+    0 8px 24px rgb(var(--color-shadow) / 0.05),
+    0 16px 56px rgb(var(--color-shadow) / 0.05),
+    0 4px 16px rgb(var(--color-shadow) / 0.05) inset,
+    0 8px 24px rgb(var(--color-shadow) / 0.05) inset,
+    0 16px 56px rgb(var(--color-shadow) / 0.05) inset;
 }
 
 .liquid-glass--fallback {
-  border: 1px solid rgb(0 0 0 / 0.05);
-  box-shadow: 0 22px 60px rgb(15 23 42 / 0.22);
+  border: 1px solid rgb(var(--color-line-subtle));
+  box-shadow: 0 22px 60px rgb(var(--color-shadow) / 0.22);
 }
 
 .liquid-glass__content {

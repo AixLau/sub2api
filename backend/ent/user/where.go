@@ -1884,6 +1884,75 @@ func HasPlatformQuotasWith(preds ...predicate.UserPlatformQuota) predicate.User 
 	})
 }
 
+// HasRewardGrants applies the HasEdge predicate on the "reward_grants" edge.
+func HasRewardGrants() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, RewardGrantsTable, RewardGrantsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasRewardGrantsWith applies the HasEdge predicate on the "reward_grants" edge with a given conditions (other predicates).
+func HasRewardGrantsWith(preds ...predicate.UserRewardGrant) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newRewardGrantsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasRewardCampaignStates applies the HasEdge predicate on the "reward_campaign_states" edge.
+func HasRewardCampaignStates() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, RewardCampaignStatesTable, RewardCampaignStatesColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasRewardCampaignStatesWith applies the HasEdge predicate on the "reward_campaign_states" edge with a given conditions (other predicates).
+func HasRewardCampaignStatesWith(preds ...predicate.RewardCampaignUserState) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newRewardCampaignStatesStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasBehaviorDaily applies the HasEdge predicate on the "behavior_daily" edge.
+func HasBehaviorDaily() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, BehaviorDailyTable, BehaviorDailyColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasBehaviorDailyWith applies the HasEdge predicate on the "behavior_daily" edge with a given conditions (other predicates).
+func HasBehaviorDailyWith(preds ...predicate.UserBehaviorDaily) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newBehaviorDailyStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasUserAllowedGroups applies the HasEdge predicate on the "user_allowed_groups" edge.
 func HasUserAllowedGroups() predicate.User {
 	return predicate.User(func(s *sql.Selector) {

@@ -665,6 +665,7 @@ export default {
     balanceAddedRedeem: '余额充值（兑换）',
     welcomeScratchReward: '新用户礼金刮刮乐',
     surpriseScratchReward: '活跃用户随机惊喜刮刮乐',
+    campaignReward: '奖励活动余额入账',
     balanceAddedAffiliate: '余额充值（返利转入）',
     balanceAddedAdmin: '余额充值（管理员）',
     balanceDeductedAdmin: '余额扣除（管理员）',

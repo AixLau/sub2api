@@ -45,6 +45,9 @@ func RegisterAdminRoutes(
 		// 公告管理
 		registerAnnouncementRoutes(admin, h)
 
+		// 奖励活动中心
+		registerRewardCampaignRoutes(admin, h, stepUpAuth, settingService)
+
 		// OpenAI OAuth
 		registerOpenAIOAuthRoutes(admin, h)
 
@@ -119,6 +122,44 @@ func RegisterAdminRoutes(
 
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
+	}
+}
+
+func registerRewardCampaignRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware, settingService *service.SettingService) {
+	campaigns := admin.Group("/reward-campaigns")
+	campaigns.Use(middleware.RewardCampaignFeatureGuard(settingService))
+	{
+		campaigns.GET("", h.Admin.Reward.ListCampaigns)
+		campaigns.POST("", h.Admin.Reward.CreateCampaign)
+		campaigns.POST("/estimate", h.Admin.Reward.Estimate)
+		campaigns.GET("/:id", h.Admin.Reward.GetCampaign)
+		campaigns.PUT("/:id", gin.HandlerFunc(stepUpAuth), h.Admin.Reward.UpdateCampaign)
+		campaigns.POST("/:id/clone", h.Admin.Reward.CloneCampaign)
+		campaigns.POST("/:id/publish", gin.HandlerFunc(stepUpAuth), actionParam("publish"), h.Admin.Reward.CampaignAction)
+		campaigns.POST("/:id/pause", actionParam("pause"), h.Admin.Reward.CampaignAction)
+		campaigns.POST("/:id/resume", gin.HandlerFunc(stepUpAuth), actionParam("resume"), h.Admin.Reward.CampaignAction)
+		campaigns.POST("/:id/end", gin.HandlerFunc(stepUpAuth), actionParam("end"), h.Admin.Reward.CampaignAction)
+		campaigns.POST("/:id/archive", actionParam("archive"), h.Admin.Reward.CampaignAction)
+		campaigns.GET("/:id/stats", h.Admin.Reward.Stats)
+		campaigns.GET("/:id/grants", h.Admin.Reward.Grants)
+		campaigns.GET("/:id/jobs", h.Admin.Reward.Jobs)
+		campaigns.POST("/:id/jobs", gin.HandlerFunc(stepUpAuth), h.Admin.Reward.CreateJob)
+	}
+
+	skins := admin.Group("/reward-skins")
+	skins.Use(middleware.RewardCampaignFeatureGuard(settingService))
+	{
+		skins.GET("", h.Admin.Reward.ListSkins)
+		skins.POST("", h.Admin.Reward.UploadSkin)
+		skins.PUT("/:id", h.Admin.Reward.UpdateSkin)
+		skins.POST("/:id/archive", h.Admin.Reward.ArchiveSkin)
+	}
+}
+
+func actionParam(action string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Params = append(c.Params, gin.Param{Key: "action", Value: action})
+		c.Next()
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/user"
+	"github.com/Wei-Shaw/sub2api/ent/userrewardgrant"
 )
 
 // RedeemCode is the model entity for the RedeemCode schema.
@@ -53,9 +54,11 @@ type RedeemCodeEdges struct {
 	User *User `json:"user,omitempty"`
 	// Group holds the value of the group edge.
 	Group *Group `json:"group,omitempty"`
+	// RewardGrant holds the value of the reward_grant edge.
+	RewardGrant *UserRewardGrant `json:"reward_grant,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [3]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -78,6 +81,17 @@ func (e RedeemCodeEdges) GroupOrErr() (*Group, error) {
 		return nil, &NotFoundError{label: group.Label}
 	}
 	return nil, &NotLoadedError{edge: "group"}
+}
+
+// RewardGrantOrErr returns the RewardGrant value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e RedeemCodeEdges) RewardGrantOrErr() (*UserRewardGrant, error) {
+	if e.RewardGrant != nil {
+		return e.RewardGrant, nil
+	} else if e.loadedTypes[2] {
+		return nil, &NotFoundError{label: userrewardgrant.Label}
+	}
+	return nil, &NotLoadedError{edge: "reward_grant"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -206,6 +220,11 @@ func (_m *RedeemCode) QueryUser() *UserQuery {
 // QueryGroup queries the "group" edge of the RedeemCode entity.
 func (_m *RedeemCode) QueryGroup() *GroupQuery {
 	return NewRedeemCodeClient(_m.config).QueryGroup(_m)
+}
+
+// QueryRewardGrant queries the "reward_grant" edge of the RedeemCode entity.
+func (_m *RedeemCode) QueryRewardGrant() *UserRewardGrantQuery {
+	return NewRedeemCodeClient(_m.config).QueryRewardGrant(_m)
 }
 
 // Update returns a builder for updating this RedeemCode.

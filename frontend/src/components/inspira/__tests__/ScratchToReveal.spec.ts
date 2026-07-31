@@ -46,7 +46,7 @@ describe('ScratchToReveal', () => {
   it('自定义 props 挂载不抛错', () => {
     const wrapper = mount(ScratchToReveal, {
       props: {
-        coverColor: '#14b8a6',
+        coverColor: '#0033FF',
         coverTextColor: '#ffffff',
         coverText: 'scratch me',
         threshold: 0.3,

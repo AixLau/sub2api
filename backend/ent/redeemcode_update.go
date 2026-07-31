@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/user"
+	"github.com/Wei-Shaw/sub2api/ent/userrewardgrant"
 )
 
 // RedeemCodeUpdate is the builder for updating RedeemCode entities.
@@ -238,6 +239,25 @@ func (_u *RedeemCodeUpdate) SetGroup(v *Group) *RedeemCodeUpdate {
 	return _u.SetGroupID(v.ID)
 }
 
+// SetRewardGrantID sets the "reward_grant" edge to the UserRewardGrant entity by ID.
+func (_u *RedeemCodeUpdate) SetRewardGrantID(id int64) *RedeemCodeUpdate {
+	_u.mutation.SetRewardGrantID(id)
+	return _u
+}
+
+// SetNillableRewardGrantID sets the "reward_grant" edge to the UserRewardGrant entity by ID if the given value is not nil.
+func (_u *RedeemCodeUpdate) SetNillableRewardGrantID(id *int64) *RedeemCodeUpdate {
+	if id != nil {
+		_u = _u.SetRewardGrantID(*id)
+	}
+	return _u
+}
+
+// SetRewardGrant sets the "reward_grant" edge to the UserRewardGrant entity.
+func (_u *RedeemCodeUpdate) SetRewardGrant(v *UserRewardGrant) *RedeemCodeUpdate {
+	return _u.SetRewardGrantID(v.ID)
+}
+
 // Mutation returns the RedeemCodeMutation object of the builder.
 func (_u *RedeemCodeUpdate) Mutation() *RedeemCodeMutation {
 	return _u.mutation
@@ -252,6 +272,12 @@ func (_u *RedeemCodeUpdate) ClearUser() *RedeemCodeUpdate {
 // ClearGroup clears the "group" edge to the Group entity.
 func (_u *RedeemCodeUpdate) ClearGroup() *RedeemCodeUpdate {
 	_u.mutation.ClearGroup()
+	return _u
+}
+
+// ClearRewardGrant clears the "reward_grant" edge to the UserRewardGrant entity.
+func (_u *RedeemCodeUpdate) ClearRewardGrant() *RedeemCodeUpdate {
+	_u.mutation.ClearRewardGrant()
 	return _u
 }
 
@@ -404,6 +430,35 @@ func (_u *RedeemCodeUpdate) sqlSave(ctx context.Context) (_node int, err error) 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.RewardGrantCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   redeemcode.RewardGrantTable,
+			Columns: []string{redeemcode.RewardGrantColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userrewardgrant.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RewardGrantIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   redeemcode.RewardGrantTable,
+			Columns: []string{redeemcode.RewardGrantColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userrewardgrant.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -639,6 +694,25 @@ func (_u *RedeemCodeUpdateOne) SetGroup(v *Group) *RedeemCodeUpdateOne {
 	return _u.SetGroupID(v.ID)
 }
 
+// SetRewardGrantID sets the "reward_grant" edge to the UserRewardGrant entity by ID.
+func (_u *RedeemCodeUpdateOne) SetRewardGrantID(id int64) *RedeemCodeUpdateOne {
+	_u.mutation.SetRewardGrantID(id)
+	return _u
+}
+
+// SetNillableRewardGrantID sets the "reward_grant" edge to the UserRewardGrant entity by ID if the given value is not nil.
+func (_u *RedeemCodeUpdateOne) SetNillableRewardGrantID(id *int64) *RedeemCodeUpdateOne {
+	if id != nil {
+		_u = _u.SetRewardGrantID(*id)
+	}
+	return _u
+}
+
+// SetRewardGrant sets the "reward_grant" edge to the UserRewardGrant entity.
+func (_u *RedeemCodeUpdateOne) SetRewardGrant(v *UserRewardGrant) *RedeemCodeUpdateOne {
+	return _u.SetRewardGrantID(v.ID)
+}
+
 // Mutation returns the RedeemCodeMutation object of the builder.
 func (_u *RedeemCodeUpdateOne) Mutation() *RedeemCodeMutation {
 	return _u.mutation
@@ -653,6 +727,12 @@ func (_u *RedeemCodeUpdateOne) ClearUser() *RedeemCodeUpdateOne {
 // ClearGroup clears the "group" edge to the Group entity.
 func (_u *RedeemCodeUpdateOne) ClearGroup() *RedeemCodeUpdateOne {
 	_u.mutation.ClearGroup()
+	return _u
+}
+
+// ClearRewardGrant clears the "reward_grant" edge to the UserRewardGrant entity.
+func (_u *RedeemCodeUpdateOne) ClearRewardGrant() *RedeemCodeUpdateOne {
+	_u.mutation.ClearRewardGrant()
 	return _u
 }
 
@@ -835,6 +915,35 @@ func (_u *RedeemCodeUpdateOne) sqlSave(ctx context.Context) (_node *RedeemCode, 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.RewardGrantCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   redeemcode.RewardGrantTable,
+			Columns: []string{redeemcode.RewardGrantColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userrewardgrant.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RewardGrantIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   redeemcode.RewardGrantTable,
+			Columns: []string{redeemcode.RewardGrantColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userrewardgrant.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

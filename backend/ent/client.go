@@ -42,6 +42,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/rewardcampaign"
+	"github.com/Wei-Shaw/sub2api/ent/rewardcampaignjob"
+	"github.com/Wei-Shaw/sub2api/ent/rewardcampaignuserstate"
+	"github.com/Wei-Shaw/sub2api/ent/rewardcampaignversion"
+	"github.com/Wei-Shaw/sub2api/ent/rewardskin"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
@@ -53,7 +58,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
+	"github.com/Wei-Shaw/sub2api/ent/userbehaviordaily"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
+	"github.com/Wei-Shaw/sub2api/ent/userrewardgrant"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 
 	stdsql "database/sql"
@@ -118,6 +125,16 @@ type Client struct {
 	Proxy *ProxyClient
 	// RedeemCode is the client for interacting with the RedeemCode builders.
 	RedeemCode *RedeemCodeClient
+	// RewardCampaign is the client for interacting with the RewardCampaign builders.
+	RewardCampaign *RewardCampaignClient
+	// RewardCampaignJob is the client for interacting with the RewardCampaignJob builders.
+	RewardCampaignJob *RewardCampaignJobClient
+	// RewardCampaignUserState is the client for interacting with the RewardCampaignUserState builders.
+	RewardCampaignUserState *RewardCampaignUserStateClient
+	// RewardCampaignVersion is the client for interacting with the RewardCampaignVersion builders.
+	RewardCampaignVersion *RewardCampaignVersionClient
+	// RewardSkin is the client for interacting with the RewardSkin builders.
+	RewardSkin *RewardSkinClient
 	// SecuritySecret is the client for interacting with the SecuritySecret builders.
 	SecuritySecret *SecuritySecretClient
 	// Setting is the client for interacting with the Setting builders.
@@ -140,8 +157,12 @@ type Client struct {
 	UserAttributeDefinition *UserAttributeDefinitionClient
 	// UserAttributeValue is the client for interacting with the UserAttributeValue builders.
 	UserAttributeValue *UserAttributeValueClient
+	// UserBehaviorDaily is the client for interacting with the UserBehaviorDaily builders.
+	UserBehaviorDaily *UserBehaviorDailyClient
 	// UserPlatformQuota is the client for interacting with the UserPlatformQuota builders.
 	UserPlatformQuota *UserPlatformQuotaClient
+	// UserRewardGrant is the client for interacting with the UserRewardGrant builders.
+	UserRewardGrant *UserRewardGrantClient
 	// UserSubscription is the client for interacting with the UserSubscription builders.
 	UserSubscription *UserSubscriptionClient
 }
@@ -182,6 +203,11 @@ func (c *Client) init() {
 	c.PromoCodeUsage = NewPromoCodeUsageClient(c.config)
 	c.Proxy = NewProxyClient(c.config)
 	c.RedeemCode = NewRedeemCodeClient(c.config)
+	c.RewardCampaign = NewRewardCampaignClient(c.config)
+	c.RewardCampaignJob = NewRewardCampaignJobClient(c.config)
+	c.RewardCampaignUserState = NewRewardCampaignUserStateClient(c.config)
+	c.RewardCampaignVersion = NewRewardCampaignVersionClient(c.config)
+	c.RewardSkin = NewRewardSkinClient(c.config)
 	c.SecuritySecret = NewSecuritySecretClient(c.config)
 	c.Setting = NewSettingClient(c.config)
 	c.SubscriptionPlan = NewSubscriptionPlanClient(c.config)
@@ -193,7 +219,9 @@ func (c *Client) init() {
 	c.UserAllowedGroup = NewUserAllowedGroupClient(c.config)
 	c.UserAttributeDefinition = NewUserAttributeDefinitionClient(c.config)
 	c.UserAttributeValue = NewUserAttributeValueClient(c.config)
+	c.UserBehaviorDaily = NewUserBehaviorDailyClient(c.config)
 	c.UserPlatformQuota = NewUserPlatformQuotaClient(c.config)
+	c.UserRewardGrant = NewUserRewardGrantClient(c.config)
 	c.UserSubscription = NewUserSubscriptionClient(c.config)
 }
 
@@ -314,6 +342,11 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		PromoCodeUsage:                NewPromoCodeUsageClient(cfg),
 		Proxy:                         NewProxyClient(cfg),
 		RedeemCode:                    NewRedeemCodeClient(cfg),
+		RewardCampaign:                NewRewardCampaignClient(cfg),
+		RewardCampaignJob:             NewRewardCampaignJobClient(cfg),
+		RewardCampaignUserState:       NewRewardCampaignUserStateClient(cfg),
+		RewardCampaignVersion:         NewRewardCampaignVersionClient(cfg),
+		RewardSkin:                    NewRewardSkinClient(cfg),
 		SecuritySecret:                NewSecuritySecretClient(cfg),
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
@@ -325,7 +358,9 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		UserAllowedGroup:              NewUserAllowedGroupClient(cfg),
 		UserAttributeDefinition:       NewUserAttributeDefinitionClient(cfg),
 		UserAttributeValue:            NewUserAttributeValueClient(cfg),
+		UserBehaviorDaily:             NewUserBehaviorDailyClient(cfg),
 		UserPlatformQuota:             NewUserPlatformQuotaClient(cfg),
+		UserRewardGrant:               NewUserRewardGrantClient(cfg),
 		UserSubscription:              NewUserSubscriptionClient(cfg),
 	}, nil
 }
@@ -373,6 +408,11 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		PromoCodeUsage:                NewPromoCodeUsageClient(cfg),
 		Proxy:                         NewProxyClient(cfg),
 		RedeemCode:                    NewRedeemCodeClient(cfg),
+		RewardCampaign:                NewRewardCampaignClient(cfg),
+		RewardCampaignJob:             NewRewardCampaignJobClient(cfg),
+		RewardCampaignUserState:       NewRewardCampaignUserStateClient(cfg),
+		RewardCampaignVersion:         NewRewardCampaignVersionClient(cfg),
+		RewardSkin:                    NewRewardSkinClient(cfg),
 		SecuritySecret:                NewSecuritySecretClient(cfg),
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
@@ -384,7 +424,9 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		UserAllowedGroup:              NewUserAllowedGroupClient(cfg),
 		UserAttributeDefinition:       NewUserAttributeDefinitionClient(cfg),
 		UserAttributeValue:            NewUserAttributeValueClient(cfg),
+		UserBehaviorDaily:             NewUserBehaviorDailyClient(cfg),
 		UserPlatformQuota:             NewUserPlatformQuotaClient(cfg),
+		UserRewardGrant:               NewUserRewardGrantClient(cfg),
 		UserSubscription:              NewUserSubscriptionClient(cfg),
 	}, nil
 }
@@ -422,10 +464,13 @@ func (c *Client) Use(hooks ...Hook) {
 		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
 		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
 		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
-		c.SubscriptionRenewal, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.Proxy, c.RedeemCode, c.RewardCampaign, c.RewardCampaignJob,
+		c.RewardCampaignUserState, c.RewardCampaignVersion, c.RewardSkin,
+		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.SubscriptionRenewal,
+		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
+		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.UserBehaviorDaily, c.UserPlatformQuota, c.UserRewardGrant,
+		c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -442,10 +487,13 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
 		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
 		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
-		c.SubscriptionRenewal, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.Proxy, c.RedeemCode, c.RewardCampaign, c.RewardCampaignJob,
+		c.RewardCampaignUserState, c.RewardCampaignVersion, c.RewardSkin,
+		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.SubscriptionRenewal,
+		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
+		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.UserBehaviorDaily, c.UserPlatformQuota, c.UserRewardGrant,
+		c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -508,6 +556,16 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Proxy.mutate(ctx, m)
 	case *RedeemCodeMutation:
 		return c.RedeemCode.mutate(ctx, m)
+	case *RewardCampaignMutation:
+		return c.RewardCampaign.mutate(ctx, m)
+	case *RewardCampaignJobMutation:
+		return c.RewardCampaignJob.mutate(ctx, m)
+	case *RewardCampaignUserStateMutation:
+		return c.RewardCampaignUserState.mutate(ctx, m)
+	case *RewardCampaignVersionMutation:
+		return c.RewardCampaignVersion.mutate(ctx, m)
+	case *RewardSkinMutation:
+		return c.RewardSkin.mutate(ctx, m)
 	case *SecuritySecretMutation:
 		return c.SecuritySecret.mutate(ctx, m)
 	case *SettingMutation:
@@ -530,8 +588,12 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.UserAttributeDefinition.mutate(ctx, m)
 	case *UserAttributeValueMutation:
 		return c.UserAttributeValue.mutate(ctx, m)
+	case *UserBehaviorDailyMutation:
+		return c.UserBehaviorDaily.mutate(ctx, m)
 	case *UserPlatformQuotaMutation:
 		return c.UserPlatformQuota.mutate(ctx, m)
+	case *UserRewardGrantMutation:
+		return c.UserRewardGrant.mutate(ctx, m)
 	case *UserSubscriptionMutation:
 		return c.UserSubscription.mutate(ctx, m)
 	default:
@@ -4786,6 +4848,22 @@ func (c *RedeemCodeClient) QueryGroup(_m *RedeemCode) *GroupQuery {
 	return query
 }
 
+// QueryRewardGrant queries the reward_grant edge of a RedeemCode.
+func (c *RedeemCodeClient) QueryRewardGrant(_m *RedeemCode) *UserRewardGrantQuery {
+	query := (&UserRewardGrantClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(redeemcode.Table, redeemcode.FieldID, id),
+			sqlgraph.To(userrewardgrant.Table, userrewardgrant.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, redeemcode.RewardGrantTable, redeemcode.RewardGrantColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *RedeemCodeClient) Hooks() []Hook {
 	return c.hooks.RedeemCode
@@ -4808,6 +4886,911 @@ func (c *RedeemCodeClient) mutate(ctx context.Context, m *RedeemCodeMutation) (V
 		return (&RedeemCodeDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown RedeemCode mutation op: %q", m.Op())
+	}
+}
+
+// RewardCampaignClient is a client for the RewardCampaign schema.
+type RewardCampaignClient struct {
+	config
+}
+
+// NewRewardCampaignClient returns a client for the RewardCampaign from the given config.
+func NewRewardCampaignClient(c config) *RewardCampaignClient {
+	return &RewardCampaignClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `rewardcampaign.Hooks(f(g(h())))`.
+func (c *RewardCampaignClient) Use(hooks ...Hook) {
+	c.hooks.RewardCampaign = append(c.hooks.RewardCampaign, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `rewardcampaign.Intercept(f(g(h())))`.
+func (c *RewardCampaignClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RewardCampaign = append(c.inters.RewardCampaign, interceptors...)
+}
+
+// Create returns a builder for creating a RewardCampaign entity.
+func (c *RewardCampaignClient) Create() *RewardCampaignCreate {
+	mutation := newRewardCampaignMutation(c.config, OpCreate)
+	return &RewardCampaignCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RewardCampaign entities.
+func (c *RewardCampaignClient) CreateBulk(builders ...*RewardCampaignCreate) *RewardCampaignCreateBulk {
+	return &RewardCampaignCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RewardCampaignClient) MapCreateBulk(slice any, setFunc func(*RewardCampaignCreate, int)) *RewardCampaignCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RewardCampaignCreateBulk{err: fmt.Errorf("calling to RewardCampaignClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RewardCampaignCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RewardCampaignCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RewardCampaign.
+func (c *RewardCampaignClient) Update() *RewardCampaignUpdate {
+	mutation := newRewardCampaignMutation(c.config, OpUpdate)
+	return &RewardCampaignUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RewardCampaignClient) UpdateOne(_m *RewardCampaign) *RewardCampaignUpdateOne {
+	mutation := newRewardCampaignMutation(c.config, OpUpdateOne, withRewardCampaign(_m))
+	return &RewardCampaignUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RewardCampaignClient) UpdateOneID(id int64) *RewardCampaignUpdateOne {
+	mutation := newRewardCampaignMutation(c.config, OpUpdateOne, withRewardCampaignID(id))
+	return &RewardCampaignUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RewardCampaign.
+func (c *RewardCampaignClient) Delete() *RewardCampaignDelete {
+	mutation := newRewardCampaignMutation(c.config, OpDelete)
+	return &RewardCampaignDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RewardCampaignClient) DeleteOne(_m *RewardCampaign) *RewardCampaignDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RewardCampaignClient) DeleteOneID(id int64) *RewardCampaignDeleteOne {
+	builder := c.Delete().Where(rewardcampaign.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RewardCampaignDeleteOne{builder}
+}
+
+// Query returns a query builder for RewardCampaign.
+func (c *RewardCampaignClient) Query() *RewardCampaignQuery {
+	return &RewardCampaignQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRewardCampaign},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RewardCampaign entity by its id.
+func (c *RewardCampaignClient) Get(ctx context.Context, id int64) (*RewardCampaign, error) {
+	return c.Query().Where(rewardcampaign.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RewardCampaignClient) GetX(ctx context.Context, id int64) *RewardCampaign {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryVersions queries the versions edge of a RewardCampaign.
+func (c *RewardCampaignClient) QueryVersions(_m *RewardCampaign) *RewardCampaignVersionQuery {
+	query := (&RewardCampaignVersionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rewardcampaign.Table, rewardcampaign.FieldID, id),
+			sqlgraph.To(rewardcampaignversion.Table, rewardcampaignversion.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, rewardcampaign.VersionsTable, rewardcampaign.VersionsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCurrentVersion queries the current_version edge of a RewardCampaign.
+func (c *RewardCampaignClient) QueryCurrentVersion(_m *RewardCampaign) *RewardCampaignVersionQuery {
+	query := (&RewardCampaignVersionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rewardcampaign.Table, rewardcampaign.FieldID, id),
+			sqlgraph.To(rewardcampaignversion.Table, rewardcampaignversion.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, rewardcampaign.CurrentVersionTable, rewardcampaign.CurrentVersionColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryGrants queries the grants edge of a RewardCampaign.
+func (c *RewardCampaignClient) QueryGrants(_m *RewardCampaign) *UserRewardGrantQuery {
+	query := (&UserRewardGrantClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rewardcampaign.Table, rewardcampaign.FieldID, id),
+			sqlgraph.To(userrewardgrant.Table, userrewardgrant.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, rewardcampaign.GrantsTable, rewardcampaign.GrantsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryUserStates queries the user_states edge of a RewardCampaign.
+func (c *RewardCampaignClient) QueryUserStates(_m *RewardCampaign) *RewardCampaignUserStateQuery {
+	query := (&RewardCampaignUserStateClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rewardcampaign.Table, rewardcampaign.FieldID, id),
+			sqlgraph.To(rewardcampaignuserstate.Table, rewardcampaignuserstate.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, rewardcampaign.UserStatesTable, rewardcampaign.UserStatesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryJobs queries the jobs edge of a RewardCampaign.
+func (c *RewardCampaignClient) QueryJobs(_m *RewardCampaign) *RewardCampaignJobQuery {
+	query := (&RewardCampaignJobClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rewardcampaign.Table, rewardcampaign.FieldID, id),
+			sqlgraph.To(rewardcampaignjob.Table, rewardcampaignjob.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, rewardcampaign.JobsTable, rewardcampaign.JobsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *RewardCampaignClient) Hooks() []Hook {
+	return c.hooks.RewardCampaign
+}
+
+// Interceptors returns the client interceptors.
+func (c *RewardCampaignClient) Interceptors() []Interceptor {
+	return c.inters.RewardCampaign
+}
+
+func (c *RewardCampaignClient) mutate(ctx context.Context, m *RewardCampaignMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RewardCampaignCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RewardCampaignUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RewardCampaignUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RewardCampaignDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RewardCampaign mutation op: %q", m.Op())
+	}
+}
+
+// RewardCampaignJobClient is a client for the RewardCampaignJob schema.
+type RewardCampaignJobClient struct {
+	config
+}
+
+// NewRewardCampaignJobClient returns a client for the RewardCampaignJob from the given config.
+func NewRewardCampaignJobClient(c config) *RewardCampaignJobClient {
+	return &RewardCampaignJobClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `rewardcampaignjob.Hooks(f(g(h())))`.
+func (c *RewardCampaignJobClient) Use(hooks ...Hook) {
+	c.hooks.RewardCampaignJob = append(c.hooks.RewardCampaignJob, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `rewardcampaignjob.Intercept(f(g(h())))`.
+func (c *RewardCampaignJobClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RewardCampaignJob = append(c.inters.RewardCampaignJob, interceptors...)
+}
+
+// Create returns a builder for creating a RewardCampaignJob entity.
+func (c *RewardCampaignJobClient) Create() *RewardCampaignJobCreate {
+	mutation := newRewardCampaignJobMutation(c.config, OpCreate)
+	return &RewardCampaignJobCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RewardCampaignJob entities.
+func (c *RewardCampaignJobClient) CreateBulk(builders ...*RewardCampaignJobCreate) *RewardCampaignJobCreateBulk {
+	return &RewardCampaignJobCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RewardCampaignJobClient) MapCreateBulk(slice any, setFunc func(*RewardCampaignJobCreate, int)) *RewardCampaignJobCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RewardCampaignJobCreateBulk{err: fmt.Errorf("calling to RewardCampaignJobClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RewardCampaignJobCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RewardCampaignJobCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RewardCampaignJob.
+func (c *RewardCampaignJobClient) Update() *RewardCampaignJobUpdate {
+	mutation := newRewardCampaignJobMutation(c.config, OpUpdate)
+	return &RewardCampaignJobUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RewardCampaignJobClient) UpdateOne(_m *RewardCampaignJob) *RewardCampaignJobUpdateOne {
+	mutation := newRewardCampaignJobMutation(c.config, OpUpdateOne, withRewardCampaignJob(_m))
+	return &RewardCampaignJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RewardCampaignJobClient) UpdateOneID(id int64) *RewardCampaignJobUpdateOne {
+	mutation := newRewardCampaignJobMutation(c.config, OpUpdateOne, withRewardCampaignJobID(id))
+	return &RewardCampaignJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RewardCampaignJob.
+func (c *RewardCampaignJobClient) Delete() *RewardCampaignJobDelete {
+	mutation := newRewardCampaignJobMutation(c.config, OpDelete)
+	return &RewardCampaignJobDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RewardCampaignJobClient) DeleteOne(_m *RewardCampaignJob) *RewardCampaignJobDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RewardCampaignJobClient) DeleteOneID(id int64) *RewardCampaignJobDeleteOne {
+	builder := c.Delete().Where(rewardcampaignjob.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RewardCampaignJobDeleteOne{builder}
+}
+
+// Query returns a query builder for RewardCampaignJob.
+func (c *RewardCampaignJobClient) Query() *RewardCampaignJobQuery {
+	return &RewardCampaignJobQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRewardCampaignJob},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RewardCampaignJob entity by its id.
+func (c *RewardCampaignJobClient) Get(ctx context.Context, id int64) (*RewardCampaignJob, error) {
+	return c.Query().Where(rewardcampaignjob.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RewardCampaignJobClient) GetX(ctx context.Context, id int64) *RewardCampaignJob {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryCampaign queries the campaign edge of a RewardCampaignJob.
+func (c *RewardCampaignJobClient) QueryCampaign(_m *RewardCampaignJob) *RewardCampaignQuery {
+	query := (&RewardCampaignClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rewardcampaignjob.Table, rewardcampaignjob.FieldID, id),
+			sqlgraph.To(rewardcampaign.Table, rewardcampaign.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, rewardcampaignjob.CampaignTable, rewardcampaignjob.CampaignColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCampaignVersion queries the campaign_version edge of a RewardCampaignJob.
+func (c *RewardCampaignJobClient) QueryCampaignVersion(_m *RewardCampaignJob) *RewardCampaignVersionQuery {
+	query := (&RewardCampaignVersionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rewardcampaignjob.Table, rewardcampaignjob.FieldID, id),
+			sqlgraph.To(rewardcampaignversion.Table, rewardcampaignversion.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, rewardcampaignjob.CampaignVersionTable, rewardcampaignjob.CampaignVersionColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryGrants queries the grants edge of a RewardCampaignJob.
+func (c *RewardCampaignJobClient) QueryGrants(_m *RewardCampaignJob) *UserRewardGrantQuery {
+	query := (&UserRewardGrantClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rewardcampaignjob.Table, rewardcampaignjob.FieldID, id),
+			sqlgraph.To(userrewardgrant.Table, userrewardgrant.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, rewardcampaignjob.GrantsTable, rewardcampaignjob.GrantsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *RewardCampaignJobClient) Hooks() []Hook {
+	return c.hooks.RewardCampaignJob
+}
+
+// Interceptors returns the client interceptors.
+func (c *RewardCampaignJobClient) Interceptors() []Interceptor {
+	return c.inters.RewardCampaignJob
+}
+
+func (c *RewardCampaignJobClient) mutate(ctx context.Context, m *RewardCampaignJobMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RewardCampaignJobCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RewardCampaignJobUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RewardCampaignJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RewardCampaignJobDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RewardCampaignJob mutation op: %q", m.Op())
+	}
+}
+
+// RewardCampaignUserStateClient is a client for the RewardCampaignUserState schema.
+type RewardCampaignUserStateClient struct {
+	config
+}
+
+// NewRewardCampaignUserStateClient returns a client for the RewardCampaignUserState from the given config.
+func NewRewardCampaignUserStateClient(c config) *RewardCampaignUserStateClient {
+	return &RewardCampaignUserStateClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `rewardcampaignuserstate.Hooks(f(g(h())))`.
+func (c *RewardCampaignUserStateClient) Use(hooks ...Hook) {
+	c.hooks.RewardCampaignUserState = append(c.hooks.RewardCampaignUserState, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `rewardcampaignuserstate.Intercept(f(g(h())))`.
+func (c *RewardCampaignUserStateClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RewardCampaignUserState = append(c.inters.RewardCampaignUserState, interceptors...)
+}
+
+// Create returns a builder for creating a RewardCampaignUserState entity.
+func (c *RewardCampaignUserStateClient) Create() *RewardCampaignUserStateCreate {
+	mutation := newRewardCampaignUserStateMutation(c.config, OpCreate)
+	return &RewardCampaignUserStateCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RewardCampaignUserState entities.
+func (c *RewardCampaignUserStateClient) CreateBulk(builders ...*RewardCampaignUserStateCreate) *RewardCampaignUserStateCreateBulk {
+	return &RewardCampaignUserStateCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RewardCampaignUserStateClient) MapCreateBulk(slice any, setFunc func(*RewardCampaignUserStateCreate, int)) *RewardCampaignUserStateCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RewardCampaignUserStateCreateBulk{err: fmt.Errorf("calling to RewardCampaignUserStateClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RewardCampaignUserStateCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RewardCampaignUserStateCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RewardCampaignUserState.
+func (c *RewardCampaignUserStateClient) Update() *RewardCampaignUserStateUpdate {
+	mutation := newRewardCampaignUserStateMutation(c.config, OpUpdate)
+	return &RewardCampaignUserStateUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RewardCampaignUserStateClient) UpdateOne(_m *RewardCampaignUserState) *RewardCampaignUserStateUpdateOne {
+	mutation := newRewardCampaignUserStateMutation(c.config, OpUpdateOne, withRewardCampaignUserState(_m))
+	return &RewardCampaignUserStateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RewardCampaignUserStateClient) UpdateOneID(id int64) *RewardCampaignUserStateUpdateOne {
+	mutation := newRewardCampaignUserStateMutation(c.config, OpUpdateOne, withRewardCampaignUserStateID(id))
+	return &RewardCampaignUserStateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RewardCampaignUserState.
+func (c *RewardCampaignUserStateClient) Delete() *RewardCampaignUserStateDelete {
+	mutation := newRewardCampaignUserStateMutation(c.config, OpDelete)
+	return &RewardCampaignUserStateDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RewardCampaignUserStateClient) DeleteOne(_m *RewardCampaignUserState) *RewardCampaignUserStateDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RewardCampaignUserStateClient) DeleteOneID(id int64) *RewardCampaignUserStateDeleteOne {
+	builder := c.Delete().Where(rewardcampaignuserstate.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RewardCampaignUserStateDeleteOne{builder}
+}
+
+// Query returns a query builder for RewardCampaignUserState.
+func (c *RewardCampaignUserStateClient) Query() *RewardCampaignUserStateQuery {
+	return &RewardCampaignUserStateQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRewardCampaignUserState},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RewardCampaignUserState entity by its id.
+func (c *RewardCampaignUserStateClient) Get(ctx context.Context, id int64) (*RewardCampaignUserState, error) {
+	return c.Query().Where(rewardcampaignuserstate.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RewardCampaignUserStateClient) GetX(ctx context.Context, id int64) *RewardCampaignUserState {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryCampaign queries the campaign edge of a RewardCampaignUserState.
+func (c *RewardCampaignUserStateClient) QueryCampaign(_m *RewardCampaignUserState) *RewardCampaignQuery {
+	query := (&RewardCampaignClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rewardcampaignuserstate.Table, rewardcampaignuserstate.FieldID, id),
+			sqlgraph.To(rewardcampaign.Table, rewardcampaign.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, rewardcampaignuserstate.CampaignTable, rewardcampaignuserstate.CampaignColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryUser queries the user edge of a RewardCampaignUserState.
+func (c *RewardCampaignUserStateClient) QueryUser(_m *RewardCampaignUserState) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rewardcampaignuserstate.Table, rewardcampaignuserstate.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, rewardcampaignuserstate.UserTable, rewardcampaignuserstate.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *RewardCampaignUserStateClient) Hooks() []Hook {
+	return c.hooks.RewardCampaignUserState
+}
+
+// Interceptors returns the client interceptors.
+func (c *RewardCampaignUserStateClient) Interceptors() []Interceptor {
+	return c.inters.RewardCampaignUserState
+}
+
+func (c *RewardCampaignUserStateClient) mutate(ctx context.Context, m *RewardCampaignUserStateMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RewardCampaignUserStateCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RewardCampaignUserStateUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RewardCampaignUserStateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RewardCampaignUserStateDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RewardCampaignUserState mutation op: %q", m.Op())
+	}
+}
+
+// RewardCampaignVersionClient is a client for the RewardCampaignVersion schema.
+type RewardCampaignVersionClient struct {
+	config
+}
+
+// NewRewardCampaignVersionClient returns a client for the RewardCampaignVersion from the given config.
+func NewRewardCampaignVersionClient(c config) *RewardCampaignVersionClient {
+	return &RewardCampaignVersionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `rewardcampaignversion.Hooks(f(g(h())))`.
+func (c *RewardCampaignVersionClient) Use(hooks ...Hook) {
+	c.hooks.RewardCampaignVersion = append(c.hooks.RewardCampaignVersion, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `rewardcampaignversion.Intercept(f(g(h())))`.
+func (c *RewardCampaignVersionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RewardCampaignVersion = append(c.inters.RewardCampaignVersion, interceptors...)
+}
+
+// Create returns a builder for creating a RewardCampaignVersion entity.
+func (c *RewardCampaignVersionClient) Create() *RewardCampaignVersionCreate {
+	mutation := newRewardCampaignVersionMutation(c.config, OpCreate)
+	return &RewardCampaignVersionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RewardCampaignVersion entities.
+func (c *RewardCampaignVersionClient) CreateBulk(builders ...*RewardCampaignVersionCreate) *RewardCampaignVersionCreateBulk {
+	return &RewardCampaignVersionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RewardCampaignVersionClient) MapCreateBulk(slice any, setFunc func(*RewardCampaignVersionCreate, int)) *RewardCampaignVersionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RewardCampaignVersionCreateBulk{err: fmt.Errorf("calling to RewardCampaignVersionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RewardCampaignVersionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RewardCampaignVersionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RewardCampaignVersion.
+func (c *RewardCampaignVersionClient) Update() *RewardCampaignVersionUpdate {
+	mutation := newRewardCampaignVersionMutation(c.config, OpUpdate)
+	return &RewardCampaignVersionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RewardCampaignVersionClient) UpdateOne(_m *RewardCampaignVersion) *RewardCampaignVersionUpdateOne {
+	mutation := newRewardCampaignVersionMutation(c.config, OpUpdateOne, withRewardCampaignVersion(_m))
+	return &RewardCampaignVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RewardCampaignVersionClient) UpdateOneID(id int64) *RewardCampaignVersionUpdateOne {
+	mutation := newRewardCampaignVersionMutation(c.config, OpUpdateOne, withRewardCampaignVersionID(id))
+	return &RewardCampaignVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RewardCampaignVersion.
+func (c *RewardCampaignVersionClient) Delete() *RewardCampaignVersionDelete {
+	mutation := newRewardCampaignVersionMutation(c.config, OpDelete)
+	return &RewardCampaignVersionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RewardCampaignVersionClient) DeleteOne(_m *RewardCampaignVersion) *RewardCampaignVersionDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RewardCampaignVersionClient) DeleteOneID(id int64) *RewardCampaignVersionDeleteOne {
+	builder := c.Delete().Where(rewardcampaignversion.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RewardCampaignVersionDeleteOne{builder}
+}
+
+// Query returns a query builder for RewardCampaignVersion.
+func (c *RewardCampaignVersionClient) Query() *RewardCampaignVersionQuery {
+	return &RewardCampaignVersionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRewardCampaignVersion},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RewardCampaignVersion entity by its id.
+func (c *RewardCampaignVersionClient) Get(ctx context.Context, id int64) (*RewardCampaignVersion, error) {
+	return c.Query().Where(rewardcampaignversion.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RewardCampaignVersionClient) GetX(ctx context.Context, id int64) *RewardCampaignVersion {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryCampaign queries the campaign edge of a RewardCampaignVersion.
+func (c *RewardCampaignVersionClient) QueryCampaign(_m *RewardCampaignVersion) *RewardCampaignQuery {
+	query := (&RewardCampaignClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rewardcampaignversion.Table, rewardcampaignversion.FieldID, id),
+			sqlgraph.To(rewardcampaign.Table, rewardcampaign.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, rewardcampaignversion.CampaignTable, rewardcampaignversion.CampaignColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCurrentForCampaigns queries the current_for_campaigns edge of a RewardCampaignVersion.
+func (c *RewardCampaignVersionClient) QueryCurrentForCampaigns(_m *RewardCampaignVersion) *RewardCampaignQuery {
+	query := (&RewardCampaignClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rewardcampaignversion.Table, rewardcampaignversion.FieldID, id),
+			sqlgraph.To(rewardcampaign.Table, rewardcampaign.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, rewardcampaignversion.CurrentForCampaignsTable, rewardcampaignversion.CurrentForCampaignsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryGrants queries the grants edge of a RewardCampaignVersion.
+func (c *RewardCampaignVersionClient) QueryGrants(_m *RewardCampaignVersion) *UserRewardGrantQuery {
+	query := (&UserRewardGrantClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rewardcampaignversion.Table, rewardcampaignversion.FieldID, id),
+			sqlgraph.To(userrewardgrant.Table, userrewardgrant.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, rewardcampaignversion.GrantsTable, rewardcampaignversion.GrantsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryJobs queries the jobs edge of a RewardCampaignVersion.
+func (c *RewardCampaignVersionClient) QueryJobs(_m *RewardCampaignVersion) *RewardCampaignJobQuery {
+	query := (&RewardCampaignJobClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rewardcampaignversion.Table, rewardcampaignversion.FieldID, id),
+			sqlgraph.To(rewardcampaignjob.Table, rewardcampaignjob.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, rewardcampaignversion.JobsTable, rewardcampaignversion.JobsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *RewardCampaignVersionClient) Hooks() []Hook {
+	return c.hooks.RewardCampaignVersion
+}
+
+// Interceptors returns the client interceptors.
+func (c *RewardCampaignVersionClient) Interceptors() []Interceptor {
+	return c.inters.RewardCampaignVersion
+}
+
+func (c *RewardCampaignVersionClient) mutate(ctx context.Context, m *RewardCampaignVersionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RewardCampaignVersionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RewardCampaignVersionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RewardCampaignVersionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RewardCampaignVersionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RewardCampaignVersion mutation op: %q", m.Op())
+	}
+}
+
+// RewardSkinClient is a client for the RewardSkin schema.
+type RewardSkinClient struct {
+	config
+}
+
+// NewRewardSkinClient returns a client for the RewardSkin from the given config.
+func NewRewardSkinClient(c config) *RewardSkinClient {
+	return &RewardSkinClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `rewardskin.Hooks(f(g(h())))`.
+func (c *RewardSkinClient) Use(hooks ...Hook) {
+	c.hooks.RewardSkin = append(c.hooks.RewardSkin, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `rewardskin.Intercept(f(g(h())))`.
+func (c *RewardSkinClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RewardSkin = append(c.inters.RewardSkin, interceptors...)
+}
+
+// Create returns a builder for creating a RewardSkin entity.
+func (c *RewardSkinClient) Create() *RewardSkinCreate {
+	mutation := newRewardSkinMutation(c.config, OpCreate)
+	return &RewardSkinCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RewardSkin entities.
+func (c *RewardSkinClient) CreateBulk(builders ...*RewardSkinCreate) *RewardSkinCreateBulk {
+	return &RewardSkinCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RewardSkinClient) MapCreateBulk(slice any, setFunc func(*RewardSkinCreate, int)) *RewardSkinCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RewardSkinCreateBulk{err: fmt.Errorf("calling to RewardSkinClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RewardSkinCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RewardSkinCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RewardSkin.
+func (c *RewardSkinClient) Update() *RewardSkinUpdate {
+	mutation := newRewardSkinMutation(c.config, OpUpdate)
+	return &RewardSkinUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RewardSkinClient) UpdateOne(_m *RewardSkin) *RewardSkinUpdateOne {
+	mutation := newRewardSkinMutation(c.config, OpUpdateOne, withRewardSkin(_m))
+	return &RewardSkinUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RewardSkinClient) UpdateOneID(id int64) *RewardSkinUpdateOne {
+	mutation := newRewardSkinMutation(c.config, OpUpdateOne, withRewardSkinID(id))
+	return &RewardSkinUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RewardSkin.
+func (c *RewardSkinClient) Delete() *RewardSkinDelete {
+	mutation := newRewardSkinMutation(c.config, OpDelete)
+	return &RewardSkinDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RewardSkinClient) DeleteOne(_m *RewardSkin) *RewardSkinDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RewardSkinClient) DeleteOneID(id int64) *RewardSkinDeleteOne {
+	builder := c.Delete().Where(rewardskin.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RewardSkinDeleteOne{builder}
+}
+
+// Query returns a query builder for RewardSkin.
+func (c *RewardSkinClient) Query() *RewardSkinQuery {
+	return &RewardSkinQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRewardSkin},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RewardSkin entity by its id.
+func (c *RewardSkinClient) Get(ctx context.Context, id int64) (*RewardSkin, error) {
+	return c.Query().Where(rewardskin.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RewardSkinClient) GetX(ctx context.Context, id int64) *RewardSkin {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryGrants queries the grants edge of a RewardSkin.
+func (c *RewardSkinClient) QueryGrants(_m *RewardSkin) *UserRewardGrantQuery {
+	query := (&UserRewardGrantClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rewardskin.Table, rewardskin.FieldID, id),
+			sqlgraph.To(userrewardgrant.Table, userrewardgrant.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, rewardskin.GrantsTable, rewardskin.GrantsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *RewardSkinClient) Hooks() []Hook {
+	return c.hooks.RewardSkin
+}
+
+// Interceptors returns the client interceptors.
+func (c *RewardSkinClient) Interceptors() []Interceptor {
+	return c.inters.RewardSkin
+}
+
+func (c *RewardSkinClient) mutate(ctx context.Context, m *RewardSkinMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RewardSkinCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RewardSkinUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RewardSkinUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RewardSkinDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RewardSkin mutation op: %q", m.Op())
 	}
 }
 
@@ -6138,6 +7121,54 @@ func (c *UserClient) QueryPlatformQuotas(_m *User) *UserPlatformQuotaQuery {
 	return query
 }
 
+// QueryRewardGrants queries the reward_grants edge of a User.
+func (c *UserClient) QueryRewardGrants(_m *User) *UserRewardGrantQuery {
+	query := (&UserRewardGrantClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(userrewardgrant.Table, userrewardgrant.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.RewardGrantsTable, user.RewardGrantsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRewardCampaignStates queries the reward_campaign_states edge of a User.
+func (c *UserClient) QueryRewardCampaignStates(_m *User) *RewardCampaignUserStateQuery {
+	query := (&RewardCampaignUserStateClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(rewardcampaignuserstate.Table, rewardcampaignuserstate.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.RewardCampaignStatesTable, user.RewardCampaignStatesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryBehaviorDaily queries the behavior_daily edge of a User.
+func (c *UserClient) QueryBehaviorDaily(_m *User) *UserBehaviorDailyQuery {
+	query := (&UserBehaviorDailyClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(userbehaviordaily.Table, userbehaviordaily.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.BehaviorDailyTable, user.BehaviorDailyColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QueryUserAllowedGroups queries the user_allowed_groups edge of a User.
 func (c *UserClient) QueryUserAllowedGroups(_m *User) *UserAllowedGroupQuery {
 	query := (&UserAllowedGroupClient{config: c.config}).Query()
@@ -6613,6 +7644,155 @@ func (c *UserAttributeValueClient) mutate(ctx context.Context, m *UserAttributeV
 	}
 }
 
+// UserBehaviorDailyClient is a client for the UserBehaviorDaily schema.
+type UserBehaviorDailyClient struct {
+	config
+}
+
+// NewUserBehaviorDailyClient returns a client for the UserBehaviorDaily from the given config.
+func NewUserBehaviorDailyClient(c config) *UserBehaviorDailyClient {
+	return &UserBehaviorDailyClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `userbehaviordaily.Hooks(f(g(h())))`.
+func (c *UserBehaviorDailyClient) Use(hooks ...Hook) {
+	c.hooks.UserBehaviorDaily = append(c.hooks.UserBehaviorDaily, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `userbehaviordaily.Intercept(f(g(h())))`.
+func (c *UserBehaviorDailyClient) Intercept(interceptors ...Interceptor) {
+	c.inters.UserBehaviorDaily = append(c.inters.UserBehaviorDaily, interceptors...)
+}
+
+// Create returns a builder for creating a UserBehaviorDaily entity.
+func (c *UserBehaviorDailyClient) Create() *UserBehaviorDailyCreate {
+	mutation := newUserBehaviorDailyMutation(c.config, OpCreate)
+	return &UserBehaviorDailyCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of UserBehaviorDaily entities.
+func (c *UserBehaviorDailyClient) CreateBulk(builders ...*UserBehaviorDailyCreate) *UserBehaviorDailyCreateBulk {
+	return &UserBehaviorDailyCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UserBehaviorDailyClient) MapCreateBulk(slice any, setFunc func(*UserBehaviorDailyCreate, int)) *UserBehaviorDailyCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UserBehaviorDailyCreateBulk{err: fmt.Errorf("calling to UserBehaviorDailyClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UserBehaviorDailyCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UserBehaviorDailyCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for UserBehaviorDaily.
+func (c *UserBehaviorDailyClient) Update() *UserBehaviorDailyUpdate {
+	mutation := newUserBehaviorDailyMutation(c.config, OpUpdate)
+	return &UserBehaviorDailyUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UserBehaviorDailyClient) UpdateOne(_m *UserBehaviorDaily) *UserBehaviorDailyUpdateOne {
+	mutation := newUserBehaviorDailyMutation(c.config, OpUpdateOne, withUserBehaviorDaily(_m))
+	return &UserBehaviorDailyUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UserBehaviorDailyClient) UpdateOneID(id int64) *UserBehaviorDailyUpdateOne {
+	mutation := newUserBehaviorDailyMutation(c.config, OpUpdateOne, withUserBehaviorDailyID(id))
+	return &UserBehaviorDailyUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for UserBehaviorDaily.
+func (c *UserBehaviorDailyClient) Delete() *UserBehaviorDailyDelete {
+	mutation := newUserBehaviorDailyMutation(c.config, OpDelete)
+	return &UserBehaviorDailyDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UserBehaviorDailyClient) DeleteOne(_m *UserBehaviorDaily) *UserBehaviorDailyDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UserBehaviorDailyClient) DeleteOneID(id int64) *UserBehaviorDailyDeleteOne {
+	builder := c.Delete().Where(userbehaviordaily.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UserBehaviorDailyDeleteOne{builder}
+}
+
+// Query returns a query builder for UserBehaviorDaily.
+func (c *UserBehaviorDailyClient) Query() *UserBehaviorDailyQuery {
+	return &UserBehaviorDailyQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUserBehaviorDaily},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a UserBehaviorDaily entity by its id.
+func (c *UserBehaviorDailyClient) Get(ctx context.Context, id int64) (*UserBehaviorDaily, error) {
+	return c.Query().Where(userbehaviordaily.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UserBehaviorDailyClient) GetX(ctx context.Context, id int64) *UserBehaviorDaily {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a UserBehaviorDaily.
+func (c *UserBehaviorDailyClient) QueryUser(_m *UserBehaviorDaily) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(userbehaviordaily.Table, userbehaviordaily.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, userbehaviordaily.UserTable, userbehaviordaily.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *UserBehaviorDailyClient) Hooks() []Hook {
+	return c.hooks.UserBehaviorDaily
+}
+
+// Interceptors returns the client interceptors.
+func (c *UserBehaviorDailyClient) Interceptors() []Interceptor {
+	return c.inters.UserBehaviorDaily
+}
+
+func (c *UserBehaviorDailyClient) mutate(ctx context.Context, m *UserBehaviorDailyMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UserBehaviorDailyCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UserBehaviorDailyUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UserBehaviorDailyUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UserBehaviorDailyDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown UserBehaviorDaily mutation op: %q", m.Op())
+	}
+}
+
 // UserPlatformQuotaClient is a client for the UserPlatformQuota schema.
 type UserPlatformQuotaClient struct {
 	config
@@ -6761,6 +7941,235 @@ func (c *UserPlatformQuotaClient) mutate(ctx context.Context, m *UserPlatformQuo
 		return (&UserPlatformQuotaDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown UserPlatformQuota mutation op: %q", m.Op())
+	}
+}
+
+// UserRewardGrantClient is a client for the UserRewardGrant schema.
+type UserRewardGrantClient struct {
+	config
+}
+
+// NewUserRewardGrantClient returns a client for the UserRewardGrant from the given config.
+func NewUserRewardGrantClient(c config) *UserRewardGrantClient {
+	return &UserRewardGrantClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `userrewardgrant.Hooks(f(g(h())))`.
+func (c *UserRewardGrantClient) Use(hooks ...Hook) {
+	c.hooks.UserRewardGrant = append(c.hooks.UserRewardGrant, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `userrewardgrant.Intercept(f(g(h())))`.
+func (c *UserRewardGrantClient) Intercept(interceptors ...Interceptor) {
+	c.inters.UserRewardGrant = append(c.inters.UserRewardGrant, interceptors...)
+}
+
+// Create returns a builder for creating a UserRewardGrant entity.
+func (c *UserRewardGrantClient) Create() *UserRewardGrantCreate {
+	mutation := newUserRewardGrantMutation(c.config, OpCreate)
+	return &UserRewardGrantCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of UserRewardGrant entities.
+func (c *UserRewardGrantClient) CreateBulk(builders ...*UserRewardGrantCreate) *UserRewardGrantCreateBulk {
+	return &UserRewardGrantCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UserRewardGrantClient) MapCreateBulk(slice any, setFunc func(*UserRewardGrantCreate, int)) *UserRewardGrantCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UserRewardGrantCreateBulk{err: fmt.Errorf("calling to UserRewardGrantClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UserRewardGrantCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UserRewardGrantCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for UserRewardGrant.
+func (c *UserRewardGrantClient) Update() *UserRewardGrantUpdate {
+	mutation := newUserRewardGrantMutation(c.config, OpUpdate)
+	return &UserRewardGrantUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UserRewardGrantClient) UpdateOne(_m *UserRewardGrant) *UserRewardGrantUpdateOne {
+	mutation := newUserRewardGrantMutation(c.config, OpUpdateOne, withUserRewardGrant(_m))
+	return &UserRewardGrantUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UserRewardGrantClient) UpdateOneID(id int64) *UserRewardGrantUpdateOne {
+	mutation := newUserRewardGrantMutation(c.config, OpUpdateOne, withUserRewardGrantID(id))
+	return &UserRewardGrantUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for UserRewardGrant.
+func (c *UserRewardGrantClient) Delete() *UserRewardGrantDelete {
+	mutation := newUserRewardGrantMutation(c.config, OpDelete)
+	return &UserRewardGrantDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UserRewardGrantClient) DeleteOne(_m *UserRewardGrant) *UserRewardGrantDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UserRewardGrantClient) DeleteOneID(id int64) *UserRewardGrantDeleteOne {
+	builder := c.Delete().Where(userrewardgrant.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UserRewardGrantDeleteOne{builder}
+}
+
+// Query returns a query builder for UserRewardGrant.
+func (c *UserRewardGrantClient) Query() *UserRewardGrantQuery {
+	return &UserRewardGrantQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUserRewardGrant},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a UserRewardGrant entity by its id.
+func (c *UserRewardGrantClient) Get(ctx context.Context, id int64) (*UserRewardGrant, error) {
+	return c.Query().Where(userrewardgrant.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UserRewardGrantClient) GetX(ctx context.Context, id int64) *UserRewardGrant {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryCampaign queries the campaign edge of a UserRewardGrant.
+func (c *UserRewardGrantClient) QueryCampaign(_m *UserRewardGrant) *RewardCampaignQuery {
+	query := (&RewardCampaignClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(userrewardgrant.Table, userrewardgrant.FieldID, id),
+			sqlgraph.To(rewardcampaign.Table, rewardcampaign.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, userrewardgrant.CampaignTable, userrewardgrant.CampaignColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCampaignVersion queries the campaign_version edge of a UserRewardGrant.
+func (c *UserRewardGrantClient) QueryCampaignVersion(_m *UserRewardGrant) *RewardCampaignVersionQuery {
+	query := (&RewardCampaignVersionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(userrewardgrant.Table, userrewardgrant.FieldID, id),
+			sqlgraph.To(rewardcampaignversion.Table, rewardcampaignversion.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, userrewardgrant.CampaignVersionTable, userrewardgrant.CampaignVersionColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryUser queries the user edge of a UserRewardGrant.
+func (c *UserRewardGrantClient) QueryUser(_m *UserRewardGrant) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(userrewardgrant.Table, userrewardgrant.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, userrewardgrant.UserTable, userrewardgrant.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QuerySkin queries the skin edge of a UserRewardGrant.
+func (c *UserRewardGrantClient) QuerySkin(_m *UserRewardGrant) *RewardSkinQuery {
+	query := (&RewardSkinClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(userrewardgrant.Table, userrewardgrant.FieldID, id),
+			sqlgraph.To(rewardskin.Table, rewardskin.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, userrewardgrant.SkinTable, userrewardgrant.SkinColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryJob queries the job edge of a UserRewardGrant.
+func (c *UserRewardGrantClient) QueryJob(_m *UserRewardGrant) *RewardCampaignJobQuery {
+	query := (&RewardCampaignJobClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(userrewardgrant.Table, userrewardgrant.FieldID, id),
+			sqlgraph.To(rewardcampaignjob.Table, rewardcampaignjob.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, userrewardgrant.JobTable, userrewardgrant.JobColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryClaimRecord queries the claim_record edge of a UserRewardGrant.
+func (c *UserRewardGrantClient) QueryClaimRecord(_m *UserRewardGrant) *RedeemCodeQuery {
+	query := (&RedeemCodeClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(userrewardgrant.Table, userrewardgrant.FieldID, id),
+			sqlgraph.To(redeemcode.Table, redeemcode.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, true, userrewardgrant.ClaimRecordTable, userrewardgrant.ClaimRecordColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *UserRewardGrantClient) Hooks() []Hook {
+	return c.hooks.UserRewardGrant
+}
+
+// Interceptors returns the client interceptors.
+func (c *UserRewardGrantClient) Interceptors() []Interceptor {
+	return c.inters.UserRewardGrant
+}
+
+func (c *UserRewardGrantClient) mutate(ctx context.Context, m *UserRewardGrantMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UserRewardGrantCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UserRewardGrantUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UserRewardGrantUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UserRewardGrantDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown UserRewardGrant mutation op: %q", m.Op())
 	}
 }
 
@@ -6972,10 +8381,12 @@ type (
 		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
-		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		SubscriptionRenewal, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
-		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
-		UserPlatformQuota, UserSubscription []ent.Hook
+		PromoCodeUsage, Proxy, RedeemCode, RewardCampaign, RewardCampaignJob,
+		RewardCampaignUserState, RewardCampaignVersion, RewardSkin, SecuritySecret,
+		Setting, SubscriptionPlan, SubscriptionRenewal, TLSFingerprintProfile,
+		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
+		UserAttributeValue, UserBehaviorDaily, UserPlatformQuota, UserRewardGrant,
+		UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
@@ -6984,10 +8395,12 @@ type (
 		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
-		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		SubscriptionRenewal, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
-		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
-		UserPlatformQuota, UserSubscription []ent.Interceptor
+		PromoCodeUsage, Proxy, RedeemCode, RewardCampaign, RewardCampaignJob,
+		RewardCampaignUserState, RewardCampaignVersion, RewardSkin, SecuritySecret,
+		Setting, SubscriptionPlan, SubscriptionRenewal, TLSFingerprintProfile,
+		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
+		UserAttributeValue, UserBehaviorDaily, UserPlatformQuota, UserRewardGrant,
+		UserSubscription []ent.Interceptor
 	}
 )
 

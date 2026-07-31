@@ -17,6 +17,9 @@ import type {
   UserAffiliateDetail,
   AffiliateTransferResponse,
   PlatformQuotasResponse,
+  PendingRewardsResponse,
+  RewardClaimResponse,
+  RewardGrant,
   SurpriseRewardStatusResponse,
   WelcomeRewardClaimResponse,
 } from '@/types'
@@ -35,6 +38,11 @@ export async function claimWelcomeReward(): Promise<WelcomeRewardClaimResponse> 
   return data
 }
 
+export async function checkWelcomeReward(): Promise<SurpriseRewardStatusResponse> {
+  const { data } = await apiClient.post<SurpriseRewardStatusResponse>('/user/welcome-reward/check')
+  return data
+}
+
 export async function checkSurpriseReward(): Promise<SurpriseRewardStatusResponse> {
   const { data } = await apiClient.post<SurpriseRewardStatusResponse>('/user/surprise-reward/check')
   return data
@@ -42,6 +50,20 @@ export async function checkSurpriseReward(): Promise<SurpriseRewardStatusRespons
 
 export async function claimSurpriseReward(): Promise<WelcomeRewardClaimResponse> {
   const { data } = await apiClient.post<WelcomeRewardClaimResponse>('/user/surprise-reward/claim')
+  return data
+}
+
+export async function getPendingRewards(): Promise<RewardGrant[]> {
+  const { data } = await apiClient.get<PendingRewardsResponse>('/user/rewards/pending')
+  return data.items
+}
+
+export async function viewReward(grantID: number): Promise<void> {
+  await apiClient.post(`/user/rewards/${grantID}/view`)
+}
+
+export async function claimReward(grantID: number): Promise<RewardClaimResponse> {
+  const { data } = await apiClient.post<RewardClaimResponse>(`/user/rewards/${grantID}/claim`)
   return data
 }
 
@@ -213,9 +235,13 @@ export async function getMyPlatformQuotas(): Promise<PlatformQuotasResponse> {
 
 export const userAPI = {
   getProfile,
+  checkWelcomeReward,
   claimWelcomeReward,
   checkSurpriseReward,
   claimSurpriseReward,
+  getPendingRewards,
+  viewReward,
+  claimReward,
   updateProfile,
   changePassword,
   sendNotifyEmailCode,

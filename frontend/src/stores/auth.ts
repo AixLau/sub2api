@@ -19,7 +19,7 @@ const AUTH_USER_KEY = 'auth_user'
 const REFRESH_TOKEN_KEY = 'refresh_token'
 const TOKEN_EXPIRES_AT_KEY = 'token_expires_at' // 存储过期时间戳而非有效期
 const PENDING_AUTH_SESSION_KEY = 'pending_auth_session'
-const PENDING_WELCOME_REWARD_KEY = 'pending_welcome_reward'
+const LEGACY_PENDING_WELCOME_REWARD_KEY = 'pending_welcome_reward'
 const AUTO_REFRESH_INTERVAL = 60 * 1000 // 60 seconds for user data refresh
 const TOKEN_REFRESH_BUFFER = 120 * 1000 // 120 seconds before expiry to refresh token
 
@@ -75,19 +75,6 @@ function clearPendingAuthSessionStorage(): void {
   localStorage.removeItem(PENDING_AUTH_SESSION_KEY)
 }
 
-function getPersistedWelcomeRewardUserID(): number | null {
-  const raw = localStorage.getItem(PENDING_WELCOME_REWARD_KEY)
-  if (!raw) return null
-  try {
-    const parsed = JSON.parse(raw) as { user_id?: unknown } | null
-    return typeof parsed?.user_id === 'number' && Number.isInteger(parsed.user_id)
-      ? parsed.user_id
-      : null
-  } catch {
-    return null
-  }
-}
-
 export const useAuthStore = defineStore('auth', () => {
   // ==================== State ====================
 
@@ -97,9 +84,11 @@ export const useAuthStore = defineStore('auth', () => {
   const tokenExpiresAt = ref<number | null>(null) // 过期时间戳（毫秒）
   const runMode = ref<'standard' | 'simple'>('standard')
   const pendingAuthSession = ref<PendingAuthSessionSummary | null>(null)
-  const pendingWelcomeRewardUserID = ref<number | null>(getPersistedWelcomeRewardUserID())
+  const pendingWelcomeRewardUserID = ref<number | null>(null)
   let refreshIntervalId: ReturnType<typeof setInterval> | null = null
   let tokenRefreshTimeoutId: ReturnType<typeof setTimeout> | null = null
+  let userRefreshGeneration = 0
+  let welcomeRewardCheckGeneration = 0
 
   // ==================== Computed ====================
 
@@ -122,12 +111,17 @@ export const useAuthStore = defineStore('auth', () => {
    * Also starts auto-refresh and immediately fetches latest user data
    */
   function checkAuth(): void {
+    userRefreshGeneration++
+    welcomeRewardCheckGeneration++
     const savedToken = localStorage.getItem(AUTH_TOKEN_KEY)
     const savedUser = localStorage.getItem(AUTH_USER_KEY)
     const savedRefreshToken = localStorage.getItem(REFRESH_TOKEN_KEY)
     const savedExpiresAt = localStorage.getItem(TOKEN_EXPIRES_AT_KEY)
     pendingAuthSession.value = getPersistedPendingAuthSession()
-    pendingWelcomeRewardUserID.value = getPersistedWelcomeRewardUserID()
+    // Reward eligibility is server-owned. Remove state written by versions
+    // that persisted welcome eligibility and a random skin in localStorage.
+    localStorage.removeItem(LEGACY_PENDING_WELCOME_REWARD_KEY)
+    pendingWelcomeRewardUserID.value = null
 
     if (savedToken && savedUser) {
       try {
@@ -313,6 +307,8 @@ export const useAuthStore = defineStore('auth', () => {
    * Internal helper function
    */
   function setAuthFromResponse(response: AuthResponse): void {
+    userRefreshGeneration++
+    welcomeRewardCheckGeneration++
     // Store token and user
     token.value = response.access_token
 
@@ -332,13 +328,7 @@ export const useAuthStore = defineStore('auth', () => {
     // Persist to localStorage
     localStorage.setItem(AUTH_TOKEN_KEY, response.access_token)
     localStorage.setItem(AUTH_USER_KEY, JSON.stringify(userData))
-    if (response.welcome_reward_pending) {
-      localStorage.setItem(
-        PENDING_WELCOME_REWARD_KEY,
-        JSON.stringify({ user_id: response.user.id })
-      )
-      pendingWelcomeRewardUserID.value = response.user.id
-    }
+    pendingWelcomeRewardUserID.value = response.welcome_reward_pending ? response.user.id : null
     clearPendingAuthSession()
 
     // Start auto-refresh interval for user data
@@ -373,8 +363,9 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function clearPendingWelcomeReward(): void {
+    welcomeRewardCheckGeneration++
     pendingWelcomeRewardUserID.value = null
-    localStorage.removeItem(PENDING_WELCOME_REWARD_KEY)
+    localStorage.removeItem(LEGACY_PENDING_WELCOME_REWARD_KEY)
   }
 
   async function claimWelcomeReward(): Promise<WelcomeRewardClaimResponse> {
@@ -392,6 +383,17 @@ export const useAuthStore = defineStore('auth', () => {
     return result.pending
   }
 
+  async function checkWelcomeReward(): Promise<boolean> {
+    const checkedUserID = user.value?.id ?? null
+    const generation = ++welcomeRewardCheckGeneration
+    const result = await userAPI.checkWelcomeReward()
+    if (generation === welcomeRewardCheckGeneration && user.value?.id === checkedUserID) {
+      pendingWelcomeRewardUserID.value =
+        result.pending && checkedUserID !== null ? checkedUserID : null
+    }
+    return result.pending
+  }
+
   async function claimSurpriseReward(): Promise<WelcomeRewardClaimResponse> {
     const result = await userAPI.claimSurpriseReward()
     if (user.value) {
@@ -399,6 +401,12 @@ export const useAuthStore = defineStore('auth', () => {
       localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user.value))
     }
     return result
+  }
+
+  async function applyRewardBalance(balanceAfter: number): Promise<void> {
+    if (!user.value || !Number.isFinite(balanceAfter)) return
+    // balance_after is a transaction snapshot and claim responses may arrive out of order.
+    await refreshUser()
   }
 
   /**
@@ -411,8 +419,10 @@ export const useAuthStore = defineStore('auth', () => {
     // Note: Don't clear localStorage here as OAuth callback may have set refresh_token
     stopAutoRefresh()
     stopTokenRefresh()
+    userRefreshGeneration++
     token.value = null
     user.value = null
+    welcomeRewardCheckGeneration++
     pendingWelcomeRewardUserID.value = null
 
     token.value = newToken
@@ -489,22 +499,28 @@ export const useAuthStore = defineStore('auth', () => {
     if (!token.value) {
       throw new Error('Not authenticated')
     }
+    const generation = ++userRefreshGeneration
 
     try {
       const response = await authAPI.getCurrentUser()
-      if (response.data.run_mode) {
-        runMode.value = response.data.run_mode
-      }
       const { run_mode: _run_mode, ...userData } = response.data
-      user.value = userData
+      if (generation === userRefreshGeneration) {
+        if (response.data.run_mode) {
+          runMode.value = response.data.run_mode
+        }
+        user.value = userData
 
-      // Update localStorage
-      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(userData))
+        // Update localStorage
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(userData))
+      }
 
       return userData
     } catch (error) {
       // If refresh fails with 401, clear auth state
-      if ((error as { status?: number }).status === 401) {
+      if (
+        generation === userRefreshGeneration &&
+        (error as { status?: number }).status === 401
+      ) {
         clearAuth({ preservePendingAuthSession: pendingAuthSession.value !== null })
       }
       throw error
@@ -525,12 +541,14 @@ export const useAuthStore = defineStore('auth', () => {
     refreshTokenValue.value = null
     tokenExpiresAt.value = null
     user.value = null
+    userRefreshGeneration++
+    welcomeRewardCheckGeneration++
     pendingWelcomeRewardUserID.value = null
     localStorage.removeItem(AUTH_TOKEN_KEY)
     localStorage.removeItem(AUTH_USER_KEY)
     localStorage.removeItem(REFRESH_TOKEN_KEY)
     localStorage.removeItem(TOKEN_EXPIRES_AT_KEY)
-    localStorage.removeItem(PENDING_WELCOME_REWARD_KEY)
+    localStorage.removeItem(LEGACY_PENDING_WELCOME_REWARD_KEY)
 
     if (options?.preservePendingAuthSession) {
       pendingAuthSession.value = getPersistedPendingAuthSession()
@@ -566,9 +584,11 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     checkAuth,
     refreshUser,
+    checkWelcomeReward,
     claimWelcomeReward,
     checkSurpriseReward,
     claimSurpriseReward,
+    applyRewardBalance,
     clearPendingWelcomeReward,
     setPendingAuthSession,
     clearPendingAuthSession

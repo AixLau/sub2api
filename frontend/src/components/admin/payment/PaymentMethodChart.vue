@@ -13,7 +13,7 @@
       <div v-for="method in methods" :key="method.type" class="space-y-1">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
-            <span :class="['inline-block h-3 w-3 rounded-full', colorMap[method.type] || 'bg-gray-400']"></span>
+            <span :class="['inline-block h-3 w-3 rounded-full', paymentMethodColorClass(method.type)]"></span>
             <span class="text-sm text-gray-700 dark:text-gray-300">
               {{ t('payment.methods.' + method.type, method.type) }}
             </span>
@@ -31,7 +31,7 @@
           <span class="w-10 text-xs text-gray-500 dark:text-gray-400">{{ currency }}</span>
           <div class="h-2 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-700">
             <div
-              :class="['h-full rounded-full transition-all', barColorMap[method.type] || 'bg-gray-400']"
+              :class="['h-full rounded-full transition-all', paymentMethodColorClass(method.type)]"
               :style="{ width: barWidth(currency, amount) + '%' }"
             ></div>
           </div>
@@ -45,28 +45,13 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { CurrencyAmounts, PaymentMethodStats } from '@/types/payment'
+import { paymentMethodColorClass } from '@/utils/paymentMethodColors'
 
 const { t } = useI18n()
 
 const props = defineProps<{
   methods: PaymentMethodStats[]
 }>()
-
-const colorMap: Record<string, string> = {
-  alipay: 'bg-blue-500',
-  wxpay: 'bg-green-500',
-  alipay_direct: 'bg-blue-400',
-  wxpay_direct: 'bg-green-400',
-  stripe: 'bg-purple-500',
-}
-
-const barColorMap: Record<string, string> = {
-  alipay: 'bg-blue-500',
-  wxpay: 'bg-green-500',
-  alipay_direct: 'bg-blue-400',
-  wxpay_direct: 'bg-green-400',
-  stripe: 'bg-purple-500',
-}
 
 const maxAmounts = computed<CurrencyAmounts>(() => {
   return props.methods.reduce<CurrencyAmounts>((maximums, method) => {

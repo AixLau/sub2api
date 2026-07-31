@@ -81,7 +81,7 @@ const layerStyle = computed(() => {
   transition: opacity 0.3s ease;
   background: radial-gradient(
     circle var(--spot-size) at var(--spot-x) var(--spot-y),
-    var(--spot-color, rgba(20, 184, 166, 0.1)),
+    var(--spot-color, rgb(var(--color-brand-500) / 0.1)),
     transparent 70%
   );
 }
@@ -89,7 +89,7 @@ const layerStyle = computed(() => {
 .dark .spotlight-layer {
   background: radial-gradient(
     circle var(--spot-size) at var(--spot-x) var(--spot-y),
-    var(--spot-color, rgba(45, 212, 191, 0.14)),
+    var(--spot-color, rgb(var(--color-brand-500) / 0.14)),
     transparent 70%
   );
 }

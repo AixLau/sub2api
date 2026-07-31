@@ -175,6 +175,15 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 			return nil, fmt.Errorf("marshal responses request: %w", err)
 		}
 	}
+	if account != nil && account.Platform == PlatformOpenAI {
+		normalizedBody, changed, normalizeErr := normalizeOpenAIResponsesReasoningContent(responsesBody)
+		if normalizeErr != nil {
+			return nil, fmt.Errorf("normalize OpenAI Responses reasoning content: %w", normalizeErr)
+		}
+		if changed {
+			responsesBody = normalizedBody
+		}
+	}
 
 	logFields := []zap.Field{
 		zap.Int64("account_id", account.ID),

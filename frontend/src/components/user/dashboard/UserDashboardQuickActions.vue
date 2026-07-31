@@ -21,10 +21,10 @@
         </button>
       </DirectionAwareHover>
 
-      <DirectionAwareHover class="rounded-xl" color="rgba(16, 185, 129, 0.12)">
+      <DirectionAwareHover class="rounded-xl" :color="quickActionColors.usage">
         <button @click="router.push('/usage')" class="group flex w-full items-center gap-4 rounded-xl bg-gray-50 p-4 text-left transition-all duration-200 dark:bg-dark-800/50">
-          <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-100 transition-transform group-hover:scale-105 dark:bg-emerald-900/30">
-            <Icon name="chart" size="lg" class="text-emerald-600 dark:text-emerald-400" />
+          <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-status-success-soft transition-transform group-hover:scale-105">
+            <Icon name="chart" size="lg" class="text-status-success" />
           </div>
           <div class="min-w-0 flex-1">
             <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('dashboard.viewUsage') }}</p>
@@ -33,12 +33,12 @@
           <Icon
             name="chevronRight"
             size="md"
-            class="text-gray-400 transition-colors group-hover:text-emerald-500 dark:text-dark-500"
+            class="text-gray-400 transition-colors group-hover:text-status-success dark:text-dark-500"
           />
         </button>
       </DirectionAwareHover>
 
-      <DirectionAwareHover v-if="canUseBatchImage" class="rounded-xl" color="rgba(14, 165, 233, 0.12)">
+      <DirectionAwareHover v-if="canUseBatchImage" class="rounded-xl" :color="quickActionColors.batchImage">
         <button @click="router.push('/batch-image')" class="group flex w-full items-center gap-4 rounded-xl bg-gray-50 p-4 text-left transition-all duration-200 dark:bg-dark-800/50">
           <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-sky-100 transition-transform group-hover:scale-105 dark:bg-sky-900/30">
             <Icon name="sparkles" size="lg" class="text-sky-600 dark:text-sky-400" />
@@ -55,10 +55,10 @@
         </button>
       </DirectionAwareHover>
 
-      <DirectionAwareHover class="rounded-xl" color="rgba(245, 158, 11, 0.12)">
+      <DirectionAwareHover class="rounded-xl" :color="quickActionColors.redeem">
         <button @click="router.push('/redeem')" class="group flex w-full items-center gap-4 rounded-xl bg-gray-50 p-4 text-left transition-all duration-200 dark:bg-dark-800/50">
-          <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-amber-100 transition-transform group-hover:scale-105 dark:bg-amber-900/30">
-            <Icon name="gift" size="lg" class="text-amber-600 dark:text-amber-400" />
+          <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-status-warning-soft transition-transform group-hover:scale-105">
+            <Icon name="gift" size="lg" class="text-status-warning" />
           </div>
           <div class="min-w-0 flex-1">
             <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('dashboard.redeemCode') }}</p>
@@ -67,7 +67,7 @@
           <Icon
             name="chevronRight"
             size="md"
-            class="text-gray-400 transition-colors group-hover:text-amber-500 dark:text-dark-500"
+            class="text-gray-400 transition-colors group-hover:text-status-warning dark:text-dark-500"
           />
         </button>
       </DirectionAwareHover>
@@ -82,9 +82,15 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import DirectionAwareHover from '@/components/inspira/DirectionAwareHover.vue'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+import { chartSeriesColors, colorWithAlpha } from '@/theme/designTokens'
 const router = useRouter()
 const { t } = useI18n()
 const { canUseBatchImage, refreshBatchImageAccess } = useBatchImageAccess()
+const quickActionColors = {
+  usage: colorWithAlpha(chartSeriesColors.success, 0.12),
+  batchImage: colorWithAlpha(chartSeriesColors.sky, 0.12),
+  redeem: colorWithAlpha(chartSeriesColors.warning, 0.12),
+}
 
 onMounted(() => {
   void refreshBatchImageAccess()

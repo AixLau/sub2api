@@ -151,6 +151,7 @@ type SystemSettings struct {
 
 	DefaultConcurrency           int
 	DefaultBalance               float64
+	RewardCampaignsEnabled       bool
 	RiskControlEnabled           bool
 	CyberSessionBlockEnabled     bool
 	CyberSessionBlockTTLSeconds  int
@@ -354,6 +355,9 @@ type PublicSettings struct {
 
 	// Affiliate (邀请返利) feature toggle
 	AffiliateEnabled bool `json:"affiliate_enabled"`
+
+	// 奖励活动中心功能开关
+	RewardCampaignsEnabled bool `json:"reward_campaigns_enabled"`
 
 	// 风控中心功能开关
 	RiskControlEnabled bool `json:"risk_control_enabled"`

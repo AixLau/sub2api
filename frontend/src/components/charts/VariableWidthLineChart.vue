@@ -97,6 +97,7 @@ import {
   type PlotLayout,
   type XCoordinateModel,
 } from './variableWidthLineChartGeometry'
+import { tokenUsageColors } from '@/theme/designTokens'
 
 defineOptions({
   name: 'VariableWidthLineChart',
@@ -126,14 +127,6 @@ const SIZE_KEY = '__vw_visual_size__'
 const COLOR_KEY = '__vw_color__'
 const SERIES_KEY = '__vw_series__'
 
-const DEFAULT_COLORS = [
-  '#2563eb',
-  '#059669',
-  '#f97316',
-  '#14b8a6',
-  '#7c3aed',
-]
-
 const props = withDefaults(defineProps<{
   title?: string
   data?: RawDatum[]
@@ -161,7 +154,13 @@ const props = withDefaults(defineProps<{
   title: '',
   data: () => [],
   height: 192,
-  colors: () => ['#2563eb', '#059669', '#f97316', '#14b8a6', '#7c3aed'],
+  colors: () => [
+    tokenUsageColors.input,
+    tokenUsageColors.output,
+    tokenUsageColors.cacheCreation,
+    tokenUsageColors.cacheRead,
+    tokenUsageColors.cacheHitRate,
+  ],
   minLineWidth: 1.2,
   maxLineWidth: 6.5,
   showLegend: true,
@@ -286,7 +285,7 @@ const seriesNames = computed(() => {
 })
 
 const colorRange = computed(() => {
-  const colors = props.colors.length ? props.colors : DEFAULT_COLORS
+  const colors = props.colors.length ? props.colors : Object.values(tokenUsageColors)
   return seriesNames.value.map((_, index) => colors[index % colors.length])
 })
 
@@ -751,7 +750,7 @@ const renderChart = async () => {
         size: 5,
       },
       style: {
-        stroke: '#ffffff',
+        stroke: 'rgb(var(--color-surface-panel))',
         lineWidth: 1.5,
         fillOpacity: 0.96,
       },
@@ -910,29 +909,16 @@ onBeforeUnmount(() => {
   min-width: 0;
   max-width: 100%;
   background: transparent;
-  --vw-title-text: #111827;
-  --vw-title-surface: #dbeafe;
-  --vw-body-text: #374151;
-  --vw-muted-text: #6b7280;
-  --vw-grid: #e5e7eb;
-  --vw-crosshair: rgba(17, 24, 39, 0.48);
-  --vw-tooltip-surface: #ffffff;
-  --vw-tooltip-border: #d1d5db;
-  --vw-tooltip-text: #374151;
-  --vw-tooltip-value: #111827;
-}
-
-:global(.dark) .vw-line {
-  --vw-title-text: #dbeafe;
-  --vw-title-surface: rgba(37, 99, 235, 0.24);
-  --vw-body-text: #d1d5db;
-  --vw-muted-text: #9ca3af;
-  --vw-grid: #374151;
-  --vw-crosshair: rgba(209, 213, 219, 0.48);
-  --vw-tooltip-surface: #111827;
-  --vw-tooltip-border: #374151;
-  --vw-tooltip-text: #d1d5db;
-  --vw-tooltip-value: #f9fafb;
+  --vw-title-text: rgb(var(--color-content-brand));
+  --vw-title-surface: rgb(var(--color-status-info-soft));
+  --vw-body-text: rgb(var(--color-content-secondary));
+  --vw-muted-text: rgb(var(--color-content-tertiary));
+  --vw-grid: rgb(var(--color-line-subtle));
+  --vw-crosshair: rgb(var(--color-content-primary) / 0.48);
+  --vw-tooltip-surface: rgb(var(--color-surface-raised));
+  --vw-tooltip-border: rgb(var(--color-line-default));
+  --vw-tooltip-text: rgb(var(--color-content-secondary));
+  --vw-tooltip-value: rgb(var(--color-content-primary));
 }
 
 .vw-line__header {
@@ -1069,7 +1055,7 @@ onBeforeUnmount(() => {
   background: var(--vw-tooltip-surface);
   border: 1px solid var(--vw-tooltip-border);
   border-radius: 7px;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 12px 28px rgb(var(--color-shadow) / 0.22);
   color: var(--vw-tooltip-text);
   padding: 10px 12px;
   /* The tooltip is visual-only. Let pointer moves continue to reach the chart

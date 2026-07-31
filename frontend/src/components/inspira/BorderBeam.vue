@@ -4,6 +4,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { accentColors, brandColors } from '@/theme/designTokens'
 
 interface Props {
   /** Beam length in px */
@@ -21,8 +22,8 @@ const props = withDefaults(defineProps<Props>(), {
   duration: 12,
   delay: 0,
   borderWidth: 1.5,
-  colorFrom: '#14b8a6',
-  colorTo: '#06b6d4'
+  colorFrom: brandColors['500'],
+  colorTo: accentColors['400']
 })
 
 const styleVars = computed(() => ({

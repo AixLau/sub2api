@@ -274,6 +274,7 @@ import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Doughnut } from 'vue-chartjs'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import UserBreakdownSubTable from './UserBreakdownSubTable.vue'
+import { categoricalPalette, neutralColors } from '@/theme/designTokens'
 import type { ModelStat, UserSpendingRankingItem, UserBreakdownItem } from '@/types'
 import { getUserBreakdown } from '@/api/admin/dashboard'
 
@@ -373,23 +374,10 @@ const effectiveMetric = computed<DistributionMetric>(() => (showCost.value && pr
 const distributionColspan = computed(() => 3 + (showCost.value ? 1 : 0) + (showAccountCost.value ? 1 : 0) + (showStandardCost.value ? 1 : 0))
 const activeView = ref<'model_distribution' | 'spending_ranking'>('model_distribution')
 const chartShellClass = computed(() => props.surface === 'tremor'
-  ? 'relative w-full rounded-lg border border-gray-200 bg-white p-5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-gray-900 dark:bg-[#090E1A]'
+  ? 'relative w-full rounded-lg border border-line-default bg-surface-panel p-5 text-left shadow-card'
   : 'card p-4')
 
-const chartColors = [
-  '#4f7cff',
-  '#20d9a0',
-  '#ffb84d',
-  '#ff6174',
-  '#8b6eff',
-  '#28c7c0',
-  '#f377c5',
-  '#ff8d67',
-  '#6e8cff',
-  '#8bd450',
-  '#35b7e9',
-  '#b56cff'
-]
+const chartColors = categoricalPalette
 
 const displayModelStats = computed(() => {
   const sourceStats = props.source === 'upstream'
@@ -431,7 +419,7 @@ const rankingChartData = computed(() => {
   if (otherRankingItem.value) {
     labels.push(t('admin.dashboard.spendingRankingOther'))
     data.push(otherRankingItem.value.actual_cost)
-    backgroundColor.push('#94a3b8')
+    backgroundColor.push(neutralColors['400'])
   }
 
   return {

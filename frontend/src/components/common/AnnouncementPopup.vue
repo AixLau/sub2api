@@ -3,7 +3,7 @@
     <Transition name="popup-fade">
       <div
         v-if="displayedAnnouncement"
-        class="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-gradient-to-br from-black/70 via-black/60 to-black/70 p-4 pt-[8vh] backdrop-blur-md"
+        class="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-surface-scrim/65 p-4 pt-[8vh] backdrop-blur-md"
       >
         <div
           class="w-full max-w-[680px] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
@@ -191,11 +191,19 @@ onBeforeUnmount(() => {
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, #cbd5e1, #94a3b8);
+  background: linear-gradient(
+    to bottom,
+    rgb(var(--color-line-strong)),
+    rgb(var(--color-content-disabled))
+  );
   border-radius: 4px;
 }
 
 .dark .overflow-y-auto::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, #4b5563, #374151);
+  background: linear-gradient(
+    to bottom,
+    rgb(var(--color-line-strong)),
+    rgb(var(--color-content-disabled))
+  );
 }
 </style>

@@ -425,6 +425,11 @@ import Icon from '@/components/icons/Icon.vue'
 import { buildGatewayUrl } from '@/api/client'
 import { formatDateLocalInput } from '@/utils/format'
 import { sanitizeUrl } from '@/utils/url'
+import {
+  brandColors,
+  chartSeriesColors,
+  semanticColors,
+} from '@/theme/designTokens'
 
 const { t, locale } = useI18n()
 const appStore = useAppStore()
@@ -527,16 +532,18 @@ function setDailyUsageDays(days: 7 | 30 | 90) {
 
 const CIRCUMFERENCE = 2 * Math.PI * 68
 const RING_GRADIENTS = [
-  { from: '#14b8a6', to: '#5eead4' },
-  { from: '#6366F1', to: '#A5B4FC' },
-  { from: '#10B981', to: '#6EE7B7' },
-  { from: '#F59E0B', to: '#FCD34D' },
+  { from: brandColors['500'], to: brandColors['300'] },
+  { from: chartSeriesColors.contrast, to: chartSeriesColors.secondaryBrand },
+  { from: chartSeriesColors.success, to: chartSeriesColors.positive },
+  { from: chartSeriesColors.warning, to: chartSeriesColors.orange },
 ]
 
 const ringAnimated = ref(false)
 const displayPcts = ref<number[]>([])
 
-const ringTrackColor = computed(() => isDark.value ? '#222222' : '#F0F0EE')
+const ringTrackColor = computed(() =>
+  semanticColors[isDark.value ? 'dark' : 'light']['surface-subtle']
+)
 
 interface RingItem {
   title: string
@@ -945,8 +952,8 @@ onUnmounted(() => {
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 .input-ring:focus {
-  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.2);
-  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px rgb(var(--color-brand-500) / 0.2);
+  border-color: rgb(var(--color-brand-500));
   outline: none;
 }
 
@@ -963,14 +970,15 @@ onUnmounted(() => {
   100% { background-position: 200% 0; }
 }
 .skeleton {
-  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+  background: linear-gradient(
+    90deg,
+    rgb(var(--color-line-default)) 25%,
+    rgb(var(--color-surface-subtle)) 50%,
+    rgb(var(--color-line-default)) 75%
+  );
   background-size: 200% 100%;
   animation: shimmer-kv 1.8s ease-in-out infinite;
   border-radius: 8px;
-}
-:global(.dark) .skeleton {
-  background: linear-gradient(90deg, #334155 25%, #1e293b 50%, #334155 75%);
-  background-size: 200% 100%;
 }
 
 /* Fade up animation */

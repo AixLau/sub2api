@@ -1,7 +1,7 @@
 <template>
   <AppLayout>
     <div class="mx-auto w-full max-w-md py-8">
-      <div class="overflow-hidden rounded-2xl bg-white shadow-[0_0_0_1px_#E5EAFF] dark:bg-dark-800 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
+      <div class="overflow-hidden rounded-2xl bg-surface-panel ring-1 ring-line-default">
         <!-- Brand header bar -->
         <div :class="['flex items-center gap-3 px-6 py-4', brandHeaderClass]">
           <span class="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm">
@@ -16,13 +16,13 @@
         <div class="flex flex-col items-center px-6 py-7">
           <!-- Expired state -->
           <template v-if="expired">
-            <div class="flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
-              <svg class="h-8 w-8 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <div class="flex h-16 w-16 items-center justify-center rounded-full bg-status-warning-soft">
+              <svg class="h-8 w-8 text-status-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
             <p class="mt-5 text-xl font-semibold tracking-tight text-gray-900 dark:text-white">{{ t('payment.qr.expired') }}</p>
-            <button class="mt-6 w-full rounded-full bg-[#0033FF] py-3 text-base font-medium text-white transition-colors hover:bg-[#0029cc] active:bg-[#0022b0]" @click="router.push('/purchase')">
+            <button class="mt-6 w-full rounded-full bg-primary-500 py-3 text-base font-medium text-white transition-colors hover:bg-primary-600 active:bg-primary-700" @click="router.push('/purchase')">
               {{ t('payment.result.backToRecharge') }}
             </button>
           </template>
@@ -39,7 +39,7 @@
               </div>
             </div>
             <p v-if="scanHint" class="mt-5 max-w-[16rem] text-center text-sm leading-relaxed text-gray-500 dark:text-gray-400">{{ scanHint }}</p>
-            <div class="mt-5 flex items-center gap-2 rounded-full bg-[#F8F9FB] px-4 py-2 dark:bg-dark-900/60">
+            <div class="mt-5 flex items-center gap-2 rounded-full bg-surface-subtle px-4 py-2">
               <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
@@ -58,12 +58,12 @@
 
           <!-- Pay in new window -->
           <template v-else>
-            <div class="h-12 w-12 animate-spin rounded-full border-4 border-[#E5EAFF] border-t-[#0033FF]"></div>
+            <div class="h-12 w-12 animate-spin rounded-full border-4 border-primary-100 border-t-primary-500"></div>
             <p class="mt-5 text-sm text-gray-500 dark:text-gray-400">{{ t('payment.qr.payInNewWindowHint') }}</p>
             <p class="mt-4 text-2xl font-semibold tabular-nums text-gray-900 dark:text-white">{{ countdownDisplay }}</p>
             <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">{{ t('payment.qr.waitingPayment') }}</p>
             <a v-if="payUrl" :href="payUrl" target="_blank" rel="noopener noreferrer"
-              class="mt-6 w-full rounded-full bg-[#0033FF] py-3 text-center text-base font-medium text-white transition-colors hover:bg-[#0029cc] active:bg-[#0022b0]">
+              class="mt-6 w-full rounded-full bg-primary-500 py-3 text-center text-base font-medium text-white transition-colors hover:bg-primary-600 active:bg-primary-700">
               {{ t('payment.qr.openPayWindow') }}
             </a>
           </template>
@@ -124,15 +124,15 @@ const isWxpay = computed(() => isBuiltInWxpayMethod(paymentType.value))
 const brandIcon = computed(() => (isWxpay.value ? wxpayIcon : alipayIcon))
 
 const brandHeaderClass = computed(() => {
-  if (isAlipay.value) return 'bg-[#00AEEF]'
-  if (isWxpay.value) return 'bg-[#2BB741]'
-  return 'bg-[#0033FF]'
+  if (isAlipay.value) return 'bg-provider-alipay'
+  if (isWxpay.value) return 'bg-provider-wechat'
+  return 'bg-primary-500'
 })
 
 const brandCornerClass = computed(() => {
-  if (isAlipay.value) return 'border-[#00AEEF]'
-  if (isWxpay.value) return 'border-[#2BB741]'
-  return 'border-[#0033FF]'
+  if (isAlipay.value) return 'border-provider-alipay'
+  if (isWxpay.value) return 'border-provider-wechat'
+  return 'border-primary-500'
 })
 
 const scanTitle = computed(() => {

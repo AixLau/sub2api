@@ -40,6 +40,49 @@ func TestTrimOpenAIEncryptedReasoningItems_ContentNull(t *testing.T) {
 	assert.False(t, hasEncrypted, "encrypted_content should be stripped")
 }
 
+func TestNormalizeOpenAIResponsesReasoningContent_RemovesInvalidContentOnly(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","input":[` +
+		`{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]},` +
+		`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"plan"}],"encrypted_content":"cipher","content":[{"type":"reasoning_text","text":"internal"}]},` +
+		`{"type":"message","role":"assistant","content":[{"type":"output_text","text":"answer"}]},` +
+		`{"type":"reasoning","content":null}` +
+		`]}`)
+
+	normalized, changed, err := normalizeOpenAIResponsesReasoningContent(body)
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	require.False(t, gjson.GetBytes(normalized, "input.1.content").Exists(),
+		"reasoning content arrays must not be replayed to strict GPT/Codex upstreams")
+	require.False(t, gjson.GetBytes(normalized, "input.3.content").Exists(),
+		"null reasoning content should be omitted as well")
+	assert.Equal(t, "cipher", gjson.GetBytes(normalized, "input.1.encrypted_content").String())
+	assert.Equal(t, "plan", gjson.GetBytes(normalized, "input.1.summary.0.text").String())
+	assert.Equal(t, "output_text", gjson.GetBytes(normalized, "input.2.content.0.type").String(),
+		"valid assistant output_text content must be preserved")
+	assert.Equal(t, "hello", gjson.GetBytes(normalized, "input.0.content.0.text").String())
+}
+
+func TestNormalizeOpenAIResponsesReasoningContent_NoOpWithoutReasoningContent(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","input":[` +
+		`{"type":"reasoning","summary":[],"encrypted_content":"cipher"},` +
+		`{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}]}`)
+
+	normalized, changed, err := normalizeOpenAIResponsesReasoningContent(body)
+	require.NoError(t, err)
+	assert.False(t, changed)
+	assert.Equal(t, string(body), string(normalized))
+}
+
+func TestNormalizeOpenAIResponsesReasoningContent_NoOpForChatMessages(t *testing.T) {
+	body := []byte(`{"model":"deepseek-reasoner","messages":[{"role":"assistant","content":"answer"}]}`)
+
+	normalized, changed, err := normalizeOpenAIResponsesReasoningContent(body)
+	require.NoError(t, err)
+	assert.False(t, changed)
+	assert.Equal(t, string(body), string(normalized))
+}
+
 func TestTrimOpenAIEncryptedReasoningItems_ContentNullOnly(t *testing.T) {
 	reqBody := map[string]any{
 		"model": "grok-4.5",

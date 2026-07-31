@@ -48,7 +48,7 @@ describe('LiquidGlass', () => {
   it.each([
     ['Safari', safariUserAgent],
     ['Firefox', firefoxUserAgent]
-  ])('uses an opaque white card without the SVG filter in %s', async (_browser, userAgent) => {
+  ])('uses the opaque raised surface token without the SVG filter in %s', async (_browser, userAgent) => {
     const resizeObserver = vi.fn()
     vi.stubGlobal('navigator', { userAgent })
     vi.stubGlobal('ResizeObserver', resizeObserver)
@@ -60,7 +60,7 @@ describe('LiquidGlass', () => {
 
     expect(wrapper.attributes('data-liquid-glass')).toBe('fallback')
     expect(wrapper.classes()).toContain('liquid-glass--fallback')
-    expect(wrapper.attributes('style')).toContain('background-color: rgb(255, 255, 255)')
+    expect(wrapper.attributes('style')).toContain('background-color: rgb(var(--color-surface-raised))')
     expect(wrapper.attributes('style')).not.toContain('url(')
     expect(wrapper.find('svg').exists()).toBe(false)
     expect(wrapper.text()).toContain('Fallback content')

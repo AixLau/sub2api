@@ -28,6 +28,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { usePrefersReducedMotion } from '@/composables/usePrefersReducedMotion'
+import { colorWithAlpha, semanticColors } from '@/theme/designTokens'
 
 interface Props {
   /** 覆盖层颜色 */
@@ -95,8 +96,9 @@ function drawCover() {
   canvas.width = Math.floor(width * dpr)
   canvas.height = Math.floor(height * dpr)
   const dark = isDarkMode()
+  const theme = semanticColors[dark ? 'dark' : 'light']
   ctx.globalCompositeOperation = 'source-over'
-  ctx.fillStyle = props.coverColor || (dark ? '#334155' : '#cbd5e1')
+  ctx.fillStyle = props.coverColor || theme['line-default']
   ctx.fillRect(0, 0, canvas.width, canvas.height)
   if (loadedCoverImage) {
     drawCoverImage(loadedCoverImage, canvas.width, canvas.height)
@@ -104,11 +106,11 @@ function drawCover() {
   if (props.coverText) {
     ctx.fillStyle =
       props.coverTextColor ||
-      (dark ? 'rgba(226, 232, 240, 0.9)' : 'rgba(71, 85, 105, 0.9)')
+      colorWithAlpha(theme['content-secondary'], 0.9)
     ctx.font = `600 ${Math.round(14 * dpr)}px system-ui, sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.shadowColor = dark ? 'rgba(15, 23, 42, 0.55)' : 'rgba(255, 255, 255, 0.7)'
+    ctx.shadowColor = colorWithAlpha(theme.shadow, dark ? 0.55 : 0.16)
     ctx.shadowBlur = 4 * dpr
     ctx.fillText(props.coverText, canvas.width / 2, canvas.height / 2)
     ctx.shadowColor = 'transparent'
@@ -328,11 +330,11 @@ onBeforeUnmount(() => {
 
 .scratch-cover--loading {
   cursor: wait;
-  background: #f3f4f6;
+  background: rgb(var(--color-surface-subtle));
 }
 
 :global(.dark) .scratch-cover--loading {
-  background: #1f2937;
+  background: rgb(var(--color-surface-subtle));
 }
 
 .scratch-cover--revealed {

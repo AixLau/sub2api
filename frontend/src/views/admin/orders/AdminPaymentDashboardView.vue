@@ -11,7 +11,7 @@
               type="button"
               class="px-3 py-1.5 text-xs font-medium transition-colors first:rounded-l-lg last:rounded-r-lg"
               :class="days === d
-                ? 'bg-primary-600 text-white'
+                ? 'bg-primary-600 text-content-on-brand'
                 : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700'"
               @click="days = d"
             >
@@ -77,6 +77,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminPaymentAPI } from '@/api/admin/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
+import { paymentMethodColorClass } from '@/utils/paymentMethodColors'
 import type { CurrencyAmounts, DashboardStats, TopUserPaymentStats } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
@@ -94,12 +95,7 @@ const loading = ref(false)
 const stats = ref<DashboardStats | null>(null)
 
 function methodColor(type: string): string {
-  const c: Record<string, string> = {
-    alipay: 'bg-blue-500', wxpay: 'bg-green-500',
-    alipay_direct: 'bg-blue-400', wxpay_direct: 'bg-green-400',
-    stripe: 'bg-purple-500',
-  }
-  return c[type] || 'bg-gray-400'
+  return paymentMethodColorClass(type)
 }
 
 function rankClass(idx: number): string {

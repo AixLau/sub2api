@@ -1486,6 +1486,260 @@ var (
 			},
 		},
 	}
+	// RewardCampaignsColumns holds the columns for the "reward_campaigns" table.
+	RewardCampaignsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "system_key", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "name", Type: field.TypeString, Size: 200},
+		{Name: "description", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "status", Type: field.TypeString, Size: 20, Default: "draft"},
+		{Name: "issuance_mode", Type: field.TypeString, Size: 32, Default: "on_access"},
+		{Name: "timezone", Type: field.TypeString, Size: 64, Default: "UTC"},
+		{Name: "starts_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "ends_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "priority", Type: field.TypeInt, Default: 0},
+		{Name: "total_budget", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "reserved_budget", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "spent_budget", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "released_budget", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "created_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "updated_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "published_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "paused_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "ended_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "archived_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "current_version_id", Type: field.TypeInt64, Nullable: true},
+	}
+	// RewardCampaignsTable holds the schema information for the "reward_campaigns" table.
+	RewardCampaignsTable = &schema.Table{
+		Name:       "reward_campaigns",
+		Columns:    RewardCampaignsColumns,
+		PrimaryKey: []*schema.Column{RewardCampaignsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "reward_campaigns_reward_campaign_versions_current_for_campaigns",
+				Columns:    []*schema.Column{RewardCampaignsColumns[22]},
+				RefColumns: []*schema.Column{RewardCampaignVersionsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "rewardcampaign_system_key",
+				Unique:  true,
+				Columns: []*schema.Column{RewardCampaignsColumns[3]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "system_key IS NOT NULL",
+				},
+			},
+			{
+				Name:    "rewardcampaign_status_starts_at_ends_at",
+				Unique:  false,
+				Columns: []*schema.Column{RewardCampaignsColumns[6], RewardCampaignsColumns[9], RewardCampaignsColumns[10]},
+			},
+			{
+				Name:    "rewardcampaign_issuance_mode_status",
+				Unique:  false,
+				Columns: []*schema.Column{RewardCampaignsColumns[7], RewardCampaignsColumns[6]},
+			},
+			{
+				Name:    "rewardcampaign_priority",
+				Unique:  false,
+				Columns: []*schema.Column{RewardCampaignsColumns[11]},
+			},
+		},
+	}
+	// RewardCampaignJobsColumns holds the columns for the "reward_campaign_jobs" table.
+	RewardCampaignJobsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "job_type", Type: field.TypeString, Size: 32, Default: "issue_batch"},
+		{Name: "idempotency_key", Type: field.TypeString, Unique: true, Size: 128},
+		{Name: "status", Type: field.TypeString, Size: 24, Default: "pending"},
+		{Name: "cursor_user_id", Type: field.TypeInt64, Default: 0},
+		{Name: "max_user_id", Type: field.TypeInt64, Default: 0},
+		{Name: "lease_owner", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "lease_expires_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "scheduled_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "next_attempt_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "started_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "finished_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "attempt_count", Type: field.TypeInt, Default: 0},
+		{Name: "max_attempts", Type: field.TypeInt, Default: 20},
+		{Name: "total_users", Type: field.TypeInt64, Default: 0},
+		{Name: "scanned_users", Type: field.TypeInt64, Default: 0},
+		{Name: "matched_users", Type: field.TypeInt64, Default: 0},
+		{Name: "granted_users", Type: field.TypeInt64, Default: 0},
+		{Name: "skipped_users", Type: field.TypeInt64, Default: 0},
+		{Name: "failed_users", Type: field.TypeInt64, Default: 0},
+		{Name: "last_error", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "campaign_id", Type: field.TypeInt64},
+		{Name: "campaign_version_id", Type: field.TypeInt64},
+	}
+	// RewardCampaignJobsTable holds the schema information for the "reward_campaign_jobs" table.
+	RewardCampaignJobsTable = &schema.Table{
+		Name:       "reward_campaign_jobs",
+		Columns:    RewardCampaignJobsColumns,
+		PrimaryKey: []*schema.Column{RewardCampaignJobsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "reward_campaign_jobs_reward_campaigns_jobs",
+				Columns:    []*schema.Column{RewardCampaignJobsColumns[23]},
+				RefColumns: []*schema.Column{RewardCampaignsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "reward_campaign_jobs_reward_campaign_versions_jobs",
+				Columns:    []*schema.Column{RewardCampaignJobsColumns[24]},
+				RefColumns: []*schema.Column{RewardCampaignVersionsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "rewardcampaignjob_campaign_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{RewardCampaignJobsColumns[23], RewardCampaignJobsColumns[5]},
+			},
+			{
+				Name:    "rewardcampaignjob_status_next_attempt_at",
+				Unique:  false,
+				Columns: []*schema.Column{RewardCampaignJobsColumns[5], RewardCampaignJobsColumns[11]},
+			},
+			{
+				Name:    "rewardcampaignjob_lease_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{RewardCampaignJobsColumns[9]},
+			},
+		},
+	}
+	// RewardCampaignUserStatesColumns holds the columns for the "reward_campaign_user_states" table.
+	RewardCampaignUserStatesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "last_evaluated_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "last_won_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "last_granted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "last_claimed_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "next_eligible_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "evaluation_count", Type: field.TypeInt64, Default: 0},
+		{Name: "win_count", Type: field.TypeInt64, Default: 0},
+		{Name: "grant_count", Type: field.TypeInt64, Default: 0},
+		{Name: "claim_count", Type: field.TypeInt64, Default: 0},
+		{Name: "control_group", Type: field.TypeBool, Default: false},
+		{Name: "current_cycle_key", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "campaign_id", Type: field.TypeInt64},
+		{Name: "user_id", Type: field.TypeInt64},
+	}
+	// RewardCampaignUserStatesTable holds the schema information for the "reward_campaign_user_states" table.
+	RewardCampaignUserStatesTable = &schema.Table{
+		Name:       "reward_campaign_user_states",
+		Columns:    RewardCampaignUserStatesColumns,
+		PrimaryKey: []*schema.Column{RewardCampaignUserStatesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "reward_campaign_user_states_reward_campaigns_user_states",
+				Columns:    []*schema.Column{RewardCampaignUserStatesColumns[14]},
+				RefColumns: []*schema.Column{RewardCampaignsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "reward_campaign_user_states_users_reward_campaign_states",
+				Columns:    []*schema.Column{RewardCampaignUserStatesColumns[15]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "rewardcampaignuserstate_campaign_id_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{RewardCampaignUserStatesColumns[14], RewardCampaignUserStatesColumns[15]},
+			},
+			{
+				Name:    "rewardcampaignuserstate_campaign_id_next_eligible_at",
+				Unique:  false,
+				Columns: []*schema.Column{RewardCampaignUserStatesColumns[14], RewardCampaignUserStatesColumns[7]},
+			},
+			{
+				Name:    "rewardcampaignuserstate_user_id_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{RewardCampaignUserStatesColumns[15], RewardCampaignUserStatesColumns[2]},
+			},
+		},
+	}
+	// RewardCampaignVersionsColumns holds the columns for the "reward_campaign_versions" table.
+	RewardCampaignVersionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "version_number", Type: field.TypeInt},
+		{Name: "config", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "config_hash", Type: field.TypeString, Size: 64},
+		{Name: "created_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "campaign_id", Type: field.TypeInt64},
+	}
+	// RewardCampaignVersionsTable holds the schema information for the "reward_campaign_versions" table.
+	RewardCampaignVersionsTable = &schema.Table{
+		Name:       "reward_campaign_versions",
+		Columns:    RewardCampaignVersionsColumns,
+		PrimaryKey: []*schema.Column{RewardCampaignVersionsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "reward_campaign_versions_reward_campaigns_versions",
+				Columns:    []*schema.Column{RewardCampaignVersionsColumns[6]},
+				RefColumns: []*schema.Column{RewardCampaignsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "rewardcampaignversion_campaign_id_version_number",
+				Unique:  true,
+				Columns: []*schema.Column{RewardCampaignVersionsColumns[6], RewardCampaignVersionsColumns[1]},
+			},
+			{
+				Name:    "rewardcampaignversion_campaign_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{RewardCampaignVersionsColumns[6], RewardCampaignVersionsColumns[5]},
+			},
+		},
+	}
+	// RewardSkinsColumns holds the columns for the "reward_skins" table.
+	RewardSkinsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "name", Type: field.TypeString, Size: 120},
+		{Name: "description", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "alt_text", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
+		{Name: "mime_type", Type: field.TypeString, Size: 32},
+		{Name: "width", Type: field.TypeInt},
+		{Name: "height", Type: field.TypeInt},
+		{Name: "byte_size", Type: field.TypeInt64},
+		{Name: "sha256", Type: field.TypeString, Unique: true, Size: 64},
+		{Name: "content", Type: field.TypeBytes},
+		{Name: "created_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "updated_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "archived_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// RewardSkinsTable holds the schema information for the "reward_skins" table.
+	RewardSkinsTable = &schema.Table{
+		Name:       "reward_skins",
+		Columns:    RewardSkinsColumns,
+		PrimaryKey: []*schema.Column{RewardSkinsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "rewardskin_status_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{RewardSkinsColumns[6], RewardSkinsColumns[1]},
+			},
+		},
+	}
 	// SecuritySecretsColumns holds the columns for the "security_secrets" table.
 	SecuritySecretsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -1970,6 +2224,50 @@ var (
 			},
 		},
 	}
+	// UserBehaviorDailyColumns holds the columns for the "user_behavior_daily" table.
+	UserBehaviorDailyColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "bucket_start", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "request_count", Type: field.TypeInt64, Default: 0},
+		{Name: "actual_cost", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "recharge_amount", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "last_api_use_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "last_active_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "user_id", Type: field.TypeInt64},
+	}
+	// UserBehaviorDailyTable holds the schema information for the "user_behavior_daily" table.
+	UserBehaviorDailyTable = &schema.Table{
+		Name:       "user_behavior_daily",
+		Columns:    UserBehaviorDailyColumns,
+		PrimaryKey: []*schema.Column{UserBehaviorDailyColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "user_behavior_daily_users_behavior_daily",
+				Columns:    []*schema.Column{UserBehaviorDailyColumns[9]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "userbehaviordaily_user_id_bucket_start",
+				Unique:  true,
+				Columns: []*schema.Column{UserBehaviorDailyColumns[9], UserBehaviorDailyColumns[1]},
+			},
+			{
+				Name:    "userbehaviordaily_bucket_start_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{UserBehaviorDailyColumns[1], UserBehaviorDailyColumns[9]},
+			},
+			{
+				Name:    "userbehaviordaily_user_id_last_api_use_at",
+				Unique:  false,
+				Columns: []*schema.Column{UserBehaviorDailyColumns[9], UserBehaviorDailyColumns[5]},
+			},
+		},
+	}
 	// UserPlatformQuotasColumns holds the columns for the "user_platform_quotas" table.
 	UserPlatformQuotasColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -2014,6 +2312,111 @@ var (
 				Name:    "userplatformquota_user_id",
 				Unique:  false,
 				Columns: []*schema.Column{UserPlatformQuotasColumns[14]},
+			},
+		},
+	}
+	// UserRewardGrantsColumns holds the columns for the "user_reward_grants" table.
+	UserRewardGrantsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "cycle_key", Type: field.TypeString, Size: 128},
+		{Name: "source", Type: field.TypeString, Size: 32},
+		{Name: "status", Type: field.TypeString, Size: 20, Default: "pending"},
+		{Name: "amount", Type: field.TypeFloat64, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "priority", Type: field.TypeInt, Default: 0},
+		{Name: "copy_snapshot", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "skin_snapshot", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "expires_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "viewed_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "claimed_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "expired_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "balance_after", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "claim_reference", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "claim_record_id", Type: field.TypeInt64, Unique: true, Nullable: true},
+		{Name: "campaign_id", Type: field.TypeInt64},
+		{Name: "job_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "campaign_version_id", Type: field.TypeInt64},
+		{Name: "skin_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "user_id", Type: field.TypeInt64},
+	}
+	// UserRewardGrantsTable holds the schema information for the "user_reward_grants" table.
+	UserRewardGrantsTable = &schema.Table{
+		Name:       "user_reward_grants",
+		Columns:    UserRewardGrantsColumns,
+		PrimaryKey: []*schema.Column{UserRewardGrantsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "user_reward_grants_redeem_codes_reward_grant",
+				Columns:    []*schema.Column{UserRewardGrantsColumns[17]},
+				RefColumns: []*schema.Column{RedeemCodesColumns[0]},
+				OnDelete:   schema.Restrict,
+			},
+			{
+				Symbol:     "user_reward_grants_reward_campaigns_grants",
+				Columns:    []*schema.Column{UserRewardGrantsColumns[18]},
+				RefColumns: []*schema.Column{RewardCampaignsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "user_reward_grants_reward_campaign_jobs_grants",
+				Columns:    []*schema.Column{UserRewardGrantsColumns[19]},
+				RefColumns: []*schema.Column{RewardCampaignJobsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "user_reward_grants_reward_campaign_versions_grants",
+				Columns:    []*schema.Column{UserRewardGrantsColumns[20]},
+				RefColumns: []*schema.Column{RewardCampaignVersionsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "user_reward_grants_reward_skins_grants",
+				Columns:    []*schema.Column{UserRewardGrantsColumns[21]},
+				RefColumns: []*schema.Column{RewardSkinsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "user_reward_grants_users_reward_grants",
+				Columns:    []*schema.Column{UserRewardGrantsColumns[22]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "userrewardgrant_campaign_id_user_id_cycle_key",
+				Unique:  true,
+				Columns: []*schema.Column{UserRewardGrantsColumns[18], UserRewardGrantsColumns[22], UserRewardGrantsColumns[3]},
+			},
+			{
+				Name:    "userrewardgrant_user_id_status_priority_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{UserRewardGrantsColumns[22], UserRewardGrantsColumns[5], UserRewardGrantsColumns[7], UserRewardGrantsColumns[11]},
+			},
+			{
+				Name:    "userrewardgrant_campaign_id_status_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{UserRewardGrantsColumns[18], UserRewardGrantsColumns[5], UserRewardGrantsColumns[1]},
+			},
+			{
+				Name:    "userrewardgrant_status_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{UserRewardGrantsColumns[5], UserRewardGrantsColumns[11]},
+			},
+			{
+				Name:    "userrewardgrant_job_id",
+				Unique:  false,
+				Columns: []*schema.Column{UserRewardGrantsColumns[19]},
+			},
+			{
+				Name:    "userrewardgrant_claim_record_id",
+				Unique:  true,
+				Columns: []*schema.Column{UserRewardGrantsColumns[17]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "claim_record_id IS NOT NULL",
+				},
 			},
 		},
 	}
@@ -2136,6 +2539,11 @@ var (
 		PromoCodeUsagesTable,
 		ProxiesTable,
 		RedeemCodesTable,
+		RewardCampaignsTable,
+		RewardCampaignJobsTable,
+		RewardCampaignUserStatesTable,
+		RewardCampaignVersionsTable,
+		RewardSkinsTable,
 		SecuritySecretsTable,
 		SettingsTable,
 		SubscriptionPlansTable,
@@ -2147,7 +2555,9 @@ var (
 		UserAllowedGroupsTable,
 		UserAttributeDefinitionsTable,
 		UserAttributeValuesTable,
+		UserBehaviorDailyTable,
 		UserPlatformQuotasTable,
+		UserRewardGrantsTable,
 		UserSubscriptionsTable,
 	}
 )
@@ -2257,6 +2667,27 @@ func init() {
 	RedeemCodesTable.Annotation = &entsql.Annotation{
 		Table: "redeem_codes",
 	}
+	RewardCampaignsTable.ForeignKeys[0].RefTable = RewardCampaignVersionsTable
+	RewardCampaignsTable.Annotation = &entsql.Annotation{
+		Table: "reward_campaigns",
+	}
+	RewardCampaignJobsTable.ForeignKeys[0].RefTable = RewardCampaignsTable
+	RewardCampaignJobsTable.ForeignKeys[1].RefTable = RewardCampaignVersionsTable
+	RewardCampaignJobsTable.Annotation = &entsql.Annotation{
+		Table: "reward_campaign_jobs",
+	}
+	RewardCampaignUserStatesTable.ForeignKeys[0].RefTable = RewardCampaignsTable
+	RewardCampaignUserStatesTable.ForeignKeys[1].RefTable = UsersTable
+	RewardCampaignUserStatesTable.Annotation = &entsql.Annotation{
+		Table: "reward_campaign_user_states",
+	}
+	RewardCampaignVersionsTable.ForeignKeys[0].RefTable = RewardCampaignsTable
+	RewardCampaignVersionsTable.Annotation = &entsql.Annotation{
+		Table: "reward_campaign_versions",
+	}
+	RewardSkinsTable.Annotation = &entsql.Annotation{
+		Table: "reward_skins",
+	}
 	SecuritySecretsTable.Annotation = &entsql.Annotation{
 		Table: "security_secrets",
 	}
@@ -2299,9 +2730,22 @@ func init() {
 	UserAttributeValuesTable.Annotation = &entsql.Annotation{
 		Table: "user_attribute_values",
 	}
+	UserBehaviorDailyTable.ForeignKeys[0].RefTable = UsersTable
+	UserBehaviorDailyTable.Annotation = &entsql.Annotation{
+		Table: "user_behavior_daily",
+	}
 	UserPlatformQuotasTable.ForeignKeys[0].RefTable = UsersTable
 	UserPlatformQuotasTable.Annotation = &entsql.Annotation{
 		Table: "user_platform_quotas",
+	}
+	UserRewardGrantsTable.ForeignKeys[0].RefTable = RedeemCodesTable
+	UserRewardGrantsTable.ForeignKeys[1].RefTable = RewardCampaignsTable
+	UserRewardGrantsTable.ForeignKeys[2].RefTable = RewardCampaignJobsTable
+	UserRewardGrantsTable.ForeignKeys[3].RefTable = RewardCampaignVersionsTable
+	UserRewardGrantsTable.ForeignKeys[4].RefTable = RewardSkinsTable
+	UserRewardGrantsTable.ForeignKeys[5].RefTable = UsersTable
+	UserRewardGrantsTable.Annotation = &entsql.Annotation{
+		Table: "user_reward_grants",
 	}
 	UserSubscriptionsTable.ForeignKeys[0].RefTable = GroupsTable
 	UserSubscriptionsTable.ForeignKeys[1].RefTable = UsersTable

@@ -3,6 +3,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { brandColors, chartSeriesColors } from '@/theme/designTokens'
 import AnimatedCircularProgress from '../AnimatedCircularProgress.vue'
 
 function getProgressCircle(wrapper: ReturnType<typeof mount>) {
@@ -44,13 +45,13 @@ describe('AnimatedCircularProgress', () => {
     expect(wrapper.text()).toContain('130%')
   })
 
-  it('阈值自动配色:<70 teal、70-90 amber、>=90 rose', () => {
-    const teal = mount(AnimatedCircularProgress, { props: { value: 30, duration: 0 } })
-    expect(getProgressCircle(teal).attributes('stroke')).toBe('#14b8a6')
+  it('阈值自动配色:<70 brand、70-90 amber、>=90 rose', () => {
+    const brand = mount(AnimatedCircularProgress, { props: { value: 30, duration: 0 } })
+    expect(getProgressCircle(brand).attributes('stroke')).toBe(brandColors['500'])
     const amber = mount(AnimatedCircularProgress, { props: { value: 75, duration: 0 } })
-    expect(getProgressCircle(amber).attributes('stroke')).toBe('#f59e0b')
+    expect(getProgressCircle(amber).attributes('stroke')).toBe(chartSeriesColors.warning)
     const rose = mount(AnimatedCircularProgress, { props: { value: 95, duration: 0 } })
-    expect(getProgressCircle(rose).attributes('stroke')).toBe('#f43f5e')
+    expect(getProgressCircle(rose).attributes('stroke')).toBe(chartSeriesColors.danger)
   })
 
   it('显式 color 覆盖阈值配色', () => {

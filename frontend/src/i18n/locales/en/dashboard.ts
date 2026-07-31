@@ -660,6 +660,7 @@ export default {
     balanceAddedRedeem: 'Balance Added (Redeem)',
     welcomeScratchReward: 'Welcome Gift Scratch Card',
     surpriseScratchReward: 'Active-user Surprise Scratch Card',
+    campaignReward: 'Campaign Reward Credited',
     balanceAddedAffiliate: 'Balance Added (Affiliate Transfer)',
     balanceAddedAdmin: 'Balance Added (Admin)',
     balanceDeductedAdmin: 'Balance Deducted (Admin)',

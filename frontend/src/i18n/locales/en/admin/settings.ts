@@ -40,6 +40,13 @@ export default {
           priceDescription: 'Pricing notes (Markdown)',
           priceDescriptionHint: 'Rendered at the top of the plaza page. Use it for billing rules, exchange rates, promotions, etc.',
         },
+        rewardCampaigns: {
+          title: 'Reward Campaign Center',
+          description: 'Roll out the server-driven reward queue, scratch-card claiming, and campaign administration in stages. Disabled by default.',
+          configureLink: 'Open Reward Campaign Center',
+          enabled: 'Enable Reward Campaign Center',
+          enabledHint: 'When off, the new reward queue and admin APIs are unavailable; legacy welcome and surprise reward adapters remain available.',
+        },
         riskControl: {
           title: 'Risk Control',
           description: 'Enable the content moderation menu and gateway audit entry point. Disabled by default.',

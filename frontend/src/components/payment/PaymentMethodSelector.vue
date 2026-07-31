@@ -12,10 +12,10 @@
         :class="[
           'relative flex h-[64px] flex-col items-center justify-center rounded-xl px-3 transition-all sm:flex-1',
           !method.available
-            ? 'cursor-not-allowed bg-gray-50 opacity-50 shadow-[0_0_0_1px_#E5EAFF] dark:bg-dark-800/50 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.06)]'
+            ? 'cursor-not-allowed bg-surface-subtle text-content-disabled opacity-50 ring-1 ring-line-subtle'
             : selected === method.type
               ? methodSelectedClass(method.type)
-              : 'bg-white text-gray-700 shadow-[0_0_0_1px_#E5EAFF] hover:shadow-[0_0_0_1px_#0033FF] dark:bg-dark-800 dark:text-gray-200 dark:shadow-[0_0_0_1px_rgba(255,255,255,0.1)]',
+              : 'bg-surface-panel text-content-secondary ring-1 ring-line-default hover:ring-line-focus',
           { 'pm-selected-glow': method.available && selected === method.type },
         ]"
         @click="method.available && emit('select', method.type)"
@@ -96,16 +96,16 @@ function methodLabel(method: PaymentMethodOption): string {
 // 选中态叠加发光边框(.pm-selected-glow,scoped CSS 伪元素实现),
 // 与下方品牌色描边共存:描边表明"是哪家",光晕表明"当前选中"。
 function methodSelectedClass(type: string): string {
-  if (isBuiltInAlipayMethod(type)) return 'bg-blue-50 text-gray-900 shadow-[0_0_0_1.5px_#02A9F1] dark:bg-blue-950 dark:text-gray-100'
-  if (isBuiltInWxpayMethod(type)) return 'bg-green-50 text-gray-900 shadow-[0_0_0_1.5px_#09BB07] dark:bg-green-950 dark:text-gray-100'
-  if (type === 'stripe') return 'bg-indigo-50 text-gray-900 shadow-[0_0_0_1.5px_#676BE5] dark:bg-indigo-950 dark:text-gray-100'
-  if (type === 'airwallex') return 'bg-orange-50 text-gray-900 shadow-[0_0_0_1.5px_#FF6B3D] dark:bg-orange-950 dark:text-gray-100'
-  return 'border border-primary-500 bg-[#E5EAFF] text-gray-900 shadow-[0_0_0_1.5px_#0033FF] dark:bg-primary-950 dark:text-gray-100'
+  if (isBuiltInAlipayMethod(type)) return 'bg-provider-alipay/10 text-content-primary ring-2 ring-inset ring-provider-alipay-selection'
+  if (isBuiltInWxpayMethod(type)) return 'bg-provider-wechat/10 text-content-primary ring-2 ring-inset ring-provider-wechat-selection'
+  if (type === 'stripe') return 'bg-provider-stripe/10 text-content-primary ring-2 ring-inset ring-provider-stripe-selection'
+  if (type === 'airwallex') return 'bg-provider-airwallex-selection/10 text-content-primary ring-2 ring-inset ring-provider-airwallex-selection'
+  return 'border border-primary-500 bg-status-info-soft text-content-primary ring-1 ring-line-focus'
 }
 </script>
 
 <style scoped>
-/* 选中态发光边框:primary(teal)光晕缓慢呼吸,叠加在既有品牌色描边之上(不替换)。
+/* 选中态发光边框:brand 光晕缓慢呼吸,叠加在既有品牌色描边之上(不替换)。
    用 ::after 伪元素承载 box-shadow,避免覆盖按钮本体的 shadow-[0_0_0_*] 描边。 */
 .pm-selected-glow::after {
   content: '';
@@ -114,16 +114,16 @@ function methodSelectedClass(type: string): string {
   border-radius: inherit;
   pointer-events: none;
   box-shadow:
-    0 0 8px 1px rgba(20, 184, 166, 0.3),
-    0 0 20px 5px rgba(20, 184, 166, 0.16);
+    0 0 8px 1px rgb(var(--color-brand-500) / 0.28),
+    0 0 20px 5px rgb(var(--color-brand-500) / 0.14);
   animation: pm-glow-breathe 3s ease-in-out infinite;
 }
 
-/* 暗色下环境更暗,用更亮的 teal(primary-400)并略提强度 */
+/* 暗色下使用更亮的 brand-400 并略提强度 */
 .dark .pm-selected-glow::after {
   box-shadow:
-    0 0 8px 1px rgba(45, 212, 191, 0.38),
-    0 0 22px 6px rgba(45, 212, 191, 0.2);
+    0 0 8px 1px rgb(var(--color-brand-400) / 0.36),
+    0 0 22px 6px rgb(var(--color-brand-400) / 0.18);
 }
 
 @keyframes pm-glow-breathe {

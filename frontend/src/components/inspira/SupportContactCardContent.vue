@@ -39,7 +39,7 @@
       <div
         role="tablist"
         :aria-label="t('common.supportCommunityTitle')"
-        class="grid grid-cols-2 rounded-full border border-white/75 bg-white/[0.55] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"
+        class="grid grid-cols-2 rounded-full border border-line-subtle bg-surface-raised/55 p-1 shadow-inner-glow"
       >
         <button
           type="button"
@@ -76,7 +76,7 @@
           :src="activeQRCode"
           :alt="t('common.supportQRCodeAlt', { platform: activePlatform })"
           :data-testid="`${testIdPrefix}-qr-image`"
-          class="h-[216px] w-[216px] rounded-[20px] bg-white object-contain shadow-[0_14px_36px_rgba(15,23,42,0.14)]"
+          class="h-[216px] w-[216px] rounded-[20px] bg-surface-panel object-contain shadow-glass"
         >
         <div v-else :data-testid="`${testIdPrefix}-qr-empty`" class="px-6 py-7 text-center">
           <span

@@ -195,7 +195,7 @@ function chipClass(active: boolean): string {
 }
 
 .chip-tinted-active {
-  color: #fff;
+  color: rgb(var(--color-content-on-brand));
   background-color: var(--chip-accent);
   background-color: color-mix(in srgb, var(--chip-accent) 85%, black);
   box-shadow: 0 1px 2px 0 color-mix(in srgb, var(--chip-accent) 35%, transparent);

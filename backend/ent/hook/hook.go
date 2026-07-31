@@ -333,6 +333,66 @@ func (f RedeemCodeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RedeemCodeMutation", m)
 }
 
+// The RewardCampaignFunc type is an adapter to allow the use of ordinary
+// function as RewardCampaign mutator.
+type RewardCampaignFunc func(context.Context, *ent.RewardCampaignMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RewardCampaignFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RewardCampaignMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RewardCampaignMutation", m)
+}
+
+// The RewardCampaignJobFunc type is an adapter to allow the use of ordinary
+// function as RewardCampaignJob mutator.
+type RewardCampaignJobFunc func(context.Context, *ent.RewardCampaignJobMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RewardCampaignJobFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RewardCampaignJobMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RewardCampaignJobMutation", m)
+}
+
+// The RewardCampaignUserStateFunc type is an adapter to allow the use of ordinary
+// function as RewardCampaignUserState mutator.
+type RewardCampaignUserStateFunc func(context.Context, *ent.RewardCampaignUserStateMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RewardCampaignUserStateFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RewardCampaignUserStateMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RewardCampaignUserStateMutation", m)
+}
+
+// The RewardCampaignVersionFunc type is an adapter to allow the use of ordinary
+// function as RewardCampaignVersion mutator.
+type RewardCampaignVersionFunc func(context.Context, *ent.RewardCampaignVersionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RewardCampaignVersionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RewardCampaignVersionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RewardCampaignVersionMutation", m)
+}
+
+// The RewardSkinFunc type is an adapter to allow the use of ordinary
+// function as RewardSkin mutator.
+type RewardSkinFunc func(context.Context, *ent.RewardSkinMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RewardSkinFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RewardSkinMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RewardSkinMutation", m)
+}
+
 // The SecuritySecretFunc type is an adapter to allow the use of ordinary
 // function as SecuritySecret mutator.
 type SecuritySecretFunc func(context.Context, *ent.SecuritySecretMutation) (ent.Value, error)
@@ -465,6 +525,18 @@ func (f UserAttributeValueFunc) Mutate(ctx context.Context, m ent.Mutation) (ent
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserAttributeValueMutation", m)
 }
 
+// The UserBehaviorDailyFunc type is an adapter to allow the use of ordinary
+// function as UserBehaviorDaily mutator.
+type UserBehaviorDailyFunc func(context.Context, *ent.UserBehaviorDailyMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f UserBehaviorDailyFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.UserBehaviorDailyMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserBehaviorDailyMutation", m)
+}
+
 // The UserPlatformQuotaFunc type is an adapter to allow the use of ordinary
 // function as UserPlatformQuota mutator.
 type UserPlatformQuotaFunc func(context.Context, *ent.UserPlatformQuotaMutation) (ent.Value, error)
@@ -475,6 +547,18 @@ func (f UserPlatformQuotaFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserPlatformQuotaMutation", m)
+}
+
+// The UserRewardGrantFunc type is an adapter to allow the use of ordinary
+// function as UserRewardGrant mutator.
+type UserRewardGrantFunc func(context.Context, *ent.UserRewardGrantMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f UserRewardGrantFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.UserRewardGrantMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserRewardGrantMutation", m)
 }
 
 // The UserSubscriptionFunc type is an adapter to allow the use of ordinary

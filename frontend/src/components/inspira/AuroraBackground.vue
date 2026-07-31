@@ -24,7 +24,7 @@
   left: -10%;
   width: 55%;
   height: 65%;
-  background: radial-gradient(circle at center, rgba(20, 184, 166, 0.5), transparent 65%);
+  background: radial-gradient(circle at center, rgb(var(--color-brand-500) / 0.42), transparent 65%);
   animation: aurora-a 16s ease-in-out infinite alternate;
 }
 
@@ -33,7 +33,11 @@
   right: -15%;
   width: 60%;
   height: 70%;
-  background: radial-gradient(circle at center, rgba(59, 130, 246, 0.45), transparent 65%);
+  background: radial-gradient(
+    circle at center,
+    rgb(var(--color-brand-500) / 0.34),
+    transparent 65%
+  );
   animation: aurora-b 20s ease-in-out infinite alternate;
 }
 
@@ -42,7 +46,11 @@
   left: 25%;
   width: 55%;
   height: 65%;
-  background: radial-gradient(circle at center, rgba(6, 182, 212, 0.45), transparent 65%);
+  background: radial-gradient(
+    circle at center,
+    rgb(var(--color-accent-400) / 0.32),
+    transparent 65%
+  );
   animation: aurora-c 24s ease-in-out infinite alternate;
 }
 

@@ -7,9 +7,10 @@
  */
 import type confetti from 'canvas-confetti'
 import { isReducedMotionPreferred } from '@/composables/usePrefersReducedMotion'
+import { categoricalPalette } from '@/theme/designTokens'
 
 /** 项目主题色系 */
-const THEME_COLORS = ['#14b8a6', '#06b6d4', '#3b82f6', '#f59e0b']
+const THEME_COLORS = categoricalPalette.slice(0, 4)
 /** Must remain above onboarding overlays/popovers (99,999,998 / 99,999,999). */
 const CELEBRATION_Z_INDEX = 100_000_100
 const CELEBRATION_PARTICLE_COUNT = 96
@@ -111,7 +112,7 @@ function fireCelebrationLayer(): void {
       background: color,
       opacity: '1',
       transform: `rotate(${startRotation}deg)`,
-      boxShadow: '0 1px 1px rgba(15, 23, 42, 0.16)',
+      boxShadow: '0 1px 1px rgb(var(--color-shadow) / 0.16)',
       willChange: 'transform, opacity'
     })
     layer.appendChild(particle)

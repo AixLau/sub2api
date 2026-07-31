@@ -197,20 +197,20 @@ function processFile(file: File) {
 }
 
 .iu-dropzone.is-dragover {
-  border-color: #14b8a6; /* primary-500 */
+  border-color: rgb(var(--color-brand-500));
   border-style: dashed;
-  background-color: rgba(20, 184, 166, 0.07);
+  background-color: rgb(var(--color-brand-500) / 0.07);
   box-shadow:
-    0 0 0 1px rgba(20, 184, 166, 0.45),
-    0 0 16px rgba(45, 212, 191, 0.3);
+    0 0 0 1px rgb(var(--color-brand-500) / 0.45),
+    0 0 16px rgb(var(--color-brand-400) / 0.28);
 }
 
 .dark .iu-dropzone.is-dragover {
-  border-color: #2dd4bf; /* primary-400 */
-  background-color: rgba(20, 184, 166, 0.12);
+  border-color: rgb(var(--color-brand-400));
+  background-color: rgb(var(--color-brand-400) / 0.12);
   box-shadow:
-    0 0 0 1px rgba(45, 212, 191, 0.4),
-    0 0 18px rgba(45, 212, 191, 0.25);
+    0 0 0 1px rgb(var(--color-brand-400) / 0.4),
+    0 0 18px rgb(var(--color-brand-400) / 0.25);
 }
 
 /* Inner icon / preview lifts and scales slightly while dragging over. */

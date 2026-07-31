@@ -8,7 +8,7 @@
 
 - **零动效依赖**:纯 CSS keyframes / `requestAnimationFrame` / `@vueuse/core`,不引入 motion 库;keyframes 写在 SFC `<style scoped>` 内,不进 `tailwind.config.js`。
 - **Tailwind v3.4**:不使用 v4 语法。
-- **亮暗模式**:class 模式(`dark:` 前缀),主题色 teal(`primary-500` #14b8a6)。
+- **亮暗模式**:class 模式(`dark:` 前缀),主题色 electric blue(`primary-500` #0033FF)。
 - **无障碍**:全部尊重 `prefers-reduced-motion`(降级为静态/直接显示最终值);`window.matchMedia` 做判空(jsdom 兼容)。
 - **jsdom 安全**:canvas 相关代码容忍 `getContext` 返回 `null`,组件在测试中挂载不抛错。
 - 类名合并用 `cn`(`@/utils/cn`,clsx + tailwind-merge)。
@@ -41,7 +41,7 @@
 | 组件 | Props(默认值) | 说明 |
 |---|---|---|
 | `AuroraBackground` | — | 多层柔光渐变极光,纯 CSS 漂移 |
-| `FlickeringGrid` | `squareSize=4` · `gridGap=6` · `flickerChance=0.3` · `color='#14b8a6'` · `maxOpacity=0.2` | canvas 闪烁网格;ResizeObserver 跟随尺寸、IntersectionObserver 离屏暂停 |
+| `FlickeringGrid` | `squareSize=4` · `gridGap=6` · `flickerChance=0.3` · `color='#0033FF'` · `maxOpacity=0.2` | canvas 闪烁网格;ResizeObserver 跟随尺寸、IntersectionObserver 离屏暂停 |
 
 ### 列表与文字
 

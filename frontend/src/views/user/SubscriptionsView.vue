@@ -36,7 +36,10 @@
             class="flex items-center justify-between border-b border-gray-100 p-4 dark:border-dark-700"
           >
             <div class="flex items-center gap-3">
-              <div :class="['h-1.5 w-1.5 shrink-0 rounded-full', platformAccentDotClass(subscription.group?.platform || '')]" />
+              <div
+                class="h-1.5 w-1.5 shrink-0 rounded-full"
+                :style="{ backgroundColor: platformAccentColor(subscription.group?.platform || '') }"
+              />
               <div>
                 <div class="flex items-center gap-2">
                   <h3 class="font-semibold text-gray-900 dark:text-white">
@@ -297,18 +300,14 @@ import Icon from '@/components/icons/Icon.vue'
 import NumberTicker from '@/components/inspira/NumberTicker.vue'
 import { formatDateTimeToMinute } from '@/utils/format'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
-import { platformBorderClass, platformBadgeClass, platformButtonClass, platformLabel } from '@/utils/platformColors'
+import {
+  platformAccentColor,
+  platformBadgeClass,
+  platformBorderClass,
+  platformButtonClass,
+  platformLabel,
+} from '@/utils/platformColors'
 import { getRemainingDurationParts, getSubscriptionQuotaBoundary, isOneTimeDailyQuota, type RemainingDurationParts, type SubscriptionQuotaWindow } from '@/utils/subscriptionQuota'
-
-function platformAccentDotClass(p: string): string {
-  switch (p) {
-    case 'anthropic': return 'bg-orange-500'
-    case 'openai': return 'bg-emerald-500'
-    case 'antigravity': return 'bg-purple-500'
-    case 'gemini': return 'bg-blue-500'
-    default: return 'bg-gray-400'
-  }
-}
 
 const { t } = useI18n()
 const router = useRouter()

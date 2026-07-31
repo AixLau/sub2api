@@ -39,6 +39,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/rewardcampaign"
+	"github.com/Wei-Shaw/sub2api/ent/rewardcampaignjob"
+	"github.com/Wei-Shaw/sub2api/ent/rewardcampaignuserstate"
+	"github.com/Wei-Shaw/sub2api/ent/rewardcampaignversion"
+	"github.com/Wei-Shaw/sub2api/ent/rewardskin"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
@@ -50,7 +55,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
+	"github.com/Wei-Shaw/sub2api/ent/userbehaviordaily"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
+	"github.com/Wei-Shaw/sub2api/ent/userrewardgrant"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 )
 
@@ -139,6 +146,11 @@ func checkColumn(t, c string) error {
 			promocodeusage.Table:                promocodeusage.ValidColumn,
 			proxy.Table:                         proxy.ValidColumn,
 			redeemcode.Table:                    redeemcode.ValidColumn,
+			rewardcampaign.Table:                rewardcampaign.ValidColumn,
+			rewardcampaignjob.Table:             rewardcampaignjob.ValidColumn,
+			rewardcampaignuserstate.Table:       rewardcampaignuserstate.ValidColumn,
+			rewardcampaignversion.Table:         rewardcampaignversion.ValidColumn,
+			rewardskin.Table:                    rewardskin.ValidColumn,
 			securitysecret.Table:                securitysecret.ValidColumn,
 			setting.Table:                       setting.ValidColumn,
 			subscriptionplan.Table:              subscriptionplan.ValidColumn,
@@ -150,7 +162,9 @@ func checkColumn(t, c string) error {
 			userallowedgroup.Table:              userallowedgroup.ValidColumn,
 			userattributedefinition.Table:       userattributedefinition.ValidColumn,
 			userattributevalue.Table:            userattributevalue.ValidColumn,
+			userbehaviordaily.Table:             userbehaviordaily.ValidColumn,
 			userplatformquota.Table:             userplatformquota.ValidColumn,
+			userrewardgrant.Table:               userrewardgrant.ValidColumn,
 			usersubscription.Table:              usersubscription.ValidColumn,
 		})
 	})

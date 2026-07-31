@@ -23,11 +23,11 @@
       <Transition name="modal-fade">
         <div
           v-if="isModalOpen"
-          class="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/55 p-4 pt-[8vh] backdrop-blur-sm"
+          class="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-surface-scrim/55 p-4 pt-[8vh] backdrop-blur-sm"
           @click="closeModal"
         >
           <div
-            class="w-full max-w-[580px] overflow-hidden rounded-[24px] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.28)] ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
+            class="w-full max-w-[580px] overflow-hidden rounded-[24px] bg-surface-raised shadow-glass ring-1 ring-line-subtle"
             @click.stop
           >
             <div class="border-b border-gray-100 bg-gray-50/80 px-5 py-4 dark:border-dark-700 dark:bg-dark-800">
@@ -129,7 +129,7 @@
       <Transition name="modal-fade">
         <div
           v-if="detailModalOpen && selectedAnnouncement"
-          class="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-gradient-to-br from-black/70 via-black/60 to-black/70 p-4 pt-[6vh] backdrop-blur-md"
+          class="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-surface-scrim/65 p-4 pt-[6vh] backdrop-blur-md"
           @click="closeDetail"
         >
           <div
@@ -402,19 +402,35 @@ watch(
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, #cbd5e1, #94a3b8);
+  background: linear-gradient(
+    to bottom,
+    rgb(var(--color-line-strong)),
+    rgb(var(--color-content-disabled))
+  );
   border-radius: 4px;
 }
 
 .dark .overflow-y-auto::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, #4b5563, #374151);
+  background: linear-gradient(
+    to bottom,
+    rgb(var(--color-line-strong)),
+    rgb(var(--color-content-disabled))
+  );
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(to bottom, #94a3b8, #64748b);
+  background: linear-gradient(
+    to bottom,
+    rgb(var(--color-content-disabled)),
+    rgb(var(--color-content-tertiary))
+  );
 }
 
 .dark .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(to bottom, #6b7280, #4b5563);
+  background: linear-gradient(
+    to bottom,
+    rgb(var(--color-content-disabled)),
+    rgb(var(--color-content-tertiary))
+  );
 }
 </style>

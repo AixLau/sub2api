@@ -155,7 +155,7 @@
     </nav>
 
     <!-- Bottom Section -->
-    <div class="mt-auto border-t border-gray-100 p-3 dark:border-dark-800">
+    <div class="mt-auto border-t border-line-subtle p-3">
       <!-- Theme Toggle -->
       <button
         @click="toggleTheme"
@@ -188,7 +188,7 @@
   <transition name="fade">
     <div
       v-if="mobileOpen"
-      class="fixed inset-0 z-30 bg-black/50 lg:hidden"
+      class="fixed inset-0 z-30 bg-surface-scrim/55 lg:hidden"
       @click="closeMobile"
     ></div>
   </transition>
@@ -711,6 +711,7 @@ const flagChannelMonitor = makeSidebarFlag(FeatureFlags.channelMonitor)
 const flagPayment = makeSidebarFlag(FeatureFlags.payment)
 const flagAvailableChannels = makeSidebarFlag(FeatureFlags.availableChannels)
 const flagAffiliate = makeSidebarFlag(FeatureFlags.affiliate)
+const flagRewardCampaigns = makeSidebarFlag(FeatureFlags.rewardCampaigns)
 const flagRiskControl = makeSidebarFlag(FeatureFlags.riskControl)
 const flagOpsMonitoring = () => adminSettingsStore.opsMonitoringEnabled
 const flagAdminPayment = () => adminSettingsStore.paymentEnabled
@@ -797,6 +798,7 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/subscriptions', label: t('nav.subscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },
+    { path: '/admin/reward-campaigns', label: t('nav.rewardCampaigns'), icon: GiftIcon, hideInSimpleMode: true, featureFlag: flagRewardCampaigns },
     { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerIcon },
     {
       path: '/admin/security-audit',
@@ -1068,8 +1070,8 @@ onBeforeUnmount(() => {
   left: 0.25rem;
   width: 3px;
   border-radius: 9999px;
-  background: rgb(13 148 136);
-  box-shadow: 0 0 8px rgb(13 148 136 / 35%);
+  background: rgb(var(--color-brand-500));
+  box-shadow: 0 0 8px rgb(var(--color-brand-500) / 32%);
   pointer-events: none;
   will-change: transform, height, opacity;
 }
@@ -1082,8 +1084,8 @@ onBeforeUnmount(() => {
 }
 
 .dark .sidebar-active-indicator {
-  background: rgb(45 212 191);
-  box-shadow: 0 0 10px rgb(45 212 191 / 40%);
+  background: rgb(var(--color-brand-400));
+  box-shadow: 0 0 10px rgb(var(--color-brand-400) / 38%);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1161,14 +1163,14 @@ onBeforeUnmount(() => {
   right: 0.75rem;
   top: 50%;
   height: 1px;
-  background: rgb(229 231 235);
+  background: rgb(var(--color-line-default));
   opacity: 0;
   transform: translateY(-50%);
   transition: opacity 0.18s ease;
 }
 
 .dark .sidebar-section-title::after {
-  background: rgb(55 65 81);
+  background: rgb(var(--color-line-default));
 }
 
 .sidebar-section-title-text-collapsed {

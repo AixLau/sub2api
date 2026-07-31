@@ -396,7 +396,7 @@ onUnmounted(() => {
     width: 70%;
     max-width: 240px;
     height: 100%;
-    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+    box-shadow: 2px 0 8px rgb(var(--color-shadow) / 0.1);
   }
 }
 
@@ -493,7 +493,7 @@ onUnmounted(() => {
   font-size: 12px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.15);
-  color: #e2e8f0;
+  color: rgb(var(--color-neutral-200));
   border: 1px solid rgba(255, 255, 255, 0.2);
   cursor: pointer;
   opacity: 0;

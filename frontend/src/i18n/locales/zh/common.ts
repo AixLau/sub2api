@@ -177,6 +177,7 @@ export default {
   nav: {
     dashboard: '仪表盘',
     announcements: '公告',
+    rewardCampaigns: '奖励活动',
     apiKeys: 'API 密钥',
     batchImage: '批量生图',
     usage: '使用记录',
@@ -480,6 +481,21 @@ export default {
     gestureHint: '按住并左右滑动刮开涂层',
     continue: '收下惊喜',
     claimFailed: '惊喜奖励领取失败，请重试。'
+  },
+
+  rewardQueue: {
+    titleFallback: '你有一份待领取奖励',
+    hintFallback: '亲手刮开涂层，看看这次获得了多少奖励。',
+    revealedHint: '恭喜中奖！奖励已经存入账户余额。',
+    coverTextFallback: '刮开领取奖励',
+    won: '账户余额奖励',
+    credited: '已存入账户余额（USD）',
+    gestureHint: '按住并左右滑动刮开涂层',
+    expiresAt: '请在 {time} 前领取',
+    later: '稍后领取',
+    continue: '收下奖励',
+    claimFailed: '奖励领取失败，请重试。',
+    pendingAria: '待领取奖励，共 {count} 份'
   },
 
   // Dashboard

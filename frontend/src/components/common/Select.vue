@@ -470,17 +470,17 @@ onUnmounted(() => {
 .select-trigger {
   @apply flex w-full items-center justify-between gap-2;
   @apply rounded-xl px-4 py-2.5 text-sm;
-  @apply bg-white dark:bg-dark-800;
-  @apply border border-gray-200 dark:border-dark-600;
-  @apply text-gray-900 dark:text-gray-100;
+  @apply bg-surface-panel;
+  @apply border border-line-default;
+  @apply text-content-primary;
   @apply transition-all duration-200;
-  @apply focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30;
-  @apply hover:border-gray-300 dark:hover:border-dark-500;
+  @apply focus:border-line-focus focus:outline-none focus:ring-2 focus:ring-line-focus/25;
+  @apply hover:border-line-strong;
   @apply cursor-pointer;
 }
 
 .select-trigger-open {
-  @apply border-primary-500 ring-2 ring-primary-500/30;
+  @apply border-line-focus ring-2 ring-line-focus/25;
 }
 
 .select-trigger-error {
@@ -488,7 +488,7 @@ onUnmounted(() => {
 }
 
 .select-trigger-disabled {
-  @apply cursor-not-allowed bg-gray-100 opacity-60 dark:bg-dark-900;
+  @apply cursor-not-allowed bg-surface-subtle text-content-disabled opacity-60;
 }
 
 .select-value {
@@ -496,36 +496,36 @@ onUnmounted(() => {
 }
 
 .select-icon {
-  @apply flex-shrink-0 text-gray-400 dark:text-dark-400;
+  @apply flex-shrink-0 text-content-disabled;
 }
 
 .select-clear {
   @apply flex flex-shrink-0 cursor-pointer items-center justify-center;
-  @apply rounded text-gray-400 transition-colors;
-  @apply hover:text-gray-600 dark:hover:text-gray-200;
+  @apply rounded text-content-disabled transition-colors;
+  @apply hover:text-content-secondary;
 }
 </style>
 
 <style>
 .select-dropdown-portal {
   @apply box-border;
-  @apply bg-white dark:bg-dark-800;
+  @apply bg-surface-raised;
   @apply rounded-xl;
-  @apply border border-gray-200 dark:border-dark-700;
-  @apply shadow-lg shadow-black/10 dark:shadow-black/30;
+  @apply border border-line-default;
+  @apply shadow-glass;
   @apply overflow-hidden;
   pointer-events: auto !important;
 }
 
 .select-dropdown-portal .select-search {
   @apply flex items-center gap-2 px-3 py-2;
-  @apply border-b border-gray-100 dark:border-dark-700;
+  @apply border-b border-line-subtle;
 }
 
 .select-dropdown-portal .select-search-input {
   @apply min-w-0 flex-1 bg-transparent text-sm;
-  @apply text-gray-900 dark:text-gray-100;
-  @apply placeholder:text-gray-400 dark:placeholder:text-dark-400;
+  @apply text-content-primary;
+  @apply placeholder:text-content-disabled;
   @apply focus:outline-none;
 }
 
@@ -536,19 +536,18 @@ onUnmounted(() => {
 .select-dropdown-portal .select-option {
   @apply flex items-center justify-between gap-2;
   @apply px-4 py-2.5 text-sm;
-  @apply text-gray-700 dark:text-gray-300;
+  @apply text-content-secondary;
   @apply cursor-pointer transition-colors duration-150;
-  @apply hover:bg-gray-50 dark:hover:bg-dark-700;
+  @apply hover:bg-surface-subtle hover:text-content-primary;
   pointer-events: auto !important;
 }
 
 .select-dropdown-portal .select-option-selected {
-  @apply bg-primary-50 dark:bg-primary-900/20;
-  @apply text-primary-700 dark:text-primary-300;
+  @apply bg-status-info-soft text-status-info;
 }
 
 .select-dropdown-portal .select-option-focused {
-  @apply bg-gray-100 dark:bg-dark-700;
+  @apply bg-surface-subtle;
 }
 
 .select-dropdown-portal .select-option-disabled {
@@ -557,13 +556,13 @@ onUnmounted(() => {
 
 .select-dropdown-portal .select-option-group {
   @apply cursor-default select-none;
-  @apply bg-gray-50 dark:bg-dark-900;
+  @apply bg-surface-subtle;
   @apply text-[11px] font-bold uppercase tracking-wider;
-  @apply text-gray-500 dark:text-gray-400;
+  @apply text-content-tertiary;
 }
 
 .select-dropdown-portal .select-option-group:hover {
-  @apply bg-gray-50 dark:bg-dark-900;
+  @apply bg-surface-subtle;
 }
 
 .select-dropdown-portal .select-option-label {
@@ -572,7 +571,7 @@ onUnmounted(() => {
 
 .select-dropdown-portal .select-empty {
   @apply px-4 py-8 text-center text-sm;
-  @apply text-gray-500 dark:text-dark-400;
+  @apply text-content-tertiary;
 }
 
 .select-dropdown-enter-active,

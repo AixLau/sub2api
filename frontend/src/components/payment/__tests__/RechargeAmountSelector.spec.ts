@@ -60,4 +60,21 @@ describe('RechargeAmountSelector', () => {
     expect(customInput.element.value).toBe('125')
     expect(wrapper.props('modelValue')).toBe(125)
   })
+
+  it('uses danger semantics for an invalid custom amount', async () => {
+    const wrapper = mountSelector()
+    const customInput = wrapper.find<HTMLInputElement>('[data-testid="custom-recharge-amount"]')
+
+    await wrapper.setProps({ modelValue: 5, error: 'too low' })
+    await customInput.trigger('focus')
+
+    expect(customInput.element.closest('label')?.classList).toContain('recharge-choice-card-error')
+    expect(wrapper.find('[data-testid="amount-error"]').classes()).toEqual(
+      expect.arrayContaining([
+        'border-status-danger-border',
+        'bg-status-danger-soft',
+        'text-status-danger',
+      ])
+    )
+  })
 })

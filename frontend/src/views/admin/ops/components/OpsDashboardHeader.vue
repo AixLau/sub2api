@@ -10,6 +10,7 @@ import { adminAPI } from '@/api'
 import { opsAPI, type OpsDashboardOverview, type OpsMetricThresholds, type OpsRealtimeTrafficSummary } from '@/api/admin/ops'
 import type { OpsRequestDetailsPreset } from './OpsRequestDetailsModal.vue'
 import { useAdminSettingsStore } from '@/stores'
+import { chartSeriesColors, neutralColors } from '@/theme/designTokens'
 import { formatNumber } from '@/utils/format'
 
 type RealtimeWindow = '1min' | '5min' | '30min' | '1h'
@@ -439,12 +440,12 @@ const healthScoreValue = computed<number | null>(() => {
 })
 
 const healthScoreColor = computed(() => {
-  if (isSystemIdle.value) return '#9ca3af' // gray-400
+  if (isSystemIdle.value) return neutralColors['400']
   const score = healthScoreValue.value
-  if (score == null) return '#9ca3af'
-  if (score >= 90) return '#10b981' // green
-  if (score >= 60) return '#f59e0b' // yellow
-  return '#ef4444' // red
+  if (score == null) return neutralColors['400']
+  if (score >= 90) return chartSeriesColors.success
+  if (score >= 60) return chartSeriesColors.warning
+  return chartSeriesColors.danger
 })
 
 const healthScoreClass = computed(() => {
@@ -1190,11 +1191,11 @@ function handleToolbarRefresh() {
 
               <!-- Animated Pulse Line (Heart Beat Animation) -->
               <div class="h-8 w-full overflow-hidden opacity-50">
-                <svg class="h-full w-full" viewBox="0 0 280 32" preserveAspectRatio="none">
+                <svg class="h-full w-full text-primary-500" viewBox="0 0 280 32" preserveAspectRatio="none">
                   <path
                     d="M0 16 Q 20 16, 40 16 T 80 16 T 120 10 T 160 22 T 200 16 T 240 16 T 280 16"
                     fill="none"
-                    stroke="#3b82f6"
+                    stroke="currentColor"
                     stroke-width="2"
                     vector-effect="non-scaling-stroke"
                   >

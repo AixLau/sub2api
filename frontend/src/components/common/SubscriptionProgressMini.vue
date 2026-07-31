@@ -28,7 +28,7 @@
         v-if="tooltipOpen"
         role="dialog"
         :aria-label="t('subscriptionProgress.title')"
-        class="absolute right-0 z-50 mt-2 w-[316px] overflow-hidden rounded-[18px] border border-gray-200/90 bg-white shadow-[0_16px_36px_rgba(15,23,42,0.14)] dark:border-dark-700 dark:bg-dark-800"
+        class="absolute right-0 z-50 mt-2 w-[316px] overflow-hidden rounded-[18px] border border-line-default bg-surface-raised shadow-glass"
       >
         <div class="border-b border-gray-100 px-4 py-3 dark:border-dark-700">
           <div class="flex items-start justify-between gap-3">

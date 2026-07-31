@@ -151,7 +151,7 @@ const layerStyle = computed(() => (props.color ? { '--dah-color': props.color } 
   z-index: 10;
   pointer-events: none;
   opacity: 0;
-  background: var(--dah-color, rgba(20, 184, 166, 0.1));
+  background: var(--dah-color, rgb(var(--color-brand-500) / 0.1));
   transition:
     transform 0.35s ease,
     opacity 0.35s ease;
@@ -159,7 +159,7 @@ const layerStyle = computed(() => (props.color ? { '--dah-color': props.color } 
 }
 
 .dark .dah-layer {
-  background: var(--dah-color, rgba(45, 212, 191, 0.14));
+  background: var(--dah-color, rgb(var(--color-brand-400) / 0.14));
 }
 
 .dah-visible {

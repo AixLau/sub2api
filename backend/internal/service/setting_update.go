@@ -405,6 +405,9 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	// Affiliate (邀请返利) feature switch
 	updates[SettingKeyAffiliateEnabled] = strconv.FormatBool(settings.AffiliateEnabled)
 
+	// Reward campaign center feature switch
+	updates[SettingKeyRewardCampaignsEnabled] = strconv.FormatBool(settings.RewardCampaignsEnabled)
+
 	// 风控中心功能开关
 	updates[SettingKeyRiskControlEnabled] = strconv.FormatBool(settings.RiskControlEnabled)
 

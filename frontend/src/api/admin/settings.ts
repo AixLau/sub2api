@@ -586,6 +586,7 @@ export interface SystemSettings {
 
   // Payment configuration
   payment_enabled: boolean;
+  reward_campaigns_enabled: boolean;
   risk_control_enabled: boolean;
 
   // Cyber session block
@@ -877,6 +878,7 @@ export interface UpdateSettingsRequest {
   codex_cli_only_engine_fingerprint_signals?: string;
   // Payment configuration
   payment_enabled?: boolean;
+  reward_campaigns_enabled?: boolean;
   risk_control_enabled?: boolean;
 
   // Cyber session block

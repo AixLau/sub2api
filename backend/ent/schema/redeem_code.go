@@ -85,6 +85,9 @@ func (RedeemCode) Edges() []ent.Edge {
 			Ref("redeem_codes").
 			Field("group_id").
 			Unique(),
+		edge.To("reward_grant", UserRewardGrant.Type).
+			Unique().
+			Annotations(entsql.OnDelete(entsql.Restrict)),
 	}
 }
 

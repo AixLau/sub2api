@@ -153,6 +153,7 @@ import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Doughnut } from 'vue-chartjs'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import UserBreakdownSubTable from './UserBreakdownSubTable.vue'
+import { categoricalPalette } from '@/theme/designTokens'
 import type { EndpointStat, UserBreakdownItem } from '@/types'
 import { getUserBreakdown } from '@/api/admin/dashboard'
 
@@ -233,20 +234,7 @@ const toggleBreakdown = async (endpoint: string) => {
   }
 }
 
-const chartColors = [
-  '#4f7cff',
-  '#20d9a0',
-  '#ffb84d',
-  '#ff6174',
-  '#8b6eff',
-  '#28c7c0',
-  '#f377c5',
-  '#ff8d67',
-  '#6e8cff',
-  '#8bd450',
-  '#35b7e9',
-  '#b56cff'
-]
+const chartColors = categoricalPalette
 
 const displayEndpointStats = computed(() => {
   const sourceStats = props.source === 'upstream'

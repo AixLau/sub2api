@@ -103,7 +103,7 @@ describe('WelcomeRewardDialog', () => {
     await flushPromises()
     expect(claimWelcomeRewardMock).toHaveBeenCalledTimes(1)
     expect(fireCelebrationMock).toHaveBeenCalledTimes(1)
-    expect(wrapper.text()).toContain('¥4.00')
+    expect(wrapper.text()).toContain('$4.00')
     expect(wrapper.text()).toContain('welcomeReward.revealedHint')
 
     await wrapper.get('button.btn-primary').trigger('click')
@@ -133,7 +133,7 @@ describe('WelcomeRewardDialog', () => {
 
     expect(claimSurpriseRewardMock).toHaveBeenCalledTimes(1)
     expect(claimWelcomeRewardMock).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('¥3.00')
+    expect(wrapper.text()).toContain('$3.00')
     expect(fireCelebrationMock).toHaveBeenCalledTimes(1)
   })
 

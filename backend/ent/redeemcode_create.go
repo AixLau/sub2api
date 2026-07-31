@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/user"
+	"github.com/Wei-Shaw/sub2api/ent/userrewardgrant"
 )
 
 // RedeemCodeCreate is the builder for creating a RedeemCode entity.
@@ -192,6 +193,25 @@ func (_c *RedeemCodeCreate) SetUser(v *User) *RedeemCodeCreate {
 // SetGroup sets the "group" edge to the Group entity.
 func (_c *RedeemCodeCreate) SetGroup(v *Group) *RedeemCodeCreate {
 	return _c.SetGroupID(v.ID)
+}
+
+// SetRewardGrantID sets the "reward_grant" edge to the UserRewardGrant entity by ID.
+func (_c *RedeemCodeCreate) SetRewardGrantID(id int64) *RedeemCodeCreate {
+	_c.mutation.SetRewardGrantID(id)
+	return _c
+}
+
+// SetNillableRewardGrantID sets the "reward_grant" edge to the UserRewardGrant entity by ID if the given value is not nil.
+func (_c *RedeemCodeCreate) SetNillableRewardGrantID(id *int64) *RedeemCodeCreate {
+	if id != nil {
+		_c = _c.SetRewardGrantID(*id)
+	}
+	return _c
+}
+
+// SetRewardGrant sets the "reward_grant" edge to the UserRewardGrant entity.
+func (_c *RedeemCodeCreate) SetRewardGrant(v *UserRewardGrant) *RedeemCodeCreate {
+	return _c.SetRewardGrantID(v.ID)
 }
 
 // Mutation returns the RedeemCodeMutation object of the builder.
@@ -381,6 +401,22 @@ func (_c *RedeemCodeCreate) createSpec() (*RedeemCode, *sqlgraph.CreateSpec) {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.GroupID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.RewardGrantIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   redeemcode.RewardGrantTable,
+			Columns: []string{redeemcode.RewardGrantColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userrewardgrant.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

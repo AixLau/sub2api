@@ -40,6 +40,13 @@ export default {
           priceDescription: '价格说明（Markdown）',
           priceDescriptionHint: '展示在模型广场页面顶部，可用于说明计费规则、汇率、优惠活动等。',
         },
+        rewardCampaigns: {
+          title: '奖励活动中心',
+          description: '分批启用服务端奖励队列、刮刮乐领取和运营活动后台。默认关闭。',
+          configureLink: '前往奖励活动中心',
+          enabled: '启用奖励活动中心',
+          enabledHint: '关闭后新奖励队列和管理接口不可访问；旧欢迎礼与惊喜礼兼容接口继续可用。',
+        },
         riskControl: {
           title: '风控中心',
           description: '启用内容审计菜单和全端点请求审核入口。默认关闭。',

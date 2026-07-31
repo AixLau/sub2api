@@ -9,6 +9,7 @@ import type { ChartState } from '../types'
 import { formatHistoryLabel, sumNumbers } from '../utils/opsFormatters'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import { chartSeriesColors, colorWithAlpha, getChartTheme } from '@/theme/designTokens'
 import { formatNumber } from '@/utils/format'
 
 ChartJS.register(Title, Tooltip, Legend, LineElement, LinearScale, PointElement, CategoryScale, Filler)
@@ -44,14 +45,16 @@ watch(
 )
 
 const isDarkMode = computed(() => document.documentElement.classList.contains('dark'))
-const colors = computed(() => ({
-  blue: '#3b82f6',
-  blueAlpha: '#3b82f620',
-  green: '#10b981',
-  greenAlpha: '#10b98120',
-  grid: isDarkMode.value ? '#374151' : '#f3f4f6',
-  text: isDarkMode.value ? '#9ca3af' : '#6b7280'
-}))
+const colors = computed(() => {
+  const theme = getChartTheme(isDarkMode.value)
+  return {
+    ...theme,
+    blue: chartSeriesColors.primary,
+    blueAlpha: colorWithAlpha(chartSeriesColors.primary, 0.12),
+    green: chartSeriesColors.success,
+    greenAlpha: colorWithAlpha(chartSeriesColors.success, 0.12),
+  }
+})
 
 const totalRequests = computed(() => sumNumbers(props.points.map((p) => p.request_count)))
 
@@ -104,10 +107,10 @@ const options = computed(() => {
         labels: { color: c.text, usePointStyle: true, boxWidth: 6, font: { size: 10 } }
       },
       tooltip: {
-        backgroundColor: isDarkMode.value ? '#1f2937' : '#ffffff',
-        titleColor: isDarkMode.value ? '#f3f4f6' : '#111827',
-        bodyColor: isDarkMode.value ? '#d1d5db' : '#4b5563',
-        borderColor: c.grid,
+        backgroundColor: c.tooltipSurface,
+        titleColor: c.tooltipTitle,
+        bodyColor: c.tooltipBody,
+        borderColor: c.tooltipBorder,
         borderWidth: 1,
         padding: 10,
         displayColors: true,

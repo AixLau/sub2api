@@ -36,6 +36,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/rewardcampaign"
+	"github.com/Wei-Shaw/sub2api/ent/rewardcampaignjob"
+	"github.com/Wei-Shaw/sub2api/ent/rewardcampaignuserstate"
+	"github.com/Wei-Shaw/sub2api/ent/rewardcampaignversion"
+	"github.com/Wei-Shaw/sub2api/ent/rewardskin"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
@@ -47,7 +52,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
+	"github.com/Wei-Shaw/sub2api/ent/userbehaviordaily"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
+	"github.com/Wei-Shaw/sub2api/ent/userrewardgrant"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 )
 
@@ -836,6 +843,141 @@ func (f TraverseRedeemCode) Traverse(ctx context.Context, q ent.Query) error {
 	return fmt.Errorf("unexpected query type %T. expect *ent.RedeemCodeQuery", q)
 }
 
+// The RewardCampaignFunc type is an adapter to allow the use of ordinary function as a Querier.
+type RewardCampaignFunc func(context.Context, *ent.RewardCampaignQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f RewardCampaignFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.RewardCampaignQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.RewardCampaignQuery", q)
+}
+
+// The TraverseRewardCampaign type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseRewardCampaign func(context.Context, *ent.RewardCampaignQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseRewardCampaign) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseRewardCampaign) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.RewardCampaignQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.RewardCampaignQuery", q)
+}
+
+// The RewardCampaignJobFunc type is an adapter to allow the use of ordinary function as a Querier.
+type RewardCampaignJobFunc func(context.Context, *ent.RewardCampaignJobQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f RewardCampaignJobFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.RewardCampaignJobQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.RewardCampaignJobQuery", q)
+}
+
+// The TraverseRewardCampaignJob type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseRewardCampaignJob func(context.Context, *ent.RewardCampaignJobQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseRewardCampaignJob) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseRewardCampaignJob) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.RewardCampaignJobQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.RewardCampaignJobQuery", q)
+}
+
+// The RewardCampaignUserStateFunc type is an adapter to allow the use of ordinary function as a Querier.
+type RewardCampaignUserStateFunc func(context.Context, *ent.RewardCampaignUserStateQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f RewardCampaignUserStateFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.RewardCampaignUserStateQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.RewardCampaignUserStateQuery", q)
+}
+
+// The TraverseRewardCampaignUserState type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseRewardCampaignUserState func(context.Context, *ent.RewardCampaignUserStateQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseRewardCampaignUserState) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseRewardCampaignUserState) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.RewardCampaignUserStateQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.RewardCampaignUserStateQuery", q)
+}
+
+// The RewardCampaignVersionFunc type is an adapter to allow the use of ordinary function as a Querier.
+type RewardCampaignVersionFunc func(context.Context, *ent.RewardCampaignVersionQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f RewardCampaignVersionFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.RewardCampaignVersionQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.RewardCampaignVersionQuery", q)
+}
+
+// The TraverseRewardCampaignVersion type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseRewardCampaignVersion func(context.Context, *ent.RewardCampaignVersionQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseRewardCampaignVersion) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseRewardCampaignVersion) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.RewardCampaignVersionQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.RewardCampaignVersionQuery", q)
+}
+
+// The RewardSkinFunc type is an adapter to allow the use of ordinary function as a Querier.
+type RewardSkinFunc func(context.Context, *ent.RewardSkinQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f RewardSkinFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.RewardSkinQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.RewardSkinQuery", q)
+}
+
+// The TraverseRewardSkin type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseRewardSkin func(context.Context, *ent.RewardSkinQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseRewardSkin) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseRewardSkin) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.RewardSkinQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.RewardSkinQuery", q)
+}
+
 // The SecuritySecretFunc type is an adapter to allow the use of ordinary function as a Querier.
 type SecuritySecretFunc func(context.Context, *ent.SecuritySecretQuery) (ent.Value, error)
 
@@ -1133,6 +1275,33 @@ func (f TraverseUserAttributeValue) Traverse(ctx context.Context, q ent.Query) e
 	return fmt.Errorf("unexpected query type %T. expect *ent.UserAttributeValueQuery", q)
 }
 
+// The UserBehaviorDailyFunc type is an adapter to allow the use of ordinary function as a Querier.
+type UserBehaviorDailyFunc func(context.Context, *ent.UserBehaviorDailyQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f UserBehaviorDailyFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.UserBehaviorDailyQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.UserBehaviorDailyQuery", q)
+}
+
+// The TraverseUserBehaviorDaily type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseUserBehaviorDaily func(context.Context, *ent.UserBehaviorDailyQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseUserBehaviorDaily) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseUserBehaviorDaily) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.UserBehaviorDailyQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.UserBehaviorDailyQuery", q)
+}
+
 // The UserPlatformQuotaFunc type is an adapter to allow the use of ordinary function as a Querier.
 type UserPlatformQuotaFunc func(context.Context, *ent.UserPlatformQuotaQuery) (ent.Value, error)
 
@@ -1158,6 +1327,33 @@ func (f TraverseUserPlatformQuota) Traverse(ctx context.Context, q ent.Query) er
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.UserPlatformQuotaQuery", q)
+}
+
+// The UserRewardGrantFunc type is an adapter to allow the use of ordinary function as a Querier.
+type UserRewardGrantFunc func(context.Context, *ent.UserRewardGrantQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f UserRewardGrantFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.UserRewardGrantQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.UserRewardGrantQuery", q)
+}
+
+// The TraverseUserRewardGrant type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseUserRewardGrant func(context.Context, *ent.UserRewardGrantQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseUserRewardGrant) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseUserRewardGrant) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.UserRewardGrantQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.UserRewardGrantQuery", q)
 }
 
 // The UserSubscriptionFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -1244,6 +1440,16 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.ProxyQuery, predicate.Proxy, proxy.OrderOption]{typ: ent.TypeProxy, tq: q}, nil
 	case *ent.RedeemCodeQuery:
 		return &query[*ent.RedeemCodeQuery, predicate.RedeemCode, redeemcode.OrderOption]{typ: ent.TypeRedeemCode, tq: q}, nil
+	case *ent.RewardCampaignQuery:
+		return &query[*ent.RewardCampaignQuery, predicate.RewardCampaign, rewardcampaign.OrderOption]{typ: ent.TypeRewardCampaign, tq: q}, nil
+	case *ent.RewardCampaignJobQuery:
+		return &query[*ent.RewardCampaignJobQuery, predicate.RewardCampaignJob, rewardcampaignjob.OrderOption]{typ: ent.TypeRewardCampaignJob, tq: q}, nil
+	case *ent.RewardCampaignUserStateQuery:
+		return &query[*ent.RewardCampaignUserStateQuery, predicate.RewardCampaignUserState, rewardcampaignuserstate.OrderOption]{typ: ent.TypeRewardCampaignUserState, tq: q}, nil
+	case *ent.RewardCampaignVersionQuery:
+		return &query[*ent.RewardCampaignVersionQuery, predicate.RewardCampaignVersion, rewardcampaignversion.OrderOption]{typ: ent.TypeRewardCampaignVersion, tq: q}, nil
+	case *ent.RewardSkinQuery:
+		return &query[*ent.RewardSkinQuery, predicate.RewardSkin, rewardskin.OrderOption]{typ: ent.TypeRewardSkin, tq: q}, nil
 	case *ent.SecuritySecretQuery:
 		return &query[*ent.SecuritySecretQuery, predicate.SecuritySecret, securitysecret.OrderOption]{typ: ent.TypeSecuritySecret, tq: q}, nil
 	case *ent.SettingQuery:
@@ -1266,8 +1472,12 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.UserAttributeDefinitionQuery, predicate.UserAttributeDefinition, userattributedefinition.OrderOption]{typ: ent.TypeUserAttributeDefinition, tq: q}, nil
 	case *ent.UserAttributeValueQuery:
 		return &query[*ent.UserAttributeValueQuery, predicate.UserAttributeValue, userattributevalue.OrderOption]{typ: ent.TypeUserAttributeValue, tq: q}, nil
+	case *ent.UserBehaviorDailyQuery:
+		return &query[*ent.UserBehaviorDailyQuery, predicate.UserBehaviorDaily, userbehaviordaily.OrderOption]{typ: ent.TypeUserBehaviorDaily, tq: q}, nil
 	case *ent.UserPlatformQuotaQuery:
 		return &query[*ent.UserPlatformQuotaQuery, predicate.UserPlatformQuota, userplatformquota.OrderOption]{typ: ent.TypeUserPlatformQuota, tq: q}, nil
+	case *ent.UserRewardGrantQuery:
+		return &query[*ent.UserRewardGrantQuery, predicate.UserRewardGrant, userrewardgrant.OrderOption]{typ: ent.TypeUserRewardGrant, tq: q}, nil
 	case *ent.UserSubscriptionQuery:
 		return &query[*ent.UserSubscriptionQuery, predicate.UserSubscription, usersubscription.OrderOption]{typ: ent.TypeUserSubscription, tq: q}, nil
 	default:

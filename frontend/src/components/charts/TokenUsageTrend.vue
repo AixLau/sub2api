@@ -30,6 +30,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import VariableWidthLineChart from '@/components/charts/VariableWidthLineChart.vue'
+import { tokenUsageColors } from '@/theme/designTokens'
 import { calculateCacheHitRate } from '@/utils/cacheHitRate'
 import type { TrendDataPoint } from '@/types'
 
@@ -53,11 +54,7 @@ type TokenSeriesPoint = {
 }
 
 const chartColors = computed(() => ({
-  input: '#2563eb',
-  output: '#059669',
-  cacheCreation: '#f97316',
-  cacheRead: '#14b8a6',
-  cacheHitRate: '#7c3aed'
+  ...tokenUsageColors
 }))
 
 const TAILWIND_HEIGHTS: Record<string, number> = {
@@ -71,7 +68,7 @@ const TAILWIND_HEIGHTS: Record<string, number> = {
 }
 
 const chartShellClass = computed(() => props.surface === 'tremor'
-  ? 'relative w-full rounded-lg border border-gray-200 bg-white p-5 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-gray-900 dark:bg-[#090E1A]'
+  ? 'relative w-full rounded-lg border border-line-default bg-surface-panel p-5 text-left shadow-card'
   : 'card p-4')
 
 const tokenUsageTrendTitle = computed(() => {

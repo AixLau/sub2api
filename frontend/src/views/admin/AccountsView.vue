@@ -1357,20 +1357,20 @@ function getOpenAICompactMeta(row: any): { label: string; className: string; dot
     case 'active':
       return {
         label: t('admin.accounts.openai.compactSupported'),
-        className: 'text-emerald-600 dark:text-emerald-300',
-        dotClass: 'bg-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.14)]'
+        className: 'text-status-success',
+        dotClass: 'bg-status-success ring-2 ring-status-success/15'
       }
     case 'blocked':
       return {
         label: t('admin.accounts.openai.compactUnsupported'),
-        className: 'text-rose-600 dark:text-rose-300',
-        dotClass: 'bg-rose-500 shadow-[0_0_0_2px_rgba(244,63,94,0.14)]'
+        className: 'text-status-danger',
+        dotClass: 'bg-status-danger ring-2 ring-status-danger/15'
       }
     case 'auto':
       return {
         label: t('admin.accounts.openai.compactAuto'),
-        className: 'text-slate-500 dark:text-slate-400',
-        dotClass: 'bg-slate-300 dark:bg-slate-500'
+        className: 'text-content-tertiary',
+        dotClass: 'bg-content-disabled'
       }
   }
 }

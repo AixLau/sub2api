@@ -59,16 +59,17 @@ import { useRoute } from 'vue-router'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
 import { buildApiUrl } from '@/api/client'
+import { providerColors } from '@/theme/designTokens'
 
 interface StripeWithWechatPay {
   confirmWechatPayPayment(clientSecret: string, options: Record<string, unknown>): Promise<{ error?: { message?: string }; paymentIntent?: { status: string } }>
 }
 
 const METHOD_COLORS: Record<string, string> = {
-  alipay: '#00AEEF',
-  wechat_pay: '#07C160',
+  alipay: providerColors.alipay,
+  wechat_pay: providerColors['wechat-official'],
 }
-const DEFAULT_METHOD_COLOR = '#635bff'
+const DEFAULT_METHOD_COLOR = providerColors.stripe
 
 const { t } = useI18n()
 const route = useRoute()

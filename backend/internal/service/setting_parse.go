@@ -58,6 +58,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyEmailVerifyEnabled:                        "false",
 		SettingKeyRegistrationEmailSuffixWhitelist:          "[]",
 		SettingKeyPromoCodeEnabled:                          "true", // 默认启用优惠码功能
+		SettingKeyRewardCampaignsEnabled:                    "false",
 		SettingKeyLoginAgreementEnabled:                     "false",
 		SettingKeyLoginAgreementMode:                        defaultLoginAgreementMode,
 		SettingKeyLoginAgreementUpdatedAt:                   defaultLoginAgreementDate,
@@ -780,6 +781,9 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 
 	// Affiliate (邀请返利) feature (default: disabled; strict true)
 	result.AffiliateEnabled = settings[SettingKeyAffiliateEnabled] == "true"
+
+	// 奖励活动中心（默认关闭，严格 true 才启用）
+	result.RewardCampaignsEnabled = settings[SettingKeyRewardCampaignsEnabled] == "true"
 
 	// 风控中心功能（默认关闭，严格 true 才启用）
 	result.RiskControlEnabled = settings[SettingKeyRiskControlEnabled] == "true"

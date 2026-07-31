@@ -5,13 +5,13 @@
       :class="showBalance ? 'md:grid-cols-[minmax(0,1fr)_minmax(240px,0.65fr)]' : 'md:grid-cols-1'"
     >
       <div class="flex min-w-0 items-center gap-4">
-        <div class="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-violet-400 text-xl font-semibold text-white shadow-[0_16px_32px_rgba(37,99,235,0.22)]">
+        <div class="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 to-accent-400 text-xl font-semibold text-white shadow-glow">
           {{ initials }}
         </div>
         <div class="min-w-0">
           <div class="flex flex-wrap items-center gap-2">
-            <h2 class="truncate text-lg font-semibold text-slate-950">{{ accountName }}</h2>
-            <span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100">
+            <h2 class="truncate text-lg font-semibold text-content-primary">{{ accountName }}</h2>
+            <span class="inline-flex items-center gap-1 rounded-full bg-status-success-soft px-2.5 py-1 text-xs font-semibold text-status-success ring-1 ring-status-success-border">
               <Icon name="shield" size="xs" :stroke-width="2.2" />
               {{ t('payment.rechargeUi.verified') }}
             </span>
@@ -19,28 +19,28 @@
         </div>
       </div>
 
-      <div v-if="showBalance" class="md:border-l md:border-white/70 md:pl-8">
-        <div class="flex items-center gap-2 text-sm font-medium text-slate-600">
+      <div v-if="showBalance" class="md:border-l md:border-line-subtle md:pl-8">
+        <div class="flex items-center gap-2 text-sm font-medium text-content-secondary">
           {{ t('payment.rechargeUi.availableBalance') }}
-          <Icon name="eye" size="sm" class="text-slate-500" />
+          <Icon name="eye" size="sm" class="text-content-tertiary" />
         </div>
-        <p class="mt-2 text-3xl font-semibold tracking-normal text-slate-950 sm:text-4xl">
+        <p class="mt-2 text-3xl font-semibold tracking-normal text-content-primary sm:text-4xl">
           {{ formattedBalance }}
         </p>
       </div>
-      <div v-else-if="subscriptionSummary" class="md:border-l md:border-white/70 md:pl-8">
-        <div class="flex items-center gap-2 text-sm font-medium text-slate-600">
+      <div v-else-if="subscriptionSummary" class="md:border-l md:border-line-subtle md:pl-8">
+        <div class="flex items-center gap-2 text-sm font-medium text-content-secondary">
           {{ t('payment.activeSubscription') }}
-          <Icon name="badge" size="sm" class="text-blue-500" />
+          <Icon name="badge" size="sm" class="text-content-brand" />
         </div>
-        <p class="mt-2 text-2xl font-semibold tracking-normal text-slate-950 sm:text-3xl">
+        <p class="mt-2 text-2xl font-semibold tracking-normal text-content-primary sm:text-3xl">
           {{ subscriptionSummary.planName }}
         </p>
         <div class="mt-3 flex flex-wrap items-center gap-2 text-sm">
-          <span class="rounded-full bg-blue-100 px-2.5 py-1 font-semibold text-blue-700">
+          <span class="rounded-full bg-status-info-soft px-2.5 py-1 font-semibold text-content-brand">
             {{ subscriptionSummary.platform }}
           </span>
-          <span class="text-slate-500">{{ subscriptionSummary.remainingText }}</span>
+          <span class="text-content-tertiary">{{ subscriptionSummary.remainingText }}</span>
         </div>
       </div>
     </div>

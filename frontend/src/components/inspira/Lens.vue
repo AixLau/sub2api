@@ -149,13 +149,13 @@ watch(enabled, (isEnabled) => {
   transform: translate(-50%, -50%);
   border-radius: 9999px;
   box-shadow:
-    inset 0 0 1px 1px rgba(0, 0, 0, 0.18),
-    inset 0 0 10px 2px rgba(0, 0, 0, 0.08);
+    inset 0 0 1px 1px rgb(var(--color-shadow) / 0.18),
+    inset 0 0 10px 2px rgb(var(--color-shadow) / 0.08);
 }
 
 .dark .lens-rim {
   box-shadow:
-    inset 0 0 1px 1px rgba(255, 255, 255, 0.22),
-    inset 0 0 10px 2px rgba(0, 0, 0, 0.25);
+    inset 0 0 1px 1px rgb(var(--color-surface-inverse) / 0.22),
+    inset 0 0 10px 2px rgb(var(--color-shadow) / 0.25);
 }
 </style>

@@ -132,6 +132,30 @@ func TestSettingService_GetPublicSettings_ExposesShowUserUsageRanking(t *testing
 	require.True(t, settings.ShowUserUsageRanking)
 }
 
+func TestSettingService_GetPublicSettings_RewardCampaignsRequireExplicitOptIn(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{name: "missing"},
+		{name: "false", raw: "false"},
+		{name: "true", raw: "true", want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			values := map[string]string{}
+			if tc.raw != "" {
+				values[SettingKeyRewardCampaignsEnabled] = tc.raw
+			}
+			svc := NewSettingService(&settingPublicRepoStub{values: values}, &config.Config{})
+
+			settings, err := svc.GetPublicSettings(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, tc.want, settings.RewardCampaignsEnabled)
+		})
+	}
+}
+
 func TestSettingService_GetPublicSettings_ExposesBalanceRechargeMultiplier(t *testing.T) {
 	repo := &settingPublicRepoStub{
 		values: map[string]string{
