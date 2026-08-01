@@ -200,9 +200,9 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			return nil, buildErr
 		}
 
-		upstreamStart := time.Now()
-		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
-		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
+		resp, err = DoOpsUpstream(c, upstreamReq, func(req *http.Request) (*http.Response, error) {
+			return s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
+		})
 		if err != nil {
 			// Transport-level failure (proxy/DNS/TCP/TLS — no HTTP response). Convert to
 			// a failover so the handler switches to a healthy account.
@@ -1163,6 +1163,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			}
 			lineStartsClientOutput = forceFlushFailedEvent || openAIStreamDataStartsClientOutput(trimmedData, eventType)
 			if firstTokenMs == nil && lineStartsClientOutput && trimmedData != "[DONE]" {
+				MarkOpsUpstreamFirstEvent(c)
 				ms := int(time.Since(startTime).Milliseconds())
 				firstTokenMs = &ms
 			}

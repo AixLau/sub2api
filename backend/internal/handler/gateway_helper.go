@@ -271,6 +271,10 @@ func (h *ConcurrencyHelper) AcquireUserSlotWithWait(c *gin.Context, userID int64
 
 func (h *ConcurrencyHelper) acquireUserSlotWithWaitTimeout(c *gin.Context, userID int64, maxConcurrency int, timeout time.Duration, isStream bool, streamStarted *bool) (func(), error) {
 	ctx := c.Request.Context()
+	waitStartedAt := time.Now()
+	defer func() {
+		service.SetOpsLatencyMs(c, service.OpsUserQueueWaitMsKey, time.Since(waitStartedAt).Milliseconds())
+	}()
 
 	// Try to acquire immediately
 	releaseFunc, acquired, err := h.TryAcquireUserSlot(ctx, userID, maxConcurrency)
@@ -444,6 +448,10 @@ func (h *ConcurrencyHelper) waitForSlotWithPingTimeout(c *gin.Context, slotType 
 
 // AcquireAccountSlotWithWaitTimeout acquires an account slot with a custom timeout (keeps SSE ping).
 func (h *ConcurrencyHelper) AcquireAccountSlotWithWaitTimeout(c *gin.Context, accountID int64, maxConcurrency int, timeout time.Duration, isStream bool, streamStarted *bool) (func(), error) {
+	waitStartedAt := time.Now()
+	defer func() {
+		service.SetOpsLatencyMs(c, service.OpsAccountQueueWaitMsKey, time.Since(waitStartedAt).Milliseconds())
+	}()
 	return h.waitForSlotWithPingTimeout(c, "account", accountID, maxConcurrency, timeout, isStream, streamStarted, true)
 }
 

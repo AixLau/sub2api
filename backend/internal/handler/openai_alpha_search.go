@@ -290,6 +290,7 @@ func (h *OpenAIGatewayHandler) recordAlphaSearchUsage(
 			APIKeyService:      h.apiKeyService,
 			QuotaPlatform:      quotaPlatform,
 			SessionID:          sessionID,
+			PhaseLatency:       service.UsagePhaseLatencySnapshot(c),
 			ChannelUsageFields: channelMapping.ToUsageFields(requestedModel, result.UpstreamModel),
 		}); err != nil {
 			logger.L().With(

@@ -82,6 +82,11 @@ var usageLogInsertArgTypes = [...]string{
 	"text",        // source
 	"text",        // session_id
 	"timestamptz", // created_at
+	"integer",     // user_queue_wait_ms
+	"integer",     // account_queue_wait_ms
+	"integer",     // upstream_request_write_ms
+	"integer",     // upstream_response_headers_ms
+	"integer",     // upstream_first_event_ms
 }
 
 const (
@@ -289,14 +294,19 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			account_stats_cost,
 			source,
 			session_id,
-			created_at
+			created_at,
+			user_queue_wait_ms,
+			account_queue_wait_ms,
+			upstream_request_write_ms,
+			upstream_response_headers_ms,
+			upstream_first_event_ms
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7,
 			$8, $9,
 			$10, $11, $12, $13,
 			$14, $15, $16, $17,
 			$18, $19, $20, $21, $22, $23,
-			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58
+			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 		RETURNING id, created_at
@@ -745,7 +755,12 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 			account_stats_cost,
 			source,
 			session_id,
-			created_at
+			created_at,
+			user_queue_wait_ms,
+			account_queue_wait_ms,
+			upstream_request_write_ms,
+			upstream_response_headers_ms,
+			upstream_first_event_ms
 		) AS (VALUES `)
 
 	// Each batch row prepends the synthetic input_index before the usage-log columns.
@@ -835,7 +850,12 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				account_stats_cost,
 				source,
 				session_id,
-				created_at
+				created_at,
+				user_queue_wait_ms,
+				account_queue_wait_ms,
+				upstream_request_write_ms,
+				upstream_response_headers_ms,
+				upstream_first_event_ms
 			)
 			SELECT
 				user_id,
@@ -895,7 +915,12 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				account_stats_cost,
 				source,
 				session_id,
-				created_at
+				created_at,
+				user_queue_wait_ms,
+				account_queue_wait_ms,
+				upstream_request_write_ms,
+				upstream_response_headers_ms,
+				upstream_first_event_ms
 			FROM input
 			ON CONFLICT (request_id, api_key_id) DO NOTHING
 			RETURNING request_id, api_key_id, id, created_at
@@ -995,7 +1020,12 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			account_stats_cost,
 			source,
 			session_id,
-			created_at
+			created_at,
+			user_queue_wait_ms,
+			account_queue_wait_ms,
+			upstream_request_write_ms,
+			upstream_response_headers_ms,
+			upstream_first_event_ms
 		) AS (VALUES `)
 
 	args := make([]any, 0, len(preparedList)*len(usageLogInsertArgTypes))
@@ -1081,7 +1111,12 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			account_stats_cost,
 			source,
 			session_id,
-			created_at
+			created_at,
+			user_queue_wait_ms,
+			account_queue_wait_ms,
+			upstream_request_write_ms,
+			upstream_response_headers_ms,
+			upstream_first_event_ms
 		)
 		SELECT
 			user_id,
@@ -1141,7 +1176,12 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			account_stats_cost,
 			source,
 			session_id,
-			created_at
+			created_at,
+			user_queue_wait_ms,
+			account_queue_wait_ms,
+			upstream_request_write_ms,
+			upstream_response_headers_ms,
+			upstream_first_event_ms
 		FROM input
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 	`)
@@ -1209,14 +1249,19 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			account_stats_cost,
 			source,
 			session_id,
-			created_at
+			created_at,
+			user_queue_wait_ms,
+			account_queue_wait_ms,
+			upstream_request_write_ms,
+			upstream_response_headers_ms,
+			upstream_first_event_ms
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7,
 			$8, $9,
 			$10, $11, $12, $13,
 			$14, $15, $16, $17,
 			$18, $19, $20, $21, $22, $23,
-			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58
+			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 	`, prepared.args...)
@@ -1263,6 +1308,11 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 		requestedModel = strings.TrimSpace(log.Model)
 	}
 	upstreamModel := nullString(log.UpstreamModel)
+	userQueueWait := nullInt(log.UserQueueWaitMs)
+	accountQueueWait := nullInt(log.AccountQueueWaitMs)
+	upstreamRequestWrite := nullInt(log.UpstreamRequestWriteMs)
+	upstreamResponseHeaders := nullInt(log.UpstreamResponseHeadersMs)
+	upstreamFirstEvent := nullInt(log.UpstreamFirstEventMs)
 	source := log.Source.Normalize()
 	log.Source = source
 
@@ -1342,6 +1392,11 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 			source,
 			sessionID, // session_id
 			createdAt,
+			userQueueWait,
+			accountQueueWait,
+			upstreamRequestWrite,
+			upstreamResponseHeaders,
+			upstreamFirstEvent,
 		},
 	}
 }

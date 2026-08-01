@@ -100,6 +100,11 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			service.UsageSourceGateway,
 			sqlmock.AnyArg(), // session_id
 			createdAt,
+			sqlmock.AnyArg(), // user_queue_wait_ms
+			sqlmock.AnyArg(), // account_queue_wait_ms
+			sqlmock.AnyArg(), // upstream_request_write_ms
+			sqlmock.AnyArg(), // upstream_response_headers_ms
+			sqlmock.AnyArg(), // upstream_first_event_ms
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(99), createdAt))
 
@@ -191,6 +196,11 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			service.UsageSourceGateway,
 			sqlmock.AnyArg(), // session_id
 			createdAt,
+			sqlmock.AnyArg(), // user_queue_wait_ms
+			sqlmock.AnyArg(), // account_queue_wait_ms
+			sqlmock.AnyArg(), // upstream_request_write_ms
+			sqlmock.AnyArg(), // upstream_response_headers_ms
+			sqlmock.AnyArg(), // upstream_first_event_ms
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(100), createdAt))
 
@@ -232,7 +242,7 @@ func TestExecUsageLogInsertNoResult_PersistsRequestedModel(t *testing.T) {
 		CreatedAt:      time.Date(2025, 1, 4, 12, 0, 0, 0, time.UTC),
 	})
 
-	mock.ExpectExec(`(?s)INSERT INTO usage_logs.*\$58\s*\)`).
+	mock.ExpectExec(`(?s)INSERT INTO usage_logs.*\$63\s*\)`).
 		WithArgs(anySliceToDriverValues(prepared.args)...).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
@@ -947,6 +957,11 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			string(service.UsageSourceAccountTest),
 			sql.NullString{},
 			now,
+			sql.NullInt64{},
+			sql.NullInt64{},
+			sql.NullInt64{},
+			sql.NullInt64{},
+			sql.NullInt64{},
 		}})
 		require.NoError(t, err)
 		require.Equal(t, service.UsageSourceAccountTest, log.Source)
@@ -1026,6 +1041,11 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			string(service.UsageSourceGateway),
 			sql.NullString{}, // session_id
 			now,
+			sql.NullInt64{}, // user_queue_wait_ms
+			sql.NullInt64{}, // account_queue_wait_ms
+			sql.NullInt64{}, // upstream_request_write_ms
+			sql.NullInt64{}, // upstream_response_headers_ms
+			sql.NullInt64{}, // upstream_first_event_ms
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)
@@ -1085,6 +1105,11 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			string(service.UsageSourceGateway),
 			sql.NullString{}, // session_id
 			now,
+			sql.NullInt64{}, // user_queue_wait_ms
+			sql.NullInt64{}, // account_queue_wait_ms
+			sql.NullInt64{}, // upstream_request_write_ms
+			sql.NullInt64{}, // upstream_response_headers_ms
+			sql.NullInt64{}, // upstream_first_event_ms
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)
@@ -1144,6 +1169,11 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			string(service.UsageSourceGateway),
 			sql.NullString{}, // session_id
 			now,
+			sql.NullInt64{}, // user_queue_wait_ms
+			sql.NullInt64{}, // account_queue_wait_ms
+			sql.NullInt64{}, // upstream_request_write_ms
+			sql.NullInt64{}, // upstream_response_headers_ms
+			sql.NullInt64{}, // upstream_first_event_ms
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)

@@ -52,6 +52,7 @@ type RecordUsageInput struct {
 	ForceCacheBilling  bool               // 强制缓存计费：将 input_tokens 转为 cache_read 计费（用于粘性会话切换）
 	APIKeyService      APIKeyQuotaUpdater // 可选：用于更新API Key配额
 	QuotaPlatform      string             // user×platform 配额计量平台：handler 在请求 ctx 内经 QuotaPlatform() 算定后传入（后扣运行在 worker 池 background ctx 上，取不到 ForcePlatform）
+	PhaseLatency       UsagePhaseLatency  // request phase timings captured before async recording
 
 	ChannelUsageFields // 渠道映射信息（由 handler 在 Forward 前解析）
 }
@@ -599,6 +600,7 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		ForceCacheBilling:  input.ForceCacheBilling,
 		APIKeyService:      input.APIKeyService,
 		QuotaPlatform:      input.QuotaPlatform,
+		PhaseLatency:       input.PhaseLatency,
 		ChannelUsageFields: input.ChannelUsageFields,
 	}, &recordUsageOpts{})
 }
@@ -621,6 +623,7 @@ type RecordUsageLongContextInput struct {
 	ForceCacheBilling     bool               // 强制缓存计费：将 input_tokens 转为 cache_read 计费（用于粘性会话切换）
 	APIKeyService         APIKeyQuotaUpdater // API Key 配额服务（可选）
 	QuotaPlatform         string             // user×platform 配额计量平台：handler 在请求 ctx 内经 QuotaPlatform() 算定后传入（后扣运行在 worker 池 background ctx 上，取不到 ForcePlatform）
+	PhaseLatency          UsagePhaseLatency  // request phase timings captured before async recording
 
 	ChannelUsageFields // 渠道映射信息（由 handler 在 Forward 前解析）
 }
@@ -642,6 +645,7 @@ func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *
 		ForceCacheBilling:  input.ForceCacheBilling,
 		APIKeyService:      input.APIKeyService,
 		QuotaPlatform:      input.QuotaPlatform,
+		PhaseLatency:       input.PhaseLatency,
 		ChannelUsageFields: input.ChannelUsageFields,
 	}, &recordUsageOpts{
 		LongContextThreshold:  input.LongContextThreshold,
@@ -665,6 +669,7 @@ type recordUsageCoreInput struct {
 	ForceCacheBilling  bool
 	APIKeyService      APIKeyQuotaUpdater
 	QuotaPlatform      string
+	PhaseLatency       UsagePhaseLatency
 	ChannelUsageFields
 }
 
@@ -1001,45 +1006,50 @@ func (s *GatewayService) buildRecordUsageLog(
 	durationMs := int(result.Duration.Milliseconds())
 	requestID := resolveUsageBillingRequestID(ctx, result.RequestID)
 	usageLog := &UsageLog{
-		UserID:                user.ID,
-		APIKeyID:              apiKey.ID,
-		AccountID:             account.ID,
-		RequestID:             requestID,
-		Model:                 result.Model,
-		RequestedModel:        requestedModel,
-		UpstreamModel:         optionalTrimmedStringPtr(result.UpstreamModel),
-		ReasoningEffort:       result.ReasoningEffort,
-		InboundEndpoint:       optionalTrimmedStringPtr(input.InboundEndpoint),
-		UpstreamEndpoint:      optionalTrimmedStringPtr(input.UpstreamEndpoint),
-		InputTokens:           result.Usage.InputTokens,
-		OutputTokens:          result.Usage.OutputTokens,
-		CacheCreationTokens:   result.Usage.CacheCreationInputTokens,
-		CacheReadTokens:       result.Usage.CacheReadInputTokens,
-		CacheCreation5mTokens: result.Usage.CacheCreation5mTokens,
-		CacheCreation1hTokens: result.Usage.CacheCreation1hTokens,
-		ImageOutputTokens:     result.Usage.ImageOutputTokens,
-		RateMultiplier:        multiplier,
-		AccountRateMultiplier: &accountRateMultiplier,
-		BillingType:           billingType,
-		BillingMode:           resolveBillingMode(result, cost),
-		Stream:                result.Stream,
-		DurationMs:            &durationMs,
-		FirstTokenMs:          result.FirstTokenMs,
-		ImageCount:            result.ImageCount,
-		ImageSize:             optionalTrimmedStringPtr(result.ImageSize),
-		ImageInputSize:        optionalTrimmedStringPtr(result.ImageInputSize),
-		ImageOutputSize:       optionalTrimmedStringPtr(result.ImageOutputSize),
-		ImageSizeSource:       optionalTrimmedStringPtr(result.ImageSizeSource),
-		ImageSizeBreakdown:    result.ImageSizeBreakdown,
-		CacheTTLOverridden:    cacheTTLOverridden,
-		ChannelID:             optionalInt64Ptr(input.ChannelID),
-		ModelMappingChain:     optionalTrimmedStringPtr(input.ModelMappingChain),
-		UserAgent:             optionalTrimmedStringPtr(input.UserAgent),
-		IPAddress:             optionalTrimmedStringPtr(input.IPAddress),
-		SessionID:             optionalTrimmedStringPtr(input.SessionID),
-		GroupID:               apiKey.GroupID,
-		SubscriptionID:        optionalSubscriptionID(subscription),
-		CreatedAt:             time.Now(),
+		UserID:                    user.ID,
+		APIKeyID:                  apiKey.ID,
+		AccountID:                 account.ID,
+		RequestID:                 requestID,
+		Model:                     result.Model,
+		RequestedModel:            requestedModel,
+		UpstreamModel:             optionalTrimmedStringPtr(result.UpstreamModel),
+		ReasoningEffort:           result.ReasoningEffort,
+		InboundEndpoint:           optionalTrimmedStringPtr(input.InboundEndpoint),
+		UpstreamEndpoint:          optionalTrimmedStringPtr(input.UpstreamEndpoint),
+		InputTokens:               result.Usage.InputTokens,
+		OutputTokens:              result.Usage.OutputTokens,
+		CacheCreationTokens:       result.Usage.CacheCreationInputTokens,
+		CacheReadTokens:           result.Usage.CacheReadInputTokens,
+		CacheCreation5mTokens:     result.Usage.CacheCreation5mTokens,
+		CacheCreation1hTokens:     result.Usage.CacheCreation1hTokens,
+		ImageOutputTokens:         result.Usage.ImageOutputTokens,
+		RateMultiplier:            multiplier,
+		AccountRateMultiplier:     &accountRateMultiplier,
+		BillingType:               billingType,
+		BillingMode:               resolveBillingMode(result, cost),
+		Stream:                    result.Stream,
+		DurationMs:                &durationMs,
+		FirstTokenMs:              result.FirstTokenMs,
+		UserQueueWaitMs:           input.PhaseLatency.UserQueueWaitMs,
+		AccountQueueWaitMs:        input.PhaseLatency.AccountQueueWaitMs,
+		UpstreamRequestWriteMs:    input.PhaseLatency.UpstreamRequestWriteMs,
+		UpstreamResponseHeadersMs: input.PhaseLatency.UpstreamResponseHeadersMs,
+		UpstreamFirstEventMs:      input.PhaseLatency.UpstreamFirstEventMs,
+		ImageCount:                result.ImageCount,
+		ImageSize:                 optionalTrimmedStringPtr(result.ImageSize),
+		ImageInputSize:            optionalTrimmedStringPtr(result.ImageInputSize),
+		ImageOutputSize:           optionalTrimmedStringPtr(result.ImageOutputSize),
+		ImageSizeSource:           optionalTrimmedStringPtr(result.ImageSizeSource),
+		ImageSizeBreakdown:        result.ImageSizeBreakdown,
+		CacheTTLOverridden:        cacheTTLOverridden,
+		ChannelID:                 optionalInt64Ptr(input.ChannelID),
+		ModelMappingChain:         optionalTrimmedStringPtr(input.ModelMappingChain),
+		UserAgent:                 optionalTrimmedStringPtr(input.UserAgent),
+		IPAddress:                 optionalTrimmedStringPtr(input.IPAddress),
+		SessionID:                 optionalTrimmedStringPtr(input.SessionID),
+		GroupID:                   apiKey.GroupID,
+		SubscriptionID:            optionalSubscriptionID(subscription),
+		CreatedAt:                 time.Now(),
 	}
 	if result.ImageCount > 0 && (cost == nil || cost.BillingMode != string(BillingModeToken)) {
 		usageLog.RateMultiplier = imageMultiplier

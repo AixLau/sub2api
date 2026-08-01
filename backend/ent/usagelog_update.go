@@ -698,6 +698,141 @@ func (_u *UsageLogUpdate) ClearFirstTokenMs() *UsageLogUpdate {
 	return _u
 }
 
+// SetUserQueueWaitMs sets the "user_queue_wait_ms" field.
+func (_u *UsageLogUpdate) SetUserQueueWaitMs(v int) *UsageLogUpdate {
+	_u.mutation.ResetUserQueueWaitMs()
+	_u.mutation.SetUserQueueWaitMs(v)
+	return _u
+}
+
+// SetNillableUserQueueWaitMs sets the "user_queue_wait_ms" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUserQueueWaitMs(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUserQueueWaitMs(*v)
+	}
+	return _u
+}
+
+// AddUserQueueWaitMs adds value to the "user_queue_wait_ms" field.
+func (_u *UsageLogUpdate) AddUserQueueWaitMs(v int) *UsageLogUpdate {
+	_u.mutation.AddUserQueueWaitMs(v)
+	return _u
+}
+
+// ClearUserQueueWaitMs clears the value of the "user_queue_wait_ms" field.
+func (_u *UsageLogUpdate) ClearUserQueueWaitMs() *UsageLogUpdate {
+	_u.mutation.ClearUserQueueWaitMs()
+	return _u
+}
+
+// SetAccountQueueWaitMs sets the "account_queue_wait_ms" field.
+func (_u *UsageLogUpdate) SetAccountQueueWaitMs(v int) *UsageLogUpdate {
+	_u.mutation.ResetAccountQueueWaitMs()
+	_u.mutation.SetAccountQueueWaitMs(v)
+	return _u
+}
+
+// SetNillableAccountQueueWaitMs sets the "account_queue_wait_ms" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableAccountQueueWaitMs(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetAccountQueueWaitMs(*v)
+	}
+	return _u
+}
+
+// AddAccountQueueWaitMs adds value to the "account_queue_wait_ms" field.
+func (_u *UsageLogUpdate) AddAccountQueueWaitMs(v int) *UsageLogUpdate {
+	_u.mutation.AddAccountQueueWaitMs(v)
+	return _u
+}
+
+// ClearAccountQueueWaitMs clears the value of the "account_queue_wait_ms" field.
+func (_u *UsageLogUpdate) ClearAccountQueueWaitMs() *UsageLogUpdate {
+	_u.mutation.ClearAccountQueueWaitMs()
+	return _u
+}
+
+// SetUpstreamRequestWriteMs sets the "upstream_request_write_ms" field.
+func (_u *UsageLogUpdate) SetUpstreamRequestWriteMs(v int) *UsageLogUpdate {
+	_u.mutation.ResetUpstreamRequestWriteMs()
+	_u.mutation.SetUpstreamRequestWriteMs(v)
+	return _u
+}
+
+// SetNillableUpstreamRequestWriteMs sets the "upstream_request_write_ms" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUpstreamRequestWriteMs(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUpstreamRequestWriteMs(*v)
+	}
+	return _u
+}
+
+// AddUpstreamRequestWriteMs adds value to the "upstream_request_write_ms" field.
+func (_u *UsageLogUpdate) AddUpstreamRequestWriteMs(v int) *UsageLogUpdate {
+	_u.mutation.AddUpstreamRequestWriteMs(v)
+	return _u
+}
+
+// ClearUpstreamRequestWriteMs clears the value of the "upstream_request_write_ms" field.
+func (_u *UsageLogUpdate) ClearUpstreamRequestWriteMs() *UsageLogUpdate {
+	_u.mutation.ClearUpstreamRequestWriteMs()
+	return _u
+}
+
+// SetUpstreamResponseHeadersMs sets the "upstream_response_headers_ms" field.
+func (_u *UsageLogUpdate) SetUpstreamResponseHeadersMs(v int) *UsageLogUpdate {
+	_u.mutation.ResetUpstreamResponseHeadersMs()
+	_u.mutation.SetUpstreamResponseHeadersMs(v)
+	return _u
+}
+
+// SetNillableUpstreamResponseHeadersMs sets the "upstream_response_headers_ms" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUpstreamResponseHeadersMs(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUpstreamResponseHeadersMs(*v)
+	}
+	return _u
+}
+
+// AddUpstreamResponseHeadersMs adds value to the "upstream_response_headers_ms" field.
+func (_u *UsageLogUpdate) AddUpstreamResponseHeadersMs(v int) *UsageLogUpdate {
+	_u.mutation.AddUpstreamResponseHeadersMs(v)
+	return _u
+}
+
+// ClearUpstreamResponseHeadersMs clears the value of the "upstream_response_headers_ms" field.
+func (_u *UsageLogUpdate) ClearUpstreamResponseHeadersMs() *UsageLogUpdate {
+	_u.mutation.ClearUpstreamResponseHeadersMs()
+	return _u
+}
+
+// SetUpstreamFirstEventMs sets the "upstream_first_event_ms" field.
+func (_u *UsageLogUpdate) SetUpstreamFirstEventMs(v int) *UsageLogUpdate {
+	_u.mutation.ResetUpstreamFirstEventMs()
+	_u.mutation.SetUpstreamFirstEventMs(v)
+	return _u
+}
+
+// SetNillableUpstreamFirstEventMs sets the "upstream_first_event_ms" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUpstreamFirstEventMs(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUpstreamFirstEventMs(*v)
+	}
+	return _u
+}
+
+// AddUpstreamFirstEventMs adds value to the "upstream_first_event_ms" field.
+func (_u *UsageLogUpdate) AddUpstreamFirstEventMs(v int) *UsageLogUpdate {
+	_u.mutation.AddUpstreamFirstEventMs(v)
+	return _u
+}
+
+// ClearUpstreamFirstEventMs clears the value of the "upstream_first_event_ms" field.
+func (_u *UsageLogUpdate) ClearUpstreamFirstEventMs() *UsageLogUpdate {
+	_u.mutation.ClearUpstreamFirstEventMs()
+	return _u
+}
+
 // SetUserAgent sets the "user_agent" field.
 func (_u *UsageLogUpdate) SetUserAgent(v string) *UsageLogUpdate {
 	_u.mutation.SetUserAgent(v)
@@ -1279,6 +1414,51 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.FirstTokenMsCleared() {
 		_spec.ClearField(usagelog.FieldFirstTokenMs, field.TypeInt)
+	}
+	if value, ok := _u.mutation.UserQueueWaitMs(); ok {
+		_spec.SetField(usagelog.FieldUserQueueWaitMs, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedUserQueueWaitMs(); ok {
+		_spec.AddField(usagelog.FieldUserQueueWaitMs, field.TypeInt, value)
+	}
+	if _u.mutation.UserQueueWaitMsCleared() {
+		_spec.ClearField(usagelog.FieldUserQueueWaitMs, field.TypeInt)
+	}
+	if value, ok := _u.mutation.AccountQueueWaitMs(); ok {
+		_spec.SetField(usagelog.FieldAccountQueueWaitMs, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedAccountQueueWaitMs(); ok {
+		_spec.AddField(usagelog.FieldAccountQueueWaitMs, field.TypeInt, value)
+	}
+	if _u.mutation.AccountQueueWaitMsCleared() {
+		_spec.ClearField(usagelog.FieldAccountQueueWaitMs, field.TypeInt)
+	}
+	if value, ok := _u.mutation.UpstreamRequestWriteMs(); ok {
+		_spec.SetField(usagelog.FieldUpstreamRequestWriteMs, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamRequestWriteMs(); ok {
+		_spec.AddField(usagelog.FieldUpstreamRequestWriteMs, field.TypeInt, value)
+	}
+	if _u.mutation.UpstreamRequestWriteMsCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamRequestWriteMs, field.TypeInt)
+	}
+	if value, ok := _u.mutation.UpstreamResponseHeadersMs(); ok {
+		_spec.SetField(usagelog.FieldUpstreamResponseHeadersMs, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamResponseHeadersMs(); ok {
+		_spec.AddField(usagelog.FieldUpstreamResponseHeadersMs, field.TypeInt, value)
+	}
+	if _u.mutation.UpstreamResponseHeadersMsCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamResponseHeadersMs, field.TypeInt)
+	}
+	if value, ok := _u.mutation.UpstreamFirstEventMs(); ok {
+		_spec.SetField(usagelog.FieldUpstreamFirstEventMs, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamFirstEventMs(); ok {
+		_spec.AddField(usagelog.FieldUpstreamFirstEventMs, field.TypeInt, value)
+	}
+	if _u.mutation.UpstreamFirstEventMsCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamFirstEventMs, field.TypeInt)
 	}
 	if value, ok := _u.mutation.UserAgent(); ok {
 		_spec.SetField(usagelog.FieldUserAgent, field.TypeString, value)
@@ -2183,6 +2363,141 @@ func (_u *UsageLogUpdateOne) ClearFirstTokenMs() *UsageLogUpdateOne {
 	return _u
 }
 
+// SetUserQueueWaitMs sets the "user_queue_wait_ms" field.
+func (_u *UsageLogUpdateOne) SetUserQueueWaitMs(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetUserQueueWaitMs()
+	_u.mutation.SetUserQueueWaitMs(v)
+	return _u
+}
+
+// SetNillableUserQueueWaitMs sets the "user_queue_wait_ms" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUserQueueWaitMs(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUserQueueWaitMs(*v)
+	}
+	return _u
+}
+
+// AddUserQueueWaitMs adds value to the "user_queue_wait_ms" field.
+func (_u *UsageLogUpdateOne) AddUserQueueWaitMs(v int) *UsageLogUpdateOne {
+	_u.mutation.AddUserQueueWaitMs(v)
+	return _u
+}
+
+// ClearUserQueueWaitMs clears the value of the "user_queue_wait_ms" field.
+func (_u *UsageLogUpdateOne) ClearUserQueueWaitMs() *UsageLogUpdateOne {
+	_u.mutation.ClearUserQueueWaitMs()
+	return _u
+}
+
+// SetAccountQueueWaitMs sets the "account_queue_wait_ms" field.
+func (_u *UsageLogUpdateOne) SetAccountQueueWaitMs(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetAccountQueueWaitMs()
+	_u.mutation.SetAccountQueueWaitMs(v)
+	return _u
+}
+
+// SetNillableAccountQueueWaitMs sets the "account_queue_wait_ms" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableAccountQueueWaitMs(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetAccountQueueWaitMs(*v)
+	}
+	return _u
+}
+
+// AddAccountQueueWaitMs adds value to the "account_queue_wait_ms" field.
+func (_u *UsageLogUpdateOne) AddAccountQueueWaitMs(v int) *UsageLogUpdateOne {
+	_u.mutation.AddAccountQueueWaitMs(v)
+	return _u
+}
+
+// ClearAccountQueueWaitMs clears the value of the "account_queue_wait_ms" field.
+func (_u *UsageLogUpdateOne) ClearAccountQueueWaitMs() *UsageLogUpdateOne {
+	_u.mutation.ClearAccountQueueWaitMs()
+	return _u
+}
+
+// SetUpstreamRequestWriteMs sets the "upstream_request_write_ms" field.
+func (_u *UsageLogUpdateOne) SetUpstreamRequestWriteMs(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetUpstreamRequestWriteMs()
+	_u.mutation.SetUpstreamRequestWriteMs(v)
+	return _u
+}
+
+// SetNillableUpstreamRequestWriteMs sets the "upstream_request_write_ms" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUpstreamRequestWriteMs(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUpstreamRequestWriteMs(*v)
+	}
+	return _u
+}
+
+// AddUpstreamRequestWriteMs adds value to the "upstream_request_write_ms" field.
+func (_u *UsageLogUpdateOne) AddUpstreamRequestWriteMs(v int) *UsageLogUpdateOne {
+	_u.mutation.AddUpstreamRequestWriteMs(v)
+	return _u
+}
+
+// ClearUpstreamRequestWriteMs clears the value of the "upstream_request_write_ms" field.
+func (_u *UsageLogUpdateOne) ClearUpstreamRequestWriteMs() *UsageLogUpdateOne {
+	_u.mutation.ClearUpstreamRequestWriteMs()
+	return _u
+}
+
+// SetUpstreamResponseHeadersMs sets the "upstream_response_headers_ms" field.
+func (_u *UsageLogUpdateOne) SetUpstreamResponseHeadersMs(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetUpstreamResponseHeadersMs()
+	_u.mutation.SetUpstreamResponseHeadersMs(v)
+	return _u
+}
+
+// SetNillableUpstreamResponseHeadersMs sets the "upstream_response_headers_ms" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUpstreamResponseHeadersMs(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUpstreamResponseHeadersMs(*v)
+	}
+	return _u
+}
+
+// AddUpstreamResponseHeadersMs adds value to the "upstream_response_headers_ms" field.
+func (_u *UsageLogUpdateOne) AddUpstreamResponseHeadersMs(v int) *UsageLogUpdateOne {
+	_u.mutation.AddUpstreamResponseHeadersMs(v)
+	return _u
+}
+
+// ClearUpstreamResponseHeadersMs clears the value of the "upstream_response_headers_ms" field.
+func (_u *UsageLogUpdateOne) ClearUpstreamResponseHeadersMs() *UsageLogUpdateOne {
+	_u.mutation.ClearUpstreamResponseHeadersMs()
+	return _u
+}
+
+// SetUpstreamFirstEventMs sets the "upstream_first_event_ms" field.
+func (_u *UsageLogUpdateOne) SetUpstreamFirstEventMs(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetUpstreamFirstEventMs()
+	_u.mutation.SetUpstreamFirstEventMs(v)
+	return _u
+}
+
+// SetNillableUpstreamFirstEventMs sets the "upstream_first_event_ms" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUpstreamFirstEventMs(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUpstreamFirstEventMs(*v)
+	}
+	return _u
+}
+
+// AddUpstreamFirstEventMs adds value to the "upstream_first_event_ms" field.
+func (_u *UsageLogUpdateOne) AddUpstreamFirstEventMs(v int) *UsageLogUpdateOne {
+	_u.mutation.AddUpstreamFirstEventMs(v)
+	return _u
+}
+
+// ClearUpstreamFirstEventMs clears the value of the "upstream_first_event_ms" field.
+func (_u *UsageLogUpdateOne) ClearUpstreamFirstEventMs() *UsageLogUpdateOne {
+	_u.mutation.ClearUpstreamFirstEventMs()
+	return _u
+}
+
 // SetUserAgent sets the "user_agent" field.
 func (_u *UsageLogUpdateOne) SetUserAgent(v string) *UsageLogUpdateOne {
 	_u.mutation.SetUserAgent(v)
@@ -2794,6 +3109,51 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if _u.mutation.FirstTokenMsCleared() {
 		_spec.ClearField(usagelog.FieldFirstTokenMs, field.TypeInt)
+	}
+	if value, ok := _u.mutation.UserQueueWaitMs(); ok {
+		_spec.SetField(usagelog.FieldUserQueueWaitMs, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedUserQueueWaitMs(); ok {
+		_spec.AddField(usagelog.FieldUserQueueWaitMs, field.TypeInt, value)
+	}
+	if _u.mutation.UserQueueWaitMsCleared() {
+		_spec.ClearField(usagelog.FieldUserQueueWaitMs, field.TypeInt)
+	}
+	if value, ok := _u.mutation.AccountQueueWaitMs(); ok {
+		_spec.SetField(usagelog.FieldAccountQueueWaitMs, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedAccountQueueWaitMs(); ok {
+		_spec.AddField(usagelog.FieldAccountQueueWaitMs, field.TypeInt, value)
+	}
+	if _u.mutation.AccountQueueWaitMsCleared() {
+		_spec.ClearField(usagelog.FieldAccountQueueWaitMs, field.TypeInt)
+	}
+	if value, ok := _u.mutation.UpstreamRequestWriteMs(); ok {
+		_spec.SetField(usagelog.FieldUpstreamRequestWriteMs, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamRequestWriteMs(); ok {
+		_spec.AddField(usagelog.FieldUpstreamRequestWriteMs, field.TypeInt, value)
+	}
+	if _u.mutation.UpstreamRequestWriteMsCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamRequestWriteMs, field.TypeInt)
+	}
+	if value, ok := _u.mutation.UpstreamResponseHeadersMs(); ok {
+		_spec.SetField(usagelog.FieldUpstreamResponseHeadersMs, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamResponseHeadersMs(); ok {
+		_spec.AddField(usagelog.FieldUpstreamResponseHeadersMs, field.TypeInt, value)
+	}
+	if _u.mutation.UpstreamResponseHeadersMsCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamResponseHeadersMs, field.TypeInt)
+	}
+	if value, ok := _u.mutation.UpstreamFirstEventMs(); ok {
+		_spec.SetField(usagelog.FieldUpstreamFirstEventMs, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamFirstEventMs(); ok {
+		_spec.AddField(usagelog.FieldUpstreamFirstEventMs, field.TypeInt, value)
+	}
+	if _u.mutation.UpstreamFirstEventMsCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamFirstEventMs, field.TypeInt)
 	}
 	if value, ok := _u.mutation.UserAgent(); ok {
 		_spec.SetField(usagelog.FieldUserAgent, field.TypeString, value)

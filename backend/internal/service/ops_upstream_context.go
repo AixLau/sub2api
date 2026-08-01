@@ -2,6 +2,8 @@ package service
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptrace"
 	"strings"
 	"time"
 
@@ -19,11 +21,17 @@ const (
 	OpsDiagnosticDetailKey     = "ops_diagnostic_detail"
 
 	// Optional stage latencies (milliseconds) for troubleshooting and alerting.
-	OpsAuthLatencyMsKey      = "ops_auth_latency_ms"
-	OpsRoutingLatencyMsKey   = "ops_routing_latency_ms"
-	OpsUpstreamLatencyMsKey  = "ops_upstream_latency_ms"
-	OpsResponseLatencyMsKey  = "ops_response_latency_ms"
-	OpsTimeToFirstTokenMsKey = "ops_time_to_first_token_ms"
+	OpsAuthLatencyMsKey             = "ops_auth_latency_ms"
+	OpsRoutingLatencyMsKey          = "ops_routing_latency_ms"
+	OpsUpstreamLatencyMsKey         = "ops_upstream_latency_ms"
+	OpsResponseLatencyMsKey         = "ops_response_latency_ms"
+	OpsTimeToFirstTokenMsKey        = "ops_time_to_first_token_ms"
+	OpsUserQueueWaitMsKey           = "ops_user_queue_wait_ms"
+	OpsAccountQueueWaitMsKey        = "ops_account_queue_wait_ms"
+	OpsUpstreamRequestWriteMsKey    = "ops_upstream_request_write_ms"
+	OpsUpstreamResponseHeadersMsKey = "ops_upstream_response_headers_ms"
+	OpsUpstreamFirstEventMsKey      = "ops_upstream_first_event_ms"
+	OpsUpstreamStartAtKey           = "ops_upstream_start_at"
 	// OpenAI WS 关键观测字段
 	OpsOpenAIWSQueueWaitMsKey = "ops_openai_ws_queue_wait_ms"
 	OpsOpenAIWSConnPickMsKey  = "ops_openai_ws_conn_pick_ms"
@@ -71,6 +79,100 @@ func SetOpsLatencyMs(c *gin.Context, key string, value int64) {
 		return
 	}
 	c.Set(key, value)
+}
+
+// OpsLatencyMs returns a measured latency as a nullable int for persistence.
+// A missing value is intentionally different from a measured 0ms.
+func OpsLatencyMs(c *gin.Context, key string) *int {
+	if c == nil || strings.TrimSpace(key) == "" {
+		return nil
+	}
+	v, ok := c.Get(key)
+	if !ok {
+		return nil
+	}
+	var value int64
+	switch typed := v.(type) {
+	case int64:
+		value = typed
+	case int:
+		value = int64(typed)
+	default:
+		return nil
+	}
+	if value < 0 {
+		return nil
+	}
+	result := int(value)
+	return &result
+}
+
+// UsagePhaseLatencySnapshot copies request-local values before the request
+// context is handed to an asynchronous usage recorder.
+func UsagePhaseLatencySnapshot(c *gin.Context) UsagePhaseLatency {
+	return UsagePhaseLatency{
+		UserQueueWaitMs:           OpsLatencyMs(c, OpsUserQueueWaitMsKey),
+		AccountQueueWaitMs:        OpsLatencyMs(c, OpsAccountQueueWaitMsKey),
+		UpstreamRequestWriteMs:    OpsLatencyMs(c, OpsUpstreamRequestWriteMsKey),
+		UpstreamResponseHeadersMs: OpsLatencyMs(c, OpsUpstreamResponseHeadersMsKey),
+		UpstreamFirstEventMs:      OpsLatencyMs(c, OpsUpstreamFirstEventMsKey),
+	}
+}
+
+// AttachOpsUpstreamTrace records when the HTTP client finishes writing the
+// upstream request. Custom test transports may not emit WroteRequest; in that
+// case the field remains nullable rather than being treated as zero.
+func AttachOpsUpstreamTrace(req *http.Request, c *gin.Context, startedAt time.Time) *http.Request {
+	if req == nil {
+		return req
+	}
+	if c != nil {
+		c.Set(OpsUpstreamStartAtKey, startedAt)
+	}
+	trace := &httptrace.ClientTrace{
+		WroteRequest: func(httptrace.WroteRequestInfo) {
+			SetOpsLatencyMs(c, OpsUpstreamRequestWriteMsKey, time.Since(startedAt).Milliseconds())
+		},
+	}
+	return req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+}
+
+// DoOpsUpstream runs one upstream attempt and records timing relative to that
+// attempt. A transport error has no response-header timestamp; keep the
+// legacy attempt latency for Ops error diagnostics in that case.
+func DoOpsUpstream(c *gin.Context, req *http.Request, do func(*http.Request) (*http.Response, error)) (*http.Response, error) {
+	startedAt := time.Now()
+	tracedReq := AttachOpsUpstreamTrace(req, c, startedAt)
+	resp, err := do(tracedReq)
+	if resp != nil {
+		MarkOpsUpstreamResponseHeaders(c, startedAt)
+	} else {
+		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(startedAt).Milliseconds())
+	}
+	return resp, err
+}
+
+// MarkOpsUpstreamResponseHeaders records the duration until the upstream
+// client returns response headers. Keep the legacy key in sync for existing
+// Ops error logging and response-latency calculations.
+func MarkOpsUpstreamResponseHeaders(c *gin.Context, startedAt time.Time) {
+	latency := time.Since(startedAt).Milliseconds()
+	SetOpsLatencyMs(c, OpsUpstreamResponseHeadersMsKey, latency)
+	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, latency)
+}
+
+// MarkOpsUpstreamFirstEvent records the first semantic event relative to the
+// current upstream attempt, rather than relative to the full client request.
+func MarkOpsUpstreamFirstEvent(c *gin.Context) {
+	if c == nil {
+		return
+	}
+	v, ok := c.Get(OpsUpstreamStartAtKey)
+	startedAt, ok := v.(time.Time)
+	if !ok || startedAt.IsZero() {
+		return
+	}
+	SetOpsLatencyMs(c, OpsUpstreamFirstEventMsKey, time.Since(startedAt).Milliseconds())
 }
 
 func MarkOpsClientBusinessLimited(c *gin.Context, reason string) {

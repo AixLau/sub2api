@@ -230,7 +230,9 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	}
 
 	turnStart := time.Now()
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	resp, err := DoOpsUpstream(c, upstreamReq, func(req *http.Request) (*http.Response, error) {
+		return s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
+	})
 	if err != nil {
 		if turn == 1 {
 			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
@@ -369,6 +371,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		if isOpenAIWSTokenEvent(eventType) {
 			tokenEventCount++
 			if firstTokenMs == nil {
+				MarkOpsUpstreamFirstEvent(c)
 				ms := int(time.Since(turnStart).Milliseconds())
 				firstTokenMs = &ms
 			}

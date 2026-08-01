@@ -116,6 +116,19 @@
 
       </div>
 
+      <div class="rounded-xl bg-gray-50 p-6 dark:bg-dark-900">
+        <h3 class="text-sm font-black uppercase tracking-wider text-gray-900 dark:text-white">
+          {{ t('admin.ops.requestDetails.table.phases') }}
+        </h3>
+        <div class="mt-4 grid grid-cols-1 gap-2 text-sm text-gray-600 dark:text-gray-300 sm:grid-cols-2 lg:grid-cols-3">
+          <div>{{ t('admin.ops.requestDetails.phase.userQueue') }}: {{ phaseValue(detail.user_queue_wait_ms) }}</div>
+          <div>{{ t('admin.ops.requestDetails.phase.accountQueue') }}: {{ phaseValue(detail.account_queue_wait_ms) }}</div>
+          <div>{{ t('admin.ops.requestDetails.phase.requestWrite') }}: {{ phaseValue(detail.upstream_request_write_ms) }}</div>
+          <div>{{ t('admin.ops.requestDetails.phase.responseHeaders') }}: {{ phaseValue(detail.upstream_response_headers_ms) }}</div>
+          <div>{{ t('admin.ops.requestDetails.phase.firstEvent') }}: {{ phaseValue(detail.upstream_first_event_ms) }}</div>
+        </div>
+      </div>
+
       <!-- Response content (client request -> error_body; upstream -> upstream_error_detail/message) -->
       <div class="rounded-xl bg-gray-50 p-6 dark:bg-dark-900">
         <h3 class="text-sm font-black uppercase tracking-wider text-gray-900 dark:text-white">{{ t('admin.ops.errorDetail.responseBody') }}</h3>
@@ -272,6 +285,10 @@ function displayModel(d: OpsErrorDetail | null): string {
   const requested = String(d.requested_model || '').trim()
   if (requested) return requested
   return String(d.model || '').trim()
+}
+
+function phaseValue(value: number | null | undefined): string {
+  return typeof value === 'number' ? `${value} ms` : '-'
 }
 
 const correlatedUpstream = ref<OpsErrorDetail[]>([])

@@ -407,9 +407,17 @@ export default {
           platform: '平台',
           model: '模型',
           duration: '耗时',
+          phases: '阶段耗时',
           status: '状态码',
           requestId: '请求ID',
           actions: '操作'
+        },
+        phase: {
+          userQueue: '用户排队',
+          accountQueue: '账号排队',
+          requestWrite: '请求发送',
+          responseHeaders: '响应头',
+          firstEvent: '首个语义事件'
         }
       },
       alertEvents: {

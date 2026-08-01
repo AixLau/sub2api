@@ -150,6 +150,8 @@ const kindBadgeClass = (kind: string) => {
   if (kind === 'error') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
   return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
 }
+
+const phaseValue = (value: number | null | undefined) => typeof value === 'number' ? `${value} ms` : '-'
 </script>
 
 <template>
@@ -207,6 +209,13 @@ const kindBadgeClass = (kind: string) => {
                     <span>{{ typeof row.duration_ms === 'number' ? `${row.duration_ms} ms` : '-' }}</span>
                     <span>{{ row.status_code ?? '-' }}</span>
                   </div>
+                  <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-gray-500 dark:text-gray-400">
+                    <span>{{ t('admin.ops.requestDetails.phase.userQueue') }}: {{ phaseValue(row.user_queue_wait_ms) }}</span>
+                    <span>{{ t('admin.ops.requestDetails.phase.accountQueue') }}: {{ phaseValue(row.account_queue_wait_ms) }}</span>
+                    <span>{{ t('admin.ops.requestDetails.phase.requestWrite') }}: {{ phaseValue(row.upstream_request_write_ms) }}</span>
+                    <span>{{ t('admin.ops.requestDetails.phase.responseHeaders') }}: {{ phaseValue(row.upstream_response_headers_ms) }}</span>
+                    <span class="col-span-2">{{ t('admin.ops.requestDetails.phase.firstEvent') }}: {{ phaseValue(row.upstream_first_event_ms) }}</span>
+                  </div>
                   <div v-if="row.request_id" class="flex items-center gap-2">
                     <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-gray-700 dark:text-gray-200" :title="row.request_id">
                       {{ row.request_id }}
@@ -249,6 +258,9 @@ const kindBadgeClass = (kind: string) => {
                     {{ t('usage.firstToken') }}
                   </th>
                   <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    {{ t('admin.ops.requestDetails.table.phases') }}
+                  </th>
+                  <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                     {{ t('admin.ops.requestDetails.table.status') }}
                   </th>
                   <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -280,6 +292,13 @@ const kindBadgeClass = (kind: string) => {
                   </td>
                   <td class="whitespace-nowrap px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
                     {{ typeof row.first_token_ms === 'number' ? `${row.first_token_ms} ms` : '-' }}
+                  </td>
+                  <td class="px-4 py-3 text-[10px] leading-4 text-gray-500 dark:text-gray-400">
+                    <div>{{ t('admin.ops.requestDetails.phase.userQueue') }}: {{ phaseValue(row.user_queue_wait_ms) }}</div>
+                    <div>{{ t('admin.ops.requestDetails.phase.accountQueue') }}: {{ phaseValue(row.account_queue_wait_ms) }}</div>
+                    <div>{{ t('admin.ops.requestDetails.phase.requestWrite') }}: {{ phaseValue(row.upstream_request_write_ms) }}</div>
+                    <div>{{ t('admin.ops.requestDetails.phase.responseHeaders') }}: {{ phaseValue(row.upstream_response_headers_ms) }}</div>
+                    <div>{{ t('admin.ops.requestDetails.phase.firstEvent') }}: {{ phaseValue(row.upstream_first_event_ms) }}</div>
                   </td>
                   <td class="whitespace-nowrap px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
                     {{ row.status_code ?? '-' }}

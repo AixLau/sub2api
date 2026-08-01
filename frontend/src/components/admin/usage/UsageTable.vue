@@ -218,12 +218,21 @@
                 : LATENCY_BAR_CLASSES[durationSeverity(row.duration_ms ?? 0)]"
               aria-hidden="true"
             ></span>
-            <div class="grid grid-cols-[max-content_max-content] items-baseline gap-x-2 gap-y-0.5 text-xs">
-              <span class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyFirstToken') }}</span>
-              <span v-if="row.first_token_ms != null" class="font-medium tabular-nums" :class="LATENCY_TEXT_CLASSES[firstTokenSeverity(row.first_token_ms)]">{{ formatDuration(row.first_token_ms) }}</span>
-              <span v-else class="text-gray-400 dark:text-gray-500">-</span>
-              <span class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyDuration') }}</span>
-              <span class="font-medium tabular-nums" :class="LATENCY_TEXT_CLASSES[durationSeverity(row.duration_ms ?? 0)]">{{ formatDuration(row.duration_ms) }}</span>
+            <div class="min-w-0">
+              <div class="grid grid-cols-[max-content_max-content] items-baseline gap-x-2 gap-y-0.5 text-xs">
+                <span class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyFirstToken') }}</span>
+                <span v-if="row.first_token_ms != null" class="font-medium tabular-nums" :class="LATENCY_TEXT_CLASSES[firstTokenSeverity(row.first_token_ms)]">{{ formatDuration(row.first_token_ms) }}</span>
+                <span v-else class="text-gray-400 dark:text-gray-500">-</span>
+                <span class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyDuration') }}</span>
+                <span class="font-medium tabular-nums" :class="LATENCY_TEXT_CLASSES[durationSeverity(row.duration_ms ?? 0)]">{{ formatDuration(row.duration_ms) }}</span>
+              </div>
+              <div v-if="hasPhaseLatency(row)" class="mt-1 grid grid-cols-[max-content_max-content] gap-x-2 gap-y-0.5 text-[10px] leading-4 text-gray-400 dark:text-gray-500">
+                <span>{{ t('usage.phaseUserQueue') }}</span><span class="tabular-nums">{{ formatDuration(row.user_queue_wait_ms) }}</span>
+                <span>{{ t('usage.phaseAccountQueue') }}</span><span class="tabular-nums">{{ formatDuration(row.account_queue_wait_ms) }}</span>
+                <span>{{ t('usage.phaseRequestWrite') }}</span><span class="tabular-nums">{{ formatDuration(row.upstream_request_write_ms) }}</span>
+                <span>{{ t('usage.phaseResponseHeaders') }}</span><span class="tabular-nums">{{ formatDuration(row.upstream_response_headers_ms) }}</span>
+                <span>{{ t('usage.phaseFirstEvent') }}</span><span class="tabular-nums">{{ formatDuration(row.upstream_first_event_ms) }}</span>
+              </div>
             </div>
           </div>
         </template>
@@ -636,6 +645,14 @@ const formatDuration = (ms: number | null | undefined): string => {
   const totalSec = Math.round(ms / 1000)
   if (totalSec < 3600) return `${Math.floor(totalSec / 60)}m ${totalSec % 60}s`
   return `${Math.floor(totalSec / 3600)}h ${Math.floor((totalSec % 3600) / 60)}m`
+}
+
+const hasPhaseLatency = (row: AdminUsageLog): boolean => {
+  return row.user_queue_wait_ms != null ||
+    row.account_queue_wait_ms != null ||
+    row.upstream_request_write_ms != null ||
+    row.upstream_response_headers_ms != null ||
+    row.upstream_first_event_ms != null
 }
 
 // Cost tooltip functions

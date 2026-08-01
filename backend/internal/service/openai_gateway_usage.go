@@ -34,6 +34,7 @@ type OpenAIRecordUsageInput struct {
 	RequestPayloadHash string
 	APIKeyService      APIKeyQuotaUpdater
 	QuotaPlatform      string // user×platform quota platform resolved by the handler before async billing.
+	PhaseLatency       UsagePhaseLatency
 	// CyberBlocked 为 true 时把该用量行标记为 cyber（request_type=cyber），计费逻辑不变。
 	CyberBlocked bool
 	ChannelUsageFields
@@ -311,6 +312,11 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	usageLog.OpenAIWSMode = result.OpenAIWSMode
 	usageLog.DurationMs = &durationMs
 	usageLog.FirstTokenMs = result.FirstTokenMs
+	usageLog.UserQueueWaitMs = input.PhaseLatency.UserQueueWaitMs
+	usageLog.AccountQueueWaitMs = input.PhaseLatency.AccountQueueWaitMs
+	usageLog.UpstreamRequestWriteMs = input.PhaseLatency.UpstreamRequestWriteMs
+	usageLog.UpstreamResponseHeadersMs = input.PhaseLatency.UpstreamResponseHeadersMs
+	usageLog.UpstreamFirstEventMs = input.PhaseLatency.UpstreamFirstEventMs
 	usageLog.CreatedAt = time.Now()
 	// 设置渠道信息
 	usageLog.ChannelID = optionalInt64Ptr(input.ChannelID)

@@ -80,6 +80,16 @@ const (
 	FieldDurationMs = "duration_ms"
 	// FieldFirstTokenMs holds the string denoting the first_token_ms field in the database.
 	FieldFirstTokenMs = "first_token_ms"
+	// FieldUserQueueWaitMs holds the string denoting the user_queue_wait_ms field in the database.
+	FieldUserQueueWaitMs = "user_queue_wait_ms"
+	// FieldAccountQueueWaitMs holds the string denoting the account_queue_wait_ms field in the database.
+	FieldAccountQueueWaitMs = "account_queue_wait_ms"
+	// FieldUpstreamRequestWriteMs holds the string denoting the upstream_request_write_ms field in the database.
+	FieldUpstreamRequestWriteMs = "upstream_request_write_ms"
+	// FieldUpstreamResponseHeadersMs holds the string denoting the upstream_response_headers_ms field in the database.
+	FieldUpstreamResponseHeadersMs = "upstream_response_headers_ms"
+	// FieldUpstreamFirstEventMs holds the string denoting the upstream_first_event_ms field in the database.
+	FieldUpstreamFirstEventMs = "upstream_first_event_ms"
 	// FieldUserAgent holds the string denoting the user_agent field in the database.
 	FieldUserAgent = "user_agent"
 	// FieldIPAddress holds the string denoting the ip_address field in the database.
@@ -191,6 +201,11 @@ var Columns = []string{
 	FieldStream,
 	FieldDurationMs,
 	FieldFirstTokenMs,
+	FieldUserQueueWaitMs,
+	FieldAccountQueueWaitMs,
+	FieldUpstreamRequestWriteMs,
+	FieldUpstreamResponseHeadersMs,
+	FieldUpstreamFirstEventMs,
 	FieldUserAgent,
 	FieldIPAddress,
 	FieldImageCount,
@@ -462,6 +477,31 @@ func ByDurationMs(opts ...sql.OrderTermOption) OrderOption {
 // ByFirstTokenMs orders the results by the first_token_ms field.
 func ByFirstTokenMs(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldFirstTokenMs, opts...).ToFunc()
+}
+
+// ByUserQueueWaitMs orders the results by the user_queue_wait_ms field.
+func ByUserQueueWaitMs(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUserQueueWaitMs, opts...).ToFunc()
+}
+
+// ByAccountQueueWaitMs orders the results by the account_queue_wait_ms field.
+func ByAccountQueueWaitMs(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAccountQueueWaitMs, opts...).ToFunc()
+}
+
+// ByUpstreamRequestWriteMs orders the results by the upstream_request_write_ms field.
+func ByUpstreamRequestWriteMs(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUpstreamRequestWriteMs, opts...).ToFunc()
+}
+
+// ByUpstreamResponseHeadersMs orders the results by the upstream_response_headers_ms field.
+func ByUpstreamResponseHeadersMs(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUpstreamResponseHeadersMs, opts...).ToFunc()
+}
+
+// ByUpstreamFirstEventMs orders the results by the upstream_first_event_ms field.
+func ByUpstreamFirstEventMs(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUpstreamFirstEventMs, opts...).ToFunc()
 }
 
 // ByUserAgent orders the results by the user_agent field.

@@ -499,12 +499,17 @@ type UsageLog struct {
 	RateMultiplier            float64 `json:"rate_multiplier"`
 	LongContextBillingApplied bool    `json:"long_context_billing_applied"`
 
-	BillingType  int8   `json:"billing_type"`
-	RequestType  string `json:"request_type"`
-	Stream       bool   `json:"stream"`
-	OpenAIWSMode bool   `json:"openai_ws_mode"`
-	DurationMs   *int   `json:"duration_ms"`
-	FirstTokenMs *int   `json:"first_token_ms"`
+	BillingType               int8   `json:"billing_type"`
+	RequestType               string `json:"request_type"`
+	Stream                    bool   `json:"stream"`
+	OpenAIWSMode              bool   `json:"openai_ws_mode"`
+	DurationMs                *int   `json:"duration_ms"`
+	FirstTokenMs              *int   `json:"first_token_ms"`
+	UserQueueWaitMs           *int   `json:"user_queue_wait_ms,omitempty"`
+	AccountQueueWaitMs        *int   `json:"account_queue_wait_ms,omitempty"`
+	UpstreamRequestWriteMs    *int   `json:"upstream_request_write_ms,omitempty"`
+	UpstreamResponseHeadersMs *int   `json:"upstream_response_headers_ms,omitempty"`
+	UpstreamFirstEventMs      *int   `json:"upstream_first_event_ms,omitempty"`
 
 	// 图片生成字段
 	ImageCount         int            `json:"image_count"`

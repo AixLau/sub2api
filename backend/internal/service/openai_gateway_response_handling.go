@@ -266,6 +266,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		}
 		if completedSemanticEvent && firstTokenMs == nil {
 			firstOutputScanGuard.Store(false)
+			MarkOpsUpstreamFirstEvent(c)
 			ms := int(time.Since(startTime).Milliseconds())
 			firstTokenMs = &ms
 			stopFirstOutputTimer()
@@ -559,6 +560,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 
 			// Record first token time
 			if !guardFirstOutput && firstTokenMs == nil && startsClientOutput {
+				MarkOpsUpstreamFirstEvent(c)
 				ms := int(time.Since(startTime).Milliseconds())
 				firstTokenMs = &ms
 				stopFirstOutputTimer()

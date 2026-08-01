@@ -1611,6 +1611,11 @@ export interface UsageLog {
   openai_ws_mode?: boolean
   duration_ms: number | null
   first_token_ms: number | null
+  user_queue_wait_ms?: number | null
+  account_queue_wait_ms?: number | null
+  upstream_request_write_ms?: number | null
+  upstream_response_headers_ms?: number | null
+  upstream_first_event_ms?: number | null
 
   // 图片生成字段
   image_count: number

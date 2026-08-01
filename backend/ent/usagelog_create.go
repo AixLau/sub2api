@@ -465,6 +465,76 @@ func (_c *UsageLogCreate) SetNillableFirstTokenMs(v *int) *UsageLogCreate {
 	return _c
 }
 
+// SetUserQueueWaitMs sets the "user_queue_wait_ms" field.
+func (_c *UsageLogCreate) SetUserQueueWaitMs(v int) *UsageLogCreate {
+	_c.mutation.SetUserQueueWaitMs(v)
+	return _c
+}
+
+// SetNillableUserQueueWaitMs sets the "user_queue_wait_ms" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUserQueueWaitMs(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetUserQueueWaitMs(*v)
+	}
+	return _c
+}
+
+// SetAccountQueueWaitMs sets the "account_queue_wait_ms" field.
+func (_c *UsageLogCreate) SetAccountQueueWaitMs(v int) *UsageLogCreate {
+	_c.mutation.SetAccountQueueWaitMs(v)
+	return _c
+}
+
+// SetNillableAccountQueueWaitMs sets the "account_queue_wait_ms" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableAccountQueueWaitMs(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetAccountQueueWaitMs(*v)
+	}
+	return _c
+}
+
+// SetUpstreamRequestWriteMs sets the "upstream_request_write_ms" field.
+func (_c *UsageLogCreate) SetUpstreamRequestWriteMs(v int) *UsageLogCreate {
+	_c.mutation.SetUpstreamRequestWriteMs(v)
+	return _c
+}
+
+// SetNillableUpstreamRequestWriteMs sets the "upstream_request_write_ms" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUpstreamRequestWriteMs(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetUpstreamRequestWriteMs(*v)
+	}
+	return _c
+}
+
+// SetUpstreamResponseHeadersMs sets the "upstream_response_headers_ms" field.
+func (_c *UsageLogCreate) SetUpstreamResponseHeadersMs(v int) *UsageLogCreate {
+	_c.mutation.SetUpstreamResponseHeadersMs(v)
+	return _c
+}
+
+// SetNillableUpstreamResponseHeadersMs sets the "upstream_response_headers_ms" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUpstreamResponseHeadersMs(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetUpstreamResponseHeadersMs(*v)
+	}
+	return _c
+}
+
+// SetUpstreamFirstEventMs sets the "upstream_first_event_ms" field.
+func (_c *UsageLogCreate) SetUpstreamFirstEventMs(v int) *UsageLogCreate {
+	_c.mutation.SetUpstreamFirstEventMs(v)
+	return _c
+}
+
+// SetNillableUpstreamFirstEventMs sets the "upstream_first_event_ms" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUpstreamFirstEventMs(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetUpstreamFirstEventMs(*v)
+	}
+	return _c
+}
+
 // SetUserAgent sets the "user_agent" field.
 func (_c *UsageLogCreate) SetUserAgent(v string) *UsageLogCreate {
 	_c.mutation.SetUserAgent(v)
@@ -1075,6 +1145,26 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.FirstTokenMs(); ok {
 		_spec.SetField(usagelog.FieldFirstTokenMs, field.TypeInt, value)
 		_node.FirstTokenMs = &value
+	}
+	if value, ok := _c.mutation.UserQueueWaitMs(); ok {
+		_spec.SetField(usagelog.FieldUserQueueWaitMs, field.TypeInt, value)
+		_node.UserQueueWaitMs = &value
+	}
+	if value, ok := _c.mutation.AccountQueueWaitMs(); ok {
+		_spec.SetField(usagelog.FieldAccountQueueWaitMs, field.TypeInt, value)
+		_node.AccountQueueWaitMs = &value
+	}
+	if value, ok := _c.mutation.UpstreamRequestWriteMs(); ok {
+		_spec.SetField(usagelog.FieldUpstreamRequestWriteMs, field.TypeInt, value)
+		_node.UpstreamRequestWriteMs = &value
+	}
+	if value, ok := _c.mutation.UpstreamResponseHeadersMs(); ok {
+		_spec.SetField(usagelog.FieldUpstreamResponseHeadersMs, field.TypeInt, value)
+		_node.UpstreamResponseHeadersMs = &value
+	}
+	if value, ok := _c.mutation.UpstreamFirstEventMs(); ok {
+		_spec.SetField(usagelog.FieldUpstreamFirstEventMs, field.TypeInt, value)
+		_node.UpstreamFirstEventMs = &value
 	}
 	if value, ok := _c.mutation.UserAgent(); ok {
 		_spec.SetField(usagelog.FieldUserAgent, field.TypeString, value)
@@ -1844,6 +1934,126 @@ func (u *UsageLogUpsert) AddFirstTokenMs(v int) *UsageLogUpsert {
 // ClearFirstTokenMs clears the value of the "first_token_ms" field.
 func (u *UsageLogUpsert) ClearFirstTokenMs() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldFirstTokenMs)
+	return u
+}
+
+// SetUserQueueWaitMs sets the "user_queue_wait_ms" field.
+func (u *UsageLogUpsert) SetUserQueueWaitMs(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldUserQueueWaitMs, v)
+	return u
+}
+
+// UpdateUserQueueWaitMs sets the "user_queue_wait_ms" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUserQueueWaitMs() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUserQueueWaitMs)
+	return u
+}
+
+// AddUserQueueWaitMs adds v to the "user_queue_wait_ms" field.
+func (u *UsageLogUpsert) AddUserQueueWaitMs(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldUserQueueWaitMs, v)
+	return u
+}
+
+// ClearUserQueueWaitMs clears the value of the "user_queue_wait_ms" field.
+func (u *UsageLogUpsert) ClearUserQueueWaitMs() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldUserQueueWaitMs)
+	return u
+}
+
+// SetAccountQueueWaitMs sets the "account_queue_wait_ms" field.
+func (u *UsageLogUpsert) SetAccountQueueWaitMs(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldAccountQueueWaitMs, v)
+	return u
+}
+
+// UpdateAccountQueueWaitMs sets the "account_queue_wait_ms" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateAccountQueueWaitMs() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldAccountQueueWaitMs)
+	return u
+}
+
+// AddAccountQueueWaitMs adds v to the "account_queue_wait_ms" field.
+func (u *UsageLogUpsert) AddAccountQueueWaitMs(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldAccountQueueWaitMs, v)
+	return u
+}
+
+// ClearAccountQueueWaitMs clears the value of the "account_queue_wait_ms" field.
+func (u *UsageLogUpsert) ClearAccountQueueWaitMs() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldAccountQueueWaitMs)
+	return u
+}
+
+// SetUpstreamRequestWriteMs sets the "upstream_request_write_ms" field.
+func (u *UsageLogUpsert) SetUpstreamRequestWriteMs(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldUpstreamRequestWriteMs, v)
+	return u
+}
+
+// UpdateUpstreamRequestWriteMs sets the "upstream_request_write_ms" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUpstreamRequestWriteMs() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUpstreamRequestWriteMs)
+	return u
+}
+
+// AddUpstreamRequestWriteMs adds v to the "upstream_request_write_ms" field.
+func (u *UsageLogUpsert) AddUpstreamRequestWriteMs(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldUpstreamRequestWriteMs, v)
+	return u
+}
+
+// ClearUpstreamRequestWriteMs clears the value of the "upstream_request_write_ms" field.
+func (u *UsageLogUpsert) ClearUpstreamRequestWriteMs() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldUpstreamRequestWriteMs)
+	return u
+}
+
+// SetUpstreamResponseHeadersMs sets the "upstream_response_headers_ms" field.
+func (u *UsageLogUpsert) SetUpstreamResponseHeadersMs(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldUpstreamResponseHeadersMs, v)
+	return u
+}
+
+// UpdateUpstreamResponseHeadersMs sets the "upstream_response_headers_ms" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUpstreamResponseHeadersMs() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUpstreamResponseHeadersMs)
+	return u
+}
+
+// AddUpstreamResponseHeadersMs adds v to the "upstream_response_headers_ms" field.
+func (u *UsageLogUpsert) AddUpstreamResponseHeadersMs(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldUpstreamResponseHeadersMs, v)
+	return u
+}
+
+// ClearUpstreamResponseHeadersMs clears the value of the "upstream_response_headers_ms" field.
+func (u *UsageLogUpsert) ClearUpstreamResponseHeadersMs() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldUpstreamResponseHeadersMs)
+	return u
+}
+
+// SetUpstreamFirstEventMs sets the "upstream_first_event_ms" field.
+func (u *UsageLogUpsert) SetUpstreamFirstEventMs(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldUpstreamFirstEventMs, v)
+	return u
+}
+
+// UpdateUpstreamFirstEventMs sets the "upstream_first_event_ms" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUpstreamFirstEventMs() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUpstreamFirstEventMs)
+	return u
+}
+
+// AddUpstreamFirstEventMs adds v to the "upstream_first_event_ms" field.
+func (u *UsageLogUpsert) AddUpstreamFirstEventMs(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldUpstreamFirstEventMs, v)
+	return u
+}
+
+// ClearUpstreamFirstEventMs clears the value of the "upstream_first_event_ms" field.
+func (u *UsageLogUpsert) ClearUpstreamFirstEventMs() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldUpstreamFirstEventMs)
 	return u
 }
 
@@ -2784,6 +2994,146 @@ func (u *UsageLogUpsertOne) UpdateFirstTokenMs() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearFirstTokenMs() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearFirstTokenMs()
+	})
+}
+
+// SetUserQueueWaitMs sets the "user_queue_wait_ms" field.
+func (u *UsageLogUpsertOne) SetUserQueueWaitMs(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUserQueueWaitMs(v)
+	})
+}
+
+// AddUserQueueWaitMs adds v to the "user_queue_wait_ms" field.
+func (u *UsageLogUpsertOne) AddUserQueueWaitMs(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUserQueueWaitMs(v)
+	})
+}
+
+// UpdateUserQueueWaitMs sets the "user_queue_wait_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUserQueueWaitMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUserQueueWaitMs()
+	})
+}
+
+// ClearUserQueueWaitMs clears the value of the "user_queue_wait_ms" field.
+func (u *UsageLogUpsertOne) ClearUserQueueWaitMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUserQueueWaitMs()
+	})
+}
+
+// SetAccountQueueWaitMs sets the "account_queue_wait_ms" field.
+func (u *UsageLogUpsertOne) SetAccountQueueWaitMs(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetAccountQueueWaitMs(v)
+	})
+}
+
+// AddAccountQueueWaitMs adds v to the "account_queue_wait_ms" field.
+func (u *UsageLogUpsertOne) AddAccountQueueWaitMs(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddAccountQueueWaitMs(v)
+	})
+}
+
+// UpdateAccountQueueWaitMs sets the "account_queue_wait_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateAccountQueueWaitMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateAccountQueueWaitMs()
+	})
+}
+
+// ClearAccountQueueWaitMs clears the value of the "account_queue_wait_ms" field.
+func (u *UsageLogUpsertOne) ClearAccountQueueWaitMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearAccountQueueWaitMs()
+	})
+}
+
+// SetUpstreamRequestWriteMs sets the "upstream_request_write_ms" field.
+func (u *UsageLogUpsertOne) SetUpstreamRequestWriteMs(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamRequestWriteMs(v)
+	})
+}
+
+// AddUpstreamRequestWriteMs adds v to the "upstream_request_write_ms" field.
+func (u *UsageLogUpsertOne) AddUpstreamRequestWriteMs(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUpstreamRequestWriteMs(v)
+	})
+}
+
+// UpdateUpstreamRequestWriteMs sets the "upstream_request_write_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUpstreamRequestWriteMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamRequestWriteMs()
+	})
+}
+
+// ClearUpstreamRequestWriteMs clears the value of the "upstream_request_write_ms" field.
+func (u *UsageLogUpsertOne) ClearUpstreamRequestWriteMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamRequestWriteMs()
+	})
+}
+
+// SetUpstreamResponseHeadersMs sets the "upstream_response_headers_ms" field.
+func (u *UsageLogUpsertOne) SetUpstreamResponseHeadersMs(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamResponseHeadersMs(v)
+	})
+}
+
+// AddUpstreamResponseHeadersMs adds v to the "upstream_response_headers_ms" field.
+func (u *UsageLogUpsertOne) AddUpstreamResponseHeadersMs(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUpstreamResponseHeadersMs(v)
+	})
+}
+
+// UpdateUpstreamResponseHeadersMs sets the "upstream_response_headers_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUpstreamResponseHeadersMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamResponseHeadersMs()
+	})
+}
+
+// ClearUpstreamResponseHeadersMs clears the value of the "upstream_response_headers_ms" field.
+func (u *UsageLogUpsertOne) ClearUpstreamResponseHeadersMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamResponseHeadersMs()
+	})
+}
+
+// SetUpstreamFirstEventMs sets the "upstream_first_event_ms" field.
+func (u *UsageLogUpsertOne) SetUpstreamFirstEventMs(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamFirstEventMs(v)
+	})
+}
+
+// AddUpstreamFirstEventMs adds v to the "upstream_first_event_ms" field.
+func (u *UsageLogUpsertOne) AddUpstreamFirstEventMs(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUpstreamFirstEventMs(v)
+	})
+}
+
+// UpdateUpstreamFirstEventMs sets the "upstream_first_event_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUpstreamFirstEventMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamFirstEventMs()
+	})
+}
+
+// ClearUpstreamFirstEventMs clears the value of the "upstream_first_event_ms" field.
+func (u *UsageLogUpsertOne) ClearUpstreamFirstEventMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamFirstEventMs()
 	})
 }
 
@@ -3926,6 +4276,146 @@ func (u *UsageLogUpsertBulk) UpdateFirstTokenMs() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearFirstTokenMs() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearFirstTokenMs()
+	})
+}
+
+// SetUserQueueWaitMs sets the "user_queue_wait_ms" field.
+func (u *UsageLogUpsertBulk) SetUserQueueWaitMs(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUserQueueWaitMs(v)
+	})
+}
+
+// AddUserQueueWaitMs adds v to the "user_queue_wait_ms" field.
+func (u *UsageLogUpsertBulk) AddUserQueueWaitMs(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUserQueueWaitMs(v)
+	})
+}
+
+// UpdateUserQueueWaitMs sets the "user_queue_wait_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUserQueueWaitMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUserQueueWaitMs()
+	})
+}
+
+// ClearUserQueueWaitMs clears the value of the "user_queue_wait_ms" field.
+func (u *UsageLogUpsertBulk) ClearUserQueueWaitMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUserQueueWaitMs()
+	})
+}
+
+// SetAccountQueueWaitMs sets the "account_queue_wait_ms" field.
+func (u *UsageLogUpsertBulk) SetAccountQueueWaitMs(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetAccountQueueWaitMs(v)
+	})
+}
+
+// AddAccountQueueWaitMs adds v to the "account_queue_wait_ms" field.
+func (u *UsageLogUpsertBulk) AddAccountQueueWaitMs(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddAccountQueueWaitMs(v)
+	})
+}
+
+// UpdateAccountQueueWaitMs sets the "account_queue_wait_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateAccountQueueWaitMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateAccountQueueWaitMs()
+	})
+}
+
+// ClearAccountQueueWaitMs clears the value of the "account_queue_wait_ms" field.
+func (u *UsageLogUpsertBulk) ClearAccountQueueWaitMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearAccountQueueWaitMs()
+	})
+}
+
+// SetUpstreamRequestWriteMs sets the "upstream_request_write_ms" field.
+func (u *UsageLogUpsertBulk) SetUpstreamRequestWriteMs(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamRequestWriteMs(v)
+	})
+}
+
+// AddUpstreamRequestWriteMs adds v to the "upstream_request_write_ms" field.
+func (u *UsageLogUpsertBulk) AddUpstreamRequestWriteMs(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUpstreamRequestWriteMs(v)
+	})
+}
+
+// UpdateUpstreamRequestWriteMs sets the "upstream_request_write_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUpstreamRequestWriteMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamRequestWriteMs()
+	})
+}
+
+// ClearUpstreamRequestWriteMs clears the value of the "upstream_request_write_ms" field.
+func (u *UsageLogUpsertBulk) ClearUpstreamRequestWriteMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamRequestWriteMs()
+	})
+}
+
+// SetUpstreamResponseHeadersMs sets the "upstream_response_headers_ms" field.
+func (u *UsageLogUpsertBulk) SetUpstreamResponseHeadersMs(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamResponseHeadersMs(v)
+	})
+}
+
+// AddUpstreamResponseHeadersMs adds v to the "upstream_response_headers_ms" field.
+func (u *UsageLogUpsertBulk) AddUpstreamResponseHeadersMs(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUpstreamResponseHeadersMs(v)
+	})
+}
+
+// UpdateUpstreamResponseHeadersMs sets the "upstream_response_headers_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUpstreamResponseHeadersMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamResponseHeadersMs()
+	})
+}
+
+// ClearUpstreamResponseHeadersMs clears the value of the "upstream_response_headers_ms" field.
+func (u *UsageLogUpsertBulk) ClearUpstreamResponseHeadersMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamResponseHeadersMs()
+	})
+}
+
+// SetUpstreamFirstEventMs sets the "upstream_first_event_ms" field.
+func (u *UsageLogUpsertBulk) SetUpstreamFirstEventMs(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamFirstEventMs(v)
+	})
+}
+
+// AddUpstreamFirstEventMs adds v to the "upstream_first_event_ms" field.
+func (u *UsageLogUpsertBulk) AddUpstreamFirstEventMs(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUpstreamFirstEventMs(v)
+	})
+}
+
+// UpdateUpstreamFirstEventMs sets the "upstream_first_event_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUpstreamFirstEventMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamFirstEventMs()
+	})
+}
+
+// ClearUpstreamFirstEventMs clears the value of the "upstream_first_event_ms" field.
+func (u *UsageLogUpsertBulk) ClearUpstreamFirstEventMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamFirstEventMs()
 	})
 }
 

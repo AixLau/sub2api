@@ -109,7 +109,9 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 			input.Body = input.Parsed.Body.Bytes()
 		}
 
-		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+		resp, err = DoOpsUpstream(c, upstreamReq, func(req *http.Request) (*http.Response, error) {
+			return s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+		})
 		if err != nil {
 			if resp != nil && resp.Body != nil {
 				_ = resp.Body.Close()
@@ -540,6 +542,7 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 					sawTerminalEvent = true
 				}
 				if firstTokenMs == nil && trimmed != "" && trimmed != "[DONE]" {
+					MarkOpsUpstreamFirstEvent(c)
 					ms := int(time.Since(startTime).Milliseconds())
 					firstTokenMs = &ms
 				}

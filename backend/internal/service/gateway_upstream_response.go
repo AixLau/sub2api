@@ -1047,6 +1047,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 					}
 					if data != "" {
 						if firstTokenMs == nil && data != "[DONE]" {
+							MarkOpsUpstreamFirstEvent(c)
 							ms := int(time.Since(startTime).Milliseconds())
 							firstTokenMs = &ms
 						}

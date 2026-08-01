@@ -467,6 +467,9 @@ func setOpsSelectedAccount(c *gin.Context, accountID int64, platform ...string) 
 	if c == nil || accountID <= 0 {
 		return
 	}
+	// Account selection owns a slot in the fast path. The wait helper
+	// overwrites this zero when the request actually waits for a slot.
+	service.SetOpsLatencyMs(c, service.OpsAccountQueueWaitMsKey, 0)
 	c.Set(opsAccountIDKey, accountID)
 	if c.Request != nil {
 		ctx := context.WithValue(c.Request.Context(), ctxkey.AccountID, accountID)
@@ -1335,6 +1338,11 @@ func applyOpsLatencyFieldsFromContext(c *gin.Context, entry *service.OpsInsertEr
 	entry.UpstreamLatencyMs = getContextLatencyMs(c, service.OpsUpstreamLatencyMsKey)
 	entry.ResponseLatencyMs = getContextLatencyMs(c, service.OpsResponseLatencyMsKey)
 	entry.TimeToFirstTokenMs = getContextLatencyMs(c, service.OpsTimeToFirstTokenMsKey)
+	entry.UserQueueWaitMs = getContextLatencyMs(c, service.OpsUserQueueWaitMsKey)
+	entry.AccountQueueWaitMs = getContextLatencyMs(c, service.OpsAccountQueueWaitMsKey)
+	entry.UpstreamRequestWriteMs = getContextLatencyMs(c, service.OpsUpstreamRequestWriteMsKey)
+	entry.UpstreamResponseHeadersMs = getContextLatencyMs(c, service.OpsUpstreamResponseHeadersMsKey)
+	entry.UpstreamFirstEventMs = getContextLatencyMs(c, service.OpsUpstreamFirstEventMsKey)
 }
 
 // applyOpsUpstreamFieldsFromContext captures attempt-level upstream context.

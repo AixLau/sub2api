@@ -497,6 +497,7 @@ func recordGrokMediaUsage(
 			APIKeyService:      h.apiKeyService,
 			QuotaPlatform:      quotaPlatform,
 			SessionID:          sessionID,
+			PhaseLatency:       service.UsagePhaseLatencySnapshot(c),
 			ChannelUsageFields: channelUsageFields,
 		}); err != nil {
 			logger.L().With(

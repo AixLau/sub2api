@@ -699,6 +699,11 @@ func UsageLogFromServiceAdmin(l *service.UsageLog) *AdminUsageLog {
 	}
 	usageLog := usageLogFromServiceUser(l)
 	usageLog.UpstreamEndpoint = l.UpstreamEndpoint
+	usageLog.UserQueueWaitMs = l.UserQueueWaitMs
+	usageLog.AccountQueueWaitMs = l.AccountQueueWaitMs
+	usageLog.UpstreamRequestWriteMs = l.UpstreamRequestWriteMs
+	usageLog.UpstreamResponseHeadersMs = l.UpstreamResponseHeadersMs
+	usageLog.UpstreamFirstEventMs = l.UpstreamFirstEventMs
 	return &AdminUsageLog{
 		UsageLog:              usageLog,
 		Source:                string(l.Source.Normalize()),

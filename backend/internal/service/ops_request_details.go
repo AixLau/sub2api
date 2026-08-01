@@ -22,9 +22,14 @@ type OpsRequestDetail struct {
 	Platform string `json:"platform,omitempty"`
 	Model    string `json:"model,omitempty"`
 
-	DurationMs   *int `json:"duration_ms,omitempty"`
-	FirstTokenMs *int `json:"first_token_ms,omitempty"`
-	StatusCode   *int `json:"status_code,omitempty"`
+	DurationMs                *int `json:"duration_ms,omitempty"`
+	FirstTokenMs              *int `json:"first_token_ms,omitempty"`
+	UserQueueWaitMs           *int `json:"user_queue_wait_ms,omitempty"`
+	AccountQueueWaitMs        *int `json:"account_queue_wait_ms,omitempty"`
+	UpstreamRequestWriteMs    *int `json:"upstream_request_write_ms,omitempty"`
+	UpstreamResponseHeadersMs *int `json:"upstream_response_headers_ms,omitempty"`
+	UpstreamFirstEventMs      *int `json:"upstream_first_event_ms,omitempty"`
+	StatusCode                *int `json:"status_code,omitempty"`
 
 	// When Kind == "error", ErrorID links to /admin/ops/errors/:id.
 	ErrorID *int64 `json:"error_id,omitempty"`

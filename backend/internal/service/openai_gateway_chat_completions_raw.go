@@ -307,6 +307,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 					usage = *u
 				}
 				if firstTokenMs == nil && !usageOnlyChunk {
+					MarkOpsUpstreamFirstEvent(c)
 					elapsed := int(time.Since(startTime).Milliseconds())
 					firstTokenMs = &elapsed
 				}

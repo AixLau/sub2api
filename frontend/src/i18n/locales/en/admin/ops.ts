@@ -407,9 +407,17 @@ export default {
           platform: 'Platform',
           model: 'Model',
           duration: 'Duration',
+          phases: 'Phase timings',
           status: 'Status',
           requestId: 'Request ID',
           actions: 'Actions'
+        },
+        phase: {
+          userQueue: 'User queue',
+          accountQueue: 'Account queue',
+          requestWrite: 'Request write',
+          responseHeaders: 'Response headers',
+          firstEvent: 'First semantic event'
         }
       },
       alertEvents: {

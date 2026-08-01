@@ -1355,6 +1355,7 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 	if ctx == nil {
 		ctx = c.Request.Context()
 	}
+	phaseLatency := service.UsagePhaseLatencySnapshot(c)
 	if s.ScheduleSuccess != nil && s.Account != nil {
 		scheduleSuccess := *s.ScheduleSuccess
 		if scheduleSuccess && s.Result != nil {
@@ -1404,6 +1405,7 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 			RequestPayloadHash: s.RequestPayloadHash,
 			APIKeyService:      h.apiKeyService,
 			QuotaPlatform:      quotaPlatform,
+			PhaseLatency:       phaseLatency,
 			ChannelUsageFields: s.ChannelUsageFields,
 			CyberBlocked:       s.CyberBlocked,
 		}); err != nil {
@@ -1841,6 +1843,7 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 	if ctx == nil {
 		ctx = c.Request.Context()
 	}
+	phaseLatency := service.UsagePhaseLatencySnapshot(c)
 	reqLog := s.ReqLog
 	if reqLog == nil {
 		reqLog = zap.NewNop()
@@ -1918,6 +1921,7 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 			RequestPayloadHash: s.RequestPayloadHash,
 			APIKeyService:      h.apiKeyService,
 			QuotaPlatform:      quotaPlatform,
+			PhaseLatency:       phaseLatency,
 			ChannelUsageFields: s.ChannelMapping.ToUsageFields(s.Model, upstreamModel),
 			CyberBlocked:       cyberBlocked,
 		}); err != nil {

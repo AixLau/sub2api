@@ -98,7 +98,6 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 		proxyURL = account.Proxy.URL()
 	}
 
-	upstreamStart := time.Now()
 	var resp *http.Response
 	for attempt := 0; ; attempt++ {
 		upstreamReq, buildErr := buildGrokResponsesRequest(upstreamCtx, c, account, patchedBody, token, cacheIdentity, s.cfg)
@@ -106,8 +105,9 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 			return nil, buildErr
 		}
 
-		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
-		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
+		resp, err = DoOpsUpstream(c, upstreamReq, func(req *http.Request) (*http.Response, error) {
+			return s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
+		})
 		if err != nil {
 			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 		}
@@ -903,7 +903,9 @@ func (s *OpenAIGatewayService) describeGrokComposerImage(
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	resp, err := DoOpsUpstream(c, upstreamReq, func(req *http.Request) (*http.Response, error) {
+		return s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
+	})
 	if err != nil {
 		return "", OpenAIUsage{}, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 	}

@@ -89,6 +89,16 @@ type UsageLog struct {
 	DurationMs *int `json:"duration_ms,omitempty"`
 	// FirstTokenMs holds the value of the "first_token_ms" field.
 	FirstTokenMs *int `json:"first_token_ms,omitempty"`
+	// UserQueueWaitMs holds the value of the "user_queue_wait_ms" field.
+	UserQueueWaitMs *int `json:"user_queue_wait_ms,omitempty"`
+	// AccountQueueWaitMs holds the value of the "account_queue_wait_ms" field.
+	AccountQueueWaitMs *int `json:"account_queue_wait_ms,omitempty"`
+	// UpstreamRequestWriteMs holds the value of the "upstream_request_write_ms" field.
+	UpstreamRequestWriteMs *int `json:"upstream_request_write_ms,omitempty"`
+	// UpstreamResponseHeadersMs holds the value of the "upstream_response_headers_ms" field.
+	UpstreamResponseHeadersMs *int `json:"upstream_response_headers_ms,omitempty"`
+	// UpstreamFirstEventMs holds the value of the "upstream_first_event_ms" field.
+	UpstreamFirstEventMs *int `json:"upstream_first_event_ms,omitempty"`
 	// UserAgent holds the value of the "user_agent" field.
 	UserAgent *string `json:"user_agent,omitempty"`
 	// IPAddress holds the value of the "ip_address" field.
@@ -204,7 +214,7 @@ func (*UsageLog) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case usagelog.FieldInputCost, usagelog.FieldOutputCost, usagelog.FieldCacheCreationCost, usagelog.FieldCacheReadCost, usagelog.FieldTotalCost, usagelog.FieldActualCost, usagelog.FieldRateMultiplier, usagelog.FieldAccountRateMultiplier:
 			values[i] = new(sql.NullFloat64)
-		case usagelog.FieldID, usagelog.FieldUserID, usagelog.FieldAPIKeyID, usagelog.FieldAccountID, usagelog.FieldChannelID, usagelog.FieldGroupID, usagelog.FieldSubscriptionID, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreation5mTokens, usagelog.FieldCacheCreation1hTokens, usagelog.FieldBillingType, usagelog.FieldDurationMs, usagelog.FieldFirstTokenMs, usagelog.FieldImageCount, usagelog.FieldVideoCount, usagelog.FieldVideoDurationSeconds:
+		case usagelog.FieldID, usagelog.FieldUserID, usagelog.FieldAPIKeyID, usagelog.FieldAccountID, usagelog.FieldChannelID, usagelog.FieldGroupID, usagelog.FieldSubscriptionID, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreation5mTokens, usagelog.FieldCacheCreation1hTokens, usagelog.FieldBillingType, usagelog.FieldDurationMs, usagelog.FieldFirstTokenMs, usagelog.FieldUserQueueWaitMs, usagelog.FieldAccountQueueWaitMs, usagelog.FieldUpstreamRequestWriteMs, usagelog.FieldUpstreamResponseHeadersMs, usagelog.FieldUpstreamFirstEventMs, usagelog.FieldImageCount, usagelog.FieldVideoCount, usagelog.FieldVideoDurationSeconds:
 			values[i] = new(sql.NullInt64)
 		case usagelog.FieldSource, usagelog.FieldRequestID, usagelog.FieldModel, usagelog.FieldRequestedModel, usagelog.FieldUpstreamModel, usagelog.FieldModelMappingChain, usagelog.FieldBillingTier, usagelog.FieldBillingMode, usagelog.FieldUserAgent, usagelog.FieldIPAddress, usagelog.FieldImageSize, usagelog.FieldImageInputSize, usagelog.FieldImageOutputSize, usagelog.FieldImageSizeSource, usagelog.FieldVideoResolution:
 			values[i] = new(sql.NullString)
@@ -441,6 +451,41 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.FirstTokenMs = new(int)
 				*_m.FirstTokenMs = int(value.Int64)
+			}
+		case usagelog.FieldUserQueueWaitMs:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field user_queue_wait_ms", values[i])
+			} else if value.Valid {
+				_m.UserQueueWaitMs = new(int)
+				*_m.UserQueueWaitMs = int(value.Int64)
+			}
+		case usagelog.FieldAccountQueueWaitMs:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field account_queue_wait_ms", values[i])
+			} else if value.Valid {
+				_m.AccountQueueWaitMs = new(int)
+				*_m.AccountQueueWaitMs = int(value.Int64)
+			}
+		case usagelog.FieldUpstreamRequestWriteMs:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_request_write_ms", values[i])
+			} else if value.Valid {
+				_m.UpstreamRequestWriteMs = new(int)
+				*_m.UpstreamRequestWriteMs = int(value.Int64)
+			}
+		case usagelog.FieldUpstreamResponseHeadersMs:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_response_headers_ms", values[i])
+			} else if value.Valid {
+				_m.UpstreamResponseHeadersMs = new(int)
+				*_m.UpstreamResponseHeadersMs = int(value.Int64)
+			}
+		case usagelog.FieldUpstreamFirstEventMs:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field upstream_first_event_ms", values[i])
+			} else if value.Valid {
+				_m.UpstreamFirstEventMs = new(int)
+				*_m.UpstreamFirstEventMs = int(value.Int64)
 			}
 		case usagelog.FieldUserAgent:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -713,6 +758,31 @@ func (_m *UsageLog) String() string {
 	builder.WriteString(", ")
 	if v := _m.FirstTokenMs; v != nil {
 		builder.WriteString("first_token_ms=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.UserQueueWaitMs; v != nil {
+		builder.WriteString("user_queue_wait_ms=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.AccountQueueWaitMs; v != nil {
+		builder.WriteString("account_queue_wait_ms=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.UpstreamRequestWriteMs; v != nil {
+		builder.WriteString("upstream_request_write_ms=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.UpstreamResponseHeadersMs; v != nil {
+		builder.WriteString("upstream_response_headers_ms=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.UpstreamFirstEventMs; v != nil {
+		builder.WriteString("upstream_first_event_ms=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")

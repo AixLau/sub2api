@@ -124,6 +124,21 @@ func (UsageLog) Fields() []ent.Field {
 		field.Int("first_token_ms").
 			Optional().
 			Nillable(),
+		field.Int("user_queue_wait_ms").
+			Optional().
+			Nillable(),
+		field.Int("account_queue_wait_ms").
+			Optional().
+			Nillable(),
+		field.Int("upstream_request_write_ms").
+			Optional().
+			Nillable(),
+		field.Int("upstream_response_headers_ms").
+			Optional().
+			Nillable(),
+		field.Int("upstream_first_event_ms").
+			Optional().
+			Nillable(),
 		field.String("user_agent").
 			MaxLen(512).
 			Optional().

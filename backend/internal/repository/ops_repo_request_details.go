@@ -103,7 +103,12 @@ WITH combined AS (
     ul.api_key_id AS api_key_id,
     ul.account_id AS account_id,
     ul.group_id AS group_id,
-    ul.stream AS stream
+    ul.stream AS stream,
+    ul.user_queue_wait_ms AS user_queue_wait_ms,
+    ul.account_queue_wait_ms AS account_queue_wait_ms,
+    ul.upstream_request_write_ms AS upstream_request_write_ms,
+    ul.upstream_response_headers_ms AS upstream_response_headers_ms,
+    ul.upstream_first_event_ms AS upstream_first_event_ms
   FROM usage_logs ul
   LEFT JOIN groups g ON g.id = ul.group_id
   LEFT JOIN accounts a ON a.id = ul.account_id
@@ -128,7 +133,12 @@ WITH combined AS (
     o.api_key_id AS api_key_id,
     o.account_id AS account_id,
     o.group_id AS group_id,
-    o.stream AS stream
+    o.stream AS stream,
+    o.user_queue_wait_ms AS user_queue_wait_ms,
+    o.account_queue_wait_ms AS account_queue_wait_ms,
+    o.upstream_request_write_ms AS upstream_request_write_ms,
+    o.upstream_response_headers_ms AS upstream_response_headers_ms,
+    o.upstream_first_event_ms AS upstream_first_event_ms
   FROM ops_error_logs o
   LEFT JOIN groups g ON g.id = o.group_id
   LEFT JOIN accounts a ON a.id = o.account_id
@@ -180,7 +190,12 @@ SELECT
   api_key_id,
   account_id,
   group_id,
-  stream
+  stream,
+  user_queue_wait_ms,
+  account_queue_wait_ms,
+  upstream_request_write_ms,
+  upstream_response_headers_ms,
+  upstream_first_event_ms
 FROM combined
 %s
 %s
@@ -233,6 +248,12 @@ LIMIT $%d OFFSET $%d
 			groupID   sql.NullInt64
 
 			stream bool
+
+			userQueueWaitMs           sql.NullInt64
+			accountQueueWaitMs        sql.NullInt64
+			upstreamRequestWriteMs    sql.NullInt64
+			upstreamResponseHeadersMs sql.NullInt64
+			upstreamFirstEventMs      sql.NullInt64
 		)
 
 		if err := rows.Scan(
@@ -253,6 +274,11 @@ LIMIT $%d OFFSET $%d
 			&accountID,
 			&groupID,
 			&stream,
+			&userQueueWaitMs,
+			&accountQueueWaitMs,
+			&upstreamRequestWriteMs,
+			&upstreamResponseHeadersMs,
+			&upstreamFirstEventMs,
 		); err != nil {
 			return nil, 0, err
 		}
@@ -277,7 +303,12 @@ LIMIT $%d OFFSET $%d
 			AccountID: toInt64Ptr(accountID),
 			GroupID:   toInt64Ptr(groupID),
 
-			Stream: stream,
+			Stream:                    stream,
+			UserQueueWaitMs:           toIntPtr(userQueueWaitMs),
+			AccountQueueWaitMs:        toIntPtr(accountQueueWaitMs),
+			UpstreamRequestWriteMs:    toIntPtr(upstreamRequestWriteMs),
+			UpstreamResponseHeadersMs: toIntPtr(upstreamResponseHeadersMs),
+			UpstreamFirstEventMs:      toIntPtr(upstreamFirstEventMs),
 		}
 
 		if item.Platform == "" {

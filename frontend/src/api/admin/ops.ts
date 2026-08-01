@@ -118,6 +118,11 @@ export interface OpsRequestDetail {
   model?: string
   duration_ms?: number | null
   first_token_ms?: number | null
+  user_queue_wait_ms?: number | null
+  account_queue_wait_ms?: number | null
+  upstream_request_write_ms?: number | null
+  upstream_response_headers_ms?: number | null
+  upstream_first_event_ms?: number | null
   status_code?: number | null
 
   error_id?: number | null
@@ -951,9 +956,14 @@ export interface OpsErrorDetail extends OpsErrorLog {
 
   auth_latency_ms?: number | null
   routing_latency_ms?: number | null
-  upstream_latency_ms?: number | null
-  response_latency_ms?: number | null
-  time_to_first_token_ms?: number | null
+	upstream_latency_ms?: number | null
+	response_latency_ms?: number | null
+	time_to_first_token_ms?: number | null
+	user_queue_wait_ms?: number | null
+	account_queue_wait_ms?: number | null
+	upstream_request_write_ms?: number | null
+	upstream_response_headers_ms?: number | null
+	upstream_first_event_ms?: number | null
 
   is_business_limited: boolean
 

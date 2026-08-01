@@ -876,6 +876,7 @@ func (s GatewayUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 	if ctx == nil {
 		ctx = c.Request.Context()
 	}
+	phaseLatency := service.UsagePhaseLatencySnapshot(c)
 	record := func(taskCtx context.Context) {
 		var err error
 		if s.LongContext {
@@ -896,6 +897,7 @@ func (s GatewayUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 				LongContextMultiplier: s.LongContextMultiplier,
 				ForceCacheBilling:     s.ForceCacheBilling,
 				APIKeyService:         s.APIKeyService,
+				PhaseLatency:          phaseLatency,
 				ChannelUsageFields:    s.ChannelUsageFields,
 			})
 		} else {
@@ -914,6 +916,7 @@ func (s GatewayUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 				RequestPayloadHash: s.RequestPayloadHash,
 				ForceCacheBilling:  s.ForceCacheBilling,
 				APIKeyService:      s.APIKeyService,
+				PhaseLatency:       phaseLatency,
 				ChannelUsageFields: s.ChannelUsageFields,
 			})
 		}

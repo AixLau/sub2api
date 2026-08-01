@@ -362,7 +362,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 				return nil, fmt.Errorf("build grok retry request: %w", err)
 			}
 		}
-		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+		resp, err = DoOpsUpstream(c, upstreamReq, func(req *http.Request) (*http.Response, error) {
+			return s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
+		})
 		if err != nil {
 			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 		}
@@ -868,6 +870,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	processDataLine := func(payload string) bool {
 		if firstChunk {
 			firstChunk = false
+			MarkOpsUpstreamFirstEvent(c)
 			ms := int(time.Since(startTime).Milliseconds())
 			firstTokenMs = &ms
 		}
