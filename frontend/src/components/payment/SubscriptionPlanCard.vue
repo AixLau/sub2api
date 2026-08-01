@@ -7,9 +7,12 @@
   >
     <BorderBeam v-if="showHighlightBeam" :size="150" :duration="12" :border-width="1.5" />
     <div class="flex min-h-[190px] flex-1 flex-col p-4 sm:p-5">
-      <div>
-        <div class="min-w-0">
-          <h3 class="break-words text-lg font-extrabold leading-tight text-slate-950">{{ plan.name }}</h3>
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0 flex-1">
+          <h3
+            :title="plan.name"
+            class="h-12 min-w-0 break-words [overflow-wrap:anywhere] text-base font-bold leading-6 text-slate-950 line-clamp-2"
+          >{{ plan.name }}</h3>
           <p
             v-if="planDisplay.description"
             data-testid="subscription-plan-description"
@@ -17,6 +20,31 @@
           >
             {{ planDisplay.description }}
           </p>
+        </div>
+        <div v-if="showHeaderMeta" class="shrink-0 text-right">
+          <div data-testid="subscription-plan-price">
+            <span class="text-xs text-slate-500">{{ planCurrencySymbol }}</span><span class="text-3xl font-extrabold tracking-normal text-blue-700">{{ formattedPriceNumber }}</span>
+          </div>
+          <div class="flex items-center justify-end gap-1">
+            <span :class="['shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium', platformBadgeClass(platform)]">
+              {{ platformLabel(platform) }}
+            </span>
+            <span class="text-[11px] text-slate-500">/ {{ planValiditySuffix(plan, t) }}</span>
+          </div>
+          <div v-if="plan.original_price" class="mt-1 flex items-center justify-end gap-1.5">
+            <span class="text-sm text-slate-400 line-through">{{ formattedOriginalPrice }}</span>
+            <span :class="['rounded-full px-1.5 py-0.5 text-[10px] font-semibold', discountClass]">{{ discountText }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="!showHeaderMeta" class="shrink-0">
+        <div data-testid="subscription-plan-price">
+          <span class="text-3xl font-extrabold tracking-normal text-blue-700">{{ formattedPrice }}</span>
+        </div>
+        <div v-if="plan.original_price" class="mt-1 flex items-center gap-1.5">
+          <span class="text-sm text-slate-400 line-through">{{ formattedOriginalPrice }}</span>
+          <span :class="['rounded-full px-1.5 py-0.5 text-[10px] font-semibold', discountClass]">{{ discountText }}</span>
         </div>
       </div>
 
@@ -49,15 +77,6 @@
             {{ validitySummary }}
           </p>
         </div>
-        <div class="min-w-0">
-          <div data-testid="subscription-plan-price">
-            <span class="text-3xl font-extrabold tracking-normal text-blue-700">{{ formattedPrice }}</span>
-          </div>
-          <div v-if="plan.original_price" class="mt-1 flex items-center gap-1.5">
-            <span class="text-sm text-slate-400 line-through">{{ formattedOriginalPrice }}</span>
-            <span :class="['rounded-full px-1.5 py-0.5 text-[10px] font-semibold', discountClass]">{{ discountText }}</span>
-          </div>
-        </div>
       </div>
 
       <!-- Subscribe Button -->
@@ -77,10 +96,12 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { SubscriptionPlan } from '@/types/payment'
 import type { UserSubscription } from '@/types'
-import { formatPaymentAmount } from '@/components/payment/currency'
+import { currencySymbol, formatPaymentAmount } from '@/components/payment/currency'
 import { planValiditySuffix } from './validity'
 import {
+  platformBadgeClass,
   platformDiscountClass,
+  platformLabel,
 } from '@/utils/platformColors'
 import { buildSubscriptionPlanDisplay, buildSubscriptionPlanDisplayLabels } from '@/components/payment/subscriptionPlanDisplay'
 import BorderBeam from '@/components/inspira/BorderBeam.vue'
@@ -111,6 +132,10 @@ const discountClass = computed(() => platformDiscountClass(platform.value))
 const planDisplay = computed(() => buildSubscriptionPlanDisplay(props.plan, buildSubscriptionPlanDisplayLabels(t)))
 
 const formattedPrice = computed(() => formatPaymentAmount(props.plan.price, props.plan.currency))
+const planCurrencySymbol = computed(() => currencySymbol(props.plan.currency))
+const formattedPriceNumber = computed(() =>
+  formattedPrice.value.replace(planCurrencySymbol.value, '').trim()
+)
 const formattedOriginalPrice = computed(() =>
   props.plan.original_price ? formatPaymentAmount(props.plan.original_price, props.plan.currency) : ''
 )
@@ -126,4 +151,8 @@ const validitySummary = computed(() => {
   if (unit === 'day') return planDisplay.value.validitySummary
   return `/ ${planValiditySuffix(props.plan, t)}`
 })
+
+const showHeaderMeta = computed(() =>
+  String(props.plan.description || '').trim() === '' || !!planDisplay.value.description
+)
 </script>

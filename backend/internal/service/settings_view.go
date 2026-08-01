@@ -141,6 +141,7 @@ type SystemSettings struct {
 	SupportWeChatGroupQRCode    string
 	DocURL                      string
 	HomeContent                 string
+	CompactHomeEnabled          bool
 	HideCcsImportButton         bool
 	PurchaseSubscriptionEnabled bool
 	PurchaseSubscriptionURL     string
@@ -313,6 +314,7 @@ type PublicSettings struct {
 	SupportWeChatGroupQRCode         string
 	DocURL                           string
 	HomeContent                      string
+	CompactHomeEnabled               bool
 	HideCcsImportButton              bool
 
 	PurchaseSubscriptionEnabled bool

@@ -26,6 +26,7 @@ import (
 	"unicode/utf8"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/promptfilter"
@@ -294,6 +295,8 @@ type ContentModerationConfig struct {
 	LocalClassifier             ContentModerationLocalClassifierConfig `json:"local_classifier,omitempty"`
 	ModelFilter                 ContentModerationModelFilter           `json:"model_filter"`
 	FailStrategy                ContentModerationFailStrategy          `json:"fail_strategy"`
+	// ProxyID 指定审计请求使用的代理服务器，nil 表示直连。
+	ProxyID *int64 `json:"proxy_id,omitempty"`
 	// CyberPolicyExcludeFromBanCount 为 true 时，cyber_policy 命中不参与自动封号计数：
 	// 当次不判定封号，且历史 cyber 行在 CountFlaggedByUserSince 中被排除。
 	// 默认 false（计入，与历史行为一致；旧配置 JSON 无此字段时反序列化为 false）。
@@ -362,6 +365,7 @@ type ContentModerationConfigView struct {
 	ModelFilter                    ContentModerationModelFilter           `json:"model_filter"`
 	FailStrategy                   ContentModerationFailStrategy          `json:"fail_strategy"`
 	CyberPolicyExcludeFromBanCount bool                                   `json:"cyber_policy_exclude_from_ban_count"`
+	ProxyID                        *int64                                 `json:"proxy_id"`
 }
 
 type ContentModerationKeywordRule struct {
@@ -446,8 +450,10 @@ type TestContentModerationAPIKeysInput struct {
 	BaseURL   string   `json:"base_url"`
 	Model     string   `json:"model"`
 	TimeoutMS int      `json:"timeout_ms"`
-	Prompt    string   `json:"prompt"`
-	Images    []string `json:"images"`
+	// ProxyID nil 表示沿用已保存配置的代理；<=0 表示强制直连测试；>0 表示指定代理测试。
+	ProxyID *int64   `json:"proxy_id"`
+	Prompt  string   `json:"prompt"`
+	Images  []string `json:"images"`
 }
 
 type TestContentModerationAPIKeysResult struct {
@@ -466,20 +472,22 @@ type ContentModerationTestAuditResult struct {
 }
 
 type UpdateContentModerationConfigInput struct {
-	MaxRequestBodyMiB              *int                                    `json:"max_request_body_mib"`
-	InflightMemoryBudgetMiB        *int                                    `json:"inflight_memory_budget_mib"`
-	RequestMemoryMultiplier        *int                                    `json:"request_memory_multiplier"`
-	MinimumRequestChargeKiB        *int                                    `json:"minimum_request_charge_kib"`
-	SmallRequestThresholdMiB       *int                                    `json:"small_request_threshold_mib"`
-	SmallRequestReserveMiB         *int                                    `json:"small_request_reserve_mib"`
-	AdmissionWaitTimeoutMS         *int                                    `json:"admission_wait_timeout_ms"`
-	ImageAuditMaxConcurrency       *int                                    `json:"image_audit_max_concurrency"`
-	RequestAuditTimeoutMS          *int                                    `json:"request_audit_timeout_ms"`
-	Enabled                        *bool                                   `json:"enabled"`
-	Mode                           *string                                 `json:"mode"`
-	Provider                       *string                                 `json:"provider"`
-	BaseURL                        *string                                 `json:"base_url"`
-	Model                          *string                                 `json:"model"`
+	MaxRequestBodyMiB        *int    `json:"max_request_body_mib"`
+	InflightMemoryBudgetMiB  *int    `json:"inflight_memory_budget_mib"`
+	RequestMemoryMultiplier  *int    `json:"request_memory_multiplier"`
+	MinimumRequestChargeKiB  *int    `json:"minimum_request_charge_kib"`
+	SmallRequestThresholdMiB *int    `json:"small_request_threshold_mib"`
+	SmallRequestReserveMiB   *int    `json:"small_request_reserve_mib"`
+	AdmissionWaitTimeoutMS   *int    `json:"admission_wait_timeout_ms"`
+	ImageAuditMaxConcurrency *int    `json:"image_audit_max_concurrency"`
+	RequestAuditTimeoutMS    *int    `json:"request_audit_timeout_ms"`
+	Enabled                  *bool   `json:"enabled"`
+	Mode                     *string `json:"mode"`
+	Provider                 *string `json:"provider"`
+	BaseURL                  *string `json:"base_url"`
+	Model                    *string `json:"model"`
+	// nil 表示不修改；<=0 清除代理；>0 指定代理。
+	ProxyID                        *int64                                  `json:"proxy_id"`
 	PassCacheEnabled               *bool                                   `json:"pass_cache_enabled"`
 	PassCacheTTLSeconds            *int                                    `json:"pass_cache_ttl_seconds"`
 	DecisionCacheEnabled           *bool                                   `json:"decision_cache_enabled"`
@@ -1124,6 +1132,7 @@ type ContentModerationService struct {
 	groupRepo                 GroupRepository
 	accountScopeRepo          ContentModerationAccountScopeRepository
 	userRepo                  UserRepository
+	proxyRepo                 ProxyRepository
 	authCacheInvalidator      APIKeyAuthCacheInvalidator
 	emailService              *EmailService
 	outboxRepo                ContentModerationOutboxRepository
@@ -1132,6 +1141,7 @@ type ContentModerationService struct {
 	baselineStatusValid       bool
 	baselineStatus            ContentModerationSecurityBaselineStatus
 	httpClient                *http.Client
+	moderationProxyCache      atomic.Pointer[moderationProxyURLCacheEntry]
 	asyncQueue                chan contentModerationTask
 	workerCount               int
 	apiKeyCursor              atomic.Uint64
@@ -1278,6 +1288,13 @@ func NewContentModerationService(
 		svc.accountScopeRepo = accountScopeRepos[0]
 	}
 	return svc
+}
+
+// SetProxyRepository configures the optional proxy lookup used by outbound
+// moderation requests without changing the long-standing constructor contract.
+func (s *ContentModerationService) SetProxyRepository(proxyRepo ProxyRepository) {
+	s.proxyRepo = proxyRepo
+	s.moderationProxyCache.Store(nil)
 }
 
 // Start launches the content moderation background runtime once.
@@ -1514,6 +1531,14 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if input.CandidateFragmentRunes != nil {
 		cfg.CandidateFragmentRunes = *input.CandidateFragmentRunes
 	}
+	if input.ProxyID != nil {
+		if *input.ProxyID > 0 {
+			id := *input.ProxyID
+			cfg.ProxyID = &id
+		} else {
+			cfg.ProxyID = nil
+		}
+	}
 	if input.TimeoutMS != nil {
 		cfg.TimeoutMS = *input.TimeoutMS
 	}
@@ -1666,6 +1691,8 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if err := s.publishConfigSnapshot(cfg, raw); err != nil {
 		return nil, fmt.Errorf("publish content moderation config: %w", err)
 	}
+	// 代理选择可能已变化，丢弃已解析的代理 URL 缓存，下次调用即时生效。
+	s.moderationProxyCache.Store(nil)
 	return s.configView(cfg), nil
 }
 
@@ -1691,6 +1718,14 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 	}
 	if input.TimeoutMS > 0 {
 		cfg.TimeoutMS = input.TimeoutMS
+	}
+	if input.ProxyID != nil {
+		if *input.ProxyID > 0 {
+			id := *input.ProxyID
+			cfg.ProxyID = &id
+		} else {
+			cfg.ProxyID = nil
+		}
 	}
 	cfg.normalize()
 	if cfg.Provider != "openai" && cfg.Provider != "zhipu" {
@@ -4827,6 +4862,11 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 			return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_LOCAL_CLASSIFIER_URL", "本地分类器 URL 无效")
 		}
 	}
+	if cfg.ProxyID != nil && s.proxyRepo != nil {
+		if _, err := s.proxyRepo.GetByID(ctx, *cfg.ProxyID); err != nil {
+			return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_PROXY", fmt.Sprintf("代理服务器不存在: %d", *cfg.ProxyID))
+		}
+	}
 	if cfg.BlockStatus < 400 || cfg.BlockStatus > 599 {
 		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_BLOCK_STATUS", "拦截 HTTP 状态码必须在 400-599 之间")
 	}
@@ -4974,9 +5014,9 @@ func (s *ContentModerationService) callModerationOnceWithInput(ctx context.Conte
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	client := s.httpClient
-	if client == nil {
-		client = http.DefaultClient
+	client, err := s.moderationHTTPClient(ctx, cfg)
+	if err != nil {
+		return nil, err
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -4999,6 +5039,73 @@ func (s *ContentModerationService) callModerationOnceWithInput(ctx context.Conte
 		return nil, errors.New("moderation api returned empty results")
 	}
 	return &out.Results[0], nil
+}
+
+// moderationProxyURLCacheEntry 缓存 proxy_id 到代理 URL 的解析结果，
+// 避免审计热路径上每次调用都查询数据库。
+type moderationProxyURLCacheEntry struct {
+	proxyID   int64
+	url       string
+	expiresAt time.Time
+}
+
+const contentModerationProxyURLCacheTTL = time.Minute
+
+// moderationHTTPClient 返回本次审计调用应使用的 HTTP 客户端。
+// 未配置代理时沿用默认客户端；配置了代理时通过共享客户端池构建，
+// 代理解析/构建失败直接返回错误，绝不回退直连（避免 IP 关联风险）。
+func (s *ContentModerationService) moderationHTTPClient(ctx context.Context, cfg *ContentModerationConfig) (*http.Client, error) {
+	if cfg == nil || cfg.ProxyID == nil {
+		if s.httpClient == nil {
+			return http.DefaultClient, nil
+		}
+		return s.httpClient, nil
+	}
+	proxyURL, err := s.resolveModerationProxyURL(ctx, *cfg.ProxyID)
+	if err != nil {
+		return nil, err
+	}
+	client, err := httpclient.GetClient(httpclient.Options{ProxyURL: proxyURL})
+	if err != nil {
+		return nil, fmt.Errorf("build moderation proxy client: %w", err)
+	}
+	return client, nil
+}
+
+func (s *ContentModerationService) resolveModerationProxyURL(ctx context.Context, proxyID int64) (string, error) {
+	now := time.Now()
+	prev := s.moderationProxyCache.Load()
+	if prev != nil && prev.proxyID == proxyID && now.Before(prev.expiresAt) {
+		return prev.url, nil
+	}
+	if s.proxyRepo == nil {
+		return "", errors.New("moderation proxy repository unavailable")
+	}
+	px, err := s.proxyRepo.GetByID(ctx, proxyID)
+	if err != nil {
+		return "", fmt.Errorf("resolve moderation proxy %d: %w", proxyID, err)
+	}
+	if !px.IsActive() || px.IsExpired(now) {
+		slog.Warn("content_moderation.proxy_not_active",
+			"proxy_id", proxyID,
+			"proxy_name", px.Name,
+			"status", px.Status,
+			"expired", px.IsExpired(now))
+	}
+	proxyURL := px.URL()
+	if prev == nil || prev.proxyID != proxyID || prev.url != proxyURL {
+		// 不打印完整 URL（可能含认证信息），仅记录可定位的地址。
+		slog.Info("content_moderation.proxy_enabled",
+			"proxy_id", proxyID,
+			"proxy_name", px.Name,
+			"proxy_addr", fmt.Sprintf("%s://%s:%d", px.Protocol, px.Host, px.Port))
+	}
+	s.moderationProxyCache.Store(&moderationProxyURLCacheEntry{
+		proxyID:   proxyID,
+		url:       proxyURL,
+		expiresAt: now.Add(contentModerationProxyURLCacheTTL),
+	})
+	return proxyURL, nil
 }
 
 func (s *ContentModerationService) buildLog(input ContentModerationCheckInput, cfg *ContentModerationConfig, action string, flagged bool, highestCategory string, highestScore float64, scores map[string]float64, text string, latency *int, queueDelay *int, metadata contentModerationMetadata) *ContentModerationLog {
@@ -5638,6 +5745,7 @@ func cloneContentModerationConfig(cfg *ContentModerationConfig) *ContentModerati
 	}
 	preparedRulesCurrent := cfg.preparedKeywordRulesCurrent()
 	clone := *cfg
+	clone.ProxyID = cloneInt64Ptr(cfg.ProxyID)
 	clone.APIKeys = append([]string(nil), cfg.APIKeys...)
 	clone.GroupIDs = append([]int64(nil), cfg.GroupIDs...)
 	clone.AccountIDs = append([]int64(nil), cfg.AccountIDs...)
@@ -5716,6 +5824,9 @@ func (cfg *ContentModerationConfig) normalize() {
 	}
 	if cfg.CandidateFragmentRunes > maxContentModerationCandidateRunes {
 		cfg.CandidateFragmentRunes = maxContentModerationCandidateRunes
+	}
+	if cfg.ProxyID != nil && *cfg.ProxyID <= 0 {
+		cfg.ProxyID = nil
 	}
 	if cfg.TimeoutMS <= 0 {
 		cfg.TimeoutMS = defaultContentModerationTimeoutMS
@@ -6365,6 +6476,7 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		Provider:                       cfg.Provider,
 		BaseURL:                        cfg.BaseURL,
 		Model:                          cfg.Model,
+		ProxyID:                        cloneInt64Ptr(cfg.ProxyID),
 		PassCacheEnabled:               cfg.PassCacheEnabled,
 		PassCacheTTLSeconds:            cfg.PassCacheTTLSeconds,
 		DecisionCacheEnabled:           cfg.DecisionCacheEnabled,

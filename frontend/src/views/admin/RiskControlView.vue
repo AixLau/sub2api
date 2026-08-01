@@ -936,7 +936,12 @@
 					<p class="mt-1 font-mono text-sm font-semibold text-gray-900 dark:text-white">2,000</p>
 					<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.candidateFragmentRunesHint') }}</p>
 				  </div>
-			</div>
+              <div>
+                <label class="input-label">{{ t('admin.riskControl.proxy') }}</label>
+                <ProxySelector v-model="configForm.proxy_id" :proxies="proxies" />
+                <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.proxyHint') }}</p>
+              </div>
+            </div>
 
             <div class="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-800">
               <div class="flex flex-col gap-4 border-b border-gray-100 bg-gray-50 px-4 py-4 dark:border-dark-700 dark:bg-dark-800/60 lg:flex-row lg:items-center lg:justify-between">
@@ -1915,6 +1920,7 @@ import Select from '@/components/common/Select.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
+import ProxySelector from '@/components/common/ProxySelector.vue'
 import { adminAPI } from '@/api/admin'
 import type {
 	ContentModerationAccountScope,
@@ -1939,7 +1945,7 @@ import type {
   TestContentModerationKeywordsResponse,
   UpdateContentModerationConfig,
 } from '@/api/admin/riskControl'
-import type { AdminGroup, SelectOption } from '@/types'
+import type { AdminGroup, Proxy, SelectOption } from '@/types'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { formatDateTime as formatDateTimeValue, formatDateTimeLocalInput } from '@/utils/format'
@@ -2038,6 +2044,7 @@ const groups = ref<AdminGroup[]>([])
 const accounts = ref<AccountOption[]>([])
 const selectedAccountDetails = ref<Record<number, AccountOption>>({})
 const accountPagination = reactive({ page: 1, page_size: 20, total: 0 })
+const proxies = ref<Proxy[]>([])
 const logs = ref<ContentModerationLog[]>([])
 const status = ref<ContentModerationRuntimeStatus | null>(null)
 const adminSummary = reactive({ blocked: 0, hit: 0, pending: 0, error: 0 })
@@ -2095,6 +2102,7 @@ const configForm = reactive({
   pass_cache_ttl_seconds: 86400,
 	decision_cache_enabled: true,
 	decision_cache_ttl_seconds: 600,
+  proxy_id: null as number | null,
   api_keys_text: '',
   api_key_configured: false,
   api_key_masked: '',
@@ -3134,6 +3142,7 @@ function applyConfig(config: ContentModerationConfig) {
 	configForm.pass_cache_ttl_seconds = config.pass_cache_ttl_seconds || 86400
 	configForm.decision_cache_enabled = config.decision_cache_enabled ?? true
 	configForm.decision_cache_ttl_seconds = config.decision_cache_ttl_seconds || 600
+  configForm.proxy_id = config.proxy_id || null
   configForm.api_keys_text = ''
   configForm.api_key_configured = config.api_key_configured
   configForm.api_key_masked = config.api_key_masked || ''
@@ -3177,18 +3186,22 @@ function applyConfig(config: ContentModerationConfig) {
 async function loadAll() {
   loading.value = true
   try {
-		const config = await adminAPI.riskControl.getConfig()
-		applyConfig(config)
-		const [groupItems, accountPage, runtimeStatus] = await Promise.all([
-		  adminAPI.groups.getAll(),
-		adminAPI.accounts.list(1, accountPagination.page_size, { lite: 'true' }),
-		  adminAPI.riskControl.getStatus(),
-		])
-		groups.value = groupItems
-	accounts.value = accountPage.items
-	accountPagination.total = accountPage.total
-	await hydrateSelectedAccountDetails()
+    const [config, groupItems, accountPage, runtimeStatus, proxyItems] = await Promise.all([
+      adminAPI.riskControl.getConfig(),
+      adminAPI.groups.getAll(),
+      adminAPI.accounts.list(1, accountPagination.page_size, { lite: 'true' }),
+      adminAPI.riskControl.getStatus(),
+      // 代理列表加载失败不阻塞风控页面（仅影响下拉可选项）
+      adminAPI.proxies.getAll().catch(() => [] as Proxy[]),
+    ])
+    applyConfig(config)
+    groups.value = groupItems
+    accounts.value = accountPage.items
+    accountPagination.total = accountPage.total
+    proxies.value = proxyItems
+    await hydrateSelectedAccountDetails()
     status.value = runtimeStatus
+    proxies.value = proxyItems
     if (Array.isArray(runtimeStatus.api_key_statuses)) {
       configForm.api_key_statuses = [...runtimeStatus.api_key_statuses]
       prunePendingDeleteAPIKeyHashes()
@@ -3307,6 +3320,8 @@ async function saveConfig() {
 	  pass_cache_ttl_seconds: Number(configForm.pass_cache_ttl_seconds) || 86400,
 	  decision_cache_enabled: configForm.decision_cache_enabled,
 	  decision_cache_ttl_seconds: Number(configForm.decision_cache_ttl_seconds) || 600,
+      // 后端语义：0 清除代理（直连），>0 指定代理
+      proxy_id: configForm.proxy_id ?? 0,
       timeout_ms: Number(configForm.timeout_ms) || 3000,
       retry_count: Number(configForm.retry_count) || 0,
       sample_rate: Number(configForm.sample_rate) || 0,
@@ -3625,6 +3640,8 @@ async function testApiKeys(useInputKeys: boolean) {
       base_url: configForm.base_url,
       model: configForm.model,
       timeout_ms: Number(configForm.timeout_ms) || 3000,
+      // 与保存语义一致：0 强制直连，>0 指定代理，确保测试与实际审计走同一条链路
+      proxy_id: configForm.proxy_id ?? 0,
       prompt: moderationTestPrompt.value,
       images: moderationTestImages.value,
     })

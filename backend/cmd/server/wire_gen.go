@@ -262,7 +262,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	contentModerationPassCache := repository.NewContentModerationPassCache(redisClient)
 	contentModerationDecisionCache := repository.NewContentModerationDecisionCache(redisClient)
 	moderationFeedbackEpochRepository := repository.NewModerationFeedbackEpochRepository(db)
-	contentModerationService := service.ProvideContentModerationService(settingRepository, contentModerationRepository, contentModerationOutboxRepository, contentModerationHashCache, groupRepository, accountRepository, userRepository, apiKeyAuthCacheInvalidator, emailService, contentModerationPassCache, contentModerationDecisionCache, moderationFeedbackEpochRepository, secretEncryptor, openAIGatewayService, openAIQuotaService, usageLogRepository, billingService, modelPricingResolver, configConfig, serviceBuildInfo)
+	contentModerationService := service.ProvideContentModerationService(settingRepository, contentModerationRepository, contentModerationOutboxRepository, contentModerationHashCache, groupRepository, accountRepository, userRepository, proxyRepository, apiKeyAuthCacheInvalidator, emailService, contentModerationPassCache, contentModerationDecisionCache, moderationFeedbackEpochRepository, secretEncryptor, openAIGatewayService, openAIQuotaService, usageLogRepository, billingService, modelPricingResolver, configConfig, serviceBuildInfo)
 	contentModerationHandler := admin.NewContentModerationHandler(contentModerationService)
 	configManager := securityaudit.NewConfigManager(db, settingRepository, redisClient, secretEncryptor, configConfig)
 	postgreSQLRepository := securityaudit.NewPostgreSQLRepository(db)

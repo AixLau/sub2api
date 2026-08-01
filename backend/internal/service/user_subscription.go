@@ -103,10 +103,7 @@ func (s *UserSubscription) NeedsWeeklyReset() bool {
 }
 
 func (s *UserSubscription) NeedsWeeklyResetAt(now time.Time) bool {
-	if s.WeeklyWindowStart == nil {
-		return false
-	}
-	return subscriptionWindowCanReset(s.ExpiresAt, *s.WeeklyWindowStart, 7*24*time.Hour, now)
+	return s.canAutomaticallyResetWeeklyAt(now)
 }
 
 func (s *UserSubscription) NeedsMonthlyReset() bool {
@@ -114,10 +111,55 @@ func (s *UserSubscription) NeedsMonthlyReset() bool {
 }
 
 func (s *UserSubscription) NeedsMonthlyResetAt(now time.Time) bool {
-	if s.MonthlyWindowStart == nil {
-		return false
+	return s.canAutomaticallyResetMonthlyAt(now)
+}
+
+func (s *UserSubscription) canAutomaticallyResetDailyAt(now time.Time) bool {
+	_, ok := s.automaticWindowStartAt(s.DailyWindowStart, 24*time.Hour, now)
+	return !s.HasOneTimeDailyQuota() && ok
+}
+
+func (s *UserSubscription) canAutomaticallyResetWeeklyAt(now time.Time) bool {
+	_, ok := s.automaticWindowStartAt(s.WeeklyWindowStart, 7*24*time.Hour, now)
+	return ok
+}
+
+func (s *UserSubscription) canAutomaticallyResetMonthlyAt(now time.Time) bool {
+	_, ok := s.automaticWindowStartAt(s.MonthlyWindowStart, 30*24*time.Hour, now)
+	return ok
+}
+
+func (s *UserSubscription) automaticWindowStartAt(previous *time.Time, period time.Duration, now time.Time) (time.Time, bool) {
+	if previous == nil {
+		return time.Time{}, false
 	}
-	return subscriptionWindowCanReset(s.ExpiresAt, *s.MonthlyWindowStart, 30*24*time.Hour, now)
+
+	anchor := *previous
+	// Older subscriptions initialized their first windows at midnight on their
+	// start date. Only that initial value is unambiguous; later midnight anchors
+	// may be manual resets and must remain authoritative.
+	legacyAnchor := startOfDay(s.StartsAt)
+	if legacyAnchor.Before(s.StartsAt) && anchor.Equal(legacyAnchor) {
+		anchor = s.StartsAt
+	}
+	next := anchor.Add(period)
+	manualBeforeStartSameDay := anchor.Before(s.StartsAt) && startOfDay(anchor).Equal(startOfDay(s.StartsAt))
+	if now.Before(next) || !next.Before(s.ExpiresAt) {
+		return time.Time{}, false
+	}
+	// Preserve the local invariant that an automatic reset must not mint a
+	// partial final quota window. An explicit admin reset earlier on the start
+	// day remains a valid anchor, matching the upstream boundary correction.
+	if !manualBeforeStartSameDay && next.Add(period).After(s.ExpiresAt) {
+		return time.Time{}, false
+	}
+
+	periods := now.Sub(anchor) / period
+	lastPeriodBeforeExpiry := (s.ExpiresAt.Sub(anchor) - 1) / period
+	if periods > lastPeriodBeforeExpiry {
+		periods = lastPeriodBeforeExpiry
+	}
+	return anchor.Add(periods * period), true
 }
 
 func (s *UserSubscription) DailyResetTime() *time.Time {

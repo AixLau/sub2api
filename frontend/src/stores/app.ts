@@ -421,6 +421,7 @@ export const useAppStore = defineStore('app', () => {
         support_wechat_group_qr_code: supportWeChatGroupQRCode.value,
         doc_url: docUrl.value,
         home_content: '',
+        compact_home_enabled: false,
         hide_ccs_import_button: false,
         payment_enabled: false,
         payment_balance_recharge_multiplier: 1,

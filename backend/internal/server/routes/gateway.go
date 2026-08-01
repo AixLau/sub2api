@@ -154,6 +154,25 @@ func RegisterGatewayRoutes(
 		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 		c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Videos API is not supported for this platform"}})
 	}
+	// /responses/*subpath 的子路径会被转发到上游同名端点之后，因此在入口就拒掉
+	// 不可转发的子路径，不让它进入调度与转发流程。可转发的判定见
+	// service.IsForwardableOpenAIResponsesRequestPath 及 upstream_path_guard.go。
+	guardResponsesSubpath := func(next gin.HandlerFunc) gin.HandlerFunc {
+		return func(c *gin.Context) {
+			if !service.IsForwardableOpenAIResponsesRequestPath(c) {
+				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalPolicyDenied)
+				c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
+					"error": gin.H{
+						"type":    "not_found_error",
+						"message": "Unsupported responses subpath",
+					},
+				})
+				return
+			}
+			next(c)
+		}
+	}
+
 	// API网关（Claude API兼容）
 	gateway := r.Group("/v1")
 	globalGatewayPipelineEntrypoint := NewGatewayPipelineEntrypointDispatcherForHandlers(h, getGroupPlatform, isOpenAIGatewayPlatform)
@@ -258,7 +277,7 @@ func RegisterGatewayRoutes(
 			"GatewayHandler.Responses",
 			service.ContentModerationProtocolOpenAIResponses,
 			"Responses subpaths for non-OpenAI groups use the shared Gateway pre-forward pipeline before upstream forwarding.",
-		), func(c *gin.Context) {
+		), guardResponsesSubpath(func(c *gin.Context) {
 			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
 				if enterModeratedRouteBranchPipeline(c, moderatedGateway, openAIResponsesSubpathRouteMeta).Stop {
 					return
@@ -267,7 +286,7 @@ func RegisterGatewayRoutes(
 				return
 			}
 			h.Gateway.Responses(c)
-		})
+		}))
 		moderatedGateway.POST("/alpha/search", coveredOpenAIHTTPRoute(
 			"/v1/alpha/search",
 			"OpenAIGatewayHandler.AlphaSearch",
@@ -553,7 +572,7 @@ func RegisterGatewayRoutes(
 		"GatewayHandler.Responses",
 		service.ContentModerationProtocolOpenAIResponses,
 		"Root Responses subpath alias for non-OpenAI groups uses the shared Gateway pre-forward pipeline before upstream forwarding.",
-	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, responsesSubpathHandler)
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, guardResponsesSubpath(responsesSubpathHandler))
 	moderatedRoot.POST("/alpha/search", coveredOpenAIHTTPRoute(
 		"/alpha/search",
 		"OpenAIGatewayHandler.AlphaSearch",
@@ -641,7 +660,7 @@ func RegisterGatewayRoutes(
 			"GatewayHandler.Responses",
 			service.ContentModerationProtocolOpenAIResponses,
 			"Codex direct Responses subpaths for non-OpenAI groups use the shared Gateway pre-forward pipeline before upstream forwarding.",
-		), codexResponsesSubpathHandler)
+		), guardResponsesSubpath(codexResponsesSubpathHandler))
 		moderatedCodexDirect.POST("/alpha/search", coveredOpenAIHTTPRoute(
 			"/backend-api/codex/alpha/search",
 			"OpenAIGatewayHandler.AlphaSearch",

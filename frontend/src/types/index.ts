@@ -212,6 +212,7 @@ export interface PublicSettings {
   support_wechat_group_qr_code?: string
   doc_url: string
   home_content: string
+  compact_home_enabled: boolean
   hide_ccs_import_button: boolean
   payment_enabled: boolean
   reward_campaigns_enabled?: boolean

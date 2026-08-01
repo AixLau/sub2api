@@ -4,13 +4,16 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/stretchr/testify/require"
 )
 
 func requireOpenAICodexProbeHeaders(t *testing.T, h http.Header) {
 	t.Helper()
-	require.Equal(t, codexCLIUserAgent, h.Get("User-Agent"))
-	require.Equal(t, "codex_cli_rs", h.Get("Originator"))
+	expectedOriginator, expectedUserAgent, ok := openai.PairCodexClientIdentity(codexCLIUserAgent)
+	require.True(t, ok)
+	require.Equal(t, expectedUserAgent, h.Get("User-Agent"))
+	require.Equal(t, expectedOriginator, h.Get("Originator"))
 	require.Equal(t, codexCLIVersion, h.Get("Version"))
 	require.Equal(t, "responses=experimental", h.Get("OpenAI-Beta"))
 	require.NotEmpty(t, h.Get("X-Codex-Window-ID"))

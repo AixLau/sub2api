@@ -16,6 +16,7 @@ const {
   getRawRequest,
   getGroups,
 	listAccounts,
+  getProxies,
   showError,
   showSuccess,
 } = vi.hoisted(() => ({
@@ -28,6 +29,7 @@ const {
   getRawRequest: vi.fn(),
   getGroups: vi.fn(),
 	listAccounts: vi.fn(),
+  getProxies: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
 }))
@@ -53,6 +55,9 @@ vi.mock('@/api/admin', () => ({
 	accounts: {
 		list: listAccounts,
 	},
+    proxies: {
+      getAll: getProxies,
+    },
   },
 }))
 
@@ -87,6 +92,7 @@ const baseConfig = (): ContentModerationConfig => ({
   mode: 'pre_block',
   base_url: 'https://api.openai.com',
   model: 'omni-moderation-latest',
+  proxy_id: null,
   api_key_configured: false,
   api_key_masked: '',
   api_key_count: 0,
@@ -255,6 +261,7 @@ describe('admin RiskControlView', () => {
     })
     getGroups.mockResolvedValue([])
 	listAccounts.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 100, pages: 0 })
+    getProxies.mockResolvedValue([])
     updateConfig.mockImplementation(async (payload: UpdateContentModerationConfig) => ({
       ...baseConfig(),
       ...payload,
@@ -907,6 +914,7 @@ describe('admin RiskControlView', () => {
           Toggle: true,
           Pagination: true,
           ModelWhitelistSelector: ModelWhitelistSelectorStub,
+          ProxySelector: true,
         },
       },
     })
@@ -968,6 +976,7 @@ describe('admin RiskControlView', () => {
           Toggle: true,
           Pagination: true,
           ModelWhitelistSelector: ModelWhitelistSelectorStub,
+          ProxySelector: true,
         },
       },
     })
@@ -1008,6 +1017,7 @@ describe('admin RiskControlView', () => {
           Toggle: true,
           Pagination: true,
           ModelWhitelistSelector: ModelWhitelistSelectorStub,
+          ProxySelector: true,
         },
       },
     })
@@ -1075,6 +1085,7 @@ describe('admin RiskControlView', () => {
           Toggle: true,
           Pagination: true,
           ModelWhitelistSelector: ModelWhitelistSelectorStub,
+          ProxySelector: true,
         },
       },
     })

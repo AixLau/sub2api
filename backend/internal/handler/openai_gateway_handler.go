@@ -183,7 +183,7 @@ func openAICompatibleRequestPlatform(ctx context.Context, apiKey *service.APIKey
 }
 
 func openAIResponsesRequiredImageCapability(reqModel string, body []byte) service.OpenAIImagesCapability {
-	if service.IsImageGenerationIntent("/v1/responses", reqModel, body) {
+	if service.IsExplicitImageGenerationIntent("/v1/responses", reqModel, body) {
 		return service.OpenAIImagesCapabilityResponsesImageTool
 	}
 	return ""
@@ -344,7 +344,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 
 	requestCtx := c.Request.Context()
 	requestPlatform := openAICompatibleRequestPlatform(c.Request.Context(), apiKey)
-	imageIntent := service.IsImageGenerationIntentForPlatform("/v1/responses", reqModel, body, requestPlatform)
+	imageIntent := openAIResponsesImageIntentForPlatform(apiKey, reqModel, body)
 	if h.rejectDirectOpenAIResponsesImagePermission(c, apiKey, imageIntent) {
 		return
 	}

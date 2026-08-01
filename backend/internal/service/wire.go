@@ -47,6 +47,7 @@ func ProvideContentModerationService(
 	groupRepo GroupRepository,
 	accountRepo AccountRepository,
 	userRepo UserRepository,
+	proxyRepo ProxyRepository,
 	authCacheInvalidator APIKeyAuthCacheInvalidator,
 	emailService *EmailService,
 	passCache ContentModerationPassCache,
@@ -62,6 +63,7 @@ func ProvideContentModerationService(
 	buildInfo BuildInfo,
 ) *ContentModerationService {
 	svc := NewContentModerationService(settingRepo, repo, hashCache, groupRepo, userRepo, authCacheInvalidator, emailService, accountRepo)
+	svc.SetProxyRepository(proxyRepo)
 	key, _ := cfg.Moderation.CacheHMACKeyBytes()
 	decisionCacheKey, _ := cfg.ContentModerationDecisionCacheHMACKeyBytes()
 	svc.SetIncrementalModerationDependencies(

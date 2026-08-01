@@ -442,6 +442,7 @@ export interface SystemSettings {
   support_wechat_group_qr_code: string;
   doc_url: string;
   home_content: string;
+  compact_home_enabled: boolean;
   hide_ccs_import_button: boolean;
   table_default_page_size: number;
   table_page_size_options: number[];
@@ -758,6 +759,7 @@ export interface UpdateSettingsRequest {
   support_wechat_group_qr_code?: string;
   doc_url?: string;
   home_content?: string;
+  compact_home_enabled?: boolean;
   hide_ccs_import_button?: boolean;
   table_default_page_size?: number;
   table_page_size_options?: number[];

@@ -37,6 +37,7 @@ func applyOpenAICodexProbeHeaders(h http.Header) {
 		return
 	}
 	ensureCodexIdentityHeaders(h)
+	enforceCodexIdentityHeaders(h)
 	h.Set("X-Codex-Window-ID", uuid.NewString())
 }
 
