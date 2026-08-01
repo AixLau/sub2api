@@ -8,20 +8,26 @@ const {
   showErrorMock,
   showWarningMock,
   showSuccessMock,
+  pushMock,
+  registerMock,
+  routeState,
 } = vi.hoisted(() => ({
   getPublicSettingsMock: vi.fn(),
   showErrorMock: vi.fn(),
   showWarningMock: vi.fn(),
   showSuccessMock: vi.fn(),
+  pushMock: vi.fn(),
+  registerMock: vi.fn(),
+  routeState: {
+    query: {} as Record<string, unknown>,
+  },
 }))
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({
-    push: vi.fn(),
+    push: pushMock,
   }),
-  useRoute: () => ({
-    query: {},
-  }),
+  useRoute: () => routeState,
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -69,7 +75,7 @@ vi.mock('@/api/auth', () => ({
 
 vi.mock('@/stores', () => ({
   useAuthStore: () => ({
-    register: vi.fn(),
+    register: (...args: any[]) => registerMock(...args),
   }),
   useAppStore: () => ({
     showError: (...args: any[]) => showErrorMock(...args),
@@ -77,6 +83,13 @@ vi.mock('@/stores', () => ({
     showSuccess: (...args: any[]) => showSuccessMock(...args),
   }),
 }))
+
+beforeEach(() => {
+  pushMock.mockReset()
+  registerMock.mockReset()
+  routeState.query = {}
+  sessionStorage.clear()
+})
 
 vi.mock('@/utils/oauthAffiliate', () => ({
   clearAffiliateReferralCode: vi.fn(),
@@ -249,5 +262,56 @@ describe('RegisterView promo code visibility', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="promo-code-field"]').exists()).toBe(true)
+  })
+})
+
+describe('RegisterView post-registration redirect', () => {
+  const redirect = '/client-setup?setup_id=setup-123&device_code=ABCD-1234&client=codex'
+
+  beforeEach(() => {
+    getPublicSettingsMock.mockReset()
+    getPublicSettingsMock.mockResolvedValue({
+      ...invitationPublicSettings,
+      email_verify_enabled: false,
+      turnstile_enabled: false,
+    })
+    registerMock.mockResolvedValue({})
+  })
+
+  async function submitRegistration() {
+    const wrapper = mountRegister()
+    await flushPromises()
+    await wrapper.get('#email').setValue('new-user@example.com')
+    await wrapper.get('#password').setValue('Password123!')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+    return wrapper
+  }
+
+  it('returns directly registered users to client setup', async () => {
+    routeState.query = { redirect }
+
+    await submitRegistration()
+
+    expect(registerMock).toHaveBeenCalledOnce()
+    expect(pushMock).toHaveBeenCalledWith(redirect)
+  })
+
+  it('stores the client setup redirect across email verification', async () => {
+    routeState.query = { redirect }
+    getPublicSettingsMock.mockResolvedValueOnce({
+      ...invitationPublicSettings,
+      email_verify_enabled: true,
+      turnstile_enabled: false,
+    })
+
+    await submitRegistration()
+
+    expect(JSON.parse(sessionStorage.getItem('register_data') || '{}')).toMatchObject({
+      email: 'new-user@example.com',
+      pending_redirect: redirect,
+    })
+    expect(registerMock).not.toHaveBeenCalled()
+    expect(pushMock).toHaveBeenCalledWith('/email-verify')
   })
 })

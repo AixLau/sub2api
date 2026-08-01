@@ -6,8 +6,18 @@ import { describe, expect, it } from 'vitest'
 
 const componentPath = resolve(dirname(fileURLToPath(import.meta.url)), '../AppSidebar.vue')
 const componentSource = readFileSync(componentPath, 'utf8')
+const layoutPath = resolve(dirname(fileURLToPath(import.meta.url)), '../AppLayout.vue')
+const layoutSource = readFileSync(layoutPath, 'utf8')
 const stylePath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../style.css')
 const styleSource = readFileSync(stylePath, 'utf8')
+
+describe('AppSidebar expanded width', () => {
+  it('keeps the sidebar width and content offset aligned', () => {
+    expect(componentSource).toContain("sidebarCollapsed ? 'w-[72px]' : 'w-52'")
+    expect(styleSource).toContain('@apply w-52 bg-surface-panel;')
+    expect(layoutSource).toContain("sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-52'")
+  })
+})
 
 describe('AppSidebar custom SVG styles', () => {
   it('does not override uploaded SVG fill or stroke colors', () => {

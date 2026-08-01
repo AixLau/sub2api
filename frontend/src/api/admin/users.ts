@@ -288,7 +288,7 @@ export interface BalanceHistoryResponse extends PaginatedResponse<BalanceHistory
  * @param id - User ID
  * @param page - Page number
  * @param pageSize - Items per page
- * @param type - Optional type filter (balance, affiliate_balance, admin_balance, welcome_scratch, surprise_scratch, concurrency, admin_concurrency, subscription)
+ * @param type - Optional type filter (balance, affiliate_balance, admin_balance, scratch, concurrency, admin_concurrency, subscription)
  * @returns Paginated balance history with total_recharged
  */
 export async function getUserBalanceHistory(

@@ -86,6 +86,7 @@ const (
 	RedeemTypeWelcomeScratch   = domain.RedeemTypeWelcomeScratch
 	RedeemTypeSurpriseScratch  = domain.RedeemTypeSurpriseScratch
 	RedeemTypeAffiliateBalance = "affiliate_balance"
+	RedeemTypeScratchFilter    = "scratch"
 )
 
 // PromoCode status constants

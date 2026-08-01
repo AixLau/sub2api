@@ -84,6 +84,7 @@ describe('GroupDistributionChart', () => {
       spacing: 2,
       hoverOffset: 4,
     })
+    expect(chartData.datasets[0].backgroundColor.slice(0, 2)).toEqual(['#3B82F6', '#20D9A0'])
     expect(wrapper.get('[data-testid="group-ring-center"]').text()).toContain('1.80K')
 
     const rows = wrapper.findAll('tbody tr')

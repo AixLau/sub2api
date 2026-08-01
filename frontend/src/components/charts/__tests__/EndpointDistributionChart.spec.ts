@@ -58,6 +58,7 @@ describe('EndpointDistributionChart', () => {
       spacing: 2,
       hoverOffset: 4,
     })
+    expect(chartData.datasets[0].backgroundColor.slice(0, 2)).toEqual(['#3B82F6', '#20D9A0'])
     expect(wrapper.get('[data-testid="endpoint-ring-center"]').text()).toContain('1.80K')
 
     const options = (wrapper.vm as any).$?.setupState.doughnutOptions

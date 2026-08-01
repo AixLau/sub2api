@@ -31,8 +31,7 @@ const messages: Record<string, string> = {
   'admin.users.typeBalance': 'Balance',
   'admin.users.typeAffiliateBalance': 'Affiliate Balance',
   'admin.users.typeAdminBalance': 'Admin Balance',
-  'admin.users.typeWelcomeScratch': 'Welcome Scratch',
-  'admin.users.typeSurpriseScratch': 'Surprise Scratch',
+  'admin.users.typeScratch': 'Scratch Card',
   'admin.users.typeConcurrency': 'Concurrency',
   'admin.users.typeAdminConcurrency': 'Admin Concurrency',
   'admin.users.typeSubscription': 'Subscription',
@@ -46,6 +45,7 @@ const messages: Record<string, string> = {
   'redeem.subscriptionAssigned': 'Subscription Assigned',
   'redeem.welcomeScratchReward': 'Welcome Gift Scratch Card',
   'redeem.surpriseScratchReward': 'Active-user Surprise Scratch Card',
+  'redeem.campaignReward': 'Campaign Reward Credited',
   'admin.users.noBalanceHistory': 'No history',
 }
 
@@ -242,6 +242,63 @@ describe('UserBalanceHistoryModal', () => {
     expect(text).toContain('Granted after scratching')
     expect(text).not.toContain('WELCOME')
     expect(text).not.toContain('SURPRISE-')
+  })
+
+  it('offers one scratch-card filter for every scratch reward source', async () => {
+    const wrapper = mount(UserBalanceHistoryModal, {
+      props: {
+        show: false,
+        user: user as any,
+      },
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    const options = wrapper.getComponent({ name: 'Select' }).props('options') as Array<{
+      value: string
+      label: string
+    }>
+    const scratchOptions = options.filter(option => option.value.includes('scratch'))
+
+    expect(scratchOptions).toEqual([{ value: 'scratch', label: 'Scratch Card' }])
+  })
+
+  it('renders campaign rewards as scratch cards without internal tracking notes', async () => {
+    apiMocks.getUserBalanceHistory.mockResolvedValue({
+      items: [{
+        id: 12,
+        code: 'CAMPAIGN-REWARD-RECORD',
+        type: 'campaign_reward',
+        value: 8,
+        status: 'used',
+        used_by: 99,
+        used_at: '2026-08-01T05:27:12Z',
+        created_at: '2026-08-01T05:27:12Z',
+        group_id: null,
+        validity_days: 0,
+        notes: 'reward campaign grant #11',
+      }],
+      total: 1,
+      total_recharged: 25,
+    })
+
+    const wrapper = mount(UserBalanceHistoryModal, {
+      props: {
+        show: false,
+        user: user as any,
+      },
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('Campaign Reward Credited')
+    expect(text).toContain('+$8.00')
+    expect(text).toContain('Granted after scratching')
+    expect(text).not.toContain('reward campaign grant #11')
+    expect(text).not.toContain('common.unknown')
   })
 
   it('keeps subscription group and notes visible when optional details are missing', async () => {

@@ -173,6 +173,7 @@ import {
   loadAffiliateReferralCode,
   oauthAffiliatePayload
 } from '@/utils/oauthAffiliate'
+import { resolveAuthRedirectPath } from '@/utils/authRedirect'
 
 const { t, locale } = useI18n()
 
@@ -271,7 +272,9 @@ onMounted(async () => {
       pendingAuthToken.value = registerData.pending_auth_token || activePendingSession?.token || ''
       pendingAuthTokenField.value = registerData.pending_auth_token_field || activePendingSession?.token_field || 'pending_auth_token'
       pendingProvider.value = registerData.pending_provider || activePendingSession?.provider || ''
-      pendingRedirect.value = registerData.pending_redirect || activePendingSession?.redirect || ''
+      pendingRedirect.value = resolveAuthRedirectPath(
+        registerData.pending_redirect || activePendingSession?.redirect
+      )
       pendingAdoptionDecision.value = registerData.pending_adoption_decision
         ? {
             adoptDisplayName: registerData.pending_adoption_decision.adopt_display_name === true,
@@ -286,7 +289,7 @@ onMounted(async () => {
     pendingAuthToken.value = activePendingSession.token
     pendingAuthTokenField.value = activePendingSession.token_field
     pendingProvider.value = activePendingSession.provider
-    pendingRedirect.value = activePendingSession.redirect || ''
+    pendingRedirect.value = resolveAuthRedirectPath(activePendingSession.redirect)
   }
 
   // Load public settings
@@ -389,7 +392,7 @@ function persistPendingOAuthSession(provider: string, redirect?: string): void {
     token: pendingAuthToken.value,
     token_field: pendingAuthTokenField.value,
     provider: provider.trim() || pendingProvider.value.trim(),
-    redirect: redirect || pendingRedirect.value || undefined,
+    redirect: resolveAuthRedirectPath(redirect || pendingRedirect.value),
   })
 }
 
@@ -553,8 +556,8 @@ async function handleVerify(): Promise<void> {
     // Show success toast
     appStore.showSuccess(t('auth.accountCreatedSuccess', { siteName: siteName.value }))
 
-    // Redirect to dashboard
-    await router.push(pendingRedirect.value || '/dashboard')
+    // Return to the page that initiated authentication.
+    await router.push(resolveAuthRedirectPath(pendingRedirect.value))
   } catch (error: unknown) {
     errorMessage.value = buildAuthErrorMessage(error, {
       fallback: t('auth.verifyFailed')
@@ -571,7 +574,10 @@ function handleBack(): void {
   sessionStorage.removeItem('register_data')
 
   // Go back to registration
-  router.push('/register')
+  router.push({
+    path: '/register',
+    query: { redirect: resolveAuthRedirectPath(pendingRedirect.value) }
+  })
 }
 
 function buildEmailSuffixNotAllowedMessage(): string {

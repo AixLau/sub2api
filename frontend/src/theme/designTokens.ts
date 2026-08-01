@@ -11,6 +11,7 @@ export const semanticColors = tokens.semantic
 export const platformIdentityColors = tokens.platform
 export const providerColors = tokens.provider
 export const categoricalPalette = tokens.dataViz.categorical
+export const distributionRingPalette = ['#3B82F6', ...categoricalPalette.slice(1)]
 export const tokenUsageColors = tokens.dataViz.tokenUsage
 
 export const chartSeriesColors = {

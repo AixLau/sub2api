@@ -254,6 +254,17 @@ json_get_string() {
   printf '%s' "$json" | sed -nE 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' | head -n 1
 }
 
+json_get_number() {
+  local json="$1"
+  local key="$2"
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$json" | jq -r --arg key "$key" \
+      '(.[$key] // .data[$key] // empty) | if type == "number" then floor else empty end'
+    return
+  fi
+  printf '%s' "$json" | sed -nE 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -n 1
+}
+
 toml_escape() {
   local value="$1"
   value="${value//\\/\\\\}"
@@ -298,7 +309,7 @@ try_auto_api_key() {
   has_tty || return 1
   command -v curl >/dev/null 2>&1 || return 1
 
-  local port redirect_uri create_json setup_id device_code poll_token verify_url callback_file server_pid approved_json setup_token exchange_json key
+  local port redirect_uri create_json setup_id device_code poll_token verify_url expires_in wait_seconds callback_file server_pid approved_json setup_token exchange_json key
   port="$(find_callback_port)" || return 1
   redirect_uri="http://127.0.0.1:${port}/callback"
 
@@ -312,6 +323,20 @@ try_auto_api_key() {
   poll_token="$(json_get_string "$create_json" "poll_token")"
   verify_url="$(json_get_string "$create_json" "verify_url")"
   [ -n "$setup_id" ] && [ -n "$device_code" ] && [ -n "$poll_token" ] && [ -n "$verify_url" ] || return 1
+
+  expires_in="$(json_get_number "$create_json" "expires_in")"
+  wait_seconds=540
+  case "$expires_in" in
+    ''|*[!0-9]*)
+      ;;
+    *)
+      if [ "$expires_in" -gt 30 ]; then
+        wait_seconds=$((expires_in - 15))
+      fi
+      ;;
+  esac
+  [ "$wait_seconds" -le 600 ] || wait_seconds=600
+  [ "$wait_seconds" -ge 30 ] || wait_seconds=30
 
   callback_file="$(mktemp)"
   (
@@ -337,7 +362,7 @@ AUTO
   open_browser "$verify_url" || true
 
   local i callback_line callback_query
-  for i in $(seq 1 120); do
+  for i in $(seq 1 "$wait_seconds"); do
     if [ -s "$callback_file" ]; then
       callback_line="$(cat "$callback_file")"
       callback_query="${callback_line#* /callback?}"

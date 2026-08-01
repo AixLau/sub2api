@@ -9,7 +9,7 @@
     <!-- Main Content Area -->
     <div
       class="relative min-h-screen transition-all duration-300"
-      :class="[sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-56']"
+      :class="[sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-52']"
     >
       <!-- Header -->
       <AppHeader />

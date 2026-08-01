@@ -284,7 +284,7 @@
       </div>
     <template #footer>
       {{ t('auth.alreadyHaveAccount') }}
-      <router-link to="/login">{{ t('auth.signIn') }}</router-link>
+      <router-link :to="loginRoute">{{ t('auth.signIn') }}</router-link>
     </template>
   </AuthLayout>
 </template>
@@ -319,6 +319,7 @@ import {
   loadAffiliateReferralCode,
   resolveAffiliateReferralCode
 } from '@/utils/oauthAffiliate'
+import { resolveAuthRedirectPath } from '@/utils/authRedirect'
 import type { LoginAgreementDocument } from '@/types'
 
 const { t, locale } = useI18n()
@@ -330,6 +331,11 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const appStore = useAppStore()
+const postAuthRedirect = computed(() => resolveAuthRedirectPath(route.query.redirect))
+const loginRoute = computed(() => ({
+  path: '/login',
+  ...(route.query.redirect ? { query: { redirect: postAuthRedirect.value } } : {})
+}))
 
 // ==================== State ====================
 
@@ -866,6 +872,7 @@ async function handleRegister(): Promise<void> {
           turnstile_token: turnstileToken.value,
           promo_code: formData.promo_code || undefined,
           invitation_code: formData.invitation_code || undefined,
+          pending_redirect: postAuthRedirect.value,
           ...(affCode ? { aff_code: affCode } : {})
         })
       )
@@ -889,8 +896,8 @@ async function handleRegister(): Promise<void> {
     // Show success toast
     appStore.showSuccess(t('auth.accountCreatedSuccess', { siteName: siteName.value }))
 
-    // Redirect to dashboard
-    await router.push('/dashboard')
+    // Return to the protected page that initiated authentication.
+    await router.push(postAuthRedirect.value)
   } catch (error: unknown) {
     // Reset Turnstile on error
     if (turnstileRef.value) {

@@ -98,6 +98,7 @@ describe('ModelDistributionChart', () => {
       spacing: 2,
       hoverOffset: 4,
     })
+    expect(chartData.datasets[0].backgroundColor.slice(0, 2)).toEqual(['#3B82F6', '#20D9A0'])
     expect(wrapper.get('[data-testid="model-ring-center"]').text()).toContain('1.50K')
 
     const rows = wrapper.findAll('tbody tr')
@@ -194,8 +195,8 @@ describe('ModelDistributionChart', () => {
       'Others',
     ])
     expect(chartData.datasets[0].data).toEqual([12, 8, 10])
-    expect(chartData.datasets[0].backgroundColor[0]).toBe('#0033FF')
-    expect(chartData.datasets[0].backgroundColor[2]).toBe('#98A4B7')
+    expect(chartData.datasets[0].backgroundColor[0]).toBe('#3B82F6')
+    expect(chartData.datasets[0].backgroundColor[2]).toBe('#9CA3AF')
     expect(chartData.datasets[0].backgroundColor[2]).not.toBe(chartData.datasets[0].backgroundColor[0])
     expect(wrapper.get('[data-testid="ranking-ring-center"]').text()).toContain('$30.00')
 

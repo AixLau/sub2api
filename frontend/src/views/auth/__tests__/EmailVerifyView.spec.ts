@@ -453,4 +453,36 @@ describe('EmailVerifyView', () => {
     expect(apiClientPostMock).not.toHaveBeenCalled()
     expect(pushMock).toHaveBeenCalledWith('/dashboard')
   })
+
+  it('returns a verified registration to the original client setup page', async () => {
+    const redirect = '/client-setup?setup_id=setup-123&device_code=ABCD-1234&client=codex'
+    sessionStorage.setItem(
+      'register_data',
+      JSON.stringify({
+        email: 'new-user@example.com',
+        password: 'secret-789',
+        pending_redirect: redirect,
+      })
+    )
+    registerMock.mockResolvedValue({})
+
+    const wrapper = mount(EmailVerifyView, {
+      global: {
+        stubs: {
+          AuthLayout: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: true,
+          TurnstileWidget: true,
+          transition: false,
+        },
+      },
+    })
+
+    await flushPromises()
+    await wrapper.get('#code').setValue('123456')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(registerMock).toHaveBeenCalledOnce()
+    expect(pushMock).toHaveBeenCalledWith(redirect)
+  })
 })

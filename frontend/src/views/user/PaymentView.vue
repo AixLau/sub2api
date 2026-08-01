@@ -1548,12 +1548,26 @@ onMounted(async () => {
 
 <style scoped>
 .recharge-page-canvas {
+  --color-brand-300: 147 197 253;
+  --color-brand-400: 47 128 255;
+  --color-brand-500: 15 98 254;
+  --color-accent-400: 96 165 250;
+  --color-content-brand: 29 78 216;
+  --color-line-focus: 37 99 235;
+
   min-height: calc(100vh - 4rem);
   margin: -1rem;
   padding: 1rem;
   background:
-    radial-gradient(circle at 18% 0%, rgb(var(--color-brand-500) / 0.1), transparent 30%),
-    radial-gradient(circle at 88% 8%, rgb(var(--color-accent-400) / 0.12), transparent 26%),
+    radial-gradient(circle at 18% 0%, rgb(59 130 246 / 0.1), transparent 30%),
+    radial-gradient(circle at 88% 8%, rgb(96 165 250 / 0.14), transparent 26%),
+    linear-gradient(180deg, #f6f9ff 0%, #eef4fb 100%);
+}
+
+:global(.dark) .recharge-page-canvas {
+  background:
+    radial-gradient(circle at 18% 0%, rgb(59 130 246 / 0.12), transparent 30%),
+    radial-gradient(circle at 88% 8%, rgb(96 165 250 / 0.1), transparent 26%),
     linear-gradient(
       180deg,
       rgb(var(--color-surface-canvas)) 0%,

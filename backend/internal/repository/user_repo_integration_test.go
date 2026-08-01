@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -200,6 +201,51 @@ func (s *UserRepoSuite) TestClaimSurpriseRewardCreatesTypedHistoryRecord() {
 	s.Equal(int64(1), result.Total)
 	s.Require().Len(surpriseHistory, 1)
 	s.Equal(service.RedeemTypeSurpriseScratch, surpriseHistory[0].Type)
+}
+
+func (s *UserRepoSuite) TestScratchHistoryFilterIncludesEveryRewardSource() {
+	user := s.mustCreateUser(&service.User{
+		Email: "unified-scratch-history@test.com",
+	})
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	for index, codeType := range []string{
+		service.RedeemTypeWelcomeScratch,
+		service.RedeemTypeSurpriseScratch,
+		service.RedeemTypeCampaignReward,
+	} {
+		usedAt := now.Add(time.Duration(index) * time.Minute)
+		record := &service.RedeemCode{
+			Code:      fmt.Sprintf("SCRATCH-HISTORY-%d", index),
+			Type:      codeType,
+			Value:     float64(index + 1),
+			Status:    service.StatusUsed,
+			UsedBy:    &user.ID,
+			UsedAt:    &usedAt,
+			CreatedAt: usedAt,
+		}
+		s.Require().NoError(NewRedeemCodeRepository(s.client).Create(s.ctx, record))
+	}
+
+	history, result, err := NewRedeemCodeRepository(s.client).ListByUserPaginated(
+		s.ctx,
+		user.ID,
+		pagination.PaginationParams{Page: 1, PageSize: 20},
+		service.RedeemTypeScratchFilter,
+	)
+
+	s.Require().NoError(err)
+	s.Require().NotNil(result)
+	s.Equal(int64(3), result.Total)
+	s.Require().Len(history, 3)
+	s.ElementsMatch(
+		[]string{
+			service.RedeemTypeWelcomeScratch,
+			service.RedeemTypeSurpriseScratch,
+			service.RedeemTypeCampaignReward,
+		},
+		[]string{history[0].Type, history[1].Type, history[2].Type},
+	)
 }
 
 func (s *UserRepoSuite) TestGetByID_NotFound() {

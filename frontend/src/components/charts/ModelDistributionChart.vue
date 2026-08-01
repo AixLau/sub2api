@@ -274,7 +274,7 @@ import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Doughnut } from 'vue-chartjs'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import UserBreakdownSubTable from './UserBreakdownSubTable.vue'
-import { categoricalPalette, neutralColors } from '@/theme/designTokens'
+import { distributionRingPalette, neutralColors } from '@/theme/designTokens'
 import type { ModelStat, UserSpendingRankingItem, UserBreakdownItem } from '@/types'
 import { getUserBreakdown } from '@/api/admin/dashboard'
 
@@ -377,7 +377,7 @@ const chartShellClass = computed(() => props.surface === 'tremor'
   ? 'relative w-full rounded-lg border border-line-default bg-surface-panel p-5 text-left shadow-card'
   : 'card p-4')
 
-const chartColors = categoricalPalette
+const chartColors = distributionRingPalette
 
 const displayModelStats = computed(() => {
   const sourceStats = props.source === 'upstream'

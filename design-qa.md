@@ -277,3 +277,22 @@ final result: passed
 - Findings: no actionable P0, P1, or P2 visual issue remains; legacy teal primary values are absent from current frontend source.
 
 final result: passed
+
+# Sidebar Width Reduction QA
+
+- Source visual truth: `/var/folders/j_/wj8mmnfx46zccr8bvxj1wklh0000gn/T/codex-clipboard-46f9de7c-8ade-4055-97cc-1d4839bb6cf3.png` at 454 x 1522 pixels, treated as a 2x capture of an approximately 227 x 761 CSS-pixel sidebar.
+- Implementation evidence: `/tmp/sub2api-sidebar-208.png` at 1778 x 1111 pixels and focused crop `/tmp/sub2api-sidebar-208-focus.png` at 231 x 1000 pixels.
+- Browser viewport and state: 1600 x 1000 CSS pixels, light theme, authenticated user dashboard, expanded sidebar. The source shows an admin menu, so comparison was limited to the requested width, spacing, typography fit, and layout boundary.
+- Full-view comparison: the sidebar measures 207.99 CSS pixels and the main content begins at 207.99 CSS pixels, with no overlap or empty gap.
+- Focused comparison: source and implementation were opened together. The 208px implementation is visibly narrower than the previous 224px layout while retaining aligned icons, labels, active background, and active indicator. No visible label overflows.
+- Fonts and typography: unchanged; tested labels remain single-line and untruncated.
+- Spacing and layout rhythm: expanded width and main offset both changed from 224px to 208px. Collapsed width and offset remain 72px.
+- Colors and visual tokens: unchanged.
+- Image quality and assets: no image or icon assets changed. The local logo image was unavailable because the public-settings backend was not running.
+- Copy and content: unchanged.
+- Interaction checks: collapse moved both sidebar and main offset to 72px; re-expand restored both to 208px.
+- Runtime checks: local API requests logged expected errors because no backend was running; no sidebar rendering or interaction errors occurred.
+- Verification: focused sidebar Vitest 11/11 passed, TypeScript typecheck passed, and `git diff --check` passed.
+- Findings: no actionable P0, P1, or P2 issue remains. No post-comparison visual fix was required.
+
+final result: passed

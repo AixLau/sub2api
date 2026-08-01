@@ -624,7 +624,7 @@
   /* ============ 侧边栏 ============ */
   .sidebar {
     @apply fixed inset-y-0 left-0 z-40;
-    @apply w-56 bg-surface-panel;
+    @apply w-52 bg-surface-panel;
     @apply border-r border-line-subtle;
     @apply flex flex-col;
     @apply transition-transform duration-300;

@@ -2,10 +2,11 @@
 
 ## 文档说明
 
-这是**星链 AI Hub 客户端一键配置脚本**的用户教程页面，面向普通用户，提供傻瓜式的 Codex / Claude Code 客户端配置指引。
+这是**星链 AI Hub 客户端安装与一键配置脚本**的用户教程页面，面向普通用户，提供 ChatGPT 桌面端安装以及 Codex / Claude Code 客户端配置指引。
 
 - **目标用户**：购买了星链 AI Hub 服务、需要配置客户端的普通用户
-- **覆盖平台**：macOS / Linux / Windows
+- **覆盖平台**：macOS / Linux / Windows（ChatGPT 桌面端仅支持 macOS / Windows）
+- **安装方式**：macOS 自动下载并打开官方 DMG；Windows 自动打开微软商店
 - **配置方式**：一键脚本（自动备份 + 交互式选择客户端 + 浏览器登录授权 + 自动创建 API Key）
 
 ## 文件结构
@@ -94,7 +95,8 @@ cwebp -q 85 output.png -o 02-mac-terminal.webp
 - **品牌名称**：全局使用"星链 AI Hub"，域名 `aixlau.me`
 - **动画持续时间**：CSS 变量 `--duration-fast: 300ms; --duration-normal: 600ms; --duration-slow: 800ms`
 - **OS 默认选择**：JS 初始化时根据 UA 自动判断（Mac/Linux → mac，其余 → win）
-- **脚本 URL**：`https://aixlau.me/install/bootstrap.sh`（确保与实际部署一致）
+- **配置脚本 URL**：`https://aixlau.me/install/bootstrap.sh`、`https://aixlau.me/install/bootstrap.ps1`
+- **ChatGPT 安装脚本 URL**：`https://aixlau.me/install/install-chatgpt.sh`、`https://aixlau.me/install/install-chatgpt.ps1`
 
 ### 图片尺寸建议
 
@@ -160,3 +162,7 @@ cwebp -q 85 output.png -o 02-mac-terminal.webp
   - 替换为新版星链 AI Hub 和 CC Switch 操作截图
   - 优先引导使用「导入到 CCS」一键导入
   - 增加一键导入失败后的 Codex 供应商手动配置步骤
+- **2026-08-01**：增加 ChatGPT 桌面端安装教程
+  - macOS 使用独立脚本下载、校验并打开 OpenAI 官方 DMG
+  - Windows 使用独立脚本打开微软商店的 ChatGPT 页面
+  - 明确 Linux 当前没有官方 ChatGPT 桌面安装包

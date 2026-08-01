@@ -10,6 +10,7 @@ const {
   showErrorMock,
   showWarningMock,
   showSuccessMock,
+  routeState,
 } = vi.hoisted(() => ({
   getPublicSettingsMock: vi.fn(),
   pushMock: vi.fn(),
@@ -17,15 +18,16 @@ const {
   showErrorMock: vi.fn(),
   showWarningMock: vi.fn(),
   showSuccessMock: vi.fn(),
+  routeState: {
+    query: {} as Record<string, unknown>,
+  },
 }))
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({
     push: pushMock,
     currentRoute: {
-      value: {
-        query: {},
-      },
+      value: routeState,
     },
   }),
 }))
@@ -82,6 +84,7 @@ describe('LoginView visual baseline', () => {
     showErrorMock.mockReset()
     showWarningMock.mockReset()
     showSuccessMock.mockReset()
+    routeState.query = {}
 
     getPublicSettingsMock.mockResolvedValue({
       turnstile_enabled: false,
@@ -112,6 +115,8 @@ describe('LoginView visual baseline', () => {
               '<div><p>{{ eyebrow }}</p><h2>{{ title }}</h2><span>{{ subtitle }}</span><slot /><slot name="footer" /></div>',
           },
           RouterLink: {
+            name: 'RouterLink',
+            props: ['to'],
             template: '<a><slot /></a>',
           },
           Icon: true,
@@ -148,6 +153,22 @@ describe('LoginView visual baseline', () => {
     expect(html).toContain('auth-secondary-link')
     expect(text).toContain('邮箱')
     expect(text).toContain('还没有账户？')
+  })
+
+  it('keeps the client setup redirect when the user opens registration', async () => {
+    const redirect = '/client-setup?setup_id=setup-123&device_code=ABCD-1234&client=codex'
+    routeState.query = { redirect }
+
+    const wrapper = mountLoginView()
+    await flushPromises()
+
+    const registerLink = wrapper
+      .findAllComponents({ name: 'RouterLink' })
+      .find((link) => link.props('to')?.path === '/register')
+    expect(registerLink?.props('to')).toEqual({
+      path: '/register',
+      query: { redirect },
+    })
   })
 
   it('blocks backend login until the current login agreement revision is accepted', async () => {

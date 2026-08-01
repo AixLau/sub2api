@@ -343,6 +343,16 @@ function Try-AutoApiKey {
         return ""
     }
 
+    $WaitSeconds = 540
+    $ExpiresIn = 0
+    if ($Session.PSObject.Properties.Name -contains "expires_in") {
+        [void][int]::TryParse([string]$Session.expires_in, [ref]$ExpiresIn)
+    }
+    if ($ExpiresIn -gt 30) {
+        $WaitSeconds = $ExpiresIn - 15
+    }
+    $WaitSeconds = [Math]::Min(600, [Math]::Max(30, $WaitSeconds))
+
     Write-Host ""
     Write-Host "正在打开浏览器完成授权。"
     Write-Host "如果浏览器没有自动打开，请手动打开："
@@ -368,7 +378,7 @@ function Try-AutoApiKey {
     }
 
     $SetupToken = ""
-    $Deadline = (Get-Date).AddSeconds(120)
+    $Deadline = (Get-Date).AddSeconds($WaitSeconds)
     try {
         while ((Get-Date) -lt $Deadline) {
             if ($Listener.IsListening) {
