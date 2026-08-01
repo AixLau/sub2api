@@ -11,8 +11,15 @@ import {
 } from '../designTokens'
 
 describe('design token theme invariants', () => {
+  it('keeps the pre-token product palette as the site-wide base', () => {
+    expect(brandColors['500']).toBe('#14B8A6')
+    expect(brandColors['600']).toBe('#0D9488')
+    expect(semanticColors.light['line-focus']).toBe(brandColors['500'])
+    expect(semanticColors.light['status-info']).toBe(brandColors['600'])
+  })
+
   it('keeps scrims dark instead of following inverse surfaces', () => {
-    expect(semanticColors.light['surface-scrim']).toBe('#050816')
+    expect(semanticColors.light['surface-scrim']).toBe('#020617')
     expect(semanticColors.dark['surface-scrim']).toBe('#000000')
     expect(semanticColors.dark['surface-scrim']).not.toBe(semanticColors.dark['surface-inverse'])
   })

@@ -3,6 +3,7 @@ import plugin from 'tailwindcss/plugin.js'
 
 const require = createRequire(import.meta.url)
 const designTokens = require('./design-tokens.json')
+const tailwindColors = require('tailwindcss/colors')
 
 const rgbChannels = (hex) => {
   const normalized = hex.replace('#', '')
@@ -66,26 +67,26 @@ export default {
   theme: {
     extend: {
       colors: {
-        // 兼容层：旧 primary/gray/dark 类名继续有效，值由统一令牌驱动。
+        // Keep the product palette token-driven without remapping Tailwind's identity colors.
         primary: variableScale('brand', designTokens.brand),
         brand: variableScale('brand', designTokens.brand),
-        blue: variableScale('brand', designTokens.brand),
-        indigo: variableScale('brand', designTokens.brand),
+        blue: tailwindColors.blue,
+        indigo: tailwindColors.indigo,
         accent: variableScale('accent', designTokens.accent),
-        cyan: variableScale('accent', designTokens.accent),
-        teal: variableScale('accent', designTokens.accent),
+        cyan: tailwindColors.cyan,
+        teal: tailwindColors.teal,
         gray: variableScale('neutral', designTokens.neutral),
-        slate: variableScale('neutral', designTokens.neutral),
+        slate: tailwindColors.slate,
         dark: variableScale('navy', designTokens.navy),
         success: variableScale('success', designTokens.success),
-        green: variableScale('success', designTokens.success),
-        emerald: variableScale('success', designTokens.success),
+        green: tailwindColors.green,
+        emerald: tailwindColors.emerald,
         warning: variableScale('warning', designTokens.warning),
-        amber: variableScale('warning', designTokens.warning),
-        yellow: variableScale('warning', designTokens.warning),
+        amber: tailwindColors.amber,
+        yellow: tailwindColors.yellow,
         danger: variableScale('danger', designTokens.danger),
-        red: variableScale('danger', designTokens.danger),
-        rose: variableScale('danger', designTokens.danger),
+        red: tailwindColors.red,
+        rose: tailwindColors.rose,
         platform: Object.fromEntries(
           Object.keys(designTokens.platform).map((name) => [name, variableColor(`platform-${name}`)])
         ),

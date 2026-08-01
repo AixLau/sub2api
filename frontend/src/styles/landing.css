@@ -11,9 +11,9 @@
   --brand: rgb(var(--brand-channels));
   --brand-hover: rgb(var(--color-brand-600));
   --brand-soft: rgb(var(--brand-channels) / 0.09);
-  --button-bg: var(--brand);
-  --button-text: rgb(var(--color-content-on-brand));
-  --border-soft: rgb(var(--color-navy-950) / 0.1);
+  --button-bg: #0a0a0a;
+  --button-text: #ffffff;
+  --border-soft: rgba(0, 0, 0, 0.08);
   --success-channels: var(--color-status-success);
   --success: rgb(var(--success-channels));
   min-width: 320px;
@@ -320,7 +320,7 @@
   content: '';
   background:
     radial-gradient(circle at 50% 48%, rgba(255, 255, 255, 0.2), transparent 33%),
-    linear-gradient(180deg, rgba(0, 51, 255, 0.08), rgba(255, 255, 255, 0.18));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.18));
   pointer-events: none;
 }
 

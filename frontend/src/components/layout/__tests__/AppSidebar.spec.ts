@@ -53,8 +53,10 @@ describe('AppSidebar active indicator', () => {
   it('measures the active link and animates a vertical indicator', () => {
     expect(componentSource).toContain('class="sidebar-active-indicator"')
     expect(componentSource).toContain("querySelector<HTMLElement>('.sidebar-link-active')")
-    expect(componentSource).toContain('activeItem.offsetTop + 4')
+    expect(componentSource).toContain('activeItemRect.top - navRect.top + nav.scrollTop + 4')
+    expect(componentSource).not.toContain('activeItem.offsetTop + 4')
     expect(componentSource).toContain('activeItem.offsetHeight - 8')
+    expect(componentSource).toMatch(/\.sidebar-active-indicator \{[\s\S]*?top: 0;/)
     expect(componentSource).toContain('transform 250ms')
     expect(componentSource).toContain('previousIndicatorTop')
     expect(componentSource).toContain('previousIndicatorHeight')

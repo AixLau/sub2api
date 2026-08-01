@@ -959,7 +959,9 @@ function scheduleIndicatorMeasurement(animate = true) {
         return
       }
 
-      const nextTop = activeItem.offsetTop + 4
+      const navRect = nav.getBoundingClientRect()
+      const activeItemRect = activeItem.getBoundingClientRect()
+      const nextTop = activeItemRect.top - navRect.top + nav.scrollTop + 4
       const nextHeight = Math.max(activeItem.offsetHeight - 8, 16)
 
       if (!animate) {
@@ -1067,6 +1069,7 @@ onBeforeUnmount(() => {
 .sidebar-active-indicator {
   position: absolute;
   z-index: 1;
+  top: 0;
   left: 0.25rem;
   width: 3px;
   border-radius: 9999px;
