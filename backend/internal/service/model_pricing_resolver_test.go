@@ -266,6 +266,47 @@ func TestResolve_WithChannelOverride_TokenFlat(t *testing.T) {
 	require.Zero(t, resolved.BasePricing.OutputPricePerTokenPriority)
 }
 
+func TestResolve_WithChannelOverride_NormalizesOpenAIDisplayAlias(t *testing.T) {
+	const groupID = int64(100)
+	repo := &mockChannelRepository{
+		listAllFn: func(_ context.Context) ([]Channel, error) {
+			return []Channel{{
+				ID:       1,
+				Name:     "test-channel",
+				Status:   StatusActive,
+				GroupIDs: []int64{groupID},
+				ModelPricing: []ChannelModelPricing{{
+					Platform:    PlatformOpenAI,
+					Models:      []string{"gpt-5.6-sol"},
+					BillingMode: BillingModeToken,
+					InputPrice:  testPtrFloat64(6e-6),
+				}},
+			}}, nil
+		},
+		getGroupPlatformsFn: func(_ context.Context, _ []int64) (map[int64]string, error) {
+			return map[int64]string{groupID: PlatformOpenAI}, nil
+		},
+	}
+	cs := NewChannelService(repo, nil, nil, nil)
+	bs := newTestBillingServiceForResolver()
+	bs.fallbackPrices["gpt-5.6-sol"] = &ModelPricing{
+		InputPricePerToken:     5e-6,
+		OutputPricePerToken:    30e-6,
+		CacheReadPricePerToken: 0.5e-6,
+	}
+	r := NewModelPricingResolver(cs, bs)
+
+	resolved := r.Resolve(context.Background(), PricingInput{
+		Model:   "GPT 5.6 sol",
+		GroupID: groupIDPtr(),
+	})
+
+	require.NotNil(t, resolved)
+	require.Equal(t, PricingSourceChannel, resolved.Source)
+	require.NotNil(t, resolved.BasePricing)
+	require.InDelta(t, 6e-6, resolved.BasePricing.InputPricePerToken, 1e-12)
+}
+
 func TestResolve_WithChannelOverride_TokenPartialOverride(t *testing.T) {
 	// Channel only sets InputPrice; OutputPrice should remain from the base (LiteLLM/fallback).
 	r := newResolverWithChannel(t, []ChannelModelPricing{{

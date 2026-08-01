@@ -675,6 +675,24 @@ func TestGetChannelModelPricing_CaseInsensitive(t *testing.T) {
 	require.Equal(t, int64(100), result.ID)
 }
 
+func TestGetChannelModelPricing_NormalizesOpenAIAlias(t *testing.T) {
+	ch := Channel{
+		ID:       1,
+		Status:   StatusActive,
+		GroupIDs: []int64{10},
+		ModelPricing: []ChannelModelPricing{
+			{ID: 100, Platform: PlatformOpenAI, Models: []string{"gpt-5.6-sol"}, InputPrice: testPtrFloat64(6e-6)},
+		},
+	}
+	repo := makeStandardRepo(ch, map[int64]string{10: PlatformOpenAI})
+	svc := newTestChannelService(repo)
+
+	result := svc.GetChannelModelPricing(context.Background(), 10, "GPT 5.6 sol")
+	require.NotNil(t, result)
+	require.Equal(t, int64(100), result.ID)
+	require.InDelta(t, 6e-6, *result.InputPrice, 1e-12)
+}
+
 func TestGetChannelModelPricing_NormalizesDotsAndHyphens(t *testing.T) {
 	ch := Channel{
 		ID:       1,

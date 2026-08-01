@@ -60,10 +60,14 @@ type channelModelKey struct {
 	model    string // lowercase
 }
 
-// normalizeChannelPricingModelName makes Anthropic's dot and hyphen spelling
-// differences equivalent in channel pricing cache keys.
+// normalizeChannelPricingModelName makes provider model aliases equivalent in
+// channel pricing cache keys. OpenAI model names are normalized with the same
+// canonical spelling used by the global pricing catalog.
 func normalizeChannelPricingModelName(model string) string {
 	model = strings.ToLower(strings.TrimSpace(model))
+	if canonical := canonicalizeOpenAIModelAliasSpelling(model); canonical != "" {
+		model = canonical
+	}
 	if strings.HasPrefix(model, "claude-") {
 		model = strings.ReplaceAll(model, ".", "-")
 	}
