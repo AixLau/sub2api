@@ -237,6 +237,8 @@ describe('user dashboard cost visibility', () => {
       spacing: 2,
       hoverOffset: 4,
     })
+    expect(chartData.datasets[0].backgroundColor[0]).toBe('#3B82F6')
+    expect(chartData.datasets[0].backgroundColor[1]).toBe('#20D9A0')
     expect(wrapper.get('[data-testid="user-model-ring-center"]').text()).toContain('300')
   })
 
