@@ -208,9 +208,19 @@
           </div>
         </template>
 
-        <!-- 合并首字/总耗时的健康度列，阶段明细通过时钟按钮按需查看 -->
+        <!-- 合并首字/总耗时的健康度列，悬浮整块延迟信息查看阶段明细 -->
         <template #cell-latency="{ row }">
-          <div class="flex items-stretch gap-1.5">
+          <div
+            data-testid="latency-trigger"
+            class="flex items-stretch gap-1.5 rounded-sm"
+            :class="hasPhaseLatency(row) ? 'cursor-help focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500' : ''"
+            :tabindex="hasPhaseLatency(row) ? 0 : undefined"
+            :aria-describedby="hasPhaseLatency(row) ? 'latency-phase-tooltip' : undefined"
+            @mouseenter="showLatencyTooltip($event, row)"
+            @mouseleave="hideLatencyTooltip"
+            @focus="showLatencyTooltip($event, row)"
+            @blur="hideLatencyTooltip"
+          >
             <span
               class="w-1 shrink-0 rounded-full"
               :class="row.first_token_ms != null
@@ -227,38 +237,6 @@
                 <span class="font-medium tabular-nums" :class="LATENCY_TEXT_CLASSES[durationSeverity(row.duration_ms ?? 0)]">{{ formatDuration(row.duration_ms) }}</span>
               </div>
             </div>
-            <HelpTooltip v-if="hasPhaseLatency(row)" trigger="click" width-class="w-72">
-              <template #trigger>
-                <button
-                  type="button"
-                  class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-blue-50 hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-500 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
-                  :aria-label="t('usage.phaseDetails')"
-                  :title="t('usage.phaseDetails')"
-                >
-                  <Icon name="clock" size="xs" />
-                </button>
-              </template>
-              <div data-testid="latency-phase-details" class="space-y-2 pr-1">
-                <div class="border-b border-gray-700 pb-1.5 text-xs font-semibold text-gray-200">
-                  {{ t('usage.phaseDetailsTitle') }}
-                </div>
-                <div class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-xs">
-                  <span class="text-gray-400">{{ t('usage.phaseUserQueue') }}</span>
-                  <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(row.user_queue_wait_ms) }}</span>
-                  <span class="text-gray-400">{{ t('usage.phaseAccountQueue') }}</span>
-                  <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(row.account_queue_wait_ms) }}</span>
-                  <span class="text-gray-400">{{ t('usage.phaseRequestWrite') }}</span>
-                  <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(row.upstream_request_write_ms) }}</span>
-                  <span class="text-gray-400">{{ t('usage.phaseResponseHeaders') }}</span>
-                  <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(row.upstream_response_headers_ms) }}</span>
-                  <span class="text-gray-400">{{ t('usage.phaseFirstEvent') }}</span>
-                  <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(row.upstream_first_event_ms) }}</span>
-                </div>
-                <div class="border-t border-gray-700 pt-1.5 text-[10px] leading-4 text-gray-400">
-                  {{ t('usage.phaseTimingHint') }}
-                </div>
-              </div>
-            </HelpTooltip>
           </div>
         </template>
 
@@ -283,6 +261,45 @@
       </DataTable>
     </div>
   </div>
+
+  <!-- Latency Phase Tooltip Portal -->
+  <Teleport to="body">
+    <div
+      v-if="latencyTooltipVisible && latencyTooltipData"
+      id="latency-phase-tooltip"
+      role="tooltip"
+      data-testid="latency-phase-details"
+      class="pointer-events-none fixed z-[9999] -translate-y-1/2"
+      :style="{
+        left: latencyTooltipPosition.x + 'px',
+        top: latencyTooltipPosition.y + 'px'
+      }"
+    >
+      <div class="w-72 rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-xs text-white shadow-xl dark:border-gray-600 dark:bg-gray-800">
+        <div class="space-y-2">
+          <div class="border-b border-gray-700 pb-1.5 font-semibold text-gray-200">
+            {{ t('usage.phaseDetailsTitle') }}
+          </div>
+          <div class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5">
+            <span class="text-gray-400">{{ t('usage.phaseUserQueue') }}</span>
+            <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(latencyTooltipData.user_queue_wait_ms) }}</span>
+            <span class="text-gray-400">{{ t('usage.phaseAccountQueue') }}</span>
+            <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(latencyTooltipData.account_queue_wait_ms) }}</span>
+            <span class="text-gray-400">{{ t('usage.phaseRequestWrite') }}</span>
+            <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(latencyTooltipData.upstream_request_write_ms) }}</span>
+            <span class="text-gray-400">{{ t('usage.phaseResponseHeaders') }}</span>
+            <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(latencyTooltipData.upstream_response_headers_ms) }}</span>
+            <span class="text-gray-400">{{ t('usage.phaseFirstEvent') }}</span>
+            <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(latencyTooltipData.upstream_first_event_ms) }}</span>
+          </div>
+          <div class="border-t border-gray-700 pt-1.5 text-[10px] leading-4 text-gray-400">
+            {{ t('usage.phaseTimingHint') }}
+          </div>
+        </div>
+        <div class="absolute right-full top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-r-[6px] border-t-[6px] border-b-transparent border-r-gray-900 border-t-transparent dark:border-r-gray-800"></div>
+      </div>
+    </div>
+  </Teleport>
 
   <!-- Token Tooltip Portal -->
   <Teleport to="body">
@@ -509,7 +526,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import { formatDateTime, formatReasoningEffort } from '@/utils/format'
 import { formatCacheTokens, formatMultiplier } from '@/utils/formatters'
 import { formatTokenPricePerMillion } from '@/utils/usagePricing'
@@ -637,6 +653,11 @@ const tokenTooltipVisible = ref(false)
 const tokenTooltipPosition = ref({ x: 0, y: 0 })
 const tokenTooltipData = ref<AdminUsageLog | null>(null)
 
+// Tooltip state - latency phases
+const latencyTooltipVisible = ref(false)
+const latencyTooltipPosition = ref({ x: 0, y: 0 })
+const latencyTooltipData = ref<AdminUsageLog | null>(null)
+
 const getRequestTypeLabel = (row: AdminUsageLog): string => {
   const requestType = resolveUsageRequestType(row)
   if (requestType === 'cyber') return t('usage.cyber')
@@ -679,6 +700,21 @@ const hasPhaseLatency = (row: AdminUsageLog): boolean => {
     row.upstream_request_write_ms != null ||
     row.upstream_response_headers_ms != null ||
     row.upstream_first_event_ms != null
+}
+
+const showLatencyTooltip = (event: Event, row: AdminUsageLog) => {
+  if (!hasPhaseLatency(row)) return
+  const target = event.currentTarget as HTMLElement
+  const rect = target.getBoundingClientRect()
+  latencyTooltipData.value = row
+  latencyTooltipPosition.value.x = rect.right + 8
+  latencyTooltipPosition.value.y = rect.top + rect.height / 2
+  latencyTooltipVisible.value = true
+}
+
+const hideLatencyTooltip = () => {
+  latencyTooltipVisible.value = false
+  latencyTooltipData.value = null
 }
 
 // Cost tooltip functions

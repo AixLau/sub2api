@@ -140,7 +140,7 @@ describe('admin UsageTable tooltip', () => {
     } as DOMRect)
   })
 
-  it('keeps the latency cell compact and exposes phase timings on demand', async () => {
+  it('keeps the latency cell compact and exposes phase timings on hover', async () => {
     const wrapper = mount(UsageTable, {
       props: {
         data: [{
@@ -172,16 +172,22 @@ describe('admin UsageTable tooltip', () => {
     expect(summary.text()).toContain('Total')
     expect(summary.text()).not.toContain('User queue')
 
-    const detailsButton = wrapper.find('button[aria-label="View phase timings"]')
-    expect(detailsButton.exists()).toBe(true)
+    const latencyTrigger = wrapper.find('[data-testid="latency-trigger"]')
+    expect(latencyTrigger.attributes('tabindex')).toBe('0')
+    expect(wrapper.find('button[aria-label="View phase timings"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="latency-phase-details"]').exists()).toBe(false)
 
-    await detailsButton.trigger('click')
+    await latencyTrigger.trigger('mouseenter')
     await nextTick()
 
     const details = wrapper.find('[data-testid="latency-phase-details"]')
     expect(details.text()).toContain('User queue')
     expect(details.text()).toContain('3.56s')
     expect(details.text()).toContain('Independent observations')
+
+    await latencyTrigger.trigger('mouseleave')
+    await nextTick()
+    expect(wrapper.find('[data-testid="latency-phase-details"]').exists()).toBe(false)
   })
 
   it('shows the x2.5 marker only for fast-tier rows, excluding long-context billing', () => {
