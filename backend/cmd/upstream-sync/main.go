@@ -297,7 +297,7 @@ func commandRecord(repoRoot string, args []string) error {
 	decision := Decision{
 		SchemaVersion:               1,
 		RecordType:                  "decision",
-		ID:                          "D-" + strings.ReplaceAll(nowRFC3339(), ":", ""),
+		ID:                          "D-" + strings.ReplaceAll(nowRFC3339(), ":", "") + "-" + feature.ID,
 		FeatureID:                   feature.ID,
 		UpstreamFrom:                report.Upstream.From,
 		UpstreamTo:                  report.Upstream.To,
