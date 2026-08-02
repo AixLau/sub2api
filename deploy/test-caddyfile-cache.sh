@@ -60,6 +60,21 @@ if printf '%s\n' "$normalized_config" | grep -Eiq '^flush_interval([[:space:]]|$
 	exit 1
 fi
 
+if ! printf '%s\n' "$normalized_config" | grep -Fq 'handle_errors 502 503 504'; then
+	echo "Caddyfile must provide a structured maintenance response for upstream outages" >&2
+	exit 1
+fi
+
+if ! printf '%s\n' "$normalized_config" | grep -Fq 'service_maintenance'; then
+	echo "Caddyfile maintenance response must expose the service_maintenance error code" >&2
+	exit 1
+fi
+
+if ! printf '%s\n' "$normalized_config" | grep -Fq 'Retry-After 30'; then
+	echo "Caddyfile maintenance response must include Retry-After" >&2
+	exit 1
+fi
+
 encode_directive_count=$(printf '%s\n' "$normalized_config" | awk '$1 == "encode" { count++ } END { print count + 0 }')
 if [ "$encode_directive_count" -ne 1 ]; then
 	echo "Caddyfile must contain exactly one explicit encode block" >&2

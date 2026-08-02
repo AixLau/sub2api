@@ -3,9 +3,12 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"log/slog"
 	"net/http"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -159,8 +162,98 @@ func ProvideHTTPServer(cfg *config.Config, router *gin.Engine) *http.Server {
 		}
 	}
 
-	server.Handler = httpHandler
+	server.Handler = newDrainableHTTPHandler(httpHandler)
 	return server
+}
+
+const (
+	serverMaintenanceMessage    = "Sub2API 正在更新或重启，服务很快恢复，请稍后重试。"
+	serverMaintenanceCode       = "service_maintenance"
+	serverMaintenanceRetryAfter = "30"
+)
+
+// drainableHTTPHandler rejects new requests with a protocol-compatible 503
+// after shutdown has started, while requests already admitted to the wrapped
+// handler are allowed to finish during http.Server.Shutdown.
+type drainableHTTPHandler struct {
+	next     http.Handler
+	draining atomic.Bool
+}
+
+func newDrainableHTTPHandler(next http.Handler) *drainableHTTPHandler {
+	return &drainableHTTPHandler{next: next}
+}
+
+func (h *drainableHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !h.draining.Load() {
+		h.next.ServeHTTP(w, r)
+		return
+	}
+
+	writeServerMaintenanceResponse(w, r)
+}
+
+// MarkHTTPServerDraining stops new requests from entering the application
+// before the listener is closed. It is safe to call more than once.
+func MarkHTTPServerDraining(server *http.Server) bool {
+	if server == nil {
+		return false
+	}
+	drainable, ok := server.Handler.(*drainableHTTPHandler)
+	if !ok {
+		return false
+	}
+	drainable.draining.Store(true)
+	return true
+}
+
+func writeServerMaintenanceResponse(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Retry-After", serverMaintenanceRetryAfter)
+	w.Header().Set("X-Sub2API-Status", "maintenance")
+	w.WriteHeader(http.StatusServiceUnavailable)
+
+	path := ""
+	if r != nil && r.URL != nil {
+		path = strings.ToLower(r.URL.Path)
+	}
+
+	var payload any
+	switch {
+	case path == "/health":
+		payload = map[string]string{
+			"status":  "draining",
+			"message": serverMaintenanceMessage,
+		}
+	case strings.Contains(path, "/messages") || strings.HasPrefix(path, "/anthropic") || strings.HasPrefix(path, "/claude"):
+		payload = map[string]any{
+			"type": "error",
+			"error": map[string]string{
+				"type":    "api_error",
+				"message": serverMaintenanceMessage,
+			},
+		}
+	case strings.HasPrefix(path, "/v1beta") || strings.HasPrefix(path, "/gemini"):
+		payload = map[string]any{
+			"error": map[string]any{
+				"code":    http.StatusServiceUnavailable,
+				"message": serverMaintenanceMessage,
+				"status":  "UNAVAILABLE",
+			},
+		}
+	default:
+		// This is the same compact shape used by the Responses API handler,
+		// so /responses remains parseable even when shutdown races a request.
+		payload = map[string]any{
+			"error": map[string]string{
+				"code":    serverMaintenanceCode,
+				"message": serverMaintenanceMessage,
+			},
+		}
+	}
+
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 func derefInt64(p *int64) int64 {

@@ -19,6 +19,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	serverpkg "github.com/Wei-Shaw/sub2api/internal/server"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/setup"
 	"github.com/Wei-Shaw/sub2api/internal/web"
@@ -182,6 +183,9 @@ func runMainServer() {
 	<-quit
 
 	log.Println("Shutting down server...")
+	if !serverpkg.MarkHTTPServerDraining(app.Server) {
+		log.Println("Warning: HTTP server does not support draining responses")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
