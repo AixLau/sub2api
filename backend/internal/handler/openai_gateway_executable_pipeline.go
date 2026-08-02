@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
@@ -779,6 +780,7 @@ type OpenAIHTTPRoutingStage struct {
 	MaxAccountSwitches         int
 	SwitchCount                *int
 	LastFailoverErr            *service.UpstreamFailoverError
+	ProfitVetoCount            *int
 	UseSimpleFailoverExhausted bool
 	ErrorFormat                openAIHTTPRoutingErrorFormat
 	NoAccountMessage           string
@@ -884,8 +886,25 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 	if s.StreamStarted != nil {
 		streamStartedPtr = s.StreamStarted
 	}
-	releaseFunc, refreshedAccount, acquired, retryable := h.acquireResponsesAccountSlot(c, s.APIKey.GroupID, sessionHash, selection, s.RequestedModel, false, s.RequiredCapability, s.RequiredImageCapability, s.Stream, streamStartedPtr, reqLog)
+	releaseFunc, refreshedAccount, acquired, retryable := h.acquireResponsesAccountSlotForRequest(c, s.APIKey.GroupID, sessionHash, selection, s.RequestedModel, false, s.RequiredCapability, s.RequiredImageCapability, s.Stream, streamStartedPtr, reqLog)
 	if !acquired {
+		if retryable && refreshedAccount != nil {
+			vetoCount := 0
+			if s.ProfitVetoCount != nil {
+				vetoCount = *s.ProfitVetoCount
+			}
+			if !recordOpenAIProfitVeto(failedAccountIDs, refreshedAccount.ID, &vetoCount) {
+				h.handleOpenAIProfitVetoExhausted(c, *streamStartedPtr, reqLog, vetoCount)
+				return ExecutableStageResult{Stop: true}
+			}
+			if s.ProfitVetoCount != nil {
+				*s.ProfitVetoCount = vetoCount
+			}
+			if s.Retry != nil {
+				*s.Retry = true
+			}
+			return ExecutableStageResult{}
+		}
 		if retryable {
 			s.writeOpenAIHTTPRoutingError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many concurrent requests, please retry later")
 		}
@@ -1405,6 +1424,7 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 			RequestPayloadHash: s.RequestPayloadHash,
 			APIKeyService:      h.apiKeyService,
 			QuotaPlatform:      quotaPlatform,
+			PricingAt:          service.OpenAIPricingAtFromContext(ctx),
 			PhaseLatency:       phaseLatency,
 			ChannelUsageFields: s.ChannelUsageFields,
 			CyberBlocked:       s.CyberBlocked,
@@ -1604,6 +1624,9 @@ type OpenAIWebSocketRoutingStage struct {
 	RequestPlatform         string
 	ClientConn              *coderws.Conn
 	LastFailoverErr         *service.UpstreamFailoverError
+	ProfitVetoCount         *int
+	Retry                   *bool
+	AdmittedContext         *context.Context
 	Account                 **service.Account
 	AccountMaxConcurrency   *int
 	CurrentAccountRelease   *func()
@@ -1672,7 +1695,20 @@ func (s OpenAIWebSocketRoutingStage) RunRouting(c *gin.Context) ExecutableStageR
 	if selection.WaitPlan != nil && selection.WaitPlan.MaxConcurrency > 0 {
 		accountMaxConcurrency = selection.WaitPlan.MaxConcurrency
 	}
+	admissionCtx := service.ContextWithSelectionProfitGate(ctx, selection)
 	accountReleaseFunc := selection.ReleaseFunc
+	if selection.Acquired {
+		latest, vetoed, reason := h.gatewayService.ProfitControlVetoLatest(admissionCtx, account)
+		if vetoed {
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
+			}
+			reqLog.Debug("openai.websocket_account_slot_profit_vetoed", zap.Int64("account_id", account.ID), zap.String("reason", reason))
+			return s.retryAfterProfitVeto(account)
+		}
+		account = latest
+		selection.Account = latest
+	}
 	if !selection.Acquired {
 		if selection.WaitPlan == nil {
 			closeOpenAIClientWS(s.ClientConn, coderws.StatusTryAgainLater, "account is busy, please retry later")
@@ -1700,12 +1736,26 @@ func (s OpenAIWebSocketRoutingStage) RunRouting(c *gin.Context) ExecutableStageR
 		selection.Account = refreshed
 		account = refreshed
 		accountReleaseFunc = fastReleaseFunc
+		latest, vetoed, reason := h.gatewayService.ProfitControlVetoLatest(admissionCtx, account)
+		if vetoed {
+			if fastReleaseFunc != nil {
+				fastReleaseFunc()
+			}
+			reqLog.Debug("openai.websocket_account_slot_profit_vetoed", zap.Int64("account_id", account.ID), zap.String("reason", reason))
+			return s.retryAfterProfitVeto(account)
+		}
+		account = latest
+		selection.Account = latest
+	}
+	ctx = admissionCtx
+	if s.AdmittedContext != nil {
+		*s.AdmittedContext = ctx
 	}
 	if s.CurrentAccountRelease != nil {
 		*s.CurrentAccountRelease = wrapReleaseOnDone(ctx, accountReleaseFunc)
 	}
-	if err := h.gatewayService.BindStickySession(ctx, s.APIKey.GroupID, s.SessionHash, account.ID); err != nil {
-		reqLog.Warn("openai.websocket_bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+	if err := h.gatewayService.BindStickySessionAfterProfitAdmission(ctx, s.APIKey.GroupID, s.SessionHash, account.ID); err != nil {
+		reqLog.Warn("openai.websocket_bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 	}
 	if s.StickyPreviousHit != nil {
 		*s.StickyPreviousHit = scheduleDecision.StickyPreviousHit
@@ -1714,7 +1764,7 @@ func (s OpenAIWebSocketRoutingStage) RunRouting(c *gin.Context) ExecutableStageR
 		*s.ScheduleLayer = scheduleDecision.Layer
 	}
 
-	token, _, tokenErr := h.gatewayService.GetAccessToken(ctx, account)
+	token, _, tokenErr := h.gatewayService.GetRequestCredential(ctx, c, account)
 	if tokenErr != nil {
 		reqLog.Warn("openai.websocket_get_access_token_failed", zap.Int64("account_id", account.ID), zap.Error(tokenErr))
 		closeOpenAIClientWS(s.ClientConn, coderws.StatusInternalError, "failed to get access token")
@@ -1733,6 +1783,24 @@ func (s OpenAIWebSocketRoutingStage) RunRouting(c *gin.Context) ExecutableStageR
 	}
 	if s.Token != nil {
 		*s.Token = token
+	}
+	return ExecutableStageResult{}
+}
+
+func (s OpenAIWebSocketRoutingStage) retryAfterProfitVeto(account *service.Account) ExecutableStageResult {
+	count := 0
+	if s.ProfitVetoCount != nil {
+		count = *s.ProfitVetoCount
+	}
+	if !recordOpenAIProfitVeto(s.FailedAccountIDs, account.ID, &count) {
+		closeOpenAIClientWS(s.ClientConn, coderws.StatusTryAgainLater, "no available account")
+		return ExecutableStageResult{Stop: true}
+	}
+	if s.ProfitVetoCount != nil {
+		*s.ProfitVetoCount = count
+	}
+	if s.Retry != nil {
+		*s.Retry = true
 	}
 	return ExecutableStageResult{}
 }
@@ -1823,6 +1891,7 @@ type OpenAIWebSocketUsageStage struct {
 	UserAgent            string
 	ClientIP             string
 	SessionID            string
+	PricingAt            time.Time
 }
 
 func (OpenAIWebSocketUsageStage) StageName() string {
@@ -1921,6 +1990,7 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 			RequestPayloadHash: s.RequestPayloadHash,
 			APIKeyService:      h.apiKeyService,
 			QuotaPlatform:      quotaPlatform,
+			PricingAt:          s.PricingAt,
 			PhaseLatency:       phaseLatency,
 			ChannelUsageFields: s.ChannelMapping.ToUsageFields(s.Model, upstreamModel),
 			CyberBlocked:       cyberBlocked,

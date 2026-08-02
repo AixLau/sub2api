@@ -897,6 +897,7 @@ func (s GatewayUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 				LongContextMultiplier: s.LongContextMultiplier,
 				ForceCacheBilling:     s.ForceCacheBilling,
 				APIKeyService:         s.APIKeyService,
+				PricingAt:             service.GatewayTokenRequestPricingAtFromContext(ctx),
 				PhaseLatency:          phaseLatency,
 				ChannelUsageFields:    s.ChannelUsageFields,
 			})
@@ -916,6 +917,7 @@ func (s GatewayUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 				RequestPayloadHash: s.RequestPayloadHash,
 				ForceCacheBilling:  s.ForceCacheBilling,
 				APIKeyService:      s.APIKeyService,
+				PricingAt:          service.GatewayTokenRequestPricingAtFromContext(ctx),
 				PhaseLatency:       phaseLatency,
 				ChannelUsageFields: s.ChannelUsageFields,
 			})

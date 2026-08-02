@@ -151,10 +151,15 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
+	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
+
+	// 分组利润控制：chat completions 文本入口请求级装门并固定 pricingAt。
+	ccPricingCtx, _ := h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
+	c.Request = c.Request.WithContext(ccPricingCtx)
 
 	for {
 		var account *service.Account
@@ -177,6 +182,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			MaxAccountSwitches:   maxAccountSwitches,
 			SwitchCount:          &switchCount,
 			LastFailoverErr:      lastFailoverErr,
+			ProfitVetoCount:      &profitVetoCount,
 			LogPrefix:            "openai_chat_completions",
 			Account:              &account,
 			AccountReleaseFunc:   &accountReleaseFunc,
