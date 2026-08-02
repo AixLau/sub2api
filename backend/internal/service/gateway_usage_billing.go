@@ -714,14 +714,15 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, multiplier, timezone.Now())
 
 	// 确定计费模型
-	concreteBillingModel := forwardResultBillingModel(result.Model, result.UpstreamModel)
-	billingModel := concreteBillingModel
-	if input.BillingModelSource == BillingModelSourceChannelMapped && input.ChannelMappedModel != "" {
-		billingModel = input.ChannelMappedModel
-	}
-	if input.BillingModelSource == BillingModelSourceRequested && input.OriginalModel != "" {
-		billingModel = input.OriginalModel
-	}
+	concreteBillingModel := firstNonEmptyUsageModel(result.UpstreamModel, result.Model)
+	billingModel := usageBillingModelForSource(
+		input.BillingModelSource,
+		input.OriginalModel,
+		input.ChannelMappedModel,
+		result.Model,
+		result.UpstreamModel,
+		"",
+	)
 	// composite 分组的公开别名（如 all/claude）会经 OriginalModel/ChannelMappedModel
 	// 进入上面的来源覆盖：任意别名查无价会静默落 $0，含家族词的别名则被价格表的
 	// 家族模糊匹配错计（如 Opus 流量按 Sonnet 兜底价）。除非管理员为别名显式配置了

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"log/slog"
-	"strings"
 )
 
 // PricingSource 定价来源标识
@@ -68,16 +67,6 @@ func (r *ModelPricingResolver) Resolve(ctx context.Context, input PricingInput) 
 	var chPricing *ChannelModelPricing
 	if input.GroupID != nil && r.channelService != nil {
 		chPricing = r.channelService.GetChannelModelPricing(ctx, *input.GroupID, input.Model)
-		// OpenAI Codex aliases can be accepted by the gateway and normalized
-		// before forwarding (for example, gpt-5.6-sol-<suffix> -> gpt-5.6-sol).
-		// Try that canonical target before falling back to the global catalog;
-		// otherwise a global family price can win and hide the administrator's
-		// channel price for the mapped target.
-		if chPricing == nil {
-			if canonical := normalizeKnownOpenAICodexModel(input.Model); canonical != "" && !strings.EqualFold(canonical, input.Model) {
-				chPricing = r.channelService.GetChannelModelPricing(ctx, *input.GroupID, canonical)
-			}
-		}
 		if chPricing != nil {
 			mode := chPricing.BillingMode
 			if mode == "" {

@@ -169,16 +169,14 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 
 	var cost *CostBreakdown
 	var err error
-	billingModel := forwardResultBillingModel(result.Model, result.UpstreamModel)
-	if result.BillingModel != "" {
-		billingModel = strings.TrimSpace(result.BillingModel)
-	}
-	if input.BillingModelSource == BillingModelSourceChannelMapped && input.ChannelMappedModel != "" && input.ChannelMappedModel != input.OriginalModel {
-		billingModel = input.ChannelMappedModel
-	}
-	if input.BillingModelSource == BillingModelSourceRequested && input.OriginalModel != "" {
-		billingModel = input.OriginalModel
-	}
+	billingModel := usageBillingModelForSource(
+		input.BillingModelSource,
+		input.OriginalModel,
+		input.ChannelMappedModel,
+		result.Model,
+		result.UpstreamModel,
+		result.BillingModel,
+	)
 	billingModels := usageBillingModelCandidates(
 		billingModel,
 		result.BillingModel,

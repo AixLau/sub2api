@@ -252,6 +252,65 @@ func TestGatewayServiceRecordUsage_PreservesLoopedChannelAndAccountUpstreamModel
 	require.Equal(t, "gpt-5.6-sol", *usageRepo.lastLog.UpstreamModel)
 }
 
+func TestGatewayServiceRecordUsage_ChannelMappedUsesGenericFinalMappingTargetPricing(t *testing.T) {
+	const (
+		groupID        = int64(1119)
+		requestedModel = "customer-facing-alias"
+		mappedModel    = "provider-priced-target"
+	)
+	channelInputPrice := 7e-6
+	channelOutputPrice := 35e-6
+
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newGatewayRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	svc.billingService.fallbackPrices[requestedModel] = &ModelPricing{
+		InputPricePerToken:  1e-6,
+		OutputPricePerToken: 5e-6,
+	}
+	cache := newEmptyChannelCache()
+	cache.pricingByGroupModel[channelModelKey{groupID: groupID, model: mappedModel}] = &ChannelModelPricing{
+		BillingMode: BillingModeToken,
+		InputPrice:  &channelInputPrice,
+		OutputPrice: &channelOutputPrice,
+	}
+	cache.channelByGroupID[groupID] = &Channel{ID: groupID, Status: StatusActive}
+	cache.groupPlatform[groupID] = ""
+	cache.loadedAt = time.Now()
+	channelService := &ChannelService{}
+	channelService.cache.Store(cache)
+	svc.resolver = NewModelPricingResolver(channelService, svc.billingService)
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID:     "gateway_generic_mapped_target_pricing",
+			Usage:         ClaudeUsage{InputTokens: 20, OutputTokens: 10},
+			Model:         requestedModel,
+			UpstreamModel: mappedModel,
+			Duration:      time.Second,
+		},
+		APIKey: &APIKey{
+			ID:      501,
+			Quota:   100,
+			GroupID: i64p(groupID),
+			Group:   &Group{ID: groupID, RateMultiplier: 1},
+		},
+		User:    &User{ID: 601},
+		Account: &Account{ID: 701},
+		ChannelUsageFields: ChannelUsageFields{
+			ChannelID:          1,
+			OriginalModel:      requestedModel,
+			ChannelMappedModel: requestedModel,
+			BillingModelSource: BillingModelSourceChannelMapped,
+			ModelMappingChain:  requestedModel + "→" + mappedModel,
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.InDelta(t, 20*channelInputPrice, usageRepo.lastLog.InputCost, 1e-12)
+	require.InDelta(t, 10*channelOutputPrice, usageRepo.lastLog.OutputCost, 1e-12)
+}
+
 func TestGatewayServiceRecordUsage_EmptyImageSizeDefaultsBeforeBillingAndPersistence(t *testing.T) {
 	imagePrice2K := 0.19
 	groupID := int64(901)
