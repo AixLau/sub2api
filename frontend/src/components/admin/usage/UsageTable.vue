@@ -208,9 +208,9 @@
           </div>
         </template>
 
-        <!-- 合并首字/总耗时的健康度列：左侧色条上端随首字档、下端随总耗时档，中段(40%-60%)短渐变过渡，便于纵向扫视整体健康状况 -->
+        <!-- 合并首字/总耗时的健康度列，阶段明细通过时钟按钮按需查看 -->
         <template #cell-latency="{ row }">
-          <div class="flex items-stretch gap-2">
+          <div class="flex items-stretch gap-1.5">
             <span
               class="w-1 shrink-0 rounded-full"
               :class="row.first_token_ms != null
@@ -219,21 +219,46 @@
               aria-hidden="true"
             ></span>
             <div class="min-w-0">
-              <div class="grid grid-cols-[max-content_max-content] items-baseline gap-x-2 gap-y-0.5 text-xs">
+              <div data-testid="latency-summary" class="grid grid-cols-[max-content_max-content] items-baseline gap-x-2 gap-y-0.5 text-xs">
                 <span class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyFirstToken') }}</span>
                 <span v-if="row.first_token_ms != null" class="font-medium tabular-nums" :class="LATENCY_TEXT_CLASSES[firstTokenSeverity(row.first_token_ms)]">{{ formatDuration(row.first_token_ms) }}</span>
                 <span v-else class="text-gray-400 dark:text-gray-500">-</span>
                 <span class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyDuration') }}</span>
                 <span class="font-medium tabular-nums" :class="LATENCY_TEXT_CLASSES[durationSeverity(row.duration_ms ?? 0)]">{{ formatDuration(row.duration_ms) }}</span>
               </div>
-              <div v-if="hasPhaseLatency(row)" class="mt-1 grid grid-cols-[max-content_max-content] gap-x-2 gap-y-0.5 text-[10px] leading-4 text-gray-400 dark:text-gray-500">
-                <span>{{ t('usage.phaseUserQueue') }}</span><span class="tabular-nums">{{ formatDuration(row.user_queue_wait_ms) }}</span>
-                <span>{{ t('usage.phaseAccountQueue') }}</span><span class="tabular-nums">{{ formatDuration(row.account_queue_wait_ms) }}</span>
-                <span>{{ t('usage.phaseRequestWrite') }}</span><span class="tabular-nums">{{ formatDuration(row.upstream_request_write_ms) }}</span>
-                <span>{{ t('usage.phaseResponseHeaders') }}</span><span class="tabular-nums">{{ formatDuration(row.upstream_response_headers_ms) }}</span>
-                <span>{{ t('usage.phaseFirstEvent') }}</span><span class="tabular-nums">{{ formatDuration(row.upstream_first_event_ms) }}</span>
-              </div>
             </div>
+            <HelpTooltip v-if="hasPhaseLatency(row)" trigger="click" width-class="w-72">
+              <template #trigger>
+                <button
+                  type="button"
+                  class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-blue-50 hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-500 dark:hover:bg-blue-900/30 dark:hover:text-blue-400"
+                  :aria-label="t('usage.phaseDetails')"
+                  :title="t('usage.phaseDetails')"
+                >
+                  <Icon name="clock" size="xs" />
+                </button>
+              </template>
+              <div data-testid="latency-phase-details" class="space-y-2 pr-1">
+                <div class="border-b border-gray-700 pb-1.5 text-xs font-semibold text-gray-200">
+                  {{ t('usage.phaseDetailsTitle') }}
+                </div>
+                <div class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-xs">
+                  <span class="text-gray-400">{{ t('usage.phaseUserQueue') }}</span>
+                  <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(row.user_queue_wait_ms) }}</span>
+                  <span class="text-gray-400">{{ t('usage.phaseAccountQueue') }}</span>
+                  <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(row.account_queue_wait_ms) }}</span>
+                  <span class="text-gray-400">{{ t('usage.phaseRequestWrite') }}</span>
+                  <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(row.upstream_request_write_ms) }}</span>
+                  <span class="text-gray-400">{{ t('usage.phaseResponseHeaders') }}</span>
+                  <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(row.upstream_response_headers_ms) }}</span>
+                  <span class="text-gray-400">{{ t('usage.phaseFirstEvent') }}</span>
+                  <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(row.upstream_first_event_ms) }}</span>
+                </div>
+                <div class="border-t border-gray-700 pt-1.5 text-[10px] leading-4 text-gray-400">
+                  {{ t('usage.phaseTimingHint') }}
+                </div>
+              </div>
+            </HelpTooltip>
           </div>
         </template>
 
@@ -484,6 +509,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import { formatDateTime, formatReasoningEffort } from '@/utils/format'
 import { formatCacheTokens, formatMultiplier } from '@/utils/formatters'
 import { formatTokenPricePerMillion } from '@/utils/usagePricing'

@@ -58,6 +58,16 @@ const messages: Record<string, string> = {
   'usage.platformAudit': 'Platform audit',
   'usage.platformTest': 'Platform test',
   'usage.modelCost': 'Model cost',
+  'usage.latencyFirstToken': 'First',
+  'usage.latencyDuration': 'Total',
+  'usage.phaseDetails': 'View phase timings',
+  'usage.phaseDetailsTitle': 'Phase timings',
+  'usage.phaseTimingHint': 'Independent observations; do not add directly',
+  'usage.phaseUserQueue': 'User queue',
+  'usage.phaseAccountQueue': 'Account queue',
+  'usage.phaseRequestWrite': 'Request write',
+  'usage.phaseResponseHeaders': 'Response headers',
+  'usage.phaseFirstEvent': 'First semantic event',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -81,6 +91,7 @@ const DataTableStub = {
         <slot name="cell-billing_mode" :row="row" />
         <slot name="cell-tokens" :row="row" />
         <slot name="cell-cost" :row="row" />
+        <slot name="cell-latency" :row="row" />
       </div>
     </div>
   `,
@@ -127,6 +138,50 @@ describe('admin UsageTable tooltip', () => {
       height: 20,
       toJSON: () => ({}),
     } as DOMRect)
+  })
+
+  it('keeps the latency cell compact and exposes phase timings on demand', async () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          ...baseImageRow,
+          request_id: 'req-latency-phases',
+          first_token_ms: 3680,
+          duration_ms: 23550,
+          user_queue_wait_ms: 0,
+          account_queue_wait_ms: 0,
+          upstream_request_write_ms: 10,
+          upstream_response_headers_ms: 3560,
+          upstream_first_event_ms: 3650,
+        }],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    const summary = wrapper.find('[data-testid="latency-summary"]')
+    expect(summary.text()).toContain('First')
+    expect(summary.text()).toContain('Total')
+    expect(summary.text()).not.toContain('User queue')
+
+    const detailsButton = wrapper.find('button[aria-label="View phase timings"]')
+    expect(detailsButton.exists()).toBe(true)
+
+    await detailsButton.trigger('click')
+    await nextTick()
+
+    const details = wrapper.find('[data-testid="latency-phase-details"]')
+    expect(details.text()).toContain('User queue')
+    expect(details.text()).toContain('3.56s')
+    expect(details.text()).toContain('Independent observations')
   })
 
   it('shows the x2.5 marker only for fast-tier rows, excluding long-context billing', () => {
