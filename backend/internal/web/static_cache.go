@@ -44,7 +44,8 @@ func isFingerprintedEmbeddedAssetPath(cleanPath string) bool {
 }
 
 // applyStaticAssetCacheHeaders sets Cache-Control for long-cacheable static paths.
-// index.html / SPA routes must keep no-cache and are not handled here.
+// index.html / SPA routes use no-store because they contain a per-response CSP
+// nonce and are not handled here.
 func applyStaticAssetCacheHeaders(header http.Header, cleanPath string) {
 	if header == nil || !isFingerprintedEmbeddedAssetPath(cleanPath) {
 		return
