@@ -52,7 +52,17 @@ func TestApplyStaticAssetCacheHeaders(t *testing.T) {
 		assert.Equal(t, staticAssetsCacheControl, header.Get("Cache-Control"))
 	})
 
-	for _, path := range []string{"assets/index.js", "logo.png", "favicon.ico", "index.html"} {
+	for _, path := range []string{"assets/index.js", "logo.png", "favicon.ico", "robots.txt"} {
+		path := path
+		t.Run("sets_shared_cache_for_"+path, func(t *testing.T) {
+			t.Parallel()
+			header := make(http.Header)
+			applyStaticAssetCacheHeaders(header, path)
+			assert.Equal(t, unversionedStaticCacheControl, header.Get("Cache-Control"))
+		})
+	}
+
+	for _, path := range []string{"index.html", "dashboard", ""} {
 		path := path
 		t.Run("skips_"+path, func(t *testing.T) {
 			t.Parallel()

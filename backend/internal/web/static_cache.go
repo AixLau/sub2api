@@ -10,7 +10,10 @@ import (
 
 // Vite emits content-hashed filenames under assets/, so the backend can apply
 // immutable caching without relying on a reverse proxy to classify paths.
-const staticAssetsCacheControl = "public, max-age=31536000, immutable"
+const (
+	staticAssetsCacheControl      = "public, max-age=31536000, immutable"
+	unversionedStaticCacheControl = "public, max-age=3600, s-maxage=86400"
+)
 
 // isFingerprintedEmbeddedAssetPath reports whether a cleaned URL path refers to
 // a Vite asset whose filename contains the default eight-character build hash.
@@ -43,12 +46,23 @@ func isFingerprintedEmbeddedAssetPath(cleanPath string) bool {
 	return true
 }
 
-// applyStaticAssetCacheHeaders sets Cache-Control for long-cacheable static paths.
+func isUnversionedEmbeddedStaticPath(cleanPath string) bool {
+	cleanPath = strings.TrimPrefix(cleanPath, "/")
+	return cleanPath != "" && cleanPath != "index.html" && path.Ext(cleanPath) != ""
+}
+
+// applyStaticAssetCacheHeaders sets Cache-Control for embedded static paths.
 // index.html / SPA routes use no-store because they contain a per-response CSP
 // nonce and are not handled here.
 func applyStaticAssetCacheHeaders(header http.Header, cleanPath string) {
-	if header == nil || !isFingerprintedEmbeddedAssetPath(cleanPath) {
+	if header == nil {
 		return
 	}
-	header.Set("Cache-Control", staticAssetsCacheControl)
+	if isFingerprintedEmbeddedAssetPath(cleanPath) {
+		header.Set("Cache-Control", staticAssetsCacheControl)
+		return
+	}
+	if isUnversionedEmbeddedStaticPath(cleanPath) {
+		header.Set("Cache-Control", unversionedStaticCacheControl)
+	}
 }

@@ -739,7 +739,7 @@ func TestFrontendServer_Middleware(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Header().Get("Content-Type"), "image/png")
-		assert.Empty(t, w.Header().Get("Cache-Control"))
+		assert.Equal(t, unversionedStaticCacheControl, w.Header().Get("Cache-Control"))
 
 		entries, err := fs.ReadDir(server.distFS, "assets")
 		require.NoError(t, err)
