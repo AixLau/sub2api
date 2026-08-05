@@ -34,6 +34,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
+	"github.com/Wei-Shaw/sub2api/ent/merchantapiendpoint"
+	"github.com/Wei-Shaw/sub2api/ent/merchantbinding"
+	"github.com/Wei-Shaw/sub2api/ent/merchantintegration"
+	"github.com/Wei-Shaw/sub2api/ent/merchantrechargerecord"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
@@ -109,6 +113,14 @@ type Client struct {
 	IdempotencyRecord *IdempotencyRecordClient
 	// IdentityAdoptionDecision is the client for interacting with the IdentityAdoptionDecision builders.
 	IdentityAdoptionDecision *IdentityAdoptionDecisionClient
+	// MerchantAPIEndpoint is the client for interacting with the MerchantAPIEndpoint builders.
+	MerchantAPIEndpoint *MerchantAPIEndpointClient
+	// MerchantBinding is the client for interacting with the MerchantBinding builders.
+	MerchantBinding *MerchantBindingClient
+	// MerchantIntegration is the client for interacting with the MerchantIntegration builders.
+	MerchantIntegration *MerchantIntegrationClient
+	// MerchantRechargeRecord is the client for interacting with the MerchantRechargeRecord builders.
+	MerchantRechargeRecord *MerchantRechargeRecordClient
 	// PaymentAuditLog is the client for interacting with the PaymentAuditLog builders.
 	PaymentAuditLog *PaymentAuditLogClient
 	// PaymentOrder is the client for interacting with the PaymentOrder builders.
@@ -195,6 +207,10 @@ func (c *Client) init() {
 	c.Group = NewGroupClient(c.config)
 	c.IdempotencyRecord = NewIdempotencyRecordClient(c.config)
 	c.IdentityAdoptionDecision = NewIdentityAdoptionDecisionClient(c.config)
+	c.MerchantAPIEndpoint = NewMerchantAPIEndpointClient(c.config)
+	c.MerchantBinding = NewMerchantBindingClient(c.config)
+	c.MerchantIntegration = NewMerchantIntegrationClient(c.config)
+	c.MerchantRechargeRecord = NewMerchantRechargeRecordClient(c.config)
 	c.PaymentAuditLog = NewPaymentAuditLogClient(c.config)
 	c.PaymentOrder = NewPaymentOrderClient(c.config)
 	c.PaymentProviderInstance = NewPaymentProviderInstanceClient(c.config)
@@ -334,6 +350,10 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		Group:                         NewGroupClient(cfg),
 		IdempotencyRecord:             NewIdempotencyRecordClient(cfg),
 		IdentityAdoptionDecision:      NewIdentityAdoptionDecisionClient(cfg),
+		MerchantAPIEndpoint:           NewMerchantAPIEndpointClient(cfg),
+		MerchantBinding:               NewMerchantBindingClient(cfg),
+		MerchantIntegration:           NewMerchantIntegrationClient(cfg),
+		MerchantRechargeRecord:        NewMerchantRechargeRecordClient(cfg),
 		PaymentAuditLog:               NewPaymentAuditLogClient(cfg),
 		PaymentOrder:                  NewPaymentOrderClient(cfg),
 		PaymentProviderInstance:       NewPaymentProviderInstanceClient(cfg),
@@ -400,6 +420,10 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		Group:                         NewGroupClient(cfg),
 		IdempotencyRecord:             NewIdempotencyRecordClient(cfg),
 		IdentityAdoptionDecision:      NewIdentityAdoptionDecisionClient(cfg),
+		MerchantAPIEndpoint:           NewMerchantAPIEndpointClient(cfg),
+		MerchantBinding:               NewMerchantBindingClient(cfg),
+		MerchantIntegration:           NewMerchantIntegrationClient(cfg),
+		MerchantRechargeRecord:        NewMerchantRechargeRecordClient(cfg),
 		PaymentAuditLog:               NewPaymentAuditLogClient(cfg),
 		PaymentOrder:                  NewPaymentOrderClient(cfg),
 		PaymentProviderInstance:       NewPaymentProviderInstanceClient(cfg),
@@ -462,9 +486,10 @@ func (c *Client) Use(hooks ...Hook) {
 		c.BatchImageJob, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
 		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
 		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
-		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.RedeemCode, c.RewardCampaign, c.RewardCampaignJob,
+		c.IdentityAdoptionDecision, c.MerchantAPIEndpoint, c.MerchantBinding,
+		c.MerchantIntegration, c.MerchantRechargeRecord, c.PaymentAuditLog,
+		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
+		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.RewardCampaign, c.RewardCampaignJob,
 		c.RewardCampaignUserState, c.RewardCampaignVersion, c.RewardSkin,
 		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.SubscriptionRenewal,
 		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
@@ -485,9 +510,10 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.BatchImageJob, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
 		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
 		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
-		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.RedeemCode, c.RewardCampaign, c.RewardCampaignJob,
+		c.IdentityAdoptionDecision, c.MerchantAPIEndpoint, c.MerchantBinding,
+		c.MerchantIntegration, c.MerchantRechargeRecord, c.PaymentAuditLog,
+		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
+		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.RewardCampaign, c.RewardCampaignJob,
 		c.RewardCampaignUserState, c.RewardCampaignVersion, c.RewardSkin,
 		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.SubscriptionRenewal,
 		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
@@ -540,6 +566,14 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.IdempotencyRecord.mutate(ctx, m)
 	case *IdentityAdoptionDecisionMutation:
 		return c.IdentityAdoptionDecision.mutate(ctx, m)
+	case *MerchantAPIEndpointMutation:
+		return c.MerchantAPIEndpoint.mutate(ctx, m)
+	case *MerchantBindingMutation:
+		return c.MerchantBinding.mutate(ctx, m)
+	case *MerchantIntegrationMutation:
+		return c.MerchantIntegration.mutate(ctx, m)
+	case *MerchantRechargeRecordMutation:
+		return c.MerchantRechargeRecord.mutate(ctx, m)
 	case *PaymentAuditLogMutation:
 		return c.PaymentAuditLog.mutate(ctx, m)
 	case *PaymentOrderMutation:
@@ -3644,6 +3678,666 @@ func (c *IdentityAdoptionDecisionClient) mutate(ctx context.Context, m *Identity
 		return (&IdentityAdoptionDecisionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown IdentityAdoptionDecision mutation op: %q", m.Op())
+	}
+}
+
+// MerchantAPIEndpointClient is a client for the MerchantAPIEndpoint schema.
+type MerchantAPIEndpointClient struct {
+	config
+}
+
+// NewMerchantAPIEndpointClient returns a client for the MerchantAPIEndpoint from the given config.
+func NewMerchantAPIEndpointClient(c config) *MerchantAPIEndpointClient {
+	return &MerchantAPIEndpointClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `merchantapiendpoint.Hooks(f(g(h())))`.
+func (c *MerchantAPIEndpointClient) Use(hooks ...Hook) {
+	c.hooks.MerchantAPIEndpoint = append(c.hooks.MerchantAPIEndpoint, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `merchantapiendpoint.Intercept(f(g(h())))`.
+func (c *MerchantAPIEndpointClient) Intercept(interceptors ...Interceptor) {
+	c.inters.MerchantAPIEndpoint = append(c.inters.MerchantAPIEndpoint, interceptors...)
+}
+
+// Create returns a builder for creating a MerchantAPIEndpoint entity.
+func (c *MerchantAPIEndpointClient) Create() *MerchantAPIEndpointCreate {
+	mutation := newMerchantAPIEndpointMutation(c.config, OpCreate)
+	return &MerchantAPIEndpointCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of MerchantAPIEndpoint entities.
+func (c *MerchantAPIEndpointClient) CreateBulk(builders ...*MerchantAPIEndpointCreate) *MerchantAPIEndpointCreateBulk {
+	return &MerchantAPIEndpointCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *MerchantAPIEndpointClient) MapCreateBulk(slice any, setFunc func(*MerchantAPIEndpointCreate, int)) *MerchantAPIEndpointCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &MerchantAPIEndpointCreateBulk{err: fmt.Errorf("calling to MerchantAPIEndpointClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*MerchantAPIEndpointCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &MerchantAPIEndpointCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for MerchantAPIEndpoint.
+func (c *MerchantAPIEndpointClient) Update() *MerchantAPIEndpointUpdate {
+	mutation := newMerchantAPIEndpointMutation(c.config, OpUpdate)
+	return &MerchantAPIEndpointUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *MerchantAPIEndpointClient) UpdateOne(_m *MerchantAPIEndpoint) *MerchantAPIEndpointUpdateOne {
+	mutation := newMerchantAPIEndpointMutation(c.config, OpUpdateOne, withMerchantAPIEndpoint(_m))
+	return &MerchantAPIEndpointUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *MerchantAPIEndpointClient) UpdateOneID(id int64) *MerchantAPIEndpointUpdateOne {
+	mutation := newMerchantAPIEndpointMutation(c.config, OpUpdateOne, withMerchantAPIEndpointID(id))
+	return &MerchantAPIEndpointUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for MerchantAPIEndpoint.
+func (c *MerchantAPIEndpointClient) Delete() *MerchantAPIEndpointDelete {
+	mutation := newMerchantAPIEndpointMutation(c.config, OpDelete)
+	return &MerchantAPIEndpointDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *MerchantAPIEndpointClient) DeleteOne(_m *MerchantAPIEndpoint) *MerchantAPIEndpointDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *MerchantAPIEndpointClient) DeleteOneID(id int64) *MerchantAPIEndpointDeleteOne {
+	builder := c.Delete().Where(merchantapiendpoint.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &MerchantAPIEndpointDeleteOne{builder}
+}
+
+// Query returns a query builder for MerchantAPIEndpoint.
+func (c *MerchantAPIEndpointClient) Query() *MerchantAPIEndpointQuery {
+	return &MerchantAPIEndpointQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeMerchantAPIEndpoint},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a MerchantAPIEndpoint entity by its id.
+func (c *MerchantAPIEndpointClient) Get(ctx context.Context, id int64) (*MerchantAPIEndpoint, error) {
+	return c.Query().Where(merchantapiendpoint.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *MerchantAPIEndpointClient) GetX(ctx context.Context, id int64) *MerchantAPIEndpoint {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryIntegration queries the integration edge of a MerchantAPIEndpoint.
+func (c *MerchantAPIEndpointClient) QueryIntegration(_m *MerchantAPIEndpoint) *MerchantIntegrationQuery {
+	query := (&MerchantIntegrationClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(merchantapiendpoint.Table, merchantapiendpoint.FieldID, id),
+			sqlgraph.To(merchantintegration.Table, merchantintegration.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, merchantapiendpoint.IntegrationTable, merchantapiendpoint.IntegrationColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *MerchantAPIEndpointClient) Hooks() []Hook {
+	return c.hooks.MerchantAPIEndpoint
+}
+
+// Interceptors returns the client interceptors.
+func (c *MerchantAPIEndpointClient) Interceptors() []Interceptor {
+	return c.inters.MerchantAPIEndpoint
+}
+
+func (c *MerchantAPIEndpointClient) mutate(ctx context.Context, m *MerchantAPIEndpointMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&MerchantAPIEndpointCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&MerchantAPIEndpointUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&MerchantAPIEndpointUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&MerchantAPIEndpointDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown MerchantAPIEndpoint mutation op: %q", m.Op())
+	}
+}
+
+// MerchantBindingClient is a client for the MerchantBinding schema.
+type MerchantBindingClient struct {
+	config
+}
+
+// NewMerchantBindingClient returns a client for the MerchantBinding from the given config.
+func NewMerchantBindingClient(c config) *MerchantBindingClient {
+	return &MerchantBindingClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `merchantbinding.Hooks(f(g(h())))`.
+func (c *MerchantBindingClient) Use(hooks ...Hook) {
+	c.hooks.MerchantBinding = append(c.hooks.MerchantBinding, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `merchantbinding.Intercept(f(g(h())))`.
+func (c *MerchantBindingClient) Intercept(interceptors ...Interceptor) {
+	c.inters.MerchantBinding = append(c.inters.MerchantBinding, interceptors...)
+}
+
+// Create returns a builder for creating a MerchantBinding entity.
+func (c *MerchantBindingClient) Create() *MerchantBindingCreate {
+	mutation := newMerchantBindingMutation(c.config, OpCreate)
+	return &MerchantBindingCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of MerchantBinding entities.
+func (c *MerchantBindingClient) CreateBulk(builders ...*MerchantBindingCreate) *MerchantBindingCreateBulk {
+	return &MerchantBindingCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *MerchantBindingClient) MapCreateBulk(slice any, setFunc func(*MerchantBindingCreate, int)) *MerchantBindingCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &MerchantBindingCreateBulk{err: fmt.Errorf("calling to MerchantBindingClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*MerchantBindingCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &MerchantBindingCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for MerchantBinding.
+func (c *MerchantBindingClient) Update() *MerchantBindingUpdate {
+	mutation := newMerchantBindingMutation(c.config, OpUpdate)
+	return &MerchantBindingUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *MerchantBindingClient) UpdateOne(_m *MerchantBinding) *MerchantBindingUpdateOne {
+	mutation := newMerchantBindingMutation(c.config, OpUpdateOne, withMerchantBinding(_m))
+	return &MerchantBindingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *MerchantBindingClient) UpdateOneID(id int64) *MerchantBindingUpdateOne {
+	mutation := newMerchantBindingMutation(c.config, OpUpdateOne, withMerchantBindingID(id))
+	return &MerchantBindingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for MerchantBinding.
+func (c *MerchantBindingClient) Delete() *MerchantBindingDelete {
+	mutation := newMerchantBindingMutation(c.config, OpDelete)
+	return &MerchantBindingDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *MerchantBindingClient) DeleteOne(_m *MerchantBinding) *MerchantBindingDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *MerchantBindingClient) DeleteOneID(id int64) *MerchantBindingDeleteOne {
+	builder := c.Delete().Where(merchantbinding.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &MerchantBindingDeleteOne{builder}
+}
+
+// Query returns a query builder for MerchantBinding.
+func (c *MerchantBindingClient) Query() *MerchantBindingQuery {
+	return &MerchantBindingQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeMerchantBinding},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a MerchantBinding entity by its id.
+func (c *MerchantBindingClient) Get(ctx context.Context, id int64) (*MerchantBinding, error) {
+	return c.Query().Where(merchantbinding.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *MerchantBindingClient) GetX(ctx context.Context, id int64) *MerchantBinding {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryIntegration queries the integration edge of a MerchantBinding.
+func (c *MerchantBindingClient) QueryIntegration(_m *MerchantBinding) *MerchantIntegrationQuery {
+	query := (&MerchantIntegrationClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(merchantbinding.Table, merchantbinding.FieldID, id),
+			sqlgraph.To(merchantintegration.Table, merchantintegration.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, merchantbinding.IntegrationTable, merchantbinding.IntegrationColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryUser queries the user edge of a MerchantBinding.
+func (c *MerchantBindingClient) QueryUser(_m *MerchantBinding) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(merchantbinding.Table, merchantbinding.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, merchantbinding.UserTable, merchantbinding.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *MerchantBindingClient) Hooks() []Hook {
+	return c.hooks.MerchantBinding
+}
+
+// Interceptors returns the client interceptors.
+func (c *MerchantBindingClient) Interceptors() []Interceptor {
+	return c.inters.MerchantBinding
+}
+
+func (c *MerchantBindingClient) mutate(ctx context.Context, m *MerchantBindingMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&MerchantBindingCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&MerchantBindingUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&MerchantBindingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&MerchantBindingDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown MerchantBinding mutation op: %q", m.Op())
+	}
+}
+
+// MerchantIntegrationClient is a client for the MerchantIntegration schema.
+type MerchantIntegrationClient struct {
+	config
+}
+
+// NewMerchantIntegrationClient returns a client for the MerchantIntegration from the given config.
+func NewMerchantIntegrationClient(c config) *MerchantIntegrationClient {
+	return &MerchantIntegrationClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `merchantintegration.Hooks(f(g(h())))`.
+func (c *MerchantIntegrationClient) Use(hooks ...Hook) {
+	c.hooks.MerchantIntegration = append(c.hooks.MerchantIntegration, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `merchantintegration.Intercept(f(g(h())))`.
+func (c *MerchantIntegrationClient) Intercept(interceptors ...Interceptor) {
+	c.inters.MerchantIntegration = append(c.inters.MerchantIntegration, interceptors...)
+}
+
+// Create returns a builder for creating a MerchantIntegration entity.
+func (c *MerchantIntegrationClient) Create() *MerchantIntegrationCreate {
+	mutation := newMerchantIntegrationMutation(c.config, OpCreate)
+	return &MerchantIntegrationCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of MerchantIntegration entities.
+func (c *MerchantIntegrationClient) CreateBulk(builders ...*MerchantIntegrationCreate) *MerchantIntegrationCreateBulk {
+	return &MerchantIntegrationCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *MerchantIntegrationClient) MapCreateBulk(slice any, setFunc func(*MerchantIntegrationCreate, int)) *MerchantIntegrationCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &MerchantIntegrationCreateBulk{err: fmt.Errorf("calling to MerchantIntegrationClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*MerchantIntegrationCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &MerchantIntegrationCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for MerchantIntegration.
+func (c *MerchantIntegrationClient) Update() *MerchantIntegrationUpdate {
+	mutation := newMerchantIntegrationMutation(c.config, OpUpdate)
+	return &MerchantIntegrationUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *MerchantIntegrationClient) UpdateOne(_m *MerchantIntegration) *MerchantIntegrationUpdateOne {
+	mutation := newMerchantIntegrationMutation(c.config, OpUpdateOne, withMerchantIntegration(_m))
+	return &MerchantIntegrationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *MerchantIntegrationClient) UpdateOneID(id int64) *MerchantIntegrationUpdateOne {
+	mutation := newMerchantIntegrationMutation(c.config, OpUpdateOne, withMerchantIntegrationID(id))
+	return &MerchantIntegrationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for MerchantIntegration.
+func (c *MerchantIntegrationClient) Delete() *MerchantIntegrationDelete {
+	mutation := newMerchantIntegrationMutation(c.config, OpDelete)
+	return &MerchantIntegrationDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *MerchantIntegrationClient) DeleteOne(_m *MerchantIntegration) *MerchantIntegrationDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *MerchantIntegrationClient) DeleteOneID(id int64) *MerchantIntegrationDeleteOne {
+	builder := c.Delete().Where(merchantintegration.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &MerchantIntegrationDeleteOne{builder}
+}
+
+// Query returns a query builder for MerchantIntegration.
+func (c *MerchantIntegrationClient) Query() *MerchantIntegrationQuery {
+	return &MerchantIntegrationQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeMerchantIntegration},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a MerchantIntegration entity by its id.
+func (c *MerchantIntegrationClient) Get(ctx context.Context, id int64) (*MerchantIntegration, error) {
+	return c.Query().Where(merchantintegration.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *MerchantIntegrationClient) GetX(ctx context.Context, id int64) *MerchantIntegration {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryEndpoints queries the endpoints edge of a MerchantIntegration.
+func (c *MerchantIntegrationClient) QueryEndpoints(_m *MerchantIntegration) *MerchantAPIEndpointQuery {
+	query := (&MerchantAPIEndpointClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(merchantintegration.Table, merchantintegration.FieldID, id),
+			sqlgraph.To(merchantapiendpoint.Table, merchantapiendpoint.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, merchantintegration.EndpointsTable, merchantintegration.EndpointsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryBindings queries the bindings edge of a MerchantIntegration.
+func (c *MerchantIntegrationClient) QueryBindings(_m *MerchantIntegration) *MerchantBindingQuery {
+	query := (&MerchantBindingClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(merchantintegration.Table, merchantintegration.FieldID, id),
+			sqlgraph.To(merchantbinding.Table, merchantbinding.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, merchantintegration.BindingsTable, merchantintegration.BindingsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRechargeRecords queries the recharge_records edge of a MerchantIntegration.
+func (c *MerchantIntegrationClient) QueryRechargeRecords(_m *MerchantIntegration) *MerchantRechargeRecordQuery {
+	query := (&MerchantRechargeRecordClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(merchantintegration.Table, merchantintegration.FieldID, id),
+			sqlgraph.To(merchantrechargerecord.Table, merchantrechargerecord.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, merchantintegration.RechargeRecordsTable, merchantintegration.RechargeRecordsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *MerchantIntegrationClient) Hooks() []Hook {
+	return c.hooks.MerchantIntegration
+}
+
+// Interceptors returns the client interceptors.
+func (c *MerchantIntegrationClient) Interceptors() []Interceptor {
+	return c.inters.MerchantIntegration
+}
+
+func (c *MerchantIntegrationClient) mutate(ctx context.Context, m *MerchantIntegrationMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&MerchantIntegrationCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&MerchantIntegrationUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&MerchantIntegrationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&MerchantIntegrationDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown MerchantIntegration mutation op: %q", m.Op())
+	}
+}
+
+// MerchantRechargeRecordClient is a client for the MerchantRechargeRecord schema.
+type MerchantRechargeRecordClient struct {
+	config
+}
+
+// NewMerchantRechargeRecordClient returns a client for the MerchantRechargeRecord from the given config.
+func NewMerchantRechargeRecordClient(c config) *MerchantRechargeRecordClient {
+	return &MerchantRechargeRecordClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `merchantrechargerecord.Hooks(f(g(h())))`.
+func (c *MerchantRechargeRecordClient) Use(hooks ...Hook) {
+	c.hooks.MerchantRechargeRecord = append(c.hooks.MerchantRechargeRecord, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `merchantrechargerecord.Intercept(f(g(h())))`.
+func (c *MerchantRechargeRecordClient) Intercept(interceptors ...Interceptor) {
+	c.inters.MerchantRechargeRecord = append(c.inters.MerchantRechargeRecord, interceptors...)
+}
+
+// Create returns a builder for creating a MerchantRechargeRecord entity.
+func (c *MerchantRechargeRecordClient) Create() *MerchantRechargeRecordCreate {
+	mutation := newMerchantRechargeRecordMutation(c.config, OpCreate)
+	return &MerchantRechargeRecordCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of MerchantRechargeRecord entities.
+func (c *MerchantRechargeRecordClient) CreateBulk(builders ...*MerchantRechargeRecordCreate) *MerchantRechargeRecordCreateBulk {
+	return &MerchantRechargeRecordCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *MerchantRechargeRecordClient) MapCreateBulk(slice any, setFunc func(*MerchantRechargeRecordCreate, int)) *MerchantRechargeRecordCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &MerchantRechargeRecordCreateBulk{err: fmt.Errorf("calling to MerchantRechargeRecordClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*MerchantRechargeRecordCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &MerchantRechargeRecordCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for MerchantRechargeRecord.
+func (c *MerchantRechargeRecordClient) Update() *MerchantRechargeRecordUpdate {
+	mutation := newMerchantRechargeRecordMutation(c.config, OpUpdate)
+	return &MerchantRechargeRecordUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *MerchantRechargeRecordClient) UpdateOne(_m *MerchantRechargeRecord) *MerchantRechargeRecordUpdateOne {
+	mutation := newMerchantRechargeRecordMutation(c.config, OpUpdateOne, withMerchantRechargeRecord(_m))
+	return &MerchantRechargeRecordUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *MerchantRechargeRecordClient) UpdateOneID(id int64) *MerchantRechargeRecordUpdateOne {
+	mutation := newMerchantRechargeRecordMutation(c.config, OpUpdateOne, withMerchantRechargeRecordID(id))
+	return &MerchantRechargeRecordUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for MerchantRechargeRecord.
+func (c *MerchantRechargeRecordClient) Delete() *MerchantRechargeRecordDelete {
+	mutation := newMerchantRechargeRecordMutation(c.config, OpDelete)
+	return &MerchantRechargeRecordDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *MerchantRechargeRecordClient) DeleteOne(_m *MerchantRechargeRecord) *MerchantRechargeRecordDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *MerchantRechargeRecordClient) DeleteOneID(id int64) *MerchantRechargeRecordDeleteOne {
+	builder := c.Delete().Where(merchantrechargerecord.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &MerchantRechargeRecordDeleteOne{builder}
+}
+
+// Query returns a query builder for MerchantRechargeRecord.
+func (c *MerchantRechargeRecordClient) Query() *MerchantRechargeRecordQuery {
+	return &MerchantRechargeRecordQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeMerchantRechargeRecord},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a MerchantRechargeRecord entity by its id.
+func (c *MerchantRechargeRecordClient) Get(ctx context.Context, id int64) (*MerchantRechargeRecord, error) {
+	return c.Query().Where(merchantrechargerecord.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *MerchantRechargeRecordClient) GetX(ctx context.Context, id int64) *MerchantRechargeRecord {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryIntegration queries the integration edge of a MerchantRechargeRecord.
+func (c *MerchantRechargeRecordClient) QueryIntegration(_m *MerchantRechargeRecord) *MerchantIntegrationQuery {
+	query := (&MerchantIntegrationClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(merchantrechargerecord.Table, merchantrechargerecord.FieldID, id),
+			sqlgraph.To(merchantintegration.Table, merchantintegration.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, merchantrechargerecord.IntegrationTable, merchantrechargerecord.IntegrationColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryUser queries the user edge of a MerchantRechargeRecord.
+func (c *MerchantRechargeRecordClient) QueryUser(_m *MerchantRechargeRecord) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(merchantrechargerecord.Table, merchantrechargerecord.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, merchantrechargerecord.UserTable, merchantrechargerecord.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *MerchantRechargeRecordClient) Hooks() []Hook {
+	return c.hooks.MerchantRechargeRecord
+}
+
+// Interceptors returns the client interceptors.
+func (c *MerchantRechargeRecordClient) Interceptors() []Interceptor {
+	return c.inters.MerchantRechargeRecord
+}
+
+func (c *MerchantRechargeRecordClient) mutate(ctx context.Context, m *MerchantRechargeRecordMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&MerchantRechargeRecordCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&MerchantRechargeRecordUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&MerchantRechargeRecordUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&MerchantRechargeRecordDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown MerchantRechargeRecord mutation op: %q", m.Op())
 	}
 }
 
@@ -7169,6 +7863,38 @@ func (c *UserClient) QueryBehaviorDaily(_m *User) *UserBehaviorDailyQuery {
 	return query
 }
 
+// QueryMerchantBindings queries the merchant_bindings edge of a User.
+func (c *UserClient) QueryMerchantBindings(_m *User) *MerchantBindingQuery {
+	query := (&MerchantBindingClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(merchantbinding.Table, merchantbinding.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.MerchantBindingsTable, user.MerchantBindingsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryMerchantRechargeRecords queries the merchant_recharge_records edge of a User.
+func (c *UserClient) QueryMerchantRechargeRecords(_m *User) *MerchantRechargeRecordQuery {
+	query := (&MerchantRechargeRecordClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(merchantrechargerecord.Table, merchantrechargerecord.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.MerchantRechargeRecordsTable, user.MerchantRechargeRecordsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QueryUserAllowedGroups queries the user_allowed_groups edge of a User.
 func (c *UserClient) QueryUserAllowedGroups(_m *User) *UserAllowedGroupQuery {
 	query := (&UserAllowedGroupClient{config: c.config}).Query()
@@ -8379,7 +9105,8 @@ type (
 		AuthIdentityChannel, BatchImageEvent, BatchImageItem, BatchImageJob,
 		ChannelMonitor, ChannelMonitorDailyRollup, ChannelMonitorHistory,
 		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
-		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
+		Group, IdempotencyRecord, IdentityAdoptionDecision, MerchantAPIEndpoint,
+		MerchantBinding, MerchantIntegration, MerchantRechargeRecord, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
 		PromoCodeUsage, Proxy, RedeemCode, RewardCampaign, RewardCampaignJob,
 		RewardCampaignUserState, RewardCampaignVersion, RewardSkin, SecuritySecret,
@@ -8393,7 +9120,8 @@ type (
 		AuthIdentityChannel, BatchImageEvent, BatchImageItem, BatchImageJob,
 		ChannelMonitor, ChannelMonitorDailyRollup, ChannelMonitorHistory,
 		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
-		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
+		Group, IdempotencyRecord, IdentityAdoptionDecision, MerchantAPIEndpoint,
+		MerchantBinding, MerchantIntegration, MerchantRechargeRecord, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
 		PromoCodeUsage, Proxy, RedeemCode, RewardCampaign, RewardCampaignJob,
 		RewardCampaignUserState, RewardCampaignVersion, RewardSkin, SecuritySecret,

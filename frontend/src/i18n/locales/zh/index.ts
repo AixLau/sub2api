@@ -5,6 +5,7 @@ import batchImage from './batchImage'
 import admin from './admin'
 import misc from './misc'
 import extensions from './extensions'
+import merchant from './merchant'
 import { mergeLocaleMessages } from '../merge'
 
 export default mergeLocaleMessages({
@@ -14,4 +15,5 @@ export default mergeLocaleMessages({
   ...batchImage,
   admin,
   ...misc,
+  ...merchant,
 }, extensions)

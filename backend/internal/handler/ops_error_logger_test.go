@@ -266,7 +266,7 @@ func TestOpsErrorLoggerMiddleware_ClassifiesCanceledBodyUploadAsClientRequest(t 
 	require.Equal(t, "client", job.entry.ErrorOwner)
 	require.Equal(t, "client_request", job.entry.ErrorSource)
 	require.False(t, job.entry.IsBusinessLimited)
-	require.Equal(t, "客户端在请求体上传完成前取消连接", job.entry.ErrorMessage)
+	require.Equal(t, "网络连接不稳定，请检查网络后重试。", job.entry.ErrorMessage)
 	require.NotNil(t, job.entry.UpstreamErrorDetail)
 	require.Contains(t, *job.entry.UpstreamErrorDetail, `"reason":"client_upload_canceled"`)
 }

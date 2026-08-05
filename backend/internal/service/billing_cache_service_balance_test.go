@@ -23,6 +23,27 @@ type balanceEligibilityCacheStub struct {
 	invalidateCalls          atomic.Int64
 }
 
+type balanceAuthCacheInvalidatorStub struct {
+	userInvalidations atomic.Int64
+	keyInvalidations  atomic.Int64
+}
+
+func (s *balanceAuthCacheInvalidatorStub) UpdateQuotaUsed(context.Context, int64, float64) error {
+	return nil
+}
+
+func (s *balanceAuthCacheInvalidatorStub) UpdateRateLimitUsage(context.Context, int64, float64) error {
+	return nil
+}
+
+func (s *balanceAuthCacheInvalidatorStub) InvalidateAuthCacheByUserID(context.Context, int64) {
+	s.userInvalidations.Add(1)
+}
+
+func (s *balanceAuthCacheInvalidatorStub) InvalidateAuthCacheByKey(context.Context, string) {
+	s.keyInvalidations.Add(1)
+}
+
 func (s *balanceEligibilityCacheStub) GetUserBalance(context.Context, int64) (float64, error) {
 	if s.cacheMissAfterInvalidate && s.invalidated.Load() {
 		return 0, errors.New("cache miss")
@@ -73,11 +94,14 @@ func TestSyncBalanceCacheAfterDeduction_InvalidatesExhaustedBalance(t *testing.T
 	cfg.Billing.MinimumBalanceReserve = 0.01
 	svc := NewBillingCacheService(cache, userRepo, nil, nil, nil, nil, cfg, nil)
 	t.Cleanup(svc.Stop)
+	authCache := &balanceAuthCacheInvalidatorStub{}
 
 	newBalance := -0.25
 	syncBalanceCacheAfterDeduction(context.Background(), &postUsageBillingParams{
-		Cost: &CostBreakdown{ActualCost: 0.75},
-		User: &User{ID: 1},
+		Cost:          &CostBreakdown{ActualCost: 0.75},
+		User:          &User{ID: 1},
+		APIKey:        &APIKey{Key: "test-key"},
+		APIKeyService: authCache,
 	}, &billingDeps{billingCacheService: svc}, &UsageBillingApplyResult{
 		NewBalance:         &newBalance,
 		BalanceOverdrafted: true,
@@ -85,6 +109,8 @@ func TestSyncBalanceCacheAfterDeduction_InvalidatesExhaustedBalance(t *testing.T
 
 	require.Equal(t, int64(1), cache.invalidateCalls.Load())
 	require.Equal(t, int64(0), cache.deductCalls.Load())
+	require.Equal(t, int64(1), authCache.userInvalidations.Load())
+	require.Equal(t, int64(0), authCache.keyInvalidations.Load())
 
 	err := svc.CheckBillingEligibility(context.Background(), &User{ID: 1}, nil, nil, nil, "")
 	require.ErrorIs(t, err, ErrInsufficientBalance)
@@ -114,14 +140,19 @@ func TestSyncBalanceCacheAfterDeduction_QueuesDeductWhenBalanceStillEligible(t *
 	cfg.Billing.MinimumBalanceReserve = 0.01
 	svc := NewBillingCacheService(cache, nil, nil, nil, nil, nil, cfg, nil)
 	t.Cleanup(svc.Stop)
+	authCache := &balanceAuthCacheInvalidatorStub{}
 
 	newBalance := 0.75
 	syncBalanceCacheAfterDeduction(context.Background(), &postUsageBillingParams{
-		Cost: &CostBreakdown{ActualCost: 0.25},
-		User: &User{ID: 1},
+		Cost:          &CostBreakdown{ActualCost: 0.25},
+		User:          &User{ID: 1},
+		APIKey:        &APIKey{Key: "test-key"},
+		APIKeyService: authCache,
 	}, &billingDeps{billingCacheService: svc}, &UsageBillingApplyResult{NewBalance: &newBalance})
 
 	require.Equal(t, int64(0), cache.invalidateCalls.Load())
+	require.Equal(t, int64(0), authCache.userInvalidations.Load())
+	require.Equal(t, int64(0), authCache.keyInvalidations.Load())
 	require.Eventually(t, func() bool {
 		return cache.deductCalls.Load() == 1
 	}, 2*time.Second, 10*time.Millisecond)

@@ -131,6 +131,24 @@ func subCacheKey(userID, groupID int64) string {
 	return "sub:" + strconv.FormatInt(userID, 10) + ":" + strconv.FormatInt(groupID, 10)
 }
 
+func fallbackSubCacheKey(userID int64) string {
+	return "sub-fallback:" + strconv.FormatInt(userID, 10)
+}
+
+func subCacheUserID(key string) (int64, bool) {
+	const prefix = "sub:"
+	if !strings.HasPrefix(key, prefix) {
+		return 0, false
+	}
+	rest := strings.TrimPrefix(key, prefix)
+	separator := strings.IndexByte(rest, ':')
+	if separator <= 0 {
+		return 0, false
+	}
+	userID, err := strconv.ParseInt(rest[:separator], 10, 64)
+	return userID, err == nil && userID > 0
+}
+
 // jitteredTTL 为 TTL 添加抖动，避免集中过期
 func (s *SubscriptionService) jitteredTTL(ttl time.Duration) time.Duration {
 	if ttl <= 0 || s.subCacheJitter <= 0 {
@@ -154,6 +172,7 @@ func (s *SubscriptionService) InvalidateSubCache(userID, groupID int64) {
 		return
 	}
 	s.subCacheL1.Del(subCacheKey(userID, groupID))
+	s.subCacheL1.Del(fallbackSubCacheKey(userID))
 }
 
 // InvalidateSubCacheSync 失效订阅 L1 缓存并等待 Ristretto 删除操作生效。
@@ -166,6 +185,9 @@ func (s *SubscriptionService) invalidateSubCacheKeySync(key string) {
 		return
 	}
 	s.subCacheL1.Del(key)
+	if userID, ok := subCacheUserID(key); ok {
+		s.subCacheL1.Del(fallbackSubCacheKey(userID))
+	}
 	s.subCacheL1.Wait()
 }
 
@@ -1183,6 +1205,65 @@ func (s *SubscriptionService) ListActiveUserSubscriptions(ctx context.Context, u
 	}
 	normalizeExpiredWindows(active)
 	return active, nil
+}
+
+// ListActiveUserSubscriptionsCached returns the fallback candidate set from the
+// subscription L1 cache. Callers receive deep-enough copies to safely update a
+// subscription or its group during request-time renewal maintenance.
+func (s *SubscriptionService) ListActiveUserSubscriptionsCached(ctx context.Context, userID int64) ([]UserSubscription, error) {
+	if s.subCacheL1 == nil {
+		return s.ListActiveUserSubscriptions(ctx, userID)
+	}
+
+	key := fallbackSubCacheKey(userID)
+	if value, ok := s.subCacheL1.Get(key); ok {
+		if cached, ok := value.([]UserSubscription); ok {
+			return cloneUserSubscriptions(cached), nil
+		}
+	}
+
+	value, err, _ := s.subCacheGroup.Do(key, func() (any, error) {
+		if cachedValue, ok := s.subCacheL1.Get(key); ok {
+			if cached, ok := cachedValue.([]UserSubscription); ok {
+				return cached, nil
+			}
+		}
+
+		subs, loadErr := s.ListActiveUserSubscriptions(ctx, userID)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		cached := cloneUserSubscriptions(subs)
+		_ = s.subCacheL1.SetWithTTL(key, cached, 1, s.jitteredTTL(s.subCacheTTL))
+		s.subCacheL1.Wait()
+		return cached, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	cached, ok := value.([]UserSubscription)
+	if !ok {
+		return nil, ErrSubscriptionNotFound
+	}
+	return cloneUserSubscriptions(cached), nil
+}
+
+func cloneUserSubscriptions(subs []UserSubscription) []UserSubscription {
+	if subs == nil {
+		return nil
+	}
+	cloned := make([]UserSubscription, len(subs))
+	for i := range subs {
+		cloned[i] = subs[i]
+		if subs[i].Group != nil {
+			group := *subs[i].Group
+			cloned[i].Group = &group
+		}
+		if subs[i].PendingRenewals != nil {
+			cloned[i].PendingRenewals = append([]SubscriptionRenewal(nil), subs[i].PendingRenewals...)
+		}
+	}
+	return cloned
 }
 
 // ListGroupSubscriptions 获取分组的所有订阅

@@ -153,6 +153,7 @@ func TestDiagnoseModelAvailabilityForPlatform_NoMatchingModel_ReturnsNotFoundSig
 
 	require.True(t, diag.HasAccountsInPool, "group has OpenAI accounts")
 	require.False(t, diag.HasModelSupport, "no account mapping admits the requested model — handler should return 404")
+	require.Equal(t, []string{"gpt-5", "gpt-5-mini"}, diag.SupportedModels)
 }
 
 func TestDiagnoseModelAvailabilityForPlatform_RateLimitedSupportingAccountRemainsConfigured(t *testing.T) {

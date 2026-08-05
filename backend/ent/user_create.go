@@ -15,6 +15,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/merchantbinding"
+	"github.com/Wei-Shaw/sub2api/ent/merchantrechargerecord"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
@@ -653,6 +655,36 @@ func (_c *UserCreate) AddBehaviorDaily(v ...*UserBehaviorDaily) *UserCreate {
 	return _c.AddBehaviorDailyIDs(ids...)
 }
 
+// AddMerchantBindingIDs adds the "merchant_bindings" edge to the MerchantBinding entity by IDs.
+func (_c *UserCreate) AddMerchantBindingIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddMerchantBindingIDs(ids...)
+	return _c
+}
+
+// AddMerchantBindings adds the "merchant_bindings" edges to the MerchantBinding entity.
+func (_c *UserCreate) AddMerchantBindings(v ...*MerchantBinding) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddMerchantBindingIDs(ids...)
+}
+
+// AddMerchantRechargeRecordIDs adds the "merchant_recharge_records" edge to the MerchantRechargeRecord entity by IDs.
+func (_c *UserCreate) AddMerchantRechargeRecordIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddMerchantRechargeRecordIDs(ids...)
+	return _c
+}
+
+// AddMerchantRechargeRecords adds the "merchant_recharge_records" edges to the MerchantRechargeRecord entity.
+func (_c *UserCreate) AddMerchantRechargeRecords(v ...*MerchantRechargeRecord) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddMerchantRechargeRecordIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (_c *UserCreate) Mutation() *UserMutation {
 	return _c.mutation
@@ -1265,6 +1297,38 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(userbehaviordaily.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.MerchantBindingsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MerchantBindingsTable,
+			Columns: []string{user.MerchantBindingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(merchantbinding.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.MerchantRechargeRecordsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MerchantRechargeRecordsTable,
+			Columns: []string{user.MerchantRechargeRecordsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(merchantrechargerecord.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

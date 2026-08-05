@@ -26,7 +26,12 @@ func TestLocalize(t *testing.T) {
 		{
 			name: "model not supported pattern",
 			in:   `Model "gpt-test" is not supported by any configured account in this group`,
-			want: `该分组中没有任何已配置账号支持模型 "gpt-test"`,
+			want: `模型名称 "gpt-test" 填写有误。请检查大小写，或前往控制台「可用渠道」复制正确的模型名称后重试。`,
+		},
+		{
+			name: "model not supported includes ranked models",
+			in:   `Model "GPT-5.6-Sol" is not supported by any configured account in this group. Supported models: "gpt-5.6-sol", "gpt-5.5", "claude-opus-5", ...`,
+			want: `模型名称 "GPT-5.6-Sol" 填写有误。该分组支持的模型："gpt-5.6-sol"、"gpt-5.5"、"claude-opus-5"等模型。请选择正确的模型名称后重试。`,
 		},
 		{
 			name: "body size pattern",

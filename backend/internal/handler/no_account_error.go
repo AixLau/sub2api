@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -30,6 +31,38 @@ type noAccountErrorClassification struct {
 	ErrType       string
 	Message       string
 	ModelNotFound bool // true when this is a 404 model_not_found classification
+}
+
+const maxSupportedModelsInError = 20
+
+func modelNotFoundMessage(displayModel string, supportedModels []string) string {
+	message := fmt.Sprintf("Model %q is not supported by any configured account in this group", displayModel)
+	if len(supportedModels) == 0 {
+		return message
+	}
+	supportedModels = append([]string(nil), supportedModels...)
+	for i, model := range supportedModels {
+		if strings.EqualFold(strings.TrimSpace(model), strings.TrimSpace(displayModel)) {
+			copy(supportedModels[1:i+1], supportedModels[:i])
+			supportedModels[0] = model
+			break
+		}
+	}
+
+	limit := len(supportedModels)
+	truncated := false
+	if limit > maxSupportedModelsInError {
+		limit = maxSupportedModelsInError
+		truncated = true
+	}
+	quoted := make([]string, 0, limit+1)
+	for _, model := range supportedModels[:limit] {
+		quoted = append(quoted, strconv.Quote(model))
+	}
+	if truncated {
+		quoted = append(quoted, "...")
+	}
+	return message + ". Supported models: " + strings.Join(quoted, ", ")
 }
 
 // classifyNoAccountError decides between 404 model_not_found and 503
@@ -81,10 +114,16 @@ func classifyNoAccountError(
 
 	result := diag.DiagnoseModelAvailabilityForPlatform(ctx, apiKey.GroupID, routingModel, platform)
 	if result.HasAccountsInPool && !result.HasModelSupport {
+		supportedModels := result.SupportedModels
+		if displayModel != routingModel {
+			// The diagnosed names belong to the post-dispatch routing layer. Do
+			// not expose them when the client used a group-level public alias.
+			supportedModels = nil
+		}
 		return noAccountErrorClassification{
 			Status:        http.StatusNotFound,
 			ErrType:       "model_not_found",
-			Message:       fmt.Sprintf("Model %q is not supported by any configured account in this group", displayModel),
+			Message:       modelNotFoundMessage(displayModel, supportedModels),
 			ModelNotFound: true,
 		}
 	}

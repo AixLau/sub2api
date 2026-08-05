@@ -98,6 +98,16 @@ func RegisterUserRoutes(
 			keys.DELETE("/:id", h.APIKey.Delete)
 		}
 
+		// 商家 SSO 入口与充值记录
+		merchantIntegrations := authenticated.Group("/merchant-integrations")
+		{
+			merchantIntegrations.GET("", h.MerchantSSO.ListIntegrations)
+			merchantIntegrations.GET("/bindings", h.MerchantSSO.ListBindings)
+			merchantIntegrations.POST("/:id/launch", h.MerchantSSO.Launch)
+			merchantIntegrations.GET("/bindings/:binding_id/recharge-records", h.MerchantSSO.ListRechargeRecords)
+			merchantIntegrations.POST("/bindings/:binding_id/recharge-records/sync", h.MerchantSSO.SyncRechargeRecords)
+		}
+
 		// 用户可用分组（非管理员接口）
 		groups := authenticated.Group("/groups")
 		{

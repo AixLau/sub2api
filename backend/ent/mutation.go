@@ -31,6 +31,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
+	"github.com/Wei-Shaw/sub2api/ent/merchantapiendpoint"
+	"github.com/Wei-Shaw/sub2api/ent/merchantbinding"
+	"github.com/Wei-Shaw/sub2api/ent/merchantintegration"
+	"github.com/Wei-Shaw/sub2api/ent/merchantrechargerecord"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
@@ -91,6 +95,10 @@ const (
 	TypeGroup                         = "Group"
 	TypeIdempotencyRecord             = "IdempotencyRecord"
 	TypeIdentityAdoptionDecision      = "IdentityAdoptionDecision"
+	TypeMerchantAPIEndpoint           = "MerchantAPIEndpoint"
+	TypeMerchantBinding               = "MerchantBinding"
+	TypeMerchantIntegration           = "MerchantIntegration"
+	TypeMerchantRechargeRecord        = "MerchantRechargeRecord"
 	TypePaymentAuditLog               = "PaymentAuditLog"
 	TypePaymentOrder                  = "PaymentOrder"
 	TypePaymentProviderInstance       = "PaymentProviderInstance"
@@ -28475,6 +28483,4587 @@ func (m *IdentityAdoptionDecisionMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown IdentityAdoptionDecision edge %s", name)
+}
+
+// MerchantAPIEndpointMutation represents an operation that mutates the MerchantAPIEndpoint nodes in the graph.
+type MerchantAPIEndpointMutation struct {
+	config
+	op                 Op
+	typ                string
+	id                 *int64
+	created_at         *time.Time
+	updated_at         *time.Time
+	_type              *string
+	url                *string
+	method             *string
+	content_type       *string
+	query_template     *map[string]interface{}
+	header_template    *map[string]interface{}
+	body_template      *map[string]interface{}
+	auth_type          *string
+	secret_ref         *string
+	response_mapping   *map[string]interface{}
+	success_rule       *map[string]interface{}
+	retry_policy       *map[string]interface{}
+	timeout_ms         *int
+	addtimeout_ms      *int
+	status             *string
+	enabled            *bool
+	clearedFields      map[string]struct{}
+	integration        *int64
+	clearedintegration bool
+	done               bool
+	oldValue           func(context.Context) (*MerchantAPIEndpoint, error)
+	predicates         []predicate.MerchantAPIEndpoint
+}
+
+var _ ent.Mutation = (*MerchantAPIEndpointMutation)(nil)
+
+// merchantapiendpointOption allows management of the mutation configuration using functional options.
+type merchantapiendpointOption func(*MerchantAPIEndpointMutation)
+
+// newMerchantAPIEndpointMutation creates new mutation for the MerchantAPIEndpoint entity.
+func newMerchantAPIEndpointMutation(c config, op Op, opts ...merchantapiendpointOption) *MerchantAPIEndpointMutation {
+	m := &MerchantAPIEndpointMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeMerchantAPIEndpoint,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withMerchantAPIEndpointID sets the ID field of the mutation.
+func withMerchantAPIEndpointID(id int64) merchantapiendpointOption {
+	return func(m *MerchantAPIEndpointMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *MerchantAPIEndpoint
+		)
+		m.oldValue = func(ctx context.Context) (*MerchantAPIEndpoint, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().MerchantAPIEndpoint.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withMerchantAPIEndpoint sets the old MerchantAPIEndpoint of the mutation.
+func withMerchantAPIEndpoint(node *MerchantAPIEndpoint) merchantapiendpointOption {
+	return func(m *MerchantAPIEndpointMutation) {
+		m.oldValue = func(context.Context) (*MerchantAPIEndpoint, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m MerchantAPIEndpointMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m MerchantAPIEndpointMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *MerchantAPIEndpointMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *MerchantAPIEndpointMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().MerchantAPIEndpoint.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *MerchantAPIEndpointMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *MerchantAPIEndpointMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the MerchantAPIEndpoint entity.
+// If the MerchantAPIEndpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantAPIEndpointMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *MerchantAPIEndpointMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *MerchantAPIEndpointMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *MerchantAPIEndpointMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the MerchantAPIEndpoint entity.
+// If the MerchantAPIEndpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantAPIEndpointMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *MerchantAPIEndpointMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetIntegrationID sets the "integration_id" field.
+func (m *MerchantAPIEndpointMutation) SetIntegrationID(i int64) {
+	m.integration = &i
+}
+
+// IntegrationID returns the value of the "integration_id" field in the mutation.
+func (m *MerchantAPIEndpointMutation) IntegrationID() (r int64, exists bool) {
+	v := m.integration
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIntegrationID returns the old "integration_id" field's value of the MerchantAPIEndpoint entity.
+// If the MerchantAPIEndpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantAPIEndpointMutation) OldIntegrationID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIntegrationID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIntegrationID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIntegrationID: %w", err)
+	}
+	return oldValue.IntegrationID, nil
+}
+
+// ResetIntegrationID resets all changes to the "integration_id" field.
+func (m *MerchantAPIEndpointMutation) ResetIntegrationID() {
+	m.integration = nil
+}
+
+// SetType sets the "type" field.
+func (m *MerchantAPIEndpointMutation) SetType(s string) {
+	m._type = &s
+}
+
+// GetType returns the value of the "type" field in the mutation.
+func (m *MerchantAPIEndpointMutation) GetType() (r string, exists bool) {
+	v := m._type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldType returns the old "type" field's value of the MerchantAPIEndpoint entity.
+// If the MerchantAPIEndpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantAPIEndpointMutation) OldType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldType: %w", err)
+	}
+	return oldValue.Type, nil
+}
+
+// ResetType resets all changes to the "type" field.
+func (m *MerchantAPIEndpointMutation) ResetType() {
+	m._type = nil
+}
+
+// SetURL sets the "url" field.
+func (m *MerchantAPIEndpointMutation) SetURL(s string) {
+	m.url = &s
+}
+
+// URL returns the value of the "url" field in the mutation.
+func (m *MerchantAPIEndpointMutation) URL() (r string, exists bool) {
+	v := m.url
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldURL returns the old "url" field's value of the MerchantAPIEndpoint entity.
+// If the MerchantAPIEndpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantAPIEndpointMutation) OldURL(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldURL is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldURL requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldURL: %w", err)
+	}
+	return oldValue.URL, nil
+}
+
+// ResetURL resets all changes to the "url" field.
+func (m *MerchantAPIEndpointMutation) ResetURL() {
+	m.url = nil
+}
+
+// SetMethod sets the "method" field.
+func (m *MerchantAPIEndpointMutation) SetMethod(s string) {
+	m.method = &s
+}
+
+// Method returns the value of the "method" field in the mutation.
+func (m *MerchantAPIEndpointMutation) Method() (r string, exists bool) {
+	v := m.method
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMethod returns the old "method" field's value of the MerchantAPIEndpoint entity.
+// If the MerchantAPIEndpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantAPIEndpointMutation) OldMethod(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMethod is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMethod requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMethod: %w", err)
+	}
+	return oldValue.Method, nil
+}
+
+// ResetMethod resets all changes to the "method" field.
+func (m *MerchantAPIEndpointMutation) ResetMethod() {
+	m.method = nil
+}
+
+// SetContentType sets the "content_type" field.
+func (m *MerchantAPIEndpointMutation) SetContentType(s string) {
+	m.content_type = &s
+}
+
+// ContentType returns the value of the "content_type" field in the mutation.
+func (m *MerchantAPIEndpointMutation) ContentType() (r string, exists bool) {
+	v := m.content_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldContentType returns the old "content_type" field's value of the MerchantAPIEndpoint entity.
+// If the MerchantAPIEndpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantAPIEndpointMutation) OldContentType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldContentType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldContentType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldContentType: %w", err)
+	}
+	return oldValue.ContentType, nil
+}
+
+// ResetContentType resets all changes to the "content_type" field.
+func (m *MerchantAPIEndpointMutation) ResetContentType() {
+	m.content_type = nil
+}
+
+// SetQueryTemplate sets the "query_template" field.
+func (m *MerchantAPIEndpointMutation) SetQueryTemplate(value map[string]interface{}) {
+	m.query_template = &value
+}
+
+// QueryTemplate returns the value of the "query_template" field in the mutation.
+func (m *MerchantAPIEndpointMutation) QueryTemplate() (r map[string]interface{}, exists bool) {
+	v := m.query_template
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldQueryTemplate returns the old "query_template" field's value of the MerchantAPIEndpoint entity.
+// If the MerchantAPIEndpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantAPIEndpointMutation) OldQueryTemplate(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldQueryTemplate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldQueryTemplate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldQueryTemplate: %w", err)
+	}
+	return oldValue.QueryTemplate, nil
+}
+
+// ResetQueryTemplate resets all changes to the "query_template" field.
+func (m *MerchantAPIEndpointMutation) ResetQueryTemplate() {
+	m.query_template = nil
+}
+
+// SetHeaderTemplate sets the "header_template" field.
+func (m *MerchantAPIEndpointMutation) SetHeaderTemplate(value map[string]interface{}) {
+	m.header_template = &value
+}
+
+// HeaderTemplate returns the value of the "header_template" field in the mutation.
+func (m *MerchantAPIEndpointMutation) HeaderTemplate() (r map[string]interface{}, exists bool) {
+	v := m.header_template
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldHeaderTemplate returns the old "header_template" field's value of the MerchantAPIEndpoint entity.
+// If the MerchantAPIEndpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantAPIEndpointMutation) OldHeaderTemplate(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldHeaderTemplate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldHeaderTemplate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldHeaderTemplate: %w", err)
+	}
+	return oldValue.HeaderTemplate, nil
+}
+
+// ResetHeaderTemplate resets all changes to the "header_template" field.
+func (m *MerchantAPIEndpointMutation) ResetHeaderTemplate() {
+	m.header_template = nil
+}
+
+// SetBodyTemplate sets the "body_template" field.
+func (m *MerchantAPIEndpointMutation) SetBodyTemplate(value map[string]interface{}) {
+	m.body_template = &value
+}
+
+// BodyTemplate returns the value of the "body_template" field in the mutation.
+func (m *MerchantAPIEndpointMutation) BodyTemplate() (r map[string]interface{}, exists bool) {
+	v := m.body_template
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBodyTemplate returns the old "body_template" field's value of the MerchantAPIEndpoint entity.
+// If the MerchantAPIEndpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantAPIEndpointMutation) OldBodyTemplate(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBodyTemplate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBodyTemplate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBodyTemplate: %w", err)
+	}
+	return oldValue.BodyTemplate, nil
+}
+
+// ResetBodyTemplate resets all changes to the "body_template" field.
+func (m *MerchantAPIEndpointMutation) ResetBodyTemplate() {
+	m.body_template = nil
+}
+
+// SetAuthType sets the "auth_type" field.
+func (m *MerchantAPIEndpointMutation) SetAuthType(s string) {
+	m.auth_type = &s
+}
+
+// AuthType returns the value of the "auth_type" field in the mutation.
+func (m *MerchantAPIEndpointMutation) AuthType() (r string, exists bool) {
+	v := m.auth_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAuthType returns the old "auth_type" field's value of the MerchantAPIEndpoint entity.
+// If the MerchantAPIEndpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantAPIEndpointMutation) OldAuthType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAuthType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAuthType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAuthType: %w", err)
+	}
+	return oldValue.AuthType, nil
+}
+
+// ResetAuthType resets all changes to the "auth_type" field.
+func (m *MerchantAPIEndpointMutation) ResetAuthType() {
+	m.auth_type = nil
+}
+
+// SetSecretRef sets the "secret_ref" field.
+func (m *MerchantAPIEndpointMutation) SetSecretRef(s string) {
+	m.secret_ref = &s
+}
+
+// SecretRef returns the value of the "secret_ref" field in the mutation.
+func (m *MerchantAPIEndpointMutation) SecretRef() (r string, exists bool) {
+	v := m.secret_ref
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSecretRef returns the old "secret_ref" field's value of the MerchantAPIEndpoint entity.
+// If the MerchantAPIEndpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantAPIEndpointMutation) OldSecretRef(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSecretRef is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSecretRef requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSecretRef: %w", err)
+	}
+	return oldValue.SecretRef, nil
+}
+
+// ResetSecretRef resets all changes to the "secret_ref" field.
+func (m *MerchantAPIEndpointMutation) ResetSecretRef() {
+	m.secret_ref = nil
+}
+
+// SetResponseMapping sets the "response_mapping" field.
+func (m *MerchantAPIEndpointMutation) SetResponseMapping(value map[string]interface{}) {
+	m.response_mapping = &value
+}
+
+// ResponseMapping returns the value of the "response_mapping" field in the mutation.
+func (m *MerchantAPIEndpointMutation) ResponseMapping() (r map[string]interface{}, exists bool) {
+	v := m.response_mapping
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResponseMapping returns the old "response_mapping" field's value of the MerchantAPIEndpoint entity.
+// If the MerchantAPIEndpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantAPIEndpointMutation) OldResponseMapping(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResponseMapping is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResponseMapping requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResponseMapping: %w", err)
+	}
+	return oldValue.ResponseMapping, nil
+}
+
+// ResetResponseMapping resets all changes to the "response_mapping" field.
+func (m *MerchantAPIEndpointMutation) ResetResponseMapping() {
+	m.response_mapping = nil
+}
+
+// SetSuccessRule sets the "success_rule" field.
+func (m *MerchantAPIEndpointMutation) SetSuccessRule(value map[string]interface{}) {
+	m.success_rule = &value
+}
+
+// SuccessRule returns the value of the "success_rule" field in the mutation.
+func (m *MerchantAPIEndpointMutation) SuccessRule() (r map[string]interface{}, exists bool) {
+	v := m.success_rule
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSuccessRule returns the old "success_rule" field's value of the MerchantAPIEndpoint entity.
+// If the MerchantAPIEndpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantAPIEndpointMutation) OldSuccessRule(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSuccessRule is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSuccessRule requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSuccessRule: %w", err)
+	}
+	return oldValue.SuccessRule, nil
+}
+
+// ResetSuccessRule resets all changes to the "success_rule" field.
+func (m *MerchantAPIEndpointMutation) ResetSuccessRule() {
+	m.success_rule = nil
+}
+
+// SetRetryPolicy sets the "retry_policy" field.
+func (m *MerchantAPIEndpointMutation) SetRetryPolicy(value map[string]interface{}) {
+	m.retry_policy = &value
+}
+
+// RetryPolicy returns the value of the "retry_policy" field in the mutation.
+func (m *MerchantAPIEndpointMutation) RetryPolicy() (r map[string]interface{}, exists bool) {
+	v := m.retry_policy
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRetryPolicy returns the old "retry_policy" field's value of the MerchantAPIEndpoint entity.
+// If the MerchantAPIEndpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantAPIEndpointMutation) OldRetryPolicy(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRetryPolicy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRetryPolicy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRetryPolicy: %w", err)
+	}
+	return oldValue.RetryPolicy, nil
+}
+
+// ResetRetryPolicy resets all changes to the "retry_policy" field.
+func (m *MerchantAPIEndpointMutation) ResetRetryPolicy() {
+	m.retry_policy = nil
+}
+
+// SetTimeoutMs sets the "timeout_ms" field.
+func (m *MerchantAPIEndpointMutation) SetTimeoutMs(i int) {
+	m.timeout_ms = &i
+	m.addtimeout_ms = nil
+}
+
+// TimeoutMs returns the value of the "timeout_ms" field in the mutation.
+func (m *MerchantAPIEndpointMutation) TimeoutMs() (r int, exists bool) {
+	v := m.timeout_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTimeoutMs returns the old "timeout_ms" field's value of the MerchantAPIEndpoint entity.
+// If the MerchantAPIEndpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantAPIEndpointMutation) OldTimeoutMs(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTimeoutMs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTimeoutMs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTimeoutMs: %w", err)
+	}
+	return oldValue.TimeoutMs, nil
+}
+
+// AddTimeoutMs adds i to the "timeout_ms" field.
+func (m *MerchantAPIEndpointMutation) AddTimeoutMs(i int) {
+	if m.addtimeout_ms != nil {
+		*m.addtimeout_ms += i
+	} else {
+		m.addtimeout_ms = &i
+	}
+}
+
+// AddedTimeoutMs returns the value that was added to the "timeout_ms" field in this mutation.
+func (m *MerchantAPIEndpointMutation) AddedTimeoutMs() (r int, exists bool) {
+	v := m.addtimeout_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTimeoutMs resets all changes to the "timeout_ms" field.
+func (m *MerchantAPIEndpointMutation) ResetTimeoutMs() {
+	m.timeout_ms = nil
+	m.addtimeout_ms = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *MerchantAPIEndpointMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *MerchantAPIEndpointMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the MerchantAPIEndpoint entity.
+// If the MerchantAPIEndpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantAPIEndpointMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *MerchantAPIEndpointMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *MerchantAPIEndpointMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *MerchantAPIEndpointMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the MerchantAPIEndpoint entity.
+// If the MerchantAPIEndpoint object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantAPIEndpointMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *MerchantAPIEndpointMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// ClearIntegration clears the "integration" edge to the MerchantIntegration entity.
+func (m *MerchantAPIEndpointMutation) ClearIntegration() {
+	m.clearedintegration = true
+	m.clearedFields[merchantapiendpoint.FieldIntegrationID] = struct{}{}
+}
+
+// IntegrationCleared reports if the "integration" edge to the MerchantIntegration entity was cleared.
+func (m *MerchantAPIEndpointMutation) IntegrationCleared() bool {
+	return m.clearedintegration
+}
+
+// IntegrationIDs returns the "integration" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// IntegrationID instead. It exists only for internal usage by the builders.
+func (m *MerchantAPIEndpointMutation) IntegrationIDs() (ids []int64) {
+	if id := m.integration; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetIntegration resets all changes to the "integration" edge.
+func (m *MerchantAPIEndpointMutation) ResetIntegration() {
+	m.integration = nil
+	m.clearedintegration = false
+}
+
+// Where appends a list predicates to the MerchantAPIEndpointMutation builder.
+func (m *MerchantAPIEndpointMutation) Where(ps ...predicate.MerchantAPIEndpoint) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the MerchantAPIEndpointMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *MerchantAPIEndpointMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.MerchantAPIEndpoint, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *MerchantAPIEndpointMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *MerchantAPIEndpointMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (MerchantAPIEndpoint).
+func (m *MerchantAPIEndpointMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *MerchantAPIEndpointMutation) Fields() []string {
+	fields := make([]string, 0, 18)
+	if m.created_at != nil {
+		fields = append(fields, merchantapiendpoint.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, merchantapiendpoint.FieldUpdatedAt)
+	}
+	if m.integration != nil {
+		fields = append(fields, merchantapiendpoint.FieldIntegrationID)
+	}
+	if m._type != nil {
+		fields = append(fields, merchantapiendpoint.FieldType)
+	}
+	if m.url != nil {
+		fields = append(fields, merchantapiendpoint.FieldURL)
+	}
+	if m.method != nil {
+		fields = append(fields, merchantapiendpoint.FieldMethod)
+	}
+	if m.content_type != nil {
+		fields = append(fields, merchantapiendpoint.FieldContentType)
+	}
+	if m.query_template != nil {
+		fields = append(fields, merchantapiendpoint.FieldQueryTemplate)
+	}
+	if m.header_template != nil {
+		fields = append(fields, merchantapiendpoint.FieldHeaderTemplate)
+	}
+	if m.body_template != nil {
+		fields = append(fields, merchantapiendpoint.FieldBodyTemplate)
+	}
+	if m.auth_type != nil {
+		fields = append(fields, merchantapiendpoint.FieldAuthType)
+	}
+	if m.secret_ref != nil {
+		fields = append(fields, merchantapiendpoint.FieldSecretRef)
+	}
+	if m.response_mapping != nil {
+		fields = append(fields, merchantapiendpoint.FieldResponseMapping)
+	}
+	if m.success_rule != nil {
+		fields = append(fields, merchantapiendpoint.FieldSuccessRule)
+	}
+	if m.retry_policy != nil {
+		fields = append(fields, merchantapiendpoint.FieldRetryPolicy)
+	}
+	if m.timeout_ms != nil {
+		fields = append(fields, merchantapiendpoint.FieldTimeoutMs)
+	}
+	if m.status != nil {
+		fields = append(fields, merchantapiendpoint.FieldStatus)
+	}
+	if m.enabled != nil {
+		fields = append(fields, merchantapiendpoint.FieldEnabled)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *MerchantAPIEndpointMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case merchantapiendpoint.FieldCreatedAt:
+		return m.CreatedAt()
+	case merchantapiendpoint.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case merchantapiendpoint.FieldIntegrationID:
+		return m.IntegrationID()
+	case merchantapiendpoint.FieldType:
+		return m.GetType()
+	case merchantapiendpoint.FieldURL:
+		return m.URL()
+	case merchantapiendpoint.FieldMethod:
+		return m.Method()
+	case merchantapiendpoint.FieldContentType:
+		return m.ContentType()
+	case merchantapiendpoint.FieldQueryTemplate:
+		return m.QueryTemplate()
+	case merchantapiendpoint.FieldHeaderTemplate:
+		return m.HeaderTemplate()
+	case merchantapiendpoint.FieldBodyTemplate:
+		return m.BodyTemplate()
+	case merchantapiendpoint.FieldAuthType:
+		return m.AuthType()
+	case merchantapiendpoint.FieldSecretRef:
+		return m.SecretRef()
+	case merchantapiendpoint.FieldResponseMapping:
+		return m.ResponseMapping()
+	case merchantapiendpoint.FieldSuccessRule:
+		return m.SuccessRule()
+	case merchantapiendpoint.FieldRetryPolicy:
+		return m.RetryPolicy()
+	case merchantapiendpoint.FieldTimeoutMs:
+		return m.TimeoutMs()
+	case merchantapiendpoint.FieldStatus:
+		return m.Status()
+	case merchantapiendpoint.FieldEnabled:
+		return m.Enabled()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *MerchantAPIEndpointMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case merchantapiendpoint.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case merchantapiendpoint.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case merchantapiendpoint.FieldIntegrationID:
+		return m.OldIntegrationID(ctx)
+	case merchantapiendpoint.FieldType:
+		return m.OldType(ctx)
+	case merchantapiendpoint.FieldURL:
+		return m.OldURL(ctx)
+	case merchantapiendpoint.FieldMethod:
+		return m.OldMethod(ctx)
+	case merchantapiendpoint.FieldContentType:
+		return m.OldContentType(ctx)
+	case merchantapiendpoint.FieldQueryTemplate:
+		return m.OldQueryTemplate(ctx)
+	case merchantapiendpoint.FieldHeaderTemplate:
+		return m.OldHeaderTemplate(ctx)
+	case merchantapiendpoint.FieldBodyTemplate:
+		return m.OldBodyTemplate(ctx)
+	case merchantapiendpoint.FieldAuthType:
+		return m.OldAuthType(ctx)
+	case merchantapiendpoint.FieldSecretRef:
+		return m.OldSecretRef(ctx)
+	case merchantapiendpoint.FieldResponseMapping:
+		return m.OldResponseMapping(ctx)
+	case merchantapiendpoint.FieldSuccessRule:
+		return m.OldSuccessRule(ctx)
+	case merchantapiendpoint.FieldRetryPolicy:
+		return m.OldRetryPolicy(ctx)
+	case merchantapiendpoint.FieldTimeoutMs:
+		return m.OldTimeoutMs(ctx)
+	case merchantapiendpoint.FieldStatus:
+		return m.OldStatus(ctx)
+	case merchantapiendpoint.FieldEnabled:
+		return m.OldEnabled(ctx)
+	}
+	return nil, fmt.Errorf("unknown MerchantAPIEndpoint field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *MerchantAPIEndpointMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case merchantapiendpoint.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case merchantapiendpoint.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case merchantapiendpoint.FieldIntegrationID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIntegrationID(v)
+		return nil
+	case merchantapiendpoint.FieldType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetType(v)
+		return nil
+	case merchantapiendpoint.FieldURL:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetURL(v)
+		return nil
+	case merchantapiendpoint.FieldMethod:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMethod(v)
+		return nil
+	case merchantapiendpoint.FieldContentType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetContentType(v)
+		return nil
+	case merchantapiendpoint.FieldQueryTemplate:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetQueryTemplate(v)
+		return nil
+	case merchantapiendpoint.FieldHeaderTemplate:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetHeaderTemplate(v)
+		return nil
+	case merchantapiendpoint.FieldBodyTemplate:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBodyTemplate(v)
+		return nil
+	case merchantapiendpoint.FieldAuthType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAuthType(v)
+		return nil
+	case merchantapiendpoint.FieldSecretRef:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSecretRef(v)
+		return nil
+	case merchantapiendpoint.FieldResponseMapping:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResponseMapping(v)
+		return nil
+	case merchantapiendpoint.FieldSuccessRule:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSuccessRule(v)
+		return nil
+	case merchantapiendpoint.FieldRetryPolicy:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRetryPolicy(v)
+		return nil
+	case merchantapiendpoint.FieldTimeoutMs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTimeoutMs(v)
+		return nil
+	case merchantapiendpoint.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case merchantapiendpoint.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	}
+	return fmt.Errorf("unknown MerchantAPIEndpoint field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *MerchantAPIEndpointMutation) AddedFields() []string {
+	var fields []string
+	if m.addtimeout_ms != nil {
+		fields = append(fields, merchantapiendpoint.FieldTimeoutMs)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *MerchantAPIEndpointMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case merchantapiendpoint.FieldTimeoutMs:
+		return m.AddedTimeoutMs()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *MerchantAPIEndpointMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case merchantapiendpoint.FieldTimeoutMs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTimeoutMs(v)
+		return nil
+	}
+	return fmt.Errorf("unknown MerchantAPIEndpoint numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *MerchantAPIEndpointMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *MerchantAPIEndpointMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *MerchantAPIEndpointMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown MerchantAPIEndpoint nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *MerchantAPIEndpointMutation) ResetField(name string) error {
+	switch name {
+	case merchantapiendpoint.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case merchantapiendpoint.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case merchantapiendpoint.FieldIntegrationID:
+		m.ResetIntegrationID()
+		return nil
+	case merchantapiendpoint.FieldType:
+		m.ResetType()
+		return nil
+	case merchantapiendpoint.FieldURL:
+		m.ResetURL()
+		return nil
+	case merchantapiendpoint.FieldMethod:
+		m.ResetMethod()
+		return nil
+	case merchantapiendpoint.FieldContentType:
+		m.ResetContentType()
+		return nil
+	case merchantapiendpoint.FieldQueryTemplate:
+		m.ResetQueryTemplate()
+		return nil
+	case merchantapiendpoint.FieldHeaderTemplate:
+		m.ResetHeaderTemplate()
+		return nil
+	case merchantapiendpoint.FieldBodyTemplate:
+		m.ResetBodyTemplate()
+		return nil
+	case merchantapiendpoint.FieldAuthType:
+		m.ResetAuthType()
+		return nil
+	case merchantapiendpoint.FieldSecretRef:
+		m.ResetSecretRef()
+		return nil
+	case merchantapiendpoint.FieldResponseMapping:
+		m.ResetResponseMapping()
+		return nil
+	case merchantapiendpoint.FieldSuccessRule:
+		m.ResetSuccessRule()
+		return nil
+	case merchantapiendpoint.FieldRetryPolicy:
+		m.ResetRetryPolicy()
+		return nil
+	case merchantapiendpoint.FieldTimeoutMs:
+		m.ResetTimeoutMs()
+		return nil
+	case merchantapiendpoint.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case merchantapiendpoint.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	}
+	return fmt.Errorf("unknown MerchantAPIEndpoint field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *MerchantAPIEndpointMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.integration != nil {
+		edges = append(edges, merchantapiendpoint.EdgeIntegration)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *MerchantAPIEndpointMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case merchantapiendpoint.EdgeIntegration:
+		if id := m.integration; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *MerchantAPIEndpointMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *MerchantAPIEndpointMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *MerchantAPIEndpointMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedintegration {
+		edges = append(edges, merchantapiendpoint.EdgeIntegration)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *MerchantAPIEndpointMutation) EdgeCleared(name string) bool {
+	switch name {
+	case merchantapiendpoint.EdgeIntegration:
+		return m.clearedintegration
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *MerchantAPIEndpointMutation) ClearEdge(name string) error {
+	switch name {
+	case merchantapiendpoint.EdgeIntegration:
+		m.ClearIntegration()
+		return nil
+	}
+	return fmt.Errorf("unknown MerchantAPIEndpoint unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *MerchantAPIEndpointMutation) ResetEdge(name string) error {
+	switch name {
+	case merchantapiendpoint.EdgeIntegration:
+		m.ResetIntegration()
+		return nil
+	}
+	return fmt.Errorf("unknown MerchantAPIEndpoint edge %s", name)
+}
+
+// MerchantBindingMutation represents an operation that mutates the MerchantBinding nodes in the graph.
+type MerchantBindingMutation struct {
+	config
+	op                    Op
+	typ                   string
+	id                    *int64
+	created_at            *time.Time
+	updated_at            *time.Time
+	external_user_id      *string
+	external_account      *string
+	status                *string
+	last_login_at         *time.Time
+	last_sync_at          *time.Time
+	last_recharge_sync_at *time.Time
+	clearedFields         map[string]struct{}
+	integration           *int64
+	clearedintegration    bool
+	user                  *int64
+	cleareduser           bool
+	done                  bool
+	oldValue              func(context.Context) (*MerchantBinding, error)
+	predicates            []predicate.MerchantBinding
+}
+
+var _ ent.Mutation = (*MerchantBindingMutation)(nil)
+
+// merchantbindingOption allows management of the mutation configuration using functional options.
+type merchantbindingOption func(*MerchantBindingMutation)
+
+// newMerchantBindingMutation creates new mutation for the MerchantBinding entity.
+func newMerchantBindingMutation(c config, op Op, opts ...merchantbindingOption) *MerchantBindingMutation {
+	m := &MerchantBindingMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeMerchantBinding,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withMerchantBindingID sets the ID field of the mutation.
+func withMerchantBindingID(id int64) merchantbindingOption {
+	return func(m *MerchantBindingMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *MerchantBinding
+		)
+		m.oldValue = func(ctx context.Context) (*MerchantBinding, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().MerchantBinding.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withMerchantBinding sets the old MerchantBinding of the mutation.
+func withMerchantBinding(node *MerchantBinding) merchantbindingOption {
+	return func(m *MerchantBindingMutation) {
+		m.oldValue = func(context.Context) (*MerchantBinding, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m MerchantBindingMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m MerchantBindingMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *MerchantBindingMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *MerchantBindingMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().MerchantBinding.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *MerchantBindingMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *MerchantBindingMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the MerchantBinding entity.
+// If the MerchantBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantBindingMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *MerchantBindingMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *MerchantBindingMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *MerchantBindingMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the MerchantBinding entity.
+// If the MerchantBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantBindingMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *MerchantBindingMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetIntegrationID sets the "integration_id" field.
+func (m *MerchantBindingMutation) SetIntegrationID(i int64) {
+	m.integration = &i
+}
+
+// IntegrationID returns the value of the "integration_id" field in the mutation.
+func (m *MerchantBindingMutation) IntegrationID() (r int64, exists bool) {
+	v := m.integration
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIntegrationID returns the old "integration_id" field's value of the MerchantBinding entity.
+// If the MerchantBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantBindingMutation) OldIntegrationID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIntegrationID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIntegrationID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIntegrationID: %w", err)
+	}
+	return oldValue.IntegrationID, nil
+}
+
+// ResetIntegrationID resets all changes to the "integration_id" field.
+func (m *MerchantBindingMutation) ResetIntegrationID() {
+	m.integration = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *MerchantBindingMutation) SetUserID(i int64) {
+	m.user = &i
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *MerchantBindingMutation) UserID() (r int64, exists bool) {
+	v := m.user
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the MerchantBinding entity.
+// If the MerchantBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantBindingMutation) OldUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *MerchantBindingMutation) ResetUserID() {
+	m.user = nil
+}
+
+// SetExternalUserID sets the "external_user_id" field.
+func (m *MerchantBindingMutation) SetExternalUserID(s string) {
+	m.external_user_id = &s
+}
+
+// ExternalUserID returns the value of the "external_user_id" field in the mutation.
+func (m *MerchantBindingMutation) ExternalUserID() (r string, exists bool) {
+	v := m.external_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExternalUserID returns the old "external_user_id" field's value of the MerchantBinding entity.
+// If the MerchantBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantBindingMutation) OldExternalUserID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExternalUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExternalUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExternalUserID: %w", err)
+	}
+	return oldValue.ExternalUserID, nil
+}
+
+// ResetExternalUserID resets all changes to the "external_user_id" field.
+func (m *MerchantBindingMutation) ResetExternalUserID() {
+	m.external_user_id = nil
+}
+
+// SetExternalAccount sets the "external_account" field.
+func (m *MerchantBindingMutation) SetExternalAccount(s string) {
+	m.external_account = &s
+}
+
+// ExternalAccount returns the value of the "external_account" field in the mutation.
+func (m *MerchantBindingMutation) ExternalAccount() (r string, exists bool) {
+	v := m.external_account
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExternalAccount returns the old "external_account" field's value of the MerchantBinding entity.
+// If the MerchantBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantBindingMutation) OldExternalAccount(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExternalAccount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExternalAccount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExternalAccount: %w", err)
+	}
+	return oldValue.ExternalAccount, nil
+}
+
+// ResetExternalAccount resets all changes to the "external_account" field.
+func (m *MerchantBindingMutation) ResetExternalAccount() {
+	m.external_account = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *MerchantBindingMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *MerchantBindingMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the MerchantBinding entity.
+// If the MerchantBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantBindingMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *MerchantBindingMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetLastLoginAt sets the "last_login_at" field.
+func (m *MerchantBindingMutation) SetLastLoginAt(t time.Time) {
+	m.last_login_at = &t
+}
+
+// LastLoginAt returns the value of the "last_login_at" field in the mutation.
+func (m *MerchantBindingMutation) LastLoginAt() (r time.Time, exists bool) {
+	v := m.last_login_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastLoginAt returns the old "last_login_at" field's value of the MerchantBinding entity.
+// If the MerchantBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantBindingMutation) OldLastLoginAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastLoginAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastLoginAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastLoginAt: %w", err)
+	}
+	return oldValue.LastLoginAt, nil
+}
+
+// ClearLastLoginAt clears the value of the "last_login_at" field.
+func (m *MerchantBindingMutation) ClearLastLoginAt() {
+	m.last_login_at = nil
+	m.clearedFields[merchantbinding.FieldLastLoginAt] = struct{}{}
+}
+
+// LastLoginAtCleared returns if the "last_login_at" field was cleared in this mutation.
+func (m *MerchantBindingMutation) LastLoginAtCleared() bool {
+	_, ok := m.clearedFields[merchantbinding.FieldLastLoginAt]
+	return ok
+}
+
+// ResetLastLoginAt resets all changes to the "last_login_at" field.
+func (m *MerchantBindingMutation) ResetLastLoginAt() {
+	m.last_login_at = nil
+	delete(m.clearedFields, merchantbinding.FieldLastLoginAt)
+}
+
+// SetLastSyncAt sets the "last_sync_at" field.
+func (m *MerchantBindingMutation) SetLastSyncAt(t time.Time) {
+	m.last_sync_at = &t
+}
+
+// LastSyncAt returns the value of the "last_sync_at" field in the mutation.
+func (m *MerchantBindingMutation) LastSyncAt() (r time.Time, exists bool) {
+	v := m.last_sync_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastSyncAt returns the old "last_sync_at" field's value of the MerchantBinding entity.
+// If the MerchantBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantBindingMutation) OldLastSyncAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastSyncAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastSyncAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastSyncAt: %w", err)
+	}
+	return oldValue.LastSyncAt, nil
+}
+
+// ClearLastSyncAt clears the value of the "last_sync_at" field.
+func (m *MerchantBindingMutation) ClearLastSyncAt() {
+	m.last_sync_at = nil
+	m.clearedFields[merchantbinding.FieldLastSyncAt] = struct{}{}
+}
+
+// LastSyncAtCleared returns if the "last_sync_at" field was cleared in this mutation.
+func (m *MerchantBindingMutation) LastSyncAtCleared() bool {
+	_, ok := m.clearedFields[merchantbinding.FieldLastSyncAt]
+	return ok
+}
+
+// ResetLastSyncAt resets all changes to the "last_sync_at" field.
+func (m *MerchantBindingMutation) ResetLastSyncAt() {
+	m.last_sync_at = nil
+	delete(m.clearedFields, merchantbinding.FieldLastSyncAt)
+}
+
+// SetLastRechargeSyncAt sets the "last_recharge_sync_at" field.
+func (m *MerchantBindingMutation) SetLastRechargeSyncAt(t time.Time) {
+	m.last_recharge_sync_at = &t
+}
+
+// LastRechargeSyncAt returns the value of the "last_recharge_sync_at" field in the mutation.
+func (m *MerchantBindingMutation) LastRechargeSyncAt() (r time.Time, exists bool) {
+	v := m.last_recharge_sync_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastRechargeSyncAt returns the old "last_recharge_sync_at" field's value of the MerchantBinding entity.
+// If the MerchantBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantBindingMutation) OldLastRechargeSyncAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastRechargeSyncAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastRechargeSyncAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastRechargeSyncAt: %w", err)
+	}
+	return oldValue.LastRechargeSyncAt, nil
+}
+
+// ClearLastRechargeSyncAt clears the value of the "last_recharge_sync_at" field.
+func (m *MerchantBindingMutation) ClearLastRechargeSyncAt() {
+	m.last_recharge_sync_at = nil
+	m.clearedFields[merchantbinding.FieldLastRechargeSyncAt] = struct{}{}
+}
+
+// LastRechargeSyncAtCleared returns if the "last_recharge_sync_at" field was cleared in this mutation.
+func (m *MerchantBindingMutation) LastRechargeSyncAtCleared() bool {
+	_, ok := m.clearedFields[merchantbinding.FieldLastRechargeSyncAt]
+	return ok
+}
+
+// ResetLastRechargeSyncAt resets all changes to the "last_recharge_sync_at" field.
+func (m *MerchantBindingMutation) ResetLastRechargeSyncAt() {
+	m.last_recharge_sync_at = nil
+	delete(m.clearedFields, merchantbinding.FieldLastRechargeSyncAt)
+}
+
+// ClearIntegration clears the "integration" edge to the MerchantIntegration entity.
+func (m *MerchantBindingMutation) ClearIntegration() {
+	m.clearedintegration = true
+	m.clearedFields[merchantbinding.FieldIntegrationID] = struct{}{}
+}
+
+// IntegrationCleared reports if the "integration" edge to the MerchantIntegration entity was cleared.
+func (m *MerchantBindingMutation) IntegrationCleared() bool {
+	return m.clearedintegration
+}
+
+// IntegrationIDs returns the "integration" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// IntegrationID instead. It exists only for internal usage by the builders.
+func (m *MerchantBindingMutation) IntegrationIDs() (ids []int64) {
+	if id := m.integration; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetIntegration resets all changes to the "integration" edge.
+func (m *MerchantBindingMutation) ResetIntegration() {
+	m.integration = nil
+	m.clearedintegration = false
+}
+
+// ClearUser clears the "user" edge to the User entity.
+func (m *MerchantBindingMutation) ClearUser() {
+	m.cleareduser = true
+	m.clearedFields[merchantbinding.FieldUserID] = struct{}{}
+}
+
+// UserCleared reports if the "user" edge to the User entity was cleared.
+func (m *MerchantBindingMutation) UserCleared() bool {
+	return m.cleareduser
+}
+
+// UserIDs returns the "user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UserID instead. It exists only for internal usage by the builders.
+func (m *MerchantBindingMutation) UserIDs() (ids []int64) {
+	if id := m.user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUser resets all changes to the "user" edge.
+func (m *MerchantBindingMutation) ResetUser() {
+	m.user = nil
+	m.cleareduser = false
+}
+
+// Where appends a list predicates to the MerchantBindingMutation builder.
+func (m *MerchantBindingMutation) Where(ps ...predicate.MerchantBinding) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the MerchantBindingMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *MerchantBindingMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.MerchantBinding, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *MerchantBindingMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *MerchantBindingMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (MerchantBinding).
+func (m *MerchantBindingMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *MerchantBindingMutation) Fields() []string {
+	fields := make([]string, 0, 10)
+	if m.created_at != nil {
+		fields = append(fields, merchantbinding.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, merchantbinding.FieldUpdatedAt)
+	}
+	if m.integration != nil {
+		fields = append(fields, merchantbinding.FieldIntegrationID)
+	}
+	if m.user != nil {
+		fields = append(fields, merchantbinding.FieldUserID)
+	}
+	if m.external_user_id != nil {
+		fields = append(fields, merchantbinding.FieldExternalUserID)
+	}
+	if m.external_account != nil {
+		fields = append(fields, merchantbinding.FieldExternalAccount)
+	}
+	if m.status != nil {
+		fields = append(fields, merchantbinding.FieldStatus)
+	}
+	if m.last_login_at != nil {
+		fields = append(fields, merchantbinding.FieldLastLoginAt)
+	}
+	if m.last_sync_at != nil {
+		fields = append(fields, merchantbinding.FieldLastSyncAt)
+	}
+	if m.last_recharge_sync_at != nil {
+		fields = append(fields, merchantbinding.FieldLastRechargeSyncAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *MerchantBindingMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case merchantbinding.FieldCreatedAt:
+		return m.CreatedAt()
+	case merchantbinding.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case merchantbinding.FieldIntegrationID:
+		return m.IntegrationID()
+	case merchantbinding.FieldUserID:
+		return m.UserID()
+	case merchantbinding.FieldExternalUserID:
+		return m.ExternalUserID()
+	case merchantbinding.FieldExternalAccount:
+		return m.ExternalAccount()
+	case merchantbinding.FieldStatus:
+		return m.Status()
+	case merchantbinding.FieldLastLoginAt:
+		return m.LastLoginAt()
+	case merchantbinding.FieldLastSyncAt:
+		return m.LastSyncAt()
+	case merchantbinding.FieldLastRechargeSyncAt:
+		return m.LastRechargeSyncAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *MerchantBindingMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case merchantbinding.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case merchantbinding.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case merchantbinding.FieldIntegrationID:
+		return m.OldIntegrationID(ctx)
+	case merchantbinding.FieldUserID:
+		return m.OldUserID(ctx)
+	case merchantbinding.FieldExternalUserID:
+		return m.OldExternalUserID(ctx)
+	case merchantbinding.FieldExternalAccount:
+		return m.OldExternalAccount(ctx)
+	case merchantbinding.FieldStatus:
+		return m.OldStatus(ctx)
+	case merchantbinding.FieldLastLoginAt:
+		return m.OldLastLoginAt(ctx)
+	case merchantbinding.FieldLastSyncAt:
+		return m.OldLastSyncAt(ctx)
+	case merchantbinding.FieldLastRechargeSyncAt:
+		return m.OldLastRechargeSyncAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown MerchantBinding field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *MerchantBindingMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case merchantbinding.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case merchantbinding.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case merchantbinding.FieldIntegrationID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIntegrationID(v)
+		return nil
+	case merchantbinding.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case merchantbinding.FieldExternalUserID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExternalUserID(v)
+		return nil
+	case merchantbinding.FieldExternalAccount:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExternalAccount(v)
+		return nil
+	case merchantbinding.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case merchantbinding.FieldLastLoginAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastLoginAt(v)
+		return nil
+	case merchantbinding.FieldLastSyncAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastSyncAt(v)
+		return nil
+	case merchantbinding.FieldLastRechargeSyncAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastRechargeSyncAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown MerchantBinding field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *MerchantBindingMutation) AddedFields() []string {
+	var fields []string
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *MerchantBindingMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *MerchantBindingMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown MerchantBinding numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *MerchantBindingMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(merchantbinding.FieldLastLoginAt) {
+		fields = append(fields, merchantbinding.FieldLastLoginAt)
+	}
+	if m.FieldCleared(merchantbinding.FieldLastSyncAt) {
+		fields = append(fields, merchantbinding.FieldLastSyncAt)
+	}
+	if m.FieldCleared(merchantbinding.FieldLastRechargeSyncAt) {
+		fields = append(fields, merchantbinding.FieldLastRechargeSyncAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *MerchantBindingMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *MerchantBindingMutation) ClearField(name string) error {
+	switch name {
+	case merchantbinding.FieldLastLoginAt:
+		m.ClearLastLoginAt()
+		return nil
+	case merchantbinding.FieldLastSyncAt:
+		m.ClearLastSyncAt()
+		return nil
+	case merchantbinding.FieldLastRechargeSyncAt:
+		m.ClearLastRechargeSyncAt()
+		return nil
+	}
+	return fmt.Errorf("unknown MerchantBinding nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *MerchantBindingMutation) ResetField(name string) error {
+	switch name {
+	case merchantbinding.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case merchantbinding.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case merchantbinding.FieldIntegrationID:
+		m.ResetIntegrationID()
+		return nil
+	case merchantbinding.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case merchantbinding.FieldExternalUserID:
+		m.ResetExternalUserID()
+		return nil
+	case merchantbinding.FieldExternalAccount:
+		m.ResetExternalAccount()
+		return nil
+	case merchantbinding.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case merchantbinding.FieldLastLoginAt:
+		m.ResetLastLoginAt()
+		return nil
+	case merchantbinding.FieldLastSyncAt:
+		m.ResetLastSyncAt()
+		return nil
+	case merchantbinding.FieldLastRechargeSyncAt:
+		m.ResetLastRechargeSyncAt()
+		return nil
+	}
+	return fmt.Errorf("unknown MerchantBinding field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *MerchantBindingMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.integration != nil {
+		edges = append(edges, merchantbinding.EdgeIntegration)
+	}
+	if m.user != nil {
+		edges = append(edges, merchantbinding.EdgeUser)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *MerchantBindingMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case merchantbinding.EdgeIntegration:
+		if id := m.integration; id != nil {
+			return []ent.Value{*id}
+		}
+	case merchantbinding.EdgeUser:
+		if id := m.user; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *MerchantBindingMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *MerchantBindingMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *MerchantBindingMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedintegration {
+		edges = append(edges, merchantbinding.EdgeIntegration)
+	}
+	if m.cleareduser {
+		edges = append(edges, merchantbinding.EdgeUser)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *MerchantBindingMutation) EdgeCleared(name string) bool {
+	switch name {
+	case merchantbinding.EdgeIntegration:
+		return m.clearedintegration
+	case merchantbinding.EdgeUser:
+		return m.cleareduser
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *MerchantBindingMutation) ClearEdge(name string) error {
+	switch name {
+	case merchantbinding.EdgeIntegration:
+		m.ClearIntegration()
+		return nil
+	case merchantbinding.EdgeUser:
+		m.ClearUser()
+		return nil
+	}
+	return fmt.Errorf("unknown MerchantBinding unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *MerchantBindingMutation) ResetEdge(name string) error {
+	switch name {
+	case merchantbinding.EdgeIntegration:
+		m.ResetIntegration()
+		return nil
+	case merchantbinding.EdgeUser:
+		m.ResetUser()
+		return nil
+	}
+	return fmt.Errorf("unknown MerchantBinding edge %s", name)
+}
+
+// MerchantIntegrationMutation represents an operation that mutates the MerchantIntegration nodes in the graph.
+type MerchantIntegrationMutation struct {
+	config
+	op                      Op
+	typ                     string
+	id                      *int64
+	created_at              *time.Time
+	updated_at              *time.Time
+	name                    *string
+	code                    *string
+	mode                    *string
+	merchant_code           *string
+	description             *string
+	status                  *string
+	enabled                 *bool
+	redirect_hosts          *[]string
+	appendredirect_hosts    []string
+	clearedFields           map[string]struct{}
+	endpoints               map[int64]struct{}
+	removedendpoints        map[int64]struct{}
+	clearedendpoints        bool
+	bindings                map[int64]struct{}
+	removedbindings         map[int64]struct{}
+	clearedbindings         bool
+	recharge_records        map[int64]struct{}
+	removedrecharge_records map[int64]struct{}
+	clearedrecharge_records bool
+	done                    bool
+	oldValue                func(context.Context) (*MerchantIntegration, error)
+	predicates              []predicate.MerchantIntegration
+}
+
+var _ ent.Mutation = (*MerchantIntegrationMutation)(nil)
+
+// merchantintegrationOption allows management of the mutation configuration using functional options.
+type merchantintegrationOption func(*MerchantIntegrationMutation)
+
+// newMerchantIntegrationMutation creates new mutation for the MerchantIntegration entity.
+func newMerchantIntegrationMutation(c config, op Op, opts ...merchantintegrationOption) *MerchantIntegrationMutation {
+	m := &MerchantIntegrationMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeMerchantIntegration,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withMerchantIntegrationID sets the ID field of the mutation.
+func withMerchantIntegrationID(id int64) merchantintegrationOption {
+	return func(m *MerchantIntegrationMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *MerchantIntegration
+		)
+		m.oldValue = func(ctx context.Context) (*MerchantIntegration, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().MerchantIntegration.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withMerchantIntegration sets the old MerchantIntegration of the mutation.
+func withMerchantIntegration(node *MerchantIntegration) merchantintegrationOption {
+	return func(m *MerchantIntegrationMutation) {
+		m.oldValue = func(context.Context) (*MerchantIntegration, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m MerchantIntegrationMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m MerchantIntegrationMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *MerchantIntegrationMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *MerchantIntegrationMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().MerchantIntegration.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *MerchantIntegrationMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *MerchantIntegrationMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the MerchantIntegration entity.
+// If the MerchantIntegration object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantIntegrationMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *MerchantIntegrationMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *MerchantIntegrationMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *MerchantIntegrationMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the MerchantIntegration entity.
+// If the MerchantIntegration object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantIntegrationMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *MerchantIntegrationMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetName sets the "name" field.
+func (m *MerchantIntegrationMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *MerchantIntegrationMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the MerchantIntegration entity.
+// If the MerchantIntegration object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantIntegrationMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *MerchantIntegrationMutation) ResetName() {
+	m.name = nil
+}
+
+// SetCode sets the "code" field.
+func (m *MerchantIntegrationMutation) SetCode(s string) {
+	m.code = &s
+}
+
+// Code returns the value of the "code" field in the mutation.
+func (m *MerchantIntegrationMutation) Code() (r string, exists bool) {
+	v := m.code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCode returns the old "code" field's value of the MerchantIntegration entity.
+// If the MerchantIntegration object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantIntegrationMutation) OldCode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCode: %w", err)
+	}
+	return oldValue.Code, nil
+}
+
+// ResetCode resets all changes to the "code" field.
+func (m *MerchantIntegrationMutation) ResetCode() {
+	m.code = nil
+}
+
+// SetMode sets the "mode" field.
+func (m *MerchantIntegrationMutation) SetMode(s string) {
+	m.mode = &s
+}
+
+// Mode returns the value of the "mode" field in the mutation.
+func (m *MerchantIntegrationMutation) Mode() (r string, exists bool) {
+	v := m.mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMode returns the old "mode" field's value of the MerchantIntegration entity.
+// If the MerchantIntegration object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantIntegrationMutation) OldMode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMode: %w", err)
+	}
+	return oldValue.Mode, nil
+}
+
+// ResetMode resets all changes to the "mode" field.
+func (m *MerchantIntegrationMutation) ResetMode() {
+	m.mode = nil
+}
+
+// SetMerchantCode sets the "merchant_code" field.
+func (m *MerchantIntegrationMutation) SetMerchantCode(s string) {
+	m.merchant_code = &s
+}
+
+// MerchantCode returns the value of the "merchant_code" field in the mutation.
+func (m *MerchantIntegrationMutation) MerchantCode() (r string, exists bool) {
+	v := m.merchant_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMerchantCode returns the old "merchant_code" field's value of the MerchantIntegration entity.
+// If the MerchantIntegration object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantIntegrationMutation) OldMerchantCode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMerchantCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMerchantCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMerchantCode: %w", err)
+	}
+	return oldValue.MerchantCode, nil
+}
+
+// ResetMerchantCode resets all changes to the "merchant_code" field.
+func (m *MerchantIntegrationMutation) ResetMerchantCode() {
+	m.merchant_code = nil
+}
+
+// SetDescription sets the "description" field.
+func (m *MerchantIntegrationMutation) SetDescription(s string) {
+	m.description = &s
+}
+
+// Description returns the value of the "description" field in the mutation.
+func (m *MerchantIntegrationMutation) Description() (r string, exists bool) {
+	v := m.description
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDescription returns the old "description" field's value of the MerchantIntegration entity.
+// If the MerchantIntegration object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantIntegrationMutation) OldDescription(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDescription is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDescription requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDescription: %w", err)
+	}
+	return oldValue.Description, nil
+}
+
+// ResetDescription resets all changes to the "description" field.
+func (m *MerchantIntegrationMutation) ResetDescription() {
+	m.description = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *MerchantIntegrationMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *MerchantIntegrationMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the MerchantIntegration entity.
+// If the MerchantIntegration object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantIntegrationMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *MerchantIntegrationMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *MerchantIntegrationMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *MerchantIntegrationMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the MerchantIntegration entity.
+// If the MerchantIntegration object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantIntegrationMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *MerchantIntegrationMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetRedirectHosts sets the "redirect_hosts" field.
+func (m *MerchantIntegrationMutation) SetRedirectHosts(s []string) {
+	m.redirect_hosts = &s
+	m.appendredirect_hosts = nil
+}
+
+// RedirectHosts returns the value of the "redirect_hosts" field in the mutation.
+func (m *MerchantIntegrationMutation) RedirectHosts() (r []string, exists bool) {
+	v := m.redirect_hosts
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRedirectHosts returns the old "redirect_hosts" field's value of the MerchantIntegration entity.
+// If the MerchantIntegration object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantIntegrationMutation) OldRedirectHosts(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRedirectHosts is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRedirectHosts requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRedirectHosts: %w", err)
+	}
+	return oldValue.RedirectHosts, nil
+}
+
+// AppendRedirectHosts adds s to the "redirect_hosts" field.
+func (m *MerchantIntegrationMutation) AppendRedirectHosts(s []string) {
+	m.appendredirect_hosts = append(m.appendredirect_hosts, s...)
+}
+
+// AppendedRedirectHosts returns the list of values that were appended to the "redirect_hosts" field in this mutation.
+func (m *MerchantIntegrationMutation) AppendedRedirectHosts() ([]string, bool) {
+	if len(m.appendredirect_hosts) == 0 {
+		return nil, false
+	}
+	return m.appendredirect_hosts, true
+}
+
+// ResetRedirectHosts resets all changes to the "redirect_hosts" field.
+func (m *MerchantIntegrationMutation) ResetRedirectHosts() {
+	m.redirect_hosts = nil
+	m.appendredirect_hosts = nil
+}
+
+// AddEndpointIDs adds the "endpoints" edge to the MerchantAPIEndpoint entity by ids.
+func (m *MerchantIntegrationMutation) AddEndpointIDs(ids ...int64) {
+	if m.endpoints == nil {
+		m.endpoints = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.endpoints[ids[i]] = struct{}{}
+	}
+}
+
+// ClearEndpoints clears the "endpoints" edge to the MerchantAPIEndpoint entity.
+func (m *MerchantIntegrationMutation) ClearEndpoints() {
+	m.clearedendpoints = true
+}
+
+// EndpointsCleared reports if the "endpoints" edge to the MerchantAPIEndpoint entity was cleared.
+func (m *MerchantIntegrationMutation) EndpointsCleared() bool {
+	return m.clearedendpoints
+}
+
+// RemoveEndpointIDs removes the "endpoints" edge to the MerchantAPIEndpoint entity by IDs.
+func (m *MerchantIntegrationMutation) RemoveEndpointIDs(ids ...int64) {
+	if m.removedendpoints == nil {
+		m.removedendpoints = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.endpoints, ids[i])
+		m.removedendpoints[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedEndpoints returns the removed IDs of the "endpoints" edge to the MerchantAPIEndpoint entity.
+func (m *MerchantIntegrationMutation) RemovedEndpointsIDs() (ids []int64) {
+	for id := range m.removedendpoints {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// EndpointsIDs returns the "endpoints" edge IDs in the mutation.
+func (m *MerchantIntegrationMutation) EndpointsIDs() (ids []int64) {
+	for id := range m.endpoints {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetEndpoints resets all changes to the "endpoints" edge.
+func (m *MerchantIntegrationMutation) ResetEndpoints() {
+	m.endpoints = nil
+	m.clearedendpoints = false
+	m.removedendpoints = nil
+}
+
+// AddBindingIDs adds the "bindings" edge to the MerchantBinding entity by ids.
+func (m *MerchantIntegrationMutation) AddBindingIDs(ids ...int64) {
+	if m.bindings == nil {
+		m.bindings = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.bindings[ids[i]] = struct{}{}
+	}
+}
+
+// ClearBindings clears the "bindings" edge to the MerchantBinding entity.
+func (m *MerchantIntegrationMutation) ClearBindings() {
+	m.clearedbindings = true
+}
+
+// BindingsCleared reports if the "bindings" edge to the MerchantBinding entity was cleared.
+func (m *MerchantIntegrationMutation) BindingsCleared() bool {
+	return m.clearedbindings
+}
+
+// RemoveBindingIDs removes the "bindings" edge to the MerchantBinding entity by IDs.
+func (m *MerchantIntegrationMutation) RemoveBindingIDs(ids ...int64) {
+	if m.removedbindings == nil {
+		m.removedbindings = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.bindings, ids[i])
+		m.removedbindings[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedBindings returns the removed IDs of the "bindings" edge to the MerchantBinding entity.
+func (m *MerchantIntegrationMutation) RemovedBindingsIDs() (ids []int64) {
+	for id := range m.removedbindings {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// BindingsIDs returns the "bindings" edge IDs in the mutation.
+func (m *MerchantIntegrationMutation) BindingsIDs() (ids []int64) {
+	for id := range m.bindings {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetBindings resets all changes to the "bindings" edge.
+func (m *MerchantIntegrationMutation) ResetBindings() {
+	m.bindings = nil
+	m.clearedbindings = false
+	m.removedbindings = nil
+}
+
+// AddRechargeRecordIDs adds the "recharge_records" edge to the MerchantRechargeRecord entity by ids.
+func (m *MerchantIntegrationMutation) AddRechargeRecordIDs(ids ...int64) {
+	if m.recharge_records == nil {
+		m.recharge_records = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.recharge_records[ids[i]] = struct{}{}
+	}
+}
+
+// ClearRechargeRecords clears the "recharge_records" edge to the MerchantRechargeRecord entity.
+func (m *MerchantIntegrationMutation) ClearRechargeRecords() {
+	m.clearedrecharge_records = true
+}
+
+// RechargeRecordsCleared reports if the "recharge_records" edge to the MerchantRechargeRecord entity was cleared.
+func (m *MerchantIntegrationMutation) RechargeRecordsCleared() bool {
+	return m.clearedrecharge_records
+}
+
+// RemoveRechargeRecordIDs removes the "recharge_records" edge to the MerchantRechargeRecord entity by IDs.
+func (m *MerchantIntegrationMutation) RemoveRechargeRecordIDs(ids ...int64) {
+	if m.removedrecharge_records == nil {
+		m.removedrecharge_records = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.recharge_records, ids[i])
+		m.removedrecharge_records[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedRechargeRecords returns the removed IDs of the "recharge_records" edge to the MerchantRechargeRecord entity.
+func (m *MerchantIntegrationMutation) RemovedRechargeRecordsIDs() (ids []int64) {
+	for id := range m.removedrecharge_records {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// RechargeRecordsIDs returns the "recharge_records" edge IDs in the mutation.
+func (m *MerchantIntegrationMutation) RechargeRecordsIDs() (ids []int64) {
+	for id := range m.recharge_records {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetRechargeRecords resets all changes to the "recharge_records" edge.
+func (m *MerchantIntegrationMutation) ResetRechargeRecords() {
+	m.recharge_records = nil
+	m.clearedrecharge_records = false
+	m.removedrecharge_records = nil
+}
+
+// Where appends a list predicates to the MerchantIntegrationMutation builder.
+func (m *MerchantIntegrationMutation) Where(ps ...predicate.MerchantIntegration) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the MerchantIntegrationMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *MerchantIntegrationMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.MerchantIntegration, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *MerchantIntegrationMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *MerchantIntegrationMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (MerchantIntegration).
+func (m *MerchantIntegrationMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *MerchantIntegrationMutation) Fields() []string {
+	fields := make([]string, 0, 10)
+	if m.created_at != nil {
+		fields = append(fields, merchantintegration.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, merchantintegration.FieldUpdatedAt)
+	}
+	if m.name != nil {
+		fields = append(fields, merchantintegration.FieldName)
+	}
+	if m.code != nil {
+		fields = append(fields, merchantintegration.FieldCode)
+	}
+	if m.mode != nil {
+		fields = append(fields, merchantintegration.FieldMode)
+	}
+	if m.merchant_code != nil {
+		fields = append(fields, merchantintegration.FieldMerchantCode)
+	}
+	if m.description != nil {
+		fields = append(fields, merchantintegration.FieldDescription)
+	}
+	if m.status != nil {
+		fields = append(fields, merchantintegration.FieldStatus)
+	}
+	if m.enabled != nil {
+		fields = append(fields, merchantintegration.FieldEnabled)
+	}
+	if m.redirect_hosts != nil {
+		fields = append(fields, merchantintegration.FieldRedirectHosts)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *MerchantIntegrationMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case merchantintegration.FieldCreatedAt:
+		return m.CreatedAt()
+	case merchantintegration.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case merchantintegration.FieldName:
+		return m.Name()
+	case merchantintegration.FieldCode:
+		return m.Code()
+	case merchantintegration.FieldMode:
+		return m.Mode()
+	case merchantintegration.FieldMerchantCode:
+		return m.MerchantCode()
+	case merchantintegration.FieldDescription:
+		return m.Description()
+	case merchantintegration.FieldStatus:
+		return m.Status()
+	case merchantintegration.FieldEnabled:
+		return m.Enabled()
+	case merchantintegration.FieldRedirectHosts:
+		return m.RedirectHosts()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *MerchantIntegrationMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case merchantintegration.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case merchantintegration.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case merchantintegration.FieldName:
+		return m.OldName(ctx)
+	case merchantintegration.FieldCode:
+		return m.OldCode(ctx)
+	case merchantintegration.FieldMode:
+		return m.OldMode(ctx)
+	case merchantintegration.FieldMerchantCode:
+		return m.OldMerchantCode(ctx)
+	case merchantintegration.FieldDescription:
+		return m.OldDescription(ctx)
+	case merchantintegration.FieldStatus:
+		return m.OldStatus(ctx)
+	case merchantintegration.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case merchantintegration.FieldRedirectHosts:
+		return m.OldRedirectHosts(ctx)
+	}
+	return nil, fmt.Errorf("unknown MerchantIntegration field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *MerchantIntegrationMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case merchantintegration.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case merchantintegration.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case merchantintegration.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case merchantintegration.FieldCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCode(v)
+		return nil
+	case merchantintegration.FieldMode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMode(v)
+		return nil
+	case merchantintegration.FieldMerchantCode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMerchantCode(v)
+		return nil
+	case merchantintegration.FieldDescription:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDescription(v)
+		return nil
+	case merchantintegration.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case merchantintegration.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case merchantintegration.FieldRedirectHosts:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRedirectHosts(v)
+		return nil
+	}
+	return fmt.Errorf("unknown MerchantIntegration field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *MerchantIntegrationMutation) AddedFields() []string {
+	return nil
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *MerchantIntegrationMutation) AddedField(name string) (ent.Value, bool) {
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *MerchantIntegrationMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown MerchantIntegration numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *MerchantIntegrationMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *MerchantIntegrationMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *MerchantIntegrationMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown MerchantIntegration nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *MerchantIntegrationMutation) ResetField(name string) error {
+	switch name {
+	case merchantintegration.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case merchantintegration.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case merchantintegration.FieldName:
+		m.ResetName()
+		return nil
+	case merchantintegration.FieldCode:
+		m.ResetCode()
+		return nil
+	case merchantintegration.FieldMode:
+		m.ResetMode()
+		return nil
+	case merchantintegration.FieldMerchantCode:
+		m.ResetMerchantCode()
+		return nil
+	case merchantintegration.FieldDescription:
+		m.ResetDescription()
+		return nil
+	case merchantintegration.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case merchantintegration.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case merchantintegration.FieldRedirectHosts:
+		m.ResetRedirectHosts()
+		return nil
+	}
+	return fmt.Errorf("unknown MerchantIntegration field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *MerchantIntegrationMutation) AddedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.endpoints != nil {
+		edges = append(edges, merchantintegration.EdgeEndpoints)
+	}
+	if m.bindings != nil {
+		edges = append(edges, merchantintegration.EdgeBindings)
+	}
+	if m.recharge_records != nil {
+		edges = append(edges, merchantintegration.EdgeRechargeRecords)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *MerchantIntegrationMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case merchantintegration.EdgeEndpoints:
+		ids := make([]ent.Value, 0, len(m.endpoints))
+		for id := range m.endpoints {
+			ids = append(ids, id)
+		}
+		return ids
+	case merchantintegration.EdgeBindings:
+		ids := make([]ent.Value, 0, len(m.bindings))
+		for id := range m.bindings {
+			ids = append(ids, id)
+		}
+		return ids
+	case merchantintegration.EdgeRechargeRecords:
+		ids := make([]ent.Value, 0, len(m.recharge_records))
+		for id := range m.recharge_records {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *MerchantIntegrationMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.removedendpoints != nil {
+		edges = append(edges, merchantintegration.EdgeEndpoints)
+	}
+	if m.removedbindings != nil {
+		edges = append(edges, merchantintegration.EdgeBindings)
+	}
+	if m.removedrecharge_records != nil {
+		edges = append(edges, merchantintegration.EdgeRechargeRecords)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *MerchantIntegrationMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case merchantintegration.EdgeEndpoints:
+		ids := make([]ent.Value, 0, len(m.removedendpoints))
+		for id := range m.removedendpoints {
+			ids = append(ids, id)
+		}
+		return ids
+	case merchantintegration.EdgeBindings:
+		ids := make([]ent.Value, 0, len(m.removedbindings))
+		for id := range m.removedbindings {
+			ids = append(ids, id)
+		}
+		return ids
+	case merchantintegration.EdgeRechargeRecords:
+		ids := make([]ent.Value, 0, len(m.removedrecharge_records))
+		for id := range m.removedrecharge_records {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *MerchantIntegrationMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.clearedendpoints {
+		edges = append(edges, merchantintegration.EdgeEndpoints)
+	}
+	if m.clearedbindings {
+		edges = append(edges, merchantintegration.EdgeBindings)
+	}
+	if m.clearedrecharge_records {
+		edges = append(edges, merchantintegration.EdgeRechargeRecords)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *MerchantIntegrationMutation) EdgeCleared(name string) bool {
+	switch name {
+	case merchantintegration.EdgeEndpoints:
+		return m.clearedendpoints
+	case merchantintegration.EdgeBindings:
+		return m.clearedbindings
+	case merchantintegration.EdgeRechargeRecords:
+		return m.clearedrecharge_records
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *MerchantIntegrationMutation) ClearEdge(name string) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown MerchantIntegration unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *MerchantIntegrationMutation) ResetEdge(name string) error {
+	switch name {
+	case merchantintegration.EdgeEndpoints:
+		m.ResetEndpoints()
+		return nil
+	case merchantintegration.EdgeBindings:
+		m.ResetBindings()
+		return nil
+	case merchantintegration.EdgeRechargeRecords:
+		m.ResetRechargeRecords()
+		return nil
+	}
+	return fmt.Errorf("unknown MerchantIntegration edge %s", name)
+}
+
+// MerchantRechargeRecordMutation represents an operation that mutates the MerchantRechargeRecord nodes in the graph.
+type MerchantRechargeRecordMutation struct {
+	config
+	op                  Op
+	typ                 string
+	id                  *int64
+	created_at          *time.Time
+	updated_at          *time.Time
+	external_user_id    *string
+	order_no            *string
+	amount              *string
+	currency            *string
+	balance_before      *string
+	balance_after       *string
+	charge_type         *string
+	pay_method          *string
+	status              *string
+	platform_order_no   *string
+	merchant_created_at *time.Time
+	clearedFields       map[string]struct{}
+	integration         *int64
+	clearedintegration  bool
+	user                *int64
+	cleareduser         bool
+	done                bool
+	oldValue            func(context.Context) (*MerchantRechargeRecord, error)
+	predicates          []predicate.MerchantRechargeRecord
+}
+
+var _ ent.Mutation = (*MerchantRechargeRecordMutation)(nil)
+
+// merchantrechargerecordOption allows management of the mutation configuration using functional options.
+type merchantrechargerecordOption func(*MerchantRechargeRecordMutation)
+
+// newMerchantRechargeRecordMutation creates new mutation for the MerchantRechargeRecord entity.
+func newMerchantRechargeRecordMutation(c config, op Op, opts ...merchantrechargerecordOption) *MerchantRechargeRecordMutation {
+	m := &MerchantRechargeRecordMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeMerchantRechargeRecord,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withMerchantRechargeRecordID sets the ID field of the mutation.
+func withMerchantRechargeRecordID(id int64) merchantrechargerecordOption {
+	return func(m *MerchantRechargeRecordMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *MerchantRechargeRecord
+		)
+		m.oldValue = func(ctx context.Context) (*MerchantRechargeRecord, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().MerchantRechargeRecord.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withMerchantRechargeRecord sets the old MerchantRechargeRecord of the mutation.
+func withMerchantRechargeRecord(node *MerchantRechargeRecord) merchantrechargerecordOption {
+	return func(m *MerchantRechargeRecordMutation) {
+		m.oldValue = func(context.Context) (*MerchantRechargeRecord, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m MerchantRechargeRecordMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m MerchantRechargeRecordMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *MerchantRechargeRecordMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *MerchantRechargeRecordMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().MerchantRechargeRecord.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *MerchantRechargeRecordMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *MerchantRechargeRecordMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the MerchantRechargeRecord entity.
+// If the MerchantRechargeRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantRechargeRecordMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *MerchantRechargeRecordMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *MerchantRechargeRecordMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *MerchantRechargeRecordMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the MerchantRechargeRecord entity.
+// If the MerchantRechargeRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantRechargeRecordMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *MerchantRechargeRecordMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetIntegrationID sets the "integration_id" field.
+func (m *MerchantRechargeRecordMutation) SetIntegrationID(i int64) {
+	m.integration = &i
+}
+
+// IntegrationID returns the value of the "integration_id" field in the mutation.
+func (m *MerchantRechargeRecordMutation) IntegrationID() (r int64, exists bool) {
+	v := m.integration
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIntegrationID returns the old "integration_id" field's value of the MerchantRechargeRecord entity.
+// If the MerchantRechargeRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantRechargeRecordMutation) OldIntegrationID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIntegrationID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIntegrationID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIntegrationID: %w", err)
+	}
+	return oldValue.IntegrationID, nil
+}
+
+// ResetIntegrationID resets all changes to the "integration_id" field.
+func (m *MerchantRechargeRecordMutation) ResetIntegrationID() {
+	m.integration = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *MerchantRechargeRecordMutation) SetUserID(i int64) {
+	m.user = &i
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *MerchantRechargeRecordMutation) UserID() (r int64, exists bool) {
+	v := m.user
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the MerchantRechargeRecord entity.
+// If the MerchantRechargeRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantRechargeRecordMutation) OldUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *MerchantRechargeRecordMutation) ResetUserID() {
+	m.user = nil
+}
+
+// SetExternalUserID sets the "external_user_id" field.
+func (m *MerchantRechargeRecordMutation) SetExternalUserID(s string) {
+	m.external_user_id = &s
+}
+
+// ExternalUserID returns the value of the "external_user_id" field in the mutation.
+func (m *MerchantRechargeRecordMutation) ExternalUserID() (r string, exists bool) {
+	v := m.external_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExternalUserID returns the old "external_user_id" field's value of the MerchantRechargeRecord entity.
+// If the MerchantRechargeRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantRechargeRecordMutation) OldExternalUserID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExternalUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExternalUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExternalUserID: %w", err)
+	}
+	return oldValue.ExternalUserID, nil
+}
+
+// ResetExternalUserID resets all changes to the "external_user_id" field.
+func (m *MerchantRechargeRecordMutation) ResetExternalUserID() {
+	m.external_user_id = nil
+}
+
+// SetOrderNo sets the "order_no" field.
+func (m *MerchantRechargeRecordMutation) SetOrderNo(s string) {
+	m.order_no = &s
+}
+
+// OrderNo returns the value of the "order_no" field in the mutation.
+func (m *MerchantRechargeRecordMutation) OrderNo() (r string, exists bool) {
+	v := m.order_no
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOrderNo returns the old "order_no" field's value of the MerchantRechargeRecord entity.
+// If the MerchantRechargeRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantRechargeRecordMutation) OldOrderNo(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOrderNo is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOrderNo requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOrderNo: %w", err)
+	}
+	return oldValue.OrderNo, nil
+}
+
+// ResetOrderNo resets all changes to the "order_no" field.
+func (m *MerchantRechargeRecordMutation) ResetOrderNo() {
+	m.order_no = nil
+}
+
+// SetAmount sets the "amount" field.
+func (m *MerchantRechargeRecordMutation) SetAmount(s string) {
+	m.amount = &s
+}
+
+// Amount returns the value of the "amount" field in the mutation.
+func (m *MerchantRechargeRecordMutation) Amount() (r string, exists bool) {
+	v := m.amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAmount returns the old "amount" field's value of the MerchantRechargeRecord entity.
+// If the MerchantRechargeRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantRechargeRecordMutation) OldAmount(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAmount: %w", err)
+	}
+	return oldValue.Amount, nil
+}
+
+// ResetAmount resets all changes to the "amount" field.
+func (m *MerchantRechargeRecordMutation) ResetAmount() {
+	m.amount = nil
+}
+
+// SetCurrency sets the "currency" field.
+func (m *MerchantRechargeRecordMutation) SetCurrency(s string) {
+	m.currency = &s
+}
+
+// Currency returns the value of the "currency" field in the mutation.
+func (m *MerchantRechargeRecordMutation) Currency() (r string, exists bool) {
+	v := m.currency
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCurrency returns the old "currency" field's value of the MerchantRechargeRecord entity.
+// If the MerchantRechargeRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantRechargeRecordMutation) OldCurrency(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCurrency is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCurrency requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCurrency: %w", err)
+	}
+	return oldValue.Currency, nil
+}
+
+// ResetCurrency resets all changes to the "currency" field.
+func (m *MerchantRechargeRecordMutation) ResetCurrency() {
+	m.currency = nil
+}
+
+// SetBalanceBefore sets the "balance_before" field.
+func (m *MerchantRechargeRecordMutation) SetBalanceBefore(s string) {
+	m.balance_before = &s
+}
+
+// BalanceBefore returns the value of the "balance_before" field in the mutation.
+func (m *MerchantRechargeRecordMutation) BalanceBefore() (r string, exists bool) {
+	v := m.balance_before
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBalanceBefore returns the old "balance_before" field's value of the MerchantRechargeRecord entity.
+// If the MerchantRechargeRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantRechargeRecordMutation) OldBalanceBefore(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBalanceBefore is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBalanceBefore requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBalanceBefore: %w", err)
+	}
+	return oldValue.BalanceBefore, nil
+}
+
+// ResetBalanceBefore resets all changes to the "balance_before" field.
+func (m *MerchantRechargeRecordMutation) ResetBalanceBefore() {
+	m.balance_before = nil
+}
+
+// SetBalanceAfter sets the "balance_after" field.
+func (m *MerchantRechargeRecordMutation) SetBalanceAfter(s string) {
+	m.balance_after = &s
+}
+
+// BalanceAfter returns the value of the "balance_after" field in the mutation.
+func (m *MerchantRechargeRecordMutation) BalanceAfter() (r string, exists bool) {
+	v := m.balance_after
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBalanceAfter returns the old "balance_after" field's value of the MerchantRechargeRecord entity.
+// If the MerchantRechargeRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantRechargeRecordMutation) OldBalanceAfter(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBalanceAfter is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBalanceAfter requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBalanceAfter: %w", err)
+	}
+	return oldValue.BalanceAfter, nil
+}
+
+// ResetBalanceAfter resets all changes to the "balance_after" field.
+func (m *MerchantRechargeRecordMutation) ResetBalanceAfter() {
+	m.balance_after = nil
+}
+
+// SetChargeType sets the "charge_type" field.
+func (m *MerchantRechargeRecordMutation) SetChargeType(s string) {
+	m.charge_type = &s
+}
+
+// ChargeType returns the value of the "charge_type" field in the mutation.
+func (m *MerchantRechargeRecordMutation) ChargeType() (r string, exists bool) {
+	v := m.charge_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldChargeType returns the old "charge_type" field's value of the MerchantRechargeRecord entity.
+// If the MerchantRechargeRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantRechargeRecordMutation) OldChargeType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldChargeType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldChargeType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldChargeType: %w", err)
+	}
+	return oldValue.ChargeType, nil
+}
+
+// ResetChargeType resets all changes to the "charge_type" field.
+func (m *MerchantRechargeRecordMutation) ResetChargeType() {
+	m.charge_type = nil
+}
+
+// SetPayMethod sets the "pay_method" field.
+func (m *MerchantRechargeRecordMutation) SetPayMethod(s string) {
+	m.pay_method = &s
+}
+
+// PayMethod returns the value of the "pay_method" field in the mutation.
+func (m *MerchantRechargeRecordMutation) PayMethod() (r string, exists bool) {
+	v := m.pay_method
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPayMethod returns the old "pay_method" field's value of the MerchantRechargeRecord entity.
+// If the MerchantRechargeRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantRechargeRecordMutation) OldPayMethod(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPayMethod is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPayMethod requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPayMethod: %w", err)
+	}
+	return oldValue.PayMethod, nil
+}
+
+// ResetPayMethod resets all changes to the "pay_method" field.
+func (m *MerchantRechargeRecordMutation) ResetPayMethod() {
+	m.pay_method = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *MerchantRechargeRecordMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *MerchantRechargeRecordMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the MerchantRechargeRecord entity.
+// If the MerchantRechargeRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantRechargeRecordMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *MerchantRechargeRecordMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetPlatformOrderNo sets the "platform_order_no" field.
+func (m *MerchantRechargeRecordMutation) SetPlatformOrderNo(s string) {
+	m.platform_order_no = &s
+}
+
+// PlatformOrderNo returns the value of the "platform_order_no" field in the mutation.
+func (m *MerchantRechargeRecordMutation) PlatformOrderNo() (r string, exists bool) {
+	v := m.platform_order_no
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlatformOrderNo returns the old "platform_order_no" field's value of the MerchantRechargeRecord entity.
+// If the MerchantRechargeRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantRechargeRecordMutation) OldPlatformOrderNo(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlatformOrderNo is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlatformOrderNo requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlatformOrderNo: %w", err)
+	}
+	return oldValue.PlatformOrderNo, nil
+}
+
+// ResetPlatformOrderNo resets all changes to the "platform_order_no" field.
+func (m *MerchantRechargeRecordMutation) ResetPlatformOrderNo() {
+	m.platform_order_no = nil
+}
+
+// SetMerchantCreatedAt sets the "merchant_created_at" field.
+func (m *MerchantRechargeRecordMutation) SetMerchantCreatedAt(t time.Time) {
+	m.merchant_created_at = &t
+}
+
+// MerchantCreatedAt returns the value of the "merchant_created_at" field in the mutation.
+func (m *MerchantRechargeRecordMutation) MerchantCreatedAt() (r time.Time, exists bool) {
+	v := m.merchant_created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMerchantCreatedAt returns the old "merchant_created_at" field's value of the MerchantRechargeRecord entity.
+// If the MerchantRechargeRecord object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *MerchantRechargeRecordMutation) OldMerchantCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMerchantCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMerchantCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMerchantCreatedAt: %w", err)
+	}
+	return oldValue.MerchantCreatedAt, nil
+}
+
+// ResetMerchantCreatedAt resets all changes to the "merchant_created_at" field.
+func (m *MerchantRechargeRecordMutation) ResetMerchantCreatedAt() {
+	m.merchant_created_at = nil
+}
+
+// ClearIntegration clears the "integration" edge to the MerchantIntegration entity.
+func (m *MerchantRechargeRecordMutation) ClearIntegration() {
+	m.clearedintegration = true
+	m.clearedFields[merchantrechargerecord.FieldIntegrationID] = struct{}{}
+}
+
+// IntegrationCleared reports if the "integration" edge to the MerchantIntegration entity was cleared.
+func (m *MerchantRechargeRecordMutation) IntegrationCleared() bool {
+	return m.clearedintegration
+}
+
+// IntegrationIDs returns the "integration" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// IntegrationID instead. It exists only for internal usage by the builders.
+func (m *MerchantRechargeRecordMutation) IntegrationIDs() (ids []int64) {
+	if id := m.integration; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetIntegration resets all changes to the "integration" edge.
+func (m *MerchantRechargeRecordMutation) ResetIntegration() {
+	m.integration = nil
+	m.clearedintegration = false
+}
+
+// ClearUser clears the "user" edge to the User entity.
+func (m *MerchantRechargeRecordMutation) ClearUser() {
+	m.cleareduser = true
+	m.clearedFields[merchantrechargerecord.FieldUserID] = struct{}{}
+}
+
+// UserCleared reports if the "user" edge to the User entity was cleared.
+func (m *MerchantRechargeRecordMutation) UserCleared() bool {
+	return m.cleareduser
+}
+
+// UserIDs returns the "user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UserID instead. It exists only for internal usage by the builders.
+func (m *MerchantRechargeRecordMutation) UserIDs() (ids []int64) {
+	if id := m.user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUser resets all changes to the "user" edge.
+func (m *MerchantRechargeRecordMutation) ResetUser() {
+	m.user = nil
+	m.cleareduser = false
+}
+
+// Where appends a list predicates to the MerchantRechargeRecordMutation builder.
+func (m *MerchantRechargeRecordMutation) Where(ps ...predicate.MerchantRechargeRecord) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the MerchantRechargeRecordMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *MerchantRechargeRecordMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.MerchantRechargeRecord, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *MerchantRechargeRecordMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *MerchantRechargeRecordMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (MerchantRechargeRecord).
+func (m *MerchantRechargeRecordMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *MerchantRechargeRecordMutation) Fields() []string {
+	fields := make([]string, 0, 15)
+	if m.created_at != nil {
+		fields = append(fields, merchantrechargerecord.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, merchantrechargerecord.FieldUpdatedAt)
+	}
+	if m.integration != nil {
+		fields = append(fields, merchantrechargerecord.FieldIntegrationID)
+	}
+	if m.user != nil {
+		fields = append(fields, merchantrechargerecord.FieldUserID)
+	}
+	if m.external_user_id != nil {
+		fields = append(fields, merchantrechargerecord.FieldExternalUserID)
+	}
+	if m.order_no != nil {
+		fields = append(fields, merchantrechargerecord.FieldOrderNo)
+	}
+	if m.amount != nil {
+		fields = append(fields, merchantrechargerecord.FieldAmount)
+	}
+	if m.currency != nil {
+		fields = append(fields, merchantrechargerecord.FieldCurrency)
+	}
+	if m.balance_before != nil {
+		fields = append(fields, merchantrechargerecord.FieldBalanceBefore)
+	}
+	if m.balance_after != nil {
+		fields = append(fields, merchantrechargerecord.FieldBalanceAfter)
+	}
+	if m.charge_type != nil {
+		fields = append(fields, merchantrechargerecord.FieldChargeType)
+	}
+	if m.pay_method != nil {
+		fields = append(fields, merchantrechargerecord.FieldPayMethod)
+	}
+	if m.status != nil {
+		fields = append(fields, merchantrechargerecord.FieldStatus)
+	}
+	if m.platform_order_no != nil {
+		fields = append(fields, merchantrechargerecord.FieldPlatformOrderNo)
+	}
+	if m.merchant_created_at != nil {
+		fields = append(fields, merchantrechargerecord.FieldMerchantCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *MerchantRechargeRecordMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case merchantrechargerecord.FieldCreatedAt:
+		return m.CreatedAt()
+	case merchantrechargerecord.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case merchantrechargerecord.FieldIntegrationID:
+		return m.IntegrationID()
+	case merchantrechargerecord.FieldUserID:
+		return m.UserID()
+	case merchantrechargerecord.FieldExternalUserID:
+		return m.ExternalUserID()
+	case merchantrechargerecord.FieldOrderNo:
+		return m.OrderNo()
+	case merchantrechargerecord.FieldAmount:
+		return m.Amount()
+	case merchantrechargerecord.FieldCurrency:
+		return m.Currency()
+	case merchantrechargerecord.FieldBalanceBefore:
+		return m.BalanceBefore()
+	case merchantrechargerecord.FieldBalanceAfter:
+		return m.BalanceAfter()
+	case merchantrechargerecord.FieldChargeType:
+		return m.ChargeType()
+	case merchantrechargerecord.FieldPayMethod:
+		return m.PayMethod()
+	case merchantrechargerecord.FieldStatus:
+		return m.Status()
+	case merchantrechargerecord.FieldPlatformOrderNo:
+		return m.PlatformOrderNo()
+	case merchantrechargerecord.FieldMerchantCreatedAt:
+		return m.MerchantCreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *MerchantRechargeRecordMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case merchantrechargerecord.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case merchantrechargerecord.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case merchantrechargerecord.FieldIntegrationID:
+		return m.OldIntegrationID(ctx)
+	case merchantrechargerecord.FieldUserID:
+		return m.OldUserID(ctx)
+	case merchantrechargerecord.FieldExternalUserID:
+		return m.OldExternalUserID(ctx)
+	case merchantrechargerecord.FieldOrderNo:
+		return m.OldOrderNo(ctx)
+	case merchantrechargerecord.FieldAmount:
+		return m.OldAmount(ctx)
+	case merchantrechargerecord.FieldCurrency:
+		return m.OldCurrency(ctx)
+	case merchantrechargerecord.FieldBalanceBefore:
+		return m.OldBalanceBefore(ctx)
+	case merchantrechargerecord.FieldBalanceAfter:
+		return m.OldBalanceAfter(ctx)
+	case merchantrechargerecord.FieldChargeType:
+		return m.OldChargeType(ctx)
+	case merchantrechargerecord.FieldPayMethod:
+		return m.OldPayMethod(ctx)
+	case merchantrechargerecord.FieldStatus:
+		return m.OldStatus(ctx)
+	case merchantrechargerecord.FieldPlatformOrderNo:
+		return m.OldPlatformOrderNo(ctx)
+	case merchantrechargerecord.FieldMerchantCreatedAt:
+		return m.OldMerchantCreatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown MerchantRechargeRecord field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *MerchantRechargeRecordMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case merchantrechargerecord.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case merchantrechargerecord.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case merchantrechargerecord.FieldIntegrationID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIntegrationID(v)
+		return nil
+	case merchantrechargerecord.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case merchantrechargerecord.FieldExternalUserID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExternalUserID(v)
+		return nil
+	case merchantrechargerecord.FieldOrderNo:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOrderNo(v)
+		return nil
+	case merchantrechargerecord.FieldAmount:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAmount(v)
+		return nil
+	case merchantrechargerecord.FieldCurrency:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCurrency(v)
+		return nil
+	case merchantrechargerecord.FieldBalanceBefore:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBalanceBefore(v)
+		return nil
+	case merchantrechargerecord.FieldBalanceAfter:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBalanceAfter(v)
+		return nil
+	case merchantrechargerecord.FieldChargeType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetChargeType(v)
+		return nil
+	case merchantrechargerecord.FieldPayMethod:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPayMethod(v)
+		return nil
+	case merchantrechargerecord.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case merchantrechargerecord.FieldPlatformOrderNo:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlatformOrderNo(v)
+		return nil
+	case merchantrechargerecord.FieldMerchantCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMerchantCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown MerchantRechargeRecord field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *MerchantRechargeRecordMutation) AddedFields() []string {
+	var fields []string
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *MerchantRechargeRecordMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *MerchantRechargeRecordMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown MerchantRechargeRecord numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *MerchantRechargeRecordMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *MerchantRechargeRecordMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *MerchantRechargeRecordMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown MerchantRechargeRecord nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *MerchantRechargeRecordMutation) ResetField(name string) error {
+	switch name {
+	case merchantrechargerecord.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case merchantrechargerecord.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case merchantrechargerecord.FieldIntegrationID:
+		m.ResetIntegrationID()
+		return nil
+	case merchantrechargerecord.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case merchantrechargerecord.FieldExternalUserID:
+		m.ResetExternalUserID()
+		return nil
+	case merchantrechargerecord.FieldOrderNo:
+		m.ResetOrderNo()
+		return nil
+	case merchantrechargerecord.FieldAmount:
+		m.ResetAmount()
+		return nil
+	case merchantrechargerecord.FieldCurrency:
+		m.ResetCurrency()
+		return nil
+	case merchantrechargerecord.FieldBalanceBefore:
+		m.ResetBalanceBefore()
+		return nil
+	case merchantrechargerecord.FieldBalanceAfter:
+		m.ResetBalanceAfter()
+		return nil
+	case merchantrechargerecord.FieldChargeType:
+		m.ResetChargeType()
+		return nil
+	case merchantrechargerecord.FieldPayMethod:
+		m.ResetPayMethod()
+		return nil
+	case merchantrechargerecord.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case merchantrechargerecord.FieldPlatformOrderNo:
+		m.ResetPlatformOrderNo()
+		return nil
+	case merchantrechargerecord.FieldMerchantCreatedAt:
+		m.ResetMerchantCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown MerchantRechargeRecord field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *MerchantRechargeRecordMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.integration != nil {
+		edges = append(edges, merchantrechargerecord.EdgeIntegration)
+	}
+	if m.user != nil {
+		edges = append(edges, merchantrechargerecord.EdgeUser)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *MerchantRechargeRecordMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case merchantrechargerecord.EdgeIntegration:
+		if id := m.integration; id != nil {
+			return []ent.Value{*id}
+		}
+	case merchantrechargerecord.EdgeUser:
+		if id := m.user; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *MerchantRechargeRecordMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *MerchantRechargeRecordMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *MerchantRechargeRecordMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedintegration {
+		edges = append(edges, merchantrechargerecord.EdgeIntegration)
+	}
+	if m.cleareduser {
+		edges = append(edges, merchantrechargerecord.EdgeUser)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *MerchantRechargeRecordMutation) EdgeCleared(name string) bool {
+	switch name {
+	case merchantrechargerecord.EdgeIntegration:
+		return m.clearedintegration
+	case merchantrechargerecord.EdgeUser:
+		return m.cleareduser
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *MerchantRechargeRecordMutation) ClearEdge(name string) error {
+	switch name {
+	case merchantrechargerecord.EdgeIntegration:
+		m.ClearIntegration()
+		return nil
+	case merchantrechargerecord.EdgeUser:
+		m.ClearUser()
+		return nil
+	}
+	return fmt.Errorf("unknown MerchantRechargeRecord unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *MerchantRechargeRecordMutation) ResetEdge(name string) error {
+	switch name {
+	case merchantrechargerecord.EdgeIntegration:
+		m.ResetIntegration()
+		return nil
+	case merchantrechargerecord.EdgeUser:
+		m.ResetUser()
+		return nil
+	}
+	return fmt.Errorf("unknown MerchantRechargeRecord edge %s", name)
 }
 
 // PaymentAuditLogMutation represents an operation that mutates the PaymentAuditLog nodes in the graph.
@@ -57547,97 +62136,103 @@ func (m *UsageLogMutation) ResetEdge(name string) error {
 // UserMutation represents an operation that mutates the User nodes in the graph.
 type UserMutation struct {
 	config
-	op                            Op
-	typ                           string
-	id                            *int64
-	created_at                    *time.Time
-	updated_at                    *time.Time
-	deleted_at                    *time.Time
-	email                         *string
-	password_hash                 *string
-	role                          *string
-	balance                       *float64
-	addbalance                    *float64
-	welcome_reward_amount         *float64
-	addwelcome_reward_amount      *float64
-	surprise_reward_amount        *float64
-	addsurprise_reward_amount     *float64
-	surprise_reward_checked_at    *time.Time
-	surprise_reward_awarded_at    *time.Time
-	frozen_balance                *float64
-	addfrozen_balance             *float64
-	concurrency                   *int
-	addconcurrency                *int
-	status                        *string
-	username                      *string
-	notes                         *string
-	totp_secret_encrypted         *string
-	totp_enabled                  *bool
-	totp_enabled_at               *time.Time
-	signup_source                 *string
-	last_login_at                 *time.Time
-	last_active_at                *time.Time
-	balance_notify_enabled        *bool
-	balance_notify_threshold_type *string
-	balance_notify_threshold      *float64
-	addbalance_notify_threshold   *float64
-	balance_notify_extra_emails   *string
-	total_recharged               *float64
-	addtotal_recharged            *float64
-	rpm_limit                     *int
-	addrpm_limit                  *int
-	clearedFields                 map[string]struct{}
-	api_keys                      map[int64]struct{}
-	removedapi_keys               map[int64]struct{}
-	clearedapi_keys               bool
-	redeem_codes                  map[int64]struct{}
-	removedredeem_codes           map[int64]struct{}
-	clearedredeem_codes           bool
-	subscriptions                 map[int64]struct{}
-	removedsubscriptions          map[int64]struct{}
-	clearedsubscriptions          bool
-	assigned_subscriptions        map[int64]struct{}
-	removedassigned_subscriptions map[int64]struct{}
-	clearedassigned_subscriptions bool
-	announcement_reads            map[int64]struct{}
-	removedannouncement_reads     map[int64]struct{}
-	clearedannouncement_reads     bool
-	allowed_groups                map[int64]struct{}
-	removedallowed_groups         map[int64]struct{}
-	clearedallowed_groups         bool
-	usage_logs                    map[int64]struct{}
-	removedusage_logs             map[int64]struct{}
-	clearedusage_logs             bool
-	attribute_values              map[int64]struct{}
-	removedattribute_values       map[int64]struct{}
-	clearedattribute_values       bool
-	promo_code_usages             map[int64]struct{}
-	removedpromo_code_usages      map[int64]struct{}
-	clearedpromo_code_usages      bool
-	payment_orders                map[int64]struct{}
-	removedpayment_orders         map[int64]struct{}
-	clearedpayment_orders         bool
-	auth_identities               map[int64]struct{}
-	removedauth_identities        map[int64]struct{}
-	clearedauth_identities        bool
-	pending_auth_sessions         map[int64]struct{}
-	removedpending_auth_sessions  map[int64]struct{}
-	clearedpending_auth_sessions  bool
-	platform_quotas               map[int64]struct{}
-	removedplatform_quotas        map[int64]struct{}
-	clearedplatform_quotas        bool
-	reward_grants                 map[int64]struct{}
-	removedreward_grants          map[int64]struct{}
-	clearedreward_grants          bool
-	reward_campaign_states        map[int64]struct{}
-	removedreward_campaign_states map[int64]struct{}
-	clearedreward_campaign_states bool
-	behavior_daily                map[int64]struct{}
-	removedbehavior_daily         map[int64]struct{}
-	clearedbehavior_daily         bool
-	done                          bool
-	oldValue                      func(context.Context) (*User, error)
-	predicates                    []predicate.User
+	op                               Op
+	typ                              string
+	id                               *int64
+	created_at                       *time.Time
+	updated_at                       *time.Time
+	deleted_at                       *time.Time
+	email                            *string
+	password_hash                    *string
+	role                             *string
+	balance                          *float64
+	addbalance                       *float64
+	welcome_reward_amount            *float64
+	addwelcome_reward_amount         *float64
+	surprise_reward_amount           *float64
+	addsurprise_reward_amount        *float64
+	surprise_reward_checked_at       *time.Time
+	surprise_reward_awarded_at       *time.Time
+	frozen_balance                   *float64
+	addfrozen_balance                *float64
+	concurrency                      *int
+	addconcurrency                   *int
+	status                           *string
+	username                         *string
+	notes                            *string
+	totp_secret_encrypted            *string
+	totp_enabled                     *bool
+	totp_enabled_at                  *time.Time
+	signup_source                    *string
+	last_login_at                    *time.Time
+	last_active_at                   *time.Time
+	balance_notify_enabled           *bool
+	balance_notify_threshold_type    *string
+	balance_notify_threshold         *float64
+	addbalance_notify_threshold      *float64
+	balance_notify_extra_emails      *string
+	total_recharged                  *float64
+	addtotal_recharged               *float64
+	rpm_limit                        *int
+	addrpm_limit                     *int
+	clearedFields                    map[string]struct{}
+	api_keys                         map[int64]struct{}
+	removedapi_keys                  map[int64]struct{}
+	clearedapi_keys                  bool
+	redeem_codes                     map[int64]struct{}
+	removedredeem_codes              map[int64]struct{}
+	clearedredeem_codes              bool
+	subscriptions                    map[int64]struct{}
+	removedsubscriptions             map[int64]struct{}
+	clearedsubscriptions             bool
+	assigned_subscriptions           map[int64]struct{}
+	removedassigned_subscriptions    map[int64]struct{}
+	clearedassigned_subscriptions    bool
+	announcement_reads               map[int64]struct{}
+	removedannouncement_reads        map[int64]struct{}
+	clearedannouncement_reads        bool
+	allowed_groups                   map[int64]struct{}
+	removedallowed_groups            map[int64]struct{}
+	clearedallowed_groups            bool
+	usage_logs                       map[int64]struct{}
+	removedusage_logs                map[int64]struct{}
+	clearedusage_logs                bool
+	attribute_values                 map[int64]struct{}
+	removedattribute_values          map[int64]struct{}
+	clearedattribute_values          bool
+	promo_code_usages                map[int64]struct{}
+	removedpromo_code_usages         map[int64]struct{}
+	clearedpromo_code_usages         bool
+	payment_orders                   map[int64]struct{}
+	removedpayment_orders            map[int64]struct{}
+	clearedpayment_orders            bool
+	auth_identities                  map[int64]struct{}
+	removedauth_identities           map[int64]struct{}
+	clearedauth_identities           bool
+	pending_auth_sessions            map[int64]struct{}
+	removedpending_auth_sessions     map[int64]struct{}
+	clearedpending_auth_sessions     bool
+	platform_quotas                  map[int64]struct{}
+	removedplatform_quotas           map[int64]struct{}
+	clearedplatform_quotas           bool
+	reward_grants                    map[int64]struct{}
+	removedreward_grants             map[int64]struct{}
+	clearedreward_grants             bool
+	reward_campaign_states           map[int64]struct{}
+	removedreward_campaign_states    map[int64]struct{}
+	clearedreward_campaign_states    bool
+	behavior_daily                   map[int64]struct{}
+	removedbehavior_daily            map[int64]struct{}
+	clearedbehavior_daily            bool
+	merchant_bindings                map[int64]struct{}
+	removedmerchant_bindings         map[int64]struct{}
+	clearedmerchant_bindings         bool
+	merchant_recharge_records        map[int64]struct{}
+	removedmerchant_recharge_records map[int64]struct{}
+	clearedmerchant_recharge_records bool
+	done                             bool
+	oldValue                         func(context.Context) (*User, error)
+	predicates                       []predicate.User
 }
 
 var _ ent.Mutation = (*UserMutation)(nil)
@@ -59875,6 +64470,114 @@ func (m *UserMutation) ResetBehaviorDaily() {
 	m.removedbehavior_daily = nil
 }
 
+// AddMerchantBindingIDs adds the "merchant_bindings" edge to the MerchantBinding entity by ids.
+func (m *UserMutation) AddMerchantBindingIDs(ids ...int64) {
+	if m.merchant_bindings == nil {
+		m.merchant_bindings = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.merchant_bindings[ids[i]] = struct{}{}
+	}
+}
+
+// ClearMerchantBindings clears the "merchant_bindings" edge to the MerchantBinding entity.
+func (m *UserMutation) ClearMerchantBindings() {
+	m.clearedmerchant_bindings = true
+}
+
+// MerchantBindingsCleared reports if the "merchant_bindings" edge to the MerchantBinding entity was cleared.
+func (m *UserMutation) MerchantBindingsCleared() bool {
+	return m.clearedmerchant_bindings
+}
+
+// RemoveMerchantBindingIDs removes the "merchant_bindings" edge to the MerchantBinding entity by IDs.
+func (m *UserMutation) RemoveMerchantBindingIDs(ids ...int64) {
+	if m.removedmerchant_bindings == nil {
+		m.removedmerchant_bindings = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.merchant_bindings, ids[i])
+		m.removedmerchant_bindings[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedMerchantBindings returns the removed IDs of the "merchant_bindings" edge to the MerchantBinding entity.
+func (m *UserMutation) RemovedMerchantBindingsIDs() (ids []int64) {
+	for id := range m.removedmerchant_bindings {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// MerchantBindingsIDs returns the "merchant_bindings" edge IDs in the mutation.
+func (m *UserMutation) MerchantBindingsIDs() (ids []int64) {
+	for id := range m.merchant_bindings {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetMerchantBindings resets all changes to the "merchant_bindings" edge.
+func (m *UserMutation) ResetMerchantBindings() {
+	m.merchant_bindings = nil
+	m.clearedmerchant_bindings = false
+	m.removedmerchant_bindings = nil
+}
+
+// AddMerchantRechargeRecordIDs adds the "merchant_recharge_records" edge to the MerchantRechargeRecord entity by ids.
+func (m *UserMutation) AddMerchantRechargeRecordIDs(ids ...int64) {
+	if m.merchant_recharge_records == nil {
+		m.merchant_recharge_records = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.merchant_recharge_records[ids[i]] = struct{}{}
+	}
+}
+
+// ClearMerchantRechargeRecords clears the "merchant_recharge_records" edge to the MerchantRechargeRecord entity.
+func (m *UserMutation) ClearMerchantRechargeRecords() {
+	m.clearedmerchant_recharge_records = true
+}
+
+// MerchantRechargeRecordsCleared reports if the "merchant_recharge_records" edge to the MerchantRechargeRecord entity was cleared.
+func (m *UserMutation) MerchantRechargeRecordsCleared() bool {
+	return m.clearedmerchant_recharge_records
+}
+
+// RemoveMerchantRechargeRecordIDs removes the "merchant_recharge_records" edge to the MerchantRechargeRecord entity by IDs.
+func (m *UserMutation) RemoveMerchantRechargeRecordIDs(ids ...int64) {
+	if m.removedmerchant_recharge_records == nil {
+		m.removedmerchant_recharge_records = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.merchant_recharge_records, ids[i])
+		m.removedmerchant_recharge_records[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedMerchantRechargeRecords returns the removed IDs of the "merchant_recharge_records" edge to the MerchantRechargeRecord entity.
+func (m *UserMutation) RemovedMerchantRechargeRecordsIDs() (ids []int64) {
+	for id := range m.removedmerchant_recharge_records {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// MerchantRechargeRecordsIDs returns the "merchant_recharge_records" edge IDs in the mutation.
+func (m *UserMutation) MerchantRechargeRecordsIDs() (ids []int64) {
+	for id := range m.merchant_recharge_records {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetMerchantRechargeRecords resets all changes to the "merchant_recharge_records" edge.
+func (m *UserMutation) ResetMerchantRechargeRecords() {
+	m.merchant_recharge_records = nil
+	m.clearedmerchant_recharge_records = false
+	m.removedmerchant_recharge_records = nil
+}
+
 // Where appends a list predicates to the UserMutation builder.
 func (m *UserMutation) Where(ps ...predicate.User) {
 	m.predicates = append(m.predicates, ps...)
@@ -60617,7 +65320,7 @@ func (m *UserMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *UserMutation) AddedEdges() []string {
-	edges := make([]string, 0, 16)
+	edges := make([]string, 0, 18)
 	if m.api_keys != nil {
 		edges = append(edges, user.EdgeAPIKeys)
 	}
@@ -60665,6 +65368,12 @@ func (m *UserMutation) AddedEdges() []string {
 	}
 	if m.behavior_daily != nil {
 		edges = append(edges, user.EdgeBehaviorDaily)
+	}
+	if m.merchant_bindings != nil {
+		edges = append(edges, user.EdgeMerchantBindings)
+	}
+	if m.merchant_recharge_records != nil {
+		edges = append(edges, user.EdgeMerchantRechargeRecords)
 	}
 	return edges
 }
@@ -60769,13 +65478,25 @@ func (m *UserMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case user.EdgeMerchantBindings:
+		ids := make([]ent.Value, 0, len(m.merchant_bindings))
+		for id := range m.merchant_bindings {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeMerchantRechargeRecords:
+		ids := make([]ent.Value, 0, len(m.merchant_recharge_records))
+		for id := range m.merchant_recharge_records {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *UserMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 16)
+	edges := make([]string, 0, 18)
 	if m.removedapi_keys != nil {
 		edges = append(edges, user.EdgeAPIKeys)
 	}
@@ -60823,6 +65544,12 @@ func (m *UserMutation) RemovedEdges() []string {
 	}
 	if m.removedbehavior_daily != nil {
 		edges = append(edges, user.EdgeBehaviorDaily)
+	}
+	if m.removedmerchant_bindings != nil {
+		edges = append(edges, user.EdgeMerchantBindings)
+	}
+	if m.removedmerchant_recharge_records != nil {
+		edges = append(edges, user.EdgeMerchantRechargeRecords)
 	}
 	return edges
 }
@@ -60927,13 +65654,25 @@ func (m *UserMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case user.EdgeMerchantBindings:
+		ids := make([]ent.Value, 0, len(m.removedmerchant_bindings))
+		for id := range m.removedmerchant_bindings {
+			ids = append(ids, id)
+		}
+		return ids
+	case user.EdgeMerchantRechargeRecords:
+		ids := make([]ent.Value, 0, len(m.removedmerchant_recharge_records))
+		for id := range m.removedmerchant_recharge_records {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *UserMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 16)
+	edges := make([]string, 0, 18)
 	if m.clearedapi_keys {
 		edges = append(edges, user.EdgeAPIKeys)
 	}
@@ -60982,6 +65721,12 @@ func (m *UserMutation) ClearedEdges() []string {
 	if m.clearedbehavior_daily {
 		edges = append(edges, user.EdgeBehaviorDaily)
 	}
+	if m.clearedmerchant_bindings {
+		edges = append(edges, user.EdgeMerchantBindings)
+	}
+	if m.clearedmerchant_recharge_records {
+		edges = append(edges, user.EdgeMerchantRechargeRecords)
+	}
 	return edges
 }
 
@@ -61021,6 +65766,10 @@ func (m *UserMutation) EdgeCleared(name string) bool {
 		return m.clearedreward_campaign_states
 	case user.EdgeBehaviorDaily:
 		return m.clearedbehavior_daily
+	case user.EdgeMerchantBindings:
+		return m.clearedmerchant_bindings
+	case user.EdgeMerchantRechargeRecords:
+		return m.clearedmerchant_recharge_records
 	}
 	return false
 }
@@ -61084,6 +65833,12 @@ func (m *UserMutation) ResetEdge(name string) error {
 		return nil
 	case user.EdgeBehaviorDaily:
 		m.ResetBehaviorDaily()
+		return nil
+	case user.EdgeMerchantBindings:
+		m.ResetMerchantBindings()
+		return nil
+	case user.EdgeMerchantRechargeRecords:
+		m.ResetMerchantRechargeRecords()
 		return nil
 	}
 	return fmt.Errorf("unknown User edge %s", name)

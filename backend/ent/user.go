@@ -113,11 +113,15 @@ type UserEdges struct {
 	RewardCampaignStates []*RewardCampaignUserState `json:"reward_campaign_states,omitempty"`
 	// BehaviorDaily holds the value of the behavior_daily edge.
 	BehaviorDaily []*UserBehaviorDaily `json:"behavior_daily,omitempty"`
+	// MerchantBindings holds the value of the merchant_bindings edge.
+	MerchantBindings []*MerchantBinding `json:"merchant_bindings,omitempty"`
+	// MerchantRechargeRecords holds the value of the merchant_recharge_records edge.
+	MerchantRechargeRecords []*MerchantRechargeRecord `json:"merchant_recharge_records,omitempty"`
 	// UserAllowedGroups holds the value of the user_allowed_groups edge.
 	UserAllowedGroups []*UserAllowedGroup `json:"user_allowed_groups,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [17]bool
+	loadedTypes [19]bool
 }
 
 // APIKeysOrErr returns the APIKeys value or an error if the edge
@@ -264,10 +268,28 @@ func (e UserEdges) BehaviorDailyOrErr() ([]*UserBehaviorDaily, error) {
 	return nil, &NotLoadedError{edge: "behavior_daily"}
 }
 
+// MerchantBindingsOrErr returns the MerchantBindings value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) MerchantBindingsOrErr() ([]*MerchantBinding, error) {
+	if e.loadedTypes[16] {
+		return e.MerchantBindings, nil
+	}
+	return nil, &NotLoadedError{edge: "merchant_bindings"}
+}
+
+// MerchantRechargeRecordsOrErr returns the MerchantRechargeRecords value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) MerchantRechargeRecordsOrErr() ([]*MerchantRechargeRecord, error) {
+	if e.loadedTypes[17] {
+		return e.MerchantRechargeRecords, nil
+	}
+	return nil, &NotLoadedError{edge: "merchant_recharge_records"}
+}
+
 // UserAllowedGroupsOrErr returns the UserAllowedGroups value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) UserAllowedGroupsOrErr() ([]*UserAllowedGroup, error) {
-	if e.loadedTypes[16] {
+	if e.loadedTypes[18] {
 		return e.UserAllowedGroups, nil
 	}
 	return nil, &NotLoadedError{edge: "user_allowed_groups"}
@@ -576,6 +598,16 @@ func (_m *User) QueryRewardCampaignStates() *RewardCampaignUserStateQuery {
 // QueryBehaviorDaily queries the "behavior_daily" edge of the User entity.
 func (_m *User) QueryBehaviorDaily() *UserBehaviorDailyQuery {
 	return NewUserClient(_m.config).QueryBehaviorDaily(_m)
+}
+
+// QueryMerchantBindings queries the "merchant_bindings" edge of the User entity.
+func (_m *User) QueryMerchantBindings() *MerchantBindingQuery {
+	return NewUserClient(_m.config).QueryMerchantBindings(_m)
+}
+
+// QueryMerchantRechargeRecords queries the "merchant_recharge_records" edge of the User entity.
+func (_m *User) QueryMerchantRechargeRecords() *MerchantRechargeRecordQuery {
+	return NewUserClient(_m.config).QueryMerchantRechargeRecords(_m)
 }
 
 // QueryUserAllowedGroups queries the "user_allowed_groups" edge of the User entity.

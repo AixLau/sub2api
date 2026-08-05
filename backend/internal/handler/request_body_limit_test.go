@@ -60,14 +60,14 @@ func TestMarkOpsRequestBodyReadError_ContextCanceled(t *testing.T) {
 
 	gotMsg, ok := c.Get(service.OpsDiagnosticMessageKey)
 	require.True(t, ok)
-	require.Equal(t, "客户端在请求体上传完成前取消连接", gotMsg)
+	require.Equal(t, "网络连接不稳定，请检查网络后重试。", gotMsg)
 
 	gotDetail, ok := c.Get(service.OpsDiagnosticDetailKey)
 	require.True(t, ok)
 	require.JSONEq(t, `{
 		"source":"request_body_reader",
 		"reason":"client_upload_canceled",
-		"message":"客户端在请求体上传完成前取消连接",
+		"message":"网络连接不稳定，请检查网络后重试。",
 		"raw_error":"context canceled",
 		"content_length":"35962130"
 	}`, gotDetail.(string))

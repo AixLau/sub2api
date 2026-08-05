@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sort"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -21,6 +22,107 @@ type ModelAvailabilityDiagnosis struct {
 	// HasModelSupport is true if at least one account's model mapping admits
 	// the requested model.
 	HasModelSupport bool
+	// SupportedModels contains concrete client-facing model names configured
+	// on the inspected accounts. It is populated only when model support is
+	// missing, sorted by numeric model version from newest to oldest.
+	SupportedModels []string
+}
+
+func addConfiguredModelNames(dst map[string]struct{}, account *Account) {
+	if account == nil {
+		return
+	}
+	for model := range account.GetModelMapping() {
+		model = strings.TrimSpace(model)
+		if model == "" || strings.Contains(model, "*") {
+			continue
+		}
+		dst[model] = struct{}{}
+	}
+}
+
+func sortedConfiguredModelNames(modelSet map[string]struct{}) []string {
+	models := make([]string, 0, len(modelSet))
+	for model := range modelSet {
+		models = append(models, model)
+	}
+	sort.Slice(models, func(i, j int) bool {
+		leftVersion := modelVersionParts(models[i])
+		rightVersion := modelVersionParts(models[j])
+		if cmp := compareModelVersions(leftVersion, rightVersion); cmp != 0 {
+			return cmp > 0
+		}
+		return strings.ToLower(models[i]) < strings.ToLower(models[j])
+	})
+	return models
+}
+
+// modelVersionParts extracts the leading model version while ignoring date
+// suffixes. For example: gpt-5.6-sol -> [5,6], claude-opus-4-8 -> [4,8],
+// and claude-opus-4-20250514 -> [4].
+func modelVersionParts(model string) []int {
+	start := -1
+	for i := 0; i < len(model); i++ {
+		if model[i] >= '0' && model[i] <= '9' {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return nil
+	}
+
+	parts := make([]int, 0, 3)
+	for pos := start; pos < len(model); {
+		end := pos
+		value := 0
+		for end < len(model) && model[end] >= '0' && model[end] <= '9' {
+			value = value*10 + int(model[end]-'0')
+			end++
+		}
+		digits := end - pos
+		if digits == 0 || (len(parts) == 0 && digits >= 4) || (len(parts) > 0 && digits > 2) {
+			break
+		}
+		parts = append(parts, value)
+		if end >= len(model) || (model[end] != '.' && model[end] != '-') {
+			break
+		}
+		pos = end + 1
+		if pos >= len(model) || model[pos] < '0' || model[pos] > '9' {
+			break
+		}
+	}
+	return parts
+}
+
+func compareModelVersions(left, right []int) int {
+	maxLen := len(left)
+	if len(right) > maxLen {
+		maxLen = len(right)
+	}
+	for i := 0; i < maxLen; i++ {
+		leftPart, rightPart := 0, 0
+		if i < len(left) {
+			leftPart = left[i]
+		}
+		if i < len(right) {
+			rightPart = right[i]
+		}
+		if leftPart > rightPart {
+			return 1
+		}
+		if leftPart < rightPart {
+			return -1
+		}
+	}
+	if len(left) > 0 && len(right) == 0 {
+		return 1
+	}
+	if len(left) == 0 && len(right) > 0 {
+		return -1
+	}
+	return 0
 }
 
 // ModelAvailabilityDiagnoser is implemented by gateway services that can
@@ -97,15 +199,18 @@ func (s *GatewayService) DiagnoseModelAvailabilityForPlatform(
 	}
 
 	diag := ModelAvailabilityDiagnosis{}
+	configuredModels := make(map[string]struct{})
 	for i := range accounts {
 		if useMixed && accounts[i].Platform == PlatformAntigravity && !accounts[i].IsMixedSchedulingEnabled() {
 			continue
 		}
 		diag.HasAccountsInPool = true
+		addConfiguredModelNames(configuredModels, &accounts[i])
 		if s.isModelSupportedByAccountWithContext(ctx, &accounts[i], requestedModel) {
 			diag.HasModelSupport = true
 			return diag
 		}
 	}
+	diag.SupportedModels = sortedConfiguredModelNames(configuredModels)
 	return diag
 }

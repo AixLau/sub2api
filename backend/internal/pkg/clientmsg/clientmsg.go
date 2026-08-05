@@ -198,9 +198,26 @@ func localizePattern(msg string) (string, bool) {
 		limit := strings.TrimSpace(strings.TrimPrefix(msg, "Request body too large, limit is "))
 		return "请求体过大，最大允许 " + limit, true
 	}
-	if strings.HasPrefix(msg, "Model ") && strings.HasSuffix(msg, " is not supported by any configured account in this group") {
-		model := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(msg, "Model "), " is not supported by any configured account in this group"))
-		return "该分组中没有任何已配置账号支持模型 " + model, true
+	const unsupportedModelSuffix = " is not supported by any configured account in this group"
+	if strings.HasPrefix(msg, "Model ") {
+		rest := strings.TrimPrefix(msg, "Model ")
+		if idx := strings.Index(rest, unsupportedModelSuffix); idx >= 0 {
+			model := strings.TrimSpace(rest[:idx])
+			tail := strings.TrimSpace(rest[idx+len(unsupportedModelSuffix):])
+			if tail == "" {
+				return "模型名称 " + model + " 填写有误。请检查大小写，或前往控制台「可用渠道」复制正确的模型名称后重试。", true
+			}
+			const supportedModelsPrefix = ". Supported models: "
+			if strings.HasPrefix(tail, supportedModelsPrefix) {
+				models := strings.TrimSpace(strings.TrimPrefix(tail, supportedModelsPrefix))
+				models = strings.ReplaceAll(models, ", ", "、")
+				models = strings.TrimSuffix(models, "、...")
+				if strings.HasSuffix(tail, ", ...") {
+					models += "等模型"
+				}
+				return "模型名称 " + model + " 填写有误。该分组支持的模型：" + models + "。请选择正确的模型名称后重试。", true
+			}
+		}
 	}
 	if strings.HasPrefix(msg, "model ") && strings.HasSuffix(msg, " not in whitelist") {
 		model := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(msg, "model "), " not in whitelist"))

@@ -158,6 +158,10 @@ func (User) Edges() []ent.Edge {
 		edge.To("reward_campaign_states", RewardCampaignUserState.Type),
 		edge.To("behavior_daily", UserBehaviorDaily.Type).
 			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("merchant_bindings", MerchantBinding.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("merchant_recharge_records", MerchantRechargeRecord.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
 	}
 }
 

@@ -52,6 +52,14 @@ type Tx struct {
 	IdempotencyRecord *IdempotencyRecordClient
 	// IdentityAdoptionDecision is the client for interacting with the IdentityAdoptionDecision builders.
 	IdentityAdoptionDecision *IdentityAdoptionDecisionClient
+	// MerchantAPIEndpoint is the client for interacting with the MerchantAPIEndpoint builders.
+	MerchantAPIEndpoint *MerchantAPIEndpointClient
+	// MerchantBinding is the client for interacting with the MerchantBinding builders.
+	MerchantBinding *MerchantBindingClient
+	// MerchantIntegration is the client for interacting with the MerchantIntegration builders.
+	MerchantIntegration *MerchantIntegrationClient
+	// MerchantRechargeRecord is the client for interacting with the MerchantRechargeRecord builders.
+	MerchantRechargeRecord *MerchantRechargeRecordClient
 	// PaymentAuditLog is the client for interacting with the PaymentAuditLog builders.
 	PaymentAuditLog *PaymentAuditLogClient
 	// PaymentOrder is the client for interacting with the PaymentOrder builders.
@@ -258,6 +266,10 @@ func (tx *Tx) init() {
 	tx.Group = NewGroupClient(tx.config)
 	tx.IdempotencyRecord = NewIdempotencyRecordClient(tx.config)
 	tx.IdentityAdoptionDecision = NewIdentityAdoptionDecisionClient(tx.config)
+	tx.MerchantAPIEndpoint = NewMerchantAPIEndpointClient(tx.config)
+	tx.MerchantBinding = NewMerchantBindingClient(tx.config)
+	tx.MerchantIntegration = NewMerchantIntegrationClient(tx.config)
+	tx.MerchantRechargeRecord = NewMerchantRechargeRecordClient(tx.config)
 	tx.PaymentAuditLog = NewPaymentAuditLogClient(tx.config)
 	tx.PaymentOrder = NewPaymentOrderClient(tx.config)
 	tx.PaymentProviderInstance = NewPaymentProviderInstanceClient(tx.config)

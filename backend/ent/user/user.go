@@ -103,6 +103,10 @@ const (
 	EdgeRewardCampaignStates = "reward_campaign_states"
 	// EdgeBehaviorDaily holds the string denoting the behavior_daily edge name in mutations.
 	EdgeBehaviorDaily = "behavior_daily"
+	// EdgeMerchantBindings holds the string denoting the merchant_bindings edge name in mutations.
+	EdgeMerchantBindings = "merchant_bindings"
+	// EdgeMerchantRechargeRecords holds the string denoting the merchant_recharge_records edge name in mutations.
+	EdgeMerchantRechargeRecords = "merchant_recharge_records"
 	// EdgeUserAllowedGroups holds the string denoting the user_allowed_groups edge name in mutations.
 	EdgeUserAllowedGroups = "user_allowed_groups"
 	// Table holds the table name of the user in the database.
@@ -217,6 +221,20 @@ const (
 	BehaviorDailyInverseTable = "user_behavior_daily"
 	// BehaviorDailyColumn is the table column denoting the behavior_daily relation/edge.
 	BehaviorDailyColumn = "user_id"
+	// MerchantBindingsTable is the table that holds the merchant_bindings relation/edge.
+	MerchantBindingsTable = "merchant_bindings"
+	// MerchantBindingsInverseTable is the table name for the MerchantBinding entity.
+	// It exists in this package in order to avoid circular dependency with the "merchantbinding" package.
+	MerchantBindingsInverseTable = "merchant_bindings"
+	// MerchantBindingsColumn is the table column denoting the merchant_bindings relation/edge.
+	MerchantBindingsColumn = "user_id"
+	// MerchantRechargeRecordsTable is the table that holds the merchant_recharge_records relation/edge.
+	MerchantRechargeRecordsTable = "merchant_recharge_records"
+	// MerchantRechargeRecordsInverseTable is the table name for the MerchantRechargeRecord entity.
+	// It exists in this package in order to avoid circular dependency with the "merchantrechargerecord" package.
+	MerchantRechargeRecordsInverseTable = "merchant_recharge_records"
+	// MerchantRechargeRecordsColumn is the table column denoting the merchant_recharge_records relation/edge.
+	MerchantRechargeRecordsColumn = "user_id"
 	// UserAllowedGroupsTable is the table that holds the user_allowed_groups relation/edge.
 	UserAllowedGroupsTable = "user_allowed_groups"
 	// UserAllowedGroupsInverseTable is the table name for the UserAllowedGroup entity.
@@ -711,6 +729,34 @@ func ByBehaviorDaily(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByMerchantBindingsCount orders the results by merchant_bindings count.
+func ByMerchantBindingsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newMerchantBindingsStep(), opts...)
+	}
+}
+
+// ByMerchantBindings orders the results by merchant_bindings terms.
+func ByMerchantBindings(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newMerchantBindingsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByMerchantRechargeRecordsCount orders the results by merchant_recharge_records count.
+func ByMerchantRechargeRecordsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newMerchantRechargeRecordsStep(), opts...)
+	}
+}
+
+// ByMerchantRechargeRecords orders the results by merchant_recharge_records terms.
+func ByMerchantRechargeRecords(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newMerchantRechargeRecordsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByUserAllowedGroupsCount orders the results by user_allowed_groups count.
 func ByUserAllowedGroupsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -834,6 +880,20 @@ func newBehaviorDailyStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(BehaviorDailyInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, BehaviorDailyTable, BehaviorDailyColumn),
+	)
+}
+func newMerchantBindingsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(MerchantBindingsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, MerchantBindingsTable, MerchantBindingsColumn),
+	)
+}
+func newMerchantRechargeRecordsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(MerchantRechargeRecordsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, MerchantRechargeRecordsTable, MerchantRechargeRecordsColumn),
 	)
 }
 func newUserAllowedGroupsStep() *sqlgraph.Step {

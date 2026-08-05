@@ -1078,6 +1078,188 @@ var (
 			},
 		},
 	}
+	// MerchantAPIEndpointsColumns holds the columns for the "merchant_api_endpoints" table.
+	MerchantAPIEndpointsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "type", Type: field.TypeString, Size: 32},
+		{Name: "url", Type: field.TypeString, Size: 2048},
+		{Name: "method", Type: field.TypeString, Size: 10, Default: "POST"},
+		{Name: "content_type", Type: field.TypeString, Size: 80, Default: "application/json"},
+		{Name: "query_template", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "header_template", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "body_template", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "auth_type", Type: field.TypeString, Size: 20, Default: "none"},
+		{Name: "secret_ref", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "response_mapping", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "success_rule", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "retry_policy", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "timeout_ms", Type: field.TypeInt, Default: 10000},
+		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "integration_id", Type: field.TypeInt64},
+	}
+	// MerchantAPIEndpointsTable holds the schema information for the "merchant_api_endpoints" table.
+	MerchantAPIEndpointsTable = &schema.Table{
+		Name:       "merchant_api_endpoints",
+		Columns:    MerchantAPIEndpointsColumns,
+		PrimaryKey: []*schema.Column{MerchantAPIEndpointsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "merchant_api_endpoints_merchant_integrations_endpoints",
+				Columns:    []*schema.Column{MerchantAPIEndpointsColumns[18]},
+				RefColumns: []*schema.Column{MerchantIntegrationsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "merchantapiendpoint_integration_id_type",
+				Unique:  true,
+				Columns: []*schema.Column{MerchantAPIEndpointsColumns[18], MerchantAPIEndpointsColumns[3]},
+			},
+			{
+				Name:    "merchantapiendpoint_integration_id_enabled_status",
+				Unique:  false,
+				Columns: []*schema.Column{MerchantAPIEndpointsColumns[18], MerchantAPIEndpointsColumns[17], MerchantAPIEndpointsColumns[16]},
+			},
+		},
+	}
+	// MerchantBindingsColumns holds the columns for the "merchant_bindings" table.
+	MerchantBindingsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "external_user_id", Type: field.TypeString, Size: 255},
+		{Name: "external_account", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
+		{Name: "last_login_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "last_sync_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "last_recharge_sync_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "integration_id", Type: field.TypeInt64},
+		{Name: "user_id", Type: field.TypeInt64},
+	}
+	// MerchantBindingsTable holds the schema information for the "merchant_bindings" table.
+	MerchantBindingsTable = &schema.Table{
+		Name:       "merchant_bindings",
+		Columns:    MerchantBindingsColumns,
+		PrimaryKey: []*schema.Column{MerchantBindingsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "merchant_bindings_merchant_integrations_bindings",
+				Columns:    []*schema.Column{MerchantBindingsColumns[9]},
+				RefColumns: []*schema.Column{MerchantIntegrationsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "merchant_bindings_users_merchant_bindings",
+				Columns:    []*schema.Column{MerchantBindingsColumns[10]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "merchantbinding_integration_id_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{MerchantBindingsColumns[9], MerchantBindingsColumns[10]},
+			},
+			{
+				Name:    "merchantbinding_integration_id_external_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{MerchantBindingsColumns[9], MerchantBindingsColumns[3]},
+			},
+			{
+				Name:    "merchantbinding_user_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{MerchantBindingsColumns[10], MerchantBindingsColumns[5]},
+			},
+		},
+	}
+	// MerchantIntegrationsColumns holds the columns for the "merchant_integrations" table.
+	MerchantIntegrationsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "name", Type: field.TypeString, Size: 120},
+		{Name: "code", Type: field.TypeString, Size: 100},
+		{Name: "mode", Type: field.TypeString, Size: 32, Default: "dynamic_api"},
+		{Name: "merchant_code", Type: field.TypeString, Size: 120, Default: ""},
+		{Name: "description", Type: field.TypeString, Size: 500, Default: ""},
+		{Name: "status", Type: field.TypeString, Size: 20, Default: "draft"},
+		{Name: "enabled", Type: field.TypeBool, Default: false},
+		{Name: "redirect_hosts", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+	}
+	// MerchantIntegrationsTable holds the schema information for the "merchant_integrations" table.
+	MerchantIntegrationsTable = &schema.Table{
+		Name:       "merchant_integrations",
+		Columns:    MerchantIntegrationsColumns,
+		PrimaryKey: []*schema.Column{MerchantIntegrationsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "merchantintegration_code",
+				Unique:  true,
+				Columns: []*schema.Column{MerchantIntegrationsColumns[4]},
+			},
+			{
+				Name:    "merchantintegration_status_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{MerchantIntegrationsColumns[8], MerchantIntegrationsColumns[9]},
+			},
+		},
+	}
+	// MerchantRechargeRecordsColumns holds the columns for the "merchant_recharge_records" table.
+	MerchantRechargeRecordsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "external_user_id", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "order_no", Type: field.TypeString, Size: 128},
+		{Name: "amount", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "currency", Type: field.TypeString, Size: 16, Default: ""},
+		{Name: "balance_before", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "balance_after", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "charge_type", Type: field.TypeString, Size: 32, Default: ""},
+		{Name: "pay_method", Type: field.TypeString, Size: 32, Default: ""},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: ""},
+		{Name: "platform_order_no", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "merchant_created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "integration_id", Type: field.TypeInt64},
+		{Name: "user_id", Type: field.TypeInt64},
+	}
+	// MerchantRechargeRecordsTable holds the schema information for the "merchant_recharge_records" table.
+	MerchantRechargeRecordsTable = &schema.Table{
+		Name:       "merchant_recharge_records",
+		Columns:    MerchantRechargeRecordsColumns,
+		PrimaryKey: []*schema.Column{MerchantRechargeRecordsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "merchant_recharge_records_merchant_integrations_recharge_records",
+				Columns:    []*schema.Column{MerchantRechargeRecordsColumns[14]},
+				RefColumns: []*schema.Column{MerchantIntegrationsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "merchant_recharge_records_users_merchant_recharge_records",
+				Columns:    []*schema.Column{MerchantRechargeRecordsColumns[15]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "merchantrechargerecord_integration_id_user_id_order_no_merchant_created_at",
+				Unique:  true,
+				Columns: []*schema.Column{MerchantRechargeRecordsColumns[14], MerchantRechargeRecordsColumns[15], MerchantRechargeRecordsColumns[4], MerchantRechargeRecordsColumns[13]},
+			},
+			{
+				Name:    "merchantrechargerecord_user_id_integration_id_merchant_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{MerchantRechargeRecordsColumns[15], MerchantRechargeRecordsColumns[14], MerchantRechargeRecordsColumns[13]},
+			},
+		},
+	}
 	// PaymentAuditLogsColumns holds the columns for the "payment_audit_logs" table.
 	PaymentAuditLogsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -2539,6 +2721,10 @@ var (
 		GroupsTable,
 		IdempotencyRecordsTable,
 		IdentityAdoptionDecisionsTable,
+		MerchantAPIEndpointsTable,
+		MerchantBindingsTable,
+		MerchantIntegrationsTable,
+		MerchantRechargeRecordsTable,
 		PaymentAuditLogsTable,
 		PaymentOrdersTable,
 		PaymentProviderInstancesTable,
@@ -2643,6 +2829,23 @@ func init() {
 	IdentityAdoptionDecisionsTable.ForeignKeys[1].RefTable = PendingAuthSessionsTable
 	IdentityAdoptionDecisionsTable.Annotation = &entsql.Annotation{
 		Table: "identity_adoption_decisions",
+	}
+	MerchantAPIEndpointsTable.ForeignKeys[0].RefTable = MerchantIntegrationsTable
+	MerchantAPIEndpointsTable.Annotation = &entsql.Annotation{
+		Table: "merchant_api_endpoints",
+	}
+	MerchantBindingsTable.ForeignKeys[0].RefTable = MerchantIntegrationsTable
+	MerchantBindingsTable.ForeignKeys[1].RefTable = UsersTable
+	MerchantBindingsTable.Annotation = &entsql.Annotation{
+		Table: "merchant_bindings",
+	}
+	MerchantIntegrationsTable.Annotation = &entsql.Annotation{
+		Table: "merchant_integrations",
+	}
+	MerchantRechargeRecordsTable.ForeignKeys[0].RefTable = MerchantIntegrationsTable
+	MerchantRechargeRecordsTable.ForeignKeys[1].RefTable = UsersTable
+	MerchantRechargeRecordsTable.Annotation = &entsql.Annotation{
+		Table: "merchant_recharge_records",
 	}
 	PaymentAuditLogsTable.Annotation = &entsql.Annotation{
 		Table: "payment_audit_logs",

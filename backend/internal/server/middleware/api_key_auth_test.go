@@ -1779,12 +1779,21 @@ func TestAPIKeyAuthFallsBackFromBalanceToSubscription(t *testing.T) {
 		clone.User = &userClone
 		return &clone, nil
 	}}
+	listCalls := 0
 	subRepo := &stubUserSubscriptionRepo{listActive: func(context.Context, int64) ([]service.UserSubscription, error) {
+		listCalls++
 		return []service.UserSubscription{fallbackSub}, nil
 	}}
-	cfg := &config.Config{RunMode: config.RunModeStandard}
+	cfg := &config.Config{
+		RunMode: config.RunModeStandard,
+		SubscriptionCache: config.SubscriptionCacheConfig{
+			L1Size:       1024,
+			L1TTLSeconds: 60,
+		},
+	}
 	apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, subRepo, nil, nil, cfg)
 	subscriptionService := service.NewSubscriptionService(nil, subRepo, nil, nil, cfg)
+	t.Cleanup(subscriptionService.Stop)
 
 	router := gin.New()
 	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, subscriptionService, cfg)))
@@ -1800,11 +1809,25 @@ func TestAPIKeyAuthFallsBackFromBalanceToSubscription(t *testing.T) {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
 
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/t", nil)
-	req.Header.Set("x-api-key", apiKey.Key)
-	router.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code)
+	request := func() {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/t", nil)
+		req.Header.Set("x-api-key", apiKey.Key)
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
+	}
+
+	request()
+	cached, err := subscriptionService.ListActiveUserSubscriptionsCached(context.Background(), user.ID)
+	require.NoError(t, err)
+	require.Len(t, cached, 1)
+	require.Equal(t, 1, listCalls, "fallback candidates should be readable from L1 cache")
+	request()
+	require.Equal(t, 1, listCalls, "fallback candidates should be reused from L1 cache")
+
+	subscriptionService.InvalidateSubCacheSync(user.ID, fallbackGroup.ID)
+	request()
+	require.Equal(t, 2, listCalls, "subscription invalidation should evict fallback candidates")
 }
 
 func TestAPIKeyAuthOpenAIQuotaErrorFormat(t *testing.T) {
@@ -2092,6 +2115,9 @@ func (r *stubUserSubscriptionRepo) Restore(ctx context.Context, subscriptionID i
 }
 
 func (r *stubUserSubscriptionRepo) ListByUserID(ctx context.Context, userID int64) ([]service.UserSubscription, error) {
+	if r.listActive != nil {
+		return r.listActive(ctx, userID)
+	}
 	return nil, errors.New("not implemented")
 }
 

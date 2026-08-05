@@ -1953,6 +1953,52 @@ func HasBehaviorDailyWith(preds ...predicate.UserBehaviorDaily) predicate.User {
 	})
 }
 
+// HasMerchantBindings applies the HasEdge predicate on the "merchant_bindings" edge.
+func HasMerchantBindings() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, MerchantBindingsTable, MerchantBindingsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasMerchantBindingsWith applies the HasEdge predicate on the "merchant_bindings" edge with a given conditions (other predicates).
+func HasMerchantBindingsWith(preds ...predicate.MerchantBinding) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newMerchantBindingsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasMerchantRechargeRecords applies the HasEdge predicate on the "merchant_recharge_records" edge.
+func HasMerchantRechargeRecords() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, MerchantRechargeRecordsTable, MerchantRechargeRecordsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasMerchantRechargeRecordsWith applies the HasEdge predicate on the "merchant_recharge_records" edge with a given conditions (other predicates).
+func HasMerchantRechargeRecordsWith(preds ...predicate.MerchantRechargeRecord) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newMerchantRechargeRecordsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasUserAllowedGroups applies the HasEdge predicate on the "user_allowed_groups" edge.
 func HasUserAllowedGroups() predicate.User {
 	return predicate.User(func(s *sql.Selector) {

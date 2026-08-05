@@ -180,7 +180,7 @@ func markOpsRequestBodyReadError(c *gin.Context, err error) {
 	message := "读取请求体失败"
 	if errors.Is(err, context.Canceled) || strings.Contains(strings.ToLower(rawErr), "context canceled") {
 		reason = "client_upload_canceled"
-		message = "客户端在请求体上传完成前取消连接"
+		message = "网络连接不稳定，请检查网络后重试。"
 	} else if errors.Is(err, io.ErrUnexpectedEOF) || strings.Contains(strings.ToLower(rawErr), "unexpected eof") {
 		reason = "client_upload_interrupted"
 		message = "请求体上传未完成：客户端在请求体传输完成前断开连接"

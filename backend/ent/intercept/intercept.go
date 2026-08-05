@@ -27,6 +27,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
+	"github.com/Wei-Shaw/sub2api/ent/merchantapiendpoint"
+	"github.com/Wei-Shaw/sub2api/ent/merchantbinding"
+	"github.com/Wei-Shaw/sub2api/ent/merchantintegration"
+	"github.com/Wei-Shaw/sub2api/ent/merchantrechargerecord"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
@@ -625,6 +629,114 @@ func (f TraverseIdentityAdoptionDecision) Traverse(ctx context.Context, q ent.Qu
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.IdentityAdoptionDecisionQuery", q)
+}
+
+// The MerchantAPIEndpointFunc type is an adapter to allow the use of ordinary function as a Querier.
+type MerchantAPIEndpointFunc func(context.Context, *ent.MerchantAPIEndpointQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f MerchantAPIEndpointFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.MerchantAPIEndpointQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.MerchantAPIEndpointQuery", q)
+}
+
+// The TraverseMerchantAPIEndpoint type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseMerchantAPIEndpoint func(context.Context, *ent.MerchantAPIEndpointQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseMerchantAPIEndpoint) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseMerchantAPIEndpoint) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.MerchantAPIEndpointQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.MerchantAPIEndpointQuery", q)
+}
+
+// The MerchantBindingFunc type is an adapter to allow the use of ordinary function as a Querier.
+type MerchantBindingFunc func(context.Context, *ent.MerchantBindingQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f MerchantBindingFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.MerchantBindingQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.MerchantBindingQuery", q)
+}
+
+// The TraverseMerchantBinding type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseMerchantBinding func(context.Context, *ent.MerchantBindingQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseMerchantBinding) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseMerchantBinding) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.MerchantBindingQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.MerchantBindingQuery", q)
+}
+
+// The MerchantIntegrationFunc type is an adapter to allow the use of ordinary function as a Querier.
+type MerchantIntegrationFunc func(context.Context, *ent.MerchantIntegrationQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f MerchantIntegrationFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.MerchantIntegrationQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.MerchantIntegrationQuery", q)
+}
+
+// The TraverseMerchantIntegration type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseMerchantIntegration func(context.Context, *ent.MerchantIntegrationQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseMerchantIntegration) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseMerchantIntegration) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.MerchantIntegrationQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.MerchantIntegrationQuery", q)
+}
+
+// The MerchantRechargeRecordFunc type is an adapter to allow the use of ordinary function as a Querier.
+type MerchantRechargeRecordFunc func(context.Context, *ent.MerchantRechargeRecordQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f MerchantRechargeRecordFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.MerchantRechargeRecordQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.MerchantRechargeRecordQuery", q)
+}
+
+// The TraverseMerchantRechargeRecord type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseMerchantRechargeRecord func(context.Context, *ent.MerchantRechargeRecordQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseMerchantRechargeRecord) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseMerchantRechargeRecord) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.MerchantRechargeRecordQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.MerchantRechargeRecordQuery", q)
 }
 
 // The PaymentAuditLogFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -1424,6 +1536,14 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.IdempotencyRecordQuery, predicate.IdempotencyRecord, idempotencyrecord.OrderOption]{typ: ent.TypeIdempotencyRecord, tq: q}, nil
 	case *ent.IdentityAdoptionDecisionQuery:
 		return &query[*ent.IdentityAdoptionDecisionQuery, predicate.IdentityAdoptionDecision, identityadoptiondecision.OrderOption]{typ: ent.TypeIdentityAdoptionDecision, tq: q}, nil
+	case *ent.MerchantAPIEndpointQuery:
+		return &query[*ent.MerchantAPIEndpointQuery, predicate.MerchantAPIEndpoint, merchantapiendpoint.OrderOption]{typ: ent.TypeMerchantAPIEndpoint, tq: q}, nil
+	case *ent.MerchantBindingQuery:
+		return &query[*ent.MerchantBindingQuery, predicate.MerchantBinding, merchantbinding.OrderOption]{typ: ent.TypeMerchantBinding, tq: q}, nil
+	case *ent.MerchantIntegrationQuery:
+		return &query[*ent.MerchantIntegrationQuery, predicate.MerchantIntegration, merchantintegration.OrderOption]{typ: ent.TypeMerchantIntegration, tq: q}, nil
+	case *ent.MerchantRechargeRecordQuery:
+		return &query[*ent.MerchantRechargeRecordQuery, predicate.MerchantRechargeRecord, merchantrechargerecord.OrderOption]{typ: ent.TypeMerchantRechargeRecord, tq: q}, nil
 	case *ent.PaymentAuditLogQuery:
 		return &query[*ent.PaymentAuditLogQuery, predicate.PaymentAuditLog, paymentauditlog.OrderOption]{typ: ent.TypePaymentAuditLog, tq: q}, nil
 	case *ent.PaymentOrderQuery:

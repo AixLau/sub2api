@@ -57,7 +57,7 @@ func findFallbackSubscription(ctx context.Context, subscriptionService *service.
 		return nil, nil, service.ErrSubscriptionNotFound
 	}
 
-	subs, err := subscriptionService.ListActiveUserSubscriptions(ctx, apiKey.User.ID)
+	subs, err := subscriptionService.ListActiveUserSubscriptionsCached(ctx, apiKey.User.ID)
 	if err != nil {
 		return nil, nil, err
 	}

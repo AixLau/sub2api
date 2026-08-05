@@ -63,6 +63,18 @@ type IdempotencyRecord func(*sql.Selector)
 // IdentityAdoptionDecision is the predicate function for identityadoptiondecision builders.
 type IdentityAdoptionDecision func(*sql.Selector)
 
+// MerchantAPIEndpoint is the predicate function for merchantapiendpoint builders.
+type MerchantAPIEndpoint func(*sql.Selector)
+
+// MerchantBinding is the predicate function for merchantbinding builders.
+type MerchantBinding func(*sql.Selector)
+
+// MerchantIntegration is the predicate function for merchantintegration builders.
+type MerchantIntegration func(*sql.Selector)
+
+// MerchantRechargeRecord is the predicate function for merchantrechargerecord builders.
+type MerchantRechargeRecord func(*sql.Selector)
+
 // PaymentAuditLog is the predicate function for paymentauditlog builders.
 type PaymentAuditLog func(*sql.Selector)
 

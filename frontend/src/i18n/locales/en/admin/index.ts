@@ -9,6 +9,7 @@ import { mergeLocaleMessages } from '../../merge'
 import audit from './audit'
 import promptAudit from './promptAudit'
 import rewards from './rewards'
+import merchant from './merchant'
 
 export default mergeLocaleMessages({
   ...overview,
@@ -20,4 +21,5 @@ export default mergeLocaleMessages({
   ...audit,
   ...promptAudit,
   ...rewards,
+  ...merchant,
 }, extensions)

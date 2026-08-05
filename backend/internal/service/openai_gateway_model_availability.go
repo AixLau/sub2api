@@ -54,8 +54,10 @@ func (s *OpenAIGatewayService) DiagnoseModelAvailabilityForPlatform(
 	}
 
 	diag := ModelAvailabilityDiagnosis{}
+	configuredModels := make(map[string]struct{})
 	for i := range accounts {
 		diag.HasAccountsInPool = true
+		addConfiguredModelNames(configuredModels, &accounts[i])
 		// Mirrors the per-candidate filter used during account selection
 		// (openai_account_scheduler.isAccountRequestCompatible): empty
 		// model_mapping accepts everything; otherwise the explicit / wildcard
@@ -65,5 +67,6 @@ func (s *OpenAIGatewayService) DiagnoseModelAvailabilityForPlatform(
 			return diag
 		}
 	}
+	diag.SupportedModels = sortedConfiguredModelNames(configuredModels)
 	return diag
 }

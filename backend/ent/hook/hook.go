@@ -237,6 +237,54 @@ func (f IdentityAdoptionDecisionFunc) Mutate(ctx context.Context, m ent.Mutation
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.IdentityAdoptionDecisionMutation", m)
 }
 
+// The MerchantAPIEndpointFunc type is an adapter to allow the use of ordinary
+// function as MerchantAPIEndpoint mutator.
+type MerchantAPIEndpointFunc func(context.Context, *ent.MerchantAPIEndpointMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MerchantAPIEndpointFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.MerchantAPIEndpointMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MerchantAPIEndpointMutation", m)
+}
+
+// The MerchantBindingFunc type is an adapter to allow the use of ordinary
+// function as MerchantBinding mutator.
+type MerchantBindingFunc func(context.Context, *ent.MerchantBindingMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MerchantBindingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.MerchantBindingMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MerchantBindingMutation", m)
+}
+
+// The MerchantIntegrationFunc type is an adapter to allow the use of ordinary
+// function as MerchantIntegration mutator.
+type MerchantIntegrationFunc func(context.Context, *ent.MerchantIntegrationMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MerchantIntegrationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.MerchantIntegrationMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MerchantIntegrationMutation", m)
+}
+
+// The MerchantRechargeRecordFunc type is an adapter to allow the use of ordinary
+// function as MerchantRechargeRecord mutator.
+type MerchantRechargeRecordFunc func(context.Context, *ent.MerchantRechargeRecordMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MerchantRechargeRecordFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.MerchantRechargeRecordMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MerchantRechargeRecordMutation", m)
+}
+
 // The PaymentAuditLogFunc type is an adapter to allow the use of ordinary
 // function as PaymentAuditLog mutator.
 type PaymentAuditLogFunc func(context.Context, *ent.PaymentAuditLogMutation) (ent.Value, error)

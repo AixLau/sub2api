@@ -98,7 +98,11 @@ func TestClassifyNoAccountError_EmptyModel_Falls503(t *testing.T) {
 
 func TestClassifyNoAccountError_ModelNotSupported_Returns404(t *testing.T) {
 	c := newTestGinContextWithRequest()
-	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: false}}
+	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{
+		HasAccountsInPool: true,
+		HasModelSupport:   false,
+		SupportedModels:   []string{"gpt-5.6-sol", "gpt-5.5", "claude-opus-5"},
+	}}
 	apiKey := &service.APIKey{GroupID: ptrInt64(42)}
 
 	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "gpt-5.1-codex-mini", "gpt-5.1-codex-mini", service.PlatformOpenAI)
@@ -107,6 +111,7 @@ func TestClassifyNoAccountError_ModelNotSupported_Returns404(t *testing.T) {
 	require.Equal(t, "model_not_found", cls.ErrType)
 	require.True(t, cls.ModelNotFound)
 	require.Contains(t, cls.Message, "gpt-5.1-codex-mini", "message must surface the requested model")
+	require.Contains(t, cls.Message, `Supported models: "gpt-5.6-sol", "gpt-5.5", "claude-opus-5"`)
 
 	require.Len(t, fd.calls, 1)
 	require.Equal(t, "gpt-5.1-codex-mini", fd.calls[0].Model)
@@ -181,15 +186,43 @@ func TestClassifyNoAccountError_NoAccountsInPool_Stays503(t *testing.T) {
 
 func TestClassifyNoAccountError_DisplayModelOverridesRoutingForMessage(t *testing.T) {
 	c := newTestGinContextWithRequest()
-	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: false}}
+	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{
+		HasAccountsInPool: true,
+		HasModelSupport:   false,
+		SupportedModels:   []string{"internal-routing-model"},
+	}}
 	apiKey := &service.APIKey{GroupID: ptrInt64(7)}
 
 	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "gpt-5", "claude-3-fancy", service.PlatformOpenAI)
 
 	require.True(t, cls.ModelNotFound)
 	require.Contains(t, cls.Message, "claude-3-fancy", "user-facing message must reference the model the user asked for, not the post-mapping routing model")
+	require.NotContains(t, cls.Message, "internal-routing-model")
 	require.Len(t, fd.calls, 1)
 	require.Equal(t, "gpt-5", fd.calls[0].Model, "diagnosis must run against the routing model (post group dispatch mapping)")
+}
+
+func TestModelNotFoundMessage_TruncatesSupportedModels(t *testing.T) {
+	models := make([]string, maxSupportedModelsInError+1)
+	for i := range models {
+		models[i] = fmt.Sprintf("model-%02d", i)
+	}
+
+	message := modelNotFoundMessage("mistyped-model", models)
+
+	require.Contains(t, message, `"model-19", ...`)
+	require.NotContains(t, message, "model-20")
+}
+
+func TestModelNotFoundMessage_PrioritizesCaseInsensitiveMatch(t *testing.T) {
+	message := modelNotFoundMessage("GPT-5.6-Sol", []string{
+		"gpt-5.6-luna",
+		"gpt-5.6-sol",
+		"gpt-5.6-terra",
+		"gpt-5.5",
+	})
+
+	require.Contains(t, message, `Supported models: "gpt-5.6-sol", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.5"`)
 }
 
 func TestClassifyNoAccountError_FromGin_NilContextStillSafe(t *testing.T) {

@@ -24,6 +24,40 @@ import type {
   WelcomeRewardClaimResponse,
 } from '@/types'
 
+export interface UserMerchantIntegration {
+  id: number
+  name: string
+  code: string
+  description: string
+}
+
+export interface UserMerchantBinding {
+  id: number
+  integration_id: number
+  integration_name?: string
+  integration_code?: string
+  external_user_id: string
+  external_account: string
+  status: string
+  last_login_at?: string
+  last_recharge_sync_at?: string
+}
+
+export async function listMerchantIntegrations(): Promise<UserMerchantIntegration[]> {
+  const { data } = await apiClient.get<UserMerchantIntegration[]>('/merchant-integrations')
+  return data
+}
+
+export async function launchMerchantIntegration(integrationId: number): Promise<{ redirect_url: string }> {
+  const { data } = await apiClient.post<{ redirect_url: string }>(`/merchant-integrations/${integrationId}/launch`)
+  return data
+}
+
+export async function listMerchantBindings(): Promise<UserMerchantBinding[]> {
+  const { data } = await apiClient.get<UserMerchantBinding[]>('/merchant-integrations/bindings')
+  return data
+}
+
 /**
  * Get current user profile
  * @returns User profile data
@@ -256,6 +290,9 @@ export const userAPI = {
   getAffiliateDetail,
   transferAffiliateQuota,
   getMyPlatformQuotas,
+  listMerchantIntegrations,
+  launchMerchantIntegration,
+  listMerchantBindings,
 }
 
 export default userAPI

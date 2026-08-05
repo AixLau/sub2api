@@ -284,7 +284,7 @@
           selectable
           :selected-keys="selectedIds"
           :selection-label="getUserSelectionLabel"
-          :actions-count="7"
+          :actions-count="8"
           :server-side-sort="true"
           default-sort-key="created_at"
           default-sort-order="desc"
@@ -694,6 +694,15 @@
                 {{ t('admin.users.apiKeys') }}
               </button>
 
+              <!-- Merchant bindings -->
+              <button
+                @click="handleMerchantBindings(user); closeActionMenu()"
+                class="flex w-full items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
+              >
+                <Icon name="link" size="sm" class="text-gray-400" :stroke-width="2" />
+                {{ t('admin.merchant.userBindings.title') }}
+              </button>
+
               <!-- Allowed Groups -->
               <button
                 @click="handleAllowedGroups(user); closeActionMenu()"
@@ -776,6 +785,7 @@
       @success="loadUsers"
     />
     <UserApiKeysModal :show="showApiKeysModal" :user="viewingUser" @close="closeApiKeysModal" />
+    <UserMerchantBindingsModal :show="showMerchantBindingsModal" :user="merchantBindingsUser" @close="closeMerchantBindingsModal" />
     <UserAllowedGroupsModal :show="showAllowedGroupsModal" :user="allowedGroupsUser" @close="closeAllowedGroupsModal" @success="loadUsers" />
     <UserBalanceModal :show="showBalanceModal" :user="balanceUser" :operation="balanceOperation" @close="closeBalanceModal" @success="loadUsers" />
     <UserBalanceHistoryModal :show="showBalanceHistoryModal" :user="balanceHistoryUser" @close="closeBalanceHistoryModal" @deposit="handleDepositFromHistory" @withdraw="handleWithdrawFromHistory" />
@@ -824,6 +834,7 @@ import UserAllowedGroupsModal from '@/components/admin/user/UserAllowedGroupsMod
 import UserBalanceModal from '@/components/admin/user/UserBalanceModal.vue'
 import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryModal.vue'
 import GroupReplaceModal from '@/components/admin/user/GroupReplaceModal.vue'
+import UserMerchantBindingsModal from '@/components/admin/user/UserMerchantBindingsModal.vue'
 
 const appStore = useAppStore()
 const route = useRoute()
@@ -1347,6 +1358,8 @@ const showPlatformQuotaModal = ref(false)
 const editingUser = ref<AdminUser | null>(null)
 const deletingUser = ref<AdminUser | null>(null)
 const viewingUser = ref<AdminUser | null>(null)
+const showMerchantBindingsModal = ref(false)
+const merchantBindingsUser = ref<AdminUser | null>(null)
 const platformQuotaUser = ref<AdminUser | null>(null)
 
 const handlePlatformQuota = (user: AdminUser) => {
@@ -1762,6 +1775,16 @@ const handleViewApiKeys = (user: AdminUser) => {
 const closeApiKeysModal = () => {
   showApiKeysModal.value = false
   viewingUser.value = null
+}
+
+const handleMerchantBindings = (user: AdminUser) => {
+  merchantBindingsUser.value = user
+  showMerchantBindingsModal.value = true
+}
+
+const closeMerchantBindingsModal = () => {
+  showMerchantBindingsModal.value = false
+  merchantBindingsUser.value = null
 }
 
 const handleAllowedGroups = (user: AdminUser) => {

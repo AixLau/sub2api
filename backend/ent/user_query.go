@@ -17,6 +17,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/merchantbinding"
+	"github.com/Wei-Shaw/sub2api/ent/merchantrechargerecord"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
@@ -36,28 +38,30 @@ import (
 // UserQuery is the builder for querying User entities.
 type UserQuery struct {
 	config
-	ctx                       *QueryContext
-	order                     []user.OrderOption
-	inters                    []Interceptor
-	predicates                []predicate.User
-	withAPIKeys               *APIKeyQuery
-	withRedeemCodes           *RedeemCodeQuery
-	withSubscriptions         *UserSubscriptionQuery
-	withAssignedSubscriptions *UserSubscriptionQuery
-	withAnnouncementReads     *AnnouncementReadQuery
-	withAllowedGroups         *GroupQuery
-	withUsageLogs             *UsageLogQuery
-	withAttributeValues       *UserAttributeValueQuery
-	withPromoCodeUsages       *PromoCodeUsageQuery
-	withPaymentOrders         *PaymentOrderQuery
-	withAuthIdentities        *AuthIdentityQuery
-	withPendingAuthSessions   *PendingAuthSessionQuery
-	withPlatformQuotas        *UserPlatformQuotaQuery
-	withRewardGrants          *UserRewardGrantQuery
-	withRewardCampaignStates  *RewardCampaignUserStateQuery
-	withBehaviorDaily         *UserBehaviorDailyQuery
-	withUserAllowedGroups     *UserAllowedGroupQuery
-	modifiers                 []func(*sql.Selector)
+	ctx                         *QueryContext
+	order                       []user.OrderOption
+	inters                      []Interceptor
+	predicates                  []predicate.User
+	withAPIKeys                 *APIKeyQuery
+	withRedeemCodes             *RedeemCodeQuery
+	withSubscriptions           *UserSubscriptionQuery
+	withAssignedSubscriptions   *UserSubscriptionQuery
+	withAnnouncementReads       *AnnouncementReadQuery
+	withAllowedGroups           *GroupQuery
+	withUsageLogs               *UsageLogQuery
+	withAttributeValues         *UserAttributeValueQuery
+	withPromoCodeUsages         *PromoCodeUsageQuery
+	withPaymentOrders           *PaymentOrderQuery
+	withAuthIdentities          *AuthIdentityQuery
+	withPendingAuthSessions     *PendingAuthSessionQuery
+	withPlatformQuotas          *UserPlatformQuotaQuery
+	withRewardGrants            *UserRewardGrantQuery
+	withRewardCampaignStates    *RewardCampaignUserStateQuery
+	withBehaviorDaily           *UserBehaviorDailyQuery
+	withMerchantBindings        *MerchantBindingQuery
+	withMerchantRechargeRecords *MerchantRechargeRecordQuery
+	withUserAllowedGroups       *UserAllowedGroupQuery
+	modifiers                   []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -446,6 +450,50 @@ func (_q *UserQuery) QueryBehaviorDaily() *UserBehaviorDailyQuery {
 	return query
 }
 
+// QueryMerchantBindings chains the current query on the "merchant_bindings" edge.
+func (_q *UserQuery) QueryMerchantBindings() *MerchantBindingQuery {
+	query := (&MerchantBindingClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(merchantbinding.Table, merchantbinding.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.MerchantBindingsTable, user.MerchantBindingsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryMerchantRechargeRecords chains the current query on the "merchant_recharge_records" edge.
+func (_q *UserQuery) QueryMerchantRechargeRecords() *MerchantRechargeRecordQuery {
+	query := (&MerchantRechargeRecordClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(merchantrechargerecord.Table, merchantrechargerecord.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.MerchantRechargeRecordsTable, user.MerchantRechargeRecordsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
 // QueryUserAllowedGroups chains the current query on the "user_allowed_groups" edge.
 func (_q *UserQuery) QueryUserAllowedGroups() *UserAllowedGroupQuery {
 	query := (&UserAllowedGroupClient{config: _q.config}).Query()
@@ -655,28 +703,30 @@ func (_q *UserQuery) Clone() *UserQuery {
 		return nil
 	}
 	return &UserQuery{
-		config:                    _q.config,
-		ctx:                       _q.ctx.Clone(),
-		order:                     append([]user.OrderOption{}, _q.order...),
-		inters:                    append([]Interceptor{}, _q.inters...),
-		predicates:                append([]predicate.User{}, _q.predicates...),
-		withAPIKeys:               _q.withAPIKeys.Clone(),
-		withRedeemCodes:           _q.withRedeemCodes.Clone(),
-		withSubscriptions:         _q.withSubscriptions.Clone(),
-		withAssignedSubscriptions: _q.withAssignedSubscriptions.Clone(),
-		withAnnouncementReads:     _q.withAnnouncementReads.Clone(),
-		withAllowedGroups:         _q.withAllowedGroups.Clone(),
-		withUsageLogs:             _q.withUsageLogs.Clone(),
-		withAttributeValues:       _q.withAttributeValues.Clone(),
-		withPromoCodeUsages:       _q.withPromoCodeUsages.Clone(),
-		withPaymentOrders:         _q.withPaymentOrders.Clone(),
-		withAuthIdentities:        _q.withAuthIdentities.Clone(),
-		withPendingAuthSessions:   _q.withPendingAuthSessions.Clone(),
-		withPlatformQuotas:        _q.withPlatformQuotas.Clone(),
-		withRewardGrants:          _q.withRewardGrants.Clone(),
-		withRewardCampaignStates:  _q.withRewardCampaignStates.Clone(),
-		withBehaviorDaily:         _q.withBehaviorDaily.Clone(),
-		withUserAllowedGroups:     _q.withUserAllowedGroups.Clone(),
+		config:                      _q.config,
+		ctx:                         _q.ctx.Clone(),
+		order:                       append([]user.OrderOption{}, _q.order...),
+		inters:                      append([]Interceptor{}, _q.inters...),
+		predicates:                  append([]predicate.User{}, _q.predicates...),
+		withAPIKeys:                 _q.withAPIKeys.Clone(),
+		withRedeemCodes:             _q.withRedeemCodes.Clone(),
+		withSubscriptions:           _q.withSubscriptions.Clone(),
+		withAssignedSubscriptions:   _q.withAssignedSubscriptions.Clone(),
+		withAnnouncementReads:       _q.withAnnouncementReads.Clone(),
+		withAllowedGroups:           _q.withAllowedGroups.Clone(),
+		withUsageLogs:               _q.withUsageLogs.Clone(),
+		withAttributeValues:         _q.withAttributeValues.Clone(),
+		withPromoCodeUsages:         _q.withPromoCodeUsages.Clone(),
+		withPaymentOrders:           _q.withPaymentOrders.Clone(),
+		withAuthIdentities:          _q.withAuthIdentities.Clone(),
+		withPendingAuthSessions:     _q.withPendingAuthSessions.Clone(),
+		withPlatformQuotas:          _q.withPlatformQuotas.Clone(),
+		withRewardGrants:            _q.withRewardGrants.Clone(),
+		withRewardCampaignStates:    _q.withRewardCampaignStates.Clone(),
+		withBehaviorDaily:           _q.withBehaviorDaily.Clone(),
+		withMerchantBindings:        _q.withMerchantBindings.Clone(),
+		withMerchantRechargeRecords: _q.withMerchantRechargeRecords.Clone(),
+		withUserAllowedGroups:       _q.withUserAllowedGroups.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -859,6 +909,28 @@ func (_q *UserQuery) WithBehaviorDaily(opts ...func(*UserBehaviorDailyQuery)) *U
 	return _q
 }
 
+// WithMerchantBindings tells the query-builder to eager-load the nodes that are connected to
+// the "merchant_bindings" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithMerchantBindings(opts ...func(*MerchantBindingQuery)) *UserQuery {
+	query := (&MerchantBindingClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withMerchantBindings = query
+	return _q
+}
+
+// WithMerchantRechargeRecords tells the query-builder to eager-load the nodes that are connected to
+// the "merchant_recharge_records" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithMerchantRechargeRecords(opts ...func(*MerchantRechargeRecordQuery)) *UserQuery {
+	query := (&MerchantRechargeRecordClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withMerchantRechargeRecords = query
+	return _q
+}
+
 // WithUserAllowedGroups tells the query-builder to eager-load the nodes that are connected to
 // the "user_allowed_groups" edge. The optional arguments are used to configure the query builder of the edge.
 func (_q *UserQuery) WithUserAllowedGroups(opts ...func(*UserAllowedGroupQuery)) *UserQuery {
@@ -948,7 +1020,7 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = _q.querySpec()
-		loadedTypes = [17]bool{
+		loadedTypes = [19]bool{
 			_q.withAPIKeys != nil,
 			_q.withRedeemCodes != nil,
 			_q.withSubscriptions != nil,
@@ -965,6 +1037,8 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 			_q.withRewardGrants != nil,
 			_q.withRewardCampaignStates != nil,
 			_q.withBehaviorDaily != nil,
+			_q.withMerchantBindings != nil,
+			_q.withMerchantRechargeRecords != nil,
 			_q.withUserAllowedGroups != nil,
 		}
 	)
@@ -1104,6 +1178,22 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 		if err := _q.loadBehaviorDaily(ctx, query, nodes,
 			func(n *User) { n.Edges.BehaviorDaily = []*UserBehaviorDaily{} },
 			func(n *User, e *UserBehaviorDaily) { n.Edges.BehaviorDaily = append(n.Edges.BehaviorDaily, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withMerchantBindings; query != nil {
+		if err := _q.loadMerchantBindings(ctx, query, nodes,
+			func(n *User) { n.Edges.MerchantBindings = []*MerchantBinding{} },
+			func(n *User, e *MerchantBinding) { n.Edges.MerchantBindings = append(n.Edges.MerchantBindings, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withMerchantRechargeRecords; query != nil {
+		if err := _q.loadMerchantRechargeRecords(ctx, query, nodes,
+			func(n *User) { n.Edges.MerchantRechargeRecords = []*MerchantRechargeRecord{} },
+			func(n *User, e *MerchantRechargeRecord) {
+				n.Edges.MerchantRechargeRecords = append(n.Edges.MerchantRechargeRecords, e)
+			}); err != nil {
 			return nil, err
 		}
 	}
@@ -1625,6 +1715,66 @@ func (_q *UserQuery) loadBehaviorDaily(ctx context.Context, query *UserBehaviorD
 	}
 	query.Where(predicate.UserBehaviorDaily(func(s *sql.Selector) {
 		s.Where(sql.InValues(s.C(user.BehaviorDailyColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadMerchantBindings(ctx context.Context, query *MerchantBindingQuery, nodes []*User, init func(*User), assign func(*User, *MerchantBinding)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(merchantbinding.FieldUserID)
+	}
+	query.Where(predicate.MerchantBinding(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.MerchantBindingsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadMerchantRechargeRecords(ctx context.Context, query *MerchantRechargeRecordQuery, nodes []*User, init func(*User), assign func(*User, *MerchantRechargeRecord)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(merchantrechargerecord.FieldUserID)
+	}
+	query.Where(predicate.MerchantRechargeRecord(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.MerchantRechargeRecordsColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {

@@ -15,6 +15,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/merchantbinding"
+	"github.com/Wei-Shaw/sub2api/ent/merchantrechargerecord"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
@@ -757,6 +759,36 @@ func (_u *UserUpdate) AddBehaviorDaily(v ...*UserBehaviorDaily) *UserUpdate {
 	return _u.AddBehaviorDailyIDs(ids...)
 }
 
+// AddMerchantBindingIDs adds the "merchant_bindings" edge to the MerchantBinding entity by IDs.
+func (_u *UserUpdate) AddMerchantBindingIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddMerchantBindingIDs(ids...)
+	return _u
+}
+
+// AddMerchantBindings adds the "merchant_bindings" edges to the MerchantBinding entity.
+func (_u *UserUpdate) AddMerchantBindings(v ...*MerchantBinding) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddMerchantBindingIDs(ids...)
+}
+
+// AddMerchantRechargeRecordIDs adds the "merchant_recharge_records" edge to the MerchantRechargeRecord entity by IDs.
+func (_u *UserUpdate) AddMerchantRechargeRecordIDs(ids ...int64) *UserUpdate {
+	_u.mutation.AddMerchantRechargeRecordIDs(ids...)
+	return _u
+}
+
+// AddMerchantRechargeRecords adds the "merchant_recharge_records" edges to the MerchantRechargeRecord entity.
+func (_u *UserUpdate) AddMerchantRechargeRecords(v ...*MerchantRechargeRecord) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddMerchantRechargeRecordIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (_u *UserUpdate) Mutation() *UserMutation {
 	return _u.mutation
@@ -1096,6 +1128,48 @@ func (_u *UserUpdate) RemoveBehaviorDaily(v ...*UserBehaviorDaily) *UserUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveBehaviorDailyIDs(ids...)
+}
+
+// ClearMerchantBindings clears all "merchant_bindings" edges to the MerchantBinding entity.
+func (_u *UserUpdate) ClearMerchantBindings() *UserUpdate {
+	_u.mutation.ClearMerchantBindings()
+	return _u
+}
+
+// RemoveMerchantBindingIDs removes the "merchant_bindings" edge to MerchantBinding entities by IDs.
+func (_u *UserUpdate) RemoveMerchantBindingIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveMerchantBindingIDs(ids...)
+	return _u
+}
+
+// RemoveMerchantBindings removes "merchant_bindings" edges to MerchantBinding entities.
+func (_u *UserUpdate) RemoveMerchantBindings(v ...*MerchantBinding) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveMerchantBindingIDs(ids...)
+}
+
+// ClearMerchantRechargeRecords clears all "merchant_recharge_records" edges to the MerchantRechargeRecord entity.
+func (_u *UserUpdate) ClearMerchantRechargeRecords() *UserUpdate {
+	_u.mutation.ClearMerchantRechargeRecords()
+	return _u
+}
+
+// RemoveMerchantRechargeRecordIDs removes the "merchant_recharge_records" edge to MerchantRechargeRecord entities by IDs.
+func (_u *UserUpdate) RemoveMerchantRechargeRecordIDs(ids ...int64) *UserUpdate {
+	_u.mutation.RemoveMerchantRechargeRecordIDs(ids...)
+	return _u
+}
+
+// RemoveMerchantRechargeRecords removes "merchant_recharge_records" edges to MerchantRechargeRecord entities.
+func (_u *UserUpdate) RemoveMerchantRechargeRecords(v ...*MerchantRechargeRecord) *UserUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveMerchantRechargeRecordIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -2058,6 +2132,96 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.MerchantBindingsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MerchantBindingsTable,
+			Columns: []string{user.MerchantBindingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(merchantbinding.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedMerchantBindingsIDs(); len(nodes) > 0 && !_u.mutation.MerchantBindingsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MerchantBindingsTable,
+			Columns: []string{user.MerchantBindingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(merchantbinding.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.MerchantBindingsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MerchantBindingsTable,
+			Columns: []string{user.MerchantBindingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(merchantbinding.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.MerchantRechargeRecordsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MerchantRechargeRecordsTable,
+			Columns: []string{user.MerchantRechargeRecordsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(merchantrechargerecord.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedMerchantRechargeRecordsIDs(); len(nodes) > 0 && !_u.mutation.MerchantRechargeRecordsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MerchantRechargeRecordsTable,
+			Columns: []string{user.MerchantRechargeRecordsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(merchantrechargerecord.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.MerchantRechargeRecordsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MerchantRechargeRecordsTable,
+			Columns: []string{user.MerchantRechargeRecordsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(merchantrechargerecord.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{user.Label}
@@ -2792,6 +2956,36 @@ func (_u *UserUpdateOne) AddBehaviorDaily(v ...*UserBehaviorDaily) *UserUpdateOn
 	return _u.AddBehaviorDailyIDs(ids...)
 }
 
+// AddMerchantBindingIDs adds the "merchant_bindings" edge to the MerchantBinding entity by IDs.
+func (_u *UserUpdateOne) AddMerchantBindingIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddMerchantBindingIDs(ids...)
+	return _u
+}
+
+// AddMerchantBindings adds the "merchant_bindings" edges to the MerchantBinding entity.
+func (_u *UserUpdateOne) AddMerchantBindings(v ...*MerchantBinding) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddMerchantBindingIDs(ids...)
+}
+
+// AddMerchantRechargeRecordIDs adds the "merchant_recharge_records" edge to the MerchantRechargeRecord entity by IDs.
+func (_u *UserUpdateOne) AddMerchantRechargeRecordIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.AddMerchantRechargeRecordIDs(ids...)
+	return _u
+}
+
+// AddMerchantRechargeRecords adds the "merchant_recharge_records" edges to the MerchantRechargeRecord entity.
+func (_u *UserUpdateOne) AddMerchantRechargeRecords(v ...*MerchantRechargeRecord) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddMerchantRechargeRecordIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (_u *UserUpdateOne) Mutation() *UserMutation {
 	return _u.mutation
@@ -3131,6 +3325,48 @@ func (_u *UserUpdateOne) RemoveBehaviorDaily(v ...*UserBehaviorDaily) *UserUpdat
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveBehaviorDailyIDs(ids...)
+}
+
+// ClearMerchantBindings clears all "merchant_bindings" edges to the MerchantBinding entity.
+func (_u *UserUpdateOne) ClearMerchantBindings() *UserUpdateOne {
+	_u.mutation.ClearMerchantBindings()
+	return _u
+}
+
+// RemoveMerchantBindingIDs removes the "merchant_bindings" edge to MerchantBinding entities by IDs.
+func (_u *UserUpdateOne) RemoveMerchantBindingIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveMerchantBindingIDs(ids...)
+	return _u
+}
+
+// RemoveMerchantBindings removes "merchant_bindings" edges to MerchantBinding entities.
+func (_u *UserUpdateOne) RemoveMerchantBindings(v ...*MerchantBinding) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveMerchantBindingIDs(ids...)
+}
+
+// ClearMerchantRechargeRecords clears all "merchant_recharge_records" edges to the MerchantRechargeRecord entity.
+func (_u *UserUpdateOne) ClearMerchantRechargeRecords() *UserUpdateOne {
+	_u.mutation.ClearMerchantRechargeRecords()
+	return _u
+}
+
+// RemoveMerchantRechargeRecordIDs removes the "merchant_recharge_records" edge to MerchantRechargeRecord entities by IDs.
+func (_u *UserUpdateOne) RemoveMerchantRechargeRecordIDs(ids ...int64) *UserUpdateOne {
+	_u.mutation.RemoveMerchantRechargeRecordIDs(ids...)
+	return _u
+}
+
+// RemoveMerchantRechargeRecords removes "merchant_recharge_records" edges to MerchantRechargeRecord entities.
+func (_u *UserUpdateOne) RemoveMerchantRechargeRecords(v ...*MerchantRechargeRecord) *UserUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveMerchantRechargeRecordIDs(ids...)
 }
 
 // Where appends a list predicates to the UserUpdate builder.
@@ -4116,6 +4352,96 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(userbehaviordaily.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.MerchantBindingsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MerchantBindingsTable,
+			Columns: []string{user.MerchantBindingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(merchantbinding.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedMerchantBindingsIDs(); len(nodes) > 0 && !_u.mutation.MerchantBindingsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MerchantBindingsTable,
+			Columns: []string{user.MerchantBindingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(merchantbinding.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.MerchantBindingsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MerchantBindingsTable,
+			Columns: []string{user.MerchantBindingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(merchantbinding.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.MerchantRechargeRecordsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MerchantRechargeRecordsTable,
+			Columns: []string{user.MerchantRechargeRecordsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(merchantrechargerecord.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedMerchantRechargeRecordsIDs(); len(nodes) > 0 && !_u.mutation.MerchantRechargeRecordsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MerchantRechargeRecordsTable,
+			Columns: []string{user.MerchantRechargeRecordsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(merchantrechargerecord.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.MerchantRechargeRecordsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.MerchantRechargeRecordsTable,
+			Columns: []string{user.MerchantRechargeRecordsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(merchantrechargerecord.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

@@ -888,6 +888,7 @@ var ProviderSet = wire.NewSet(
 	ProvideChannelMonitorService,
 	ProvideChannelMonitorRunner,
 	NewChannelMonitorRequestTemplateService,
+	NewMerchantSSOService,
 	ProvideUserPlatformQuotaUsageFlusher,
 )
 

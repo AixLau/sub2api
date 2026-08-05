@@ -224,6 +224,8 @@ export default {
     contentModeration: '内容审核',
     promptAudit: '提示词审计',
     auditLogs: '操作日志',
+    merchant: '商家服务',
+    merchantIntegrations: '商家 SSO',
   },
 
   // Auth

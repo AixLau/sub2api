@@ -24,6 +24,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
+	"github.com/Wei-Shaw/sub2api/ent/merchantapiendpoint"
+	"github.com/Wei-Shaw/sub2api/ent/merchantbinding"
+	"github.com/Wei-Shaw/sub2api/ent/merchantintegration"
+	"github.com/Wei-Shaw/sub2api/ent/merchantrechargerecord"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
@@ -1263,6 +1267,306 @@ func init() {
 	identityadoptiondecisionDescDecidedAt := identityadoptiondecisionFields[4].Descriptor()
 	// identityadoptiondecision.DefaultDecidedAt holds the default value on creation for the decided_at field.
 	identityadoptiondecision.DefaultDecidedAt = identityadoptiondecisionDescDecidedAt.Default.(func() time.Time)
+	merchantapiendpointMixin := schema.MerchantAPIEndpoint{}.Mixin()
+	merchantapiendpointMixinFields0 := merchantapiendpointMixin[0].Fields()
+	_ = merchantapiendpointMixinFields0
+	merchantapiendpointFields := schema.MerchantAPIEndpoint{}.Fields()
+	_ = merchantapiendpointFields
+	// merchantapiendpointDescCreatedAt is the schema descriptor for created_at field.
+	merchantapiendpointDescCreatedAt := merchantapiendpointMixinFields0[0].Descriptor()
+	// merchantapiendpoint.DefaultCreatedAt holds the default value on creation for the created_at field.
+	merchantapiendpoint.DefaultCreatedAt = merchantapiendpointDescCreatedAt.Default.(func() time.Time)
+	// merchantapiendpointDescUpdatedAt is the schema descriptor for updated_at field.
+	merchantapiendpointDescUpdatedAt := merchantapiendpointMixinFields0[1].Descriptor()
+	// merchantapiendpoint.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	merchantapiendpoint.DefaultUpdatedAt = merchantapiendpointDescUpdatedAt.Default.(func() time.Time)
+	// merchantapiendpoint.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	merchantapiendpoint.UpdateDefaultUpdatedAt = merchantapiendpointDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// merchantapiendpointDescType is the schema descriptor for type field.
+	merchantapiendpointDescType := merchantapiendpointFields[1].Descriptor()
+	// merchantapiendpoint.TypeValidator is a validator for the "type" field. It is called by the builders before save.
+	merchantapiendpoint.TypeValidator = func() func(string) error {
+		validators := merchantapiendpointDescType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(_type string) error {
+			for _, fn := range fns {
+				if err := fn(_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// merchantapiendpointDescURL is the schema descriptor for url field.
+	merchantapiendpointDescURL := merchantapiendpointFields[2].Descriptor()
+	// merchantapiendpoint.URLValidator is a validator for the "url" field. It is called by the builders before save.
+	merchantapiendpoint.URLValidator = func() func(string) error {
+		validators := merchantapiendpointDescURL.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(url string) error {
+			for _, fn := range fns {
+				if err := fn(url); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// merchantapiendpointDescMethod is the schema descriptor for method field.
+	merchantapiendpointDescMethod := merchantapiendpointFields[3].Descriptor()
+	// merchantapiendpoint.DefaultMethod holds the default value on creation for the method field.
+	merchantapiendpoint.DefaultMethod = merchantapiendpointDescMethod.Default.(string)
+	// merchantapiendpoint.MethodValidator is a validator for the "method" field. It is called by the builders before save.
+	merchantapiendpoint.MethodValidator = merchantapiendpointDescMethod.Validators[0].(func(string) error)
+	// merchantapiendpointDescContentType is the schema descriptor for content_type field.
+	merchantapiendpointDescContentType := merchantapiendpointFields[4].Descriptor()
+	// merchantapiendpoint.DefaultContentType holds the default value on creation for the content_type field.
+	merchantapiendpoint.DefaultContentType = merchantapiendpointDescContentType.Default.(string)
+	// merchantapiendpoint.ContentTypeValidator is a validator for the "content_type" field. It is called by the builders before save.
+	merchantapiendpoint.ContentTypeValidator = merchantapiendpointDescContentType.Validators[0].(func(string) error)
+	// merchantapiendpointDescAuthType is the schema descriptor for auth_type field.
+	merchantapiendpointDescAuthType := merchantapiendpointFields[8].Descriptor()
+	// merchantapiendpoint.DefaultAuthType holds the default value on creation for the auth_type field.
+	merchantapiendpoint.DefaultAuthType = merchantapiendpointDescAuthType.Default.(string)
+	// merchantapiendpoint.AuthTypeValidator is a validator for the "auth_type" field. It is called by the builders before save.
+	merchantapiendpoint.AuthTypeValidator = merchantapiendpointDescAuthType.Validators[0].(func(string) error)
+	// merchantapiendpointDescSecretRef is the schema descriptor for secret_ref field.
+	merchantapiendpointDescSecretRef := merchantapiendpointFields[9].Descriptor()
+	// merchantapiendpoint.DefaultSecretRef holds the default value on creation for the secret_ref field.
+	merchantapiendpoint.DefaultSecretRef = merchantapiendpointDescSecretRef.Default.(string)
+	// merchantapiendpoint.SecretRefValidator is a validator for the "secret_ref" field. It is called by the builders before save.
+	merchantapiendpoint.SecretRefValidator = merchantapiendpointDescSecretRef.Validators[0].(func(string) error)
+	// merchantapiendpointDescTimeoutMs is the schema descriptor for timeout_ms field.
+	merchantapiendpointDescTimeoutMs := merchantapiendpointFields[13].Descriptor()
+	// merchantapiendpoint.DefaultTimeoutMs holds the default value on creation for the timeout_ms field.
+	merchantapiendpoint.DefaultTimeoutMs = merchantapiendpointDescTimeoutMs.Default.(int)
+	// merchantapiendpointDescStatus is the schema descriptor for status field.
+	merchantapiendpointDescStatus := merchantapiendpointFields[14].Descriptor()
+	// merchantapiendpoint.DefaultStatus holds the default value on creation for the status field.
+	merchantapiendpoint.DefaultStatus = merchantapiendpointDescStatus.Default.(string)
+	// merchantapiendpoint.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	merchantapiendpoint.StatusValidator = merchantapiendpointDescStatus.Validators[0].(func(string) error)
+	// merchantapiendpointDescEnabled is the schema descriptor for enabled field.
+	merchantapiendpointDescEnabled := merchantapiendpointFields[15].Descriptor()
+	// merchantapiendpoint.DefaultEnabled holds the default value on creation for the enabled field.
+	merchantapiendpoint.DefaultEnabled = merchantapiendpointDescEnabled.Default.(bool)
+	merchantbindingMixin := schema.MerchantBinding{}.Mixin()
+	merchantbindingMixinFields0 := merchantbindingMixin[0].Fields()
+	_ = merchantbindingMixinFields0
+	merchantbindingFields := schema.MerchantBinding{}.Fields()
+	_ = merchantbindingFields
+	// merchantbindingDescCreatedAt is the schema descriptor for created_at field.
+	merchantbindingDescCreatedAt := merchantbindingMixinFields0[0].Descriptor()
+	// merchantbinding.DefaultCreatedAt holds the default value on creation for the created_at field.
+	merchantbinding.DefaultCreatedAt = merchantbindingDescCreatedAt.Default.(func() time.Time)
+	// merchantbindingDescUpdatedAt is the schema descriptor for updated_at field.
+	merchantbindingDescUpdatedAt := merchantbindingMixinFields0[1].Descriptor()
+	// merchantbinding.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	merchantbinding.DefaultUpdatedAt = merchantbindingDescUpdatedAt.Default.(func() time.Time)
+	// merchantbinding.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	merchantbinding.UpdateDefaultUpdatedAt = merchantbindingDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// merchantbindingDescExternalUserID is the schema descriptor for external_user_id field.
+	merchantbindingDescExternalUserID := merchantbindingFields[2].Descriptor()
+	// merchantbinding.ExternalUserIDValidator is a validator for the "external_user_id" field. It is called by the builders before save.
+	merchantbinding.ExternalUserIDValidator = func() func(string) error {
+		validators := merchantbindingDescExternalUserID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(external_user_id string) error {
+			for _, fn := range fns {
+				if err := fn(external_user_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// merchantbindingDescExternalAccount is the schema descriptor for external_account field.
+	merchantbindingDescExternalAccount := merchantbindingFields[3].Descriptor()
+	// merchantbinding.DefaultExternalAccount holds the default value on creation for the external_account field.
+	merchantbinding.DefaultExternalAccount = merchantbindingDescExternalAccount.Default.(string)
+	// merchantbinding.ExternalAccountValidator is a validator for the "external_account" field. It is called by the builders before save.
+	merchantbinding.ExternalAccountValidator = merchantbindingDescExternalAccount.Validators[0].(func(string) error)
+	// merchantbindingDescStatus is the schema descriptor for status field.
+	merchantbindingDescStatus := merchantbindingFields[4].Descriptor()
+	// merchantbinding.DefaultStatus holds the default value on creation for the status field.
+	merchantbinding.DefaultStatus = merchantbindingDescStatus.Default.(string)
+	// merchantbinding.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	merchantbinding.StatusValidator = merchantbindingDescStatus.Validators[0].(func(string) error)
+	merchantintegrationMixin := schema.MerchantIntegration{}.Mixin()
+	merchantintegrationMixinFields0 := merchantintegrationMixin[0].Fields()
+	_ = merchantintegrationMixinFields0
+	merchantintegrationFields := schema.MerchantIntegration{}.Fields()
+	_ = merchantintegrationFields
+	// merchantintegrationDescCreatedAt is the schema descriptor for created_at field.
+	merchantintegrationDescCreatedAt := merchantintegrationMixinFields0[0].Descriptor()
+	// merchantintegration.DefaultCreatedAt holds the default value on creation for the created_at field.
+	merchantintegration.DefaultCreatedAt = merchantintegrationDescCreatedAt.Default.(func() time.Time)
+	// merchantintegrationDescUpdatedAt is the schema descriptor for updated_at field.
+	merchantintegrationDescUpdatedAt := merchantintegrationMixinFields0[1].Descriptor()
+	// merchantintegration.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	merchantintegration.DefaultUpdatedAt = merchantintegrationDescUpdatedAt.Default.(func() time.Time)
+	// merchantintegration.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	merchantintegration.UpdateDefaultUpdatedAt = merchantintegrationDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// merchantintegrationDescName is the schema descriptor for name field.
+	merchantintegrationDescName := merchantintegrationFields[0].Descriptor()
+	// merchantintegration.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	merchantintegration.NameValidator = func() func(string) error {
+		validators := merchantintegrationDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// merchantintegrationDescCode is the schema descriptor for code field.
+	merchantintegrationDescCode := merchantintegrationFields[1].Descriptor()
+	// merchantintegration.CodeValidator is a validator for the "code" field. It is called by the builders before save.
+	merchantintegration.CodeValidator = func() func(string) error {
+		validators := merchantintegrationDescCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(code string) error {
+			for _, fn := range fns {
+				if err := fn(code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// merchantintegrationDescMode is the schema descriptor for mode field.
+	merchantintegrationDescMode := merchantintegrationFields[2].Descriptor()
+	// merchantintegration.DefaultMode holds the default value on creation for the mode field.
+	merchantintegration.DefaultMode = merchantintegrationDescMode.Default.(string)
+	// merchantintegration.ModeValidator is a validator for the "mode" field. It is called by the builders before save.
+	merchantintegration.ModeValidator = merchantintegrationDescMode.Validators[0].(func(string) error)
+	// merchantintegrationDescMerchantCode is the schema descriptor for merchant_code field.
+	merchantintegrationDescMerchantCode := merchantintegrationFields[3].Descriptor()
+	// merchantintegration.DefaultMerchantCode holds the default value on creation for the merchant_code field.
+	merchantintegration.DefaultMerchantCode = merchantintegrationDescMerchantCode.Default.(string)
+	// merchantintegration.MerchantCodeValidator is a validator for the "merchant_code" field. It is called by the builders before save.
+	merchantintegration.MerchantCodeValidator = merchantintegrationDescMerchantCode.Validators[0].(func(string) error)
+	// merchantintegrationDescDescription is the schema descriptor for description field.
+	merchantintegrationDescDescription := merchantintegrationFields[4].Descriptor()
+	// merchantintegration.DefaultDescription holds the default value on creation for the description field.
+	merchantintegration.DefaultDescription = merchantintegrationDescDescription.Default.(string)
+	// merchantintegration.DescriptionValidator is a validator for the "description" field. It is called by the builders before save.
+	merchantintegration.DescriptionValidator = merchantintegrationDescDescription.Validators[0].(func(string) error)
+	// merchantintegrationDescStatus is the schema descriptor for status field.
+	merchantintegrationDescStatus := merchantintegrationFields[5].Descriptor()
+	// merchantintegration.DefaultStatus holds the default value on creation for the status field.
+	merchantintegration.DefaultStatus = merchantintegrationDescStatus.Default.(string)
+	// merchantintegration.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	merchantintegration.StatusValidator = merchantintegrationDescStatus.Validators[0].(func(string) error)
+	// merchantintegrationDescEnabled is the schema descriptor for enabled field.
+	merchantintegrationDescEnabled := merchantintegrationFields[6].Descriptor()
+	// merchantintegration.DefaultEnabled holds the default value on creation for the enabled field.
+	merchantintegration.DefaultEnabled = merchantintegrationDescEnabled.Default.(bool)
+	merchantrechargerecordMixin := schema.MerchantRechargeRecord{}.Mixin()
+	merchantrechargerecordMixinFields0 := merchantrechargerecordMixin[0].Fields()
+	_ = merchantrechargerecordMixinFields0
+	merchantrechargerecordFields := schema.MerchantRechargeRecord{}.Fields()
+	_ = merchantrechargerecordFields
+	// merchantrechargerecordDescCreatedAt is the schema descriptor for created_at field.
+	merchantrechargerecordDescCreatedAt := merchantrechargerecordMixinFields0[0].Descriptor()
+	// merchantrechargerecord.DefaultCreatedAt holds the default value on creation for the created_at field.
+	merchantrechargerecord.DefaultCreatedAt = merchantrechargerecordDescCreatedAt.Default.(func() time.Time)
+	// merchantrechargerecordDescUpdatedAt is the schema descriptor for updated_at field.
+	merchantrechargerecordDescUpdatedAt := merchantrechargerecordMixinFields0[1].Descriptor()
+	// merchantrechargerecord.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	merchantrechargerecord.DefaultUpdatedAt = merchantrechargerecordDescUpdatedAt.Default.(func() time.Time)
+	// merchantrechargerecord.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	merchantrechargerecord.UpdateDefaultUpdatedAt = merchantrechargerecordDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// merchantrechargerecordDescExternalUserID is the schema descriptor for external_user_id field.
+	merchantrechargerecordDescExternalUserID := merchantrechargerecordFields[2].Descriptor()
+	// merchantrechargerecord.DefaultExternalUserID holds the default value on creation for the external_user_id field.
+	merchantrechargerecord.DefaultExternalUserID = merchantrechargerecordDescExternalUserID.Default.(string)
+	// merchantrechargerecord.ExternalUserIDValidator is a validator for the "external_user_id" field. It is called by the builders before save.
+	merchantrechargerecord.ExternalUserIDValidator = merchantrechargerecordDescExternalUserID.Validators[0].(func(string) error)
+	// merchantrechargerecordDescOrderNo is the schema descriptor for order_no field.
+	merchantrechargerecordDescOrderNo := merchantrechargerecordFields[3].Descriptor()
+	// merchantrechargerecord.OrderNoValidator is a validator for the "order_no" field. It is called by the builders before save.
+	merchantrechargerecord.OrderNoValidator = func() func(string) error {
+		validators := merchantrechargerecordDescOrderNo.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(order_no string) error {
+			for _, fn := range fns {
+				if err := fn(order_no); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// merchantrechargerecordDescAmount is the schema descriptor for amount field.
+	merchantrechargerecordDescAmount := merchantrechargerecordFields[4].Descriptor()
+	// merchantrechargerecord.DefaultAmount holds the default value on creation for the amount field.
+	merchantrechargerecord.DefaultAmount = merchantrechargerecordDescAmount.Default.(string)
+	// merchantrechargerecord.AmountValidator is a validator for the "amount" field. It is called by the builders before save.
+	merchantrechargerecord.AmountValidator = merchantrechargerecordDescAmount.Validators[0].(func(string) error)
+	// merchantrechargerecordDescCurrency is the schema descriptor for currency field.
+	merchantrechargerecordDescCurrency := merchantrechargerecordFields[5].Descriptor()
+	// merchantrechargerecord.DefaultCurrency holds the default value on creation for the currency field.
+	merchantrechargerecord.DefaultCurrency = merchantrechargerecordDescCurrency.Default.(string)
+	// merchantrechargerecord.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
+	merchantrechargerecord.CurrencyValidator = merchantrechargerecordDescCurrency.Validators[0].(func(string) error)
+	// merchantrechargerecordDescBalanceBefore is the schema descriptor for balance_before field.
+	merchantrechargerecordDescBalanceBefore := merchantrechargerecordFields[6].Descriptor()
+	// merchantrechargerecord.DefaultBalanceBefore holds the default value on creation for the balance_before field.
+	merchantrechargerecord.DefaultBalanceBefore = merchantrechargerecordDescBalanceBefore.Default.(string)
+	// merchantrechargerecord.BalanceBeforeValidator is a validator for the "balance_before" field. It is called by the builders before save.
+	merchantrechargerecord.BalanceBeforeValidator = merchantrechargerecordDescBalanceBefore.Validators[0].(func(string) error)
+	// merchantrechargerecordDescBalanceAfter is the schema descriptor for balance_after field.
+	merchantrechargerecordDescBalanceAfter := merchantrechargerecordFields[7].Descriptor()
+	// merchantrechargerecord.DefaultBalanceAfter holds the default value on creation for the balance_after field.
+	merchantrechargerecord.DefaultBalanceAfter = merchantrechargerecordDescBalanceAfter.Default.(string)
+	// merchantrechargerecord.BalanceAfterValidator is a validator for the "balance_after" field. It is called by the builders before save.
+	merchantrechargerecord.BalanceAfterValidator = merchantrechargerecordDescBalanceAfter.Validators[0].(func(string) error)
+	// merchantrechargerecordDescChargeType is the schema descriptor for charge_type field.
+	merchantrechargerecordDescChargeType := merchantrechargerecordFields[8].Descriptor()
+	// merchantrechargerecord.DefaultChargeType holds the default value on creation for the charge_type field.
+	merchantrechargerecord.DefaultChargeType = merchantrechargerecordDescChargeType.Default.(string)
+	// merchantrechargerecord.ChargeTypeValidator is a validator for the "charge_type" field. It is called by the builders before save.
+	merchantrechargerecord.ChargeTypeValidator = merchantrechargerecordDescChargeType.Validators[0].(func(string) error)
+	// merchantrechargerecordDescPayMethod is the schema descriptor for pay_method field.
+	merchantrechargerecordDescPayMethod := merchantrechargerecordFields[9].Descriptor()
+	// merchantrechargerecord.DefaultPayMethod holds the default value on creation for the pay_method field.
+	merchantrechargerecord.DefaultPayMethod = merchantrechargerecordDescPayMethod.Default.(string)
+	// merchantrechargerecord.PayMethodValidator is a validator for the "pay_method" field. It is called by the builders before save.
+	merchantrechargerecord.PayMethodValidator = merchantrechargerecordDescPayMethod.Validators[0].(func(string) error)
+	// merchantrechargerecordDescStatus is the schema descriptor for status field.
+	merchantrechargerecordDescStatus := merchantrechargerecordFields[10].Descriptor()
+	// merchantrechargerecord.DefaultStatus holds the default value on creation for the status field.
+	merchantrechargerecord.DefaultStatus = merchantrechargerecordDescStatus.Default.(string)
+	// merchantrechargerecord.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	merchantrechargerecord.StatusValidator = merchantrechargerecordDescStatus.Validators[0].(func(string) error)
+	// merchantrechargerecordDescPlatformOrderNo is the schema descriptor for platform_order_no field.
+	merchantrechargerecordDescPlatformOrderNo := merchantrechargerecordFields[11].Descriptor()
+	// merchantrechargerecord.DefaultPlatformOrderNo holds the default value on creation for the platform_order_no field.
+	merchantrechargerecord.DefaultPlatformOrderNo = merchantrechargerecordDescPlatformOrderNo.Default.(string)
+	// merchantrechargerecord.PlatformOrderNoValidator is a validator for the "platform_order_no" field. It is called by the builders before save.
+	merchantrechargerecord.PlatformOrderNoValidator = merchantrechargerecordDescPlatformOrderNo.Validators[0].(func(string) error)
 	paymentauditlogFields := schema.PaymentAuditLog{}.Fields()
 	_ = paymentauditlogFields
 	// paymentauditlogDescOrderID is the schema descriptor for order_id field.

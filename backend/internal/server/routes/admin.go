@@ -36,6 +36,9 @@ func RegisterAdminRoutes(
 		// 用户管理
 		registerUserManagementRoutes(admin, h)
 
+		// 商家 SSO 集成
+		registerMerchantSSORoutes(admin, h)
+
 		// 分组管理
 		registerGroupRoutes(admin, h)
 
@@ -357,10 +360,28 @@ func registerUserManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		users.GET("/:id/platform-quotas", h.Admin.User.GetUserPlatformQuotas)
 		users.PUT("/:id/platform-quotas", h.Admin.User.UpdateUserPlatformQuotas)
 		users.POST("/:id/platform-quotas/reset", h.Admin.User.ResetUserPlatformQuotaWindow)
+		users.GET("/:id/merchant-bindings", h.Admin.MerchantSSO.ListUserBindings)
+		users.GET("/:id/merchant-bindings/:binding_id/recharge-records", h.Admin.MerchantSSO.ListUserRechargeRecords)
+		users.POST("/:id/merchant-bindings/:binding_id/recharge-records/sync", h.Admin.MerchantSSO.SyncUserRechargeRecords)
 
 		// User attribute values
 		users.GET("/:id/attributes", h.Admin.UserAttribute.GetUserAttributes)
 		users.PUT("/:id/attributes", h.Admin.UserAttribute.UpdateUserAttributes)
+	}
+}
+
+func registerMerchantSSORoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	integrations := admin.Group("/merchant-integrations")
+	{
+		integrations.GET("", h.Admin.MerchantSSO.ListIntegrations)
+		integrations.POST("", h.Admin.MerchantSSO.CreateIntegration)
+		integrations.GET("/:id", h.Admin.MerchantSSO.GetIntegration)
+		integrations.PUT("/:id", h.Admin.MerchantSSO.UpdateIntegration)
+		integrations.POST("/:id/enabled", h.Admin.MerchantSSO.SetIntegrationEnabled)
+		integrations.POST("/:id/endpoints", h.Admin.MerchantSSO.CreateEndpoint)
+		integrations.PUT("/:id/endpoints/:endpoint_id", h.Admin.MerchantSSO.UpdateEndpoint)
+		integrations.POST("/:id/endpoints/:endpoint_id/enabled", h.Admin.MerchantSSO.SetEndpointEnabled)
+		integrations.POST("/:id/endpoints/:endpoint_id/test", h.Admin.MerchantSSO.TestEndpoint)
 	}
 }
 

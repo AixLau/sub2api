@@ -68,6 +68,10 @@ type apiKeyAuthCacheInvalidator interface {
 	InvalidateAuthCacheByKey(ctx context.Context, key string)
 }
 
+type userAuthCacheInvalidator interface {
+	InvalidateAuthCacheByUserID(ctx context.Context, userID int64)
+}
+
 type usageLogBestEffortWriter interface {
 	CreateBestEffort(ctx context.Context, log *UsageLog) error
 }
@@ -417,6 +421,13 @@ func syncBalanceCacheAfterDeduction(ctx context.Context, p *postUsageBillingPara
 				"balance_overdrafted", result.BalanceOverdrafted,
 				"error", err,
 			)
+		}
+		// Authentication snapshots also embed the user's balance. Expire every key
+		// so the next request can observe exhaustion and select a subscription fallback.
+		if invalidator, ok := p.APIKeyService.(userAuthCacheInvalidator); ok {
+			invalidator.InvalidateAuthCacheByUserID(ctx, p.User.ID)
+		} else if invalidator, ok := p.APIKeyService.(apiKeyAuthCacheInvalidator); ok && p.APIKey != nil && p.APIKey.Key != "" {
+			invalidator.InvalidateAuthCacheByKey(ctx, p.APIKey.Key)
 		}
 		return
 	}

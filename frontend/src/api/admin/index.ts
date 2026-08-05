@@ -35,6 +35,7 @@ import riskControlAPI from './riskControl'
 import adminComplianceAPI from './compliance'
 import auditAPI from './audit'
 import rewardsAPI from './rewards'
+import merchantIntegrationsAPI from './merchantIntegrations'
 
 /**
  * Unified admin API object for convenient access
@@ -71,7 +72,8 @@ export const adminAPI = {
   riskControl: riskControlAPI,
   compliance: adminComplianceAPI,
   audit: auditAPI,
-  rewards: rewardsAPI
+  rewards: rewardsAPI,
+  merchantIntegrations: merchantIntegrationsAPI
 }
 
 export {
@@ -106,7 +108,8 @@ export {
   riskControlAPI,
   adminComplianceAPI,
   auditAPI,
-  rewardsAPI
+  rewardsAPI,
+  merchantIntegrationsAPI
 }
 
 export default adminAPI
@@ -125,3 +128,13 @@ export type {
   RewardIssuanceMode,
   RewardSkin
 } from './rewards'
+export type {
+  MerchantAPIEndpoint,
+  MerchantBinding,
+  MerchantEndpointInput,
+  MerchantIntegration,
+  MerchantIntegrationInput,
+  MerchantRechargeRecord,
+  MerchantRechargeSyncResult,
+  MerchantTestResult
+} from './merchantIntegrations'
