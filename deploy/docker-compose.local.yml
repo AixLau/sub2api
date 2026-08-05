@@ -103,6 +103,9 @@ services:
       - JWT_SECRET=${JWT_SECRET:-}
       - JWT_EXPIRE_HOUR=${JWT_EXPIRE_HOUR:-24}
 
+      # Server-to-server merchant SSO API. Keep this secret outside source control.
+      - MERCHANT_SSO_API_API_KEY=${MERCHANT_SSO_API_API_KEY:-}
+
       # =======================================================================
       # Setup Configuration
       # =======================================================================

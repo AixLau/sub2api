@@ -70,6 +70,7 @@ type Handlers struct {
 	AsyncImage       *AsyncImageHandler
 	BatchImage       *BatchImageHandler
 	MerchantSSO      *MerchantSSOHandler
+	MerchantSSOAPI   *MerchantSSOAPIHandler
 }
 
 // BuildInfo contains build-time information

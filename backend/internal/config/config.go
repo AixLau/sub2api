@@ -75,6 +75,7 @@ type Config struct {
 	Redis                   RedisConfig                   `mapstructure:"redis"`
 	Ops                     OpsConfig                     `mapstructure:"ops"`
 	JWT                     JWTConfig                     `mapstructure:"jwt"`
+	MerchantSSOAPI          MerchantSSOAPIConfig          `mapstructure:"merchant_sso_api"`
 	Totp                    TotpConfig                    `mapstructure:"totp"`
 	WebAuthn                WebAuthnConfig                `mapstructure:"webauthn"`
 	LinuxDo                 LinuxDoConnectConfig          `mapstructure:"linuxdo_connect"`
@@ -103,6 +104,12 @@ type Config struct {
 	BatchImage              BatchImageConfig              `mapstructure:"batch_image"`
 	Moderation              ModerationSecurityConfig      `mapstructure:"moderation"`
 	ImageStorage            ImageStorageConfig            `mapstructure:"image_storage"`
+}
+
+// MerchantSSOAPIConfig configures the server-side merchant SSO API.
+// The API key must be supplied through deployment configuration, never source.
+type MerchantSSOAPIConfig struct {
+	APIKey string `mapstructure:"api_key"`
 }
 
 type ModerationSecurityConfig struct {
@@ -2539,6 +2546,7 @@ func setDefaults() {
 // environment. Any subsystem that wants a richer default still applies it after
 // unmarshal, exactly as before.
 func setEnvReachableDefaults() {
+	viper.SetDefault("merchant_sso_api.api_key", "")
 	viper.SetDefault("gateway.forced_codex_instructions_template_file", "")
 	viper.SetDefault("gateway.session_idle_timeout_minutes", 0)
 	viper.SetDefault("gateway.user_message_queue.mode", "")

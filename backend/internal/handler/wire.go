@@ -194,6 +194,7 @@ func ProvideHandlers(
 	asyncImageHandler *AsyncImageHandler,
 	batchImageHandler *BatchImageHandler,
 	merchantSSOHandler *MerchantSSOHandler,
+	merchantSSOAPIHandler *MerchantSSOAPIHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 	_ *service.RewardJobWorker,
@@ -222,6 +223,7 @@ func ProvideHandlers(
 		AsyncImage:       asyncImageHandler,
 		BatchImage:       batchImageHandler,
 		MerchantSSO:      merchantSSOHandler,
+		MerchantSSOAPI:   merchantSSOAPIHandler,
 	}
 }
 
@@ -271,6 +273,7 @@ var ProviderSet = wire.NewSet(
 	NewAsyncImageHandler,
 	ProvideBatchImageHandler,
 	NewMerchantSSOHandler,
+	NewMerchantSSOAPIHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,
