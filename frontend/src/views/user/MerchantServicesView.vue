@@ -45,7 +45,7 @@
           <h2 class="text-base font-semibold text-content-primary">{{ t('merchant.bindingsTitle') }}</h2>
         </div>
         <div class="divide-y divide-line-subtle">
-          <div v-for="binding in bindings" :key="binding.id" class="grid gap-3 py-3 text-sm sm:grid-cols-[1.2fr_1fr_1fr] sm:items-center">
+          <div v-for="binding in bindings" :key="binding.id" class="grid gap-3 py-3 text-sm sm:grid-cols-[1.2fr_1fr_1fr_auto] sm:items-center">
             <div>
               <div class="font-medium text-content-primary">{{ binding.integration_name || binding.integration_code }}</div>
               <div class="mt-1 text-xs text-content-tertiary">{{ t('merchant.account') }}: {{ binding.external_account || binding.external_user_id }}</div>
@@ -58,6 +58,42 @@
               <div class="text-xs text-content-tertiary">{{ t('merchant.lastLogin') }}</div>
               <div class="text-sm text-content-secondary">{{ formatDate(binding.last_login_at) }}</div>
             </div>
+            <div class="flex flex-wrap items-center gap-2 sm:justify-end">
+              <button
+                class="btn btn-secondary btn-sm"
+                type="button"
+                :disabled="bindingActionKey !== null"
+                @click="runBindingAction(binding, 'sync')"
+              >
+                <Icon name="sync" size="sm" class="mr-1.5" :class="{ 'animate-spin': bindingActionKey === actionKey(binding.id, 'sync') }" />
+                {{ bindingActionKey === actionKey(binding.id, 'sync') ? t('merchant.syncing') : t('merchant.sync') }}
+              </button>
+              <button
+                class="btn btn-secondary btn-sm"
+                type="button"
+                :disabled="bindingActionKey !== null"
+                @click="runBindingAction(binding, 'bind')"
+              >
+                <Icon name="link" size="sm" class="mr-1.5" :class="{ 'animate-spin': bindingActionKey === actionKey(binding.id, 'bind') }" />
+                {{ bindingActionKey === actionKey(binding.id, 'bind') ? t('merchant.binding') : t('merchant.bind') }}
+              </button>
+              <button
+                class="btn btn-secondary btn-sm"
+                type="button"
+                :disabled="bindingActionKey !== null"
+                @click="runBindingAction(binding, 'status')"
+              >
+                <Icon name="refresh" size="sm" class="mr-1.5" :class="{ 'animate-spin': bindingActionKey === actionKey(binding.id, 'status') }" />
+                {{ bindingActionKey === actionKey(binding.id, 'status') ? t('merchant.checking') : t('merchant.checkStatus') }}
+              </button>
+            </div>
+            <p
+              v-if="bindingFeedback[binding.id]"
+              class="sm:col-start-4 text-xs sm:text-right"
+              :class="bindingFeedback[binding.id].kind === 'success' ? 'text-status-success' : 'text-status-danger'"
+            >
+              {{ bindingFeedback[binding.id].message }}
+            </p>
           </div>
         </div>
       </section>
@@ -67,7 +103,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -81,6 +117,8 @@ const integrations = ref<UserMerchantIntegration[]>([])
 const bindings = ref<UserMerchantBinding[]>([])
 const loading = ref(false)
 const launchingId = ref<number | null>(null)
+const bindingActionKey = ref<string | null>(null)
+const bindingFeedback = reactive<Record<number, { kind: 'success' | 'error'; message: string }>>({})
 
 function formatDate(value?: string): string {
   if (!value) return t('merchant.never')
@@ -124,6 +162,36 @@ async function launch(integrationId: number) {
     appStore.showError(extractApiErrorMessage(error, t('merchant.launchFailed')))
   } finally {
     launchingId.value = null
+  }
+}
+
+type BindingAction = 'sync' | 'bind' | 'status'
+
+function actionKey(bindingId: number, action: BindingAction): string {
+  return `${bindingId}:${action}`
+}
+
+async function runBindingAction(binding: UserMerchantBinding, action: BindingAction) {
+  const key = actionKey(binding.id, action)
+  bindingActionKey.value = key
+  delete bindingFeedback[binding.id]
+  try {
+    if (action === 'sync') {
+      await userAPI.syncMerchantBinding(binding.id)
+    } else if (action === 'bind') {
+      await userAPI.bindMerchantBinding(binding.id)
+    } else {
+      await userAPI.refreshMerchantBindingStatus(binding.id)
+    }
+    bindingFeedback[binding.id] = { kind: 'success', message: t(`merchant.${action}Success`) }
+    bindings.value = await userAPI.listMerchantBindings()
+  } catch (error: unknown) {
+    bindingFeedback[binding.id] = {
+      kind: 'error',
+      message: extractApiErrorMessage(error, t(`merchant.${action}Failed`))
+    }
+  } finally {
+    bindingActionKey.value = null
   }
 }
 

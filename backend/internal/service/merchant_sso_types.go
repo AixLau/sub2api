@@ -52,6 +52,7 @@ var (
 		"externalAccount": "data.account",
 		"redirectUrl":     "data.redirect_url",
 		"loginToken":      "data.login_token",
+		"status":          "data.status",
 		"errorCode":       "code",
 		"errorMessage":    "message",
 	}
@@ -186,6 +187,17 @@ type MerchantRechargeSyncResult struct {
 	Records   []MerchantRechargeRecord `json:"records"`
 }
 
+type MerchantBindingActionResult struct {
+	Binding    MerchantBinding `json:"binding"`
+	HTTPStatus int             `json:"http_status"`
+	Response   map[string]any  `json:"response,omitempty"`
+}
+
+type MerchantCallbackResult struct {
+	Binding  MerchantBinding `json:"binding"`
+	Response map[string]any  `json:"response,omitempty"`
+}
+
 type MerchantTestResult struct {
 	EndpointID  int64          `json:"endpoint_id"`
 	HTTPStatus  int            `json:"http_status"`
@@ -204,6 +216,7 @@ type merchantResponse struct {
 	ExternalAccount string
 	RedirectURL     string
 	LoginToken      string
+	Status          string
 	Payload         map[string]any
 }
 
@@ -532,6 +545,8 @@ func merchantTemplateValue(name string, context merchantTemplateContext) string 
 		return context.ExternalUserID
 	case "binding.external_account":
 		return context.ExternalAccount
+	case "login_token", "loginToken", "token":
+		return context.LoginToken
 	case "requestId":
 		return context.RequestID
 	case "timestamp":
@@ -559,6 +574,7 @@ type merchantTemplateContext struct {
 	RequestID       string
 	Timestamp       string
 	Nonce           string
+	LoginToken      string
 	Query           map[string]string
 }
 

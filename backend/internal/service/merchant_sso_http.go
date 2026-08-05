@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -63,6 +64,18 @@ func (s *MerchantSSOService) callMerchantEndpoint(
 	binding *dbent.MerchantBinding,
 	query MerchantRechargeQuery,
 ) (merchantCallResult, error) {
+	return s.callMerchantEndpointWithToken(ctx, integration, endpoint, platformUser, binding, query, "")
+}
+
+func (s *MerchantSSOService) callMerchantEndpointWithToken(
+	ctx context.Context,
+	integration *dbent.MerchantIntegration,
+	endpoint *dbent.MerchantAPIEndpoint,
+	platformUser *dbent.User,
+	binding *dbent.MerchantBinding,
+	query MerchantRechargeQuery,
+	loginToken string,
+) (merchantCallResult, error) {
 	if endpoint == nil || integration == nil {
 		return merchantCallResult{}, ErrMerchantCallFailed.WithCause(fmt.Errorf("merchant endpoint is not configured"))
 	}
@@ -75,6 +88,7 @@ func (s *MerchantSSOService) callMerchantEndpoint(
 		RequestID:    "merchant-" + merchantRandomToken(12),
 		Timestamp:    merchantFormatInt(time.Now().Unix()),
 		Nonce:        merchantRandomToken(16),
+		LoginToken:   strings.TrimSpace(loginToken),
 		Query: map[string]string{
 			"start_time": query.StartTime,
 			"end_time":   query.EndTime,
@@ -228,6 +242,7 @@ func (s *MerchantSSOService) callMerchantEndpoint(
 			ExternalAccount: merchantStringAt(payload, mappingPath(mapping, "externalAccount", "external_account", "data.account")),
 			RedirectURL:     merchantStringAt(payload, mappingPath(mapping, "redirectUrl", "redirect_url", "data.redirect_url")),
 			LoginToken:      merchantStringAt(payload, mappingPath(mapping, "loginToken", "login_token", "data.login_token")),
+			Status:          merchantStringAt(payload, mappingPath(mapping, "status", "status_path", "data.status")),
 			Payload:         payload,
 		}
 		if merchantRetryableStatus(response.StatusCode) && attempt < maxAttempts {
@@ -365,6 +380,47 @@ func addMerchantAuthentication(request *http.Request, endpoint *dbent.MerchantAP
 		request.Header.Set("X-Signature", hex.EncodeToString(mac.Sum(nil)))
 	default:
 		return fmt.Errorf("unsupported merchant auth type %q", endpoint.AuthType)
+	}
+	return nil
+}
+
+func verifyMerchantCallbackAuthentication(request *http.Request, endpoint *dbent.MerchantAPIEndpoint, body []byte) error {
+	if endpoint == nil || endpoint.AuthType == "" || endpoint.AuthType == MerchantAuthNone {
+		return fmt.Errorf("callback authentication must be configured")
+	}
+	secret, ok := os.LookupEnv(strings.TrimSpace(endpoint.SecretRef))
+	if !ok || strings.TrimSpace(secret) == "" {
+		return fmt.Errorf("merchant callback auth secret is not configured")
+	}
+	switch endpoint.AuthType {
+	case MerchantAuthAPIKey:
+		if !hmac.Equal([]byte(request.Header.Get("X-API-Key")), []byte(secret)) {
+			return fmt.Errorf("invalid callback api key")
+		}
+	case MerchantAuthBearer:
+		if !hmac.Equal([]byte(request.Header.Get("Authorization")), []byte("Bearer "+secret)) {
+			return fmt.Errorf("invalid callback bearer token")
+		}
+	case MerchantAuthBasic:
+		expected := "Basic " + base64.StdEncoding.EncodeToString([]byte(secret))
+		if !hmac.Equal([]byte(request.Header.Get("Authorization")), []byte(expected)) {
+			return fmt.Errorf("invalid callback basic credentials")
+		}
+	case MerchantAuthHMAC:
+		timestamp := strings.TrimSpace(request.Header.Get("X-Timestamp"))
+		unix, err := strconv.ParseInt(timestamp, 10, 64)
+		if err != nil || time.Since(time.Unix(unix, 0)) > 5*time.Minute || time.Since(time.Unix(unix, 0)) < -5*time.Minute {
+			return fmt.Errorf("invalid or expired callback timestamp")
+		}
+		canonical := request.Method + "\n" + request.URL.RequestURI() + "\n" + timestamp + "\n" + string(body)
+		mac := hmac.New(sha256.New, []byte(secret))
+		_, _ = mac.Write([]byte(canonical))
+		provided, err := hex.DecodeString(strings.TrimSpace(request.Header.Get("X-Signature")))
+		if err != nil || !hmac.Equal(provided, mac.Sum(nil)) {
+			return fmt.Errorf("invalid callback signature")
+		}
+	default:
+		return fmt.Errorf("unsupported callback auth type %q", endpoint.AuthType)
 	}
 	return nil
 }

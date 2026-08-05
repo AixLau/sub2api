@@ -125,6 +125,12 @@ export interface MerchantTestResult {
   response?: Record<string, unknown>
 }
 
+export interface MerchantEndpointTestInput {
+  user_id?: number
+  start_time?: string
+  end_time?: string
+}
+
 export interface MerchantRechargeSyncResult {
   binding_id: number
   synced: number
@@ -153,6 +159,10 @@ export async function update(id: number, input: MerchantIntegrationInput): Promi
   return data
 }
 
+export async function remove(id: number): Promise<void> {
+  await apiClient.delete(`/admin/merchant-integrations/${id}`)
+}
+
 export async function setEnabled(id: number, enabled: boolean): Promise<MerchantIntegration> {
   const { data } = await apiClient.post<MerchantIntegration>(`/admin/merchant-integrations/${id}/enabled`, { enabled })
   return data
@@ -168,6 +178,10 @@ export async function updateEndpoint(integrationId: number, endpointId: number, 
   return data
 }
 
+export async function removeEndpoint(integrationId: number, endpointId: number): Promise<void> {
+  await apiClient.delete(`/admin/merchant-integrations/${integrationId}/endpoints/${endpointId}`)
+}
+
 export async function setEndpointEnabled(integrationId: number, endpointId: number, enabled: boolean): Promise<MerchantAPIEndpoint> {
   const { data } = await apiClient.post<MerchantAPIEndpoint>(
     `/admin/merchant-integrations/${integrationId}/endpoints/${endpointId}/enabled`,
@@ -179,7 +193,7 @@ export async function setEndpointEnabled(integrationId: number, endpointId: numb
 export async function testEndpoint(
   integrationId: number,
   endpointId: number,
-  input: { user_id?: number; start_time?: string; end_time?: string } = {}
+  input: MerchantEndpointTestInput = {}
 ): Promise<MerchantTestResult> {
   const { data } = await apiClient.post<MerchantTestResult>(
     `/admin/merchant-integrations/${integrationId}/endpoints/${endpointId}/test`,
@@ -223,9 +237,11 @@ const merchantIntegrationsAPI = {
   getById,
   create,
   update,
+  remove,
   setEnabled,
   createEndpoint,
   updateEndpoint,
+  removeEndpoint,
   setEndpointEnabled,
   testEndpoint,
   listUserBindings,

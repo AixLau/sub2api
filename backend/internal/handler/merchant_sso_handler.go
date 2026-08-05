@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"encoding/json"
+	"io"
 	"strconv"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -104,6 +106,69 @@ func (h *MerchantSSOHandler) SyncRechargeRecords(c *gin.Context) {
 		StartTime: input.StartTime,
 		EndTime:   input.EndTime,
 	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *MerchantSSOHandler) SyncBinding(c *gin.Context) {
+	h.runBindingAction(c, func(userID, bindingID int64) (any, error) {
+		return h.merchantService.SyncBinding(c.Request.Context(), userID, bindingID)
+	})
+}
+
+func (h *MerchantSSOHandler) BindBinding(c *gin.Context) {
+	h.runBindingAction(c, func(userID, bindingID int64) (any, error) {
+		return h.merchantService.BindBinding(c.Request.Context(), userID, bindingID)
+	})
+}
+
+func (h *MerchantSSOHandler) StatusBinding(c *gin.Context) {
+	h.runBindingAction(c, func(userID, bindingID int64) (any, error) {
+		return h.merchantService.StatusBinding(c.Request.Context(), userID, bindingID)
+	})
+}
+
+func (h *MerchantSSOHandler) runBindingAction(c *gin.Context, action func(int64, int64) (any, error)) {
+	subject, ok := middleware.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	bindingID, err := strconv.ParseInt(c.Param("binding_id"), 10, 64)
+	if err != nil || bindingID <= 0 {
+		response.BadRequest(c, "invalid binding id")
+		return
+	}
+	result, err := action(subject.UserID, bindingID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+// Callback is intentionally public: the merchant calls it after completing
+// an asynchronous login or account-state transition.
+func (h *MerchantSSOHandler) Callback(c *gin.Context) {
+	integrationID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || integrationID <= 0 {
+		response.BadRequest(c, "invalid integration id")
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, 256*1024+1))
+	if err != nil || len(body) > 256*1024 {
+		response.BadRequest(c, "invalid callback body")
+		return
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil || payload == nil {
+		response.BadRequest(c, "callback payload must be a JSON object")
+		return
+	}
+	result, err := h.merchantService.HandleCallback(c.Request.Context(), integrationID, c.Request, body, payload)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

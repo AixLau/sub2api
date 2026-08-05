@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -163,6 +164,13 @@ func (s *MerchantSSOService) SetIntegrationEnabled(ctx context.Context, id int64
 	return s.GetIntegration(ctx, row.ID)
 }
 
+func (s *MerchantSSOService) DeleteIntegration(ctx context.Context, id int64) error {
+	if err := s.client.MerchantIntegration.DeleteOneID(id).Exec(ctx); err != nil {
+		return merchantNotFound(err, ErrMerchantIntegrationNotFound)
+	}
+	return nil
+}
+
 func (s *MerchantSSOService) CreateEndpoint(ctx context.Context, integrationID int64, input MerchantAPIEndpointInput) (*MerchantAPIEndpoint, error) {
 	if _, err := s.client.MerchantIntegration.Get(ctx, integrationID); err != nil {
 		return nil, merchantNotFound(err, ErrMerchantIntegrationNotFound)
@@ -259,6 +267,16 @@ func (s *MerchantSSOService) SetEndpointEnabled(ctx context.Context, integration
 	}
 	result := merchantEndpointView(updated)
 	return &result, nil
+}
+
+func (s *MerchantSSOService) DeleteEndpoint(ctx context.Context, integrationID, id int64) error {
+	if _, err := s.client.MerchantAPIEndpoint.Query().Where(merchantapiendpoint.IDEQ(id), merchantapiendpoint.IntegrationIDEQ(integrationID)).Only(ctx); err != nil {
+		return merchantNotFound(err, ErrMerchantEndpointNotFound)
+	}
+	if err := s.client.MerchantAPIEndpoint.DeleteOneID(id).Exec(ctx); err != nil {
+		return fmt.Errorf("delete merchant endpoint: %w", err)
+	}
+	return nil
 }
 
 func (s *MerchantSSOService) ValidateIntegrationReady(ctx context.Context, id int64) error {
@@ -374,7 +392,10 @@ func (s *MerchantSSOService) Launch(ctx context.Context, integrationID, userID i
 	}
 	if call.Response.RedirectURL == "" && loginEndpoint.Type == MerchantEndpointLogin {
 		if tokenEndpoint := activeMerchantEndpoint(endpoints, MerchantEndpointToken); tokenEndpoint != nil {
-			call, callErr = s.callMerchantEndpoint(ctx, integration, tokenEndpoint, platformUser, binding, MerchantRechargeQuery{})
+			if strings.TrimSpace(call.Response.LoginToken) == "" {
+				return nil, ErrMerchantResponseInvalid.WithCause(errors.New("login response did not contain redirect_url or login_token"))
+			}
+			call, callErr = s.callMerchantEndpointWithToken(ctx, integration, tokenEndpoint, platformUser, binding, MerchantRechargeQuery{}, call.Response.LoginToken)
 			if callErr != nil {
 				return nil, callErr
 			}
@@ -384,7 +405,7 @@ func (s *MerchantSSOService) Launch(ctx context.Context, integrationID, userID i
 		}
 	}
 	if call.Response.RedirectURL == "" {
-		return nil, ErrMerchantResponseInvalid.WithCause(errors.New("login response did not contain redirect_url"))
+		return nil, ErrMerchantResponseInvalid.WithCause(errors.New("login response did not contain redirect_url; configure a token endpoint for login_token exchange"))
 	}
 	redirect, err := validateMerchantRedirectURL(call.Response.RedirectURL, integration.RedirectHosts)
 	if err != nil {
@@ -408,6 +429,113 @@ func (s *MerchantSSOService) Launch(ctx context.Context, integrationID, userID i
 		ExternalAccount: binding.ExternalAccount,
 		RedirectURL:     redirect,
 	}, nil
+}
+
+func (s *MerchantSSOService) SyncBinding(ctx context.Context, userID, bindingID int64) (*MerchantBindingActionResult, error) {
+	return s.runBindingAction(ctx, userID, bindingID, MerchantEndpointSync)
+}
+
+func (s *MerchantSSOService) BindBinding(ctx context.Context, userID, bindingID int64) (*MerchantBindingActionResult, error) {
+	return s.runBindingAction(ctx, userID, bindingID, MerchantEndpointBind)
+}
+
+func (s *MerchantSSOService) StatusBinding(ctx context.Context, userID, bindingID int64) (*MerchantBindingActionResult, error) {
+	return s.runBindingAction(ctx, userID, bindingID, MerchantEndpointStatus)
+}
+
+func (s *MerchantSSOService) runBindingAction(ctx context.Context, userID, bindingID int64, endpointType string) (*MerchantBindingActionResult, error) {
+	binding, err := s.getBindingForUser(ctx, bindingID, userID)
+	if err != nil {
+		return nil, err
+	}
+	integration, endpoints, err := s.loadIntegration(ctx, binding.IntegrationID)
+	if err != nil {
+		return nil, err
+	}
+	endpoint := activeMerchantEndpoint(endpoints, endpointType)
+	if endpoint == nil {
+		return nil, ErrMerchantEndpointNotFound.WithCause(fmt.Errorf("%s endpoint is not configured", endpointType))
+	}
+	platformUser, err := s.client.User.Query().Where(user.IDEQ(userID)).WithAttributeValues(func(q *dbent.UserAttributeValueQuery) {
+		q.WithDefinition()
+	}).Only(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load merchant action user: %w", err)
+	}
+	call, err := s.callMerchantEndpoint(ctx, integration, endpoint, platformUser, binding, MerchantRechargeQuery{})
+	if err != nil {
+		return nil, err
+	}
+	if !call.Response.Successful {
+		return nil, merchantBusinessError(call.Response)
+	}
+	status := "active"
+	if endpointType == MerchantEndpointStatus {
+		switch strings.ToLower(strings.TrimSpace(call.Response.Status)) {
+		case "disabled", "inactive", "blocked", "suspended":
+			status = "disabled"
+		}
+	}
+	binding, err = s.updateBinding(ctx, binding, status, call.Response.ExternalUserID, call.Response.ExternalAccount)
+	if err != nil {
+		return nil, err
+	}
+	return &MerchantBindingActionResult{Binding: merchantBindingView(binding), HTTPStatus: call.HTTPStatus, Response: call.Response.Payload}, nil
+}
+
+func (s *MerchantSSOService) updateBinding(ctx context.Context, binding *dbent.MerchantBinding, status, externalUserID, externalAccount string) (*dbent.MerchantBinding, error) {
+	updater := s.client.MerchantBinding.UpdateOneID(binding.ID).SetStatus(status).SetLastSyncAt(time.Now())
+	if strings.TrimSpace(externalUserID) != "" {
+		updater.SetExternalUserID(strings.TrimSpace(externalUserID))
+	}
+	if strings.TrimSpace(externalAccount) != "" {
+		updater.SetExternalAccount(strings.TrimSpace(externalAccount))
+	}
+	return updater.Save(ctx)
+}
+
+// HandleCallback accepts a merchant-originated callback and applies it to the
+// existing binding. The callback never creates a binding because it cannot
+// safely infer the platform user from an untrusted external identifier.
+func (s *MerchantSSOService) HandleCallback(ctx context.Context, integrationID int64, request *http.Request, body []byte, payload map[string]any) (*MerchantCallbackResult, error) {
+	integration, endpoints, err := s.loadIntegration(ctx, integrationID)
+	if err != nil {
+		return nil, err
+	}
+	callback := activeMerchantEndpoint(endpoints, MerchantEndpointCallback)
+	mapping := defaultMerchantResponseMapping
+	if callback != nil {
+		mapping = endpointResponseMapping(callback)
+	}
+	if err := verifyMerchantCallbackAuthentication(request, callback, body); err != nil {
+		return nil, ErrMerchantCallFailed.WithCause(err)
+	}
+	externalUserID := merchantStringAt(payload, mappingPath(mapping, "externalUserId", "external_user_id", "data.user_id"))
+	externalAccount := merchantStringAt(payload, mappingPath(mapping, "externalAccount", "external_account", "data.account"))
+	if externalUserID == "" && externalAccount == "" {
+		return nil, ErrMerchantResponseInvalid.WithCause(errors.New("callback did not contain external user id or account"))
+	}
+	query := s.client.MerchantBinding.Query().Where(merchantbinding.IntegrationIDEQ(integration.ID))
+	if externalUserID != "" {
+		query = query.Where(merchantbinding.ExternalUserIDEQ(externalUserID))
+	} else {
+		query = query.Where(merchantbinding.ExternalAccountEQ(externalAccount))
+	}
+	binding, err := query.Only(ctx)
+	if err != nil {
+		return nil, merchantNotFound(err, ErrMerchantBindingNotFound)
+	}
+	status := strings.ToLower(strings.TrimSpace(merchantStringAt(payload, mappingPath(mapping, "status", "status_path", "data.status"))))
+	if status != "disabled" && status != "inactive" && status != "blocked" && status != "suspended" {
+		status = "active"
+	} else {
+		status = "disabled"
+	}
+	binding, err = s.updateBinding(ctx, binding, status, externalUserID, externalAccount)
+	if err != nil {
+		return nil, err
+	}
+	return &MerchantCallbackResult{Binding: merchantBindingView(binding), Response: payload}, nil
 }
 
 func (s *MerchantSSOService) TestEndpoint(ctx context.Context, integrationID, endpointID, userID int64, query MerchantRechargeQuery) (*MerchantTestResult, error) {

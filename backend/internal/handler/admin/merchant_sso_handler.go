@@ -92,6 +92,18 @@ func (h *MerchantSSOHandler) SetIntegrationEnabled(c *gin.Context) {
 	response.Success(c, item)
 }
 
+func (h *MerchantSSOHandler) DeleteIntegration(c *gin.Context) {
+	id, ok := merchantPathID(c, "id")
+	if !ok {
+		return
+	}
+	if err := h.merchantService.DeleteIntegration(c.Request.Context(), id); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"deleted": true, "id": id})
+}
+
 func (h *MerchantSSOHandler) CreateEndpoint(c *gin.Context) {
 	integrationID, ok := merchantPathID(c, "id")
 	if !ok {
@@ -151,6 +163,22 @@ func (h *MerchantSSOHandler) SetEndpointEnabled(c *gin.Context) {
 		return
 	}
 	response.Success(c, item)
+}
+
+func (h *MerchantSSOHandler) DeleteEndpoint(c *gin.Context) {
+	integrationID, ok := merchantPathID(c, "id")
+	if !ok {
+		return
+	}
+	endpointID, ok := merchantPathID(c, "endpoint_id")
+	if !ok {
+		return
+	}
+	if err := h.merchantService.DeleteEndpoint(c.Request.Context(), integrationID, endpointID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"deleted": true, "id": endpointID})
 }
 
 func (h *MerchantSSOHandler) TestEndpoint(c *gin.Context) {
@@ -238,6 +266,39 @@ func (h *MerchantSSOHandler) SyncUserRechargeRecords(c *gin.Context) {
 		StartTime: input.StartTime,
 		EndTime:   input.EndTime,
 	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *MerchantSSOHandler) SyncUserBinding(c *gin.Context) {
+	h.runBindingAction(c, func(userID, bindingID int64) (any, error) {
+		return h.merchantService.SyncBinding(c.Request.Context(), userID, bindingID)
+	})
+}
+func (h *MerchantSSOHandler) BindUserBinding(c *gin.Context) {
+	h.runBindingAction(c, func(userID, bindingID int64) (any, error) {
+		return h.merchantService.BindBinding(c.Request.Context(), userID, bindingID)
+	})
+}
+func (h *MerchantSSOHandler) StatusUserBinding(c *gin.Context) {
+	h.runBindingAction(c, func(userID, bindingID int64) (any, error) {
+		return h.merchantService.StatusBinding(c.Request.Context(), userID, bindingID)
+	})
+}
+
+func (h *MerchantSSOHandler) runBindingAction(c *gin.Context, action func(int64, int64) (any, error)) {
+	userID, ok := merchantPathID(c, "id")
+	if !ok {
+		return
+	}
+	bindingID, ok := merchantPathID(c, "binding_id")
+	if !ok {
+		return
+	}
+	result, err := action(userID, bindingID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

@@ -11,6 +11,18 @@ export default {
     externalUserId: 'External user ID',
     lastLogin: 'Last login',
     never: 'Never',
+    sync: 'Sync',
+    syncing: 'Syncing...',
+    bind: 'Bind',
+    binding: 'Binding...',
+    checkStatus: 'Check status',
+    checking: 'Checking...',
+    syncSuccess: 'Account synchronized.',
+    bindSuccess: 'Account bound.',
+    statusSuccess: 'Account status refreshed.',
+    syncFailed: 'Unable to synchronize the account.',
+    bindFailed: 'Unable to bind the account.',
+    statusFailed: 'Unable to refresh the account status.',
     launchFailed: 'Unable to open the merchant service.',
     noBinding: 'No connected merchant account yet.'
   }

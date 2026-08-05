@@ -99,10 +99,17 @@
             </div>
 
             <div class="mt-5 flex justify-end">
-              <button class="btn btn-primary" type="submit" :disabled="savingIntegration">
-                <Icon name="check" size="md" class="mr-2" />
-                {{ savingIntegration ? t('common.saving') : t('admin.merchant.save') }}
-              </button>
+              <div class="flex w-full justify-between gap-2">
+                <button v-if="selectedId" class="btn btn-danger" type="button" :disabled="deletingTarget !== null" @click="requestDeleteIntegration">
+                  <Icon name="trash" size="md" class="mr-2" />
+                  {{ deletingTarget?.kind === 'integration' ? t('admin.merchant.deleting') : t('common.delete') }}
+                </button>
+                <span v-else />
+                <button class="btn btn-primary" type="submit" :disabled="savingIntegration || deletingTarget !== null">
+                  <Icon name="check" size="md" class="mr-2" />
+                  {{ savingIntegration ? t('common.saving') : t('admin.merchant.save') }}
+                </button>
+              </div>
             </div>
           </form>
 
@@ -137,6 +144,10 @@
                   <button class="btn btn-secondary px-2" type="button" :title="t('admin.merchant.test')" :disabled="testingEndpointId === endpoint.id" @click="testEndpoint(endpoint)">
                     <Icon name="play" size="sm" :class="testingEndpointId === endpoint.id ? 'animate-pulse' : ''" />
                     <span class="ml-1.5 hidden sm:inline">{{ testingEndpointId === endpoint.id ? t('admin.merchant.testing') : t('admin.merchant.test') }}</span>
+                  </button>
+                  <button class="btn btn-danger px-2" type="button" :title="t('admin.merchant.deleteEndpoint')" :disabled="deletingTarget !== null" @click="requestDeleteEndpoint(endpoint)">
+                    <Icon name="trash" size="sm" />
+                    <span class="sr-only">{{ t('admin.merchant.deleteEndpoint') }}</span>
                   </button>
                   <Toggle :model-value="endpoint.enabled" @update:model-value="toggleEndpoint(endpoint, $event)" />
                 </div>
@@ -331,6 +342,41 @@
       </div>
     </div>
 
+    <BaseDialog v-if="testDialogEndpoint" :show="true" :title="t('admin.merchant.testParameters')" width="narrow" @close="closeTestDialog">
+      <div class="space-y-4">
+        <p class="text-sm text-content-secondary">{{ t('admin.merchant.testParametersHint') }}</p>
+        <p v-if="testUsersLoading" class="text-xs text-content-tertiary">{{ t('common.loading') }}</p>
+        <div v-else-if="testUsersError" class="rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-800 dark:border-warning-800/40 dark:bg-warning-900/20 dark:text-warning-200">
+          <p>{{ testUsersError }}</p>
+          <button class="mt-2 btn btn-secondary px-2 py-1 text-xs" type="button" @click="loadTestUsers">
+            {{ t('common.retry') }}
+          </button>
+        </div>
+        <label class="field-label">
+          <span>{{ t('admin.merchant.fields.testUser') }}</span>
+          <select v-model="testUserId" class="input" :disabled="testUsersLoading">
+            <option value="">{{ t('admin.merchant.fields.testUserManual') }}</option>
+            <option v-for="user in testUsers" :key="user.id" :value="String(user.id)">{{ user.email || user.username || user.id }} (#{{ user.id }})</option>
+          </select>
+        </label>
+        <label class="field-label">
+          <span>{{ t('admin.merchant.fields.testUserId') }}</span>
+          <input v-model="testUserId" class="input" type="number" min="1" :placeholder="t('admin.merchant.fields.testUserIdPlaceholder')" />
+        </label>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <label class="field-label"><span>{{ t('admin.merchant.fields.startTime') }}</span><input v-model="testStartTime" class="input" type="datetime-local" /></label>
+          <label class="field-label"><span>{{ t('admin.merchant.fields.endTime') }}</span><input v-model="testEndTime" class="input" type="datetime-local" /></label>
+        </div>
+      </div>
+      <template #footer>
+        <button class="btn btn-secondary" type="button" @click="closeTestDialog">{{ t('common.cancel') }}</button>
+        <button class="btn btn-primary" type="button" :disabled="testingEndpointId !== null" @click="confirmTestEndpoint">
+          <Icon name="play" size="sm" class="mr-2" />
+          {{ testingEndpointId !== null ? t('admin.merchant.testing') : t('admin.merchant.runTest') }}
+        </button>
+      </template>
+    </BaseDialog>
+
     <BaseDialog v-if="testResult" :show="true" :title="t('admin.merchant.testResult')" width="wide" @close="testResult = null">
       <div class="grid gap-4 sm:grid-cols-3">
         <div class="rounded-md bg-surface-subtle p-3">
@@ -350,6 +396,19 @@
         <button class="btn btn-secondary" type="button" @click="testResult = null">{{ t('common.close') }}</button>
       </template>
     </BaseDialog>
+
+    <ConfirmDialog
+      :show="deletingTarget !== null"
+      :title="deletingTarget?.kind === 'integration' ? t('admin.merchant.deleteIntegration') : t('admin.merchant.deleteEndpoint')"
+      :message="deletingTarget?.kind === 'integration' ? t('admin.merchant.deleteIntegrationConfirm') : t('admin.merchant.deleteEndpointConfirm')"
+      :confirm-text="deleteSubmitting ? t('admin.merchant.deleting') : deletingTarget?.kind === 'integration' ? t('admin.merchant.deleteIntegration') : t('admin.merchant.deleteEndpoint')"
+      :cancel-text="t('common.cancel')"
+      danger
+      @confirm="confirmDelete"
+      @cancel="deletingTarget = null"
+    >
+      <p v-if="deleteSubmitting" class="text-xs text-content-tertiary">{{ t('admin.merchant.deleting') }}</p>
+    </ConfirmDialog>
   </AppLayout>
 </template>
 
@@ -358,11 +417,13 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api/admin'
 import type {
   MerchantAPIEndpoint,
+  MerchantEndpointTestInput,
   MerchantEndpointInput,
   MerchantEndpointType,
   MerchantIntegration,
@@ -371,6 +432,7 @@ import type {
 } from '@/api/admin/merchantIntegrations'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
+import type { AdminUser } from '@/types'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -384,6 +446,15 @@ const savingIntegration = ref(false)
 const savingEndpoint = ref(false)
 const testingEndpointId = ref<number | null>(null)
 const testResult = ref<MerchantTestResult | null>(null)
+const testDialogEndpoint = ref<MerchantAPIEndpoint | null>(null)
+const testUserId = ref('')
+const testStartTime = ref('')
+const testEndTime = ref('')
+const testUsers = ref<AdminUser[]>([])
+const testUsersLoading = ref(false)
+const testUsersError = ref('')
+const deletingTarget = ref<{ kind: 'integration'; id: number } | { kind: 'endpoint'; integrationId: number; id: number } | null>(null)
+const deleteSubmitting = ref(false)
 
 const methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
 const authTypes = ['none', 'api_key', 'bearer', 'basic', 'hmac'] as const
@@ -900,16 +971,97 @@ async function toggleEndpoint(endpoint: MerchantAPIEndpoint, enabled: boolean) {
   }
 }
 
+async function loadTestUsers() {
+  testUsersLoading.value = true
+  testUsersError.value = ''
+  try {
+    const response = await adminAPI.users.list(1, 100, { status: 'active', role: 'user' })
+    testUsers.value = response.items
+  } catch (error: unknown) {
+    testUsersError.value = extractApiErrorMessage(error, t('admin.merchant.testUserLoadError'))
+    appStore.showError(testUsersError.value)
+  } finally {
+    testUsersLoading.value = false
+  }
+}
+
 async function testEndpoint(endpoint: MerchantAPIEndpoint) {
   if (!selectedId.value) return
+  testDialogEndpoint.value = endpoint
+  testResult.value = null
+  testUserId.value = ''
+  testStartTime.value = ''
+  testEndTime.value = ''
+  if (testUsers.value.length === 0) await loadTestUsers()
+}
+
+function closeTestDialog() {
+  if (testingEndpointId.value === null) {
+    testDialogEndpoint.value = null
+    testUsersError.value = ''
+  }
+}
+
+function buildTestEndpointInput(): MerchantEndpointTestInput {
+  const userId = Number(testUserId.value)
+  return {
+    ...(Number.isInteger(userId) && userId > 0 ? { user_id: userId } : {}),
+    ...(testStartTime.value ? { start_time: new Date(testStartTime.value).toISOString() } : {}),
+    ...(testEndTime.value ? { end_time: new Date(testEndTime.value).toISOString() } : {})
+  }
+}
+
+async function confirmTestEndpoint() {
+  if (!selectedId.value || !testDialogEndpoint.value) return
+  const endpoint = testDialogEndpoint.value
   testingEndpointId.value = endpoint.id
   try {
-    testResult.value = await adminAPI.merchantIntegrations.testEndpoint(selectedId.value, endpoint.id)
+    testResult.value = await adminAPI.merchantIntegrations.testEndpoint(selectedId.value, endpoint.id, buildTestEndpointInput())
+    testDialogEndpoint.value = null
     appStore.showSuccess(testResult.value.successful ? t('admin.merchant.testPassed') : t('admin.merchant.testFailed'))
   } catch (error: unknown) {
     appStore.showError(extractApiErrorMessage(error, t('admin.merchant.endpointError')))
   } finally {
     testingEndpointId.value = null
+  }
+}
+
+function requestDeleteIntegration() {
+  if (selectedId.value) deletingTarget.value = { kind: 'integration', id: selectedId.value }
+}
+
+function requestDeleteEndpoint(endpoint: MerchantAPIEndpoint) {
+  if (selectedId.value) deletingTarget.value = { kind: 'endpoint', integrationId: selectedId.value, id: endpoint.id }
+}
+
+async function confirmDelete() {
+  const target = deletingTarget.value
+  if (!target || deleteSubmitting.value) return
+  deleteSubmitting.value = true
+  try {
+    if (target.kind === 'integration') {
+      await adminAPI.merchantIntegrations.remove(target.id)
+      integrations.value = integrations.value.filter(item => item.id !== target.id)
+      selectedId.value = null
+      creatingIntegration.value = false
+      closeEndpointForm()
+      if (integrations.value.length > 0) await selectIntegration(integrations.value[0].id, false)
+      else startNewIntegration()
+      appStore.showSuccess(t('admin.merchant.integrationDeleted'))
+    } else {
+      await adminAPI.merchantIntegrations.removeEndpoint(target.integrationId, target.id)
+      const fresh = await adminAPI.merchantIntegrations.getById(target.integrationId)
+      const index = integrations.value.findIndex(item => item.id === fresh.id)
+      if (index >= 0) integrations.value[index] = fresh
+      hydrateIntegrationForm(fresh)
+      closeEndpointForm()
+      appStore.showSuccess(t('admin.merchant.endpointDeleted'))
+    }
+  } catch (error: unknown) {
+    appStore.showError(extractApiErrorMessage(error, t('admin.merchant.deleteError')))
+  } finally {
+    deletingTarget.value = null
+    deleteSubmitting.value = false
   }
 }
 

@@ -43,6 +43,12 @@ export interface UserMerchantBinding {
   last_recharge_sync_at?: string
 }
 
+export interface MerchantBindingActionResult {
+  binding?: UserMerchantBinding
+  http_status?: number
+  response?: unknown
+}
+
 export async function listMerchantIntegrations(): Promise<UserMerchantIntegration[]> {
   const { data } = await apiClient.get<UserMerchantIntegration[]>('/merchant-integrations')
   return data
@@ -55,6 +61,21 @@ export async function launchMerchantIntegration(integrationId: number): Promise<
 
 export async function listMerchantBindings(): Promise<UserMerchantBinding[]> {
   const { data } = await apiClient.get<UserMerchantBinding[]>('/merchant-integrations/bindings')
+  return data
+}
+
+export async function syncMerchantBinding(bindingId: number): Promise<MerchantBindingActionResult> {
+  const { data } = await apiClient.post<MerchantBindingActionResult>(`/merchant-integrations/bindings/${bindingId}/sync`)
+  return data
+}
+
+export async function bindMerchantBinding(bindingId: number): Promise<MerchantBindingActionResult> {
+  const { data } = await apiClient.post<MerchantBindingActionResult>(`/merchant-integrations/bindings/${bindingId}/bind`)
+  return data
+}
+
+export async function refreshMerchantBindingStatus(bindingId: number): Promise<MerchantBindingActionResult> {
+  const { data } = await apiClient.post<MerchantBindingActionResult>(`/merchant-integrations/bindings/${bindingId}/status`)
   return data
 }
 
@@ -293,6 +314,9 @@ export const userAPI = {
   listMerchantIntegrations,
   launchMerchantIntegration,
   listMerchantBindings,
+  syncMerchantBinding,
+  bindMerchantBinding,
+  refreshMerchantBindingStatus,
 }
 
 export default userAPI
