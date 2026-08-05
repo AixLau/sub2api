@@ -11,7 +11,8 @@ import type {
   LoginRequest,
   RegisterRequest,
   AuthResponse,
-  WelcomeRewardClaimResponse
+  WelcomeRewardClaimResponse,
+  ActionCaptchaRequestProof
 } from '@/types'
 
 const AUTH_TOKEN_KEY = 'auth_token'

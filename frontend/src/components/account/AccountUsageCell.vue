@@ -144,7 +144,7 @@
           refresh button is rendered via the pre-actions slot so the user sees a
           single row of related buttons instead of two stacked rows.
         -->
-        <OpenAIQuotaResetCell :account="account" @reset="emit('account-updated')">
+        <OpenAIQuotaResetCell :account="account" @account-updated="handleQuotaResetAccountUpdated">
           <template #pre-actions>
             <button
               type="button"
@@ -186,7 +186,7 @@
       <div v-else>
         <div class="text-xs text-gray-400">-</div>
         <!-- Always allow on-demand upstream quota query, even before local data exists. -->
-        <OpenAIQuotaResetCell :account="account" class="mt-1" @reset="emit('account-updated')" />
+        <OpenAIQuotaResetCell :account="account" class="mt-1" @account-updated="handleQuotaResetAccountUpdated" />
       </div>
     </template>
 
@@ -657,7 +657,7 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  'account-updated': []
+  'account-updated': [account?: Account]
 }>()
 
 const { t } = useI18n()

@@ -76,7 +76,14 @@
       <div v-if="turnstileEnabled && publicSettingsLoaded">
         <TurnstileWidget
           ref="turnstileRef"
-          :site-key="turnstileSiteKey"
+          :turnstile-enabled="turnstileEnabled"
+          :turnstile-site-key="turnstileSiteKey"
+          :tencent-enabled="tencentCaptchaEnabled"
+          :tencent-app-id="tencentCaptchaAppId"
+          :aliyun-enabled="aliyunCaptchaEnabled"
+          :aliyun-scene-id="aliyunCaptchaSceneId"
+          :aliyun-prefix="aliyunCaptchaPrefix"
+          :aliyun-region="aliyunCaptchaRegion"
           @verify="onTurnstileVerify"
           @expire="onTurnstileExpire"
           @error="onTurnstileError"
@@ -121,15 +128,19 @@
         :github-enabled="githubOAuthEnabled"
         :google-enabled="googleOAuthEnabled"
         :disabled="authActionDisabled"
+        :show-divider="false"
+        @start="handleOAuthStart"
       />
 
-      <LinuxDoOAuthSection v-if="linuxdoOAuthEnabled" :disabled="authActionDisabled" />
-      <DingTalkOAuthSection v-if="dingtalkOAuthEnabled" :disabled="authActionDisabled" />
-      <WechatOAuthSection v-if="wechatOAuthEnabled" :disabled="authActionDisabled" />
+      <LinuxDoOAuthSection v-if="linuxdoOAuthEnabled" :disabled="authActionDisabled" :show-divider="false" @start="handleOAuthStart" />
+      <DingTalkOAuthSection v-if="dingtalkOAuthEnabled" :disabled="authActionDisabled" :show-divider="false" @start="handleOAuthStart" />
+      <WechatOAuthSection v-if="wechatOAuthEnabled" :disabled="authActionDisabled" :show-divider="false" @start="handleOAuthStart" />
       <OidcOAuthSection
         v-if="oidcOAuthEnabled"
         :provider-name="oidcOAuthProviderName"
         :disabled="authActionDisabled"
+        :show-divider="false"
+        @start="handleOAuthStart"
       />
     </div>
 
