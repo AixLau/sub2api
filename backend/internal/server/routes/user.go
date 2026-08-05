@@ -17,9 +17,6 @@ func RegisterUserRoutes(
 	settingService *service.SettingService,
 	panelRateLimiter *middleware.PanelRateLimiter,
 ) {
-	// Merchant callbacks are authenticated by binding identity and merchant
-	// configuration, so they must be reachable without a platform JWT.
-	v1.POST("/merchant-integrations/:id/callback", h.MerchantSSO.Callback)
 	// 公开模型目录（无需认证）：只返回已启用渠道中公开分组可用的模型与展示价格。
 	v1.GET("/models/public", h.AvailableChannel.ListPublic)
 	v1.GET("/reward-skins/:id/content", middleware.RewardCampaignFeatureGuard(settingService), h.Reward.SkinContent)
@@ -99,19 +96,6 @@ func RegisterUserRoutes(
 			keys.POST("", h.APIKey.Create)
 			keys.PUT("/:id", h.APIKey.Update)
 			keys.DELETE("/:id", h.APIKey.Delete)
-		}
-
-		// 商家 SSO 入口与充值记录
-		merchantIntegrations := authenticated.Group("/merchant-integrations")
-		{
-			merchantIntegrations.GET("", h.MerchantSSO.ListIntegrations)
-			merchantIntegrations.GET("/bindings", h.MerchantSSO.ListBindings)
-			merchantIntegrations.POST("/:id/launch", h.MerchantSSO.Launch)
-			merchantIntegrations.POST("/bindings/:binding_id/sync", h.MerchantSSO.SyncBinding)
-			merchantIntegrations.POST("/bindings/:binding_id/bind", h.MerchantSSO.BindBinding)
-			merchantIntegrations.POST("/bindings/:binding_id/status", h.MerchantSSO.StatusBinding)
-			merchantIntegrations.GET("/bindings/:binding_id/recharge-records", h.MerchantSSO.ListRechargeRecords)
-			merchantIntegrations.POST("/bindings/:binding_id/recharge-records/sync", h.MerchantSSO.SyncRechargeRecords)
 		}
 
 		// 用户可用分组（非管理员接口）

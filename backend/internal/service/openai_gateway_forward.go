@@ -1139,7 +1139,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 
 	// 终态收口：originator 必须与最终 User-Agent 首段配套且为官方身份，否则上游 404（issue #3901）。
 	if account.Type == AccountTypeOAuth {
-		enforceCodexIdentityHeaders(req.Header)
+		enforceCodexIdentityHeadersWithUA(req.Header, s.codexIdentityOverrideUA(account))
 	}
 	// Ensure required headers exist
 	if req.Header.Get("content-type") == "" {
@@ -1150,6 +1150,18 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	account.ApplyHeaderOverrides(req.Header)
 
 	return req, nil
+}
+
+// codexIdentityOverrideUA returns the account-level identity override while
+// retaining ForceCodexCLI as the highest-priority gateway policy.
+func (s *OpenAIGatewayService) codexIdentityOverrideUA(account *Account) string {
+	if s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
+		return ""
+	}
+	if account == nil {
+		return ""
+	}
+	return account.GetOpenAIUserAgent()
 }
 
 // overrideBrowserUserAgent replaces browser-like user agents on OAuth requests

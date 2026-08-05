@@ -33,8 +33,10 @@ const (
 	openaiPlatformAPIURL            = "https://api.openai.com/v1/responses"
 	openaiPlatformAPIInputTokensURL = "https://api.openai.com/v1/responses/input_tokens"
 	openaiStickySessionTTL          = time.Hour // 粘性会话TTL
-	// 与后台设置默认值保持一致，避免透传路径绕过管理员配置。
-	codexCLIUserAgent = DefaultOpenAICodexUserAgent
+	// 与真实 Codex CLI 的 User-Agent 结构对齐；运行时版本更新复用同一后缀。
+	codexCLIUserAgentSuffix = " (Ubuntu 22.4.0; x86_64) xterm-256color"
+	// 编译期兜底身份；运行时优先使用后台配置或自动同步版本。
+	codexCLIUserAgent = "codex_cli_rs/" + codexCLIVersion + codexCLIUserAgentSuffix
 	// codex_cli_only 拒绝时单个请求头日志长度上限（字符）
 	codexCLIOnlyHeaderValueMaxBytes = 256
 
@@ -49,7 +51,12 @@ const (
 	openAIWSRetryJitterRatioDefault    = 0.2
 	openAICompactSessionSeedKey        = "openai_compact_session_seed"
 	openAIUpstreamEndpointContextKey   = "openai_actual_upstream_endpoint"
-	codexCLIVersion                    = "0.144.1"
+	// codexCLIVersion 是网关对上游声明的 Codex 客户端版本，同时供 codexCLIUserAgent
+	// 与 version 头使用。上游 /backend-api/codex 在容量紧张时按客户端身份分优先级降载，
+	// 陈旧版本会被优先丢弃（HTTP 200 + 流内 server_is_overloaded）；非官方客户端配不出
+	// 官方身份时整体回退到本常量，因此它必须跟随官方 CLI 的当前发布版本，
+	// 落后多个版本会让这些请求稳定落在被优先丢弃的一侧。
+	codexCLIVersion = "0.146.0"
 	// Codex 限额快照仅用于后台展示/诊断，不需要每个成功请求都立即落库。
 	openAICodexSnapshotPersistMinInterval = 30 * time.Second
 	// 配额自动暂停时，超过该时长仍未刷新的 used% 快照视为陈旧，不再据此暂停账号。
@@ -489,6 +496,11 @@ func NewOpenAIGatewayService(
 	settingService *SettingService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 ) *OpenAIGatewayService {
+	// enforceCodexIdentityHeaders 是 HTTP / 透传 / WS / 探针 等出站路径共用的纯函数收口点，
+	// 拿不到配置，故在此发布进程级开关快照。配置取反义，零值即「强制统一出口开启」。
+	if cfg != nil {
+		SetCodexIdentityEnforcementEnabled(!cfg.Gateway.DisableCodexIdentityEnforcement)
+	}
 	svc := &OpenAIGatewayService{
 		accountRepo:         accountRepo,
 		usageLogRepo:        usageLogRepo,

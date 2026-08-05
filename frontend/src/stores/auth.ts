@@ -291,9 +291,9 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function loginWithPasskey(): Promise<User> {
+  async function loginWithPasskey(proof?: ActionCaptchaRequestProof): Promise<User> {
     try {
-      const response = await passkeyAPI.login()
+      const response = await passkeyAPI.login(proof)
       setAuthFromResponse(response)
       return user.value!
     } catch (error) {

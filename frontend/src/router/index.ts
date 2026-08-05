@@ -345,18 +345,6 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/merchant-services',
-    name: 'MerchantServices',
-    component: () => import('@/views/user/MerchantServicesView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: false,
-      title: 'Merchant Services',
-      titleKey: 'merchant.title',
-      descriptionKey: 'merchant.description'
-    }
-  },
-  {
     path: '/subscriptions',
     name: 'Subscriptions',
     component: () => import('@/views/user/SubscriptionsView.vue'),
@@ -515,18 +503,6 @@ const routes: RouteRecordRaw[] = [
       title: 'User Management',
       titleKey: 'admin.users.title',
       descriptionKey: 'admin.users.description'
-    }
-  },
-  {
-    path: '/admin/merchant-integrations',
-    name: 'AdminMerchantIntegrations',
-    component: () => import('@/views/admin/MerchantIntegrationsView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      title: 'Merchant SSO',
-      titleKey: 'admin.merchant.title',
-      descriptionKey: 'admin.merchant.description'
     }
   },
   {

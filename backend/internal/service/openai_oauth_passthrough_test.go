@@ -988,9 +988,10 @@ func TestOpenAIGatewayService_OAuthLegacy_CompositeCodexUAUsesCodexOriginator(t 
 	_, err := svc.Forward(context.Background(), c, account, inputBody)
 	require.NoError(t, err)
 	require.NotNil(t, upstream.lastReq)
-	// 浏览器型复合 UA 被替换为默认 Codex UA（codex-tui 形态），originator 随最终 UA 配套（issue #3901）。
+	// 浏览器型复合 UA 被替换为默认 Codex UA（CLI 形态，避开上游降载桶），
+	// originator 随最终 UA 配套（issue #3901）。
 	require.Equal(t, DefaultOpenAICodexUserAgent, upstream.lastReq.Header.Get("User-Agent"))
-	require.Equal(t, "codex-tui", upstream.lastReq.Header.Get("originator"))
+	require.Equal(t, "codex_cli_rs", upstream.lastReq.Header.Get("originator"))
 	require.NotEqual(t, "opencode", upstream.lastReq.Header.Get("originator"))
 }
 
@@ -1841,7 +1842,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_NonCodexUAFallbackToCodexUA(t *te
 func TestOpenAIGatewayService_OAuthPassthrough_AccountCodexTuiIdentityPreservedAndPaired(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	const tuiUA = "codex-tui/0.140.2 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.140.2)"
+	const tuiUA = "codex_vscode/0.140.2 (Mac OS X 14.0; arm64) vscode (codex_vscode; 0.140.2)"
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1880,8 +1881,53 @@ func TestOpenAIGatewayService_OAuthPassthrough_AccountCodexTuiIdentityPreservedA
 	_, err := svc.Forward(context.Background(), c, account, inputBody)
 	require.NoError(t, err)
 	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, tuiUA, upstream.lastReq.Header.Get("User-Agent"))
-	require.Equal(t, "codex-tui", upstream.lastReq.Header.Get("originator"))
+	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "codex_cli_rs", upstream.lastReq.Header.Get("originator"))
+	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("version"))
+}
+
+// 透传模式下真实 TUI 客户端的身份同样被统一：被优先降载的身份不会带到上游。
+func TestOpenAIGatewayService_OAuthPassthrough_CodexTuiIdentityUnified(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+	c.Request.Header.Set("User-Agent", "codex-tui/0.140.2 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.140.2)")
+	c.Request.Header.Set("originator", "codex-tui")
+
+	inputBody := []byte(`{"model":"gpt-5.2","stream":false,"store":true,"input":[{"type":"text","text":"hi"}]}`)
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid"}},
+		Body:       io.NopCloser(strings.NewReader("data: [DONE]\n\n")),
+	}}
+
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+		httpUpstream: upstream,
+	}
+
+	account := &Account{
+		ID:             123,
+		Name:           "acc",
+		Platform:       PlatformOpenAI,
+		Type:           AccountTypeOAuth,
+		Concurrency:    1,
+		Credentials:    map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
+		Extra:          map[string]any{"openai_passthrough": true},
+		Status:         StatusActive,
+		Schedulable:    true,
+		RateMultiplier: f64p(1),
+	}
+
+	_, err := svc.Forward(context.Background(), c, account, inputBody)
+	require.NoError(t, err)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "codex_cli_rs", upstream.lastReq.Header.Get("originator"))
+	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("version"))
 }
 
 func TestOpenAIGatewayService_CodexCLIOnly_RejectsNonCodexClient(t *testing.T) {

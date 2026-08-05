@@ -238,6 +238,13 @@ func (m *mockUserRepo) DeductBalance(ctx context.Context, id int64, amount float
 	return nil
 }
 
+func (m *mockUserRepo) DeductAvailableBalance(ctx context.Context, id int64, amount float64) (float64, error) {
+	if m.deductAvailableBalanceFn != nil {
+		return m.deductAvailableBalanceFn(ctx, id, amount)
+	}
+	return amount, nil
+}
+
 func (m *mockUserRepo) AdjustBalance(ctx context.Context, id int64, delta float64) (BalanceChange, error) {
 	panic("unexpected AdjustBalance call")
 }
