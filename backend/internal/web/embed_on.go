@@ -4,7 +4,6 @@ package web
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"embed"
 	"encoding/json"
@@ -15,32 +14,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 )
-
-type gzipResponseWriter struct {
-	http.ResponseWriter
-	writer *gzip.Writer
-}
-
-func (w *gzipResponseWriter) WriteHeader(statusCode int) {
-	if statusCode != http.StatusNoContent && statusCode != http.StatusNotModified {
-		w.Header().Del("Content-Length")
-		w.Header().Set("Content-Encoding", "gzip")
-	}
-	w.ResponseWriter.WriteHeader(statusCode)
-}
-
-func (w *gzipResponseWriter) Write(data []byte) (int, error) {
-	w.Header().Del("Content-Length")
-	w.Header().Set("Content-Encoding", "gzip")
-	return w.writer.Write(data)
-}
 
 const (
 	// NonceHTMLPlaceholder is the placeholder for nonce in HTML script tags
@@ -53,6 +33,11 @@ var frontendFS embed.FS
 // PublicSettingsProvider is an interface to fetch public settings
 type PublicSettingsProvider interface {
 	GetPublicSettingsForInjection(ctx context.Context) (any, error)
+}
+
+type PublicTransitPageSettingsProvider interface {
+	PublicSettingsProvider
+	GetPublicTransitRuntime(ctx context.Context) service.PublicTransitRuntime
 }
 
 // FrontendServer serves the embedded frontend with settings injection
@@ -115,20 +100,15 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 			return
 		}
 
+		if strings.TrimRight(path, "/") == service.PublicTransitPagePath && !s.publicTransitPageEnabled(c.Request.Context()) {
+			c.String(http.StatusNotFound, "Public transit page is disabled")
+			c.Abort()
+			return
+		}
+
 		cleanPath := strings.TrimPrefix(path, "/")
 		if cleanPath == "" {
 			cleanPath = "index.html"
-		}
-
-		// For /docs/ paths, try override only (no fallback to embedded)
-		if strings.HasPrefix(path, "/docs/") {
-			if s.tryServeOverride(c, cleanPath) {
-				return
-			}
-			// If override file not found, return 404 instead of index.html
-			c.Status(http.StatusNotFound)
-			c.Abort()
-			return
 		}
 
 		// For index.html or SPA routes, serve with injected settings
@@ -144,97 +124,20 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 
 		// Serve static files normally (hashed assets get long-lived cache headers)
 		applyStaticAssetCacheHeaders(c.Writer.Header(), cleanPath)
-		if isCompressibleFrontendPath(cleanPath) {
-			addVaryAcceptEncoding(c.Writer.Header())
-		}
-		if shouldCompressFrontendResponse(c.Request, cleanPath) {
-			writer, err := gzip.NewWriterLevel(c.Writer, gzip.BestSpeed)
-			if err == nil {
-				s.fileServer.ServeHTTP(&gzipResponseWriter{
-					ResponseWriter: c.Writer,
-					writer:         writer,
-				}, c.Request)
-				_ = writer.Close()
-				c.Abort()
-				return
-			}
-		}
 		s.fileServer.ServeHTTP(c.Writer, c.Request)
 		c.Abort()
 	}
 }
 
-func acceptsGzip(header string) bool {
-	wildcardAccepted := false
-	for _, part := range strings.Split(header, ",") {
-		fields := strings.Split(strings.TrimSpace(part), ";")
-		encoding := strings.ToLower(strings.TrimSpace(fields[0]))
-		accepted := true
-		for _, parameter := range fields[1:] {
-			name, value, found := strings.Cut(strings.TrimSpace(parameter), "=")
-			if found && strings.EqualFold(strings.TrimSpace(name), "q") {
-				quality, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-				if err == nil && quality <= 0 {
-					accepted = false
-					break
-				}
-			}
-		}
-		if encoding == "gzip" {
-			return accepted
-		}
-		if encoding == "*" {
-			wildcardAccepted = accepted
-		}
-	}
-	return wildcardAccepted
-}
-
-func shouldCompressFrontendResponse(request *http.Request, path string) bool {
-	if request.Method != http.MethodGet || request.Header.Get("Range") != "" || !acceptsGzip(request.Header.Get("Accept-Encoding")) {
+func (s *FrontendServer) publicTransitPageEnabled(ctx context.Context) bool {
+	if s == nil || s.settings == nil {
 		return false
 	}
-	return isCompressibleFrontendPath(path)
-}
-
-func isCompressibleFrontendPath(path string) bool {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".css", ".html", ".js", ".json", ".map", ".svg", ".txt", ".wasm", ".xml":
-		return true
-	default:
+	provider, ok := s.settings.(PublicTransitPageSettingsProvider)
+	if !ok {
 		return false
 	}
-}
-
-func addVaryAcceptEncoding(header http.Header) {
-	for _, value := range header.Values("Vary") {
-		for _, token := range strings.Split(value, ",") {
-			if strings.EqualFold(strings.TrimSpace(token), "Accept-Encoding") {
-				return
-			}
-		}
-	}
-	header.Add("Vary", "Accept-Encoding")
-}
-
-func writeHTMLResponse(c *gin.Context, content []byte) {
-	addVaryAcceptEncoding(c.Writer.Header())
-	if shouldCompressFrontendResponse(c.Request, "index.html") {
-		c.Header("Content-Type", "text/html; charset=utf-8")
-		c.Header("Content-Encoding", "gzip")
-		c.Writer.Header().Del("Content-Length")
-		c.Status(http.StatusOK)
-		writer, err := gzip.NewWriterLevel(c.Writer, gzip.BestSpeed)
-		if err == nil {
-			_, _ = writer.Write(content)
-			_ = writer.Close()
-			c.Abort()
-			return
-		}
-		c.Header("Content-Encoding", "")
-	}
-	c.Data(http.StatusOK, "text/html; charset=utf-8", content)
-	c.Abort()
+	return provider.GetPublicTransitRuntime(ctx).PageEnabled
 }
 
 func (s *FrontendServer) fileExists(path string) bool {
@@ -263,21 +166,26 @@ func (s *FrontendServer) tryServeOverride(c *gin.Context, cleanPath string) bool
 }
 
 func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
-	// The HTML contains a per-response CSP nonce. Allowing clients or proxies to
-	// revalidate a cached body can pair an old nonce in the body with a newly
-	// generated CSP header from a 304 response.
-	c.Header("Cache-Control", "no-store")
-
 	// Get nonce from context (generated by SecurityHeaders middleware)
 	nonce := middleware.GetNonceFromContext(c)
 
 	// Check cache first
 	cached := s.cache.Get()
 	if cached != nil {
+		// Check If-None-Match for 304 response
+		if match := c.GetHeader("If-None-Match"); match == cached.ETag {
+			c.Status(http.StatusNotModified)
+			c.Abort()
+			return
+		}
+
 		// Replace nonce placeholder with actual nonce before serving
 		content := replaceNoncePlaceholder(cached.Content, nonce)
 
-		writeHTMLResponse(c, content)
+		c.Header("ETag", cached.ETag)
+		c.Header("Cache-Control", "no-cache") // Must revalidate
+		c.Data(http.StatusOK, "text/html; charset=utf-8", content)
+		c.Abort()
 		return
 	}
 
@@ -288,14 +196,16 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 	settings, err := s.settings.GetPublicSettingsForInjection(ctx)
 	if err != nil {
 		// Fallback: serve without injection
-		writeHTMLResponse(c, s.baseHTML)
+		c.Data(http.StatusOK, "text/html; charset=utf-8", s.baseHTML)
+		c.Abort()
 		return
 	}
 
 	settingsJSON, err := json.Marshal(settings)
 	if err != nil {
 		// Fallback: serve without injection
-		writeHTMLResponse(c, s.baseHTML)
+		c.Data(http.StatusOK, "text/html; charset=utf-8", s.baseHTML)
+		c.Abort()
 		return
 	}
 
@@ -305,7 +215,13 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 	// Replace nonce placeholder with actual nonce before serving
 	content := replaceNoncePlaceholder(rendered, nonce)
 
-	writeHTMLResponse(c, content)
+	cached = s.cache.Get()
+	if cached != nil {
+		c.Header("ETag", cached.ETag)
+	}
+	c.Header("Cache-Control", "no-cache")
+	c.Data(http.StatusOK, "text/html; charset=utf-8", content)
+	c.Abort()
 }
 
 func (s *FrontendServer) injectSettings(settingsJSON []byte) []byte {
@@ -428,17 +344,6 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 			cleanPath = "index.html"
 		}
 
-		// For /docs/ paths, try override only (no fallback to embedded)
-		if strings.HasPrefix(path, "/docs/") {
-			if tryServeOverrideFile(c, overrideDir, cleanPath) {
-				return
-			}
-			// If override file not found, return 404 instead of index.html
-			c.Status(http.StatusNotFound)
-			c.Abort()
-			return
-		}
-
 		if file, err := distFS.Open(cleanPath); err == nil {
 			_ = file.Close()
 			// Try local override first
@@ -473,6 +378,7 @@ func tryServeOverrideFile(c *gin.Context, overrideDir, cleanPath string) bool {
 func shouldBypassEmbeddedFrontend(path string) bool {
 	trimmed := strings.TrimSpace(path)
 	return strings.HasPrefix(trimmed, "/api/") ||
+		strings.HasPrefix(trimmed, "/.well-known/") ||
 		strings.HasPrefix(trimmed, "/v1/") ||
 		strings.HasPrefix(trimmed, "/v1beta/") ||
 		strings.HasPrefix(trimmed, "/backend-api/") ||

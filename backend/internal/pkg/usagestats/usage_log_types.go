@@ -30,8 +30,8 @@ type DashboardStats struct {
 	// 用户统计
 	TotalUsers    int64 `json:"total_users"`
 	TodayNewUsers int64 `json:"today_new_users"` // 今日新增用户数
-	ActiveUsers   int64 `json:"active_users"`    // 今日调用网关 API 的用户数
-	// 小时活跃用户数（当前小时内调用网关 API 的用户数）
+	ActiveUsers   int64 `json:"active_users"`    // 今日有请求的用户数
+	// 小时活跃用户数（UTC 当前小时）
 	HourlyActiveUsers int64 `json:"hourly_active_users"`
 
 	// 预聚合新鲜度
@@ -75,9 +75,8 @@ type DashboardStats struct {
 	AverageDurationMs float64 `json:"average_duration_ms"` // 平均响应时间
 
 	// 性能指标
-	Rpm                 int64 `json:"rpm"`                    // 近5分钟平均每分钟请求数
-	Tpm                 int64 `json:"tpm"`                    // 近5分钟平均每分钟Token数
-	Recent5mActiveUsers int64 `json:"recent_5m_active_users"` // 近5分钟调用网关 API 的用户数
+	Rpm int64 `json:"rpm"` // 近5分钟平均每分钟请求数
+	Tpm int64 `json:"tpm"` // 近5分钟平均每分钟Token数
 }
 
 // TrendDataPoint represents a single point in trend data
@@ -116,12 +115,43 @@ type EndpointStat struct {
 	ActualCost  float64 `json:"actual_cost"` // 实际扣除
 }
 
-// GroupUsageSummary represents today's, yesterday's, and cumulative cost for a single group.
+// GroupUsageSummary represents cost plus cache usage windows for a single group.
 type GroupUsageSummary struct {
-	GroupID       int64   `json:"group_id"`
-	TodayCost     float64 `json:"today_cost"`
-	YesterdayCost float64 `json:"yesterday_cost"`
-	TotalCost     float64 `json:"total_cost"`
+	GroupID                    int64   `json:"group_id"`
+	TodayCost                  float64 `json:"today_cost"`
+	TotalCost                  float64 `json:"total_cost"`
+	TodayInputTokens           int64   `json:"today_input_tokens"`
+	TodayCacheCreationTokens   int64   `json:"today_cache_creation_tokens"`
+	TodayCacheReadTokens       int64   `json:"today_cache_read_tokens"`
+	TodayCacheHitRate          float64 `json:"today_cache_hit_rate"`
+	Last24hInputTokens         int64   `json:"last_24h_input_tokens"`
+	Last24hCacheCreationTokens int64   `json:"last_24h_cache_creation_tokens"`
+	Last24hCacheReadTokens     int64   `json:"last_24h_cache_read_tokens"`
+	Last24hCacheHitRate        float64 `json:"last_24h_cache_hit_rate"`
+	Last7dInputTokens          int64   `json:"last_7d_input_tokens"`
+	Last7dCacheCreationTokens  int64   `json:"last_7d_cache_creation_tokens"`
+	Last7dCacheReadTokens      int64   `json:"last_7d_cache_read_tokens"`
+	Last7dCacheHitRate         float64 `json:"last_7d_cache_hit_rate"`
+	TotalInputTokens           int64   `json:"total_input_tokens"`
+	TotalCacheCreationTokens   int64   `json:"total_cache_creation_tokens"`
+	TotalCacheReadTokens       int64   `json:"total_cache_read_tokens"`
+	TotalCacheHitRate          float64 `json:"total_cache_hit_rate"`
+}
+
+// GroupCacheUsageSummary represents rolling cache usage windows for a single group.
+type GroupCacheUsageSummary struct {
+	GroupID int64                 `json:"group_id"`
+	Last24h GroupCacheUsageWindow `json:"last_24h"`
+	Last7d  GroupCacheUsageWindow `json:"last_7d"`
+	Total   GroupCacheUsageWindow `json:"total"`
+}
+
+// GroupCacheUsageWindow represents cache usage within one rolling time window.
+type GroupCacheUsageWindow struct {
+	InputTokens         int64   `json:"input_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	CacheHitRate        float64 `json:"cache_hit_rate"`
 }
 
 // GroupStat represents usage statistics for a single group
@@ -165,46 +195,6 @@ type UserSpendingRankingResponse struct {
 	TotalTokens     int64                     `json:"total_tokens"`
 }
 
-// ActiveUsersTrendPoint represents active users count at a specific time point
-type ActiveUsersTrendPoint struct {
-	Date        string `json:"date"`
-	ActiveUsers int64  `json:"active_users"`
-}
-
-// UserRetentionPoint represents a registration cohort and its exact-day retention.
-// Nil rates indicate that the cohort has not reached the corresponding observation day.
-type UserRetentionPoint struct {
-	Date            string   `json:"date"`
-	Registrations   int64    `json:"registrations"`
-	ActiveUsers     int64    `json:"active_users"`
-	D1Retained      int64    `json:"d1_retained"`
-	D7Retained      int64    `json:"d7_retained"`
-	D30Retained     int64    `json:"d30_retained"`
-	PaidUsers       int64    `json:"paid_users"`
-	PaidActiveUsers int64    `json:"paid_active_users"`
-	RepeatBuyers    int64    `json:"repeat_buyers"`
-	RechargeAmount  float64  `json:"recharge_amount"`
-	D1Rate          *float64 `json:"d1_rate"`
-	D7Rate          *float64 `json:"d7_rate"`
-	D30Rate         *float64 `json:"d30_rate"`
-	PaidRate        *float64 `json:"paid_rate"`
-	RepeatBuyRate   *float64 `json:"repeat_buy_rate"`
-}
-
-// UserRetentionSummary contains weighted rates across cohorts old enough to observe.
-type UserRetentionSummary struct {
-	D1Rate        *float64 `json:"d1_rate"`
-	D7Rate        *float64 `json:"d7_rate"`
-	D30Rate       *float64 `json:"d30_rate"`
-	PaidRate      *float64 `json:"paid_rate"`
-	RepeatBuyRate *float64 `json:"repeat_buy_rate"`
-}
-
-type UserGrowthRetention struct {
-	Cohorts []UserRetentionPoint `json:"cohorts"`
-	Summary UserRetentionSummary `json:"summary"`
-}
-
 // UserBreakdownItem represents per-user usage breakdown within a dimension (group, model, endpoint).
 type UserBreakdownItem struct {
 	UserID       int64   `json:"user_id"`
@@ -227,14 +217,12 @@ type UserBreakdownDimension struct {
 	Endpoint     string // filter by endpoint value (non-empty to enable)
 	EndpointType string // "inbound", "upstream", or "path"
 	// Additional filter conditions
-	UserID             int64   // filter by user_id (>0 to enable)
-	ExcludeUserIDs     []int64 // exclude matching user_id values
-	APIKeyID           int64   // filter by api_key_id (>0 to enable)
-	AccountID          int64   // filter by account_id (>0 to enable)
-	RequestType        *int16  // filter by request_type (non-nil to enable)
-	Stream             *bool   // filter by stream flag (non-nil to enable)
-	NativeCompactionV2 *bool   // filter by native compaction v2 flag (non-nil to enable)
-	BillingType        *int8   // filter by billing_type (non-nil to enable)
+	UserID      int64  // filter by user_id (>0 to enable)
+	APIKeyID    int64  // filter by api_key_id (>0 to enable)
+	AccountID   int64  // filter by account_id (>0 to enable)
+	RequestType *int16 // filter by request_type (non-nil to enable)
+	Stream      *bool  // filter by stream flag (non-nil to enable)
+	BillingType *int8  // filter by billing_type (non-nil to enable)
 	// SortBy 指定排序列(空 = 默认按 actual_cost)。合法值由 repo 层 allowlist 校验。
 	SortBy string
 }
@@ -298,26 +286,6 @@ type UserDashboardStats struct {
 	ByPlatform []PlatformDashboardStats `json:"by_platform,omitempty"`
 }
 
-// UserDashboardActivity summarizes a user's historic usage and the daily
-// token activity required to render the dashboard contribution graph.
-type UserDashboardActivity struct {
-	WindowStart                  string            `json:"window_start"`
-	WindowEnd                    string            `json:"window_end"`
-	CurrentDate                  string            `json:"current_date"`
-	TotalTokens                  int64             `json:"total_tokens"`
-	PeakDailyTokens              int64             `json:"peak_daily_tokens"`
-	CurrentStreakDays            int64             `json:"current_streak_days"`
-	LongestStreakDays            int64             `json:"longest_streak_days"`
-	CumulativeTokensBeforeWindow int64             `json:"cumulative_tokens_before_window"`
-	Days                         []UserActivityDay `json:"days"`
-}
-
-// UserActivityDay is a single local calendar day with one or more usage logs.
-type UserActivityDay struct {
-	Date        string `json:"date"`
-	TotalTokens int64  `json:"total_tokens"`
-}
-
 // PlatformDashboardStats 单个平台的用量明细。
 type PlatformDashboardStats struct {
 	Platform        string  `json:"platform"`
@@ -331,22 +299,18 @@ type PlatformDashboardStats struct {
 
 // UsageLogFilters represents filters for usage log queries
 type UsageLogFilters struct {
-	UserID         int64
-	ExcludeUserIDs []int64
-	APIKeyID       int64
-	AccountID      int64
-	GroupID        int64
-	RequestID      string
-	Model          string
+	UserID    int64
+	APIKeyID  int64
+	AccountID int64
+	GroupID   int64
+	RequestID string
+	Model     string
 	// ModelFilterSource controls how Model is matched. Empty preserves raw usage_logs.model semantics.
-	ModelFilterSource  string
-	RequestType        *int16
-	Stream             *bool
-	NativeCompactionV2 *bool
-	BillingType        *int8
-	BillingMode        string
-	// Source filters usage rows by their producer (gateway, account_test, or content_moderation).
-	Source                string
+	ModelFilterSource     string
+	RequestType           *int16
+	Stream                *bool
+	BillingType           *int8
+	BillingMode           string
 	UpstreamModelMismatch *bool
 	StartTime             *time.Time
 	EndTime               *time.Time
@@ -397,37 +361,30 @@ type BatchAPIKeyUsageStats struct {
 
 // AccountUsageHistory represents daily usage history for an account
 type AccountUsageHistory struct {
-	Date                string  `json:"date"`
-	Label               string  `json:"label"`
-	Requests            int64   `json:"requests"`
-	InputTokens         int64   `json:"input_tokens"`
-	CacheCreationTokens int64   `json:"cache_creation_tokens"`
-	CacheReadTokens     int64   `json:"cache_read_tokens"`
-	Tokens              int64   `json:"tokens"`
-	Cost                float64 `json:"cost"`        // 标准计费（total_cost）
-	ActualCost          float64 `json:"actual_cost"` // 账号口径费用（total_cost * account_rate_multiplier）
-	UserCost            float64 `json:"user_cost"`   // 用户口径费用（actual_cost，受分组倍率影响）
+	Date       string  `json:"date"`
+	Label      string  `json:"label"`
+	Requests   int64   `json:"requests"`
+	Tokens     int64   `json:"tokens"`
+	Cost       float64 `json:"cost"`        // 标准计费（total_cost）
+	ActualCost float64 `json:"actual_cost"` // 账号口径费用（total_cost * account_rate_multiplier）
+	UserCost   float64 `json:"user_cost"`   // 用户口径费用（actual_cost，受分组倍率影响）
 }
 
 // AccountUsageSummary represents summary statistics for an account
 type AccountUsageSummary struct {
-	Days                     int     `json:"days"`
-	ActualDaysUsed           int     `json:"actual_days_used"`
-	TotalCost                float64 `json:"total_cost"`      // 账号口径费用
-	TotalUserCost            float64 `json:"total_user_cost"` // 用户口径费用
-	TotalStandardCost        float64 `json:"total_standard_cost"`
-	TotalRequests            int64   `json:"total_requests"`
-	TotalInputTokens         int64   `json:"total_input_tokens"`
-	TotalCacheCreationTokens int64   `json:"total_cache_creation_tokens"`
-	TotalCacheReadTokens     int64   `json:"total_cache_read_tokens"`
-	TotalTokens              int64   `json:"total_tokens"`
-	CacheHitRate             float64 `json:"cache_hit_rate"`
-	AvgDailyCost             float64 `json:"avg_daily_cost"` // 账号口径日均
-	AvgDailyUserCost         float64 `json:"avg_daily_user_cost"`
-	AvgDailyRequests         float64 `json:"avg_daily_requests"`
-	AvgDailyTokens           float64 `json:"avg_daily_tokens"`
-	AvgDurationMs            float64 `json:"avg_duration_ms"`
-	Today                    *struct {
+	Days              int     `json:"days"`
+	ActualDaysUsed    int     `json:"actual_days_used"`
+	TotalCost         float64 `json:"total_cost"`      // 账号口径费用
+	TotalUserCost     float64 `json:"total_user_cost"` // 用户口径费用
+	TotalStandardCost float64 `json:"total_standard_cost"`
+	TotalRequests     int64   `json:"total_requests"`
+	TotalTokens       int64   `json:"total_tokens"`
+	AvgDailyCost      float64 `json:"avg_daily_cost"` // 账号口径日均
+	AvgDailyUserCost  float64 `json:"avg_daily_user_cost"`
+	AvgDailyRequests  float64 `json:"avg_daily_requests"`
+	AvgDailyTokens    float64 `json:"avg_daily_tokens"`
+	AvgDurationMs     float64 `json:"avg_duration_ms"`
+	Today             *struct {
 		Date     string  `json:"date"`
 		Cost     float64 `json:"cost"`
 		UserCost float64 `json:"user_cost"`

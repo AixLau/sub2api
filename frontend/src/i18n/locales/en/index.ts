@@ -5,11 +5,9 @@ import channelMonitorV2 from './channelMonitorV2'
 import batchImage from './batchImage'
 import admin from './admin'
 import misc from './misc'
-import extensions from './extensions'
-import merchant from './merchant'
-import { mergeLocaleMessages } from '../merge'
+import publicTransit from './publicTransit'
 
-export default mergeLocaleMessages({
+export default {
   ...landing,
   ...common,
   ...dashboard,
@@ -17,5 +15,5 @@ export default mergeLocaleMessages({
   ...batchImage,
   admin,
   ...misc,
-  ...merchant,
-}, extensions)
+  ...publicTransit,
+}
