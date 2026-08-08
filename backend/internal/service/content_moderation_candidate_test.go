@@ -1565,6 +1565,86 @@ func TestHighRiskCandidateReviewNeedsRejectEligibleDimensionsToBlock(t *testing.
 	require.Equal(t, "review", result.Verdict)
 }
 
+func TestExplicitOperationalCandidatePromotesCorroboratedReview(t *testing.T) {
+	selection := contentModerationCandidateSelection{
+		Kind: contentModerationCandidateKindPromptFilter,
+		Rule: ContentModerationKeywordRule{
+			Keyword:  "covert_surveillance_privacy_abuse_request",
+			Category: ContentModerationKeywordCategoryPrivacy,
+			Severity: ContentModerationKeywordSeverityCritical,
+		},
+		PromptHit: &contentModerationPromptFilterHit{Verdict: promptfilter.Verdict{OperationalHit: true}},
+	}
+	result, overridden := applyCandidateSemanticReviewPolicy(ContentModerationSemanticReviewResult{
+		Verdict: "review", Intent: "harmful", Target: "third_party", Authorization: "unclear",
+		HarmMechanism: "privacy_invasion", HarmEvidence: "explicit", Severity: "critical", Confidence: 0.98,
+		Operationality: "actionable", Executability: "direct", Categories: []string{"privacy"},
+	}, selection, true)
+
+	require.True(t, overridden)
+	require.Equal(t, "reject", result.Verdict)
+	require.Contains(t, result.ReasonCodes, "semantic_policy_explicit_operational_candidate")
+}
+
+func TestExplicitOperationalCandidateDoesNotPromoteUncorroboratedReview(t *testing.T) {
+	baseSelection := contentModerationCandidateSelection{
+		Kind: contentModerationCandidateKindPromptFilter,
+		Rule: ContentModerationKeywordRule{
+			Keyword:  "protocol_entitlement_bypass_request",
+			Category: ContentModerationKeywordCategoryCyber,
+			Severity: ContentModerationKeywordSeverityCritical,
+		},
+		PromptHit: &contentModerationPromptFilterHit{Verdict: promptfilter.Verdict{OperationalHit: true}},
+	}
+	baseResult := ContentModerationSemanticReviewResult{
+		Verdict: "review", Intent: "harmful", Target: "external_service", Authorization: "unclear",
+		HarmMechanism: "evasion", HarmEvidence: "explicit", Severity: "critical", Confidence: 0.98,
+		Operationality: "actionable", Executability: "direct", Categories: []string{"license_cracking"},
+	}
+	tests := []struct {
+		name   string
+		mutate func(*ContentModerationSemanticReviewResult, *contentModerationCandidateSelection)
+	}{
+		{name: "authorized lab", mutate: func(result *ContentModerationSemanticReviewResult, _ *contentModerationCandidateSelection) {
+			result.Target = "authorized_lab"
+			result.Authorization = "authorized"
+		}},
+		{name: "inferred harm", mutate: func(result *ContentModerationSemanticReviewResult, _ *contentModerationCandidateSelection) {
+			result.HarmEvidence = "inferred"
+		}},
+		{name: "no harm mechanism", mutate: func(result *ContentModerationSemanticReviewResult, _ *contentModerationCandidateSelection) {
+			result.HarmMechanism = "none"
+		}},
+		{name: "indirect executability", mutate: func(result *ContentModerationSemanticReviewResult, _ *contentModerationCandidateSelection) {
+			result.Executability = "indirect"
+		}},
+		{name: "low confidence", mutate: func(result *ContentModerationSemanticReviewResult, _ *contentModerationCandidateSelection) {
+			result.Confidence = 0.80
+		}},
+		{name: "non operational match", mutate: func(_ *ContentModerationSemanticReviewResult, selection *contentModerationCandidateSelection) {
+			selection.PromptHit.Verdict.OperationalHit = false
+		}},
+		{name: "unlisted operational rule", mutate: func(_ *ContentModerationSemanticReviewResult, selection *contentModerationCandidateSelection) {
+			selection.Rule.Keyword = "reverse_engineering_license_bypass"
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := baseResult
+			selection := baseSelection
+			promptHit := *baseSelection.PromptHit
+			selection.PromptHit = &promptHit
+			tt.mutate(&result, &selection)
+
+			result, overridden := applyCandidateSemanticReviewPolicy(result, selection, true)
+
+			require.False(t, overridden)
+			require.Equal(t, "review", result.Verdict)
+		})
+	}
+}
+
 func TestPromptInjectionV2PreBlockOutcomeMatrixIsFailClosedWithoutViolation(t *testing.T) {
 	tests := []struct {
 		name       string

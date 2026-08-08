@@ -3,7 +3,7 @@ package promptfilter
 // Candidate rules are deliberately non-strict and non-operational. They widen
 // local recall for candidate_only, but only a downstream reviewer can decide
 // whether the request is allowed or blocked.
-const candidateSourceRevision = "local-candidate-recall@2026-07-22"
+const candidateSourceRevision = "local-candidate-recall@2026-08-08"
 
 var candidatePatternConfigs = []PatternConfig{
 	{
@@ -20,7 +20,7 @@ var candidatePatternConfigs = []PatternConfig{
 	},
 	{
 		Name:     "candidate_privacy_doxxing",
-		Regex:    `(?i)\b(?:doxx?|deanonymi[sz]e|unmask|track\s+down|find|locate|reveal|publish)\b.{0,100}\b(?:someone(?:'s)?|a\s+private\s+person(?:'s)?|this\s+person(?:'s)?|their)\b.{0,60}\b(?:home\s+address|phone\s+number|current\s+location|real\s+identity|private\s+records?)\b|(?:人肉|开盒|去匿名|查找|定位|曝光|公布).{0,80}(?:某人|个人|这个人|他人).{0,50}(?:家庭住址|手机号|当前位置|真实身份|隐私记录)`,
+		Regex:    `(?i)\b(?:doxx?|deanonymi[sz]e|unmask|track\s+down|find|locate|reveal|publish)\b.{0,100}\b(?:someone(?:'s)?|a\s+private\s+person(?:'s)?|this\s+person(?:'s)?|their)\b.{0,60}\b(?:home\s+address|phone\s+number|current\s+location|real\s+identity|private\s+records?)\b|\b(?:track|monitor|surveil|spy\s+on|intercept|tap)\b.{0,120}\b(?:someone|a\s+person|another\s+person|this\s+person|their)\b.{0,100}\b(?:communications?|messages?|calls?|texts?|emails?|location|home\s+address)\b|(?:人肉|开盒|去匿名|查找|定位|曝光|公布).{0,80}(?:某人|个人|这个人|他人).{0,50}(?:家庭住址|手机号|当前位置|真实身份|隐私记录)|(?:跟踪|追踪|监视|监控|监听|窃听|拦截|截取).{0,100}(?:某人|个人|这个人|他人|对方|他|她).{0,80}(?:私人通信|个人通信|消息|通话|短信|邮件|位置|家庭住址|住址|地址)`,
 		Weight:   70,
 		Category: "privacy",
 	},
@@ -76,6 +76,18 @@ var candidatePatternConfigs = []PatternConfig{
 		Name:     "candidate_key_iv_extraction",
 		Regex:    `(?i)(?:\b(?:extract|dump|recover|derive|decrypt|find|obtain)\b|提取|导出|恢复|推导|解密|查找|获取).{0,100}(?:\b(?:key\s*(?:and|&|/|和)\s*iv|key/iv|initiali[sz]ation\s+vector|crypto(?:graphic)?\s+key)\b|密钥|密码|令牌|token|私钥|初始化向量)|(?:\b(?:key\s*(?:and|&|/|和)\s*iv|key/iv|initiali[sz]ation\s+vector|crypto(?:graphic)?\s+key)\b|密钥|密码|令牌|token|私钥|初始化向量).{0,100}(?:\b(?:extract|dump|recover|derive|decrypt|find|obtain)\b|提取|导出|恢复|推导|解密|查找|获取)`,
 		Weight:   55,
+		Category: "cyber",
+	},
+	{
+		Name:     "candidate_ransomware_creation",
+		Regex:    `(?i)\b(?:write|generate|create|build|develop|implement|provide)\s+(?:me\s+)?(?:a\s+)?(?:(?:fully\s+)?(?:functional|working)|deployable|complete|production[-\s]?ready)?\s*ransomware(?:\s+(?:program|payload|code|script|tool|sample))?\b.{0,180}\b(?:encrypt(?:s|ing)?\s+(?:(?:victim|target|user)(?:'s)?\s+|all\s+)?(?:files?|documents?|data)|drop(?:s|ping)?\s+(?:a\s+)?ransom\s+note|demand(?:s|ing)?\s+(?:a\s+)?(?:ransom|payment)|delete(?:s|ing)?\s+(?:backups?|shadow\s+copies)|spread(?:s|ing)?|propagat(?:e|es|ing)|infect(?:s|ing)?)\b|(?:写|编写|生成|创建|制作|开发|实现|提供)(?:给我)?(?:一个|一份|一套)?(?:完整|可用|可运行|可部署|功能齐全)?(?:的)?(?:勒索软件|勒索病毒)(?:程序|载荷|代码|脚本|工具|样本)?.{0,140}(?:加密(?:受害者|目标|用户|所有)?(?:的)?(?:文件|文档|数据)|投放勒索信|索要(?:赎金|付款)|删除(?:备份|卷影副本)|传播|感染)`,
+		Weight:   80,
+		Category: "malware",
+	},
+	{
+		Name:     "candidate_protocol_entitlement_bypass",
+		Regex:    `(?i)\b(?:intercept|hijack|tamper\s+with|modify|rewrite|forge|spoof)\b.{0,140}\b(?:gateway|server|client|engine|protocol|traffic|communication|request|response|handshake|state)\b.{0,180}\b(?:bypass|circumvent|evade|defeat|remove|raise)\b.{0,100}\b(?:licen[cs](?:e|ing)|activation|seat|user|device|concurren(?:t|cy)|usage|subscription|entitlement)\b.{0,40}\b(?:limit|cap|restriction|check|quota)\b|(?:拦截|劫持|篡改|修改|伪造|重写).{0,100}(?:网关|服务器|客户端|引擎|协议|通信|请求|响应|握手|状态).{0,140}(?:绕过|突破|规避|解除|提高).{0,80}(?:授权|许可|激活|席位|用户|人数|设备|并发|用量|订阅|权益).{0,30}(?:限制|上限|校验|配额)`,
+		Weight:   75,
 		Category: "cyber",
 	},
 }

@@ -5,7 +5,7 @@ package promptfilter
 // are intentionally narrower and are eligible for the existing hard block.
 // Sources: https://genai.owasp.org/llmrisk/llm01-prompt-injection/ and
 // https://ctf101.org/.
-const supplementalSourceRevision = "local-content-audit@2026-07-16"
+const supplementalSourceRevision = "local-content-audit@2026-08-08"
 
 var supplementalPatternConfigs = []PatternConfig{
 	{
@@ -130,6 +130,27 @@ var supplementalPatternConfigs = []PatternConfig{
 		Regex:    `(?i)\b(?:crack|dump|steal|extract|harvest|brute[-\s]?force|spray|pass[-\s]?the[-\s]?hash|pass[-\s]?the[-\s]?ticket)\b.{0,100}\b(?:password|credential|hash|cookie|token|ticket|login|account|lsass|sam|ntds|mimikatz|hashcat|john|hydra)\b.{0,120}\b(?:unauthori[sz]ed|without\s+(?:permission|authorization)|victim|third[-\s]?party|someone\s+else(?:'s)?|stolen|compromised|production\s+(?:account|system|server)|admin\s+access|root\s+access)\b|\b(?:unauthori[sz]ed|without\s+(?:permission|authorization)|victim|third[-\s]?party|someone\s+else(?:'s)?|stolen|compromised|production)\b.{0,100}\b(?:crack|dump|steal|extract|harvest|brute[-\s]?force|spray|pass[-\s]?the[-\s]?hash|pass[-\s]?the[-\s]?ticket)\b.{0,100}\b(?:password|credential|hash|cookie|token|ticket|login|account|lsass|sam|ntds)\b|(?:破解|转储|窃取|提取|收集|爆破|喷洒|哈希传递|票据传递).{0,100}(?:密码|凭证|哈希|cookie|令牌|票据|登录|账号|LSASS|SAM|NTDS).{0,100}(?:未经授权|未授权|无权限|受害者|第三方|他人|被盗|已失陷|生产账号|生产系统|管理员权限|root权限)|(?:未经授权|未授权|无权限|受害者|第三方|他人|被盗|已失陷|生产环境).{0,100}(?:破解|转储|窃取|提取|收集|爆破|喷洒|哈希传递|票据传递).{0,100}(?:密码|凭证|哈希|cookie|令牌|票据|登录|账号|LSASS|SAM|NTDS)`,
 		Weight:   100,
 		Category: "credential_attack",
+		Strict:   true,
+	},
+	{
+		Name:     "ransomware_creation_request",
+		Regex:    `(?i)\b(?:write|generate|create|build|develop|implement|provide)\s+(?:me\s+)?(?:a\s+)?(?:(?:fully\s+)?(?:functional|working)|deployable|complete|production[-\s]?ready)\s+ransomware\s+(?:program|payload|code|script|tool|sample)\b.{0,180}\b(?:encrypt(?:s|ing)?\s+(?:(?:victim|target|user)(?:'s)?\s+|all\s+)?(?:files?|documents?|data)|drop(?:s|ping)?\s+(?:a\s+)?ransom\s+note|demand(?:s|ing)?\s+(?:a\s+)?(?:ransom|payment)|delete(?:s|ing)?\s+(?:backups?|shadow\s+copies)|spread(?:s|ing)?|propagat(?:e|es|ing)|infect(?:s|ing)?)\b|(?:写|编写|生成|创建|制作|开发|实现|提供)(?:给我)?(?:一个|一份|一套)?(?:完整|可用|可运行|可部署|功能齐全){1,2}(?:的)?(?:勒索软件|勒索病毒)(?:程序|载荷|代码|脚本|工具|样本).{0,140}(?:加密(?:受害者|目标|用户|所有)?(?:的)?(?:文件|文档|数据)|投放勒索信|索要(?:赎金|付款)|删除(?:备份|卷影副本)|传播|感染)`,
+		Weight:   100,
+		Category: "malware",
+		Strict:   true,
+	},
+	{
+		Name:     "covert_surveillance_privacy_abuse_request",
+		Regex:    `(?i)\b(?:help\s+me|show\s+me\s+how\s+to|tell\s+me\s+how\s+to|how\s+(?:can|do)\s+i|i\s+want\s+to|provide\s+(?:detailed\s+)?(?:instructions|steps|a\s+plan)\s+(?:for|to)|give\s+me\s+(?:a\s+)?(?:plan|steps)\s+to)\s+(?:secretly|covertly|silently|without\s+(?:their\s+)?(?:knowledge|consent))\s*(?:track|monitor|surveil|spy\s+on|intercept|tap)\b.{0,180}\b(?:private|personal)?\s*(?:communications?|messages?|calls?|texts?|emails?|location|home\s+address)\b|\b(?:help\s+me|show\s+me\s+how\s+to|tell\s+me\s+how\s+to|how\s+(?:can|do)\s+i|i\s+want\s+to|provide\s+(?:detailed\s+)?(?:instructions|steps|a\s+plan)\s+(?:for|to)|give\s+me\s+(?:a\s+)?(?:plan|steps)\s+to)\s+(?:track|monitor|surveil|spy\s+on|intercept|tap)\b.{0,180}\b(?:private|personal)?\s*(?:communications?|messages?|calls?|texts?|emails?|location|home\s+address)\b.{0,180}\b(?:avoid(?:ing)?\s+detection|without\s+being\s+detected|undetected|leave\s+no\s+trace|without\s+(?:their\s+)?(?:knowledge|consent))\b|(?:帮我|教我|告诉我如何|给我(?:一个|一份)?(?:方案|步骤)|如何|怎么|我想(?:要)?)(?:秘密|暗中|隐蔽|偷偷|在(?:本人|对方)不知情时|未经(?:本人|对方)?同意)(?:跟踪|追踪|监视|监控|监听|窃听|拦截|截取).{0,140}(?:私人通信|个人通信|消息|通话|短信|邮件|位置|家庭住址|住址|地址)|(?:帮我|教我|告诉我如何|给我(?:一个|一份)?(?:方案|步骤)|如何|怎么|我想(?:要)?)(?:跟踪|追踪|监视|监控|监听|窃听|拦截|截取).{0,140}(?:私人通信|个人通信|消息|通话|短信|邮件|位置|家庭住址|住址|地址).{0,140}(?:避开|规避)(?:检测|侦测)|(?:帮我|教我|告诉我如何|给我(?:一个|一份)?(?:方案|步骤)|如何|怎么|我想(?:要)?)(?:跟踪|追踪|监视|监控|监听|窃听|拦截|截取).{0,140}(?:私人通信|个人通信|消息|通话|短信|邮件|位置|家庭住址|住址|地址).{0,140}(?:不被发现|不留痕迹|未经(?:本人|对方)?同意|在(?:本人|对方)不知情)`,
+		Weight:   100,
+		Category: "privacy",
+		Strict:   true,
+	},
+	{
+		Name:     "protocol_entitlement_bypass_request",
+		Regex:    `(?i)\b(?:help\s+me|show\s+me\s+how\s+to|tell\s+me\s+how\s+to|how\s+(?:can|do)\s+i|i\s+want\s+to|give\s+me\s+(?:a\s+)?(?:plan|steps)\s+to|provide\s+(?:instructions|steps)\s+to)\s+(?:intercept|hijack|tamper\s+with|modify|rewrite|forge|spoof)\b.{0,140}\b(?:gateway|server|client|engine|protocol|traffic|communication|request|response|handshake|state)\b.{0,180}\b(?:bypass|circumvent|evade|defeat|remove|raise)\b.{0,100}\b(?:licen[cs](?:e|ing)|activation|seat|user|device|concurren(?:t|cy)|usage|subscription|entitlement)\b.{0,40}\b(?:limit|cap|restriction|check|quota)\b|\b(?:write|build|create|design|implement)\s+(?:a\s+)?(?:tool|script|proxy|method|plan|system)\s+to\s+(?:intercept|hijack|tamper\s+with|modify|rewrite|forge|spoof)\b.{0,140}\b(?:gateway|server|client|engine|protocol|traffic|communication|request|response|handshake|state)\b.{0,180}\b(?:bypass|circumvent|evade|defeat|remove|raise)\b.{0,100}\b(?:licen[cs](?:e|ing)|activation|seat|user|device|concurren(?:t|cy)|usage|subscription|entitlement)\b.{0,40}\b(?:limit|cap|restriction|check|quota)\b|(?:帮我|教我|告诉我如何|如何|怎么|我想(?:要)?)(?:通过)?(?:拦截|劫持|篡改|修改|伪造|重写).{0,100}(?:网关|服务器|客户端|引擎|协议|通信|请求|响应|握手|状态).{0,140}(?:绕过|突破|规避|解除|提高).{0,80}(?:授权|许可|激活|席位|用户|人数|设备|并发|用量|订阅|权益).{0,30}(?:限制|上限|校验|配额)|(?:设计|实现|编写)(?:一个|一套)?(?:代理|脚本|工具|方案|系统)(?:来|去|用于)?(?:拦截|劫持|篡改|修改|伪造|重写).{0,100}(?:网关|服务器|客户端|引擎|协议|通信|请求|响应|握手|状态).{0,140}(?:绕过|突破|规避|解除|提高).{0,80}(?:授权|许可|激活|席位|用户|人数|设备|并发|用量|订阅|权益).{0,30}(?:限制|上限|校验|配额)`,
+		Weight:   100,
+		Category: "license_cracking",
 		Strict:   true,
 	},
 }

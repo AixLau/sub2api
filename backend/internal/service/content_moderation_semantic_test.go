@@ -966,7 +966,7 @@ func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
 	require.Equal(t, "gpt-5.4-mini-upstream", requestBody["model"])
 	require.Equal(t, float64(ContentModerationSemanticReviewDefaultOutputTokens), requestBody["max_output_tokens"])
 	require.Equal(t, semanticReviewInstructions, requestBody["instructions"])
-	require.Equal(t, "semantic-review-instructions-v5", semanticReviewInstructionsRevision)
+	require.Equal(t, "semantic-review-instructions-v6", semanticReviewInstructionsRevision)
 	require.Contains(t, semanticReviewInstructions, "Use review only as the final fallback")
 	require.Contains(t, semanticReviewInstructions, "Review is forbidden solely because of low confidence")
 	require.Contains(t, semanticReviewInstructions, "Otherwise set authorization=not_applicable")
@@ -1424,6 +1424,77 @@ func TestSemanticReviewPolicyPromotesIndirectExecutableAbuse(t *testing.T) {
 	require.True(t, overridden)
 	require.Equal(t, "reject", result.Verdict)
 	require.Contains(t, result.ReasonCodes, "semantic_policy_reject")
+}
+
+func TestSemanticReviewPolicyPreservesExplicitCriticalMalwareReject(t *testing.T) {
+	result, overridden := applySemanticReviewPolicy(ContentModerationSemanticReviewResult{
+		Verdict:           "reject",
+		Intent:            "harmful",
+		Target:            "third_party",
+		Authorization:     "unclear",
+		InformationAccess: "not_applicable",
+		HarmMechanism:     "other",
+		HarmEvidence:      "explicit",
+		Severity:          "critical",
+		Confidence:        0.99,
+		Operationality:    "actionable",
+		Executability:     "direct",
+		Categories:        []string{"cyber", "malware"},
+	})
+
+	require.False(t, overridden)
+	require.Equal(t, "reject", result.Verdict)
+	require.NotContains(t, result.ReasonCodes, "semantic_policy_reject_inconsistent")
+}
+
+func TestSemanticReviewPolicyExplicitMalwareExceptionKeepsSafetyBoundaries(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*ContentModerationSemanticReviewResult)
+	}{
+		{name: "authorized lab", mutate: func(result *ContentModerationSemanticReviewResult) {
+			result.Target = "authorized_lab"
+			result.Authorization = "authorized"
+		}},
+		{name: "self owned target", mutate: func(result *ContentModerationSemanticReviewResult) {
+			result.Target = "self_owned"
+		}},
+		{name: "inferred harm", mutate: func(result *ContentModerationSemanticReviewResult) {
+			result.HarmEvidence = "inferred"
+		}},
+		{name: "no harm mechanism", mutate: func(result *ContentModerationSemanticReviewResult) {
+			result.HarmMechanism = "none"
+		}},
+		{name: "indirect executability", mutate: func(result *ContentModerationSemanticReviewResult) {
+			result.Executability = "indirect"
+		}},
+		{name: "no malware category", mutate: func(result *ContentModerationSemanticReviewResult) {
+			result.Categories = []string{"cyber"}
+		}},
+		{name: "high rather than critical", mutate: func(result *ContentModerationSemanticReviewResult) {
+			result.Severity = "high"
+		}},
+		{name: "low confidence", mutate: func(result *ContentModerationSemanticReviewResult) {
+			result.Confidence = 0.80
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ContentModerationSemanticReviewResult{
+				Verdict: "reject", Intent: "harmful", Target: "third_party", Authorization: "unclear",
+				HarmMechanism: "other", HarmEvidence: "explicit", Severity: "critical", Confidence: 0.99,
+				Operationality: "actionable", Executability: "direct", Categories: []string{"malware"},
+			}
+			tt.mutate(&result)
+
+			result, overridden := applySemanticReviewPolicy(result)
+
+			require.True(t, overridden)
+			require.NotEqual(t, "reject", result.Verdict)
+			require.Contains(t, result.ReasonCodes, "semantic_policy_reject_inconsistent")
+		})
+	}
 }
 
 func TestSemanticReviewPolicyIncompleteEvidenceKeepsReviewForHumanTriage(t *testing.T) {

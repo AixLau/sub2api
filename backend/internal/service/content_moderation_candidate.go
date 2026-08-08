@@ -1373,9 +1373,11 @@ func applyCandidateSemanticReviewPolicy(
 		return result, false
 	}
 	// Candidate severity is corroborating evidence, not a substitute for the
-	// semantic dimensions required to reject. In particular, ambiguity or an
-	// absent harm mechanism must remain reviewable.
-	if !semanticReviewPolicyRejectEligible(result) {
+	// semantic dimensions required to reject. The explicit operational branch
+	// is limited to locally narrow rules and still requires a high-confidence,
+	// directly executable, explicitly harmful semantic result.
+	explicitOperational := contentModerationCandidateExplicitOperationalRejectEligible(result, selection)
+	if !semanticReviewPolicyRejectEligible(result) && !explicitOperational {
 		return result, false
 	}
 	category := normalizeContentModerationKeywordCategory(selection.Rule.Category)
@@ -1384,8 +1386,33 @@ func applyCandidateSemanticReviewPolicy(
 	}
 	result.Verdict = "reject"
 	result.Severity = ContentModerationKeywordSeverityHigh
-	result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "semantic_policy_high_risk_candidate")
+	reasonCode := "semantic_policy_high_risk_candidate"
+	if explicitOperational {
+		reasonCode = "semantic_policy_explicit_operational_candidate"
+	}
+	result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, reasonCode)
 	return result, true
+}
+
+func contentModerationCandidateExplicitOperationalRejectEligible(
+	result ContentModerationSemanticReviewResult,
+	selection contentModerationCandidateSelection,
+) bool {
+	if selection.Kind != contentModerationCandidateKindPromptFilter || selection.PromptHit == nil ||
+		!selection.PromptHit.Verdict.OperationalHit || result.Intent != "harmful" ||
+		result.Operationality != "actionable" || result.Executability != "direct" ||
+		result.HarmEvidence != "explicit" || result.HarmMechanism == "none" ||
+		result.Authorization == "authorized" || result.Target == "self_owned" ||
+		result.Target == "authorized_lab" || (result.Severity != ContentModerationKeywordSeverityHigh &&
+		result.Severity != ContentModerationKeywordSeverityCritical) {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(selection.Rule.Keyword)) {
+	case "ransomware_creation_request", "covert_surveillance_privacy_abuse_request", "protocol_entitlement_bypass_request":
+		return true
+	default:
+		return false
+	}
 }
 
 func contentModerationCandidateIsHighRisk(selection contentModerationCandidateSelection, normalizedCategory string) bool {

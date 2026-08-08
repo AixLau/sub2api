@@ -955,7 +955,8 @@ func operationalPattern(name string) bool {
 		"token_theft", "mass_exploitation", "jailbreak_operational_request", "prompt_injection_override",
 		"system_prompt_extraction", "agent_tool_permission_bypass", "web_exploitation_unauthorized_harm_request",
 		"binary_exploitation_unauthorized_harm_request", "crypto_unauthorized_key_theft_request",
-		"pentest_unauthorized_harm_request", "credential_attack_operational_request":
+		"pentest_unauthorized_harm_request", "credential_attack_operational_request", "ransomware_creation_request",
+		"covert_surveillance_privacy_abuse_request", "protocol_entitlement_bypass_request":
 		return true
 	default:
 		return false
