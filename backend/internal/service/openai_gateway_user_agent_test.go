@@ -85,6 +85,8 @@ func TestOpenAICodexOAuthUpstreamRequestsIgnoreClientUserAgent(t *testing.T) {
 			"",
 			"",
 			"",
+			"",
+			"",
 		)
 		require.NoError(t, err)
 		require.Equal(t, "codex_vscode/1.0", headers.Get("User-Agent"))

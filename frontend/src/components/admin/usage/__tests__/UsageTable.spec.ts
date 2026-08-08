@@ -51,23 +51,12 @@ const messages: Record<string, string> = {
   'admin.usage.billingModeToken': 'Token',
   'admin.usage.billingModePerRequest': 'Per request',
   'admin.usage.billingModeImage': 'Image',
-  'usage.accountTest': 'Account test',
-  'usage.contentModeration': 'Content moderation',
-  'usage.failedUpstreamUsage': 'Failed upstream usage',
-  'usage.platform': 'Platform',
-  'usage.platformAudit': 'Platform audit',
-  'usage.platformTest': 'Platform test',
-  'usage.modelCost': 'Model cost',
-  'usage.latencyFirstToken': 'First',
-  'usage.latencyDuration': 'Total',
-  'usage.phaseDetails': 'View phase timings',
-  'usage.phaseDetailsTitle': 'Phase timings',
-  'usage.phaseTimingHint': 'Independent observations; do not add directly',
-  'usage.phaseUserQueue': 'User queue',
-  'usage.phaseAccountQueue': 'Account queue',
-  'usage.phaseRequestWrite': 'Request write',
-  'usage.phaseResponseHeaders': 'Response headers',
-  'usage.phaseFirstEvent': 'First semantic event',
+	'usage.requestedModel': 'Requested',
+	'usage.sentUpstreamModel': 'Sent upstream',
+	'usage.upstreamResponseModel': 'Upstream response',
+	'usage.modelVariant': 'Possible version variant',
+	'usage.modelMismatch': 'Different model',
+
 }
 
 vi.mock('vue-i18n', async () => {
@@ -325,90 +314,48 @@ describe('admin UsageTable tooltip', () => {
     expect(text).toContain('claude-sonnet-4-20250514')
   })
 
-  it('labels account-test rows as platform operations without the model-cost prefix', () => {
-    const row = {
-      request_id: 'account-test-1',
-      source: 'account_test',
-      user_id: 0,
-      api_key_id: 0,
-      model: 'gpt-5.4',
-      actual_cost: 0,
-      total_cost: 0.012345,
-      account_rate_multiplier: 1,
-      rate_multiplier: 1,
-      input_cost: 0.002,
-      output_cost: 0.010345,
-      cache_creation_cost: 0,
-      cache_read_cost: 0,
-      input_tokens: 100,
-      output_tokens: 20,
-    }
+	it.each([
+		{
+			name: 'possible version variant',
+			responseModel: 'gpt-5.5-2026-08-01',
+			expectedBadge: 'Possible version variant',
+		},
+		{
+			name: 'different upstream model',
+			responseModel: 'gpt-5.4',
+			expectedBadge: 'Different model',
+		},
+	])('shows a compact upstream response audit marker for $name', ({ responseModel, expectedBadge }) => {
+		const wrapper = mount(UsageTable, {
+			props: {
+				data: [{
+					request_id: `req-${responseModel}`,
+					model: 'gpt-5.6-sol',
+					upstream_model: 'gpt-5.5',
+					model_mapping_chain: 'gpt-5.6-sol→gpt-5.5',
+					upstream_response_model: responseModel,
+					upstream_model_mismatch: true,
+				}],
+				loading: false,
+				columns: [],
+			},
+			global: {
+				stubs: {
+					DataTable: DataTableStub,
+					EmptyState: true,
+					Icon: true,
+					Teleport: true,
+				},
+			},
+		})
 
-    const wrapper = mount(UsageTable, {
-      props: {
-        data: [row],
-        loading: false,
-        columns: [],
-      },
-      global: {
-        stubs: {
-          DataTable: DataTableStub,
-          EmptyState: true,
-          Icon: true,
-          Teleport: true,
-        },
-      },
-    })
+		const text = wrapper.text()
+		expect(text).toContain('gpt-5.6-sol')
+		expect(text).toContain('gpt-5.5')
+		expect(text).toContain(responseModel)
+		expect(text).toContain(expectedBadge)
+	})
 
-    const text = wrapper.text()
-    expect(text).toContain('Account test')
-    expect(text).toContain('Platform test')
-    expect(text).not.toContain('Model cost')
-    expect(text).toContain('$0.012345')
-    expect(text).not.toContain('#0')
-  })
-
-  it('hides the content-moderation label and model-cost prefix for platform audit rows', () => {
-    const row = {
-      request_id: 'content-moderation-1',
-      source: 'content_moderation',
-      user_id: 0,
-      api_key_id: 0,
-      model: 'gpt-5.3-codex-spark',
-      actual_cost: 0,
-      total_cost: 0.012345,
-      account_rate_multiplier: 1,
-      rate_multiplier: 1,
-      input_cost: 0.002,
-      output_cost: 0.010345,
-      cache_creation_cost: 0,
-      cache_read_cost: 0,
-      input_tokens: 100,
-      output_tokens: 20,
-    }
-
-    const wrapper = mount(UsageTable, {
-      props: {
-        data: [row],
-        loading: false,
-        columns: [],
-      },
-      global: {
-        stubs: {
-          DataTable: DataTableStub,
-          EmptyState: true,
-          Icon: true,
-          Teleport: true,
-        },
-      },
-    })
-
-    const text = wrapper.text()
-    expect(text).toContain('Platform audit')
-    expect(text).not.toContain('Content moderation')
-    expect(text).not.toContain('Model cost')
-    expect(text).toContain('$0.012345')
-  })
 
   it.each([
     {

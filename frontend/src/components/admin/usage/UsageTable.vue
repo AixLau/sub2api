@@ -54,20 +54,47 @@
         </template>
 
         <template #cell-model="{ row }">
-          <div class="space-y-1">
+          <div class="space-y-0.5 text-xs">
             <span v-if="row.source === 'account_test'" class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200">
               {{ t('usage.accountTest') }}
             </span>
             <span v-else-if="row.source === 'failed_upstream_usage'" class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200">
               {{ t('usage.failedUpstreamUsage') }}
             </span>
-            <div v-if="row.model_mapping_chain && row.model_mapping_chain.includes('→')" class="space-y-0.5 text-xs">
+            <div v-if="row.model_mapping_chain && row.model_mapping_chain.includes('→')" class="space-y-0.5">
+
               <div v-for="(step, i) in row.model_mapping_chain.split('→')" :key="i"
                    class="break-all"
                    :class="i === 0 ? 'font-medium text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'"
                    :style="i > 0 ? `padding-left: ${i * 0.75}rem` : ''">
                 <span v-if="i > 0" class="mr-0.5">↳</span>{{ step }}
               </div>
+            </div>
+            <div v-else-if="row.upstream_model && row.upstream_model !== row.model" class="space-y-0.5">
+              <div class="break-all font-medium text-gray-900 dark:text-white">
+                {{ row.model }}
+              </div>
+              <div class="break-all text-gray-500 dark:text-gray-400">
+                <span class="mr-0.5">↳</span>{{ row.upstream_model }}
+              </div>
+            </div>
+            <span v-else class="font-medium text-gray-900 dark:text-white">{{ row.model }}</span>
+            <div
+              v-if="row.upstream_model_mismatch === true && row.upstream_response_model"
+              class="break-all pl-3 text-[11px]"
+              :class="isLikelyModelVariant(row) ? 'text-amber-600 dark:text-amber-400' : 'text-orange-600 dark:text-orange-400'"
+              :title="modelAuditTitle(row)"
+            >
+              <span class="mr-1">↳ {{ t('usage.upstreamResponseModel') }}:</span>{{ row.upstream_response_model }}
+              <span
+                class="ml-1 inline-flex rounded px-1 py-px text-[10px] font-medium ring-1 ring-inset"
+                :class="isLikelyModelVariant(row)
+                  ? 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30'
+                  : 'bg-orange-50 text-orange-700 ring-orange-200 dark:bg-orange-500/10 dark:text-orange-300 dark:ring-orange-500/30'"
+              >
+                {{ isLikelyModelVariant(row) ? t('usage.modelVariant') : t('usage.modelMismatch') }}
+              </span>
+
             </div>
             <div v-else-if="row.upstream_model && row.upstream_model !== row.model" class="space-y-0.5 text-xs">
               <div class="break-all font-medium text-gray-900 dark:text-white">
@@ -230,10 +257,10 @@
             ></span>
             <div class="min-w-0">
               <div data-testid="latency-summary" class="grid grid-cols-[max-content_max-content] items-baseline gap-x-2 gap-y-0.5 text-xs">
-                <span class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyFirstToken') }}</span>
+                <span class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyFirstToken') === 'usage.latencyFirstToken' ? 'First' : t('usage.latencyFirstToken') }}</span>
                 <span v-if="row.first_token_ms != null" class="font-medium tabular-nums" :class="LATENCY_TEXT_CLASSES[firstTokenSeverity(row.first_token_ms)]">{{ formatDuration(row.first_token_ms) }}</span>
                 <span v-else class="text-gray-400 dark:text-gray-500">-</span>
-                <span class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyDuration') }}</span>
+                <span class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyDuration') === 'usage.latencyDuration' ? 'Total' : t('usage.latencyDuration') }}</span>
                 <span class="font-medium tabular-nums" :class="LATENCY_TEXT_CLASSES[durationSeverity(row.duration_ms ?? 0)]">{{ formatDuration(row.duration_ms) }}</span>
               </div>
             </div>
@@ -278,22 +305,22 @@
       <div class="w-72 rounded-lg border border-gray-700 bg-gray-900 px-3 py-2.5 text-xs text-white shadow-xl dark:border-gray-600 dark:bg-gray-800">
         <div class="space-y-2">
           <div class="border-b border-gray-700 pb-1.5 font-semibold text-gray-200">
-            {{ t('usage.phaseDetailsTitle') }}
+            {{ usageLabel('usage.phaseDetailsTitle', 'Latency phases') }}
           </div>
           <div class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5">
-            <span class="text-gray-400">{{ t('usage.phaseUserQueue') }}</span>
+            <span class="text-gray-400">{{ usageLabel('usage.phaseUserQueue', 'User queue') }}</span>
             <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(latencyTooltipData.user_queue_wait_ms) }}</span>
-            <span class="text-gray-400">{{ t('usage.phaseAccountQueue') }}</span>
+            <span class="text-gray-400">{{ usageLabel('usage.phaseAccountQueue', 'Account queue') }}</span>
             <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(latencyTooltipData.account_queue_wait_ms) }}</span>
-            <span class="text-gray-400">{{ t('usage.phaseRequestWrite') }}</span>
+            <span class="text-gray-400">{{ usageLabel('usage.phaseRequestWrite', 'Request write') }}</span>
             <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(latencyTooltipData.upstream_request_write_ms) }}</span>
-            <span class="text-gray-400">{{ t('usage.phaseResponseHeaders') }}</span>
+            <span class="text-gray-400">{{ usageLabel('usage.phaseResponseHeaders', 'Response headers') }}</span>
             <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(latencyTooltipData.upstream_response_headers_ms) }}</span>
-            <span class="text-gray-400">{{ t('usage.phaseFirstEvent') }}</span>
+            <span class="text-gray-400">{{ usageLabel('usage.phaseFirstEvent', 'First event') }}</span>
             <span class="text-right font-medium tabular-nums text-white">{{ formatDuration(latencyTooltipData.upstream_first_event_ms) }}</span>
           </div>
           <div class="border-t border-gray-700 pt-1.5 text-[10px] leading-4 text-gray-400">
-            {{ t('usage.phaseTimingHint') }}
+            {{ usageLabel('usage.phaseTimingHint', 'Independent observations') }}
           </div>
         </div>
         <div class="absolute right-full top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-r-[6px] border-t-[6px] border-b-transparent border-r-gray-900 border-t-transparent dark:border-r-gray-800"></div>
@@ -605,6 +632,10 @@ const emit = defineEmits<{
   ipGeoBatchFailed: []
 }>()
 const { t } = useI18n()
+const usageLabel = (key: string, fallback: string): string => {
+  const value = t(key)
+  return value === key ? fallback : value
+}
 const showAccountBilling = props.showAccountBilling
 
 function isPlatformOperation(row: AdminUsageLog): boolean {
@@ -620,6 +651,27 @@ const showUpstreamEndpoint = props.showUpstreamEndpoint
 const ipGeoBatchLoading = ref(false)
 
 const showIpGeoToolbar = computed(() => props.columns.some((col) => col.key === 'ip_address'))
+
+const sentUpstreamModel = (row: AdminUsageLog): string => row.upstream_model?.trim() || row.model?.trim() || ''
+
+const normalizeModelVariant = (model: string): string => model
+  .trim()
+  .toLowerCase()
+  .replace(/-latest$/, '')
+  .replace(/-\d{4}-\d{2}-\d{2}$/, '')
+  .replace(/-\d{8}$/, '')
+
+const isLikelyModelVariant = (row: AdminUsageLog): boolean => {
+  const sent = sentUpstreamModel(row)
+  const response = row.upstream_response_model?.trim() || ''
+  return sent !== '' && response !== '' && normalizeModelVariant(sent) === normalizeModelVariant(response)
+}
+
+const modelAuditTitle = (row: AdminUsageLog): string => [
+  `${t('usage.requestedModel')}: ${row.model || '-'}`,
+  `${t('usage.sentUpstreamModel')}: ${sentUpstreamModel(row) || '-'}`,
+  `${t('usage.upstreamResponseModel')}: ${row.upstream_response_model || '-'}`,
+].join('\n')
 
 const currentPageIps = computed(() =>
   Array.from(new Set(props.data.map((row) => row.ip_address).filter((ip): ip is string => Boolean(ip))))
