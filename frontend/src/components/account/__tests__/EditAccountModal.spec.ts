@@ -336,6 +336,27 @@ describe('EditAccountModal', () => {
     expect(location.text()).toContain('203.0.113.9')
   })
 
+  it('defaults concurrency to 1 when the input is cleared before saving', async () => {
+    const account = buildAccount()
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    const concurrencyInput = wrapper.find('input[type="number"]')
+    await concurrencyInput.setValue('')
+
+    expect((concurrencyInput.element as HTMLInputElement).value).toBe('')
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledWith(
+      account.id,
+      expect.objectContaining({ concurrency: 1 })
+    )
+  })
+
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {
     const account = buildAccount()
     updateAccountMock.mockReset()
