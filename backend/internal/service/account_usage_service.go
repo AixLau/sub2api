@@ -83,7 +83,21 @@ type accountWindowStatsBatchReader interface {
 }
 
 type openAIRateLimitRecoveryCandidateLister interface {
-	ListOpenAIRateLimitRecoveryCandidateIDs(ctx context.Context, afterID int64, limit int) ([]int64, error)
+	ListOpenAIRateLimitRecoveryCandidateIDs(ctx context.Context, afterID int64, limit int, resetAfter time.Time) ([]int64, error)
+}
+
+type openAIRateLimitWindowStartClaimer interface {
+	ClaimOpenAIExpiredRateLimit(ctx context.Context, id int64, observedLimitedAt, observedResetAt time.Time) (bool, error)
+}
+
+type openAIRateLimitWindowStarter interface {
+	RunTestBackground(ctx context.Context, accountID int64, modelID string) (*ScheduledTestResult, error)
+}
+
+type openAIRateLimitWindowStartTask struct {
+	limitedAt time.Time
+	resetAt   time.Time
+	timer     *time.Timer
 }
 
 // apiUsageCache 缓存从 Anthropic API 获取的使用率数据（utilization, resets_at）
@@ -107,19 +121,22 @@ type antigravityUsageCache struct {
 }
 
 const (
-	apiCacheTTL             = 3 * time.Minute
-	apiErrorCacheTTL        = 1 * time.Minute        // 负缓存 TTL：429 等错误缓存 1 分钟
-	antigravityErrorTTL     = 1 * time.Minute        // Antigravity 错误缓存 TTL（可恢复错误）
-	apiQueryMaxJitter       = 800 * time.Millisecond // 用量查询最大随机延迟
-	windowStatsCacheTTL     = 1 * time.Minute
-	openAIProbeCacheTTL     = 10 * time.Minute
-	openAIProbeMinInterval  = 7 * time.Minute
-	openAIProbeMaxInterval  = 13 * time.Minute
-	openAIRecoveryInterval  = 1 * time.Minute
-	openAIRecoveryBatchSize = 20
-	grokProbeRetryTTL       = 1 * time.Minute
-	grokFreeQuotaWindow     = 24 * time.Hour
-	openAICodexProbeVersion = codexCLIVersion // 与网关出站身份同源，避免两处硬编码版本各自漂移
+	apiCacheTTL               = 3 * time.Minute
+	apiErrorCacheTTL          = 1 * time.Minute        // 负缓存 TTL：429 等错误缓存 1 分钟
+	antigravityErrorTTL       = 1 * time.Minute        // Antigravity 错误缓存 TTL（可恢复错误）
+	apiQueryMaxJitter         = 800 * time.Millisecond // 用量查询最大随机延迟
+	windowStatsCacheTTL       = 1 * time.Minute
+	openAIProbeCacheTTL       = 10 * time.Minute
+	openAIProbeMinInterval    = 7 * time.Minute
+	openAIProbeMaxInterval    = 13 * time.Minute
+	openAIRecoveryInterval    = 1 * time.Minute
+	openAIRecoveryBatchSize   = 20
+	openAIWindowStartMinDelay = 10 * time.Second
+	openAIWindowStartMaxDelay = 60 * time.Second
+	openAIWindowStartLookback = openAIRecoveryInterval + openAIWindowStartMaxDelay
+	grokProbeRetryTTL         = 1 * time.Minute
+	grokFreeQuotaWindow       = 24 * time.Hour
+	openAICodexProbeVersion   = codexCLIVersion // 与网关出站身份同源，避免两处硬编码版本各自漂移
 )
 
 // UsageCache 封装账户使用量相关的缓存
@@ -307,8 +324,11 @@ type AccountUsageService struct {
 	identityCache           IdentityCache
 	tlsFPProfileService     *TLSFingerprintProfileService
 	runtimeBlocker          AccountRuntimeBlocker
+	openAIWindowStarter     openAIRateLimitWindowStarter
 	openAIRecoveryStartOnce sync.Once
 	openAIRecoveryCursor    int64
+	openAIWindowStartMu     sync.Mutex
+	openAIWindowStartTasks  map[int64]*openAIRateLimitWindowStartTask
 }
 
 // NewAccountUsageService 创建AccountUsageService实例
@@ -340,10 +360,9 @@ func NewAccountUsageService(
 	}
 }
 
-// StartOpenAIRateLimitRecovery periodically rechecks OpenAI OAuth accounts that
-// are still held in a global 429 cooldown. OpenAI can reset windows earlier than
-// its previously advertised reset time, so recovery must not depend on an admin
-// opening the accounts page.
+// StartOpenAIRateLimitRecovery periodically rechecks OpenAI OAuth accounts held
+// in a global 429 cooldown and schedules a one-shot request shortly after the
+// advertised reset time so the next sliding window starts without user traffic.
 func (s *AccountUsageService) StartOpenAIRateLimitRecovery() {
 	if s == nil {
 		return
@@ -353,6 +372,7 @@ func (s *AccountUsageService) StartOpenAIRateLimitRecovery() {
 	}
 	s.openAIRecoveryStartOnce.Do(func() {
 		go func() {
+			s.runOpenAIRateLimitRecoveryCycle()
 			ticker := time.NewTicker(openAIRecoveryInterval)
 			defer ticker.Stop()
 			for range ticker.C {
@@ -372,6 +392,7 @@ func (s *AccountUsageService) runOpenAIRateLimitRecoveryCycle() {
 		listCtx,
 		s.openAIRecoveryCursor,
 		openAIRecoveryBatchSize,
+		time.Now().Add(-openAIWindowStartLookback),
 	)
 	cancel()
 	if err != nil {
@@ -385,6 +406,18 @@ func (s *AccountUsageService) runOpenAIRateLimitRecoveryCycle() {
 	s.openAIRecoveryCursor = ids[len(ids)-1]
 
 	for _, accountID := range ids {
+		accountCtx, accountCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		account, accountErr := s.accountRepo.GetByID(accountCtx, accountID)
+		accountCancel()
+		if accountErr != nil {
+			slog.Warn("openai_rate_limit_window_start_account_failed", "account_id", accountID, "error", accountErr)
+			continue
+		}
+		s.scheduleOpenAIRateLimitWindowStart(account)
+		if account.RateLimitResetAt != nil && !account.RateLimitResetAt.After(time.Now()) {
+			continue
+		}
+
 		probeCtx, probeCancel := context.WithTimeout(context.Background(), 20*time.Second)
 		_, probeErr := s.GetUsage(probeCtx, accountID)
 		probeCancel()
@@ -392,6 +425,94 @@ func (s *AccountUsageService) runOpenAIRateLimitRecoveryCycle() {
 			slog.Warn("openai_rate_limit_recovery_probe_failed", "account_id", accountID, "error", probeErr)
 		}
 	}
+}
+
+func (s *AccountUsageService) scheduleOpenAIRateLimitWindowStart(account *Account) {
+	if s == nil || s.openAIWindowStarter == nil || account == nil ||
+		account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth || account.IsShadow() ||
+		account.RateLimitedAt == nil || account.RateLimitResetAt == nil {
+		return
+	}
+
+	limitedAt := *account.RateLimitedAt
+	resetAt := *account.RateLimitResetAt
+	now := time.Now()
+	dueAt := resetAt.Add(randomOpenAIWindowStartDelay())
+	if dueAt.Before(now) {
+		dueAt = now
+	}
+
+	s.openAIWindowStartMu.Lock()
+	defer s.openAIWindowStartMu.Unlock()
+	if existing := s.openAIWindowStartTasks[account.ID]; existing != nil {
+		if existing.limitedAt.Equal(limitedAt) && existing.resetAt.Equal(resetAt) {
+			return
+		}
+		if existing.timer != nil {
+			existing.timer.Stop()
+		}
+	}
+	if s.openAIWindowStartTasks == nil {
+		s.openAIWindowStartTasks = make(map[int64]*openAIRateLimitWindowStartTask)
+	}
+	task := &openAIRateLimitWindowStartTask{limitedAt: limitedAt, resetAt: resetAt}
+	task.timer = time.AfterFunc(time.Until(dueAt), func() {
+		s.runOpenAIRateLimitWindowStart(account.ID, task)
+	})
+	s.openAIWindowStartTasks[account.ID] = task
+	slog.Info("openai_rate_limit_window_start_scheduled", "account_id", account.ID, "reset_at", resetAt, "start_at", dueAt)
+}
+
+func randomOpenAIWindowStartDelay() time.Duration {
+	span := openAIWindowStartMaxDelay - openAIWindowStartMinDelay
+	if span <= 0 {
+		return openAIWindowStartMinDelay
+	}
+	return openAIWindowStartMinDelay + time.Duration(rand.Int64N(int64(span)+1))
+}
+
+func (s *AccountUsageService) runOpenAIRateLimitWindowStart(accountID int64, task *openAIRateLimitWindowStartTask) {
+	if s == nil || task == nil || s.openAIWindowStarter == nil {
+		return
+	}
+	s.openAIWindowStartMu.Lock()
+	if current := s.openAIWindowStartTasks[accountID]; current != task {
+		s.openAIWindowStartMu.Unlock()
+		return
+	}
+	delete(s.openAIWindowStartTasks, accountID)
+	s.openAIWindowStartMu.Unlock()
+
+	claimer, ok := s.accountRepo.(openAIRateLimitWindowStartClaimer)
+	if !ok {
+		return
+	}
+	claimCtx, claimCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	claimed, err := claimer.ClaimOpenAIExpiredRateLimit(claimCtx, accountID, task.limitedAt, task.resetAt)
+	claimCancel()
+	if err != nil {
+		slog.Warn("openai_rate_limit_window_start_claim_failed", "account_id", accountID, "error", err)
+		return
+	}
+	if !claimed {
+		return
+	}
+	if s.runtimeBlocker != nil {
+		s.runtimeBlocker.ClearAccountSchedulingBlock(accountID)
+	}
+
+	probeCtx, probeCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	result, probeErr := s.openAIWindowStarter.RunTestBackground(probeCtx, accountID, "")
+	probeCancel()
+	if probeErr != nil || result == nil || result.Status != "success" {
+		var resultStatus string
+		if result != nil {
+			resultStatus = result.Status
+		}
+		slog.Warn("openai_rate_limit_window_start_failed", "account_id", accountID, "error", probeErr, "result_status", resultStatus)
+		return
+	}
+	slog.Info("openai_rate_limit_window_started", "account_id", accountID, "reset_at", task.resetAt)
 }
 
 // GetUsage 获取账号使用量

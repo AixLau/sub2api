@@ -249,6 +249,7 @@ func ProvideAccountUsageService(
 	identityCache IdentityCache,
 	tlsFPProfileService *TLSFingerprintProfileService,
 	openAIGatewayService *OpenAIGatewayService,
+	accountTestService *AccountTestService,
 ) *AccountUsageService {
 	service := NewAccountUsageService(
 		accountRepo,
@@ -264,6 +265,7 @@ func ProvideAccountUsageService(
 		tlsFPProfileService,
 	)
 	service.runtimeBlocker = openAIGatewayService
+	service.openAIWindowStarter = accountTestService
 	service.StartOpenAIRateLimitRecovery()
 	return service
 }

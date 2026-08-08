@@ -1268,7 +1268,7 @@ func (r *accountRepository) ListByPlatform(ctx context.Context, platform string)
 	return r.accountsToService(ctx, accounts)
 }
 
-func (r *accountRepository) ListOpenAIRateLimitRecoveryCandidateIDs(ctx context.Context, afterID int64, limit int) ([]int64, error) {
+func (r *accountRepository) ListOpenAIRateLimitRecoveryCandidateIDs(ctx context.Context, afterID int64, limit int, resetAfter time.Time) ([]int64, error) {
 	if limit <= 0 {
 		return []int64{}, nil
 	}
@@ -1280,11 +1280,44 @@ func (r *accountRepository) ListOpenAIRateLimitRecoveryCandidateIDs(ctx context.
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
 			dbaccount.ParentAccountIDIsNil(),
-			dbaccount.RateLimitResetAtGT(time.Now()),
+			dbaccount.RateLimitResetAtGT(resetAfter),
 		).
 		Order(dbent.Asc(dbaccount.FieldID)).
 		Limit(limit).
 		IDs(ctx)
+}
+
+// ClaimOpenAIExpiredRateLimit atomically claims one completed OAuth 429 window.
+// Matching both timestamps prevents a stale timer (or another server instance)
+// from clearing and probing a newer rate-limit generation.
+func (r *accountRepository) ClaimOpenAIExpiredRateLimit(ctx context.Context, id int64, observedLimitedAt, observedResetAt time.Time) (bool, error) {
+	updated, err := r.client.Account.Update().
+		Where(
+			dbaccount.IDEQ(id),
+			dbaccount.PlatformEQ(service.PlatformOpenAI),
+			dbaccount.TypeEQ(service.AccountTypeOAuth),
+			dbaccount.StatusEQ(service.StatusActive),
+			dbaccount.SchedulableEQ(true),
+			dbaccount.ParentAccountIDIsNil(),
+			dbaccount.RateLimitedAtEQ(observedLimitedAt),
+			dbaccount.RateLimitResetAtEQ(observedResetAt),
+			dbaccount.RateLimitResetAtLTE(time.Now()),
+		).
+		ClearRateLimitedAt().
+		ClearRateLimitResetAt().
+		Save(ctx)
+	if err != nil {
+		return false, err
+	}
+	if updated == 0 {
+		r.syncSchedulerAccountSnapshot(ctx, id)
+		return false, nil
+	}
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
+		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue OpenAI rate-limit window claim failed: account=%d err=%v", id, err)
+	}
+	r.syncSchedulerAccountSnapshot(ctx, id)
+	return true, nil
 }
 
 func (r *accountRepository) UpdateLastUsed(ctx context.Context, id int64) error {

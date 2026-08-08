@@ -14,6 +14,8 @@ type accountUsageCodexProbeRepo struct {
 	clearRateLimitIDs      []int64
 	recoveryCandidateIDs   []int64
 	recoveryCandidateAfter []int64
+	windowStartClaimed     bool
+	windowStartClaimIDs    []int64
 }
 
 func (r *accountUsageCodexProbeRepo) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
@@ -39,7 +41,7 @@ func (r *accountUsageCodexProbeRepo) ClearRateLimit(_ context.Context, accountID
 	return nil
 }
 
-func (r *accountUsageCodexProbeRepo) ListOpenAIRateLimitRecoveryCandidateIDs(_ context.Context, afterID int64, limit int) ([]int64, error) {
+func (r *accountUsageCodexProbeRepo) ListOpenAIRateLimitRecoveryCandidateIDs(_ context.Context, afterID int64, limit int, _ time.Time) ([]int64, error) {
 	r.recoveryCandidateAfter = append(r.recoveryCandidateAfter, afterID)
 	out := make([]int64, 0, limit)
 	for _, id := range r.recoveryCandidateIDs {
@@ -52,6 +54,21 @@ func (r *accountUsageCodexProbeRepo) ListOpenAIRateLimitRecoveryCandidateIDs(_ c
 		}
 	}
 	return out, nil
+}
+
+func (r *accountUsageCodexProbeRepo) ClaimOpenAIExpiredRateLimit(_ context.Context, accountID int64, _, _ time.Time) (bool, error) {
+	r.windowStartClaimIDs = append(r.windowStartClaimIDs, accountID)
+	return r.windowStartClaimed, nil
+}
+
+type accountUsageWindowStarter struct {
+	accountIDs []int64
+	result     *ScheduledTestResult
+}
+
+func (s *accountUsageWindowStarter) RunTestBackground(_ context.Context, accountID int64, _ string) (*ScheduledTestResult, error) {
+	s.accountIDs = append(s.accountIDs, accountID)
+	return s.result, nil
 }
 
 type accountUsageRuntimeBlocker struct {
@@ -152,6 +169,59 @@ func TestRandomOpenAIProbeIntervalWithinRange(t *testing.T) {
 				openAIProbeMaxInterval,
 			)
 		}
+	}
+}
+
+func TestRandomOpenAIWindowStartDelayWithinRange(t *testing.T) {
+	t.Parallel()
+
+	for range 100 {
+		delay := randomOpenAIWindowStartDelay()
+		if delay < openAIWindowStartMinDelay || delay > openAIWindowStartMaxDelay {
+			t.Fatalf(
+				"random window start delay = %s, want within [%s, %s]",
+				delay,
+				openAIWindowStartMinDelay,
+				openAIWindowStartMaxDelay,
+			)
+		}
+	}
+}
+
+func TestAccountUsageService_WindowStartRequiresSuccessfulClaim(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	resetAt := now.Add(-time.Minute)
+	tests := []struct {
+		name        string
+		claimed     bool
+		wantStarted bool
+	}{
+		{name: "claimed", claimed: true, wantStarted: true},
+		{name: "stale generation", claimed: false, wantStarted: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &accountUsageCodexProbeRepo{windowStartClaimed: tt.claimed}
+			starter := &accountUsageWindowStarter{result: &ScheduledTestResult{Status: "success"}}
+			task := &openAIRateLimitWindowStartTask{limitedAt: now, resetAt: resetAt}
+			svc := &AccountUsageService{
+				accountRepo:            repo,
+				openAIWindowStarter:    starter,
+				openAIWindowStartTasks: map[int64]*openAIRateLimitWindowStartTask{123: task},
+			}
+
+			svc.runOpenAIRateLimitWindowStart(123, task)
+
+			if len(repo.windowStartClaimIDs) != 1 || repo.windowStartClaimIDs[0] != 123 {
+				t.Fatalf("claim calls = %v, want [123]", repo.windowStartClaimIDs)
+			}
+			started := len(starter.accountIDs) > 0
+			if started != tt.wantStarted {
+				t.Fatalf("window start request sent = %v, want %v", started, tt.wantStarted)
+			}
+		})
 	}
 }
 
