@@ -314,6 +314,30 @@ describe('admin UsageTable tooltip', () => {
     expect(text).toContain('claude-sonnet-4-20250514')
   })
 
+  it('renders an unchanged model name only once', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-admin-model-unchanged',
+          model: 'unique-model-name',
+          upstream_model: 'unique-model-name',
+        }],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    expect(wrapper.text().match(/unique-model-name/g)).toHaveLength(1)
+  })
+
 	it.each([
 		{
 			name: 'possible version variant',

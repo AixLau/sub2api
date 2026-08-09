@@ -94,17 +94,7 @@
               >
                 {{ isLikelyModelVariant(row) ? t('usage.modelVariant') : t('usage.modelMismatch') }}
               </span>
-
             </div>
-            <div v-else-if="row.upstream_model && row.upstream_model !== row.model" class="space-y-0.5 text-xs">
-              <div class="break-all font-medium text-gray-900 dark:text-white">
-                {{ row.model }}
-              </div>
-              <div class="break-all text-gray-500 dark:text-gray-400">
-                <span class="mr-0.5">↳</span>{{ row.upstream_model }}
-              </div>
-            </div>
-            <span v-else class="font-medium text-gray-900 dark:text-white">{{ row.model }}</span>
           </div>
         </template>
 
