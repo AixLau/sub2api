@@ -491,20 +491,25 @@ func (s *ContentModerationService) handleContentModerationOutboxEventFailure(ctx
 		backoff = 10 * time.Minute
 	}
 	if nextRetry >= event.MaxRetries {
-		if event.EventType == ContentModerationOutboxEventSemanticReview {
-			if auditErr := s.persistSemanticReviewDeadLetterLog(stateCtx, event, errors.New(failureText)); auditErr != nil {
-				retryText := fmt.Sprintf("semantic_dead_letter_audit_persist_failed: %v; review_error: %s", auditErr, failureText)
-				if retryErr := outboxRepo.ScheduleEventRetry(stateCtx, event.ID, event.LeaseUntil, nextRetry, time.Now().Add(backoff), retryText); retryErr != nil {
-					slog.Warn("content_moderation.outbox_retry_schedule_failed", "event_id", event.ID, "error", retryErr)
-				}
-				return
-			}
-		}
 		if markErr := outboxRepo.MarkEventDeadLetter(stateCtx, event.ID, event.LeaseUntil, failureText); markErr != nil {
 			slog.Warn("content_moderation.outbox_dead_letter_failed", "event_id", event.ID, "error", markErr)
 			return
 		}
 		if event.EventType == ContentModerationOutboxEventSemanticReview {
+			if auditErr := s.persistSemanticReviewDeadLetterLog(stateCtx, event, errors.New(failureText)); auditErr != nil {
+				replayed, replayErr := outboxRepo.ReplayDeadLetter(stateCtx, event.ID)
+				if replayErr != nil || !replayed {
+					slog.Warn("content_moderation.outbox_dead_letter_audit_replay_failed",
+						"event_id", event.ID,
+						"audit_error", auditErr,
+						"replay_error", replayErr,
+						"replayed", replayed,
+					)
+				} else {
+					slog.Warn("content_moderation.outbox_dead_letter_audit_retry_scheduled", "event_id", event.ID, "error", auditErr)
+				}
+				return
+			}
 			s.asyncErrors.Add(1)
 			s.asyncDropped.Add(1)
 		}
