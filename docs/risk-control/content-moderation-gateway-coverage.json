@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "manifest_version": "2026-07-25.1",
+  "manifest_version": "2026-08-09.1",
   "receipt_contract": {
     "production_admission_requires": ["local_scan_done", "forward_allowed"],
     "selected_account_deferred_must_complete": true,
@@ -2067,6 +2067,152 @@
       ],
       "status": "covered",
       "review_reason": "Root Grok video extension alias reaches the shared Grok media moderation hook before upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/v1/tts",
+        "handler": "OpenAIGatewayHandler.GrokVoice",
+        "protocol": "openai_responses"
+      },
+      "method": "POST",
+      "path": "/v1/tts",
+      "handler": "OpenAIGatewayHandler.GrokVoice",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        { "stage": "moderation", "required": true, "covered": true },
+        { "stage": "billing", "required": true, "covered": true },
+        { "stage": "routing", "required": true, "covered": true },
+        { "stage": "forward", "required": true, "covered": true },
+        { "stage": "usage", "required": true, "covered": true }
+      ],
+      "status": "covered",
+      "review_reason": "Grok text-to-speech input is moderated before account selection and upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/tts",
+        "handler": "OpenAIGatewayHandler.GrokVoice",
+        "protocol": "openai_responses"
+      },
+      "method": "POST",
+      "path": "/tts",
+      "handler": "OpenAIGatewayHandler.GrokVoice",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        { "stage": "moderation", "required": true, "covered": true },
+        { "stage": "billing", "required": true, "covered": true },
+        { "stage": "routing", "required": true, "covered": true },
+        { "stage": "forward", "required": true, "covered": true },
+        { "stage": "usage", "required": true, "covered": true }
+      ],
+      "status": "covered",
+      "review_reason": "Root Grok text-to-speech alias is moderated before account selection and upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/v1/videos",
+        "handler": "OpenAIGatewayHandler.GrokVideoGeneration",
+        "protocol": "openai_images"
+      },
+      "method": "POST",
+      "path": "/v1/videos",
+      "handler": "OpenAIGatewayHandler.GrokVideoGeneration",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_images",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        { "stage": "moderation", "required": true, "covered": true },
+        { "stage": "image", "required": true, "covered": true },
+        { "stage": "billing", "required": true, "covered": true },
+        { "stage": "routing", "required": true, "covered": true },
+        { "stage": "forward", "required": true, "covered": true },
+        { "stage": "usage", "required": true, "covered": true }
+      ],
+      "status": "covered",
+      "review_reason": "Grok video creation reaches the shared media moderation hook before upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/videos",
+        "handler": "OpenAIGatewayHandler.GrokVideoGeneration",
+        "protocol": "openai_images"
+      },
+      "method": "POST",
+      "path": "/videos",
+      "handler": "OpenAIGatewayHandler.GrokVideoGeneration",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_images",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        { "stage": "moderation", "required": true, "covered": true },
+        { "stage": "image", "required": true, "covered": true },
+        { "stage": "billing", "required": true, "covered": true },
+        { "stage": "routing", "required": true, "covered": true },
+        { "stage": "forward", "required": true, "covered": true },
+        { "stage": "usage", "required": true, "covered": true }
+      ],
+      "status": "covered",
+      "review_reason": "Root Grok video creation alias reaches the shared media moderation hook before upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/v1/web_search",
+        "handler": "GatewayHandler.WebSearch",
+        "protocol": "openai_responses"
+      },
+      "method": "POST",
+      "path": "/v1/web_search",
+      "handler": "GatewayHandler.WebSearch",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        { "stage": "moderation", "required": true, "covered": true },
+        { "stage": "billing", "required": true, "covered": true },
+        { "stage": "routing", "required": true, "covered": true },
+        { "stage": "forward", "required": true, "covered": true },
+        { "stage": "usage", "required": true, "covered": true }
+      ],
+      "status": "covered",
+      "review_reason": "Web search input is moderated before account selection and upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/web_search",
+        "handler": "GatewayHandler.WebSearch",
+        "protocol": "openai_responses"
+      },
+      "method": "POST",
+      "path": "/web_search",
+      "handler": "GatewayHandler.WebSearch",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        { "stage": "moderation", "required": true, "covered": true },
+        { "stage": "billing", "required": true, "covered": true },
+        { "stage": "routing", "required": true, "covered": true },
+        { "stage": "forward", "required": true, "covered": true },
+        { "stage": "usage", "required": true, "covered": true }
+      ],
+      "status": "covered",
+      "review_reason": "Root web search alias is moderated before account selection and upstream forwarding."
     },
     {
       "route": {

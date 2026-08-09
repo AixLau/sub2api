@@ -145,6 +145,9 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	}); billingStage.Stop {
 		return
 	}
+	if failoverClientGone(c) {
+		return
+	}
 
 	sessionHash := h.gatewayService.GenerateSessionHash(c, body)
 	promptCacheKey := h.gatewayService.ExtractSessionID(c, body)

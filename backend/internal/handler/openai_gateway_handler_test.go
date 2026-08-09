@@ -384,7 +384,7 @@ func (r openAITestAccountRepo) GetByID(ctx context.Context, id int64) (*service.
 	return &account, nil
 }
 
-func TestOpenAIAcquireResponsesAccountSlotRefreshesAlreadyAcquiredSelection(t *testing.T) {
+func TestOpenAIAcquireResponsesAccountSlotRejectsStaleSelectionForRetry(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -414,7 +414,7 @@ func TestOpenAIAcquireResponsesAccountSlotRefreshesAlreadyAcquiredSelection(t *t
 		ReleaseFunc: func() { released = true },
 	}
 
-	release, account, acquired, _ := h.acquireResponsesAccountSlotForRequest(
+	release, account, acquired, retryReason := h.acquireResponsesAccountSlotForRequest(
 		c,
 		nil,
 		"",
@@ -430,9 +430,10 @@ func TestOpenAIAcquireResponsesAccountSlotRefreshesAlreadyAcquiredSelection(t *t
 
 	require.False(t, acquired)
 	require.Nil(t, release)
-	require.Nil(t, account)
+	require.Equal(t, selected.ID, account.ID)
 	require.True(t, released)
-	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Equal(t, openAISlotRetryAccountUnavailable, retryReason)
+	require.Equal(t, http.StatusOK, w.Code)
 }
 
 func TestOpenAIEnsureForwardErrorResponse_AfterDeltaAppendsSingleValidResponseFailed(t *testing.T) {

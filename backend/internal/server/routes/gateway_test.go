@@ -523,7 +523,7 @@ func gatewayPostRouteCanCarryUpstreamUserContent(path string) bool {
 		return false
 	}
 	switch path {
-	case "/v1/images/batches/:id/cancel":
+	case "/v1/images/batches/:id/cancel", "/v1/stt", "/v1/custom-voices":
 		return false
 	}
 	switch path {
@@ -533,7 +533,8 @@ func gatewayPostRouteCanCarryUpstreamUserContent(path string) bool {
 		"/embeddings",
 		"/images/generations", "/images/edits",
 		"/images/generations/async", "/images/edits/async",
-		"/videos/generations", "/videos/edits", "/videos/extensions":
+		"/videos", "/videos/generations", "/videos/edits", "/videos/extensions",
+		"/tts", "/web_search":
 		return true
 	}
 	return strings.HasPrefix(path, "/v1/") ||
@@ -596,9 +597,15 @@ func gatewayModerationCriticalRouteCoverageProofRoutes() []string {
 		"POST /v1/videos/generations":                  {},
 		"POST /v1/videos/edits":                        {},
 		"POST /v1/videos/extensions":                   {},
+		"POST /v1/videos":                              {},
+		"POST /v1/tts":                                 {},
+		"POST /v1/web_search":                          {},
 		"POST /videos/generations":                     {},
 		"POST /videos/edits":                           {},
 		"POST /videos/extensions":                      {},
+		"POST /videos":                                 {},
+		"POST /tts":                                    {},
+		"POST /web_search":                             {},
 		"POST /v1beta/models/*modelAction":             {},
 		"POST /antigravity/v1beta/models/*modelAction": {},
 	}

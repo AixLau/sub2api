@@ -13,6 +13,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -201,18 +202,34 @@ func newTestGatewayHandler(t *testing.T, group *service.Group, accounts []*servi
 	concurrencyHelper := NewConcurrencyHelper(concurrencySvc, SSEPingFormatClaude, 0)
 
 	h := &GatewayHandler{
-		gatewayService:      gwSvc,
-		billingCacheService: billingCacheSvc,
-		concurrencyHelper:   concurrencyHelper,
+		gatewayService:           gwSvc,
+		billingCacheService:      billingCacheSvc,
+		concurrencyHelper:        concurrencyHelper,
+		contentModerationService: newDisabledContentModerationServiceForHandlerTest(t),
+		cfg:                      cfg,
 		// 这些字段对本测试不敏感，保持较小即可
 		maxAccountSwitches:       1,
 		maxAccountSwitchesGemini: 1,
 	}
+	h.moderationGuard = newContentModerationGuard(h.contentModerationService)
 
 	cleanup := func() {
 		billingCacheSvc.Stop()
 	}
 	return h, cleanup
+}
+
+func setGatewayMessagesRouteMetaForTest(c *gin.Context, path string) {
+	moderationcoverage.SetRouteMeta(c, moderationcoverage.Entry{
+		Method:             "POST",
+		Path:               path,
+		Handler:            "GatewayHandler.Messages",
+		Upstream:           true,
+		ModerationRequired: true,
+		Protocol:           service.ContentModerationProtocolAnthropicMessages,
+		Pipeline:           moderationcoverage.PipelineGatewayPreForward,
+		Status:             moderationcoverage.StatusCovered,
+	})
 }
 
 func TestGatewayHandlerMessages_InterceptWarmup_AntigravityAccount_MixedSchedulingV1(t *testing.T) {
@@ -262,6 +279,7 @@ func TestGatewayHandlerMessages_InterceptWarmup_AntigravityAccount_MixedScheduli
 	req.Header.Set("Content-Type", "application/json")
 	req = req.WithContext(context.WithValue(req.Context(), ctxkey.Group, group))
 	c.Request = req
+	setGatewayMessagesRouteMetaForTest(c, "/v1/messages")
 
 	apiKey := &service.APIKey{
 		ID:      3001,
@@ -281,7 +299,7 @@ func TestGatewayHandlerMessages_InterceptWarmup_AntigravityAccount_MixedScheduli
 
 	h.Messages(c)
 
-	require.Equal(t, 200, rec.Code)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
 
 	// 断言：确实选中了 antigravity 账号（不是纯函数测试，而是从 Handler 里验证调度结果）
 	selected, ok := c.Get(opsAccountIDKey)
@@ -352,6 +370,7 @@ func TestGatewayHandlerMessages_InterceptWarmup_AntigravityAccount_ForcePlatform
 	req = req.WithContext(ctx)
 	c.Request = req
 	c.Set(string(middleware.ContextKeyForcePlatform), service.PlatformAntigravity)
+	setGatewayMessagesRouteMetaForTest(c, "/antigravity/v1/messages")
 
 	apiKey := &service.APIKey{
 		ID:      3002,
@@ -371,7 +390,7 @@ func TestGatewayHandlerMessages_InterceptWarmup_AntigravityAccount_ForcePlatform
 
 	h.Messages(c)
 
-	require.Equal(t, 200, rec.Code)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
 
 	selected, ok := c.Get(opsAccountIDKey)
 	require.True(t, ok)

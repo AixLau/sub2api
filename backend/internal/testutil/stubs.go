@@ -103,6 +103,12 @@ func (c StubGatewayCache) RefreshSessionTTL(_ context.Context, _ int64, _ string
 func (c StubGatewayCache) DeleteSessionAccountID(_ context.Context, _ int64, _ string) error {
 	return nil
 }
+func (c StubGatewayCache) SetUserAccountCooldown(_ context.Context, _, _ int64, _ time.Duration) error {
+	return nil
+}
+func (c StubGatewayCache) GetUserAccountCooldowns(_ context.Context, _ int64) (map[int64]struct{}, error) {
+	return nil, nil
+}
 
 func (c StubGatewayCache) SetGrokVideoPendingBilling(_ context.Context, _ string, _ []byte, _ time.Duration) error {
 	return nil

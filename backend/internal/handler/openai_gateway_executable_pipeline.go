@@ -886,9 +886,9 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 	if s.StreamStarted != nil {
 		streamStartedPtr = s.StreamStarted
 	}
-	releaseFunc, refreshedAccount, acquired, retryable := h.acquireResponsesAccountSlotForRequest(c, s.APIKey.GroupID, sessionHash, selection, s.RequestedModel, false, s.RequiredCapability, s.RequiredImageCapability, s.Stream, streamStartedPtr, reqLog)
+	releaseFunc, refreshedAccount, acquired, retryReason := h.acquireResponsesAccountSlotForRequest(c, s.APIKey.GroupID, sessionHash, selection, s.RequestedModel, false, s.RequiredCapability, s.RequiredImageCapability, s.Stream, streamStartedPtr, reqLog)
 	if !acquired {
-		if retryable && refreshedAccount != nil {
+		if retryReason == openAISlotRetryProfitVeto && refreshedAccount != nil {
 			vetoCount := 0
 			if s.ProfitVetoCount != nil {
 				vetoCount = *s.ProfitVetoCount
@@ -905,7 +905,14 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 			}
 			return ExecutableStageResult{}
 		}
-		if retryable {
+		if retryReason == openAISlotRetryAccountUnavailable && refreshedAccount != nil {
+			failedAccountIDs[refreshedAccount.ID] = struct{}{}
+			if s.Retry != nil {
+				*s.Retry = true
+			}
+			return ExecutableStageResult{}
+		}
+		if retryReason == openAISlotRetryCapacity {
 			s.writeOpenAIHTTPRoutingError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many concurrent requests, please retry later")
 		}
 		return ExecutableStageResult{Stop: true}
@@ -1624,6 +1631,7 @@ type OpenAIWebSocketRoutingStage struct {
 	RequestPlatform         string
 	ClientConn              *coderws.Conn
 	LastFailoverErr         *service.UpstreamFailoverError
+	HandleFailover          func(*service.Account, *service.UpstreamFailoverError) bool
 	ProfitVetoCount         *int
 	Retry                   *bool
 	AdmittedContext         *context.Context
@@ -1767,6 +1775,16 @@ func (s OpenAIWebSocketRoutingStage) RunRouting(c *gin.Context) ExecutableStageR
 	token, _, tokenErr := h.gatewayService.GetRequestCredential(ctx, c, account)
 	if tokenErr != nil {
 		reqLog.Warn("openai.websocket_get_access_token_failed", zap.Int64("account_id", account.ID), zap.Error(tokenErr))
+		var failoverErr *service.UpstreamFailoverError
+		if errors.As(tokenErr, &failoverErr) && s.HandleFailover != nil {
+			if s.HandleFailover(account, failoverErr) {
+				if s.Retry != nil {
+					*s.Retry = true
+				}
+				return ExecutableStageResult{}
+			}
+			return ExecutableStageResult{Stop: true, Err: tokenErr}
+		}
 		closeOpenAIClientWS(s.ClientConn, coderws.StatusInternalError, "failed to get access token")
 		return ExecutableStageResult{Stop: true, Err: tokenErr}
 	}

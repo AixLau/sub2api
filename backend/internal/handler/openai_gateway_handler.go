@@ -397,6 +397,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	}); billingStage.Stop {
 		return
 	}
+	if failoverClientGone(c) {
+		return
+	}
 
 	// Generate session hash (header first; fallback to prompt_cache_key)
 	sessionHash := h.gatewayService.GenerateSessionHash(c, sessionHashBody)
@@ -1345,6 +1348,18 @@ const (
 	// 未写任何响应；调用方应经 recordOpenAIProfitVeto 把该账号加入本请求排除集
 	// 后重新选号，全池耗尽由下一轮选号返回标准 no available accounts。
 	openAISlotAcquireProfitVetoed
+	// openAISlotAcquireRetryableRejected：选号后账号已失效，未写响应；调用方
+	// 应排除该账号后重新选号，但不应把它计入利润否决预算。
+	openAISlotAcquireRetryableRejected
+)
+
+type openAISlotRetryReason int
+
+const (
+	openAISlotRetryNone openAISlotRetryReason = iota
+	openAISlotRetryCapacity
+	openAISlotRetryAccountUnavailable
+	openAISlotRetryProfitVeto
 )
 
 // openAIWSTurnPricing 持有 WebSocket 连接内「当前 turn」的计费定价时刻。
@@ -1414,11 +1429,11 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 	reqStream bool,
 	streamStarted *bool,
 	reqLog *zap.Logger,
-) (func(), *service.Account, bool, bool) {
+) (func(), *service.Account, bool, openAISlotRetryReason) {
 	if selection == nil || selection.Account == nil {
 		markOpsRoutingCapacityLimited(c)
 		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", *streamStarted)
-		return nil, nil, false, false
+		return nil, nil, false, openAISlotRetryNone
 	}
 
 	// 终检与准入后绑定使用选号结果携带的门：composite 等跨分组调度解析出的
@@ -1431,10 +1446,13 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
 			}
-			markOpsRoutingCapacityLimited(c)
 			reqLog.Info("openai.selected_account_unavailable_before_use", zap.Int64("account_id", account.ID), zap.Error(refreshErr))
+			if errors.Is(refreshErr, service.ErrNoAvailableAccounts) {
+				return nil, account, false, openAISlotRetryAccountUnavailable
+			}
+			markOpsRoutingCapacityLimited(c)
 			h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", *streamStarted)
-			return nil, nil, false, false
+			return nil, nil, false, openAISlotRetryNone
 		}
 		selection.Account = refreshed
 		account = refreshed
@@ -1444,7 +1462,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 				selection.ReleaseFunc()
 			}
 			reqLog.Debug("openai.account_slot_profit_vetoed", zap.Int64("account_id", account.ID), zap.String("reason", reason))
-			return nil, account, false, true
+			return nil, account, false, openAISlotRetryProfitVeto
 		}
 		account = latest
 		selection.Account = latest
@@ -1455,12 +1473,12 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 				reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 			}
 		}
-		return wrapReleaseOnDone(ctx, selection.ReleaseFunc), account, true, false
+		return wrapReleaseOnDone(ctx, selection.ReleaseFunc), account, true, openAISlotRetryNone
 	}
 	if selection.WaitPlan == nil {
 		markOpsRoutingCapacityLimited(c)
 		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", *streamStarted)
-		return nil, nil, false, false
+		return nil, nil, false, openAISlotRetryNone
 	}
 
 	fastReleaseFunc, fastAcquired, err := h.concurrencyHelper.TryAcquireAccountSlot(
@@ -1471,7 +1489,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 	if err != nil {
 		reqLog.Warn("openai.account_slot_quick_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		h.handleConcurrencyError(c, err, "account", *streamStarted)
-		return nil, nil, false, false
+		return nil, nil, false, openAISlotRetryNone
 	}
 	if fastAcquired {
 		refreshed, refreshErr := h.gatewayService.RefreshSelectedAccountBeforeUse(ctx, account, requestedModel, requireCompact, requiredCapability, requiredImageCapability)
@@ -1479,10 +1497,13 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 			if fastReleaseFunc != nil {
 				fastReleaseFunc()
 			}
-			markOpsRoutingCapacityLimited(c)
 			reqLog.Info("openai.selected_account_unavailable_before_use", zap.Int64("account_id", account.ID), zap.Error(refreshErr))
+			if errors.Is(refreshErr, service.ErrNoAvailableAccounts) {
+				return nil, account, false, openAISlotRetryAccountUnavailable
+			}
+			markOpsRoutingCapacityLimited(c)
 			h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", *streamStarted)
-			return nil, nil, false, false
+			return nil, nil, false, openAISlotRetryNone
 		}
 		selection.Account = refreshed
 		account = refreshed
@@ -1494,14 +1515,14 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 				fastReleaseFunc()
 			}
 			reqLog.Debug("openai.account_slot_profit_vetoed", zap.Int64("account_id", account.ID), zap.String("reason", reason))
-			return nil, account, false, true
+			return nil, account, false, openAISlotRetryProfitVeto
 		}
 		account = latest
 		selection.Account = latest
 		if err := h.gatewayService.BindStickySessionAfterProfitAdmission(ctx, groupID, sessionHash, account.ID); err != nil {
 			reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		}
-		return wrapReleaseOnDone(ctx, fastReleaseFunc), account, true, false
+		return wrapReleaseOnDone(ctx, fastReleaseFunc), account, true, openAISlotRetryNone
 	}
 
 	canWait, waitErr := h.concurrencyHelper.IncrementAccountWaitCount(ctx, account.ID, selection.WaitPlan.MaxWaiting)
@@ -1512,7 +1533,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 			zap.Int64("account_id", account.ID),
 			zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
 		)
-		return nil, nil, false, true
+		return nil, nil, false, openAISlotRetryCapacity
 	}
 
 	accountWaitCounted := waitErr == nil && canWait
@@ -1545,10 +1566,10 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 	if err != nil {
 		reqLog.Warn("openai.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		if IsConcurrencyRetryableError(err) {
-			return nil, nil, false, true
+			return nil, nil, false, openAISlotRetryCapacity
 		}
 		h.handleConcurrencyError(c, err, "account", *streamStarted)
-		return nil, nil, false, false
+		return nil, nil, false, openAISlotRetryNone
 	}
 
 	// Slot acquired: no longer waiting in queue.
@@ -1558,10 +1579,13 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()
 		}
-		markOpsRoutingCapacityLimited(c)
 		reqLog.Info("openai.selected_account_unavailable_before_use", zap.Int64("account_id", account.ID), zap.Error(refreshErr))
+		if errors.Is(refreshErr, service.ErrNoAvailableAccounts) {
+			return nil, account, false, openAISlotRetryAccountUnavailable
+		}
+		markOpsRoutingCapacityLimited(c)
 		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", *streamStarted)
-		return nil, nil, false, false
+		return nil, nil, false, openAISlotRetryNone
 	}
 	selection.Account = refreshed
 	account = refreshed
@@ -1573,14 +1597,14 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotForRequest(
 			accountReleaseFunc()
 		}
 		reqLog.Debug("openai.account_slot_profit_vetoed", zap.Int64("account_id", account.ID), zap.String("reason", reason))
-		return nil, account, false, true
+		return nil, account, false, openAISlotRetryProfitVeto
 	}
 	account = latest
 	selection.Account = latest
 	if err := h.gatewayService.BindStickySessionAfterProfitAdmission(ctx, groupID, sessionHash, account.ID); err != nil {
 		reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 	}
-	return wrapReleaseOnDone(ctx, accountReleaseFunc), account, true, false
+	return wrapReleaseOnDone(ctx, accountReleaseFunc), account, true, openAISlotRetryNone
 }
 
 func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
@@ -1592,14 +1616,17 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 	streamStarted *bool,
 	reqLog *zap.Logger,
 ) (func(), openAISlotAcquireResult) {
-	release, rejectedAccount, acquired, retryable := h.acquireResponsesAccountSlotForRequest(
+	release, rejectedAccount, acquired, retryReason := h.acquireResponsesAccountSlotForRequest(
 		c, groupID, sessionHash, selection, "", false, "", "", reqStream, streamStarted, reqLog,
 	)
 	if acquired {
 		return release, openAISlotAcquireOK
 	}
-	if retryable && rejectedAccount != nil {
+	if retryReason == openAISlotRetryProfitVeto && rejectedAccount != nil {
 		return nil, openAISlotAcquireProfitVetoed
+	}
+	if retryReason == openAISlotRetryAccountUnavailable && rejectedAccount != nil {
+		return nil, openAISlotAcquireRetryableRejected
 	}
 	return nil, openAISlotAcquireFailed
 }
@@ -1960,6 +1987,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			RequestPlatform:         requestPlatform,
 			ClientConn:              wsConn,
 			LastFailoverErr:         lastFailoverErr,
+			HandleFailover:          handleWSFailover,
 			ProfitVetoCount:         &profitVetoCount,
 			Retry:                   &routingRetry,
 			AdmittedContext:         &ctx,

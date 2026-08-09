@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -80,61 +81,62 @@ func profitSlotTestContext(t *testing.T, gw *service.OpenAIGatewayService, group
 
 func TestAcquireResponsesAccountSlotProfitRecheck(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	gw := &service.OpenAIGatewayService{}
 	groupID := int64(50)
 
-	newHandler := func(cache *profitCountingConcurrencyCache) *OpenAIGatewayHandler {
-		return &OpenAIGatewayHandler{
+	newFixture := func(t *testing.T, accountID int64, selectedRate, latestRate float64, suppress bool) (*OpenAIGatewayHandler, *gin.Context, *httptest.ResponseRecorder, *profitCountingConcurrencyCache, *service.AccountSelectionResult) {
+		t.Helper()
+		selected := profitSlotTestAccount(accountID, selectedRate)
+		repo := &openAIImagesFailoverAccountRepo{accounts: []service.Account{*selected}}
+		cfg := &config.Config{RunMode: config.RunModeSimple}
+		cache := &profitCountingConcurrencyCache{}
+		concurrencyService := service.NewConcurrencyService(cache)
+		gw := service.NewOpenAIGatewayService(
+			repo, nil, nil, nil, nil, nil, nil, cfg, nil, concurrencyService, nil,
+			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		)
+		ctx := profitSlotTestContext(t, gw, groupID, suppress)
+		selection, err := gw.SelectAccountWithLoadAwareness(ctx, &groupID, "", "gpt-5.1", nil)
+		require.NoError(t, err)
+		require.NotNil(t, selection)
+		require.Equal(t, !suppress, selection.ProfitGateActive())
+		repo.accounts[0] = *profitSlotTestAccount(accountID, latestRate)
+
+		h := &OpenAIGatewayHandler{
 			gatewayService:    gw,
-			concurrencyHelper: NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatClaude, 0),
+			concurrencyHelper: NewConcurrencyHelper(concurrencyService, SSEPingFormatClaude, 0),
 		}
-	}
-	newSelection := func(account *service.Account) *service.AccountSelectionResult {
-		return &service.AccountSelectionResult{
-			Account:  account,
-			Acquired: false,
-			WaitPlan: &service.AccountWaitPlan{AccountID: account.ID, MaxConcurrency: 2, Timeout: time.Second, MaxWaiting: 2},
-		}
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("POST", "/v1/responses", nil).WithContext(ctx)
+		return h, c, w, cache, selection
 	}
 
 	t.Run("veto releases slot and requests reschedule without writing response", func(t *testing.T) {
-		cache := &profitCountingConcurrencyCache{}
-		h := newHandler(cache)
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request = httptest.NewRequest("POST", "/v1/responses", nil).WithContext(profitSlotTestContext(t, gw, groupID, false))
+		h, c, w, cache, selection := newFixture(t, 1, 0.3, 0.8, false)
 		streamStarted := false
 
-		release, result := h.acquireResponsesAccountSlot(c, &groupID, "", newSelection(profitSlotTestAccount(1, 0.8)), false, &streamStarted, zap.NewNop())
-		require.Equal(t, openAISlotAcquireProfitVetoed, result)
+		release, result := h.acquireResponsesAccountSlot(c, &groupID, "", selection, false, &streamStarted, zap.NewNop())
+		require.Equal(t, openAISlotAcquireProfitVetoed, result, "status=%d body=%s releases=%d", w.Code, w.Body.String(), cache.accountReleases.Load())
 		require.Nil(t, release)
 		require.Zero(t, w.Body.Len(), "利润终检否决不得写出任何响应")
 		require.Equal(t, int64(1), cache.accountReleases.Load(), "否决后必须立即释放已获取的槽位")
 	})
 
 	t.Run("qualifying account acquires normally", func(t *testing.T) {
-		cache := &profitCountingConcurrencyCache{}
-		h := newHandler(cache)
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request = httptest.NewRequest("POST", "/v1/responses", nil).WithContext(profitSlotTestContext(t, gw, groupID, false))
+		h, c, _, _, selection := newFixture(t, 2, 0.3, 0.3, false)
 		streamStarted := false
 
-		release, result := h.acquireResponsesAccountSlot(c, &groupID, "", newSelection(profitSlotTestAccount(2, 0.3)), false, &streamStarted, zap.NewNop())
+		release, result := h.acquireResponsesAccountSlot(c, &groupID, "", selection, false, &streamStarted, zap.NewNop())
 		require.Equal(t, openAISlotAcquireOK, result)
 		require.NotNil(t, release)
 		release()
 	})
 
 	t.Run("image intent suppression keeps official behavior", func(t *testing.T) {
-		cache := &profitCountingConcurrencyCache{}
-		h := newHandler(cache)
-		w := httptest.NewRecorder()
-		c, _ := gin.CreateTestContext(w)
-		c.Request = httptest.NewRequest("POST", "/v1/responses", nil).WithContext(profitSlotTestContext(t, gw, groupID, true))
+		h, c, _, _, selection := newFixture(t, 3, 0.3, 0.8, true)
 		streamStarted := false
 
-		release, result := h.acquireResponsesAccountSlot(c, &groupID, "", newSelection(profitSlotTestAccount(3, 0.8)), false, &streamStarted, zap.NewNop())
+		release, result := h.acquireResponsesAccountSlot(c, &groupID, "", selection, false, &streamStarted, zap.NewNop())
 		require.Equal(t, openAISlotAcquireOK, result, "生图意图跳门：过贵账号照常获取（图片边界不装门）")
 		require.NotNil(t, release)
 		release()

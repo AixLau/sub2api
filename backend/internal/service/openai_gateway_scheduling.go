@@ -312,6 +312,10 @@ func openAICompactSupportTier(account *Account) int {
 // 注意：对 spark 影子账号，调用方还须额外调用 parentHealthyForShadow(account, lookup)
 // 检查母账号凭据可用性；该检查未内置于本函数，以避免注入 DB 依赖。
 func isOpenAICompatibleAccountEligibleForRequest(ctx context.Context, account *Account, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability) bool {
+	return isOpenAICompatibleAccountEligibleForRequestWithProfitControl(ctx, account, platform, requestedModel, requireCompact, requiredCapability, true)
+}
+
+func isOpenAICompatibleAccountEligibleForRequestWithProfitControl(ctx context.Context, account *Account, platform string, requestedModel string, requireCompact bool, requiredCapability OpenAIEndpointCapability, enforceProfitControl bool) bool {
 	platform = normalizeOpenAICompatiblePlatform(platform)
 	if account == nil || account.Platform != platform || !account.IsOpenAICompatible() || !account.IsSchedulableForModelWithContext(ctx, requestedModel) {
 		return false
@@ -355,8 +359,10 @@ func isOpenAICompatibleAccountEligibleForRequest(ctx context.Context, account *A
 	}
 	// 分组利润控制：legacy 引擎的粘性/候选循环与 DB recheck 共用
 	// 本判定，任何 fallback 都不能把利润不合格账号重新放回候选。
-	if vetoed, _ := openAIProfitControlVetoReason(ctx, account); vetoed {
-		return false
+	if enforceProfitControl {
+		if vetoed, _ := openAIProfitControlVetoReason(ctx, account); vetoed {
+			return false
+		}
 	}
 	return true
 }
@@ -1414,7 +1420,10 @@ func (s *OpenAIGatewayService) RefreshSelectedAccountBeforeUse(ctx context.Conte
 		latest = current
 	}
 
-	if !isOpenAICompatibleAccountEligibleForRequest(ctx, latest, latest.Platform, requestedModel, requireCompact, requiredCapability) {
+	// Profit is rechecked explicitly by the handler immediately after this
+	// refresh so it can release the acquired slot and reschedule. Treating a
+	// profit veto as generic ineligibility here would make that branch unreachable.
+	if !isOpenAICompatibleAccountEligibleForRequestWithProfitControl(ctx, latest, latest.Platform, requestedModel, requireCompact, requiredCapability, false) {
 		return nil, ErrNoAvailableAccounts
 	}
 	if s.isOpenAIAccountRequestRuntimeBlocked(latest, requestedModel) {

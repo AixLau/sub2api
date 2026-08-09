@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -111,7 +112,7 @@ func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUp
 		service.NewAPIKeyService(nil, nil, nil, nil, nil, nil, cfg),
 		nil,
 		nil,
-		nil,
+		newDisabledContentModerationServiceForHandlerTest(t),
 		nil,
 		cfg,
 	)
@@ -131,6 +132,7 @@ func newOpenAIResponsesFailoverTestContext(t *testing.T, ctx context.Context) (*
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = req
+	moderationcoverage.SetRouteMeta(c, moderationcoverage.AnnotatePipelineCoverage(openAIResponsesHTTPRouteMetaForTest()))
 	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
 		ID:      99,
 		GroupID: &groupID,
@@ -159,7 +161,7 @@ func TestOpenAIGatewayHandlerResponses_FailoverAbortsWhenClientDisconnected(t *t
 
 	handler.Responses(c)
 
-	require.Equal(t, []int64{1}, upstream.calls(), "客户端断开后不应再切换到账号 2")
+	require.Equal(t, []int64{1}, upstream.calls(), "客户端断开后不应再切换到账号 2; status=%d body=%s", rec.Code, rec.Body.String())
 	require.Equal(t, statusClientClosedRequest, c.Writer.Status(), "应按 499 归类")
 	require.Zero(t, rec.Body.Len(), "不应写入 502 错误响应体")
 
@@ -188,7 +190,7 @@ func TestOpenAIGatewayHandlerResponses_FailoverContinuesForConnectedClient(t *te
 
 	handler.Responses(c)
 
-	require.Equal(t, []int64{1, 2}, upstream.calls(), "在线客户端应正常切换账号")
+	require.Equal(t, []int64{1, 2}, upstream.calls(), "在线客户端应正常切换账号; status=%d body=%s", rec.Code, rec.Body.String())
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Equal(t, "upstream_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
 }

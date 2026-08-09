@@ -2096,6 +2096,9 @@ func (r *stubUserSubscriptionRepo) GetByIDIncludeDeleted(ctx context.Context, id
 }
 
 func (r *stubUserSubscriptionRepo) GetByUserIDAndGroupID(ctx context.Context, userID, groupID int64) (*service.UserSubscription, error) {
+	if r.getActive != nil {
+		return r.getActive(ctx, userID, groupID)
+	}
 	return nil, errors.New("not implemented")
 }
 

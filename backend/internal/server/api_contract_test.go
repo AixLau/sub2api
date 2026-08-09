@@ -444,6 +444,8 @@ func TestAPIContracts(t *testing.T) {
 						"weekly_usage_usd": 2.34,
 						"monthly_usage_usd": 3.45,
 						"monthly_bonus_usd": 0,
+						"pending_renewals": [],
+						"pending_renewal_count": 0,
 						"created_at": "2025-01-02T03:04:05Z",
 						"updated_at": "2025-01-02T03:04:05Z"
 					}
@@ -713,6 +715,8 @@ func TestAPIContracts(t *testing.T) {
 				"message": "success",
 				"data": {
 					"registration_enabled": true,
+					"reward_campaigns_enabled": false,
+					"show_user_usage_ranking": false,
 					"email_verify_enabled": false,
 					"registration_email_suffix_whitelist": [],
 					"registration_email_domain_quota_enabled": false,
@@ -1061,6 +1065,8 @@ func TestAPIContracts(t *testing.T) {
 				"message": "success",
 				"data": {
 					"registration_enabled": true,
+					"reward_campaigns_enabled": false,
+					"show_user_usage_ranking": false,
 					"email_verify_enabled": false,
 					"registration_email_suffix_whitelist": [],
 					"registration_email_domain_quota_enabled": false,
@@ -2249,6 +2255,16 @@ func (r *stubUserSubscriptionRepo) ListActiveByUserID(ctx context.Context, userI
 	}
 	return append([]service.UserSubscription(nil), r.activeByUser[userID]...), nil
 }
+func (r *stubUserSubscriptionRepo) ListActiveByUserIDPlatformSubscriptionType(_ context.Context, userID int64, platform, subscriptionType string) ([]service.UserSubscription, error) {
+	var filtered []service.UserSubscription
+	for _, sub := range r.activeByUser[userID] {
+		if sub.Group == nil || sub.Group.Platform != platform || sub.Group.SubscriptionType != subscriptionType {
+			continue
+		}
+		filtered = append(filtered, sub)
+	}
+	return filtered, nil
+}
 func (stubUserSubscriptionRepo) ListByGroupID(ctx context.Context, groupID int64, params pagination.PaginationParams) ([]service.UserSubscription, *pagination.PaginationResult, error) {
 	return nil, nil, errors.New("not implemented")
 }
@@ -2639,6 +2655,10 @@ func (r *stubUsageLogRepo) GetAPIKeyUsageTrend(ctx context.Context, startTime, e
 
 func (r *stubUsageLogRepo) GetUserUsageTrend(ctx context.Context, startTime, endTime time.Time, granularity string, limit int) ([]usagestats.UserUsageTrendPoint, error) {
 	return nil, errors.New("not implemented")
+}
+
+func (r *stubUsageLogRepo) GetActiveUsersTrend(context.Context, time.Time, time.Time, string) ([]usagestats.ActiveUsersTrendPoint, error) {
+	return nil, nil
 }
 
 func (r *stubUsageLogRepo) GetUserSpendingRanking(ctx context.Context, startTime, endTime time.Time, limit int) (*usagestats.UserSpendingRankingResponse, error) {

@@ -17,6 +17,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -933,7 +934,17 @@ func newGrokCredentialFailoverHandler(t *testing.T, mode string) (*OpenAIGateway
 		acquireUserSlotFn:    func(context.Context, int64, int, string) (bool, error) { return true, nil },
 		acquireAccountSlotFn: func(context.Context, int64, int, string) (bool, error) { return true, nil },
 	}
-	h := NewOpenAIGatewayHandler(gateway, service.NewConcurrencyService(cache), billingCache, &service.APIKeyService{}, nil, nil, nil, nil, cfg)
+	h := NewOpenAIGatewayHandler(
+		gateway,
+		service.NewConcurrencyService(cache),
+		billingCache,
+		&service.APIKeyService{},
+		nil,
+		nil,
+		newDisabledContentModerationServiceForHandlerTest(t),
+		nil,
+		cfg,
+	)
 	apiKey := &service.APIKey{
 		ID: 902, GroupID: &groupID,
 		User:  &service.User{ID: 903, Status: service.StatusActive},
@@ -943,6 +954,33 @@ func newGrokCredentialFailoverHandler(t *testing.T, mode string) (*OpenAIGateway
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAPIKey), apiKey)
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.User.ID, Concurrency: 1})
+		var routeMeta moderationcoverage.Entry
+		switch c.Request.URL.Path {
+		case "/openai/v1/responses":
+			if c.Request.Method == http.MethodGet {
+				routeMeta = moderationcoverage.Entry{
+					Method:   http.MethodGet,
+					Path:     "/v1/responses",
+					Handler:  "OpenAIGatewayHandler.ResponsesWebSocket",
+					Protocol: service.ContentModerationProtocolOpenAIResponses,
+				}
+				moderationcoverage.MarkPipelineEntrypointEntered(c, moderationcoverage.PipelineOpenAIWebSocket, "test websocket gateway pipeline entrypoint")
+			} else {
+				routeMeta = openAIResponsesHTTPRouteMetaForTest()
+			}
+		case "/openai/v1/messages":
+			routeMeta = moderationcoverage.Entry{Method: http.MethodPost, Path: "/v1/messages", Handler: "OpenAIGatewayHandler.Messages", Protocol: service.ContentModerationProtocolOpenAIMessages}
+		case "/openai/v1/chat/completions":
+			routeMeta = moderationcoverage.Entry{Method: http.MethodPost, Path: "/v1/chat/completions", Handler: "OpenAIGatewayHandler.ChatCompletions", Protocol: service.ContentModerationProtocolOpenAIChat}
+		case "/openai/v1/videos/generations":
+			routeMeta = moderationcoverage.Entry{Method: http.MethodPost, Path: "/v1/videos/generations", Handler: "OpenAIGatewayHandler.GrokVideoGeneration", Protocol: service.ContentModerationProtocolOpenAIImages}
+		}
+		if routeMeta.Handler != "" {
+			routeMeta.Upstream = true
+			routeMeta.ModerationRequired = true
+			routeMeta.Status = moderationcoverage.StatusCovered
+			moderationcoverage.SetRouteMeta(c, moderationcoverage.AnnotatePipelineCoverage(routeMeta))
+		}
 		c.Next()
 	})
 	router.POST("/openai/v1/responses", h.Responses)
