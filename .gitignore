@@ -161,3 +161,5 @@ output/
 # Upstream sync audit outputs are temporary; durable intent lives in
 # upstream-sync/*.yaml and upstream-sync/decisions.ndjson.
 upstream-sync/out/
+# Vitest / Vite cache at repo root
+.vite/

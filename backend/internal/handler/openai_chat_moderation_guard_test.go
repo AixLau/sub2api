@@ -137,6 +137,22 @@ func (c *openAIChatModerationGuardCyberCache) GetUserAccountCooldowns(context.Co
 	return nil, nil
 }
 
+func (c *openAIChatModerationGuardCyberCache) SetGrokVideoPendingBilling(context.Context, string, []byte, time.Duration) error {
+	return nil
+}
+
+func (c *openAIChatModerationGuardCyberCache) GetGrokVideoPendingBilling(context.Context, string) ([]byte, error) {
+	return nil, nil
+}
+
+func (c *openAIChatModerationGuardCyberCache) ClaimGrokVideoBilled(context.Context, string, time.Duration) (bool, error) {
+	return true, nil
+}
+
+func (c *openAIChatModerationGuardCyberCache) ReleaseGrokVideoBilled(context.Context, string) error {
+	return nil
+}
+
 func (c *openAIChatModerationGuardCyberCache) SetCyberSessionBlocked(_ context.Context, key string, _ time.Duration) error {
 	if c.blocked == nil {
 		c.blocked = map[string]bool{}

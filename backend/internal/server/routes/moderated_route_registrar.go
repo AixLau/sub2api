@@ -12,6 +12,7 @@ import (
 type routeRegistrar interface {
 	GET(relativePath string, handlers ...gin.HandlerFunc) gin.IRoutes
 	POST(relativePath string, handlers ...gin.HandlerFunc) gin.IRoutes
+	PATCH(relativePath string, handlers ...gin.HandlerFunc) gin.IRoutes
 	DELETE(relativePath string, handlers ...gin.HandlerFunc) gin.IRoutes
 }
 
@@ -75,6 +76,12 @@ func (r *ModeratedRouteRegistrar) POST(relativePath string, meta ModeratedRouteM
 	meta.Method = "POST"
 	meta = r.registerRoute(meta)
 	return r.routes.POST(relativePath, r.prependModeratedRouteMetaHandler(meta, handlers)...)
+}
+
+func (r *ModeratedRouteRegistrar) PATCH(relativePath string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {
+	meta.Method = "PATCH"
+	meta = r.registerRoute(meta)
+	return r.routes.PATCH(relativePath, r.prependModeratedRouteMetaHandler(meta, handlers)...)
 }
 
 func (r *ModeratedRouteRegistrar) DELETE(relativePath string, meta ModeratedRouteMeta, handlers ...gin.HandlerFunc) gin.IRoutes {

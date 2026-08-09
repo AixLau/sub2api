@@ -195,6 +195,7 @@ import {
 } from '@/api/auth'
 import { apiClient } from '@/api/client'
 import { buildAuthErrorMessage } from '@/utils/authError'
+import { extractApiErrorCode } from '@/utils/apiError'
 import {
   formatRegistrationEmailSuffixWhitelistForMessage,
   isRegistrationEmailSuffixAllowed,
@@ -272,6 +273,8 @@ const aliyunCaptchaPrefix = ref<string>('')
 const aliyunCaptchaRegion = ref<string>('cn')
 const siteName = ref<string>('Sub2API')
 const registrationEmailSuffixWhitelist = ref<string[]>([])
+// 域名限量注册开关：开启时非白名单域名可注册 1 个账户（由后端判定），前端不做白名单预检。
+const emailDomainQuotaEnabled = ref<boolean>(false)
 
 // Turnstile for resend
 const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
@@ -376,6 +379,7 @@ onMounted(async () => {
     registrationEmailSuffixWhitelist.value = normalizeRegistrationEmailSuffixWhitelist(
       settings.registration_email_suffix_whitelist || []
     )
+    emailDomainQuotaEnabled.value = settings.registration_email_domain_quota_enabled === true
   } catch (error) {
     console.error('Failed to load public settings:', error)
   }
@@ -484,8 +488,11 @@ function isPendingOAuthFlow(): boolean {
   return Boolean(pendingProvider.value.trim())
 }
 
+// 域名限量注册开启时交由后端按额度判定；pending OAuth / 换绑流程沿用后端策略，前端不预检。
 function shouldBypassRegistrationEmailPolicy(): boolean {
-  return isPendingOAuthFlow() || Boolean(pendingAuthToken.value.trim())
+  return (
+    emailDomainQuotaEnabled.value || isPendingOAuthFlow() || Boolean(pendingAuthToken.value.trim())
+  )
 }
 
 function resolvePendingOAuthCallbackRoute(provider: string): string {
@@ -578,9 +585,7 @@ async function sendCode(): Promise<void> {
 
     showResendTurnstile.value = false
   } catch (error: unknown) {
-    errorMessage.value = buildAuthErrorMessage(error, {
-      fallback: t('auth.sendCodeFailed')
-    })
+    errorMessage.value = buildRegistrationErrorMessage(error, t('auth.sendCodeFailed'))
 
     appStore.showError(errorMessage.value)
   } finally {
@@ -743,9 +748,7 @@ async function handleVerify(): Promise<void> {
     // Return to the page that initiated authentication.
     await router.push(resolveAuthRedirectPath(pendingRedirect.value))
   } catch (error: unknown) {
-    errorMessage.value = buildAuthErrorMessage(error, {
-      fallback: t('auth.verifyFailed')
-    })
+    errorMessage.value = buildRegistrationErrorMessage(error, t('auth.verifyFailed'))
 
     appStore.showError(errorMessage.value)
   } finally {
@@ -783,6 +786,13 @@ function buildEmailSuffixNotAllowedMessage(): string {
       more: (count) => t('auth.emailSuffixAllowedMore', { count })
     })
   })
+}
+
+function buildRegistrationErrorMessage(error: unknown, fallback: string): string {
+  if (extractApiErrorCode(error) === 'EMAIL_DOMAIN_REGISTRATION_LIMIT') {
+    return t('auth.emailDomainRegistrationLimit')
+  }
+  return buildAuthErrorMessage(error, { fallback })
 }
 </script>
 

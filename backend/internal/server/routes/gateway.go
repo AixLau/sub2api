@@ -495,6 +495,78 @@ func RegisterGatewayRoutes(
 			"BatchImageHandler.DeleteOutputs",
 			"Batch image output deletion removes local generated files and does not submit model-visible user content.",
 		), h.BatchImage.DeleteOutputs)
+
+		// OpenAI-compatible clients may create through /videos; xAI receives the
+		// canonical /videos/generations route inside the Grok media forwarder.
+		openAIVideoCreateRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
+			"/v1/videos",
+			"OpenAIGatewayHandler.GrokVideoGeneration",
+			service.ContentModerationProtocolOpenAIImages,
+			"Grok video generation prompt metadata is moderated before upstream forwarding.",
+		))
+		moderatedGateway.POST("/videos", intentionalNoAuditRoute(
+			"/v1/videos",
+			"OpenAIGatewayHandler.GrokVideoGeneration",
+			"Non-Grok groups are rejected before upstream content handling; Grok groups enter the OpenAI HTTP moderation branch.",
+		), func(c *gin.Context) {
+			if getGroupPlatform(c) != service.PlatformGrok {
+				videoGenerationHandler(c)
+				return
+			}
+			if enterModeratedRouteBranchPipeline(c, moderatedGateway, openAIVideoCreateRouteMeta).Stop {
+				return
+			}
+			videoGenerationHandler(c)
+		})
+		for _, route := range []string{"/videos/generations/:request_id/content", "/videos/edits/:request_id/content", "/videos/extensions/:request_id/content"} {
+			moderatedGateway.GETNoAudit(route, intentionalNoAuditRoute("/v1"+route, "OpenAIGatewayHandler.GrokVideoContent", "Grok video content lookup proxies already-generated output."), videoContentHandler)
+		}
+		for _, route := range []string{"/videos/generations/:request_id", "/videos/edits/:request_id", "/videos/extensions/:request_id"} {
+			moderatedGateway.GETNoAudit(route, intentionalNoAuditRoute("/v1"+route, "OpenAIGatewayHandler.GrokVideoStatus", "Grok video status lookup reads existing upstream task state."), videoStatusHandler)
+		}
+
+		voiceHandler := func(endpoint string) gin.HandlerFunc {
+			return func(c *gin.Context) {
+				if getGroupPlatform(c) != service.PlatformGrok {
+					service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+					c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Voice API is not supported for this platform"}})
+					return
+				}
+				h.OpenAIGateway.GrokVoice(c, endpoint)
+			}
+		}
+		moderatedGateway.POST("/tts", coveredOpenAIHTTPRoute("/v1/tts", "OpenAIGatewayHandler.GrokVoice", service.ContentModerationProtocolOpenAIResponses, "TTS text is moderated before forwarding."), voiceHandler("tts"))
+		moderatedGateway.POST("/stt", intentionalNoAuditRoute("/v1/stt", "OpenAIGatewayHandler.GrokVoice", "Multipart audio transcription is not text-extractable by the current moderation protocol."), voiceHandler("stt"))
+		moderatedGateway.POST("/custom-voices", intentionalNoAuditRoute("/v1/custom-voices", "OpenAIGatewayHandler.GrokVoice", "Custom voice media is not text-extractable by the current moderation protocol."), voiceHandler("custom-voices"))
+		customVoicePathHandler := func(c *gin.Context) {
+			if getGroupPlatform(c) != service.PlatformGrok {
+				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+				c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Voice API is not supported for this platform"}})
+				return
+			}
+			h.OpenAIGateway.GrokVoice(c, grokCustomVoiceEndpoint(c))
+		}
+		moderatedGateway.GETNoAudit("/custom-voices", intentionalNoAuditRoute("/v1/custom-voices", "OpenAIGatewayHandler.GrokVoice", "Custom voice listing is read-only."), voiceHandler("custom-voices"))
+		moderatedGateway.GETNoAudit("/custom-voices/:voice_id/audio", intentionalNoAuditRoute("/v1/custom-voices/:voice_id/audio", "OpenAIGatewayHandler.GrokVoice", "Custom voice audio lookup is read-only."), customVoicePathHandler)
+		moderatedGateway.GETNoAudit("/custom-voices/:voice_id", intentionalNoAuditRoute("/v1/custom-voices/:voice_id", "OpenAIGatewayHandler.GrokVoice", "Custom voice metadata lookup is read-only."), customVoicePathHandler)
+		moderatedGateway.PATCH("/custom-voices/:voice_id", intentionalNoAuditRoute("/v1/custom-voices/:voice_id", "OpenAIGatewayHandler.GrokVoice", "Custom voice mutation media is not text-extractable by the current moderation protocol."), customVoicePathHandler)
+		moderatedGateway.DELETENoAudit("/custom-voices/:voice_id", intentionalNoAuditRoute("/v1/custom-voices/:voice_id", "OpenAIGatewayHandler.GrokVoice", "Custom voice deletion submits no model-visible content."), customVoicePathHandler)
+		moderatedGateway.GETNoAudit("/realtime", intentionalNoAuditRoute("/v1/realtime", "OpenAIGatewayHandler.GrokRealtime", "Realtime WebSocket traffic is handled after the HTTP route handshake."), func(c *gin.Context) {
+			if getGroupPlatform(c) != service.PlatformGrok {
+				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+				c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Realtime API is not supported for this platform"}})
+				return
+			}
+			h.OpenAIGateway.GrokRealtime(c)
+		})
+		moderatedGateway.POST("/web_search", coveredOpenAIHTTPRoute("/v1/web_search", "GatewayHandler.WebSearch", service.ContentModerationProtocolOpenAIResponses, "Web search query text is moderated before forwarding."), func(c *gin.Context) {
+			if getGroupPlatform(c) != service.PlatformGrok {
+				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+				c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Web Search API is not supported for this platform"}})
+				return
+			}
+			h.Gateway.WebSearch(c)
+		})
 	}
 
 	// Gemini 原生 API 兼容层（Gemini SDK/CLI 直连）
@@ -774,6 +846,26 @@ func RegisterGatewayRoutes(
 		}
 		videoGenerationHandler(c)
 	})
+	rootOpenAIVideoCreateRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
+		"/videos",
+		"OpenAIGatewayHandler.GrokVideoGeneration",
+		service.ContentModerationProtocolOpenAIImages,
+		"Root Grok video generation alias reaches the shared Grok media moderation hook before upstream forwarding.",
+	))
+	moderatedRoot.POST("/videos", intentionalNoAuditRoute(
+		"/videos",
+		"OpenAIGatewayHandler.GrokVideoGeneration",
+		"Non-Grok groups are rejected before upstream content handling; Grok groups enter the OpenAI HTTP moderation branch.",
+	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+		if getGroupPlatform(c) != service.PlatformGrok {
+			videoGenerationHandler(c)
+			return
+		}
+		if enterModeratedRouteBranchPipeline(c, moderatedRoot, rootOpenAIVideoCreateRouteMeta).Stop {
+			return
+		}
+		videoGenerationHandler(c)
+	})
 	rootOpenAIVideoEditRouteMeta := registerModeratedRouteBranch(http.MethodPost, coveredOpenAIHTTPRoute(
 		"/videos/edits",
 		"OpenAIGatewayHandler.GrokVideoEdit",
@@ -824,6 +916,55 @@ func RegisterGatewayRoutes(
 		"OpenAIGatewayHandler.GrokVideoContent",
 		"Root Grok video content lookup proxies already-generated output and does not submit new model-visible user content.",
 	), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoContentHandler)
+	for _, route := range []string{"/videos/generations/:request_id/content", "/videos/edits/:request_id/content", "/videos/extensions/:request_id/content"} {
+		moderatedRoot.GETNoAudit(route, intentionalNoAuditRoute(route, "OpenAIGatewayHandler.GrokVideoContent", "Root Grok video content lookup proxies already-generated output."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoContentHandler)
+	}
+	for _, route := range []string{"/videos/generations/:request_id", "/videos/edits/:request_id", "/videos/extensions/:request_id"} {
+		moderatedRoot.GETNoAudit(route, intentionalNoAuditRoute(route, "OpenAIGatewayHandler.GrokVideoStatus", "Root Grok video status lookup reads existing upstream task state."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoStatusHandler)
+	}
+
+	rootVoiceHandler := func(endpoint string) gin.HandlerFunc {
+		return func(c *gin.Context) {
+			if getGroupPlatform(c) != service.PlatformGrok {
+				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+				c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Voice API is not supported for this platform"}})
+				return
+			}
+			h.OpenAIGateway.GrokVoice(c, endpoint)
+		}
+	}
+	moderatedRoot.POST("/tts", coveredOpenAIHTTPRoute("/tts", "OpenAIGatewayHandler.GrokVoice", service.ContentModerationProtocolOpenAIResponses, "TTS text is moderated before forwarding."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, rootVoiceHandler("tts"))
+	moderatedRoot.POST("/stt", intentionalNoAuditRoute("/stt", "OpenAIGatewayHandler.GrokVoice", "Multipart audio transcription is not text-extractable by the current moderation protocol."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, rootVoiceHandler("stt"))
+	moderatedRoot.POST("/custom-voices", intentionalNoAuditRoute("/custom-voices", "OpenAIGatewayHandler.GrokVoice", "Custom voice media is not text-extractable by the current moderation protocol."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, rootVoiceHandler("custom-voices"))
+	rootCustomVoicePathHandler := func(c *gin.Context) {
+		if getGroupPlatform(c) != service.PlatformGrok {
+			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Voice API is not supported for this platform"}})
+			return
+		}
+		h.OpenAIGateway.GrokVoice(c, grokCustomVoiceEndpoint(c))
+	}
+	moderatedRoot.GETNoAudit("/custom-voices", intentionalNoAuditRoute("/custom-voices", "OpenAIGatewayHandler.GrokVoice", "Custom voice listing is read-only."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, rootVoiceHandler("custom-voices"))
+	moderatedRoot.GETNoAudit("/custom-voices/:voice_id/audio", intentionalNoAuditRoute("/custom-voices/:voice_id/audio", "OpenAIGatewayHandler.GrokVoice", "Custom voice audio lookup is read-only."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, rootCustomVoicePathHandler)
+	moderatedRoot.GETNoAudit("/custom-voices/:voice_id", intentionalNoAuditRoute("/custom-voices/:voice_id", "OpenAIGatewayHandler.GrokVoice", "Custom voice metadata lookup is read-only."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, rootCustomVoicePathHandler)
+	moderatedRoot.PATCH("/custom-voices/:voice_id", intentionalNoAuditRoute("/custom-voices/:voice_id", "OpenAIGatewayHandler.GrokVoice", "Custom voice mutation media is not text-extractable by the current moderation protocol."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, rootCustomVoicePathHandler)
+	moderatedRoot.DELETENoAudit("/custom-voices/:voice_id", intentionalNoAuditRoute("/custom-voices/:voice_id", "OpenAIGatewayHandler.GrokVoice", "Custom voice deletion submits no model-visible content."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, rootCustomVoicePathHandler)
+	moderatedRoot.GETNoAudit("/realtime", intentionalNoAuditRoute("/realtime", "OpenAIGatewayHandler.GrokRealtime", "Realtime WebSocket traffic is handled after the HTTP route handshake."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+		if getGroupPlatform(c) != service.PlatformGrok {
+			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Realtime API is not supported for this platform"}})
+			return
+		}
+		h.OpenAIGateway.GrokRealtime(c)
+	})
+	moderatedRoot.POST("/web_search", coveredOpenAIHTTPRoute("/web_search", "GatewayHandler.WebSearch", service.ContentModerationProtocolOpenAIResponses, "Web search query text is moderated before forwarding."), bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+		if getGroupPlatform(c) != service.PlatformGrok {
+			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Web Search API is not supported for this platform"}})
+			return
+		}
+		h.Gateway.WebSearch(c)
+	})
 
 	// Antigravity 模型列表
 	moderatedRoot.GETNoAudit("/antigravity/models", intentionalNoAuditRoute(
@@ -1023,6 +1164,22 @@ func compositeGeminiTargetPlatformMiddleware(resolver *service.CompositeRouteRes
 		}
 		c.Next()
 	}
+}
+
+// grokCustomVoiceEndpoint derives the upstream Voice endpoint for the
+// /custom-voices/:voice_id[/audio] routes.
+//
+// The /audio suffix must be decided from the matched route template, not from
+// the raw URL path: a voice literally named "audio" makes GET
+// /custom-voices/audio match /custom-voices/:voice_id, and a raw-path suffix
+// check would rewrite it to custom-voices/audio/audio — turning a profile
+// lookup into an audio download.
+func grokCustomVoiceEndpoint(c *gin.Context) string {
+	endpoint := "custom-voices/" + c.Param("voice_id")
+	if strings.HasSuffix(c.FullPath(), "/:voice_id/audio") {
+		endpoint += "/audio"
+	}
+	return endpoint
 }
 
 func compositeGeminiModelFromParams(c *gin.Context) string {

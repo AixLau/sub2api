@@ -56,7 +56,7 @@
             @change="handleUpload"
           />
           <Icon name="upload" size="sm" class="mr-1.5" :stroke-width="2" />
-          {{ uploadLabel }}
+          {{ resolvedUploadLabel }}
         </label>
         <button
           v-if="modelValue"
@@ -65,7 +65,7 @@
           @click="$emit('update:modelValue', '')"
         >
           <Icon name="trash" size="sm" class="mr-1.5" :stroke-width="2" />
-          {{ removeLabel }}
+          {{ resolvedRemoveLabel }}
         </button>
       </div>
       <p v-if="hint" class="text-xs text-gray-500 dark:text-gray-400">{{ hint }}</p>
@@ -76,8 +76,11 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
   modelValue: string
@@ -90,8 +93,8 @@ const props = withDefaults(defineProps<{
 }>(), {
   mode: 'image',
   size: 'md',
-  uploadLabel: 'Upload',
-  removeLabel: 'Remove',
+  uploadLabel: '',
+  removeLabel: '',
   hint: '',
   maxSize: 300 * 1024,
 })
@@ -101,6 +104,9 @@ const emit = defineEmits<{
 }>()
 
 const error = ref('')
+
+const resolvedUploadLabel = computed(() => props.uploadLabel || t('common.upload'))
+const resolvedRemoveLabel = computed(() => props.removeLabel || t('common.remove'))
 
 const acceptTypes = computed(() => props.mode === 'svg' ? '.svg' : 'image/*')
 
@@ -152,9 +158,12 @@ function handleUpload(event: Event) {
 function processFile(file: File) {
   error.value = ''
 
-  if (props.maxSize && file.size > props.maxSize) {
-    error.value = `File too large (${(file.size / 1024).toFixed(1)} KB), max ${(props.maxSize / 1024).toFixed(0)} KB`
-    return
+	if (props.maxSize && file.size > props.maxSize) {
+		error.value = t('common.fileTooLargeKb', {
+			size: (file.size / 1024).toFixed(1),
+			max: (props.maxSize / 1024).toFixed(0)
+		})
+		return
   }
 
   const reader = new FileReader()
@@ -169,10 +178,10 @@ function processFile(file: File) {
       if (text) emit('update:modelValue', text.trim())
     }
     reader.readAsText(file)
-  } else {
-    if (!file.type.startsWith('image/')) {
-      error.value = 'Please select an image file'
-      return
+	} else {
+		if (!file.type.startsWith('image/')) {
+			error.value = t('common.selectImageFile')
+			return
     }
     reader.onload = (e) => {
       emit('update:modelValue', e.target?.result as string)
@@ -181,7 +190,7 @@ function processFile(file: File) {
   }
 
   reader.onerror = () => {
-    error.value = 'Failed to read file'
+    error.value = t('common.fileReadFailed')
   }
 }
 </script>
