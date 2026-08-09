@@ -539,16 +539,15 @@ func createMerchantEndpointWithAuth(t *testing.T, client *dbent.Client, integrat
 
 func testMerchantBindingAction(t *testing.T, endpointType string, payload map[string]any, expectedStatus string) {
 	t.Helper()
+	responsePayload := cloneMerchantMap(payload)
+	responsePayload["success"] = true
 	client := newMerchantSSOTestClient(t)
 	svc := &MerchantSSOService{client: client}
 	doer := &merchantTestHTTPDoer{
 		responses: []*http.Response{
 			{
 				StatusCode: http.StatusOK,
-				Body: io.NopCloser(strings.NewReader(mustJSON(t, map[string]any{
-					"success": true,
-					"data":    payload["data"],
-				}))),
+				Body:       io.NopCloser(strings.NewReader(mustMerchantJSON(t, responsePayload))),
 			},
 		},
 	}
@@ -557,7 +556,9 @@ func testMerchantBindingAction(t *testing.T, endpointType string, payload map[st
 	ctx := context.Background()
 	integration := createMerchantIntegration(t, client, "merchant-"+endpointType, []string{"action.merchant.example"})
 	user := createMerchantUser(t, client, "action-"+endpointType+"@example.com", endpointType)
-	createMerchantEndpoint(t, client, integration.ID, endpointType, "https://merchant.example/"+endpointType, map[string]any{}, map[string]any{})
+	createMerchantEndpoint(t, client, integration.ID, endpointType, "https://merchant.example/"+endpointType, map[string]any{
+		"binding": "{{binding.external_user_id}}",
+	}, map[string]any{})
 	binding, err := client.MerchantBinding.Create().
 		SetIntegrationID(integration.ID).
 		SetUserID(user.ID).
@@ -580,21 +581,21 @@ func testMerchantBindingAction(t *testing.T, endpointType string, payload map[st
 	}
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, result.HTTPStatus)
-	require.Equal(t, payload, result.Response)
+	require.Equal(t, responsePayload, result.Response)
 
 	stored, err := client.MerchantBinding.Get(ctx, binding.ID)
 	require.NoError(t, err)
 	require.Equal(t, expectedStatus, stored.Status)
 	require.NotNil(t, stored.LastSyncAt)
 	require.Equal(t, "ext-"+endpointType, stored.ExternalUserID)
-	require.Equal(t, "acct-"+endpointType, stored.ExternalAccount)
+	require.Equal(t, "alice-"+endpointType, stored.ExternalAccount)
 
 	body, err := io.ReadAll(doer.requests[0].Body)
 	require.NoError(t, err)
 	require.Contains(t, string(body), `"binding":"ext-`+endpointType+`"`)
 }
 
-func mustJSON(t *testing.T, v any) string {
+func mustMerchantJSON(t *testing.T, v any) string {
 	t.Helper()
 	raw, err := json.Marshal(v)
 	require.NoError(t, err)

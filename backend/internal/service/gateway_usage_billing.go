@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"strings"
@@ -237,6 +239,11 @@ func resolveUsageBillingPayloadFingerprint(ctx context.Context, requestPayloadHa
 		}
 	}
 	return ""
+}
+
+func usageBillingFailureLogRequestID(requestID string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(requestID)))
+	return "billing-failed:" + hex.EncodeToString(sum[:])
 }
 
 func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsageBillingParams) *UsageBillingCommand {
@@ -825,6 +832,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 
 	if billingErr != nil {
 		usageLog.ActualCost = 0
+		usageLog.RequestID = usageBillingFailureLogRequestID(requestID)
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
 		return billingErr
 	}

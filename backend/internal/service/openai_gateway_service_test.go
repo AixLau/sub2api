@@ -1729,7 +1729,8 @@ func TestOpenAIStreamingStructuralEventsThenCapacityErrorReturnsFailover(t *test
 	require.ErrorAs(t, err, &failoverErr)
 	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
 	require.Contains(t, string(failoverErr.ResponseBody), "currently overloaded")
-	require.False(t, failoverErr.RetryableOnSameAccount)
+	require.True(t, failoverErr.RetryableOnSameAccount)
+	require.True(t, failoverErr.RequestScopedTransient)
 	require.True(t, failoverErr.SafeToFailoverAfterWrite)
 	require.False(t, c.Writer.Written())
 	require.Empty(t, rec.Body.String())
@@ -1809,7 +1810,8 @@ func TestOpenAIStreamingResponseFailedBeforeOutputServerOverloadedCodeReturnsFai
 	require.ErrorAs(t, err, &failoverErr)
 	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
 	require.Contains(t, string(failoverErr.ResponseBody), "Please retry later")
-	require.False(t, failoverErr.RetryableOnSameAccount)
+	require.True(t, failoverErr.RetryableOnSameAccount)
+	require.True(t, failoverErr.RequestScopedTransient)
 	require.False(t, c.Writer.Written())
 	require.Empty(t, rec.Body.String())
 }
@@ -3191,8 +3193,8 @@ func TestOpenAIBuildUpstreamRequestPreservesCodexIdentityHeaders(t *testing.T) {
 func TestOpenAIBuildUpstreamRequestOAuthOfficialClientOriginatorCompatibility(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	// 强制统一出口：客户端自报的 originator / User-Agent 都不参与上游身份构造，
-	// 一律改写为网关规范身份，天然满足 originator 与 UA 首段配套的上游校验（issue #3901）。
+	// 强制统一出口：请求端自报身份不参与构造；账号级官方 UA 作为管理员配置保留
+	// 客户端与指纹，版本段跟随网关规范版本重建（issue #3901）。
 	tests := []struct {
 		name              string
 		accountUserAgent  string
@@ -3201,14 +3203,14 @@ func TestOpenAIBuildUpstreamRequestOAuthOfficialClientOriginatorCompatibility(t 
 		wantOriginator    string
 		wantUA            string
 	}{
-		{name: "official account ua pairs originator", accountUserAgent: "Codex Desktop/1.2.3", wantOriginator: "Codex Desktop", wantUA: "Codex Desktop/1.2.3"},
+		{name: "official account ua pairs originator", accountUserAgent: "Codex Desktop/1.2.3", wantOriginator: "Codex Desktop", wantUA: "Codex Desktop/" + codexCLIVersion},
 		{
 			name:              "request identity cannot override account ua",
 			accountUserAgent:  "codex-tui/0.140.2 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.140.2)",
 			requestUserAgent:  "codex_cli_rs/0.144.1",
 			requestOriginator: "codex_cli_rs",
 			wantOriginator:    "codex-tui",
-			wantUA:            "codex-tui/0.140.2 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.140.2)",
+			wantUA:            "codex-tui/" + codexCLIVersion + " (Mac OS X 14.0; arm64) iTerm (codex-tui; " + codexCLIVersion + ")",
 		},
 		{name: "request originator without configured ua falls back to default identity", requestOriginator: "codex_vscode", wantOriginator: "codex-tui", wantUA: DefaultOpenAICodexUserAgent},
 		{name: "third-party account ua masked to default identity", accountUserAgent: "luna/1.2.0", wantOriginator: "codex-tui", wantUA: DefaultOpenAICodexUserAgent},
@@ -3240,8 +3242,8 @@ func TestOpenAIBuildUpstreamRequestOAuthOfficialClientOriginatorCompatibility(t 
 			isCodexCLI := openai.IsCodexOfficialClientByHeaders(c.GetHeader("User-Agent"), c.GetHeader("originator"))
 			req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", false, "", isCodexCLI)
 			require.NoError(t, err)
-			require.Equal(t, openai.CodexDefaultOriginator, req.Header.Get("originator"))
-			require.Equal(t, codexCLIUserAgent, req.Header.Get("User-Agent"))
+			require.Equal(t, tt.wantOriginator, req.Header.Get("originator"))
+			require.Equal(t, tt.wantUA, req.Header.Get("User-Agent"))
 			require.Equal(t, codexCLIVersion, req.Header.Get("version"))
 		})
 	}

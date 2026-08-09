@@ -200,6 +200,21 @@ func TestEnforceCodexIdentityHeadersFollowsCanonicalResolver(t *testing.T) {
 	require.Equal(t, "0.200.1", h.Get("version"))
 }
 
+func TestEnforceCodexIdentityHeadersUsesExplicitCanonicalUA(t *testing.T) {
+	SetCodexCanonicalUserAgentResolver(func() string {
+		return "codex-tui/0.199.0" + codexCLIUserAgentSuffix
+	})
+	t.Cleanup(func() { SetCodexCanonicalUserAgentResolver(nil) })
+
+	h := make(http.Header)
+	h.Set("originator", "codex-tui")
+	enforceCodexIdentityHeadersWithCanonicalUA(h, "", "codex_vscode/0.200.1 (Mac OS X 15.0; arm64) vscode")
+
+	require.Equal(t, "codex_vscode", h.Get("originator"))
+	require.Equal(t, "codex_vscode/0.200.1 (Mac OS X 15.0; arm64) vscode", h.Get("user-agent"))
+	require.Equal(t, "0.200.1", h.Get("version"))
+}
+
 // 解析器返回非法值（配置被写坏、同步到异常内容）时必须回退到内置身份，
 // 绝不能把不可控内容拼进出站身份。
 //

@@ -12,11 +12,13 @@ import (
 )
 
 func newOpenAICodexUASettingService(value string) *SettingService {
-	values := map[string]string{}
+	values := map[string]string{
+		SettingKeyOpenAICodexClientVersionSynced: codexCLIVersion,
+	}
 	if value != "" {
 		values[SettingKeyOpenAICodexUserAgent] = value
 	}
-	return NewSettingService(&betaPolicySettingRepoStub{values: values}, &config.Config{})
+	return NewSettingService(&codexVersionSettingRepoStub{values: values}, &config.Config{})
 }
 
 func TestResolveOpenAICodexUpstreamUserAgentPrecedence(t *testing.T) {
@@ -59,8 +61,9 @@ func TestOpenAICodexOAuthUpstreamRequestsIgnoreClientUserAgent(t *testing.T) {
 		svc := &OpenAIGatewayService{settingService: settings}
 		req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", false, "", true)
 		require.NoError(t, err)
-		require.Equal(t, "codex_vscode/1.0", req.Header.Get("User-Agent"))
+		require.Equal(t, "codex_vscode/"+codexCLIVersion, req.Header.Get("User-Agent"))
 		require.Equal(t, "codex_vscode", req.Header.Get("Originator"))
+		require.Equal(t, codexCLIVersion, req.Header.Get("Version"))
 	})
 
 	t.Run("passthrough", func(t *testing.T) {
@@ -68,8 +71,9 @@ func TestOpenAICodexOAuthUpstreamRequestsIgnoreClientUserAgent(t *testing.T) {
 		svc := &OpenAIGatewayService{settingService: settings}
 		req, err := svc.buildUpstreamRequestOpenAIPassthrough(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token")
 		require.NoError(t, err)
-		require.Equal(t, "codex_vscode/1.0", req.Header.Get("User-Agent"))
+		require.Equal(t, "codex_vscode/"+codexCLIVersion, req.Header.Get("User-Agent"))
 		require.Equal(t, "codex_vscode", req.Header.Get("Originator"))
+		require.Equal(t, codexCLIVersion, req.Header.Get("Version"))
 	})
 
 	t.Run("websocket", func(t *testing.T) {
@@ -89,12 +93,13 @@ func TestOpenAICodexOAuthUpstreamRequestsIgnoreClientUserAgent(t *testing.T) {
 			"",
 		)
 		require.NoError(t, err)
-		require.Equal(t, "codex_vscode/1.0", headers.Get("User-Agent"))
+		require.Equal(t, "codex_vscode/"+codexCLIVersion, headers.Get("User-Agent"))
 		require.Equal(t, "codex_vscode", headers.Get("Originator"))
+		require.Equal(t, codexCLIVersion, headers.Get("Version"))
 	})
 }
 
-func TestOpenAICodexAccountUserAgentWinsEvenWhenForceCodexCLIEnabled(t *testing.T) {
+func TestOpenAICodexForceCodexCLIUsesCanonicalSystemIdentity(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -115,6 +120,7 @@ func TestOpenAICodexAccountUserAgentWinsEvenWhenForceCodexCLIEnabled(t *testing.
 
 	req, err := svc.buildUpstreamRequestOpenAIPassthrough(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token")
 	require.NoError(t, err)
-	require.Equal(t, "codex-tui/2.0", req.Header.Get("User-Agent"))
-	require.Equal(t, "codex-tui", req.Header.Get("Originator"))
+	require.Equal(t, "codex_vscode/"+codexCLIVersion, req.Header.Get("User-Agent"))
+	require.Equal(t, "codex_vscode", req.Header.Get("Originator"))
+	require.Equal(t, codexCLIVersion, req.Header.Get("Version"))
 }

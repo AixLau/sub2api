@@ -63,12 +63,14 @@ type openAIRecordUsageBestEffortLogRepoStub struct {
 	bestEffortCalls int
 	createCalls     int
 	lastLog         *UsageLog
+	requestIDs      []string
 	lastCtxErr      error
 }
 
 func (s *openAIRecordUsageBestEffortLogRepoStub) CreateBestEffort(ctx context.Context, log *UsageLog) error {
 	s.bestEffortCalls++
 	s.lastLog = log
+	s.requestIDs = append(s.requestIDs, log.RequestID)
 	s.lastCtxErr = ctx.Err()
 	return s.bestEffortErr
 }
@@ -76,6 +78,7 @@ func (s *openAIRecordUsageBestEffortLogRepoStub) CreateBestEffort(ctx context.Co
 func (s *openAIRecordUsageBestEffortLogRepoStub) Create(ctx context.Context, log *UsageLog) (bool, error) {
 	s.createCalls++
 	s.lastLog = log
+	s.requestIDs = append(s.requestIDs, log.RequestID)
 	s.lastCtxErr = ctx.Err()
 	return false, s.createErr
 }
@@ -549,7 +552,7 @@ func TestGatewayServiceRecordUsage_UsesFallbackRequestIDForUsageLog(t *testing.T
 	require.Equal(t, "local:gateway-local-fallback", usageRepo.lastLog.RequestID)
 }
 
-func TestGatewayServiceRecordUsage_PrefersUpstreamRequestIDOverClientRequestID(t *testing.T) {
+func TestGatewayServiceRecordUsage_PrefersStableClientRequestID(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
 	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
@@ -573,9 +576,9 @@ func TestGatewayServiceRecordUsage_PrefersUpstreamRequestIDOverClientRequestID(t
 
 	require.NoError(t, err)
 	require.NotNil(t, billingRepo.lastCmd)
-	require.Equal(t, "upstream-volatile-456", billingRepo.lastCmd.RequestID)
+	require.Equal(t, "client:client-stable-123", billingRepo.lastCmd.RequestID)
 	require.NotNil(t, usageRepo.lastLog)
-	require.Equal(t, "upstream-volatile-456", usageRepo.lastLog.RequestID)
+	require.Equal(t, "client:client-stable-123", usageRepo.lastLog.RequestID)
 }
 
 func TestForwardResultHasBillableUsage(t *testing.T) {
@@ -696,9 +699,9 @@ func TestGatewayServiceRecordUsage_BillingFingerprintConflictRetriesAndPersistsU
 }
 
 func TestGatewayServiceRecordUsage_BillingErrorSkipsUsageLogWrite(t *testing.T) {
-	usageRepo := &openAIRecordUsageLogRepoStub{}
+	usageRepo := &openAIRecordUsageBestEffortLogRepoStub{}
 	billingErr := errors.New("billing tx failed")
-	billingRepo := &openAIRecordUsageBillingRepoStub{err: billingErr}
+	billingRepo := &openAIRecordUsageBillingRepoStub{errs: []error{billingErr, nil}}
 	userRepo := &openAIRecordUsageUserRepoStub{}
 	subRepo := &openAIRecordUsageSubRepoStub{}
 	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo)
@@ -720,7 +723,7 @@ func TestGatewayServiceRecordUsage_BillingErrorSkipsUsageLogWrite(t *testing.T) 
 
 	require.ErrorIs(t, err, billingErr)
 	require.Equal(t, 1, billingRepo.calls)
-	require.Equal(t, 1, usageRepo.calls)
+	require.Equal(t, 1, usageRepo.bestEffortCalls)
 	require.NotNil(t, usageRepo.lastLog)
 	require.Equal(t, 10, usageRepo.lastLog.InputTokens)
 	require.Equal(t, 6, usageRepo.lastLog.OutputTokens)
@@ -728,6 +731,33 @@ func TestGatewayServiceRecordUsage_BillingErrorSkipsUsageLogWrite(t *testing.T) 
 	require.Greater(t, usageRepo.lastLog.OutputCost, 0.0)
 	require.Greater(t, usageRepo.lastLog.TotalCost, 0.0)
 	require.Zero(t, usageRepo.lastLog.ActualCost)
+	require.NotEqual(t, "gateway_billing_fail", usageRepo.lastLog.RequestID)
+	require.True(t, strings.HasPrefix(usageRepo.lastLog.RequestID, "billing-failed:"))
+	require.Equal(t, usageBillingFailureLogRequestID("gateway_billing_fail"), usageRepo.lastLog.RequestID)
+
+	err = svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID: "gateway_billing_fail",
+			Usage: ClaudeUsage{
+				InputTokens:  10,
+				OutputTokens: 6,
+			},
+			Model:    "claude-sonnet-4",
+			Duration: time.Second,
+		},
+		APIKey:  &APIKey{ID: 505},
+		User:    &User{ID: 605},
+		Account: &Account{ID: 705},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 2, billingRepo.calls)
+	require.Equal(t, 2, usageRepo.bestEffortCalls)
+	require.Equal(t, []string{
+		usageBillingFailureLogRequestID("gateway_billing_fail"),
+		"gateway_billing_fail",
+	}, usageRepo.requestIDs)
+	require.Greater(t, usageRepo.lastLog.ActualCost, 0.0)
 }
 
 func TestGatewayServiceRecordUsage_ReasoningEffortPersisted(t *testing.T) {

@@ -56,6 +56,13 @@ const messages: Record<string, string> = {
 	'usage.upstreamResponseModel': 'Upstream response',
 	'usage.modelVariant': 'Possible version variant',
 	'usage.modelMismatch': 'Different model',
+	'usage.accountTest': 'Account test',
+	'usage.contentModeration': 'Content moderation',
+	'usage.failedUpstreamUsage': 'Failed upstream usage',
+	'usage.platform': 'Platform',
+	'usage.platformAudit': 'Platform audit',
+	'usage.platformTest': 'Platform test',
+	'usage.modelCost': 'Model cost',
 
 }
 
@@ -336,6 +343,87 @@ describe('admin UsageTable tooltip', () => {
     })
 
     expect(wrapper.text().match(/unique-model-name/g)).toHaveLength(1)
+  })
+
+  it('labels account-test rows as platform operations without the model-cost prefix', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'account-test-1',
+          source: 'account_test',
+          user_id: 0,
+          api_key_id: 0,
+          model: 'gpt-5.4',
+          actual_cost: 0,
+          total_cost: 0.012345,
+          account_rate_multiplier: 1,
+          rate_multiplier: 1,
+          input_cost: 0.002,
+          output_cost: 0.010345,
+          cache_creation_cost: 0,
+          cache_read_cost: 0,
+          input_tokens: 100,
+          output_tokens: 20,
+        }],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('Account test')
+    expect(text).toContain('Platform test')
+    expect(text).not.toContain('Model cost')
+    expect(text).toContain('$0.012345')
+    expect(text).not.toContain('#0')
+  })
+
+  it('hides the content-moderation label and model-cost prefix for platform audit rows', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'content-moderation-1',
+          source: 'content_moderation',
+          user_id: 0,
+          api_key_id: 0,
+          model: 'gpt-5.3-codex-spark',
+          actual_cost: 0,
+          total_cost: 0.012345,
+          account_rate_multiplier: 1,
+          rate_multiplier: 1,
+          input_cost: 0.002,
+          output_cost: 0.010345,
+          cache_creation_cost: 0,
+          cache_read_cost: 0,
+          input_tokens: 100,
+          output_tokens: 20,
+        }],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('Platform audit')
+    expect(text).not.toContain('Content moderation')
+    expect(text).not.toContain('Model cost')
+    expect(text).toContain('$0.012345')
   })
 
 	it.each([

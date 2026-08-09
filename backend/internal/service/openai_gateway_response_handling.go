@@ -634,13 +634,13 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		processed chan struct{}
 	}
 	// 独立 goroutine 读取上游，避免读取阻塞影响 keepalive/超时处理
-	// Guard mode permits one queued token plus the token being processed. With
-	// the guarded scanner cap this bounds scanner/channel retention near 16 MiB;
-	// the timeout-disabled path preserves the legacy depth of 16.
+	// Before semantic output, per-event acknowledgements permit only one queued
+	// token plus the token being processed. The physical queue retains the legacy
+	// depth so upstream read-ahead resumes after the first semantic event commits.
 	events := make(chan scanEvent, openAIFirstOutputEventQueueSize(guardFirstOutput))
 	done := make(chan struct{})
 	sendEvent := func(ev scanEvent) bool {
-		if guardFirstOutput {
+		if firstOutputScanGuard.Load() {
 			ev.processed = make(chan struct{})
 		}
 		select {
@@ -658,9 +658,10 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			return false
 		}
 	}
-	markEventProcessed := func(ev scanEvent) {
-		if ev.processed != nil {
+	markEventProcessed := func(ev *scanEvent) {
+		if ev != nil && ev.processed != nil {
 			close(ev.processed)
+			ev.processed = nil
 		}
 	}
 	var lastReadAt int64
@@ -692,11 +693,18 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				return finalizeStream()
 			}
 			if result, err, done := handleScanErr(ev.err); done {
-				markEventProcessed(ev)
+				markEventProcessed(&ev)
 				return result, err
 			}
+			if guardFirstOutput && ev.line == "" && eventStartsClientOutput {
+				// The complete semantic event is already staged. Release scanner
+				// backpressure before a potentially slow downstream Flush so upstream
+				// reads and interval tracking continue independently.
+				firstOutputScanGuard.Store(false)
+				markEventProcessed(&ev)
+			}
 			processSSELine(ev.line, len(events) == 0)
-			markEventProcessed(ev)
+			markEventProcessed(&ev)
 			if streamEarlyErr != nil {
 				return resultWithUsage(), streamEarlyErr
 			}
@@ -724,7 +732,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			}
 			_ = resp.Body.Close()
 			for ev := range events {
-				markEventProcessed(ev)
+				markEventProcessed(&ev)
 			}
 			return resultWithUsage(), s.newOpenAIFirstOutputTimeoutError(
 				ctx, c, account, startTime, originalModel, reasoningEffort,

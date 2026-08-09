@@ -15,17 +15,17 @@ describe('site_logo sanitization', () => {
     expect(sidebarSource).toContain('sanitizeUrl(appStore.siteLogo')
   })
 
-  it('HomeView no longer renders admin-configurable site_logo (星链落地页品牌为静态)', () => {
-    expect(homeViewSource).not.toContain('site_logo')
-    expect(homeViewSource).not.toContain('siteLogo')
+  it('HomeView sanitizes the admin-configurable logo used by compact mode', () => {
+    expect(homeViewSource).toContain("import { sanitizeUrl } from '@/utils/url'")
+    expect(homeViewSource).toContain("appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '/logo.svg'")
   })
 
   it('KeyUsageView applies sanitizeUrl to siteLogo', () => {
     expect(keyUsageViewSource).toContain('sanitizeUrl(appStore.cachedPublicSettings?.site_logo || appStore.siteLogo')
   })
 
-  it('both pass allowRelative and allowDataUrl options', () => {
-    for (const src of [sidebarSource, keyUsageViewSource]) {
+  it('all configurable logo consumers allow relative and image data URLs', () => {
+    for (const src of [sidebarSource, homeViewSource, keyUsageViewSource]) {
       expect(src).toContain('allowRelative: true')
       expect(src).toContain('allowDataUrl: true')
     }

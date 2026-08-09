@@ -173,8 +173,8 @@ func TestOpenAIFirstOutputStageDefaultLimitIsIndependentFromScannerLimit(t *test
 	require.Less(t, stage.limit, int64(defaultMaxLineSize))
 }
 
-func TestOpenAIFirstOutputEventQueueSizeBackpressuresGuardedStreams(t *testing.T) {
-	require.Equal(t, 1, openAIFirstOutputEventQueueSize(true))
+func TestOpenAIFirstOutputEventQueueRetainsReadAheadCapacity(t *testing.T) {
+	require.Equal(t, 16, openAIFirstOutputEventQueueSize(true))
 	require.Equal(t, 16, openAIFirstOutputEventQueueSize(false))
 }
 

@@ -19,12 +19,14 @@ type openAIRecordUsageLogRepoStub struct {
 	err        error
 	calls      int
 	lastLog    *UsageLog
+	requestIDs []string
 	lastCtxErr error
 }
 
 func (s *openAIRecordUsageLogRepoStub) Create(ctx context.Context, log *UsageLog) (bool, error) {
 	s.calls++
 	s.lastLog = log
+	s.requestIDs = append(s.requestIDs, log.RequestID)
 	s.lastCtxErr = ctx.Err()
 	return s.inserted, s.err
 }
@@ -1041,7 +1043,7 @@ func TestOpenAIGatewayServiceRecordUsage_GeneratesRequestIDWhenAllSourcesMissing
 func TestOpenAIGatewayServiceRecordUsage_BillingErrorWritesUnsettledUsageLog(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	billingErr := errors.New("billing tx failed")
-	billingRepo := &openAIRecordUsageBillingRepoStub{err: billingErr}
+	billingRepo := &openAIRecordUsageBillingRepoStub{errs: []error{billingErr, nil}}
 	userRepo := &openAIRecordUsageUserRepoStub{}
 	subRepo := &openAIRecordUsageSubRepoStub{}
 	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo, nil)
@@ -1071,6 +1073,33 @@ func TestOpenAIGatewayServiceRecordUsage_BillingErrorWritesUnsettledUsageLog(t *
 	require.Greater(t, usageRepo.lastLog.OutputCost, 0.0)
 	require.Greater(t, usageRepo.lastLog.TotalCost, 0.0)
 	require.Zero(t, usageRepo.lastLog.ActualCost)
+	require.NotEqual(t, "resp_billing_fail", usageRepo.lastLog.RequestID)
+	require.True(t, strings.HasPrefix(usageRepo.lastLog.RequestID, "billing-failed:"))
+	require.Equal(t, usageBillingFailureLogRequestID("resp_billing_fail"), usageRepo.lastLog.RequestID)
+
+	err = svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID: "resp_billing_fail",
+			Usage: OpenAIUsage{
+				InputTokens:  8,
+				OutputTokens: 4,
+			},
+			Model:    "gpt-5.1",
+			Duration: time.Second,
+		},
+		APIKey:  &APIKey{ID: 10048},
+		User:    &User{ID: 20048},
+		Account: &Account{ID: 30048},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 2, billingRepo.calls)
+	require.Equal(t, 2, usageRepo.calls)
+	require.Equal(t, []string{
+		usageBillingFailureLogRequestID("resp_billing_fail"),
+		"resp_billing_fail",
+	}, usageRepo.requestIDs)
+	require.Greater(t, usageRepo.lastLog.ActualCost, 0.0)
 }
 
 func TestOpenAIGatewayServiceRecordUsage_BillingFingerprintConflictRetriesAndPersistsUsage(t *testing.T) {

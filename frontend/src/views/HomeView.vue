@@ -9,6 +9,7 @@ import LandingShell from '@/components/landing/LandingShell.vue'
 import HeroSection from '@/components/landing/HeroSection.vue'
 import TrustedBySection from '@/components/landing/TrustedBySection.vue'
 import { applyLandingSeo } from '@/utils/landingSeo'
+import { sanitizeUrl } from '@/utils/url'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -21,7 +22,10 @@ const hasHomeContent = computed(() => homeContent.value.trim().length > 0)
 const compactHomeEnabled = computed(() => appStore.cachedPublicSettings?.compact_home_enabled === true)
 const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API')
 const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || '')
-const siteLogo = computed(() => appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '/logo.svg')
+const siteLogo = computed(() => sanitizeUrl(
+  appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '/logo.svg',
+  { allowRelative: true, allowDataUrl: true }
+))
 const dashboardPath = computed(() => authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
 const compactDestination = computed(() => authStore.isAuthenticated ? dashboardPath.value : '/login')
 

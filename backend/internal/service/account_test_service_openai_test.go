@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/gin-gonic/gin"
@@ -153,7 +154,7 @@ func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.
 	require.Contains(t, recorder.Body.String(), "test_complete")
 }
 
-func TestAccountTestService_OpenAIOAuthAccountTestConfiguredUserAgentIdentity(t *testing.T) {
+func TestAccountTestService_OpenAIOAuthAccountTestWithoutSettingsUsesDefaultIdentity(t *testing.T) {
 	ctx, _ := newTestContext()
 	resp := newJSONResponse(http.StatusOK, "data: {\"type\":\"response.completed\"}\n\n")
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
@@ -172,8 +173,9 @@ func TestAccountTestService_OpenAIOAuthAccountTestConfiguredUserAgentIdentity(t 
 	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.4", "", "")
 	require.NoError(t, err)
 	require.Len(t, upstream.requests, 1)
-	require.Equal(t, "codex_vscode/1.0", upstream.requests[0].Header.Get("User-Agent"))
-	require.Equal(t, "codex_vscode", upstream.requests[0].Header.Get("Originator"))
+	require.Equal(t, codexCLIUserAgent, upstream.requests[0].Header.Get("User-Agent"))
+	require.Equal(t, openai.CodexDefaultOriginator, upstream.requests[0].Header.Get("Originator"))
+	require.Equal(t, codexCLIVersion, upstream.requests[0].Header.Get("Version"))
 }
 
 func TestAccountTestService_OpenAISuccessIncludesTimingMetrics(t *testing.T) {

@@ -246,7 +246,7 @@ func TestExecUsageLogInsertNoResult_PersistsRequestedModel(t *testing.T) {
 		CreatedAt:      time.Date(2025, 1, 4, 12, 0, 0, 0, time.UTC),
 	})
 
-	mock.ExpectExec(`(?s)INSERT INTO usage_logs.*\$63\s*\)`).
+	mock.ExpectExec(`(?s)INSERT INTO usage_logs.*\$65\s*\)`).
 		WithArgs(anySliceToDriverValues(prepared.args)...).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
@@ -267,6 +267,9 @@ func TestPrepareUsageLogInsert_ArgCountMatchesTypes(t *testing.T) {
 	})
 
 	require.Len(t, prepared.args, len(usageLogInsertArgTypes))
+	placeholders := usageLogInsertPlaceholders()
+	require.Equal(t, len(prepared.args), strings.Count(placeholders, "$"))
+	require.True(t, strings.HasSuffix(placeholders, fmt.Sprintf("$%d", len(prepared.args))))
 }
 
 func TestPrepareUsageLogInsert_PersistsImageSizeMetadata(t *testing.T) {

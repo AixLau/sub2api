@@ -23,7 +23,6 @@ const (
 	openAIFirstOutputStageMemoryLimit        = 64 * 1024
 	openAIFirstOutputStageMaxBytes           = 8 * 1024 * 1024
 	openAIFirstOutputScannerFramingAllowance = 64
-	openAIFirstOutputGuardQueueSize          = 1
 	openAIDefaultStreamQueueSize             = 16
 )
 
@@ -61,10 +60,10 @@ func newDefaultOpenAIFirstOutputStage() *openAIFirstOutputStage {
 	return newOpenAIFirstOutputStage(openAIFirstOutputStageMaxBytes)
 }
 
-func openAIFirstOutputEventQueueSize(guardFirstOutput bool) int {
-	if guardFirstOutput {
-		return openAIFirstOutputGuardQueueSize
-	}
+func openAIFirstOutputEventQueueSize(bool) int {
+	// Guarded streams use per-event acknowledgements before semantic output to
+	// bound retention. Keep the physical queue at the normal depth so read-ahead
+	// resumes immediately after the guard is released.
 	return openAIDefaultStreamQueueSize
 }
 

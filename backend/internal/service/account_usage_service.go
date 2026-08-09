@@ -94,6 +94,8 @@ type openAIRateLimitWindowStarter interface {
 	RunTestBackground(ctx context.Context, accountID int64, modelID string) (*ScheduledTestResult, error)
 }
 
+type openAIWindowStartProbeContextKey struct{}
+
 type openAIRateLimitWindowStartTask struct {
 	limitedAt time.Time
 	resetAt   time.Time
@@ -133,7 +135,9 @@ const (
 	openAIRecoveryBatchSize   = 20
 	openAIWindowStartMinDelay = 10 * time.Second
 	openAIWindowStartMaxDelay = 60 * time.Second
-	openAIWindowStartLookback = openAIRecoveryInterval + openAIWindowStartMaxDelay
+	// Keep stale cooldown rows eligible across a restart or a prolonged
+	// database outage.  Seven days covers the longest Codex usage window.
+	openAIWindowStartLookback = 7*24*time.Hour + openAIWindowStartMaxDelay
 	grokProbeRetryTTL         = 1 * time.Minute
 	grokFreeQuotaWindow       = 24 * time.Hour
 	openAICodexProbeVersion   = codexCLIVersion // 与网关出站身份同源，避免两处硬编码版本各自漂移
@@ -413,8 +417,18 @@ func (s *AccountUsageService) runOpenAIRateLimitRecoveryCycle() {
 			slog.Warn("openai_rate_limit_window_start_account_failed", "account_id", accountID, "error", accountErr)
 			continue
 		}
+		if account == nil {
+			slog.Warn("openai_rate_limit_window_start_account_failed", "account_id", accountID, "reason", "account_not_found")
+			continue
+		}
 		s.scheduleOpenAIRateLimitWindowStart(account)
-		if account.RateLimitResetAt != nil && !account.RateLimitResetAt.After(time.Now()) {
+		// Keep polling /wham/usage for early upstream resets. The OpenAI usage
+		// path suppresses ClearRateLimit while this generation has a pending
+		// window-start task, so an early availability response cannot invalidate
+		// the timer before it sends the sliding-window request.
+		if account.RateLimitResetAt != nil &&
+			!account.RateLimitResetAt.After(time.Now()) &&
+			s.hasPendingOpenAIRateLimitWindowStart(accountID) {
 			continue
 		}
 
@@ -427,6 +441,27 @@ func (s *AccountUsageService) runOpenAIRateLimitRecoveryCycle() {
 	}
 }
 
+func (s *AccountUsageService) hasPendingOpenAIRateLimitWindowStart(accountID int64) bool {
+	if s == nil || accountID <= 0 {
+		return false
+	}
+	s.openAIWindowStartMu.Lock()
+	defer s.openAIWindowStartMu.Unlock()
+	_, ok := s.openAIWindowStartTasks[accountID]
+	return ok
+}
+
+func (s *AccountUsageService) removeOpenAIRateLimitWindowStartTask(accountID int64, task *openAIRateLimitWindowStartTask) {
+	if s == nil || task == nil {
+		return
+	}
+	s.openAIWindowStartMu.Lock()
+	if current := s.openAIWindowStartTasks[accountID]; current == task {
+		delete(s.openAIWindowStartTasks, accountID)
+	}
+	s.openAIWindowStartMu.Unlock()
+}
+
 func (s *AccountUsageService) scheduleOpenAIRateLimitWindowStart(account *Account) {
 	if s == nil || s.openAIWindowStarter == nil || account == nil ||
 		account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth || account.IsShadow() ||
@@ -437,10 +472,7 @@ func (s *AccountUsageService) scheduleOpenAIRateLimitWindowStart(account *Accoun
 	limitedAt := *account.RateLimitedAt
 	resetAt := *account.RateLimitResetAt
 	now := time.Now()
-	dueAt := resetAt.Add(randomOpenAIWindowStartDelay())
-	if dueAt.Before(now) {
-		dueAt = now
-	}
+	dueAt := openAIWindowStartDueAt(resetAt, now, randomOpenAIWindowStartDelay())
 
 	s.openAIWindowStartMu.Lock()
 	defer s.openAIWindowStartMu.Unlock()
@@ -463,6 +495,13 @@ func (s *AccountUsageService) scheduleOpenAIRateLimitWindowStart(account *Accoun
 	slog.Info("openai_rate_limit_window_start_scheduled", "account_id", account.ID, "reset_at", resetAt, "start_at", dueAt)
 }
 
+func openAIWindowStartDueAt(resetAt, now time.Time, delay time.Duration) time.Time {
+	if resetAt.After(now) {
+		return resetAt.Add(delay)
+	}
+	return now.Add(delay)
+}
+
 func randomOpenAIWindowStartDelay() time.Duration {
 	span := openAIWindowStartMaxDelay - openAIWindowStartMinDelay
 	if span <= 0 {
@@ -480,36 +519,54 @@ func (s *AccountUsageService) runOpenAIRateLimitWindowStart(accountID int64, tas
 		s.openAIWindowStartMu.Unlock()
 		return
 	}
-	delete(s.openAIWindowStartTasks, accountID)
+	// Keep the task in the map until the conditional database claim returns.
+	// Otherwise a concurrent /wham/usage poll can clear this generation between
+	// timer expiry and the claim, causing the probe to be skipped permanently.
 	s.openAIWindowStartMu.Unlock()
 
 	claimer, ok := s.accountRepo.(openAIRateLimitWindowStartClaimer)
 	if !ok {
+		s.removeOpenAIRateLimitWindowStartTask(accountID, task)
+		slog.Warn("openai_rate_limit_window_start_claim_unavailable", "account_id", accountID)
 		return
 	}
 	claimCtx, claimCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	claimed, err := claimer.ClaimOpenAIExpiredRateLimit(claimCtx, accountID, task.limitedAt, task.resetAt)
 	claimCancel()
+	s.removeOpenAIRateLimitWindowStartTask(accountID, task)
 	if err != nil {
 		slog.Warn("openai_rate_limit_window_start_claim_failed", "account_id", accountID, "error", err)
 		return
 	}
 	if !claimed {
+		slog.Warn("openai_rate_limit_window_start_claim_skipped", "account_id", accountID, "reset_at", task.resetAt, "reason", "rate_limit_state_changed")
 		return
 	}
 	if s.runtimeBlocker != nil {
 		s.runtimeBlocker.ClearAccountSchedulingBlock(accountID)
 	}
+	slog.Info("openai_rate_limit_window_start_request", "account_id", accountID, "reset_at", task.resetAt)
 
-	probeCtx, probeCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	probeCtx, probeCancel := context.WithTimeout(
+		context.WithValue(context.Background(), openAIWindowStartProbeContextKey{}, true),
+		30*time.Second,
+	)
 	result, probeErr := s.openAIWindowStarter.RunTestBackground(probeCtx, accountID, "")
 	probeCancel()
 	if probeErr != nil || result == nil || result.Status != "success" {
 		var resultStatus string
+		var resultError string
 		if result != nil {
 			resultStatus = result.Status
+			resultError = truncate(strings.TrimSpace(result.ErrorMessage), 240)
 		}
-		slog.Warn("openai_rate_limit_window_start_failed", "account_id", accountID, "error", probeErr, "result_status", resultStatus)
+		slog.Warn(
+			"openai_rate_limit_window_start_failed",
+			"account_id", accountID,
+			"error", probeErr,
+			"result_status", resultStatus,
+			"result_error", resultError,
+		)
 		return
 	}
 	slog.Info("openai_rate_limit_window_started", "account_id", accountID, "reset_at", task.resetAt)
@@ -801,7 +858,7 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 					updates = buildCodexSparkWindowExtraUpdates(quotaUsage, now)
 				} else {
 					updates = buildCodexGlobalWindowExtraUpdates(quotaUsage, now)
-					if openAIQuotaShowsAvailable(quotaUsage) {
+					if openAIQuotaShowsAvailable(quotaUsage) && !s.hasPendingOpenAIRateLimitWindowStart(account.ID) {
 						s.recoverOpenAIGlobalRateLimitAfterProbe(ctx, account)
 					}
 				}

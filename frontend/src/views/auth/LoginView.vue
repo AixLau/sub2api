@@ -73,13 +73,14 @@
         </p>
       </div>
 
-      <div v-if="turnstileEnabled && publicSettingsLoaded">
+      <div v-if="captchaEnabled && publicSettingsLoaded">
         <TurnstileWidget
           ref="turnstileRef"
           :turnstile-enabled="turnstileEnabled"
           :turnstile-site-key="turnstileSiteKey"
           :tencent-enabled="tencentCaptchaEnabled"
           :tencent-app-id="tencentCaptchaAppId"
+          :tencent-region="tencentCaptchaRegion"
           :aliyun-enabled="aliyunCaptchaEnabled"
           :aliyun-scene-id="aliyunCaptchaSceneId"
           :aliyun-prefix="aliyunCaptchaPrefix"
@@ -115,6 +116,7 @@
       <button
         v-if="showPasskeyLogin"
         type="button"
+        data-testid="passkey-login"
         class="auth-submit w-full"
         :disabled="authActionDisabled"
         @click="handlePasskeyLogin"

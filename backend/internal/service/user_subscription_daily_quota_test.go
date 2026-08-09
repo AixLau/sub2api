@@ -205,7 +205,7 @@ func TestCheckAndResetWindows_MultiDaySubscriptionStillResetsDailyUsage(t *testi
 	require.Equal(t, 0.0, sub.DailyUsageUSD)
 }
 
-func TestCheckAndResetWindows_DoesNotResetMonthlyUsageWhenNextWindowWouldOutliveSubscription(t *testing.T) {
+func TestCheckAndResetWindows_AllowsPartialFinalMonthlyWindow(t *testing.T) {
 	loc := time.FixedZone("CST", 8*60*60)
 	now := time.Now().In(loc)
 	monthlyWindowStart := now.Add(-30*24*time.Hour - time.Hour)
@@ -226,8 +226,8 @@ func TestCheckAndResetWindows_DoesNotResetMonthlyUsageWhenNextWindowWouldOutlive
 	err := svc.CheckAndResetWindows(context.Background(), sub)
 
 	require.NoError(t, err)
-	require.False(t, repo.resetMonthlyCalled, "月包到期前不应因为当天零点窗口到期而刷新出下一整月额度")
-	require.Equal(t, 400.01, sub.MonthlyUsageUSD)
+	require.True(t, repo.resetMonthlyCalled, "到期前开始的最后一个月窗口可以短于 30 天")
+	require.Zero(t, sub.MonthlyUsageUSD)
 }
 
 func TestValidateAndCheckLimits_DailyCardDoesNotAllowSecondQuotaAfterMidnight(t *testing.T) {
@@ -254,7 +254,7 @@ func TestValidateAndCheckLimits_DailyCardDoesNotAllowSecondQuotaAfterMidnight(t 
 	require.Equal(t, dailyLimit+0.01, sub.DailyUsageUSD, "热路径不应清零日卡已用额度")
 }
 
-func TestValidateAndCheckLimits_DoesNotClearMonthlyUsageWhenNextWindowWouldOutliveSubscription(t *testing.T) {
+func TestValidateAndCheckLimits_AllowsPartialFinalMonthlyWindow(t *testing.T) {
 	loc := time.FixedZone("CST", 8*60*60)
 	now := time.Now().In(loc)
 	monthlyWindowStart := now.Add(-30*24*time.Hour - time.Hour)
@@ -275,9 +275,9 @@ func TestValidateAndCheckLimits_DoesNotClearMonthlyUsageWhenNextWindowWouldOutli
 
 	needsMaintenance, err := svc.ValidateAndCheckLimits(sub, group)
 
-	require.False(t, needsMaintenance, "月包到期前不应触发月窗口重置维护")
-	require.True(t, errors.Is(err, ErrMonthlyLimitExceeded))
-	require.Equal(t, monthlyLimit+0.01, sub.MonthlyUsageUSD, "热路径不应清零临近到期月包的已用额度")
+	require.True(t, needsMaintenance, "到期前开始的最后一个月窗口需要推进维护")
+	require.NoError(t, err)
+	require.Zero(t, sub.MonthlyUsageUSD)
 }
 
 func TestValidateAndCheckLimits_ExpiredMonthlyWindowClearsBonusInMemory(t *testing.T) {

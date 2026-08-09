@@ -66,6 +66,7 @@ func (r *resetQuotaUserSubRepoStub) ResetUsageWindows(_ context.Context, _ int64
 	}
 	if resetMonthly {
 		r.sub.MonthlyUsageUSD = 0
+		r.sub.MonthlyBonusUSD = 0
 		r.sub.MonthlyWindowStart = &periodicStart
 	}
 	return nil

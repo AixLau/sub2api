@@ -416,7 +416,7 @@ func (r *userSubscriptionRepository) ResetUsageWindows(ctx context.Context, id i
 		update.SetWeeklyUsageUsd(0).SetWeeklyWindowStart(periodicStart)
 	}
 	if resetMonthly {
-		update.SetMonthlyUsageUsd(0).SetMonthlyWindowStart(periodicStart)
+		update.SetMonthlyUsageUsd(0).SetMonthlyBonusUsd(0).SetMonthlyWindowStart(periodicStart)
 	}
 	_, err := update.Save(ctx)
 	return translatePersistenceError(err, service.ErrSubscriptionNotFound, nil)

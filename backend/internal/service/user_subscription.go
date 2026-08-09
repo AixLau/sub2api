@@ -102,7 +102,8 @@ func (s *UserSubscription) NeedsWeeklyReset() bool {
 }
 
 func (s *UserSubscription) NeedsWeeklyResetAt(now time.Time) bool {
-	return s.canAutomaticallyResetWeeklyAt(now)
+	resetAt := s.WeeklyResetTime()
+	return resetAt != nil && !now.Before(*resetAt)
 }
 
 func (s *UserSubscription) NeedsMonthlyReset() bool {
@@ -110,7 +111,8 @@ func (s *UserSubscription) NeedsMonthlyReset() bool {
 }
 
 func (s *UserSubscription) NeedsMonthlyResetAt(now time.Time) bool {
-	return s.canAutomaticallyResetMonthlyAt(now)
+	resetAt := s.MonthlyResetTime()
+	return resetAt != nil && !now.Before(*resetAt)
 }
 
 func (s *UserSubscription) canAutomaticallyResetDailyAt(now time.Time) bool {
@@ -147,8 +149,8 @@ func (s *UserSubscription) canAutomaticallyResetMonthlyAt(now time.Time) bool {
 }
 
 // automaticWindowStartAt 计算周/月窗口（期限对齐滚动窗口）的当前窗口起点。
-// 窗口从锚点按整数个 period 步进，且不越过订阅到期时间，避免最后一个不完整
-// 周期重复发放额度（issue #5051）。日窗口不走此函数，见 automaticDailyWindowStartAt。
+// 窗口从锚点按整数个 period 步进，且不越过订阅到期时间。只要下一个窗口在
+// 到期前开始，就允许最后一个不完整周期。日窗口不走此函数，见 automaticDailyWindowStartAt。
 func (s *UserSubscription) automaticWindowStartAt(previous *time.Time, period time.Duration, now time.Time) (time.Time, bool) {
 	if previous == nil {
 		return time.Time{}, false
@@ -163,14 +165,7 @@ func (s *UserSubscription) automaticWindowStartAt(previous *time.Time, period ti
 		anchor = s.StartsAt
 	}
 	next := anchor.Add(period)
-	manualBeforeStartSameDay := anchor.Before(s.StartsAt) && startOfDay(anchor).Equal(startOfDay(s.StartsAt))
 	if now.Before(next) || !next.Before(s.ExpiresAt) {
-		return time.Time{}, false
-	}
-	// Preserve the local invariant that an automatic reset must not mint a
-	// partial final quota window. An explicit admin reset earlier on the start
-	// day remains a valid anchor, matching the upstream boundary correction.
-	if !manualBeforeStartSameDay && next.Add(period).After(s.ExpiresAt) {
 		return time.Time{}, false
 	}
 

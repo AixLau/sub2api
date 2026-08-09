@@ -1838,12 +1838,12 @@ func TestOpenAIGatewayService_OAuthPassthrough_NonCodexUAFallbackToCodexUA(t *te
 	require.Equal(t, DefaultOpenAICodexUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 }
 
-// 回归（issue #3901）：账号级 codex-tui UA 在透传模式下必须逐字保留，且 originator
-// 由最终账号 UA 推导配套；客户端 UA 不得覆盖账号配置。
-func TestOpenAIGatewayService_OAuthPassthrough_AccountCodexTuiIdentityPreservedAndPaired(t *testing.T) {
+// 回归（issue #3901）：账号级官方 UA 在透传模式下必须保留客户端与指纹，且 originator
+// 由最终账号 UA 推导配套；仅版本段跟随当前生效版本重建。
+func TestOpenAIGatewayService_OAuthPassthrough_AccountIdentityPreservedAndPaired(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	const tuiUA = "codex_vscode/0.140.2 (Mac OS X 14.0; arm64) vscode (codex_vscode; 0.140.2)"
+	const accountUA = "codex_vscode/0.140.2 (Mac OS X 14.0; arm64) vscode (codex_vscode; 0.140.2)"
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -1872,7 +1872,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_AccountCodexTuiIdentityPreservedA
 		Platform:       PlatformOpenAI,
 		Type:           AccountTypeOAuth,
 		Concurrency:    1,
-		Credentials:    map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc", "user_agent": tuiUA},
+		Credentials:    map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc", "user_agent": accountUA},
 		Extra:          map[string]any{"openai_passthrough": true},
 		Status:         StatusActive,
 		Schedulable:    true,
@@ -1882,8 +1882,11 @@ func TestOpenAIGatewayService_OAuthPassthrough_AccountCodexTuiIdentityPreservedA
 	_, err := svc.Forward(context.Background(), c, account, inputBody)
 	require.NoError(t, err)
 	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
-	require.Equal(t, openai.CodexDefaultOriginator, upstream.lastReq.Header.Get("originator"))
+	require.Equal(t,
+		"codex_vscode/"+codexCLIVersion+" (Mac OS X 14.0; arm64) vscode (codex_vscode; "+codexCLIVersion+")",
+		upstream.lastReq.Header.Get("User-Agent"),
+	)
+	require.Equal(t, "codex_vscode", upstream.lastReq.Header.Get("originator"))
 	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("version"))
 }
 

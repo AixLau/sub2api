@@ -1151,7 +1151,11 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 
 	// 终态收口：originator 必须与最终 User-Agent 首段配套且为官方身份，否则上游 404（issue #3901）。
 	if account.Type == AccountTypeOAuth {
-		enforceCodexIdentityHeadersWithUA(req.Header, s.codexIdentityOverrideUA(account))
+		enforceCodexIdentityHeadersWithCanonicalUA(
+			req.Header,
+			s.codexIdentityOverrideUA(account),
+			resolveOpenAICodexCanonicalUserAgent(ctx, s.settingService),
+		)
 	}
 	// Ensure required headers exist
 	if req.Header.Get("content-type") == "" {

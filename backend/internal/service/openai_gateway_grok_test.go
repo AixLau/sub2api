@@ -1504,7 +1504,7 @@ func TestForwardGrokMedia429ReconcilesRateLimitBeforeCustomErrorBypass(t *testin
 	require.Error(t, err)
 	require.Nil(t, result)
 	require.Equal(t, http.StatusInternalServerError, recorder.Code)
-	require.Contains(t, recorder.Body.String(), "Upstream gateway error")
+	require.Contains(t, recorder.Body.String(), `"type":"upstream_error"`)
 	require.NotContains(t, recorder.Body.String(), "do not expose")
 	require.Equal(t, 1, repo.rateLimitedCalls)
 	require.Zero(t, repo.tempUnschedCalls)

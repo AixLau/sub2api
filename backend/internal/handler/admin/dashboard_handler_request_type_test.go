@@ -62,6 +62,8 @@ func (s *dashboardUsageRepoCapture) GetUsageTrendWithUsageFilters(
 	granularity string,
 	filters usagestats.UsageLogFilters,
 ) ([]usagestats.TrendDataPoint, error) {
+	s.trendStart = startTime
+	s.trendEnd = endTime
 	s.trendRequestType = filters.RequestType
 	s.trendStream = filters.Stream
 	s.trendMismatch = filters.UpstreamModelMismatch
@@ -92,6 +94,8 @@ func (s *dashboardUsageRepoCapture) GetModelStatsWithUsageFiltersBySource(
 	filters usagestats.UsageLogFilters,
 	source string,
 ) ([]usagestats.ModelStat, error) {
+	s.modelStart = startTime
+	s.modelEnd = endTime
 	s.modelRequestType = filters.RequestType
 	s.modelStream = filters.Stream
 	s.modelMismatch = filters.UpstreamModelMismatch
@@ -157,7 +161,8 @@ func newDashboardRequestTypeTestRouter(repo *dashboardUsageRepoCapture) *gin.Eng
 	router.GET("/admin/dashboard/trend", handler.GetUsageTrend)
 	router.GET("/admin/dashboard/models", handler.GetModelStats)
 	router.GET("/admin/dashboard/groups", handler.GetGroupStats)
-
+	router.GET("/admin/dashboard/snapshot-v2", handler.GetSnapshotV2)
+	router.GET("/admin/dashboard/user-breakdown", handler.GetUserBreakdown)
 	router.GET("/admin/dashboard/users-ranking", handler.GetUserSpendingRanking)
 	return router
 }

@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 
 import TokenUsageTrend from '../TokenUsageTrend.vue'
+import { tokenUsageColors } from '@/theme/designTokens'
 
 const messages: Record<string, string> = {
   'usage.tokenUsageTrend': 'Token 使用趋势',
@@ -126,7 +127,12 @@ describe('TokenUsageTrend', () => {
     expect(chart.props('formatX')).toEqual(expect.any(Function))
     expect(chart.props('formatY')).toEqual(expect.any(Function))
     expect(chart.props('tooltipHtml')).toEqual(expect.any(Function))
-    expect(chart.props('colors')).toEqual(['#0033FF', '#059669', '#F97316', '#0891B2'])
+    expect(chart.props('colors')).toEqual([
+      tokenUsageColors.input,
+      tokenUsageColors.output,
+      tokenUsageColors.cacheCreation,
+      tokenUsageColors.cacheRead,
+    ])
     expect((chart.props('xField') as (datum: { date: string }) => unknown)({ date: '2026-05-08' })).toEqual(new Date('2026-05-08'))
   })
 
@@ -176,7 +182,7 @@ describe('TokenUsageTrend', () => {
     expect(tooltipHtml).toContain('class="token-trend-tooltip__marker"')
     expect(tooltipHtml).toContain('class="token-trend-tooltip__value"')
     expect(tooltipHtml).toContain('class="token-trend-tooltip__summary"')
-    expect(tooltipHtml).toContain('--token-trend-marker: #0033FF')
+    expect(tooltipHtml).toContain(`--token-trend-marker: ${tokenUsageColors.input}`)
     expect(tooltipHtml).not.toContain('background: #111827')
     expect(tooltipHtml).toContain('总使用: 1.05K')
     expect(tooltipHtml).not.toContain('$')

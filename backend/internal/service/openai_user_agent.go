@@ -24,6 +24,17 @@ func resolveOpenAICodexUpstreamUserAgent(ctx context.Context, account *Account, 
 	return DefaultOpenAICodexUserAgent
 }
 
+// resolveOpenAICodexCanonicalUserAgent returns the fully normalized system
+// identity, including the currently effective client version.
+func resolveOpenAICodexCanonicalUserAgent(ctx context.Context, settingService *SettingService) string {
+	if settingService != nil {
+		if canonicalUA := strings.TrimSpace(settingService.GetOpenAICodexCanonicalUserAgent(ctx)); canonicalUA != "" {
+			return canonicalUA
+		}
+	}
+	return codexCLIUserAgent
+}
+
 // Messages bridge requests preserve a valid official client identity when no
 // account or system override is configured. Explicit local configuration keeps
 // priority over the inbound client identity.

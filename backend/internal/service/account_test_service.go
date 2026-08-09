@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -153,6 +154,14 @@ func shouldRecordAccountTestUsage(ctx context.Context) bool {
 	return !ok || record
 }
 
+func isOpenAIWindowStartProbe(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	marked, _ := ctx.Value(openAIWindowStartProbeContextKey{}).(bool)
+	return marked
+}
+
 // NewAccountTestService creates a new AccountTestService
 func NewAccountTestService(
 	accountRepo AccountRepository,
@@ -203,14 +212,13 @@ func (s *AccountTestService) validateUpstreamBaseURL(raw string) (string, error)
 }
 
 func (s *AccountTestService) forceOpenAIAccountTestIdentity(ctx context.Context, header http.Header) string {
-	userAgent := DefaultOpenAICodexUserAgent
-	if s != nil && s.settingService != nil {
-		if configured := strings.TrimSpace(s.settingService.GetOpenAICodexUserAgent(ctx)); configured != "" {
-			userAgent = configured
-		}
+	settingService := (*SettingService)(nil)
+	if s != nil {
+		settingService = s.settingService
 	}
-	header.Set("User-Agent", userAgent)
-	enforceCodexIdentityHeaders(header)
+	canonicalUA := resolveOpenAICodexCanonicalUserAgent(ctx, settingService)
+	header.Set("User-Agent", canonicalUA)
+	enforceCodexIdentityHeadersWithCanonicalUA(header, "", canonicalUA)
 	return header.Get("User-Agent")
 }
 
@@ -813,7 +821,10 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	credentialAccount.ApplyHeaderOverrides(req.Header)
-	userAgent := s.forceOpenAIAccountTestIdentity(ctx, req.Header)
+	userAgent := req.Header.Get("User-Agent")
+	if isOAuth {
+		userAgent = s.forceOpenAIAccountTestIdentity(ctx, req.Header)
+	}
 
 	// Get proxy URL
 	proxyURL := ""
@@ -821,6 +832,16 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
+	if isOpenAIWindowStartProbe(ctx) {
+		slog.Info(
+			"openai_rate_limit_window_start_http_request",
+			"account_id", account.ID,
+			"endpoint", req.URL.Path,
+			"model", upstreamTestModelID,
+			"input_text", "hi",
+			"instruction_bytes", len(openai.DefaultInstructions),
+		)
+	}
 	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
@@ -1026,7 +1047,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	req.Header.Set("User-Agent", resolveOpenAICodexUpstreamUserAgent(ctx, account, s.settingService))
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	account.ApplyHeaderOverrides(req.Header)
-	userAgent := s.forceOpenAIAccountTestIdentity(ctx, req.Header)
+	userAgent := req.Header.Get("User-Agent")
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -1960,7 +1981,7 @@ func (s *AccountTestService) testOpenAIImageAPIKey(c *gin.Context, ctx context.C
 	req.Header.Set("User-Agent", resolveOpenAICodexUpstreamUserAgent(ctx, account, s.settingService))
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	account.ApplyHeaderOverrides(req.Header)
-	userAgent := s.forceOpenAIAccountTestIdentity(ctx, req.Header)
+	userAgent := req.Header.Get("User-Agent")
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -2197,8 +2218,8 @@ func (s *AccountTestService) sendErrorAndEnd(c *gin.Context, errorMsg string) er
 	return fmt.Errorf("%s", errorMsg)
 }
 
-// RunTestBackground executes an account test in-memory (no real HTTP client),
-// capturing SSE output via httptest.NewRecorder, then parses the result.
+// RunTestBackground executes an account test with an in-memory Gin recorder.
+// The provider request still uses the configured upstream HTTP client.
 func (s *AccountTestService) RunTestBackground(ctx context.Context, accountID int64, modelID string) (*ScheduledTestResult, error) {
 	startedAt := time.Now()
 	ctx = withoutAccountTestUsageRecording(ctx)

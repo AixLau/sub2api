@@ -453,7 +453,11 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	// 默认 Codex CLI 身份（承接原「非 Codex UA 安全兜底」，并修复其把 codex-tui 等官方 UA 改写为
 	// codex_cli_rs 造成的 originator 错配 404），详见 issue #3901。
 	if account.Type == AccountTypeOAuth {
-		enforceCodexIdentityHeadersWithUA(req.Header, s.codexIdentityOverrideUA(account))
+		enforceCodexIdentityHeadersWithCanonicalUA(
+			req.Header,
+			s.codexIdentityOverrideUA(account),
+			resolveOpenAICodexCanonicalUserAgent(ctx, s.settingService),
+		)
 	}
 
 	if req.Header.Get("content-type") == "" {
@@ -1131,6 +1135,7 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 		ResponseBody:             body,
 		ResponseHeaders:          headers,
 		RetryableOnSameAccount:   openAIStreamFailedEventRetryableOnSameAccount(account, payload, message),
+		RequestScopedTransient:   isOpenAIUpstreamCapacityShedEvent(payload),
 		SafeToFailoverAfterWrite: true,
 	}
 }

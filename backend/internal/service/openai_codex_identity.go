@@ -106,7 +106,16 @@ type codexOutboundIdentity struct {
 // 永久钉死在陈旧版本上，绕过版本自动同步，落回上游优先降载的那一侧。
 // 需要固定版本请填「Codex 客户端版本号」并关闭自动同步。
 func resolveCodexOutboundIdentity(candidateUA string) codexOutboundIdentity {
-	canonical := codexCanonicalUserAgent()
+	return resolveCodexOutboundIdentityWithCanonicalUA(candidateUA, codexCanonicalUserAgent())
+}
+
+// resolveCodexOutboundIdentityWithCanonicalUA uses an explicit canonical identity
+// when the caller already has request-scoped access to the active settings.
+func resolveCodexOutboundIdentityWithCanonicalUA(candidateUA, canonicalUA string) codexOutboundIdentity {
+	canonical := strings.TrimSpace(canonicalUA)
+	if canonical == "" {
+		canonical = codexCLIUserAgent
+	}
 	ua := strings.TrimSpace(candidateUA)
 	if ua == "" {
 		ua = canonical
@@ -186,6 +195,13 @@ func enforceCodexIdentityHeaders(h http.Header) {
 // 不应被补回。需要从缺失身份头恢复的调用方应先调用 ensureCodexIdentityHeaders。
 // 必须在所有 User-Agent 改写之后调用。
 func enforceCodexIdentityHeadersWithUA(h http.Header, overrideUA string) {
+	enforceCodexIdentityHeadersWithCanonicalUA(h, overrideUA, codexCanonicalUserAgent())
+}
+
+// enforceCodexIdentityHeadersWithCanonicalUA is the request-scoped variant of
+// enforceCodexIdentityHeadersWithUA. It avoids relying on process-global wiring
+// when the caller already owns the SettingService used for this request.
+func enforceCodexIdentityHeadersWithCanonicalUA(h http.Header, overrideUA, canonicalUA string) {
 	if h == nil || h.Get("originator") == "" {
 		return
 	}
@@ -193,7 +209,7 @@ func enforceCodexIdentityHeadersWithUA(h http.Header, overrideUA string) {
 		pairCodexIdentityHeaders(h)
 		return
 	}
-	identity := resolveCodexOutboundIdentity(overrideUA)
+	identity := resolveCodexOutboundIdentityWithCanonicalUA(overrideUA, canonicalUA)
 	h.Set("user-agent", identity.userAgent)
 	h.Set("originator", identity.originator)
 	h.Set("version", identity.version)
@@ -208,6 +224,7 @@ func pairCodexIdentityHeaders(h http.Header) {
 		if !ok {
 			originator, pairedUA = "codex-tui", DefaultOpenAICodexUserAgent
 		}
+		h.Set("version", codexClientVersionFromUA(pairedUA))
 	}
 	h.Set("user-agent", pairedUA)
 	h.Set("originator", originator)

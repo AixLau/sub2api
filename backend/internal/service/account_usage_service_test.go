@@ -9,13 +9,15 @@ import (
 
 type accountUsageCodexProbeRepo struct {
 	stubOpenAIAccountRepo
-	updateExtraCh          chan map[string]any
-	rateLimitCh            chan time.Time
-	clearRateLimitIDs      []int64
-	recoveryCandidateIDs   []int64
-	recoveryCandidateAfter []int64
-	windowStartClaimed     bool
-	windowStartClaimIDs    []int64
+	updateExtraCh           chan map[string]any
+	rateLimitCh             chan time.Time
+	clearRateLimitIDs       []int64
+	recoveryCandidateIDs    []int64
+	recoveryCandidateAfter  []int64
+	windowStartClaimed      bool
+	windowStartClaimIDs     []int64
+	windowStartClaimStarted chan struct{}
+	windowStartClaimRelease <-chan struct{}
 }
 
 func (r *accountUsageCodexProbeRepo) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
@@ -58,16 +60,27 @@ func (r *accountUsageCodexProbeRepo) ListOpenAIRateLimitRecoveryCandidateIDs(_ c
 
 func (r *accountUsageCodexProbeRepo) ClaimOpenAIExpiredRateLimit(_ context.Context, accountID int64, _, _ time.Time) (bool, error) {
 	r.windowStartClaimIDs = append(r.windowStartClaimIDs, accountID)
+	if r.windowStartClaimStarted != nil {
+		select {
+		case r.windowStartClaimStarted <- struct{}{}:
+		default:
+		}
+	}
+	if r.windowStartClaimRelease != nil {
+		<-r.windowStartClaimRelease
+	}
 	return r.windowStartClaimed, nil
 }
 
 type accountUsageWindowStarter struct {
-	accountIDs []int64
-	result     *ScheduledTestResult
+	accountIDs       []int64
+	windowStartProbe []bool
+	result           *ScheduledTestResult
 }
 
-func (s *accountUsageWindowStarter) RunTestBackground(_ context.Context, accountID int64, _ string) (*ScheduledTestResult, error) {
+func (s *accountUsageWindowStarter) RunTestBackground(ctx context.Context, accountID int64, _ string) (*ScheduledTestResult, error) {
 	s.accountIDs = append(s.accountIDs, accountID)
+	s.windowStartProbe = append(s.windowStartProbe, isOpenAIWindowStartProbe(ctx))
 	return s.result, nil
 }
 
@@ -188,6 +201,56 @@ func TestRandomOpenAIWindowStartDelayWithinRange(t *testing.T) {
 	}
 }
 
+func TestOpenAIWindowStartDueAtPreservesRandomDelayForExpiredRows(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+	delay := 37 * time.Second
+
+	futureReset := now.Add(5 * time.Minute)
+	if got, want := openAIWindowStartDueAt(futureReset, now, delay), futureReset.Add(delay); !got.Equal(want) {
+		t.Fatalf("future reset due at = %v, want %v", got, want)
+	}
+
+	pastReset := now.Add(-2 * time.Hour)
+	if got, want := openAIWindowStartDueAt(pastReset, now, delay), now.Add(delay); !got.Equal(want) {
+		t.Fatalf("expired reset due at = %v, want %v", got, want)
+	}
+}
+
+func TestCreateOpenAITestPayloadHasProbeInputAndInstructions(t *testing.T) {
+	t.Parallel()
+
+	payload := createOpenAITestPayload("gpt-5.4", true)
+	input, ok := payload["input"].([]map[string]any)
+	if !ok || len(input) != 1 {
+		t.Fatalf("probe input = %#v, want one input message", payload["input"])
+	}
+	content, ok := input[0]["content"].([]map[string]any)
+	if !ok || len(content) != 1 || content[0]["text"] != "hi" {
+		t.Fatalf("probe content = %#v, want one hi input", input[0]["content"])
+	}
+	instructions, ok := payload["instructions"].(string)
+	if !ok || instructions == "" {
+		t.Fatal("probe request must include non-empty Codex instructions")
+	}
+}
+
+func TestAccountUsageService_PendingWindowStartIsVisible(t *testing.T) {
+	t.Parallel()
+
+	task := &openAIRateLimitWindowStartTask{}
+	svc := &AccountUsageService{
+		openAIWindowStartTasks: map[int64]*openAIRateLimitWindowStartTask{123: task},
+	}
+	if !svc.hasPendingOpenAIRateLimitWindowStart(123) {
+		t.Fatal("expected pending window-start task")
+	}
+	if svc.hasPendingOpenAIRateLimitWindowStart(456) {
+		t.Fatal("unexpected pending window-start task")
+	}
+}
+
 func TestAccountUsageService_WindowStartRequiresSuccessfulClaim(t *testing.T) {
 	t.Parallel()
 
@@ -221,7 +284,53 @@ func TestAccountUsageService_WindowStartRequiresSuccessfulClaim(t *testing.T) {
 			if started != tt.wantStarted {
 				t.Fatalf("window start request sent = %v, want %v", started, tt.wantStarted)
 			}
+			if started && (len(starter.windowStartProbe) != 1 || !starter.windowStartProbe[0]) {
+				t.Fatalf("window start request context marker = %v, want [true]", starter.windowStartProbe)
+			}
 		})
+	}
+}
+
+func TestAccountUsageService_WindowStartRemainsPendingDuringClaim(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	task := &openAIRateLimitWindowStartTask{limitedAt: now.Add(-2 * time.Minute), resetAt: now.Add(-time.Minute)}
+	claimStarted := make(chan struct{}, 1)
+	claimRelease := make(chan struct{})
+	repo := &accountUsageCodexProbeRepo{
+		windowStartClaimed:      false,
+		windowStartClaimStarted: claimStarted,
+		windowStartClaimRelease: claimRelease,
+	}
+	starter := &accountUsageWindowStarter{result: &ScheduledTestResult{Status: "success"}}
+	svc := &AccountUsageService{
+		accountRepo:            repo,
+		openAIWindowStarter:    starter,
+		openAIWindowStartTasks: map[int64]*openAIRateLimitWindowStartTask{123: task},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		svc.runOpenAIRateLimitWindowStart(123, task)
+		close(done)
+	}()
+	select {
+	case <-claimStarted:
+	case <-time.After(time.Second):
+		t.Fatal("window-start claim did not begin")
+	}
+	if !svc.hasPendingOpenAIRateLimitWindowStart(123) {
+		t.Fatal("window-start task must remain pending while claim is in flight")
+	}
+	close(claimRelease)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("window-start claim did not finish")
+	}
+	if svc.hasPendingOpenAIRateLimitWindowStart(123) {
+		t.Fatal("window-start task should be removed after claim result")
 	}
 }
 

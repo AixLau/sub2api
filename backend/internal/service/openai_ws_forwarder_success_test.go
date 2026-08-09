@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -760,8 +759,8 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStoreFalseByDefault(t *testing.T
 func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	// WS 握手头与 HTTP 出站共用身份收口：同样强制统一为网关规范身份，
-	// 客户端自报的 originator / user-agent 不参与构造（issue #3901 的配对不变式自然满足）。
+	// WS 握手头与 HTTP 出站共用身份收口：请求端自报身份不参与构造；账号级官方 UA
+	// 保留客户端与指纹，版本段跟随网关规范版本重建（issue #3901）。
 	tests := []struct {
 		name              string
 		accountUserAgent  string
@@ -770,14 +769,14 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testi
 		wantOriginator    string
 		wantUA            string
 	}{
-		{name: "official account ua pairs originator", accountUserAgent: "Codex Desktop/1.2.3", wantOriginator: "Codex Desktop", wantUA: "Codex Desktop/1.2.3"},
+		{name: "official account ua pairs originator", accountUserAgent: "Codex Desktop/1.2.3", wantOriginator: "Codex Desktop", wantUA: "Codex Desktop/" + codexCLIVersion},
 		{
 			name:              "request identity cannot override account ua",
 			accountUserAgent:  "codex-tui/0.140.2 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.140.2)",
 			requestUserAgent:  "codex_cli_rs/0.144.1",
 			requestOriginator: "codex_cli_rs",
 			wantOriginator:    "codex-tui",
-			wantUA:            "codex-tui/0.140.2 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.140.2)",
+			wantUA:            "codex-tui/" + codexCLIVersion + " (Mac OS X 14.0; arm64) iTerm (codex-tui; " + codexCLIVersion + ")",
 		},
 		{name: "request originator without configured ua falls back to default identity", requestOriginator: "codex_vscode", wantOriginator: "codex-tui", wantUA: DefaultOpenAICodexUserAgent},
 	}
@@ -846,8 +845,8 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testi
 			result, err := svc.Forward(context.Background(), c, account, body)
 			require.NoError(t, err)
 			require.NotNil(t, result)
-			require.Equal(t, openai.CodexDefaultOriginator, captureDialer.lastHeaders.Get("originator"))
-			require.Equal(t, codexCLIUserAgent, captureDialer.lastHeaders.Get("user-agent"))
+			require.Equal(t, tt.wantOriginator, captureDialer.lastHeaders.Get("originator"))
+			require.Equal(t, tt.wantUA, captureDialer.lastHeaders.Get("user-agent"))
 			require.Equal(t, codexCLIVersion, captureDialer.lastHeaders.Get("version"))
 		})
 	}

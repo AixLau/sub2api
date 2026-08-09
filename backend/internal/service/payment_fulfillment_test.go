@@ -550,7 +550,7 @@ func TestSubscriptionPurchaseEmailContextFromRedeemUsesActiveSubscription(t *tes
 	t.Parallel()
 
 	groupID := int64(7)
-	expiresAt := time.Date(2026, 8, 1, 14, 45, 0, 0, time.UTC)
+	expiresAt := time.Date(2027, 8, 1, 14, 45, 0, 0, time.UTC)
 	groupRepo := &subscriptionGroupRepoStub{
 		group: &Group{ID: groupID, Name: "Claude Pro 月包", SubscriptionType: SubscriptionTypeSubscription},
 	}

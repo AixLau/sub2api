@@ -23,29 +23,30 @@ import (
 // --- mock: UserRepository ---
 
 type mockUserRepo struct {
-	claimWelcomeRewardFn    func(ctx context.Context, id int64) (float64, float64, error)
-	checkSurpriseRewardFn   func(ctx context.Context, id int64, now time.Time, shouldAward bool, amount float64) (bool, error)
-	claimSurpriseRewardFn   func(ctx context.Context, id int64, now time.Time) (float64, float64, error)
-	updateBalanceErr        error
-	updateBalanceFn         func(ctx context.Context, id int64, amount float64) error
-	deductBalanceFn         func(ctx context.Context, id int64, amount float64) error
-	getByIDUser             *User
-	getByIDErr              error
-	identities              []UserAuthIdentityRecord
-	unbindIdentityErr       error
-	unboundProviders        []string
-	updateLastActiveErr     error
-	updateLastActiveUserIDs []int64
-	updateLastActiveAt      []time.Time
-	updateFn                func(ctx context.Context, user *User) error
-	updateCalls             int
-	updateFields            []UserUpdateFields
-	upsertAvatarFn          func(ctx context.Context, userID int64, input UpsertUserAvatarInput) (*UserAvatar, error)
-	upsertAvatarArgs        []UpsertUserAvatarInput
-	deleteAvatarFn          func(ctx context.Context, userID int64) error
-	deleteAvatarIDs         []int64
-	getAvatarFn             func(ctx context.Context, userID int64) (*UserAvatar, error)
-	txCalls                 int
+	claimWelcomeRewardFn     func(ctx context.Context, id int64) (float64, float64, error)
+	checkSurpriseRewardFn    func(ctx context.Context, id int64, now time.Time, shouldAward bool, amount float64) (bool, error)
+	claimSurpriseRewardFn    func(ctx context.Context, id int64, now time.Time) (float64, float64, error)
+	updateBalanceErr         error
+	updateBalanceFn          func(ctx context.Context, id int64, amount float64) error
+	deductBalanceFn          func(ctx context.Context, id int64, amount float64) error
+	deductAvailableBalanceFn func(ctx context.Context, id int64, amount float64) (float64, error)
+	getByIDUser              *User
+	getByIDErr               error
+	identities               []UserAuthIdentityRecord
+	unbindIdentityErr        error
+	unboundProviders         []string
+	updateLastActiveErr      error
+	updateLastActiveUserIDs  []int64
+	updateLastActiveAt       []time.Time
+	updateFn                 func(ctx context.Context, user *User) error
+	updateCalls              int
+	updateFields             []UserUpdateFields
+	upsertAvatarFn           func(ctx context.Context, userID int64, input UpsertUserAvatarInput) (*UserAvatar, error)
+	upsertAvatarArgs         []UpsertUserAvatarInput
+	deleteAvatarFn           func(ctx context.Context, userID int64) error
+	deleteAvatarIDs          []int64
+	getAvatarFn              func(ctx context.Context, userID int64) (*UserAvatar, error)
+	txCalls                  int
 }
 
 func (m *mockUserRepo) ClaimWelcomeReward(ctx context.Context, id int64) (float64, float64, error) {

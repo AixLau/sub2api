@@ -44,6 +44,14 @@ func (r *revokeCacheUserSubRepoStub) GetActiveByUserIDAndGroupID(_ context.Conte
 	return &cp, nil
 }
 
+func (r *revokeCacheUserSubRepoStub) GetByUserIDAndGroupID(_ context.Context, userID, groupID int64) (*UserSubscription, error) {
+	if r.deleted || r.sub == nil || r.sub.UserID != userID || r.sub.GroupID != groupID {
+		return nil, ErrSubscriptionNotFound
+	}
+	cp := *r.sub
+	return &cp, nil
+}
+
 func TestRevokeSubscription_InvalidatesL1CacheSynchronously(t *testing.T) {
 	repo := &revokeCacheUserSubRepoStub{
 		sub: &UserSubscription{

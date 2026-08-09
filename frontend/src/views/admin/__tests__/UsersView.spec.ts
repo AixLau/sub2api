@@ -9,13 +9,15 @@ const {
   getAllGroups,
   getBatchUsersUsage,
   listEnabledDefinitions,
-  getBatchUserAttributes
+  getBatchUserAttributes,
+  getPlatformQuotas
 } = vi.hoisted(() => ({
   listUsers: vi.fn(),
   getAllGroups: vi.fn(),
   getBatchUsersUsage: vi.fn(),
   listEnabledDefinitions: vi.fn(),
-  getBatchUserAttributes: vi.fn()
+  getBatchUserAttributes: vi.fn(),
+  getPlatformQuotas: vi.fn()
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -23,7 +25,8 @@ vi.mock('@/api/admin', () => ({
     users: {
       list: listUsers,
       toggleStatus: vi.fn(),
-      delete: vi.fn()
+      delete: vi.fn(),
+      getPlatformQuotas
     },
     groups: {
       getAll: getAllGroups
@@ -36,6 +39,10 @@ vi.mock('@/api/admin', () => ({
       getBatchUserAttributes
     }
   }
+}))
+
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: {} })
 }))
 
 vi.mock('@/stores/app', () => ({
@@ -129,6 +136,7 @@ describe('admin UsersView', () => {
     getBatchUsersUsage.mockReset()
     listEnabledDefinitions.mockReset()
     getBatchUserAttributes.mockReset()
+    getPlatformQuotas.mockReset()
 
     listUsers.mockResolvedValue({
       items: [createAdminUser()],
@@ -141,6 +149,7 @@ describe('admin UsersView', () => {
     getBatchUsersUsage.mockResolvedValue({ stats: {} })
     listEnabledDefinitions.mockResolvedValue([])
     getBatchUserAttributes.mockResolvedValue({ values: {} })
+    getPlatformQuotas.mockResolvedValue({ platform_quotas: [] })
   })
 
   afterEach(() => {

@@ -3,7 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import OpenAIQuotaResetCell from '../OpenAIQuotaResetCell.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import type { Account } from '@/types'
-import { queryOpenAIQuota, resetOpenAIQuota } from '@/api/admin/accounts'
+import { refreshOpenAIQuota, resetOpenAIQuota } from '@/api/admin/accounts'
 
 vi.mock('@/api/admin/accounts', () => ({
   refreshOpenAIQuota: vi.fn(),
@@ -60,7 +60,7 @@ const resetButton = (wrapper: ReturnType<typeof mount>) =>
   wrapper.findAll('button')[1]
 
 beforeEach(() => {
-  vi.mocked(queryOpenAIQuota).mockReset()
+  vi.mocked(refreshOpenAIQuota).mockReset()
   vi.mocked(resetOpenAIQuota).mockReset()
 })
 
@@ -210,7 +210,7 @@ describe('OpenAIQuotaResetCell — 外审 F6:影子禁用重置', () => {
   })
 
   it('重置成功后通知账号列表刷新429状态', async () => {
-    vi.mocked(queryOpenAIQuota).mockResolvedValue({
+    vi.mocked(refreshOpenAIQuota).mockResolvedValue({
       rate_limit_reset_credits: {
         available_count: 1,
         credits: [{ expires_at: '2026-07-03T04:05:06Z' }],
