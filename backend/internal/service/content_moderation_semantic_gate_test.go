@@ -165,7 +165,7 @@ func TestSemanticReviewEvidenceMarksClippedSourceExcerptIncomplete(t *testing.T)
 	require.False(t, candidate.Input.EvidenceComplete)
 }
 
-func TestSemanticReviewEvidenceMarksSourceSelectionOverflowIncomplete(t *testing.T) {
+func TestSemanticReviewEvidenceUsesLatestMatchingUserTurnOnly(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.SemanticReview.Enabled = true
 	cfg.SemanticReview.Trigger = ContentModerationSemanticReviewTriggerLocalReview
@@ -189,12 +189,36 @@ func TestSemanticReviewEvidenceMarksSourceSelectionOverflowIncomplete(t *testing
 	}, &contentModerationSemanticReviewRouterStub{})
 
 	require.True(t, ok)
-	require.False(t, candidate.Input.EvidenceComplete)
+	require.True(t, candidate.Input.EvidenceComplete)
 	require.False(t, candidate.ContextOnly)
 	require.Contains(t, candidate.Input.Text, "danger-marker latest user")
-	require.Contains(t, candidate.Input.Text, "danger-marker tool five")
 	require.NotContains(t, candidate.Input.Text, "danger-marker old")
 	require.NotContains(t, candidate.Input.Text, "danger-marker tool three")
+	require.NotContains(t, candidate.Input.Text, "danger-marker tool five")
+}
+
+func TestSemanticReviewKeywordCandidateDoesNotUseAssistantOrToolAsIntent(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.SemanticReview.Enabled = true
+	cfg.SemanticReview.Trigger = ContentModerationSemanticReviewTriggerLocalReview
+	content := ContentModerationInput{
+		Text: "danger-marker old\ndanger-marker tool\ncurrent harmless request",
+		Sources: []ContentModerationInputSource{
+			{Source: "messages[0]", Role: "assistant", Text: "danger-marker old"},
+			{Source: "messages[1]", Role: "tool", Text: "danger-marker tool"},
+			{Source: "messages[2]", Role: "user", Text: "current harmless request"},
+		},
+	}
+
+	_, ok := contentModerationSemanticGateCandidateForKeyword(cfg, content, ContentModerationKeywordRule{
+		Keyword:  "danger-marker",
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}, &contentModerationSemanticReviewRouterStub{})
+
+	require.False(t, ok)
 }
 
 func TestSemanticReviewEvidenceMarksHeaderBudgetOmissionIncomplete(t *testing.T) {

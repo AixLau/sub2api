@@ -35,6 +35,9 @@ func contentModerationSemanticGateCandidateForKeyword(cfg *ContentModerationConf
 		return contentModerationSemanticGateCandidate{}, false
 	}
 	reviewText, evidenceComplete := buildContentModerationSemanticReviewEvidence(cfg.SemanticReview, content, rule.Keyword)
+	if strings.TrimSpace(reviewText) == "" {
+		return contentModerationSemanticGateCandidate{}, false
+	}
 	return contentModerationSemanticGateCandidate{
 		Input: ContentModerationSemanticReviewInput{
 			Text:             reviewText,
@@ -88,7 +91,19 @@ func contentModerationSemanticGateCandidateForPromptFilter(cfg *ContentModeratio
 		category = "cyber"
 	}
 	nonTerminalContext := !contentModerationPromptFilterSourceCanHardBlock(hit.Source)
-	reviewText, evidenceComplete := buildContentModerationSemanticReviewEvidence(cfg.SemanticReview, reviewContent, keyword)
+	semanticCfg := cfg.SemanticReview
+	reviewKeyword := keyword
+	if nonTerminalContext {
+		// Review only the latest direct user turn when the local hit came from
+		// assistant, developer, tool, or ambient context. The context hit may
+		// trigger review, but its text cannot establish the user's intent.
+		semanticCfg.Trigger = ContentModerationSemanticReviewTriggerAll
+		reviewKeyword = ""
+	}
+	reviewText, evidenceComplete := buildContentModerationSemanticReviewEvidence(semanticCfg, reviewContent, reviewKeyword)
+	if strings.TrimSpace(reviewText) == "" {
+		return contentModerationSemanticGateCandidate{}, false
+	}
 	return contentModerationSemanticGateCandidate{
 		Input: ContentModerationSemanticReviewInput{
 			Text:             reviewText,

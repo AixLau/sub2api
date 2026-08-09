@@ -243,7 +243,7 @@ func TestCandidateOrdinaryAllowEscalationPolicy(t *testing.T) {
 	}
 }
 
-func TestCandidateSelectionUsesMatchedUserSourceOnly(t *testing.T) {
+func TestCandidateSelectionDoesNotScanOlderUserHistory(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.KeywordRules = []ContentModerationKeywordRule{{
 		Keyword:  "danger-marker",
@@ -260,14 +260,87 @@ func TestCandidateSelectionUsesMatchedUserSourceOnly(t *testing.T) {
 		{Source: "responses.input[3].role=user.content", Role: "user", Text: "latest user turn is harmless"},
 	}}
 
-	selection, found := contentModerationCandidateSelectionForInput(cfg, content)
+	_, found := contentModerationCandidateSelectionForInput(cfg, content)
 
+	require.False(t, found)
+
+	content.Sources[4].Text = "latest user turn asks about danger-marker"
+	selection, found := contentModerationCandidateSelectionForInput(cfg, content)
 	require.True(t, found)
-	require.Equal(t, "responses.input[0].role=user.content", selection.Source.Source)
-	require.Equal(t, "history asks about danger-marker", selection.Fragment)
+	require.Equal(t, "responses.input[3].role=user.content", selection.Source.Source)
+	require.Equal(t, "latest user turn asks about danger-marker", selection.Fragment)
 	require.NotContains(t, selection.Fragment, "system prompt")
 	require.NotContains(t, selection.Fragment, "tool")
 	require.NotContains(t, selection.Fragment, "AGENTS.md")
+}
+
+func TestCandidateSelectionMergesTextPartsFromLatestUserTurn(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword:  "danger-marker",
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}}
+	content := ContentModerationInput{Sources: []ContentModerationInputSource{
+		{Source: "responses.input[0].role=user.content", Role: "user", Text: "older harmless request"},
+		{Source: "responses.input[2].role=user.content[0]", Role: "user", Text: "danger-marker in the first part"},
+		{Source: "responses.input[2].role=user.content[1]", Role: "user", Text: "latest part supplies the requested details"},
+	}}
+
+	selection, found := contentModerationCandidateSelectionForInput(cfg, content)
+
+	require.True(t, found)
+	require.Equal(t, "responses.input[2].user_text", selection.Source.Source)
+	require.Contains(t, selection.Fragment, "danger-marker in the first part")
+	require.Contains(t, selection.Fragment, "latest part supplies the requested details")
+}
+
+func TestCandidateSelectionUsesTextFallbackOnlyWithoutAttributedSources(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword:  "danger-marker",
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Enabled:  true,
+	}}
+
+	selection, found := contentModerationCandidateSelectionForInput(cfg, ContentModerationInput{Text: "danger-marker direct input"})
+	require.True(t, found)
+	require.Equal(t, "content.text", selection.Source.Source)
+	require.Equal(t, "user", selection.Source.Role)
+
+	_, found = contentModerationCandidateSelectionForInput(cfg, ContentModerationInput{
+		Text:    "danger-marker context aggregate",
+		Sources: []ContentModerationInputSource{{Source: "tool", Role: "tool", Text: "danger-marker tool output"}},
+	})
+	require.False(t, found)
+}
+
+func TestCandidateSelectionTreatsEmptyAndUnknownClientRolesAsDirectEvidence(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword:  "danger-marker",
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Enabled:  true,
+	}}
+
+	for _, role := range []string{"", "custom_client_role"} {
+		selection, found := contentModerationCandidateSelectionForInput(cfg, ContentModerationInput{
+			Sources: []ContentModerationInputSource{{Source: "client.input", Role: role, Text: "danger-marker direct input"}},
+		})
+		require.True(t, found, role)
+		require.Equal(t, "client.input", selection.Source.Source, role)
+	}
+
+	for _, role := range []string{"system", "developer", "assistant", "model", "tool", "function", "context"} {
+		_, found := contentModerationCandidateSelectionForInput(cfg, ContentModerationInput{
+			Sources: []ContentModerationInputSource{{Source: "client.context", Role: role, Text: "danger-marker context"}},
+		})
+		require.False(t, found, role)
+	}
 }
 
 func TestCandidateSelectionDoesNotLetWrapperMarkersBypassUserContent(t *testing.T) {
@@ -1579,6 +1652,27 @@ func TestExplicitOperationalCandidatePromotesCorroboratedReview(t *testing.T) {
 		Verdict: "review", Intent: "harmful", Target: "third_party", Authorization: "unclear",
 		HarmMechanism: "privacy_invasion", HarmEvidence: "explicit", Severity: "critical", Confidence: 0.98,
 		Operationality: "actionable", Executability: "direct", Categories: []string{"privacy"},
+	}, selection, true)
+
+	require.True(t, overridden)
+	require.Equal(t, "reject", result.Verdict)
+	require.Contains(t, result.ReasonCodes, "semantic_policy_explicit_operational_candidate")
+}
+
+func TestReviewOnlySoftwareEntitlementCandidatePromotesCorroboratedReview(t *testing.T) {
+	selection := contentModerationCandidateSelection{
+		Kind: contentModerationCandidateKindPromptFilter,
+		Rule: ContentModerationKeywordRule{
+			Keyword:  "candidate_software_entitlement_bypass",
+			Category: ContentModerationKeywordCategoryCyber,
+			Severity: ContentModerationKeywordSeverityHigh,
+		},
+		PromptHit: &contentModerationPromptFilterHit{Verdict: promptfilter.Verdict{OperationalHit: false}},
+	}
+	result, overridden := applyCandidateSemanticReviewPolicy(ContentModerationSemanticReviewResult{
+		Verdict: "review", Intent: "harmful", Target: "external_service", Authorization: "unclear",
+		HarmMechanism: "evasion", HarmEvidence: "explicit", Severity: "high", Confidence: 0.98,
+		Operationality: "actionable", Executability: "direct", Categories: []string{"license_cracking"},
 	}, selection, true)
 
 	require.True(t, overridden)

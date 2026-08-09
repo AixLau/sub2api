@@ -966,7 +966,7 @@ func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
 	require.Equal(t, "gpt-5.4-mini-upstream", requestBody["model"])
 	require.Equal(t, float64(ContentModerationSemanticReviewDefaultOutputTokens), requestBody["max_output_tokens"])
 	require.Equal(t, semanticReviewInstructions, requestBody["instructions"])
-	require.Equal(t, "semantic-review-instructions-v6", semanticReviewInstructionsRevision)
+	require.Equal(t, "semantic-review-instructions-v7", semanticReviewInstructionsRevision)
 	require.Contains(t, semanticReviewInstructions, "Use review only as the final fallback")
 	require.Contains(t, semanticReviewInstructions, "Review is forbidden solely because of low confidence")
 	require.Contains(t, semanticReviewInstructions, "Otherwise set authorization=not_applicable")
@@ -983,6 +983,8 @@ func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
 	require.Contains(t, semanticReviewInstructions, "does not by itself establish authorization=authorized; treat it as unclear")
 	require.Contains(t, semanticReviewInstructions, "indirect executability where the remaining step is trivial assembly of the provided components")
 	require.Contains(t, semanticReviewInstructions, "authorization is not stated or is unverifiable")
+	require.Contains(t, semanticReviewInstructions, "falsifying its expiry or valid-days result")
+	require.Contains(t, semanticReviewInstructions, "fixing startup, compatibility, or UI defects are not license cracking")
 	reasoning, ok := requestBody["reasoning"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, ContentModerationSemanticReviewDefaultReasoning, reasoning["effort"])
@@ -2513,6 +2515,21 @@ func TestBuildSemanticReviewInputLocalReviewIncludesOnlyMatchedSources(t *testin
 	require.NotContains(t, got, "system secret")
 	require.NotContains(t, got, "assistant history")
 	require.LessOrEqual(t, len([]rune(got)), cfg.MaxInputRunes)
+}
+
+func TestBuildSemanticReviewInputLocalReviewIgnoresRiskOutsideLatestUserTurn(t *testing.T) {
+	cfg := semanticReviewTestConfig()
+	cfg.Trigger = ContentModerationSemanticReviewTriggerLocalReview
+	content := ContentModerationInput{Sources: []ContentModerationInputSource{
+		{Source: "messages[0]", Role: "user", Text: "danger-marker in an older request"},
+		{Source: "messages[1]", Role: "assistant", Text: "danger-marker in assistant history"},
+		{Source: "messages[2]", Role: "tool", Text: "danger-marker in tool output"},
+		{Source: "messages[3]", Role: "user", Text: "Summarize the current project status"},
+	}}
+
+	got := buildContentModerationSemanticReviewInput(cfg, content, "danger-marker")
+
+	require.Empty(t, got)
 }
 
 func TestBuildSemanticReviewInputAllUsesLatestUserOnly(t *testing.T) {

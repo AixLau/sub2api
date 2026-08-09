@@ -33,7 +33,7 @@ const (
 	contentModerationCandidateFailureCacheTTL      = 15 * time.Second
 	contentModerationDecisionCacheOperationTimeout = 2 * time.Second
 	contentModerationCandidatePreferredRunes       = 1_200
-	contentModerationCandidateEvidenceRevision     = "candidate-evidence-v2"
+	contentModerationCandidateEvidenceRevision     = "candidate-evidence-v3"
 	contentModerationReviewKindGeneral             = "general"
 	contentModerationReviewKindPromptInjection     = "prompt_injection"
 )
@@ -97,26 +97,50 @@ func (selection contentModerationCandidateSelection) metadata() contentModeratio
 	}
 }
 
-// contentModerationCandidateSelectionForInput deliberately chooses exactly one
-// matched user source. Context wrappers, system instructions, tool output, and
-// history cannot be concatenated into the provider prompt. We walk backwards
-// so the most recent risky user turn wins, while still catching a risky turn
-// in request history when the final turn is benign.
+// contentModerationCandidateSelectionForInput classifies only the latest
+// actionable user turn. Context wrappers, system instructions, tool output,
+// assistant history, and older user turns cannot establish the current user's
+// intent. Multiple text parts from the latest user turn are merged so splitting
+// one request across protocol parts cannot bypass candidate selection.
 func contentModerationCandidateSelectionForInput(cfg *ContentModerationConfig, content ContentModerationInput) (contentModerationCandidateSelection, bool) {
-	for index := len(content.Sources) - 1; index >= 0; index-- {
-		source := content.Sources[index]
-		if cfg != nil && (cfg.SemanticReview.PromptInjectionReviewerEnabled || cfg.SemanticReview.PromptInjectionFailClosed) {
-			source = contentModerationCandidateFullReviewSource(content, source)
+	sources := content.Sources
+	if cfg != nil && (cfg.SemanticReview.PromptInjectionReviewerEnabled || cfg.SemanticReview.PromptInjectionFailClosed) {
+		sources = append([]ContentModerationInputSource(nil), content.Sources...)
+		for index, source := range sources {
+			if contentModerationSourceIsActionableUserTurn(source) {
+				sources[index] = contentModerationCandidateFullReviewSource(content, source)
+			}
 		}
-		if !contentModerationSourceIsActionableUserTurn(source) {
-			continue
-		}
-		if selection, found := contentModerationCandidateSelectionForSource(cfg, source); found {
-			return selection, true
-		}
+	}
+	if source, found := latestContentModerationActionableUserTurnSource(sources); found {
+		return contentModerationCandidateSelectionForSource(cfg, source)
+	}
+
+	// Protocols without structured source attribution still expose their
+	// normalized direct input through Text. Only use this fallback when there
+	// are no attributed sources; otherwise a context-only payload could be
+	// mislabeled as a user request.
+	if len(content.Sources) == 0 && strings.TrimSpace(content.Text) != "" {
+		return contentModerationCandidateSelectionForSource(cfg, ContentModerationInputSource{
+			Source:          "content.text",
+			Role:            "user",
+			Text:            content.Text,
+			Truncated:       content.Truncated,
+			TruncateReasons: append([]string(nil), content.TruncateReasons...),
+		})
 	}
 
 	return contentModerationCandidateSelection{}, false
+}
+
+func latestContentModerationActionableUserTurnSource(sources []ContentModerationInputSource) (ContentModerationInputSource, bool) {
+	for index := len(sources) - 1; index >= 0; index-- {
+		if !contentModerationSourceIsActionableUserTurn(sources[index]) {
+			continue
+		}
+		return semanticReviewLatestUserTurnSource(sources, index), true
+	}
+	return ContentModerationInputSource{}, false
 }
 
 func contentModerationCandidateFullReviewSource(content ContentModerationInput, source ContentModerationInputSource) ContentModerationInputSource {
@@ -429,13 +453,14 @@ func contentModerationCandidateSeverityRank(severity string) int {
 }
 
 func contentModerationSourceIsActionableUserTurn(source ContentModerationInputSource) bool {
-	if !strings.EqualFold(strings.TrimSpace(source.Role), "user") {
+	if strings.TrimSpace(source.Text) == "" {
 		return false
 	}
-	// Source provenance comes from the protocol extractor. Do not treat marker
-	// text such as "AGENTS.md" or "environment_context" as trusted context:
-	// a caller can place those strings in a real user turn to bypass review.
-	return strings.TrimSpace(source.Text) != ""
+	// Source provenance comes from the protocol extractor. Empty and unknown
+	// client roles remain untrusted direct evidence, matching semantic review;
+	// otherwise callers could evade candidate selection by renaming the role.
+	// Known assistant, tool, system, developer, and context roles stay excluded.
+	return isSemanticReviewDirectUserEvidence(source)
 }
 
 func contentModerationCandidateFragment(text, keyword string, maxRunes int) string {
@@ -1399,15 +1424,25 @@ func contentModerationCandidateExplicitOperationalRejectEligible(
 	selection contentModerationCandidateSelection,
 ) bool {
 	if selection.Kind != contentModerationCandidateKindPromptFilter || selection.PromptHit == nil ||
-		!selection.PromptHit.Verdict.OperationalHit || result.Intent != "harmful" ||
-		result.Operationality != "actionable" || result.Executability != "direct" ||
+		result.Intent != "harmful" || result.Operationality != "actionable" || result.Executability != "direct" ||
 		result.HarmEvidence != "explicit" || result.HarmMechanism == "none" ||
 		result.Authorization == "authorized" || result.Target == "self_owned" ||
 		result.Target == "authorized_lab" || (result.Severity != ContentModerationKeywordSeverityHigh &&
 		result.Severity != ContentModerationKeywordSeverityCritical) {
 		return false
 	}
-	switch strings.ToLower(strings.TrimSpace(selection.Rule.Keyword)) {
+	name := strings.ToLower(strings.TrimSpace(selection.Rule.Keyword))
+	// The software-entitlement rule is intentionally review-only so rule_only
+	// mode cannot block ordinary debugging or reverse engineering from regex
+	// evidence alone. It may corroborate a reject only after the reviewer also
+	// reports explicit, directly executable harm across every dimension above.
+	if name == "candidate_software_entitlement_bypass" {
+		return true
+	}
+	if !selection.PromptHit.Verdict.OperationalHit {
+		return false
+	}
+	switch name {
 	case "ransomware_creation_request", "covert_surveillance_privacy_abuse_request", "protocol_entitlement_bypass_request":
 		return true
 	default:
