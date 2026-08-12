@@ -140,7 +140,7 @@ func TestOpenAIHandleErrorResponse_CodexUnsupportedChatGPTModelReturnsBadRequest
 	errField, ok := payload["error"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "invalid_request_error", errField["type"])
-	assert.Equal(t, "该模型已被 OpenAI 官方弃用，请切换最新模型", errField["message"])
+	assert.Equal(t, "The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account.", errField["message"])
 }
 
 func TestOpenAIHandleErrorResponse_ContextWindow502KeepsMessageWithoutFailover(t *testing.T) {
@@ -195,7 +195,7 @@ func TestOpenAIHandleErrorResponse_DeprecatedModelReturnsBadRequest(t *testing.T
 	errField, ok := payload["error"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "invalid_request_error", errField["type"])
-	assert.Equal(t, "该模型已被 OpenAI 官方弃用，请切换最新模型", errField["message"])
+	assert.Equal(t, "The model old-codex is deprecated and no longer available.", errField["message"])
 }
 
 func TestOpenAIHandleErrorResponse_SubscriptionExhausted429ReportsPlanBalance(t *testing.T) {

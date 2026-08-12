@@ -167,6 +167,9 @@ func MarkOpsUpstreamFirstEvent(c *gin.Context) {
 	if c == nil {
 		return
 	}
+	if OpsLatencyMs(c, OpsUpstreamFirstEventMsKey) != nil {
+		return
+	}
 	v, ok := c.Get(OpsUpstreamStartAtKey)
 	startedAt, ok := v.(time.Time)
 	if !ok || startedAt.IsZero() {

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +13,40 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
+
+type cyberRuntimeSettingRepo struct {
+	*contentModerationTestSettingRepo
+	mu               sync.Mutex
+	getMultipleCalls int
+	getMultipleErr   error
+}
+
+func newCyberRuntimeSettingRepo(values map[string]string) *cyberRuntimeSettingRepo {
+	return &cyberRuntimeSettingRepo{contentModerationTestSettingRepo: &contentModerationTestSettingRepo{values: values}}
+}
+
+func (r *cyberRuntimeSettingRepo) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
+	r.mu.Lock()
+	r.getMultipleCalls++
+	err := r.getMultipleErr
+	r.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return r.contentModerationTestSettingRepo.GetMultiple(ctx, keys)
+}
+
+func (r *cyberRuntimeSettingRepo) calls() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.getMultipleCalls
+}
+
+func (r *cyberRuntimeSettingRepo) failMultiple(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.getMultipleErr = err
+}
 
 // cyberOrderingTestRepo records the sequence of repo calls to verify F7 ordering.
 type cyberOrderingTestRepo struct {
@@ -275,6 +310,131 @@ func TestRecordCyberSessionBlockedEvent_WritesRiskAuditWithoutBanCount(t *testin
 	require.NoError(t, err)
 	require.Equal(t, string(rawBody), view.Body)
 	require.Equal(t, len(rawBody), view.BodyBytes)
+}
+
+func TestRecordCyberPolicyEvent_RespectsContentModerationScope(t *testing.T) {
+	groupID := int64(7)
+	tests := []struct {
+		name       string
+		config     string
+		groupID    *int64
+		model      string
+		wantCalls  []bool
+		wantLogs   int
+		wantBanned bool
+	}{
+		{
+			name:     "excluded group",
+			config:   `{"all_groups":false,"group_ids":[8],"ban_threshold":1}`,
+			groupID:  &groupID,
+			model:    "gpt-5",
+			wantLogs: 0,
+		},
+		{
+			name:     "ungrouped excluded by selected groups",
+			config:   `{"all_groups":false,"group_ids":[7],"ban_threshold":1}`,
+			groupID:  nil,
+			model:    "gpt-5",
+			wantLogs: 0,
+		},
+		{
+			name:     "excluded model",
+			config:   `{"all_groups":true,"model_filter":{"type":"include","models":["gpt-4o"]},"ban_threshold":1}`,
+			groupID:  &groupID,
+			model:    "gpt-5",
+			wantLogs: 0,
+		},
+		{
+			name:       "included group and model",
+			config:     `{"enabled":false,"mode":"off","sample_rate":0,"all_groups":false,"group_ids":[7],"model_filter":{"type":"include","models":["gpt-5"]},"ban_threshold":1}`,
+			groupID:    &groupID,
+			model:      "gpt-5",
+			wantCalls:  []bool{false},
+			wantLogs:   1,
+			wantBanned: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &banCountArgsTestRepo{}
+			userRepo := &contentModerationTestUserRepo{user: &User{ID: 1, Role: RoleUser, Status: StatusActive}}
+			svc := NewContentModerationService(
+				&contentModerationTestSettingRepo{values: map[string]string{
+					SettingKeyRiskControlEnabled:      "true",
+					SettingKeyContentModerationConfig: tt.config,
+				}},
+				repo, nil, nil, userRepo, nil, nil, nil,
+			)
+
+			svc.RecordCyberPolicyEvent(context.Background(), CyberPolicyRecordInput{
+				UserID:  1,
+				GroupID: tt.groupID,
+				Model:   tt.model,
+			})
+
+			if tt.wantCalls == nil {
+				require.Empty(t, repo.snapshotCountCalls())
+			} else {
+				require.Equal(t, tt.wantCalls, repo.snapshotCountCalls())
+			}
+			require.Len(t, repo.snapshotLogs(), tt.wantLogs)
+			require.Equal(t, tt.wantBanned, userRepo.user.Status == StatusDisabled)
+			if tt.wantBanned {
+				require.Len(t, userRepo.updated, 1)
+			} else {
+				require.Empty(t, userRepo.updated)
+			}
+		})
+	}
+}
+
+func TestRecordCyberPolicyEvent_InitialRuntimeSnapshotLoadFailureSkipsEvent(t *testing.T) {
+	repo := &banCountArgsTestRepo{}
+	settingRepo := newCyberRuntimeSettingRepo(map[string]string{
+		SettingKeyRiskControlEnabled:      "true",
+		SettingKeyContentModerationConfig: `{invalid`,
+	})
+	svc := NewContentModerationService(settingRepo, repo, nil, nil, nil, nil, nil, nil)
+
+	svc.RecordCyberPolicyEvent(context.Background(), CyberPolicyRecordInput{
+		UserID: 1,
+		Model:  "gpt-5",
+	})
+
+	require.Empty(t, repo.snapshotCountCalls())
+	require.Empty(t, repo.snapshotLogs())
+	require.GreaterOrEqual(t, settingRepo.calls(), 1)
+}
+
+func TestRecordCyberPolicyEvent_RuntimeSnapshotRefreshFailureKeepsStaleScope(t *testing.T) {
+	repo := &banCountArgsTestRepo{}
+	settingRepo := newCyberRuntimeSettingRepo(map[string]string{
+		SettingKeyRiskControlEnabled:      "true",
+		SettingKeyContentModerationConfig: `{"all_groups":true,"model_filter":{"type":"include","models":["gpt-5"]}}`,
+	})
+	svc := NewContentModerationService(settingRepo, repo, nil, nil, nil, nil, nil, nil)
+	svc.runtimeCacheTTL = time.Minute
+
+	_, err := svc.loadRuntimeSnapshot(context.Background())
+	require.NoError(t, err)
+	current := svc.runtimeSnapshot.Load()
+	require.NotNil(t, current)
+	expired := *current
+	expired.loadedAt = time.Now().Add(-2 * time.Minute)
+	svc.runtimeSnapshot.Store(&expired)
+	settingRepo.failMultiple(errors.New("database unavailable"))
+
+	svc.RecordCyberPolicyEvent(context.Background(), CyberPolicyRecordInput{
+		UserID: 1,
+		Model:  "gpt-5",
+	})
+
+	require.Len(t, repo.snapshotLogs(), 1)
+	require.Eventually(t, func() bool {
+		return settingRepo.calls() == 2
+	}, time.Second, time.Millisecond)
+	require.Equal(t, 2, settingRepo.calls())
 }
 
 // TestRecordCyberPolicyEvent_CreateLogBeforeEmail verifies F7: the moderation

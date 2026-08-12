@@ -318,6 +318,8 @@ func TestProfitControl_EligibilityFunctionVetoes(t *testing.T) {
 
 	require.True(t, isOpenAICompatibleAccountEligibleForRequest(gateCtx, cheap, PlatformOpenAI, "", false, ""))
 	require.False(t, isOpenAICompatibleAccountEligibleForRequest(gateCtx, expensive, PlatformOpenAI, "", false, ""))
+	require.True(t, isOpenAICompatibleAccountEligibleForRequestWithProfitControl(gateCtx, expensive, PlatformOpenAI, "", false, "", false),
+		"refresh paths must be able to defer profit control until after slot acquisition")
 	// 无门时保持既有行为。
 	require.True(t, isOpenAICompatibleAccountEligibleForRequest(context.Background(), expensive, PlatformOpenAI, "", false, ""))
 }

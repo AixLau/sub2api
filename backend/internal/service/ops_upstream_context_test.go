@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -15,6 +16,19 @@ func newOpsTimingTestContext() *gin.Context {
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/test", nil)
 	return c
+}
+
+func TestMarkOpsUpstreamFirstEventKeepsFirstObservation(t *testing.T) {
+	c := newOpsTimingTestContext()
+	c.Set(OpsUpstreamStartAtKey, time.Now().Add(-time.Second))
+
+	MarkOpsUpstreamFirstEvent(c)
+	first := OpsLatencyMs(c, OpsUpstreamFirstEventMsKey)
+	require.NotNil(t, first)
+
+	c.Set(OpsUpstreamStartAtKey, time.Now().Add(-2*time.Second))
+	MarkOpsUpstreamFirstEvent(c)
+	require.Equal(t, *first, *OpsLatencyMs(c, OpsUpstreamFirstEventMsKey))
 }
 
 func TestDoOpsUpstreamRecordsWriteAndResponseHeaderTimings(t *testing.T) {

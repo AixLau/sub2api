@@ -39,10 +39,12 @@ const (
 	ContentModerationModeObserve  = "observe"
 	ContentModerationModePreBlock = "pre_block"
 
-	contentModerationControlPlaneTimeout  = 3 * time.Second
-	contentModerationPersistenceTimeout   = 5 * time.Second
-	contentModerationConfigCacheTTL       = time.Second
-	contentModerationConfigRefreshTimeout = 5 * time.Second
+	contentModerationControlPlaneTimeout   = 3 * time.Second
+	contentModerationPersistenceTimeout    = 5 * time.Second
+	contentModerationConfigCacheTTL        = time.Second
+	contentModerationConfigRefreshTimeout  = 5 * time.Second
+	contentModerationRuntimeCacheTTL       = time.Second
+	contentModerationRuntimeRefreshTimeout = 5 * time.Second
 
 	contentModerationAPIKeysModeAppend  = "append"
 	contentModerationAPIKeysModeReplace = "replace"
@@ -1161,6 +1163,10 @@ type ContentModerationService struct {
 	lastCleanupDeletedHit     atomic.Int64
 	lastCleanupDeletedNonHit  atomic.Int64
 	lastOutboxCleanupDeleted  atomic.Int64
+	runtimeSnapshot           atomic.Pointer[contentModerationRuntimeSnapshot]
+	runtimeRefreshMu          sync.Mutex
+	runtimeCacheTTL           time.Duration
+	runtimeRefreshRetryAt     atomic.Int64
 	keyHealthMu               sync.Mutex
 	keyHealth                 map[string]*contentModerationKeyHealth
 	passCache                 ContentModerationPassCache
@@ -1691,6 +1697,7 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if err := s.publishConfigSnapshot(cfg, raw); err != nil {
 		return nil, fmt.Errorf("publish content moderation config: %w", err)
 	}
+	s.replaceRuntimeConfig(cfg, raw)
 	// 代理选择可能已变化，丢弃已解析的代理 URL 缓存，下次调用即时生效。
 	s.moderationProxyCache.Store(nil)
 	return s.configView(cfg), nil
@@ -4822,6 +4829,125 @@ func (s *ContentModerationService) isRiskControlEnabled(ctx context.Context) (bo
 		return false, fmt.Errorf("read risk control switch: %w", err)
 	}
 	return raw == "true", nil
+}
+
+func (s *ContentModerationService) loadRuntimeSnapshot(ctx context.Context) (*contentModerationRuntimeSnapshot, error) {
+	if s == nil || s.settingRepo == nil {
+		return nil, errors.New("content moderation setting repository unavailable")
+	}
+	now := time.Now()
+	if snapshot := s.runtimeSnapshot.Load(); snapshot != nil {
+		if now.Sub(snapshot.loadedAt) < s.runtimeSnapshotTTL() {
+			return snapshot, nil
+		}
+		s.triggerRuntimeSnapshotRefresh()
+		return snapshot, nil
+	}
+
+	s.runtimeRefreshMu.Lock()
+	defer s.runtimeRefreshMu.Unlock()
+	if snapshot := s.runtimeSnapshot.Load(); snapshot != nil {
+		return snapshot, nil
+	}
+	return s.refreshRuntimeSnapshot(ctx)
+}
+
+func (s *ContentModerationService) runtimeSnapshotTTL() time.Duration {
+	if s != nil && s.runtimeCacheTTL > 0 {
+		return s.runtimeCacheTTL
+	}
+	return contentModerationRuntimeCacheTTL
+}
+
+func (s *ContentModerationService) triggerRuntimeSnapshotRefresh() {
+	if s == nil || s.runtimeRefreshDeferred() || !s.runtimeRefreshMu.TryLock() {
+		return
+	}
+	if s.runtimeRefreshDeferred() {
+		s.runtimeRefreshMu.Unlock()
+		return
+	}
+	go func() {
+		defer s.runtimeRefreshMu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), contentModerationRuntimeRefreshTimeout)
+		defer cancel()
+		if _, err := s.refreshRuntimeSnapshot(ctx); err != nil {
+			s.runtimeRefreshRetryAt.Store(time.Now().Add(s.runtimeSnapshotTTL()).UnixNano())
+			slog.Warn("content_moderation.runtime_snapshot_refresh_failed", "error", err)
+		}
+	}()
+}
+
+func (s *ContentModerationService) runtimeRefreshDeferred() bool {
+	return s != nil && time.Now().UnixNano() < s.runtimeRefreshRetryAt.Load()
+}
+
+func (s *ContentModerationService) refreshRuntimeSnapshot(ctx context.Context) (*contentModerationRuntimeSnapshot, error) {
+	values, err := s.settingRepo.GetMultiple(ctx, []string{
+		SettingKeyRiskControlEnabled,
+		SettingKeyContentModerationConfig,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get content moderation runtime settings: %w", err)
+	}
+	rawConfig := values[SettingKeyContentModerationConfig]
+	configDigest := sha256.Sum256([]byte(rawConfig))
+	if current := s.runtimeSnapshot.Load(); current != nil && current.configDigest == configDigest {
+		snapshot := &contentModerationRuntimeSnapshot{
+			riskControlEnabled: values[SettingKeyRiskControlEnabled] == "true",
+			config:             current.config,
+			keywordMatcher:     current.keywordMatcher,
+			configDigest:       configDigest,
+			loadedAt:           time.Now(),
+		}
+		s.runtimeSnapshot.Store(snapshot)
+		s.runtimeRefreshRetryAt.Store(0)
+		return snapshot, nil
+	}
+	cfg, err := parseContentModerationConfig(rawConfig)
+	if err != nil {
+		return nil, err
+	}
+	snapshot := &contentModerationRuntimeSnapshot{
+		riskControlEnabled: values[SettingKeyRiskControlEnabled] == "true",
+		config:             cfg,
+		keywordMatcher:     newContentModerationKeywordMatcher(cfg.BlockedKeywords),
+		configDigest:       configDigest,
+		loadedAt:           time.Now(),
+	}
+	s.runtimeSnapshot.Store(snapshot)
+	s.runtimeRefreshRetryAt.Store(0)
+	return snapshot, nil
+}
+
+func (s *ContentModerationService) replaceRuntimeConfig(cfg *ContentModerationConfig, raw []byte) {
+	if s == nil || cfg == nil {
+		return
+	}
+	s.runtimeRefreshMu.Lock()
+	defer s.runtimeRefreshMu.Unlock()
+	current := s.runtimeSnapshot.Load()
+	if current == nil {
+		return
+	}
+	config := cloneContentModerationConfig(cfg)
+	s.runtimeSnapshot.Store(&contentModerationRuntimeSnapshot{
+		riskControlEnabled: current.riskControlEnabled,
+		config:             config,
+		keywordMatcher:     newContentModerationKeywordMatcher(config.BlockedKeywords),
+		configDigest:       sha256.Sum256(raw),
+		loadedAt:           time.Now(),
+	})
+}
+
+func (s *contentModerationRuntimeSnapshot) matchBlockedKeyword(text string) (string, bool) {
+	if s == nil || s.config == nil {
+		return "", false
+	}
+	if s.keywordMatcher != nil {
+		return s.keywordMatcher.Match(text)
+	}
+	return matchBlockedKeyword(text, s.config.BlockedKeywords)
 }
 
 func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *ContentModerationConfig) error {
@@ -8563,24 +8689,23 @@ func (s *ContentModerationService) correlateCyberPolicyMiss(ctx context.Context,
 
 // RecordCyberPolicyEvent 把一次 cyber_policy 硬阻断写入风控中心日志、计入违规计数、
 // 并给用户发邮件。当前请求已由 gateway 透传给用户；本方法仅做事后记录/通知/计数。
-// 仅受 risk_control_enabled 总开关约束（不受内容审核 Enabled/Mode/scope/sample 约束）。
+// 受 risk_control_enabled 总开关和内容审核 group/model scope 约束，
+// 不受内容审核 Enabled/Mode/sample 约束。
 func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, in CyberPolicyRecordInput) {
 	if s == nil || s.repo == nil {
 		return
 	}
-	riskEnabled, riskErr := s.isRiskControlEnabled(ctx)
-	if riskErr != nil {
-		// A read failure must not silently discard a hard upstream cyber event.
-		slog.Warn("content_moderation.cyber_risk_switch_read_failed", "error", riskErr)
-		riskEnabled = true
-	}
-	if !riskEnabled {
+	runtimeSnapshot, err := s.loadRuntimeSnapshot(ctx)
+	if err != nil {
+		slog.Warn("content_moderation.cyber_runtime_snapshot_load_failed", "error", err)
 		return
 	}
-	cfg, err := s.loadConfig(ctx)
-	if err != nil {
-		slog.Warn("content_moderation.cyber_load_config_failed", "error", err)
-		cfg = &ContentModerationConfig{}
+	if !runtimeSnapshot.riskControlEnabled {
+		return
+	}
+	cfg := runtimeSnapshot.config
+	if !cfg.includesGroup(in.GroupID) || !cfg.includesModel(in.Model) {
+		return
 	}
 	correlated := s.correlateCyberPolicyMiss(ctx, cfg, in.RequestID)
 	var userID *int64
