@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientSetupView from '../ClientSetupView.vue'
 
 const routeQuery = vi.hoisted(() => ({
@@ -27,6 +27,7 @@ vi.mock('@/api', () => ({
 describe('ClientSetupView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.useFakeTimers()
     routeQuery.setup_id = 'setup-123'
     routeQuery.device_code = 'ABCD-1234'
     routeQuery.client = 'codex'
@@ -51,6 +52,10 @@ describe('ClientSetupView', () => {
     })
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('confirms the setup session without requiring a click', async () => {
     mount(ClientSetupView)
 
@@ -62,6 +67,12 @@ describe('ClientSetupView', () => {
       client: 'codex'
     })
     expect(window.location.href).toBe('')
+
+    await vi.advanceTimersByTimeAsync(9_999)
+    expect(window.location.href).toBe('')
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(window.location.href).toBe('https://aixlau.me/dashboard')
   })
 
   it('shows a neutral notification instead of an approval button while confirming', async () => {
@@ -92,5 +103,6 @@ describe('ClientSetupView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('配置确认完成')
+    expect(window.location.href).toBe('')
   })
 })

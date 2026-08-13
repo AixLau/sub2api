@@ -42,9 +42,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { clientSetupAPI } from '@/api'
+
+const CLIENT_SETUP_REDIRECT_URL = 'https://aixlau.me/dashboard'
+const CLIENT_SETUP_REDIRECT_DELAY_MS = 10_000
 
 const route = useRoute()
 const setupId = computed(() => String(route.query.setup_id || '').trim())
@@ -56,6 +59,7 @@ const approved = ref(false)
 const status = ref('pending')
 const errorMessage = ref('')
 const successMessage = ref('')
+let redirectTimer: ReturnType<typeof setTimeout> | null = null
 
 const clientLabel = computed(() => (client.value === 'claude' ? 'Claude Code' : 'Codex'))
 const statusText = computed(() => {
@@ -74,7 +78,7 @@ const statusClass = computed(() => {
 })
 const actionText = computed(() => {
   if (loading.value) return '正在处理本次配置，请稍候...'
-  if (approved.value) return '配置确认完成，正在回到终端继续。'
+  if (approved.value) return '配置确认完成，10 秒后将进入仪表盘。'
   if (errorMessage.value) return '处理失败，请按页面提示重试或回到终端继续处理。'
   return '正在检查配置请求，请稍候。'
 })
@@ -104,13 +108,23 @@ async function approve() {
     })
     approved.value = true
     status.value = result.status
-    successMessage.value = '配置确认完成，正在回到终端继续。'
+    successMessage.value = '配置确认完成，10 秒后将进入仪表盘。'
+    redirectTimer = setTimeout(() => {
+      window.location.href = CLIENT_SETUP_REDIRECT_URL
+    }, CLIENT_SETUP_REDIRECT_DELAY_MS)
   } catch (error) {
     errorMessage.value = readErrorMessage(error, '处理失败，请稍后重试或回到终端继续处理。')
   } finally {
     loading.value = false
   }
 }
+
+onBeforeUnmount(() => {
+  if (redirectTimer) {
+    clearTimeout(redirectTimer)
+    redirectTimer = null
+  }
+})
 
 function readErrorMessage(error: unknown, fallback: string): string {
   if (error && typeof error === 'object' && 'message' in error) {
