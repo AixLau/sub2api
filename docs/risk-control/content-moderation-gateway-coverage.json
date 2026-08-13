@@ -2217,6 +2217,54 @@
     {
       "route": {
         "method": "POST",
+        "path": "/v1/x_search",
+        "handler": "GatewayHandler.XSearch",
+        "protocol": "openai_responses"
+      },
+      "method": "POST",
+      "path": "/v1/x_search",
+      "handler": "GatewayHandler.XSearch",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        { "stage": "moderation", "required": true, "covered": true },
+        { "stage": "billing", "required": true, "covered": true },
+        { "stage": "routing", "required": true, "covered": true },
+        { "stage": "forward", "required": true, "covered": true },
+        { "stage": "usage", "required": true, "covered": true }
+      ],
+      "status": "covered",
+      "review_reason": "X search query input is moderated before account selection and upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
+        "path": "/x_search",
+        "handler": "GatewayHandler.XSearch",
+        "protocol": "openai_responses"
+      },
+      "method": "POST",
+      "path": "/x_search",
+      "handler": "GatewayHandler.XSearch",
+      "upstream": true,
+      "moderation_required": true,
+      "protocol": "openai_responses",
+      "pipeline": "openai_http",
+      "stage_coverage": [
+        { "stage": "moderation", "required": true, "covered": true },
+        { "stage": "billing", "required": true, "covered": true },
+        { "stage": "routing", "required": true, "covered": true },
+        { "stage": "forward", "required": true, "covered": true },
+        { "stage": "usage", "required": true, "covered": true }
+      ],
+      "status": "covered",
+      "review_reason": "Root X search alias is moderated before account selection and upstream forwarding."
+    },
+    {
+      "route": {
+        "method": "POST",
         "path": "/v1beta/models/*modelAction",
         "handler": "GatewayHandler.GeminiV1BetaModels",
         "protocol": "gemini"

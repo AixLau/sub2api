@@ -529,6 +529,7 @@ func gatewayPostRouteCanCarryUpstreamUserContent(path string) bool {
 	switch path {
 	case "/messages/count_tokens",
 		"/responses", "/responses/*subpath", "/alpha/search",
+		"/x_search",
 		"/chat/completions",
 		"/embeddings",
 		"/images/generations", "/images/edits",
@@ -600,12 +601,14 @@ func gatewayModerationCriticalRouteCoverageProofRoutes() []string {
 		"POST /v1/videos":                              {},
 		"POST /v1/tts":                                 {},
 		"POST /v1/web_search":                          {},
+		"POST /v1/x_search":                            {},
 		"POST /videos/generations":                     {},
 		"POST /videos/edits":                           {},
 		"POST /videos/extensions":                      {},
 		"POST /videos":                                 {},
 		"POST /tts":                                    {},
 		"POST /web_search":                             {},
+		"POST /x_search":                               {},
 		"POST /v1beta/models/*modelAction":             {},
 		"POST /antigravity/v1beta/models/*modelAction": {},
 	}

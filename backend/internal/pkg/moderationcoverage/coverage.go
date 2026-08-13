@@ -561,7 +561,7 @@ func OpenAIHTTPPipelineStagesForRoute(handlerName, protocol string) []PipelineSt
 		stages = append(stages, CoveredPipelineStage(StageImage))
 	case "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.GrokVideoEdit", "OpenAIGatewayHandler.GrokVideoExtension":
 		stages = append(stages, CoveredPipelineStage(StageImage))
-	case "OpenAIGatewayHandler.Embeddings", "OpenAIGatewayHandler.GrokVoice", "GatewayHandler.WebSearch":
+	case "OpenAIGatewayHandler.Embeddings", "OpenAIGatewayHandler.GrokVoice", "GatewayHandler.WebSearch", "GatewayHandler.XSearch":
 	default:
 		return nil
 	}
@@ -718,6 +718,10 @@ func StageAdapterDescriptorsForRoute(handlerName, protocol string) []RouteAdapte
 		"OpenAIGatewayHandler.GrokVideoEdit",
 		"OpenAIGatewayHandler.GrokVideoExtension",
 		"OpenAIGatewayHandler.Embeddings":
+		if len(OpenAIHTTPPipelineStagesForRoute(handlerName, protocol)) > 0 {
+			return openAIHTTP()
+		}
+	case "GatewayHandler.WebSearch", "GatewayHandler.XSearch":
 		if len(OpenAIHTTPPipelineStagesForRoute(handlerName, protocol)) > 0 {
 			return openAIHTTP()
 		}

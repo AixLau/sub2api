@@ -48,6 +48,7 @@ func TestEveryGatewayPOSTRouteIsClassifiedForPromptAuditCoverage(t *testing.T) {
 		"/models/*modelAction":      {"gemini_v1beta_handler.go"},
 		"/tts":                      {"grok_audio.go"},
 		"/web_search":               {"gateway_web_search.go"},
+		"/x_search":                 {"gateway_web_search.go"},
 	}
 	excluded := map[string]string{
 		"/messages/count_tokens":     "the gateway pre-forward registrar audits the request and the handler consumes the audited body without running a duplicate Coordinator check",

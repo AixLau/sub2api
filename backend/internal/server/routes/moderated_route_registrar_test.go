@@ -1059,11 +1059,13 @@ func TestOpenAIHTTPModeratedRouteRegistrarExposesPipelineStages(t *testing.T) {
 		"POST /v1/videos/extensions",
 		"POST /v1/videos/generations",
 		"POST /v1/web_search",
+		"POST /v1/x_search",
 		"POST /videos",
 		"POST /videos/edits",
 		"POST /videos/extensions",
 		"POST /videos/generations",
 		"POST /web_search",
+		"POST /x_search",
 	}, moderatedRoutePathKeysFromEntries(entries))
 
 	for _, entry := range entries {
@@ -1089,7 +1091,7 @@ func TestOpenAIHTTPModeratedRouteRegistrarExposesPipelineStages(t *testing.T) {
 		case "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.GrokVideoEdit", "OpenAIGatewayHandler.GrokVideoExtension":
 			requireStageNotRequired(t, entry, moderationcoverage.StageCyber)
 			requireStageRequiredAndCovered(t, entry, moderationcoverage.StageImage)
-		case "OpenAIGatewayHandler.Embeddings", "OpenAIGatewayHandler.GrokVoice", "GatewayHandler.WebSearch":
+		case "OpenAIGatewayHandler.Embeddings", "OpenAIGatewayHandler.GrokVoice", "GatewayHandler.WebSearch", "GatewayHandler.XSearch":
 			requireStageNotRequired(t, entry, moderationcoverage.StageCyber)
 			requireStageNotRequired(t, entry, moderationcoverage.StageImage)
 		case "OpenAIGatewayHandler.Messages":
@@ -1258,6 +1260,7 @@ func postRouteCanReachUpstreamContent(path string) bool {
 	switch path {
 	case "/messages/count_tokens",
 		"/responses", "/responses/*subpath", "/alpha/search",
+		"/x_search",
 		"/chat/completions",
 		"/embeddings",
 		"/images/generations", "/images/edits",
@@ -1534,6 +1537,7 @@ func openAIHTTPStageCoverageFromHandlerSources(t *testing.T) map[string]openAIHT
 		filepath.Join(handlerDir, "openai_embeddings.go"),
 		filepath.Join(handlerDir, "openai_gateway_handler.go"),
 		filepath.Join(handlerDir, "openai_images.go"),
+		filepath.Join(handlerDir, "openai_x_search.go"),
 		filepath.Join(handlerDir, "grok_media.go"),
 	}
 	pipelineFields := openAIGatewayPipelineFieldsFromHandlerSources(t, files)
@@ -1685,7 +1689,7 @@ func mergeOpenAIHTTPGatewayEntrypointStageCoverage(t *testing.T, coverageByHandl
 			alphaCoverage.ModerationLocations = append(alphaCoverage.ModerationLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
 			alphaCoverage.CyberLocations = append(alphaCoverage.CyberLocations, "backend/internal/handler/content_moderation_guard.go:EnterOpenAIHTTPGatewayPipeline")
 			coverageByHandler["OpenAIGatewayHandler.AlphaSearch"] = alphaCoverage
-			for _, handlerName := range []string{"OpenAIGatewayHandler.GrokVoice", "GatewayHandler.WebSearch"} {
+			for _, handlerName := range []string{"OpenAIGatewayHandler.GrokVoice", "GatewayHandler.WebSearch", "GatewayHandler.XSearch"} {
 				aliasCoverage := coverageByHandler[handlerName]
 				aliasCoverage.Protocol = protocol
 				aliasCoverage.HasHTTPPreForwardPipeline = true
@@ -1747,7 +1751,7 @@ func gatewayPreForwardHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) 
 
 func openAIHTTPHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
 	switch fn.Name.Name {
-	case "ChatCompletions", "Responses", "AlphaSearch", "Images", "GrokVideoGeneration", "GrokVideoEdit", "GrokVideoExtension", "GrokVoice", "Embeddings", "Messages", "WebSearch":
+	case "ChatCompletions", "Responses", "AlphaSearch", "Images", "GrokVideoGeneration", "GrokVideoEdit", "GrokVideoExtension", "GrokVoice", "Embeddings", "Messages", "WebSearch", "XSearch":
 	default:
 		return "", false
 	}
@@ -1755,7 +1759,7 @@ func openAIHTTPHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
 		return "", false
 	}
 	receiver := astExprLastIdentName(fn.Recv.List[0].Type)
-	if receiver != "OpenAIGatewayHandler" && !(receiver == "GatewayHandler" && fn.Name.Name == "WebSearch") {
+	if receiver != "OpenAIGatewayHandler" && !(receiver == "GatewayHandler" && (fn.Name.Name == "WebSearch" || fn.Name.Name == "XSearch")) {
 		return "", false
 	}
 	return receiver + "." + fn.Name.Name, true
@@ -1763,7 +1767,7 @@ func openAIHTTPHandlerStageCoverageName(fn *ast.FuncDecl) (string, bool) {
 
 func isOpenAIHTTPModeratedHandler(handler string) bool {
 	switch strings.TrimSpace(handler) {
-	case "OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Messages", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.AlphaSearch", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.GrokVideoEdit", "OpenAIGatewayHandler.GrokVideoExtension", "OpenAIGatewayHandler.GrokVoice", "OpenAIGatewayHandler.Embeddings", "GatewayHandler.WebSearch":
+	case "OpenAIGatewayHandler.ChatCompletions", "OpenAIGatewayHandler.Messages", "OpenAIGatewayHandler.Responses", "OpenAIGatewayHandler.AlphaSearch", "OpenAIGatewayHandler.Images", "OpenAIGatewayHandler.GrokVideoGeneration", "OpenAIGatewayHandler.GrokVideoEdit", "OpenAIGatewayHandler.GrokVideoExtension", "OpenAIGatewayHandler.GrokVoice", "OpenAIGatewayHandler.Embeddings", "GatewayHandler.WebSearch", "GatewayHandler.XSearch":
 		return true
 	default:
 		return false
