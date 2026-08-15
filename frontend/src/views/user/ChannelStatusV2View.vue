@@ -335,7 +335,7 @@
 
           <div v-else-if="activeTab === 'errors'" class="space-y-3">
             <div
-              v-for="row in errorRows"
+              v-for="row in visibleErrorRows"
               :key="row.category"
               class="rounded-2xl bg-gray-50 p-4 text-sm dark:bg-dark-900/30"
               :class="row.ignored ? 'opacity-60' : ''"
@@ -566,6 +566,9 @@ let autoRefreshTimer: number | null = null
 const hasDimensionFilter = computed(
   () => filter.value.platforms.length + filter.value.groupIds.length + filter.value.models.length > 0
 )
+const visibleErrorRows = computed(() =>
+  isAdmin.value ? errorRows.value : errorRows.value.filter((row) => !row.ignored)
+)
 // Full platform catalog (never pruned). Groups/models cascade by selected platforms
 // so choosing a platform narrows the other pickers without collapsing platforms.
 const platformOptions = computed(() =>
@@ -636,7 +639,7 @@ const activeRowsEmpty = computed(() =>
   activeTab.value === 'models'
     ? modelRows.value.length === 0
     : activeTab.value === 'errors'
-      ? errorRows.value.length === 0
+      ? visibleErrorRows.value.length === 0
       : userRows.value.length === 0
 )
 /** First-upgrade backfill toward 90m/24h/7d/30d; banner hides when backend omits bootstrap. */

@@ -386,22 +386,31 @@ func TestApplyIgnoredErrorsAdjustsRateOnly(t *testing.T) {
 	require.Equal(t, int64(100), m.RequestCount)
 }
 
-func TestErrorsForViewerStripsDetailsAndCountsForNonAdmin(t *testing.T) {
+func TestErrorsForViewerHidesIgnoredAndStripsSensitiveFieldsForNonAdmin(t *testing.T) {
 	fixture := &ChannelMonitorV2List[ChannelMonitorV2ErrorRow]{
-		Items: []ChannelMonitorV2ErrorRow{{
-			Category: "timeout",
-			Count:    42,
-			Rate:     0.4,
-			Details: []ChannelMonitorV2ErrorDetail{{
-				Platform:           "anthropic",
-				Model:              "claude",
-				ErrorType:          "upstream",
-				StatusCode:         504,
-				UpstreamStatusCode: 504,
-				Message:            "gateway timeout sk-secret",
-				Count:              12,
-			}},
-		}},
+		Items: []ChannelMonitorV2ErrorRow{
+			{
+				Category: "timeout",
+				Count:    42,
+				Rate:     0.4,
+				Ignored:  true,
+				Details: []ChannelMonitorV2ErrorDetail{{
+					Platform:           "anthropic",
+					Model:              "claude",
+					ErrorType:          "upstream",
+					StatusCode:         504,
+					UpstreamStatusCode: 504,
+					Message:            "gateway timeout sk-secret",
+					Count:              12,
+				}},
+			},
+			{
+				Category: "upstream_5xx",
+				Count:    8,
+				Rate:     0.1,
+				Details:  []ChannelMonitorV2ErrorDetail{{Message: "upstream failed", Count: 8}},
+			},
+		},
 	}
 	repo := &channelMonitorV2RepoStub{config: ChannelMonitorV2Config{Enabled: true}, errors: fixture}
 	svc := NewChannelMonitorV2Service(repo)
@@ -410,13 +419,16 @@ func TestErrorsForViewerStripsDetailsAndCountsForNonAdmin(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, repo.admin)
 	require.Len(t, userList.Items, 1)
+	require.Equal(t, "upstream_5xx", userList.Items[0].Category)
 	require.Zero(t, userList.Items[0].Count)
 	require.Empty(t, userList.Items[0].Details)
-	require.InDelta(t, 0.4, userList.Items[0].Rate, 0.0001)
+	require.InDelta(t, 0.1, userList.Items[0].Rate, 0.0001)
 
 	adminList, err := svc.ErrorsForViewer(context.Background(), ChannelMonitorV2Filter{}, true)
 	require.NoError(t, err)
 	require.True(t, repo.admin)
+	require.Len(t, adminList.Items, 2)
+	require.True(t, adminList.Items[0].Ignored)
 	require.Equal(t, int64(42), adminList.Items[0].Count)
 	require.Len(t, adminList.Items[0].Details, 1)
 	require.Contains(t, adminList.Items[0].Details[0].Message, "gateway timeout")

@@ -550,8 +550,9 @@ func (s *ChannelMonitorV2Service) Errors(ctx context.Context, filter ChannelMoni
 }
 
 // ErrorsForViewer returns the error breakdown.
-// Non-admin callers receive category rates + ignored flags only: absolute Count
-// is zeroed and Details (upstream messages / status codes / volume) are omitted.
+// Non-admin callers do not receive ignored categories. For remaining categories,
+// absolute Count is zeroed and Details (upstream messages / status codes / volume)
+// are omitted. Admin callers retain the complete breakdown.
 func (s *ChannelMonitorV2Service) ErrorsForViewer(ctx context.Context, filter ChannelMonitorV2Filter, admin bool) (*ChannelMonitorV2List[ChannelMonitorV2ErrorRow], error) {
 	cfg, err := s.getEnabledConfig(ctx)
 	if err != nil {
@@ -562,10 +563,16 @@ func (s *ChannelMonitorV2Service) ErrorsForViewer(ctx context.Context, filter Ch
 		return nil, err
 	}
 	if !admin && list != nil {
-		for i := range list.Items {
-			list.Items[i].Count = 0
-			list.Items[i].Details = nil
+		visible := make([]ChannelMonitorV2ErrorRow, 0, len(list.Items))
+		for _, row := range list.Items {
+			if row.Ignored {
+				continue
+			}
+			row.Count = 0
+			row.Details = nil
+			visible = append(visible, row)
 		}
+		list.Items = visible
 	}
 	return list, nil
 }
