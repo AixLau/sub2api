@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"log/slog"
 	"sort"
 	"strings"
 
@@ -146,16 +147,83 @@ func (h *AvailableChannelHandler) ListPublic(c *gin.Context) {
 		return
 	}
 
+	// 首页目录仍以可调度账号决定模型可见性，但展示价格应与实际渠道配置一致。
+	// 自定义价格读取失败时保留系统预设，避免可选的展示增强拖垮公开目录。
+	var customPricing map[publicModelKey]*service.ChannelModelPricing
+	if h.channelService != nil {
+		channels, listErr := h.channelService.ListAvailable(c.Request.Context())
+		if listErr != nil {
+			slog.Warn("public_model_custom_pricing_failed", "error", listErr)
+		} else {
+			customPricing = collectPublicModelPricing(channels)
+		}
+	}
+
 	c.Header("Cache-Control", "public, max-age=60")
-	response.Success(c, publicModelCatalogResponse{Models: buildSystemPublicModelCatalog(modelSets, h.modelPricing)})
+	response.Success(c, publicModelCatalogResponse{
+		Models: buildSystemPublicModelCatalog(modelSets, h.modelPricing, customPricing),
+	})
+}
+
+type publicModelKey struct {
+	platform string
+	name     string
+}
+
+// collectPublicModelPricing collects deterministic pricing candidates from
+// active channels attached to at least one public group. ListAvailable sorts
+// channels by name, so the first candidate wins when several channels price the
+// same model.
+func collectPublicModelPricing(channels []service.AvailableChannel) map[publicModelKey]*service.ChannelModelPricing {
+	result := make(map[publicModelKey]*service.ChannelModelPricing)
+	for i := range channels {
+		channel := &channels[i]
+		if channel.Status != service.StatusActive {
+			continue
+		}
+		for j := range channel.SupportedModels {
+			model := &channel.SupportedModels[j]
+			if model.Pricing == nil || !channelHasPublicGroupForPlatform(channel.Groups, model.Platform) {
+				continue
+			}
+			key := newPublicModelKey(model.Platform, model.Name)
+			if _, exists := result[key]; exists {
+				continue
+			}
+			clone := model.Pricing.Clone()
+			result[key] = &clone
+		}
+	}
+	return result
+}
+
+func channelHasPublicGroupForPlatform(groups []service.AvailableGroupRef, platform string) bool {
+	for i := range groups {
+		group := &groups[i]
+		if group.IsExclusive {
+			continue
+		}
+		if group.Platform == platform || group.Platform == service.PlatformComposite {
+			return true
+		}
+	}
+	return false
+}
+
+func newPublicModelKey(platform, name string) publicModelKey {
+	return publicModelKey{
+		platform: strings.ToLower(strings.TrimSpace(platform)),
+		name:     strings.ToLower(strings.TrimSpace(name)),
+	}
 }
 
 // buildSystemPublicModelCatalog uses the same availability semantics as
-// GET /v1/models and always resolves prices from the global PricingService.
-// Channel model definitions and channel prices do not participate.
+// GET /v1/models. Channel pricing overrides the global PricingService preset;
+// missing custom fields continue to use the preset, matching token billing.
 func buildSystemPublicModelCatalog(
 	modelSets []service.SystemAvailableModelSet,
 	pricingSource systemModelPricingSource,
+	customPricing map[publicModelKey]*service.ChannelModelPricing,
 ) []userSupportedModel {
 	byKey := make(map[string]userSupportedModel)
 	for _, set := range modelSets {
@@ -179,7 +247,10 @@ func buildSystemPublicModelCatalog(
 			byKey[key] = userSupportedModel{
 				Name:     name,
 				Platform: platform,
-				Pricing:  toSystemModelPricing(pricingSource.GetModelPricing(name)),
+				Pricing: mergePublicModelPricing(
+					toSystemModelPricing(pricingSource.GetModelPricing(name)),
+					toUserPricing(customPricing[newPublicModelKey(platform, name)]),
+				),
 			}
 		}
 	}
@@ -195,6 +266,51 @@ func buildSystemPublicModelCatalog(
 		return strings.ToLower(models[i].Name) < strings.ToLower(models[j].Name)
 	})
 	return models
+}
+
+// mergePublicModelPricing applies custom fields over the system preset. For
+// non-token modes the custom configuration is authoritative because token
+// preset fields are not meaningful for per-request media billing.
+func mergePublicModelPricing(
+	systemPricing, customPricing *userSupportedModelPricing,
+) *userSupportedModelPricing {
+	if customPricing == nil {
+		return systemPricing
+	}
+	if customPricing.BillingMode != "" && customPricing.BillingMode != string(service.BillingModeToken) {
+		return customPricing
+	}
+	if systemPricing == nil {
+		return customPricing
+	}
+
+	merged := *systemPricing
+	merged.BillingMode = string(service.BillingModeToken)
+	if customPricing.InputPrice != nil {
+		merged.InputPrice = customPricing.InputPrice
+	}
+	if customPricing.OutputPrice != nil {
+		merged.OutputPrice = customPricing.OutputPrice
+	}
+	if customPricing.CacheWritePrice != nil {
+		merged.CacheWritePrice = customPricing.CacheWritePrice
+	}
+	if customPricing.CacheReadPrice != nil {
+		merged.CacheReadPrice = customPricing.CacheReadPrice
+	}
+	if customPricing.ImageInputPrice != nil {
+		merged.ImageInputPrice = customPricing.ImageInputPrice
+	}
+	if customPricing.ImageOutputPrice != nil {
+		merged.ImageOutputPrice = customPricing.ImageOutputPrice
+	}
+	if customPricing.PerRequestPrice != nil {
+		merged.PerRequestPrice = customPricing.PerRequestPrice
+	}
+	if len(customPricing.Intervals) > 0 {
+		merged.Intervals = customPricing.Intervals
+	}
+	return &merged
 }
 
 func toSystemModelPricing(p *service.LiteLLMModelPricing) *userSupportedModelPricing {
