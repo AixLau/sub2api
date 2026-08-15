@@ -679,27 +679,10 @@ func (s *ChannelMonitorV2Service) Users(ctx context.Context, filter ChannelMonit
 	}
 	result.Items = channelMonitorV2TopUsersWithSelf(result.Items, selfIndex, 10)
 	hideTP := s.hideThroughputForViewer(ctx, admin)
-	if admin {
-		// Keep identity for admin; still mark self for UI highlight.
+	if !admin {
 		for i := range result.Items {
-			if result.Items[i].UserID != nil && *result.Items[i].UserID == viewerID {
-				result.Items[i].IsSelf = true
-				if result.Items[i].DisplayLabel == "" || result.Items[i].DisplayLabel == "Me" {
-					// Prefer real label when available from repo.
-					if result.Items[i].Username != "" {
-						result.Items[i].DisplayLabel = result.Items[i].Username
-					} else if result.Items[i].Email != "" {
-						result.Items[i].DisplayLabel = result.Items[i].Email
-					} else {
-						result.Items[i].DisplayLabel = "Me"
-					}
-				}
-			}
+			redactChannelMonitorV2Metric(&result.Items[i].Metrics, hideTP)
 		}
-		return result, nil
-	}
-	for i := range result.Items {
-		redactChannelMonitorV2Metric(&result.Items[i].Metrics, hideTP)
 	}
 	for i := range result.Items {
 		row := &result.Items[i]
@@ -707,8 +690,12 @@ func (s *ChannelMonitorV2Service) Users(ctx context.Context, filter ChannelMonit
 			row.IsSelf, row.CanDrilldown, row.DisplayLabel = true, true, "Me"
 			continue
 		}
+		userID := int64(0)
+		if row.UserID != nil {
+			userID = *row.UserID
+		}
+		row.DisplayLabel = maskUserRankingEmail(row.Email, userID)
 		row.UserID, row.Email, row.Username, row.CanDrilldown = nil, "", "", false
-		row.DisplayLabel = fmt.Sprintf("Other user #%d", i+1)
 	}
 	return result, nil
 }
