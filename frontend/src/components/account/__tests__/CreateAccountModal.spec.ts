@@ -200,20 +200,20 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(wrapper.get('[data-testid="selected-proxy-id"]').text()).toBe('17')
   })
 
-  it('defaults Codex fingerprint convergence to session and persists explicit off', async () => {
+  it('defaults Codex fingerprint convergence to off and persists explicit session opt-in', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'OpenAI')
 
     const modeSelect = wrapper.get<HTMLSelectElement>('[data-testid="create-codex-fingerprint-mode-select"]')
-    expect(modeSelect.element.value).toBe('session')
+    expect(modeSelect.element.value).toBe('off')
 
-    await modeSelect.setValue('off')
+    await modeSelect.setValue('session')
     await wrapper.get('form#create-account-form input[type="text"]').setValue('Codex import')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await wrapper.get('[data-testid="import-codex-session"]').trigger('click')
     await flushPromises()
 
-    expect(importCodexSessionMock.mock.calls[0]?.[0]?.extra?.codex_fingerprint_mode).toBe('off')
+    expect(importCodexSessionMock.mock.calls[0]?.[0]?.extra?.codex_fingerprint_mode).toBe('session')
   })
 
   it('sends false explicitly for normal OpenAI account creation by default', async () => {

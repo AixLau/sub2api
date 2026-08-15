@@ -336,7 +336,7 @@ describe('EditAccountModal', () => {
     expect(location.text()).toContain('203.0.113.9')
   })
 
-  it('defaults an unconfigured Codex fingerprint mode to session and persists explicit off', async () => {
+  it('defaults an unconfigured Codex fingerprint mode to off and persists explicit session opt-in', async () => {
     const account = buildOpenAISparkShadowAccount()
     account.extra = {}
     updateAccountMock.mockReset().mockResolvedValue(account)
@@ -344,12 +344,12 @@ describe('EditAccountModal', () => {
 
     const wrapper = mountModal(account)
     const modeSelect = wrapper.get<HTMLSelectElement>('[data-testid="edit-codex-fingerprint-mode-select"]')
-    expect(modeSelect.element.value).toBe('session')
+    expect(modeSelect.element.value).toBe('off')
 
-    await modeSelect.setValue('off')
+    await modeSelect.setValue('session')
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
-    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.codex_fingerprint_mode).toBe('off')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.codex_fingerprint_mode).toBe('session')
   })
 
   it('defaults concurrency to 1 when the input is cleared before saving', async () => {

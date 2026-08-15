@@ -345,23 +345,23 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
-  it('OpenAI OAuth 指纹收敛默认 session，并可批量显式关闭', async () => {
+  it('OpenAI OAuth 指纹收敛默认 off，并可批量显式开启 session', async () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],
       selectedTypes: ['oauth']
     })
 
     const modeSelect = wrapper.get<HTMLSelectElement>('[data-testid="bulk-codex-fingerprint-mode-select"]')
-    expect(modeSelect.element.value).toBe('session')
+    expect(modeSelect.element.value).toBe('off')
 
     await wrapper.get('[data-testid="bulk-codex-fingerprint-mode-enabled"]').setValue(true)
-    await modeSelect.setValue('off')
+    await modeSelect.setValue('session')
     await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
     await flushPromises()
 
     expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
       extra: {
-        codex_fingerprint_mode: 'off'
+        codex_fingerprint_mode: 'session'
       }
     })
   })
