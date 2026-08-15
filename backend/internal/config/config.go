@@ -1755,6 +1755,10 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	if err := bindModerationEnv(); err != nil {
 		return nil, fmt.Errorf("bind moderation environment: %w", err)
 	}
+	if tz, ok := os.LookupEnv("TZ"); ok && strings.TrimSpace(tz) != "" {
+		// AutomaticEnv 会先把 timezone 映射到 TIMEZONE；显式 Set 保证标准 TZ 变量优先。
+		viper.Set("timezone", strings.TrimSpace(tz))
+	}
 	if err := viper.BindEnv("server.enable_server_timing", "ENABLE_SERVER_TIMING"); err != nil {
 		return nil, fmt.Errorf("bind ENABLE_SERVER_TIMING: %w", err)
 	}

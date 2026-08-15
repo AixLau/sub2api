@@ -373,7 +373,7 @@ func (h *OpenAIGatewayHandler) readOpenAIHTTPPreForwardRequest(c *gin.Context, r
 	cyberBody := body
 	if protocol == service.ContentModerationProtocolOpenAIResponses {
 		setOpsRequestContext(c, "", false)
-		if service.IsOpenAIResponsesCompactPathForTest(c) {
+		if service.IsOpenAIResponsesCompactPath(c) {
 			if compactSeed := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()); compactSeed != "" {
 				c.Set(service.OpenAICompactSessionSeedKeyForTest(), compactSeed)
 			}

@@ -141,7 +141,9 @@ func TestAccountTestService_OpenAICompactForcesSystemUAAndRecordsZeroUsage(t *te
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     make(http.Header),
-		Body:       io.NopCloser(strings.NewReader(`{"id":"compact_45"}`)),
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"compact_45\",\"output\":[{\"type\":\"compaction\",\"id\":\"cmp_45\"}],\"usage\":{\"input_tokens\":0,\"output_tokens\":0,\"total_tokens\":0}}}\n\n",
+		)),
 	}}
 	writer := &accountTestUsageWriterStub{}
 	svc := newOpenAIAccountTestServiceForRecording(upstream, writer)
@@ -164,7 +166,7 @@ func TestAccountTestService_OpenAICompactForcesSystemUAAndRecordsZeroUsage(t *te
 	require.NotNil(t, writer.log)
 	require.Equal(t, "compact_45", writer.log.RequestID)
 	require.Zero(t, writer.log.TotalTokens())
-	require.Equal(t, RequestTypeSync, writer.log.RequestType)
+	require.Equal(t, RequestTypeStream, writer.log.RequestType)
 }
 
 func TestAccountTestService_OpenAIImageAPIKeyPreservesUAOverrideAndRecordsUsage(t *testing.T) {
