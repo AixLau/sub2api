@@ -2108,10 +2108,7 @@ func (s *OpenAIGatewayService) ReviewSemanticContent(
 		return ContentModerationSemanticReviewResult{}, err
 	}
 	requestCtx := ctx
-	// Platform semantic review uses the public Responses endpoint for both
-	// OAuth and API-key accounts. Regular gateway OAuth forwarding continues to
-	// use chatgptCodexURL elsewhere in the request pipeline.
-	targetURL := openaiPlatformAPIURL
+	targetURL := chatgptCodexURL
 	userAgent := DefaultOpenAICodexUserAgent
 	if s.settingService != nil {
 		userAgent = s.settingService.GetOpenAICodexUserAgent(requestCtx)
@@ -2137,6 +2134,7 @@ func (s *OpenAIGatewayService) ReviewSemanticContent(
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("User-Agent", userAgent)
 	if oauth {
+		req.Host = "chatgpt.com"
 		req.Header.Set("Accept", "text/event-stream")
 		req.Header.Set("OpenAI-Beta", "responses=experimental")
 		req.Header.Set("Originator", "codex-tui")
@@ -2226,7 +2224,7 @@ func (s *OpenAIGatewayService) ReviewSemanticContent(
 	if reviewKind == contentModerationReviewKindPromptInjection {
 		result.InboundEndpoint = "/internal/content-moderation/prompt-injection-review"
 	}
-	result.UpstreamEndpoint = semanticReviewUpstreamEndpoint()
+	result.UpstreamEndpoint = semanticReviewUpstreamEndpoint(oauth)
 	result.UserAgent = userAgent
 	return result, nil
 }
@@ -2465,7 +2463,10 @@ func semanticReviewResponseText(body []byte, contentType string) (string, error)
 	return response.Text, nil
 }
 
-func semanticReviewUpstreamEndpoint() string {
+func semanticReviewUpstreamEndpoint(oauth bool) string {
+	if oauth {
+		return "/backend-api/codex/responses"
+	}
 	return "/v1/responses"
 }
 
