@@ -90,6 +90,32 @@ const ProxySelectorStub = defineComponent({
   template: '<div data-testid="selected-proxy-id">{{ modelValue ?? "none" }}</div>',
 })
 
+const SelectStub = defineComponent({
+  name: 'SelectStub',
+  props: {
+    modelValue: {
+      type: [String, Number, Boolean, null],
+      default: '',
+    },
+    options: {
+      type: Array,
+      default: () => [],
+    },
+  },
+  emits: ['update:modelValue'],
+  template: `
+    <select
+      v-bind="$attrs"
+      :value="modelValue"
+      @change="$emit('update:modelValue', $event.target.value)"
+    >
+      <option v-for="option in options" :key="option.value" :value="option.value">
+        {{ option.label }}
+      </option>
+    </select>
+  `,
+})
+
 function mountModal(extraProps: Record<string, unknown> = {}) {
   return mount(CreateAccountModal, {
     props: { show: true, proxies: [], groups: [], ...extraProps },
@@ -98,7 +124,7 @@ function mountModal(extraProps: Record<string, unknown> = {}) {
         BaseDialog: BaseDialogStub,
         OAuthAuthorizationFlow: OAuthAuthorizationFlowStub,
         ConfirmDialog: true,
-        Select: true,
+        Select: SelectStub,
         Icon: true,
         PlatformIcon: true,
         ProxySelector: ProxySelectorStub,
@@ -172,6 +198,22 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await wrapper.setProps({ show: true })
 
     expect(wrapper.get('[data-testid="selected-proxy-id"]').text()).toBe('17')
+  })
+
+  it('defaults Codex fingerprint convergence to session and persists explicit off', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+
+    const modeSelect = wrapper.get<HTMLSelectElement>('[data-testid="create-codex-fingerprint-mode-select"]')
+    expect(modeSelect.element.value).toBe('session')
+
+    await modeSelect.setValue('off')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Codex import')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await wrapper.get('[data-testid="import-codex-session"]').trigger('click')
+    await flushPromises()
+
+    expect(importCodexSessionMock.mock.calls[0]?.[0]?.extra?.codex_fingerprint_mode).toBe('off')
   })
 
   it('sends false explicitly for normal OpenAI account creation by default', async () => {
