@@ -811,8 +811,8 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 			return s.sendErrorAndEnd(c, "No access token available")
 		}
 
-		// OAuth uses ChatGPT internal API
-		apiURL = chatgptCodexAPIURL
+		// Platform account tests use the public Responses API for OAuth accounts.
+		apiURL = openaiPlatformAPIURL
 	} else if credentialAccount.Type == "apikey" {
 		// API Key - use Platform API
 		authToken = credentialAccount.GetOpenAIApiKey()
@@ -843,8 +843,8 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	c.Writer.Header().Set("X-Accel-Buffering", "no")
 	c.Writer.Flush()
 
-	// Create OpenAI Responses API payload. OAuth accounts use ChatGPT Codex
-	// upstream and must apply the same model normalization as real forwarding.
+	// Create the OpenAI Responses API payload. OAuth accounts still need the
+	// same model normalization as real forwarding.
 	upstreamTestModelID := testModelID
 	if isOAuth {
 		upstreamTestModelID = normalizeOpenAIModelForUpstream(credentialAccount, testModelID)
@@ -884,9 +884,8 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	}
 	req.Header.Set("User-Agent", resolveOpenAICodexUpstreamUserAgent(ctx, credentialAccount, s.settingService))
 
-	// Set OAuth-specific headers for ChatGPT internal API
+	// Set OAuth-specific headers for the Responses API.
 	if isOAuth {
-		req.Host = "chatgpt.com"
 		req.Header.Set("accept", "text/event-stream")
 		req.Header.Set("OpenAI-Beta", "responses=experimental")
 		req.Header.Set("Originator", openai.CodexDefaultOriginator)

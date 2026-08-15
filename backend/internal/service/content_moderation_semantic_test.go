@@ -1007,6 +1007,42 @@ func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
 	require.Contains(t, required, "deception_type")
 }
 
+func TestReviewSemanticContentUsesPublicResponsesEndpointForCodexOAuth(t *testing.T) {
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(strings.NewReader(`{
+			"id":"resp_semantic_oauth",
+			"output_text":"{\"verdict\":\"allow\"}",
+			"usage":{"input_tokens":31,"output_tokens":4}
+		}`)),
+	}}
+	svc := &OpenAIGatewayService{
+		httpUpstream:   upstream,
+		cfg:            &config.Config{},
+		settingService: newOpenAICodexUASettingService("codex_vscode/9.9.9"),
+	}
+	account := &Account{
+		ID:       52,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "semantic-oauth-token",
+		},
+	}
+
+	result, err := svc.ReviewSemanticContent(context.Background(), account, "gpt-5.4-mini", ContentModerationSemanticReviewInput{Text: "candidate"})
+
+	require.NoError(t, err)
+	require.Equal(t, "allow", result.Verdict)
+	require.Equal(t, "/v1/responses", result.UpstreamEndpoint)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, http.MethodPost, upstream.lastReq.Method)
+	require.Equal(t, openaiPlatformAPIURL, upstream.lastReq.URL.String())
+	require.NotEqual(t, "chatgpt.com", upstream.lastReq.Host)
+	require.Equal(t, "Bearer semantic-oauth-token", upstream.lastReq.Header.Get("Authorization"))
+}
+
 func TestReviewSemanticContentHonorsEffectiveInputLimitAcrossTransports(t *testing.T) {
 	tests := []struct {
 		name           string
