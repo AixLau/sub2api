@@ -679,10 +679,27 @@ func (s *ChannelMonitorV2Service) Users(ctx context.Context, filter ChannelMonit
 	}
 	result.Items = channelMonitorV2TopUsersWithSelf(result.Items, selfIndex, 10)
 	hideTP := s.hideThroughputForViewer(ctx, admin)
-	if !admin {
+	if admin {
+		// The admin endpoint keeps identity for operator drilldown while the user
+		// endpoint below strips raw identity and exposes only a masked label.
 		for i := range result.Items {
-			redactChannelMonitorV2Metric(&result.Items[i].Metrics, hideTP)
+			if result.Items[i].UserID != nil && *result.Items[i].UserID == viewerID {
+				result.Items[i].IsSelf = true
+				if result.Items[i].DisplayLabel == "" || result.Items[i].DisplayLabel == "Me" {
+					if result.Items[i].Username != "" {
+						result.Items[i].DisplayLabel = result.Items[i].Username
+					} else if result.Items[i].Email != "" {
+						result.Items[i].DisplayLabel = result.Items[i].Email
+					} else {
+						result.Items[i].DisplayLabel = "Me"
+					}
+				}
+			}
 		}
+		return result, nil
+	}
+	for i := range result.Items {
+		redactChannelMonitorV2Metric(&result.Items[i].Metrics, hideTP)
 	}
 	for i := range result.Items {
 		row := &result.Items[i]

@@ -304,13 +304,14 @@ func TestChannelMonitorV2UsersRemovesOtherUserIdentity(t *testing.T) {
 	require.Equal(t, "Me", result.Items[1].DisplayLabel)
 }
 
-func TestChannelMonitorV2UsersMasksOtherIdentityForAdminButKeepsMetrics(t *testing.T) {
+func TestChannelMonitorV2UsersKeepsOtherIdentityAndMetricsForAdmin(t *testing.T) {
 	selfID, otherID := int64(7), int64(9)
 	repo := &channelMonitorV2RepoStub{config: ChannelMonitorV2Config{Enabled: true}, users: &ChannelMonitorV2List[ChannelMonitorV2UserRow]{Items: []ChannelMonitorV2UserRow{
 		{
 			UserID:       &otherID,
 			Email:        "other@example.com",
 			Username:     "other",
+			DisplayLabel: "other",
 			CanDrilldown: true,
 			Metrics:      ChannelMonitorV2Metric{RequestCount: 42, TokenCount: 1000},
 		},
@@ -319,15 +320,16 @@ func TestChannelMonitorV2UsersMasksOtherIdentityForAdminButKeepsMetrics(t *testi
 
 	result, err := NewChannelMonitorV2Service(repo).Users(context.Background(), ChannelMonitorV2Filter{}, selfID, true)
 	require.NoError(t, err)
-	require.Nil(t, result.Items[0].UserID)
-	require.Empty(t, result.Items[0].Email)
-	require.Empty(t, result.Items[0].Username)
-	require.False(t, result.Items[0].CanDrilldown)
-	require.Equal(t, "o***@e***.com", result.Items[0].DisplayLabel)
+	require.Equal(t, otherID, *result.Items[0].UserID)
+	require.Equal(t, "other@example.com", result.Items[0].Email)
+	require.Equal(t, "other", result.Items[0].Username)
+	require.True(t, result.Items[0].CanDrilldown)
+	require.Equal(t, "other", result.Items[0].DisplayLabel)
 	require.EqualValues(t, 42, result.Items[0].Metrics.RequestCount)
 	require.EqualValues(t, 1000, result.Items[0].Metrics.TokenCount)
 	require.Equal(t, selfID, *result.Items[1].UserID)
-	require.Equal(t, "Me", result.Items[1].DisplayLabel)
+	require.True(t, result.Items[1].IsSelf)
+	require.Equal(t, "self", result.Items[1].DisplayLabel)
 }
 
 func TestChannelMonitorV2UsersAppendsSelfWhenMissingFromRanking(t *testing.T) {
