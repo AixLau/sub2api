@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +50,35 @@ type accountRepository struct {
 	// Used to proactively sync account snapshot to cache when status changes,
 	// ensuring sticky sessions can promptly detect unavailable accounts.
 	schedulerCache service.SchedulerCache
+}
+
+// BatchUpdateOpenAICapacityHistory merges derived capacity history into all
+// affected account rows in one statement. Empty updates are a no-op.
+func (r *accountRepository) BatchUpdateOpenAICapacityHistory(ctx context.Context, updates []service.OpenAICapacityHistoryUpdate) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	payload, err := json.Marshal(updates)
+	if err != nil {
+		return fmt.Errorf("marshal openai capacity history updates: %w", err)
+	}
+	_, err = r.sql.ExecContext(ctx, `
+		WITH input AS (
+			SELECT *
+			FROM jsonb_to_recordset($1::jsonb) AS i(account_id bigint, updates jsonb)
+		)
+		UPDATE accounts AS a
+		SET extra = COALESCE(a.extra, '{}'::jsonb) || input.updates,
+			updated_at = NOW()
+		FROM input
+		WHERE a.id = input.account_id
+			AND a.deleted_at IS NULL
+			AND NOT (COALESCE(a.extra, '{}'::jsonb) @> input.updates)
+	`, payload)
+	if err != nil {
+		return fmt.Errorf("batch update openai capacity history: %w", err)
+	}
+	return nil
 }
 
 var schedulerNeutralExtraKeyPrefixes = []string{

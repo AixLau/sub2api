@@ -173,6 +173,11 @@
             {{ t('admin.accounts.listPendingSyncAction') }}
           </button>
         </div>
+        <OpenAIOAuthUsageSummary
+          :summary="openAIUsageSummary"
+          :loading="openAIUsageSummaryLoading"
+          :error="openAIUsageSummaryError"
+        />
       </template>
       <template #table>
         <AccountBulkActionsBar
@@ -324,6 +329,7 @@
               :request-batched-usage="isDesktopViewport ? queueBatchedUsage : null"
 				@account-updated="handleAccountUpdated"
 				@usage-loaded="handleAccountUsageLoaded(row.id, $event)"
+				@quota-refreshed="scheduleOpenAIUsageSummaryRefresh"
             />
           </template>
           <template #cell-proxy="{ row }">
@@ -507,6 +513,7 @@ import { CreateAccountModal, EditAccountModal, BulkEditAccountModal, SyncFromCrs
 import AccountTableActions from '@/components/admin/account/AccountTableActions.vue'
 import AccountTableFilters from '@/components/admin/account/AccountTableFilters.vue'
 import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActionsBar.vue'
+import OpenAIOAuthUsageSummary from '@/components/admin/account/OpenAIOAuthUsageSummary.vue'
 import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
 import ImportDataModal from '@/components/admin/account/ImportDataModal.vue'
 import ReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vue'
@@ -532,7 +539,7 @@ import { extractApiErrorMessage } from '@/utils/apiError'
 import { sanitizeUrl } from '@/utils/url'
 import { getFloatingPanelPosition } from '@/utils/floatingPanel'
 import { formatMultiplier } from '@/utils/formatters'
-import type { Account, AccountPlatform, AccountSchedulerGroupScore, AccountType, AccountUsageInfo, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel, UpstreamBillingProbeSnapshot } from '@/types'
+import type { Account, AccountPlatform, AccountSchedulerGroupScore, AccountType, AccountUsageInfo, OpenAIOAuthUsageSummary as OpenAIOAuthUsageSummaryData, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel, UpstreamBillingProbeSnapshot } from '@/types'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -696,6 +703,46 @@ const todayStatsError = ref<string | null>(null)
 const todayStatsReqSeq = ref(0)
 const pendingTodayStatsRefresh = ref(false)
 const usageManualRefreshToken = ref(0)
+const openAIUsageSummary = ref<OpenAIOAuthUsageSummaryData | null>(null)
+const openAIUsageSummaryLoading = ref(false)
+const openAIUsageSummaryError = ref<string | null>(null)
+let openAIUsageSummaryRequestSequence = 0
+let openAIUsageSummaryRefreshTimer: ReturnType<typeof setTimeout> | null = null
+
+const refreshOpenAIUsageSummary = async () => {
+  const sequence = ++openAIUsageSummaryRequestSequence
+  openAIUsageSummaryLoading.value = true
+  openAIUsageSummaryError.value = null
+  try {
+    const summary = await adminAPI.accounts.getOpenAIOAuthUsageSummary()
+    if (sequence === openAIUsageSummaryRequestSequence) {
+      openAIUsageSummary.value = summary
+    }
+  } catch (error) {
+    if (sequence === openAIUsageSummaryRequestSequence) {
+      openAIUsageSummaryError.value = extractApiErrorMessage(error)
+    }
+  } finally {
+    if (sequence === openAIUsageSummaryRequestSequence) {
+      openAIUsageSummaryLoading.value = false
+    }
+  }
+}
+
+const scheduleOpenAIUsageSummaryRefresh = () => {
+  if (openAIUsageSummaryRefreshTimer !== null) clearTimeout(openAIUsageSummaryRefreshTimer)
+  openAIUsageSummaryRefreshTimer = setTimeout(() => {
+    openAIUsageSummaryRefreshTimer = null
+    void refreshOpenAIUsageSummary()
+  }, 250)
+}
+
+const isOpenAIOAuthSummaryAccount = (account: Account) => (
+  account.platform === 'openai' &&
+  account.type === 'oauth' &&
+  !account.parent_account_id &&
+  account.quota_dimension !== 'spark'
+)
 
 const desktopViewportQuery = '(min-width: 768px)'
 const isDesktopViewport = ref(
@@ -756,6 +803,10 @@ const setUsageBatchState = (accountID: number, usage: AccountUsageInfo | null, e
 const handleAccountUsageLoaded = (accountID: number, usage: AccountUsageInfo) => {
   if (usageBatchByAccountId.value[String(accountID)] === usage) return
   setUsageBatchState(accountID, usage, null)
+  const account = accounts.value.find(item => item.id === accountID)
+  if (account && isOpenAIOAuthSummaryAccount(account)) {
+    scheduleOpenAIUsageSummaryRefresh()
+  }
 }
 
 const flushQueuedUsageBatch = async () => {
@@ -1157,7 +1208,7 @@ const load = async () => {
   if (isFirstLoad.value) {
     requestParams.lite = '1'
   }
-  await baseLoad()
+  await Promise.all([baseLoad(), refreshOpenAIUsageSummary()])
   if (isFirstLoad.value) {
     isFirstLoad.value = false
     delete requestParams.lite
@@ -1171,7 +1222,7 @@ const reload = async () => {
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = false
-  await baseReload()
+  await Promise.all([baseReload(), refreshOpenAIUsageSummary()])
   await refreshTodayStatsBatch()
 }
 
@@ -1377,7 +1428,7 @@ const refreshAccountsIncrementally = async () => {
     }
     upstreamBillingNow.value = Date.now()
 
-    await refreshTodayStatsBatch()
+    await Promise.all([refreshTodayStatsBatch(), refreshOpenAIUsageSummary()])
   } catch (error) {
     console.error('Auto refresh failed:', error)
   } finally {
@@ -2183,6 +2234,7 @@ const handleProbeUpstreamBilling = async (account: Account) => {
 const handleAccountUpdated = (updatedAccount: Account) => {
   patchAccountInList(updatedAccount)
   enterAutoRefreshSilentWindow()
+  if (isOpenAIOAuthSummaryAccount(updatedAccount)) scheduleOpenAIUsageSummaryRefresh()
 }
 const formatExportTimestamp = () => {
   const now = new Date()
@@ -2300,6 +2352,7 @@ const handleRefresh = async (a: Account) => {
     const updated = await adminAPI.accounts.refreshCredentials(a.id)
     patchAccountInList(updated)
     enterAutoRefreshSilentWindow()
+    if (isOpenAIOAuthSummaryAccount(updated)) scheduleOpenAIUsageSummaryRefresh()
   } catch (error) {
     console.error('Failed to refresh credentials:', error)
   }
@@ -2502,6 +2555,10 @@ onUnmounted(() => {
     usageBatchFlushTimer = null
   }
   pendingUsageBatchIds.clear()
+  if (openAIUsageSummaryRefreshTimer !== null) {
+    clearTimeout(openAIUsageSummaryRefreshTimer)
+    openAIUsageSummaryRefreshTimer = null
+  }
   window.removeEventListener('scroll', handleScroll, true)
   window.removeEventListener('resize', handleViewportResize)
   document.removeEventListener('click', handleClickOutside)

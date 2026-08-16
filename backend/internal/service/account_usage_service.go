@@ -326,6 +326,7 @@ type AccountUsageService struct {
 	grokQuotaFetcher        *GrokQuotaFetcher
 	grokQuotaService        *GrokQuotaService
 	openAIQuotaService      *OpenAIQuotaService
+	settingRepo             SettingRepository
 	cache                   *UsageCache
 	identityCache           IdentityCache
 	tlsFPProfileService     *TLSFingerprintProfileService
@@ -335,6 +336,7 @@ type AccountUsageService struct {
 	openAIRecoveryCursor    int64
 	openAIWindowStartMu     sync.Mutex
 	openAIWindowStartTasks  map[int64]*openAIRateLimitWindowStartTask
+	openAISummaryFlight     singleflight.Group
 }
 
 // NewAccountUsageService 创建AccountUsageService实例
@@ -347,6 +349,7 @@ func NewAccountUsageService(
 	grokQuotaFetcher *GrokQuotaFetcher,
 	grokQuotaService *GrokQuotaService,
 	openAIQuotaService *OpenAIQuotaService,
+	settingRepo SettingRepository,
 	cache *UsageCache,
 	identityCache IdentityCache,
 	tlsFPProfileService *TLSFingerprintProfileService,
@@ -360,6 +363,7 @@ func NewAccountUsageService(
 		grokQuotaFetcher:        grokQuotaFetcher,
 		grokQuotaService:        grokQuotaService,
 		openAIQuotaService:      openAIQuotaService,
+		settingRepo:             settingRepo,
 		cache:                   cache,
 		identityCache:           identityCache,
 		tlsFPProfileService:     tlsFPProfileService,

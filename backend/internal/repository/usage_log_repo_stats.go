@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -16,6 +17,65 @@ import (
 	"github.com/lib/pq"
 	"golang.org/x/sync/errgroup"
 )
+
+// GetOpenAIWindowCostsBatch aggregates 5h and 7d account-billed costs with
+// per-account window starts in one query. A nil start means that window has no
+// billable current period and therefore remains zero.
+func (r *usageLogRepository) GetOpenAIWindowCostsBatch(
+	ctx context.Context,
+	queries []service.OpenAIWindowCostQuery,
+	end time.Time,
+) (map[int64]service.OpenAIWindowCosts, error) {
+	result := make(map[int64]service.OpenAIWindowCosts, len(queries))
+	if len(queries) == 0 {
+		return result, nil
+	}
+	payload, err := json.Marshal(queries)
+	if err != nil {
+		return nil, fmt.Errorf("marshal openai window queries: %w", err)
+	}
+	rows, err := r.sql.QueryContext(ctx, `
+		WITH windows AS (
+			SELECT *
+			FROM jsonb_to_recordset($1::jsonb) AS w(
+				account_id bigint,
+				five_hour_start timestamptz,
+				seven_day_start timestamptz
+			)
+		)
+		SELECT
+			w.account_id,
+			COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1))
+				FILTER (WHERE w.five_hour_start IS NOT NULL AND ul.created_at >= w.five_hour_start), 0),
+			COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1))
+				FILTER (WHERE w.seven_day_start IS NOT NULL AND ul.created_at >= w.seven_day_start), 0)
+		FROM windows w
+		LEFT JOIN usage_logs ul
+			ON ul.account_id = w.account_id
+			AND ul.created_at < $2
+			AND (
+				(w.five_hour_start IS NOT NULL AND ul.created_at >= w.five_hour_start)
+				OR (w.seven_day_start IS NOT NULL AND ul.created_at >= w.seven_day_start)
+			)
+		GROUP BY w.account_id
+	`, payload, end)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var accountID int64
+		var costs service.OpenAIWindowCosts
+		if err := rows.Scan(&accountID, &costs.FiveHour, &costs.SevenDay); err != nil {
+			return nil, err
+		}
+		result[accountID] = costs
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
 
 // GetUserStatsAggregated returns aggregated usage statistics for a user using database-level aggregation
 func (r *usageLogRepository) GetUserStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error) {

@@ -144,6 +144,12 @@ var duplicateAccountDiscardedExtraKeys = map[string]struct{}{
 	"codex_7d_reset_after_seconds":           {},
 	"codex_7d_window_minutes":                {},
 	"codex_7d_reset_at":                      {},
+	"openai_capacity_5h_last_known":          {},
+	"openai_capacity_5h_updated_at":          {},
+	"openai_capacity_5h_window_start":        {},
+	"openai_capacity_7d_last_known":          {},
+	"openai_capacity_7d_updated_at":          {},
+	"openai_capacity_7d_window_start":        {},
 }
 
 func duplicateAccountExtra(value map[string]any) (map[string]any, error) {
@@ -651,6 +657,11 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 				normalizedExtra[key] = v
 			}
 		}
+		for _, key := range openAICapacityManagedExtraKeys {
+			if v, ok := account.Extra[key]; ok {
+				normalizedExtra[key] = v
+			}
+		}
 		account.Extra = normalizedExtra
 		if account.Platform == PlatformAntigravity && wasOveragesEnabled && !account.IsOveragesEnabled() {
 			delete(account.Extra, "antigravity_credits_overages") // 清理旧版 overages 运行态
@@ -858,6 +869,9 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	delete(updates, OllamaCloudUsageSessionExtraKey)
 	delete(updates, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(updates, OllamaCloudUsageSnapshotExtraKey)
+	for _, key := range openAICapacityManagedExtraKeys {
+		delete(updates, key)
+	}
 	if _, exists := updates[openAILongContextBillingEnabledKey]; exists {
 		account, err := s.accountRepo.GetByID(ctx, id)
 		if err != nil {
@@ -880,6 +894,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	delete(input.Extra, UpstreamBillingProbeEnabledExtraKey)
 	delete(input.Extra, UpstreamBillingRateSyncEnabledExtraKey)
 	delete(input.Extra, UpstreamBillingProbeExtraKey)
+	for _, key := range openAICapacityManagedExtraKeys {
+		delete(input.Extra, key)
+	}
 	delete(input.Extra, OllamaCloudUsageSessionExtraKey)
 	delete(input.Extra, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(input.Extra, OllamaCloudUsageSnapshotExtraKey)

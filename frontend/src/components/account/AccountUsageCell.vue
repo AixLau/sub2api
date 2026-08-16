@@ -142,7 +142,11 @@
           refresh button is rendered via the pre-actions slot so the user sees a
           single row of related buttons instead of two stacked rows.
         -->
-        <OpenAIQuotaResetCell :account="account" @account-updated="handleQuotaResetAccountUpdated">
+        <OpenAIQuotaResetCell
+          :account="account"
+          @account-updated="handleQuotaResetAccountUpdated"
+          @quota-refreshed="emit('quota-refreshed')"
+        >
           <template #pre-actions>
             <button
               type="button"
@@ -184,7 +188,12 @@
       <div v-else>
         <div class="text-xs text-gray-400">-</div>
         <!-- Always allow on-demand upstream quota query, even before local data exists. -->
-        <OpenAIQuotaResetCell :account="account" class="mt-1" @account-updated="handleQuotaResetAccountUpdated" />
+        <OpenAIQuotaResetCell
+          :account="account"
+          class="mt-1"
+          @account-updated="handleQuotaResetAccountUpdated"
+          @quota-refreshed="emit('quota-refreshed')"
+        />
       </div>
     </template>
 
@@ -654,6 +663,7 @@ const props = withDefaults(
 const emit = defineEmits<{
 	'account-updated': [account: Account]
 	'usage-loaded': [usage: AccountUsageInfo]
+	'quota-refreshed': []
 }>()
 
 const { t } = useI18n()
@@ -1467,12 +1477,9 @@ const quotaTotalBar = computed((): QuotaBarInfo | null => {
 })
 
 const handleQuotaResetAccountUpdated = (account: Account) => {
-  // The reset response already carries authoritative quota and account data.
-  // Avoid turning the parent patch into a second automatic /usage request.
-  // The suppression is time-boxed so an unhandled emit (parent that ignores
-  // account-updated) cannot latch it and swallow a later, unrelated refresh.
   suppressOpenAIUsageRefreshUntil.value = Date.now() + SUPPRESS_USAGE_REFRESH_WINDOW_MS
   emit('account-updated', account)
+  emit('quota-refreshed')
 }
 
 // ===== Key account today stats formatters =====

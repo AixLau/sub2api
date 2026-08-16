@@ -155,6 +155,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   reset: []
+  'quota-refreshed': []
 }>()
 
 const { t } = useI18n()
@@ -338,6 +339,7 @@ const handleQuery = async () => {
     } else {
       resetWarning.value = t('admin.accounts.openaiQuotaReset.refreshCachePersistFailed')
     }
+    emit('quota-refreshed')
   } catch (e) {
     error.value = extractErrorMessage(e)
   } finally {

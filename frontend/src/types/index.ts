@@ -1302,6 +1302,26 @@ export interface WindowStats {
   user_cost?: number
 }
 
+export interface OpenAIOAuthUsageWindowSummary {
+  used: number
+  estimated_remaining: number | null
+  estimated_capacity: number | null
+  usage_percent: number
+  remaining_percent: number
+  reference_capacity: number | null
+  reference_source: 'current' | 'historical' | 'mixed' | 'unavailable'
+  estimated_account_count: number
+  unestimated_account_count: number
+  pending_sync_account_count: number
+}
+
+export interface OpenAIOAuthUsageSummary {
+  account_count: number
+  generated_at: string
+  five_hour: OpenAIOAuthUsageWindowSummary
+  seven_day: OpenAIOAuthUsageWindowSummary
+}
+
 export interface UsageProgress {
   utilization: number // Percentage (0-100+, 100 = 100%)
   resets_at: string | null

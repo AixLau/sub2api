@@ -2335,6 +2335,21 @@ func (h *AccountHandler) GetUsage(c *gin.Context) {
 	response.Success(c, usage)
 }
 
+// GetOpenAIOAuthUsageSummary returns a full-pool usage estimate for OpenAI
+// OAuth main accounts. List pagination and filters intentionally do not apply.
+func (h *AccountHandler) GetOpenAIOAuthUsageSummary(c *gin.Context) {
+	if h.accountUsageService == nil {
+		response.InternalError(c, "Account usage service is not configured")
+		return
+	}
+	summary, err := h.accountUsageService.GetOpenAIOAuthUsageSummary(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, summary)
+}
+
 // ClearRateLimit handles clearing account rate limit status
 // POST /api/v1/admin/accounts/:id/clear-rate-limit
 func (h *AccountHandler) ClearRateLimit(c *gin.Context) {

@@ -24,7 +24,8 @@ import type {
   UpstreamBillingProbeResult,
   UpstreamBillingProbeSettings,
   OllamaCloudUsageSettings,
-  OllamaCloudUsageState
+  OllamaCloudUsageState,
+  OpenAIOAuthUsageSummary
 } from '@/types'
 
 /**
@@ -129,6 +130,11 @@ export async function listWithEtag(
  */
 export async function getById(id: number): Promise<Account> {
   const { data } = await apiClient.get<Account>(`/admin/accounts/${id}`)
+  return data
+}
+
+export async function getOpenAIOAuthUsageSummary(): Promise<OpenAIOAuthUsageSummary> {
+  const { data } = await apiClient.get<OpenAIOAuthUsageSummary>('/admin/accounts/openai-oauth/usage-summary')
   return data
 }
 
@@ -1005,6 +1011,7 @@ export async function refreshOllamaCloudUsage(id: number): Promise<OllamaCloudUs
 export const accountsAPI = {
   list,
   listWithEtag,
+  getOpenAIOAuthUsageSummary,
   getById,
   create,
   duplicate,
