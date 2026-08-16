@@ -380,6 +380,12 @@ func aggregateOpenAIWindow(inputs []*openAIAccountWindowInput, def openAIWindowD
 				}
 				updates = append(updates, OpenAICapacityHistoryUpdate{AccountID: input.account.ID, Updates: update})
 			}
+		case input.sampleCurrent && input.candidate > 0 && input.history <= 0:
+			// Once an account reaches the dynamic threshold, its own current
+			// cost/percentage estimate is more representative for this response
+			// than a pool fallback. Rejected outliers remain transient and do not
+			// update account history or pool references.
+			input.capacity, input.source = input.candidate, "current"
 		case input.history > 0:
 			input.capacity, input.source = input.history, "historical"
 		case currentPlanMedian[input.plan] > 0:

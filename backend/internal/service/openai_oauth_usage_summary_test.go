@@ -238,6 +238,27 @@ func TestOpenAIWindowDynamicCapacityRequiresTenPercentUsage(t *testing.T) {
 	assertNear(t, atThreshold.candidate, 2100)
 }
 
+func TestAggregateOpenAIWindowUsesTransientDynamicEstimateBeforePoolFallback(t *testing.T) {
+	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
+	start := now.Add(-7 * 24 * time.Hour)
+	inputs := []*openAIAccountWindowInput{
+		{account: Account{ID: 1}, plan: "pro", percent: 50, used: 500, candidate: 1000, sampleCurrent: true, start: &start},
+		{account: Account{ID: 2}, plan: "pro", percent: 50, used: 550, candidate: 1100, sampleCurrent: true, start: &start},
+		{account: Account{ID: 3}, plan: "pro", percent: 100, used: 200, candidate: 200, sampleCurrent: true, start: &start},
+	}
+
+	summary, updates, _ := aggregateOpenAIWindow(inputs, openAISevenDayWindow, openAIStoredCapacityReference{}, now)
+	if inputs[2].accepted {
+		t.Fatalf("outlier must not be accepted for history: %+v", inputs[2])
+	}
+	assertNear(t, inputs[2].capacity, 200)
+	assertNear(t, *summary.EstimatedCapacity, 2300)
+	assertNear(t, *summary.EstimatedRemaining, 1050)
+	if len(updates) != 2 {
+		t.Fatalf("transient outlier must not be persisted: %+v", updates)
+	}
+}
+
 func TestAggregateOpenAIWindowDoesNotRewriteUnchangedHistory(t *testing.T) {
 	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
 	start := now.Add(-5 * time.Hour)
