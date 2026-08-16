@@ -56,8 +56,9 @@ type rewardWorkerGateRepoStub struct {
 
 type legacyRewardReplayRepoStub struct {
 	RewardRepository
-	grant RewardGrant
-	claim RewardClaimResult
+	grant   RewardGrant
+	claim   RewardClaimResult
+	profile RewardAudienceProfile
 }
 
 func (r *legacyRewardReplayRepoStub) ImportLegacyPending(context.Context, int64, time.Time) error {
@@ -74,6 +75,12 @@ func (r *legacyRewardReplayRepoStub) FindPendingBySystemKey(context.Context, int
 
 func (r *legacyRewardReplayRepoStub) ListRuntimeCampaigns(context.Context, string, time.Time) ([]RewardCampaign, error) {
 	return nil, nil
+}
+
+func (r *legacyRewardReplayRepoStub) GetAudienceProfile(_ context.Context, userID int64, _ time.Time) (*RewardAudienceProfile, error) {
+	profile := r.profile
+	profile.UserID = userID
+	return &profile, nil
 }
 
 func (r *legacyRewardReplayRepoStub) FindLatestBySystemKey(context.Context, int64, string) (*RewardGrant, error) {
@@ -508,6 +515,19 @@ func TestRewardServiceClaimLegacyReplaysCommittedClaim(t *testing.T) {
 	}
 	if result.GrantID != 91 || result.Amount != 3 || result.Balance != 13 || !result.AlreadyClaimed {
 		t.Fatalf("ClaimLegacy() = %#v, want committed claim replay", result)
+	}
+}
+
+func TestRewardServiceClaimRejectsPlusAlias(t *testing.T) {
+	repo := &legacyRewardReplayRepoStub{
+		profile: RewardAudienceProfile{Email: "user+tag@example.com"},
+	}
+	svc := NewRewardService(repo, nil, nil)
+
+	_, err := svc.Claim(context.Background(), 7, 91)
+
+	if !errors.Is(err, ErrRewardNotEligible) {
+		t.Fatalf("Claim() error = %v, want ErrRewardNotEligible", err)
 	}
 }
 

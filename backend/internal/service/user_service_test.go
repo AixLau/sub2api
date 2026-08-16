@@ -463,6 +463,21 @@ func TestClaimWelcomeReward_AlreadyClaimed(t *testing.T) {
 	require.ErrorIs(t, err, ErrWelcomeRewardUnavailable)
 }
 
+func TestClaimWelcomeReward_RejectsPlusAlias(t *testing.T) {
+	repo := &mockUserRepo{
+		getByIDUser: &User{Email: "user+tag@example.com"},
+		claimWelcomeRewardFn: func(context.Context, int64) (float64, float64, error) {
+			t.Fatal("plus alias must not reach the reward repository")
+			return 0, 0, nil
+		},
+	}
+	svc := NewUserService(repo, nil, nil, nil)
+
+	_, _, err := svc.ClaimWelcomeReward(context.Background(), 42)
+
+	require.ErrorIs(t, err, ErrRewardNotEligible)
+}
+
 func TestIsSurpriseRewardEligible(t *testing.T) {
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
 	recentActivity := now.Add(-24 * time.Hour)

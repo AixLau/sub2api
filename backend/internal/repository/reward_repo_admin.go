@@ -469,7 +469,9 @@ WITH recent_behavior AS (
 SELECT COUNT(*), COALESCE(MAX(b.data_updated_at), $1)
 FROM users u
 LEFT JOIN behavior b ON b.user_id = u.id
-WHERE u.role = 'user' AND u.status = 'active' AND u.deleted_at IS NULL AND (` + where + `)
+WHERE u.role = 'user' AND u.status = 'active' AND u.deleted_at IS NULL
+  AND POSITION('+' IN SPLIT_PART(u.email, '@', 1)) = 0
+  AND (` + where + `)
 `
 	queryArgs := append([]any{now}, args...)
 	var count int64

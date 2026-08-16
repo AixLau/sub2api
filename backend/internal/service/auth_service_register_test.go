@@ -772,6 +772,37 @@ func TestAuthService_Register_AssignsDefaultSubscriptions(t *testing.T) {
 	require.Equal(t, 7, assigner.calls[1].ValidityDays)
 }
 
+func TestAuthService_Register_PlusAliasSkipsSignupRewards(t *testing.T) {
+	repo := &userRepoStub{nextID: 43}
+	assigner := &defaultSubscriptionAssignerStub{}
+	quotaRepo := &userPlatformQuotaRepoStub{}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled:   "true",
+		SettingKeyDefaultSubscriptions:  `[{"group_id":11,"validity_days":30}]`,
+		SettingKeyDefaultPlatformQuotas: `{"openai":{"weekly":12.34}}`,
+	}, nil, quotaRepo)
+	service.defaultSubAssigner = assigner
+
+	_, user, err := service.Register(context.Background(), "user+tag@example.com", "password")
+
+	require.NoError(t, err)
+	require.NotNil(t, user)
+	require.Equal(t, "user+tag@example.com", user.Email)
+	require.Zero(t, user.Balance)
+	require.Equal(t, 2, user.Concurrency)
+	require.Empty(t, assigner.calls)
+	require.Len(t, repo.created, 1, "plus alias should still create an account")
+	var openAIWeekly *float64
+	for _, record := range quotaRepo.bulkInsertCalls[0] {
+		if record.Platform == "openai" {
+			openAIWeekly = record.WeeklyLimitUSD
+			break
+		}
+	}
+	require.NotNil(t, openAIWeekly, "normal platform limits should remain in effect")
+	require.Equal(t, 12.34, *openAIWeekly)
+}
+
 func TestAuthService_Register_UsesEmailAuthSourceDefaultsWhenGrantEnabled(t *testing.T) {
 	repo := &userRepoStub{nextID: 52}
 	assigner := &defaultSubscriptionAssignerStub{}

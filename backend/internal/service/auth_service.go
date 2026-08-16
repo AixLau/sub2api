@@ -226,7 +226,7 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		return "", nil, fmt.Errorf("hash password: %w", err)
 	}
 
-	grantPlan := s.resolveSignupGrantPlan(ctx, "email")
+	grantPlan := s.resolveSignupGrantPlanForEmail(ctx, email, "email")
 
 	// 新用户默认 RPM（0 = 不限制）。注册时写入，后续作为用户级兜底。
 	var defaultRPMLimit int
@@ -261,7 +261,7 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 	// snapshot user × platform quota（fail-open）
 	_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
-	if s.affiliateService != nil {
+	if s.affiliateService != nil && !IsEmailPlusAlias(email) {
 		if _, err := s.affiliateService.EnsureUserAffiliate(ctx, user.ID); err != nil {
 			logger.LegacyPrintf("service.auth", "[Auth] Failed to initialize affiliate profile for user %d: %v", user.ID, err)
 		}
@@ -281,7 +281,7 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		}
 	}
 	// 应用优惠码（如果提供且功能已启用）
-	if promoCode != "" && s.promoService != nil && s.settingService != nil && s.settingService.IsPromoCodeEnabled(ctx) {
+	if !IsEmailPlusAlias(email) && promoCode != "" && s.promoService != nil && s.settingService != nil && s.settingService.IsPromoCodeEnabled(ctx) {
 		if err := s.promoService.ApplyPromoCode(ctx, user.ID, promoCode); err != nil {
 			// 优惠码应用失败不影响注册，只记录日志
 			logger.LegacyPrintf("service.auth", "[Auth] Failed to apply promo code for user %d: %v", user.ID, err)
@@ -605,7 +605,7 @@ func (s *AuthService) LoginOrRegisterOAuth(ctx context.Context, email, username 
 			}
 
 			signupSource := inferLegacySignupSource(email)
-			grantPlan := s.resolveSignupGrantPlan(ctx, signupSource)
+			grantPlan := s.resolveSignupGrantPlanForEmail(ctx, email, signupSource)
 			var defaultRPMLimit int
 			if s.settingService != nil {
 				defaultRPMLimit = s.settingService.GetDefaultUserRPMLimit(ctx)
@@ -754,7 +754,7 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 			if strings.TrimSpace(signupSource) == "" {
 				signupSource = inferLegacySignupSource(email)
 			}
-			grantPlan := s.resolveSignupGrantPlan(ctx, signupSource)
+			grantPlan := s.resolveSignupGrantPlanForEmail(ctx, email, signupSource)
 			var defaultRPMLimit int
 			if s.settingService != nil {
 				defaultRPMLimit = s.settingService.GetDefaultUserRPMLimit(ctx)
@@ -806,7 +806,7 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					// snapshot user × platform quota（fail-open）
 					_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
-					s.bindOAuthAffiliate(ctx, user.ID, affiliateCode)
+					s.bindOAuthAffiliate(ctx, user.ID, user.Email, affiliateCode)
 				}
 			} else {
 				if err := s.userRepo.Create(ctx, newUser); err != nil {
@@ -827,7 +827,7 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 					// snapshot user × platform quota（fail-open）
 					_ = s.snapshotPlatformQuotaDefaults(ctx, user.ID, &grantPlan)
-					s.bindOAuthAffiliate(ctx, user.ID, affiliateCode)
+					s.bindOAuthAffiliate(ctx, user.ID, user.Email, affiliateCode)
 					if invitationRedeemCode != nil {
 						if err := s.redeemRepo.Use(ctx, invitationRedeemCode.ID, user.ID); err != nil {
 							return nil, nil, ErrInvitationCodeInvalid
@@ -862,15 +862,20 @@ func (s *AuthService) loginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 }
 
 func (s *AuthService) ApplyOAuthSignupPromoCode(ctx context.Context, userID int64, promoCode string) {
-	if userID <= 0 {
+	if s == nil || s.userRepo == nil || userID <= 0 {
 		return
 	}
-	s.applyOAuthSignupPromoCode(ctx, &User{ID: userID}, promoCode)
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to load user %d before applying promo code: %v", userID, err)
+		return
+	}
+	s.applyOAuthSignupPromoCode(ctx, user, promoCode)
 }
 
 func (s *AuthService) applyOAuthSignupPromoCode(ctx context.Context, user *User, promoCode string) *User {
 	promoCode = strings.TrimSpace(promoCode)
-	if user == nil || user.ID <= 0 || promoCode == "" || s.promoService == nil || s.settingService == nil || !s.settingService.IsPromoCodeEnabled(ctx) {
+	if user == nil || user.ID <= 0 || IsEmailPlusAlias(user.Email) || promoCode == "" || s.promoService == nil || s.settingService == nil || !s.settingService.IsPromoCodeEnabled(ctx) {
 		return user
 	}
 	if err := s.promoService.ApplyPromoCode(ctx, user.ID, promoCode); err != nil {
@@ -949,6 +954,19 @@ func (s *AuthService) resolveSignupGrantPlan(ctx context.Context, signupSource s
 	return plan
 }
 
+// resolveSignupGrantPlanForEmail preserves normal account defaults and limits
+// while removing balance and subscription signup rewards for plus-addressed
+// emails.
+func (s *AuthService) resolveSignupGrantPlanForEmail(ctx context.Context, email, signupSource string) signupGrantPlan {
+	plan := s.resolveSignupGrantPlan(ctx, signupSource)
+	if !IsEmailPlusAlias(email) {
+		return plan
+	}
+	plan.Balance = 0
+	plan.Subscriptions = nil
+	return plan
+}
+
 func authSourceSignupSettings(defaults *AuthSourceDefaultSettings, signupSource string) (ProviderDefaultGrantSettings, bool) {
 	if defaults == nil {
 		return ProviderDefaultGrantSettings{}, false
@@ -976,8 +994,8 @@ func authSourceSignupSettings(defaults *AuthSourceDefaultSettings, signupSource 
 
 // bindOAuthAffiliate initializes the affiliate profile and binds the inviter
 // for an OAuth-registered user. Failures are logged but never block registration.
-func (s *AuthService) bindOAuthAffiliate(ctx context.Context, userID int64, affiliateCode string) {
-	if s.affiliateService == nil || userID <= 0 {
+func (s *AuthService) bindOAuthAffiliate(ctx context.Context, userID int64, email, affiliateCode string) {
+	if s.affiliateService == nil || userID <= 0 || IsEmailPlusAlias(email) {
 		return
 	}
 	if _, err := s.affiliateService.EnsureUserAffiliate(ctx, userID); err != nil {

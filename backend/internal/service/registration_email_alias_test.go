@@ -49,6 +49,25 @@ func TestNormalizeEmailForAliasDedupKeepsDistinctInboxes(t *testing.T) {
 	)
 }
 
+func TestIsEmailPlusAlias(t *testing.T) {
+	tests := []struct {
+		name  string
+		email string
+		want  bool
+	}{
+		{name: "plus alias", email: "user+tag@example.com", want: true},
+		{name: "case insensitive", email: "User+Tag@Example.COM", want: true},
+		{name: "plain email", email: "user@example.com", want: false},
+		{name: "leading plus is not alias", email: "+user@example.com", want: false},
+		{name: "malformed", email: "user+tag", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, IsEmailPlusAlias(tt.email))
+		})
+	}
+}
+
 func TestEmailAliasDedupProbes(t *testing.T) {
 	require.ElementsMatch(t,
 		[]EmailAliasProbe{{Local: "someone", Domain: "gmailcom"}, {Local: "someone", Domain: "googlemailcom"}},

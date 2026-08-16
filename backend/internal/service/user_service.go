@@ -1207,6 +1207,9 @@ func (s *UserService) ClaimWelcomeReward(ctx context.Context, userID int64) (flo
 			"welcome reward service is unavailable",
 		)
 	}
+	if err := s.ensureRewardEligible(ctx, userID); err != nil {
+		return 0, 0, err
+	}
 
 	amount, balance, err := repo.ClaimWelcomeReward(ctx, userID)
 	if err != nil {
@@ -1231,6 +1234,9 @@ func (s *UserService) CheckSurpriseReward(ctx context.Context, userID int64) (bo
 			"surprise reward service is unavailable",
 		)
 	}
+	if err := s.ensureRewardEligible(ctx, userID); err != nil {
+		return false, err
+	}
 
 	roll, err := cryptoRandomInt(100)
 	if err != nil {
@@ -1250,7 +1256,7 @@ func (s *UserService) CheckSurpriseReward(ctx context.Context, userID int64) (bo
 }
 
 func IsSurpriseRewardEligible(user *User, now time.Time) bool {
-	if user == nil || user.Role != RoleUser || user.Status != StatusActive {
+	if user == nil || IsEmailPlusAlias(user.Email) || user.Role != RoleUser || user.Status != StatusActive {
 		return false
 	}
 	if user.CreatedAt.After(now.Add(-SurpriseRewardMinimumAge)) {
@@ -1271,6 +1277,9 @@ func (s *UserService) ClaimSurpriseReward(ctx context.Context, userID int64) (fl
 			"surprise reward service is unavailable",
 		)
 	}
+	if err := s.ensureRewardEligible(ctx, userID); err != nil {
+		return 0, 0, err
+	}
 
 	amount, balance, err := repo.ClaimSurpriseReward(ctx, userID, time.Now().UTC())
 	if err != nil {
@@ -1285,6 +1294,17 @@ func (s *UserService) ClaimSurpriseReward(ctx context.Context, userID int64) (fl
 		}
 	}
 	return amount, balance, nil
+}
+
+func (s *UserService) ensureRewardEligible(ctx context.Context, userID int64) error {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("load user for reward eligibility: %w", err)
+	}
+	if user != nil && IsEmailPlusAlias(user.Email) {
+		return ErrRewardNotEligible
+	}
+	return nil
 }
 
 func cryptoRandomInt(limit int64) (int64, error) {

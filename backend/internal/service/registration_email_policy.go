@@ -22,6 +22,14 @@ func RegistrationEmailSuffix(email string) string {
 	return "@" + domain
 }
 
+// IsEmailPlusAlias reports whether the local part uses plus addressing.
+// The address remains valid for registration, but it is not eligible for
+// signup or activity rewards because it can resolve to an existing inbox.
+func IsEmailPlusAlias(email string) bool {
+	local, _, ok := splitEmailForPolicy(email)
+	return ok && strings.IndexByte(local, '+') > 0
+}
+
 // RegistrationEmailDomain 返回邮箱对应的可注册主域名，用于域名注册额度归一化。
 // 例如 abc.com 和 abcd.abc.com 都返回 abc.com；无法从公共后缀表归一化时保留原域名。
 func RegistrationEmailDomain(email string) string {

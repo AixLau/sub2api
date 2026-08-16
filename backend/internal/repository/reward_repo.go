@@ -50,11 +50,12 @@ ORDER BY c.priority DESC, c.ends_at ASC NULLS LAST, c.id ASC
 func (r *rewardRepository) GetAudienceProfile(ctx context.Context, userID int64, now time.Time) (*service.RewardAudienceProfile, error) {
 	profile := &service.RewardAudienceProfile{}
 	err := r.db.QueryRowContext(ctx, `
-SELECT id, role, status, created_at, signup_source, last_active_at, balance, total_recharged
+SELECT id, email, role, status, created_at, signup_source, last_active_at, balance, total_recharged
 FROM users
 WHERE id = $1 AND deleted_at IS NULL
 `, userID).Scan(
 		&profile.UserID,
+		&profile.Email,
 		&profile.Role,
 		&profile.Status,
 		&profile.RegisteredAt,
@@ -120,7 +121,7 @@ func (r *rewardRepository) GetAudienceProfiles(ctx context.Context, userIDs []in
 		return profiles, nil
 	}
 	rows, err := r.db.QueryContext(ctx, `
-SELECT id, role, status, created_at, signup_source, last_active_at, balance, total_recharged
+SELECT id, email, role, status, created_at, signup_source, last_active_at, balance, total_recharged
 FROM users
 WHERE id = ANY($1::bigint[]) AND role = 'user' AND status = 'active' AND deleted_at IS NULL
 `, pq.Array(userIDs))
@@ -130,7 +131,7 @@ WHERE id = ANY($1::bigint[]) AND role = 'user' AND status = 'active' AND deleted
 	for rows.Next() {
 		var profile service.RewardAudienceProfile
 		var lastActive sql.NullTime
-		if err := rows.Scan(&profile.UserID, &profile.Role, &profile.Status, &profile.RegisteredAt, &profile.SignupSource, &lastActive, &profile.Balance, &profile.TotalRecharged); err != nil {
+		if err := rows.Scan(&profile.UserID, &profile.Email, &profile.Role, &profile.Status, &profile.RegisteredAt, &profile.SignupSource, &lastActive, &profile.Balance, &profile.TotalRecharged); err != nil {
 			rows.Close()
 			return nil, err
 		}

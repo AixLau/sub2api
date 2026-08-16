@@ -18,6 +18,7 @@ import (
 
 type RewardAudienceProfile struct {
 	UserID               int64
+	Email                string
 	Role                 string
 	Status               string
 	RegisteredAt         time.Time
@@ -33,6 +34,11 @@ type RewardAudienceProfile struct {
 	Recharge30D          float64
 	TotalRecharged       float64
 }
+
+var ErrRewardNotEligible = infraerrors.Forbidden(
+	"REWARD_NOT_ELIGIBLE",
+	"this account is not eligible for rewards",
+)
 
 type RewardRepository interface {
 	ImportLegacyPending(ctx context.Context, userID int64, now time.Time) error
@@ -96,6 +102,13 @@ func (s *RewardService) Pending(ctx context.Context, userID int64) ([]RewardGran
 		return nil, infraerrors.BadRequest("REWARD_INVALID_USER", "invalid user")
 	}
 	now := s.now().UTC()
+	profile, err := s.repo.GetAudienceProfile(ctx, userID, now)
+	if err != nil {
+		return nil, fmt.Errorf("load reward audience profile: %w", err)
+	}
+	if profile != nil && IsEmailPlusAlias(profile.Email) {
+		return []RewardGrant{}, nil
+	}
 	if err := s.repo.ImportLegacyPending(ctx, userID, now); err != nil {
 		return nil, fmt.Errorf("import legacy rewards: %w", err)
 	}
@@ -107,10 +120,6 @@ func (s *RewardService) Pending(ctx context.Context, userID int64) ([]RewardGran
 		return nil, fmt.Errorf("list active reward campaigns: %w", err)
 	}
 	if len(campaigns) > 0 {
-		profile, err := s.repo.GetAudienceProfile(ctx, userID, now)
-		if err != nil {
-			return nil, fmt.Errorf("load reward audience profile: %w", err)
-		}
 		for _, campaign := range campaigns {
 			if (profile.Role != "" && profile.Role != "user") ||
 				(profile.Status != "" && profile.Status != "active") {
@@ -150,6 +159,13 @@ func (s *RewardService) Claim(ctx context.Context, userID, grantID int64) (*Rewa
 	if grantID <= 0 {
 		return nil, infraerrors.BadRequest("REWARD_INVALID_GRANT", "invalid reward grant")
 	}
+	profile, err := s.repo.GetAudienceProfile(ctx, userID, s.now().UTC())
+	if err != nil {
+		return nil, fmt.Errorf("load reward audience profile: %w", err)
+	}
+	if profile != nil && IsEmailPlusAlias(profile.Email) {
+		return nil, ErrRewardNotEligible
+	}
 	result, err := s.repo.Claim(ctx, userID, grantID, s.now().UTC())
 	if err != nil {
 		return nil, err
@@ -160,6 +176,13 @@ func (s *RewardService) Claim(ctx context.Context, userID, grantID int64) (*Rewa
 
 func (s *RewardService) LegacyPending(ctx context.Context, userID int64, systemKey string) (bool, error) {
 	now := s.now().UTC()
+	profile, err := s.repo.GetAudienceProfile(ctx, userID, now)
+	if err != nil {
+		return false, err
+	}
+	if profile != nil && IsEmailPlusAlias(profile.Email) {
+		return false, ErrRewardNotEligible
+	}
 	if err := s.repo.ImportLegacyPending(ctx, userID, now); err != nil {
 		return false, err
 	}
@@ -188,7 +211,7 @@ func (s *RewardService) LegacyPending(ctx context.Context, userID int64, systemK
 	if campaign == nil {
 		return false, nil
 	}
-	profile, err := s.repo.GetAudienceProfile(ctx, userID, now)
+	profile, err = s.repo.GetAudienceProfile(ctx, userID, now)
 	if err != nil {
 		return false, err
 	}

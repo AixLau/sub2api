@@ -35,6 +35,14 @@ func (r *pendingRewardRepositoryStub) ListRuntimeCampaigns(
 	return nil, nil
 }
 
+func (r *pendingRewardRepositoryStub) GetAudienceProfile(
+	context.Context,
+	int64,
+	time.Time,
+) (*service.RewardAudienceProfile, error) {
+	return &service.RewardAudienceProfile{Email: "user@example.com"}, nil
+}
+
 func (r *pendingRewardRepositoryStub) ListPending(
 	context.Context,
 	int64,
