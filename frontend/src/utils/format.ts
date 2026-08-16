@@ -74,6 +74,30 @@ export function formatCurrency(amount: number | null | undefined, currency: stri
   }).format(amount)
 }
 
+/** Formats currency with stable k/M/B/T units for dense operational surfaces. */
+export function formatCompactCurrency(amount: number | null | undefined, currency: string = 'USD'): string {
+  const value = amount ?? 0
+  const absolute = Math.abs(value)
+  const units = [
+    { threshold: 1e12, suffix: 'T' },
+    { threshold: 1e9, suffix: 'B' },
+    { threshold: 1e6, suffix: 'M' },
+    { threshold: 1e3, suffix: 'k' }
+  ]
+  const unit = units.find(({ threshold }) => absolute >= threshold)
+  const displayValue = unit ? value / unit.threshold : value
+
+  const formatted = new Intl.NumberFormat(getLocale(), {
+    style: 'currency',
+    currency,
+    currencyDisplay: 'narrowSymbol',
+    minimumFractionDigits: unit ? 2 : 0,
+    maximumFractionDigits: 2
+  }).format(displayValue)
+
+  return `${formatted}${unit?.suffix ?? ''}`
+}
+
 /**
  * 格式化字节大小
  * @param bytes 字节数

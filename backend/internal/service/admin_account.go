@@ -147,9 +147,11 @@ var duplicateAccountDiscardedExtraKeys = map[string]struct{}{
 	"openai_capacity_5h_last_known":          {},
 	"openai_capacity_5h_updated_at":          {},
 	"openai_capacity_5h_window_start":        {},
+	"openai_capacity_5h_plan_type":           {},
 	"openai_capacity_7d_last_known":          {},
 	"openai_capacity_7d_updated_at":          {},
 	"openai_capacity_7d_window_start":        {},
+	"openai_capacity_7d_plan_type":           {},
 }
 
 func duplicateAccountExtra(value map[string]any) (map[string]any, error) {

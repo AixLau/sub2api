@@ -8,18 +8,23 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/shopspring/decimal"
 )
 
 const (
 	openAICapacity5hKey             = "openai_capacity_5h_last_known"
 	openAICapacity5hUpdatedAtKey    = "openai_capacity_5h_updated_at"
 	openAICapacity5hWindowStartKey  = "openai_capacity_5h_window_start"
+	openAICapacity5hPlanKey         = "openai_capacity_5h_plan_type"
 	openAICapacity7dKey             = "openai_capacity_7d_last_known"
 	openAICapacity7dUpdatedAtKey    = "openai_capacity_7d_updated_at"
 	openAICapacity7dWindowStartKey  = "openai_capacity_7d_window_start"
+	openAICapacity7dPlanKey         = "openai_capacity_7d_plan_type"
 	openAICapacityReference5hKey    = "openai_oauth_capacity_reference_5h"
 	openAICapacityReference7dKey    = "openai_oauth_capacity_reference_7d"
 	openAICapacityMinimumSamplePct  = 10.0
+	openAICapacityMaximumTrustedPct = 90.0
 	openAICapacityOutlierLowerRatio = 0.5
 	openAICapacityOutlierUpperRatio = 2.0
 )
@@ -28,9 +33,11 @@ var openAICapacityManagedExtraKeys = []string{
 	openAICapacity5hKey,
 	openAICapacity5hUpdatedAtKey,
 	openAICapacity5hWindowStartKey,
+	openAICapacity5hPlanKey,
 	openAICapacity7dKey,
 	openAICapacity7dUpdatedAtKey,
 	openAICapacity7dWindowStartKey,
+	openAICapacity7dPlanKey,
 }
 
 type OpenAIWindowCostQuery struct {
@@ -58,23 +65,26 @@ type openAICapacityHistoryBatchWriter interface {
 }
 
 type OpenAIOAuthUsageSummary struct {
-	AccountCount int                      `json:"account_count"`
-	GeneratedAt  time.Time                `json:"generated_at"`
-	FiveHour     OpenAIUsageWindowSummary `json:"five_hour"`
-	SevenDay     OpenAIUsageWindowSummary `json:"seven_day"`
+	AccountCount         int                      `json:"account_count"`
+	IncludedAccountCount int                      `json:"included_account_count"`
+	ExcludedAccountCount int                      `json:"excluded_account_count"`
+	GeneratedAt          time.Time                `json:"generated_at"`
+	FiveHour             OpenAIUsageWindowSummary `json:"five_hour"`
+	SevenDay             OpenAIUsageWindowSummary `json:"seven_day"`
 }
 
 type OpenAIUsageWindowSummary struct {
-	Used                    float64  `json:"used"`
-	EstimatedRemaining      *float64 `json:"estimated_remaining"`
-	EstimatedCapacity       *float64 `json:"estimated_capacity"`
-	UsagePercent            float64  `json:"usage_percent"`
-	RemainingPercent        float64  `json:"remaining_percent"`
-	ReferenceCapacity       *float64 `json:"reference_capacity"`
-	ReferenceSource         string   `json:"reference_source"`
-	EstimatedAccountCount   int      `json:"estimated_account_count"`
-	UnestimatedAccountCount int      `json:"unestimated_account_count"`
-	PendingSyncAccountCount int      `json:"pending_sync_account_count"`
+	Used                      float64  `json:"used"`
+	EstimatedRemaining        *float64 `json:"estimated_remaining"`
+	EstimatedCapacity         *float64 `json:"estimated_capacity"`
+	UsagePercent              float64  `json:"usage_percent"`
+	RemainingPercent          float64  `json:"remaining_percent"`
+	ReferenceCapacity         *float64 `json:"reference_capacity"`
+	ReferenceSource           string   `json:"reference_source"`
+	CurrentSampleAccountCount int      `json:"current_sample_account_count"`
+	EstimatedAccountCount     int      `json:"estimated_account_count"`
+	UnestimatedAccountCount   int      `json:"unestimated_account_count"`
+	PendingSyncAccountCount   int      `json:"pending_sync_account_count"`
 }
 
 type openAIStoredCapacityReference struct {
@@ -92,6 +102,7 @@ type openAIWindowDefinition struct {
 	historyKey       string
 	historyUpdated   string
 	historyStart     string
+	historyPlan      string
 	settingKey       string
 }
 
@@ -99,13 +110,13 @@ var (
 	openAIFiveHourWindow = openAIWindowDefinition{
 		name: "5h", duration: 5 * time.Hour,
 		usedPercentKey: "codex_5h_used_percent", resetAtKey: "codex_5h_reset_at", windowMinutesKey: "codex_5h_window_minutes",
-		historyKey: openAICapacity5hKey, historyUpdated: openAICapacity5hUpdatedAtKey, historyStart: openAICapacity5hWindowStartKey,
+		historyKey: openAICapacity5hKey, historyUpdated: openAICapacity5hUpdatedAtKey, historyStart: openAICapacity5hWindowStartKey, historyPlan: openAICapacity5hPlanKey,
 		settingKey: openAICapacityReference5hKey,
 	}
 	openAISevenDayWindow = openAIWindowDefinition{
 		name: "7d", duration: 7 * 24 * time.Hour,
 		usedPercentKey: "codex_7d_used_percent", resetAtKey: "codex_7d_reset_at", windowMinutesKey: "codex_7d_window_minutes",
-		historyKey: openAICapacity7dKey, historyUpdated: openAICapacity7dUpdatedAtKey, historyStart: openAICapacity7dWindowStartKey,
+		historyKey: openAICapacity7dKey, historyUpdated: openAICapacity7dUpdatedAtKey, historyStart: openAICapacity7dWindowStartKey, historyPlan: openAICapacity7dPlanKey,
 		settingKey: openAICapacityReference7dKey,
 	}
 )
@@ -121,6 +132,7 @@ type openAIAccountWindowInput struct {
 	used          float64
 	history       float64
 	candidate     float64
+	historySample bool
 	accepted      bool
 	capacity      float64
 	source        string
@@ -147,10 +159,16 @@ func (s *AccountUsageService) computeOpenAIOAuthUsageSummary(ctx context.Context
 	if err != nil {
 		return nil, fmt.Errorf("list openai oauth accounts: %w", err)
 	}
-	eligible := make([]Account, 0, len(accounts))
+	poolAccounts := make([]Account, 0, len(accounts))
 	for i := range accounts {
 		if !accounts[i].IsShadow() && accounts[i].QuotaDimensionOrDefault() == QuotaDimensionGlobal {
-			eligible = append(eligible, accounts[i])
+			poolAccounts = append(poolAccounts, accounts[i])
+		}
+	}
+	included := make([]Account, 0, len(poolAccounts))
+	for i := range poolAccounts {
+		if poolAccounts[i].Status == StatusActive && poolAccounts[i].Schedulable {
+			included = append(included, poolAccounts[i])
 		}
 	}
 
@@ -158,8 +176,8 @@ func (s *AccountUsageService) computeOpenAIOAuthUsageSummary(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	fiveInputs, fiveQueries := buildOpenAIWindowInputs(eligible, openAIFiveHourWindow, now)
-	sevenInputs, sevenQueries := buildOpenAIWindowInputs(eligible, openAISevenDayWindow, now)
+	fiveInputs, fiveQueries := buildOpenAIWindowInputs(included, openAIFiveHourWindow, now)
+	sevenInputs, sevenQueries := buildOpenAIWindowInputs(included, openAISevenDayWindow, now)
 	queries := mergeOpenAIWindowCostQueries(fiveQueries, sevenQueries)
 	costReader, ok := s.usageLogRepo.(openAIWindowCostBatchReader)
 	if !ok {
@@ -201,10 +219,12 @@ func (s *AccountUsageService) computeOpenAIOAuthUsageSummary(ctx context.Context
 	}
 
 	return &OpenAIOAuthUsageSummary{
-		AccountCount: len(eligible),
-		GeneratedAt:  now,
-		FiveHour:     fiveSummary,
-		SevenDay:     sevenSummary,
+		AccountCount:         len(poolAccounts),
+		IncludedAccountCount: len(included),
+		ExcludedAccountCount: len(poolAccounts) - len(included),
+		GeneratedAt:          now,
+		FiveHour:             fiveSummary,
+		SevenDay:             sevenSummary,
 	}, nil
 }
 
@@ -238,10 +258,15 @@ func buildOpenAIWindowInputs(accounts []Account, def openAIWindowDefinition, now
 	for i := range accounts {
 		account := accounts[i]
 		percent, start, costKnown, sampleCurrent, pending := resolveOpenAIWindowState(account.Extra, def, now)
+		plan := normalizeOpenAIPlan(account.GetCredential("plan_type"))
+		history := positiveFinite(parseExtraFloat64(account.Extra[def.historyKey]))
+		if !openAICapacityHistoryMatchesPlan(account.Extra, def, plan) {
+			history = 0
+		}
 		input := &openAIAccountWindowInput{
-			account: account, plan: normalizeOpenAIPlan(account.GetCredential("plan_type")), percent: percent,
+			account: account, plan: plan, percent: percent,
 			start: start, costKnown: costKnown, sampleCurrent: sampleCurrent, pending: pending,
-			history: positiveFinite(parseExtraFloat64(account.Extra[def.historyKey])),
+			history: history,
 		}
 		inputs = append(inputs, input)
 		query := OpenAIWindowCostQuery{AccountID: account.ID}
@@ -326,7 +351,12 @@ func applyOpenAIWindowCosts(inputs []*openAIAccountWindowInput, costs map[int64]
 			input.used = nonNegativeFinite(cost.SevenDay)
 		}
 		if input.sampleCurrent && input.percent >= openAICapacityMinimumSamplePct && input.used > 0 {
-			input.candidate = positiveFinite(input.used * 100 / input.percent)
+			candidate, _ := decimal.NewFromFloat(input.used).
+				Mul(decimal.NewFromInt(100)).
+				Div(decimal.NewFromFloat(input.percent)).
+				Float64()
+			input.candidate = positiveFinite(candidate)
+			input.historySample = input.percent <= openAICapacityMaximumTrustedPct
 		}
 	}
 }
@@ -334,12 +364,12 @@ func applyOpenAIWindowCosts(inputs []*openAIAccountWindowInput, costs map[int64]
 func aggregateOpenAIWindow(inputs []*openAIAccountWindowInput, def openAIWindowDefinition, stored openAIStoredCapacityReference, now time.Time) (OpenAIUsageWindowSummary, []OpenAICapacityHistoryUpdate, *openAIStoredCapacityReference) {
 	rawByPlan := make(map[string][]float64)
 	for _, input := range inputs {
-		if input.candidate > 0 {
+		if input.candidate > 0 && input.historySample {
 			rawByPlan[input.plan] = append(rawByPlan[input.plan], input.candidate)
 		}
 	}
 	for _, input := range inputs {
-		if input.candidate <= 0 {
+		if input.candidate <= 0 || !input.historySample {
 			continue
 		}
 		accept := true
@@ -371,20 +401,19 @@ func aggregateOpenAIWindow(inputs []*openAIAccountWindowInput, def openAIWindowD
 		switch {
 		case input.accepted:
 			input.capacity, input.source = input.candidate, "current"
-			if openAICapacityHistoryChanged(input.account.Extra, def, input.candidate, input.start) {
+			if openAICapacityHistoryChanged(input.account.Extra, def, input.candidate, input.start, input.plan) {
 				update := map[string]any{
-					def.historyKey: input.candidate, def.historyUpdated: now.UTC().Format(time.RFC3339),
+					def.historyKey: input.candidate, def.historyUpdated: now.UTC().Format(time.RFC3339), def.historyPlan: input.plan,
 				}
 				if input.start != nil {
 					update[def.historyStart] = input.start.UTC().Format(time.RFC3339)
 				}
 				updates = append(updates, OpenAICapacityHistoryUpdate{AccountID: input.account.ID, Updates: update})
 			}
-		case input.sampleCurrent && input.candidate > 0 && input.history <= 0:
-			// Once an account reaches the dynamic threshold, its own current
-			// cost/percentage estimate is more representative for this response
-			// than a pool fallback. Rejected outliers remain transient and do not
-			// update account history or pool references.
+		case input.sampleCurrent && input.candidate > 0 && !input.historySample:
+			// High-usage estimates remain useful for the current response, but do
+			// not replace trusted history or pool references. Outliers inside the
+			// trusted sample range continue through the fallback chain below.
 			input.capacity, input.source = input.candidate, "current"
 		case input.history > 0:
 			input.capacity, input.source = input.history, "historical"
@@ -400,10 +429,16 @@ func aggregateOpenAIWindow(inputs []*openAIAccountWindowInput, def openAIWindowD
 	}
 
 	var summary OpenAIUsageWindowSummary
+	usedTotal := decimal.Zero
+	capacityTotal := decimal.Zero
+	remainingTotal := decimal.Zero
 	summary.ReferenceSource = "unavailable"
 	sources := map[string]bool{}
 	for _, input := range inputs {
-		summary.Used += input.used
+		usedTotal = usedTotal.Add(decimal.NewFromFloat(input.used))
+		if input.accepted {
+			summary.CurrentSampleAccountCount++
+		}
 		if input.pending {
 			summary.PendingSyncAccountCount++
 		}
@@ -414,20 +449,21 @@ func aggregateOpenAIWindow(inputs []*openAIAccountWindowInput, def openAIWindowD
 		summary.EstimatedAccountCount++
 		capacity := math.Max(input.capacity, input.used)
 		remaining := math.Max(0, capacity-input.used)
-		if summary.EstimatedCapacity == nil {
-			summary.EstimatedCapacity = new(float64)
-			summary.EstimatedRemaining = new(float64)
-		}
-		*summary.EstimatedCapacity += capacity
-		*summary.EstimatedRemaining += remaining
+		capacityTotal = capacityTotal.Add(decimal.NewFromFloat(capacity))
+		remainingTotal = remainingTotal.Add(decimal.NewFromFloat(remaining))
 		sources[input.source] = true
 	}
-	if summary.EstimatedCapacity != nil && *summary.EstimatedCapacity > 0 {
+	summary.Used, _ = usedTotal.Float64()
+	if capacityTotal.IsPositive() {
+		capacity, _ := capacityTotal.Float64()
+		remaining, _ := remainingTotal.Float64()
+		summary.EstimatedCapacity = openAIFloat64Ptr(capacity)
+		summary.EstimatedRemaining = openAIFloat64Ptr(remaining)
 		summary.UsagePercent = clampPercent(summary.Used / *summary.EstimatedCapacity * 100)
 		summary.RemainingPercent = 100 - summary.UsagePercent
 	} else {
 		summary.UsagePercent = 0
-		summary.RemainingPercent = 0
+		summary.RemainingPercent = 100
 	}
 	switch {
 	case sources["current"] && sources["historical"]:
@@ -521,8 +557,23 @@ func withinCapacityRange(value, reference float64) bool {
 	return value > 0 && reference > 0 && value >= reference*openAICapacityOutlierLowerRatio && value <= reference*openAICapacityOutlierUpperRatio
 }
 
-func openAICapacityHistoryChanged(extra map[string]any, def openAIWindowDefinition, capacity float64, start *time.Time) bool {
+func openAICapacityHistoryMatchesPlan(extra map[string]any, def openAIWindowDefinition, plan string) bool {
+	if extra == nil {
+		return true
+	}
+	stored, ok := extra[def.historyPlan].(string)
+	if !ok || strings.TrimSpace(stored) == "" {
+		return true
+	}
+	return normalizeOpenAIPlan(stored) == plan
+}
+
+func openAICapacityHistoryChanged(extra map[string]any, def openAIWindowDefinition, capacity float64, start *time.Time, plan string) bool {
 	if !openAIFloatNearlyEqual(positiveFinite(parseExtraFloat64(extra[def.historyKey])), capacity) {
+		return true
+	}
+	storedPlan, _ := extra[def.historyPlan].(string)
+	if strings.TrimSpace(storedPlan) == "" || normalizeOpenAIPlan(storedPlan) != plan {
 		return true
 	}
 	storedStart := parseExtraTime(extra[def.historyStart])

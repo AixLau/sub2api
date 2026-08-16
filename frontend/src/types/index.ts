@@ -1310,6 +1310,7 @@ export interface OpenAIOAuthUsageWindowSummary {
   remaining_percent: number
   reference_capacity: number | null
   reference_source: 'current' | 'historical' | 'mixed' | 'unavailable'
+  current_sample_account_count: number
   estimated_account_count: number
   unestimated_account_count: number
   pending_sync_account_count: number
@@ -1317,6 +1318,8 @@ export interface OpenAIOAuthUsageWindowSummary {
 
 export interface OpenAIOAuthUsageSummary {
   account_count: number
+  included_account_count: number
+  excluded_account_count: number
   generated_at: string
   five_hour: OpenAIOAuthUsageWindowSummary
   seven_day: OpenAIOAuthUsageWindowSummary

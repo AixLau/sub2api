@@ -17,6 +17,7 @@ const show = ref(false)
 const triggerRef = useTemplateRef<HTMLElement>('trigger')
 const tooltipRef = useTemplateRef<HTMLElement>('tooltip')
 const tooltipStyle = ref({ top: '0px', left: '0px' })
+const VIEWPORT_PADDING = 8
 
 function openTooltip() {
   show.value = true
@@ -71,9 +72,19 @@ function updatePosition() {
   const el = triggerRef.value
   if (!el) return
   const rect = el.getBoundingClientRect()
+  const tooltipWidth = tooltipRef.value?.offsetWidth ?? 0
+  const naturalCenter = rect.left + rect.width / 2
+  const minimumCenter = VIEWPORT_PADDING + tooltipWidth / 2
+  const maximumCenter = window.innerWidth - VIEWPORT_PADDING - tooltipWidth / 2
+  const clampedCenter = tooltipWidth > 0
+    ? minimumCenter > maximumCenter
+      ? window.innerWidth / 2
+      : Math.min(maximumCenter, Math.max(minimumCenter, naturalCenter))
+    : naturalCenter
+
   tooltipStyle.value = {
-    top: `${rect.top + window.scrollY}px`,
-    left: `${rect.left + rect.width / 2 + window.scrollX}px`,
+    top: `${rect.top}px`,
+    left: `${clampedCenter}px`,
   }
 }
 

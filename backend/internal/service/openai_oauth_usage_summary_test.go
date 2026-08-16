@@ -63,14 +63,14 @@ func TestOpenAIOAuthUsageSummaryScopeAndWeightedEstimate(t *testing.T) {
 	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
 	reset5h := now.Add(2 * time.Hour)
 	reset7d := now.Add(4 * 24 * time.Hour)
-	main := summaryAccount(80, "inactive", "plus", map[string]any{
+	main := summaryAccount(80, "active", "plus", map[string]any{
 		"codex_5h_used_percent": 54.0, "codex_5h_window_minutes": 300.0,
 		"codex_5h_reset_at":     reset5h.Format(time.RFC3339),
 		"codex_7d_used_percent": 25.0, "codex_7d_window_minutes": 10080.0,
 		"codex_7d_reset_at":      reset7d.Format(time.RFC3339),
 		"codex_usage_updated_at": now.Add(-time.Minute).Format(time.RFC3339),
 	})
-	zero := summaryAccount(81, "error", "plus", map[string]any{
+	zero := summaryAccount(81, "active", "plus", map[string]any{
 		"codex_5h_used_percent": 0.0, "codex_5h_window_minutes": 0.0,
 		"codex_7d_used_percent": 0.0, "codex_7d_window_minutes": 0.0,
 	})
@@ -78,8 +78,9 @@ func TestOpenAIOAuthUsageSummaryScopeAndWeightedEstimate(t *testing.T) {
 	shadow := summaryAccount(82, "active", "plus", main.Extra)
 	shadow.ParentAccountID = &parentID
 	shadow.QuotaDimension = QuotaDimensionSpark
+	excluded := summaryAccount(83, "inactive", "plus", zero.Extra)
 
-	accountRepo := &openAISummaryAccountRepoStub{accounts: []Account{main, zero, shadow}}
+	accountRepo := &openAISummaryAccountRepoStub{accounts: []Account{main, zero, shadow, excluded}}
 	usageRepo := &openAISummaryUsageRepoStub{costs: map[int64]OpenAIWindowCosts{
 		80: {FiveHour: 1200, SevenDay: 500},
 	}}
@@ -90,8 +91,8 @@ func TestOpenAIOAuthUsageSummaryScopeAndWeightedEstimate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compute summary: %v", err)
 	}
-	if summary.AccountCount != 2 {
-		t.Fatalf("account count = %d, want 2", summary.AccountCount)
+	if summary.AccountCount != 3 || summary.IncludedAccountCount != 2 || summary.ExcludedAccountCount != 1 {
+		t.Fatalf("unexpected account counts: %+v", summary)
 	}
 	assertNear(t, summary.FiveHour.Used, 1200)
 	assertNear(t, *summary.FiveHour.EstimatedCapacity, 2400/0.54)
@@ -165,9 +166,9 @@ func TestResolveOpenAIWindowStateAfterReset(t *testing.T) {
 func TestAggregateOpenAIWindowFiltersOutliersAndPrefersPlan(t *testing.T) {
 	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
 	inputs := []*openAIAccountWindowInput{
-		{account: Account{ID: 1}, plan: "plus", percent: 50, used: 500, candidate: 1000},
-		{account: Account{ID: 2}, plan: "plus", percent: 50, used: 550, candidate: 1100},
-		{account: Account{ID: 3}, plan: "plus", percent: 50, used: 5000, candidate: 10000},
+		{account: Account{ID: 1}, plan: "plus", percent: 50, used: 500, candidate: 1000, historySample: true, sampleCurrent: true},
+		{account: Account{ID: 2}, plan: "plus", percent: 50, used: 550, candidate: 1100, historySample: true, sampleCurrent: true},
+		{account: Account{ID: 3}, plan: "plus", percent: 50, used: 5000, candidate: 10000, historySample: true, sampleCurrent: true},
 		{account: Account{ID: 4}, plan: "plus", history: 900},
 		{account: Account{ID: 5}, plan: "team"},
 	}
@@ -207,6 +208,35 @@ func TestOpenAIWindowPercentIsClampedAndFullUsageHasNoRemaining(t *testing.T) {
 	assertNear(t, summary.UsagePercent, 100)
 }
 
+func TestOpenAIWindowInvalidNumbersDoNotPolluteSummary(t *testing.T) {
+	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
+	reset := now.Add(time.Hour)
+	for _, value := range []float64{-5, math.NaN(), math.Inf(1), math.Inf(-1)} {
+		percent, _, _, _, _ := resolveOpenAIWindowState(map[string]any{
+			"codex_5h_used_percent": value, "codex_5h_window_minutes": 300.0,
+			"codex_5h_reset_at": reset.Format(time.RFC3339), "codex_usage_updated_at": now.Format(time.RFC3339),
+		}, openAIFiveHourWindow, now)
+		if percent != 0 {
+			t.Fatalf("invalid percent %v was not clamped to zero: %v", value, percent)
+		}
+	}
+
+	start := now.Add(-5 * time.Hour)
+	inputs := []*openAIAccountWindowInput{
+		{account: Account{ID: 1}, percent: 50, start: &start, costKnown: true, sampleCurrent: true},
+		{account: Account{ID: 2}, percent: 50, start: &start, costKnown: true, sampleCurrent: true},
+	}
+	applyOpenAIWindowCosts(inputs, map[int64]OpenAIWindowCosts{
+		1: {FiveHour: math.NaN()},
+		2: {FiveHour: -10},
+	}, true)
+	for _, input := range inputs {
+		if input.used != 0 || input.candidate != 0 {
+			t.Fatalf("invalid cost polluted input: %+v", input)
+		}
+	}
+}
+
 func TestOpenAIWindowDynamicCapacityRequiresTenPercentUsage(t *testing.T) {
 	start := time.Date(2026, 8, 16, 7, 0, 0, 0, time.UTC)
 	belowThreshold := &openAIAccountWindowInput{
@@ -242,8 +272,8 @@ func TestAggregateOpenAIWindowUsesTransientDynamicEstimateBeforePoolFallback(t *
 	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
 	start := now.Add(-7 * 24 * time.Hour)
 	inputs := []*openAIAccountWindowInput{
-		{account: Account{ID: 1}, plan: "pro", percent: 50, used: 500, candidate: 1000, sampleCurrent: true, start: &start},
-		{account: Account{ID: 2}, plan: "pro", percent: 50, used: 550, candidate: 1100, sampleCurrent: true, start: &start},
+		{account: Account{ID: 1}, plan: "pro", percent: 50, used: 500, candidate: 1000, historySample: true, sampleCurrent: true, start: &start},
+		{account: Account{ID: 2}, plan: "pro", percent: 50, used: 550, candidate: 1100, historySample: true, sampleCurrent: true, start: &start},
 		{account: Account{ID: 3}, plan: "pro", percent: 100, used: 200, candidate: 200, sampleCurrent: true, start: &start},
 	}
 
@@ -267,9 +297,10 @@ func TestAggregateOpenAIWindowDoesNotRewriteUnchangedHistory(t *testing.T) {
 		account: Account{ID: 1, Extra: map[string]any{
 			openAICapacity5hKey:            capacity,
 			openAICapacity5hWindowStartKey: start.Format(time.RFC3339),
+			openAICapacity5hPlanKey:        "plus",
 		}},
 		plan: "plus", percent: 50, start: &start, costKnown: true, sampleCurrent: true,
-		used: 1000, candidate: capacity, history: capacity,
+		used: 1000, candidate: capacity, historySample: true, history: capacity,
 	}
 	stored := openAIStoredCapacityReference{
 		Global: openAIFloat64Ptr(capacity),
@@ -279,6 +310,99 @@ func TestAggregateOpenAIWindowDoesNotRewriteUnchangedHistory(t *testing.T) {
 	_, updates, reference := aggregateOpenAIWindow([]*openAIAccountWindowInput{input}, openAIFiveHourWindow, stored, now)
 	if len(updates) != 0 || reference != nil {
 		t.Fatalf("unchanged derived cache should not be rewritten: updates=%+v reference=%+v", updates, reference)
+	}
+}
+
+func TestAggregateOpenAIWindowUsesCapacityWeightedPercent(t *testing.T) {
+	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
+	inputs := []*openAIAccountWindowInput{
+		{account: Account{ID: 1}, plan: "plus", percent: 20, used: 20, candidate: 100, historySample: true},
+		{account: Account{ID: 2}, plan: "plus", percent: 80, used: 160, candidate: 200, historySample: true},
+	}
+
+	summary, _, _ := aggregateOpenAIWindow(inputs, openAISevenDayWindow, openAIStoredCapacityReference{}, now)
+	assertNear(t, summary.Used, 180)
+	assertNear(t, *summary.EstimatedCapacity, 300)
+	assertNear(t, *summary.EstimatedRemaining, 120)
+	assertNear(t, summary.UsagePercent, 60)
+	assertNear(t, summary.RemainingPercent, 40)
+}
+
+func TestAggregateOpenAIWindowZeroPercentUsesHistoryAndCurrentCost(t *testing.T) {
+	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
+	input := &openAIAccountWindowInput{
+		account: Account{ID: 1}, plan: "plus", percent: 0, used: 0.5, history: 100,
+	}
+
+	summary, updates, _ := aggregateOpenAIWindow([]*openAIAccountWindowInput{input}, openAIFiveHourWindow, openAIStoredCapacityReference{}, now)
+	assertNear(t, summary.Used, 0.5)
+	assertNear(t, *summary.EstimatedCapacity, 100)
+	assertNear(t, *summary.EstimatedRemaining, 99.5)
+	if len(updates) != 0 {
+		t.Fatalf("zero-percent observation updated history: %+v", updates)
+	}
+}
+
+func TestOpenAIWindowZeroPercentKeepsCurrentWindowCost(t *testing.T) {
+	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
+	reset := now.Add(2 * time.Hour)
+	account := summaryAccount(1, StatusActive, "plus", map[string]any{
+		"codex_5h_used_percent": 0.0, "codex_5h_window_minutes": 300.0,
+		"codex_5h_reset_at": reset.Format(time.RFC3339), "codex_usage_updated_at": now.Format(time.RFC3339),
+		openAICapacity5hKey: 100.0, openAICapacity5hPlanKey: "plus",
+	})
+	inputs, _ := buildOpenAIWindowInputs([]Account{account}, openAIFiveHourWindow, now)
+	applyOpenAIWindowCosts(inputs, map[int64]OpenAIWindowCosts{1: {FiveHour: 0.5}}, true)
+
+	summary, _, _ := aggregateOpenAIWindow(inputs, openAIFiveHourWindow, openAIStoredCapacityReference{}, now)
+	assertNear(t, summary.Used, 0.5)
+	assertNear(t, *summary.EstimatedCapacity, 100)
+	assertNear(t, *summary.EstimatedRemaining, 99.5)
+}
+
+func TestAggregateOpenAIWindowFirstAllZeroRemainsUnestimated(t *testing.T) {
+	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
+	inputs := []*openAIAccountWindowInput{
+		{account: Account{ID: 1}, plan: "plus"},
+		{account: Account{ID: 2}, plan: "plus"},
+	}
+
+	summary, updates, reference := aggregateOpenAIWindow(inputs, openAIFiveHourWindow, openAIStoredCapacityReference{}, now)
+	if summary.EstimatedCapacity != nil || summary.EstimatedRemaining != nil {
+		t.Fatalf("first all-zero window was estimated: %+v", summary)
+	}
+	assertNear(t, summary.UsagePercent, 0)
+	assertNear(t, summary.RemainingPercent, 100)
+	if summary.UnestimatedAccountCount != 2 || len(updates) != 0 || reference != nil {
+		t.Fatalf("unexpected all-zero result: summary=%+v updates=%+v reference=%+v", summary, updates, reference)
+	}
+}
+
+func TestBuildOpenAIWindowInputsRejectsHistoryFromAnotherPlan(t *testing.T) {
+	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
+	account := summaryAccount(1, StatusActive, "team", map[string]any{
+		"codex_5h_used_percent": 0.0, "codex_5h_window_minutes": 0.0,
+		openAICapacity5hKey: 100.0, openAICapacity5hPlanKey: "plus",
+	})
+
+	inputs, _ := buildOpenAIWindowInputs([]Account{account}, openAIFiveHourWindow, now)
+	if len(inputs) != 1 || inputs[0].history != 0 {
+		t.Fatalf("history from another plan remained eligible: %+v", inputs)
+	}
+}
+
+func TestOpenAIWindowHighUsageEstimateIsTransient(t *testing.T) {
+	now := time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
+	start := now.Add(-5 * time.Hour)
+	input := &openAIAccountWindowInput{
+		account: Account{ID: 1}, plan: "plus", percent: 95, start: &start, costKnown: true, sampleCurrent: true,
+	}
+	applyOpenAIWindowCosts([]*openAIAccountWindowInput{input}, map[int64]OpenAIWindowCosts{1: {FiveHour: 95}}, true)
+
+	summary, updates, reference := aggregateOpenAIWindow([]*openAIAccountWindowInput{input}, openAIFiveHourWindow, openAIStoredCapacityReference{}, now)
+	assertNear(t, *summary.EstimatedCapacity, 100)
+	if input.accepted || len(updates) != 0 || reference != nil || summary.CurrentSampleAccountCount != 0 {
+		t.Fatalf("high-usage estimate polluted trusted history: input=%+v updates=%+v reference=%+v summary=%+v", input, updates, reference, summary)
 	}
 }
 
@@ -296,9 +420,9 @@ func TestNormalizeOpenAIPlanRejectsAnomalousValues(t *testing.T) {
 func summaryAccount(id int64, status, plan string, extra map[string]any) Account {
 	return Account{
 		ID: id, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: status,
-		QuotaDimension: QuotaDimensionGlobal,
-		Credentials:    map[string]any{"plan_type": plan},
-		Extra:          extra,
+		QuotaDimension: QuotaDimensionGlobal, Schedulable: true,
+		Credentials: map[string]any{"plan_type": plan},
+		Extra:       extra,
 	}
 }
 
