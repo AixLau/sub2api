@@ -2335,8 +2335,9 @@ func (h *AccountHandler) GetUsage(c *gin.Context) {
 	response.Success(c, usage)
 }
 
-// GetOpenAIOAuthUsageSummary returns a full-pool usage estimate for active,
-// schedulable OpenAI OAuth main accounts. List pagination and filters do not apply.
+// GetOpenAIOAuthUsageSummary returns a full-pool usage estimate for all
+// undeleted OpenAI OAuth global main accounts. Status, schedulability, list
+// pagination, and list filters do not apply.
 func (h *AccountHandler) GetOpenAIOAuthUsageSummary(c *gin.Context) {
 	if h.accountUsageService == nil {
 		response.InternalError(c, "Account usage service is not configured")

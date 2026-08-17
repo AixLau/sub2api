@@ -61,6 +61,7 @@ describe('OpenAIOAuthUsageSummary', () => {
     expect(wrapper.find('[data-testid="openai-oauth-usage-details"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="usage-summary-full"]').text())
       .not.toContain('admin.accounts.openaiUsageSummary.capacity')
+    expect(wrapper.get('[data-testid="usage-summary-full"]').text()).not.toContain('~')
 
     const progress = wrapper.get('[data-testid="usage-window-full-five-hour"] [data-testid="usage-progress"]')
     expect(progress.attributes('style')).toContain('width: 54%')
@@ -122,7 +123,9 @@ describe('OpenAIOAuthUsageSummary', () => {
     const wrapper = mount(OpenAIOAuthUsageSummary, {
       props: { summary: null, loading: true, error: null }
     })
-    expect(wrapper.get('[data-testid="usage-summary-skeleton"]').classes()).toContain('h-11')
+    const skeleton = wrapper.get('[data-testid="usage-summary-skeleton"]')
+    expect(skeleton.classes()).toContain('h-11')
+    expect(wrapper.get('[data-testid="usage-summary-skeleton-shimmer"]').classes()).toContain('motion-safe:animate-shimmer')
 
     await wrapper.setProps({ loading: false, error: 'network error' })
     expect(wrapper.text()).toContain('admin.accounts.openaiUsageSummary.loadFailedCompact')

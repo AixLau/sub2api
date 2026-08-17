@@ -139,8 +139,10 @@ type openAIAccountWindowInput struct {
 }
 
 // GetOpenAIOAuthUsageSummary computes a full-pool summary from persisted quota
-// snapshots and account-billed usage logs. Valid estimates are cached as
-// read-through history; zero-percent observations never overwrite that history.
+// snapshots and account-billed usage logs. Every undeleted OpenAI OAuth global
+// main account is included regardless of status or schedulability. Valid
+// estimates are cached as read-through history; zero-percent observations never
+// overwrite that history.
 func (s *AccountUsageService) GetOpenAIOAuthUsageSummary(ctx context.Context) (*OpenAIOAuthUsageSummary, error) {
 	if s == nil || s.accountRepo == nil || s.usageLogRepo == nil {
 		return nil, fmt.Errorf("openai oauth usage summary is not configured")
@@ -165,12 +167,10 @@ func (s *AccountUsageService) computeOpenAIOAuthUsageSummary(ctx context.Context
 			poolAccounts = append(poolAccounts, accounts[i])
 		}
 	}
-	included := make([]Account, 0, len(poolAccounts))
-	for i := range poolAccounts {
-		if poolAccounts[i].Status == StatusActive && poolAccounts[i].Schedulable {
-			included = append(included, poolAccounts[i])
-		}
-	}
+	// This is an accounting view, not a scheduler availability view. Accounts
+	// that are inactive, manually unschedulable, or currently rate limited still
+	// contribute to the pool's historical usage and capacity estimate.
+	included := poolAccounts
 
 	refs, err := s.loadOpenAICapacityReferences(ctx)
 	if err != nil {

@@ -78,9 +78,16 @@ func TestOpenAIOAuthUsageSummaryScopeAndWeightedEstimate(t *testing.T) {
 	shadow := summaryAccount(82, "active", "plus", main.Extra)
 	shadow.ParentAccountID = &parentID
 	shadow.QuotaDimension = QuotaDimensionSpark
-	excluded := summaryAccount(83, "inactive", "plus", zero.Extra)
+	inactive := summaryAccount(83, "inactive", "plus", zero.Extra)
+	inactive.Schedulable = false
+	rateLimited := summaryAccount(84, "active", "plus", zero.Extra)
+	rateLimited.Schedulable = false
+	limitedAt := now.Add(-time.Minute)
+	limitedUntil := now.Add(time.Hour)
+	rateLimited.RateLimitedAt = &limitedAt
+	rateLimited.RateLimitResetAt = &limitedUntil
 
-	accountRepo := &openAISummaryAccountRepoStub{accounts: []Account{main, zero, shadow, excluded}}
+	accountRepo := &openAISummaryAccountRepoStub{accounts: []Account{main, zero, shadow, inactive, rateLimited}}
 	usageRepo := &openAISummaryUsageRepoStub{costs: map[int64]OpenAIWindowCosts{
 		80: {FiveHour: 1200, SevenDay: 500},
 	}}
@@ -91,17 +98,17 @@ func TestOpenAIOAuthUsageSummaryScopeAndWeightedEstimate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compute summary: %v", err)
 	}
-	if summary.AccountCount != 3 || summary.IncludedAccountCount != 2 || summary.ExcludedAccountCount != 1 {
+	if summary.AccountCount != 4 || summary.IncludedAccountCount != 4 || summary.ExcludedAccountCount != 0 {
 		t.Fatalf("unexpected account counts: %+v", summary)
 	}
 	assertNear(t, summary.FiveHour.Used, 1200)
-	assertNear(t, *summary.FiveHour.EstimatedCapacity, 2400/0.54)
-	assertNear(t, *summary.FiveHour.EstimatedRemaining, 2400/0.54-1200)
-	assertNear(t, summary.FiveHour.UsagePercent, 27)
-	if summary.FiveHour.EstimatedAccountCount != 2 || summary.FiveHour.UnestimatedAccountCount != 0 {
+	assertNear(t, *summary.FiveHour.EstimatedCapacity, 4800/0.54)
+	assertNear(t, *summary.FiveHour.EstimatedRemaining, 4800/0.54-1200)
+	assertNear(t, summary.FiveHour.UsagePercent, 13.5)
+	if summary.FiveHour.EstimatedAccountCount != 4 || summary.FiveHour.UnestimatedAccountCount != 0 {
 		t.Fatalf("unexpected estimate counts: %+v", summary.FiveHour)
 	}
-	if len(usageRepo.queries) != 2 || usageRepo.queries[0].AccountID != 80 || usageRepo.queries[1].AccountID != 81 {
+	if len(usageRepo.queries) != 4 || usageRepo.queries[0].AccountID != 80 || usageRepo.queries[1].AccountID != 81 || usageRepo.queries[2].AccountID != 83 || usageRepo.queries[3].AccountID != 84 {
 		t.Fatalf("summary query scope = %+v", usageRepo.queries)
 	}
 	if len(accountRepo.updates) != 1 || accountRepo.updates[0].AccountID != 80 {

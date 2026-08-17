@@ -21,8 +21,11 @@
     <div
       v-else-if="!summary"
       data-testid="usage-summary-skeleton"
-      class="h-11 w-48 animate-pulse rounded-lg border border-gray-200 bg-gray-100 dark:border-dark-700 dark:bg-dark-800 xl:h-14 xl:w-[370px] min-[1536px]:w-[620px]"
-    />
+      class="h-11 w-48 overflow-hidden rounded-lg border border-gray-200 dark:border-dark-700 xl:h-14 xl:w-[370px] min-[1536px]:w-[620px]"
+      aria-hidden="true"
+    >
+      <Skeleton data-testid="usage-summary-skeleton-shimmer" width="100%" height="100%" class="h-full w-full" />
+    </div>
 
     <template v-else>
       <div
@@ -143,6 +146,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import OpenAIOAuthUsageDetailsDialog from './OpenAIOAuthUsageDetailsDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
+import Skeleton from '@/components/common/Skeleton.vue'
 import { formatCompactCurrency, formatCurrency } from '@/utils/format'
 import type { OpenAIOAuthUsageSummary } from '@/types'
 
@@ -163,7 +167,7 @@ const clampPercent = (value: number) => Math.min(100, Math.max(0, Number.isFinit
 const formatPercent = (value: number) => `${clampPercent(value).toFixed(1)}%`
 const formatCompactEstimate = (value: number | null) => value == null
   ? t('admin.accounts.openaiUsageSummary.pendingEstimateShort')
-  : `~${formatCompactCurrency(value)}`
+  : formatCompactCurrency(value)
 
 const progressColor = (value: number) => {
   const percent = clampPercent(value)
@@ -181,14 +185,14 @@ const windows = computed(() => {
       label: t('admin.accounts.openaiUsageSummary.fiveHour'),
       shortLabel: '5h',
       data: props.summary.five_hour,
-      title: `${t('admin.accounts.openaiUsageSummary.fiveHour')}: ${t('admin.accounts.openaiUsageSummary.used')} ${formatCurrency(props.summary.five_hour.used)}, ${t('admin.accounts.openaiUsageSummary.remaining')} ${props.summary.five_hour.estimated_remaining == null ? t('admin.accounts.openaiUsageSummary.pendingEstimate') : `~${formatCurrency(props.summary.five_hour.estimated_remaining)}`}`
+      title: `${t('admin.accounts.openaiUsageSummary.fiveHour')}: ${t('admin.accounts.openaiUsageSummary.used')} ${formatCurrency(props.summary.five_hour.used)}, ${t('admin.accounts.openaiUsageSummary.remaining')} ${props.summary.five_hour.estimated_remaining == null ? t('admin.accounts.openaiUsageSummary.pendingEstimate') : formatCurrency(props.summary.five_hour.estimated_remaining)}`
     },
     {
       key: 'seven-day',
       label: t('admin.accounts.openaiUsageSummary.sevenDay'),
       shortLabel: '7d',
       data: props.summary.seven_day,
-      title: `${t('admin.accounts.openaiUsageSummary.sevenDay')}: ${t('admin.accounts.openaiUsageSummary.used')} ${formatCurrency(props.summary.seven_day.used)}, ${t('admin.accounts.openaiUsageSummary.remaining')} ${props.summary.seven_day.estimated_remaining == null ? t('admin.accounts.openaiUsageSummary.pendingEstimate') : `~${formatCurrency(props.summary.seven_day.estimated_remaining)}`}`
+      title: `${t('admin.accounts.openaiUsageSummary.sevenDay')}: ${t('admin.accounts.openaiUsageSummary.used')} ${formatCurrency(props.summary.seven_day.used)}, ${t('admin.accounts.openaiUsageSummary.remaining')} ${props.summary.seven_day.estimated_remaining == null ? t('admin.accounts.openaiUsageSummary.pendingEstimate') : formatCurrency(props.summary.seven_day.estimated_remaining)}`
     }
   ]
 })

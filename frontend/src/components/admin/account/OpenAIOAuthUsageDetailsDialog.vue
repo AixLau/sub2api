@@ -137,7 +137,7 @@ const clampPercent = (value: number) => Math.min(100, Math.max(0, Number.isFinit
 const formatPercent = (value: number) => `${clampPercent(value).toFixed(1)}%`
 const formatEstimate = (value: number | null) => value == null
   ? t('admin.accounts.openaiUsageSummary.pendingEstimate')
-  : `~${formatCurrency(value)}`
+  : formatCurrency(value)
 
 const progressColor = (value: number) => {
   const percent = clampPercent(value)
