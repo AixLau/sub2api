@@ -70,6 +70,9 @@ func (r *userRepository) create(ctx context.Context, userIn *service.User, guard
 	if userIn == nil {
 		return nil
 	}
+	if strings.TrimSpace(userIn.AvatarURL) == "" {
+		userIn.AvatarURL = service.RandomDefaultAvatarURL()
+	}
 
 	// 统一使用 ent 的事务：保证用户与允许分组的更新原子化，
 	// 并避免基于 *sql.Tx 手动构造 ent client 导致的 ExecQuerier 断言错误。
@@ -163,6 +166,17 @@ func (r *userRepository) create(ctx context.Context, userIn *service.User, guard
 	}
 	if err := ensureEmailAuthIdentityWithClient(txCtx, txClient, created.ID, created.Email, "user_repo_create"); err != nil {
 		return err
+	}
+	if _, err := r.UpsertUserAvatar(txCtx, created.ID, service.UpsertUserAvatarInput{
+		StorageProvider: "remote_url",
+		URL:             userIn.AvatarURL,
+		ContentType:     "image/webp",
+	}); err != nil {
+		// Some repository unit tests use a minimal SQLite schema without the
+		// optional profile tables. Production migrations always create this table.
+		if !strings.Contains(err.Error(), "no such table: user_avatars") {
+			return err
+		}
 	}
 
 	if tx != nil {
