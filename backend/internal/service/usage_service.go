@@ -412,6 +412,15 @@ func (s *UsageService) GetUserDashboardStats(ctx context.Context, userID int64) 
 	return &stats, nil
 }
 
+// GetUserDashboardActivity returns contribution-graph data for a fixed calendar window.
+func (s *UsageService) GetUserDashboardActivity(ctx context.Context, userID int64, windowStart, windowEnd, currentDay time.Time, userTimezone string) (*usagestats.UserDashboardActivity, error) {
+	activity, err := s.usageRepo.GetUserDashboardActivity(ctx, userID, windowStart, windowEnd, currentDay, userTimezone)
+	if err != nil {
+		return nil, fmt.Errorf("get user dashboard activity: %w", err)
+	}
+	return activity, nil
+}
+
 // GetAPIKeyDashboardStats returns dashboard summary stats filtered by API Key.
 func (s *UsageService) GetAPIKeyDashboardStats(ctx context.Context, apiKeyID int64) (*usagestats.UserDashboardStats, error) {
 	stats, err := s.usageRepo.GetAPIKeyDashboardStats(ctx, apiKeyID)

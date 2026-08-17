@@ -297,6 +297,25 @@ type UserDashboardStats struct {
 	ByPlatform []PlatformDashboardStats `json:"by_platform,omitempty"`
 }
 
+// UserDashboardActivity summarizes a user's historic usage and the daily
+// token activity required to render the dashboard contribution graph.
+type UserDashboardActivity struct {
+	WindowStart                  string            `json:"window_start"`
+	WindowEnd                    string            `json:"window_end"`
+	TotalTokens                  int64             `json:"total_tokens"`
+	PeakDailyTokens              int64             `json:"peak_daily_tokens"`
+	CurrentStreakDays            int64             `json:"current_streak_days"`
+	LongestStreakDays            int64             `json:"longest_streak_days"`
+	CumulativeTokensBeforeWindow int64             `json:"cumulative_tokens_before_window"`
+	Days                         []UserActivityDay `json:"days"`
+}
+
+// UserActivityDay is a single local calendar day with one or more usage logs.
+type UserActivityDay struct {
+	Date        string `json:"date"`
+	TotalTokens int64  `json:"total_tokens"`
+}
+
 // PlatformDashboardStats 单个平台的用量明细。
 type PlatformDashboardStats struct {
 	Platform        string  `json:"platform"`

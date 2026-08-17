@@ -515,6 +515,39 @@ func (h *UsageHandler) DashboardStats(c *gin.Context) {
 	response.Success(c, stats)
 }
 
+// DashboardActivity returns the contribution-graph data for the current user.
+// GET /api/v1/usage/dashboard/activity
+func (h *UsageHandler) DashboardActivity(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	userTZ := strings.TrimSpace(c.Query("timezone"))
+	if _, err := time.LoadLocation(userTZ); err != nil {
+		userTZ = timezone.Location().String()
+		if userTZ == "Local" {
+			userTZ = "UTC"
+		}
+	}
+	now := timezone.NowInUserLocation(userTZ)
+	currentDay := timezone.StartOfDayInUserLocation(now, userTZ)
+	weekday := int(currentDay.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+	windowStart := currentDay.AddDate(0, 0, -(weekday-1)-51*7)
+	windowEnd := windowStart.AddDate(0, 0, 52*7)
+
+	activity, err := h.usageService.GetUserDashboardActivity(c.Request.Context(), subject.UserID, windowStart, windowEnd, currentDay, userTZ)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, activity)
+}
+
 // DashboardTrend handles getting user usage trend data
 // GET /api/v1/usage/dashboard/trend
 func (h *UsageHandler) DashboardTrend(c *gin.Context) {

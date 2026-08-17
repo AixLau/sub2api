@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -393,6 +394,62 @@ type UserDashboardStats = usagestats.UserDashboardStats
 
 // PlatformDashboardStats 单平台用量明细
 type PlatformDashboardStats = usagestats.PlatformDashboardStats
+
+// GetUserDashboardActivity returns daily activity and historic contribution metrics.
+func (r *usageLogRepository) GetUserDashboardActivity(ctx context.Context, userID int64, windowStart, windowEnd, currentDay time.Time, userTimezone string) (*usagestats.UserDashboardActivity, error) {
+	activity := &usagestats.UserDashboardActivity{
+		WindowStart: windowStart.Format("2006-01-02"),
+		WindowEnd:   windowEnd.AddDate(0, 0, -1).Format("2006-01-02"),
+		Days:        []usagestats.UserActivityDay{},
+	}
+
+	const query = `
+		WITH daily_usage AS (
+			SELECT
+				(created_at AT TIME ZONE $5)::date AS activity_date,
+				COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0)::bigint AS total_tokens
+			FROM usage_logs
+			WHERE user_id = $1
+			GROUP BY activity_date
+		), streak_groups AS (
+			SELECT
+				activity_date,
+				activity_date - (ROW_NUMBER() OVER (ORDER BY activity_date))::int AS streak_group
+			FROM daily_usage
+		), streak_lengths AS (
+			SELECT MAX(activity_date) AS streak_end, COUNT(*)::bigint AS streak_days
+			FROM streak_groups
+			GROUP BY streak_group
+		)
+		SELECT
+			COALESCE((SELECT SUM(total_tokens) FROM daily_usage), 0)::bigint AS total_tokens,
+			COALESCE((SELECT MAX(total_tokens) FROM daily_usage), 0)::bigint AS peak_daily_tokens,
+			COALESCE((SELECT streak_days FROM streak_lengths WHERE streak_end = $4::date), 0)::bigint AS current_streak_days,
+			COALESCE((SELECT MAX(streak_days) FROM streak_lengths), 0)::bigint AS longest_streak_days,
+			COALESCE((SELECT SUM(total_tokens) FROM daily_usage WHERE activity_date < $2::date), 0)::bigint AS cumulative_tokens_before_window,
+			COALESCE((
+				SELECT json_agg(json_build_object('date', activity_date, 'total_tokens', total_tokens) ORDER BY activity_date)
+				FROM daily_usage
+				WHERE activity_date >= $2::date AND activity_date < $3::date
+			), '[]'::json) AS days`
+
+	var daysJSON []byte
+	if err := scanSingleRow(ctx, r.sql, query,
+		[]any{userID, activity.WindowStart, windowEnd.Format("2006-01-02"), currentDay.Format("2006-01-02"), userTimezone},
+		&activity.TotalTokens,
+		&activity.PeakDailyTokens,
+		&activity.CurrentStreakDays,
+		&activity.LongestStreakDays,
+		&activity.CumulativeTokensBeforeWindow,
+		&daysJSON,
+	); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(daysJSON, &activity.Days); err != nil {
+		return nil, fmt.Errorf("decode user dashboard activity days: %w", err)
+	}
+	return activity, nil
+}
 
 // GetUserDashboardStats 获取用户专属的仪表盘统计
 func (r *usageLogRepository) GetUserDashboardStats(ctx context.Context, userID int64) (*UserDashboardStats, error) {

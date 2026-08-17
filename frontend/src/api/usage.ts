@@ -55,6 +55,22 @@ export interface UserDashboardStats {
   by_platform?: PlatformDashboardStats[]
 }
 
+export interface UserDashboardActivityDay {
+  date: string
+  total_tokens: number
+}
+
+export interface UserDashboardActivity {
+  window_start: string
+  window_end: string
+  total_tokens: number
+  peak_daily_tokens: number
+  current_streak_days: number
+  longest_streak_days: number
+  cumulative_tokens_before_window: number
+  days: UserDashboardActivityDay[]
+}
+
 export interface TrendParams {
   start_date?: string
   end_date?: string
@@ -282,6 +298,12 @@ export async function getDashboardStats(): Promise<UserDashboardStats> {
   return data
 }
 
+/** Get contribution-graph activity for the current user. */
+export async function getDashboardActivity(): Promise<UserDashboardActivity> {
+  const { data } = await apiClient.get<UserDashboardActivity>('/usage/dashboard/activity')
+  return data
+}
+
 /**
  * Get user usage trend data
  * @param params - Query parameters for filtering
@@ -400,6 +422,7 @@ export const usageAPI = {
   getById,
   // Dashboard
   getDashboardStats,
+  getDashboardActivity,
   getDashboardTrend,
   getDashboardModels,
   getMyApiKeyDailyUsage,

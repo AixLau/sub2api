@@ -5,6 +5,7 @@ import DashboardView from '../DashboardView.vue'
 const mocks = vi.hoisted(() => ({
   refreshUser: vi.fn(),
   getDashboardStats: vi.fn(),
+  getDashboardActivity: vi.fn(),
   getDashboardTrend: vi.fn(),
   getDashboardModels: vi.fn(),
   getByDateRange: vi.fn()
@@ -21,6 +22,7 @@ vi.mock('@/stores/auth', () => ({
 vi.mock('@/api/usage', () => ({
   usageAPI: {
     getDashboardStats: mocks.getDashboardStats,
+    getDashboardActivity: mocks.getDashboardActivity,
     getDashboardTrend: mocks.getDashboardTrend,
     getDashboardModels: mocks.getDashboardModels,
     getByDateRange: mocks.getByDateRange
@@ -59,6 +61,7 @@ function mountDashboard() {
       stubs: {
         AppLayout: { template: '<div><slot /></div>' },
         UserDashboardStats: { template: '<div data-testid="dashboard-stats" />' },
+        UserDashboardActivity: { template: '<div data-testid="dashboard-activity" />' },
         UserDashboardCharts: {
           emits: ['refresh'],
           template: '<button data-testid="dashboard-refresh" @click="$emit(\'refresh\')" />'
@@ -74,6 +77,7 @@ describe('user DashboardView loading lifecycle', () => {
   it('renders the layout-matched skeleton in the first frame', () => {
     mocks.refreshUser.mockResolvedValue(undefined)
     mocks.getDashboardStats.mockReturnValue(new Promise(() => {}))
+    mocks.getDashboardActivity.mockResolvedValue({ days: [] })
     mocks.getDashboardTrend.mockResolvedValue({ trend: [] })
     mocks.getDashboardModels.mockResolvedValue({ models: [] })
     mocks.getByDateRange.mockResolvedValue({ items: [] })
@@ -86,6 +90,7 @@ describe('user DashboardView loading lifecycle', () => {
   it('keeps rendered dashboard content mounted during refresh', async () => {
     mocks.refreshUser.mockResolvedValue(undefined)
     mocks.getDashboardStats.mockResolvedValueOnce(stats)
+    mocks.getDashboardActivity.mockResolvedValue({ days: [] })
     mocks.getDashboardTrend.mockResolvedValue({ trend: [] })
     mocks.getDashboardModels.mockResolvedValue({ models: [] })
     mocks.getByDateRange.mockResolvedValue({ items: [] })

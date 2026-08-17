@@ -108,6 +108,30 @@ func TestUsageLogRepositoryGetPerformanceStatsCountsGatewayAPIUsers(t *testing.T
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestUsageLogRepositoryGetUserDashboardActivityReturnsSummaryAndDailyRows(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+	windowStart := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
+	windowEnd := windowStart.AddDate(0, 0, 364)
+	currentDay := time.Date(2026, 8, 18, 0, 0, 0, 0, time.UTC)
+
+	mock.ExpectQuery("(?s)WITH daily_usage AS.*streak_lengths AS.*json_agg").
+		WithArgs(int64(7), "2026-01-05", "2027-01-04", "2026-08-18", "UTC").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"total_tokens", "peak_daily_tokens", "current_streak_days", "longest_streak_days", "cumulative_tokens_before_window", "days",
+		}).AddRow(int64(200), int64(80), int64(2), int64(3), int64(20), []byte(`[{"date":"2026-01-05","total_tokens":40}]`)))
+
+	activity, err := repo.GetUserDashboardActivity(context.Background(), 7, windowStart, windowEnd, currentDay, "UTC")
+	require.NoError(t, err)
+	require.Equal(t, int64(200), activity.TotalTokens)
+	require.Equal(t, int64(80), activity.PeakDailyTokens)
+	require.Equal(t, int64(2), activity.CurrentStreakDays)
+	require.Equal(t, int64(3), activity.LongestStreakDays)
+	require.Equal(t, int64(20), activity.CumulativeTokensBeforeWindow)
+	require.Equal(t, []usagestats.UserActivityDay{{Date: "2026-01-05", TotalTokens: 40}}, activity.Days)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestUsageLogRepositoryGetUserGrowthRetentionUsesMatureCohorts(t *testing.T) {
 	db, mock := newSQLMock(t)
 	repo := &usageLogRepository{sql: db}
