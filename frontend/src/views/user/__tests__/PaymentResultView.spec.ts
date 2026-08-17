@@ -475,6 +475,33 @@ describe('PaymentResultView', () => {
     expect(wrapper.text()).toContain(formatPaymentAmount(103, 'HKD'))
   })
 
+  it('does not show a credited amount for subscription orders', async () => {
+    routeState.query = {
+      resume_token: 'resume-subscription',
+    }
+    resolveOrderPublicByResumeToken.mockResolvedValue({
+      data: {
+        ...orderFactory('PAID'),
+        order_type: 'subscription',
+        amount: 10,
+        pay_amount: 100,
+      },
+    })
+
+    const wrapper = mount(PaymentResultView, {
+      global: {
+        stubs: {
+          OrderStatusBadge: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('payment.orders.payAmount')
+    expect(wrapper.text()).not.toContain('payment.orders.creditedAmount')
+  })
+
   it('normalizes aliased payment methods before rendering the label', async () => {
     routeState.query = {
       resume_token: 'resume-88',
