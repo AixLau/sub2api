@@ -104,9 +104,11 @@
           <Icon name="chart" size="md" class="text-sky-600 dark:text-sky-400" :stroke-width="2" />
         </div>
         <div class="min-w-0 flex-1">
-          <p class="text-xl font-bold text-gray-900 dark:text-white">{{ formatTokens(activity?.peak_daily_tokens || 0) }}</p>
-          <p class="truncate text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.activity.peakDailyTokens') }}</p>
-          <div class="mt-1.5 space-y-1 text-xs text-gray-500 dark:text-gray-400">
+          <div class="flex items-baseline justify-between gap-2">
+            <p class="text-xl font-bold text-gray-900 dark:text-white">{{ formatTokens(activity?.peak_daily_tokens || 0) }}</p>
+            <p class="truncate text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.activity.peakDailyTokens') }}</p>
+          </div>
+          <div class="mt-1.5 grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
             <div class="flex items-center justify-between gap-2">
               <span class="truncate">{{ t('dashboard.activity.currentStreak') }}</span>
               <span class="shrink-0 font-medium text-sky-600 dark:text-sky-400">{{ formatDays(activity?.current_streak_days || 0) }}</span>
@@ -159,6 +161,7 @@ const formatBalance = (b: number) =>
 const formatNumber = (n: number) => n.toLocaleString()
 const formatCost = (c: number) => c.toFixed(4)
 const formatTokens = (t: number) => {
+  if (t >= 1_000_000_000) return `${(t / 1_000_000_000).toFixed(2)}B`
   if (t >= 1_000_000) return `${(t / 1_000_000).toFixed(1)}M`
   if (t >= 1000) return `${(t / 1000).toFixed(1)}K`
   return Math.round(t).toString()

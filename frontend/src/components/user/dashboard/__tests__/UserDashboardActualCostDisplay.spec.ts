@@ -199,6 +199,30 @@ describe('user dashboard cost visibility', () => {
     expect(wrapper.text()).toContain('6.75B')
   })
 
+  it('formats peak daily tokens in billions', () => {
+    const wrapper = mount(UserDashboardStats, {
+      props: {
+        stats: dashboardStats(),
+        balance: 0,
+        isSimple: false,
+        activity: {
+          window_start: '2025-09-01',
+          window_end: '2026-08-30',
+          current_date: '2026-08-18',
+          total_tokens: 2_500_000_000,
+          peak_daily_tokens: 2_500_000_000,
+          current_streak_days: 3,
+          longest_streak_days: 9,
+          cumulative_tokens_before_window: 0,
+          days: [],
+        },
+      },
+      global: { stubs: { Icon: IconStub } },
+    })
+
+    expect(wrapper.text()).toContain('2.50B')
+  })
+
   it('shows activity metrics in place of the performance card', () => {
     const wrapper = mount(UserDashboardStats, {
       props: {
