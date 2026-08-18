@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
@@ -24,6 +25,68 @@ import (
 	"github.com/tidwall/sjson"
 	"go.uber.org/zap"
 )
+
+const openAIResponsesClientToolMappingContextKey = "openai_responses_client_tool_mapping"
+
+func hasOpenAIResponsesClientToolMapping(mapping apicompat.ResponsesClientToolMapping) bool {
+	return len(mapping.CustomTools) > 0 || mapping.ToolSearch || len(mapping.NamespaceTools) > 0
+}
+
+func adaptOpenAIResponsesClientTools(body []byte) ([]byte, apicompat.ResponsesClientToolMapping, error) {
+	if !needsOpenAIResponsesClientToolAdaptation(body) {
+		return body, apicompat.ResponsesClientToolMapping{}, nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	var requestBody map[string]any
+	if err := decoder.Decode(&requestBody); err != nil {
+		return body, apicompat.ResponsesClientToolMapping{}, fmt.Errorf("decode OpenAI Responses client tools: %w", err)
+	}
+	mapping, changed, err := apicompat.AdaptResponsesClientTools(requestBody)
+	if err != nil || !changed {
+		return body, mapping, err
+	}
+	rebuilt, err := marshalOpenAIUpstreamJSON(requestBody)
+	if err != nil {
+		return body, apicompat.ResponsesClientToolMapping{}, fmt.Errorf("encode OpenAI Responses client tools: %w", err)
+	}
+	return rebuilt, mapping, nil
+}
+
+func needsOpenAIResponsesClientToolAdaptation(body []byte) bool {
+	needs := false
+	var visit func(gjson.Result) bool
+	visit = func(value gjson.Result) bool {
+		if value.IsObject() {
+			switch strings.TrimSpace(value.Get("type").String()) {
+			case "custom", "custom_tool_call", "custom_tool_call_output", "tool_search", "tool_search_call", "tool_search_output":
+				needs = true
+				return false
+			}
+		}
+		if value.IsObject() || value.IsArray() {
+			value.ForEach(func(_, child gjson.Result) bool { return visit(child) })
+		}
+		return !needs
+	}
+	visit(gjson.ParseBytes(body))
+	return needs
+}
+
+func openAIResponsesClientToolMapping(c *gin.Context) (apicompat.ResponsesClientToolMapping, bool) {
+	if c == nil {
+		return apicompat.ResponsesClientToolMapping{}, false
+	}
+	value, ok := c.Get(openAIResponsesClientToolMappingContextKey)
+	mapping, typed := value.(apicompat.ResponsesClientToolMapping)
+	return mapping, ok && typed && hasOpenAIResponsesClientToolMapping(mapping)
+}
+
+func clearOpenAIResponsesClientToolMapping(c *gin.Context) {
+	if c != nil {
+		c.Set(openAIResponsesClientToolMappingContextKey, apicompat.ResponsesClientToolMapping{})
+	}
+}
 
 func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	ctx context.Context,

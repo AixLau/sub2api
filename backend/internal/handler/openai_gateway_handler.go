@@ -1417,6 +1417,13 @@ func (p *openAIWSTurnPricing) current() time.Time {
 	return p.at
 }
 
+func (p *openAIWSTurnPricing) currentOr(fallback time.Time) time.Time {
+	if current := p.current(); !current.IsZero() {
+		return current
+	}
+	return fallback
+}
+
 // recordOpenAIProfitVeto 记录 OpenAI 侧选号循环的一次利润门终检否决：把账号
 // 加入本请求排除集并递增否决计数。返回 false 表示否决次数已达
 // maxProfitVetoAttempts，调用方必须停止重选并按「无可用账号」终止。

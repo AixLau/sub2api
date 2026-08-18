@@ -257,6 +257,12 @@ func NormalizeOpenAICompatiblePlatform(platform string) string {
 	}
 }
 
+// Keep the internal spelling used by the scheduler while the exported helper
+// remains available to handlers and routing code.
+func normalizeOpenAICompatiblePlatform(platform string) string {
+	return NormalizeOpenAICompatiblePlatform(platform)
+}
+
 // noAvailableOpenAISelectionError builds the standard "no account available" error
 // while preserving the legacy /responses/compact error when applicable.
 // details carries an optional machine-parseable exclusion summary (e.g.

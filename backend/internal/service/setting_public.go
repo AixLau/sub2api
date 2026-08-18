@@ -232,8 +232,9 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyAccountQuotaNotifyEnabled,
 		SettingKeyChannelMonitorEnabled,
 		SettingKeyChannelMonitorMode,
-		SettingKeyChannelMonitorDefaultIntervalSeconds,
-		SettingKeyChannelMonitorHideThroughput,
+			SettingKeyChannelMonitorDefaultIntervalSeconds,
+			SettingKeyChannelMonitorHideThroughput,
+			SettingKeyChannelMonitorShowQuota,
 		SettingKeyAvailableChannelsEnabled,
 		SettingKeyModelPlazaEnabled,
 		SettingKeyModelPlazaRequireAuth,
@@ -434,6 +435,7 @@ type ChannelMonitorRuntime struct {
 	Enabled                bool
 	Mode                   string // ChannelMonitorModeV1 or ChannelMonitorModeV2
 	DefaultIntervalSeconds int
+	ShowQuota              bool
 	// HideThroughput: when true, user-facing V2 APIs omit RPM/TPM scale signals.
 	HideThroughput bool
 }
@@ -478,6 +480,7 @@ func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMo
 		Mode:                   normalizeChannelMonitorMode(vals[SettingKeyChannelMonitorMode]),
 		DefaultIntervalSeconds: parseChannelMonitorInterval(vals[SettingKeyChannelMonitorDefaultIntervalSeconds]),
 		HideThroughput:         !isFalseSettingValue(vals[SettingKeyChannelMonitorHideThroughput]),
+		ShowQuota:              !isFalseSettingValue(vals[SettingKeyChannelMonitorShowQuota]),
 	}
 }
 

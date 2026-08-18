@@ -985,8 +985,19 @@ func (s *GatewayService) calculateRecordUsageCost(
 	billingModel string,
 	multiplier float64,
 	imageMultiplier float64,
-	opts *recordUsageOpts,
+	extra ...any,
 ) *CostBreakdown {
+	var opts *recordUsageOpts
+	if len(extra) == 1 {
+		opts, _ = extra[0].(*recordUsageOpts)
+	} else if len(extra) >= 2 {
+		// Accept the pre-refactor (pricingAt, opts) call shape used by older
+		// tests and integrations while retaining the current internal form.
+		opts, _ = extra[1].(*recordUsageOpts)
+	}
+	if opts == nil {
+		opts = &recordUsageOpts{}
+	}
 	// 图片生成：渠道定价为 token 计费时走 token 路径，否则走图片计费
 	if result.ImageCount > 0 {
 		if resolved := s.resolveChannelPricing(ctx, billingModel, apiKey); resolved != nil && resolved.Mode == BillingModeToken {
