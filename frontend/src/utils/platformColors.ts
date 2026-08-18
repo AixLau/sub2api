@@ -4,6 +4,7 @@
  * All components that need platform-specific styling should import from here
  * instead of defining their own color mappings.
  */
+import { brandColors, platformIdentityColors } from '@/theme/designTokens'
 
 export type Platform =
   | 'anthropic'
@@ -74,17 +75,17 @@ const BORDER_STRONG_DEFAULT = 'border-gray-300 dark:border-dark-600'
 // ── Accent (single raw color per platform; consumers derive washes/tints
 //    from it via CSS color-mix, e.g. plaza paid-price zone) ──
 const ACCENT: Record<Platform, string> = {
-  anthropic: '#f97316', // orange-500
-  openai: '#22c55e', // green-500
-  antigravity: '#a855f7', // purple-500
-  gemini: '#3b82f6', // blue-500
-  grok: '#71717a', // zinc-500
+  anthropic: platformIdentityColors.anthropic,
+  openai: platformIdentityColors.openai,
+  antigravity: platformIdentityColors.antigravity,
+  gemini: platformIdentityColors.gemini,
+  grok: platformIdentityColors.grok,
   kimi: '#ec4899', // pink-500
   zhipu: '#6366f1', // indigo-500
   deepseek: '#14b8a6', // teal-500
-  composite: '#06b6d4', // cyan-500
+  composite: platformIdentityColors.composite,
 }
-const ACCENT_DEFAULT = '#14b8a6' // primary-500 (teal)
+const ACCENT_DEFAULT = brandColors['500']
 
 // ── Accent bar (gradient) ───────────────────────────────────────────
 const ACCENT_BAR: Record<Platform, string> = {
@@ -197,76 +198,102 @@ const GRADIENT_SUBTEXT: Record<Platform, string> = {
 }
 const GRADIENT_SUBTEXT_DEFAULT = 'text-primary-200'
 
-// ── Public API ──────────────────────────────────────────────────────
+// ── Picker (platform filter / radio button) ─────────────────────────
+const PICKER_ACTIVE: Partial<Record<Platform, string>> = {
+  openai: 'border-platform-openai bg-platform-openai/10 text-platform-openai-deep',
+  grok: 'border-platform-grok bg-platform-grok/10 text-platform-grok-deeper',
+}
+const PICKER_INACTIVE_DEFAULT = 'border-line-default bg-surface-panel text-content-tertiary hover:border-line-strong hover:text-content-primary'
+const PICKER_ACTIVE_DEFAULT = 'border-line-strong bg-surface-subtle text-content-primary'
 
-function isPlatform(p: string): p is Platform {
-  return (
-    p === 'anthropic' ||
-    p === 'openai' ||
-    p === 'antigravity' ||
-    p === 'gemini' ||
-    p === 'grok' ||
-    p === 'kimi' ||
-    p === 'zhipu' ||
-    p === 'deepseek' ||
-    p === 'composite'
-  )
+// ── Public API ──────────────────────────────────────────────────────
+function normalizePlatform(p: string): Platform | null {
+  switch (p.trim().toLowerCase()) {
+    case 'anthropic': case 'claude': return 'anthropic'
+    case 'openai': return 'openai'
+    case 'antigravity': return 'antigravity'
+    case 'gemini': case 'google': return 'gemini'
+    case 'grok': case 'xai': return 'grok'
+    case 'kimi': return 'kimi'
+    case 'zhipu': case 'glm': return 'zhipu'
+    case 'deepseek': return 'deepseek'
+    case 'composite': return 'composite'
+    default: return null
+  }
 }
 
 export function platformBadgeClass(p: string): string {
-  return isPlatform(p) ? BADGE[p] : BADGE_DEFAULT
+  const platform = normalizePlatform(p)
+  return platform ? BADGE[platform] : BADGE_DEFAULT
 }
 
 export function platformBadgeLightClass(p: string): string {
-  return isPlatform(p) ? BADGE_LIGHT[p] : BADGE_DEFAULT
+  const platform = normalizePlatform(p)
+  return platform ? BADGE_LIGHT[platform] : BADGE_DEFAULT
 }
 
 export function platformBorderClass(p: string): string {
-  return isPlatform(p) ? BORDER[p] : BORDER_DEFAULT
+  const platform = normalizePlatform(p)
+  return platform ? BORDER[platform] : BORDER_DEFAULT
 }
 
 export function platformBorderStrongClass(p: string): string {
-  return isPlatform(p) ? BORDER_STRONG[p] : BORDER_STRONG_DEFAULT
+  const platform = normalizePlatform(p)
+  return platform ? BORDER_STRONG[platform] : BORDER_STRONG_DEFAULT
 }
 
 export function platformAccentColor(p: string): string {
-  return isPlatform(p) ? ACCENT[p] : ACCENT_DEFAULT
+  const platform = normalizePlatform(p)
+  return platform ? ACCENT[platform] : ACCENT_DEFAULT
 }
 
 export function platformAccentBarClass(p: string): string {
-  return isPlatform(p) ? ACCENT_BAR[p] : ACCENT_BAR_DEFAULT
+  const platform = normalizePlatform(p)
+  return platform ? ACCENT_BAR[platform] : ACCENT_BAR_DEFAULT
 }
 
 export function platformTextClass(p: string): string {
-  return isPlatform(p) ? TEXT[p] : TEXT_DEFAULT
+  const platform = normalizePlatform(p)
+  return platform ? TEXT[platform] : TEXT_DEFAULT
 }
 
 export function platformIconClass(p: string): string {
-  return isPlatform(p) ? ICON[p] : ICON_DEFAULT
+  const platform = normalizePlatform(p)
+  return platform ? ICON[platform] : ICON_DEFAULT
 }
 
 export function platformButtonClass(p: string): string {
-  return isPlatform(p) ? BUTTON[p] : BUTTON_DEFAULT
+  const platform = normalizePlatform(p)
+  return platform ? BUTTON[platform] : BUTTON_DEFAULT
 }
 
 export function platformDiscountClass(p: string): string {
-  return isPlatform(p) ? DISCOUNT[p] : DISCOUNT_DEFAULT
+  const platform = normalizePlatform(p)
+  return platform ? DISCOUNT[platform] : DISCOUNT_DEFAULT
 }
 
 export function platformGradientClass(p: string): string {
-  return isPlatform(p) ? GRADIENT[p] : GRADIENT_DEFAULT
+  const platform = normalizePlatform(p)
+  return platform ? GRADIENT[platform] : GRADIENT_DEFAULT
 }
 
 export function platformGradientTextClass(p: string): string {
-  return isPlatform(p) ? GRADIENT_TEXT[p] : GRADIENT_TEXT_DEFAULT
+  const platform = normalizePlatform(p)
+  return platform ? GRADIENT_TEXT[platform] : GRADIENT_TEXT_DEFAULT
 }
 
 export function platformGradientSubtextClass(p: string): string {
-  return isPlatform(p) ? GRADIENT_SUBTEXT[p] : GRADIENT_SUBTEXT_DEFAULT
+  const platform = normalizePlatform(p)
+  return platform ? GRADIENT_SUBTEXT[platform] : GRADIENT_SUBTEXT_DEFAULT
+}
+
+export function platformPickerClass(p: string, active: boolean): string {
+  const platform = normalizePlatform(p)
+  return active && platform ? PICKER_ACTIVE[platform] ?? PICKER_ACTIVE_DEFAULT : PICKER_INACTIVE_DEFAULT
 }
 
 export function platformLabel(p: string): string {
-  switch (p) {
+  switch (normalizePlatform(p)) {
     case 'anthropic': return 'Anthropic'
     case 'openai': return 'OpenAI'
     case 'antigravity': return 'Antigravity'
