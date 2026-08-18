@@ -163,6 +163,22 @@ const recentUsage = (): UsageLog[] => [
 ]
 
 describe('user dashboard cost visibility', () => {
+  it('does not render the per-platform breakdown returned by the dashboard API', () => {
+    const wrapper = mount(UserDashboardStats, {
+      props: {
+        stats: dashboardStats(),
+        balance: 0,
+        isSimple: false,
+      },
+      global: { stubs: { Icon: IconStub } },
+    })
+
+    const text = wrapper.text()
+    expect(text).not.toContain('dashboard.platformBreakdown')
+    expect(text).not.toContain('$20.0000')
+    expect(text).not.toContain('$5.0000')
+  })
+
   it('formats accumulated tokens in billions', () => {
     const stats = dashboardStats()
     stats.total_tokens = 6_750_000_000
