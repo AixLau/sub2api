@@ -7,7 +7,7 @@
     <div v-if="showHeader" class="mb-4 flex items-start justify-between gap-4">
       <div>
         <p id="recharge-amount-title" class="recharge-section-title">1. {{ t('payment.rechargeUi.selectAmount') }}</p>
-        <p class="mt-1 text-sm text-slate-500">{{ t('payment.rechargeUi.amountHint') }}</p>
+        <p class="mt-1 text-sm text-content-secondary">{{ t('payment.rechargeUi.amountHint') }}</p>
       </div>
     </div>
 
@@ -22,8 +22,8 @@
         :aria-pressed="selectedPreset === preset"
         @click="selectPreset(preset)"
       >
-        <span class="block text-lg font-semibold text-slate-950">{{ formatPresetAmount(preset) }}</span>
-        <span v-if="showPresetMeta" class="mt-1 block text-xs text-slate-500">{{ t('payment.rechargeUi.noFee') }}</span>
+        <span class="block text-lg font-semibold text-content-primary">{{ formatPresetAmount(preset) }}</span>
+        <span v-if="showPresetMeta" class="mt-1 block text-xs text-content-tertiary">{{ t('payment.rechargeUi.noFee') }}</span>
       </button>
 
       <label
@@ -33,9 +33,9 @@
           'recharge-choice-card-error': isCustomActive && !!error,
         }"
       >
-        <span class="shrink-0 text-sm font-semibold text-slate-500">{{ currencyPrefix }}</span>
+        <span class="shrink-0 text-sm font-semibold text-content-tertiary">{{ currencyPrefix }}</span>
         <span class="min-w-0 flex-1">
-          <span class="mb-1 block text-xs font-medium text-slate-500">{{ t('payment.customAmount') }}</span>
+          <span class="mb-1 block text-xs font-medium text-content-tertiary">{{ t('payment.customAmount') }}</span>
           <input
             :id="inputId"
             data-testid="custom-recharge-amount"
@@ -45,7 +45,7 @@
             :placeholder="t('payment.rechargeUi.customAmountPlaceholder')"
             :aria-invalid="!!error"
             :aria-describedby="error ? errorId : undefined"
-            class="w-full min-w-0 bg-transparent text-sm font-semibold text-slate-950 outline-none placeholder:text-slate-400"
+            class="w-full min-w-0 bg-transparent text-sm font-semibold text-content-primary outline-none placeholder:text-content-disabled"
             @input="handleInput"
             @focus="markCustomActive"
           />

@@ -12,6 +12,60 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Older payment branches still use slate/gray utility classes. Keep their
+   content readable in dark mode while those branches converge on semantic
+   tokens. The mapping is scoped to the recharge surface and leaves the
+   global utility palette untouched. */
+.dark .recharge-page-content .text-slate-950,
+.dark .recharge-page-content .text-slate-900,
+.dark .recharge-page-content .text-slate-800,
+.dark .recharge-page-content .text-gray-900 {
+  color: rgb(var(--color-content-primary));
+}
+
+.dark .recharge-page-content .text-slate-600,
+.dark .recharge-page-content .text-gray-600 {
+  color: rgb(var(--color-content-secondary));
+}
+
+.dark .recharge-page-content .text-slate-500,
+.dark .recharge-page-content .text-gray-500 {
+  color: rgb(var(--color-content-tertiary));
+}
+
+.dark .recharge-page-content .text-slate-400,
+.dark .recharge-page-content .text-gray-400,
+.dark .recharge-page-content .text-slate-300 {
+  color: rgb(var(--color-content-disabled));
+}
+
+.dark .recharge-page-content .text-blue-700 {
+  color: rgb(var(--color-content-brand));
+}
+
+.dark .recharge-page-content .bg-blue-100 {
+  background-color: rgb(var(--color-status-info-soft));
+}
+
+.dark .recharge-page-content .border-slate-200\/70,
+.dark .recharge-page-content .border-slate-200,
+.dark .recharge-page-content .border-gray-200 {
+  border-color: rgb(var(--color-line-subtle) / 0.7);
+}
+
+.dark .recharge-page-content .border-red-200 {
+  border-color: rgb(var(--color-status-danger-border));
+}
+
+.dark .recharge-page-content .bg-red-50\/80 {
+  background-color: rgb(var(--color-status-danger-soft) / 0.8);
+}
+
+.dark .recharge-page-content .text-red-700,
+.dark .recharge-page-content .text-red-600\/80 {
+  color: rgb(var(--color-status-danger));
+}
+
 .dark .recharge-page-shell,
 .dark .recharge-page-content {
   --recharge-highlight: rgb(255 255 255 / 0.08);

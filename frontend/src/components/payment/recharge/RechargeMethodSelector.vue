@@ -6,7 +6,7 @@
   >
     <div v-if="showHeader" class="mb-4">
       <p id="recharge-method-title" class="recharge-section-title">2. {{ t('payment.rechargeUi.selectPaymentMethod') }}</p>
-      <p class="mt-1 text-sm text-slate-500">{{ t('payment.rechargeUi.paymentMethodHint') }}</p>
+      <p class="mt-1 text-sm text-content-secondary">{{ t('payment.rechargeUi.paymentMethodHint') }}</p>
     </div>
 
     <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" role="radiogroup" :aria-label="t('payment.paymentMethod')">
@@ -38,7 +38,7 @@
             <span class="recharge-method-name">{{ methodLabel(method.type) }}</span>
             <span
               v-if="isRecommended(method.type)"
-              class="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700"
+              class="rounded-full bg-status-info-soft px-2 py-0.5 text-[10px] font-semibold text-content-brand"
             >
               {{ t('payment.rechargeUi.recommended') }}
             </span>
@@ -55,7 +55,7 @@
         >
           <Icon name="check" size="xs" :stroke-width="2.4" />
         </span>
-        <Icon v-else name="chevronRight" size="sm" class="shrink-0 text-slate-400" aria-hidden="true" />
+        <Icon v-else name="chevronRight" size="sm" class="shrink-0 text-content-disabled" aria-hidden="true" />
       </button>
     </div>
   </section>
