@@ -144,14 +144,6 @@ func (s *stickyGatewayCacheHotpathStub) DeleteSessionAccountID(ctx context.Conte
 	return nil
 }
 
-func (s *stickyGatewayCacheHotpathStub) SetUserAccountCooldown(ctx context.Context, userID, accountID int64, ttl time.Duration) error {
-	return nil
-}
-
-func (s *stickyGatewayCacheHotpathStub) GetUserAccountCooldowns(ctx context.Context, userID int64) (map[int64]struct{}, error) {
-	return nil, nil
-}
-
 func (s *stickyGatewayCacheHotpathStub) SetGrokVideoPendingBilling(_ context.Context, _ string, _ []byte, _ time.Duration) error {
 	return nil
 }
@@ -610,48 +602,95 @@ func TestGetAvailableModels_ErrorAndGlobalListBranches(t *testing.T) {
 	require.Equal(t, int64(1), okRepo.listAllCalls.Load())
 }
 
-func TestListSystemAvailableModelSets_GroupsSchedulableAccountsByPlatform(t *testing.T) {
-	repo := &modelsListAccountRepoStub{
-		all: []Account{
-			{
-				ID:       1,
-				Platform: PlatformOpenAI,
-				Credentials: map[string]any{"model_mapping": map[string]any{
-					"gpt-5.5": "gpt-5.5",
-					"gpt-5.4": "gpt-5.4",
-				}},
+func TestGetAvailableModels_OpenAIPassthroughUsesDefaultFallback(t *testing.T) {
+	groupID := int64(10)
+
+	tests := []struct {
+		name     string
+		accounts []Account
+		want     []string
+	}{
+		{
+			name: "passthrough only ignores stale mapping",
+			accounts: []Account{
+				{
+					ID:          1,
+					Platform:    PlatformOpenAI,
+					Credentials: map[string]any{"model_mapping": map[string]any{"stale-model": "upstream-model"}},
+					Extra:       map[string]any{"openai_passthrough": true},
+				},
 			},
-			{
-				ID:          2,
-				Platform:    PlatformOpenAI,
-				Credentials: map[string]any{},
+			want: nil,
+		},
+		{
+			name: "passthrough wins over ordinary account mapping",
+			accounts: []Account{
+				{
+					ID:          2,
+					Platform:    PlatformOpenAI,
+					Credentials: map[string]any{"model_mapping": map[string]any{"configured-model": "configured-upstream"}},
+				},
+				{
+					ID:          3,
+					Platform:    PlatformOpenAI,
+					Credentials: map[string]any{"model_mapping": map[string]any{"stale-model": "upstream-model"}},
+					Extra:       map[string]any{"openai_passthrough": true},
+				},
 			},
-			{
-				ID:          3,
-				Platform:    PlatformAnthropic,
-				Credentials: map[string]any{},
+			want: nil,
+		},
+		{
+			name: "ordinary accounts preserve mapped whitelist",
+			accounts: []Account{
+				{
+					ID:          4,
+					Platform:    PlatformOpenAI,
+					Credentials: map[string]any{"model_mapping": map[string]any{"configured-model": "configured-upstream"}},
+				},
 			},
-			{ID: 4, Platform: ""},
+			want: []string{"configured-model"},
 		},
 	}
-	svc := &GatewayService{accountRepo: repo}
 
-	sets, err := svc.ListSystemAvailableModelSets(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, []SystemAvailableModelSet{
-		{Platform: PlatformAnthropic, Models: []string{}},
-		{Platform: PlatformOpenAI, Models: []string{"gpt-5.4", "gpt-5.5"}},
-	}, sets)
-	require.Equal(t, int64(1), repo.listAllCalls.Load())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &modelsListAccountRepoStub{byGroup: map[int64][]Account{groupID: tt.accounts}}
+			svc := &GatewayService{
+				accountRepo:        repo,
+				modelsListCache:    gocache.New(time.Minute, time.Minute),
+				modelsListCacheTTL: time.Minute,
+			}
+
+			require.Equal(t, tt.want, svc.GetAvailableModels(context.Background(), &groupID, PlatformOpenAI))
+		})
+	}
 }
 
-func TestListSystemAvailableModelSets_PropagatesRepositoryError(t *testing.T) {
-	wantErr := errors.New("db error")
-	svc := &GatewayService{accountRepo: &modelsListAccountRepoStub{err: wantErr}}
+func TestGetAvailableModels_GlobalListPreservesMappedModelsWithOpenAIPassthrough(t *testing.T) {
+	groupID := int64(11)
+	repo := &modelsListAccountRepoStub{
+		byGroup: map[int64][]Account{
+			groupID: {
+				{
+					ID:       1,
+					Platform: PlatformOpenAI,
+					Extra:    map[string]any{"openai_passthrough": true},
+				},
+				{
+					ID:          2,
+					Platform:    PlatformAnthropic,
+					Credentials: map[string]any{"model_mapping": map[string]any{"claude-mapped": "claude-upstream"}},
+				},
+			},
+		},
+	}
+	svc := &GatewayService{
+		accountRepo:        repo,
+		modelsListCache:    gocache.New(time.Minute, time.Minute),
+		modelsListCacheTTL: time.Minute,
+	}
 
-	sets, err := svc.ListSystemAvailableModelSets(context.Background())
-	require.ErrorIs(t, err, wantErr)
-	require.Nil(t, sets)
+	require.Equal(t, []string{"claude-mapped"}, svc.GetAvailableModels(context.Background(), &groupID, ""))
 }
 
 func TestGatewayHotpathHelpers_CacheTTLAndStickyContext(t *testing.T) {

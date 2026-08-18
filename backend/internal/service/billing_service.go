@@ -116,15 +116,10 @@ const (
 	openAIGPT54LongContextInputThreshold   = 272000
 	openAIGPT54LongContextInputMultiplier  = 2.0
 	openAIGPT54LongContextOutputMultiplier = 1.5
-	openAIFastBillingMultiplier            = 2.5
 )
 
 func normalizeBillingServiceTier(serviceTier string) string {
-	normalized := strings.ToLower(strings.TrimSpace(serviceTier))
-	if normalized == "fast" {
-		return "priority"
-	}
-	return normalized
+	return strings.ToLower(strings.TrimSpace(serviceTier))
 }
 
 func usePriorityServiceTierPricing(serviceTier string, pricing *ModelPricing) bool {
@@ -170,6 +165,27 @@ type CostBreakdown struct {
 	ActualCost                float64 // 应用倍率后的实际费用
 	BillingMode               string  // 计费模式（"token"/"per_request"/"image"），由 CalculateCostUnified 填充
 	LongContextBillingApplied bool
+}
+
+func applyCostBreakdownMultiplier(cost *CostBreakdown, multiplier float64) {
+	if cost == nil || multiplier == 1 {
+		return
+	}
+	cost.InputCost *= multiplier
+	cost.ImageInputCost *= multiplier
+	cost.OutputCost *= multiplier
+	cost.ImageOutputCost *= multiplier
+	cost.CacheCreationCost *= multiplier
+	cost.CacheReadCost *= multiplier
+	cost.TotalCost *= multiplier
+	cost.ActualCost *= multiplier
+}
+
+func resolvedChannelTimeMultiplier(resolved *ResolvedPricing, at time.Time) float64 {
+	if resolved == nil || resolved.Source != PricingSourceChannel || resolved.channelPricing == nil {
+		return 1
+	}
+	return resolved.channelPricing.TimePricing.MultiplierAt(at)
 }
 
 // ErrModelPricingUnavailable indicates that none of the configured pricing
@@ -993,26 +1009,24 @@ func (s *BillingService) GetModelPricingWithChannel(model string, channelPricing
 	// 防止修改 fallbackPrices 中的共享指针
 	cloned := *pricing
 	pricing = &cloned
-	// 渠道只配置一套标准档价格。清空上游 priority 专用价格，让计费核心
-	// 基于最终渠道价统一应用默认档位倍率；OpenAI fast 路径可再覆盖为 2.5x。
-	pricing.InputPricePerTokenPriority = 0
-	pricing.OutputPricePerTokenPriority = 0
-	pricing.CacheCreationPricePerTokenPriority = 0
-	pricing.CacheReadPricePerTokenPriority = 0
 	if channelPricing.InputPrice != nil {
 		pricing.InputPricePerToken = *channelPricing.InputPrice
+		pricing.InputPricePerTokenPriority = *channelPricing.InputPrice
 	}
 	if channelPricing.OutputPrice != nil {
 		pricing.OutputPricePerToken = *channelPricing.OutputPrice
+		pricing.OutputPricePerTokenPriority = *channelPricing.OutputPrice
 	}
 	if channelPricing.CacheWritePrice != nil {
 		pricing.CacheCreationPricePerToken = *channelPricing.CacheWritePrice
+		pricing.CacheCreationPricePerTokenPriority = *channelPricing.CacheWritePrice
 		pricing.CacheCreationPriceExplicit = true
 		pricing.CacheCreation5mPrice = *channelPricing.CacheWritePrice
 		pricing.CacheCreation1hPrice = *channelPricing.CacheWritePrice
 	}
 	if channelPricing.CacheReadPrice != nil {
 		pricing.CacheReadPricePerToken = *channelPricing.CacheReadPrice
+		pricing.CacheReadPricePerTokenPriority = *channelPricing.CacheReadPrice
 	}
 	if channelPricing.ImageOutputPrice != nil {
 		pricing.ImageOutputPricePerToken = *channelPricing.ImageOutputPrice
@@ -1028,20 +1042,20 @@ func (s *BillingService) GetModelPricingWithChannel(model string, channelPricing
 
 // CostInput 统一计费输入
 type CostInput struct {
-	Ctx                        context.Context
-	Model                      string
-	GroupID                    *int64 // 用于渠道定价查找
-	Group                      *Group
-	Tokens                     UsageTokens
-	RequestCount               int     // 按次计费时使用
-	UsageUnits                 float64 // 音频等连续计量单位（分钟/小时/百万字符）
-	SizeTier                   string  // 按次/图片模式的层级标签（"1K","2K","4K","HD" 等）
-	RateMultiplier             float64
-	ServiceTier                string                // "priority","flex","" 等
-	PriorityMultiplierOverride float64               // OpenAI fast/priority 的业务倍率覆盖值；0 表示使用模型专用价格或通用倍率
-	Resolver                   *ModelPricingResolver // 定价解析器
-	Resolved                   *ResolvedPricing      // 可选：预解析的定价结果（避免重复 Resolve 调用）
-	LongContextBillingEnabled  *bool
+	Ctx                       context.Context
+	Model                     string
+	GroupID                   *int64 // 用于渠道定价查找
+	Group                     *Group
+	Tokens                    UsageTokens
+	RequestCount              int     // 按次计费时使用
+	UsageUnits                float64 // 音频等连续计量单位（分钟/小时/百万字符）
+	SizeTier                  string  // 按次/图片模式的层级标签（"1K","2K","4K","HD" 等）
+	RateMultiplier            float64
+	PricingAt                 time.Time             // 渠道分时定价使用的计费时刻
+	ServiceTier               string                // "priority","flex","" 等
+	Resolver                  *ModelPricingResolver // 定价解析器
+	Resolved                  *ResolvedPricing      // 可选：预解析的定价结果（避免重复 Resolve 调用）
+	LongContextBillingEnabled *bool
 }
 
 // CalculateCostUnified 统一计费入口，支持三种计费模式。
@@ -1060,7 +1074,6 @@ func (s *BillingService) CalculateCostUnified(input CostInput) (*CostBreakdown, 
 			input.ServiceTier,
 			nil,
 			applyLongContextBilling,
-			input.PriorityMultiplierOverride,
 		)
 	}
 
@@ -1113,7 +1126,9 @@ func (s *BillingService) calculateTokenCost(resolved *ResolvedPricing, input Cos
 		applyLongCtx = applyLongCtx && *input.LongContextBillingEnabled
 	}
 
-	return s.computeTokenBreakdown(pricing, input.Tokens, input.RateMultiplier, input.ServiceTier, applyLongCtx, input.PriorityMultiplierOverride), nil
+	breakdown := s.computeTokenBreakdown(pricing, input.Tokens, input.RateMultiplier, input.ServiceTier, applyLongCtx)
+	applyCostBreakdownMultiplier(breakdown, resolvedChannelTimeMultiplier(resolved, input.PricingAt))
+	return breakdown, nil
 }
 
 // computeTokenBreakdown 是 token 计费的核心逻辑，由 calculateTokenCost 和 calculateCostInternal 共用。
@@ -1121,7 +1136,7 @@ func (s *BillingService) calculateTokenCost(resolved *ResolvedPricing, input Cos
 func (s *BillingService) computeTokenBreakdown(
 	pricing *ModelPricing, tokens UsageTokens,
 	rateMultiplier float64, serviceTier string,
-	applyLongCtx bool, priorityMultiplierOverride float64,
+	applyLongCtx bool,
 ) *CostBreakdown {
 	// 保存时强制 > 0；若仍有负数泄漏，按 0 处理避免按 1x 误扣。
 	if rateMultiplier < 0 {
@@ -1135,9 +1150,7 @@ func (s *BillingService) computeTokenBreakdown(
 	cacheCreationMultiplier := 1.0
 	tierMultiplier := 1.0
 
-	if normalizeBillingServiceTier(serviceTier) == "priority" && priorityMultiplierOverride > 0 {
-		tierMultiplier = priorityMultiplierOverride
-	} else if usePriorityServiceTierPricing(serviceTier, pricing) {
+	if usePriorityServiceTierPricing(serviceTier, pricing) {
 		if pricing.InputPricePerTokenPriority > 0 {
 			inputPrice = pricing.InputPricePerTokenPriority
 		}
@@ -1157,7 +1170,7 @@ func (s *BillingService) computeTokenBreakdown(
 	longContextPricingEligible := applyLongCtx && s.shouldApplySessionLongContextPricing(tokens, pricing)
 	var baselineCost *CostBreakdown
 	if longContextPricingEligible {
-		baselineCost = s.computeTokenBreakdown(pricing, tokens, rateMultiplier, serviceTier, false, priorityMultiplierOverride)
+		baselineCost = s.computeTokenBreakdown(pricing, tokens, rateMultiplier, serviceTier, false)
 		inputPrice *= pricing.LongContextInputMultiplier
 		outputPrice *= pricing.LongContextOutputMultiplier
 		// 缓存读取本质上是输入侧的复用，应与 input 一同应用长上下文倍率；
@@ -1295,22 +1308,11 @@ func (s *BillingService) calculateCostWithServiceTierPolicy(
 	serviceTier string,
 	longContextBillingEnabled bool,
 ) (*CostBreakdown, error) {
-	return s.calculateCostInternalWithPolicy(model, tokens, rateMultiplier, serviceTier, nil, longContextBillingEnabled, 0)
-}
-
-func (s *BillingService) calculateCostWithServiceTierPolicyAndOverride(
-	model string,
-	tokens UsageTokens,
-	rateMultiplier float64,
-	serviceTier string,
-	longContextBillingEnabled bool,
-	priorityMultiplierOverride float64,
-) (*CostBreakdown, error) {
-	return s.calculateCostInternalWithPolicy(model, tokens, rateMultiplier, serviceTier, nil, longContextBillingEnabled, priorityMultiplierOverride)
+	return s.calculateCostInternalWithPolicy(model, tokens, rateMultiplier, serviceTier, nil, longContextBillingEnabled)
 }
 
 func (s *BillingService) calculateCostInternal(model string, tokens UsageTokens, rateMultiplier float64, serviceTier string, channelPricing *ChannelModelPricing) (*CostBreakdown, error) {
-	return s.calculateCostInternalWithPolicy(model, tokens, rateMultiplier, serviceTier, channelPricing, true, 0)
+	return s.calculateCostInternalWithPolicy(model, tokens, rateMultiplier, serviceTier, channelPricing, true)
 }
 
 func (s *BillingService) calculateCostInternalWithPolicy(
@@ -1320,7 +1322,6 @@ func (s *BillingService) calculateCostInternalWithPolicy(
 	serviceTier string,
 	channelPricing *ChannelModelPricing,
 	longContextBillingEnabled bool,
-	priorityMultiplierOverride float64,
 ) (*CostBreakdown, error) {
 	var pricing *ModelPricing
 	var err error
@@ -1333,7 +1334,7 @@ func (s *BillingService) calculateCostInternalWithPolicy(
 		return nil, err
 	}
 
-	return s.computeTokenBreakdown(pricing, tokens, rateMultiplier, serviceTier, longContextBillingEnabled, priorityMultiplierOverride), nil
+	return s.computeTokenBreakdown(pricing, tokens, rateMultiplier, serviceTier, longContextBillingEnabled), nil
 }
 
 func (s *BillingService) applyModelSpecificPricingPolicy(model string, pricing *ModelPricing) *ModelPricing {

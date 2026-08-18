@@ -185,8 +185,6 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeySiteSubtitle,
 		SettingKeyAPIBaseURL,
 		SettingKeyContactInfo,
-		SettingKeySupportQQGroupQRCode,
-		SettingKeySupportWeChatGroupQRCode,
 		SettingKeyDocURL,
 		SettingKeyHomeContent,
 		SettingKeyCompactHomeEnabled,
@@ -217,7 +215,6 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyWeChatConnectFrontendRedirectURL,
 		SettingKeyBackendModeEnabled,
 		SettingPaymentEnabled,
-		SettingBalanceRechargeMult,
 		SettingKeyOIDCConnectEnabled,
 		SettingKeyOIDCConnectProviderName,
 		SettingKeyGitHubOAuthEnabled,
@@ -234,14 +231,13 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyChannelMonitorMode,
 		SettingKeyChannelMonitorDefaultIntervalSeconds,
 		SettingKeyChannelMonitorHideThroughput,
+		SettingKeyChannelMonitorShowQuota,
 		SettingKeyAvailableChannelsEnabled,
 		SettingKeyModelPlazaEnabled,
 		SettingKeyModelPlazaRequireAuth,
 		SettingKeyAffiliateEnabled,
-		SettingKeyRewardCampaignsEnabled,
 		SettingKeyRiskControlEnabled,
 		SettingKeyAllowUserViewErrorRequests,
-		SettingKeyShowUserUsageRanking,
 	}
 
 	settings, err := s.settingRepo.GetMultiple(ctx, keys)
@@ -298,9 +294,6 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 	if v, err := strconv.ParseFloat(settings[SettingKeyBalanceLowNotifyThreshold], 64); err == nil && v >= 0 {
 		balanceLowNotifyThreshold = v
 	}
-	balanceRechargeMultiplier := normalizeBalanceRechargeMultiplier(
-		pcParseFloat(settings[SettingBalanceRechargeMult], defaultBalanceRechargeMultiplier),
-	)
 
 	return &PublicSettings{
 		RegistrationEnabled:                 settings[SettingKeyRegistrationEnabled] == "true",
@@ -332,8 +325,6 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SiteSubtitle:                        s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
 		APIBaseURL:                          settings[SettingKeyAPIBaseURL],
 		ContactInfo:                         settings[SettingKeyContactInfo],
-		SupportQQGroupQRCode:                settings[SettingKeySupportQQGroupQRCode],
-		SupportWeChatGroupQRCode:            settings[SettingKeySupportWeChatGroupQRCode],
 		DocURL:                              settings[SettingKeyDocURL],
 		HomeContent:                         settings[SettingKeyHomeContent],
 		CompactHomeEnabled:                  settings[SettingKeyCompactHomeEnabled] == "true",
@@ -352,7 +343,6 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		WeChatOAuthMobileEnabled:            weChatMobileEnabled,
 		BackendModeEnabled:                  settings[SettingKeyBackendModeEnabled] == "true",
 		PaymentEnabled:                      settings[SettingPaymentEnabled] == "true",
-		BalanceRechargeMultiplier:           balanceRechargeMultiplier,
 		OIDCOAuthEnabled:                    oidcEnabled,
 		OIDCOAuthProviderName:               oidcProviderName,
 		GitHubOAuthEnabled:                  gitHubEnabled,
@@ -366,6 +356,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ChannelMonitorMode:                   normalizeChannelMonitorMode(settings[SettingKeyChannelMonitorMode]),
 		ChannelMonitorDefaultIntervalSeconds: parseChannelMonitorInterval(settings[SettingKeyChannelMonitorDefaultIntervalSeconds]),
 		ChannelMonitorHideThroughput:         !isFalseSettingValue(settings[SettingKeyChannelMonitorHideThroughput]),
+		ChannelMonitorShowQuota:              settings[SettingKeyChannelMonitorShowQuota] == "true",
 
 		AvailableChannelsEnabled: settings[SettingKeyAvailableChannelsEnabled] == "true",
 
@@ -374,12 +365,9 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 
 		AffiliateEnabled: settings[SettingKeyAffiliateEnabled] == "true",
 
-		RewardCampaignsEnabled: settings[SettingKeyRewardCampaignsEnabled] == "true",
-
 		RiskControlEnabled: settings[SettingKeyRiskControlEnabled] == "true",
 
 		AllowUserViewErrorRequests: settings[SettingKeyAllowUserViewErrorRequests] == "true",
-		ShowUserUsageRanking:       settings[SettingKeyShowUserUsageRanking] == "true",
 	}, nil
 }
 
@@ -436,6 +424,10 @@ type ChannelMonitorRuntime struct {
 	DefaultIntervalSeconds int
 	// HideThroughput: when true, user-facing V2 APIs omit RPM/TPM scale signals.
 	HideThroughput bool
+	// ShowQuota: when true, user-facing monitor views keep the quota/balance
+	// snapshots; otherwise the user handler strips them server-side.
+	// Parsed fail-closed (only literal "true" enables). Admin always sees them.
+	ShowQuota bool
 }
 
 // ActiveProbesAllowed reports whether V1 active provider probes may run.
@@ -464,6 +456,7 @@ func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMo
 		SettingKeyChannelMonitorMode,
 		SettingKeyChannelMonitorDefaultIntervalSeconds,
 		SettingKeyChannelMonitorHideThroughput,
+		SettingKeyChannelMonitorShowQuota,
 	})
 	if err != nil {
 		return ChannelMonitorRuntime{
@@ -478,6 +471,7 @@ func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMo
 		Mode:                   normalizeChannelMonitorMode(vals[SettingKeyChannelMonitorMode]),
 		DefaultIntervalSeconds: parseChannelMonitorInterval(vals[SettingKeyChannelMonitorDefaultIntervalSeconds]),
 		HideThroughput:         !isFalseSettingValue(vals[SettingKeyChannelMonitorHideThroughput]),
+		ShowQuota:              vals[SettingKeyChannelMonitorShowQuota] == "true",
 	}
 }
 
@@ -538,17 +532,6 @@ func (s *SettingService) IsUserErrorViewAllowed(ctx context.Context) bool {
 	return vals[SettingKeyAllowUserViewErrorRequests] == "true"
 }
 
-// IsUserUsageRankingVisible reads the user-facing ranking switch directly
-// from the settings store. Fail-closed because the feature is opt-in.
-func (s *SettingService) IsUserUsageRankingVisible(ctx context.Context) bool {
-	vals, err := s.settingRepo.GetMultiple(ctx, []string{SettingKeyShowUserUsageRanking})
-	if err != nil {
-		slog.Warn("failed to get show_user_usage_ranking setting, defaulting to false", "error", err)
-		return false
-	}
-	return vals[SettingKeyShowUserUsageRanking] == "true"
-}
-
 // PublicSettingsInjectionPayload is the JSON shape embedded into HTML as
 // `window.__APP_CONFIG__` so the frontend can hydrate feature flags & site
 // config before the first XHR finishes.
@@ -591,8 +574,6 @@ type PublicSettingsInjectionPayload struct {
 	SiteSubtitle                        string                   `json:"site_subtitle"`
 	APIBaseURL                          string                   `json:"api_base_url"`
 	ContactInfo                         string                   `json:"contact_info"`
-	SupportQQGroupQRCode                string                   `json:"support_qq_group_qr_code"`
-	SupportWeChatGroupQRCode            string                   `json:"support_wechat_group_qr_code"`
 	DocURL                              string                   `json:"doc_url"`
 	HomeContent                         string                   `json:"home_content"`
 	CompactHomeEnabled                  bool                     `json:"compact_home_enabled"`
@@ -615,7 +596,6 @@ type PublicSettingsInjectionPayload struct {
 	GoogleOAuthEnabled                  bool                     `json:"google_oauth_enabled"`
 	BackendModeEnabled                  bool                     `json:"backend_mode_enabled"`
 	PaymentEnabled                      bool                     `json:"payment_enabled"`
-	BalanceRechargeMultiplier           float64                  `json:"payment_balance_recharge_multiplier"`
 	Version                             string                   `json:"version"`
 	// 服务器全局时区（IANA 名称与当前 UTC 偏移），高峰时段等服务端本地时间窗口的展示标注用
 	ServerTimezone              string  `json:"server_timezone"`
@@ -634,14 +614,15 @@ type PublicSettingsInjectionPayload struct {
 	// ChannelMonitorHideThroughput is public so the user UI can hide RPM/TPM
 	// without waiting for API redaction alone (defense in depth).
 	ChannelMonitorHideThroughput bool `json:"channel_monitor_hide_throughput"`
-	AvailableChannelsEnabled     bool `json:"available_channels_enabled"`
-	ModelPlazaEnabled            bool `json:"model_plaza_enabled"`
-	ModelPlazaRequireAuth        bool `json:"model_plaza_require_auth"`
-	AffiliateEnabled             bool `json:"affiliate_enabled"`
-	RewardCampaignsEnabled       bool `json:"reward_campaigns_enabled"`
-	RiskControlEnabled           bool `json:"risk_control_enabled"`
-	AllowUserViewErrorRequests   bool `json:"allow_user_view_error_requests"`
-	ShowUserUsageRanking         bool `json:"show_user_usage_ranking"`
+	// ChannelMonitorShowQuota gates the user-facing quota/balance display on
+	// monitors; fail-closed (absent/false = hidden). Admin UI always shows it.
+	ChannelMonitorShowQuota    bool `json:"channel_monitor_show_quota"`
+	AvailableChannelsEnabled   bool `json:"available_channels_enabled"`
+	ModelPlazaEnabled          bool `json:"model_plaza_enabled"`
+	ModelPlazaRequireAuth      bool `json:"model_plaza_require_auth"`
+	AffiliateEnabled           bool `json:"affiliate_enabled"`
+	RiskControlEnabled         bool `json:"risk_control_enabled"`
+	AllowUserViewErrorRequests bool `json:"allow_user_view_error_requests"`
 }
 
 // GetPublicSettingsForInjection returns public settings in a format suitable for HTML injection.
@@ -681,8 +662,6 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		SiteSubtitle:                        settings.SiteSubtitle,
 		APIBaseURL:                          settings.APIBaseURL,
 		ContactInfo:                         settings.ContactInfo,
-		SupportQQGroupQRCode:                settings.SupportQQGroupQRCode,
-		SupportWeChatGroupQRCode:            settings.SupportWeChatGroupQRCode,
 		DocURL:                              settings.DocURL,
 		HomeContent:                         settings.HomeContent,
 		CompactHomeEnabled:                  settings.CompactHomeEnabled,
@@ -705,7 +684,6 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		GoogleOAuthEnabled:                  settings.GoogleOAuthEnabled,
 		BackendModeEnabled:                  settings.BackendModeEnabled,
 		PaymentEnabled:                      settings.PaymentEnabled,
-		BalanceRechargeMultiplier:           settings.BalanceRechargeMultiplier,
 		Version:                             s.version,
 		ServerTimezone:                      timezone.Name(),
 		ServerUTCOffset:                     timezone.UTCOffset(),
@@ -718,14 +696,13 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ChannelMonitorMode:                   settings.ChannelMonitorMode,
 		ChannelMonitorDefaultIntervalSeconds: settings.ChannelMonitorDefaultIntervalSeconds,
 		ChannelMonitorHideThroughput:         settings.ChannelMonitorHideThroughput,
+		ChannelMonitorShowQuota:              settings.ChannelMonitorShowQuota,
 		AvailableChannelsEnabled:             settings.AvailableChannelsEnabled,
 		ModelPlazaEnabled:                    settings.ModelPlazaEnabled,
 		ModelPlazaRequireAuth:                settings.ModelPlazaRequireAuth,
 		AffiliateEnabled:                     settings.AffiliateEnabled,
-		RewardCampaignsEnabled:               settings.RewardCampaignsEnabled,
 		RiskControlEnabled:                   settings.RiskControlEnabled,
 		AllowUserViewErrorRequests:           settings.AllowUserViewErrorRequests,
-		ShowUserUsageRanking:                 settings.ShowUserUsageRanking,
 	}, nil
 }
 

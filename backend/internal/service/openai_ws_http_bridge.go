@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
@@ -144,7 +144,7 @@ func buildOpenAIWSHTTPBridgeErrorEvent(statusCode int, message string) []byte {
 		"status": statusCode,
 		"error": map[string]any{
 			"type":    "upstream_error",
-			"message": clientmsg.Localize(message),
+			"message": message,
 		},
 	}
 	body, err := json.Marshal(event)
@@ -186,6 +186,13 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	body, err := prepareOpenAIWSHTTPBridgeBody(payload)
 	if err != nil {
 		return nil, fmt.Errorf("prepare http bridge body: %w", err)
+	}
+	var clientToolMapping apicompat.ResponsesClientToolMapping
+	if account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey {
+		body, clientToolMapping, err = adaptResponsesClientToolsForFunctionUpstream(body, "OpenAI WS HTTP bridge")
+		if err != nil {
+			return nil, fmt.Errorf("adapt OpenAI WS HTTP bridge client tools: %w", err)
+		}
 	}
 
 	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
@@ -231,9 +238,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	}
 
 	turnStart := time.Now()
-	resp, err := DoOpsUpstream(c, upstreamReq, func(req *http.Request) (*http.Response, error) {
-		return s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
-	})
+	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 	if err != nil {
 		if turn == 1 {
 			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
@@ -332,11 +337,14 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		return result
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
 	if s.cfg != nil && s.cfg.Gateway.MaxLineSize > 0 {
 		maxLineSize = s.cfg.Gateway.MaxLineSize
 	}
+	if hasResponsesClientToolMapping(clientToolMapping) {
+		resp.Body = newResponsesClientToolStreamBody(resp.Body, clientToolMapping, maxLineSize)
+	}
+	scanner := bufio.NewScanner(resp.Body)
 	scanBuf := getSSEScannerBuf64K()
 	scanner.Buffer(scanBuf[:0], maxLineSize)
 	defer putSSEScannerBuf64K(scanBuf)
@@ -375,7 +383,6 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		if isOpenAIWSTokenEvent(eventType) {
 			tokenEventCount++
 			if firstTokenMs == nil {
-				MarkOpsUpstreamFirstEvent(c)
 				ms := int(time.Since(turnStart).Milliseconds())
 				firstTokenMs = &ms
 			}

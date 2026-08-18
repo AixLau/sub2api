@@ -25,7 +25,7 @@ func (s *OpenAIGatewayService) validateUpstreamBaseURL(raw string) (string, erro
 		}
 		return normalized, nil
 	}
-	normalized, err := urlvalidator.ValidateHTTPURL(raw, s.cfg.Security.URLAllowlist.AllowInsecureHTTP, urlvalidator.ValidationOptions{
+	normalized, err := urlvalidator.ValidateHTTPSURL(raw, urlvalidator.ValidationOptions{
 		AllowedHosts:     s.cfg.Security.URLAllowlist.UpstreamHosts,
 		RequireAllowlist: true,
 		AllowPrivate:     s.cfg.Security.URLAllowlist.AllowPrivateHosts,
@@ -45,59 +45,31 @@ func buildOpenAIResponsesURL(base string) string {
 	return buildOpenAIEndpointURL(base, "/v1/responses")
 }
 
-// normalizeOpenAIResponsesReasoningContent removes the non-standard content
-// field from replayed Responses reasoning items. Some clients/upstreams (most
-// notably the ChatGPT/Codex Responses endpoint) model reasoning input items as
-// metadata-only records and validate `content` as an empty list. A previous
-// DeepSeek turn can leave a reasoning item such as
-// `content:[{"type":"reasoning_text",...}]`, which then fails with
-// "input[n].content: array too long" when the conversation is switched to GPT.
-//
-// Keep the reasoning item's encrypted_content/summary/id fields intact: those
-// fields carry the replay metadata used by Codex continuation. This helper is
-// intentionally limited to reasoning items; assistant message output_text
-// content arrays are valid Responses input and must not be flattened.
-func normalizeOpenAIResponsesReasoningContent(body []byte) ([]byte, bool, error) {
-	if len(body) == 0 {
-		return body, false, nil
+// buildOpenAIResponsesURLForPlatform 组装 Responses 端点（平台感知）。
+// DeepSeek 官方 Responses 端点为 /responses（无 /v1 前缀，适配 Codex）；
+// 其余平台维持 /v1/responses。
+func buildOpenAIResponsesURLForPlatform(platform string, base string) string {
+	if platform == PlatformDeepseek {
+		return buildOpenAIEndpointURL(base, "/responses")
 	}
+	return buildOpenAIResponsesURL(base)
+}
 
-	input := gjson.GetBytes(body, "input")
-	if !input.IsArray() {
-		return body, false, nil
+// normalizeDeepSeekResponsesRequestBody 适配 DeepSeek 无状态 Responses 端点：
+// 强制 store=false 并清除 previous_response_id（官方 /responses 不支持服务端
+// 状态存储，携带这些字段会被拒绝）。非 deepseek responses 协议账号原样返回。
+func normalizeDeepSeekResponsesRequestBody(account *Account, body []byte) []byte {
+	if account == nil || account.Platform != PlatformDeepseek || account.GetAPIProtocol() != APIProtocolResponses {
+		return body
 	}
-
-	normalized := body
-	changed := false
-	index := 0
-	var normalizeErr error
-	input.ForEach(func(_, item gjson.Result) bool {
-		currentIndex := index
-		index++
-		if !item.IsObject() || strings.TrimSpace(item.Get("type").String()) != "reasoning" {
-			return true
-		}
-
-		// The field is invalid for Codex reasoning input regardless of whether it
-		// is an array, string, object, or null. Omitting it is accepted by both
-		// the public Responses API and the stricter ChatGPT internal endpoint.
-		if !item.Get("content").Exists() {
-			return true
-		}
-		path := fmt.Sprintf("input.%d.content", currentIndex)
-		next, err := sjson.DeleteBytes(normalized, path)
-		if err != nil {
-			normalizeErr = fmt.Errorf("delete %s: %w", path, err)
-			return false
-		}
-		normalized = next
-		changed = true
-		return true
-	})
-	if normalizeErr != nil {
-		return body, false, normalizeErr
+	normalized, err := sjson.SetBytes(body, "store", false)
+	if err != nil {
+		return body
 	}
-	return normalized, changed, nil
+	if stripped, err := sjson.DeleteBytes(normalized, "previous_response_id"); err == nil {
+		normalized = stripped
+	}
+	return normalized
 }
 
 func trimOpenAIEncryptedReasoningItems(reqBody map[string]any) bool {
