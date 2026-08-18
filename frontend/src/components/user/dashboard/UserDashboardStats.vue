@@ -97,13 +97,13 @@
       </div>
     </div>
 
-    <!-- Performance (RPM/TPM) -->
+    <!-- Token activity summary -->
     <div class="card p-4">
       <div class="flex items-center gap-3">
-        <div class="rounded-lg bg-violet-100 p-2 dark:bg-violet-900/30">
-          <Icon name="bolt" size="md" class="text-violet-600 dark:text-violet-400" :stroke-width="2" />
+        <div class="rounded-lg bg-sky-100 p-2 dark:bg-sky-900/30">
+          <Icon name="chart" size="md" class="text-sky-600 dark:text-sky-400" :stroke-width="2" />
         </div>
-        <div class="flex-1">
+        <div class="min-w-0 flex-1">
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.performance') }}</p>
           <div class="flex items-baseline gap-2">
             <p class="text-xl font-bold text-gray-900 dark:text-white">{{ formatTokens(stats?.rpm || 0) }}</p>
@@ -112,6 +112,19 @@
           <div class="flex items-baseline gap-2">
             <p class="text-sm font-semibold text-violet-600 dark:text-violet-400">{{ formatTokens(stats?.tpm || 0) }}</p>
             <span class="text-xs text-gray-500 dark:text-gray-400">TPM</span>
+          <div class="mt-0.5 flex items-baseline gap-2">
+            <p class="text-xl font-bold text-gray-900 dark:text-white">{{ formatTokens(activity?.peak_daily_tokens || 0) }}</p>
+            <span class="truncate text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.activity.peakDailyTokens') }}</span>
+          </div>
+          <div class="mt-1.5 space-y-1 text-xs text-gray-500 dark:text-gray-400">
+            <div class="flex items-center justify-between gap-2">
+              <span class="truncate">{{ t('dashboard.activity.currentStreak') }}</span>
+              <span class="shrink-0 font-medium text-sky-600 dark:text-sky-400">{{ formatDays(activity?.current_streak_days || 0) }}</span>
+            </div>
+            <div class="flex items-center justify-between gap-2">
+              <span class="truncate">{{ t('dashboard.activity.longestStreak') }}</span>
+              <span class="shrink-0 font-medium text-sky-600 dark:text-sky-400">{{ formatDays(activity?.longest_streak_days || 0) }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -226,8 +239,9 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
-import type { UserDashboardStats as UserStatsType } from '@/api/usage'
 import type { PlatformQuotaItem } from '@/types'
+import type { UserDashboardActivity, UserDashboardStats as UserStatsType } from '@/api/usage'
+import { platformLabel } from '@/utils/platformColors'
 
 interface FusedPlatformCard {
   platform: string
@@ -244,17 +258,9 @@ const props = defineProps<{
   balance: number
   isSimple: boolean
   platformQuotas?: PlatformQuotaItem[] | null
+  activity?: UserDashboardActivity | null
 }>()
 const { t } = useI18n()
-
-const PLATFORM_LABELS: Record<string, string> = {
-  anthropic: 'Claude',
-  openai: 'OpenAI',
-  gemini: 'Gemini',
-  antigravity: 'Antigravity'
-}
-
-const platformLabel = (p: string) => PLATFORM_LABELS[p] ?? p
 
 const sortedPlatforms = computed(() => {
   const list = props.stats?.by_platform ?? []
@@ -385,7 +391,8 @@ const formatCost = (c: number) => c.toFixed(4)
 const formatTokens = (t: number) => {
   if (t >= 1_000_000) return `${(t / 1_000_000).toFixed(1)}M`
   if (t >= 1000) return `${(t / 1000).toFixed(1)}K`
-  return t.toString()
+  return Math.round(t).toString()
 }
+const formatDays = (days: number) => t('dashboard.activity.days', { count: days })
 const formatDuration = (ms: number) => ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms.toFixed(0)}ms`
 </script>

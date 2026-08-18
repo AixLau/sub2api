@@ -400,6 +400,7 @@ func (r *usageLogRepository) GetUserDashboardActivity(ctx context.Context, userI
 	activity := &usagestats.UserDashboardActivity{
 		WindowStart: windowStart.Format("2006-01-02"),
 		WindowEnd:   windowEnd.AddDate(0, 0, -1).Format("2006-01-02"),
+		CurrentDate: currentDay.Format("2006-01-02"),
 		Days:        []usagestats.UserActivityDay{},
 	}
 

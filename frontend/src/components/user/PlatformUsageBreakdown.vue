@@ -46,6 +46,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
+import { platformLabel } from '@/utils/platformColors'
 import type { PlatformUsage } from '@/api/admin/dashboard'
 
 const props = defineProps<{
@@ -90,14 +91,4 @@ const sortedBreakdown = computed<BreakdownRow[]>(() => {
 
 const hasBreakdown = computed(() => sortedBreakdown.value.length > 0)
 
-const PLATFORM_LABELS: Record<string, string> = {
-  anthropic: 'Claude',
-  openai: 'OpenAI',
-  gemini: 'Gemini',
-  antigravity: 'Antigravity'
-}
-
-function platformLabel(platform: string): string {
-  return PLATFORM_LABELS[platform] ?? platform
-}
 </script>

@@ -51,3 +51,7 @@ func optionalInt64Ptr(v int64) *int64 {
 	}
 	return &v
 }
+
+func forwardResultBillingModel(requestedModel, upstreamModel string) string {
+	return firstNonEmptyUsageModel(requestedModel, upstreamModel)
+}

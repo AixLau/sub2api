@@ -985,16 +985,8 @@ func (s *GatewayService) calculateRecordUsageCost(
 	billingModel string,
 	multiplier float64,
 	imageMultiplier float64,
-	extra ...any,
+	opts *recordUsageOpts,
 ) *CostBreakdown {
-	var opts *recordUsageOpts
-	if len(extra) == 1 {
-		opts, _ = extra[0].(*recordUsageOpts)
-	} else if len(extra) >= 2 {
-		// Accept the pre-refactor (pricingAt, opts) call shape used by older
-		// tests and integrations while retaining the current internal form.
-		opts, _ = extra[1].(*recordUsageOpts)
-	}
 	if opts == nil {
 		opts = &recordUsageOpts{}
 	}

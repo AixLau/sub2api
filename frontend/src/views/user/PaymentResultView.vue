@@ -55,7 +55,7 @@
               <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.payAmount') }}</span>
               <span class="font-bold text-primary-600 dark:text-primary-400">{{ formatGatewayAmount(order.pay_amount) }}</span>
             </div>
-            <div v-if="order.order_type === 'balance' && hasAmountFields(order) && order.amount !== order.pay_amount" class="flex justify-between">
+            <div v-if="isBalanceOrder(order) && order.amount !== order.pay_amount" class="flex justify-between">
               <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.creditedAmount') }}</span>
               <span class="font-medium text-gray-900 dark:text-white">{{ '$' + order.amount.toFixed(2) }}</span>
             </div>
@@ -235,6 +235,10 @@ function hasAmountFields(nextOrder: ResolvedOrder | null): nextOrder is PaymentO
 
 function hasPaymentType(nextOrder: ResolvedOrder | null): nextOrder is PaymentOrder {
   return !!nextOrder && 'payment_type' in nextOrder && typeof nextOrder.payment_type === 'string' && nextOrder.payment_type.trim() !== ''
+}
+
+function isBalanceOrder(nextOrder: ResolvedOrder | null): nextOrder is PaymentOrder {
+  return !!nextOrder && 'order_type' in nextOrder && nextOrder.order_type === 'balance' && hasAmountFields(nextOrder)
 }
 
 function normalizeOrderStatus(status: string | null | undefined): string {

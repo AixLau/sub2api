@@ -268,6 +268,7 @@ import Icon from '@/components/icons/Icon.vue'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { getChannelMonitorMode, isChannelMonitorV2Mode } from '@/utils/featureFlags'
+import { platformLabel } from '@/utils/platformColors'
 import {
   getConfig,
   updateConfig,
@@ -376,20 +377,6 @@ function toggleIgnoredCategory(category: string) {
 function categoryLabel(category: string) {
   const key = `channelMonitorV2.errorCategories.${category}`
   return te(key) ? t(key) : category
-}
-
-function platformLabel(value: string) {
-  return (
-    {
-      anthropic: 'Claude',
-      openai: 'OpenAI',
-      grok: 'Grok',
-      kiro: 'Kiro',
-      gemini: 'Gemini',
-      antigravity: 'Antigravity',
-      composite: 'Composite',
-    } as Record<string, string>
-  )[value] || value
 }
 
 function normalizeConfig(value: MonitorConfig): MonitorConfig {

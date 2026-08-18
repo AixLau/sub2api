@@ -15,18 +15,13 @@ export default {
     timeRange: '时间范围',
     activity: {
       title: 'Token 活动',
-      lastYear: '过去 12 个月',
       viewMode: '活动视图',
       daily: '每日',
       weekly: '每周',
       cumulative: '累计',
-      totalTokens: '累计 Token 数',
       peakDailyTokens: '峰值 Token 数',
       currentStreak: '当前连续天数',
       longestStreak: '最长连续天数',
-      tokenActivity: 'Token 活动',
-      less: '少',
-      more: '多',
       days: '{count} 天',
       tooltip: '{date} {mode}使用 {tokens} 个 Token',
       futureDate: '{date} 尚未到来'

@@ -15,6 +15,10 @@ const messages: Record<string, string> = {
   'dashboard.actual': 'Actual',
   'dashboard.apiKeys': 'API Keys',
   'dashboard.averageTime': 'Average time',
+  'dashboard.activity.currentStreak': 'Current Streak',
+  'dashboard.activity.days': '{count} days',
+  'dashboard.activity.longestStreak': 'Longest Streak',
+  'dashboard.activity.peakDailyTokens': 'Peak Daily Tokens',
   'dashboard.avgResponse': 'Avg Response',
   'dashboard.balance': 'Balance',
   'dashboard.day': 'Day',
@@ -177,6 +181,36 @@ describe('user dashboard cost visibility', () => {
     })
 
     expect(wrapper.text()).toContain('6.75B')
+  })
+
+  it('shows activity metrics in place of the performance card', () => {
+    const wrapper = mount(UserDashboardStats, {
+      props: {
+        stats: dashboardStats(),
+        balance: 0,
+        isSimple: false,
+        activity: {
+          window_start: '2025-09-01',
+          window_end: '2026-08-30',
+          current_date: '2026-08-18',
+          total_tokens: 1_000_000,
+          peak_daily_tokens: 850_000,
+          current_streak_days: 3,
+          longest_streak_days: 9,
+          cumulative_tokens_before_window: 0,
+          days: [],
+        },
+      },
+      global: { stubs: { Icon: IconStub } },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('Peak Daily Tokens')
+    expect(text).toContain('850.0K')
+    expect(text).toContain('Current Streak')
+    expect(text).toContain('Longest Streak')
+    expect(text).not.toContain('RPM')
+    expect(text).not.toContain('TPM')
   })
 
   it('shows user actual consumption in the summary cards without standard cost', () => {

@@ -1,62 +1,51 @@
 <template>
-  <section class="card overflow-hidden p-4 sm:p-5" data-testid="user-dashboard-activity">
-    <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-      <div>
-        <div class="flex items-center gap-2">
-          <Icon name="chartBar" size="sm" class="text-sky-600 dark:text-sky-400" :stroke-width="2" />
-          <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('dashboard.activity.title') }}</h2>
-        </div>
-        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.activity.lastYear') }}</p>
-      </div>
-      <div class="flex w-fit rounded-md bg-gray-100 p-1 dark:bg-dark-700" role="tablist" :aria-label="t('dashboard.activity.viewMode')">
+  <section class="mx-auto w-full max-w-[1460px]" data-testid="user-dashboard-activity">
+    <div class="flex items-center justify-between gap-4">
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white">{{ t('dashboard.activity.title') }}</h2>
+      <div class="flex items-center gap-5 text-sm font-medium" role="tablist" :aria-label="t('dashboard.activity.viewMode')">
         <button
           v-for="option in modeOptions"
           :key="option.value"
           type="button"
           role="tab"
+          class="transition-colors"
+          :class="mode === option.value ? 'text-gray-900 dark:text-white' : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'"
           :aria-selected="mode === option.value"
-          class="rounded px-2.5 py-1 text-xs font-medium transition-colors"
-          :class="mode === option.value ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-600 dark:text-white' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'"
-          @click="mode = option.value"
+          @click="selectMode(option.value)"
         >
           {{ option.label }}
         </button>
       </div>
     </div>
 
-    <div class="grid grid-cols-2 divide-x-0 divide-y divide-gray-100 rounded-md border border-gray-100 dark:divide-dark-700 dark:border-dark-700 sm:grid-cols-4 sm:divide-x sm:divide-y-0">
-      <div v-for="stat in statItems" :key="stat.label" class="min-w-0 p-3 text-center">
-        <p class="truncate text-lg font-semibold tabular-nums text-gray-900 dark:text-white">{{ stat.value }}</p>
-        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ stat.label }}</p>
-      </div>
+    <div v-if="loading && !activity" class="grid h-48 place-items-center text-sm text-gray-500 dark:text-gray-400">
+      {{ t('common.loading') }}
     </div>
-
-    <div class="mt-6">
-      <div class="mb-3 flex min-h-8 flex-wrap items-center justify-between gap-2">
-        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('dashboard.activity.tokenActivity') }}</h3>
-        <p v-if="activeCell" class="rounded bg-gray-900 px-2.5 py-1 text-xs text-white dark:bg-gray-100 dark:text-gray-900" aria-live="polite">
-          {{ activityTooltip(activeCell) }}
-        </p>
-        <div v-else class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400" aria-hidden="true">
-          <span>{{ t('dashboard.activity.less') }}</span>
-          <span v-for="level in 5" :key="level" class="h-3 w-3 rounded-sm" :class="legendClass(level - 1)" />
-          <span>{{ t('dashboard.activity.more') }}</span>
-        </div>
-      </div>
-
-      <div v-if="loading && !activity" class="grid h-32 place-items-center text-sm text-gray-500 dark:text-gray-400">
-        {{ t('common.loading') }}
-      </div>
-      <div v-else class="overflow-x-auto pb-1">
-        <div class="min-w-[680px]">
-          <div class="mb-2 grid grid-cols-12 text-[10px] text-gray-400 dark:text-gray-500">
-            <span v-for="month in monthLabels" :key="month.key" :style="{ gridColumn: `${month.column} / span 1` }">{{ month.label }}</span>
+    <div v-else ref="activityGraph" class="activity-graph relative mt-5" @mouseleave="hideActivityPreview">
+      <p
+        v-if="activityPreview"
+        data-testid="activity-tooltip"
+        class="pointer-events-none absolute z-10 max-w-[min(92%,28rem)] -translate-x-1/2 -translate-y-[calc(100%+12px)] rounded-2xl bg-gray-900 px-4 py-3 text-sm text-white shadow-lg dark:bg-gray-100 dark:text-gray-900"
+        :style="{ left: `${activityPreview.x}px`, top: `${activityPreview.y}px` }"
+      >
+        {{ activityTooltip(activityPreview.cell) }}
+      </p>
+      <div class="activity-scroll overflow-x-auto pb-1 sm:overflow-hidden">
+        <div class="min-w-[620px] sm:min-w-0">
+          <div class="relative mb-2 h-5 text-xs text-gray-400 dark:text-gray-500">
+            <span
+              v-for="month in monthLabels"
+              :key="month.key"
+              data-testid="activity-month-label"
+              class="absolute top-0 whitespace-nowrap"
+              :style="{ left: `${month.offset}%` }"
+            >{{ month.label }}</span>
           </div>
           <div
-            class="grid gap-1"
-            :style="{ gridTemplateColumns: `repeat(${weeks.length}, minmax(0, 1fr))`, gridTemplateRows: 'repeat(7, minmax(0, 1fr))', gridAutoFlow: 'column' }"
+            class="grid gap-1.5"
+            :style="gridStyle"
             role="grid"
-            :aria-label="t('dashboard.activity.tokenActivity')"
+            :aria-label="t('dashboard.activity.title')"
           >
             <button
               v-for="cell in cells"
@@ -65,12 +54,11 @@
               role="gridcell"
               :disabled="cell.isFuture"
               :aria-label="activityTooltip(cell)"
-              :title="activityTooltip(cell)"
-              class="aspect-square min-h-3 rounded-[3px] outline-none ring-offset-1 transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-sky-500 disabled:cursor-default disabled:hover:scale-100"
+              class="aspect-square min-h-3 rounded-[5px] outline-none ring-offset-1 transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-sky-500 disabled:cursor-default disabled:hover:scale-100"
               :class="cellClass(cell)"
-              @mouseenter="activeCell = cell"
-              @focus="activeCell = cell"
-              @click="activeCell = cell"
+              @mouseenter="showActivityPreview(cell, $event)"
+              @mousemove="showActivityPreview(cell, $event)"
+              @mouseleave="hideActivityPreview"
             />
           </div>
         </div>
@@ -82,7 +70,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import Icon from '@/components/icons/Icon.vue'
 import type { UserDashboardActivity as Activity } from '@/api/usage'
 import { formatCompactNumber } from '@/utils/format'
 
@@ -101,7 +88,8 @@ const props = defineProps<{
 
 const { t, locale } = useI18n()
 const mode = ref<ActivityMode>('daily')
-const activeCell = ref<ActivityCell | null>(null)
+const activityGraph = ref<HTMLElement | null>(null)
+const activityPreview = ref<{ cell: ActivityCell, x: number, y: number } | null>(null)
 
 const modeOptions = computed(() => [
   { value: 'daily' as const, label: t('dashboard.activity.daily') },
@@ -109,19 +97,17 @@ const modeOptions = computed(() => [
   { value: 'cumulative' as const, label: t('dashboard.activity.cumulative') },
 ])
 
-const statItems = computed(() => [
-  { label: t('dashboard.activity.totalTokens'), value: formatTokens(props.activity?.total_tokens ?? 0) },
-  { label: t('dashboard.activity.peakDailyTokens'), value: formatTokens(props.activity?.peak_daily_tokens ?? 0) },
-  { label: t('dashboard.activity.currentStreak'), value: formatDays(props.activity?.current_streak_days ?? 0) },
-  { label: t('dashboard.activity.longestStreak'), value: formatDays(props.activity?.longest_streak_days ?? 0) },
-])
-
 const windowStart = computed(() => props.activity?.window_start ?? fallbackWindowStart())
-const windowEnd = computed(() => props.activity?.window_end ?? formatDate(new Date()))
+const windowEnd = computed(() => props.activity?.window_end ?? fallbackWindowEnd())
+const currentDate = computed(() => props.activity?.current_date ?? formatDate(new Date()))
 const usageByDate = computed(() => new Map((props.activity?.days ?? []).map(day => [day.date, Number(day.total_tokens) || 0])))
-
-const weeks = computed(() => Array.from({ length: 52 }, (_, index) => index))
-const baseDates = computed(() => Array.from({ length: 52 * 7 }, (_, index) => formatDate(addDays(parseDate(windowStart.value), index))))
+const baseDates = computed(() => datesBetween(windowStart.value, windowEnd.value))
+const weeks = computed(() => Math.ceil(baseDates.value.length / 7))
+const gridStyle = computed(() => ({
+  gridTemplateColumns: `repeat(${weeks.value}, minmax(0, 1fr))`,
+  gridTemplateRows: 'repeat(7, minmax(0, 1fr))',
+  gridAutoFlow: 'column',
+}))
 
 const cells = computed<ActivityCell[]>(() => {
   let runningTotal = Number(props.activity?.cumulative_tokens_before_window ?? 0)
@@ -132,27 +118,27 @@ const cells = computed<ActivityCell[]>(() => {
   })
   const weeklyTotals = new Map<string, number>()
   for (const item of values) {
-    const weekStart = formatDate(addDays(parseDate(item.date), -weekdayOffset(parseDate(item.date))))
+    const weekStart = startOfWeek(item.date)
     weeklyTotals.set(weekStart, (weeklyTotals.get(weekStart) ?? 0) + item.daily)
   }
   return values.map(item => ({
     date: item.date,
-    value: mode.value === 'daily' ? item.daily : mode.value === 'weekly' ? (weeklyTotals.get(formatDate(addDays(parseDate(item.date), -weekdayOffset(parseDate(item.date))))) ?? 0) : item.cumulative,
-    isFuture: item.date > windowEnd.value,
+    value: mode.value === 'daily' ? item.daily : mode.value === 'weekly' ? (weeklyTotals.get(startOfWeek(item.date)) ?? 0) : item.cumulative,
+    isFuture: item.date > currentDate.value,
   }))
 })
 
 const maxValue = computed(() => Math.max(0, ...cells.value.filter(cell => !cell.isFuture).map(cell => cell.value)))
-const monthLabels = computed(() => {
-  let previousMonth = -1
-  return baseDates.value.flatMap((date, index) => {
-    const parsed = parseDate(date)
-    const month = parsed.getMonth()
-    if (month === previousMonth) return []
-    previousMonth = month
-    return [{ key: date, column: Math.floor(index / 7) + 1, label: new Intl.DateTimeFormat(locale.value, { month: 'short' }).format(parsed) }]
-  })
-})
+const monthLabels = computed(() => baseDates.value.flatMap((date, index) => {
+  const parsed = parseDate(date)
+  const previous = index > 0 ? parseDate(baseDates.value[index - 1]) : null
+  if (previous && previous.getMonth() === parsed.getMonth() && previous.getFullYear() === parsed.getFullYear()) return []
+  return [{
+    key: date,
+    offset: (Math.floor(index / 7) / weeks.value) * 100,
+    label: new Intl.DateTimeFormat(locale.value, { month: 'short' }).format(parsed),
+  }]
+}))
 
 function cellClass(cell: ActivityCell): string {
   if (cell.isFuture || cell.value <= 0) return 'bg-gray-100 dark:bg-dark-700'
@@ -187,12 +173,34 @@ function activityTooltip(cell: ActivityCell): string {
   })
 }
 
-function formatTokens(value: number): string {
-  return formatCompactNumber(value)
+function showActivityPreview(cell: ActivityCell, event: MouseEvent) {
+  if (cell.isFuture || !activityGraph.value) {
+    activityPreview.value = null
+    return
+  }
+  const bounds = activityGraph.value.getBoundingClientRect()
+  const width = Math.max(bounds.width, 1)
+  const horizontalPadding = Math.min(180, Math.max(96, width / 4))
+  const minX = Math.min(horizontalPadding, width / 2)
+  const maxX = Math.max(minX, width - horizontalPadding)
+  activityPreview.value = {
+    cell,
+    x: Math.min(Math.max(event.clientX - bounds.left, minX), maxX),
+    y: Math.max(0, event.clientY - bounds.top),
+  }
 }
 
-function formatDays(value: number): string {
-  return t('dashboard.activity.days', { count: value })
+function hideActivityPreview() {
+  activityPreview.value = null
+}
+
+function selectMode(nextMode: ActivityMode) {
+  mode.value = nextMode
+  hideActivityPreview()
+}
+
+function formatTokens(value: number): string {
+  return formatCompactNumber(value)
 }
 
 function formatDisplayDate(value: string): string {
@@ -201,7 +209,24 @@ function formatDisplayDate(value: string): string {
 
 function fallbackWindowStart(): string {
   const today = new Date()
-  return formatDate(addDays(today, -((today.getDay() || 7) - 1) - 51 * 7))
+  return formatDate(addDays(today, -weekdayOffset(today) - 51 * 7))
+}
+
+function fallbackWindowEnd(): string {
+  return formatDate(addDays(parseDate(fallbackWindowStart()), 52 * 7 - 1))
+}
+
+function datesBetween(start: string, end: string): string[] {
+  const dates: string[] = []
+  for (let date = parseDate(start), last = parseDate(end); date <= last; date = addDays(date, 1)) {
+    dates.push(formatDate(date))
+  }
+  return dates
+}
+
+function startOfWeek(date: string): string {
+  const value = parseDate(date)
+  return formatDate(addDays(value, -weekdayOffset(value)))
 }
 
 function parseDate(value: string): Date {
@@ -225,3 +250,14 @@ function weekdayOffset(value: Date): number {
   return (value.getDay() + 6) % 7
 }
 </script>
+
+<style scoped>
+.activity-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.activity-scroll {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+</style>

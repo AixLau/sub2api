@@ -15,18 +15,13 @@ export default {
     timeRange: 'Time Range',
     activity: {
       title: 'Token Activity',
-      lastYear: 'Past 12 months',
       viewMode: 'Activity view',
       daily: 'Daily',
       weekly: 'Weekly',
       cumulative: 'Cumulative',
-      totalTokens: 'Total Tokens',
       peakDailyTokens: 'Peak Daily Tokens',
       currentStreak: 'Current Streak',
       longestStreak: 'Longest Streak',
-      tokenActivity: 'Token Activity',
-      less: 'Less',
-      more: 'More',
       days: '{count} days',
       tooltip: '{date} used {tokens} tokens ({mode})',
       futureDate: '{date} has not arrived'

@@ -302,6 +302,7 @@ type UserDashboardStats struct {
 type UserDashboardActivity struct {
 	WindowStart                  string            `json:"window_start"`
 	WindowEnd                    string            `json:"window_end"`
+	CurrentDate                  string            `json:"current_date"`
 	TotalTokens                  int64             `json:"total_tokens"`
 	PeakDailyTokens              int64             `json:"peak_daily_tokens"`
 	CurrentStreakDays            int64             `json:"current_streak_days"`

@@ -45,7 +45,7 @@ func (s *dashboardActivityRepoStub) GetUserDashboardActivity(_ context.Context, 
 	}, nil
 }
 
-func TestDashboardActivityUsesAuthenticatedUserAndCalendarWindow(t *testing.T) {
+func TestDashboardActivityUsesAuthenticatedUserAndFixedWeekWindow(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &dashboardActivityRepoStub{}
 	handler := NewUsageHandler(service.NewUsageService(repo, nil, nil, nil), nil, nil, nil)
@@ -64,7 +64,8 @@ func TestDashboardActivityUsesAuthenticatedUserAndCalendarWindow(t *testing.T) {
 	require.Equal(t, int64(42), repo.userID)
 	require.Equal(t, "Asia/Shanghai", repo.timezone)
 	require.Equal(t, time.Monday, repo.windowStart.Weekday())
-	require.Equal(t, 52*24*time.Hour, repo.windowEnd.Sub(repo.windowStart))
+	require.Equal(t, time.Monday, repo.windowEnd.Weekday())
+	require.Equal(t, 52*7*24*time.Hour, repo.windowEnd.Sub(repo.windowStart))
 	require.Equal(t, 0, repo.currentDay.Hour())
 	require.Contains(t, rec.Body.String(), `"total_tokens":120`)
 	require.Contains(t, rec.Body.String(), `"current_streak_days":2`)
