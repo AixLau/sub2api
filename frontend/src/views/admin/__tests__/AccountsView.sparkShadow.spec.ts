@@ -13,21 +13,29 @@ const {
   listAccounts,
   listWithEtag,
   getBatchTodayStats,
+  getOpenAIOAuthUsageSummary,
+  getUpstreamBillingProbeSettings,
   getAllProxies,
   getAllGroups,
   duplicateAccount,
   createSparkShadow,
+  queryUpstreamUsage,
   showSuccess,
+  showInfo,
   showError
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
   listWithEtag: vi.fn(),
   getBatchTodayStats: vi.fn(),
+  getOpenAIOAuthUsageSummary: vi.fn(),
+  getUpstreamBillingProbeSettings: vi.fn(),
   getAllProxies: vi.fn(),
   getAllGroups: vi.fn(),
   duplicateAccount: vi.fn(),
   createSparkShadow: vi.fn(),
+  queryUpstreamUsage: vi.fn(),
   showSuccess: vi.fn(),
+  showInfo: vi.fn(),
   showError: vi.fn()
 }))
 
@@ -37,21 +45,23 @@ vi.mock('@/api/admin', () => ({
       list: listAccounts,
       listWithEtag,
       getBatchTodayStats,
+      getOpenAIOAuthUsageSummary,
       duplicate: duplicateAccount,
-      getUpstreamBillingProbeSettings: vi.fn().mockResolvedValue({ enabled: true, interval_minutes: 30 }),
+      queryUpstreamUsage,
+      getUpstreamBillingProbeSettings,
       createSparkShadow,
       delete: vi.fn(),
       batchClearError: vi.fn(),
       batchRefresh: vi.fn(),
       toggleSchedulable: vi.fn()
     },
-    proxies: { getAllWithCount: getAllProxies },
+    proxies: { getAll: getAllProxies, getAllWithCount: getAllProxies },
     groups: { getAll: getAllGroups }
   }
 }))
 
 vi.mock('@/stores/app', () => ({
-  useAppStore: () => ({ showError, showSuccess, showInfo: vi.fn() })
+  useAppStore: () => ({ showError, showSuccess, showInfo })
 }))
 
 vi.mock('@/stores/auth', () => ({
@@ -107,16 +117,19 @@ const mountView = () =>
 describe('admin AccountsView — 外审 F2:spark 影子创建接线', () => {
   beforeEach(() => {
     localStorage.clear()
-    for (const fn of [listAccounts, listWithEtag, getBatchTodayStats, getAllProxies, getAllGroups, duplicateAccount, createSparkShadow, showSuccess, showError]) {
+    for (const fn of [listAccounts, listWithEtag, getBatchTodayStats, getOpenAIOAuthUsageSummary, getUpstreamBillingProbeSettings, getAllProxies, getAllGroups, duplicateAccount, createSparkShadow, queryUpstreamUsage, showSuccess, showInfo, showError]) {
       fn.mockReset()
     }
     listAccounts.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 0 })
     listWithEtag.mockResolvedValue({ notModified: true, etag: null, data: null })
     getBatchTodayStats.mockResolvedValue({ stats: {} })
+    getOpenAIOAuthUsageSummary.mockResolvedValue(null)
+    getUpstreamBillingProbeSettings.mockResolvedValue({ enabled: true, interval_minutes: 30 })
     getAllProxies.mockResolvedValue([])
     getAllGroups.mockResolvedValue([])
     duplicateAccount.mockResolvedValue({ id: 998, name: 'parent-acc (Copy)' })
     createSparkShadow.mockResolvedValue({ id: 999, name: 'parent-acc (Spark)' })
+    queryUpstreamUsage.mockResolvedValue({ balance: 12.5, remaining: 8, mode: 'prepaid' })
   })
 
   afterEach(() => {
@@ -134,6 +147,21 @@ describe('admin AccountsView — 外审 F2:spark 影子创建接线', () => {
     expect(duplicateAccount).toHaveBeenCalledWith(42)
     expect(showSuccess).toHaveBeenCalledWith('admin.accounts.duplicateSuccess')
     expect(listAccounts.mock.calls.length).toBeGreaterThan(1)
+    wrapper.unmount()
+  })
+
+  it('AccountActionMenu 的 query-upstream-usage 事件调用上游余额接口并展示结果', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    wrapper.findComponent(AccountActionMenu).vm.$emit('query-upstream-usage', { id: 42, name: 'openai-key' })
+    await flushPromises()
+
+    expect(queryUpstreamUsage).toHaveBeenCalledOnce()
+    expect(queryUpstreamUsage).toHaveBeenCalledWith(42)
+    expect(showInfo).toHaveBeenCalledWith(
+      'admin.accounts.upstreamUsageBalance | admin.accounts.upstreamUsageRemaining | admin.accounts.upstreamUsageMode'
+    )
     wrapper.unmount()
   })
 
@@ -259,11 +287,13 @@ const mountViewWithRow = () =>
 describe('admin AccountsView — 账号行展示', () => {
   beforeEach(() => {
     localStorage.clear()
-    for (const fn of [listAccounts, listWithEtag, getBatchTodayStats, getAllProxies, getAllGroups, duplicateAccount, createSparkShadow, showSuccess, showError]) {
+    for (const fn of [listAccounts, listWithEtag, getBatchTodayStats, getOpenAIOAuthUsageSummary, getUpstreamBillingProbeSettings, getAllProxies, getAllGroups, duplicateAccount, createSparkShadow, showSuccess, showError]) {
       fn.mockReset()
     }
     listWithEtag.mockResolvedValue({ notModified: true, etag: null, data: null })
     getBatchTodayStats.mockResolvedValue({ stats: {} })
+    getOpenAIOAuthUsageSummary.mockResolvedValue(null)
+    getUpstreamBillingProbeSettings.mockResolvedValue({ enabled: true, interval_minutes: 30 })
     getAllProxies.mockResolvedValue([])
     getAllGroups.mockResolvedValue([])
     vi.stubGlobal('confirm', vi.fn(() => true))

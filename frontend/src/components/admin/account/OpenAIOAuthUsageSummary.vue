@@ -30,26 +30,16 @@
     <template v-else>
       <div
         data-testid="usage-summary-full"
-        class="hidden h-14 w-[min(48vw,760px)] min-w-[620px] items-stretch overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800 min-[1536px]:flex"
+        class="hidden h-14 w-[min(36vw,560px)] min-w-[430px] items-stretch overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800 min-[1536px]:flex"
       >
-        <header class="flex w-[156px] flex-shrink-0 items-center border-r border-gray-200 px-3 dark:border-dark-700">
-          <div class="min-w-0">
-            <div class="flex items-center gap-1.5">
-              <span :class="['h-2 w-2 flex-shrink-0 rounded-full', status.dotClass]" />
-              <h2 class="truncate text-xs font-semibold text-gray-900 dark:text-white">
-                OpenAI OAuth · {{ summary.included_account_count }}
-              </h2>
-            </div>
-            <p class="mt-1 truncate pl-3.5 text-[10px] text-gray-500 dark:text-gray-400">{{ status.label }}</p>
-          </div>
-        </header>
-
-        <article
+        <button
           v-for="window in windows"
           :key="window.key"
+          type="button"
           :data-testid="`usage-window-full-${window.key}`"
-          class="min-w-0 flex-1 border-r border-gray-200 px-3 py-2 dark:border-dark-700"
+          class="min-w-0 flex-1 border-r border-gray-200 px-3 py-2 text-left last:border-r-0 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700"
           :title="window.title"
+          @click="showDetails = true"
         >
           <div class="flex items-baseline justify-between gap-2">
             <span class="text-[11px] font-medium text-gray-500 dark:text-gray-400">{{ window.label }}</span>
@@ -67,30 +57,15 @@
               :style="{ width: `${clampPercent(window.data.usage_percent)}%` }"
             />
           </div>
-        </article>
-
-        <button
-          type="button"
-          data-testid="usage-summary-details"
-          class="flex w-14 flex-shrink-0 flex-col items-center justify-center gap-1 text-[11px] font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-primary-700 dark:text-gray-300 dark:hover:bg-dark-700 dark:hover:text-primary-300"
-          @click="showDetails = true"
-        >
-          <Icon v-if="loading" name="refresh" size="sm" class="animate-spin" />
-          <Icon v-else name="chevronRight" size="sm" />
-          <span>{{ t('admin.accounts.openaiUsageSummary.details') }}</span>
         </button>
       </div>
 
       <button
         type="button"
         data-testid="usage-summary-medium"
-        class="hidden h-14 w-[370px] items-stretch overflow-hidden rounded-lg border border-gray-200 bg-white text-left transition-colors hover:border-primary-300 hover:bg-gray-50 dark:border-dark-700 dark:bg-dark-800 dark:hover:border-primary-700 dark:hover:bg-dark-700 xl:flex min-[1536px]:hidden"
+        class="hidden h-14 w-[260px] items-stretch overflow-hidden rounded-lg border border-gray-200 bg-white text-left transition-colors hover:border-primary-300 hover:bg-gray-50 dark:border-dark-700 dark:bg-dark-800 dark:hover:border-primary-700 dark:hover:bg-dark-700 xl:flex min-[1536px]:hidden"
         @click="showDetails = true"
       >
-        <span class="flex w-[132px] flex-shrink-0 items-center gap-1.5 border-r border-gray-200 px-3 dark:border-dark-700">
-          <span :class="['h-2 w-2 flex-shrink-0 rounded-full', status.dotClass]" />
-          <span class="truncate text-xs font-semibold text-gray-900 dark:text-white">OpenAI OAuth · {{ summary.included_account_count }}</span>
-        </span>
         <span
           v-for="window in windows"
           :key="window.key"
@@ -117,17 +92,20 @@
       <button
         type="button"
         data-testid="usage-summary-collapsed"
-        class="flex h-11 w-[190px] items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 text-sm transition-colors hover:border-primary-300 hover:bg-gray-50 dark:border-dark-700 dark:bg-dark-800 dark:hover:border-primary-700 dark:hover:bg-dark-700 xl:hidden"
+        class="flex h-11 w-[190px] items-stretch overflow-hidden rounded-lg border border-gray-200 bg-white text-left transition-colors hover:border-primary-300 hover:bg-gray-50 dark:border-dark-700 dark:bg-dark-800 dark:hover:border-primary-700 dark:hover:bg-dark-700 xl:hidden"
         @click="showDetails = true"
       >
-        <span class="flex min-w-0 items-center gap-2">
-          <span :class="['h-2 w-2 flex-shrink-0 rounded-full', status.dotClass]" />
-          <span class="truncate font-medium text-gray-700 dark:text-gray-200">
-            {{ t('admin.accounts.openaiUsageSummary.collapsedLabel') }} · {{ formatPercent(highestUsagePercent) }}
+        <span
+          v-for="window in windows"
+          :key="window.key"
+          :data-testid="`usage-window-collapsed-${window.key}`"
+          class="flex min-w-0 flex-1 items-center justify-between gap-1 border-r border-gray-200 px-2 last:border-r-0 dark:border-dark-700"
+        >
+          <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ window.shortLabel }}</span>
+          <span class="text-xs font-semibold tabular-nums text-gray-900 dark:text-white">
+            {{ formatPercent(window.data.usage_percent) }}
           </span>
         </span>
-        <Icon v-if="loading" name="refresh" size="sm" class="flex-shrink-0 animate-spin text-gray-400" />
-        <Icon v-else name="chevronRight" size="sm" class="flex-shrink-0 text-gray-400" />
       </button>
     </template>
 
@@ -197,33 +175,4 @@ const windows = computed(() => {
   ]
 })
 
-const highestUsagePercent = computed(() => props.summary
-  ? Math.max(clampPercent(props.summary.five_hour.usage_percent), clampPercent(props.summary.seven_day.usage_percent))
-  : 0)
-
-const status = computed(() => {
-  if (props.error) {
-    return { label: t('admin.accounts.openaiUsageSummary.statusError'), dotClass: 'bg-red-500' }
-  }
-  if (props.loading) {
-    return { label: t('admin.accounts.openaiUsageSummary.statusRefreshing'), dotClass: 'animate-pulse bg-blue-500' }
-  }
-  if (!props.summary) {
-    return { label: t('admin.accounts.openaiUsageSummary.statusUnavailable'), dotClass: 'bg-gray-400' }
-  }
-  const pending = props.summary.five_hour.pending_sync_account_count + props.summary.seven_day.pending_sync_account_count
-  if (pending > 0) {
-    return { label: t('admin.accounts.openaiUsageSummary.statusPendingSync'), dotClass: 'bg-blue-500' }
-  }
-  const unestimated = props.summary.five_hour.unestimated_account_count + props.summary.seven_day.unestimated_account_count
-  if (unestimated > 0) {
-    return { label: t('admin.accounts.openaiUsageSummary.statusPartial'), dotClass: 'bg-amber-500' }
-  }
-  const historical = [props.summary.five_hour.reference_source, props.summary.seven_day.reference_source]
-    .some(source => source === 'historical' || source === 'mixed')
-  if (historical) {
-    return { label: t('admin.accounts.openaiUsageSummary.historicalStatus'), dotClass: 'bg-gray-400' }
-  }
-  return { label: t('admin.accounts.openaiUsageSummary.statusCurrent'), dotClass: 'bg-emerald-500' }
-})
 </script>

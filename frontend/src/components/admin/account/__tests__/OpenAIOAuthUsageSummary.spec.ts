@@ -54,10 +54,15 @@ describe('OpenAIOAuthUsageSummary', () => {
     })
 
     expect(wrapper.get('[data-testid="openai-oauth-usage-summary"]').attributes('data-layout')).toBe('toolbar-compact')
-    expect(wrapper.get('[data-testid="usage-summary-full"]').text()).toContain('OpenAI OAuth · 3')
+    expect(wrapper.get('[data-testid="usage-summary-full"]').text()).not.toContain('OpenAI OAuth')
     expect(wrapper.get('[data-testid="usage-summary-full"]').text()).toContain('54.0%')
+    expect(wrapper.findAll('[data-testid^="usage-window-full-"]')).toHaveLength(2)
     expect(wrapper.get('[data-testid="usage-summary-medium"]').classes()).toContain('xl:flex')
+    expect(wrapper.findAll('[data-testid^="usage-window-medium-"]')).toHaveLength(2)
     expect(wrapper.get('[data-testid="usage-summary-collapsed"]').classes()).toContain('xl:hidden')
+    expect(wrapper.findAll('[data-testid^="usage-window-collapsed-"]')).toHaveLength(2)
+    expect(wrapper.get('[data-testid="usage-summary-collapsed"]').text()).toContain('5h')
+    expect(wrapper.get('[data-testid="usage-summary-collapsed"]').text()).toContain('7d')
     expect(wrapper.find('[data-testid="openai-oauth-usage-details"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="usage-summary-full"]').text())
       .not.toContain('admin.accounts.openaiUsageSummary.capacity')
@@ -75,7 +80,7 @@ describe('OpenAIOAuthUsageSummary', () => {
       global: { stubs: { Teleport: true } }
     })
 
-    await wrapper.get('[data-testid="usage-summary-details"]').trigger('click')
+    await wrapper.get('[data-testid="usage-window-full-five-hour"]').trigger('click')
     const details = wrapper.get('[data-testid="openai-oauth-usage-details"]')
 
     expect(details.text()).toContain('admin.accounts.openaiUsageSummary.totalAccounts')
@@ -113,7 +118,7 @@ describe('OpenAIOAuthUsageSummary', () => {
     expect(fullWindow.text()).toContain('0.0%')
     expect(fullWindow.text()).toContain('admin.accounts.openaiUsageSummary.pendingEstimateShort')
 
-    await wrapper.get('[data-testid="usage-summary-details"]').trigger('click')
+    await wrapper.get('[data-testid="usage-window-full-five-hour"]').trigger('click')
     const details = wrapper.get('[data-testid="usage-details-five-hour"]')
     expect(details.text()).toContain('admin.accounts.openaiUsageSummary.pendingEstimate')
     expect(details.text()).toContain('100.0%')

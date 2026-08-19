@@ -2,16 +2,9 @@
   <AppLayout>
     <TablePageLayout>
       <template #filters>
-        <div class="flex flex-wrap-reverse items-start justify-between gap-3">
-          <AccountTableFilters
-            v-model:searchQuery="params.search"
-            :filters="params"
-            :groups="groups"
-            @update:filters="(newFilters) => Object.assign(params, newFilters)"
-            @change="debouncedReload"
-            @update:searchQuery="debouncedReload"
-          />
-          <AccountTableActions
+        <div class="space-y-3">
+          <div data-testid="account-management-toolbar" class="flex flex-wrap items-center justify-between gap-3">
+            <AccountTableActions
             :loading="loading"
             @refresh="handleManualRefresh"
             @create="showCreate = true"
@@ -159,7 +152,25 @@
                 </Teleport>
               </div>
             </template>
-          </AccountTableActions>
+            </AccountTableActions>
+            <OpenAIOAuthUsageSummary
+              class="ml-auto"
+              :summary="openAIUsageSummary"
+              :loading="openAIUsageSummaryLoading"
+              :error="openAIUsageSummaryError"
+              @retry="refreshOpenAIUsageSummary"
+            />
+          </div>
+          <div data-testid="account-management-filters">
+            <AccountTableFilters
+              v-model:searchQuery="params.search"
+              :filters="params"
+              :groups="groups"
+              @update:filters="(newFilters) => Object.assign(params, newFilters)"
+              @change="debouncedReload"
+              @update:searchQuery="debouncedReload"
+            />
+          </div>
         </div>
         <div
           v-if="hasPendingListSync"
@@ -292,7 +303,7 @@
             </div>
           </template>
           <template #cell-schedulable="{ row }">
-            <button @click="handleToggleSchedulable(row)" :disabled="togglingSchedulable === row.id" class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-dark-800" :class="[row.schedulable ? 'bg-primary-500 hover:bg-primary-600' : 'bg-gray-200 hover:bg-gray-300 dark:bg-dark-600 dark:hover:bg-dark-500']" :title="row.schedulable ? t('admin.accounts.schedulableEnabled') : t('admin.accounts.schedulableDisabled')">
+            <button data-testid="account-schedulable-toggle" @click="handleToggleSchedulable(row)" :disabled="togglingSchedulable === row.id" class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-dark-800" :class="[row.schedulable ? 'bg-primary-500 hover:bg-primary-600' : 'bg-gray-200 hover:bg-gray-300 dark:bg-dark-600 dark:hover:bg-dark-500']" :title="row.schedulable ? t('admin.accounts.schedulableEnabled') : t('admin.accounts.schedulableDisabled')">
               <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out" :class="[row.schedulable ? 'translate-x-4' : 'translate-x-0']" />
             </button>
           </template>
@@ -324,6 +335,7 @@
               :request-batched-usage="isDesktopViewport ? queueBatchedUsage : null"
               @account-updated="handleAccountUpdated"
               @usage-loaded="handleAccountUsageLoaded(row.id, $event)"
+              @quota-refreshed="scheduleOpenAIUsageSummaryRefresh"
             />
           </template>
           <template #cell-proxy="{ row }">
@@ -456,7 +468,7 @@
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
-    <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
+    <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @query-upstream-usage="handleQueryUpstreamUsage" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal :show="showImportData" @close="showImportData = false" @imported="handleDataImported" />
     <BulkEditAccountModal
@@ -507,6 +519,7 @@ import { CreateAccountModal, EditAccountModal, BulkEditAccountModal, SyncFromCrs
 import AccountTableActions from '@/components/admin/account/AccountTableActions.vue'
 import AccountTableFilters from '@/components/admin/account/AccountTableFilters.vue'
 import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActionsBar.vue'
+import OpenAIOAuthUsageSummary from '@/components/admin/account/OpenAIOAuthUsageSummary.vue'
 import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
 import ImportDataModal from '@/components/admin/account/ImportDataModal.vue'
 import ReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vue'
@@ -532,7 +545,7 @@ import { extractApiErrorMessage } from '@/utils/apiError'
 import { sanitizeUrl } from '@/utils/url'
 import { getFloatingPanelPosition } from '@/utils/floatingPanel'
 import { formatMultiplier } from '@/utils/formatters'
-import type { Account, AccountPlatform, AccountSchedulerGroupScore, AccountType, AccountUsageInfo, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel, UpstreamBillingProbeSnapshot } from '@/types'
+import type { Account, AccountPlatform, AccountSchedulerGroupScore, AccountType, AccountUsageInfo, OpenAIOAuthUsageSummary as OpenAIOAuthUsageSummaryData, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel, UpstreamBillingProbeSnapshot } from '@/types'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -696,6 +709,46 @@ const todayStatsError = ref<string | null>(null)
 const todayStatsReqSeq = ref(0)
 const pendingTodayStatsRefresh = ref(false)
 const usageManualRefreshToken = ref(0)
+const openAIUsageSummary = ref<OpenAIOAuthUsageSummaryData | null>(null)
+const openAIUsageSummaryLoading = ref(false)
+const openAIUsageSummaryError = ref<string | null>(null)
+let openAIUsageSummaryRequestSequence = 0
+let openAIUsageSummaryRefreshTimer: ReturnType<typeof setTimeout> | null = null
+
+const refreshOpenAIUsageSummary = async () => {
+  const sequence = ++openAIUsageSummaryRequestSequence
+  openAIUsageSummaryLoading.value = true
+  openAIUsageSummaryError.value = null
+  try {
+    const summary = await adminAPI.accounts.getOpenAIOAuthUsageSummary()
+    if (sequence === openAIUsageSummaryRequestSequence) {
+      openAIUsageSummary.value = summary
+    }
+  } catch (error) {
+    if (sequence === openAIUsageSummaryRequestSequence) {
+      openAIUsageSummaryError.value = extractApiErrorMessage(error)
+    }
+  } finally {
+    if (sequence === openAIUsageSummaryRequestSequence) {
+      openAIUsageSummaryLoading.value = false
+    }
+  }
+}
+
+const scheduleOpenAIUsageSummaryRefresh = () => {
+  if (openAIUsageSummaryRefreshTimer !== null) clearTimeout(openAIUsageSummaryRefreshTimer)
+  openAIUsageSummaryRefreshTimer = setTimeout(() => {
+    openAIUsageSummaryRefreshTimer = null
+    void refreshOpenAIUsageSummary()
+  }, 250)
+}
+
+const isOpenAIOAuthSummaryAccount = (account: Account) => (
+  account.platform === 'openai' &&
+  account.type === 'oauth' &&
+  !account.parent_account_id &&
+  account.quota_dimension !== 'spark'
+)
 
 const desktopViewportQuery = '(min-width: 768px)'
 const isDesktopViewport = ref(
@@ -756,6 +809,10 @@ const setUsageBatchState = (accountID: number, usage: AccountUsageInfo | null, e
 const handleAccountUsageLoaded = (accountID: number, usage: AccountUsageInfo) => {
   if (usageBatchByAccountId.value[String(accountID)] === usage) return
   setUsageBatchState(accountID, usage, null)
+  const account = accounts.value.find(item => item.id === accountID)
+  if (account && isOpenAIOAuthSummaryAccount(account)) {
+    scheduleOpenAIUsageSummaryRefresh()
+  }
 }
 
 const flushQueuedUsageBatch = async () => {
@@ -1157,7 +1214,7 @@ const load = async () => {
   if (isFirstLoad.value) {
     requestParams.lite = '1'
   }
-  await baseLoad()
+  await Promise.all([baseLoad(), refreshOpenAIUsageSummary()])
   if (isFirstLoad.value) {
     isFirstLoad.value = false
     delete requestParams.lite
@@ -1171,7 +1228,7 @@ const reload = async () => {
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = false
-  await baseReload()
+  await Promise.all([baseReload(), refreshOpenAIUsageSummary()])
   await refreshTodayStatsBatch()
 }
 
@@ -1377,7 +1434,7 @@ const refreshAccountsIncrementally = async () => {
     }
     upstreamBillingNow.value = Date.now()
 
-    await refreshTodayStatsBatch()
+    await Promise.all([refreshTodayStatsBatch(), refreshOpenAIUsageSummary()])
   } catch (error) {
     console.error('Auto refresh failed:', error)
   } finally {
@@ -1969,6 +2026,7 @@ const handleBulkToggleSchedulable = async (schedulable: boolean) => {
       if (hasIds) clearSelection()
       else setSelectedIds(accountIds)
     }
+    if (successCount > 0) scheduleOpenAIUsageSummaryRefresh()
   } catch (error) {
     console.error('Failed to bulk toggle schedulable:', error)
     appStore.showError(t('common.error'))
@@ -2183,6 +2241,7 @@ const handleProbeUpstreamBilling = async (account: Account) => {
 const handleAccountUpdated = (updatedAccount: Account) => {
   patchAccountInList(updatedAccount)
   enterAutoRefreshSilentWindow()
+  scheduleOpenAIUsageSummaryRefresh()
 }
 const formatExportTimestamp = () => {
   const now = new Date()
@@ -2244,6 +2303,30 @@ const closeStatsModal = () => { showStats.value = false; statsAcc.value = null }
 const closeReAuthModal = () => { showReAuth.value = false; reAuthAcc.value = null }
 const handleTest = (a: Account) => { testingAcc.value = a; showTest.value = true }
 const handleViewStats = (a: Account) => { statsAcc.value = a; showStats.value = true }
+const formatUpstreamUsageValue = (value: unknown): string | null => {
+  if (value === null || value === undefined || value === '') return null
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value.toLocaleString(undefined, { maximumFractionDigits: 6 })
+  }
+  return typeof value === 'string' ? value : null
+}
+const handleQueryUpstreamUsage = async (a: Account) => {
+  try {
+    const usage = await adminAPI.accounts.queryUpstreamUsage(a.id)
+    const balance = formatUpstreamUsageValue(usage.balance)
+    const remaining = formatUpstreamUsageValue(usage.remaining)
+    const mode = formatUpstreamUsageValue(usage.mode)
+    const parts = [
+      balance ? t('admin.accounts.upstreamUsageBalance', { value: balance }) : '',
+      remaining && remaining !== balance ? t('admin.accounts.upstreamUsageRemaining', { value: remaining }) : '',
+      mode ? t('admin.accounts.upstreamUsageMode', { value: mode }) : ''
+    ].filter(Boolean)
+    appStore.showInfo(parts.length > 0 ? parts.join(' | ') : t('admin.accounts.upstreamUsageQueried'))
+  } catch (error: any) {
+    console.error('Failed to query upstream usage:', error)
+    appStore.showError(error?.message || t('admin.accounts.upstreamUsageFailed'))
+  }
+}
 const handleSchedule = async (a: Account) => {
   scheduleAcc.value = a
   scheduleModelOptions.value = []
@@ -2277,6 +2360,7 @@ const handleRefresh = async (a: Account) => {
     const updated = await adminAPI.accounts.refreshCredentials(a.id)
     patchAccountInList(updated)
     enterAutoRefreshSilentWindow()
+    if (isOpenAIOAuthSummaryAccount(updated)) scheduleOpenAIUsageSummaryRefresh()
   } catch (error) {
     console.error('Failed to refresh credentials:', error)
   }
@@ -2287,6 +2371,7 @@ const handleRecoverState = async (a: Account) => {
     patchAccountInList(updated)
     enterAutoRefreshSilentWindow()
     appStore.showSuccess(t('admin.accounts.recoverStateSuccess'))
+    scheduleOpenAIUsageSummaryRefresh()
   } catch (error: any) {
     console.error('Failed to recover account state:', error)
     appStore.showError(error?.message || t('admin.accounts.recoverStateFailed'))
@@ -2298,6 +2383,7 @@ const handleResetQuota = async (a: Account) => {
     patchAccountInList(updated)
     enterAutoRefreshSilentWindow()
     appStore.showSuccess(t('common.success'))
+    scheduleOpenAIUsageSummaryRefresh()
   } catch (error) {
     console.error('Failed to reset quota:', error)
   }
@@ -2377,6 +2463,7 @@ const handleToggleSchedulable = async (a: Account) => {
     const updated = await adminAPI.accounts.setSchedulable(a.id, nextSchedulable)
     updateSchedulableInList([a.id], updated?.schedulable ?? nextSchedulable)
     enterAutoRefreshSilentWindow()
+    scheduleOpenAIUsageSummaryRefresh()
   } catch (error) {
     console.error('Failed to toggle schedulable:', error)
     appStore.showError(t('admin.accounts.failedToToggleSchedulable'))
@@ -2486,6 +2573,10 @@ onUnmounted(() => {
     usageBatchFlushTimer = null
   }
   pendingUsageBatchIds.clear()
+  if (openAIUsageSummaryRefreshTimer !== null) {
+    clearTimeout(openAIUsageSummaryRefreshTimer)
+    openAIUsageSummaryRefreshTimer = null
+  }
   window.removeEventListener('scroll', handleScroll, true)
   window.removeEventListener('resize', handleViewportResize)
   document.removeEventListener('click', handleClickOutside)

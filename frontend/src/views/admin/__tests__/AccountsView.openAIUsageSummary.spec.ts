@@ -34,6 +34,7 @@ vi.mock('@/api/admin', () => ({
       setSchedulable
     },
     proxies: {
+      getAll: getAllProxies,
       getAllWithCount: getAllProxies
     },
     groups: {
