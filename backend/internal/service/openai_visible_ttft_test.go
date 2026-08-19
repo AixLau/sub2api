@@ -26,9 +26,11 @@ func TestOpenAIVisibleOutputClassification(t *testing.T) {
 		{name: "empty delta", data: `{"type":"response.output_text.delta","delta":""}`, want: false},
 		{name: "text delta", data: `{"type":"response.output_text.delta","delta":"test output"}`, want: true},
 		{name: "tool arguments", data: `{"type":"response.function_call_arguments.delta","delta":"{}"}`, want: true},
-		{name: "text done fallback", data: `{"type":"response.output_text.done","text":"test output"}`, want: true},
+		{name: "text done", data: `{"type":"response.output_text.done","text":"test output"}`, want: false},
 		{name: "partial image", data: `{"type":"response.image_generation_call.partial_image","partial_image_b64":"dGVzdA=="}`, want: true},
-		{name: "completed image item", data: `{"type":"response.output_item.done","item":{"id":"item_test","type":"image_generation_call","result":"dGVzdA=="}}`, want: true},
+		{name: "completed image item", data: `{"type":"response.output_item.done","item":{"id":"item_test","type":"image_generation_call","result":"dGVzdA=="}}`, want: false},
+		{name: "tool arguments done", data: `{"type":"response.function_call_arguments.done","arguments":"{}"}`, want: false},
+		{name: "content part done", data: `{"type":"response.content_part.done","part":{"text":"test output"}}`, want: false},
 		{name: "empty completed", data: `{"type":"response.completed","response":{"id":"resp_test","output":[]}}`, want: false},
 		{name: "completed with output usage only", data: `{"type":"response.completed","response":{"id":"resp_test","usage":{"input_tokens":1,"output_tokens":2}}}`, want: false},
 		{name: "completed with text", data: `{"type":"response.completed","response":{"id":"resp_test","output":[{"type":"message","content":[{"type":"output_text","text":"test output"}]}]}}`, want: false},
@@ -70,7 +72,7 @@ func TestOpenAIResponsesTTFTStartsAtVisibleOutput(t *testing.T) {
 	}
 }
 
-func TestOpenAIResponsesTTFTStartsAtCompletedImage(t *testing.T) {
+func TestOpenAIResponsesTTFTStartsAtPartialImage(t *testing.T) {
 	for _, passthrough := range []bool{false, true} {
 		name := "native"
 		if passthrough {
@@ -78,7 +80,7 @@ func TestOpenAIResponsesTTFTStartsAtCompletedImage(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			result := runSyntheticVisibleTTFTStream(t, passthrough, 120*time.Millisecond, 0,
-				`{"type":"response.output_item.done","item":{"id":"item_test","type":"image_generation_call","result":"dGVzdA=="}}`)
+				`{"type":"response.image_generation_call.partial_image","partial_image_b64":"dGVzdA=="}`)
 			require.NotNil(t, result.firstTokenMs)
 			require.GreaterOrEqual(t, *result.firstTokenMs, 100)
 		})
