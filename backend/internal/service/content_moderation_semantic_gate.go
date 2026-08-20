@@ -164,6 +164,8 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 	result, policyOverride := applySemanticReviewPolicyWithPromotion(result, candidate.Input.EvidenceComplete)
 	result, attributionOverride := applySemanticReviewAttributionPolicy(result, candidate.ContextOnly)
 	policyOverride = policyOverride || attributionOverride
+	result, highRiskReviewOverride := applySemanticReviewHighRiskReviewPolicy(result, candidate.ContextOnly)
+	policyOverride = policyOverride || highRiskReviewOverride
 	category := "semantic_review"
 	if len(result.Categories) > 0 && strings.TrimSpace(result.Categories[0]) != "" {
 		category = result.Categories[0]
@@ -297,6 +299,8 @@ func (s *ContentModerationService) semanticReviewProviderFallback(
 	result, policyOverride := applySemanticReviewPolicyWithPromotion(result, candidate.Input.EvidenceComplete)
 	result, attributionOverride := applySemanticReviewAttributionPolicy(result, candidate.ContextOnly)
 	policyOverride = policyOverride || attributionOverride
+	result, highRiskReviewOverride := applySemanticReviewHighRiskReviewPolicy(result, candidate.ContextOnly)
+	policyOverride = policyOverride || highRiskReviewOverride
 	category := "semantic_review"
 	if len(result.Categories) > 0 && strings.TrimSpace(result.Categories[0]) != "" {
 		category = result.Categories[0]

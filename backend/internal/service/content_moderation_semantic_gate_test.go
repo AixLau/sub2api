@@ -428,7 +428,7 @@ func TestContentModerationCheck_TriggerAllLowRiskReviewRemainsPendingWithoutBloc
 	require.False(t, logs[0].EmailSent)
 }
 
-func TestContentModerationCheck_TriggerAllHighRiskReviewRemainsPendingWithoutBlocking(t *testing.T) {
+func TestContentModerationCheck_TriggerAllHighRiskReviewBlocks(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
@@ -467,17 +467,14 @@ func TestContentModerationCheck_TriggerAllHighRiskReviewRemainsPendingWithoutBlo
 	})
 
 	require.NoError(t, err)
-	require.True(t, decision.Allowed)
-	require.False(t, decision.Blocked)
-	require.Zero(t, decision.StatusCode)
-	require.Equal(t, ContentModerationActionAllow, decision.Action)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.Blocked)
+	require.Equal(t, cfg.BlockStatus, decision.StatusCode)
+	require.Equal(t, ContentModerationActionSemanticReviewReject, decision.Action)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
-	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
-	require.Zero(t, logs[0].ViolationCount)
-	require.False(t, logs[0].AutoBanned)
-	require.False(t, logs[0].EmailSent)
+	require.Equal(t, ContentModerationActionSemanticReviewReject, logs[0].Action)
+	require.Contains(t, string(logs[0].Metadata), `"semantic_policy_high_risk_review"`)
 }
 
 func TestContentModerationCheck_TriggerAllToolOnlyRejectIsRecordedWithoutBlocking(t *testing.T) {
@@ -1254,7 +1251,7 @@ func TestContentModerationCheck_HybridCyberKeywordUsesOrdinaryModerationAndSeman
 	require.True(t, moderationCalled, "a hybrid keyword hit must call the ordinary moderation API")
 }
 
-func TestContentModerationCheck_HybridHighRiskReviewRemainsPendingWithoutBlocking(t *testing.T) {
+func TestContentModerationCheck_HybridHighRiskReviewBlocks(t *testing.T) {
 	moderationCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		moderationCalled = true
@@ -1311,17 +1308,14 @@ func TestContentModerationCheck_HybridHighRiskReviewRemainsPendingWithoutBlockin
 
 	require.NoError(t, err)
 	require.True(t, moderationCalled)
-	require.True(t, decision.Allowed)
-	require.False(t, decision.Blocked)
-	require.Zero(t, decision.StatusCode)
-	require.Equal(t, ContentModerationActionAllow, decision.Action)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.Blocked)
+	require.Equal(t, cfg.BlockStatus, decision.StatusCode)
+	require.Equal(t, ContentModerationActionSemanticReviewReject, decision.Action)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
-	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
-	require.Zero(t, logs[0].ViolationCount)
-	require.False(t, logs[0].AutoBanned)
-	require.False(t, logs[0].EmailSent)
+	require.Equal(t, ContentModerationActionSemanticReviewReject, logs[0].Action)
+	require.Contains(t, string(logs[0].Metadata), `"semantic_policy_high_risk_review"`)
 }
 
 func TestContentModerationCheck_HybridCyberKeywordBlocksOnSemanticRejectAfterOrdinaryModeration(t *testing.T) {

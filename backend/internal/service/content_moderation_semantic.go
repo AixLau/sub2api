@@ -1565,6 +1565,20 @@ func applySemanticReviewAttributionPolicy(result ContentModerationSemanticReview
 	}
 }
 
+func applySemanticReviewHighRiskReviewPolicy(result ContentModerationSemanticReviewResult, contextOnly bool) (ContentModerationSemanticReviewResult, bool) {
+	result = normalizeSemanticReviewResult(result)
+	if contextOnly || result.Verdict != "review" {
+		return result, false
+	}
+	if result.Severity != ContentModerationKeywordSeverityHigh &&
+		result.Severity != ContentModerationKeywordSeverityCritical {
+		return result, false
+	}
+	result.Verdict = "reject"
+	result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "semantic_policy_high_risk_review")
+	return result, true
+}
+
 func semanticReviewPolicySafeFallbackVerdict(result ContentModerationSemanticReviewResult) string {
 	// A harmless reason is advisory model output. It cannot independently
 	// override structured dimensions that still describe harmful abuse.
