@@ -1079,77 +1079,26 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			CreatedAt: time.Now(),
 		}
 		applyOpsLatencyFieldsFromContext(c, entry)
-		// Capture upstream error context set by gateway services (if present).
-		// This does NOT affect the client response; it enriches Ops troubleshooting data.
-		{
-			if v, ok := c.Get(service.OpsUpstreamStatusCodeKey); ok {
-				switch t := v.(type) {
-				case int:
-					if t > 0 {
-						code := t
-						entry.UpstreamStatusCode = &code
-					}
-				case int64:
-					if t > 0 {
-						code := int(t)
-						entry.UpstreamStatusCode = &code
-					}
-				}
-			}
-			if v, ok := c.Get(service.OpsUpstreamErrorMessageKey); ok {
-				if s, ok := v.(string); ok {
-					if msg := strings.TrimSpace(s); msg != "" {
-						entry.UpstreamErrorMessage = &msg
-					}
-				}
-			}
-			if v, ok := c.Get(service.OpsUpstreamErrorDetailKey); ok {
-				if s, ok := v.(string); ok {
-					if detail := strings.TrimSpace(s); detail != "" {
-						entry.UpstreamErrorDetail = &detail
-					}
-				}
-			}
-			if v, ok := c.Get(service.OpsUpstreamErrorsKey); ok {
-				if events, ok := v.([]*service.OpsUpstreamErrorEvent); ok && len(events) > 0 {
-					entry.UpstreamErrors = events
-					// Best-effort backfill the single upstream fields from the last event when missing.
-					last := events[len(events)-1]
-					if last != nil {
-						if entry.UpstreamStatusCode == nil && last.UpstreamStatusCode > 0 {
-							code := last.UpstreamStatusCode
-							entry.UpstreamStatusCode = &code
-						}
-						if entry.UpstreamErrorMessage == nil && strings.TrimSpace(last.Message) != "" {
-							msg := strings.TrimSpace(last.Message)
-							entry.UpstreamErrorMessage = &msg
-						}
-						if entry.UpstreamErrorDetail == nil && strings.TrimSpace(last.Detail) != "" {
-							detail := strings.TrimSpace(last.Detail)
-							entry.UpstreamErrorDetail = &detail
-						}
-					}
-				}
-			}
-			if entry.UpstreamErrorMessage == nil {
-				if v, ok := c.Get(service.OpsDiagnosticMessageKey); ok {
-					if s, ok := v.(string); ok {
-						if msg := strings.TrimSpace(s); msg != "" {
-							entry.UpstreamErrorMessage = &msg
-						}
-					}
-				}
-			}
-			if entry.UpstreamErrorDetail == nil {
-				if v, ok := c.Get(service.OpsDiagnosticDetailKey); ok {
-					if s, ok := v.(string); ok {
-						if detail := strings.TrimSpace(s); detail != "" {
-							entry.UpstreamErrorDetail = &detail
-						}
+		applyOpsUpstreamFieldsFromContext(c, entry)
+		if entry.UpstreamErrorMessage == nil {
+			if value, ok := c.Get(service.OpsDiagnosticMessageKey); ok {
+				if message, ok := value.(string); ok {
+					if message = strings.TrimSpace(message); message != "" {
+						entry.UpstreamErrorMessage = &message
 					}
 				}
 			}
 		}
+		if entry.UpstreamErrorDetail == nil {
+			if value, ok := c.Get(service.OpsDiagnosticDetailKey); ok {
+				if detail, ok := value.(string); ok {
+					if detail = strings.TrimSpace(detail); detail != "" {
+						entry.UpstreamErrorDetail = &detail
+					}
+				}
+			}
+		}
+		suppressOpsUpstreamAttributionForLocalModelConfiguration(c, entry)
 
 		if apiKey != nil {
 			entry.APIKeyID = &apiKey.ID
@@ -1416,6 +1365,19 @@ func applyOpsUpstreamFieldsFromContext(c *gin.Context, entry *service.OpsInsertE
 	}
 }
 
+func suppressOpsUpstreamAttributionForLocalModelConfiguration(c *gin.Context, entry *service.OpsInsertErrorLogInput) {
+	if entry == nil || !service.HasOpsClientBusinessLimited(c) || service.OpsClientBusinessLimitedReason(c) != service.OpsClientBusinessLimitedReasonLocalModelConfiguration {
+		return
+	}
+	entry.AccountID = nil
+	entry.UpstreamEndpoint = ""
+	entry.UpstreamModel = ""
+	entry.UpstreamStatusCode = nil
+	entry.UpstreamErrorMessage = nil
+	entry.UpstreamErrorDetail = nil
+	entry.UpstreamErrors = nil
+}
+
 func getContextLatencyMs(c *gin.Context, key string) *int64 {
 	if c == nil || strings.TrimSpace(key) == "" {
 		return nil
@@ -1632,23 +1594,27 @@ func classifyOpsErrorLog(c *gin.Context, errType, message, code string, status i
 	phase = classifyOpsPhase(errType, message, code)
 	routingCapacityLimited := isOpsRoutingCapacityLimited(c)
 	clientBusinessLimited := service.HasOpsClientBusinessLimited(c)
+	localModelConfiguration := clientBusinessLimited && service.OpsClientBusinessLimitedReason(c) == service.OpsClientBusinessLimitedReasonLocalModelConfiguration
 	upstreamError := hasOpsUpstreamErrorContext(c)
 	accountAuthFailure := hasOpsAccountAuthFailure(c)
-	if accountAuthFailure && !routingCapacityLimited {
+	if localModelConfiguration {
+		phase = "routing"
+	} else if accountAuthFailure && !routingCapacityLimited {
 		phase = "account_auth"
 	} else if upstreamError && !routingCapacityLimited {
 		phase = "upstream"
 	}
-	if clientBusinessLimited && !upstreamError && !routingCapacityLimited {
+	if clientBusinessLimited && !upstreamError && !routingCapacityLimited && !localModelConfiguration {
 		phase = "auth"
 	}
 	if routingCapacityLimited {
 		phase = "routing"
 	}
 	msg := strings.ToLower(message)
-	localClientAuthError := !upstreamError && phase == "auth" && isOpsClientAuthError(code, msg)
-	localBusinessLimited := !upstreamError && classifyOpsIsBusinessLimited(errType, phase, code, status, message, localClientAuthError)
-	isBusinessLimited = routingCapacityLimited || (clientBusinessLimited && !upstreamError) || localBusinessLimited
+	effectiveUpstreamError := upstreamError && !localModelConfiguration
+	localClientAuthError := !effectiveUpstreamError && phase == "auth" && isOpsClientAuthError(code, msg)
+	localBusinessLimited := !effectiveUpstreamError && classifyOpsIsBusinessLimited(errType, phase, code, status, message, localClientAuthError)
+	isBusinessLimited = localModelConfiguration || routingCapacityLimited || (clientBusinessLimited && !effectiveUpstreamError) || localBusinessLimited
 	errorOwner = classifyOpsErrorOwner(phase, message)
 	errorSource = classifyOpsErrorSource(phase, message)
 	return phase, isBusinessLimited, errorOwner, errorSource
