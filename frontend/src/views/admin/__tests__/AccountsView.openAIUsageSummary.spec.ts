@@ -121,7 +121,7 @@ const DataTableStub = {
 
 const OpenAIOAuthUsageSummaryStub = {
   props: ['summary', 'loading', 'error'],
-  emits: ['retry'],
+  emits: ['retry', 'view-accounts'],
   template: '<div data-testid="openai-summary-stub">{{ summary?.included_account_count }}</div>'
 }
 
@@ -201,5 +201,24 @@ describe('admin AccountsView OpenAI OAuth pool quota', () => {
 
     expect(setSchedulable).toHaveBeenCalledWith(80, false)
     expect(getOpenAIOAuthUsageSummary).toHaveBeenCalledTimes(1)
+  })
+
+  it('navigates from the usage drawer to the OpenAI OAuth account scope', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const summaryStub = wrapper.findComponent(OpenAIOAuthUsageSummaryStub)
+    summaryStub.vm.$emit('view-accounts')
+    await flushPromises()
+
+    const lastListCall = listAccounts.mock.calls.at(-1)
+    expect(lastListCall?.[2]).toEqual(expect.objectContaining({
+      platform: 'openai',
+      type: 'oauth',
+      status: '',
+      group: '',
+      privacy_mode: '',
+      search: ''
+    }))
   })
 })

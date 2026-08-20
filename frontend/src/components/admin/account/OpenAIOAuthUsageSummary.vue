@@ -2,7 +2,7 @@
   <section
     data-testid="openai-oauth-usage-summary"
     data-layout="toolbar-compact"
-    class="min-w-0"
+    class="usage-summary-root"
     aria-live="polite"
     :aria-busy="loading"
   >
@@ -10,104 +10,75 @@
       v-if="error && !summary"
       type="button"
       data-testid="usage-summary-error"
-      class="flex h-11 items-center gap-2 rounded-lg border border-red-200 bg-white px-3 text-sm text-red-700 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:bg-dark-800 dark:text-red-300 dark:hover:bg-red-950/30"
+      class="usage-summary-shell usage-summary-error"
       @click="emit('retry')"
     >
-      <Icon name="exclamationCircle" size="sm" />
-      <span>{{ t('admin.accounts.openaiUsageSummary.loadFailedCompact') }}</span>
-      <Icon name="refresh" size="xs" />
+      <span class="usage-summary-frame usage-summary-error-frame">
+        <Icon name="exclamationCircle" size="sm" aria-hidden="true" />
+        <span class="truncate">{{ t('admin.accounts.openaiUsageSummary.loadFailedCompact') }}</span>
+        <Icon name="refresh" size="xs" aria-hidden="true" />
+      </span>
     </button>
 
     <div
       v-else-if="!summary"
       data-testid="usage-summary-skeleton"
-      class="h-11 w-48 overflow-hidden rounded-lg border border-gray-200 dark:border-dark-700 xl:h-14 xl:w-[370px] min-[1536px]:w-[620px]"
+      class="usage-summary-shell usage-summary-skeleton"
       aria-hidden="true"
     >
-      <Skeleton data-testid="usage-summary-skeleton-shimmer" width="100%" height="100%" class="h-full w-full" />
+      <div class="usage-summary-frame">
+        <div v-for="key in ['five-hour', 'seven-day']" :key="key" class="usage-skeleton-window">
+          <div class="usage-skeleton-heading">
+            <Skeleton data-testid="usage-summary-skeleton-shimmer" width="42px" height="10px" />
+            <Skeleton width="48px" height="18px" />
+          </div>
+          <Skeleton class="usage-skeleton-amount" width="118px" height="9px" />
+          <Skeleton class="usage-skeleton-progress" width="100%" height="3px" />
+        </div>
+      </div>
     </div>
 
-    <template v-else>
-      <div
-        data-testid="usage-summary-full"
-        class="hidden h-14 w-[min(36vw,560px)] min-w-[430px] items-stretch overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800 min-[1536px]:flex"
-      >
+    <div v-else class="usage-summary-shell usage-summary-shell-ready">
+      <div class="usage-summary-frame">
         <button
           v-for="window in windows"
           :key="window.key"
           type="button"
-          :data-testid="`usage-window-full-${window.key}`"
-          class="min-w-0 flex-1 border-r border-gray-200 px-3 py-2 text-left last:border-r-0 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700"
+          :data-testid="`usage-window-${window.key}`"
+          :class="['usage-window', `usage-window-${window.key}`]"
           :title="window.title"
+          :aria-label="window.title"
           @click="showDetails = true"
         >
-          <div class="flex items-baseline justify-between gap-2">
-            <span class="text-[11px] font-medium text-gray-500 dark:text-gray-400">{{ window.label }}</span>
-            <strong class="text-xs font-semibold tabular-nums text-gray-900 dark:text-white">{{ formatPercent(window.data.usage_percent) }}</strong>
-          </div>
-          <div class="mt-0.5 flex items-center gap-2 whitespace-nowrap text-[11px] tabular-nums text-gray-600 dark:text-gray-300">
-            <span>{{ t('admin.accounts.openaiUsageSummary.usedShort') }} {{ formatCompactCurrency(window.data.used) }}</span>
-            <span class="text-gray-300 dark:text-dark-600">·</span>
-            <span>{{ t('admin.accounts.openaiUsageSummary.remainingShort') }} {{ formatCompactEstimate(window.data.estimated_remaining) }}</span>
-          </div>
-          <div class="mt-1 h-1 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
-            <div
-              data-testid="usage-progress"
-              :class="['h-full rounded-full transition-[width,background-color] duration-300', progressColor(window.data.usage_percent)]"
-              :style="{ width: `${clampPercent(window.data.usage_percent)}%` }"
-            />
-          </div>
+          <span class="usage-window-content">
+            <span class="usage-window-heading">
+              <span class="usage-window-label usage-window-label-full">{{ window.label }}</span>
+              <span class="usage-window-label usage-window-label-short">{{ window.shortLabel }}</span>
+              <strong class="usage-window-percent">{{ formatPercent(window.data.usage_percent) }}</strong>
+            </span>
+            <span class="usage-window-amount">
+              <span class="usage-window-used">{{ t('admin.accounts.openaiUsageSummary.usedShort') }} {{ formatCompactCurrency(window.data.used) }}</span>
+              <span class="usage-window-separator">·</span>
+              <span>{{ t('admin.accounts.openaiUsageSummary.remainingShort') }} {{ formatCompactEstimate(window.data.estimated_remaining) }}</span>
+            </span>
+            <span class="usage-window-progress-track">
+              <span
+                data-testid="usage-progress"
+                :class="['usage-window-progress', progressColor(window.key, window.data.usage_percent)]"
+                :style="{ width: `${clampPercent(window.data.usage_percent)}%` }"
+              />
+            </span>
+          </span>
+          <span
+            v-if="window.key === 'five-hour' || window.key === 'seven-day'"
+            :class="['usage-toy', window.key === 'five-hour' ? 'usage-toy-clock' : 'usage-toy-calendar']"
+            aria-hidden="true"
+          >
+            <Icon :name="window.key === 'five-hour' ? 'clock' : 'calendar'" size="sm" />
+          </span>
         </button>
       </div>
-
-      <button
-        type="button"
-        data-testid="usage-summary-medium"
-        class="hidden h-14 w-[260px] items-stretch overflow-hidden rounded-lg border border-gray-200 bg-white text-left transition-colors hover:border-primary-300 hover:bg-gray-50 dark:border-dark-700 dark:bg-dark-800 dark:hover:border-primary-700 dark:hover:bg-dark-700 xl:flex min-[1536px]:hidden"
-        @click="showDetails = true"
-      >
-        <span
-          v-for="window in windows"
-          :key="window.key"
-          :data-testid="`usage-window-medium-${window.key}`"
-          class="flex min-w-0 flex-1 flex-col justify-center border-r border-gray-200 px-2 last:border-r-0 dark:border-dark-700"
-          :title="window.title"
-        >
-          <span class="flex items-center justify-between gap-1 text-[11px]">
-            <span class="font-medium text-gray-500 dark:text-gray-400">{{ window.shortLabel }}</span>
-            <strong class="tabular-nums text-gray-900 dark:text-white">{{ formatPercent(window.data.usage_percent) }}</strong>
-          </span>
-          <span class="mt-0.5 truncate text-[10px] tabular-nums text-gray-500 dark:text-gray-400">
-            {{ t('admin.accounts.openaiUsageSummary.remainingShort') }} {{ formatCompactEstimate(window.data.estimated_remaining) }}
-          </span>
-          <span class="mt-1 h-0.5 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
-            <span
-              :class="['block h-full rounded-full', progressColor(window.data.usage_percent)]"
-              :style="{ width: `${clampPercent(window.data.usage_percent)}%` }"
-            />
-          </span>
-        </span>
-      </button>
-
-      <button
-        type="button"
-        data-testid="usage-summary-collapsed"
-        class="flex h-11 w-[190px] items-stretch overflow-hidden rounded-lg border border-gray-200 bg-white text-left transition-colors hover:border-primary-300 hover:bg-gray-50 dark:border-dark-700 dark:bg-dark-800 dark:hover:border-primary-700 dark:hover:bg-dark-700 xl:hidden"
-        @click="showDetails = true"
-      >
-        <span
-          v-for="window in windows"
-          :key="window.key"
-          :data-testid="`usage-window-collapsed-${window.key}`"
-          class="flex min-w-0 flex-1 items-center justify-between gap-1 border-r border-gray-200 px-2 last:border-r-0 dark:border-dark-700"
-        >
-          <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ window.shortLabel }}</span>
-          <span class="text-xs font-semibold tabular-nums text-gray-900 dark:text-white">
-            {{ formatPercent(window.data.usage_percent) }}
-          </span>
-        </span>
-      </button>
-    </template>
+    </div>
 
     <OpenAIOAuthUsageDetailsDialog
       :show="showDetails"
@@ -115,6 +86,7 @@
       :error="error"
       @close="showDetails = false"
       @retry="emit('retry')"
+      @view-accounts="emit('view-accounts')"
     />
   </section>
 </template>
@@ -136,6 +108,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (event: 'retry'): void
+  (event: 'view-accounts'): void
 }>()
 
 const { t } = useI18n()
@@ -147,12 +120,14 @@ const formatCompactEstimate = (value: number | null) => value == null
   ? t('admin.accounts.openaiUsageSummary.pendingEstimateShort')
   : formatCompactCurrency(value)
 
-const progressColor = (value: number) => {
+const progressColor = (key: string, value: number) => {
   const percent = clampPercent(value)
   if (percent >= 95) return 'bg-red-500'
   if (percent >= 85) return 'bg-orange-500'
   if (percent >= 70) return 'bg-amber-500'
-  return 'bg-primary-500'
+  return key === 'seven-day'
+    ? 'bg-gradient-to-r from-violet-600 to-purple-500'
+    : 'bg-gradient-to-r from-blue-600 to-indigo-500'
 }
 
 const windows = computed(() => {
@@ -176,3 +151,429 @@ const windows = computed(() => {
 })
 
 </script>
+
+<style scoped>
+.usage-summary-root {
+  display: block;
+  min-width: 0;
+  overflow: visible;
+}
+
+.usage-summary-shell {
+  width: clamp(430px, 32vw, 520px);
+  padding: 1px;
+  border-radius: 15px;
+  background: linear-gradient(
+    90deg,
+    rgb(59 130 246 / 0.28),
+    rgb(139 92 246 / 0.26),
+    rgb(236 72 153 / 0.2)
+  );
+  box-shadow:
+    0 8px 24px rgb(99 102 241 / 0.08),
+    0 1px 2px rgb(15 23 42 / 0.05);
+}
+
+.usage-summary-frame {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  height: 56px;
+  overflow: visible;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.92);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.9);
+  backdrop-filter: blur(16px) saturate(145%);
+  -webkit-backdrop-filter: blur(16px) saturate(145%);
+}
+
+.dark .usage-summary-shell {
+  background: linear-gradient(
+    90deg,
+    rgb(96 165 250 / 0.32),
+    rgb(167 139 250 / 0.28),
+    rgb(244 114 182 / 0.24)
+  );
+  box-shadow:
+    0 8px 24px rgb(0 0 0 / 0.2),
+    0 1px 2px rgb(0 0 0 / 0.16);
+}
+
+.dark .usage-summary-frame {
+  background: rgb(var(--color-navy-800) / 0.95);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
+}
+
+.usage-window {
+  position: relative;
+  display: block;
+  flex: 1 1 0%;
+  min-width: 0;
+  overflow: visible;
+  border: 0;
+  border-right: 1px solid rgb(148 163 184 / 0.16);
+  background: transparent;
+  color: rgb(var(--color-content-primary));
+  text-align: left;
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.usage-window:last-child {
+  border-right: 0;
+}
+
+.usage-window:hover {
+  z-index: 2;
+  background: rgb(239 246 255 / 0.42);
+  box-shadow: 0 5px 14px rgb(99 102 241 / 0.08);
+  transform: translateY(-1px);
+}
+
+.dark .usage-window {
+  border-right-color: rgb(148 163 184 / 0.18);
+}
+
+.dark .usage-window:hover {
+  background: rgb(99 102 241 / 0.12);
+  box-shadow: 0 5px 14px rgb(0 0 0 / 0.18);
+}
+
+.usage-window:focus-visible {
+  z-index: 3;
+  outline: 2px solid rgb(var(--color-line-focus));
+  outline-offset: -2px;
+}
+
+.usage-window-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  height: 100%;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  padding: 6px 42px 5px 12px;
+}
+
+.usage-window-heading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  line-height: 1;
+}
+
+.usage-window-label {
+  min-width: 0;
+  overflow: hidden;
+  color: rgb(var(--color-content-brand));
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usage-window-seven-day .usage-window-label {
+  color: rgb(124 58 237);
+}
+
+.dark .usage-window-seven-day .usage-window-label {
+  color: rgb(196 181 253);
+}
+
+.usage-window-label-short {
+  display: none;
+}
+
+.usage-window-percent {
+  flex-shrink: 0;
+  color: rgb(15 23 42);
+  font-size: 19px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.dark .usage-window-percent {
+  color: rgb(248 250 252);
+}
+
+.usage-window-amount {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  margin-top: 3px;
+  color: rgb(71 85 105);
+  font-size: 10px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dark .usage-window-amount {
+  color: rgb(203 213 225);
+}
+
+.usage-window-used {
+  color: rgb(100 116 139);
+}
+
+.dark .usage-window-used {
+  color: rgb(148 163 184);
+}
+
+.usage-window-separator {
+  color: rgb(148 163 184 / 0.7);
+}
+
+.usage-window-progress-track {
+  display: block;
+  width: 100%;
+  height: 3px;
+  margin-top: auto;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(226 232 240 / 0.9);
+}
+
+.dark .usage-window-progress-track {
+  background: rgb(71 85 105 / 0.72);
+}
+
+.usage-window-progress {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  transition: width 300ms ease, background-color 300ms ease;
+}
+
+.usage-toy {
+  position: absolute;
+  z-index: 0;
+  right: 9px;
+  bottom: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 29px;
+  height: 29px;
+  border-radius: 10px;
+  color: white;
+  pointer-events: none;
+  user-select: none;
+  transform: rotate(-7deg);
+}
+
+.usage-toy::before,
+.usage-toy::after {
+  position: absolute;
+  content: '';
+}
+
+.usage-toy-clock {
+  background: linear-gradient(145deg, rgb(37 99 235), rgb(79 70 229));
+  box-shadow:
+    inset 2px 2px 0 rgb(255 255 255 / 0.42),
+    inset -3px -4px 0 rgb(30 64 175 / 0.3),
+    0 5px 9px rgb(37 99 235 / 0.24);
+}
+
+.usage-toy-clock::before,
+.usage-toy-clock::after {
+  top: -3px;
+  width: 8px;
+  height: 5px;
+  border-radius: 5px 5px 2px 2px;
+  background: rgb(29 78 216);
+}
+
+.usage-toy-clock::before {
+  left: 4px;
+  transform: rotate(-18deg);
+}
+
+.usage-toy-clock::after {
+  right: 4px;
+  transform: rotate(18deg);
+}
+
+.usage-toy-calendar {
+  background: linear-gradient(145deg, rgb(167 139 250), rgb(236 72 153));
+  box-shadow:
+    inset 2px 2px 0 rgb(255 255 255 / 0.44),
+    inset -3px -4px 0 rgb(126 34 206 / 0.24),
+    0 5px 9px rgb(168 85 247 / 0.2);
+  transform: rotate(6deg);
+}
+
+.usage-toy-calendar::before,
+.usage-toy-calendar::after {
+  top: -3px;
+  width: 4px;
+  height: 8px;
+  border: 2px solid rgb(126 34 206);
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.28);
+}
+
+.usage-toy-calendar::before {
+  left: 7px;
+}
+
+.usage-toy-calendar::after {
+  right: 7px;
+}
+
+.usage-summary-error {
+  display: block;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+}
+
+.usage-summary-error-frame {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  color: rgb(var(--color-status-danger));
+  font-size: 11px;
+}
+
+.usage-summary-error:focus-visible {
+  outline: 2px solid rgb(var(--color-line-focus));
+  outline-offset: 2px;
+}
+
+.usage-skeleton-window {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 0%;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  border-right: 1px solid rgb(148 163 184 / 0.16);
+  padding: 6px 12px 5px;
+}
+
+.usage-skeleton-window:last-child {
+  border-right: 0;
+}
+
+.usage-skeleton-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.usage-skeleton-amount {
+  margin-top: 1px;
+}
+
+.usage-skeleton-progress {
+  margin-top: auto;
+}
+
+@media (min-width: 1280px) and (max-width: 1535px) {
+  .usage-summary-shell {
+    width: 320px;
+  }
+
+  .usage-summary-frame {
+    height: 54px;
+  }
+
+  .usage-window-content {
+    padding: 6px 28px 5px 10px;
+  }
+
+  .usage-window-label-full {
+    display: none;
+  }
+
+  .usage-window-label-short {
+    display: inline;
+  }
+
+  .usage-window-percent {
+    font-size: 18px;
+  }
+
+  .usage-window-used,
+  .usage-window-separator {
+    display: none;
+  }
+
+  .usage-window-amount {
+    font-size: 10px;
+  }
+
+  .usage-toy {
+    right: 6px;
+    bottom: 6px;
+    width: 23px;
+    height: 23px;
+    border-radius: 8px;
+  }
+
+  .usage-skeleton-amount {
+    width: 72px !important;
+  }
+}
+
+@media (max-width: 1279px) {
+  .usage-summary-shell {
+    width: 210px;
+  }
+
+  .usage-summary-frame {
+    height: 44px;
+  }
+
+  .usage-window-content {
+    padding: 4px 8px;
+  }
+
+  .usage-window-label-full {
+    display: none;
+  }
+
+  .usage-window-label-short {
+    display: inline;
+  }
+
+  .usage-window-percent {
+    font-size: 15px;
+  }
+
+  .usage-window-amount,
+  .usage-toy,
+  .usage-skeleton-amount {
+    display: none;
+  }
+
+  .usage-window-progress-track {
+    height: 2px;
+  }
+
+  .usage-skeleton-window {
+    padding: 4px 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .usage-window,
+  .usage-window-progress {
+    transition: none;
+  }
+}
+</style>

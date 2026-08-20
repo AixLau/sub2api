@@ -159,6 +159,7 @@
               :loading="openAIUsageSummaryLoading"
               :error="openAIUsageSummaryError"
               @retry="refreshOpenAIUsageSummary"
+              @view-accounts="handleViewOpenAIOAuthAccounts"
             />
           </div>
           <div data-testid="account-management-filters">
@@ -1230,6 +1231,22 @@ const reload = async () => {
   pendingTodayStatsRefresh.value = false
   await Promise.all([baseReload(), refreshOpenAIUsageSummary()])
   await refreshTodayStatsBatch()
+}
+
+const handleViewOpenAIOAuthAccounts = () => {
+  params.platform = 'openai'
+  params.type = 'oauth'
+  params.status = ''
+  params.privacy_mode = ''
+  params.group = ''
+  params.search = ''
+  pagination.page = 1
+  clearSelection()
+  syncAccountListDerivedParams()
+  hasPendingListSync.value = false
+  resetAutoRefreshCache()
+  pendingTodayStatsRefresh.value = true
+  void reload()
 }
 
 const refreshUpstreamBillingSortedList = async (force = false) => {

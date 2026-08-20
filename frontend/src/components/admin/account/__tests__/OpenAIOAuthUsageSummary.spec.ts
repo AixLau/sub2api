@@ -47,40 +47,40 @@ const summary = (): Summary => ({
 })
 
 describe('OpenAIOAuthUsageSummary', () => {
-  it('renders toolbar, medium, and collapsed quota summaries without capacity', () => {
+  it('renders only the two compact quota windows without overview metadata', () => {
     const wrapper = mount(OpenAIOAuthUsageSummary, {
       props: { summary: summary(), loading: false, error: null },
       global: { stubs: { Teleport: true } }
     })
 
-    expect(wrapper.get('[data-testid="openai-oauth-usage-summary"]').attributes('data-layout')).toBe('toolbar-compact')
-    expect(wrapper.get('[data-testid="usage-summary-full"]').text()).not.toContain('OpenAI OAuth')
-    expect(wrapper.get('[data-testid="usage-summary-full"]').text()).toContain('54.0%')
-    expect(wrapper.findAll('[data-testid^="usage-window-full-"]')).toHaveLength(2)
-    expect(wrapper.get('[data-testid="usage-summary-medium"]').classes()).toContain('xl:flex')
-    expect(wrapper.findAll('[data-testid^="usage-window-medium-"]')).toHaveLength(2)
-    expect(wrapper.get('[data-testid="usage-summary-collapsed"]').classes()).toContain('xl:hidden')
-    expect(wrapper.findAll('[data-testid^="usage-window-collapsed-"]')).toHaveLength(2)
-    expect(wrapper.get('[data-testid="usage-summary-collapsed"]').text()).toContain('5h')
-    expect(wrapper.get('[data-testid="usage-summary-collapsed"]').text()).toContain('7d')
+    const root = wrapper.get('[data-testid="openai-oauth-usage-summary"]')
+    expect(root.attributes('data-layout')).toBe('toolbar-compact')
+    expect(wrapper.findAll('[data-testid^="usage-window-"]')).toHaveLength(2)
+    expect(wrapper.get('[data-testid="usage-window-five-hour"]').text()).toContain('54.0%')
+    expect(wrapper.get('[data-testid="usage-window-seven-day"]').text()).toContain('25.0%')
+    expect(wrapper.get('[data-testid="usage-window-five-hour"]').text()).toContain('admin.accounts.openaiUsageSummary.fiveHour')
+    expect(wrapper.get('[data-testid="usage-window-seven-day"]').text()).toContain('admin.accounts.openaiUsageSummary.sevenDay')
+    expect(root.text()).not.toContain('OpenAI OAuth')
+    expect(root.text()).not.toContain('totalAccounts')
+    expect(root.text()).not.toContain('includedAccounts')
+    expect(root.text()).not.toContain('excludedAccounts')
+    expect(wrapper.find('.usage-toy-clock').exists()).toBe(true)
+    expect(wrapper.find('.usage-toy-calendar').exists()).toBe(true)
     expect(wrapper.find('[data-testid="openai-oauth-usage-details"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="usage-summary-full"]').text())
-      .not.toContain('admin.accounts.openaiUsageSummary.capacity')
-    expect(wrapper.get('[data-testid="usage-summary-full"]').text()).not.toContain('~')
 
-    const progress = wrapper.get('[data-testid="usage-window-full-five-hour"] [data-testid="usage-progress"]')
+    const progress = wrapper.get('[data-testid="usage-window-five-hour"] [data-testid="usage-progress"]')
     expect(progress.attributes('style')).toContain('width: 54%')
-    expect(progress.classes()).toContain('bg-primary-500')
-    expect(wrapper.find('.bg-gradient-to-r').exists()).toBe(false)
+    expect(progress.classes()).toContain('from-blue-600')
+    expect(wrapper.get('[data-testid="usage-window-seven-day"] [data-testid="usage-progress"]').classes()).toContain('from-violet-600')
   })
 
-  it('opens complete details with counts, capacity, source, and synchronization hints', async () => {
+  it('opens complete details from either quota window', async () => {
     const wrapper = mount(OpenAIOAuthUsageSummary, {
       props: { summary: summary(), loading: false, error: null },
       global: { stubs: { Teleport: true } }
     })
 
-    await wrapper.get('[data-testid="usage-window-full-five-hour"]').trigger('click')
+    await wrapper.get('[data-testid="usage-window-five-hour"]').trigger('click')
     const details = wrapper.get('[data-testid="openai-oauth-usage-details"]')
 
     expect(details.text()).toContain('admin.accounts.openaiUsageSummary.totalAccounts')
@@ -91,7 +91,10 @@ describe('OpenAIOAuthUsageSummary', () => {
     expect(details.text()).toContain('admin.accounts.openaiUsageSummary.historicalHint')
     expect(details.text()).toContain('admin.accounts.openaiUsageSummary.unestimatedHint:1')
     expect(details.text()).toContain('admin.accounts.openaiUsageSummary.pendingSyncHint:2')
-    expect(details.text()).toContain('2 / 3')
+    expect(details.text()).toContain('4 / 3')
+
+    await wrapper.get('[data-testid="usage-window-seven-day"]').trigger('click')
+    expect(wrapper.get('[data-testid="openai-oauth-usage-details"]')).toBeTruthy()
   })
 
   it('shows zero usage separately from unavailable capacity', async () => {
@@ -114,11 +117,11 @@ describe('OpenAIOAuthUsageSummary', () => {
       global: { stubs: { Teleport: true } }
     })
 
-    const fullWindow = wrapper.get('[data-testid="usage-window-full-five-hour"]')
+    const fullWindow = wrapper.get('[data-testid="usage-window-five-hour"]')
     expect(fullWindow.text()).toContain('0.0%')
     expect(fullWindow.text()).toContain('admin.accounts.openaiUsageSummary.pendingEstimateShort')
 
-    await wrapper.get('[data-testid="usage-window-full-five-hour"]').trigger('click')
+    await wrapper.get('[data-testid="usage-window-five-hour"]').trigger('click')
     const details = wrapper.get('[data-testid="usage-details-five-hour"]')
     expect(details.text()).toContain('admin.accounts.openaiUsageSummary.pendingEstimate')
     expect(details.text()).toContain('100.0%')
@@ -129,7 +132,8 @@ describe('OpenAIOAuthUsageSummary', () => {
       props: { summary: null, loading: true, error: null }
     })
     const skeleton = wrapper.get('[data-testid="usage-summary-skeleton"]')
-    expect(skeleton.classes()).toContain('h-11')
+    expect(skeleton.classes()).toContain('usage-summary-shell')
+    expect(skeleton.findAll('.usage-skeleton-window')).toHaveLength(2)
     expect(wrapper.get('[data-testid="usage-summary-skeleton-shimmer"]').classes()).toContain('motion-safe:animate-shimmer')
 
     await wrapper.setProps({ loading: false, error: 'network error' })
