@@ -262,7 +262,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	eventInProgress := false
 	eventStartsClientOutput := false
 	eventShowsStructuralProgress := false
-	eventStartsVisibleOutput := false
+	eventStartsFirstResponse := false
 	eventShouldFlush := false
 	handlePendingWriteError := func(err error) {
 		if firstOutputStage != nil && !firstOutputProgressObserved && !firstOutputStage.closed {
@@ -283,7 +283,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	completeGuardedEvent := func(queueDrained bool) {
 		completedProgressEvent := eventStartsClientOutput
 		completedStructuralProgress := eventShowsStructuralProgress
-		completedVisibleEvent := eventStartsVisibleOutput
+		completedFirstResponse := eventStartsFirstResponse
 		shouldFlush := eventShouldFlush || (queueDrained && clientOutputStarted)
 		eventInProgress = false
 		if !clientDisconnected {
@@ -314,13 +314,13 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			firstOutputTimeoutDisarmed = true
 			stopFirstOutputTimer()
 		}
-		if completedVisibleEvent && firstTokenMs == nil {
+		if completedFirstResponse && firstTokenMs == nil {
 			ms := int(time.Since(startTime).Milliseconds())
 			firstTokenMs = &ms
 		}
 		eventStartsClientOutput = false
 		eventShowsStructuralProgress = false
-		eventStartsVisibleOutput = false
+		eventStartsFirstResponse = false
 		eventShouldFlush = false
 	}
 	sendErrorEvent := func(reason string) {
@@ -620,11 +620,12 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			}
 			startsClientOutput := forceFlushFailedEvent || openAIStreamDataStartsClientOutput(data, eventType)
 			showsStructuralProgress := openAIStreamDataShowsStructuralProgress(data, eventType)
+			startsFirstResponse := openAIStreamDataStartsFirstResponse(data, eventType)
 			startsVisibleOutput := openAIStreamDataStartsVisibleOutput(data, eventType)
 			if guardFirstOutput {
 				eventStartsClientOutput = eventStartsClientOutput || startsClientOutput
 				eventShowsStructuralProgress = eventShowsStructuralProgress || showsStructuralProgress
-				eventStartsVisibleOutput = eventStartsVisibleOutput || startsVisibleOutput
+				eventStartsFirstResponse = eventStartsFirstResponse || startsFirstResponse
 			}
 			if startsClientOutput && !openAIStreamEventTypeIsTerminal(eventType) {
 				responsesSemanticOutputSeen = true
@@ -664,10 +665,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				MarkOpsUpstreamFirstEvent(c)
 				upstreamFirstEventSeen = true
 			}
-			if !guardFirstOutput && firstTokenMs == nil && startsVisibleOutput {
+			if !guardFirstOutput && firstTokenMs == nil && startsFirstResponse {
 				ms := int(time.Since(startTime).Milliseconds())
 				firstTokenMs = &ms
-				stopFirstOutputTimer()
 			}
 			s.parseSSEUsageBytes(dataBytes, usage)
 			return
