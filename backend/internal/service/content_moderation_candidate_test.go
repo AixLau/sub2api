@@ -1680,6 +1680,89 @@ func TestReviewOnlySoftwareEntitlementCandidatePromotesCorroboratedReview(t *tes
 	require.Contains(t, result.ReasonCodes, "semantic_policy_explicit_operational_candidate")
 }
 
+func TestIncompleteSoftwareEntitlementCandidatePromotesExplicitOperationalReview(t *testing.T) {
+	selection := contentModerationCandidateSelection{
+		Kind: contentModerationCandidateKindPromptFilter,
+		Rule: ContentModerationKeywordRule{
+			Keyword:  "candidate_software_entitlement_bypass",
+			Category: ContentModerationKeywordCategoryCyber,
+			Severity: ContentModerationKeywordSeverityHigh,
+		},
+		PromptHit: &contentModerationPromptFilterHit{Verdict: promptfilter.Verdict{OperationalHit: false}},
+	}
+	result, overridden := applyCandidateSemanticReviewPolicy(ContentModerationSemanticReviewResult{
+		Verdict: "review", Intent: "harmful", Target: "third_party", Authorization: "unclear",
+		HarmMechanism: "evasion", HarmEvidence: "explicit", Severity: "high", Confidence: 0.98,
+		Operationality: "actionable", Executability: "indirect", Categories: []string{"license_cracking"},
+	}, selection, false)
+
+	require.True(t, overridden)
+	require.Equal(t, "reject", result.Verdict)
+	require.Contains(t, result.ReasonCodes, "semantic_policy_incomplete_explicit_operational_candidate")
+}
+
+func TestIncompleteSoftwareEntitlementCandidateKeepsInferredReview(t *testing.T) {
+	selection := contentModerationCandidateSelection{
+		Kind: contentModerationCandidateKindPromptFilter,
+		Rule: ContentModerationKeywordRule{
+			Keyword:  "candidate_software_entitlement_bypass",
+			Category: ContentModerationKeywordCategoryCyber,
+			Severity: ContentModerationKeywordSeverityHigh,
+		},
+		PromptHit: &contentModerationPromptFilterHit{Verdict: promptfilter.Verdict{OperationalHit: false}},
+	}
+	result, overridden := applyCandidateSemanticReviewPolicy(ContentModerationSemanticReviewResult{
+		Verdict: "review", Intent: "harmful", Target: "third_party", Authorization: "unclear",
+		HarmMechanism: "evasion", HarmEvidence: "inferred", Severity: "high", Confidence: 0.98,
+		Operationality: "actionable", Executability: "indirect", Categories: []string{"license_cracking"},
+	}, selection, false)
+
+	require.False(t, overridden)
+	require.Equal(t, "review", result.Verdict)
+}
+
+func TestExplicitCTFChallengeCandidatePromotesHarmfulReview(t *testing.T) {
+	selection := contentModerationCandidateSelection{
+		Kind: contentModerationCandidateKindPromptFilter,
+		Rule: ContentModerationKeywordRule{
+			Keyword:  "ctf_security_challenge",
+			Category: ContentModerationKeywordCategoryCyber,
+			Severity: ContentModerationKeywordSeverityHigh,
+		},
+		PromptHit: &contentModerationPromptFilterHit{Verdict: promptfilter.Verdict{OperationalHit: false}},
+	}
+	result, overridden := applyCandidateSemanticReviewPolicy(ContentModerationSemanticReviewResult{
+		Verdict: "review", Intent: "harmful", Target: "third_party", Authorization: "unclear",
+		HarmMechanism: "unauthorized_access", HarmEvidence: "explicit", Severity: "high", Confidence: 0.96,
+		Operationality: "actionable", Executability: "indirect", Categories: []string{"unauthorized_access"},
+	}, selection, true)
+
+	require.True(t, overridden)
+	require.Equal(t, "reject", result.Verdict)
+	require.Contains(t, result.ReasonCodes, "semantic_policy_explicit_operational_candidate")
+}
+
+func TestIncompleteAgentToolPermissionCandidatePromotesExplicitReview(t *testing.T) {
+	selection := contentModerationCandidateSelection{
+		Kind: contentModerationCandidateKindPromptFilter,
+		Rule: ContentModerationKeywordRule{
+			Keyword:  "agent_tool_permission_bypass",
+			Category: ContentModerationKeywordCategoryJailbreak,
+			Severity: ContentModerationKeywordSeverityCritical,
+		},
+		PromptHit: &contentModerationPromptFilterHit{Verdict: promptfilter.Verdict{OperationalHit: true}},
+	}
+	result, overridden := applyCandidateSemanticReviewPolicy(ContentModerationSemanticReviewResult{
+		Verdict: "review", Intent: "harmful", Target: "third_party", Authorization: "unclear",
+		HarmMechanism: "unauthorized_access", HarmEvidence: "explicit", Severity: "high", Confidence: 0.94,
+		Operationality: "actionable", Executability: "direct", Categories: []string{"unauthorized_access"},
+	}, selection, false)
+
+	require.True(t, overridden)
+	require.Equal(t, "reject", result.Verdict)
+	require.Contains(t, result.ReasonCodes, "semantic_policy_incomplete_explicit_operational_candidate")
+}
+
 func TestExplicitOperationalCandidateDoesNotPromoteUncorroboratedReview(t *testing.T) {
 	baseSelection := contentModerationCandidateSelection{
 		Kind: contentModerationCandidateKindPromptFilter,

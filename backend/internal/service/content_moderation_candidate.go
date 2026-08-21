@@ -1391,7 +1391,7 @@ func applyCandidateSemanticReviewPolicy(
 	evidenceComplete bool,
 ) (ContentModerationSemanticReviewResult, bool) {
 	result = normalizeSemanticReviewResult(result)
-	if result.Verdict != "review" || !evidenceComplete || result.Confidence < candidateSemanticReviewAutoRejectConfidence {
+	if result.Verdict != "review" || result.Confidence < candidateSemanticReviewAutoRejectConfidence {
 		return result, false
 	}
 	if result.Intent == "benign" || result.Intent == "defensive" {
@@ -1400,8 +1400,13 @@ func applyCandidateSemanticReviewPolicy(
 	// Candidate severity is corroborating evidence, not a substitute for the
 	// semantic dimensions required to reject. The explicit operational branch
 	// is limited to locally narrow rules and still requires a high-confidence,
-	// directly executable, explicitly harmful semantic result.
+	// actionable, explicitly harmful semantic result.
 	explicitOperational := contentModerationCandidateExplicitOperationalRejectEligible(result, selection)
+	// Incomplete evidence may only be promoted by the narrow operational
+	// candidates below. Generic or ambiguous reviews remain review.
+	if !evidenceComplete && !explicitOperational {
+		return result, false
+	}
 	if !semanticReviewPolicyRejectEligible(result) && !explicitOperational {
 		return result, false
 	}
@@ -1414,6 +1419,9 @@ func applyCandidateSemanticReviewPolicy(
 	reasonCode := "semantic_policy_high_risk_candidate"
 	if explicitOperational {
 		reasonCode = "semantic_policy_explicit_operational_candidate"
+		if !evidenceComplete {
+			reasonCode = "semantic_policy_incomplete_explicit_operational_candidate"
+		}
 	}
 	result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, reasonCode)
 	return result, true
@@ -1423,27 +1431,39 @@ func contentModerationCandidateExplicitOperationalRejectEligible(
 	result ContentModerationSemanticReviewResult,
 	selection contentModerationCandidateSelection,
 ) bool {
-	if selection.Kind != contentModerationCandidateKindPromptFilter || selection.PromptHit == nil ||
-		result.Intent != "harmful" || result.Operationality != "actionable" || result.Executability != "direct" ||
+	if selection.Kind != contentModerationCandidateKindPromptFilter || selection.PromptHit == nil {
+		return false
+	}
+	name := strings.ToLower(strings.TrimSpace(selection.Rule.Keyword))
+	allowsIndirect := name == "candidate_software_entitlement_bypass" ||
+		name == "ctf_security_challenge" || name == "agent_tool_permission_bypass"
+	if result.Intent != "harmful" || result.Operationality != "actionable" ||
+		(result.Executability != "direct" &&
+			!(allowsIndirect && result.Executability == "indirect")) ||
 		result.HarmEvidence != "explicit" || result.HarmMechanism == "none" ||
 		result.Authorization == "authorized" || result.Target == "self_owned" ||
 		result.Target == "authorized_lab" || (result.Severity != ContentModerationKeywordSeverityHigh &&
 		result.Severity != ContentModerationKeywordSeverityCritical) {
 		return false
 	}
-	name := strings.ToLower(strings.TrimSpace(selection.Rule.Keyword))
-	// The software-entitlement rule is intentionally review-only so rule_only
-	// mode cannot block ordinary debugging or reverse engineering from regex
-	// evidence alone. It may corroborate a reject only after the reviewer also
-	// reports explicit, directly executable harm across every dimension above.
+	// These candidates are intentionally corroborating rules so rule_only mode
+	// cannot block ordinary debugging, reverse engineering, or CTF work from
+	// regex evidence alone. They may corroborate a reject only after the
+	// reviewer also reports explicit, actionable harm across every dimension
+	// above. Indirect executability is accepted for these candidates because
+	// the observed incidents describe a concrete harmful outcome even when the
+	// model cannot establish a direct step-by-step execution path.
 	if name == "candidate_software_entitlement_bypass" {
+		return true
+	}
+	if name == "ctf_security_challenge" {
 		return true
 	}
 	if !selection.PromptHit.Verdict.OperationalHit {
 		return false
 	}
 	switch name {
-	case "ransomware_creation_request", "covert_surveillance_privacy_abuse_request", "protocol_entitlement_bypass_request":
+	case "agent_tool_permission_bypass", "ransomware_creation_request", "covert_surveillance_privacy_abuse_request", "protocol_entitlement_bypass_request":
 		return true
 	default:
 		return false
