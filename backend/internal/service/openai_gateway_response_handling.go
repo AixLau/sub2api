@@ -248,6 +248,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	sawFailedEvent := false
 	responsesSemanticOutputSeen := false
 	upstreamFirstEventSeen := false
+	capacityFailoverSuppressedLogged := false
 	failedMessage := ""
 	clientOutputStarted := false
 	clientSemanticOutputStarted := func() bool {
@@ -480,6 +481,32 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			dataBytes := []byte(data)
 			eventTypeRaw := gjson.GetBytes(dataBytes, "type").String()
 			eventType := strings.TrimSpace(eventTypeRaw)
+			if !capacityFailoverSuppressedLogged && account != nil && account.Platform == PlatformOpenAI &&
+				(eventType == "error" || eventType == "response.failed") && clientSemanticOutputStarted() &&
+				isOpenAIUpstreamCapacityShedEvent(dataBytes) {
+				logOpenAICapacityFailoverSuppressed(ctx, account, "native_sse", upstreamRequestID, eventType)
+				capacityFailoverSuppressedLogged = true
+			}
+			if eventType == "error" && !clientSemanticOutputStarted() {
+				errorMessage := extractOpenAISSEErrorMessage(dataBytes)
+				if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, errorMessage); matched {
+					s.recordOpenAIStreamUpstreamError(c, account, false, upstreamRequestID, "http_error", dataBytes, errorMessage)
+					MarkResponseCommitted(c)
+					c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+					c.JSON(status, gin.H{
+						"error": gin.H{
+							"type":    errType,
+							"message": errMsg,
+						},
+					})
+					streamEarlyErr = fmt.Errorf("upstream error event: passthrough rule matched message=%s", errMsg)
+					return
+				}
+				if openAIStreamErrorEventShouldFailover(dataBytes, errorMessage) {
+					streamEarlyErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, errorMessage, resp.Header)
+					return
+				}
+			}
 			observer.ObserveOpenAI(dataBytes, eventTypeRaw)
 			// 初始上游 data 的 type 只解析一次：原始值保持终止事件的精确匹配，规范化值供后续分支复用。
 			if openAIStreamEventIsTerminalWithType(data, eventTypeRaw) {

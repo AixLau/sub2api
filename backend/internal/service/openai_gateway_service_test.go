@@ -658,6 +658,14 @@ func (c *stubGatewayCache) GetUserAccountCooldowns(ctx context.Context, userID i
 	return out, nil
 }
 
+func (c *stubGatewayCache) SetReasoningContent(context.Context, string, string, time.Duration) error {
+	return nil
+}
+
+func (c *stubGatewayCache) GetReasoningContent(context.Context, string) (string, error) {
+	return "", ErrReasoningContentNotFound
+}
+
 func TestOpenAISelectAccountWithLoadAwareness_UsesPerUserCooldowns(t *testing.T) {
 	groupID := int64(1)
 	cooled := Account{

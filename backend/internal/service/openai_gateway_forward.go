@@ -471,7 +471,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if !isCodexCLI {
 		if maxOutputTokens.Exists() {
 			switch account.Platform {
-			case PlatformOpenAI:
+			case PlatformOpenAI, PlatformDeepseek:
 				// OpenAI-compatible API key accounts with custom base URLs are
 				// handled before the CodexCLI branch so ForceCodexCLI does not
 				// accidentally leak unsupported fields upstream. For native Responses
@@ -1084,12 +1084,13 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 			if err != nil {
 				return nil, err
 			}
-			targetURL = buildOpenAIResponsesURL(validatedURL)
+			targetURL = buildOpenAIResponsesURLForPlatform(account.Platform, validatedURL)
 		}
 	default:
 		targetURL = openaiPlatformAPIURL
 	}
 	targetURL = appendOpenAIResponsesRequestPathSuffix(targetURL, openAIResponsesRequestPathSuffix(c))
+	body = normalizeDeepSeekResponsesRequestBody(account, body)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(body))
 	if err != nil {

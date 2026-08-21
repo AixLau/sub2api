@@ -137,6 +137,14 @@ func (c *openAIChatModerationGuardCyberCache) GetUserAccountCooldowns(context.Co
 	return nil, nil
 }
 
+func (c *openAIChatModerationGuardCyberCache) SetReasoningContent(context.Context, string, string, time.Duration) error {
+	return nil
+}
+
+func (c *openAIChatModerationGuardCyberCache) GetReasoningContent(context.Context, string) (string, error) {
+	return "", service.ErrReasoningContentNotFound
+}
+
 func (c *openAIChatModerationGuardCyberCache) SetGrokVideoPendingBilling(context.Context, string, []byte, time.Duration) error {
 	return nil
 }

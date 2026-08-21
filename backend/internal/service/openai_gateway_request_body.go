@@ -45,6 +45,28 @@ func buildOpenAIResponsesURL(base string) string {
 	return buildOpenAIEndpointURL(base, "/v1/responses")
 }
 
+func buildOpenAIResponsesURLForPlatform(platform string, base string) string {
+	if platform == PlatformDeepseek {
+		return buildOpenAIEndpointURL(base, "/responses")
+	}
+	return buildOpenAIResponsesURL(base)
+}
+
+func normalizeDeepSeekResponsesRequestBody(account *Account, body []byte) []byte {
+	if account == nil || account.Platform != PlatformDeepseek ||
+		(account.GetAPIProtocol() != APIProtocolResponses && !account.IsAdaptiveAPIProtocol()) {
+		return body
+	}
+	normalized, err := sjson.SetBytes(body, "store", false)
+	if err != nil {
+		return body
+	}
+	if stripped, err := sjson.DeleteBytes(normalized, "previous_response_id"); err == nil {
+		normalized = stripped
+	}
+	return normalized
+}
+
 // normalizeOpenAIResponsesReasoningContent removes the non-standard content
 // field from replayed Responses reasoning items. Some clients/upstreams (most
 // notably the ChatGPT/Codex Responses endpoint) model reasoning input items as

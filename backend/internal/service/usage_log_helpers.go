@@ -10,6 +10,13 @@ func optionalTrimmedStringPtr(raw string) *string {
 	return &trimmed
 }
 
+func optionalStringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
+}
+
 // usageBillingModelForSource selects the model name before pricing lookup.
 // Channel-mapped billing uses the explicit channel target when one exists;
 // otherwise any later account/provider mapping is represented by upstreamModel.
