@@ -305,6 +305,18 @@ func TestNormalizeContentModerationSemanticReviewConfigMigratesPreviousAttemptBu
 	require.Equal(t, ContentModerationSemanticReviewFallbackTimeoutMS, cfg.FallbackTimeoutMS)
 }
 
+func TestNormalizeContentModerationSemanticReviewConfigMigratesLegacyCandidateBudgets(t *testing.T) {
+	cfg := normalizeContentModerationSemanticReviewConfig(ContentModerationSemanticReviewConfig{
+		TimeoutMS:         ContentModerationSemanticReviewLegacyTimeoutMS,
+		PrimaryTimeoutMS:  10_000,
+		FallbackTimeoutMS: 5_000,
+	})
+
+	require.Equal(t, ContentModerationSemanticReviewDefaultTimeoutMS, cfg.TimeoutMS)
+	require.Equal(t, ContentModerationSemanticReviewPrimaryTimeoutMS, cfg.PrimaryTimeoutMS)
+	require.Equal(t, ContentModerationSemanticReviewFallbackTimeoutMS, cfg.FallbackTimeoutMS)
+}
+
 func TestNormalizeContentModerationSemanticReviewConfigPreservesCustomAttemptBudgets(t *testing.T) {
 	cfg := normalizeContentModerationSemanticReviewConfig(ContentModerationSemanticReviewConfig{
 		TimeoutMS:         30_000,

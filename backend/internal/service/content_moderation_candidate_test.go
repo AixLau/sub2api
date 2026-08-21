@@ -75,6 +75,19 @@ func TestCandidateModeEnforcesBoundedReviewerInvariants(t *testing.T) {
 	require.Equal(t, 12_000, cfg.SemanticReview.MaxInputRunes)
 }
 
+func TestCandidateReviewTimeoutLeavesSemanticReviewSafetyMargin(t *testing.T) {
+	svc := candidateTestService(&contentModerationTestRepo{})
+	cfg := candidateTestConfig()
+	cfg.RequestAuditTimeoutMS = 20_000
+	cfg.SemanticReview.Enabled = true
+	cfg.SemanticReview.TimeoutMS = ContentModerationSemanticReviewDefaultTimeoutMS
+
+	require.Equal(t,
+		26*time.Second,
+		svc.candidateReviewTimeout(cfg),
+	)
+}
+
 func TestPromptInjectionFailClosedRequiresPreBlockMode(t *testing.T) {
 	svc := candidateTestService(&contentModerationTestRepo{})
 	cfg := candidateTestConfig()
@@ -1659,6 +1672,27 @@ func TestExplicitOperationalCandidatePromotesCorroboratedReview(t *testing.T) {
 	require.Contains(t, result.ReasonCodes, "semantic_policy_explicit_operational_candidate")
 }
 
+func TestExplicitOperationalCandidatePromotesLowConfidenceReview(t *testing.T) {
+	selection := contentModerationCandidateSelection{
+		Kind: contentModerationCandidateKindPromptFilter,
+		Rule: ContentModerationKeywordRule{
+			Keyword:  "agent_tool_permission_bypass",
+			Category: ContentModerationKeywordCategoryJailbreak,
+			Severity: ContentModerationKeywordSeverityCritical,
+		},
+		PromptHit: &contentModerationPromptFilterHit{Verdict: promptfilter.Verdict{OperationalHit: true}},
+	}
+	result, overridden := applyCandidateSemanticReviewPolicy(ContentModerationSemanticReviewResult{
+		Verdict: "review", Intent: "harmful", Target: "third_party", Authorization: "unclear",
+		HarmMechanism: "unauthorized_access", HarmEvidence: "explicit", Severity: "critical", Confidence: 0.61,
+		Operationality: "actionable", Executability: "direct", Categories: []string{"unauthorized_access"},
+	}, selection, true)
+
+	require.True(t, overridden)
+	require.Equal(t, "reject", result.Verdict)
+	require.Contains(t, result.ReasonCodes, "semantic_policy_explicit_operational_candidate")
+}
+
 func TestReviewOnlySoftwareEntitlementCandidatePromotesCorroboratedReview(t *testing.T) {
 	selection := contentModerationCandidateSelection{
 		Kind: contentModerationCandidateKindPromptFilter,
@@ -1794,9 +1828,6 @@ func TestExplicitOperationalCandidateDoesNotPromoteUncorroboratedReview(t *testi
 		}},
 		{name: "indirect executability", mutate: func(result *ContentModerationSemanticReviewResult, _ *contentModerationCandidateSelection) {
 			result.Executability = "indirect"
-		}},
-		{name: "low confidence", mutate: func(result *ContentModerationSemanticReviewResult, _ *contentModerationCandidateSelection) {
-			result.Confidence = 0.80
 		}},
 		{name: "non operational match", mutate: func(_ *ContentModerationSemanticReviewResult, selection *contentModerationCandidateSelection) {
 			selection.PromptHit.Verdict.OperationalHit = false

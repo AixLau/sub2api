@@ -6062,9 +6062,10 @@ func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanti
 		cfg.PrimaryTimeoutMS <= 0 && cfg.FallbackTimeoutMS <= 0 &&
 		cfg.MaxAttemptsPerModel <= 0 && cfg.MaxOutputTokens <= 0 &&
 		strings.TrimSpace(cfg.ReasoningEffort) == ""
-	legacyDefaultAttemptBudgets := (cfg.TimeoutMS == 8_000 || cfg.TimeoutMS == ContentModerationSemanticReviewLegacyTimeoutMS) &&
-		cfg.PrimaryTimeoutMS == 5_000 &&
-		cfg.FallbackTimeoutMS == 3_000
+	legacyCandidateBudgetConfig := cfg.TimeoutMS == ContentModerationSemanticReviewLegacyTimeoutMS &&
+		cfg.PrimaryTimeoutMS == 10_000 && cfg.FallbackTimeoutMS == 5_000
+	legacyDefaultAttemptBudgets := ((cfg.TimeoutMS == 8_000 || cfg.TimeoutMS == ContentModerationSemanticReviewLegacyTimeoutMS) &&
+		cfg.PrimaryTimeoutMS == 5_000 && cfg.FallbackTimeoutMS == 3_000) || legacyCandidateBudgetConfig
 	legacyDefaultBudgetConfig := cfg.TimeoutMS == 8_000 && legacyDefaultAttemptBudgets
 	cfg.Trigger = normalizeContentModerationSemanticReviewTrigger(cfg.Trigger)
 	if normalized := normalizeContentModerationSemanticReviewModel(cfg.PrimaryModel); normalized != "" {
@@ -6092,7 +6093,7 @@ func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanti
 	cfg.FallbackModels = models
 	// Migrate the previous default, which represented a per-attempt timeout, to
 	// the bounded end-to-end review budget introduced by semantic-review-v2.
-	if cfg.TimeoutMS <= 0 || legacyBudgetConfig || legacyDefaultBudgetConfig {
+	if cfg.TimeoutMS <= 0 || legacyBudgetConfig || legacyDefaultBudgetConfig || legacyCandidateBudgetConfig {
 		cfg.TimeoutMS = ContentModerationSemanticReviewDefaultTimeoutMS
 	}
 	if cfg.TimeoutMS > ContentModerationSemanticReviewMaxTimeoutMS {

@@ -31,6 +31,7 @@ const (
 	contentModerationCandidateRouteSemantic = "semantic"
 
 	contentModerationCandidateFailureCacheTTL      = 15 * time.Second
+	contentModerationCandidateReviewSafetyMargin   = 1 * time.Second
 	contentModerationDecisionCacheOperationTimeout = 2 * time.Second
 	contentModerationCandidatePreferredRunes       = 1_200
 	contentModerationCandidateEvidenceRevision     = "candidate-evidence-v3"
@@ -790,6 +791,13 @@ func (s *ContentModerationService) candidateReviewTimeout(cfg *ContentModeration
 	if cfg != nil && cfg.RequestAuditTimeoutMS > 0 {
 		timeout = time.Duration(cfg.RequestAuditTimeoutMS) * time.Millisecond
 	}
+	if cfg != nil && cfg.SemanticReview.Enabled {
+		semanticBudget := normalizeContentModerationSemanticReviewConfig(cfg.SemanticReview).TimeoutMS
+		semanticTimeout := time.Duration(semanticBudget)*time.Millisecond + contentModerationCandidateReviewSafetyMargin
+		if semanticTimeout > timeout {
+			timeout = semanticTimeout
+		}
+	}
 	if timeout < time.Second {
 		return time.Second
 	}
@@ -1383,15 +1391,26 @@ const candidateSemanticReviewAutoRejectConfidence = 0.85
 
 // applyCandidateSemanticReviewPolicy uses the local candidate as corroborating
 // evidence. A high-confidence review from a general reviewer is still
-// conservative for high-risk candidates, while explicit benign/defensive
-// classifications remain reviewable instead of being rejected blindly.
+// conservative for high-risk candidates, while an explicit operational
+// candidate can reject even when the model confidence is lower. Explicit
+// benign/defensive classifications remain reviewable instead of being rejected
+// blindly.
 func applyCandidateSemanticReviewPolicy(
 	result ContentModerationSemanticReviewResult,
 	selection contentModerationCandidateSelection,
 	evidenceComplete bool,
 ) (ContentModerationSemanticReviewResult, bool) {
 	result = normalizeSemanticReviewResult(result)
-	if result.Verdict != "review" || result.Confidence < candidateSemanticReviewAutoRejectConfidence {
+	if result.Verdict != "review" {
+		return result, false
+	}
+	// This branch is deliberately computed before the confidence threshold. The
+	// candidate is only allowed to bypass that threshold when the reviewer also
+	// supplies explicit harmful, actionable evidence for a narrowly defined
+	// operational rule; a generic or ambiguous review still needs high
+	// confidence before it can become terminal.
+	explicitOperational := contentModerationCandidateExplicitOperationalRejectEligible(result, selection)
+	if result.Confidence < candidateSemanticReviewAutoRejectConfidence && !explicitOperational {
 		return result, false
 	}
 	if result.Intent == "benign" || result.Intent == "defensive" {
@@ -1399,9 +1418,8 @@ func applyCandidateSemanticReviewPolicy(
 	}
 	// Candidate severity is corroborating evidence, not a substitute for the
 	// semantic dimensions required to reject. The explicit operational branch
-	// is limited to locally narrow rules and still requires a high-confidence,
-	// actionable, explicitly harmful semantic result.
-	explicitOperational := contentModerationCandidateExplicitOperationalRejectEligible(result, selection)
+	// is limited to locally narrow rules and still requires actionable,
+	// explicitly harmful semantic evidence.
 	// Incomplete evidence may only be promoted by the narrow operational
 	// candidates below. Generic or ambiguous reviews remain review.
 	if !evidenceComplete && !explicitOperational {

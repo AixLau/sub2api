@@ -30,10 +30,10 @@ const (
 	ContentModerationSemanticReviewFallbackModel = "gpt-5.4-mini"
 
 	ContentModerationSemanticReviewLegacyTimeoutMS      = 20_000
-	ContentModerationSemanticReviewDefaultTimeoutMS     = 15_000
+	ContentModerationSemanticReviewDefaultTimeoutMS     = 25_000
 	ContentModerationSemanticReviewMaxTimeoutMS         = 60_000
-	ContentModerationSemanticReviewPrimaryTimeoutMS     = 10_000
-	ContentModerationSemanticReviewFallbackTimeoutMS    = 5_000
+	ContentModerationSemanticReviewPrimaryTimeoutMS     = 15_000
+	ContentModerationSemanticReviewFallbackTimeoutMS    = 8_000
 	ContentModerationSemanticReviewDefaultOutputTokens  = 512
 	ContentModerationSemanticReviewMaxOutputTokens      = 2_048
 	ContentModerationSemanticReviewDefaultReasoning     = "low"
