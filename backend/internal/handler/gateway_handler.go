@@ -1067,28 +1067,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					_ = h.antigravityGatewayService.WriteMappedClaudeError(c, account, promptTooLongErr.StatusCode, promptTooLongErr.RequestID, promptTooLongErr.Body)
 					return
 				}
-				var failoverErr *service.UpstreamFailoverError
-				if errors.As(err, &failoverErr) {
-					// 流式内容已写入客户端，无法撤销，禁止 failover 以防止流拼接腐化
-					if c.Writer.Size() != writerSizeBeforeForward {
-						h.handleFailoverExhausted(c, failoverErr, account.Platform, true)
-						return
-					}
-					action := fs.HandleFailoverErrorForUser(c.Request.Context(), h.gatewayService, subject.UserID, account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
-					switch action {
-					case FailoverContinue:
-						continue
-					case FailoverExhausted:
-						h.handleFailoverExhausted(c, fs.LastFailoverErr, account.Platform, streamStarted)
-						return
-					case FailoverCanceled:
-						failoverClientGone(c)
-						return
-					}
-				}
 				billableStreamUsageError := service.IsBillableStreamUsageError(err)
-				if result != nil && (billableStreamUsageError || service.ForwardResultHasBillableUsage(result)) {
+				usageRecordedAfterError := false
+				recordPartialUsage := func() {
+					if result == nil || (!billableStreamUsageError && !service.ForwardResultHasBillableUsage(result)) {
+						return
+					}
 					recordUsageResult(result)
+					usageRecordedAfterError = true
 					usageRecordedEvent := "gateway.forward_usage_recorded_after_error"
 					if billableStreamUsageError {
 						usageRecordedEvent = "gateway.billable_stream_usage_recorded_after_error"
@@ -1105,6 +1091,27 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						zap.Int("cache_read_tokens", result.Usage.CacheReadInputTokens),
 					)
 				}
+				var failoverErr *service.UpstreamFailoverError
+				if errors.As(err, &failoverErr) {
+					// 流式内容已写入客户端，无法撤销，禁止 failover 以防止流拼接腐化
+					if c.Writer.Size() != writerSizeBeforeForward {
+						recordPartialUsage()
+						h.handleFailoverExhausted(c, failoverErr, account.Platform, true)
+						return
+					}
+					action := fs.HandleFailoverErrorForUser(c.Request.Context(), h.gatewayService, subject.UserID, account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
+					switch action {
+					case FailoverContinue:
+						continue
+					case FailoverExhausted:
+						h.handleFailoverExhausted(c, fs.LastFailoverErr, account.Platform, streamStarted)
+						return
+					case FailoverCanceled:
+						failoverClientGone(c)
+						return
+					}
+				}
+				recordPartialUsage()
 				upstreamErrorAlreadyCommunicated := gatewayForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {
@@ -1129,10 +1136,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					forwardFailedFields = append(forwardFailedFields, zap.Int64p("proxy_id", account.ProxyID))
 				}
 				reqLog.Error("gateway.forward_failed", forwardFailedFields...)
-				// Forward 与错误一起返回的部分结果：流中断前上游已计量的 usage 照常入账，
-				// 避免上游已产生消耗的请求完全漏记（#5148）。failover 错误恒定 result=nil，
-				// 不会走到这里重复计费。
-				if result != nil {
+				if result != nil && !usageRecordedAfterError {
 					recordUsageResult(result)
 				}
 				return

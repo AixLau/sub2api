@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -129,7 +130,7 @@ func TestGeminiForwardNative_CustomCodesMiss400HiddenAs500(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	errObj, ok := got["error"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, geminiCustomCodeSkippedClientMessage, errObj["message"])
+	require.Equal(t, clientmsg.Localize(geminiCustomCodeSkippedClientMessage), errObj["message"])
 	require.NotContains(t, rec.Body.String(), geminiSkippedTestUpstreamMsg, "上游细节不应透传给客户端")
 }
 
@@ -169,7 +170,7 @@ func TestGeminiForwardAsChatCompletions_CustomCodesMiss400HiddenAs500(t *testing
 	errObj, ok := got["error"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "api_error", errObj["type"])
-	require.Equal(t, geminiCustomCodeSkippedClientMessage, errObj["message"])
+	require.Equal(t, clientmsg.Localize(geminiCustomCodeSkippedClientMessage), errObj["message"])
 }
 
 func TestGeminiForwardAsChatCompletions_PoolMode400KeepsUpstreamMessage(t *testing.T) {

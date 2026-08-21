@@ -866,6 +866,10 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 					account.ID, account.Name, resp.Header.Get("x-request-id"),
 					truncateString(sseErr.RawData, 1000),
 				)
+				failoverErr := &UpstreamFailoverError{
+					StatusCode:   semanticStatus,
+					ResponseBody: body,
+				}
 				if streamingResultHasBillableUsage(streamResult) {
 					return forwardResultFromStreamingResult(
 						resp.Header.Get("x-request-id"),
@@ -873,13 +877,10 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 						originalModel,
 						mappedModel,
 						startTime,
-					), &BillableStreamUsageError{Err: err}
+					), &BillableStreamUsageError{Err: failoverErr}
 				}
 
-				return nil, &UpstreamFailoverError{
-					StatusCode:   semanticStatus,
-					ResponseBody: body,
-				}
+				return nil, failoverErr
 			}
 			// 流中断（缺失 terminal 事件、读错误、数据间隔超时等）时保留已观测到的
 			// usage 与错误一起返回，handler 在错误处理完成后照常提交 usage 记录。
