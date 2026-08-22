@@ -1117,77 +1117,78 @@ type ModerationFeedbackEpochRepository interface {
 }
 
 type ContentModerationService struct {
-	resourceProtection        *ResourceProtectionManager
-	configUpdateMu            sync.Mutex
-	configSnapshot            atomic.Pointer[contentModerationConfigSnapshot]
-	configRefreshMu           sync.Mutex
-	configRefreshInFlight     atomic.Bool
-	configSnapshotGeneration  atomic.Uint64
-	configCacheTTL            time.Duration
-	configRefreshRetryAt      atomic.Int64
-	settingRepo               SettingRepository
-	repo                      ContentModerationRepository
-	rawRequestSnapshotStore   ContentModerationRawRequestSnapshotStore
-	rawRequestEncryptor       SecretEncryptor
-	evidenceStore             ContentModerationEvidenceStore
-	hashCache                 ContentModerationHashCache
-	groupRepo                 GroupRepository
-	accountScopeRepo          ContentModerationAccountScopeRepository
-	userRepo                  UserRepository
-	proxyRepo                 ProxyRepository
-	authCacheInvalidator      APIKeyAuthCacheInvalidator
-	emailService              *EmailService
-	outboxRepo                ContentModerationOutboxRepository
-	buildInfo                 BuildInfo
-	baselineStatusMu          sync.Mutex
-	baselineStatusValid       bool
-	baselineStatus            ContentModerationSecurityBaselineStatus
-	httpClient                *http.Client
-	moderationProxyCache      atomic.Pointer[moderationProxyURLCacheEntry]
-	asyncQueue                chan contentModerationTask
-	workerCount               int
-	apiKeyCursor              atomic.Uint64
-	asyncActive               atomic.Int64
-	asyncEnqueued             atomic.Int64
-	asyncDropped              atomic.Int64
-	asyncProcessed            atomic.Int64
-	asyncErrors               atomic.Int64
-	preBlockActive            atomic.Int64
-	preBlockChecked           atomic.Int64
-	preBlockAllowed           atomic.Int64
-	preBlockBlocked           atomic.Int64
-	preBlockErrors            atomic.Int64
-	preBlockLatencyTotalMS    atomic.Int64
-	localClassifierActive     atomic.Int64
-	lastCleanupUnix           atomic.Int64
-	lastCleanupDeletedHit     atomic.Int64
-	lastCleanupDeletedNonHit  atomic.Int64
-	lastOutboxCleanupDeleted  atomic.Int64
-	runtimeSnapshot           atomic.Pointer[contentModerationRuntimeSnapshot]
-	runtimeRefreshMu          sync.Mutex
-	runtimeCacheTTL           time.Duration
-	runtimeRefreshRetryAt     atomic.Int64
-	keyHealthMu               sync.Mutex
-	keyHealth                 map[string]*contentModerationKeyHealth
-	passCache                 ContentModerationPassCache
-	decisionCache             ContentModerationDecisionCache
-	candidateDecisionMemory   *contentModerationCandidateMemoryDecisionCache
-	candidateDecisionFlights  *contentModerationCandidateDecisionCoordinator
-	feedbackEpochRepo         ModerationFeedbackEpochRepository
-	restrictedClientFactory   RestrictedModerationClientFactory
-	semanticReviewRouter      ContentModerationSemanticReviewRouter
-	moderationCacheHMACKey    []byte
-	decisionCacheHMACKey      []byte
-	moderationCacheKeyVersion uint64
-	metrics                   *ContentModerationMetrics
-	runtimeMu                 sync.Mutex
-	runtimeCancel             context.CancelFunc
-	runtimeWG                 sync.WaitGroup
-	runtimeStarted            bool
-	runtimeClosed             bool
-	runtimeCloseOnce          sync.Once
-	runtimeDone               chan struct{}
-	runtimeTimings            contentModerationRuntimeTimings
+	resourceProtection          *ResourceProtectionManager
+	configUpdateMu              sync.Mutex
+	configSnapshot              atomic.Pointer[contentModerationConfigSnapshot]
+	configRefreshMu             sync.Mutex
+	configRefreshInFlight       atomic.Bool
+	configSnapshotGeneration    atomic.Uint64
+	configCacheTTL              time.Duration
+	configRefreshRetryAt        atomic.Int64
+	settingRepo                 SettingRepository
+	repo                        ContentModerationRepository
+	rawRequestSnapshotStore     ContentModerationRawRequestSnapshotStore
+	rawRequestEncryptor         SecretEncryptor
+	evidenceStore               ContentModerationEvidenceStore
+	hashCache                   ContentModerationHashCache
+	groupRepo                   GroupRepository
+	accountScopeRepo            ContentModerationAccountScopeRepository
+	userRepo                    UserRepository
+	proxyRepo                   ProxyRepository
+	authCacheInvalidator        APIKeyAuthCacheInvalidator
+	emailService                *EmailService
+	outboxRepo                  ContentModerationOutboxRepository
+	buildInfo                   BuildInfo
+	baselineStatusMu            sync.Mutex
+	baselineStatusValid         bool
+	baselineStatus              ContentModerationSecurityBaselineStatus
+	httpClient                  *http.Client
+	moderationProxyCache        atomic.Pointer[moderationProxyURLCacheEntry]
+	asyncQueue                  chan contentModerationTask
+	workerCount                 int
+	apiKeyCursor                atomic.Uint64
+	asyncActive                 atomic.Int64
+	asyncEnqueued               atomic.Int64
+	asyncDropped                atomic.Int64
+	asyncProcessed              atomic.Int64
+	asyncErrors                 atomic.Int64
+	preBlockActive              atomic.Int64
+	preBlockChecked             atomic.Int64
+	preBlockAllowed             atomic.Int64
+	preBlockBlocked             atomic.Int64
+	preBlockErrors              atomic.Int64
+	preBlockLatencyTotalMS      atomic.Int64
+	localClassifierActive       atomic.Int64
+	lastCleanupUnix             atomic.Int64
+	lastCleanupDeletedHit       atomic.Int64
+	lastCleanupDeletedNonHit    atomic.Int64
+	lastOutboxCleanupDeleted    atomic.Int64
+	runtimeSnapshot             atomic.Pointer[contentModerationRuntimeSnapshot]
+	runtimeRefreshMu            sync.Mutex
+	runtimeCacheTTL             time.Duration
+	runtimeRefreshRetryAt       atomic.Int64
+	keyHealthMu                 sync.Mutex
+	keyHealth                   map[string]*contentModerationKeyHealth
+	passCache                   ContentModerationPassCache
+	decisionCache               ContentModerationDecisionCache
+	candidateDecisionMemory     *contentModerationCandidateMemoryDecisionCache
+	candidateDecisionFlights    *contentModerationCandidateDecisionCoordinator
+	feedbackEpochRepo           ModerationFeedbackEpochRepository
+	restrictedClientFactory     RestrictedModerationClientFactory
+	semanticReviewRouter        ContentModerationSemanticReviewRouter
+	semanticReviewModelProvider ContentModerationSemanticReviewModelProvider
+	moderationCacheHMACKey      []byte
+	decisionCacheHMACKey        []byte
+	moderationCacheKeyVersion   uint64
+	metrics                     *ContentModerationMetrics
+	runtimeMu                   sync.Mutex
+	runtimeCancel               context.CancelFunc
+	runtimeWG                   sync.WaitGroup
+	runtimeStarted              bool
+	runtimeClosed               bool
+	runtimeCloseOnce            sync.Once
+	runtimeDone                 chan struct{}
+	runtimeTimings              contentModerationRuntimeTimings
 }
 
 type contentModerationRuntimeTimings struct {
@@ -1397,6 +1398,9 @@ func (s *ContentModerationService) SetIncrementalModerationDependencies(passCach
 func (s *ContentModerationService) SetModerationMetrics(metrics *ContentModerationMetrics) {
 	if s != nil {
 		s.metrics = metrics
+		if router, ok := s.semanticReviewRouter.(*openAIContentModerationSemanticReviewRouter); ok {
+			router.metrics = metrics
+		}
 	}
 }
 
@@ -1412,6 +1416,22 @@ func (s *ContentModerationService) SetSemanticReviewRouter(router ContentModerat
 		return
 	}
 	s.semanticReviewRouter = router
+	if concrete, ok := router.(*openAIContentModerationSemanticReviewRouter); ok {
+		concrete.metrics = s.metrics
+	}
+}
+
+func (s *ContentModerationService) SetSemanticReviewModelProvider(provider ContentModerationSemanticReviewModelProvider) {
+	if s != nil {
+		s.semanticReviewModelProvider = provider
+	}
+}
+
+func (s *ContentModerationService) GetSemanticReviewModels(ctx context.Context) ([]string, error) {
+	if s == nil || s.semanticReviewModelProvider == nil {
+		return []string{}, nil
+	}
+	return s.semanticReviewModelProvider.ListSemanticReviewModels(ctx)
 }
 
 func (s *ContentModerationService) ModerationMetricsHandler() http.Handler {
@@ -6043,7 +6063,7 @@ func defaultContentModerationSemanticReviewConfig() ContentModerationSemanticRev
 		Enabled:                        false,
 		Trigger:                        ContentModerationSemanticReviewTriggerLocalReview,
 		PrimaryModel:                   ContentModerationSemanticReviewPrimaryModel,
-		FallbackModels:                 []string{ContentModerationSemanticReviewFallbackModel},
+		FallbackModels:                 nil,
 		TimeoutMS:                      ContentModerationSemanticReviewDefaultTimeoutMS,
 		PrimaryTimeoutMS:               ContentModerationSemanticReviewPrimaryTimeoutMS,
 		FallbackTimeoutMS:              ContentModerationSemanticReviewFallbackTimeoutMS,
@@ -6087,9 +6107,6 @@ func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanti
 		seen[key] = struct{}{}
 		models = append(models, model)
 	}
-	if len(models) == 0 && strings.EqualFold(cfg.PrimaryModel, ContentModerationSemanticReviewPrimaryModel) {
-		models = []string{ContentModerationSemanticReviewFallbackModel}
-	}
 	cfg.FallbackModels = models
 	// Migrate the previous default, which represented a per-attempt timeout, to
 	// the bounded end-to-end review budget introduced by semantic-review-v2.
@@ -6111,7 +6128,13 @@ func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanti
 	if cfg.FallbackTimeoutMS > cfg.TimeoutMS {
 		cfg.FallbackTimeoutMS = cfg.TimeoutMS
 	}
-	if cfg.MaxAttemptsPerModel <= 0 {
+	// Migrate the deployed single-attempt default to the bounded retry policy;
+	// explicit custom budgets remain intact.
+	legacySingleAttemptDefault := cfg.MaxAttemptsPerModel == 1 &&
+		cfg.TimeoutMS == ContentModerationSemanticReviewDefaultTimeoutMS &&
+		cfg.PrimaryTimeoutMS == ContentModerationSemanticReviewPrimaryTimeoutMS &&
+		cfg.FallbackTimeoutMS == ContentModerationSemanticReviewFallbackTimeoutMS
+	if cfg.MaxAttemptsPerModel <= 0 || legacySingleAttemptDefault {
 		cfg.MaxAttemptsPerModel = ContentModerationSemanticReviewDefaultModelAttempts
 	}
 	if cfg.MaxAttemptsPerModel > ContentModerationSemanticReviewMaxModelAttempts {
@@ -6146,14 +6169,7 @@ func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanti
 }
 
 func normalizeContentModerationSemanticReviewModel(model string) string {
-	switch strings.ToLower(strings.TrimSpace(model)) {
-	case strings.ToLower(ContentModerationSemanticReviewPrimaryModel):
-		return ContentModerationSemanticReviewPrimaryModel
-	case strings.ToLower(ContentModerationSemanticReviewFallbackModel):
-		return ContentModerationSemanticReviewFallbackModel
-	default:
-		return ""
-	}
+	return strings.TrimSpace(model)
 }
 
 func defaultContentModerationLocalClassifierConfig() ContentModerationLocalClassifierConfig {

@@ -206,6 +206,7 @@ func registerContentModerationRoutes(admin *gin.RouterGroup, h *handler.Handlers
 	risk := admin.Group("/risk-control")
 	{
 		risk.GET("/config", h.Admin.ContentModeration.GetConfig)
+		risk.GET("/semantic-review/models", h.Admin.ContentModeration.GetSemanticReviewModels)
 		risk.PUT("/config", h.Admin.ContentModeration.UpdateConfig)
 		risk.POST("/api-keys/test", h.Admin.ContentModeration.TestAPIKeys)
 		risk.POST("/keywords/test", h.Admin.ContentModeration.TestKeywords)

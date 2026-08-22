@@ -58,6 +58,10 @@ export interface ContentModerationSemanticReviewConfig {
   prompt_injection_fail_closed: boolean
 }
 
+export interface ContentModerationSemanticReviewModelsResponse {
+  models: string[]
+}
+
 export interface ContentModerationConfig {
 	max_request_body_mib: number
 	inflight_memory_budget_mib: number
@@ -617,6 +621,13 @@ export async function getConfig(): Promise<ContentModerationConfig> {
   return data
 }
 
+export async function getSemanticReviewModels(): Promise<string[]> {
+  const { data } = await apiClient.get<ContentModerationSemanticReviewModelsResponse>(
+    '/admin/risk-control/semantic-review/models'
+  )
+  return Array.isArray(data.models) ? data.models : []
+}
+
 export async function updateConfig(
   payload: UpdateContentModerationConfig
 ): Promise<ContentModerationConfig> {
@@ -701,6 +712,7 @@ export async function clearFlaggedHashes(): Promise<ClearFlaggedHashesResponse> 
 
 export const riskControlAPI = {
   getConfig,
+  getSemanticReviewModels,
   updateConfig,
   getStatus,
   testAPIKeys,

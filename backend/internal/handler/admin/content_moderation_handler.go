@@ -118,6 +118,15 @@ func (h *ContentModerationHandler) GetConfig(c *gin.Context) {
 	response.Success(c, cfg)
 }
 
+func (h *ContentModerationHandler) GetSemanticReviewModels(c *gin.Context) {
+	models, err := h.service.GetSemanticReviewModels(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"models": models})
+}
+
 func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 	var req contentModerationConfigRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

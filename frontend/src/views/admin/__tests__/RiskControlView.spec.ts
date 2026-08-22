@@ -8,6 +8,7 @@ import type { ContentModerationConfig, UpdateContentModerationConfig } from '@/a
 
 const {
   getConfig,
+  getSemanticReviewModels,
   updateConfig,
   getStatus,
   listLogs,
@@ -21,6 +22,7 @@ const {
   showSuccess,
 } = vi.hoisted(() => ({
   getConfig: vi.fn(),
+  getSemanticReviewModels: vi.fn(),
   updateConfig: vi.fn(),
   getStatus: vi.fn(),
   listLogs: vi.fn(),
@@ -38,6 +40,7 @@ vi.mock('@/api/admin', () => ({
   adminAPI: {
     riskControl: {
       getConfig,
+      getSemanticReviewModels,
       updateConfig,
       getStatus,
       listLogs,
@@ -246,6 +249,7 @@ describe('admin RiskControlView', () => {
     showSuccess.mockReset()
 
     getConfig.mockResolvedValue(baseConfig())
+    getSemanticReviewModels.mockResolvedValue(['gpt-5.3-codex-spark'])
     getStatus.mockResolvedValue(runtimeStatus())
     listLogs.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 1 })
     testKeywords.mockResolvedValue({
@@ -395,7 +399,7 @@ describe('admin RiskControlView', () => {
     const usage = wrapper.get('[data-test="semantic-review-usage"]')
     expect(usage.text()).toContain('12')
     expect(usage.text()).toContain('gpt-5.3-codex-spark')
-    expect(usage.text()).toContain('gpt-5.4-mini')
+    expect(usage.text()).toContain('admin.riskControl.semanticUsage.fallback')
     expect(usage.text()).toContain('742 ms')
 
     await findButtonByText(wrapper, 'admin.riskControl.semanticUsage.viewRecords').trigger('click')

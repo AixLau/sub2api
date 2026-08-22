@@ -93,6 +93,7 @@ func ProvideContentModerationService(
 		NewOpenAIContentModerationSemanticReviewQuotaRefresher(openAIQuotaService, accountRepo),
 		NewPlatformUsageRecorder(usageLogRepo, billingService, pricingResolver),
 	))
+	svc.SetSemanticReviewModelProvider(openAIGatewayService)
 	if rawStore, ok := repo.(ContentModerationRawRequestSnapshotStore); ok {
 		svc.SetRawRequestSnapshotStore(rawStore, encryptor)
 	}

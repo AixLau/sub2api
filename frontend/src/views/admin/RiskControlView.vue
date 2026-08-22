@@ -66,12 +66,12 @@
               <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ semanticUsageNumber(semanticReviewUsage.total_calls) }}</p>
             </div>
             <div class="p-4 sm:p-5">
-              <p class="truncate text-xs text-gray-500 dark:text-gray-400">gpt-5.3-codex-spark</p>
+              <p class="truncate text-xs text-gray-500 dark:text-gray-400">{{ configForm.semantic_review_primary_model || 'gpt-5.3-codex-spark' }}</p>
               <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ semanticUsageNumber(semanticReviewUsage.primary_calls) }}</p>
               <p class="mt-1 text-xs text-gray-400">{{ t('admin.riskControl.semanticUsage.primary') }}</p>
             </div>
             <div class="p-4 sm:p-5">
-              <p class="truncate text-xs text-gray-500 dark:text-gray-400">gpt-5.4-mini</p>
+              <p class="truncate text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.semanticUsage.fallback') }}</p>
               <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ semanticUsageNumber(semanticReviewUsage.fallback_calls) }}</p>
               <p class="mt-1 text-xs text-gray-400">{{ t('admin.riskControl.semanticUsage.fallbackRate', { rate: semanticFallbackRate }) }}</p>
             </div>
@@ -841,6 +841,9 @@
                   <div>
                     <label class="input-label">{{ t('admin.riskControl.semanticReviewFallbackModels') }}</label>
                     <textarea v-model="configForm.semantic_review_fallback_models_text" class="input min-h-20 resize-y font-mono text-sm" :placeholder="t('admin.riskControl.semanticReviewFallbackModelsPlaceholder')"></textarea>
+                    <p v-if="semanticReviewAvailableModels.length" class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                      {{ t('admin.riskControl.semanticReviewAvailableModels') }}: {{ semanticReviewAvailableModels.join(', ') }}
+                    </p>
                   </div>
                   <div>
                     <label class="input-label">{{ t('admin.riskControl.semanticReviewTimeout') }}</label>
@@ -2042,6 +2045,7 @@ const accountSearch = ref('')
 const flaggedHashInput = ref('')
 const groups = ref<AdminGroup[]>([])
 const accounts = ref<AccountOption[]>([])
+const semanticReviewAvailableModels = ref<string[]>([])
 const selectedAccountDetails = ref<Record<number, AccountOption>>({})
 const accountPagination = reactive({ page: 1, page_size: 20, total: 0 })
 const proxies = ref<Proxy[]>([])
@@ -2085,7 +2089,7 @@ const configForm = reactive({
 	  prompt_filter_threshold: 50,
 	  prompt_filter_strict_threshold: 90,
   semantic_review_primary_model: 'gpt-5.3-codex-spark',
-  semantic_review_fallback_models_text: 'gpt-5.4-mini',
+  semantic_review_fallback_models_text: '',
   semantic_review_timeout_ms: 8000,
   semantic_review_primary_timeout_ms: 5000,
   semantic_review_fallback_timeout_ms: 3000,
@@ -2263,10 +2267,13 @@ const promptFilterModeOptions = computed<SelectOption[]>(() => [
   { value: 'off', label: t('admin.riskControl.promptFilterModeOff') },
 ])
 
-const semanticReviewModelOptions = computed<SelectOption[]>(() => [
-  { value: 'gpt-5.3-codex-spark', label: 'gpt-5.3-codex-spark' },
-  { value: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
-])
+const semanticReviewModelOptions = computed<SelectOption[]>(() => {
+  const models = new Set(semanticReviewAvailableModels.value)
+  const current = configForm.semantic_review_primary_model.trim()
+  if (current) models.add(current)
+  if (models.size === 0) models.add('gpt-5.3-codex-spark')
+  return Array.from(models).map((model) => ({ value: model, label: model }))
+})
 
 const semanticReviewReasoningOptions = computed<SelectOption[]>(() => [
   { value: 'low', label: 'low' },
@@ -3109,7 +3116,7 @@ function applyConfig(config: ContentModerationConfig) {
     enabled: true,
     trigger: 'local_review',
     primary_model: 'gpt-5.3-codex-spark',
-    fallback_models: ['gpt-5.4-mini'],
+    fallback_models: [],
     timeout_ms: 8000,
     primary_timeout_ms: 5000,
     fallback_timeout_ms: 3000,
@@ -3186,15 +3193,17 @@ function applyConfig(config: ContentModerationConfig) {
 async function loadAll() {
   loading.value = true
   try {
-    const [config, groupItems, accountPage, runtimeStatus, proxyItems] = await Promise.all([
+    const [config, groupItems, accountPage, runtimeStatus, semanticModels, proxyItems] = await Promise.all([
       adminAPI.riskControl.getConfig(),
       adminAPI.groups.getAll(),
       adminAPI.accounts.list(1, accountPagination.page_size, { lite: 'true' }),
       adminAPI.riskControl.getStatus(),
+      adminAPI.riskControl.getSemanticReviewModels().catch(() => [] as string[]),
       // 代理列表加载失败不阻塞风控页面（仅影响下拉可选项）
       adminAPI.proxies.getAll().catch(() => [] as Proxy[]),
     ])
     applyConfig(config)
+    semanticReviewAvailableModels.value = semanticModels
     groups.value = groupItems
     accounts.value = accountPage.items
     accountPagination.total = accountPage.total

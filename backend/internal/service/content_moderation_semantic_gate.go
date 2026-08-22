@@ -433,6 +433,13 @@ func contentModerationSemanticGateMetadata(cfg *ContentModerationConfig, content
 		_ = json.Unmarshal([]byte(base), &metadata)
 	}
 	metadata["semantic_review_model"] = result.Model
+	if result.AttemptCount > 0 {
+		metadata["semantic_review_attempt_count"] = result.AttemptCount
+	}
+	if result.FallbackFrom != "" {
+		metadata["semantic_review_fallback_from"] = result.FallbackFrom
+		metadata["semantic_review_fallback_reason"] = result.FallbackReason
+	}
 	metadata["semantic_review_verdict"] = result.Verdict
 	metadata["semantic_review_intent"] = result.Intent
 	metadata["semantic_review_target"] = result.Target

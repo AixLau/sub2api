@@ -5,7 +5,40 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
+
+// ListSemanticReviewModels returns concrete text-capable model names exposed
+// by active, schedulable OpenAI accounts. Explicit account mappings are used
+// verbatim; accounts without a mapping use the platform defaults.
+func (s *OpenAIGatewayService) ListSemanticReviewModels(ctx context.Context) ([]string, error) {
+	if s == nil || s.accountRepo == nil {
+		return []string{}, nil
+	}
+	accounts, err := s.accountRepo.ListModelAvailabilityCandidates(ctx, nil, []string{PlatformOpenAI}, true)
+	if err != nil {
+		return nil, err
+	}
+	models := make(map[string]struct{})
+	for i := range accounts {
+		account := &accounts[i]
+		if account.IsShadow() || !account.IsOpenAI() {
+			continue
+		}
+		mapping := account.GetModelMapping()
+		if account.IsOpenAIPassthroughEnabled() || len(mapping) == 0 {
+			for _, model := range openai.DefaultModels {
+				if strings.Contains(strings.ToLower(model.ID), "image") {
+					continue
+				}
+				models[model.ID] = struct{}{}
+			}
+			continue
+		}
+		addConfiguredModelNames(models, account)
+	}
+	return sortedConfiguredModelNames(models), nil
+}
 
 // DiagnoseModelAvailabilityForPlatform reports whether the requested model
 // is configured to be served by any persistently eligible OpenAI-compatible

@@ -37,7 +37,7 @@ const (
 	ContentModerationSemanticReviewDefaultOutputTokens  = 512
 	ContentModerationSemanticReviewMaxOutputTokens      = 2_048
 	ContentModerationSemanticReviewDefaultReasoning     = "low"
-	ContentModerationSemanticReviewDefaultModelAttempts = 1
+	ContentModerationSemanticReviewDefaultModelAttempts = 2
 	ContentModerationSemanticReviewMaxModelAttempts     = 2
 	ContentModerationSemanticReviewDefaultMaxInputRunes = 4_000
 	contentModerationSemanticReviewMaxSources           = 3
@@ -124,6 +124,9 @@ type ContentModerationSemanticReviewResult struct {
 	ReasonDetails    []string    `json:"-"`
 	Model            string      `json:"model,omitempty"`
 	AccountID        int64       `json:"account_id,omitempty"`
+	AttemptCount     int         `json:"-"`
+	FallbackFrom     string      `json:"-"`
+	FallbackReason   string      `json:"-"`
 	UpstreamModel    string      `json:"-"`
 	RequestID        string      `json:"-"`
 	Usage            OpenAIUsage `json:"-"`
@@ -136,6 +139,10 @@ type ContentModerationSemanticReviewResult struct {
 type ContentModerationSemanticReviewBackend interface {
 	SelectSemanticReviewAccount(ctx context.Context, groupID *int64, model string, excludedIDs map[int64]struct{}) (*AccountSelectionResult, error)
 	ReviewSemanticContent(ctx context.Context, account *Account, model string, input ContentModerationSemanticReviewInput) (ContentModerationSemanticReviewResult, error)
+}
+
+type ContentModerationSemanticReviewModelProvider interface {
+	ListSemanticReviewModels(ctx context.Context) ([]string, error)
 }
 
 type ContentModerationSemanticReviewQuotaRefresher interface {
@@ -809,6 +816,7 @@ func (s *ContentModerationService) processContentModerationSemanticReviewEvent(c
 		"evidence_context_only":                 payload.SemanticReview.ContextOnly,
 		"reviewed_text_sha256":                  hex.EncodeToString(reviewedTextDigest[:]),
 		"semantic_review_verdict":               result.Verdict,
+		"semantic_review_attempt_count":         result.AttemptCount,
 		"semantic_review_intent":                result.Intent,
 		"semantic_review_target":                result.Target,
 		"semantic_review_authorization":         result.Authorization,
@@ -822,6 +830,10 @@ func (s *ContentModerationService) processContentModerationSemanticReviewEvent(c
 		"semantic_review_reason_details":        result.ReasonDetails,
 		"semantic_review_policy_override":       policyOverride,
 		"semantic_review_instructions_revision": semanticReviewInstructionsRevision,
+	}
+	if result.FallbackFrom != "" {
+		metadataValues["semantic_review_fallback_from"] = result.FallbackFrom
+		metadataValues["semantic_review_fallback_reason"] = result.FallbackReason
 	}
 	if result.ModelSeverity != "" {
 		metadataValues["semantic_review_model_severity"] = result.ModelSeverity
@@ -965,6 +977,7 @@ type openAIContentModerationSemanticReviewRouter struct {
 	backend       ContentModerationSemanticReviewBackend
 	quota         ContentModerationSemanticReviewQuotaRefresher
 	usageRecorder PlatformUsageRecorder
+	metrics       *ContentModerationMetrics
 	refresh       singleflight.Group
 	refreshSlots  chan struct{}
 }
@@ -1013,10 +1026,21 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 	reviewCtx, cancelReview := context.WithTimeout(ctx, time.Duration(cfg.TimeoutMS)*time.Millisecond)
 	defer cancelReview()
 
+	fallbackModels := cfg.FallbackModels
+	if len(fallbackModels) == 0 {
+		if lister, ok := r.backend.(ContentModerationSemanticReviewModelProvider); ok {
+			if discovered, err := lister.ListSemanticReviewModels(reviewCtx); err == nil {
+				fallbackModels = discovered
+			}
+		}
+	}
 	models := []string{cfg.PrimaryModel}
-	models = append(models, cfg.FallbackModels...)
+	models = append(models, fallbackModels...)
+	models = dedupeSemanticReviewModels(models)
 	var lastErr error
-	for modelIndex, model := range dedupeSemanticReviewModels(models) {
+	attemptCount := 0
+	primaryFailureReason := ""
+	for modelIndex, model := range models {
 		excluded := make(map[int64]struct{})
 		for attempt := 0; attempt < cfg.MaxAttemptsPerModel; attempt++ {
 			if err := reviewCtx.Err(); err != nil {
@@ -1029,6 +1053,12 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 				break
 			}
 			if selection == nil || selection.Account == nil {
+				if modelIndex == 0 && primaryFailureReason == "" {
+					primaryFailureReason = "no_account"
+				}
+				if r.metrics != nil {
+					r.metrics.observeSemanticReviewAttempt(model, "no_account", "no_account")
+				}
 				break
 			}
 			account := selection.Account
@@ -1038,26 +1068,50 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 				}
 			}
 			if account.Type == AccountTypeOAuth && semanticReviewQuotaExhausted(account, model, time.Now()) {
+				if modelIndex == 0 && primaryFailureReason == "" {
+					primaryFailureReason = "quota_exhausted"
+				}
+				if r.metrics != nil {
+					r.metrics.observeSemanticReviewAttempt(model, "skipped", "quota_exhausted")
+				}
 				excluded[account.ID] = struct{}{}
 				releaseAccountSelection(selection)
 				continue
 			}
 
-			attemptTimeout := semanticReviewAttemptTimeout(cfg, modelIndex, reviewCtx)
+			attemptTimeout := semanticReviewAttemptTimeout(cfg, modelIndex, attempt, cfg.MaxAttemptsPerModel, len(models), reviewCtx)
 			if attemptTimeout <= 0 {
 				releaseAccountSelection(selection)
 				lastErr = context.DeadlineExceeded
 				break
 			}
 			started := time.Now()
+			attemptCount++
 			callCtx, cancel := context.WithTimeout(reviewCtx, attemptTimeout)
 			result, callErr := r.backend.ReviewSemanticContent(callCtx, account, model, input)
 			cancel()
 			if callErr == nil {
 				result.Model = model
 				result.AccountID = account.ID
+				result.AttemptCount = attemptCount
+				if modelIndex > 0 {
+					result.FallbackFrom = cfg.PrimaryModel
+					result.FallbackReason = primaryFailureReason
+				}
+				if r.metrics != nil {
+					r.metrics.observeSemanticReviewAttempt(model, "success", "")
+				}
 				r.recordUsage(ctx, input, account, result, int(time.Since(started).Milliseconds()))
 				releaseAccountSelection(selection)
+				if modelIndex > 0 {
+					slog.Info("content_moderation.semantic_review_fallback",
+						"from_model", cfg.PrimaryModel,
+						"to_model", model,
+						"reason", primaryFailureReason,
+						"attempt_count", attemptCount,
+						"account_id", account.ID,
+					)
+				}
 				if reviewKind == contentModerationReviewKindPromptInjection {
 					return normalizePromptInjectionReviewResult(result), nil
 				}
@@ -1065,6 +1119,13 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 			}
 			releaseAccountSelection(selection)
 			lastErr = callErr
+			reason := semanticReviewAttemptReason(callErr)
+			if modelIndex == 0 && primaryFailureReason == "" {
+				primaryFailureReason = reason
+			}
+			if r.metrics != nil {
+				r.metrics.observeSemanticReviewAttempt(model, "error", reason)
+			}
 			if isSemanticReviewModelUnsupportedError(callErr) {
 				// Unsupported is scoped to this account/model pair. Keep trying
 				// another account while this model still has attempt budget; the
@@ -1088,7 +1149,32 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 	return ContentModerationSemanticReviewResult{}, &ContentModerationSemanticReviewUnavailableError{Err: lastErr}
 }
 
-func semanticReviewAttemptTimeout(cfg ContentModerationSemanticReviewConfig, modelIndex int, ctx context.Context) time.Duration {
+func semanticReviewAttemptReason(err error) string {
+	var upstreamErr *ContentModerationSemanticReviewUpstreamError
+	if errors.As(err, &upstreamErr) {
+		switch upstreamErr.Code {
+		case "model_unsupported":
+			return "model_unsupported"
+		case "quota_exhausted":
+			return "quota_exhausted"
+		case "transport":
+			return "transport"
+		case "read_response":
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+				return "timeout"
+			}
+			return "read_response"
+		case "token_unavailable":
+			return "token_unavailable"
+		}
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return "timeout"
+	}
+	return "retryable_error"
+}
+
+func semanticReviewAttemptTimeout(cfg ContentModerationSemanticReviewConfig, modelIndex, attempt, maxAttempts, modelCount int, ctx context.Context) time.Duration {
 	timeoutMS := cfg.PrimaryTimeoutMS
 	if modelIndex > 0 {
 		timeoutMS = cfg.FallbackTimeoutMS
@@ -1098,6 +1184,19 @@ func semanticReviewAttemptTimeout(cfg ContentModerationSemanticReviewConfig, mod
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
 			return 0
+		}
+		// Keep one fallback attempt viable while retrying the primary model.
+		// Without this reservation, two slow Spark attempts can consume the
+		// entire end-to-end budget before the configured mini fallback runs.
+		if modelIndex == 0 && maxAttempts > attempt+1 && modelCount > 1 {
+			fallbackReserve := time.Duration(cfg.FallbackTimeoutMS) * time.Millisecond
+			primarySlots := maxAttempts - attempt
+			if remaining > fallbackReserve && primarySlots > 0 {
+				reservedPrimaryTimeout := (remaining - fallbackReserve) / time.Duration(primarySlots)
+				if reservedPrimaryTimeout > 0 && reservedPrimaryTimeout < timeout {
+					timeout = reservedPrimaryTimeout
+				}
+			}
 		}
 		if timeout <= 0 || remaining < timeout {
 			timeout = remaining

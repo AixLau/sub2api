@@ -85,9 +85,9 @@ describe('risk control locale copy', () => {
   it('describes candidate review as a single bounded user fragment', () => {
     expect(zh.admin.riskControl.promptFilterModeHint).toContain('一个用户上下文片段')
     expect(zh.admin.riskControl.promptFilterModeHint).not.toContain('混合模式')
-    expect(zh.admin.riskControl.semanticReviewHint).toContain('gpt-5.3-codex-spark')
+    expect(zh.admin.riskControl.semanticReviewHint).toContain('配置的顺序降级')
     expect(en.admin.riskControl.promptFilterModeHint).toContain('one user-context fragment')
     expect(en.admin.riskControl.promptFilterModeHint).not.toContain('hybrid mode')
-    expect(en.admin.riskControl.semanticReviewHint).toContain('gpt-5.4-mini')
+    expect(en.admin.riskControl.semanticReviewHint).toContain('configured fallback order')
   })
 })

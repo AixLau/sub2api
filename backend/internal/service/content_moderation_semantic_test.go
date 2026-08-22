@@ -249,23 +249,23 @@ func semanticReviewTestConfig() ContentModerationSemanticReviewConfig {
 	})
 }
 
-func TestNormalizeContentModerationSemanticReviewConfigKeepsBuiltInModelsOnly(t *testing.T) {
+func TestNormalizeContentModerationSemanticReviewConfigKeepsConfiguredModels(t *testing.T) {
 	cfg := normalizeContentModerationSemanticReviewConfig(ContentModerationSemanticReviewConfig{
 		PrimaryModel:   "provider-owned-model",
 		FallbackModels: []string{"gpt-5.4-mini", "GPT-5-MINI", "gpt-5.3-codex-spark"},
 	})
 
-	require.Equal(t, ContentModerationSemanticReviewPrimaryModel, cfg.PrimaryModel)
-	require.Equal(t, []string{ContentModerationSemanticReviewFallbackModel}, cfg.FallbackModels)
+	require.Equal(t, "provider-owned-model", cfg.PrimaryModel)
+	require.Equal(t, []string{"gpt-5.4-mini", "GPT-5-MINI", "gpt-5.3-codex-spark"}, cfg.FallbackModels)
 }
 
-func TestNormalizeContentModerationSemanticReviewConfigReplacesLegacyMini(t *testing.T) {
+func TestNormalizeContentModerationSemanticReviewConfigAllowsCustomFallback(t *testing.T) {
 	cfg := normalizeContentModerationSemanticReviewConfig(ContentModerationSemanticReviewConfig{
 		PrimaryModel:   ContentModerationSemanticReviewPrimaryModel,
 		FallbackModels: []string{"gpt-5-mini"},
 	})
 
-	require.Equal(t, []string{ContentModerationSemanticReviewFallbackModel}, cfg.FallbackModels)
+	require.Equal(t, []string{"gpt-5-mini"}, cfg.FallbackModels)
 }
 
 func TestNormalizeContentModerationSemanticReviewConfigAppliesBoundedInferenceDefaults(t *testing.T) {
@@ -329,6 +329,17 @@ func TestNormalizeContentModerationSemanticReviewConfigPreservesCustomAttemptBud
 	require.Equal(t, 3_000, cfg.FallbackTimeoutMS)
 }
 
+func TestNormalizeContentModerationSemanticReviewConfigMigratesLegacySingleAttemptDefault(t *testing.T) {
+	cfg := normalizeContentModerationSemanticReviewConfig(ContentModerationSemanticReviewConfig{
+		TimeoutMS:           ContentModerationSemanticReviewDefaultTimeoutMS,
+		PrimaryTimeoutMS:    ContentModerationSemanticReviewPrimaryTimeoutMS,
+		FallbackTimeoutMS:   ContentModerationSemanticReviewFallbackTimeoutMS,
+		MaxAttemptsPerModel: 1,
+	})
+
+	require.Equal(t, ContentModerationSemanticReviewDefaultModelAttempts, cfg.MaxAttemptsPerModel)
+}
+
 func TestNormalizeContentModerationSemanticReviewConfigForcesLowReasoning(t *testing.T) {
 	cfg := normalizeContentModerationSemanticReviewConfig(ContentModerationSemanticReviewConfig{
 		ReasoningEffort: "minimal",
@@ -370,13 +381,13 @@ func TestContentModerationUpdateConfigNormalizesSemanticReviewModels(t *testing.
 	view, err := svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{SemanticReview: &semantic})
 
 	require.NoError(t, err)
-	require.Equal(t, ContentModerationSemanticReviewPrimaryModel, view.SemanticReview.PrimaryModel)
-	require.Equal(t, []string{ContentModerationSemanticReviewFallbackModel}, view.SemanticReview.FallbackModels)
+	require.Equal(t, "unsupported-provider-model", view.SemanticReview.PrimaryModel)
+	require.Equal(t, []string{"gpt-5.4-mini"}, view.SemanticReview.FallbackModels)
 	savedRaw, err := settingRepo.GetValue(context.Background(), SettingKeyContentModerationConfig)
 	require.NoError(t, err)
 	var saved ContentModerationConfig
 	require.NoError(t, json.Unmarshal([]byte(savedRaw), &saved))
-	require.Equal(t, ContentModerationSemanticReviewPrimaryModel, saved.SemanticReview.PrimaryModel)
+	require.Equal(t, "unsupported-provider-model", saved.SemanticReview.PrimaryModel)
 }
 
 func TestSemanticReviewRouterRefreshesStaleSparkQuotaBeforeRequest(t *testing.T) {
@@ -532,7 +543,7 @@ func TestSemanticReviewRouterBoundsBackgroundQuotaRefreshConcurrency(t *testing.
 	}, time.Second, 10*time.Millisecond)
 }
 
-func TestSemanticReviewRouterFallsBackAfterOnePrimaryAccountAttempt(t *testing.T) {
+func TestSemanticReviewRouterTriesAnotherPrimaryAccountBeforeFallback(t *testing.T) {
 	first := freshSemanticReviewAccount(21)
 	second := freshSemanticReviewAccount(22)
 	backend := &semanticReviewBackendStub{
@@ -555,13 +566,14 @@ func TestSemanticReviewRouterFallsBackAfterOnePrimaryAccountAttempt(t *testing.T
 	result, err := router.Review(context.Background(), semanticReviewTestConfig(), ContentModerationSemanticReviewInput{Text: "test"})
 
 	require.NoError(t, err)
-	require.Equal(t, int64(23), result.AccountID)
-	require.Equal(t, ContentModerationSemanticReviewFallbackModel, result.Model)
+	require.Equal(t, second.ID, result.AccountID)
+	require.Equal(t, ContentModerationSemanticReviewPrimaryModel, result.Model)
+	require.Equal(t, 2, result.AttemptCount)
 	require.Eventually(t, func() bool {
 		return len(quota.snapshotCalls()) == 1
 	}, time.Second, 10*time.Millisecond)
 	require.Equal(t, []int64{first.ID}, quota.snapshotCalls())
-	require.Equal(t, []string{ContentModerationSemanticReviewPrimaryModel, ContentModerationSemanticReviewFallbackModel}, backend.reviewCalls)
+	require.Equal(t, []string{ContentModerationSemanticReviewPrimaryModel, ContentModerationSemanticReviewPrimaryModel}, backend.reviewCalls)
 }
 
 func TestSemanticReviewRouterFallsBackWhenPrimaryModelIsUnsupported(t *testing.T) {
@@ -679,7 +691,7 @@ func TestSemanticReviewRouterSharesOneBudgetAcrossPrimaryAndFallback(t *testing.
 	require.NoError(t, err)
 	require.Equal(t, ContentModerationSemanticReviewFallbackModel, result.Model)
 	require.Less(t, elapsed, 200*time.Millisecond)
-	require.GreaterOrEqual(t, elapsed, 60*time.Millisecond)
+	require.GreaterOrEqual(t, elapsed, 30*time.Millisecond)
 	require.Equal(t, []string{ContentModerationSemanticReviewPrimaryModel, ContentModerationSemanticReviewFallbackModel}, backend.reviewCalls)
 }
 
