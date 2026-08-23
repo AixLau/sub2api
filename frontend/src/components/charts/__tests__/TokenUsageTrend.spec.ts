@@ -23,6 +23,7 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
+      locale: { value: 'zh-CN' },
       t: (key: string) => messages[key] ?? key,
     }),
   }

@@ -256,7 +256,9 @@ const routes: RouteRecordRaw[] = [
       requiresAdmin: false,
       title: 'Dashboard',
       titleKey: 'dashboard.title',
-      descriptionKey: 'dashboard.welcomeMessage'
+      descriptionKey: 'dashboard.welcomeMessage',
+      hideHeaderTitle: true,
+      hideBackgroundMesh: true
     }
   },
   {

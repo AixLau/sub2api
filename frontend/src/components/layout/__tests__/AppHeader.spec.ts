@@ -24,6 +24,11 @@ const mocks = vi.hoisted(() => ({
   rewardStore: {
     pendingCount: 0
   },
+  route: {
+    name: 'Profile',
+    meta: {} as Record<string, unknown>,
+    params: {} as Record<string, string>
+  },
   routerPush: vi.fn()
 }))
 
@@ -49,7 +54,7 @@ vi.mock('@/utils/featureFlags', () => ({
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: mocks.routerPush }),
-  useRoute: () => ({ name: 'Profile', meta: {}, params: {} })
+  useRoute: () => mocks.route
 }))
 
 vi.mock('vue-i18n', async (importOriginal) => ({
@@ -64,7 +69,44 @@ describe('AppHeader contact support entry', () => {
     mocks.appStore.supportWeChatGroupQRCode = 'data:image/png;base64,wechat-code'
     mocks.authStore.user = null
     mocks.rewardStore.pendingCount = 0
+    mocks.route.name = 'Profile'
+    mocks.route.meta = {}
+    mocks.route.params = {}
+    mocks.appStore.toggleMobileSidebar.mockReset()
     mocks.routerPush.mockReset()
+  })
+
+  it('hides only the dashboard desktop title block and keeps the mobile menu control', async () => {
+    mocks.route.name = 'Dashboard'
+    mocks.route.meta = {
+      titleKey: 'dashboard.title',
+      descriptionKey: 'dashboard.welcomeMessage',
+      hideHeaderTitle: true
+    }
+
+    const wrapper = shallowMount(AppHeader, {
+      global: { stubs: { RouterLink: true } }
+    })
+
+    expect(wrapper.find('[data-testid="header-title-block"]').exists()).toBe(false)
+    const menuButton = wrapper.get('[aria-label="common.toggleMenu"]')
+    await menuButton.trigger('click')
+    expect(mocks.appStore.toggleMobileSidebar).toHaveBeenCalledTimes(1)
+  })
+
+  it('continues to render the desktop title block on other routes', () => {
+    mocks.route.name = 'Profile'
+    mocks.route.meta = {
+      titleKey: 'profile.title',
+      descriptionKey: 'profile.description'
+    }
+
+    const wrapper = shallowMount(AppHeader, {
+      global: { stubs: { RouterLink: true } }
+    })
+
+    expect(wrapper.get('[data-testid="header-title-block"]').text()).toContain('profile.title')
+    expect(wrapper.get('[data-testid="header-title-block"]').text()).toContain('profile.description')
   })
 
   it('opens the wallet panel on hover and routes the primary recharge action', async () => {

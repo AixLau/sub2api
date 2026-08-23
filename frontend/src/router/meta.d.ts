@@ -76,5 +76,17 @@ declare module 'vue-router' {
      * i18n key for the page description
      */
     descriptionKey?: string
+
+    /**
+     * Hide the desktop page title block while preserving header actions.
+     * @default false
+     */
+    hideHeaderTitle?: boolean
+
+    /**
+     * Hide the shared page mesh when a route supplies its own visual canvas.
+     * @default false
+     */
+    hideBackgroundMesh?: boolean
   }
 }

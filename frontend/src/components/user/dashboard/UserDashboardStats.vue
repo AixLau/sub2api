@@ -1,171 +1,223 @@
 <template>
-  <!-- Row 1: Core Stats -->
-  <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-    <!-- Balance -->
-    <div v-if="!isSimple" class="card p-4">
-      <div class="flex items-center gap-3">
-        <div class="rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30">
-          <svg class="h-5 w-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" />
-          </svg>
-        </div>
-        <div>
-          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.balance') }}</p>
-          <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">${{ formatBalance(balance) }}</p>
-          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('common.available') }}</p>
-        </div>
+  <section
+    class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+    data-testid="dashboard-stats"
+  >
+    <template v-for="card in cards" :key="card.id">
+      <div v-if="!card.hidden" class="contents" :data-testid="card.testId">
+        <DashboardStatCard
+          :title="card.title"
+          :value="card.value"
+          :description="card.description"
+          :icon="card.icon"
+          :theme="card.theme"
+          :accent="card.accent"
+          :decorative-chart="card.decorativeChart"
+          :value-class="card.valueClass"
+          :hidden="card.hidden"
+        />
       </div>
-    </div>
-
-    <!-- API Keys -->
-    <div class="card p-4">
-      <div class="flex items-center gap-3">
-        <div class="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
-          <Icon name="key" size="md" class="text-blue-600 dark:text-blue-400" :stroke-width="2" />
-        </div>
-        <div>
-          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.apiKeys') }}</p>
-          <p class="text-xl font-bold text-gray-900 dark:text-white">{{ stats?.total_api_keys || 0 }}</p>
-          <p class="text-xs text-green-600 dark:text-green-400">{{ stats?.active_api_keys || 0 }} {{ t('common.active') }}</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Today Requests -->
-    <div class="card p-4">
-      <div class="flex items-center gap-3">
-        <div class="rounded-lg bg-green-100 p-2 dark:bg-green-900/30">
-          <Icon name="chart" size="md" class="text-green-600 dark:text-green-400" :stroke-width="2" />
-        </div>
-        <div>
-          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.todayRequests') }}</p>
-          <p class="text-xl font-bold text-gray-900 dark:text-white">{{ stats?.today_requests || 0 }}</p>
-          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('common.total') }}: {{ formatNumber(stats?.total_requests || 0) }}</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Today Cost -->
-    <div class="card p-4">
-      <div class="flex items-center gap-3">
-        <div class="rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30">
-          <Icon name="dollar" size="md" class="text-purple-600 dark:text-purple-400" :stroke-width="2" />
-        </div>
-        <div>
-          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.todayCost') }}</p>
-          <p class="text-xl font-bold text-gray-900 dark:text-white">
-            <span class="text-purple-600 dark:text-purple-400" :title="t('dashboard.actual')">${{ formatCost(stats?.today_actual_cost || 0) }}</span>
-            <span class="text-sm font-normal text-gray-400 dark:text-gray-500" :title="t('dashboard.standard')"> / ${{ formatCost(stats?.today_cost || 0) }}</span>
-          </p>
-          <p class="text-xs">
-            <span class="text-gray-500 dark:text-gray-400">{{ t('common.total') }}: </span>
-            <span class="text-purple-600 dark:text-purple-400" :title="t('dashboard.actual')">${{ formatCost(stats?.total_actual_cost || 0) }}</span>
-            <span class="text-gray-400 dark:text-gray-500" :title="t('dashboard.standard')"> / ${{ formatCost(stats?.total_cost || 0) }}</span>
-          </p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Row 2: Token Stats -->
-  <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-    <!-- Today Tokens -->
-    <div class="card p-4">
-      <div class="flex items-center gap-3">
-        <div class="rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30">
-          <Icon name="cube" size="md" class="text-amber-600 dark:text-amber-400" :stroke-width="2" />
-        </div>
-        <div>
-          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.todayTokens') }}</p>
-          <p class="text-xl font-bold text-gray-900 dark:text-white">{{ formatTokens(stats?.today_tokens || 0) }}</p>
-          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.input') }}: {{ formatTokens(stats?.today_input_tokens || 0) }} / {{ t('dashboard.output') }}: {{ formatTokens(stats?.today_output_tokens || 0) }} / {{ t('dashboard.cache') }}: {{ formatTokens((stats?.today_cache_creation_tokens || 0) + (stats?.today_cache_read_tokens || 0)) }}</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Total Tokens -->
-    <div class="card p-4">
-      <div class="flex items-center gap-3">
-        <div class="rounded-lg bg-indigo-100 p-2 dark:bg-indigo-900/30">
-          <Icon name="database" size="md" class="text-indigo-600 dark:text-indigo-400" :stroke-width="2" />
-        </div>
-        <div>
-          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.totalTokens') }}</p>
-          <p class="text-xl font-bold text-gray-900 dark:text-white">{{ formatTokens(stats?.total_tokens || 0) }}</p>
-          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.input') }}: {{ formatTokens(stats?.total_input_tokens || 0) }} / {{ t('dashboard.output') }}: {{ formatTokens(stats?.total_output_tokens || 0) }} / {{ t('dashboard.cache') }}: {{ formatTokens((stats?.total_cache_creation_tokens || 0) + (stats?.total_cache_read_tokens || 0)) }}</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Token activity summary -->
-    <div class="card p-4">
-      <div class="flex items-center gap-3">
-        <div class="rounded-lg bg-sky-100 p-2 dark:bg-sky-900/30">
-          <Icon name="chart" size="md" class="text-sky-600 dark:text-sky-400" :stroke-width="2" />
-        </div>
-        <div class="min-w-0 flex-1">
-          <div class="flex items-baseline justify-between gap-2">
-            <p class="text-xl font-bold text-gray-900 dark:text-white">{{ formatTokens(activity?.peak_daily_tokens || 0) }}</p>
-            <p class="truncate text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.activity.peakDailyTokens') }}</p>
-          </div>
-          <div class="mt-1.5 grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
-            <div class="flex items-center justify-between gap-2">
-              <span class="truncate">{{ t('dashboard.activity.currentStreak') }}</span>
-              <span class="shrink-0 font-medium text-sky-600 dark:text-sky-400">{{ formatDays(activity?.current_streak_days || 0) }}</span>
-            </div>
-            <div class="flex items-center justify-between gap-2">
-              <span class="truncate">{{ t('dashboard.activity.longestStreak') }}</span>
-              <span class="shrink-0 font-medium text-sky-600 dark:text-sky-400">{{ formatDays(activity?.longest_streak_days || 0) }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Avg Response Time -->
-    <div class="card p-4">
-      <div class="flex items-center gap-3">
-        <div class="rounded-lg bg-rose-100 p-2 dark:bg-rose-900/30">
-          <Icon name="clock" size="md" class="text-rose-600 dark:text-rose-400" :stroke-width="2" />
-        </div>
-        <div>
-          <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.avgResponse') }}</p>
-          <p class="text-xl font-bold text-gray-900 dark:text-white">{{ formatDuration(stats?.average_duration_ms || 0) }}</p>
-          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.averageTime') }}</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
+    </template>
+  </section>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import Icon from '@/components/icons/Icon.vue'
-import type { UserDashboardActivity, UserDashboardStats as UserStatsType } from '@/api/usage'
+import type {
+  UserDashboardActivity,
+  UserDashboardStats as UserStatsType,
+} from '@/api/usage'
+import {
+  formatCompactNumber,
+  formatCostFixed,
+  formatNumberLocaleString,
+} from '@/utils/format'
+import DashboardStatCard from './DashboardStatCard.vue'
+import type {
+  DashboardStatAccent,
+  DashboardStatDecoration,
+  DashboardStatIcon,
+  DashboardStatTheme,
+} from './dashboardStatThemes'
 
-defineProps<{
+const props = defineProps<{
   stats: UserStatsType
   balance: number
   isSimple: boolean
   activity?: UserDashboardActivity | null
 }>()
+
 const { t } = useI18n()
 
-const formatBalance = (b: number) =>
-  new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(b)
-
-const formatNumber = (n: number) => n.toLocaleString()
-const formatCost = (c: number) => c.toFixed(4)
-const formatTokens = (t: number) => {
-  if (t >= 1_000_000_000) return `${(t / 1_000_000_000).toFixed(2)}B`
-  if (t >= 1_000_000) return `${(t / 1_000_000).toFixed(1)}M`
-  if (t >= 1000) return `${(t / 1000).toFixed(1)}K`
-  return Math.round(t).toString()
+interface DashboardCard {
+  id: string
+  testId: string
+  title: string
+  value: string
+  description: string
+  icon: DashboardStatIcon
+  theme: DashboardStatTheme
+  accent?: DashboardStatAccent
+  decorativeChart?: DashboardStatDecoration
+  valueClass?: string
+  hidden?: boolean
 }
-const formatDays = (days: number) => t('dashboard.activity.days', { count: days })
-const formatDuration = (ms: number) => ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms.toFixed(0)}ms`
+
+const cards = computed<DashboardCard[]>(() => {
+  const stats = props.stats
+  const todayCacheTokens = finiteNumber(stats.today_cache_creation_tokens)
+    + finiteNumber(stats.today_cache_read_tokens)
+  const totalCacheTokens = finiteNumber(stats.total_cache_creation_tokens)
+    + finiteNumber(stats.total_cache_read_tokens)
+
+  return [
+    {
+      id: 'balance',
+      testId: 'balance-card',
+      title: t('dashboard.balanceTotal'),
+      value: formatMoney(props.balance, 2),
+      description: t('dashboard.balanceAvailable'),
+      icon: 'dollar',
+      theme: 'pink',
+      decorativeChart: 'wave',
+      hidden: props.isSimple,
+    },
+    {
+      id: 'api-keys',
+      testId: 'api-keys-card',
+      title: t('dashboard.apiKeys'),
+      value: formatMetric(stats.total_api_keys),
+      description: `${formatMetric(stats.active_api_keys)} ${t('common.active')}`,
+      icon: 'key',
+      theme: 'blue',
+      accent: 'description',
+      decorativeChart: 'wave',
+    },
+    {
+      id: 'today-requests',
+      testId: 'today-requests-card',
+      title: t('dashboard.todayRequests'),
+      value: formatMetric(stats.today_requests),
+      description: `${t('common.total')}: ${formatFullNumber(stats.total_requests)}`,
+      icon: 'chart',
+      theme: 'green',
+      decorativeChart: 'bars',
+    },
+    {
+      id: 'today-cost',
+      testId: 'today-cost-card',
+      title: t('dashboard.todayCost'),
+      value: formatMoney(stats.today_actual_cost, 4),
+      description: `${t('common.total')}: ${formatMoney(stats.total_actual_cost, 4)}`,
+      icon: 'dollar',
+      theme: 'purple',
+      accent: 'value',
+      decorativeChart: 'wave',
+    },
+    {
+      id: 'today-tokens',
+      testId: 'today-tokens-card',
+      title: t('dashboard.todayTokens'),
+      value: formatTokens(stats.today_tokens),
+      description: tokenBreakdown(
+        stats.today_input_tokens,
+        stats.today_output_tokens,
+        todayCacheTokens,
+      ),
+      icon: 'cube',
+      theme: 'amber',
+      decorativeChart: 'wave',
+    },
+    {
+      id: 'total-tokens',
+      testId: 'total-tokens-card',
+      title: t('dashboard.totalTokens'),
+      value: formatTokens(stats.total_tokens),
+      description: tokenBreakdown(
+        stats.total_input_tokens,
+        stats.total_output_tokens,
+        totalCacheTokens,
+      ),
+      icon: 'database',
+      theme: 'indigo',
+      decorativeChart: 'wave',
+    },
+    {
+      id: 'performance',
+      testId: 'performance-card',
+      title: t('dashboard.activity.peakDailyTokens'),
+      value: formatTokens(props.activity?.peak_daily_tokens),
+      description: activityStreaks(
+        props.activity?.current_streak_days,
+        props.activity?.longest_streak_days,
+      ),
+      icon: 'chart',
+      theme: 'violet',
+      accent: 'description',
+      decorativeChart: 'wave',
+    },
+    {
+      id: 'average-response',
+      testId: 'average-response-card',
+      title: t('dashboard.avgResponse'),
+      value: formatDuration(stats.average_duration_ms),
+      description: t('dashboard.averageTime'),
+      icon: 'clock',
+      theme: 'rose',
+      decorativeChart: 'wave',
+    },
+  ]
+})
+
+function finiteNumber(value: number | null | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function formatMetric(value: number | null | undefined): string {
+  return formatCompactNumber(finiteNumber(value))
+}
+
+function formatFullNumber(value: number | null | undefined): string {
+  return formatNumberLocaleString(Math.round(finiteNumber(value)))
+}
+
+function formatMoney(value: number | null | undefined, fractionDigits: number): string {
+  return `$${formatCostFixed(finiteNumber(value), fractionDigits)}`
+}
+
+function formatTokens(value: number | null | undefined): string {
+  const number = finiteNumber(value)
+  if (Math.abs(number) >= 1_000_000_000) return `${(number / 1_000_000_000).toFixed(2)}B`
+  return formatCompactNumber(number)
+}
+
+function tokenBreakdown(input: number, output: number, cache: number): string {
+  return [
+    `${t('dashboard.input')}: ${formatTokens(input)}`,
+    `${t('dashboard.output')}: ${formatTokens(output)}`,
+    `${t('dashboard.cache')}: ${formatTokens(cache)}`,
+  ].join(' / ')
+}
+
+function activityStreaks(
+  current: number | null | undefined,
+  longest: number | null | undefined,
+): string {
+  return [
+    `${t('dashboard.activity.currentStreak')} ${formatDays(current)}`,
+    `${t('dashboard.activity.longestStreak')} ${formatDays(longest)}`,
+  ].join(' / ')
+}
+
+function formatDays(value: number | null | undefined): string {
+  return t('dashboard.activity.days', { count: finiteNumber(value) })
+}
+
+function formatDuration(value: number | null | undefined): string {
+  const milliseconds = Math.max(0, finiteNumber(value))
+  return milliseconds >= 1000
+    ? `${(milliseconds / 1000).toFixed(2)}s`
+    : `${milliseconds.toFixed(0)}ms`
+}
 </script>

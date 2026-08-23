@@ -4,7 +4,10 @@ import { mount } from '@vue/test-utils'
 import UserDashboardCharts from '../UserDashboardCharts.vue'
 import UserDashboardRecentUsage from '../UserDashboardRecentUsage.vue'
 import UserDashboardStats from '../UserDashboardStats.vue'
-import type { UserDashboardStats as UserStatsType } from '@/api/usage'
+import type {
+  UserDashboardActivity as UserActivityType,
+  UserDashboardStats as UserStatsType,
+} from '@/api/usage'
 import type { ModelStat, UsageLog } from '@/types'
 
 const messages: Record<string, string> = {
@@ -21,6 +24,8 @@ const messages: Record<string, string> = {
   'dashboard.activity.peakDailyTokens': 'Peak Daily Tokens',
   'dashboard.avgResponse': 'Avg Response',
   'dashboard.balance': 'Balance',
+  'dashboard.balanceTotal': 'Total balance',
+  'dashboard.balanceAvailable': 'Available balance',
   'dashboard.day': 'Day',
   'dashboard.granularity': 'Granularity',
   'dashboard.hour': 'Hour',
@@ -33,6 +38,7 @@ const messages: Record<string, string> = {
   'dashboard.performance': 'Performance',
   'dashboard.recentUsage': 'Recent Usage',
   'dashboard.requests': 'Requests',
+  'dashboard.rpm': 'RPM',
   'dashboard.standard': 'Standard',
   'dashboard.timeRange': 'Time Range',
   'dashboard.todayCost': 'Today Cost',
@@ -40,6 +46,7 @@ const messages: Record<string, string> = {
   'dashboard.todayTokens': 'Today Tokens',
   'dashboard.tokens': 'Tokens',
   'dashboard.totalTokens': 'Total Tokens',
+  'dashboard.tpm': 'TPM',
   'dashboard.viewAllUsage': 'View All Usage',
 }
 
@@ -48,7 +55,13 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => messages[key] ?? key,
+      t: (key: string, params: Record<string, unknown> = {}) => {
+        const message = messages[key] ?? key
+        return Object.entries(params).reduce(
+          (result, [name, value]) => result.replace(`{${name}}`, String(value)),
+          message,
+        )
+      },
     }),
   }
 })
@@ -104,6 +117,21 @@ const dashboardStats = (): UserStatsType => ({
       today_actual_cost: 5,
     },
   ],
+})
+
+const dashboardActivity = (
+  overrides: Partial<UserActivityType> = {},
+): UserActivityType => ({
+  window_start: '2025-06-23',
+  window_end: '2026-06-21',
+  current_date: '2026-06-19',
+  total_tokens: 3_000,
+  peak_daily_tokens: 800_000,
+  current_streak_days: 7,
+  longest_streak_days: 16,
+  cumulative_tokens_before_window: 0,
+  days: [],
+  ...overrides,
 })
 
 const modelStats = (): ModelStat[] => [
@@ -199,58 +227,72 @@ describe('user dashboard cost visibility', () => {
     expect(wrapper.text()).toContain('6.75B')
   })
 
-  it('formats peak daily tokens in billions', () => {
+  it('uses the reference balance-card labels and pink visual theme', () => {
     const wrapper = mount(UserDashboardStats, {
       props: {
         stats: dashboardStats(),
-        balance: 0,
+        balance: 128.45,
         isSimple: false,
-        activity: {
-          window_start: '2025-09-01',
-          window_end: '2026-08-30',
-          current_date: '2026-08-18',
-          total_tokens: 2_500_000_000,
-          peak_daily_tokens: 2_500_000_000,
-          current_streak_days: 3,
-          longest_streak_days: 9,
-          cumulative_tokens_before_window: 0,
-          days: [],
-        },
       },
       global: { stubs: { Icon: IconStub } },
     })
 
-    expect(wrapper.text()).toContain('2.50B')
+    const balanceCard = wrapper.get('[data-testid="balance-card"]')
+    expect(balanceCard.text()).toContain('Total balance')
+    expect(balanceCard.text()).toContain('Available balance')
+    expect(balanceCard.get('[data-stat-theme="pink"]').classes()).toContain('dashboard-stat-card--pink')
   })
 
-  it('shows activity metrics in place of the performance card', () => {
+  it('formats peak daily tokens in billions', () => {
+    const activity = dashboardActivity({ peak_daily_tokens: 2_500_000_000 })
+
     const wrapper = mount(UserDashboardStats, {
       props: {
         stats: dashboardStats(),
         balance: 0,
         isSimple: false,
-        activity: {
-          window_start: '2025-09-01',
-          window_end: '2026-08-30',
-          current_date: '2026-08-18',
-          total_tokens: 1_000_000,
-          peak_daily_tokens: 850_000,
-          current_streak_days: 3,
-          longest_streak_days: 9,
-          cumulative_tokens_before_window: 0,
-          days: [],
-        },
+        activity,
       },
       global: { stubs: { Icon: IconStub } },
     })
 
-    const text = wrapper.text()
+    expect(wrapper.get('[data-testid="performance-card"]').text()).toContain('2.50B')
+  })
+
+  it('restores the peak-token and streak activity metrics', () => {
+    const wrapper = mount(UserDashboardStats, {
+      props: {
+        stats: dashboardStats(),
+        balance: 0,
+        isSimple: false,
+        activity: dashboardActivity(),
+      },
+      global: { stubs: { Icon: IconStub } },
+    })
+
+    const text = wrapper.get('[data-testid="performance-card"]').text()
     expect(text).toContain('Peak Daily Tokens')
-    expect(text).toContain('850.0K')
-    expect(text).toContain('Current Streak')
-    expect(text).toContain('Longest Streak')
+    expect(text).toContain('800.0K')
+    expect(text).toContain('Current Streak 7 days')
+    expect(text).toContain('Longest Streak 16 days')
     expect(text).not.toContain('RPM')
     expect(text).not.toContain('TPM')
+  })
+
+  it('removes the balance card in simple mode without replacing the real statistic cards', () => {
+    const wrapper = mount(UserDashboardStats, {
+      props: {
+        stats: dashboardStats(),
+        balance: 123.45,
+        isSimple: true,
+        activity: dashboardActivity(),
+      },
+      global: { stubs: { Icon: IconStub } },
+    })
+
+    expect(wrapper.find('[data-testid="balance-card"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="stat-card"]')).toHaveLength(7)
+    expect(wrapper.get('[data-testid="performance-card"]').text()).toContain('800.0K')
   })
 
   it('shows user actual consumption in the summary cards without standard cost', () => {

@@ -11,7 +11,7 @@
           <Icon name="menu" size="md" />
         </button>
 
-        <div class="hidden min-w-0 lg:block">
+        <div v-if="!hideHeaderTitle" data-testid="header-title-block" class="hidden min-w-0 lg:block">
           <h1 class="truncate text-lg font-semibold text-content-primary">
             {{ pageTitle }}
           </h1>
@@ -428,6 +428,8 @@ const displayName = computed(() => {
   if (!user.value) return ''
   return user.value.username || user.value.email?.split('@')[0] || ''
 })
+
+const hideHeaderTitle = computed(() => route.meta.hideHeaderTitle === true)
 
 const pageTitle = computed(() => {
   // For custom pages, use the menu item's label instead of generic "自定义页面"

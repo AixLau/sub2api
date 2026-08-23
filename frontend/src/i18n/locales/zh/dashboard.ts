@@ -2,7 +2,14 @@ export default {
   dashboard: {
     title: '仪表盘',
     welcomeMessage: '欢迎回来！这是您账户的概览。',
+    hero: {
+      welcome: '欢迎回来，{name} 👋',
+      subtitle: '今天又是创造智能的美好一天。',
+      user: '用户'
+    },
     balance: '余额',
+    balanceTotal: '总额',
+    balanceAvailable: '可用余额',
     apiKeys: 'API 密钥',
     todayRequests: '今日请求',
     todayCost: '今日消费',
@@ -10,6 +17,8 @@ export default {
     totalTokens: '累计 Token',
     cacheToday: '今日缓存',
     performance: '性能指标',
+    rpm: 'RPM',
+    tpm: 'TPM',
     avgResponse: '平均响应',
     averageTime: '平均时间',
     timeRange: '时间范围',
@@ -64,12 +73,15 @@ export default {
     quickActions: '快捷操作',
     createApiKey: '创建 API 密钥',
     generateNewKey: '生成新的 API 密钥',
+    modelPlaza: '模型广场',
+    openModelPlaza: '探索可用模型与价格',
     batchImageAgent: '批量生图助手',
     batchImageAgentDesc: '复制给 Agent 的任务说明',
     viewUsage: '查看使用记录',
     checkDetailedLogs: '查看详细的使用日志',
     redeemCode: '兑换码',
-    addBalanceWithCode: '使用兑换码充值'
+    addBalanceWithCode: '使用兑换码充值',
+    loadFailed: '仪表盘数据加载失败，请重试。'
   },
 
   // Groups (shared)

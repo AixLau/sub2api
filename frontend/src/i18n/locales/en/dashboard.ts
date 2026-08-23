@@ -2,7 +2,14 @@ export default {
   dashboard: {
     title: 'Dashboard',
     welcomeMessage: "Welcome back! Here's an overview of your account.",
+    hero: {
+      welcome: 'Welcome back, {name} 👋',
+      subtitle: 'Another beautiful day to create intelligence.',
+      user: 'User'
+    },
     balance: 'Balance',
+    balanceTotal: 'Total balance',
+    balanceAvailable: 'Available balance',
     apiKeys: 'API Keys',
     todayRequests: 'Today Requests',
     todayCost: 'Today Cost',
@@ -10,6 +17,8 @@ export default {
     totalTokens: 'Total Tokens',
     cacheToday: 'Cache (Today)',
     performance: 'Performance',
+    rpm: 'RPM',
+    tpm: 'TPM',
     avgResponse: 'Avg Response',
     averageTime: 'Average time',
     timeRange: 'Time Range',
@@ -64,12 +73,15 @@ export default {
     quickActions: 'Quick Actions',
     createApiKey: 'Create API Key',
     generateNewKey: 'Generate a new API key',
+    modelPlaza: 'Model Plaza',
+    openModelPlaza: 'Explore available models and pricing',
     batchImageAgent: 'Batch Image Assistant',
     batchImageAgentDesc: 'Copy instructions for an agent',
     viewUsage: 'View Usage',
     checkDetailedLogs: 'Check detailed usage logs',
     redeemCode: 'Redeem Code',
-    addBalanceWithCode: 'Add balance with a code'
+    addBalanceWithCode: 'Add balance with a code',
+    loadFailed: 'Unable to load dashboard data. Please try again.'
   },
 
   // Groups (shared)
