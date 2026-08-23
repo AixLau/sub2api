@@ -10,6 +10,7 @@ import HeroSection from '@/components/landing/HeroSection.vue'
 import TrustedBySection from '@/components/landing/TrustedBySection.vue'
 import { applyLandingSeo } from '@/utils/landingSeo'
 import { sanitizeUrl } from '@/utils/url'
+import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -20,6 +21,13 @@ const appStore = useAppStore()
 const homeContent = computed(() => appStore.cachedPublicSettings?.home_content || '')
 const hasHomeContent = computed(() => homeContent.value.trim().length > 0)
 const compactHomeEnabled = computed(() => appStore.cachedPublicSettings?.compact_home_enabled === true)
+const modelPlazaEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.modelPlaza))
+const modelPlazaRequiresAuth = computed(
+  () => appStore.cachedPublicSettings?.model_plaza_require_auth === true
+)
+const showModelPlazaEntry = computed(
+  () => modelPlazaEnabled.value && (authStore.isAuthenticated || !modelPlazaRequiresAuth.value)
+)
 const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API')
 const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || '')
 const siteLogo = computed(() => sanitizeUrl(
@@ -75,6 +83,15 @@ onMounted(() => {
         <div class="flex items-center gap-2">
           <LocaleSwitcher />
           <router-link
+            v-if="showModelPlazaEntry"
+            to="/model-plaza"
+            class="flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            :title="t('nav.modelPlaza')"
+          >
+            <Icon name="grid" size="md" />
+            <span class="hidden sm:inline">{{ t('nav.modelPlaza') }}</span>
+          </router-link>
+          <router-link
             :to="compactDestination"
             class="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-gray-900"
           >
@@ -99,7 +116,7 @@ onMounted(() => {
     </main>
   </div>
 
-  <LandingShell v-else variant="home">
+  <LandingShell v-else variant="home" :show-model-plaza-entry="showModelPlazaEntry">
     <HeroSection />
     <TrustedBySection />
   </LandingShell>

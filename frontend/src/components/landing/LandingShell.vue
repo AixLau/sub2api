@@ -1,6 +1,6 @@
 <template>
   <div class="landing-shell app-shell" :class="{ 'app-shell--home': variant === 'home' }">
-    <LandingNavbar />
+    <LandingNavbar :show-model-plaza-entry="showModelPlazaEntry" />
     <main :class="variant === 'home' ? 'home-main' : 'public-page-main'">
       <slot />
     </main>
@@ -17,9 +17,11 @@ useLandingLightTheme()
 withDefaults(
   defineProps<{
     variant?: 'home' | 'page'
+    showModelPlazaEntry?: boolean
   }>(),
   {
-    variant: 'page'
+    variant: 'page',
+    showModelPlazaEntry: false
   }
 )
 </script>

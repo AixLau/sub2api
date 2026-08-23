@@ -200,7 +200,7 @@ func TestOpenAIHTTPGatewayPipelineDefaultStagesReleaseImageSlotWhenCyberStageBlo
 	body := []byte(`{"model":"gpt-5.1","prompt_cache_key":"pipeline-image-session","input":"draw","tools":[{"type":"image_generation"}]}`)
 	apiKey := &service.APIKey{ID: 77, Group: &service.Group{AllowImageGeneration: true}}
 	c, w := newOpenAIGatewayPipelineCyberContext(http.MethodPost, "/v1/responses", body)
-	blockKey := service.CyberSessionBlockKey(apiKey.ID, c, body)
+	blockKey := service.CyberSessionExplicitBlockKey(apiKey.ID, c, body)
 	require.NotEmpty(t, blockKey)
 
 	guard := &openAIGatewayPipelineModerationGuardSpy{decision: &service.ContentModerationDecision{

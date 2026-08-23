@@ -215,7 +215,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 					h.handleFailoverExhausted(c, failoverErr, true)
 					return
 				}
-				h.runOpenAIHTTPScheduleResultStage(c, account, reqModel, false, nil)
+				h.runOpenAIHTTPScheduleResultStage(c, account, reqModel, false, result, false, nil, err)
 				if failoverClientGone(c) {
 					reqLog.Info("openai_embeddings.failover_aborted_client_disconnected",
 						zap.Int64("account_id", account.ID),
@@ -240,7 +240,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 				)
 				continue
 			}
-			h.runOpenAIHTTPScheduleResultStage(c, account, reqModel, false, nil)
+			h.runOpenAIHTTPScheduleResultStage(c, account, reqModel, false, result, false, nil, err)
 			if c.Writer.Size() == writerSizeBeforeForward {
 				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
 			}

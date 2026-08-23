@@ -6,6 +6,9 @@
         <span>{{ brandName }}</span>
       </router-link>
       <div class="nav-actions">
+        <router-link v-if="showModelPlazaEntry" class="nav-account-link" to="/model-plaza">
+          模型广场
+        </router-link>
         <router-link class="nav-account-link" to="/login">登录</router-link>
         <router-link class="nav-account-link nav-account-link--strong" to="/register">
           注册
@@ -70,4 +73,8 @@ import { brandName, navLinks } from '@/data/landing'
 const route = useRoute()
 const isOpen = ref(false)
 const currentYear = new Date().getFullYear()
+
+defineProps<{
+  showModelPlazaEntry?: boolean
+}>()
 </script>

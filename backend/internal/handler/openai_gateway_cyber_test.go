@@ -147,6 +147,23 @@ func TestRejectIfCyberSessionBlocked_FailOpen(t *testing.T) {
 	require.False(t, h2.rejectIfCyberSessionBlocked(c, key, []byte(`{}`), "gpt-5", cyberBlockFormatResponses), "nil gateway service → pass")
 }
 
+func TestBuildCyberSessionBlockWritePlanCombinesExplicitAndTranscriptKeys(t *testing.T) {
+	body := []byte(`{"messages":[{"role":"user","content":"setup"},{"role":"assistant","content":"ready"},{"role":"user","content":"trigger"}]}`)
+	c := newTestGinContext()
+	c.Request = httptest.NewRequest("POST", "/openai/v1/responses", strings.NewReader(string(body)))
+	c.Request.RemoteAddr = "203.0.113.44:12345"
+	c.Request.Header.Set("User-Agent", "client/1.2.3")
+
+	plan := buildCyberSessionBlockWritePlan(7, c, body)
+	require.Len(t, plan.keys, 2)
+	require.NotEmpty(t, plan.scopeKey)
+
+	c.Request.Header.Set("session_id", "sess-explicit")
+	plan = buildCyberSessionBlockWritePlan(7, c, body)
+	require.Len(t, plan.keys, 3)
+	require.NotEmpty(t, plan.scopeKey)
+}
+
 // TestRecordCyberPolicyIfMarked_BlockKeyPlumbed verifies the 6th param is
 // accepted and a non-empty key with nil gateway service does not panic
 // (write-side guards live in the service layer).
@@ -155,7 +172,7 @@ func TestRecordCyberPolicyIfMarked_BlockKeyPlumbed(t *testing.T) {
 	service.MarkOpsCyberPolicy(c, service.CyberPolicyMark{Message: "x", UpstreamStatus: 400})
 	h := &OpenAIGatewayHandler{}
 	require.NotPanics(t, func() {
-		h.recordCyberPolicyIfMarked(c, nil, nil, nil, "gpt-5", true, "deadbeef", service.ChannelUsageFields{}, "", nil)
+		h.recordCyberPolicyIfMarked(c, nil, nil, nil, "gpt-5", true, "deadbeef", service.ChannelUsageFields{}, "", []byte(`{"input":"deadbeef"}`))
 	})
 }
 

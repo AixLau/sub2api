@@ -64,7 +64,7 @@ func TestOpenAIChatCompletions_CyberBlockedByPipelineStage(t *testing.T) {
 	require.Equal(t, "gpt-5.1", guard.calls[0].Model)
 	require.Equal(t, []byte(body), guard.calls[0].Body)
 	require.Equal(t, 1, cyberChecker.runtimeCalls)
-	require.Equal(t, []string{service.CyberSessionBlockKey(apiKey.ID, c, []byte(body))}, cyberChecker.checkedKeys)
+	require.Equal(t, []string{service.CyberSessionExplicitBlockKey(apiKey.ID, c, []byte(body))}, cyberChecker.checkedKeys)
 }
 
 func TestOpenAIChatCompletions_ModerationBlockSkipsCyberPipelineStage(t *testing.T) {
@@ -120,7 +120,7 @@ func TestOpenAIChat_GatewayPipelineEntrypointNilPipelineCyberFallbackBlocksBefor
 
 	apiKey, ok := middleware.GetAPIKeyFromContext(c)
 	require.True(t, ok)
-	key := service.CyberSessionBlockKey(apiKey.ID, c, []byte(body))
+	key := service.CyberSessionExplicitBlockKey(apiKey.ID, c, []byte(body))
 	cache := &openAIChatModerationGuardCyberCache{blocked: map[string]bool{key: true}}
 	settingService := service.NewSettingService(&contentModerationHandlerSettingRepo{values: map[string]string{
 		service.SettingKeyCyberSessionBlockEnabled:    "true",
@@ -167,12 +167,12 @@ type openAIChatCyberPipelineCheckerSpy struct {
 	checkedKeys  []string
 }
 
-func (s *openAIChatCyberPipelineCheckerSpy) CyberSessionBlockRuntime(context.Context) (bool, time.Duration) {
+func (s *openAIChatCyberPipelineCheckerSpy) FindCyberSessionBlockedForRequest(_ context.Context, apiKeyID int64, c *gin.Context, body []byte, _, _ string) string {
 	s.runtimeCalls++
-	return s.enabled, time.Minute
-}
-
-func (s *openAIChatCyberPipelineCheckerSpy) IsCyberSessionBlocked(_ context.Context, key string) bool {
+	key := service.CyberSessionExplicitBlockKey(apiKeyID, c, body)
 	s.checkedKeys = append(s.checkedKeys, key)
-	return s.blocked
+	if s.enabled && s.blocked {
+		return key
+	}
+	return ""
 }

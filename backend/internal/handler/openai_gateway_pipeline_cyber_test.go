@@ -23,7 +23,7 @@ func TestOpenAIGatewayPipelineCheckCyberSessionBlocked(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.1","prompt_cache_key":"pipeline-session","input":"hello"}`)
 	apiKey := &service.APIKey{ID: 7}
 	c, w := newOpenAIGatewayPipelineCyberContext(http.MethodPost, "/v1/responses", body)
-	blockKey := service.CyberSessionBlockKey(apiKey.ID, c, body)
+	blockKey := service.CyberSessionExplicitBlockKey(apiKey.ID, c, body)
 	require.NotEmpty(t, blockKey)
 
 	checker := &openAIGatewayPipelineCyberCheckerStub{
@@ -54,7 +54,7 @@ func TestOpenAIGatewayPipelineCheckCyberSessionAllowed(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.1","prompt_cache_key":"pipeline-session","messages":[{"role":"user","content":"hello"}]}`)
 	apiKey := &service.APIKey{ID: 7}
 	c, w := newOpenAIGatewayPipelineCyberContext(http.MethodPost, "/v1/chat/completions", body)
-	blockKey := service.CyberSessionBlockKey(apiKey.ID, c, body)
+	blockKey := service.CyberSessionExplicitBlockKey(apiKey.ID, c, body)
 	require.NotEmpty(t, blockKey)
 
 	checker := &openAIGatewayPipelineCyberCheckerStub{
@@ -73,20 +73,25 @@ func TestOpenAIGatewayPipelineCheckCyberSessionAllowed(t *testing.T) {
 
 	require.NotNil(t, result)
 	require.False(t, result.Blocked)
-	require.Equal(t, blockKey, result.BlockKey)
+	require.Empty(t, result.BlockKey)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Empty(t, w.Body.String())
 	require.Equal(t, []string{blockKey}, checker.checkedKeys)
 }
 
-func TestOpenAIGatewayPipelineCheckCyberSessionBlockKeyStable(t *testing.T) {
+func TestOpenAIGatewayPipelineCheckCyberSessionExplicitBlockKeyStable(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"model":"gpt-5.1","prompt_cache_key":"pipeline-session","input":"hello"}`)
 	apiKey := &service.APIKey{ID: 7}
 	c1, _ := newOpenAIGatewayPipelineCyberContext(http.MethodPost, "/v1/responses", body)
 	c2, _ := newOpenAIGatewayPipelineCyberContext(http.MethodPost, "/v1/responses", body)
+	blockKey := service.CyberSessionExplicitBlockKey(apiKey.ID, c1, body)
+	otherBlockKey := service.CyberSessionExplicitBlockKey(8, c1, body)
 
-	checker := &openAIGatewayPipelineCyberCheckerStub{enabled: true}
+	checker := &openAIGatewayPipelineCyberCheckerStub{
+		enabled: true,
+		blocked: map[string]bool{blockKey: true, otherBlockKey: true},
+	}
 	pipeline := newOpenAIGatewayPipeline(nil)
 	pipeline.cyberSessionChecker = checker
 
@@ -105,7 +110,7 @@ func TestOpenAIGatewayPipelineCheckCyberSessionBlockKeyStable(t *testing.T) {
 
 	require.NotEmpty(t, result1.BlockKey)
 	require.Equal(t, result1.BlockKey, result2.BlockKey)
-	require.Equal(t, service.CyberSessionBlockKey(apiKey.ID, c1, body), result1.BlockKey)
+	require.Equal(t, blockKey, result1.BlockKey)
 
 	otherAPIKeyResult := pipeline.CheckCyberSession(c1, zap.NewNop(), openAIGatewayCyberSessionInput{
 		APIKey: &service.APIKey{ID: 8},
@@ -164,7 +169,7 @@ func TestOpenAIGatewayHandlerCheckCyberSessionWithPipelineEnqueuesOpsEntry(t *te
 	body := []byte(`{"model":"gpt-5.1","prompt_cache_key":"pipeline-session","input":"hello"}`)
 	apiKey := &service.APIKey{ID: 7, Name: "gateway-key", Key: "sk-test-cyber-pipeline"}
 	c, w := newOpenAIGatewayPipelineCyberContext(http.MethodPost, "/v1/responses", body)
-	blockKey := service.CyberSessionBlockKey(apiKey.ID, c, body)
+	blockKey := service.CyberSessionExplicitBlockKey(apiKey.ID, c, body)
 	require.NotEmpty(t, blockKey)
 
 	checker := &openAIGatewayPipelineCyberCheckerStub{
@@ -211,7 +216,7 @@ func TestOpenAIGatewayHTTPPipelineCyberSessionBlockRecordsRiskAudit(t *testing.T
 	}
 	c, w := newOpenAIGatewayPipelineCyberContext(http.MethodPost, "/v1/responses", body)
 	c.Writer.Header().Set("X-Request-Id", "req-session-blocked")
-	blockKey := service.CyberSessionBlockKey(apiKey.ID, c, body)
+	blockKey := service.CyberSessionExplicitBlockKey(apiKey.ID, c, body)
 	require.NotEmpty(t, blockKey)
 
 	checker := &openAIGatewayPipelineCyberCheckerStub{
@@ -278,13 +283,13 @@ type openAIGatewayPipelineCyberCheckerStub struct {
 	checkedKeys []string
 }
 
-func (s *openAIGatewayPipelineCyberCheckerStub) CyberSessionBlockRuntime(context.Context) (bool, time.Duration) {
-	return s.enabled, time.Minute
-}
-
-func (s *openAIGatewayPipelineCyberCheckerStub) IsCyberSessionBlocked(_ context.Context, key string) bool {
+func (s *openAIGatewayPipelineCyberCheckerStub) FindCyberSessionBlockedForRequest(_ context.Context, apiKeyID int64, c *gin.Context, body []byte, _, _ string) string {
+	key := service.CyberSessionExplicitBlockKey(apiKeyID, c, body)
 	s.checkedKeys = append(s.checkedKeys, key)
-	return s.blocked[key]
+	if s.enabled && s.blocked[key] {
+		return key
+	}
+	return ""
 }
 
 type openAIGatewayPipelineRiskAuditSettingRepo struct {

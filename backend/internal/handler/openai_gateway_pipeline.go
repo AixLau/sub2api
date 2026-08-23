@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 	"strings"
-	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -603,8 +603,7 @@ func (p *OpenAIGatewayPipeline) webSocketFollowupFramePipelineStages(input openA
 }
 
 type openAIGatewayCyberSessionChecker interface {
-	CyberSessionBlockRuntime(ctx context.Context) (bool, time.Duration)
-	IsCyberSessionBlocked(ctx context.Context, key string) bool
+	FindCyberSessionBlockedForRequest(ctx context.Context, apiKeyID int64, c *gin.Context, body []byte, clientIP, userAgent string) string
 }
 
 type openAIGatewayCyberSessionInput struct {
@@ -643,18 +642,16 @@ func (p *OpenAIGatewayPipeline) checkCyberSessionBlock(c *gin.Context, input ope
 	if c.Request != nil {
 		ctx = c.Request.Context()
 	}
-	key := service.CyberSessionBlockKey(input.APIKey.ID, c, input.Body)
+	clientIP, userAgent := "", ""
+	if c.Request != nil {
+		clientIP = strings.TrimSpace(ip.GetClientIP(c))
+		userAgent = c.GetHeader("User-Agent")
+	}
+	key := p.cyberSessionChecker.FindCyberSessionBlockedForRequest(ctx, input.APIKey.ID, c, input.Body, clientIP, userAgent)
 	if key == "" {
 		return result
 	}
 	result.BlockKey = key
-	enabled, _ := p.cyberSessionChecker.CyberSessionBlockRuntime(ctx)
-	if !enabled {
-		return result
-	}
-	if !p.cyberSessionChecker.IsCyberSessionBlocked(ctx, key) {
-		return result
-	}
 	result.Blocked = true
 	return result
 }

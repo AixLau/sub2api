@@ -979,6 +979,7 @@ func (s OpenAIHTTPRoutingStage) handleOpenAIHTTPRoutingSelectionError(c *gin.Con
 			return ExecutableStageResult{Stop: true, Err: err}
 		}
 		cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, s.Handler.gatewayService, s.APIKey, requestedModel, displayModel)
+		cls = classifySelectionFailureError(err, cls)
 		if !cls.ModelNotFound {
 			markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 		}
@@ -1301,13 +1302,29 @@ func (h *OpenAIGatewayHandler) openAIHTTPUsageStageFromRouteDescriptor(c *gin.Co
 	return blockedUsageStage(moderationcoverage.PipelineOpenAIHTTP, "pipeline usage stage adapter is not bound by route descriptor")
 }
 
-func (h *OpenAIGatewayHandler) runOpenAIHTTPScheduleResultStage(c *gin.Context, account *service.Account, requestedModel string, success bool, firstTokenMs *int) openAIHTTPExecutableStageResult {
+func (h *OpenAIGatewayHandler) runOpenAIHTTPScheduleResultStage(
+	c *gin.Context,
+	account *service.Account,
+	forwardModel string,
+	requireCompact bool,
+	result *service.OpenAIForwardResult,
+	success bool,
+	firstTokenMs *int,
+	observedErr ...error,
+) openAIHTTPExecutableStageResult {
+	var scheduleErr error
+	if len(observedErr) > 0 {
+		scheduleErr = observedErr[0]
+	}
 	return h.runOpenAIHTTPUsageStage(c, OpenAIHTTPUsageStage{
-		Handler:            h,
-		Account:            account,
-		ScheduleModel:      requestedModel,
-		ScheduleSuccess:    &success,
-		ScheduleFirstToken: firstTokenMs,
+		Handler:                h,
+		Result:                 result,
+		Account:                account,
+		ScheduleModel:          forwardModel,
+		ScheduleRequireCompact: requireCompact,
+		ScheduleSuccess:        &success,
+		ScheduleFirstToken:     firstTokenMs,
+		ScheduleObservedErr:    scheduleErr,
 	})
 }
 
@@ -1339,33 +1356,35 @@ type OpenAIHTTPCyberUsageStageInput struct {
 }
 
 type OpenAIHTTPUsageStage struct {
-	Handler            *OpenAIGatewayHandler
-	RequestContext     context.Context
-	Result             *service.OpenAIForwardResult
-	Source             service.UsageSource
-	APIKey             *service.APIKey
-	Account            *service.Account
-	Subscription       *service.UserSubscription
-	InboundEndpoint    string
-	UpstreamEndpoint   string
-	UserAgent          string
-	ClientIP           string
-	SessionID          string
-	RequestPayloadHash string
-	RequestBody        []byte
-	QuotaPlatform      string
-	ChannelUsageFields service.ChannelUsageFields
-	CyberBlocked       bool
-	ForwardErrored     bool
-	CyberBlockKey      string
-	ScheduleSuccess    *bool
-	ScheduleModel      string
-	ScheduleFirstToken *int
-	Mandatory          bool
-	LogComponent       string
-	LogMessage         string
-	LogUserID          int64
-	LogModel           string
+	Handler                *OpenAIGatewayHandler
+	RequestContext         context.Context
+	Result                 *service.OpenAIForwardResult
+	Source                 service.UsageSource
+	APIKey                 *service.APIKey
+	Account                *service.Account
+	Subscription           *service.UserSubscription
+	InboundEndpoint        string
+	UpstreamEndpoint       string
+	UserAgent              string
+	ClientIP               string
+	SessionID              string
+	RequestPayloadHash     string
+	RequestBody            []byte
+	QuotaPlatform          string
+	ChannelUsageFields     service.ChannelUsageFields
+	CyberBlocked           bool
+	ForwardErrored         bool
+	CyberBlockKey          string
+	ScheduleSuccess        *bool
+	ScheduleModel          string
+	ScheduleRequireCompact bool
+	ScheduleFirstToken     *int
+	ScheduleObservedErr    error
+	Mandatory              bool
+	LogComponent           string
+	LogMessage             string
+	LogUserID              int64
+	LogModel               string
 }
 
 func (OpenAIHTTPUsageStage) StageName() string {
@@ -1395,7 +1414,8 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 		if model == "" {
 			model = s.LogModel
 		}
-		h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account.ID, s.Account.GetMappedModel(model), scheduleSuccess, firstTokenMs)
+		model = openAIAccountScheduleModel(c, s.Account, model, s.ScheduleRequireCompact, s.Result)
+		h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account, model, scheduleSuccess, firstTokenMs, s.ScheduleObservedErr)
 	}
 	failedUpstreamUsage := s.Source.Normalize() == service.UsageSourceFailedUpstream
 	if failedUpstreamUsage {
@@ -1690,11 +1710,11 @@ func (s OpenAIWebSocketRoutingStage) RunRouting(c *gin.Context) ExecutableStageR
 	)
 	if err != nil {
 		reqLog.Warn("openai.websocket_account_select_failed", zap.Error(openAICompatibleSelectionErrorForLog(err, s.RequestPlatform)), zap.Int("excluded_account_count", len(failedAccountIDs)))
-		s.closeOpenAIWebSocketRoutingNoAccount(err)
+		s.closeOpenAIWebSocketRoutingNoAccount(c, err)
 		return ExecutableStageResult{Stop: true, Err: err}
 	}
 	if selection == nil || selection.Account == nil {
-		s.closeOpenAIWebSocketRoutingNoAccount(nil)
+		s.closeOpenAIWebSocketRoutingNoAccount(c, nil)
 		return ExecutableStageResult{Stop: true}
 	}
 
@@ -1823,9 +1843,9 @@ func (s OpenAIWebSocketRoutingStage) retryAfterProfitVeto(account *service.Accou
 	return ExecutableStageResult{}
 }
 
-func (s OpenAIWebSocketRoutingStage) closeOpenAIWebSocketRoutingNoAccount(err error) {
+func (s OpenAIWebSocketRoutingStage) closeOpenAIWebSocketRoutingNoAccount(c *gin.Context, err error) {
 	if s.LastFailoverErr != nil {
-		closeOpenAIWSFailoverExhausted(s.ClientConn, s.LastFailoverErr)
+		closeOpenAIWSFailoverExhausted(c, s.ClientConn, s.LastFailoverErr)
 		return
 	}
 	closeOpenAIClientWS(s.ClientConn, coderws.StatusTryAgainLater, "no available account")
@@ -1900,6 +1920,7 @@ type OpenAIWebSocketUsageStage struct {
 	TurnErr              error
 	Result               *service.OpenAIForwardResult
 	CyberBlockKey        string
+	CyberBlockBody       []byte
 	ChannelMapping       service.ChannelMappingResult
 	RequestPayloadHash   string
 	QuotaPlatform        string
@@ -1940,7 +1961,7 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 	if upstreamModel == "" && s.Result != nil {
 		upstreamModel = strings.TrimSpace(s.Result.UpstreamModel)
 	}
-	h.recordCyberPolicyIfMarked(c, s.APIKey, s.Account, s.Subscription, s.Model, s.TurnErr != nil, s.CyberBlockKey, s.ChannelMapping.ToUsageFields(s.Model, upstreamModel), s.RequestPayloadHash, nil)
+	h.recordCyberPolicyIfMarked(c, s.APIKey, s.Account, s.Subscription, s.Model, s.TurnErr != nil, s.CyberBlockKey, s.ChannelMapping.ToUsageFields(s.Model, upstreamModel), s.RequestPayloadHash, s.CyberBlockBody)
 	if service.GetOpsCyberPolicy(c) != nil && s.CyberBlockedThisConn != nil {
 		*s.CyberBlockedThisConn = true
 	}
@@ -1962,7 +1983,7 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 	}
 	if s.Result == nil {
 		if s.ScheduleSuccess != nil && s.Account != nil {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account.ID, s.Account.GetMappedModel(s.Model), *s.ScheduleSuccess, nil)
+			h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account, openAIAccountScheduleModel(c, s.Account, s.Model, false, nil), *s.ScheduleSuccess, nil, s.TurnErr)
 		}
 		return ExecutableStageResult{}
 	}
@@ -1980,7 +2001,7 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 	if scheduleModel == "" {
 		scheduleModel = s.Account.GetMappedModel(s.Model)
 	}
-	h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account.ID, scheduleModel, scheduleSuccess, s.Result.FirstTokenMs)
+	h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account, scheduleModel, scheduleSuccess, s.Result.FirstTokenMs, s.TurnErr)
 	inboundEndpoint := GetInboundEndpoint(c)
 	upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, s.Account, s.Result)
 	cyberBlocked := service.GetOpsCyberPolicy(c) != nil

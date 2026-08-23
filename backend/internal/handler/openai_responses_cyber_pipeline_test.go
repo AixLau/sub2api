@@ -46,7 +46,7 @@ func TestOpenAIResponsesHTTP_CyberBlockedByPipelineBeforeRoutingBillingSlotsAndF
 	require.Equal(t, "gpt-5.1", guard.calls[0].Model)
 	require.Equal(t, []byte(body), guard.calls[0].Body)
 	require.Equal(t, 1, cyberChecker.runtimeCalls)
-	require.Equal(t, []string{service.CyberSessionBlockKey(apiKey.ID, c, []byte(body))}, cyberChecker.checkedKeys)
+	require.Equal(t, []string{service.CyberSessionExplicitBlockKey(apiKey.ID, c, []byte(body))}, cyberChecker.checkedKeys)
 }
 
 func TestOpenAIResponsesHTTP_CyberBlockedUsesRequestPlatformInClientMessage(t *testing.T) {
@@ -75,7 +75,7 @@ func TestOpenAIResponsesHTTP_CyberBlockedUsesRequestPlatformInClientMessage(t *t
 	require.Contains(t, w.Body.String(), "session_blocked_by_cyber_policy")
 	require.Contains(t, w.Body.String(), "会话已被Anthropic网络安全策略屏蔽,请开启新会话")
 	require.NotContains(t, w.Body.String(), "会话已被OpenAI网络安全策略屏蔽")
-	require.Equal(t, []string{service.CyberSessionBlockKey(apiKey.ID, c, []byte(body))}, cyberChecker.checkedKeys)
+	require.Equal(t, []string{service.CyberSessionExplicitBlockKey(apiKey.ID, c, []byte(body))}, cyberChecker.checkedKeys)
 }
 
 func TestOpenAIResponsesHTTP_ModerationBlockSkipsCyberPipelineStage(t *testing.T) {
@@ -222,12 +222,12 @@ type openAIResponsesCyberPipelineCheckerSpy struct {
 	checkedKeys  []string
 }
 
-func (s *openAIResponsesCyberPipelineCheckerSpy) CyberSessionBlockRuntime(context.Context) (bool, time.Duration) {
+func (s *openAIResponsesCyberPipelineCheckerSpy) FindCyberSessionBlockedForRequest(_ context.Context, apiKeyID int64, c *gin.Context, body []byte, _, _ string) string {
 	s.runtimeCalls++
-	return s.enabled, time.Minute
-}
-
-func (s *openAIResponsesCyberPipelineCheckerSpy) IsCyberSessionBlocked(_ context.Context, key string) bool {
+	key := service.CyberSessionExplicitBlockKey(apiKeyID, c, body)
 	s.checkedKeys = append(s.checkedKeys, key)
-	return s.blocked
+	if s.enabled && s.blocked {
+		return key
+	}
+	return ""
 }

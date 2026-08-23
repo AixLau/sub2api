@@ -61,6 +61,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 				h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
 				return
 			}
+			logRequestBodyReadFailure(reqLog, c.Request, err)
 			markOpsRequestBodyReadError(c, err)
 			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
 			return
@@ -220,7 +221,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		err = stageResult.Err
 		cyberBlockKeyChat := ""
 		if service.GetOpsCyberPolicy(c) != nil {
-			cyberBlockKeyChat = service.CyberSessionBlockKey(apiKey.ID, c, body)
+			cyberBlockKeyChat = service.CyberSessionExplicitBlockKey(apiKey.ID, c, body)
 		}
 		h.runOpenAIHTTPCyberUsageStage(c, OpenAIHTTPCyberUsageStageInput{
 			APIKey:             apiKey,
@@ -282,11 +283,12 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						return
 					}
 					if c.Writer.Size() != writerSizeBeforeForward {
+						h.gatewayService.ObserveOpenAIAccountHealthFailure(c.Request.Context(), account, err)
 						h.handleFailoverExhausted(c, failoverErr, true)
 						return
 					}
 					if failoverErr.ShouldReportAccountScheduleFailure() {
-						h.runOpenAIHTTPScheduleResultStage(c, account, reqModel, false, nil)
+						h.runOpenAIHTTPScheduleResultStage(c, account, reqModel, false, result, false, nil, err)
 					}
 					if !failoverErr.ShouldRetryNextAccount() {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
@@ -294,8 +296,8 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					}
 					// Pool mode: retry on the same account
 					if failoverErr.RetryableOnSameAccount {
-						retryLimit := account.GetPoolModeRetryCount()
-						if sameAccountRetryCount[account.ID] < retryLimit {
+						retryLimit := effectiveSameAccountRetryLimit(failoverErr, account)
+						if sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
 							sameAccountRetryCount[account.ID]++
 							retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
 							reqLog.Warn("openai_chat_completions.pool_mode_same_account_retry",
@@ -334,7 +336,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					)
 					continue
 				}
-				h.runOpenAIHTTPScheduleResultStage(c, account, reqModel, false, nil)
+				h.runOpenAIHTTPScheduleResultStage(c, account, reqModel, false, result, false, nil, err)
 				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {
@@ -374,7 +376,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			ClientIP:           clientIP,
 			SessionID:          sessionID,
 			QuotaPlatform:      quotaPlatform,
-			ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel),
+			ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, reqModel, resultUpstreamModel(result)),
 			CyberBlocked:       cyberBlocked,
 			ScheduleSuccess:    &scheduleSucceeded,
 			LogComponent:       "handler.openai_gateway.chat_completions",

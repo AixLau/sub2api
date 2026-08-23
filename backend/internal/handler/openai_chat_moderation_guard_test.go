@@ -72,7 +72,7 @@ func TestOpenAIChatCompletions_ChecksModerationGuardBeforeCyberSessionBlock(t *t
 
 	apiKey, ok := middleware.GetAPIKeyFromContext(c)
 	require.True(t, ok)
-	key := service.CyberSessionBlockKey(apiKey.ID, c, []byte(body))
+	key := service.CyberSessionExplicitBlockKey(apiKey.ID, c, []byte(body))
 	cache := &openAIChatModerationGuardCyberCache{blocked: map[string]bool{key: true}}
 	settingService := service.NewSettingService(&contentModerationHandlerSettingRepo{values: map[string]string{
 		service.SettingKeyCyberSessionBlockEnabled:    "true",
@@ -108,6 +108,7 @@ func TestOpenAIChatCompletions_ChecksModerationGuardBeforeCyberSessionBlock(t *t
 
 type openAIChatModerationGuardCyberCache struct {
 	blocked map[string]bool
+	scopes  map[string]bool
 }
 
 var _ service.GatewayCache = (*openAIChatModerationGuardCyberCache)(nil)
@@ -161,14 +162,31 @@ func (c *openAIChatModerationGuardCyberCache) ReleaseGrokVideoBilled(context.Con
 	return nil
 }
 
-func (c *openAIChatModerationGuardCyberCache) SetCyberSessionBlocked(_ context.Context, key string, _ time.Duration) error {
+func (c *openAIChatModerationGuardCyberCache) SetCyberSessionBlocked(_ context.Context, scopeKey string, keys []string, _ time.Duration) error {
 	if c.blocked == nil {
 		c.blocked = map[string]bool{}
 	}
-	c.blocked[key] = true
+	for _, key := range keys {
+		c.blocked[key] = true
+	}
+	if scopeKey != "" {
+		if c.scopes == nil {
+			c.scopes = map[string]bool{}
+		}
+		c.scopes[scopeKey] = true
+	}
 	return nil
 }
 
-func (c *openAIChatModerationGuardCyberCache) IsCyberSessionBlocked(_ context.Context, key string) (bool, error) {
-	return c.blocked[key], nil
+func (c *openAIChatModerationGuardCyberCache) IsCyberSessionScopeActive(_ context.Context, scopeKey string) (bool, error) {
+	return c.scopes[scopeKey], nil
+}
+
+func (c *openAIChatModerationGuardCyberCache) FindCyberSessionBlocked(_ context.Context, keys []string) (string, error) {
+	for _, key := range keys {
+		if c.blocked[key] {
+			return key, nil
+		}
+	}
+	return "", nil
 }
