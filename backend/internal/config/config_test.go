@@ -23,117 +23,11 @@ func resetViperWithJWTSecret(t *testing.T) {
 	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
 }
 
-func TestModerationSecurityConfigDefaults(t *testing.T) {
+func TestLoadDefaultModelsListReadMaxBytes(t *testing.T) {
 	resetViperWithJWTSecret(t)
-
 	cfg, err := Load()
 	require.NoError(t, err)
-	require.Equal(t, uint64(1), cfg.Moderation.CacheHMACKeyVersion)
-	require.Equal(t, []string{"api.openai.com", "open.bigmodel.cn"}, cfg.Moderation.AllowedHosts)
-	key, available := cfg.Moderation.CacheHMACKeyBytes()
-	require.False(t, available)
-	require.Nil(t, key)
-}
-
-func TestModerationSecurityConfigHMACKey(t *testing.T) {
-	validLower := strings.Repeat("ab", 32)
-	validUpper := strings.Repeat("AB", 32)
-	tests := []struct {
-		name      string
-		value     string
-		available bool
-	}{
-		{name: "missing", value: "", available: false},
-		{name: "valid lowercase", value: validLower, available: true},
-		{name: "valid uppercase", value: validUpper, available: true},
-		{name: "malformed", value: strings.Repeat("zz", 32), available: false},
-		{name: "odd length", value: strings.Repeat("a", 63), available: false},
-		{name: "62 characters", value: strings.Repeat("a", 62), available: false},
-		{name: "66 characters", value: strings.Repeat("a", 66), available: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			resetViperWithJWTSecret(t)
-			t.Setenv("MODERATION_CACHE_HMAC_KEY", tt.value)
-
-			cfg, err := Load()
-			require.NoError(t, err)
-			key, available := cfg.Moderation.CacheHMACKeyBytes()
-			require.Equal(t, tt.available, available)
-			if tt.available {
-				require.Len(t, key, 32)
-			} else {
-				require.Nil(t, key)
-			}
-		})
-	}
-}
-
-func TestModerationSecurityConfigVersion(t *testing.T) {
-	tests := []struct {
-		name    string
-		value   string
-		want    uint64
-		wantErr bool
-	}{
-		{name: "default", value: "", want: 1},
-		{name: "explicit", value: "7", want: 7},
-		{name: "zero", value: "0", wantErr: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			resetViperWithJWTSecret(t)
-			if tt.value != "" {
-				t.Setenv("MODERATION_CACHE_HMAC_KEY_VERSION", tt.value)
-			}
-
-			cfg, err := Load()
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, tt.want, cfg.Moderation.CacheHMACKeyVersion)
-		})
-	}
-}
-
-func TestModerationSecurityConfigAllowedHosts(t *testing.T) {
-	tests := []struct {
-		name    string
-		value   string
-		want    []string
-		wantErr bool
-	}{
-		{name: "normalizes lowercase", value: "API.OPENAI.COM,Open.BigModel.CN", want: []string{"api.openai.com", "open.bigmodel.cn"}},
-		{name: "scheme", value: "https://api.openai.com", wantErr: true},
-		{name: "port", value: "api.openai.com:443", wantErr: true},
-		{name: "path", value: "api.openai.com/v1", wantErr: true},
-		{name: "trailing dot", value: "api.openai.com.", wantErr: true},
-		{name: "empty label", value: "api..openai.com", wantErr: true},
-		{name: "wildcard", value: "*.openai.com", wantErr: true},
-		{name: "IPv4 literal", value: "127.0.0.1", wantErr: true},
-		{name: "IPv6 literal", value: "2001:db8::1", wantErr: true},
-		{name: "localhost", value: "localhost", wantErr: true},
-		{name: "duplicate after normalization", value: "api.openai.com,API.OPENAI.COM", wantErr: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			resetViperWithJWTSecret(t)
-			t.Setenv("MODERATION_ALLOWED_HOSTS", tt.value)
-
-			cfg, err := Load()
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, tt.want, cfg.Moderation.AllowedHosts)
-		})
-	}
+	require.Equal(t, DefaultModelsListReadMaxBytes, cfg.Gateway.ModelsListReadMaxBytes)
 }
 
 func TestLoadTimezonePrecedence(t *testing.T) {
@@ -664,6 +558,15 @@ func TestLoadOpenAIWSClientFirstMessageTimeoutFromEnv(t *testing.T) {
 	cfg, err := Load()
 	require.NoError(t, err)
 	require.Equal(t, 120, cfg.Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds)
+}
+
+func TestLoadOpenAIWSForceHTTPFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_OPENAI_WS_FORCE_HTTP", "true")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.Gateway.OpenAIWS.ForceHTTP)
 }
 
 func TestLoadDefaultOpenAICompactModel(t *testing.T) {
@@ -1908,6 +1811,11 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "gateway.text_max_body_size",
 		},
 		{
+			name:    "gateway models list read limit",
+			mutate:  func(c *Config) { c.Gateway.ModelsListReadMaxBytes = 0 },
+			wantErr: "gateway.models_list_read_max_bytes",
+		},
+		{
 			name:    "gateway response header timeout",
 			mutate:  func(c *Config) { c.Gateway.ResponseHeaderTimeout = -1 },
 			wantErr: "gateway.response_header_timeout",
@@ -2056,11 +1964,6 @@ func TestValidateConfigErrors(t *testing.T) {
 			name:    "gateway image concurrency max negative",
 			mutate:  func(c *Config) { c.Gateway.ImageConcurrency.MaxConcurrentRequests = -1 },
 			wantErr: "gateway.image_concurrency.max_concurrent_requests must be non-negative",
-		},
-		{
-			name:    "gateway image concurrency max per user negative",
-			mutate:  func(c *Config) { c.Gateway.ImageConcurrency.MaxConcurrentRequestsPerUser = -1 },
-			wantErr: "gateway.image_concurrency.max_concurrent_requests_per_user must be non-negative",
 		},
 		{
 			name:    "gateway image concurrency overflow mode invalid",
@@ -2693,9 +2596,6 @@ func TestLoad_DefaultGatewayImageStreamConfig(t *testing.T) {
 	}
 	if cfg.Gateway.ImageConcurrency.MaxConcurrentRequests != 0 {
 		t.Fatalf("image_concurrency.max_concurrent_requests = %d, want 0", cfg.Gateway.ImageConcurrency.MaxConcurrentRequests)
-	}
-	if cfg.Gateway.ImageConcurrency.MaxConcurrentRequestsPerUser != 0 {
-		t.Fatalf("image_concurrency.max_concurrent_requests_per_user = %d, want 0", cfg.Gateway.ImageConcurrency.MaxConcurrentRequestsPerUser)
 	}
 	if cfg.Gateway.ImageConcurrency.OverflowMode != ImageConcurrencyOverflowModeReject {
 		t.Fatalf("image_concurrency.overflow_mode = %q, want %q", cfg.Gateway.ImageConcurrency.OverflowMode, ImageConcurrencyOverflowModeReject)

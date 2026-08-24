@@ -10,6 +10,7 @@ import audit from './audit'
 import promptAudit from './promptAudit'
 import rewards from './rewards'
 import merchant from './merchant'
+import plugins from './plugins'
 
 export default mergeLocaleMessages({
   ...overview,
@@ -22,4 +23,5 @@ export default mergeLocaleMessages({
   ...promptAudit,
   ...rewards,
   ...merchant,
+  ...plugins,
 }, extensions)

@@ -19,7 +19,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
-	serverpkg "github.com/Wei-Shaw/sub2api/internal/server"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/setup"
 	"github.com/Wei-Shaw/sub2api/internal/web"
@@ -146,8 +145,6 @@ func runMainServer() {
 
 	buildInfo := handler.BuildInfo{
 		Version:   Version,
-		Commit:    Commit,
-		Date:      Date,
 		BuildType: BuildType,
 	}
 
@@ -156,8 +153,11 @@ func runMainServer() {
 		log.Fatalf("Failed to initialize application: %v", err)
 	}
 	defer app.Cleanup()
-	pprofServer := startPprofServer()
-	defer shutdownPprofServer(pprofServer)
+	if app.PluginManager != nil {
+		if err := app.PluginManager.Start(context.Background()); err != nil {
+			log.Printf("Plugin manager started in degraded state: %v", err)
+		}
+	}
 	if app.PromptAudit != nil {
 		if err := app.PromptAudit.Start(context.Background()); err != nil {
 			// Startup continues so unrelated APIs stay up. Fail-closed (unavailable)
@@ -183,9 +183,6 @@ func runMainServer() {
 	<-quit
 
 	log.Println("Shutting down server...")
-	if !serverpkg.MarkHTTPServerDraining(app.Server) {
-		log.Println("Warning: HTTP server does not support draining responses")
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

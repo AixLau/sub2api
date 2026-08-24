@@ -37,6 +37,7 @@ import adminComplianceAPI from './compliance'
 import auditAPI from './audit'
 import rewardsAPI from './rewards'
 import merchantIntegrationsAPI from './merchantIntegrations'
+import pluginsAPI from './plugins'
 
 /**
  * Unified admin API object for convenient access
@@ -75,7 +76,8 @@ export const adminAPI = {
   compliance: adminComplianceAPI,
   audit: auditAPI,
   rewards: rewardsAPI,
-  merchantIntegrations: merchantIntegrationsAPI
+  merchantIntegrations: merchantIntegrationsAPI,
+  plugins: pluginsAPI
 }
 
 export {
@@ -112,7 +114,8 @@ export {
   adminComplianceAPI,
   auditAPI,
   rewardsAPI,
-  merchantIntegrationsAPI
+  merchantIntegrationsAPI,
+  pluginsAPI
 }
 
 export default adminAPI
@@ -141,3 +144,9 @@ export type {
   MerchantRechargeSyncResult,
   MerchantTestResult
 } from './merchantIntegrations'
+export type {
+  PluginInstallation,
+  PluginCompatibility,
+  PluginUISession,
+  PluginTestResult
+} from './plugins'

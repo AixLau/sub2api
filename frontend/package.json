@@ -17,6 +17,7 @@
   "dependencies": {
     "@airwallex/components-sdk": "^1.30.2",
     "@antv/g2": "5.4.8",
+    "@lobehub/icons": "^4.0.2",
     "@stripe/stripe-js": "^9.0.1",
     "@tanstack/vue-virtual": "^3.13.23",
     "@vueuse/core": "^10.7.0",
@@ -24,7 +25,7 @@
     "canvas-confetti": "^1.9.4",
     "chart.js": "^4.4.1",
     "clsx": "^2.1.1",
-    "dompurify": "^3.3.1",
+    "dompurify": "^3.4.14",
     "driver.js": "^1.4.0",
     "file-saver": "^2.0.5",
     "marked": "^17.0.1",
@@ -67,7 +68,8 @@
     "overrides": {
       "js-cookie": "3.0.7",
       "form-data@<4.0.6": ">=4.0.6",
-      "postcss@<8.5.18": ">=8.5.18"
+      "postcss@<8.5.18": ">=8.5.18",
+      "dompurify@<3.4.14": ">=3.4.14"
     }
   }
 }

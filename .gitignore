@@ -1,4 +1,5 @@
-docs/claude-relay-service/
+# 本地杂项文档、测试数据和外部项目副本
+/docs-local/
 .codex
 
 # ===================
@@ -86,7 +87,6 @@ temp/
 .cache/
 .dev/
 .serena/
-.worktrees/
 
 # ===================
 # 构建产物
@@ -131,27 +131,21 @@ AGENTS.md
 backend/cmd/server/server
 deploy/docker-compose.override.yml
 .gocache/
-.pnpm-store/
-.superpowers/
 vite.config.js
 docs/*
-!docs/install/
-!docs/install/assets/
-docs/install/assets/*.png
-!docs/install/assets/ccswitch-*.webp
-!docs/deployment/
-docs/deployment/*
-!docs/deployment/README.md
 !docs/PAYMENT.md
 !docs/PAYMENT_CN.md
 !docs/ADMIN_PAYMENT_INTEGRATION_API.md
 !docs/ASYNC_IMAGE_TASKS.md
-!docs/STRATA_COLOR_SYSTEM.md
+!docs/BATCH_IMAGE_MVP.md
+!docs/COMPOSITE_GROUPS.md
+!docs/PLUGIN_DEVELOPMENT.md
+!docs/channel-monitor-v2-safe-defaults.md
 !docs/legal/
 !docs/legal/*.md
-!docs/risk-control/
-!docs/risk-control/*.md
-!docs/risk-control/*.json
+!docs/screenshots/
+docs/screenshots/*
+!docs/screenshots/mobile-account-actions-menu.png
 .serena/
 .codex/
 frontend/coverage/
@@ -159,8 +153,7 @@ aicodex
 output/
 .codegraph/
 
-# Upstream sync audit outputs are temporary; durable intent lives in
-# upstream-sync/*.yaml and upstream-sync/decisions.ndjson.
-upstream-sync/out/
 # Vitest / Vite cache at repo root
 .vite/
+# 本地闭源插件开发目录及构建产物不进入 Sub2API 仓库
+/plugins/

@@ -59,6 +59,12 @@ export default {
           enabled: '启用奖励活动中心',
           enabledHint: '关闭后新奖励队列和管理接口不可访问；旧欢迎礼与惊喜礼兼容接口继续可用。',
         },
+        pluginManagement: {
+          title: '插件管理',
+          description: '控制管理后台侧边栏是否显示插件管理入口，不影响插件运行状态。',
+          enabled: '显示插件管理',
+          enabledHint: '关闭后仅隐藏侧边栏入口，不会停止已加载或运行中的插件。',
+        },
         riskControl: {
           title: '风控中心',
           description: '启用内容审计菜单和全端点请求审核入口。默认关闭。',

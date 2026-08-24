@@ -13,7 +13,6 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/clientmsg"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
@@ -230,7 +229,7 @@ func buildOpenAIWSHTTPBridgeErrorEvent(statusCode int, message string) []byte {
 		"status": statusCode,
 		"error": map[string]any{
 			"type":    "upstream_error",
-			"message": clientmsg.Localize(message),
+			"message": message,
 		},
 	}
 	body, err := json.Marshal(event)
@@ -333,8 +332,12 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		if err != nil {
 			return nil, fmt.Errorf("adapt %s client tools: %w", openAIWSHTTPBridgeToolUpstreamName(account), err)
 		}
-		if account.Platform == PlatformGrok && !grokExplicitToolsField && !grokExplicitToolIntent &&
-			len(inheritedLoweredTools) > 0 && hasGrokResponsesToolIntent(body) {
+		if account.Platform == PlatformGrok && !grokExplicitToolsField && !grokExplicitToolIntent && len(inheritedLoweredTools) > 0 && hasGrokResponsesToolIntent(body) {
+			// This continuation omitted tools, so the pre-adapter source cannot
+			// represent the effective inherited declarations. Cache routing must
+			// see the rehydrated tool intent or it will replace client functions
+			// with the native-search tool-free route. Explicit current-turn tool
+			// intent still uses the original pre-sanitization source above.
 			grokIntentSourceBody = append(grokIntentSourceBody[:0], body...)
 		}
 		loweredTools := inheritedState.LoweredTools
@@ -404,9 +407,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		if buildErr != nil {
 			return nil, buildErr
 		}
-		resp, err = DoOpsUpstream(c, upstreamReq, func(req *http.Request) (*http.Response, error) {
-			return s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
-		})
+		resp, err = s.doOpenAIUpstream(upstreamReq, proxyURL, account)
 		if err != nil {
 			if turn == 1 {
 				return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
@@ -512,7 +513,8 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			UpstreamModel:                 mappedModel,
 			UpstreamResponseModel:         responseModelObserver.Model(),
 			UpstreamResponseModelConflict: responseModelObserver.Conflict(),
-			ServiceTier:                   extractOpenAIServiceTierFromBody(body),
+			UpstreamResponseServiceTier:   responseModelObserver.ServiceTier(),
+			ServiceTier:                   resolvedOpenAIUpstreamServiceTierFromObserver(responseModelObserver, extractOpenAIServiceTierFromBody(body)),
 			ReasoningEffort:               ApplyThinkingEnabledFallback(extractOpenAIReasoningEffortFromBody(body, mappedModel, originalModel), body, mappedModel),
 			Stream:                        reqStream,
 			OpenAIWSMode:                  true,
@@ -622,7 +624,6 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		if isOpenAIWSTokenEvent(eventType) {
 			tokenEventCount++
 			if firstTokenMs == nil {
-				MarkOpsUpstreamFirstEvent(c)
 				ms := int(time.Since(turnStart).Milliseconds())
 				firstTokenMs = &ms
 			}
