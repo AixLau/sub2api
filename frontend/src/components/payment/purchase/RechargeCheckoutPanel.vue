@@ -14,6 +14,7 @@
       aria-hidden="true"
       draggable="false"
       decoding="async"
+      loading="lazy"
     />
 
     <div data-testid="recharge-controls" class="purchase-checkout-controls min-w-0 space-y-5">

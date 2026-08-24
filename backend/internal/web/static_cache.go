@@ -12,7 +12,7 @@ import (
 // immutable caching without relying on a reverse proxy to classify paths.
 const (
 	staticAssetsCacheControl      = "public, max-age=31536000, immutable"
-	unversionedStaticCacheControl = "public, max-age=3600, s-maxage=86400"
+	unversionedStaticCacheControl = "public, max-age=31536000"
 )
 
 // isFingerprintedEmbeddedAssetPath reports whether a cleaned URL path refers to

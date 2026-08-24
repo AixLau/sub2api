@@ -19,6 +19,7 @@ describe('PurchaseHero', () => {
     expect(wrapper.get('#purchase-hero-title').text()).toContain('payment.purchaseHero.lineTwoAccent')
     expect(wrapper.get('[data-testid="purchase-headline-art"]').attributes('src'))
       .toBe('/assets/purchase/purchase-headline-transparent.webp')
+    expect(wrapper.get('[data-testid="purchase-headline-art"]').attributes('loading')).toBe('eager')
   })
 
   it('keeps the balance outside the hero column and omits the retired right rail', async () => {
@@ -53,6 +54,7 @@ describe('PurchaseHero', () => {
     expect(images[0]?.attributes()).toMatchObject({
       width: '1536',
       height: '1024',
+      loading: 'eager',
     })
     for (const image of images) {
       expect(image.attributes('alt')).toBe('')

@@ -2,13 +2,14 @@
   <aside class="purchase-right-rail" data-testid="purchase-right-rail" aria-hidden="true">
     <img
       class="purchase-right-rail__art"
-      src="/assets/purchase/purchase-right-rail-transparent.png"
+      src="/assets/purchase/purchase-right-rail-transparent.webp"
       width="797"
       height="1973"
       alt=""
       aria-hidden="true"
       draggable="false"
       decoding="async"
+      loading="lazy"
     />
   </aside>
 </template>

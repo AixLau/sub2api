@@ -5,7 +5,7 @@
   >
     <img
       class="user-dashboard-charts__badge"
-      src="/assets/dashboard/badge-good-job.png"
+      src="/assets/dashboard/badge-good-job.webp"
       alt=""
       aria-hidden="true"
       draggable="false"

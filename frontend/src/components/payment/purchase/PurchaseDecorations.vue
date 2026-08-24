@@ -13,6 +13,7 @@
       aria-hidden="true"
       draggable="false"
       decoding="async"
+      loading="eager"
       fetchpriority="high"
     />
     <img
@@ -24,6 +25,7 @@
       aria-hidden="true"
       draggable="false"
       decoding="async"
+      loading="lazy"
     />
   </div>
 </template>

@@ -97,10 +97,10 @@ describe('dashboard decorative assets', () => {
     })
     const bunny = quickWrapper.get<HTMLImageElement>('[data-testid="dashboard-quick-actions-bunny"] img')
 
-    expectDecorativeImage(camera, '/assets/dashboard/camera-fun.png', '.user-dashboard__camera-image')
-    expectDecorativeImage(astronaut, '/assets/dashboard/mascot-ai-astronaut.png', '.user-dashboard__astronaut')
-    expectDecorativeImage(badge, '/assets/dashboard/badge-good-job.png', '.user-dashboard-charts__badge')
-    expectDecorativeImage(bunny, '/assets/dashboard/mascot-game-bunny.png', '.quick-actions-panel__mascot')
+    expectDecorativeImage(camera, '/assets/dashboard/camera-fun.webp', '.user-dashboard__camera-image')
+    expectDecorativeImage(astronaut, '/assets/dashboard/mascot-ai-astronaut.webp', '.user-dashboard__astronaut')
+    expectDecorativeImage(badge, '/assets/dashboard/badge-good-job.webp', '.user-dashboard-charts__badge')
+    expectDecorativeImage(bunny, '/assets/dashboard/mascot-game-bunny.webp', '.quick-actions-panel__mascot')
 
     heroWrapper.unmount()
     chartsWrapper.unmount()

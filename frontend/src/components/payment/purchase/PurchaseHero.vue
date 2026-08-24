@@ -19,6 +19,7 @@
         aria-hidden="true"
         draggable="false"
         decoding="async"
+        loading="eager"
         fetchpriority="high"
       />
       <p class="purchase-hero__security-line">
