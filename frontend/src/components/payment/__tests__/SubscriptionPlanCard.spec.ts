@@ -66,8 +66,22 @@ const mountPlanCard = (
   });
 
 describe("SubscriptionPlanCard", () => {
-  it("uses the liquid glass subscription plan card surface", () => {
+  it("exposes a keyboard-selectable radio state without relying on color", async () => {
     const wrapper = mountPlanCard("openai");
+
+    expect(wrapper.attributes("role")).toBe("radio");
+    expect(wrapper.attributes("aria-checked")).toBe("false");
+    expect(wrapper.find("[data-testid='subscription-plan-radio']").exists()).toBe(true);
+
+    await wrapper.setProps({ selected: true });
+    expect(wrapper.attributes("aria-checked")).toBe("true");
+
+    await wrapper.trigger("keydown", { key: "Enter" });
+    expect(wrapper.emitted("select")?.[0]?.[0]).toMatchObject({ id: 1 });
+  });
+
+  it("uses the liquid glass surface without rendering feature rows", () => {
+    const wrapper = mountPlanCard("openai", { features: ["Priority access"] });
 
     expect(wrapper.classes()).toContain("subscription-liquid-plan-card");
     expect(wrapper.find("[data-testid='subscription-plan-price']").exists()).toBe(true);
@@ -135,10 +149,10 @@ describe("SubscriptionPlanCard", () => {
   // 'month'，「1 个月」的套餐卡片被显示成「1天」。测试环境的 vue-i18n 为
   // runtime-only 构建，t() 原样返回 key，故按 key 断言单位分支。
   it("renders plural admin-form validity units instead of mislabeled days (#4607)", () => {
-    expect(mountPlanCard("openai", { validity_days: 1, validity_unit: "months" }).text()).toContain("/ payment.perMonth");
-    expect(mountPlanCard("openai", { validity_days: 3, validity_unit: "months" }).text()).toContain("/ 3payment.months");
-    expect(mountPlanCard("openai", { validity_days: 2, validity_unit: "weeks" }).text()).toContain("/ 2payment.weeks");
-    expect(mountPlanCard("openai", { validity_days: 30, validity_unit: "day" }).text()).toContain("30 天有效");
+    expect(mountPlanCard("openai", { validity_days: 1, validity_unit: "months" }).get("[data-testid='subscription-plan-validity-summary']").text()).toBe("payment.perMonth");
+    expect(mountPlanCard("openai", { validity_days: 3, validity_unit: "months" }).get("[data-testid='subscription-plan-validity-summary']").text()).toBe("3payment.months");
+    expect(mountPlanCard("openai", { validity_days: 2, validity_unit: "weeks" }).get("[data-testid='subscription-plan-validity-summary']").text()).toBe("2payment.weeks");
+    expect(mountPlanCard("openai", { validity_days: 30, validity_unit: "day" }).get("[data-testid='subscription-plan-validity-summary']").text()).toBe("30 天有效");
   });
 
   it("uses the configured currency symbol while preserving USD for legacy plans", () => {
@@ -150,20 +164,30 @@ describe("SubscriptionPlanCard", () => {
     expect(usdPlan.find("[data-testid='subscription-plan-price']").text()).toBe("$10.00");
   });
 
-  it("automatically renders the border beam only for discounted plans", () => {
+  it("uses a static thin highlight only for discounted plans", () => {
     const discountedPlan = mountPlanCard("openai", { original_price: 20 });
     const regularPlan = mountPlanCard("openai");
 
-    expect(discountedPlan.find(".border-beam").exists()).toBe(true);
-    expect(regularPlan.find(".border-beam").exists()).toBe(false);
+    expect(discountedPlan.attributes("data-highlighted")).toBe("true");
+    expect(discountedPlan.classes()).toContain("!border-lime-400/90");
+    expect(regularPlan.attributes("data-highlighted")).toBeUndefined();
+    expect(discountedPlan.find(".border-beam").exists()).toBe(false);
   });
 
-  it("allows the border beam auto-detection to be explicitly overridden", () => {
+  it("does not invent a discount when original price is not above the sale price", () => {
+    const wrapper = mountPlanCard("openai", { price: 20, original_price: 10 });
+
+    expect(wrapper.text()).not.toContain("¥10.00");
+    expect(wrapper.find("[data-testid='subscription-plan-discount']").exists()).toBe(false);
+    expect(wrapper.attributes("data-highlighted")).toBeUndefined();
+  });
+
+  it("allows the static highlight auto-detection to be explicitly overridden", () => {
     const forcedOn = mountPlanCard("openai", {}, true);
     const forcedOff = mountPlanCard("openai", { original_price: 20 }, false);
 
-    expect(forcedOn.find(".border-beam").exists()).toBe(true);
-    expect(forcedOff.find(".border-beam").exists()).toBe(false);
+    expect(forcedOn.attributes("data-highlighted")).toBe("true");
+    expect(forcedOff.attributes("data-highlighted")).toBeUndefined();
   });
 
   it.each([
@@ -178,7 +202,7 @@ describe("SubscriptionPlanCard", () => {
     expect(title.attributes("title")).toBe(name);
     expect(title.classes()).toEqual(expect.arrayContaining([
       "min-w-0",
-      "h-12",
+      "h-10",
       "break-words",
       "line-clamp-2",
       "[overflow-wrap:anywhere]",
@@ -186,7 +210,7 @@ describe("SubscriptionPlanCard", () => {
     expect(title.classes()).not.toContain("truncate");
   });
 
-  it("keeps title, badge, price, description, and purchase action in separate bounded regions", () => {
+  it("keeps title, price, description, and radio in compact bounded regions", () => {
     const wrapper = mountPlanCard("openai", {
       name: "Enterprise Global Acceleration Subscription with Priority Support",
       price: 123.45,
@@ -194,37 +218,26 @@ describe("SubscriptionPlanCard", () => {
       description: "Includes advanced models and priority support.",
     });
     const title = wrapper.get("h3");
-    const badge = wrapper.findAll("span").find((node) => node.text() === "OpenAI");
-    const price = wrapper.findAll("span").find((node) => node.text() === "123.45");
+    const price = wrapper.get("[data-testid='subscription-plan-price']");
 
     expect(title.element.parentElement?.classList).toContain("min-w-0");
     expect(title.element.parentElement?.classList).toContain("flex-1");
-    expect(badge?.classes()).toContain("shrink-0");
-    expect([...(badge?.element.parentElement?.classList ?? [])]).toEqual(expect.arrayContaining([
-      "flex",
-      "items-center",
-      "justify-end",
-    ]));
-    expect(badge?.element.parentElement?.textContent).toContain("/ 30payment.days");
-    expect(badge?.element.parentElement?.parentElement?.classList).toContain("shrink-0");
-    expect(price?.element.parentElement?.parentElement?.classList).toContain("shrink-0");
+    expect(price.text()).toBe("$123.45");
+    expect(price.classes()).toEqual(expect.arrayContaining(["text-2xl", "font-black", "tabular-nums"]));
     expect(wrapper.get("p").text()).toBe("Includes advanced models and priority support.");
-    expect(wrapper.get("button").text()).toBe("payment.subscribeNow");
+    expect(wrapper.find("[data-testid='subscription-plan-action']").exists()).toBe(false);
+    expect(wrapper.find("[data-testid='subscription-plan-radio']").exists()).toBe(true);
+    expect(wrapper.classes()).toContain("!min-h-[11rem]");
   });
 
   it("keeps short plan titles compact and aligned", () => {
     const wrapper = mountPlanCard("openai", { name: "Pro", description: "" });
     const title = wrapper.get("h3");
-    const badge = wrapper.findAll("span").find((node) => node.text() === "OpenAI");
 
     expect(title.text()).toBe("Pro");
     expect(title.attributes("title")).toBe("Pro");
-    expect(title.classes()).toEqual(expect.arrayContaining(["text-base", "font-bold", "h-12"]));
-    expect([...(badge?.element.parentElement?.classList ?? [])]).toEqual(expect.arrayContaining([
-      "flex",
-      "items-center",
-      "justify-end",
-    ]));
-    expect(badge?.element.parentElement?.textContent).toContain("/ 30payment.days");
+    expect(title.classes()).toEqual(expect.arrayContaining(["text-base", "font-black", "h-10"]));
+    expect(wrapper.find("[data-testid='subscription-plan-description']").exists()).toBe(false);
+    expect(wrapper.get("[data-testid='subscription-plan-validity-summary']").text()).toBe("30 天有效");
   });
 });

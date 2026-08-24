@@ -1,15 +1,21 @@
 <template>
   <section
-    class="recharge-glass-card p-5 sm:p-6"
+    class="recharge-glass-card recharge-method-section p-5 sm:p-6"
     :aria-labelledby="showHeader ? 'recharge-method-title' : undefined"
     :aria-label="showHeader ? undefined : t('payment.rechargeUi.selectPaymentMethod')"
   >
-    <div v-if="showHeader" class="mb-4">
-      <p id="recharge-method-title" class="recharge-section-title">2. {{ t('payment.rechargeUi.selectPaymentMethod') }}</p>
-      <p class="mt-1 text-sm text-content-secondary">{{ t('payment.rechargeUi.paymentMethodHint') }}</p>
+    <div v-if="showHeader" class="recharge-section-header recharge-method-header mb-4">
+      <p id="recharge-method-title" class="recharge-section-title recharge-section-title-reference">
+        {{ t('payment.rechargeUi.selectPaymentMethod') }}
+        <Icon name="lock" size="xs" class="recharge-section-ornament" aria-hidden="true" />
+      </p>
+      <p class="recharge-method-header-note">
+        {{ t('payment.rechargeUi.paymentSecurityHint') }}
+        <Icon name="shield" size="xs" aria-hidden="true" />
+      </p>
     </div>
 
-    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" role="radiogroup" :aria-label="t('payment.paymentMethod')">
+    <div class="recharge-method-grid grid gap-3 sm:grid-cols-2" role="radiogroup" :aria-label="t('payment.paymentMethod')">
       <button
         v-for="method in sortedMethods"
         :key="method.type"
@@ -26,22 +32,36 @@
         ]"
         role="radio"
         :aria-checked="selected === method.type"
+        :aria-label="methodAriaLabel(method)"
         :disabled="!method.available"
         @click="method.available && emit('select', method.type)"
       >
         <span class="recharge-method-icon" :class="methodToneClass(method.type)">
-          <img v-if="methodIcon(method.type)" :src="methodIcon(method.type)" alt="" class="h-6 w-6 object-contain" />
-          <Icon v-else :name="fallbackIcon(method.type)" size="md" />
+          <img
+            v-if="methodIcon(method.type)"
+            :src="methodIcon(method.type)"
+            alt=""
+            aria-hidden="true"
+            draggable="false"
+            class="h-6 w-6 select-none object-contain"
+          />
+          <Icon v-else :name="fallbackIcon(method.type)" size="md" aria-hidden="true" />
         </span>
         <span class="recharge-method-content">
           <span class="recharge-method-title-row">
-            <span class="recharge-method-name">{{ methodLabel(method.type) }}</span>
+            <span class="recharge-method-name">{{ methodLabel(method) }}</span>
             <span
-              v-if="isRecommended(method.type)"
+              v-if="method.available && isRecommended(method.type)"
               class="rounded-full bg-status-info-soft px-2 py-0.5 text-[10px] font-semibold text-content-brand"
             >
               {{ t('payment.rechargeUi.recommended') }}
             </span>
+          </span>
+          <span v-if="methodBrandName(method.type)" class="recharge-method-brand-name">
+            {{ methodBrandName(method.type) }}
+          </span>
+          <span v-if="methodAssurance(method.type)" class="recharge-method-assurance">
+            {{ methodAssurance(method.type) }}
           </span>
           <span v-if="!method.available || method.fee_rate > 0" class="recharge-method-meta">
             <template v-if="!method.available">{{ t('payment.rechargeUi.methodUnavailable') }}</template>
@@ -49,13 +69,12 @@
           </span>
         </span>
         <span
-          v-if="selected === method.type"
-          class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white"
+          class="recharge-method-selection-indicator"
+          :class="{ 'recharge-method-selection-indicator-selected': selected === method.type }"
           aria-hidden="true"
         >
-          <Icon name="check" size="xs" :stroke-width="2.4" />
+          <Icon v-if="selected === method.type" name="check" size="sm" :stroke-width="2.6" />
         </span>
-        <Icon v-else name="chevronRight" size="sm" class="shrink-0 text-content-disabled" aria-hidden="true" />
       </button>
     </div>
   </section>
@@ -66,7 +85,11 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import type { PaymentMethodOption } from '@/components/payment/PaymentMethodSelector.vue'
-import { METHOD_ORDER } from '@/components/payment/providerConfig'
+import {
+  METHOD_ORDER,
+  isBuiltInAlipayMethod,
+  isBuiltInWxpayMethod,
+} from '@/components/payment/providerConfig'
 import alipayIcon from '@/assets/icons/alipay.svg'
 import wxpayIcon from '@/assets/icons/wxpay.svg'
 import stripeIcon from '@/assets/icons/stripe.svg'
@@ -76,8 +99,10 @@ const props = withDefaults(defineProps<{
   methods: PaymentMethodOption[]
   selected: string
   showHeader?: boolean
+  recommendedMethod?: string
 }>(), {
   showHeader: true,
+  recommendedMethod: '',
 })
 
 const emit = defineEmits<{
@@ -105,8 +130,8 @@ const sortedMethods = computed(() => {
 })
 
 function methodIcon(type: string): string {
-  if (type.includes('alipay')) return METHOD_ICONS.alipay
-  if (type.includes('wxpay')) return METHOD_ICONS.wxpay
+  if (isBuiltInAlipayMethod(type)) return METHOD_ICONS.alipay
+  if (isBuiltInWxpayMethod(type)) return METHOD_ICONS.wxpay
   return METHOD_ICONS[type] || ''
 }
 
@@ -116,31 +141,54 @@ function fallbackIcon(type: string): 'creditCard' | 'server' | 'shield' {
   return 'shield'
 }
 
-function methodLabel(type: string): string {
-  if (type === 'stripe') return t('payment.rechargeUi.enterpriseCard')
-  if (type === 'airwallex') return t('payment.methods.airwallex')
-  return t(`payment.methods.${type}`, type)
+function methodLabel(method: PaymentMethodOption): string {
+  if (method.display_name?.trim()) return method.display_name.trim()
+  if (method.type === 'stripe') return t('payment.rechargeUi.enterpriseCard')
+  if (method.type === 'airwallex') return t('payment.methods.airwallex')
+  return t(`payment.methods.${method.type}`, method.type)
+}
+
+function methodAriaLabel(method: PaymentMethodOption): string {
+  const label = methodLabel(method)
+  if (!method.available) return `${label}, ${t('payment.rechargeUi.methodUnavailable')}`
+  if (method.fee_rate > 0) return `${label}, ${t('payment.fee')} ${method.fee_rate}%`
+  return label
+}
+
+function methodBrandName(type: string): string {
+  if (isBuiltInAlipayMethod(type)) return t('payment.rechargeUi.alipayBrand')
+  if (isBuiltInWxpayMethod(type)) return t('payment.rechargeUi.wechatPayBrand')
+  return ''
+}
+
+function methodAssurance(type: string): string {
+  if (isBuiltInAlipayMethod(type)) return t('payment.rechargeUi.alipayAssurance')
+  if (isBuiltInWxpayMethod(type)) return t('payment.rechargeUi.wechatPayAssurance')
+  return ''
 }
 
 function methodToneClass(type: string): string {
-  if (type.includes('wxpay')) return 'recharge-method-icon-wxpay'
+  if (isBuiltInWxpayMethod(type)) return 'recharge-method-icon-wxpay'
   if (type === 'stripe') return 'recharge-method-icon-stripe'
   if (type === 'airwallex') return 'recharge-method-icon-airwallex'
-  return 'recharge-method-icon-alipay'
+  if (isBuiltInAlipayMethod(type) || type === 'nineplus' || type === 'haozpay') {
+    return 'recharge-method-icon-alipay'
+  }
+  return 'recharge-method-icon-generic'
 }
 
 function methodSelectedBrandClass(type: string): string {
-  if (type.includes('wxpay')) return 'recharge-method-selected-wxpay'
+  if (isBuiltInWxpayMethod(type)) return 'recharge-method-selected-wxpay'
   if (type === 'stripe') return 'recharge-method-selected-stripe'
   if (type === 'airwallex') return 'recharge-method-selected-airwallex'
-  if (type.includes('alipay') || type === 'nineplus' || type === 'haozpay') {
+  if (isBuiltInAlipayMethod(type) || type === 'nineplus' || type === 'haozpay') {
     return 'recharge-method-selected-alipay'
   }
   return 'recharge-method-selected-default'
 }
 
 function isRecommended(type: string): boolean {
-  return type === props.methods[0]?.type || type === 'alipay' || type === 'nineplus'
+  return props.recommendedMethod === type
 }
 </script>
 
@@ -163,12 +211,9 @@ function isRecommended(type: string): boolean {
   animation: recharge-method-glow-breathe 3s ease-in-out infinite;
 }
 
-.recharge-method-selected-alipay {
-  border-color: rgb(var(--color-provider-alipay-selection)) !important;
-}
-
+.recharge-method-selected-alipay,
 .recharge-method-selected-wxpay {
-  border-color: rgb(var(--color-provider-wechat-selection)) !important;
+  border-color: #7157ff !important;
 }
 
 .recharge-method-selected-stripe {
@@ -181,6 +226,11 @@ function isRecommended(type: string): boolean {
 
 .recharge-method-selected-default {
   border-color: rgb(var(--color-brand-500)) !important;
+}
+
+.recharge-method-icon-generic {
+  background: rgb(var(--color-brand-500) / 0.1);
+  color: rgb(var(--color-content-brand));
 }
 
 @keyframes recharge-method-glow-breathe {

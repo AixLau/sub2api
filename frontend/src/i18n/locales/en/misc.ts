@@ -62,7 +62,7 @@ export default {
   // Recharge / Subscription Page
   purchase: {
     title: 'Recharge / Subscription',
-    description: 'Recharge balance or purchase a subscription',
+    description: 'Top up instantly and keep every idea moving.',
     openInNewTab: 'Open in new tab',
     notEnabledTitle: 'Feature not enabled',
     notEnabledDesc: 'The administrator has not enabled the recharge/subscription entry. Please contact admin.',
@@ -385,8 +385,8 @@ export default {
     rechargeAccount: 'Recharge Account',
     activeSubscription: 'Active Subscription',
     noActiveSubscription: 'No active subscription',
-    tabTopUp: 'Top Up',
-    tabSubscribe: 'Subscribe',
+    tabTopUp: 'Balance Recharge',
+    tabSubscribe: 'Subscription Services',
     noPlans: 'No subscription plans available',
     notAvailable: 'Top-up is currently unavailable',
     confirmSubscription: 'Confirm Subscription',

@@ -84,6 +84,13 @@ declare module 'vue-router' {
     hideHeaderTitle?: boolean
 
     /**
+     * Let a route own the complete main-content canvas while preserving
+     * the shared header and sidebar.
+     * @default false
+     */
+    fullBleedContent?: boolean
+
+    /**
      * Hide the shared page mesh when a route supplies its own visual canvas.
      * @default false
      */

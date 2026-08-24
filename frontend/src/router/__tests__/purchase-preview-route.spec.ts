@@ -95,5 +95,6 @@ describe('router development preview routes', () => {
     expect(route?.path).toBe('/purchase')
     expect(route?.meta.requiresAuth).toBe(true)
     expect(route?.meta.requiresPayment).toBe(true)
+    expect(route?.meta.titleKey).toBe('payment.rechargeUi.title')
   })
 })

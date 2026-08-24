@@ -1,92 +1,104 @@
 <template>
   <div
+    :data-testid="`subscription-plan-${plan.id}`"
+    role="radio"
+    :aria-checked="selected"
+    :aria-label="plan.name"
+    tabindex="0"
+    :data-highlighted="showStaticHighlight ? 'true' : undefined"
     :class="[
-      'subscription-liquid-plan-card group relative flex flex-col transition-all',
-      'hover:-translate-y-0.5',
+      'subscription-liquid-plan-card group relative flex !min-h-[11rem] cursor-pointer flex-col transition-all',
+      'hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2',
+      selected && 'subscription-liquid-plan-card-selected',
+      showStaticHighlight && !selected && '!border-lime-400/90',
+      renewalTarget && !selected && '!border-amber-400/90',
     ]"
+    @click="selectPlan"
+    @keydown.enter.prevent="selectPlan"
+    @keydown.space.prevent="selectPlan"
   >
-    <BorderBeam v-if="showHighlightBeam" :size="150" :duration="12" :border-width="1.5" />
-    <div class="flex min-h-[190px] flex-1 flex-col p-4 sm:p-5">
-      <div class="flex items-start justify-between gap-2">
+    <div class="flex flex-1 flex-col p-3">
+      <span
+        v-if="renewalTarget"
+        data-testid="subscription-renewal-target"
+        class="mb-1 w-fit rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200"
+      >
+        {{ t('payment.subscriptionUi.renewalTarget') }}
+      </span>
+      <div class="flex items-start justify-between gap-3">
         <div class="min-w-0 flex-1">
           <h3
             :title="plan.name"
-            class="h-12 min-w-0 break-words [overflow-wrap:anywhere] text-base font-bold leading-6 text-slate-950 line-clamp-2"
+            class="h-10 min-w-0 break-words [overflow-wrap:anywhere] text-base font-black leading-5 text-content-primary line-clamp-2"
           >{{ plan.name }}</h3>
-          <p
-            v-if="planDisplay.description"
-            data-testid="subscription-plan-description"
-            class="mt-2 line-clamp-2 text-sm leading-relaxed text-slate-500"
-          >
-            {{ planDisplay.description }}
-          </p>
         </div>
-        <div v-if="showHeaderMeta" class="shrink-0 text-right">
-          <div data-testid="subscription-plan-price">
-            <span class="text-xs text-slate-500">{{ planCurrencySymbol }}</span><span class="text-3xl font-extrabold tracking-normal text-blue-700">{{ formattedPriceNumber }}</span>
-          </div>
-          <div class="flex items-center justify-end gap-1">
-            <span :class="['shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium', platformBadgeClass(platform)]">
-              {{ platformLabel(platform) }}
+        <span
+          v-if="hasDiscount"
+          data-testid="subscription-plan-discount"
+          class="shrink-0 rounded-full border border-lime-400 bg-lime-200 px-2 py-0.5 text-[10px] font-black text-slate-950"
+        >
+          {{ discountText }}
+        </span>
+      </div>
+
+      <div class="min-h-[2rem]">
+        <p
+          v-if="planDisplay.description"
+          data-testid="subscription-plan-description"
+          class="mt-1 line-clamp-2 text-xs leading-4 text-content-secondary"
+        >
+          {{ planDisplay.description }}
+        </p>
+      </div>
+
+      <div class="mt-2">
+        <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span data-testid="subscription-plan-price" class="tabular-nums text-2xl font-black tracking-tight text-blue-700 dark:text-blue-300">
+            {{ formattedPrice }}
+          </span>
+          <template v-if="validitySummary">
+            <span class="text-xs font-black text-blue-600 dark:text-blue-300" aria-hidden="true">/</span>
+            <span
+              data-testid="subscription-plan-validity-summary"
+              class="text-xs font-bold text-content-tertiary"
+            >
+              {{ validitySummary }}
             </span>
-            <span class="text-[11px] text-slate-500">/ {{ planValiditySuffix(plan, t) }}</span>
-          </div>
-          <div v-if="plan.original_price" class="mt-1 flex items-center justify-end gap-1.5">
-            <span class="text-sm text-slate-400 line-through">{{ formattedOriginalPrice }}</span>
-            <span :class="['rounded-full px-1.5 py-0.5 text-[10px] font-semibold', discountClass]">{{ discountText }}</span>
-          </div>
+          </template>
         </div>
-      </div>
-
-      <div v-if="!showHeaderMeta" class="shrink-0">
-        <div data-testid="subscription-plan-price">
-          <span class="text-3xl font-extrabold tracking-normal text-blue-700">{{ formattedPrice }}</span>
-        </div>
-        <div v-if="plan.original_price" class="mt-1 flex items-center gap-1.5">
-          <span class="text-sm text-slate-400 line-through">{{ formattedOriginalPrice }}</span>
-          <span :class="['rounded-full px-1.5 py-0.5 text-[10px] font-semibold', discountClass]">{{ discountText }}</span>
-        </div>
-      </div>
-
-      <!-- Features list (compact) -->
-      <div v-if="plan.features.length > 0" data-testid="subscription-plan-features" class="mb-4 space-y-2">
-        <div v-for="feature in plan.features" :key="feature" class="flex items-start gap-2">
-          <svg class="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-          </svg>
-          <span class="break-words text-xs leading-relaxed text-slate-600">{{ feature }}</span>
-        </div>
+        <span v-if="hasDiscount" class="mt-0.5 block tabular-nums text-xs text-content-tertiary line-through">
+          {{ formattedOriginalPrice }}
+        </span>
       </div>
 
       <div class="flex-1" />
 
-      <div class="mt-5 flex flex-wrap items-end justify-between gap-3">
-        <div v-if="planDisplay.quotaSummary || planDisplay.validitySummary" class="min-w-0">
+      <div class="mt-2 flex items-end justify-between gap-3 border-t border-line-subtle pt-2">
+        <div class="min-w-0">
           <p
             v-if="planDisplay.quotaSummary"
             data-testid="subscription-plan-quota-summary"
-            class="text-2xl font-extrabold tracking-normal text-slate-950"
+            class="truncate text-sm font-black text-content-primary"
           >
             {{ planDisplay.quotaSummary }}
           </p>
-          <p
-            v-if="validitySummary"
-            data-testid="subscription-plan-validity-summary"
-            class="mt-1 text-sm font-semibold text-slate-500"
-          >
-            {{ validitySummary }}
-          </p>
+          <p v-else class="text-xs font-semibold text-content-tertiary">{{ t('payment.planFeatures') }}</p>
         </div>
+        <span
+          data-testid="subscription-plan-radio"
+          :class="[
+            'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+            selected
+              ? 'border-blue-600 bg-blue-600 text-white'
+              : 'border-slate-300 bg-white text-transparent dark:border-slate-500 dark:bg-slate-800',
+          ]"
+          aria-hidden="true"
+        >
+          <svg class="h-3 w-3" viewBox="0 0 12 12" fill="none">
+            <path d="m2.25 6.25 2.25 2.25 5.25-5.25" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </span>
       </div>
-
-      <!-- Subscribe Button -->
-      <button
-        type="button"
-        class="recharge-primary-button mt-5 w-full"
-        @click="emit('select', plan)"
-      >
-        {{ isRenewal ? t('payment.renewNow') : t('payment.subscribeNow') }}
-      </button>
     </div>
   </div>
 </template>
@@ -95,53 +107,42 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { SubscriptionPlan } from '@/types/payment'
-import type { UserSubscription } from '@/types'
-import { currencySymbol, formatPaymentAmount } from '@/components/payment/currency'
+import { formatPaymentAmount } from '@/components/payment/currency'
 import { planValiditySuffix } from './validity'
-import {
-  platformBadgeClass,
-  platformDiscountClass,
-  platformLabel,
-} from '@/utils/platformColors'
 import { buildSubscriptionPlanDisplay, buildSubscriptionPlanDisplayLabels } from '@/components/payment/subscriptionPlanDisplay'
-import BorderBeam from '@/components/inspira/BorderBeam.vue'
 
 const props = withDefaults(defineProps<{
   plan: SubscriptionPlan
-  activeSubscriptions?: UserSubscription[]
-  /** Force the animated border on/off; defaults to on for discounted plans */
+  /** Force the static highlighted outline on/off; defaults to on for discounted plans. */
   highlight?: boolean
+  selected?: boolean
+  renewalTarget?: boolean
 }>(), {
   highlight: undefined,
+  selected: false,
+  renewalTarget: false,
 })
 const emit = defineEmits<{ select: [plan: SubscriptionPlan] }>()
 const { t } = useI18n()
-const platform = computed(() => props.plan.group_platform || '')
-
-const showHighlightBeam = computed(() => {
-  if (props.highlight !== undefined) return props.highlight
-  return !!(props.plan.original_price && props.plan.original_price > props.plan.price)
-})
-
-const isRenewal = computed(() =>
-  props.activeSubscriptions?.some(s => s.group_id === props.plan.group_id && s.status === 'active') ?? false
+const hasDiscount = computed(() =>
+  Number.isFinite(Number(props.plan.original_price))
+  && (props.plan.original_price ?? 0) > props.plan.price
 )
 
-// Derived color classes from central config
-const discountClass = computed(() => platformDiscountClass(platform.value))
+const showStaticHighlight = computed(() => {
+  if (props.highlight !== undefined) return props.highlight
+  return hasDiscount.value
+})
+
 const planDisplay = computed(() => buildSubscriptionPlanDisplay(props.plan, buildSubscriptionPlanDisplayLabels(t)))
 
 const formattedPrice = computed(() => formatPaymentAmount(props.plan.price, props.plan.currency))
-const planCurrencySymbol = computed(() => currencySymbol(props.plan.currency))
-const formattedPriceNumber = computed(() =>
-  formattedPrice.value.replace(planCurrencySymbol.value, '').trim()
-)
 const formattedOriginalPrice = computed(() =>
-  props.plan.original_price ? formatPaymentAmount(props.plan.original_price, props.plan.currency) : ''
+  hasDiscount.value ? formatPaymentAmount(props.plan.original_price ?? 0, props.plan.currency) : ''
 )
 
 const discountText = computed(() => {
-  if (!props.plan.original_price || props.plan.original_price <= 0) return ''
+  if (!hasDiscount.value || !props.plan.original_price) return ''
   const pct = Math.round((1 - props.plan.price / props.plan.original_price) * 100)
   return pct > 0 ? `-${pct}%` : ''
 })
@@ -149,10 +150,10 @@ const discountText = computed(() => {
 const validitySummary = computed(() => {
   const unit = String(props.plan.validity_unit || 'day').trim().toLowerCase()
   if (unit === 'day') return planDisplay.value.validitySummary
-  return `/ ${planValiditySuffix(props.plan, t)}`
+  return planValiditySuffix(props.plan, t)
 })
 
-const showHeaderMeta = computed(() =>
-  String(props.plan.description || '').trim() === '' || !!planDisplay.value.description
-)
+function selectPlan() {
+  emit('select', props.plan)
+}
 </script>

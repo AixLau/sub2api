@@ -1,418 +1,178 @@
 <template>
   <AppLayout>
     <div data-testid="recharge-liquid-page" class="recharge-page-canvas">
-      <div class="recharge-page-content mx-auto max-w-6xl space-y-5">
-        <div v-if="loading" class="flex items-center justify-center py-20">
-          <div class="h-8 w-8 animate-spin rounded-full border-4 border-primary-500 border-t-transparent"></div>
+      <div class="recharge-page-content mx-auto w-full max-w-none">
+        <div v-if="loading" class="flex min-h-[28rem] items-center justify-center">
+          <div
+            class="h-9 w-9 animate-spin rounded-full border-4 border-primary-500 border-t-transparent motion-reduce:animate-none"
+            role="status"
+            :aria-label="t('common.loading')"
+          ></div>
         </div>
 
-        <template v-else>
-          <PurchaseModeTabs
-            v-if="paymentPhase === 'select'"
-            v-model="activeTab"
-            :tabs="tabs"
-          />
+        <div v-else-if="paymentPhase === 'select'" class="purchase-select-shell">
+          <PurchaseModeTabs v-model="activeTab" :tabs="tabs" />
 
-          <template v-if="paymentPhase === 'paying'">
-            <PaymentStatusPanel
-              :order-id="paymentState.orderId"
-              :amount="paymentState.amount"
-              :qr-code="paymentState.qrCode"
-              :expires-at="paymentState.expiresAt"
-              :payment-type="paymentState.paymentType"
-              :provider-key="paymentState.providerKey"
-              :pay-url="paymentState.payUrl"
-              :order-type="paymentState.orderType"
-              :currency="paymentState.currency || selectedCurrency"
-              :pay-amount="paymentState.payAmount || paymentState.amount"
-              :out-trade-no="paymentState.outTradeNo"
-              :mobile-alipay-deep-link="paymentState.alipayMobilePrecreateDeepLink"
-              @done="onPaymentDone"
-              @success="onPaymentSuccess"
-              @settled="onPaymentSettled"
-            />
-          </template>
-
-          <template v-else>
-            <template v-if="activeTab === 'recharge'">
-              <div v-if="enabledMethods.length === 0" class="recharge-glass-card py-16 text-center">
-                <p class="text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
+          <PurchasePageStage :formatted-balance="formattedCurrentBalance">
+            <section
+              v-if="activeTab === 'recharge'"
+              id="purchase-panel-recharge"
+              role="tabpanel"
+              aria-labelledby="purchase-tab-recharge"
+              tabindex="0"
+              class="purchase-business-panel focus:outline-none"
+            >
+              <div
+                v-if="enabledMethods.length === 0"
+                class="recharge-glass-card py-16 text-center"
+                role="status"
+              >
+                <p class="text-content-secondary">{{ t('payment.notAvailable') }}</p>
               </div>
 
-              <template v-if="enabledMethods.length > 0">
-                <div class="space-y-5">
-                  <AccountBalanceHero
-                    :account-name="accountDisplayName"
-                    :formatted-balance="formattedCurrentBalance"
-                  />
-
-                  <div
-                    v-if="!isNinePlusSelected"
-                    data-testid="recharge-layout"
-                    class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start"
-                  >
-                    <div data-testid="recharge-controls" class="space-y-5">
-                      <RechargeAmountSelector
-                        v-model="amount"
-                        :amounts="quickRechargeAmounts"
-                        :min="effectiveMinAmount"
-                        :max="effectiveMaxAmount"
-                        :currency="selectedCurrency"
-                        :locale="localeCode"
-                        :error="amountError"
-                        :format-amount="formatSelectedPaymentAmount"
-                        :show-header="false"
-                        :show-preset-meta="false"
-                      />
-                      <RechargeMethodSelector
-                        v-if="rechargeMethodTypes.length >= 1"
-                        :methods="methodOptions"
-                        :selected="selectedMethod"
-                        :show-header="false"
-                        @select="selectedMethod = $event"
-                      />
-                      <RechargeTrustBar class="hidden xl:block" />
-                    </div>
-                    <RechargeOrderSummary
-                      :formatted-amount="formatSelectedPaymentAmount(validAmount)"
-                      :formatted-fee="formatSelectedPaymentAmount(feeAmount)"
-                      :formatted-total="formatSelectedPaymentAmount(totalAmount)"
-                      :formatted-estimated-credited-amount="formattedEstimatedCreditedAmount"
-                      :disabled="!canSubmit || submitting"
-                      :submitting="submitting"
-                      :has-submitted="submitAttempted"
-                      :error-message="errorMessage"
-                      :error-hint-message="errorHintMessage"
-                      @submit="handleSubmitRecharge"
-                    />
-                  </div>
-
-                  <div
-                    v-else
-                    data-testid="recharge-layout"
-                    class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start"
-                  >
-                    <div data-testid="recharge-controls" class="space-y-5">
-                      <div class="recharge-glass-card p-5 sm:p-6">
-                        <div class="mb-3">
-                          <p class="recharge-section-title">{{ t('payment.nineplus.selectProduct') }}</p>
-                        </div>
-                        <div v-if="availableNinePlusProducts.length" class="grid gap-3 sm:grid-cols-2">
-                          <button
-                            v-for="product in availableNinePlusProducts"
-                            :key="product.product_id"
-                            type="button"
-                            :data-testid="`nineplus-product-${product.product_id}`"
-                            class="recharge-choice-card px-4 py-3 text-left"
-                            :class="selectedNinePlusProductId === product.product_id
-                              ? 'recharge-choice-card-selected'
-                              : ''"
-                            @click="selectedNinePlusProductId = product.product_id"
-                          >
-                            <div class="flex items-start justify-between gap-3">
-                              <span class="text-sm font-medium text-slate-600">{{ product.display_name }}</span>
-                              <span v-if="product.badge" class="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">{{ product.badge }}</span>
-                            </div>
-                            <div class="mt-2 flex flex-wrap items-end justify-between gap-2">
-                              <p class="text-2xl font-semibold tracking-normal text-slate-950">{{ formatNinePlusCreditedAmount(product) || product.display_name }}</p>
-                              <p class="text-sm font-semibold text-blue-700">
-                                {{ t('payment.amountLabel') }} {{ formatSelectedPaymentAmount(ninePlusProductPriceAmount(product)) }}
-                              </p>
-                            </div>
-                          </button>
-                        </div>
-                        <p v-else class="py-8 text-center text-sm text-slate-500">{{ t('payment.nineplus.noProducts') }}</p>
-                      </div>
-                      <RechargeMethodSelector
-                        v-if="rechargeMethodTypes.length >= 1"
-                        :methods="methodOptions"
-                        :selected="selectedMethod"
-                        :show-header="false"
-                        @select="selectedMethod = $event"
-                      />
-                      <RechargeTrustBar class="hidden lg:block" />
-                    </div>
-                    <aside data-testid="recharge-confirmation" class="recharge-glass-card p-5 sm:p-6 lg:sticky lg:top-24">
-                      <div class="space-y-4">
-                        <div>
-                          <p class="recharge-section-title">{{ t('payment.rechargeUi.orderSummary') }}</p>
-                          <p class="mt-1 text-3xl font-semibold tracking-normal text-slate-950">{{ formatSelectedPaymentAmount(totalAmount) }}</p>
-                        </div>
-                        <div v-if="validAmount > 0" class="space-y-2 text-sm">
-                          <div v-if="isNinePlusSelected && selectedNinePlusCreditedAmountLabel" class="flex justify-between">
-                            <span class="text-slate-500">{{ t('payment.creditedBalance') }}</span>
-                            <span class="font-semibold text-slate-950">{{ selectedNinePlusCreditedAmountLabel }}</span>
-                          </div>
-                          <div class="flex justify-between">
-                            <span class="text-slate-500">{{ isNinePlusSelected ? t('payment.amountLabel') : t('payment.paymentAmount') }}</span>
-                            <span class="text-slate-950">{{ formatSelectedPaymentAmount(isNinePlusSelected ? selectedNinePlusProductPriceAmount : validAmount) }}</span>
-                          </div>
-                          <div v-if="isNinePlusSelected && selectedNinePlusProductFeeAmount > 0" class="flex justify-between">
-                            <span class="text-slate-500">{{ t('payment.fee') }}</span>
-                            <span class="text-slate-950">{{ formatSelectedPaymentAmount(selectedNinePlusProductFeeAmount) }}</span>
-                          </div>
-                          <div v-else-if="feeRate > 0" class="flex justify-between">
-                            <span class="text-slate-500">{{ t('payment.fee') }} ({{ feeRate }}%)</span>
-                            <span class="text-slate-950">{{ formatSelectedPaymentAmount(feeAmount) }}</span>
-                          </div>
-                          <div
-                            v-if="balanceRechargeMultiplier !== 1 && !isNinePlusSelected"
-                            class="flex justify-between"
-                            :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': feeRate <= 0 }"
-                          >
-                            <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
-                            <span class="text-gray-900 dark:text-white">${{ creditedAmount.toFixed(2) }}</span>
-                          </div>
-                          <p
-                            v-if="balanceRechargeMultiplier !== 1 && !isNinePlusSelected"
-                            class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400"
-                          >
-                            {{ t('payment.rechargeRatePreview', { usd: balanceRechargeMultiplier.toFixed(2) }) }}
-                          </p>
-                        </div>
-                        <div v-if="errorMessage" class="rounded-2xl border border-red-200 bg-red-50/80 px-4 py-3 text-sm text-red-700" role="alert">
-                          <p>{{ errorMessage }}</p>
-                          <p v-if="errorHintMessage" class="mt-1 text-red-600/80">{{ errorHintMessage }}</p>
-                        </div>
-                        <button data-testid="submit-recharge" class="recharge-primary-button w-full" :disabled="!canSubmit || submitting" :aria-busy="submitting" @click="handleSubmitRecharge">
-                          <span v-if="submitting" class="flex items-center justify-center gap-2">
-                            <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
-                            {{ t('common.processing') }}
-                          </span>
-                          <span v-else>{{ t('payment.rechargeUi.rechargeNow') }}</span>
-                        </button>
-                      </div>
-                    </aside>
-                  </div>
-
-                  <RechargeTrustBar :class="isNinePlusSelected ? 'lg:hidden' : 'xl:hidden'" />
-                </div>
-              </template>
-            </template>
-
-            <template v-else-if="activeTab === 'subscription' && ninePlusSubscriptionProducts.length > 0">
-              <div data-testid="subscription-layout" class="space-y-5">
-                <CurrentSubscriptionCard
-                  v-if="currentSubscriptionSummary"
-                  :subscription="currentSubscriptionSummary"
-                />
-                <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
-                  <div data-testid="subscription-controls" class="space-y-5">
-                    <section class="recharge-glass-card p-5 sm:p-6" aria-labelledby="nineplus-subscription-title">
-                      <div class="mb-4">
-                        <p id="nineplus-subscription-title" class="recharge-section-title">{{ t('payment.nineplus.selectSubscriptionProduct') }}</p>
-                      </div>
-                      <div class="grid gap-3 sm:grid-cols-2">
-                        <button
-                          v-for="product in ninePlusSubscriptionProducts"
-                          :key="product.product_id"
-                          type="button"
-                          :data-testid="`nineplus-subscription-product-${product.product_id}`"
-                          class="recharge-choice-card px-4 py-4 text-left"
-                          :class="{ 'recharge-choice-card-selected': selectedNinePlusSubscriptionProductId === product.product_id }"
-                          @click="selectedNinePlusSubscriptionProductId = product.product_id"
-                        >
-                          <div class="flex items-start justify-between gap-3">
-                            <span class="min-w-0">
-                              <span class="block break-words text-base font-semibold text-slate-950">{{ ninePlusSubscriptionProductTitle(product) }}</span>
-                              <span v-if="product.description" class="mt-1 block line-clamp-2 text-xs leading-relaxed text-slate-500">{{ product.description }}</span>
-                            </span>
-                            <span v-if="ninePlusProductCategory(product)" class="shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">{{ ninePlusProductCategory(product) }}</span>
-                          </div>
-                          <div class="mt-4 flex flex-wrap items-end justify-between gap-3">
-                            <p class="text-2xl font-semibold tracking-normal text-blue-700">{{ formatNinePlusCreditedAmount(product) }}</p>
-                            <p class="text-xs font-semibold text-slate-500">
-                              {{ t('payment.packagePriceShort') }} {{ formatSelectedPaymentAmount(ninePlusProductPriceAmount(product)) }}
-                            </p>
-                          </div>
-                        </button>
-                      </div>
-                    </section>
-                    <RechargeMethodSelector
-                      v-if="subscriptionNinePlusMethodOptions.length"
-                      :methods="subscriptionNinePlusMethodOptions"
-                      :selected="selectedMethod"
-                      :show-header="false"
-                      @select="selectedMethod = $event"
-                    />
-                  </div>
-                  <aside data-testid="subscription-confirmation" class="recharge-glass-card recharge-summary-card p-5 sm:p-6">
-                    <p class="recharge-section-title">{{ t('payment.rechargeUi.orderSummary') }}</p>
-                    <div class="mt-5 space-y-4 text-sm">
-                      <div v-if="effectiveNinePlusSubscriptionProduct" class="flex items-center justify-between gap-4">
-                        <span class="text-slate-500">{{ t('payment.nineplus.selectedSubscription') }}</span>
-                        <span class="min-w-0 max-w-[190px] break-words text-right font-semibold text-slate-950">{{ ninePlusSubscriptionProductTitle(effectiveNinePlusSubscriptionProduct) }}</span>
-                      </div>
-                      <div v-if="selectedNinePlusSubscriptionQuotaLabel" class="flex items-center justify-between gap-4">
-                        <span class="text-slate-500">{{ t('payment.planCard.quota') }}</span>
-                        <span class="font-semibold text-slate-950">{{ selectedNinePlusSubscriptionQuotaLabel }}</span>
-                      </div>
-                      <div class="flex items-center justify-between gap-4">
-                        <span class="text-slate-500">{{ t('payment.packagePrice') }}</span>
-                        <span class="font-semibold text-slate-950">{{ formatSelectedPaymentAmount(selectedNinePlusSubscriptionProductPriceAmount) }}</span>
-                      </div>
-                      <div v-if="selectedNinePlusSubscriptionProductFeeAmount > 0" class="flex items-center justify-between gap-4">
-                        <span class="text-slate-500">{{ t('payment.fee') }}</span>
-                        <span class="font-semibold text-slate-950">{{ formatSelectedPaymentAmount(selectedNinePlusSubscriptionProductFeeAmount) }}</span>
-                      </div>
-                      <div class="border-t border-slate-200/70 pt-4">
-                        <div class="flex items-center justify-between gap-4">
-                          <span class="font-semibold text-slate-950">{{ t('payment.payableAmount') }}</span>
-                          <span class="text-2xl font-semibold text-blue-700">{{ formatSelectedPaymentAmount(ninePlusSubscriptionAmount) }}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <button data-testid="submit-subscription" class="recharge-primary-button mt-6 w-full" :disabled="!canSubmitNinePlusSubscription || submitting" :aria-busy="submitting" @click="handleSubmitNinePlusSubscription">
-                      <span v-if="submitting" class="flex items-center justify-center gap-2">
-                        <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
-                        {{ t('common.processing') }}
-                      </span>
-                      <span v-else>{{ t('payment.createOrder') }} {{ formatSelectedPaymentAmount(ninePlusSubscriptionAmount) }}</span>
-                    </button>
-                  </aside>
-                </div>
-                <RechargeTrustBar />
-              </div>
-            </template>
-
-            <template v-else-if="activeTab === 'subscription'">
-              <div data-testid="subscription-layout" class="space-y-5">
-                <CurrentSubscriptionCard
-                  v-if="currentSubscriptionSummary"
-                  :subscription="currentSubscriptionSummary"
-                />
-                <!-- Subscription confirm (inline, replaces plan list) -->
-                <template v-if="selectedPlan">
-                  <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
-                    <div class="space-y-5">
-                      <section class="recharge-glass-card p-5 sm:p-6" aria-labelledby="selected-plan-title">
-                        <div>
-                          <div class="min-w-0">
-                            <h3 id="selected-plan-title" class="break-words text-lg font-extrabold leading-tight text-slate-950">{{ selectedPlan.name }}</h3>
-                            <p v-if="selectedPlanDisplay.description" class="mt-2 line-clamp-2 text-sm leading-relaxed text-slate-500">
-                              {{ selectedPlanDisplay.description }}
-                            </p>
-                          </div>
-                        </div>
-                        <div class="mt-6 flex flex-wrap items-end justify-between gap-3">
-                          <div v-if="selectedPlanDisplay.quotaSummary || selectedPlanDisplay.validitySummary" class="min-w-0">
-                            <p v-if="selectedPlanDisplay.quotaSummary" class="text-2xl font-extrabold tracking-normal text-slate-950">
-                              {{ selectedPlanDisplay.quotaSummary }}
-                            </p>
-                            <p v-if="selectedPlanValiditySummary" class="mt-1 text-sm font-semibold text-slate-500">
-                              {{ selectedPlanValiditySummary }}
-                            </p>
-                          </div>
-                          <div class="min-w-0">
-                            <div>
-                              <span class="text-3xl font-extrabold tracking-normal text-blue-700">{{ formatSelectedSubscriptionPaymentAmount(selectedPlan.price) }}</span>
-                            </div>
-                            <div v-if="selectedPlan.original_price" class="mt-1">
-                              <span class="text-sm text-slate-400 line-through">
-                                {{ formatSelectedSubscriptionPaymentAmount(selectedPlan.original_price) }}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </section>
-                      <RechargeMethodSelector
-                        v-if="subMethodOptions.length"
-                        :methods="subMethodOptions"
-                        :selected="selectedMethod"
-                        :show-header="false"
-                        @select="selectedMethod = $event"
-                      />
-                    </div>
-                    <aside data-testid="subscription-confirmation" class="recharge-glass-card recharge-summary-card p-5 sm:p-6">
-                      <p class="recharge-section-title">{{ t('payment.rechargeUi.orderSummary') }}</p>
-                      <div class="mt-5 space-y-4 text-sm">
-                        <div class="flex items-center justify-between gap-4">
-                          <span class="text-slate-500">{{ t('payment.rechargeUi.selectedPlan') }}</span>
-                          <span class="min-w-0 max-w-[190px] break-words text-right font-semibold text-slate-950">{{ selectedPlan.name }}</span>
-                        </div>
-                        <div class="flex items-center justify-between gap-4">
-                          <span class="text-slate-500">{{ t('payment.amountLabel') }}</span>
-                          <span class="font-semibold text-slate-950">{{ formatSelectedPaymentAmount(subPaymentAmount) }}</span>
-                        </div>
-                        <div v-if="feeRate > 0 && selectedPlan.price > 0" class="flex items-center justify-between gap-4">
-                          <span class="text-slate-500">{{ t('payment.fee') }} ({{ feeRate }}%)</span>
-                          <span class="font-semibold text-slate-950">{{ formatSelectedPaymentAmount(subFeeAmount) }}</span>
-                        </div>
-                        <div class="border-t border-slate-200/70 pt-4">
-                          <div class="flex items-center justify-between gap-4">
-                            <span class="font-semibold text-slate-950">{{ t('payment.actualPay') }}</span>
-                            <span class="text-2xl font-semibold text-blue-700">{{ formatSelectedPaymentAmount(subTotalAmount) }}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <button data-testid="submit-subscription" class="recharge-primary-button mt-6 w-full" :disabled="!canSubmitSubscription || submitting" :aria-busy="submitting" @click="confirmSubscribe">
-                        <span v-if="submitting" class="flex items-center justify-center gap-2">
-                          <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
-                          {{ t('common.processing') }}
-                        </span>
-                        <span v-else>{{ t('payment.createOrder') }} {{ formatSelectedPaymentAmount(subTotalAmount) }}</span>
-                      </button>
-                      <button class="recharge-secondary-button mt-3 w-full" @click="selectedPlan = null">{{ t('common.cancel') }}</button>
-                    </aside>
-                  </div>
-                </template>
-                <!-- Plan list -->
-                <template v-else>
-                  <section v-if="checkout.plans.length === 0" class="recharge-glass-card py-16 text-center">
-                    <Icon name="gift" size="xl" class="mx-auto mb-3 text-slate-300" />
-                    <p class="text-slate-500">{{ t('payment.noPlans') }}</p>
-                  </section>
-                  <section v-else class="recharge-glass-card p-5 sm:p-6" aria-labelledby="subscription-plans-title">
-                    <div class="mb-4">
-                      <p id="subscription-plans-title" class="recharge-section-title">{{ t('payment.tabSubscribe') }}</p>
-                    </div>
-                    <div :class="planGridClass">
-                      <SubscriptionPlanCard v-for="plan in checkout.plans" :key="plan.id" :plan="plan" :active-subscriptions="activeSubscriptions" @select="selectPlan" />
-                    </div>
-                  </section>
-                </template>
-                <RechargeTrustBar />
-              </div>
-            </template>
-          </template>
-
-          <div v-if="(checkout.help_text || checkout.help_image_url) && paymentPhase === 'select' && !selectedPlan" class="recharge-glass-card p-4">
-            <div class="flex flex-col items-center gap-3">
-              <img
-                v-if="checkout.help_image_url"
-                :src="checkout.help_image_url"
-                alt=""
-                class="h-40 max-w-full cursor-pointer rounded-lg object-contain transition-opacity hover:opacity-80"
-                @click="previewImage = checkout.help_image_url"
+              <NinePlusRechargeCheckoutPanel
+                v-else-if="isNinePlusSelected"
+                :products="availableNinePlusProducts"
+                :selected-product-id="selectedNinePlusProductId"
+                :methods="methodOptions"
+                :selected-method="selectedMethod"
+                :format-amount="formatSelectedPaymentAmount"
+                :disabled="!canSubmit"
+                :submitting="submitting"
+                :error-message="errorMessage"
+                :error-hint-message="errorHintMessage"
+                @select-product="selectedNinePlusProductId = $event"
+                @select-method="selectRechargeMethod"
+                @submit="handleSubmitRecharge"
               />
-              <p v-if="checkout.help_text" class="text-center text-sm text-slate-500">{{ checkout.help_text }}</p>
+
+              <RechargeCheckoutPanel
+                v-else
+                v-model="amount"
+                :amounts="quickRechargeAmounts"
+                :min="effectiveMinAmount"
+                :max="effectiveMaxAmount"
+                :currency="selectedCurrency"
+                :locale="localeCode"
+                :max-fraction-digits="rechargeFractionDigits"
+                :amount-error="amountError"
+                :format-amount="formatSelectedPaymentAmount"
+                :format-credited-amount="formatCreditedPresetAmount"
+                :methods="methodOptions"
+                :selected-method="selectedMethod"
+                :formatted-amount="formatSelectedPaymentAmount(validAmount)"
+                :formatted-fee="formatSelectedPaymentAmount(feeAmount)"
+                :formatted-total="formatSelectedPaymentAmount(totalAmount)"
+                :formatted-estimated-credited-amount="formattedEstimatedCreditedAmount"
+                :disabled="!canSubmit"
+                :submitting="submitting"
+                :has-submitted="submitAttempted"
+                :error-message="errorMessage"
+                :error-hint-message="errorHintMessage"
+                :one-to-one-configured="oneToOneConfigured"
+                :configuration-warning="oneToOneConfigurationWarning"
+                @select-method="selectRechargeMethod"
+                @submit="handleSubmitRecharge"
+              />
+            </section>
+
+            <section
+              v-else
+              id="purchase-panel-subscription"
+              role="tabpanel"
+              aria-labelledby="purchase-tab-subscription"
+              tabindex="0"
+              class="purchase-business-panel focus:outline-none"
+            >
+              <SubscriptionCheckoutPanel
+                :plans="checkout.plans"
+                :nine-plus-products="ninePlusSubscriptionProducts"
+                :active-subscriptions="activeSubscriptions"
+                :current-subscription="currentSubscriptionSummary"
+                :methods="subscriptionMethodOptions"
+                :selected-method="selectedMethod"
+                :selected-option-key="selectedSubscriptionOptionKey"
+                :renewal-group-id="renewGroupId"
+                :payment-amount="subPaymentAmount"
+                :fee-amount="subFeeAmount"
+                :total-amount="subTotalAmount"
+                :original-amount="subOriginalAmount"
+                :discount-amount="subDiscountAmount"
+                :payment-currency="selectedCurrency"
+                :can-submit="canSubmitSubscription"
+                :submitting="submitting"
+                :error-message="errorMessage"
+                @select-option="selectSubscriptionOption"
+                @select-method="selectSubscriptionMethod"
+                @submit="confirmSubscribeOption"
+              />
+            </section>
+
+            <template #trust>
+              <RechargeTrustBar />
+            </template>
+          </PurchasePageStage>
+
+          <section
+            v-if="checkout.help_text || checkout.help_image_url"
+            class="recharge-glass-card p-4"
+            :aria-label="t('payment.rechargeUi.support247')"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <button
+                v-if="checkout.help_image_url"
+                type="button"
+                class="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+                :aria-label="t('payment.rechargeUi.support247')"
+                @click="previewImage = checkout.help_image_url"
+              >
+                <img
+                  :src="checkout.help_image_url"
+                  alt=""
+                  class="h-40 max-w-full rounded-lg object-contain transition-opacity hover:opacity-80"
+                />
+              </button>
+              <p v-if="checkout.help_text" class="text-center text-sm text-content-secondary">
+                {{ checkout.help_text }}
+              </p>
             </div>
-          </div>
-        </template>
+          </section>
+        </div>
+
+        <div v-else class="mx-auto w-full max-w-3xl py-6">
+          <PaymentStatusPanel
+            :order-id="paymentState.orderId"
+            :amount="paymentState.amount"
+            :qr-code="paymentState.qrCode"
+            :expires-at="paymentState.expiresAt"
+            :payment-type="paymentState.paymentType"
+            :provider-key="paymentState.providerKey"
+            :pay-url="paymentState.payUrl"
+            :order-type="paymentState.orderType"
+            :currency="paymentState.currency || selectedCurrency"
+            :pay-amount="paymentState.payAmount || paymentState.amount"
+            :out-trade-no="paymentState.outTradeNo"
+            :mobile-alipay-deep-link="paymentState.alipayMobilePrecreateDeepLink"
+            @done="onPaymentDone"
+            @success="onPaymentSuccess"
+            @settled="onPaymentSettled"
+          />
+        </div>
       </div>
     </div>
-    <!-- Renewal Plan Selection Modal -->
+
     <Teleport to="body">
       <Transition name="modal">
-        <div v-if="showRenewalModal" class="fixed inset-0 z-50 flex items-center justify-center bg-surface-scrim/60 backdrop-blur-sm p-4" @click.self="closeRenewalModal">
-          <div class="relative w-full max-w-lg rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-dark-700 dark:bg-dark-900">
-            <!-- Close button -->
-            <button class="absolute right-4 top-4 rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-dark-700 dark:hover:text-gray-200" @click="closeRenewalModal">
-              <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-            <h3 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">{{ t('payment.selectPlan') }}</h3>
-            <div class="space-y-4">
-              <SubscriptionPlanCard v-for="plan in renewalPlans" :key="plan.id" :plan="plan" :active-subscriptions="activeSubscriptions" @select="selectPlanFromModal" />
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-    <!-- Image Preview Overlay -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="previewImage" class="fixed inset-0 z-[60] flex items-center justify-center bg-surface-scrim/75 backdrop-blur-sm" @click="previewImage = ''">
-          <img :src="previewImage" alt="" class="max-h-[85vh] max-w-[90vw] rounded-xl object-contain shadow-2xl" />
+        <div
+          v-if="previewImage"
+          class="fixed inset-0 z-[60] flex items-center justify-center bg-surface-scrim/75 p-4 backdrop-blur-sm"
+          @click="previewImage = ''"
+        >
+          <img
+            :src="previewImage"
+            alt=""
+            class="max-h-[85vh] max-w-[90vw] rounded-xl object-contain shadow-2xl"
+          />
         </div>
       </Transition>
     </Teleport>
@@ -438,13 +198,21 @@ import type {
   OrderType,
 } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import AccountBalanceHero from '@/components/payment/recharge/AccountBalanceHero.vue'
-import CurrentSubscriptionCard from '@/components/payment/recharge/CurrentSubscriptionCard.vue'
-import RechargeAmountSelector from '@/components/payment/recharge/RechargeAmountSelector.vue'
-import RechargeMethodSelector from '@/components/payment/recharge/RechargeMethodSelector.vue'
-import RechargeOrderSummary from '@/components/payment/recharge/RechargeOrderSummary.vue'
 import RechargeTrustBar from '@/components/payment/recharge/RechargeTrustBar.vue'
 import PurchaseModeTabs from '@/components/payment/recharge/PurchaseModeTabs.vue'
+import PurchasePageStage from '@/components/payment/purchase/PurchasePageStage.vue'
+import RechargeCheckoutPanel from '@/components/payment/purchase/RechargeCheckoutPanel.vue'
+import NinePlusRechargeCheckoutPanel from '@/components/payment/purchase/NinePlusRechargeCheckoutPanel.vue'
+import SubscriptionCheckoutPanel from '@/components/payment/purchase/SubscriptionCheckoutPanel.vue'
+import {
+  buildPurchaseSubscriptionOptions,
+  findPurchaseSubscriptionOption,
+  isNinePlusProductInStock,
+  isNinePlusSubscriptionProduct,
+  ninePlusPaymentAmounts,
+  type CurrentSubscriptionSummary,
+  type PurchaseSubscriptionOption,
+} from '@/components/payment/purchase/purchaseViewModels'
 import { METHOD_ORDER, getPaymentPopupFeatures } from '@/components/payment/providerConfig'
 import {
   PAYMENT_RECOVERY_STORAGE_KEY,
@@ -458,12 +226,8 @@ import {
   writePaymentRecoverySnapshot,
 } from '@/components/payment/paymentFlow'
 import { platformLabel } from '@/utils/platformColors'
-import SubscriptionPlanCard from '@/components/payment/SubscriptionPlanCard.vue'
 import PaymentStatusPanel from '@/components/payment/PaymentStatusPanel.vue'
-import Icon from '@/components/icons/Icon.vue'
 import { DEFAULT_PAYMENT_CURRENCY, formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
-import { buildSubscriptionPlanDisplay, buildSubscriptionPlanDisplayLabels, type SubscriptionPlanDisplay } from '@/components/payment/subscriptionPlanDisplay'
-import { planValiditySuffix as validitySuffixOf } from '@/components/payment/validity'
 import type { PaymentMethodOption } from '@/components/payment/PaymentMethodSelector.vue'
 import { buildPaymentErrorToastMessage, describePaymentScenarioError } from './paymentUx'
 import { hasWechatResumeQuery, parseWechatResumeRoute, stripWechatResumeQuery } from './paymentWechatResume'
@@ -491,12 +255,14 @@ const submitting = ref(false)
 const errorMessage = ref('')
 const errorHintMessage = ref('')
 const submitAttempted = ref(false)
-const activeTab = ref<'recharge' | 'subscription'>('recharge')
+type PurchaseMode = 'recharge' | 'subscription'
+const activeTab = ref<PurchaseMode>(route.query.tab === 'subscription' ? 'subscription' : 'recharge')
+const checkoutReady = ref(false)
 const amount = ref<number | null>(null)
 const selectedMethod = ref('')
 const selectedNinePlusProductId = ref('')
-const selectedNinePlusSubscriptionProductId = ref('')
-const selectedPlan = ref<SubscriptionPlan | null>(null)
+const selectedSubscriptionOptionKey = ref('')
+const renewGroupId = ref<number | null>(null)
 const previewImage = ref('')
 
 const paymentPhase = ref<'select' | 'paying'>('select')
@@ -652,7 +418,7 @@ function buildWechatOAuthAuthorizeUrl(
 function onPaymentDone() {
   const wasSubscription = paymentState.value.orderType === 'subscription'
   resetPayment()
-  selectedPlan.value = null
+  selectedSubscriptionOptionKey.value = ''
   if (wasSubscription) {
     subscriptionStore.fetchActiveSubscriptions(true).catch(() => {})
   }
@@ -683,163 +449,144 @@ const DEFAULT_MIN_RECHARGE_AMOUNT = 10
 const DEFAULT_MAX_RECHARGE_AMOUNT = 500000
 
 const tabs = computed(() => {
-  const result: { key: 'recharge' | 'subscription'; label: string }[] = []
-  if (!checkout.value.balance_disabled) result.push({ key: 'recharge', label: t('payment.tabTopUp') })
-  result.push({ key: 'subscription', label: t('payment.tabSubscribe') })
+  const result: Array<{
+    key: PurchaseMode
+    label: string
+    panelId: string
+  }> = []
+  if (!checkout.value.balance_disabled) {
+    result.push({
+      key: 'recharge',
+      label: t('payment.tabTopUp'),
+      panelId: 'purchase-panel-recharge',
+    })
+  }
+  result.push({
+    key: 'subscription',
+    label: t('payment.tabSubscribe'),
+    panelId: 'purchase-panel-subscription',
+  })
   return result
 })
 
+function paymentMethodSortIndex(type: string): number {
+  const index = METHOD_ORDER.indexOf(type as (typeof METHOD_ORDER)[number])
+  return index < 0 ? METHOD_ORDER.length : index
+}
+
 const visibleMethods = computed(() => getVisibleMethods(checkout.value.methods))
-const enabledMethods = computed(() => Object.keys(visibleMethods.value))
+const enabledMethods = computed(() =>
+  Object.keys(visibleMethods.value).sort((left, right) =>
+    paymentMethodSortIndex(left) - paymentMethodSortIndex(right) || left.localeCompare(right)
+  )
+)
+const standardRechargeMethodTypes = computed(() =>
+  enabledMethods.value.filter(type => type !== 'nineplus')
+)
 const isNinePlusSelected = computed(() => selectedMethod.value === 'nineplus')
-function ninePlusProductCategory(product: NinePlusProduct): string {
-  return (product.category || product.badge || '').trim()
-}
-function isNinePlusProductInStock(product: NinePlusProduct): boolean {
-  return product.stock_count == null || product.stock_count > 0
-}
-function isNinePlusSubscriptionProduct(product: NinePlusProduct): boolean {
-  const text = `${ninePlusProductCategory(product)} ${product.display_name} ${product.description}`.toLowerCase()
-  return text.includes('套餐')
-    || text.includes('月包')
-    || text.includes('月卡')
-    || text.includes('年包')
-    || text.includes('年卡')
-    || text.includes('会员')
-    || text.includes('畅用')
-    || text.includes('订阅')
-    || text.includes('subscription')
-    || text.includes('membership')
-}
-function ninePlusSubscriptionProductTitle(product: NinePlusProduct): string {
-  return product.display_name
-    .replace(/[：:]\s*\d+(?:\.\d+)?\s*元\/月[，,]?\s*(?:月包|月卡)?\s*包含\s*\d+\s*额度.*$/, '')
-    .trim() || product.display_name
-}
+
 const activeNinePlusProducts = computed(() =>
   (checkout.value.nineplus_products || [])
     .filter(product => product.enabled && isNinePlusProductInStock(product))
-    .sort((a, b) => a.sort_order - b.sort_order)
+    .sort((left, right) => left.sort_order - right.sort_order)
 )
 const availableNinePlusProducts = computed(() =>
   activeNinePlusProducts.value
     .filter(product => !isNinePlusSubscriptionProduct(product))
-    .sort((a, b) => ninePlusProductPriceAmount(a) - ninePlusProductPriceAmount(b) || a.sort_order - b.sort_order)
+    .sort((left, right) =>
+      ninePlusPaymentAmounts(left).price - ninePlusPaymentAmounts(right).price
+      || left.sort_order - right.sort_order
+    )
 )
 const ninePlusSubscriptionProducts = computed(() =>
   activeNinePlusProducts.value
     .filter(isNinePlusSubscriptionProduct)
-    .sort((a, b) => ninePlusProductPriceAmount(a) - ninePlusProductPriceAmount(b) || a.sort_order - b.sort_order)
+    .sort((left, right) =>
+      ninePlusPaymentAmounts(left).price - ninePlusPaymentAmounts(right).price
+      || left.sort_order - right.sort_order
+    )
 )
-const rechargeMethodTypes = computed(() =>
-  enabledMethods.value.includes('nineplus') ? ['nineplus'] : enabledMethods.value
-)
-const defaultNinePlusProduct = computed(() => availableNinePlusProducts.value[0] ?? null)
 const selectedNinePlusProduct = computed(() =>
   availableNinePlusProducts.value.find(product => product.product_id === selectedNinePlusProductId.value) ?? null
 )
-const effectiveNinePlusProduct = computed(() => selectedNinePlusProduct.value ?? defaultNinePlusProduct.value)
-const defaultNinePlusSubscriptionProduct = computed(() => ninePlusSubscriptionProducts.value[0] ?? null)
-const selectedNinePlusSubscriptionProduct = computed(() =>
-  ninePlusSubscriptionProducts.value.find(product => product.product_id === selectedNinePlusSubscriptionProductId.value) ?? null
+const effectiveNinePlusProduct = computed(() =>
+  selectedNinePlusProduct.value ?? availableNinePlusProducts.value[0] ?? null
 )
-const effectiveNinePlusSubscriptionProduct = computed(() => selectedNinePlusSubscriptionProduct.value ?? defaultNinePlusSubscriptionProduct.value)
-function roundCurrencyAmount(value: number): number {
-  return Math.round(value * 100) / 100
-}
-function ninePlusProductPriceAmount(product: { price: number }): number {
-  return product.price
-}
-function ninePlusProductFeeAmount(product: { price: number; fee?: number; payment_amount?: number }): number {
-  if ((product.fee ?? 0) > 0) return roundCurrencyAmount(product.fee ?? 0)
-  const paymentAmount = product.payment_amount ?? 0
-  if (paymentAmount > product.price) return roundCurrencyAmount(paymentAmount - product.price)
-  return 0
-}
-function ninePlusProductAmount(product: { price: number; fee?: number; payment_amount?: number }): number {
-  if ((product.payment_amount ?? 0) > 0) return roundCurrencyAmount(product.payment_amount ?? 0)
-  return roundCurrencyAmount(product.price + ninePlusProductFeeAmount(product))
-}
-function formatNinePlusCreditedAmount(product: { quota?: number; quota_unit?: string }): string {
-  const quota = product.quota ?? 0
-  if (quota <= 0) return ''
-  const unit = (product.quota_unit || '').trim()
-  const normalizedUnit = unit.toUpperCase()
-  if (normalizedUnit === 'USD' || unit === '$') return `$${quota.toFixed(2)}`
-  if (normalizedUnit === 'CNY' || unit === '¥') return `¥${quota.toFixed(2)}`
-  return unit ? `${quota} ${unit}` : quota.toFixed(2)
-}
-const selectedNinePlusCreditedAmountLabel = computed(() =>
-  effectiveNinePlusProduct.value ? formatNinePlusCreditedAmount(effectiveNinePlusProduct.value) : ''
+const selectedNinePlusRechargeAmounts = computed(() =>
+  effectiveNinePlusProduct.value
+    ? ninePlusPaymentAmounts(effectiveNinePlusProduct.value)
+    : { price: 0, fee: 0, total: 0 }
 )
-const selectedNinePlusSubscriptionQuotaLabel = computed(() =>
-  effectiveNinePlusSubscriptionProduct.value ? formatNinePlusCreditedAmount(effectiveNinePlusSubscriptionProduct.value) : ''
-)
-const selectedNinePlusProductPriceAmount = computed(() =>
-  effectiveNinePlusProduct.value ? ninePlusProductPriceAmount(effectiveNinePlusProduct.value) : 0
-)
-const selectedNinePlusProductFeeAmount = computed(() =>
-  effectiveNinePlusProduct.value ? ninePlusProductFeeAmount(effectiveNinePlusProduct.value) : 0
-)
-const selectedNinePlusSubscriptionProductPriceAmount = computed(() =>
-  effectiveNinePlusSubscriptionProduct.value ? ninePlusProductPriceAmount(effectiveNinePlusSubscriptionProduct.value) : 0
-)
-const selectedNinePlusSubscriptionProductFeeAmount = computed(() =>
-  effectiveNinePlusSubscriptionProduct.value ? ninePlusProductFeeAmount(effectiveNinePlusSubscriptionProduct.value) : 0
-)
-const ninePlusSubscriptionAmount = computed(() =>
-  effectiveNinePlusSubscriptionProduct.value ? ninePlusProductAmount(effectiveNinePlusSubscriptionProduct.value) : 0
-)
+
 const validAmount = computed(() =>
-  isNinePlusSelected.value && effectiveNinePlusProduct.value
-    ? ninePlusProductAmount(effectiveNinePlusProduct.value)
+  isNinePlusSelected.value
+    ? selectedNinePlusRechargeAmounts.value.total
     : amount.value ?? 0
 )
 const balanceRechargeMultiplier = computed(() => {
   const multiplier = checkout.value.balance_recharge_multiplier
-  return Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1
+  // Treat an invalid checkout response as a configuration failure. Falling
+  // back to 1 here would make the UI promise a credit the backend did not
+  // explicitly authorize.
+  return Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 0
 })
-// 订阅 CNY 换算汇率（1 USD = X CNY）。0 = 未配置，订阅保持 price 直付（与后端 opt-in 条件严格镜像）。
+const oneToOneConfigured = computed(() =>
+  Math.abs(balanceRechargeMultiplier.value - 1) < 1e-9
+)
+const oneToOneConfigurationWarning = computed(() =>
+  oneToOneConfigured.value
+    ? ''
+    : t('payment.rechargeUi.oneToOneConfigurationWarning', {
+        multiplier: balanceRechargeMultiplier.value.toFixed(4),
+      })
+)
+const creditedAmount = computed(() =>
+  Math.round(validAmount.value * balanceRechargeMultiplier.value * 100) / 100
+)
+
+// 订阅 CNY 换算汇率（1 USD = X CNY）。0 = 未配置，保持套餐 price 直付。
 const subscriptionUsdToCnyRate = computed(() => {
   const rate = checkout.value.subscription_usd_to_cny_rate
   return Number.isFinite(rate) && rate > 0 ? rate : 0
 })
-const creditedAmount = computed(() => Math.round((validAmount.value * balanceRechargeMultiplier.value) * 100) / 100)
-
-// Adaptive grid: center single card, 2-col for 2 plans, 3-col for 3+
-const planGridClass = computed(() => {
-  const n = checkout.value.plans.length
-  if (n <= 2) return 'grid grid-cols-1 gap-5 sm:grid-cols-2'
-  return 'grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3'
-})
 
 // Check if an amount fits a method's [min, max]. 0 = no limit.
-function amountFitsMethod(amt: number, methodType: string): boolean {
-  if (amt <= 0) return true
-  const ml = visibleMethods.value[methodType]
-  if (!ml) return false
-  if (ml.single_min > 0 && amt < ml.single_min) return false
-  if (ml.single_max > 0 && amt > ml.single_max) return false
+function amountFitsMethod(value: number, methodType: string): boolean {
+  if (value <= 0) return true
+  const limit = visibleMethods.value[methodType]
+  if (!limit) return false
+  if (limit.single_min > 0 && value < limit.single_min) return false
+  if (limit.single_max > 0 && value > limit.single_max) return false
   return true
 }
 
-// Visible methods decide the amount range shown to users.
+const standardRechargeLimits = computed(() =>
+  standardRechargeMethodTypes.value
+    .map(type => visibleMethods.value[type])
+    .filter((limit): limit is NonNullable<typeof limit> => Boolean(limit))
+)
 const globalMinAmount = computed(() => {
-  const limits = Object.values(visibleMethods.value)
-  if (limits.length === 0) return 0
-  if (limits.some(limit => limit.single_min <= 0)) return 0
+  const limits = standardRechargeLimits.value
+  if (limits.length === 0 || limits.some(limit => limit.single_min <= 0)) return 0
   return Math.min(...limits.map(limit => limit.single_min))
 })
 const globalMaxAmount = computed(() => {
-  const limits = Object.values(visibleMethods.value)
-  if (limits.length === 0) return 0
-  if (limits.some(limit => limit.single_max <= 0)) return 0
+  const limits = standardRechargeLimits.value
+  if (limits.length === 0 || limits.some(limit => limit.single_max <= 0)) return 0
   return Math.max(...limits.map(limit => limit.single_max))
 })
+const effectiveMinAmount = computed(() =>
+  globalMinAmount.value > 0 ? globalMinAmount.value : DEFAULT_MIN_RECHARGE_AMOUNT
+)
+const effectiveMaxAmount = computed(() =>
+  globalMaxAmount.value > 0 ? globalMaxAmount.value : DEFAULT_MAX_RECHARGE_AMOUNT
+)
 
-// Selected method's limits (for validation and error messages)
 const selectedLimit = computed(() => visibleMethods.value[selectedMethod.value])
 const selectedCurrency = computed(() => normalizePaymentCurrency(selectedLimit.value?.currency))
+const rechargeFractionDigits = computed(() =>
+  Math.min(2, currencyFractionDigits(selectedCurrency.value))
+)
 const localeCode = computed(() => {
   const raw = i18n.locale as unknown
   if (typeof raw === 'string') return raw
@@ -849,18 +596,17 @@ const localeCode = computed(() => {
   return undefined
 })
 
-const accountDisplayName = computed(() =>
-  user.value?.username || user.value?.email || t('payment.rechargeUi.defaultAccountName')
-)
 const currentBalanceAmount = computed(() => {
   const value = user.value?.balance
   return Number.isFinite(value) ? Number(value) : 0
 })
-const formattedCurrentBalance = computed(() => formatSelectedPaymentAmount(currentBalanceAmount.value))
+const formattedCurrentBalance = computed(() =>
+  formatPaymentAmount(currentBalanceAmount.value, 'USD', localeCode.value)
+)
 const currentSubscription = computed(() =>
   activeSubscriptions.value.find(subscription => subscription.status === 'active') ?? null
 )
-const currentSubscriptionSummary = computed(() => {
+const currentSubscriptionSummary = computed<CurrentSubscriptionSummary | null>(() => {
   const subscription = currentSubscription.value
   if (!subscription) return null
 
@@ -877,8 +623,6 @@ const currentSubscriptionSummary = computed(() => {
     ),
   }
 })
-const effectiveMinAmount = computed(() => globalMinAmount.value > 0 ? globalMinAmount.value : DEFAULT_MIN_RECHARGE_AMOUNT)
-const effectiveMaxAmount = computed(() => globalMaxAmount.value > 0 ? globalMaxAmount.value : DEFAULT_MAX_RECHARGE_AMOUNT)
 
 function currencyFractionDigits(currency: string): number {
   try {
@@ -905,7 +649,9 @@ function ceilPaymentAmount(value: number, currency: string): number {
 
 function subscriptionPaymentAmountForCurrency(value: number, currency: string): number {
   const rate = subscriptionUsdToCnyRate.value
-  if (rate <= 0 || currency !== DEFAULT_PAYMENT_CURRENCY) return roundPaymentAmount(value, currency)
+  if (rate <= 0 || currency !== DEFAULT_PAYMENT_CURRENCY) {
+    return roundPaymentAmount(value, currency)
+  }
   return roundPaymentAmount(value * rate, currency)
 }
 
@@ -917,135 +663,270 @@ function formatCreditedAmount(value: number): string {
   return formatPaymentAmount(value, 'USD', localeCode.value)
 }
 
-function formatSelectedSubscriptionPaymentAmount(value: number): string {
-  return formatSelectedPaymentAmount(subscriptionPaymentAmountForCurrency(value, selectedCurrency.value))
+function formatCreditedPresetAmount(value: number): string {
+  try {
+    return new Intl.NumberFormat(localeCode.value, {
+      style: 'currency',
+      currency: 'USD',
+      currencyDisplay: 'narrowSymbol',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value)
+  } catch {
+    return `$${value.toFixed(2)}`
+  }
+}
+
+function hasSupportedRechargePrecision(value: number): boolean {
+  const factor = 10 ** rechargeFractionDigits.value
+  return Math.abs(value * factor - Math.round(value * factor)) < 1e-8
+}
+
+function standardRechargeTotalForCurrency(value: number, currency: string): number {
+  const feeRate = checkout.value.recharge_fee_rate ?? 0
+  if (feeRate <= 0 || value <= 0) return roundPaymentAmount(value, currency)
+  const fee = ceilPaymentAmount((value * feeRate) / 100, currency)
+  return roundPaymentAmount(value + fee, currency)
+}
+
+function rechargeAmountForMethod(type: string): number {
+  if (type === 'nineplus') return selectedNinePlusRechargeAmounts.value.total
+  const currency = normalizePaymentCurrency(visibleMethods.value[type]?.currency)
+  return standardRechargeTotalForCurrency(amount.value ?? 0, currency)
 }
 
 const methodOptions = computed<PaymentMethodOption[]>(() =>
-  rechargeMethodTypes.value.map((type) => {
-    const ml = visibleMethods.value[type]
+  enabledMethods.value.map((type) => {
+    const limit = visibleMethods.value[type]
+    const methodAmount = rechargeAmountForMethod(type)
+    const hasNinePlusProduct = type !== 'nineplus' || effectiveNinePlusProduct.value !== null
     return {
       type,
-      display_name: ml?.display_name,
-      fee_rate: ml?.fee_rate ?? 0,
-      available: ml?.available !== false && amountFitsMethod(validAmount.value, type),
+      display_name: limit?.display_name,
+      fee_rate: limit?.fee_rate ?? 0,
+      available: hasNinePlusProduct
+        && limit?.available !== false
+        && amountFitsMethod(methodAmount, type),
     }
   })
 )
 
-const feeRate = computed(() => isNinePlusSelected.value ? 0 : checkout.value?.recharge_fee_rate ?? 0)
+const feeRate = computed(() =>
+  isNinePlusSelected.value ? 0 : checkout.value.recharge_fee_rate ?? 0
+)
 const feeAmount = computed(() =>
   feeRate.value > 0 && validAmount.value > 0
-    ? Math.ceil(((validAmount.value * feeRate.value) / 100) * 100) / 100
+    ? ceilPaymentAmount((validAmount.value * feeRate.value) / 100, selectedCurrency.value)
     : 0
 )
 const totalAmount = computed(() =>
   feeRate.value > 0 && validAmount.value > 0
-    ? Math.round((validAmount.value + feeAmount.value) * 100) / 100
+    ? roundPaymentAmount(validAmount.value + feeAmount.value, selectedCurrency.value)
     : validAmount.value
 )
-const formattedEstimatedCreditedAmount = computed(() => formatCreditedAmount(creditedAmount.value))
+const formattedEstimatedCreditedAmount = computed(() =>
+  formatCreditedAmount(creditedAmount.value)
+)
 
 const amountError = computed(() => {
-  if (validAmount.value <= 0) return ''
-  if (!isNinePlusSelected.value && !Number.isInteger(validAmount.value)) {
-    return t('payment.amountMustBeInteger')
+  if (isNinePlusSelected.value || validAmount.value <= 0) return ''
+  if (!hasSupportedRechargePrecision(validAmount.value)) {
+    return t('payment.amountTooManyDecimals', { digits: rechargeFractionDigits.value })
   }
-  if (!isNinePlusSelected.value && validAmount.value < effectiveMinAmount.value) {
-    return t('payment.amountTooLow', { min: formatSelectedPaymentAmount(effectiveMinAmount.value) })
+  if (validAmount.value < effectiveMinAmount.value) {
+    return t('payment.amountTooLow', {
+      min: formatSelectedPaymentAmount(effectiveMinAmount.value),
+    })
   }
-  if (!isNinePlusSelected.value && validAmount.value > effectiveMaxAmount.value) {
-    return t('payment.amountTooHigh', { max: formatSelectedPaymentAmount(effectiveMaxAmount.value) })
+  if (validAmount.value > effectiveMaxAmount.value) {
+    return t('payment.amountTooHigh', {
+      max: formatSelectedPaymentAmount(effectiveMaxAmount.value),
+    })
   }
-  // No method can handle this amount
-  if (!rechargeMethodTypes.value.some((m) => amountFitsMethod(validAmount.value, m))) {
+  if (!standardRechargeMethodTypes.value.some(method =>
+    amountFitsMethod(
+      standardRechargeTotalForCurrency(
+        validAmount.value,
+        normalizePaymentCurrency(visibleMethods.value[method]?.currency),
+      ),
+      method,
+    )
+  )) {
     return t('payment.amountNoMethod')
   }
-  // Selected method can't handle this amount (but others can)
-  const ml = selectedLimit.value
-  if (ml) {
-    if (ml.single_min > 0 && validAmount.value < ml.single_min) return t('payment.amountTooLow', { min: formatSelectedPaymentAmount(ml.single_min) })
-    if (ml.single_max > 0 && validAmount.value > ml.single_max) return t('payment.amountTooHigh', { max: formatSelectedPaymentAmount(ml.single_max) })
+  const limit = selectedLimit.value
+  if (limit) {
+    if (limit.single_min > 0 && totalAmount.value < limit.single_min) {
+      return t('payment.amountTooLow', {
+        min: formatSelectedPaymentAmount(limit.single_min),
+      })
+    }
+    if (limit.single_max > 0 && totalAmount.value > limit.single_max) {
+      return t('payment.amountTooHigh', {
+        max: formatSelectedPaymentAmount(limit.single_max),
+      })
+    }
   }
   return ''
 })
 
-const canSubmit = computed(() =>
-  validAmount.value > 0
-    && (isNinePlusSelected.value || (validAmount.value >= effectiveMinAmount.value && validAmount.value <= effectiveMaxAmount.value))
+const canSubmit = computed(() => {
+  if (isNinePlusSelected.value) {
+    return effectiveNinePlusProduct.value !== null
+      && validAmount.value > 0
+      && amountFitsMethod(validAmount.value, 'nineplus')
+      && visibleMethods.value.nineplus?.available !== false
+  }
+  return oneToOneConfigured.value
+    && validAmount.value >= effectiveMinAmount.value
+    && validAmount.value <= effectiveMaxAmount.value
     && !amountError.value
-    && (!isNinePlusSelected.value || effectiveNinePlusProduct.value !== null)
-    && amountFitsMethod(validAmount.value, selectedMethod.value)
+    && amountFitsMethod(totalAmount.value, selectedMethod.value)
     && selectedLimit.value?.available !== false
+})
+
+const subscriptionOptions = computed(() =>
+  buildPurchaseSubscriptionOptions(checkout.value.plans, ninePlusSubscriptionProducts.value)
+)
+const selectedSubscriptionOption = computed(() =>
+  findPurchaseSubscriptionOption(subscriptionOptions.value, selectedSubscriptionOptionKey.value)
+)
+const selectedInternalPlan = computed(() =>
+  selectedSubscriptionOption.value?.source === 'internal'
+    ? selectedSubscriptionOption.value.plan
+    : null
+)
+const selectedNinePlusSubscriptionProduct = computed(() =>
+  selectedSubscriptionOption.value?.source === 'nineplus'
+    ? selectedSubscriptionOption.value.product
+    : null
 )
 
-const subscriptionNinePlusMethodOptions = computed<PaymentMethodOption[]>(() => {
-	if (!enabledMethods.value.includes('nineplus')) return []
-	const ml = visibleMethods.value.nineplus
-  return [{
-    type: 'nineplus',
-    fee_rate: ml?.fee_rate ?? 0,
-    available: ml?.available !== false && amountFitsMethod(ninePlusSubscriptionAmount.value, 'nineplus'),
-  }]
-})
-
-const canSubmitNinePlusSubscription = computed(() =>
-  effectiveNinePlusSubscriptionProduct.value !== null
-    && selectedMethod.value === 'nineplus'
-    && ninePlusSubscriptionAmount.value > 0
-    && amountFitsMethod(ninePlusSubscriptionAmount.value, 'nineplus')
-    && visibleMethods.value.nineplus?.available !== false
-)
-
-const subPaymentAmount = computed(() => {
-  const price = selectedPlan.value?.price ?? 0
-  return subscriptionPaymentAmountForCurrency(price, selectedCurrency.value)
-})
-
-const subFeeAmount = computed(() => {
-  if (feeRate.value <= 0 || subPaymentAmount.value <= 0) return 0
-  return ceilPaymentAmount((subPaymentAmount.value * feeRate.value) / 100, selectedCurrency.value)
-})
-
-const subTotalAmount = computed(() => {
-  if (feeRate.value <= 0 || subPaymentAmount.value <= 0) return subPaymentAmount.value
-  return roundPaymentAmount(subPaymentAmount.value + subFeeAmount.value, selectedCurrency.value)
-})
-
-function subscriptionTotalAmountForCurrency(value: number, currency: string): number {
-  const paymentAmount = subscriptionPaymentAmountForCurrency(value, currency)
-  if (feeRate.value <= 0 || paymentAmount <= 0) return paymentAmount
-  const fee = ceilPaymentAmount((paymentAmount * feeRate.value) / 100, currency)
-  return roundPaymentAmount(paymentAmount + fee, currency)
+function subscriptionMethodTypesForOption(
+  option: PurchaseSubscriptionOption | null,
+): string[] {
+  if (option?.source === 'nineplus') {
+    return enabledMethods.value.includes('nineplus') ? ['nineplus'] : []
+  }
+  if (option?.source === 'internal') {
+    return enabledMethods.value.filter(type => type !== 'nineplus')
+  }
+  if (checkout.value.plans.length > 0) {
+    return enabledMethods.value.filter(type => type !== 'nineplus')
+  }
+  if (ninePlusSubscriptionProducts.value.length > 0 && enabledMethods.value.includes('nineplus')) {
+    return ['nineplus']
+  }
+  return enabledMethods.value.filter(type => type !== 'nineplus')
 }
 
-// Subscription-specific: method options based on gateway pay amount
-const subMethodOptions = computed<PaymentMethodOption[]>(() => {
-  const price = selectedPlan.value?.price ?? 0
-  return enabledMethods.value.filter(type => type !== 'nineplus').map((type) => {
-    const ml = visibleMethods.value[type]
-    const currency = normalizePaymentCurrency(ml?.currency)
+function subscriptionAmountsForOption(
+  option: PurchaseSubscriptionOption | null,
+  currency: string,
+): { price: number; fee: number; total: number; original: number; discount: number } {
+  if (!option) {
+    return { price: 0, fee: 0, total: 0, original: 0, discount: 0 }
+  }
+  if (option.source === 'nineplus') {
+    const amounts = ninePlusPaymentAmounts(option.product)
+    const original = option.originalPrice ?? 0
+    return {
+      ...amounts,
+      original,
+      discount: Math.max(0, original - amounts.price),
+    }
+  }
+
+  const price = subscriptionPaymentAmountForCurrency(option.plan.price, currency)
+  const fee = checkout.value.recharge_fee_rate > 0 && price > 0
+    ? ceilPaymentAmount((price * checkout.value.recharge_fee_rate) / 100, currency)
+    : 0
+  const original = option.originalPrice
+    ? subscriptionPaymentAmountForCurrency(option.originalPrice, currency)
+    : 0
+  return {
+    price,
+    fee,
+    total: roundPaymentAmount(price + fee, currency),
+    original,
+    discount: Math.max(0, original - price),
+  }
+}
+
+const selectedSubscriptionAmounts = computed(() =>
+  subscriptionAmountsForOption(selectedSubscriptionOption.value, selectedCurrency.value)
+)
+const subPaymentAmount = computed(() => selectedSubscriptionAmounts.value.price)
+const subFeeAmount = computed(() => selectedSubscriptionAmounts.value.fee)
+const subTotalAmount = computed(() => selectedSubscriptionAmounts.value.total)
+const subOriginalAmount = computed(() => selectedSubscriptionAmounts.value.original)
+const subDiscountAmount = computed(() => selectedSubscriptionAmounts.value.discount)
+
+const subscriptionMethodOptions = computed<PaymentMethodOption[]>(() =>
+  subscriptionMethodTypesForOption(selectedSubscriptionOption.value).map((type) => {
+    const limit = visibleMethods.value[type]
+    const currency = normalizePaymentCurrency(limit?.currency)
+    const amounts = subscriptionAmountsForOption(selectedSubscriptionOption.value, currency)
     return {
       type,
-      display_name: ml?.display_name,
-      fee_rate: ml?.fee_rate ?? 0,
-      available: ml?.available !== false && amountFitsMethod(subscriptionTotalAmountForCurrency(price, currency), type),
+      display_name: limit?.display_name,
+      fee_rate: limit?.fee_rate ?? 0,
+      available: limit?.available !== false
+        && amountFitsMethod(amounts.total, type),
     }
   })
-})
-
-const canSubmitSubscription = computed(() =>
-  selectedPlan.value !== null
-    && amountFitsMethod(subTotalAmount.value, selectedMethod.value)
-    && selectedLimit.value?.available !== false
 )
 
-// Auto-switch to first available method when current selection can't handle the amount
-watch(() => [validAmount.value, selectedMethod.value] as const, ([amt, method]) => {
-  if (amt <= 0 || amountFitsMethod(amt, method)) return
-  const available = rechargeMethodTypes.value.find((m) => amountFitsMethod(amt, m))
-  if (available) selectedMethod.value = available
+const canSubmitSubscription = computed(() => {
+  const option = selectedSubscriptionOption.value
+  if (!option || subTotalAmount.value <= 0) return false
+  if (option.source === 'nineplus' && selectedMethod.value !== 'nineplus') return false
+  if (option.source === 'internal' && selectedMethod.value === 'nineplus') return false
+  return amountFitsMethod(subTotalAmount.value, selectedMethod.value)
+    && selectedLimit.value?.available !== false
 })
+
+function firstAvailableMethod(options: PaymentMethodOption[]): string {
+  return options.find(option => option.available !== false)?.type || options[0]?.type || ''
+}
+
+function selectRechargeMethod(method: string): void {
+  selectedMethod.value = method
+  errorMessage.value = ''
+  errorHintMessage.value = ''
+}
+
+function selectSubscriptionMethod(method: string): void {
+  selectedMethod.value = method
+  errorMessage.value = ''
+  errorHintMessage.value = ''
+}
+
+function selectSubscriptionOption(option: PurchaseSubscriptionOption): void {
+  selectedSubscriptionOptionKey.value = option.key
+  const options = subscriptionMethodTypesForOption(option).map(type => {
+    const limit = visibleMethods.value[type]
+    const currency = normalizePaymentCurrency(limit?.currency)
+    const amounts = subscriptionAmountsForOption(option, currency)
+    return {
+      type,
+      available: limit?.available !== false
+        && amountFitsMethod(amounts.total, type),
+    } as PaymentMethodOption
+  })
+  if (!options.some(method => method.type === selectedMethod.value && method.available !== false)) {
+    selectedMethod.value = firstAvailableMethod(options)
+  }
+  errorMessage.value = ''
+  errorHintMessage.value = ''
+}
+
+function selectInternalPlan(plan: SubscriptionPlan): void {
+  const option = subscriptionOptions.value.find(candidate =>
+    candidate.source === 'internal' && candidate.id === plan.id
+  )
+  if (option) selectSubscriptionOption(option)
+}
 
 watch(availableNinePlusProducts, (products) => {
   if (!products.length) {
@@ -1057,83 +938,110 @@ watch(availableNinePlusProducts, (products) => {
   }
 }, { immediate: true })
 
-watch(ninePlusSubscriptionProducts, (products) => {
-  if (!products.length) {
-    selectedNinePlusSubscriptionProductId.value = ''
-    return
-  }
-  if (!products.some(product => product.product_id === selectedNinePlusSubscriptionProductId.value)) {
-    selectedNinePlusSubscriptionProductId.value = products[0].product_id
+watch(subscriptionOptions, (options) => {
+  if (
+    selectedSubscriptionOptionKey.value
+    && !options.some(option => option.key === selectedSubscriptionOptionKey.value)
+  ) {
+    selectedSubscriptionOptionKey.value = ''
   }
 }, { immediate: true })
 
-watch(isNinePlusSelected, (selected) => {
-  if (!selected || selectedNinePlusProductId.value) return
-  selectedNinePlusProductId.value = availableNinePlusProducts.value[0]?.product_id || ''
-})
-
-watch(() => [activeTab.value, ninePlusSubscriptionProducts.value.length] as const, ([tab, productCount]) => {
-  if (tab === 'subscription' && productCount > 0 && enabledMethods.value.includes('nineplus')) {
-    selectedMethod.value = 'nineplus'
+watch(() => [totalAmount.value, selectedMethod.value, activeTab.value] as const, ([value, method, tab]) => {
+  if (tab !== 'recharge' || isNinePlusSelected.value || value <= 0 || amountFitsMethod(value, method)) {
+    return
   }
+  const fallback = methodOptions.value.find(option =>
+    option.type !== 'nineplus' && option.available !== false
+  )
+  if (fallback) selectedMethod.value = fallback.type
 })
 
-// Renewal modal state
-const showRenewalModal = ref(false)
-const renewGroupId = ref<number | null>(null)
-const renewalPlans = computed(() => {
-  if (renewGroupId.value == null) return []
-  return checkout.value.plans.filter(p => p.group_id === renewGroupId.value)
-})
-
-const selectedPlanDisplay = computed<SubscriptionPlanDisplay>(() => {
-  if (!selectedPlan.value) {
-    return { description: '', quotaSummary: '', validitySummary: '' }
-  }
-  return buildSubscriptionPlanDisplay(selectedPlan.value, buildSubscriptionPlanDisplayLabels(t))
-})
-
-const selectedPlanValiditySummary = computed(() => {
-  if (!selectedPlan.value) return ''
-  const unit = String(selectedPlan.value.validity_unit || 'day').trim().toLowerCase()
-  if (unit === 'day') return selectedPlanDisplay.value.validitySummary
-  return `/ ${validitySuffixOf(selectedPlan.value, t)}`
-})
-
-function selectPlan(plan: SubscriptionPlan) {
-  selectedPlan.value = plan
-  if (selectedMethod.value === 'nineplus') {
-    selectedMethod.value = enabledMethods.value.find(method => method !== 'nineplus') || ''
-  }
-  errorMessage.value = ''
+function desiredPurchaseMode(): PurchaseMode {
+  if (checkout.value.balance_disabled) return 'subscription'
+  return route.query.tab === 'subscription' ? 'subscription' : 'recharge'
 }
 
-function selectPlanFromModal(plan: SubscriptionPlan) {
-  showRenewalModal.value = false
+async function syncActiveTabQuery(mode: PurchaseMode): Promise<void> {
+  if (!checkoutReady.value || paymentPhase.value !== 'select') return
+
+  const query = { ...route.query }
+  const mustDropGroup = mode === 'recharge' && 'group' in query
+  if (query.tab === mode && !mustDropGroup) return
+
+  query.tab = mode
+  if (mode === 'recharge') delete query.group
+  await router.replace({ path: route.path, query })
+}
+
+function applyRenewalGroupFromQuery(): void {
   renewGroupId.value = null
-  selectedPlan.value = plan
-  errorMessage.value = ''
+  if (activeTab.value !== 'subscription' || typeof route.query.group !== 'string') return
+
+  const groupId = Number(route.query.group)
+  if (!Number.isSafeInteger(groupId) || groupId <= 0) return
+
+  const groupPlans = checkout.value.plans.filter(plan => plan.group_id === groupId)
+  if (!groupPlans.length) return
+
+  renewGroupId.value = groupId
+  if (groupPlans.length === 1) {
+    selectInternalPlan(groupPlans[0])
+    return
+  }
+
+  if (
+    selectedInternalPlan.value
+    && selectedInternalPlan.value.group_id !== groupId
+  ) {
+    selectedSubscriptionOptionKey.value = ''
+  }
 }
 
-function closeRenewalModal() {
-  showRenewalModal.value = false
-  renewGroupId.value = null
+function ensureMethodForMode(mode: PurchaseMode): void {
+  const options = mode === 'subscription'
+    ? subscriptionMethodOptions.value
+    : methodOptions.value
+  if (!options.some(option => option.type === selectedMethod.value && option.available !== false)) {
+    selectedMethod.value = firstAvailableMethod(options)
+  }
 }
+
+watch(activeTab, (mode) => {
+  if (!checkoutReady.value) return
+  if (mode === 'recharge') renewGroupId.value = null
+  ensureMethodForMode(mode)
+  void syncActiveTabQuery(mode)
+})
+
+watch(
+  () => [route.query.tab, route.query.group] as const,
+  () => {
+    if (!checkoutReady.value || paymentPhase.value !== 'select') return
+    const mode = desiredPurchaseMode()
+    if (activeTab.value !== mode) activeTab.value = mode
+    applyRenewalGroupFromQuery()
+    ensureMethodForMode(mode)
+  },
+)
 
 async function handleSubmitRecharge() {
   if (!canSubmit.value || submitting.value) return
   await createOrder(validAmount.value, 'balance')
 }
 
-async function confirmSubscribe() {
-  if (!selectedPlan.value || submitting.value) return
-  await createOrder(selectedPlan.value.price, 'subscription', selectedPlan.value.id)
-}
+async function confirmSubscribeOption(option: PurchaseSubscriptionOption) {
+  if (submitting.value || option.key !== selectedSubscriptionOptionKey.value) return
 
-async function handleSubmitNinePlusSubscription() {
-  const product = effectiveNinePlusSubscriptionProduct.value
-  if (!product || !canSubmitNinePlusSubscription.value || submitting.value) return
-  await createOrder(ninePlusProductAmount(product), 'subscription', undefined, { externalProduct: product })
+  if (option.source === 'nineplus') {
+    const amounts = ninePlusPaymentAmounts(option.product)
+    await createOrder(amounts.total, 'subscription', undefined, {
+      externalProduct: option.product,
+    })
+    return
+  }
+
+  await createOrder(option.plan.price, 'subscription', option.plan.id)
 }
 
 async function createOrder(orderAmount: number, orderType: OrderType, planId?: number, options: CreateOrderOptions = {}) {
@@ -1143,7 +1051,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
   errorHintMessage.value = ''
   const requestType = normalizeVisibleMethod(options.paymentType || selectedMethod.value) || options.paymentType || selectedMethod.value
   const defaultExternalProduct = orderType === 'subscription'
-    ? effectiveNinePlusSubscriptionProduct.value
+    ? selectedNinePlusSubscriptionProduct.value
     : effectiveNinePlusProduct.value
   const ninePlusProduct = requestType === 'nineplus' ? options.externalProduct ?? defaultExternalProduct : null
   try {
@@ -1459,7 +1367,9 @@ async function resumeWechatPaymentFromQuery() {
     amount.value = resume.orderAmount
   }
   if (resume.orderType === 'subscription' && resume.planId) {
-    selectedPlan.value = checkout.value.plans.find(plan => plan.id === resume.planId) ?? null
+    activeTab.value = 'subscription'
+    const plan = checkout.value.plans.find(candidate => candidate.id === resume.planId)
+    if (plan) selectInternalPlan(plan)
   }
 
   await router.replace({ path: route.path, query: stripWechatResumeQuery(route.query) })
@@ -1486,16 +1396,10 @@ onMounted(async () => {
   try {
     const res = await paymentAPI.getCheckoutInfo()
     checkout.value = res.data
-    selectedNinePlusProductId.value = availableNinePlusProducts.value[0]?.product_id || ''
-    if (rechargeMethodTypes.value.length) {
-      const order: readonly string[] = METHOD_ORDER
-      const sorted = [...rechargeMethodTypes.value].sort((a, b) => {
-        const ai = order.indexOf(a)
-        const bi = order.indexOf(b)
-        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)
-      })
-      selectedMethod.value = sorted[0]
-    }
+    activeTab.value = desiredPurchaseMode()
+    selectedMethod.value = firstAvailableMethod(
+      activeTab.value === 'subscription' ? subscriptionMethodOptions.value : methodOptions.value,
+    )
     if (typeof window !== 'undefined') {
       if (hasWechatResumeQuery(route.query)) {
         removeRecoverySnapshot()
@@ -1522,25 +1426,18 @@ onMounted(async () => {
       }
     }
     await resumeWechatPaymentFromQuery()
-    if (checkout.value.balance_disabled) {
-      activeTab.value = 'subscription'
-    }
-    // Handle renewal navigation: ?tab=subscription&group=123
-    if (route.query.tab === 'subscription') {
-      activeTab.value = 'subscription'
-      if (route.query.group) {
-        const groupId = Number(route.query.group)
-        const groupPlans = checkout.value.plans.filter(p => p.group_id === groupId)
-        if (groupPlans.length === 1) {
-          selectedPlan.value = groupPlans[0]
-        } else if (groupPlans.length > 1) {
-          renewGroupId.value = groupId
-          showRenewalModal.value = true
-        }
-      }
+    checkoutReady.value = true
+    if (paymentPhase.value === 'select') {
+      activeTab.value = desiredPurchaseMode()
+      applyRenewalGroupFromQuery()
+      ensureMethodForMode(activeTab.value)
+      await syncActiveTabQuery(activeTab.value)
     }
   } catch (err: unknown) { appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error'))) }
-  finally { loading.value = false }
+  finally {
+    checkoutReady.value = true
+    loading.value = false
+  }
   // Fetch active subscriptions (uses cache, non-blocking)
   subscriptionStore.fetchActiveSubscriptions().catch(() => {})
 })
@@ -1548,26 +1445,32 @@ onMounted(async () => {
 
 <style scoped>
 .recharge-page-canvas {
-  --color-brand-300: 147 197 253;
-  --color-brand-400: 47 128 255;
-  --color-brand-500: 15 98 254;
-  --color-accent-400: 96 165 250;
-  --color-content-brand: 29 78 216;
-  --color-line-focus: 37 99 235;
+  --color-brand-300: 165 180 252;
+  --color-brand-400: 99 102 241;
+  --color-brand-500: 79 70 229;
+  --color-accent-400: 168 85 247;
+  --color-content-brand: 67 56 202;
+  --color-line-focus: 79 70 229;
 
+  width: 100%;
+  min-width: 0;
   min-height: calc(100vh - 4rem);
-  margin: -1rem;
-  padding: 1rem;
+  overflow-x: clip;
+  padding: clamp(1rem, 2.1vw, 2rem);
   background:
-    radial-gradient(circle at 18% 0%, rgb(59 130 246 / 0.1), transparent 30%),
-    radial-gradient(circle at 88% 8%, rgb(96 165 250 / 0.14), transparent 26%),
-    linear-gradient(180deg, #f6f9ff 0%, #eef4fb 100%);
+    radial-gradient(circle at 16% 0%, rgb(99 102 241 / 0.13), transparent 30%),
+    radial-gradient(circle at 90% 8%, rgb(236 72 153 / 0.1), transparent 24%),
+    linear-gradient(180deg, #f7f8ff 0%, #eef2ff 48%, #f8fafc 100%);
+}
+
+.recharge-page-content {
+  min-width: 0;
 }
 
 :global(.dark) .recharge-page-canvas {
   background:
-    radial-gradient(circle at 18% 0%, rgb(59 130 246 / 0.12), transparent 30%),
-    radial-gradient(circle at 88% 8%, rgb(96 165 250 / 0.1), transparent 26%),
+    radial-gradient(circle at 16% 0%, rgb(79 70 229 / 0.2), transparent 30%),
+    radial-gradient(circle at 90% 8%, rgb(190 24 93 / 0.12), transparent 24%),
     linear-gradient(
       180deg,
       rgb(var(--color-surface-canvas)) 0%,
@@ -1575,28 +1478,9 @@ onMounted(async () => {
     );
 }
 
-.recharge-summary-card {
-  position: sticky;
-  top: 6rem;
-}
-
-@media (min-width: 768px) {
-  .recharge-page-canvas {
-    margin: -1.5rem;
-    padding: 1.5rem;
-  }
-}
-
-@media (min-width: 1024px) {
-  .recharge-page-canvas {
-    margin: -2rem;
-    padding: 2rem;
-  }
-}
-
 @media (max-width: 767px) {
-  .recharge-summary-card {
-    position: static;
+  .recharge-page-canvas {
+    padding: 0.75rem;
   }
 }
 </style>

@@ -18,7 +18,7 @@
       <AppHeader />
 
       <!-- Main Content -->
-      <main class="p-4 md:p-6 lg:p-8">
+      <main :class="route.meta.fullBleedContent === true ? 'p-0' : 'p-4 md:p-6 lg:p-8'">
         <Transition name="console-page" :css="!prefersReducedMotion" appear>
           <div :key="route.path">
             <slot />

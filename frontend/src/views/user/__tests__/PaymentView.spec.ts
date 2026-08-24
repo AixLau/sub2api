@@ -50,16 +50,33 @@ vi.mock('vue-router', async () => {
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
+  const { ref } = await vi.importActual<typeof import('vue')>('vue')
   const translations: Record<string, string> = {
     'payment.amountLabel': '充值金额',
     'payment.packagePriceShort': '套餐价',
-    'payment.amountMustBeInteger': '充值金额必须为整数',
+    'payment.amountTooManyDecimals': '充值金额最多支持 {digits} 位小数',
     'payment.amountTooLow': '最低金额为 {min}',
     'payment.rechargeUi.estimatedCreditedAmount': '预计到账金额',
+    'payment.rechargeUi.oneToOneAgreement': '¥1 = $1 API 余额',
+    'payment.rechargeUi.oneToOneConfigurationWarning': '充值倍率 {multiplier} 不是 1:1，请联系管理员。',
+    'payment.subscriptionUi.activationRule': '生效方式',
+    'payment.subscriptionUi.deferredActivation': '当前套餐结束后顺延',
+    'payment.subscriptionUi.immediateActivation': '支付成功后立即生效',
+    'payment.subscriptionUi.manualRenewal': '到期后手动续费',
+    'payment.subscriptionUi.noAutomaticRenewal': '不会自动扣款',
+    'payment.subscriptionUi.oneTimePurchase': '一次性购买',
+    'payment.subscriptionUi.originalPrice': '套餐原价',
+    'payment.subscriptionUi.planDiscount': '套餐优惠',
+    'payment.subscriptionUi.renewalMethod': '续费方式',
+    'payment.subscriptionUi.renewalTarget': '当前套餐同组续费',
+    'payment.subscriptionUi.selectPlanFirst': '请先选择订阅套餐',
+    'payment.subscriptionUi.selectedPlan': '订阅套餐',
+    'payment.subscriptionUi.validity': '服务有效期',
   }
   return {
     ...actual,
     useI18n: () => ({
+      locale: ref('zh'),
       t: (key: string, params?: Record<string, unknown>) => {
         const template = translations[key] ?? key
         if (!params) return template
@@ -399,7 +416,7 @@ function activeSubscriptionFixture(overrides: Partial<UserSubscription> = {}): U
 }
 
 function mountPaymentViewForContent() {
-  return shallowMount(PaymentView, {
+  return mount(PaymentView, {
     global: {
       stubs: {
         AppLayout: {
@@ -417,10 +434,14 @@ function mountPaymentViewForContent() {
 
 async function mountRechargeView(
   options: Partial<CheckoutInfoResponse> = {},
-  mountOptions: { activeSubscriptions?: UserSubscription[]; balance?: number } = {},
+  mountOptions: {
+    activeSubscriptions?: UserSubscription[]
+    balance?: number
+    query?: Record<string, unknown>
+  } = {},
 ) {
   routeState.path = '/purchase'
-  routeState.query = {}
+  routeState.query = mountOptions.query ?? {}
   routerReplace.mockReset().mockResolvedValue(undefined)
   routerPush.mockReset().mockResolvedValue(undefined)
   routerResolve.mockClear()
@@ -485,6 +506,9 @@ async function mountRechargeView(
         },
         SubscriptionPlanCard: {
           template: '<div data-testid="subscription-plan-card-stub" />',
+        },
+        PaymentStatusPanel: {
+          template: '<div data-testid="payment-status-panel-stub" />',
         },
         Teleport: true,
         Transition: false,
@@ -558,7 +582,7 @@ async function mountSubscriptionConfirm(options: Parameters<typeof checkoutInfoW
   window.localStorage.clear()
   ;(window as Window & { WeixinJSBridge?: { invoke: typeof bridgeInvoke } }).WeixinJSBridge = undefined
 
-  const wrapper = shallowMount(PaymentView, {
+  const wrapper = mount(PaymentView, {
     global: {
       stubs: {
         AppLayout: {
@@ -598,7 +622,7 @@ async function mountSubscriptionPlanList(planCount: number) {
   window.localStorage.clear()
   ;(window as Window & { WeixinJSBridge?: { invoke: typeof bridgeInvoke } }).WeixinJSBridge = undefined
 
-  const wrapper = shallowMount(PaymentView, {
+  const wrapper = mount(PaymentView, {
     global: {
       stubs: {
         AppLayout: {
@@ -614,8 +638,112 @@ async function mountSubscriptionPlanList(planCount: number) {
   return wrapper
 }
 
+describe('PaymentView purchase tab routing', () => {
+  it.each([
+    ['missing tab query', {}],
+    ['explicit recharge query', { tab: 'recharge' }],
+  ])('opens recharge for %s', async (_label, query) => {
+    const wrapper = await mountRechargeView({}, { query })
+
+    expect(wrapper.get('[data-testid="purchase-mode-recharge"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.find('[data-testid="recharge-layout"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="subscription-layout"]').exists()).toBe(false)
+    expect(fetchActiveSubscriptions).toHaveBeenCalled()
+  })
+
+  it('opens subscription from query and auto-selects the sole plan in a renewal group', async () => {
+    const plan = checkoutInfoWithPlansFixture().data.plans[0]
+    const wrapper = await mountRechargeView({ plans: [plan] }, {
+      query: { tab: 'subscription', group: '3' },
+    })
+
+    expect(wrapper.get('[data-testid="purchase-mode-subscription"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.find('[data-testid="subscription-layout"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="recharge-layout"]').exists()).toBe(false)
+    expect((wrapper.vm as unknown as { renewGroupId: number | null }).renewGroupId).toBe(3)
+    expect((wrapper.vm as unknown as { selectedSubscriptionOptionKey: string }).selectedSubscriptionOptionKey).toBe('internal:7')
+  })
+
+  it('hides recharge and forces subscription when balance recharge is disabled', async () => {
+    const plan = checkoutInfoWithPlansFixture().data.plans[0]
+    const wrapper = await mountRechargeView({ balance_disabled: true, plans: [plan] })
+
+    expect(wrapper.find('[data-testid="purchase-mode-recharge"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="purchase-mode-subscription"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.find('[data-testid="subscription-layout"]').exists()).toBe(true)
+    expect(routerReplace).toHaveBeenCalledWith({
+      path: '/purchase',
+      query: { tab: 'subscription' },
+    })
+  })
+
+  it('preserves payment recovery query while changing tabs and removes only renewal group', async () => {
+    const plan = checkoutInfoWithPlansFixture().data.plans[0]
+    const wrapper = await mountRechargeView({ plans: [plan] }, {
+      query: { tab: 'recharge' },
+    })
+
+    routeState.query = {
+      tab: 'recharge',
+      group: '3',
+      resume_token: 'resume-token',
+      wechat_resume_token: 'wechat-token',
+      campaign: 'summer',
+    }
+    routerReplace.mockClear()
+
+    await wrapper.get('[data-testid="purchase-mode-subscription"]').trigger('click')
+    await flushPromises()
+
+    expect(routerReplace).toHaveBeenLastCalledWith({
+      path: '/purchase',
+      query: {
+        tab: 'subscription',
+        group: '3',
+        resume_token: 'resume-token',
+        wechat_resume_token: 'wechat-token',
+        campaign: 'summer',
+      },
+    })
+
+    routeState.query = {
+      tab: 'subscription',
+      group: '3',
+      resume_token: 'resume-token',
+      wechat_resume_token: 'wechat-token',
+      campaign: 'summer',
+    }
+    routerReplace.mockClear()
+
+    await wrapper.get('[data-testid="purchase-mode-recharge"]').trigger('click')
+    await flushPromises()
+
+    expect(routerReplace).toHaveBeenLastCalledWith({
+      path: '/purchase',
+      query: {
+        tab: 'recharge',
+        resume_token: 'resume-token',
+        wechat_resume_token: 'wechat-token',
+        campaign: 'summer',
+      },
+    })
+  })
+
+  it('hides the tabs and selection panels while a payment is in progress', async () => {
+    const wrapper = await mountRechargeView()
+
+    ;(wrapper.vm as unknown as { paymentPhase: 'select' | 'paying' }).paymentPhase = 'paying'
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="purchase-mode-recharge"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="purchase-mode-subscription"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="recharge-layout"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="payment-status-panel-stub"]').exists()).toBe(true)
+  })
+})
+
 describe('PaymentView subscription plan grid', () => {
-  it.each([3, 4, 6])('keeps %i plans on the existing mobile/tablet/desktop grid', async (planCount) => {
+  it.each([3, 4, 6])('keeps %i plans on the responsive three-to-four-column grid', async (planCount) => {
     const wrapper = await mountSubscriptionPlanList(planCount)
     const cards = wrapper.findAllComponents(SubscriptionPlanCard)
 
@@ -625,6 +753,7 @@ describe('PaymentView subscription plan grid', () => {
       'grid-cols-1',
       'sm:grid-cols-2',
       'lg:grid-cols-3',
+      '2xl:grid-cols-4',
     ]))
   })
 })
@@ -645,7 +774,7 @@ describe('PaymentView subscription confirmation amounts', () => {
       },
     })
 
-    const text = wrapper.text()
+    const text = wrapper.get('[data-testid="order-summary"]').text()
     const convertedPrice = formatPaymentAmount(71.43, 'CNY')
     const convertedOriginalPrice = formatPaymentAmount(92.88, 'CNY')
 
@@ -654,7 +783,7 @@ describe('PaymentView subscription confirmation amounts', () => {
     expect(text).not.toContain(formatPaymentAmount(9.99, 'CNY'))
     // 换算必须使用订阅汇率（×7.15），而不是余额倍率（÷0.14 = 71.36）
     expect(text).not.toContain(formatPaymentAmount(71.36, 'CNY'))
-    expect(wrapper.findAll('button').some(button => button.text().includes(convertedPrice))).toBe(true)
+    expect(wrapper.get('[data-testid="subscription-summary-total"]').text()).toContain(convertedPrice)
   })
 
   it('keeps plan price when the subscription rate is not configured or payment currency is not CNY', async () => {
@@ -707,7 +836,7 @@ describe('PaymentView subscription confirmation amounts', () => {
       },
     })
 
-    const text = wrapper.text()
+    const text = wrapper.get('[data-testid="order-summary"]').text()
     const convertedPrice = formatPaymentAmount(71.43, 'CNY')
     const fee = formatPaymentAmount(1.79, 'CNY')
     const total = formatPaymentAmount(73.22, 'CNY')
@@ -715,7 +844,7 @@ describe('PaymentView subscription confirmation amounts', () => {
     expect(text).toContain(convertedPrice)
     expect(text).toContain(fee)
     expect(text).toContain(total)
-    expect(wrapper.findAll('button').some(button => button.text().includes(total))).toBe(true)
+    expect(wrapper.get('[data-testid="subscription-summary-total"]').text()).toContain(total)
   })
 
   it('uses compact selected plan styling without exposing rate or daily weekly monthly limits', async () => {
@@ -755,13 +884,75 @@ describe('PaymentView subscription confirmation amounts', () => {
   })
 })
 
+describe('PaymentView subscription checkout behavior', () => {
+  it('keeps all API checkout plans visible after selecting a plan', async () => {
+    const wrapper = await mountSubscriptionPlanList(3)
+
+    expect(wrapper.findAll('[data-testid^="subscription-plan-"][role="radio"]')).toHaveLength(3)
+
+    await wrapper.get('[data-testid="subscription-plan-2"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('[data-testid^="subscription-plan-"][role="radio"]')).toHaveLength(3)
+    expect(wrapper.get('[data-testid="subscription-plan-2"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.get('[data-testid="subscription-summary-plan"]').text()).toBe('Plan 2')
+  })
+
+  it('shows a selectable empty state when checkout returns no plans', async () => {
+    const wrapper = await mountRechargeView({}, { query: { tab: 'subscription' } })
+
+    expect(wrapper.find('[data-testid="subscription-empty-state"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="subscription-select-plan-first"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="submit-subscription"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('omits renewal explanation rows, coupons, and recurring-payment controls', async () => {
+    const wrapper = await mountSubscriptionConfirm()
+    const text = wrapper.text()
+
+    expect(wrapper.find('[data-testid="subscription-no-automatic-renewal"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="subscription-manual-renewal"]').exists()).toBe(false)
+    expect(text).not.toMatch(/优惠券|coupon|下次扣款|下次续费时间/i)
+    expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid*="coupon"]').exists()).toBe(false)
+  })
+
+  it('renders subscription payment methods from checkout instead of a fixed provider list', async () => {
+    const plan = checkoutInfoWithPlansFixture().data.plans[0]
+    const wrapper = await mountRechargeView({
+      plans: [plan],
+      methods: {
+        stripe: {
+          daily_limit: 0,
+          daily_used: 0,
+          daily_remaining: 0,
+          single_min: 0,
+          single_max: 0,
+          fee_rate: 1.5,
+          available: true,
+          currency: 'CNY',
+          display_name: 'Checkout Stripe',
+        },
+      },
+    }, {
+      query: { tab: 'subscription', group: '3' },
+    })
+
+    expect(wrapper.find('[data-testid="payment-method-stripe"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="payment-method-alipay"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="payment-method-wxpay"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="payment-method-stripe"]').text()).toContain('Checkout Stripe')
+  })
+})
+
 describe('PaymentView recharge liquid glass selection', () => {
   it('renders the account recharge surface and submits the selected quick amount through the existing order flow', async () => {
     const wrapper = await mountRechargeView()
 
     expect(wrapper.find('[data-testid="recharge-liquid-page"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="purchase-mode-recharge"]').attributes('aria-pressed')).toBe('true')
-    expect(wrapper.find('[data-testid="account-balance-hero"]').text()).toContain('demo-user')
+    expect(wrapper.find('[data-testid="purchase-mode-recharge"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.find('[data-testid="purchase-hero"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="purchase-balance-ticket"]').text()).toContain('$0.00')
     expect(wrapper.find('[data-testid="order-summary"]').text()).toContain(formatPaymentAmount(0, 'CNY'))
 
     await wrapper.find('[data-testid="quick-amount-50"]').trigger('click')
@@ -779,6 +970,43 @@ describe('PaymentView recharge liquid glass selection', () => {
     }))
   })
 
+  it.each([10, 100])('credits ¥%i as the same numeric USD API balance', async (rechargeAmount) => {
+    const wrapper = await mountRechargeView()
+
+    await wrapper.get(`[data-testid="quick-amount-${rechargeAmount}"]`).trigger('click')
+
+    expect(wrapper.get('[data-testid="estimated-credited-highlight"]').text()).toContain(
+      formatPaymentAmount(rechargeAmount, 'USD'),
+    )
+    expect(wrapper.find('[data-testid="recharge-one-to-one-agreement"]').exists()).toBe(false)
+    expect(wrapper.get(`[data-testid="quick-amount-${rechargeAmount}"]`).text()).toContain(
+      `$${rechargeAmount.toFixed(2)}`,
+    )
+    expect(wrapper.text()).not.toContain('$13.83')
+  })
+
+  it('keeps channel fees in the payable total without changing credited API balance', async () => {
+    const wrapper = await mountRechargeView({ recharge_fee_rate: 2 })
+
+    await wrapper.get('[data-testid="quick-amount-100"]').trigger('click')
+
+    const summary = wrapper.get('[data-testid="order-summary"]')
+    expect(summary.text()).toContain(formatPaymentAmount(100, 'CNY'))
+    expect(summary.text()).toContain(formatPaymentAmount(2, 'CNY'))
+    expect(summary.text()).toContain(formatPaymentAmount(102, 'CNY'))
+    expect(wrapper.get('[data-testid="estimated-credited-highlight"]').text()).toContain(
+      formatPaymentAmount(100, 'USD'),
+    )
+
+    await wrapper.get('[data-testid="submit-recharge"]').trigger('click')
+    await flushPromises()
+
+    expect(createOrder).toHaveBeenCalledWith(expect.objectContaining({
+      amount: 100,
+      order_type: 'balance',
+    }))
+  })
+
   it('uses AppLayout content as the page canvas instead of rendering a nested recharge page shell', async () => {
     const wrapper = await mountRechargeView()
 
@@ -792,23 +1020,29 @@ describe('PaymentView recharge liquid glass selection', () => {
     expect(wrapper.text()).not.toContain('payment.rechargeUi.subtitle')
   })
 
-  it('keeps recharge cards focused on amounts without business instruction copy or discount text', async () => {
+  it('keeps recharge cards focused on exact amounts without exchange-rate, coupon, or discount copy', async () => {
     const wrapper = await mountRechargeView()
 
     expect(wrapper.text()).not.toContain('payment.rechargeUi.amountHint')
     expect(wrapper.text()).not.toContain('payment.rechargeUi.paymentMethodHint')
+    expect(wrapper.get('#recharge-amount-title').text()).not.toMatch(/^1\./)
+    expect(wrapper.get('#recharge-method-title').text()).not.toMatch(/^2\./)
     expect(wrapper.text()).not.toContain('payment.rechargeUi.noFee')
-    expect(wrapper.findAll('.recharge-section-title').map(title => title.text()).every(title => !/^\d+\./.test(title))).toBe(true)
+    expect(wrapper.text()).not.toContain('¥1 = $1 API 余额')
+    expect(wrapper.text()).not.toMatch(/\$13\.83|优惠券|coupon/i)
 
     const quickAmount = wrapper.find('[data-testid="quick-amount-50"]')
     expect(quickAmount.exists()).toBe(true)
-    expect(quickAmount.text()).toBe('¥50')
-    expect(quickAmount.text()).not.toContain('.00')
+    expect(quickAmount.text()).toContain('¥50')
+    expect(quickAmount.text()).toContain('≈')
+    expect(quickAmount.text()).toContain('$50.00')
   })
 
-  it('shows estimated credited amount from the backend multiplier without adding current balance', async () => {
+  it.each([0, 0.14])(
+    'blocks standard recharge multiplier %s instead of showing a false one-to-one contract',
+    async (multiplier) => {
     const wrapper = await mountRechargeView({
-      balance_recharge_multiplier: 3,
+      balance_recharge_multiplier: multiplier,
     }, {
       balance: 120,
     })
@@ -817,14 +1051,19 @@ describe('PaymentView recharge liquid glass selection', () => {
 
     const summaryText = wrapper.find('[data-testid="order-summary"]').text()
     const creditedHighlight = wrapper.find('[data-testid="estimated-credited-highlight"]')
+    const expectedCredited = formatPaymentAmount(50 * multiplier, 'USD')
 
     expect(summaryText).toContain('预计到账金额')
-    expect(summaryText).toContain(formatPaymentAmount(150, 'USD'))
-    expect(summaryText).not.toContain(formatPaymentAmount(270, 'USD'))
+    expect(summaryText).toContain(expectedCredited)
+    expect(summaryText).not.toContain(formatPaymentAmount(120 + 50 * multiplier, 'USD'))
     expect(creditedHighlight.exists()).toBe(true)
-    expect(creditedHighlight.text()).toContain(formatPaymentAmount(150, 'USD'))
+    expect(creditedHighlight.text()).toContain(expectedCredited)
     expect(creditedHighlight.classes()).toContain('recharge-summary-highlight')
-  })
+    expect(wrapper.find('[data-testid="recharge-one-to-one-agreement"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="recharge-configuration-warning"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="submit-recharge"]').attributes('disabled')).toBeDefined()
+    },
+  )
 
   it('shows a clear segmented switch from recharge to subscription without changing payment flow state', async () => {
     const wrapper = await mountRechargeView({
@@ -853,12 +1092,12 @@ describe('PaymentView recharge liquid glass selection', () => {
 
     await wrapper.find('[data-testid="purchase-mode-subscription"]').trigger('click')
 
-    expect(wrapper.find('[data-testid="purchase-mode-subscription"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="purchase-mode-subscription"]').attributes('aria-selected')).toBe('true')
     expect(wrapper.find('[data-testid="subscription-layout"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="recharge-layout"]').exists()).toBe(false)
   })
 
-  it('renders the current subscription summary from active subscription API data without using the account balance hero', async () => {
+  it('renders current subscription API data below the same shared balance hero', async () => {
     const wrapper = await mountRechargeView({
       plans: [
         {
@@ -895,6 +1134,8 @@ describe('PaymentView recharge liquid glass selection', () => {
     expect(subscriptionCard.text()).toContain('userSubscriptions.daysRemaining')
     expect(subscriptionCard.text()).not.toContain('payment.rechargeUi.availableBalance')
     expect(subscriptionCard.text()).not.toContain(formatPaymentAmount(0, 'CNY'))
+    expect(wrapper.find('[data-testid="purchase-hero"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="purchase-balance-ticket"]').text()).toContain('$0.00')
     expect(wrapper.find('[data-testid="account-balance-hero"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="recharge-header-account-pill"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="subscription-layout"]').text()).not.toContain('demo-user')
@@ -989,10 +1230,11 @@ describe('PaymentView recharge liquid glass selection', () => {
     await wrapper.find('[data-testid="purchase-mode-subscription"]').trigger('click')
 
     expect(wrapper.find('[data-testid="current-subscription-card"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="purchase-hero"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="account-balance-hero"]').exists()).toBe(false)
   })
 
-  it('keeps nineplus subscription products on the cleaned subscription surface without account or balance UI', async () => {
+  it('keeps NinePlus subscriptions below the shared hero without leaking account identity into checkout', async () => {
     const wrapper = await mountRechargeView(checkoutInfoWithNinePlusCatalogFixture().data, {
       activeSubscriptions: [activeSubscriptionFixture()],
       balance: 88,
@@ -1003,6 +1245,7 @@ describe('PaymentView recharge liquid glass selection', () => {
     const layout = wrapper.find('[data-testid="subscription-layout"]')
 
     expect(wrapper.find('[data-testid="current-subscription-card"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="purchase-balance-ticket"]').text()).toContain('$88.00')
     expect(wrapper.find('[data-testid="account-balance-hero"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="recharge-header-account-pill"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="nineplus-subscription-product-sub-standard"]').exists()).toBe(true)
@@ -1012,29 +1255,46 @@ describe('PaymentView recharge liquid glass selection', () => {
     expect(layout.text()).not.toContain('demo@example.com')
   })
 
-  it('disables submission and links the validation message when custom amount is below the method minimum', async () => {
+  it('silently clamps a custom amount to the method minimum after editing', async () => {
     const wrapper = await mountRechargeView()
-    const input = wrapper.find('[data-testid="custom-recharge-amount"]')
+    await wrapper.get('[data-testid="custom-recharge-trigger"]').trigger('click')
+    const input = wrapper.get('[data-testid="custom-recharge-amount"]')
 
     await input.setValue('9')
 
-    const error = wrapper.find('[data-testid="amount-error"]')
-    expect(error.exists()).toBe(true)
-    expect(error.text()).toContain('¥10.00')
-    expect(input.attributes('aria-describedby')).toBe('recharge-amount-error')
+    expect(wrapper.find('[data-testid="amount-error"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="submit-recharge"]').attributes('disabled')).toBeDefined()
+
+    await input.trigger('blur')
+    await flushPromises()
+
+    expect((input.element as HTMLInputElement).value).toBe('10')
+    expect(wrapper.find('[data-testid="amount-error"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="order-summary"]').text()).toContain('¥10.00')
+    expect(wrapper.find('[data-testid="submit-recharge"]').attributes('disabled')).toBeUndefined()
   })
 
-  it('disables submission when recharge amount is not an integer', async () => {
+  it('accepts a custom recharge amount with up to two decimal places', async () => {
     const wrapper = await mountRechargeView()
     const amountSelector = wrapper.findComponent({ name: 'RechargeAmountSelector' })
 
     await amountSelector.vm.$emit('update:modelValue', 12.5)
     await flushPromises()
 
-    const error = wrapper.find('[data-testid="amount-error"]')
-    expect(error.exists()).toBe(true)
-    expect(error.text()).toContain('充值金额必须为整数')
+    expect(wrapper.find('[data-testid="amount-error"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="order-summary"]').text()).toContain('¥12.50')
+    expect(wrapper.find('[data-testid="submit-recharge"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('disables submission when recharge amount exceeds two decimal places', async () => {
+    const wrapper = await mountRechargeView()
+    const amountSelector = wrapper.findComponent({ name: 'RechargeAmountSelector' })
+
+    await amountSelector.vm.$emit('update:modelValue', 12.345)
+    await flushPromises()
+
+    const error = wrapper.get('[data-testid="amount-error"]')
+    expect(error.text()).toContain('充值金额最多支持 2 位小数')
     expect(wrapper.find('[data-testid="submit-recharge"]').attributes('disabled')).toBeDefined()
   })
 
@@ -1113,7 +1373,7 @@ describe('PaymentView payment recovery', () => {
       createdAt: Date.now(),
     }))
 
-    const wrapper = shallowMount(PaymentView, {
+    const wrapper = mount(PaymentView, {
       global: {
         stubs: {
           AppLayout: {
@@ -1404,15 +1664,22 @@ describe('PaymentView nineplus unified display', () => {
     window.localStorage.clear()
   })
 
-  it('shows one Alipay option backed by nineplus when both providers are enabled', async () => {
+  it('keeps non-core NinePlus outside the standard Alipay and WeChat selector', async () => {
     getCheckoutInfo.mockResolvedValue(checkoutInfoWithNinePlusAndAlipayFixture())
     const wrapper = mountPaymentViewForContent()
 
     await flushPromises()
 
-    expect((wrapper.vm as { selectedMethod: string }).selectedMethod).toBe('nineplus')
-    expect((wrapper.vm as { methodOptions: Array<{ type: string }> }).methodOptions.map((method) => method.type)).toEqual(['nineplus'])
-    expect(wrapper.text()).toContain('payment.creditedBalance')
+    expect((wrapper.vm as { selectedMethod: string }).selectedMethod).toBe('alipay')
+    expect((wrapper.vm as { methodOptions: Array<{ type: string }> }).methodOptions.map((method) => method.type)).toEqual([
+      'alipay',
+      'nineplus',
+    ])
+
+    expect(wrapper.find('[data-testid="payment-method-alipay"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="payment-method-nineplus"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="nineplus-product-np-small"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="estimated-credited-highlight"]').exists()).toBe(true)
   })
 
   it('keeps nineplus recharge cards focused on credited value and recharge amount', async () => {
@@ -1429,9 +1696,10 @@ describe('PaymentView nineplus unified display', () => {
 
     expect(cardText).toContain('支付宝充值 5')
     expect(cardText).toContain('$35.00')
-    expect(cardText).toContain('充值金额 ¥5.00')
-    expect(cardText).not.toContain('实付 ¥5.10')
-    expect(cardText).not.toContain('0.10')
+    expect(cardText).toContain('¥5.00')
+    expect(cardText).not.toContain('¥5.10')
+    expect(wrapper.get('[data-testid="order-summary"]').text()).toContain('¥0.10')
+    expect(wrapper.get('[data-testid="order-summary"]').text()).toContain('¥5.10')
   })
 
   it('separates nineplus recharge and subscription products by catalog category', async () => {
@@ -1457,8 +1725,8 @@ describe('PaymentView nineplus unified display', () => {
       'nineplus-subscription-product-sub-standard',
     ])
     expect(cards[0].text()).toContain('$220.00')
-    expect(cards[0].text()).toContain('套餐价 ¥29.90')
-    expect(cards[0].text()).not.toContain('实付 ¥30.50')
+    expect(cards[0].text()).toContain('¥29.90')
+    expect(cards[0].text()).not.toContain('¥30.50')
   })
 
   it('uses the liquid glass preview surface for nineplus subscription selection', async () => {
@@ -1471,13 +1739,29 @@ describe('PaymentView nineplus unified display', () => {
     await wrapper.vm.$nextTick()
 
     const productCard = wrapper.find('[data-testid="nineplus-subscription-product-sub-starter"]')
-    const summary = wrapper.find('[data-testid="subscription-confirmation"]')
-    const submit = wrapper.find('[data-testid="submit-subscription"]')
+    await productCard.trigger('click')
+    await wrapper.vm.$nextTick()
 
-    expect(productCard.classes()).toContain('recharge-choice-card')
-    expect(productCard.classes()).toContain('recharge-choice-card-selected')
+    const summary = wrapper.get('[data-testid="order-summary"]')
+    const submit = wrapper.get('[data-testid="submit-subscription"]')
+
+    expect(productCard.classes()).toContain('subscription-liquid-plan-card')
+    expect(productCard.classes()).toContain('subscription-liquid-plan-card-selected')
     expect(summary.classes()).toContain('recharge-glass-card')
     expect(summary.classes()).toContain('recharge-summary-card')
+    expect(summary.text()).toContain('¥0.60')
+    expect(summary.text()).toContain('¥30.50')
     expect(submit.classes()).toContain('recharge-primary-button')
+
+    await submit.trigger('click')
+    await flushPromises()
+
+    expect(createOrder).toHaveBeenCalledWith(expect.objectContaining({
+      amount: 30.5,
+      payment_type: 'nineplus',
+      order_type: 'subscription',
+      external_product_id: 'sub-starter',
+      external_quantity: 1,
+    }))
   })
 })
