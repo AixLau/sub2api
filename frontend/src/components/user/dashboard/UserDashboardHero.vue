@@ -13,7 +13,7 @@
       <span class="user-dashboard__camera-glow"></span>
       <img
         class="user-dashboard__camera-image"
-        src="/assets/dashboard/camera-fun.png"
+        src="/assets/dashboard/camera-fun.webp"
         alt=""
         aria-hidden="true"
         draggable="false"

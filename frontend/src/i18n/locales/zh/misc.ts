@@ -60,13 +60,13 @@ export default {
 
   // Recharge / Subscription Page
   purchase: {
-    title: '帐户充值',
-    description: '为帐户充值',
+    title: '账户充值',
+    description: '快速充值，立即到账，畅享无限可能！',
     openInNewTab: '新窗口打开',
     notEnabledTitle: '该功能未开启',
-    notEnabledDesc: '管理员暂未开启帐户充值入口，请联系管理员。',
-    notConfiguredTitle: '帐户充值链接未配置',
-    notConfiguredDesc: '管理员已开启入口，但尚未配置帐户充值链接，请联系管理员。'
+    notEnabledDesc: '管理员暂未开启账户充值入口，请联系管理员。',
+    notConfiguredTitle: '账户充值链接未配置',
+    notConfiguredDesc: '管理员已开启入口，但尚未配置账户充值链接，请联系管理员。'
   },
 
   // Custom Page (iframe embed)
@@ -313,7 +313,7 @@ export default {
 
   // Payment System
   payment: {
-    title: '帐户充值',
+    title: '账户充值',
     amountLabel: '充值金额',
     paymentAmount: '支付金额',
     creditedBalance: '到账余额',
@@ -409,8 +409,8 @@ export default {
     rechargeAccount: '充值账户',
     activeSubscription: '当前订阅',
     noActiveSubscription: '暂无有效订阅',
-    tabTopUp: '充值',
-    tabSubscribe: '订阅',
+    tabTopUp: '余额充值',
+    tabSubscribe: '订阅服务',
     noPlans: '暂无可用订阅套餐',
     notAvailable: '充值功能暂未开放',
     confirmSubscription: '确认订阅',

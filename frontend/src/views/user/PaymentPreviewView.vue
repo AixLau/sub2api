@@ -1,222 +1,340 @@
 <template>
-  <div data-testid="recharge-liquid-page" class="mx-auto max-w-6xl">
-    <div class="recharge-page-shell space-y-5">
-      <PurchaseModeTabs v-model="activeMode" :tabs="tabs" />
-      <RechargeHeader
-        account-name="Acme Corporation"
-        :show-account-pill="activeMode === 'recharge'"
-      />
-      <AccountBalanceHero
-        account-name="Acme Corporation"
-        :formatted-balance="formatCny(currentBalance)"
-        :show-balance="activeMode === 'recharge'"
-        :subscription-summary="activeMode === 'subscription' ? currentSubscriptionSummary : null"
-      />
-
+  <main class="min-h-screen bg-surface-canvas px-2 py-3 sm:px-3 sm:py-4 lg:px-8 lg:py-5">
+    <div data-testid="recharge-liquid-page" class="recharge-page-canvas">
       <div
-        v-if="activeMode === 'recharge'"
-        data-testid="recharge-preview-layout"
-        class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start"
+        data-testid="purchase-preview-shell"
+        class="purchase-select-shell recharge-page-content mx-auto w-full max-w-none"
       >
-        <div class="space-y-5">
-          <RechargeAmountSelector
-            v-model="amount"
-            :amounts="quickRechargeAmounts"
-            :min="10"
-            :max="500000"
-            currency="CNY"
-            :error="amountError"
-            :format-amount="formatCny"
-          />
-          <RechargeMethodSelector
-            :methods="methodOptions"
-            :selected="selectedMethod"
-            @select="selectedMethod = $event"
-          />
-        </div>
+        <PurchaseModeTabs v-model="activeMode" :tabs="tabs" />
 
-        <RechargeOrderSummary
-          :formatted-amount="formatCny(validAmount)"
-          :formatted-fee="formatCny(feeAmount)"
-          :formatted-total="formatCny(totalAmount)"
-          :formatted-estimated-credited-amount="formatCny(validAmount)"
-          :disabled="!!amountError || validAmount <= 0"
-          :submitting="false"
-          @submit="showPreviewNotice = true"
-        />
-      </div>
-
-      <div
-        v-else
-        data-testid="subscription-preview-layout"
-        class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start"
-      >
-        <section class="recharge-glass-card p-5 sm:p-6" aria-labelledby="subscription-preview-title">
-          <div class="mb-4">
-            <p id="subscription-preview-title" class="recharge-section-title">1. {{ t('payment.tabSubscribe') }}</p>
-            <p class="mt-1 text-sm text-slate-500">{{ t('payment.rechargeUi.subscriptionHint') }}</p>
-          </div>
-          <div class="grid gap-3 sm:grid-cols-2">
-            <button
-              v-for="plan in previewPlans"
-              :key="plan.id"
-              type="button"
-              class="recharge-choice-card px-4 py-4 text-left"
-              :class="{ 'recharge-choice-card-selected': selectedPlanId === plan.id }"
-              :data-testid="`preview-subscription-plan-${plan.id}`"
-              @click="selectedPlanId = plan.id"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <span>
-                  <span class="block text-base font-semibold text-slate-950">{{ plan.name }}</span>
-                  <span class="mt-1 block text-xs text-slate-500">{{ plan.description }}</span>
-                </span>
-                <span class="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
-                  {{ plan.badge }}
-                </span>
-              </div>
-              <div class="mt-4 flex items-end justify-between gap-3">
-                <span class="text-2xl font-semibold text-blue-700">{{ formatCny(plan.price) }}</span>
-                <span class="text-xs font-medium text-slate-500">{{ plan.quota }}</span>
-              </div>
-            </button>
-          </div>
-          <RechargeMethodSelector
-            class="mt-5"
-            :methods="methodOptions"
-            :selected="selectedMethod"
-            @select="selectedMethod = $event"
-          />
-        </section>
-
-        <aside data-testid="subscription-preview-summary" class="recharge-glass-card recharge-summary-card p-5 sm:p-6">
-          <p class="recharge-section-title">2. {{ t('payment.rechargeUi.orderSummary') }}</p>
-          <div class="mt-5 space-y-4 text-sm">
-            <div class="flex items-center justify-between gap-4">
-              <span class="text-slate-500">{{ t('payment.rechargeUi.selectedPlan') }}</span>
-              <span class="font-semibold text-slate-950">{{ selectedPlan.name }}</span>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <span class="text-slate-500">{{ t('payment.planCard.quota') }}</span>
-              <span class="font-semibold text-slate-950">{{ selectedPlan.quota }}</span>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <span class="text-slate-500">{{ t('payment.packagePrice') }}</span>
-              <span class="font-semibold text-slate-950">{{ formatCny(selectedPlan.price) }}</span>
-            </div>
-            <div class="border-t border-slate-200/70 pt-4">
-              <div class="flex items-center justify-between gap-4">
-                <span class="font-semibold text-slate-950">{{ t('payment.payableAmount') }}</span>
-                <span class="text-2xl font-semibold text-blue-700">{{ formatCny(selectedPlan.price) }}</span>
-              </div>
-            </div>
-          </div>
-          <button
-            data-testid="preview-submit-subscription"
-            type="button"
-            class="recharge-primary-button mt-6 w-full"
-            @click="showPreviewNotice = true"
+        <PurchasePageStage :formatted-balance="formatUsd(previewBalance)">
+          <section
+            v-if="activeMode === 'recharge'"
+            id="purchase-panel-recharge"
+            data-testid="recharge-preview-panel"
+            role="tabpanel"
+            aria-labelledby="purchase-tab-recharge"
+            tabindex="0"
+            class="purchase-business-panel focus:outline-none"
           >
-            {{ t('payment.subscribeNow') }}
-          </button>
-        </aside>
+            <RechargeCheckoutPanel
+              v-model="amount"
+              :amounts="quickRechargeAmounts"
+              :min="minimumRechargeAmount"
+              :max="maximumRechargeAmount"
+              currency="CNY"
+              :locale="locale"
+              :amount-error="amountError"
+              :format-amount="formatCny"
+              :format-credited-amount="formatUsdCompact"
+              :methods="methodOptions"
+              :selected-method="selectedMethod"
+              :formatted-amount="formatCny(validAmount)"
+              :formatted-fee="formatCny(rechargeFeeAmount)"
+              :formatted-total="formatCny(rechargeTotalAmount)"
+              :formatted-estimated-credited-amount="formatUsd(rechargeCreditedAmount)"
+              :disabled="!canSubmitRecharge"
+              :submitting="false"
+              :one-to-one-configured="true"
+              @select-method="selectedMethod = $event"
+              @submit="showPreviewNotice = true"
+            />
+          </section>
+
+          <section
+            v-else
+            id="purchase-panel-subscription"
+            data-testid="subscription-preview-panel"
+            role="tabpanel"
+            aria-labelledby="purchase-tab-subscription"
+            tabindex="0"
+            class="purchase-business-panel focus:outline-none"
+          >
+            <SubscriptionCheckoutPanel
+              :plans="previewPlans"
+              :active-subscriptions="activeSubscriptions"
+              :current-subscription="currentSubscriptionSummary"
+              :methods="methodOptions"
+              :selected-method="selectedMethod"
+              :selected-option-key="selectedSubscriptionOptionKey"
+              :renewal-group-id="currentSubscriptionGroupId"
+              :payment-amount="subscriptionPaymentAmount"
+              :fee-amount="subscriptionFeeAmount"
+              :total-amount="subscriptionTotalAmount"
+              :payment-currency="selectedSubscriptionCurrency"
+              :can-submit="canSubmitSubscription"
+              :submitting="false"
+              @select-option="selectSubscriptionOption"
+              @select-method="selectedMethod = $event"
+              @submit="showPreviewNotice = true"
+            />
+          </section>
+
+          <template #trust>
+            <RechargeTrustBar />
+          </template>
+        </PurchasePageStage>
+
+        <p
+          v-if="showPreviewNotice"
+          data-testid="purchase-preview-notice"
+          class="rounded-2xl border border-blue-200 bg-blue-50/80 px-4 py-3 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200"
+          role="status"
+        >
+          {{ t('payment.rechargeUi.previewNotice') }}
+        </p>
+
       </div>
-
-      <p
-        v-if="showPreviewNotice"
-        class="rounded-2xl border border-blue-200 bg-blue-50/80 px-4 py-3 text-sm text-blue-700"
-        role="status"
-      >
-        {{ t('payment.rechargeUi.previewNotice') }}
-      </p>
-
-      <RechargeTrustBar />
     </div>
-  </div>
+  </main>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
 import '@/components/payment/recharge/recharge-liquid.css'
-import RechargeHeader from '@/components/payment/recharge/RechargeHeader.vue'
-import AccountBalanceHero from '@/components/payment/recharge/AccountBalanceHero.vue'
-import RechargeAmountSelector from '@/components/payment/recharge/RechargeAmountSelector.vue'
-import RechargeMethodSelector from '@/components/payment/recharge/RechargeMethodSelector.vue'
-import RechargeOrderSummary from '@/components/payment/recharge/RechargeOrderSummary.vue'
-import RechargeTrustBar from '@/components/payment/recharge/RechargeTrustBar.vue'
+import PurchasePageStage from '@/components/payment/purchase/PurchasePageStage.vue'
+import RechargeCheckoutPanel from '@/components/payment/purchase/RechargeCheckoutPanel.vue'
+import SubscriptionCheckoutPanel from '@/components/payment/purchase/SubscriptionCheckoutPanel.vue'
+import type { PurchaseSubscriptionOption } from '@/components/payment/purchase/purchaseViewModels'
 import PurchaseModeTabs from '@/components/payment/recharge/PurchaseModeTabs.vue'
+import RechargeTrustBar from '@/components/payment/recharge/RechargeTrustBar.vue'
 import { formatPaymentAmount } from '@/components/payment/currency'
 import type { PaymentMethodOption } from '@/components/payment/PaymentMethodSelector.vue'
+import type { UserSubscription } from '@/types'
+import type { SubscriptionPlan } from '@/types/payment'
 
 type PurchaseMode = 'recharge' | 'subscription'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 
+const previewBalance = 7365.87
+const previewBalanceRechargeMultiplier = 1
 const quickRechargeAmounts = [10, 20, 50, 100, 200, 500, 1000]
-const currentBalance = 12345.67
-const activeMode = ref<PurchaseMode>(route.query.tab === 'subscription' ? 'subscription' : 'recharge')
-const amount = ref<number | null>(50)
-const selectedMethod = ref('alipay')
-const selectedPlanId = ref('team-pro')
-const showPreviewNotice = ref(false)
-const tabs = computed<Array<{ key: PurchaseMode; label: string }>>(() => [
-  { key: 'recharge', label: t('payment.tabTopUp') },
-  { key: 'subscription', label: t('payment.tabSubscribe') },
-])
+const minimumRechargeAmount = 10
+const maximumRechargeAmount = 500000
+const currentSubscriptionGroupId = 101
 
-const previewPlans = [
+const activeMode = ref<PurchaseMode>(
+  route.query.tab === 'subscription' ? 'subscription' : 'recharge',
+)
+const amount = ref<number | null>(100)
+const selectedMethod = ref('alipay')
+const selectedSubscriptionOptionKey = ref('internal:101')
+const showPreviewNotice = ref(false)
+
+const tabs = computed<Array<{
+  key: PurchaseMode
+  label: string
+  panelId: string
+}>>(() => [
   {
-    id: 'team-pro',
-    name: '团队专业版',
-    description: '适合稳定调用与团队协作',
-    badge: '推荐',
-    quota: '月度额度 $220',
-    price: 299,
+    key: 'recharge',
+    label: t('payment.tabTopUp'),
+    panelId: 'purchase-panel-recharge',
   },
   {
-    id: 'enterprise',
-    name: '企业旗舰版',
-    description: '更高额度与企业支持',
-    badge: '企业',
-    quota: '月度额度 $830',
-    price: 999,
+    key: 'subscription',
+    label: t('payment.tabSubscribe'),
+    panelId: 'purchase-panel-subscription',
+  },
+])
+
+const previewPlans: SubscriptionPlan[] = [
+  {
+    id: 101,
+    group_id: currentSubscriptionGroupId,
+    group_platform: 'openai',
+    group_name: 'OpenAI 创作服务',
+    rate_multiplier: 1,
+    daily_limit_usd: 10,
+    weekly_limit_usd: 50,
+    monthly_limit_usd: 180,
+    supported_model_scopes: ['gpt-5', 'gpt-4.1'],
+    name: '创作月度套餐',
+    description: '适合日常创作与稳定 API 调用',
+    price: 39,
+    currency: 'CNY',
+    validity_days: 1,
+    validity_unit: 'month',
+    features: ['每月 API 额度', '支持主流 OpenAI 模型', '到期后手动续费'],
+    for_sale: true,
+    sort_order: 1,
+  },
+  {
+    id: 102,
+    group_id: 102,
+    group_platform: 'anthropic',
+    group_name: 'Claude 专业服务',
+    rate_multiplier: 1,
+    daily_limit_usd: 20,
+    weekly_limit_usd: 100,
+    monthly_limit_usd: 360,
+    supported_model_scopes: ['claude-sonnet-4', 'claude-opus-4'],
+    name: '创作季度套餐',
+    description: '适合持续开发、团队协作与高频调用',
+    price: 99,
+    original_price: 117,
+    currency: 'CNY',
+    validity_days: 3,
+    validity_unit: 'month',
+    features: ['季度 API 额度', '支持 Claude 专业模型', '一次性购买'],
+    for_sale: true,
+    sort_order: 2,
+  },
+  {
+    id: 103,
+    group_id: 103,
+    group_platform: 'gemini',
+    group_name: 'Gemini 年度服务',
+    rate_multiplier: 1,
+    daily_limit_usd: 35,
+    weekly_limit_usd: 180,
+    monthly_limit_usd: 720,
+    supported_model_scopes: ['gemini-2.5-pro', 'gemini-2.5-flash'],
+    name: '创作年度套餐',
+    description: '适合长期项目与更高额度需求',
+    price: 299,
+    original_price: 468,
+    currency: 'CNY',
+    validity_days: 365,
+    validity_unit: 'day',
+    features: ['年度 API 额度', '支持 Gemini 系列模型', '人工续费更可控'],
+    for_sale: true,
+    sort_order: 3,
   },
 ]
 
-const validAmount = computed(() => amount.value ?? 0)
-const feeAmount = computed(() => 0)
-const totalAmount = computed(() => validAmount.value + feeAmount.value)
-const selectedPlan = computed(() =>
-  previewPlans.find((plan) => plan.id === selectedPlanId.value) ?? previewPlans[0]
-)
-const currentSubscriptionSummary = computed(() => ({
-  planName: 'Pro 套餐',
+const activeSubscriptions: UserSubscription[] = [
+  {
+    id: 1,
+    user_id: 1,
+    group_id: currentSubscriptionGroupId,
+    status: 'active',
+    starts_at: '2026-08-01T00:00:00Z',
+    expires_at: '2026-09-01T00:00:00Z',
+    daily_usage_usd: 1.25,
+    weekly_usage_usd: 8.5,
+    monthly_usage_usd: 42,
+    monthly_bonus_usd: 0,
+    pending_renewal_count: 1,
+    pending_renewals: [],
+    daily_window_start: '2026-08-23T00:00:00Z',
+    weekly_window_start: '2026-08-18T00:00:00Z',
+    monthly_window_start: '2026-08-01T00:00:00Z',
+    created_at: '2026-08-01T00:00:00Z',
+    updated_at: '2026-08-23T00:00:00Z',
+  },
+]
+
+const currentSubscriptionSummary = {
+  planName: '创作月度套餐',
   platform: 'OpenAI',
-  remainingText: t('userSubscriptions.daysRemaining', { days: 21 }),
-}))
-const amountError = computed(() => {
-  if (validAmount.value <= 0) return ''
-  if (validAmount.value < 10) return t('payment.amountTooLow', { min: formatCny(10) })
-  if (validAmount.value > 500000) return t('payment.amountTooHigh', { max: formatCny(500000) })
-  return ''
-})
-const methodOptions = computed<PaymentMethodOption[]>(() => [
+  remainingText: t('userSubscriptions.daysRemaining', { days: 9 }),
+  pendingCount: 1,
+  pendingDays: 30,
+}
+
+const methodOptions: PaymentMethodOption[] = [
   { type: 'alipay', fee_rate: 0, available: true },
   { type: 'wxpay', fee_rate: 0, available: true },
-  { type: 'stripe', fee_rate: 0, available: true },
-  { type: 'airwallex', fee_rate: 0, available: true },
-])
+  { type: 'stripe', fee_rate: 1.2, available: true },
+  { type: 'airwallex', fee_rate: 0.6, available: true },
+]
+
+const validAmount = computed(() => amount.value ?? 0)
+const rechargeCreditedAmount = computed(() =>
+  roundCurrency(validAmount.value * previewBalanceRechargeMultiplier),
+)
+const selectedPaymentMethod = computed(() =>
+  methodOptions.find(method => method.type === selectedMethod.value),
+)
+const selectedPaymentFeeRate = computed(() => selectedPaymentMethod.value?.fee_rate ?? 0)
+const rechargeFeeAmount = computed(() =>
+  roundCurrency(validAmount.value * selectedPaymentFeeRate.value / 100),
+)
+const rechargeTotalAmount = computed(() =>
+  roundCurrency(validAmount.value + rechargeFeeAmount.value),
+)
+const amountError = computed(() => {
+  if (validAmount.value <= 0) return ''
+  if (validAmount.value < minimumRechargeAmount) {
+    return t('payment.amountTooLow', { min: formatCny(minimumRechargeAmount) })
+  }
+  if (validAmount.value > maximumRechargeAmount) {
+    return t('payment.amountTooHigh', { max: formatCny(maximumRechargeAmount) })
+  }
+  return ''
+})
+const canSubmitRecharge = computed(() =>
+  validAmount.value > 0
+  && !amountError.value
+  && selectedPaymentMethod.value?.available === true,
+)
+
+const selectedPreviewPlan = computed(() => {
+  const id = Number(selectedSubscriptionOptionKey.value.replace('internal:', ''))
+  return previewPlans.find(plan => plan.id === id) ?? null
+})
+const subscriptionPaymentAmount = computed(() => selectedPreviewPlan.value?.price ?? 0)
+const subscriptionFeeAmount = computed(() =>
+  roundCurrency(subscriptionPaymentAmount.value * selectedPaymentFeeRate.value / 100),
+)
+const subscriptionTotalAmount = computed(() =>
+  roundCurrency(subscriptionPaymentAmount.value + subscriptionFeeAmount.value),
+)
+const selectedSubscriptionCurrency = computed(() =>
+  selectedPreviewPlan.value?.currency || 'CNY',
+)
+const canSubmitSubscription = computed(() =>
+  selectedPreviewPlan.value !== null && selectedPaymentMethod.value?.available === true,
+)
+
+function roundCurrency(value: number): number {
+  return Math.round(value * 100) / 100
+}
 
 function formatCny(value: number): string {
-  return formatPaymentAmount(value, 'CNY', 'zh')
+  return formatPaymentAmount(value, 'CNY', locale.value)
+}
+
+function formatUsd(value: number): string {
+  return formatPaymentAmount(value, 'USD', locale.value)
+}
+
+function formatUsdCompact(value: number): string {
+  try {
+    return new Intl.NumberFormat(locale.value, {
+      style: 'currency',
+      currency: 'USD',
+      currencyDisplay: 'narrowSymbol',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value)
+  } catch {
+    return `$${value.toFixed(2)}`
+  }
+}
+
+function selectSubscriptionOption(option: PurchaseSubscriptionOption): void {
+  selectedSubscriptionOptionKey.value = option.key
 }
 
 watch(activeMode, (mode) => {
   showPreviewNotice.value = false
-  router.replace({ query: { ...route.query, tab: mode } })
+  const query: LocationQueryRaw = { ...route.query, tab: mode }
+  if (mode === 'recharge') delete query.group
+  void router.replace({ query })
 })
+
+watch(
+  () => route.query.tab,
+  (tab) => {
+    const nextMode: PurchaseMode = tab === 'subscription' ? 'subscription' : 'recharge'
+    if (nextMode !== activeMode.value) activeMode.value = nextMode
+  },
+)
 </script>

@@ -20,6 +20,7 @@ vi.mock('vue-router', async () => {
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
+  const { ref } = await vi.importActual<typeof import('vue')>('vue')
   const translations: Record<string, string> = {
     'common.processing': '处理中...',
     'payment.actualPay': '实付金额',
@@ -33,12 +34,26 @@ vi.mock('vue-i18n', async () => {
     'payment.payableAmount': '应付金额',
     'payment.paymentAmount': '支付金额',
     'payment.paymentMethod': '支付方式',
+    'payment.purchaseHero.lineOne': '让每一次创造',
+    'payment.purchaseHero.lineTwoLead': '都有',
+    'payment.purchaseHero.lineTwoAccent': '能量',
+    'payment.purchaseHero.securityLine': 'SECURE · FAST · RELIABLE',
     'payment.planCard.monthlyLimit': '月限额',
     'payment.planCard.quota': '配额',
+    'payment.planCard.quotaUnit': '额度',
     'payment.planCard.rate': '倍率',
+    'payment.planCard.validitySuffix': '有效',
+    'payment.days': '天',
+    'payment.weeks': '周',
+    'payment.months': '个月',
+    'payment.years': '年',
+    'payment.perMonth': '月',
+    'payment.noPlans': '暂无可用订阅套餐',
+    'payment.selectPlan': '选择套餐',
     'payment.subscribeNow': '立即开通',
-    'payment.tabSubscribe': '订阅',
-    'payment.tabTopUp': '充值',
+    'payment.renewNow': '立即续费',
+    'payment.tabSubscribe': '订阅服务',
+    'payment.tabTopUp': '余额充值',
     'payment.activeSubscription': '当前订阅',
     'payment.rechargeUi.activeMode': '当前模式',
     'payment.rechargeUi.agreementName': '充值协议',
@@ -48,6 +63,7 @@ vi.mock('vue-i18n', async () => {
     'payment.rechargeUi.availableBalance': '当前可用余额',
     'payment.rechargeUi.cardMethodDesc': '安全快捷',
     'payment.rechargeUi.customAmountPlaceholder': '请输入金额',
+    'payment.rechargeUi.creditedBalance': '到账 API 余额',
     'payment.rechargeUi.enterpriseCard': '银行卡支付',
     'payment.rechargeUi.enterpriseEncryption': '企业级加密保护',
     'payment.rechargeUi.enterpriseEncryptionDesc': 'SSL 加密传输，数据安全存储。',
@@ -58,6 +74,7 @@ vi.mock('vue-i18n', async () => {
     'payment.rechargeUi.instantArrivalShort': '实时到账',
     'payment.rechargeUi.methodUnavailable': '当前金额不可用',
     'payment.rechargeUi.noFee': '优惠 0',
+    'payment.rechargeUi.oneToOneAgreement': '¥1 = $1 API 余额',
     'payment.rechargeUi.orderSummary': '订单摘要',
     'payment.rechargeUi.paymentMethodHint': '使用安全支付通道完成本次充值。',
     'payment.rechargeUi.previewNotice': '这是本地 UI 预览，不会发起真实支付请求。',
@@ -78,11 +95,28 @@ vi.mock('vue-i18n', async () => {
     'payment.rechargeUi.title': '账户充值',
     'payment.rechargeUi.trustGuarantees': '充值安全保障',
     'payment.rechargeUi.verified': '企业认证',
+    'payment.subscriptionUi.activationRule': '生效方式',
+    'payment.subscriptionUi.deferredActivation': '当前套餐结束后顺延',
+    'payment.subscriptionUi.immediateActivation': '支付成功后立即生效',
+    'payment.subscriptionUi.manualRenewal': '到期后手动续费',
+    'payment.subscriptionUi.noAutomaticRenewal': '不会自动扣款',
+    'payment.subscriptionUi.oneTimePurchase': '一次性购买',
+    'payment.subscriptionUi.originalPrice': '套餐原价',
+    'payment.subscriptionUi.planDiscount': '套餐优惠',
+    'payment.subscriptionUi.renewalMethod': '续费方式',
+    'payment.subscriptionUi.renewalTarget': '当前套餐同组续费',
+    'payment.subscriptionUi.selectPlanFirst': '请先选择订阅套餐',
+    'payment.subscriptionUi.selectedPlan': '订阅套餐',
+    'payment.subscriptionUi.validity': '服务有效期',
     'userSubscriptions.daysRemaining': '剩余 {days} 天',
+    'userSubscriptions.pendingRenewals': '待生效续费 {count} 笔',
+    'userSubscriptions.pendingRenewalTotalDays': '共 {days} 天',
+    'userSubscriptions.pendingRenewalRule': '当前套餐结束后按付款顺序生效。',
   }
   return {
     ...actual,
     useI18n: () => ({
+      locale: ref('zh'),
       t: (key: string, params?: Record<string, unknown>) => {
         const template = translations[key] ?? key
         if (!params) return template
@@ -96,48 +130,118 @@ vi.mock('vue-i18n', async () => {
 })
 
 describe('PaymentPreviewView', () => {
-  it('renders a login-free recharge preview with interactive amount and method selection', async () => {
+  it('keeps the compact top tabs ahead of the shared hero and previews exact credited balance', async () => {
     routeState.query = {}
     routerReplace.mockReset()
     const wrapper = mount(PaymentPreviewView)
 
+    const previewShell = wrapper.get('[data-testid="purchase-preview-shell"]')
+    expect(previewShell.classes()).toEqual(expect.arrayContaining(['purchase-select-shell', 'max-w-none']))
+
+    const tabList = wrapper.get('[role="tablist"]').element
+    const hero = wrapper.get('[data-testid="purchase-hero"]').element
+    expect(tabList.compareDocumentPosition(hero) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+
     expect(wrapper.find('[data-testid="recharge-liquid-page"]').exists()).toBe(true)
-    const heroText = wrapper.find('[data-testid="account-balance-hero"]').text()
-    expect(heroText).toContain('Acme Corporation')
-    expect(heroText).not.toContain('账户 ID')
-    expect(heroText).not.toContain('1000 8888 6666')
-    expect(wrapper.find('[data-testid="purchase-mode-recharge"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="purchase-hero"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="purchase-balance-ticket"]').text()).toContain('$7,365.87')
+    expect(wrapper.get('[data-testid="purchase-mode-recharge"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.find('[data-testid="purchase-mode-subscription"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="recharge-preview-panel"]').attributes('role')).toBe('tabpanel')
+    expect(wrapper.get('[data-testid="recharge-preview-panel"]').classes()).toContain('purchase-business-panel')
+    expect(wrapper.find('[data-testid="recharge-layout"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="recharge-controls"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="submit-recharge"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="purchase-energy-orb"]').attributes('src'))
+      .toBe('/assets/purchase/energy-orb.webp')
+    expect(wrapper.text()).not.toContain('选择快捷金额，或输入自定义充值金额。')
+    expect(wrapper.text()).not.toContain('使用安全支付通道完成本次充值。')
 
-    await wrapper.find('[data-testid="quick-amount-100"]').trigger('click')
-    expect(wrapper.find('[data-testid="order-summary"]').text()).toContain('¥100.00')
+    const decorations = wrapper.get('[data-testid="purchase-decorations"]')
+    expect(decorations.findAll('img')).toHaveLength(2)
+    for (const image of decorations.findAll('img')) {
+      expect(image.attributes('aria-hidden')).toBe('true')
+      expect(image.attributes('draggable')).toBe('false')
+      expect(image.attributes('alt')).toBe('')
+    }
 
-    await wrapper.find('[data-testid="payment-method-wxpay"]').trigger('click')
-    expect(wrapper.find('[data-testid="payment-method-wxpay"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.find('[data-testid="purchase-right-rail"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="purchase-hero"]')
+      .find('[data-testid="purchase-balance-ticket"]').exists()).toBe(false)
+
+    const quickAmount10 = wrapper.get('[data-testid="quick-amount-10"]')
+    const quickAmount100 = wrapper.get('[data-testid="quick-amount-100"]')
+    expect(quickAmount10.text()).toContain('$10.00')
+    expect(quickAmount100.text()).toContain('$100.00')
+
+    await quickAmount10.trigger('click')
+    expect(wrapper.get('[data-testid="order-summary"]').text()).toContain('¥10.00')
+    expect(wrapper.get('[data-testid="estimated-credited-highlight"]').text()).toContain('$10.00')
+    expect(wrapper.find('[data-testid="recharge-one-to-one-agreement"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('¥1 = $1 API 余额')
+
+    await quickAmount100.trigger('click')
+    expect(wrapper.findAll('[data-testid^="payment-method-"]')).toHaveLength(2)
+    expect(wrapper.find('[data-testid="payment-method-stripe"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="payment-method-airwallex"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="payment-method-wxpay"]').trigger('click')
+
+    expect(wrapper.get('[data-testid="estimated-credited-highlight"]').text()).toContain('$100.00')
+    expect(wrapper.get('[data-testid="order-summary"]').text()).toContain('¥100.00')
+    expect(wrapper.text()).not.toContain('$13.83')
+    expect(wrapper.text()).not.toMatch(/优惠券|自动续费已开启|下次(?:自动)?扣款|下一续费时间/)
+    expect(wrapper.find('[data-testid*="coupon"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="submit-recharge"]').trigger('click')
+    expect(wrapper.get('[data-testid="purchase-preview-notice"]').attributes('role')).toBe('status')
   })
 
-  it('switches to the subscription preview and keeps it reachable from the tab query', async () => {
+  it('renders three API-shaped plans, keeps them visible, and preserves recovery query on tab changes', async () => {
     routeState.query = {
       tab: 'subscription',
+      group: '101',
+      resume_token: 'resume-token',
+      wechat_resume_token: 'wechat-token',
     }
     routerReplace.mockReset()
     const wrapper = mount(PaymentPreviewView)
 
-    expect(wrapper.find('[data-testid="purchase-mode-subscription"]').attributes('aria-pressed')).toBe('true')
-    expect(wrapper.find('[data-testid="subscription-preview-layout"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('团队专业版')
-    expect(wrapper.find('[data-testid="recharge-header-account-pill"]').exists()).toBe(false)
-    const heroText = wrapper.find('[data-testid="account-balance-hero"]').text()
-    expect(heroText).toContain('当前订阅')
-    expect(heroText).toContain('Pro 套餐')
-    expect(heroText).toContain('OpenAI')
-    expect(heroText).toContain('剩余 21 天')
-    expect(heroText).not.toContain('当前可用余额')
-    expect(heroText).not.toContain('¥12,345.67')
+    expect(wrapper.get('[data-testid="purchase-mode-subscription"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('[data-testid="subscription-preview-panel"]').attributes('role')).toBe('tabpanel')
+    expect(wrapper.get('[data-testid="subscription-preview-panel"]').classes()).toContain('purchase-business-panel')
+    expect(wrapper.find('[data-testid="subscription-layout"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="subscription-controls"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="submit-subscription"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="purchase-balance-ticket"]').text()).toContain('$7,365.87')
+    expect(wrapper.findAll('[data-testid^="subscription-plan-"][role="radio"]')).toHaveLength(3)
+    expect(wrapper.get('[data-testid="subscription-plan-101"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.get('[data-testid="current-subscription-name"]').text()).toBe('创作月度套餐')
+    expect(wrapper.find('[data-testid="subscription-no-automatic-renewal"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="subscription-manual-renewal"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="order-summary"]').text()).not.toContain('一次性购买')
+    expect(wrapper.text()).not.toContain('优惠券')
+    expect(wrapper.text()).not.toContain('下次扣款')
+    expect(wrapper.text()).not.toContain('自动续费已开启')
+    expect(wrapper.text()).not.toContain('下一续费时间')
+    expect(wrapper.text()).not.toMatch(/≈\s*\$/)
+    expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid*="coupon"]').exists()).toBe(false)
 
-    await wrapper.find('[data-testid="purchase-mode-recharge"]').trigger('click')
+    await wrapper.get('[data-testid="subscription-plan-102"]').trigger('click')
 
-    expect(routerReplace).toHaveBeenCalledWith({ query: { tab: 'recharge' } })
-    expect(wrapper.find('[data-testid="purchase-mode-recharge"]').attributes('aria-pressed')).toBe('true')
-    expect(wrapper.find('[data-testid="recharge-preview-layout"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid^="subscription-plan-"][role="radio"]')).toHaveLength(3)
+    expect(wrapper.get('[data-testid="subscription-summary-plan"]').text()).toBe('创作季度套餐')
+
+    await wrapper.get('[data-testid="purchase-mode-recharge"]').trigger('click')
+
+    expect(routerReplace).toHaveBeenCalledWith({
+      query: {
+        tab: 'recharge',
+        resume_token: 'resume-token',
+        wechat_resume_token: 'wechat-token',
+      },
+    })
+    expect(wrapper.get('[data-testid="purchase-mode-recharge"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.find('[data-testid="recharge-preview-panel"]').exists()).toBe(true)
   })
 })

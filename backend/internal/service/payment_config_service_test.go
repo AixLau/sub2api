@@ -110,6 +110,9 @@ func TestParsePaymentConfig(t *testing.T) {
 		if cfg.MaxPendingOrders != 3 {
 			t.Fatalf("expected MaxPendingOrders=3, got %v", cfg.MaxPendingOrders)
 		}
+		if cfg.BalanceRechargeMultiplier != 1 {
+			t.Fatalf("expected BalanceRechargeMultiplier=1, got %v", cfg.BalanceRechargeMultiplier)
+		}
 		if cfg.LoadBalanceStrategy != payment.DefaultLoadBalanceStrategy {
 			t.Fatalf("expected LoadBalanceStrategy=%s, got %q", payment.DefaultLoadBalanceStrategy, cfg.LoadBalanceStrategy)
 		}
@@ -132,6 +135,7 @@ func TestParsePaymentConfig(t *testing.T) {
 			SettingMaxPendingOrders:              "5",
 			SettingEnabledPaymentTypes:           "alipay,wxpay,stripe",
 			SettingBalancePayDisabled:            "true",
+			SettingBalanceRechargeMult:           "0.14",
 			SettingLoadBalanceStrategy:           "least_amount",
 			SettingProductNamePrefix:             "PRE",
 			SettingProductNameSuffix:             "SUF",
@@ -166,6 +170,9 @@ func TestParsePaymentConfig(t *testing.T) {
 		if !cfg.BalanceDisabled {
 			t.Fatal("expected BalanceDisabled=true")
 		}
+		if cfg.BalanceRechargeMultiplier != 0.14 {
+			t.Fatalf("BalanceRechargeMultiplier = %v, want 0.14", cfg.BalanceRechargeMultiplier)
+		}
 		if cfg.LoadBalanceStrategy != "least_amount" {
 			t.Fatalf("LoadBalanceStrategy = %q, want %q", cfg.LoadBalanceStrategy, "least_amount")
 		}
@@ -177,6 +184,17 @@ func TestParsePaymentConfig(t *testing.T) {
 		}
 		if !cfg.AlipayMobilePrecreateDeepLink {
 			t.Fatal("expected AlipayMobilePrecreateDeepLink=true")
+		}
+	})
+
+	t.Run("explicit one-to-one recharge multiplier is preserved", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := svc.parsePaymentConfig(map[string]string{
+			SettingBalanceRechargeMult: "1",
+		})
+		if cfg.BalanceRechargeMultiplier != 1 {
+			t.Fatalf("BalanceRechargeMultiplier = %v, want 1", cfg.BalanceRechargeMultiplier)
 		}
 	})
 

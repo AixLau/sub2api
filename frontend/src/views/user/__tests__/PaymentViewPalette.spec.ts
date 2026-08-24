@@ -8,11 +8,11 @@ const viewPath = resolve(dirname(fileURLToPath(import.meta.url)), '../PaymentVie
 const viewSource = readFileSync(viewPath, 'utf8')
 
 describe('PaymentView palette', () => {
-  it('keeps the recharge experience on its original blue theme', () => {
-    expect(viewSource).toContain('--color-brand-400: 47 128 255;')
-    expect(viewSource).toContain('--color-brand-500: 15 98 254;')
-    expect(viewSource).toContain('--color-content-brand: 29 78 216;')
-    expect(viewSource).toContain('linear-gradient(180deg, #f6f9ff 0%, #eef4fb 100%);')
+  it('uses the shared blue-violet purchase canvas in light and dark modes', () => {
+    expect(viewSource).toContain('--color-brand-400: 99 102 241;')
+    expect(viewSource).toContain('--color-brand-500: 79 70 229;')
+    expect(viewSource).toContain('--color-content-brand: 67 56 202;')
+    expect(viewSource).toContain('linear-gradient(180deg, #f7f8ff 0%, #eef2ff 48%, #f8fafc 100%);')
     expect(viewSource).toContain(':global(.dark) .recharge-page-canvas')
   })
 })

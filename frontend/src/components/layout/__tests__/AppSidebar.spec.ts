@@ -17,6 +17,10 @@ describe('AppSidebar expanded width', () => {
     expect(styleSource).toContain('@apply w-52 bg-surface-panel;')
     expect(layoutSource).toContain("sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-52'")
   })
+
+  it('allows route-owned canvases to use the full main-content area', () => {
+    expect(layoutSource).toContain("route.meta.fullBleedContent === true ? 'p-0' : 'p-4 md:p-6 lg:p-8'")
+  })
 })
 
 describe('AppSidebar custom SVG styles', () => {

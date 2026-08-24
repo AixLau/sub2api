@@ -11,7 +11,7 @@
 
     <img
       class="user-dashboard__astronaut"
-      src="/assets/dashboard/mascot-ai-astronaut.png"
+      src="/assets/dashboard/mascot-ai-astronaut.webp"
       alt=""
       aria-hidden="true"
       draggable="false"

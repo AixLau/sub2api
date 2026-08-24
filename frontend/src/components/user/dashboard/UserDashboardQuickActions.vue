@@ -59,7 +59,7 @@
         >
           <span class="quick-actions-panel__mascot-glow"></span>
           <img
-            src="/assets/dashboard/mascot-game-bunny.png"
+            src="/assets/dashboard/mascot-game-bunny.webp"
             alt=""
             aria-hidden="true"
             draggable="false"
