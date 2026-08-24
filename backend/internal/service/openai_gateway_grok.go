@@ -102,7 +102,6 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 		proxyURL = account.Proxy.URL()
 	}
 
-	upstreamStart := time.Now()
 	var resp *http.Response
 	for attempt := 0; ; attempt++ {
 		upstreamReq, buildErr := buildGrokResponsesRequest(upstreamCtx, c, account, patchedBody, token, cacheIdentity, s.cfg, s.settingService)
@@ -110,8 +109,9 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 			return nil, buildErr
 		}
 
-		resp, err = s.doOpenAIUpstream(upstreamReq, proxyURL, account)
-		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
+		resp, err = DoOpsUpstream(c, upstreamReq, func(req *http.Request) (*http.Response, error) {
+			return s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
+		})
 		if err != nil {
 			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 		}
@@ -1091,19 +1091,6 @@ func sanitizeGrokResponsesTools(body []byte) ([]byte, error) {
 			filteredTools = append(filteredTools, raw)
 		}
 	}
-	if !grokRawToolsContainType(filteredTools, "tool_search") {
-		for index, raw := range filteredTools {
-			if !gjson.GetBytes(raw, "defer_loading").Exists() {
-				continue
-			}
-			cleaned, deleteErr := sjson.DeleteBytes(raw, "defer_loading")
-			if deleteErr != nil {
-				return nil, deleteErr
-			}
-			filteredTools[index] = cleaned
-			toolsChanged = true
-		}
-	}
 
 	var err error
 	if len(filteredTools) != len(rawTools) || toolsChanged {
@@ -1136,15 +1123,6 @@ func sanitizeGrokResponsesTools(body []byte) ([]byte, error) {
 		}
 	}
 	return body, nil
-}
-
-func grokRawToolsContainType(tools []json.RawMessage, want string) bool {
-	for _, tool := range tools {
-		if strings.TrimSpace(gjson.GetBytes(tool, "type").String()) == want {
-			return true
-		}
-	}
-	return false
 }
 
 func deleteGrokOrphanToolControls(body []byte) ([]byte, error) {
@@ -1351,7 +1329,9 @@ func (s *OpenAIGatewayService) describeGrokComposerImage(
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.doOpenAIUpstream(upstreamReq, proxyURL, account)
+	resp, err := DoOpsUpstream(c, upstreamReq, func(req *http.Request) (*http.Response, error) {
+		return s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
+	})
 	if err != nil {
 		return "", OpenAIUsage{}, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 	}
