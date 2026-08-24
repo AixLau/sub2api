@@ -361,7 +361,12 @@ func TestCalculateCreateOrderPayAmountForBalanceDoesNotDivideByRechargeMultiplie
 func TestCalculateCreditedBalanceStillUsesRechargeMultiplier(t *testing.T) {
 	t.Parallel()
 
-	got := calculateCreditedBalance(10, 0.14)
+	got := calculateCreditedBalance(10, 1)
+	if got != 10 {
+		t.Fatalf("credited balance = %v, want 10 for the standard 1:1 recharge configuration", got)
+	}
+
+	got = calculateCreditedBalance(10, 0.14)
 	if got != 1.4 {
 		t.Fatalf("credited balance = %v, want 1.4", got)
 	}
