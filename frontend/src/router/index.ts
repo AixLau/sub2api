@@ -258,6 +258,7 @@ const routes: RouteRecordRaw[] = [
       titleKey: 'dashboard.title',
       descriptionKey: 'dashboard.welcomeMessage',
       hideHeaderTitle: true,
+      fullBleedContent: true,
       hideBackgroundMesh: true
     }
   },

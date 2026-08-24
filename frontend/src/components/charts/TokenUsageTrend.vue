@@ -8,19 +8,6 @@
     :aria-label="tokenUsageTrendTitle"
     :aria-busy="loading"
   >
-    <img
-      v-if="isPlayfulDashboard"
-      class="token-trend__badge"
-      src="/assets/dashboard/badge-good-job.png"
-      alt=""
-      aria-hidden="true"
-      draggable="false"
-      width="116"
-      height="116"
-      loading="lazy"
-      decoding="async"
-    />
-
     <div
       v-if="loading"
       :class="loadingContainerClass"
@@ -322,23 +309,10 @@ const escapeHtml = (value: string): string =>
   pointer-events: none;
 }
 
-.token-trend--playful > :not(.token-trend__badge) {
+.token-trend--playful > * {
   position: relative;
   z-index: 2;
   min-width: 0;
-}
-
-.token-trend__badge {
-  position: absolute;
-  top: -54px;
-  right: -6px;
-  z-index: 1;
-  width: clamp(90px, 7vw, 116px);
-  height: auto;
-  aspect-ratio: 1;
-  object-fit: contain;
-  pointer-events: none;
-  user-select: none;
 }
 
 .token-trend__loading {
@@ -390,22 +364,12 @@ const escapeHtml = (value: string): string =>
 }
 
 @media (max-width: 1279px) {
-  .token-trend__badge {
-    top: -42px;
-    right: 0;
-    width: 82px;
-  }
-
   .token-trend--playful :deep(.vw-line__header) {
     padding-right: 66px;
   }
 }
 
 @media (max-width: 1023px) {
-  .token-trend__badge {
-    display: none;
-  }
-
   .token-trend--playful :deep(.vw-line__header) {
     padding-right: 0;
   }

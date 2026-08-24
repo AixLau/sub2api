@@ -1,7 +1,7 @@
 import { mount, type DOMWrapper } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
-import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
+import UserDashboardCharts from '../UserDashboardCharts.vue'
 import UserDashboardDecorations from '../UserDashboardDecorations.vue'
 import UserDashboardHero from '../UserDashboardHero.vue'
 import UserDashboardQuickActions from '../UserDashboardQuickActions.vue'
@@ -64,21 +64,27 @@ describe('dashboard decorative assets', () => {
     const camera = heroWrapper.get<HTMLImageElement>('.user-dashboard__camera-image')
     const astronaut = heroWrapper.get<HTMLImageElement>('.user-dashboard__astronaut')
 
-    const trendWrapper = mount(TokenUsageTrend, {
+    const chartsWrapper = mount(UserDashboardCharts, {
       attachTo: document.body,
       props: {
-        trendData: [],
         loading: false,
-        surface: 'playfulDashboard',
+        startDate: '2026-06-13',
+        endDate: '2026-06-19',
+        granularity: 'day',
+        trend: [],
+        models: [],
       },
       global: {
         stubs: {
-          VariableWidthLineChart: true,
+          DateRangePicker: true,
+          Icon: true,
           LoadingSpinner: true,
+          Select: true,
+          TokenUsageTrend: true,
         },
       },
     })
-    const badge = trendWrapper.get<HTMLImageElement>('.token-trend__badge')
+    const badge = chartsWrapper.get<HTMLImageElement>('.user-dashboard-charts__badge')
 
     const quickWrapper = mount(UserDashboardQuickActions, {
       attachTo: document.body,
@@ -93,11 +99,11 @@ describe('dashboard decorative assets', () => {
 
     expectDecorativeImage(camera, '/assets/dashboard/camera-fun.png', '.user-dashboard__camera-image')
     expectDecorativeImage(astronaut, '/assets/dashboard/mascot-ai-astronaut.png', '.user-dashboard__astronaut')
-    expectDecorativeImage(badge, '/assets/dashboard/badge-good-job.png', '.token-trend__badge')
+    expectDecorativeImage(badge, '/assets/dashboard/badge-good-job.png', '.user-dashboard-charts__badge')
     expectDecorativeImage(bunny, '/assets/dashboard/mascot-game-bunny.png', '.quick-actions-panel__mascot')
 
     heroWrapper.unmount()
-    trendWrapper.unmount()
+    chartsWrapper.unmount()
     quickWrapper.unmount()
   })
 })

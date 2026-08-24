@@ -10,11 +10,12 @@
   --dashboard-panel-strong: rgba(255, 255, 255, 0.92);
   --dashboard-line: rgba(116, 126, 169, 0.16);
   --dashboard-soft-shadow: 0 18px 52px rgba(76, 86, 138, 0.1);
+  --dashboard-content-gutter: clamp(1.75rem, 4.5vw, 3.5rem);
   position: relative;
   isolation: isolate;
   width: 100%;
   min-width: 0;
-  min-height: calc(100vh - 8rem);
+  min-height: calc(100vh - 4rem);
   padding-bottom: 2px;
   background: transparent;
 }
@@ -56,7 +57,7 @@
   z-index: 0;
   width: 100%;
   min-width: 0;
-  padding: 0 clamp(0.75rem, 1.5vw, 1.5rem) clamp(1rem, 1.7vw, 1.75rem);
+  padding: 0 0 clamp(2rem, 3vw, 3.75rem);
 }
 
 .user-dashboard .user-dashboard__content {
@@ -66,7 +67,7 @@
   min-width: 0;
   flex-direction: column;
   gap: clamp(1rem, 1.25vw, 1.25rem);
-  padding-top: 0.25rem;
+  padding: 0.25rem var(--dashboard-content-gutter) 0;
 }
 
 .user-dashboard .user-dashboard__bottom-grid {
@@ -84,6 +85,8 @@
 .user-dashboard .user-dashboard__canvas > [data-testid='user-dashboard-skeleton'] {
   position: relative;
   z-index: 5;
+  width: auto;
+  margin-inline: var(--dashboard-content-gutter);
 }
 
 .user-dashboard .user-dashboard__error {
@@ -94,6 +97,7 @@
   align-items: center;
   justify-content: center;
   gap: 1rem;
+  margin-inline: var(--dashboard-content-gutter);
   padding: 2rem;
   color: rgb(71 79 107);
   text-align: center;
@@ -144,7 +148,9 @@
   min-height: 108px;
   align-items: center;
   gap: clamp(2rem, 5vw, 5.75rem);
-  padding: 8px clamp(18rem, 25vw, 23rem) 10px clamp(0.5rem, 1.8vw, 1.75rem);
+  padding:
+    8px calc(var(--dashboard-content-gutter) + clamp(18rem, 25vw, 23rem))
+    10px calc(var(--dashboard-content-gutter) + clamp(0.5rem, 1.8vw, 1.75rem));
 }
 
 .user-dashboard .user-dashboard__hero-copy {
@@ -428,7 +434,7 @@
 @media (min-width: 1280px) and (max-width: 1439px) {
   .user-dashboard .user-dashboard__hero {
     gap: clamp(1.75rem, 4vw, 4.25rem);
-    padding-right: clamp(14.5rem, 22vw, 17.5rem);
+    padding-right: calc(var(--dashboard-content-gutter) + clamp(14.5rem, 22vw, 17.5rem));
   }
 
   .user-dashboard .user-dashboard__astronaut {
@@ -452,8 +458,8 @@
   .user-dashboard .user-dashboard__hero {
     min-height: 100px;
     gap: clamp(1.25rem, 3vw, 2.5rem);
-    padding-right: clamp(10.5rem, 18vw, 13.5rem);
-    padding-left: 0.75rem;
+    padding-right: calc(var(--dashboard-content-gutter) + clamp(10.5rem, 18vw, 13.5rem));
+    padding-left: calc(var(--dashboard-content-gutter) + 0.75rem);
   }
 
   .user-dashboard .user-dashboard__hero-title {
@@ -491,14 +497,10 @@
 }
 
 @media (max-width: 1023px) {
-  .user-dashboard {
-    min-height: calc(100vh - 7rem);
-  }
-
   .user-dashboard .user-dashboard__hero {
     min-height: 94px;
     gap: clamp(1.25rem, 6vw, 3rem);
-    padding: 6px clamp(0.25rem, 1.5vw, 0.75rem) 8px;
+    padding: 6px calc(var(--dashboard-content-gutter) + clamp(0.25rem, 1.5vw, 0.75rem)) 8px;
   }
 
   .user-dashboard .user-dashboard__bottom-grid {
@@ -541,22 +543,13 @@
 }
 
 @media (max-width: 639px) {
-  .user-dashboard {
-    min-height: calc(100vh - 6rem);
-  }
-
   .user-dashboard .user-dashboard__error {
     flex-direction: column;
   }
 
   .user-dashboard .user-dashboard__hero {
     min-height: 86px;
-    padding: 8px 0.25rem 10px;
-  }
-
-  .user-dashboard .user-dashboard__canvas {
-    padding-inline: 0.75rem;
-    padding-bottom: 1rem;
+    padding: 8px calc(var(--dashboard-content-gutter) + 0.25rem) 10px;
   }
 
   .user-dashboard .user-dashboard__hero-copy {

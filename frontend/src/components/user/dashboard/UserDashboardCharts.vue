@@ -3,6 +3,18 @@
     class="user-dashboard-charts"
     :aria-label="`${t('dashboard.modelDistribution')} / ${t('dashboard.tokenUsageTrend')}`"
   >
+    <img
+      class="user-dashboard-charts__badge"
+      src="/assets/dashboard/badge-good-job.png"
+      alt=""
+      aria-hidden="true"
+      draggable="false"
+      width="116"
+      height="116"
+      loading="lazy"
+      decoding="async"
+    />
+
     <div
       class="user-dashboard-charts__filters"
       data-testid="user-dashboard-filters"
@@ -316,10 +328,24 @@ const getModelColor = (index: number): string =>
 <style scoped>
 .user-dashboard-charts {
   position: relative;
+  isolation: isolate;
   display: grid;
   width: 100%;
   min-width: 0;
   gap: 16px;
+}
+
+.user-dashboard-charts__badge {
+  position: absolute;
+  top: 40px;
+  right: -52px;
+  z-index: 5;
+  width: clamp(90px, 7vw, 116px);
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
 }
 
 .user-dashboard-charts__filters {
@@ -636,6 +662,20 @@ const getModelColor = (index: number): string =>
 @media (min-width: 1024px) {
   .user-dashboard-charts__analysis-grid {
     grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  }
+}
+
+@media (max-width: 1279px) {
+  .user-dashboard-charts__badge {
+    top: 44px;
+    right: -40px;
+    width: 82px;
+  }
+}
+
+@media (max-width: 1023px) {
+  .user-dashboard-charts__badge {
+    display: none;
   }
 }
 
