@@ -17,6 +17,18 @@ func optionalStringValue(value *string) string {
 	return strings.TrimSpace(*value)
 }
 
+// coalesceRequestedReasoningEffort prefers the client-requested value and falls
+// back to the effective effort for unmapped and historical call paths.
+func coalesceRequestedReasoningEffort(requested, effective *string) *string {
+	if trimmed := optionalStringValue(requested); trimmed != "" {
+		return &trimmed
+	}
+	if trimmed := optionalStringValue(effective); trimmed != "" {
+		return &trimmed
+	}
+	return nil
+}
+
 // usageBillingModelForSource selects the model name before pricing lookup.
 // Channel-mapped billing uses the explicit channel target when one exists;
 // otherwise any later account/provider mapping is represented by upstreamModel.

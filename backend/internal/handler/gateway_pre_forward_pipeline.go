@@ -289,6 +289,7 @@ func (h *GatewayHandler) readOpenAICompatibleGatewayPreForwardRequest(
 		writeError(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
 		return nil, "", false, false
 	}
+	bindRequestedReasoningEffort(c, body, modelResult.String())
 	return body, modelResult.String(), stream, true
 }
 
@@ -876,6 +877,7 @@ func (s GatewayUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 	if ctx == nil {
 		ctx = c.Request.Context()
 	}
+	stampForwardRequestedReasoningEffort(s.Result, service.RequestedReasoningEffortFromContext(ctx))
 	phaseLatency := service.UsagePhaseLatencySnapshot(c)
 	record := func(taskCtx context.Context) {
 		var err error

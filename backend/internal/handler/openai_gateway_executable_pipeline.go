@@ -1242,6 +1242,7 @@ func (s OpenAIHTTPForwardStage) RunForward(c *gin.Context) ExecutableStageResult
 
 	var result *service.OpenAIForwardResult
 	var err error
+	bindRequestedReasoningEffort(c, s.Body, "")
 	switch s.Kind {
 	case OpenAIHTTPForwardChatCompletions:
 		result, err = s.GatewayService.ForwardAsChatCompletions(ctx, c, s.Account, s.Body, s.PromptCacheKey, s.DefaultMappedModel)
@@ -1405,6 +1406,7 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 	if ctx == nil {
 		ctx = c.Request.Context()
 	}
+	stampOpenAIRequestedReasoningEffort(s.Result, c)
 	phaseLatency := service.UsagePhaseLatencySnapshot(c)
 	if s.ScheduleSuccess != nil && s.Account != nil {
 		scheduleSuccess := *s.ScheduleSuccess
