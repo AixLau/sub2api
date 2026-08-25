@@ -34,6 +34,7 @@ const (
 	ContentModerationSemanticReviewMaxTimeoutMS         = 60_000
 	ContentModerationSemanticReviewPrimaryTimeoutMS     = 15_000
 	ContentModerationSemanticReviewFallbackTimeoutMS    = 8_000
+	ContentModerationSemanticReviewEscalationTimeoutMS  = 15_000
 	ContentModerationSemanticReviewDefaultOutputTokens  = 512
 	ContentModerationSemanticReviewMaxOutputTokens      = 2_048
 	ContentModerationSemanticReviewDefaultReasoning     = "low"
@@ -134,6 +135,7 @@ type ContentModerationSemanticReviewResult struct {
 	UserAgent        string      `json:"-"`
 	InboundEndpoint  string      `json:"-"`
 	UpstreamEndpoint string      `json:"-"`
+	escalation       *contentModerationSemanticEscalationTrace
 }
 
 type ContentModerationSemanticReviewBackend interface {
@@ -1027,7 +1029,7 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 	defer cancelReview()
 
 	fallbackModels := cfg.FallbackModels
-	if len(fallbackModels) == 0 {
+	if len(fallbackModels) == 0 && !cfg.disableDiscoveredFallback {
 		if lister, ok := r.backend.(ContentModerationSemanticReviewModelProvider); ok {
 			if discovered, err := lister.ListSemanticReviewModels(reviewCtx); err == nil {
 				fallbackModels = discovered
@@ -2184,7 +2186,10 @@ func (s *OpenAIGatewayService) ReviewSemanticContent(
 	if maxOutputTokens <= 0 || maxOutputTokens > ContentModerationSemanticReviewMaxOutputTokens {
 		maxOutputTokens = ContentModerationSemanticReviewDefaultOutputTokens
 	}
-	reasoningEffort := ContentModerationSemanticReviewDefaultReasoning
+	reasoningEffort := normalizeContentModerationSemanticReviewReasoningEffort(
+		input.ReasoningEffort,
+		ContentModerationSemanticReviewDefaultReasoning,
+	)
 	maxInputRunes := input.MaxInputRunes
 	if maxInputRunes <= 0 || maxInputRunes > maxModerationInputRunes {
 		maxInputRunes = ContentModerationSemanticReviewDefaultMaxInputRunes

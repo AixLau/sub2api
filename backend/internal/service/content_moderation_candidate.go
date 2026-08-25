@@ -792,7 +792,11 @@ func (s *ContentModerationService) candidateReviewTimeout(cfg *ContentModeration
 		timeout = time.Duration(cfg.RequestAuditTimeoutMS) * time.Millisecond
 	}
 	if cfg != nil && cfg.SemanticReview.Enabled {
-		semanticBudget := normalizeContentModerationSemanticReviewConfig(cfg.SemanticReview).TimeoutMS
+		semanticCfg := normalizeContentModerationSemanticReviewConfig(cfg.SemanticReview)
+		semanticBudget := semanticCfg.TimeoutMS
+		if contentModerationSemanticEscalationEnabled(semanticCfg) {
+			semanticBudget += semanticCfg.EscalationTimeoutMS
+		}
 		semanticTimeout := time.Duration(semanticBudget)*time.Millisecond + contentModerationCandidateReviewSafetyMargin
 		if semanticTimeout > timeout {
 			timeout = semanticTimeout
@@ -1291,16 +1295,31 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 	if s.metrics != nil {
 		s.metrics.observeSemanticReview(result.Model, result.Verdict, started, result.Usage)
 	}
-	var policyOverride bool
-	if semanticInput.ReviewKind == contentModerationReviewKindPromptInjection {
-		result, policyOverride = applyPromptInjectionReviewPolicy(result, semanticInput.EvidenceComplete)
-	} else {
-		result, policyOverride = applySemanticReviewPolicyWithPromotion(result, semanticInput.EvidenceComplete)
-	}
-	result, candidatePolicyOverride := applyCandidateSemanticReviewPolicy(result, selection, semanticInput.EvidenceComplete)
-	policyOverride = policyOverride || candidatePolicyOverride
+	result, policyOverride := applyCandidateSemanticReviewPolicies(result, selection, semanticInput)
 	if semanticInput.ReviewKind == contentModerationReviewKindPromptInjection && s.metrics != nil {
 		s.metrics.observePromptInjectionReview(result.Verdict, semanticInput.EvidenceComplete, len([]rune(semanticInput.Text)))
+	}
+	escalationInput := semanticInput
+	escalationAttempted := false
+	var escalationErr error
+	if result.Verdict == "review" && contentModerationSemanticEscalationEnabled(cfg.SemanticReview) {
+		escalationInput = contentModerationCandidateEscalationInput(cfg, selection, semanticInput)
+		escalationStarted := time.Now()
+		var escalated ContentModerationSemanticReviewResult
+		escalated, escalationAttempted, escalationErr = s.escalateSemanticReview(ctx, cfg.SemanticReview, escalationInput, result)
+		latency += int(time.Since(escalationStarted).Milliseconds())
+		result = escalated
+		if escalationAttempted && escalationErr == nil {
+			if s.metrics != nil {
+				s.metrics.observeSemanticReview(escalated.Model, escalated.Verdict, escalationStarted, escalated.Usage)
+			}
+			var escalationPolicyOverride bool
+			escalated, escalationPolicyOverride = applyCandidateSemanticReviewPolicies(escalated, selection, escalationInput)
+			var evidenceOverride bool
+			escalated, evidenceOverride = applySemanticReviewEscalationEvidencePolicy(escalated, escalationInput.EvidenceComplete)
+			policyOverride = policyOverride || escalationPolicyOverride || evidenceOverride
+			result = escalated
+		}
 	}
 	category, score, scores := semanticReviewCategorySummary(result)
 	buildDecision := func(action string, flagged, blocked bool) *ContentModerationDecision {
@@ -1341,10 +1360,13 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		return contentModerationCandidateOutcome{Decision: buildDecision(action, true, blocked), DecisionID: decisionID, Cacheable: true}
 	case "review":
 		action := ContentModerationActionSemanticReviewReview
-		failClosed := promptInjectionFailClosedActive(cfg, selection)
+		failClosed := promptInjectionFailClosedActive(cfg, selection) ||
+			semanticReviewEscalationFailClosed(cfg, escalationAttempted)
 		if failClosed {
 			action = ContentModerationActionSemanticReviewDeferred
-			if !semanticInput.EvidenceComplete {
+			if escalationErr != nil {
+				action = ContentModerationActionSemanticReviewUnavailable
+			} else if !escalationInput.EvidenceComplete {
 				action = ContentModerationActionSemanticReviewIncomplete
 			}
 		}
@@ -1364,11 +1386,13 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		if failClosed {
 			decision := buildDecision(action, true, true)
 			decision.StatusCode = http.StatusServiceUnavailable
-			decision.Message = promptInjectionDeferredMessage(action)
-			if s.metrics != nil {
+			decision.Message = semanticReviewDeferredMessage(action)
+			if selection.ReviewKind == contentModerationReviewKindPromptInjection && s.metrics != nil {
 				reason := "review"
 				if action == ContentModerationActionSemanticReviewIncomplete {
 					reason = "incomplete"
+				} else if action == ContentModerationActionSemanticReviewUnavailable {
+					reason = "unavailable"
 				}
 				s.metrics.observePromptInjectionFailClosed(reason)
 			}
@@ -1385,6 +1409,21 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		}
 		return contentModerationCandidateOutcome{Decision: buildDecision(ContentModerationActionSemanticReviewAllow, false, false), DecisionID: decisionID, Cacheable: true}
 	}
+}
+
+func applyCandidateSemanticReviewPolicies(
+	result ContentModerationSemanticReviewResult,
+	selection contentModerationCandidateSelection,
+	input ContentModerationSemanticReviewInput,
+) (ContentModerationSemanticReviewResult, bool) {
+	var policyOverride bool
+	if input.ReviewKind == contentModerationReviewKindPromptInjection {
+		result, policyOverride = applyPromptInjectionReviewPolicy(result, input.EvidenceComplete)
+	} else {
+		result, policyOverride = applySemanticReviewPolicyWithPromotion(result, input.EvidenceComplete)
+	}
+	result, candidatePolicyOverride := applyCandidateSemanticReviewPolicy(result, selection, input.EvidenceComplete)
+	return result, policyOverride || candidatePolicyOverride
 }
 
 const candidateSemanticReviewAutoRejectConfidence = 0.85
@@ -1518,7 +1557,7 @@ func promptInjectionFailClosedActive(cfg *ContentModerationConfig, selection con
 		selection.ReviewKind == contentModerationReviewKindPromptInjection
 }
 
-func promptInjectionDeferredMessage(action string) string {
+func semanticReviewDeferredMessage(action string) string {
 	switch action {
 	case ContentModerationActionSemanticReviewIncomplete:
 		return "内容审核证据不完整，请缩短请求后重试"
@@ -1531,6 +1570,36 @@ func promptInjectionDeferredMessage(action string) string {
 
 func contentModerationCandidateSemanticInput(selection contentModerationCandidateSelection) string {
 	return selection.Fragment
+}
+
+func contentModerationCandidateEscalationInput(cfg *ContentModerationConfig, selection contentModerationCandidateSelection, input ContentModerationSemanticReviewInput) ContentModerationSemanticReviewInput {
+	if cfg == nil {
+		return input
+	}
+	text := strings.TrimSpace(selection.ReviewText)
+	if text == "" {
+		text = strings.TrimSpace(selection.Source.Text)
+	}
+	if text == "" {
+		text = strings.TrimSpace(selection.Fragment)
+	}
+	maxRunes := cfg.SemanticReview.EscalationMaxInputRunes
+	if maxRunes <= 0 || maxRunes > maxModerationInputRunes {
+		maxRunes = maxModerationInputRunes
+	}
+	redacted := redactContentModerationSecrets(text)
+	complete := !selection.Source.Truncated && len(selection.Source.TruncateReasons) == 0 &&
+		len([]rune(redacted)) <= maxRunes
+	if selection.ReviewKind == contentModerationReviewKindPromptInjection &&
+		selection.EvidenceRevision == contentModerationPromptInjectionEvidenceRevision {
+		complete = selection.EvidenceComplete && len([]rune(redacted)) <= maxRunes
+	}
+	input.Text = trimRunes(redacted, maxRunes)
+	input.ReviewKind = selection.ReviewKind
+	input.EvidenceComplete = complete
+	input.EvidenceRevision = selection.EvidenceRevision + "+escalation-v1"
+	input.MaxInputRunes = maxRunes
+	return input
 }
 
 func contentModerationCandidateSemanticMetadata(selection contentModerationCandidateSelection, result ContentModerationSemanticReviewResult, policyOverride bool, ordinaryReason string) contentModerationMetadata {
@@ -1570,6 +1639,7 @@ func contentModerationCandidateSemanticMetadata(selection contentModerationCandi
 		metadata["semantic_review_schema_revision"] = promptInjectionReviewerSchemaRevision
 	}
 	metadata["semantic_review_policy_override"] = policyOverride
+	addSemanticReviewEscalationMetadata(metadata, result)
 	if ordinaryReason != "" {
 		metadata["ordinary_moderation_reason"] = ordinaryReason
 	}
@@ -1716,7 +1786,7 @@ func (s *ContentModerationService) candidateUnavailableOutcomeWithLatency(
 		return contentModerationCandidateOutcome{
 			Decision: &ContentModerationDecision{
 				Allowed: false, Blocked: true, Flagged: true,
-				Message:        promptInjectionDeferredMessage(ContentModerationActionSemanticReviewUnavailable),
+				Message:        semanticReviewDeferredMessage(ContentModerationActionSemanticReviewUnavailable),
 				StatusCode:     http.StatusServiceUnavailable,
 				Action:         ContentModerationActionSemanticReviewUnavailable,
 				MatchedKeyword: selection.Rule.Keyword, KeywordCategory: selection.Rule.Category,
@@ -1840,7 +1910,7 @@ func (s *ContentModerationService) candidateExtractionFailureOutcome(ctx context
 		return contentModerationCandidateOutcome{
 			Decision: &ContentModerationDecision{
 				Allowed: false, Blocked: true, Flagged: true,
-				Message:        promptInjectionDeferredMessage(ContentModerationActionSemanticReviewIncomplete),
+				Message:        semanticReviewDeferredMessage(ContentModerationActionSemanticReviewIncomplete),
 				StatusCode:     http.StatusServiceUnavailable,
 				Action:         ContentModerationActionSemanticReviewIncomplete,
 				MatchedKeyword: selection.Rule.Keyword, KeywordCategory: selection.Rule.Category,

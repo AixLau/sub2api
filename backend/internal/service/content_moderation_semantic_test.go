@@ -1031,6 +1031,34 @@ func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
 	require.Contains(t, required, "deception_type")
 }
 
+func TestReviewSemanticContentUsesConfiguredReasoningEffort(t *testing.T) {
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"resp_reasoning","output_text":"{\"verdict\":\"allow\"}"}`)),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream, cfg: &config.Config{}}
+	account := &Account{
+		ID:       53,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "semantic-api-key",
+		},
+	}
+
+	_, err := svc.ReviewSemanticContent(context.Background(), account, "gpt-5.6-sol", ContentModerationSemanticReviewInput{
+		Text: "candidate", ReasoningEffort: "xhigh",
+	})
+
+	require.NoError(t, err)
+	var requestBody map[string]any
+	require.NoError(t, json.Unmarshal(upstream.lastBody, &requestBody))
+	reasoning, ok := requestBody["reasoning"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "xhigh", reasoning["effort"])
+}
+
 func TestReviewSemanticContentHonorsEffectiveInputLimitAcrossTransports(t *testing.T) {
 	tests := []struct {
 		name           string

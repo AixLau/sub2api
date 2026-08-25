@@ -840,7 +840,15 @@
                   </div>
                   <div>
                     <label class="input-label">{{ t('admin.riskControl.semanticReviewFallbackModels') }}</label>
-                    <textarea v-model="configForm.semantic_review_fallback_models_text" class="input min-h-20 resize-y font-mono text-sm" :placeholder="t('admin.riskControl.semanticReviewFallbackModelsPlaceholder')"></textarea>
+                    <OrderedMultiSelect
+                      v-model="configForm.semantic_review_fallback_models"
+                      :options="semanticReviewFallbackModelOptions"
+                      :placeholder="t('admin.riskControl.semanticReviewFallbackModelsPlaceholder')"
+                      :move-up-label="t('admin.riskControl.semanticReviewFallbackMoveUp')"
+                      :move-down-label="t('admin.riskControl.semanticReviewFallbackMoveDown')"
+                      :remove-label="t('admin.riskControl.semanticReviewFallbackRemove')"
+                    />
+                    <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.semanticReviewFallbackModelsHint') }}</p>
                     <p v-if="semanticReviewAvailableModels.length" class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
                       {{ t('admin.riskControl.semanticReviewAvailableModels') }}: {{ semanticReviewAvailableModels.join(', ') }}
                     </p>
@@ -869,6 +877,38 @@
                     <label class="input-label">{{ t('admin.riskControl.semanticReviewReasoningEffort') }}</label>
                     <Select v-model="configForm.semantic_review_reasoning_effort" :options="semanticReviewReasoningOptions" />
                   </div>
+                  <div class="flex items-center justify-between gap-4 md:col-span-2">
+                    <div>
+                      <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.semanticReviewEscalationEnabled') }}</p>
+                      <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.semanticReviewEscalationHint') }}</p>
+                    </div>
+                    <Toggle v-model="configForm.semantic_review_escalation_enabled" />
+                  </div>
+                  <template v-if="configForm.semantic_review_escalation_enabled">
+                    <div>
+                      <label class="input-label">{{ t('admin.riskControl.semanticReviewEscalationModel') }}</label>
+                      <Select v-model="configForm.semantic_review_escalation_model" :options="semanticReviewModelOptions" />
+                    </div>
+                    <div>
+                      <label class="input-label">{{ t('admin.riskControl.semanticReviewEscalationTimeout') }}</label>
+                      <input v-model.number="configForm.semantic_review_escalation_timeout_ms" type="number" min="1000" max="60000" class="input" />
+                    </div>
+                    <div>
+                      <label class="input-label">{{ t('admin.riskControl.semanticReviewEscalationMaxInput') }}</label>
+                      <input v-model.number="configForm.semantic_review_escalation_max_input_runes" type="number" min="2000" max="12000" step="500" class="input" />
+                    </div>
+                    <div>
+                      <label class="input-label">{{ t('admin.riskControl.semanticReviewEscalationReasoningEffort') }}</label>
+                      <Select v-model="configForm.semantic_review_escalation_reasoning_effort" :options="semanticReviewEscalationReasoningOptions" />
+                    </div>
+                    <div class="flex items-center justify-between gap-4">
+                      <div>
+                        <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.semanticReviewEscalationFailClosed') }}</p>
+                        <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.semanticReviewEscalationFailClosedHint') }}</p>
+                      </div>
+                      <Toggle v-model="configForm.semantic_review_escalation_fail_closed" />
+                    </div>
+                  </template>
                 </div>
                 <dl data-test="prompt-injection-reviewer-status" class="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 border-t border-gray-100 pt-4 text-sm dark:border-dark-700 md:grid-cols-3">
                   <div>
@@ -1914,12 +1954,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import Select from '@/components/common/Select.vue'
+import OrderedMultiSelect from '@/components/common/OrderedMultiSelect.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
@@ -2089,13 +2130,19 @@ const configForm = reactive({
 	  prompt_filter_threshold: 50,
 	  prompt_filter_strict_threshold: 90,
   semantic_review_primary_model: 'gpt-5.3-codex-spark',
-  semantic_review_fallback_models_text: '',
+	semantic_review_fallback_models: [] as string[],
+	semantic_review_escalation_enabled: false,
+	semantic_review_escalation_model: '',
+	semantic_review_escalation_timeout_ms: 15000,
+	semantic_review_escalation_max_input_runes: 12000,
+	semantic_review_escalation_reasoning_effort: 'high' as 'low' | 'medium' | 'high' | 'xhigh',
+	semantic_review_escalation_fail_closed: true,
   semantic_review_timeout_ms: 8000,
   semantic_review_primary_timeout_ms: 5000,
   semantic_review_fallback_timeout_ms: 3000,
   semantic_review_max_attempts_per_model: 1,
   semantic_review_max_output_tokens: 512,
-  semantic_review_reasoning_effort: 'low' as const,
+	semantic_review_reasoning_effort: 'low' as 'low' | 'medium' | 'high' | 'xhigh',
   prompt_injection_reviewer_enabled: false,
   prompt_injection_max_input_runes: 12000,
   prompt_injection_fail_closed: false,
@@ -2271,12 +2318,37 @@ const semanticReviewModelOptions = computed<SelectOption[]>(() => {
   const models = new Set(semanticReviewAvailableModels.value)
   const current = configForm.semantic_review_primary_model.trim()
   if (current) models.add(current)
+	const escalation = configForm.semantic_review_escalation_model.trim()
+	if (escalation) models.add(escalation)
   if (models.size === 0) models.add('gpt-5.3-codex-spark')
   return Array.from(models).map((model) => ({ value: model, label: model }))
 })
 
+const semanticReviewFallbackModelOptions = computed<SelectOption[]>(() => {
+	const models = new Set(semanticReviewAvailableModels.value)
+	for (const model of configForm.semantic_review_fallback_models) models.add(model)
+	models.delete(configForm.semantic_review_primary_model.trim())
+	return Array.from(models).filter(Boolean).map((model) => ({ value: model, label: model }))
+})
+
+watch(() => configForm.semantic_review_primary_model, (primaryModel) => {
+	configForm.semantic_review_fallback_models = configForm.semantic_review_fallback_models.filter(
+		(model) => model !== primaryModel.trim(),
+	)
+})
+
 const semanticReviewReasoningOptions = computed<SelectOption[]>(() => [
   { value: 'low', label: 'low' },
+	{ value: 'medium', label: 'medium' },
+	{ value: 'high', label: 'high' },
+	{ value: 'xhigh', label: 'xhigh' },
+])
+
+const semanticReviewEscalationReasoningOptions = computed<SelectOption[]>(() => [
+	{ value: 'low', label: 'low' },
+	{ value: 'medium', label: 'medium' },
+	{ value: 'high', label: 'high' },
+	{ value: 'xhigh', label: 'xhigh' },
 ])
 
 const modelFilterOptions = computed<Array<{ value: ContentModerationModelFilterType; label: string; description: string }>>(() => [
@@ -3116,7 +3188,13 @@ function applyConfig(config: ContentModerationConfig) {
     enabled: true,
     trigger: 'local_review',
     primary_model: 'gpt-5.3-codex-spark',
-    fallback_models: [],
+	    fallback_models: [],
+	    escalation_enabled: false,
+	    escalation_model: '',
+	    escalation_timeout_ms: 15000,
+	    escalation_max_input_runes: 12000,
+	    escalation_reasoning_effort: 'high',
+	    escalation_fail_closed: true,
     timeout_ms: 8000,
     primary_timeout_ms: 5000,
     fallback_timeout_ms: 3000,
@@ -3129,13 +3207,19 @@ function applyConfig(config: ContentModerationConfig) {
     prompt_injection_fail_closed: false,
   }
   configForm.semantic_review_primary_model = semanticReview.primary_model || 'gpt-5.3-codex-spark'
-  configForm.semantic_review_fallback_models_text = Array.isArray(semanticReview.fallback_models) ? semanticReview.fallback_models.join('\n') : ''
+	configForm.semantic_review_fallback_models = Array.isArray(semanticReview.fallback_models) ? [...semanticReview.fallback_models] : []
+	configForm.semantic_review_escalation_enabled = semanticReview.escalation_enabled ?? false
+	configForm.semantic_review_escalation_model = semanticReview.escalation_model || ''
+	configForm.semantic_review_escalation_timeout_ms = semanticReview.escalation_timeout_ms || 15000
+	configForm.semantic_review_escalation_max_input_runes = semanticReview.escalation_max_input_runes || 12000
+	configForm.semantic_review_escalation_reasoning_effort = semanticReview.escalation_reasoning_effort || 'high'
+	configForm.semantic_review_escalation_fail_closed = semanticReview.escalation_fail_closed ?? true
   configForm.semantic_review_timeout_ms = semanticReview.timeout_ms || 8000
   configForm.semantic_review_primary_timeout_ms = semanticReview.primary_timeout_ms || 5000
   configForm.semantic_review_fallback_timeout_ms = semanticReview.fallback_timeout_ms || 3000
   configForm.semantic_review_max_attempts_per_model = semanticReview.max_attempts_per_model || 1
   configForm.semantic_review_max_output_tokens = semanticReview.max_output_tokens || 512
-  configForm.semantic_review_reasoning_effort = 'low'
+	configForm.semantic_review_reasoning_effort = semanticReview.reasoning_effort || 'low'
 	configForm.prompt_injection_reviewer_enabled = semanticReview.prompt_injection_reviewer_enabled ?? false
 	configForm.prompt_injection_max_input_runes = semanticReview.prompt_injection_max_input_runes || 12000
 	configForm.prompt_injection_fail_closed = semanticReview.prompt_injection_fail_closed ?? false
@@ -3307,10 +3391,13 @@ async function saveConfig() {
 	        enabled: true,
 	        trigger: 'local_review',
 	        primary_model: configForm.semantic_review_primary_model.trim() || 'gpt-5.3-codex-spark',
-	        fallback_models: configForm.semantic_review_fallback_models_text
-	          .split(/[\n,]/)
-	          .map((model) => model.trim())
-	          .filter(Boolean),
+	        fallback_models: [...configForm.semantic_review_fallback_models],
+	        escalation_enabled: configForm.semantic_review_escalation_enabled,
+	        escalation_model: configForm.semantic_review_escalation_model.trim(),
+	        escalation_timeout_ms: Number(configForm.semantic_review_escalation_timeout_ms) || 15000,
+	        escalation_max_input_runes: Number(configForm.semantic_review_escalation_max_input_runes) || 12000,
+	        escalation_reasoning_effort: configForm.semantic_review_escalation_reasoning_effort,
+	        escalation_fail_closed: configForm.semantic_review_escalation_fail_closed,
           timeout_ms: Number(configForm.semantic_review_timeout_ms) || 8000,
           primary_timeout_ms: Number(configForm.semantic_review_primary_timeout_ms) || 5000,
           fallback_timeout_ms: Number(configForm.semantic_review_fallback_timeout_ms) || 3000,

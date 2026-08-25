@@ -398,6 +398,12 @@ type ContentModerationSemanticReviewConfig struct {
 	Trigger                        string   `json:"trigger"`
 	PrimaryModel                   string   `json:"primary_model"`
 	FallbackModels                 []string `json:"fallback_models"`
+	EscalationEnabled              bool     `json:"escalation_enabled"`
+	EscalationModel                string   `json:"escalation_model"`
+	EscalationTimeoutMS            int      `json:"escalation_timeout_ms"`
+	EscalationMaxInputRunes        int      `json:"escalation_max_input_runes"`
+	EscalationReasoningEffort      string   `json:"escalation_reasoning_effort"`
+	EscalationFailClosed           bool     `json:"escalation_fail_closed"`
 	TimeoutMS                      int      `json:"timeout_ms"`
 	PrimaryTimeoutMS               int      `json:"primary_timeout_ms"`
 	FallbackTimeoutMS              int      `json:"fallback_timeout_ms"`
@@ -408,6 +414,7 @@ type ContentModerationSemanticReviewConfig struct {
 	PromptInjectionReviewerEnabled bool     `json:"prompt_injection_reviewer_enabled"`
 	PromptInjectionMaxInputRunes   int      `json:"prompt_injection_max_input_runes"`
 	PromptInjectionFailClosed      bool     `json:"prompt_injection_fail_closed"`
+	disableDiscoveredFallback      bool
 }
 
 type ContentModerationFailStrategy struct {
@@ -4989,6 +4996,18 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 			"Prompt Injection fail-closed 仅可在 pre_block 模式启用",
 		)
 	}
+	if cfg.SemanticReview.EscalationEnabled && strings.TrimSpace(cfg.SemanticReview.EscalationModel) == "" {
+		return infraerrors.BadRequest(
+			"INVALID_SEMANTIC_REVIEW_ESCALATION_MODEL",
+			"启用决策升级审核时必须选择升级模型",
+		)
+	}
+	if cfg.SemanticReview.EscalationEnabled && cfg.SemanticReview.EscalationFailClosed && cfg.Mode != ContentModerationModePreBlock {
+		return infraerrors.BadRequest(
+			"INVALID_SEMANTIC_REVIEW_ESCALATION_FAIL_CLOSED_MODE",
+			"决策升级审核失败关闭仅可在 pre_block 模式启用",
+		)
+	}
 	switch normalizeContentModerationPromptFilterMode(cfg.PromptFilterMode) {
 	case promptfilter.ModeOff, promptfilter.ModeObserve, promptfilter.ModeWarn, promptfilter.ModeBlock:
 	default:
@@ -6064,6 +6083,12 @@ func defaultContentModerationSemanticReviewConfig() ContentModerationSemanticRev
 		Trigger:                        ContentModerationSemanticReviewTriggerLocalReview,
 		PrimaryModel:                   ContentModerationSemanticReviewPrimaryModel,
 		FallbackModels:                 nil,
+		EscalationEnabled:              false,
+		EscalationModel:                "",
+		EscalationTimeoutMS:            ContentModerationSemanticReviewEscalationTimeoutMS,
+		EscalationMaxInputRunes:        maxModerationInputRunes,
+		EscalationReasoningEffort:      "high",
+		EscalationFailClosed:           true,
 		TimeoutMS:                      ContentModerationSemanticReviewDefaultTimeoutMS,
 		PrimaryTimeoutMS:               ContentModerationSemanticReviewPrimaryTimeoutMS,
 		FallbackTimeoutMS:              ContentModerationSemanticReviewFallbackTimeoutMS,
@@ -6108,6 +6133,26 @@ func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanti
 		models = append(models, model)
 	}
 	cfg.FallbackModels = models
+	cfg.EscalationModel = normalizeContentModerationSemanticReviewModel(cfg.EscalationModel)
+	if cfg.EscalationTimeoutMS <= 0 {
+		cfg.EscalationTimeoutMS = ContentModerationSemanticReviewEscalationTimeoutMS
+	}
+	if cfg.EscalationTimeoutMS > ContentModerationSemanticReviewMaxTimeoutMS {
+		cfg.EscalationTimeoutMS = ContentModerationSemanticReviewMaxTimeoutMS
+	}
+	if cfg.EscalationMaxInputRunes <= 0 {
+		cfg.EscalationMaxInputRunes = maxModerationInputRunes
+	}
+	if cfg.EscalationMaxInputRunes < maxContentModerationCandidateRunes {
+		cfg.EscalationMaxInputRunes = maxContentModerationCandidateRunes
+	}
+	if cfg.EscalationMaxInputRunes > maxModerationInputRunes {
+		cfg.EscalationMaxInputRunes = maxModerationInputRunes
+	}
+	cfg.EscalationReasoningEffort = normalizeContentModerationSemanticReviewReasoningEffort(
+		cfg.EscalationReasoningEffort,
+		"high",
+	)
 	// Migrate the previous default, which represented a per-attempt timeout, to
 	// the bounded end-to-end review budget introduced by semantic-review-v2.
 	if cfg.TimeoutMS <= 0 || legacyBudgetConfig || legacyDefaultBudgetConfig || legacyCandidateBudgetConfig {
@@ -6161,11 +6206,20 @@ func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanti
 	if cfg.MaxOutputTokens > ContentModerationSemanticReviewMaxOutputTokens {
 		cfg.MaxOutputTokens = ContentModerationSemanticReviewMaxOutputTokens
 	}
-	// The built-in semantic reviewers use a fixed low reasoning budget. Keeping
-	// this invariant server-side prevents stale settings from changing the
-	// latency and cost profile of content moderation.
-	cfg.ReasoningEffort = ContentModerationSemanticReviewDefaultReasoning
+	cfg.ReasoningEffort = normalizeContentModerationSemanticReviewReasoningEffort(
+		cfg.ReasoningEffort,
+		ContentModerationSemanticReviewDefaultReasoning,
+	)
 	return cfg
+}
+
+func normalizeContentModerationSemanticReviewReasoningEffort(value, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "low", "medium", "high", "xhigh":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return fallback
+	}
 }
 
 func normalizeContentModerationSemanticReviewModel(model string) string {

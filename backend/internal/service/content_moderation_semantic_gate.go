@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -161,13 +162,32 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 	if state, ok := ctx.Value(contentModerationSemanticReviewStateContextKey{}).(*contentModerationSemanticReviewState); ok && state != nil {
 		state.Completed = true
 	}
-	result, policyOverride := applySemanticReviewPolicyWithPromotion(result, candidate.Input.EvidenceComplete)
-	result, attributionOverride := applySemanticReviewAttributionPolicy(result, candidate.ContextOnly)
-	policyOverride = policyOverride || attributionOverride
-	if candidate.Input.EvidenceComplete {
-		var highRiskReviewOverride bool
-		result, highRiskReviewOverride = applySemanticReviewHighRiskReviewPolicy(result, candidate.ContextOnly)
-		policyOverride = policyOverride || highRiskReviewOverride
+	result, policyOverride := applySemanticReviewGatePolicies(
+		result,
+		candidate.Input.EvidenceComplete,
+		candidate.ContextOnly,
+		candidate.Input.ReviewKind,
+	)
+	escalationInput := candidate.Input
+	escalationAttempted := false
+	var escalationErr error
+	if result.Verdict == "review" && !candidate.ContextOnly && contentModerationSemanticEscalationEnabled(cfg.SemanticReview) {
+		escalationInput = contentModerationSemanticGateEscalationInput(input, cfg, content, candidate, candidate.Input)
+		var escalated ContentModerationSemanticReviewResult
+		escalated, escalationAttempted, escalationErr = s.escalateSemanticReview(ctx, cfg.SemanticReview, escalationInput, result)
+		result = escalated
+		if escalationAttempted && escalationErr == nil {
+			var escalationOverride bool
+			result, escalationOverride = applySemanticReviewGatePolicies(
+				result,
+				escalationInput.EvidenceComplete,
+				candidate.ContextOnly,
+				escalationInput.ReviewKind,
+			)
+			var evidenceOverride bool
+			result, evidenceOverride = applySemanticReviewEscalationEvidencePolicy(result, escalationInput.EvidenceComplete)
+			policyOverride = policyOverride || escalationOverride || evidenceOverride
+		}
 	}
 	category := "semantic_review"
 	if len(result.Categories) > 0 && strings.TrimSpace(result.Categories[0]) != "" {
@@ -216,6 +236,15 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 		}, true
 	case "review":
 		action := ContentModerationActionSemanticReviewReview
+		failClosed := semanticReviewEscalationFailClosed(cfg, escalationAttempted)
+		if failClosed {
+			action = ContentModerationActionSemanticReviewDeferred
+			if escalationErr != nil {
+				action = ContentModerationActionSemanticReviewUnavailable
+			} else if !escalationInput.EvidenceComplete {
+				action = ContentModerationActionSemanticReviewIncomplete
+			}
+		}
 		log := s.buildLog(input, cfg, action, true, category, score, categoryScores, content.KeywordHitExcerpt(candidate.Keyword), nil, nil, metadata)
 		log.MatchedKeyword = candidate.Keyword
 		log.KeywordCategory = candidate.Category
@@ -225,12 +254,52 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 		log.RiskContextType = ContentModerationRiskContextActualRequest
 		log.RiskContextReason = action
 		log.ReviewStatus = ContentModerationReviewStatusPending
-		if candidate.ContextOnly {
+		if candidate.ContextOnly || failClosed {
 			log.UserViolationEligible = false
 		}
 		s.persistContentModerationLog(ctx, cfg, log, hashText, false, false)
+		if failClosed {
+			return &ContentModerationDecision{
+				Allowed:           false,
+				Blocked:           true,
+				Flagged:           true,
+				Message:           semanticReviewDeferredMessage(action),
+				StatusCode:        http.StatusServiceUnavailable,
+				HighestCategory:   category,
+				HighestScore:      score,
+				CategoryScores:    categoryScores,
+				Action:            action,
+				MatchedKeyword:    candidate.Keyword,
+				KeywordCategory:   candidate.Category,
+				KeywordSeverity:   candidate.Severity,
+				RiskContextType:   ContentModerationRiskContextActualRequest,
+				RiskContextReason: action,
+			}, true
+		}
 	}
 	return nil, false
+}
+
+func applySemanticReviewGatePolicies(
+	result ContentModerationSemanticReviewResult,
+	evidenceComplete bool,
+	contextOnly bool,
+	reviewKind string,
+) (ContentModerationSemanticReviewResult, bool) {
+	var policyOverride bool
+	if reviewKind == contentModerationReviewKindPromptInjection {
+		result, policyOverride = applyPromptInjectionReviewPolicy(result, evidenceComplete)
+	} else {
+		result, policyOverride = applySemanticReviewPolicyWithPromotion(result, evidenceComplete)
+	}
+	result, attributionOverride := applySemanticReviewAttributionPolicy(result, contextOnly)
+	policyOverride = policyOverride || attributionOverride
+	if evidenceComplete {
+		var highRiskReviewOverride bool
+		result, highRiskReviewOverride = applySemanticReviewHighRiskReviewPolicy(result, contextOnly)
+		policyOverride = policyOverride || highRiskReviewOverride
+	}
+	return result, policyOverride
 }
 
 func (s *ContentModerationService) semanticReviewProviderFallback(
@@ -299,9 +368,33 @@ func (s *ContentModerationService) semanticReviewProviderFallback(
 	if state, ok := ctx.Value(contentModerationSemanticReviewStateContextKey{}).(*contentModerationSemanticReviewState); ok && state != nil {
 		state.Completed = true
 	}
-	result, policyOverride := applySemanticReviewPolicyWithPromotion(result, candidate.Input.EvidenceComplete)
-	result, attributionOverride := applySemanticReviewAttributionPolicy(result, candidate.ContextOnly)
-	policyOverride = policyOverride || attributionOverride
+	result, policyOverride := applySemanticReviewGatePolicies(
+		result,
+		candidate.Input.EvidenceComplete,
+		candidate.ContextOnly,
+		contentModerationReviewKindGeneral,
+	)
+	escalationInput := candidate.Input
+	escalationAttempted := false
+	var escalationErr error
+	if result.Verdict == "review" && !candidate.ContextOnly && contentModerationSemanticEscalationEnabled(cfg.SemanticReview) {
+		escalationInput = contentModerationSemanticGateEscalationInput(input, cfg, content, candidate, candidate.Input)
+		var escalated ContentModerationSemanticReviewResult
+		escalated, escalationAttempted, escalationErr = s.escalateSemanticReview(ctx, cfg.SemanticReview, escalationInput, result)
+		result = escalated
+		if escalationAttempted && escalationErr == nil {
+			var escalationOverride bool
+			result, escalationOverride = applySemanticReviewGatePolicies(
+				result,
+				escalationInput.EvidenceComplete,
+				candidate.ContextOnly,
+				escalationInput.ReviewKind,
+			)
+			var evidenceOverride bool
+			result, evidenceOverride = applySemanticReviewEscalationEvidencePolicy(result, escalationInput.EvidenceComplete)
+			policyOverride = policyOverride || escalationOverride || evidenceOverride
+		}
+	}
 	category := "semantic_review"
 	if len(result.Categories) > 0 && strings.TrimSpace(result.Categories[0]) != "" {
 		category = result.Categories[0]
@@ -373,17 +466,31 @@ func (s *ContentModerationService) semanticReviewProviderFallback(
 		return buildDecision(action, true, blocked), true
 	case "review":
 		action := ContentModerationActionSemanticReviewReview
+		failClosed := semanticReviewEscalationFailClosed(cfg, escalationAttempted) && allowBlock
+		if failClosed {
+			action = ContentModerationActionSemanticReviewDeferred
+			if escalationErr != nil {
+				action = ContentModerationActionSemanticReviewUnavailable
+			} else if !escalationInput.EvidenceComplete {
+				action = ContentModerationActionSemanticReviewIncomplete
+			}
+		}
 		log := s.buildLog(input, cfg, action, true, category, score, categoryScores, content.ExcerptText(), &latency, nil, metadata)
 		setLogMetadata(log, action)
 		log.ReviewStatus = ContentModerationReviewStatusPending
-		if candidate.ContextOnly {
+		if candidate.ContextOnly || failClosed {
 			log.UserViolationEligible = false
 		}
 		s.persistContentModerationLog(ctx, cfg, log, hashText, false, false)
 		if allowBlock && cfg.Mode == ContentModerationModePreBlock {
 			s.recordPreBlockSyncMetric(latency, action)
 		}
-		return buildDecision(action, true, false), true
+		decision := buildDecision(action, true, failClosed)
+		if failClosed {
+			decision.StatusCode = http.StatusServiceUnavailable
+			decision.Message = semanticReviewDeferredMessage(action)
+		}
+		return decision, true
 	default:
 		if allowBlock && cfg.Mode == ContentModerationModePreBlock {
 			s.recordPreBlockSyncMetric(latency, ContentModerationActionSemanticReviewAllow)
@@ -459,6 +566,7 @@ func contentModerationSemanticGateMetadata(cfg *ContentModerationConfig, content
 	metadata["semantic_review_reason_codes"] = result.ReasonCodes
 	metadata["semantic_review_reason_details"] = result.ReasonDetails
 	metadata["semantic_review_policy_override"] = policyOverride
+	addSemanticReviewEscalationMetadata(metadata, result)
 	metadata["semantic_review_candidate"] = candidate.Keyword
 	if candidate.SyntheticAll {
 		metadata["semantic_review_candidate_synthetic_all"] = true

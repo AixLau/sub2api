@@ -46,13 +46,19 @@ export interface ContentModerationSemanticReviewConfig {
   trigger: 'local_review' | 'all' | string
   primary_model: string
   fallback_models: string[]
+  escalation_enabled: boolean
+  escalation_model: string
+  escalation_timeout_ms: number
+  escalation_max_input_runes: number
+  escalation_reasoning_effort: 'low' | 'medium' | 'high' | 'xhigh'
+  escalation_fail_closed: boolean
   timeout_ms: number
   primary_timeout_ms: number
   fallback_timeout_ms: number
   max_attempts_per_model: number
   max_input_runes: number
   max_output_tokens: number
-  reasoning_effort: 'low'
+  reasoning_effort: 'low' | 'medium' | 'high' | 'xhigh'
   prompt_injection_reviewer_enabled: boolean
   prompt_injection_max_input_runes: number
   prompt_injection_fail_closed: boolean
