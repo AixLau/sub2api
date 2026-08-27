@@ -69,13 +69,13 @@ func RegisterGatewayRoutes(
 			h.Gateway.CountTokens(c)
 		}
 	}
+	codexModelsHandler := func(c *gin.Context) {
+		dispatchCodexModelsGateway(c, h.OpenAIGateway.CodexModels, h.Gateway.CodexModels)
+	}
 	modelsHandler := func(c *gin.Context) {
 		if c.Query("client_version") != "" {
-			switch getGroupPlatform(c) {
-			case service.PlatformOpenAI, service.PlatformComposite:
-				h.OpenAIGateway.CodexModels(c)
-				return
-			}
+			codexModelsHandler(c)
+			return
 		}
 		h.Gateway.Models(c)
 	}
@@ -1064,6 +1064,14 @@ func RegisterGatewayRoutes(
 		), h.Gateway.GeminiV1BetaModels)
 	}
 
+}
+
+func dispatchCodexModelsGateway(c *gin.Context, openAIHandler, generatedHandler gin.HandlerFunc) {
+	if getGroupPlatform(c) == service.PlatformOpenAI {
+		openAIHandler(c)
+		return
+	}
+	generatedHandler(c)
 }
 
 // getGroupPlatform extracts the group platform from the API Key stored in context.
