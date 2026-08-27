@@ -46,6 +46,20 @@ func codexRestrictionRequestFromContext(ctx context.Context) (CodexRestrictionRe
 func (s *OpenAIGatewayService) codexAccountAllowedForScheduling(ctx context.Context, account *Account) (bool, string) {
 	req, ok := codexRestrictionRequestFromContext(ctx)
 	if !ok || account == nil || !account.IsCodexCLIOnlyEnabled() {
+		if !ok || account == nil {
+			return true, ""
+		}
+	}
+	// Scheduler snapshots may intentionally omit account Extra fields. Refresh
+	// the account before deciding so a newly enabled codex_cli_only flag cannot
+	// be missed and deferred to the forwarding-stage defensive check.
+	checkedAccount := account
+	if s != nil && s.accountRepo != nil {
+		if fresh, err := s.accountRepo.GetByID(ctx, account.ID); err == nil && fresh != nil {
+			checkedAccount = fresh
+		}
+	}
+	if !checkedAccount.IsCodexCLIOnlyEnabled() {
 		return true, ""
 	}
 	policy := CodexRestrictionPolicy{EngineFingerprintSignals: openai.DefaultEngineFingerprintSignals}
@@ -56,7 +70,7 @@ func (s *OpenAIGatewayService) codexAccountAllowedForScheduling(ctx context.Cont
 	if detector == nil {
 		return false, CodexClientRestrictionReasonNotMatchedUA
 	}
-	result := detector.Detect(req.Context, account, policy, req.Body)
+	result := detector.Detect(req.Context, checkedAccount, policy, req.Body)
 	return result.Matched, result.Reason
 }
 
