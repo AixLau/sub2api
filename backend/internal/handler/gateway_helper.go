@@ -116,7 +116,7 @@ func claudeCodeBodyMapFromParsedRequest(parsedReq *service.ParsedRequest) map[st
 // 3. 减少 Redis 压力，避免惊群效应
 const (
 	// maxConcurrencyWait 等待并发槽位的最大时间
-	maxConcurrencyWait = 30 * time.Second
+	maxConcurrencyWait = 60 * time.Second
 	// defaultPingInterval 流式响应等待时发送 ping 的默认间隔
 	defaultPingInterval = 10 * time.Second
 	// initialBackoff 初始退避时间
