@@ -1579,6 +1579,7 @@ func (s *GatewayService) ListSystemAvailableModelSets(ctx context.Context) ([]Sy
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Platform < result[j].Platform })
 	return result, nil
+}
 
 func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, groupID int64, model string) (CompositeModelOwnership, error) {
 	model = strings.TrimSpace(model)

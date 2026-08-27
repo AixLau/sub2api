@@ -335,6 +335,8 @@ func TestNormalizeOpenAIParallelToolCallsWithoutTools_KeepsResponsesLiteAddition
 	require.NoError(t, err)
 	require.False(t, changed)
 	require.Equal(t, gjson.False, gjson.GetBytes(normalized, "parallel_tool_calls").Type)
+}
+
 func TestFilterOpenAIResponsesNoneReasoningEffortForAccount(t *testing.T) {
 	tests := []struct {
 		name          string
