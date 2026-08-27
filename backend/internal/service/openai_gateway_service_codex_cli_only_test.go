@@ -60,6 +60,24 @@ func TestOpenAIGatewayService_GetCodexClientRestrictionDetector(t *testing.T) {
 	})
 }
 
+func TestOpenAIGatewayService_SelectBestAccountFiltersCodexOnlyAccounts(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	c.Request.Header.Set("User-Agent", "Go-http-client/2.0")
+	ctx := WithCodexRestrictionRequest(context.Background(), c, []byte(`{"model":"gpt-5.6-sol"}`))
+
+	restricted := Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true, Priority: 1, Extra: map[string]any{"codex_cli_only": true}}
+	open := Account{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true, Priority: 2}
+	svc := &OpenAIGatewayService{codexDetector: NewOpenAICodexClientRestrictionDetector(nil)}
+
+	selected, _, stats := svc.selectBestAccount(ctx, nil, PlatformOpenAI, []Account{restricted, open}, "gpt-5.6-sol", nil, false, "", false)
+	require.NotNil(t, selected)
+	require.Equal(t, int64(2), selected.ID)
+	require.Equal(t, 1, stats.reasons["codex_official_client_user_agent_not_matched"])
+}
+
 func TestOpenAIGatewayService_Forward_VersionGateMessage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

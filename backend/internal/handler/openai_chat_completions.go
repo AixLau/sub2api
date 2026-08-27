@@ -163,7 +163,8 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 	// 分组利润控制：chat completions 文本入口请求级装门并固定 pricingAt。
 	ccPricingCtx, _ := h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
-	c.Request = c.Request.WithContext(ccPricingCtx)
+	requestCtx := service.WithCodexRestrictionRequest(ccPricingCtx, c, body)
+	c.Request = c.Request.WithContext(requestCtx)
 
 	for {
 		var account *service.Account

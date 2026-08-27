@@ -326,6 +326,13 @@ func noAvailableOpenAISelectionError(requestedModel string, compactBlocked bool,
 	return openAINoAvailableSelectionError{message: message}
 }
 
+func noAllowedCodexAccountsError(requestedModel string) error {
+	if requestedModel == "" {
+		return ErrNoAllowedCodexAccounts
+	}
+	return fmt.Errorf("%w supporting model: %s", ErrNoAllowedCodexAccounts, requestedModel)
+}
+
 type openAINoAvailableSelectionError struct {
 	message string
 }
@@ -857,6 +864,9 @@ func (s *OpenAIGatewayService) selectAccountForModelWithExclusions(ctx context.C
 	selected, compactBlocked, filterStats := s.selectBestAccount(ctx, groupID, platform, accounts, requestedModel, excludedIDs, requireCompact, requiredCapability, preferLowUpstreamRate)
 
 	if selected == nil {
+		if filterStats.onlyCodexRestriction() {
+			return nil, noAllowedCodexAccountsError(requestedModel)
+		}
 		return nil, noAvailableOpenAISelectionError(requestedModel, compactBlocked, filterStats.summary(""))
 	}
 
@@ -901,6 +911,10 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 
 	account, err := s.getSchedulableAccount(ctx, accountID)
 	if err != nil {
+		return nil
+	}
+	if allowed, _ := s.codexAccountAllowedForScheduling(ctx, account); !allowed {
+		_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 		return nil
 	}
 
@@ -976,6 +990,10 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 		fresh = s.recheckSelectedOpenAIAccountFromDBBeforeProfit(ctx, fresh, groupID, platform, requestedModel, false, requiredCapability)
 		if fresh == nil {
 			filterStats.exclude("ineligible")
+			continue
+		}
+		if allowed, reason := s.codexAccountAllowedForScheduling(ctx, fresh); !allowed {
+			filterStats.exclude("codex_" + reason)
 			continue
 		}
 		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
@@ -1145,7 +1163,8 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				if clearSticky {
 					_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 				}
-				if !clearSticky && isOpenAICompatibleAccountEligibleForRequest(ctx, account, platform, requestedModel, false, requiredCapability) {
+				codexAllowed, _ := s.codexAccountAllowedForScheduling(ctx, account)
+				if !clearSticky && codexAllowed && isOpenAICompatibleAccountEligibleForRequest(ctx, account, platform, requestedModel, false, requiredCapability) {
 					account = s.recheckSelectedOpenAIAccountFromDB(ctx, account, groupID, platform, requestedModel, requireCompact, requiredCapability)
 					if account == nil {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
@@ -1210,6 +1229,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		// re-check schedulability here so recently rate-limited/overloaded accounts
 		// are not selected again before the bucket is rebuilt.
 		if !isOpenAICompatibleAccountEligibleForRequest(ctx, acc, platform, requestedModel, false, requiredCapability) {
+			continue
+		}
+		if allowed, _ := s.codexAccountAllowedForScheduling(ctx, acc); !allowed {
 			continue
 		}
 		if !parentHealthyForShadow(acc, parentLookupL2) {

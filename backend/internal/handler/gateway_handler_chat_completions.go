@@ -71,7 +71,8 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 	pricingCtx, _ := service.WithGatewayTokenRequestPricing(c.Request.Context())
-	c.Request = c.Request.WithContext(pricingCtx)
+	requestCtx := service.WithCodexRestrictionRequest(pricingCtx, c, body)
+	c.Request = c.Request.WithContext(requestCtx)
 
 	// 解析渠道级模型映射
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)

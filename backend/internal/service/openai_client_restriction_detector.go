@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -8,6 +10,55 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/gin-gonic/gin"
 )
+
+// ErrNoAllowedCodexAccounts indicates that every otherwise schedulable account
+// was filtered by the request's codex_cli_only policy.
+var ErrNoAllowedCodexAccounts = errors.New("no accounts allow this Codex client")
+
+type codexRestrictionRequestContextKey struct{}
+
+// CodexRestrictionRequest carries the inbound client identity through account
+// selection so codex_cli_only can participate in scheduling before a slot is
+// acquired or an upstream request is started.
+type CodexRestrictionRequest struct {
+	Context *gin.Context
+	Body    []byte
+}
+
+// WithCodexRestrictionRequest attaches the current inbound request to a
+// scheduler context. The body is only inspected for configured fingerprint
+// signals and is never logged by the scheduler.
+func WithCodexRestrictionRequest(ctx context.Context, c *gin.Context, body []byte) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, codexRestrictionRequestContextKey{}, CodexRestrictionRequest{Context: c, Body: body})
+}
+
+func codexRestrictionRequestFromContext(ctx context.Context) (CodexRestrictionRequest, bool) {
+	if ctx == nil {
+		return CodexRestrictionRequest{}, false
+	}
+	req, ok := ctx.Value(codexRestrictionRequestContextKey{}).(CodexRestrictionRequest)
+	return req, ok && req.Context != nil
+}
+
+func (s *OpenAIGatewayService) codexAccountAllowedForScheduling(ctx context.Context, account *Account) (bool, string) {
+	req, ok := codexRestrictionRequestFromContext(ctx)
+	if !ok || account == nil || !account.IsCodexCLIOnlyEnabled() {
+		return true, ""
+	}
+	policy := CodexRestrictionPolicy{EngineFingerprintSignals: openai.DefaultEngineFingerprintSignals}
+	if s != nil && s.settingService != nil {
+		policy = s.settingService.GetCodexRestrictionPolicy(ctx)
+	}
+	detector := s.getCodexClientRestrictionDetector()
+	if detector == nil {
+		return false, CodexClientRestrictionReasonNotMatchedUA
+	}
+	result := detector.Detect(req.Context, account, policy, req.Body)
+	return result.Matched, result.Reason
+}
 
 // CodexOfficialClientsOnlyMessage 是 codex_cli_only 拒绝时面向客户端的通用兜底文案。
 // 仅当拒绝原因不是「可解析版本但越界」（VersionTooLow/VersionTooHigh）时使用：

@@ -622,6 +622,10 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		clearBinding()
 		return nil, false, nil
 	}
+	if allowed, _ := s.service.codexAccountAllowedForScheduling(ctx, account); !allowed {
+		clearBinding()
+		return nil, false, nil
+	}
 	if shouldClearStickySession(account, req.RequestedModel) || account.Platform != NormalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() || !account.IsSchedulable() {
 		clearBinding()
 		return nil, false, nil
@@ -1468,6 +1472,23 @@ type openAISelectionFilterStats struct {
 	reasons map[string]int
 }
 
+func (s openAISelectionFilterStats) onlyCodexRestriction() bool {
+	if s.pool <= 0 || len(s.reasons) == 0 {
+		return false
+	}
+	count := 0
+	for reason, n := range s.reasons {
+		if strings.HasPrefix(reason, "codex_") {
+			count += n
+			continue
+		}
+		if n > 0 {
+			return false
+		}
+	}
+	return count == s.pool
+}
+
 func (s *openAISelectionFilterStats) exclude(reason string) {
 	if s.reasons == nil {
 		s.reasons = make(map[string]int, 4)
@@ -1570,6 +1591,10 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			filterStats.exclude("not_schedulable")
 			continue
 		}
+		if allowed, reason := s.service.codexAccountAllowedForScheduling(ctx, account); !allowed {
+			filterStats.exclude("codex_" + reason)
+			continue
+		}
 		if account.Platform != NormalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() {
 			filterStats.exclude("platform_mismatch")
 			continue
@@ -1603,6 +1628,9 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		})
 	}
 	if len(filtered) == 0 {
+		if filterStats.onlyCodexRestriction() {
+			return nil, 0, 0, 0, diagnostics, noAllowedCodexAccountsError(req.RequestedModel)
+		}
 		return nil, 0, 0, 0, diagnostics, noAvailableOpenAISelectionError(req.RequestedModel, false, filterStats.summary(""))
 	}
 

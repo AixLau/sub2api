@@ -530,7 +530,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	// token 计费部分仍受利润门保护，独立图片/视频端点才在门外。
 	pricingCtx, _ := h.gatewayService.WithOpenAIRequestPricingContext(requestCtx, apiKey.GroupID)
 	requestCtx = pricingCtx
-	c.Request = c.Request.WithContext(pricingCtx)
+	requestCtx = service.WithCodexRestrictionRequest(requestCtx, c, body)
+	c.Request = c.Request.WithContext(requestCtx)
 
 	for {
 		// Streaming forwards may outlive the client so usage can be drained, but a
@@ -2058,6 +2059,8 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		openAIWSIngressFallbackSessionSeed(subject.UserID, apiKey.ID, apiKey.GroupID),
 	)
 	ctx = service.WithOpenAIGuardianParentAffinity(ctx, c, firstMessage, reqModel)
+	ctx = service.WithCodexRestrictionRequest(ctx, c, firstMessage)
+	c.Request = c.Request.WithContext(ctx)
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
 	profitVetoCount := 0

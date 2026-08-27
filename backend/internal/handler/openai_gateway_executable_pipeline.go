@@ -973,6 +973,11 @@ func openAIAccountScheduleDecisionLogFields(decision service.OpenAIAccountSchedu
 
 func (s OpenAIHTTPRoutingStage) handleOpenAIHTTPRoutingSelectionError(c *gin.Context, err error, firstAttempt bool, requestedModel, displayModel string) ExecutableStageResult {
 	if firstAttempt {
+		if errors.Is(err, service.ErrNoAllowedCodexAccounts) {
+			markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
+			s.writeOpenAIHTTPRoutingError(c, http.StatusForbidden, "forbidden_error", service.CodexOfficialClientsOnlyMessage)
+			return ExecutableStageResult{Stop: true, Err: err}
+		}
 		if errors.Is(err, service.ErrNoAvailableCompactAccounts) {
 			markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 			s.writeOpenAIHTTPRoutingError(c, http.StatusServiceUnavailable, "compact_not_supported", "No available OpenAI accounts support /responses/compact")
@@ -1844,6 +1849,10 @@ func (s OpenAIWebSocketRoutingStage) retryAfterProfitVeto(account *service.Accou
 }
 
 func (s OpenAIWebSocketRoutingStage) closeOpenAIWebSocketRoutingNoAccount(c *gin.Context, err error) {
+	if errors.Is(err, service.ErrNoAllowedCodexAccounts) {
+		closeOpenAIClientWS(s.ClientConn, coderws.StatusPolicyViolation, service.CodexOfficialClientsOnlyMessage)
+		return
+	}
 	if s.LastFailoverErr != nil {
 		closeOpenAIWSFailoverExhausted(c, s.ClientConn, s.LastFailoverErr)
 		return
