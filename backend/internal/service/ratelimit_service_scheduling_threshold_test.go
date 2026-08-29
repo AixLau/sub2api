@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -96,6 +97,7 @@ type fableSchedulingThresholdRepoStub struct {
 	lastModelScope  string
 	lastModelReset  time.Time
 	lastModelReason string
+	modelErr        error
 }
 
 func (r *fableSchedulingThresholdRepoStub) SetModelRateLimit(_ context.Context, _ int64, scope string, resetAt time.Time, reason ...string) error {
@@ -105,7 +107,7 @@ func (r *fableSchedulingThresholdRepoStub) SetModelRateLimit(_ context.Context, 
 	if len(reason) > 0 {
 		r.lastModelReason = reason[0]
 	}
-	return nil
+	return r.modelErr
 }
 
 func TestRateLimitService_ApplyAccountSchedulingThreshold_FableOnlyLimitsFableModels(t *testing.T) {
@@ -152,6 +154,38 @@ func TestRateLimitService_ApplyAccountSchedulingThreshold_FableOnlyLimitsFableMo
 	blocked = rl.ApplyAccountSchedulingThreshold(context.Background(), account)
 	require.False(t, blocked)
 	require.Equal(t, 1, accountRepo.modelCalls, "an active model limit should not be persisted twice")
+}
+
+func TestRateLimitService_FableThresholdRetriesAfterPersistenceFailure(t *testing.T) {
+	accountSchedulingThresholdsSF.Forget(SettingKeyAccountSchedulingThresholds)
+	accountSchedulingThresholdsCache.Store(&cachedAccountSchedulingThresholds{})
+
+	settingsRepo := newMockSettingRepo()
+	settingsRepo.data[SettingKeyAccountSchedulingThresholds] = `{"anthropic":100}`
+	accountRepo := &fableSchedulingThresholdRepoStub{modelErr: errors.New("database unavailable")}
+	rl := NewRateLimitService(accountRepo, nil, &config.Config{}, nil, nil)
+	rl.SetSettingService(NewSettingService(settingsRepo, &config.Config{}))
+
+	until := time.Now().UTC().Add(4 * 24 * time.Hour).Truncate(time.Second)
+	account := &Account{
+		ID: 1005, Platform: PlatformAnthropic, Status: StatusActive, Schedulable: true,
+		Credentials: map[string]any{"account_scheduling_threshold": 60},
+		Extra: map[string]any{
+			"passive_usage_7d_utilization":    0.40,
+			"passive_usage_7d_reset":          float64(time.Now().UTC().Add(3 * 24 * time.Hour).Unix()),
+			"passive_usage_7d_oi_utilization": 0.61,
+			"passive_usage_7d_oi_reset":       float64(until.Unix()),
+		},
+	}
+
+	require.False(t, rl.ApplyAccountSchedulingThreshold(context.Background(), account))
+	require.Equal(t, 1, accountRepo.modelCalls)
+	require.True(t, account.IsSchedulableForModel("claude-fable-5"), "failed persistence must not poison the in-memory snapshot")
+
+	accountRepo.modelErr = nil
+	require.False(t, rl.ApplyAccountSchedulingThreshold(context.Background(), account))
+	require.Equal(t, 2, accountRepo.modelCalls, "the next evaluation must retry persistence")
+	require.False(t, account.IsSchedulableForModel("claude-fable-5"))
 }
 
 func TestRateLimitService_ApplyAccountSchedulingThreshold_SkipsDuplicateTempUnschedulable(t *testing.T) {

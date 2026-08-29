@@ -241,7 +241,6 @@ func (s *RateLimitService) applyAnthropicFableSchedulingThreshold(ctx context.Co
 		Until:            *decision.Until,
 		Now:              now,
 	})
-	setAccountModelRateLimitSnapshot(account, anthropicFableRateLimitKey, *decision.Until, reason, now)
 	if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, anthropicFableRateLimitKey, *decision.Until, reason); err != nil {
 		slog.Warn("anthropic_fable_scheduling_threshold_set_model_limit_failed",
 			"account_id", account.ID,
@@ -251,6 +250,7 @@ func (s *RateLimitService) applyAnthropicFableSchedulingThreshold(ctx context.Co
 			"error", err)
 		return
 	}
+	setAccountModelRateLimitSnapshot(account, anthropicFableRateLimitKey, *decision.Until, reason, now)
 
 	slog.Info("anthropic_fable_scheduling_threshold_model_limited",
 		"account_id", account.ID,
