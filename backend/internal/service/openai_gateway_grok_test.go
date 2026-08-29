@@ -42,7 +42,7 @@ func TestPatchGrokResponsesBodySetsMappedModelAndDropsUnsupportedFields(t *testi
 	require.False(t, gjson.GetBytes(patched, "safety_identifier").Exists())
 	require.Equal(t, "high", gjson.GetBytes(patched, "reasoning.effort").String())
 }
-func TestPatchGrokResponsesBodyDropsRedundantViewImageForCurrentInlineImage(t *testing.T) {
+func TestPatchGrokResponsesBodyDropsRedundantViewImageForCurrentInlineImageLegacy(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -92,7 +92,7 @@ func TestPatchGrokResponsesBodyDropsRedundantViewImageForCurrentInlineImage(t *t
 	}
 }
 
-func TestPatchGrokResponsesBodyKeepsNonRedundantViewImage(t *testing.T) {
+func TestPatchGrokResponsesBodyKeepsNonRedundantViewImageLegacy(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -127,7 +127,7 @@ func TestPatchGrokResponsesBodyKeepsNonRedundantViewImage(t *testing.T) {
 	}
 }
 
-func TestPatchGrokResponsesBodyDropsViewImageOnlyToolMetadata(t *testing.T) {
+func TestPatchGrokResponsesBodyDropsViewImageOnlyToolMetadataLegacy(t *testing.T) {
 	t.Parallel()
 
 	body := []byte(`{
