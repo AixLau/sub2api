@@ -1,7 +1,7 @@
 <template>
   <AppLayout>
     <div class="space-y-6" data-usage-dashboard="tremor-shell">
-      <UsageStatsCards data-usage-dashboard="summary" :stats="usageStats" :show-account-cost="false" :show-standard-cost="false" :show-cost="true" />
+      <UsageStatsCards data-usage-dashboard="summary" :stats="usageStats" :show-account-cost="false" :show-cost="true" :strike-standard-cost="true" />
 
       <div class="space-y-4">
         <div class="card p-4" data-usage-dashboard="controls">
@@ -33,7 +33,6 @@
             :show-cost="true"
             :enable-breakdown="false"
             :show-account-cost="false"
-            :show-standard-cost="false"
             :start-date="startDate"
             :end-date="endDate"
           />
@@ -45,14 +44,13 @@
             :show-cost="true"
             :enable-breakdown="false"
             :show-account-cost="false"
-            :show-standard-cost="false"
             :start-date="startDate"
             :end-date="endDate"
           />
         </div>
 
         <div class="grid grid-cols-1 gap-6">
-          <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" :show-cost="true" chart-height-class="h-80" />
+          <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" :show-cost="true" :show-standard-cost="true" :show-cache-rate="true" chart-height-class="h-80" />
         </div>
       </div>
 

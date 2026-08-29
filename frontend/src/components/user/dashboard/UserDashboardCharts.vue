@@ -132,6 +132,7 @@
                   <th scope="col">{{ t('dashboard.requests') }}</th>
                   <th scope="col">{{ t('dashboard.tokens') }}</th>
                   <th scope="col">{{ t('dashboard.actual') }}</th>
+                  <th scope="col">{{ t('dashboard.standard') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -156,6 +157,9 @@
                   <td class="user-dashboard-charts__actual">
                     ${{ formatCost(model.actual_cost) }}
                   </td>
+                  <td class="user-dashboard-charts__standard">
+                    ${{ formatCost(model.cost) }}
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -177,6 +181,8 @@
         :trend-data="trend"
         :loading="loading"
         :show-cost="true"
+        :show-standard-cost="true"
+        :show-cache-rate="true"
         surface="playfulDashboard"
         chart-height-class="h-48"
       />
