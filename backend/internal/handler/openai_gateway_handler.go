@@ -2255,7 +2255,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				// visits this hook first and gets the same side-effect-free close error;
 				// its original BeforeTurn guard remains as defense in depth.
 				if cyberBlockedThisConn {
-					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)
+					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMessageForAPIKey(apiKey), nil)
 				}
 				if turn == 1 {
 					return nil
