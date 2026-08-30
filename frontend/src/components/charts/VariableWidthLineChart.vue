@@ -39,17 +39,6 @@
         </div>
       </div>
 
-      <div v-if="rightAxisTicks.length && layoutSnapshot.renderable" class="vw-line__right-axis" aria-hidden="true">
-        <span
-          v-for="item in rightAxisTickItems"
-          :key="item.key"
-          class="vw-line__right-axis-tick"
-          :style="{ top: `${item.top}px` }"
-        >
-          {{ item.label }}
-        </span>
-      </div>
-
       <div ref="containerRef" class="vw-line__chart" />
 
       <div v-if="!isEmpty && layoutSnapshot.renderable" class="vw-line__x-axis" aria-hidden="true">
@@ -148,8 +137,6 @@ const props = withDefaults(defineProps<{
   colors?: string[]
   yDomain?: [number, number]
   yTicks?: number[]
-  rightAxisTicks?: number[]
-  formatRightAxis?: (value: number) => string
   xTicks?: unknown[]
   xScaleType?: ScaleType
   minLineWidth?: number
@@ -182,7 +169,6 @@ const props = withDefaults(defineProps<{
   brushEffect: true,
   strokeEffect: 'staccato',
   emptyText: '暂无数据',
-  rightAxisTicks: () => [],
 })
 
 const bodyRef = ref<HTMLDivElement | null>(null)
@@ -375,16 +361,6 @@ const gridTickItems = computed(() => {
     key: String(value),
     label: props.formatY ? props.formatY(value) : String(value),
     top: 100 - ((value - min) / span) * 100,
-  }))
-})
-
-const rightAxisTickItems = computed(() => {
-  const ticks = props.rightAxisTicks ?? []
-  const plotHeight = layoutSnapshot.value.plotBottom - layoutSnapshot.value.plotTop
-  return ticks.map((value) => ({
-    key: String(value),
-    label: props.formatRightAxis ? props.formatRightAxis(value) : String(value),
-    top: layoutSnapshot.value.plotTop + (1 - value / 100) * plotHeight,
   }))
 })
 
@@ -1030,22 +1006,6 @@ onBeforeUnmount(() => {
 .vw-line__grid-line {
   width: 100%;
   border-top: 1px dashed var(--vw-grid);
-}
-
-.vw-line__right-axis {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.vw-line__right-axis-tick {
-  position: absolute;
-  right: 0;
-  transform: translateY(-50%);
-  color: rgb(var(--color-content-tertiary));
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
 }
 
 .vw-line__chart {

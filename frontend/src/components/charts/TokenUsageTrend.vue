@@ -1,6 +1,6 @@
 <template>
   <div
-    :class="[chartShellClass, { 'token-trend--with-cache-rate': showCacheRate }]"
+    :class="chartShellClass"
     :style="chartShellStyle"
     :data-surface="surface ?? 'default'"
     data-testid="token-usage-trend"
@@ -8,15 +8,6 @@
     :aria-label="tokenUsageTrendTitle"
     :aria-busy="loading"
   >
-    <div
-      v-if="showCacheRate && cacheRate !== null"
-      class="token-trend__cache-rate"
-      data-testid="token-trend-cache-rate"
-      :title="t('usage.trend.cacheHitRate')"
-    >
-      <span>{{ t('usage.trend.cacheHitRate') }}</span>
-      <strong>{{ cacheRate.toFixed(1) }}%</strong>
-    </div>
     <div
       v-if="loading"
       :class="loadingContainerClass"
@@ -40,8 +31,6 @@
       :empty-text="emptyText"
       :format-x="formatAxisDate"
       :format-y="formatTokenAxis"
-      :right-axis-ticks="showCacheRate ? cacheRateTicks : []"
-      :format-right-axis="formatCacheRateAxis"
       :tooltip-html="buildTooltipHtml"
       show-legend
       :brush-effect="false"
@@ -68,13 +57,9 @@ const props = withDefaults(defineProps<{
   loading?: boolean
   surface?: 'default' | 'tremor' | 'playfulDashboard'
   showCost?: boolean
-  showStandardCost?: boolean
-  showCacheRate?: boolean
   chartHeightClass?: string
 }>(), {
-  chartHeightClass: 'h-48',
-  showStandardCost: false,
-  showCacheRate: false,
+  chartHeightClass: 'h-48'
 })
 
 type TokenSeriesPoint = {
@@ -128,39 +113,16 @@ const tokenSeries = computed<TokenSeriesPoint[]>(() =>
     { date: data.date, category: tokenLabels.value.input, value: data.input_tokens, source: data },
     { date: data.date, category: tokenLabels.value.output, value: data.output_tokens, source: data },
     { date: data.date, category: tokenLabels.value.cacheCreation, value: data.cache_creation_tokens, source: data },
-    { date: data.date, category: tokenLabels.value.cacheRead, value: data.cache_read_tokens, source: data },
-  ]).concat(cacheRateSeries.value)
+    { date: data.date, category: tokenLabels.value.cacheRead, value: data.cache_read_tokens, source: data }
+  ])
 )
 
 const tokenColorRange = computed(() => [
   chartColors.value.input,
   chartColors.value.output,
   chartColors.value.cacheCreation,
-  chartColors.value.cacheRead,
-  ...(props.showCacheRate ? [chartColors.value.cacheHitRate] : []),
+  chartColors.value.cacheRead
 ])
-
-const cacheRateTicks = [0, 20, 40, 60, 80, 100]
-const formatCacheRateAxis = (value: number): string => `${value}%`
-
-const cacheRateSeries = computed<TokenSeriesPoint[]>(() => {
-  if (!props.showCacheRate || !props.trendData.length) return []
-  const tokenMax = Math.max(
-    1,
-    ...props.trendData.flatMap((data) => [
-      data.input_tokens,
-      data.output_tokens,
-      data.cache_creation_tokens,
-      data.cache_read_tokens,
-    ]),
-  )
-  return props.trendData.map((data) => ({
-    date: data.date,
-    category: tokenLabels.value.cacheHitRate,
-    value: (getCacheHitRate(data) / 100) * tokenMax,
-    source: data,
-  }))
-})
 
 const chartHeight = computed(() => {
   const exactHeight = TAILWIND_HEIGHTS[props.chartHeightClass]
@@ -227,16 +189,6 @@ const getCacheHitRate = (data: TrendDataPoint): number => {
 const totalUsageTokens = (data: TrendDataPoint): number =>
   data.total_tokens ?? data.input_tokens + data.output_tokens + data.cache_creation_tokens + data.cache_read_tokens
 
-const cacheRate = computed<number | null>(() => {
-  if (!props.trendData.length) return null
-  const totals = props.trendData.reduce((result, data) => ({
-    input: result.input + data.input_tokens,
-    creation: result.creation + data.cache_creation_tokens,
-    read: result.read + data.cache_read_tokens,
-  }), { input: 0, creation: 0, read: 0 })
-  return calculateCacheHitRate(totals.input, totals.creation, totals.read)
-})
-
 const formatTokens = (value: number): string => {
   if (!Number.isFinite(value)) return '0'
   if (value >= 1_000_000_000) {
@@ -295,8 +247,7 @@ const buildTooltipHtml = (title: unknown): string => {
 
   const summaryRows = [
     `${t('usage.trend.totalUsage')}: ${formatTokens(totalUsageTokens(data))}`,
-    ...(props.showCost ? [`${t('usage.trend.cost')}: $${formatCost(data.actual_cost)}`] : []),
-    ...(props.showStandardCost ? [`${t('usage.trend.standardCost')}: $${formatCost(data.cost)}`] : []),
+    ...(props.showCost ? [`${t('usage.trend.cost')}: $${formatCost(data.actual_cost)}`] : [])
   ]
 
   return `
@@ -330,34 +281,6 @@ const escapeHtml = (value: string): string =>
 </script>
 
 <style scoped>
-.token-trend--with-cache-rate {
-  position: relative;
-}
-
-.token-trend__cache-rate {
-  position: absolute;
-  top: 14px;
-  right: 16px;
-  z-index: 4;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  color: rgb(var(--color-content-secondary));
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.token-trend__cache-rate strong {
-  color: rgb(var(--color-content-primary));
-  font-size: 13px;
-  font-weight: 750;
-}
-
-.token-trend--with-cache-rate :deep(.vw-line__header) {
-  padding-right: 110px;
-}
-
 .token-trend--playful {
   position: relative;
   isolation: isolate;

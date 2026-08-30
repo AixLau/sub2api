@@ -15,7 +15,6 @@ const messages: Record<string, string> = {
   'usage.trend.totalUsage': '总使用',
   'usage.trend.actualCost': '实际消费',
   'usage.trend.cost': '消费',
-  'usage.trend.standardCost': '标准',
   'admin.dashboard.noDataAvailable': 'No data available',
 }
 
@@ -42,8 +41,6 @@ const VariableWidthLineChartStub = defineComponent({
     height: Number,
     yDomain: Array,
     yTicks: Array,
-    rightAxisTicks: Array,
-    formatRightAxis: Function,
     xTicks: Array,
     showLegend: Boolean,
     brushEffect: Boolean,
@@ -152,17 +149,6 @@ describe('TokenUsageTrend', () => {
     ])
   })
 
-  it('plots cache hit rate as a separate series with a right percentage axis', () => {
-    const wrapper = mountTrend({ showCacheRate: true })
-    const chart = getChart(wrapper)
-    const data = chart.props('data') as Array<{ category: string; value: number }>
-
-    expect(data).toContainEqual(expect.objectContaining({ category: '缓存命中率', value: 250 }))
-    expect(chart.props('rightAxisTicks')).toEqual([0, 20, 40, 60, 80, 100])
-    expect(chart.props('formatRightAxis')).toEqual(expect.any(Function))
-    expect((chart.props('formatRightAxis') as (value: number) => string)(50)).toBe('50%')
-  })
-
   it('returns 0 hit rate in the tooltip when all prompt tokens are zero', () => {
     const wrapper = mountTrend({
       trendData: [
@@ -207,21 +193,14 @@ describe('TokenUsageTrend', () => {
   })
 
   it('shows total usage and cost in tooltip footer when enabled', () => {
-    const wrapper = mountTrend({ showCost: true, showStandardCost: true })
+    const wrapper = mountTrend({ showCost: true })
     const tooltipHtml = (getChart(wrapper).props('tooltipHtml') as (title: string) => string)('2026-05-08')
 
     expect(tooltipHtml).toContain('总使用: 1.05K')
     expect(tooltipHtml).toContain('消费: $4.58')
-    expect(tooltipHtml).toContain('标准: $2.64')
     expect(tooltipHtml).not.toContain('实际消费')
-  })
-
-  it('shows the aggregate cache hit rate in the right-side label when enabled', () => {
-    const wrapper = mountTrend({ showCacheRate: true })
-    const label = wrapper.get('[data-testid="token-trend-cache-rate"]')
-
-    expect(label.text()).toContain('缓存命中率')
-    expect(label.text()).toContain('50.0%')
+    expect(tooltipHtml).not.toContain('Standard')
+    expect(tooltipHtml).not.toContain('标准')
   })
 
   it('escapes dynamic tooltip text while keeping semantic markup', () => {

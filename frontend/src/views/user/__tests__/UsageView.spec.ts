@@ -99,12 +99,12 @@ const usageTableStub = {
   template: '<div class="usage-table" :data-columns="JSON.stringify((columns || []).map((col) => col.key))" :data-show-account-billing="String(showAccountBilling)" :data-show-upstream-endpoint="String(showUpstreamEndpoint)" :data-show-cost-breakdown="String(showCostBreakdown)" />',
 }
 const tokenUsageTrendStub = {
-  props: ['showCost', 'showStandardCost', 'showCacheRate', 'chartHeightClass'],
-  template: '<div class="token-usage-trend" :data-show-cost="String(showCost)" :data-show-standard-cost="String(showStandardCost)" :data-show-cache-rate="String(showCacheRate)" :data-height="chartHeightClass" />',
+  props: ['showCost', 'chartHeightClass'],
+  template: '<div class="token-usage-trend" :data-show-cost="String(showCost)" :data-height="chartHeightClass" />',
 }
 const usageStatsCardsStub = {
-  props: ['showAccountCost', 'showStandardCost', 'showCost', 'strikeStandardCost'],
-  template: '<div class="usage-stats-cards" :data-show-cost="String(showCost)" :data-show-account-cost="String(showAccountCost)" :data-show-standard-cost="String(showStandardCost)" :data-strike-standard-cost="String(strikeStandardCost)" />',
+  props: ['showAccountCost', 'showStandardCost', 'showCost'],
+  template: '<div class="usage-stats-cards" :data-show-cost="String(showCost)" :data-show-account-cost="String(showAccountCost)" :data-show-standard-cost="String(showStandardCost)" />',
 }
 const distributionChartStub = {
   props: ['showCost', 'showAccountCost', 'showStandardCost', 'metric'],
@@ -275,15 +275,14 @@ describe('user UsageView', () => {
     expect(getDashboardSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({ start_time: undefined, end_time: undefined }))
   })
 
-  it('shows actual and struck-through standard cost while hiding account cost', async () => {
+  it('shows user total consumption while hiding account and standard cost comparisons', async () => {
     const wrapper = mountUsageView()
     await flushPromises()
 
     const summary = wrapper.find('.usage-stats-cards')
     expect(summary.attributes('data-show-cost')).toBe('true')
     expect(summary.attributes('data-show-account-cost')).toBe('false')
-    expect(summary.attributes('data-show-standard-cost')).toBe('undefined')
-    expect(summary.attributes('data-strike-standard-cost')).toBe('true')
+    expect(summary.attributes('data-show-standard-cost')).toBe('false')
 
     const distributionCharts = wrapper.findAll('.distribution-chart')
     expect(distributionCharts.map((chart) => chart.attributes('data-metric'))).toEqual([
@@ -294,13 +293,11 @@ describe('user UsageView', () => {
     for (const chart of distributionCharts) {
       expect(chart.attributes('data-show-cost')).toBe('true')
       expect(chart.attributes('data-show-account-cost')).toBe('false')
-      expect(chart.attributes('data-show-standard-cost')).toBe('undefined')
+      expect(chart.attributes('data-show-standard-cost')).toBe('false')
     }
 
     expect(wrapper.find('.endpoint-distribution-chart').exists()).toBe(false)
     expect(wrapper.find('.token-usage-trend').attributes('data-show-cost')).toBe('true')
-    expect(wrapper.find('.token-usage-trend').attributes('data-show-standard-cost')).toBe('true')
-    expect(wrapper.find('.token-usage-trend').attributes('data-show-cache-rate')).toBe('true')
     expect(wrapper.find('.token-usage-trend').attributes('data-height')).toBe('h-80')
 
     const tableColumns = JSON.parse(wrapper.find('.usage-table').attributes('data-columns') || '[]')

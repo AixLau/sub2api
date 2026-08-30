@@ -16,7 +16,6 @@ const messages: Record<string, string> = {
   'common.refresh': 'Refresh',
   'common.total': 'Total',
   'dashboard.actual': 'Actual',
-  'dashboard.actualAccountCost': 'Actual Account Cost',
   'dashboard.apiKeys': 'API Keys',
   'dashboard.averageTime': 'Average time',
   'dashboard.activity.currentStreak': 'Current Streak',
@@ -81,8 +80,8 @@ const SelectStub = { template: '<span />' }
 const EmptyStateStub = { template: '<div />' }
 const RouterLinkStub = { template: '<a><slot /></a>' }
 const TokenUsageTrendStub = {
-  props: ['showCost', 'showStandardCost', 'showCacheRate'],
-  template: '<div class="token-usage-trend" :data-show-cost="String(showCost)" :data-show-standard-cost="String(showStandardCost)" :data-show-cache-rate="String(showCacheRate)" />',
+  props: ['showCost'],
+  template: '<div class="token-usage-trend" :data-show-cost="String(showCost)" />',
 }
 
 const dashboardStats = (): UserStatsType => ({
@@ -296,7 +295,7 @@ describe('user dashboard cost visibility', () => {
     expect(wrapper.get('[data-testid="performance-card"]').text()).toContain('800.0K')
   })
 
-  it('shows actual and standard cost alongside each other in the summary cards', () => {
+  it('shows user actual consumption in the summary cards without standard cost', () => {
     const wrapper = mount(UserDashboardStats, {
       props: {
         stats: dashboardStats(),
@@ -312,29 +311,16 @@ describe('user dashboard cost visibility', () => {
 
     const text = wrapper.text()
     expect(text).toContain('Today Cost')
-    expect(text).toContain('$24.8752 / $19.1348')
-    expect(text).toContain('$7796.5673 / $7746.7298')
+    expect(text).toContain('$24.8752')
+    expect(text).toContain('$7796.5673')
     expect(text).not.toContain('$20.0000')
+    expect(text).not.toContain('$5.0000')
     expect(text).not.toContain('dashboard.platformBreakdown')
+    expect(text).not.toContain('$19.1348')
+    expect(text).not.toContain('$7746.7298')
   })
 
-  it('uses actual and standard cost for the cost card', () => {
-    const wrapper = mount(UserDashboardStats, {
-      props: {
-        stats: dashboardStats(),
-        balance: 0,
-        isSimple: false,
-      },
-      global: { stubs: { Icon: IconStub } },
-    })
-
-    const card = wrapper.get('[data-testid="today-cost-card"]')
-    expect(card.text()).toContain('Today Cost')
-    expect(card.text()).toContain('$24.8752 / $19.1348')
-    expect(card.text()).toContain('$7796.5673 / $7746.7298')
-  })
-
-  it('shows actual and standard cost in charts', () => {
+  it('shows user actual consumption in charts without standard cost', () => {
     const wrapper = mount(UserDashboardCharts, {
       props: {
         loading: false,
@@ -357,11 +343,9 @@ describe('user dashboard cost visibility', () => {
     const text = wrapper.text()
     expect(text).toContain('Actual')
     expect(text).toContain('$24.8752')
-    expect(text).toContain('$19.1348')
-    expect(text).toContain('Standard')
+    expect(text).not.toContain('$19.1348')
+    expect(text).not.toContain('Standard')
     expect(wrapper.find('.token-usage-trend').attributes('data-show-cost')).toBe('true')
-    expect(wrapper.find('.token-usage-trend').attributes('data-show-standard-cost')).toBe('true')
-    expect(wrapper.find('.token-usage-trend').attributes('data-show-cache-rate')).toBe('true')
 
     const chartData = JSON.parse(wrapper.get('.chart-data').text())
     expect(chartData.datasets[0]).toMatchObject({

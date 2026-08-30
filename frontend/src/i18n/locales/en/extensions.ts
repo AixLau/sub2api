@@ -122,7 +122,6 @@ export default {
       cacheHitRate: 'Cache Hit Rate',
       cacheRead: 'Cache Read',
       cost: 'Cost',
-      standardCost: 'Standard',
       input: 'Input',
       output: 'Output',
       totalUsage: 'Total Usage',
