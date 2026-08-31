@@ -3236,7 +3236,9 @@ func TestOpenAIGatewayServiceRecordUsage_ShadowUsesParentCredentialTierContract(
 	require.NotNil(t, usageRepo.lastLog.ServiceTier)
 	require.Equal(t, "priority", *usageRepo.lastLog.ServiceTier)
 
-	fastCost, calcErr := svc.billingService.CalculateCostWithServiceTier("gpt-5.6-sol", tokens, 1.0, "priority")
+	fastCost, calcErr := svc.billingService.calculateCostWithServiceTierPolicyAndOverride(
+		"gpt-5.6-sol", tokens, 1.0, "priority", true, openAIFastBillingMultiplier,
+	)
 	require.NoError(t, calcErr)
 	require.InDelta(t, fastCost.TotalCost, usageRepo.lastLog.TotalCost, 1e-10)
 }
