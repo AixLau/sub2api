@@ -1535,6 +1535,47 @@ func (s *BillingService) CalculateCostWithServiceTier(model string, tokens Usage
 	return s.calculateCostInternal(model, tokens, rateMultiplier, serviceTier, nil)
 }
 
+// CalculateCostWithLongContext preserves the legacy marginal long-context
+// contract used by Gemini /v1beta callers that have not migrated to catalog
+// ladders. Directory-driven callers use CalculateCostUnified instead.
+func (s *BillingService) CalculateCostWithLongContext(model string, tokens UsageTokens, rateMultiplier float64, threshold int, extraMultiplier float64) (*CostBreakdown, error) {
+	if threshold <= 0 || extraMultiplier <= 1 || tokens.CacheReadTokens+tokens.InputTokens <= threshold {
+		return s.CalculateCost(model, tokens, rateMultiplier)
+	}
+	cacheIn, inputIn := tokens.CacheReadTokens, tokens.InputTokens
+	if cacheIn >= threshold {
+		cacheIn, inputIn = threshold, 0
+	} else {
+		inputIn = threshold - cacheIn
+	}
+	inRange, err := s.CalculateCost(model, UsageTokens{
+		InputTokens: inputIn, OutputTokens: tokens.OutputTokens,
+		CacheCreationTokens: tokens.CacheCreationTokens, CacheReadTokens: cacheIn,
+		CacheCreation5mTokens: tokens.CacheCreation5mTokens, CacheCreation1hTokens: tokens.CacheCreation1hTokens,
+		ImageOutputTokens: tokens.ImageOutputTokens,
+	}, rateMultiplier)
+	if err != nil {
+		return nil, err
+	}
+	outRange, err := s.CalculateCost(model, UsageTokens{
+		InputTokens:     tokens.InputTokens - inputIn,
+		CacheReadTokens: tokens.CacheReadTokens - cacheIn,
+	}, rateMultiplier*extraMultiplier)
+	if err != nil {
+		return inRange, fmt.Errorf("out-range cost: %w", err)
+	}
+	return &CostBreakdown{
+		InputCost:      inRange.InputCost + outRange.InputCost,
+		ImageInputCost: inRange.ImageInputCost + outRange.ImageInputCost,
+		OutputCost:     inRange.OutputCost, ImageOutputCost: inRange.ImageOutputCost,
+		CacheCreationCost:         inRange.CacheCreationCost,
+		CacheReadCost:             inRange.CacheReadCost + outRange.CacheReadCost,
+		TotalCost:                 inRange.TotalCost + outRange.TotalCost,
+		ActualCost:                inRange.ActualCost + outRange.ActualCost,
+		LongContextBillingApplied: outRange.ActualCost > 0,
+	}, nil
+}
+
 func (s *BillingService) calculateCostWithServiceTierPolicy(
 	model string,
 	tokens UsageTokens,

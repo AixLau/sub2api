@@ -987,8 +987,12 @@ func (s *GatewayService) calculateRecordUsageCost(
 	multiplier float64,
 	imageMultiplier float64,
 	pricingAt time.Time,
-	opts *recordUsageOpts,
+	optsArg ...*recordUsageOpts,
 ) *CostBreakdown {
+	var opts *recordUsageOpts
+	if len(optsArg) > 0 {
+		opts = optsArg[0]
+	}
 	if opts == nil {
 		opts = &recordUsageOpts{}
 	}
