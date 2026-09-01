@@ -336,7 +336,13 @@ func (h *OpenAIGatewayHandler) openAIHTTPPreForwardPipeline() *OpenAIGatewayPipe
 
 func (h *OpenAIGatewayHandler) readOpenAIHTTPPreForwardRequest(c *gin.Context, reqLog *zap.Logger, protocol string) ([]byte, string, bool, []byte, *service.OpenAIImagesRequest, bool) {
 	bodyReadStart := time.Now()
-	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
+	var body []byte
+	var err error
+	if protocol == service.ContentModerationProtocolOpenAIImages {
+		body, err = readRawRequestBodyWithLimit(c.Request, h.cfg)
+	} else {
+		body, err = readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
+	}
 	bodyReadMs := time.Since(bodyReadStart).Milliseconds()
 	if err != nil {
 		if requestErr := c.Request.Context().Err(); requestErr != nil {

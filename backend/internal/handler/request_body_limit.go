@@ -210,6 +210,16 @@ func readLenientJSONRequestBodyWithPrealloc(req *http.Request, cfg *config.Confi
 	return pkghttputil.ReadLenientJSONRequestBodyWithPrealloc(req, limit)
 }
 
+func readRawRequestBodyWithLimit(req *http.Request, cfg *config.Config) ([]byte, error) {
+	limit := gatewayMaxBodySize(cfg)
+	if req != nil {
+		if protected := service.RequestBodyLimit(req.Context()); protected > 0 && (limit <= 0 || protected < limit) {
+			limit = protected
+		}
+	}
+	return pkghttputil.ReadRequestBodyWithLimit(req, limit)
+}
+
 func gatewayMaxBodySize(cfg *config.Config) int64 {
 	if cfg == nil {
 		return 0
