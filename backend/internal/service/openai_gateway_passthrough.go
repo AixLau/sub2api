@@ -1247,6 +1247,20 @@ func openAIStreamDataStartsFirstResponse(data, eventType string) bool {
 	return !openAIStreamEventTypeIsTerminal(eventType) && !strings.HasSuffix(eventType, ".done")
 }
 
+func (s *OpenAIGatewayService) openAITTFTMode(ctx context.Context) string {
+	if s != nil && s.settingService != nil {
+		return normalizeOpenAITTFTMode(s.settingService.GetOpenAITTFTMode(ctx))
+	}
+	return OpenAITTFTModeSemantic
+}
+
+func (s *OpenAIGatewayService) openAIStreamDataStartsConfiguredTTFT(ctx context.Context, data, eventType string) bool {
+	if s.openAITTFTMode(ctx) == OpenAITTFTModeVisible {
+		return openAIStreamDataStartsVisibleOutput(data, eventType)
+	}
+	return openAIStreamDataStartsFirstResponse(data, eventType)
+}
+
 // openAIStreamFailedEventErrorCode 提取流内 failed 事件的错误码（小写），
 // 兼容 response.failed 的嵌套形态与裸 error 形态。
 func openAIStreamFailedEventErrorCode(payload []byte) string {
@@ -2109,7 +2123,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				openAIResponsesCompletedEventIsEmpty(dataBytes, usage) {
 				return resultWithUsage(), newOpenAIResponsesEmptyCompletedFailoverError(c, account, upstreamRequestID)
 			}
-			if firstTokenMs == nil && openAIStreamDataStartsFirstResponse(trimmedData, eventType) {
+			if firstTokenMs == nil && s.openAIStreamDataStartsConfiguredTTFT(ctx, trimmedData, eventType) {
 				ms := int(time.Since(startTime).Milliseconds())
 				firstTokenMs = &ms
 			}

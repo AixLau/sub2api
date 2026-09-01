@@ -693,7 +693,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			}
 			startsClientOutput := forceFlushFailedEvent || openAIStreamDataStartsClientOutput(data, eventType)
 			showsStructuralProgress := openAIStreamDataShowsStructuralProgress(data, eventType)
-			startsFirstResponse := openAIStreamDataStartsFirstResponse(data, eventType)
+			startsFirstResponse := s.openAIStreamDataStartsConfiguredTTFT(ctx, data, eventType)
 			startsVisibleOutput := openAIStreamDataStartsVisibleOutput(data, eventType)
 			if guardFirstOutput {
 				eventStartsClientOutput = eventStartsClientOutput || startsClientOutput
