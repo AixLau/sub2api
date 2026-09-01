@@ -350,7 +350,7 @@ func TestUsageLogRepositoryAccountTestUsesCreateSingle(t *testing.T) {
 		CreatedAt: createdAt,
 	}
 	prepared := prepareUsageLogInsert(log)
-	mock.ExpectQuery(`(?s)^\s*INSERT INTO usage_logs.*\$65\s*\)`).
+	mock.ExpectQuery(`(?s)^\s*INSERT INTO usage_logs.*\$67\s*\)`).
 		WithArgs(anySliceToDriverValues(prepared.args)...).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(101), createdAt))
 

@@ -250,7 +250,7 @@ func TestExecUsageLogInsertNoResult_PersistsRequestedModel(t *testing.T) {
 		CreatedAt:      time.Date(2025, 1, 4, 12, 0, 0, 0, time.UTC),
 	})
 
-	mock.ExpectExec(`(?s)INSERT INTO usage_logs.*\$65\s*\)`).
+	mock.ExpectExec(`(?s)INSERT INTO usage_logs.*\$67\s*\)`).
 		WithArgs(anySliceToDriverValues(prepared.args)...).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
@@ -941,6 +941,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullFloat64{},
 			string(service.UsageSourceAccountTest),
 			sql.NullString{},
+			false,
 			now,
 			sql.NullInt64{},
 			sql.NullInt64{},
@@ -1028,6 +1029,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullFloat64{}, // account_stats_cost
 			string(service.UsageSourceGateway),
 			sql.NullString{}, // session_id
+			false,            // native_compaction_v2
 			now,
 			sql.NullInt64{}, // user_queue_wait_ms
 			sql.NullInt64{}, // account_queue_wait_ms
@@ -1095,6 +1097,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullFloat64{}, // account_stats_cost
 			string(service.UsageSourceGateway),
 			sql.NullString{}, // session_id
+			false,            // native_compaction_v2
 			now,
 			sql.NullInt64{}, // user_queue_wait_ms
 			sql.NullInt64{}, // account_queue_wait_ms
@@ -1162,6 +1165,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullFloat64{}, // account_stats_cost
 			string(service.UsageSourceGateway),
 			sql.NullString{}, // session_id
+			false,            // native_compaction_v2
 			now,
 			sql.NullInt64{}, // user_queue_wait_ms
 			sql.NullInt64{}, // account_queue_wait_ms

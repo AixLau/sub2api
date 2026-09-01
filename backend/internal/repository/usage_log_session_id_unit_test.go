@@ -77,6 +77,8 @@ func TestPrepareUsageLogInsert_SessionIDNullWhenAbsent(t *testing.T) {
 // TestUsageLogInsertQueries_IncludeSessionID guards that every generated INSERT path
 // and the SELECT column list reference session_id.
 func TestUsageLogInsertQueries_IncludeSessionID(t *testing.T) {
+	require.Len(t, strings.Split(usageLogSelectColumns, ", "), 68,
+		"SELECT columns must stay aligned with scanUsageLog destinations")
 	require.Contains(t, usageLogSelectColumns, "session_id",
 		"SELECT column list must include session_id")
 
