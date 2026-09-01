@@ -102,6 +102,7 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // account_stats_cost
 			service.UsageSourceGateway,
 			sqlmock.AnyArg(), // session_id
+			log.NativeCompactionV2,
 			createdAt,
 			sqlmock.AnyArg(), // user_queue_wait_ms
 			sqlmock.AnyArg(), // account_queue_wait_ms
@@ -201,6 +202,7 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			sqlmock.AnyArg(), // account_stats_cost
 			service.UsageSourceGateway,
 			sqlmock.AnyArg(), // session_id
+			log.NativeCompactionV2,
 			createdAt,
 			sqlmock.AnyArg(), // user_queue_wait_ms
 			sqlmock.AnyArg(), // account_queue_wait_ms

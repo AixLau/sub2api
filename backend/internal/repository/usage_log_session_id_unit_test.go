@@ -32,7 +32,7 @@ func newSessionIDUsageLog(sessionID *string) *service.UsageLog {
 // arg slice / arg-type table so the five INSERT column lists stay in sync. session_id
 // precedes native_compaction_v2, created_at, and the phase-latency columns.
 func TestPrepareUsageLogInsert_SessionIDArgWiring(t *testing.T) {
-	require.Len(t, usageLogInsertArgTypes, 66, "arg-type table must include upstream model fields, source, session_id, native compaction, and phase latency")
+	require.Len(t, usageLogInsertArgTypes, 66, "arg-type table must include upstream model fields, requested effort, source, session_id, native compaction, and phase latency")
 	require.Equal(t, len(usageLogInsertArgTypes), strings.Count(usageLogInsertPlaceholders(), "$"),
 		"single-row INSERT placeholders must track the arg-type table")
 	require.True(t, strings.HasSuffix(usageLogInsertPlaceholders(), "$66"),
@@ -43,7 +43,8 @@ func TestPrepareUsageLogInsert_SessionIDArgWiring(t *testing.T) {
 	require.Len(t, prepared.args, len(usageLogInsertArgTypes),
 		"prepared args must match the arg-type table length")
 
-	// Five phase fields follow created_at; native_compaction_v2 follows session_id.
+	// The five phase fields follow created_at; native_compaction_v2 sits between
+	// session_id and created_at.
 	sessionArg := prepared.args[len(prepared.args)-8]
 	ns, ok := sessionArg.(sql.NullString)
 	require.True(t, ok, "session_id arg should be a sql.NullString, got %T", sessionArg)
