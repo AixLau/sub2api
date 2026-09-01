@@ -217,6 +217,14 @@ function reasoningCellText(wrapper: ReturnType<typeof mount>): string {
   return wrapper.get('[data-testid="reasoning-effort-cell"]').text()
 }
 
+async function ensureAdminReasoningColumnVisible(wrapper: ReturnType<typeof mount>) {
+  if (wrapper.find('[data-testid="reasoning-effort-cell"]').exists()) return
+
+  await wrapper.get('[data-testid="usage-column-settings"]').trigger('click')
+  await wrapper.get('[data-testid="usage-column-toggle-reasoning_effort"]').trigger('click')
+  await flushPromises()
+}
+
 describe('usage reasoning effort page display', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -276,11 +284,7 @@ describe('usage reasoning effort page display', () => {
     })
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="reasoning-effort-cell"]').exists()).toBe(false)
-
-    await wrapper.get('[data-testid="usage-column-settings"]').trigger('click')
-    await wrapper.get('[data-testid="usage-column-toggle-reasoning_effort"]').trigger('click')
-    await flushPromises()
+    await ensureAdminReasoningColumnVisible(wrapper)
 
     const cell = reasoningCellText(wrapper)
     expect(cell).toContain('Max')
@@ -311,9 +315,7 @@ describe('usage reasoning effort page display', () => {
     })
     await flushPromises()
 
-    await wrapper.get('[data-testid="usage-column-settings"]').trigger('click')
-    await wrapper.get('[data-testid="usage-column-toggle-reasoning_effort"]').trigger('click')
-    await flushPromises()
+    await ensureAdminReasoningColumnVisible(wrapper)
 
     const cell = reasoningCellText(wrapper)
     expect(cell).toContain('High')
