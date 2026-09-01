@@ -4194,6 +4194,7 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 				IPAddress:          clientIPStr,
 				SessionID:          sessionID,
 				RequestPayloadHash: requestPayloadHash,
+				NativeCompactionV2: service.IsOpenAINativeCompactionV2(c),
 				APIKeyService:      apiKeySvc,
 				ChannelUsageFields: channelFields,
 			})

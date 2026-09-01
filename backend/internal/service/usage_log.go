@@ -213,6 +213,7 @@ type UsageLog struct {
 	RequestType               RequestType
 	Stream                    bool
 	OpenAIWSMode              bool
+	NativeCompactionV2        bool
 	DurationMs                *int
 	FirstTokenMs              *int
 	UserQueueWaitMs           *int

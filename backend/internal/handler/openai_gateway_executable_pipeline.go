@@ -1460,6 +1460,7 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 			PhaseLatency:       phaseLatency,
 			ChannelUsageFields: s.ChannelUsageFields,
 			CyberBlocked:       s.CyberBlocked,
+			NativeCompactionV2: service.IsOpenAINativeCompactionV2(c),
 		}); err != nil {
 			logger.L().With(
 				zap.String("component", s.LogComponent),
@@ -2042,6 +2043,7 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 			PhaseLatency:       phaseLatency,
 			ChannelUsageFields: s.ChannelMapping.ToUsageFields(s.Model, upstreamModel),
 			CyberBlocked:       cyberBlocked,
+			NativeCompactionV2: service.IsOpenAINativeCompactionV2(c),
 		}); err != nil {
 			reqLog.Error("openai.websocket_record_usage_failed",
 				zap.Int64("account_id", s.Account.ID),

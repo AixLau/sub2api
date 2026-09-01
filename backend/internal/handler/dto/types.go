@@ -518,6 +518,7 @@ type UsageLog struct {
 	RequestType               string `json:"request_type"`
 	Stream                    bool   `json:"stream"`
 	OpenAIWSMode              bool   `json:"openai_ws_mode"`
+	NativeCompactionV2        bool   `json:"native_compaction_v2"`
 	DurationMs                *int   `json:"duration_ms"`
 	FirstTokenMs              *int   `json:"first_token_ms"`
 	UserQueueWaitMs           *int   `json:"user_queue_wait_ms,omitempty"`

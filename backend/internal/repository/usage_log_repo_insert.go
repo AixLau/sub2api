@@ -83,6 +83,7 @@ var usageLogInsertArgTypes = [...]string{
 	"numeric",     // account_stats_cost
 	"text",        // source
 	"text",        // session_id
+	"boolean",     // native_compaction_v2
 	"timestamptz", // created_at
 	"integer",     // user_queue_wait_ms
 	"integer",     // account_queue_wait_ms
@@ -310,6 +311,7 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			account_stats_cost,
 			source,
 			session_id,
+			native_compaction_v2,
 			created_at,
 			user_queue_wait_ms,
 			account_queue_wait_ms,
@@ -766,6 +768,7 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 			account_stats_cost,
 			source,
 			session_id,
+			native_compaction_v2,
 			created_at,
 			user_queue_wait_ms,
 			account_queue_wait_ms,
@@ -863,6 +866,7 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				account_stats_cost,
 				source,
 				session_id,
+				native_compaction_v2,
 				created_at,
 				user_queue_wait_ms,
 				account_queue_wait_ms,
@@ -930,6 +934,7 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				account_stats_cost,
 				source,
 				session_id,
+				native_compaction_v2,
 				created_at,
 				user_queue_wait_ms,
 				account_queue_wait_ms,
@@ -1037,6 +1042,7 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			account_stats_cost,
 			source,
 			session_id,
+			native_compaction_v2,
 			created_at,
 			user_queue_wait_ms,
 			account_queue_wait_ms,
@@ -1130,6 +1136,7 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			account_stats_cost,
 			source,
 			session_id,
+			native_compaction_v2,
 			created_at,
 			user_queue_wait_ms,
 			account_queue_wait_ms,
@@ -1197,6 +1204,7 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			account_stats_cost,
 			source,
 			session_id,
+			native_compaction_v2,
 			created_at,
 			user_queue_wait_ms,
 			account_queue_wait_ms,
@@ -1272,6 +1280,7 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			account_stats_cost,
 			source,
 			session_id,
+			native_compaction_v2,
 			created_at,
 			user_queue_wait_ms,
 			account_queue_wait_ms,
@@ -1412,6 +1421,7 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 			log.AccountStatsCost, // account_stats_cost
 			source,
 			sessionID, // session_id
+			log.NativeCompactionV2,
 			createdAt,
 			userQueueWait,
 			accountQueueWait,
