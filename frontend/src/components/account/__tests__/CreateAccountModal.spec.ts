@@ -360,6 +360,67 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(probeUpstreamBillingMock).not.toHaveBeenCalled()
   })
 
+  it('submits adaptive Kimi protocol endpoints', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Kimi')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Kimi adaptive')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('sk-kimi')
+
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
+      account_mode: 'payg',
+      api_protocol: 'adaptive',
+      base_url: 'https://api.moonshot.cn/v1',
+      api_base_urls: {
+        chat_completions: 'https://api.moonshot.cn/v1',
+        anthropic: 'https://api.moonshot.cn/anthropic',
+        responses: 'https://api.moonshot.cn/v1'
+      }
+    })
+  })
+
+  it('submits adaptive Kimi Coding Plan Responses endpoint', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Kimi')
+    await selectButtonByText(wrapper, 'admin.accounts.cnProviders.accountMode.coding')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Kimi coding')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('sk-kimi-coding')
+
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
+      account_mode: 'coding',
+      api_protocol: 'adaptive',
+      base_url: 'https://api.kimi.com/coding/v1',
+      api_base_urls: {
+        chat_completions: 'https://api.kimi.com/coding/v1',
+        anthropic: 'https://api.kimi.com/coding',
+        responses: 'https://api.kimi.com/coding/v1'
+      }
+    })
+  })
+
+  it('uses the edited adaptive Chat endpoint when previewing upstream models', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'Kimi')
+    await wrapper
+      .get('[data-testid="cn-adaptive-base-url-chat_completions"]')
+      .setValue('https://relay.example.com/v1')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('sk-relay')
+
+    expect(wrapper.getComponent(ModelWhitelistSelectorStub).props('syncCredentials')).toMatchObject({
+      platform: 'kimi',
+      type: 'apikey',
+      base_url: 'https://relay.example.com/v1',
+      api_key: 'sk-relay'
+    })
+  })
+
   it('exposes Agent Identity in the OpenAI authorization methods', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'OpenAI')
