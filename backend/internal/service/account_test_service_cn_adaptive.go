@@ -15,7 +15,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const accountTestSuppressCompletionContextKey = "account_test_suppress_completion"
+const (
+	accountTestSuppressCompletionContextKey = "account_test_suppress_completion"
+	accountTestDeferredCompletionContextKey = "account_test_deferred_completion"
+)
 
 // testCNProviderAdaptiveConnection verifies every native endpoint used by an
 // adaptive CN-provider account. Zhipu uses Chat Completions plus Anthropic;
@@ -51,7 +54,13 @@ func (s *AccountTestService) testCNProviderAdaptiveConnection(c *gin.Context, ac
 	}
 
 	c.Set(accountTestSuppressCompletionContextKey, false)
-	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+	completion := TestEvent{Type: "test_complete", Success: true}
+	if deferred, ok := c.Get(accountTestDeferredCompletionContextKey); ok {
+		if event, ok := deferred.(TestEvent); ok {
+			completion = event
+		}
+	}
+	s.sendEvent(c, completion)
 	return nil
 }
 

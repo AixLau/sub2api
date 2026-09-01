@@ -313,7 +313,12 @@ func (s *AccountTestService) completeOpenAIAccountTest(c *gin.Context, metrics *
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Connection succeeded but failed to record usage: %s", err.Error()))
 		}
 	}
-	s.sendEvent(c, metrics.completeEvent(true, ""))
+	completion := metrics.completeEvent(true, "")
+	if suppress, _ := c.Get(accountTestSuppressCompletionContextKey); suppress == true {
+		c.Set(accountTestDeferredCompletionContextKey, completion)
+		return nil
+	}
+	s.sendEvent(c, completion)
 	return nil
 }
 
