@@ -3675,14 +3675,14 @@ func writeContentModerationWSError(ctx context.Context, conn *coderws.Conn, deci
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	message := strings.TrimSpace(decision.Message)
+	message := contentModerationClientMessage(decision)
 	if message == "" {
 		message = "content moderation blocked this request"
 	}
 	eventID := "evt_content_moderation_blocked"
 	errorType := "invalid_request_error"
 	if contentModerationIsNonViolationDeferred(decision) {
-		eventID = "evt_content_review_deferred"
+		eventID = "evt_network_error"
 		errorType = "server_error"
 	}
 	payload, err := json.Marshal(gin.H{
@@ -3710,7 +3710,7 @@ func (h *OpenAIGatewayHandler) writeOpenAIWebSocketPipelineBlock(ctx context.Con
 			markOpsContentModerationDiagnostic(c, result.ModerationDecision)
 			writeContentModerationWSError(ctx, conn, result.ModerationDecision)
 			if message == "" {
-				message = result.ModerationDecision.Message
+				message = contentModerationClientMessage(result.ModerationDecision)
 			}
 		}
 	case openAIWebSocketPipelineBlockReasonImagePermission:

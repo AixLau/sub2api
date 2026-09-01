@@ -1065,12 +1065,12 @@ func (h *GatewayHandler) writeGatewayPreForwardModerationError(c *gin.Context, f
 	markOpsContentModerationDiagnostic(c, decision)
 	switch format {
 	case gatewayPreForwardErrorGemini:
-		googleError(c, contentModerationStatus(decision), decision.Message)
+		googleError(c, contentModerationStatus(decision), contentModerationClientMessage(decision))
 	case gatewayPreForwardErrorOpenAIChat:
-		h.chatCompletionsErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+		h.chatCompletionsErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), contentModerationClientMessage(decision))
 	case gatewayPreForwardErrorOpenAIResponses:
-		h.responsesErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+		h.responsesErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), contentModerationClientMessage(decision))
 	default:
-		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), contentModerationClientMessage(decision))
 	}
 }

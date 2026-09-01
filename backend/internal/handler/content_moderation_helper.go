@@ -78,15 +78,23 @@ func contentModerationStatus(decision *service.ContentModerationDecision) int {
 func contentModerationErrorCode(decision *service.ContentModerationDecision) string {
 	if decision != nil {
 		switch strings.TrimSpace(decision.Action) {
-		case service.ContentModerationActionSemanticReviewDeferred:
-			return "content_review_required"
-		case service.ContentModerationActionSemanticReviewUnavailable:
-			return "content_review_unavailable"
-		case service.ContentModerationActionSemanticReviewIncomplete:
-			return "content_review_incomplete"
+		case service.ContentModerationActionSemanticReviewDeferred,
+			service.ContentModerationActionSemanticReviewUnavailable,
+			service.ContentModerationActionSemanticReviewIncomplete:
+			return "network_error"
 		}
 	}
 	return "content_policy_violation"
+}
+
+func contentModerationClientMessage(decision *service.ContentModerationDecision) string {
+	if contentModerationIsNonViolationDeferred(decision) {
+		return service.ContentModerationTemporaryClientMessage
+	}
+	if decision == nil {
+		return ""
+	}
+	return strings.TrimSpace(decision.Message)
 }
 
 func contentModerationIsNonViolationDeferred(decision *service.ContentModerationDecision) bool {
@@ -119,7 +127,7 @@ func markOpsContentModerationDiagnostic(c *gin.Context, decision *service.Conten
 		"source":         "content_moderation",
 		"code":           contentModerationErrorCode(decision),
 		"action":         strings.TrimSpace(decision.Action),
-		"client_message": strings.TrimSpace(decision.Message),
+		"client_message": contentModerationClientMessage(decision),
 		"status_code":    fmt.Sprintf("%d", contentModerationStatus(decision)),
 	}
 	if decision.HighestCategory != "" {
@@ -206,7 +214,7 @@ func (h *OpenAIGatewayHandler) ModerateBatchImageSubmit(c *gin.Context) bool {
 	model := strings.TrimSpace(gjson.GetBytes(body, "model").String())
 	decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolBatchImages, model, body)
 	if decision != nil && decision.Blocked {
-		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), contentModerationClientMessage(decision))
 		return false
 	}
 	restoreRequestBody(c, body)

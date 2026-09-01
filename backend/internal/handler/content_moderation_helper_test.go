@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
@@ -11,26 +12,45 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
 
 func TestContentModerationDeferredActionsUseRetryableNonViolationResponses(t *testing.T) {
 	tests := []struct {
 		action string
-		code   string
 	}{
-		{service.ContentModerationActionSemanticReviewDeferred, "content_review_required"},
-		{service.ContentModerationActionSemanticReviewUnavailable, "content_review_unavailable"},
-		{service.ContentModerationActionSemanticReviewIncomplete, "content_review_incomplete"},
+		{service.ContentModerationActionSemanticReviewDeferred},
+		{service.ContentModerationActionSemanticReviewUnavailable},
+		{service.ContentModerationActionSemanticReviewIncomplete},
 	}
 	for _, tt := range tests {
 		t.Run(tt.action, func(t *testing.T) {
-			decision := &service.ContentModerationDecision{Blocked: true, Action: tt.action}
+			decision := &service.ContentModerationDecision{Blocked: true, Action: tt.action, Message: "internal review state"}
 			require.True(t, contentModerationIsNonViolationDeferred(decision))
 			require.Equal(t, http.StatusServiceUnavailable, contentModerationStatus(decision))
-			require.Equal(t, tt.code, contentModerationErrorCode(decision))
+			require.Equal(t, "network_error", contentModerationErrorCode(decision))
+			require.Equal(t, service.ContentModerationTemporaryClientMessage, contentModerationClientMessage(decision))
 		})
 	}
+}
+
+func TestGatewayPreForwardDeferredReviewHidesModerationDetailsFromClient(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	decision := &service.ContentModerationDecision{
+		Blocked: true,
+		Action:  service.ContentModerationActionSemanticReviewUnavailable,
+		Message: "内容审核暂时不可用，请稍后重试",
+	}
+
+	(&GatewayHandler{}).writeGatewayPreForwardModerationError(c, gatewayPreForwardErrorOpenAIResponses, decision)
+
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+	require.Equal(t, "network_error", gjson.GetBytes(recorder.Body.Bytes(), "error.code").String())
+	require.Equal(t, service.ContentModerationTemporaryClientMessage, gjson.GetBytes(recorder.Body.Bytes(), "error.message").String())
+	require.False(t, strings.Contains(recorder.Body.String(), "审核"))
 }
 
 func TestContentModerationReceiptUsesDecisionPolicyRevisionAndNeverAllowsNilDecision(t *testing.T) {

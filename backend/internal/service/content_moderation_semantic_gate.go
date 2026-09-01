@@ -263,7 +263,7 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 				Allowed:           false,
 				Blocked:           true,
 				Flagged:           true,
-				Message:           semanticReviewDeferredMessage(action),
+				Message:           ContentModerationTemporaryClientMessage,
 				StatusCode:        http.StatusServiceUnavailable,
 				HighestCategory:   category,
 				HighestScore:      score,
@@ -488,7 +488,7 @@ func (s *ContentModerationService) semanticReviewProviderFallback(
 		decision := buildDecision(action, true, failClosed)
 		if failClosed {
 			decision.StatusCode = http.StatusServiceUnavailable
-			decision.Message = semanticReviewDeferredMessage(action)
+			decision.Message = ContentModerationTemporaryClientMessage
 		}
 		return decision, true
 	default:

@@ -92,11 +92,11 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 		decision := securityaudit.Decision{Kind: securityaudit.DecisionAllow, HTTPStatus: http.StatusOK, AllowNextStage: true}
 		decision.Legacy = &securityaudit.LegacyDecision{
 			Allowed: legacyDecision.Allowed, Blocked: legacyDecision.Blocked, Flagged: legacyDecision.Flagged,
-			Message: legacyDecision.Message, StatusCode: legacyDecision.StatusCode,
-			ErrorCode: "content_policy_violation", Action: legacyDecision.Action,
+			Message: contentModerationClientMessage(legacyDecision), StatusCode: legacyDecision.StatusCode,
+			ErrorCode: contentModerationErrorCode(legacyDecision), Action: legacyDecision.Action,
 		}
 		if legacyDecision.Blocked {
-			decision.Kind, decision.HTTPStatus, decision.ErrorCode, decision.ClientMessage, decision.AllowNextStage = securityaudit.DecisionBlock, contentModerationStatus(legacyDecision), "content_policy_violation", legacyDecision.Message, false
+			decision.Kind, decision.HTTPStatus, decision.ErrorCode, decision.ClientMessage, decision.AllowNextStage = securityaudit.DecisionBlock, contentModerationStatus(legacyDecision), contentModerationErrorCode(legacyDecision), contentModerationClientMessage(legacyDecision), false
 		}
 		if decision.AllowNextStage && cacheCompletion {
 			c.Set(securityAuditCompletedContextKey, true)
@@ -148,8 +148,8 @@ func securityAuditLegacyDecision(decision *service.ContentModerationDecision) *s
 	}
 	return &securityaudit.LegacyDecision{
 		Allowed: decision.Allowed, Blocked: decision.Blocked, Flagged: decision.Flagged,
-		Message: decision.Message, StatusCode: decision.StatusCode,
-		ErrorCode: "content_policy_violation", Action: decision.Action,
+		Message: contentModerationClientMessage(decision), StatusCode: decision.StatusCode,
+		ErrorCode: contentModerationErrorCode(decision), Action: decision.Action,
 	}
 }
 

@@ -1908,6 +1908,7 @@ func TestPromptInjectionV2PreBlockOutcomeMatrixIsFailClosedWithoutViolation(t *t
 			require.True(t, decision.Blocked)
 			require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
 			require.Equal(t, tt.wantAction, decision.Action)
+			require.Equal(t, ContentModerationTemporaryClientMessage, decision.Message)
 			require.NotEmpty(t, decision.PolicyRevision)
 			logs := repo.snapshotLogs()
 			require.Len(t, logs, 1)

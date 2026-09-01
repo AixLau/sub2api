@@ -1386,7 +1386,7 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		if failClosed {
 			decision := buildDecision(action, true, true)
 			decision.StatusCode = http.StatusServiceUnavailable
-			decision.Message = semanticReviewDeferredMessage(action)
+			decision.Message = ContentModerationTemporaryClientMessage
 			if selection.ReviewKind == contentModerationReviewKindPromptInjection && s.metrics != nil {
 				reason := "review"
 				if action == ContentModerationActionSemanticReviewIncomplete {
@@ -1557,16 +1557,7 @@ func promptInjectionFailClosedActive(cfg *ContentModerationConfig, selection con
 		selection.ReviewKind == contentModerationReviewKindPromptInjection
 }
 
-func semanticReviewDeferredMessage(action string) string {
-	switch action {
-	case ContentModerationActionSemanticReviewIncomplete:
-		return "内容审核证据不完整，请缩短请求后重试"
-	case ContentModerationActionSemanticReviewUnavailable:
-		return "内容审核暂时不可用，请稍后重试"
-	default:
-		return "内容审核需要进一步复核，请稍后重试"
-	}
-}
+const ContentModerationTemporaryClientMessage = "网络连接出现波动，请稍后重试"
 
 func contentModerationCandidateSemanticInput(selection contentModerationCandidateSelection) string {
 	return selection.Fragment
@@ -1786,7 +1777,7 @@ func (s *ContentModerationService) candidateUnavailableOutcomeWithLatency(
 		return contentModerationCandidateOutcome{
 			Decision: &ContentModerationDecision{
 				Allowed: false, Blocked: true, Flagged: true,
-				Message:        semanticReviewDeferredMessage(ContentModerationActionSemanticReviewUnavailable),
+				Message:        ContentModerationTemporaryClientMessage,
 				StatusCode:     http.StatusServiceUnavailable,
 				Action:         ContentModerationActionSemanticReviewUnavailable,
 				MatchedKeyword: selection.Rule.Keyword, KeywordCategory: selection.Rule.Category,
@@ -1910,7 +1901,7 @@ func (s *ContentModerationService) candidateExtractionFailureOutcome(ctx context
 		return contentModerationCandidateOutcome{
 			Decision: &ContentModerationDecision{
 				Allowed: false, Blocked: true, Flagged: true,
-				Message:        semanticReviewDeferredMessage(ContentModerationActionSemanticReviewIncomplete),
+				Message:        ContentModerationTemporaryClientMessage,
 				StatusCode:     http.StatusServiceUnavailable,
 				Action:         ContentModerationActionSemanticReviewIncomplete,
 				MatchedKeyword: selection.Rule.Keyword, KeywordCategory: selection.Rule.Category,

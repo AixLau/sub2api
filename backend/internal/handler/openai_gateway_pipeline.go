@@ -119,9 +119,9 @@ func (h *OpenAIGatewayHandler) writeOpenAIHTTPModerationError(c *gin.Context, fo
 	markOpsContentModerationDiagnostic(c, decision)
 	switch format {
 	case openAIHTTPModerationErrorAnthropic:
-		h.anthropicErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+		h.anthropicErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), contentModerationClientMessage(decision))
 	default:
-		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
+		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), contentModerationClientMessage(decision))
 	}
 }
 
@@ -414,7 +414,7 @@ func (OpenAIWebSocketModerationStage) Run(ctx *openAIWebSocketGatewayStageContex
 		Blocked:            true,
 		BlockReason:        openAIWebSocketPipelineBlockReasonModeration,
 		ModerationDecision: decision,
-		Message:            decision.Message,
+		Message:            contentModerationClientMessage(decision),
 	}}
 }
 
