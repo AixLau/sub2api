@@ -240,14 +240,14 @@ const (
 	deepseekProOffPeakCacheRead     = 2.2e-8  // $0.022 per MTok (cache hit)
 )
 
-// isDeepSeekModel 判断模型名是否为 DeepSeek 模型（大小写不敏感）。
-// 任意 deepseek- 前缀均视为 DeepSeek 模型：官方模型（v4-flash / v4-pro /
-// v4-flash-vision-exp）按各自价卡计价，其余 deepseek-*（含已停服的
-// deepseek-chat / deepseek-reasoner 与未知型号）统一按 flash 价兜底，
-// 避免计费中断；新名字由 fallback warn 日志（每模型每进程一条）暴露，
-// 运营者据此更新价卡。
+// isDeepSeekModel 判断模型名是否为具有明确本地价卡的 DeepSeek 模型。
+// 未知 deepseek-* 必须失败关闭，避免根据名称猜价导致错误计费。
 func isDeepSeekModel(model string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "deepseek-")
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.Contains(model, "deepseek-v4-flash") ||
+		strings.Contains(model, "deepseek-v4-pro") ||
+		model == "deepseek-chat" ||
+		model == "deepseek-reasoner"
 }
 
 // deepseekPeakMultiplierAt 返回指定时刻的 DeepSeek 官方峰谷定价因子。
@@ -827,9 +827,7 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	}
 
 	// DeepSeek 系列：官方模型 V4 Pro/Flash（含 vision-exp）按各自价卡；
-	// 其余 deepseek-*（含已停服的 deepseek-chat / deepseek-reasoner 与未知型号）
-	// 统一按 flash 价兜底，避免计费中断。新名字由 fallback warn 日志
-	// （每模型每进程一条）暴露，运营者据此更新价卡。
+	// 已停服的 chat/reasoner 映射到 flash。未知 deepseek-* 失败关闭。
 	// "deepseek-v4-flash-vision-exp" 含 "deepseek-v4-flash" 子串，显式分支置于 flash 之前，语义清晰。
 	if strings.Contains(modelLower, "deepseek-v4-flash-vision-exp") {
 		return s.fallbackPrices["deepseek-v4-flash-vision-exp"]
@@ -840,7 +838,7 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	if strings.Contains(modelLower, "deepseek-v4-pro") {
 		return s.fallbackPrices["deepseek-v4-pro"]
 	}
-	if strings.HasPrefix(modelLower, "deepseek-") {
+	if modelLower == "deepseek-chat" || modelLower == "deepseek-reasoner" {
 		return s.fallbackPrices["deepseek-v4-flash"]
 	}
 
