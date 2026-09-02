@@ -203,7 +203,8 @@ func TestOpenAIMessagesHandlerReusesPreForwardModerationIdentity(t *testing.T) {
 func TestOpenAIResponsesHandlerKeepsOriginalModerationBodyAfterReasoningRewrite(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"model":"gpt-test","stream":false,"input":"benign","reasoning":{"effort":"high"}}`)
-	capped, changed := service.ApplyOpenAIReasoningEffortPolicy(body, "low", nil)
+	capped, changed, err := service.ApplyOpenAIReasoningEffortPolicy(body, "low", nil, service.ReasoningEffortOverLimitDowngrade)
+	require.NoError(t, err)
 	require.True(t, changed)
 	require.NotEqual(t, body, capped)
 

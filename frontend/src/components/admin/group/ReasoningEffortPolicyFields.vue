@@ -243,6 +243,16 @@ const showValidation = ref(false);
 const reasoningEffortOptions = computed(() =>
   reasoningEffortOptionsForPlatform(props.platform),
 );
+const overLimitOptions = computed(() => [
+  {
+    value: reasoningEffortOverLimitDowngrade,
+    label: t("admin.groups.form.maxReasoningEffortOverLimitDowngrade"),
+  },
+  {
+    value: reasoningEffortOverLimitDeny,
+    label: t("admin.groups.form.maxReasoningEffortOverLimitDeny"),
+  },
+]);
 const matchTypeOptions = computed(() => [
   {
     value: "exact",
@@ -269,6 +279,10 @@ const pairErrors = (id: string) => validationErrors.value[id] ?? {};
 
 const updateMaxEffort = (value: string | number | boolean | null) => {
   emit("update:maxEffort", asString(value));
+};
+
+const updateOverLimit = (value: string | number | boolean | null) => {
+  emit("update:overLimit", asString(value));
 };
 
 const updateGroup = (

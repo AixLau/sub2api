@@ -13,6 +13,9 @@ const openAIReasoningEffortValues = [
   "max",
 ] as const;
 
+export const reasoningEffortOverLimitDowngrade = "downgrade";
+export const reasoningEffortOverLimitDeny = "deny";
+
 const reasoningEffortMatchTypes: readonly ReasoningEffortMatchType[] = [
   "exact",
   "prefix",
@@ -49,6 +52,14 @@ export function normalizeReasoningEffortForPlatform(
   )
     ? normalized
     : "";
+}
+
+export function normalizeReasoningEffortOverLimit(
+  value: string | null | undefined,
+): string {
+  return value?.trim().toLowerCase() === reasoningEffortOverLimitDeny
+    ? reasoningEffortOverLimitDeny
+    : reasoningEffortOverLimitDowngrade;
 }
 
 export function normalizeReasoningEffortMatchType(

@@ -14,6 +14,8 @@ const (
 	maxReasoningEffortMappings = 64
 	maxReasoningEffortValueLen = 64
 	maxReasoningEffortModelLen = 200
+	ReasoningEffortOverLimitDowngrade = "downgrade"
+	ReasoningEffortOverLimitDeny = "deny"
 )
 
 var openAIReasoningEffortValues = []string{"minimal", "low", "medium", "high", "xhigh", "max"}
@@ -414,7 +416,7 @@ func sanitizeGroupReasoningEffortPolicy(group *Group) {
 // the request model by exact name, prefix, or suffix) and then caps known
 // effort levels. Omitted values remain untouched so upstream defaults stay in
 // control.
-func ApplyOpenAIReasoningEffortPolicy(body []byte, maxEffort string, mappings []ReasoningEffortMapping) ([]byte, bool) {
+func ApplyOpenAIReasoningEffortPolicy(body []byte, maxEffort string, mappings []ReasoningEffortMapping, overLimit string) ([]byte, bool, error) {
 	maxRank, hasMax := reasoningEffortRank(maxEffort)
 	if len(body) == 0 || (!hasMax && len(mappings) == 0) {
 		return body, false, nil

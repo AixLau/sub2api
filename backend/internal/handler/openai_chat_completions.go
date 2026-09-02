@@ -89,10 +89,11 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
 			return
 		}
-		if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformOpenAI {
-			if cappedBody, changed := service.ApplyOpenAIReasoningEffortPolicy(body, apiKey.Group.MaxReasoningEffort, apiKey.Group.ReasoningEffortMappings); changed {
-				body = cappedBody
-			}
+		if cappedBody, changed, err := applyOpenAIReasoningEffortPolicyForRequest(c, apiKey, body); err != nil {
+			respondOpenAIReasoningEffortPolicyError(c, err, h.errorResponse)
+			return
+		} else if changed {
+			body = cappedBody
 		}
 	}
 	ensureCompositeTargetPlatform(c, apiKey, reqModel)
