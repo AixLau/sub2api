@@ -1,5 +1,8 @@
 <template>
-  <span>{{ displayText }}</span>
+  <span
+    class="number-ticker inline-block whitespace-nowrap tabular-nums"
+    :style="{ width: `${displayWidth}ch` }"
+  >{{ displayText }}</span>
 </template>
 
 <script setup lang="ts">
@@ -36,6 +39,19 @@ const displayText = computed(() => {
         maximumFractionDigits: props.decimalPlaces
       })
   return `${props.prefix}${body}${props.suffix}`
+})
+
+// Reserve the final value's character width before the animation starts. Without
+// this, each intermediate digit count changes the parent's layout and makes
+// metric cards visibly jump while the ticker rolls from zero.
+const displayWidth = computed(() => {
+  const targetText = props.formatFn
+    ? props.formatFn(props.value)
+    : props.value.toLocaleString('en-US', {
+        minimumFractionDigits: props.decimalPlaces,
+        maximumFractionDigits: props.decimalPlaces
+      })
+  return Math.max(1, `${props.prefix}${targetText}${props.suffix}`.length)
 })
 
 function stopAnimation() {
