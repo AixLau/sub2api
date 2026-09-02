@@ -32,12 +32,14 @@ describe("groupsReasoningEffort", () => {
       ).toEqual(expected);
       expect(supportsReasoningEffortPolicyPlatform(platform)).toBe(true);
     }
-    for (const platform of [
-      "anthropic",
-      "gemini",
-      "antigravity",
-      "grok",
-    ] as const) {
+    expect(
+      reasoningEffortOptionsForPlatform("anthropic").map(
+        (option) => option.value,
+      ),
+    ).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    expect(supportsReasoningEffortPolicyPlatform("anthropic")).toBe(true);
+
+    for (const platform of ["gemini", "antigravity", "grok"] as const) {
       expect(reasoningEffortOptionsForPlatform(platform)).toEqual([]);
       expect(supportsReasoningEffortPolicyPlatform(platform)).toBe(false);
     }
@@ -127,6 +129,12 @@ describe("groupsReasoningEffort", () => {
     expect(normalizeReasoningEffortForPlatform("openai", " MAX ")).toBe("max");
     expect(normalizeReasoningEffortForPlatform("composite", " MAX ")).toBe(
       "max",
+    );
+    expect(normalizeReasoningEffortForPlatform("anthropic", "xhigh")).toBe(
+      "xhigh",
+    );
+    expect(normalizeReasoningEffortForPlatform("anthropic", "minimal")).toBe(
+      "",
     );
     expect(normalizeReasoningEffortForPlatform("grok", "max")).toBe("");
     expect(normalizeReasoningEffortForPlatform("openai", "none")).toBe("");

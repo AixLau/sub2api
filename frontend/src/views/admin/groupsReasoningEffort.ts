@@ -15,6 +15,13 @@ const openAIReasoningEffortValues = [
 
 export const reasoningEffortOverLimitDowngrade = "downgrade";
 export const reasoningEffortOverLimitDeny = "deny";
+const anthropicReasoningEffortValues = [
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const;
 
 const reasoningEffortMatchTypes: readonly ReasoningEffortMatchType[] = [
   "exact",
@@ -25,14 +32,16 @@ const reasoningEffortMatchTypes: readonly ReasoningEffortMatchType[] = [
 const reasoningEffortValuesForPlatform = (
   platform: GroupPlatform,
 ): readonly string[] =>
-  supportsReasoningEffortPolicyPlatform(platform)
-    ? openAIReasoningEffortValues
-    : [];
+  platform === "anthropic"
+    ? anthropicReasoningEffortValues
+    : supportsReasoningEffortPolicyPlatform(platform)
+      ? openAIReasoningEffortValues
+      : [];
 
 export function supportsReasoningEffortPolicyPlatform(
   platform: GroupPlatform,
 ): boolean {
-  return platform === "openai" || platform === "composite";
+  return platform === "anthropic" || platform === "openai" || platform === "composite";
 }
 
 export function reasoningEffortOptionsForPlatform(platform: GroupPlatform) {

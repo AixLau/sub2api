@@ -615,6 +615,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 				pricingAt,
 				tokens,
 				serviceTier,
+				optionalStringValue(result.ReasoningEffort),
 				longContextBillingGate,
 			)
 			if err == nil {
@@ -705,6 +706,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 	pricingAt time.Time,
 	tokens UsageTokens,
 	serviceTier string,
+	reasoningEffort string,
 	longContextBillingGate *bool,
 ) (*CostBreakdown, error) {
 	if s.resolver != nil && apiKey.Group != nil {
@@ -718,13 +720,14 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 			RequestCount:               1,
 			RateMultiplier:             multiplier,
 			PricingAt:                  pricingAt,
+			ReasoningEffort: reasoningEffort,
 			ServiceTier:                serviceTier,
 			PriorityMultiplierOverride: openAIFastBillingMultiplier,
 			Resolver:                   s.resolver,
 			LongContextBillingEnabled:  longContextBillingGate,
 		})
 	}
-	return s.billingService.calculateCostWithServiceTierPolicyAndOverride(
+	breakdown, err := s.billingService.calculateCostWithServiceTierPolicyAndOverride(
 		billingModel,
 		tokens,
 		multiplier,
@@ -732,6 +735,10 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 		longContextBillingGate == nil || *longContextBillingGate,
 		openAIFastBillingMultiplier,
 	)
+	if err == nil {
+		applyCostBreakdownMultiplier(breakdown, maxReasoningEffortBillingMultiplier(billingModel, reasoningEffort, nil))
+	}
+	return breakdown, err
 }
 
 func (s *OpenAIGatewayService) calculateOpenAIImageCost(
