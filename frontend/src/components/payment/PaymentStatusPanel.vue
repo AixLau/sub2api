@@ -509,7 +509,7 @@ async function tryRecoverPendingOrder(order: PaymentOrder): Promise<PaymentOrder
     || orderProviderKey === 'haozpay'
     || orderPaymentType === 'nineplus'
     || orderPaymentType === 'haozpay'
-  if (!isWxpay.value && !isOrderHostedAggregator && !isMobileAlipayDeepLink.value) return order
+  if (!isWxpay.value && !isOrderHostedAggregator && !isAlipay.value) return order
   const outTradeNo = String(order.out_trade_no || '').trim()
   if (!outTradeNo) return order
   const normalizedStatus = String(order.status || '').trim().toUpperCase()
