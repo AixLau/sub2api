@@ -3212,8 +3212,8 @@ func (h *OpenAIGatewayHandler) pruneImageLimiterForUser(userID int64, limiter *i
 // handleConcurrencyError handles concurrency-related acquire errors.
 func (h *OpenAIGatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted bool) {
 	markOpsConcurrencyErrorDiagnostic(c, err)
-	status, errType, message := concurrencyErrorResponse(err, slotType)
-	h.handleStreamingAwareError(c, status, errType, message, streamStarted)
+	status, errType, code, message := concurrencyErrorResponse(err, slotType)
+	h.handleStreamingAwareErrorWithCode(c, status, errType, code, message, streamStarted, false)
 }
 
 func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, streamStarted bool) {
@@ -3394,7 +3394,7 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareErrorWithCode(
 		// 通用 `event: error` 帧不被识别为终止事件，会导致
 		// "stream closed before response.completed"。
 		if inboundIsResponses(c) {
-			if writeResponsesFailedSSE(c, errType, message) {
+			if writeResponsesFailedSSE(c, errType, code, message) {
 				return
 			}
 		}
@@ -3575,7 +3575,7 @@ func (h *OpenAIGatewayHandler) errorResponse(c *gin.Context, status int, errType
 	// 提交的 SSE 流交错，必须降级为 response.failed 终止事件（#3887）。
 	if service.StopOpenAICompactSSEKeepaliveCommitted(c) {
 		service.MarkOpsStreamError(c, errType, message, status)
-		if writeResponsesFailedSSE(c, errType, message) {
+		if writeResponsesFailedSSE(c, errType, "", message) {
 			return
 		}
 	}
@@ -4018,7 +4018,7 @@ func (h *OpenAIGatewayHandler) rejectIfCyberSessionBlocked(c *gin.Context, apiKe
 	if service.StopOpenAICompactSSEKeepaliveCommitted(c) {
 		message := cyberSessionBlockedClientMessage(cyberSessionBlockPlatform(apiKey, "", format))
 		service.MarkOpsStreamError(c, "permission_error", message, http.StatusForbidden)
-		if writeResponsesFailedSSE(c, "permission_error", message) {
+		if writeResponsesFailedSSE(c, "permission_error", "", message) {
 			h.enqueueCyberSessionBlockedOpsEntry(c, apiKey, model, key)
 			h.recordCyberSessionBlockedRiskEvent(c, apiKey, model, key, body)
 			return true
