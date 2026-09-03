@@ -91,6 +91,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 	}
 
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
+	forwardModel := openAIChannelForwardModel(channelMapping, reqModel)
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	requestPlatform := openAICompatibleRequestPlatform(c.Request.Context(), apiKey)
@@ -138,7 +139,8 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			ReqLog:               reqLog,
 			APIKey:               apiKey,
 			SubjectUserID:        subject.UserID,
-			RequestedModel:       reqModel,
+			RequestedModel:       forwardModel,
+			DisplayModel:         reqModel,
 			FailedAccountIDs:     failedAccountIDs,
 			RequiredTransport:    service.OpenAIUpstreamTransportHTTPSSE,
 			RequiredCapability:   service.OpenAIEndpointCapabilityEmbeddings,
