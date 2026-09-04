@@ -478,15 +478,7 @@ func newConfiguredCodexModelDescriptor(modelID string) configuredCodexModelDescr
 		descriptor.DisplayName = openaiCodexDisplayName(modelID)
 		descriptor.Description = "OpenAI GPT coding model routed through Sub2API."
 		descriptor.SupportsParallelToolCalls = true
-		if configuredCodexSupportsPriorityServiceTier(modelID) {
-			descriptor.ServiceTiers = []configuredCodexServiceTier{
-				{
-					ID:          "priority",
-					Name:        "Fast",
-					Description: "Priority processing for lower latency.",
-				},
-			}
-		}
+		descriptor.ServiceTiers = configuredCodexServiceTiersForModel(modelID)
 		if isOpenAICodexReasoningGPTModel(modelID) {
 			defaultReasoningLevel := "medium"
 			if getNormalizedCodexModel(modelID) == "gpt-5.6-sol" {
@@ -514,6 +506,25 @@ func newConfiguredCodexModelDescriptor(modelID string) configuredCodexModelDescr
 	return descriptor
 }
 
+func configuredCodexServiceTiersForModel(modelID string) []configuredCodexServiceTier {
+	tiers := make([]configuredCodexServiceTier, 0, 2)
+	if configuredCodexSupportsPriorityServiceTier(modelID) {
+		tiers = append(tiers, configuredCodexServiceTier{
+			ID:          OpenAIFastTierPriority,
+			Name:        "Fast",
+			Description: "Priority processing for lower latency.",
+		})
+	}
+	if configuredCodexSupportsUltrafastServiceTier(modelID) {
+		tiers = append(tiers, configuredCodexServiceTier{
+			ID:          OpenAIFastTierUltrafast,
+			Name:        "Ultrafast",
+			Description: "Ultra-low latency processing.",
+		})
+	}
+	return tiers
+}
+
 func configuredCodexSupportsPriorityServiceTier(modelID string) bool {
 	normalized := canonicalizeOpenAIModelAliasSpelling(modelID)
 	if isOpenAIGPT6AstraModel(normalized) {
@@ -525,6 +536,10 @@ func configuredCodexSupportsPriorityServiceTier(modelID string) bool {
 		}
 	}
 	return false
+}
+
+func configuredCodexSupportsUltrafastServiceTier(modelID string) bool {
+	return normalizeKnownOpenAICodexModel(modelID) == "gpt-5.6-sol"
 }
 
 func configuredCodexGrokReasoningLevels(modelID string) []configuredCodexReasoningLevel {
