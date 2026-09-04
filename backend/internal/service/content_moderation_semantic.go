@@ -2256,7 +2256,11 @@ func (s *OpenAIGatewayService) ReviewSemanticContent(
 		req.Header.Set("Accept", "text/event-stream")
 		req.Header.Set("OpenAI-Beta", "responses=experimental")
 		req.Header.Set("Originator", "codex-tui")
-		req.Header.Set("Version", codexCLIVersion)
+		version := CodexCanonicalClientVersion()
+		if s != nil && s.settingService != nil {
+			version = s.settingService.GetOpenAICodexClientVersion(requestCtx)
+		}
+		req.Header.Set("Version", version)
 		if err := resolveAndSetOpenAIChatGPTAccountHeaders(requestCtx, s.accountRepo, req.Header, account); err != nil {
 			return ContentModerationSemanticReviewResult{}, &ContentModerationSemanticReviewUpstreamError{Code: "account_headers", Message: err.Error(), Retryable: true}
 		}

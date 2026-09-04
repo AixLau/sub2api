@@ -1391,7 +1391,11 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		if isOpenAIResponsesCompactPath(c) {
 			req.Header.Set("accept", "application/json")
 			if req.Header.Get("version") == "" {
-				req.Header.Set("version", codexCLIVersion)
+				version := CodexCanonicalClientVersion()
+				if s != nil && s.settingService != nil {
+					version = s.settingService.GetOpenAICodexClientVersion(c.Request.Context())
+				}
+				req.Header.Set("version", version)
 			}
 			compactSession := resolveOpenAICompactSessionID(c)
 			req.Header.Set("session_id", isolateOpenAISessionID(apiKeyID, compactSession))
