@@ -1175,6 +1175,7 @@ func accountListOrder(params pagination.PaginationParams) []func(*entsql.Selecto
 		return []func(*entsql.Selector){func(s *entsql.Selector) {
 			name := s.C(dbaccount.FieldName)
 			// Sort trailing numeric suffixes by value (pro-2 before pro-10).
+			s.OrderBy(entsql.Asc(dbaccount.FieldPriority))
 			s.OrderExpr(entsql.Expr("regexp_replace(" + name + ", '[0-9]+$'::text, ''::text) ASC"))
 			s.OrderExpr(entsql.Expr("NULLIF(substring(" + name + " from '[0-9]+$'), '')::bigint ASC NULLS FIRST"))
 			s.OrderBy(entsql.Asc(dbaccount.FieldName), entsql.Asc(dbaccount.FieldID))
