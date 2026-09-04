@@ -568,6 +568,7 @@ func ProxyAccountSummaryFromService(a *service.ProxyAccountSummary) *ProxyAccoun
 		Platform: a.Platform,
 		Type:     a.Type,
 		Notes:    a.Notes,
+		Email:    a.Email,
 	}
 }
 

@@ -942,6 +942,7 @@
           <thead class="bg-gray-50 text-xs uppercase text-gray-500 dark:bg-dark-800 dark:text-dark-400">
             <tr>
               <th class="px-4 py-2 text-left">{{ t('admin.proxies.accountName') }}</th>
+              <th class="px-4 py-2 text-left">{{ t('admin.proxies.accountEmail') }}</th>
               <th class="px-4 py-2 text-left">{{ t('admin.accounts.columns.platformType') }}</th>
               <th class="px-4 py-2 text-left">{{ t('admin.proxies.accountNotes') }}</th>
             </tr>
@@ -949,6 +950,7 @@
           <tbody class="divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-900">
             <tr v-for="account in proxyAccounts" :key="account.id">
               <td class="px-4 py-2 font-medium text-gray-900 dark:text-white">{{ account.name }}</td>
+              <td class="px-4 py-2 text-gray-600 dark:text-gray-300">{{ account.email || '--' }}</td>
               <td class="px-4 py-2">
                 <PlatformTypeBadge :platform="account.platform" :type="account.type" />
               </td>

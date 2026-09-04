@@ -74,4 +74,5 @@ type ProxyAccountSummary struct {
 	Platform string
 	Type     string
 	Notes    *string
+	Email    string
 }

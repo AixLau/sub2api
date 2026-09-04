@@ -137,6 +137,7 @@ export default {
       accountsEmpty: 'No accounts are using this proxy',
       accountsFailed: 'Failed to load accounts list',
       accountName: 'Account',
+      accountEmail: 'Email',
       accountPlatform: 'Platform',
       accountNotes: 'Notes',
       addAccount: 'Add Account',

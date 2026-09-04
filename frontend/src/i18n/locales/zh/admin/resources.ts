@@ -154,6 +154,7 @@ export default {
       accountsEmpty: '暂无账号使用此代理',
       accountsFailed: '获取账号列表失败',
       accountName: '账号名称',
+      accountEmail: '邮箱',
       accountPlatform: '所属平台',
       accountNotes: '备注',
       addAccount: '添加账号',

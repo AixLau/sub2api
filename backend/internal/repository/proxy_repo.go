@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"sort"
 	"strings"
 	"time"
@@ -15,6 +16,20 @@ import (
 
 	entsql "entgo.io/ent/dialect/sql"
 )
+
+func accountEmail(credentials, extra []byte) string {
+	for _, raw := range [][]byte{extra, credentials} {
+		var values map[string]any
+		if json.Unmarshal(raw, &values) == nil {
+			for _, key := range []string{"email_address", "email"} {
+				if email, ok := values[key].(string); ok && strings.TrimSpace(email) != "" {
+					return strings.TrimSpace(email)
+				}
+			}
+		}
+	}
+	return ""
+}
 
 // sqlQuerier 已替换为 sqlExecutor（定义在 group_repo.go），
 // proxyRepository 使用同一接口以支持 ExecContext。
@@ -480,7 +495,7 @@ func (r *proxyRepository) CountAccountsByProxyID(ctx context.Context, proxyID in
 
 func (r *proxyRepository) ListAccountSummariesByProxyID(ctx context.Context, proxyID int64) ([]service.ProxyAccountSummary, error) {
 	rows, err := r.sql.QueryContext(ctx, `
-		SELECT id, name, platform, type, notes
+		SELECT id, name, platform, type, notes, credentials, extra
 		FROM accounts
 		WHERE proxy_id = $1 AND deleted_at IS NULL
 		ORDER BY id DESC
@@ -493,13 +508,14 @@ func (r *proxyRepository) ListAccountSummariesByProxyID(ctx context.Context, pro
 	out := make([]service.ProxyAccountSummary, 0)
 	for rows.Next() {
 		var (
-			id       int64
-			name     string
-			platform string
-			accType  string
-			notes    sql.NullString
+			id                 int64
+			name               string
+			platform           string
+			accType            string
+			notes              sql.NullString
+			credentials, extra []byte
 		)
-		if err := rows.Scan(&id, &name, &platform, &accType, &notes); err != nil {
+		if err := rows.Scan(&id, &name, &platform, &accType, &notes, &credentials, &extra); err != nil {
 			return nil, err
 		}
 		var notesPtr *string
@@ -512,6 +528,7 @@ func (r *proxyRepository) ListAccountSummariesByProxyID(ctx context.Context, pro
 			Platform: platform,
 			Type:     accType,
 			Notes:    notesPtr,
+			Email:    accountEmail(credentials, extra),
 		})
 	}
 	if err := rows.Err(); err != nil {

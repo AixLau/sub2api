@@ -400,6 +400,7 @@ type ProxyAccountSummary struct {
 	Platform string  `json:"platform"`
 	Type     string  `json:"type"`
 	Notes    *string `json:"notes,omitempty"`
+	Email    string  `json:"email,omitempty"`
 }
 
 type RedeemCode struct {

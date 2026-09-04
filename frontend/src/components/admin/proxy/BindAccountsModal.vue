@@ -47,6 +47,7 @@
                   />
                 </th>
                 <th class="px-3 py-2 text-left">{{ t('admin.proxies.accountName') }}</th>
+                <th class="px-3 py-2 text-left">{{ t('admin.proxies.accountEmail') }}</th>
                 <th class="px-3 py-2 text-left">{{ t('admin.accounts.columns.platformType') }}</th>
                 <th class="px-3 py-2 text-left">{{ t('admin.proxies.currentProxy') }}</th>
               </tr>
@@ -67,6 +68,7 @@
                     @change="toggleAccount(account.id)"
                   />
                 </td>
+                <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ account.extra?.email_address || account.extra?.email || account.credentials?.email || '--' }}</td>
                 <td class="px-3 py-2">
                   <div class="font-medium text-gray-900 dark:text-white">{{ account.name }}</div>
                   <div v-if="account.parent_account_id" class="text-xs text-gray-500">

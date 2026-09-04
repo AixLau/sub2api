@@ -999,6 +999,7 @@ export interface ProxyAccountSummary {
   platform: AccountPlatform
   type: AccountType
   notes?: string | null
+  email?: string
 }
 
 export interface ProxyQualityCheckItem {
