@@ -55,10 +55,7 @@
 
         <template #cell-model="{ row }">
           <div class="space-y-0.5 text-xs">
-            <span v-if="row.source === 'account_test'" class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200">
-              {{ t('usage.accountTest') }}
-            </span>
-            <span v-else-if="row.source === 'failed_upstream_usage'" class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200">
+            <span v-if="row.source === 'failed_upstream_usage'" class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200">
               {{ t('usage.failedUpstreamUsage') }}
             </span>
             <div v-if="row.model_mapping_chain && row.model_mapping_chain.includes('→')" class="space-y-0.5">

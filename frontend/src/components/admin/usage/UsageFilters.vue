@@ -329,7 +329,6 @@ const sourceOptions = computed<SelectOption[]>(() => [
   { value: 'gateway', label: t('admin.usage.sourceGateway') },
   { value: 'failed_upstream_usage', label: t('admin.usage.sourceFailedUpstream') },
   { value: 'content_moderation', label: t('admin.usage.sourcePlatformAudit') },
-  { value: 'account_test', label: t('admin.usage.sourceAccountTest') },
 ])
 
 const billingTypeOptions = ref<SelectOption[]>([
