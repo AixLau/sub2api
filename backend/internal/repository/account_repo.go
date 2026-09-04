@@ -1010,7 +1010,18 @@ func (r *accountRepository) accountListFilteredQuery(platform, accountType, stat
 		}
 	}
 	if search != "" {
-		q = q.Where(dbaccount.NameContainsFold(search))
+		q = q.Where(dbaccount.Or(
+			dbaccount.NameContainsFold(search),
+			func(s *entsql.Selector) {
+				s.Where(sqljson.ValueContains(dbaccount.FieldCredentials, search, sqljson.Path("email")))
+			},
+			func(s *entsql.Selector) {
+				s.Where(sqljson.ValueContains(dbaccount.FieldExtra, search, sqljson.Path("email")))
+			},
+			func(s *entsql.Selector) {
+				s.Where(sqljson.ValueContains(dbaccount.FieldExtra, search, sqljson.Path("email_address")))
+			},
+		))
 	}
 	if groupID == service.AccountListGroupUngrouped {
 		q = q.Where(dbaccount.Not(dbaccount.HasAccountGroups()))
