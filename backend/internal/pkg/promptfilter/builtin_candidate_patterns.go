@@ -3,7 +3,18 @@ package promptfilter
 // Candidate rules are deliberately non-strict and non-operational. They widen
 // local recall for candidate_only, but only a downstream reviewer can decide
 // whether the request is allowed or blocked.
-const candidateSourceRevision = "local-candidate-recall@2026-09-06-expanded"
+const candidateSourceRevision = "local-candidate-recall@2026-09-06-context"
+
+// Expiry and quota maintenance is ordinary application work. Broad entitlement
+// terms require circumvention verbs; edits to licensing checks remain candidates.
+const entitlementCircumventionEN = `\b(?:bypass|circumvent|disable|remove|unlock|patch|hook|tamper\s+with|forge|spoof|fake|force)\b`
+const entitlementTargetEN = `\b(?:licen[cs](?:e|ing)|activation|trial|paywall|subscription|entitlement|expiry|expiration|validity|valid\s+days?|(?:seat|user|device|concurren(?:t|cy)|usage)\s+(?:limit|cap|restriction|check|quota))\b`
+const entitlementEditEN = `\b(?:extend|reset|return|set|change|modify)\b`
+const entitlementLicenseEN = `\b(?:licen[cs](?:e|ing)|activation|trial|paywall|entitlement)\b`
+const entitlementCircumventionZH = `(?:绕过|突破|规避|解除|移除|去除|伪造|篡改|(?:固定|直接)返回)`
+const entitlementTargetZH = `(?:授权|许可|激活|试用|订阅|会员|付费墙|权益|有效期|有效天数|到期时间|过期时间|(?:席位|人数|用户数|设备数|并发|用量).{0,12}(?:限制|上限|校验|检查|配额))`
+const entitlementEditZH = `(?:提高|修改|改成|改为|延长|重置|返回)`
+const entitlementLicenseZH = `(?:(?:授权|许可).{0,8}(?:校验|验证|检查|限制|期限)|激活|试用|付费墙)`
 
 var candidatePatternConfigs = []PatternConfig{
 	{
@@ -94,8 +105,13 @@ var candidatePatternConfigs = []PatternConfig{
 		Category: "cyber",
 	},
 	{
-		Name:     "candidate_software_entitlement_bypass",
-		Regex:    `(?i)\b(?:crack|brute[-\s]?force)\b.{0,60}\b(?:commercial\s+)?(?:software|program|application|app|client|binary|executable|exe|dll)\b|\b(?:commercial\s+)?(?:software|program|application|app|client|binary|executable|exe|dll)\b.{0,60}\b(?:crack|brute[-\s]?force)\b|\b(?:patch|hook|tamper\s+with|modify)\b.{0,60}\b(?:binary|executable|exe|dll)\b|\b(?:binary|executable|exe|dll)\b.{0,60}\b(?:patch|hook|tamper\s+with|modify)\b|\b(?:bypass|circumvent|disable|remove|unlock|patch|hook|tamper\s+with|forge|spoof|extend|reset|fake|force|return|set|change|modify)\b.{0,100}\b(?:licen[cs](?:e|ing)|activation|trial|paywall|subscription|entitlement|expiry|expiration|validity|valid\s+days?|(?:seat|user|device|concurren(?:t|cy)|usage)\s+(?:limit|cap|restriction|check|quota))\b|\b(?:licen[cs](?:e|ing)|activation|trial|paywall|subscription|entitlement|expiry|expiration|validity|valid\s+days?|(?:seat|user|device|concurren(?:t|cy)|usage)\s+(?:limit|cap|restriction|check|quota))\b.{0,100}\b(?:bypass|circumvent|disable|remove|unlock|patch|hook|tamper\s+with|forge|spoof|extend|reset|fake|force|return|set|change|modify)\b|(?:破解|爆破).{0,60}(?:商业)?(?:软件|程序|应用|客户端|二进制(?:文件)?|EXE|DLL)|(?:商业)?(?:软件|程序|应用|客户端|二进制(?:文件)?|EXE|DLL).{0,60}(?:破解|爆破)|(?:patch|hook|打补丁|修改|篡改).{0,60}(?:二进制(?:文件)?|EXE|DLL)|(?:二进制(?:文件)?|EXE|DLL).{0,60}(?:patch|hook|打补丁|修改|篡改)|(?:绕过|突破|规避|解除|移除|去除|提高|伪造|篡改|修改|改(?:成|为)?|延长|重置|(?:固定|直接)?返回).{0,80}(?:授权|许可|激活|试用|订阅|会员|付费墙|权益|有效期|有效天数|到期时间|过期时间|(?:席位|人数|用户数|设备数|并发|用量).{0,12}(?:限制|上限|校验|检查|配额))|(?:授权|许可|激活|试用|订阅|会员|付费墙|权益|有效期|有效天数|到期时间|过期时间|(?:席位|人数|用户数|设备数|并发|用量).{0,12}(?:限制|上限|校验|检查|配额)).{0,80}(?:绕过|突破|规避|解除|移除|去除|提高|伪造|篡改|修改|改(?:成|为)?|延长|重置|(?:固定|直接)?返回)`,
+		Name: "candidate_software_entitlement_bypass",
+		Regex: `(?i)\b(?:crack|brute[-\s]?force)\b.{0,60}\b(?:commercial\s+)?(?:software|program|application|app|client|binary|executable|exe|dll)\b|\b(?:commercial\s+)?(?:software|program|application|app|client|binary|executable|exe|dll)\b.{0,60}\b(?:crack|brute[-\s]?force)\b|\b(?:patch|hook|tamper\s+with|modify)\b.{0,60}\b(?:binary|executable|exe|dll)\b|\b(?:binary|executable|exe|dll)\b.{0,60}\b(?:patch|hook|tamper\s+with|modify)\b|` +
+			entitlementCircumventionEN + `.{0,240}` + entitlementTargetEN + `|` + entitlementTargetEN + `.{0,240}` + entitlementCircumventionEN + `|` +
+			entitlementEditEN + `.{0,100}` + entitlementLicenseEN + `|` + entitlementLicenseEN + `.{0,100}` + entitlementEditEN + `|` +
+			`(?:破解|爆破).{0,60}(?:商业)?(?:软件|程序|应用|客户端|二进制(?:文件)?|EXE|DLL)|(?:商业)?(?:软件|程序|应用|客户端|二进制(?:文件)?|EXE|DLL).{0,60}(?:破解|爆破)|(?:patch|hook|打补丁|修改|篡改).{0,60}(?:二进制(?:文件)?|EXE|DLL)|(?:二进制(?:文件)?|EXE|DLL).{0,60}(?:patch|hook|打补丁|修改|篡改)|` +
+			entitlementCircumventionZH + `.{0,240}` + entitlementTargetZH + `|` + entitlementTargetZH + `.{0,240}` + entitlementCircumventionZH + `|` +
+			entitlementEditZH + `.{0,80}` + entitlementLicenseZH + `|` + entitlementLicenseZH + `.{0,80}` + entitlementEditZH,
 		Weight:   70,
 		Category: "license_cracking",
 	},

@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -77,6 +79,29 @@ func TestCandidateCacheIncludesChangedTextOutsideFragment(t *testing.T) {
 	require.NotEqual(t,
 		svc.candidateDecisionCacheKey(cfg, ContentModerationCheckInput{UserID: 1}, first),
 		svc.candidateDecisionCacheKey(cfg, ContentModerationCheckInput{UserID: 1}, second))
+}
+
+func TestCandidateCacheInvalidatesConfigOnlyPolicyRevision(t *testing.T) {
+	cfg := auditRegressionCandidateConfig()
+	svc := candidateTestService(&contentModerationTestRepo{})
+	selection, found := contentModerationCandidateSelectionForSource(cfg, ContentModerationInputSource{
+		Source: "responses.input[0].role=user.content", Role: "user", Text: "danger-marker request",
+	})
+	require.True(t, found)
+	// Reproduce the previous cache identity, which ignored built-in rule updates.
+	payload, err := json.Marshal(struct {
+		Version     int                      `json:"version"`
+		RiskEnabled bool                     `json:"risk_control_enabled"`
+		Config      *ContentModerationConfig `json:"config"`
+	}{Version: 1, RiskEnabled: true, Config: cfg})
+	require.NoError(t, err)
+	previous := sha256.Sum256(payload)
+	oldInput := ContentModerationCheckInput{UserID: 1, policyRevision: hex.EncodeToString(previous[:])}
+	currentInput := ContentModerationCheckInput{UserID: 1}
+	require.NotEqual(t, svc.candidateDecisionCacheKey(cfg, oldInput, selection),
+		svc.candidateDecisionCacheKey(cfg, currentInput, selection))
+	require.Equal(t, svc.candidateDecisionCacheKey(cfg, currentInput, selection),
+		svc.candidateDecisionCacheKey(cfg, currentInput, selection))
 }
 
 func TestSemanticReviewHTTP404UsesConfiguredFallback(t *testing.T) {

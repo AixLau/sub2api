@@ -5,7 +5,13 @@ package promptfilter
 // are intentionally narrower and are eligible for the existing hard block.
 // Sources: https://genai.owasp.org/llmrisk/llm01-prompt-injection/ and
 // https://ctf101.org/.
-const supplementalSourceRevision = "local-content-audit@2026-08-08"
+const supplementalSourceRevision = "local-content-audit@2026-09-06-context"
+
+// Common development syntax needs attack context; exploit-specific signatures
+// below still create candidates on their own.
+const webPayloadDevelopmentMarker = `(?:\bsleep\s*\(|\bbenchmark\s*\(|<script\b|javascript:|\b127\.0\.0\.1\b|\blocalhost\b)`
+const webPayloadAttackContext = `(?:\b(?:payload|injection|sqli|ssrf|xss|exploit|attack|bypass)\b|注入|攻击|载荷|绕过)`
+const httpxSecurityContext = `(?:\b(?:projectdiscovery|reconnaissance|pentest|scan|probe|targets?|hosts?|ports?|subdomains?)\b|资产探测|端口扫描|子域名)`
 
 var supplementalPatternConfigs = []PatternConfig{
 	{
@@ -68,8 +74,10 @@ var supplementalPatternConfigs = []PatternConfig{
 		Strict:   true,
 	},
 	{
-		Name:     "web_payload_marker",
-		Regex:    `(?i)(?:\bunion\s+select\b|\bor\s+1\s*=\s*1\b|\bsleep\s*\(|\bbenchmark\s*\(|(?:\.\./){2,}|%2e%2e|<script\b|javascript:|\{\{\s*\d+\s*[+*]\s*\d+\s*\}\}|169\.254\.169\.254|127\.0\.0\.1|localhost).{0,80}(?:payload|injection|exploit|bypass|flag|admin|secret|注入|利用|绕过|flag|机密|管理员)?`,
+		Name: "web_payload_marker",
+		Regex: `(?i)(?:\bunion\s+select\b|\bor\s+1\s*=\s*1\b|\b(?:and|or)\s+(?:sleep|benchmark)\s*\(|(?:\.\./){2,}|%2e%2e|(?:<script\b|javascript:).{0,160}\b(?:document\s*\.\s*cookie|(?:alert|eval|atob|fetch|XMLHttpRequest|WebSocket)\s*\()|\{\{\s*\d+\s*[+*]\s*\d+\s*\}\}|169\.254\.169\.254)|` +
+			webPayloadDevelopmentMarker + `.{0,80}` + webPayloadAttackContext + `|` +
+			webPayloadAttackContext + `.{0,80}` + webPayloadDevelopmentMarker,
 		Weight:   20,
 		Category: "web_payload",
 	},
@@ -113,8 +121,10 @@ var supplementalPatternConfigs = []PatternConfig{
 		Strict:   true,
 	},
 	{
-		Name:     "pentest_tooling",
-		Regex:    `(?i)\b(?:ffuf|gobuster|dirsearch|feroxbuster|nikto|nuclei|impacket|bloodhound|netexec|crackmapexec|kerbrute|responder|rubeus|hydra|medusa|msfvenom|burp\s* suite|proxychains|chisel|ligolo|netcat|socat|enum4linux|amass|subfinder|httpx|assetfinder|waybackurls|metasploit|mimikatz|sqlmap|nmap|masscan|zmap|penetration\s+testing|pentest|red\s+team)\b|(?:目录扫描|子域名枚举|资产发现|端口扫描|密码喷洒|撞库|凭证转储|中继攻击|代理链|内网穿透|渗透|渗透测试工具)`,
+		Name: "pentest_tooling",
+		Regex: `(?i)\b(?:ffuf|gobuster|dirsearch|feroxbuster|nikto|nuclei|impacket|bloodhound|netexec|crackmapexec|kerbrute|responder|rubeus|hydra|medusa|msfvenom|burp\s* suite|proxychains|chisel|ligolo|netcat|socat|enum4linux|amass|subfinder|assetfinder|waybackurls|metasploit|mimikatz|sqlmap|nmap|masscan|zmap|penetration\s+testing|pentest|red\s+team)\b|(?:目录扫描|子域名枚举|资产发现|端口扫描|密码喷洒|撞库|凭证转储|中继攻击|代理链|内网穿透|渗透|渗透测试工具)|` +
+			`\bhttpx\b.{0,80}` + httpxSecurityContext + `|` + httpxSecurityContext + `.{0,80}\bhttpx\b|` +
+			`\bhttpx\s+-(?:l|u|sc|status-code|ports|silent|title|tech-detect)\b`,
 		Weight:   25,
 		Category: "pentest_tooling",
 	},

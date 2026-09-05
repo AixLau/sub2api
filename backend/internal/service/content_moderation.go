@@ -2069,10 +2069,11 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 
 func contentModerationPolicyRevision(riskEnabled bool, cfg *ContentModerationConfig) string {
 	payload, _ := json.Marshal(struct {
-		Version     int                      `json:"version"`
-		RiskEnabled bool                     `json:"risk_control_enabled"`
-		Config      *ContentModerationConfig `json:"config"`
-	}{Version: 1, RiskEnabled: riskEnabled, Config: cfg})
+		Version           int                      `json:"version"`
+		RiskEnabled       bool                     `json:"risk_control_enabled"`
+		Config            *ContentModerationConfig `json:"config"`
+		PromptFilterRules string                   `json:"prompt_filter_rules"`
+	}{Version: 1, RiskEnabled: riskEnabled, Config: cfg, PromptFilterRules: promptfilter.BuiltinRuleSetRevision})
 	hash := sha256.Sum256(payload)
 	return hex.EncodeToString(hash[:])
 }
