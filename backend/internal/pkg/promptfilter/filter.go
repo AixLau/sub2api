@@ -951,7 +951,7 @@ func operationalPattern(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "credential_theft", "evasion", "operational_remote_access_request",
 		"reverse_engineering_secret_extraction", "reverse_engineering_license_bypass", "reverse_engineering_anti_debug_bypass",
-		"frida_hook_abuse", "license_cracking", "data_exfiltration", "ransomware_deployment", "credential_dumping",
+		"frida_hook_abuse", "license_cracking", "data_exfiltration", "ransomware_deployment",
 		"token_theft", "mass_exploitation", "jailbreak_operational_request", "prompt_injection_override",
 		"system_prompt_extraction", "agent_tool_permission_bypass", "web_exploitation_unauthorized_harm_request",
 		"binary_exploitation_unauthorized_harm_request", "crypto_unauthorized_key_theft_request",

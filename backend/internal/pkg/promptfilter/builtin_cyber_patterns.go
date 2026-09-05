@@ -5,13 +5,15 @@ package promptfilter
 // are intentionally narrower and are eligible for the existing hard block.
 // Sources: https://genai.owasp.org/llmrisk/llm01-prompt-injection/ and
 // https://ctf101.org/.
-const supplementalSourceRevision = "local-content-audit@2026-09-06-context"
+const supplementalSourceRevision = "local-content-audit@2026-09-06-cyber-intent"
 
 // Common development syntax needs attack context; exploit-specific signatures
 // below still create candidates on their own.
 const webPayloadDevelopmentMarker = `(?:\bsleep\s*\(|\bbenchmark\s*\(|<script\b|javascript:|\b127\.0\.0\.1\b|\blocalhost\b)`
 const webPayloadAttackContext = `(?:\b(?:payload|injection|sqli|ssrf|xss|exploit|attack|bypass)\b|注入|攻击|载荷|绕过)`
 const httpxSecurityContext = `(?:\b(?:projectdiscovery|reconnaissance|pentest|scan|probe|targets?|hosts?|ports?|subdomains?)\b|资产探测|端口扫描|子域名)`
+const binaryProtectionContext = `\b(?:binary|elf|stack|protection|overflow|bypass)\b`
+const binaryProtectionAlias = `\b(?:pie|nx|canary)\b`
 
 var supplementalPatternConfigs = []PatternConfig{
 	{
@@ -82,8 +84,9 @@ var supplementalPatternConfigs = []PatternConfig{
 		Category: "web_payload",
 	},
 	{
-		Name:     "binary_exploitation_technique",
-		Regex:    `(?i)\b(?:pwn|binary\s+exploitation|buffer\s+overflow|stack\s+overflow|heap\s+overflow|use[-\s]?after[-\s]?free|uaf|double\s+free|format\s+string|ret2libc|ret2csu|ret2dlresolve|rop|return[-\s]?oriented\s+programming|jop|srop|stack\s+pivot|shellcode|tcache\s+poisoning|fastbin|house\s+of\s+force|got\s+overwrite|plt\s*[/\\]\s*got|libc\s+leak|one[_\s-]?gadget|pwntools|pwning|canary|aslr|pie|nx|relro|seccomp)\b|(?:栈溢出|缓冲区溢出|堆溢出|格式化字符串|返回导向|栈迁移|释放后使用|双重释放|堆利用|GOT覆写|泄露libc|绕过canary|绕过ASLR|绕过NX|二进制利用|二进制漏洞|PWN题)`,
+		Name: "binary_exploitation_technique",
+		Regex: `(?i)\b(?:pwn|binary\s+exploitation|buffer\s+overflow|stack\s+overflow|heap\s+overflow|use[-\s]?after[-\s]?free|uaf|double\s+free|format\s+string\s+(?:exploit|vulnerabilit(?:y|ies)|attack)|ret2libc|ret2csu|ret2dlresolve|rop|return[-\s]?oriented\s+programming|jop|srop|stack\s+pivot|shellcode|tcache\s+poisoning|fastbin|house\s+of\s+force|got\s+overwrite|plt\s*[/\\]\s*got|libc\s+leak|one[_\s-]?gadget|pwntools|pwning|aslr|relro|seccomp)\b|(?:栈溢出|缓冲区溢出|堆溢出|格式化字符串(?:漏洞|利用|攻击)|返回导向|栈迁移|释放后使用|双重释放|堆利用|GOT覆写|泄露libc|绕过canary|绕过ASLR|绕过NX|二进制利用|二进制漏洞|PWN题)|` +
+			binaryProtectionAlias + `.{0,60}` + binaryProtectionContext + `|` + binaryProtectionContext + `.{0,60}` + binaryProtectionAlias,
 		Weight:   30,
 		Category: "binary_exploitation",
 	},
@@ -96,7 +99,7 @@ var supplementalPatternConfigs = []PatternConfig{
 	},
 	{
 		Name:     "ctf_crypto_technique",
-		Regex:    `(?i)\b(?:single[-\s]?byte\s+xor|repeating[-\s]?key\s+xor|known[-\s]?plaintext|crib[-\s]?dragging|frequency\s+analysis|vigen(?:e|è)re|padding\s+oracles?|cbc\s+bit[-\s]?flipping|ecb\s+oracles?|length\s+extension|hash\s+collisions?|md5\s+collisions?|rsa[-\s]+(?:cryptography|encryption|cipher|keys?|signatures?|modulus|padding|attacks?|challenges?)|common\s+modulus|low[-\s]?exponent|wiener(?:'s)?\s+attack|hastad|discrete\s+log(?:arithm)?|weak\s+prng|nonce\s+reuse|ecdsa\s+nonce|hashcat|john(?:\s+the\s+ripper)?|rainbow\s+table|password\s+hash)\b|(?:单字节XOR|重复密钥XOR|已知明文|频率分析|填充预言机|CBC位翻转|ECB预言机|长度扩展|哈希碰撞|MD5碰撞|RSA(?:加密|密码|密钥|签名|模数|填充|攻击|题目)|共模|低指数|Wiener|Håstad|离散对数|弱随机数|nonce复用|ECDSA随机数|哈希破解|密码哈希|彩虹表)`,
+		Regex:    `(?i)\b(?:single[-\s]?byte\s+xor|repeating[-\s]?key\s+xor|known[-\s]?plaintext|crib[-\s]?dragging|frequency\s+analysis|vigen(?:e|è)re|padding\s+oracles?|cbc\s+bit[-\s]?flipping|ecb\s+oracles?|length\s+extension|hash\s+collisions?|md5\s+collisions?|rsa[-\s]+(?:cryptography|encryption|cipher|keys?|signatures?|modulus|padding|attacks?|challenges?)|common\s+modulus|low[-\s]?exponent|wiener(?:'s)?\s+attack|hastad|discrete\s+log(?:arithm)?|weak\s+prng|nonce\s+reuse|ecdsa\s+nonce|hashcat|john\s+the\s+ripper|rainbow\s+table|password\s+hash)\b|(?:单字节XOR|重复密钥XOR|已知明文|频率分析|填充预言机|CBC位翻转|ECB预言机|长度扩展|哈希碰撞|MD5碰撞|RSA(?:加密|密码|密钥|签名|模数|填充|攻击|题目)|共模|低指数|Wiener|Håstad|离散对数|弱随机数|nonce复用|ECDSA随机数|哈希破解|密码哈希|彩虹表)`,
 		Weight:   25,
 		Category: "crypto_attack",
 	},
@@ -109,7 +112,7 @@ var supplementalPatternConfigs = []PatternConfig{
 	},
 	{
 		Name:     "reverse_engineering_toolchain",
-		Regex:    `(?i)\b(?:crackme|reverse\s+engineering|binary\s+analysis|ida(?:\s+pro)?|ghidra|binary\s+ninja|radare2|x64dbg|ollydbg|gdb|frida|angr|z3|jadx|apktool|unpack(?:ing)?|decompil(?:e|er)|disassembl(?:e|y)|symbolic\s+execution|dynamic\s+instrumentation|anti[-\s]?debug|anti[-\s]?tamper|control[-\s]?flow\s+flattening|opaque\s+predicate|patch\s+(?:the\s+)?binary|nop\s+sled)\b|(?:逆向工程|静态分析|动态分析|反汇编|反编译|脱壳|调试|符号执行|动态插桩|反调试|反篡改|控制流平坦化|不透明谓词|补丁|破解题)`,
+		Regex:    `(?i)\b(?:crackme|reverse\s+engineering|binary\s+analysis|ida(?:\s+pro)?|ghidra|binary\s+ninja|radare2|x64dbg|ollydbg|gdb|frida|angr|z3|jadx|apktool|decompil(?:e|er)|disassembl(?:e|y)|symbolic\s+execution|dynamic\s+instrumentation|anti[-\s]?debug|anti[-\s]?tamper|control[-\s]?flow\s+flattening|opaque\s+predicate|patch\s+(?:the\s+)?binary|nop\s+sled)\b|\bunpack(?:ing)?\b.{0,40}\b(?:binary|executable|packer)\b|(?:逆向工程|反汇编|反编译|脱壳|符号执行|动态插桩|反调试|反篡改|控制流平坦化|不透明谓词|破解题)|(?:二进制|可执行文件).{0,30}(?:静态分析|动态分析|调试|补丁)|(?:静态分析|动态分析|调试|补丁).{0,30}(?:二进制|可执行文件)`,
 		Weight:   25,
 		Category: "reverse_engineering",
 	},

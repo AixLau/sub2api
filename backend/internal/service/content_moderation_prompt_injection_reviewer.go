@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	promptInjectionReviewerInstructionsRevision = "prompt-injection-instructions-v3"
+	promptInjectionReviewerInstructionsRevision = "prompt-injection-instructions-v4"
 	promptInjectionReviewerSchemaRevision       = "prompt-injection-schema-v2"
 )
 
@@ -66,7 +66,7 @@ func semanticReviewInstructionsForKind(reviewKind string, finalReview bool) stri
 		return semanticReviewPolicyInstructions + semanticReviewFinalDecisionInstructions
 	}
 	if normalizeContentModerationReviewKind(reviewKind) == contentModerationReviewKindPromptInjection {
-		return promptInjectionReviewInstructions + "\nIf the outer intent is software reverse engineering/cracking or virology study/research, return review with presentation=unknown and ambiguous_context so the final auditor can apply the platform's prohibited-topic policy. Authorization or educational purpose does not exempt these topics."
+		return promptInjectionReviewInstructions + "\nIf the outer task requests software entitlement circumvention or virology study/research, return review with presentation=unknown and ambiguous_context for the final auditor. Mere reverse engineering, debugging, packet capture, Hook or security research terminology does not establish an active override or a prohibited outcome."
 	}
 	return semanticReviewInstructions
 }

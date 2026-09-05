@@ -18,7 +18,8 @@ func TestFinalSemanticReviewUsesBinarySchemaAndPlatformIntentPrompt(t *testing.T
 		verdict := format["schema"].(map[string]any)["properties"].(map[string]any)["verdict"].(map[string]any)
 		require.Equal(t, []string{"allow", "reject"}, verdict["enum"])
 		instructions := semanticReviewInstructionsForKind(kind, true)
-		require.Contains(t, instructions, "software reverse engineering or cracking")
+		require.Contains(t, instructions, "authorized reverse engineering")
+		require.Contains(t, instructions, "third-party software licenses")
 		require.Contains(t, instructions, "virology education and research")
 		require.Contains(t, instructions, "only permitted verdicts are allow and reject")
 		require.NotContains(t, instructions, "INITIAL SCREEN")
@@ -26,7 +27,7 @@ func TestFinalSemanticReviewUsesBinarySchemaAndPlatformIntentPrompt(t *testing.T
 }
 
 func TestFinalSemanticReviewEnforcesModelIdentifiedRestrictedIntent(t *testing.T) {
-	for _, category := range []string{"reverse_engineering", "license_cracking", "biosecurity"} {
+	for _, category := range []string{"license_cracking", "biosecurity"} {
 		result := candidateAllowSemanticRouter().result
 		result.Categories = []string{category}
 		result.HarmEvidence = "explicit"
@@ -40,6 +41,29 @@ func TestFinalSemanticReviewEnforcesModelIdentifiedRestrictedIntent(t *testing.T
 		require.NoError(t, err)
 		require.Equal(t, "allow", final.Verdict, "incidental topic labels must not establish intent")
 	}
+}
+
+func TestFinalSemanticReviewAllowsAuthorizedReverseAnalysis(t *testing.T) {
+	result := candidateAllowSemanticRouter().result
+	result.Categories = []string{"reverse_engineering"}
+	result.HarmEvidence = "explicit"
+	result.Intent = "defensive"
+	result.Target = "self_owned"
+	result.Authorization = "authorized"
+	final, err := applyFinalSemanticReviewPolicy(result)
+	require.NoError(t, err)
+	require.Equal(t, "allow", final.Verdict)
+
+	result.Verdict = "reject"
+	result.Intent = "harmful"
+	result.Authorization = "unauthorized"
+	result.Target = "third_party"
+	result.HarmMechanism = "credential_theft"
+	result.Operationality = "actionable"
+	result.Executability = "direct"
+	final, err = applyFinalSemanticReviewPolicy(result)
+	require.NoError(t, err)
+	require.Equal(t, "reject", final.Verdict)
 }
 
 func TestCandidateSecondAuditHasOnlyTerminalModelDecisions(t *testing.T) {

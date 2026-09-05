@@ -3,7 +3,7 @@ package promptfilter
 // Candidate rules are deliberately non-strict and non-operational. They widen
 // local recall for candidate_only, but only a downstream reviewer can decide
 // whether the request is allowed or blocked.
-const candidateSourceRevision = "local-candidate-recall@2026-09-06-context"
+const candidateSourceRevision = "local-candidate-recall@2026-09-06-cyber-intent"
 
 // Expiry and quota maintenance is ordinary application work. Broad entitlement
 // terms require circumvention verbs; edits to licensing checks remain candidates.
@@ -16,7 +16,7 @@ const entitlementTargetZH = `(?:授权|许可|激活|试用|订阅|会员|付费
 const entitlementEditZH = `(?:提高|修改|改成|改为|延长|重置|返回)`
 const entitlementLicenseZH = `(?:(?:授权|许可).{0,8}(?:校验|验证|检查|限制|期限)|激活|试用|付费墙)`
 
-var candidatePatternConfigs = []PatternConfig{
+var candidatePatternConfigs = append([]PatternConfig{
 	{
 		Name:   "candidate_virology_intent",
 		Regex:  `(?i)\b(?:virolog(?:y|ic|ical|ists?)|viral|virus(?:es)?|virions?|pathogens?|bacteriophages?|coronavirus(?:es)?|influenza|sars[-\s]?cov(?:[-\s]?2)?|hiv|hbv|hcv|hpv|ebola|bioweapons?|biological\s+(?:agents?|weapons?))\b|病毒|病原体|噬菌体|生物武器|流感病毒|冠状病毒`,
@@ -33,8 +33,10 @@ var candidatePatternConfigs = []PatternConfig{
 		Weight: 70, Category: "cyber",
 	},
 	{
-		Name:     "candidate_unauthorized_access",
-		Regex:    `(?i)\b(?:break\s+into|hack\s+into|gain\s+unauthori[sz]ed\s+access\s+to|access\s+without\s+(?:permission|authorization)|bypass\s+(?:the\s+)?(?:login|authentication|access\s+control))\b.{0,100}\b(?:account|email|server|system|network|database|device|admin|portal)\b|(?:入侵|黑进|未授权访问|未经授权访问|绕过(?:登录|认证|鉴权|访问控制)).{0,80}(?:账号|邮箱|服务器|系统|网络|数据库|设备|后台)`,
+		Name: "candidate_unauthorized_access",
+		Regex: `(?i)\b(?:break\s+into|hack\s+into|gain\s+unauthori[sz]ed\s+access\s+to|access\s+without\s+(?:permission|authorization)|bypass\s+(?:the\s+)?(?:login|authentication|access\s+control))\b.{0,100}\b(?:account|email|server|system|network|database|device|admin|portal)\b|(?:入侵|黑进|未授权访问|未经授权访问|绕过(?:登录|认证|鉴权|访问控制)).{0,80}(?:账号|邮箱|服务器|系统|网络|数据库|设备|后台)|` +
+			`\b(?:attack|compromise|take\s+over)\b.{0,80}\b(?:third[-\s]?party|victim|someone\s+else(?:'s)?|unauthori[sz]ed)\b.{0,60}\b(?:servers?|hosts?|websites?|accounts?|networks?)\b|` +
+			`(?:攻击|打穿|拿下|接管).{0,60}(?:他人|第三方|受害者|未授权).{0,60}(?:网站|主机|服务器|账号|内网|域控)`,
 		Weight:   70,
 		Category: "cyber",
 	},
@@ -187,4 +189,4 @@ var candidatePatternConfigs = []PatternConfig{
 		Weight:   75,
 		Category: "biometric",
 	},
-}
+}, cyberIntentPatternConfigs...)

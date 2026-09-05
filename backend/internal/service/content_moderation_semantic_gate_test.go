@@ -1253,7 +1253,7 @@ func TestContentModerationCheck_HybridCyberKeywordUsesOrdinaryModerationAndSeman
 	require.True(t, moderationCalled, "a hybrid keyword hit must call the ordinary moderation API")
 }
 
-func TestContentModerationCheck_HybridRejectsAuthorizedReverseEngineeringIntent(t *testing.T) {
+func TestContentModerationCheck_HybridAllowsReviewerApprovedReverseEngineering(t *testing.T) {
 	moderationCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		moderationCalled = true
@@ -1296,11 +1296,12 @@ func TestContentModerationCheck_HybridRejectsAuthorizedReverseEngineeringIntent(
 		nil,
 		nil,
 	)
-	svc.SetSemanticReviewRouter(&contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
-		Verdict: "reject", Intent: "benign", Target: "self_owned", Authorization: "authorized",
+	router := &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "allow", Intent: "benign", Target: "self_owned", Authorization: "authorized",
 		HarmMechanism: "none", HarmEvidence: "explicit", Severity: "high", Confidence: 0.91,
 		Operationality: "actionable", Executability: "direct", Categories: []string{"reverse_engineering"},
-	}})
+	}}
+	svc.SetSemanticReviewRouter(router)
 
 	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
 		UserID: 17, APIKeyID: 29, Endpoint: "/v1/responses", Provider: "openai",
@@ -1310,14 +1311,10 @@ func TestContentModerationCheck_HybridRejectsAuthorizedReverseEngineeringIntent(
 
 	require.NoError(t, err)
 	require.True(t, moderationCalled)
-	require.False(t, decision.Allowed)
-	require.True(t, decision.Blocked)
-	require.Equal(t, cfg.BlockStatus, decision.StatusCode)
-	require.Equal(t, ContentModerationActionSemanticReviewReject, decision.Action)
-	logs := repo.snapshotLogs()
-	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewReject, logs[0].Action)
-	require.Contains(t, string(logs[0].Metadata), `"platform_reverse_engineering"`)
+	require.Equal(t, 1, router.calls)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionAllow, decision.Action)
 }
 
 func TestContentModerationCheck_HybridCyberKeywordBlocksOnSemanticRejectAfterOrdinaryModeration(t *testing.T) {

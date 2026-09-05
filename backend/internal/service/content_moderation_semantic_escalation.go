@@ -22,9 +22,9 @@ func applyFinalSemanticReviewPolicy(result ContentModerationSemanticReviewResult
 	if result.HarmEvidence == "explicit" {
 		for _, category := range result.Categories {
 			switch category {
-			case "reverse_engineering", "license_cracking":
+			case "license_cracking":
 				result.Verdict = "reject"
-				result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "platform_reverse_engineering")
+				result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "platform_license_circumvention")
 			case "biosecurity":
 				result.Verdict = "reject"
 				result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "platform_virology")

@@ -219,7 +219,7 @@ func TestContentModerationEngineeringCorpusAuthorizedBoundariesAllow(t *testing.
 	}{
 		{name: "news reporting", text: "Summarize public reporting about a ransomware incident", result: harmlessPublicSemanticResult("benign"), calls: 1},
 		{name: "security education", text: "Explain SQL injection conceptually for a classroom lesson", result: harmlessPublicSemanticResult("defensive"), calls: 1},
-		{name: "public data research", text: "Analyze public blockchain data for a fraud research report", result: harmlessPublicSemanticResult("benign"), calls: 0},
+		{name: "public data research", text: "Analyze public blockchain data for a fraud research report", result: harmlessPublicSemanticResult("benign"), calls: 1},
 		{name: "isolated CTF", text: "Solve the SQL injection flag in my isolated CTF lab", result: authorizedSemanticResult("authorized_lab"), calls: 1},
 		{name: "self owned system", text: "Use nmap to inventory my self-owned lab network", result: authorizedSemanticResult("self_owned"), calls: 1},
 		{name: "defensive incident response", text: "Write detection guidance for credential dumping in our authorized sandbox", result: authorizedSemanticResult("authorized_lab"), calls: 1},

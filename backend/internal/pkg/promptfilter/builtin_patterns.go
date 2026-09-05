@@ -1,6 +1,6 @@
 package promptfilter
 
-// Built-in patterns copied with permission from james-6-23/codex2api.
+// Built-in patterns adapted with permission from james-6-23/codex2api.
 // Source revision: 6793e0b09fe170895878f73f256a3d7ee7e5a08b.
 // Keep this revision pinned when updating the rule set.
 
@@ -19,12 +19,12 @@ var defaultPatternConfigs = []PatternConfig{
 	{Name: "scanner_tooling", Regex: `(?i)\b(sqlmap|nmap|masscan|zmap|burp\s+suite)\b`, Weight: 10, Category: "tooling"},
 	{Name: "large_scale_scanning", Regex: `(?i)\b(large[-\s]?scale|internet[-\s]?wide|public\s+ip\s+ranges?|mass)\s+(scan|scanning|enumeration)\b`, Weight: 40, Category: "scanning"},
 	{Name: "cve_reference", Regex: `(?i)\bcve-\d{4}-\d{4,7}\b`, Weight: 10, Category: "vulnerability"},
-	{Name: "generic_exploit", Regex: `(?i)\b(exploit|payload|vulnerability|0day|zero[-\s]?day)\b`, Weight: 10, Category: "vulnerability"},
-	{Name: "reverse_engineering", Regex: `(?i)\b(ida\s+pro|ghidra|x64dbg|ollydbg|frida\s+hook|deobfuscate|unpack)\b|反编译|脱壳`, Weight: 15, Category: "reverse_engineering"},
+	{Name: "generic_exploit", Regex: `(?i)\b(exploit|vulnerability|0day|zero[-\s]?day)\b|\b(?:malicious|attack|shellcode|injection|weaponized|weaponised)\b.{0,60}\bpayload\b|\bpayload\b.{0,60}\b(?:malicious|attack|shellcode|injection|weaponized|weaponised)\b`, Weight: 10, Category: "vulnerability"},
+	{Name: "reverse_engineering", Regex: `(?i)\b(ida\s+pro|ghidra|x64dbg|ollydbg|frida\s+hook|deobfuscate)\b|\bunpack(?:ing)?\b.{0,40}\b(?:binary|executable|packer)\b|反编译|脱壳`, Weight: 15, Category: "reverse_engineering"},
 	{Name: "reverse_engineering_secret_extraction", Regex: `(?i)\b(ida\s+pro|ghidra|x64dbg|ollydbg|frida|jadx|apktool|decompile|disassembl|reverse\s+engineer)\b.{0,120}\b(extract|dump|recover|decrypt)\b.{0,80}\b(api\s*keys?|tokens?|secrets?|private\s*keys?|certificates?|license\s*keys?)\b|(?:ida|ghidra|frida|jadx|apktool|反编译|反汇编).{0,80}(提取|导出|解密|恢复).{0,40}(密钥|token|令牌|私钥|证书|授权码)`, Weight: 90, Category: "reverse_engineering", Strict: true},
 	{Name: "reverse_engineering_license_bypass", Regex: `(?i)\b(ida\s+pro|ghidra|x64dbg|ollydbg|frida|jadx|apktool|decompile|disassembl|reverse\s+engineer)\b.{0,120}\b(bypass|crack|patch|remove|unlock)\b.{0,80}\b(license|activation|trial|paywall|subscription|in[-\s]?app\s+purchase|iap|entitlement)\b|(?:ida|ghidra|x64dbg|frida|反编译|逆向|脱壳|调试).{0,80}(绕过|破解|补丁|去除|解锁).{0,40}(授权|激活|试用|会员|订阅|付费|内购)`, Weight: 85, Category: "license_cracking", Strict: true},
 	{Name: "reverse_engineering_anti_debug_bypass", Regex: `(?i)\b(bypass|disable|remove|defeat)\b.{0,60}\b(anti[-\s]?debug|anti[-\s]?tamper|integrity\s+check|root\s+detection|jailbreak\s+detection|certificate\s+pinning)\b|绕过.{0,40}(反调试|反篡改|完整性校验|root\s*检测|越狱检测|证书绑定|证书固定)`, Weight: 70, Category: "reverse_engineering", Strict: true},
-	{Name: "frida_hook_abuse", Regex: `(?i)\b(frida|substrate|xposed)\b.{0,100}\b(hook|patch|bypass|unlock)\b.{0,80}\b(payment|purchase|license|activation|subscription|login|auth|entitlement)\b|(?:frida|xposed).{0,80}(hook|绕过|破解|解锁).{0,40}(支付|内购|授权|激活|会员|订阅|登录|鉴权)`, Weight: 75, Category: "reverse_engineering", Strict: true},
+	{Name: "frida_hook_abuse", Regex: `(?i)\b(frida|substrate|xposed)\b.{0,100}\b(patch|bypass|unlock)\b.{0,80}\b(payment|purchase|license|activation|subscription|login|auth|entitlement)\b|(?:frida|xposed).{0,80}(绕过|破解|解锁).{0,40}(支付|内购|授权|激活|会员|订阅|登录|鉴权)`, Weight: 75, Category: "reverse_engineering", Strict: true},
 	{Name: "license_cracking", Regex: `(?i)\b(keygen|crack\s+license|serial\s+generator|license\s+bypass|patch\s+(activation|license))\b|注册机|破解授权|序列号生成`, Weight: 55, Category: "license_cracking", Strict: true},
 	{Name: "data_exfiltration", Regex: `(?i)\b(exfiltrate|exfiltration|data\s+theft|steal\s+data|siphon\s+data)\b.{0,80}\b(database|files?|documents?|source\s+code|intellectual\s+property)\b|数据窃取|数据外泄`, Weight: 70, Category: "data_theft", Strict: true},
 	{Name: "ddos_attack", Regex: `(?i)\b(ddos|dos\s+attack|distributed\s+denial|amplification\s+attack|syn\s+flood|udp\s+flood)\b|拒绝服务攻击|流量攻击`, Weight: 65, Category: "network_attack", Strict: true},

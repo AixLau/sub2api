@@ -131,9 +131,9 @@ func canonicalSemanticReviewReasonCode(value string) string {
 	if key == "" {
 		return ""
 	}
-	// Keep application-generated codes stable and backwards compatible.
+	// Preserve application-generated codes through taxonomy normalization.
 	switch key {
-	case "final_inconclusive", "platform_reverse_engineering", "platform_virology":
+	case "final_inconclusive", "platform_license_circumvention", "platform_virology":
 		return key
 	case "semantic_policy_public_harmless", "semantic_policy_reject", "semantic_policy_reject_inconsistent", "semantic_policy_allow_inconsistent", "semantic_policy_harmless_review", "semantic_policy_unsubstantiated_fraud", "semantic_policy_context_only", "unstructured_model_output", "invalid_model_output_json":
 		return key
