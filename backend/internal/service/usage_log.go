@@ -147,6 +147,9 @@ type UsageLog struct {
 	AccountID int64
 	Source    UsageSource
 	RequestID string
+	// UpstreamRequestID is the provider-side request identifier captured from
+	// the upstream response headers, when available.
+	UpstreamRequestID *string
 	Model     string
 	// RequestedModel is the client-requested model name recorded for stable user/admin display.
 	// Empty should be treated as Model for backward compatibility with historical rows.

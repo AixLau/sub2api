@@ -41,6 +41,12 @@ func (UsageLog) Fields() []ent.Field {
 		field.String("request_id").
 			MaxLen(64).
 			NotEmpty(),
+		// UpstreamRequestID is the request identifier returned by the upstream
+		// provider, when the account/path exposes one in response headers.
+		field.String("upstream_request_id").
+			MaxLen(128).
+			Optional().
+			Nillable(),
 		field.String("model").
 			MaxLen(100).
 			NotEmpty(),

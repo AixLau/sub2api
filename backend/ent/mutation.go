@@ -58531,6 +58531,7 @@ type UsageLogMutation struct {
 	id                              *int64
 	source                          *string
 	request_id                      *string
+	upstream_request_id             *string
 	model                           *string
 	requested_model                 *string
 	upstream_model                  *string
@@ -58921,6 +58922,55 @@ func (m *UsageLogMutation) OldRequestID(ctx context.Context) (v string, err erro
 // ResetRequestID resets all changes to the "request_id" field.
 func (m *UsageLogMutation) ResetRequestID() {
 	m.request_id = nil
+}
+
+// SetUpstreamRequestID sets the "upstream_request_id" field.
+func (m *UsageLogMutation) SetUpstreamRequestID(s string) {
+	m.upstream_request_id = &s
+}
+
+// UpstreamRequestID returns the value of the "upstream_request_id" field in the mutation.
+func (m *UsageLogMutation) UpstreamRequestID() (r string, exists bool) {
+	v := m.upstream_request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamRequestID returns the old "upstream_request_id" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldUpstreamRequestID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamRequestID: %w", err)
+	}
+	return oldValue.UpstreamRequestID, nil
+}
+
+// ClearUpstreamRequestID clears the value of the "upstream_request_id" field.
+func (m *UsageLogMutation) ClearUpstreamRequestID() {
+	m.upstream_request_id = nil
+	m.clearedFields[usagelog.FieldUpstreamRequestID] = struct{}{}
+}
+
+// UpstreamRequestIDCleared returns if the "upstream_request_id" field was cleared in this mutation.
+func (m *UsageLogMutation) UpstreamRequestIDCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldUpstreamRequestID]
+	return ok
+}
+
+// ResetUpstreamRequestID resets all changes to the "upstream_request_id" field.
+func (m *UsageLogMutation) ResetUpstreamRequestID() {
+	m.upstream_request_id = nil
+	delete(m.clearedFields, usagelog.FieldUpstreamRequestID)
 }
 
 // SetModel sets the "model" field.
@@ -61701,7 +61751,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 53)
+	fields := make([]string, 0, 54)
 	if m.user != nil {
 		fields = append(fields, usagelog.FieldUserID)
 	}
@@ -61716,6 +61766,9 @@ func (m *UsageLogMutation) Fields() []string {
 	}
 	if m.request_id != nil {
 		fields = append(fields, usagelog.FieldRequestID)
+	}
+	if m.upstream_request_id != nil {
+		fields = append(fields, usagelog.FieldUpstreamRequestID)
 	}
 	if m.model != nil {
 		fields = append(fields, usagelog.FieldModel)
@@ -61879,6 +61932,8 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.Source()
 	case usagelog.FieldRequestID:
 		return m.RequestID()
+	case usagelog.FieldUpstreamRequestID:
+		return m.UpstreamRequestID()
 	case usagelog.FieldModel:
 		return m.Model()
 	case usagelog.FieldRequestedModel:
@@ -61994,6 +62049,8 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldSource(ctx)
 	case usagelog.FieldRequestID:
 		return m.OldRequestID(ctx)
+	case usagelog.FieldUpstreamRequestID:
+		return m.OldUpstreamRequestID(ctx)
 	case usagelog.FieldModel:
 		return m.OldModel(ctx)
 	case usagelog.FieldRequestedModel:
@@ -62133,6 +62190,13 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRequestID(v)
+		return nil
+	case usagelog.FieldUpstreamRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamRequestID(v)
 		return nil
 	case usagelog.FieldModel:
 		v, ok := value.(string)
@@ -62821,6 +62885,9 @@ func (m *UsageLogMutation) ClearedFields() []string {
 	if m.FieldCleared(usagelog.FieldAPIKeyID) {
 		fields = append(fields, usagelog.FieldAPIKeyID)
 	}
+	if m.FieldCleared(usagelog.FieldUpstreamRequestID) {
+		fields = append(fields, usagelog.FieldUpstreamRequestID)
+	}
 	if m.FieldCleared(usagelog.FieldRequestedModel) {
 		fields = append(fields, usagelog.FieldRequestedModel)
 	}
@@ -62921,6 +62988,9 @@ func (m *UsageLogMutation) ClearField(name string) error {
 		return nil
 	case usagelog.FieldAPIKeyID:
 		m.ClearAPIKeyID()
+		return nil
+	case usagelog.FieldUpstreamRequestID:
+		m.ClearUpstreamRequestID()
 		return nil
 	case usagelog.FieldRequestedModel:
 		m.ClearRequestedModel()
@@ -63025,6 +63095,9 @@ func (m *UsageLogMutation) ResetField(name string) error {
 		return nil
 	case usagelog.FieldRequestID:
 		m.ResetRequestID()
+		return nil
+	case usagelog.FieldUpstreamRequestID:
+		m.ResetUpstreamRequestID()
 		return nil
 	case usagelog.FieldModel:
 		m.ResetModel()
@@ -64519,6 +64592,8 @@ func (m *UserMutation) RestrictPublicGroups() (r bool, exists bool) {
 }
 
 // OldRestrictPublicGroups returns the old "restrict_public_groups" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
 func (m *UserMutation) OldRestrictPublicGroups(ctx context.Context) (v bool, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldRestrictPublicGroups is only allowed on UpdateOne operations")
