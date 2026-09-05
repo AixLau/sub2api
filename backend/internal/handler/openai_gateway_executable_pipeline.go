@@ -1424,6 +1424,10 @@ func (s OpenAIHTTPUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 		model = openAIAccountScheduleModel(c, s.Account, model, s.ScheduleRequireCompact, s.Result)
 		h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account, model, scheduleSuccess, firstTokenMs, s.ScheduleObservedErr)
 	}
+	// Schedule-only calls carry a partial result for health feedback, but no billing identity.
+	if s.ScheduleSuccess != nil && s.APIKey == nil {
+		return ExecutableStageResult{}
+	}
 	failedUpstreamUsage := s.Source.Normalize() == service.UsageSourceFailedUpstream
 	if failedUpstreamUsage {
 		// Cyber failures have their own usage recorder. Recording both paths would
