@@ -4,15 +4,13 @@
 
 // OpenAI
 const openaiModels = [
-  // GPT-6 系列
-  'gpt-6', 'gpt-6-astra',
   // GPT-5.2 系列
   'gpt-5.2', 'gpt-5.2-2025-12-11', 'gpt-5.2-chat-latest',
   'gpt-5.2-pro', 'gpt-5.2-pro-2025-12-11',
 	// GPT-5.6 系列
   'gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna',
   // GPT-6 系列
-  'gpt-6-astra',
+  'gpt-6', 'gpt-6-astra',
   // GPT-5.5 系列
   'gpt-5.5',
   // GPT-5.4 系列

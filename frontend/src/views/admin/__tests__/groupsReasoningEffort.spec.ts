@@ -4,6 +4,7 @@ import {
   createReasoningEffortMappingPair,
   createReasoningEffortMappingRow,
   normalizeReasoningEffortForPlatform,
+  normalizeReasoningEffortOverLimit,
   normalizeReasoningEffortSourceForPlatform,
   normalizeReasoningEffortMatchType,
   reasoningEffortMappingsToAPI,

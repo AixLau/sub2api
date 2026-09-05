@@ -30,7 +30,7 @@ const (
 	checkPaidResultCancelled   = "cancelled"
 
 	pendingPaymentReconcileLimit = 20
-	haozPayExpiredReconcileAge = 24 * time.Hour
+	haozPayExpiredReconcileAge   = 24 * time.Hour
 )
 
 type checkPaidOptions struct {
@@ -434,7 +434,7 @@ func (s *PaymentService) ReconcilePendingNinePlusOrders(ctx context.Context) (in
 			),
 		).
 		Order(dbent.Asc(paymentorder.FieldCreatedAt)).
-		Limit(pendingWxpayReconcileLimit).
+		Limit(pendingPaymentReconcileLimit).
 		All(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("query pending nineplus orders: %w", err)
@@ -468,7 +468,7 @@ func (s *PaymentService) ReconcilePendingHaozPayOrders(ctx context.Context) (int
 			paymentorder.ProviderKeyEQ(payment.TypeHaozPay),
 		).
 		Order(dbent.Asc(paymentorder.FieldCreatedAt)).
-		Limit(pendingWxpayReconcileLimit).
+		Limit(pendingPaymentReconcileLimit).
 		All(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("query pending haozpay orders: %w", err)
@@ -490,7 +490,7 @@ func (s *PaymentService) ReconcileNinePlusFulfillment(ctx context.Context) (int,
 			paymentorder.StatusIn(OrderStatusPaid, OrderStatusRecharging),
 		).
 		Order(dbent.Asc(paymentorder.FieldUpdatedAt)).
-		Limit(pendingWxpayReconcileLimit).
+		Limit(pendingPaymentReconcileLimit).
 		All(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("query nineplus fulfillment orders: %w", err)

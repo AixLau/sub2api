@@ -1022,7 +1022,7 @@ watch(
   [
     () => route.path,
     sidebarCollapsed,
-    () => Array.from(expandedGroups.value),
+  () => Array.from(groupExpandOverrides.value),
     () => adminNavItems.value.length,
     () => personalNavItems.value.length,
     () => userNavItems.value.length

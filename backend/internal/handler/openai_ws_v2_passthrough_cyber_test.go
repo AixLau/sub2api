@@ -102,7 +102,7 @@ func newOpenAIWSPassthroughHandlerHarness(t *testing.T, upstreamURL string) *ope
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.User.ID, Concurrency: 1})
 		c.Next()
 	})
-	router.GET("/openai/v1/responses", func(c *gin.Context) {
+	router.GET("/openai/v1/responses", markOpenAIWebSocketGatewayPipelineEntrypointForTest(), func(c *gin.Context) {
 		h.ResponsesWebSocket(c)
 		close(handlerDone)
 	})
@@ -178,7 +178,8 @@ func TestOpenAIResponsesWebSocketV2PassthroughCyberMarkIsConsumedAfterTurn(t *te
 	require.Eventually(t, func() bool {
 		logs := harness.moderationRepo.logSnapshot()
 		return len(logs) == 1 && logs[0].Action == service.ContentModerationActionCyberPolicy &&
-			strings.Contains(logs[0].Error, "upstream_usage=in:11,out:3")
+			gjson.GetBytes(logs[0].Metadata, "upstream_input_tokens").Int() == 11 &&
+			gjson.GetBytes(logs[0].Metadata, "upstream_output_tokens").Int() == 3
 	}, 3*time.Second, 10*time.Millisecond, "handler AfterTurn must call recordCyberPolicyIfMarked and write the risk-control event")
 
 	keyCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -205,7 +206,7 @@ func TestOpenAIResponsesWebSocketV2PassthroughCyberMarkIsConsumedAfterTurn(t *te
 	require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
 	// closeOpenAIClientWS caps close reasons at 120 bytes; passthrough must expose
 	// the same client-visible prefix rather than dropping the close frame.
-	require.Equal(t, "该会话已被网络安全策略屏蔽，请开启新会话 / This session is blocked by cyber-security policy, please ", closeErr.Reason)
+	require.Equal(t, cyberSessionBlockedClientMessage(service.PlatformOpenAI), closeErr.Reason)
 	select {
 	case <-harness.handlerDone:
 	case <-time.After(3 * time.Second):

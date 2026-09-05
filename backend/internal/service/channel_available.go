@@ -185,14 +185,14 @@ func synthesizePricingFromLiteLLM(lp *LiteLLMModelPricing, existing *ChannelMode
 		}
 	}
 	return &ChannelModelPricing{
-		BillingMode:      mode,
-		CacheWrite1hPrice: nonZeroPtr(lp.CacheCreationInputTokenCostAbove1hr),
+		BillingMode:                  mode,
+		CacheWrite1hPrice:            nonZeroPtr(lp.CacheCreationInputTokenCostAbove1hr),
 		MaxReasoningEffortMultiplier: maxReasoningEffortMultiplierFromPricing(existing),
-		InputPrice:       nonZeroPtr(lp.InputCostPerToken),
-		OutputPrice:      nonZeroPtr(lp.OutputCostPerToken),
-		CacheWritePrice:  cacheWritePriceFromLiteLLM(lp),
-		CacheReadPrice:   nonZeroPtr(lp.CacheReadInputTokenCost),
-		ImageOutputPrice: nonZeroPtr(lp.OutputCostPerImageToken),
+		InputPrice:                   nonZeroPtr(lp.InputCostPerToken),
+		OutputPrice:                  nonZeroPtr(lp.OutputCostPerToken),
+		CacheWritePrice:              cacheWritePriceFromLiteLLM(lp),
+		CacheReadPrice:               nonZeroPtr(lp.CacheReadInputTokenCost),
+		ImageOutputPrice:             nonZeroPtr(lp.OutputCostPerImageToken),
 	}
 }
 
@@ -215,7 +215,9 @@ func cacheWritePriceFromLiteLLM(lp *LiteLLMModelPricing) *float64 {
 }
 
 func maxReasoningEffortMultiplierFromPricing(pricing *ChannelModelPricing) *float64 {
-	if pricing == nil { return nil }
+	if pricing == nil {
+		return nil
+	}
 	return pricing.MaxReasoningEffortMultiplier
 }
 

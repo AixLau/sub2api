@@ -79,7 +79,7 @@ describe('AppSidebar active indicator', () => {
   it('remeasures after route, collapse, group, and container-size changes', () => {
     expect(componentSource).toContain('() => route.path')
     expect(componentSource).toContain('sidebarCollapsed,')
-    expect(componentSource).toContain('() => Array.from(expandedGroups.value)')
+    expect(componentSource).toContain('() => Array.from(groupExpandOverrides.value)')
     expect(componentSource).toContain('new ResizeObserver')
   })
 

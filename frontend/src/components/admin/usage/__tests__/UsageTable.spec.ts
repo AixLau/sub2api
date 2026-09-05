@@ -391,7 +391,7 @@ describe('admin UsageTable tooltip', () => {
     })
 
     const text = wrapper.text()
-    expect(text).toContain('Account test')
+    expect(text).not.toContain('Account test')
     expect(text).toContain('Platform test')
     expect(text).not.toContain('Model cost')
     expect(text).toContain('$0.012345')

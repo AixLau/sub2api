@@ -384,11 +384,6 @@ func upstreamCatalogNeedsRegistry(models []string, metadata map[string]UpstreamM
 	return false
 }
 
-func upstreamModelMetadataIsComplete(model UpstreamModelMetadata) bool {
-	return model.Reasoning != nil && len(normalizeCodexInputModalities(model.InputModalities)) > 0 &&
-		model.ContextWindow > 0 && (!*model.Reasoning || len(normalizeReasoningLevels(model.SupportedReasoningLevels)) > 0)
-}
-
 func upstreamModelMetadataIsUseful(metadata UpstreamModelMetadata) bool {
 	return strings.TrimSpace(metadata.DisplayName) != "" ||
 		strings.TrimSpace(metadata.Description) != "" ||
@@ -669,16 +664,7 @@ func matchModelsDevProviderByAPIURL(registry map[string]modelsDevProvider, accou
 			bestScore = len(providerBaseURL)
 		}
 	}
-	if bestScore >= 0 {
-		return best, true
-	}
-	parsed, err := url.Parse(accountBaseURL)
-	if err == nil && (parsed.Hostname() == "api.openai.com" || parsed.Hostname() == "chatgpt.com") {
-		if provider, ok := registry["openai"]; ok && provider.API == "" && len(provider.Models) > 0 {
-			return provider, true
-		}
-	}
-	return modelsDevProvider{}, false
+	return best, bestScore >= 0
 }
 
 // matchModelsDevProviderByKnownHost covers first-party hosts whose models.dev

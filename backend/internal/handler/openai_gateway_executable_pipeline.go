@@ -1921,29 +1921,29 @@ func (s OpenAIWebSocketForwardStage) RunForward(c *gin.Context) ExecutableStageR
 }
 
 type OpenAIWebSocketUsageStage struct {
-	Handler              *OpenAIGatewayHandler
-	RequestContext       context.Context
-	ReqLog               *zap.Logger
-	APIKey               *service.APIKey
-	Account              *service.Account
-	Subscription         *service.UserSubscription
-	Model                string
-	UpstreamModel        string
-	TurnErr              error
-	Result               *service.OpenAIForwardResult
-	CyberBlockKey        string
-	CyberBlockBody       []byte
-	ChannelMapping       service.ChannelMappingResult
-	RequestPayloadHash   string
-	QuotaPlatform        string
-	ReleaseTurnSlots     func()
-	CyberBlockedThisConn *bool
+	Handler                        *OpenAIGatewayHandler
+	RequestContext                 context.Context
+	ReqLog                         *zap.Logger
+	APIKey                         *service.APIKey
+	Account                        *service.Account
+	Subscription                   *service.UserSubscription
+	Model                          string
+	UpstreamModel                  string
+	TurnErr                        error
+	Result                         *service.OpenAIForwardResult
+	CyberBlockKey                  string
+	CyberBlockBody                 []byte
+	ChannelMapping                 service.ChannelMappingResult
+	RequestPayloadHash             string
+	QuotaPlatform                  string
+	ReleaseTurnSlots               func()
+	CyberBlockedThisConn           *bool
 	CyberBlockPendingAfterFailover *bool
-	ScheduleSuccess      *bool
-	UserAgent            string
-	ClientIP             string
-	SessionID            string
-	PricingAt            time.Time
+	ScheduleSuccess                *bool
+	UserAgent                      string
+	ClientIP                       string
+	SessionID                      string
+	PricingAt                      time.Time
 }
 
 func (OpenAIWebSocketUsageStage) StageName() string {

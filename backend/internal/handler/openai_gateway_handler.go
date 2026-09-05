@@ -2641,10 +2641,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		var turnPricing openAIWSTurnPricing
 		hooks := &service.OpenAIWSIngressHooks{
 			MaxReasoningEffortOverLimit: overLimit,
-			ClientLifecycleContext:  clientLifecycleCtx,
-			InitialRequestModel:     reqModel,
-			MaxReasoningEffort:      maxReasoningEffort,
-			ReasoningEffortMappings: reasoningEffortMappings,
+			ClientLifecycleContext:      clientLifecycleCtx,
+			InitialRequestModel:         reqModel,
+			MaxReasoningEffort:          maxReasoningEffort,
+			ReasoningEffortMappings:     reasoningEffortMappings,
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
 				c.Set(securityAuditWSTurnContextKey, turn)
 				service.BeginOpsStreamTurn(c, turn)
@@ -2800,27 +2800,27 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					result.BillingModel = openAIWSTurnBillingModel(result, turnMapping, turnRequestedModel, turnUpstreamModel)
 				}
 				_ = h.runOpenAIWebSocketStage(c, OpenAIWebSocketUsageStage{
-					Handler:              h,
-					RequestContext:       ctx,
-					ReqLog:               reqLog,
-					APIKey:               apiKey,
-					Account:              account,
-					Subscription:         subscription,
-					Model:                turnRequestedModel,
-					UpstreamModel:        turnUpstreamModel,
-					TurnErr:              turnErr,
-					Result:               result,
-					CyberBlockKey:        cyberBlockKey,
-					CyberBlockBody:       cyberBlockBody,
-					ChannelMapping:       turnMapping,
-					RequestPayloadHash:   requestPayloadHash,
-					ReleaseTurnSlots:     releaseTurnSlots,
+					Handler:                        h,
+					RequestContext:                 ctx,
+					ReqLog:                         reqLog,
+					APIKey:                         apiKey,
+					Account:                        account,
+					Subscription:                   subscription,
+					Model:                          turnRequestedModel,
+					UpstreamModel:                  turnUpstreamModel,
+					TurnErr:                        turnErr,
+					Result:                         result,
+					CyberBlockKey:                  cyberBlockKey,
+					CyberBlockBody:                 cyberBlockBody,
+					ChannelMapping:                 turnMapping,
+					RequestPayloadHash:             requestPayloadHash,
+					ReleaseTurnSlots:               releaseTurnSlots,
 					CyberBlockPendingAfterFailover: &cyberBlockPendingAfterFailover,
-					CyberBlockedThisConn: &cyberBlockedThisConn,
-					UserAgent:            userAgent,
-					ClientIP:             clientIP,
-					SessionID:            service.ExtractClientSessionID(c),
-					PricingAt:            turnPricing.current(),
+					CyberBlockedThisConn:           &cyberBlockedThisConn,
+					UserAgent:                      userAgent,
+					ClientIP:                       clientIP,
+					SessionID:                      service.ExtractClientSessionID(c),
+					PricingAt:                      turnPricing.current(),
 				})
 			},
 		}

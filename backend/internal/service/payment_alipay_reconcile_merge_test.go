@@ -1,11 +1,13 @@
+//go:build unit
+
 package service
 
 import (
-"context"
-"testing"
-"time"
-"github.com/stretchr/testify/require"
-"github.com/Wei-Shaw/sub2api/internal/pkg/payment"
+	"context"
+	"github.com/Wei-Shaw/sub2api/internal/payment"
+	"github.com/stretchr/testify/require"
+	"testing"
+	"time"
 )
 
 func TestReconcilePendingPaymentOrdersQueriesAlipayOrder(t *testing.T) {
@@ -60,4 +62,3 @@ func TestReconcilePendingPaymentOrdersQueriesAlipayOrder(t *testing.T) {
 	require.Equal(t, 1, provider.queryCalls)
 	require.Equal(t, order.OutTradeNo, provider.lastQueryTradeNo)
 }
-

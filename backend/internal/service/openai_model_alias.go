@@ -108,11 +108,6 @@ func normalizeKnownOpenAICodexModel(model string) string {
 	}
 }
 
-func isOpenAIGPT6AstraModel(model string) bool {
-	normalized := canonicalizeOpenAIModelAliasSpelling(model)
-	return normalized == "gpt-6" || normalized == "gpt-6-astra"
-}
-
 // isOpenAIGPT56Model 判断是否 GPT-5.6 系列模型；入参可为原始模型名
 // （含大小写/路径/后缀变体）或已归一化的基名，两者均能正确识别。
 func isOpenAIGPT56Model(model string) bool {
@@ -132,11 +127,10 @@ func isOpenAIGPT56Model(model string) bool {
 }
 
 // isOpenAIGPT6AstraModel reports GPT-6 Astra and dated/provider-prefixed variants.
-// Bare "gpt-6" and other future gpt-6-* models are intentionally excluded until
-// their capabilities are confirmed (see #6622).
+// The public "gpt-6" alias routes to Astra; unrelated GPT-6 families stay excluded.
 func isOpenAIGPT6AstraModel(model string) bool {
 	normalized := canonicalizeOpenAIModelAliasSpelling(model)
-	return normalized == "gpt-6-astra" || strings.HasPrefix(normalized, "gpt-6-astra-")
+	return normalized == "gpt-6" || normalized == "gpt-6-astra" || strings.HasPrefix(normalized, "gpt-6-astra-")
 }
 
 func appendUsageBillingModelCandidate(candidates []string, seen map[string]struct{}, model string) []string {

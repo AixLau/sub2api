@@ -11,11 +11,11 @@ import (
 )
 
 const (
-	maxReasoningEffortMappings = 64
-	maxReasoningEffortValueLen = 64
-	maxReasoningEffortModelLen = 200
+	maxReasoningEffortMappings        = 64
+	maxReasoningEffortValueLen        = 64
+	maxReasoningEffortModelLen        = 200
 	ReasoningEffortOverLimitDowngrade = "downgrade"
-	ReasoningEffortOverLimitDeny = "deny"
+	ReasoningEffortOverLimitDeny      = "deny"
 )
 
 var openAIReasoningEffortValues = []string{"minimal", "low", "medium", "high", "xhigh", "max"}

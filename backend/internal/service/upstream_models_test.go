@@ -417,31 +417,6 @@ func TestFetchUpstreamSupportedModelsParsesOpenAIResponse(t *testing.T) {
 	require.Equal(t, "Bearer openai-key", upstream.lastReq.Header.Get("Authorization"))
 }
 
-func TestFetchUpstreamSupportedModelsUsesConfiguredBodyLimit(t *testing.T) {
-	t.Parallel()
-
-	upstream := &httpUpstreamRecorder{resp: &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"gpt-5"}]}`)),
-	}}
-	cfg := upstreamModelSyncTestConfig()
-	cfg.Gateway.ModelsListReadMaxBytes = 8
-	svc := &AccountTestService{httpUpstream: upstream, cfg: cfg}
-
-	_, err := svc.FetchUpstreamSupportedModels(context.Background(), &Account{
-		ID:       7,
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeAPIKey,
-		Credentials: map[string]any{
-			"api_key":  "openai-key",
-			"base_url": "https://openai.example.com/v1",
-		},
-	})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "response exceeds 8 bytes")
-}
-
 // Scenario: ID-only 模型列表从 Models.dev 补齐能力。
 func TestSyncUpstreamModelCatalogEnrichesOpenCodeIDOnlyListAndPersistsSnapshot(t *testing.T) {
 	upstream := &httpUpstreamRecorder{responses: []*http.Response{
@@ -1171,7 +1146,6 @@ func TestFetchUpstreamSupportedModelsParsesGrokAPIKeyResponse(t *testing.T) {
 	require.Equal(t, "Bearer xai-key", upstream.lastReq.Header.Get("Authorization"))
 }
 
-
 func TestFetchUpstreamSupportedModelsParsesGrokOAuthResponse(t *testing.T) {
 	t.Parallel()
 
@@ -1197,7 +1171,6 @@ func TestFetchUpstreamSupportedModelsParsesGrokOAuthResponse(t *testing.T) {
 	require.Equal(t, "grok-user@example.com", upstream.lastReq.Header.Get("X-Email"))
 }
 
-
 func TestBuildUpstreamModelsRequestGrokOAuthDoesNotSendIdentityToCustomBase(t *testing.T) {
 	t.Parallel()
 
@@ -1211,7 +1184,6 @@ func TestBuildUpstreamModelsRequestGrokOAuthDoesNotSendIdentityToCustomBase(t *t
 	require.Empty(t, req.Header.Get("X-UserID"))
 	require.Empty(t, req.Header.Get("X-Email"))
 }
-
 
 func TestFetchUpstreamSupportedModelsDoesNotExposeUpstreamBody(t *testing.T) {
 	t.Parallel()

@@ -720,7 +720,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 			RequestCount:               1,
 			RateMultiplier:             multiplier,
 			PricingAt:                  pricingAt,
-			ReasoningEffort: reasoningEffort,
+			ReasoningEffort:            reasoningEffort,
 			ServiceTier:                serviceTier,
 			PriorityMultiplierOverride: openAIFastBillingMultiplier,
 			Resolver:                   s.resolver,
