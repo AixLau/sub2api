@@ -343,6 +343,16 @@ export default {
         upstreamStatus: 'Upstream Status',
         message: 'Message',
         rootCause: 'Root Cause',
+        diagnosis: {
+          title: 'Diagnosis', evidence: 'Evidence', action: 'Suggested action', external: 'External service / network', input: 'Request or configuration', platform: 'Platform internal', unknown: 'Unable to determine',
+          upstreamSummary: 'The failure occurred in the upstream service or connection; the current evidence does not point to gateway code.',
+          upstreamEvidence: 'Upstream status {status} or provider ownership', upstreamAction: 'Check upstream status, account health, and retries in the same time window.',
+          clientSummary: 'The client or network connection was interrupted before the response completed.', clientEvidence: 'Status {status} or cancellation signal', clientAction: 'Check client timeouts, proxy connection settings, and network stability.',
+          routingSummary: 'The requested model or route did not match an available target.', routingEvidence: 'Status {status} or routing phase', routingAction: 'Check model name, group allowlists, and available accounts.',
+          requestSummary: 'Request parameters, authentication, or business quota caused the rejection.', requestEvidence: 'Status {status} or request/auth phase', requestAction: 'Check request parameters, API key, balance, and subscription state.',
+          platformSummary: 'Gateway-internal processing returned a service error.', platformEvidence: 'Status {status} or internal phase', platformAction: 'Use the request ID to inspect application logs and stack traces.',
+          unknownSummary: 'The available fields are not sufficient to assign responsibility reliably.', unknownEvidence: 'No clear upstream status, phase, or error message', unknownAction: 'Inspect diagnostic payloads and correlate system logs by request ID.'
+        },
         diagnosticPayloads: 'Diagnostic Payloads',
         payloads: {
           client: 'Client Response',

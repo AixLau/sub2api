@@ -73,6 +73,8 @@ describe('OpsErrorDetailModal', () => {
     expect(wrapper.text()).toContain('provider rate limit exhausted')
     expect(wrapper.text()).toContain('admin.ops.errorDetail.upstreamStatus')
     expect(wrapper.text()).toContain('429')
+    expect(wrapper.text()).toContain('admin.ops.errorDetail.diagnosis.title')
+    expect(wrapper.text()).toContain('admin.ops.errorDetail.diagnosis.external')
     expect(wrapper.findAll('pre')).toHaveLength(2)
     expect(wrapper.text()).not.toContain('admin.ops.errorDetail.payloads.upstream_detail')
   })

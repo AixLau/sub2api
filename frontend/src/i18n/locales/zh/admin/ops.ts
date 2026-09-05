@@ -343,6 +343,16 @@ export default {
         upstreamStatus: '上游状态码',
         message: '消息',
         rootCause: '根因',
+        diagnosis: {
+          title: '诊断结论', evidence: '判断依据', action: '建议操作', external: '外部服务 / 网络', input: '请求或配置', platform: '平台内部', unknown: '暂无法判断',
+          upstreamSummary: '错误发生在上游服务或上游连接，当前日志不支持归因于平台代码。',
+          upstreamEvidence: '上游状态码 {status} 或归属方为服务商', upstreamAction: '检查上游状态、账号健康与同一时间段的重试情况。',
+          clientSummary: '请求在客户端或网络连接中断，服务端未能完成响应。', clientEvidence: '状态码 {status} 或连接取消信号', clientAction: '检查客户端超时、代理连接和网络稳定性。',
+          routingSummary: '请求的模型或路由配置未匹配到可用目标。', routingEvidence: '状态码 {status} 或阶段为路由', routingAction: '检查模型名称、分组白名单和可用账号。',
+          requestSummary: '请求参数、认证或业务额度触发了拒绝。', requestEvidence: '状态码 {status} 或阶段为请求/认证', requestAction: '检查请求参数、API Key、余额和订阅状态。',
+          platformSummary: '网关内部处理返回了服务错误。', platformEvidence: '状态码 {status} 或阶段为内部', platformAction: '结合 request ID 查询应用日志和堆栈。',
+          unknownSummary: '现有字段不足以可靠判断责任归属。', unknownEvidence: '缺少明确的上游状态、阶段或错误消息', unknownAction: '查看诊断载荷并关联同一 request ID 的系统日志。'
+        },
         diagnosticPayloads: '诊断载荷',
         payloads: {
           client: '客户端响应',

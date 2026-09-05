@@ -143,6 +143,18 @@
         <div class="mt-3 break-words text-sm font-medium text-amber-900 dark:text-amber-100">{{ rootCauseMessage }}</div>
       </div>
 
+      <div class="rounded-xl border p-6" :class="diagnosis.className">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h3 class="text-sm font-black uppercase tracking-wider">{{ t('admin.ops.errorDetail.diagnosis.title') }}</h3>
+          <span class="rounded-md px-2 py-1 text-xs font-bold" :class="diagnosis.badgeClass">{{ diagnosis.label }}</span>
+        </div>
+        <p class="mt-3 text-sm font-medium">{{ diagnosis.summary }}</p>
+        <div class="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+          <div><span class="opacity-60">{{ t('admin.ops.errorDetail.diagnosis.evidence') }}:</span> {{ diagnosis.evidence }}</div>
+          <div><span class="opacity-60">{{ t('admin.ops.errorDetail.diagnosis.action') }}:</span> {{ diagnosis.action }}</div>
+        </div>
+      </div>
+
       <div class="rounded-xl bg-gray-50 p-6 dark:bg-dark-900">
         <h3 class="text-sm font-black uppercase tracking-wider text-gray-900 dark:text-white">{{ t('admin.ops.errorDetail.diagnosticPayloads') }}</h3>
         <div v-if="!diagnosticPayloadSections.length" class="mt-4 text-sm text-gray-500 dark:text-gray-400">{{ t('common.noData') }}</div>
@@ -282,6 +294,34 @@ const rootCauseMessage = computed(() => {
     if (value) return value
   }
   return ''
+})
+
+type Diagnosis = { label: string; summary: string; evidence: string; action: string; className: string; badgeClass: string }
+
+const diagnosis = computed<Diagnosis>(() => {
+  const current = detail.value
+  const upstream = current?.upstream_status_code ?? 0
+  const status = current?.status_code ?? 0
+  const phase = String(current?.phase || '').toLowerCase()
+  const owner = String(current?.error_owner || '').toLowerCase()
+  const message = String(rootCauseMessage.value || current?.message || '').toLowerCase()
+  const isCancellation = status === 499 || message.includes('context canceled') || message.includes('client disconnected') || message.includes('broken pipe')
+  if (isCancellation) {
+    return { label: t('admin.ops.errorDetail.diagnosis.external'), summary: t('admin.ops.errorDetail.diagnosis.clientSummary'), evidence: t('admin.ops.errorDetail.diagnosis.clientEvidence', { status }), action: t('admin.ops.errorDetail.diagnosis.clientAction'), className: 'border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-100', badgeClass: 'bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200' }
+  }
+  if (upstream >= 500 || upstream === 429 || owner === 'provider' || phase === 'upstream') {
+    return { label: t('admin.ops.errorDetail.diagnosis.external'), summary: t('admin.ops.errorDetail.diagnosis.upstreamSummary'), evidence: t('admin.ops.errorDetail.diagnosis.upstreamEvidence', { status: upstream || status }), action: t('admin.ops.errorDetail.diagnosis.upstreamAction'), className: 'border-red-200 bg-red-50 text-red-950 dark:border-red-800 dark:bg-red-950/30 dark:text-red-100', badgeClass: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' }
+  }
+  if (status === 404 || phase === 'routing') {
+    return { label: t('admin.ops.errorDetail.diagnosis.input'), summary: t('admin.ops.errorDetail.diagnosis.routingSummary'), evidence: t('admin.ops.errorDetail.diagnosis.routingEvidence', { status }), action: t('admin.ops.errorDetail.diagnosis.routingAction'), className: 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100', badgeClass: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' }
+  }
+  if (status === 400 || status === 403 || phase === 'request' || phase === 'auth') {
+    return { label: t('admin.ops.errorDetail.diagnosis.input'), summary: t('admin.ops.errorDetail.diagnosis.requestSummary'), evidence: t('admin.ops.errorDetail.diagnosis.requestEvidence', { status }), action: t('admin.ops.errorDetail.diagnosis.requestAction'), className: 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100', badgeClass: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' }
+  }
+  if (status >= 500 || phase === 'internal') {
+    return { label: t('admin.ops.errorDetail.diagnosis.platform'), summary: t('admin.ops.errorDetail.diagnosis.platformSummary'), evidence: t('admin.ops.errorDetail.diagnosis.platformEvidence', { status }), action: t('admin.ops.errorDetail.diagnosis.platformAction'), className: 'border-violet-200 bg-violet-50 text-violet-950 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-100', badgeClass: 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200' }
+  }
+  return { label: t('admin.ops.errorDetail.diagnosis.unknown'), summary: t('admin.ops.errorDetail.diagnosis.unknownSummary'), evidence: t('admin.ops.errorDetail.diagnosis.unknownEvidence'), action: t('admin.ops.errorDetail.diagnosis.unknownAction'), className: 'border-gray-200 bg-gray-50 text-gray-950 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-100', badgeClass: 'bg-gray-100 text-gray-800 dark:bg-dark-700 dark:text-gray-200' }
 })
 
 const diagnosticPayloadSections = computed(() => {
