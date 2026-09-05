@@ -109,6 +109,7 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // upstream_request_write_ms
 			sqlmock.AnyArg(), // upstream_response_headers_ms
 			sqlmock.AnyArg(), // upstream_first_event_ms
+			sqlmock.AnyArg(), // upstream_request_id
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(99), createdAt))
 
@@ -209,6 +210,7 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			sqlmock.AnyArg(), // upstream_request_write_ms
 			sqlmock.AnyArg(), // upstream_response_headers_ms
 			sqlmock.AnyArg(), // upstream_first_event_ms
+			sqlmock.AnyArg(), // upstream_request_id
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(100), createdAt))
 
@@ -948,6 +950,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullInt64{},
 			sql.NullInt64{},
 			sql.NullInt64{},
+			sql.NullString{}, // upstream_request_id
 		}})
 		require.NoError(t, err)
 		require.Equal(t, service.UsageSourceAccountTest, log.Source)
@@ -1031,11 +1034,12 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{}, // session_id
 			false,            // native_compaction_v2
 			now,
-			sql.NullInt64{}, // user_queue_wait_ms
-			sql.NullInt64{}, // account_queue_wait_ms
-			sql.NullInt64{}, // upstream_request_write_ms
-			sql.NullInt64{}, // upstream_response_headers_ms
-			sql.NullInt64{}, // upstream_first_event_ms
+			sql.NullInt64{},  // user_queue_wait_ms
+			sql.NullInt64{},  // account_queue_wait_ms
+			sql.NullInt64{},  // upstream_request_write_ms
+			sql.NullInt64{},  // upstream_response_headers_ms
+			sql.NullInt64{},  // upstream_first_event_ms
+			sql.NullString{}, // upstream_request_id
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)
@@ -1099,11 +1103,12 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{}, // session_id
 			false,            // native_compaction_v2
 			now,
-			sql.NullInt64{}, // user_queue_wait_ms
-			sql.NullInt64{}, // account_queue_wait_ms
-			sql.NullInt64{}, // upstream_request_write_ms
-			sql.NullInt64{}, // upstream_response_headers_ms
-			sql.NullInt64{}, // upstream_first_event_ms
+			sql.NullInt64{},  // user_queue_wait_ms
+			sql.NullInt64{},  // account_queue_wait_ms
+			sql.NullInt64{},  // upstream_request_write_ms
+			sql.NullInt64{},  // upstream_response_headers_ms
+			sql.NullInt64{},  // upstream_first_event_ms
+			sql.NullString{}, // upstream_request_id
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)
@@ -1167,11 +1172,12 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{}, // session_id
 			false,            // native_compaction_v2
 			now,
-			sql.NullInt64{}, // user_queue_wait_ms
-			sql.NullInt64{}, // account_queue_wait_ms
-			sql.NullInt64{}, // upstream_request_write_ms
-			sql.NullInt64{}, // upstream_response_headers_ms
-			sql.NullInt64{}, // upstream_first_event_ms
+			sql.NullInt64{},  // user_queue_wait_ms
+			sql.NullInt64{},  // account_queue_wait_ms
+			sql.NullInt64{},  // upstream_request_write_ms
+			sql.NullInt64{},  // upstream_response_headers_ms
+			sql.NullInt64{},  // upstream_first_event_ms
+			sql.NullString{}, // upstream_request_id
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)
