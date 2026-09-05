@@ -349,7 +349,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 
 	// 7. Send request
 	proxyURL := ""
-	if account.Proxy != nil {
+	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
 	resp, err := DoOpsUpstream(c, upstreamReq, func(req *http.Request) (*http.Response, error) {

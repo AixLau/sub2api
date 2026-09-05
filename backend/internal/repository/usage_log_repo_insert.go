@@ -91,6 +91,7 @@ var usageLogInsertArgTypes = [...]string{
 	"integer",     // upstream_request_write_ms
 	"integer",     // upstream_response_headers_ms
 	"integer",     // upstream_first_event_ms
+	"text",        // upstream_request_id
 }
 
 func usageLogInsertPlaceholders() string {
@@ -319,7 +320,8 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			account_queue_wait_ms,
 			upstream_request_write_ms,
 			upstream_response_headers_ms,
-			upstream_first_event_ms
+			upstream_first_event_ms,
+			upstream_request_id
 		) VALUES (` + usageLogInsertPlaceholders() + `)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 		RETURNING id, created_at
@@ -777,7 +779,8 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 			account_queue_wait_ms,
 			upstream_request_write_ms,
 			upstream_response_headers_ms,
-			upstream_first_event_ms
+			upstream_first_event_ms,
+			upstream_request_id
 		) AS (VALUES `)
 
 	// Each batch row prepends the synthetic input_index before the usage-log columns.
@@ -876,7 +879,8 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				account_queue_wait_ms,
 				upstream_request_write_ms,
 				upstream_response_headers_ms,
-				upstream_first_event_ms
+				upstream_first_event_ms,
+				upstream_request_id
 			)
 			SELECT
 				user_id,
@@ -945,7 +949,8 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				account_queue_wait_ms,
 				upstream_request_write_ms,
 				upstream_response_headers_ms,
-				upstream_first_event_ms
+				upstream_first_event_ms,
+				upstream_request_id
 			FROM input
 			ON CONFLICT (request_id, api_key_id) DO NOTHING
 			RETURNING request_id, api_key_id, id, created_at
@@ -1054,7 +1059,8 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			account_queue_wait_ms,
 			upstream_request_write_ms,
 			upstream_response_headers_ms,
-			upstream_first_event_ms
+			upstream_first_event_ms,
+			upstream_request_id
 		) AS (VALUES `)
 
 	args := make([]any, 0, len(preparedList)*len(usageLogInsertArgTypes))
@@ -1149,7 +1155,8 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			account_queue_wait_ms,
 			upstream_request_write_ms,
 			upstream_response_headers_ms,
-			upstream_first_event_ms
+			upstream_first_event_ms,
+			upstream_request_id
 		)
 		SELECT
 			user_id,
@@ -1218,7 +1225,8 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			account_queue_wait_ms,
 			upstream_request_write_ms,
 			upstream_response_headers_ms,
-			upstream_first_event_ms
+			upstream_first_event_ms,
+			upstream_request_id
 		FROM input
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 	`)
@@ -1295,7 +1303,8 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			account_queue_wait_ms,
 			upstream_request_write_ms,
 			upstream_response_headers_ms,
-			upstream_first_event_ms
+			upstream_first_event_ms,
+			upstream_request_id
 		) VALUES (` + usageLogInsertPlaceholders() + `)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 	`
@@ -1349,6 +1358,7 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 	upstreamRequestWrite := nullInt(log.UpstreamRequestWriteMs)
 	upstreamResponseHeaders := nullInt(log.UpstreamResponseHeadersMs)
 	upstreamFirstEvent := nullInt(log.UpstreamFirstEventMs)
+	upstreamRequestID := nullString(log.UpstreamRequestID)
 	source := log.Source.Normalize()
 	log.Source = source
 
@@ -1439,6 +1449,7 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 			upstreamRequestWrite,
 			upstreamResponseHeaders,
 			upstreamFirstEvent,
+			upstreamRequestID,
 		},
 	}
 }
