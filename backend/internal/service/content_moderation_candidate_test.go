@@ -429,7 +429,7 @@ func TestCandidateIncompleteExtractionReviewsAvailableEvidence(t *testing.T) {
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
 	require.Empty(t, logs[0].Error)
-	require.Equal(t, ContentModerationActionSemanticReviewAllow, logs[0].Action)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
 	require.Equal(t, contentModerationDecisionSourceSemantic, logs[0].DecisionSource)
 	require.Equal(t, []string{"max_total_runes"}, logs[0].TruncateReasons)
 	require.Equal(t, "responses.input[0].role=user.content", logs[0].SelectedSource)
@@ -474,7 +474,7 @@ func TestCandidateIncompleteExtractionCollapsesRepeatedRetriesIntoOneAudit(t *te
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
 	require.Empty(t, logs[0].Error)
-	require.Equal(t, ContentModerationActionSemanticReviewAllow, logs[0].Action)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
 	require.Equal(t, 1, router.calls)
 	require.Equal(t, int64(1), repo.duplicateRetries.Load())
 }
@@ -533,7 +533,7 @@ func TestCandidateUnknownResponsesValueReviewsExtractedUserText(t *testing.T) {
 	require.Contains(t, router.input.Text, "exploit")
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewAllow, logs[0].Action)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
 	require.Empty(t, logs[0].Error)
 	require.Equal(t, []string{"unsupported_required_value"}, logs[0].TruncateReasons)
 	require.False(t, logs[0].UserViolationEligible)
@@ -823,7 +823,7 @@ func TestCandidateDecisionCacheSuppressesRepeatedModelExecutionAndSideEffects(t 
 	require.Equal(t, int64(1), repo.duplicateRetries.Load())
 }
 
-func TestCandidateDecisionCacheV4SeparatesDifferentPromptInjectionTails(t *testing.T) {
+func TestCandidateDecisionCacheSeparatesDifferentTailsWithEitherReviewer(t *testing.T) {
 	svc := candidateTestService(&candidateRetryDedupeRepo{})
 	cfg := candidateTestConfig()
 	base := contentModerationCandidateSelection{
@@ -847,14 +847,14 @@ func TestCandidateDecisionCacheV4SeparatesDifferentPromptInjectionTails(t *testi
 	second.EvidenceRunes = len([]rune(second.ReviewText))
 	input := ContentModerationCheckInput{UserID: 17, APIKeyID: 29, Protocol: ContentModerationProtocolOpenAIResponses}
 
-	legacyFirst := svc.candidateDecisionCacheKey(cfg, input, first)
-	legacySecond := svc.candidateDecisionCacheKey(cfg, input, second)
-	require.Equal(t, legacyFirst, legacySecond)
+	generalFirst := svc.candidateDecisionCacheKey(cfg, input, first)
+	generalSecond := svc.candidateDecisionCacheKey(cfg, input, second)
+	require.NotEqual(t, generalFirst, generalSecond)
 
 	cfg.SemanticReview.PromptInjectionReviewerEnabled = true
-	v4First := svc.candidateDecisionCacheKey(cfg, input, first)
-	v4Second := svc.candidateDecisionCacheKey(cfg, input, second)
-	require.NotEqual(t, v4First, v4Second)
+	dedicatedFirst := svc.candidateDecisionCacheKey(cfg, input, first)
+	dedicatedSecond := svc.candidateDecisionCacheKey(cfg, input, second)
+	require.NotEqual(t, dedicatedFirst, dedicatedSecond)
 }
 
 func TestCandidateDecisionCacheV4IsolatesEvidenceRevision(t *testing.T) {
@@ -1714,7 +1714,7 @@ func TestReviewOnlySoftwareEntitlementCandidatePromotesCorroboratedReview(t *tes
 	require.Contains(t, result.ReasonCodes, "semantic_policy_explicit_operational_candidate")
 }
 
-func TestIncompleteSoftwareEntitlementCandidatePromotesExplicitOperationalReview(t *testing.T) {
+func TestIncompleteSoftwareEntitlementCandidateKeepsExplicitOperationalReview(t *testing.T) {
 	selection := contentModerationCandidateSelection{
 		Kind: contentModerationCandidateKindPromptFilter,
 		Rule: ContentModerationKeywordRule{
@@ -1730,9 +1730,8 @@ func TestIncompleteSoftwareEntitlementCandidatePromotesExplicitOperationalReview
 		Operationality: "actionable", Executability: "indirect", Categories: []string{"license_cracking"},
 	}, selection, false)
 
-	require.True(t, overridden)
-	require.Equal(t, "reject", result.Verdict)
-	require.Contains(t, result.ReasonCodes, "semantic_policy_incomplete_explicit_operational_candidate")
+	require.False(t, overridden)
+	require.Equal(t, "review", result.Verdict)
 }
 
 func TestIncompleteSoftwareEntitlementCandidateKeepsInferredReview(t *testing.T) {
@@ -1776,7 +1775,7 @@ func TestExplicitCTFChallengeCandidatePromotesHarmfulReview(t *testing.T) {
 	require.Contains(t, result.ReasonCodes, "semantic_policy_explicit_operational_candidate")
 }
 
-func TestIncompleteAgentToolPermissionCandidatePromotesExplicitReview(t *testing.T) {
+func TestIncompleteAgentToolPermissionCandidateKeepsExplicitReview(t *testing.T) {
 	selection := contentModerationCandidateSelection{
 		Kind: contentModerationCandidateKindPromptFilter,
 		Rule: ContentModerationKeywordRule{
@@ -1792,9 +1791,8 @@ func TestIncompleteAgentToolPermissionCandidatePromotesExplicitReview(t *testing
 		Operationality: "actionable", Executability: "direct", Categories: []string{"unauthorized_access"},
 	}, selection, false)
 
-	require.True(t, overridden)
-	require.Equal(t, "reject", result.Verdict)
-	require.Contains(t, result.ReasonCodes, "semantic_policy_incomplete_explicit_operational_candidate")
+	require.False(t, overridden)
+	require.Equal(t, "review", result.Verdict)
 }
 
 func TestExplicitOperationalCandidateDoesNotPromoteUncorroboratedReview(t *testing.T) {

@@ -2263,6 +2263,9 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	}
 	content := extractContentModerationInputCached(ctx, input.Protocol, input.Body, auditScope)
 	if content.IsEmpty() {
+		if content.Extraction.Complete && isResponsesContextOnlyModerationInput(input.Protocol, input.Body, auditScope) {
+			return allow, nil
+		}
 		slog.Info("content_moderation.skip_empty_input",
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,

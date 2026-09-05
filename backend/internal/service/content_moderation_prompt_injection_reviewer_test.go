@@ -45,6 +45,12 @@ func TestPromptInjectionReviewerUsesDedicatedInstructionsAndStrictSchema(t *test
 	schema := format["schema"].(map[string]any)
 	require.Equal(t, false, schema["additionalProperties"])
 	require.ElementsMatch(t, []any{"verdict", "active_override", "presentation", "targets", "confidence", "reason_codes"}, schema["required"])
+	properties := schema["properties"].(map[string]any)
+	for _, field := range []string{"targets", "reason_codes"} {
+		array := properties[field].(map[string]any)
+		require.NotContains(t, array, "uniqueItems", "strict upstream schemas reject this keyword; the parser validates uniqueness")
+		require.Contains(t, array, "maxItems")
+	}
 }
 
 func TestPromptInjectionReviewerTransportAcrossConfiguredModels(t *testing.T) {

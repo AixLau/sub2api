@@ -1359,6 +1359,37 @@ func validateModerationProtocolShape(protocol string, root gjson.Result, respons
 	}
 }
 
+// User-only auditing intentionally excludes tool continuations and assistant
+// context. Their absence from the extracted user text is not an audit failure.
+func isResponsesContextOnlyModerationInput(protocol string, body []byte, auditScope string) bool {
+	if protocol != ContentModerationProtocolOpenAIResponses || auditScope != ContentModerationAuditScopeUserOnly {
+		return false
+	}
+	items := gjson.GetBytes(body, "input")
+	if !items.IsArray() || len(items.Array()) == 0 {
+		return false
+	}
+	contextOnly := true
+	items.ForEach(func(_, item gjson.Result) bool {
+		if !item.IsObject() {
+			contextOnly = false
+			return false
+		}
+		role := strings.ToLower(strings.TrimSpace(item.Get("role").String()))
+		switch role {
+		case "assistant", "system", "developer", "tool", "function":
+			return true
+		case "":
+			typ := item.Get("type").String()
+			contextOnly = isResponsesToolItemType(typ) || isResponsesAssistantContextType(typ)
+		default:
+			contextOnly = false
+		}
+		return contextOnly
+	})
+	return contextOnly
+}
+
 func isUnexpectedEmptyModerationInput(protocol string, body []byte) bool {
 	if len(body) == 0 || !gjson.ValidBytes(body) {
 		return false

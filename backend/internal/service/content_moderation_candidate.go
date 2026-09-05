@@ -34,7 +34,7 @@ const (
 	contentModerationCandidateReviewSafetyMargin   = 1 * time.Second
 	contentModerationDecisionCacheOperationTimeout = 2 * time.Second
 	contentModerationCandidatePreferredRunes       = 1_200
-	contentModerationCandidateEvidenceRevision     = "candidate-evidence-v3"
+	contentModerationCandidateEvidenceRevision     = "candidate-evidence-v4"
 	contentModerationReviewKindGeneral             = "general"
 	contentModerationReviewKindPromptInjection     = "prompt_injection"
 )
@@ -105,12 +105,15 @@ func (selection contentModerationCandidateSelection) metadata() contentModeratio
 // one request across protocol parts cannot bypass candidate selection.
 func contentModerationCandidateSelectionForInput(cfg *ContentModerationConfig, content ContentModerationInput) (contentModerationCandidateSelection, bool) {
 	sources := content.Sources
-	if cfg != nil && (cfg.SemanticReview.PromptInjectionReviewerEnabled || cfg.SemanticReview.PromptInjectionFailClosed) {
-		sources = append([]ContentModerationInputSource(nil), content.Sources...)
-		for index, source := range sources {
-			if contentModerationSourceIsActionableUserTurn(source) {
-				sources[index] = contentModerationCandidateFullReviewSource(content, source)
-			}
+	if len(content.Extraction.Sources) > 0 {
+		// The display projection truncates and deduplicates messages. Select from
+		// the extraction stream so tails and repeated latest turns remain visible.
+		sources = make([]ContentModerationInputSource, 0, len(content.Extraction.Sources))
+		for _, source := range content.Extraction.Sources {
+			sources = append(sources, ContentModerationInputSource{
+				Source: source.Source, Role: source.Role, Text: normalizeContentModerationText(source.Text),
+				Truncated: source.Truncated, TruncateReasons: source.TruncateReasons,
+			})
 		}
 	}
 	if source, found := latestContentModerationActionableUserTurnSource(sources); found {
@@ -142,24 +145,6 @@ func latestContentModerationActionableUserTurnSource(sources []ContentModeration
 		return semanticReviewLatestUserTurnSource(sources, index), true
 	}
 	return ContentModerationInputSource{}, false
-}
-
-func contentModerationCandidateFullReviewSource(content ContentModerationInput, source ContentModerationInputSource) ContentModerationInputSource {
-	for index := len(content.Extraction.Sources) - 1; index >= 0; index-- {
-		extracted := content.Extraction.Sources[index]
-		if strings.TrimSpace(extracted.Source) != strings.TrimSpace(source.Source) ||
-			strings.ToLower(strings.TrimSpace(extracted.Role)) != strings.ToLower(strings.TrimSpace(source.Role)) {
-			continue
-		}
-		source.Text = normalizeContentModerationText(extracted.Text)
-		source.Truncated = extracted.Truncated || !content.Extraction.Complete
-		source.TruncateReasons = normalizeContentModerationTruncateReasons(append(
-			append([]string(nil), extracted.TruncateReasons...),
-			content.Extraction.TruncateReasons...,
-		))
-		return source
-	}
-	return source
 }
 
 func contentModerationCandidateSelectionFromRule(cfg *ContentModerationConfig, source ContentModerationInputSource, origin string, rule ContentModerationKeywordRule, kind string) contentModerationCandidateSelection {
@@ -553,8 +538,10 @@ func (s *ContentModerationService) candidateDecisionCacheKeyWithSemanticSchemaRe
 	if policyRevision == "" {
 		policyRevision = contentModerationPolicyRevision(true, cfg)
 	}
-	namespace := "candidate-decision-v5"
-	evidenceIdentity := selection.Fragment
+	namespace := "candidate-decision-v6"
+	// Both initial review and escalation can depend on text outside the display
+	// fragment. A changed outer task must never inherit a cached allow or reject.
+	evidenceIdentity := selection.Source.Text
 	instructionsRevision := ""
 	schemaRevision := ""
 	if selection.Route == contentModerationCandidateRouteSemantic {
@@ -562,8 +549,6 @@ func (s *ContentModerationService) candidateDecisionCacheKeyWithSemanticSchemaRe
 		schemaRevision = strings.TrimSpace(semanticSchemaRevision)
 	}
 	if cfg != nil && cfg.SemanticReview.PromptInjectionReviewerEnabled && selection.ReviewKind == contentModerationReviewKindPromptInjection {
-		namespace = "candidate-decision-v4"
-		evidenceIdentity = selection.Source.Text
 		instructionsRevision = promptInjectionReviewerInstructionsRevision
 		schemaRevision = promptInjectionReviewerSchemaRevision
 	}
@@ -585,6 +570,9 @@ func (s *ContentModerationService) candidateDecisionCacheKeyWithSemanticSchemaRe
 		selection.Rule.Severity,
 		selection.Route,
 		evidenceIdentity,
+		selection.Fragment,
+		selection.ReviewText,
+		promptInjectionReviewerSchemaRevision,
 	}
 	if instructionsRevision != "" {
 		parts = append(parts, instructionsRevision)
@@ -592,26 +580,14 @@ func (s *ContentModerationService) candidateDecisionCacheKeyWithSemanticSchemaRe
 	if schemaRevision != "" {
 		parts = append(parts, schemaRevision)
 	}
-	if namespace == "candidate-decision-v4" {
-		parts = append(parts,
-			selection.ReviewKind,
-			selection.EvidenceRevision,
-			selection.EvidenceDigest,
-			strconv.FormatBool(selection.EvidenceComplete),
-			strconv.Itoa(selection.EvidenceRunes),
-		)
-	} else {
-		// General semantic policy can produce different outcomes for the same
-		// fragment when evidence completeness or its interpretation changes.
-		// Origin is the candidate path's attribution boundary (the analogue of
-		// ContextOnly in full semantic review).
-		parts = append(parts,
-			normalizeContentModerationReviewKind(selection.ReviewKind),
-			strings.TrimSpace(selection.EvidenceRevision),
-			strconv.FormatBool(selection.EvidenceComplete),
-			strings.TrimSpace(selection.Origin),
-		)
-	}
+	parts = append(parts,
+		normalizeContentModerationReviewKind(selection.ReviewKind),
+		strings.TrimSpace(selection.EvidenceRevision),
+		selection.EvidenceDigest,
+		strconv.Itoa(selection.EvidenceRunes),
+		strconv.FormatBool(selection.EvidenceComplete),
+		strings.TrimSpace(selection.Origin),
+	)
 	// An incomplete extraction has no provider payload to identify it. Include
 	// the bounded source text and its reasons so two different malformed user
 	// turns cannot collapse into the same audit row merely because their
@@ -1422,6 +1398,11 @@ func applyCandidateSemanticReviewPolicies(
 	} else {
 		result, policyOverride = applySemanticReviewPolicyWithPromotion(result, input.EvidenceComplete)
 	}
+	if !input.EvidenceComplete && result.Verdict == "allow" {
+		result.Verdict = "review"
+		result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "semantic_policy_incomplete_evidence")
+		policyOverride = true
+	}
 	result, candidatePolicyOverride := applyCandidateSemanticReviewPolicy(result, selection, input.EvidenceComplete)
 	return result, policyOverride || candidatePolicyOverride
 }
@@ -1440,7 +1421,7 @@ func applyCandidateSemanticReviewPolicy(
 	evidenceComplete bool,
 ) (ContentModerationSemanticReviewResult, bool) {
 	result = normalizeSemanticReviewResult(result)
-	if result.Verdict != "review" {
+	if result.Verdict != "review" || !evidenceComplete {
 		return result, false
 	}
 	// This branch is deliberately computed before the confidence threshold. The
@@ -1459,11 +1440,6 @@ func applyCandidateSemanticReviewPolicy(
 	// semantic dimensions required to reject. The explicit operational branch
 	// is limited to locally narrow rules and still requires actionable,
 	// explicitly harmful semantic evidence.
-	// Incomplete evidence may only be promoted by the narrow operational
-	// candidates below. Generic or ambiguous reviews remain review.
-	if !evidenceComplete && !explicitOperational {
-		return result, false
-	}
 	if !semanticReviewPolicyRejectEligible(result) && !explicitOperational {
 		return result, false
 	}
@@ -1476,9 +1452,6 @@ func applyCandidateSemanticReviewPolicy(
 	reasonCode := "semantic_policy_high_risk_candidate"
 	if explicitOperational {
 		reasonCode = "semantic_policy_explicit_operational_candidate"
-		if !evidenceComplete {
-			reasonCode = "semantic_policy_incomplete_explicit_operational_candidate"
-		}
 	}
 	result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, reasonCode)
 	return result, true
@@ -1742,7 +1715,9 @@ func (s *ContentModerationService) candidateUnavailableOutcomeWithLatency(
 		latencyMS,
 		marshalContentModerationMetadata(metadata),
 	)
-	failClosed := promptInjectionFailClosedActive(cfg, selection)
+	failClosed := promptInjectionFailClosedActive(cfg, selection) ||
+		(decisionSource == contentModerationDecisionSourceSemantic && cfg != nil &&
+			semanticReviewEscalationFailClosed(cfg, contentModerationSemanticEscalationEnabled(cfg.SemanticReview)))
 	if failClosed {
 		log.Action = ContentModerationActionSemanticReviewUnavailable
 		log.Flagged = true
@@ -1766,7 +1741,7 @@ func (s *ContentModerationService) candidateUnavailableOutcomeWithLatency(
 		s.recordPreBlockSyncMetric(latency, action)
 	}
 	if failClosed {
-		if s.metrics != nil {
+		if selection.ReviewKind == contentModerationReviewKindPromptInjection && s.metrics != nil {
 			s.metrics.observePromptInjectionReview("error", selection.EvidenceComplete, selection.EvidenceRunes)
 			reasonLabel := "unavailable"
 			if reason == "prompt_injection_reviewer_disabled" {

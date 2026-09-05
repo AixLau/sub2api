@@ -2406,7 +2406,9 @@ func classifySemanticReviewUpstreamHTTPError(status int, body []byte) error {
 	}
 	lower := strings.ToLower(message)
 	quota := status == http.StatusTooManyRequests || strings.Contains(lower, "quota") || strings.Contains(lower, "rate_limit") || strings.Contains(lower, "rate limit") || strings.Contains(lower, "insufficient_quota")
-	retryable := quota || status >= 500 || status == http.StatusRequestTimeout || status == http.StatusBadGateway || status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout || status == http.StatusUnauthorized || status == http.StatusForbidden
+	// A missing route/model belongs to the selected upstream. Another configured
+	// account or model can still review the same input within the retry budget.
+	retryable := quota || status >= 500 || status == http.StatusRequestTimeout || status == http.StatusNotFound || status == http.StatusUnauthorized || status == http.StatusForbidden
 	code := "upstream_error"
 	if quota {
 		code = "quota_exhausted"
