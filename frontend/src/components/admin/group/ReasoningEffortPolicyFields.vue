@@ -136,7 +136,7 @@
               <Select
                 :id="`${idPrefix}-${pair.id}-from`"
                 :model-value="pair.from"
-                :options="reasoningEffortOptions"
+                :options="reasoningEffortSourceOptions"
                 :placeholder="t('admin.groups.form.reasoningEffortFromPlaceholder')"
                 :error="showValidation && !!pairErrors(pair.id).from"
                 :aria-label="t('admin.groups.form.reasoningEffortFrom')"
@@ -217,6 +217,7 @@ import {
   createReasoningEffortMappingRow,
   normalizeReasoningEffortMatchType,
   reasoningEffortOptionsForPlatform,
+  reasoningEffortSourceOptionsForPlatform,
   reasoningEffortOverLimitDeny,
   reasoningEffortOverLimitDowngrade,
   validateReasoningEffortMappings,
@@ -253,6 +254,9 @@ const overLimitOptions = computed(() => [
     label: t("admin.groups.form.maxReasoningEffortOverLimitDeny"),
   },
 ]);
+const reasoningEffortSourceOptions = computed(() =>
+  reasoningEffortSourceOptionsForPlatform(props.platform),
+);
 const matchTypeOptions = computed(() => [
   {
     value: "exact",
