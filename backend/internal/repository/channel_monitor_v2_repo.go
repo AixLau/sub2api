@@ -784,7 +784,7 @@ func (r *channelMonitorV2Repository) loadErrorDetails(ctx context.Context, filte
 			COALESCE(current_error.error_source, '') AS error_source,
 			COALESCE(current_error.status_code, 0) AS status_code,
 			COALESCE(current_error.upstream_status_code, 0) AS upstream_status_code,
-			LEFT(COALESCE(NULLIF(current_error.upstream_error_message, ''), NULLIF(current_error.error_message, ''), NULLIF(current_error.upstream_error_detail, ''), NULLIF(current_error.error_body, ''), current_error.error_type, ''), 600) AS message,
+			LEFT(` + channelMonitorV2ErrorMessageSQL + `, 600) AS message,
 			COUNT(*) AS count
 		FROM ops_error_logs current_error
 		WHERE ` + strings.Join(conditions, " AND ") + `
