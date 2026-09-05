@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"net/http"
 	"strings"
 	"time"
 )
@@ -169,25 +168,22 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 		candidate.Input.ReviewKind,
 	)
 	escalationInput := candidate.Input
-	escalationAttempted := false
-	var escalationErr error
 	if result.Verdict == "review" && !candidate.ContextOnly && contentModerationSemanticEscalationEnabled(cfg.SemanticReview) {
 		escalationInput = contentModerationSemanticGateEscalationInput(input, cfg, content, candidate, candidate.Input)
 		var escalated ContentModerationSemanticReviewResult
-		escalated, escalationAttempted, escalationErr = s.escalateSemanticReview(ctx, cfg.SemanticReview, escalationInput, result)
-		result = escalated
-		if escalationAttempted && escalationErr == nil {
-			var escalationOverride bool
-			result, escalationOverride = applySemanticReviewGatePolicies(
-				result,
-				escalationInput.EvidenceComplete,
-				candidate.ContextOnly,
-				escalationInput.ReviewKind,
-			)
-			var evidenceOverride bool
-			result, evidenceOverride = applySemanticReviewEscalationEvidencePolicy(result, escalationInput.EvidenceComplete)
-			policyOverride = policyOverride || escalationOverride || evidenceOverride
+		var escalationErr error
+		escalated, _, escalationErr = s.escalateSemanticReview(ctx, cfg.SemanticReview, escalationInput, result)
+		if escalationErr != nil {
+			s.persistSemanticReviewErrorLog(ctx, input, cfg, content, hashText, cfg.SemanticReview.EscalationModel, "final_semantic_review_failed", nil, escalationErr)
+			return semanticReviewUnavailableDecision(cfg.Mode == ContentModerationModePreBlock), true
 		}
+		result = escalated
+	}
+	result = semanticReviewContextOnlyDecision(result, candidate.ContextOnly)
+	if result.Verdict != "allow" && result.Verdict != "reject" {
+		s.persistSemanticReviewErrorLog(ctx, input, cfg, content, hashText, cfg.SemanticReview.EscalationModel,
+			"final_semantic_review_failed", nil, errors.New("final semantic reviewer is unavailable"))
+		return semanticReviewUnavailableDecision(cfg.Mode == ContentModerationModePreBlock), true
 	}
 	category := "semantic_review"
 	if len(result.Categories) > 0 && strings.TrimSpace(result.Categories[0]) != "" {
@@ -202,6 +198,12 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 	}
 	metadata := contentModerationSemanticGateMetadata(cfg, content, input.Protocol, candidate, result, policyOverride)
 	categoryScores := map[string]float64{"semantic_review": score}
+	if candidate.ContextOnly && policyOverride && result.Verdict == "allow" {
+		log := s.buildLog(input, cfg, ContentModerationActionSemanticReviewAllow, false, category, score, categoryScores,
+			content.ExcerptText(), nil, nil, metadata)
+		log.UserViolationEligible = false
+		s.persistContentModerationLog(ctx, cfg, log, hashText, false, false)
+	}
 
 	switch result.Verdict {
 	case "reject":
@@ -214,8 +216,8 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 		log.EffectiveKeywordAction = ContentModerationActionSemanticReviewReject
 		log.RiskContextType = ContentModerationRiskContextActualRequest
 		log.RiskContextReason = "semantic_review_reject"
-		log.UserViolationEligible = !candidate.ContextOnly
-		s.enqueueRecord(ctx, input, cfg, log, hashText, !candidate.ContextOnly, !candidate.ContextOnly)
+		log.UserViolationEligible = !candidate.ContextOnly && escalationInput.EvidenceComplete && !semanticReviewFinalInconclusive(result)
+		s.enqueueRecord(ctx, input, cfg, log, hashText, log.UserViolationEligible, log.UserViolationEligible)
 		return &ContentModerationDecision{
 			Allowed:                false,
 			Blocked:                true,
@@ -234,48 +236,6 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 			RiskContextType:        ContentModerationRiskContextActualRequest,
 			RiskContextReason:      "semantic_review_reject",
 		}, true
-	case "review":
-		action := ContentModerationActionSemanticReviewReview
-		failClosed := semanticReviewEscalationFailClosed(cfg, escalationAttempted)
-		if failClosed {
-			action = ContentModerationActionSemanticReviewDeferred
-			if escalationErr != nil {
-				action = ContentModerationActionSemanticReviewUnavailable
-			} else if !escalationInput.EvidenceComplete {
-				action = ContentModerationActionSemanticReviewIncomplete
-			}
-		}
-		log := s.buildLog(input, cfg, action, true, category, score, categoryScores, content.KeywordHitExcerpt(candidate.Keyword), nil, nil, metadata)
-		log.MatchedKeyword = candidate.Keyword
-		log.KeywordCategory = candidate.Category
-		log.KeywordSeverity = candidate.Severity
-		log.KeywordAction = action
-		log.EffectiveKeywordAction = action
-		log.RiskContextType = ContentModerationRiskContextActualRequest
-		log.RiskContextReason = action
-		log.ReviewStatus = ContentModerationReviewStatusPending
-		if candidate.ContextOnly || failClosed {
-			log.UserViolationEligible = false
-		}
-		s.persistContentModerationLog(ctx, cfg, log, hashText, false, false)
-		if failClosed {
-			return &ContentModerationDecision{
-				Allowed:           false,
-				Blocked:           true,
-				Flagged:           true,
-				Message:           ContentModerationTemporaryClientMessage,
-				StatusCode:        http.StatusServiceUnavailable,
-				HighestCategory:   category,
-				HighestScore:      score,
-				CategoryScores:    categoryScores,
-				Action:            action,
-				MatchedKeyword:    candidate.Keyword,
-				KeywordCategory:   candidate.Category,
-				KeywordSeverity:   candidate.Severity,
-				RiskContextType:   ContentModerationRiskContextActualRequest,
-				RiskContextReason: action,
-			}, true
-		}
 	}
 	return nil, false
 }
@@ -286,6 +246,9 @@ func applySemanticReviewGatePolicies(
 	contextOnly bool,
 	reviewKind string,
 ) (ContentModerationSemanticReviewResult, bool) {
+	if normalizeSemanticReviewVerdict(result.Verdict) == "review" {
+		return normalizeSemanticReviewResult(result), false
+	}
 	var policyOverride bool
 	if reviewKind == contentModerationReviewKindPromptInjection {
 		result, policyOverride = applyPromptInjectionReviewPolicy(result, evidenceComplete)
@@ -375,25 +338,22 @@ func (s *ContentModerationService) semanticReviewProviderFallback(
 		contentModerationReviewKindGeneral,
 	)
 	escalationInput := candidate.Input
-	escalationAttempted := false
-	var escalationErr error
 	if result.Verdict == "review" && !candidate.ContextOnly && contentModerationSemanticEscalationEnabled(cfg.SemanticReview) {
 		escalationInput = contentModerationSemanticGateEscalationInput(input, cfg, content, candidate, candidate.Input)
 		var escalated ContentModerationSemanticReviewResult
-		escalated, escalationAttempted, escalationErr = s.escalateSemanticReview(ctx, cfg.SemanticReview, escalationInput, result)
-		result = escalated
-		if escalationAttempted && escalationErr == nil {
-			var escalationOverride bool
-			result, escalationOverride = applySemanticReviewGatePolicies(
-				result,
-				escalationInput.EvidenceComplete,
-				candidate.ContextOnly,
-				escalationInput.ReviewKind,
-			)
-			var evidenceOverride bool
-			result, evidenceOverride = applySemanticReviewEscalationEvidencePolicy(result, escalationInput.EvidenceComplete)
-			policyOverride = policyOverride || escalationOverride || evidenceOverride
+		var escalationErr error
+		escalated, _, escalationErr = s.escalateSemanticReview(ctx, cfg.SemanticReview, escalationInput, result)
+		if escalationErr != nil {
+			s.persistSemanticReviewErrorLog(ctx, input, cfg, content, hashText, cfg.SemanticReview.EscalationModel, "final_semantic_review_failed", nil, escalationErr)
+			return semanticReviewUnavailableDecision(allowBlock && cfg.Mode == ContentModerationModePreBlock), true
 		}
+		result = escalated
+	}
+	result = semanticReviewContextOnlyDecision(result, candidate.ContextOnly)
+	if result.Verdict != "allow" && result.Verdict != "reject" {
+		s.persistSemanticReviewErrorLog(ctx, input, cfg, content, hashText, cfg.SemanticReview.EscalationModel,
+			"final_semantic_review_failed", nil, errors.New("final semantic reviewer is unavailable"))
+		return semanticReviewUnavailableDecision(allowBlock && cfg.Mode == ContentModerationModePreBlock), true
 	}
 	category := "semantic_review"
 	if len(result.Categories) > 0 && strings.TrimSpace(result.Categories[0]) != "" {
@@ -455,7 +415,7 @@ func (s *ContentModerationService) semanticReviewProviderFallback(
 		action := ContentModerationActionSemanticReviewReject
 		log := s.buildLog(input, cfg, action, true, category, score, categoryScores, content.ExcerptText(), &latency, nil, metadata)
 		setLogMetadata(log, action)
-		log.UserViolationEligible = !candidate.ContextOnly
+		log.UserViolationEligible = !candidate.ContextOnly && escalationInput.EvidenceComplete && !semanticReviewFinalInconclusive(result)
 		enforcementEligible := blocked && log.UserViolationEligible
 		if blocked {
 			s.recordPreBlockSyncMetric(latency, action)
@@ -464,33 +424,6 @@ func (s *ContentModerationService) semanticReviewProviderFallback(
 			s.persistContentModerationLog(ctx, cfg, log, hashText, false, false)
 		}
 		return buildDecision(action, true, blocked), true
-	case "review":
-		action := ContentModerationActionSemanticReviewReview
-		failClosed := semanticReviewEscalationFailClosed(cfg, escalationAttempted) && allowBlock
-		if failClosed {
-			action = ContentModerationActionSemanticReviewDeferred
-			if escalationErr != nil {
-				action = ContentModerationActionSemanticReviewUnavailable
-			} else if !escalationInput.EvidenceComplete {
-				action = ContentModerationActionSemanticReviewIncomplete
-			}
-		}
-		log := s.buildLog(input, cfg, action, true, category, score, categoryScores, content.ExcerptText(), &latency, nil, metadata)
-		setLogMetadata(log, action)
-		log.ReviewStatus = ContentModerationReviewStatusPending
-		if candidate.ContextOnly || failClosed {
-			log.UserViolationEligible = false
-		}
-		s.persistContentModerationLog(ctx, cfg, log, hashText, false, false)
-		if allowBlock && cfg.Mode == ContentModerationModePreBlock {
-			s.recordPreBlockSyncMetric(latency, action)
-		}
-		decision := buildDecision(action, true, failClosed)
-		if failClosed {
-			decision.StatusCode = http.StatusServiceUnavailable
-			decision.Message = ContentModerationTemporaryClientMessage
-		}
-		return decision, true
 	default:
 		if allowBlock && cfg.Mode == ContentModerationModePreBlock {
 			s.recordPreBlockSyncMetric(latency, ContentModerationActionSemanticReviewAllow)

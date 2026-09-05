@@ -171,6 +171,8 @@ func TestCandidateOnlyIncidentRegressionsBlockBeforeForwardAdmission(t *testing.
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := candidateEngineeringConfig()
 			cfg.SemanticReview.Enabled = true
+			cfg.SemanticReview.EscalationEnabled = true
+			cfg.SemanticReview.EscalationModel = ContentModerationSemanticReviewFallbackModel
 			raw, err := json.Marshal(cfg)
 			require.NoError(t, err)
 			repo := &candidateRetryDedupeRepo{}
@@ -179,7 +181,9 @@ func TestCandidateOnlyIncidentRegressionsBlockBeforeForwardAdmission(t *testing.
 				SettingKeyContentModerationConfig: string(raw),
 			}}, repo, nil, nil, nil, nil, nil)
 			svc.SetDecisionCacheKey(bytes.Repeat([]byte{0x5a}, 32))
-			router := &contentModerationSemanticReviewRouterStub{result: tt.result}
+			final := tt.result
+			final.Verdict = "reject"
+			router := &semanticReviewSequenceRouter{results: []ContentModerationSemanticReviewResult{tt.result, final}}
 			svc.SetSemanticReviewRouter(router)
 
 			decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
@@ -197,7 +201,11 @@ func TestCandidateOnlyIncidentRegressionsBlockBeforeForwardAdmission(t *testing.
 			require.True(t, decision.Blocked)
 			require.Equal(t, ContentModerationActionSemanticReviewReject, decision.Action)
 			require.Equal(t, tt.pattern, decision.MatchedKeyword)
-			require.Equal(t, 1, router.calls)
+			if tt.result.Verdict == "review" {
+				require.Len(t, router.inputs, 2)
+			} else {
+				require.Len(t, router.inputs, 1)
+			}
 		})
 	}
 }

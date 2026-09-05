@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	contentModerationPromptInjectionEvidenceRevision = "prompt-injection-evidence-v2+" + promptfilter.DetectorRevision
+	contentModerationPromptInjectionEvidenceRevision = "semantic-evidence-v3+" + promptfilter.DetectorRevision
 	contentModerationPromptInjectionEvidenceMinRunes = 512
 	contentModerationPromptInjectionEvidenceMaxCores = 512
 )
@@ -27,6 +27,7 @@ type contentModerationPromptInjectionEvidenceInput struct {
 	Matches        []promptfilter.Match
 	MaxRunes       int
 	SourceComplete bool
+	AllMatches     bool
 }
 
 type contentModerationPromptInjectionEvidence struct {
@@ -101,7 +102,11 @@ func buildContentModerationPromptInjectionEvidence(input contentModerationPrompt
 	}
 
 	sourceRunes := []rune(sourceText)
-	cores, matchesTotal, invalidMatches, omittedByCoreLimit := contentModerationPromptInjectionEvidenceCores(sourceText, input.Matches)
+	cores, matchesTotal, invalidMatches, omittedByCoreLimit := contentModerationPromptInjectionEvidenceCores(sourceText, input.Matches, input.AllMatches)
+	reviewKind := contentModerationReviewKindPromptInjection
+	if input.AllMatches {
+		reviewKind = contentModerationReviewKindGeneral
+	}
 	validMatches := matchesTotal - invalidMatches
 	rawSpansComplete := invalidMatches == 0
 
@@ -120,7 +125,7 @@ func buildContentModerationPromptInjectionEvidence(input contentModerationPrompt
 
 	// Context and edge sizes are reduced as a unit. Every attempt includes all
 	// located occurrences; only the final overflow fallback is allowed to omit a
-	// hit, and that fallback is always marked incomplete.
+// hit, and that fallback is always marked incomplete.
 	attempts := []struct {
 		context int
 		edge    int
@@ -137,6 +142,7 @@ func buildContentModerationPromptInjectionEvidence(input contentModerationPrompt
 		intervals := contentModerationPromptInjectionEvidenceIntervals(len(sourceRunes), cores, attempt.context, attempt.edge)
 		complete := sourceComplete && rawSpansComplete && !omittedByCoreLimit && matchesTotal > 0
 		text, windowCount, covered, err := marshalContentModerationPromptInjectionEvidenceEnvelope(
+			reviewKind,
 			sourceRunes,
 			intervals,
 			complete,
@@ -154,7 +160,7 @@ func buildContentModerationPromptInjectionEvidence(input contentModerationPrompt
 	// Keyword flooding can make the exact hit spans themselves exceed 12K.
 	// Preserve both source edges, then admit strict/operational/high-weight cores
 	// in priority order while keeping one valid JSON value. Any omitted core makes
-	// the result incomplete, so a semantic allow cannot become a final allow.
+	// the result incomplete and prevents treating it as full-source evidence.
 	prioritized := append([]contentModerationPromptInjectionEvidenceCore(nil), cores...)
 	sort.SliceStable(prioritized, func(i, j int) bool {
 		if prioritized[i].Operational != prioritized[j].Operational {
@@ -172,7 +178,7 @@ func buildContentModerationPromptInjectionEvidence(input contentModerationPrompt
 	for _, core := range prioritized {
 		candidate := append(selected, core)
 		intervals := contentModerationPromptInjectionEvidenceIntervals(len(sourceRunes), candidate, 0, 64)
-		text, _, _, err := marshalContentModerationPromptInjectionEvidenceEnvelope(sourceRunes, intervals, false, matchesTotal, contentModerationPromptInjectionEvidenceCovered(candidate))
+		text, _, _, err := marshalContentModerationPromptInjectionEvidenceEnvelope(reviewKind, sourceRunes, intervals, false, matchesTotal, contentModerationPromptInjectionEvidenceCovered(candidate))
 		if err != nil {
 			return contentModerationPromptInjectionEvidence{}, err
 		}
@@ -182,6 +188,7 @@ func buildContentModerationPromptInjectionEvidence(input contentModerationPrompt
 	}
 	intervals := contentModerationPromptInjectionEvidenceIntervals(len(sourceRunes), selected, 0, 64)
 	text, windowCount, covered, err := marshalContentModerationPromptInjectionEvidenceEnvelope(
+		reviewKind,
 		sourceRunes,
 		intervals,
 		false,
@@ -212,7 +219,7 @@ func newContentModerationPromptInjectionEvidence(text string, complete, windowed
 	}
 }
 
-func contentModerationPromptInjectionEvidenceCores(text string, matches []promptfilter.Match) ([]contentModerationPromptInjectionEvidenceCore, int, int, bool) {
+func contentModerationPromptInjectionEvidenceCores(text string, matches []promptfilter.Match, allMatches bool) ([]contentModerationPromptInjectionEvidenceCore, int, int, bool) {
 	byteOffsets := make([]int, 0, utf8.RuneCountInString(text)+1)
 	for byteOffset := range text {
 		byteOffsets = append(byteOffsets, byteOffset)
@@ -229,7 +236,7 @@ func contentModerationPromptInjectionEvidenceCores(text string, matches []prompt
 	invalidMatches := 0
 	omittedByCoreLimit := false
 	for _, match := range matches {
-		if !promptfilter.IsPromptInjectionMatch(match) {
+		if !allMatches && !promptfilter.IsPromptInjectionMatch(match) {
 			continue
 		}
 		matchesTotal++
@@ -324,7 +331,7 @@ func contentModerationPromptInjectionEvidenceIntervals(sourceRunes int, cores []
 	return merged
 }
 
-func marshalContentModerationPromptInjectionEvidenceEnvelope(source []rune, intervals []contentModerationPromptInjectionEvidenceInterval, complete bool, matchesTotal, matchesCovered int) (string, int, int, error) {
+func marshalContentModerationPromptInjectionEvidenceEnvelope(reviewKind string, source []rune, intervals []contentModerationPromptInjectionEvidenceInterval, complete bool, matchesTotal, matchesCovered int) (string, int, int, error) {
 	windows := make([]contentModerationPromptInjectionEvidenceWindow, 0, len(intervals))
 	covered := 0
 	for _, interval := range intervals {
@@ -353,7 +360,7 @@ func marshalContentModerationPromptInjectionEvidenceEnvelope(source []rune, inte
 		complete = false
 	}
 	envelope := contentModerationPromptInjectionEvidenceEnvelope{
-		Kind:           contentModerationReviewKindPromptInjection,
+		Kind:           reviewKind,
 		Revision:       contentModerationPromptInjectionEvidenceRevision,
 		SourceRunes:    len(source),
 		Complete:       complete,

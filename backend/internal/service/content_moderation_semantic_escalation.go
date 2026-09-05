@@ -3,10 +3,63 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 )
 
 const semanticReviewEscalationReasonInitialReview = "initial_review"
+
+func applyFinalSemanticReviewPolicy(result ContentModerationSemanticReviewResult) (ContentModerationSemanticReviewResult, error) {
+	result = normalizeSemanticReviewResult(result)
+	result.FinalReview = true
+	if result.Verdict != "allow" && result.Verdict != "reject" {
+		return result, errors.New("final semantic review returned a non-terminal verdict")
+	}
+	if semanticReviewPolicyRejectEligible(result) {
+		result.Verdict = "reject"
+		result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "semantic_policy_reject")
+	}
+	if result.HarmEvidence == "explicit" {
+		for _, category := range result.Categories {
+			switch category {
+			case "reverse_engineering", "license_cracking":
+				result.Verdict = "reject"
+				result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "platform_reverse_engineering")
+			case "biosecurity":
+				result.Verdict = "reject"
+				result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "platform_virology")
+			}
+		}
+	}
+	return result, nil
+}
+
+func semanticReviewUnavailableDecision(block bool) *ContentModerationDecision {
+	if !block {
+		return &ContentModerationDecision{Allowed: true, Action: ContentModerationActionError}
+	}
+	return &ContentModerationDecision{
+		Blocked: true, Action: ContentModerationActionSemanticReviewUnavailable,
+		StatusCode: http.StatusServiceUnavailable, Message: ContentModerationTemporaryClientMessage,
+	}
+}
+
+func semanticReviewContextOnlyDecision(result ContentModerationSemanticReviewResult, contextOnly bool) ContentModerationSemanticReviewResult {
+	if contextOnly {
+		result.Verdict = "allow"
+		result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "semantic_policy_context_only")
+	}
+	return result
+}
+
+func semanticReviewFinalInconclusive(result ContentModerationSemanticReviewResult) bool {
+	for _, reason := range result.ReasonCodes {
+		if reason == "final_inconclusive" {
+			return true
+		}
+	}
+	return false
+}
 
 type contentModerationSemanticEscalationTrace struct {
 	Attempted         bool
@@ -64,11 +117,16 @@ func (s *ContentModerationService) escalateSemanticReview(
 	escalationCfg.disableDiscoveredFallback = true
 
 	input.MaxInputRunes = cfg.EscalationMaxInputRunes
+	input.FinalReview = true
+	input.ReviewKind = contentModerationReviewKindGeneral
 	input.ReasoningEffort = cfg.EscalationReasoningEffort
 	if strings.TrimSpace(input.UsageRecordID) != "" {
 		input.UsageRecordID += "-escalation"
 	}
 	result, err := s.semanticReviewRouter.Review(ctx, escalationCfg, input)
+	if err == nil {
+		result, err = applyFinalSemanticReviewPolicy(result)
+	}
 	if err != nil {
 		trace.Error = sanitizeSemanticReviewError(err.Error())
 		initial.escalation = trace
@@ -132,25 +190,4 @@ func addSemanticReviewEscalationMetadata(metadata map[string]any, result Content
 	if trace.Error != "" {
 		metadata["semantic_review_escalation_error"] = trace.Error
 	}
-}
-
-func semanticReviewEscalationFailClosed(cfg *ContentModerationConfig, attempted bool) bool {
-	return attempted && cfg != nil && cfg.Mode == ContentModerationModePreBlock &&
-		cfg.SemanticReview.EscalationFailClosed
-}
-
-func applySemanticReviewEscalationEvidencePolicy(
-	result ContentModerationSemanticReviewResult,
-	evidenceComplete bool,
-) (ContentModerationSemanticReviewResult, bool) {
-	result = normalizeSemanticReviewResult(result)
-	if evidenceComplete || result.Verdict == "review" {
-		return result, false
-	}
-	if result.Verdict == "reject" {
-		result.ModelSeverity = result.Severity
-	}
-	result.Verdict = "review"
-	result.ReasonCodes = appendSemanticReviewReasonCode(result.ReasonCodes, "semantic_policy_incomplete_escalation_evidence")
-	return result, true
 }

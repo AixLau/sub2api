@@ -51,7 +51,7 @@ func TestContentModerationSemanticCandidateAllDoesNotRequireKeyword(t *testing.T
 	require.True(t, candidate.SyntheticAll)
 }
 
-func TestSemanticReviewGateDowngradesRejectWhenEvidenceIsTruncated(t *testing.T) {
+func TestSemanticReviewGateRequiresFinalReviewerForTruncatedReject(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
@@ -85,13 +85,14 @@ func TestSemanticReviewGateDowngradesRejectWhenEvidenceIsTruncated(t *testing.T)
 		candidate,
 	)
 
-	require.False(t, terminal)
-	require.Nil(t, decision)
+	require.True(t, terminal)
+	require.True(t, decision.Blocked)
+	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
-	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
-	require.Contains(t, string(logs[0].Metadata), "semantic_policy_incomplete_evidence")
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.Empty(t, logs[0].ReviewStatus)
+	require.Contains(t, logs[0].Error, "final semantic reviewer is unavailable")
 	require.Empty(t, hashCache.snapshotRecorded())
 }
 
@@ -247,7 +248,7 @@ func TestSemanticReviewEvidenceMarksHeaderBudgetOmissionIncomplete(t *testing.T)
 	require.False(t, candidate.Input.EvidenceComplete)
 }
 
-func TestSemanticReviewGateDowngradesRejectForClippedSourceLessKeywordExcerpt(t *testing.T) {
+func TestSemanticReviewGateRequiresFinalReviewerForClippedKeywordExcerpt(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
@@ -284,12 +285,13 @@ func TestSemanticReviewGateDowngradesRejectForClippedSourceLessKeywordExcerpt(t 
 		candidate,
 	)
 
-	require.False(t, terminal)
-	require.Nil(t, decision)
+	require.True(t, terminal)
+	require.True(t, decision.Blocked)
+	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
-	require.Contains(t, string(logs[0].Metadata), "semantic_policy_incomplete_evidence")
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.Contains(t, logs[0].Error, "final semantic reviewer is unavailable")
 	require.Empty(t, hashCache.snapshotRecorded())
 }
 
@@ -377,7 +379,7 @@ func TestContentModerationCheck_TriggerAllAuditsMissWithoutKeyword(t *testing.T)
 	require.Contains(t, router.input.Text, "without any configured keyword")
 }
 
-func TestContentModerationCheck_TriggerAllLowRiskReviewRemainsPendingWithoutBlocking(t *testing.T) {
+func TestContentModerationCheck_TriggerAllRequiresFinalReviewer(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
@@ -416,19 +418,19 @@ func TestContentModerationCheck_TriggerAllLowRiskReviewRemainsPendingWithoutBloc
 	})
 
 	require.NoError(t, err)
-	require.True(t, decision.Allowed)
-	require.False(t, decision.Blocked)
-	require.Equal(t, ContentModerationActionAllow, decision.Action)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionSemanticReviewUnavailable, decision.Action)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
-	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.Equal(t, ContentModerationActionError, logs[0].Action)
+	require.Empty(t, logs[0].ReviewStatus)
 	require.Zero(t, logs[0].ViolationCount)
 	require.False(t, logs[0].AutoBanned)
 	require.False(t, logs[0].EmailSent)
 }
 
-func TestContentModerationCheck_TriggerAllHighRiskReviewBlocks(t *testing.T) {
+func TestContentModerationCheck_TriggerAllHighRiskModelRejectBlocks(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.Enabled = true
 	cfg.Mode = ContentModerationModePreBlock
@@ -455,7 +457,7 @@ func TestContentModerationCheck_TriggerAllHighRiskReviewBlocks(t *testing.T) {
 		nil,
 	)
 	svc.SetSemanticReviewRouter(&contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
-		Verdict: "review", Intent: "ambiguous", Target: "unknown", Authorization: "unclear",
+		Verdict: "reject", Intent: "harmful", Target: "third_party", Authorization: "unauthorized",
 		HarmMechanism: "credential_theft", Severity: "high", Confidence: 0.92,
 		Operationality: "actionable", Executability: "direct", Categories: []string{"credential_theft"},
 	}})
@@ -474,7 +476,7 @@ func TestContentModerationCheck_TriggerAllHighRiskReviewBlocks(t *testing.T) {
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
 	require.Equal(t, ContentModerationActionSemanticReviewReject, logs[0].Action)
-	require.Contains(t, string(logs[0].Metadata), `"semantic_policy_high_risk_review"`)
+	require.Contains(t, string(logs[0].Metadata), `"semantic_review_verdict":"reject"`)
 }
 
 func TestContentModerationCheck_TriggerAllToolOnlyRejectIsRecordedWithoutBlocking(t *testing.T) {
@@ -523,8 +525,8 @@ func TestContentModerationCheck_TriggerAllToolOnlyRejectIsRecordedWithoutBlockin
 	require.Contains(t, router.input.Text, "evidence=context_only")
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
-	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.Equal(t, ContentModerationActionSemanticReviewAllow, logs[0].Action)
+	require.Empty(t, logs[0].ReviewStatus)
 	require.False(t, logs[0].UserViolationEligible)
 	require.Zero(t, logs[0].ViolationCount)
 	require.False(t, logs[0].AutoBanned)
@@ -571,8 +573,8 @@ func TestContentModerationCheck_TriggerAllAmbientUIRejectIsRecordedWithoutBlocki
 	require.Contains(t, router.input.Text, "role=context evidence=context_only")
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
-	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.Equal(t, ContentModerationActionSemanticReviewAllow, logs[0].Action)
+	require.Empty(t, logs[0].ReviewStatus)
 	require.False(t, logs[0].UserViolationEligible)
 	require.Zero(t, logs[0].ViolationCount)
 }
@@ -646,7 +648,7 @@ func TestContentModerationProviderFailureFallsBackToSemanticReview(t *testing.T)
 	require.Equal(t, ContentModerationActionSemanticReviewReject, logs[1].Action)
 }
 
-func TestContentModerationProviderFailureHighRiskReviewRemainsPendingWithoutBlocking(t *testing.T) {
+func TestContentModerationProviderFailureHighRiskReviewRequiresFinalReviewer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
@@ -689,16 +691,16 @@ func TestContentModerationProviderFailureHighRiskReviewRemainsPendingWithoutBloc
 	})
 
 	require.NoError(t, err)
-	require.True(t, decision.Allowed)
-	require.False(t, decision.Blocked)
-	require.Zero(t, decision.StatusCode)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, decision.Action)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.Blocked)
+	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.Equal(t, ContentModerationActionSemanticReviewUnavailable, decision.Action)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 2)
 	require.Equal(t, ContentModerationActionError, logs[0].Action)
 	require.Contains(t, logs[0].Error, "moderation api status 503")
-	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[1].Action)
-	require.Equal(t, ContentModerationReviewStatusPending, logs[1].ReviewStatus)
+	require.Equal(t, ContentModerationActionError, logs[1].Action)
+	require.Empty(t, logs[1].ReviewStatus)
 	require.Zero(t, logs[1].ViolationCount)
 	require.False(t, logs[1].AutoBanned)
 	require.False(t, logs[1].EmailSent)
@@ -855,9 +857,9 @@ func TestContentModerationProviderFailureFallbackUsesKeywordContext(t *testing.T
 	})
 
 	require.NoError(t, err)
-	require.True(t, decision.Allowed)
-	require.False(t, decision.Blocked)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, decision.Action)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionSemanticReviewUnavailable, decision.Action)
 	require.Equal(t, 1, router.calls)
 	require.False(t, router.input.EvidenceComplete)
 	require.Contains(t, router.input.Text, "exploit nearby context")
@@ -1251,7 +1253,7 @@ func TestContentModerationCheck_HybridCyberKeywordUsesOrdinaryModerationAndSeman
 	require.True(t, moderationCalled, "a hybrid keyword hit must call the ordinary moderation API")
 }
 
-func TestContentModerationCheck_HybridHighRiskReviewBlocks(t *testing.T) {
+func TestContentModerationCheck_HybridRejectsAuthorizedReverseEngineeringIntent(t *testing.T) {
 	moderationCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		moderationCalled = true
@@ -1295,8 +1297,8 @@ func TestContentModerationCheck_HybridHighRiskReviewBlocks(t *testing.T) {
 		nil,
 	)
 	svc.SetSemanticReviewRouter(&contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
-		Verdict: "review", Intent: "ambiguous", Target: "unknown", Authorization: "unclear",
-		HarmMechanism: "other", Severity: "high", Confidence: 0.91,
+		Verdict: "reject", Intent: "benign", Target: "self_owned", Authorization: "authorized",
+		HarmMechanism: "none", HarmEvidence: "explicit", Severity: "high", Confidence: 0.91,
 		Operationality: "actionable", Executability: "direct", Categories: []string{"reverse_engineering"},
 	}})
 
@@ -1315,7 +1317,7 @@ func TestContentModerationCheck_HybridHighRiskReviewBlocks(t *testing.T) {
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
 	require.Equal(t, ContentModerationActionSemanticReviewReject, logs[0].Action)
-	require.Contains(t, string(logs[0].Metadata), `"semantic_policy_high_risk_review"`)
+	require.Contains(t, string(logs[0].Metadata), `"platform_reverse_engineering"`)
 }
 
 func TestContentModerationCheck_HybridCyberKeywordBlocksOnSemanticRejectAfterOrdinaryModeration(t *testing.T) {

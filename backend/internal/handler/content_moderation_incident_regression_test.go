@@ -18,16 +18,23 @@ import (
 )
 
 type incidentSemanticReviewRouterStub struct {
-	result service.ContentModerationSemanticReviewResult
-	calls  int
+	result     service.ContentModerationSemanticReviewResult
+	calls      int
+	finalCalls int
 }
 
 func (s *incidentSemanticReviewRouterStub) Review(
-	context.Context,
-	service.ContentModerationSemanticReviewConfig,
-	service.ContentModerationSemanticReviewInput,
+	_ context.Context,
+	_ service.ContentModerationSemanticReviewConfig,
+	input service.ContentModerationSemanticReviewInput,
 ) (service.ContentModerationSemanticReviewResult, error) {
 	s.calls++
+	if input.FinalReview {
+		s.finalCalls++
+		result := s.result
+		result.Verdict = "reject"
+		return result, nil
+	}
 	return s.result, nil
 }
 
@@ -40,6 +47,24 @@ func TestContentModerationIncidentRegressionsStopBeforeForward(t *testing.T) {
 		body     string
 		result   service.ContentModerationSemanticReviewResult
 	}{
+		{
+			name: "responses virology research intent",
+			path: "/v1/responses", protocol: service.ContentModerationProtocolOpenAIResponses,
+			body: `{"model":"gpt-test","input":"请帮我研究病毒学，目的是大学课程学习"}`,
+			result: service.ContentModerationSemanticReviewResult{
+				Verdict: "review", Intent: "benign", Target: "none", Authorization: "not_applicable",
+				HarmMechanism: "none", HarmEvidence: "explicit", Categories: []string{"biosecurity"},
+			},
+		},
+		{
+			name: "responses authorized reverse engineering intent",
+			path: "/v1/responses", protocol: service.ContentModerationProtocolOpenAIResponses,
+			body: `{"model":"gpt-test","input":"教我逆向分析自己编写的程序"}`,
+			result: service.ContentModerationSemanticReviewResult{
+				Verdict: "review", Intent: "benign", Target: "self_owned", Authorization: "authorized",
+				HarmMechanism: "none", HarmEvidence: "explicit", Categories: []string{"reverse_engineering"},
+			},
+		},
 		{
 			name:     "messages functional ransomware",
 			path:     "/v1/messages",
@@ -126,7 +151,13 @@ func TestContentModerationIncidentRegressionsStopBeforeForward(t *testing.T) {
 			require.True(t, entry.Stop)
 			require.Equal(t, http.StatusForbidden, w.Code)
 			require.Contains(t, w.Body.String(), "content_policy_violation")
-			require.Equal(t, 1, router.calls)
+			if tt.result.Verdict == "review" {
+				require.Equal(t, 2, router.calls)
+				require.Equal(t, 1, router.finalCalls)
+			} else {
+				require.Equal(t, 1, router.calls)
+				require.Zero(t, router.finalCalls)
+			}
 		})
 	}
 }
@@ -142,7 +173,7 @@ func newIncidentContentModerationService(t *testing.T) *service.ContentModeratio
 		BlockStatus:      http.StatusForbidden,
 		BlockMessage:     "内容审计测试阻断",
 		SemanticReview: service.ContentModerationSemanticReviewConfig{
-			Enabled: true,
+			Enabled: true, EscalationEnabled: true, EscalationModel: "final-review-model",
 		},
 	}
 	raw, err := json.Marshal(cfg)

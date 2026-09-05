@@ -87,8 +87,12 @@ func canonicalSemanticReviewCategory(value string) string {
 		return "credential_theft"
 	case "unauthorized_access", "unauthorised_access", "access_control_bypass", "account_takeover", "intrusion":
 		return "unauthorized_access"
-	case "malware", "ransomware", "virus", "trojan":
+	case "malware", "ransomware", "computer_virus", "trojan":
 		return "malware"
+	case "biosecurity", "virology", "biological_risk", "biological_virus", "pathogen", "bioweapon":
+		return "biosecurity"
+	case "weapons", "weapon", "weaponization":
+		return "weapons"
 	case "exploit_delivery", "exploitation", "vulnerability_exploitation", "exploit":
 		return "exploit_delivery"
 	case "evasion", "detection_evasion", "stealth":
@@ -129,6 +133,8 @@ func canonicalSemanticReviewReasonCode(value string) string {
 	}
 	// Keep application-generated codes stable and backwards compatible.
 	switch key {
+	case "final_inconclusive", "platform_reverse_engineering", "platform_virology":
+		return key
 	case "semantic_policy_public_harmless", "semantic_policy_reject", "semantic_policy_reject_inconsistent", "semantic_policy_allow_inconsistent", "semantic_policy_harmless_review", "semantic_policy_unsubstantiated_fraud", "semantic_policy_context_only", "unstructured_model_output", "invalid_model_output_json":
 		return key
 	case "no_authorization", "unauthorized_access", "unauthorised_access", "without_permission":

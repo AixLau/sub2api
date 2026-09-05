@@ -901,13 +901,6 @@
                       <label class="input-label">{{ t('admin.riskControl.semanticReviewEscalationReasoningEffort') }}</label>
                       <Select v-model="configForm.semantic_review_escalation_reasoning_effort" :options="semanticReviewEscalationReasoningOptions" />
                     </div>
-                    <div class="flex items-center justify-between gap-4">
-                      <div>
-                        <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.semanticReviewEscalationFailClosed') }}</p>
-                        <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.semanticReviewEscalationFailClosedHint') }}</p>
-                      </div>
-                      <Toggle v-model="configForm.semantic_review_escalation_fail_closed" />
-                    </div>
                   </template>
                 </div>
                 <dl data-test="prompt-injection-reviewer-status" class="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 border-t border-gray-100 pt-4 text-sm dark:border-dark-700 md:grid-cols-3">
@@ -2136,7 +2129,6 @@ const configForm = reactive({
 	semantic_review_escalation_timeout_ms: 15000,
 	semantic_review_escalation_max_input_runes: 12000,
 	semantic_review_escalation_reasoning_effort: 'high' as 'low' | 'medium' | 'high' | 'xhigh',
-	semantic_review_escalation_fail_closed: true,
   semantic_review_timeout_ms: 8000,
   semantic_review_primary_timeout_ms: 5000,
   semantic_review_fallback_timeout_ms: 3000,
@@ -3194,7 +3186,6 @@ function applyConfig(config: ContentModerationConfig) {
 	    escalation_timeout_ms: 15000,
 	    escalation_max_input_runes: 12000,
 	    escalation_reasoning_effort: 'high',
-	    escalation_fail_closed: true,
     timeout_ms: 8000,
     primary_timeout_ms: 5000,
     fallback_timeout_ms: 3000,
@@ -3213,7 +3204,6 @@ function applyConfig(config: ContentModerationConfig) {
 	configForm.semantic_review_escalation_timeout_ms = semanticReview.escalation_timeout_ms || 15000
 	configForm.semantic_review_escalation_max_input_runes = semanticReview.escalation_max_input_runes || 12000
 	configForm.semantic_review_escalation_reasoning_effort = semanticReview.escalation_reasoning_effort || 'high'
-	configForm.semantic_review_escalation_fail_closed = semanticReview.escalation_fail_closed ?? true
   configForm.semantic_review_timeout_ms = semanticReview.timeout_ms || 8000
   configForm.semantic_review_primary_timeout_ms = semanticReview.primary_timeout_ms || 5000
   configForm.semantic_review_fallback_timeout_ms = semanticReview.fallback_timeout_ms || 3000
@@ -3397,7 +3387,6 @@ async function saveConfig() {
 	        escalation_timeout_ms: Number(configForm.semantic_review_escalation_timeout_ms) || 15000,
 	        escalation_max_input_runes: Number(configForm.semantic_review_escalation_max_input_runes) || 12000,
 	        escalation_reasoning_effort: configForm.semantic_review_escalation_reasoning_effort,
-	        escalation_fail_closed: configForm.semantic_review_escalation_fail_closed,
           timeout_ms: Number(configForm.semantic_review_timeout_ms) || 8000,
           primary_timeout_ms: Number(configForm.semantic_review_primary_timeout_ms) || 5000,
           fallback_timeout_ms: Number(configForm.semantic_review_fallback_timeout_ms) || 3000,
@@ -3983,6 +3972,7 @@ function keywordCategoryLabel(value?: string): string {
     regulated_advice: t('admin.riskControl.keywordCategories.regulatedAdvice'),
     copyright: t('admin.riskControl.keywordCategories.copyright'),
     biometric: t('admin.riskControl.keywordCategories.biometric'),
+    biosecurity: t('admin.riskControl.keywordCategories.biosecurity'),
     prompt_injection: t('admin.riskControl.keywordCategories.promptInjection'),
     prompt_evasion: t('admin.riskControl.keywordCategories.promptEvasion'),
     agent_abuse: t('admin.riskControl.keywordCategories.agentAbuse'),

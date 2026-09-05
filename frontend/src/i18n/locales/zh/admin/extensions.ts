@@ -143,6 +143,7 @@ export default {
       regulatedAdvice: '受监管建议',
       copyright: '版权',
       biometric: '生物识别',
+      biosecurity: '生物安全 / 病毒学',
       promptInjection: '提示注入',
       promptEvasion: '提示规避',
       agentAbuse: '智能体工具滥用',

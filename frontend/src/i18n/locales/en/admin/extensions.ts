@@ -128,6 +128,7 @@ export default {
       regulatedAdvice: 'Regulated advice',
       copyright: 'Copyright',
       biometric: 'Biometric',
+      biosecurity: 'Biosecurity / Virology',
       promptInjection: 'Prompt injection',
       promptEvasion: 'Prompt evasion',
       agentAbuse: 'Agent/tool abuse',

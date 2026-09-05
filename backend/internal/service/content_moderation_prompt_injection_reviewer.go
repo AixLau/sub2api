@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	promptInjectionReviewerInstructionsRevision = "prompt-injection-instructions-v2"
+	promptInjectionReviewerInstructionsRevision = "prompt-injection-instructions-v3"
 	promptInjectionReviewerSchemaRevision       = "prompt-injection-schema-v2"
 )
 
@@ -61,14 +61,24 @@ func normalizeContentModerationReviewKind(value string) string {
 	return contentModerationReviewKindGeneral
 }
 
-func semanticReviewInstructionsForKind(reviewKind string) string {
+func semanticReviewInstructionsForKind(reviewKind string, finalReview bool) string {
+	if finalReview {
+		return semanticReviewPolicyInstructions + semanticReviewFinalDecisionInstructions
+	}
 	if normalizeContentModerationReviewKind(reviewKind) == contentModerationReviewKindPromptInjection {
-		return promptInjectionReviewInstructions
+		return promptInjectionReviewInstructions + "\nIf the outer intent is software reverse engineering/cracking or virology study/research, return review with presentation=unknown and ambiguous_context so the final auditor can apply the platform's prohibited-topic policy. Authorization or educational purpose does not exempt these topics."
 	}
 	return semanticReviewInstructions
 }
 
-func semanticReviewJSONSchemaForKind(reviewKind string) map[string]any {
+func semanticReviewJSONSchemaForKind(reviewKind string, finalReview bool) map[string]any {
+	if finalReview {
+		format := semanticReviewJSONSchema()
+		format["name"] = "semantic_review_final_v1"
+		properties := format["schema"].(map[string]any)["properties"].(map[string]any)
+		properties["verdict"] = map[string]any{"type": "string", "enum": []string{"allow", "reject"}}
+		return format
+	}
 	if normalizeContentModerationReviewKind(reviewKind) == contentModerationReviewKindPromptInjection {
 		return promptInjectionReviewJSONSchema()
 	}

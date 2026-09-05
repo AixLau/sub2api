@@ -7,7 +7,7 @@ import (
 )
 
 func TestCandidatePatternsHaveReviewOnlyContract(t *testing.T) {
-	require.Len(t, candidatePatternConfigs, 15)
+	require.Len(t, candidatePatternConfigs, 18)
 	revisions := make(map[string]string, len(candidatePatternConfigs))
 	for _, pattern := range BuiltinPatternConfigs() {
 		revisions[pattern.Name] = pattern.SourceRevision

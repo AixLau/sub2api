@@ -40,7 +40,6 @@ func escalationCandidateConfig() *ContentModerationConfig {
 	cfg.SemanticReview.EscalationTimeoutMS = 15_000
 	cfg.SemanticReview.EscalationMaxInputRunes = maxModerationInputRunes
 	cfg.SemanticReview.EscalationReasoningEffort = "high"
-	cfg.SemanticReview.EscalationFailClosed = true
 	return cfg
 }
 
@@ -122,7 +121,7 @@ func TestCandidateSemanticReviewEscalationRejectsClearDanger(t *testing.T) {
 	require.Contains(t, string(logs[0].Metadata), `"semantic_review_initial_verdict":"review"`)
 }
 
-func TestCandidateSemanticReviewEscalationUsesPromptInjectionReviewer(t *testing.T) {
+func TestCandidateSemanticReviewEscalationUsesFinalGeneralReviewer(t *testing.T) {
 	cfg := escalationCandidateConfig()
 	cfg.SemanticReview.PromptInjectionReviewerEnabled = false
 	selection := contentModerationCandidateSelectionFromRule(cfg, ContentModerationInputSource{
@@ -145,7 +144,7 @@ func TestCandidateSemanticReviewEscalationUsesPromptInjectionReviewer(t *testing
 			Model: ContentModerationSemanticReviewPrimaryModel,
 		},
 		{
-			Verdict: "review", ActiveOverride: true, Presentation: "direct_instruction", Confidence: 0.98,
+			Verdict: "reject", ActiveOverride: true, Presentation: "direct_instruction", Confidence: 0.98,
 			Targets: []string{"tool_permission"}, ReasonCodes: []string{"tool_permission_bypass"},
 			Model: "gpt-5.6-sol",
 		},
@@ -164,11 +163,11 @@ func TestCandidateSemanticReviewEscalationUsesPromptInjectionReviewer(t *testing
 	require.Equal(t, ContentModerationActionSemanticReviewReject, outcome.Decision.Action)
 	require.Len(t, router.inputs, 2)
 	require.Equal(t, contentModerationReviewKindGeneral, router.inputs[0].ReviewKind)
-	require.Equal(t, contentModerationReviewKindPromptInjection, router.inputs[1].ReviewKind)
+	require.Equal(t, contentModerationReviewKindGeneral, router.inputs[1].ReviewKind)
 	require.True(t, router.inputs[1].EvidenceComplete)
 }
 
-func TestCandidateSemanticReviewEscalationDefersUnresolvedReview(t *testing.T) {
+func TestCandidateSemanticReviewEscalationRejectsInvalidFinalReview(t *testing.T) {
 	cfg := escalationCandidateConfig()
 	selection := escalationCandidateSelection(cfg, false)
 	router := &semanticReviewSequenceRouter{results: []ContentModerationSemanticReviewResult{
@@ -187,14 +186,14 @@ func TestCandidateSemanticReviewEscalationDefersUnresolvedReview(t *testing.T) {
 
 	require.True(t, outcome.Decision.Blocked)
 	require.Equal(t, http.StatusServiceUnavailable, outcome.Decision.StatusCode)
-	require.Equal(t, ContentModerationActionSemanticReviewDeferred, outcome.Decision.Action)
+	require.Equal(t, ContentModerationActionSemanticReviewUnavailable, outcome.Decision.Action)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
 	require.False(t, logs[0].UserViolationEligible)
 	require.Zero(t, logs[0].ViolationCount)
 }
 
-func TestCandidateSemanticReviewEscalationDefersIncompleteEvidence(t *testing.T) {
+func TestCandidateSemanticReviewEscalationHonorsFinalModelOnIncompleteEvidence(t *testing.T) {
 	cfg := escalationCandidateConfig()
 	selection := escalationCandidateSelection(cfg, true)
 	router := &semanticReviewSequenceRouter{results: []ContentModerationSemanticReviewResult{
@@ -215,9 +214,9 @@ func TestCandidateSemanticReviewEscalationDefersIncompleteEvidence(t *testing.T)
 		Protocol: ContentModerationProtocolOpenAIResponses,
 	}, cfg, selection, "")
 
-	require.True(t, outcome.Decision.Blocked, "%+v", outcome.Decision)
-	require.Equal(t, http.StatusServiceUnavailable, outcome.Decision.StatusCode)
-	require.Equal(t, ContentModerationActionSemanticReviewIncomplete, outcome.Decision.Action)
+	require.False(t, outcome.Decision.Blocked, "%+v", outcome.Decision)
+	require.Zero(t, outcome.Decision.StatusCode)
+	require.Equal(t, ContentModerationActionSemanticReviewAllow, outcome.Decision.Action)
 	require.False(t, router.inputs[1].EvidenceComplete)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)

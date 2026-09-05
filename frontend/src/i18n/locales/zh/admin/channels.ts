@@ -286,8 +286,6 @@ export default {
       semanticReviewEscalationTimeout: '升级审核预算（毫秒）',
       semanticReviewEscalationMaxInput: '升级审核最大输入字符数',
       semanticReviewEscalationReasoningEffort: '升级审核推理强度',
-      semanticReviewEscalationFailClosed: '升级审核失败关闭',
-      semanticReviewEscalationFailClosedHint: '二审仍不确定、证据不完整或模型不可用时返回 503，不向上游转发。',
       promptInjectionReviewerStatus: 'Prompt Injection 专用审核',
       promptInjectionFailClosedStatus: 'Prompt Injection 失败关闭',
       promptInjectionMaxInput: 'Prompt Injection 输入预算',

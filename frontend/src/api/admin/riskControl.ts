@@ -24,6 +24,7 @@ export type ContentModerationKeywordCategory =
   | 'regulated_advice'
   | 'copyright'
   | 'biometric'
+  | 'biosecurity'
   | 'other'
 export type ContentModerationKeywordSeverity = 'low' | 'medium' | 'high' | 'critical'
 export type ContentModerationKeywordAction = 'block' | 'observe' | 'warn'
@@ -51,7 +52,6 @@ export interface ContentModerationSemanticReviewConfig {
   escalation_timeout_ms: number
   escalation_max_input_runes: number
   escalation_reasoning_effort: 'low' | 'medium' | 'high' | 'xhigh'
-  escalation_fail_closed: boolean
   timeout_ms: number
   primary_timeout_ms: number
   fallback_timeout_ms: number

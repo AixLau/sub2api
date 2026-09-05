@@ -100,6 +100,7 @@ const (
 	ContentModerationKeywordCategoryRegulatedAdvice    = "regulated_advice"
 	ContentModerationKeywordCategoryCopyright          = "copyright"
 	ContentModerationKeywordCategoryBiometric          = "biometric"
+	ContentModerationKeywordCategoryBiosecurity        = "biosecurity"
 	ContentModerationKeywordCategoryOther              = "other"
 
 	ContentModerationKeywordSeverityLow      = "low"
@@ -403,7 +404,6 @@ type ContentModerationSemanticReviewConfig struct {
 	EscalationTimeoutMS            int      `json:"escalation_timeout_ms"`
 	EscalationMaxInputRunes        int      `json:"escalation_max_input_runes"`
 	EscalationReasoningEffort      string   `json:"escalation_reasoning_effort"`
-	EscalationFailClosed           bool     `json:"escalation_fail_closed"`
 	TimeoutMS                      int      `json:"timeout_ms"`
 	PrimaryTimeoutMS               int      `json:"primary_timeout_ms"`
 	FallbackTimeoutMS              int      `json:"fallback_timeout_ms"`
@@ -5005,12 +5005,6 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 			"启用决策升级审核时必须选择升级模型",
 		)
 	}
-	if cfg.SemanticReview.EscalationEnabled && cfg.SemanticReview.EscalationFailClosed && cfg.Mode != ContentModerationModePreBlock {
-		return infraerrors.BadRequest(
-			"INVALID_SEMANTIC_REVIEW_ESCALATION_FAIL_CLOSED_MODE",
-			"决策升级审核失败关闭仅可在 pre_block 模式启用",
-		)
-	}
 	switch normalizeContentModerationPromptFilterMode(cfg.PromptFilterMode) {
 	case promptfilter.ModeOff, promptfilter.ModeObserve, promptfilter.ModeWarn, promptfilter.ModeBlock:
 	default:
@@ -6091,7 +6085,6 @@ func defaultContentModerationSemanticReviewConfig() ContentModerationSemanticRev
 		EscalationTimeoutMS:            ContentModerationSemanticReviewEscalationTimeoutMS,
 		EscalationMaxInputRunes:        maxModerationInputRunes,
 		EscalationReasoningEffort:      "high",
-		EscalationFailClosed:           true,
 		TimeoutMS:                      ContentModerationSemanticReviewDefaultTimeoutMS,
 		PrimaryTimeoutMS:               ContentModerationSemanticReviewPrimaryTimeoutMS,
 		FallbackTimeoutMS:              ContentModerationSemanticReviewFallbackTimeoutMS,
@@ -7137,6 +7130,8 @@ func normalizeContentModerationKeywordCategory(category string) string {
 		return ContentModerationKeywordCategoryCopyright
 	case ContentModerationKeywordCategoryBiometric:
 		return ContentModerationKeywordCategoryBiometric
+	case ContentModerationKeywordCategoryBiosecurity:
+		return ContentModerationKeywordCategoryBiosecurity
 	case ContentModerationKeywordCategoryOther:
 		return ContentModerationKeywordCategoryOther
 	// Prompt-filter categories describe capability/intent rather than the

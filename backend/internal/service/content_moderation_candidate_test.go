@@ -401,7 +401,7 @@ func TestCandidateModeIgnoresLargeResponsesToolOutputInUserOnlyScope(t *testing.
 }
 
 func TestCandidateIncompleteExtractionReviewsAvailableEvidence(t *testing.T) {
-	cfg := candidateTestConfig()
+	cfg := escalationCandidateConfig()
 	cfg.KeywordRules = []ContentModerationKeywordRule{{
 		Keyword:  "danger-marker",
 		Category: ContentModerationKeywordCategoryCyber,
@@ -429,13 +429,13 @@ func TestCandidateIncompleteExtractionReviewsAvailableEvidence(t *testing.T) {
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
 	require.Empty(t, logs[0].Error)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
+	require.Equal(t, ContentModerationActionSemanticReviewAllow, logs[0].Action)
 	require.Equal(t, contentModerationDecisionSourceSemantic, logs[0].DecisionSource)
 	require.Equal(t, []string{"max_total_runes"}, logs[0].TruncateReasons)
 	require.Equal(t, "responses.input[0].role=user.content", logs[0].SelectedSource)
 	require.Equal(t, "user", logs[0].SelectedSourceRole)
 	require.Equal(t, "danger-marker request", logs[0].InputExcerpt)
-	require.Equal(t, 1, router.calls)
+	require.Equal(t, 2, router.calls)
 	require.False(t, router.input.EvidenceComplete)
 	require.Equal(t, "danger-marker request", router.input.Text)
 	view, err := svc.GetEvidenceSnapshot(context.Background(), logs[0].ID)
@@ -445,7 +445,7 @@ func TestCandidateIncompleteExtractionReviewsAvailableEvidence(t *testing.T) {
 }
 
 func TestCandidateIncompleteExtractionCollapsesRepeatedRetriesIntoOneAudit(t *testing.T) {
-	cfg := candidateTestConfig()
+	cfg := escalationCandidateConfig()
 	cfg.KeywordRules = []ContentModerationKeywordRule{{
 		Keyword:  "danger-marker",
 		Category: ContentModerationKeywordCategoryCyber,
@@ -474,8 +474,8 @@ func TestCandidateIncompleteExtractionCollapsesRepeatedRetriesIntoOneAudit(t *te
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
 	require.Empty(t, logs[0].Error)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
-	require.Equal(t, 1, router.calls)
+	require.Equal(t, ContentModerationActionSemanticReviewAllow, logs[0].Action)
+	require.Equal(t, 2, router.calls)
 	require.Equal(t, int64(1), repo.duplicateRetries.Load())
 }
 
@@ -510,7 +510,7 @@ func TestCandidateIncompleteExtractionDoesNotCollapseDifferentSourceText(t *test
 }
 
 func TestCandidateUnknownResponsesValueReviewsExtractedUserText(t *testing.T) {
-	cfg := candidateTestConfig()
+	cfg := escalationCandidateConfig()
 	cfg.PromptFilterMode = promptfilter.ModeObserve
 	repo := &contentModerationTestRepo{}
 	svc := candidateTestService(repo)
@@ -528,12 +528,12 @@ func TestCandidateUnknownResponsesValueReviewsExtractedUserText(t *testing.T) {
 	}, cfg, content)
 
 	require.True(t, decision.Allowed)
-	require.Equal(t, 1, router.calls)
+	require.Equal(t, 2, router.calls)
 	require.False(t, router.input.EvidenceComplete)
 	require.Contains(t, router.input.Text, "exploit")
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
+	require.Equal(t, ContentModerationActionSemanticReviewAllow, logs[0].Action)
 	require.Empty(t, logs[0].Error)
 	require.Equal(t, []string{"unsupported_required_value"}, logs[0].TruncateReasons)
 	require.False(t, logs[0].UserViolationEligible)
@@ -555,7 +555,7 @@ func TestIncompleteCandidateEvidenceCannotPromoteReviewToReject(t *testing.T) {
 	require.Equal(t, "reject", complete.Verdict)
 }
 
-func TestIncompleteCandidateEvidenceDowngradesModelRejectToReview(t *testing.T) {
+func TestIncompleteCandidateEvidenceRequiresFinalReviewerForModelReject(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.KeywordRules = []ContentModerationKeywordRule{{
 		Keyword:  "danger-marker",
@@ -583,17 +583,16 @@ func TestIncompleteCandidateEvidenceDowngradesModelRejectToReview(t *testing.T) 
 		UserID: 17, APIKeyID: 29, Protocol: ContentModerationProtocolOpenAIResponses,
 	}, cfg, content)
 
-	require.True(t, decision.Allowed)
-	require.False(t, decision.Blocked)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, decision.Action)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionSemanticReviewUnavailable, decision.Action)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
-	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.Equal(t, ContentModerationActionSemanticReviewUnavailable, logs[0].Action)
+	require.Empty(t, logs[0].ReviewStatus)
 	require.False(t, logs[0].UserViolationEligible)
 	require.Zero(t, logs[0].ViolationCount)
-	require.Contains(t, string(logs[0].Metadata), "semantic_policy_incomplete_evidence")
-	require.Contains(t, string(logs[0].Metadata), `"semantic_review_model_severity":"high"`)
+	require.Contains(t, logs[0].Error, "final semantic reviewer is unavailable")
 }
 
 func TestCandidateSelectionUsesValidationReasonsFromSelectedSourceOnly(t *testing.T) {
@@ -670,7 +669,7 @@ func TestCandidateSelectionKeepsTailPromptFilterMatchInBoundedPayload(t *testing
 	require.Equal(t, len([]rune(text)), selection.EvidenceRunes)
 }
 
-func TestCandidateFragmentBudgetMarksEvidenceIncompleteAndDowngradesReject(t *testing.T) {
+func TestCandidateFragmentBudgetRequiresFinalReviewerForTruncatedReject(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.KeywordRules = []ContentModerationKeywordRule{{
 		Keyword:  "danger-marker",
@@ -701,16 +700,16 @@ func TestCandidateFragmentBudgetMarksEvidenceIncompleteAndDowngradesReject(t *te
 		content,
 	)
 
-	require.True(t, decision.Allowed)
-	require.False(t, decision.Blocked)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, decision.Action)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionSemanticReviewUnavailable, decision.Action)
 	require.False(t, router.input.EvidenceComplete)
 	require.NotContains(t, router.input.Text, "authorized diagnostic")
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.Empty(t, logs[0].ReviewStatus)
 	require.False(t, logs[0].UserViolationEligible)
-	require.Contains(t, string(logs[0].Metadata), "semantic_policy_incomplete_evidence")
+	require.Contains(t, logs[0].Error, "final semantic reviewer is unavailable")
 }
 
 func TestCandidateSelectionMarksBoundedSourceEvidenceIncompleteWithoutChangingLegacyDecision(t *testing.T) {
@@ -1447,7 +1446,7 @@ func TestCandidateCheckRoutesCyberCandidateToSemanticReview(t *testing.T) {
 	require.Zero(t, status.PreBlockBlocked)
 }
 
-func TestCandidateSemanticReviewKeepsAmbiguousHighRiskCandidatePendingWithoutBlocking(t *testing.T) {
+func TestCandidateSemanticReviewRequiresFinalReviewerForAmbiguousHighRisk(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.Enabled = true
 	cfg.KeywordRules = []ContentModerationKeywordRule{{
@@ -1480,16 +1479,16 @@ func TestCandidateSemanticReviewKeepsAmbiguousHighRiskCandidatePendingWithoutBlo
 	})
 
 	require.NoError(t, err)
-	require.True(t, decision.Allowed)
-	require.False(t, decision.Blocked)
-	require.Zero(t, decision.StatusCode)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, decision.Action)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.Blocked)
+	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.Equal(t, ContentModerationActionSemanticReviewUnavailable, decision.Action)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
 	require.Equal(t, contentModerationDecisionSourceSemantic, logs[0].DecisionSource)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
-	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
-	require.True(t, logs[0].UserViolationEligible)
+	require.Equal(t, ContentModerationActionSemanticReviewUnavailable, logs[0].Action)
+	require.Empty(t, logs[0].ReviewStatus)
+	require.False(t, logs[0].UserViolationEligible)
 	require.Zero(t, logs[0].ViolationCount)
 	require.False(t, logs[0].AutoBanned)
 	require.False(t, logs[0].EmailSent)
@@ -1514,7 +1513,7 @@ func TestCandidateSemanticReviewAllowsHarmlessHighRiskCandidate(t *testing.T) {
 	}}, repo, nil, nil, nil, nil, nil)
 	svc.SetDecisionCacheKey(bytes.Repeat([]byte{0x5a}, 32))
 	svc.SetSemanticReviewRouter(&contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
-		Verdict: "review", Intent: "defensive", Target: "external_service", Authorization: "unclear",
+		Verdict: "allow", Intent: "defensive", Target: "external_service", Authorization: "unclear",
 		InformationAccess: "restricted", HarmMechanism: "none", Severity: "low", Confidence: 0.98,
 		Operationality: "actionable", Executability: "direct", Categories: []string{"other"},
 		ReasonCodes: []string{"remote_read_only_diagnostics", "no_concrete_harm_mechanism"},
@@ -1536,8 +1535,8 @@ func TestCandidateSemanticReviewAllowsHarmlessHighRiskCandidate(t *testing.T) {
 	require.Equal(t, ContentModerationActionSemanticReviewAllow, logs[0].Action)
 	require.Empty(t, logs[0].ReviewStatus)
 	require.Empty(t, logs[0].Error)
-	require.Contains(t, string(logs[0].Metadata), `"semantic_review_policy_override":true`)
-	require.Contains(t, string(logs[0].Metadata), "semantic_policy_harmless_review")
+	require.Contains(t, string(logs[0].Metadata), `"semantic_review_policy_override":false`)
+	require.Contains(t, string(logs[0].Metadata), `"semantic_review_verdict":"allow"`)
 	require.Zero(t, logs[0].ViolationCount)
 	require.False(t, logs[0].AutoBanned)
 	require.False(t, logs[0].EmailSent)
@@ -1562,7 +1561,7 @@ func TestCandidateSemanticReviewAllowsInferredDeceptionHighRiskCandidate(t *test
 	}}, repo, nil, nil, nil, nil, nil)
 	svc.SetDecisionCacheKey(bytes.Repeat([]byte{0x5a}, 32))
 	svc.SetSemanticReviewRouter(&contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
-		Verdict: "review", Intent: "benign", Target: "external_service", Authorization: "unclear",
+		Verdict: "allow", Intent: "benign", Target: "external_service", Authorization: "unclear",
 		InformationAccess: "provided_by_user", HarmMechanism: "deception_fraud",
 		HarmEvidence: "inferred", DeceptionType: "none", Severity: "high", Confidence: 0.67,
 		Operationality: "actionable", Executability: "direct", Categories: []string{"cyber"},
@@ -1593,7 +1592,7 @@ func TestCandidateSemanticReviewAllowsInferredDeceptionHighRiskCandidate(t *test
 	require.False(t, logs[0].EmailSent)
 }
 
-func TestCandidateSemanticReviewLowCustomReviewIsNotDeferred(t *testing.T) {
+func TestCandidateSemanticReviewRequiresFinalReviewerForLowRiskAmbiguity(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.Enabled = true
 	cfg.KeywordRules = []ContentModerationKeywordRule{{
@@ -1625,13 +1624,13 @@ func TestCandidateSemanticReviewLowCustomReviewIsNotDeferred(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.True(t, decision.Allowed)
-	require.False(t, decision.Blocked)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, decision.Action)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionSemanticReviewUnavailable, decision.Action)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
-	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.Equal(t, ContentModerationActionSemanticReviewUnavailable, logs[0].Action)
+	require.Empty(t, logs[0].ReviewStatus)
 }
 
 func TestHighRiskCandidateReviewNeedsRejectEligibleDimensionsToBlock(t *testing.T) {
@@ -1862,7 +1861,7 @@ func TestPromptInjectionV2PreBlockOutcomeMatrixIsFailClosedWithoutViolation(t *t
 		{
 			name: "review", result: ContentModerationSemanticReviewResult{
 				Verdict: "review", Presentation: "unknown", Confidence: 0.7,
-			}, bodyText: "override-marker request", wantAction: ContentModerationActionSemanticReviewDeferred,
+			}, bodyText: "override-marker request", wantAction: ContentModerationActionSemanticReviewUnavailable,
 		},
 		{
 			name: "unavailable", reviewErr: errors.New("reviewer timeout"),
@@ -1871,7 +1870,7 @@ func TestPromptInjectionV2PreBlockOutcomeMatrixIsFailClosedWithoutViolation(t *t
 		{
 			name: "incomplete_allow", result: ContentModerationSemanticReviewResult{
 				Verdict: "allow", Presentation: "quoted_analysis", Confidence: 0.95,
-			}, bodyText: "override-marker " + strings.Repeat("界", maxModerationInputRunes), wantAction: ContentModerationActionSemanticReviewIncomplete,
+			}, bodyText: "override-marker " + strings.Repeat("界", maxModerationInputRunes), wantAction: ContentModerationActionSemanticReviewUnavailable,
 		},
 	}
 
@@ -1957,7 +1956,7 @@ func TestPromptInjectionV2Real5KAndCompactVariantsNeverAllowAcross30Runs(t *test
 				require.NoError(t, checkErr)
 				require.False(t, decision.Allowed)
 				require.True(t, decision.Blocked)
-				require.Contains(t, []string{ContentModerationActionSemanticReviewReject, ContentModerationActionSemanticReviewDeferred}, decision.Action)
+				require.Contains(t, []string{ContentModerationActionSemanticReviewReject, ContentModerationActionSemanticReviewUnavailable}, decision.Action)
 			}
 		})
 	}
@@ -2075,7 +2074,7 @@ func TestSelectedAccountBaselineDecisionIsReusedByCandidateAttempt(t *testing.T)
 	require.Equal(t, 1, router.calls, "the account attempt must reuse the baseline semantic verdict")
 }
 
-func TestCandidateCheckFailsOpenWhenCriticalSemanticReviewUnavailable(t *testing.T) {
+func TestCandidateCheckFailsClosedWhenCriticalSemanticReviewUnavailable(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.Enabled = true
 	cfg.APIKeys = []string{"sk-test"}
@@ -2108,12 +2107,14 @@ func TestCandidateCheckFailsOpenWhenCriticalSemanticReviewUnavailable(t *testing
 	})
 
 	require.NoError(t, err)
-	require.True(t, decision.Allowed)
-	require.False(t, decision.Blocked)
-	require.Equal(t, ContentModerationActionError, decision.Action)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionSemanticReviewUnavailable, decision.Action)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.False(t, logs[0].Flagged)
+	require.True(t, logs[0].Flagged)
+	require.False(t, logs[0].UserViolationEligible)
+	require.Empty(t, logs[0].ReviewStatus)
 	require.Equal(t, "candidate_reviewer_unavailable", logs[0].RiskContextReason)
 	require.NotNil(t, logs[0].UpstreamLatencyMS)
 	require.GreaterOrEqual(t, *logs[0].UpstreamLatencyMS, 0)

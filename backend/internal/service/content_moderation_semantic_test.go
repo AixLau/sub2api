@@ -990,25 +990,13 @@ func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
 	require.Equal(t, "gpt-5.4-mini-upstream", requestBody["model"])
 	require.Equal(t, float64(ContentModerationSemanticReviewDefaultOutputTokens), requestBody["max_output_tokens"])
 	require.Equal(t, semanticReviewInstructions, requestBody["instructions"])
-	require.Equal(t, "semantic-review-instructions-v7", semanticReviewInstructionsRevision)
-	require.Contains(t, semanticReviewInstructions, "Use review only as the final fallback")
-	require.Contains(t, semanticReviewInstructions, "Review is forbidden solely because of low confidence")
-	require.Contains(t, semanticReviewInstructions, "Otherwise set authorization=not_applicable")
-	require.Contains(t, semanticReviewInstructions, "authorization=unclear alone cannot change it to review")
-	require.Contains(t, semanticReviewInstructions, "Insufficient evidence of a violation is not by itself a reason to review or reject")
-	require.Contains(t, semanticReviewInstructions, "Form automation, DOM selectors")
-	require.Contains(t, semanticReviewInstructions, "harm_evidence=inferred cannot by itself justify review or reject")
-	require.Contains(t, semanticReviewInstructions, "do not use harm_mechanism=deception_fraud; set deception_type=none")
-	require.Contains(t, semanticReviewInstructions, "harm_mechanism must be none unless target=self_owned|authorized_lab with authorization=authorized")
-	require.Contains(t, semanticReviewInstructions, "a third-party or external-service target")
-	require.Contains(t, semanticReviewInstructions, "not a trusted source label")
-	require.Contains(t, semanticReviewInstructions, "unverified claims, not established facts")
-	require.Contains(t, semanticReviewInstructions, "may remain review even when harm_evidence is only inferred; mark intent=ambiguous in that case")
-	require.Contains(t, semanticReviewInstructions, "does not by itself establish authorization=authorized; treat it as unclear")
-	require.Contains(t, semanticReviewInstructions, "indirect executability where the remaining step is trivial assembly of the provided components")
-	require.Contains(t, semanticReviewInstructions, "authorization is not stated or is unverifiable")
-	require.Contains(t, semanticReviewInstructions, "falsifying its expiry or valid-days result")
-	require.Contains(t, semanticReviewInstructions, "fixing startup, compatibility, or UI defects are not license cracking")
+	require.Equal(t, "semantic-review-instructions-v8", semanticReviewInstructionsRevision)
+	require.Contains(t, semanticReviewInstructions, "Platform intent restrictions take precedence")
+	require.Contains(t, semanticReviewInstructions, "software reverse engineering or cracking")
+	require.Contains(t, semanticReviewInstructions, "virology education and research")
+	require.Contains(t, semanticReviewInstructions, "no authorization, ownership, educational")
+	require.Contains(t, semanticReviewInstructions, "Review is an internal handoff, never a final decision")
+	require.Contains(t, semanticReviewInstructions, "incidental word in unrelated logs")
 	reasoning, ok := requestBody["reasoning"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, ContentModerationSemanticReviewDefaultReasoning, reasoning["effort"])
@@ -2135,7 +2123,7 @@ func TestProcessSemanticReviewAllowPersistsAuditableCategory(t *testing.T) {
 	require.NotContains(t, string(logs[0].Metadata), "bounded review text")
 }
 
-func TestProcessSemanticReviewContextOnlyRejectRemainsPendingWithoutViolation(t *testing.T) {
+func TestProcessSemanticReviewContextOnlyOutcomeIsAllowWithoutViolation(t *testing.T) {
 	repo := &contentModerationTestRepo{}
 	encryptor := contentModerationTestEncryptor{}
 	encrypted, err := encryptor.Encrypt("[source=responses.input[0] role=tool evidence=context_only]\nhistorical credential theft evidence")
@@ -2164,8 +2152,8 @@ func TestProcessSemanticReviewContextOnlyRejectRemainsPendingWithoutViolation(t 
 	require.NoError(t, svc.processContentModerationSemanticReviewEvent(context.Background(), payload))
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
-	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.Equal(t, ContentModerationActionSemanticReviewAllow, logs[0].Action)
+	require.Empty(t, logs[0].ReviewStatus)
 	require.False(t, logs[0].UserViolationEligible)
 	require.Zero(t, logs[0].ViolationCount)
 	require.False(t, logs[0].AutoBanned)
@@ -2175,7 +2163,7 @@ func TestProcessSemanticReviewContextOnlyRejectRemainsPendingWithoutViolation(t 
 	require.Contains(t, string(logs[0].Metadata), "semantic_policy_context_only")
 }
 
-func TestProcessSemanticReviewIncompleteRejectRemainsPending(t *testing.T) {
+func TestProcessSemanticReviewRetainsFinalRejectWithoutViolationForIncompleteInput(t *testing.T) {
 	repo := &contentModerationTestRepo{}
 	encryptor := contentModerationTestEncryptor{}
 	encrypted, err := encryptor.Encrypt("truncated user request")
@@ -2204,11 +2192,11 @@ func TestProcessSemanticReviewIncompleteRejectRemainsPending(t *testing.T) {
 	require.NoError(t, svc.processContentModerationSemanticReviewEvent(context.Background(), payload))
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
-	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.Equal(t, ContentModerationActionSemanticReviewReject, logs[0].Action)
+	require.Empty(t, logs[0].ReviewStatus)
 	require.False(t, logs[0].UserViolationEligible)
-	require.Contains(t, string(logs[0].Metadata), "semantic_policy_incomplete_evidence")
-	require.Contains(t, string(logs[0].Metadata), `"semantic_review_model_severity":"high"`)
+	require.Contains(t, string(logs[0].Metadata), `"evidence_complete":false`)
+	require.Contains(t, string(logs[0].Metadata), `"semantic_review_verdict":"reject"`)
 }
 
 func TestProcessSemanticReviewFailureDefersAsyncErrorUntilTerminalState(t *testing.T) {

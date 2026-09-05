@@ -35,8 +35,8 @@ func TestPromptInjectionReviewerUsesDedicatedInstructionsAndStrictSchema(t *test
 	require.Equal(t, "quoted_analysis", result.Presentation)
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(upstream.lastBody, &body))
-	require.Equal(t, promptInjectionReviewInstructions, body["instructions"])
-	require.Equal(t, "prompt-injection-instructions-v2", promptInjectionReviewerInstructionsRevision)
+	require.Equal(t, semanticReviewInstructionsForKind(contentModerationReviewKindPromptInjection, false), body["instructions"])
+	require.Equal(t, "prompt-injection-instructions-v3", promptInjectionReviewerInstructionsRevision)
 	require.Contains(t, promptInjectionReviewInstructions, "Analyze this rollout and produce a summary")
 	require.Contains(t, promptInjectionReviewInstructions, "Never return reject when active_override=false")
 	format := body["text"].(map[string]any)["format"].(map[string]any)

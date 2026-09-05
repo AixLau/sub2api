@@ -3,9 +3,24 @@ package promptfilter
 // Candidate rules are deliberately non-strict and non-operational. They widen
 // local recall for candidate_only, but only a downstream reviewer can decide
 // whether the request is allowed or blocked.
-const candidateSourceRevision = "local-candidate-recall@2026-08-09"
+const candidateSourceRevision = "local-candidate-recall@2026-09-06"
 
 var candidatePatternConfigs = []PatternConfig{
+	{
+		Name:   "candidate_virology_intent",
+		Regex:  `(?i)\b(?:virolog(?:y|ical|ist)|viral|virus(?:es)?|pathogens?|bacteriophages?|bioweapons?|biological\s+(?:agents?|weapons?))\b|病毒|病原体|噬菌体|生物武器`,
+		Weight: 75, Category: "biosecurity",
+	},
+	{
+		Name:   "candidate_reverse_engineering_intent",
+		Regex:  `(?i)\b(?:reverse[-\s]+engineer(?:ing|ed)?|decompil(?:e|ing|ation)|disassembl(?:e|ing|y)|ghidra|ida\s+pro|x64dbg|frida|jadx|apktool|keygen)\b|逆向|反编译|反汇编|脱壳|注册机|软件破解|破解软件`,
+		Weight: 75, Category: "reverse_engineering",
+	},
+	{
+		Name:   "candidate_cyber_attack_intent",
+		Regex:  `(?i)\b(?:cyber[-\s]?attacks?|ddos|botnets?|credential\s+stuffing|data\s+exfiltration|ransomware|unauthori[sz]ed\s+intrusion)\b|网络攻击|拒绝服务攻击|僵尸网络|撞库|窃取凭证|数据外传|勒索软件`,
+		Weight: 70, Category: "cyber",
+	},
 	{
 		Name:     "candidate_unauthorized_access",
 		Regex:    `(?i)\b(?:break\s+into|hack\s+into|gain\s+unauthori[sz]ed\s+access\s+to|access\s+without\s+(?:permission|authorization)|bypass\s+(?:the\s+)?(?:login|authentication|access\s+control))\b.{0,100}\b(?:account|email|server|system|network|database|device|admin|portal)\b|(?:入侵|黑进|未授权访问|未经授权访问|绕过(?:登录|认证|鉴权|访问控制)).{0,80}(?:账号|邮箱|服务器|系统|网络|数据库|设备|后台)`,

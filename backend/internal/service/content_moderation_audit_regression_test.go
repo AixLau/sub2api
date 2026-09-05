@@ -164,30 +164,26 @@ func TestCandidateUserOnlyAllowsResponsesToolContinuation(t *testing.T) {
 		[]byte(`{"input":[{"type":"function_call_output","output":"test"}]}`), ContentModerationAuditScopeAllContext))
 }
 
-func TestCandidateInitialReviewerFailureHonorsEscalationFailClosed(t *testing.T) {
+func TestCandidateInitialReviewerFailureFailsClosed(t *testing.T) {
 	for _, mode := range []string{ContentModerationModePreBlock, ContentModerationModeObserve} {
-		for _, failClosed := range []bool{false, true} {
-			cfg := escalationCandidateConfig()
-			cfg.Mode = mode
-			cfg.SemanticReview.EscalationFailClosed = failClosed
-			selection := escalationCandidateSelection(cfg, false)
-			repo := &contentModerationTestRepo{}
-			svc := candidateTestService(repo)
-			svc.SetSemanticReviewRouter(&contentModerationSemanticReviewRouterStub{
-				err: &ContentModerationSemanticReviewUnavailableError{Err: context.DeadlineExceeded},
-			})
-			outcome := svc.runCandidateSemanticReview(context.Background(), ContentModerationCheckInput{UserID: 1}, cfg, selection, "")
-			wantBlock := mode == ContentModerationModePreBlock && failClosed
-			require.Equal(t, wantBlock, outcome.Decision.Blocked)
-			logs := repo.snapshotLogs()
-			require.Len(t, logs, 1)
-			require.False(t, logs[0].UserViolationEligible)
-			require.Zero(t, logs[0].ViolationCount)
-			if wantBlock {
-				require.Equal(t, http.StatusServiceUnavailable, outcome.Decision.StatusCode)
-				require.Equal(t, ContentModerationActionSemanticReviewUnavailable, logs[0].Action)
-				require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
-			}
+		cfg := escalationCandidateConfig()
+		cfg.Mode = mode
+		selection := escalationCandidateSelection(cfg, false)
+		repo := &contentModerationTestRepo{}
+		svc := candidateTestService(repo)
+		svc.SetSemanticReviewRouter(&contentModerationSemanticReviewRouterStub{
+			err: &ContentModerationSemanticReviewUnavailableError{Err: context.DeadlineExceeded},
+		})
+		outcome := svc.runCandidateSemanticReview(context.Background(), ContentModerationCheckInput{UserID: 1}, cfg, selection, "")
+		require.Equal(t, mode == ContentModerationModePreBlock, outcome.Decision.Blocked)
+		logs := repo.snapshotLogs()
+		require.Len(t, logs, 1)
+		require.False(t, logs[0].UserViolationEligible)
+		require.Zero(t, logs[0].ViolationCount)
+		require.Empty(t, logs[0].ReviewStatus)
+		if mode == ContentModerationModePreBlock {
+			require.Equal(t, http.StatusServiceUnavailable, outcome.Decision.StatusCode)
+			require.Equal(t, ContentModerationActionSemanticReviewUnavailable, logs[0].Action)
 		}
 	}
 }

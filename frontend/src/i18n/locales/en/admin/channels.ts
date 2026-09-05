@@ -286,8 +286,6 @@ export default {
       semanticReviewEscalationTimeout: 'Escalation review budget (ms)',
       semanticReviewEscalationMaxInput: 'Escalation maximum input characters',
       semanticReviewEscalationReasoningEffort: 'Escalation reasoning effort',
-      semanticReviewEscalationFailClosed: 'Fail closed after escalation',
-      semanticReviewEscalationFailClosedHint: 'Return 503 without forwarding when the second review is unresolved, incomplete, or unavailable.',
       promptInjectionReviewerStatus: 'Prompt-injection reviewer',
       promptInjectionFailClosedStatus: 'Prompt-injection fail-closed',
       promptInjectionMaxInput: 'Prompt-injection input budget',
