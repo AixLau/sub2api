@@ -3,22 +3,22 @@ package promptfilter
 // Candidate rules are deliberately non-strict and non-operational. They widen
 // local recall for candidate_only, but only a downstream reviewer can decide
 // whether the request is allowed or blocked.
-const candidateSourceRevision = "local-candidate-recall@2026-09-06"
+const candidateSourceRevision = "local-candidate-recall@2026-09-06-expanded"
 
 var candidatePatternConfigs = []PatternConfig{
 	{
 		Name:   "candidate_virology_intent",
-		Regex:  `(?i)\b(?:virolog(?:y|ical|ist)|viral|virus(?:es)?|pathogens?|bacteriophages?|bioweapons?|biological\s+(?:agents?|weapons?))\b|病毒|病原体|噬菌体|生物武器`,
+		Regex:  `(?i)\b(?:virolog(?:y|ic|ical|ists?)|viral|virus(?:es)?|virions?|pathogens?|bacteriophages?|coronavirus(?:es)?|influenza|sars[-\s]?cov(?:[-\s]?2)?|hiv|hbv|hcv|hpv|ebola|bioweapons?|biological\s+(?:agents?|weapons?))\b|病毒|病原体|噬菌体|生物武器|流感病毒|冠状病毒`,
 		Weight: 75, Category: "biosecurity",
 	},
 	{
 		Name:   "candidate_reverse_engineering_intent",
-		Regex:  `(?i)\b(?:reverse[-\s]+engineer(?:ing|ed)?|decompil(?:e|ing|ation)|disassembl(?:e|ing|y)|ghidra|ida\s+pro|x64dbg|frida|jadx|apktool|keygen)\b|逆向|反编译|反汇编|脱壳|注册机|软件破解|破解软件`,
+		Regex:  `(?i)\b(?:reverse[-\s]*engineer(?:ing|ed|s)?|decompil(?:e[ds]?|ers?|ing|ation)|disassembl(?:e[ds]?|ers?|ing|y)|ghidra|ida\s+pro|x64dbg|ollydbg|frida|jadx|apktool|dnspy|ilspy|radare2|retdec|keygens?)\b|逆向|反编译|反汇编|反混淆|去混淆|脱壳|注册机|破解补丁|软件破解|破解软件`,
 		Weight: 75, Category: "reverse_engineering",
 	},
 	{
 		Name:   "candidate_cyber_attack_intent",
-		Regex:  `(?i)\b(?:cyber[-\s]?attacks?|ddos|botnets?|credential\s+stuffing|data\s+exfiltration|ransomware|unauthori[sz]ed\s+intrusion)\b|网络攻击|拒绝服务攻击|僵尸网络|撞库|窃取凭证|数据外传|勒索软件`,
+		Regex:  `(?i)\b(?:cyber[-\s]?attacks?|ddos|botnets?|credential\s+(?:stuffing|harvesting)|password\s+spraying|session\s+hijacking|data\s+exfiltration|ransomware|infostealers?|ransomware[-\s]as[-\s]a[-\s]service|unauthori[sz]ed\s+intrusion)\b|网络攻击|拒绝服务攻击|僵尸网络|撞库|凭证填充|密码喷洒|会话劫持|窃取凭证|窃取令牌|数据外传|勒索软件|盗号木马`,
 		Weight: 70, Category: "cyber",
 	},
 	{
@@ -110,5 +110,65 @@ var candidatePatternConfigs = []PatternConfig{
 		Regex:    `(?i)\b(?:intercept|hijack|tamper\s+with|modify|rewrite|forge|spoof)\b.{0,140}\b(?:gateway|server|client|engine|protocol|traffic|communication|request|response|handshake|state)\b.{0,180}\b(?:bypass|circumvent|evade|defeat|remove|raise)\b.{0,100}\b(?:licen[cs](?:e|ing)|activation|seat|user|device|concurren(?:t|cy)|usage|subscription|entitlement)\b.{0,40}\b(?:limit|cap|restriction|check|quota)\b|(?:拦截|劫持|篡改|修改|伪造|重写).{0,100}(?:网关|服务器|客户端|引擎|协议|通信|请求|响应|握手|状态).{0,140}(?:绕过|突破|规避|解除|提高).{0,80}(?:授权|许可|激活|席位|用户|人数|设备|并发|用量|订阅|权益).{0,30}(?:限制|上限|校验|配额)`,
 		Weight:   75,
 		Category: "cyber",
+	},
+	{
+		Name:     "candidate_financial_fraud",
+		Regex:    `(?i)\b(?:fraud(?:ulent(?:ly)?)?|defraud(?:ed|ing|s)?|scam(?:s|med|ming|mers?)?|investment\s+scams?|romance\s+scams?|advance[-\s]fee\s+fraud|money\s+laundering|carding|stolen\s+card\s+cashout)\b|诈骗|洗钱|杀猪盘|电诈话术|(?:编写|生成|设计|制作|提供).{0,60}骗取转账|盗刷套现`,
+		Weight:   70,
+		Category: "fraud",
+	},
+	{
+		Name:     "candidate_document_forgery",
+		Regex:    `(?i)\b(?:forg(?:e[ds]?|ing|ery)|falsif(?:y|ies|ied|ying|ication)|counterfeit(?:ed|ing|s)?|fabricat(?:e[ds]?|ing|ion)|fake[ds]?)\b.{0,80}\b(?:invoices?|receipts?|bank\s+statements?|passports?|identity\s+documents?|prescriptions?|diplomas?|certificates?|signatures?|transaction\s+records?)\b|(?:伪造|造假|篡改|虚假).{0,60}(?:发票|收据|银行流水|身份证|护照|处方|学历|毕业证|证书|签名|印章|交易记录)|假(?:发票|银行流水|证件|合同)`,
+		Weight:   70,
+		Category: "fraud",
+	},
+	{
+		Name:     "candidate_identity_impersonation",
+		Regex:    `(?i)\b(?:impersonate|pose\s+as|pretend\s+to\s+be)\b.{0,70}\b(?:bank|police|customer\s+support|technical\s+support|government\s+official|employer|coworker)\b|\b(?:clone\s+(?:someone(?:'s)?|their)\s+voice|voice\s+cloning|deepfake)\b.{0,100}\b(?:deceive|defraud|steal|transfer\s+money|bypass\s+verification)\b|冒充.{0,40}(?:银行|客服|公安|警察|公检法|政府人员|同事)|(?:克隆声音|声音克隆|深度伪造|伪造身份).{0,80}(?:骗取|诈骗|转账|绕过验证|冒领)`,
+		Weight:   70,
+		Category: "fraud",
+	},
+	{
+		Name:     "candidate_child_exploitation",
+		Regex:    `(?i)\b(?:csam|(?:child(?:ren)?|minors?)\s+(?:pornography|sexual\s+(?:abuse|exploitation))|sexual\s+grooming\s+(?:of\s+)?(?:children|minors)|groom(?:ing)?\s+(?:a\s+)?(?:child|minor)\s+for\s+sex)\b|(?:儿童|幼童|未成年人?)性(?:虐待|剥削)|未成年人?色情|幼童色情|性诱骗.{0,20}(?:儿童|未成年人?)|(?:诱骗|胁迫).{0,40}(?:儿童|未成年人?).{0,40}(?:裸照|性行为|色情)`,
+		Weight:   80,
+		Category: "minor_safety",
+	},
+	{
+		Name:     "candidate_coercion_violence",
+		Regex:    `(?i)\b(?:plan|organize|carry\s+out|help\s+with)\b.{0,80}\b(?:terrorist\s+attacks?|mass\s+violence|assassination|kidnapping)\b|\b(?:blackmail|extort|intimidate)\b.{0,60}\b(?:someone|a\s+person|the\s+victim|my\s+(?:partner|coworker|neighbor))\b|(?:策划|组织|实施|协助).{0,60}(?:恐怖袭击|暴力袭击|暗杀|绑架)|(?:勒索|敲诈|恐吓).{0,40}(?:某人|他人|对方|受害者|同事|邻居)`,
+		Weight:   80,
+		Category: "violence",
+	},
+	{
+		Name:     "candidate_chemical_radiological_weapons",
+		Regex:    `(?i)\b(?:chemical\s+weapons?|nerve\s+agents?|radiological\s+weapons?|dirty\s+bombs?|toxic\s+gas\s+attacks?|chemical\s+warfare)\b|化学武器|神经毒剂|放射性武器|脏弹|毒气袭击|化学战剂`,
+		Weight:   80,
+		Category: "weapons",
+	},
+	{
+		Name:     "candidate_sensitive_data_trade",
+		Regex:    `(?i)\b(?:buy|sell|leak|publish|trade)\b.{0,80}\b(?:stolen\s+(?:personal\s+)?data|medical\s+records?|identity\s+numbers?|private\s+addresses?|phone\s+(?:numbers?|lists?)|doxxing\s+databases?)\b|(?:购买|出售|交易|泄露|公布).{0,60}(?:社工库|开盒数据|个人信息库|身份证号码|手机号|电话号码|就医记录|病历数据|私人住址)|(?:出售|交易).{0,50}个人隐私`,
+		Weight:   75,
+		Category: "privacy",
+	},
+	{
+		Name:     "candidate_self_harm_promotion",
+		Regex:    `(?i)\b(?:encourage|persuade|pressure|convince|promote)\b.{0,80}\b(?:suicide|self[-\s]harm|anorexia|bulimia|eating\s+disorders?|disordered\s+eating)\b|\b(?:hide|conceal)\b.{0,60}\b(?:starvation|eating\s+disorders?|self[-\s]harm)\b|(?:鼓励|诱导|逼迫|怂恿|劝说).{0,60}(?:自杀|自残|厌食|催吐|进食障碍)|(?:隐藏|掩盖).{0,40}(?:自残行为|进食障碍|厌食症)`,
+		Weight:   80,
+		Category: "self_harm",
+	},
+	{
+		Name:     "candidate_copyright_circumvention",
+		Regex:    `(?i)\b(?:bypass|remove|crack|defeat|strip)\b.{0,80}\b(?:drm|digital\s+rights\s+management|copy[-\s]protection|copyright\s+protection)\b|(?:破解|绕过|移除|去除|解除).{0,60}(?:DRM|数字版权管理|复制保护|版权保护)`,
+		Weight:   70,
+		Category: "copyright",
+	},
+	{
+		Name:     "candidate_biometric_privacy_abuse",
+		Regex:    `(?i)\b(?:identify|track|recognize)\b.{0,60}\b(?:strangers|protesters|people\s+in\s+public)\b.{0,80}\b(?:faces?|facial\s+recognition|surveillance\s+cameras?)\b|\b(?:build|create|collect)\b.{0,80}\b(?:facial\s+recognition|face)\s+databases?\b.{0,60}\bwithout\s+consent\b|(?:识别|追踪|监控).{0,40}(?:陌生人|抗议者|公共场所人员).{0,60}(?:人脸|面部|摄像头)|(?:未经同意|未经授权).{0,40}(?:建立|收集|创建).{0,40}人脸(?:识别)?数据库`,
+		Weight:   75,
+		Category: "biometric",
 	},
 }
