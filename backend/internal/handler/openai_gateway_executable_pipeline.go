@@ -1938,6 +1938,7 @@ type OpenAIWebSocketUsageStage struct {
 	QuotaPlatform        string
 	ReleaseTurnSlots     func()
 	CyberBlockedThisConn *bool
+	CyberBlockPendingAfterFailover *bool
 	ScheduleSuccess      *bool
 	UserAgent            string
 	ClientIP             string
@@ -1951,7 +1952,9 @@ func (OpenAIWebSocketUsageStage) StageName() string {
 
 func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
 	// Cyber turn state must live exactly one turn; usage recording runs async.
-	defer clearCyberPolicyTurnState(c)
+	defer func() {
+		clearCyberPolicyAttemptState(c, s.CyberBlockPendingAfterFailover == nil || !*s.CyberBlockPendingAfterFailover)
+	}()
 	if s.ReleaseTurnSlots != nil {
 		s.ReleaseTurnSlots()
 	}
@@ -1974,7 +1977,9 @@ func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResul
 		upstreamModel = strings.TrimSpace(s.Result.UpstreamModel)
 	}
 	h.recordCyberPolicyIfMarked(c, s.APIKey, s.Account, s.Subscription, s.Model, s.TurnErr != nil, s.CyberBlockKey, s.ChannelMapping.ToUsageFields(s.Model, upstreamModel), s.RequestPayloadHash, s.CyberBlockBody)
-	if service.GetOpsCyberPolicy(c) != nil && s.CyberBlockedThisConn != nil {
+	if s.CyberBlockedThisConn != nil && s.CyberBlockPendingAfterFailover != nil {
+		*s.CyberBlockedThisConn, *s.CyberBlockPendingAfterFailover = advanceOpenAIWSCyberBlockState(*s.CyberBlockedThisConn, *s.CyberBlockPendingAfterFailover, service.GetOpsCyberPolicy(c) != nil, s.TurnErr)
+	} else if service.GetOpsCyberPolicy(c) != nil && s.CyberBlockedThisConn != nil {
 		*s.CyberBlockedThisConn = true
 	}
 	if s.TurnErr != nil {
