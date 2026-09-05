@@ -915,7 +915,7 @@ func TestMatchModelsDevProviderFallsBackToOpenAIProviderWithoutAPIField(t *testi
 
 	registry := map[string]modelsDevProvider{
 		"openai": {
-			ID: "openai",
+			ID:   "openai",
 			Name: "OpenAI",
 			// Official models.dev entry currently omits `api`.
 			Models: map[string]modelsDevModel{
@@ -1082,7 +1082,7 @@ func TestSyncUpstreamModelCatalogEnrichesConfiguredMappingModelsMissingFromUpstr
 		{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body: io.NopCloser(strings.NewReader(`{"object":"list","data":[{"id":"gpt-5.6-sol","object":"model"}]}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"object":"list","data":[{"id":"gpt-5.6-sol","object":"model"}]}`)),
 		},
 		{
 			StatusCode: http.StatusOK,
