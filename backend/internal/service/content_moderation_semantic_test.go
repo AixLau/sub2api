@@ -576,6 +576,34 @@ func TestSemanticReviewRouterTriesAnotherPrimaryAccountBeforeFallback(t *testing
 	require.Equal(t, []string{ContentModerationSemanticReviewPrimaryModel, ContentModerationSemanticReviewPrimaryModel}, backend.reviewCalls)
 }
 
+func TestSemanticReviewRouterSkipsSameModelRetryAfterProviderOverload(t *testing.T) {
+	first := freshSemanticReviewAccount(31)
+	second := freshSemanticReviewAccount(32)
+	fallback := freshSemanticReviewAccount(33)
+	backend := &semanticReviewBackendStub{
+		accountsByModel: map[string][]*Account{
+			ContentModerationSemanticReviewPrimaryModel:  {first, second},
+			ContentModerationSemanticReviewFallbackModel: {fallback},
+		},
+		review: func(_ context.Context, _ *Account, model string) (ContentModerationSemanticReviewResult, error) {
+			if model == ContentModerationSemanticReviewPrimaryModel {
+				return ContentModerationSemanticReviewResult{}, &ContentModerationSemanticReviewUpstreamError{
+					HTTPStatus: http.StatusServiceUnavailable, Code: "upstream_overloaded", Retryable: true,
+				}
+			}
+			return ContentModerationSemanticReviewResult{Verdict: "allow"}, nil
+		},
+	}
+	router := NewOpenAIContentModerationSemanticReviewRouter(backend, nil, nil)
+
+	result, err := router.Review(context.Background(), semanticReviewTestConfig(), ContentModerationSemanticReviewInput{Text: "test"})
+
+	require.NoError(t, err)
+	require.Equal(t, ContentModerationSemanticReviewFallbackModel, result.Model)
+	require.Equal(t, 2, result.AttemptCount)
+	require.Equal(t, []string{ContentModerationSemanticReviewPrimaryModel, ContentModerationSemanticReviewFallbackModel}, backend.reviewCalls)
+}
+
 func TestSemanticReviewRouterFallsBackWhenPrimaryModelIsUnsupported(t *testing.T) {
 	backend := &semanticReviewBackendStub{
 		accountsByModel: map[string][]*Account{
@@ -2714,6 +2742,11 @@ func TestSemanticReviewUpstreamErrorClassification(t *testing.T) {
 	require.True(t, errors.As(err, &upstreamErr))
 	require.True(t, upstreamErr.Retryable)
 	require.True(t, upstreamErr.QuotaExhausted)
+	overloaded := classifySemanticReviewUpstreamHTTPError(http.StatusServiceUnavailable, []byte(`{"error":"Our servers are currently overloaded. Please try again later."}`))
+	require.ErrorAs(t, overloaded, &upstreamErr)
+	require.Equal(t, "upstream_overloaded", upstreamErr.Code)
+	require.True(t, upstreamErr.Retryable)
+	require.False(t, upstreamErr.QuotaExhausted)
 }
 
 func TestSemanticReviewUpstreamErrorClassifiesCodexPlanGatedModel(t *testing.T) {

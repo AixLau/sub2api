@@ -1156,6 +1156,13 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 				excluded[account.ID] = struct{}{}
 				continue
 			}
+			// Provider-wide overload and peer/internal stream failures are not
+			// account-specific. Retrying another account on the same model only
+			// adds latency; move directly to the next configured model instead.
+			if semanticReviewShouldAvoidSameModelRetry(callErr) {
+				excluded[account.ID] = struct{}{}
+				break
+			}
 			if !isSemanticReviewRetryableError(callErr) {
 				return ContentModerationSemanticReviewResult{}, callErr
 			}
@@ -1187,6 +1194,10 @@ func semanticReviewAttemptReason(err error) string {
 				return "timeout"
 			}
 			return "read_response"
+		case "upstream_overloaded":
+			return "upstream_overloaded"
+		case "stream_internal_error":
+			return "stream_internal_error"
 		case "token_unavailable":
 			return "token_unavailable"
 		}
@@ -1195,6 +1206,14 @@ func semanticReviewAttemptReason(err error) string {
 		return "timeout"
 	}
 	return "retryable_error"
+}
+
+func semanticReviewShouldAvoidSameModelRetry(err error) bool {
+	var upstreamErr *ContentModerationSemanticReviewUpstreamError
+	if !errors.As(err, &upstreamErr) {
+		return false
+	}
+	return upstreamErr.Code == "upstream_overloaded" || upstreamErr.Code == "stream_internal_error"
 }
 
 func semanticReviewAttemptTimeout(cfg ContentModerationSemanticReviewConfig, modelIndex, attempt, maxAttempts, modelCount int, ctx context.Context) time.Duration {
@@ -2449,6 +2468,9 @@ func classifySemanticReviewUpstreamHTTPError(status int, body []byte) error {
 		return &ContentModerationSemanticReviewUpstreamError{HTTPStatus: status, Code: "model_unsupported", Message: message}
 	}
 	lower := strings.ToLower(message)
+	if strings.Contains(lower, "overloaded") || strings.Contains(lower, "servers are currently overloaded") {
+		return &ContentModerationSemanticReviewUpstreamError{HTTPStatus: status, Code: "upstream_overloaded", Message: message, Retryable: true}
+	}
 	quota := status == http.StatusTooManyRequests || strings.Contains(lower, "quota") || strings.Contains(lower, "rate_limit") || strings.Contains(lower, "rate limit") || strings.Contains(lower, "insufficient_quota")
 	// A missing route/model belongs to the selected upstream. Another configured
 	// account or model can still review the same input within the retry budget.
@@ -2563,6 +2585,10 @@ func semanticReviewSSEUpstreamError(event gjson.Result) error {
 	message := semanticReviewSSEErrorMessage(event)
 	if isOpenAICodexPlanGatedModelError(http.StatusBadRequest, []byte(message)) {
 		return &ContentModerationSemanticReviewUpstreamError{HTTPStatus: http.StatusBadRequest, Code: "model_unsupported", Message: message}
+	}
+	lower := strings.ToLower(message)
+	if strings.Contains(lower, "overloaded") || strings.Contains(lower, "internal_error") || strings.Contains(lower, "stream id") {
+		return &ContentModerationSemanticReviewUpstreamError{Code: "stream_internal_error", Message: message, Retryable: true}
 	}
 	retryable := !semanticReviewSSEDeterministicClientError(event)
 	status := 0
