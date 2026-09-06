@@ -3,7 +3,7 @@ package promptfilter
 // Candidate rules are deliberately non-strict and non-operational. They widen
 // local recall for candidate_only, but only a downstream reviewer can decide
 // whether the request is allowed or blocked.
-const candidateSourceRevision = "local-candidate-recall@2026-09-06-cyber-intent"
+const candidateSourceRevision = "local-candidate-recall@2026-09-06-ctf-corpus"
 
 // Expiry and quota maintenance is ordinary application work. Broad entitlement
 // terms require circumvention verbs; edits to licensing checks remain candidates.

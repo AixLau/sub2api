@@ -27,6 +27,12 @@
 
 ## 新增组合配置
 
+### CTF 场景语料
+
+真实 CTF 请求通常同时包含赛题类型、题目工件和分析目标，例如“本地 Web 题 + Flask 源码 + SSTI”“ELF + NX/PIE/Canary + 崩溃分析”“PCAP + flag + 流量会话”“APK + JADX + 本地校验”“RSA 共模题 + 多组密文”“Docker 镜像 + nc 服务”。这些组合由 `candidate_ctf_artifact_context` 召回语义审核；`ELF`、`PCAP`、`APK`、`flag`、`writeup`、`Docker`、`nc` 等词单独出现不触发该规则。
+
+CTF 语境不改变实际目标判断。若文本同时要求攻击第三方生产目标、窃取 token、获取 root shell、转储真实凭证或建立后门，继续命中现有高风险规则。
+
 配置位于 `backend/internal/pkg/promptfilter/builtin_cyber_intent_patterns.go`，经 `candidatePatternConfigs` 加载，使用现有规则版本和候选审核机制。
 
 | 规则标识 | 必须出现的组合证据 |

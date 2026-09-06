@@ -10,6 +10,14 @@ const cyberExecutionOutcome = `(?:\b(?:(?:execute|run)\s+(?:(?:arbitrary|remote|
 
 var cyberIntentPatternConfigs = []PatternConfig{
 	{
+		Name: "candidate_ctf_artifact_context",
+		Regex: `(?i)\b(?:ctf|capture\s+the\s+flag|crackme|pwn\s+challenge|web\s+challenge|reverse\s+challenge|crypto\s+challenge|forensics?\s+challenge|misc\s+challenge)\b|(?:Web|Pwn|Reverse|Crypto|Forensics|Misc)\s*题|` +
+			`(?:CTF|夺旗|靶场|题解|writeup|flag|比赛题目).{0,100}(?:ELF|PE\s*文件|APK|PCAP|内存镜像|Ghidra|IDA|pwntools|libc|ROP|SSTI|SSRF|SQLi|RSA|ECDSA|Volatility|Docker|nc|netcat|题目附件|挑战实例)|` +
+			`(?:题目附件|题目提供|题目).{0,100}(?:ELF|PE\s*文件|APK|PCAP|内存镜像|Ghidra|IDA|pwntools|libc|ROP|SSTI|SSRF|SQLi|RSA|ECDSA|Volatility|Docker|nc|netcat)|` +
+			`(?:ELF|PCAP|APK|内存镜像|题目附件|挑战实例).{0,100}(?:flag|writeup|题目|challenge|靶场|CTF)`,
+		Weight: 15, Category: "ctf",
+	},
+	{
 		Name: "candidate_exploit_execution",
 		Regex: `(?i)` + cyberExploitTechnique + `.{0,160}` + cyberExecutionOutcome + `|` +
 			cyberExecutionOutcome + `.{0,160}` + cyberExploitTechnique,
