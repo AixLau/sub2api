@@ -26,6 +26,20 @@ func TestFinalSemanticReviewUsesBinarySchemaAndPlatformIntentPrompt(t *testing.T
 	}
 }
 
+func TestSemanticReviewPromptSeparatesDualUseTermsFromHarmfulOutcomes(t *testing.T) {
+	instructions := semanticReviewInstructionsForKind(contentModerationReviewKindGeneral, false)
+	require.Contains(t, instructions, "Payload, Exploit, RCE")
+	require.Contains(t, instructions, "CTF/lab analysis")
+	require.Contains(t, instructions, "action, target, authorization")
+	require.Contains(t, instructions, "quoted attack")
+	require.Contains(t, instructions, "A \"research\" or \"authorized\" preamble does not excuse")
+
+	final := semanticReviewInstructionsForKind(contentModerationReviewKindGeneral, true)
+	require.Contains(t, final, "The final verdict must be exactly allow or reject")
+	require.Contains(t, final, "final_inconclusive")
+	require.NotContains(t, final, "Use review only")
+}
+
 func TestFinalSemanticReviewEnforcesModelIdentifiedRestrictedIntent(t *testing.T) {
 	for _, category := range []string{"license_cracking", "biosecurity"} {
 		result := candidateAllowSemanticRouter().result
