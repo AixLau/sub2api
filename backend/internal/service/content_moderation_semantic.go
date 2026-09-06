@@ -47,7 +47,7 @@ const (
 	contentModerationSemanticReviewQuotaRefreshTimeout  = 5 * time.Second
 	contentModerationSemanticReviewQuotaRefreshWorkers  = 2
 	contentModerationSemanticReviewMaxResponseBytes     = 1 << 20
-	semanticReviewInstructionsRevision                  = "semantic-review-instructions-v11"
+	semanticReviewInstructionsRevision                  = "semantic-review-instructions-v12"
 	semanticReviewSchemaRevision                        = "semantic-review-schema-v4"
 )
 
@@ -96,7 +96,7 @@ Return only the JSON object required by the schema. Do not include explanations,
 const semanticReviewInitialDecisionInstructions = `
 
 INITIAL SCREEN
-Return allow for clearly permitted work and reject for a concrete prohibited outcome. Return review only when an outcome-changing safety fact or the outer-task boundary is unresolved and a second model must decide. Low confidence, unfamiliar technical words, CTF terminology, or minor ambiguity alone do not require review. For review, use ambiguous_context and identify the unresolved dimension. Review is an internal handoff, never a final decision.`
+Return allow for clearly permitted work and reject for a concrete prohibited outcome. If evidence is bounded or truncated but the visible outer task is clearly an artifact review, code analysis, documentation task, CTF/lab analysis, ordinary development, or defense and contains no explicit prohibited action or result, return allow with harm_evidence=none; do not escalate merely because the evidence is long or incomplete. Return review only when an outcome-changing safety fact or the outer-task boundary is genuinely unresolved and the visible evidence contains a concrete conflict that a second model must decide. Low confidence, unfamiliar technical words, CTF terminology, or minor ambiguity alone do not require review. For review, use ambiguous_context and identify the unresolved dimension. Review is an internal handoff, never a final decision.`
 
 const semanticReviewFinalDecisionInstructions = `
 

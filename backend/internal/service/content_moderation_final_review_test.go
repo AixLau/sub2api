@@ -40,6 +40,8 @@ func TestSemanticReviewPromptSeparatesDualUseTermsFromHarmfulOutcomes(t *testing
 	require.Contains(t, final, "Truncation, an incomplete flag")
 	require.Contains(t, final, "return allow with harm_evidence=none")
 	require.NotContains(t, final, "Use review only")
+	initial := semanticReviewInstructionsForKind(contentModerationReviewKindGeneral, false)
+	require.Contains(t, initial, "do not escalate merely because the evidence is long or incomplete")
 }
 
 func TestFinalSemanticReviewEnforcesModelIdentifiedRestrictedIntent(t *testing.T) {
