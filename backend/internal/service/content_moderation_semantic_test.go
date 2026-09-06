@@ -1018,7 +1018,7 @@ func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
 	require.Equal(t, "gpt-5.4-mini-upstream", requestBody["model"])
 	require.Equal(t, float64(ContentModerationSemanticReviewDefaultOutputTokens), requestBody["max_output_tokens"])
 	require.Equal(t, semanticReviewInstructions, requestBody["instructions"])
-	require.Equal(t, "semantic-review-instructions-v10", semanticReviewInstructionsRevision)
+	require.Equal(t, "semantic-review-instructions-v11", semanticReviewInstructionsRevision)
 	require.Contains(t, semanticReviewInstructions, "Platform virology restrictions take precedence")
 	require.Contains(t, semanticReviewInstructions, "authorized reverse engineering")
 	require.Contains(t, semanticReviewInstructions, "virology education and research")

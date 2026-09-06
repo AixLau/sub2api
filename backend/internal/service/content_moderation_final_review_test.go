@@ -37,6 +37,8 @@ func TestSemanticReviewPromptSeparatesDualUseTermsFromHarmfulOutcomes(t *testing
 	final := semanticReviewInstructionsForKind(contentModerationReviewKindGeneral, true)
 	require.Contains(t, final, "The final verdict must be exactly allow or reject")
 	require.Contains(t, final, "final_inconclusive")
+	require.Contains(t, final, "Truncation, an incomplete flag")
+	require.Contains(t, final, "return allow with harm_evidence=none")
 	require.NotContains(t, final, "Use review only")
 }
 
