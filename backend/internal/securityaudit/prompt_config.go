@@ -14,19 +14,19 @@ import (
 )
 
 const (
-	DefaultWorkerCount   = 4
-	MaxWorkerCount       = 32
-	DefaultQueueCapacity = 32768
-	MaxQueueCapacity     = 100000
-	DefaultTimeoutMS     = 3000
-	MinTimeoutMS         = 100
-	MaxTimeoutMS         = 30000
-	DefaultInputLimit    = 4000
-	MinInputLimit        = 128
-	MaxInputLimit        = 100000
-	DefaultMaxTokens     = 64
-	MinMaxTokens         = 1
-	DefaultPayloadTTL    = 30 * time.Minute
+	DefaultWorkerCount    = 4
+	MaxWorkerCount        = 32
+	DefaultQueueCapacity  = 32768
+	MaxQueueCapacity      = 100000
+	DefaultTimeoutMS      = 3000
+	MinTimeoutMS          = 100
+	MaxTimeoutMS          = 30000
+	DefaultInputLimit     = 4000
+	MinInputLimit         = 128
+	MaxInputLimit         = 100000
+	DefaultMaxInputTokens = 4000
+	MinMaxInputTokens     = 1
+	DefaultPayloadTTL     = 30 * time.Minute
 )
 
 type SecretEncryptor interface {
@@ -62,7 +62,7 @@ type StorageEndpoint struct {
 	TokenCiphertext string `json:"token_ciphertext,omitempty"`
 	TimeoutMS       int    `json:"timeout_ms"`
 	InputLimit      int    `json:"input_limit"`
-	MaxTokens       int    `json:"max_tokens"`
+	MaxInputTokens  int    `json:"max_input_tokens"`
 	Enabled         bool   `json:"enabled"`
 }
 
@@ -85,16 +85,16 @@ type storageConfig struct {
 }
 
 type ActiveEndpoint struct {
-	ID         string
-	Name       string
-	Protocol   string
-	BaseURL    string
-	Model      string
-	Token      string
-	TimeoutMS  int
-	InputLimit int
-	MaxTokens  int
-	Enabled    bool
+	ID             string
+	Name           string
+	Protocol       string
+	BaseURL        string
+	Model          string
+	Token          string
+	TimeoutMS      int
+	InputLimit     int
+	MaxInputTokens int
+	Enabled        bool
 	// TokenInvalid marks an endpoint whose persisted token ciphertext cannot be
 	// decrypted with the current encryption key (key changed or auto-generated
 	// on restart). The endpoint is kept visible for admins but excluded from
@@ -122,17 +122,17 @@ type ActiveConfig struct {
 }
 
 type PublicEndpoint struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Protocol    string `json:"protocol"`
-	BaseURL     string `json:"base_url"`
-	Model       string `json:"model"`
-	TimeoutMS   int    `json:"timeout_ms"`
-	InputLimit  int    `json:"input_limit"`
-	MaxTokens   int    `json:"max_tokens"`
-	Enabled     bool   `json:"enabled"`
-	HasToken    bool   `json:"has_token"`
-	TokenStatus string `json:"token_status"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Protocol       string `json:"protocol"`
+	BaseURL        string `json:"base_url"`
+	Model          string `json:"model"`
+	TimeoutMS      int    `json:"timeout_ms"`
+	InputLimit     int    `json:"input_limit"`
+	MaxInputTokens int    `json:"max_input_tokens"`
+	Enabled        bool   `json:"enabled"`
+	HasToken       bool   `json:"has_token"`
+	TokenStatus    string `json:"token_status"`
 }
 
 type PublicConfig struct {
@@ -155,17 +155,17 @@ type PublicConfig struct {
 }
 
 type UpdateEndpoint struct {
-	ID         string `json:"id" binding:"required"`
-	Name       string `json:"name" binding:"required"`
-	Protocol   string `json:"protocol"`
-	BaseURL    string `json:"base_url" binding:"required"`
-	Model      string `json:"model"`
-	Token      string `json:"token,omitempty"`
-	ClearToken bool   `json:"clear_token"`
-	TimeoutMS  int    `json:"timeout_ms"`
-	InputLimit int    `json:"input_limit"`
-	MaxTokens  int    `json:"max_tokens"`
-	Enabled    bool   `json:"enabled"`
+	ID             string `json:"id" binding:"required"`
+	Name           string `json:"name" binding:"required"`
+	Protocol       string `json:"protocol"`
+	BaseURL        string `json:"base_url" binding:"required"`
+	Model          string `json:"model"`
+	Token          string `json:"token,omitempty"`
+	ClearToken     bool   `json:"clear_token"`
+	TimeoutMS      int    `json:"timeout_ms"`
+	InputLimit     int    `json:"input_limit"`
+	MaxInputTokens int    `json:"max_input_tokens"`
+	Enabled        bool   `json:"enabled"`
 }
 
 type UpdateConfigRequest struct {
@@ -257,8 +257,8 @@ func normalizeStorageConfig(cfg *storageConfig) {
 		if ep.InputLimit == 0 {
 			ep.InputLimit = DefaultInputLimit
 		}
-		if ep.MaxTokens == 0 {
-			ep.MaxTokens = DefaultMaxTokens
+		if ep.MaxInputTokens == 0 {
+			ep.MaxInputTokens = DefaultMaxInputTokens
 		}
 	}
 }
@@ -304,8 +304,8 @@ func validateStorageConfig(cfg storageConfig) error {
 		if ep.InputLimit < MinInputLimit || ep.InputLimit > MaxInputLimit {
 			return infraerrors.BadRequest("prompt_audit_invalid_input_limit", "审计节点输入上限超出允许范围")
 		}
-		if ep.MaxTokens != 0 && ep.MaxTokens < MinMaxTokens {
-			return infraerrors.BadRequest("prompt_audit_invalid_max_tokens", "审计节点最大输出 token 超出允许范围")
+		if ep.MaxInputTokens != 0 && ep.MaxInputTokens < MinMaxInputTokens {
+			return infraerrors.BadRequest("prompt_audit_invalid_max_input_tokens", "审计节点最大输入 token 必须大于 0")
 		}
 		if ep.Enabled {
 			enabled++
@@ -352,8 +352,8 @@ func validateUpdateConfigRequest(req UpdateConfigRequest) error {
 		if endpoint.InputLimit < MinInputLimit || endpoint.InputLimit > MaxInputLimit {
 			return infraerrors.BadRequest("prompt_audit_invalid_input_limit", "审计节点输入上限超出允许范围")
 		}
-		if endpoint.MaxTokens != 0 && endpoint.MaxTokens < MinMaxTokens {
-			return infraerrors.BadRequest("prompt_audit_invalid_max_tokens", "审计节点最大输出 token 超出允许范围")
+		if endpoint.MaxInputTokens != 0 && endpoint.MaxInputTokens < MinMaxInputTokens {
+			return infraerrors.BadRequest("prompt_audit_invalid_max_input_tokens", "审计节点最大输入 token 必须大于 0")
 		}
 	}
 	return nil
@@ -421,7 +421,7 @@ func PublicFromStorage(cfg storageConfig, riskControlEnabled bool, invalidTokenE
 		}
 		endpoints = append(endpoints, PublicEndpoint{
 			ID: ep.ID, Name: ep.Name, Protocol: ep.Protocol, BaseURL: ep.BaseURL,
-			Model: ep.Model, TimeoutMS: ep.TimeoutMS, InputLimit: ep.InputLimit, MaxTokens: ep.MaxTokens,
+			Model: ep.Model, TimeoutMS: ep.TimeoutMS, InputLimit: ep.InputLimit, MaxInputTokens: ep.MaxInputTokens,
 			Enabled: ep.Enabled, HasToken: hasToken, TokenStatus: status,
 		})
 	}
@@ -466,7 +466,7 @@ func ActiveFromStorage(cfg storageConfig, riskControlEnabled bool, encryptor Sec
 		}
 		active.Endpoints = append(active.Endpoints, ActiveEndpoint{
 			ID: ep.ID, Name: ep.Name, Protocol: ep.Protocol, BaseURL: ep.BaseURL, Model: ep.Model,
-			Token: token, TimeoutMS: ep.TimeoutMS, InputLimit: ep.InputLimit, MaxTokens: ep.MaxTokens,
+			Token: token, TimeoutMS: ep.TimeoutMS, InputLimit: ep.InputLimit, MaxInputTokens: ep.MaxInputTokens,
 			Enabled: ep.Enabled && !tokenInvalid, TokenInvalid: tokenInvalid,
 		})
 	}

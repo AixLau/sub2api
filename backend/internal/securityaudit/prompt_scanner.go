@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/tiktoken-go/tokenizer"
 )
 
 func SplitRunes(value string, limit int) []string {
@@ -22,6 +24,33 @@ func SplitRunes(value string, limit int) []string {
 			}
 			chunks = append(chunks, string(runes[start:end]))
 		}
+	}
+	return chunks
+}
+
+func SplitTokens(value string, limit int) []string {
+	if limit <= 0 || strings.TrimSpace(value) == "" {
+		return nil
+	}
+	codec, err := tokenizer.Get(tokenizer.O200kBase)
+	if err != nil {
+		return SplitRunes(value, limit*4)
+	}
+	ids, _, err := codec.Encode(value)
+	if err != nil || len(ids) <= limit {
+		return []string{value}
+	}
+	chunks := make([]string, 0, (len(ids)+limit-1)/limit)
+	for start := 0; start < len(ids); start += limit {
+		end := start + limit
+		if end > len(ids) {
+			end = len(ids)
+		}
+		chunk, err := codec.Decode(ids[start:end])
+		if err != nil {
+			return SplitRunes(value, limit*4)
+		}
+		chunks = append(chunks, chunk)
 	}
 	return chunks
 }

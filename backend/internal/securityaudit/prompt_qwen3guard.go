@@ -261,6 +261,10 @@ const contentAuditSystemPrompt = `<|system|>
 
 func NewOpenAICompatibleScanner() *OpenAICompatibleScanner { return &OpenAICompatibleScanner{} }
 
+func usesCodexSparkAuditPrompt(model string) bool {
+	return strings.EqualFold(strings.TrimSpace(model), "gpt-5.3-codex-spark")
+}
+
 func (s *OpenAICompatibleScanner) Scan(ctx context.Context, endpoint ActiveEndpoint, chunk string, enabledScanners []string) (*NormalizedResult, error) {
 	client, err := s.clientFor(endpoint)
 	if err != nil {
@@ -270,18 +274,18 @@ func (s *OpenAICompatibleScanner) Scan(ctx context.Context, endpoint ActiveEndpo
 	if err != nil {
 		return nil, &GuardError{Code: ErrorCodeUnavailable, Cause: err}
 	}
-	maxTokens := endpoint.MaxTokens
-	if maxTokens == 0 {
-		maxTokens = DefaultMaxTokens
-	}
-	payload := map[string]any{
-		"model": endpoint.Model,
-		"messages": []map[string]string{
+	messages := []map[string]string{{"role": "user", "content": chunk}}
+	if usesCodexSparkAuditPrompt(endpoint.Model) {
+		messages = []map[string]string{
 			{"role": "system", "content": contentAuditSystemPrompt},
 			{"role": "user", "content": "<user_input>\n" + chunk + "\n</user_input>"},
-		},
+		}
+	}
+	payload := map[string]any{
+		"model":       endpoint.Model,
+		"messages":    messages,
 		"temperature": 0,
-		"max_tokens":  maxTokens,
+		"max_tokens":  64,
 		"seed":        42,
 	}
 	body, err := json.Marshal(payload)

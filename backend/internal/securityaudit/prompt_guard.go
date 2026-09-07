@@ -71,7 +71,7 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 	evalCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	inputLimit := minimumInputLimit(endpoints)
-	chunks := SplitRunes(snapshot.ScanText, inputLimit)
+	chunks := splitPromptAuditChunks(snapshot.ScanText, endpoints, inputLimit)
 	if len(chunks) == 0 {
 		if g.metrics != nil {
 			g.metrics.Observe(DecisionAllow, g.clock.Now().Sub(start))
@@ -261,6 +261,27 @@ func minimumInputLimit(endpoints []ActiveEndpoint) int {
 		}
 	}
 	return limit
+}
+
+func splitPromptAuditChunks(value string, endpoints []ActiveEndpoint, charLimit int) []string {
+	chunks := SplitRunes(value, charLimit)
+	for _, endpoint := range endpoints {
+		if !usesCodexSparkAuditPrompt(endpoint.Model) || endpoint.MaxInputTokens <= 0 {
+			continue
+		}
+		// Reserve a small amount for the user-input wrapper. The system prompt
+		// is separate from the audited content and is not part of this budget.
+		contentLimit := endpoint.MaxInputTokens - 8
+		if contentLimit < 1 {
+			contentLimit = 1
+		}
+		limited := make([]string, 0, len(chunks))
+		for _, chunk := range chunks {
+			limited = append(limited, SplitTokens(chunk, contentLimit)...)
+		}
+		chunks = limited
+	}
+	return chunks
 }
 
 func guardErrorCode(err error) string {

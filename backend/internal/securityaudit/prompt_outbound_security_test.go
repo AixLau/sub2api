@@ -58,15 +58,33 @@ func TestOpenAICompatibleScannerRequestContract(t *testing.T) {
 		require.Equal(t, float64(42), payload["seed"])
 		messages, ok := payload["messages"].([]any)
 		require.True(t, ok)
-		require.Len(t, messages, 2)
-		require.Equal(t, "system", messages[0].(map[string]any)["role"])
-		require.Contains(t, messages[1].(map[string]any)["content"], "<user_input>\nhello\n</user_input>")
+		require.Len(t, messages, 1)
+		require.Equal(t, "user", messages[0].(map[string]any)["role"])
+		require.Equal(t, "hello", messages[0].(map[string]any)["content"])
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Safety: Safe\nCategories: None"}}]}`))
 	}))
 	defer server.Close()
 	scanner := NewOpenAICompatibleScanner()
 	result, err := scanner.Scan(context.Background(), ActiveEndpoint{ID: "one", BaseURL: server.URL, Model: DefaultGuardModel, Token: "token", TimeoutMS: 1000}, "hello", AllScannerIDs)
+	require.NoError(t, err)
+	require.Equal(t, EventPass, result.Decision)
+}
+
+func TestOpenAICompatibleScannerUsesCodexSparkAuditPrompt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+		messages := payload["messages"].([]any)
+		require.Len(t, messages, 2)
+		require.Equal(t, "system", messages[0].(map[string]any)["role"])
+		require.Equal(t, "user", messages[1].(map[string]any)["role"])
+		require.Contains(t, messages[1].(map[string]any)["content"], "<user_input>\nhello\n</user_input>")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"flagged\":false,\"confidence\":0.05,\"category\":\"pass\",\"reason\":\"\"}"}}]}`))
+	}))
+	defer server.Close()
+	result, err := NewOpenAICompatibleScanner().Scan(context.Background(), ActiveEndpoint{ID: "spark", BaseURL: server.URL, Model: "gpt-5.3-codex-spark", TimeoutMS: 1000}, "hello", AllScannerIDs)
 	require.NoError(t, err)
 	require.Equal(t, EventPass, result.Decision)
 }
