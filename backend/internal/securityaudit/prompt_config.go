@@ -24,6 +24,9 @@ const (
 	DefaultInputLimit    = 4000
 	MinInputLimit        = 128
 	MaxInputLimit        = 100000
+	DefaultMaxTokens     = 64
+	MinMaxTokens         = 1
+	MaxMaxTokens         = 4096
 	DefaultPayloadTTL    = 30 * time.Minute
 )
 
@@ -60,6 +63,7 @@ type StorageEndpoint struct {
 	TokenCiphertext string `json:"token_ciphertext,omitempty"`
 	TimeoutMS       int    `json:"timeout_ms"`
 	InputLimit      int    `json:"input_limit"`
+	MaxTokens       int    `json:"max_tokens"`
 	Enabled         bool   `json:"enabled"`
 }
 
@@ -90,6 +94,7 @@ type ActiveEndpoint struct {
 	Token      string
 	TimeoutMS  int
 	InputLimit int
+	MaxTokens  int
 	Enabled    bool
 	// TokenInvalid marks an endpoint whose persisted token ciphertext cannot be
 	// decrypted with the current encryption key (key changed or auto-generated
@@ -125,6 +130,7 @@ type PublicEndpoint struct {
 	Model       string `json:"model"`
 	TimeoutMS   int    `json:"timeout_ms"`
 	InputLimit  int    `json:"input_limit"`
+	MaxTokens   int    `json:"max_tokens"`
 	Enabled     bool   `json:"enabled"`
 	HasToken    bool   `json:"has_token"`
 	TokenStatus string `json:"token_status"`
@@ -159,6 +165,7 @@ type UpdateEndpoint struct {
 	ClearToken bool   `json:"clear_token"`
 	TimeoutMS  int    `json:"timeout_ms"`
 	InputLimit int    `json:"input_limit"`
+	MaxTokens  int    `json:"max_tokens"`
 	Enabled    bool   `json:"enabled"`
 }
 
@@ -251,6 +258,9 @@ func normalizeStorageConfig(cfg *storageConfig) {
 		if ep.InputLimit == 0 {
 			ep.InputLimit = DefaultInputLimit
 		}
+		if ep.MaxTokens == 0 {
+			ep.MaxTokens = DefaultMaxTokens
+		}
 	}
 }
 
@@ -294,6 +304,9 @@ func validateStorageConfig(cfg storageConfig) error {
 		}
 		if ep.InputLimit < MinInputLimit || ep.InputLimit > MaxInputLimit {
 			return infraerrors.BadRequest("prompt_audit_invalid_input_limit", "审计节点输入上限超出允许范围")
+		}
+		if ep.MaxTokens != 0 && (ep.MaxTokens < MinMaxTokens || ep.MaxTokens > MaxMaxTokens) {
+			return infraerrors.BadRequest("prompt_audit_invalid_max_tokens", "审计节点最大输出 token 超出允许范围")
 		}
 		if ep.Enabled {
 			enabled++
@@ -339,6 +352,9 @@ func validateUpdateConfigRequest(req UpdateConfigRequest) error {
 		}
 		if endpoint.InputLimit < MinInputLimit || endpoint.InputLimit > MaxInputLimit {
 			return infraerrors.BadRequest("prompt_audit_invalid_input_limit", "审计节点输入上限超出允许范围")
+		}
+		if endpoint.MaxTokens != 0 && (endpoint.MaxTokens < MinMaxTokens || endpoint.MaxTokens > MaxMaxTokens) {
+			return infraerrors.BadRequest("prompt_audit_invalid_max_tokens", "审计节点最大输出 token 超出允许范围")
 		}
 	}
 	return nil
@@ -406,7 +422,7 @@ func PublicFromStorage(cfg storageConfig, riskControlEnabled bool, invalidTokenE
 		}
 		endpoints = append(endpoints, PublicEndpoint{
 			ID: ep.ID, Name: ep.Name, Protocol: ep.Protocol, BaseURL: ep.BaseURL,
-			Model: ep.Model, TimeoutMS: ep.TimeoutMS, InputLimit: ep.InputLimit,
+			Model: ep.Model, TimeoutMS: ep.TimeoutMS, InputLimit: ep.InputLimit, MaxTokens: ep.MaxTokens,
 			Enabled: ep.Enabled, HasToken: hasToken, TokenStatus: status,
 		})
 	}
@@ -451,7 +467,7 @@ func ActiveFromStorage(cfg storageConfig, riskControlEnabled bool, encryptor Sec
 		}
 		active.Endpoints = append(active.Endpoints, ActiveEndpoint{
 			ID: ep.ID, Name: ep.Name, Protocol: ep.Protocol, BaseURL: ep.BaseURL, Model: ep.Model,
-			Token: token, TimeoutMS: ep.TimeoutMS, InputLimit: ep.InputLimit,
+			Token: token, TimeoutMS: ep.TimeoutMS, InputLimit: ep.InputLimit, MaxTokens: ep.MaxTokens,
 			Enabled: ep.Enabled && !tokenInvalid, TokenInvalid: tokenInvalid,
 		})
 	}

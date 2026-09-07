@@ -202,11 +202,15 @@ func (s *OpenAICompatibleScanner) Scan(ctx context.Context, endpoint ActiveEndpo
 	if err != nil {
 		return nil, &GuardError{Code: ErrorCodeUnavailable, Cause: err}
 	}
+	maxTokens := endpoint.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = DefaultMaxTokens
+	}
 	payload := map[string]any{
 		"model":       endpoint.Model,
 		"messages":    []map[string]string{{"role": "user", "content": chunk}},
 		"temperature": 0,
-		"max_tokens":  64,
+		"max_tokens":  maxTokens,
 		"seed":        42,
 	}
 	body, err := json.Marshal(payload)

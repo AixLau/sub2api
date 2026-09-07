@@ -37,6 +37,7 @@ export async function probeEndpoint(endpoint: PromptAuditEndpointDraft): Promise
       token: endpoint.token || undefined,
       timeout_ms: endpoint.timeout_ms,
       input_limit: endpoint.input_limit,
+      max_tokens: endpoint.max_tokens,
       enabled: endpoint.enabled,
     },
   })

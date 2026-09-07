@@ -49,6 +49,7 @@ export function createDefaultEndpoint(index = 1): PromptAuditEndpointDraft {
     model: DEFAULT_GUARD_MODEL,
     timeout_ms: 3000,
     input_limit: 4000,
+    max_tokens: 64,
     enabled: true,
     has_token: false,
     token_status: 'missing',
@@ -80,6 +81,7 @@ export function buildUpdateRequest(draft: PromptAuditDraft): PromptAuditUpdateRe
       clear_token: endpoint.clear_token,
       timeout_ms: Number(endpoint.timeout_ms),
       input_limit: Number(endpoint.input_limit),
+      max_tokens: Number(endpoint.max_tokens),
       enabled: endpoint.enabled,
     })),
   }
