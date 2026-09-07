@@ -3331,9 +3331,9 @@ func TestOpenAIGatewayServiceRecordUsage_CodexDefaultEchoKeepsFastBilling(t *tes
 			require.NotNil(t, usageRepo.lastLog.ServiceTier)
 			require.Equal(t, "priority", *usageRepo.lastLog.ServiceTier)
 
-			fastCost, calcErr := svc.billingService.CalculateCostWithServiceTier("gpt-5.6-sol", tokens, 1.0, "priority")
+			baseCost, calcErr := svc.billingService.CalculateCostWithServiceTier("gpt-5.6-sol", tokens, 1.0, "default")
 			require.NoError(t, calcErr)
-			require.InDelta(t, fastCost.TotalCost, usageRepo.lastLog.TotalCost, 1e-10)
+			require.InDelta(t, baseCost.TotalCost*2.5, usageRepo.lastLog.TotalCost, 1e-10, "Codex Fast uses the local 2.5x price policy")
 		})
 	}
 }

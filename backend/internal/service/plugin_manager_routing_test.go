@@ -1,13 +1,17 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -110,5 +114,48 @@ func TestStablePluginBucketIsDeterministicAndBounded(t *testing.T) {
 		first := stablePluginBucket(id)
 		assert.Equal(t, first, stablePluginBucket(id))
 		assert.Less(t, first, uint64(100))
+	}
+}
+
+func TestOpenAIGatewayForwardPathsRespectPluginBinding(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, mode := range []string{"native", "passthrough", "ws-http-bridge", "messages", "chat"} {
+		t.Run(mode, func(t *testing.T) {
+			manager := &PluginManager{}
+			manager.route.Store(&pluginRoute{pluginID: 1, rolloutPercent: 100, unavailable: "plugin-review-unavailable"})
+			upstream := &pluginRoutingHTTPUpstream{}
+			svc := &OpenAIGatewayService{cfg: &config.Config{}, pluginManager: manager, httpUpstream: upstream}
+			account := &Account{
+				ID: 71, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+				Credentials: map[string]any{"access_token": "test-token"},
+				Extra:       map[string]any{"openai_passthrough": mode == "passthrough"},
+			}
+			body := []byte(`{"model":"gpt-5.5","instructions":"Help with coding.","input":"hello","stream":true}`)
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+			var err error
+			switch mode {
+			case "ws-http-bridge":
+				_, err = svc.proxyOpenAIWSHTTPBridgeTurn(context.Background(), c, account, "test-token", body, len(body), "gpt-5.5", "", "", "", "", 1, func([]byte) error { return nil })
+			case "messages":
+				body = []byte(`{"model":"claude-sonnet-4-5","max_tokens":16,"messages":[{"role":"user","content":"hello"}]}`)
+				_, err = svc.ForwardAsAnthropic(context.Background(), c, account, body, "", "gpt-5.5")
+			case "chat":
+				body = []byte(`{"model":"gpt-5.5","messages":[{"role":"user","content":"hello"}]}`)
+				_, err = svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "")
+			default:
+				_, err = svc.Forward(context.Background(), c, account, body)
+			}
+			var failover *UpstreamFailoverError
+			require.ErrorAs(t, err, &failover)
+			require.Equal(t, http.StatusBadGateway, failover.StatusCode)
+			events, exists := c.Get(OpsUpstreamErrorsKey)
+			require.True(t, exists)
+			upstreamEvents, ok := events.([]*OpsUpstreamErrorEvent)
+			require.True(t, ok)
+			require.Len(t, upstreamEvents, 1)
+			require.Contains(t, upstreamEvents[0].Message, "plugin-review-unavailable")
+			require.Zero(t, upstream.doCalls, "an enabled plugin binding must not be bypassed by a forwarding mode")
+		})
 	}
 }

@@ -44,13 +44,10 @@ func TestPrepareOpenAIWSHTTPBridgeBodyStripsWSFields(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestProxyOpenAIWSHTTPBridgeTurn_UpstreamDefaultServiceTierWinsOverRequest(t *testing.T) {
+func TestProxyOpenAIWSHTTPBridgeTurn_ObservedDefaultLowersAPIKeyBilling(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	// proxyOpenAIWSHTTPBridgeTurn 是 client WS→HTTP bridge，本身不 canonicalize
-	// fast→priority；生产入口的归一化在 openai_ws_forwarder_ingress.go 的 fast
-	// policy。本测试只覆盖局部 observer：canonical 请求 priority 被上游
-	// response.completed service_tier=default 覆盖。
+	// Keep outbound and observed tiers separate until the shared billing policy runs.
 	sse := strings.Join([]string{
 		`data: {"type":"response.completed","response":{"id":"resp_tier","model":"gpt-5.5","status":"completed","service_tier":"default","usage":{"input_tokens":1,"output_tokens":1}}}`,
 		``,
@@ -80,14 +77,16 @@ func TestProxyOpenAIWSHTTPBridgeTurn_UpstreamDefaultServiceTierWinsOverRequest(t
 	require.NotNil(t, result)
 	require.Equal(t, "priority", gjson.GetBytes(upstream.lastBody, "service_tier").String())
 	require.NotNil(t, result.ServiceTier)
+	require.Equal(t, "priority", *result.ServiceTier)
+	require.Equal(t, "default", result.UpstreamResponseServiceTier)
+	require.True(t, ApplyOpenAIServiceTierBillingResolution(account, result).Downgraded)
 	require.Equal(t, "default", *result.ServiceTier)
 }
 
-func TestProxyOpenAIWSHTTPBridgeTurn_UpstreamDefaultWinsOverFastAlias(t *testing.T) {
+func TestProxyOpenAIWSHTTPBridgeTurn_ObservedDefaultLowersFastAliasBilling(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	// 客户端别名 fast 同样被上游回显的 default 覆盖：局部 observer 的
-	// ServiceTier() 是唯一计费依据，绝不回退到请求侧 fast。
+	// The Fast alias shares the same API-key billing resolution as priority.
 	sse := strings.Join([]string{
 		`data: {"type":"response.completed","response":{"id":"resp_tier2","model":"gpt-5.5","status":"completed","service_tier":"default","usage":{"input_tokens":1,"output_tokens":1}}}`,
 		``,
@@ -116,8 +115,42 @@ func TestProxyOpenAIWSHTTPBridgeTurn_UpstreamDefaultWinsOverFastAlias(t *testing
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.ServiceTier)
-	require.Equal(t, "default", *result.ServiceTier,
-		"local observer's upstream-echoed default must win over the fast alias")
+	require.Equal(t, "priority", *result.ServiceTier)
+	require.Equal(t, "default", result.UpstreamResponseServiceTier)
+	require.True(t, ApplyOpenAIServiceTierBillingResolution(account, result).Downgraded)
+	require.Equal(t, "default", *result.ServiceTier)
+}
+
+func TestProxyOpenAIWSHTTPBridgeTurn_ServiceTierBillingBoundaries(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tt := range []struct {
+		name, accountType, requested, observed, billed string
+	}{
+		{"oauth default echo is not authoritative", AccountTypeOAuth, "priority", "default", "priority"},
+		{"response cannot raise API-key billing", AccountTypeAPIKey, "default", "priority", "default"},
+		{"unknown response tier keeps request tier", AccountTypeAPIKey, "priority", "unknown", "priority"},
+		{"missing response tier keeps request tier", AccountTypeAPIKey, "priority", "", "priority"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			sse := fmt.Sprintf("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_tier_boundary\",\"model\":\"gpt-5.5\",\"status\":\"completed\",\"service_tier\":%q}}\n\n", tt.observed)
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:       io.NopCloser(strings.NewReader(sse)),
+			}}
+			svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+			account := &Account{ID: 5883, Platform: PlatformOpenAI, Type: tt.accountType, Concurrency: 1}
+			payload := []byte(fmt.Sprintf(`{"model":"gpt-5.5","stream":true,"service_tier":%q,"input":"hi"}`, tt.requested))
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+			result, err := svc.proxyOpenAIWSHTTPBridgeTurn(context.Background(), c, account, "test-token", payload, len(payload), "gpt-5.5", "", "", "", "", 1, func([]byte) error { return nil })
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Equal(t, tt.requested, optionalStringValue(result.ServiceTier))
+			ApplyOpenAIServiceTierBillingResolution(account, result)
+			require.Equal(t, tt.billed, optionalStringValue(result.ServiceTier))
+		})
+	}
 }
 
 func TestPrepareOpenAIWSHTTPBridgeBodyStripsNoneReasoningForCompatibleEndpoint(t *testing.T) {

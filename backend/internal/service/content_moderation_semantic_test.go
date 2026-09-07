@@ -363,7 +363,7 @@ func TestNormalizeContentModerationSemanticReviewConfigPreservesExplicitTwentySe
 	require.Equal(t, 12_000, cfg.PrimaryTimeoutMS)
 	require.Equal(t, 8_000, cfg.FallbackTimeoutMS)
 	require.Equal(t, ContentModerationSemanticReviewMaxOutputTokens, cfg.MaxOutputTokens)
-	require.Equal(t, ContentModerationSemanticReviewDefaultReasoning, cfg.ReasoningEffort)
+	require.Equal(t, "high", cfg.ReasoningEffort, "an explicit supported effort must survive budget normalization")
 }
 
 func TestContentModerationUpdateConfigNormalizesSemanticReviewModels(t *testing.T) {
