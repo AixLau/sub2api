@@ -6,10 +6,13 @@ import (
 	"net/http"
 )
 
-type PublicTransitHandler struct{ svc *service.PublicTransitService }
+type PublicTransitHandler struct {
+	svc *service.PublicTransitService
+	v2  *ChannelMonitorV2Handler
+}
 
-func NewPublicTransitHandler(s *service.PublicTransitService) *PublicTransitHandler {
-	return &PublicTransitHandler{svc: s}
+func NewPublicTransitHandler(s *service.PublicTransitService, v2 *ChannelMonitorV2Handler) *PublicTransitHandler {
+	return &PublicTransitHandler{svc: s, v2: v2}
 }
 func (h *PublicTransitHandler) Discovery(c *gin.Context) {
 	v, e := h.svc.Discovery(c.Request.Context(), "")
@@ -20,6 +23,10 @@ func (h *PublicTransitHandler) Discovery(c *gin.Context) {
 	c.JSON(http.StatusOK, v)
 }
 func (h *PublicTransitHandler) Snapshot(c *gin.Context) {
+	if h.v2 != nil {
+		h.v2.PublicSnapshot(c)
+		return
+	}
 	v, e := h.svc.Snapshot(c.Request.Context(), "")
 	if e != nil {
 		c.Status(500)
