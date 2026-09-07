@@ -92,20 +92,6 @@ func (h *ChannelMonitorV2Handler) Dimensions(c *gin.Context) {
 
 func (h *ChannelMonitorV2Handler) Snapshot(c *gin.Context) { h.snapshot(c, false) }
 
-// PublicSnapshot exposes the same v2 aggregate used by the authenticated view,
-// without user scope or throughput redaction.
-func (h *ChannelMonitorV2Handler) PublicSnapshot(c *gin.Context) {
-	filter, ok := h.parseFilter(c)
-	if !ok {
-		return
-	}
-	result, err := h.service.Snapshot(c.Request.Context(), filter, false)
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, result)
-}
 func (h *ChannelMonitorV2Handler) AdminSnapshot(c *gin.Context) { h.snapshot(c, true) }
 func (h *ChannelMonitorV2Handler) Models(c *gin.Context)        { h.models(c, false) }
 func (h *ChannelMonitorV2Handler) AdminModels(c *gin.Context)   { h.models(c, true) }
