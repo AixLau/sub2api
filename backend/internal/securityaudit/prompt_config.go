@@ -26,7 +26,6 @@ const (
 	MaxInputLimit        = 100000
 	DefaultMaxTokens     = 64
 	MinMaxTokens         = 1
-	MaxMaxTokens         = 4096
 	DefaultPayloadTTL    = 30 * time.Minute
 )
 
@@ -305,7 +304,7 @@ func validateStorageConfig(cfg storageConfig) error {
 		if ep.InputLimit < MinInputLimit || ep.InputLimit > MaxInputLimit {
 			return infraerrors.BadRequest("prompt_audit_invalid_input_limit", "审计节点输入上限超出允许范围")
 		}
-		if ep.MaxTokens != 0 && (ep.MaxTokens < MinMaxTokens || ep.MaxTokens > MaxMaxTokens) {
+		if ep.MaxTokens != 0 && ep.MaxTokens < MinMaxTokens {
 			return infraerrors.BadRequest("prompt_audit_invalid_max_tokens", "审计节点最大输出 token 超出允许范围")
 		}
 		if ep.Enabled {
@@ -353,7 +352,7 @@ func validateUpdateConfigRequest(req UpdateConfigRequest) error {
 		if endpoint.InputLimit < MinInputLimit || endpoint.InputLimit > MaxInputLimit {
 			return infraerrors.BadRequest("prompt_audit_invalid_input_limit", "审计节点输入上限超出允许范围")
 		}
-		if endpoint.MaxTokens != 0 && (endpoint.MaxTokens < MinMaxTokens || endpoint.MaxTokens > MaxMaxTokens) {
+		if endpoint.MaxTokens != 0 && endpoint.MaxTokens < MinMaxTokens {
 			return infraerrors.BadRequest("prompt_audit_invalid_max_tokens", "审计节点最大输出 token 超出允许范围")
 		}
 	}

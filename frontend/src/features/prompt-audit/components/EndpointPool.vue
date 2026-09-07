@@ -129,7 +129,7 @@
         </label>
         <label class="space-y-1 text-sm text-gray-700 dark:text-dark-200">
           <span>最大输出 Token</span>
-          <input v-model.number="editing.max_tokens" class="input w-full" type="number" min="1" max="4096" required aria-label="最大输出 Token" />
+          <input v-model.number="editing.max_tokens" class="input w-full" type="number" min="1" required aria-label="最大输出 Token" />
         </label>
       </form>
       <template #footer>
