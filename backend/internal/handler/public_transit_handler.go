@@ -1,59 +1,30 @@
 package handler
 
 import (
-	"net/http"
-	"strings"
-
-	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-
 	"github.com/gin-gonic/gin"
+	"net/http"
 )
 
-type PublicTransitHandler struct {
-	publicTransitService *service.PublicTransitService
-}
+type PublicTransitHandler struct{ svc *service.PublicTransitService }
 
-func NewPublicTransitHandler(publicTransitService *service.PublicTransitService) *PublicTransitHandler {
-	return &PublicTransitHandler{publicTransitService: publicTransitService}
+func NewPublicTransitHandler(s *service.PublicTransitService) *PublicTransitHandler {
+	return &PublicTransitHandler{svc: s}
 }
-
 func (h *PublicTransitHandler) Discovery(c *gin.Context) {
-	payload, err := h.publicTransitService.Discovery(c.Request.Context(), requestBaseURL(c))
-	if err != nil {
-		response.ErrorFrom(c, err)
+	v, e := h.svc.Discovery(c.Request.Context(), "")
+	if e != nil {
+		c.Status(500)
 		return
 	}
-	c.JSON(http.StatusOK, payload)
+	c.JSON(http.StatusOK, v)
 }
-
 func (h *PublicTransitHandler) Snapshot(c *gin.Context) {
-	payload, err := h.publicTransitService.Snapshot(c.Request.Context(), requestBaseURL(c))
-	if err != nil {
-		response.ErrorFrom(c, err)
+	v, e := h.svc.Snapshot(c.Request.Context(), "")
+	if e != nil {
+		c.Status(500)
 		return
 	}
 	c.Header("Cache-Control", "public, max-age=60")
-	c.JSON(http.StatusOK, payload)
-}
-
-func requestBaseURL(c *gin.Context) string {
-	if c == nil || c.Request == nil {
-		return ""
-	}
-	scheme := strings.TrimSpace(c.Request.Header.Get("X-Forwarded-Proto"))
-	if scheme == "" {
-		scheme = "http"
-		if c.Request.TLS != nil {
-			scheme = "https"
-		}
-	}
-	host := strings.TrimSpace(c.Request.Header.Get("X-Forwarded-Host"))
-	if host == "" {
-		host = c.Request.Host
-	}
-	if host == "" {
-		return ""
-	}
-	return scheme + "://" + host
+	c.JSON(http.StatusOK, v)
 }
