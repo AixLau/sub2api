@@ -1019,6 +1019,8 @@ func isFalseSettingValue(value string) bool {
 	}
 }
 
+func IsFalseSettingValue(value string) bool { return isFalseSettingValue(value) }
+
 func normalizeVisibleMethodSettingSource(method, source string, enabled bool) (string, error) {
 	_ = enabled
 	source = strings.TrimSpace(source)

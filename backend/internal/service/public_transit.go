@@ -26,6 +26,14 @@ type PublicTransitSnapshot struct {
 }
 type PublicTransitService struct{}
 
+func (s *SettingService) PublicTransitEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return true
+	}
+	v, err := s.settingRepo.GetValue(ctx, SettingKeyPublicTransitEnabled)
+	return err != nil || !isFalseSettingValue(v)
+}
+
 func NewPublicTransitService() *PublicTransitService { return &PublicTransitService{} }
 func (s *PublicTransitService) Discovery(context.Context, string) (*PublicTransitDiscovery, error) {
 	return &PublicTransitDiscovery{PublicTransitSchemaVersion, PublicTransitSystem, PublicTransitSnapshotPath, time.Now().UTC().Format(time.RFC3339)}, nil

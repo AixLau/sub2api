@@ -8,12 +8,13 @@ import (
 
 // Status constants
 const (
-	StatusActive   = domain.StatusActive
-	StatusDisabled = domain.StatusDisabled
-	StatusError    = domain.StatusError
-	StatusUnused   = domain.StatusUnused
-	StatusUsed     = domain.StatusUsed
-	StatusExpired  = domain.StatusExpired
+	SettingKeyPublicTransitEnabled = "public_transit_enabled"
+	StatusActive                   = domain.StatusActive
+	StatusDisabled                 = domain.StatusDisabled
+	StatusError                    = domain.StatusError
+	StatusUnused                   = domain.StatusUnused
+	StatusUsed                     = domain.StatusUsed
+	StatusExpired                  = domain.StatusExpired
 )
 
 // Role constants

@@ -94,14 +94,25 @@ func (h *ChannelMonitorV2Handler) Snapshot(c *gin.Context) { h.snapshot(c, false
 
 // PublicSnapshot exposes the same v2 aggregate used by the authenticated view,
 // without user scope or throughput redaction.
-func (h *ChannelMonitorV2Handler) PublicSnapshot(c *gin.Context) { h.snapshot(c, true) }
-func (h *ChannelMonitorV2Handler) AdminSnapshot(c *gin.Context)  { h.snapshot(c, true) }
-func (h *ChannelMonitorV2Handler) Models(c *gin.Context)         { h.models(c, false) }
-func (h *ChannelMonitorV2Handler) AdminModels(c *gin.Context)    { h.models(c, true) }
-func (h *ChannelMonitorV2Handler) Matrix(c *gin.Context)         { h.matrix(c, false) }
-func (h *ChannelMonitorV2Handler) AdminMatrix(c *gin.Context)    { h.matrix(c, true) }
-func (h *ChannelMonitorV2Handler) Users(c *gin.Context)          { h.users(c, false) }
-func (h *ChannelMonitorV2Handler) AdminUsers(c *gin.Context)     { h.users(c, true) }
+func (h *ChannelMonitorV2Handler) PublicSnapshot(c *gin.Context) {
+	filter, ok := h.parseFilter(c)
+	if !ok {
+		return
+	}
+	result, err := h.service.Snapshot(c.Request.Context(), filter, false)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+func (h *ChannelMonitorV2Handler) AdminSnapshot(c *gin.Context) { h.snapshot(c, true) }
+func (h *ChannelMonitorV2Handler) Models(c *gin.Context)        { h.models(c, false) }
+func (h *ChannelMonitorV2Handler) AdminModels(c *gin.Context)   { h.models(c, true) }
+func (h *ChannelMonitorV2Handler) Matrix(c *gin.Context)        { h.matrix(c, false) }
+func (h *ChannelMonitorV2Handler) AdminMatrix(c *gin.Context)   { h.matrix(c, true) }
+func (h *ChannelMonitorV2Handler) Users(c *gin.Context)         { h.users(c, false) }
+func (h *ChannelMonitorV2Handler) AdminUsers(c *gin.Context)    { h.users(c, true) }
 
 func (h *ChannelMonitorV2Handler) snapshot(c *gin.Context, admin bool) {
 	filter, ok := h.parseFilter(c)
