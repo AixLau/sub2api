@@ -42,6 +42,21 @@ func TestParseQwen3GuardStrictAndPolicy(t *testing.T) {
 	}
 }
 
+func TestParseQwen3GuardStructuredAuditJSON(t *testing.T) {
+	pass, err := ParseQwen3Guard(`{"flagged":false,"confidence":0.05,"category":"pass","reason":""}`, AllScannerIDs)
+	require.NoError(t, err)
+	require.Equal(t, EventPass, pass.Decision)
+
+	blocked, err := ParseQwen3Guard(`{"flagged":true,"confidence":0.92,"category":"cyber_abuse","reason":"攻击第三方系统"}`, AllScannerIDs)
+	require.NoError(t, err)
+	require.Equal(t, EventCritical, blocked.Decision)
+	require.Equal(t, ActionBlock, blocked.Action)
+	require.Equal(t, []string{"jailbreak"}, blocked.MatchedScanners)
+
+	_, err = ParseQwen3Guard(`{"flagged":false,"confidence":1.2,"category":"pass","reason":""}`, AllScannerIDs)
+	require.Error(t, err)
+}
+
 func TestParseQwen3GuardIgnoresAuxiliaryResponseFields(t *testing.T) {
 	result, err := ParseQwen3Guard("Safety: Unsafe\nCategories: Jailbreak\nRefusal: No", AllScannerIDs)
 	require.NoError(t, err)
