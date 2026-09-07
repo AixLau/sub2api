@@ -6185,9 +6185,6 @@ func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanti
 	if cfg.MaxInputRunes <= 0 {
 		cfg.MaxInputRunes = ContentModerationSemanticReviewDefaultMaxInputRunes
 	}
-	if cfg.MaxInputRunes > maxModerationInputRunes {
-		cfg.MaxInputRunes = maxModerationInputRunes
-	}
 	if cfg.PromptInjectionMaxInputRunes <= 0 {
 		cfg.PromptInjectionMaxInputRunes = maxModerationInputRunes
 	}

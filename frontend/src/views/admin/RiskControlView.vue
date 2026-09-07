@@ -870,6 +870,10 @@
                     <input v-model.number="configForm.semantic_review_max_attempts_per_model" type="number" min="1" max="2" class="input" />
                   </div>
                   <div>
+                    <label class="input-label" for="semantic-review-max-input">{{ t('admin.riskControl.semanticReviewMaxInput') }}</label>
+                    <input id="semantic-review-max-input" v-model.number="configForm.semantic_review_max_input_runes" data-test="semantic-review-max-input" type="number" min="1" step="1" class="input" />
+                  </div>
+                  <div>
                     <label class="input-label">{{ t('admin.riskControl.semanticReviewMaxOutputTokens') }}</label>
                     <input v-model.number="configForm.semantic_review_max_output_tokens" type="number" min="128" max="2048" step="64" class="input" />
                   </div>
@@ -2133,6 +2137,7 @@ const configForm = reactive({
   semantic_review_primary_timeout_ms: 5000,
   semantic_review_fallback_timeout_ms: 3000,
   semantic_review_max_attempts_per_model: 1,
+  semantic_review_max_input_runes: 2000,
   semantic_review_max_output_tokens: 512,
 	semantic_review_reasoning_effort: 'low' as 'low' | 'medium' | 'high' | 'xhigh',
   prompt_injection_reviewer_enabled: false,
@@ -3208,6 +3213,7 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.semantic_review_primary_timeout_ms = semanticReview.primary_timeout_ms || 5000
   configForm.semantic_review_fallback_timeout_ms = semanticReview.fallback_timeout_ms || 3000
   configForm.semantic_review_max_attempts_per_model = semanticReview.max_attempts_per_model || 1
+  configForm.semantic_review_max_input_runes = semanticReview.max_input_runes || 2000
   configForm.semantic_review_max_output_tokens = semanticReview.max_output_tokens || 512
 	configForm.semantic_review_reasoning_effort = semanticReview.reasoning_effort || 'low'
 	configForm.prompt_injection_reviewer_enabled = semanticReview.prompt_injection_reviewer_enabled ?? false
@@ -3391,7 +3397,7 @@ async function saveConfig() {
           primary_timeout_ms: Number(configForm.semantic_review_primary_timeout_ms) || 5000,
           fallback_timeout_ms: Number(configForm.semantic_review_fallback_timeout_ms) || 3000,
           max_attempts_per_model: Number(configForm.semantic_review_max_attempts_per_model) || 1,
-          max_input_runes: 2000,
+          max_input_runes: Math.max(1, Math.floor(Number(configForm.semantic_review_max_input_runes) || 2000)),
           max_output_tokens: Number(configForm.semantic_review_max_output_tokens) || 512,
           reasoning_effort: configForm.semantic_review_reasoning_effort,
           prompt_injection_reviewer_enabled: configForm.prompt_injection_reviewer_enabled,

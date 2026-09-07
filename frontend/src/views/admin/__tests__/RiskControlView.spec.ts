@@ -980,6 +980,32 @@ describe('admin RiskControlView', () => {
 		}))
 	})
 
+  it('loads and saves the ordinary semantic review input budget', async () => {
+    const config = baseConfig()
+    config.semantic_review!.max_input_runes = 6000
+    getConfig.mockResolvedValue(config)
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub, BaseDialog: BaseDialogStub, Icon: true,
+          Select: true, Toggle: true, Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true,
+        },
+      },
+    })
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    const input = wrapper.get<HTMLInputElement>('[data-test="semantic-review-max-input"]')
+    expect(input.element.value).toBe('6000')
+    expect(input.attributes('max')).toBeUndefined()
+    await input.setValue('100000')
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+    await flushPromises()
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+      semantic_review: expect.objectContaining({ max_input_runes: 100000 }),
+    }))
+  })
+
   it('submits edited risk control thresholds when saving moderation config', async () => {
     const wrapper = mount(RiskControlView, {
       global: {

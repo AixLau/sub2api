@@ -539,7 +539,7 @@ func (s *ContentModerationService) candidateDecisionCacheKeyWithSemanticSchemaRe
 	if policyRevision == "" {
 		policyRevision = contentModerationPolicyRevision(true, cfg)
 	}
-	namespace := "candidate-decision-v7"
+	namespace := "candidate-decision-v8"
 	// Both initial review and escalation can depend on text outside the display
 	// fragment. A changed outer task must never inherit a cached allow or reject.
 	evidenceIdentity := selection.Source.Text
@@ -1223,19 +1223,19 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		)
 	}
 	semanticCfg := contentModerationSemanticReviewConfigForProviderFallback(cfg)
-	semanticReviewText := contentModerationCandidateSemanticInput(selection)
+	semanticReviewText := contentModerationCandidateSemanticInput(selection, semanticCfg.MaxInputRunes)
 	if semanticCfg.PromptInjectionReviewerEnabled && selection.ReviewKind == contentModerationReviewKindPromptInjection {
 		semanticReviewText = selection.ReviewText
+	} else {
+		selection.EvidenceComplete = !selection.Source.Truncated && len(selection.Source.TruncateReasons) == 0 &&
+			semanticReviewText == selection.Source.Text
 	}
 	semanticInput := contentModerationSemanticReviewInputForCheck(
 		input,
 		semanticReviewText,
 		semanticReviewDecisionID(input, s.candidateDecisionCacheKey(cfg, input, selection)),
 	)
-	// Phase 0 keeps the legacy candidate payload and 2K behavior explicit while
-	// allowing the transport to honor larger effective limits for future
-	// prompt-injection evidence. candidate_fragment_runes remains display-only.
-	semanticInput.MaxInputRunes = maxContentModerationCandidateRunes
+	semanticInput.MaxInputRunes = semanticCfg.MaxInputRunes
 	semanticInput.ReviewKind = contentModerationReviewKindGeneral
 	semanticInput.EvidenceComplete = true
 	semanticInput.EvidenceRevision = "legacy-candidate-evidence-v1"
@@ -1496,8 +1496,15 @@ func promptInjectionFailClosedActive(cfg *ContentModerationConfig, selection con
 
 const ContentModerationTemporaryClientMessage = "网络连接出现波动，请稍后重试"
 
-func contentModerationCandidateSemanticInput(selection contentModerationCandidateSelection) string {
-	return selection.Fragment
+func contentModerationCandidateSemanticInput(selection contentModerationCandidateSelection, maxRunes int) string {
+	text := selection.Source.Text
+	if strings.TrimSpace(text) == "" {
+		text = selection.Fragment
+	}
+	if selection.MatchStartByte >= 0 && selection.MatchEndByte > selection.MatchStartByte {
+		return trimRunes(contentModerationExcerptAroundByteSpan(text, selection.MatchStartByte, selection.MatchEndByte, maxRunes), maxRunes)
+	}
+	return trimRunes(text, maxRunes)
 }
 
 func contentModerationCandidateEscalationInput(cfg *ContentModerationConfig, selection contentModerationCandidateSelection, input ContentModerationSemanticReviewInput) ContentModerationSemanticReviewInput {
@@ -1698,10 +1705,10 @@ func (s *ContentModerationService) candidateUnavailableOutcomeWithLatency(
 	failClosed := promptInjectionFailClosedActive(cfg, selection) ||
 		(decisionSource == contentModerationDecisionSourceSemantic && cfg != nil &&
 			cfg.Mode == ContentModerationModePreBlock)
+	log.UserViolationEligible = false
 	if failClosed {
 		log.Action = ContentModerationActionSemanticReviewUnavailable
 		log.Flagged = true
-		log.UserViolationEligible = false
 	}
 	log.ModerationProvider = strings.TrimSpace(provider)
 	log.ModerationModel = strings.TrimSpace(model)

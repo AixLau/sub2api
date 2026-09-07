@@ -2358,7 +2358,7 @@ func (s *OpenAIGatewayService) ReviewSemanticContent(
 		ContentModerationSemanticReviewDefaultReasoning,
 	)
 	maxInputRunes := input.MaxInputRunes
-	if maxInputRunes <= 0 || maxInputRunes > maxModerationInputRunes {
+	if maxInputRunes <= 0 {
 		maxInputRunes = ContentModerationSemanticReviewDefaultMaxInputRunes
 	}
 	reviewKind := normalizeContentModerationReviewKind(input.ReviewKind)

@@ -663,7 +663,7 @@ func TestCandidateSelectionKeepsTailPromptFilterMatchInBoundedPayload(t *testing
 	require.LessOrEqual(t, len([]rune(selection.Fragment)), maxContentModerationCandidateRunes)
 	require.Contains(t, strings.ToLower(selection.Fragment), "jailbreak")
 	require.NotContains(t, selection.Fragment, "ordinary-marker")
-	require.Equal(t, selection.Fragment, contentModerationCandidateSemanticInput(selection))
+	require.Contains(t, strings.ToLower(contentModerationCandidateSemanticInput(selection, 2000)), "jailbreak")
 	require.Equal(t, text, selection.ReviewText)
 	require.False(t, selection.EvidenceComplete)
 	require.Equal(t, len([]rune(text)), selection.EvidenceRunes)
@@ -671,6 +671,7 @@ func TestCandidateSelectionKeepsTailPromptFilterMatchInBoundedPayload(t *testing
 
 func TestCandidateFragmentBudgetRequiresFinalReviewerForTruncatedReject(t *testing.T) {
 	cfg := candidateTestConfig()
+	cfg.SemanticReview.MaxInputRunes = 2000
 	cfg.KeywordRules = []ContentModerationKeywordRule{{
 		Keyword:  "danger-marker",
 		Category: ContentModerationKeywordCategoryCyber,
@@ -710,6 +711,31 @@ func TestCandidateFragmentBudgetRequiresFinalReviewerForTruncatedReject(t *testi
 	require.Empty(t, logs[0].ReviewStatus)
 	require.False(t, logs[0].UserViolationEligible)
 	require.Contains(t, logs[0].Error, "final semantic reviewer is unavailable")
+}
+
+func TestCandidateSemanticReviewHonorsConfiguredInputBudget(t *testing.T) {
+	for _, budget := range []int{1000, 2000, 6000, 12000, 24000} {
+		t.Run(strconv.Itoa(budget), func(t *testing.T) {
+			cfg := candidateTestConfig()
+			cfg.SemanticReview.MaxInputRunes = budget
+			source := ContentModerationInputSource{
+				Source: "responses.input[0].role=user.content", Role: "user",
+				Text: strings.Repeat("界", 15000) + " danger-marker " + strings.Repeat("文", 15000),
+			}
+			selection := contentModerationCandidateSelectionFromRule(cfg, source, contentModerationSourceOriginUserTurn,
+				ContentModerationKeywordRule{Keyword: "danger-marker", Category: ContentModerationKeywordCategoryCyber,
+					Severity: ContentModerationKeywordSeverityHigh, Action: ContentModerationKeywordActionBlock, Enabled: true},
+				contentModerationCandidateKindKeyword)
+			svc := candidateTestService(&contentModerationTestRepo{})
+			router := candidateAllowSemanticRouter()
+			svc.semanticReviewRouter = router
+			svc.runCandidateSemanticReview(context.Background(), ContentModerationCheckInput{UserID: 17}, cfg, selection, "")
+			require.Equal(t, budget, router.input.MaxInputRunes)
+			require.LessOrEqual(t, len([]rune(router.input.Text)), budget)
+			require.Greater(t, len([]rune(router.input.Text)), budget-20)
+			require.Contains(t, router.input.Text, "danger-marker")
+		})
+	}
 }
 
 func TestCandidateSelectionMarksBoundedSourceEvidenceIncompleteWithoutChangingLegacyDecision(t *testing.T) {
