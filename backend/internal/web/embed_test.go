@@ -4,7 +4,9 @@ package web
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +20,93 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestFrontendCompression(t *testing.T) {
+	t.Run("compresses JavaScript for gzip clients", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
+		request.Header.Set("Accept-Encoding", "br, gzip")
+
+		require.True(t, shouldCompressFrontendResponse(request, "assets/app.js"))
+
+		request.Header.Set("Accept-Encoding", "gzip;q=0.0, br")
+		require.False(t, shouldCompressFrontendResponse(request, "assets/app.js"))
+	})
+
+	t.Run("skips ranges and already compressed assets", func(t *testing.T) {
+		rangeRequest := httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
+		rangeRequest.Header.Set("Accept-Encoding", "gzip")
+		rangeRequest.Header.Set("Range", "bytes=0-100")
+		require.False(t, shouldCompressFrontendResponse(rangeRequest, "assets/app.js"))
+
+		imageRequest := httptest.NewRequest(http.MethodGet, "/assets/logo.png", nil)
+		imageRequest.Header.Set("Accept-Encoding", "gzip")
+		require.False(t, shouldCompressFrontendResponse(imageRequest, "assets/logo.png"))
+	})
+
+	t.Run("writes compressed HTML with matching headers", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		context.Request.Header.Set("Accept-Encoding", "gzip")
+
+		writeHTMLResponse(context, []byte("<html><body>compressed</body></html>"))
+
+		require.Equal(t, "gzip", recorder.Header().Get("Content-Encoding"))
+		require.Contains(t, recorder.Header().Values("Vary"), "Accept-Encoding")
+		reader, err := gzip.NewReader(recorder.Body)
+		require.NoError(t, err)
+		decompressed, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		require.NoError(t, reader.Close())
+		require.Equal(t, "<html><body>compressed</body></html>", string(decompressed))
+	})
+
+	t.Run("varies uncompressed HTML by accepted encoding", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+
+		writeHTMLResponse(context, []byte("<html></html>"))
+
+		require.Empty(t, recorder.Header().Get("Content-Encoding"))
+		require.Contains(t, recorder.Header().Values("Vary"), "Accept-Encoding")
+	})
+
+	t.Run("serves embedded JavaScript through gzip middleware", func(t *testing.T) {
+		server, err := NewFrontendServer(&mockSettingsProvider{
+			settings: map[string]string{"site_name": "Test"},
+		})
+		require.NoError(t, err)
+
+		var assetPath string
+		require.NoError(t, fs.WalkDir(server.distFS, "assets", func(path string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if assetPath == "" && !entry.IsDir() && strings.HasSuffix(path, ".js") {
+				assetPath = path
+			}
+			return nil
+		}))
+		require.NotEmpty(t, assetPath)
+
+		router := gin.New()
+		router.Use(server.Middleware())
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/"+assetPath, nil)
+		request.Header.Set("Accept-Encoding", "gzip")
+		router.ServeHTTP(recorder, request)
+
+		require.Equal(t, http.StatusOK, recorder.Code)
+		require.Equal(t, "gzip", recorder.Header().Get("Content-Encoding"))
+		reader, err := gzip.NewReader(recorder.Body)
+		require.NoError(t, err)
+		decompressed, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		require.NoError(t, reader.Close())
+		require.NotEmpty(t, decompressed)
+	})
+}
 
 func init() {
 	gin.SetMode(gin.TestMode)
@@ -331,7 +420,7 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 		assert.Contains(t, w2.Body.String(), `nonce="nonce2"`)
 	})
 
-	t.Run("sets_etag_header", func(t *testing.T) {
+	t.Run("does_not_expose_etag_for_nonce_html", func(t *testing.T) {
 		provider := &mockSettingsProvider{
 			settings: map[string]string{"test": "value"},
 		}
@@ -346,13 +435,10 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 
 		server.serveIndexHTML(c)
 
-		etag := w.Header().Get("ETag")
-		assert.NotEmpty(t, etag)
-		assert.True(t, strings.HasPrefix(etag, `"`))
-		assert.True(t, strings.HasSuffix(etag, `"`))
+		assert.Empty(t, w.Header().Get("ETag"))
 	})
 
-	t.Run("returns_304_for_matching_etag", func(t *testing.T) {
+	t.Run("ignores_if_none_match_for_nonce_html", func(t *testing.T) {
 		provider := &mockSettingsProvider{
 			settings: map[string]string{"test": "value"},
 		}
@@ -360,29 +446,27 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 		server, err := NewFrontendServer(provider)
 		require.NoError(t, err)
 
-		// Use a real router for proper 304 handling
-		router := gin.New()
-		router.Use(func(c *gin.Context) {
-			c.Set(middleware.CSPNonceKey, "test-nonce")
-			c.Next()
-		})
-		router.Use(server.Middleware())
-
-		// First request to populate cache and get ETag
+		// First request populates the internal HTML cache.
 		w1 := httptest.NewRecorder()
-		req1 := httptest.NewRequest(http.MethodGet, "/", nil)
-		router.ServeHTTP(w1, req1)
-		etag := w1.Header().Get("ETag")
-		require.NotEmpty(t, etag)
+		c1, _ := gin.CreateTestContext(w1)
+		c1.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c1.Set(middleware.CSPNonceKey, "nonce1")
+		server.serveIndexHTML(c1)
+		cached := server.cache.Get()
+		require.NotNil(t, cached)
+		require.NotEmpty(t, cached.ETag)
 
-		// Second request with If-None-Match
+		// A stale validator must still receive a fresh body with the current nonce.
 		w2 := httptest.NewRecorder()
-		req2 := httptest.NewRequest(http.MethodGet, "/", nil)
-		req2.Header.Set("If-None-Match", etag)
-		router.ServeHTTP(w2, req2)
+		c2, _ := gin.CreateTestContext(w2)
+		c2.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c2.Request.Header.Set("If-None-Match", cached.ETag)
+		c2.Set(middleware.CSPNonceKey, "nonce2")
+		server.serveIndexHTML(c2)
 
-		assert.Equal(t, http.StatusNotModified, w2.Code)
-		assert.Empty(t, w2.Body.String())
+		assert.Equal(t, http.StatusOK, w2.Code)
+		assert.Contains(t, w2.Body.String(), `nonce="nonce2"`)
+		assert.Empty(t, w2.Header().Get("ETag"))
 	})
 
 	t.Run("sets_cache_control_header", func(t *testing.T) {
@@ -400,7 +484,7 @@ func TestFrontendServer_ServeIndexHTML(t *testing.T) {
 
 		server.serveIndexHTML(c)
 
-		assert.Equal(t, "no-cache", w.Header().Get("Cache-Control"))
+		assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
 	})
 
 	t.Run("fallback_on_settings_error", func(t *testing.T) {
@@ -650,12 +734,12 @@ func TestFrontendServer_Middleware(t *testing.T) {
 
 		// Request for existing static file
 		w := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/logo.svg", nil)
+		req := httptest.NewRequest(http.MethodGet, "/logo.png", nil)
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		assert.Contains(t, w.Header().Get("Content-Type"), "image/svg+xml")
-		assert.Empty(t, w.Header().Get("Cache-Control"))
+		assert.Contains(t, w.Header().Get("Content-Type"), "image/png")
+		assert.Equal(t, unversionedStaticCacheControl, w.Header().Get("Cache-Control"))
 
 		entries, err := fs.ReadDir(server.distFS, "assets")
 		require.NoError(t, err)
@@ -735,11 +819,11 @@ func TestServeEmbeddedFrontend(t *testing.T) {
 		router.Use(middleware)
 
 		w := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/logo.svg", nil)
+		req := httptest.NewRequest(http.MethodGet, "/logo.png", nil)
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
-		assert.Contains(t, w.Header().Get("Content-Type"), "image/svg+xml")
+		assert.Contains(t, w.Header().Get("Content-Type"), "image/png")
 	})
 
 	t.Run("serves_index_html_for_root", func(t *testing.T) {

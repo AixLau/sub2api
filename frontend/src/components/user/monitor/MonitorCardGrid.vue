@@ -57,7 +57,7 @@ import MonitorCard from './MonitorCard.vue'
 const props = defineProps<{
   items: UserMonitorView[]
   window: '7d' | '15d' | '30d'
-  countdownSeconds?: number | null
+  countdownSeconds: number
   loading: boolean
   detailCache: Record<number, UserMonitorDetail>
 }>()

@@ -4,7 +4,7 @@
       class="flex justify-between text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-2"
     >
       <span>{{ t('monitorCommon.history60pts', { n: length }) }}</span>
-      <span v-if="countdownSeconds != null" class="tabular-nums">{{ t('monitorCommon.nextUpdateIn', { n: countdownSeconds }) }}</span>
+      <span class="tabular-nums">{{ t('monitorCommon.nextUpdateIn', { n: countdownSeconds }) }}</span>
     </div>
 
     <div
@@ -41,12 +41,11 @@ import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
 
 const props = withDefaults(defineProps<{
   buckets?: MonitorTimelinePoint[]
-  countdownSeconds?: number | null
+  countdownSeconds: number
   length?: number
   maintenance?: boolean
 }>(), {
   buckets: () => [],
-  countdownSeconds: null,
   length: 60,
   maintenance: false,
 })

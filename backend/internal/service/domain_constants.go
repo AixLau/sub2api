@@ -521,9 +521,7 @@ const (
 
 	// SettingKeyModelPlazaDescription stores the Markdown blurb rendered at the top of
 	// the Model Plaza page (global pricing notes, exchange rate, promotions, ...).
-	SettingKeyModelPlazaDescription    = "model_plaza_description"
-	SettingKeyPublicTransitEnabled     = "public_transit_enabled"
-	SettingKeyPublicTransitPageEnabled = "public_transit_page_enabled"
+	SettingKeyModelPlazaDescription = "model_plaza_description"
 
 	// SettingKeyPluginManagementEnabled controls sidebar visibility only; it does
 	// not stop or otherwise change already loaded plugin runtimes.

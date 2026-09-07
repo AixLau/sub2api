@@ -29,6 +29,8 @@ func ProvideGrokOAuthService(proxyRepo ProxyRepository, oauthClient GrokOAuthCli
 // BuildInfo contains build information
 type BuildInfo struct {
 	Version   string
+	Commit    string
+	Date      string
 	BuildType string
 }
 
@@ -45,6 +47,62 @@ func ProvidePricingService(cfg *config.Config, remoteClient PricingRemoteClient)
 // ProvideUpdateService creates UpdateService with BuildInfo
 func ProvideUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, buildInfo BuildInfo) *UpdateService {
 	return NewUpdateService(cache, githubClient, buildInfo.Version, buildInfo.BuildType)
+}
+
+// ProvideContentModerationService creates ContentModerationService with runtime build metadata.
+func ProvideContentModerationService(
+	settingRepo SettingRepository,
+	repo ContentModerationRepository,
+	outboxRepo ContentModerationOutboxRepository,
+	hashCache ContentModerationHashCache,
+	groupRepo GroupRepository,
+	accountRepo AccountRepository,
+	userRepo UserRepository,
+	proxyRepo ProxyRepository,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	emailService *EmailService,
+	passCache ContentModerationPassCache,
+	decisionCache ContentModerationDecisionCache,
+	feedbackEpochRepo ModerationFeedbackEpochRepository,
+	encryptor SecretEncryptor,
+	openAIGatewayService *OpenAIGatewayService,
+	openAIQuotaService *OpenAIQuotaService,
+	usageLogRepo UsageLogRepository,
+	billingService *BillingService,
+	pricingResolver *ModelPricingResolver,
+	cfg *config.Config,
+	buildInfo BuildInfo,
+) *ContentModerationService {
+	svc := NewContentModerationService(settingRepo, repo, hashCache, groupRepo, userRepo, authCacheInvalidator, emailService, accountRepo)
+	svc.SetProxyRepository(proxyRepo)
+	key, _ := cfg.Moderation.CacheHMACKeyBytes()
+	decisionCacheKey, _ := cfg.ContentModerationDecisionCacheHMACKeyBytes()
+	svc.SetIncrementalModerationDependencies(
+		passCache,
+		feedbackEpochRepo,
+		NewRestrictedModerationClientFactory(cfg.Moderation.AllowedHosts),
+		key,
+		cfg.Moderation.CacheHMACKeyVersion,
+	)
+	svc.SetDecisionCacheKey(decisionCacheKey)
+	svc.SetDecisionCache(decisionCache)
+	svc.SetModerationMetrics(NewContentModerationMetrics())
+	svc.SetOutboxRepository(outboxRepo)
+	svc.SetSemanticReviewRouter(NewOpenAIContentModerationSemanticReviewRouter(
+		openAIGatewayService,
+		NewOpenAIContentModerationSemanticReviewQuotaRefresher(openAIQuotaService, accountRepo),
+		NewPlatformUsageRecorder(usageLogRepo, billingService, pricingResolver),
+	))
+	svc.SetSemanticReviewModelProvider(openAIGatewayService)
+	if rawStore, ok := repo.(ContentModerationRawRequestSnapshotStore); ok {
+		svc.SetRawRequestSnapshotStore(rawStore, encryptor)
+	}
+	if evidenceStore, ok := repo.(ContentModerationEvidenceStore); ok {
+		svc.SetEvidenceStore(evidenceStore, encryptor)
+	}
+	svc.SetBuildInfo(buildInfo)
+	svc.Start(context.Background())
+	return svc
 }
 
 // ProvideEmailQueueService creates EmailQueueService with default worker count
@@ -186,6 +244,7 @@ func ProvideOpenAIQuotaService(
 ) *OpenAIQuotaService {
 	service := NewOpenAIQuotaService(accountRepo, proxyRepo, tokenProvider, privacyClientFactory)
 	service.agentIdentityWS = openAIGatewayService
+	service.runtimeBlocker = openAIGatewayService
 	return service
 }
 
@@ -198,10 +257,12 @@ func ProvideAccountUsageService(
 	grokQuotaFetcher *GrokQuotaFetcher,
 	grokQuotaService *GrokQuotaService,
 	openAIQuotaService *OpenAIQuotaService,
+	settingRepo SettingRepository,
 	cache *UsageCache,
 	identityCache IdentityCache,
 	tlsFPProfileService *TLSFingerprintProfileService,
 	openAIGatewayService *OpenAIGatewayService,
+	accountTestService *AccountTestService,
 ) *AccountUsageService {
 	service := NewAccountUsageService(
 		accountRepo,
@@ -212,11 +273,14 @@ func ProvideAccountUsageService(
 		grokQuotaFetcher,
 		grokQuotaService,
 		openAIQuotaService,
+		settingRepo,
 		cache,
 		identityCache,
 		tlsFPProfileService,
 	)
-	service.agentIdentityWS = openAIGatewayService
+	service.runtimeBlocker = openAIGatewayService
+	service.openAIWindowStarter = accountTestService
+	service.StartOpenAIRateLimitRecovery()
 	return service
 }
 
@@ -228,9 +292,12 @@ func ProvideAccountTestService(
 	antigravityGatewayService *AntigravityGatewayService,
 	httpUpstream HTTPUpstream,
 	cfg *config.Config,
+	settingService *SettingService,
+	usageLogRepo UsageLogRepository,
+	billingService *BillingService,
+	pricingResolver *ModelPricingResolver,
 	tlsFPProfileService *TLSFingerprintProfileService,
 	openAIGatewayService *OpenAIGatewayService,
-	settingService *SettingService,
 ) *AccountTestService {
 	service := NewAccountTestService(
 		accountRepo,
@@ -240,6 +307,10 @@ func ProvideAccountTestService(
 		antigravityGatewayService,
 		httpUpstream,
 		cfg,
+		settingService,
+		usageLogRepo,
+		billingService,
+		pricingResolver,
 		tlsFPProfileService,
 	)
 	service.agentIdentityWS = openAIGatewayService
@@ -259,6 +330,45 @@ func ProvideGrokQuotaService(
 	service := NewGrokQuotaService(accountRepo, proxyRepo, tokenProvider, httpUpstream, cfg, usageLogRepo)
 	service.SetSettingService(settingService)
 	return service
+}
+
+// ProvideCNProviderQuotaService 构造国产供应商 Coding Plan 额度探测服务。
+func ProvideCNProviderQuotaService(
+	accountRepo AccountRepository,
+	proxyRepo ProxyRepository,
+	httpUpstream HTTPUpstream,
+	cfg *config.Config,
+) *CNProviderQuotaService {
+	return NewCNProviderQuotaService(accountRepo, proxyRepo, httpUpstream, cfg)
+}
+
+// ProvideCNProviderBalanceService 构造国产供应商余额探测服务。
+func ProvideCNProviderBalanceService(
+	accountRepo AccountRepository,
+	proxyRepo ProxyRepository,
+	httpUpstream HTTPUpstream,
+	cfg *config.Config,
+) *CNProviderBalanceService {
+	return NewCNProviderBalanceService(accountRepo, proxyRepo, httpUpstream, cfg)
+}
+
+// ProvideCNProviderBalanceCheckService 构造并启动周期余额/额度检测任务。
+// payg 账号探余额（低余额停调）；coding plan 账号探 5h/weekly 滚动窗口
+// （落 extra 快照供调度阈值评估自动停调）。
+// 间隔取自 gateway.cn_providers.balance_check_interval_minutes；<=0 或关闭时不启动。
+func ProvideCNProviderBalanceCheckService(
+	accountRepo AccountRepository,
+	balanceService *CNProviderBalanceService,
+	quotaService *CNProviderQuotaService,
+	cfg *config.Config,
+) *CNProviderBalanceCheckService {
+	minutes := 10
+	if cfg != nil && cfg.Gateway.CNProviders.BalanceCheckIntervalMinutes > 0 {
+		minutes = cfg.Gateway.CNProviders.BalanceCheckIntervalMinutes
+	}
+	svc := NewCNProviderBalanceCheckService(accountRepo, balanceService, quotaService, cfg, time.Duration(minutes)*time.Minute)
+	svc.Start()
+	return svc
 }
 
 // ProvideGeminiTokenProvider creates GeminiTokenProvider with OAuthRefreshAPI injection
@@ -423,6 +533,9 @@ func ProvideRateLimitService(
 	tokenCacheInvalidator TokenCacheInvalidator,
 ) *RateLimitService {
 	svc := NewRateLimitService(accountRepo, usageRepo, cfg, geminiQuotaService, tempUnschedCache)
+	if healthCache, ok := tempUnschedCache.(OpenAIAPIKeyHealthCache); ok {
+		svc.SetOpenAIAPIKeyHealthCache(healthCache)
+	}
 	svc.SetTimeoutCounterCache(timeoutCounterCache)
 	svc.SetOpenAI403CounterCache(openAI403CounterCache)
 	svc.SetSettingService(settingService)
@@ -625,8 +738,11 @@ func ProvideBackupService(
 	encryptor SecretEncryptor,
 	storeFactory BackupObjectStoreFactory,
 	dumper DBDumper,
+	lockCache LeaderLockCache,
+	db *sql.DB,
 ) *BackupService {
 	svc := NewBackupService(settingRepo, cfg, encryptor, storeFactory, dumper)
+	svc.SetLeaderLock(lockCache, db)
 	svc.Start()
 	return svc
 }
@@ -666,9 +782,11 @@ func ProvideOpsService(
 	)
 	if settingService != nil {
 		svc.SetOpenAIQuotaAutoPauseSettingsSink(settingService.SetOpenAIQuotaAutoPauseSettings)
+		svc.SetUserAccountCooldownSecondsSink(settingService.SetUserAccountCooldownSeconds)
 		// Optional warm-up so the first scheduled request after process start observes
 		// a populated cache rather than zero defaults. Best-effort, sync-bounded.
 		settingService.WarmOpenAIQuotaAutoPauseSettings(context.Background())
+		settingService.WarmUserAccountCooldownTTL(context.Background())
 	}
 	svc.authCacheInvalidationWorker = authCacheInvalidationWorker
 	svc.apiKeyService = apiKeyService
@@ -703,6 +821,9 @@ func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupReposit
 	if err := svc.MigrateCodexBodyFingerprintToSignals(context.Background()); err != nil {
 		logger.LegacyPrintf("service.setting", "Warning: migrate codex body fingerprint to signals failed: %v", err)
 	}
+	if err := svc.MigrateGrokDefaultTextModel(context.Background()); err != nil {
+		logger.LegacyPrintf("service.setting", "Warning: migrate Grok default text model failed: %v", err)
+	}
 	antigravity.SetUserAgentVersionResolver(svc.GetAntigravityUserAgentVersion)
 	// enforceCodexIdentityHeaders 是所有 Codex 出站路径共用的纯函数收口点，拿不到 ctx，
 	// 故注入无参解析器；解析器内部自带 60s TTL 缓存，热路径不触库。
@@ -710,6 +831,20 @@ func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupReposit
 		return svc.GetOpenAICodexCanonicalUserAgent(context.Background())
 	})
 	return svc
+}
+
+func ProvideOpenAIQuotaAutoResetService(
+	accountRepo AccountRepository,
+	quotaService *OpenAIQuotaService,
+	rateLimitService *RateLimitService,
+	idempotency *IdempotencyCoordinator,
+	audit *AuditLogService,
+	settingService *SettingService,
+	leaderLock LeaderLockCache,
+) *OpenAIQuotaAutoResetService {
+	service := NewOpenAIQuotaAutoResetService(accountRepo, quotaService, rateLimitService, idempotency, audit, settingService, leaderLock)
+	service.Start()
+	return service
 }
 
 // ProvideBillingCacheService wires BillingCacheService with its RPM dependencies.
@@ -744,8 +879,38 @@ func ProvideAPIKeyService(
 	return svc
 }
 
+func ProvideSubscriptionService(
+	groupRepo GroupRepository,
+	userSubRepo UserSubscriptionRepository,
+	billingCacheService *BillingCacheService,
+	entClient *dbent.Client,
+	cfg *config.Config,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+) *SubscriptionService {
+	svc := NewSubscriptionService(groupRepo, userSubRepo, billingCacheService, entClient, cfg)
+	svc.SetRenewalAuthCacheInvalidator(authCacheInvalidator)
+	return svc
+}
+
+func ProvideRedeemService(
+	redeemRepo RedeemCodeRepository,
+	userRepo UserRepository,
+	subscriptionService *SubscriptionService,
+	cache RedeemCache,
+	billingCacheService *BillingCacheService,
+	entClient *dbent.Client,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	apiKeyRepo APIKeyRepository,
+	affiliateService *AffiliateService,
+) *RedeemService {
+	svc := NewRedeemService(redeemRepo, userRepo, subscriptionService, cache, billingCacheService, entClient, authCacheInvalidator, affiliateService)
+	svc.SetAPIKeyRepository(apiKeyRepo)
+	return svc
+}
+
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
+	NewMerchantSSOAPIService,
 	// Core services
 	ProvideAuthService,
 	NewPasskeyService,
@@ -757,7 +922,7 @@ var ProviderSet = wire.NewSet(
 	NewCompositeRouteResolver,
 	NewAccountService,
 	NewProxyService,
-	NewRedeemService,
+	ProvideRedeemService,
 	NewPromoService,
 	NewUsageService,
 	NewDashboardService,
@@ -765,6 +930,8 @@ var ProviderSet = wire.NewSet(
 	NewBillingService,
 	ProvideBillingCacheService,
 	NewAnnouncementService,
+	NewRewardService,
+	ProvideRewardJobWorker,
 	NewAdminService,
 	NewGatewayService,
 	NewOpenAIGatewayService,
@@ -793,6 +960,9 @@ var ProviderSet = wire.NewSet(
 	ProvideOpenAITokenProvider,
 	ProvideOpenAIQuotaService,
 	ProvideGrokQuotaService,
+	ProvideCNProviderQuotaService,
+	ProvideCNProviderBalanceService,
+	ProvideCNProviderBalanceCheckService,
 	ProvideClaudeTokenProvider,
 	NewAntigravityGatewayService,
 	ProvideRateLimitService,
@@ -818,7 +988,7 @@ var ProviderSet = wire.NewSet(
 	NewTurnstileService,
 	NewTencentCaptchaService,
 	NewAliyunCaptchaService,
-	NewSubscriptionService,
+	ProvideSubscriptionService,
 	wire.Bind(new(DefaultSubscriptionAssigner), new(*SubscriptionService)),
 	ProvideConcurrencyService,
 	ProvideUserMessageQueueService,
@@ -838,6 +1008,7 @@ var ProviderSet = wire.NewSet(
 	ProvideUsageCleanupService,
 	ProvideDeferredService,
 	NewAntigravityQuotaFetcher,
+	ProvideOpenAIQuotaAutoResetService,
 	NewGrokQuotaFetcher,
 	NewUserAttributeService,
 	NewUsageCache,
@@ -852,9 +1023,12 @@ var ProviderSet = wire.NewSet(
 	ProvideScheduledTestRunnerService,
 	NewGroupCapacityService,
 	NewChannelService,
-	NewPublicTransitService,
+	wire.Bind(new(ChannelCacheInvalidator), new(*ChannelService)),
 	NewModelPricingResolver,
-	NewContentModerationService,
+	NewModelPlazaService,
+	NewPluginManager,
+	ProvideContentModerationService,
+	wire.Bind(new(BatchImageModerationGate), new(*ContentModerationService)),
 	NewAffiliateService,
 	ProvidePaymentConfigService,
 	ProvidePaymentService,
@@ -862,9 +1036,11 @@ var ProviderSet = wire.NewSet(
 	ProvideBalanceNotifyService,
 	ProvideChannelMonitorService,
 	ProvideChannelMonitorRunner,
+	NewChannelMonitorQuotaFetcher,
 	ProvideChannelMonitorV2Service,
 	ProvideChannelMonitorV2Aggregator,
 	NewChannelMonitorRequestTemplateService,
+	NewMerchantSSOService,
 	ProvideUserPlatformQuotaUsageFlusher,
 )
 
@@ -889,9 +1065,10 @@ func ProvideBalanceNotifyService(emailService *EmailService, settingRepo Setting
 }
 
 // ProvidePaymentService creates PaymentService and attaches notification email delivery.
-func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService, notificationEmailService *NotificationEmailService) *PaymentService {
+func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, apiKeyRepo APIKeyRepository, apiKeyService *APIKeyService, affiliateService *AffiliateService, notificationEmailService *NotificationEmailService) *PaymentService {
 	svc := NewPaymentService(entClient, registry, loadBalancer, redeemService, subscriptionSvc, configService, userRepo, groupRepo, affiliateService)
 	svc.SetNotificationEmailService(notificationEmailService)
+	svc.SetAPIKeyMigrationDependencies(apiKeyRepo, apiKeyService)
 	return svc
 }
 
@@ -920,13 +1097,20 @@ func ProvideChannelMonitorService(
 // 通过 SetScheduler 注入回 service 后再 Start，确保启动时加载所有 enabled monitor，
 // 后续 CRUD 也能即时同步任务表。Runner.Stop 由 cleanup function 调用。
 // settingService 用于 runner 每次 fire 读取功能开关。
-func ProvideChannelMonitorRunner(svc *ChannelMonitorService, settingService *SettingService) *ChannelMonitorRunner {
+// quotaFetcher（账号侧用量聚合）也在此注入：accountUsage/CN 服务在 wire 图中
+// 晚于 channelMonitorService 构造，走 setter 注入避免调整既有构造顺序。
+func ProvideChannelMonitorRunner(
+	svc *ChannelMonitorService,
+	settingService *SettingService,
+	quotaFetcher *ChannelMonitorQuotaFetcher,
+) *ChannelMonitorRunner {
 	r := NewChannelMonitorRunner(svc, settingService)
 	if svc != nil {
 		// Ensure runtime reader is set even if ProvideChannelMonitorService
 		// was constructed without settings (tests / alternate providers).
 		svc.SetRuntimeReader(settingService)
 		svc.SetScheduler(r)
+		svc.SetQuotaFetcher(quotaFetcher)
 	}
 	r.Start()
 	return r

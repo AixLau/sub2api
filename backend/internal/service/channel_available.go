@@ -90,7 +90,7 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 		ch.normalizeBillingModelSource()
 
 		supported := ch.SupportedModels()
-		s.fillGlobalPricingFallback(supported)
+		fillGlobalPricingFallback(s.pricingService, supported)
 
 		out = append(out, AvailableChannel{
 			ID:                 ch.ID,
@@ -117,23 +117,16 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 //  1. Pricing == nil（渠道完全没声明该模型的定价条目）
 //  2. Pricing 非 nil 但所有价格字段为空（admin UI 建了条目但没填价格）
 //
-// 当 s.pricingService 为 nil（测试场景），跳过回落。
-func (s *ChannelService) fillGlobalPricingFallback(models []SupportedModel) {
-	if s.pricingService == nil {
-		return
-	}
+// 当 pricingService 为 nil（测试场景），跳过价格回落，但仍补充内置模型倍率。
+// 可用渠道与模型广场共用。
+func fillGlobalPricingFallback(pricingService *PricingService, models []SupportedModel) {
 	for i := range models {
-		if !pricingNeedsFallback(models[i].Pricing) {
-			models[i].PricingSource = ModelPriceSourceCustom
-			continue
+		if pricingService != nil && pricingNeedsFallback(models[i].Pricing) {
+			if lp := pricingService.GetModelPricing(models[i].Name); lp != nil {
+				models[i].Pricing = synthesizePricingFromLiteLLM(lp, models[i].Pricing)
+			}
 		}
-		lp := s.pricingService.GetModelPricing(models[i].Name)
-		if lp == nil {
-			models[i].PricingSource = ModelPriceSourceUnknown
-			continue
-		}
-		models[i].Pricing = synthesizePricingFromLiteLLM(lp, models[i].Pricing)
-		models[i].PricingSource = ModelPriceSourceStandard
+		models[i].Pricing = withDefaultMaxReasoningEffortMultiplier(models[i].Pricing, models[i].Name)
 	}
 }
 
@@ -183,21 +176,49 @@ func synthesizePricingFromLiteLLM(lp *LiteLLMModelPricing, existing *ChannelMode
 
 	if mode == BillingModeImage || mode == BillingModePerRequest {
 		return &ChannelModelPricing{
-			BillingMode:      mode,
-			PerRequestPrice:  nonZeroPtr(lp.OutputCostPerImage),
-			ImageOutputPrice: nonZeroPtr(lp.OutputCostPerImageToken),
-			InputPrice:       nonZeroPtr(lp.InputCostPerToken),
-			OutputPrice:      nonZeroPtr(lp.OutputCostPerToken),
+			BillingMode:                  mode,
+			PerRequestPrice:              nonZeroPtr(lp.OutputCostPerImage),
+			ImageOutputPrice:             nonZeroPtr(lp.OutputCostPerImageToken),
+			InputPrice:                   nonZeroPtr(lp.InputCostPerToken),
+			OutputPrice:                  nonZeroPtr(lp.OutputCostPerToken),
+			MaxReasoningEffortMultiplier: maxReasoningEffortMultiplierFromPricing(existing),
 		}
 	}
 	return &ChannelModelPricing{
-		BillingMode:      mode,
-		InputPrice:       nonZeroPtr(lp.InputCostPerToken),
-		OutputPrice:      nonZeroPtr(lp.OutputCostPerToken),
-		CacheWritePrice:  nonZeroPtr(lp.CacheCreationInputTokenCost),
-		CacheReadPrice:   nonZeroPtr(lp.CacheReadInputTokenCost),
-		ImageOutputPrice: nonZeroPtr(lp.OutputCostPerImageToken),
+		BillingMode:                  mode,
+		CacheWrite1hPrice:            nonZeroPtr(lp.CacheCreationInputTokenCostAbove1hr),
+		MaxReasoningEffortMultiplier: maxReasoningEffortMultiplierFromPricing(existing),
+		InputPrice:                   nonZeroPtr(lp.InputCostPerToken),
+		OutputPrice:                  nonZeroPtr(lp.OutputCostPerToken),
+		CacheWritePrice:              cacheWritePriceFromLiteLLM(lp),
+		CacheReadPrice:               nonZeroPtr(lp.CacheReadInputTokenCost),
+		ImageOutputPrice:             nonZeroPtr(lp.OutputCostPerImageToken),
 	}
+}
+
+// cacheWritePriceFromLiteLLM 保留“支持提示缓存但没有额外创建费用”的零价格语义。
+// LiteLLM 的数值结构无法区分缺失和 0；同时具备缓存读取价与 supports_prompt_caching
+// 时，0 表示缓存创建不额外收费，而不是价格未知。
+func cacheWritePriceFromLiteLLM(lp *LiteLLMModelPricing) *float64 {
+	if lp == nil {
+		return nil
+	}
+	if lp.CacheCreationInputTokenCost != 0 {
+		return nonZeroPtr(lp.CacheCreationInputTokenCost)
+	}
+	if lp.SupportsPromptCaching && lp.CacheReadInputTokenCost > 0 {
+		zero := 0.0
+		return &zero
+	}
+	return nil
+
+}
+
+func maxReasoningEffortMultiplierFromPricing(pricing *ChannelModelPricing) *float64 {
+	if pricing == nil {
+		return nil
+	}
+	return pricing.MaxReasoningEffortMultiplier
 }
 
 func nonZeroPtr(v float64) *float64 {
