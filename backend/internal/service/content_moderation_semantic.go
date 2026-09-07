@@ -18,6 +18,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/promptfilter"
+	gocache "github.com/patrickmn/go-cache"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/singleflight"
 )
@@ -993,12 +994,13 @@ func semanticReviewLogReason(result ContentModerationSemanticReviewResult) strin
 }
 
 type openAIContentModerationSemanticReviewRouter struct {
-	backend       ContentModerationSemanticReviewBackend
-	quota         ContentModerationSemanticReviewQuotaRefresher
-	usageRecorder PlatformUsageRecorder
-	metrics       *ContentModerationMetrics
-	refresh       singleflight.Group
-	refreshSlots  chan struct{}
+	backend        ContentModerationSemanticReviewBackend
+	quota          ContentModerationSemanticReviewQuotaRefresher
+	usageRecorder  PlatformUsageRecorder
+	metrics        *ContentModerationMetrics
+	refresh        singleflight.Group
+	refreshSlots   chan struct{}
+	quotaSnapshots *gocache.Cache
 }
 
 func NewOpenAIContentModerationSemanticReviewRouter(
@@ -1007,10 +1009,11 @@ func NewOpenAIContentModerationSemanticReviewRouter(
 	usageRecorder PlatformUsageRecorder,
 ) ContentModerationSemanticReviewRouter {
 	return &openAIContentModerationSemanticReviewRouter{
-		backend:       backend,
-		quota:         quota,
-		usageRecorder: usageRecorder,
-		refreshSlots:  make(chan struct{}, contentModerationSemanticReviewQuotaRefreshWorkers),
+		backend:        backend,
+		quota:          quota,
+		usageRecorder:  usageRecorder,
+		refreshSlots:   make(chan struct{}, contentModerationSemanticReviewQuotaRefreshWorkers),
+		quotaSnapshots: gocache.New(openAIProbeCacheTTL, openAIProbeCacheTTL),
 	}
 }
 
@@ -1098,18 +1101,30 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 				lastErr = errors.New("semantic review selected an excluded account")
 				break
 			}
-			if account.Type == AccountTypeOAuth && isCodexSparkModel(model) && semanticReviewShouldRefreshSparkQuota(account, time.Now()) {
-				if updates, refreshErr := r.refreshSemanticReviewQuotaSync(reviewCtx, account.ID); refreshErr == nil {
+			quotaModel := account.GetMappedModel(model)
+			if account.Type == AccountTypeOAuth && isCodexSparkModel(quotaModel) && semanticReviewShouldRefreshSparkQuota(account, time.Now()) {
+				var updates map[string]any
+				if r.quotaSnapshots != nil {
+					if cached, ok := r.quotaSnapshots.Get(fmt.Sprint(account.ID)); ok {
+						updates, _ = cached.(map[string]any)
+					}
+				}
+				if len(updates) == 0 {
+					updates, _ = r.refreshSemanticReviewQuotaSync(reviewCtx, account.ID)
+				}
+				if len(updates) > 0 {
 					account = semanticReviewAccountSnapshotWithExtra(account, updates)
 				}
 			}
-			if account.Type == AccountTypeOAuth && semanticReviewQuotaExhausted(account, model, time.Now()) {
+			if account.Type == AccountTypeOAuth && semanticReviewQuotaExhausted(account, quotaModel, time.Now()) {
 				if modelIndex == 0 && primaryFailureReason == "" {
 					primaryFailureReason = "quota_exhausted"
 				}
 				if r.metrics != nil {
 					r.metrics.observeSemanticReviewAttempt(model, "skipped", "quota_exhausted")
 				}
+				slog.Info("content_moderation.semantic_review_account_skipped",
+					"model", model, "upstream_model", quotaModel, "account_id", account.ID, "reason", "quota_exhausted")
 				excluded[account.ID] = struct{}{}
 				releaseAccountSelection(selection)
 				continue
@@ -1159,6 +1174,9 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 			releaseAccountSelection(selection)
 			lastErr = callErr
 			reason := semanticReviewAttemptReason(callErr)
+			slog.Warn("content_moderation.semantic_review_attempt_failed",
+				"model", model, "account_id", account.ID, "attempt_count", attemptCount,
+				"reason", reason, "error", sanitizeSemanticReviewError(callErr.Error()))
 			if modelIndex == 0 && primaryFailureReason == "" {
 				primaryFailureReason = reason
 			}
@@ -1184,6 +1202,9 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 			}
 			excluded[account.ID] = struct{}{}
 			if account.Type == AccountTypeOAuth {
+				if r.quotaSnapshots != nil {
+					r.quotaSnapshots.Delete(fmt.Sprint(account.ID))
+				}
 				r.refreshSemanticReviewQuotaAsync(account.ID)
 			}
 		}
@@ -1329,7 +1350,7 @@ func (r *openAIContentModerationSemanticReviewRouter) refreshSemanticReviewQuota
 	refreshCtx, cancel := context.WithTimeout(ctx, contentModerationSemanticReviewQuotaRefreshTimeout)
 	defer cancel()
 	value, err, _ := r.refresh.Do(fmt.Sprintf("%d", accountID), func() (any, error) {
-		return r.quota.RefreshSemanticReviewQuota(refreshCtx, accountID)
+		return r.fetchSemanticReviewQuota(refreshCtx, accountID)
 	})
 	if err != nil {
 		return nil, err
@@ -1350,7 +1371,7 @@ func (r *openAIContentModerationSemanticReviewRouter) refreshSemanticReviewQuota
 	result := r.refresh.DoChan(fmt.Sprintf("%d", accountID), func() (any, error) {
 		refreshCtx, refreshCancel := context.WithTimeout(context.Background(), contentModerationSemanticReviewQuotaSyncTimeout)
 		defer refreshCancel()
-		return r.quota.RefreshSemanticReviewQuota(refreshCtx, accountID)
+		return r.fetchSemanticReviewQuota(refreshCtx, accountID)
 	})
 	select {
 	case <-waitCtx.Done():
@@ -1364,6 +1385,14 @@ func (r *openAIContentModerationSemanticReviewRouter) refreshSemanticReviewQuota
 	}
 }
 
+func (r *openAIContentModerationSemanticReviewRouter) fetchSemanticReviewQuota(ctx context.Context, accountID int64) (map[string]any, error) {
+	updates, err := r.quota.RefreshSemanticReviewQuota(ctx, accountID)
+	if err == nil && r.quotaSnapshots != nil && updates["codex_usage_dimension"] == "spark" {
+		r.quotaSnapshots.SetDefault(fmt.Sprint(accountID), updates)
+	}
+	return updates, err
+}
+
 func semanticReviewAccountSnapshotWithExtra(account *Account, updates map[string]any) *Account {
 	if account == nil || len(updates) == 0 {
 		return account
@@ -1372,6 +1401,11 @@ func semanticReviewAccountSnapshotWithExtra(account *Account, updates map[string
 	snapshot.Extra = make(map[string]any, len(account.Extra)+len(updates))
 	for key, value := range account.Extra {
 		snapshot.Extra[key] = value
+	}
+	// An absent Spark window is unknown, not the normal account's global
+	// window or a window left over from an earlier Spark snapshot.
+	for _, key := range []string{"codex_5h_used_percent", "codex_5h_reset_at", "codex_7d_used_percent", "codex_7d_reset_at"} {
+		delete(snapshot.Extra, key)
 	}
 	mergeAccountExtra(&snapshot, updates)
 	return &snapshot
@@ -1408,17 +1442,16 @@ func semanticReviewQuotaSnapshotStale(account *Account, now time.Time) bool {
 }
 
 func semanticReviewShouldRefreshSparkQuota(account *Account, now time.Time) bool {
-	if semanticReviewQuotaSnapshotStale(account, now) {
-		return true
-	}
-	// A normal OAuth account's /responses 429 updates the global Codex snapshot.
-	// Refresh the independent codex_bengalfox window once, then reuse that snapshot
-	// until its normal TTL expires instead of adding a quota request to every audit.
-	if account == nil || account.IsShadow() || !account.IsRateLimited() {
+	return !semanticReviewHasSparkQuotaSnapshot(account) || semanticReviewQuotaSnapshotStale(account, now)
+}
+
+func semanticReviewHasSparkQuotaSnapshot(account *Account) bool {
+	if account == nil {
 		return false
 	}
 	dimension, _ := account.Extra["codex_usage_dimension"].(string)
-	return !strings.EqualFold(strings.TrimSpace(dimension), "spark")
+	return strings.EqualFold(strings.TrimSpace(dimension), "spark") ||
+		(dimension == "" && account.IsShadow() && account.QuotaDimension == QuotaDimensionSpark)
 }
 
 func releaseAccountSelection(selection *AccountSelectionResult) {
@@ -1455,7 +1488,7 @@ func normalizeContentModerationSemanticReviewTrigger(trigger string) string {
 }
 
 func semanticReviewQuotaExhausted(account *Account, model string, now time.Time) bool {
-	if account == nil || !isCodexSparkModel(model) || len(account.Extra) == 0 {
+	if !isCodexSparkModel(model) || !semanticReviewHasSparkQuotaSnapshot(account) {
 		return false
 	}
 	for _, window := range []struct {
@@ -2825,7 +2858,14 @@ func (r *openAIContentModerationSemanticReviewQuotaRefresher) RefreshSemanticRev
 	if r == nil || r.quota == nil || r.accountRepo == nil || accountID <= 0 {
 		return nil, errors.New("semantic review quota refresher is unavailable")
 	}
-	usage, err := r.quota.QueryUsage(ctx, accountID)
+	account, err := r.accountRepo.GetByID(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if account == nil {
+		return nil, errors.New("semantic review quota account is unavailable")
+	}
+	usage, err := r.quota.queryUsage(ctx, accountID, false)
 	if err != nil {
 		return nil, err
 	}
@@ -2833,8 +2873,12 @@ func (r *openAIContentModerationSemanticReviewQuotaRefresher) RefreshSemanticRev
 	if len(updates) == 0 {
 		return nil, nil
 	}
-	if err := r.accountRepo.UpdateExtra(ctx, accountID, updates); err != nil {
-		return nil, err
+	// Normal accounts own the global Codex snapshot. Only Spark shadows
+	// persist these fields; normal-account audit snapshots stay in the router.
+	if account.IsShadow() && account.QuotaDimension == QuotaDimensionSpark {
+		if err := r.accountRepo.UpdateExtra(ctx, accountID, updates); err != nil {
+			return nil, err
+		}
 	}
 	return updates, nil
 }

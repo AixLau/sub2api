@@ -227,6 +227,7 @@ func freshSemanticReviewAccount(id int64) *Account {
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeOAuth,
 		Extra: map[string]any{
+			"codex_usage_dimension":  "spark",
 			"codex_usage_updated_at": time.Now().Format(time.RFC3339),
 		},
 	}
@@ -401,6 +402,7 @@ func TestSemanticReviewRouterRefreshesStaleSparkQuotaBeforeRequest(t *testing.T)
 	}
 	quota := &semanticReviewQuotaStub{updates: map[int64]map[string]any{
 		11: {
+			"codex_usage_dimension":  "spark",
 			"codex_5h_used_percent":  100.0,
 			"codex_5h_reset_at":      time.Now().Add(time.Hour).Format(time.RFC3339),
 			"codex_usage_updated_at": time.Now().Format(time.RFC3339),
