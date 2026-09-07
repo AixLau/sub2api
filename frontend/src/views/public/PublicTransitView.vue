@@ -257,7 +257,7 @@
               <MonitorCardGrid
                 :items="publicMonitorViews"
                 :window="monitorWindow"
-                :countdown-seconds="null"
+                :countdown-seconds="0"
                 :loading="false"
                 :detail-cache="publicMonitorDetailCache"
                 @card-click="openMonitorDetail"
