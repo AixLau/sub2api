@@ -43,58 +43,11 @@ const (
 	PlatformGemini      = domain.PlatformGemini
 	PlatformAntigravity = domain.PlatformAntigravity
 	PlatformGrok        = domain.PlatformGrok
-	// 国产 OpenAI 兼容供应商（与 grok 一样经 OpenAI 网关转发）。
-	PlatformKimi      = domain.PlatformKimi
-	PlatformZhipu     = domain.PlatformZhipu
-	PlatformDeepseek  = domain.PlatformDeepseek
-	PlatformComposite = domain.PlatformComposite
+	PlatformComposite   = domain.PlatformComposite
 	// PlatformKiro is retained for unsupported-platform threshold tests and legacy
 	// account rows. Scheduling-threshold evaluation never pauses kiro accounts.
 	PlatformKiro = "kiro"
 )
-
-// 账号接入模式（国产供应商）：按量付费 vs Coding Plan。
-const (
-	AccountModePayG   = domain.AccountModePayG
-	AccountModeCoding = domain.AccountModeCoding
-)
-
-// 上游 API 协议（国产供应商）：决定转发端点与格式，与接入模式正交。
-const (
-	APIProtocolChatCompletions = domain.APIProtocolChatCompletions
-	APIProtocolAnthropic       = domain.APIProtocolAnthropic
-	APIProtocolResponses       = domain.APIProtocolResponses
-	APIProtocolAdaptive        = domain.APIProtocolAdaptive
-)
-
-// 国产 OpenAI 兼容供应商各模式的默认 base_url。
-// 与前端 credentialsBuilder.ts 中的预设保持一致。
-const (
-	DefaultKimiPayGBaseURL    = "https://api.moonshot.cn/v1"
-	DefaultKimiCodingBaseURL  = "https://api.kimi.com/coding/v1"
-	DefaultZhipuPayGBaseURL   = "https://open.bigmodel.cn/api/paas/v4"
-	DefaultZhipuCodingBaseURL = "https://open.bigmodel.cn/api/coding/paas/v4"
-	DefaultDeepseekBaseURL    = "https://api.deepseek.com"
-)
-
-// 国产供应商 Anthropic 协议端点的默认 base_url（上游路径为 {base}/v1/messages）。
-// 与前端 credentialsBuilder.ts 中的预设保持一致。
-const (
-	DefaultKimiPayGAnthropicBaseURL   = "https://api.moonshot.cn/anthropic"
-	DefaultKimiCodingAnthropicBaseURL = "https://api.kimi.com/coding"
-	DefaultZhipuAnthropicBaseURL      = "https://open.bigmodel.cn/api/anthropic"
-	DefaultDeepseekAnthropicBaseURL   = "https://api.deepseek.com/anthropic"
-)
-
-// IsCNProvider 报告 platform 是否为国产 OpenAI 兼容供应商（kimi/zhipu/deepseek）。
-func IsCNProvider(platform string) bool {
-	switch platform {
-	case PlatformKimi, PlatformZhipu, PlatformDeepseek:
-		return true
-	default:
-		return false
-	}
-}
 
 // AllowedQuotaPlatforms 是允许设置 user × platform quota 的平台列表（单一权威来源）。
 // ent/schema/user_platform_quota.go 的 Validate 函数独立维护（构建期约束），
@@ -105,20 +58,14 @@ var AllowedQuotaPlatforms = []string{
 	PlatformGemini,
 	PlatformAntigravity,
 	PlatformGrok,
-	PlatformKimi,
-	PlatformZhipu,
-	PlatformDeepseek,
 }
 
 // AllowedSchedulingThresholdPlatforms 是允许设置账号自动停调阈值的平台列表。
-// openai/anthropic/grok 有原生用量窗口；kimi/zhipu 的 Coding Plan 同样暴露 5h/weekly
-// 滚动窗口，纳入阈值评估。deepseek 为余额型，走余额检测而非阈值。
+// 仅 openai / anthropic / grok 有原生用量窗口可供评估；其他平台写入阈值无效果。
 var AllowedSchedulingThresholdPlatforms = []string{
 	PlatformOpenAI,
 	PlatformAnthropic,
 	PlatformGrok,
-	PlatformKimi,
-	PlatformZhipu,
 }
 
 // IsAllowedQuotaPlatform 报告 s 是否为合法的 quota platform 标识。
@@ -147,10 +94,7 @@ const (
 	RedeemTypeConcurrency      = domain.RedeemTypeConcurrency
 	RedeemTypeSubscription     = domain.RedeemTypeSubscription
 	RedeemTypeInvitation       = domain.RedeemTypeInvitation
-	RedeemTypeWelcomeScratch   = domain.RedeemTypeWelcomeScratch
-	RedeemTypeSurpriseScratch  = domain.RedeemTypeSurpriseScratch
 	RedeemTypeAffiliateBalance = "affiliate_balance"
-	RedeemTypeScratchFilter    = "scratch"
 )
 
 // PromoCode status constants
@@ -205,7 +149,6 @@ const (
 	SettingKeyPasswordResetEnabled                = "password_reset_enabled"           // 是否启用忘记密码功能（需要先开启邮件验证）
 	SettingKeyFrontendURL                         = "frontend_url"                     // 前端基础URL，用于生成邮件中的重置密码链接
 	SettingKeyInvitationCodeEnabled               = "invitation_code_enabled"          // 是否启用邀请码注册
-	SettingKeyRewardCampaignsEnabled              = "reward_campaigns_enabled"         // 奖励活动中心功能总开关
 	SettingKeyAffiliateEnabled                    = "affiliate_enabled"                // 邀请返利功能总开关
 	SettingKeyAffiliateRebateRate                 = "affiliate_rebate_rate"            // 邀请返利比例（百分比，0-100）
 	SettingKeyAffiliateRebateFreezeHours          = "affiliate_rebate_freeze_hours"    // 返利冻结期（小时，0=不冻结）
@@ -356,8 +299,6 @@ const (
 	SettingKeySiteSubtitle                = "site_subtitle"                 // 网站副标题
 	SettingKeyAPIBaseURL                  = "api_base_url"                  // API端点地址（用于客户端配置和导入）
 	SettingKeyContactInfo                 = "contact_info"                  // 客服联系方式
-	SettingKeySupportQQGroupQRCode        = "support_qq_group_qr_code"      // QQ 用户群二维码 (base64)
-	SettingKeySupportWeChatGroupQRCode    = "support_wechat_group_qr_code"  // 微信用户群二维码 (base64)
 	SettingKeyDocURL                      = "doc_url"                       // 文档链接
 	SettingKeyHomeContent                 = "home_content"                  // 首页内容（支持 Markdown/HTML，或 URL 作为 iframe src）
 	SettingKeyCompactHomeEnabled          = "compact_home_enabled"          // 是否启用内置简洁首页
@@ -484,13 +425,6 @@ const (
 	// Default false (show rates). Admin endpoints always keep full metrics.
 	SettingKeyChannelMonitorHideThroughput = "channel_monitor_hide_throughput"
 
-	// SettingKeyChannelMonitorShowQuota controls whether quota/balance snapshots
-	// attached to channel monitors (check_mode=quota/quota_probe) are exposed on
-	// the user-facing monitor APIs and UI. Default false (hidden); parsed
-	// fail-closed (only the literal "true" enables it). Admin endpoints always
-	// keep the full snapshots regardless of this flag.
-	SettingKeyChannelMonitorShowQuota = "channel_monitor_show_quota"
-
 	// SettingKeyGrokDefaultTextModel is the fallback Grok text model for empty
 	// request models and built-in Grok aliases (e.g. "grok" → this id). Default grok-4.5.
 	SettingKeyGrokDefaultTextModel = "grok_default_text_model"
@@ -521,11 +455,9 @@ const (
 
 	// SettingKeyModelPlazaDescription stores the Markdown blurb rendered at the top of
 	// the Model Plaza page (global pricing notes, exchange rate, promotions, ...).
-	SettingKeyModelPlazaDescription = "model_plaza_description"
-
-	// SettingKeyPluginManagementEnabled controls sidebar visibility only; it does
-	// not stop or otherwise change already loaded plugin runtimes.
-	SettingKeyPluginManagementEnabled = "plugin_management_enabled"
+	SettingKeyModelPlazaDescription    = "model_plaza_description"
+	SettingKeyPublicTransitEnabled     = "public_transit_enabled"
+	SettingKeyPublicTransitPageEnabled = "public_transit_page_enabled"
 
 	// SettingKeyUpstreamBillingProbeSettings stores the global enable switch and interval
 	// for probing remote Sub2API API-key billing metadata.
@@ -543,10 +475,6 @@ const (
 
 	// SettingKeyRateLimit429CooldownSettings stores JSON config for 429 fallback cooldown handling.
 	SettingKeyRateLimit429CooldownSettings = "rate_limit_429_cooldown_settings"
-	// SettingKeyOpenAIImagesOAuthUnavailableCooldownSettings stores the cooldown applied when the OAuth image tool is unavailable.
-	SettingKeyOpenAIImagesOAuthUnavailableCooldownSettings = "openai_images_oauth_unavailable_cooldown_settings"
-	// SettingKeyOpenAIAPIKeyHealthBreakerSettings stores the opt-in OpenAI pool API-key breaker config.
-	SettingKeyOpenAIAPIKeyHealthBreakerSettings = "openai_apikey_health_breaker_settings"
 
 	// =========================
 	// Stream Timeout Handling
@@ -626,10 +554,6 @@ const (
 	SettingKeyBackendModeEnabled = "backend_mode_enabled"
 
 	// Gateway Forwarding Behavior
-	// SettingKeyOpenAITTFTMode 控制 first_token_ms 的统计口径。
-	SettingKeyOpenAITTFTMode = "openai_ttft_mode"
-	OpenAITTFTModeSemantic   = "semantic"
-	OpenAITTFTModeVisible    = "visible"
 	// SettingKeyEnableFingerprintUnification 是否统一 OAuth 账号的 X-Stainless-* 指纹头（默认 true）
 	SettingKeyEnableFingerprintUnification = "enable_fingerprint_unification"
 	// SettingKeyEnableMetadataPassthrough 是否透传客户端原始 metadata.user_id（默认 false）
@@ -658,7 +582,8 @@ const (
 	// SettingKeyAntigravityUserAgentVersion Antigravity 上游 User-Agent 版本号（空值使用环境变量/默认值）
 	SettingKeyAntigravityUserAgentVersion = "antigravity_user_agent_version"
 	// SettingKeyOpenAICodexUserAgent OpenAI Codex 完整 User-Agent（空值使用内置默认）
-	// OAuth Codex 上游请求在账号未配置自定义 UA 时使用此值，不透传客户端 UA。
+	// 当客户端 UA 被识别为浏览器（Chrome/Firefox/Safari/Edge 等）时，转发给 OpenAI 上游前会替换为此值，
+	// 用于避免 Cloudflare 对浏览器型 UA 的质询拦截。
 	SettingKeyOpenAICodexUserAgent = "openai_codex_user_agent"
 	// SettingKeyOpenAICodexClientVersion 网关对 ChatGPT 上游声明的 Codex 客户端版本号（管理员覆写）。
 	// 空值表示跟随自动同步值；自动同步也没有结果时回退到内置常量。
@@ -716,7 +641,3 @@ const AdminAPIKeyPrefix = "admin-"
 // SettingKeyAllowUserViewErrorRequests controls whether end users can view
 // their own failed requests on the usage page. Default false (opt-in).
 const SettingKeyAllowUserViewErrorRequests = "allow_user_view_error_requests"
-
-// SettingKeyShowUserUsageRanking controls whether end users can view the
-// redacted Top 20 usage ranking. Default false (opt-in).
-const SettingKeyShowUserUsageRanking = "show_user_usage_ranking"

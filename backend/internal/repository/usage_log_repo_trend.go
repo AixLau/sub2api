@@ -263,62 +263,22 @@ func (r *usageLogRepository) GetUserUsageTrendByUserID(ctx context.Context, user
 	return results, nil
 }
 
-// GetActiveUsersTrend returns active users count trend data.
-func (r *usageLogRepository) GetActiveUsersTrend(ctx context.Context, startTime, endTime time.Time, granularity string) (results []usagestats.ActiveUsersTrendPoint, err error) {
-	dateFormat := safeDateFormat(granularity)
-
-	query := fmt.Sprintf(`
-		SELECT
-			TO_CHAR(created_at, '%s') as date,
-			COUNT(DISTINCT user_id) as active_users
-		FROM usage_logs
-		WHERE %s
-		  AND created_at >= $1 AND created_at < $2
-		GROUP BY date
-		ORDER BY date ASC
-	`, dateFormat, activeAPIUserWhereClause)
-
-	rows, err := r.sql.QueryContext(ctx, query, startTime, endTime)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if closeErr := rows.Close(); closeErr != nil && err == nil {
-			err = closeErr
-			results = nil
-		}
-	}()
-
-	results = make([]usagestats.ActiveUsersTrendPoint, 0)
-	for rows.Next() {
-		var row usagestats.ActiveUsersTrendPoint
-		if err = rows.Scan(&row.Date, &row.ActiveUsers); err != nil {
-			return nil, err
-		}
-		results = append(results, row)
-	}
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-	return results, nil
-}
-
 // GetUserModelStats 获取指定用户的模型统计
 func (r *usageLogRepository) GetUserModelStats(ctx context.Context, userID int64, startTime, endTime time.Time) (results []ModelStat, err error) {
 	return r.getModelStatsWithFiltersBySource(ctx, startTime, endTime, userID, 0, 0, 0, "", nil, nil, nil, usagestats.ModelSourceRequested, "", nil)
 }
 
 // GetUsageTrendWithFilters returns usage trend data with optional filters
-func (r *usageLogRepository) GetUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8, excludeUserIDs ...int64) (results []TrendDataPoint, err error) {
-	return r.getUsageTrendWithFilters(ctx, startTime, endTime, granularity, userID, apiKeyID, accountID, groupID, model, "", requestType, stream, billingType, "", nil, excludeUserIDs...)
+func (r *usageLogRepository) GetUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8) (results []TrendDataPoint, err error) {
+	return r.getUsageTrendWithFilters(ctx, startTime, endTime, granularity, userID, apiKeyID, accountID, groupID, model, "", requestType, stream, billingType, "", nil)
 }
 
 func (r *usageLogRepository) GetUsageTrendWithUsageFilters(ctx context.Context, startTime, endTime time.Time, granularity string, filters UsageLogFilters) (results []TrendDataPoint, err error) {
-	return r.getUsageTrendWithFilters(ctx, startTime, endTime, granularity, filters.UserID, filters.APIKeyID, filters.AccountID, filters.GroupID, filters.Model, filters.ModelFilterSource, filters.RequestType, filters.Stream, filters.BillingType, filters.BillingMode, filters.UpstreamModelMismatch, filters.ExcludeUserIDs...)
+	return r.getUsageTrendWithFilters(ctx, startTime, endTime, granularity, filters.UserID, filters.APIKeyID, filters.AccountID, filters.GroupID, filters.Model, filters.ModelFilterSource, filters.RequestType, filters.Stream, filters.BillingType, filters.BillingMode, filters.UpstreamModelMismatch)
 }
 
-func (r *usageLogRepository) getUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, userID, apiKeyID, accountID, groupID int64, model string, modelSource string, requestType *int16, stream *bool, billingType *int8, billingMode string, upstreamModelMismatch *bool, excludeUserIDs ...int64) (results []TrendDataPoint, err error) {
-	if shouldUsePreaggregatedTrend(granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType, billingMode, upstreamModelMismatch, excludeUserIDs) {
+func (r *usageLogRepository) getUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, userID, apiKeyID, accountID, groupID int64, model string, modelSource string, requestType *int16, stream *bool, billingType *int8, billingMode string, upstreamModelMismatch *bool) (results []TrendDataPoint, err error) {
+	if shouldUsePreaggregatedTrend(granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType, billingMode, upstreamModelMismatch) {
 		aggregated, aggregatedErr := r.getUsageTrendFromAggregates(ctx, startTime, endTime, granularity)
 		if aggregatedErr == nil && len(aggregated) > 0 {
 			return aggregated, nil
@@ -347,7 +307,6 @@ func (r *usageLogRepository) getUsageTrendWithFilters(ctx context.Context, start
 		query += fmt.Sprintf(" AND user_id = $%d", len(args)+1)
 		args = append(args, userID)
 	}
-	query, args = appendUsageLogExcludeUserIDsQueryFilter(query, args, "user_id", excludeUserIDs)
 	if apiKeyID > 0 {
 		query += fmt.Sprintf(" AND api_key_id = $%d", len(args)+1)
 		args = append(args, apiKeyID)
@@ -392,12 +351,11 @@ func (r *usageLogRepository) getUsageTrendWithFilters(ctx context.Context, start
 	return results, nil
 }
 
-func shouldUsePreaggregatedTrend(granularity string, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8, billingMode string, upstreamModelMismatch *bool, excludeUserIDs []int64) bool {
+func shouldUsePreaggregatedTrend(granularity string, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8, billingMode string, upstreamModelMismatch *bool) bool {
 	if granularity != "day" && granularity != "hour" {
 		return false
 	}
 	return userID == 0 &&
-		len(excludeUserIDs) == 0 &&
 		apiKeyID == 0 &&
 		accountID == 0 &&
 		groupID == 0 &&
@@ -470,21 +428,21 @@ func (r *usageLogRepository) getUsageTrendFromAggregates(ctx context.Context, st
 }
 
 // GetModelStatsWithFilters returns model statistics with optional filters
-func (r *usageLogRepository) GetModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8, excludeUserIDs ...int64) (results []ModelStat, err error) {
-	return r.getModelStatsWithFiltersBySource(ctx, startTime, endTime, userID, apiKeyID, accountID, groupID, "", requestType, stream, billingType, usagestats.ModelSourceRequested, "", nil, excludeUserIDs...)
+func (r *usageLogRepository) GetModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8) (results []ModelStat, err error) {
+	return r.getModelStatsWithFiltersBySource(ctx, startTime, endTime, userID, apiKeyID, accountID, groupID, "", requestType, stream, billingType, usagestats.ModelSourceRequested, "", nil)
 }
 
 // GetModelStatsWithFiltersBySource returns model statistics with optional filters and model source dimension.
 // source: requested | upstream | mapping.
-func (r *usageLogRepository) GetModelStatsWithFiltersBySource(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8, source string, excludeUserIDs ...int64) (results []ModelStat, err error) {
-	return r.getModelStatsWithFiltersBySource(ctx, startTime, endTime, userID, apiKeyID, accountID, groupID, "", requestType, stream, billingType, source, "", nil, excludeUserIDs...)
+func (r *usageLogRepository) GetModelStatsWithFiltersBySource(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8, source string) (results []ModelStat, err error) {
+	return r.getModelStatsWithFiltersBySource(ctx, startTime, endTime, userID, apiKeyID, accountID, groupID, "", requestType, stream, billingType, source, "", nil)
 }
 
 func (r *usageLogRepository) GetModelStatsWithUsageFiltersBySource(ctx context.Context, startTime, endTime time.Time, filters UsageLogFilters, source string) (results []ModelStat, err error) {
-	return r.getModelStatsWithFiltersBySource(ctx, startTime, endTime, filters.UserID, filters.APIKeyID, filters.AccountID, filters.GroupID, filters.Model, filters.RequestType, filters.Stream, filters.BillingType, source, filters.BillingMode, filters.UpstreamModelMismatch, filters.ExcludeUserIDs...)
+	return r.getModelStatsWithFiltersBySource(ctx, startTime, endTime, filters.UserID, filters.APIKeyID, filters.AccountID, filters.GroupID, filters.Model, filters.RequestType, filters.Stream, filters.BillingType, source, filters.BillingMode, filters.UpstreamModelMismatch)
 }
 
-func (r *usageLogRepository) getModelStatsWithFiltersBySource(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8, source string, billingMode string, upstreamModelMismatch *bool, excludeUserIDs ...int64) (results []ModelStat, err error) {
+func (r *usageLogRepository) getModelStatsWithFiltersBySource(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8, source string, billingMode string, upstreamModelMismatch *bool) (results []ModelStat, err error) {
 	actualCostExpr := "COALESCE(SUM(actual_cost), 0) as actual_cost"
 	// 当仅按 account_id 聚合时，实际费用使用账号倍率（total_cost * account_rate_multiplier）。
 	if accountID > 0 && userID == 0 && apiKeyID == 0 {
@@ -514,7 +472,6 @@ func (r *usageLogRepository) getModelStatsWithFiltersBySource(ctx context.Contex
 		query += fmt.Sprintf(" AND user_id = $%d", len(args)+1)
 		args = append(args, userID)
 	}
-	query, args = appendUsageLogExcludeUserIDsQueryFilter(query, args, "user_id", excludeUserIDs)
 	if apiKeyID > 0 {
 		query += fmt.Sprintf(" AND api_key_id = $%d", len(args)+1)
 		args = append(args, apiKeyID)
@@ -563,15 +520,15 @@ func (r *usageLogRepository) getModelStatsWithFiltersBySource(ctx context.Contex
 }
 
 // GetGroupStatsWithFilters returns group usage statistics with optional filters
-func (r *usageLogRepository) GetGroupStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8, excludeUserIDs ...int64) (results []usagestats.GroupStat, err error) {
-	return r.getGroupStatsWithFilters(ctx, startTime, endTime, userID, apiKeyID, accountID, groupID, "", requestType, stream, billingType, "", nil, excludeUserIDs...)
+func (r *usageLogRepository) GetGroupStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8) (results []usagestats.GroupStat, err error) {
+	return r.getGroupStatsWithFilters(ctx, startTime, endTime, userID, apiKeyID, accountID, groupID, "", requestType, stream, billingType, "", nil)
 }
 
 func (r *usageLogRepository) GetGroupStatsWithUsageFilters(ctx context.Context, startTime, endTime time.Time, filters UsageLogFilters) (results []usagestats.GroupStat, err error) {
-	return r.getGroupStatsWithFilters(ctx, startTime, endTime, filters.UserID, filters.APIKeyID, filters.AccountID, filters.GroupID, filters.Model, filters.RequestType, filters.Stream, filters.BillingType, filters.BillingMode, filters.UpstreamModelMismatch, filters.ExcludeUserIDs...)
+	return r.getGroupStatsWithFilters(ctx, startTime, endTime, filters.UserID, filters.APIKeyID, filters.AccountID, filters.GroupID, filters.Model, filters.RequestType, filters.Stream, filters.BillingType, filters.BillingMode, filters.UpstreamModelMismatch)
 }
 
-func (r *usageLogRepository) getGroupStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8, billingMode string, upstreamModelMismatch *bool, excludeUserIDs ...int64) (results []usagestats.GroupStat, err error) {
+func (r *usageLogRepository) getGroupStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8, billingMode string, upstreamModelMismatch *bool) (results []usagestats.GroupStat, err error) {
 	query := `
 		SELECT
 			COALESCE(ul.group_id, 0) as group_id,
@@ -591,7 +548,6 @@ func (r *usageLogRepository) getGroupStatsWithFilters(ctx context.Context, start
 		query += fmt.Sprintf(" AND ul.user_id = $%d", len(args)+1)
 		args = append(args, userID)
 	}
-	query, args = appendUsageLogExcludeUserIDsQueryFilter(query, args, "ul.user_id", excludeUserIDs)
 	if apiKeyID > 0 {
 		query += fmt.Sprintf(" AND ul.api_key_id = $%d", len(args)+1)
 		args = append(args, apiKeyID)
@@ -690,7 +646,6 @@ func (r *usageLogRepository) GetUserBreakdownStats(ctx context.Context, startTim
 		query += fmt.Sprintf(" AND ul.user_id = $%d", len(args)+1)
 		args = append(args, dim.UserID)
 	}
-	query, args = appendUsageLogExcludeUserIDsQueryFilter(query, args, "ul.user_id", dim.ExcludeUserIDs)
 	if dim.APIKeyID > 0 {
 		query += fmt.Sprintf(" AND ul.api_key_id = $%d", len(args)+1)
 		args = append(args, dim.APIKeyID)
@@ -708,7 +663,6 @@ func (r *usageLogRepository) GetUserBreakdownStats(ctx context.Context, startTim
 		query += fmt.Sprintf(" AND ul.stream = $%d", len(args)+1)
 		args = append(args, *dim.Stream)
 	}
-	query, args = appendNativeCompactionV2QueryFilter(query, args, dim.NativeCompactionV2, "ul")
 	if dim.BillingType != nil {
 		query += fmt.Sprintf(" AND ul.billing_type = $%d", len(args)+1)
 		args = append(args, *dim.BillingType)
@@ -720,7 +674,7 @@ func (r *usageLogRepository) GetUserBreakdownStats(ctx context.Context, startTim
 	case "total_tokens", "input_tokens", "output_tokens", "cache_tokens", "requests", "cost", "actual_cost":
 		orderBy = dim.SortBy
 	}
-	query += " GROUP BY ul.user_id, u.email ORDER BY " + orderBy + " DESC, requests DESC, ul.user_id ASC"
+	query += " GROUP BY ul.user_id, u.email ORDER BY " + orderBy + " DESC"
 	if limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", limit)
 	}
@@ -761,9 +715,84 @@ func (r *usageLogRepository) GetUserBreakdownStats(ctx context.Context, startTim
 	return results, nil
 }
 
-// GetAllGroupUsageSummary 返回所有分组在服务端配置时区内的今日、昨日与当前保留记录累计金额。
-func (r *usageLogRepository) GetAllGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error) {
-	return r.getAllGroupUsageSummaryFromRollups(ctx, todayStart)
+// GetAllGroupUsageSummary returns today's and cumulative actual_cost for every group.
+// todayStart is the start-of-day in the caller's timezone (UTC-based).
+// TODO(perf): This query scans ALL usage_logs rows for total_cost aggregation.
+// When usage_logs exceeds ~1M rows, consider adding a short-lived cache (30s)
+// or a materialized view / pre-aggregation table for cumulative costs.
+func (r *usageLogRepository) GetAllGroupUsageSummary(ctx context.Context, todayStart, since24h, since7d time.Time) ([]usagestats.GroupUsageSummary, error) {
+	query := `
+		SELECT
+			g.id AS group_id,
+			COALESCE(SUM(ul.actual_cost), 0) AS total_cost,
+			COALESCE(SUM(CASE WHEN ul.created_at >= $1 THEN ul.actual_cost ELSE 0 END), 0) AS today_cost,
+			COALESCE(SUM(ul.input_tokens), 0), COALESCE(SUM(ul.cache_creation_tokens), 0), COALESCE(SUM(ul.cache_read_tokens), 0),
+			COALESCE(SUM(CASE WHEN ul.created_at >= $1 THEN ul.input_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN ul.created_at >= $1 THEN ul.cache_creation_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN ul.created_at >= $1 THEN ul.cache_read_tokens ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN ul.created_at >= $2 THEN ul.input_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN ul.created_at >= $2 THEN ul.cache_creation_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN ul.created_at >= $2 THEN ul.cache_read_tokens ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN ul.created_at >= $3 THEN ul.input_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN ul.created_at >= $3 THEN ul.cache_creation_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN ul.created_at >= $3 THEN ul.cache_read_tokens ELSE 0 END), 0)
+		FROM groups g
+		LEFT JOIN usage_logs ul ON ul.group_id = g.id
+		GROUP BY g.id
+	`
+
+	rows, err := r.sql.QueryContext(ctx, query, todayStart, since24h, since7d)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var results []usagestats.GroupUsageSummary
+	for rows.Next() {
+		var row usagestats.GroupUsageSummary
+		if err := rows.Scan(&row.GroupID, &row.TotalCost, &row.TodayCost,
+			&row.TotalInputTokens, &row.TotalCacheCreationTokens, &row.TotalCacheReadTokens,
+			&row.TodayInputTokens, &row.TodayCacheCreationTokens, &row.TodayCacheReadTokens,
+			&row.Last24hInputTokens, &row.Last24hCacheCreationTokens, &row.Last24hCacheReadTokens,
+			&row.Last7dInputTokens, &row.Last7dCacheCreationTokens, &row.Last7dCacheReadTokens); err != nil {
+			return nil, err
+		}
+		row.TodayCacheHitRate = cacheHitRate(row.TodayInputTokens, row.TodayCacheCreationTokens, row.TodayCacheReadTokens)
+		row.Last24hCacheHitRate = cacheHitRate(row.Last24hInputTokens, row.Last24hCacheCreationTokens, row.Last24hCacheReadTokens)
+		row.Last7dCacheHitRate = cacheHitRate(row.Last7dInputTokens, row.Last7dCacheCreationTokens, row.Last7dCacheReadTokens)
+		row.TotalCacheHitRate = cacheHitRate(row.TotalInputTokens, row.TotalCacheCreationTokens, row.TotalCacheReadTokens)
+		results = append(results, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+func (r *usageLogRepository) GetGroupCacheUsageSummary(ctx context.Context, since24h, since7d time.Time) ([]usagestats.GroupCacheUsageSummary, error) {
+	query := `SELECT g.id,
+		COALESCE(SUM(CASE WHEN ul.created_at >= $1 THEN ul.input_tokens ELSE 0 END),0), COALESCE(SUM(CASE WHEN ul.created_at >= $1 THEN ul.cache_creation_tokens ELSE 0 END),0), COALESCE(SUM(CASE WHEN ul.created_at >= $1 THEN ul.cache_read_tokens ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN ul.created_at >= $2 THEN ul.input_tokens ELSE 0 END),0), COALESCE(SUM(CASE WHEN ul.created_at >= $2 THEN ul.cache_creation_tokens ELSE 0 END),0), COALESCE(SUM(CASE WHEN ul.created_at >= $2 THEN ul.cache_read_tokens ELSE 0 END),0),
+		COALESCE(SUM(ul.input_tokens),0), COALESCE(SUM(ul.cache_creation_tokens),0), COALESCE(SUM(ul.cache_read_tokens),0)
+		FROM groups g LEFT JOIN usage_logs ul ON ul.group_id = g.id GROUP BY g.id`
+	rows, err := r.sql.QueryContext(ctx, query, since24h, since7d)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var results []usagestats.GroupCacheUsageSummary
+	for rows.Next() {
+		var row usagestats.GroupCacheUsageSummary
+		if err := rows.Scan(&row.GroupID, &row.Last24h.InputTokens, &row.Last24h.CacheCreationTokens, &row.Last24h.CacheReadTokens, &row.Last7d.InputTokens, &row.Last7d.CacheCreationTokens, &row.Last7d.CacheReadTokens, &row.Total.InputTokens, &row.Total.CacheCreationTokens, &row.Total.CacheReadTokens); err != nil {
+			return nil, err
+		}
+		row.Last24h.CacheHitRate = cacheHitRate(row.Last24h.InputTokens, row.Last24h.CacheCreationTokens, row.Last24h.CacheReadTokens)
+		row.Last7d.CacheHitRate = cacheHitRate(row.Last7d.InputTokens, row.Last7d.CacheCreationTokens, row.Last7d.CacheReadTokens)
+		row.Total.CacheHitRate = cacheHitRate(row.Total.InputTokens, row.Total.CacheCreationTokens, row.Total.CacheReadTokens)
+		results = append(results, row)
+	}
+	return results, rows.Err()
+}
+
+func cacheHitRate(inputTokens, cacheCreationTokens, cacheReadTokens int64) float64 {
+	total := inputTokens + cacheCreationTokens + cacheReadTokens
+	if total <= 0 || cacheReadTokens <= 0 {
+		return 0
+	}
+	return float64(cacheReadTokens) / float64(total) * 100
 }
 
 // resolveModelDimensionExpression maps model source type to a safe SQL expression.

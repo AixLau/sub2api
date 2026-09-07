@@ -2,20 +2,14 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
-	"sync"
 	"time"
-	"unicode/utf8"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
-	"golang.org/x/sync/singleflight"
 )
 
 var (
@@ -60,34 +54,13 @@ type UsageStats struct {
 	AverageDurationMs        float64 `json:"average_duration_ms"`
 }
 
-const UserUsageRankingLimit = 20
-
-// UserUsageRankingItem is the privacy-safe shape returned to end users.
-// It intentionally excludes raw user IDs, costs, and participant totals.
-type UserUsageRankingItem struct {
-	Rank        int    `json:"rank"`
-	DisplayName string `json:"display_name"`
-	Requests    int64  `json:"requests"`
-	TotalTokens int64  `json:"total_tokens"`
-	IsCurrent   bool   `json:"is_current"`
-}
-
 // UsageService 使用统计服务
 type UsageService struct {
 	usageRepo            UsageLogRepository
 	userRepo             UserRepository
 	entClient            *dbent.Client
 	authCacheInvalidator APIKeyAuthCacheInvalidator
-	dashboardStatsCache  sync.Map
-	dashboardStatsGroup  singleflight.Group
 }
-
-type userDashboardStatsCacheEntry struct {
-	stats     usagestats.UserDashboardStats
-	expiresAt time.Time
-}
-
-const userDashboardStatsCacheTTL = 30 * time.Second
 
 // NewUsageService 创建使用统计服务实例
 func NewUsageService(usageRepo UsageLogRepository, userRepo UserRepository, entClient *dbent.Client, authCacheInvalidator APIKeyAuthCacheInvalidator) *UsageService {
@@ -97,63 +70,6 @@ func NewUsageService(usageRepo UsageLogRepository, userRepo UserRepository, entC
 		entClient:            entClient,
 		authCacheInvalidator: authCacheInvalidator,
 	}
-}
-
-// GetUserUsageRanking returns a fixed Top 20 ranking ordered by total tokens.
-// The current user is identifiable only when they are already in that Top 20.
-func (s *UsageService) GetUserUsageRanking(ctx context.Context, currentUserID int64, startTime, endTime time.Time) ([]UserUsageRankingItem, error) {
-	items, err := s.usageRepo.GetUserBreakdownStats(ctx, startTime, endTime, usagestats.UserBreakdownDimension{
-		SortBy: "total_tokens",
-	}, UserUsageRankingLimit)
-	if err != nil {
-		return nil, fmt.Errorf("get user usage ranking: %w", err)
-	}
-	return BuildUserUsageRanking(items, currentUserID), nil
-}
-
-// BuildUserUsageRanking removes private fields before data leaves the service layer.
-func BuildUserUsageRanking(items []usagestats.UserBreakdownItem, currentUserID int64) []UserUsageRankingItem {
-	if len(items) > UserUsageRankingLimit {
-		items = items[:UserUsageRankingLimit]
-	}
-	out := make([]UserUsageRankingItem, 0, len(items))
-	for index, item := range items {
-		isCurrent := item.UserID == currentUserID
-		displayName := maskUserRankingEmail(item.Email, item.UserID)
-		if isCurrent {
-			displayName = strings.TrimSpace(item.Email)
-			if displayName == "" {
-				displayName = "User"
-			}
-		}
-		out = append(out, UserUsageRankingItem{
-			Rank:        index + 1,
-			DisplayName: displayName,
-			Requests:    item.Requests,
-			TotalTokens: item.TotalTokens,
-			IsCurrent:   isCurrent,
-		})
-	}
-	return out
-}
-
-func maskUserRankingEmail(email string, userID int64) string {
-	email = strings.TrimSpace(email)
-	local, domain, ok := strings.Cut(email, "@")
-	if !ok || local == "" || domain == "" {
-		digest := sha256.Sum256([]byte(strconv.FormatInt(userID, 10)))
-		return fmt.Sprintf("User %X", digest[:3])
-	}
-
-	localRunes := []rune(local)
-	maskedLocal := string(localRunes[0]) + "***"
-	labels := strings.Split(domain, ".")
-	if len(labels) == 0 || labels[0] == "" || !utf8.ValidString(labels[0]) {
-		return maskedLocal + "@***"
-	}
-	firstLabel := []rune(labels[0])
-	labels[0] = string(firstLabel[0]) + "***"
-	return maskedLocal + "@" + strings.Join(labels, ".")
 }
 
 // Create 创建使用日志
@@ -375,50 +291,11 @@ func (s *UsageService) Delete(ctx context.Context, id int64) error {
 
 // GetUserDashboardStats returns per-user dashboard summary stats.
 func (s *UsageService) GetUserDashboardStats(ctx context.Context, userID int64) (*usagestats.UserDashboardStats, error) {
-	cacheKey := strconv.FormatInt(userID, 10)
-	if cached, ok := s.dashboardStatsCache.Load(cacheKey); ok {
-		entry := cached.(userDashboardStatsCacheEntry)
-		if time.Now().Before(entry.expiresAt) {
-			stats := entry.stats
-			return &stats, nil
-		}
-		s.dashboardStatsCache.Delete(cacheKey)
-	}
-
-	loaded, err, _ := s.dashboardStatsGroup.Do(cacheKey, func() (any, error) {
-		if cached, ok := s.dashboardStatsCache.Load(cacheKey); ok {
-			entry := cached.(userDashboardStatsCacheEntry)
-			if time.Now().Before(entry.expiresAt) {
-				return entry.stats, nil
-			}
-			s.dashboardStatsCache.Delete(cacheKey)
-		}
-
-		stats, loadErr := s.usageRepo.GetUserDashboardStats(ctx, userID)
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		entry := userDashboardStatsCacheEntry{
-			stats:     *stats,
-			expiresAt: time.Now().Add(userDashboardStatsCacheTTL),
-		}
-		s.dashboardStatsCache.Store(cacheKey, entry)
-		return entry.stats, nil
-	})
+	stats, err := s.usageRepo.GetUserDashboardStats(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get user dashboard stats: %w", err)
 	}
-	stats := loaded.(usagestats.UserDashboardStats)
-	return &stats, nil
-}
-
-// GetUserDashboardActivity returns contribution-graph data for a fixed calendar window.
-func (s *UsageService) GetUserDashboardActivity(ctx context.Context, userID int64, windowStart, windowEnd, currentDay time.Time, userTimezone string) (*usagestats.UserDashboardActivity, error) {
-	activity, err := s.usageRepo.GetUserDashboardActivity(ctx, userID, windowStart, windowEnd, currentDay, userTimezone)
-	if err != nil {
-		return nil, fmt.Errorf("get user dashboard activity: %w", err)
-	}
-	return activity, nil
+	return stats, nil
 }
 
 // GetAPIKeyDashboardStats returns dashboard summary stats filtered by API Key.
@@ -451,7 +328,7 @@ func (s *UsageService) GetUsageTrendWithFilters(ctx context.Context, startTime, 
 		}
 		return trend, nil
 	}
-	trend, err := s.usageRepo.GetUsageTrendWithFilters(ctx, startTime, endTime, granularity, filters.UserID, filters.APIKeyID, filters.AccountID, filters.GroupID, filters.Model, filters.RequestType, filters.Stream, filters.BillingType, filters.ExcludeUserIDs...)
+	trend, err := s.usageRepo.GetUsageTrendWithFilters(ctx, startTime, endTime, granularity, filters.UserID, filters.APIKeyID, filters.AccountID, filters.GroupID, filters.Model, filters.RequestType, filters.Stream, filters.BillingType)
 	if err != nil {
 		return nil, fmt.Errorf("get usage trend with filters: %w", err)
 	}
@@ -481,16 +358,16 @@ func (s *UsageService) GetModelStatsWithFiltersBySource(ctx context.Context, sta
 		return stats, nil
 	}
 	type modelStatsBySourceRepo interface {
-		GetModelStatsWithFiltersBySource(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8, source string, excludeUserIDs ...int64) ([]usagestats.ModelStat, error)
+		GetModelStatsWithFiltersBySource(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8, source string) ([]usagestats.ModelStat, error)
 	}
 	if sourceRepo, ok := s.usageRepo.(modelStatsBySourceRepo); ok {
-		stats, err := sourceRepo.GetModelStatsWithFiltersBySource(ctx, startTime, endTime, filters.UserID, filters.APIKeyID, filters.AccountID, filters.GroupID, filters.RequestType, filters.Stream, filters.BillingType, normalizedSource, filters.ExcludeUserIDs...)
+		stats, err := sourceRepo.GetModelStatsWithFiltersBySource(ctx, startTime, endTime, filters.UserID, filters.APIKeyID, filters.AccountID, filters.GroupID, filters.RequestType, filters.Stream, filters.BillingType, normalizedSource)
 		if err != nil {
 			return nil, fmt.Errorf("get model stats with filters by source: %w", err)
 		}
 		return stats, nil
 	}
-	stats, err := s.usageRepo.GetModelStatsWithFilters(ctx, startTime, endTime, filters.UserID, filters.APIKeyID, filters.AccountID, filters.GroupID, filters.RequestType, filters.Stream, filters.BillingType, filters.ExcludeUserIDs...)
+	stats, err := s.usageRepo.GetModelStatsWithFilters(ctx, startTime, endTime, filters.UserID, filters.APIKeyID, filters.AccountID, filters.GroupID, filters.RequestType, filters.Stream, filters.BillingType)
 	if err != nil {
 		return nil, fmt.Errorf("get model stats with filters: %w", err)
 	}
