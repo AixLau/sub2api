@@ -116,10 +116,7 @@ func registerRoutes(
 	// 通用路由（健康检查、状态等）
 	routes.RegisterCommonRoutes(r)
 	v1 := r.Group("/api/v1")
-	publicTransit := handler.NewPublicTransitHandler(service.NewPublicTransitService(nil, nil), settingService)
-	r.GET(service.PublicTransitWellKnownPath, publicTransit.Discovery)
-	r.GET(service.PublicTransitSnapshotPath, publicTransit.Snapshot)
-	v1.GET("/public/transit/snapshot", publicTransit.Snapshot)
+	routes.RegisterPublicTransitRoutes(r, v1, h)
 
 	// API v1
 

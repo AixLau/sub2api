@@ -1,166 +1,84 @@
-# Sub2API 公开资料出口增强版
+# Sub2API 公开渠道状态 v2 快照
 
-本仓库基于 [Wei-Shaw/sub2api](https://github.com/Wei-Shaw/sub2api) `v0.1.175` 适配，额外加入一个面向中转站站长和第三方采集器的“公开资料出口”功能。
+公开资料接口将渠道状态 v2 的被动请求聚合转换为独立的公开 JSON。所有查询仅包含活跃、非专属分组，并继续受 v2 已启用的平台、模型和分组配置限制。
 
-它的目标不是开放后台，也不是暴露账号池，而是把站点本来适合公开的信息标准化输出，方便 PriceAI 或其他采集器自动识别模型价格、分组倍率、缓存命中和可用性状态。
+## 路由
 
-## 新增能力
+| 方法 | 路径 | 响应 |
+| --- | --- | --- |
+| GET | `/.well-known/ai-transit.json` | 协议版本、系统类型、快照地址、生成时间 |
+| GET | `/api/public/transit/v1/snapshot` | 公开 v2 快照 |
+| GET | `/api/v1/public/transit/snapshot` | 相同快照 |
 
-- 公开发现接口：`/.well-known/ai-transit.json`
-- 公开快照接口：`/api/public/transit/v1/snapshot`
-- 可选公开页面：`/public/transit`
-- 后台开关：`系统设置 -> 功能开关 -> 公开资料出口`
-- 分组价格：充值倍率、分组倍率、平台、模型数量
-- 模型明细：模型名、计费模式、输入价、输出价、缓存输入价、缓存创建价、按次/尺寸价
-- 缓存指标：累计缓存命中率、缓存命中量、缓存创建量
-- 可用性监测：复用现有渠道状态监测数据，展示延迟、可用率和状态
+接口不要求登录。成功响应直接返回 JSON 对象，没有后台 API 的 `data` 包装，设置 `Cache-Control: public, max-age=60`。
+
+发现接口的 `snapshot_url` 是相对于当前站点的根路径，不使用请求中的 Host 或转发头生成外部地址。
+
+```bash
+curl https://your-domain.example/.well-known/ai-transit.json
+curl 'https://your-domain.example/api/public/transit/v1/snapshot?range=7d'
+```
+
+## 快照字段
+
+| 字段 | 内容 |
+| --- | --- |
+| `schema_version` | `ai-transit.v1` |
+| `system` | `sub2api` |
+| `generated_at` | UTC RFC 3339 生成时间 |
+| `monitoring` | 整体公开范围的来源、时间窗口、覆盖信息、指标、健康状态、趋势 |
+| `groups` | 分组公开名称、平台、倍率、指标、健康状态、趋势 |
+| `models` | 平台、模型名、指标、健康状态 |
+
+`monitoring.source` 为 `channel-monitor-v2`。接口仅接受 `range` 参数，默认 `7d`，支持 v2 原生的 `90m`、`24h`、`7d` 和 `30d`。`group_id`、`platform`、`model`、`admin` 等参数不会改变公开范围。
+
+`metrics` 字段包含：
+
+- `success_rate`、`error_rate`、`cache_rate`：与 v2 相同的 0 到 1 比例，例如 `0.98` 表示 98%。
+- `ttft`：首 Token 延迟的 `p50_ms`、`p90_ms`、`p95_ms` 和 `avg_ms`。
+- `duration`：请求总耗时的相同延迟统计字段。
+
+延迟单位均为毫秒；无样本的延迟为 `null`。健康状态包含 `overall`、`error_rate`、`ttft`、`cache` 和 `score`，直接沿用 v2 的健康判断。未知状态为 `unknown`，无有效得分时 `score` 为 `null`。
+
+`monitoring.coverage` 包含请求窗口、实际覆盖开始时间、数据截止时间、计算时间、覆盖是否完整和时间桶秒数。`trend` 是每个时间桶的指标与健康状态。v2 会对齐时间桶，具体窗口应以 `requested_start` 和 `requested_end` 为准。
+
+历史回填未完成时 `coverage_complete` 为 `false`，比例仅代表已有聚合数据。没有公开分组时，范围仍然受限，`groups`、`models` 和趋势返回空数组；不会退回全站或私有分组。没有数据时比例可能为 0，必须结合健康状态和覆盖信息解释，不能把未知数据解释为已确认故障。
+
+## 可用性语义
+
+本接口的成功率来自实际请求，沿用渠道状态 v2 的错误分类与忽略规则。忽略的错误可能不计入 `error_rate`，因此不要强制认为成功率和错误率之和一定为 1。
+
+本实现没有使用旧版主动探测监控，也不生成探测 Ping、最近一次探测延迟或 15 天探测可用率。TTFT 和请求总耗时不能当作 Ping 延迟。
+
+当前响应是 v2 监控公开投影，不是参考仓库的完整价格目录协议。它不包含旧协议中的 `station`、`billing`、分组模型价格、充值比例或 `monitoring` 数组；接收方应使用本文件描述的字段契约。旧参考页面未注册为当前前端路由，本次接口不提供 `/public/transit` 页面。
+
+## 开关与错误
+
+数据库设置 `public_transit_enabled` 控制三个接口。未配置时按现有行为默认开启；设置为 false 后返回 404，服务端无需重启。已被客户端或 CDN 缓存的成功响应可能保留至最多 60 秒缓存期结束。
+
+- 公开开关关闭：404。
+- 渠道状态 v2 配置关闭：快照返回 404；发现接口仍受公开开关控制。
+- 不支持的 `range`：400。
+- 数据源读取失败或返回不完整数据：500，响应使用通用错误信息。
+
+错误响应设置 `Cache-Control: no-store`。快照不会把数据库错误、内部连接信息或异常详情返回给匿名调用方。
 
 ## 隐私边界
 
-公开资料出口只输出标准化聚合信息，不公开以下内容：
+公开 DTO 独立定义，不嵌入内部 v2 DTO。新增内部字段不会自动进入公开协议。以下内容均不输出：
 
-- 上游账号、Cookie、Access Token、Refresh Token
-- API Key、密钥、代理配置
-- 内部渠道 ID、账号池调度细节
-- 用户身份、用户余额、用户请求日志
+- 内部分组 ID、渠道 ID、账号 ID、用户 ID 和管理员 ID。
+- 上游账号、Cookie、Access Token、Refresh Token、API Key、密钥和代理配置。
+- 用户信息、余额、请求日志及原始错误详情。
+- 请求数、Token 数、RPM、TPM、采样数和缓存比例的原始分子、分母。
+- v2 内部配置、阈值、修改人和历史回填进度细节。
 
-站长可以只开放机器可读接口，不开放公开页面。
-
-## 开关说明
-
-公开资料出口拆成两个开关：
-
-- `public_transit_enabled`：公开资料接口开关，默认开启。
-- `public_transit_page_enabled`：公开资料页面开关，默认关闭。
-
-如果只想让 PriceAI 或其他采集器自动抓取数据，开启接口即可；如果希望访客也能在站点页面上查看模型价格和可用性，再开启公开页面。
-
-## 接口示例
-
-发现接口：
-
-```bash
-curl https://your-domain.example/.well-known/ai-transit.json
-```
-
-返回示例：
-
-```json
-{
-  "schema_version": "ai-transit.v1",
-  "system": "sub2api",
-  "snapshot_url": "https://your-domain.example/api/public/transit/v1/snapshot",
-  "homepage_url": "https://your-domain.example/public/transit",
-  "generated_at": "2026-08-12T00:00:00Z"
-}
-```
-
-快照接口：
-
-```bash
-curl https://your-domain.example/api/public/transit/v1/snapshot
-```
-
-快照会包含站点基础信息、公开分组、模型价格、缓存指标和可用性监测摘要。
-
-## 接入方式
-
-如果你的 Sub2API 版本接近 `v0.1.175`，推荐在独立分支合并本仓库的适配提交：
-
-```bash
-git remote add public-transit https://github.com/youchu4220/sub2api-public-transit.git
-git fetch public-transit main
-git cherry-pick <v0.1.175-public-transit-commit>
-```
-
-如果你的仓库改动较多，也可以下载 patch 后手动应用：
-
-```bash
-curl -L https://github.com/youchu4220/sub2api-public-transit/commit/<v0.1.175-public-transit-commit>.patch -o public-transit.patch
-git am public-transit.patch
-```
-
-遇到冲突时，优先检查这些区域：
-
-- 分组管理：`backend/internal/handler/admin/group_handler.go`
-- 用量统计：`backend/internal/repository/usage_log_repo.go`
-- 设置开关：`backend/internal/service/setting_service.go`
-- 前端分组页：`frontend/src/views/admin/GroupsView.vue`
-- 前端设置页：`frontend/src/views/admin/SettingsView.vue`
-
-## 发给 Codex / Agent 的接入提示词
-
-如果你希望让自己的 Codex、Claude Code、Cursor Agent 或其他代码助手自动接入，可以把下面这段直接发给它：
-
-```text
-请在当前 Sub2API 仓库中接入“公开资料出口”功能。
-
-参考仓库：
-https://github.com/youchu4220/sub2api-public-transit
-
-目标：
-1. 不要把我的仓库直接替换成参考仓库。
-2. 先确认当前仓库的上游来源、当前分支、未提交改动和 Sub2API 版本。
-3. 确认参考仓库当前默认分支基于 `Wei-Shaw/sub2api v0.1.175` 或更高版本。
-4. 优先合并对应上游版本的公开资料出口适配提交；如果我的仓库已经深度二改导致冲突较多，就按功能边界手动适配，不要机械解决冲突。
-5. 合并时保留我的现有数据、配置、部署文件和本地改动，不要重置仓库，不要删除数据库或数据卷。
-6. 接入后确认至少存在这些能力：
-   - /.well-known/ai-transit.json
-   - /api/public/transit/v1/snapshot
-   - /public/transit
-   - 后台“系统设置 -> 功能开关 -> 公开资料出口”中的接口开关和页面开关
-7. 接入后运行关键验证：
-   - 在 `backend/` 下运行 `go test ./internal/service ./internal/handler ./internal/server ./internal/repository ./internal/web -tags embed`
-   - pnpm --dir frontend run build
-8. 如果测试失败，先定位是否是合并冲突或本地二改导致，不要盲目升级依赖。
-9. 最后给我输出：
-   - 接入的 commit hash
-   - 冲突文件和处理方式
-   - 验证命令结果
-   - 部署前需要我确认的风险点
-
-注意：公开资料出口只能公开模型价格、分组倍率、缓存命中和可用性等聚合信息，不能公开账号、密钥、Cookie、Token、内部渠道 ID 或用户数据。
-```
-
-如果你的站点已经有大量二改，建议先让 Agent 创建一个临时分支再接入：
-
-```bash
-git switch -c feature/public-transit-snapshot
-```
-
-## 验证建议
-
-应用后建议至少执行：
+## 验证
 
 ```bash
 cd backend
-go test ./internal/service ./internal/handler ./internal/server ./internal/repository ./internal/web -tags embed
-
-cd ..
-pnpm --dir frontend run build
+GOMAXPROCS=2 go test -p=1 ./internal/service ./internal/handler -run PublicTransit -count=1
+GOMAXPROCS=2 go test -p=1 ./internal/server ./internal/server/routes
 ```
 
-启动服务后检查：
-
-```bash
-curl -I https://your-domain.example/public/transit
-curl https://your-domain.example/.well-known/ai-transit.json
-curl https://your-domain.example/api/public/transit/v1/snapshot
-```
-
-## 给 PriceAI 的站点准入建议
-
-站点如果希望被自动收录，建议至少满足：
-
-- `/.well-known/ai-transit.json` 可公开访问
-- `/api/public/transit/v1/snapshot` 可公开访问
-- 模型价格字段尽量完整
-- 分组倍率和充值倍率真实可用
-- 可用性监测保持启用
-- 不在公开接口中泄露账号、密钥、Cookie 或内部渠道 ID
-
-## 与原版 Sub2API 的关系
-
-本仓库不是重新发行一个独立网关项目，而是基于原版 Sub2API 增加“公开资料出口”能力。原项目的部署方式、数据库结构和后台使用习惯尽量保持不变。
-
-如果上游后续合并了类似功能，建议优先回到上游主线；如果上游暂未合并，可以继续基于本仓库的单一功能提交做兼容接入。
+契约测试覆盖开关即时生效、公开路径一致性、错误与缓存头、真实 v2 Service 的公开分组范围，以及敏感字段不进入响应。

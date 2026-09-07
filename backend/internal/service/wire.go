@@ -919,6 +919,7 @@ var ProviderSet = wire.NewSet(
 	ProvideAPIKeyAuthCacheInvalidator,
 	ProvideAuthCacheInvalidationWorker,
 	NewGroupService,
+	NewPublicTransitService,
 	NewCompositeRouteResolver,
 	NewAccountService,
 	NewProxyService,
