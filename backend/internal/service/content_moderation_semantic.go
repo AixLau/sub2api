@@ -1065,7 +1065,7 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 	primaryFailureReason := ""
 	for modelIndex, model := range models {
 		excluded := make(map[int64]struct{})
-		for attempt := 0; attempt < cfg.MaxAttemptsPerModel; attempt++ {
+		for attempt := 0; attempt < cfg.MaxAttemptsPerModel; {
 			if err := reviewCtx.Err(); err != nil {
 				lastErr = err
 				break
@@ -1073,6 +1073,14 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 			selection, err := r.backend.SelectSemanticReviewAccount(reviewCtx, cloneInt64Ptr(input.GroupID), model, excluded)
 			if err != nil {
 				lastErr = err
+				if errors.Is(err, ErrNoAvailableAccounts) {
+					if modelIndex == 0 && primaryFailureReason == "" {
+						primaryFailureReason = "no_account"
+					}
+					if r.metrics != nil {
+						r.metrics.observeSemanticReviewAttempt(model, "no_account", "no_account")
+					}
+				}
 				break
 			}
 			if selection == nil || selection.Account == nil {
@@ -1085,6 +1093,11 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 				break
 			}
 			account := selection.Account
+			if _, alreadyExcluded := excluded[account.ID]; alreadyExcluded {
+				releaseAccountSelection(selection)
+				lastErr = errors.New("semantic review selected an excluded account")
+				break
+			}
 			if account.Type == AccountTypeOAuth && isCodexSparkModel(model) && semanticReviewShouldRefreshSparkQuota(account, time.Now()) {
 				if updates, refreshErr := r.refreshSemanticReviewQuotaSync(reviewCtx, account.ID); refreshErr == nil {
 					account = semanticReviewAccountSnapshotWithExtra(account, updates)
@@ -1109,6 +1122,9 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 				break
 			}
 			started := time.Now()
+			// Only upstream calls consume the retry budget; quota filtering may
+			// need to pass over several accounts before finding a usable one.
+			attempt++
 			attemptCount++
 			callCtx, cancel := context.WithTimeout(reviewCtx, attemptTimeout)
 			result, callErr := r.backend.ReviewSemanticContent(callCtx, account, model, input)
@@ -2046,28 +2062,61 @@ func (s *OpenAIGatewayService) SelectSemanticReviewAccount(ctx context.Context, 
 		return nil, errors.New("openai gateway service is unavailable")
 	}
 	ctx = withSemanticReviewSystemRouting(ctx)
+	selectionExclusions := make(map[int64]struct{}, len(excludedIDs))
+	for id := range excludedIDs {
+		selectionExclusions[id] = struct{}{}
+	}
+	var accounts []Account
+	if isCodexSparkModel(model) && s.accountRepo != nil {
+		var err error
+		accounts, err = s.accountRepo.ListModelAvailabilityCandidates(ctx, nil, []string{PlatformOpenAI}, true)
+		if err != nil {
+			return nil, fmt.Errorf("list system semantic review accounts: %w", err)
+		}
+		// Filter before scheduling so a large Plus pool cannot crowd Pro
+		// accounts out of the scheduler's candidate budget.
+		for i := range accounts {
+			account := &accounts[i]
+			if _, excluded := selectionExclusions[account.ID]; excluded {
+				continue
+			}
+			if !s.semanticReviewAccountSupportsModel(ctx, account, model) {
+				selectionExclusions[account.ID] = struct{}{}
+			}
+		}
+	}
 	selectForGroup := func(selectionGroupID *int64) (*AccountSelectionResult, error) {
-		selection, _, err := s.SelectAccountWithSchedulerForCapability(
-			ctx,
-			cloneInt64Ptr(selectionGroupID),
-			"",
-			"",
-			model,
-			cloneExcludedAccountIDs(excludedIDs),
-			OpenAIUpstreamTransportHTTPSSE,
-			OpenAIEndpointCapabilityChatCompletions,
-			false,
-			false,
-			false,
-			PlatformOpenAI,
-		)
-		if semanticReviewAccountSelectionSucceeded(selection, err) || !isCodexSparkModel(model) {
-			return selection, err
+		for {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			selection, _, err := s.SelectAccountWithSchedulerForCapability(
+				ctx,
+				cloneInt64Ptr(selectionGroupID),
+				"",
+				"",
+				model,
+				cloneExcludedAccountIDs(selectionExclusions),
+				OpenAIUpstreamTransportHTTPSSE,
+				OpenAIEndpointCapabilityChatCompletions,
+				false,
+				false,
+				false,
+				PlatformOpenAI,
+			)
+			if semanticReviewAccountSelectionSucceeded(selection, err) {
+				if s.semanticReviewAccountSupportsModel(ctx, selection.Account, model) {
+					return selection, nil
+				}
+				selectionExclusions[selection.Account.ID] = struct{}{}
+				releaseAccountSelection(selection)
+				continue
+			}
+			if !isCodexSparkModel(model) || (err != nil && !errors.Is(err, ErrNoAvailableAccounts)) {
+				return selection, err
+			}
+			return s.selectGloballyRateLimitedSemanticReviewSparkAccount(ctx, selectionGroupID, model, selectionExclusions)
 		}
-		if err != nil && !errors.Is(err, ErrNoAvailableAccounts) {
-			return nil, err
-		}
-		return s.selectGloballyRateLimitedSemanticReviewSparkAccount(ctx, selectionGroupID, model, excludedIDs)
 	}
 
 	selection, err := selectForGroup(groupID)
@@ -2081,14 +2130,14 @@ func (s *OpenAIGatewayService) SelectSemanticReviewAccount(ctx context.Context, 
 		return nil, semanticReviewAccountSelectionError(err)
 	}
 
-	accounts, listErr := s.accountRepo.ListSchedulableByPlatform(ctx, PlatformOpenAI)
-	if isCodexSparkModel(model) {
-		accounts, listErr = s.accountRepo.ListModelAvailabilityCandidates(ctx, nil, []string{PlatformOpenAI}, true)
+	if !isCodexSparkModel(model) {
+		var listErr error
+		accounts, listErr = s.accountRepo.ListSchedulableByPlatform(ctx, PlatformOpenAI)
+		if listErr != nil {
+			return nil, fmt.Errorf("list system semantic review accounts: %w", listErr)
+		}
 	}
-	if listErr != nil {
-		return nil, fmt.Errorf("list system semantic review accounts: %w", listErr)
-	}
-	for _, fallbackGroupID := range semanticReviewFallbackGroupIDs(groupID, model, accounts, excludedIDs) {
+	for _, fallbackGroupID := range semanticReviewFallbackGroupIDs(groupID, model, accounts, selectionExclusions) {
 		selection, err = selectForGroup(fallbackGroupID)
 		if semanticReviewAccountSelectionSucceeded(selection, err) {
 			return selection, nil
@@ -2098,6 +2147,34 @@ func (s *OpenAIGatewayService) SelectSemanticReviewAccount(ctx context.Context, 
 		}
 	}
 	return nil, semanticReviewAccountSelectionError(err)
+}
+
+func (s *OpenAIGatewayService) semanticReviewAccountSupportsModel(ctx context.Context, account *Account, model string) bool {
+	if account == nil {
+		return false
+	}
+	if !account.UsesOpenAICodexProtocol() || !isCodexSparkModel(account.GetMappedModel(model)) {
+		return true
+	}
+	credentialAccount := account
+	if account.IsShadow() {
+		if s.accountRepo == nil {
+			return false
+		}
+		resolved, err := resolveCredentialAccount(ctx, s.accountRepo, account)
+		if err != nil {
+			return false
+		}
+		credentialAccount = resolved
+	}
+	// A configured model mapping is not evidence of a ChatGPT entitlement.
+	// Spark shadows inherit the current plan from their credential owner.
+	switch strings.ToLower(strings.TrimSpace(credentialAccount.GetCredential("plan_type"))) {
+	case "pro", "chatgptpro":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *OpenAIGatewayService) selectGloballyRateLimitedSemanticReviewSparkAccount(
@@ -2126,6 +2203,9 @@ func (s *OpenAIGatewayService) selectGloballyRateLimitedSemanticReviewSparkAccou
 			continue
 		}
 		if !semanticReviewSparkAccountEligibleDuringGlobalRateLimit(s, account, model, now) {
+			continue
+		}
+		if !s.semanticReviewAccountSupportsModel(ctx, account, model) {
 			continue
 		}
 		return &AccountSelectionResult{Account: account, Acquired: true, ReleaseFunc: func() {}}, nil

@@ -823,6 +823,7 @@ func TestSelectSemanticReviewAccountUsesNormalOAuthSparkQuotaDuringGlobal429(t *
 		RateLimitResetAt: &resetAt,
 		AccountGroups:    []AccountGroup{{GroupID: groupID}},
 		Credentials: map[string]any{
+			"plan_type":     "pro",
 			"model_mapping": map[string]any{ContentModerationSemanticReviewPrimaryModel: ContentModerationSemanticReviewPrimaryModel},
 		},
 	}
