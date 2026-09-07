@@ -127,7 +127,7 @@
           <span>{{ t('admin.promptAudit.pool.inputLimit') }}</span>
           <input v-model.number="editing.input_limit" class="input w-full" type="number" min="128" max="100000" required :aria-label="t('admin.promptAudit.pool.inputLimit')" />
         </label>
-        <label class="space-y-1 text-sm text-gray-700 dark:text-dark-200">
+        <label v-if="editing.model.trim().toLowerCase() === 'gpt-5.3-codex-spark'" class="space-y-1 text-sm text-gray-700 dark:text-dark-200">
           <span>最大输入 Token</span>
           <input v-model.number="editing.max_input_tokens" class="input w-full" type="number" min="1" required aria-label="最大输入 Token" />
         </label>
