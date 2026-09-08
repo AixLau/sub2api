@@ -201,9 +201,7 @@ func TestChannelMonitorV2ErrorTaxonomyPriority(t *testing.T) {
 	}
 }
 
-func TestChannelMonitorV2HealthBlendsErrorTTFTAndCache(t *testing.T) {
-	// error 3%/5% → 40; ttft p50 2s → 100; cache 50% → 50
-	// overall = (0.6*40 + 0.2*100 + 0.2*50) / 1.0 = 54 → warning
+func TestChannelMonitorV2HealthUsesSuccessRate(t *testing.T) {
 	p50 := int64(2000)
 	p95 := int64(9000)
 	thresholds := ChannelMonitorV2HealthThresholds{
@@ -221,6 +219,8 @@ func TestChannelMonitorV2HealthBlendsErrorTTFTAndCache(t *testing.T) {
 	}
 	metrics := ChannelMonitorV2Metric{
 		RequestCount:         100,
+		SuccessRequests:      70,
+		SuccessRate:          0.70,
 		ErrorRate:            0.03,
 		CacheRate:            0.50,
 		CacheRateDenominator: 100,
@@ -233,12 +233,13 @@ func TestChannelMonitorV2HealthBlendsErrorTTFTAndCache(t *testing.T) {
 	require.NotNil(t, health.Score)
 	require.NotNil(t, health.CacheScore)
 	require.InDelta(t, 50.0, *health.CacheScore, 0.01)
-	require.InDelta(t, 54.0, *health.Score, 0.01)
+	require.InDelta(t, 70.0, *health.Score, 0.01)
 	require.Equal(t, "warning", health.Overall)
 
 	// Perfect signals → 100
 	p50OK := int64(1000)
 	metrics.ErrorRate = 0
+	metrics.SuccessRate = 1
 	metrics.CacheRate = 1
 	metrics.TTFT.P50Ms = &p50OK
 	health = ChannelMonitorV2HealthForWithThresholds(metrics, thresholds)
