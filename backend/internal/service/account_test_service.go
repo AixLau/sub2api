@@ -269,12 +269,15 @@ func (s *AccountTestService) FetchOpenAIAccountModels(ctx context.Context, accou
 	if err := json.Unmarshal(response.Body, &payload); err != nil {
 		return nil, fmt.Errorf("decode OpenAI account models: %w", err)
 	}
-	// Standard OpenAI catalogs guarantee an ID, not a display_name. The admin
-	// model selector requires a non-empty label for every discovered model.
+	// Populate the admin picker fields without changing the shared discovery response.
 	for i := range payload.Data {
 		if strings.TrimSpace(payload.Data[i].DisplayName) == "" {
 			payload.Data[i].DisplayName = payload.Data[i].ID
 		}
+		if strings.TrimSpace(payload.Data[i].Type) == "" {
+			payload.Data[i].Type = "model"
+		}
+
 	}
 	return payload.Data, nil
 }
@@ -620,7 +623,9 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		req.Header.Set("Authorization", "Bearer "+authToken)
 	} else {
 		req.Header.Set("anthropic-beta", claude.APIKeyBetaHeader)
-		setAnthropicAPIKeyAuthHeader(req.Header, account, authToken)
+		// Ollama Cloud Anthropic 兼容端点按实际 base_url 强制 Bearer，
+		// 其余保持 extra/default 行为。
+		setAnthropicAPIKeyAuthHeader(req.Header, account, authToken, account.GetBaseURL())
 	}
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
