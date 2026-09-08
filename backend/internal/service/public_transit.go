@@ -232,8 +232,18 @@ func publicTransitCoverage(v ChannelMonitorV2Coverage) PublicTransitCoverage {
 }
 
 func publicTransitMetrics(v ChannelMonitorV2Metric) PublicTransitMetrics {
+	// Match the channel-monitor-v2 dashboard's 7d success-rate card: it is the
+	// complement of the scored error rate. The raw SuccessRate field tracks
+	// absolute successful requests and intentionally differs when ignored error
+	// categories or retry attempts are present.
+	successRate := 1 - v.ErrorRate
+	if successRate < 0 {
+		successRate = 0
+	} else if successRate > 1 {
+		successRate = 1
+	}
 	return PublicTransitMetrics{
-		ErrorRate: v.ErrorRate, SuccessRate: v.SuccessRate, CacheRate: v.CacheRate,
+		ErrorRate: v.ErrorRate, SuccessRate: successRate, CacheRate: v.CacheRate,
 		TTFT: publicTransitLatency(v.TTFT), Duration: publicTransitLatency(v.Duration),
 	}
 }

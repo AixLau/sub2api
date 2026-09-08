@@ -1001,11 +1001,12 @@ func ChannelMonitorV2HealthForWithThresholds(metrics ChannelMonitorV2Metric, thr
 		parts = append(parts, scored{score: s, weight: thresholds.CacheWeight, band: result.Cache})
 	}
 
-	// The public health score represents the observed request success rate for
-	// the selected monitoring window. Keep the component scores above for
-	// diagnostics, but do not blend them into the public score.
+	// The public health score follows the dashboard's success-rate card: the
+	// complement of the scored error rate for the selected monitoring window.
+	// Keep the component scores above for diagnostics, but do not blend them
+	// into the public score.
 	if metrics.RequestCount >= result.MinimumSample {
-		score := metrics.SuccessRate * 100
+		score := (1 - metrics.ErrorRate) * 100
 		if score < 0 {
 			score = 0
 		} else if score > 100 {

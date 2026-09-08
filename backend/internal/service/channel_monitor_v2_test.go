@@ -219,8 +219,6 @@ func TestChannelMonitorV2HealthUsesSuccessRate(t *testing.T) {
 	}
 	metrics := ChannelMonitorV2Metric{
 		RequestCount:         100,
-		SuccessRequests:      70,
-		SuccessRate:          0.70,
 		ErrorRate:            0.03,
 		CacheRate:            0.50,
 		CacheRateDenominator: 100,
@@ -233,8 +231,8 @@ func TestChannelMonitorV2HealthUsesSuccessRate(t *testing.T) {
 	require.NotNil(t, health.Score)
 	require.NotNil(t, health.CacheScore)
 	require.InDelta(t, 50.0, *health.CacheScore, 0.01)
-	require.InDelta(t, 70.0, *health.Score, 0.01)
-	require.Equal(t, "warning", health.Overall)
+	require.InDelta(t, 97.0, *health.Score, 0.01)
+	require.Equal(t, "healthy", health.Overall)
 
 	// Perfect signals → 100
 	p50OK := int64(1000)
