@@ -483,7 +483,6 @@ type ContentModerationTestAuditResult struct {
 type UpdateContentModerationConfigInput struct {
 	MaxRequestBodyMiB        *int    `json:"max_request_body_mib"`
 	InflightMemoryBudgetMiB  *int    `json:"inflight_memory_budget_mib"`
-	RequestMemoryMultiplier  *int    `json:"request_memory_multiplier"`
 	MinimumRequestChargeKiB  *int    `json:"minimum_request_charge_kib"`
 	SmallRequestThresholdMiB *int    `json:"small_request_threshold_mib"`
 	SmallRequestReserveMiB   *int    `json:"small_request_reserve_mib"`
@@ -1527,7 +1526,7 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 		src *int
 	}{
 		{&cfg.MaxRequestBodyMiB, input.MaxRequestBodyMiB}, {&cfg.InflightMemoryBudgetMiB, input.InflightMemoryBudgetMiB},
-		{&cfg.RequestMemoryMultiplier, input.RequestMemoryMultiplier}, {&cfg.MinimumRequestChargeKiB, input.MinimumRequestChargeKiB},
+		{&cfg.MinimumRequestChargeKiB, input.MinimumRequestChargeKiB},
 		{&cfg.SmallRequestThresholdMiB, input.SmallRequestThresholdMiB}, {&cfg.SmallRequestReserveMiB, input.SmallRequestReserveMiB},
 		{&cfg.AdmissionWaitTimeoutMS, input.AdmissionWaitTimeoutMS}, {&cfg.ImageAuditMaxConcurrency, input.ImageAuditMaxConcurrency},
 		{&cfg.RequestAuditTimeoutMS, input.RequestAuditTimeoutMS},

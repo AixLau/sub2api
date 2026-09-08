@@ -14,7 +14,6 @@ import (
 const (
 	DefaultMaxRequestBodyMiB        = 50
 	DefaultInflightMemoryBudgetMiB  = 400
-	DefaultRequestMemoryMultiplier  = 4
 	DefaultMinimumRequestChargeKiB  = 256
 	DefaultSmallRequestThresholdMiB = 1
 	DefaultSmallRequestReserveMiB   = 64
@@ -50,7 +49,6 @@ func (e *RequestMemoryBudgetExhaustedError) Unwrap() error {
 type ResourceProtectionConfig struct {
 	MaxRequestBodyMiB        int `json:"max_request_body_mib"`
 	InflightMemoryBudgetMiB  int `json:"inflight_memory_budget_mib"`
-	RequestMemoryMultiplier  int `json:"request_memory_multiplier"`
 	MinimumRequestChargeKiB  int `json:"minimum_request_charge_kib"`
 	SmallRequestThresholdMiB int `json:"small_request_threshold_mib"`
 	SmallRequestReserveMiB   int `json:"small_request_reserve_mib"`
@@ -60,7 +58,7 @@ type ResourceProtectionConfig struct {
 }
 
 func DefaultResourceProtectionConfig() ResourceProtectionConfig {
-	return ResourceProtectionConfig{DefaultMaxRequestBodyMiB, DefaultInflightMemoryBudgetMiB, DefaultRequestMemoryMultiplier, DefaultMinimumRequestChargeKiB, DefaultSmallRequestThresholdMiB, DefaultSmallRequestReserveMiB, DefaultAdmissionWaitTimeoutMS, DefaultImageAuditMaxConcurrency, DefaultRequestAuditTimeoutMS}
+	return ResourceProtectionConfig{DefaultMaxRequestBodyMiB, DefaultInflightMemoryBudgetMiB, DefaultMinimumRequestChargeKiB, DefaultSmallRequestThresholdMiB, DefaultSmallRequestReserveMiB, DefaultAdmissionWaitTimeoutMS, DefaultImageAuditMaxConcurrency, DefaultRequestAuditTimeoutMS}
 }
 
 func (c *ResourceProtectionConfig) Normalize() {
@@ -70,9 +68,6 @@ func (c *ResourceProtectionConfig) Normalize() {
 	}
 	if c.InflightMemoryBudgetMiB == 0 {
 		c.InflightMemoryBudgetMiB = d.InflightMemoryBudgetMiB
-	}
-	if c.RequestMemoryMultiplier == 0 {
-		c.RequestMemoryMultiplier = d.RequestMemoryMultiplier
 	}
 	if c.MinimumRequestChargeKiB == 0 {
 		c.MinimumRequestChargeKiB = d.MinimumRequestChargeKiB
@@ -103,7 +98,7 @@ func (c ResourceProtectionConfig) Validate(runtimeMaxMiB int) error {
 		value, min, max int
 	}{
 		{"max_request_body_mib", c.MaxRequestBodyMiB, 1, 256}, {"inflight_memory_budget_mib", c.InflightMemoryBudgetMiB, 64, minInt(4096, runtimeMaxMiB)},
-		{"request_memory_multiplier", c.RequestMemoryMultiplier, 2, 8}, {"minimum_request_charge_kib", c.MinimumRequestChargeKiB, 64, 4096},
+		{"minimum_request_charge_kib", c.MinimumRequestChargeKiB, 64, 4096},
 		{"small_request_threshold_mib", c.SmallRequestThresholdMiB, 1, 8}, {"small_request_reserve_mib", c.SmallRequestReserveMiB, 16, 512},
 		{"admission_wait_timeout_ms", c.AdmissionWaitTimeoutMS, 0, 60000}, {"image_audit_max_concurrency", c.ImageAuditMaxConcurrency, 1, 32},
 		{"request_audit_timeout_ms", c.RequestAuditTimeoutMS, 1000, 300000},
@@ -122,7 +117,7 @@ func (c ResourceProtectionConfig) Validate(runtimeMaxMiB int) error {
 	if reserve >= budget {
 		return errors.New("small_request_reserve_mib must be less than inflight_memory_budget_mib")
 	}
-	if maxBody*int64(c.RequestMemoryMultiplier) > budget-reserve {
+	if maxBody > budget-reserve {
 		return errors.New("maximum request charge must fit in the large-request budget")
 	}
 	return nil
@@ -266,7 +261,7 @@ func (m *ResourceProtectionManager) Acquire(ctx context.Context, contentLength i
 	if base < minimum {
 		base = minimum
 	}
-	charge := base * int64(cfg.RequestMemoryMultiplier)
+	charge := base
 	small := !ambiguous && contentLength <= int64(cfg.SmallRequestThresholdMiB)<<20
 	w := &resourceWaiter{charge: charge, small: small, ready: make(chan struct{})}
 	m.waiters = append(m.waiters, w)
@@ -450,7 +445,7 @@ func detectRuntimeSafeMaximumMiB() int {
 		}
 		bytes, err := strconv.ParseInt(value, 10, 64)
 		if err == nil && bytes > 0 && bytes < 1<<60 {
-			limits = append(limits, bytes/2)
+			limits = append(limits, bytes)
 			break
 		}
 	}

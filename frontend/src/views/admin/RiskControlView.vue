@@ -2113,7 +2113,7 @@ let statusTimer: number | null = null
 const configForm = reactive({
 	max_request_body_mib: 50,
 	inflight_memory_budget_mib: 400,
-	request_memory_multiplier: 4,
+
 	minimum_request_charge_kib: 256,
 	small_request_threshold_mib: 1,
 	small_request_reserve_mib: 64,
@@ -2274,7 +2274,6 @@ const settingsTabs = computed<Array<{ id: SettingsTab; label: string }>>(() => [
 const resourceProtectionFields = computed(() => [
   { key: 'max_request_body_mib' as const, label: t('admin.riskControl.maxRequestBodyMiB'), min: 1, max: 256 },
   { key: 'inflight_memory_budget_mib' as const, label: t('admin.riskControl.inflightMemoryBudgetMiB'), min: 64, max: configForm.resource_protection_status?.runtime_safe_maximum_mib || 1024 },
-  { key: 'request_memory_multiplier' as const, label: t('admin.riskControl.requestMemoryMultiplier'), min: 2, max: 8 },
   { key: 'minimum_request_charge_kib' as const, label: t('admin.riskControl.minimumRequestChargeKiB'), min: 64, max: 4096 },
   { key: 'small_request_threshold_mib' as const, label: t('admin.riskControl.smallRequestThresholdMiB'), min: 1, max: 8 },
   { key: 'small_request_reserve_mib' as const, label: t('admin.riskControl.smallRequestReserveMiB'), min: 16, max: 512 },
@@ -3168,7 +3167,6 @@ const runtimeBadgeClass = computed(() => {
 function applyConfig(config: ContentModerationConfig) {
 	configForm.max_request_body_mib = config.max_request_body_mib || 50
 	configForm.inflight_memory_budget_mib = config.inflight_memory_budget_mib || 400
-	configForm.request_memory_multiplier = config.request_memory_multiplier || 4
 	configForm.minimum_request_charge_kib = config.minimum_request_charge_kib || 256
 	configForm.small_request_threshold_mib = config.small_request_threshold_mib || 1
 	configForm.small_request_reserve_mib = config.small_request_reserve_mib || 64
@@ -3371,7 +3369,6 @@ async function saveConfig() {
     const payload: UpdateContentModerationConfig = {
 	  max_request_body_mib: Number(configForm.max_request_body_mib),
 	  inflight_memory_budget_mib: Number(configForm.inflight_memory_budget_mib),
-	  request_memory_multiplier: Number(configForm.request_memory_multiplier),
 	  minimum_request_charge_kib: Number(configForm.minimum_request_charge_kib),
 	  small_request_threshold_mib: Number(configForm.small_request_threshold_mib),
 	  small_request_reserve_mib: Number(configForm.small_request_reserve_mib),

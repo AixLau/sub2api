@@ -23,7 +23,6 @@ func NewContentModerationHandler(svc *service.ContentModerationService) *Content
 type contentModerationConfigRequest struct {
 	MaxRequestBodyMiB        *int    `json:"max_request_body_mib"`
 	InflightMemoryBudgetMiB  *int    `json:"inflight_memory_budget_mib"`
-	RequestMemoryMultiplier  *int    `json:"request_memory_multiplier"`
 	MinimumRequestChargeKiB  *int    `json:"minimum_request_charge_kib"`
 	SmallRequestThresholdMiB *int    `json:"small_request_threshold_mib"`
 	SmallRequestReserveMiB   *int    `json:"small_request_reserve_mib"`
@@ -138,7 +137,6 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 	cfg, err := h.service.UpdateConfig(c.Request.Context(), service.UpdateContentModerationConfigInput{
 		MaxRequestBodyMiB:              req.MaxRequestBodyMiB,
 		InflightMemoryBudgetMiB:        req.InflightMemoryBudgetMiB,
-		RequestMemoryMultiplier:        req.RequestMemoryMultiplier,
 		MinimumRequestChargeKiB:        req.MinimumRequestChargeKiB,
 		SmallRequestThresholdMiB:       req.SmallRequestThresholdMiB,
 		SmallRequestReserveMiB:         req.SmallRequestReserveMiB,
