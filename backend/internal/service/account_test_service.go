@@ -269,6 +269,13 @@ func (s *AccountTestService) FetchOpenAIAccountModels(ctx context.Context, accou
 	if err := json.Unmarshal(response.Body, &payload); err != nil {
 		return nil, fmt.Errorf("decode OpenAI account models: %w", err)
 	}
+	// Standard OpenAI catalogs guarantee an ID, not a display_name. The admin
+	// model selector requires a non-empty label for every discovered model.
+	for i := range payload.Data {
+		if strings.TrimSpace(payload.Data[i].DisplayName) == "" {
+			payload.Data[i].DisplayName = payload.Data[i].ID
+		}
+	}
 	return payload.Data, nil
 }
 
