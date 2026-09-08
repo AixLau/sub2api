@@ -449,9 +449,6 @@ func detectRuntimeSafeMaximumMiB() int {
 			break
 		}
 	}
-	if bytes, ok := parseGoMemoryLimit(os.Getenv("GOMEMLIMIT")); ok {
-		limits = append(limits, bytes*2/3)
-	}
 	if len(limits) == 0 {
 		return defaultRuntimeSafeMaximumMiB
 	}
