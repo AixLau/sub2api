@@ -1,6 +1,10 @@
 package securityaudit
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestShouldStorePromptAuditEvent(t *testing.T) {
 	tests := []struct {
@@ -22,4 +26,18 @@ func TestShouldStorePromptAuditEvent(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPromptAuditResultJSONUsesEmptyCollections(t *testing.T) {
+	categories, err := marshalPromptAuditCategories(nil)
+	require.NoError(t, err)
+	require.Equal(t, "[]", string(categories))
+
+	scanners, err := marshalPromptAuditScanners(nil)
+	require.NoError(t, err)
+	require.Equal(t, "[]", string(scanners))
+
+	scores, err := marshalPromptAuditScores(nil)
+	require.NoError(t, err)
+	require.Equal(t, "{}", string(scores))
 }

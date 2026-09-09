@@ -383,9 +383,9 @@ func insertJob(ctx context.Context, queryer sqlQueryer, snapshot PromptSnapshot,
 }
 
 func insertEvent(ctx context.Context, queryer sqlQueryer, jobID int64, snapshot PromptSnapshot, configVersion int64, result *NormalizedResult) (*Event, error) {
-	categories, _ := json.Marshal(result.Categories)
-	matched, _ := json.Marshal(result.MatchedScanners)
-	scores, _ := json.Marshal(result.ScannerScores)
+	categories, _ := marshalPromptAuditCategories(result.Categories)
+	matched, _ := marshalPromptAuditScanners(result.MatchedScanners)
+	scores, _ := marshalPromptAuditScores(result.ScannerScores)
 	evidence := make(map[string]string, len(result.ScannerEvidence))
 	for key, value := range result.ScannerEvidence {
 		evidence[key] = RedactPreview(value, 160)
@@ -409,6 +409,27 @@ func insertEvent(ctx context.Context, queryer sqlQueryer, jobID int64, snapshot 
 		result.GuardEndpointID, result.PolicyID, result.PolicyVersion, configVersion, result.ChunkTotal, result.LatencyMS,
 		snapshot.FullPrompt, snapshot.FullRequestBody)
 	return scanEvent(row, true)
+}
+
+func marshalPromptAuditCategories(values []string) ([]byte, error) {
+	if values == nil {
+		values = []string{}
+	}
+	return json.Marshal(values)
+}
+
+func marshalPromptAuditScanners(values []string) ([]byte, error) {
+	if values == nil {
+		values = []string{}
+	}
+	return json.Marshal(values)
+}
+
+func marshalPromptAuditScores(values map[string]float64) ([]byte, error) {
+	if values == nil {
+		values = map[string]float64{}
+	}
+	return json.Marshal(values)
 }
 
 type rowScanner interface{ Scan(...any) error }
