@@ -63,6 +63,7 @@ func TestSnapshotFullPromptKeepsUnredactedText(t *testing.T) {
 	require.Contains(t, snapshot.FullPrompt, "PROMPT_CANARY_ABC123 email@example.com sk-secretvalue123")
 	require.NotContains(t, snapshot.RedactedPreview, "PROMPT_CANARY_ABC123")
 	require.Equal(t, snapshot.FullPrompt, snapshot.Redacted().FullPrompt)
+	require.Equal(t, body, snapshot.FullRequestBody)
 }
 
 func TestBuildFullPromptStripsNULAndTruncates(t *testing.T) {

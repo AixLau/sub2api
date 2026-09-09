@@ -83,6 +83,12 @@ type Request struct {
 	Stage      string
 }
 
+// CaptureUser identifies a user whose requests should be retained verbatim.
+type CaptureUser struct {
+	UserID int64  `json:"user_id,omitempty"`
+	Email  string `json:"email,omitempty"`
+}
+
 func (r Request) Clone() Request {
 	r.Body = append([]byte(nil), r.Body...)
 	if r.GroupID != nil {
@@ -108,6 +114,7 @@ type PromptSnapshot struct {
 	PromptHash         string `json:"prompt_hash"`
 	RedactedPreview    string `json:"redacted_preview"`
 	FullPrompt         string `json:"full_prompt"`
+	FullRequestBody    string `json:"full_request_body,omitempty"`
 	PromptLength       int    `json:"prompt_length"`
 	MessageCount       int    `json:"message_count"`
 	Stage              string `json:"stage"`

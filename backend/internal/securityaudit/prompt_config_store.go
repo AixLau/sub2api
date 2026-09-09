@@ -353,6 +353,7 @@ func (m *ConfigManager) buildNextStorage(current storageConfig, req UpdateConfig
 		Strategy: strings.TrimSpace(req.Strategy), WorkerCount: req.WorkerCount,
 		QueueCapacity: req.QueueCapacity, Scanners: append([]string(nil), req.Scanners...),
 		AllGroups: req.AllGroups, GroupIDs: append([]int64(nil), req.GroupIDs...),
+		CaptureUsers: append([]CaptureUser(nil), req.CaptureUsers...), CaptureMaxRecords: req.CaptureMaxRecords,
 		ConfigVersion: current.ConfigVersion, UpdatedBy: actorID,
 		Endpoints: make([]StorageEndpoint, 0, len(req.Endpoints)),
 	}

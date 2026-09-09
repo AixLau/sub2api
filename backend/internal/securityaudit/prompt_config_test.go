@@ -45,6 +45,19 @@ func TestDefaultConfigIsOff(t *testing.T) {
 	require.Contains(t, string(publicJSON), `"endpoints":[]`)
 }
 
+func TestCaptureUserSelectorMatchesIDOrEmail(t *testing.T) {
+	storage := DefaultStorageConfig()
+	storage.CaptureUsers = []CaptureUser{{UserID: 42}, {Email: "Admin@Example.com"}}
+	storage.CaptureMaxRecords = 7
+	normalizeStorageConfig(&storage)
+	active, err := ActiveFromStorage(storage, false, prefixEncryptor{})
+	require.NoError(t, err)
+	require.True(t, active.CapturesUser(Request{UserID: 42}))
+	require.True(t, active.CapturesUser(Request{UserEmail: "admin@example.com"}))
+	require.False(t, active.CapturesUser(Request{UserID: 43, UserEmail: "other@example.com"}))
+	require.Equal(t, 7, active.CaptureMaxRecords)
+}
+
 func TestBlockingLatestTurnOnlyConfigRoundTrip(t *testing.T) {
 	manager := &ConfigManager{encryptor: prefixEncryptor{}, encryptionKeyConfigured: true}
 	request := UpdateConfigRequest{

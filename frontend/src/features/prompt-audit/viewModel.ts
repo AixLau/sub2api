@@ -32,6 +32,8 @@ export function configToDraft(config: PromptAuditConfig): PromptAuditDraft {
     ...cloneData(config),
     group_ids: [...(config.group_ids ?? [])],
     scanners: [...(config.scanners ?? [])],
+    capture_users: [...(config.capture_users ?? [])],
+    capture_max_records: config.capture_max_records ?? 0,
     endpoints: (config.endpoints ?? []).map((endpoint) => ({
       ...endpoint,
       token: '',
@@ -84,6 +86,10 @@ export function buildUpdateRequest(draft: PromptAuditDraft): PromptAuditUpdateRe
       max_input_tokens: Number(endpoint.max_input_tokens),
       enabled: endpoint.enabled,
     })),
+    capture_users: (draft.capture_users ?? [])
+      .map((selector) => ({ user_id: selector.user_id || undefined, email: selector.email?.trim().toLowerCase() || undefined }))
+      .filter((selector) => selector.user_id || selector.email),
+    capture_max_records: Number(draft.capture_max_records) || 0,
   }
 }
 

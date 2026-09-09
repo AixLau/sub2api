@@ -26,11 +26,28 @@ func (e *Enqueuer) Enqueue(ctx context.Context, req Request) error {
 	}
 	cfg, ok := e.config.Active()
 	baseFields := requestLogFields(req)
-	if !ok || cfg.EffectiveMode() != ModeAsync {
+	if !ok || (cfg.EffectiveMode() != ModeAsync && !cfg.CapturesUser(req)) {
 		LogInfo(EventEnqueueSkipped, mergeLogFields(baseFields, map[string]any{"status": "skipped", "error_code": "mode_not_async"}))
 		return nil
 	}
 	baseFields["config_version"] = cfg.ConfigVersion
+	if cfg.CapturesUser(req) {
+		snapshot, err := ExtractPromptSnapshot(req)
+		if errors.Is(err, ErrNoPromptText) {
+			return nil
+		}
+		if err != nil {
+			e.recordDropped()
+			return err
+		}
+		if _, err := e.repo.RecordCapture(ctx, snapshot, cfg.ConfigVersion, cfg.CaptureMaxRecords); err != nil {
+			e.recordDropped()
+			LogWarn(EventEnqueueDropped, mergeLogFields(baseFields, map[string]any{"status": "dropped", "error_code": "capture_record_failed"}))
+			return err
+		}
+		LogInfo(EventJobEnqueued, mergeLogFields(baseFields, map[string]any{"status": "captured", "capture_max_records": cfg.CaptureMaxRecords}))
+		return nil
+	}
 	if !cfg.IncludesGroup(req.GroupID) {
 		LogInfo(EventEnqueueSkipped, mergeLogFields(baseFields, map[string]any{"status": "skipped", "error_code": "group_out_of_scope"}))
 		return nil

@@ -108,7 +108,15 @@ func (s *PromptService) EffectiveMode() Mode {
 }
 
 func (s *PromptService) Enqueue(_ context.Context, req Request) error {
-	if s == nil || s.enqueuer == nil || s.EffectiveMode() != ModeAsync {
+	if s == nil || s.enqueuer == nil {
+		return nil
+	}
+	var active ActiveConfig
+	activeOK := false
+	if s.config != nil {
+		active, activeOK = s.config.Active()
+	}
+	if s.EffectiveMode() != ModeAsync && (!activeOK || !active.CapturesUser(req)) {
 		return nil
 	}
 	select {

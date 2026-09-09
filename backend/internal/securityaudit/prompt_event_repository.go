@@ -323,7 +323,7 @@ func eventColumns(alias string) string {
 // eventDetailColumns adds the full prompt, which can be large, so it is only
 // loaded for single-event detail reads and never for list pages.
 func eventDetailColumns(alias string) string {
-	return eventColumns(alias) + fmt.Sprintf(",%[1]s.full_prompt", alias)
+	return eventColumns(alias) + fmt.Sprintf(",%[1]s.full_prompt,%[1]s.full_request_body", alias)
 }
 
 func scanEvent(row rowScanner, withFullPrompt ...bool) (*Event, error) {
@@ -340,6 +340,7 @@ func scanEvent(row rowScanner, withFullPrompt ...bool) (*Event, error) {
 		&event.ConfigVersion, &event.ChunkTotal, &event.LatencyMS, &event.CreatedAt}
 	if len(withFullPrompt) > 0 && withFullPrompt[0] {
 		dest = append(dest, &event.Snapshot.FullPrompt)
+		dest = append(dest, &event.Snapshot.FullRequestBody)
 	}
 	err := row.Scan(dest...)
 	if err != nil {

@@ -14,6 +14,10 @@
           <div>
             <h4 class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.promptAudit.events.promptFull') }}</h4>
             <pre class="mt-2 max-h-[min(46vh,26rem)] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-50 p-4 text-sm text-gray-700 dark:bg-dark-900 dark:text-dark-200" data-test="summary-prompt-full">{{ displayPrompt(event) }}</pre>
+            <template v-if="event.snapshot.full_request_body">
+              <h4 class="mt-4 text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.promptAudit.events.requestBodyFull') }}</h4>
+              <pre class="mt-2 max-h-[min(46vh,26rem)] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-amber-50 p-4 text-xs text-gray-800 dark:bg-amber-950/20 dark:text-dark-100" data-test="summary-request-body-full">{{ event.snapshot.full_request_body }}</pre>
+            </template>
           </div>
           <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
             <dt class="text-gray-500">{{ t('admin.promptAudit.events.decision') }}</dt><dd class="font-medium text-gray-900 dark:text-white">{{ formatDecisionAction(event.decision, event.action) }}</dd>

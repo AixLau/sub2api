@@ -75,6 +75,7 @@ type JobRepository interface {
 	ReclaimStale(ctx context.Context, stagingBefore, processingBefore time.Time, limit int) (int64, error)
 	QueueStats(ctx context.Context) (QueueStats, error)
 	RecordBlocking(ctx context.Context, snapshot PromptSnapshot, configVersion int64, result *NormalizedResult, storePassEvents bool) (*Event, error)
+	RecordCapture(ctx context.Context, snapshot PromptSnapshot, configVersion int64, maxRecords int) (*Event, error)
 }
 
 type PostgreSQLRepository struct {
@@ -293,8 +294,55 @@ func (r *PostgreSQLRepository) RecordBlocking(ctx context.Context, snapshot Prom
 	}
 	var event *Event
 	if shouldStorePromptAuditEvent(result.Decision, storePassEvents) {
-		event, err = insertEvent(ctx, tx, job.ID, snapshot.Redacted(), configVersion, result)
+		event, err = insertEvent(ctx, tx, job.ID, snapshot, configVersion, result)
 		if err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
+func (r *PostgreSQLRepository) RecordCapture(ctx context.Context, snapshot PromptSnapshot, configVersion int64, maxRecords int) (*Event, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("prompt audit database unavailable")
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	job, err := insertJob(ctx, tx, snapshot.Redacted(), ModeAsync, configVersion, "done", 1)
+	if err != nil {
+		return nil, err
+	}
+	event, err := insertEvent(ctx, tx, job.ID, snapshot, configVersion, &NormalizedResult{
+		Decision: EventPass, RiskLevel: RiskLow, Action: ActionAllow,
+		ScannerBackend: "user_capture", PolicyID: "user_capture",
+	})
+	if err != nil {
+		return nil, err
+	}
+	if maxRecords > 0 && snapshot.UserID > 0 {
+		rows, err := tx.QueryContext(ctx, `
+			WITH old AS (
+				SELECT id FROM prompt_audit_events
+				WHERE user_id = $1 AND scanner_backend = 'user_capture' AND id <> $2
+				ORDER BY created_at DESC, id DESC OFFSET $3
+			), deleted AS (
+				DELETE FROM prompt_audit_events e USING old WHERE e.id = old.id RETURNING e.job_id
+			)
+			SELECT job_id FROM deleted`, snapshot.UserID, event.ID, maxRecords-1)
+		if err != nil {
+			return nil, err
+		}
+		jobIDs, err := scanReturnedJobIDs(rows)
+		if err != nil {
+			return nil, err
+		}
+		if _, err = deleteOrphanJobs(ctx, tx, jobIDs); err != nil {
 			return nil, err
 		}
 	}
@@ -349,9 +397,9 @@ func insertEvent(ctx context.Context, queryer sqlQueryer, jobID int64, snapshot 
 			group_id,group_name,provider,endpoint,protocol,model,prompt_hash,redacted_preview,stage,
 			decision,risk_level,action,categories,matched_scanners,scanner_scores,scanner_evidence,
 			scanner_backend,scanner_version,guard_endpoint_id,policy_id,policy_version,config_version,chunk_total,latency_ms,
-			full_prompt
+			full_prompt,full_request_body
 		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
-			$20::jsonb,$21::jsonb,$22::jsonb,$23::jsonb,$24,$25,$26,$27,$28,$29,$30,$31,$32)
+			$20::jsonb,$21::jsonb,$22::jsonb,$23::jsonb,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
 		RETURNING `+eventDetailColumns("prompt_audit_events"),
 		jobID, snapshot.RequestID, nullableID(snapshot.UserID), snapshot.UsernameSnapshot, snapshot.UserEmailSnapshot,
 		nullableID(snapshot.APIKeyID), snapshot.APIKeyNameSnapshot, snapshot.GroupID, snapshot.GroupName,
@@ -359,7 +407,7 @@ func insertEvent(ctx context.Context, queryer sqlQueryer, jobID int64, snapshot 
 		snapshot.RedactedPreview, normalizeStage(snapshot.Stage), string(result.Decision), string(result.RiskLevel),
 		string(result.Action), categories, matched, scores, evidenceJSON, result.ScannerBackend, result.ScannerVersion,
 		result.GuardEndpointID, result.PolicyID, result.PolicyVersion, configVersion, result.ChunkTotal, result.LatencyMS,
-		snapshot.FullPrompt)
+		snapshot.FullPrompt, snapshot.FullRequestBody)
 	return scanEvent(row, true)
 }
 

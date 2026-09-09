@@ -78,6 +78,8 @@ type storageConfig struct {
 	AllGroups              bool              `json:"all_groups"`
 	GroupIDs               []int64           `json:"group_ids"`
 	Endpoints              []StorageEndpoint `json:"endpoints"`
+	CaptureUsers           []CaptureUser     `json:"capture_users,omitempty"`
+	CaptureMaxRecords      int               `json:"capture_max_records,omitempty"`
 	ConfigVersion          int64             `json:"config_version"`
 	UpdatedAt              time.Time         `json:"updated_at"`
 	UpdatedBy              int64             `json:"updated_by"`
@@ -115,6 +117,8 @@ type ActiveConfig struct {
 	AllGroups              bool
 	GroupIDs               []int64
 	Endpoints              []ActiveEndpoint
+	CaptureUsers           []CaptureUser
+	CaptureMaxRecords      int
 	ConfigVersion          int64
 	UpdatedAt              time.Time
 	UpdatedBy              int64
@@ -148,6 +152,8 @@ type PublicConfig struct {
 	AllGroups              bool             `json:"all_groups"`
 	GroupIDs               []int64          `json:"group_ids"`
 	Endpoints              []PublicEndpoint `json:"endpoints"`
+	CaptureUsers           []CaptureUser    `json:"capture_users,omitempty"`
+	CaptureMaxRecords      int              `json:"capture_max_records,omitempty"`
 	ConfigVersion          int64            `json:"config_version"`
 	UpdatedAt              time.Time        `json:"updated_at"`
 	UpdatedBy              int64            `json:"updated_by"`
@@ -181,6 +187,8 @@ type UpdateConfigRequest struct {
 	AllGroups              bool             `json:"all_groups"`
 	GroupIDs               []int64          `json:"group_ids"`
 	Endpoints              []UpdateEndpoint `json:"endpoints"`
+	CaptureUsers           []CaptureUser    `json:"capture_users,omitempty"`
+	CaptureMaxRecords      int              `json:"capture_max_records,omitempty"`
 }
 
 func DefaultStorageConfig() storageConfig {
@@ -196,6 +204,7 @@ func DefaultStorageConfig() storageConfig {
 		AllGroups:              true,
 		GroupIDs:               []int64{},
 		Endpoints:              []StorageEndpoint{},
+		CaptureUsers:           []CaptureUser{},
 		ConfigVersion:          1,
 	}
 }
@@ -236,6 +245,21 @@ func normalizeStorageConfig(cfg *storageConfig) {
 	}
 	cfg.Scanners = canonicalScannerIDs(cfg.Scanners)
 	cfg.GroupIDs = canonicalInt64s(cfg.GroupIDs)
+	selectors := make([]CaptureUser, 0, len(cfg.CaptureUsers))
+	seenSelectors := make(map[string]struct{}, len(cfg.CaptureUsers))
+	for _, selector := range cfg.CaptureUsers {
+		selector.Email = strings.ToLower(strings.TrimSpace(selector.Email))
+		if selector.UserID <= 0 && selector.Email == "" {
+			continue
+		}
+		key := fmt.Sprintf("%d|%s", selector.UserID, selector.Email)
+		if _, exists := seenSelectors[key]; exists {
+			continue
+		}
+		seenSelectors[key] = struct{}{}
+		selectors = append(selectors, selector)
+	}
+	cfg.CaptureUsers = selectors
 	// Preserve an invalid blocking-without-audit combination so validation can
 	// reject it instead of silently changing administrator intent.
 	for i := range cfg.Endpoints {
@@ -275,6 +299,12 @@ func validateStorageConfig(cfg storageConfig) error {
 	}
 	if cfg.QueueCapacity < 1 || cfg.QueueCapacity > MaxQueueCapacity {
 		return infraerrors.BadRequest("prompt_audit_invalid_queue_capacity", "队列容量超出允许范围")
+	}
+	if cfg.CaptureMaxRecords < 0 || cfg.CaptureMaxRecords > 100000 {
+		return infraerrors.BadRequest("prompt_audit_invalid_capture_max_records", "指定用户保留条数必须在 0 到 100000 之间")
+	}
+	if len(cfg.CaptureUsers) > 1000 {
+		return infraerrors.BadRequest("prompt_audit_too_many_capture_users", "指定用户最多 1000 个")
 	}
 	if !cfg.AllGroups && len(cfg.GroupIDs) == 0 {
 		return infraerrors.BadRequest("prompt_audit_groups_required", "指定分组模式至少需要选择一个分组")
@@ -326,6 +356,12 @@ func validateUpdateConfigRequest(req UpdateConfigRequest) error {
 	}
 	if req.QueueCapacity < 1 || req.QueueCapacity > MaxQueueCapacity {
 		return infraerrors.BadRequest("prompt_audit_invalid_queue_capacity", "队列容量超出允许范围")
+	}
+	if req.CaptureMaxRecords < 0 || req.CaptureMaxRecords > 100000 {
+		return infraerrors.BadRequest("prompt_audit_invalid_capture_max_records", "指定用户保留条数必须在 0 到 100000 之间")
+	}
+	if len(req.CaptureUsers) > 1000 {
+		return infraerrors.BadRequest("prompt_audit_too_many_capture_users", "指定用户最多 1000 个")
 	}
 	if len(req.Scanners) == 0 {
 		return infraerrors.BadRequest("prompt_audit_scanners_required", "至少需要启用一个风险分类")
@@ -380,6 +416,19 @@ func (cfg ActiveConfig) IncludesGroup(groupID *int64) bool {
 	return i < len(cfg.GroupIDs) && cfg.GroupIDs[i] == *groupID
 }
 
+func (cfg ActiveConfig) CapturesUser(req Request) bool {
+	email := strings.ToLower(strings.TrimSpace(req.UserEmail))
+	for _, selector := range cfg.CaptureUsers {
+		if selector.UserID > 0 && selector.UserID == req.UserID {
+			return true
+		}
+		if selector.Email != "" && selector.Email == email {
+			return true
+		}
+	}
+	return false
+}
+
 func (cfg ActiveConfig) EnabledEndpoints() []ActiveEndpoint {
 	result := make([]ActiveEndpoint, 0, len(cfg.Endpoints))
 	for _, ep := range cfg.Endpoints {
@@ -430,7 +479,7 @@ func PublicFromStorage(cfg storageConfig, riskControlEnabled bool, invalidTokenE
 		Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, BlockingLatestTurnOnly: cfg.BlockingLatestTurnOnly, StorePassEvents: cfg.StorePassEvents,
 		EffectiveMode: active.EffectiveMode(), Strategy: cfg.Strategy, WorkerCount: cfg.WorkerCount,
 		QueueCapacity: cfg.QueueCapacity, Scanners: scanners, AllGroups: cfg.AllGroups,
-		GroupIDs: groupIDs, Endpoints: endpoints, ConfigVersion: cfg.ConfigVersion,
+		GroupIDs: groupIDs, Endpoints: endpoints, CaptureUsers: append([]CaptureUser(nil), cfg.CaptureUsers...), CaptureMaxRecords: cfg.CaptureMaxRecords, ConfigVersion: cfg.ConfigVersion,
 		UpdatedAt: cfg.UpdatedAt, UpdatedBy: cfg.UpdatedBy, ChangeSummary: cfg.ChangeSummary,
 	}
 }
@@ -441,7 +490,7 @@ func ActiveFromStorage(cfg storageConfig, riskControlEnabled bool, encryptor Sec
 		BlockingLatestTurnOnly: cfg.BlockingLatestTurnOnly,
 		StorePassEvents:        cfg.StorePassEvents, Strategy: cfg.Strategy, WorkerCount: cfg.WorkerCount,
 		QueueCapacity: cfg.QueueCapacity, Scanners: append([]string(nil), cfg.Scanners...), AllGroups: cfg.AllGroups,
-		GroupIDs: append([]int64(nil), cfg.GroupIDs...), ConfigVersion: cfg.ConfigVersion,
+		GroupIDs: append([]int64(nil), cfg.GroupIDs...), CaptureUsers: append([]CaptureUser(nil), cfg.CaptureUsers...), CaptureMaxRecords: cfg.CaptureMaxRecords, ConfigVersion: cfg.ConfigVersion,
 		UpdatedAt: cfg.UpdatedAt, UpdatedBy: cfg.UpdatedBy, ChangeSummary: cfg.ChangeSummary,
 		Endpoints: make([]ActiveEndpoint, 0, len(cfg.Endpoints)),
 	}
@@ -484,7 +533,9 @@ func changeSummary(cfg storageConfig) string {
 		AllGroups              bool   `json:"all_groups"`
 		GroupCount             int    `json:"group_count"`
 		GroupHash              string `json:"group_hash"`
-	}{cfg.Enabled, cfg.BlockingEnabled, cfg.BlockingLatestTurnOnly, cfg.StorePassEvents, len(cfg.Endpoints), len(cfg.Scanners), cfg.AllGroups, len(cfg.GroupIDs), ""}
+		CaptureUserCount       int    `json:"capture_user_count"`
+		CaptureMaxRecords      int    `json:"capture_max_records"`
+	}{cfg.Enabled, cfg.BlockingEnabled, cfg.BlockingLatestTurnOnly, cfg.StorePassEvents, len(cfg.Endpoints), len(cfg.Scanners), cfg.AllGroups, len(cfg.GroupIDs), "", len(cfg.CaptureUsers), cfg.CaptureMaxRecords}
 	rawGroups, _ := json.Marshal(cfg.GroupIDs)
 	digest := sha256.Sum256(rawGroups)
 	summary.GroupHash = hex.EncodeToString(digest[:])

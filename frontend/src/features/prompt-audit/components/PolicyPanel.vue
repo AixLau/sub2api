@@ -51,6 +51,26 @@
             </label>
           </div>
         </fieldset>
+
+        <fieldset class="mt-5 border-t border-gray-100 pt-5 dark:border-dark-800">
+          <legend class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.promptAudit.policy.captureTitle') }}</legend>
+          <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">{{ t('admin.promptAudit.policy.captureDescription') }}</p>
+          <div class="mt-3 grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)_auto]">
+            <input v-model.number="captureUserID" type="number" min="1" class="input" :placeholder="t('admin.promptAudit.policy.captureUserId')" />
+            <input v-model.trim="captureEmail" type="email" class="input" :placeholder="t('admin.promptAudit.policy.captureEmail')" />
+            <button type="button" class="btn btn-secondary" @click="addCaptureUser">{{ t('admin.promptAudit.policy.captureAdd') }}</button>
+          </div>
+          <div v-if="captureUsers.length" class="mt-3 space-y-2">
+            <div v-for="(selector, index) in captureUsers" :key="`${selector.user_id ?? ''}-${selector.email ?? ''}-${index}`" class="flex items-center justify-between gap-3 rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-dark-700">
+              <span>{{ selector.email || `#${selector.user_id}` }}</span>
+              <button type="button" class="text-red-600 hover:text-red-700" @click="removeCaptureUser(index)">{{ t('common.delete') }}</button>
+            </div>
+          </div>
+          <label class="mt-3 block text-sm text-gray-700 dark:text-dark-200">
+            <span>{{ t('admin.promptAudit.policy.captureMaxRecords') }}</span>
+            <input :value="draft.capture_max_records" type="number" min="0" max="100000" class="input mt-1.5 w-full" @input="patch({ capture_max_records: Number(($event.target as HTMLInputElement).value) })" />
+          </label>
+        </fieldset>
       </div>
 
       <div class="space-y-4 rounded-xl border border-gray-200 p-4 dark:border-dark-700/60 dark:bg-dark-900/20 sm:p-5">
@@ -81,6 +101,9 @@ const props = defineProps<{ draft: PromptAuditDraft; groups: PromptAuditGroup[] 
 const emit = defineEmits<{ (event: 'update:draft', value: PromptAuditDraft): void }>()
 const { t } = useI18n()
 const groupSearch = ref('')
+const captureUserID = ref<number | undefined>()
+const captureEmail = ref('')
+const captureUsers = computed(() => props.draft.capture_users ?? [])
 
 const filteredGroups = computed(() => {
   const query = groupSearch.value.trim().toLowerCase()
@@ -104,6 +127,19 @@ function toggleScanner(id: string) {
   if (selected.has(id)) selected.delete(id)
   else selected.add(id)
   patch({ scanners: SCANNER_CATALOG.map((item) => item.id).filter((item) => selected.has(item)) })
+}
+function addCaptureUser() {
+  const userID = Number(captureUserID.value)
+  const email = captureEmail.value.trim().toLowerCase()
+  if (!Number.isInteger(userID) && !email) return
+  const duplicate = captureUsers.value.some((item) => (userID > 0 && item.user_id === userID) || (email && item.email === email))
+  if (duplicate) return
+  patch({ capture_users: [...captureUsers.value, { user_id: userID > 0 ? userID : undefined, email: email || undefined }] })
+  captureUserID.value = undefined
+  captureEmail.value = ''
+}
+function removeCaptureUser(index: number) {
+  patch({ capture_users: captureUsers.value.filter((_, current) => current !== index) })
 }
 function scannerLabel(id: string): string {
   return t(`admin.promptAudit.scanners.${id}`)

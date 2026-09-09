@@ -34,6 +34,8 @@ export interface PromptAuditConfig {
   all_groups: boolean
   group_ids: number[]
   endpoints: PromptAuditEndpoint[]
+  capture_users?: PromptCaptureUser[]
+  capture_max_records?: number
   config_version: number
   updated_at: string
   updated_by: number
@@ -42,6 +44,8 @@ export interface PromptAuditConfig {
 
 export interface PromptAuditDraft extends Omit<PromptAuditConfig, 'endpoints'> {
   endpoints: PromptAuditEndpointDraft[]
+  capture_users: PromptCaptureUser[]
+  capture_max_records: number
 }
 
 export interface PromptAuditUpdateRequest {
@@ -69,6 +73,13 @@ export interface PromptAuditUpdateRequest {
     max_input_tokens?: number
     enabled: boolean
   }>
+  capture_users: PromptCaptureUser[]
+  capture_max_records: number
+}
+
+export interface PromptCaptureUser {
+  user_id?: number
+  email?: string
 }
 
 export interface PromptProbeResult {
@@ -152,6 +163,7 @@ export interface PromptSnapshot {
   prompt_hash: string
   redacted_preview: string
   full_prompt: string
+  full_request_body?: string
   prompt_length: number
   message_count: number
   stage: string
