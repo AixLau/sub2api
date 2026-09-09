@@ -28,6 +28,7 @@ type fakePromptEngine struct {
 	err       error
 	enqueues  atomic.Int64
 	evaluates atomic.Int64
+	captures  bool
 }
 
 func (f *fakePromptEngine) EffectiveMode() Mode { return f.mode }
@@ -39,6 +40,8 @@ func (f *fakePromptEngine) Evaluate(context.Context, Request) (*PromptDecision, 
 	f.evaluates.Add(1)
 	return f.decision, f.err
 }
+
+func (f *fakePromptEngine) CapturesSelectedUser(Request) bool { return f.captures }
 
 func TestCoordinatorModesAndPriority(t *testing.T) {
 	tests := []struct {
@@ -72,6 +75,13 @@ func TestCoordinatorModesAndPriority(t *testing.T) {
 			require.Equal(t, tt.wantEvaluation, prompt.evaluates.Load())
 		})
 	}
+}
+
+func TestCoordinatorCapturesSelectedUserWhenAuditIsOff(t *testing.T) {
+	prompt := &fakePromptEngine{mode: ModeOff, captures: true}
+	decision := NewCoordinator(&fakeLegacyEngine{}, prompt).Check(context.Background(), Request{Body: []byte(`{"messages":[{"role":"user","content":"hello"}]}`)})
+	require.Equal(t, DecisionAllow, decision.Kind)
+	require.Equal(t, int64(1), prompt.enqueues.Load())
 }
 
 func TestCoordinatorDoesNotMutateRequestBody(t *testing.T) {

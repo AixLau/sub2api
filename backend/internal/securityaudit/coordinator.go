@@ -57,6 +57,9 @@ func (c *Coordinator) check(ctx context.Context, req Request, legacy *LegacyDeci
 	case ModeBlocking:
 		return c.checkBlocking(ctx, req, legacy, legacyProvided)
 	default:
+		if capture, ok := c.prompt.(interface{ CapturesSelectedUser(Request) bool }); ok && capture.CapturesSelectedUser(req) {
+			_ = c.prompt.Enqueue(ctx, req.Clone())
+		}
 		if !legacyProvided {
 			legacy, _ = c.checkLegacy(ctx, req)
 		}

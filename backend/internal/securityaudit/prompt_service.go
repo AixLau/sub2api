@@ -107,6 +107,17 @@ func (s *PromptService) EffectiveMode() Mode {
 	return s.config.EffectiveMode()
 }
 
+// CapturesSelectedUser reports whether a request belongs to the explicit
+// user-capture allowlist. Coordinator uses this only when normal prompt audit
+// is disabled, so ordinary traffic keeps the existing off-mode behavior.
+func (s *PromptService) CapturesSelectedUser(req Request) bool {
+	if s == nil || s.config == nil {
+		return false
+	}
+	cfg, ok := s.config.Active()
+	return ok && cfg.CapturesUser(req)
+}
+
 func (s *PromptService) Enqueue(_ context.Context, req Request) error {
 	if s == nil || s.enqueuer == nil {
 		return nil
