@@ -166,7 +166,7 @@ func newOpenAIResponsesCyberPipelineHandler(
 	t.Helper()
 
 	concurrencyCache := &concurrencyCacheMock{acquireUserSlotFn: acquireUserSlotFn}
-	channelService := service.NewChannelService(&openAIResponsesChannelMustNotRunRepo{t: t}, nil, nil, nil)
+	channelService := service.NewChannelService(&openAIResponsesChannelMustNotRunRepo{t: t}, nil, nil, nil, nil)
 	return &OpenAIGatewayHandler{
 		moderationGuard:          guard,
 		pipeline:                 &OpenAIGatewayPipeline{moderationGuard: guard, cyberSessionChecker: cyberChecker},

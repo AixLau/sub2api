@@ -134,6 +134,7 @@
           :utilization="usageInfo.seven_day.utilization"
           :resets-at="usageInfo.seven_day.resets_at"
           :window-stats="usageInfo.seven_day.window_stats"
+          :estimated-total-cost="openAISevenDayEstimatedTotalCost"
           :show-now-when-idle="true"
           color="emerald"
         />
@@ -434,8 +435,8 @@
       </div>
     </template>
 
-    <!-- CN providers (Kimi / Zhipu / DeepSeek): coding-plan quota or payg balance -->
-    <template v-else-if="account.platform === 'kimi' || account.platform === 'zhipu' || account.platform === 'deepseek'">
+    <!-- CN providers (Kimi / Zhipu / DeepSeek / MiniMax): coding-plan quota or payg balance -->
+    <template v-else-if="account.platform === 'kimi' || account.platform === 'zhipu' || account.platform === 'deepseek' || account.platform === 'minimax'">
       <div class="space-y-1">
         <!-- 子单元格各自按 模式×平台 判定可见；两者都不可见时（智谱 payg 无公开
              余额端点、coding 探测也不适用）才回落到占位符。 -->
@@ -728,6 +729,7 @@ const showUsageWindows = computed(() => {
     props.account.platform === 'kimi' ||
     props.account.platform === 'zhipu' ||
     props.account.platform === 'deepseek'
+    || props.account.platform === 'minimax'
   ) {
     return true
   }
@@ -782,6 +784,25 @@ const geminiUsageAvailable = computed(() => {
 const hasOpenAIUsageFallback = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
   return !!usageInfo.value?.five_hour || !!usageInfo.value?.seven_day
+})
+
+const openAISevenDayEstimatedTotalCost = computed(() => {
+  const sevenDay = usageInfo.value?.seven_day
+  const utilization = sevenDay?.utilization
+  const currentCost = sevenDay?.window_stats?.cost
+  if (
+    typeof utilization !== 'number' ||
+    typeof currentCost !== 'number' ||
+    !Number.isFinite(utilization) ||
+    !Number.isFinite(currentCost) ||
+    utilization <= 0 ||
+    currentCost <= 0
+  ) {
+    return null
+  }
+
+  const estimate = (currentCost * 100) / utilization
+  return Number.isFinite(estimate) && estimate > 0 ? estimate : null
 })
 
 const openAIUsageRefreshKey = computed(() => buildOpenAIUsageRefreshKey(props.account))
