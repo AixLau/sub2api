@@ -366,6 +366,23 @@ func TestSameFixedRollupBucket(t *testing.T) {
 	require.False(t, sameFixedRollupBucket(start, start.Add(24*time.Hour), 86400))
 }
 
+func TestChannelMonitorV2DateBinUsesExplicitUTCOrigin(t *testing.T) {
+	const utcOrigin = "TIMESTAMPTZ '1970-01-01 00:00:00+00'"
+	const localOrigin = "TIMESTAMPTZ '1970-01-01'"
+
+	sqlFragments := []string{
+		channelMonitorV2FixedRollupBoundsSQL,
+		channelMonitorV2MetricsRollupSQL,
+		channelMonitorV2UserMetricsRollupSQL,
+		channelMonitorV2HistogramRollupSQL,
+		channelMonitorV2ErrorRollupSQL,
+	}
+	for _, fragment := range sqlFragments {
+		require.NotContains(t, fragment, localOrigin)
+		require.Contains(t, fragment, utcOrigin)
+	}
+}
+
 // Needles present in service.ClassifyChannelMonitorV2Error must appear in the
 // aggregation SQL CASE so rollup categories match drilldown classification.
 func TestChannelMonitorV2SQLTaxonomyContainsGoNeedles(t *testing.T) {
