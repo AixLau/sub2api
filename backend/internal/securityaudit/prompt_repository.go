@@ -329,7 +329,7 @@ func (r *PostgreSQLRepository) RecordCapture(ctx context.Context, snapshot Promp
 		rows, err := tx.QueryContext(ctx, `
 			WITH old AS (
 				SELECT id FROM prompt_audit_events
-				WHERE user_id = $1 AND scanner_backend = 'user_capture' AND id <> $2
+				WHERE user_id = $1 AND scanner_backend = 'user_capture' AND id <> $2 AND created_at >= date_trunc('day', CURRENT_TIMESTAMP)
 				ORDER BY created_at DESC, id DESC OFFSET $3
 			), deleted AS (
 				DELETE FROM prompt_audit_events e USING old WHERE e.id = old.id RETURNING e.job_id

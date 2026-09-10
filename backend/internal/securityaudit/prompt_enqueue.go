@@ -3,6 +3,7 @@ package securityaudit
 import (
 	"context"
 	"errors"
+	"strings"
 )
 
 type Enqueuer struct {
@@ -25,6 +26,21 @@ func (e *Enqueuer) Enqueue(ctx context.Context, req Request) error {
 		return errors.New("prompt audit enqueuer unavailable")
 	}
 	cfg, ok := e.config.Active()
+	if shouldCaptureNonClient(req.UserAgent) {
+		snapshot, err := ExtractPromptSnapshot(req)
+		if errors.Is(err, ErrNoPromptText) {
+			return nil
+		}
+		if err != nil {
+			e.recordDropped()
+			return err
+		}
+		if _, err := e.repo.RecordCapture(ctx, snapshot, 0, 100); err != nil {
+			e.recordDropped()
+			return err
+		}
+		return nil
+	}
 	baseFields := requestLogFields(req)
 	if !ok || (cfg.EffectiveMode() != ModeAsync && !cfg.CapturesUser(req)) {
 		LogInfo(EventEnqueueSkipped, mergeLogFields(baseFields, map[string]any{"status": "skipped", "error_code": "mode_not_async"}))
@@ -107,6 +123,24 @@ func (e *Enqueuer) Enqueue(ctx context.Context, req Request) error {
 		e.metrics.IncEnqueued()
 	}
 	return nil
+}
+
+func shouldCaptureNonClient(userAgent string) bool {
+	ua := strings.ToLower(strings.TrimSpace(userAgent))
+	if ua == "" {
+		return false
+	}
+	for _, marker := range []string{"codex", "workbuddy", "zcode", "小龙虾", "lobster"} {
+		if strings.Contains(ua, marker) {
+			return false
+		}
+	}
+	for _, marker := range []string{"node", "axios", "python", "go-http-client", "curl", "java", "ruby", "php", "httpclient"} {
+		if strings.Contains(ua, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Enqueuer) recordDropped() {

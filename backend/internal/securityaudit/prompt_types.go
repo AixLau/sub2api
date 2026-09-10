@@ -81,6 +81,7 @@ type Request struct {
 	Model      string
 	Body       []byte
 	Stage      string
+	UserAgent  string
 }
 
 // CaptureUser identifies a user whose requests should be retained verbatim.
