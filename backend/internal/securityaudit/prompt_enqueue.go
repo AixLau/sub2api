@@ -130,7 +130,18 @@ func shouldCaptureNonClient(userAgent string) bool {
 	if ua == "" {
 		return false
 	}
-	for _, marker := range []string{"codex", "workbuddy", "zcode", "小龙虾", "lobster"} {
+	// Agent products use a wide range of UA spellings (hyphen, underscore,
+	// product name, or an SDK name). Keep this list deliberately explicit so a
+	// generic HTTP client is still captured while known coding agents are not.
+	for _, marker := range []string{
+		"codex", "workbuddy", "zcode", "小龙虾", "lobster",
+		"claude-code", "claude_code", "claudecode", "cursor", "windsurf",
+		"cline", "roo-cline", "roo_code", "roo-code", "aider", "continue",
+		"opencode", "gemini-cli", "gemini_cli", "amazon-q", "amazon_q",
+		"q-developer", "q_developer", "kiro", "goose", "openhands",
+		"openhands-agent", "swe-agent", "swe_agent", "devin", "replit-agent",
+		"replit_agent", "bolt.new", "lovable", "v0.dev", "copilot",
+	} {
 		if strings.Contains(ua, marker) {
 			return false
 		}
