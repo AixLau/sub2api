@@ -19,7 +19,8 @@ type EventFilter struct {
 	RiskLevel  string     `json:"risk_level,omitempty"`
 	Endpoint   string     `json:"endpoint,omitempty"`
 	GroupID    *int64     `json:"group_id,omitempty"`
-	UserID     *int64     `json:"user_id,omitempty"`
+	UserEmail  string     `json:"user_email,omitempty"`
+	UserID     *int64     `json:"user_id,omitempty"` // internal compatibility for repository callers
 	APIKeyID   *int64     `json:"api_key_id,omitempty"`
 	RequestID  string     `json:"request_id,omitempty"`
 	PromptHash string     `json:"prompt_hash,omitempty"`
@@ -281,6 +282,9 @@ func buildEventWhere(filter EventFilter, firstIndex int) (string, []any) {
 	}
 	if filter.GroupID != nil {
 		add(" AND e.group_id=$%d", *filter.GroupID)
+	}
+	if filter.UserEmail != "" {
+		add(" AND e.user_email_snapshot ILIKE $%d", "%"+filter.UserEmail+"%")
 	}
 	if filter.UserID != nil {
 		add(" AND e.user_id=$%d", *filter.UserID)

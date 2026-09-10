@@ -214,7 +214,7 @@ export interface PromptEventFilters {
   risk_level: string
   endpoint: string
   group_id: string
-  user_id: string
+	user_email: string
   api_key_id: string
   request_id: string
   prompt_hash: string

@@ -260,17 +260,13 @@ func eventFilterFromQuery(c *gin.Context) (EventFilter, error) {
 	if err != nil {
 		return EventFilter{}, err
 	}
-	userID, err := optionalPositiveInt64Query(c, "user_id")
-	if err != nil {
-		return EventFilter{}, err
-	}
 	apiKeyID, err := optionalPositiveInt64Query(c, "api_key_id")
 	if err != nil {
 		return EventFilter{}, err
 	}
 	filter := EventFilter{
 		Decision: c.Query("decision"), RiskLevel: c.Query("risk_level"), Endpoint: c.Query("endpoint"),
-		GroupID: groupID, UserID: userID, APIKeyID: apiKeyID, RequestID: c.Query("request_id"),
+		GroupID: groupID, UserEmail: strings.TrimSpace(c.Query("user_email")), APIKeyID: apiKeyID, RequestID: c.Query("request_id"),
 		PromptHash: c.Query("prompt_hash"), Keyword: c.Query("keyword"),
 	}
 	if value := strings.TrimSpace(c.Query("start_at")); value != "" {

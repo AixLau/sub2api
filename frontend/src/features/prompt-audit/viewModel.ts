@@ -104,7 +104,7 @@ export function emptyEventFilters(): PromptEventFilters {
     risk_level: '',
     endpoint: '',
     group_id: '',
-    user_id: '',
+	user_email: '',
     api_key_id: '',
     request_id: '',
     prompt_hash: '',
@@ -126,10 +126,12 @@ export function eventQueryParams(filters: PromptEventFilters): Record<string, st
     const value = filters[key].trim()
     if (value) result[key] = value
   }
-  for (const key of ['group_id', 'user_id', 'api_key_id'] as const) {
+	for (const key of ['group_id', 'api_key_id'] as const) {
     const value = Number(filters[key])
     if (Number.isInteger(value) && value > 0) result[key] = value
-  }
+	}
+	const email = filters.user_email.trim()
+	if (email) result.user_email = email
   const start = toISO(filters.start_at)
   const end = toISO(filters.end_at)
   if (start) result.start_at = start
