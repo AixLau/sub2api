@@ -13,7 +13,9 @@ import (
 )
 
 type openAIFastPolicyRepoStub struct {
-	values map[string]string
+	values           map[string]string
+	getMultipleCalls int
+	getMultipleKeys  [][]string
 }
 
 func (s *openAIFastPolicyRepoStub) Get(ctx context.Context, key string) (*Setting, error) {
@@ -36,7 +38,15 @@ func (s *openAIFastPolicyRepoStub) Set(ctx context.Context, key, value string) e
 }
 
 func (s *openAIFastPolicyRepoStub) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
-	panic("unexpected GetMultiple call")
+	s.getMultipleCalls++
+	s.getMultipleKeys = append(s.getMultipleKeys, append([]string(nil), keys...))
+	result := make(map[string]string, len(keys))
+	for _, key := range keys {
+		if value, ok := s.values[key]; ok {
+			result[key] = value
+		}
+	}
+	return result, nil
 }
 
 func (s *openAIFastPolicyRepoStub) SetMultiple(ctx context.Context, settings map[string]string) error {
@@ -62,6 +72,16 @@ func newOpenAIGatewayServiceWithSettings(t *testing.T, settings *OpenAIFastPolic
 	return &OpenAIGatewayService{
 		settingService: NewSettingService(repo, &config.Config{}),
 	}
+}
+
+func TestOpenAIFastPolicyRepoStubGetMultipleHonorsSettingRepositoryContract(t *testing.T) {
+	repo := &openAIFastPolicyRepoStub{values: map[string]string{
+		"known": "value",
+	}}
+	values, err := repo.GetMultiple(context.Background(), []string{"known", "missing"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"known": "value"}, values)
+	require.Equal(t, [][]string{{"known", "missing"}}, repo.getMultipleKeys)
 }
 
 func openAIFastFilterPriorityPolicy() *OpenAIFastPolicySettings {
