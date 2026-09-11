@@ -14,15 +14,17 @@ import (
 // all Codex carriers. The same values are projected to compatibility headers,
 // flat client_metadata, and the nested x-codex-turn-metadata object.
 type codexRequestIdentitySnapshot struct {
-	installationID     string
-	sessionID          string
-	threadID           string
-	windowID           string
-	turnID             string
-	parentThreadID     string
-	turnMetadataRaw    string
-	bodyTurnMetadata   map[string]any
-	headerTurnMetadata map[string]any
+	installationID        string
+	sessionID             string
+	threadID              string
+	windowID              string
+	turnID                string
+	parentThreadID        string
+	turnMetadataRaw       string
+	bodyTurnMetadata      map[string]any
+	headerTurnMetadata    map[string]any
+	bodyTurnMetadataRaw   string
+	headerTurnMetadataRaw string
 }
 
 func (i codexRequestIdentitySnapshot) empty() bool {
@@ -91,12 +93,6 @@ func resolveCodexRequestIdentity(headers http.Header, clientMetadata map[string]
 	bodyNested := codexIdentityNestedMetadata(bodyNestedRaw)
 	headerNestedRaw := strings.TrimSpace(headers.Get(openAIWSTurnMetadataHeader))
 	headerNested := codexIdentityNestedMetadata(headerNestedRaw)
-	if bodyNested == nil {
-		bodyNested = map[string]any{}
-	}
-	if headerNested == nil {
-		headerNested = map[string]any{}
-	}
 
 	return codexRequestIdentitySnapshot{
 		installationID: codexFirstIdentityValue(
@@ -138,9 +134,11 @@ func resolveCodexRequestIdentity(headers http.Header, clientMetadata map[string]
 			codexIdentityString(bodyNested["parent_thread_id"]),
 			codexIdentityString(headerNested["parent_thread_id"]),
 		),
-		turnMetadataRaw:    headerNestedRaw,
-		bodyTurnMetadata:   bodyNested,
-		headerTurnMetadata: headerNested,
+		turnMetadataRaw:       headerNestedRaw,
+		bodyTurnMetadata:      bodyNested,
+		headerTurnMetadata:    headerNested,
+		bodyTurnMetadataRaw:   bodyNestedRaw,
+		headerTurnMetadataRaw: headerNestedRaw,
 	}
 }
 
@@ -206,6 +204,14 @@ func applyCodexOutboundIdentityToClientMetadata(clientMetadata map[string]any, i
 	} else {
 		headerNested = codexCompatibilityTurnMetadata(headerNested)
 	}
+	if len(bodyNested) == 0 && identity.bodyTurnMetadataRaw != "" {
+		bodyNested = nil
+	}
+	if len(headerNested) == 0 && identity.headerTurnMetadataRaw != "" {
+		headerNested = nil
+	}
+	bodyMetadataInvalid := identity.bodyTurnMetadataRaw != "" && identity.bodyTurnMetadata == nil
+	headerMetadataInvalid := identity.headerTurnMetadataRaw != "" && identity.headerTurnMetadata == nil
 	applyCodexIdentityFieldsToNestedMetadata(bodyNested, identity)
 	applyCodexIdentityFieldsToNestedMetadata(headerNested, identity)
 
@@ -223,9 +229,21 @@ func applyCodexOutboundIdentityToClientMetadata(clientMetadata map[string]any, i
 	if err != nil {
 		return "", "", err
 	}
+	if bodyRaw == "" && identity.bodyTurnMetadataRaw != "" {
+		bodyRaw = identity.bodyTurnMetadataRaw
+	}
 	headerRaw, err := encode(headerNested)
 	if err != nil {
 		return "", "", err
+	}
+	if headerRaw == "" && identity.headerTurnMetadataRaw != "" {
+		headerRaw = identity.headerTurnMetadataRaw
+	}
+	if bodyMetadataInvalid {
+		bodyRaw = identity.bodyTurnMetadataRaw
+	}
+	if headerMetadataInvalid {
+		headerRaw = identity.headerTurnMetadataRaw
 	}
 	if bodyRaw != "" {
 		clientMetadata[openAIWSTurnMetadataHeader] = bodyRaw

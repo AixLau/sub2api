@@ -703,7 +703,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	applyStagedCodexFingerprintHeaders(c, account, req.Header)
 	// 终态收口：透传路径的 OAuth 与非透传一致。originator 必须与最终
 	// User-Agent 首段配套且为官方身份，否则整体回退为默认 Codex CLI 身份。
-	if account.UsesOpenAICodexProtocol() {
+	if account.UsesOpenAICodexProtocol() && !isOpenAIResponsesCompactPath(c) {
 		enforceCodexIdentityHeadersWithCanonicalUA(
 			req.Header,
 			s.codexIdentityOverrideUA(account),

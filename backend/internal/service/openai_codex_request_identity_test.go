@@ -75,7 +75,7 @@ func TestNormalizeCodexOutboundIdentityMapTrimsCompatibilityMetadata(t *testing.
 	headers := http.Header{}
 	headers.Set("session-id", "session-map")
 	body := map[string]any{"client_metadata": map[string]any{
-		"session_id": "session-map",
+		"session_id":               "session-map",
 		openAIWSTurnMetadataHeader: `{"session_id":"session-map","tool_namespaces_info":{"mcp":{"functions":["keep-in-body"]}},"body_only":"keep"}`,
 	}}
 	_, changed, err := normalizeCodexOutboundIdentityMap(headers, body, "")
