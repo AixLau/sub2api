@@ -376,15 +376,23 @@ func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
 	h.Set("session-id", ids.sessionID)
 	h.Set("session_id", ids.sessionID)
 	h.Set("thread-id", ids.threadID)
+	parentReferencePresent := strings.TrimSpace(h.Get("x-codex-parent-thread-id")) != ""
+	if parentReferencePresent {
+		h.Set("x-codex-parent-thread-id", ids.threadID)
+	}
 
-	rewriteCodexTurnMetadataFields(h, map[string]any{
+	fields := map[string]any{
 		"installation_id":         ids.installationID,
 		"session_id":              ids.sessionID,
 		"thread_id":               ids.threadID,
 		"turn_id":                 ids.turnID,
 		"window_id":               ids.windowID,
 		"turn_started_at_unix_ms": ids.turnStartedAtUnixMs,
-	})
+	}
+	if parentReferencePresent {
+		fields["parent_thread_id"] = ids.threadID
+	}
+	rewriteCodexTurnMetadataFields(h, fields)
 }
 
 // rewriteCodexTurnMetadataFields 解析 x-codex-turn-metadata 头中的 JSON，
@@ -456,20 +464,49 @@ func applyCodexFingerprintToClientMetadataMap(existing map[string]any, ids *code
 	}
 
 	// session / full 模式
+	parentReferencePresent := codexFingerprintParentReferencePresent(existing)
 	existing["session_id"] = ids.sessionID
 	existing["thread_id"] = ids.threadID
 	existing["turn_id"] = ids.turnID
 	existing["x-codex-window-id"] = ids.windowID
+	if parentReferencePresent {
+		existing["x-codex-parent-thread-id"] = ids.threadID
+	}
 
-	rewriteClientMetadataEmbeddedTurnMetadata(existing, map[string]any{
+	fields := map[string]any{
 		"installation_id":         ids.installationID,
 		"session_id":              ids.sessionID,
 		"thread_id":               ids.threadID,
 		"turn_id":                 ids.turnID,
 		"window_id":               ids.windowID,
 		"turn_started_at_unix_ms": ids.turnStartedAtUnixMs,
-	})
+	}
+	if parentReferencePresent {
+		fields["parent_thread_id"] = ids.threadID
+	}
+	rewriteClientMetadataEmbeddedTurnMetadata(existing, fields)
 	return true
+}
+
+func codexFingerprintParentReferencePresent(values map[string]any) bool {
+	if values == nil {
+		return false
+	}
+	for _, key := range []string{"parent_thread_id", "x-codex-parent-thread-id"} {
+		if raw, ok := values[key].(string); ok && strings.TrimSpace(raw) != "" {
+			return true
+		}
+	}
+	raw, ok := values[openAIWSTurnMetadataHeader].(string)
+	if !ok || strings.TrimSpace(raw) == "" {
+		return false
+	}
+	metadata := map[string]any{}
+	if err := json.Unmarshal([]byte(raw), &metadata); err != nil || metadata == nil {
+		return false
+	}
+	parent, _ := metadata["parent_thread_id"].(string)
+	return strings.TrimSpace(parent) != ""
 }
 
 func captureCodexFingerprintOriginalBodySessionID(ids *codexFingerprintIDs, clientMetadata any) {

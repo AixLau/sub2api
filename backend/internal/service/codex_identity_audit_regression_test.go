@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func auditCodexJSON(t *testing.T, raw string) map[string]any {
@@ -92,6 +94,53 @@ func TestCodexIdentityAudit_ParentReferenceEqualsMappedParentThread(t *testing.T
 	got := childHeaders.Get("x-codex-parent-thread-id")
 	if got != want {
 		t.Fatalf("child parent reference=%q, actual parent outbound thread=%q", got, want)
+	}
+}
+
+func TestCodexIdentityAudit_ParentReferenceFollowsFinalThreadAcrossFingerprintModes(t *testing.T) {
+	for _, mode := range []string{"off", "device", "session", "full"} {
+		t.Run(mode, func(t *testing.T) {
+			account := &Account{
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeOAuth,
+				Credentials: map[string]any{"chatgpt_account_id": "audit-account-" + mode},
+				Extra: map[string]any{
+					codexFingerprintModeExtraKey: mode,
+					codexFingerprintSeedExtraKey: "123e4567-e89b-12d3-a456-426614174000",
+				},
+			}
+			const apiKeyID int64 = 7
+			build := func(threadID, parentID string) (http.Header, map[string]any) {
+				headers := make(http.Header)
+				headers.Set("session-id", "client-session")
+				headers.Set("thread-id", threadID)
+				if parentID != "" {
+					headers.Set("x-codex-parent-thread-id", parentID)
+				}
+				body := map[string]any{"client_metadata": map[string]any{
+					"session_id": threadID,
+					"thread_id":  threadID,
+				}}
+				if parentID != "" {
+					body["client_metadata"].(map[string]any)["x-codex-parent-thread-id"] = parentID
+				}
+				ids := resolveCodexFingerprintIDsFromRequest(account, headers)
+				applyCodexAccountIdentityClientMetadataMap(body, account, apiKeyID)
+				if ids != nil {
+					applyCodexFingerprintClientMetadata(body, ids)
+				}
+				applyCodexAccountIdentityHeaders(headers, account, apiKeyID)
+				if ids != nil {
+					applyCodexFingerprintHeaders(headers, ids)
+				}
+				_, _, err := normalizeCodexOutboundIdentityMap(headers, body, "")
+				require.NoError(t, err)
+				return headers, body
+			}
+			parentHeaders, _ := build("parent-original", "")
+			childHeaders, _ := build("child-original", "parent-original")
+			require.Equal(t, parentHeaders.Get("thread-id"), childHeaders.Get("x-codex-parent-thread-id"))
+		})
 	}
 }
 

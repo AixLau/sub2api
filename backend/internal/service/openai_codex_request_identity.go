@@ -202,7 +202,9 @@ func applyCodexOutboundIdentityToClientMetadata(clientMetadata map[string]any, i
 	}
 	headerNested := cloneCodexIdentityMetadata(identity.headerTurnMetadata)
 	if len(headerNested) == 0 {
-		headerNested = cloneCodexIdentityMetadata(identity.bodyTurnMetadata)
+		headerNested = codexCompatibilityTurnMetadata(identity.bodyTurnMetadata)
+	} else {
+		headerNested = codexCompatibilityTurnMetadata(headerNested)
 	}
 	applyCodexIdentityFieldsToNestedMetadata(bodyNested, identity)
 	applyCodexIdentityFieldsToNestedMetadata(headerNested, identity)
@@ -240,6 +242,15 @@ func cloneCodexIdentityMetadata(metadata map[string]any) map[string]any {
 		cloned[key] = value
 	}
 	return cloned
+}
+
+// codexCompatibilityTurnMetadata projects the selected official metadata
+// shape onto the bounded compatibility header. The full body projection keeps
+// tool_namespaces_info; the direct header omits it.
+func codexCompatibilityTurnMetadata(metadata map[string]any) map[string]any {
+	projected := cloneCodexIdentityMetadata(metadata)
+	delete(projected, "tool_namespaces_info")
+	return projected
 }
 
 func applyCodexIdentityFieldsToNestedMetadata(metadata map[string]any, identity codexRequestIdentitySnapshot) {
