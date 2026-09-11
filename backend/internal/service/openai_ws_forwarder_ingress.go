@@ -313,11 +313,18 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			)
 		}
 		if turnMetadata := strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)); turnMetadata != "" {
-			next, setErr := applyPayloadMutation(normalized, "client_metadata."+openAIWSTurnMetadataHeader, turnMetadata)
-			if setErr != nil {
-				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", setErr)
+			// The handshake header is a connection-level compatibility default.
+			// A response.create frame may carry richer, turn-specific metadata;
+			// preserve that current-frame object instead of replacing it with the
+			// first-turn header snapshot.
+			existingTurnMetadata := strings.TrimSpace(gjson.GetBytes(normalized, "client_metadata."+openAIWSTurnMetadataHeader).String())
+			if existingTurnMetadata == "" {
+				next, setErr := applyPayloadMutation(normalized, "client_metadata."+openAIWSTurnMetadataHeader, turnMetadata)
+				if setErr != nil {
+					return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", setErr)
+				}
+				normalized = next
 			}
-			normalized = next
 		}
 		accountIdentitySourceRaw := append([]byte(nil), normalized...)
 		accountScopedPayload, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRaw(normalized, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))

@@ -1034,8 +1034,9 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				if accountScoped {
 					payload = accountScopedPayload
 				}
+				frameIdentityHeaders := headers.Clone()
 				if normalized, _, changed, identityErr := normalizeCodexOutboundIdentityRaw(
-					headers,
+					frameIdentityHeaders,
 					payload,
 					strings.TrimSpace(gjson.GetBytes(payload, "prompt_cache_key").String()),
 				); identityErr != nil {

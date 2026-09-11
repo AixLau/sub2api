@@ -120,8 +120,11 @@ var codexAccountIdentityFields = []struct {
 	{name: "turn-id", kind: "turn"},
 	{name: "window_id", kind: "window"},
 	{name: "x-codex-window-id", kind: "window"},
-	{name: "parent_thread_id", kind: "parent-thread"},
-	{name: "x-codex-parent-thread-id", kind: "parent-thread"},
+	// A parent_thread_id is a reference to the same thread identity namespace;
+	// it must use the exact mapping as thread_id so child requests can refer to
+	// the mapped parent request.
+	{name: "parent_thread_id", kind: "thread"},
+	{name: "x-codex-parent-thread-id", kind: "thread"},
 	{name: "x-client-request-id", kind: "request"},
 }
 

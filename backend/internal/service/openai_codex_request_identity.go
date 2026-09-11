@@ -14,13 +14,15 @@ import (
 // all Codex carriers. The same values are projected to compatibility headers,
 // flat client_metadata, and the nested x-codex-turn-metadata object.
 type codexRequestIdentitySnapshot struct {
-	installationID  string
-	sessionID       string
-	threadID        string
-	windowID        string
-	turnID          string
-	parentThreadID  string
-	turnMetadataRaw string
+	installationID     string
+	sessionID          string
+	threadID           string
+	windowID           string
+	turnID             string
+	parentThreadID     string
+	turnMetadataRaw    string
+	bodyTurnMetadata   map[string]any
+	headerTurnMetadata map[string]any
 }
 
 func (i codexRequestIdentitySnapshot) empty() bool {
@@ -85,50 +87,60 @@ func codexFirstIdentityValue(values ...string) string {
 // and finally the prompt-cache/session fallback. This precedence prevents a
 // synthesized legacy session_id from overriding an official body session_id.
 func resolveCodexRequestIdentity(headers http.Header, clientMetadata map[string]any, fallbackSession string) codexRequestIdentitySnapshot {
-	nestedRaw := codexIdentityString(clientMetadata[openAIWSTurnMetadataHeader])
-	if headerMetadata := strings.TrimSpace(headers.Get(openAIWSTurnMetadataHeader)); headerMetadata != "" {
-		nestedRaw = headerMetadata
+	bodyNestedRaw := codexIdentityString(clientMetadata[openAIWSTurnMetadataHeader])
+	bodyNested := codexIdentityNestedMetadata(bodyNestedRaw)
+	headerNestedRaw := strings.TrimSpace(headers.Get(openAIWSTurnMetadataHeader))
+	headerNested := codexIdentityNestedMetadata(headerNestedRaw)
+	if bodyNested == nil {
+		bodyNested = map[string]any{}
 	}
-	nested := codexIdentityNestedMetadata(nestedRaw)
-	if nested == nil {
-		nested = map[string]any{}
+	if headerNested == nil {
+		headerNested = map[string]any{}
 	}
 
 	return codexRequestIdentitySnapshot{
 		installationID: codexFirstIdentityValue(
 			headers.Get("x-codex-installation-id"),
 			codexIdentityString(clientMetadata["x-codex-installation-id"]),
-			codexIdentityString(nested["installation_id"]),
+			codexIdentityString(bodyNested["installation_id"]),
+			codexIdentityString(headerNested["installation_id"]),
 		),
 		sessionID: codexFirstIdentityValue(
 			headers.Get("session-id"),
 			codexIdentityString(clientMetadata["session_id"]),
 			headers.Get("session_id"),
-			codexIdentityString(nested["session_id"]),
+			codexIdentityString(bodyNested["session_id"]),
+			codexIdentityString(headerNested["session_id"]),
 			fallbackSession,
 		),
 		threadID: codexFirstIdentityValue(
 			headers.Get("thread-id"),
 			codexIdentityString(clientMetadata["thread_id"]),
 			headers.Get("thread_id"),
-			codexIdentityString(nested["thread_id"]),
+			codexIdentityString(bodyNested["thread_id"]),
+			codexIdentityString(headerNested["thread_id"]),
 			headers.Get("x-client-request-id"),
 		),
 		windowID: codexFirstIdentityValue(
 			headers.Get("x-codex-window-id"),
 			codexIdentityString(clientMetadata["x-codex-window-id"]),
-			codexIdentityString(nested["window_id"]),
+			codexIdentityString(bodyNested["window_id"]),
+			codexIdentityString(headerNested["window_id"]),
 		),
 		turnID: codexFirstIdentityValue(
 			codexIdentityString(clientMetadata["turn_id"]),
-			codexIdentityString(nested["turn_id"]),
+			codexIdentityString(bodyNested["turn_id"]),
+			codexIdentityString(headerNested["turn_id"]),
 		),
 		parentThreadID: codexFirstIdentityValue(
 			headers.Get("x-codex-parent-thread-id"),
 			codexIdentityString(clientMetadata["x-codex-parent-thread-id"]),
-			codexIdentityString(nested["parent_thread_id"]),
+			codexIdentityString(bodyNested["parent_thread_id"]),
+			codexIdentityString(headerNested["parent_thread_id"]),
 		),
-		turnMetadataRaw: nestedRaw,
+		turnMetadataRaw:    headerNestedRaw,
+		bodyTurnMetadata:   bodyNested,
+		headerTurnMetadata: headerNested,
 	}
 }
 
@@ -161,9 +173,9 @@ func applyCodexOutboundIdentityToHeaders(headers http.Header, identity codexRequ
 	}
 }
 
-func applyCodexOutboundIdentityToClientMetadata(clientMetadata map[string]any, identity codexRequestIdentitySnapshot) error {
+func applyCodexOutboundIdentityToClientMetadata(clientMetadata map[string]any, identity codexRequestIdentitySnapshot) (string, string, error) {
 	if clientMetadata == nil || identity.empty() {
-		return nil
+		return "", "", nil
 	}
 	if identity.installationID != "" {
 		clientMetadata["x-codex-installation-id"] = identity.installationID
@@ -184,40 +196,74 @@ func applyCodexOutboundIdentityToClientMetadata(clientMetadata map[string]any, i
 		clientMetadata["x-codex-parent-thread-id"] = identity.parentThreadID
 	}
 
-	nestedRaw := identity.turnMetadataRaw
-	if nestedRaw == "" {
-		nestedRaw = codexIdentityString(clientMetadata[openAIWSTurnMetadataHeader])
+	bodyNested := cloneCodexIdentityMetadata(identity.bodyTurnMetadata)
+	if len(bodyNested) == 0 {
+		bodyNested = cloneCodexIdentityMetadata(identity.headerTurnMetadata)
 	}
-	nested := codexIdentityNestedMetadata(nestedRaw)
-	if nested == nil {
-		nested = map[string]any{}
+	headerNested := cloneCodexIdentityMetadata(identity.headerTurnMetadata)
+	if len(headerNested) == 0 {
+		headerNested = cloneCodexIdentityMetadata(identity.bodyTurnMetadata)
+	}
+	applyCodexIdentityFieldsToNestedMetadata(bodyNested, identity)
+	applyCodexIdentityFieldsToNestedMetadata(headerNested, identity)
+
+	encode := func(metadata map[string]any) (string, error) {
+		if len(metadata) == 0 {
+			return "", nil
+		}
+		encoded, err := json.Marshal(metadata)
+		if err != nil {
+			return "", fmt.Errorf("encode codex turn metadata: %w", err)
+		}
+		return string(encoded), nil
+	}
+	bodyRaw, err := encode(bodyNested)
+	if err != nil {
+		return "", "", err
+	}
+	headerRaw, err := encode(headerNested)
+	if err != nil {
+		return "", "", err
+	}
+	if bodyRaw != "" {
+		clientMetadata[openAIWSTurnMetadataHeader] = bodyRaw
+	}
+	return bodyRaw, headerRaw, nil
+}
+
+func cloneCodexIdentityMetadata(metadata map[string]any) map[string]any {
+	if len(metadata) == 0 {
+		return map[string]any{}
+	}
+	cloned := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func applyCodexIdentityFieldsToNestedMetadata(metadata map[string]any, identity codexRequestIdentitySnapshot) {
+	if metadata == nil {
+		return
 	}
 	if identity.installationID != "" {
-		nested["installation_id"] = identity.installationID
+		metadata["installation_id"] = identity.installationID
 	}
 	if identity.sessionID != "" {
-		nested["session_id"] = identity.sessionID
+		metadata["session_id"] = identity.sessionID
 	}
 	if identity.threadID != "" {
-		nested["thread_id"] = identity.threadID
+		metadata["thread_id"] = identity.threadID
 	}
 	if identity.windowID != "" {
-		nested["window_id"] = identity.windowID
+		metadata["window_id"] = identity.windowID
 	}
 	if identity.turnID != "" {
-		nested["turn_id"] = identity.turnID
+		metadata["turn_id"] = identity.turnID
 	}
 	if identity.parentThreadID != "" {
-		nested["parent_thread_id"] = identity.parentThreadID
+		metadata["parent_thread_id"] = identity.parentThreadID
 	}
-	if len(nested) > 0 {
-		encoded, err := json.Marshal(nested)
-		if err != nil {
-			return fmt.Errorf("encode codex turn metadata: %w", err)
-		}
-		clientMetadata[openAIWSTurnMetadataHeader] = string(encoded)
-	}
-	return nil
 }
 
 // normalizeCodexOutboundIdentityMap synchronizes a decoded request body and
@@ -235,9 +281,11 @@ func normalizeCodexOutboundIdentityMap(headers http.Header, body map[string]any,
 	if clientMetadata == nil {
 		clientMetadata = make(map[string]any)
 	}
-	if err := applyCodexOutboundIdentityToClientMetadata(clientMetadata, identity); err != nil {
+	_, headerMetadataRaw, err := applyCodexOutboundIdentityToClientMetadata(clientMetadata, identity)
+	if err != nil {
 		return identity, false, err
 	}
+	identity.turnMetadataRaw = headerMetadataRaw
 	body["client_metadata"] = clientMetadata
 	applyCodexOutboundIdentityToHeaders(headers, identity)
 	return identity, true, nil
@@ -263,9 +311,11 @@ func normalizeCodexOutboundIdentityRaw(headers http.Header, body []byte, fallbac
 	if identity.empty() {
 		return body, identity, false, nil
 	}
-	if err := applyCodexOutboundIdentityToClientMetadata(clientMetadata, identity); err != nil {
+	_, headerMetadataRaw, err := applyCodexOutboundIdentityToClientMetadata(clientMetadata, identity)
+	if err != nil {
 		return body, identity, false, err
 	}
+	identity.turnMetadataRaw = headerMetadataRaw
 	rawMetadata, err := json.Marshal(clientMetadata)
 	if err != nil {
 		return body, identity, false, fmt.Errorf("encode codex client metadata: %w", err)
