@@ -16,11 +16,20 @@ func TestFetchOpenAIAccountModelsOAuthProvidesDisplayNames(t *testing.T) {
 
 	models, err := svc.FetchOpenAIAccountModels(context.Background(), account)
 	require.NoError(t, err)
-	require.Len(t, models, 2)
+	// The OAuth picker also appends locally supported image choices. Assert the
+	// upstream models and their display-name normalization without depending on
+	// the number of locally supported image models.
+	require.GreaterOrEqual(t, len(models), 2)
 	require.Equal(t, "gpt-6-astra", models[0].ID)
 	require.Equal(t, "gpt-6-astra", models[0].DisplayName)
 	require.Equal(t, "custom-live-model", models[1].ID)
 	require.Equal(t, "custom-live-model", models[1].DisplayName)
+	ids := make([]string, 0, len(models))
+	for _, model := range models {
+		ids = append(ids, model.ID)
+	}
+	require.Contains(t, ids, "gpt-image-2.5-flare")
+	require.Contains(t, ids, "gpt-image-2.5-sunburst")
 
 	// Admin display labels must not alter the shared standard model catalog.
 	response, err := gateway.FetchOpenAIModelsList(context.Background(), account)
