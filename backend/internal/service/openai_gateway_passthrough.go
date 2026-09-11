@@ -717,6 +717,24 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）
 	account.ApplyHeaderOverrides(req.Header)
+	if account.UsesOpenAICodexProtocol() {
+		normalizedBody, _, changed, normalizeErr := normalizeCodexOutboundIdentityRaw(
+			req.Header,
+			body,
+			strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()),
+		)
+		if normalizeErr != nil {
+			return nil, fmt.Errorf("normalize codex outbound identity: %w", normalizeErr)
+		}
+		if changed {
+			body = normalizedBody
+			req.Body = io.NopCloser(bytes.NewReader(body))
+			req.ContentLength = int64(len(body))
+			req.GetBody = func() (io.ReadCloser, error) {
+				return io.NopCloser(bytes.NewReader(body)), nil
+			}
+		}
+	}
 	applyOpenCodeSessionHeader(c, account, targetURL, req.Header)
 	// x-codex-beta-features：按真实 Codex 的会话级行为补注（在账号级覆写之后，
 	// 保证不被覆盖丢失）。

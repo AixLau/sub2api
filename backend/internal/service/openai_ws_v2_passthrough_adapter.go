@@ -856,6 +856,18 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	if buildHdrErr != nil {
 		return fmt.Errorf("build ws headers: %w", buildHdrErr)
 	}
+	if normalized, identity, changed, identityErr := normalizeCodexOutboundIdentityRaw(
+		headers,
+		firstClientMessage,
+		promptCacheKey,
+	); identityErr != nil {
+		return fmt.Errorf("normalize first websocket identity: %w", identityErr)
+	} else {
+		if changed {
+			firstClientMessage = normalized
+		}
+		applyCodexOutboundIdentityToHeaders(headers, identity)
+	}
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
@@ -1021,6 +1033,15 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				}
 				if accountScoped {
 					payload = accountScopedPayload
+				}
+				if normalized, _, changed, identityErr := normalizeCodexOutboundIdentityRaw(
+					headers,
+					payload,
+					strings.TrimSpace(gjson.GetBytes(payload, "prompt_cache_key").String()),
+				); identityErr != nil {
+					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", identityErr)
+				} else if changed {
+					payload = normalized
 				}
 			}
 			if isResponseCreate {

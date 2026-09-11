@@ -120,6 +120,8 @@ var codexAccountIdentityFields = []struct {
 	{name: "turn-id", kind: "turn"},
 	{name: "window_id", kind: "window"},
 	{name: "x-codex-window-id", kind: "window"},
+	{name: "parent_thread_id", kind: "parent-thread"},
+	{name: "x-codex-parent-thread-id", kind: "parent-thread"},
 	{name: "x-client-request-id", kind: "request"},
 }
 
@@ -254,8 +256,9 @@ func applyCodexAccountIdentityHeaders(headers http.Header, account *Account, api
 		return
 	}
 	for _, field := range codexAccountIdentityFields {
-		// Underscore session/conversation headers are rebuilt separately from the
-		// prompt cache key by each request builder.
+		// The underscore session_id value is rebuilt from prompt_cache_key by
+		// the request builders. The canonical hyphenated session-id and body
+		// metadata are synchronized by the final outbound identity pass.
 		if field.name == "session_id" {
 			continue
 		}

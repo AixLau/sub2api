@@ -467,6 +467,20 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		normalized = policyApplied
 		ingressSessionOriginalModel = originalModel
+		identityHeaders := make(http.Header)
+		if c != nil && c.Request != nil {
+			identityHeaders = c.Request.Header.Clone()
+		}
+		applyCodexAccountIdentityHeaders(identityHeaders, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
+		if identityNormalized, _, identityChanged, identityErr := normalizeCodexOutboundIdentityRaw(
+			identityHeaders,
+			normalized,
+			promptCacheKey,
+		); identityErr != nil {
+			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", identityErr)
+		} else if identityChanged {
+			normalized = identityNormalized
+		}
 
 		return openAIWSClientPayload{
 			payloadRaw:               normalized,
@@ -781,6 +795,19 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	)
 	if buildHdrErr != nil {
 		return fmt.Errorf("build ws headers: %w", buildHdrErr)
+	}
+	if normalized, identity, changed, identityErr := normalizeCodexOutboundIdentityRaw(
+		wsHeaders,
+		firstPayload.payloadRaw,
+		firstPayload.promptCacheKey,
+	); identityErr != nil {
+		return fmt.Errorf("normalize ingress websocket identity: %w", identityErr)
+	} else {
+		if changed {
+			firstPayload.payloadRaw = normalized
+			firstPayload.payloadBytes = len(normalized)
+		}
+		applyCodexOutboundIdentityToHeaders(wsHeaders, identity)
 	}
 	baseAcquireReq := openAIWSAcquireRequest{
 		Account: account,
