@@ -22,6 +22,7 @@ const codexSessionIdentityInputContextKey = "codex_session_identity_input"
 type codexSessionIdentityInput struct {
 	sessionID                       string
 	promptCacheKeyReferencesSession bool
+	parentReferencePresent          bool
 }
 
 func stageCodexSessionIdentityInputMap(c *gin.Context, body map[string]any) {
@@ -29,10 +30,12 @@ func stageCodexSessionIdentityInputMap(c *gin.Context, body map[string]any) {
 		return
 	}
 	cacheKey := codexIdentityString(body["prompt_cache_key"])
-	identity := resolveCodexRequestIdentity(c.Request.Header, codexIdentityMetadataMap(body["client_metadata"]), cacheKey)
+	clientMetadata := codexIdentityMetadataMap(body["client_metadata"])
+	identity := resolveCodexRequestIdentity(c.Request.Header, clientMetadata, cacheKey)
 	c.Set(codexSessionIdentityInputContextKey, &codexSessionIdentityInput{
 		sessionID:                       identity.sessionID,
 		promptCacheKeyReferencesSession: cacheKey != "" && cacheKey == identity.sessionID,
+		parentReferencePresent:          identity.parentThreadID != "" || codexFingerprintParentReferencePresent(clientMetadata),
 	})
 }
 

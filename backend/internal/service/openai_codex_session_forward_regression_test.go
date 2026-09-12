@@ -222,6 +222,54 @@ func TestCodexSessionConflictingLowerPriorityBodyCacheKeyKeepsIndependentScope(t
 	}
 }
 
+func TestCodexSessionParentDowngradeReturnsCacheOwnershipToCapturedInput(t *testing.T) {
+	for _, transport := range []string{"http", "passthrough"} {
+		for _, mode := range []codexFingerprintMode{codexFingerprintSession, codexFingerprintFull} {
+			for _, bodySession := range []string{
+				"01950000-0000-7000-8000-000000000001",
+				"550e8400-e29b-41d4-a716-446655440000",
+				"body-session-b",
+			} {
+				t.Run(transport+"/"+string(mode)+"/"+bodySession, func(t *testing.T) {
+					run := func(withBodySession bool) (string, string) {
+						cfg := &config.Config{Gateway: config.GatewayConfig{CodexSessionIdentityMapping: CodexSessionIdentityMappingV2}}
+						upstream := &httpUpstreamRecorder{resp: &http.Response{
+							StatusCode: http.StatusOK,
+							Header:     http.Header{"Content-Type": {"text/event-stream"}},
+							Body:       io.NopCloser(strings.NewReader("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_parent\",\"model\":\"gpt-5.2\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n")),
+						}}
+						svc := &OpenAIGatewayService{cfg: cfg, cache: &codexSessionIdentityTestStore{GatewayCache: &stubGatewayCache{}, values: map[string]string{}}, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
+						account := newTestOAuthAccount(9531, map[string]any{codexFingerprintModeExtraKey: string(mode), "openai_passthrough": transport == "passthrough"})
+						account.Credentials = map[string]any{"access_token": "test-token", "chatgpt_account_id": "parent-downgrade-account"}
+						c := newCodexSessionIdentityTestContext(t, 95, 953)
+						c.Request.Header.Set("User-Agent", "codex_cli_rs/0.146.0")
+						c.Request.Header.Set("originator", "codex_cli_rs")
+						c.Request.Header.Set("session-id", "client-session-a")
+						body := map[string]any{"model": "gpt-5.2", "stream": true, "instructions": "test", "prompt_cache_key": bodySession, "input": []any{map[string]any{"role": "user", "content": "hello"}}, "client_metadata": map[string]any{"x-codex-parent-thread-id": "parent-thread"}}
+						if withBodySession {
+							body["client_metadata"].(map[string]any)["session_id"] = bodySession
+						}
+						encoded, err := json.Marshal(body)
+						require.NoError(t, err)
+						_, err = svc.Forward(context.Background(), c, account, encoded)
+						require.NoError(t, err)
+						if transport == "passthrough" {
+							require.NotNil(t, upstream.lastReq)
+						}
+						return gjson.GetBytes(upstream.lastBody, "client_metadata.session_id").String(), gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String()
+					}
+					withoutBody, withoutBodyCache := run(false)
+					withBody, withBodyCache := run(true)
+					require.NotEmpty(t, withoutBody)
+					require.Equal(t, withoutBody, withBody, "parent-triggered device downgrade must retain the explicit header session")
+					require.Equal(t, withoutBodyCache, withBodyCache, "device downgrade must use captured cache ownership")
+					require.Equal(t, scopeCodexAccountIdentityValue(codexSessionIdentityV2Account("parent-downgrade-account"), 953, "prompt-cache", bodySession), withoutBodyCache)
+				})
+			}
+		}
+	}
+}
+
 func TestCodexSessionStrategyCutoverAndRollbackAtHTTPBuilders(t *testing.T) {
 	// An old UUIDv7 is still a UUIDv7: creation time cannot prove whether it
 	// was active before upgrade. A strategy change is an explicit boundary.

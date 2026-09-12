@@ -198,7 +198,7 @@ func applyCodexAccountIdentityClientMetadataMapWithInput(requestBody map[string]
 		}
 	}
 	if raw, ok := requestBody["prompt_cache_key"].(string); ok && strings.TrimSpace(raw) != "" {
-		if input != nil && !codexFingerprintModeOwnsSessionCache(account.GetCodexFingerprintMode()) {
+		if input != nil && !codexFingerprintModeOwnsSessionCacheForInput(account, input) {
 			if input.promptCacheKeyReferencesSession {
 				return changed
 			}
@@ -269,7 +269,7 @@ func applyCodexAccountIdentityClientMetadataRawWithInput(body []byte, account *A
 	}
 	if promptCacheKey := gjson.GetBytes(body, "prompt_cache_key"); promptCacheKey.Type == gjson.String && strings.TrimSpace(promptCacheKey.String()) != "" {
 		raw := promptCacheKey.String()
-		if input != nil && !codexFingerprintModeOwnsSessionCache(account.GetCodexFingerprintMode()) {
+		if input != nil && !codexFingerprintModeOwnsSessionCacheForInput(account, input) {
 			if input.promptCacheKeyReferencesSession {
 				return next, changed, nil
 			}

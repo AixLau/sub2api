@@ -136,6 +136,22 @@ func codexFingerprintModeOwnsSessionCache(mode codexFingerprintMode) bool {
 	return mode == codexFingerprintSession || mode == codexFingerprintFull
 }
 
+// codexFingerprintModeOwnsSessionCacheForInput reflects the mode that will
+// actually project this request. A parent reference downgrades session/full to
+// device during fingerprint projection, so its cache key must be handled by
+// the captured identity source instead of the fingerprint branch.
+func codexFingerprintModeOwnsSessionCacheForInput(account *Account, input *codexSessionIdentityInput) bool {
+	if account == nil || !codexFingerprintModeOwnsSessionCache(account.GetCodexFingerprintMode()) {
+		return false
+	}
+	// A configured mode without its durable seed produces no fingerprint
+	// snapshot and therefore cannot own the cache relationship for this request.
+	if _, ok := codexFingerprintSeed(account.Extra); !ok {
+		return false
+	}
+	return input == nil || !input.parentReferencePresent
+}
+
 func codexFingerprintSeed(extra map[string]any) (string, bool) {
 	if extra == nil {
 		return "", false
