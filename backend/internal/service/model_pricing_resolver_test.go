@@ -287,7 +287,7 @@ func TestResolve_WithChannelOverride_NormalizesOpenAIDisplayAlias(t *testing.T) 
 			return map[int64]string{groupID: PlatformOpenAI}, nil
 		},
 	}
-	cs := NewChannelService(repo, nil, nil, nil)
+	cs := NewChannelService(repo, nil, nil, nil, nil)
 	bs := newTestBillingServiceForResolver()
 	bs.fallbackPrices["gpt-5.6-sol"] = &ModelPricing{
 		InputPricePerToken:     5e-6,
