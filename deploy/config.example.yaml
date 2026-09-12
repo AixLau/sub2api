@@ -268,9 +268,13 @@ gateway:
   #
   # 默认 false（即归一化开启）；仅当上游调整分桶、使归一化反而落入降载桶时才置 true。
   disable_codex_originator_normalization: false
-  # Codex session identity migration strategy. v2 maps newly-created UUIDv7
-  # sessions through the durable account-scoped store. Set to legacy to roll
-  # back without changing existing active-session mappings.
+  # UUIDv7 session isolation: v2 uses durable mappings; legacy restores
+  # deterministic API-key/account scoping. This covers ALL UUIDv7 inputs;
+  # UUID version cannot distinguish sessions active before deployment.
+  # Upgrade/rollback strategy: drain active sessions before switching modes,
+  # use the same mode on every instance, then start fresh client sessions.
+  # Switching modes changes upstream identity. Keep the v2 Redis mappings
+  # when rolling back so re-enabling v2 can recover the saved identities.
   codex_session_identity_mapping: "v2"
   # Enable Codex image-generation bridge injection for /openai/v1/responses.
   # 是否为 Codex /responses 请求自动注入 image_generation 工具与桥接指令。

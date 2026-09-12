@@ -533,8 +533,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if currentClientPromptCacheKey, ok := decoded["prompt_cache_key"].(string); ok {
 			clientPromptCacheKey = currentClientPromptCacheKey
 		}
-		if !isCompactRequest && applyCodexAccountIdentityClientMetadataMap(decoded, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c)) {
-			markDecodedModified()
+		if !isCompactRequest {
+			stageCodexSessionIdentityInputMap(c, decoded)
+			if applyCodexAccountIdentityClientMetadataMap(decoded, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c)) {
+				markDecodedModified()
+			}
 		}
 		stageCodexFingerprintIDs(c, nil)
 		// 指纹收敛：一次性解析收敛 ID，请求体和出站头共享同一份 IDs（保证 turn_id 等随机字段一致）。
@@ -1543,13 +1546,11 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	}
 	// compact 保留上方的头部规范化，但不能向其 body 注入 Responses 元数据。
 	if account.UsesOpenAICodexProtocol() && !isOpenAIResponsesCompactPath(c) {
-		normalizedBody, _, changed, normalizeErr := normalizeCodexOutboundIdentityRawWithSessionMapper(
+		normalizedBody, _, changed, normalizeErr := s.normalizeCodexOutboundIdentityRaw(
+			ctx, c, account,
 			req.Header,
 			body,
 			promptCacheKey,
-			func(raw string) (string, error) {
-				return s.resolveCodexMappedSessionIdentity(ctx, c, account, raw)
-			},
 		)
 		if normalizeErr != nil {
 			return nil, fmt.Errorf("normalize codex outbound identity: %w", normalizeErr)

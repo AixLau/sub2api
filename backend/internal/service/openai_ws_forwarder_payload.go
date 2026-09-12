@@ -240,6 +240,11 @@ func setOpenAIWSTurnMetadata(payload map[string]any, turnMetadata string) {
 	if metadata == "" {
 		return
 	}
+	// The header is a bounded compatibility default. A current-turn body
+	// snapshot owns richer fields such as tool_namespaces_info and timestamps.
+	if existing := codexIdentityMetadataMap(payload["client_metadata"]); codexIdentityString(existing[openAIWSTurnMetadataHeader]) != "" {
+		return
+	}
 
 	switch existing := payload["client_metadata"].(type) {
 	case map[string]any:

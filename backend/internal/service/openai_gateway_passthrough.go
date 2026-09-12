@@ -174,6 +174,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		}
 		reqStream = gjson.GetBytes(body, "stream").Bool()
 
+		stageCodexSessionIdentityInputRaw(c, body)
 		accountScopedBody, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRaw(body, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
 		if scopeErr != nil {
 			return nil, scopeErr
@@ -730,13 +731,11 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	}
 	// compact 已按自身 schema 裁剪，不能根据会话头重新注入 client_metadata。
 	if account.UsesOpenAICodexProtocol() && !isOpenAIResponsesCompactPath(c) {
-		normalizedBody, _, changed, normalizeErr := normalizeCodexOutboundIdentityRawWithSessionMapper(
+		normalizedBody, _, changed, normalizeErr := s.normalizeCodexOutboundIdentityRaw(
+			ctx, c, account,
 			req.Header,
 			body,
 			strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()),
-			func(raw string) (string, error) {
-				return s.resolveCodexMappedSessionIdentity(ctx, c, account, raw)
-			},
 		)
 		if normalizeErr != nil {
 			return nil, fmt.Errorf("normalize codex outbound identity: %w", normalizeErr)

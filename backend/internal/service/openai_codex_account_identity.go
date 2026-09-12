@@ -31,6 +31,7 @@ func (s *OpenAIGatewayService) prepareCodexAccountIdentitySource(ctx context.Con
 	}
 	if c != nil {
 		c.Set(codexAccountIdentitySourceContextKey, source)
+		c.Set(codexSessionIdentityInputContextKey, (*codexSessionIdentityInput)(nil))
 	}
 	return source, nil
 }
@@ -138,10 +139,8 @@ func applyCodexAccountIdentityFields(values map[string]any, account *Account, ap
 		if !ok || strings.TrimSpace(raw) == "" {
 			continue
 		}
-		// Official Codex 0.146+ creates new SessionId values as UUIDv7. Keep
-		// that logical session untouched until the session-specific durable
-		// mapper can assign its UUIDv7 counterpart. Legacy UUIDv4/opaque values
-		// continue through the old deterministic mapping for migration safety.
+		// Keep UUIDv7 input until the final session mapper selects durable v2
+		// or deterministic legacy isolation. UUID version is not a migration age.
 		if field.kind == "session" && isCodexUUIDv7(raw) {
 			continue
 		}
@@ -191,7 +190,7 @@ func applyCodexAccountIdentityClientMetadataMap(requestBody map[string]any, acco
 		}
 	}
 	if raw, ok := requestBody["prompt_cache_key"].(string); ok && strings.TrimSpace(raw) != "" {
-		if isCodexUUIDv7(originalBodySessionID) {
+		if isCodexUUIDv7(originalBodySessionID) && raw == strings.TrimSpace(originalBodySessionID) {
 			return changed
 		}
 		kind := "prompt-cache"
@@ -247,7 +246,7 @@ func applyCodexAccountIdentityClientMetadataRaw(body []byte, account *Account, a
 	}
 	if promptCacheKey := gjson.GetBytes(body, "prompt_cache_key"); promptCacheKey.Type == gjson.String && strings.TrimSpace(promptCacheKey.String()) != "" {
 		raw := promptCacheKey.String()
-		if isCodexUUIDv7(originalBodySessionID) {
+		if isCodexUUIDv7(originalBodySessionID) && raw == strings.TrimSpace(originalBodySessionID) {
 			return next, changed, nil
 		}
 		kind := "prompt-cache"

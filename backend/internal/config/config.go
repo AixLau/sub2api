@@ -1038,10 +1038,12 @@ type GatewayConfig struct {
 	// DisableCodexOriginatorNormalization: 已废弃，等价于 DisableCodexIdentityEnforcement。
 	// 保留以兼容既有配置文件；加载时会折叠进新键，不要在新代码里直接读取。
 	DisableCodexOriginatorNormalization bool `mapstructure:"disable_codex_originator_normalization"`
-	// CodexSessionIdentityMapping selects the session identity migration strategy.
-	// v2 maps newly-created UUIDv7 sessions through the durable account-scoped
-	// store; legacy keeps the pre-migration deterministic projection so an active
-	// session is never changed implicitly.
+	// CodexSessionIdentityMapping selects UUIDv7 session isolation: v2 uses a
+	// durable mapping; legacy restores deterministic API-key/account scoping.
+	// This applies to all UUIDv7 inputs, including sessions predating deployment.
+	// Change the strategy only after draining active sessions and start fresh
+	// client sessions afterward. A mode switch changes their upstream identity;
+	// retaining the v2 store allows re-enabling v2 to recover its saved mappings.
 	CodexSessionIdentityMapping string `mapstructure:"codex_session_identity_mapping"`
 	// CodexImageGenerationBridgeEnabled: 是否为 Codex `/v1/responses` 自动注入 image_generation 工具和桥接指令。
 	// 默认关闭，避免纯文本 Codex 请求被意外改写；显式携带 image_generation 工具的请求仍按分组能力转发。

@@ -164,13 +164,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	if identityFallback == "" {
 		identityFallback = openAIWSPayloadString(payload, "prompt_cache_key")
 	}
-	if _, _, identityErr := normalizeCodexOutboundIdentityMapWithSessionMapper(
+	if _, _, identityErr := s.normalizeCodexOutboundIdentityMap(
+		ctx, c, account,
 		wsHeaders,
 		payload,
 		identityFallback,
-		func(raw string) (string, error) {
-			return s.resolveCodexMappedSessionIdentity(ctx, c, account, raw)
-		},
 	); identityErr != nil {
 		return nil, wrapOpenAIWSFallback("identity_metadata", identityErr)
 	}

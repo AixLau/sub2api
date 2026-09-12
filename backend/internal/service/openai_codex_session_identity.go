@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -16,8 +17,9 @@ import (
 const codexSessionIdentityMappingVersion = "v2"
 
 // CodexSessionIdentityMappingV2 is the durable mapping strategy used for
-// newly-created UUIDv7 session identifiers. The legacy strategy remains
-// available as a configuration rollback value.
+// UUIDv7 session identifiers. Legacy restores deterministic scoped isolation.
+// Switching strategies is an explicit session boundary, not a transparent
+// migration of active sessions (including UUIDv7 sessions predating deployment).
 const (
 	CodexSessionIdentityMappingV2     = "v2"
 	CodexSessionIdentityMappingLegacy = "legacy"
@@ -123,24 +125,23 @@ func stageCodexSessionIdentity(c *gin.Context, key, mapped string) {
 	mappings[strings.TrimSpace(key)] = strings.TrimSpace(mapped)
 }
 
-// resolveCodexMappedSessionIdentity returns a UUIDv7 only for newly created
-// mappings of official UUIDv7 sessions. Existing non-v7 identifiers continue
-// through the legacy mapping so an active pre-migration session cannot change
-// identity mid-conversation.
+// resolveCodexMappedSessionIdentity maps UUIDv7 inputs according to the selected
+// strategy. UUID version identifies the input shape, not when a session became
+// active. Continuity is guaranteed within a strategy; operators must switch
+// strategies at a session boundary. Non-v7 inputs were already scoped upstream
+// of this final pass and must not be hashed again.
 func (s *OpenAIGatewayService) resolveCodexMappedSessionIdentity(ctx context.Context, c *gin.Context, account *Account, raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	account = codexAccountIdentitySource(c, account)
-	if !s.codexSessionIdentityMappingEnabled() {
-		return raw, nil
-	}
-	if raw == "" || !codexSessionIdentityIsolationRequired(c, account, getAPIKeyIDFromContext(c)) {
+	apiKeyID := getAPIKeyIDFromContext(c)
+	if raw == "" || !codexSessionIdentityIsolationRequired(c, account, apiKeyID) {
 		return raw, nil
 	}
 	if !isCodexUUIDv7(raw) {
-		// Non-v7 values belong to the pre-migration path. The surrounding
-		// builders already applied the legacy deterministic isolation where it
-		// is required; mapping them again here would change an active session.
 		return raw, nil
+	}
+	if !s.codexSessionIdentityMappingEnabled() {
+		return isolateOpenAIUpstreamSessionID(apiKeyID, account, raw), nil
 	}
 	key := codexSessionIdentityMappingKey(c, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), raw)
 	if mapped := stagedCodexSessionIdentity(c, key); mapped != "" {
@@ -208,18 +209,26 @@ func (s *OpenAIGatewayService) normalizeCodexSessionHeaders(ctx context.Context,
 	if headers == nil || account == nil || !account.UsesOpenAICodexProtocol() {
 		return nil
 	}
-	raw := codexFirstIdentityValue(headers.Get("session-id"), headers.Get("session_id"))
-	if raw == "" {
+	identity := resolveCodexRequestIdentity(headers, nil, "")
+	if identity.empty() {
 		return nil
 	}
-	mapped, err := s.resolveCodexMappedSessionIdentity(ctx, c, account, raw)
+	mapped, err := s.resolveCodexMappedSessionIdentity(ctx, c, account, identity.sessionID)
 	if err != nil {
 		return err
 	}
-	if mapped == "" {
-		return nil
+	identity.sessionID = mapped
+	// Compact has no Responses client_metadata body. Normalize only its
+	// existing compatibility header, using the same final identity snapshot.
+	if identity.headerTurnMetadataRaw != "" {
+		metadata := codexCompatibilityTurnMetadata(identity.headerTurnMetadata)
+		applyCodexIdentityFieldsToNestedMetadata(metadata, identity)
+		encoded, err := json.Marshal(metadata)
+		if err != nil {
+			return fmt.Errorf("encode compact Codex turn metadata: %w", err)
+		}
+		identity.turnMetadataRaw = string(encoded)
 	}
-	headers.Set("session-id", mapped)
-	headers.Set("session_id", mapped)
+	applyCodexOutboundIdentityToHeaders(headers, identity)
 	return nil
 }

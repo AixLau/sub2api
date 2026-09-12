@@ -341,7 +341,7 @@ func TestCodexSessionIdentityV2SharedStoreConcurrentCreateAcrossInstances(t *tes
 	require.Equal(t, 1, backend.sets)
 }
 
-func TestCodexSessionIdentityLegacyRollbackPreservesUUIDv7(t *testing.T) {
+func TestCodexSessionIdentityLegacyRollbackRestoresIsolation(t *testing.T) {
 	store := &codexSessionIdentityV2Store{values: make(map[string]string)}
 	svc := &OpenAIGatewayService{cache: store}
 	svc.cfg = &config.Config{Gateway: config.GatewayConfig{CodexSessionIdentityMapping: CodexSessionIdentityMappingLegacy}}
@@ -349,7 +349,14 @@ func TestCodexSessionIdentityLegacyRollbackPreservesUUIDv7(t *testing.T) {
 
 	mapped, err := svc.resolveCodexMappedSessionIdentity(context.Background(), newCodexSessionIdentityV2Context(t, 41, 51), codexSessionIdentityV2Account("rollback"), raw)
 	require.NoError(t, err)
-	require.Equal(t, raw, mapped)
+	require.Equal(t, isolateOpenAIUpstreamSessionID(51, codexSessionIdentityV2Account("rollback"), raw), mapped)
+	require.NotEqual(t, raw, mapped)
+	otherKey, err := svc.resolveCodexMappedSessionIdentity(context.Background(), newCodexSessionIdentityV2Context(t, 42, 52), codexSessionIdentityV2Account("rollback"), raw)
+	require.NoError(t, err)
+	otherAccount, err := svc.resolveCodexMappedSessionIdentity(context.Background(), newCodexSessionIdentityV2Context(t, 41, 51), codexSessionIdentityV2Account("rollback-other"), raw)
+	require.NoError(t, err)
+	require.NotEqual(t, mapped, otherKey)
+	require.NotEqual(t, mapped, otherAccount)
 	require.Equal(t, 0, store.sets)
 }
 

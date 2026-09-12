@@ -1,14 +1,58 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
+
+const codexSessionIdentityInputContextKey = "codex_session_identity_input"
+
+// codexSessionIdentityInput records the client's session/cache relationship
+// before any account or fingerprint rewrite. It is replaced for every attempt
+// and every incoming WS frame; mapped values never become the next turn's input.
+type codexSessionIdentityInput struct {
+	sessionID                       string
+	promptCacheKeyReferencesSession bool
+}
+
+func stageCodexSessionIdentityInputMap(c *gin.Context, body map[string]any) {
+	if c == nil || c.Request == nil {
+		return
+	}
+	cacheKey := codexIdentityString(body["prompt_cache_key"])
+	identity := resolveCodexRequestIdentity(c.Request.Header, codexIdentityMetadataMap(body["client_metadata"]), cacheKey)
+	c.Set(codexSessionIdentityInputContextKey, &codexSessionIdentityInput{
+		sessionID:                       identity.sessionID,
+		promptCacheKeyReferencesSession: cacheKey != "" && cacheKey == identity.sessionID,
+	})
+}
+
+func stageCodexSessionIdentityInputRaw(c *gin.Context, body []byte) {
+	metadata := map[string]any{}
+	if raw := gjson.GetBytes(body, "client_metadata"); raw.IsObject() {
+		_ = json.Unmarshal([]byte(raw.Raw), &metadata)
+	}
+	stageCodexSessionIdentityInputMap(c, map[string]any{
+		"client_metadata":  metadata,
+		"prompt_cache_key": gjson.GetBytes(body, "prompt_cache_key").Value(),
+	})
+}
+
+func stagedCodexSessionIdentityInput(c *gin.Context) *codexSessionIdentityInput {
+	if c == nil {
+		return nil
+	}
+	value, _ := c.Get(codexSessionIdentityInputContextKey)
+	input, _ := value.(*codexSessionIdentityInput)
+	return input
+}
 
 // codexRequestIdentitySnapshot is the one request-scoped identity snapshot shared by
 // all Codex carriers. The same values are projected to compatibility headers,
@@ -102,26 +146,15 @@ func resolveCodexRequestIdentity(headers http.Header, clientMetadata map[string]
 		codexIdentityString(headerNested["session_id"]),
 		fallbackSession,
 	}
-	sessionID := ""
+	// UUIDv7 may survive an earlier transform alongside an intermediate hash.
+	// Production callers additionally retain the original input before rewriting.
+	sessionID := codexFirstIdentityValue(sessionCandidates...)
 	for _, candidate := range sessionCandidates {
 		candidate = strings.TrimSpace(candidate)
 		if candidate != "" && isCodexUUIDv7(candidate) {
 			sessionID = candidate
 			break
 		}
-	}
-	if sessionID == "" {
-		// During migration, the old underscore header may still contain the
-		// stable legacy mapping while session-id contains a different UUIDv4
-		// projection. Preserve that active session until a new v7 boundary.
-		sessionID = codexFirstIdentityValue(
-			headers.Get("session-id"),
-			codexIdentityString(clientMetadata["session_id"]),
-			headers.Get("session_id"),
-			codexIdentityString(bodyNested["session_id"]),
-			codexIdentityString(headerNested["session_id"]),
-			fallbackSession,
-		)
 	}
 
 	return codexRequestIdentitySnapshot{
@@ -222,11 +255,12 @@ func applyCodexOutboundIdentityToClientMetadata(clientMetadata map[string]any, i
 		bodyNested = cloneCodexIdentityMetadata(identity.headerTurnMetadata)
 	}
 	headerNested := cloneCodexIdentityMetadata(identity.headerTurnMetadata)
-	if len(headerNested) == 0 {
-		headerNested = codexCompatibilityTurnMetadata(identity.bodyTurnMetadata)
-	} else {
-		headerNested = codexCompatibilityTurnMetadata(headerNested)
+	// Body metadata is the current turn's full snapshot. Retain independent
+	// header-only extensions, but project current body fields over stale defaults.
+	for key, value := range identity.bodyTurnMetadata {
+		headerNested[key] = value
 	}
+	headerNested = codexCompatibilityTurnMetadata(headerNested)
 	if len(bodyNested) == 0 && identity.bodyTurnMetadataRaw != "" {
 		bodyNested = nil
 	}
@@ -328,26 +362,36 @@ func normalizeCodexOutboundIdentityMap(headers http.Header, body map[string]any,
 }
 
 func normalizeCodexOutboundIdentityMapWithSessionMapper(headers http.Header, body map[string]any, fallbackSession string, mapSession codexSessionIdentityMapper) (codexRequestIdentitySnapshot, bool, error) {
+	return normalizeCodexOutboundIdentityMapFromInput(headers, body, fallbackSession, nil, mapSession)
+}
+
+func (s *OpenAIGatewayService) normalizeCodexOutboundIdentityMap(ctx context.Context, c *gin.Context, account *Account, headers http.Header, body map[string]any, fallbackSession string) (codexRequestIdentitySnapshot, bool, error) {
+	return normalizeCodexOutboundIdentityMapFromInput(headers, body, fallbackSession, stagedCodexSessionIdentityInput(c), func(raw string) (string, error) {
+		return s.resolveCodexMappedSessionIdentity(ctx, c, account, raw)
+	})
+}
+
+func normalizeCodexOutboundIdentityMapFromInput(headers http.Header, body map[string]any, fallbackSession string, input *codexSessionIdentityInput, mapSession codexSessionIdentityMapper) (codexRequestIdentitySnapshot, bool, error) {
 	if body == nil {
 		return codexRequestIdentitySnapshot{}, false, nil
 	}
 	clientMetadata := codexIdentityMetadataMap(body["client_metadata"])
 	identity := resolveCodexRequestIdentity(headers, clientMetadata, fallbackSession)
+	promptCacheKey, hasPromptCacheKey := body["prompt_cache_key"].(string)
+	cacheReferencesSession := strings.TrimSpace(promptCacheKey) != "" && strings.TrimSpace(promptCacheKey) == identity.sessionID
+	if input != nil && isCodexUUIDv7(input.sessionID) {
+		identity.sessionID = input.sessionID
+		cacheReferencesSession = input.promptCacheKeyReferencesSession
+	}
 	if identity.empty() {
 		return identity, false, nil
 	}
-	rawSessionID := identity.sessionID
 	if mapSession != nil && identity.sessionID != "" {
 		mapped, err := mapSession(identity.sessionID)
 		if err != nil {
 			return identity, false, err
 		}
 		identity.sessionID = strings.TrimSpace(mapped)
-		if identity.sessionID != "" && identity.sessionID != rawSessionID {
-			if promptCacheKey, ok := body["prompt_cache_key"].(string); ok && strings.TrimSpace(promptCacheKey) == rawSessionID {
-				body["prompt_cache_key"] = identity.sessionID
-			}
-		}
 	}
 	if clientMetadata == nil {
 		clientMetadata = make(map[string]any)
@@ -358,6 +402,9 @@ func normalizeCodexOutboundIdentityMapWithSessionMapper(headers http.Header, bod
 	}
 	identity.turnMetadataRaw = headerMetadataRaw
 	body["client_metadata"] = clientMetadata
+	if mapSession != nil && identity.sessionID != "" && hasPromptCacheKey && cacheReferencesSession {
+		body["prompt_cache_key"] = identity.sessionID
+	}
 	applyCodexOutboundIdentityToHeaders(headers, identity)
 	return identity, true, nil
 }
@@ -369,6 +416,16 @@ func normalizeCodexOutboundIdentityRaw(headers http.Header, body []byte, fallbac
 }
 
 func normalizeCodexOutboundIdentityRawWithSessionMapper(headers http.Header, body []byte, fallbackSession string, mapSession codexSessionIdentityMapper) ([]byte, codexRequestIdentitySnapshot, bool, error) {
+	return normalizeCodexOutboundIdentityRawFromInput(headers, body, fallbackSession, nil, mapSession)
+}
+
+func (s *OpenAIGatewayService) normalizeCodexOutboundIdentityRaw(ctx context.Context, c *gin.Context, account *Account, headers http.Header, body []byte, fallbackSession string) ([]byte, codexRequestIdentitySnapshot, bool, error) {
+	return normalizeCodexOutboundIdentityRawFromInput(headers, body, fallbackSession, stagedCodexSessionIdentityInput(c), func(raw string) (string, error) {
+		return s.resolveCodexMappedSessionIdentity(ctx, c, account, raw)
+	})
+}
+
+func normalizeCodexOutboundIdentityRawFromInput(headers http.Header, body []byte, fallbackSession string, input *codexSessionIdentityInput, mapSession codexSessionIdentityMapper) ([]byte, codexRequestIdentitySnapshot, bool, error) {
 	if len(body) == 0 {
 		return body, codexRequestIdentitySnapshot{}, false, nil
 	}
@@ -383,10 +440,15 @@ func normalizeCodexOutboundIdentityRawWithSessionMapper(headers http.Header, bod
 		}
 	}
 	identity := resolveCodexRequestIdentity(headers, clientMetadata, fallbackSession)
+	promptCacheKey := gjson.GetBytes(body, "prompt_cache_key")
+	cacheReferencesSession := promptCacheKey.Type == gjson.String && strings.TrimSpace(promptCacheKey.String()) != "" && strings.TrimSpace(promptCacheKey.String()) == identity.sessionID
+	if input != nil && isCodexUUIDv7(input.sessionID) {
+		identity.sessionID = input.sessionID
+		cacheReferencesSession = input.promptCacheKeyReferencesSession
+	}
 	if identity.empty() {
 		return body, identity, false, nil
 	}
-	rawSessionID := identity.sessionID
 	if mapSession != nil && identity.sessionID != "" {
 		mapped, err := mapSession(identity.sessionID)
 		if err != nil {
@@ -407,14 +469,12 @@ func normalizeCodexOutboundIdentityRawWithSessionMapper(headers http.Header, bod
 	if err != nil {
 		return body, identity, false, fmt.Errorf("splice codex client metadata: %w", err)
 	}
-	if identity.sessionID != "" && identity.sessionID != rawSessionID {
-		if promptCacheKey := gjson.GetBytes(body, "prompt_cache_key"); promptCacheKey.Type == gjson.String && strings.TrimSpace(promptCacheKey.String()) == rawSessionID {
-			rewritten, setErr := sjson.SetBytes(next, "prompt_cache_key", identity.sessionID)
-			if setErr != nil {
-				return body, identity, false, fmt.Errorf("splice codex prompt cache key: %w", setErr)
-			}
-			next = rewritten
+	if mapSession != nil && identity.sessionID != "" && promptCacheKey.Type == gjson.String && cacheReferencesSession {
+		rewritten, setErr := sjson.SetBytes(next, "prompt_cache_key", identity.sessionID)
+		if setErr != nil {
+			return body, identity, false, fmt.Errorf("splice codex prompt cache key: %w", setErr)
 		}
+		next = rewritten
 	}
 	applyCodexOutboundIdentityToHeaders(headers, identity)
 	return next, identity, true, nil
