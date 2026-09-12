@@ -268,6 +268,10 @@ gateway:
   #
   # 默认 false（即归一化开启）；仅当上游调整分桶、使归一化反而落入降载桶时才置 true。
   disable_codex_originator_normalization: false
+  # Codex session identity migration strategy. v2 maps newly-created UUIDv7
+  # sessions through the durable account-scoped store. Set to legacy to roll
+  # back without changing existing active-session mappings.
+  codex_session_identity_mapping: "v2"
   # Enable Codex image-generation bridge injection for /openai/v1/responses.
   # 是否为 Codex /responses 请求自动注入 image_generation 工具与桥接指令。
   #

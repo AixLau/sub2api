@@ -264,6 +264,7 @@ func resolveConvergedThreadID(seed, clientSessionID string) string {
 type codexFingerprintIDs struct {
 	accountID                     int64
 	mode                          codexFingerprintMode
+	seed                          string
 	installationID                string
 	sessionID                     string
 	threadID                      string
@@ -291,6 +292,7 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 	ids := &codexFingerprintIDs{
 		accountID:           account.ID,
 		mode:                mode,
+		seed:                seed,
 		turnStartedAtUnixMs: time.Now().UnixMilli(),
 	}
 
@@ -298,13 +300,16 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 	if ids.installationID == "" {
 		return nil
 	}
-
 	switch mode {
 	case codexFingerprintDevice:
 		return ids
 
 	case codexFingerprintSession:
-		ids.sessionID = resolveConvergedSessionID(seed)
+		if isCodexUUIDv7(clientSessionID) {
+			ids.sessionID = strings.TrimSpace(clientSessionID)
+		} else {
+			ids.sessionID = resolveConvergedSessionID(seed)
+		}
 		ids.threadID = resolveConvergedThreadID(seed, clientSessionID)
 		if ids.threadID == "" {
 			ids.threadID = ids.sessionID
@@ -314,8 +319,16 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 		return ids
 
 	case codexFingerprintFull:
-		ids.sessionID = resolveConvergedSessionID(seed)
-		ids.threadID = ids.sessionID
+		if isCodexUUIDv7(clientSessionID) {
+			ids.sessionID = strings.TrimSpace(clientSessionID)
+			// Keep session and thread as distinct identities. The legacy full
+			// mode used one value for both; preserve that only for pre-migration
+			// opaque/UUIDv4 sessions.
+			ids.threadID = resolveConvergedThreadID(seed, clientSessionID)
+		} else {
+			ids.sessionID = resolveConvergedSessionID(seed)
+			ids.threadID = ids.sessionID
+		}
 		ids.turnID = uuid.Must(uuid.NewV7()).String()
 		ids.windowID = ids.threadID + ":0"
 		return ids
@@ -362,6 +375,21 @@ func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
 	// 所有非 off 模式都收敛 installation_id
 	h.Set("x-codex-installation-id", ids.installationID)
 
+	parentReferencePresent := strings.TrimSpace(h.Get("x-codex-parent-thread-id")) != ""
+	if parentReferencePresent && (ids.mode == codexFingerprintSession || ids.mode == codexFingerprintFull) {
+		// Session/full convergence cannot derive a child thread from a parent
+		// reference alone. Fall back to the device projection for this request;
+		// account identity scoping below still preserves the parent graph.
+		ids.mode = codexFingerprintDevice
+	}
+	if ids.mode == codexFingerprintSession || ids.mode == codexFingerprintFull {
+		if threadID := strings.TrimSpace(h.Get("thread-id")); isCodexUUID(threadID) {
+			// Account identity scoping may already have produced the durable
+			// thread projection. Keep it so parent references and the parent
+			// request use the same final value.
+			ids.threadID = threadID
+		}
+	}
 	if ids.mode == codexFingerprintDevice {
 		rewriteCodexTurnMetadataFields(h, map[string]any{
 			"installation_id": ids.installationID,
@@ -371,15 +399,21 @@ func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
 
 	// session / full 模式：改写所有相关头
 	h.Set("x-codex-window-id", ids.windowID)
-	h.Set("x-client-request-id", ids.threadID)
+	if parentReferencePresent {
+		// The parent header points at another thread. Replacing it with the
+		// current child thread would silently break the parent/child graph.
+		// Account identity scoping has already mapped this reference before the
+		// fingerprint projection runs.
+		if threadID := strings.TrimSpace(h.Get("thread-id")); threadID != "" {
+			ids.threadID = threadID
+		}
+	} else {
+		h.Set("x-client-request-id", ids.threadID)
+	}
 	// 连字符形式和下划线形式都改写，保证一致
 	h.Set("session-id", ids.sessionID)
 	h.Set("session_id", ids.sessionID)
 	h.Set("thread-id", ids.threadID)
-	parentReferencePresent := strings.TrimSpace(h.Get("x-codex-parent-thread-id")) != ""
-	if parentReferencePresent {
-		h.Set("x-codex-parent-thread-id", ids.threadID)
-	}
 
 	fields := map[string]any{
 		"installation_id":         ids.installationID,
@@ -388,9 +422,6 @@ func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
 		"turn_id":                 ids.turnID,
 		"window_id":               ids.windowID,
 		"turn_started_at_unix_ms": ids.turnStartedAtUnixMs,
-	}
-	if parentReferencePresent {
-		fields["parent_thread_id"] = ids.threadID
 	}
 	rewriteCodexTurnMetadataFields(h, fields)
 }
@@ -450,7 +481,27 @@ func applyCodexFingerprintToClientMetadataMap(existing map[string]any, ids *code
 	}
 
 	modified := false
+	captureCodexFingerprintOriginalBodySessionID(ids, existing)
+	if ids.mode == codexFingerprintSession || ids.mode == codexFingerprintFull {
+		if isCodexUUIDv7(ids.originalBodySessionID) {
+			ids.sessionID = ids.originalBodySessionID
+			if ids.mode == codexFingerprintFull {
+				ids.threadID = resolveConvergedThreadID(ids.seed, ids.originalBodySessionID)
+			}
+		}
+	}
 
+	parentReferencePresent := codexFingerprintParentReferencePresent(existing)
+	if parentReferencePresent && (ids.mode == codexFingerprintSession || ids.mode == codexFingerprintFull) {
+		// See applyCodexFingerprintHeaders: without the parent's original
+		// session, converging the child thread would break the reference.
+		ids.mode = codexFingerprintDevice
+	}
+	if ids.mode == codexFingerprintSession || ids.mode == codexFingerprintFull {
+		if threadID, ok := existing["thread_id"].(string); ok && isCodexUUID(strings.TrimSpace(threadID)) {
+			ids.threadID = strings.TrimSpace(threadID)
+		}
+	}
 	if ids.installationID != "" {
 		existing["x-codex-installation-id"] = ids.installationID
 		modified = true
@@ -464,14 +515,16 @@ func applyCodexFingerprintToClientMetadataMap(existing map[string]any, ids *code
 	}
 
 	// session / full 模式
-	parentReferencePresent := codexFingerprintParentReferencePresent(existing)
 	existing["session_id"] = ids.sessionID
-	existing["thread_id"] = ids.threadID
+	if parentReferencePresent {
+		if threadID, ok := existing["thread_id"].(string); ok && strings.TrimSpace(threadID) != "" {
+			ids.threadID = strings.TrimSpace(threadID)
+		}
+	} else {
+		existing["thread_id"] = ids.threadID
+	}
 	existing["turn_id"] = ids.turnID
 	existing["x-codex-window-id"] = ids.windowID
-	if parentReferencePresent {
-		existing["x-codex-parent-thread-id"] = ids.threadID
-	}
 
 	fields := map[string]any{
 		"installation_id":         ids.installationID,
@@ -480,9 +533,6 @@ func applyCodexFingerprintToClientMetadataMap(existing map[string]any, ids *code
 		"turn_id":                 ids.turnID,
 		"window_id":               ids.windowID,
 		"turn_started_at_unix_ms": ids.turnStartedAtUnixMs,
-	}
-	if parentReferencePresent {
-		fields["parent_thread_id"] = ids.threadID
 	}
 	rewriteClientMetadataEmbeddedTurnMetadata(existing, fields)
 	return true

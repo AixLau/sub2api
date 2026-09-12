@@ -352,7 +352,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
 
-	if promptCacheKey != "" {
+	if promptCacheKey != "" && !account.UsesOpenAICodexProtocol() {
 		apiKeyID := getAPIKeyIDFromContext(c)
 		sessionKey := promptCacheKey
 		if !compatPromptCacheTenantIsolated {

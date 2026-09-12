@@ -6,12 +6,106 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
+
+type codexSessionIdentityTestStore struct {
+	GatewayCache
+	mu     sync.Mutex
+	values map[string]string
+	sets   int
+}
+
+func (s *codexSessionIdentityTestStore) GetCodexSessionIdentity(_ context.Context, key string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	value, ok := s.values[key]
+	if !ok {
+		return "", ErrCodexSessionIdentityNotFound
+	}
+	return value, nil
+}
+
+func (s *codexSessionIdentityTestStore) SetCodexSessionIdentityIfAbsent(_ context.Context, key, value string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.values[key]; ok {
+		return false, nil
+	}
+	s.values[key] = value
+	s.sets++
+	return true, nil
+}
+
+func newCodexSessionIdentityTestContext(t *testing.T, userID, apiKeyID int64) *gin.Context {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Set("api_key", &APIKey{ID: apiKeyID, UserID: userID})
+	return c
+}
+
+func newCodexUUIDv7ForTest(t *testing.T) string {
+	t.Helper()
+	value, err := uuid.NewV7()
+	require.NoError(t, err)
+	return value.String()
+}
+
+func TestResolveCodexMappedSessionIdentityUsesDurableUUIDv7Mapping(t *testing.T) {
+	store := &codexSessionIdentityTestStore{values: make(map[string]string)}
+	account := &Account{ID: 7101, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"chatgpt_account_id": "upstream-7101"}}
+	c := newCodexSessionIdentityTestContext(t, 41, 51)
+	service := &OpenAIGatewayService{cache: store}
+	raw := newCodexUUIDv7ForTest(t)
+	started := time.Now()
+
+	first, err := service.resolveCodexMappedSessionIdentity(context.Background(), c, account, raw)
+	require.NoError(t, err)
+	second, err := service.resolveCodexMappedSessionIdentity(context.Background(), c, account, raw)
+	require.NoError(t, err)
+	require.Equal(t, first, second)
+	require.True(t, isCodexUUIDv7(first))
+	require.Equal(t, 1, store.sets)
+	parsed, err := uuid.Parse(first)
+	require.NoError(t, err)
+	require.Equal(t, uuid.Version(7), parsed.Version())
+	sec, _ := parsed.Time().UnixTime()
+	require.InDelta(t, started.Unix(), sec, 2)
+}
+
+func TestResolveCodexMappedSessionIdentityScopesUserAndAccount(t *testing.T) {
+	store := &codexSessionIdentityTestStore{values: make(map[string]string)}
+	service := &OpenAIGatewayService{cache: store}
+	raw := newCodexUUIDv7ForTest(t)
+	accountA := &Account{ID: 7201, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"chatgpt_account_id": "upstream-a"}}
+	accountB := &Account{ID: 7202, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"chatgpt_account_id": "upstream-b"}}
+	a, err := service.resolveCodexMappedSessionIdentity(context.Background(), newCodexSessionIdentityTestContext(t, 1, 11), accountA, raw)
+	require.NoError(t, err)
+	b, err := service.resolveCodexMappedSessionIdentity(context.Background(), newCodexSessionIdentityTestContext(t, 2, 22), accountA, raw)
+	require.NoError(t, err)
+	c, err := service.resolveCodexMappedSessionIdentity(context.Background(), newCodexSessionIdentityTestContext(t, 1, 11), accountB, raw)
+	require.NoError(t, err)
+	require.NotEqual(t, a, b)
+	require.NotEqual(t, a, c)
+	require.Equal(t, 3, store.sets)
+}
+
+func TestResolveCodexMappedSessionIdentityFailsClosedWithoutStore(t *testing.T) {
+	account := &Account{ID: 7301, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"chatgpt_account_id": "upstream-7301"}}
+	service := &OpenAIGatewayService{}
+	_, err := service.resolveCodexMappedSessionIdentity(context.Background(), newCodexSessionIdentityTestContext(t, 3, 33), account, newCodexUUIDv7ForTest(t))
+	require.ErrorIs(t, err, ErrCodexSessionIdentityStoreUnavailable)
+}
 
 func TestNormalizeCodexOutboundIdentityMapSynchronizesAllCarriers(t *testing.T) {
 	headers := http.Header{}
@@ -124,7 +218,7 @@ func TestBuildUpstreamRequestEmitsStandardCodexHeadersAndBodyParity(t *testing.T
 	service := &OpenAIGatewayService{}
 	req, err := service.buildUpstreamRequest(context.Background(), c, account, body, "token", true, "session-final", true)
 	require.NoError(t, err)
-	wantSession := scopeCodexAccountIdentityValue(account, 0, "session", "session-final")
+	wantSession := isolateOpenAIUpstreamSessionID(0, account, "session-final")
 	wantThread := scopeCodexAccountIdentityValue(account, 0, "thread", "thread-final")
 	wantParent := scopeCodexAccountIdentityValue(account, 0, "thread", "parent-final")
 	wantInstall := scopeCodexAccountIdentityValue(account, 0, "installation", "install-final")
@@ -168,7 +262,7 @@ func TestBuildOpenAIPassthroughEmitsStandardCodexHeadersAndBodyParity(t *testing
 	service := &OpenAIGatewayService{}
 	req, err := service.buildUpstreamRequestOpenAIPassthrough(context.Background(), c, account, body, "token")
 	require.NoError(t, err)
-	wantSession := scopeCodexAccountIdentityValue(account, 0, "session", "session-passthrough")
+	wantSession := isolateOpenAIUpstreamSessionID(0, account, "session-passthrough")
 	wantThread := scopeCodexAccountIdentityValue(account, 0, "thread", "thread-passthrough")
 	wantParent := scopeCodexAccountIdentityValue(account, 0, "thread", "parent-passthrough")
 	require.Equal(t, wantSession, req.Header.Get("session-id"))

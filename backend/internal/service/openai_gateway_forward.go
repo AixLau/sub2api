@@ -1441,8 +1441,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	if account.UsesOpenAICodexProtocol() {
 		compatMessagesBridge = isOpenAICompatMessagesBridgeContext(c) || isOpenAICompatMessagesBridgeBody(body)
 		// 清除客户端透传的 session 头，后续用隔离后的值重新设置，防止跨用户会话碰撞。
+		clientSessionID := extractClientSessionID(req.Header)
 		clientConversationID := strings.TrimSpace(req.Header.Get("conversation_id"))
 		req.Header.Del("conversation_id")
+		req.Header.Del("session-id")
 		req.Header.Del("session_id")
 
 		if compatMessagesBridge {
@@ -1462,16 +1464,34 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 				req.Header.Set("version", version)
 			}
 			compactSession := resolveOpenAICompactSessionID(c)
-			req.Header.Set("session_id", isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), compactSession))
+			if isCodexUUIDv7(compactSession) {
+				req.Header.Set("session_id", compactSession)
+				req.Header.Set("session-id", compactSession)
+			} else {
+				isolated := isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), compactSession)
+				req.Header.Set("session_id", isolated)
+				req.Header.Set("session-id", isolated)
+			}
 		} else {
 			req.Header.Set("accept", "text/event-stream")
 		}
 		if promptCacheKey != "" {
 			isolated := isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), promptCacheKey)
+			if isCodexUUIDv7(clientSessionID) {
+				isolated = clientSessionID
+			}
 			req.Header.Set("session_id", isolated)
+			req.Header.Set("session-id", isolated)
 			if !compatMessagesBridge || clientConversationID != "" {
 				req.Header.Set("conversation_id", isolated)
 			}
+		} else if clientSessionID != "" {
+			isolated := isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), clientSessionID)
+			if isCodexUUIDv7(clientSessionID) {
+				isolated = clientSessionID
+			}
+			req.Header.Set("session_id", isolated)
+			req.Header.Set("session-id", isolated)
 		}
 	} else if isOpenAIResponsesCompactPath(c) {
 		// compact 上游是 unary JSON 协议：API-key 账号也显式声明 Accept，
@@ -1516,12 +1536,20 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）
 	account.ApplyHeaderOverrides(req.Header)
+	if account.UsesOpenAICodexProtocol() && isOpenAIResponsesCompactPath(c) {
+		if err := s.normalizeCodexSessionHeaders(ctx, c, account, req.Header); err != nil {
+			return nil, fmt.Errorf("normalize compact Codex session identity: %w", err)
+		}
+	}
 	// compact 保留上方的头部规范化，但不能向其 body 注入 Responses 元数据。
 	if account.UsesOpenAICodexProtocol() && !isOpenAIResponsesCompactPath(c) {
-		normalizedBody, _, changed, normalizeErr := normalizeCodexOutboundIdentityRaw(
+		normalizedBody, _, changed, normalizeErr := normalizeCodexOutboundIdentityRawWithSessionMapper(
 			req.Header,
 			body,
 			promptCacheKey,
+			func(raw string) (string, error) {
+				return s.resolveCodexMappedSessionIdentity(ctx, c, account, raw)
+			},
 		)
 		if normalizeErr != nil {
 			return nil, fmt.Errorf("normalize codex outbound identity: %w", normalizeErr)

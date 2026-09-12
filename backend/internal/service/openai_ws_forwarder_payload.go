@@ -128,7 +128,12 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	if account != nil && account.UsesOpenAICodexProtocol() {
 		apiKeyID := getAPIKeyIDFromContext(c)
 		if sessionResolution.SessionID != "" {
-			headers.Set("session_id", isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), sessionResolution.SessionID))
+			isolated := sessionResolution.SessionID
+			if !isCodexUUIDv7(isolated) {
+				isolated = isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), isolated)
+			}
+			headers.Set("session_id", isolated)
+			headers.Set("session-id", isolated)
 		}
 		if sessionResolution.ConversationID != "" {
 			headers.Set("conversation_id", isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), sessionResolution.ConversationID))

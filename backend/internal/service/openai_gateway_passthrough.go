@@ -674,7 +674,12 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 			clientConversationID = promptCacheKey
 		}
 		if clientSessionID != "" {
-			req.Header.Set("session_id", isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), clientSessionID))
+			isolated := isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), clientSessionID)
+			if isCodexUUIDv7(clientSessionID) {
+				isolated = clientSessionID
+			}
+			req.Header.Set("session_id", isolated)
+			req.Header.Set("session-id", isolated)
 		}
 		if clientConversationID != "" {
 			req.Header.Set("conversation_id", isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), clientConversationID))
@@ -718,12 +723,20 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）
 	account.ApplyHeaderOverrides(req.Header)
+	if account.UsesOpenAICodexProtocol() && isOpenAIResponsesCompactPath(c) {
+		if err := s.normalizeCodexSessionHeaders(ctx, c, account, req.Header); err != nil {
+			return nil, fmt.Errorf("normalize compact Codex session identity: %w", err)
+		}
+	}
 	// compact 已按自身 schema 裁剪，不能根据会话头重新注入 client_metadata。
 	if account.UsesOpenAICodexProtocol() && !isOpenAIResponsesCompactPath(c) {
-		normalizedBody, _, changed, normalizeErr := normalizeCodexOutboundIdentityRaw(
+		normalizedBody, _, changed, normalizeErr := normalizeCodexOutboundIdentityRawWithSessionMapper(
 			req.Header,
 			body,
 			strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()),
+			func(raw string) (string, error) {
+				return s.resolveCodexMappedSessionIdentity(ctx, c, account, raw)
+			},
 		)
 		if normalizeErr != nil {
 			return nil, fmt.Errorf("normalize codex outbound identity: %w", normalizeErr)

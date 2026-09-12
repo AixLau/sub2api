@@ -94,6 +94,36 @@ func resolveCodexRequestIdentity(headers http.Header, clientMetadata map[string]
 	headerNestedRaw := strings.TrimSpace(headers.Get(openAIWSTurnMetadataHeader))
 	headerNested := codexIdentityNestedMetadata(headerNestedRaw)
 
+	sessionCandidates := []string{
+		headers.Get("session-id"),
+		codexIdentityString(clientMetadata["session_id"]),
+		headers.Get("session_id"),
+		codexIdentityString(bodyNested["session_id"]),
+		codexIdentityString(headerNested["session_id"]),
+		fallbackSession,
+	}
+	sessionID := ""
+	for _, candidate := range sessionCandidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate != "" && isCodexUUIDv7(candidate) {
+			sessionID = candidate
+			break
+		}
+	}
+	if sessionID == "" {
+		// During migration, the old underscore header may still contain the
+		// stable legacy mapping while session-id contains a different UUIDv4
+		// projection. Preserve that active session until a new v7 boundary.
+		sessionID = codexFirstIdentityValue(
+			headers.Get("session-id"),
+			codexIdentityString(clientMetadata["session_id"]),
+			headers.Get("session_id"),
+			codexIdentityString(bodyNested["session_id"]),
+			codexIdentityString(headerNested["session_id"]),
+			fallbackSession,
+		)
+	}
+
 	return codexRequestIdentitySnapshot{
 		installationID: codexFirstIdentityValue(
 			headers.Get("x-codex-installation-id"),
@@ -101,14 +131,7 @@ func resolveCodexRequestIdentity(headers http.Header, clientMetadata map[string]
 			codexIdentityString(bodyNested["installation_id"]),
 			codexIdentityString(headerNested["installation_id"]),
 		),
-		sessionID: codexFirstIdentityValue(
-			headers.Get("session-id"),
-			codexIdentityString(clientMetadata["session_id"]),
-			headers.Get("session_id"),
-			codexIdentityString(bodyNested["session_id"]),
-			codexIdentityString(headerNested["session_id"]),
-			fallbackSession,
-		),
+		sessionID: sessionID,
 		threadID: codexFirstIdentityValue(
 			headers.Get("thread-id"),
 			codexIdentityString(clientMetadata["thread_id"]),
@@ -298,7 +321,13 @@ func applyCodexIdentityFieldsToNestedMetadata(metadata map[string]any, identity 
 // normalizeCodexOutboundIdentityMap synchronizes a decoded request body and
 // its final outbound headers. It is intentionally called late in each builder,
 // after account/fingerprint transforms, so it cannot reintroduce stale values.
+type codexSessionIdentityMapper func(string) (string, error)
+
 func normalizeCodexOutboundIdentityMap(headers http.Header, body map[string]any, fallbackSession string) (codexRequestIdentitySnapshot, bool, error) {
+	return normalizeCodexOutboundIdentityMapWithSessionMapper(headers, body, fallbackSession, nil)
+}
+
+func normalizeCodexOutboundIdentityMapWithSessionMapper(headers http.Header, body map[string]any, fallbackSession string, mapSession codexSessionIdentityMapper) (codexRequestIdentitySnapshot, bool, error) {
 	if body == nil {
 		return codexRequestIdentitySnapshot{}, false, nil
 	}
@@ -306,6 +335,13 @@ func normalizeCodexOutboundIdentityMap(headers http.Header, body map[string]any,
 	identity := resolveCodexRequestIdentity(headers, clientMetadata, fallbackSession)
 	if identity.empty() {
 		return identity, false, nil
+	}
+	if mapSession != nil && identity.sessionID != "" {
+		mapped, err := mapSession(identity.sessionID)
+		if err != nil {
+			return identity, false, err
+		}
+		identity.sessionID = strings.TrimSpace(mapped)
 	}
 	if clientMetadata == nil {
 		clientMetadata = make(map[string]any)
@@ -323,6 +359,10 @@ func normalizeCodexOutboundIdentityMap(headers http.Header, body map[string]any,
 // normalizeCodexOutboundIdentityRaw performs the same synchronization while
 // preserving the rest of a potentially large passthrough body byte-for-byte.
 func normalizeCodexOutboundIdentityRaw(headers http.Header, body []byte, fallbackSession string) ([]byte, codexRequestIdentitySnapshot, bool, error) {
+	return normalizeCodexOutboundIdentityRawWithSessionMapper(headers, body, fallbackSession, nil)
+}
+
+func normalizeCodexOutboundIdentityRawWithSessionMapper(headers http.Header, body []byte, fallbackSession string, mapSession codexSessionIdentityMapper) ([]byte, codexRequestIdentitySnapshot, bool, error) {
 	if len(body) == 0 {
 		return body, codexRequestIdentitySnapshot{}, false, nil
 	}
@@ -339,6 +379,13 @@ func normalizeCodexOutboundIdentityRaw(headers http.Header, body []byte, fallbac
 	identity := resolveCodexRequestIdentity(headers, clientMetadata, fallbackSession)
 	if identity.empty() {
 		return body, identity, false, nil
+	}
+	if mapSession != nil && identity.sessionID != "" {
+		mapped, err := mapSession(identity.sessionID)
+		if err != nil {
+			return body, identity, false, err
+		}
+		identity.sessionID = strings.TrimSpace(mapped)
 	}
 	_, headerMetadataRaw, err := applyCodexOutboundIdentityToClientMetadata(clientMetadata, identity)
 	if err != nil {

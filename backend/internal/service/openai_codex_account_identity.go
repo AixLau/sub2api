@@ -125,7 +125,7 @@ var codexAccountIdentityFields = []struct {
 	// the mapped parent request.
 	{name: "parent_thread_id", kind: "thread"},
 	{name: "x-codex-parent-thread-id", kind: "thread"},
-	{name: "x-client-request-id", kind: "request"},
+	{name: "x-client-request-id", kind: "thread"},
 }
 
 func applyCodexAccountIdentityFields(values map[string]any, account *Account, apiKeyID int64) bool {
@@ -136,6 +136,13 @@ func applyCodexAccountIdentityFields(values map[string]any, account *Account, ap
 	for _, field := range codexAccountIdentityFields {
 		raw, ok := values[field.name].(string)
 		if !ok || strings.TrimSpace(raw) == "" {
+			continue
+		}
+		// Official Codex 0.146+ creates new SessionId values as UUIDv7. Keep
+		// that logical session untouched until the session-specific durable
+		// mapper can assign its UUIDv7 counterpart. Legacy UUIDv4/opaque values
+		// continue through the old deterministic mapping for migration safety.
+		if field.kind == "session" && isCodexUUIDv7(raw) {
 			continue
 		}
 		next := scopeCodexAccountIdentityValue(account, apiKeyID, field.kind, raw)
@@ -184,6 +191,9 @@ func applyCodexAccountIdentityClientMetadataMap(requestBody map[string]any, acco
 		}
 	}
 	if raw, ok := requestBody["prompt_cache_key"].(string); ok && strings.TrimSpace(raw) != "" {
+		if isCodexUUIDv7(originalBodySessionID) {
+			return changed
+		}
 		kind := "prompt-cache"
 		if strings.TrimSpace(originalBodySessionID) != "" && raw == originalBodySessionID {
 			kind = "session"
@@ -237,6 +247,9 @@ func applyCodexAccountIdentityClientMetadataRaw(body []byte, account *Account, a
 	}
 	if promptCacheKey := gjson.GetBytes(body, "prompt_cache_key"); promptCacheKey.Type == gjson.String && strings.TrimSpace(promptCacheKey.String()) != "" {
 		raw := promptCacheKey.String()
+		if isCodexUUIDv7(originalBodySessionID) {
+			return next, changed, nil
+		}
 		kind := "prompt-cache"
 		if strings.TrimSpace(originalBodySessionID) != "" && raw == originalBodySessionID {
 			kind = "session"
@@ -258,15 +271,32 @@ func applyCodexAccountIdentityHeaders(headers http.Header, account *Account, api
 	if headers == nil || codexAccountIdentityNamespace(account) == "" {
 		return
 	}
+	// http.Header is case-insensitive on the wire, but callers may construct
+	// a map literal with lower-case keys in tests or internal adapters. Collapse
+	// those aliases before reading and writing so stale duplicate carriers
+	// cannot win precedence through Header.Get.
+	for key, values := range headers {
+		canonical := http.CanonicalHeaderKey(key)
+		if key != canonical {
+			if _, exists := headers[canonical]; !exists {
+				headers[canonical] = values
+			}
+			delete(headers, key)
+		}
+	}
 	for _, field := range codexAccountIdentityFields {
-		// The underscore session_id value is rebuilt from prompt_cache_key by
-		// the request builders. The canonical hyphenated session-id and body
-		// metadata are synchronized by the final outbound identity pass.
-		if field.name == "session_id" {
+		// Session carriers are established by the request builders (or by the
+		// durable UUIDv7 mapper) and then synchronized in one final pass. Do not
+		// independently scope either spelling here: doing so would make the
+		// hyphenated and underscore forms diverge before that pass runs.
+		if field.name == "session_id" || field.name == "session-id" {
 			continue
 		}
 		raw := strings.TrimSpace(headers.Get(field.name))
 		if raw != "" {
+			if field.kind == "session" && isCodexUUIDv7(raw) {
+				continue
+			}
 			headers.Set(field.name, scopeCodexAccountIdentityValue(account, apiKeyID, field.kind, raw))
 		}
 	}

@@ -327,12 +327,46 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 		}
 		accountIdentitySourceRaw := append([]byte(nil), normalized...)
+		// HTTP bridge request construction performs the final session projection.
+		// Preserve the raw session seed here to avoid mapping an account-scoped
+		// UUID a second time, while still scoping thread/device metadata now.
+		rawBridgeSession := ""
+		rawBridgePromptCacheKey := ""
+		rawBridgeTurnMetadata := ""
+		if forceHTTPBridge {
+			rawBridgeSession = gjson.GetBytes(normalized, "client_metadata.session_id").String()
+			rawBridgePromptCacheKey = gjson.GetBytes(normalized, "prompt_cache_key").String()
+			rawBridgeTurnMetadata = gjson.GetBytes(normalized, "client_metadata."+openAIWSTurnMetadataHeader).String()
+		}
 		accountScopedPayload, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRaw(normalized, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
 		if scopeErr != nil {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", scopeErr)
 		}
 		if accountScoped {
 			normalized = accountScopedPayload
+			if forceHTTPBridge {
+				var restoreErr error
+				if rawBridgePromptCacheKey != "" {
+					normalized, restoreErr = sjson.SetBytes(normalized, "prompt_cache_key", rawBridgePromptCacheKey)
+				}
+				if restoreErr == nil && rawBridgeSession != "" {
+					normalized, restoreErr = sjson.SetBytes(normalized, "client_metadata.session_id", rawBridgeSession)
+				}
+				if restoreErr == nil && rawBridgeTurnMetadata != "" && rawBridgeSession != "" {
+					var nested map[string]any
+					if json.Unmarshal([]byte(rawBridgeTurnMetadata), &nested) == nil && nested != nil {
+						nested["session_id"] = rawBridgeSession
+						if encoded, marshalErr := json.Marshal(nested); marshalErr == nil {
+							normalized, restoreErr = sjson.SetBytes(normalized, "client_metadata."+openAIWSTurnMetadataHeader, string(encoded))
+						} else {
+							restoreErr = marshalErr
+						}
+					}
+				}
+				if restoreErr != nil {
+					return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", restoreErr)
+				}
+			}
 		}
 		if responsesLite {
 			litePayload, _, liteErr := normalizeOpenAIResponsesLitePayloadForAccount(normalized, account)
@@ -479,10 +513,13 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			identityHeaders = c.Request.Header.Clone()
 		}
 		applyCodexAccountIdentityHeaders(identityHeaders, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
-		if identityNormalized, _, identityChanged, identityErr := normalizeCodexOutboundIdentityRaw(
+		if identityNormalized, _, identityChanged, identityErr := normalizeCodexOutboundIdentityRawWithSessionMapper(
 			identityHeaders,
 			normalized,
 			promptCacheKey,
+			func(raw string) (string, error) {
+				return s.resolveCodexMappedSessionIdentity(c.Request.Context(), c, account, raw)
+			},
 		); identityErr != nil {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", identityErr)
 		} else if identityChanged {
@@ -803,10 +840,13 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	if buildHdrErr != nil {
 		return fmt.Errorf("build ws headers: %w", buildHdrErr)
 	}
-	if normalized, identity, changed, identityErr := normalizeCodexOutboundIdentityRaw(
+	if normalized, identity, changed, identityErr := normalizeCodexOutboundIdentityRawWithSessionMapper(
 		wsHeaders,
 		firstPayload.payloadRaw,
 		firstPayload.promptCacheKey,
+		func(raw string) (string, error) {
+			return s.resolveCodexMappedSessionIdentity(ctx, c, account, raw)
+		},
 	); identityErr != nil {
 		return fmt.Errorf("normalize ingress websocket identity: %w", identityErr)
 	} else {

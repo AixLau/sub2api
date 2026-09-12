@@ -18,6 +18,7 @@ const (
 	stickySessionPrefix                = "sticky_session:"
 	userAccountCooldownPrefix          = "user_account_cooldown:"
 	openAIResponsesSessionWindowPrefix = "openai_responses_session_window:"
+	openAICodexSessionIdentityPrefix   = "openai_codex_session_identity:"
 	liveCallPrefix                     = "live:call:"
 )
 
@@ -79,6 +80,42 @@ func (c *gatewayCache) RefreshSessionTTL(ctx context.Context, groupID int64, ses
 func (c *gatewayCache) DeleteSessionAccountID(ctx context.Context, groupID int64, sessionHash string) error {
 	key := buildSessionKey(groupID, sessionHash)
 	return c.rdb.Del(ctx, key).Err()
+}
+
+// GetCodexSessionIdentity reads a durable session identity mapping. The key is
+// already a one-way digest produced by the service, so raw user/session values
+// never enter Redis key names.
+func (c *gatewayCache) GetCodexSessionIdentity(ctx context.Context, key string) (string, error) {
+	if c == nil || c.rdb == nil {
+		return "", errors.New("gateway cache unavailable")
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "", errors.New("invalid Codex session identity key")
+	}
+	value, err := c.rdb.Get(ctx, openAICodexSessionIdentityPrefix+key).Result()
+	if errors.Is(err, redis.Nil) {
+		return "", service.ErrCodexSessionIdentityNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(value), nil
+}
+
+// SetCodexSessionIdentityIfAbsent atomically creates a durable mapping. No
+// expiry is attached: an active Codex session must never silently receive a
+// different upstream identity after a cache TTL elapses.
+func (c *gatewayCache) SetCodexSessionIdentityIfAbsent(ctx context.Context, key, value string) (bool, error) {
+	if c == nil || c.rdb == nil {
+		return false, errors.New("gateway cache unavailable")
+	}
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if key == "" || value == "" {
+		return false, errors.New("invalid Codex session identity mapping")
+	}
+	return c.rdb.SetNX(ctx, openAICodexSessionIdentityPrefix+key, value, 0).Result()
 }
 
 func (c *gatewayCache) SetUserAccountCooldown(ctx context.Context, userID, accountID int64, ttl time.Duration) error {

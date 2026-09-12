@@ -79,7 +79,7 @@ func TestCodexIdentityAudit_OAuthWSReuseKeepsHandshakeAndPerTurnMetadata(t *test
 	require.Equal(t, "resp_oauth_b", secondResult.RequestID)
 
 	require.Equal(t, 1, captureDialer.DialCount(), "同一 OAuth namespace/session 应复用同一握手")
-	wantSession := scopeCodexAccountIdentityValue(account, 0, "session", "client-session")
+	wantSession := isolateOpenAIUpstreamSessionID(0, account, "client-session")
 	wantThread := scopeCodexAccountIdentityValue(account, 0, "thread", "client-thread")
 	require.Equal(t, wantSession, captureDialer.lastHeaders.Get("session-id"))
 	require.Equal(t, wantThread, captureDialer.lastHeaders.Get("thread-id"))

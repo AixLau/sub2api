@@ -1038,6 +1038,11 @@ type GatewayConfig struct {
 	// DisableCodexOriginatorNormalization: 已废弃，等价于 DisableCodexIdentityEnforcement。
 	// 保留以兼容既有配置文件；加载时会折叠进新键，不要在新代码里直接读取。
 	DisableCodexOriginatorNormalization bool `mapstructure:"disable_codex_originator_normalization"`
+	// CodexSessionIdentityMapping selects the session identity migration strategy.
+	// v2 maps newly-created UUIDv7 sessions through the durable account-scoped
+	// store; legacy keeps the pre-migration deterministic projection so an active
+	// session is never changed implicitly.
+	CodexSessionIdentityMapping string `mapstructure:"codex_session_identity_mapping"`
 	// CodexImageGenerationBridgeEnabled: 是否为 Codex `/v1/responses` 自动注入 image_generation 工具和桥接指令。
 	// 默认关闭，避免纯文本 Codex 请求被意外改写；显式携带 image_generation 工具的请求仍按分组能力转发。
 	CodexImageGenerationBridgeEnabled bool `mapstructure:"codex_image_generation_bridge_enabled"`
@@ -1970,6 +1975,13 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	if cfg.Gateway.DisableCodexOriginatorNormalization {
 		cfg.Gateway.DisableCodexIdentityEnforcement = true
 	}
+	cfg.Gateway.CodexSessionIdentityMapping = strings.ToLower(strings.TrimSpace(cfg.Gateway.CodexSessionIdentityMapping))
+	if cfg.Gateway.CodexSessionIdentityMapping == "" {
+		cfg.Gateway.CodexSessionIdentityMapping = "v2"
+	}
+	if cfg.Gateway.CodexSessionIdentityMapping != "v2" && cfg.Gateway.CodexSessionIdentityMapping != "legacy" {
+		return nil, fmt.Errorf("gateway.codex_session_identity_mapping: unsupported value %q (want v2 or legacy)", cfg.Gateway.CodexSessionIdentityMapping)
+	}
 
 	// 兼容旧键 gateway.openai_ws.sticky_previous_response_ttl_seconds。
 	// 新键未配置（<=0）时回退旧键；新键优先。
@@ -2509,6 +2521,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.force_codex_cli", false)
 	viper.SetDefault("gateway.disable_codex_identity_enforcement", false)
 	viper.SetDefault("gateway.disable_codex_originator_normalization", false)
+	viper.SetDefault("gateway.codex_session_identity_mapping", "v2")
 	viper.SetDefault("gateway.codex_image_generation_bridge_enabled", false)
 	viper.SetDefault("gateway.openai_passthrough_allow_timeout_headers", false)
 	viper.SetDefault("gateway.openai_compact_model", "gpt-5.4")
