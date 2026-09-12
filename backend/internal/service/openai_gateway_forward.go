@@ -1516,6 +1516,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）
 	account.ApplyHeaderOverrides(req.Header)
+	// compact 保留上方的头部规范化，但不能向其 body 注入 Responses 元数据。
 	if account.UsesOpenAICodexProtocol() && !isOpenAIResponsesCompactPath(c) {
 		normalizedBody, _, changed, normalizeErr := normalizeCodexOutboundIdentityRaw(
 			req.Header,
