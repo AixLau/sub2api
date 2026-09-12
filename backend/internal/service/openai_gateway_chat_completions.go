@@ -295,7 +295,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 			reqBody["prompt_cache_key"] = promptCacheKey
 		}
 		stageCodexSessionIdentityInputMap(c, reqBody)
-		applyCodexAccountIdentityClientMetadataMap(reqBody, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
+		applyCodexAccountIdentityClientMetadataMapWithInput(reqBody, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), stagedCodexSessionIdentityInput(c))
 		responsesBody, err = json.Marshal(reqBody)
 		if err != nil {
 			return nil, fmt.Errorf("remarshal after codex transform: %w", err)

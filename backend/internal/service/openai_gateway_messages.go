@@ -245,7 +245,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			promptCacheKey = codexResult.PromptCacheKey
 		}
 		stageCodexSessionIdentityInputMap(c, reqBody)
-		applyCodexAccountIdentityClientMetadataMap(reqBody, codexAccountIdentitySource(c, account), apiKeyID)
+		applyCodexAccountIdentityClientMetadataMapWithInput(reqBody, codexAccountIdentitySource(c, account), apiKeyID, stagedCodexSessionIdentityInput(c))
 		delete(reqBody, "prompt_cache_key")
 		if shouldAutoInjectPromptCacheKeyForCompat(upstreamModel) {
 			compatTurnState = s.getOpenAICompatSessionTurnState(ctx, c, account, promptCacheKey)

@@ -174,6 +174,14 @@ func applyCodexAccountIdentityEmbeddedMetadata(values map[string]any, account *A
 }
 
 func applyCodexAccountIdentityClientMetadataMap(requestBody map[string]any, account *Account, apiKeyID int64) bool {
+	return applyCodexAccountIdentityClientMetadataMapWithInput(requestBody, account, apiKeyID, nil)
+}
+
+// applyCodexAccountIdentityClientMetadataMapWithInput uses the pre-rewrite
+// session/cache relationship when one is available. A key belonging to a
+// different explicit session is always scoped as prompt-cache, even when the
+// body happens to contain that key as a lower-priority session candidate.
+func applyCodexAccountIdentityClientMetadataMapWithInput(requestBody map[string]any, account *Account, apiKeyID int64, input *codexSessionIdentityInput) bool {
 	if requestBody == nil || codexAccountIdentityNamespace(account) == "" {
 		return false
 	}
@@ -190,6 +198,17 @@ func applyCodexAccountIdentityClientMetadataMap(requestBody map[string]any, acco
 		}
 	}
 	if raw, ok := requestBody["prompt_cache_key"].(string); ok && strings.TrimSpace(raw) != "" {
+		if input != nil && !codexFingerprintModeOwnsSessionCache(account.GetCodexFingerprintMode()) {
+			if input.promptCacheKeyReferencesSession {
+				return changed
+			}
+			next := scopeCodexAccountIdentityValue(account, apiKeyID, "prompt-cache", raw)
+			if next != raw {
+				requestBody["prompt_cache_key"] = next
+				changed = true
+			}
+			return changed
+		}
 		if isCodexUUIDv7(originalBodySessionID) && raw == strings.TrimSpace(originalBodySessionID) {
 			return changed
 		}
@@ -210,6 +229,10 @@ func applyCodexAccountIdentityClientMetadataMap(requestBody map[string]any, acco
 // subobjects with gjson/sjson. The passthrough hot path never unmarshals the
 // potentially multi-megabyte request body.
 func applyCodexAccountIdentityClientMetadataRaw(body []byte, account *Account, apiKeyID int64) ([]byte, bool, error) {
+	return applyCodexAccountIdentityClientMetadataRawWithInput(body, account, apiKeyID, nil)
+}
+
+func applyCodexAccountIdentityClientMetadataRawWithInput(body []byte, account *Account, apiKeyID int64, input *codexSessionIdentityInput) ([]byte, bool, error) {
 	if len(body) == 0 || codexAccountIdentityNamespace(account) == "" {
 		return body, false, nil
 	}
@@ -246,6 +269,21 @@ func applyCodexAccountIdentityClientMetadataRaw(body []byte, account *Account, a
 	}
 	if promptCacheKey := gjson.GetBytes(body, "prompt_cache_key"); promptCacheKey.Type == gjson.String && strings.TrimSpace(promptCacheKey.String()) != "" {
 		raw := promptCacheKey.String()
+		if input != nil && !codexFingerprintModeOwnsSessionCache(account.GetCodexFingerprintMode()) {
+			if input.promptCacheKeyReferencesSession {
+				return next, changed, nil
+			}
+			scoped := scopeCodexAccountIdentityValue(account, apiKeyID, "prompt-cache", raw)
+			if scoped != raw {
+				rewritten, err := sjson.SetBytes(next, "prompt_cache_key", scoped)
+				if err != nil {
+					return body, false, fmt.Errorf("splice account-scoped prompt_cache_key: %w", err)
+				}
+				next = rewritten
+				changed = true
+			}
+			return next, changed, nil
+		}
 		if isCodexUUIDv7(originalBodySessionID) && raw == strings.TrimSpace(originalBodySessionID) {
 			return next, changed, nil
 		}

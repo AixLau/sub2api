@@ -339,7 +339,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			rawBridgePromptCacheKey = gjson.GetBytes(normalized, "prompt_cache_key").String()
 			rawBridgeTurnMetadata = gjson.GetBytes(normalized, "client_metadata."+openAIWSTurnMetadataHeader).String()
 		}
-		accountScopedPayload, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRaw(normalized, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
+		accountScopedPayload, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRawWithInput(normalized, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), stagedCodexSessionIdentityInput(c))
 		if scopeErr != nil {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", scopeErr)
 		}

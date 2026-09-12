@@ -132,6 +132,10 @@ func codexFingerprintModeRequiresSeed(mode codexFingerprintMode) bool {
 	}
 }
 
+func codexFingerprintModeOwnsSessionCache(mode codexFingerprintMode) bool {
+	return mode == codexFingerprintSession || mode == codexFingerprintFull
+}
+
 func codexFingerprintSeed(extra map[string]any) (string, bool) {
 	if extra == nil {
 		return "", false

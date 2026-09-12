@@ -151,6 +151,77 @@ func TestCodexSessionFullForwardRetainsOriginalCacheBinding(t *testing.T) {
 	}
 }
 
+func TestCodexSessionConflictingLowerPriorityBodyCacheKeyKeepsIndependentScope(t *testing.T) {
+	for _, transport := range []string{"http", "passthrough", "ws"} {
+		for _, mode := range []string{CodexSessionIdentityMappingV2, CodexSessionIdentityMappingLegacy} {
+			for _, bodySession := range []string{
+				"01950000-0000-7000-8000-000000000001",
+				"550e8400-e29b-41d4-a716-446655440000",
+				"body-session-b",
+			} {
+				t.Run(transport+"/"+mode+"/"+bodySession, func(t *testing.T) {
+					run := func(withBodySession bool) (string, string) {
+						cfg := &config.Config{Gateway: config.GatewayConfig{CodexSessionIdentityMapping: mode}}
+						cfg.Gateway.OpenAIWS.Enabled = transport == "ws"
+						cfg.Gateway.OpenAIWS.OAuthEnabled = true
+						cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+						cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
+						cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
+						upstream := &httpUpstreamRecorder{}
+						store := &codexSessionIdentityTestStore{GatewayCache: &stubGatewayCache{}, values: map[string]string{}}
+						svc := &OpenAIGatewayService{cfg: cfg, cache: store, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
+						account := newTestOAuthAccount(9521, map[string]any{
+							"openai_passthrough":              transport == "passthrough",
+							"responses_websockets_v2_enabled": transport == "ws",
+							codexFingerprintModeExtraKey:      "off",
+						})
+						account.Credentials = map[string]any{"access_token": "test-token", "chatgpt_account_id": "conflict-account"}
+						capture := &openAIWSCaptureConn{}
+						if transport == "ws" {
+							pool := newOpenAIWSConnPool(cfg)
+							pool.setClientDialerForTest(&openAIWSCaptureDialer{conn: capture})
+							t.Cleanup(pool.Close)
+							svc.openaiWSPool = pool
+						}
+						c := newCodexSessionIdentityTestContext(t, 95, 952)
+						c.Request.Header.Set("User-Agent", "codex_cli_rs/0.146.0")
+						c.Request.Header.Set("originator", "codex_cli_rs")
+						c.Request.Header.Set("session-id", "client-session-a")
+						body := map[string]any{"model": "gpt-5.2", "stream": true, "instructions": "test", "prompt_cache_key": bodySession, "input": []any{map[string]any{"role": "user", "content": "hello"}}}
+						if withBodySession {
+							body["client_metadata"] = map[string]any{"session_id": bodySession}
+						}
+						encoded, err := json.Marshal(body)
+						require.NoError(t, err)
+						completed := `{"type":"response.completed","response":{"id":"resp_conflict","model":"gpt-5.2","usage":{"input_tokens":1,"output_tokens":1}}}`
+						upstream.resp = &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: io.NopCloser(strings.NewReader("data: " + completed + "\n\n"))}
+						capture.mu.Lock()
+						capture.events = append(capture.events, []byte(completed))
+						capture.mu.Unlock()
+						_, err = svc.Forward(context.Background(), c, account, encoded)
+						require.NoError(t, err)
+						if transport == "ws" {
+							require.Len(t, capture.writes, 1)
+							encoded, err = json.Marshal(capture.writes[0])
+							require.NoError(t, err)
+						} else {
+							require.NotNil(t, upstream.lastReq)
+							encoded = upstream.lastBody
+						}
+						return gjson.GetBytes(encoded, "client_metadata.session_id").String(), gjson.GetBytes(encoded, "prompt_cache_key").String()
+					}
+					withoutBody, withoutBodyCache := run(false)
+					withBody, withBodyCache := run(true)
+					require.NotEmpty(t, withoutBody)
+					require.Equal(t, withoutBody, withBody, "lower-priority body session must not replace the explicit header session")
+					require.Equal(t, withoutBodyCache, withBodyCache, "cache-key mapping must use the captured source relationship")
+					require.Equal(t, scopeCodexAccountIdentityValue(codexSessionIdentityV2Account("conflict-account"), 952, "prompt-cache", bodySession), withoutBodyCache)
+				})
+			}
+		}
+	}
+}
+
 func TestCodexSessionStrategyCutoverAndRollbackAtHTTPBuilders(t *testing.T) {
 	// An old UUIDv7 is still a UUIDv7: creation time cannot prove whether it
 	// was active before upgrade. A strategy change is an explicit boundary.

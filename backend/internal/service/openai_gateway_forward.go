@@ -535,7 +535,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 		if !isCompactRequest {
 			stageCodexSessionIdentityInputMap(c, decoded)
-			if applyCodexAccountIdentityClientMetadataMap(decoded, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c)) {
+			if applyCodexAccountIdentityClientMetadataMapWithInput(decoded, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), stagedCodexSessionIdentityInput(c)) {
 				markDecodedModified()
 			}
 		}
