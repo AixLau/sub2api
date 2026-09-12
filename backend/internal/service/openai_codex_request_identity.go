@@ -336,12 +336,18 @@ func normalizeCodexOutboundIdentityMapWithSessionMapper(headers http.Header, bod
 	if identity.empty() {
 		return identity, false, nil
 	}
+	rawSessionID := identity.sessionID
 	if mapSession != nil && identity.sessionID != "" {
 		mapped, err := mapSession(identity.sessionID)
 		if err != nil {
 			return identity, false, err
 		}
 		identity.sessionID = strings.TrimSpace(mapped)
+		if identity.sessionID != "" && identity.sessionID != rawSessionID {
+			if promptCacheKey, ok := body["prompt_cache_key"].(string); ok && strings.TrimSpace(promptCacheKey) == rawSessionID {
+				body["prompt_cache_key"] = identity.sessionID
+			}
+		}
 	}
 	if clientMetadata == nil {
 		clientMetadata = make(map[string]any)
@@ -380,6 +386,7 @@ func normalizeCodexOutboundIdentityRawWithSessionMapper(headers http.Header, bod
 	if identity.empty() {
 		return body, identity, false, nil
 	}
+	rawSessionID := identity.sessionID
 	if mapSession != nil && identity.sessionID != "" {
 		mapped, err := mapSession(identity.sessionID)
 		if err != nil {
@@ -399,6 +406,15 @@ func normalizeCodexOutboundIdentityRawWithSessionMapper(headers http.Header, bod
 	next, err := sjson.SetRawBytes(body, "client_metadata", rawMetadata)
 	if err != nil {
 		return body, identity, false, fmt.Errorf("splice codex client metadata: %w", err)
+	}
+	if identity.sessionID != "" && identity.sessionID != rawSessionID {
+		if promptCacheKey := gjson.GetBytes(body, "prompt_cache_key"); promptCacheKey.Type == gjson.String && strings.TrimSpace(promptCacheKey.String()) == rawSessionID {
+			rewritten, setErr := sjson.SetBytes(next, "prompt_cache_key", identity.sessionID)
+			if setErr != nil {
+				return body, identity, false, fmt.Errorf("splice codex prompt cache key: %w", setErr)
+			}
+			next = rewritten
+		}
 	}
 	applyCodexOutboundIdentityToHeaders(headers, identity)
 	return next, identity, true, nil

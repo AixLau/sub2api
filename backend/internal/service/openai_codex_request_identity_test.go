@@ -277,3 +277,28 @@ func TestBuildOpenAIPassthroughEmitsStandardCodexHeadersAndBodyParity(t *testing
 	require.Equal(t, wantParent, gjson.GetBytes(upstreamBody, "client_metadata.x-codex-parent-thread-id").String())
 	require.Equal(t, "preserve", gjson.GetBytes(upstreamBody, "client_metadata.trace").String())
 }
+
+func TestBuildOpenAIPassthroughUsesCanonicalSessionHeaderWithoutPromptCacheKey(t *testing.T) {
+	store := &codexSessionIdentityTestStore{values: make(map[string]string)}
+	service := &OpenAIGatewayService{cache: store}
+	account := &Account{
+		ID:          7401,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"chatgpt_account_id": "chatgpt-passthrough-session"},
+	}
+	raw := newCodexUUIDv7ForTest(t)
+	c := newCodexSessionIdentityTestContext(t, 74, 741)
+	c.Request.Header.Set("session-id", raw)
+
+	req, err := service.buildUpstreamRequestOpenAIPassthrough(
+		context.Background(), c, account,
+		[]byte(`{"model":"gpt-5.6-codex","stream":true}`),
+		"token",
+	)
+	require.NoError(t, err)
+	mapped := req.Header.Get("session-id")
+	require.True(t, isCodexUUIDv7(mapped))
+	require.NotEqual(t, raw, mapped)
+	require.Equal(t, mapped, req.Header.Get("session_id"))
+}

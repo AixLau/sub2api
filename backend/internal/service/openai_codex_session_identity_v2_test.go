@@ -369,6 +369,7 @@ func TestCodexSessionIdentityV2FinalHTTPCarriersUseOneMappedSession(t *testing.T
 	require.Equal(t, mapped, req.Header.Get("session_id"))
 	upstreamBody, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
+	require.Equal(t, mapped, gjson.GetBytes(upstreamBody, "prompt_cache_key").String())
 	require.Equal(t, mapped, gjson.GetBytes(upstreamBody, "client_metadata.session_id").String())
 	nested := gjson.Parse(gjson.GetBytes(upstreamBody, "client_metadata.x-codex-turn-metadata").String())
 	require.Equal(t, mapped, nested.Get("session_id").String())
