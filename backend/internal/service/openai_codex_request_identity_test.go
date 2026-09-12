@@ -253,27 +253,49 @@ func TestBuildUpstreamRequestAutoConversationFollowsMappedSession(t *testing.T) 
 			account := &Account{ID: 7501, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"chatgpt_account_id": "chatgpt-conversation"}}
 			raw := newCodexUUIDv7ForTest(t)
 			body := []byte(`{"model":"gpt-5.6-codex","stream":true,"prompt_cache_key":"` + raw + `","client_metadata":{"session_id":"` + raw + `"}}`)
-			build := func(userID, apiKeyID int64, acc *Account) *http.Request {
+			build := func(userID, apiKeyID int64, acc *Account, conversationID string) *http.Request {
 				c := newCodexSessionIdentityTestContext(t, userID, apiKeyID)
 				c.Request.Header.Set("session-id", raw)
+				if conversationID != "" {
+					c.Request.Header.Set("conversation_id", conversationID)
+				}
 				req, err := service.buildUpstreamRequest(context.Background(), c, acc, body, "token", true, raw, true)
 				require.NoError(t, err)
 				return req
 			}
-			first := build(75, 751, account)
-			retry := build(75, 751, account)
-			require.Equal(t, first.Header.Get("session-id"), first.Header.Get("conversation_id"))
-			require.Equal(t, first.Header.Get("session-id"), retry.Header.Get("conversation_id"))
-			require.NotEqual(t, raw, first.Header.Get("conversation_id"))
-			if mode == CodexSessionIdentityMappingV2 {
-				require.True(t, isCodexUUIDv7(first.Header.Get("conversation_id")))
-			} else {
-				require.Equal(t, isolateOpenAIUpstreamSessionID(751, account, raw), first.Header.Get("conversation_id"))
+			for _, incoming := range []struct{ name, value string }{
+				{name: "absent"},
+				{name: "same_as_session", value: raw},
+				{name: "different_from_session", value: "independent-conversation"},
+			} {
+				t.Run(incoming.name, func(t *testing.T) {
+					first := build(75, 751, account, incoming.value)
+					retry := build(75, 751, account, incoming.value)
+					mapped := first.Header.Get("session-id")
+					require.NotEmpty(t, mapped)
+					require.Equal(t, mapped, first.Header.Get("session_id"))
+					require.Equal(t, mapped, first.Header.Get("conversation_id"), "ordinary HTTP rebuilds conversation from session even when the client supplied it")
+					require.Equal(t, mapped, retry.Header.Get("session-id"))
+					require.Equal(t, mapped, retry.Header.Get("conversation_id"))
+					require.NotEqual(t, raw, first.Header.Get("conversation_id"))
+					if mode == CodexSessionIdentityMappingV2 {
+						require.True(t, isCodexUUIDv7(mapped))
+					} else {
+						require.Equal(t, isolateOpenAIUpstreamSessionID(751, account, raw), mapped)
+					}
+					upstreamBody, err := io.ReadAll(first.Body)
+					require.NoError(t, err)
+					require.Equal(t, mapped, gjson.GetBytes(upstreamBody, "client_metadata.session_id").String())
+					require.Equal(t, mapped, gjson.GetBytes(upstreamBody, "prompt_cache_key").String())
+					otherUser := build(76, 752, account, incoming.value)
+					otherAccount := build(75, 751, codexSessionIdentityV2Account("chatgpt-conversation-other"), incoming.value)
+					for _, other := range []*http.Request{otherUser, otherAccount} {
+						require.Equal(t, other.Header.Get("session-id"), other.Header.Get("conversation_id"))
+						require.NotEqual(t, mapped, other.Header.Get("conversation_id"))
+						require.NotEqual(t, raw, other.Header.Get("conversation_id"))
+					}
+				})
 			}
-			otherUser := build(76, 752, account)
-			otherAccount := build(75, 751, codexSessionIdentityV2Account("chatgpt-conversation-other"))
-			require.NotEqual(t, first.Header.Get("conversation_id"), otherUser.Header.Get("conversation_id"))
-			require.NotEqual(t, first.Header.Get("conversation_id"), otherAccount.Header.Get("conversation_id"))
 		})
 	}
 }
