@@ -1223,11 +1223,14 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		)
 	}
 	semanticCfg := contentModerationSemanticReviewConfigForProviderFallback(cfg)
+	initialEvidenceComplete := selection.EvidenceComplete
 	semanticReviewText := contentModerationCandidateSemanticInput(selection, semanticCfg.MaxInputRunes)
+	semanticInputEvidenceComplete := initialEvidenceComplete
 	if semanticCfg.PromptInjectionReviewerEnabled && selection.ReviewKind == contentModerationReviewKindPromptInjection {
 		semanticReviewText = selection.ReviewText
 	} else {
-		selection.EvidenceComplete = !selection.Source.Truncated && len(selection.Source.TruncateReasons) == 0 &&
+		semanticInputEvidenceComplete = initialEvidenceComplete &&
+			!selection.Source.Truncated && len(selection.Source.TruncateReasons) == 0 &&
 			semanticReviewText == selection.Source.Text
 	}
 	semanticInput := contentModerationSemanticReviewInputForCheck(
@@ -1237,10 +1240,9 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 	)
 	semanticInput.MaxInputRunes = semanticCfg.MaxInputRunes
 	semanticInput.ReviewKind = contentModerationReviewKindGeneral
-	semanticInput.EvidenceComplete = true
+	semanticInput.EvidenceComplete = semanticInputEvidenceComplete
 	semanticInput.EvidenceRevision = "legacy-candidate-evidence-v1"
-	if !selection.EvidenceComplete {
-		semanticInput.EvidenceComplete = false
+	if !semanticInput.EvidenceComplete {
 		semanticInput.EvidenceRevision = selection.EvidenceRevision
 	}
 	if semanticCfg.PromptInjectionReviewerEnabled && selection.ReviewKind == contentModerationReviewKindPromptInjection {
