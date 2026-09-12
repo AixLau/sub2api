@@ -16,101 +16,136 @@ import (
 func TestCodexSessionFullForwardRetainsOriginalCacheBinding(t *testing.T) {
 	for _, transport := range []string{"http", "passthrough", "ws"} {
 		for _, mode := range []string{CodexSessionIdentityMappingV2, CodexSessionIdentityMappingLegacy} {
-			for _, source := range []string{"header_only", "body_nested_only", "header_nested_only", "explicit_flat_cache", "explicit_header_cache"} {
-				t.Run(transport+"/"+mode+"/"+source, func(t *testing.T) {
-					cfg := &config.Config{Gateway: config.GatewayConfig{CodexSessionIdentityMapping: mode}}
-					cfg.Gateway.OpenAIWS.Enabled = transport == "ws"
-					cfg.Gateway.OpenAIWS.OAuthEnabled = true
-					cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
-					cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
-					cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
-					upstream := &httpUpstreamRecorder{}
-					store := &codexSessionIdentityTestStore{GatewayCache: &stubGatewayCache{}, values: map[string]string{}}
-					svc := &OpenAIGatewayService{cfg: cfg, cache: store, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
-					account := newTestOAuthAccount(9511, map[string]any{
-						"openai_passthrough":              transport == "passthrough",
-						"responses_websockets_v2_enabled": transport == "ws",
-						codexFingerprintModeExtraKey:      "off",
-					})
-					account.Credentials = map[string]any{"access_token": "test-token", "chatgpt_account_id": "cache-binding-account"}
-					capture := &openAIWSCaptureConn{}
-					dialer := &openAIWSCaptureDialer{conn: capture}
-					if transport == "ws" {
-						pool := newOpenAIWSConnPool(cfg)
-						pool.setClientDialerForTest(dialer)
-						t.Cleanup(pool.Close)
-						svc.openaiWSPool = pool
-					}
-					rawSession := newCodexUUIDv7ForTest(t)
-					var firstSession string
-					for turn := 0; turn < 2; turn++ {
-						c := newCodexSessionIdentityTestContext(t, 91, 92)
-						c.Request.Header.Set("User-Agent", "codex_cli_rs/0.146.0")
-						c.Request.Header.Set("originator", "codex_cli_rs")
-						body := map[string]any{"model": "gpt-5.2", "stream": true, "instructions": "test", "prompt_cache_key": rawSession, "input": []any{map[string]any{"role": "user", "content": "hello"}}}
-						nested, err := json.Marshal(map[string]any{"session_id": rawSession, "turn_started_at_unix_ms": 1000 + turn})
-						require.NoError(t, err)
-						switch source {
-						case "body_nested_only":
-							body["client_metadata"] = map[string]any{openAIWSTurnMetadataHeader: string(nested)}
-						case "header_nested_only":
-							c.Request.Header.Set(openAIWSTurnMetadataHeader, string(nested))
-						default:
-							c.Request.Header.Set("session-id", rawSession)
-						}
-						independent := strings.HasPrefix(source, "explicit_")
-						if independent {
-							body["prompt_cache_key"] = "independent-cache"
-							if source == "explicit_flat_cache" {
-								body["client_metadata"] = map[string]any{"session_id": rawSession}
+			for _, shape := range []struct {
+				name     string
+				sessions []string
+			}{
+				{"uuidv7", []string{newCodexUUIDv7ForTest(t), newCodexUUIDv7ForTest(t)}},
+				{"uuidv4", []string{"550e8400-e29b-41d4-a716-446655440000", "550e8400-e29b-41d4-a716-446655440001"}},
+				{"opaque", []string{"client-session-a", "client-session-b"}},
+			} {
+				for _, source := range []struct {
+					name, location  string
+					independentKeys []string
+				}{
+					{name: "header_only", location: "header"},
+					{name: "underscore_header", location: "underscore"},
+					{name: "cache_fallback", location: "cache"},
+					{name: "flat_only", location: "flat"},
+					{name: "body_nested_only", location: "body_nested"},
+					{name: "header_nested_only", location: "header_nested"},
+					{"explicit_header_cache", "header", []string{"independent-cache-a", "independent-cache-b"}},
+					{"explicit_flat_cache", "flat", []string{"independent-cache-a", "independent-cache-b"}},
+					{"explicit_v7_header_cache", "header", []string{"01950000-0000-7000-8000-000000000001", "01950000-0000-7000-8000-000000000002"}},
+					{"explicit_v7_flat_cache", "flat", []string{"01950000-0000-7000-8000-000000000001", "01950000-0000-7000-8000-000000000002"}},
+					{"explicit_v7_body_nested_cache", "body_nested", []string{"01950000-0000-7000-8000-000000000001", "01950000-0000-7000-8000-000000000002"}},
+					{"explicit_v7_header_nested_cache", "header_nested", []string{"01950000-0000-7000-8000-000000000001", "01950000-0000-7000-8000-000000000002"}},
+				} {
+					t.Run(transport+"/"+mode+"/"+shape.name+"/"+source.name, func(t *testing.T) {
+						cfg := &config.Config{Gateway: config.GatewayConfig{CodexSessionIdentityMapping: mode}}
+						cfg.Gateway.OpenAIWS.Enabled = transport == "ws"
+						cfg.Gateway.OpenAIWS.OAuthEnabled = true
+						cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+						cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
+						cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
+						store := &codexSessionIdentityTestStore{GatewayCache: &stubGatewayCache{}, values: map[string]string{}}
+						account := newTestOAuthAccount(9511, map[string]any{
+							"openai_passthrough":              transport == "passthrough",
+							"responses_websockets_v2_enabled": transport == "ws",
+							codexFingerprintModeExtraKey:      "off",
+						})
+						account.Credentials = map[string]any{"access_token": "test-token", "chatgpt_account_id": "cache-binding-account"}
+						var finalSessions []string
+						for _, rawSession := range shape.sessions {
+							// Each client session gets its own connection, while both use
+							// the same downstream/upstream scope and durable mapping store.
+							upstream := &httpUpstreamRecorder{}
+							svc := &OpenAIGatewayService{cfg: cfg, cache: store, httpUpstream: upstream, toolCorrector: NewCodexToolCorrector()}
+							capture := &openAIWSCaptureConn{}
+							dialer := &openAIWSCaptureDialer{conn: capture}
+							if transport == "ws" {
+								pool := newOpenAIWSConnPool(cfg)
+								pool.setClientDialerForTest(dialer)
+								t.Cleanup(pool.Close)
+								svc.openaiWSPool = pool
 							}
+							var firstSession string
+							for turn := 0; turn < 2; turn++ {
+								c := newCodexSessionIdentityTestContext(t, 91, 92)
+								c.Request.Header.Set("User-Agent", "codex_cli_rs/0.146.0")
+								c.Request.Header.Set("originator", "codex_cli_rs")
+								cacheKey := rawSession
+								if source.independentKeys != nil {
+									cacheKey = source.independentKeys[turn]
+								}
+								body := map[string]any{"model": "gpt-5.2", "stream": true, "instructions": "test", "prompt_cache_key": cacheKey, "input": []any{map[string]any{"role": "user", "content": "hello"}}}
+								nested, err := json.Marshal(map[string]any{"session_id": rawSession, "turn_started_at_unix_ms": 1000 + turn})
+								require.NoError(t, err)
+								switch source.location {
+								case "header":
+									c.Request.Header.Set("session-id", rawSession)
+								case "underscore":
+									c.Request.Header.Set("session_id", rawSession)
+								case "flat":
+									body["client_metadata"] = map[string]any{"session_id": rawSession}
+								case "body_nested":
+									body["client_metadata"] = map[string]any{openAIWSTurnMetadataHeader: string(nested)}
+								case "header_nested":
+									c.Request.Header.Set(openAIWSTurnMetadataHeader, string(nested))
+								}
+								encoded, err := json.Marshal(body)
+								require.NoError(t, err)
+								completed := `{"type":"response.completed","response":{"id":"resp_binding","model":"gpt-5.2","usage":{"input_tokens":1,"output_tokens":1}}}`
+								upstream.resp = &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: io.NopCloser(strings.NewReader("data: " + completed + "\n\n"))}
+								capture.mu.Lock()
+								capture.events = append(capture.events, []byte(completed))
+								capture.mu.Unlock()
+								_, err = svc.Forward(context.Background(), c, account, encoded)
+								require.NoError(t, err)
+								var headers http.Header
+								var output []byte
+								if transport == "ws" {
+									require.Nil(t, upstream.lastReq, "must reach forwardOpenAIWSV2")
+									require.Len(t, capture.writes, turn+1)
+									headers = dialer.lastHeaders
+									output, err = json.Marshal(capture.writes[turn])
+									require.NoError(t, err)
+								} else {
+									require.NotNil(t, upstream.lastReq)
+									require.Equal(t, transport == "passthrough", c.GetBool("openai_passthrough"), "exercise the intended full forwarding branch")
+									headers, output = upstream.lastReq.Header, upstream.lastBody
+								}
+								mapped := headers.Get("session-id")
+								require.NotEmpty(t, mapped)
+								require.NotEqual(t, rawSession, mapped)
+								if mode == CodexSessionIdentityMappingLegacy || shape.name != "uuidv7" {
+									require.Equal(t, isolateOpenAIUpstreamSessionID(92, account, rawSession), mapped, "map the explicit session, never its independent cache key")
+								} else {
+									require.True(t, isCodexUUIDv7(mapped))
+								}
+								if turn == 0 {
+									firstSession = mapped
+								}
+								require.Equal(t, firstSession, mapped, "changing only an independent key must not change the session")
+								require.Equal(t, mapped, headers.Get("session_id"))
+								require.Equal(t, mapped, gjson.GetBytes(output, "client_metadata.session_id").String())
+								require.Equal(t, mapped, gjson.Get(gjson.GetBytes(output, "client_metadata."+openAIWSTurnMetadataHeader).String(), "session_id").String())
+								require.Equal(t, mapped, gjson.Get(headers.Get(openAIWSTurnMetadataHeader), "session_id").String())
+								wantCacheKey := mapped
+								if source.independentKeys != nil {
+									wantCacheKey = scopeCodexAccountIdentityValue(account, 92, "prompt-cache", cacheKey)
+									require.NotEqual(t, mapped, wantCacheKey)
+								}
+								require.Equal(t, wantCacheKey, gjson.GetBytes(output, "prompt_cache_key").String())
+							}
+							finalSessions = append(finalSessions, firstSession)
 						}
-						encoded, err := json.Marshal(body)
-						require.NoError(t, err)
-						completed := `{"type":"response.completed","response":{"id":"resp_binding","model":"gpt-5.2","usage":{"input_tokens":1,"output_tokens":1}}}`
-						upstream.resp = &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: io.NopCloser(strings.NewReader("data: " + completed + "\n\n"))}
-						capture.mu.Lock()
-						capture.events = append(capture.events, []byte(completed))
-						capture.mu.Unlock()
-						_, err = svc.Forward(context.Background(), c, account, encoded)
-						require.NoError(t, err)
-						var headers http.Header
-						var output []byte
-						if transport == "ws" {
-							require.Nil(t, upstream.lastReq, "must reach forwardOpenAIWSV2")
-							require.Len(t, capture.writes, turn+1)
-							headers = dialer.lastHeaders
-							output, err = json.Marshal(capture.writes[turn])
-							require.NoError(t, err)
-						} else {
-							require.NotNil(t, upstream.lastReq)
-							require.Equal(t, transport == "passthrough", c.GetBool("openai_passthrough"), "exercise the intended full forwarding branch")
-							headers, output = upstream.lastReq.Header, upstream.lastBody
+						require.NotEqual(t, finalSessions[0], finalSessions[1], "different sessions sharing one independent key must remain isolated")
+						if shape.name != "uuidv7" {
+							require.Zero(t, store.sets, "independent UUIDv7 cache keys must never create session mappings")
 						}
-						mapped := headers.Get("session-id")
-						require.NotEmpty(t, mapped)
-						require.NotEqual(t, rawSession, mapped)
-						if mode == CodexSessionIdentityMappingLegacy {
-							require.Equal(t, isolateOpenAIUpstreamSessionID(92, account, rawSession), mapped)
-						} else {
-							require.True(t, isCodexUUIDv7(mapped))
-						}
-						if turn == 0 {
-							firstSession = mapped
-						}
-						require.Equal(t, firstSession, mapped)
-						require.Equal(t, mapped, headers.Get("session_id"))
-						require.Equal(t, mapped, gjson.GetBytes(output, "client_metadata.session_id").String())
-						require.Equal(t, mapped, gjson.Get(gjson.GetBytes(output, "client_metadata."+openAIWSTurnMetadataHeader).String(), "session_id").String())
-						require.Equal(t, mapped, gjson.Get(headers.Get(openAIWSTurnMetadataHeader), "session_id").String())
-						wantCacheKey := mapped
-						if independent {
-							wantCacheKey = scopeCodexAccountIdentityValue(account, 92, "prompt-cache", "independent-cache")
-							require.NotEqual(t, mapped, wantCacheKey)
-						}
-						require.Equal(t, wantCacheKey, gjson.GetBytes(output, "prompt_cache_key").String())
-					}
-				})
+					})
+				}
 			}
 		}
 	}

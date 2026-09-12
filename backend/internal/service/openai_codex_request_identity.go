@@ -17,6 +17,8 @@ const codexSessionIdentityInputContextKey = "codex_session_identity_input"
 // codexSessionIdentityInput records the client's session/cache relationship
 // before any account or fingerprint rewrite. It is replaced for every attempt
 // and every incoming WS frame; mapped values never become the next turn's input.
+// A cache key that referenced this session follows its final isolated identity
+// for UUIDv4, UUIDv7 and opaque inputs alike. Independent keys keep their scope.
 type codexSessionIdentityInput struct {
 	sessionID                       string
 	promptCacheKeyReferencesSession bool
@@ -52,6 +54,20 @@ func stagedCodexSessionIdentityInput(c *gin.Context) *codexSessionIdentityInput 
 	value, _ := c.Get(codexSessionIdentityInputContextKey)
 	input, _ := value.(*codexSessionIdentityInput)
 	return input
+}
+
+// codexOriginalSessionID is used only before header isolation. The captured
+// input precedes account/body rewrites; the fallback is for constructors with
+// no captured body input. A cache key never outranks an explicit session.
+func codexOriginalSessionID(c *gin.Context, fallbackSession string) string {
+	if input := stagedCodexSessionIdentityInput(c); input != nil && input.sessionID != "" {
+		return input.sessionID
+	}
+	var headers http.Header
+	if c != nil && c.Request != nil {
+		headers = c.Request.Header
+	}
+	return resolveCodexRequestIdentity(headers, nil, fallbackSession).sessionID
 }
 
 // codexRequestIdentitySnapshot is the one request-scoped identity snapshot shared by
@@ -130,8 +146,9 @@ func codexFirstIdentityValue(values ...string) string {
 
 // resolveCodexRequestIdentity chooses standard hyphenated headers first,
 // then flat client_metadata, legacy underscore headers, nested turn metadata,
-// and finally the prompt-cache/session fallback. This precedence prevents a
-// synthesized legacy session_id from overriding an official body session_id.
+// and finally the prompt-cache/session fallback, regardless of UUID version.
+// Final coordination uses the captured raw input for pending UUIDv7 mapping;
+// it must not guess whether a candidate was mapped from its UUID shape.
 func resolveCodexRequestIdentity(headers http.Header, clientMetadata map[string]any, fallbackSession string) codexRequestIdentitySnapshot {
 	bodyNestedRaw := codexIdentityString(clientMetadata[openAIWSTurnMetadataHeader])
 	bodyNested := codexIdentityNestedMetadata(bodyNestedRaw)
@@ -146,16 +163,7 @@ func resolveCodexRequestIdentity(headers http.Header, clientMetadata map[string]
 		codexIdentityString(headerNested["session_id"]),
 		fallbackSession,
 	}
-	// UUIDv7 may survive an earlier transform alongside an intermediate hash.
-	// Production callers additionally retain the original input before rewriting.
 	sessionID := codexFirstIdentityValue(sessionCandidates...)
-	for _, candidate := range sessionCandidates {
-		candidate = strings.TrimSpace(candidate)
-		if candidate != "" && isCodexUUIDv7(candidate) {
-			sessionID = candidate
-			break
-		}
-	}
 
 	return codexRequestIdentitySnapshot{
 		installationID: codexFirstIdentityValue(
@@ -379,9 +387,13 @@ func normalizeCodexOutboundIdentityMapFromInput(headers http.Header, body map[st
 	identity := resolveCodexRequestIdentity(headers, clientMetadata, fallbackSession)
 	promptCacheKey, hasPromptCacheKey := body["prompt_cache_key"].(string)
 	cacheReferencesSession := strings.TrimSpace(promptCacheKey) != "" && strings.TrimSpace(promptCacheKey) == identity.sessionID
-	if input != nil && isCodexUUIDv7(input.sessionID) {
-		identity.sessionID = input.sessionID
+	if input != nil {
 		cacheReferencesSession = input.promptCacheKeyReferencesSession
+		// Only raw UUIDv7 inputs still need the final session mapper. Preserve
+		// the already isolated non-v7 session selected from outbound carriers.
+		if isCodexUUIDv7(input.sessionID) {
+			identity.sessionID = input.sessionID
+		}
 	}
 	if identity.empty() {
 		return identity, false, nil
@@ -442,9 +454,11 @@ func normalizeCodexOutboundIdentityRawFromInput(headers http.Header, body []byte
 	identity := resolveCodexRequestIdentity(headers, clientMetadata, fallbackSession)
 	promptCacheKey := gjson.GetBytes(body, "prompt_cache_key")
 	cacheReferencesSession := promptCacheKey.Type == gjson.String && strings.TrimSpace(promptCacheKey.String()) != "" && strings.TrimSpace(promptCacheKey.String()) == identity.sessionID
-	if input != nil && isCodexUUIDv7(input.sessionID) {
-		identity.sessionID = input.sessionID
+	if input != nil {
 		cacheReferencesSession = input.promptCacheKeyReferencesSession
+		if isCodexUUIDv7(input.sessionID) {
+			identity.sessionID = input.sessionID
+		}
 	}
 	if identity.empty() {
 		return body, identity, false, nil

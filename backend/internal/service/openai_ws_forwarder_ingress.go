@@ -513,6 +513,18 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if c != nil && c.Request != nil {
 			identityHeaders = c.Request.Header.Clone()
 		}
+		if account.UsesOpenAICodexProtocol() {
+			// These headers are still the raw handshake input. Scope non-v7
+			// sessions before final coordination, just as the dial builder does.
+			session := codexOriginalSessionID(c, promptCacheKey)
+			if !isCodexUUIDv7(session) {
+				session = isolateOpenAIUpstreamSessionID(getAPIKeyIDFromContext(c), codexAccountIdentitySource(c, account), session)
+			}
+			if session != "" {
+				identityHeaders.Set("session-id", session)
+				identityHeaders.Set("session_id", session)
+			}
+		}
 		applyCodexAccountIdentityHeaders(identityHeaders, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
 		if identityNormalized, _, identityChanged, identityErr := s.normalizeCodexOutboundIdentityRaw(
 			c.Request.Context(), c, account,

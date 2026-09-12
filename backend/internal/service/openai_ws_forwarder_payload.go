@@ -127,6 +127,10 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	// OAuth 账号：将 apiKeyID 混入 session 标识符，防止跨用户会话碰撞。
 	if account != nil && account.UsesOpenAICodexProtocol() {
 		apiKeyID := getAPIKeyIDFromContext(c)
+		if original := codexOriginalSessionID(c, sessionResolution.SessionID); original != sessionResolution.SessionID {
+			sessionResolution.SessionID = original
+			sessionResolution.SessionSource = "codex_identity_input"
+		}
 		if sessionResolution.SessionID != "" {
 			isolated := sessionResolution.SessionID
 			if !isCodexUUIDv7(isolated) {

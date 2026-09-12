@@ -1444,7 +1444,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	if account.UsesOpenAICodexProtocol() {
 		compatMessagesBridge = isOpenAICompatMessagesBridgeContext(c) || isOpenAICompatMessagesBridgeBody(body)
 		// 清除客户端透传的 session 头，后续用隔离后的值重新设置，防止跨用户会话碰撞。
-		clientSessionID := extractClientSessionID(req.Header)
+		clientSessionID := codexOriginalSessionID(c, promptCacheKey)
 		clientConversationID := strings.TrimSpace(req.Header.Get("conversation_id"))
 		req.Header.Del("conversation_id")
 		req.Header.Del("session-id")
@@ -1466,35 +1466,22 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 				}
 				req.Header.Set("version", version)
 			}
-			compactSession := resolveOpenAICompactSessionID(c)
-			if isCodexUUIDv7(compactSession) {
-				req.Header.Set("session_id", compactSession)
-				req.Header.Set("session-id", compactSession)
-			} else {
-				isolated := isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), compactSession)
-				req.Header.Set("session_id", isolated)
-				req.Header.Set("session-id", isolated)
+			if clientSessionID == "" {
+				clientSessionID = resolveOpenAICompactSessionID(c)
 			}
 		} else {
 			req.Header.Set("accept", "text/event-stream")
 		}
-		if promptCacheKey != "" {
-			isolated := isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), promptCacheKey)
-			if isCodexUUIDv7(clientSessionID) {
-				isolated = clientSessionID
-			}
-			req.Header.Set("session_id", isolated)
-			req.Header.Set("session-id", isolated)
-			if !compatMessagesBridge || clientConversationID != "" {
-				req.Header.Set("conversation_id", isolated)
-			}
-		} else if clientSessionID != "" {
+		if clientSessionID != "" {
 			isolated := isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), clientSessionID)
 			if isCodexUUIDv7(clientSessionID) {
 				isolated = clientSessionID
 			}
 			req.Header.Set("session_id", isolated)
 			req.Header.Set("session-id", isolated)
+			if promptCacheKey != "" && (!compatMessagesBridge || clientConversationID != "") {
+				req.Header.Set("conversation_id", isolated)
+			}
 		}
 	} else if isOpenAIResponsesCompactPath(c) {
 		// compact 上游是 unary JSON 协议：API-key 账号也显式声明 Accept，
