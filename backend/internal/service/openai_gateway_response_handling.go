@@ -722,7 +722,12 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 
 			// 写入客户端（客户端断开后继续 drain 上游）
 			if !clientDisconnected && !failureDelivered && !suppressCurrentEvent {
-				shouldFlush := queueDrained && (clientOutputStarted || startsClientOutput)
+				// A terminal event must be written when its SSE frame closes, even if
+				// the scanner has already queued the following blank line. Otherwise
+				// first-output staging can retain an authoritative response.completed
+				// until the stream times out or EOF drops the staged bytes.
+				terminalFrame := strings.TrimSpace(data) == "[DONE]" || openAIStreamEventTypeIsTerminal(eventType)
+				shouldFlush := terminalFrame || (queueDrained && (clientOutputStarted || startsClientOutput))
 				if firstTokenMs == nil && startsVisibleOutput {
 					// 保证首个 token 事件尽快出站，避免影响 TTFT。
 					shouldFlush = true

@@ -497,6 +497,27 @@ func TestOpenAIResponseFlush_RecentBareErrorAllowsCompletedBeforeIdleTimeout(t *
 	require.NotContains(t, gotBody, `"type":"response.failed"`)
 }
 
+func TestOpenAIResponseFlush_QueuedCompletedFlushesAtTerminalBoundary(t *testing.T) {
+	reader := &stagedOpenAISSEReadCloser{
+		segments: [][]byte{
+			[]byte("data: {\"type\":\"error\",\"error\":{\"code\":\"transient\",\"message\":\"retrying\"}}\n"),
+			[]byte("\n"),
+			[]byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_queued\",\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":6,\"output_tokens\":2}}}\n"),
+			[]byte("\n"),
+		},
+	}
+	recorder := newOpenAIResponseFlushRecorder()
+	resultCh, errCh := runOpenAIResponseFlushTestAsync(recorder, reader, config.GatewayConfig{StreamDataIntervalTimeout: 30})
+
+	require.NoError(t, <-errCh)
+	result := <-resultCh
+	require.NotNil(t, result)
+	require.Equal(t, 6, result.usage.InputTokens)
+	gotBody, _ := recorder.snapshot()
+	require.Contains(t, gotBody, `"type":"response.completed"`)
+	require.NotContains(t, gotBody, `"type":"response.failed"`)
+}
+
 func TestOpenAIResponseFlush_BareErrorTimeoutSynthesizesFailed(t *testing.T) {
 	tests := []struct {
 		name string
