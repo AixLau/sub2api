@@ -1438,6 +1438,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		}
 	}
 	compatMessagesBridge := false
+	autoConversationID := false
 	// 客户端回带的 x-codex-turn-state 若已知由其他账号铸造（failover 换号），
 	// 剥离后再出站——异账号 blob 与本账号的（指纹收敛后）出站身份自相矛盾。
 	s.guardOpenAICodexTurnStateEcho(c, account, req.Header)
@@ -1481,6 +1482,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 			req.Header.Set("session-id", isolated)
 			if promptCacheKey != "" && (!compatMessagesBridge || clientConversationID != "") {
 				req.Header.Set("conversation_id", isolated)
+				autoConversationID = clientConversationID == ""
 			}
 		}
 	} else if isOpenAIResponsesCompactPath(c) {
@@ -1533,7 +1535,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	}
 	// compact 保留上方的头部规范化，但不能向其 body 注入 Responses 元数据。
 	if account.UsesOpenAICodexProtocol() && !isOpenAIResponsesCompactPath(c) {
-		normalizedBody, _, changed, normalizeErr := s.normalizeCodexOutboundIdentityRaw(
+		normalizedBody, identity, changed, normalizeErr := s.normalizeCodexOutboundIdentityRaw(
 			ctx, c, account,
 			req.Header,
 			body,
@@ -1541,6 +1543,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		)
 		if normalizeErr != nil {
 			return nil, fmt.Errorf("normalize codex outbound identity: %w", normalizeErr)
+		}
+		if autoConversationID && identity.sessionID != "" {
+			req.Header.Set("conversation_id", identity.sessionID)
 		}
 		if changed {
 			body = normalizedBody

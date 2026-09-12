@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -241,6 +242,56 @@ func TestBuildUpstreamRequestEmitsStandardCodexHeadersAndBodyParity(t *testing.T
 	require.Equal(t, "preserve", gjson.GetBytes(upstreamBody, "client_metadata.trace").String())
 	require.Contains(t, gjson.GetBytes(upstreamBody, "client_metadata.x-codex-turn-metadata").String(), "tool_namespaces_info")
 	require.NotContains(t, req.Header.Get(openAIWSTurnMetadataHeader), "tool_namespaces_info")
+}
+
+func TestBuildUpstreamRequestAutoConversationFollowsMappedSession(t *testing.T) {
+	for _, mode := range []string{CodexSessionIdentityMappingLegacy, CodexSessionIdentityMappingV2} {
+		t.Run(mode, func(t *testing.T) {
+			store := &codexSessionIdentityTestStore{values: make(map[string]string)}
+			service := &OpenAIGatewayService{cache: store}
+			service.cfg = &config.Config{Gateway: config.GatewayConfig{CodexSessionIdentityMapping: mode}}
+			account := &Account{ID: 7501, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"chatgpt_account_id": "chatgpt-conversation"}}
+			raw := newCodexUUIDv7ForTest(t)
+			body := []byte(`{"model":"gpt-5.6-codex","stream":true,"prompt_cache_key":"` + raw + `","client_metadata":{"session_id":"` + raw + `"}}`)
+			build := func(userID, apiKeyID int64, acc *Account) *http.Request {
+				c := newCodexSessionIdentityTestContext(t, userID, apiKeyID)
+				c.Request.Header.Set("session-id", raw)
+				req, err := service.buildUpstreamRequest(context.Background(), c, acc, body, "token", true, raw, true)
+				require.NoError(t, err)
+				return req
+			}
+			first := build(75, 751, account)
+			retry := build(75, 751, account)
+			require.Equal(t, first.Header.Get("session-id"), first.Header.Get("conversation_id"))
+			require.Equal(t, first.Header.Get("session-id"), retry.Header.Get("conversation_id"))
+			require.NotEqual(t, raw, first.Header.Get("conversation_id"))
+			if mode == CodexSessionIdentityMappingV2 {
+				require.True(t, isCodexUUIDv7(first.Header.Get("conversation_id")))
+			} else {
+				require.Equal(t, isolateOpenAIUpstreamSessionID(751, account, raw), first.Header.Get("conversation_id"))
+			}
+			otherUser := build(76, 752, account)
+			otherAccount := build(75, 751, codexSessionIdentityV2Account("chatgpt-conversation-other"))
+			require.NotEqual(t, first.Header.Get("conversation_id"), otherUser.Header.Get("conversation_id"))
+			require.NotEqual(t, first.Header.Get("conversation_id"), otherAccount.Header.Get("conversation_id"))
+		})
+	}
+}
+
+func TestBuildOpenAIPassthroughPreservesExplicitConversationIsolation(t *testing.T) {
+	store := &codexSessionIdentityTestStore{values: make(map[string]string)}
+	service := &OpenAIGatewayService{cache: store}
+	account := codexSessionIdentityV2Account("chatgpt-explicit-conversation")
+	rawSession := newCodexUUIDv7ForTest(t)
+	rawConversation := newCodexUUIDv7ForTest(t)
+	c := newCodexSessionIdentityTestContext(t, 75, 751)
+	c.Request.Header.Set("session-id", rawSession)
+	c.Request.Header.Set("conversation_id", rawConversation)
+	body := []byte(`{"model":"gpt-5.6-codex","stream":true,"prompt_cache_key":"` + rawSession + `","client_metadata":{"session_id":"` + rawSession + `"}}`)
+	req, err := service.buildUpstreamRequestOpenAIPassthrough(context.Background(), c, account, body, "token")
+	require.NoError(t, err)
+	require.Equal(t, isolateOpenAIUpstreamSessionID(751, account, rawConversation), req.Header.Get("conversation_id"))
+	require.NotEqual(t, req.Header.Get("session-id"), req.Header.Get("conversation_id"))
 }
 
 func TestBuildOpenAIPassthroughEmitsStandardCodexHeadersAndBodyParity(t *testing.T) {
