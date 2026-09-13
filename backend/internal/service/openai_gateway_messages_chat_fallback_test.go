@@ -155,6 +155,7 @@ func TestForwardAsAnthropic_ForceChatCompletionsNonStreaming(t *testing.T) {
 	require.Equal(t, "hello", gjson.GetBytes(upstream.lastBody, "messages.0.content").String())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "input").Exists())
 	require.True(t, gjson.GetBytes(upstream.lastBody, "stream_options").Exists() == false)
+	require.False(t, gjson.GetBytes(upstream.lastBody, "service_tier").Exists(), "an observed priority response must not become an outbound request tier")
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, "assistant", gjson.Get(rec.Body.String(), "role").String())
@@ -180,7 +181,7 @@ func TestForwardAsAnthropic_ForceChatCompletionsStreamingClosesOpenBlockOnDone(t
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	upstreamBody := strings.Join([]string{
-		`data: {"id":"chatcmpl_s","object":"chat.completion.chunk","model":"gpt-5.4","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}`,
+		`data: {"id":"chatcmpl_s","object":"chat.completion.chunk","model":"gpt-5.4","service_tier":"priority","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}`,
 		"",
 		`data: {"id":"chatcmpl_s","object":"chat.completion.chunk","model":"gpt-5.4","choices":[{"index":0,"delta":{"content":"he"},"finish_reason":null}]}`,
 		"",
@@ -224,6 +225,8 @@ func TestForwardAsAnthropic_ForceChatCompletionsStreamingClosesOpenBlockOnDone(t
 
 	require.Equal(t, 4, result.Usage.InputTokens)
 	require.Equal(t, 3, result.Usage.OutputTokens)
+	require.Nil(t, result.ServiceTier)
+	require.Equal(t, "priority", result.UpstreamResponseServiceTier)
 	require.True(t, result.Stream)
 	require.NotNil(t, result.FirstTokenMs)
 }
