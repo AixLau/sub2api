@@ -444,13 +444,6 @@ func (h *OpenAIGatewayHandler) readOpenAIHTTPPreForwardRequest(c *gin.Context, r
 				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "previous_response_id must be a response.id (resp_*), not a message id")
 				return nil, "", false, nil, nil, false
 			}
-			if reqLog != nil {
-				reqLog.Warn("openai.request_validation_failed",
-					zap.String("reason", "previous_response_id_requires_wsv2"),
-				)
-			}
-			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "previous_response_id is only supported on Responses WebSocket v2")
-			return nil, "", false, nil, nil, false
 		}
 	}
 	return body, modelResult.String(), stream, cyberBody, nil, true

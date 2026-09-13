@@ -1822,6 +1822,18 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 		if failoverErr := s.nonStreamingTerminalFailureFailover(c, resp, account, false, terminalType, terminalPayload, msg, mappedModel); failoverErr != nil {
 			return nil, failoverErr
 		}
+		if account == nil {
+			// Preserve the partial result when there is no account to fail over
+			// from. A response.failed event may carry input/output usage that must
+			// still reach the billing/error path before the protocol error is written.
+			usage := s.parseSSEUsageFromBody(bodyText)
+			partial := &openaiNonStreamingResult{
+				OpenAIUsage: usage,
+				usage:       usage,
+				responseID:  extractOpenAIResponseIDFromJSONBytes(terminalPayload),
+			}
+			return partial, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
+		}
 		return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
 	}
 	finalResponse, ok := extractCodexFinalResponse(bodyText)

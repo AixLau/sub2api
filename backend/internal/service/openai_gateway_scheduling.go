@@ -1168,8 +1168,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	if err != nil {
 		return nil, err
 	}
+	filterStats := openAISelectionFilterStats{pool: len(accounts)}
 	if len(accounts) == 0 {
-		return nil, ErrNoAvailableAccounts
+		return nil, noAvailableOpenAISelectionError(requestedModel, requireCompact, filterStats.summary(""))
 	}
 
 	isExcluded := func(accountID int64) bool {
@@ -1252,27 +1253,45 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 	baseCandidateCount := 0
 	candidates := make([]*Account, 0, len(accounts))
+	legacyScheduler := &defaultOpenAIAccountScheduler{service: s}
+	request := OpenAIAccountScheduleRequest{
+		GroupID:            groupID,
+		Platform:           platform,
+		RequestedModel:     requestedModel,
+		RequiredCapability: requiredCapability,
+		RequireCompact:     requireCompact,
+	}
 	for i := range accounts {
 		acc := &accounts[i]
 		if isExcluded(acc.ID) {
+			filterStats.exclude("excluded")
 			continue
 		}
 		// Scheduler snapshots can be temporarily stale (bucket rebuild is throttled);
 		// re-check schedulability here so recently rate-limited/overloaded accounts
 		// are not selected again before the bucket is rebuilt.
 		if !isOpenAICompatibleAccountEligibleForRequest(ctx, acc, platform, requestedModel, false, requiredCapability) {
+			_, reason := legacyScheduler.isAccountRequestCompatibleReason(ctx, acc, request)
+			if reason == "" {
+				reason = "ineligible"
+			}
+			filterStats.exclude(reason)
 			continue
 		}
-		if allowed, _ := s.codexAccountAllowedForScheduling(ctx, acc); !allowed {
+		if allowed, reason := s.codexAccountAllowedForScheduling(ctx, acc); !allowed {
+			filterStats.exclude("codex_" + reason)
 			continue
 		}
 		if !parentHealthyForShadow(acc, parentLookupL2) {
+			filterStats.exclude("shadow_parent_unhealthy")
 			continue
 		}
 		if s.isOpenAIAccountRequestRuntimeBlocked(acc, requestedModel) {
+			filterStats.exclude("runtime_blocked")
 			continue
 		}
 		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, acc, requestedModel, requireCompact) {
+			filterStats.exclude("channel_restricted")
 			continue
 		}
 		baseCandidateCount++
@@ -1280,7 +1299,10 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	if len(candidates) == 0 {
-		return nil, ErrNoAvailableAccounts
+		if filterStats.onlyCodexRestriction() {
+			return nil, noAllowedCodexAccountsError(requestedModel)
+		}
+		return nil, noAvailableOpenAISelectionError(requestedModel, requireCompact, filterStats.summary(""))
 	}
 	rateOrder := openAILegacyUpstreamRateOrder{}
 	if preferLowUpstreamRate {
@@ -1471,7 +1493,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	if requireCompact && baseCandidateCount > 0 {
 		return nil, ErrNoAvailableCompactAccounts
 	}
-	return nil, ErrNoAvailableAccounts
+	return nil, noAvailableOpenAISelectionError(requestedModel, false, filterStats.summary("selection_order_exhausted"))
 }
 
 func (s *OpenAIGatewayService) listSchedulableAccounts(ctx context.Context, groupID *int64, platform string) ([]Account, error) {
