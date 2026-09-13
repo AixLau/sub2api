@@ -163,11 +163,18 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 	if parsed, parseErr := url.Parse(base); parseErr == nil && strings.Trim(parsed.Path, "/") == "" {
 		base += "/v1"
 	}
-	u, err := url.Parse(base + "/chat/completions")
+	endpoint := "/chat/completions"
+	if normalizeContentModerationSemanticReviewEndpoint(cfg.APIEndpoint) == "responses" {
+		endpoint = "/responses"
+	}
+	u, err := url.Parse(base + endpoint)
 	if err != nil {
 		return ContentModerationSemanticReviewResult{}, errors.New("接口地址错误")
 	}
 	body := map[string]any{"model": model, "temperature": 0, "max_tokens": cfg.MaxOutputTokens, "messages": []map[string]string{{"role": "system", "content": semanticReviewInstructions}, {"role": "user", "content": input.Text}}}
+	if normalizeContentModerationSemanticReviewEndpoint(cfg.APIEndpoint) == "responses" {
+		body = map[string]any{"model": model, "instructions": semanticReviewInstructions, "input": input.Text, "max_output_tokens": cfg.MaxOutputTokens, "store": false}
+	}
 	raw, _ := json.Marshal(body)
 	if timeoutMS <= 0 {
 		timeoutMS = cfg.TimeoutMS
@@ -211,10 +218,21 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	if err := json.Unmarshal(data, &envelope); err != nil || len(envelope.Choices) == 0 {
+	content := ""
+	if normalizeContentModerationSemanticReviewEndpoint(cfg.APIEndpoint) == "responses" {
+		parsed, parseErr := parseSemanticReviewResponse(data, resp.Header.Get("Content-Type"))
+		if parseErr == nil {
+			content = parsed.Text
+		}
+	} else {
+		if err := json.Unmarshal(data, &envelope); err == nil && len(envelope.Choices) > 0 {
+			content = envelope.Choices[0].Message.Content
+		}
+	}
+	if strings.TrimSpace(content) == "" {
 		return ContentModerationSemanticReviewResult{}, errors.New("服务商返回格式无效")
 	}
-	content := strings.TrimSpace(envelope.Choices[0].Message.Content)
+	content = strings.TrimSpace(content)
 	content = strings.TrimPrefix(content, "```json")
 	content = strings.TrimPrefix(content, "```")
 	content = strings.TrimSuffix(strings.TrimSpace(content), "```")

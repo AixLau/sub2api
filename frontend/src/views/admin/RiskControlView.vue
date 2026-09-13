@@ -839,6 +839,10 @@
                     <input v-model.trim="configForm.semantic_review_api_base_url" type="url" class="input" placeholder="https://api.openai.com/v1" />
                   </div>
                   <div>
+                    <label class="input-label">{{ t('admin.riskControl.semanticReviewApiEndpoint') }}</label>
+                    <Select v-model="configForm.semantic_review_api_endpoint" :options="semanticReviewApiEndpointOptions" />
+                  </div>
+                  <div>
                     <label class="input-label">{{ t('admin.riskControl.semanticReviewApiKey') }}</label>
                     <input v-model="configForm.semantic_review_api_key" type="password" class="input" autocomplete="new-password" :placeholder="configForm.semantic_review_api_key_masked || 'sk-…'" />
                   </div>
@@ -2150,6 +2154,7 @@ const configForm = reactive({
 	  prompt_filter_strict_threshold: 90,
   semantic_review_primary_model: 'gpt-5.3-codex-spark',
 	semantic_review_api_base_url: '',
+	semantic_review_api_endpoint: 'chat_completions' as 'responses' | 'chat_completions',
 	semantic_review_api_key: '',
 	semantic_review_api_key_masked: '',
 	semantic_review_available_models: [] as string[],
@@ -2373,6 +2378,11 @@ const semanticReviewModelOptions = computed<SelectOption[]>(() => {
   if (models.size === 0) models.add('gpt-5.3-codex-spark')
   return Array.from(models).map((model) => ({ value: model, label: model }))
 })
+
+const semanticReviewApiEndpointOptions = computed<SelectOption[]>(() => [
+	{ value: 'responses', label: '/v1/responses' },
+	{ value: 'chat_completions', label: '/v1/chat/completions' },
+])
 
 const semanticReviewFallbackModelOptions = computed<SelectOption[]>(() => {
 	const models = new Set(semanticReviewAvailableModels.value)
@@ -3276,6 +3286,7 @@ function applyConfigValues(config: ContentModerationConfig) {
   }
   configForm.semantic_review_primary_model = semanticReview.primary_model || 'gpt-5.3-codex-spark'
   configForm.semantic_review_api_base_url = semanticReview.api_base_url || ''
+	configForm.semantic_review_api_endpoint = semanticReview.api_endpoint === 'responses' ? 'responses' : 'chat_completions'
 	configForm.semantic_review_api_key = ''
 	configForm.semantic_review_api_key_masked = semanticReview.api_key_masked || ''
 	configForm.semantic_review_available_models = Array.isArray(semanticReview.available_models) ? [...semanticReview.available_models] : []
@@ -3461,6 +3472,7 @@ async function saveConfig() {
 	      prompt_filter_strict_threshold: Number(configForm.prompt_filter_strict_threshold) || 90,
 	      semantic_review: {
         api_base_url: configForm.semantic_review_api_base_url.trim(),
+	        api_endpoint: configForm.semantic_review_api_endpoint,
         api_key: configForm.semantic_review_api_key.trim() || undefined,
 	        available_models: [...configForm.semantic_review_available_models],
 	        enabled: true,

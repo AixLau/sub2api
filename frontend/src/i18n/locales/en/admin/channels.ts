@@ -265,6 +265,7 @@ export default {
       semanticReviewEnabled: 'Platform semantic review models',
       semanticReviewHint: 'Jailbreak, reverse-engineering, cyber, authorization, and ordinary-review-uncertain candidates use the selected primary model, then the configured fallback order. The model list comes from active account settings.',
       semanticReviewApiBaseUrl: 'API Base URL',
+      semanticReviewApiEndpoint: 'API endpoint',
       semanticReviewApiKey: 'API Key',
       semanticReviewFetchModels: 'Fetch models',
       semanticReviewTestModel: 'Test model',

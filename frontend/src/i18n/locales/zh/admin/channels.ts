@@ -265,6 +265,7 @@ export default {
       semanticReviewEnabled: '平台语义审核模型',
       semanticReviewHint: '越狱、逆向、网络安全、授权与普通审核不确定的候选先使用选定的主模型，再按配置的顺序降级；模型列表来自当前启用账号的模型设置。',
       semanticReviewApiBaseUrl: 'API Base URL / 接口地址',
+      semanticReviewApiEndpoint: '接口端点',
       semanticReviewApiKey: 'API Key',
       semanticReviewFetchModels: '获取模型列表',
       semanticReviewTestModel: '测试模型',

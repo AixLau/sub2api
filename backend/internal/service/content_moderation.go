@@ -396,6 +396,7 @@ type ContentModerationLocalClassifierConfig struct {
 // credential theft, and similar intent.
 type ContentModerationSemanticReviewConfig struct {
 	APIBaseURL                     string   `json:"api_base_url,omitempty"`
+	APIEndpoint                    string   `json:"api_endpoint,omitempty"`
 	APIKey                         string   `json:"api_key,omitempty"`
 	APIKeyConfigured               bool     `json:"api_key_configured,omitempty"`
 	APIKeyMasked                   string   `json:"api_key_masked,omitempty"`
@@ -6147,6 +6148,7 @@ func defaultContentModerationSemanticReviewConfig() ContentModerationSemanticRev
 
 func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanticReviewConfig) ContentModerationSemanticReviewConfig {
 	cfg.APIBaseURL = strings.TrimRight(strings.TrimSpace(cfg.APIBaseURL), "/")
+	cfg.APIEndpoint = normalizeContentModerationSemanticReviewEndpoint(cfg.APIEndpoint)
 	cfg.APIKey = strings.TrimSpace(cfg.APIKey)
 	availableModels := make([]string, 0, len(cfg.AvailableModels))
 	seenAvailable := map[string]struct{}{}
@@ -6268,6 +6270,13 @@ func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanti
 		ContentModerationSemanticReviewDefaultReasoning,
 	)
 	return cfg
+}
+
+func normalizeContentModerationSemanticReviewEndpoint(endpoint string) string {
+	if strings.EqualFold(strings.TrimSpace(endpoint), "responses") || strings.HasSuffix(strings.TrimSpace(endpoint), "/responses") {
+		return "responses"
+	}
+	return "chat_completions"
 }
 
 func normalizeContentModerationSemanticReviewReasoningEffort(value, fallback string) string {
