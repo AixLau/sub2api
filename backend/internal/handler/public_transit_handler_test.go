@@ -187,8 +187,10 @@ func (s *publicTransitV2Repo) GetSnapshot(_ context.Context, filter service.Chan
 	s.record(filter, admin)
 	actor := int64(12345)
 	return &service.ChannelMonitorV2Snapshot{
-		Config:  service.ChannelMonitorV2Config{GroupIDs: []int64{10, 99}, UpdatedBy: &actor},
-		Metrics: service.ChannelMonitorV2Metric{SuccessRate: 0.98, RequestCount: 12345, RPM: 6789},
+		Config: service.ChannelMonitorV2Config{GroupIDs: []int64{10, 99}, UpdatedBy: &actor},
+		// Public success rate complements scored errors, which can differ from
+		// the raw success ratio when some error categories are excluded.
+		Metrics: service.ChannelMonitorV2Metric{ErrorRate: 0.02, SuccessRate: 0.95, RequestCount: 12345, RPM: 6789},
 		Health:  service.ChannelMonitorV2Health{Overall: "healthy"},
 	}, nil
 }
