@@ -1017,12 +1017,8 @@ func NewOpenAIContentModerationSemanticReviewRouter(
 	backend ContentModerationSemanticReviewBackend,
 	quota ContentModerationSemanticReviewQuotaRefresher,
 	usageRecorder PlatformUsageRecorder,
-	settingServices ...*SettingService,
+	settingService *SettingService,
 ) ContentModerationSemanticReviewRouter {
-	var settingService *SettingService
-	if len(settingServices) > 0 {
-		settingService = settingServices[0]
-	}
 	return &openAIContentModerationSemanticReviewRouter{
 		backend:        backend,
 		quota:          quota,
