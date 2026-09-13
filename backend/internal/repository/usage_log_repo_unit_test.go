@@ -204,8 +204,8 @@ func TestPrepareUsageLogInsertAccountTestActors(t *testing.T) {
 	require.Nil(t, accountTest.args[0])
 	require.Nil(t, accountTest.args[1])
 	require.Equal(t, int64(7), accountTest.args[2])
-	require.Equal(t, service.UsageSourceAccountTest, accountTest.args[len(accountTest.args)-9])
-	require.Equal(t, createdAt, accountTest.args[len(accountTest.args)-6])
+	require.Equal(t, service.UsageSourceAccountTest, accountTest.args[len(accountTest.args)-10])
+	require.Equal(t, createdAt, accountTest.args[len(accountTest.args)-7])
 
 	contentModeration := prepareUsageLogInsert(&service.UsageLog{
 		Source:    service.UsageSourceContentModeration,
@@ -217,7 +217,7 @@ func TestPrepareUsageLogInsertAccountTestActors(t *testing.T) {
 	require.Nil(t, contentModeration.args[0])
 	require.Nil(t, contentModeration.args[1])
 	require.Equal(t, int64(8), contentModeration.args[2])
-	require.Equal(t, service.UsageSourceContentModeration, contentModeration.args[len(contentModeration.args)-9])
+	require.Equal(t, service.UsageSourceContentModeration, contentModeration.args[len(contentModeration.args)-10])
 
 	gateway := prepareUsageLogInsert(&service.UsageLog{
 		Source:    service.UsageSourceGateway,
@@ -231,15 +231,15 @@ func TestPrepareUsageLogInsertAccountTestActors(t *testing.T) {
 	require.Equal(t, int64(1), gateway.args[0])
 	require.Equal(t, int64(2), gateway.args[1])
 	require.Equal(t, int64(3), gateway.args[2])
-	require.Equal(t, service.UsageSourceGateway, gateway.args[len(gateway.args)-9])
-	require.Equal(t, createdAt, gateway.args[len(gateway.args)-6])
+	require.Equal(t, service.UsageSourceGateway, gateway.args[len(gateway.args)-10])
+	require.Equal(t, createdAt, gateway.args[len(gateway.args)-7])
 
 	require.Len(t, accountTest.args, len(usageLogInsertArgTypes))
+	require.Equal(t, "text", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-10])
 	require.Equal(t, "text", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-9])
-	require.Equal(t, "text", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-8])
-	require.Equal(t, "boolean", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-7])
-	require.Equal(t, "timestamptz", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-6])
-	require.Equal(t, "integer", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-1])
+	require.Equal(t, "boolean", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-8])
+	require.Equal(t, "timestamptz", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-7])
+	require.Equal(t, "text", usageLogInsertArgTypes[len(usageLogInsertArgTypes)-1])
 }
 
 func TestUsageLogRepositoryRejectsInvalidActors(t *testing.T) {
@@ -350,7 +350,7 @@ func TestUsageLogRepositoryAccountTestUsesCreateSingle(t *testing.T) {
 		CreatedAt: createdAt,
 	}
 	prepared := prepareUsageLogInsert(log)
-	mock.ExpectQuery(`(?s)^\s*INSERT INTO usage_logs.*\$67\s*\)`).
+	mock.ExpectQuery(`(?s)^\s*INSERT INTO usage_logs.*\$68\s*\)`).
 		WithArgs(anySliceToDriverValues(prepared.args)...).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(101), createdAt))
 

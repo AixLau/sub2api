@@ -15,19 +15,32 @@ func TestResourceProtectionDefaultMaximumRequestCharge(t *testing.T) {
 	m := NewResourceProtectionManager(DefaultResourceProtectionConfig())
 	first, err := m.Acquire(context.Background(), 50<<20, false)
 	require.NoError(t, err)
-	require.Equal(t, int64(200<<20), m.Status().ActiveBytes)
+	require.Equal(t, int64(50<<20), m.Status().ActiveBytes)
+
+	// The default large-request limit is the total budget minus the small
+	// request reserve. Six 50 MiB requests fit; the seventh reaches the limit.
+	reservations := []*ResourceReservation{first}
+	for range 5 {
+		reservation, acquireErr := m.Acquire(context.Background(), 50<<20, false)
+		require.NoError(t, acquireErr)
+		reservations = append(reservations, reservation)
+	}
+	require.Equal(t, int64(300<<20), m.Status().ActiveBytes)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 	_, err = m.Acquire(ctx, 50<<20, false)
 	require.Error(t, err)
 
-	first.Release()
+	for _, reservation := range reservations {
+		reservation.Release()
+	}
 	require.Eventually(t, func() bool { return m.Status().ActiveBytes == 0 }, time.Second, time.Millisecond)
 }
 
 func TestResourceProtectionBudgetErrorIncludesAdmissionSnapshot(t *testing.T) {
 	cfg := DefaultResourceProtectionConfig()
+	cfg.InflightMemoryBudgetMiB = 128
 	cfg.AdmissionWaitTimeoutMS = 1
 	m := NewResourceProtectionManager(cfg)
 	reservation, err := m.Acquire(context.Background(), 50<<20, false)
@@ -39,10 +52,10 @@ func TestResourceProtectionBudgetErrorIncludesAdmissionSnapshot(t *testing.T) {
 	require.ErrorAs(t, err, &budgetErr)
 	require.ErrorIs(t, err, ErrRequestMemoryBudgetExhausted)
 	require.Equal(t, int64(50<<20), budgetErr.RequestContentLength)
-	require.Equal(t, int64(200<<20), budgetErr.EstimatedChargeBytes)
-	require.Equal(t, int64(200<<20), budgetErr.ActiveBytes)
-	require.Equal(t, int64(336<<20), budgetErr.AdmissionLimitBytes)
-	require.Equal(t, int64(136<<20), budgetErr.AvailableBytes)
+	require.Equal(t, int64(50<<20), budgetErr.EstimatedChargeBytes)
+	require.Equal(t, int64(50<<20), budgetErr.ActiveBytes)
+	require.Equal(t, int64(64<<20), budgetErr.AdmissionLimitBytes)
+	require.Equal(t, int64(14<<20), budgetErr.AvailableBytes)
 	require.Equal(t, 1, budgetErr.ActiveReservations)
 	require.Zero(t, budgetErr.WaitingRequests)
 	require.Equal(t, 1, budgetErr.AdmissionWaitMS)
