@@ -161,6 +161,8 @@ func TestSanitizeOpsUpstreamErrorsForQueueDropsEmptyButKeepsOlderTrimmedEvents(t
 			ev.Detail = "proxy handshake failed"
 		case 1:
 			// fully empty
+		case 2:
+			ev.UpstreamResponseBody = `{"error":"upstream response without status"}`
 		default:
 			ev.UpstreamStatusCode = 500
 		}
@@ -181,6 +183,9 @@ func TestSanitizeOpsUpstreamErrorsForQueueDropsEmptyButKeepsOlderTrimmedEvents(t
 	}
 	if events[1].AtUnixMs != 3 {
 		t.Fatalf("fully-empty attempt must be dropped, got at=%d", events[1].AtUnixMs)
+	}
+	if events[1].UpstreamResponseBody != "" {
+		t.Fatal("body-only older attempt must survive with its payload cleared")
 	}
 }
 

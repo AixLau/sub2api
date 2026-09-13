@@ -593,6 +593,7 @@ func sanitizeOpsUpstreamErrors(entry *OpsInsertErrorLogInput) error {
 	sanitized := make([]*OpsUpstreamErrorEvent, 0, len(events))
 	for i, ev := range events {
 		out := *ev
+		hadResponseBody := strings.TrimSpace(out.UpstreamResponseBody) != ""
 		normalizeOpsUpstreamProxyAttribution(&out)
 		// Only boundOpsUpstreamErrors may stamp this; never trust caller input.
 		out.DroppedEarlierAttempts = 0
@@ -632,10 +633,13 @@ func sanitizeOpsUpstreamErrors(entry *OpsInsertErrorLogInput) error {
 		out.Message = msg
 
 		detail := strings.TrimSpace(out.Detail)
-		// Drop fully-empty events (can happen if only status code was known).
-		// Judged on the original detail so an older attempt whose detail is
-		// cleared by the body window below is still retained.
-		if out.UpstreamStatusCode == 0 && out.Message == "" && detail == "" {
+		responseBody := strings.TrimSpace(out.UpstreamResponseBody)
+		// Drop events that carried no attempt information at all. Keep a real
+		// detail/body-only attempt even when the queue body window clears its
+		// large payload: the scalar attribution and ordering still matter when
+		// diagnosing an older retry.
+		hadAttemptPayload := out.UpstreamStatusCode != 0 || out.Message != "" || detail != "" || hadResponseBody
+		if !hadAttemptPayload {
 			continue
 		}
 		if keepBody && detail != "" {
@@ -646,17 +650,11 @@ func sanitizeOpsUpstreamErrors(entry *OpsInsertErrorLogInput) error {
 			out.Detail = ""
 		}
 
-		responseBody := strings.TrimSpace(out.UpstreamResponseBody)
 		if responseBody != "" {
 			sanitizedBody, _ := sanitizeErrorBodyForStorage(responseBody, opsMaxStoredErrorBodyBytes)
 			out.UpstreamResponseBody = sanitizedBody
 		} else {
 			out.UpstreamResponseBody = ""
-		}
-
-		// Drop fully-empty events (can happen if only status code was known).
-		if out.UpstreamStatusCode == 0 && out.Message == "" && out.Detail == "" && out.UpstreamResponseBody == "" {
-			continue
 		}
 
 		evCopy := out
