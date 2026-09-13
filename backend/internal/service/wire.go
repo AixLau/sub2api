@@ -88,12 +88,9 @@ func ProvideContentModerationService(
 	svc.SetDecisionCache(decisionCache)
 	svc.SetModerationMetrics(NewContentModerationMetrics())
 	svc.SetOutboxRepository(outboxRepo)
-	svc.SetSemanticReviewRouter(NewOpenAIContentModerationSemanticReviewRouter(
-		openAIGatewayService,
-		NewOpenAIContentModerationSemanticReviewQuotaRefresher(openAIQuotaService, accountRepo),
-		NewPlatformUsageRecorder(usageLogRepo, billingService, pricingResolver),
-	))
-	svc.SetSemanticReviewModelProvider(openAIGatewayService)
+	// Content moderation uses only the administrator-configured API Key route.
+	// The OpenAI account gateway is intentionally not injected here.
+	svc.SetSemanticReviewRouter(NewOpenAIContentModerationSemanticReviewRouter(nil, nil, nil))
 	if rawStore, ok := repo.(ContentModerationRawRequestSnapshotStore); ok {
 		svc.SetRawRequestSnapshotStore(rawStore, encryptor)
 	}
