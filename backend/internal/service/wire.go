@@ -72,7 +72,7 @@ func ProvideContentModerationService(
 	pricingResolver *ModelPricingResolver,
 	cfg *config.Config,
 	buildInfo BuildInfo,
-	settingService *SettingService,
+	settingServices ...*SettingService,
 ) *ContentModerationService {
 	svc := NewContentModerationService(settingRepo, repo, hashCache, groupRepo, userRepo, authCacheInvalidator, emailService, accountRepo)
 	svc.SetProxyRepository(proxyRepo)
@@ -91,6 +91,10 @@ func ProvideContentModerationService(
 	svc.SetOutboxRepository(outboxRepo)
 	// Content moderation uses only the administrator-configured API Key route.
 	// The OpenAI account gateway is intentionally not injected here.
+	var settingService *SettingService
+	if len(settingServices) > 0 {
+		settingService = settingServices[0]
+	}
 	svc.SetSemanticReviewRouter(NewOpenAIContentModerationSemanticReviewRouter(nil, nil, nil, settingService))
 	if rawStore, ok := repo.(ContentModerationRawRequestSnapshotStore); ok {
 		svc.SetRawRequestSnapshotStore(rawStore, encryptor)

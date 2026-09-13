@@ -1450,6 +1450,11 @@ func (s *ContentModerationService) GetSemanticReviewModels(ctx context.Context) 
 // the credentials currently entered by an administrator. It intentionally does
 // not persist the key.
 func (s *ContentModerationService) FetchSemanticReviewModels(ctx context.Context, baseURL, apiKey string) ([]string, error) {
+	if strings.TrimSpace(apiKey) == "" {
+		if cfg, err := s.loadConfigFresh(ctx); err == nil && cfg != nil && strings.EqualFold(strings.TrimRight(cfg.SemanticReview.APIBaseURL, "/"), strings.TrimRight(baseURL, "/")) {
+			apiKey = cfg.SemanticReview.APIKey
+		}
+	}
 	return fetchContentModerationModels(ctx, baseURL, apiKey)
 }
 

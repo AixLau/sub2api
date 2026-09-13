@@ -2337,7 +2337,7 @@ function onProviderChange(value: string | number | boolean | null) {
 async function fetchSemanticModels() {
   const baseURL = configForm.semantic_review_api_base_url.trim()
   const apiKey = configForm.semantic_review_api_key.trim()
-  if (!baseURL || !apiKey) { appStore.showError(t('admin.riskControl.semanticReviewModelsConfigRequired')); return }
+  if (!baseURL || (!apiKey && !configForm.semantic_review_api_key_masked)) { appStore.showError(t('admin.riskControl.semanticReviewModelsConfigRequired')); return }
   semanticModelsLoading.value = true
   try {
     const models = await adminAPI.riskControl.fetchSemanticReviewModels(baseURL, apiKey)
