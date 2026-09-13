@@ -139,6 +139,9 @@ const (
 	ContentModerationAuditScopeUserOnly    = "user_only"
 	ContentModerationAuditScopeUserAndTool = "user_and_tool"
 	ContentModerationAuditScopeAllContext  = "all_context"
+	// ContentModerationAuditScopeLatestTurnOnly keeps the latest direct user
+	// turn and the nearest preceding assistant/model output.
+	ContentModerationAuditScopeLatestTurnOnly = "latest_turn_only"
 
 	ContentModerationAccountScopeAll      = "all"
 	ContentModerationAccountScopeOAuth    = "oauth"
@@ -273,6 +276,7 @@ type ContentModerationConfig struct {
 	AccountIDs                  []int64                                `json:"account_ids,omitempty"`
 	RecordNonHits               bool                                   `json:"record_non_hits"`
 	AuditScope                  string                                 `json:"audit_scope,omitempty"`
+	LatestTurnOnly              bool                                   `json:"latest_turn_only"`
 	StoreInputExcerpt           bool                                   `json:"store_input_excerpt"`
 	SearchInputExcerpt          bool                                   `json:"search_input_excerpt"`
 	Thresholds                  map[string]float64                     `json:"thresholds"`
@@ -338,6 +342,7 @@ type ContentModerationConfigView struct {
 	AccountIDs                     []int64                                `json:"account_ids"`
 	RecordNonHits                  bool                                   `json:"record_non_hits"`
 	AuditScope                     string                                 `json:"audit_scope"`
+	LatestTurnOnly                 bool                                   `json:"latest_turn_only"`
 	StoreInputExcerpt              bool                                   `json:"store_input_excerpt"`
 	SearchInputExcerpt             bool                                   `json:"search_input_excerpt"`
 	Thresholds                     map[string]float64                     `json:"thresholds"`
@@ -521,6 +526,7 @@ type UpdateContentModerationConfigInput struct {
 	AccountIDs                     *[]int64                                `json:"account_ids"`
 	RecordNonHits                  *bool                                   `json:"record_non_hits"`
 	AuditScope                     *string                                 `json:"audit_scope"`
+	LatestTurnOnly                 *bool                                   `json:"latest_turn_only"`
 	StoreInputExcerpt              *bool                                   `json:"store_input_excerpt"`
 	SearchInputExcerpt             *bool                                   `json:"search_input_excerpt"`
 	Thresholds                     *map[string]float64                     `json:"thresholds"`
@@ -1752,6 +1758,9 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if input.AuditScope != nil {
 		cfg.AuditScope = strings.TrimSpace(*input.AuditScope)
 	}
+	if input.LatestTurnOnly != nil {
+		cfg.LatestTurnOnly = *input.LatestTurnOnly
+	}
 	if input.StoreInputExcerpt != nil {
 		cfg.StoreInputExcerpt = *input.StoreInputExcerpt
 	}
@@ -2007,10 +2016,7 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 		}, nil
 	}
 
-	auditScope := cfg.AuditScope
-	if cfg.candidateOnly() {
-		auditScope = ContentModerationAuditScopeUserOnly
-	}
+	auditScope := contentModerationEffectiveAuditScope(cfg)
 	content := extractContentModerationInputCached(ctx, input.Protocol, input.Body, auditScope)
 	inputHash := content.Hash()
 	if prior != nil && prior.Reusable && prior.InputHash == inputHash && prior.PolicyRevision == policyRevision {
@@ -2336,10 +2342,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"configured_models", cfg.ModelFilter.Models)
 		return allow, nil
 	}
-	auditScope := cfg.AuditScope
-	if cfg.candidateOnly() {
-		auditScope = ContentModerationAuditScopeUserOnly
-	}
+	auditScope := contentModerationEffectiveAuditScope(cfg)
 	content := extractContentModerationInputCached(ctx, input.Protocol, input.Body, auditScope)
 	if content.IsEmpty() {
 		if content.Extraction.Complete && isResponsesContextOnlyModerationInput(input.Protocol, input.Body, auditScope) {
@@ -4631,6 +4634,7 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 		accountCoverage = "selected_accounts"
 	}
 	modelCoverage := modelFilter.Type
+	effectiveAuditScope := contentModerationEffectiveAuditScope(cfg)
 	externalAPIConfigured := len(cfg.apiKeys()) > 0
 	externalAPIHealth := s.contentModerationExternalAPIHealth(cfg)
 	externalAPIHealthy := externalAPIConfigured && externalAPIHealth.healthy
@@ -4695,7 +4699,7 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 	if cfg.Mode != ContentModerationModePreBlock {
 		unsafeReasons = append(unsafeReasons, "mode_not_pre_block")
 	}
-	if !cfg.candidateOnly() && cfg.AuditScope != ContentModerationAuditScopeAllContext {
+	if !cfg.candidateOnly() && effectiveAuditScope != ContentModerationAuditScopeAllContext {
 		unsafeReasons = append(unsafeReasons, "audit_scope_not_all_context")
 	}
 	if cfg.candidateOnly() && s.semanticReviewRouter == nil {
@@ -4749,7 +4753,7 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 		RiskControlEnabled:         riskEnabled,
 		ModerationEnabled:          cfg.Enabled,
 		Mode:                       cfg.Mode,
-		AuditScope:                 cfg.AuditScope,
+		AuditScope:                 effectiveAuditScope,
 		PublicFailStrategy:         failStrategy.Default,
 		GroupCoverage:              groupCoverage,
 		AccountCoverage:            accountCoverage,
@@ -5967,6 +5971,7 @@ func defaultContentModerationConfig() *ContentModerationConfig {
 		AccountIDs:                  []int64{},
 		RecordNonHits:               false,
 		AuditScope:                  ContentModerationAuditScopeAllContext,
+		LatestTurnOnly:              false,
 		StoreInputExcerpt:           true,
 		SearchInputExcerpt:          false,
 		Thresholds:                  ContentModerationDefaultThresholds(),
@@ -6398,9 +6403,24 @@ func normalizeContentModerationAuditScope(scope string) string {
 		return ContentModerationAuditScopeUserAndTool
 	case ContentModerationAuditScopeAllContext:
 		return ContentModerationAuditScopeAllContext
+	case ContentModerationAuditScopeLatestTurnOnly:
+		return ContentModerationAuditScopeLatestTurnOnly
 	default:
 		return ContentModerationAuditScopeAllContext
 	}
+}
+
+func contentModerationEffectiveAuditScope(cfg *ContentModerationConfig) string {
+	if cfg == nil {
+		return ContentModerationAuditScopeAllContext
+	}
+	if cfg.LatestTurnOnly {
+		return ContentModerationAuditScopeLatestTurnOnly
+	}
+	if cfg.candidateOnly() {
+		return ContentModerationAuditScopeUserOnly
+	}
+	return normalizeContentModerationAuditScope(cfg.AuditScope)
 }
 
 func normalizeContentModerationAccountScope(scope string) string {
@@ -6819,6 +6839,7 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		AccountIDs:                     append([]int64(nil), cfg.AccountIDs...),
 		RecordNonHits:                  cfg.RecordNonHits,
 		AuditScope:                     cfg.AuditScope,
+		LatestTurnOnly:                 cfg.LatestTurnOnly,
 		StoreInputExcerpt:              cfg.StoreInputExcerpt,
 		SearchInputExcerpt:             cfg.SearchInputExcerpt,
 		Thresholds:                     cloneFloatMap(cfg.Thresholds),

@@ -109,6 +109,7 @@ const baseConfig = (): ContentModerationConfig => ({
   account_ids: [],
   record_non_hits: false,
   audit_scope: 'user_only',
+  latest_turn_only: false,
   store_input_excerpt: true,
   search_input_excerpt: false,
   worker_count: 4,
@@ -950,6 +951,34 @@ describe('admin RiskControlView', () => {
       },
     }))
     expect(showError).not.toHaveBeenCalled()
+  })
+
+  it('loads and submits latest-turn-only content moderation scope', async () => {
+    const config = baseConfig()
+    config.latest_turn_only = true
+    getConfig.mockResolvedValue(config)
+
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    expect(wrapper.text()).toContain('admin.riskControl.latestTurnOnly')
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+    await flushPromises()
+
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({ latest_turn_only: true }))
   })
 
 	it('saves OAuth credential account scope without selected account IDs', async () => {

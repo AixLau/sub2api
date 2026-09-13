@@ -689,6 +689,9 @@ func ExtractContentModerationInput(protocol string, body []byte, auditScopes ...
 	out.Extraction = moderationExtractionFromInputSources(sources, !toolState.truncated, toolState.truncateReasons)
 	out.Normalize()
 	deduplicateContentModerationInput(&out)
+	if auditScope == ContentModerationAuditScopeLatestTurnOnly {
+		out = narrowContentModerationInputToLatestTurn(out)
+	}
 	// Text is the bounded legacy/display projection. Extraction retains the
 	// complete source stream used by incremental moderation and chunking.
 	out.Text = trimRunes(out.Text, maxModerationInputRunes)
@@ -3388,6 +3391,12 @@ func shouldIncludeModerationRole(role string, typ string, auditScope string) boo
 		return isUser
 	case ContentModerationAuditScopeUserAndTool:
 		return isUser || isTool
+	case ContentModerationAuditScopeLatestTurnOnly:
+		// Retain every message source as a boundary. The narrowing pass removes
+		// system, developer, tool, and older user sources, but must still be able
+		// to distinguish the nearest assistant/model output from an older one
+		// separated by one of those roles.
+		return true
 	default:
 		return true
 	}

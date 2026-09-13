@@ -54,6 +54,7 @@ type contentModerationConfigRequest struct {
 	AccountIDs              *[]int64            `json:"account_ids"`
 	RecordNonHits           *bool               `json:"record_non_hits"`
 	AuditScope              *string             `json:"audit_scope"`
+	LatestTurnOnly          *bool               `json:"latest_turn_only"`
 	StoreInputExcerpt       *bool               `json:"store_input_excerpt"`
 	SearchInputExcerpt      *bool               `json:"search_input_excerpt"`
 	Thresholds              *map[string]float64 `json:"thresholds"`
@@ -201,6 +202,7 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		AccountIDs:                     req.AccountIDs,
 		RecordNonHits:                  req.RecordNonHits,
 		AuditScope:                     req.AuditScope,
+		LatestTurnOnly:                 req.LatestTurnOnly,
 		StoreInputExcerpt:              req.StoreInputExcerpt,
 		SearchInputExcerpt:             req.SearchInputExcerpt,
 		Thresholds:                     req.Thresholds,

@@ -254,6 +254,8 @@ export default {
       modeObserveDesc: 'Candidates are reviewed and recorded, but requests always pass and no user penalty is applied.',
       modeOff: 'Off',
       modeOffDesc: 'Content moderation is disabled and no audit records are written.',
+      latestTurnOnly: 'Only latest input and prior output',
+      latestTurnOnlyHint: 'Send only the latest user input and the nearest preceding assistant/model output to content moderation; payloads without user input keep the existing extraction scope.',
       promptFilterMode: 'Cyber Prompt Filter',
       promptFilterModeHint: 'Pinned codex2api patterns run locally. A match sends one user-context fragment to review, never a system prompt, tool output, or history wrapper.',
       promptFilterModeObserve: 'Observe',

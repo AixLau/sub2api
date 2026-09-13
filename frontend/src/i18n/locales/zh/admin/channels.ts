@@ -254,6 +254,8 @@ export default {
       modeObserveDesc: '候选片段仍会送审并保留记录，但请求始终放行，也不会触发处罚。',
       modeOff: '关闭',
       modeOffDesc: '不执行内容审计，也不会写入审核记录。',
+      latestTurnOnly: '仅审最新输入和上一轮输出',
+      latestTurnOnlyHint: '只将最新用户输入和其之前最近的 assistant/model 输出送入内容审计；没有用户输入时保留原有提取范围。',
       promptFilterMode: '网络安全提示词规则',
       promptFilterModeHint: '本地运行固定版本的 codex2api 规则。命中后只提取一个用户上下文片段送审，不会拼接系统提示、工具输出或历史包装。',
       promptFilterModeObserve: '仅观察',

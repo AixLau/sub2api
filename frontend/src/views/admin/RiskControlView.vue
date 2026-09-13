@@ -809,6 +809,13 @@
                 <Select v-model="configForm.mode" :options="modeOptions" />
                 <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ modeDescription(configForm.mode) }}</p>
               </div>
+              <div class="flex items-center justify-between rounded-lg border border-gray-100 p-4 dark:border-dark-700">
+                <div>
+                  <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.latestTurnOnly') }}</p>
+                  <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.latestTurnOnlyHint') }}</p>
+                </div>
+                <Toggle v-model="configForm.latest_turn_only" :disabled="!configForm.enabled || configForm.mode === 'off'" />
+              </div>
               <div>
                 <label class="input-label">{{ t('admin.riskControl.promptFilterMode') }}</label>
                 <Select v-model="configForm.prompt_filter_mode" :options="promptFilterModeOptions" />
@@ -2198,7 +2205,8 @@ const configForm = reactive({
   group_ids: [] as number[],
 	account_scope: 'all' as ContentModerationAccountScope,
 	account_ids: [] as number[],
-  store_input_excerpt: true,
+	latest_turn_only: false,
+	store_input_excerpt: true,
   search_input_excerpt: false,
   worker_count: 4,
   queue_size: 32768,
@@ -3338,7 +3346,8 @@ function applyConfigValues(config: ContentModerationConfig) {
   configForm.group_ids = Array.isArray(config.group_ids) ? [...config.group_ids] : []
 	configForm.account_scope = config.account_scope === 'oauth' || config.account_scope === 'selected' ? config.account_scope : 'all'
 	configForm.account_ids = Array.isArray(config.account_ids) ? [...config.account_ids] : []
-  configForm.store_input_excerpt = config.store_input_excerpt ?? true
+	configForm.latest_turn_only = config.latest_turn_only ?? false
+	configForm.store_input_excerpt = config.store_input_excerpt ?? true
   configForm.search_input_excerpt = config.search_input_excerpt ?? false
   configForm.worker_count = config.worker_count || 4
   configForm.queue_size = config.queue_size || 32768
@@ -3513,6 +3522,7 @@ async function saveConfig() {
       group_ids: configForm.all_groups ? [] : [...configForm.group_ids],
 		account_scope: configForm.account_scope,
 		account_ids: configForm.account_scope === 'selected' ? [...configForm.account_ids] : [],
+		latest_turn_only: configForm.latest_turn_only,
 	      record_non_hits: false,
 	      audit_scope: 'user_only',
       store_input_excerpt: configForm.store_input_excerpt,

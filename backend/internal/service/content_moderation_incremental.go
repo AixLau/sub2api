@@ -89,7 +89,7 @@ func (s *ContentModerationService) runIncrementalModeration(ctx context.Context,
 		return AggregatedModerationBatch{}, err
 	}
 	_, policyScope, err := CanonicalLegacyModerationPolicyScope(LegacyModerationPolicy{
-		Provider: cfg.Provider, BaseURL: cfg.BaseURL, Model: cfg.Model, AuditScope: cfg.AuditScope,
+		Provider: cfg.Provider, BaseURL: cfg.BaseURL, Model: cfg.Model, AuditScope: contentModerationEffectiveAuditScope(cfg),
 		Thresholds: cfg.Thresholds, Rules: legacyModerationRules(cfg.keywordRules()), EngineMode: cfg.EngineMode,
 		ModelFilters: cfg.ModelFilter.Models, GroupFilters: cfg.GroupIDs, FailurePolicy: cfg.FailStrategy.Default,
 		AdapterVersion: provider.AdapterVersion(), ExtractorVersion: "moderation-extractor-v1", ChunkerVersion: ModerationChunkerVersion,
@@ -106,7 +106,7 @@ func (s *ContentModerationService) runIncrementalModeration(ctx context.Context,
 		if cacheEnabled {
 			_, digest, identityErr := BuildModerationChunkIdentity(s.moderationCacheHMACKey, ModerationIdentityInput{
 				KeyVersion: s.moderationCacheKeyVersion, FeedbackEpoch: feedbackEpoch, Provider: cfg.Provider,
-				Model: cfg.Model, AuditScope: cfg.AuditScope, PolicyScope: policyScope, ChunkerVersion: ModerationChunkerVersion,
+				Model: cfg.Model, AuditScope: contentModerationEffectiveAuditScope(cfg), PolicyScope: policyScope, ChunkerVersion: ModerationChunkerVersion,
 				ContextFrame: chunk.ContextFrame, NormalizedText: chunk.NormalizedText,
 			})
 			if identityErr != nil {

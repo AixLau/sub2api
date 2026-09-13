@@ -109,6 +109,7 @@ export interface ContentModerationConfig {
   account_ids?: number[]
   record_non_hits: boolean
   audit_scope: ContentModerationAuditScope | string
+  latest_turn_only?: boolean
   store_input_excerpt: boolean
   search_input_excerpt: boolean
   thresholds: Record<string, number>
@@ -251,6 +252,7 @@ export interface UpdateContentModerationConfig {
   account_ids?: number[]
   record_non_hits?: boolean
   audit_scope?: ContentModerationAuditScope | string
+  latest_turn_only?: boolean
   store_input_excerpt?: boolean
   search_input_excerpt?: boolean
   thresholds?: Record<string, number>
