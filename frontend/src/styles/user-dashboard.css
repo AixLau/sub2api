@@ -73,7 +73,7 @@
 .user-dashboard .user-dashboard__bottom-grid {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 2fr) minmax(19rem, 1fr);
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   gap: clamp(1rem, 1.25vw, 1.25rem);
   align-items: stretch;
 }
@@ -539,6 +539,12 @@
 
   .user-dashboard .user-dashboard__ribbon--side {
     display: none;
+  }
+}
+
+@media (max-width: 639px) {
+  .user-dashboard .user-dashboard__content {
+    padding-inline: max(0.75rem, var(--dashboard-content-gutter));
   }
 }
 

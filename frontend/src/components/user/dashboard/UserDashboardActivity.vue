@@ -56,6 +56,7 @@
               :aria-label="activityTooltip(cell)"
               class="aspect-square min-h-3 rounded-[5px] outline-none ring-offset-1 transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-sky-500 disabled:cursor-default disabled:hover:scale-100"
               :class="cellClass(cell)"
+              :style="cellStyle(cell)"
               @mouseenter="showActivityPreview(cell, $event)"
               @mousemove="showActivityPreview(cell, $event)"
               @mouseleave="hideActivityPreview"
@@ -128,7 +129,6 @@ const cells = computed<ActivityCell[]>(() => {
   }))
 })
 
-const maxValue = computed(() => Math.max(0, ...cells.value.filter(cell => !cell.isFuture).map(cell => cell.value)))
 const monthLabels = computed(() => baseDates.value.flatMap((date, index) => {
   const parsed = parseDate(date)
   const previous = index > 0 ? parseDate(baseDates.value[index - 1]) : null
@@ -141,27 +141,16 @@ const monthLabels = computed(() => baseDates.value.flatMap((date, index) => {
 }))
 
 function cellClass(cell: ActivityCell): string {
-  if (cell.isFuture || cell.value <= 0) return 'bg-gray-100 dark:bg-dark-700'
-  return legendClass(activityLevel(cell.value))
+  return cell.isFuture || cell.value <= 0 ? 'bg-gray-100 dark:bg-dark-700' : ''
 }
 
-function legendClass(level: number): string {
-  return [
-    'bg-gray-100 dark:bg-dark-700',
-    'bg-sky-100 dark:bg-sky-950',
-    'bg-sky-300 dark:bg-sky-800',
-    'bg-sky-500 dark:bg-sky-600',
-    'bg-sky-700 dark:bg-sky-400',
-  ][level] ?? 'bg-gray-100 dark:bg-dark-700'
-}
-
-function activityLevel(value: number): number {
-  if (maxValue.value <= 0 || value <= 0) return 0
-  const ratio = value / maxValue.value
-  if (ratio <= 0.25) return 1
-  if (ratio <= 0.5) return 2
-  if (ratio <= 0.75) return 3
-  return 4
+function cellStyle(cell: ActivityCell): Record<string, string> | undefined {
+  if (cell.isFuture || cell.value <= 0) return undefined
+  const ratio = Math.min(1, cell.value / 1_000_000_000)
+  const red = 14
+  const green = Math.round(165 - ratio * 100)
+  const blue = Math.round(233 - ratio * 80)
+  return { backgroundColor: `rgb(${red} ${green} ${blue})` }
 }
 
 function activityTooltip(cell: ActivityCell): string {

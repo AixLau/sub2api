@@ -252,7 +252,8 @@ const rootClass = computed(() => [
   letter-spacing: -0.035em;
   line-height: 1.12;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .dashboard-stat-card--accent-value .dashboard-stat-card__value {
@@ -269,7 +270,8 @@ const rootClass = computed(() => [
   font-variant-numeric: tabular-nums;
   line-height: 1rem;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .dashboard-stat-card--accent-description .dashboard-stat-card__description {
