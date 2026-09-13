@@ -1112,6 +1112,16 @@ func sanitizeGrokResponsesTools(body []byte) ([]byte, error) {
 				}
 				toolsChanged = true
 			}
+			// Grok does not support tool_search. Once functions are sent eagerly,
+			// retaining its deferred-loading flag would leave them unavailable.
+			if tool.Get("defer_loading").Exists() {
+				var err error
+				raw, err = sjson.DeleteBytes(raw, "defer_loading")
+				if err != nil {
+					return nil, err
+				}
+				toolsChanged = true
+			}
 			filteredTools = append(filteredTools, raw)
 		}
 	}
