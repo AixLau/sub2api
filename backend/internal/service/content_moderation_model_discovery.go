@@ -95,6 +95,12 @@ func (r *openAIContentModerationSemanticReviewRouter) reviewWithConfiguredAPI(ct
 	if maxAttempts <= 0 {
 		maxAttempts = 1
 	}
+	userAgent := DefaultOpenAICodexUserAgent
+	if r != nil && r.settingService != nil {
+		if configured := strings.TrimSpace(r.settingService.GetOpenAICodexUserAgent(reviewCtx)); configured != "" {
+			userAgent = configured
+		}
+	}
 	for modelIndex, model := range models {
 		model = strings.TrimSpace(model)
 		if model == "" || seen[strings.ToLower(model)] {
@@ -111,7 +117,7 @@ func (r *openAIContentModerationSemanticReviewRouter) reviewWithConfiguredAPI(ct
 				break
 			}
 			attemptCount++
-			result, err := callConfiguredSemanticModel(reviewCtx, cfg, model, input, timeoutMS)
+			result, err := callConfiguredSemanticModel(reviewCtx, cfg, model, input, timeoutMS, userAgent)
 			if err == nil {
 				result.Model = model
 				result.AttemptCount = attemptCount
@@ -148,7 +154,7 @@ func (r *openAIContentModerationSemanticReviewRouter) reviewWithConfiguredAPI(ct
 	return ContentModerationSemanticReviewResult{}, &ContentModerationSemanticReviewUnavailableError{Err: last}
 }
 
-func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSemanticReviewConfig, model string, input ContentModerationSemanticReviewInput, timeoutMS int) (ContentModerationSemanticReviewResult, error) {
+func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSemanticReviewConfig, model string, input ContentModerationSemanticReviewInput, timeoutMS int, userAgent string) (ContentModerationSemanticReviewResult, error) {
 	base := strings.TrimRight(strings.TrimSpace(cfg.APIBaseURL), "/")
 	if parsed, parseErr := url.Parse(base); parseErr == nil && strings.Trim(parsed.Path, "/") == "" {
 		base += "/v1"
@@ -169,6 +175,7 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 	}
 	req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", userAgent)
 	resp, err := client.Do(req)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {

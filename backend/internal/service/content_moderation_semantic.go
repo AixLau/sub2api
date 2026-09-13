@@ -1010,19 +1010,26 @@ type openAIContentModerationSemanticReviewRouter struct {
 	refresh        singleflight.Group
 	refreshSlots   chan struct{}
 	quotaSnapshots *gocache.Cache
+	settingService *SettingService
 }
 
 func NewOpenAIContentModerationSemanticReviewRouter(
 	backend ContentModerationSemanticReviewBackend,
 	quota ContentModerationSemanticReviewQuotaRefresher,
 	usageRecorder PlatformUsageRecorder,
+	settingServices ...*SettingService,
 ) ContentModerationSemanticReviewRouter {
+	var settingService *SettingService
+	if len(settingServices) > 0 {
+		settingService = settingServices[0]
+	}
 	return &openAIContentModerationSemanticReviewRouter{
 		backend:        backend,
 		quota:          quota,
 		usageRecorder:  usageRecorder,
 		refreshSlots:   make(chan struct{}, contentModerationSemanticReviewQuotaRefreshWorkers),
 		quotaSnapshots: gocache.New(openAIProbeCacheTTL, openAIProbeCacheTTL),
+		settingService: settingService,
 	}
 }
 
