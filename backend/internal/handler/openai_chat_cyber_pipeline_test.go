@@ -67,6 +67,60 @@ func TestOpenAIChatCompletions_CyberBlockedByPipelineStage(t *testing.T) {
 	require.Equal(t, []string{service.CyberSessionExplicitBlockKey(apiKey.ID, c, []byte(body))}, cyberChecker.checkedKeys)
 }
 
+func TestOpenAIMessages_CyberBlockedByRegistrarBeforeHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := `{"model":"gpt-5.1","prompt_cache_key":"messages-session","messages":[{"role":"user","content":"hello"}]}`
+	guard := &moderationGuardSpy{decision: &service.ContentModerationDecision{
+		Allowed: true,
+		Action:  service.ContentModerationActionAllow,
+	}}
+	checker := &openAIChatCyberPipelineCheckerSpy{enabled: true, blocked: true}
+	userSlotCalls := 0
+	concurrencyCache := &concurrencyCacheMock{
+		acquireUserSlotFn: func(context.Context, int64, int, string) (bool, error) {
+			userSlotCalls++
+			return false, nil
+		},
+	}
+	h := &OpenAIGatewayHandler{
+		pipeline:            &OpenAIGatewayPipeline{moderationGuard: guard, cyberSessionChecker: checker},
+		gatewayService:      &service.OpenAIGatewayService{},
+		billingCacheService: &service.BillingCacheService{},
+		apiKeyService:       &service.APIKeyService{},
+		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(concurrencyCache), SSEPingFormatNone, time.Second),
+	}
+	handlerReached := false
+	var blockKey string
+	router := gin.New()
+	router.POST("/v1/messages", func(c *gin.Context) {
+		setGatewayAuthContextForModerationTest(c)
+		apiKey, ok := middleware.GetAPIKeyFromContext(c)
+		require.True(t, ok)
+		apiKey.Group.AllowMessagesDispatch = true
+		blockKey = service.CyberSessionExplicitBlockKey(apiKey.ID, c, []byte(body))
+		meta := openAIMessagesHTTPRouteMetaForTest()
+		moderationcoverage.SetRouteMeta(c, meta)
+		if h.EnterOpenAIHTTPGatewayPipeline(c, meta).Stop {
+			return
+		}
+		handlerReached = true
+		h.Messages(c)
+	})
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(body)))
+
+	require.Equal(t, http.StatusForbidden, recorder.Code)
+	require.Contains(t, recorder.Body.String(), `"type":"permission_error"`)
+	require.Contains(t, recorder.Body.String(), `"type":"error"`)
+	require.False(t, handlerReached, "registrar must reject blocked sessions before the Messages handler")
+	require.Zero(t, userSlotCalls)
+	require.Len(t, guard.calls, 1)
+	require.Equal(t, service.ContentModerationProtocolOpenAIMessages, guard.calls[0].Protocol)
+	require.Equal(t, []byte(body), guard.calls[0].Body)
+	require.NotEmpty(t, blockKey)
+	require.Equal(t, []string{blockKey}, checker.checkedKeys)
+}
+
 func TestOpenAIChatCompletions_ModerationBlockSkipsCyberPipelineStage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	guard := &moderationGuardSpy{decision: &service.ContentModerationDecision{

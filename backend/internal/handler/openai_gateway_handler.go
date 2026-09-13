@@ -1175,9 +1175,6 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	sessionHash := h.gatewayService.GenerateSessionHash(c, body)
 	promptCacheKey := h.gatewayService.ExtractSessionID(c, body)
 	sessionHash, promptCacheKey = resolveOpenAIMessagesMetadataSession(c, sessionHash, promptCacheKey, reqModel, body)
-	if h.rejectIfCyberSessionBlocked(c, apiKey, body, reqModel, cyberBlockFormatAnthropic) {
-		return
-	}
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
 	profitVetoCount := 0
@@ -2548,13 +2545,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			return false
 		}
 		if failoverErr.ShouldReportAccountScheduleFailure() {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(
-				account,
-				openAIAccountScheduleModel(c, account, wsForwardModel, false, nil),
-				false,
-				nil,
-				failoverErr,
-			)
+			h.runOpenAIWebSocketScheduleResultStage(c, account, wsForwardModel, failoverErr)
 		}
 		releaseAccountSlot()
 		if !failoverErr.ShouldRetryNextAccount() {
@@ -2919,7 +2910,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				}
 				if waitForWSSameAccountRetry(account, failoverErr) {
 					if failoverErr.ShouldReportAccountScheduleFailure() {
-						h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, wsForwardModel, false, nil), false, nil, proxyErr)
+						h.runOpenAIWebSocketScheduleResultStage(c, account, wsForwardModel, proxyErr)
 					}
 					if !ensureUserSlotHeld() {
 						return
@@ -2973,7 +2964,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			}
 
 			if shouldReportOpenAIWSProxyAccountFailure(proxyErr) {
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, wsForwardModel, false, nil), false, nil, proxyErr)
+				h.runOpenAIWebSocketScheduleResultStage(c, account, wsForwardModel, proxyErr)
 			}
 			closeStatus, closeReason := summarizeWSCloseErrorForLog(proxyErr)
 			proxyFailedFields := []zap.Field{

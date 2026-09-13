@@ -1924,6 +1924,17 @@ func (s OpenAIWebSocketForwardStage) RunForward(c *gin.Context) ExecutableStageR
 	return ExecutableStageResult{Err: err}
 }
 
+func (h *OpenAIGatewayHandler) runOpenAIWebSocketScheduleResultStage(c *gin.Context, account *service.Account, model string, observedErr error) ExecutableStageResult {
+	success := false
+	return h.runOpenAIWebSocketUsageStage(c, OpenAIWebSocketUsageStage{
+		Handler:         h,
+		Account:         account,
+		Model:           model,
+		TurnErr:         observedErr,
+		ScheduleSuccess: &success,
+	})
+}
+
 type OpenAIWebSocketUsageStage struct {
 	Handler                        *OpenAIGatewayHandler
 	RequestContext                 context.Context
@@ -1955,6 +1966,29 @@ func (OpenAIWebSocketUsageStage) StageName() string {
 }
 
 func (s OpenAIWebSocketUsageStage) RunUsage(c *gin.Context) ExecutableStageResult {
+	// Transport failures can report scheduling feedback without completing a
+	// logical turn. Keep these calls ahead of the failed-turn usage guards and
+	// do not clear cyber state, release turn slots, or enqueue billing for them.
+	if s.ScheduleSuccess != nil && s.APIKey == nil {
+		if h := s.Handler; h != nil && h.gatewayService != nil && s.Account != nil {
+			success := *s.ScheduleSuccess
+			var firstTokenMs *int
+			if s.Result != nil {
+				firstTokenMs = s.Result.FirstTokenMs
+				if success {
+					success = s.Result.SucceededForScheduling()
+				}
+			}
+			model := strings.TrimSpace(s.UpstreamModel)
+			if model == "" {
+				model = s.Model
+			}
+			model = openAIAccountScheduleModel(c, s.Account, model, false, s.Result)
+			h.gatewayService.ReportOpenAIAccountScheduleResult(s.Account, model, success, firstTokenMs, s.TurnErr)
+		}
+		return ExecutableStageResult{}
+	}
+
 	// Cyber turn state must live exactly one turn; usage recording runs async.
 	defer func() {
 		clearCyberPolicyAttemptState(c, s.CyberBlockPendingAfterFailover == nil || !*s.CyberBlockPendingAfterFailover)
