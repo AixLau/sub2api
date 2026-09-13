@@ -1022,7 +1022,11 @@ func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
 	require.Equal(t, float64(ContentModerationSemanticReviewDefaultOutputTokens), requestBody["max_output_tokens"])
 	require.Equal(t, semanticReviewInstructions, requestBody["instructions"])
 	require.Equal(t, "semantic-review-instructions-v12", semanticReviewInstructionsRevision)
-	require.Contains(t, semanticReviewInstructions, "Platform virology restrictions take precedence")
+	// Keep the platform-specific virology prohibition and its lack of
+	// authorization exceptions as semantic policy contracts, rather than
+	// coupling the test to the previous prompt's section heading.
+	require.Contains(t, semanticReviewInstructions, "Reject actual intent to study, research, analyze, design, cultivate, or modify biological viruses")
+	require.Contains(t, semanticReviewInstructions, "This platform restriction has no authorization, ownership, educational, defensive, institutional, or fictional exception")
 	require.Contains(t, semanticReviewInstructions, "authorized reverse engineering")
 	require.Contains(t, semanticReviewInstructions, "virology education and research")
 	require.Contains(t, semanticReviewInstructions, "no authorization, ownership, educational")
