@@ -171,9 +171,17 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 	if err != nil {
 		return ContentModerationSemanticReviewResult{}, errors.New("接口地址错误")
 	}
-	body := map[string]any{"model": model, "temperature": 0, "max_tokens": cfg.MaxOutputTokens, "messages": []map[string]string{{"role": "system", "content": semanticReviewInstructions}, {"role": "user", "content": input.Text}}}
+	body := map[string]any{"model": model, "temperature": 0, "max_tokens": cfg.MaxOutputTokens, "messages": []map[string]string{{"role": "system", "content": semanticReviewInstructionsForKind(input.ReviewKind, input.FinalReview)}, {"role": "user", "content": input.Text}}}
 	if normalizeContentModerationSemanticReviewEndpoint(cfg.APIEndpoint) == "responses" {
-		body = map[string]any{"model": model, "instructions": semanticReviewInstructions, "input": input.Text, "max_output_tokens": cfg.MaxOutputTokens, "store": false}
+		body = map[string]any{
+			"model":             model,
+			"instructions":      semanticReviewInstructionsForKind(input.ReviewKind, input.FinalReview),
+			"input":             input.Text,
+			"max_output_tokens": cfg.MaxOutputTokens,
+			"reasoning":         map[string]any{"effort": cfg.ReasoningEffort},
+			"text":              map[string]any{"format": semanticReviewJSONSchemaForKind(input.ReviewKind, input.FinalReview)},
+			"store":             false,
+		}
 	}
 	raw, _ := json.Marshal(body)
 	if timeoutMS <= 0 {
