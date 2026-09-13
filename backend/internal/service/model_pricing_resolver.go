@@ -176,13 +176,17 @@ func (r *ModelPricingResolver) applyFirstTokenTier(resolved *ResolvedPricing, co
 	if resolved == nil || len(resolved.Intervals) == 0 {
 		return
 	}
-	first := resolved.Intervals[0]
-	for _, interval := range resolved.Intervals[1:] {
-		if interval.MinTokens < first.MinTokens {
-			first = interval
-		}
+	// The disabled-ladder path asks for the price at one token.  A channel
+	// interval whose lower bound starts above one token does not cover that
+	// probe, so it must not replace the channel's flat/base price.  This also
+	// mirrors GetIntervalPricing(…, 1), which falls back to BasePricing when no
+	// interval matches.
+	first := FindMatchingInterval(resolved.Intervals, 1)
+	if first == nil {
+		resolved.Intervals = nil
+		return
 	}
-	resolved.BasePricing = intervalToModelPricing(&first, resolved.BasePricing, config)
+	resolved.BasePricing = intervalToModelPricing(first, resolved.BasePricing, config)
 	resolved.BasePricing.SupportsCacheBreakdown = resolved.SupportsCacheBreakdown
 	resolved.Intervals = nil
 }
