@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -1011,6 +1012,16 @@ type openAIContentModerationSemanticReviewRouter struct {
 	refreshSlots   chan struct{}
 	quotaSnapshots *gocache.Cache
 	settingService *SettingService
+	internalToken  string
+}
+
+func (r *openAIContentModerationSemanticReviewRouter) SetInternalTokenKey(key []byte) {
+	if r == nil || len(key) == 0 {
+		return
+	}
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write([]byte("semantic-review-v1"))
+	r.internalToken = hex.EncodeToString(mac.Sum(nil))
 }
 
 func NewOpenAIContentModerationSemanticReviewRouter(

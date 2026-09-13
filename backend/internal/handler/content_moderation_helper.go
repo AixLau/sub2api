@@ -245,6 +245,17 @@ func runContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.Conte
 		markContentModerationReceipt(c, protocol, "", decision, false)
 		return decision
 	}
+	if svc.IsInternalSemanticReviewRequest(c.Request) {
+		// The configured semantic reviewer may point at this same gateway. Mark
+		// that hop as internal so the reviewer request does not recursively invoke
+		// content moderation and consume the entire timeout budget.
+		decision := &service.ContentModerationDecision{Allowed: true, Action: service.ContentModerationActionAllow}
+		markContentModerationReceipt(c, protocol, "", decision, false)
+		if reqLog != nil {
+			reqLog.Info("content_moderation.skip_internal_semantic_review")
+		}
+		return decision
+	}
 	input := buildContentModerationInput(c, apiKey, subject, protocol, model, body)
 	if cached, ok := contentModerationDecisionFromCache(c, protocol, model, body); ok {
 		return cached
