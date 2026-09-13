@@ -395,6 +395,11 @@ type ContentModerationLocalClassifierConfig struct {
 // classifiers, while this path handles jailbreak, reverse-engineering abuse,
 // credential theft, and similar intent.
 type ContentModerationSemanticReviewConfig struct {
+	APIBaseURL                     string   `json:"api_base_url,omitempty"`
+	APIKey                         string   `json:"api_key,omitempty"`
+	APIKeyConfigured               bool     `json:"api_key_configured,omitempty"`
+	APIKeyMasked                   string   `json:"api_key_masked,omitempty"`
+	AvailableModels                []string `json:"available_models,omitempty"`
 	Enabled                        bool     `json:"enabled"`
 	Trigger                        string   `json:"trigger"`
 	PrimaryModel                   string   `json:"primary_model"`
@@ -1440,6 +1445,20 @@ func (s *ContentModerationService) GetSemanticReviewModels(ctx context.Context) 
 	return s.semanticReviewModelProvider.ListSemanticReviewModels(ctx)
 }
 
+// FetchSemanticReviewModels queries an OpenAI-compatible /models endpoint using
+// the credentials currently entered by an administrator. It intentionally does
+// not persist the key.
+func (s *ContentModerationService) FetchSemanticReviewModels(ctx context.Context, baseURL, apiKey string) ([]string, error) {
+	return fetchContentModerationModels(ctx, baseURL, apiKey)
+}
+
+func (s *ContentModerationService) TestSemanticReviewModel(ctx context.Context, baseURL, apiKey, model string) error {
+	cfg := defaultContentModerationSemanticReviewConfig()
+	cfg.APIBaseURL, cfg.APIKey, cfg.PrimaryModel = baseURL, apiKey, strings.TrimSpace(model)
+	_, err := (&openAIContentModerationSemanticReviewRouter{}).reviewWithConfiguredAPI(ctx, cfg, ContentModerationSemanticReviewInput{Text: "请仅返回 allow verdict。"})
+	return err
+}
+
 func (s *ContentModerationService) ModerationMetricsHandler() http.Handler {
 	if s == nil || s.metrics == nil {
 		return http.NotFoundHandler()
@@ -1641,7 +1660,11 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 		cfg.PromptFilterStrictThreshold = *input.PromptFilterStrictThreshold
 	}
 	if input.SemanticReview != nil {
-		cfg.SemanticReview = *input.SemanticReview
+		semantic := *input.SemanticReview
+		if strings.TrimSpace(semantic.APIKey) == "" {
+			semantic.APIKey = cfg.SemanticReview.APIKey
+		}
+		cfg.SemanticReview = semantic
 	}
 	if input.LocalClassifier != nil {
 		cfg.LocalClassifier = *input.LocalClassifier
@@ -5005,6 +5028,30 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 			"启用决策升级审核时必须选择升级模型",
 		)
 	}
+	if strings.TrimSpace(cfg.SemanticReview.APIBaseURL) != "" {
+		if strings.TrimSpace(cfg.SemanticReview.APIKey) == "" {
+			return infraerrors.BadRequest("SEMANTIC_REVIEW_API_KEY_REQUIRED", "内容审计模型 API Key 不能为空")
+		}
+		if strings.TrimSpace(cfg.SemanticReview.PrimaryModel) == "" {
+			return infraerrors.BadRequest("SEMANTIC_REVIEW_PRIMARY_MODEL_REQUIRED", "必须选择主内容审计模型")
+		}
+		if _, err := url.ParseRequestURI(cfg.SemanticReview.APIBaseURL); err != nil {
+			return infraerrors.BadRequest("INVALID_SEMANTIC_REVIEW_BASE_URL", "内容审计模型接口地址无效")
+		}
+		if len(cfg.SemanticReview.AvailableModels) == 0 {
+			return infraerrors.BadRequest("SEMANTIC_REVIEW_MODELS_REQUIRED", "请先获取模型列表")
+		}
+		known := false
+		for _, model := range cfg.SemanticReview.AvailableModels {
+			if strings.EqualFold(strings.TrimSpace(model), cfg.SemanticReview.PrimaryModel) {
+				known = true
+				break
+			}
+		}
+		if !known {
+			return infraerrors.BadRequest("SEMANTIC_REVIEW_PRIMARY_MODEL_INVALID", "主内容审计模型不在最近获取的模型列表中，请重新获取")
+		}
+	}
 	switch normalizeContentModerationPromptFilterMode(cfg.PromptFilterMode) {
 	case promptfilter.ModeOff, promptfilter.ModeObserve, promptfilter.ModeWarn, promptfilter.ModeBlock:
 	default:
@@ -6099,6 +6146,23 @@ func defaultContentModerationSemanticReviewConfig() ContentModerationSemanticRev
 }
 
 func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanticReviewConfig) ContentModerationSemanticReviewConfig {
+	cfg.APIBaseURL = strings.TrimRight(strings.TrimSpace(cfg.APIBaseURL), "/")
+	cfg.APIKey = strings.TrimSpace(cfg.APIKey)
+	availableModels := make([]string, 0, len(cfg.AvailableModels))
+	seenAvailable := map[string]struct{}{}
+	for _, model := range cfg.AvailableModels {
+		model = strings.TrimSpace(model)
+		key := strings.ToLower(model)
+		if model == "" {
+			continue
+		}
+		if _, exists := seenAvailable[key]; exists {
+			continue
+		}
+		seenAvailable[key] = struct{}{}
+		availableModels = append(availableModels, model)
+	}
+	cfg.AvailableModels = availableModels
 	legacyBudgetConfig := cfg.TimeoutMS == ContentModerationSemanticReviewLegacyTimeoutMS &&
 		cfg.PrimaryTimeoutMS <= 0 && cfg.FallbackTimeoutMS <= 0 &&
 		cfg.MaxAttemptsPerModel <= 0 && cfg.MaxOutputTokens <= 0 &&
@@ -6658,6 +6722,12 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 	if len(masks) > 0 {
 		apiKeyMasked = masks[0]
 	}
+	semantic := normalizeContentModerationSemanticReviewConfig(cfg.SemanticReview)
+	semantic.APIKeyConfigured = strings.TrimSpace(cfg.SemanticReview.APIKey) != ""
+	if semantic.APIKeyConfigured {
+		semantic.APIKeyMasked = maskSecretTail(cfg.SemanticReview.APIKey)
+	}
+	semantic.APIKey = ""
 	return &ContentModerationConfigView{
 		ResourceProtectionConfig:       cfg.ResourceProtectionConfig,
 		ResourceProtectionStatus:       s.ResourceProtectionStatus(),
@@ -6711,7 +6781,7 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		PromptFilterSourceURL:          promptfilter.BuiltinSourceURL,
 		PromptFilterSourceAuthor:       promptfilter.BuiltinSourceAuthor,
 		PromptFilterSourcePermission:   promptfilter.BuiltinSourcePermission,
-		SemanticReview:                 normalizeContentModerationSemanticReviewConfig(cfg.SemanticReview),
+		SemanticReview:                 semantic,
 		LocalClassifier:                normalizeContentModerationLocalClassifierConfig(cfg.LocalClassifier),
 		ModelFilter:                    cloneContentModerationModelFilter(cfg.ModelFilter),
 		FailStrategy:                   cloneContentModerationFailStrategy(cfg.FailStrategy),

@@ -126,6 +126,40 @@ func (h *ContentModerationHandler) GetSemanticReviewModels(c *gin.Context) {
 	response.Success(c, gin.H{"models": models})
 }
 
+func (h *ContentModerationHandler) FetchSemanticReviewModels(c *gin.Context) {
+	var req struct {
+		BaseURL string `json:"base_url"`
+		APIKey  string `json:"api_key"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	models, err := h.service.FetchSemanticReviewModels(c.Request.Context(), req.BaseURL, req.APIKey)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"models": models})
+}
+
+func (h *ContentModerationHandler) TestSemanticReviewModel(c *gin.Context) {
+	var req struct {
+		BaseURL string `json:"base_url"`
+		APIKey  string `json:"api_key"`
+		Model   string `json:"model"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if err := h.service.TestSemanticReviewModel(c.Request.Context(), req.BaseURL, req.APIKey, req.Model); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"ok": true})
+}
+
 func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 	var req contentModerationConfigRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

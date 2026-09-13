@@ -835,6 +835,24 @@
                 </div>
                 <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
+                    <label class="input-label">{{ t('admin.riskControl.semanticReviewApiBaseUrl') }}</label>
+                    <input v-model.trim="configForm.semantic_review_api_base_url" type="url" class="input" placeholder="https://api.openai.com/v1" />
+                  </div>
+                  <div>
+                    <label class="input-label">{{ t('admin.riskControl.semanticReviewApiKey') }}</label>
+                    <input v-model="configForm.semantic_review_api_key" type="password" class="input" autocomplete="new-password" :placeholder="configForm.semantic_review_api_key_masked || 'sk-…'" />
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2 md:col-span-2">
+                    <button type="button" class="btn btn-secondary" :disabled="semanticModelsLoading" @click="fetchSemanticModels">
+                      <Icon name="refresh" size="sm" :class="semanticModelsLoading ? 'animate-spin' : ''" />
+                      {{ semanticModelsLoading ? t('common.loading') : t('admin.riskControl.semanticReviewFetchModels') }}
+                    </button>
+                    <button type="button" class="btn btn-secondary" :disabled="semanticModelTestLoading" @click="testSemanticModel">
+                      {{ semanticModelTestLoading ? t('common.loading') : t('admin.riskControl.semanticReviewTestModel') }}
+                    </button>
+                    <span v-if="semanticReviewAvailableModels.length" class="text-xs text-gray-500">{{ t('admin.riskControl.semanticReviewModelsLoaded', { count: semanticReviewAvailableModels.length }) }}</span>
+                  </div>
+                  <div>
                     <label class="input-label">{{ t('admin.riskControl.semanticReviewPrimaryModel') }}</label>
                     <Select v-model="configForm.semantic_review_primary_model" :options="semanticReviewModelOptions" />
                   </div>
@@ -2070,6 +2088,8 @@ const logsLoading = ref(false)
 const rawRequestLoading = ref(false)
 const statusLoading = ref(false)
 const apiKeyTesting = ref(false)
+const semanticModelsLoading = ref(false)
+const semanticModelTestLoading = ref(false)
 const keywordTesting = ref(false)
 const hashActionLoading = ref(false)
 const unbanningUserID = ref<number | null>(null)
@@ -2109,6 +2129,7 @@ const rawRequestTruncated = ref(false)
 const evidence = ref<ContentModerationEvidence | null>(null)
 const evidenceLoading = ref(false)
 let statusTimer: number | null = null
+let applyingConfig = false
 
 const configForm = reactive({
 	max_request_body_mib: 50,
@@ -2127,6 +2148,10 @@ const configForm = reactive({
 	  prompt_filter_threshold: 50,
 	  prompt_filter_strict_threshold: 90,
   semantic_review_primary_model: 'gpt-5.3-codex-spark',
+	semantic_review_api_base_url: '',
+	semantic_review_api_key: '',
+	semantic_review_api_key_masked: '',
+	semantic_review_available_models: [] as string[],
 	semantic_review_fallback_models: [] as string[],
 	semantic_review_escalation_enabled: false,
 	semantic_review_escalation_model: '',
@@ -2303,6 +2328,34 @@ function onProviderChange(value: string | number | boolean | null) {
   if (!configForm.model || configForm.model === 'moderation') configForm.model = 'omni-moderation-latest'
 }
 
+async function fetchSemanticModels() {
+  const baseURL = configForm.semantic_review_api_base_url.trim()
+  const apiKey = configForm.semantic_review_api_key.trim()
+  if (!baseURL || !apiKey) { appStore.showError(t('admin.riskControl.semanticReviewModelsConfigRequired')); return }
+  semanticModelsLoading.value = true
+  try {
+    const models = await adminAPI.riskControl.fetchSemanticReviewModels(baseURL, apiKey)
+    semanticReviewAvailableModels.value = models
+	configForm.semantic_review_available_models = [...models]
+    if (!models.length) throw new Error(t('admin.riskControl.semanticReviewModelsEmpty'))
+    appStore.showSuccess(t('admin.riskControl.semanticReviewModelsLoaded', { count: models.length }))
+  } catch (err: unknown) { appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.semanticReviewModelsFetchFailed'))) }
+  finally { semanticModelsLoading.value = false }
+}
+
+async function testSemanticModel() {
+  const baseURL = configForm.semantic_review_api_base_url.trim()
+  const apiKey = configForm.semantic_review_api_key.trim()
+  const model = configForm.semantic_review_primary_model.trim()
+  if (!baseURL || !apiKey || !model) { appStore.showError(t('admin.riskControl.semanticReviewTestConfigRequired')); return }
+  semanticModelTestLoading.value = true
+  try {
+    await adminAPI.riskControl.testSemanticReviewModel({ base_url: baseURL, api_key: apiKey, model })
+    appStore.showSuccess(t('admin.riskControl.semanticReviewTestSuccess'))
+  } catch (err: unknown) { appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.semanticReviewTestFailed'))) }
+  finally { semanticModelTestLoading.value = false }
+}
+
 const promptFilterModeOptions = computed<SelectOption[]>(() => [
   { value: 'observe', label: t('admin.riskControl.promptFilterModeObserve') },
   { value: 'warn', label: t('admin.riskControl.promptFilterModeWarn') },
@@ -2331,6 +2384,19 @@ watch(() => configForm.semantic_review_primary_model, (primaryModel) => {
 	configForm.semantic_review_fallback_models = configForm.semantic_review_fallback_models.filter(
 		(model) => model !== primaryModel.trim(),
 	)
+})
+
+watch(() => configForm.semantic_review_api_key, () => {
+	if (applyingConfig) return
+	// A changed key invalidates the previously discovered catalog; require an
+	// explicit refresh so a stale model is never silently selected.
+	semanticReviewAvailableModels.value = []
+	configForm.semantic_review_available_models = []
+})
+watch(() => configForm.semantic_review_api_base_url, () => {
+	if (applyingConfig) return
+	semanticReviewAvailableModels.value = []
+	configForm.semantic_review_available_models = []
 })
 
 const semanticReviewReasoningOptions = computed<SelectOption[]>(() => [
@@ -3165,6 +3231,13 @@ const runtimeBadgeClass = computed(() => {
 })
 
 function applyConfig(config: ContentModerationConfig) {
+	applyingConfig = true
+	try {
+	applyConfigValues(config)
+	} finally { applyingConfig = false }
+}
+
+function applyConfigValues(config: ContentModerationConfig) {
 	configForm.max_request_body_mib = config.max_request_body_mib || 50
 	configForm.inflight_memory_budget_mib = config.inflight_memory_budget_mib || 400
 	configForm.minimum_request_charge_kib = config.minimum_request_charge_kib || 256
@@ -3201,6 +3274,11 @@ function applyConfig(config: ContentModerationConfig) {
     prompt_injection_fail_closed: false,
   }
   configForm.semantic_review_primary_model = semanticReview.primary_model || 'gpt-5.3-codex-spark'
+  configForm.semantic_review_api_base_url = semanticReview.api_base_url || ''
+	configForm.semantic_review_api_key = ''
+	configForm.semantic_review_api_key_masked = semanticReview.api_key_masked || ''
+	configForm.semantic_review_available_models = Array.isArray(semanticReview.available_models) ? [...semanticReview.available_models] : []
+	semanticReviewAvailableModels.value = [...configForm.semantic_review_available_models]
 	configForm.semantic_review_fallback_models = Array.isArray(semanticReview.fallback_models) ? [...semanticReview.fallback_models] : []
 	configForm.semantic_review_escalation_enabled = semanticReview.escalation_enabled ?? false
 	configForm.semantic_review_escalation_model = semanticReview.escalation_model || ''
@@ -3281,7 +3359,7 @@ async function loadAll() {
       adminAPI.proxies.getAll().catch(() => [] as Proxy[]),
     ])
     applyConfig(config)
-    semanticReviewAvailableModels.value = semanticModels
+	if (!config.semantic_review?.api_base_url) semanticReviewAvailableModels.value = semanticModels
     groups.value = groupItems
     accounts.value = accountPage.items
     accountPagination.total = accountPage.total
@@ -3381,6 +3459,9 @@ async function saveConfig() {
 	      prompt_filter_threshold: Number(configForm.prompt_filter_threshold) || 50,
 	      prompt_filter_strict_threshold: Number(configForm.prompt_filter_strict_threshold) || 90,
 	      semantic_review: {
+        api_base_url: configForm.semantic_review_api_base_url.trim(),
+        api_key: configForm.semantic_review_api_key.trim() || undefined,
+	        available_models: [...configForm.semantic_review_available_models],
 	        enabled: true,
 	        trigger: 'local_review',
 	        primary_model: configForm.semantic_review_primary_model.trim() || 'gpt-5.3-codex-spark',

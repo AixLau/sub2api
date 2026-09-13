@@ -43,6 +43,11 @@ export interface ContentModerationKeywordRule {
 }
 
 export interface ContentModerationSemanticReviewConfig {
+  api_base_url?: string
+  api_key_configured?: boolean
+  api_key_masked?: string
+  api_key?: string
+  available_models?: string[]
   enabled: boolean
   trigger: 'local_review' | 'all' | string
   primary_model: string
@@ -634,6 +639,17 @@ export async function getSemanticReviewModels(): Promise<string[]> {
   return Array.isArray(data.models) ? data.models : []
 }
 
+export async function fetchSemanticReviewModels(baseUrl: string, apiKey: string): Promise<string[]> {
+  const { data } = await apiClient.post<ContentModerationSemanticReviewModelsResponse>(
+    '/admin/risk-control/semantic-review/models', { base_url: baseUrl, api_key: apiKey }
+  )
+  return Array.isArray(data.models) ? data.models : []
+}
+
+export async function testSemanticReviewModel(payload: { base_url: string; api_key: string; model: string }): Promise<void> {
+  await apiClient.post('/admin/risk-control/semantic-review/test', payload)
+}
+
 export async function updateConfig(
   payload: UpdateContentModerationConfig
 ): Promise<ContentModerationConfig> {
@@ -719,6 +735,8 @@ export async function clearFlaggedHashes(): Promise<ClearFlaggedHashesResponse> 
 export const riskControlAPI = {
   getConfig,
   getSemanticReviewModels,
+  fetchSemanticReviewModels,
+  testSemanticReviewModel,
   updateConfig,
   getStatus,
   testAPIKeys,

@@ -211,6 +211,7 @@ func safeContentModerationConfigForOutbox(cfg *ContentModerationConfig) *Content
 	safe := cloneContentModerationConfig(cfg)
 	safe.APIKey = ""
 	safe.APIKeys = nil
+	safe.SemanticReview.APIKey = ""
 	return safe
 }
 
@@ -793,6 +794,14 @@ func (s *ContentModerationService) processContentModerationSemanticReviewEvent(c
 	if cfg == nil {
 		cfg = defaultContentModerationConfig()
 	}
+	// Configured provider credentials are deliberately omitted from the public
+	// outbox payload. Reload them from the protected settings store when an
+	// asynchronous review needs to run.
+	if strings.TrimSpace(cfg.SemanticReview.APIBaseURL) != "" && strings.TrimSpace(cfg.SemanticReview.APIKey) == "" {
+		if current, loadErr := s.loadConfigFresh(ctx); loadErr == nil && current != nil {
+			cfg.SemanticReview.APIKey = current.SemanticReview.APIKey
+		}
+	}
 	cfg.normalize()
 	started := time.Now()
 	input := payload.SemanticReview.Input.checkInput()
@@ -1022,10 +1031,16 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 	cfg ContentModerationSemanticReviewConfig,
 	input ContentModerationSemanticReviewInput,
 ) (ContentModerationSemanticReviewResult, error) {
-	if r == nil || r.backend == nil {
+	if r == nil {
 		return ContentModerationSemanticReviewResult{}, errors.New("semantic review backend is unavailable")
 	}
 	cfg = normalizeContentModerationSemanticReviewConfig(cfg)
+	if cfg.APIBaseURL != "" && cfg.APIKey != "" {
+		return r.reviewWithConfiguredAPI(ctx, cfg, input)
+	}
+	if r.backend == nil {
+		return ContentModerationSemanticReviewResult{}, errors.New("semantic review backend is unavailable")
+	}
 	reviewKind := normalizeContentModerationReviewKind(input.ReviewKind)
 	configuredMaxInputRunes := cfg.MaxInputRunes
 	if input.FinalReview {
