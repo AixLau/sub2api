@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -228,6 +229,7 @@ func TestOpenAIResponsesWebSocketV2PassthroughNonCyberTurnAllowsFollowup(t *test
 	gin.SetMode(gin.TestMode)
 
 	upstreamDone := make(chan struct{})
+	firstUpstreamFrame := make(chan []byte, 1)
 	secondUpstreamFrame := make(chan []byte, 1)
 	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer close(upstreamDone)
@@ -236,9 +238,10 @@ func TestOpenAIResponsesWebSocketV2PassthroughNonCyberTurnAllowsFollowup(t *test
 		defer func() { _ = conn.CloseNow() }()
 
 		readCtx, cancelRead := context.WithTimeout(r.Context(), 3*time.Second)
-		_, _, err = conn.Read(readCtx)
+		_, first, err := conn.Read(readCtx)
 		cancelRead()
 		require.NoError(t, err)
+		firstUpstreamFrame <- append([]byte(nil), first...)
 
 		firstCompleted := []byte(`{"type":"response.completed","response":{"id":"resp_non_cyber_handler_turn_1","model":"gpt-5.1","usage":{"input_tokens":2,"output_tokens":1}}}`)
 		writeCtx, cancelWrite := context.WithTimeout(r.Context(), 3*time.Second)
@@ -312,9 +315,35 @@ func TestOpenAIResponsesWebSocketV2PassthroughNonCyberTurnAllowsFollowup(t *test
 		t.Fatal("non-cyber upstream websocket did not exit")
 	}
 	select {
+	case first := <-firstUpstreamFrame:
+		requireOpenAIWSPassthroughSessionCarriers(t, firstPayload, first)
+	default:
+		t.Fatal("non-cyber first turn did not reach upstream")
+	}
+	select {
 	case second := <-secondUpstreamFrame:
-		require.JSONEq(t, secondPayload, string(second))
+		requireOpenAIWSPassthroughSessionCarriers(t, secondPayload, second)
 	default:
 		t.Fatal("non-cyber follow-up did not reach upstream")
 	}
+}
+
+func requireOpenAIWSPassthroughSessionCarriers(t *testing.T, original string, forwarded []byte) {
+	t.Helper()
+	var expected map[string]any
+	require.NoError(t, json.Unmarshal([]byte(original), &expected))
+	sessionID := gjson.Get(original, "prompt_cache_key").String()
+	require.NotEmpty(t, sessionID)
+	turnMetadata, err := json.Marshal(map[string]string{"session_id": sessionID})
+	require.NoError(t, err)
+	// The API-key passthrough request uses its explicit cache key as the session
+	// fallback. Normalization adds matching flat and nested session carriers;
+	// every other request field must remain equal to the client frame.
+	expected["client_metadata"] = map[string]string{
+		"session_id":            sessionID,
+		"x-codex-turn-metadata": string(turnMetadata),
+	}
+	expectedJSON, err := json.Marshal(expected)
+	require.NoError(t, err)
+	require.JSONEq(t, string(expectedJSON), string(forwarded))
 }
