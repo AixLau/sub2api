@@ -2157,6 +2157,7 @@ const configForm = reactive({
 	semantic_review_api_endpoint: 'chat_completions' as 'responses' | 'chat_completions',
 	semantic_review_api_key: '',
 	semantic_review_api_key_masked: '',
+	semantic_review_api_key_configured: false,
 	semantic_review_available_models: [] as string[],
 	semantic_review_fallback_models: [] as string[],
 	semantic_review_escalation_enabled: false,
@@ -2353,7 +2354,7 @@ async function testSemanticModel() {
   const baseURL = configForm.semantic_review_api_base_url.trim()
   const apiKey = configForm.semantic_review_api_key.trim()
   const model = configForm.semantic_review_primary_model.trim()
-  if (!baseURL || !apiKey || !model) { appStore.showError(t('admin.riskControl.semanticReviewTestConfigRequired')); return }
+  if (!baseURL || (!apiKey && !configForm.semantic_review_api_key_configured) || !model) { appStore.showError(t('admin.riskControl.semanticReviewTestConfigRequired')); return }
   semanticModelTestLoading.value = true
   try {
     await adminAPI.riskControl.testSemanticReviewModel({ base_url: baseURL, api_key: apiKey, model })
@@ -3289,6 +3290,7 @@ function applyConfigValues(config: ContentModerationConfig) {
 	configForm.semantic_review_api_endpoint = semanticReview.api_endpoint === 'responses' ? 'responses' : 'chat_completions'
 	configForm.semantic_review_api_key = ''
 	configForm.semantic_review_api_key_masked = semanticReview.api_key_masked || ''
+	configForm.semantic_review_api_key_configured = semanticReview.api_key_configured === true
 	configForm.semantic_review_available_models = Array.isArray(semanticReview.available_models) ? [...semanticReview.available_models] : []
 	semanticReviewAvailableModels.value = [...configForm.semantic_review_available_models]
 	configForm.semantic_review_fallback_models = Array.isArray(semanticReview.fallback_models) ? [...semanticReview.fallback_models] : []

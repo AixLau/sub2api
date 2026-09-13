@@ -1459,6 +1459,19 @@ func (s *ContentModerationService) FetchSemanticReviewModels(ctx context.Context
 }
 
 func (s *ContentModerationService) TestSemanticReviewModel(ctx context.Context, baseURL, apiKey, model string) error {
+	if s != nil && (strings.TrimSpace(apiKey) == "" || strings.TrimSpace(baseURL) == "" || strings.TrimSpace(model) == "") {
+		if saved, err := s.loadConfigFresh(ctx); err == nil && saved != nil {
+			if strings.TrimSpace(apiKey) == "" {
+				apiKey = saved.SemanticReview.APIKey
+			}
+			if strings.TrimSpace(baseURL) == "" {
+				baseURL = saved.SemanticReview.APIBaseURL
+			}
+			if strings.TrimSpace(model) == "" {
+				model = saved.SemanticReview.PrimaryModel
+			}
+		}
+	}
 	cfg := defaultContentModerationSemanticReviewConfig()
 	cfg.APIBaseURL, cfg.APIKey, cfg.PrimaryModel = baseURL, apiKey, strings.TrimSpace(model)
 	_, err := (&openAIContentModerationSemanticReviewRouter{}).reviewWithConfiguredAPI(ctx, cfg, ContentModerationSemanticReviewInput{Text: "请仅返回 allow verdict。"})
