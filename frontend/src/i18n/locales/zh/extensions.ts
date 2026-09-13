@@ -122,7 +122,7 @@ export default {
       cacheCreation: '缓存创建',
       cacheHitRate: '缓存命中率',
       cacheRead: '缓存读取',
-      cost: '消费',
+      cost: '成本',
       consumption: '消费',
       input: '输入',
       output: '输出',
