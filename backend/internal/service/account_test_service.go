@@ -192,6 +192,7 @@ type AccountTestService struct {
 	cfg                       *config.Config
 	settingService            *SettingService
 	tlsFPProfileService       *TLSFingerprintProfileService
+	proxyProber               ProxyExitInfoProber
 	pluginManager             *PluginManager
 	usageLogWriter            accountTestUsageLogWriter
 	billingService            *BillingService
@@ -212,6 +213,8 @@ func (s *AccountTestService) SetSettingService(settingService *SettingService) {
 		s.settingService = settingService
 	}
 }
+
+func (s *AccountTestService) SetProxyExitInfoProber(p ProxyExitInfoProber) { s.proxyProber = p }
 
 type accountTestUsageLogWriter interface {
 	Create(ctx context.Context, log *UsageLog) (inserted bool, err error)
@@ -364,7 +367,17 @@ func (s *AccountTestService) forceOpenAIAccountTestIdentity(ctx context.Context,
 
 func (s *AccountTestService) completeOpenAIAccountTest(c *gin.Context, metrics *accountTestMetrics, result *openAIAccountTestUsage) error {
 	if result != nil && s != nil && s.usageLogWriter != nil && shouldRecordAccountTestUsage(c.Request.Context()) {
-		if err := s.recordOpenAIAccountTest(c.Request.Context(), metrics, result, c.ClientIP()); err != nil {
+		ip := ""
+		if s.proxyProber != nil {
+			proxyURL := ""
+			if result.account.Proxy != nil {
+				proxyURL = result.account.Proxy.URL()
+			}
+			if info, _, err := s.proxyProber.ProbeProxy(c.Request.Context(), proxyURL); err == nil && info != nil {
+				ip = info.IP
+			}
+		}
+		if err := s.recordOpenAIAccountTest(c.Request.Context(), metrics, result, ip); err != nil {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Connection succeeded but failed to record usage: %s", err.Error()))
 		}
 	}
