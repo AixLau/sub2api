@@ -70,6 +70,19 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 		return nil
 	}
 	cacheCompletion := cachesSecurityAuditCompletion(stage)
+	if legacy != nil && legacy.IsInternalSemanticReviewRequest(c.Request) {
+		// A custom semantic reviewer may call this same gateway. Bypass the full
+		// security-audit coordinator for that authenticated internal hop to avoid
+		// recursively auditing the reviewer prompt itself.
+		decision := securityaudit.Decision{Kind: securityaudit.DecisionAllow, HTTPStatus: http.StatusOK, AllowNextStage: true}
+		if cacheCompletion {
+			c.Set(securityAuditCompletedContextKey, true)
+		}
+		if reqLog != nil {
+			reqLog.Info("security_audit.skip_internal_semantic_review")
+		}
+		return &decision
+	}
 	if cacheCompletion {
 		if completed, exists := c.Get(securityAuditCompletedContextKey); exists && completed == true {
 			return nil
