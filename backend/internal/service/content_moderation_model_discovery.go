@@ -12,6 +12,9 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/google/uuid"
 )
 
 var errContentModerationModelsEmpty = errors.New("未获取到任何可用模型")
@@ -36,6 +39,7 @@ func fetchContentModerationModels(ctx context.Context, baseURL, apiKey string) (
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Accept", "application/json")
+	setConfiguredCodexIdentityHeaders(req, DefaultOpenAICodexUserAgent)
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -175,7 +179,7 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 	}
 	req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", userAgent)
+	setConfiguredCodexIdentityHeaders(req, userAgent)
 	resp, err := client.Do(req)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -219,4 +223,26 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 		return ContentModerationSemanticReviewResult{}, errors.New("模型返回内容无法解析")
 	}
 	return result, nil
+}
+
+// setConfiguredCodexIdentityHeaders makes custom moderation requests look like
+// the supported Codex app-server client to upstream gateways that enforce
+// codex_cli_only. The x-codex-* headers satisfy the engine fingerprint gate;
+// originator/version satisfy the app-server identity gate.
+func setConfiguredCodexIdentityHeaders(req *http.Request, userAgent string) {
+	if req == nil {
+		return
+	}
+	if strings.TrimSpace(userAgent) == "" {
+		userAgent = DefaultOpenAICodexUserAgent
+	}
+	originator, pairedUA, ok := openai.PairCodexClientIdentity(userAgent)
+	if !ok {
+		originator, pairedUA = openai.CodexDefaultOriginator, DefaultOpenAICodexUserAgent
+	}
+	req.Header.Set("User-Agent", pairedUA)
+	req.Header.Set("originator", originator)
+	req.Header.Set("version", CodexCanonicalClientVersion())
+	req.Header.Set("x-codex-installation-id", uuid.NewString())
+	req.Header.Set("x-codex-window-id", uuid.NewString())
 }

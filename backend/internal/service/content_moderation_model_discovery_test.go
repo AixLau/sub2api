@@ -14,6 +14,9 @@ import (
 func TestConfiguredSemanticReviewRetriesPrimaryBeforeFallback(t *testing.T) {
 	var primaryCalls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NotEmpty(t, r.Header.Get("x-codex-window-id"))
+		require.NotEmpty(t, r.Header.Get("x-codex-installation-id"))
+		require.NotEmpty(t, r.Header.Get("originator"))
 		var body struct {
 			Model string `json:"model"`
 		}
