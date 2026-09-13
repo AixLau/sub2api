@@ -22,6 +22,7 @@ export default {
       success: 'Success',
       failed: 'Failed',
       running: 'Running',
+      requestIp: 'Request IP',
       schedule: 'Schedule',
       cronHelp: 'Standard 5-field cron expression (e.g., */30 * * * *)',
       cronTooltipTitle: 'Cron expression examples:',

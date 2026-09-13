@@ -2502,6 +2502,7 @@ export interface ScheduledTestResult {
   started_at: string
   finished_at: string
   created_at: string
+  ip_address?: string | null
 }
 
 export interface CreateScheduledTestPlanRequest {

@@ -22,6 +22,7 @@ export default {
       success: '成功',
       failed: '失败',
       running: '运行中',
+      requestIp: '请求 IP',
       schedule: '定时测试',
       cronHelp: '标准 5 字段 cron 表达式（例如 */30 * * * *）',
       cronTooltipTitle: 'Cron 表达式示例：',

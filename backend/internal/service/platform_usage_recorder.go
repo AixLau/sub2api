@@ -31,6 +31,7 @@ type PlatformUsageRecord struct {
 	DurationMS       *int
 	FirstTokenMS     *int
 	UserAgent        *string
+	IPAddress        *string
 	InboundEndpoint  *string
 	UpstreamEndpoint *string
 	ImageCount       int
@@ -118,6 +119,7 @@ func (r *platformUsageRecorder) Record(ctx context.Context, record PlatformUsage
 		DurationMs:            clonePlatformUsageIntPtr(record.DurationMS),
 		FirstTokenMs:          clonePlatformUsageIntPtr(record.FirstTokenMS),
 		UserAgent:             clonePlatformUsageStringPtr(record.UserAgent),
+		IPAddress:             clonePlatformUsageStringPtr(record.IPAddress),
 		InboundEndpoint:       clonePlatformUsageStringPtr(record.InboundEndpoint),
 		UpstreamEndpoint:      clonePlatformUsageStringPtr(record.UpstreamEndpoint),
 		AccountRateMultiplier: &rateMultiplier,

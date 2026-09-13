@@ -364,7 +364,7 @@ func (s *AccountTestService) forceOpenAIAccountTestIdentity(ctx context.Context,
 
 func (s *AccountTestService) completeOpenAIAccountTest(c *gin.Context, metrics *accountTestMetrics, result *openAIAccountTestUsage) error {
 	if result != nil && s != nil && s.usageLogWriter != nil && shouldRecordAccountTestUsage(c.Request.Context()) {
-		if err := s.recordOpenAIAccountTest(c.Request.Context(), metrics, result); err != nil {
+		if err := s.recordOpenAIAccountTest(c.Request.Context(), metrics, result, c.ClientIP()); err != nil {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Connection succeeded but failed to record usage: %s", err.Error()))
 		}
 	}
@@ -377,7 +377,7 @@ func (s *AccountTestService) completeOpenAIAccountTest(c *gin.Context, metrics *
 	return nil
 }
 
-func (s *AccountTestService) recordOpenAIAccountTest(ctx context.Context, metrics *accountTestMetrics, result *openAIAccountTestUsage) error {
+func (s *AccountTestService) recordOpenAIAccountTest(ctx context.Context, metrics *accountTestMetrics, result *openAIAccountTestUsage, clientIP string) error {
 	if result == nil || result.account == nil {
 		return errors.New("account test usage context is incomplete")
 	}
@@ -408,6 +408,7 @@ func (s *AccountTestService) recordOpenAIAccountTest(ctx context.Context, metric
 		DurationMS:       durationMS,
 		FirstTokenMS:     firstTokenMS,
 		UserAgent:        platformUsageStringPtr(result.userAgent),
+		IPAddress:        platformUsageStringPtr(clientIP),
 		InboundEndpoint:  &inboundEndpoint,
 		UpstreamEndpoint: platformUsageStringPtr(result.upstreamEndpoint),
 		ImageCount:       result.imageCount,

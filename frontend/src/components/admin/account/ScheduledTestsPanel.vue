@@ -392,6 +392,9 @@
                     <span v-if="result.latency_ms > 0" class="text-xs text-gray-500 dark:text-gray-400">
                       {{ result.latency_ms }}ms
                     </span>
+                    <span v-if="result.ip_address" class="text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('admin.scheduledTests.requestIp') }}: {{ result.ip_address }}
+                    </span>
                   </div>
 
                   <!-- Started At -->
