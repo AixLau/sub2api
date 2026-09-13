@@ -246,8 +246,9 @@ const buildTooltipHtml = (title: unknown): string => {
   ]
 
   const summaryRows = [
+    ...(props.showCost ? [`${t('usage.trend.standardCost')}: $${formatCost(data.cost)}`] : []),
+    ...(props.showCost ? [`${t('usage.trend.cost')}: $${formatCost(data.actual_cost)}`] : []),
     `${t('usage.trend.totalUsage')}: ${formatTokens(totalUsageTokens(data))}`,
-    ...(props.showCost ? [`${t('usage.trend.cost')}: $${formatCost(data.actual_cost)}`] : [])
   ]
 
   return `
