@@ -300,6 +300,7 @@ func ProvideAccountTestService(
 	pricingResolver *ModelPricingResolver,
 	tlsFPProfileService *TLSFingerprintProfileService,
 	openAIGatewayService *OpenAIGatewayService,
+	proxyProber ProxyExitInfoProber,
 ) *AccountTestService {
 	service := NewAccountTestService(
 		accountRepo,
@@ -316,6 +317,7 @@ func ProvideAccountTestService(
 		tlsFPProfileService,
 	)
 	service.agentIdentityWS = openAIGatewayService
+	service.SetProxyExitInfoProber(proxyProber)
 	service.SetOpenAIGatewayService(openAIGatewayService)
 	service.SetSettingService(settingService)
 	return service
