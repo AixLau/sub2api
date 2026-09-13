@@ -885,7 +885,8 @@
                   </div>
                   <div>
                     <label class="input-label">{{ t('admin.riskControl.semanticReviewMaxAttempts') }}</label>
-                    <input v-model.number="configForm.semantic_review_max_attempts_per_model" type="number" min="1" max="2" class="input" />
+                    <input v-model.number="configForm.semantic_review_max_attempts_per_model" type="number" min="1" max="5" class="input" />
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.semanticReviewMaxAttemptsHint') }}</p>
                   </div>
                   <div>
                     <label class="input-label" for="semantic-review-max-input">{{ t('admin.riskControl.semanticReviewMaxInput') }}</label>
@@ -2161,7 +2162,7 @@ const configForm = reactive({
   semantic_review_timeout_ms: 8000,
   semantic_review_primary_timeout_ms: 5000,
   semantic_review_fallback_timeout_ms: 3000,
-  semantic_review_max_attempts_per_model: 1,
+  semantic_review_max_attempts_per_model: 2,
   semantic_review_max_input_runes: 2000,
   semantic_review_max_output_tokens: 512,
 	semantic_review_reasoning_effort: 'low' as 'low' | 'medium' | 'high' | 'xhigh',
@@ -3265,7 +3266,7 @@ function applyConfigValues(config: ContentModerationConfig) {
     timeout_ms: 8000,
     primary_timeout_ms: 5000,
     fallback_timeout_ms: 3000,
-    max_attempts_per_model: 1,
+    max_attempts_per_model: 2,
     max_input_runes: 2000,
     max_output_tokens: 512,
     reasoning_effort: 'low',
@@ -3288,7 +3289,7 @@ function applyConfigValues(config: ContentModerationConfig) {
   configForm.semantic_review_timeout_ms = semanticReview.timeout_ms || 8000
   configForm.semantic_review_primary_timeout_ms = semanticReview.primary_timeout_ms || 5000
   configForm.semantic_review_fallback_timeout_ms = semanticReview.fallback_timeout_ms || 3000
-  configForm.semantic_review_max_attempts_per_model = semanticReview.max_attempts_per_model || 1
+  configForm.semantic_review_max_attempts_per_model = semanticReview.max_attempts_per_model || 2
   configForm.semantic_review_max_input_runes = semanticReview.max_input_runes || 2000
   configForm.semantic_review_max_output_tokens = semanticReview.max_output_tokens || 512
 	configForm.semantic_review_reasoning_effort = semanticReview.reasoning_effort || 'low'
@@ -3474,7 +3475,7 @@ async function saveConfig() {
           timeout_ms: Number(configForm.semantic_review_timeout_ms) || 8000,
           primary_timeout_ms: Number(configForm.semantic_review_primary_timeout_ms) || 5000,
           fallback_timeout_ms: Number(configForm.semantic_review_fallback_timeout_ms) || 3000,
-          max_attempts_per_model: Number(configForm.semantic_review_max_attempts_per_model) || 1,
+          max_attempts_per_model: Number(configForm.semantic_review_max_attempts_per_model) || 2,
           max_input_runes: Math.max(1, Math.floor(Number(configForm.semantic_review_max_input_runes) || 2000)),
           max_output_tokens: Number(configForm.semantic_review_max_output_tokens) || 512,
           reasoning_effort: configForm.semantic_review_reasoning_effort,

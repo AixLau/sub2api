@@ -40,7 +40,7 @@ const (
 	ContentModerationSemanticReviewMaxOutputTokens      = 2_048
 	ContentModerationSemanticReviewDefaultReasoning     = "low"
 	ContentModerationSemanticReviewDefaultModelAttempts = 2
-	ContentModerationSemanticReviewMaxModelAttempts     = 2
+	ContentModerationSemanticReviewMaxModelAttempts     = 5
 	ContentModerationSemanticReviewDefaultMaxInputRunes = 4_000
 	contentModerationSemanticReviewMaxSources           = 3
 	contentModerationSemanticReviewExcerptRunes         = 1_200
