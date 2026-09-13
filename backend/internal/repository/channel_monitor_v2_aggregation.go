@@ -11,6 +11,12 @@ import (
 const channelMonitorV2PlatformSQL = `lower(` + usageLogEffectivePlatformExpr + `)`
 const channelMonitorV2ModelSQL = `COALESCE(NULLIF(TRIM(ul.requested_model), ''), NULLIF(TRIM(ul.model), ''), 'unknown')`
 
+// API-key accounts are intentionally excluded from all source aggregations so
+// their traffic and failures do not affect channel health or throughput metrics.
+// Keep rows whose account has already been removed (or whose legacy error log
+// has no account reference) so historical logs remain usable.
+const channelMonitorV2ExcludeAPIKeyAccountSQL = `COALESCE(LOWER(a.type), '') <> 'apikey'`
+
 // Classify explicit error messages, not response metadata such as moderation or tool_choice.
 const channelMonitorV2ErrorMessageSQL = `COALESCE(NULLIF(current_error.upstream_error_message, ''), NULLIF(current_error.error_message, ''), current_error.error_type, '')`
 
@@ -187,6 +193,7 @@ FROM usage_logs ul
 LEFT JOIN groups g ON g.id = ul.group_id
 LEFT JOIN accounts a ON a.id = ul.account_id
 WHERE ul.created_at >= $1 AND ul.created_at < $2
+  AND ` + channelMonitorV2ExcludeAPIKeyAccountSQL + `
 GROUP BY 1, 2, 3, 4`
 
 const channelMonitorV2UserMetricsSQL = `
@@ -210,6 +217,7 @@ FROM usage_logs ul
 LEFT JOIN groups g ON g.id = ul.group_id
 LEFT JOIN accounts a ON a.id = ul.account_id
 WHERE ul.created_at >= $1 AND ul.created_at < $2 AND ul.user_id IS NOT NULL
+  AND ` + channelMonitorV2ExcludeAPIKeyAccountSQL + `
 GROUP BY 1, 2, 3, 4, 5`
 
 const channelMonitorV2HistogramSQL = `
@@ -225,6 +233,7 @@ CROSS JOIN LATERAL (VALUES (0::bigint), (ul.user_id)) audience(user_id)
 CROSS JOIN LATERAL (VALUES ('ttft'::text, ul.first_token_ms), ('duration'::text, ul.duration_ms)) latency(metric, value_ms)
 WHERE ul.created_at >= $1 AND ul.created_at < $2
   AND audience.user_id IS NOT NULL AND latency.value_ms IS NOT NULL AND latency.value_ms >= 0
+  AND ` + channelMonitorV2ExcludeAPIKeyAccountSQL + `
   AND ` + usageLogSuccessFilterUL + `
 GROUP BY 1, 2, 3, 4, 5, 6, 7`
 
@@ -282,6 +291,7 @@ WITH dedup AS (
     )
     AND NOT current_error.is_count_tokens
     AND (COALESCE(current_error.status_code, 0) >= 400 OR current_error.error_type = 'cyber_policy')
+    AND ` + channelMonitorV2ExcludeAPIKeyAccountSQL + `
   ORDER BY COALESCE(NULLIF(current_error.request_id, ''), 'error:' || current_error.id::text), current_error.created_at DESC, current_error.id DESC
 ), classified AS (
   SELECT *, CASE

@@ -298,6 +298,17 @@ func TestChannelMonitorV2UsageSuccessExcludesCyberBillingRows(t *testing.T) {
 	require.Contains(t, channelMonitorV2HistogramSQL, "ul.actual_cost > 0")
 }
 
+func TestChannelMonitorV2SourceAggregationsExcludeAPIKeyAccounts(t *testing.T) {
+	for _, query := range []string{
+		channelMonitorV2UsageMetricsSQL,
+		channelMonitorV2UserMetricsSQL,
+		channelMonitorV2HistogramSQL,
+		channelMonitorV2ErrorAggregationSQL,
+	} {
+		require.Contains(t, strings.ToLower(query), "coalesce(lower(a.type), '') <> 'apikey'")
+	}
+}
+
 func TestChannelMonitorV2RatesUseCoveredWindow(t *testing.T) {
 	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	filter := service.ChannelMonitorV2Filter{Start: start, End: start.Add(24 * time.Hour)}
