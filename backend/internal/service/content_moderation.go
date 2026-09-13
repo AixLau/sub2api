@@ -1216,13 +1216,27 @@ func (s *ContentModerationService) SetSemanticReviewInternalTokenKey(key []byte)
 }
 
 func (s *ContentModerationService) IsInternalSemanticReviewRequest(req *http.Request) bool {
-	if s == nil || req == nil || len(s.moderationCacheHMACKey) == 0 {
+	key := s.internalSemanticReviewHMACKey()
+	if s == nil || req == nil || len(key) == 0 {
 		return false
 	}
-	mac := hmac.New(sha256.New, s.moderationCacheHMACKey)
+	mac := hmac.New(sha256.New, key)
 	_, _ = mac.Write([]byte("semantic-review-v1"))
 	want := hex.EncodeToString(mac.Sum(nil))
 	return hmac.Equal([]byte(strings.TrimSpace(req.Header.Get(contentModerationInternalRequestHeader))), []byte(want))
+}
+
+func (s *ContentModerationService) internalSemanticReviewHMACKey() []byte {
+	if s == nil {
+		return nil
+	}
+	if len(s.moderationCacheHMACKey) == sha256.Size {
+		return s.moderationCacheHMACKey
+	}
+	if len(s.decisionCacheHMACKey) == sha256.Size {
+		return s.decisionCacheHMACKey
+	}
+	return nil
 }
 
 type contentModerationRuntimeTimings struct {
@@ -1452,7 +1466,7 @@ func (s *ContentModerationService) SetSemanticReviewRouter(router ContentModerat
 	s.semanticReviewRouter = router
 	if concrete, ok := router.(*openAIContentModerationSemanticReviewRouter); ok {
 		concrete.metrics = s.metrics
-		concrete.SetInternalTokenKey(s.moderationCacheHMACKey)
+		concrete.SetInternalTokenKey(s.internalSemanticReviewHMACKey())
 	}
 }
 
