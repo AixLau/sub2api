@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -481,9 +482,17 @@ func TestOpenAIAgentIdentityChatRecoveryKeepsAutoDerivedSessionIsolationStable(t
 	require.Len(t, upstream.requests, 2)
 	firstKey := gjson.GetBytes(upstream.bodies[0], "prompt_cache_key").String()
 	secondKey := gjson.GetBytes(upstream.bodies[1], "prompt_cache_key").String()
+	var originalChat apicompat.ChatCompletionsRequest
+	require.NoError(t, json.Unmarshal(body, &originalChat))
+	originalKey := deriveCompatPromptCacheKey(&originalChat, "gpt-5.4")
+	require.Equal(t, isolateOpenAIUpstreamSessionID(99, codexAccountIdentitySource(c, account), originalKey), firstKey)
+	require.NotEqual(t, originalKey, firstKey)
 	require.NotEmpty(t, firstKey)
 	require.Equal(t, firstKey, secondKey)
-	require.Equal(t, isolateOpenAIUpstreamSessionID(99, codexAccountIdentitySource(c, account), firstKey), upstream.requests[0].Header.Get("session_id"))
+	// The final request body carries the already isolated cache key. The
+	// session header must reuse that same final projection; hashing the final
+	// key again would make recovery produce a different identity.
+	require.Equal(t, firstKey, upstream.requests[0].Header.Get("session_id"))
 	require.Equal(t, upstream.requests[0].Header.Get("session_id"), upstream.requests[1].Header.Get("session_id"))
 }
 
