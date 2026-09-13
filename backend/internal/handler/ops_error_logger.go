@@ -1184,6 +1184,9 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 		}
 
 		normalizedType := normalizeOpsErrorType(parsed.ErrorType, parsed.Code)
+		if isContentModerationSafetyError(c, parsed.Code) {
+			normalizedType = "cyber_policy"
+		}
 
 		phase, isBusinessLimited, errorOwner, errorSource := classifyOpsErrorLog(c, normalizedType, errorMessage, parsed.Code, status)
 
@@ -1460,6 +1463,9 @@ func logOpsStreamErrorValue(c *gin.Context, ops *service.OpsService, wireStatus 
 		classifyStatus = wireStatus
 	}
 	normalizedType := normalizeOpsErrorType(streamErr.ErrType, streamErr.Code)
+	if isContentModerationSafetyError(c, streamErr.Code) {
+		normalizedType = "cyber_policy"
+	}
 	phase, isBusinessLimited, errorOwner, errorSource := classifyOpsErrorLog(c, normalizedType, streamErr.Message, streamErr.Code, classifyStatus)
 	recordedStatus := wireStatus
 	if streamErr.CountTowardsSLA && streamErr.IntendedStatus >= 400 {
@@ -2174,6 +2180,8 @@ func classifyOpsPhase(errType, message, code string) string {
 	}
 
 	switch errType {
+	case "cyber_policy":
+		return "request"
 	case "authentication_error":
 		return "auth"
 	case "billing_error", "subscription_error":
@@ -2195,6 +2203,23 @@ func classifyOpsPhase(errType, message, code string) string {
 	default:
 		return "internal"
 	}
+}
+
+func isContentModerationSafetyError(c *gin.Context, code string) bool {
+	code = strings.ToLower(strings.TrimSpace(code))
+	if code == "content_policy_violation" || code == "cyber_policy" {
+		return true
+	}
+	if c == nil {
+		return false
+	}
+	value, ok := c.Get(service.OpsDiagnosticDetailKey)
+	if !ok {
+		return false
+	}
+	detail, _ := value.(string)
+	detail = strings.ToLower(detail)
+	return strings.Contains(detail, "content_moderation") || strings.Contains(detail, "semantic_review")
 }
 
 func classifyOpsSeverity(errType string, status int) string {
