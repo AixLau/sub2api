@@ -86,6 +86,12 @@ func (_u *UsageLogUpdate) SetNillableAccountID(v *int64) *UsageLogUpdate {
 	return _u
 }
 
+// ClearAccountID clears the value of the "account_id" field.
+func (_u *UsageLogUpdate) ClearAccountID() *UsageLogUpdate {
+	_u.mutation.ClearAccountID()
+	return _u
+}
+
 // SetSource sets the "source" field.
 func (_u *UsageLogUpdate) SetSource(v string) *UsageLogUpdate {
 	_u.mutation.SetSource(v)
@@ -1302,9 +1308,6 @@ func (_u *UsageLogUpdate) check() error {
 			return &ValidationError{Name: "video_resolution", err: fmt.Errorf(`ent: validator failed for field "UsageLog.video_resolution": %w`, err)}
 		}
 	}
-	if _u.mutation.AccountCleared() && len(_u.mutation.AccountIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "UsageLog.account"`)
-	}
 	return nil
 }
 
@@ -1836,6 +1839,12 @@ func (_u *UsageLogUpdateOne) SetNillableAccountID(v *int64) *UsageLogUpdateOne {
 	if v != nil {
 		_u.SetAccountID(*v)
 	}
+	return _u
+}
+
+// ClearAccountID clears the value of the "account_id" field.
+func (_u *UsageLogUpdateOne) ClearAccountID() *UsageLogUpdateOne {
+	_u.mutation.ClearAccountID()
 	return _u
 }
 
@@ -3067,9 +3076,6 @@ func (_u *UsageLogUpdateOne) check() error {
 		if err := usagelog.VideoResolutionValidator(v); err != nil {
 			return &ValidationError{Name: "video_resolution", err: fmt.Errorf(`ent: validator failed for field "UsageLog.video_resolution": %w`, err)}
 		}
-	}
-	if _u.mutation.AccountCleared() && len(_u.mutation.AccountIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "UsageLog.account"`)
 	}
 	return nil
 }

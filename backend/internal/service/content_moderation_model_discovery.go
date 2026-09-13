@@ -121,14 +121,17 @@ func (r *openAIContentModerationSemanticReviewRouter) reviewWithConfiguredAPI(ct
 				break
 			}
 			attemptCount++
+			started := time.Now()
 			result, err := callConfiguredSemanticModel(reviewCtx, cfg, model, input, timeoutMS, userAgent, r.internalToken)
 			if err == nil {
 				result.Model = model
+				result.UpstreamEndpoint = "/v1/" + normalizeContentModerationSemanticReviewEndpoint(cfg.APIEndpoint)
 				result.AttemptCount = attemptCount
 				if modelIndex > 0 {
 					result.FallbackFrom = cfg.PrimaryModel
 					result.FallbackReason = primaryFailure
 				}
+				r.recordConfiguredUsage(ctx, input, result, int(time.Since(started).Milliseconds()))
 				slog.Info("content_moderation.semantic_review_configured_success", "model", model, "fallback", modelIndex > 0, "attempt", attempt)
 				return normalizeSemanticReviewResult(result), nil
 			}
@@ -156,6 +159,34 @@ func (r *openAIContentModerationSemanticReviewRouter) reviewWithConfiguredAPI(ct
 		last = errors.New("未配置主内容审计模型")
 	}
 	return ContentModerationSemanticReviewResult{}, &ContentModerationSemanticReviewUnavailableError{Err: last}
+}
+
+func (r *openAIContentModerationSemanticReviewRouter) recordConfiguredUsage(ctx context.Context, input ContentModerationSemanticReviewInput, result ContentModerationSemanticReviewResult, durationMS int) {
+	if r == nil || r.usageRecorder == nil {
+		return
+	}
+	inbound := "/internal/content-moderation/semantic-review"
+	upstream := "/v1/" + normalizeContentModerationSemanticReviewEndpoint(result.UpstreamEndpoint)
+	if result.UpstreamEndpoint == "" {
+		upstream = "/v1/responses"
+	}
+	if err := r.usageRecorder.Record(ctx, PlatformUsageRecord{
+		Source:           UsageSourceContentModeration,
+		RequestID:        semanticReviewUsageRecordID(input),
+		Model:            result.Model,
+		RequestedModel:   result.Model,
+		UpstreamModel:    result.UpstreamModel,
+		GroupID:          cloneInt64Ptr(input.GroupID),
+		Usage:            result.Usage,
+		RequestType:      RequestTypeSync,
+		DurationMS:       &durationMS,
+		FirstTokenMS:     result.FirstTokenMS,
+		UserAgent:        platformUsageStringPtr(result.UserAgent),
+		InboundEndpoint:  &inbound,
+		UpstreamEndpoint: &upstream,
+	}); err != nil {
+		slog.Warn("content_moderation.semantic_review_usage_record_failed", "model", result.Model, "error", sanitizeSemanticReviewError(err.Error()))
+	}
 }
 
 func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSemanticReviewConfig, model string, input ContentModerationSemanticReviewInput, timeoutMS int, userAgent, internalToken string) (ContentModerationSemanticReviewResult, error) {
@@ -228,16 +259,20 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage OpenAIUsage `json:"usage"`
 	}
 	content := ""
+	var usage OpenAIUsage
 	if normalizeContentModerationSemanticReviewEndpoint(cfg.APIEndpoint) == "responses" {
 		parsed, parseErr := parseSemanticReviewResponse(data, resp.Header.Get("Content-Type"))
 		if parseErr == nil {
 			content = parsed.Text
+			usage = parsed.Usage
 		}
 	} else {
 		if err := json.Unmarshal(data, &envelope); err == nil && len(envelope.Choices) > 0 {
 			content = envelope.Choices[0].Message.Content
+			usage = envelope.Usage
 		}
 	}
 	if strings.TrimSpace(content) == "" {
@@ -251,6 +286,7 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 	if err := json.Unmarshal([]byte(content), &result); err != nil {
 		return ContentModerationSemanticReviewResult{}, errors.New("模型返回内容无法解析")
 	}
+	result.Usage = usage
 	return result, nil
 }
 

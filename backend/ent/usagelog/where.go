@@ -400,6 +400,16 @@ func AccountIDNotIn(vs ...int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNotIn(FieldAccountID, vs...))
 }
 
+// AccountIDIsNil applies the IsNil predicate on the "account_id" field.
+func AccountIDIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldAccountID))
+}
+
+// AccountIDNotNil applies the NotNil predicate on the "account_id" field.
+func AccountIDNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldAccountID))
+}
+
 // SourceEQ applies the EQ predicate on the "source" field.
 func SourceEQ(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldSource, v))

@@ -95,7 +95,7 @@ func ProvideContentModerationService(
 	if len(settingServices) > 0 {
 		settingService = settingServices[0]
 	}
-	svc.SetSemanticReviewRouter(NewOpenAIContentModerationSemanticReviewRouter(nil, nil, nil, settingService))
+	svc.SetSemanticReviewRouter(NewOpenAIContentModerationSemanticReviewRouter(nil, nil, NewPlatformUsageRecorder(usageLogRepo, billingService, pricingResolver), settingService))
 	if rawStore, ok := repo.(ContentModerationRawRequestSnapshotStore); ok {
 		svc.SetRawRequestSnapshotStore(rawStore, encryptor)
 	}

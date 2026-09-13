@@ -1364,9 +1364,13 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 
 	var userIDArg any = log.UserID
 	var apiKeyIDArg any = log.APIKeyID
+	var accountIDArg any = log.AccountID
 	if source.IsPlatformOperation() {
 		userIDArg = nil
 		apiKeyIDArg = nil
+		if log.AccountID <= 0 {
+			accountIDArg = nil
+		}
 	}
 	upstreamResponseModel := nullString(log.UpstreamResponseModel)
 	upstreamModelMismatch := nullBool(log.UpstreamModelMismatch)
@@ -1384,7 +1388,7 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 		args: []any{
 			userIDArg,
 			apiKeyIDArg,
-			log.AccountID,
+			accountIDArg,
 			requestIDArg,
 			log.Model,
 			nullString(&requestedModel),

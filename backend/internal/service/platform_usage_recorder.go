@@ -66,7 +66,7 @@ func (r *platformUsageRecorder) Record(ctx context.Context, record PlatformUsage
 	if r == nil || r.writer == nil {
 		return errors.New("platform usage recorder is unavailable")
 	}
-	if record.Account == nil || record.Account.ID <= 0 {
+	if (record.Source.Normalize() != UsageSourceContentModeration) && (record.Account == nil || record.Account.ID <= 0) {
 		return errors.New("platform usage record account is required")
 	}
 	source := record.Source.Normalize()
@@ -102,7 +102,7 @@ func (r *platformUsageRecorder) Record(ctx context.Context, record PlatformUsage
 	rateMultiplier := 1.0
 	logEntry := &UsageLog{
 		Source:                source,
-		AccountID:             record.Account.ID,
+		AccountID:             0,
 		RequestID:             requestID,
 		Model:                 model,
 		RequestedModel:        requestedModel,
@@ -124,6 +124,9 @@ func (r *platformUsageRecorder) Record(ctx context.Context, record PlatformUsage
 		UpstreamEndpoint:      clonePlatformUsageStringPtr(record.UpstreamEndpoint),
 		AccountRateMultiplier: &rateMultiplier,
 		CreatedAt:             time.Now().UTC(),
+	}
+	if record.Account != nil && record.Account.ID > 0 {
+		logEntry.AccountID = record.Account.ID
 	}
 	if upstreamModel != "" {
 		logEntry.UpstreamModel = &upstreamModel
