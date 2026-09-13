@@ -84,32 +84,63 @@ func (r *openAIContentModerationSemanticReviewRouter) reviewWithConfiguredAPI(ct
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	reviewCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutMS)*time.Millisecond)
+	defer cancel()
 	models := append([]string{cfg.PrimaryModel}, cfg.FallbackModels...)
 	seen := map[string]bool{}
 	var last error
-	for i, model := range models {
+	primaryFailure := ""
+	attemptCount := 0
+	maxAttempts := cfg.MaxAttemptsPerModel
+	if maxAttempts <= 0 {
+		maxAttempts = 1
+	}
+	for modelIndex, model := range models {
 		model = strings.TrimSpace(model)
 		if model == "" || seen[strings.ToLower(model)] {
 			continue
 		}
 		seen[strings.ToLower(model)] = true
 		timeoutMS := cfg.PrimaryTimeoutMS
-		if i > 0 {
+		if modelIndex > 0 {
 			timeoutMS = cfg.FallbackTimeoutMS
 		}
-		result, err := callConfiguredSemanticModel(ctx, cfg, model, input, timeoutMS)
-		if err == nil {
-			result.Model = model
-			result.AttemptCount = i + 1
-			if i > 0 {
-				result.FallbackFrom = cfg.PrimaryModel
-				result.FallbackReason = sanitizeSemanticReviewError(last.Error())
+		for attempt := 1; attempt <= maxAttempts; attempt++ {
+			if err := reviewCtx.Err(); err != nil {
+				last = err
+				break
 			}
-			slog.Info("content_moderation.semantic_review_configured_success", "model", model, "fallback", i > 0)
-			return normalizeSemanticReviewResult(result), nil
+			attemptCount++
+			result, err := callConfiguredSemanticModel(reviewCtx, cfg, model, input, timeoutMS)
+			if err == nil {
+				result.Model = model
+				result.AttemptCount = attemptCount
+				if modelIndex > 0 {
+					result.FallbackFrom = cfg.PrimaryModel
+					result.FallbackReason = primaryFailure
+				}
+				slog.Info("content_moderation.semantic_review_configured_success", "model", model, "fallback", modelIndex > 0, "attempt", attempt)
+				return normalizeSemanticReviewResult(result), nil
+			}
+			last = err
+			if modelIndex == 0 && primaryFailure == "" {
+				primaryFailure = sanitizeSemanticReviewError(err.Error())
+			}
+			slog.Warn("content_moderation.semantic_review_configured_attempt_failed", "model", model, "attempt", attempt, "error", sanitizeSemanticReviewError(err.Error()))
+			if attempt < maxAttempts {
+				backoff := time.Duration(attempt) * 100 * time.Millisecond
+				timer := time.NewTimer(backoff)
+				select {
+				case <-reviewCtx.Done():
+					timer.Stop()
+					break
+				case <-timer.C:
+				}
+				if reviewCtx.Err() != nil {
+					break
+				}
+			}
 		}
-		last = err
-		slog.Warn("content_moderation.semantic_review_configured_attempt_failed", "model", model, "attempt", i+1, "error", sanitizeSemanticReviewError(err.Error()))
 	}
 	if last == nil {
 		last = errors.New("未配置主内容审计模型")
