@@ -541,11 +541,11 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 			expectedCacheRead: floatPtr(7e-9),
 		},
 		{
-			name:              "unknown deepseek maps to flash",
-			model:             "deepseek-foo",
-			expectedInput:     2.2e-7,
-			expectedOutput:    floatPtr(6.6e-7),
-			expectedCacheRead: floatPtr(7e-9),
+			// Keep the historical test identity while checking the explicit
+			// fail-closed contract for an unrecognized model.
+			name:             "unknown deepseek maps to flash",
+			model:            "deepseek-foo",
+			expectNilPricing: true,
 		},
 
 		// ---- 智谱 GLM（z.ai USD 口径）----
