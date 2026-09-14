@@ -1544,6 +1544,16 @@ func (s *ContentModerationService) GetConfig(ctx context.Context) (*ContentModer
 	return s.configView(cfg), nil
 }
 
+func (s *ContentModerationService) ConfiguredBlockMessage(ctx context.Context) string {
+	if s == nil {
+		return ""
+	}
+	if cfg, err := s.loadConfigFresh(ctx); err == nil && cfg != nil {
+		return strings.TrimSpace(cfg.BlockMessage)
+	}
+	return ""
+}
+
 func (s *ContentModerationService) RequiresSelectedAccount(ctx context.Context) bool {
 	if s == nil {
 		return false
@@ -5097,19 +5107,6 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 		}
 		if _, err := url.ParseRequestURI(cfg.SemanticReview.APIBaseURL); err != nil {
 			return infraerrors.BadRequest("INVALID_SEMANTIC_REVIEW_BASE_URL", "内容审计模型接口地址无效")
-		}
-		if len(cfg.SemanticReview.AvailableModels) == 0 {
-			return infraerrors.BadRequest("SEMANTIC_REVIEW_MODELS_REQUIRED", "请先获取模型列表")
-		}
-		known := false
-		for _, model := range cfg.SemanticReview.AvailableModels {
-			if strings.EqualFold(strings.TrimSpace(model), cfg.SemanticReview.PrimaryModel) {
-				known = true
-				break
-			}
-		}
-		if !known {
-			return infraerrors.BadRequest("SEMANTIC_REVIEW_PRIMARY_MODEL_INVALID", "主内容审计模型不在最近获取的模型列表中，请重新获取")
 		}
 	}
 	switch normalizeContentModerationPromptFilterMode(cfg.PromptFilterMode) {

@@ -865,7 +865,8 @@
                   </div>
                   <div>
                     <label class="input-label">{{ t('admin.riskControl.semanticReviewPrimaryModel') }}</label>
-                    <Select v-model="configForm.semantic_review_primary_model" :options="semanticReviewModelOptions" />
+                    <input v-model.trim="configForm.semantic_review_primary_model" type="text" class="input" :placeholder="t('admin.riskControl.semanticReviewPrimaryModelPlaceholder')" />
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.semanticReviewPrimaryModelHint') }}</p>
                   </div>
                   <div>
                     <label class="input-label">{{ t('admin.riskControl.semanticReviewFallbackModels') }}</label>
