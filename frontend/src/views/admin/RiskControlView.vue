@@ -821,25 +821,6 @@
                 </div>
                 <Toggle v-model="configForm.latest_turn_only" :disabled="!configForm.enabled || configForm.mode === 'off'" />
               </div>
-              <div>
-                <label class="input-label">{{ t('admin.riskControl.promptFilterMode') }}</label>
-                <Select v-model="configForm.prompt_filter_mode" :options="promptFilterModeOptions" />
-                <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.promptFilterModeHint') }}</p>
-                <p v-if="promptFilterSourceRevision" class="mt-1 break-all text-[11px] leading-4 text-gray-400 dark:text-gray-500">
-                  {{ t('admin.riskControl.promptFilterSource', { author: promptFilterSourceAuthor, revision: promptFilterSourceRevision }) }}
-                  <a v-if="promptFilterSourceURL" :href="promptFilterSourceURL" target="_blank" rel="noreferrer" class="ml-1 text-primary-600 hover:underline dark:text-primary-400">{{ t('admin.riskControl.promptFilterSourceLink') }}</a>
-                </p>
-              </div>
-              <div class="grid grid-cols-2 gap-3">
-                <div>
-                  <label class="input-label">{{ t('admin.riskControl.promptFilterThreshold') }}</label>
-                  <input v-model.number="configForm.prompt_filter_threshold" type="number" min="1" max="500" class="input" />
-                </div>
-                <div>
-                  <label class="input-label">{{ t('admin.riskControl.promptFilterStrictThreshold') }}</label>
-                  <input v-model.number="configForm.prompt_filter_strict_threshold" type="number" min="1" max="1000" class="input" />
-                </div>
-              </div>
               <div class="rounded-lg border border-gray-100 p-4 dark:border-dark-700 lg:col-span-2">
                 <div>
                   <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.semanticReviewEnabled') }}</p>
@@ -943,7 +924,7 @@
                     </div>
                   </template>
                 </div>
-                <dl data-test="prompt-injection-reviewer-status" class="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 border-t border-gray-100 pt-4 text-sm dark:border-dark-700 md:grid-cols-3">
+                <dl data-test="prompt-injection-reviewer-status" class="hidden">
                   <div>
                     <dt class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.promptInjectionReviewerStatus') }}</dt>
                     <dd class="mt-1 font-medium text-gray-900 dark:text-white">{{ configForm.prompt_injection_reviewer_enabled ? t('admin.riskControl.semanticStatusEnabled') : t('admin.riskControl.semanticStatusDisabled') }}</dd>
@@ -958,6 +939,7 @@
                   </div>
                 </dl>
               </div>
+	      <div class="hidden">
               <div>
 					<label class="input-label">{{ t('admin.riskControl.provider') }}</label>
 				<Select v-model="configForm.provider" :options="providerOptions" @update:modelValue="onProviderChange" />
@@ -1285,6 +1267,7 @@
                   </div>
                 </div>
               </div>
+	      </div>
             </div>
           </div>
 
@@ -1636,6 +1619,30 @@
               <div class="text-sm leading-6">
                 <p class="font-medium" :class="keywordNotice.titleClass">{{ keywordNotice.title }}</p>
                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ keywordNotice.description }}</p>
+              </div>
+            </div>
+
+            <div class="rounded-lg border border-gray-100 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900/30">
+              <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.promptFilterMode') }}</p>
+              <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.promptFilterModeHint') }}</p>
+              <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div class="md:col-span-2">
+                  <Select v-model="configForm.prompt_filter_mode" :options="promptFilterModeOptions" />
+                  <p v-if="promptFilterSourceRevision" class="mt-2 break-all text-[11px] leading-4 text-gray-400 dark:text-gray-500">
+                    {{ t('admin.riskControl.promptFilterSource', { author: promptFilterSourceAuthor, revision: promptFilterSourceRevision }) }}
+                    <a v-if="promptFilterSourceURL" :href="promptFilterSourceURL" target="_blank" rel="noreferrer" class="ml-1 text-primary-600 hover:underline dark:text-primary-400">{{ t('admin.riskControl.promptFilterSourceLink') }}</a>
+                  </p>
+                </div>
+                <div class="grid grid-cols-2 gap-3 md:col-span-1">
+                  <div>
+                    <label class="input-label">{{ t('admin.riskControl.promptFilterThreshold') }}</label>
+                    <input v-model.number="configForm.prompt_filter_threshold" type="number" min="1" max="500" class="input" />
+                  </div>
+                  <div>
+                    <label class="input-label">{{ t('admin.riskControl.promptFilterStrictThreshold') }}</label>
+                    <input v-model.number="configForm.prompt_filter_strict_threshold" type="number" min="1" max="1000" class="input" />
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -2167,7 +2174,7 @@ const configForm = reactive({
 	resource_protection_status: null as ContentModerationConfig['resource_protection_status'] | null,
   enabled: false,
 	  mode: 'pre_block' as ModerationMode,
-	  engine_mode: 'candidate_only' as ContentModerationEngineMode,
+	  engine_mode: 'rules_and_model' as ContentModerationEngineMode,
 	  prompt_filter_mode: 'observe' as ContentModerationPromptFilterMode,
 	  prompt_filter_threshold: 50,
 	  prompt_filter_strict_threshold: 90,
@@ -2340,13 +2347,12 @@ const modeOptions = computed<SelectOption[]>(() => [
   { value: 'off', label: t('admin.riskControl.modeOff') },
 ])
 const engineModeOptions = computed<SelectOption[]>(() => [
-  { value: 'candidate_only', label: t('admin.riskControl.keywordModeCandidateOnly') },
-  { value: 'api_only', label: t('admin.riskControl.keywordModeApiOnly') },
-  { value: 'hybrid', label: t('admin.riskControl.keywordModeKeywordAndApi') },
-  { value: 'rule_only', label: t('admin.riskControl.keywordModeKeywordOnly') },
+  { value: 'rules_only', label: t('admin.riskControl.reviewModeRulesOnly') },
+  { value: 'model_only', label: t('admin.riskControl.reviewModeModelOnly') },
+  { value: 'rules_and_model', label: t('admin.riskControl.reviewModeRulesAndModel') },
 ])
 function engineModeDescription(mode: string) {
-  const key = mode === 'api_only' ? 'keywordModeApiOnlyDesc' : mode === 'rule_only' ? 'keywordModeKeywordOnlyDesc' : mode === 'hybrid' ? 'keywordModeKeywordAndApiDesc' : 'keywordModeCandidateOnlyDesc'
+  const key = mode === 'rules_only' ? 'reviewModeRulesOnlyDesc' : mode === 'model_only' ? 'reviewModeModelOnlyDesc' : 'reviewModeRulesAndModelDesc'
   return t(`admin.riskControl.${key}`)
 }
 const providerOptions = computed<SelectOption[]>(() => [
@@ -2509,8 +2515,8 @@ const keywordNotice = computed<KeywordNoticeView>(() => {
   }
 	return {
 		...keywordNoticeTones.info,
-		title: t('admin.riskControl.keywordModeCandidateOnlyNotice'),
-		description: t('admin.riskControl.keywordModeCandidateOnlyDesc'),
+		title: `${t('admin.riskControl.engineMode')}: ${engineModeOptions.value.find((option) => option.value === configForm.engine_mode)?.label || configForm.engine_mode}`,
+		description: engineModeDescription(configForm.engine_mode),
 	}
 })
 
@@ -3293,7 +3299,7 @@ function applyConfigValues(config: ContentModerationConfig) {
 	configForm.resource_protection_status = config.resource_protection_status || null
   configForm.enabled = config.enabled
   configForm.mode = config.mode
-	configForm.engine_mode = (config.engine_mode || 'candidate_only') as ContentModerationEngineMode
+	configForm.engine_mode = (config.engine_mode === 'rules_only' || config.engine_mode === 'model_only' || config.engine_mode === 'rules_and_model' ? config.engine_mode : 'rules_and_model') as ContentModerationEngineMode
 	configForm.prompt_filter_mode = (config.prompt_filter_mode === 'off' || config.prompt_filter_mode === 'warn' || config.prompt_filter_mode === 'block' ? config.prompt_filter_mode : 'observe')
 	configForm.prompt_filter_threshold = config.prompt_filter_threshold || 50
 	configForm.prompt_filter_strict_threshold = config.prompt_filter_strict_threshold || 90
@@ -3568,7 +3574,7 @@ async function saveConfig() {
       thresholds: buildRiskThresholdPayload(),
       blocked_keywords: blockedKeywordList.value,
       keyword_rules: keywordRuleList.value,
-	  keyword_blocking_mode: configForm.engine_mode === 'api_only' ? 'api_only' : configForm.engine_mode === 'rule_only' ? 'keyword_only' : 'keyword_and_api',
+	  keyword_blocking_mode: configForm.engine_mode === 'model_only' ? 'api_only' : configForm.engine_mode === 'rules_only' ? 'keyword_only' : 'keyword_and_api',
 	  engine_mode: configForm.engine_mode,
 	  model_filter: modelFilterPayload,
     }

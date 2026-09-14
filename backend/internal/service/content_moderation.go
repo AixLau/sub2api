@@ -75,12 +75,14 @@ const (
 	ContentModerationKeywordModeKeywordAndAPI = "keyword_and_api"
 	ContentModerationKeywordModeAPIOnly       = "api_only"
 
-	ContentModerationEngineModeRuleOnly = "rule_only"
-	ContentModerationEngineModeAPIOnly  = "api_only"
-	ContentModerationEngineModeHybrid   = "hybrid"
-	// ContentModerationEngineModeCandidateOnly runs external reviewers only
-	// after a source-local candidate is found. It deliberately does not flatten
-	// unrelated request context into the provider input.
+	// Canonical review modes exposed by the new configuration UI.
+	ContentModerationEngineModeRulesOnly     = "rules_only"
+	ContentModerationEngineModeModelOnly     = "model_only"
+	ContentModerationEngineModeRulesAndModel = "rules_and_model"
+	// Legacy values remain source-compatible and are migrated on load/save.
+	ContentModerationEngineModeRuleOnly      = "rule_only"
+	ContentModerationEngineModeAPIOnly       = "api_only"
+	ContentModerationEngineModeHybrid        = "hybrid"
 	ContentModerationEngineModeCandidateOnly = "candidate_only"
 
 	ContentModerationFailStrategyOpen   = "open"
@@ -314,6 +316,8 @@ type ContentModerationConfig struct {
 	preparedBlockedKeywordFirst    *string
 	preparedKeywordRuleCount       int
 	preparedKeywordRuleFirst       *ContentModerationKeywordRule
+	legacyCandidateOnly            bool
+	legacyEngineMode               bool
 }
 
 type ContentModerationConfigView struct {
@@ -1987,7 +1991,7 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 	baselineCompleted := input.PromptInjectionBaseline != nil && input.PromptInjectionBaseline.Completed &&
 		input.PromptInjectionBaseline.PolicyRevision == policyRevision
 	if riskEnabled && cfg.Enabled && cfg.Mode != ContentModerationModeOff &&
-		!baselineCompleted && (!cfg.candidateOnly() || !inGroupScope || !inAccountScope || !inModelScope) {
+		!baselineCompleted && (cfg.legacyEngineMode || cfg.candidateOnly()) && (!cfg.candidateOnly() || !inGroupScope || !inAccountScope || !inModelScope) {
 		baselineCompleted = true
 		if baselineDecision, handled := s.checkPromptInjectionBaseline(ctx, input, cfg); handled && baselineDecision != nil && baselineDecision.Blocked {
 			return &ContentModerationGateResult{
@@ -2203,6 +2207,46 @@ func contentModerationDetachedContext(parent context.Context, timeout time.Durat
 	return context.WithTimeout(context.WithoutCancel(parent), timeout)
 }
 
+// checkUnifiedReviewMode executes the canonical rules/model pipeline. Legacy
+// ordinary moderation API routing remains available only while old configs are
+// being normalized; new canonical modes never enter that path.
+func (s *ContentModerationService) checkUnifiedReviewMode(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string) (*ContentModerationDecision, bool) {
+	if cfg == nil || cfg.Mode != ContentModerationModePreBlock || (cfg.EngineMode != ContentModerationEngineModeModelOnly && cfg.EngineMode != ContentModerationEngineModeRulesAndModel) || cfg.legacyEngineMode || cfg.candidateOnly() {
+		return nil, false
+	}
+	if cfg.EngineMode == ContentModerationEngineModeRulesAndModel {
+		if keywordRule, hit := matchContentModerationLocalRuleInputSet(content, cfg.keywordRuleSet()); hit {
+			decision := s.keywordDecision(ctx, input, cfg, content, hashText, keywordRule)
+			if decision != nil && decision.Blocked {
+				return decision, true
+			}
+		}
+		if promptHit, hit := contentModerationPromptFilterHitForInput(content, cfg.promptFilterConfig()); hit {
+			if decision, terminal := s.promptFilterDecision(ctx, input, cfg, content, hashText, promptHit); terminal {
+				return decision, true
+			}
+		}
+	}
+	if !cfg.SemanticReview.Enabled || s.semanticReviewRouter == nil {
+		return contentModerationFailureDecision(cfg), true
+	}
+	reviewText, evidenceComplete := buildContentModerationSemanticReviewEvidence(cfg.SemanticReview, content, "")
+	if strings.TrimSpace(reviewText) == "" {
+		return contentModerationFailureDecision(cfg), true
+	}
+	candidate := contentModerationSemanticGateCandidate{
+		Input:   ContentModerationSemanticReviewInput{Text: reviewText, EvidenceComplete: evidenceComplete},
+		Keyword: "semantic_review", Category: "semantic_review",
+		Severity: ContentModerationKeywordSeverityHigh, SyntheticAll: true,
+		ContextOnly: semanticReviewEvidenceContextOnly(cfg.SemanticReview, content, ""),
+	}
+	reviewCtx := context.WithValue(ctx, contentModerationRequiredSemanticReviewContextKey{}, true)
+	if decision, terminal := s.semanticReviewGate(reviewCtx, input, cfg, content, hashText, candidate); terminal {
+		return decision, true
+	}
+	return contentModerationFailureDecision(cfg), true
+}
+
 func (s *ContentModerationService) Check(ctx context.Context, input ContentModerationCheckInput) (out *ContentModerationDecision, checkErr error) {
 	effectivePolicyRevision := ""
 	defer func() {
@@ -2322,7 +2366,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		return allow, nil
 	}
 	baselineCompleted, _ := ctx.Value(contentModerationPromptInjectionBaselineCompletedContextKey{}).(bool)
-	if !baselineCompleted && (!cfg.candidateOnly() || !inGroupScope || !inModelScope) {
+	if !baselineCompleted && (cfg.legacyEngineMode || cfg.candidateOnly()) && (!cfg.candidateOnly() || !inGroupScope || !inModelScope) {
 		if baselineDecision, handled := s.checkPromptInjectionBaseline(ctx, input, cfg); handled && baselineDecision != nil && baselineDecision.Blocked {
 			return baselineDecision, nil
 		}
@@ -2429,6 +2473,9 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			s.recordPreBlockSyncMetric(0, ContentModerationActionError)
 		}
 		return contentModerationFailureDecision(cfg), nil
+	}
+	if unifiedDecision, handled := s.checkUnifiedReviewMode(ctx, input, cfg, content, content.Hash()); handled {
+		return unifiedDecision, nil
 	}
 	if cfg.candidateOnly() {
 		return s.checkCandidateOnly(ctx, input, cfg, content), nil
@@ -3000,7 +3047,7 @@ func (s *ContentModerationService) promptFilterDecision(ctx context.Context, inp
 	}
 	hardBlock := action == ContentModerationActionPromptFilterBlock &&
 		verdict.OperationalHit &&
-		cfg.EngineMode == ContentModerationEngineModeRuleOnly &&
+		(cfg.EngineMode == ContentModerationEngineModeRulesOnly || cfg.EngineMode == ContentModerationEngineModeRuleOnly) &&
 		contentModerationPromptFilterSourceCanHardBlock(hit.Source)
 	if action == ContentModerationActionPromptFilterBlock && !hardBlock {
 		action = ContentModerationActionPromptFilterReview
@@ -4748,11 +4795,11 @@ func (s *ContentModerationService) buildContentModerationEffectiveProtectionStat
 		unsafeReasons = append(unsafeReasons, "high_risk_rules_not_blocking")
 	}
 	switch cfg.EngineMode {
-	case ContentModerationEngineModeRuleOnly:
+	case ContentModerationEngineModeRulesOnly:
 		if !deterministicPolicyPresent {
 			unsafeReasons = append(unsafeReasons, "rule_only_without_blocking_rules", "no_deterministic_high_risk_policy")
 		}
-	case ContentModerationEngineModeAPIOnly:
+	case ContentModerationEngineModeModelOnly:
 		if !externalAPIHealthy {
 			unsafeReasons = append(unsafeReasons, "api_only_without_healthy_external_api")
 		}
@@ -4936,7 +4983,7 @@ func normalizeContentModerationCandidateOnlyInvariants(cfg *ContentModerationCon
 	if cfg == nil {
 		return
 	}
-	if cfg.EngineMode == ContentModerationEngineModeCandidateOnly {
+	if cfg.legacyCandidateOnly || cfg.EngineMode == ContentModerationEngineModeCandidateOnly {
 		cfg.KeywordBlockingMode = ContentModerationKeywordModeKeywordAndAPI
 		cfg.AuditScope = ContentModerationAuditScopeUserOnly
 		cfg.RecordNonHits = false
@@ -6160,6 +6207,12 @@ func (cfg *ContentModerationConfig) normalize() {
 	cfg.Thresholds = mergeContentModerationThresholds(ContentModerationDefaultThresholds(), cfg.Thresholds)
 	cfg.BlockedKeywords = normalizeBlockedKeywords(cfg.BlockedKeywords)
 	cfg.KeywordRules = normalizeContentModerationKeywordRules(cfg.KeywordRules)
+	rawEngineMode := strings.ToLower(strings.TrimSpace(cfg.EngineMode))
+	cfg.legacyCandidateOnly = rawEngineMode == ContentModerationEngineModeCandidateOnly
+	cfg.legacyEngineMode = rawEngineMode != "" && rawEngineMode != ContentModerationEngineModeRulesOnly && rawEngineMode != ContentModerationEngineModeModelOnly && rawEngineMode != ContentModerationEngineModeRulesAndModel
+	if cfg.legacyCandidateOnly {
+		normalizeContentModerationCandidateOnlyInvariants(cfg)
+	}
 	cfg.KeywordBlockingMode, cfg.EngineMode = normalizeModerationEngineAndKeywordModes(cfg.EngineMode, cfg.KeywordBlockingMode)
 	cfg.PromptFilterMode = normalizeContentModerationPromptFilterMode(cfg.PromptFilterMode)
 	if cfg.PromptFilterThreshold <= 0 {
@@ -6448,9 +6501,9 @@ func (cfg *ContentModerationConfig) shouldRunLocalRules() bool {
 		return false
 	}
 	switch cfg.EngineMode {
-	case ContentModerationEngineModeAPIOnly:
+	case ContentModerationEngineModeModelOnly, ContentModerationEngineModeAPIOnly:
 		return false
-	case ContentModerationEngineModeRuleOnly, ContentModerationEngineModeHybrid, ContentModerationEngineModeCandidateOnly:
+	case ContentModerationEngineModeRulesOnly, ContentModerationEngineModeRuleOnly, ContentModerationEngineModeRulesAndModel, ContentModerationEngineModeHybrid:
 		return true
 	default:
 		return normalizeKeywordBlockingMode(cfg.KeywordBlockingMode) != ContentModerationKeywordModeAPIOnly
@@ -6462,9 +6515,9 @@ func (cfg *ContentModerationConfig) externalModerationRequired() bool {
 		return true
 	}
 	switch cfg.EngineMode {
-	case ContentModerationEngineModeRuleOnly:
+	case ContentModerationEngineModeRulesOnly, ContentModerationEngineModeRuleOnly:
 		return false
-	case ContentModerationEngineModeAPIOnly, ContentModerationEngineModeHybrid, ContentModerationEngineModeCandidateOnly:
+	case ContentModerationEngineModeModelOnly, ContentModerationEngineModeAPIOnly, ContentModerationEngineModeRulesAndModel, ContentModerationEngineModeHybrid:
 		return true
 	default:
 		return normalizeKeywordBlockingMode(cfg.KeywordBlockingMode) != ContentModerationKeywordModeKeywordOnly
@@ -6472,7 +6525,7 @@ func (cfg *ContentModerationConfig) externalModerationRequired() bool {
 }
 
 func (cfg *ContentModerationConfig) candidateOnly() bool {
-	return cfg != nil && cfg.EngineMode == ContentModerationEngineModeCandidateOnly
+	return cfg != nil && cfg.legacyCandidateOnly
 }
 
 func (cfg *ContentModerationConfig) promptFilterConfig() promptfilter.Config {
@@ -7362,15 +7415,13 @@ func normalizeKeywordBlockingMode(mode string) string {
 }
 
 func normalizeModerationEngineMode(mode string) string {
-	switch strings.TrimSpace(mode) {
-	case ContentModerationEngineModeRuleOnly:
-		return ContentModerationEngineModeRuleOnly
-	case ContentModerationEngineModeAPIOnly:
-		return ContentModerationEngineModeAPIOnly
-	case ContentModerationEngineModeHybrid:
-		return ContentModerationEngineModeHybrid
-	case ContentModerationEngineModeCandidateOnly:
-		return ContentModerationEngineModeCandidateOnly
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "rules_only", "rule_only", "keyword_only":
+		return ContentModerationEngineModeRulesOnly
+	case "model_only", "api_only":
+		return ContentModerationEngineModeModelOnly
+	case "rules_and_model", "hybrid", "candidate_only", "keyword_and_api":
+		return ContentModerationEngineModeRulesAndModel
 	default:
 		return ""
 	}
@@ -7403,19 +7454,19 @@ func normalizeContentModerationPromptFilterMode(mode string) string {
 func engineModeFromKeywordBlockingMode(mode string) string {
 	switch normalizeKeywordBlockingMode(mode) {
 	case ContentModerationKeywordModeKeywordOnly:
-		return ContentModerationEngineModeRuleOnly
+		return ContentModerationEngineModeRulesOnly
 	case ContentModerationKeywordModeAPIOnly:
-		return ContentModerationEngineModeAPIOnly
+		return ContentModerationEngineModeModelOnly
 	default:
-		return ContentModerationEngineModeHybrid
+		return ContentModerationEngineModeRulesAndModel
 	}
 }
 
 func keywordBlockingModeFromEngineMode(mode string) string {
 	switch normalizeModerationEngineMode(mode) {
-	case ContentModerationEngineModeRuleOnly:
+	case ContentModerationEngineModeRulesOnly:
 		return ContentModerationKeywordModeKeywordOnly
-	case ContentModerationEngineModeAPIOnly:
+	case ContentModerationEngineModeModelOnly:
 		return ContentModerationKeywordModeAPIOnly
 	default:
 		return ContentModerationKeywordModeKeywordAndAPI

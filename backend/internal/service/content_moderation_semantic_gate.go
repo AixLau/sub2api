@@ -21,6 +21,8 @@ type contentModerationSemanticGateCandidate struct {
 	ContextOnly        bool
 }
 
+type contentModerationRequiredSemanticReviewContextKey struct{}
+
 func contentModerationSemanticGateCandidateForKeyword(cfg *ContentModerationConfig, content ContentModerationInput, rule ContentModerationKeywordRule, router ContentModerationSemanticReviewRouter) (contentModerationSemanticGateCandidate, bool) {
 	if cfg == nil || !cfg.SemanticReview.Enabled || router == nil || strings.TrimSpace(content.Text) == "" {
 		return contentModerationSemanticGateCandidate{}, false
@@ -121,8 +123,12 @@ func contentModerationSemanticGateCandidateForPromptFilter(cfg *ContentModeratio
 
 func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string, candidate contentModerationSemanticGateCandidate) (*ContentModerationDecision, bool) {
 	if s == nil || cfg == nil || s.semanticReviewRouter == nil {
+		if required, _ := ctx.Value(contentModerationRequiredSemanticReviewContextKey{}).(bool); required {
+			return semanticReviewUnavailableDecision(cfg != nil && cfg.Mode == ContentModerationModePreBlock), true
+		}
 		return nil, false
 	}
+	required, _ := ctx.Value(contentModerationRequiredSemanticReviewContextKey{}).(bool)
 	evidenceComplete := candidate.Input.EvidenceComplete
 	candidate.Input = contentModerationSemanticReviewInputForCheck(
 		input,
@@ -154,8 +160,10 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 			"candidate_keyword", candidate.Keyword,
 			"candidate_category", candidate.Category,
 			"error", err)
-		// Semantic review is an optional pre-check. If it is unavailable,
-		// continue to the required ordinary moderation API in hybrid mode.
+		if required {
+			return semanticReviewUnavailableDecision(cfg.Mode == ContentModerationModePreBlock), true
+		}
+		// Semantic review is an optional pre-check for legacy callers.
 		return nil, false
 	}
 	if state, ok := ctx.Value(contentModerationSemanticReviewStateContextKey{}).(*contentModerationSemanticReviewState); ok && state != nil {
@@ -236,6 +244,9 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 			RiskContextType:        ContentModerationRiskContextActualRequest,
 			RiskContextReason:      "semantic_review_reject",
 		}, true
+	}
+	if required {
+		return &ContentModerationDecision{Allowed: true, Action: ContentModerationActionSemanticReviewAllow}, true
 	}
 	return nil, false
 }
