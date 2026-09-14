@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -23,6 +24,17 @@ import (
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/singleflight"
 )
+
+//go:embed api_gateway_audit_prompt_zh_string.json
+var embeddedAuditPromptJSON string
+
+var configuredAuditPrompt = func() string {
+	var prompt string
+	if err := json.Unmarshal([]byte(embeddedAuditPromptJSON), &prompt); err == nil && strings.TrimSpace(prompt) != "" {
+		return prompt
+	}
+	return semanticReviewInstructions
+}()
 
 const (
 	ContentModerationSemanticReviewTriggerLocalReview = "local_review"
