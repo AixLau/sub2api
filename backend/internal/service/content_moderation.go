@@ -2230,7 +2230,12 @@ func (s *ContentModerationService) checkUnifiedReviewMode(ctx context.Context, i
 	if !cfg.SemanticReview.Enabled || s.semanticReviewRouter == nil {
 		return contentModerationFailureDecision(cfg), true
 	}
-	reviewText, evidenceComplete := buildContentModerationSemanticReviewEvidence(cfg.SemanticReview, content, "")
+	semanticCfg := cfg.SemanticReview
+	// Canonical model modes always review the selected context. The legacy
+	// local_review trigger only applies to migrated candidate configurations;
+	// reusing it here would make model_only silently skip ordinary requests.
+	semanticCfg.Trigger = ContentModerationSemanticReviewTriggerAll
+	reviewText, evidenceComplete := buildContentModerationSemanticReviewEvidence(semanticCfg, content, "")
 	if strings.TrimSpace(reviewText) == "" {
 		return contentModerationFailureDecision(cfg), true
 	}
@@ -2238,7 +2243,7 @@ func (s *ContentModerationService) checkUnifiedReviewMode(ctx context.Context, i
 		Input:   ContentModerationSemanticReviewInput{Text: reviewText, EvidenceComplete: evidenceComplete},
 		Keyword: "semantic_review", Category: "semantic_review",
 		Severity: ContentModerationKeywordSeverityHigh, SyntheticAll: true,
-		ContextOnly: semanticReviewEvidenceContextOnly(cfg.SemanticReview, content, ""),
+		ContextOnly: semanticReviewEvidenceContextOnly(semanticCfg, content, ""),
 	}
 	reviewCtx := context.WithValue(ctx, contentModerationRequiredSemanticReviewContextKey{}, true)
 	if decision, terminal := s.semanticReviewGate(reviewCtx, input, cfg, content, hashText, candidate); terminal {
