@@ -44,7 +44,7 @@ export interface ContentModerationKeywordRule {
 
 export interface ContentModerationSemanticReviewConfig {
   api_base_url?: string
-  api_endpoint?: 'responses' | 'chat_completions' | string
+  api_endpoint?: 'responses' | 'chat_completions' | 'messages' | string
   api_key_configured?: boolean
   api_key_masked?: string
   api_key?: string

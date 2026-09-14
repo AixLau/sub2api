@@ -195,8 +195,11 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 		base += "/v1"
 	}
 	endpoint := "/chat/completions"
-	if normalizeContentModerationSemanticReviewEndpoint(cfg.APIEndpoint) == "responses" {
+	protocol := normalizeContentModerationSemanticReviewEndpoint(cfg.APIEndpoint)
+	if protocol == "responses" {
 		endpoint = "/responses"
+	} else if protocol == "messages" {
+		endpoint = "/messages"
 	}
 	u, err := url.Parse(base + endpoint)
 	if err != nil {
@@ -204,7 +207,7 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 	}
 	compactInstructions := semanticReviewInstructionsForKind(input.ReviewKind, input.FinalReview) + "\nReturn exactly one minified JSON object with only the required fields. Do not include explanations, markdown, whitespace padding, or extra fields."
 	body := map[string]any{"model": model, "temperature": 0, "max_tokens": cfg.MaxOutputTokens, "response_format": map[string]any{"type": "json_object"}, "messages": []map[string]string{{"role": "system", "content": compactInstructions}, {"role": "user", "content": input.Text}}}
-	if normalizeContentModerationSemanticReviewEndpoint(cfg.APIEndpoint) == "responses" {
+	if protocol == "responses" {
 		body = map[string]any{
 			"model":             model,
 			"instructions":      compactInstructions,
@@ -213,6 +216,13 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 			"reasoning":         map[string]any{"effort": cfg.ReasoningEffort},
 			"text":              map[string]any{"format": compactSemanticReviewJSONSchema(input.FinalReview)},
 			"store":             false,
+		}
+	} else if protocol == "messages" {
+		body = map[string]any{
+			"model":      model,
+			"system":     compactInstructions,
+			"messages":   []map[string]any{{"role": "user", "content": input.Text}},
+			"max_tokens": cfg.MaxOutputTokens,
 		}
 	}
 	raw, _ := json.Marshal(body)
@@ -225,6 +235,10 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 		return ContentModerationSemanticReviewResult{}, errors.New("接口地址错误")
 	}
 	req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+	if protocol == "messages" {
+		req.Header.Set("x-api-key", cfg.APIKey)
+		req.Header.Set("anthropic-version", "2023-06-01")
+	}
 	req.Header.Set("Content-Type", "application/json")
 	setConfiguredCodexIdentityHeaders(req, userAgent)
 	if strings.TrimSpace(internalToken) != "" {
@@ -264,11 +278,28 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 	}
 	content := ""
 	var usage OpenAIUsage
-	if normalizeContentModerationSemanticReviewEndpoint(cfg.APIEndpoint) == "responses" {
+	if protocol == "responses" {
 		parsed, parseErr := parseSemanticReviewResponse(data, resp.Header.Get("Content-Type"))
 		if parseErr == nil {
 			content = parsed.Text
 			usage = parsed.Usage
+		}
+	} else if protocol == "messages" {
+		var envelope struct {
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+			Usage OpenAIUsage `json:"usage"`
+		}
+		if err := json.Unmarshal(data, &envelope); err == nil {
+			for _, block := range envelope.Content {
+				if block.Type == "text" {
+					content = block.Text
+					break
+				}
+			}
+			usage = envelope.Usage
 		}
 	} else {
 		if err := json.Unmarshal(data, &envelope); err == nil && len(envelope.Choices) > 0 {

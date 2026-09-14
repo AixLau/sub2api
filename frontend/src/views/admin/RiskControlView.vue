@@ -2162,7 +2162,7 @@ const configForm = reactive({
 	  prompt_filter_strict_threshold: 90,
   semantic_review_primary_model: 'gpt-5.3-codex-spark',
 	semantic_review_api_base_url: '',
-	semantic_review_api_endpoint: 'chat_completions' as 'responses' | 'chat_completions',
+	semantic_review_api_endpoint: 'chat_completions' as 'responses' | 'chat_completions' | 'messages',
 	semantic_review_api_key: '',
 	semantic_review_api_key_masked: '',
 	semantic_review_api_key_configured: false,
@@ -2392,6 +2392,7 @@ const semanticReviewModelOptions = computed<SelectOption[]>(() => {
 const semanticReviewApiEndpointOptions = computed<SelectOption[]>(() => [
 	{ value: 'responses', label: '/v1/responses' },
 	{ value: 'chat_completions', label: '/v1/chat/completions' },
+	{ value: 'messages', label: '/v1/messages (Anthropic)' },
 ])
 
 const semanticReviewFallbackModelOptions = computed<SelectOption[]>(() => {
@@ -3296,7 +3297,7 @@ function applyConfigValues(config: ContentModerationConfig) {
   }
   configForm.semantic_review_primary_model = semanticReview.primary_model || 'gpt-5.3-codex-spark'
   configForm.semantic_review_api_base_url = semanticReview.api_base_url || ''
-	configForm.semantic_review_api_endpoint = semanticReview.api_endpoint === 'responses' ? 'responses' : 'chat_completions'
+	configForm.semantic_review_api_endpoint = semanticReview.api_endpoint === 'responses' || semanticReview.api_endpoint === 'messages' ? semanticReview.api_endpoint : 'chat_completions'
 	configForm.semantic_review_api_key = ''
 	configForm.semantic_review_api_key_masked = semanticReview.api_key_masked || ''
 	configForm.semantic_review_api_key_configured = semanticReview.api_key_configured === true

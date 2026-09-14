@@ -6330,6 +6330,9 @@ func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanti
 }
 
 func normalizeContentModerationSemanticReviewEndpoint(endpoint string) string {
+	if strings.EqualFold(strings.TrimSpace(endpoint), "messages") || strings.HasSuffix(strings.TrimSpace(endpoint), "/messages") {
+		return "messages"
+	}
 	if strings.EqualFold(strings.TrimSpace(endpoint), "responses") || strings.HasSuffix(strings.TrimSpace(endpoint), "/responses") {
 		return "responses"
 	}
