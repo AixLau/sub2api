@@ -98,3 +98,9 @@ func TestSemanticReviewResponseCapturesProviderReasoningSummary(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "判断为许可证绕过请求", response.ReasoningSummary)
 }
+
+func TestSemanticReviewResponseDoesNotTreatJSONDataFieldAsSSE(t *testing.T) {
+	response, err := parseSemanticReviewResponse([]byte(`{"output_text":"{\"verdict\":\"allow\",\"reason_code\":\"data: benign_context\"}"}`), "application/json")
+	require.NoError(t, err)
+	require.Contains(t, response.Text, "data: benign_context")
+}

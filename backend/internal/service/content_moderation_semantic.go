@@ -2642,7 +2642,8 @@ type semanticReviewResponse struct {
 }
 
 func parseSemanticReviewResponse(body []byte, contentType string) (semanticReviewResponse, error) {
-	if strings.Contains(strings.ToLower(contentType), "text/event-stream") || bytes.Contains(body, []byte("data:")) {
+	trimmed := bytes.TrimSpace(body)
+	if strings.Contains(strings.ToLower(contentType), "text/event-stream") || bytes.HasPrefix(trimmed, []byte("data:")) {
 		return parseSemanticReviewSSE(bytes.NewReader(body), time.Time{})
 	}
 	if !json.Valid(body) {
