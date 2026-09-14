@@ -104,3 +104,9 @@ func TestSemanticReviewResponseDoesNotTreatJSONDataFieldAsSSE(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, response.Text, "data: benign_context")
 }
+
+func TestConfiguredSemanticReviewContentRecoversWrappedJSON(t *testing.T) {
+	result, err := parseConfiguredSemanticReviewContent("Here is the result:\n```json\n{\"decision\":\"reject\",\"category\":\"cyber\"}\n```\n")
+	require.NoError(t, err)
+	require.Equal(t, "reject", result.Verdict)
+}

@@ -299,6 +299,22 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 			content = parsed.Text
 			usage = parsed.Usage
 			reasoningSummary = parsed.ReasoningSummary
+		} else {
+			// A few OpenAI-compatible providers ignore the selected Responses
+			// endpoint and return a Chat Completions envelope. Accept that shape
+			// here while keeping the same strict JSON result validation below.
+			var compatible struct {
+				Choices []struct {
+					Message struct {
+						Content string `json:"content"`
+					} `json:"message"`
+				} `json:"choices"`
+				Usage OpenAIUsage `json:"usage"`
+			}
+			if json.Unmarshal(data, &compatible) == nil && len(compatible.Choices) > 0 {
+				content = compatible.Choices[0].Message.Content
+				usage = compatible.Usage
+			}
 		}
 	} else if protocol == "messages" {
 		var envelope struct {
@@ -353,7 +369,13 @@ func parseConfiguredSemanticReviewContent(content string) (ContentModerationSema
 	content = strings.TrimSuffix(strings.TrimSpace(content), "```")
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(content), &raw); err != nil {
-		return ContentModerationSemanticReviewResult{}, err
+		// Some compatible endpoints prepend a short explanation despite the
+		// output contract. Recover only a complete JSON object and continue to
+		// reject the response if no object can be decoded.
+		start, end := strings.IndexByte(content, '{'), strings.LastIndexByte(content, '}')
+		if start < 0 || end <= start || json.Unmarshal([]byte(content[start:end+1]), &raw) != nil {
+			return ContentModerationSemanticReviewResult{}, err
+		}
 	}
 	if _, ok := raw["verdict"]; !ok {
 		if decision, ok := raw["decision"]; ok {
