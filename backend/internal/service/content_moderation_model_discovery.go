@@ -126,6 +126,7 @@ func (r *openAIContentModerationSemanticReviewRouter) reviewWithConfiguredAPI(ct
 			slog.Info("content_moderation.semantic_review_configured_start",
 				"model", model, "attempt", attempt, "attempt_count", attemptCount,
 				"endpoint", "/v1/"+normalizeContentModerationSemanticReviewEndpoint(cfg.APIEndpoint),
+				"reasoning_effort", cfg.ReasoningEffort, "max_output_tokens", cfg.MaxOutputTokens,
 				"input_runes", len([]rune(input.Text)), "timeout_ms", timeoutMS)
 			result, err := callConfiguredSemanticModel(reviewCtx, cfg, model, input, timeoutMS, userAgent, r.internalToken)
 			if err == nil {
@@ -262,7 +263,10 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 	slog.Info("content_moderation.semantic_review_configured_headers",
 		"model", model, "status", resp.StatusCode,
 		"time_to_headers_ms", headersAt.Sub(started).Milliseconds())
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	data, readErr := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if readErr != nil {
+		return ContentModerationSemanticReviewResult{}, errors.New("读取模型响应失败，请检查网络连接或请求超时设置")
+	}
 	bodyReadAt := time.Now()
 	logConfiguredSemanticResponseDebug(model, resp.StatusCode, data)
 	slog.Info("content_moderation.semantic_review_configured_body_read",
@@ -283,6 +287,9 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return ContentModerationSemanticReviewResult{}, fmt.Errorf("模型调用失败（HTTP %d）", resp.StatusCode)
+	}
+	if err := configuredSemanticResponseCompletionError(data, cfg.MaxOutputTokens); err != nil {
+		return ContentModerationSemanticReviewResult{}, err
 	}
 	var envelope struct {
 		Choices []struct {
@@ -342,7 +349,7 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 		}
 	}
 	if strings.TrimSpace(content) == "" {
-		return ContentModerationSemanticReviewResult{}, errors.New("服务商返回格式无效")
+		return ContentModerationSemanticReviewResult{}, errors.New("模型未返回最终审核文本，请检查输出上限、思考强度及接口端点")
 	}
 	content = strings.TrimSpace(content)
 	content = strings.TrimPrefix(content, "```json")
@@ -359,6 +366,33 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 	result.Usage = usage
 	result.ReasoningSummary = reasoningSummary
 	return result, nil
+}
+
+func configuredSemanticResponseCompletionError(data []byte, maxOutputTokens int) error {
+	var envelope struct {
+		Status            string `json:"status"`
+		IncompleteDetails struct {
+			Reason string `json:"reason"`
+		} `json:"incomplete_details"`
+		Choices []struct {
+			FinishReason string `json:"finish_reason"`
+		} `json:"choices"`
+	}
+	if json.Unmarshal(data, &envelope) != nil {
+		return nil // Non-JSON envelopes are handled by the stream parser.
+	}
+	outputLimited := envelope.IncompleteDetails.Reason == "max_output_tokens"
+	for _, choice := range envelope.Choices {
+		outputLimited = outputLimited || choice.FinishReason == "length"
+	}
+	if outputLimited {
+		return fmt.Errorf("模型输出达到上限（%d tokens），未完成审核结果；请降低思考强度或提高输出上限", maxOutputTokens)
+	}
+	switch envelope.Status {
+	case "incomplete", "failed", "cancelled", "canceled", "in_progress", "queued":
+		return errors.New("模型响应未完成，未获得最终审核结果")
+	}
+	return nil
 }
 
 func logConfiguredSemanticResponseDebug(model string, status int, body []byte) {

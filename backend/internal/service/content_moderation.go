@@ -1505,23 +1505,69 @@ func (s *ContentModerationService) FetchSemanticReviewModels(ctx context.Context
 	return fetchContentModerationModels(ctx, baseURL, apiKey)
 }
 
-func (s *ContentModerationService) TestSemanticReviewModel(ctx context.Context, baseURL, apiKey, model string) error {
-	if s != nil && (strings.TrimSpace(apiKey) == "" || strings.TrimSpace(baseURL) == "" || strings.TrimSpace(model) == "") {
-		if saved, err := s.loadConfigFresh(ctx); err == nil && saved != nil {
-			if strings.TrimSpace(apiKey) == "" {
-				apiKey = saved.SemanticReview.APIKey
-			}
-			if strings.TrimSpace(baseURL) == "" {
-				baseURL = saved.SemanticReview.APIBaseURL
-			}
-			if strings.TrimSpace(model) == "" {
-				model = saved.SemanticReview.PrimaryModel
-			}
+type TestSemanticReviewModelInput struct {
+	BaseURL             string  `json:"base_url"`
+	APIKey              string  `json:"api_key"`
+	Model               string  `json:"model"`
+	APIEndpoint         *string `json:"api_endpoint"`
+	ReasoningEffort     *string `json:"reasoning_effort"`
+	MaxOutputTokens     *int    `json:"max_output_tokens"`
+	TimeoutMS           *int    `json:"timeout_ms"`
+	PrimaryTimeoutMS    *int    `json:"primary_timeout_ms"`
+	MaxAttemptsPerModel *int    `json:"max_attempts_per_model"`
+}
+
+func (s *ContentModerationService) TestSemanticReviewModel(ctx context.Context, input TestSemanticReviewModelInput) error {
+	cfg := defaultContentModerationSemanticReviewConfig()
+	if s != nil && s.settingRepo != nil {
+		saved, err := s.loadConfigFresh(ctx)
+		if err != nil {
+			return err
+		}
+		cfg = saved.SemanticReview
+	}
+	if baseURL := strings.TrimRight(strings.TrimSpace(input.BaseURL), "/"); baseURL != "" {
+		if baseURL != strings.TrimRight(cfg.APIBaseURL, "/") {
+			cfg.APIKey = ""
+		}
+		cfg.APIBaseURL = baseURL
+	}
+	if apiKey := strings.TrimSpace(input.APIKey); apiKey != "" {
+		cfg.APIKey = apiKey
+	}
+	if model := strings.TrimSpace(input.Model); model != "" {
+		cfg.PrimaryModel = model
+	}
+	if cfg.APIBaseURL == "" || cfg.APIKey == "" || cfg.PrimaryModel == "" {
+		return errors.New("请先填写接口地址、API Key 并选择主模型")
+	}
+	if input.APIEndpoint != nil {
+		cfg.APIEndpoint = *input.APIEndpoint
+	}
+	if input.ReasoningEffort != nil {
+		cfg.ReasoningEffort = *input.ReasoningEffort
+	}
+	for _, field := range []struct{ dst, src *int }{
+		{&cfg.MaxOutputTokens, input.MaxOutputTokens},
+		{&cfg.TimeoutMS, input.TimeoutMS},
+		{&cfg.PrimaryTimeoutMS, input.PrimaryTimeoutMS},
+		{&cfg.MaxAttemptsPerModel, input.MaxAttemptsPerModel},
+	} {
+		if field.src != nil {
+			*field.dst = *field.src
 		}
 	}
-	cfg := defaultContentModerationSemanticReviewConfig()
-	cfg.APIBaseURL, cfg.APIKey, cfg.PrimaryModel = baseURL, apiKey, strings.TrimSpace(model)
-	_, err := (&openAIContentModerationSemanticReviewRouter{}).reviewWithConfiguredAPI(ctx, cfg, ContentModerationSemanticReviewInput{Text: "请仅返回 allow verdict。"})
+	cfg = normalizeContentModerationSemanticReviewConfig(cfg)
+	// A test must establish whether the selected primary model works.
+	cfg.FallbackModels = nil
+	testRouter := &openAIContentModerationSemanticReviewRouter{}
+	if s != nil {
+		if router, ok := s.semanticReviewRouter.(*openAIContentModerationSemanticReviewRouter); ok {
+			testRouter.settingService = router.settingService
+			testRouter.internalToken = router.internalToken
+		}
+	}
+	_, err := testRouter.reviewWithConfiguredAPI(ctx, cfg, ContentModerationSemanticReviewInput{Text: "请仅返回 allow verdict。"})
 	return err
 }
 
@@ -2226,11 +2272,8 @@ func (s *ContentModerationService) checkUnifiedReviewMode(ctx context.Context, i
 			candidateSeverity = strings.TrimSpace(keywordRule.Severity)
 		}
 		if promptHit, hit := contentModerationPromptFilterHitForInput(content, cfg.promptFilterConfig()); hit {
-			if decision, terminal := s.promptFilterDecision(ctx, input, cfg, content, hashText, promptHit); terminal {
-				// The unified rules+model mode treats this as a candidate even
-				// when a legacy prompt-filter action is configured as block.
-				_ = decision
-			}
+			// Keep the rule evidence on the final model record. Do not create
+			// a separate pending-review record for a non-terminal rule hit.
 			if len(promptHit.Verdict.Matches) > 0 && candidateKeyword == "" {
 				candidateKeyword = strings.TrimSpace(promptHit.Verdict.Matches[0].Name)
 				candidateCategory = strings.TrimSpace(promptHit.Verdict.Matches[0].Category)

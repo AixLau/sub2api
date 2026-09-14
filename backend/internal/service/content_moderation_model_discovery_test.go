@@ -124,3 +124,81 @@ func TestConfiguredSemanticReviewContentAcceptsVerdictAliases(t *testing.T) {
 		require.Equal(t, "reject", result.Verdict, input)
 	}
 }
+
+func TestSemanticReviewModelTestUsesSavedSettingsAndDraftOverrides(t *testing.T) {
+	var received map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/v1/responses", r.URL.Path)
+		require.Equal(t, "Bearer saved-key", r.Header.Get("Authorization"))
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&received))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"{\"verdict\":\"allow\"}"}]}]}`))
+	}))
+	defer server.Close()
+	cfg := defaultContentModerationConfig()
+	cfg.SemanticReview.APIBaseURL = server.URL
+	cfg.SemanticReview.APIKey = "saved-key"
+	cfg.SemanticReview.APIEndpoint = "responses"
+	cfg.SemanticReview.PrimaryModel = "saved-model"
+	cfg.SemanticReview.ReasoningEffort = "none"
+	cfg.SemanticReview.MaxOutputTokens = 512
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	svc := &ContentModerationService{settingRepo: &contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyContentModerationConfig: string(raw),
+	}}}
+	// A masked key should reuse saved credentials and keep saved endpoint/none.
+	err = svc.TestSemanticReviewModel(context.Background(), TestSemanticReviewModelInput{BaseURL: server.URL, Model: "draft-model"})
+	require.NoError(t, err)
+	require.Equal(t, "draft-model", received["model"])
+	require.Equal(t, "none", received["reasoning"].(map[string]any)["effort"])
+	require.Equal(t, float64(512), received["max_output_tokens"])
+	require.NotContains(t, received, "text")
+
+	endpoint, effort, limit := "responses", "high", 1024
+	err = svc.TestSemanticReviewModel(context.Background(), TestSemanticReviewModelInput{
+		BaseURL: server.URL, Model: "draft-model", APIEndpoint: &endpoint, ReasoningEffort: &effort, MaxOutputTokens: &limit,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "high", received["reasoning"].(map[string]any)["effort"])
+	require.Equal(t, float64(1024), received["max_output_tokens"])
+}
+
+func TestConfiguredSemanticReviewRetriesMissingFinalAnswer(t *testing.T) {
+	for _, tc := range []struct{ name, protocol, first string }{
+		{"responses_reasoning_only", "responses", `{"status":"completed","output":[{"type":"reasoning","content":[{"type":"reasoning_text","text":"{\"verdict\":\"allow\"}"}]}]}`},
+		{"responses_incomplete", "responses", `{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output_text":"{\"verdict\":\"allow\"}"}`},
+		{"chat_length", "chat_completions", `{"choices":[{"finish_reason":"length","message":{"content":null,"reasoning_content":"thinking"}}]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if calls.Add(1) == 1 {
+					_, _ = w.Write([]byte(tc.first))
+					return
+				}
+				if tc.protocol == "responses" {
+					_, _ = w.Write([]byte(`{"status":"completed","output_text":"{\"verdict\":\"reject\"}"}`))
+				} else {
+					_, _ = w.Write([]byte(`{"choices":[{"finish_reason":"stop","message":{"content":"{\"verdict\":\"reject\"}"}}]}`))
+				}
+			}))
+			defer server.Close()
+			cfg := defaultContentModerationSemanticReviewConfig()
+			cfg.APIBaseURL, cfg.APIKey, cfg.PrimaryModel, cfg.APIEndpoint = server.URL, "key", "model", tc.protocol
+			cfg.TimeoutMS, cfg.PrimaryTimeoutMS, cfg.MaxAttemptsPerModel = 5000, 1000, 2
+			result, err := (&openAIContentModerationSemanticReviewRouter{}).reviewWithConfiguredAPI(context.Background(), cfg, ContentModerationSemanticReviewInput{Text: "test"})
+			require.NoError(t, err)
+			require.Equal(t, "reject", result.Verdict)
+			require.Equal(t, int32(2), calls.Load())
+			require.Equal(t, 2, result.AttemptCount)
+		})
+	}
+}
+
+func TestConfiguredSemanticResponseExplainsOutputLimit(t *testing.T) {
+	err := configuredSemanticResponseCompletionError([]byte(`{"choices":[{"finish_reason":"length"}]}`), 512)
+	require.ErrorContains(t, err, "512 tokens")
+	require.ErrorContains(t, err, "降低思考强度或提高输出上限")
+}

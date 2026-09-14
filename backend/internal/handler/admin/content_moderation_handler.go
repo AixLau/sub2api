@@ -145,16 +145,12 @@ func (h *ContentModerationHandler) FetchSemanticReviewModels(c *gin.Context) {
 }
 
 func (h *ContentModerationHandler) TestSemanticReviewModel(c *gin.Context) {
-	var req struct {
-		BaseURL string `json:"base_url"`
-		APIKey  string `json:"api_key"`
-		Model   string `json:"model"`
-	}
+	var req service.TestSemanticReviewModelInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	if err := h.service.TestSemanticReviewModel(c.Request.Context(), req.BaseURL, req.APIKey, req.Model); err != nil {
+	if err := h.service.TestSemanticReviewModel(c.Request.Context(), req); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}

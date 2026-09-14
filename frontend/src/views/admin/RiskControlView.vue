@@ -2393,7 +2393,17 @@ async function testSemanticModel() {
   if (!baseURL || (!apiKey && !configForm.semantic_review_api_key_configured) || !model) { appStore.showError(t('admin.riskControl.semanticReviewTestConfigRequired')); return }
   semanticModelTestLoading.value = true
   try {
-    await adminAPI.riskControl.testSemanticReviewModel({ base_url: baseURL, api_key: apiKey, model })
+    await adminAPI.riskControl.testSemanticReviewModel({
+      base_url: baseURL,
+      api_key: apiKey,
+      model,
+      api_endpoint: configForm.semantic_review_api_endpoint,
+      reasoning_effort: configForm.semantic_review_reasoning_effort,
+      max_output_tokens: Number(configForm.semantic_review_max_output_tokens),
+      timeout_ms: Number(configForm.semantic_review_timeout_ms),
+      primary_timeout_ms: Number(configForm.semantic_review_primary_timeout_ms),
+      max_attempts_per_model: Number(configForm.semantic_review_max_attempts_per_model),
+    })
     appStore.showSuccess(t('admin.riskControl.semanticReviewTestSuccess'))
   } catch (err: unknown) { appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.semanticReviewTestFailed'))) }
   finally { semanticModelTestLoading.value = false }
@@ -4272,6 +4282,7 @@ function riskContextReasonLabel(value?: string): string {
     candidate_ordinary_moderation: t('admin.riskControl.riskContextReasons.candidateOrdinaryModeration'),
     candidate_extraction_incomplete: t('admin.riskControl.riskContextReasons.candidateExtractionIncomplete'),
     candidate_reviewer_unavailable: t('admin.riskControl.riskContextReasons.candidateReviewerUnavailable'),
+    semantic_review_allow: t('admin.riskControl.action.semanticReviewAllow'),
     semantic_review_reject: t('admin.riskControl.riskContextReasons.semanticReviewReject'),
     semantic_review_review: t('admin.riskControl.riskContextReasons.semanticReviewReview'),
     semantic_review_provider_fallback: t('admin.riskControl.riskContextReasons.semanticReviewProviderFallback'),

@@ -2891,12 +2891,18 @@ func semanticReviewJSONText(value gjson.Result) string {
 	if output := value.Get("output"); output.IsArray() {
 		var text strings.Builder
 		output.ForEach(func(_, item gjson.Result) bool {
+			if kind := item.Get("type").String(); kind != "" && kind != "message" {
+				return true
+			}
 			content := item.Get("content")
 			if !content.IsArray() {
 				return true
 			}
 			content.ForEach(func(_, part gjson.Result) bool {
 				if !part.IsObject() {
+					return true
+				}
+				if kind := part.Get("type").String(); kind != "" && kind != "output_text" && kind != "text" {
 					return true
 				}
 				partText := part.Get("text")

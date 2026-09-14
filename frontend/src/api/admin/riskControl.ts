@@ -649,7 +649,19 @@ export async function fetchSemanticReviewModels(baseUrl: string, apiKey: string)
   return Array.isArray(data.models) ? data.models : []
 }
 
-export async function testSemanticReviewModel(payload: { base_url: string; api_key: string; model: string }): Promise<void> {
+export interface TestSemanticReviewModelInput {
+  base_url: string
+  api_key: string
+  model: string
+  api_endpoint?: string
+  reasoning_effort?: ContentModerationSemanticReviewConfig['reasoning_effort']
+  max_output_tokens?: number
+  timeout_ms?: number
+  primary_timeout_ms?: number
+  max_attempts_per_model?: number
+}
+
+export async function testSemanticReviewModel(payload: TestSemanticReviewModelInput): Promise<void> {
   await apiClient.post('/admin/risk-control/semantic-review/test', payload)
 }
 

@@ -9,6 +9,7 @@ import type { ContentModerationConfig, UpdateContentModerationConfig } from '@/a
 const {
   getConfig,
   getSemanticReviewModels,
+  testSemanticReviewModel,
   updateConfig,
   getStatus,
   listLogs,
@@ -23,6 +24,7 @@ const {
 } = vi.hoisted(() => ({
   getConfig: vi.fn(),
   getSemanticReviewModels: vi.fn(),
+  testSemanticReviewModel: vi.fn(),
   updateConfig: vi.fn(),
   getStatus: vi.fn(),
   listLogs: vi.fn(),
@@ -41,6 +43,7 @@ vi.mock('@/api/admin', () => ({
     riskControl: {
       getConfig,
       getSemanticReviewModels,
+      testSemanticReviewModel,
       updateConfig,
       getStatus,
       listLogs,
@@ -243,6 +246,7 @@ function findButtonByText(wrapper: VueWrapper, text: string): DOMWrapper<HTMLBut
 describe('admin RiskControlView', () => {
   beforeEach(() => {
     getConfig.mockReset()
+    testSemanticReviewModel.mockReset()
     updateConfig.mockReset()
     getStatus.mockReset()
     listLogs.mockReset()
@@ -951,6 +955,58 @@ describe('admin RiskControlView', () => {
       },
     }))
     expect(showError).not.toHaveBeenCalled()
+  })
+
+  it('tests the draft model with the configured endpoint and reasoning without saving', async () => {
+    const config = baseConfig()
+    config.engine_mode = 'rules_and_model'
+    Object.assign(config.semantic_review, {
+      api_base_url: 'https://provider.example/v1',
+      api_endpoint: 'responses',
+      api_key_configured: true,
+      api_key_masked: 'sk-****',
+      reasoning_effort: 'none',
+      max_output_tokens: 512,
+      timeout_ms: 30000,
+      primary_timeout_ms: 15000,
+      max_attempts_per_model: 3,
+    })
+    getConfig.mockResolvedValue(config)
+    testSemanticReviewModel.mockResolvedValue({ message: 'ok' })
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+          ProxySelector: true,
+        },
+      },
+    })
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await wrapper.get('input[placeholder="admin.riskControl.semanticReviewPrimaryModelPlaceholder"]').setValue('deepseek-v4.1-flash')
+    await findButtonByText(wrapper, 'admin.riskControl.semanticReviewTestModel').trigger('click')
+    await flushPromises()
+
+    expect(testSemanticReviewModel).toHaveBeenCalledWith({
+      base_url: 'https://provider.example/v1',
+      api_key: '',
+      model: 'deepseek-v4.1-flash',
+      api_endpoint: 'responses',
+      reasoning_effort: 'none',
+      max_output_tokens: 512,
+      timeout_ms: 30000,
+      primary_timeout_ms: 15000,
+      max_attempts_per_model: 3,
+    })
+    expect(updateConfig).not.toHaveBeenCalled()
+    expect(showError).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('loads and submits latest-turn-only content moderation scope', async () => {

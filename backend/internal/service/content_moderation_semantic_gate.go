@@ -223,10 +223,17 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 	metadata := contentModerationSemanticGateMetadata(cfg, content, input.Protocol, candidate, result, policyOverride)
 	categoryScores := map[string]float64{"semantic_review": score}
 	latency := int(time.Since(started).Milliseconds())
-	if candidate.ContextOnly && policyOverride && result.Verdict == "allow" {
+	if result.Verdict == "allow" && ((required && cfg.EngineMode == ContentModerationEngineModeRulesAndModel) || (candidate.ContextOnly && policyOverride)) {
 		log := s.buildLog(input, cfg, ContentModerationActionSemanticReviewAllow, false, category, score, categoryScores,
 			content.ExcerptText(), &latency, nil, metadata)
 		applySemanticReviewLogAttribution(log, result, latency, cfg.SemanticReview.PrimaryModel)
+		log.MatchedKeyword = candidate.Keyword
+		log.KeywordCategory = candidate.Category
+		log.KeywordSeverity = candidate.Severity
+		log.KeywordAction = ContentModerationActionSemanticReviewAllow
+		log.EffectiveKeywordAction = ContentModerationActionSemanticReviewAllow
+		log.RiskContextType = ContentModerationRiskContextActualRequest
+		log.RiskContextReason = ContentModerationActionSemanticReviewAllow
 		log.UserViolationEligible = false
 		s.persistContentModerationLog(ctx, cfg, log, hashText, false, false)
 	}
