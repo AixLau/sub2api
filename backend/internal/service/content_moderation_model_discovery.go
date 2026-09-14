@@ -202,15 +202,16 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 	if err != nil {
 		return ContentModerationSemanticReviewResult{}, errors.New("接口地址错误")
 	}
-	body := map[string]any{"model": model, "temperature": 0, "max_tokens": cfg.MaxOutputTokens, "messages": []map[string]string{{"role": "system", "content": semanticReviewInstructionsForKind(input.ReviewKind, input.FinalReview)}, {"role": "user", "content": input.Text}}}
+	compactInstructions := semanticReviewInstructionsForKind(input.ReviewKind, input.FinalReview) + "\nReturn exactly one minified JSON object with only the required fields. Do not include explanations, markdown, whitespace padding, or extra fields."
+	body := map[string]any{"model": model, "temperature": 0, "max_tokens": cfg.MaxOutputTokens, "response_format": map[string]any{"type": "json_object"}, "messages": []map[string]string{{"role": "system", "content": compactInstructions}, {"role": "user", "content": input.Text}}}
 	if normalizeContentModerationSemanticReviewEndpoint(cfg.APIEndpoint) == "responses" {
 		body = map[string]any{
 			"model":             model,
-			"instructions":      semanticReviewInstructionsForKind(input.ReviewKind, input.FinalReview),
+			"instructions":      compactInstructions,
 			"input":             input.Text,
 			"max_output_tokens": cfg.MaxOutputTokens,
 			"reasoning":         map[string]any{"effort": cfg.ReasoningEffort},
-			"text":              map[string]any{"format": semanticReviewJSONSchemaForKind(input.ReviewKind, input.FinalReview)},
+			"text":              map[string]any{"format": compactSemanticReviewJSONSchema(input.FinalReview)},
 			"store":             false,
 		}
 	}
@@ -310,4 +311,28 @@ func setConfiguredCodexIdentityHeaders(req *http.Request, userAgent string) {
 	req.Header.Set("version", CodexCanonicalClientVersion())
 	req.Header.Set("x-codex-installation-id", uuid.NewString())
 	req.Header.Set("x-codex-window-id", uuid.NewString())
+}
+
+func compactSemanticReviewJSONSchema(finalReview bool) map[string]any {
+	verdicts := []string{"allow", "review", "reject"}
+	if finalReview {
+		verdicts = []string{"allow", "reject"}
+	}
+	enum := func(values ...string) map[string]any { return map[string]any{"type": "string", "enum": values} }
+	return map[string]any{
+		"type": "json_schema", "name": "semantic_review_compact_v1", "strict": true,
+		"schema": map[string]any{
+			"type": "object", "additionalProperties": false,
+			"properties": map[string]any{
+				"verdict": enum(verdicts...), "intent": enum("benign", "ambiguous", "harmful", "unknown"), "target": enum("self", "third_party", "unknown"),
+				"authorization": enum("authorized", "unauthorized", "unknown"), "information_access": enum("public", "private", "credential", "unknown"),
+				"harm_mechanism": enum("none", "credential_theft", "unauthorized_access", "exploit_delivery", "destructive_intrusion", "fraud", "privacy", "violence", "weapons", "biosecurity", "license_circumvention", "other"),
+				"harm_evidence":  enum("none", "inferred", "explicit", "unknown"), "deception_type": enum("none", "impersonation", "phishing", "fraud", "unknown"),
+				"severity": enum("low", "medium", "high", "critical"), "confidence": map[string]any{"type": "number", "minimum": 0, "maximum": 1},
+				"operationality": enum("none", "conceptual", "actionable"), "executability": enum("none", "indirect", "direct"),
+				"categories": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": 4}, "reason_codes": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": 4},
+			},
+			"required": []string{"verdict", "intent", "target", "authorization", "information_access", "harm_mechanism", "harm_evidence", "deception_type", "severity", "confidence", "operationality", "executability", "categories", "reason_codes"},
+		},
+	}
 }
