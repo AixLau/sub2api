@@ -939,7 +939,7 @@
                   </div>
                 </dl>
               </div>
-	      <div class="hidden">
+	      <div v-if="false" style="display: none !important">
               <div>
 					<label class="input-label">{{ t('admin.riskControl.provider') }}</label>
 				<Select v-model="configForm.provider" :options="providerOptions" @update:modelValue="onProviderChange" />
