@@ -122,6 +122,10 @@ func (r *openAIContentModerationSemanticReviewRouter) reviewWithConfiguredAPI(ct
 			}
 			attemptCount++
 			started := time.Now()
+			slog.Info("content_moderation.semantic_review_configured_start",
+				"model", model, "attempt", attempt, "attempt_count", attemptCount,
+				"endpoint", "/v1/"+normalizeContentModerationSemanticReviewEndpoint(cfg.APIEndpoint),
+				"input_runes", len([]rune(input.Text)), "timeout_ms", timeoutMS)
 			result, err := callConfiguredSemanticModel(reviewCtx, cfg, model, input, timeoutMS, userAgent, r.internalToken)
 			if err == nil {
 				result.Model = model
@@ -132,7 +136,8 @@ func (r *openAIContentModerationSemanticReviewRouter) reviewWithConfiguredAPI(ct
 					result.FallbackReason = primaryFailure
 				}
 				r.recordConfiguredUsage(ctx, input, result, int(time.Since(started).Milliseconds()))
-				slog.Info("content_moderation.semantic_review_configured_success", "model", model, "fallback", modelIndex > 0, "attempt", attempt)
+				slog.Info("content_moderation.semantic_review_configured_success", "model", model, "fallback", modelIndex > 0, "attempt", attempt,
+					"total_ms", time.Since(started).Milliseconds())
 				return normalizeSemanticReviewResult(result), nil
 			}
 			last = err
@@ -190,6 +195,7 @@ func (r *openAIContentModerationSemanticReviewRouter) recordConfiguredUsage(ctx 
 }
 
 func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSemanticReviewConfig, model string, input ContentModerationSemanticReviewInput, timeoutMS int, userAgent, internalToken string) (ContentModerationSemanticReviewResult, error) {
+	started := time.Now()
 	base := strings.TrimRight(strings.TrimSpace(cfg.APIBaseURL), "/")
 	if parsed, parseErr := url.Parse(base); parseErr == nil && strings.Trim(parsed.Path, "/") == "" {
 		base += "/v1"
@@ -252,7 +258,16 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 		return ContentModerationSemanticReviewResult{}, errors.New("网络请求失败")
 	}
 	defer resp.Body.Close()
+	headersAt := time.Now()
+	slog.Info("content_moderation.semantic_review_configured_headers",
+		"model", model, "status", resp.StatusCode,
+		"time_to_headers_ms", headersAt.Sub(started).Milliseconds())
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	bodyReadAt := time.Now()
+	slog.Info("content_moderation.semantic_review_configured_body_read",
+		"model", model, "response_bytes", len(data),
+		"response_read_ms", bodyReadAt.Sub(headersAt).Milliseconds(),
+		"http_total_ms", bodyReadAt.Sub(started).Milliseconds())
 	if resp.StatusCode == 401 {
 		return ContentModerationSemanticReviewResult{}, errors.New("API Key 无效")
 	}
@@ -318,6 +333,10 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 	if err := json.Unmarshal([]byte(content), &result); err != nil {
 		return ContentModerationSemanticReviewResult{}, errors.New("模型返回内容无法解析")
 	}
+	parsedAt := time.Now()
+	slog.Info("content_moderation.semantic_review_configured_parsed",
+		"model", model, "parse_ms", parsedAt.Sub(bodyReadAt).Milliseconds(),
+		"total_ms", parsedAt.Sub(started).Milliseconds())
 	result.Usage = usage
 	return result, nil
 }
