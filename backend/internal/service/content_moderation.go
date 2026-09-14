@@ -2214,17 +2214,34 @@ func (s *ContentModerationService) checkUnifiedReviewMode(ctx context.Context, i
 	if cfg == nil || cfg.Mode != ContentModerationModePreBlock || (cfg.EngineMode != ContentModerationEngineModeModelOnly && cfg.EngineMode != ContentModerationEngineModeRulesAndModel) || cfg.legacyEngineMode || cfg.candidateOnly() {
 		return nil, false
 	}
+	candidateKeyword := ""
+	candidateCategory := ""
+	candidateSeverity := ContentModerationKeywordSeverityHigh
 	if cfg.EngineMode == ContentModerationEngineModeRulesAndModel {
 		if keywordRule, hit := matchContentModerationLocalRuleInputSet(content, cfg.keywordRuleSet()); hit {
-			decision := s.keywordDecision(ctx, input, cfg, content, hashText, keywordRule)
-			if decision != nil && decision.Blocked {
-				return decision, true
-			}
+			// A keyword/rule hit is evidence for the model in this mode. It
+			// must never create a terminal block on its own.
+			candidateKeyword = strings.TrimSpace(keywordRule.Keyword)
+			candidateCategory = strings.TrimSpace(keywordRule.Category)
+			candidateSeverity = strings.TrimSpace(keywordRule.Severity)
 		}
 		if promptHit, hit := contentModerationPromptFilterHitForInput(content, cfg.promptFilterConfig()); hit {
 			if decision, terminal := s.promptFilterDecision(ctx, input, cfg, content, hashText, promptHit); terminal {
-				return decision, true
+				// The unified rules+model mode treats this as a candidate even
+				// when a legacy prompt-filter action is configured as block.
+				_ = decision
 			}
+			if len(promptHit.Verdict.Matches) > 0 && candidateKeyword == "" {
+				candidateKeyword = strings.TrimSpace(promptHit.Verdict.Matches[0].Name)
+				candidateCategory = strings.TrimSpace(promptHit.Verdict.Matches[0].Category)
+				candidateSeverity = promptFilterSeverity(promptHit.Verdict)
+			}
+		}
+		if candidateSeverity == "" {
+			candidateSeverity = ContentModerationKeywordSeverityHigh
+		}
+		if candidateCategory == "" {
+			candidateCategory = "semantic_review"
 		}
 	}
 	if !cfg.SemanticReview.Enabled || s.semanticReviewRouter == nil {
@@ -2235,14 +2252,14 @@ func (s *ContentModerationService) checkUnifiedReviewMode(ctx context.Context, i
 	// local_review trigger only applies to migrated candidate configurations;
 	// reusing it here would make model_only silently skip ordinary requests.
 	semanticCfg.Trigger = ContentModerationSemanticReviewTriggerAll
-	reviewText, evidenceComplete := buildContentModerationSemanticReviewEvidence(semanticCfg, content, "")
+	reviewText, evidenceComplete := buildContentModerationSemanticReviewEvidence(semanticCfg, content, candidateKeyword)
 	if strings.TrimSpace(reviewText) == "" {
 		return contentModerationFailureDecision(cfg), true
 	}
 	candidate := contentModerationSemanticGateCandidate{
 		Input:   ContentModerationSemanticReviewInput{Text: reviewText, EvidenceComplete: evidenceComplete},
-		Keyword: "semantic_review", Category: "semantic_review",
-		Severity: ContentModerationKeywordSeverityHigh, SyntheticAll: true,
+		Keyword: candidateKeyword, Category: candidateCategory,
+		Severity: candidateSeverity, SyntheticAll: candidateKeyword == "",
 		ContextOnly: semanticReviewEvidenceContextOnly(semanticCfg, content, ""),
 	}
 	reviewCtx := context.WithValue(ctx, contentModerationRequiredSemanticReviewContextKey{}, true)

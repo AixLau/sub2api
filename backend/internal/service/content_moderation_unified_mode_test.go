@@ -48,3 +48,29 @@ func TestUnifiedModelModeReviewsWithoutLocalCandidate(t *testing.T) {
 	require.Equal(t, 1, router.calls)
 	require.Contains(t, router.input.Text, "普通请求")
 }
+
+func TestUnifiedRulesAndModelDoesNotBlockKeywordBeforeModel(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.EngineMode = ContentModerationEngineModeRulesAndModel
+	cfg.SemanticReview.Enabled = true
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword: "credential", Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh, Action: ContentModerationKeywordActionBlock, Enabled: true,
+	}}
+	cfg.normalize()
+	router := &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "allow", Intent: "benign", Target: "unknown", Authorization: "unknown",
+		InformationAccess: "unknown", HarmMechanism: "none", HarmEvidence: "none",
+		Operationality: "none", Executability: "none", Severity: "low", Confidence: 1,
+	}}
+	svc := NewContentModerationService(nil, &contentModerationTestRepo{}, nil, nil, nil, nil, nil)
+	svc.SetSemanticReviewRouter(router)
+
+	decision, handled := svc.checkUnifiedReviewMode(context.Background(), ContentModerationCheckInput{UserID: 1}, cfg, ContentModerationInput{Text: "credential administration"}, "hash")
+
+	require.True(t, handled)
+	require.NotNil(t, decision)
+	require.True(t, decision.Allowed)
+	require.Equal(t, 1, router.calls)
+}
