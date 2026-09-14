@@ -64,7 +64,7 @@ export interface ContentModerationSemanticReviewConfig {
   max_attempts_per_model: number
   max_input_runes: number
   max_output_tokens: number
-  reasoning_effort: 'low' | 'medium' | 'high' | 'xhigh'
+  reasoning_effort: 'none' | 'low' | 'medium' | 'high' | 'xhigh'
   prompt_injection_reviewer_enabled: boolean
   prompt_injection_max_input_runes: number
   prompt_injection_fail_closed: boolean

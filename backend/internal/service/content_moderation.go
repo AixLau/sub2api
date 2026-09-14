@@ -6341,7 +6341,7 @@ func normalizeContentModerationSemanticReviewEndpoint(endpoint string) string {
 
 func normalizeContentModerationSemanticReviewReasoningEffort(value, fallback string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "low", "medium", "high", "xhigh":
+	case "none", "low", "medium", "high", "xhigh":
 		return strings.ToLower(strings.TrimSpace(value))
 	default:
 		return fallback

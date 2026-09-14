@@ -809,6 +809,11 @@
                 <Select v-model="configForm.mode" :options="modeOptions" />
                 <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ modeDescription(configForm.mode) }}</p>
               </div>
+              <div>
+                <label class="input-label">{{ t('admin.riskControl.engineMode') }}</label>
+                <Select v-model="configForm.engine_mode" :options="engineModeOptions" />
+                <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ engineModeDescription(configForm.engine_mode) }}</p>
+              </div>
               <div class="flex items-center justify-between rounded-lg border border-gray-100 p-4 dark:border-dark-700">
                 <div>
                   <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.latestTurnOnly') }}</p>
@@ -1998,7 +2003,8 @@ import type {
 	ContentModerationAccountScope,
   ContentModerationAPIKeyLoad,
   ContentModerationAPIKeyStatus,
-  ContentModerationConfig,
+	ContentModerationConfig,
+	ContentModerationEngineMode,
 	ContentModerationEvidence,
   ContentModerationKeywordRule,
   ContentModerationLog,
@@ -2157,6 +2163,7 @@ const configForm = reactive({
 	resource_protection_status: null as ContentModerationConfig['resource_protection_status'] | null,
   enabled: false,
 	  mode: 'pre_block' as ModerationMode,
+	  engine_mode: 'candidate_only' as ContentModerationEngineMode,
 	  prompt_filter_mode: 'observe' as ContentModerationPromptFilterMode,
 	  prompt_filter_threshold: 50,
 	  prompt_filter_strict_threshold: 90,
@@ -2179,7 +2186,7 @@ const configForm = reactive({
   semantic_review_max_attempts_per_model: 2,
   semantic_review_max_input_runes: 2000,
   semantic_review_max_output_tokens: 512,
-	semantic_review_reasoning_effort: 'low' as 'low' | 'medium' | 'high' | 'xhigh',
+	semantic_review_reasoning_effort: 'low' as 'none' | 'low' | 'medium' | 'high' | 'xhigh',
   prompt_injection_reviewer_enabled: false,
   prompt_injection_max_input_runes: 12000,
   prompt_injection_fail_closed: false,
@@ -2328,6 +2335,16 @@ const modeOptions = computed<SelectOption[]>(() => [
   { value: 'observe', label: t('admin.riskControl.modeObserve') },
   { value: 'off', label: t('admin.riskControl.modeOff') },
 ])
+const engineModeOptions = computed<SelectOption[]>(() => [
+  { value: 'candidate_only', label: t('admin.riskControl.keywordModeCandidateOnly') },
+  { value: 'api_only', label: t('admin.riskControl.keywordModeApiOnly') },
+  { value: 'hybrid', label: t('admin.riskControl.keywordModeKeywordAndApi') },
+  { value: 'rule_only', label: t('admin.riskControl.keywordModeKeywordOnly') },
+])
+function engineModeDescription(mode: string) {
+  const key = mode === 'api_only' ? 'keywordModeApiOnlyDesc' : mode === 'rule_only' ? 'keywordModeKeywordOnlyDesc' : mode === 'hybrid' ? 'keywordModeKeywordAndApiDesc' : 'keywordModeCandidateOnlyDesc'
+  return t(`admin.riskControl.${key}`)
+}
 const providerOptions = computed<SelectOption[]>(() => [
   { label: 'OpenAI', value: 'openai' },
   { label: t('admin.riskControl.providerZhipu'), value: 'zhipu' },
@@ -2422,6 +2439,7 @@ watch(() => configForm.semantic_review_api_base_url, () => {
 })
 
 const semanticReviewReasoningOptions = computed<SelectOption[]>(() => [
+  { value: 'none', label: 'none' },
   { value: 'low', label: 'low' },
 	{ value: 'medium', label: 'medium' },
 	{ value: 'high', label: 'high' },
@@ -3271,6 +3289,7 @@ function applyConfigValues(config: ContentModerationConfig) {
 	configForm.resource_protection_status = config.resource_protection_status || null
   configForm.enabled = config.enabled
   configForm.mode = config.mode
+	configForm.engine_mode = (config.engine_mode || 'candidate_only') as ContentModerationEngineMode
 	configForm.prompt_filter_mode = (config.prompt_filter_mode === 'off' || config.prompt_filter_mode === 'warn' || config.prompt_filter_mode === 'block' ? config.prompt_filter_mode : 'observe')
 	configForm.prompt_filter_threshold = config.prompt_filter_threshold || 50
 	configForm.prompt_filter_strict_threshold = config.prompt_filter_strict_threshold || 90
@@ -3545,8 +3564,8 @@ async function saveConfig() {
       thresholds: buildRiskThresholdPayload(),
       blocked_keywords: blockedKeywordList.value,
       keyword_rules: keywordRuleList.value,
-	  keyword_blocking_mode: 'keyword_and_api',
-	  engine_mode: 'candidate_only',
+	  keyword_blocking_mode: configForm.engine_mode === 'api_only' ? 'api_only' : configForm.engine_mode === 'rule_only' ? 'keyword_only' : 'keyword_and_api',
+	  engine_mode: configForm.engine_mode,
 	  model_filter: modelFilterPayload,
     }
     const keys = parseApiKeys(configForm.api_keys_text)

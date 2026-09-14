@@ -579,6 +579,7 @@ export default {
       blockedKeywordCount: '{count} keywords configured',
       blockedKeywordsLimit: 'Up to {max} keywords, each no longer than 200 characters. Duplicates are removed automatically.',
       keywordBlockingMode: 'Moderation strategy',
+      engineMode: 'Moderation engine',
       keywordModeKeywordAndApi: 'Keyword + API',
       keywordModeKeywordAndApiDesc: 'Send keyword hits to the upstream moderation API for the final decision; misses also use the API.',
       keywordModeKeywordAndApiNotice: 'Keyword + API is active: a keyword hit is not rejected immediately; the upstream moderation API makes the final decision.',

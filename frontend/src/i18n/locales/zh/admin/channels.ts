@@ -579,6 +579,7 @@ export default {
       blockedKeywordCount: '已配置 {count} 个关键词',
       blockedKeywordsLimit: '最多保存 {max} 个关键词，单个长度不超过 200 个字符；重复项会自动去重。',
       keywordBlockingMode: '审计策略',
+      engineMode: '审核引擎',
       keywordModeKeywordAndApi: '关键词 + API',
       keywordModeKeywordAndApiDesc: '命中关键词后调用上游审计接口，由模型最终决定；未命中时也调用上游审计接口。',
       keywordModeKeywordAndApiNotice: '当前为「关键词 + API」策略：命中关键词的请求不会直接 403，仍会调用上游审计接口，由模型最终决定。',

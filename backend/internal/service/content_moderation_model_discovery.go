@@ -220,7 +220,6 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 			"input":             input.Text,
 			"max_output_tokens": cfg.MaxOutputTokens,
 			"reasoning":         map[string]any{"effort": cfg.ReasoningEffort},
-			"text":              map[string]any{"format": compactSemanticReviewJSONSchema(input.FinalReview)},
 			"store":             false,
 		}
 	} else if protocol == "messages" {
@@ -329,8 +328,8 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 	content = strings.TrimPrefix(content, "```json")
 	content = strings.TrimPrefix(content, "```")
 	content = strings.TrimSuffix(strings.TrimSpace(content), "```")
-	var result ContentModerationSemanticReviewResult
-	if err := json.Unmarshal([]byte(content), &result); err != nil {
+	result, err := parseConfiguredSemanticReviewContent(content)
+	if err != nil {
 		return ContentModerationSemanticReviewResult{}, errors.New("模型返回内容无法解析")
 	}
 	parsedAt := time.Now()
@@ -338,6 +337,53 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 		"model", model, "parse_ms", parsedAt.Sub(bodyReadAt).Milliseconds(),
 		"total_ms", parsedAt.Sub(started).Milliseconds())
 	result.Usage = usage
+	return result, nil
+}
+
+// parseConfiguredSemanticReviewContent accepts the compact review object as
+// well as the common Responses-compatible aliases emitted by providers that
+// do not enforce a response schema (decision/category/reason_code).
+func parseConfiguredSemanticReviewContent(content string) (ContentModerationSemanticReviewResult, error) {
+	content = strings.TrimSpace(content)
+	content = strings.TrimPrefix(content, "```json")
+	content = strings.TrimPrefix(content, "```")
+	content = strings.TrimSuffix(strings.TrimSpace(content), "```")
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(content), &raw); err != nil {
+		return ContentModerationSemanticReviewResult{}, err
+	}
+	if _, ok := raw["verdict"]; !ok {
+		if decision, ok := raw["decision"]; ok {
+			raw["verdict"] = decision
+		}
+	}
+	if _, ok := raw["categories"]; !ok {
+		if category, ok := raw["category"]; ok {
+			var value string
+			if json.Unmarshal(category, &value) == nil && strings.TrimSpace(value) != "" {
+				raw["categories"], _ = json.Marshal([]string{value})
+			}
+		}
+	}
+	if _, ok := raw["reason_codes"]; !ok {
+		if reasonCode, ok := raw["reason_code"]; ok {
+			var value string
+			if json.Unmarshal(reasonCode, &value) == nil && strings.TrimSpace(value) != "" {
+				raw["reason_codes"], _ = json.Marshal([]string{value})
+			}
+		}
+	}
+	normalized, err := json.Marshal(raw)
+	if err != nil {
+		return ContentModerationSemanticReviewResult{}, err
+	}
+	var result ContentModerationSemanticReviewResult
+	if err := json.Unmarshal(normalized, &result); err != nil || strings.TrimSpace(result.Verdict) == "" {
+		if err == nil {
+			err = errors.New("missing verdict")
+		}
+		return ContentModerationSemanticReviewResult{}, err
+	}
 	return result, nil
 }
 
@@ -361,28 +407,4 @@ func setConfiguredCodexIdentityHeaders(req *http.Request, userAgent string) {
 	req.Header.Set("version", CodexCanonicalClientVersion())
 	req.Header.Set("x-codex-installation-id", uuid.NewString())
 	req.Header.Set("x-codex-window-id", uuid.NewString())
-}
-
-func compactSemanticReviewJSONSchema(finalReview bool) map[string]any {
-	verdicts := []string{"allow", "review", "reject"}
-	if finalReview {
-		verdicts = []string{"allow", "reject"}
-	}
-	enum := func(values ...string) map[string]any { return map[string]any{"type": "string", "enum": values} }
-	return map[string]any{
-		"type": "json_schema", "name": "semantic_review_compact_v1", "strict": true,
-		"schema": map[string]any{
-			"type": "object", "additionalProperties": false,
-			"properties": map[string]any{
-				"verdict": enum(verdicts...), "intent": enum("benign", "ambiguous", "harmful", "unknown"), "target": enum("self", "third_party", "unknown"),
-				"authorization": enum("authorized", "unauthorized", "unknown"), "information_access": enum("public", "private", "credential", "unknown"),
-				"harm_mechanism": enum("none", "credential_theft", "unauthorized_access", "exploit_delivery", "destructive_intrusion", "fraud", "privacy", "violence", "weapons", "biosecurity", "license_circumvention", "other"),
-				"harm_evidence":  enum("none", "inferred", "explicit", "unknown"), "deception_type": enum("none", "impersonation", "phishing", "fraud", "unknown"),
-				"severity": enum("low", "medium", "high", "critical"), "confidence": map[string]any{"type": "number", "minimum": 0, "maximum": 1},
-				"operationality": enum("none", "conceptual", "actionable"), "executability": enum("none", "indirect", "direct"),
-				"categories": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": 4}, "reason_codes": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": 4},
-			},
-			"required": []string{"verdict", "intent", "target", "authorization", "information_access", "harm_mechanism", "harm_evidence", "deception_type", "severity", "confidence", "operationality", "executability", "categories", "reason_codes"},
-		},
-	}
 }

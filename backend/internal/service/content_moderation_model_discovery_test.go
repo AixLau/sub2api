@@ -69,3 +69,26 @@ func TestConfiguredSemanticReviewSwitchesAfterPrimaryRetriesExhausted(t *testing
 	require.Equal(t, "primary", result.FallbackFrom)
 	require.Equal(t, int32(3), calls.Load())
 }
+
+func TestConfiguredResponsesRequestMatchesCompatibleEndpointAndSupportsNoneReasoning(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/v1/responses", r.URL.Path)
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		require.Equal(t, "primary", body["model"])
+		require.Equal(t, "none", body["reasoning"].(map[string]any)["effort"])
+		require.NotContains(t, body, "text")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"resp_test","output":[{"content":[{"type":"output_text","text":"{\"decision\":\"reject\",\"category\":\"license_cracking\",\"reason_code\":\"third_party_license_circumvention\"}"}]}]}`))
+	}))
+	defer server.Close()
+	router := &openAIContentModerationSemanticReviewRouter{}
+	cfg := defaultContentModerationSemanticReviewConfig()
+	cfg.APIBaseURL, cfg.APIKey, cfg.APIEndpoint, cfg.PrimaryModel = server.URL, "test-key", "responses", "primary"
+	cfg.ReasoningEffort = "none"
+	cfg.MaxAttemptsPerModel = 1
+	cfg.TimeoutMS, cfg.PrimaryTimeoutMS = 5000, 1000
+	result, err := router.reviewWithConfiguredAPI(context.Background(), cfg, ContentModerationSemanticReviewInput{Text: "test"})
+	require.NoError(t, err)
+	require.Equal(t, "reject", result.Verdict)
+}
