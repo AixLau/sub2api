@@ -457,6 +457,7 @@ export default {
 		severity: 'Severity',
 		categories: 'Categories',
 		reasonCodes: 'Reason Codes',
+		reasoningSummary: 'Model Reasoning Summary',
 		policyOverride: 'Policy Override',
 	  },
 	  decisionSource: 'Decision Source',

@@ -1913,6 +1913,10 @@
                     <dd class="mt-1 break-words font-medium text-violet-950 dark:text-violet-50">{{ item.value }}</dd>
                   </div>
                 </dl>
+                <div v-if="semanticReviewOutput.reasoning_summary" class="mt-4 rounded-lg border border-violet-200 bg-white/60 p-3 dark:border-violet-800/50 dark:bg-violet-950/20">
+                  <p class="text-xs font-medium text-violet-700 dark:text-violet-200">{{ t('admin.riskControl.modelResponseFields.reasoningSummary') }}</p>
+                  <p class="mt-1 whitespace-pre-wrap break-words text-sm leading-5 text-violet-950 dark:text-violet-50">{{ semanticReviewOutput.reasoning_summary }}</p>
+                </div>
                 <details class="mt-4">
                   <summary class="cursor-pointer text-xs font-medium text-violet-700 dark:text-violet-200">{{ t('admin.riskControl.viewStructuredResponse') }}</summary>
                   <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-violet-950 p-3 text-xs leading-5 text-violet-50">{{ semanticReviewOutputText }}</pre>

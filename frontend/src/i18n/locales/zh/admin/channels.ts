@@ -457,6 +457,7 @@ export default {
 		severity: '风险等级',
 		categories: '风险分类',
 		reasonCodes: '判断依据',
+		reasoningSummary: '模型判断摘要',
 		policyOverride: '策略修正',
 	  },
 	  decisionSource: '判定来源',

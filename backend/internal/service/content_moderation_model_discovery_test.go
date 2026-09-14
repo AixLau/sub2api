@@ -92,3 +92,9 @@ func TestConfiguredResponsesRequestMatchesCompatibleEndpointAndSupportsNoneReaso
 	require.NoError(t, err)
 	require.Equal(t, "reject", result.Verdict)
 }
+
+func TestSemanticReviewResponseCapturesProviderReasoningSummary(t *testing.T) {
+	response, err := parseSemanticReviewResponse([]byte(`{"reasoning":{"summary":[{"type":"summary_text","text":"判断为许可证绕过请求"}]},"output_text":"{\"verdict\":\"reject\"}"}`), "application/json")
+	require.NoError(t, err)
+	require.Equal(t, "判断为许可证绕过请求", response.ReasoningSummary)
+}

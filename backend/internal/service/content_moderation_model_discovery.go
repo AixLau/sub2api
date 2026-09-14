@@ -292,11 +292,13 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 	}
 	content := ""
 	var usage OpenAIUsage
+	reasoningSummary := ""
 	if protocol == "responses" {
 		parsed, parseErr := parseSemanticReviewResponse(data, resp.Header.Get("Content-Type"))
 		if parseErr == nil {
 			content = parsed.Text
 			usage = parsed.Usage
+			reasoningSummary = parsed.ReasoningSummary
 		}
 	} else if protocol == "messages" {
 		var envelope struct {
@@ -337,6 +339,7 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 		"model", model, "parse_ms", parsedAt.Sub(bodyReadAt).Milliseconds(),
 		"total_ms", parsedAt.Sub(started).Milliseconds())
 	result.Usage = usage
+	result.ReasoningSummary = reasoningSummary
 	return result, nil
 }
 

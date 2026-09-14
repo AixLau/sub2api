@@ -139,6 +139,7 @@ type ContentModerationSemanticReviewResult struct {
 	Operationality    string   `json:"operationality"`
 	Executability     string   `json:"executability,omitempty"`
 	ReasonCodes       []string `json:"reason_codes"`
+	ReasoningSummary  string   `json:"reasoning_summary,omitempty"`
 	// ModelSeverity preserves the model's original severity when a policy rule
 	// forces an allow and overwrites Severity, so audits can still see that a
 	// high-severity model verdict was released by policy. Never model-supplied.
@@ -863,6 +864,9 @@ func (s *ContentModerationService) processContentModerationSemanticReviewEvent(c
 		"semantic_review_reason_details":        result.ReasonDetails,
 		"semantic_review_policy_override":       policyOverride,
 		"semantic_review_instructions_revision": semanticReviewInstructionsRevision,
+	}
+	if result.ReasoningSummary != "" {
+		metadataValues["semantic_review_reasoning_summary"] = result.ReasoningSummary
 	}
 	if result.FallbackFrom != "" {
 		metadataValues["semantic_review_fallback_from"] = result.FallbackFrom
@@ -2551,6 +2555,7 @@ func (s *OpenAIGatewayService) ReviewSemanticContent(
 	result.RequestID = parsedResponse.RequestID
 	result.Usage = parsedResponse.Usage
 	result.FirstTokenMS = parsedResponse.FirstTokenMS
+	result.ReasoningSummary = parsedResponse.ReasoningSummary
 	result.InboundEndpoint = "/internal/content-moderation/semantic-review"
 	if reviewKind == contentModerationReviewKindPromptInjection {
 		result.InboundEndpoint = "/internal/content-moderation/prompt-injection-review"
@@ -2629,10 +2634,11 @@ func classifySemanticReviewUpstreamHTTPError(status int, body []byte) error {
 }
 
 type semanticReviewResponse struct {
-	Text         string
-	Usage        OpenAIUsage
-	RequestID    string
-	FirstTokenMS *int
+	Text             string
+	Usage            OpenAIUsage
+	RequestID        string
+	FirstTokenMS     *int
+	ReasoningSummary string
 }
 
 func parseSemanticReviewResponse(body []byte, contentType string) (semanticReviewResponse, error) {
@@ -2649,12 +2655,42 @@ func parseSemanticReviewResponse(body []byte, contentType string) (semanticRevie
 	if text := semanticReviewJSONText(payload); text != "" {
 		usage, _ := semanticReviewUsage(payload)
 		return semanticReviewResponse{
-			Text:      text,
-			Usage:     usage,
-			RequestID: semanticReviewResponseID(payload),
+			Text:             text,
+			Usage:            usage,
+			RequestID:        semanticReviewResponseID(payload),
+			ReasoningSummary: semanticReviewReasoningSummary(payload),
 		}, nil
 	}
 	return semanticReviewResponse{}, errors.New("semantic review response contained no text")
+}
+
+// semanticReviewReasoningSummary extracts only the provider's explicit
+// reasoning summary. Hidden reasoning tokens are never persisted or shown.
+func semanticReviewReasoningSummary(value gjson.Result) string {
+	var parts []string
+	appendSummary := func(summary gjson.Result) {
+		if !summary.IsArray() {
+			return
+		}
+		summary.ForEach(func(_, item gjson.Result) bool {
+			if text := strings.TrimSpace(item.Get("text").String()); text != "" {
+				parts = append(parts, text)
+			}
+			return true
+		})
+	}
+	if reasoning := value.Get("reasoning"); reasoning.IsObject() {
+		appendSummary(reasoning.Get("summary"))
+	}
+	if output := value.Get("output"); output.IsArray() {
+		output.ForEach(func(_, item gjson.Result) bool {
+			if strings.EqualFold(item.Get("type").String(), "reasoning") {
+				appendSummary(item.Get("summary"))
+			}
+			return true
+		})
+	}
+	return trimRunes(redactContentModerationSecrets(strings.Join(parts, "\n")), 2000)
 }
 
 func parseSemanticReviewSSE(reader io.Reader, started time.Time) (semanticReviewResponse, error) {

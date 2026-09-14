@@ -498,6 +498,9 @@ func contentModerationSemanticGateMetadata(cfg *ContentModerationConfig, content
 	metadata["semantic_review_executability"] = result.Executability
 	metadata["semantic_review_reason_codes"] = result.ReasonCodes
 	metadata["semantic_review_reason_details"] = result.ReasonDetails
+	if result.ReasoningSummary != "" {
+		metadata["semantic_review_reasoning_summary"] = result.ReasoningSummary
+	}
 	metadata["semantic_review_policy_override"] = policyOverride
 	addSemanticReviewEscalationMetadata(metadata, result)
 	metadata["semantic_review_candidate"] = candidate.Keyword
