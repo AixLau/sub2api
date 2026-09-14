@@ -17,6 +17,8 @@ type PromptEngine interface {
 	Evaluate(ctx context.Context, req Request) (*PromptDecision, error)
 }
 
+type warnPolicy interface{ WarnAllowsNextStage() bool }
+
 type Coordinator struct {
 	legacy LegacyEngine
 	prompt PromptEngine
@@ -53,7 +55,7 @@ func (c *Coordinator) check(ctx context.Context, req Request, legacy *LegacyDeci
 		if !legacyProvided {
 			legacy, _ = c.checkLegacy(ctx, req)
 		}
-		return prioritize(legacy, nil)
+		return prioritize(legacy, nil, true)
 	case ModeBlocking:
 		return c.checkBlocking(ctx, req, legacy, legacyProvided)
 	default:
@@ -63,7 +65,7 @@ func (c *Coordinator) check(ctx context.Context, req Request, legacy *LegacyDeci
 		if !legacyProvided {
 			legacy, _ = c.checkLegacy(ctx, req)
 		}
-		return prioritize(legacy, nil)
+		return prioritize(legacy, nil, true)
 	}
 }
 
@@ -103,7 +105,11 @@ func (c *Coordinator) checkBlocking(ctx context.Context, req Request, legacy *Le
 		prompt = result
 	}()
 	wg.Wait()
-	return prioritize(legacy, prompt)
+	allowWarn := true
+	if policy, ok := c.prompt.(warnPolicy); ok {
+		allowWarn = policy.WarnAllowsNextStage()
+	}
+	return prioritize(legacy, prompt, allowWarn)
 }
 
 func (c *Coordinator) checkLegacy(ctx context.Context, req Request) (*LegacyDecision, error) {
@@ -113,7 +119,7 @@ func (c *Coordinator) checkLegacy(ctx context.Context, req Request) (*LegacyDeci
 	return c.legacy.Check(ctx, req)
 }
 
-func prioritize(legacy *LegacyDecision, prompt *PromptDecision) Decision {
+func prioritize(legacy *LegacyDecision, prompt *PromptDecision, allowWarn bool) Decision {
 	if legacy != nil && legacy.Blocked {
 		status := legacy.StatusCode
 		if status < 400 || status > 599 {
@@ -142,7 +148,13 @@ func prioritize(legacy *LegacyDecision, prompt *PromptDecision) Decision {
 		return Decision{Kind: DecisionUnavailable, HTTPStatus: http.StatusServiceUnavailable, ErrorCode: ErrorCodeUnavailable,
 			ClientMessage: "提示词安全审计暂时不可用，请稍后重试", Legacy: legacy, Prompt: prompt}
 	case DecisionFlag:
-		return Decision{Kind: DecisionFlag, HTTPStatus: http.StatusOK, Legacy: legacy, Prompt: prompt, AllowNextStage: true}
+		decision := Decision{Kind: DecisionFlag, HTTPStatus: http.StatusOK, Legacy: legacy, Prompt: prompt, AllowNextStage: allowWarn}
+		if !allowWarn {
+			decision.HTTPStatus = http.StatusForbidden
+			decision.ErrorCode = ErrorCodeBlocked
+			decision.ClientMessage = "提示词安全审计命中风险，请调整输入后重试"
+		}
+		return decision
 	default:
 		return allowDecision(legacy, prompt)
 	}

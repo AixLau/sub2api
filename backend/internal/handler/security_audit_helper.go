@@ -130,6 +130,11 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 			}
 			logSecurityAuditStart(reqLog, request, len(body), false)
 			decision := coordinator.Check(c.Request.Context(), request)
+			if decision.Kind == securityaudit.DecisionBlock && legacy != nil {
+				if message := legacy.ConfiguredBlockMessage(c.Request.Context()); message != "" {
+					decision.ClientMessage = message
+				}
+			}
 			if decision.Kind == securityaudit.DecisionAllow {
 				c.Set(securityAuditWSDedupeContextKey, securityAuditWSDedupeEntry{
 					stage: request.Stage, turn: turnNo, bodyHash: bodyHash, decision: decision,

@@ -69,6 +69,7 @@ type StorageEndpoint struct {
 type storageConfig struct {
 	Enabled                bool              `json:"enabled"`
 	BlockingEnabled        bool              `json:"blocking_enabled"`
+	WarnAllowsNextStage    bool              `json:"warn_allows_next_stage"`
 	BlockingLatestTurnOnly bool              `json:"blocking_latest_turn_only"`
 	StorePassEvents        bool              `json:"store_pass_events"`
 	Strategy               string            `json:"strategy"`
@@ -108,6 +109,7 @@ type ActiveConfig struct {
 	RiskControlEnabled     bool
 	Enabled                bool
 	BlockingEnabled        bool
+	WarnAllowsNextStage    bool
 	BlockingLatestTurnOnly bool
 	StorePassEvents        bool
 	Strategy               string
@@ -142,6 +144,7 @@ type PublicEndpoint struct {
 type PublicConfig struct {
 	Enabled                bool             `json:"enabled"`
 	BlockingEnabled        bool             `json:"blocking_enabled"`
+	WarnAllowsNextStage    bool             `json:"warn_allows_next_stage"`
 	BlockingLatestTurnOnly bool             `json:"blocking_latest_turn_only"`
 	StorePassEvents        bool             `json:"store_pass_events"`
 	EffectiveMode          Mode             `json:"effective_mode"`
@@ -178,6 +181,7 @@ type UpdateConfigRequest struct {
 	ExpectedConfigVersion  int64            `json:"expected_config_version" binding:"required"`
 	Enabled                bool             `json:"enabled"`
 	BlockingEnabled        bool             `json:"blocking_enabled"`
+	WarnAllowsNextStage    bool             `json:"warn_allows_next_stage"`
 	BlockingLatestTurnOnly bool             `json:"blocking_latest_turn_only"`
 	StorePassEvents        bool             `json:"store_pass_events"`
 	Strategy               string           `json:"strategy"`
@@ -195,6 +199,7 @@ func DefaultStorageConfig() storageConfig {
 	return storageConfig{
 		Enabled:                false,
 		BlockingEnabled:        false,
+		WarnAllowsNextStage:    true,
 		BlockingLatestTurnOnly: false,
 		StorePassEvents:        false,
 		Strategy:               "priority",
@@ -474,9 +479,9 @@ func PublicFromStorage(cfg storageConfig, riskControlEnabled bool, invalidTokenE
 			Enabled: ep.Enabled, HasToken: hasToken, TokenStatus: status,
 		})
 	}
-	active := ActiveConfig{RiskControlEnabled: riskControlEnabled, Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled}
+	active := ActiveConfig{RiskControlEnabled: riskControlEnabled, Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, WarnAllowsNextStage: cfg.WarnAllowsNextStage}
 	return PublicConfig{
-		Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, BlockingLatestTurnOnly: cfg.BlockingLatestTurnOnly, StorePassEvents: cfg.StorePassEvents,
+		Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, WarnAllowsNextStage: cfg.WarnAllowsNextStage, BlockingLatestTurnOnly: cfg.BlockingLatestTurnOnly, StorePassEvents: cfg.StorePassEvents,
 		EffectiveMode: active.EffectiveMode(), Strategy: cfg.Strategy, WorkerCount: cfg.WorkerCount,
 		QueueCapacity: cfg.QueueCapacity, Scanners: scanners, AllGroups: cfg.AllGroups,
 		GroupIDs: groupIDs, Endpoints: endpoints, CaptureUsers: append([]CaptureUser(nil), cfg.CaptureUsers...), CaptureMaxRecords: cfg.CaptureMaxRecords, ConfigVersion: cfg.ConfigVersion,
@@ -486,7 +491,7 @@ func PublicFromStorage(cfg storageConfig, riskControlEnabled bool, invalidTokenE
 
 func ActiveFromStorage(cfg storageConfig, riskControlEnabled bool, encryptor SecretEncryptor) (ActiveConfig, error) {
 	active := ActiveConfig{
-		RiskControlEnabled: riskControlEnabled, Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled,
+		RiskControlEnabled: riskControlEnabled, Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, WarnAllowsNextStage: cfg.WarnAllowsNextStage,
 		BlockingLatestTurnOnly: cfg.BlockingLatestTurnOnly,
 		StorePassEvents:        cfg.StorePassEvents, Strategy: cfg.Strategy, WorkerCount: cfg.WorkerCount,
 		QueueCapacity: cfg.QueueCapacity, Scanners: append([]string(nil), cfg.Scanners...), AllGroups: cfg.AllGroups,

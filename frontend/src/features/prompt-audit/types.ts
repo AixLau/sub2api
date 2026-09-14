@@ -24,6 +24,7 @@ export interface PromptAuditEndpointDraft extends PromptAuditEndpoint {
 export interface PromptAuditConfig {
   enabled: boolean
   blocking_enabled: boolean
+  warn_allows_next_stage?: boolean
   blocking_latest_turn_only: boolean
   store_pass_events: boolean
   effective_mode: PromptAuditMode
@@ -52,6 +53,7 @@ export interface PromptAuditUpdateRequest {
   expected_config_version: number
   enabled: boolean
   blocking_enabled: boolean
+  warn_allows_next_stage?: boolean
   blocking_latest_turn_only: boolean
   store_pass_events: boolean
   strategy: 'priority'
