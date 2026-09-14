@@ -746,18 +746,21 @@
     "supports_xhigh_reasoning_effort": true
   },
   "deepseek-v4-flash": {
-    "cache_read_input_token_cost": 7e-09,
-    "input_cost_per_token": 2.2e-07,
+    "cache_creation_input_token_cost": 0.0,
+    "cache_read_input_token_cost": 1.4e-08,
+    "input_cost_per_token": 4.4e-07,
+    "input_cost_per_token_cache_hit": 1.4e-08,
     "litellm_provider": "deepseek",
-    "max_input_tokens": 1048576,
+    "max_input_tokens": 1000000,
     "max_output_tokens": 393216,
     "max_tokens": 393216,
     "mode": "chat",
-    "output_cost_per_token": 6.6e-07,
+    "output_cost_per_token": 1.32e-06,
     "source": "https://api-docs.deepseek.com/quick_start/pricing",
     "supported_endpoints": [
       "/v1/chat/completions"
     ],
+    "supports_assistant_prefill": true,
     "supports_function_calling": true,
     "supports_native_streaming": true,
     "supports_parallel_function_calling": true,
@@ -765,21 +768,25 @@
     "supports_reasoning": true,
     "supports_response_schema": true,
     "supports_system_messages": true,
-    "supports_tool_choice": true
+    "supports_tool_choice": true,
+    "supports_vision": false
   },
   "deepseek-v4-flash-vision-exp": {
-    "cache_read_input_token_cost": 7e-09,
-    "input_cost_per_token": 2.2e-07,
+    "cache_creation_input_token_cost": 0.0,
+    "cache_read_input_token_cost": 1.4e-08,
+    "input_cost_per_token": 4.4e-07,
+    "input_cost_per_token_cache_hit": 1.4e-08,
     "litellm_provider": "deepseek",
-    "max_input_tokens": 1048576,
+    "max_input_tokens": 1000000,
     "max_output_tokens": 393216,
     "max_tokens": 393216,
     "mode": "chat",
-    "output_cost_per_token": 6.6e-07,
+    "output_cost_per_token": 1.32e-06,
     "source": "https://api-docs.deepseek.com/quick_start/pricing",
     "supported_endpoints": [
       "/v1/chat/completions"
     ],
+    "supports_assistant_prefill": true,
     "supports_function_calling": true,
     "supports_native_streaming": true,
     "supports_parallel_function_calling": true,
@@ -791,18 +798,21 @@
     "supports_vision": true
   },
   "deepseek-v4-pro": {
-    "cache_read_input_token_cost": 2.2e-08,
-    "input_cost_per_token": 6.6e-07,
+    "cache_creation_input_token_cost": 0.0,
+    "cache_read_input_token_cost": 4.4e-08,
+    "input_cost_per_token": 1.32e-06,
+    "input_cost_per_token_cache_hit": 4.4e-08,
     "litellm_provider": "deepseek",
-    "max_input_tokens": 1048576,
+    "max_input_tokens": 1000000,
     "max_output_tokens": 393216,
     "max_tokens": 393216,
     "mode": "chat",
-    "output_cost_per_token": 1.98e-06,
+    "output_cost_per_token": 3.96e-06,
     "source": "https://api-docs.deepseek.com/quick_start/pricing",
     "supported_endpoints": [
       "/v1/chat/completions"
     ],
+    "supports_assistant_prefill": true,
     "supports_function_calling": true,
     "supports_native_streaming": true,
     "supports_parallel_function_calling": true,
@@ -810,7 +820,8 @@
     "supports_reasoning": true,
     "supports_response_schema": true,
     "supports_system_messages": true,
-    "supports_tool_choice": true
+    "supports_tool_choice": true,
+    "supports_vision": false
   },
   "gemini-2.0-flash": {
     "cache_read_input_token_cost": 2.5e-08,
@@ -5186,12 +5197,12 @@
     "cache_read_input_token_cost": 5e-07,
     "cache_read_input_token_cost_above_272k_tokens": 1e-06,
     "cache_read_input_token_cost_flex": 2.5e-07,
-    "cache_read_input_token_cost_priority": 1.25e-6,
+    "cache_read_input_token_cost_priority": 1.25e-06,
     "input_cost_per_token": 5e-06,
     "input_cost_per_token_above_272k_tokens": 1e-05,
     "input_cost_per_token_batches": 2.5e-06,
     "input_cost_per_token_flex": 2.5e-06,
-    "input_cost_per_token_priority": 12.5e-6,
+    "input_cost_per_token_priority": 1.25e-05,
     "litellm_provider": "openai",
     "max_input_tokens": 1050000,
     "max_output_tokens": 128000,
@@ -5201,7 +5212,7 @@
     "output_cost_per_token_above_272k_tokens": 4.5e-05,
     "output_cost_per_token_batches": 1.5e-05,
     "output_cost_per_token_flex": 1.5e-05,
-    "output_cost_per_token_priority": 75e-6,
+    "output_cost_per_token_priority": 7.5e-05,
     "supported_endpoints": [
       "/v1/chat/completions",
       "/v1/batch",
@@ -5234,12 +5245,12 @@
     "cache_read_input_token_cost": 5e-07,
     "cache_read_input_token_cost_above_272k_tokens": 1e-06,
     "cache_read_input_token_cost_flex": 2.5e-07,
-    "cache_read_input_token_cost_priority": 1.25e-6,
+    "cache_read_input_token_cost_priority": 1.25e-06,
     "input_cost_per_token": 5e-06,
     "input_cost_per_token_above_272k_tokens": 1e-05,
     "input_cost_per_token_batches": 2.5e-06,
     "input_cost_per_token_flex": 2.5e-06,
-    "input_cost_per_token_priority": 12.5e-6,
+    "input_cost_per_token_priority": 1.25e-05,
     "litellm_provider": "openai",
     "max_input_tokens": 1050000,
     "max_output_tokens": 128000,
@@ -5249,7 +5260,7 @@
     "output_cost_per_token_above_272k_tokens": 4.5e-05,
     "output_cost_per_token_batches": 1.5e-05,
     "output_cost_per_token_flex": 1.5e-05,
-    "output_cost_per_token_priority": 75e-6,
+    "output_cost_per_token_priority": 7.5e-05,
     "supported_endpoints": [
       "/v1/chat/completions",
       "/v1/batch",
@@ -6325,68 +6336,251 @@
     "supports_vision": true,
     "supports_web_search": true
   },
-    "gpt-image-2.5-flare": {
-        "cache_read_input_image_token_cost": 2e-06,
-        "cache_read_input_token_cost": 1.25e-06,
-        "input_cost_per_image_token": 8e-06,
-        "input_cost_per_token": 5e-06,
-        "litellm_provider": "openai",
-        "mode": "image_generation",
-        "output_cost_per_image_token": 3e-05,
-        "output_cost_per_token": 0,
-        "supported_endpoints": [
-            "/v1/images/generations",
-            "/v1/images/edits"
-        ],
-        "supports_vision": true,
-        "supports_prompt_caching": true
-    },
-    "gpt-image-2.5-flare-2026-09-08": {
-        "cache_read_input_image_token_cost": 2e-06,
-        "cache_read_input_token_cost": 1.25e-06,
-        "input_cost_per_image_token": 8e-06,
-        "input_cost_per_token": 5e-06,
-        "litellm_provider": "openai",
-        "mode": "image_generation",
-        "output_cost_per_image_token": 3e-05,
-        "output_cost_per_token": 0,
-        "supported_endpoints": [
-            "/v1/images/generations",
-            "/v1/images/edits"
-        ],
-        "supports_vision": true,
-        "supports_prompt_caching": true
-    },
-    "gpt-image-2.5-sunburst": {
-        "cache_read_input_image_token_cost": 2e-06,
-        "cache_read_input_token_cost": 1.25e-06,
-        "input_cost_per_image_token": 8e-06,
-        "input_cost_per_token": 5e-06,
-        "litellm_provider": "openai",
-        "mode": "image_generation",
-        "output_cost_per_image_token": 3e-05,
-        "output_cost_per_token": 0,
-        "supported_endpoints": [
-            "/v1/images/generations",
-            "/v1/images/edits"
-        ],
-        "supports_vision": true,
-        "supports_prompt_caching": true
-    },
-    "gpt-image-2.5-sunburst-2026-09-08": {
-        "cache_read_input_image_token_cost": 2e-06,
-        "cache_read_input_token_cost": 1.25e-06,
-        "input_cost_per_image_token": 8e-06,
-        "input_cost_per_token": 5e-06,
-        "litellm_provider": "openai",
-        "mode": "image_generation",
-        "output_cost_per_image_token": 3e-05,
-        "output_cost_per_token": 0,
-        "supported_endpoints": [
-            "/v1/images/generations",
-            "/v1/images/edits"
-        ],
-        "supports_vision": true,
-        "supports_prompt_caching": true
-    }
+  "gpt-image-2.5-flare": {
+    "cache_read_input_image_token_cost": 2e-06,
+    "cache_read_input_token_cost": 1.25e-06,
+    "input_cost_per_image_token": 8e-06,
+    "input_cost_per_token": 5e-06,
+    "litellm_provider": "openai",
+    "mode": "image_generation",
+    "output_cost_per_image_token": 3e-05,
+    "output_cost_per_token": 0,
+    "supported_endpoints": [
+      "/v1/images/generations",
+      "/v1/images/edits"
+    ],
+    "supports_vision": true,
+    "supports_prompt_caching": true
+  },
+  "gpt-image-2.5-flare-2026-09-08": {
+    "cache_read_input_image_token_cost": 2e-06,
+    "cache_read_input_token_cost": 1.25e-06,
+    "input_cost_per_image_token": 8e-06,
+    "input_cost_per_token": 5e-06,
+    "litellm_provider": "openai",
+    "mode": "image_generation",
+    "output_cost_per_image_token": 3e-05,
+    "output_cost_per_token": 0,
+    "supported_endpoints": [
+      "/v1/images/generations",
+      "/v1/images/edits"
+    ],
+    "supports_vision": true,
+    "supports_prompt_caching": true
+  },
+  "gpt-image-2.5-sunburst": {
+    "cache_read_input_image_token_cost": 2e-06,
+    "cache_read_input_token_cost": 1.25e-06,
+    "input_cost_per_image_token": 8e-06,
+    "input_cost_per_token": 5e-06,
+    "litellm_provider": "openai",
+    "mode": "image_generation",
+    "output_cost_per_image_token": 3e-05,
+    "output_cost_per_token": 0,
+    "supported_endpoints": [
+      "/v1/images/generations",
+      "/v1/images/edits"
+    ],
+    "supports_vision": true,
+    "supports_prompt_caching": true
+  },
+  "gpt-image-2.5-sunburst-2026-09-08": {
+    "cache_read_input_image_token_cost": 2e-06,
+    "cache_read_input_token_cost": 1.25e-06,
+    "input_cost_per_image_token": 8e-06,
+    "input_cost_per_token": 5e-06,
+    "litellm_provider": "openai",
+    "mode": "image_generation",
+    "output_cost_per_image_token": 3e-05,
+    "output_cost_per_token": 0,
+    "supported_endpoints": [
+      "/v1/images/generations",
+      "/v1/images/edits"
+    ],
+    "supports_vision": true,
+    "supports_prompt_caching": true
+  },
+  "deepseek-chat": {
+    "cache_read_input_token_cost": 2.8e-08,
+    "input_cost_per_token": 2.8e-07,
+    "litellm_provider": "deepseek",
+    "max_input_tokens": 131072,
+    "max_output_tokens": 8192,
+    "max_tokens": 8192,
+    "mode": "chat",
+    "output_cost_per_token": 4.2e-07,
+    "source": "https://api-docs.deepseek.com/quick_start/pricing",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ],
+    "supports_function_calling": true,
+    "supports_native_streaming": true,
+    "supports_parallel_function_calling": true,
+    "supports_prompt_caching": true,
+    "supports_response_schema": true,
+    "supports_system_messages": true,
+    "supports_tool_choice": true
+  },
+  "deepseek-flash": {
+    "cache_creation_input_token_cost": 0.0,
+    "cache_read_input_token_cost": 6e-09,
+    "input_cost_per_token": 3e-07,
+    "input_cost_per_token_cache_hit": 6e-09,
+    "litellm_provider": "deepseek",
+    "max_input_tokens": 1000000,
+    "max_output_tokens": 393216,
+    "max_tokens": 393216,
+    "mode": "chat",
+    "output_cost_per_token": 1.2e-06,
+    "source": "https://api-docs.deepseek.com/quick_start/pricing",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ],
+    "supports_assistant_prefill": true,
+    "supports_function_calling": true,
+    "supports_native_streaming": true,
+    "supports_parallel_function_calling": true,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_system_messages": true,
+    "supports_tool_choice": true,
+    "supports_vision": true
+  },
+  "deepseek-reasoner": {
+    "cache_read_input_token_cost": 2.8e-08,
+    "input_cost_per_token": 2.8e-07,
+    "litellm_provider": "deepseek",
+    "max_input_tokens": 131072,
+    "max_output_tokens": 65536,
+    "max_tokens": 65536,
+    "mode": "chat",
+    "output_cost_per_token": 4.2e-07,
+    "source": "https://api-docs.deepseek.com/quick_start/pricing",
+    "supported_endpoints": [
+      "/v1/chat/completions"
+    ],
+    "supports_function_calling": false,
+    "supports_native_streaming": true,
+    "supports_parallel_function_calling": false,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_system_messages": true,
+    "supports_tool_choice": false
+  },
+  "deepseek-v3-2-251201": {
+    "input_cost_per_token": 0.0,
+    "litellm_provider": "volcengine",
+    "max_input_tokens": 98304,
+    "max_output_tokens": 32768,
+    "max_tokens": 32768,
+    "mode": "chat",
+    "output_cost_per_token": 0.0,
+    "supports_assistant_prefill": true,
+    "supports_function_calling": true,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_tool_choice": true
+  },
+  "glm-5.1": {
+    "cache_creation_input_token_cost": 1e-06,
+    "cache_read_input_token_cost": 2.8e-07,
+    "input_cost_per_token": 1.4e-06,
+    "litellm_provider": "zhipu",
+    "max_input_tokens": 81920,
+    "max_output_tokens": 81920,
+    "max_tokens": 81920,
+    "mode": "chat",
+    "multi_vendor": true,
+    "output_cost_per_token": 4.4e-06,
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "supports_function_calling": true,
+    "supports_native_streaming": true,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_system_messages": true,
+    "supports_tool_choice": true
+  },
+  "kimi-k2.5": {
+    "cache_creation_input_token_cost": 6e-07,
+    "cache_read_input_token_cost": 1e-07,
+    "input_cost_per_token": 6e-07,
+    "litellm_provider": "moonshot",
+    "max_input_tokens": 131072,
+    "max_output_tokens": 131072,
+    "max_tokens": 131072,
+    "mode": "chat",
+    "multi_vendor": true,
+    "output_cost_per_token": 2.25e-06,
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "supports_function_calling": true,
+    "supports_native_streaming": true,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_system_messages": true,
+    "supports_tool_choice": true
+  },
+  "kimi-k2.6": {
+    "cache_creation_input_token_cost": 9.54e-07,
+    "cache_read_input_token_cost": 1.61e-07,
+    "input_cost_per_token": 9.54e-07,
+    "litellm_provider": "moonshot",
+    "max_input_tokens": 1000000,
+    "max_output_tokens": 384000,
+    "max_tokens": 384000,
+    "mode": "chat",
+    "multi_vendor": true,
+    "output_cost_per_token": 3.961e-06,
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "supports_function_calling": true,
+    "supports_native_streaming": true,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_system_messages": true,
+    "supports_tool_choice": true
+  },
+  "minimax-m2.7": {
+    "cache_creation_input_token_cost": 3.75e-07,
+    "cache_read_input_token_cost": 6e-08,
+    "input_cost_per_token": 3e-07,
+    "litellm_provider": "minimax",
+    "max_input_tokens": 131072,
+    "max_output_tokens": 131072,
+    "max_tokens": 131072,
+    "mode": "chat",
+    "multi_vendor": true,
+    "output_cost_per_token": 1.2e-06,
+    "supported_input_modalities": [
+      "text"
+    ],
+    "supported_output_modalities": [
+      "text"
+    ],
+    "supports_function_calling": true,
+    "supports_native_streaming": true,
+    "supports_prompt_caching": true,
+    "supports_reasoning": true,
+    "supports_response_schema": true,
+    "supports_system_messages": true,
+    "supports_tool_choice": true
+  }
 }
