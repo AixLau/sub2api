@@ -1911,6 +1911,13 @@ func (h *OpenAIGatewayHandler) acquireResponsesUserSlot(
 	reqLog *zap.Logger,
 ) (func(), bool) {
 	ctx := c.Request.Context()
+	if h.contentModerationService != nil && h.contentModerationService.IsInternalSemanticReviewRequest(c.Request) {
+		// Internal semantic-review calls reuse the caller's identity. Acquiring
+		// that same user's slot would wait for the outer request to finish, while
+		// the outer request is waiting for this reviewer response.
+		reqLog.Info("openai.skip_user_slot_internal_semantic_review")
+		return func() {}, true
+	}
 	userReleaseFunc, err := h.concurrencyHelper.AcquireUserSlotWithWait(c, userID, userConcurrency, reqStream, streamStarted)
 	if err != nil {
 		reqLog.Warn("openai.user_slot_acquire_failed", zap.Error(err))
