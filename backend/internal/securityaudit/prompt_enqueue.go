@@ -83,7 +83,7 @@ func (e *Enqueuer) Enqueue(ctx context.Context, req Request) error {
 		LogWarn(EventEnqueueDropped, mergeLogFields(baseFields, map[string]any{"status": "dropped", "error_code": "snapshot_invalid"}))
 		return nil
 	}
-	job, err := e.repo.CreateStagingWithCapacity(ctx, snapshot.Redacted(), cfg.ConfigVersion, DefaultMaxAttempts, cfg.QueueCapacity)
+	job, err := e.repo.CreateStagingWithCapacity(ctx, snapshot.Redacted(), cfg.ConfigVersion, cfg.MaxAttempts, cfg.QueueCapacity)
 	if err != nil {
 		code := "database_unavailable"
 		if errors.Is(err, ErrQueueFull) {

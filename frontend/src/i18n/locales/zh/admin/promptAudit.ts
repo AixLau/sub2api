@@ -56,7 +56,7 @@ export default {
       scanners: 'Qwen3Guard 输入风险分类', workerCount: 'Worker 数量', queueCapacity: '持久队列容量', strategy: '节点策略', strategyHint: '按配置顺序优先尝试，必要时故障切换。',
       captureTitle: '指定用户请求记录', captureDescription: '仅为明确选择的用户保留完整、未脱敏请求体；建议只在短期排障时使用。', captureUserId: '用户 ID', captureEmail: '邮箱', captureAdd: '添加用户', captureMaxRecords: '每个用户最多保留条数（0 表示不限制）',
     },
-    saveBar: { enabled: '启用提示词审计', blocking: '同步阻止', warnAllowsNextStage: 'Warn 风险允许放行', blockingLatestTurnOnly: '仅审最新输入和上一轮输出', storePass: '保存安全事件', dirty: '有未保存的更改', synced: '配置已同步' },
+    saveBar: { enabled: '启用提示词审计', blocking: '同步阻止', warnAllowsNextStage: 'Warn 风险允许放行', maxAttempts: '最大尝试次数', blockingLatestTurnOnly: '仅审最新输入和上一轮输出', storePass: '保存安全事件', dirty: '有未保存的更改', synced: '配置已同步' },
     blockingConfirm: {
       title: '开启同步阻止？',
       message: '适用请求会在账号选择、计费和访问上游之前等待 Guard。命中 Block、Guard 不可用或响应非法时，请求都不会访问上游。',

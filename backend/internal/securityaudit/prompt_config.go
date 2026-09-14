@@ -14,20 +14,21 @@ import (
 )
 
 const (
-	DefaultWorkerCount    = 4
-	MaxWorkerCount        = 32
-	DefaultQueueCapacity  = 32768
-	MaxQueueCapacity      = 100000
-	DefaultTimeoutMS      = 3000
-	MinTimeoutMS          = 100
-	MaxTimeoutMS          = 30000
-	DefaultInputLimit     = 4000
-	MinInputLimit         = 128
-	MaxInputLimit         = 100000
-	DefaultMaxInputTokens = 4000
-	DefaultMaxAttempts    = 3
-	MinMaxInputTokens     = 1
-	DefaultPayloadTTL     = 30 * time.Minute
+	DefaultWorkerCount     = 4
+	MaxWorkerCount         = 32
+	DefaultQueueCapacity   = 32768
+	MaxQueueCapacity       = 100000
+	DefaultTimeoutMS       = 3000
+	MinTimeoutMS           = 100
+	MaxTimeoutMS           = 30000
+	DefaultInputLimit      = 4000
+	MinInputLimit          = 128
+	MaxInputLimit          = 100000
+	DefaultMaxInputTokens  = 4000
+	DefaultMaxAttempts     = 3
+	MaxPromptAuditAttempts = 10
+	MinMaxInputTokens      = 1
+	DefaultPayloadTTL      = 30 * time.Minute
 )
 
 type SecretEncryptor interface {
@@ -71,6 +72,7 @@ type storageConfig struct {
 	Enabled                bool              `json:"enabled"`
 	BlockingEnabled        bool              `json:"blocking_enabled"`
 	WarnAllowsNextStage    bool              `json:"warn_allows_next_stage"`
+	MaxAttempts            int               `json:"max_attempts"`
 	BlockingLatestTurnOnly bool              `json:"blocking_latest_turn_only"`
 	StorePassEvents        bool              `json:"store_pass_events"`
 	Strategy               string            `json:"strategy"`
@@ -111,6 +113,7 @@ type ActiveConfig struct {
 	Enabled                bool
 	BlockingEnabled        bool
 	WarnAllowsNextStage    bool
+	MaxAttempts            int
 	BlockingLatestTurnOnly bool
 	StorePassEvents        bool
 	Strategy               string
@@ -146,6 +149,7 @@ type PublicConfig struct {
 	Enabled                bool             `json:"enabled"`
 	BlockingEnabled        bool             `json:"blocking_enabled"`
 	WarnAllowsNextStage    bool             `json:"warn_allows_next_stage"`
+	MaxAttempts            int              `json:"max_attempts"`
 	BlockingLatestTurnOnly bool             `json:"blocking_latest_turn_only"`
 	StorePassEvents        bool             `json:"store_pass_events"`
 	EffectiveMode          Mode             `json:"effective_mode"`
@@ -183,6 +187,7 @@ type UpdateConfigRequest struct {
 	Enabled                bool             `json:"enabled"`
 	BlockingEnabled        bool             `json:"blocking_enabled"`
 	WarnAllowsNextStage    bool             `json:"warn_allows_next_stage"`
+	MaxAttempts            int              `json:"max_attempts"`
 	BlockingLatestTurnOnly bool             `json:"blocking_latest_turn_only"`
 	StorePassEvents        bool             `json:"store_pass_events"`
 	Strategy               string           `json:"strategy"`
@@ -201,6 +206,7 @@ func DefaultStorageConfig() storageConfig {
 		Enabled:                false,
 		BlockingEnabled:        false,
 		WarnAllowsNextStage:    true,
+		MaxAttempts:            DefaultMaxAttempts,
 		BlockingLatestTurnOnly: false,
 		StorePassEvents:        false,
 		Strategy:               "priority",
@@ -245,6 +251,12 @@ func normalizeStorageConfig(cfg *storageConfig) {
 	}
 	if cfg.QueueCapacity == 0 {
 		cfg.QueueCapacity = DefaultQueueCapacity
+	}
+	if cfg.MaxAttempts <= 0 {
+		cfg.MaxAttempts = DefaultMaxAttempts
+	}
+	if cfg.MaxAttempts > MaxPromptAuditAttempts {
+		cfg.MaxAttempts = MaxPromptAuditAttempts
 	}
 	if len(cfg.Scanners) == 0 {
 		cfg.Scanners = append([]string(nil), AllScannerIDs...)
@@ -362,6 +374,9 @@ func validateUpdateConfigRequest(req UpdateConfigRequest) error {
 	}
 	if req.QueueCapacity < 1 || req.QueueCapacity > MaxQueueCapacity {
 		return infraerrors.BadRequest("prompt_audit_invalid_queue_capacity", "队列容量超出允许范围")
+	}
+	if req.MaxAttempts < 0 || req.MaxAttempts > MaxPromptAuditAttempts {
+		return infraerrors.BadRequest("prompt_audit_invalid_max_attempts", "提示词审计最大尝试次数必须在 1 到 10 次之间")
 	}
 	if req.CaptureMaxRecords < 0 || req.CaptureMaxRecords > 100000 {
 		return infraerrors.BadRequest("prompt_audit_invalid_capture_max_records", "指定用户保留条数必须在 0 到 100000 之间")
@@ -482,9 +497,9 @@ func PublicFromStorage(cfg storageConfig, riskControlEnabled bool, invalidTokenE
 			Enabled: ep.Enabled, HasToken: hasToken, TokenStatus: status,
 		})
 	}
-	active := ActiveConfig{RiskControlEnabled: riskControlEnabled, Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, WarnAllowsNextStage: cfg.WarnAllowsNextStage}
+	active := ActiveConfig{RiskControlEnabled: riskControlEnabled, Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, WarnAllowsNextStage: cfg.WarnAllowsNextStage, MaxAttempts: cfg.MaxAttempts}
 	return PublicConfig{
-		Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, WarnAllowsNextStage: cfg.WarnAllowsNextStage, BlockingLatestTurnOnly: cfg.BlockingLatestTurnOnly, StorePassEvents: cfg.StorePassEvents,
+		Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, WarnAllowsNextStage: cfg.WarnAllowsNextStage, MaxAttempts: cfg.MaxAttempts, BlockingLatestTurnOnly: cfg.BlockingLatestTurnOnly, StorePassEvents: cfg.StorePassEvents,
 		EffectiveMode: active.EffectiveMode(), Strategy: cfg.Strategy, WorkerCount: cfg.WorkerCount,
 		QueueCapacity: cfg.QueueCapacity, Scanners: scanners, AllGroups: cfg.AllGroups,
 		GroupIDs: groupIDs, Endpoints: endpoints, CaptureUsers: append([]CaptureUser(nil), cfg.CaptureUsers...), CaptureMaxRecords: cfg.CaptureMaxRecords, ConfigVersion: cfg.ConfigVersion,
@@ -494,7 +509,7 @@ func PublicFromStorage(cfg storageConfig, riskControlEnabled bool, invalidTokenE
 
 func ActiveFromStorage(cfg storageConfig, riskControlEnabled bool, encryptor SecretEncryptor) (ActiveConfig, error) {
 	active := ActiveConfig{
-		RiskControlEnabled: riskControlEnabled, Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, WarnAllowsNextStage: cfg.WarnAllowsNextStage,
+		RiskControlEnabled: riskControlEnabled, Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, WarnAllowsNextStage: cfg.WarnAllowsNextStage, MaxAttempts: cfg.MaxAttempts,
 		BlockingLatestTurnOnly: cfg.BlockingLatestTurnOnly,
 		StorePassEvents:        cfg.StorePassEvents, Strategy: cfg.Strategy, WorkerCount: cfg.WorkerCount,
 		QueueCapacity: cfg.QueueCapacity, Scanners: append([]string(nil), cfg.Scanners...), AllGroups: cfg.AllGroups,

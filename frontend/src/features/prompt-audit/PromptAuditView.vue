@@ -96,6 +96,7 @@
           <SaveToggle :label="t('admin.promptAudit.saveBar.enabled')" :model-value="draft.enabled" data-test="enabled-toggle" @update:model-value="setEnabled" />
           <SaveToggle :label="t('admin.promptAudit.saveBar.blocking')" :model-value="draft.blocking_enabled" :disabled="!draft.enabled" data-test="blocking-toggle" @update:model-value="setBlocking" />
           <SaveToggle :label="t('admin.promptAudit.saveBar.warnAllowsNextStage')" :model-value="draft.warn_allows_next_stage ?? true" :disabled="!draft.enabled || !draft.blocking_enabled" data-test="warn-allows-next-stage-toggle" @update:model-value="replaceDraft({ ...draft!, warn_allows_next_stage: $event })" />
+          <label class="flex items-center gap-2 text-sm"><span>{{ t('admin.promptAudit.saveBar.maxAttempts') }}</span><input v-model.number="draft.max_attempts" type="number" min="1" max="10" class="input w-20" /></label>
           <SaveToggle :label="t('admin.promptAudit.saveBar.blockingLatestTurnOnly')" :model-value="draft.blocking_latest_turn_only" :disabled="!draft.enabled || !draft.blocking_enabled" data-test="blocking-latest-turn-only-toggle" @update:model-value="replaceDraft({ ...draft!, blocking_latest_turn_only: $event })" />
           <SaveToggle :label="t('admin.promptAudit.saveBar.storePass')" :model-value="draft.store_pass_events" data-test="store-pass-toggle" @update:model-value="replaceDraft({ ...draft!, store_pass_events: $event })" />
         </div>
