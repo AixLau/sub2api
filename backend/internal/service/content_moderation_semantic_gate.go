@@ -24,7 +24,7 @@ type contentModerationSemanticGateCandidate struct {
 type contentModerationRequiredSemanticReviewContextKey struct{}
 
 func contentModerationSemanticGateCandidateForKeyword(cfg *ContentModerationConfig, content ContentModerationInput, rule ContentModerationKeywordRule, router ContentModerationSemanticReviewRouter) (contentModerationSemanticGateCandidate, bool) {
-	if cfg == nil || !cfg.SemanticReview.Enabled || router == nil || strings.TrimSpace(content.Text) == "" {
+	if cfg == nil || cfg.EngineMode == ContentModerationEngineModeRulesOnly || !cfg.SemanticReview.Enabled || router == nil || strings.TrimSpace(content.Text) == "" {
 		return contentModerationSemanticGateCandidate{}, false
 	}
 	category := strings.ToLower(strings.TrimSpace(rule.Category))
@@ -53,7 +53,7 @@ func contentModerationSemanticGateCandidateForKeyword(cfg *ContentModerationConf
 }
 
 func contentModerationSemanticGateCandidateForAll(cfg *ContentModerationConfig, content ContentModerationInput, router ContentModerationSemanticReviewRouter) (contentModerationSemanticGateCandidate, bool) {
-	if cfg == nil || !cfg.SemanticReview.Enabled || router == nil || strings.TrimSpace(content.Text) == "" {
+	if cfg == nil || cfg.EngineMode == ContentModerationEngineModeRulesOnly || !cfg.SemanticReview.Enabled || router == nil || strings.TrimSpace(content.Text) == "" {
 		return contentModerationSemanticGateCandidate{}, false
 	}
 	if normalizeContentModerationSemanticReviewTrigger(cfg.SemanticReview.Trigger) != ContentModerationSemanticReviewTriggerAll {
@@ -77,7 +77,7 @@ func contentModerationSemanticGateCandidateForAll(cfg *ContentModerationConfig, 
 }
 
 func contentModerationSemanticGateCandidateForPromptFilter(cfg *ContentModerationConfig, content ContentModerationInput, hit contentModerationPromptFilterHit, router ContentModerationSemanticReviewRouter) (contentModerationSemanticGateCandidate, bool) {
-	if cfg == nil || !cfg.SemanticReview.Enabled || router == nil || len(hit.Verdict.Matches) == 0 {
+	if cfg == nil || cfg.EngineMode == ContentModerationEngineModeRulesOnly || !cfg.SemanticReview.Enabled || router == nil || len(hit.Verdict.Matches) == 0 {
 		return contentModerationSemanticGateCandidate{}, false
 	}
 	if normalizeContentModerationSemanticReviewTrigger(cfg.SemanticReview.Trigger) == ContentModerationSemanticReviewTriggerAll {
