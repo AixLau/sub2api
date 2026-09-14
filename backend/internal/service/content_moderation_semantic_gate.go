@@ -23,6 +23,22 @@ type contentModerationSemanticGateCandidate struct {
 
 type contentModerationRequiredSemanticReviewContextKey struct{}
 
+func applySemanticReviewLogAttribution(log *ContentModerationLog, result ContentModerationSemanticReviewResult, latency int, fallbackModel string) {
+	if log == nil {
+		return
+	}
+	log.DecisionSource = contentModerationDecisionSourceSemantic
+	log.ModerationProvider = "platform_openai"
+	if result.AccountID <= 0 {
+		log.ModerationProvider = "custom_api"
+	}
+	log.ModerationModel = strings.TrimSpace(result.Model)
+	if log.ModerationModel == "" {
+		log.ModerationModel = strings.TrimSpace(fallbackModel)
+	}
+	log.UpstreamLatencyMS = &latency
+}
+
 func contentModerationSemanticGateCandidateForKeyword(cfg *ContentModerationConfig, content ContentModerationInput, rule ContentModerationKeywordRule, router ContentModerationSemanticReviewRouter) (contentModerationSemanticGateCandidate, bool) {
 	if cfg == nil || cfg.EngineMode == ContentModerationEngineModeRulesOnly || !cfg.SemanticReview.Enabled || router == nil || strings.TrimSpace(content.Text) == "" {
 		return contentModerationSemanticGateCandidate{}, false
@@ -206,9 +222,11 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 	}
 	metadata := contentModerationSemanticGateMetadata(cfg, content, input.Protocol, candidate, result, policyOverride)
 	categoryScores := map[string]float64{"semantic_review": score}
+	latency := int(time.Since(started).Milliseconds())
 	if candidate.ContextOnly && policyOverride && result.Verdict == "allow" {
 		log := s.buildLog(input, cfg, ContentModerationActionSemanticReviewAllow, false, category, score, categoryScores,
-			content.ExcerptText(), nil, nil, metadata)
+			content.ExcerptText(), &latency, nil, metadata)
+		applySemanticReviewLogAttribution(log, result, latency, cfg.SemanticReview.PrimaryModel)
 		log.UserViolationEligible = false
 		s.persistContentModerationLog(ctx, cfg, log, hashText, false, false)
 	}
@@ -216,7 +234,8 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 	switch result.Verdict {
 	case "reject":
 		s.recordPreBlockSyncMetric(0, ContentModerationActionSemanticReviewReject)
-		log := s.buildLog(input, cfg, ContentModerationActionSemanticReviewReject, true, category, score, categoryScores, content.KeywordHitExcerpt(candidate.Keyword), nil, nil, metadata)
+		log := s.buildLog(input, cfg, ContentModerationActionSemanticReviewReject, true, category, score, categoryScores, content.KeywordHitExcerpt(candidate.Keyword), &latency, nil, metadata)
+		applySemanticReviewLogAttribution(log, result, latency, cfg.SemanticReview.PrimaryModel)
 		log.MatchedKeyword = candidate.Keyword
 		log.KeywordCategory = candidate.Category
 		log.KeywordSeverity = candidate.Severity
@@ -425,6 +444,7 @@ func (s *ContentModerationService) semanticReviewProviderFallback(
 		blocked := allowBlock && cfg.Mode == ContentModerationModePreBlock
 		action := ContentModerationActionSemanticReviewReject
 		log := s.buildLog(input, cfg, action, true, category, score, categoryScores, content.ExcerptText(), &latency, nil, metadata)
+		applySemanticReviewLogAttribution(log, result, latency, cfg.SemanticReview.PrimaryModel)
 		setLogMetadata(log, action)
 		log.UserViolationEligible = !candidate.ContextOnly && escalationInput.EvidenceComplete && !semanticReviewFinalInconclusive(result)
 		enforcementEligible := blocked && log.UserViolationEligible
