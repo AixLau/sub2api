@@ -110,3 +110,17 @@ func TestConfiguredSemanticReviewContentRecoversWrappedJSON(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "reject", result.Verdict)
 }
+
+func TestConfiguredSemanticReviewContentAcceptsVerdictAliases(t *testing.T) {
+	for _, input := range []string{
+		`{"judgment":"reject","category":"cyber"}`,
+		`{"judgement":"reject","categories":["cyber"]}`,
+		`{"classification":"reject","reason":"cyber_abuse"}`,
+		`{"action":"reject","harm_mechanism":"credential_theft"}`,
+		`{"allow":false,"reject":true}`,
+	} {
+		result, err := parseConfiguredSemanticReviewContent(input)
+		require.NoError(t, err, input)
+		require.Equal(t, "reject", result.Verdict, input)
+	}
+}

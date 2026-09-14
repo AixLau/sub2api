@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -263,6 +264,7 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 		"time_to_headers_ms", headersAt.Sub(started).Milliseconds())
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 	bodyReadAt := time.Now()
+	logConfiguredSemanticResponseDebug(model, resp.StatusCode, data)
 	slog.Info("content_moderation.semantic_review_configured_body_read",
 		"model", model, "response_bytes", len(data),
 		"response_read_ms", bodyReadAt.Sub(headersAt).Milliseconds(),
@@ -359,6 +361,14 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 	return result, nil
 }
 
+func logConfiguredSemanticResponseDebug(model string, status int, body []byte) {
+	if strings.TrimSpace(os.Getenv("CONTENT_MODERATION_DEBUG_RESPONSE")) != "1" {
+		return
+	}
+	slog.Warn("content_moderation.semantic_review_configured_response_debug",
+		"model", model, "status", status, "response_bytes", len(body), "response", string(body))
+}
+
 // parseConfiguredSemanticReviewContent accepts the compact review object as
 // well as the common Responses-compatible aliases emitted by providers that
 // do not enforce a response schema (decision/category/reason_code).
@@ -378,8 +388,26 @@ func parseConfiguredSemanticReviewContent(content string) (ContentModerationSema
 		}
 	}
 	if _, ok := raw["verdict"]; !ok {
-		if decision, ok := raw["decision"]; ok {
-			raw["verdict"] = decision
+		for _, alias := range []string{"decision", "judgment", "judgement", "classification", "action"} {
+			if value, exists := raw[alias]; exists {
+				raw["verdict"] = value
+				break
+			}
+		}
+	}
+	if _, ok := raw["verdict"]; !ok {
+		var rejected, allowed bool
+		if value, exists := raw["reject"]; exists {
+			_ = json.Unmarshal(value, &rejected)
+		}
+		if value, exists := raw["allow"]; exists {
+			_ = json.Unmarshal(value, &allowed)
+		}
+		switch {
+		case rejected:
+			raw["verdict"] = json.RawMessage(`"reject"`)
+		case allowed:
+			raw["verdict"] = json.RawMessage(`"allow"`)
 		}
 	}
 	if _, ok := raw["categories"]; !ok {
@@ -390,8 +418,17 @@ func parseConfiguredSemanticReviewContent(content string) (ContentModerationSema
 			}
 		}
 	}
+	if _, ok := raw["harm_mechanism"]; !ok {
+		if mechanism, exists := raw["mechanism"]; exists {
+			raw["harm_mechanism"] = mechanism
+		}
+	}
 	if _, ok := raw["reason_codes"]; !ok {
-		if reasonCode, ok := raw["reason_code"]; ok {
+		reasonCode, ok := raw["reason_code"]
+		if !ok {
+			reasonCode, ok = raw["reason"]
+		}
+		if ok {
 			var value string
 			if json.Unmarshal(reasonCode, &value) == nil && strings.TrimSpace(value) != "" {
 				raw["reason_codes"], _ = json.Marshal([]string{value})
