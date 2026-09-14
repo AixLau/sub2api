@@ -25,6 +25,7 @@ const (
 	MinInputLimit         = 128
 	MaxInputLimit         = 100000
 	DefaultMaxInputTokens = 4000
+	DefaultMaxAttempts    = 3
 	MinMaxInputTokens     = 1
 	DefaultPayloadTTL     = 30 * time.Minute
 )
@@ -397,6 +398,8 @@ func validateUpdateConfigRequest(req UpdateConfigRequest) error {
 			return infraerrors.BadRequest("prompt_audit_invalid_max_input_tokens", "审计节点最大输入 token 必须大于 0")
 		}
 	}
+	// The retry count is stored per queued job. Existing explicit values are
+	// preserved; zero uses the default of three attempts.
 	return nil
 }
 

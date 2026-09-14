@@ -113,7 +113,7 @@ func (r *PostgreSQLRepository) CreateStagingWithCapacity(ctx context.Context, sn
 		return nil, ErrQueueFull
 	}
 	if maxAttempts <= 0 {
-		maxAttempts = 3
+		maxAttempts = DefaultMaxAttempts
 	}
 	job, err := insertJob(ctx, tx, snapshot.Redacted(), ModeAsync, configVersion, "staging", maxAttempts)
 	if err != nil {
