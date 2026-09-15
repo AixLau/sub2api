@@ -1304,6 +1304,8 @@ type contentModerationTask struct {
 	enqueuedAt       time.Time
 }
 
+type contentModerationQueueDelayContextKey struct{}
+
 type contentModerationKeyHealth struct {
 	Hash           string
 	Masked         string
@@ -2121,48 +2123,21 @@ func (s *ContentModerationService) CheckAccountAttempt(ctx context.Context, inpu
 		}
 		return result, err
 	}
-	observeProviderMissingKey := cfg.externalModerationRequired() && len(cfg.apiKeys()) == 0
-	if riskEnabled && cfg.Enabled && cfg.Mode == ContentModerationModeObserve && !content.IsEmpty() && (len(cfg.apiKeys()) > 0 || cfg.SemanticReview.Enabled || observeProviderMissingKey) {
-		semanticEnqueued := false
-		focusKeyword := contentModerationLocalFocusKeyword(cfg, content)
-		if observeProviderMissingKey {
-			latency := 0
-			s.persistContentModerationErrorLog(
-				ctx,
-				input,
-				cfg,
-				content,
-				inputHash,
-				&latency,
-				nil,
-				errors.New("ordinary moderation API key unavailable"),
-			)
-			if s.semanticReviewRouter != nil {
-				semanticEnqueued = s.enqueueSemanticReviewAfterProviderFailure(ctx, input, cfg, content, inputHash, focusKeyword)
-			}
-		} else {
-			semanticEnqueued = s.enqueueSemanticReviewAfterRules(ctx, input, cfg, content, inputHash, allow)
-		}
-		disposition := ContentModerationDispositionObserveDropped
+	if riskEnabled && cfg.Enabled && cfg.Mode == ContentModerationModeObserve && !content.IsEmpty() &&
+		(cfg.SemanticReview.Enabled || cfg.EngineMode == ContentModerationEngineModeRulesOnly || cfg.EngineMode == ContentModerationEngineModeRulesAndModel || cfg.EngineMode == ContentModerationEngineModeModelOnly) {
+		// Observation is asynchronous, but it must enqueue the same unified
+		// rules/model task as pre-block mode. The retired ordinary moderation API
+		// is never called from this branch.
 		result := &ContentModerationGateResult{
-			Disposition: disposition, Decision: allow, InputHash: inputHash, PolicyRevision: policyRevision,
+			Disposition: ContentModerationDispositionObserveDropped, Decision: allow,
+			InputHash: inputHash, PolicyRevision: policyRevision,
 		}
-		auditEnqueued := semanticEnqueued
-		if len(cfg.apiKeys()) > 0 {
-			auditEnqueued = s.enqueueAsync(input, cfg, content, inputHash) || auditEnqueued
-		}
-		if auditEnqueued {
-			disposition = ContentModerationDispositionObserveEnqueued
-			result.Disposition = disposition
+		if s.enqueueAsync(input, cfg, content, inputHash) {
+			result.Disposition = ContentModerationDispositionObserveEnqueued
 			result.NextState = &ContentModerationAttemptState{
-				Disposition: disposition, Decision: allow, InputHash: inputHash, PolicyRevision: policyRevision, Reusable: true,
-				policySnapshot: policySnapshot,
+				Disposition: result.Disposition, Decision: allow, InputHash: inputHash,
+				PolicyRevision: policyRevision, Reusable: true, policySnapshot: policySnapshot,
 			}
-		}
-		if observeExtractionError || observeProviderMissingKey {
-			result.Disposition = ContentModerationDispositionProviderErrorOpen
-			result.Decision = contentModerationFailureDecision(cfg)
-			result.NextState = nil
 		}
 		return result, nil
 	}
@@ -2258,7 +2233,7 @@ func contentModerationDetachedContext(parent context.Context, timeout time.Durat
 // ordinary moderation API routing remains available only while old configs are
 // being normalized; new canonical modes never enter that path.
 func (s *ContentModerationService) checkUnifiedReviewMode(ctx context.Context, input ContentModerationCheckInput, cfg *ContentModerationConfig, content ContentModerationInput, hashText string) (*ContentModerationDecision, bool) {
-	if cfg == nil || cfg.Mode != ContentModerationModePreBlock || (cfg.EngineMode != ContentModerationEngineModeModelOnly && cfg.EngineMode != ContentModerationEngineModeRulesAndModel) || cfg.legacyEngineMode || cfg.candidateOnly() {
+	if cfg == nil || (cfg.Mode != ContentModerationModePreBlock && cfg.Mode != ContentModerationModeObserve) || (cfg.EngineMode != ContentModerationEngineModeModelOnly && cfg.EngineMode != ContentModerationEngineModeRulesAndModel) || cfg.legacyEngineMode || cfg.candidateOnly() {
 		return nil, false
 	}
 	candidateKeyword := ""
@@ -2644,6 +2619,13 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 				"keyword_blocking_mode", cfg.KeywordBlockingMode)
 			return allow, nil
 		}
+	}
+	if cfg.Mode == ContentModerationModeObserve &&
+		(cfg.EngineMode == ContentModerationEngineModeRulesOnly || cfg.EngineMode == ContentModerationEngineModeModelOnly || cfg.EngineMode == ContentModerationEngineModeRulesAndModel) {
+		if s.enqueueAsync(input, cfg, content, hashText) {
+			return &ContentModerationDecision{Allowed: true, Action: ContentModerationKeywordActionObserve}, nil
+		}
+		return allow, nil
 	}
 	if len(cfg.apiKeys()) == 0 {
 		externalRequired := cfg.externalModerationRequired()
@@ -3730,6 +3712,24 @@ func (s *ContentModerationService) worker(runtimeCtx context.Context, id int, id
 				return
 			}
 			if !taskCfg.includesModel(task.input.Model) {
+				return
+			}
+			if taskCfg.EngineMode == ContentModerationEngineModeModelOnly || taskCfg.EngineMode == ContentModerationEngineModeRulesAndModel {
+				s.asyncActive.Add(1)
+				defer s.asyncActive.Add(-1)
+				queueDelay := int(time.Since(task.enqueuedAt).Milliseconds())
+				workCtx := context.WithValue(ctx, contentModerationQueueDelayContextKey{}, queueDelay)
+				_, _ = s.checkUnifiedReviewMode(workCtx, task.input, taskCfg, task.content, task.inputHash)
+				s.asyncProcessed.Add(1)
+				return
+			}
+			if taskCfg.EngineMode == ContentModerationEngineModeRulesOnly {
+				s.asyncActive.Add(1)
+				defer s.asyncActive.Add(-1)
+				queueDelay := int(time.Since(task.enqueuedAt).Milliseconds())
+				workCtx := context.WithValue(ctx, contentModerationQueueDelayContextKey{}, queueDelay)
+				_ = s.reviewRulesOnly(workCtx, task.input, taskCfg, task.content, task.inputHash)
+				s.asyncProcessed.Add(1)
 				return
 			}
 			if len(taskCfg.apiKeys()) == 0 {
@@ -5731,6 +5731,9 @@ func (s *ContentModerationService) persistContentModerationLog(ctx context.Conte
 	ctx = persistCtx
 	if s.repo == nil {
 		return
+	}
+	if delay, ok := ctx.Value(contentModerationQueueDelayContextKey{}).(int); ok && log.QueueDelayMS == nil {
+		log.QueueDelayMS = &delay
 	}
 	if strings.TrimSpace(log.DecisionID) == "" {
 		log.DecisionID = contentModerationDecisionID(ContentModerationCheckInput{}, log, hashText)

@@ -138,7 +138,7 @@ type Engine struct {
 
 var engineCache sync.Map // map[string]*Engine
 
-var localFilesystemPathPattern = regexp.MustCompile(`(?i)(?:[a-z]:|:)[\\/][^\s"'<>，。；！？\[\](){}]*|[\\/](?:users|home|tmp|var|private)[\\/][^\s"'<>，。；！？\[\](){}]*`)
+var localFilesystemPathPattern = regexp.MustCompile("(?i)(?:^|[\\s\\\"'`=（(\\[{：])((?:[a-z]:[\\\\/]|/(?:users|home|tmp|var|private)/|~[/\\\\])[^\\s\\\"'`<>，。；！？;|&\\[\\](){}]*)")
 
 func BuiltinPatternConfigs() []PatternConfig {
 	out := builtinPatternConfigs()
@@ -428,9 +428,21 @@ func maskLocalFilesystemPaths(text string) string {
 	if text == "" || !strings.ContainsAny(text, `:\/`) {
 		return text
 	}
-	return localFilesystemPathPattern.ReplaceAllStringFunc(text, func(path string) string {
-		return strings.Repeat(" ", utf8.RuneCountInString(path))
-	})
+	matches := localFilesystemPathPattern.FindAllStringSubmatchIndex(text, -1)
+	if len(matches) == 0 {
+		return text
+	}
+	out := []byte(text)
+	for _, match := range matches {
+		if len(match) < 4 {
+			continue
+		}
+		start, end := match[2], match[3]
+		for i := start; i < end; i++ {
+			out[i] = ' '
+		}
+	}
+	return string(out)
 }
 
 func promptInjectionSignalFamilies(matches []Match) []string {

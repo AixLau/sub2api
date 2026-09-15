@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -357,7 +358,9 @@ func callConfiguredSemanticModel(ctx context.Context, cfg ContentModerationSeman
 	content = strings.TrimSuffix(strings.TrimSpace(content), "```")
 	result, err := parseConfiguredSemanticReviewContent(content)
 	if err != nil {
-		return ContentModerationSemanticReviewResult{}, errors.New("模型返回内容无法解析")
+		digest := sha256.Sum256([]byte(content))
+		slog.Warn("content_moderation.semantic_review_parse_failed", "model", model, "response_bytes", len(data), "output_sha256", fmt.Sprintf("%x", digest), "parse_error", sanitizeSemanticReviewError(err.Error()))
+		return ContentModerationSemanticReviewResult{}, fmt.Errorf("模型返回内容无法解析（%s）", sanitizeSemanticReviewError(err.Error()))
 	}
 	parsedAt := time.Now()
 	slog.Info("content_moderation.semantic_review_configured_parsed",
@@ -400,7 +403,7 @@ func logConfiguredSemanticResponseDebug(model string, status int, body []byte) {
 		return
 	}
 	slog.Warn("content_moderation.semantic_review_configured_response_debug",
-		"model", model, "status", status, "response_bytes", len(body), "response", string(body))
+		"model", model, "status", status, "response_bytes", len(body), "response", redactContentModerationSecrets(string(body)))
 }
 
 // parseConfiguredSemanticReviewContent accepts the compact review object as

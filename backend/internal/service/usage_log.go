@@ -269,6 +269,18 @@ func (u *UsageLog) ValidateActors() error {
 	if u == nil {
 		return fmt.Errorf("usage log is required")
 	}
+	// Content moderation calls use administrator-managed credentials and have
+	// no internal account actor. Their platform usage row deliberately stores
+	// account_id as NULL; user and API-key actors remain forbidden below.
+	if u.Source.Normalize() == UsageSourceContentModeration {
+		if u.AccountID < 0 {
+			return fmt.Errorf("content_moderation account_id must not be negative")
+		}
+		if u.UserID != 0 || u.APIKeyID != 0 {
+			return fmt.Errorf("content_moderation usage log must not include user_id or api_key_id")
+		}
+		return nil
+	}
 	if u.AccountID <= 0 {
 		return fmt.Errorf("usage log account_id must be positive")
 	}

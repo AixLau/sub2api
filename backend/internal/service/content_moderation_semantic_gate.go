@@ -198,15 +198,17 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 		var escalationErr error
 		escalated, _, escalationErr = s.escalateSemanticReview(ctx, cfg.SemanticReview, escalationInput, result)
 		if escalationErr != nil {
-			s.persistSemanticReviewErrorLog(ctx, input, cfg, content, hashText, cfg.SemanticReview.EscalationModel, "final_semantic_review_failed", nil, escalationErr)
+			escalationLatency := int(time.Since(started).Milliseconds())
+			s.persistSemanticReviewErrorLog(ctx, input, cfg, content, hashText, cfg.SemanticReview.EscalationModel, "final_semantic_review_failed", &escalationLatency, escalationErr)
 			return semanticReviewUnavailableDecision(cfg.Mode == ContentModerationModePreBlock), true
 		}
 		result = escalated
 	}
 	result = semanticReviewContextOnlyDecision(result, candidate.ContextOnly)
 	if result.Verdict != "allow" && result.Verdict != "reject" {
+		finalLatency := int(time.Since(started).Milliseconds())
 		s.persistSemanticReviewErrorLog(ctx, input, cfg, content, hashText, cfg.SemanticReview.EscalationModel,
-			"final_semantic_review_failed", nil, errors.New("final semantic reviewer is unavailable"))
+			"final_semantic_review_failed", &finalLatency, errors.New("final semantic reviewer is unavailable"))
 		return semanticReviewUnavailableDecision(cfg.Mode == ContentModerationModePreBlock), true
 	}
 	category := "semantic_review"
@@ -223,7 +225,7 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 	metadata := contentModerationSemanticGateMetadata(cfg, content, input.Protocol, candidate, result, policyOverride)
 	categoryScores := map[string]float64{"semantic_review": score}
 	latency := int(time.Since(started).Milliseconds())
-	if result.Verdict == "allow" && ((required && cfg.EngineMode == ContentModerationEngineModeRulesAndModel) || (candidate.ContextOnly && policyOverride)) {
+	if result.Verdict == "allow" && (required || (candidate.ContextOnly && policyOverride)) {
 		log := s.buildLog(input, cfg, ContentModerationActionSemanticReviewAllow, false, category, score, categoryScores,
 			content.ExcerptText(), &latency, nil, metadata)
 		applySemanticReviewLogAttribution(log, result, latency, cfg.SemanticReview.PrimaryModel)
@@ -251,10 +253,14 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 		log.RiskContextType = ContentModerationRiskContextActualRequest
 		log.RiskContextReason = "semantic_review_reject"
 		log.UserViolationEligible = !candidate.ContextOnly && escalationInput.EvidenceComplete && !semanticReviewFinalInconclusive(result)
-		s.enqueueRecord(ctx, input, cfg, log, hashText, log.UserViolationEligible, log.UserViolationEligible)
+		if cfg.Mode == ContentModerationModePreBlock {
+			s.enqueueRecord(ctx, input, cfg, log, hashText, log.UserViolationEligible, log.UserViolationEligible)
+		} else {
+			s.persistContentModerationLog(ctx, cfg, log, hashText, false, false)
+		}
 		return &ContentModerationDecision{
-			Allowed:                false,
-			Blocked:                true,
+			Allowed:                cfg.Mode != ContentModerationModePreBlock,
+			Blocked:                cfg.Mode == ContentModerationModePreBlock,
 			Flagged:                true,
 			Message:                cfg.BlockMessage,
 			StatusCode:             cfg.BlockStatus,

@@ -148,7 +148,10 @@ func contentModerationSemanticGateEscalationInput(
 	}
 	reviewCfg := cfg.SemanticReview
 	reviewCfg.MaxInputRunes = reviewCfg.EscalationMaxInputRunes
-	text, complete := buildContentModerationSemanticReviewEvidence(reviewCfg, content, candidate.Keyword)
+	// The fallback marker (for example provider_unavailable) is internal state,
+	// not user evidence. Rebuild the second-review input from the actual request.
+	reviewCfg.Trigger = ContentModerationSemanticReviewTriggerAll
+	text, complete := buildContentModerationSemanticReviewEvidence(reviewCfg, content, "")
 	base.Text = text
 	base.EvidenceComplete = complete
 	base.EvidenceRevision = "semantic-escalation-evidence-v1"

@@ -490,6 +490,9 @@ func (s *ContentModerationService) handleContentModerationOutboxEventFailure(ctx
 	if event.Priority == ContentModerationOutboxPriorityStrong && backoff > 10*time.Minute {
 		backoff = 10 * time.Minute
 	}
+	if event.EventType == ContentModerationOutboxEventSemanticReview && isDeterministicSemanticReviewFailure(err) {
+		nextRetry = event.MaxRetries
+	}
 	if nextRetry >= event.MaxRetries {
 		if markErr := outboxRepo.MarkEventDeadLetter(stateCtx, event.ID, event.LeaseUntil, failureText); markErr != nil {
 			slog.Warn("content_moderation.outbox_dead_letter_failed", "event_id", event.ID, "error", markErr)
@@ -518,6 +521,19 @@ func (s *ContentModerationService) handleContentModerationOutboxEventFailure(ctx
 	if retryErr := outboxRepo.ScheduleEventRetry(stateCtx, event.ID, event.LeaseUntil, nextRetry, time.Now().Add(backoff), failureText); retryErr != nil {
 		slog.Warn("content_moderation.outbox_retry_schedule_failed", "event_id", event.ID, "error", retryErr)
 	}
+}
+
+func isDeterministicSemanticReviewFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	for _, marker := range []string{"模型返回内容无法解析", "模型未返回最终审核文本", "模型输出达到上限", "verdict 必须", "缺少 verdict"} {
+		if strings.Contains(message, strings.ToLower(marker)) {
+			return true
+		}
+	}
+	return false
 }
 
 func contentModerationOutboxFailureText(event ContentModerationOutboxEvent, err error) string {

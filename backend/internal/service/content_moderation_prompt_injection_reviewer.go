@@ -65,13 +65,18 @@ func normalizeContentModerationReviewKind(value string) string {
 
 func semanticReviewInstructionsForKind(reviewKind string, finalReview bool) string {
 	if finalReview {
-		return configuredAuditPrompt + semanticReviewFinalDecisionInstructions
+		return configuredAuditPrompt + semanticReviewOutputContract + semanticReviewFinalDecisionInstructions
 	}
 	if normalizeContentModerationReviewKind(reviewKind) == contentModerationReviewKindPromptInjection {
 		return promptInjectionReviewInstructions + "\nIf the outer task requests software entitlement circumvention or virology study/research, return review with presentation=unknown and ambiguous_context for the final auditor. Mere reverse engineering, debugging, packet capture, Hook or security research terminology does not establish an active override or a prohibited outcome."
 	}
-	return configuredAuditPrompt
+	return configuredAuditPrompt + semanticReviewOutputContract
 }
+
+const semanticReviewOutputContract = `
+<output_schema>
+严格只输出一个压缩 JSON 对象：{"verdict":"allow|reject|review","category":"政策允许的单个类别","authorization":"authorized|unauthorized|not_applicable|unknown|conflicting","operationality":"non_operational|operational|unknown","executability":"non_executable|executable|unknown","information_access":"public_or_user_provided|private_or_restricted|secret_or_credentials|not_applicable|unknown","harm_mechanism":"none 或政策规定的机制","harm_evidence":"none|inferred|explicit","deception_type":"none|material_misrepresentation|impersonation|unauthorized_submission|falsification|financial_fraud|other","reason_code":"简短 snake_case 原因代码","unresolved_dimension":"none 或真正未决的维度"}。每个字段只能有一个值，不得输出候选列表、Markdown、解释或其他字段。
+</output_schema>`
 
 func semanticReviewJSONSchemaForKind(reviewKind string, finalReview bool) map[string]any {
 	if finalReview {
