@@ -914,6 +914,7 @@ describe('admin RiskControlView', () => {
 	        escalation_reasoning_effort: 'high',
 	        max_attempts_per_model: 1,
 	        max_input_runes: 2000,
+	        max_submit_runes: 2000,
 	        max_output_tokens: 512,
 	        reasoning_effort: 'low',
 	        prompt_injection_reviewer_enabled: true,
@@ -1088,6 +1089,33 @@ describe('admin RiskControlView', () => {
     await flushPromises()
     expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
       semantic_review: expect.objectContaining({ max_input_runes: 100000 }),
+    }))
+  })
+
+  it('loads and saves the submitted semantic review text budget', async () => {
+    const config = baseConfig()
+    config.semantic_review!.max_input_runes = 6000
+    config.semantic_review!.max_submit_runes = 8000
+    getConfig.mockResolvedValue(config)
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub, BaseDialog: BaseDialogStub, Icon: true,
+          Select: true, Toggle: true, Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true,
+        },
+      },
+    })
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    const input = wrapper.get<HTMLInputElement>('[data-test="semantic-review-max-submit"]')
+    expect(input.element.value).toBe('8000')
+    expect(input.attributes('max')).toBeUndefined()
+    await input.setValue('12000')
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+    await flushPromises()
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+      semantic_review: expect.objectContaining({ max_submit_runes: 12000 }),
     }))
   })
 

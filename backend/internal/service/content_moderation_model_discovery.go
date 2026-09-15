@@ -124,6 +124,12 @@ func (r *openAIContentModerationSemanticReviewRouter) reviewWithConfiguredAPI(ct
 			}
 			attemptCount++
 			started := time.Now()
+			input.Text = trimRunes(redactContentModerationSecrets(input.Text), cfg.effectiveSubmitRunes())
+			if strings.TrimSpace(input.Text) == "" {
+				last = errors.New("semantic review input is empty")
+				break
+			}
+			submittedText, submittedMaxRunes, submittedTruncated, submittedReasons := contentModerationSemanticSubmittedText(input.Text, cfg.effectiveSubmitRunes())
 			slog.Info("content_moderation.semantic_review_configured_start",
 				"model", model, "attempt", attempt, "attempt_count", attemptCount,
 				"endpoint", "/v1/"+normalizeContentModerationSemanticReviewEndpoint(cfg.APIEndpoint),
@@ -134,6 +140,10 @@ func (r *openAIContentModerationSemanticReviewRouter) reviewWithConfiguredAPI(ct
 				result.Model = model
 				result.UpstreamEndpoint = "/v1/" + normalizeContentModerationSemanticReviewEndpoint(cfg.APIEndpoint)
 				result.AttemptCount = attemptCount
+				result.SubmittedText = submittedText
+				result.SubmittedMaxRunes = submittedMaxRunes
+				result.SubmittedTruncated = submittedTruncated
+				result.SubmittedTruncateReasons = submittedReasons
 				if modelIndex > 0 {
 					result.FallbackFrom = cfg.PrimaryModel
 					result.FallbackReason = primaryFailure

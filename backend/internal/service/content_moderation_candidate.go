@@ -1224,7 +1224,7 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 	}
 	semanticCfg := contentModerationSemanticReviewConfigForProviderFallback(cfg)
 	initialEvidenceComplete := selection.EvidenceComplete
-	semanticReviewText := contentModerationCandidateSemanticInput(selection, semanticCfg.MaxInputRunes)
+	semanticReviewText := contentModerationCandidateSemanticInput(selection, semanticCfg.effectiveSubmitRunes())
 	semanticInputEvidenceComplete := initialEvidenceComplete
 	if semanticCfg.PromptInjectionReviewerEnabled && selection.ReviewKind == contentModerationReviewKindPromptInjection {
 		semanticReviewText = selection.ReviewText
@@ -1238,7 +1238,7 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		semanticReviewText,
 		semanticReviewDecisionID(input, s.candidateDecisionCacheKey(cfg, input, selection)),
 	)
-	semanticInput.MaxInputRunes = semanticCfg.MaxInputRunes
+	semanticInput.MaxInputRunes = semanticCfg.effectiveSubmitRunes()
 	semanticInput.ReviewKind = contentModerationReviewKindGeneral
 	semanticInput.EvidenceComplete = semanticInputEvidenceComplete
 	semanticInput.EvidenceRevision = "legacy-candidate-evidence-v1"
@@ -1334,6 +1334,7 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		log := s.buildCandidateLog(input, cfg, selection, contentModerationDecisionSourceSemantic, action, true, category, score, scores, &latency, metadata)
 		log.ModerationProvider = "platform_openai"
 		log.ModerationModel = result.Model
+		applySemanticReviewSubmittedLog(log, cfg, result)
 		log.UserViolationEligible = selection.Origin == contentModerationSourceOriginUserTurn &&
 			escalationInput.EvidenceComplete && !semanticReviewFinalInconclusive(result)
 		decisionID := s.persistCandidateAudit(ctx, input, cfg, selection, log, blocked)
@@ -1342,6 +1343,7 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		log := s.buildCandidateLog(input, cfg, selection, contentModerationDecisionSourceSemantic, ContentModerationActionSemanticReviewAllow, false, category, score, scores, &latency, metadata)
 		log.ModerationProvider = "platform_openai"
 		log.ModerationModel = result.Model
+		applySemanticReviewSubmittedLog(log, cfg, result)
 		decisionID := s.persistCandidateAudit(ctx, input, cfg, selection, log, false)
 		if cfg.Mode == ContentModerationModePreBlock {
 			s.recordPreBlockSyncMetric(latency, ContentModerationActionSemanticReviewAllow)

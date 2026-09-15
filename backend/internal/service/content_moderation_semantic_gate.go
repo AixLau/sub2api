@@ -229,6 +229,7 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 		log := s.buildLog(input, cfg, ContentModerationActionSemanticReviewAllow, false, category, score, categoryScores,
 			content.ExcerptText(), &latency, nil, metadata)
 		applySemanticReviewLogAttribution(log, result, latency, cfg.SemanticReview.PrimaryModel)
+		applySemanticReviewSubmittedLog(log, cfg, result)
 		log.MatchedKeyword = candidate.Keyword
 		log.KeywordCategory = candidate.Category
 		log.KeywordSeverity = candidate.Severity
@@ -245,6 +246,7 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 		s.recordPreBlockSyncMetric(0, ContentModerationActionSemanticReviewReject)
 		log := s.buildLog(input, cfg, ContentModerationActionSemanticReviewReject, true, category, score, categoryScores, content.KeywordHitExcerpt(candidate.Keyword), &latency, nil, metadata)
 		applySemanticReviewLogAttribution(log, result, latency, cfg.SemanticReview.PrimaryModel)
+		applySemanticReviewSubmittedLog(log, cfg, result)
 		log.MatchedKeyword = candidate.Keyword
 		log.KeywordCategory = candidate.Category
 		log.KeywordSeverity = candidate.Severity
@@ -450,6 +452,7 @@ func (s *ContentModerationService) semanticReviewProviderFallback(
 		log.EffectiveKeywordAction = action
 		log.RiskContextType = ContentModerationRiskContextActualRequest
 		log.RiskContextReason = "semantic_review_provider_fallback"
+		applySemanticReviewSubmittedLog(log, cfg, result)
 	}
 
 	switch result.Verdict {

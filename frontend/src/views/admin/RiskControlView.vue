@@ -891,6 +891,11 @@
                     <input id="semantic-review-max-input" v-model.number="configForm.semantic_review_max_input_runes" data-test="semantic-review-max-input" type="number" min="1" step="1" class="input" />
                   </div>
                   <div>
+                    <label class="input-label" for="semantic-review-max-submit">{{ t('admin.riskControl.semanticReviewMaxSubmit') }}</label>
+                    <input id="semantic-review-max-submit" v-model.number="configForm.semantic_review_max_submit_runes" data-test="semantic-review-max-submit" type="number" min="1" step="1" class="input" />
+                    <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.semanticReviewMaxSubmitHint') }}</p>
+                  </div>
+                  <div>
                     <label class="input-label">{{ t('admin.riskControl.semanticReviewMaxOutputTokens') }}</label>
                     <input v-model.number="configForm.semantic_review_max_output_tokens" type="number" min="128" max="2048" step="64" class="input" />
                   </div>
@@ -1898,6 +1903,13 @@
 					<p class="text-xs font-medium text-sky-700/80 dark:text-sky-200/80">{{ t('admin.riskControl.reviewPayloadStats') }}</p>
 					<p class="mt-1 break-words text-sm font-semibold text-sky-900 dark:text-sky-50">{{ t('admin.riskControl.reviewPayloadStatsValue', { runes: inputDetailRow.selected_fragment_runes || 0, retries: inputDetailRow.duplicate_retry_count || 0 }) }}</p>
 				  </div>
+				  <div v-if="inputDetailRow.submitted_text">
+					<p class="text-xs font-medium text-sky-700/80 dark:text-sky-200/80">{{ t('admin.riskControl.submittedTextStats') }}</p>
+					<p class="mt-1 break-words text-sm font-semibold text-sky-900 dark:text-sky-50">
+						{{ t('admin.riskControl.submittedTextStatsValue', { runes: inputDetailRow.submitted_runes || 0, max: inputDetailRow.submitted_max_runes || 0 }) }}
+						<span v-if="inputDetailRow.submitted_truncated" class="ml-2 inline-flex rounded-md bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-200">{{ t('admin.riskControl.submittedTextTruncated') }}</span>
+					</p>
+				  </div>
 				</div>
 			  </div>
 
@@ -2196,6 +2208,7 @@ const configForm = reactive({
   semantic_review_fallback_timeout_ms: 3000,
   semantic_review_max_attempts_per_model: 2,
   semantic_review_max_input_runes: 2000,
+  semantic_review_max_submit_runes: 2000,
   semantic_review_max_output_tokens: 512,
 	semantic_review_reasoning_effort: 'low' as 'none' | 'low' | 'medium' | 'high' | 'xhigh',
   prompt_injection_reviewer_enabled: false,
@@ -3133,6 +3146,7 @@ const riskThresholdRows = computed<RiskThresholdRow[]>(() => (
 
 const inputDetailText = computed(() => {
   if (!inputDetailRow.value) return '-'
+  if (inputDetailRow.value.submitted_text) return inputDetailRow.value.submitted_text
   if (evidence.value?.log_id === inputDetailRow.value.id) return evidence.value.payload || '-'
   if (rawRequestBodyLogID.value === inputDetailRow.value.id && rawRequestBody.value) return rawRequestBody.value
   return inputDetailRow.value.input_excerpt || '-'
@@ -3328,6 +3342,7 @@ function applyConfigValues(config: ContentModerationConfig) {
     fallback_timeout_ms: 3000,
     max_attempts_per_model: 2,
     max_input_runes: 2000,
+    max_submit_runes: 2000,
     max_output_tokens: 512,
     reasoning_effort: 'low',
     prompt_injection_reviewer_enabled: false,
@@ -3353,6 +3368,7 @@ function applyConfigValues(config: ContentModerationConfig) {
   configForm.semantic_review_fallback_timeout_ms = semanticReview.fallback_timeout_ms || 3000
   configForm.semantic_review_max_attempts_per_model = semanticReview.max_attempts_per_model || 2
   configForm.semantic_review_max_input_runes = semanticReview.max_input_runes || 2000
+  configForm.semantic_review_max_submit_runes = semanticReview.max_submit_runes || semanticReview.max_input_runes || 2000
   configForm.semantic_review_max_output_tokens = semanticReview.max_output_tokens || 512
 	configForm.semantic_review_reasoning_effort = semanticReview.reasoning_effort || 'low'
 	configForm.prompt_injection_reviewer_enabled = semanticReview.prompt_injection_reviewer_enabled ?? false
@@ -3541,6 +3557,7 @@ async function saveConfig() {
           fallback_timeout_ms: Number(configForm.semantic_review_fallback_timeout_ms) || 3000,
           max_attempts_per_model: Number(configForm.semantic_review_max_attempts_per_model) || 2,
           max_input_runes: Math.max(1, Math.floor(Number(configForm.semantic_review_max_input_runes) || 2000)),
+          max_submit_runes: Math.max(1, Math.floor(Number(configForm.semantic_review_max_submit_runes) || Number(configForm.semantic_review_max_input_runes) || 2000)),
           max_output_tokens: Number(configForm.semantic_review_max_output_tokens) || 512,
           reasoning_effort: configForm.semantic_review_reasoning_effort,
           prompt_injection_reviewer_enabled: configForm.prompt_injection_reviewer_enabled,

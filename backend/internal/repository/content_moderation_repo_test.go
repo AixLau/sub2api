@@ -472,6 +472,7 @@ func TestContentModerationRepositoryCreateLog_UsesValidUpsertReturningSQL(t *tes
 			log.DecisionSource, log.ModerationProvider, log.ModerationModel, log.SourceOrigin,
 			log.SelectedSource, log.SelectedSourceRole, log.SelectedFragmentRunes,
 			log.DecisionCacheHit, log.DuplicateRetryCount, log.UserViolationEligible, `["max_total_runes"]`,
+			log.SubmittedText, log.SubmittedRunes, log.SubmittedMaxRunes, log.SubmittedTruncated, `[]`,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(42), now))
 
@@ -541,7 +542,8 @@ func TestContentModerationRepositoryListLogsIncludesRawRequestMetadata(t *testin
 			"violation_count", "auto_banned", "email_sent", "user_status", "queue_delay_ms",
 			"raw_request_available", "raw_request_bytes", "raw_request_truncated",
 			"decision_source", "moderation_provider", "moderation_model", "source_origin", "selected_source", "selected_source_role",
-			"selected_fragment_runes", "decision_cache_hit", "duplicate_retry_count", "user_violation_eligible", "truncate_reasons", "evidence_available", "created_at",
+			"selected_fragment_runes", "decision_cache_hit", "duplicate_retry_count", "user_violation_eligible", "truncate_reasons", "evidence_available",
+			"submitted_text", "submitted_runes", "submitted_max_runes", "submitted_truncated", "submitted_truncate_reasons", "created_at",
 		}).AddRow(
 			int64(42), "req-raw", nil, "u@example.com", nil, "H", nil, "Default",
 			int64(77), "oauth-primary", service.AccountTypeOAuth,
@@ -552,7 +554,7 @@ func TestContentModerationRepositoryListLogsIncludesRawRequestMetadata(t *testin
 			0, false, false, "active", nil,
 			true, 128, true,
 			"ordinary_api", "openai", "omni-moderation-latest", "user_turn", "responses.input", "user",
-			240, true, 2, true, []byte(`["max_total_runes"]`), true, now,
+			240, true, 2, true, []byte(`["max_total_runes"]`), true, "", 0, 0, false, []byte(`[]`), now,
 		))
 
 	items, page, err := repo.ListLogs(context.Background(), service.ContentModerationLogFilter{})

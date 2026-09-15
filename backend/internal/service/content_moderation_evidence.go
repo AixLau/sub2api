@@ -131,6 +131,10 @@ func (s *ContentModerationService) storeCandidateEvidence(ctx context.Context, l
 	selectionMetadata["user_violation_eligible"] = log.UserViolationEligible
 	selectionMetadata["source_truncated"] = selection.Source.Truncated
 	selectionMetadata["truncate_reasons"] = append([]string(nil), selection.Source.TruncateReasons...)
+	selectionMetadata["submitted_runes"] = log.SubmittedRunes
+	selectionMetadata["submitted_max_runes"] = log.SubmittedMaxRunes
+	selectionMetadata["submitted_truncated"] = log.SubmittedTruncated
+	selectionMetadata["submitted_truncate_reasons"] = append([]string(nil), log.SubmittedTruncateReasons...)
 	snapshot := &ContentModerationEvidenceSnapshot{
 		LogID:            log.ID,
 		RequestID:        log.RequestID,

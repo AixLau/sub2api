@@ -113,6 +113,7 @@ func (s *ContentModerationService) escalateSemanticReview(
 	escalationCfg.FallbackTimeoutMS = cfg.EscalationTimeoutMS
 	escalationCfg.MaxAttemptsPerModel = 1
 	escalationCfg.MaxInputRunes = cfg.EscalationMaxInputRunes
+	escalationCfg.MaxSubmitRunes = cfg.EscalationMaxInputRunes
 	escalationCfg.ReasoningEffort = cfg.EscalationReasoningEffort
 	escalationCfg.disableDiscoveredFallback = true
 
@@ -148,6 +149,7 @@ func contentModerationSemanticGateEscalationInput(
 	}
 	reviewCfg := cfg.SemanticReview
 	reviewCfg.MaxInputRunes = reviewCfg.EscalationMaxInputRunes
+	reviewCfg.MaxSubmitRunes = reviewCfg.EscalationMaxInputRunes
 	// The fallback marker (for example provider_unavailable) is internal state,
 	// not user evidence. Rebuild the second-review input from the actual request.
 	reviewCfg.Trigger = ContentModerationSemanticReviewTriggerAll

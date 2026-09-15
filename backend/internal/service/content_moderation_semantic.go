@@ -173,7 +173,16 @@ type ContentModerationSemanticReviewResult struct {
 	UserAgent        string      `json:"-"`
 	InboundEndpoint  string      `json:"-"`
 	UpstreamEndpoint string      `json:"-"`
-	escalation       *contentModerationSemanticEscalationTrace
+	// SubmittedText is the exact text the router sent to the model after
+	// redaction and the effective submitted-text cap were applied. Semantic audit
+	// logging persists this value verbatim so the stored text is 1:1 with the
+	// upstream request. SubmittedMaxRunes/SubmittedTruncated/SubmittedTruncateReasons
+	// describe how the submitted text was bounded.
+	SubmittedText            string   `json:"-"`
+	SubmittedMaxRunes        int      `json:"-"`
+	SubmittedTruncated       bool     `json:"-"`
+	SubmittedTruncateReasons []string `json:"-"`
+	escalation               *contentModerationSemanticEscalationTrace
 }
 
 type ContentModerationSemanticReviewBackend interface {
@@ -366,7 +375,7 @@ func (s *ContentModerationService) enqueueSemanticReviewEvent(
 			EvidenceComplete: evidenceComplete,
 			EvidenceRevision: "general-semantic-evidence-v2",
 			ContextOnly:      semanticReviewEvidenceContextOnly(cfg.SemanticReview, content, focusKeyword),
-			MaxInputRunes:    cfg.SemanticReview.MaxInputRunes,
+			MaxInputRunes:    cfg.SemanticReview.effectiveSubmitRunes(),
 		},
 	}
 	event := newContentModerationOutboxEvent(decisionID, ContentModerationOutboxEventSemanticReview, inputHash, ContentModerationOutboxPriorityStrong, payload)
@@ -411,6 +420,7 @@ func buildContentModerationSemanticReviewEvidence(cfg ContentModerationSemanticR
 
 func buildContentModerationSemanticReviewInputResult(cfg ContentModerationSemanticReviewConfig, content ContentModerationInput, keyword string) contentModerationSemanticReviewBuildResult {
 	cfg = normalizeContentModerationSemanticReviewConfig(cfg)
+	budget := cfg.effectiveSubmitRunes()
 	sources, sourcesComplete := selectContentModerationSemanticReviewSourcesWithCompleteness(cfg, content, keyword)
 	result := contentModerationSemanticReviewBuildResult{Complete: sourcesComplete}
 	if len(sources) == 0 {
@@ -425,10 +435,10 @@ func buildContentModerationSemanticReviewInputResult(cfg ContentModerationSemant
 			text = semanticReviewExcerptAroundKeyword(text, keyword, contentModerationSemanticReviewExcerptRunes)
 		}
 		text = redactContentModerationSecrets(text)
-		if len([]rune(text)) > cfg.MaxInputRunes {
+		if len([]rune(text)) > budget {
 			result.Complete = false
 		}
-		result.Text = trimRunes(text, cfg.MaxInputRunes)
+		result.Text = trimRunes(text, budget)
 		return result
 	}
 
@@ -442,7 +452,7 @@ func buildContentModerationSemanticReviewInputResult(cfg ContentModerationSemant
 		if b.Len() > 0 {
 			separator = "\n\n"
 		}
-		available := cfg.MaxInputRunes - writtenRunes - len([]rune(separator))
+		available := budget - writtenRunes - len([]rune(separator))
 		if available <= 0 {
 			result.Complete = false
 			break
@@ -900,6 +910,7 @@ func (s *ContentModerationService) processContentModerationSemanticReviewEvent(c
 	log.DecisionSource = contentModerationDecisionSourceSemantic
 	log.ModerationProvider = "platform_openai"
 	log.ModerationModel = strings.TrimSpace(result.Model)
+	applySemanticReviewSubmittedLog(log, cfg, result)
 	if payload.SemanticReview.ContextOnly || !semanticInput.EvidenceComplete || semanticReviewFinalInconclusive(result) {
 		log.UserViolationEligible = false
 	}
@@ -1076,7 +1087,7 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 		return ContentModerationSemanticReviewResult{}, errors.New("semantic review backend is unavailable")
 	}
 	reviewKind := normalizeContentModerationReviewKind(input.ReviewKind)
-	configuredMaxInputRunes := cfg.MaxInputRunes
+	configuredMaxInputRunes := cfg.effectiveSubmitRunes()
 	if input.FinalReview {
 		reviewKind = contentModerationReviewKindGeneral
 		input.ReviewKind = reviewKind
@@ -1095,6 +1106,7 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 	if strings.TrimSpace(input.Text) == "" {
 		return ContentModerationSemanticReviewResult{}, errors.New("semantic review input is empty")
 	}
+	submittedText, submittedMaxRunes, submittedTruncated, submittedReasons := contentModerationSemanticSubmittedText(input.Text, effectiveMaxInputRunes)
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -1197,6 +1209,10 @@ func (r *openAIContentModerationSemanticReviewRouter) Review(
 				result.Model = model
 				result.AccountID = account.ID
 				result.AttemptCount = attemptCount
+				result.SubmittedText = submittedText
+				result.SubmittedMaxRunes = submittedMaxRunes
+				result.SubmittedTruncated = submittedTruncated
+				result.SubmittedTruncateReasons = submittedReasons
 				if modelIndex > 0 {
 					result.FallbackFrom = cfg.PrimaryModel
 					result.FallbackReason = primaryFailureReason

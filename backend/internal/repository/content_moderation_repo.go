@@ -73,6 +73,14 @@ func (r *contentModerationRepository) CreateLog(ctx context.Context, log *servic
 	if err != nil {
 		return fmt.Errorf("marshal moderation truncate reasons: %w", err)
 	}
+	submittedTruncateReasons := log.SubmittedTruncateReasons
+	if submittedTruncateReasons == nil {
+		submittedTruncateReasons = []string{}
+	}
+	submittedTruncateReasonsJSON, err := json.Marshal(submittedTruncateReasons)
+	if err != nil {
+		return fmt.Errorf("marshal moderation submitted truncate reasons: %w", err)
+	}
 	metadata := log.Metadata
 	if len(metadata) == 0 {
 		metadata = json.RawMessage(`{}`)
@@ -112,7 +120,8 @@ INSERT INTO content_moderation_logs (
     violation_count, auto_banned, email_sent, queue_delay_ms,
     decision_source, moderation_provider, moderation_model, source_origin,
     selected_source, selected_source_role, selected_fragment_runes,
-	    decision_cache_hit, duplicate_retry_count, user_violation_eligible, truncate_reasons
+	    decision_cache_hit, duplicate_retry_count, user_violation_eligible, truncate_reasons,
+	    submitted_text, submitted_runes, submitted_max_runes, submitted_truncated, submitted_truncate_reasons
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
     $9, $10, $11,
@@ -121,7 +130,8 @@ INSERT INTO content_moderation_logs (
     $26, $27, $28, $29, $30,
     $31, $32, $33, $34, $35, $36,
     $37, $38, $39, $40,
-    $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51::jsonb
+    $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51::jsonb,
+    $52, $53, $54, $55, $56::jsonb
 ) ON CONFLICT (decision_id) WHERE decision_id <> '' DO UPDATE SET
     queue_delay_ms = COALESCE(EXCLUDED.queue_delay_ms, content_moderation_logs.queue_delay_ms),
     violation_count = GREATEST(content_moderation_logs.violation_count, EXCLUDED.violation_count),
@@ -132,6 +142,20 @@ INSERT INTO content_moderation_logs (
 	    truncate_reasons = CASE
 	        WHEN EXCLUDED.truncate_reasons <> '[]'::jsonb THEN EXCLUDED.truncate_reasons
 	        ELSE content_moderation_logs.truncate_reasons
+	    END,
+	    submitted_text = CASE
+	        WHEN EXCLUDED.submitted_text <> '' THEN EXCLUDED.submitted_text
+	        ELSE content_moderation_logs.submitted_text
+	    END,
+	    submitted_runes = GREATEST(content_moderation_logs.submitted_runes, EXCLUDED.submitted_runes),
+	    submitted_max_runes = CASE
+	        WHEN EXCLUDED.submitted_max_runes > 0 THEN EXCLUDED.submitted_max_runes
+	        ELSE content_moderation_logs.submitted_max_runes
+	    END,
+	    submitted_truncated = content_moderation_logs.submitted_truncated OR EXCLUDED.submitted_truncated,
+	    submitted_truncate_reasons = CASE
+	        WHEN EXCLUDED.submitted_truncate_reasons <> '[]'::jsonb THEN EXCLUDED.submitted_truncate_reasons
+	        ELSE content_moderation_logs.submitted_truncate_reasons
 	    END
 RETURNING id, created_at`,
 		log.DecisionID, log.RequestID, userID, log.UserEmail, apiKeyID, log.APIKeyName, groupID, log.GroupName,
@@ -144,6 +168,7 @@ RETURNING id, created_at`,
 		log.DecisionSource, log.ModerationProvider, log.ModerationModel, log.SourceOrigin,
 		log.SelectedSource, log.SelectedSourceRole, log.SelectedFragmentRunes,
 		log.DecisionCacheHit, log.DuplicateRetryCount, log.UserViolationEligible, string(truncateReasonsJSON),
+		log.SubmittedText, log.SubmittedRunes, log.SubmittedMaxRunes, log.SubmittedTruncated, string(submittedTruncateReasonsJSON),
 	).Scan(&log.ID, &log.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("insert content moderation log: %w", err)
@@ -189,6 +214,8 @@ SELECT
     COALESCE(l.selected_fragment_runes, 0), COALESCE(l.decision_cache_hit, FALSE),
 	    COALESCE(l.duplicate_retry_count, 0), COALESCE(l.user_violation_eligible, FALSE),
 	    COALESCE(l.truncate_reasons, '[]'::jsonb), (es.id IS NOT NULL),
+	    COALESCE(l.submitted_text, ''), COALESCE(l.submitted_runes, 0), COALESCE(l.submitted_max_runes, 0),
+	    COALESCE(l.submitted_truncated, FALSE), COALESCE(l.submitted_truncate_reasons, '[]'::jsonb),
     l.created_at
 FROM content_moderation_logs l
 LEFT JOIN users u ON u.id = l.user_id
@@ -209,7 +236,7 @@ LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 		var userID, apiKeyID, groupID, accountID, latency, queueDelay, reviewedBy sql.NullInt64
 		var accountName, accountType sql.NullString
 		var reviewedAt sql.NullTime
-		var scoresRaw, thresholdsRaw, metadataRaw, truncateReasonsRaw []byte
+		var scoresRaw, thresholdsRaw, metadataRaw, truncateReasonsRaw, submittedTruncateReasonsRaw []byte
 		if err := rows.Scan(
 			&item.ID,
 			&item.RequestID,
@@ -267,6 +294,11 @@ LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 			&item.UserViolationEligible,
 			&truncateReasonsRaw,
 			&item.EvidenceAvailable,
+			&item.SubmittedText,
+			&item.SubmittedRunes,
+			&item.SubmittedMaxRunes,
+			&item.SubmittedTruncated,
+			&submittedTruncateReasonsRaw,
 			&item.CreatedAt,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan content moderation log: %w", err)
@@ -315,6 +347,8 @@ LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 		}
 		item.TruncateReasons = []string{}
 		_ = json.Unmarshal(truncateReasonsRaw, &item.TruncateReasons)
+		item.SubmittedTruncateReasons = []string{}
+		_ = json.Unmarshal(submittedTruncateReasonsRaw, &item.SubmittedTruncateReasons)
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -526,6 +560,14 @@ func (r *contentModerationRepository) ReplaceSemanticReviewDeadLetterByDecisionI
 	if err != nil {
 		return false, fmt.Errorf("marshal moderation truncate reasons: %w", err)
 	}
+	submittedTruncateReasons := log.SubmittedTruncateReasons
+	if submittedTruncateReasons == nil {
+		submittedTruncateReasons = []string{}
+	}
+	submittedTruncateReasonsJSON, err := json.Marshal(submittedTruncateReasons)
+	if err != nil {
+		return false, fmt.Errorf("marshal moderation submitted truncate reasons: %w", err)
+	}
 	err = r.db.QueryRowContext(ctx, `
 UPDATE content_moderation_logs
 SET action = $1,
@@ -553,6 +595,11 @@ SET action = $1,
     selected_fragment_runes = $23,
     user_violation_eligible = $24,
     truncate_reasons = $25::jsonb,
+    submitted_text = $30,
+    submitted_runes = $31,
+    submitted_max_runes = $32,
+    submitted_truncated = $33,
+    submitted_truncate_reasons = $34::jsonb,
     queue_delay_ms = COALESCE($26, queue_delay_ms),
     decision_cache_hit = decision_cache_hit OR $27,
     duplicate_retry_count = GREATEST(duplicate_retry_count, $28)
@@ -591,6 +638,11 @@ RETURNING id, created_at
 		log.DecisionCacheHit,
 		log.DuplicateRetryCount,
 		log.DecisionID,
+		log.SubmittedText,
+		log.SubmittedRunes,
+		log.SubmittedMaxRunes,
+		log.SubmittedTruncated,
+		string(submittedTruncateReasonsJSON),
 	).Scan(&log.ID, &log.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
@@ -768,6 +820,8 @@ SELECT
     COALESCE(l.selected_fragment_runes, 0), COALESCE(l.decision_cache_hit, FALSE),
 	    COALESCE(l.duplicate_retry_count, 0), COALESCE(l.user_violation_eligible, FALSE),
 	    COALESCE(l.truncate_reasons, '[]'::jsonb), (es.id IS NOT NULL),
+	    COALESCE(l.submitted_text, ''), COALESCE(l.submitted_runes, 0), COALESCE(l.submitted_max_runes, 0),
+	    COALESCE(l.submitted_truncated, FALSE), COALESCE(l.submitted_truncate_reasons, '[]'::jsonb),
     l.created_at
 FROM updated l
 LEFT JOIN users u ON u.id = l.user_id
@@ -794,7 +848,7 @@ func scanContentModerationLogRows(rows *sql.Rows) ([]service.ContentModerationLo
 		var item service.ContentModerationLog
 		var userID, apiKeyID, groupID, latency, queueDelay, reviewedBy sql.NullInt64
 		var reviewedAt sql.NullTime
-		var scoresRaw, thresholdsRaw, metadataRaw, truncateReasonsRaw []byte
+		var scoresRaw, thresholdsRaw, metadataRaw, truncateReasonsRaw, submittedTruncateReasonsRaw []byte
 		if err := rows.Scan(
 			&item.ID,
 			&item.RequestID,
@@ -849,6 +903,11 @@ func scanContentModerationLogRows(rows *sql.Rows) ([]service.ContentModerationLo
 			&item.UserViolationEligible,
 			&truncateReasonsRaw,
 			&item.EvidenceAvailable,
+			&item.SubmittedText,
+			&item.SubmittedRunes,
+			&item.SubmittedMaxRunes,
+			&item.SubmittedTruncated,
+			&submittedTruncateReasonsRaw,
 			&item.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan content moderation log: %w", err)
@@ -891,6 +950,8 @@ func scanContentModerationLogRows(rows *sql.Rows) ([]service.ContentModerationLo
 		}
 		item.TruncateReasons = []string{}
 		_ = json.Unmarshal(truncateReasonsRaw, &item.TruncateReasons)
+		item.SubmittedTruncateReasons = []string{}
+		_ = json.Unmarshal(submittedTruncateReasonsRaw, &item.SubmittedTruncateReasons)
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {

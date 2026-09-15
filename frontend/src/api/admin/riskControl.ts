@@ -63,6 +63,7 @@ export interface ContentModerationSemanticReviewConfig {
   fallback_timeout_ms: number
   max_attempts_per_model: number
   max_input_runes: number
+  max_submit_runes: number
   max_output_tokens: number
   reasoning_effort: 'none' | 'low' | 'medium' | 'high' | 'xhigh'
   prompt_injection_reviewer_enabled: boolean
@@ -535,6 +536,11 @@ export interface ContentModerationLog {
   category_scores: Record<string, number>
   threshold_snapshot: Record<string, number>
   input_excerpt: string
+  submitted_text?: string
+  submitted_runes?: number
+  submitted_max_runes?: number
+  submitted_truncated?: boolean
+  submitted_truncate_reasons?: string[]
   truncate_reasons?: string[]
   upstream_latency_ms: number | null
   error: string

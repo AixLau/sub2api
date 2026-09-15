@@ -406,31 +406,36 @@ type ContentModerationLocalClassifierConfig struct {
 // classifiers, while this path handles jailbreak, reverse-engineering abuse,
 // credential theft, and similar intent.
 type ContentModerationSemanticReviewConfig struct {
-	APIBaseURL                     string   `json:"api_base_url,omitempty"`
-	APIEndpoint                    string   `json:"api_endpoint,omitempty"`
-	APIKey                         string   `json:"api_key,omitempty"`
-	APIKeyConfigured               bool     `json:"api_key_configured,omitempty"`
-	APIKeyMasked                   string   `json:"api_key_masked,omitempty"`
-	AvailableModels                []string `json:"available_models,omitempty"`
-	Enabled                        bool     `json:"enabled"`
-	Trigger                        string   `json:"trigger"`
-	PrimaryModel                   string   `json:"primary_model"`
-	FallbackModels                 []string `json:"fallback_models"`
-	EscalationEnabled              bool     `json:"escalation_enabled"`
-	EscalationModel                string   `json:"escalation_model"`
-	EscalationTimeoutMS            int      `json:"escalation_timeout_ms"`
-	EscalationMaxInputRunes        int      `json:"escalation_max_input_runes"`
-	EscalationReasoningEffort      string   `json:"escalation_reasoning_effort"`
-	TimeoutMS                      int      `json:"timeout_ms"`
-	PrimaryTimeoutMS               int      `json:"primary_timeout_ms"`
-	FallbackTimeoutMS              int      `json:"fallback_timeout_ms"`
-	MaxAttemptsPerModel            int      `json:"max_attempts_per_model"`
-	MaxInputRunes                  int      `json:"max_input_runes"`
-	MaxOutputTokens                int      `json:"max_output_tokens"`
-	ReasoningEffort                string   `json:"reasoning_effort"`
-	PromptInjectionReviewerEnabled bool     `json:"prompt_injection_reviewer_enabled"`
-	PromptInjectionMaxInputRunes   int      `json:"prompt_injection_max_input_runes"`
-	PromptInjectionFailClosed      bool     `json:"prompt_injection_fail_closed"`
+	APIBaseURL                string   `json:"api_base_url,omitempty"`
+	APIEndpoint               string   `json:"api_endpoint,omitempty"`
+	APIKey                    string   `json:"api_key,omitempty"`
+	APIKeyConfigured          bool     `json:"api_key_configured,omitempty"`
+	APIKeyMasked              string   `json:"api_key_masked,omitempty"`
+	AvailableModels           []string `json:"available_models,omitempty"`
+	Enabled                   bool     `json:"enabled"`
+	Trigger                   string   `json:"trigger"`
+	PrimaryModel              string   `json:"primary_model"`
+	FallbackModels            []string `json:"fallback_models"`
+	EscalationEnabled         bool     `json:"escalation_enabled"`
+	EscalationModel           string   `json:"escalation_model"`
+	EscalationTimeoutMS       int      `json:"escalation_timeout_ms"`
+	EscalationMaxInputRunes   int      `json:"escalation_max_input_runes"`
+	EscalationReasoningEffort string   `json:"escalation_reasoning_effort"`
+	TimeoutMS                 int      `json:"timeout_ms"`
+	PrimaryTimeoutMS          int      `json:"primary_timeout_ms"`
+	FallbackTimeoutMS         int      `json:"fallback_timeout_ms"`
+	MaxAttemptsPerModel       int      `json:"max_attempts_per_model"`
+	MaxInputRunes             int      `json:"max_input_runes"`
+	// MaxSubmitRunes is the authoritative cap on the number of runes actually
+	// submitted to the semantic review model. It governs evidence construction
+	// and the model request itself. When unset it falls back to MaxInputRunes so
+	// configurations written before this field existed keep their behaviour.
+	MaxSubmitRunes                 int    `json:"max_submit_runes"`
+	MaxOutputTokens                int    `json:"max_output_tokens"`
+	ReasoningEffort                string `json:"reasoning_effort"`
+	PromptInjectionReviewerEnabled bool   `json:"prompt_injection_reviewer_enabled"`
+	PromptInjectionMaxInputRunes   int    `json:"prompt_injection_max_input_runes"`
+	PromptInjectionFailClosed      bool   `json:"prompt_injection_fail_closed"`
 	disableDiscoveredFallback      bool
 }
 
@@ -760,65 +765,74 @@ type ContentModerationDecision struct {
 }
 
 type ContentModerationLog struct {
-	ID                     int64              `json:"id"`
-	DecisionID             string             `json:"decision_id,omitempty"`
-	RequestID              string             `json:"request_id"`
-	UserID                 *int64             `json:"user_id,omitempty"`
-	UserEmail              string             `json:"user_email"`
-	APIKeyID               *int64             `json:"api_key_id,omitempty"`
-	APIKeyName             string             `json:"api_key_name"`
-	GroupID                *int64             `json:"group_id,omitempty"`
-	GroupName              string             `json:"group_name"`
-	AccountID              *int64             `json:"account_id,omitempty"`
-	AccountName            string             `json:"account_name"`
-	AccountType            string             `json:"account_type"`
-	Endpoint               string             `json:"endpoint"`
-	Provider               string             `json:"provider"`
-	Model                  string             `json:"model"`
-	Mode                   string             `json:"mode"`
-	Action                 string             `json:"action"`
-	Flagged                bool               `json:"flagged"`
-	HighestCategory        string             `json:"highest_category"`
-	HighestScore           float64            `json:"highest_score"`
-	CategoryScores         map[string]float64 `json:"category_scores"`
-	ThresholdSnapshot      map[string]float64 `json:"threshold_snapshot"`
-	InputExcerpt           string             `json:"input_excerpt"`
-	TruncateReasons        []string           `json:"truncate_reasons,omitempty"`
-	UpstreamLatencyMS      *int               `json:"upstream_latency_ms,omitempty"`
-	Error                  string             `json:"error"`
-	Metadata               json.RawMessage    `json:"metadata"`
-	MatchedKeyword         string             `json:"matched_keyword"`
-	KeywordCategory        string             `json:"keyword_category"`
-	KeywordSeverity        string             `json:"keyword_severity"`
-	KeywordAction          string             `json:"keyword_action"`
-	EffectiveKeywordAction string             `json:"effective_keyword_action"`
-	RiskContextType        string             `json:"risk_context_type"`
-	RiskContextReason      string             `json:"risk_context_reason"`
-	ReviewStatus           string             `json:"review_status"`
-	ReviewNote             string             `json:"review_note"`
-	ReviewedBy             *int64             `json:"reviewed_by,omitempty"`
-	ReviewedAt             *time.Time         `json:"reviewed_at,omitempty"`
-	ViolationCount         int                `json:"violation_count"`
-	AutoBanned             bool               `json:"auto_banned"`
-	EmailSent              bool               `json:"email_sent"`
-	UserStatus             string             `json:"user_status"`
-	QueueDelayMS           *int               `json:"queue_delay_ms,omitempty"`
-	RawRequestAvailable    bool               `json:"raw_request_available"`
-	RawRequestBytes        int                `json:"raw_request_bytes"`
-	RawRequestTruncated    bool               `json:"raw_request_truncated"`
-	DecisionSource         string             `json:"decision_source"`
-	ModerationProvider     string             `json:"moderation_provider"`
-	ModerationModel        string             `json:"moderation_model"`
-	SourceOrigin           string             `json:"source_origin"`
-	SelectedSource         string             `json:"selected_source"`
-	SelectedSourceRole     string             `json:"selected_source_role"`
-	SelectedFragmentRunes  int                `json:"selected_fragment_runes"`
-	DecisionCacheHit       bool               `json:"decision_cache_hit"`
-	DuplicateRetryCount    int                `json:"duplicate_retry_count"`
-	UserViolationEligible  bool               `json:"user_violation_eligible"`
-	EvidenceAvailable      bool               `json:"evidence_available"`
-	CreatedAt              time.Time          `json:"created_at"`
-	persisted              bool
+	ID                int64              `json:"id"`
+	DecisionID        string             `json:"decision_id,omitempty"`
+	RequestID         string             `json:"request_id"`
+	UserID            *int64             `json:"user_id,omitempty"`
+	UserEmail         string             `json:"user_email"`
+	APIKeyID          *int64             `json:"api_key_id,omitempty"`
+	APIKeyName        string             `json:"api_key_name"`
+	GroupID           *int64             `json:"group_id,omitempty"`
+	GroupName         string             `json:"group_name"`
+	AccountID         *int64             `json:"account_id,omitempty"`
+	AccountName       string             `json:"account_name"`
+	AccountType       string             `json:"account_type"`
+	Endpoint          string             `json:"endpoint"`
+	Provider          string             `json:"provider"`
+	Model             string             `json:"model"`
+	Mode              string             `json:"mode"`
+	Action            string             `json:"action"`
+	Flagged           bool               `json:"flagged"`
+	HighestCategory   string             `json:"highest_category"`
+	HighestScore      float64            `json:"highest_score"`
+	CategoryScores    map[string]float64 `json:"category_scores"`
+	ThresholdSnapshot map[string]float64 `json:"threshold_snapshot"`
+	InputExcerpt      string             `json:"input_excerpt"`
+	// SubmittedText is the exact text sent to the semantic review model for
+	// semantic audit records. Unlike InputExcerpt (a bounded 240-rune display
+	// summary), it is never re-derived from a shorter excerpt and its rune
+	// count always matches SubmittedRunes.
+	SubmittedText            string          `json:"submitted_text,omitempty"`
+	SubmittedRunes           int             `json:"submitted_runes"`
+	SubmittedMaxRunes        int             `json:"submitted_max_runes"`
+	SubmittedTruncated       bool            `json:"submitted_truncated"`
+	SubmittedTruncateReasons []string        `json:"submitted_truncate_reasons,omitempty"`
+	TruncateReasons          []string        `json:"truncate_reasons,omitempty"`
+	UpstreamLatencyMS        *int            `json:"upstream_latency_ms,omitempty"`
+	Error                    string          `json:"error"`
+	Metadata                 json.RawMessage `json:"metadata"`
+	MatchedKeyword           string          `json:"matched_keyword"`
+	KeywordCategory          string          `json:"keyword_category"`
+	KeywordSeverity          string          `json:"keyword_severity"`
+	KeywordAction            string          `json:"keyword_action"`
+	EffectiveKeywordAction   string          `json:"effective_keyword_action"`
+	RiskContextType          string          `json:"risk_context_type"`
+	RiskContextReason        string          `json:"risk_context_reason"`
+	ReviewStatus             string          `json:"review_status"`
+	ReviewNote               string          `json:"review_note"`
+	ReviewedBy               *int64          `json:"reviewed_by,omitempty"`
+	ReviewedAt               *time.Time      `json:"reviewed_at,omitempty"`
+	ViolationCount           int             `json:"violation_count"`
+	AutoBanned               bool            `json:"auto_banned"`
+	EmailSent                bool            `json:"email_sent"`
+	UserStatus               string          `json:"user_status"`
+	QueueDelayMS             *int            `json:"queue_delay_ms,omitempty"`
+	RawRequestAvailable      bool            `json:"raw_request_available"`
+	RawRequestBytes          int             `json:"raw_request_bytes"`
+	RawRequestTruncated      bool            `json:"raw_request_truncated"`
+	DecisionSource           string          `json:"decision_source"`
+	ModerationProvider       string          `json:"moderation_provider"`
+	ModerationModel          string          `json:"moderation_model"`
+	SourceOrigin             string          `json:"source_origin"`
+	SelectedSource           string          `json:"selected_source"`
+	SelectedSourceRole       string          `json:"selected_source_role"`
+	SelectedFragmentRunes    int             `json:"selected_fragment_runes"`
+	DecisionCacheHit         bool            `json:"decision_cache_hit"`
+	DuplicateRetryCount      int             `json:"duplicate_retry_count"`
+	UserViolationEligible    bool            `json:"user_violation_eligible"`
+	EvidenceAvailable        bool            `json:"evidence_available"`
+	CreatedAt                time.Time       `json:"created_at"`
+	persisted                bool
 }
 
 type ContentModerationRawRequestSnapshot struct {
@@ -5544,6 +5558,52 @@ func contentModerationInputExcerptForLog(cfg *ContentModerationConfig, text stri
 	return trimRunes(redactContentModerationSecrets(text), maxModerationExcerptRunes)
 }
 
+// contentModerationSemanticSubmittedText finalizes the text actually submitted to
+// the semantic review model and reports how it was bounded. The input must
+// already be redacted; callers redact first so this stays exactly the text the
+// model receives. maxRunes is the effective submit cap that already governed
+// evidence construction and the model request. The returned text is exactly what
+// the model received, so an audit record can persist it verbatim and record a
+// matching rune count; the 240-rune display excerpt remains a separate,
+// independent summary.
+func contentModerationSemanticSubmittedText(text string, maxRunes int) (string, int, bool, []string) {
+	trimmed := trimRunes(text, maxRunes)
+	truncated := maxRunes > 0 && len([]rune(text)) > maxRunes
+	var reasons []string
+	if truncated {
+		reasons = append(reasons, "submit_max_runes")
+	}
+	return trimmed, maxRunes, truncated, reasons
+}
+
+// applySemanticReviewSubmittedLog records the exact text the semantic reviewer
+// received so the audit record is 1:1 with the model request. InputExcerpt is
+// refreshed as an independent 240-rune display summary of that same text; it no
+// longer stands in for the submitted content. The rune count, configured cap,
+// truncation flag, and truncation reason are always recorded; the submitted
+// text itself follows the existing store_input_excerpt privacy gate. The helper
+// is a no-op for failed reviews that never produced submitted text.
+func applySemanticReviewSubmittedLog(log *ContentModerationLog, cfg *ContentModerationConfig, result ContentModerationSemanticReviewResult) {
+	if log == nil || strings.TrimSpace(result.SubmittedText) == "" {
+		return
+	}
+	submitted := result.SubmittedText
+	log.SubmittedRunes = len([]rune(submitted))
+	log.SubmittedMaxRunes = result.SubmittedMaxRunes
+	log.SubmittedTruncated = result.SubmittedTruncated
+	log.SubmittedTruncateReasons = normalizeContentModerationTruncateReasons(result.SubmittedTruncateReasons)
+	if result.SubmittedTruncated {
+		log.TruncateReasons = normalizeContentModerationTruncateReasons(append(append([]string(nil), log.TruncateReasons...), result.SubmittedTruncateReasons...))
+	}
+	if cfg != nil && !cfg.StoreInputExcerpt {
+		return
+	}
+	log.SubmittedText = submitted
+	// The display excerpt is an independent bounded summary of the same already-
+	// redacted submitted text; it never represents the full submitted content.
+	log.InputExcerpt = trimRunes(submitted, maxModerationExcerptRunes)
+}
+
 func contentModerationKeywordHitExcerptFromText(text string, keyword string) (string, bool) {
 	text = strings.TrimSpace(text)
 	keyword = strings.TrimSpace(keyword)
@@ -6317,6 +6377,7 @@ func defaultContentModerationSemanticReviewConfig() ContentModerationSemanticRev
 		FallbackTimeoutMS:              ContentModerationSemanticReviewFallbackTimeoutMS,
 		MaxAttemptsPerModel:            ContentModerationSemanticReviewDefaultModelAttempts,
 		MaxInputRunes:                  ContentModerationSemanticReviewDefaultMaxInputRunes,
+		MaxSubmitRunes:                 0,
 		MaxOutputTokens:                ContentModerationSemanticReviewDefaultOutputTokens,
 		ReasoningEffort:                ContentModerationSemanticReviewDefaultReasoning,
 		PromptInjectionReviewerEnabled: false,
@@ -6449,6 +6510,17 @@ func normalizeContentModerationSemanticReviewConfig(cfg ContentModerationSemanti
 		ContentModerationSemanticReviewDefaultReasoning,
 	)
 	return cfg
+}
+
+// effectiveSubmitRunes returns the authoritative cap on the number of runes
+// actually submitted to the semantic review model. MaxSubmitRunes is the
+// operator-facing control; when it is unset the legacy MaxInputRunes value is
+// used so configurations written before the field existed are unchanged.
+func (cfg ContentModerationSemanticReviewConfig) effectiveSubmitRunes() int {
+	if cfg.MaxSubmitRunes > 0 {
+		return cfg.MaxSubmitRunes
+	}
+	return cfg.MaxInputRunes
 }
 
 func normalizeContentModerationSemanticReviewEndpoint(endpoint string) string {
