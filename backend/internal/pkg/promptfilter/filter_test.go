@@ -461,6 +461,19 @@ func BenchmarkInspectPromptFilter12KPromptInjectionHit(b *testing.B) {
 	}
 }
 
+func TestInspectIgnoresLocalFilesystemPathSegments(t *testing.T) {
+	for _, text := range []string{
+		`C:\Users\wrnin\Documents\password\ChatGPT\测试`,
+		`:\Users\wrnin\Documents\ChatGPT\token\测试`,
+		`请查看 /Users/wrnin/Documents/password/ChatGPT/测试`,
+	} {
+		verdict := Inspect(text, Config{Mode: ModeBlock})
+		if len(verdict.Matches) != 0 {
+			t.Fatalf("local path was classified as rule evidence: %q => %+v", text, verdict.Matches)
+		}
+	}
+}
+
 func findMatchByName(matches []Match, name string) (Match, bool) {
 	for _, match := range matches {
 		if match.Name == name {

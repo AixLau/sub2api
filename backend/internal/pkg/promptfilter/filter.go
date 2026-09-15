@@ -138,6 +138,8 @@ type Engine struct {
 
 var engineCache sync.Map // map[string]*Engine
 
+var localFilesystemPathPattern = regexp.MustCompile(`(?i)(?:[a-z]:|:)[\\/][^\s"'<>，。；！？\[\](){}]*|[\\/](?:users|home|tmp|var|private)[\\/][^\s"'<>，。；！？\[\](){}]*`)
+
 func BuiltinPatternConfigs() []PatternConfig {
 	out := builtinPatternConfigs()
 	for idx := range out {
@@ -268,6 +270,7 @@ func Inspect(text string, cfg Config) Verdict {
 }
 
 func (e *Engine) inspect(text string) Verdict {
+	text = maskLocalFilesystemPaths(text)
 	cfg := e.cfg
 	segments, scanComplete, scannedRunes, extractedRunes := buildScanSegments(text, cfg.MaxTextLength)
 	verdict := Verdict{
@@ -416,6 +419,18 @@ func (e *Engine) inspect(text string) Verdict {
 		verdict.Action = ActionAllow
 	}
 	return verdict
+}
+
+// maskLocalFilesystemPaths keeps local file paths from contributing directory
+// names such as "password" or "token" as security-rule evidence. The mask
+// preserves rune count so bounded scan windows remain stable.
+func maskLocalFilesystemPaths(text string) string {
+	if text == "" || !strings.ContainsAny(text, `:\/`) {
+		return text
+	}
+	return localFilesystemPathPattern.ReplaceAllStringFunc(text, func(path string) string {
+		return strings.Repeat(" ", utf8.RuneCountInString(path))
+	})
 }
 
 func promptInjectionSignalFamilies(matches []Match) []string {

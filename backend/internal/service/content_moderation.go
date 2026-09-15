@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -7823,7 +7824,7 @@ func matchContentModerationLocalRuleInputSet(content ContentModerationInput, rul
 		skippedSourceHit := false
 		if len(content.Sources) > 0 {
 			for _, source := range content.Sources {
-				match, hit := rules.Match(source.Text)
+				match, hit := rules.Match(maskLocalFilesystemPaths(source.Text))
 				if !hit {
 					continue
 				}
@@ -7835,12 +7836,37 @@ func matchContentModerationLocalRuleInputSet(content ContentModerationInput, rul
 			}
 		}
 		if !skippedSourceHit {
-			if match, hit := rules.Match(content.Text); hit {
+			if match, hit := rules.Match(maskLocalFilesystemPaths(content.Text)); hit {
 				return match, true
 			}
 		}
 	}
-	return matchContextualBuiltInRiskRuleInput(content)
+	masked := content
+	masked.Text = maskLocalFilesystemPaths(content.Text)
+	if len(content.Sources) > 0 {
+		masked.Sources = append([]ContentModerationInputSource(nil), content.Sources...)
+		for i := range masked.Sources {
+			masked.Sources[i].Text = maskLocalFilesystemPaths(masked.Sources[i].Text)
+		}
+	}
+	return matchContextualBuiltInRiskRuleInput(masked)
+}
+
+var localFilesystemPathPattern = regexp.MustCompile(`(?i)(?:[a-z]:|:)[\\/][^\s"'<>，。；！？\[\](){}]*|[\\/](?:users|home|tmp|var|private)[\\/][^\s"'<>，。；！？\[\](){}]*`)
+
+// maskLocalFilesystemPaths prevents directory names from becoming keyword
+// evidence. A path is context, while an action requested against that path is
+// still scanned in the surrounding text.
+func maskLocalFilesystemPaths(text string) string {
+	if text == "" || !strings.ContainsAny(text, `:\/`) {
+		return text
+	}
+	return localFilesystemPathPattern.ReplaceAllStringFunc(text, func(path string) string {
+		if looksLikeLocalFilesystemContext(path, normalizeKeywordComparable(path)) {
+			return strings.Repeat(" ", utf8.RuneCountInString(path))
+		}
+		return path
+	})
 }
 
 func matchContentModerationKeyword(text string, rules []ContentModerationKeywordRule) (ContentModerationKeywordRule, bool) {

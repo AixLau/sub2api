@@ -155,6 +155,21 @@ func TestCandidatePromptFilterClassifiesExpandedSafetyRecall(t *testing.T) {
 	}
 }
 
+func TestLocalFilesystemPathDoesNotBecomeKeywordEvidence(t *testing.T) {
+	rules := newContentModerationPreparedRuleSet([]ContentModerationKeywordRule{{
+		Keyword: "password", Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh, Action: ContentModerationKeywordActionBlock, Enabled: true,
+	}})
+	for _, text := range []string{
+		`C:\Users\wrnin\Documents\password\ChatGPT\测试`,
+		`:\Users\wrnin\Documents\ChatGPT\password\测试`,
+		`请查看 C:\Users\wrnin\Documents\password\ChatGPT\测试`,
+	} {
+		_, hit := matchContentModerationLocalRuleInputSet(ContentModerationInput{Text: text}, rules)
+		require.False(t, hit, text)
+	}
+}
+
 func TestCandidateAuthorizedSecurityResearchStillUsesSemanticReview(t *testing.T) {
 	cfg := candidateTestConfig()
 	cfg.PromptFilterMode = promptfilter.ModeBlock
