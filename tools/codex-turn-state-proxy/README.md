@@ -18,7 +18,7 @@ use an upstream URL without `/v1` when the client already sends `/v1`.
 For Codex with an existing provider named `custom`, override its URL for one run:
 
 ```bash
-codex exec --ephemeral --skip-git-repo-check -s read-only \
+codex exec --skip-git-repo-check -s read-only \
   -c 'model_providers.custom.base_url="http://127.0.0.1:18080/v1"' \
   'Reply only OK. Do not use tools.'
 ```
@@ -44,6 +44,38 @@ The same `request_id` joins both directions. A fresh turn can have no inbound
 state. This proxy does not synthesize or inject turn state, and cannot guarantee
 that the upstream returns it. For WebSocket, it observes the HTTP handshake
 headers, not metadata inside frames. Stop the proxy with Ctrl+C.
+
+## Full HTTP capture
+
+For comparing provider behavior, add `-capture-dir /path/to/new-capture-dir`.
+The parent must exist and the capture directory must not already exist. Each
+request gets its own directory with:
+
+| File | Contents |
+| --- | --- |
+| `request.json` | Destination, method, headers after auth/URL rewriting, content length, and time |
+| `request.wire-headers.jsonl` | Transport-written headers, including Host/Content-Length or HTTP/2 pseudo-headers |
+| `request.body` | Exact outbound HTTP entity body |
+| `response.json` | Status, protocol, all upstream headers before proxy filtering, and time |
+| `response.body` | Full response entity body, including SSE events and terminal response/usage metadata |
+| `response.end.json` | Whether EOF was reached, captured byte count, trailers, and end time |
+
+Authorization, cookies, and common API-key headers are redacted **only in the
+capture files**, without changing forwarded values. Directories use mode 0700
+and files use mode 0600. Bodies and request URLs are captured verbatim and may
+contain private data; full capture is explicitly enabled with this flag.
+
+Full capture buffers the request before sending it. Responses continue streaming
+as they arrive. HTTP transfer framing is removed by Go, but Content-Encoding is
+retained: decode gzip/zstd bodies according to the captured headers before
+parsing JSON or SSE. `response.completed`, `response.incomplete`, or
+`response.failed` events contain the final Response object when the upstream
+provides it. An interrupted stream may have no final usage, so check both the
+terminal event and `response.end.json`.
+
+WebSocket captures include only handshake metadata, without response body/end
+files. This observes traffic between this local proxy and the configured API
+endpoint; it cannot observe that endpoint's internal requests to another service.
 
 Run the focused checks without loading the backend module:
 

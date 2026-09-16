@@ -3,12 +3,15 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -32,14 +35,14 @@ func (b *logBuffer) String() string {
 	return b.b.String()
 }
 
-func startTestProxy(t *testing.T, upstream, apiKey string) (*httptest.Server, *logBuffer) {
+func startTestProxy(t *testing.T, upstream, apiKey, captureDir string) (*httptest.Server, *logBuffer) {
 	t.Helper()
 	target, err := url.Parse(upstream)
 	if err != nil {
 		t.Fatal(err)
 	}
 	logs := &logBuffer{}
-	server := httptest.NewServer(newProxy(target, apiKey, slog.New(slog.NewJSONHandler(logs, nil))))
+	server := httptest.NewServer(newProxy(target, apiKey, captureDir, slog.New(slog.NewJSONHandler(logs, nil))))
 	t.Cleanup(server.Close)
 	return server, logs
 }
@@ -64,7 +67,7 @@ func TestProxyFlushesSSEBeforeUpstreamCompletes(t *testing.T) {
 		}
 	}))
 	t.Cleanup(upstream.Close)
-	server, logs := startTestProxy(t, upstream.URL, "")
+	server, logs := startTestProxy(t, upstream.URL, "", "")
 
 	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/responses?test=1", strings.NewReader(`{"model":"test","input":"private-body"}`))
 	if err != nil {
@@ -117,7 +120,7 @@ func TestProxyPreservesMissingOrEmptyHeadersOnErrorResponses(t *testing.T) {
 				_, _ = io.WriteString(w, `{"error":"busy"}`)
 			}))
 			t.Cleanup(upstream.Close)
-			server, logs := startTestProxy(t, upstream.URL, "upstream-secret")
+			server, logs := startTestProxy(t, upstream.URL, "upstream-secret", "")
 			client := &http.Client{Timeout: 3 * time.Second}
 			resp, err := client.Get(server.URL + "/v1/responses")
 			if err != nil {
@@ -172,7 +175,7 @@ func TestProxyRelaysWebSocketHandshakeAndFrames(t *testing.T) {
 		_ = rw.Flush()
 	}))
 	t.Cleanup(upstream.Close)
-	server, logs := startTestProxy(t, upstream.URL, "")
+	server, logs := startTestProxy(t, upstream.URL, "", t.TempDir())
 	conn, err := net.DialTimeout("tcp", server.Listener.Addr().String(), 3*time.Second)
 	if err != nil {
 		t.Fatal(err)
@@ -199,5 +202,106 @@ func TestProxyRelaysWebSocketHandshakeAndFrames(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), `"status":101`) || !strings.Contains(logs.String(), "ws-upstream") {
 		t.Fatal("missing websocket response capture")
+	}
+}
+
+func TestFullCapturePreservesStreamingMetadataAndRedactsCredentials(t *testing.T) {
+	dir := t.TempDir()
+	finish := make(chan struct{})
+	var once sync.Once
+	release := func() { once.Do(func() { close(finish) }) }
+	defer release()
+	requestBody := `{"model":"test-model","input":"hello","stream":true}`
+	first := "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_test\",\"model\":\"reported-model\"}}\n\n"
+	last := "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_test\",\"status\":\"completed\",\"model\":\"reported-model\",\"usage\":{\"input_tokens\":10,\"output_tokens\":2,\"output_tokens_details\":{\"reasoning_tokens\":1},\"total_tokens\":12}}}\n\n"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil || string(body) != requestBody || r.Header.Get("Authorization") != "Bearer real-upstream-key" || r.Header.Get("Cookie") != "client-cookie" {
+			t.Error("upstream request differs from intended request")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Set-Cookie", "upstream-cookie")
+		w.Header().Set("Connection", "X-Upstream-Hop")
+		w.Header().Set("X-Upstream-Hop", "hop-marker")
+		w.Header().Set(turnStateHeader, "full-capture-state")
+		w.Header().Set("Trailer", "X-End-Marker")
+		_, _ = io.WriteString(w, first)
+		w.(http.Flusher).Flush()
+		select {
+		case <-finish:
+		case <-r.Context().Done():
+			return
+		}
+		_, _ = io.WriteString(w, last)
+		w.Header().Set("X-End-Marker", "done")
+	}))
+	t.Cleanup(upstream.Close)
+	server, _ := startTestProxy(t, upstream.URL, "real-upstream-key", dir)
+	req, _ := http.NewRequest("POST", server.URL+"/v1/responses", strings.NewReader(requestBody))
+	req.Header.Set("Authorization", "Bearer client-placeholder")
+	req.Header.Set("Cookie", "client-cookie")
+	resp, err := (&http.Client{Timeout: 3 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	buf := make([]byte, len(first))
+	if _, err := io.ReadFull(resp.Body, buf); err != nil || string(buf) != first {
+		t.Fatalf("capture buffered the stream: %v", err)
+	}
+	release()
+	rest, err := io.ReadAll(resp.Body)
+	if err != nil || string(rest) != last {
+		t.Fatalf("response changed: %q, %v", rest, err)
+	}
+	if resp.Header.Get("Set-Cookie") != "upstream-cookie" || resp.Header.Get("X-Upstream-Hop") != "" {
+		t.Fatal("redaction changed forwarding or hop header was not stripped")
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 {
+		t.Fatalf("capture directories = %d", len(entries))
+	}
+	runDir := filepath.Join(dir, entries[0].Name())
+	read := func(name string) []byte {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(runDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	if string(read("request.body")) != requestBody || string(read("response.body")) != first+last {
+		t.Fatal("captured body differs from actual body")
+	}
+	responseMeta := string(read("response.json"))
+	if !strings.Contains(responseMeta, "hop-marker") || !strings.Contains(responseMeta, "full-capture-state") {
+		t.Fatal("upstream headers were captured after filtering")
+	}
+	for _, name := range []string{"request.json", "request.wire-headers.jsonl", "response.json", "response.end.json"} {
+		data := string(read(name))
+		for _, private := range []string{"real-upstream-key", "client-placeholder", "client-cookie", "upstream-cookie"} {
+			if strings.Contains(data, private) {
+				t.Fatalf("credential leaked to %s", name)
+			}
+		}
+		info, _ := os.Stat(filepath.Join(runDir, name))
+		if info.Mode().Perm() != 0600 {
+			t.Fatalf("capture permissions: %s", info.Mode())
+		}
+	}
+	wireHeaders := string(read("request.wire-headers.jsonl"))
+	if !strings.Contains(wireHeaders, "Content-Length") || !strings.Contains(wireHeaders, "Host") {
+		t.Fatal("transport-generated headers not captured")
+	}
+	var end struct {
+		Complete bool        `json:"complete"`
+		Bytes    int         `json:"body_bytes"`
+		Trailers http.Header `json:"trailers"`
+	}
+	if err := json.Unmarshal(read("response.end.json"), &end); err != nil {
+		t.Fatal(err)
+	}
+	if !end.Complete || end.Bytes != len(first+last) || end.Trailers.Get("X-End-Marker") != "done" {
+		t.Fatalf("incomplete capture: %+v", end)
 	}
 }
