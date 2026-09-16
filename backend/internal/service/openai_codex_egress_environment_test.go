@@ -22,7 +22,11 @@ import (
 
 type codexEgressProbeFunc func(context.Context, string) (*ProxyExitInfo, int64, error)
 
-func (f codexEgressProbeFunc) ProbeProxy(ctx context.Context, url string) (*ProxyExitInfo, int64, error) {
+func (f codexEgressProbeFunc) ProbeProxy(context.Context, string) (*ProxyExitInfo, int64, error) {
+	return nil, 0, errors.New("Codex must use the timezone-aware probe")
+}
+
+func (f codexEgressProbeFunc) ProbeProxyTimezone(ctx context.Context, url string) (*ProxyExitInfo, int64, error) {
 	return f(ctx, url)
 }
 

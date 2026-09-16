@@ -609,7 +609,7 @@ type ProxyQualityCheckItem struct {
 	CFRay      string `json:"cf_ray,omitempty"`
 }
 
-// ProxyExitInfo represents proxy exit information from ip-api.com
+// ProxyExitInfo represents the public egress reported by an IP lookup provider
 type ProxyExitInfo struct {
 	Timezone    string
 	IP          string
@@ -622,6 +622,8 @@ type ProxyExitInfo struct {
 // ProxyExitInfoProber tests proxy connectivity and retrieves exit information
 type ProxyExitInfoProber interface {
 	ProbeProxy(ctx context.Context, proxyURL string) (*ProxyExitInfo, int64, error)
+	// ProbeProxyTimezone requires a valid IP and IANA timezone, trying alternate providers as needed.
+	ProbeProxyTimezone(ctx context.Context, proxyURL string) (*ProxyExitInfo, int64, error)
 }
 
 type groupExistenceBatchReader interface {
