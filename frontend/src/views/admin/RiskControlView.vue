@@ -1839,6 +1839,13 @@
               </span>
             </div>
             <div class="rounded-lg border border-gray-100 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800/70">
+              <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.enforcement') }}</p>
+              <p class="mt-1 truncate text-sm font-semibold text-gray-900 dark:text-white">
+                {{ logEnforcementLabel(inputDetailRow) }}
+              </p>
+              <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ logModeLabel(inputDetailRow.mode) }}</p>
+            </div>
+            <div class="rounded-lg border border-gray-100 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800/70">
               <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.table.highest') }}</p>
               <p class="mt-1 truncate text-sm font-semibold text-gray-900 dark:text-white">
                 {{ moderationCategoryLabel(inputDetailRow.highest_category) }} / {{ percent(inputDetailRow.highest_score) }}
@@ -3180,6 +3187,7 @@ const semanticReviewSummaryItems = computed(() => {
     { label: t('admin.riskControl.modelResponseFields.severity'), value: text(output.severity) },
     { label: t('admin.riskControl.modelResponseFields.categories'), value: text(output.categories) },
     { label: t('admin.riskControl.modelResponseFields.reasonCodes'), value: text(output.reason_codes) },
+    { label: t('admin.riskControl.modelResponseFields.rawVerdict'), value: text(output.raw_verdict) },
     { label: t('admin.riskControl.modelResponseFields.policyOverride'), value: output.policy_override ? t('common.yes') : t('common.no') },
   ]
 })
@@ -3247,6 +3255,14 @@ const preBlockMetricItems = computed(() => [
     meta: t('admin.riskControl.preBlockErrorsHint'),
     class: 'bg-amber-50 dark:bg-amber-900/10',
     valueClass: 'text-amber-700 dark:text-amber-300',
+  },
+  {
+    key: 'technical',
+    label: t('admin.riskControl.preBlockTechnicalFailures'),
+    value: formatNumber(status.value?.pre_block_technical_failures ?? 0),
+    meta: t('admin.riskControl.preBlockTechnicalFailuresHint'),
+    class: 'bg-orange-50 dark:bg-orange-900/10',
+    valueClass: 'text-orange-700 dark:text-orange-300',
   },
   {
     key: 'latency',
@@ -4069,6 +4085,35 @@ function resultLabel(row: ContentModerationLog): string {
   return t('admin.riskControl.result.pass')
 }
 
+function logEnforcementLabel(row: ContentModerationLog): string {
+  const enforcement = String(row.enforcement || '').trim().toLowerCase()
+  if (enforcement === 'blocked') return t('admin.riskControl.enforcementBlocked')
+  if (enforcement === 'allowed') return t('admin.riskControl.enforcementAllowed')
+  if (enforcement === 'error') return t('admin.riskControl.enforcementError')
+  // Rows written before the column existed are classified by action, which is
+  // what the UI used to do for every row.
+  return isBlockedLog(row)
+    ? t('admin.riskControl.enforcementInferredBlocked')
+    : t('admin.riskControl.enforcementInferredAllowed')
+}
+
+function logModeLabel(mode: string): string {
+  switch (String(mode || '').trim()) {
+    case 'pre_block':
+      return t('admin.riskControl.modePreBlock')
+    case 'observe':
+      return t('admin.riskControl.modeObserve')
+    case 'off':
+      return t('admin.riskControl.modeOff')
+    case 'post_upstream':
+      return t('admin.riskControl.modePostUpstream')
+    case 'pre_upstream':
+      return t('admin.riskControl.modePreUpstream')
+    default:
+      return String(mode || '').trim() || '-'
+  }
+}
+
 function resultBadgeClass(row: ContentModerationLog): string {
   if (isBlockedLog(row)) return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
   if (isReviewableLog(row)) return 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
@@ -4090,7 +4135,14 @@ const BLOCKED_LOG_ACTIONS = new Set([
   'cyber_policy_session_blocked',
 ])
 
-function isBlockedLog(row: Pick<ContentModerationLog, 'action'>): boolean {
+// Legacy fallback for rows written before the enforcement column existed. New
+// rows state the outcome directly, so an observe-mode reject — which logs
+// semantic_review_reject while the request was forwarded — is no longer shown as
+// blocked.
+function isBlockedLog(row: Pick<ContentModerationLog, 'action' | 'enforcement'>): boolean {
+  const enforcement = String(row.enforcement || '').trim().toLowerCase()
+  if (enforcement === 'blocked') return true
+  if (enforcement !== '') return false
   return BLOCKED_LOG_ACTIONS.has(row.action)
 }
 

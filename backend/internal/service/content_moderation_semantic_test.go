@@ -1020,20 +1020,29 @@ func TestReviewSemanticContentSupportsOpenAIAPIKeyAccounts(t *testing.T) {
 	require.NoError(t, json.Unmarshal(upstream.lastBody, &requestBody))
 	require.Equal(t, "gpt-5.4-mini-upstream", requestBody["model"])
 	require.Equal(t, float64(ContentModerationSemanticReviewDefaultOutputTokens), requestBody["max_output_tokens"])
-	require.Equal(t, semanticReviewInstructions, requestBody["instructions"])
-	require.Equal(t, "semantic-review-instructions-v12", semanticReviewInstructionsRevision)
-	// Keep the platform-specific virology prohibition and its lack of
-	// authorization exceptions as semantic policy contracts, rather than
-	// coupling the test to the previous prompt's section heading.
-	require.Contains(t, semanticReviewInstructions, "Reject actual intent to study, research, analyze, design, cultivate, or modify biological viruses")
-	require.Contains(t, semanticReviewInstructions, "This platform restriction has no authorization, ownership, educational, defensive, institutional, or fictional exception")
-	require.Contains(t, semanticReviewInstructions, "authorized reverse engineering")
-	require.Contains(t, semanticReviewInstructions, "virology education and research")
-	require.Contains(t, semanticReviewInstructions, "no authorization, ownership, educational")
-	require.Contains(t, semanticReviewInstructions, "Review is an internal handoff, never a final decision")
-	require.Contains(t, semanticReviewInstructions, "technical word")
-	require.Contains(t, semanticReviewInstructions, "CTF/lab analysis")
-	require.Contains(t, semanticReviewInstructions, "do not escalate merely because the evidence is long or incomplete")
+	// The request must carry the assembled initial-screen instructions. Asserting
+	// against the assembled value keeps this test honest when the configured audit
+	// prompt changes: the previous hard-coded English constant is only the
+	// fallback used when the embedded prompt fails to parse.
+	instructions := semanticReviewInstructionsForKind(contentModerationReviewKindGeneral, false)
+	require.Equal(t, instructions, requestBody["instructions"])
+	require.Equal(t, "semantic-review-instructions-v13", semanticReviewInstructionsRevision)
+	// Keep the platform-specific virology prohibition, its lack of authorization
+	// exceptions, and the auditor/downstream role separation as semantic policy
+	// contracts, rather than coupling the test to a section heading.
+	require.Contains(t, instructions, "本平台主题限制没有授权、所有权、教育、防御、机构或虚构例外")
+	require.Contains(t, instructions, "包含非操作性的病毒学教育和研究")
+	// The virology restriction requires an established biological-virus object.
+	require.Contains(t, instructions, "必须由请求或相关材料确立研究对象确实是生物病毒")
+	// The auditor/downstream boundary is the point of this revision: not executing
+	// the request is not grounds to reject the downstream task.
+	require.Contains(t, instructions, "绝不能以“用户要求我执行，但我的角色只能审计”为拒绝理由")
+	require.Contains(t, instructions, "你只分类，不代替下游助手完成任务")
+	require.Contains(t, instructions, "经授权逆向")
+	require.Contains(t, instructions, "CTF 或实验室分析")
+	require.Contains(t, instructions, "则尚未确立禁止结果")
+	require.Contains(t, instructions, "review 仅表示内部转交")
+	require.Contains(t, instructions, "不要因为证据长、不完整或存在未见材料就推定恶意")
 	reasoning, ok := requestBody["reasoning"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, ContentModerationSemanticReviewDefaultReasoning, reasoning["effort"])

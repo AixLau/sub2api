@@ -70,6 +70,13 @@ const (
 	ContentModerationActionCyberPolicy               = "cyber_policy" // cyber_policy 硬阻断的风控日志 action（封号计数排除按此值过滤）
 	ContentModerationActionCyberPolicySessionBlocked = "cyber_policy_session_blocked"
 
+	// Enforcement outcomes, persisted independently of the action. Action states
+	// what the pipeline concluded about the content; enforcement states what the
+	// gateway did with the request. In observe mode they disagree by design.
+	ContentModerationEnforcementAllowed = "allowed"
+	ContentModerationEnforcementBlocked = "blocked"
+	ContentModerationEnforcementError   = "error"
+
 	contentModerationKeywordCategory = "keyword"
 
 	ContentModerationKeywordModeKeywordOnly   = "keyword_only"
@@ -765,23 +772,28 @@ type ContentModerationDecision struct {
 }
 
 type ContentModerationLog struct {
-	ID                int64              `json:"id"`
-	DecisionID        string             `json:"decision_id,omitempty"`
-	RequestID         string             `json:"request_id"`
-	UserID            *int64             `json:"user_id,omitempty"`
-	UserEmail         string             `json:"user_email"`
-	APIKeyID          *int64             `json:"api_key_id,omitempty"`
-	APIKeyName        string             `json:"api_key_name"`
-	GroupID           *int64             `json:"group_id,omitempty"`
-	GroupName         string             `json:"group_name"`
-	AccountID         *int64             `json:"account_id,omitempty"`
-	AccountName       string             `json:"account_name"`
-	AccountType       string             `json:"account_type"`
-	Endpoint          string             `json:"endpoint"`
-	Provider          string             `json:"provider"`
-	Model             string             `json:"model"`
-	Mode              string             `json:"mode"`
-	Action            string             `json:"action"`
+	ID          int64  `json:"id"`
+	DecisionID  string `json:"decision_id,omitempty"`
+	RequestID   string `json:"request_id"`
+	UserID      *int64 `json:"user_id,omitempty"`
+	UserEmail   string `json:"user_email"`
+	APIKeyID    *int64 `json:"api_key_id,omitempty"`
+	APIKeyName  string `json:"api_key_name"`
+	GroupID     *int64 `json:"group_id,omitempty"`
+	GroupName   string `json:"group_name"`
+	AccountID   *int64 `json:"account_id,omitempty"`
+	AccountName string `json:"account_name"`
+	AccountType string `json:"account_type"`
+	Endpoint    string `json:"endpoint"`
+	Provider    string `json:"provider"`
+	Model       string `json:"model"`
+	Mode        string `json:"mode"`
+	Action      string `json:"action"`
+	// Enforcement is what the gateway did with the request, independent of the
+	// content verdict in Action. An observe-mode reject is 'allowed'; a
+	// fail-closed reviewer failure is 'blocked'; a technical failure that failed
+	// open is 'error'. Empty means the row predates the column.
+	Enforcement       string             `json:"enforcement"`
 	Flagged           bool               `json:"flagged"`
 	HighestCategory   string             `json:"highest_category"`
 	HighestScore      float64            `json:"highest_score"`
@@ -792,7 +804,11 @@ type ContentModerationLog struct {
 	// semantic audit records. Unlike InputExcerpt (a bounded 240-rune display
 	// summary), it is never re-derived from a shorter excerpt and its rune
 	// count always matches SubmittedRunes.
-	SubmittedText            string          `json:"submitted_text,omitempty"`
+	SubmittedText string `json:"submitted_text,omitempty"`
+	// SubmittedTextSHA256 digests the exact text in SubmittedText and is written
+	// under the same store_input_excerpt gate, so it never retains evidence the
+	// privacy setting was meant to drop.
+	SubmittedTextSHA256      string          `json:"submitted_text_sha256,omitempty"`
 	SubmittedRunes           int             `json:"submitted_runes"`
 	SubmittedMaxRunes        int             `json:"submitted_max_runes"`
 	SubmittedTruncated       bool            `json:"submitted_truncated"`
@@ -984,58 +1000,62 @@ type ContentModerationPipelineExecutionStatus = moderationcoverage.PipelineExecu
 type ContentModerationPipelineExecutionObservationStatus = moderationcoverage.PipelineStageExecutionObservation
 
 type ContentModerationRuntimeStatus struct {
-	Build                        ContentModerationBuildStatus               `json:"build"`
-	SecurityBaseline             ContentModerationSecurityBaselineStatus    `json:"security_baseline"`
-	EffectiveProtection          ContentModerationEffectiveProtectionStatus `json:"effective_protection"`
-	RouteCoverage                ContentModerationRouteCoverageStatus       `json:"route_coverage"`
-	PipelineCoverage             ContentModerationPipelineCoverageStatus    `json:"pipeline_coverage"`
-	PipelineExecution            ContentModerationPipelineExecutionStatus   `json:"pipeline_execution"`
-	Enabled                      bool                                       `json:"enabled"`
-	RiskControlEnabled           bool                                       `json:"risk_control_enabled"`
-	Mode                         string                                     `json:"mode"`
-	Provider                     string                                     `json:"provider"`
-	Model                        string                                     `json:"model"`
-	PassCacheEnabled             bool                                       `json:"pass_cache_enabled"`
-	PassCacheAvailable           bool                                       `json:"pass_cache_available"`
-	PassCacheDegradedReason      string                                     `json:"pass_cache_degraded_reason,omitempty"`
-	PassCacheTTLSeconds          int                                        `json:"pass_cache_ttl_seconds"`
-	DecisionCacheEnabled         bool                                       `json:"decision_cache_enabled"`
-	DecisionCacheAvailable       bool                                       `json:"decision_cache_available"`
-	DecisionCacheDistributed     bool                                       `json:"decision_cache_distributed"`
-	DecisionCacheTTLSeconds      int                                        `json:"decision_cache_ttl_seconds"`
-	CandidateFragmentRunes       int                                        `json:"candidate_fragment_runes"`
-	ChunkerVersion               string                                     `json:"chunker_version"`
-	ChunkMaxRunes                int                                        `json:"chunk_max_runes"`
-	ChunkOverlapRunes            int                                        `json:"chunk_overlap_runes"`
-	ChunkMaxCount                int                                        `json:"chunk_max_count"`
-	WorkerCount                  int                                        `json:"worker_count"`
-	MaxWorkers                   int                                        `json:"max_workers"`
-	ActiveWorkers                int                                        `json:"active_workers"`
-	IdleWorkers                  int                                        `json:"idle_workers"`
-	QueueSize                    int                                        `json:"queue_size"`
-	QueueLength                  int                                        `json:"queue_length"`
-	QueueUsagePercent            float64                                    `json:"queue_usage_percent"`
-	Enqueued                     int64                                      `json:"enqueued"`
-	Dropped                      int64                                      `json:"dropped"`
-	Processed                    int64                                      `json:"processed"`
-	Errors                       int64                                      `json:"errors"`
-	PreBlockActive               int                                        `json:"pre_block_active"`
-	PreBlockChecked              int64                                      `json:"pre_block_checked"`
-	PreBlockAllowed              int64                                      `json:"pre_block_allowed"`
-	PreBlockBlocked              int64                                      `json:"pre_block_blocked"`
-	PreBlockErrors               int64                                      `json:"pre_block_errors"`
-	PreBlockAvgLatencyMS         int64                                      `json:"pre_block_avg_latency_ms"`
-	PreBlockAPIKeyActive         int64                                      `json:"pre_block_api_key_active"`
-	PreBlockAPIKeyAvailableCount int64                                      `json:"pre_block_api_key_available_count"`
-	PreBlockAPIKeyTotalCalls     int64                                      `json:"pre_block_api_key_total_calls"`
-	PreBlockAPIKeyLoads          []ContentModerationAPIKeyLoad              `json:"pre_block_api_key_loads"`
-	APIKeyStatuses               []ContentModerationAPIKeyStatus            `json:"api_key_statuses"`
-	FlaggedHashCount             int64                                      `json:"flagged_hash_count"`
-	LastCleanupAt                *time.Time                                 `json:"last_cleanup_at,omitempty"`
-	LastCleanupDeletedHit        int64                                      `json:"last_cleanup_deleted_hit"`
-	LastCleanupDeletedNonHit     int64                                      `json:"last_cleanup_deleted_non_hit"`
-	Outbox                       ContentModerationOutboxStatus              `json:"outbox"`
-	SemanticReviewUsage          ContentModerationSemanticReviewUsageStats  `json:"semantic_review_usage"`
+	Build                    ContentModerationBuildStatus               `json:"build"`
+	SecurityBaseline         ContentModerationSecurityBaselineStatus    `json:"security_baseline"`
+	EffectiveProtection      ContentModerationEffectiveProtectionStatus `json:"effective_protection"`
+	RouteCoverage            ContentModerationRouteCoverageStatus       `json:"route_coverage"`
+	PipelineCoverage         ContentModerationPipelineCoverageStatus    `json:"pipeline_coverage"`
+	PipelineExecution        ContentModerationPipelineExecutionStatus   `json:"pipeline_execution"`
+	Enabled                  bool                                       `json:"enabled"`
+	RiskControlEnabled       bool                                       `json:"risk_control_enabled"`
+	Mode                     string                                     `json:"mode"`
+	Provider                 string                                     `json:"provider"`
+	Model                    string                                     `json:"model"`
+	PassCacheEnabled         bool                                       `json:"pass_cache_enabled"`
+	PassCacheAvailable       bool                                       `json:"pass_cache_available"`
+	PassCacheDegradedReason  string                                     `json:"pass_cache_degraded_reason,omitempty"`
+	PassCacheTTLSeconds      int                                        `json:"pass_cache_ttl_seconds"`
+	DecisionCacheEnabled     bool                                       `json:"decision_cache_enabled"`
+	DecisionCacheAvailable   bool                                       `json:"decision_cache_available"`
+	DecisionCacheDistributed bool                                       `json:"decision_cache_distributed"`
+	DecisionCacheTTLSeconds  int                                        `json:"decision_cache_ttl_seconds"`
+	CandidateFragmentRunes   int                                        `json:"candidate_fragment_runes"`
+	ChunkerVersion           string                                     `json:"chunker_version"`
+	ChunkMaxRunes            int                                        `json:"chunk_max_runes"`
+	ChunkOverlapRunes        int                                        `json:"chunk_overlap_runes"`
+	ChunkMaxCount            int                                        `json:"chunk_max_count"`
+	WorkerCount              int                                        `json:"worker_count"`
+	MaxWorkers               int                                        `json:"max_workers"`
+	ActiveWorkers            int                                        `json:"active_workers"`
+	IdleWorkers              int                                        `json:"idle_workers"`
+	QueueSize                int                                        `json:"queue_size"`
+	QueueLength              int                                        `json:"queue_length"`
+	QueueUsagePercent        float64                                    `json:"queue_usage_percent"`
+	Enqueued                 int64                                      `json:"enqueued"`
+	Dropped                  int64                                      `json:"dropped"`
+	Processed                int64                                      `json:"processed"`
+	Errors                   int64                                      `json:"errors"`
+	PreBlockActive           int                                        `json:"pre_block_active"`
+	PreBlockChecked          int64                                      `json:"pre_block_checked"`
+	PreBlockAllowed          int64                                      `json:"pre_block_allowed"`
+	PreBlockBlocked          int64                                      `json:"pre_block_blocked"`
+	PreBlockErrors           int64                                      `json:"pre_block_errors"`
+	// PreBlockTechnicalFailures counts pre-block rejections caused by reviewer
+	// unavailability or incomplete input assembly, kept out of PreBlockBlocked so a
+	// reviewer outage is not reported as content blocking.
+	PreBlockTechnicalFailures    int64                                     `json:"pre_block_technical_failures"`
+	PreBlockAvgLatencyMS         int64                                     `json:"pre_block_avg_latency_ms"`
+	PreBlockAPIKeyActive         int64                                     `json:"pre_block_api_key_active"`
+	PreBlockAPIKeyAvailableCount int64                                     `json:"pre_block_api_key_available_count"`
+	PreBlockAPIKeyTotalCalls     int64                                     `json:"pre_block_api_key_total_calls"`
+	PreBlockAPIKeyLoads          []ContentModerationAPIKeyLoad             `json:"pre_block_api_key_loads"`
+	APIKeyStatuses               []ContentModerationAPIKeyStatus           `json:"api_key_statuses"`
+	FlaggedHashCount             int64                                     `json:"flagged_hash_count"`
+	LastCleanupAt                *time.Time                                `json:"last_cleanup_at,omitempty"`
+	LastCleanupDeletedHit        int64                                     `json:"last_cleanup_deleted_hit"`
+	LastCleanupDeletedNonHit     int64                                     `json:"last_cleanup_deleted_non_hit"`
+	Outbox                       ContentModerationOutboxStatus             `json:"outbox"`
+	SemanticReviewUsage          ContentModerationSemanticReviewUsageStats `json:"semantic_review_usage"`
 }
 
 type ContentModerationSemanticReviewUsageStats struct {
@@ -1155,46 +1175,51 @@ type ModerationFeedbackEpochRepository interface {
 }
 
 type ContentModerationService struct {
-	resourceProtection          *ResourceProtectionManager
-	configUpdateMu              sync.Mutex
-	configSnapshot              atomic.Pointer[contentModerationConfigSnapshot]
-	configRefreshMu             sync.Mutex
-	configRefreshInFlight       atomic.Bool
-	configSnapshotGeneration    atomic.Uint64
-	configCacheTTL              time.Duration
-	configRefreshRetryAt        atomic.Int64
-	settingRepo                 SettingRepository
-	repo                        ContentModerationRepository
-	rawRequestSnapshotStore     ContentModerationRawRequestSnapshotStore
-	rawRequestEncryptor         SecretEncryptor
-	evidenceStore               ContentModerationEvidenceStore
-	hashCache                   ContentModerationHashCache
-	groupRepo                   GroupRepository
-	accountScopeRepo            ContentModerationAccountScopeRepository
-	userRepo                    UserRepository
-	proxyRepo                   ProxyRepository
-	authCacheInvalidator        APIKeyAuthCacheInvalidator
-	emailService                *EmailService
-	outboxRepo                  ContentModerationOutboxRepository
-	buildInfo                   BuildInfo
-	baselineStatusMu            sync.Mutex
-	baselineStatusValid         bool
-	baselineStatus              ContentModerationSecurityBaselineStatus
-	httpClient                  *http.Client
-	moderationProxyCache        atomic.Pointer[moderationProxyURLCacheEntry]
-	asyncQueue                  chan contentModerationTask
-	workerCount                 int
-	apiKeyCursor                atomic.Uint64
-	asyncActive                 atomic.Int64
-	asyncEnqueued               atomic.Int64
-	asyncDropped                atomic.Int64
-	asyncProcessed              atomic.Int64
-	asyncErrors                 atomic.Int64
-	preBlockActive              atomic.Int64
-	preBlockChecked             atomic.Int64
-	preBlockAllowed             atomic.Int64
-	preBlockBlocked             atomic.Int64
-	preBlockErrors              atomic.Int64
+	resourceProtection       *ResourceProtectionManager
+	configUpdateMu           sync.Mutex
+	configSnapshot           atomic.Pointer[contentModerationConfigSnapshot]
+	configRefreshMu          sync.Mutex
+	configRefreshInFlight    atomic.Bool
+	configSnapshotGeneration atomic.Uint64
+	configCacheTTL           time.Duration
+	configRefreshRetryAt     atomic.Int64
+	settingRepo              SettingRepository
+	repo                     ContentModerationRepository
+	rawRequestSnapshotStore  ContentModerationRawRequestSnapshotStore
+	rawRequestEncryptor      SecretEncryptor
+	evidenceStore            ContentModerationEvidenceStore
+	hashCache                ContentModerationHashCache
+	groupRepo                GroupRepository
+	accountScopeRepo         ContentModerationAccountScopeRepository
+	userRepo                 UserRepository
+	proxyRepo                ProxyRepository
+	authCacheInvalidator     APIKeyAuthCacheInvalidator
+	emailService             *EmailService
+	outboxRepo               ContentModerationOutboxRepository
+	buildInfo                BuildInfo
+	baselineStatusMu         sync.Mutex
+	baselineStatusValid      bool
+	baselineStatus           ContentModerationSecurityBaselineStatus
+	httpClient               *http.Client
+	moderationProxyCache     atomic.Pointer[moderationProxyURLCacheEntry]
+	asyncQueue               chan contentModerationTask
+	workerCount              int
+	apiKeyCursor             atomic.Uint64
+	asyncActive              atomic.Int64
+	asyncEnqueued            atomic.Int64
+	asyncDropped             atomic.Int64
+	asyncProcessed           atomic.Int64
+	asyncErrors              atomic.Int64
+	preBlockActive           atomic.Int64
+	preBlockChecked          atomic.Int64
+	preBlockAllowed          atomic.Int64
+	preBlockBlocked          atomic.Int64
+	preBlockErrors           atomic.Int64
+	// preBlockTechnicalFailures counts pre-block rejections caused by reviewer
+	// unavailability or incomplete input assembly. They do reject the request, but
+	// they are not content verdicts; counting them as content blocks hid the
+	// technical failures operators need to see.
+	preBlockTechnicalFailures   atomic.Int64
 	preBlockLatencyTotalMS      atomic.Int64
 	localClassifierActive       atomic.Int64
 	lastCleanupUnix             atomic.Int64
@@ -2559,6 +2584,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			scores := map[string]float64{"hash": 1.0}
 			logMetadata := contentModerationHitLogMetadata(cfg, content, contentModerationPrimarySource(input.Protocol, content))
 			log := s.buildLog(input, cfg, ContentModerationActionHashBlock, true, "hash", 1.0, scores, content.ExcerptText(), nil, nil, logMetadata)
+			log.Enforcement = ContentModerationEnforcementBlocked
 			s.enqueueRecord(ctx, input, cfg, log, hashText, false, false)
 			return &ContentModerationDecision{
 				Allowed:    false,
@@ -2848,6 +2874,7 @@ func (s *ContentModerationService) checkSyncWithFocusKeyword(ctx context.Context
 			logMetadata = contentModerationHitLogMetadata(cfg, content, contentModerationPrimarySource(input.Protocol, content))
 		}
 		log := s.buildLog(input, cfg, action, flagged, highestCategory, highestScore, result.CategoryScores, content.ExcerptText(), &latency, queueDelay, logMetadata)
+		log.Enforcement = contentModerationEnforcementFor(blocked)
 		if queueDelay == nil && cfg.Mode == ContentModerationModePreBlock {
 			s.enqueueRecord(ctx, input, cfg, log, hashText, blocked, blocked)
 		} else {
@@ -2905,6 +2932,10 @@ func (s *ContentModerationService) buildContentModerationErrorLog(
 ) *ContentModerationLog {
 	log := s.buildLog(input, cfg, ContentModerationActionError, false, "", 0, nil, content.ExcerptText(), latencyMS, queueDelayMS, "")
 	log.Error = err.Error()
+	// Every action = error record is a technical failure. The ordinary moderation
+	// path fails open, so the request is still forwarded; fail-closed reviewer
+	// failures use their own actions (semantic_review_unavailable) and are blocked.
+	log.Enforcement = ContentModerationEnforcementError
 	truncateReasons := append([]string(nil), content.TruncateReasons...)
 	truncateReasons = append(truncateReasons, content.Extraction.TruncateReasons...)
 	for _, source := range content.Sources {
@@ -3044,9 +3075,12 @@ func (s *ContentModerationService) recordPreBlockSyncMetric(latencyMS int, actio
 	switch action {
 	case ContentModerationActionBlock, ContentModerationActionHashBlock, ContentModerationActionKeywordBlock,
 		ContentModerationActionPromptFilterBlock, ContentModerationActionSemanticReviewReject,
-		ContentModerationActionSemanticReviewDeferred, ContentModerationActionSemanticReviewUnavailable,
-		ContentModerationActionSemanticReviewIncomplete:
+		ContentModerationActionSemanticReviewDeferred:
 		s.preBlockBlocked.Add(1)
+	case ContentModerationActionSemanticReviewUnavailable, ContentModerationActionSemanticReviewIncomplete:
+		// These reject the request, but they record a reviewer outage or an input
+		// assembly failure rather than a content verdict about the user.
+		s.preBlockTechnicalFailures.Add(1)
 	case ContentModerationActionError:
 		s.preBlockErrors.Add(1)
 	default:
@@ -3080,6 +3114,7 @@ func (s *ContentModerationService) keywordDecision(ctx context.Context, input Co
 	logMetadata := contentModerationHitLogMetadata(cfg, content, contentModerationMatchedSource(input.Protocol, keywordMatch.Keyword, content))
 	log := s.buildLog(input, cfg, keywordDecision.action, keywordDecision.flagged, contentModerationKeywordCategory, 1.0, scores, content.KeywordHitExcerpt(keywordMatch.Keyword), nil, nil, logMetadata)
 	applyContentModerationKeywordMetadata(log, keywordDecision)
+	log.Enforcement = contentModerationEnforcementFor(keywordDecision.blocked)
 	s.enqueueRecord(ctx, input, cfg, log, hashText, false, keywordDecision.blocked)
 	return contentModerationDecisionFromKeyword(cfg, keywordDecision, scores)
 }
@@ -3125,6 +3160,9 @@ func (s *ContentModerationService) promptFilterDecision(ctx context.Context, inp
 	log.EffectiveKeywordAction = action
 	log.RiskContextType = ContentModerationRiskContextActualRequest
 	log.RiskContextReason = "codex2api_pattern_candidate"
+	// Only a rule_only terminal match blocks; every other prompt-filter outcome is
+	// a review candidate or an observation and leaves the request forwarded.
+	log.Enforcement = contentModerationEnforcementFor(hardBlock)
 	if action == ContentModerationActionPromptFilterReview {
 		log.ReviewStatus = ContentModerationReviewStatusPending
 	}
@@ -3314,6 +3352,7 @@ func (s *ContentModerationService) keywordReviewDecision(ctx context.Context, in
 	logMetadata := contentModerationHitLogMetadata(cfg, content, contentModerationMatchedSource(input.Protocol, keywordMatch.Keyword, content))
 	log := s.buildLog(input, cfg, keywordDecision.action, keywordDecision.flagged, contentModerationKeywordCategory, 1.0, scores, content.KeywordHitExcerpt(keywordMatch.Keyword), nil, nil, logMetadata)
 	applyContentModerationKeywordMetadata(log, keywordDecision)
+	log.Enforcement = contentModerationEnforcementFor(keywordDecision.blocked)
 	s.enqueueRecord(ctx, input, cfg, log, hashText, false, false)
 	return contentModerationDecisionFromKeyword(cfg, keywordDecision, scores)
 }
@@ -4072,6 +4111,7 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 		PreBlockAllowed:              s.preBlockAllowed.Load(),
 		PreBlockBlocked:              s.preBlockBlocked.Load(),
 		PreBlockErrors:               s.preBlockErrors.Load(),
+		PreBlockTechnicalFailures:    s.preBlockTechnicalFailures.Load(),
 		PreBlockAvgLatencyMS:         preBlockAvgLatency,
 		PreBlockAPIKeyActive:         s.preBlockAPIKeyActive(cfg.apiKeys()),
 		PreBlockAPIKeyAvailableCount: s.preBlockAPIKeyAvailableCount(cfg.apiKeys()),
@@ -5599,9 +5639,24 @@ func applySemanticReviewSubmittedLog(log *ContentModerationLog, cfg *ContentMode
 		return
 	}
 	log.SubmittedText = submitted
+	// Digested from the same already-redacted, already-capped text that is stored
+	// and that the reviewer received, so a stored record can be tied back to the
+	// upstream request it describes.
+	digest := sha256.Sum256([]byte(submitted))
+	log.SubmittedTextSHA256 = hex.EncodeToString(digest[:])
 	// The display excerpt is an independent bounded summary of the same already-
 	// redacted submitted text; it never represents the full submitted content.
 	log.InputExcerpt = trimRunes(submitted, maxModerationExcerptRunes)
+}
+
+// contentModerationEnforcementFor maps a decision's blocked flag to the persisted
+// enforcement outcome. It exists so every call site states the same thing the same
+// way instead of each re-deriving a string.
+func contentModerationEnforcementFor(blocked bool) string {
+	if blocked {
+		return ContentModerationEnforcementBlocked
+	}
+	return ContentModerationEnforcementAllowed
 }
 
 func contentModerationKeywordHitExcerptFromText(text string, keyword string) (string, bool) {
@@ -5841,7 +5896,11 @@ func contentModerationHitLogMetadata(cfg *ContentModerationConfig, content Conte
 	if content.Truncated {
 		metadata["truncated"] = true
 		if len(content.TruncateReasons) > 0 {
-			metadata["truncate_reasons"] = content.TruncateReasons
+			// Named source_truncate_reasons, not truncate_reasons: the row already
+			// has a top-level truncate_reasons column holding the same slice, and a
+			// consumer that flattens metadata into the row would silently shadow the
+			// column with a nested copy of the same name.
+			metadata["source_truncate_reasons"] = content.TruncateReasons
 		}
 	}
 	if len(metadata) == 0 {
@@ -9169,19 +9228,22 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 		metadataValues["upstream_output_tokens"] = in.UpstreamOutTok
 	}
 	log := &ContentModerationLog{
-		RequestID:          in.RequestID,
-		UserID:             userID,
-		UserEmail:          in.UserEmail,
-		APIKeyID:           apiKeyID,
-		APIKeyName:         in.APIKeyName,
-		GroupID:            cloneInt64Ptr(in.GroupID),
-		GroupName:          in.GroupName,
-		Endpoint:           in.Endpoint,
-		Provider:           "openai",
-		Model:              in.Model,
-		Mode:               "post_upstream",
-		Action:             ContentModerationActionCyberPolicy,
-		Flagged:            true,
+		RequestID:  in.RequestID,
+		UserID:     userID,
+		UserEmail:  in.UserEmail,
+		APIKeyID:   apiKeyID,
+		APIKeyName: in.APIKeyName,
+		GroupID:    cloneInt64Ptr(in.GroupID),
+		GroupName:  in.GroupName,
+		Endpoint:   in.Endpoint,
+		Provider:   "openai",
+		Model:      in.Model,
+		Mode:       "post_upstream",
+		Action:     ContentModerationActionCyberPolicy,
+		Flagged:    true,
+		// Recorded after upstream already refused the request, so the block is a
+		// fact about the request, not an inference from the action.
+		Enforcement:        ContentModerationEnforcementBlocked,
 		HighestCategory:    "cyber_policy",
 		HighestScore:       1.0,
 		Metadata:           contentModerationMetadataRaw(marshalContentModerationMetadata(metadataValues)),
@@ -9273,6 +9335,7 @@ func (s *ContentModerationService) RecordCyberSessionBlockedEvent(ctx context.Co
 		Mode:            "pre_upstream",
 		Action:          ContentModerationActionCyberPolicySessionBlocked,
 		Flagged:         true,
+		Enforcement:     ContentModerationEnforcementBlocked,
 		HighestCategory: ContentModerationActionCyberPolicySessionBlocked,
 		HighestScore:    1.0,
 		Metadata: contentModerationMetadataRaw(marshalContentModerationMetadata(map[string]any{

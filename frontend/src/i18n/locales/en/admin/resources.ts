@@ -551,7 +551,7 @@ export default {
       sourceFailedUpstream: 'Failed Upstream Usage',
       sourcePlatformAudit: 'Platform Audit',
       sourceAccountTest: 'Account Tests',
-      sourceAnalyticsHint: 'Source filtering applies to usage details and summary cards. Trend and distribution charts are hidden to avoid mixing other sources.',
+      sourceAnalyticsHint: 'Source filtering applies to usage details and summary cards. Trend and distribution charts are hidden to avoid mixing other sources. Platform audit is excluded by default; select "Platform Audit" to query audit records.',
       inputCost: 'Input Cost',
       outputCost: 'Output Cost',
       cacheCreationCost: 'Cache Creation Cost',

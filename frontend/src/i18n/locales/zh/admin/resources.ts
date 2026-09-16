@@ -548,7 +548,7 @@ export default {
       sourceFailedUpstream: '上游失败用量',
       sourcePlatformAudit: '平台审计',
       sourceAccountTest: '账号测试',
-      sourceAnalyticsHint: '来源筛选仅统计使用明细与顶部汇总；趋势和分布图暂不展示，避免混入其他来源。',
+      sourceAnalyticsHint: '来源筛选仅统计使用明细与顶部汇总；趋势和分布图暂不展示，避免混入其他来源。默认不展示平台审计，选择“平台审计”后才查询审计记录。',
       inputCost: '输入费用',
       outputCost: '输出费用',
       cacheCreationCost: '缓存创建费用',

@@ -1274,6 +1274,9 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 	if s.metrics != nil {
 		s.metrics.observeSemanticReview(result.Model, result.Verdict, started, result.Usage)
 	}
+	// Capture the reviewer's own verdict before any policy pass can rewrite or
+	// replace it (escalation below replaces result outright).
+	rawVerdict := result.Verdict
 	result, policyOverride := applyCandidateSemanticReviewPolicies(result, selection, semanticInput)
 	if semanticInput.ReviewKind == contentModerationReviewKindPromptInjection && s.metrics != nil {
 		s.metrics.observePromptInjectionReview(result.Verdict, semanticInput.EvidenceComplete, len([]rune(semanticInput.Text)))
@@ -1323,7 +1326,7 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		}
 		return decision
 	}
-	metadata := contentModerationCandidateSemanticMetadata(selection, result, policyOverride, ordinaryReason)
+	metadata := contentModerationCandidateSemanticMetadata(selection, result, rawVerdict, policyOverride, ordinaryReason)
 	switch result.Verdict {
 	case "reject":
 		blocked := cfg.Mode == ContentModerationModePreBlock
@@ -1556,7 +1559,7 @@ func contentModerationCandidateEscalationInput(cfg *ContentModerationConfig, sel
 	return input
 }
 
-func contentModerationCandidateSemanticMetadata(selection contentModerationCandidateSelection, result ContentModerationSemanticReviewResult, policyOverride bool, ordinaryReason string) contentModerationMetadata {
+func contentModerationCandidateSemanticMetadata(selection contentModerationCandidateSelection, result ContentModerationSemanticReviewResult, rawVerdict string, policyOverride bool, ordinaryReason string) contentModerationMetadata {
 	metadata := selection.metadata().mapValue()
 	metadata["semantic_review_model"] = result.Model
 	if result.AttemptCount > 0 {
@@ -1567,6 +1570,10 @@ func contentModerationCandidateSemanticMetadata(selection contentModerationCandi
 		metadata["semantic_review_fallback_reason"] = result.FallbackReason
 	}
 	metadata["semantic_review_verdict"] = result.Verdict
+	// The verdict the reviewer produced before policy rewrote or replaced it.
+	if strings.TrimSpace(rawVerdict) != "" {
+		metadata["semantic_review_raw_verdict"] = rawVerdict
+	}
 	metadata["semantic_review_final"] = result.FinalReview
 	metadata["semantic_review_intent"] = result.Intent
 	metadata["semantic_review_target"] = result.Target
@@ -1636,6 +1643,12 @@ func (s *ContentModerationService) persistCandidateAudit(
 ) string {
 	if s == nil || log == nil {
 		return ""
+	}
+	// Callers that reject through a fail-closed branch set this explicitly, because
+	// they pass blocked=false while still returning a blocking decision. Only fill
+	// it in from the argument when the caller has not already stated the outcome.
+	if log.Enforcement == "" {
+		log.Enforcement = contentModerationEnforcementFor(blocked)
 	}
 	enforcementEligible := blocked && log.UserViolationEligible
 	if enforcementEligible {
@@ -1710,9 +1723,16 @@ func (s *ContentModerationService) candidateUnavailableOutcomeWithLatency(
 		(decisionSource == contentModerationDecisionSourceSemantic && cfg != nil &&
 			cfg.Mode == ContentModerationModePreBlock)
 	log.UserViolationEligible = false
+	// Fail-closed rejects the request, but this path reaches persistCandidateAudit
+	// with blocked=false, so state the outcome here rather than let the caller's
+	// argument decide it. A fail-open reviewer outage returns action=error and is
+	// recorded as an error, not as a content block.
 	if failClosed {
 		log.Action = ContentModerationActionSemanticReviewUnavailable
 		log.Flagged = true
+		log.Enforcement = ContentModerationEnforcementBlocked
+	} else {
+		log.Enforcement = ContentModerationEnforcementError
 	}
 	log.ModerationProvider = strings.TrimSpace(provider)
 	log.ModerationModel = strings.TrimSpace(model)
@@ -1810,9 +1830,11 @@ func (s *ContentModerationService) candidateExtractionFailureOutcome(ctx context
 	reasons = normalizeContentModerationTruncateReasons(reasons)
 	metadata := map[string]any{
 		"extraction_complete": false,
-		"truncate_reasons":    reasons,
-		"selected_source":     selectedSource,
-		"selected_role":       selectedRole,
+		// Named to match contentModerationHitLogMetadata and to avoid shadowing the
+		// top-level truncate_reasons column when metadata is flattened into the row.
+		"source_truncate_reasons": reasons,
+		"selected_source":         selectedSource,
+		"selected_role":           selectedRole,
 	}
 	log := s.buildLog(
 		input,
@@ -1841,6 +1863,12 @@ func (s *ContentModerationService) candidateExtractionFailureOutcome(ctx context
 		log.Action = ContentModerationActionSemanticReviewIncomplete
 		log.Flagged = true
 		log.UserViolationEligible = false
+		// Input assembly failed and the fail-closed contract turns that into a
+		// rejection. Without the fail-closed contract this is a technical failure
+		// that fails open.
+		log.Enforcement = ContentModerationEnforcementBlocked
+	} else {
+		log.Enforcement = ContentModerationEnforcementError
 	}
 	s.persistContentModerationLog(ctx, cfg, log, "", false, false)
 	if selection != nil {

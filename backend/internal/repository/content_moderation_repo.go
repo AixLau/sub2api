@@ -121,7 +121,8 @@ INSERT INTO content_moderation_logs (
     decision_source, moderation_provider, moderation_model, source_origin,
     selected_source, selected_source_role, selected_fragment_runes,
 	    decision_cache_hit, duplicate_retry_count, user_violation_eligible, truncate_reasons,
-	    submitted_text, submitted_runes, submitted_max_runes, submitted_truncated, submitted_truncate_reasons
+	    submitted_text, submitted_runes, submitted_max_runes, submitted_truncated, submitted_truncate_reasons,
+	    submitted_text_sha256, enforcement
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
     $9, $10, $11,
@@ -131,7 +132,8 @@ INSERT INTO content_moderation_logs (
     $31, $32, $33, $34, $35, $36,
     $37, $38, $39, $40,
     $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51::jsonb,
-    $52, $53, $54, $55, $56::jsonb
+    $52, $53, $54, $55, $56::jsonb,
+    $57, $58
 ) ON CONFLICT (decision_id) WHERE decision_id <> '' DO UPDATE SET
     queue_delay_ms = COALESCE(EXCLUDED.queue_delay_ms, content_moderation_logs.queue_delay_ms),
     violation_count = GREATEST(content_moderation_logs.violation_count, EXCLUDED.violation_count),
@@ -139,6 +141,11 @@ INSERT INTO content_moderation_logs (
     email_sent = content_moderation_logs.email_sent OR EXCLUDED.email_sent,
 	    decision_cache_hit = content_moderation_logs.decision_cache_hit OR EXCLUDED.decision_cache_hit,
 	    duplicate_retry_count = GREATEST(content_moderation_logs.duplicate_retry_count, EXCLUDED.duplicate_retry_count),
+	    enforcement = COALESCE(NULLIF(EXCLUDED.enforcement, ''), content_moderation_logs.enforcement),
+	    submitted_text_sha256 = CASE
+	        WHEN EXCLUDED.submitted_text_sha256 <> '' THEN EXCLUDED.submitted_text_sha256
+	        ELSE content_moderation_logs.submitted_text_sha256
+	    END,
 	    truncate_reasons = CASE
 	        WHEN EXCLUDED.truncate_reasons <> '[]'::jsonb THEN EXCLUDED.truncate_reasons
 	        ELSE content_moderation_logs.truncate_reasons
@@ -169,6 +176,7 @@ RETURNING id, created_at`,
 		log.SelectedSource, log.SelectedSourceRole, log.SelectedFragmentRunes,
 		log.DecisionCacheHit, log.DuplicateRetryCount, log.UserViolationEligible, string(truncateReasonsJSON),
 		log.SubmittedText, log.SubmittedRunes, log.SubmittedMaxRunes, log.SubmittedTruncated, string(submittedTruncateReasonsJSON),
+		log.SubmittedTextSHA256, log.Enforcement,
 	).Scan(&log.ID, &log.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("insert content moderation log: %w", err)
@@ -216,6 +224,7 @@ SELECT
 	    COALESCE(l.truncate_reasons, '[]'::jsonb), (es.id IS NOT NULL),
 	    COALESCE(l.submitted_text, ''), COALESCE(l.submitted_runes, 0), COALESCE(l.submitted_max_runes, 0),
 	    COALESCE(l.submitted_truncated, FALSE), COALESCE(l.submitted_truncate_reasons, '[]'::jsonb),
+	    COALESCE(l.submitted_text_sha256, ''), COALESCE(l.enforcement, ''),
     l.created_at
 FROM content_moderation_logs l
 LEFT JOIN users u ON u.id = l.user_id
@@ -299,6 +308,8 @@ LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 			&item.SubmittedMaxRunes,
 			&item.SubmittedTruncated,
 			&submittedTruncateReasonsRaw,
+			&item.SubmittedTextSHA256,
+			&item.Enforcement,
 			&item.CreatedAt,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan content moderation log: %w", err)
@@ -602,7 +613,9 @@ SET action = $1,
     submitted_truncate_reasons = $34::jsonb,
     queue_delay_ms = COALESCE($26, queue_delay_ms),
     decision_cache_hit = decision_cache_hit OR $27,
-    duplicate_retry_count = GREATEST(duplicate_retry_count, $28)
+    duplicate_retry_count = GREATEST(duplicate_retry_count, $28),
+    submitted_text_sha256 = $35,
+    enforcement = $36
 WHERE decision_id = $29
   AND action = 'error'
   AND decision_source = 'semantic_review'
@@ -643,6 +656,8 @@ RETURNING id, created_at
 		log.SubmittedMaxRunes,
 		log.SubmittedTruncated,
 		string(submittedTruncateReasonsJSON),
+		log.SubmittedTextSHA256,
+		log.Enforcement,
 	).Scan(&log.ID, &log.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
@@ -822,6 +837,7 @@ SELECT
 	    COALESCE(l.truncate_reasons, '[]'::jsonb), (es.id IS NOT NULL),
 	    COALESCE(l.submitted_text, ''), COALESCE(l.submitted_runes, 0), COALESCE(l.submitted_max_runes, 0),
 	    COALESCE(l.submitted_truncated, FALSE), COALESCE(l.submitted_truncate_reasons, '[]'::jsonb),
+	    COALESCE(l.submitted_text_sha256, ''), COALESCE(l.enforcement, ''),
     l.created_at
 FROM updated l
 LEFT JOIN users u ON u.id = l.user_id
@@ -908,6 +924,8 @@ func scanContentModerationLogRows(rows *sql.Rows) ([]service.ContentModerationLo
 			&item.SubmittedMaxRunes,
 			&item.SubmittedTruncated,
 			&submittedTruncateReasonsRaw,
+			&item.SubmittedTextSHA256,
+			&item.Enforcement,
 			&item.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan content moderation log: %w", err)
@@ -1010,6 +1028,12 @@ func buildContentModerationLogWhere(filter service.ContentModerationLogFilter) (
 	blockedActions := "'block', 'hash_block', 'keyword_block', 'prompt_filter_block', 'semantic_review_reject', 'semantic_review_deferred', 'semantic_review_unavailable', 'semantic_review_incomplete', 'cyber_policy', 'cyber_policy_session_blocked'"
 	reviewActions := "'keyword_review', 'prompt_filter_review', 'semantic_review_review'"
 	notBlockedOrReview := "l.action NOT IN (" + blockedActions + ") AND l.action NOT IN (" + reviewActions + ") AND COALESCE(l.review_status, '') <> 'pending'"
+	// Rows written from now on carry an explicit enforcement outcome, so an
+	// observe-mode reject (which was allowed) is no longer classified as blocked.
+	// Rows written before the column existed keep the historical action-only
+	// classification: mode cannot stand in for it, because cyber_policy blocks are
+	// recorded without regard to the moderation mode.
+	blockedPredicate := "((COALESCE(l.enforcement, '') = 'blocked') OR (COALESCE(l.enforcement, '') = '' AND l.action IN (" + blockedActions + ")))"
 	add := func(expr string, value any) {
 		args = append(args, value)
 		where = append(where, fmt.Sprintf(expr, len(args)))
@@ -1018,7 +1042,7 @@ func buildContentModerationLogWhere(filter service.ContentModerationLogFilter) (
 	case "hit", "flagged":
 		where = append(where, "l.flagged = TRUE AND l.error = '' AND "+notBlockedOrReview)
 	case "blocked", "block":
-		where = append(where, "l.action IN ("+blockedActions+")")
+		where = append(where, blockedPredicate)
 	case "review":
 		where = append(where, "(l.action IN ("+reviewActions+") OR l.review_status = 'pending') AND l.action NOT IN ("+blockedActions+")")
 	case "keyword_review":

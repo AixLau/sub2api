@@ -15,6 +15,8 @@ func (s *ContentModerationService) reviewRulesOnly(ctx context.Context, input Co
 		applyContentModerationKeywordMetadata(log, contentModerationKeywordDecision{rule: rule, context: classifyContentModerationKeywordContext(content.Text, rule), action: ContentModerationActionKeywordReview, flagged: true, effectiveAction: ContentModerationKeywordActionObserve})
 		log.DecisionSource = "rule"
 		log.QueueDelayMS = queueDelayPointer(ctx)
+		// Observation mode: the rule result is recorded without blocking.
+		log.Enforcement = ContentModerationEnforcementAllowed
 		s.persistContentModerationLog(ctx, cfg, log, hashText, false, false)
 		return &ContentModerationDecision{Allowed: true, Flagged: true, Action: ContentModerationActionKeywordReview, MatchedKeyword: rule.Keyword, KeywordCategory: rule.Category, KeywordSeverity: rule.Severity}
 	}
@@ -22,6 +24,7 @@ func (s *ContentModerationService) reviewRulesOnly(ctx context.Context, input Co
 		log := s.buildLog(input, cfg, ContentModerationActionAllow, false, "", 0, nil, content.ExcerptText(), nil, nil, "")
 		log.DecisionSource = "rule"
 		log.QueueDelayMS = queueDelayPointer(ctx)
+		log.Enforcement = ContentModerationEnforcementAllowed
 		s.persistContentModerationLog(ctx, cfg, log, hashText, false, false)
 	}
 	s.recordPreBlockSyncMetric(0, ContentModerationActionAllow)

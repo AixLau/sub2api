@@ -16,11 +16,17 @@ func TestContentModerationUsageAllowsCustomAPIWithoutAccount(t *testing.T) {
 func TestSemanticReviewEscalationUsesOriginalEvidence(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.SemanticReview.EscalationMaxInputRunes = 1000
-	candidate := contentModerationSemanticGateCandidate{Keyword: "provider_unavailable", Category: "semantic_fallback"}
+	// A provider-fallback candidate carries no matched keyword: the technical
+	// marker is internal routing state, not user evidence. The rebuilt escalation
+	// input must still be the real request, and none of the old marker vocabulary
+	// may leak back in through the keyword slot.
+	candidate := contentModerationSemanticGateCandidate{ProviderFallback: true}
 	content := ContentModerationInput{Text: "请分析这个普通请求", Sources: []ContentModerationInputSource{{Source: "responses.input", Role: "user", Text: "请分析这个普通请求"}}}
 	input := contentModerationSemanticGateEscalationInput(ContentModerationCheckInput{}, cfg, content, candidate, ContentModerationSemanticReviewInput{})
 	require.Contains(t, input.Text, content.Text)
-	require.NotContains(t, input.Text, candidate.Keyword)
+	require.Empty(t, candidate.Keyword)
+	require.NotContains(t, input.Text, "provider_unavailable")
+	require.NotContains(t, input.Text, "semantic_fallback")
 }
 
 func TestSemanticOutboxDoesNotRetryDeterministicResponseErrors(t *testing.T) {

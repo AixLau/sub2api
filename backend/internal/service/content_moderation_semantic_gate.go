@@ -19,6 +19,11 @@ type contentModerationSemanticGateCandidate struct {
 	NonTerminalContext bool
 	SyntheticAll       bool
 	ContextOnly        bool
+	// ProviderFallback marks a candidate that exists only because the primary
+	// reviewer was unreachable. It carries no matched keyword: the marker is
+	// internal routing state, not user evidence, so it must not occupy the
+	// keyword slot where the admin UI and log search expect a matched string.
+	ProviderFallback bool
 }
 
 type contentModerationRequiredSemanticReviewContextKey struct{}
@@ -185,6 +190,10 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 	if state, ok := ctx.Value(contentModerationSemanticReviewStateContextKey{}).(*contentModerationSemanticReviewState); ok && state != nil {
 		state.Completed = true
 	}
+	// Capture the reviewer's own verdict before any policy pass can rewrite or
+	// replace it. semantic_review_verdict records the post-policy verdict, so
+	// without this the audit record cannot say what the model actually decided.
+	rawVerdict := result.Verdict
 	result, policyOverride := applySemanticReviewGatePolicies(
 		result,
 		candidate.Input.EvidenceComplete,
@@ -222,7 +231,7 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 	if score > 1 {
 		score = 1
 	}
-	metadata := contentModerationSemanticGateMetadata(cfg, content, input.Protocol, candidate, result, policyOverride)
+	metadata := contentModerationSemanticGateMetadata(cfg, content, input.Protocol, candidate, result, rawVerdict, policyOverride)
 	categoryScores := map[string]float64{"semantic_review": score}
 	latency := int(time.Since(started).Milliseconds())
 	if result.Verdict == "allow" && (required || (candidate.ContextOnly && policyOverride)) {
@@ -238,6 +247,7 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 		log.RiskContextType = ContentModerationRiskContextActualRequest
 		log.RiskContextReason = ContentModerationActionSemanticReviewAllow
 		log.UserViolationEligible = false
+		log.Enforcement = ContentModerationEnforcementAllowed
 		s.persistContentModerationLog(ctx, cfg, log, hashText, false, false)
 	}
 
@@ -255,6 +265,10 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 		log.RiskContextType = ContentModerationRiskContextActualRequest
 		log.RiskContextReason = "semantic_review_reject"
 		log.UserViolationEligible = !candidate.ContextOnly && escalationInput.EvidenceComplete && !semanticReviewFinalInconclusive(result)
+		// A reject only blocks in pre_block mode. In observe mode the request is
+		// still forwarded, so the record states that instead of leaving the admin UI
+		// to infer "blocked" from the action.
+		log.Enforcement = contentModerationEnforcementFor(cfg.Mode == ContentModerationModePreBlock)
 		if cfg.Mode == ContentModerationModePreBlock {
 			s.enqueueRecord(ctx, input, cfg, log, hashText, log.UserViolationEligible, log.UserViolationEligible)
 		} else {
@@ -330,10 +344,14 @@ func (s *ContentModerationService) semanticReviewProviderFallback(
 			Text:             reviewText,
 			EvidenceComplete: evidenceComplete,
 		},
-		Keyword:     "provider_unavailable",
-		Category:    "semantic_fallback",
-		Severity:    ContentModerationKeywordSeverityHigh,
-		ContextOnly: semanticReviewEvidenceContextOnly(semanticCfg, content, focusKeyword),
+		// The primary reviewer being unreachable is technical state, not content
+		// evidence. Leaving the keyword slot empty keeps the diagnostic marker out
+		// of matched_keyword, where it used to be indistinguishable from a real
+		// keyword hit and made provider failures look like content violations.
+		// The provenance is carried by ProviderFallback, RiskContextReason
+		// ("semantic_review_provider_fallback"), and the provider error log.
+		ProviderFallback: true,
+		ContextOnly:      semanticReviewEvidenceContextOnly(semanticCfg, content, focusKeyword),
 	}
 	if strings.TrimSpace(candidate.Input.Text) == "" {
 		return nil, false
@@ -376,6 +394,8 @@ func (s *ContentModerationService) semanticReviewProviderFallback(
 	if state, ok := ctx.Value(contentModerationSemanticReviewStateContextKey{}).(*contentModerationSemanticReviewState); ok && state != nil {
 		state.Completed = true
 	}
+	// Capture the reviewer's own verdict before any policy pass can rewrite it.
+	rawVerdict := result.Verdict
 	result, policyOverride := applySemanticReviewGatePolicies(
 		result,
 		candidate.Input.EvidenceComplete,
@@ -412,7 +432,7 @@ func (s *ContentModerationService) semanticReviewProviderFallback(
 		score = 1
 	}
 	categoryScores := map[string]float64{"semantic_review": score}
-	metadata := contentModerationSemanticGateMetadata(cfg, content, input.Protocol, candidate, result, policyOverride)
+	metadata := contentModerationSemanticGateMetadata(cfg, content, input.Protocol, candidate, result, rawVerdict, policyOverride)
 	latency := int(time.Since(started).Milliseconds())
 	buildDecision := func(action string, flagged, blocked bool) *ContentModerationDecision {
 		return &ContentModerationDecision{
@@ -463,6 +483,7 @@ func (s *ContentModerationService) semanticReviewProviderFallback(
 		applySemanticReviewLogAttribution(log, result, latency, cfg.SemanticReview.PrimaryModel)
 		setLogMetadata(log, action)
 		log.UserViolationEligible = !candidate.ContextOnly && escalationInput.EvidenceComplete && !semanticReviewFinalInconclusive(result)
+		log.Enforcement = contentModerationEnforcementFor(blocked)
 		enforcementEligible := blocked && log.UserViolationEligible
 		if blocked {
 			s.recordPreBlockSyncMetric(latency, action)
@@ -509,7 +530,7 @@ func (s *ContentModerationService) persistSemanticReviewErrorLog(
 	s.persistContentModerationLog(ctx, cfg, log, hashText, false, false)
 }
 
-func contentModerationSemanticGateMetadata(cfg *ContentModerationConfig, content ContentModerationInput, protocol string, candidate contentModerationSemanticGateCandidate, result ContentModerationSemanticReviewResult, policyOverride bool) contentModerationMetadata {
+func contentModerationSemanticGateMetadata(cfg *ContentModerationConfig, content ContentModerationInput, protocol string, candidate contentModerationSemanticGateCandidate, result ContentModerationSemanticReviewResult, rawVerdict string, policyOverride bool) contentModerationMetadata {
 	metadata := map[string]any{}
 	matchedSource := strings.TrimSpace(candidate.MatchedSource)
 	if matchedSource == "" {
@@ -528,6 +549,12 @@ func contentModerationSemanticGateMetadata(cfg *ContentModerationConfig, content
 		metadata["semantic_review_fallback_reason"] = result.FallbackReason
 	}
 	metadata["semantic_review_verdict"] = result.Verdict
+	// The verdict the reviewer produced before the policy passes below rewrite it.
+	// policy_override only says that something changed; this says what the model
+	// actually decided, which is what makes an override auditable.
+	if strings.TrimSpace(rawVerdict) != "" {
+		metadata["semantic_review_raw_verdict"] = rawVerdict
+	}
 	metadata["semantic_review_intent"] = result.Intent
 	metadata["semantic_review_target"] = result.Target
 	metadata["semantic_review_authorization"] = result.Authorization
@@ -550,7 +577,12 @@ func contentModerationSemanticGateMetadata(cfg *ContentModerationConfig, content
 	}
 	metadata["semantic_review_policy_override"] = policyOverride
 	addSemanticReviewEscalationMetadata(metadata, result)
-	metadata["semantic_review_candidate"] = candidate.Keyword
+	if keyword := strings.TrimSpace(candidate.Keyword); keyword != "" {
+		metadata["semantic_review_candidate"] = keyword
+	}
+	if candidate.ProviderFallback {
+		metadata["semantic_review_candidate_provider_fallback"] = true
+	}
 	if candidate.SyntheticAll {
 		metadata["semantic_review_candidate_synthetic_all"] = true
 	}

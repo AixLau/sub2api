@@ -135,6 +135,9 @@ func (s *ContentModerationService) storeCandidateEvidence(ctx context.Context, l
 	selectionMetadata["submitted_max_runes"] = log.SubmittedMaxRunes
 	selectionMetadata["submitted_truncated"] = log.SubmittedTruncated
 	selectionMetadata["submitted_truncate_reasons"] = append([]string(nil), log.SubmittedTruncateReasons...)
+	if log.SubmittedTextSHA256 != "" {
+		selectionMetadata["submitted_text_sha256"] = log.SubmittedTextSHA256
+	}
 	snapshot := &ContentModerationEvidenceSnapshot{
 		LogID:            log.ID,
 		RequestID:        log.RequestID,

@@ -759,6 +759,15 @@ func TestSemanticProviderFallbackRejectInObserveModeHasNoEnforcementSideEffects(
 	require.Empty(t, userRepo.updated)
 	require.Equal(t, StatusActive, userRepo.user.Status)
 	require.Zero(t, emailProbe.getMultipleCalls.Load())
+	// Observe mode forwarded the request, so the record says so instead of leaving
+	// the admin UI to read "blocked" out of action=semantic_review_reject.
+	require.Equal(t, ContentModerationEnforcementAllowed, logs[0].Enforcement)
+	// A provider outage is technical state, not a matched keyword, so it must not
+	// occupy the keyword slot or carry an affirmative risk severity.
+	require.Empty(t, logs[0].MatchedKeyword)
+	require.Empty(t, logs[0].KeywordCategory)
+	require.NotEqual(t, ContentModerationKeywordSeverityHigh, logs[0].KeywordSeverity)
+	require.Equal(t, "semantic_review_provider_fallback", logs[0].RiskContextReason)
 }
 
 func TestSemanticReviewProviderFallbackPersistsSanitizedRouterError(t *testing.T) {

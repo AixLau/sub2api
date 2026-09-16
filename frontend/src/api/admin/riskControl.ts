@@ -323,6 +323,10 @@ export interface ContentModerationRuntimeStatus {
   pre_block_allowed: number
   pre_block_blocked: number
   pre_block_errors: number
+  /** Pre-block rejections caused by reviewer unavailability or incomplete input
+   * assembly, kept out of pre_block_blocked so a reviewer outage is not reported
+   * as content blocking. */
+  pre_block_technical_failures: number
   pre_block_avg_latency_ms: number
   pre_block_api_key_active: number
   pre_block_api_key_available_count: number
@@ -529,6 +533,12 @@ export interface ContentModerationLog {
   model: string
   mode: string
   action: string
+  /**
+   * What the gateway did with the request, independent of the content verdict in
+   * `action`. 'allowed' | 'blocked' | 'error'; empty on rows written before the
+   * column existed, where 'blocked' has to be inferred from `action`.
+   */
+  enforcement?: string
   flagged: boolean
   highest_category: string
   highest_score: number
@@ -541,6 +551,7 @@ export interface ContentModerationLog {
   submitted_max_runes?: number
   submitted_truncated?: boolean
   submitted_truncate_reasons?: string[]
+  submitted_text_sha256?: string
   truncate_reasons?: string[]
   upstream_latency_ms: number | null
   error: string

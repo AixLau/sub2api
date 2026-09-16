@@ -420,10 +420,10 @@ func TestUsageLogRepositoryListWithFiltersRequestTypePriority(t *testing.T) {
 		ExactTotal:  true,
 	}
 
-	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM usage_logs WHERE \\(actual_cost > 0 OR source IN \\('account_test', 'content_moderation'\\)\\) AND \\(request_type = \\$1 OR \\(request_type = 0 AND openai_ws_mode = TRUE\\)\\)").
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM usage_logs WHERE \\(actual_cost > 0 OR source IN \\('account_test', 'content_moderation'\\)\\) AND source <> 'content_moderation' AND \\(request_type = \\$1 OR \\(request_type = 0 AND openai_ws_mode = TRUE\\)\\)").
 		WithArgs(requestType).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(0)))
-	mock.ExpectQuery("SELECT .* FROM usage_logs WHERE \\(actual_cost > 0 OR source IN \\('account_test', 'content_moderation'\\)\\) AND \\(request_type = \\$1 OR \\(request_type = 0 AND openai_ws_mode = TRUE\\)\\) ORDER BY id DESC LIMIT \\$2 OFFSET \\$3").
+	mock.ExpectQuery("SELECT .* FROM usage_logs WHERE \\(actual_cost > 0 OR source IN \\('account_test', 'content_moderation'\\)\\) AND source <> 'content_moderation' AND \\(request_type = \\$1 OR \\(request_type = 0 AND openai_ws_mode = TRUE\\)\\) ORDER BY id DESC LIMIT \\$2 OFFSET \\$3").
 		WithArgs(requestType, 20, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
@@ -441,7 +441,7 @@ func TestUsageLogRepositoryListWithFiltersRequestID(t *testing.T) {
 
 	filters := usagestats.UsageLogFilters{RequestID: " req-0123 "}
 
-	mock.ExpectQuery("SELECT .* FROM usage_logs WHERE \\(actual_cost > 0 OR source IN \\('account_test', 'content_moderation'\\)\\) AND request_id = \\$1 ORDER BY id DESC LIMIT \\$2 OFFSET \\$3").
+	mock.ExpectQuery("SELECT .* FROM usage_logs WHERE \\(actual_cost > 0 OR source IN \\('account_test', 'content_moderation'\\)\\) AND source <> 'content_moderation' AND request_id = \\$1 ORDER BY id DESC LIMIT \\$2 OFFSET \\$3").
 		WithArgs("req-0123", 21, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
@@ -461,7 +461,7 @@ func TestUsageLogRepositoryListWithFiltersRequestedModelSource(t *testing.T) {
 		ModelFilterSource: usagestats.ModelSourceRequested,
 	}
 
-	mock.ExpectQuery("SELECT .* FROM usage_logs WHERE \\(actual_cost > 0 OR source IN \\('account_test', 'content_moderation'\\)\\) AND COALESCE\\(NULLIF\\(TRIM\\(requested_model\\), ''\\), model\\) = \\$1 ORDER BY id DESC LIMIT \\$2 OFFSET \\$3").
+	mock.ExpectQuery("SELECT .* FROM usage_logs WHERE \\(actual_cost > 0 OR source IN \\('account_test', 'content_moderation'\\)\\) AND source <> 'content_moderation' AND COALESCE\\(NULLIF\\(TRIM\\(requested_model\\), ''\\), model\\) = \\$1 ORDER BY id DESC LIMIT \\$2 OFFSET \\$3").
 		WithArgs("gpt-5", 21, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
@@ -481,10 +481,10 @@ func TestUsageLogRepositoryListWithFiltersExcludesFailedPlaceholders(t *testing.
 		ExactTotal: true,
 	}
 
-	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM usage_logs WHERE user_id = \\$1 AND \\(actual_cost > 0 OR source IN \\('account_test', 'content_moderation'\\)\\)").
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM usage_logs WHERE user_id = \\$1 AND \\(actual_cost > 0 OR source IN \\('account_test', 'content_moderation'\\)\\) AND source <> 'content_moderation'").
 		WithArgs(int64(42)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(0)))
-	mock.ExpectQuery("SELECT .* FROM usage_logs WHERE user_id = \\$1 AND \\(actual_cost > 0 OR source IN \\('account_test', 'content_moderation'\\)\\) ORDER BY id DESC LIMIT \\$2 OFFSET \\$3").
+	mock.ExpectQuery("SELECT .* FROM usage_logs WHERE user_id = \\$1 AND \\(actual_cost > 0 OR source IN \\('account_test', 'content_moderation'\\)\\) AND source <> 'content_moderation' ORDER BY id DESC LIMIT \\$2 OFFSET \\$3").
 		WithArgs(int64(42), 20, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
@@ -500,9 +500,9 @@ func TestUsageLogRepositoryListWithFiltersIncludesAccountTestsWithoutShowingOthe
 	db, mock := newSQLMock(t)
 	repo := &usageLogRepository{sql: db}
 
-	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM usage_logs WHERE \\(actual_cost > 0 OR source IN \\('account_test', 'content_moderation'\\)\\)").
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM usage_logs WHERE \\(actual_cost > 0 OR source IN \\('account_test', 'content_moderation'\\)\\) AND source <> 'content_moderation'").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(0)))
-	mock.ExpectQuery("SELECT .* FROM usage_logs WHERE \\(actual_cost > 0 OR source IN \\('account_test', 'content_moderation'\\)\\) ORDER BY id DESC LIMIT \\$1 OFFSET \\$2").
+	mock.ExpectQuery("SELECT .* FROM usage_logs WHERE \\(actual_cost > 0 OR source IN \\('account_test', 'content_moderation'\\)\\) AND source <> 'content_moderation' ORDER BY id DESC LIMIT \\$1 OFFSET \\$2").
 		WithArgs(20, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
@@ -510,6 +510,65 @@ func TestUsageLogRepositoryListWithFiltersIncludesAccountTestsWithoutShowingOthe
 	require.NoError(t, err)
 	require.Empty(t, logs)
 	require.NotNil(t, page)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUsageLogRepositoryListWithFiltersIncludesPlatformAuditOnlyWhenFiltered(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+
+	filters := usagestats.UsageLogFilters{Source: string(service.UsageSourceContentModeration), ExactTotal: true}
+
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM usage_logs WHERE \\(actual_cost > 0 OR source IN \\('account_test', 'content_moderation'\\)\\) AND source = \\$1").
+		WithArgs(string(service.UsageSourceContentModeration)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(0)))
+	mock.ExpectQuery("SELECT .* FROM usage_logs WHERE \\(actual_cost > 0 OR source IN \\('account_test', 'content_moderation'\\)\\) AND source = \\$1 ORDER BY id DESC LIMIT \\$2 OFFSET \\$3").
+		WithArgs(string(service.UsageSourceContentModeration), 20, 0).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	logs, page, err := repo.ListWithFilters(context.Background(), pagination.PaginationParams{Page: 1, PageSize: 20}, filters)
+	require.NoError(t, err)
+	require.Empty(t, logs)
+	require.NotNil(t, page)
+	require.Equal(t, int64(0), page.Total)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUsageLogRepositoryGetStatsWithFiltersIncludesPlatformAuditOnlyWhenFiltered(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+
+	filters := usagestats.UsageLogFilters{Source: string(service.UsageSourceContentModeration)}
+
+	// 显式按平台审计筛选时,不再追加 source <> 'content_moderation' 排除条件。
+	mock.ExpectQuery("(?s)FROM usage_logs\\s+WHERE source = \\$1.*GROUP BY GROUPING SETS").
+		WithArgs(string(service.UsageSourceContentModeration)).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"inbound_grouped", "upstream_grouped", "inbound_endpoint", "upstream_endpoint",
+			"requests", "input_tokens", "output_tokens", "cache_creation_tokens", "cache_read_tokens",
+			"cost", "actual_cost", "account_cost", "avg_duration_ms",
+		}).AddRow(1, 1, nil, nil, int64(0), int64(0), int64(0), int64(0), int64(0), 0.0, 0.0, 0.0, 0.0))
+
+	stats, err := repo.GetStatsWithFilters(context.Background(), filters)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), stats.TotalRequests)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUsageLogRepositoryGetStatsWithFiltersExcludesPlatformAuditByDefault(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+
+	mock.ExpectQuery("(?s)FROM usage_logs\\s+WHERE source <> 'content_moderation'.*GROUP BY GROUPING SETS").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"inbound_grouped", "upstream_grouped", "inbound_endpoint", "upstream_endpoint",
+			"requests", "input_tokens", "output_tokens", "cache_creation_tokens", "cache_read_tokens",
+			"cost", "actual_cost", "account_cost", "avg_duration_ms",
+		}).AddRow(1, 1, nil, nil, int64(0), int64(0), int64(0), int64(0), int64(0), 0.0, 0.0, 0.0, 0.0))
+
+	stats, err := repo.GetStatsWithFilters(context.Background(), usagestats.UsageLogFilters{})
+	require.NoError(t, err)
+	require.Equal(t, int64(0), stats.TotalRequests)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -603,7 +662,7 @@ func TestUsageLogRepositoryGetStatsWithFiltersRequestedModelSource(t *testing.T)
 		ModelFilterSource: usagestats.ModelSourceRequested,
 	}
 
-	mock.ExpectQuery("(?s)FROM usage_logs\\s+WHERE COALESCE\\(NULLIF\\(TRIM\\(requested_model\\), ''\\), model\\) = \\$1.*GROUP BY GROUPING SETS").
+	mock.ExpectQuery("(?s)FROM usage_logs\\s+WHERE COALESCE\\(NULLIF\\(TRIM\\(requested_model\\), ''\\), model\\) = \\$1 AND source <> 'content_moderation'.*GROUP BY GROUPING SETS").
 		WithArgs("gpt-5").
 		WillReturnRows(sqlmock.NewRows([]string{
 			"inbound_grouped",
@@ -644,7 +703,7 @@ func TestUsageLogRepositoryGetStatsWithFiltersRequestTypePriority(t *testing.T) 
 		Stream:      &stream,
 	}
 
-	mock.ExpectQuery("(?s)FROM usage_logs\\s+WHERE \\(request_type = \\$1 OR \\(request_type = 0 AND stream = FALSE AND openai_ws_mode = FALSE\\)\\).*GROUP BY GROUPING SETS").
+	mock.ExpectQuery("(?s)FROM usage_logs\\s+WHERE \\(request_type = \\$1 OR \\(request_type = 0 AND stream = FALSE AND openai_ws_mode = FALSE\\)\\) AND source <> 'content_moderation'.*GROUP BY GROUPING SETS").
 		WithArgs(requestType).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"inbound_grouped",
@@ -679,7 +738,7 @@ func TestUsageLogRepositoryGetStatsWithFiltersExcludeUserIDs(t *testing.T) {
 		ExcludeUserIDs: []int64{101, 202},
 	}
 
-	mock.ExpectQuery("FROM usage_logs\\s+WHERE \\(user_id IS NULL OR user_id <> ALL\\(\\$1\\)\\)").
+	mock.ExpectQuery("FROM usage_logs\\s+WHERE \\(user_id IS NULL OR user_id <> ALL\\(\\$1\\)\\) AND source <> 'content_moderation'").
 		WithArgs(pqInt64ArrayMatcher{values: []int64{101, 202}}).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"inbound_grouped", "upstream_grouped", "inbound_endpoint", "upstream_endpoint",

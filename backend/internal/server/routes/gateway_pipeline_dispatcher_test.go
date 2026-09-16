@@ -142,6 +142,71 @@ func TestGatewayPipelineEntrypointDispatcherRouteCapabilityMatrix(t *testing.T) 
 				"OpenAIGatewayHandler.Responses", service.ContentModerationProtocolOpenAIResponses),
 			wantPipeline: moderationcoverage.PipelineOpenAIHTTP,
 		},
+		// 国产 OpenAI 兼容供应商与 OpenAI/Grok 一样被 isOpenAIResponsesCompatibleGatewayPlatform
+		// 交给 OpenAI 网关 handler，因此必须进入且只进入 OpenAI HTTP 分支管线。此前这些平台
+		// 缺席本矩阵，导致 /v1/messages 先跑通配前向管线（anthropic_messages）、再被 handler 审
+		// 一次（openai_messages），按 protocol 做 key 的决策缓存必然 miss，审核模型被调用两次。
+		{
+			name:     "Deepseek messages auto route enters only the OpenAI HTTP branch",
+			platform: service.PlatformDeepseek,
+			metas: autoRoute("/v1/messages", "GatewayHandler.Messages", service.ContentModerationProtocolAnthropicMessages,
+				"OpenAIGatewayHandler.Messages", service.ContentModerationProtocolOpenAIMessages),
+			wantPipeline: moderationcoverage.PipelineOpenAIHTTP,
+		},
+		{
+			name:     "Kimi messages auto route enters only the OpenAI HTTP branch",
+			platform: service.PlatformKimi,
+			metas: autoRoute("/v1/messages", "GatewayHandler.Messages", service.ContentModerationProtocolAnthropicMessages,
+				"OpenAIGatewayHandler.Messages", service.ContentModerationProtocolOpenAIMessages),
+			wantPipeline: moderationcoverage.PipelineOpenAIHTTP,
+		},
+		{
+			name:     "Zhipu messages auto route enters only the OpenAI HTTP branch",
+			platform: service.PlatformZhipu,
+			metas: autoRoute("/v1/messages", "GatewayHandler.Messages", service.ContentModerationProtocolAnthropicMessages,
+				"OpenAIGatewayHandler.Messages", service.ContentModerationProtocolOpenAIMessages),
+			wantPipeline: moderationcoverage.PipelineOpenAIHTTP,
+		},
+		{
+			name:     "MiniMax messages auto route enters only the OpenAI HTTP branch",
+			platform: service.PlatformMiniMax,
+			metas: autoRoute("/v1/messages", "GatewayHandler.Messages", service.ContentModerationProtocolAnthropicMessages,
+				"OpenAIGatewayHandler.Messages", service.ContentModerationProtocolOpenAIMessages),
+			wantPipeline: moderationcoverage.PipelineOpenAIHTTP,
+		},
+		{
+			name:     "Deepseek responses auto route enters only the OpenAI HTTP branch",
+			platform: service.PlatformDeepseek,
+			metas: autoRoute("/v1/responses", "GatewayHandler.Responses", service.ContentModerationProtocolOpenAIResponses,
+				"OpenAIGatewayHandler.Responses", service.ContentModerationProtocolOpenAIResponses),
+			wantPipeline: moderationcoverage.PipelineOpenAIHTTP,
+		},
+		{
+			name:     "Deepseek chat completions auto route enters only the OpenAI HTTP branch",
+			platform: service.PlatformDeepseek,
+			metas: autoRoute("/v1/chat/completions", "GatewayHandler.ChatCompletions", service.ContentModerationProtocolOpenAIChat,
+				"OpenAIGatewayHandler.ChatCompletions", service.ContentModerationProtocolOpenAIChat),
+			wantPipeline: moderationcoverage.PipelineOpenAIHTTP,
+		},
+		{
+			// count_tokens 没有注册 OpenAI HTTP 分支，仍由通配前向管线负责。
+			name:         "Deepseek count tokens keeps the generic pre-forward pipeline",
+			platform:     service.PlatformDeepseek,
+			metas:        []ModeratedRouteMeta{genericTextRoute("/v1/messages/count_tokens", "GatewayHandler.CountTokens", service.ContentModerationProtocolAnthropicMessages)},
+			wantPipeline: moderationcoverage.PipelineGatewayPreForward,
+		},
+		{
+			name:     "Deepseek embeddings remain unsupported",
+			platform: service.PlatformDeepseek,
+			metas: []ModeratedRouteMeta{openAITextBranch("/v1/embeddings", "OpenAIGatewayHandler.Embeddings",
+				service.ContentModerationProtocolOpenAIEmbeddings)},
+		},
+		{
+			name:     "Deepseek images remain unsupported",
+			platform: service.PlatformDeepseek,
+			metas: []ModeratedRouteMeta{openAITextBranch("/v1/images/generations", "OpenAIGatewayHandler.Images",
+				service.ContentModerationProtocolOpenAIImages)},
+		},
 		{
 			name:         "Anthropic messages",
 			platform:     service.PlatformAnthropic,

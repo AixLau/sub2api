@@ -99,12 +99,19 @@ func (d *GatewayPipelineEntrypointDispatcher) enterGatewayPreForward(c *gin.Cont
 		return GatewayPipelineEntryResult{}
 	}
 	if !middleware.HasForcePlatform(c) {
-		switch d.groupPlatformForRequest(c) {
-		case service.PlatformOpenAI:
+		switch platform := d.groupPlatformForRequest(c); {
+		case platform == service.PlatformOpenAI:
 			if !isOpenAICountTokensGenericAdmission(meta) {
 				return GatewayPipelineEntryResult{}
 			}
-		case service.PlatformGrok:
+		case platform == service.PlatformGrok:
+			return GatewayPipelineEntryResult{}
+		case service.IsCNProvider(platform) && openAIHTTPBranchOwnsRequest(meta):
+			// 国产 OpenAI 兼容供应商把 /v1/messages、/v1/responses、
+			// /v1/chat/completions 三条自动路由交给 OpenAI 网关 handler，审核归
+			// OpenAI HTTP 分支管线。通配前向管线若同时运行，同一请求会以另一个
+			// protocol 被审核第二次：进程内决策缓存按 protocol 做 key，第二次必然
+			// cache miss，于是重复调用审核模型并写入两条审核记录。
 			return GatewayPipelineEntryResult{}
 		}
 	}
@@ -131,8 +138,8 @@ func openAIHTTPAdmissionSupported(platform string, meta ModeratedRouteMeta) bool
 	handlerName := strings.TrimSpace(meta.Handler)
 	protocol := strings.TrimSpace(meta.Protocol)
 
-	switch platform {
-	case service.PlatformOpenAI:
+	switch {
+	case platform == service.PlatformOpenAI:
 		switch handlerName {
 		case "OpenAIGatewayHandler.ChatCompletions":
 			return protocol == service.ContentModerationProtocolOpenAIChat
@@ -149,7 +156,11 @@ func openAIHTTPAdmissionSupported(platform string, meta ModeratedRouteMeta) bool
 		default:
 			return false
 		}
-	case service.PlatformGrok:
+	case platform == service.PlatformGrok || service.IsCNProvider(platform):
+		// Grok 与国产 OpenAI 兼容供应商共用的自动路由分支：/v1/messages、
+		// /v1/responses、/v1/chat/completions。供应商清单必须与 gateway.go 的
+		// isOpenAIResponsesCompatibleGatewayPlatform 对齐；Images/Embeddings/
+		// AlphaSearch 只对 OpenAI 开放，不在这些平台的自动路由内。
 		switch handlerName {
 		case "OpenAIGatewayHandler.ChatCompletions":
 			return protocol == service.ContentModerationProtocolOpenAIChat
@@ -185,4 +196,22 @@ func gatewayPreForwardAdmissionSupported(meta ModeratedRouteMeta) bool {
 func isOpenAICountTokensGenericAdmission(meta ModeratedRouteMeta) bool {
 	return strings.TrimSpace(meta.Handler) == "GatewayHandler.CountTokens" &&
 		strings.TrimSpace(meta.Protocol) == service.ContentModerationProtocolAnthropicMessages
+}
+
+// openAIHTTPBranchOwnsRequest 报告这条通配前向元数据是否会被同一路由注册的
+// OpenAI HTTP 分支接管。/v1/messages、/v1/responses、/v1/chat/completions 会按
+// 平台把请求交给 OpenAI 网关 handler，并各自注册一条 coveredOpenAIHTTPRoute 分支；
+// 平台命中该分支时，通配前向管线必须让位，否则同一请求会被两条管线各审一次。
+// 未注册分支的通配路由（如 /v1/messages/count_tokens）仍由通配前向管线负责。
+func openAIHTTPBranchOwnsRequest(meta ModeratedRouteMeta) bool {
+	switch strings.TrimSpace(meta.Handler) {
+	case "GatewayHandler.Messages":
+		return strings.TrimSpace(meta.Protocol) == service.ContentModerationProtocolAnthropicMessages
+	case "GatewayHandler.Responses":
+		return strings.TrimSpace(meta.Protocol) == service.ContentModerationProtocolOpenAIResponses
+	case "GatewayHandler.ChatCompletions":
+		return strings.TrimSpace(meta.Protocol) == service.ContentModerationProtocolOpenAIChat
+	default:
+		return false
+	}
 }

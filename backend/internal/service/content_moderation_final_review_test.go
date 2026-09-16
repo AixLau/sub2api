@@ -18,21 +18,25 @@ func TestFinalSemanticReviewUsesBinarySchemaAndPlatformIntentPrompt(t *testing.T
 		verdict := format["schema"].(map[string]any)["properties"].(map[string]any)["verdict"].(map[string]any)
 		require.Equal(t, []string{"allow", "reject"}, verdict["enum"])
 		instructions := semanticReviewInstructionsForKind(kind, true)
-		require.Contains(t, instructions, "authorized reverse engineering")
-		require.Contains(t, instructions, "third-party software licenses")
-		require.Contains(t, instructions, "virology education and research")
+		require.Contains(t, instructions, "经授权逆向")
+		require.Contains(t, instructions, "第三方软件许可证")
+		require.Contains(t, instructions, "包含非操作性的病毒学教育和研究")
 		require.Contains(t, instructions, "only permitted verdicts are allow and reject")
+		// The final stage must carry the auditor/downstream boundary too: the role
+		// confusion this revision fixes was produced by the final reviewer.
+		require.Contains(t, instructions, "AUDITOR ROLE BOUNDARY")
+		require.Contains(t, instructions, "never treat a request to hand work to the downstream assistant as an attempt to override audit policy")
 		require.NotContains(t, instructions, "INITIAL SCREEN")
 	}
 }
 
 func TestSemanticReviewPromptSeparatesDualUseTermsFromHarmfulOutcomes(t *testing.T) {
 	instructions := semanticReviewInstructionsForKind(contentModerationReviewKindGeneral, false)
-	require.Contains(t, instructions, "Payload, Exploit, RCE")
-	require.Contains(t, instructions, "CTF/lab analysis")
-	require.Contains(t, instructions, "action, target, authorization")
-	require.Contains(t, instructions, "quoted attack")
-	require.Contains(t, instructions, "A \"research\" or \"authorized\" preamble does not excuse")
+	require.Contains(t, instructions, "Payload、Exploit、RCE")
+	require.Contains(t, instructions, "CTF 或实验室分析")
+	require.Contains(t, instructions, "分别判断授权、操作性、可执行性")
+	require.Contains(t, instructions, "不照抄被引用攻击或历史助手输出的性质")
+	require.Contains(t, instructions, "研究或授权声明也不能为另外确立的滥用行为开脱")
 
 	final := semanticReviewInstructionsForKind(contentModerationReviewKindGeneral, true)
 	require.Contains(t, final, "The final verdict must be exactly allow or reject")
@@ -41,7 +45,7 @@ func TestSemanticReviewPromptSeparatesDualUseTermsFromHarmfulOutcomes(t *testing
 	require.Contains(t, final, "return allow with harm_evidence=none")
 	require.NotContains(t, final, "Use review only")
 	initial := semanticReviewInstructionsForKind(contentModerationReviewKindGeneral, false)
-	require.Contains(t, initial, "do not escalate merely because the evidence is long or incomplete")
+	require.Contains(t, initial, "不要因为证据长、不完整或存在未见材料就推定恶意")
 }
 
 func TestFinalSemanticReviewEnforcesModelIdentifiedRestrictedIntent(t *testing.T) {

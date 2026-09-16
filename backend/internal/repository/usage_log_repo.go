@@ -86,6 +86,37 @@ func appendUsageLogSourceWhereCondition(conditions []string, args []any, source 
 	return conditions, args
 }
 
+// platformAuditUsageSource 是平台审计（内容审核）用量记录的来源标识。
+// 这类记录由平台自身发起、actual_cost 恒为 0，管理台使用记录默认不应展示，
+// 只有在“记录来源”显式筛选平台审计时才纳入查询。
+const platformAuditUsageSource = service.UsageSourceContentModeration
+
+func usageSourceIsPlatformAudit(source string) bool {
+	return service.UsageSource(strings.TrimSpace(source)).Normalize() == platformAuditUsageSource
+}
+
+// appendUsageLogListVisibilityCondition 决定使用记录列表的可见范围：
+// 真实用量（actual_cost > 0）与账号测试（account_test）始终可见；
+// 平台审计（content_moderation）默认隐藏，仅在显式按该来源筛选时才纳入。
+// 基础谓语与部分索引 idx_usage_logs_admin_visible_id 的谓词保持一致，
+// 默认撒销通过追加 source <> 'content_moderation' 实现，以保证索引可用。
+func appendUsageLogListVisibilityCondition(conditions []string, source string) []string {
+	conditions = append(conditions, "(actual_cost > 0 OR source IN ('account_test', 'content_moderation'))")
+	if !usageSourceIsPlatformAudit(source) {
+		conditions = append(conditions, "source <> 'content_moderation'")
+	}
+	return conditions
+}
+
+// appendUsageLogStatsVisibilityCondition 与列表可见性保持一致：
+// 平台审计记录默认不计入汇总，仅在显式按该来源筛选时才统计。
+func appendUsageLogStatsVisibilityCondition(conditions []string, source string) []string {
+	if usageSourceIsPlatformAudit(source) {
+		return conditions
+	}
+	return append(conditions, "source <> 'content_moderation'")
+}
+
 func appendUsageLogBillingModeWhereConditionWithAlias(conditions []string, args []any, billingMode string, alias string) ([]string, []any) {
 	mode := strings.TrimSpace(billingMode)
 	if mode == "" {

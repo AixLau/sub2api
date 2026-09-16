@@ -105,6 +105,8 @@ backend/internal/web/dist/*
 
 # 后端运行时缓存数据
 backend/data/
+# 本地运行实例的数据目录（含数据库口令、JWT secret 与日志）
+data/
 
 # ===================
 # 本地配置文件（包含敏感信息）
