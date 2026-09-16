@@ -62,6 +62,8 @@ export default {
   purchase: {
     title: '账户充值',
     description: '快速充值，立即到账，畅享无限可能！',
+    rechargeDescription: '充值页面',
+    subscriptionDescription: '订阅页面',
     openInNewTab: '新窗口打开',
     notEnabledTitle: '该功能未开启',
     notEnabledDesc: '管理员暂未开启账户充值入口，请联系管理员。',

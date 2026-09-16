@@ -158,6 +158,24 @@ export default {
         deepseek: 'DeepSeek',
         minimax: 'MiniMax',
       },
+      opencodeGo: {
+        accountMode: {
+          title: 'Account Mode',
+          go: 'OpenCode Go (OAuth-compatible mode)',
+          goDesc: 'Use OpenCode Go OAuth compatibility mode.',
+          zen: 'OpenCode Zen (native mode)',
+          zenDesc: 'Use OpenCode Zen native API mode.'
+        },
+        protocolRules: {
+          title: 'Protocol Rules',
+          hint: 'Optional protocol conversion rules for unsupported endpoints.',
+          fallback: 'Fallback endpoint',
+          patternPlaceholder: 'Endpoint pattern, e.g. /v1/chat/completions',
+          add: 'Add rule',
+          remove: 'Remove rule',
+          restoreDefaults: 'Restore defaults'
+        }
+      },
       cnProviders: {
         accountMode: {
           title: 'Account Type',

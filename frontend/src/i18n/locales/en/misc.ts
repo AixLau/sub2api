@@ -63,6 +63,8 @@ export default {
   purchase: {
     title: 'Recharge / Subscription',
     description: 'Top up instantly and keep every idea moving.',
+    rechargeDescription: 'Recharge page',
+    subscriptionDescription: 'Subscription page',
     openInNewTab: 'Open in new tab',
     notEnabledTitle: 'Feature not enabled',
     notEnabledDesc: 'The administrator has not enabled the recharge/subscription entry. Please contact admin.',

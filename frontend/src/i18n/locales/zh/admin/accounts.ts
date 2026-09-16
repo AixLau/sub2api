@@ -361,6 +361,24 @@ export default {
         deepseek: 'DeepSeek',
         minimax: 'MiniMax',
       },
+      opencodeGo: {
+        accountMode: {
+          title: '账号模式',
+          go: 'OpenCode Go（OAuth 兼容模式）',
+          goDesc: '使用 OpenCode Go OAuth 兼容模式。',
+          zen: 'OpenCode Zen（原生模式）',
+          zenDesc: '使用 OpenCode Zen 原生 API 模式。'
+        },
+        protocolRules: {
+          title: '协议规则',
+          hint: '为不支持的端点配置可选的协议转换规则。',
+          fallback: '回退端点',
+          patternPlaceholder: '端点模式，例如 /v1/chat/completions',
+          add: '添加规则',
+          remove: '删除规则',
+          restoreDefaults: '恢复默认'
+        }
+      },
       cnProviders: {
         accountMode: {
           title: '账号类型',
