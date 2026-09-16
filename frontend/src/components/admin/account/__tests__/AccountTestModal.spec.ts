@@ -36,6 +36,7 @@ vi.mock('vue-i18n', async () => {
         if (key === 'admin.accounts.imagePreviewAlt' && params?.index) {
           return `test-image-${params.index}`
         }
+        if (key === 'admin.accounts.sendingTestContent') return `sending: ${params?.prompt}`
         return messages[key] || key
       }
     })
@@ -79,9 +80,9 @@ function mountModal(account: Record<string, unknown> = {
         BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
         Select: { template: '<div class="select-stub"></div>' },
         TextArea: {
-          props: ['modelValue'],
+          props: ['modelValue', 'disabled'],
           emits: ['update:modelValue'],
-          template: '<textarea class="textarea-stub" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />'
+          template: '<textarea class="textarea-stub" :value="modelValue" :disabled="disabled" @input="$emit(\'update:modelValue\', $event.target.value)" />'
         },
         Icon: true
       }
@@ -117,6 +118,50 @@ describe('AccountTestModal', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it.each(['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'zhipu'])(
+    '%s 文本测试支持手动输入多行内容并显示实际发送内容',
+    async (platform) => {
+      getAvailableModels.mockResolvedValue([{ id: 'test-text-model', display_name: 'Text model' }])
+      global.fetch = vi.fn().mockResolvedValue(createStreamResponse([
+        'data: {"type":"test_start","model":"test-text-model"}\n',
+        'data: {"type":"test_complete","success":true}\n'
+      ])) as any
+      const wrapper = mountModal({ id: 42, name: 'Text account', platform, type: 'apikey', status: 'active' })
+      await wrapper.setProps({ show: true })
+      await flushPromises()
+
+      const prompt = '请回答："你好"\n第二行'
+      await wrapper.get('textarea').setValue(`  ${prompt}  `)
+      const startButton = wrapper.findAll('button').find((button) => button.text().includes('admin.accounts.startTest'))!
+      await startButton.trigger('click')
+      expect(wrapper.get('textarea').attributes('disabled')).toBeDefined()
+      await flushPromises()
+
+      const [url, request] = vi.mocked(global.fetch).mock.calls[0]
+      expect(url).toContain('/admin/accounts/42/test')
+      expect(JSON.parse(request!.body as string)).toMatchObject({ model_id: 'test-text-model', prompt })
+      expect(wrapper.text()).toContain(`sending: ${prompt}`)
+      expect(wrapper.get('textarea').attributes('disabled')).toBeUndefined()
+
+      await wrapper.setProps({ show: false })
+      await wrapper.setProps({ show: true })
+      await flushPromises()
+      expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('')
+    }
+  )
+
+  it('空白测试内容使用默认消息', async () => {
+    getAvailableModels.mockResolvedValue([{ id: 'claude-sonnet-4-6', display_name: 'Sonnet' }])
+    const wrapper = mountModal({ id: 42, name: 'Claude', platform: 'anthropic', type: 'apikey', status: 'active' })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+    await wrapper.get('textarea').setValue('  \n  ')
+    await wrapper.findAll('button').find((button) => button.text().includes('admin.accounts.startTest'))!.trigger('click')
+    await flushPromises()
+    expect(JSON.parse(vi.mocked(global.fetch).mock.calls[0][1]!.body as string).prompt).toBe('')
+    expect(wrapper.text()).toContain('sending: hi')
   })
 
   it('gemini 图片模型测试会携带提示词并渲染图片预览', async () => {
@@ -233,6 +278,8 @@ describe('AccountTestModal', () => {
 
     ;(wrapper.vm as any).selectedModelId = 'gpt-5.4'
     ;(wrapper.vm as any).testMode = 'compact'
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('textarea').exists()).toBe(false)
     await (wrapper.vm as any).startTest()
     await flushPromises()
 

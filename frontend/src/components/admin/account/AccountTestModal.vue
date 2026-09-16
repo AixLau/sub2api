@@ -84,6 +84,7 @@
       <div v-if="supportsPromptInput" class="space-y-1.5">
         <TextArea
           v-model="testPrompt"
+          id="account-test-prompt"
           :label="promptInputLabel"
           :placeholder="promptInputPlaceholder"
           :hint="promptInputHint"
@@ -187,7 +188,12 @@
           </div>
 
           <!-- Output Lines -->
-          <div v-for="(line, index) in outputLines" :key="index" :class="line.class">
+          <div
+            v-for="(line, index) in outputLines"
+            :key="index"
+            class="whitespace-pre-wrap break-words"
+            :class="line.class"
+          >
             {{ line.text }}
           </div>
 
@@ -498,9 +504,10 @@ const modelOptionsForMode = computed(() => {
 
 const supportsPromptInput = computed(() => {
   if (!isGrokAccount.value) {
-    return supportsImageTest.value
+    return testMode.value !== 'compact'
   }
   return (
+    grokTestMode.value === 'text' ||
     grokTestMode.value === 'image' ||
     grokTestMode.value === 'video' ||
     grokTestMode.value === 'search' ||
@@ -609,7 +616,7 @@ const promptInputLabel = computed(() => {
   if (grokTestMode.value === 'tts') {
     return t('admin.accounts.grok.ttsTextLabel')
   }
-  return t('admin.accounts.imagePromptLabel')
+  return t('admin.accounts.testContentLabel')
 })
 
 const promptInputPlaceholder = computed(() => {
@@ -625,7 +632,7 @@ const promptInputPlaceholder = computed(() => {
   if (grokTestMode.value === 'tts') {
     return t('admin.accounts.grok.ttsTextPlaceholder')
   }
-  return ''
+  return t('admin.accounts.testContentPlaceholder')
 })
 
 const promptInputHint = computed(() => {
@@ -647,7 +654,7 @@ const promptInputHint = computed(() => {
   if (grokTestMode.value === 'realtime') {
     return t('admin.accounts.grok.realtimeTestHint')
   }
-  return ''
+  return t('admin.accounts.testContentHint')
 })
 
 const testModeSummary = computed(() => {
@@ -670,7 +677,10 @@ const testModeSummary = computed(() => {
     }
   }
   if (supportsImageTest.value) return t('admin.accounts.imageTestMode')
-  return t('admin.accounts.testPrompt')
+  if (isOpenAIAccount.value && testMode.value === 'compact') {
+    return t('admin.accounts.openai.testModeCompact')
+  }
+  return t('admin.accounts.textTestMode')
 })
 
 const canStartTest = computed(() => {
@@ -972,10 +982,12 @@ const handleEvent = (event: {
                     ? t('admin.accounts.grok.sendingSTTRequest')
                     : grokTestMode.value === 'realtime'
                       ? t('admin.accounts.grok.sendingRealtimeRequest')
-                      : t('admin.accounts.sendingTestMessage')
-          : supportsImageTest.value
-            ? t('admin.accounts.sendingImageRequest')
-            : t('admin.accounts.sendingTestMessage'),
+                      : t('admin.accounts.sendingTestContent', { prompt: testPrompt.value.trim() || 'hi' })
+          : isOpenAIAccount.value && testMode.value === 'compact'
+            ? t('admin.accounts.openai.testModeCompact')
+            : supportsImageTest.value
+              ? t('admin.accounts.sendingImageRequest')
+              : t('admin.accounts.sendingTestContent', { prompt: testPrompt.value.trim() || 'hi' }),
         'text-gray-400'
       )
       addLine('', 'text-gray-300')
