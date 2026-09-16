@@ -187,14 +187,6 @@ func (s *PromptService) Evaluate(ctx context.Context, req Request) (*PromptDecis
 
 func (s *PromptService) GetConfig() (PublicConfig, error) { return s.config.Public() }
 
-func (s *PromptService) WarnAllowsNextStage() bool {
-	if s == nil || s.config == nil {
-		return true
-	}
-	active, ok := s.config.Active()
-	return !ok || active.WarnAllowsNextStage
-}
-
 func (s *PromptService) SaveConfig(ctx context.Context, req UpdateConfigRequest, actorID int64) (PublicConfig, error) {
 	return s.config.Save(ctx, req, actorID)
 }

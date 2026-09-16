@@ -72,7 +72,9 @@ func AggregateResults(results []*NormalizedResult, latency time.Duration) (*Norm
 		if result == nil {
 			return nil, errors.New("prompt guard partial result is not allowed")
 		}
-		if resultSeverity(result.Decision) > resultSeverity(aggregated.Decision) {
+		if resultSeverity(result.Decision) > resultSeverity(aggregated.Decision) ||
+			result.Decision == aggregated.Decision && (result.Action == ActionBlock && aggregated.Action != ActionBlock ||
+				result.Action == aggregated.Action && riskSeverity(result.RiskLevel) > riskSeverity(aggregated.RiskLevel)) {
 			aggregated.Decision = result.Decision
 			aggregated.RiskLevel = result.RiskLevel
 			aggregated.Action = result.Action
@@ -119,6 +121,19 @@ func resultSeverity(decision EventDecision) int {
 	case EventCritical:
 		return 3
 	case EventFlag:
+		return 2
+	default:
+		return 1
+	}
+}
+
+func riskSeverity(risk RiskLevel) int {
+	switch risk {
+	case RiskCritical:
+		return 4
+	case RiskHigh:
+		return 3
+	case RiskMedium:
 		return 2
 	default:
 		return 1

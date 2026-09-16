@@ -3,6 +3,8 @@ package securityaudit
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -45,7 +47,98 @@ func (s *scriptedScanner) Scan(ctx context.Context, endpoint ActiveEndpoint, _ s
 }
 
 func guardConfig(endpoints ...ActiveEndpoint) ActiveConfig {
-	return ActiveConfig{RiskControlEnabled: true, Enabled: true, BlockingEnabled: true, ConfigVersion: 2, Scanners: AllScannerIDs, Endpoints: endpoints}
+	return ActiveConfig{RiskControlEnabled: true, Enabled: true, BlockingEnabled: true,
+		MediumRiskAllowsNextStage: true, HighRiskAllowsNextStage: true,
+		ConfigVersion: 2, Scanners: AllScannerIDs, Endpoints: endpoints}
+}
+
+func TestBlockingRiskPoliciesReachGatewayAndAuditRecord(t *testing.T) {
+	for _, mediumAllowed := range []bool{false, true} {
+		for _, highAllowed := range []bool{false, true} {
+			for _, tc := range []struct {
+				name    string
+				output  string
+				risk    RiskLevel
+				allowed bool
+			}{
+				{"low", "Safety: Safe\nCategories: None", RiskLow, true},
+				{"medium", "Safety: Controversial\nCategories: Violent", RiskMedium, mediumAllowed},
+				{"high", "Safety: Unsafe\nCategories: Copyright Violation", RiskHigh, highAllowed},
+				{"critical", "Safety: Unsafe\nCategories: Violent", RiskCritical, false},
+			} {
+				t.Run(fmt.Sprintf("%s/medium=%t/high=%t", tc.name, mediumAllowed, highAllowed), func(t *testing.T) {
+					cfg := guardConfig(ActiveEndpoint{ID: "one", Enabled: true, TimeoutMS: 1000, InputLimit: 100})
+					cfg.AllGroups = true
+					cfg.Scanners = []string{"violent"}
+					cfg.MediumRiskAllowsNextStage, cfg.HighRiskAllowsNextStage = mediumAllowed, highAllowed
+					repo := &fakeJobRepository{}
+					metrics := NewAtomicMetrics()
+					store := &fakeConfigStore{cfg: cfg, active: true}
+					scanner := PromptScannerFunc(func(_ context.Context, _ ActiveEndpoint, _ string, scanners []string) (*NormalizedResult, error) {
+						// An admin update during a scan applies to the next request,
+						// not the evaluation already running with cfg.
+						store.cfg.MediumRiskAllowsNextStage = !mediumAllowed
+						store.cfg.HighRiskAllowsNextStage = !highAllowed
+						return ParseQwen3Guard(tc.output, scanners)
+					})
+					engine := &PromptService{config: store, evaluator: NewGuardEvaluator(scanner, repo, metrics)}
+					decision := NewCoordinator(nil, engine).Check(context.Background(), asyncRequest())
+					require.Equal(t, tc.allowed, decision.AllowNextStage)
+					require.Equal(t, tc.allowed, decision.Prompt.AllowNextStage)
+					require.Equal(t, tc.risk, decision.Prompt.Result.RiskLevel)
+					require.Equal(t, tc.risk, repo.recordBlockingResult.RiskLevel)
+					if tc.allowed {
+						require.Equal(t, http.StatusOK, decision.HTTPStatus)
+						require.Empty(t, decision.ErrorCode)
+						require.Zero(t, metrics.Snapshot().Blocked)
+					} else {
+						require.Equal(t, http.StatusForbidden, decision.HTTPStatus)
+						require.Equal(t, ErrorCodeBlocked, decision.ErrorCode)
+						require.Equal(t, DecisionBlock, decision.Kind)
+						require.Equal(t, ActionBlock, repo.recordBlockingResult.Action)
+						require.Equal(t, int64(1), metrics.Snapshot().Blocked)
+					}
+					if tc.risk == RiskMedium || tc.risk == RiskHigh {
+						require.Equal(t, EventFlag, repo.recordBlockingResult.Decision)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestBlockingRiskPolicyRejectsAnyDeniedChunk(t *testing.T) {
+	for _, blockedRisk := range []RiskLevel{RiskMedium, RiskHigh} {
+		for _, blockedFirst := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/first=%t", blockedRisk, blockedFirst), func(t *testing.T) {
+				cfg := guardConfig(ActiveEndpoint{ID: "one", Enabled: true, TimeoutMS: 1000, InputLimit: 3})
+				cfg.MediumRiskAllowsNextStage = blockedRisk != RiskMedium
+				cfg.HighRiskAllowsNextStage = blockedRisk != RiskHigh
+				calls := 0
+				scanner := PromptScannerFunc(func(context.Context, ActiveEndpoint, string, []string) (*NormalizedResult, error) {
+					calls++
+					risk := RiskMedium
+					if blockedRisk == RiskMedium {
+						risk = RiskHigh
+					}
+					if (calls == 1) == blockedFirst {
+						risk = blockedRisk
+					}
+					return &NormalizedResult{Decision: EventFlag, RiskLevel: risk, Action: ActionWarn}, nil
+				})
+				decision, err := NewGuardEvaluator(scanner, nil, nil).Evaluate(context.Background(), cfg, PromptSnapshot{ScanText: "abcdefghi"})
+				require.NoError(t, err)
+				require.False(t, decision.AllowNextStage)
+				require.Equal(t, DecisionBlock, decision.Kind)
+				require.Equal(t, blockedRisk, decision.Result.RiskLevel)
+				if blockedFirst {
+					require.Equal(t, 1, calls)
+				} else {
+					require.Equal(t, 2, calls)
+				}
+			})
+		}
+	}
 }
 
 func TestGuardEvaluatorOrderedFailoverAndInvalidTerminal(t *testing.T) {

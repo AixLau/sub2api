@@ -13,7 +13,7 @@ import {
 const config = (): PromptAuditConfig => ({
   enabled: true,
   blocking_enabled: false,
-  blocking_latest_turn_only: false,
+  medium_risk_allows_next_stage: true, high_risk_allows_next_stage: true, blocking_latest_turn_only: false,
   store_pass_events: false,
   effective_mode: 'async_audit',
   strategy: 'priority',
@@ -61,6 +61,14 @@ describe('Prompt Audit view model', () => {
     const draft = configToDraft(config())
     draft.blocking_latest_turn_only = true
     expect(buildUpdateRequest(draft)).toMatchObject({ blocking_latest_turn_only: true })
+  })
+
+  it.each(['medium_risk_allows_next_stage', 'high_risk_allows_next_stage'] as const)('tracks and preserves explicit false for %s', (field) => {
+    const draft = configToDraft(config())
+    const original = draftFingerprint(draft)
+    draft[field] = false
+    expect(draftFingerprint(draft)).not.toBe(original)
+    expect(buildUpdateRequest(draft)[field]).toBe(false)
   })
 
   it('tracks dirty state from the full normalized save payload', () => {

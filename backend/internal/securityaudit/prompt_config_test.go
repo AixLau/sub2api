@@ -16,6 +16,36 @@ import (
 
 type prefixEncryptor struct{}
 
+func TestRiskPoliciesRoundTripIndependently(t *testing.T) {
+	defaults := DefaultStorageConfig()
+	require.True(t, defaults.MediumRiskAllowsNextStage)
+	require.True(t, defaults.HighRiskAllowsNextStage)
+	for _, medium := range []bool{false, true} {
+		for _, high := range []bool{false, true} {
+			req := promptAuditUpdateRequest(1, 1, "")
+			req.MediumRiskAllowsNextStage, req.HighRiskAllowsNextStage = medium, high
+			stored, err := (&ConfigManager{}).buildNextStorage(defaults, req, 1)
+			require.NoError(t, err)
+			raw, err := json.Marshal(stored)
+			require.NoError(t, err)
+			require.NotContains(t, string(raw), `"warn_allows_next_stage"`)
+			reloaded, err := ParseStorageConfig(string(raw))
+			require.NoError(t, err)
+			active, err := ActiveFromStorage(reloaded, true, nil)
+			require.NoError(t, err)
+			public := PublicFromStorage(reloaded, true, nil)
+			require.Equal(t, medium, active.MediumRiskAllowsNextStage)
+			require.Equal(t, high, active.HighRiskAllowsNextStage)
+			require.Equal(t, medium, public.MediumRiskAllowsNextStage)
+			require.Equal(t, high, public.HighRiskAllowsNextStage)
+			var summary map[string]any
+			require.NoError(t, json.Unmarshal([]byte(changeSummary(reloaded)), &summary))
+			require.Equal(t, medium, summary["medium_risk_allows_next_stage"])
+			require.Equal(t, high, summary["high_risk_allows_next_stage"])
+		}
+	}
+}
+
 func (prefixEncryptor) Encrypt(value string) (string, error) { return "enc:" + value, nil }
 func (prefixEncryptor) Decrypt(value string) (string, error) {
 	if !strings.HasPrefix(value, "enc:") {

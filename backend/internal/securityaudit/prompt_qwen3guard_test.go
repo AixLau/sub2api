@@ -139,6 +139,31 @@ func TestAggregateDeduplicatesFactsAndUsesMostSevereEndpointMetadata(t *testing.
 	require.Equal(t, 7, result.LatencyMS)
 }
 
+func TestAggregateFlagsPreservesBlockingActionAndHighestAllowedRisk(t *testing.T) {
+	for _, mediumAction := range []Action{ActionWarn, ActionBlock} {
+		for _, highFirst := range []bool{false, true} {
+			medium := &NormalizedResult{Decision: EventFlag, RiskLevel: RiskMedium, Action: mediumAction, GuardEndpointID: "medium-node"}
+			high := &NormalizedResult{Decision: EventFlag, RiskLevel: RiskHigh, Action: ActionWarn, GuardEndpointID: "high-node"}
+			results := []*NormalizedResult{medium, high}
+			if highFirst {
+				results = []*NormalizedResult{high, medium}
+			}
+			result, err := AggregateResults(results, 0)
+			require.NoError(t, err)
+			require.Equal(t, EventFlag, result.Decision)
+			if mediumAction == ActionBlock {
+				require.Equal(t, ActionBlock, result.Action)
+				require.Equal(t, RiskMedium, result.RiskLevel)
+				require.Equal(t, "medium-node", result.GuardEndpointID)
+			} else {
+				require.Equal(t, ActionWarn, result.Action)
+				require.Equal(t, RiskHigh, result.RiskLevel)
+				require.Equal(t, "high-node", result.GuardEndpointID)
+			}
+		}
+	}
+}
+
 func TestIssueSummariesAreDeterministicRedactedDerivedDTOs(t *testing.T) {
 	const canary = "PROMPT_CANARY_EVIDENCE_SECRET"
 	result := NormalizedResult{

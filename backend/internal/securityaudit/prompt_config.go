@@ -69,25 +69,26 @@ type StorageEndpoint struct {
 }
 
 type storageConfig struct {
-	Enabled                bool              `json:"enabled"`
-	BlockingEnabled        bool              `json:"blocking_enabled"`
-	WarnAllowsNextStage    bool              `json:"warn_allows_next_stage"`
-	MaxAttempts            int               `json:"max_attempts"`
-	BlockingLatestTurnOnly bool              `json:"blocking_latest_turn_only"`
-	StorePassEvents        bool              `json:"store_pass_events"`
-	Strategy               string            `json:"strategy"`
-	WorkerCount            int               `json:"worker_count"`
-	QueueCapacity          int               `json:"queue_capacity"`
-	Scanners               []string          `json:"scanners"`
-	AllGroups              bool              `json:"all_groups"`
-	GroupIDs               []int64           `json:"group_ids"`
-	Endpoints              []StorageEndpoint `json:"endpoints"`
-	CaptureUsers           []CaptureUser     `json:"capture_users,omitempty"`
-	CaptureMaxRecords      int               `json:"capture_max_records,omitempty"`
-	ConfigVersion          int64             `json:"config_version"`
-	UpdatedAt              time.Time         `json:"updated_at"`
-	UpdatedBy              int64             `json:"updated_by"`
-	ChangeSummary          string            `json:"change_summary"`
+	Enabled                   bool              `json:"enabled"`
+	BlockingEnabled           bool              `json:"blocking_enabled"`
+	MediumRiskAllowsNextStage bool              `json:"medium_risk_allows_next_stage"`
+	HighRiskAllowsNextStage   bool              `json:"high_risk_allows_next_stage"`
+	MaxAttempts               int               `json:"max_attempts"`
+	BlockingLatestTurnOnly    bool              `json:"blocking_latest_turn_only"`
+	StorePassEvents           bool              `json:"store_pass_events"`
+	Strategy                  string            `json:"strategy"`
+	WorkerCount               int               `json:"worker_count"`
+	QueueCapacity             int               `json:"queue_capacity"`
+	Scanners                  []string          `json:"scanners"`
+	AllGroups                 bool              `json:"all_groups"`
+	GroupIDs                  []int64           `json:"group_ids"`
+	Endpoints                 []StorageEndpoint `json:"endpoints"`
+	CaptureUsers              []CaptureUser     `json:"capture_users,omitempty"`
+	CaptureMaxRecords         int               `json:"capture_max_records,omitempty"`
+	ConfigVersion             int64             `json:"config_version"`
+	UpdatedAt                 time.Time         `json:"updated_at"`
+	UpdatedBy                 int64             `json:"updated_by"`
+	ChangeSummary             string            `json:"change_summary"`
 }
 
 type ActiveEndpoint struct {
@@ -109,26 +110,27 @@ type ActiveEndpoint struct {
 }
 
 type ActiveConfig struct {
-	RiskControlEnabled     bool
-	Enabled                bool
-	BlockingEnabled        bool
-	WarnAllowsNextStage    bool
-	MaxAttempts            int
-	BlockingLatestTurnOnly bool
-	StorePassEvents        bool
-	Strategy               string
-	WorkerCount            int
-	QueueCapacity          int
-	Scanners               []string
-	AllGroups              bool
-	GroupIDs               []int64
-	Endpoints              []ActiveEndpoint
-	CaptureUsers           []CaptureUser
-	CaptureMaxRecords      int
-	ConfigVersion          int64
-	UpdatedAt              time.Time
-	UpdatedBy              int64
-	ChangeSummary          string
+	RiskControlEnabled        bool
+	Enabled                   bool
+	BlockingEnabled           bool
+	MediumRiskAllowsNextStage bool
+	HighRiskAllowsNextStage   bool
+	MaxAttempts               int
+	BlockingLatestTurnOnly    bool
+	StorePassEvents           bool
+	Strategy                  string
+	WorkerCount               int
+	QueueCapacity             int
+	Scanners                  []string
+	AllGroups                 bool
+	GroupIDs                  []int64
+	Endpoints                 []ActiveEndpoint
+	CaptureUsers              []CaptureUser
+	CaptureMaxRecords         int
+	ConfigVersion             int64
+	UpdatedAt                 time.Time
+	UpdatedBy                 int64
+	ChangeSummary             string
 }
 
 type PublicEndpoint struct {
@@ -146,26 +148,27 @@ type PublicEndpoint struct {
 }
 
 type PublicConfig struct {
-	Enabled                bool             `json:"enabled"`
-	BlockingEnabled        bool             `json:"blocking_enabled"`
-	WarnAllowsNextStage    bool             `json:"warn_allows_next_stage"`
-	MaxAttempts            int              `json:"max_attempts"`
-	BlockingLatestTurnOnly bool             `json:"blocking_latest_turn_only"`
-	StorePassEvents        bool             `json:"store_pass_events"`
-	EffectiveMode          Mode             `json:"effective_mode"`
-	Strategy               string           `json:"strategy"`
-	WorkerCount            int              `json:"worker_count"`
-	QueueCapacity          int              `json:"queue_capacity"`
-	Scanners               []string         `json:"scanners"`
-	AllGroups              bool             `json:"all_groups"`
-	GroupIDs               []int64          `json:"group_ids"`
-	Endpoints              []PublicEndpoint `json:"endpoints"`
-	CaptureUsers           []CaptureUser    `json:"capture_users,omitempty"`
-	CaptureMaxRecords      int              `json:"capture_max_records,omitempty"`
-	ConfigVersion          int64            `json:"config_version"`
-	UpdatedAt              time.Time        `json:"updated_at"`
-	UpdatedBy              int64            `json:"updated_by"`
-	ChangeSummary          string           `json:"change_summary"`
+	Enabled                   bool             `json:"enabled"`
+	BlockingEnabled           bool             `json:"blocking_enabled"`
+	MediumRiskAllowsNextStage bool             `json:"medium_risk_allows_next_stage"`
+	HighRiskAllowsNextStage   bool             `json:"high_risk_allows_next_stage"`
+	MaxAttempts               int              `json:"max_attempts"`
+	BlockingLatestTurnOnly    bool             `json:"blocking_latest_turn_only"`
+	StorePassEvents           bool             `json:"store_pass_events"`
+	EffectiveMode             Mode             `json:"effective_mode"`
+	Strategy                  string           `json:"strategy"`
+	WorkerCount               int              `json:"worker_count"`
+	QueueCapacity             int              `json:"queue_capacity"`
+	Scanners                  []string         `json:"scanners"`
+	AllGroups                 bool             `json:"all_groups"`
+	GroupIDs                  []int64          `json:"group_ids"`
+	Endpoints                 []PublicEndpoint `json:"endpoints"`
+	CaptureUsers              []CaptureUser    `json:"capture_users,omitempty"`
+	CaptureMaxRecords         int              `json:"capture_max_records,omitempty"`
+	ConfigVersion             int64            `json:"config_version"`
+	UpdatedAt                 time.Time        `json:"updated_at"`
+	UpdatedBy                 int64            `json:"updated_by"`
+	ChangeSummary             string           `json:"change_summary"`
 }
 
 type UpdateEndpoint struct {
@@ -183,41 +186,43 @@ type UpdateEndpoint struct {
 }
 
 type UpdateConfigRequest struct {
-	ExpectedConfigVersion  int64            `json:"expected_config_version" binding:"required"`
-	Enabled                bool             `json:"enabled"`
-	BlockingEnabled        bool             `json:"blocking_enabled"`
-	WarnAllowsNextStage    bool             `json:"warn_allows_next_stage"`
-	MaxAttempts            int              `json:"max_attempts"`
-	BlockingLatestTurnOnly bool             `json:"blocking_latest_turn_only"`
-	StorePassEvents        bool             `json:"store_pass_events"`
-	Strategy               string           `json:"strategy"`
-	WorkerCount            int              `json:"worker_count"`
-	QueueCapacity          int              `json:"queue_capacity"`
-	Scanners               []string         `json:"scanners"`
-	AllGroups              bool             `json:"all_groups"`
-	GroupIDs               []int64          `json:"group_ids"`
-	Endpoints              []UpdateEndpoint `json:"endpoints"`
-	CaptureUsers           []CaptureUser    `json:"capture_users,omitempty"`
-	CaptureMaxRecords      int              `json:"capture_max_records,omitempty"`
+	ExpectedConfigVersion     int64            `json:"expected_config_version" binding:"required"`
+	Enabled                   bool             `json:"enabled"`
+	BlockingEnabled           bool             `json:"blocking_enabled"`
+	MediumRiskAllowsNextStage bool             `json:"medium_risk_allows_next_stage"`
+	HighRiskAllowsNextStage   bool             `json:"high_risk_allows_next_stage"`
+	MaxAttempts               int              `json:"max_attempts"`
+	BlockingLatestTurnOnly    bool             `json:"blocking_latest_turn_only"`
+	StorePassEvents           bool             `json:"store_pass_events"`
+	Strategy                  string           `json:"strategy"`
+	WorkerCount               int              `json:"worker_count"`
+	QueueCapacity             int              `json:"queue_capacity"`
+	Scanners                  []string         `json:"scanners"`
+	AllGroups                 bool             `json:"all_groups"`
+	GroupIDs                  []int64          `json:"group_ids"`
+	Endpoints                 []UpdateEndpoint `json:"endpoints"`
+	CaptureUsers              []CaptureUser    `json:"capture_users,omitempty"`
+	CaptureMaxRecords         int              `json:"capture_max_records,omitempty"`
 }
 
 func DefaultStorageConfig() storageConfig {
 	return storageConfig{
-		Enabled:                false,
-		BlockingEnabled:        false,
-		WarnAllowsNextStage:    true,
-		MaxAttempts:            DefaultMaxAttempts,
-		BlockingLatestTurnOnly: false,
-		StorePassEvents:        false,
-		Strategy:               "priority",
-		WorkerCount:            DefaultWorkerCount,
-		QueueCapacity:          DefaultQueueCapacity,
-		Scanners:               append([]string(nil), AllScannerIDs...),
-		AllGroups:              true,
-		GroupIDs:               []int64{},
-		Endpoints:              []StorageEndpoint{},
-		CaptureUsers:           []CaptureUser{},
-		ConfigVersion:          1,
+		Enabled:                   false,
+		BlockingEnabled:           false,
+		MediumRiskAllowsNextStage: true,
+		HighRiskAllowsNextStage:   true,
+		MaxAttempts:               DefaultMaxAttempts,
+		BlockingLatestTurnOnly:    false,
+		StorePassEvents:           false,
+		Strategy:                  "priority",
+		WorkerCount:               DefaultWorkerCount,
+		QueueCapacity:             DefaultQueueCapacity,
+		Scanners:                  append([]string(nil), AllScannerIDs...),
+		AllGroups:                 true,
+		GroupIDs:                  []int64{},
+		Endpoints:                 []StorageEndpoint{},
+		CaptureUsers:              []CaptureUser{},
+		ConfigVersion:             1,
 	}
 }
 
@@ -497,9 +502,9 @@ func PublicFromStorage(cfg storageConfig, riskControlEnabled bool, invalidTokenE
 			Enabled: ep.Enabled, HasToken: hasToken, TokenStatus: status,
 		})
 	}
-	active := ActiveConfig{RiskControlEnabled: riskControlEnabled, Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, WarnAllowsNextStage: cfg.WarnAllowsNextStage, MaxAttempts: cfg.MaxAttempts}
+	active := ActiveConfig{RiskControlEnabled: riskControlEnabled, Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, MediumRiskAllowsNextStage: cfg.MediumRiskAllowsNextStage, HighRiskAllowsNextStage: cfg.HighRiskAllowsNextStage, MaxAttempts: cfg.MaxAttempts}
 	return PublicConfig{
-		Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, WarnAllowsNextStage: cfg.WarnAllowsNextStage, MaxAttempts: cfg.MaxAttempts, BlockingLatestTurnOnly: cfg.BlockingLatestTurnOnly, StorePassEvents: cfg.StorePassEvents,
+		Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, MediumRiskAllowsNextStage: cfg.MediumRiskAllowsNextStage, HighRiskAllowsNextStage: cfg.HighRiskAllowsNextStage, MaxAttempts: cfg.MaxAttempts, BlockingLatestTurnOnly: cfg.BlockingLatestTurnOnly, StorePassEvents: cfg.StorePassEvents,
 		EffectiveMode: active.EffectiveMode(), Strategy: cfg.Strategy, WorkerCount: cfg.WorkerCount,
 		QueueCapacity: cfg.QueueCapacity, Scanners: scanners, AllGroups: cfg.AllGroups,
 		GroupIDs: groupIDs, Endpoints: endpoints, CaptureUsers: append([]CaptureUser(nil), cfg.CaptureUsers...), CaptureMaxRecords: cfg.CaptureMaxRecords, ConfigVersion: cfg.ConfigVersion,
@@ -509,7 +514,7 @@ func PublicFromStorage(cfg storageConfig, riskControlEnabled bool, invalidTokenE
 
 func ActiveFromStorage(cfg storageConfig, riskControlEnabled bool, encryptor SecretEncryptor) (ActiveConfig, error) {
 	active := ActiveConfig{
-		RiskControlEnabled: riskControlEnabled, Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, WarnAllowsNextStage: cfg.WarnAllowsNextStage, MaxAttempts: cfg.MaxAttempts,
+		RiskControlEnabled: riskControlEnabled, Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, MediumRiskAllowsNextStage: cfg.MediumRiskAllowsNextStage, HighRiskAllowsNextStage: cfg.HighRiskAllowsNextStage, MaxAttempts: cfg.MaxAttempts,
 		BlockingLatestTurnOnly: cfg.BlockingLatestTurnOnly,
 		StorePassEvents:        cfg.StorePassEvents, Strategy: cfg.Strategy, WorkerCount: cfg.WorkerCount,
 		QueueCapacity: cfg.QueueCapacity, Scanners: append([]string(nil), cfg.Scanners...), AllGroups: cfg.AllGroups,
@@ -547,18 +552,20 @@ func ActiveFromStorage(cfg storageConfig, riskControlEnabled bool, encryptor Sec
 
 func changeSummary(cfg storageConfig) string {
 	summary := struct {
-		Enabled                bool   `json:"enabled"`
-		BlockingEnabled        bool   `json:"blocking_enabled"`
-		BlockingLatestTurnOnly bool   `json:"blocking_latest_turn_only"`
-		StorePassEvents        bool   `json:"store_pass_events"`
-		EndpointCount          int    `json:"endpoint_count"`
-		ScannerCount           int    `json:"scanner_count"`
-		AllGroups              bool   `json:"all_groups"`
-		GroupCount             int    `json:"group_count"`
-		GroupHash              string `json:"group_hash"`
-		CaptureUserCount       int    `json:"capture_user_count"`
-		CaptureMaxRecords      int    `json:"capture_max_records"`
-	}{cfg.Enabled, cfg.BlockingEnabled, cfg.BlockingLatestTurnOnly, cfg.StorePassEvents, len(cfg.Endpoints), len(cfg.Scanners), cfg.AllGroups, len(cfg.GroupIDs), "", len(cfg.CaptureUsers), cfg.CaptureMaxRecords}
+		Enabled                   bool   `json:"enabled"`
+		BlockingEnabled           bool   `json:"blocking_enabled"`
+		BlockingLatestTurnOnly    bool   `json:"blocking_latest_turn_only"`
+		StorePassEvents           bool   `json:"store_pass_events"`
+		EndpointCount             int    `json:"endpoint_count"`
+		ScannerCount              int    `json:"scanner_count"`
+		AllGroups                 bool   `json:"all_groups"`
+		GroupCount                int    `json:"group_count"`
+		GroupHash                 string `json:"group_hash"`
+		CaptureUserCount          int    `json:"capture_user_count"`
+		CaptureMaxRecords         int    `json:"capture_max_records"`
+		MediumRiskAllowsNextStage bool   `json:"medium_risk_allows_next_stage"`
+		HighRiskAllowsNextStage   bool   `json:"high_risk_allows_next_stage"`
+	}{cfg.Enabled, cfg.BlockingEnabled, cfg.BlockingLatestTurnOnly, cfg.StorePassEvents, len(cfg.Endpoints), len(cfg.Scanners), cfg.AllGroups, len(cfg.GroupIDs), "", len(cfg.CaptureUsers), cfg.CaptureMaxRecords, cfg.MediumRiskAllowsNextStage, cfg.HighRiskAllowsNextStage}
 	rawGroups, _ := json.Marshal(cfg.GroupIDs)
 	digest := sha256.Sum256(rawGroups)
 	summary.GroupHash = hex.EncodeToString(digest[:])

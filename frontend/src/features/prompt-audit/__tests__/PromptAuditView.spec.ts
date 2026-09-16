@@ -19,7 +19,7 @@ vi.mock('vue-i18n', async () => {
 })
 
 const baseConfig = (): PromptAuditConfig => ({
-  enabled: true, blocking_enabled: false, blocking_latest_turn_only: false, store_pass_events: false, effective_mode: 'async_audit', strategy: 'priority',
+  enabled: true, blocking_enabled: false, medium_risk_allows_next_stage: true, high_risk_allows_next_stage: true, blocking_latest_turn_only: false, store_pass_events: false, effective_mode: 'async_audit', strategy: 'priority',
   worker_count: 4, queue_capacity: 100, scanners: SCANNER_CATALOG.map((item) => item.id), all_groups: true, group_ids: [],
   endpoints: [{ id: 'guard-1', name: 'Guard One', protocol: 'openai_compatible', base_url: 'http://127.0.0.1:8000', model: 'guard-model', timeout_ms: 3000, input_limit: 4000, enabled: true, has_token: true, token_status: 'configured' }],
   config_version: 7, updated_at: '2026-07-16T00:00:00Z', updated_by: 1, change_summary: '{}',
@@ -135,6 +135,51 @@ describe('PromptAuditView', () => {
     expect(wrapper.get('[data-test="blocking-latest-turn-only-toggle"]').attributes()).toHaveProperty('disabled')
   })
 
+  it.each([
+    [true, true], [true, false], [false, true], [false, false],
+  ])('saves independent medium=%s and high=%s risk policies', async (medium, high) => {
+    mocks.getConfig.mockResolvedValue({ ...baseConfig(), blocking_enabled: true, effective_mode: 'blocking' })
+    mocks.updateConfig.mockImplementation(async (request) => ({ ...baseConfig(), ...request, config_version: 8 }))
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="tab-config"]').trigger('click')
+    const mediumToggle = wrapper.get('[data-test="medium-risk-allows-next-stage-toggle"]')
+    const highToggle = wrapper.get('[data-test="high-risk-allows-next-stage-toggle"]')
+    if (!medium) await mediumToggle.trigger('click')
+    if (!high) await highToggle.trigger('click')
+    // Dirty the draft even when both policies retain their initial value.
+    await wrapper.get('[data-test="store-pass-toggle"]').trigger('click')
+    expect(mediumToggle.attributes('aria-checked')).toBe(String(medium))
+    expect(highToggle.attributes('aria-checked')).toBe(String(high))
+    await wrapper.get('[data-test="save-config"]').trigger('click')
+    await flushPromises()
+    expect(mocks.updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+      medium_risk_allows_next_stage: medium,
+      high_risk_allows_next_stage: high,
+    }))
+    expect(mediumToggle.attributes('aria-checked')).toBe(String(medium))
+    expect(highToggle.attributes('aria-checked')).toBe(String(high))
+    expect(wrapper.get('[data-test="save-config"]').attributes()).toHaveProperty('disabled')
+  })
+
+  it('disables risk policies outside synchronous blocking', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="tab-config"]').trigger('click')
+    for (const level of ['medium', 'high']) {
+      expect(wrapper.get(`[data-test="${level}-risk-allows-next-stage-toggle"]`).attributes()).toHaveProperty('disabled')
+    }
+    await wrapper.get('[data-test="blocking-toggle"]').trigger('click')
+    await wrapper.get('[data-test="confirm-action"]').trigger('click')
+    for (const level of ['medium', 'high']) {
+      expect(wrapper.get(`[data-test="${level}-risk-allows-next-stage-toggle"]`).attributes()).not.toHaveProperty('disabled')
+    }
+    await wrapper.get('[data-test="enabled-toggle"]').trigger('click')
+    for (const level of ['medium', 'high']) {
+      expect(wrapper.get(`[data-test="${level}-risk-allows-next-stage-toggle"]`).attributes()).toHaveProperty('disabled')
+    }
+  })
+
   it('clears plaintext token state after a successful save', async () => {
     const wrapper = mountView()
     await flushPromises()
@@ -178,7 +223,7 @@ describe('PromptAuditView', () => {
     await flushPromises()
     await wrapper.get('[data-test="tab-config"]').trigger('click')
     const switches = wrapper.findAll('[role="switch"]')
-    expect(switches).toHaveLength(5)
+    expect(switches).toHaveLength(6)
     expect(switches.every((item) => Boolean(item.attributes('aria-label')))).toBe(true)
     expect(wrapper.html()).toContain('fixed inset-x-0 bottom-0')
     expect(wrapper.html()).toContain('flex-wrap')

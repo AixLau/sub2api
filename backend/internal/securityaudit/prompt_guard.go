@@ -109,6 +109,14 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 			logGuardFailure(snapshot, cfg, kind, code, "", g.clock.Now().Sub(start))
 			return nil, err
 		}
+		// Apply the policy from this evaluation's config snapshot to every
+		// chunk. A denied medium-risk chunk must still block when another
+		// chunk has high risk that the administrator allows.
+		if result.Action == ActionWarn && !cfg.allowsFlaggedRisk(result.RiskLevel) {
+			copy := *result
+			copy.Action = ActionBlock
+			result = &copy
+		}
 		result.ChunkTotal = len(chunks)
 		results = append(results, result)
 		LogInfo(EventChunkCompleted, mergeLogFields(baseFields, map[string]any{
@@ -176,6 +184,19 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 		}))
 	}
 	return decision, nil
+}
+
+func (cfg ActiveConfig) allowsFlaggedRisk(risk RiskLevel) bool {
+	switch risk {
+	case RiskLow:
+		return true
+	case RiskMedium:
+		return cfg.MediumRiskAllowsNextStage
+	case RiskHigh:
+		return cfg.HighRiskAllowsNextStage
+	default:
+		return false
+	}
 }
 
 func logGuardFailure(snapshot PromptSnapshot, cfg ActiveConfig, kind DecisionKind, code, guardEndpointID string, latency time.Duration) {

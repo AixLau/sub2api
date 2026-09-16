@@ -50,6 +50,14 @@
                 @probe="runProbe"
               />
               <div v-if="loadErrors.groups" role="alert" class="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">{{ loadErrors.groups }}</div>
+              <section aria-labelledby="prompt-risk-policy-title" class="border-b border-gray-200 py-6 dark:border-dark-700/60">
+                <h2 id="prompt-risk-policy-title" class="text-base font-semibold text-gray-950 dark:text-white">{{ t('admin.promptAudit.policy.riskPolicyTitle') }}</h2>
+                <p class="mt-1 text-sm text-gray-500 dark:text-dark-300">{{ t('admin.promptAudit.policy.riskPolicyHint') }}</p>
+                <div class="mt-4 flex flex-wrap gap-x-8 gap-y-3">
+                  <SaveToggle :label="t('admin.promptAudit.policy.mediumRiskAllowsNextStage')" :model-value="draft.medium_risk_allows_next_stage" :disabled="!draft.enabled || !draft.blocking_enabled" data-test="medium-risk-allows-next-stage-toggle" @update:model-value="replaceDraft({ ...draft!, medium_risk_allows_next_stage: $event })" />
+                  <SaveToggle :label="t('admin.promptAudit.policy.highRiskAllowsNextStage')" :model-value="draft.high_risk_allows_next_stage" :disabled="!draft.enabled || !draft.blocking_enabled" data-test="high-risk-allows-next-stage-toggle" @update:model-value="replaceDraft({ ...draft!, high_risk_allows_next_stage: $event })" />
+                </div>
+              </section>
               <PolicyPanel :draft="draft" :groups="groups" @update:draft="replaceDraft" />
             </template>
           </div>
@@ -95,7 +103,6 @@
         <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
           <SaveToggle :label="t('admin.promptAudit.saveBar.enabled')" :model-value="draft.enabled" data-test="enabled-toggle" @update:model-value="setEnabled" />
           <SaveToggle :label="t('admin.promptAudit.saveBar.blocking')" :model-value="draft.blocking_enabled" :disabled="!draft.enabled" data-test="blocking-toggle" @update:model-value="setBlocking" />
-          <SaveToggle :label="t('admin.promptAudit.saveBar.warnAllowsNextStage')" :model-value="draft.warn_allows_next_stage ?? true" :disabled="!draft.enabled || !draft.blocking_enabled" data-test="warn-allows-next-stage-toggle" @update:model-value="replaceDraft({ ...draft!, warn_allows_next_stage: $event })" />
           <label class="flex items-center gap-2 text-sm"><span>{{ t('admin.promptAudit.saveBar.maxAttempts') }}</span><input v-model.number="draft.max_attempts" type="number" min="1" max="10" class="input w-20" /></label>
           <SaveToggle :label="t('admin.promptAudit.saveBar.blockingLatestTurnOnly')" :model-value="draft.blocking_latest_turn_only" :disabled="!draft.enabled || !draft.blocking_enabled" data-test="blocking-latest-turn-only-toggle" @update:model-value="replaceDraft({ ...draft!, blocking_latest_turn_only: $event })" />
           <SaveToggle :label="t('admin.promptAudit.saveBar.storePass')" :model-value="draft.store_pass_events" data-test="store-pass-toggle" @update:model-value="replaceDraft({ ...draft!, store_pass_events: $event })" />

@@ -51,12 +51,14 @@ export default {
       toggleNode: 'Toggle node {name}', deleteConfirm: 'Remove “{name}” from the draft? It takes effect after saving.',
     },
     policy: {
+      riskPolicyTitle: 'Risk-level actions',
+      mediumRiskAllowsNextStage: 'Allow medium risk', highRiskAllowsNextStage: 'Allow high risk', riskPolicyHint: 'Applies only to synchronous blocking. Turn off a switch to reject flagged requests at that level. Low risk is allowed; critical risk is always blocked.',
       title: 'Audit policy', description: 'Configure group scope, nine input-risk categories, workers, and queue bounds.', scope: 'Scope', allGroups: 'All groups', selectedGroups: 'Selected groups',
       searchGroups: 'Search groups', noGroups: 'No matching groups', missingGroups: 'Configured IDs for groups that no longer exist', selectedCount: '{count} groups selected',
       scanners: 'Qwen3Guard input-risk categories', workerCount: 'Worker count', queueCapacity: 'Persistent queue capacity', strategy: 'Node strategy', strategyHint: 'Try nodes in configuration order and fail over when allowed.',
       captureTitle: 'Selected-user request capture', captureDescription: 'Keep complete, unredacted request bodies for explicitly selected users. Use only for short-lived troubleshooting.', captureUserId: 'User ID', captureEmail: 'Email', captureAdd: 'Add user', captureMaxRecords: 'Maximum retained records per user (0 = unlimited)',
     },
-    saveBar: { enabled: 'Enable prompt audit', blocking: 'Synchronous blocking', warnAllowsNextStage: 'Allow Warn results', maxAttempts: 'Max attempts', blockingLatestTurnOnly: 'Only latest input and prior output', storePass: 'Store safe events', dirty: 'Unsaved changes', synced: 'Configuration synced' },
+    saveBar: { enabled: 'Enable prompt audit', blocking: 'Synchronous blocking', maxAttempts: 'Max attempts', blockingLatestTurnOnly: 'Only latest input and prior output', storePass: 'Store safe events', dirty: 'Unsaved changes', synced: 'Configuration synced' },
     blockingConfirm: {
       title: 'Enable synchronous blocking?',
       message: 'Applicable requests wait for Guard before account selection, billing, or upstream access. Block, unavailable Guard, and invalid responses all prevent upstream access.',
