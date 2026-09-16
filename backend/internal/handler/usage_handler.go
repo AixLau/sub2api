@@ -23,6 +23,18 @@ type userUsageFilters struct {
 	EndTime   time.Time
 }
 
+type userTrendDataPoint struct {
+	Date                string  `json:"date"`
+	Requests            int64   `json:"requests"`
+	InputTokens         int64   `json:"input_tokens"`
+	OutputTokens        int64   `json:"output_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	TotalTokens         int64   `json:"total_tokens"`
+	Cost                float64 `json:"cost"`
+	ActualCost          float64 `json:"actual_cost"`
+}
+
 type userModelStat struct {
 	Model               string  `json:"model"`
 	Requests            int64   `json:"requests"`
@@ -575,7 +587,7 @@ func (h *UsageHandler) DashboardTrend(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"trend":       trend,
+		"trend":       userTrendFromUsageStats(trend),
 		"start_date":  parsed.StartTime.Format("2006-01-02"),
 		"end_date":    parsed.EndTime.Add(-24 * time.Hour).Format("2006-01-02"),
 		"granularity": granularity,
@@ -651,7 +663,7 @@ func (h *UsageHandler) DashboardSnapshotV2(c *gin.Context) {
 			response.ErrorFrom(c, err)
 			return
 		}
-		resp["trend"] = trend
+		resp["trend"] = userTrendFromUsageStats(trend)
 	}
 	if includeModels {
 		models, err := h.usageService.GetModelStatsWithFiltersBySource(c.Request.Context(), parsed.StartTime, parsed.EndTime, parsed.Filters, usagestats.ModelSourceRequested)
@@ -671,6 +683,24 @@ func (h *UsageHandler) DashboardSnapshotV2(c *gin.Context) {
 	}
 
 	response.Success(c, resp)
+}
+
+func userTrendFromUsageStats(stats []usagestats.TrendDataPoint) []userTrendDataPoint {
+	out := make([]userTrendDataPoint, 0, len(stats))
+	for _, stat := range stats {
+		out = append(out, userTrendDataPoint{
+			Date:                stat.Date,
+			Requests:            stat.Requests,
+			InputTokens:         stat.InputTokens,
+			OutputTokens:        stat.OutputTokens,
+			CacheCreationTokens: stat.CacheCreationTokens,
+			CacheReadTokens:     stat.CacheReadTokens,
+			TotalTokens:         stat.TotalTokens,
+			Cost:                stat.Cost,
+			ActualCost:          stat.ActualCost,
+		})
+	}
+	return out
 }
 
 func userModelStatsFromUsageStats(stats []usagestats.ModelStat) []userModelStat {

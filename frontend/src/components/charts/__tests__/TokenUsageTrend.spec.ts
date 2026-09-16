@@ -14,7 +14,9 @@ const messages: Record<string, string> = {
   'usage.trend.cacheHitRate': '缓存命中率',
   'usage.trend.totalUsage': '总使用',
   'usage.trend.actualCost': '实际消费',
-  'usage.trend.cost': '消费',
+  'usage.trend.cost': '成本',
+  'usage.trend.consumption': '消费',
+  'usage.trend.accountCost': '账号计费成本',
   'admin.dashboard.noDataAvailable': 'No data available',
 }
 
@@ -63,6 +65,7 @@ const trendPoint = {
   cache_creation_tokens: 300,
   cache_read_tokens: 500,
   total_tokens: 1050,
+  account_cost: 1.23,
   cost: 2.64,
   actual_cost: 4.58,
 }
@@ -201,6 +204,20 @@ describe('TokenUsageTrend', () => {
     expect(tooltipHtml).not.toContain('实际消费')
     expect(tooltipHtml).not.toContain('Standard')
     expect(tooltipHtml).not.toContain('标准')
+  })
+
+  it('uses account billing cost for admin tooltips, including zero cost', () => {
+    for (const accountCost of [1.23, 0]) {
+      const wrapper = mountTrend({
+        showCost: true,
+        costMetric: 'account',
+        trendData: [{ ...trendPoint, account_cost: accountCost }],
+      })
+      const tooltip = (getChart(wrapper).props('tooltipHtml') as (title: string) => string)(trendPoint.date)
+      expect(tooltip).toContain(`账号计费成本: $${accountCost === 0 ? '0.0000' : '1.23'}`)
+      expect(tooltip).toContain('消费: $4.58')
+      expect(tooltip).not.toContain('$2.64')
+    }
   })
 
   it('escapes dynamic tooltip text while keeping semantic markup', () => {

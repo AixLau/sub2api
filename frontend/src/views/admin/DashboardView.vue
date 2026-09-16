@@ -259,6 +259,7 @@
           </div>
 
           <TokenUsageTrend
+            cost-metric="account"
             :trend-data="trendData"
             :loading="chartsLoading"
             chart-height-class="h-80"

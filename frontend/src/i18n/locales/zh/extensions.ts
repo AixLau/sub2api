@@ -123,6 +123,7 @@ export default {
       cacheHitRate: '缓存命中率',
       cacheRead: '缓存读取',
       cost: '成本',
+      accountCost: '账号计费成本',
       consumption: '消费',
       input: '输入',
       output: '输出',

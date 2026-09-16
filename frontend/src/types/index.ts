@@ -2017,6 +2017,7 @@ export interface TrendDataPoint {
   cache_creation_tokens: number
   cache_read_tokens: number
   total_tokens: number
+  account_cost?: number // 账号计费成本（仅管理员接口返回）
   cost: number // 标准计费
   actual_cost: number // 实际扣除
 }

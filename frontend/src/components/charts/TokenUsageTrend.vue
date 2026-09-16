@@ -57,9 +57,11 @@ const props = withDefaults(defineProps<{
   loading?: boolean
   surface?: 'default' | 'tremor' | 'playfulDashboard'
   showCost?: boolean
+  costMetric?: 'standard' | 'account'
   chartHeightClass?: string
 }>(), {
-  chartHeightClass: 'h-48'
+  chartHeightClass: 'h-48',
+  costMetric: 'standard'
 })
 
 type TokenSeriesPoint = {
@@ -245,8 +247,10 @@ const buildTooltipHtml = (title: unknown): string => {
     { label: tokenLabels.value.cacheHitRate, value: `${getCacheHitRate(data).toFixed(1)}%`, color: chartColors.value.cacheHitRate }
   ]
 
+  const cost = props.costMetric === 'account' ? data.account_cost : data.cost
+  const costLabel = props.costMetric === 'account' ? 'usage.trend.accountCost' : 'usage.trend.cost'
   const summaryRows = [
-    ...(props.showCost ? [`${t('usage.trend.cost')}: $${formatCost(data.cost)}`] : []),
+    ...(props.showCost && cost !== undefined ? [`${t(costLabel)}: $${formatCost(cost)}`] : []),
     ...(props.showCost ? [`${t('usage.trend.consumption')}: $${formatCost(data.actual_cost)}`] : []),
     `${t('usage.trend.totalUsage')}: ${formatTokens(totalUsageTokens(data))}`,
   ]

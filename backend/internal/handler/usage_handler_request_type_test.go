@@ -21,6 +21,7 @@ type userUsageRepoCapture struct {
 	listFilters  usagestats.UsageLogFilters
 	statsFilters usagestats.UsageLogFilters
 	trendFilters usagestats.UsageLogFilters
+	trend        []usagestats.TrendDataPoint
 	groupFilters usagestats.UsageLogFilters
 	trendStart   time.Time
 	trendEnd     time.Time
@@ -66,7 +67,7 @@ func (s *userUsageRepoCapture) GetUsageTrendWithFilters(ctx context.Context, sta
 		Stream:      stream,
 		BillingType: billingType,
 	}
-	return []usagestats.TrendDataPoint{}, nil
+	return s.trend, nil
 }
 
 func (s *userUsageRepoCapture) GetModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8, excludeUserIDs ...int64) ([]usagestats.ModelStat, error) {
@@ -102,6 +103,7 @@ func newUserUsageRequestTypeTestRouter(repo *userUsageRepoCapture) *gin.Engine {
 	router.GET("/usage", handler.List)
 	router.GET("/usage/stats", handler.Stats)
 	router.GET("/usage/dashboard/models", handler.DashboardModels)
+	router.GET("/usage/dashboard/trend", handler.DashboardTrend)
 	router.GET("/usage/dashboard/snapshot-v2", handler.DashboardSnapshotV2)
 	return router
 }
@@ -427,5 +429,20 @@ func TestUserUsageSnapshotRejectsInvalidIncludeFlags(t *testing.T) {
 		router.ServeHTTP(rec, req)
 
 		require.Equal(t, http.StatusBadRequest, rec.Code, query)
+	}
+}
+
+func TestUserUsageTrendOmitsAccountCost(t *testing.T) {
+	for _, path := range []string{"/usage/dashboard/trend", "/usage/dashboard/snapshot-v2?include_model_stats=false&include_group_stats=false"} {
+		t.Run(path, func(t *testing.T) {
+			repo := &userUsageRepoCapture{trend: []usagestats.TrendDataPoint{{Date: "2026-03-01", Cost: 2, ActualCost: 3, AccountCost: 1}}}
+			router := newUserUsageRequestTypeTestRouter(repo)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+			require.Equal(t, http.StatusOK, rec.Code)
+			require.Contains(t, rec.Body.String(), `"cost":2`)
+			require.Contains(t, rec.Body.String(), `"actual_cost":3`)
+			require.NotContains(t, rec.Body.String(), `"account_cost"`)
+		})
 	}
 }
