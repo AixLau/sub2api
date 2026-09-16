@@ -113,16 +113,12 @@ const typeLabel = computed(() => {
   }
 })
 
-const normalizedPlanType = computed(() => normalizePlanType(props.planType))
+const normalizedPlanType = computed(() =>
+  (props.planType || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+)
 
 const planLabel = computed(() => {
   if (!normalizedPlanType.value) return ''
-  // ChatGPT 档位命名（Pro 5x / Pro 20x、Business Standard / Business Premium）只适用于
-  // OpenAI：Antigravity 与 Grok 各自的 pro/team 沿用下面的通用标签。
-  if (props.platform === 'openai') {
-    const label = openAIPlanTypeLabel(props.planType)
-    if (label) return label
-  }
   switch (normalizedPlanType.value) {
     case 'plus':
       return 'Plus'
@@ -258,14 +254,10 @@ const planBadgeClass = computed(() => {
   if (normalizedPlanType.value === 'plus') {
     return 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
   }
-  if (normalizedPlanType.value === 'team' || normalizedPlanType.value === 'selfservebusinessprolite') {
+  if (normalizedPlanType.value === 'team') {
     return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
   }
-  if (
-    normalizedPlanType.value === 'pro' ||
-    normalizedPlanType.value === 'chatgptpro' ||
-    normalizedPlanType.value === 'prolite'
-  ) {
+  if (normalizedPlanType.value === 'pro' || normalizedPlanType.value === 'chatgptpro') {
     return 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
   }
   return typeClass.value

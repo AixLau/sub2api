@@ -3,10 +3,7 @@ import { flushPromises, mount, shallowMount } from '@vue/test-utils'
 import PaymentView from '../PaymentView.vue'
 import { PAYMENT_RECOVERY_STORAGE_KEY } from '@/components/payment/paymentFlow'
 import { formatPaymentAmount } from '@/components/payment/currency'
-import AmountInput from '@/components/payment/AmountInput.vue'
 import SubscriptionPlanCard from '@/components/payment/SubscriptionPlanCard.vue'
-import en from '@/i18n/locales/en'
-import zh from '@/i18n/locales/zh'
 import type { CheckoutInfoResponse, MethodLimit, SubscriptionPlan } from '@/types/payment'
 import type { UserSubscription } from '@/types'
 
@@ -112,23 +109,13 @@ vi.mock('@/stores/subscriptions', () => ({
   }),
 }))
 
-vi.mock('@/stores', async () => {
-  const { reactive } = await import('vue')
-  const state = reactive({ cachedPublicSettings: undefined as Record<string, unknown> | undefined })
-  appStoreState.setPublicSettings = (value) => {
-    state.cachedPublicSettings = value
-  }
-  return {
-    useAppStore: () => ({
-      showError,
-      showInfo,
-      showWarning,
-      get cachedPublicSettings() {
-        return state.cachedPublicSettings
-      },
-    }),
-  }
-})
+vi.mock('@/stores', () => ({
+  useAppStore: () => ({
+    showError,
+    showInfo,
+    showWarning,
+  }),
+}))
 
 vi.mock('@/api/payment', () => ({
   paymentAPI: {
@@ -768,43 +755,6 @@ describe('PaymentView subscription plan grid', () => {
       'lg:grid-cols-3',
       '2xl:grid-cols-4',
     ]))
-  })
-})
-
-describe('PaymentView recharge rate preview', () => {
-  it('uses the selected payment method currency in both locale templates', async () => {
-    translate.mockClear()
-    routeState.path = '/purchase'
-    routeState.query = {}
-    getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({
-      balance_recharge_multiplier: 0.5,
-      methods: {
-        stripe: {
-          ...checkoutInfoFixture().data.methods.wxpay,
-          currency: 'USD',
-        },
-      },
-    }))
-
-    const wrapper = shallowMount(PaymentView, {
-      global: {
-        stubs: {
-          AppLayout: { template: '<div><slot /></div>' },
-          Teleport: true,
-          Transition: false,
-        },
-      },
-    })
-    await flushPromises()
-    wrapper.getComponent(AmountInput).vm.$emit('update:modelValue', 10)
-    await flushPromises()
-
-    expect(translate).toHaveBeenCalledWith('payment.rechargeRatePreview', {
-      currency: 'USD',
-      usd: '0.50',
-    })
-    expect(en.payment.rechargeRatePreview).toBe('Current rate: 1 {currency} = {usd} USD')
-    expect(zh.payment.rechargeRatePreview).toBe('当前倍率：1 {currency} = {usd} USD')
   })
 })
 

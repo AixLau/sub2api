@@ -464,7 +464,6 @@ func (s *AntigravityGatewayService) Forward(ctx context.Context, c *gin.Context,
 
 	return &ForwardResult{
 		RequestID:                     requestID,
-		UpstreamHeaders:               resp.Header,
 		Usage:                         *usage,
 		Model:                         originalModel,
 		UpstreamModel:                 billingModel,

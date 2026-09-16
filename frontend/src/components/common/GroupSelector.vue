@@ -69,7 +69,7 @@ const authStore = useAuthStore()
 
 interface Props {
   modelValue: number[]
-  groups: (Group & { account_count?: number })[]
+  groups: AdminGroup[]
   platform?: GroupPlatform // Optional platform filter
   mixedScheduling?: boolean // For antigravity accounts: allow anthropic/gemini groups
   searchable?: boolean | 'auto'

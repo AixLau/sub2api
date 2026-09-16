@@ -6,7 +6,6 @@ import (
 )
 
 // headerWireCasing 定义每个白名单 header 在真实 Claude CLI 抓包中的准确大小写。
-// Accept-Encoding keeps canonical casing so net/http recognizes explicit compression negotiation.
 // Go 的 HTTP server 解析请求时会将所有 header key 转为 Canonical 形式（如 x-app → X-App），
 // 此 map 用于在转发时恢复到真实的 wire format。
 //
@@ -35,7 +34,7 @@ var headerWireCasing = map[string]string{
 	"content-type":                              "content-type",
 	"accept-language":                           "accept-language",
 	"sec-fetch-mode":                            "sec-fetch-mode",
-	"accept-encoding":                           "Accept-Encoding",
+	"accept-encoding":                           "accept-encoding",
 	"authorization":                             "authorization",
 
 	// Claude Code 2.1.87+ 新增 header

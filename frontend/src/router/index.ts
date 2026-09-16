@@ -356,8 +356,7 @@ const routes: RouteRecordRaw[] = [
       requiresAdmin: false,
       title: 'My Subscriptions',
       titleKey: 'userSubscriptions.title',
-      descriptionKey: 'userSubscriptions.description',
-      requiresSubscription: true
+      descriptionKey: 'userSubscriptions.description'
     }
   },
   {

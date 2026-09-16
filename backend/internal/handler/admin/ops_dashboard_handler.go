@@ -219,8 +219,7 @@ func (h *OpsHandler) GetDashboardErrorDistribution(c *gin.Context) {
 	response.Success(c, data)
 }
 
-// GetDashboardOpenAITokenStats returns token efficiency stats for all platforms, grouped by model.
-// The endpoint name is retained for compatibility; platform and group_id optionally narrow the scope.
+// GetDashboardOpenAITokenStats returns OpenAI token efficiency stats grouped by model.
 // GET /api/v1/admin/ops/dashboard/openai-token-stats
 func (h *OpsHandler) GetDashboardOpenAITokenStats(c *gin.Context) {
 	if h.opsService == nil {

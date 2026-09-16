@@ -114,7 +114,7 @@ func codexCanonicalUserAgent() string {
 	resolver := codexCanonicalUAResolver
 	codexCanonicalUAMu.RUnlock()
 	if resolver != nil {
-		if ua := resolver(); strings.TrimSpace(ua) != "" {
+		if ua := strings.TrimSpace(resolver()); ua != "" {
 			return ua
 		}
 	}
