@@ -296,7 +296,7 @@ func i64p(v int64) *int64 {
 func newOpenAIRecordUsageServiceForTest(usageRepo UsageLogRepository, userRepo UserRepository, subRepo UserSubscriptionRepository, rateRepo UserGroupRateRepository) *OpenAIGatewayService {
 	cfg := &config.Config{}
 	cfg.Default.RateMultiplier = 1.1
-	svc := NewOpenAIGatewayService(
+	svc := NewOpenAIGatewayService(nil,
 		nil,
 		usageRepo,
 		nil,

@@ -171,7 +171,7 @@ func newOpenAIResponsesCyberPipelineHandler(
 		moderationGuard:          guard,
 		pipeline:                 &OpenAIGatewayPipeline{moderationGuard: guard, cyberSessionChecker: cyberChecker},
 		contentModerationService: newDisabledContentModerationServiceForHandlerTest(t),
-		gatewayService: service.NewOpenAIGatewayService(
+		gatewayService: service.NewOpenAIGatewayService(nil,
 			nil, // accountRepo
 			nil, // usageLogRepo
 			nil, // usageBillingRepo

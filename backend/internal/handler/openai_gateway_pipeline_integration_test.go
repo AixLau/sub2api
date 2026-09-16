@@ -410,7 +410,7 @@ func newCountTokensAuditedBodyTestHandler() (*OpenAIGatewayHandler, *countTokens
 	}}
 	upstream := &countTokensAuditedBodyUpstream{}
 	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
-	gatewaySvc := service.NewOpenAIGatewayService(
+	gatewaySvc := service.NewOpenAIGatewayService(nil,
 		accountRepo,
 		nil,
 		nil,

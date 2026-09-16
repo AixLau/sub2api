@@ -89,7 +89,7 @@ func TestAcquireResponsesAccountSlotProfitRecheck(t *testing.T) {
 		cfg := &config.Config{RunMode: config.RunModeSimple}
 		cache := &profitCountingConcurrencyCache{}
 		concurrencyService := service.NewConcurrencyService(cache)
-		gw := service.NewOpenAIGatewayService(
+		gw := service.NewOpenAIGatewayService(nil,
 			repo, nil, nil, nil, nil, nil, nil, cfg, nil, concurrencyService, nil,
 			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		)

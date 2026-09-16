@@ -192,7 +192,7 @@ func TestOpenAIChat_GatewayPipelineEntrypointNilPipelineCyberFallbackBlocksBefor
 	}}
 	h := &OpenAIGatewayHandler{
 		moderationGuard:     guard,
-		gatewayService:      service.NewOpenAIGatewayService(nil, nil, nil, nil, nil, nil, cache, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, settingService, nil),
+		gatewayService:      service.NewOpenAIGatewayService(nil, nil, nil, nil, nil, nil, nil, cache, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, settingService, nil),
 		billingCacheService: &service.BillingCacheService{},
 		apiKeyService:       &service.APIKeyService{},
 		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(concurrencyCache), SSEPingFormatNone, time.Second),
