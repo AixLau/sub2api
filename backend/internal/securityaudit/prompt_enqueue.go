@@ -85,6 +85,15 @@ func (e *Enqueuer) Enqueue(ctx context.Context, req Request) error {
 	}
 	job, err := e.repo.CreateStagingWithCapacity(ctx, snapshot.Redacted(), cfg.ConfigVersion, cfg.MaxAttempts, cfg.QueueCapacity)
 	if err != nil {
+		if errors.Is(err, ErrDuplicatePrompt) {
+			if e.metrics != nil {
+				e.metrics.IncDeduplicated()
+			}
+			LogInfo(EventEnqueueSkipped, mergeLogFields(baseFields, map[string]any{
+				"status": "skipped", "error_code": "duplicate_prompt",
+			}))
+			return nil
+		}
 		code := "database_unavailable"
 		if errors.Is(err, ErrQueueFull) {
 			code = "queue_full"

@@ -24,6 +24,7 @@ type AtomicMetrics struct {
 	latencyMax   atomic.Int64
 	enqueued     atomic.Int64
 	dropped      atomic.Int64
+	deduplicated atomic.Int64
 	latencyMu    sync.RWMutex
 	latencies    []int64
 	latencyNext  int
@@ -60,7 +61,7 @@ func (m *AtomicMetrics) AuditSnapshot() AuditMetricsSnapshot {
 	if m == nil {
 		return AuditMetricsSnapshot{}
 	}
-	return AuditMetricsSnapshot{Enqueued: m.enqueued.Load(), Dropped: m.dropped.Load()}
+	return AuditMetricsSnapshot{Enqueued: m.enqueued.Load(), Dropped: m.dropped.Load(), Deduplicated: m.deduplicated.Load()}
 }
 
 func (m *AtomicMetrics) Observe(kind DecisionKind, latency time.Duration) {
@@ -120,6 +121,12 @@ func (m *AtomicMetrics) IncEnqueued() {
 func (m *AtomicMetrics) IncDropped() {
 	if m != nil {
 		m.dropped.Add(1)
+	}
+}
+
+func (m *AtomicMetrics) IncDeduplicated() {
+	if m != nil {
+		m.deduplicated.Add(1)
 	}
 }
 

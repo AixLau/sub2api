@@ -142,6 +142,7 @@ export interface PromptAuditRuntime {
   failed_total: number
   enqueued_total: number
   dropped_total: number
+  deduplicated_total: number
   last_processed_at?: string
   last_error_code?: string
   last_error_message?: string

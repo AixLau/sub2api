@@ -11,13 +11,15 @@ import (
 )
 
 const (
-	promptAuditAdmissionLockKey int64 = 579147893221901921
-	promptAuditConfigLockKey    int64 = 579147893221901922
+	promptAuditAdmissionLockKey    int64 = 579147893221901921
+	promptAuditConfigLockKey       int64 = 579147893221901922
+	promptAuditDeduplicationWindow       = 5 * time.Minute
 )
 
 var (
 	ErrQueueFull          = errors.New("prompt audit queue full")
 	ErrQueueAdmissionBusy = errors.New("prompt audit queue admission busy")
+	ErrDuplicatePrompt    = errors.New("prompt audit prompt already admitted")
 	ErrLeaseLost          = errors.New("prompt audit worker lease lost")
 	ErrEventNotFound      = errors.New("prompt audit event not found")
 )
@@ -102,6 +104,31 @@ func (r *PostgreSQLRepository) CreateStagingWithCapacity(ctx context.Context, sn
 	}
 	if !locked {
 		return nil, ErrQueueAdmissionBusy
+	}
+	// Collapse duplicate bursts within one audit identity and policy version.
+	// Pending work is reused until it finishes; successful scans suppress new
+	// work for a short fixed window. Failures and capture-only jobs must never
+	// suppress a new scan. Check before capacity so duplicates use no queue slot.
+	if snapshot.PromptHash != "" {
+		var duplicateID int64
+		err := tx.QueryRowContext(ctx, `
+			SELECT id FROM prompt_audit_jobs
+			WHERE prompt_hash=$1 AND config_version=$2
+			  AND user_id IS NOT DISTINCT FROM $3
+			  AND api_key_id IS NOT DISTINCT FROM $4
+			  AND group_id IS NOT DISTINCT FROM $5
+			  AND execution_mode='async_audit'
+			  AND (status IN ('staging','queued','processing','retry')
+			       OR (status='done' AND attempts > 0 AND created_at >= $6))
+			ORDER BY id DESC LIMIT 1`, snapshot.PromptHash, configVersion,
+			nullableID(snapshot.UserID), nullableID(snapshot.APIKeyID), snapshot.GroupID,
+			r.clock.Now().Add(-promptAuditDeduplicationWindow)).Scan(&duplicateID)
+		if err == nil {
+			return nil, ErrDuplicatePrompt
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return nil, err
+		}
 	}
 	var active int
 	if err := tx.QueryRowContext(ctx, `

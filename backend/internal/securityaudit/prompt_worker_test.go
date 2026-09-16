@@ -270,6 +270,17 @@ func TestEnqueuerStagingPayloadPublishProtocolAndFailureCleanup(t *testing.T) {
 		}
 	})
 
+	t.Run("duplicate prompt is skipped without touching payload", func(t *testing.T) {
+		trace := []string{}
+		repo := &fakeJobRepository{trace: &trace, createErr: ErrDuplicatePrompt}
+		payload := &fakePayloadStore{trace: &trace, values: map[int64]string{}}
+		metrics := NewAtomicMetrics()
+		require.NoError(t, NewEnqueuer(&fakeConfigStore{cfg: asyncConfig(), active: true}, repo, payload, metrics).Enqueue(context.Background(), asyncRequest()))
+		require.Equal(t, []string{"create_staging"}, trace)
+		require.Empty(t, payload.values)
+		require.Equal(t, AuditMetricsSnapshot{Deduplicated: 1}, metrics.AuditSnapshot())
+	})
+
 	t.Run("payload failure marks staging failed", func(t *testing.T) {
 		trace := []string{}
 		repo := &fakeJobRepository{trace: &trace, createJob: &Job{ID: 42}}

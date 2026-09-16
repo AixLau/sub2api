@@ -223,8 +223,9 @@ type GuardMetricsSnapshot struct {
 }
 
 type AuditMetricsSnapshot struct {
-	Enqueued int64 `json:"enqueued"`
-	Dropped  int64 `json:"dropped"`
+	Enqueued     int64 `json:"enqueued"`
+	Dropped      int64 `json:"dropped"`
+	Deduplicated int64 `json:"deduplicated"`
 }
 
 type QueueStats struct {
@@ -253,6 +254,7 @@ type RuntimeSnapshot struct {
 	FailedTotal           int64                  `json:"failed_total"`
 	EnqueuedTotal         int64                  `json:"enqueued_total"`
 	DroppedTotal          int64                  `json:"dropped_total"`
+	DeduplicatedTotal     int64                  `json:"deduplicated_total"`
 	LastProcessedAt       *time.Time             `json:"last_processed_at,omitempty"`
 	LastErrorCode         string                 `json:"last_error_code,omitempty"`
 	LastErrorMessage      string                 `json:"last_error_message,omitempty"`
@@ -276,6 +278,7 @@ type Metrics interface {
 	Observe(kind DecisionKind, latency time.Duration)
 	IncEnqueued()
 	IncDropped()
+	IncDeduplicated()
 	IncTimeout()
 	IncFailover()
 	IncBulkheadFull()

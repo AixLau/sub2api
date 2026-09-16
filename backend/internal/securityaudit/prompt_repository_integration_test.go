@@ -43,7 +43,7 @@ func openPromptAuditIntegrationDB(t *testing.T) *sql.DB {
 		);
 	`)
 	require.NoError(t, err)
-	for _, name := range []string{"181_prompt_audit.sql", "182_prompt_audit_full_prompt.sql", "184_prompt_audit_capture_body.sql"} {
+	for _, name := range []string{"181_prompt_audit.sql", "182_prompt_audit_full_prompt.sql", "184_prompt_audit_capture_body.sql", "245_prompt_audit_deduplication_index_notx.sql"} {
 		migration, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
 		require.NoError(t, err)
 		// The migration runner can retry an interrupted deployment; the migration
@@ -134,6 +134,7 @@ func TestPromptAuditMigrationSchemaAndLeakageGate(t *testing.T) {
 		"idx_prompt_audit_jobs_schedule", "idx_prompt_audit_jobs_request", "idx_prompt_audit_jobs_user_created",
 		"idx_prompt_audit_jobs_api_key_created", "idx_prompt_audit_jobs_group_created", "idx_prompt_audit_jobs_prompt_hash",
 		"idx_prompt_audit_jobs_created", "idx_prompt_audit_events_job", "idx_prompt_audit_events_request",
+		"idx_prompt_audit_jobs_deduplication",
 		"idx_prompt_audit_events_decision_created", "idx_prompt_audit_events_risk_created",
 		"idx_prompt_audit_events_user_created", "idx_prompt_audit_events_api_key_created",
 		"idx_prompt_audit_events_group_created", "idx_prompt_audit_events_prompt_hash", "idx_prompt_audit_events_created",
@@ -293,6 +294,118 @@ func TestPromptAuditRepositoryAdmissionClaimFencingAndEventTransaction(t *testin
 	require.Equal(t, int64(1), reclaimed)
 	require.NoError(t, db.QueryRow(`SELECT status FROM prompt_audit_jobs WHERE id=$1`, staging.ID).Scan(&status))
 	require.Equal(t, "failed", status)
+}
+
+func TestPromptAuditRepositoryDeduplicatesPendingAndRecentSuccessfulScans(t *testing.T) {
+	db := openPromptAuditIntegrationDB(t)
+	repo := NewPostgreSQLRepository(db)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	repo.clock = fixedClock{now: now}
+
+	for _, tt := range []struct {
+		name        string
+		status      string
+		mode        Mode
+		attempts    int
+		age         time.Duration
+		wantSkipped bool
+	}{
+		{name: "staging", status: "staging", mode: ModeAsync, age: time.Hour, wantSkipped: true},
+		{name: "queued", status: "queued", mode: ModeAsync, wantSkipped: true},
+		{name: "processing", status: "processing", mode: ModeAsync, attempts: 1, wantSkipped: true},
+		{name: "retry", status: "retry", mode: ModeAsync, attempts: 1, wantSkipped: true},
+		{name: "recent success", status: "done", mode: ModeAsync, attempts: 1, age: time.Minute, wantSkipped: true},
+		{name: "expired success", status: "done", mode: ModeAsync, attempts: 1, age: promptAuditDeduplicationWindow + time.Second},
+		{name: "failed scan", status: "failed", mode: ModeAsync, attempts: 1},
+		{name: "capture only", status: "done", mode: ModeAsync},
+		{name: "blocking scan", status: "done", mode: ModeBlocking, attempts: 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			resetPromptAuditIntegrationDB(t, db)
+			snapshot := integrationSnapshot("duplicate")
+			job, err := repo.CreateStagingWithCapacity(ctx, snapshot, 1, 3, 1)
+			require.NoError(t, err)
+			_, err = db.Exec(`UPDATE prompt_audit_jobs SET status=$2, execution_mode=$3, attempts=$4, created_at=$5 WHERE id=$1`,
+				job.ID, tt.status, tt.mode, tt.attempts, now.Add(-tt.age))
+			require.NoError(t, err)
+			snapshot.RequestID = "another-request"
+			duplicate, err := repo.CreateStagingWithCapacity(ctx, snapshot, 1, 3, 1)
+			if tt.wantSkipped {
+				require.ErrorIs(t, err, ErrDuplicatePrompt)
+				require.Nil(t, duplicate)
+			} else {
+				require.NoError(t, err)
+				require.NotEqual(t, job.ID, duplicate.ID)
+			}
+		})
+	}
+}
+
+func TestPromptAuditRepositoryDeduplicationSeparatesIdentityAndPolicy(t *testing.T) {
+	db := openPromptAuditIntegrationDB(t)
+	repo := NewPostgreSQLRepository(db)
+	ctx := context.Background()
+	snapshot := integrationSnapshot("identity")
+	snapshot.UserID = insertIdentity(t, db, "users")
+	snapshot.APIKeyID = insertIdentity(t, db, "api_keys")
+	groupID := insertIdentity(t, db, "groups")
+	snapshot.GroupID = &groupID
+	_, err := repo.CreateStagingWithCapacity(ctx, snapshot, 1, 3, 10)
+	require.NoError(t, err)
+
+	for _, tt := range []struct {
+		name    string
+		version int64
+		change  func(*PromptSnapshot)
+	}{
+		{name: "policy", version: 2, change: func(*PromptSnapshot) {}},
+		{name: "user", version: 1, change: func(s *PromptSnapshot) { s.UserID = insertIdentity(t, db, "users") }},
+		{name: "API key", version: 1, change: func(s *PromptSnapshot) { s.APIKeyID = insertIdentity(t, db, "api_keys") }},
+		{name: "group", version: 1, change: func(s *PromptSnapshot) { id := insertIdentity(t, db, "groups"); s.GroupID = &id }},
+		{name: "content", version: 1, change: func(s *PromptSnapshot) { s.PromptHash = strings.Repeat("f", 64) }},
+		{name: "missing hash", version: 1, change: func(s *PromptSnapshot) { s.PromptHash = "" }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			other := snapshot
+			tt.change(&other)
+			_, err := repo.CreateStagingWithCapacity(ctx, other, tt.version, 3, 10)
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestPromptAuditRepositoryConcurrentDuplicateAdmissionCreatesOneJob(t *testing.T) {
+	db := openPromptAuditIntegrationDB(t)
+	repo := NewPostgreSQLRepository(db)
+	ctx := context.Background()
+	start := make(chan struct{})
+	results := make(chan error, 8)
+	for i := 0; i < cap(results); i++ {
+		go func(index int) {
+			<-start
+			snapshot := integrationSnapshot("concurrent")
+			snapshot.RequestID = fmt.Sprintf("request-%d", index)
+			_, err := repo.CreateStagingWithCapacity(ctx, snapshot, 1, 3, 100)
+			results <- err
+		}(i)
+	}
+	close(start)
+	accepted := 0
+	for i := 0; i < cap(results); i++ {
+		err := <-results
+		if err == nil {
+			accepted++
+		} else {
+			require.True(t, errors.Is(err, ErrDuplicatePrompt) || errors.Is(err, ErrQueueAdmissionBusy), "unexpected admission error: %v", err)
+		}
+	}
+	require.Equal(t, 1, accepted)
+	stats, err := repo.QueueStats(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), stats.Active)
+	_, err = repo.CreateStagingWithCapacity(ctx, integrationSnapshot("concurrent"), 1, 3, 100)
+	require.ErrorIs(t, err, ErrDuplicatePrompt)
 }
 
 func TestPromptAuditRepositoryForeignKeysFiltersAndStableIdentitySnapshots(t *testing.T) {

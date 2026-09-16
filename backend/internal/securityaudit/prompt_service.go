@@ -235,6 +235,7 @@ func (s *PromptService) Runtime(ctx context.Context) RuntimeSnapshot {
 	if s.metrics != nil {
 		auditMetrics := s.metrics.AuditSnapshot()
 		runtime.EnqueuedTotal, runtime.DroppedTotal = auditMetrics.Enqueued, auditMetrics.Dropped
+		runtime.DeduplicatedTotal = auditMetrics.Deduplicated
 	}
 	runtime.WorkerHeartbeatAt, runtime.LastProcessedAt = heartbeat, lastProcessed
 	if workerCode != "" {
