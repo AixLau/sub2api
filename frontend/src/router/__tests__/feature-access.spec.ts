@@ -183,3 +183,35 @@ describe('feature route guard', () => {
     expect(next).toHaveBeenCalledWith(target)
   })
 })
+
+describe('subscription route guard (opt-out flag)', () => {
+  beforeEach(() => {
+    authStore.isAdmin = false
+    authStore.isSimpleMode = false
+    appStore.publicSettingsLoaded = true
+    appStore.fetchPublicSettings.mockReset()
+  })
+
+  it.each([
+    ['missing key', {}],
+    ['explicit true', { subscription_enabled: true }],
+  ])('lets /subscriptions through when the flag is %s', async (_name, settings) => {
+    appStore.cachedPublicSettings = settings
+
+    const { navigation, next } = runGuard({ requiresSubscription: true }, '/subscriptions')
+    await navigation
+
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith()
+  })
+
+  it('sends admins to the admin dashboard when subscriptions are disabled', async () => {
+    authStore.isAdmin = true
+    appStore.cachedPublicSettings = { subscription_enabled: false }
+
+    const { navigation, next } = runGuard({ requiresSubscription: true }, '/subscriptions')
+    await navigation
+
+    expect(next).toHaveBeenCalledWith('/admin/dashboard')
+  })
+})

@@ -44,8 +44,10 @@ vi.mock('@/stores/adminSettings', () => ({
   useAdminSettingsStore: () => ({ customMenuItems: [] })
 }))
 
-vi.mock('@/utils/featureFlags', () => ({
+vi.mock('@/utils/featureFlags', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/utils/featureFlags')>(),
   FeatureFlags: {
+    subscription: { key: 'subscription_enabled', mode: 'opt-out' },
     modelPlaza: { key: 'model_plaza_enabled', mode: 'opt-in' },
     rewardCampaigns: { key: 'reward_campaigns_enabled', mode: 'opt-in' }
   },
