@@ -256,6 +256,7 @@ func TestContentModerationRuntime_WireProviderStartsRuntime(t *testing.T) {
 			AllowedHosts:        []string{"api.openai.com", "open.bigmodel.cn"},
 		}},
 		BuildInfo{},
+		nil,
 	)
 	registerContentModerationRuntimeCleanup(t, svc)
 
