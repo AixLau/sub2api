@@ -256,6 +256,7 @@ export const GROK_BASE_URL_PRESETS: GrokBaseUrlPreset[] = [
 // 两者正交。同协议请求零转换直通，跨协议组合才走转换链。
 
 export type CnAccountMode = 'payg' | 'coding'
+export type OpenCodeAccountMode = 'zen' | 'go'
 export type CnProviderPlatform = 'kimi' | 'zhipu' | 'deepseek' | 'minimax'
 
 /** deepseek / kimi / minimax 支持原生 responses；adaptive 会按入站协议选择原生端点。 */
