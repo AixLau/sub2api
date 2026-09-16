@@ -600,14 +600,15 @@ func TestIncompleteCandidateEvidenceRequiresFinalReviewerForModelReject(t *testi
 
 	require.False(t, decision.Allowed)
 	require.True(t, decision.Blocked)
-	require.Equal(t, ContentModerationActionSemanticReviewUnavailable, decision.Action)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, decision.Action)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionSemanticReviewUnavailable, logs[0].Action)
-	require.Empty(t, logs[0].ReviewStatus)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
+	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.Equal(t, ContentModerationEnforcementBlocked, logs[0].Enforcement)
 	require.False(t, logs[0].UserViolationEligible)
 	require.Zero(t, logs[0].ViolationCount)
-	require.Contains(t, logs[0].Error, "final semantic reviewer is unavailable")
+	require.Empty(t, logs[0].Error)
 }
 
 func TestCandidateSelectionUsesValidationReasonsFromSelectedSourceOnly(t *testing.T) {
@@ -718,14 +719,15 @@ func TestCandidateFragmentBudgetRequiresFinalReviewerForTruncatedReject(t *testi
 
 	require.False(t, decision.Allowed)
 	require.True(t, decision.Blocked)
-	require.Equal(t, ContentModerationActionSemanticReviewUnavailable, decision.Action)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, decision.Action)
 	require.False(t, router.input.EvidenceComplete)
 	require.NotContains(t, router.input.Text, "authorized diagnostic")
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Empty(t, logs[0].ReviewStatus)
+	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.Equal(t, ContentModerationEnforcementBlocked, logs[0].Enforcement)
 	require.False(t, logs[0].UserViolationEligible)
-	require.Contains(t, logs[0].Error, "final semantic reviewer is unavailable")
+	require.Empty(t, logs[0].Error)
 }
 
 func TestCandidateSemanticReviewHonorsConfiguredInputBudget(t *testing.T) {

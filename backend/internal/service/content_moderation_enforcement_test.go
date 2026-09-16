@@ -176,6 +176,93 @@ func TestSemanticReviewProviderFallbackPreBlockOmitsKeywordAndBlocks(t *testing.
 	require.NotContains(t, metadata, "semantic_review_candidate")
 }
 
+// TestSemanticReviewGateRecordsPlainReviewVerdictAsPendingReview reproduces the
+// production shape that produced a false "final semantic reviewer is unavailable"
+// record roughly ten times an hour: a reviewer that returns review, on a
+// deployment with no final reviewer enabled. Nothing was unavailable, so the
+// record must state the content outcome instead.
+func TestSemanticReviewGateRecordsPlainReviewVerdictAsPendingReview(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModeObserve
+	cfg.SemanticReview.Enabled = true
+	cfg.SemanticReview.EscalationEnabled = false
+	content := ContentModerationInput{Text: "an ordinary request the reviewer could not resolve"}
+	router := &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "review", Intent: "unclear", Severity: "medium", Confidence: 0.4,
+		ReasonCodes: []string{"ambiguous_context"},
+	}}
+	candidate := contentModerationSemanticGateCandidate{
+		Input: ContentModerationSemanticReviewInput{Text: content.Text, EvidenceComplete: true},
+	}
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(nil, repo, &contentModerationTestHashCache{}, nil, nil, nil, nil)
+	svc.SetSemanticReviewRouter(router)
+
+	decision, terminal := svc.semanticReviewGate(
+		context.Background(),
+		ContentModerationCheckInput{UserID: 17, Protocol: ContentModerationProtocolOpenAIResponses},
+		cfg,
+		content,
+		strings.Repeat("a", 64),
+		candidate,
+	)
+
+	require.True(t, terminal)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, decision.Action)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
+	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.Equal(t, ContentModerationEnforcementAllowed, logs[0].Enforcement)
+	require.Empty(t, logs[0].Error, "no reviewer was unavailable")
+	require.False(t, logs[0].UserViolationEligible)
+	require.Zero(t, logs[0].ViolationCount)
+}
+
+// TestCandidateSemanticReviewRecordsPlainReviewVerdictAsPendingReview is the
+// candidate-path half of the same production shape.
+func TestCandidateSemanticReviewRecordsPlainReviewVerdictAsPendingReview(t *testing.T) {
+	cfg := candidateTestConfig()
+	cfg.Mode = ContentModerationModeObserve
+	cfg.SemanticReview.EscalationEnabled = false
+	cfg.KeywordRules = []ContentModerationKeywordRule{{
+		Keyword:  "danger-marker",
+		Category: ContentModerationKeywordCategoryCyber,
+		Severity: ContentModerationKeywordSeverityHigh,
+		Action:   ContentModerationKeywordActionBlock,
+		Enabled:  true,
+	}}
+	repo := &contentModerationTestRepo{}
+	svc := candidateTestService(repo)
+	svc.semanticReviewRouter = &contentModerationSemanticReviewRouterStub{result: ContentModerationSemanticReviewResult{
+		Verdict: "review", Intent: "unclear", Severity: "medium", Confidence: 0.4,
+		ReasonCodes: []string{"ambiguous_context"},
+	}}
+	content := ContentModerationInput{Sources: []ContentModerationInputSource{{
+		Source: "responses.input[0].role=user.content",
+		Role:   "user",
+		Text:   "danger-marker request",
+	}}}
+
+	decision := svc.checkCandidateOnly(context.Background(), ContentModerationCheckInput{
+		UserID: 17, APIKeyID: 29, Protocol: ContentModerationProtocolOpenAIResponses,
+	}, cfg, content)
+
+	require.NotNil(t, decision)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, decision.Action)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
+	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.Equal(t, ContentModerationEnforcementAllowed, logs[0].Enforcement)
+	require.Empty(t, logs[0].Error, "no reviewer was unavailable")
+}
+
 func TestApplySemanticReviewSubmittedLogDigestsStoredText(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	cfg.StoreInputExcerpt = true

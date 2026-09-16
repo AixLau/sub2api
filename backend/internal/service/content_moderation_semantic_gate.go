@@ -214,12 +214,6 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 		result = escalated
 	}
 	result = semanticReviewContextOnlyDecision(result, candidate.ContextOnly)
-	if result.Verdict != "allow" && result.Verdict != "reject" {
-		finalLatency := int(time.Since(started).Milliseconds())
-		s.persistSemanticReviewErrorLog(ctx, input, cfg, content, hashText, cfg.SemanticReview.EscalationModel,
-			"final_semantic_review_failed", &finalLatency, errors.New("final semantic reviewer is unavailable"))
-		return semanticReviewUnavailableDecision(cfg.Mode == ContentModerationModePreBlock), true
-	}
 	category := "semantic_review"
 	if len(result.Categories) > 0 && strings.TrimSpace(result.Categories[0]) != "" {
 		category = result.Categories[0]
@@ -234,6 +228,62 @@ func (s *ContentModerationService) semanticReviewGate(ctx context.Context, input
 	metadata := contentModerationSemanticGateMetadata(cfg, content, input.Protocol, candidate, result, rawVerdict, policyOverride)
 	categoryScores := map[string]float64{"semantic_review": score}
 	latency := int(time.Since(started).Milliseconds())
+	if result.Verdict != "allow" && result.Verdict != "reject" {
+		if contentModerationSemanticGateCandidateReviewKind(candidate) == contentModerationReviewKindPromptInjection {
+			// The prompt-injection reviewer has its own opt-in fail-closed contract
+			// (prompt_injection_reviewer_enabled + prompt_injection_fail_closed),
+			// which deliberately reports a non-terminal PI outcome as an unavailable
+			// reviewer with a 503. Leave that contract untouched.
+			finalLatency := int(time.Since(started).Milliseconds())
+			s.persistSemanticReviewErrorLog(ctx, input, cfg, content, hashText, cfg.SemanticReview.EscalationModel,
+				"final_semantic_review_failed", &finalLatency, errors.New("final semantic reviewer is unavailable"))
+			return semanticReviewUnavailableDecision(cfg.Mode == ContentModerationModePreBlock), true
+		}
+		// A non-terminal verdict means the reviewer could not resolve an
+		// outcome-changing safety fact. That is a legitimate outcome of the initial
+		// screen, not a reviewer outage: with escalation disabled the verdict
+		// necessarily stays review and no final reviewer was ever called, so
+		// reporting "the final reviewer is unavailable" described an event that did
+		// not happen and discarded the candidate from human triage.
+		//
+		// The enforcement decision is deliberately unchanged: a pre-block
+		// deployment still fails closed, because 503-on-unresolved-review is the
+		// existing safety posture. Only the record and the label now state what
+		// actually happened.
+		blocked := cfg.Mode == ContentModerationModePreBlock
+		log := s.buildLog(input, cfg, ContentModerationActionSemanticReviewReview, true, category, score, categoryScores, content.ExcerptText(), &latency, nil, metadata)
+		applySemanticReviewLogAttribution(log, result, latency, cfg.SemanticReview.PrimaryModel)
+		applySemanticReviewSubmittedLog(log, cfg, result)
+		log.MatchedKeyword = candidate.Keyword
+		log.KeywordCategory = candidate.Category
+		log.KeywordSeverity = candidate.Severity
+		log.KeywordAction = ContentModerationActionSemanticReviewReview
+		log.EffectiveKeywordAction = ContentModerationActionSemanticReviewReview
+		log.RiskContextType = ContentModerationRiskContextActualRequest
+		log.RiskContextReason = ContentModerationActionSemanticReviewReview
+		log.ReviewStatus = ContentModerationReviewStatusPending
+		log.UserViolationEligible = false
+		log.Enforcement = contentModerationEnforcementFor(blocked)
+		s.persistContentModerationLog(ctx, cfg, log, hashText, false, false)
+		if blocked {
+			return semanticReviewUnresolvedReviewBlock(), true
+		}
+		return &ContentModerationDecision{
+			Allowed:                true,
+			Flagged:                true,
+			HighestCategory:        category,
+			HighestScore:           score,
+			CategoryScores:         categoryScores,
+			Action:                 ContentModerationActionSemanticReviewReview,
+			MatchedKeyword:         candidate.Keyword,
+			KeywordCategory:        candidate.Category,
+			KeywordSeverity:        candidate.Severity,
+			KeywordAction:          ContentModerationActionSemanticReviewReview,
+			EffectiveKeywordAction: ContentModerationActionSemanticReviewReview,
+			RiskContextType:        ContentModerationRiskContextActualRequest,
+			RiskContextReason:      ContentModerationActionSemanticReviewReview,
+		}, true
+	}
 	if result.Verdict == "allow" && (required || (candidate.ContextOnly && policyOverride)) {
 		log := s.buildLog(input, cfg, ContentModerationActionSemanticReviewAllow, false, category, score, categoryScores,
 			content.ExcerptText(), &latency, nil, metadata)

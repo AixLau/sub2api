@@ -88,11 +88,15 @@ func TestSemanticReviewGateRequiresFinalReviewerForTruncatedReject(t *testing.T)
 	require.True(t, terminal)
 	require.True(t, decision.Blocked)
 	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, decision.Action)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionError, logs[0].Action)
-	require.Empty(t, logs[0].ReviewStatus)
-	require.Contains(t, logs[0].Error, "final semantic reviewer is unavailable")
+	// The reviewer answered; only the outcome was unresolved. Recording this as a
+	// reviewer outage described an event that did not happen.
+	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
+	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.Equal(t, ContentModerationEnforcementBlocked, logs[0].Enforcement)
+	require.Empty(t, logs[0].Error)
 	require.Empty(t, hashCache.snapshotRecorded())
 }
 
@@ -288,10 +292,13 @@ func TestSemanticReviewGateRequiresFinalReviewerForClippedKeywordExcerpt(t *test
 	require.True(t, terminal)
 	require.True(t, decision.Blocked)
 	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+	require.Equal(t, ContentModerationActionSemanticReviewReview, decision.Action)
 	logs := repo.snapshotLogs()
 	require.Len(t, logs, 1)
-	require.Equal(t, ContentModerationActionError, logs[0].Action)
-	require.Contains(t, logs[0].Error, "final semantic reviewer is unavailable")
+	require.Equal(t, ContentModerationActionSemanticReviewReview, logs[0].Action)
+	require.Equal(t, ContentModerationReviewStatusPending, logs[0].ReviewStatus)
+	require.Equal(t, ContentModerationEnforcementBlocked, logs[0].Enforcement)
+	require.Empty(t, logs[0].Error)
 	require.Empty(t, hashCache.snapshotRecorded())
 }
 

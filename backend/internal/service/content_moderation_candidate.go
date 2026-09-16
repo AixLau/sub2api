@@ -1297,11 +1297,6 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		}
 		result = escalated
 	}
-	if result.Verdict != "allow" && result.Verdict != "reject" {
-		return s.candidateUnavailableOutcome(ctx, input, cfg, selection,
-			contentModerationDecisionSourceSemantic, "platform_openai", cfg.SemanticReview.EscalationModel,
-			"final semantic reviewer is unavailable")
-	}
 	category, score, scores := semanticReviewCategorySummary(result)
 	buildDecision := func(action string, flagged, blocked bool) *ContentModerationDecision {
 		decision := &ContentModerationDecision{
@@ -1327,6 +1322,55 @@ func (s *ContentModerationService) runCandidateSemanticReview(ctx context.Contex
 		return decision
 	}
 	metadata := contentModerationCandidateSemanticMetadata(selection, result, rawVerdict, policyOverride, ordinaryReason)
+	if result.Verdict != "allow" && result.Verdict != "reject" {
+		if selection.ReviewKind == contentModerationReviewKindPromptInjection {
+			// The prompt-injection reviewer has its own opt-in fail-closed contract,
+			// which deliberately reports a non-terminal PI outcome as an unavailable
+			// reviewer. Leave that contract untouched.
+			return s.candidateUnavailableOutcome(ctx, input, cfg, selection,
+				contentModerationDecisionSourceSemantic, "platform_openai", cfg.SemanticReview.EscalationModel,
+				"final semantic reviewer is unavailable")
+		}
+		// A non-terminal verdict means the reviewer could not resolve an
+		// outcome-changing safety fact. That is a legitimate outcome, not a reviewer
+		// outage: with escalation disabled the verdict necessarily stays review and
+		// no final reviewer was ever called, so reporting a reviewer as unavailable
+		// described an event that did not happen and dropped the candidate from human
+		// triage. The enforcement is deliberately unchanged.
+		failClosed := promptInjectionFailClosedActive(cfg, selection) || cfg.Mode == ContentModerationModePreBlock
+		log := s.buildCandidateLog(input, cfg, selection, contentModerationDecisionSourceSemantic, ContentModerationActionSemanticReviewReview, true, category, score, scores, &latency, metadata)
+		log.ModerationProvider = "platform_openai"
+		log.ModerationModel = result.Model
+		applySemanticReviewSubmittedLog(log, cfg, result)
+		log.ReviewStatus = ContentModerationReviewStatusPending
+		log.UserViolationEligible = false
+		log.Enforcement = contentModerationEnforcementFor(failClosed)
+		decisionID := s.persistCandidateAudit(ctx, input, cfg, selection, log, false)
+		if cfg.Mode == ContentModerationModePreBlock {
+			// The pre-block counters keep their existing classification: a request
+			// rejected because the review could not be resolved is an operational
+			// failure, and the audit record carries the content outcome.
+			metricAction := ContentModerationActionError
+			if failClosed {
+				metricAction = ContentModerationActionSemanticReviewUnavailable
+			}
+			s.recordPreBlockSyncMetric(latency, metricAction)
+		}
+		if failClosed {
+			return contentModerationCandidateOutcome{
+				Decision: &ContentModerationDecision{
+					Allowed: false, Blocked: true, Flagged: true,
+					Message: ContentModerationTemporaryClientMessage, StatusCode: http.StatusServiceUnavailable,
+					Action:         ContentModerationActionSemanticReviewReview,
+					MatchedKeyword: selection.Rule.Keyword, KeywordCategory: selection.Rule.Category,
+					KeywordSeverity: selection.Rule.Severity, RiskContextType: ContentModerationRiskContextActualRequest,
+					RiskContextReason: "candidate_semantic_review_review",
+				},
+				DecisionID: decisionID, Cacheable: true, CacheTTL: s.candidateFailureCacheTTL(cfg),
+			}
+		}
+		return contentModerationCandidateOutcome{Decision: buildDecision(ContentModerationActionSemanticReviewReview, true, false), DecisionID: decisionID, Cacheable: true}
+	}
 	switch result.Verdict {
 	case "reject":
 		blocked := cfg.Mode == ContentModerationModePreBlock

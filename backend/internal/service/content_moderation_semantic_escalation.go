@@ -44,6 +44,20 @@ func semanticReviewUnavailableDecision(block bool) *ContentModerationDecision {
 	}
 }
 
+// semanticReviewUnresolvedReviewBlock is the fail-closed response for a
+// deployment whose general reviewer returned a non-terminal verdict that nothing
+// could resolve, for example because no final reviewer is configured. The
+// enforcement is the same as semanticReviewUnavailableDecision, but the action
+// names the content outcome, a pending review, instead of reporting a reviewer
+// outage. Recording an outage here was wrong: the reviewer answered, and only the
+// outcome was unresolved.
+func semanticReviewUnresolvedReviewBlock() *ContentModerationDecision {
+	return &ContentModerationDecision{
+		Blocked: true, Flagged: true, Action: ContentModerationActionSemanticReviewReview,
+		StatusCode: http.StatusServiceUnavailable, Message: ContentModerationTemporaryClientMessage,
+	}
+}
+
 func semanticReviewContextOnlyDecision(result ContentModerationSemanticReviewResult, contextOnly bool) ContentModerationSemanticReviewResult {
 	if contextOnly {
 		result.Verdict = "allow"
