@@ -49,7 +49,7 @@ func TestOpenAIWebSocketScheduleFailureDoesNotCompleteTurnOrSubmitBilling(t *tes
 			rateLimit := service.NewRateLimitService(accountRepo, nil, nil, nil, nil)
 			rateLimit.SetSettingService(settings)
 			rateLimit.SetOpenAIAPIKeyHealthCache(healthCache)
-			gateway := service.NewOpenAIGatewayService(
+			gateway := service.NewOpenAIGatewayService(nil,
 				accountRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 				nil, rateLimit, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 			)

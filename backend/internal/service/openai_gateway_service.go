@@ -471,6 +471,8 @@ var ErrNoAvailableCompactAccounts = errors.New("no available accounts support /r
 
 // OpenAIGatewayService handles OpenAI API gateway operations
 type OpenAIGatewayService struct {
+	codexEgressEnvironment codexEgressEnvironmentResolver
+
 	accountRepo           AccountRepository
 	usageLogRepo          UsageLogRepository
 	usageBillingRepo      UsageBillingRepository
@@ -541,6 +543,7 @@ type OpenAIGatewayService struct {
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService
 func NewOpenAIGatewayService(
+	proxyProber ProxyExitInfoProber,
 	accountRepo AccountRepository,
 	usageLogRepo UsageLogRepository,
 	usageBillingRepo UsageBillingRepository,
@@ -570,6 +573,8 @@ func NewOpenAIGatewayService(
 		SetCodexIdentityEnforcementEnabled(!cfg.Gateway.DisableCodexIdentityEnforcement)
 	}
 	svc := &OpenAIGatewayService{
+		codexEgressEnvironment: codexEgressEnvironmentResolver{prober: proxyProber},
+
 		accountRepo:         accountRepo,
 		usageLogRepo:        usageLogRepo,
 		usageBillingRepo:    usageBillingRepo,

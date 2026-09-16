@@ -81,7 +81,7 @@ func TestOpenAIChatCompletions_ChecksModerationGuardBeforeCyberSessionBlock(t *t
 
 	h := &OpenAIGatewayHandler{
 		moderationGuard:     guard,
-		gatewayService:      service.NewOpenAIGatewayService(nil, nil, nil, nil, nil, nil, cache, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, settingService, nil),
+		gatewayService:      service.NewOpenAIGatewayService(nil, nil, nil, nil, nil, nil, nil, cache, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, settingService, nil),
 		billingCacheService: &service.BillingCacheService{},
 		apiKeyService:       &service.APIKeyService{},
 		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(&concurrencyCacheMock{}), SSEPingFormatNone, time.Second),

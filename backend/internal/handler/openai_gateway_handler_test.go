@@ -448,7 +448,7 @@ func TestOpenAIAcquireResponsesAccountSlotRejectsStaleSelectionForRetry(t *testi
 	latest.Schedulable = false
 	released := false
 	h := &OpenAIGatewayHandler{
-		gatewayService: service.NewOpenAIGatewayService(
+		gatewayService: service.NewOpenAIGatewayService(nil,
 			openAITestAccountRepo{accounts: map[int64]service.Account{latest.ID: latest}},
 			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		),
@@ -2882,7 +2882,7 @@ func TestOpenAIResponses_APIKeyPassthroughPool5xxRetriesThenExhaustsMaxSwitches(
 	upstream := &openAIHTTPPassthroughFailoverUpstream{}
 	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
 	t.Cleanup(billingCacheSvc.Stop)
-	gatewaySvc := service.NewOpenAIGatewayService(
+	gatewaySvc := service.NewOpenAIGatewayService(nil,
 		accountRepo,
 		nil,
 		nil,
@@ -2994,7 +2994,7 @@ func TestOpenAIResponses_APIKeyPassthroughPoolAuthFailureRetriesThenSwitchesToHe
 			rateLimitSvc := service.NewRateLimitService(accountRepo, nil, cfg, nil, nil)
 			billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
 			t.Cleanup(billingCacheSvc.Stop)
-			gatewaySvc := service.NewOpenAIGatewayService(
+			gatewaySvc := service.NewOpenAIGatewayService(nil,
 				accountRepo,
 				nil,
 				nil,
@@ -3087,7 +3087,7 @@ func TestOpenAIResponses_APIKeyPassthroughSSERateLimitUsesConfiguredPoolRetry(t 
 	upstream := &openAIHTTPPassthroughSSERateLimitUpstream{}
 	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
 	t.Cleanup(billingCacheSvc.Stop)
-	gatewaySvc := service.NewOpenAIGatewayService(
+	gatewaySvc := service.NewOpenAIGatewayService(nil,
 		accountRepo,
 		nil,
 		nil,
@@ -3249,7 +3249,7 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 	accountRepo := &openAIWSFailoverHandlerAccountRepoStub{accounts: accounts}
 	rateLimitSvc := service.NewRateLimitService(accountRepo, nil, cfg, nil, nil)
 	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
-	gatewaySvc := service.NewOpenAIGatewayService(
+	gatewaySvc := service.NewOpenAIGatewayService(nil,
 		accountRepo,
 		nil,
 		nil,
@@ -3458,7 +3458,7 @@ func TestOpenAIResponsesWebSocket_FirstOutputTimeoutWithoutDownstreamReusesClien
 	accountRepo := &openAIWSFailoverHandlerAccountRepoStub{accounts: accounts}
 	rateLimitSvc := service.NewRateLimitService(accountRepo, nil, cfg, nil, nil)
 	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
-	gatewaySvc := service.NewOpenAIGatewayService(
+	gatewaySvc := service.NewOpenAIGatewayService(nil,
 		accountRepo, nil, nil, nil, nil, nil, nil, cfg, nil, nil,
 		service.NewBillingService(cfg, nil), rateLimitSvc, billingCacheSvc,
 		nil, &service.DeferredService{}, nil, nil, nil, nil, nil, nil, nil,
@@ -3665,7 +3665,7 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	}
 
 	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
-	gatewaySvc := service.NewOpenAIGatewayService(
+	gatewaySvc := service.NewOpenAIGatewayService(nil,
 		accountRepo,
 		usageRepo,
 		nil,

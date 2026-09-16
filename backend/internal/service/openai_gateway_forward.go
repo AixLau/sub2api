@@ -149,6 +149,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		setOpenAIResponsesClientToolMapping(c, mapping)
 	}
 
+	body, err = s.rewriteCodexEgressEnvironment(ctx, c, account, body)
+	if err != nil {
+		return nil, err
+	}
+
 	originalBody := body
 	rememberOpenCodeInboundBody(c, originalBody)
 	requestView := newOpenAIRequestView(body)
