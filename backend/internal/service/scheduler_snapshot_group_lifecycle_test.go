@@ -325,18 +325,18 @@ func newGroupLifecycleTestService(cache SchedulerCache, accounts AccountReposito
 }
 
 func expectedGroupLifecycleBuckets(groupID int64) []SchedulerBucket {
-	platforms := schedulerSnapshotPlatforms()
-	buckets := make([]SchedulerBucket, 0, 18)
-	for _, platform := range platforms {
-		buckets = append(buckets,
-			SchedulerBucket{GroupID: groupID, Platform: platform, Mode: SchedulerModeSingle},
-			SchedulerBucket{GroupID: groupID, Platform: platform, Mode: SchedulerModeForced},
-		)
+	return schedulerCanonicalBuckets(groupID)
+}
+
+func schedulerCanonicalAccountQueryCount() int {
+	count := 0
+	for _, platform := range schedulerSnapshotPlatforms() {
+		count++
 		if platform == PlatformAnthropic || platform == PlatformGemini {
-			buckets = append(buckets, SchedulerBucket{GroupID: groupID, Platform: platform, Mode: SchedulerModeMixed})
+			count++
 		}
 	}
-	return buckets
+	return count
 }
 
 func bucketStrings(buckets []SchedulerBucket) map[string]struct{} {

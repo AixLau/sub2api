@@ -532,6 +532,7 @@ func (s *OpenAIGatewayService) bufferRawChatCompletions(
 
 	return &OpenAIForwardResult{
 		RequestID:                     requestID,
+		UpstreamHeaders:               resp.Header,
 		Usage:                         usage,
 		Model:                         originalModel,
 		BillingModel:                  billingModel,

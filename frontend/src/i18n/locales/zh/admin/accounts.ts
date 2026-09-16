@@ -382,6 +382,22 @@ export default {
           responses: 'Responses',
           responsesDesc: '供应商原生 Responses 端点，适配 Codex。',
         },
+        zhipuTeam: {
+          title: '团队版组织 / 项目 ID',
+          organization: '组织 ID（团队版可选）',
+          organizationPlaceholder: '团队版 Coding Plan 的组织 ID',
+          project: '项目 ID（团队版可选）',
+          projectPlaceholder: '团队版 Coding Plan 的项目 ID',
+          hint: '仅团队版 GLM Coding Plan 需要填写，填写后用量查询走团队版端点；个人版留空即可。获取方式点击左侧问号查看教程。',
+          help: {
+            title: '如何获取组织 / 项目 ID',
+            step1: '用团队版账号登录智谱开放平台（bigmodel.cn），进入「Coding Plan → 团队版 → 我的套餐」页面。',
+            step2: '按 F12 打开浏览器开发者工具，切换到「Network / 网络」标签，然后刷新页面。',
+            step3: '在 Network 的筛选框中输入 /api/biz/v1/organization，点击命中的请求（如 api_keys）。',
+            step4: '请求 URL 中 org- 开头的一段即组织 ID、proj_ 开头的一段即项目 ID（也可在 Request Headers 中查看 bigmodel-organization / bigmodel-project 的值），分别填入上方输入框。',
+            example: '示例：…/organization/org-0610bE2D…/projects/proj_0798F20…/api_keys → org-0610bE2D… 填「组织 ID」，proj_0798F20… 填「项目 ID」',
+          },
+        },
         balance: '余额 --',
         window5h: '5h',
         windowWeekly: '7d',
@@ -680,6 +696,14 @@ export default {
       apiKeyRequired: 'API Key *',
       apiKeyPlaceholder: 'sk-ant-api03-...',
       apiKeyHint: '您的 Claude Console API Key',
+      upstreamRequestIdHeader: '上游ID',
+      upstreamRequestIdHeaderPlaceholder: '留空不记录',
+      upstreamRequestIdHeaderHelp: {
+        intro: '填写直接上游在响应头中声明请求标识的头名，记录到用量明细的“上游ID”列；留空则不记录。',
+        examplesTitle: '常见取值',
+        sub2apiNote: '对应对方用量明细的请求ID列',
+        official: '{platform} 官方 API'
+      },
       // OpenAI specific hints
       openai: {
         baseUrlHint: '留空使用官方 OpenAI API',
@@ -697,15 +721,16 @@ export default {
           '默认关闭。开启后可启用 responses_websockets_v2 协议能力（受网关全局开关与账号类型开关约束）。',
         wsMode: 'WS mode',
         wsModeDesc:
-          '仅对当前 OpenAI 账号类型生效；包括 http_bridge 在内的账号 WS mode 仅在全局 gateway.openai_ws.mode_router_v2_enabled=true 时生效。',
+          '仅对当前 OpenAI 账号类型生效。选择“关闭”可禁用 WS；其余模式需全局 gateway.openai_ws.mode_router_v2_enabled=true 才按所选方式连接，未开启时统一使用上下文池。',
         wsModeOff: '关闭（off）',
         wsModeCtxPool: '上下文池（ctx_pool）',
         wsModePassthrough: '透传（passthrough）',
         wsModeHttpBridge: 'HTTP 桥接（http_bridge）',
         wsModeShared: '共享（shared）',
         wsModeDedicated: '独享（dedicated）',
-        wsModeConcurrencyHint: '启用 WS mode 后，该账号并发数将作为该账号 WS 连接池上限。',
-        wsModePassthroughHint: 'passthrough 模式不使用 WS 连接池。',
+        wsModeCtxPoolHint: '网关从连接池获取并复用上游 WS 连接，连接池上限由网关配置决定。',
+        wsModePassthroughHint: '网关为每个客户端会话单独建立上游 WS 连接，不使用连接池。',
+        wsModeHttpBridgeHint: '网关将客户端 WS 请求转换为上游 HTTP 请求，再将 SSE 流式响应转换为 WS 消息返回。',
         oauthResponsesWebsocketsV2: 'OAuth WebSocket Mode',
         oauthResponsesWebsocketsV2Desc:
           '仅对 OpenAI OAuth 生效。开启后该账号才允许使用 OpenAI WebSocket Mode 协议。',
