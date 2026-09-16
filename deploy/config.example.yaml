@@ -187,12 +187,20 @@ security:
     # Allow skipping TLS verification for proxy probe (debug only)
     # 允许代理探测时跳过 TLS 证书验证（仅用于调试）
     insecure_skip_verify: false
-    # Optional ordered probe targets. Leave empty to use the built-in ip-api/ipify fallback.
-    # parser supports: ip-api, ipify, chatgpt-trace
-    # 可选的有序探测目标。留空时使用内置 ip-api/ipify 回退。
-    # parser 支持：ip-api、ipify、chatgpt-trace
+    # Optional ordered probe targets. Leave empty to use the built-in ip-api -> ipwhois -> ipapi-co -> ipify fallback.
+    # parser supports: ip-api, ipwhois, ipapi-co, ipify, chatgpt-trace
+    # 可选的有序探测目标。留空时使用内置 ip-api → ipwhois → ipapi-co → ipify 回退。
+    # parser 支持：ip-api、ipwhois、ipapi-co、ipify、chatgpt-trace
+    # Codex timezone lookup skips IP-only targets and shares a 3-second total budget.
+    # Codex 时区探测跳过仅返回 IP 的目标，共享 3 秒总预算；自定义列表需包含时区接口。
     urls: []
     # urls:
+    #   - url: "http://ip-api.com/json/?lang=zh-CN"
+    #     parser: "ip-api"
+    #   - url: "https://ipwho.is/"
+    #     parser: "ipwhois"
+    #   - url: "https://ipapi.co/json/"
+    #     parser: "ipapi-co"
     #   - url: "https://chatgpt.com/cdn-cgi/trace"
     #     parser: "chatgpt-trace"
     #   - url: "https://api64.ipify.org?format=json"

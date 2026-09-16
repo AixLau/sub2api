@@ -126,7 +126,7 @@ func (r *codexEgressEnvironmentResolver) probe(ctx context.Context, proxyURL str
 	if r.prober == nil {
 		return nil, errors.New("probe not configured")
 	}
-	info, _, err := r.prober.ProbeProxy(ctx, proxyURL)
+	info, _, err := r.prober.ProbeProxyTimezone(ctx, proxyURL)
 	if err != nil {
 		return nil, errors.New("exit probe failed")
 	}
