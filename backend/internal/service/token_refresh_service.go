@@ -66,9 +66,7 @@ type TokenRefreshService struct {
 	refreshAPI       *OAuthRefreshAPI // 统一刷新 API
 	runtimeBlocker   AccountRuntimeBlocker
 
-	// OpenAI privacy: 刷新成功后检查并设置 training opt-out
-	privacyClientFactory PrivacyClientFactory
-	proxyRepo            ProxyRepository
+	proxyRepo ProxyRepository // Antigravity 隐私设置使用账号代理
 
 	stopCh        chan struct{}
 	stopOnce      sync.Once
@@ -162,12 +160,6 @@ func (s *TokenRefreshService) setCandidateAfterID(afterID int64) {
 	s.candidateMu.Lock()
 	s.afterID = afterID
 	s.candidateMu.Unlock()
-}
-
-// SetPrivacyDeps 注入 OpenAI privacy opt-out 所需依赖
-func (s *TokenRefreshService) SetPrivacyDeps(factory PrivacyClientFactory, proxyRepo ProxyRepository) {
-	s.privacyClientFactory = factory
-	s.proxyRepo = proxyRepo
 }
 
 // SetRefreshAPI 注入统一的 OAuth 刷新 API
@@ -1196,8 +1188,6 @@ func (s *TokenRefreshService) postRefreshActions(ctx context.Context, account *A
 		}
 	}
 	s.postRefreshStateSync(ctx, account)
-	// OpenAI OAuth: 刷新成功后，检查是否已设置 privacy_mode，未设置则尝试关闭训练数据共享
-	s.ensureOpenAIPrivacy(ctx, account)
 	// Antigravity OAuth: 刷新成功后，检查是否已设置 privacy_mode，未设置则调用 setUserSettings
 	s.ensureAntigravityPrivacy(ctx, account)
 	// Grok: clear soft reauth flag after a successful credential refresh.
@@ -1436,49 +1426,6 @@ func isNonRetryableRefreshError(err error) bool {
 		}
 	}
 	return false
-}
-
-// ensureOpenAIPrivacy 检查 OpenAI OAuth 账号是否已设置 privacy_mode，
-// 未设置则调用 disableOpenAITraining 并持久化结果到 Extra。
-func (s *TokenRefreshService) ensureOpenAIPrivacy(ctx context.Context, account *Account) {
-	if account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth {
-		return
-	}
-	if s.privacyClientFactory == nil {
-		return
-	}
-	if shouldSkipOpenAIPrivacyEnsure(account.Extra) {
-		return
-	}
-
-	token, _ := account.Credentials["access_token"].(string)
-	if token == "" {
-		return
-	}
-
-	var proxyURL string
-	if account.ProxyID != nil && s.proxyRepo != nil {
-		if p, err := s.proxyRepo.GetByID(ctx, *account.ProxyID); err == nil && p != nil {
-			proxyURL = p.URL()
-		}
-	}
-
-	mode := disableOpenAITraining(ctx, s.privacyClientFactory, token, proxyURL)
-	if mode == "" {
-		return
-	}
-
-	if err := s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{"privacy_mode": mode}); err != nil {
-		slog.Warn("token_refresh.update_privacy_mode_failed",
-			"account_id", account.ID,
-			"error", err,
-		)
-	} else {
-		slog.Info("token_refresh.privacy_mode_set",
-			"account_id", account.ID,
-			"privacy_mode", mode,
-		)
-	}
 }
 
 // ensureAntigravityPrivacy 后台刷新中检查 Antigravity OAuth 账号隐私状态。

@@ -68,12 +68,12 @@ func TestAccountTestServiceSkipsShadow(t *testing.T) {
 	require.Contains(t, err.Error(), "resolve spark shadow parent")
 }
 
-// --- 3. EnsureOpenAIPrivacy 守卫 ---
+// --- 3. ForceOpenAIPrivacy 守卫 ---
 
-// TestEnsureOpenAIPrivacySkipsShadow 验证影子账号跳过隐私设置（不调用 privacyClientFactory）。
+// TestForceOpenAIPrivacySkipsShadow 验证影子账号跳过隐私设置（不调用 privacyClientFactory）。
 // 影子账号透传母账号凭据，但 Extra 通常为空，需给它一个 access_token 才能让
 // 现有的 token=="" 提前返回路径失效，从而真实验证 IsCredentialShadow 守卫。
-func TestEnsureOpenAIPrivacySkipsShadow(t *testing.T) {
+func TestForceOpenAIPrivacySkipsShadow(t *testing.T) {
 	pid := int64(100)
 	shadow := &Account{
 		ID:              200,
@@ -90,7 +90,7 @@ func TestEnsureOpenAIPrivacySkipsShadow(t *testing.T) {
 			return nil, errors.New("should not reach factory for shadow account")
 		},
 	}
-	got := svc.EnsureOpenAIPrivacy(context.Background(), shadow)
+	got := svc.ForceOpenAIPrivacy(context.Background(), shadow)
 	require.Equal(t, "", got)
 	require.False(t, privacyCalled, "privacyClientFactory 不应被影子账号触发")
 }

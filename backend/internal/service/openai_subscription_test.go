@@ -336,9 +336,6 @@ func newChatGPTBackendTestServer(t *testing.T, cfg chatGPTBackendTestServerConfi
 	return server
 }
 
-// enrichTokenInfo 收尾还会调用 disableOpenAITraining，它的 URL 是常量、指向真实
-// chatgpt.com，测试无法接管。给客户端一个短超时让它快速失败——该调用只写
-// PrivacyMode，不影响本组用例的断言。
 func newTestPrivacyClientFactory() PrivacyClientFactory {
 	return func(string) (*req.Client, error) {
 		return req.C().SetTimeout(time.Second), nil

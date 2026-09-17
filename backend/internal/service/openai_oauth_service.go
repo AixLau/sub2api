@@ -126,7 +126,6 @@ type OpenAITokenInfo struct {
 	OrganizationID        string `json:"organization_id,omitempty"`
 	PlanType              string `json:"plan_type,omitempty"`
 	SubscriptionExpiresAt string `json:"subscription_expires_at,omitempty"`
-	PrivacyMode           string `json:"privacy_mode,omitempty"`
 }
 
 // ExchangeCode exchanges authorization code for tokens
@@ -254,9 +253,8 @@ func (s *OpenAIOAuthService) RefreshTokenWithClientID(ctx context.Context, refre
 	return tokenInfo, nil
 }
 
-// enrichTokenInfo 通过 ChatGPT backend-api 补全 tokenInfo 并设置隐私（best-effort）。
-// 从 accounts/check 获取最新 plan_type、subscription_expires_at、email，
-// 然后尝试关闭训练数据共享。适用于所有获取/刷新 token 的路径。
+// enrichTokenInfo 通过 ChatGPT backend-api 只读补全账号和订阅信息（best-effort）。
+// 适用于所有获取/刷新 token 的路径，不修改账号隐私设置。
 func (s *OpenAIOAuthService) enrichTokenInfo(ctx context.Context, tokenInfo *OpenAITokenInfo, proxyURL string) {
 	if tokenInfo.AccessToken == "" || s.privacyClientFactory == nil {
 		return
@@ -302,9 +300,6 @@ func (s *OpenAIOAuthService) enrichTokenInfo(ctx context.Context, tokenInfo *Ope
 			tokenInfo.SubscriptionExpiresAt = expiresAt
 		}
 	}
-
-	// 尝试设置隐私（关闭训练数据共享），best-effort
-	tokenInfo.PrivacyMode = disableOpenAITraining(ctx, s.privacyClientFactory, tokenInfo.AccessToken, proxyURL)
 }
 
 func shouldApplyChatGPTAccountInfoPlanType(current, candidate string) bool {
