@@ -58,7 +58,8 @@
                   <SaveToggle :label="t('admin.promptAudit.policy.highRiskAllowsNextStage')" :model-value="draft.high_risk_allows_next_stage" :disabled="!draft.enabled || !draft.blocking_enabled" data-test="high-risk-allows-next-stage-toggle" @update:model-value="replaceDraft({ ...draft!, high_risk_allows_next_stage: $event })" />
                 </div>
               </section>
-              <PolicyPanel :draft="draft" :groups="groups" @update:draft="replaceDraft" />
+              <p v-if="accountsError" role="alert" class="mt-3 text-sm text-red-600">{{ accountsError }}</p>
+              <PolicyPanel :draft="draft" :groups="groups" :accounts="accounts" @update:draft="replaceDraft" />
             </template>
           </div>
 
@@ -167,6 +168,7 @@ import EventDetailDialog from './components/EventDetailDialog.vue'
 import FilterDeleteDialog from './components/FilterDeleteDialog.vue'
 import promptAuditAPI from './api'
 import type {
+  PromptAuditAccount,
   PromptAuditDraft,
   PromptAuditEndpointDraft,
   PromptAuditEvent,
@@ -192,6 +194,8 @@ const serverConfig = ref<PromptAuditDraft | null>(null)
 const draft = ref<PromptAuditDraft | null>(null)
 const runtime = ref<PromptAuditRuntime | null>(null)
 const groups = ref<PromptAuditGroup[]>([])
+const accounts = ref<PromptAuditAccount[]>([])
+const accountsError = ref('')
 const events = reactive<PromptEventPage>({ items: [], total: 0, page: 1, page_size: 20, pages: 0 })
 const filters = ref<PromptEventFilters>(emptyEventFilters())
 const appliedFilters = ref<PromptEventFilters>(emptyEventFilters())
@@ -281,6 +285,11 @@ async function loadGroups() {
   catch (error) { loadErrors.groups = errorMessage(error, 'admin.promptAudit.errors.loadGroups') }
   finally { loading.groups = false }
 }
+async function loadAccounts() {
+  accountsError.value = ''
+  try { accounts.value = await promptAuditAPI.listAccounts() }
+  catch (error) { accountsError.value = errorMessage(error, 'admin.promptAudit.policy.loadAccountsError') }
+}
 async function loadEvents() {
   loading.events = true
   loadErrors.events = ''
@@ -295,7 +304,7 @@ async function loadEvents() {
   }
 }
 async function loadInitial() {
-  await Promise.allSettled([loadConfig(), loadRuntime(), loadGroups(), loadEvents()])
+  await Promise.allSettled([loadConfig(), loadRuntime(), loadGroups(), loadAccounts(), loadEvents()])
 }
 
 function replaceDraft(value: PromptAuditDraft) { draft.value = cloneData(value) }

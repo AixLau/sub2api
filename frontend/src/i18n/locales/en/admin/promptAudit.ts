@@ -51,6 +51,17 @@ export default {
       toggleNode: 'Toggle node {name}', deleteConfirm: 'Remove “{name}” from the draft? It takes effect after saving.',
     },
     policy: {
+      selectedAccountCount: '{count} accounts selected',
+      accountScope: 'Upstream account scope',
+      accountScopeHint: 'Intersect with the group scope and audit the selected upstream account. Only OpenAI OAuth accounts can be selected.',
+      allAccounts: 'All accounts',
+      selectedAccounts: 'Selected accounts',
+      searchAccounts: 'Search account name or ID',
+      noAccounts: 'No OpenAI OAuth accounts available',
+      missingAccounts: 'These accounts are missing or no longer OpenAI OAuth accounts. Update your selection',
+      clearMissingAccounts: 'Remove unavailable selections',
+      loadAccountsError: 'Failed to load accounts',
+
       riskPolicyTitle: 'Risk-level actions',
       mediumRiskAllowsNextStage: 'Allow medium risk', highRiskAllowsNextStage: 'Allow high risk', riskPolicyHint: 'Applies only to synchronous blocking. Turn off a switch to reject flagged requests at that level. Low risk is allowed; critical risk is always blocked.',
       title: 'Audit policy', description: 'Configure group scope, nine input-risk categories, workers, and queue bounds.', scope: 'Scope', allGroups: 'All groups', selectedGroups: 'Selected groups',

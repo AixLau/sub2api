@@ -42,3 +42,15 @@ describe('Prompt Audit API', () => {
     }))
   })
 })
+
+it('loads all pages of OpenAI OAuth accounts and excludes other account types', async () => {
+  client.get.mockReset()
+  client.get.mockResolvedValueOnce({ data: { items: [
+    { id: 1, name: 'OAuth', platform: 'openai', type: 'oauth', status: 'active' },
+    { id: 2, name: 'Key', platform: 'openai', type: 'apikey', status: 'active' },
+  ], pages: 2 } }).mockResolvedValueOnce({ data: { items: [
+    { id: 3, name: 'OAuth 2', platform: 'openai', type: 'oauth', status: 'inactive' },
+  ], pages: 2 } })
+  expect((await promptAuditAPI.listAccounts()).map(account => account.id)).toEqual([1, 3])
+  expect(client.get).toHaveBeenNthCalledWith(2, '/admin/accounts', expect.objectContaining({ params: expect.objectContaining({ page: 2, platform: 'openai', type: 'oauth', lite: 'true' }) }))
+})

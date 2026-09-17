@@ -920,6 +920,17 @@ func (s OpenAIHTTPRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult
 	if value, ok := c.Get(openAIHTTPPreForwardRequestContextKey); ok {
 		if request, requestOK := value.(openAIHTTPPreForwardRequest); requestOK {
 			subject, _ := middleware2.GetAuthSubjectFromContext(c)
+			if decision := runSelectedAccountPromptAudit(c, h.securityAuditCoordinator, s.APIKey, subject, request.Protocol, request.Model, request.contentModerationBody(), "http", refreshedAccount); decision != nil && !decision.AllowNextStage {
+				if releaseFunc != nil {
+					releaseFunc()
+				}
+				if request.Protocol == service.ContentModerationProtocolOpenAIMessages {
+					h.anthropicSecurityAuditError(c, decision)
+				} else {
+					h.openAISecurityAuditError(c, decision)
+				}
+				return ExecutableStageResult{Stop: true}
+			}
 			gate := runSelectedAccountContentModeration(c, reqLog, h.contentModerationService, s.APIKey, subject, request.Protocol, request.Model, request.contentModerationBody(), refreshedAccount)
 			if gate != nil && gate.Decision != nil && gate.Decision.Blocked {
 				if releaseFunc != nil {

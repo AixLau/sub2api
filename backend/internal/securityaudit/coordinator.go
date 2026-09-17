@@ -165,3 +165,17 @@ func unavailablePromptDecision(code string) *PromptDecision {
 	}
 	return &PromptDecision{Kind: kind, ErrorCode: code, AllowNextStage: false}
 }
+
+// CheckSelectedAccount runs only the deferred prompt audit. Legacy moderation
+// has its own selected-account gate and must not be executed twice here.
+func (c *Coordinator) CheckSelectedAccount(ctx context.Context, req Request) *Decision {
+	if c == nil || c.prompt == nil {
+		return nil
+	}
+	scoped, ok := c.prompt.(interface{ RequiresSelectedAccount() bool })
+	if !ok || !scoped.RequiresSelectedAccount() {
+		return nil
+	}
+	decision := c.CheckWithLegacy(ctx, req, nil)
+	return &decision
+}

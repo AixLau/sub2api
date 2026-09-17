@@ -43,6 +43,28 @@
         </div>
 
         <fieldset class="mt-5 border-t border-gray-100 pt-5 dark:border-dark-800">
+          <legend class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.promptAudit.policy.accountScope') }}</legend>
+          <p class="mt-1 text-xs text-gray-500">{{ t('admin.promptAudit.policy.accountScopeHint') }}</p>
+          <div class="mt-3 flex flex-wrap gap-5 text-sm">
+            <label class="flex items-center gap-2"><input type="radio" name="prompt-audit-accounts" :checked="!draft.selected_accounts" @change="patch({ selected_accounts: false, account_ids: [] })" />{{ t('admin.promptAudit.policy.allAccounts') }}</label>
+            <label class="flex items-center gap-2"><input type="radio" name="prompt-audit-accounts" :checked="draft.selected_accounts" @change="patch({ selected_accounts: true })" />{{ t('admin.promptAudit.policy.selectedAccounts') }}</label>
+          </div>
+          <div v-if="draft.selected_accounts" class="mt-3">
+            <input v-model="accountSearch" type="search" class="input w-full" :aria-label="t('admin.promptAudit.policy.searchAccounts')" :placeholder="t('admin.promptAudit.policy.searchAccounts')" />
+            <div class="mt-3 max-h-52 overflow-y-auto rounded-lg border border-gray-200 p-2 dark:border-dark-700">
+              <label v-for="account in filteredAccounts" :key="account.id" class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-gray-50 dark:hover:bg-dark-800">
+                <input type="checkbox" :checked="draft.account_ids.includes(account.id)" @change="toggleAccount(account.id)" />
+                <span>{{ account.name }} · #{{ account.id }}</span><span class="ml-auto text-xs text-gray-500">{{ account.status }}</span>
+              </label>
+              <p v-if="!filteredAccounts.length" class="py-4 text-center text-sm text-gray-500">{{ t('admin.promptAudit.policy.noAccounts') }}</p>
+            </div>
+            <p v-if="missingAccountIds.length" class="mt-2 text-sm text-amber-700">{{ t('admin.promptAudit.policy.missingAccounts') }}: {{ missingAccountIds.join(', ') }}</p>
+            <button v-if="missingAccountIds.length" type="button" class="btn btn-secondary mt-2" @click="patch({ account_ids: draft.account_ids.filter(id => !missingAccountIds.includes(id)) })">{{ t('admin.promptAudit.policy.clearMissingAccounts') }}</button>
+            <p class="mt-2 text-xs text-gray-500">{{ t('admin.promptAudit.policy.selectedAccountCount', { count: draft.account_ids.length }) }}</p>
+          </div>
+        </fieldset>
+
+        <fieldset class="mt-5 border-t border-gray-100 pt-5 dark:border-dark-800">
           <legend class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.promptAudit.policy.scanners') }}</legend>
           <div class="mt-3 grid gap-2 sm:grid-cols-2">
             <label v-for="scanner in SCANNER_CATALOG" :key="scanner.id" class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:text-dark-200 dark:hover:bg-dark-800">
@@ -94,13 +116,23 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { PromptAuditDraft, PromptAuditGroup } from '../types'
+import type { PromptAuditDraft, PromptAuditGroup, PromptAuditAccount } from '../types'
 import { cloneData, SCANNER_CATALOG } from '../viewModel'
 
-const props = defineProps<{ draft: PromptAuditDraft; groups: PromptAuditGroup[] }>()
+const props = defineProps<{ draft: PromptAuditDraft; groups: PromptAuditGroup[]; accounts?: PromptAuditAccount[] }>()
 const emit = defineEmits<{ (event: 'update:draft', value: PromptAuditDraft): void }>()
 const { t } = useI18n()
 const groupSearch = ref('')
+const accountSearch = ref('')
+const eligibleAccounts = computed(() => (props.accounts ?? []).filter(account => account.platform === 'openai' && account.type === 'oauth'))
+const filteredAccounts = computed(() => eligibleAccounts.value.filter(account => `${account.name} ${account.id}`.toLowerCase().includes(accountSearch.value.trim().toLowerCase())))
+const missingAccountIds = computed(() => (props.draft.account_ids ?? []).filter(id => !eligibleAccounts.value.some(account => account.id === id)))
+function toggleAccount(id: number) {
+  const selected = new Set(props.draft.account_ids)
+  if (selected.has(id)) selected.delete(id)
+  else selected.add(id)
+  patch({ account_ids: [...selected].sort((a, b) => a - b) })
+}
 const captureUserID = ref<number | undefined>()
 const captureEmail = ref('')
 const captureUsers = computed(() => props.draft.capture_users ?? [])

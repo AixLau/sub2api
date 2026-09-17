@@ -68,7 +68,7 @@ describe('Prompt Audit components', () => {
   it('supports group search, stale configured groups, nine scanners, and bounded worker inputs', async () => {
     const draft: PromptAuditDraft = {
       enabled: true, blocking_enabled: false, medium_risk_allows_next_stage: true, high_risk_allows_next_stage: true, blocking_latest_turn_only: false, store_pass_events: false, effective_mode: 'async_audit', strategy: 'priority',
-      worker_count: 4, queue_capacity: 100, scanners: SCANNER_CATALOG.map((item) => item.id), all_groups: false, group_ids: [1, 99],
+      worker_count: 4, queue_capacity: 100, scanners: SCANNER_CATALOG.map((item) => item.id), selected_accounts: false, account_ids: [], all_groups: false, group_ids: [1, 99],
       endpoints: [endpoint()], config_version: 1, updated_at: '', updated_by: 0, change_summary: '',
     }
     const wrapper = mount(PolicyPanel, {
@@ -82,6 +82,21 @@ describe('Prompt Audit components', () => {
     await wrapper.get('[aria-label="admin.promptAudit.policy.workerCount"]').setValue('6')
     const emitted = wrapper.emitted('update:draft')?.at(-1)?.[0] as PromptAuditDraft
     expect(emitted.worker_count).toBe(6)
+    await wrapper.setProps({ draft: { ...draft, selected_accounts: true, account_ids: [99] }, accounts: [
+      { id: 7, name: 'OAuth account', platform: 'openai', type: 'oauth', status: 'active' },
+      { id: 8, name: 'API key account', platform: 'openai', type: 'apikey', status: 'active' },
+      { id: 9, name: 'Anthropic account', platform: 'anthropic', type: 'oauth', status: 'active' },
+    ] })
+    expect(wrapper.text()).toContain('OAuth account')
+    expect(wrapper.text()).not.toContain('API key account')
+    expect(wrapper.text()).not.toContain('Anthropic account')
+    expect(wrapper.text()).toContain('admin.promptAudit.policy.missingAccounts')
+    const account = wrapper.findAll('label').find(label => label.text().includes('OAuth account'))!
+    await account.get('input').setValue(true)
+    expect((wrapper.emitted('update:draft')?.at(-1)?.[0] as PromptAuditDraft).account_ids).toEqual([7, 99])
+    await wrapper.get('[aria-label="admin.promptAudit.policy.searchAccounts"]').setValue('missing')
+    expect(wrapper.text()).not.toContain('OAuth account')
+
   })
 
   it('keeps identity fields separate, supports selection, and opens filter deletion from the toolbar', async () => {

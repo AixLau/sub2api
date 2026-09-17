@@ -20,7 +20,7 @@ const config = (): PromptAuditConfig => ({
   worker_count: 4,
   queue_capacity: 100,
   scanners: SCANNER_CATALOG.map((item) => item.id),
-  all_groups: true,
+  selected_accounts: false, account_ids: [], all_groups: true,
   group_ids: [],
   endpoints: [{
     id: 'guard-1', name: 'Guard One', protocol: 'openai_compatible', base_url: 'http://127.0.0.1:8000',
@@ -92,4 +92,11 @@ describe('Prompt Audit view model', () => {
       end_at: new Date(filters.end_at).toISOString(),
     })
   })
+})
+
+it('round trips selected accounts and clears the scope when all accounts are selected', () => {
+  const draft = configToDraft({ ...config(), selected_accounts: true, account_ids: [9, 3] })
+  expect(buildUpdateRequest(draft)).toMatchObject({ selected_accounts: true, account_ids: [3, 9] })
+  draft.selected_accounts = false
+  expect(buildUpdateRequest(draft).account_ids).toEqual([])
 })

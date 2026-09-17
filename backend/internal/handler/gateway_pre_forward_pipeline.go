@@ -11,6 +11,7 @@ import (
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/moderationcoverage"
+	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -711,6 +712,10 @@ func (s GatewayRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult {
 				if request, requestOK := value.(gatewayPreForwardRequest); requestOK {
 					apiKey, _ := middleware2.GetAPIKeyFromContext(c)
 					subject, _ := middleware2.GetAuthSubjectFromContext(c)
+					if decision := runSelectedAccountPromptAudit(c, h.securityAuditCoordinator, apiKey, subject, request.Protocol, request.Model, request.Body, "http", account); decision != nil && !decision.AllowNextStage {
+						h.writeGatewayPreForwardPromptAuditError(c, request.ErrorFormat, decision)
+						return ExecutableStageResult{Stop: true}
+					}
 					gate := runSelectedAccountContentModeration(c, requestLogger(c, "handler.gateway.account_moderation"), h.contentModerationService, apiKey, subject, request.Protocol, request.Model, request.Body, account)
 					if gate != nil && gate.Decision != nil && gate.Decision.Blocked {
 						h.writeGatewayPreForwardModerationError(c, request.ErrorFormat, gate.Decision)
@@ -730,6 +735,14 @@ func (s GatewayRoutingStage) RunRouting(c *gin.Context) ExecutableStageResult {
 			if request, requestOK := value.(gatewayPreForwardRequest); requestOK {
 				apiKey, _ := middleware2.GetAPIKeyFromContext(c)
 				subject, _ := middleware2.GetAuthSubjectFromContext(c)
+				if decision := runSelectedAccountPromptAudit(c, h.securityAuditCoordinator, apiKey, subject, request.Protocol, request.Model, request.Body, "http", selection.Account); decision != nil && !decision.AllowNextStage {
+					if selection.Acquired && selection.ReleaseFunc != nil {
+						selection.ReleaseFunc()
+						selection.ReleaseFunc = nil
+					}
+					h.writeGatewayPreForwardPromptAuditError(c, request.ErrorFormat, decision)
+					return ExecutableStageResult{Stop: true}
+				}
 				gate := runSelectedAccountContentModeration(c, requestLogger(c, "handler.gateway.account_moderation"), h.contentModerationService, apiKey, subject, request.Protocol, request.Model, request.Body, selection.Account)
 				if gate != nil && gate.Decision != nil && gate.Decision.Blocked {
 					if selection.Acquired && selection.ReleaseFunc != nil {
@@ -1072,5 +1085,18 @@ func (h *GatewayHandler) writeGatewayPreForwardModerationError(c *gin.Context, f
 		h.responsesErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), contentModerationClientMessage(decision))
 	default:
 		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), contentModerationClientMessage(decision))
+	}
+}
+
+func (h *GatewayHandler) writeGatewayPreForwardPromptAuditError(c *gin.Context, format gatewayPreForwardErrorFormat, decision *securityaudit.Decision) {
+	switch format {
+	case gatewayPreForwardErrorGemini:
+		googleSecurityAuditError(c, decision)
+	case gatewayPreForwardErrorOpenAIChat:
+		h.openAISecurityAuditError(c, decision)
+	case gatewayPreForwardErrorOpenAIResponses:
+		h.responsesSecurityAuditError(c, decision)
+	default:
+		h.anthropicSecurityAuditError(c, decision)
 	}
 }

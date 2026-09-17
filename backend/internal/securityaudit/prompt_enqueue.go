@@ -26,6 +26,9 @@ func (e *Enqueuer) Enqueue(ctx context.Context, req Request) error {
 		return errors.New("prompt audit enqueuer unavailable")
 	}
 	cfg, ok := e.config.Active()
+	if ok && !cfg.IncludesAccount(req) {
+		return nil
+	}
 	if shouldCaptureNonClient(req.UserAgent) {
 		snapshot, err := ExtractPromptSnapshot(req)
 		if errors.Is(err, ErrNoPromptText) {

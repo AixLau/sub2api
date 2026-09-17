@@ -7,7 +7,7 @@ import PromptAuditView from '../PromptAuditView.vue'
 
 const mocks = vi.hoisted(() => ({
   getConfig: vi.fn(), updateConfig: vi.fn(), probeEndpoint: vi.fn(), getRuntime: vi.fn(), listEvents: vi.fn(),
-  getEvent: vi.fn(), deleteEvent: vi.fn(), batchDeleteEvents: vi.fn(), previewDelete: vi.fn(), deleteEventsByFilter: vi.fn(), listGroups: vi.fn(),
+  getEvent: vi.fn(), deleteEvent: vi.fn(), batchDeleteEvents: vi.fn(), previewDelete: vi.fn(), deleteEventsByFilter: vi.fn(), listGroups: vi.fn(), listAccounts: vi.fn(),
   showSuccess: vi.fn(), showError: vi.fn(),
 }))
 
@@ -20,7 +20,7 @@ vi.mock('vue-i18n', async () => {
 
 const baseConfig = (): PromptAuditConfig => ({
   enabled: true, blocking_enabled: false, medium_risk_allows_next_stage: true, high_risk_allows_next_stage: true, blocking_latest_turn_only: false, store_pass_events: false, effective_mode: 'async_audit', strategy: 'priority',
-  worker_count: 4, queue_capacity: 100, scanners: SCANNER_CATALOG.map((item) => item.id), all_groups: true, group_ids: [],
+  worker_count: 4, queue_capacity: 100, scanners: SCANNER_CATALOG.map((item) => item.id), selected_accounts: false, account_ids: [], all_groups: true, group_ids: [],
   endpoints: [{ id: 'guard-1', name: 'Guard One', protocol: 'openai_compatible', base_url: 'http://127.0.0.1:8000', model: 'guard-model', timeout_ms: 3000, input_limit: 4000, enabled: true, has_token: true, token_status: 'configured' }],
   config_version: 7, updated_at: '2026-07-16T00:00:00Z', updated_by: 1, change_summary: '{}',
 })
@@ -38,7 +38,7 @@ const EndpointStub = defineComponent({
   props: ['endpoints', 'probeResults', 'probingIds'], emits: ['update:endpoints', 'probe'],
   template: '<div data-test="endpoint"><button data-test="inject-secret" @click="$emit(\'update:endpoints\', endpoints.map((e) => ({ ...e, token: \'PROMPT_AUDIT_CANARY_SECRET_DO_NOT_PERSIST\' })))">secret</button><button data-test="probe" @click="$emit(\'probe\', endpoints[0])">probe</button></div>',
 })
-const PolicyStub = defineComponent({ props: ['draft', 'groups'], emits: ['update:draft'], template: '<div data-test="policy" />' })
+const PolicyStub = defineComponent({ props: ['draft', 'groups', 'accounts'], emits: ['update:draft'], template: '<div data-test="policy" />' })
 const EventsStub = defineComponent({
   props: ['events', 'filters', 'selectedIds', 'loading', 'error', 'total', 'page', 'pageSize'],
   emits: ['filters-change', 'search', 'selection', 'page', 'page-size', 'view', 'delete', 'batch-delete', 'preview-delete'],
@@ -63,6 +63,7 @@ describe('PromptAuditView', () => {
     Object.values(mocks).forEach((mock) => mock.mockReset())
     mocks.getConfig.mockResolvedValue(baseConfig())
     mocks.getRuntime.mockResolvedValue(runtime())
+    mocks.listAccounts.mockResolvedValue([])
     mocks.listGroups.mockResolvedValue([])
     mocks.listEvents.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 0 })
     mocks.updateConfig.mockImplementation(async () => ({ ...baseConfig(), config_version: 8 }))

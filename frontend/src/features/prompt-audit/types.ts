@@ -36,6 +36,8 @@ export interface PromptAuditConfig {
   scanners: string[]
   all_groups: boolean
   group_ids: number[]
+  selected_accounts: boolean
+  account_ids: number[]
   endpoints: PromptAuditEndpoint[]
   capture_users?: PromptCaptureUser[]
   capture_max_records?: number
@@ -66,6 +68,8 @@ export interface PromptAuditUpdateRequest {
   scanners: string[]
   all_groups: boolean
   group_ids: number[]
+  selected_accounts: boolean
+  account_ids: number[]
   endpoints: Array<{
     id: string
     name: string
@@ -265,3 +269,5 @@ export interface PromptLoadErrors {
   groups: string
   events: string
 }
+
+export interface PromptAuditAccount { id: number; name: string; platform: string; type: string; status: string }

@@ -32,6 +32,8 @@ export function configToDraft(config: PromptAuditConfig): PromptAuditDraft {
     ...cloneData(config),
     max_attempts: config.max_attempts || 3,
     group_ids: [...(config.group_ids ?? [])],
+    selected_accounts: config.selected_accounts ?? false,
+    account_ids: [...(config.account_ids ?? [])],
     scanners: [...(config.scanners ?? [])],
     capture_users: [...(config.capture_users ?? [])],
     capture_max_records: config.capture_max_records ?? 0,
@@ -75,6 +77,8 @@ export function buildUpdateRequest(draft: PromptAuditDraft): PromptAuditUpdateRe
     worker_count: Number(draft.worker_count),
     queue_capacity: Number(draft.queue_capacity),
     scanners: [...draft.scanners],
+    selected_accounts: draft.selected_accounts,
+    account_ids: draft.selected_accounts ? [...draft.account_ids].sort((a, b) => a - b) : [],
     all_groups: draft.all_groups,
     group_ids: draft.all_groups ? [] : [...draft.group_ids].sort((a, b) => a - b),
     endpoints: draft.endpoints.map((endpoint) => ({

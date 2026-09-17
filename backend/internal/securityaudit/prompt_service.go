@@ -172,7 +172,7 @@ func (s *PromptService) Evaluate(ctx context.Context, req Request) (*PromptDecis
 		}
 		return &PromptDecision{Kind: DecisionAllow, AllowNextStage: true}, nil
 	}
-	if cfg.EffectiveMode() != ModeBlocking || !cfg.IncludesGroup(req.GroupID) {
+	if cfg.EffectiveMode() != ModeBlocking || !cfg.IncludesGroup(req.GroupID) || !cfg.IncludesAccount(req) {
 		return &PromptDecision{Kind: DecisionAllow, AllowNextStage: true}, nil
 	}
 	snapshot, err := ExtractBlockingPromptSnapshot(req, cfg.BlockingLatestTurnOnly)
@@ -495,4 +495,12 @@ func parseTimeQuery(value string) *time.Time {
 	}
 	parsed = parsed.UTC()
 	return &parsed
+}
+
+func (s *PromptService) RequiresSelectedAccount() bool {
+	if s == nil || s.config == nil {
+		return false
+	}
+	cfg, ok := s.config.Active()
+	return ok && cfg.SelectedAccounts
 }

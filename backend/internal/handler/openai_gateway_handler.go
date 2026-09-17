@@ -2645,6 +2645,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		if routingRetry {
 			continue
 		}
+		if decision := runSelectedAccountPromptAudit(c, h.securityAuditCoordinator, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, reqModel, firstMessage, "first_turn", account); decision != nil && !decision.AllowNextStage {
+			releaseAccountSlot()
+			writeSecurityAuditWSError(ctx, wsConn, decision)
+			closeOpenAIClientWS(wsConn, securityAuditWSCloseStatus(decision), securityAuditWSCloseReason(decision))
+			return
+		}
 		if gate := runSelectedAccountContentModeration(c, reqLog, h.contentModerationService, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, reqModel, firstMessage, account); gate != nil && gate.Decision != nil && gate.Decision.Blocked {
 			releaseAccountSlot()
 			pipelineResult := openAIWebSocketPipelineResult{
@@ -2734,6 +2740,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if pipelineResult.Blocked {
 					closeReason := h.writeOpenAIWebSocketPipelineBlock(ctx, c, wsConn, apiKey, model, pipelineResult)
 					return service.NewOpenAIWSClientCloseError(openAIWebSocketPipelineCloseStatus(pipelineResult), closeReason, nil)
+				}
+				if decision := runSelectedAccountPromptAudit(c, h.securityAuditCoordinator, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, model, payload, "subsequent_turn", account); decision != nil && !decision.AllowNextStage {
+					writeSecurityAuditWSError(ctx, wsConn, decision)
+					return service.NewOpenAIWSClientCloseError(securityAuditWSCloseStatus(decision), securityAuditWSCloseReason(decision), nil)
 				}
 				if gate := runSelectedAccountContentModeration(c, reqLog, h.contentModerationService, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, model, payload, account); gate != nil && gate.Decision != nil && gate.Decision.Blocked {
 					pipelineResult := openAIWebSocketPipelineResult{

@@ -82,6 +82,8 @@ type storageConfig struct {
 	Scanners                  []string          `json:"scanners"`
 	AllGroups                 bool              `json:"all_groups"`
 	GroupIDs                  []int64           `json:"group_ids"`
+	SelectedAccounts          bool              `json:"selected_accounts"`
+	AccountIDs                []int64           `json:"account_ids"`
 	Endpoints                 []StorageEndpoint `json:"endpoints"`
 	CaptureUsers              []CaptureUser     `json:"capture_users,omitempty"`
 	CaptureMaxRecords         int               `json:"capture_max_records,omitempty"`
@@ -124,6 +126,8 @@ type ActiveConfig struct {
 	Scanners                  []string
 	AllGroups                 bool
 	GroupIDs                  []int64
+	SelectedAccounts          bool
+	AccountIDs                []int64
 	Endpoints                 []ActiveEndpoint
 	CaptureUsers              []CaptureUser
 	CaptureMaxRecords         int
@@ -162,6 +166,8 @@ type PublicConfig struct {
 	Scanners                  []string         `json:"scanners"`
 	AllGroups                 bool             `json:"all_groups"`
 	GroupIDs                  []int64          `json:"group_ids"`
+	SelectedAccounts          bool             `json:"selected_accounts"`
+	AccountIDs                []int64          `json:"account_ids"`
 	Endpoints                 []PublicEndpoint `json:"endpoints"`
 	CaptureUsers              []CaptureUser    `json:"capture_users,omitempty"`
 	CaptureMaxRecords         int              `json:"capture_max_records,omitempty"`
@@ -200,6 +206,8 @@ type UpdateConfigRequest struct {
 	Scanners                  []string         `json:"scanners"`
 	AllGroups                 bool             `json:"all_groups"`
 	GroupIDs                  []int64          `json:"group_ids"`
+	SelectedAccounts          bool             `json:"selected_accounts"`
+	AccountIDs                []int64          `json:"account_ids"`
 	Endpoints                 []UpdateEndpoint `json:"endpoints"`
 	CaptureUsers              []CaptureUser    `json:"capture_users,omitempty"`
 	CaptureMaxRecords         int              `json:"capture_max_records,omitempty"`
@@ -268,6 +276,10 @@ func normalizeStorageConfig(cfg *storageConfig) {
 	}
 	cfg.Scanners = canonicalScannerIDs(cfg.Scanners)
 	cfg.GroupIDs = canonicalInt64s(cfg.GroupIDs)
+	cfg.AccountIDs = canonicalInt64s(cfg.AccountIDs)
+	if !cfg.SelectedAccounts {
+		cfg.AccountIDs = []int64{}
+	}
 	selectors := make([]CaptureUser, 0, len(cfg.CaptureUsers))
 	seenSelectors := make(map[string]struct{}, len(cfg.CaptureUsers))
 	for _, selector := range cfg.CaptureUsers {
@@ -328,6 +340,9 @@ func validateStorageConfig(cfg storageConfig) error {
 	}
 	if len(cfg.CaptureUsers) > 1000 {
 		return infraerrors.BadRequest("prompt_audit_too_many_capture_users", "指定用户最多 1000 个")
+	}
+	if err := validateAccountScope(cfg.SelectedAccounts, cfg.AccountIDs); err != nil {
+		return err
 	}
 	if !cfg.AllGroups && len(cfg.GroupIDs) == 0 {
 		return infraerrors.BadRequest("prompt_audit_groups_required", "指定分组模式至少需要选择一个分组")
@@ -396,6 +411,9 @@ func validateUpdateConfigRequest(req UpdateConfigRequest) error {
 		if _, ok := ScannerCatalog[NormalizeCategory(scanner)]; !ok {
 			return infraerrors.BadRequest("prompt_audit_invalid_scanner", "提示词审计风险分类无效")
 		}
+	}
+	if err := validateAccountScope(req.SelectedAccounts, req.AccountIDs); err != nil {
+		return err
 	}
 	if !req.AllGroups {
 		if len(req.GroupIDs) == 0 {
@@ -507,7 +525,7 @@ func PublicFromStorage(cfg storageConfig, riskControlEnabled bool, invalidTokenE
 		Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, MediumRiskAllowsNextStage: cfg.MediumRiskAllowsNextStage, HighRiskAllowsNextStage: cfg.HighRiskAllowsNextStage, MaxAttempts: cfg.MaxAttempts, BlockingLatestTurnOnly: cfg.BlockingLatestTurnOnly, StorePassEvents: cfg.StorePassEvents,
 		EffectiveMode: active.EffectiveMode(), Strategy: cfg.Strategy, WorkerCount: cfg.WorkerCount,
 		QueueCapacity: cfg.QueueCapacity, Scanners: scanners, AllGroups: cfg.AllGroups,
-		GroupIDs: groupIDs, Endpoints: endpoints, CaptureUsers: append([]CaptureUser(nil), cfg.CaptureUsers...), CaptureMaxRecords: cfg.CaptureMaxRecords, ConfigVersion: cfg.ConfigVersion,
+		SelectedAccounts: cfg.SelectedAccounts, AccountIDs: append([]int64{}, cfg.AccountIDs...), GroupIDs: groupIDs, Endpoints: endpoints, CaptureUsers: append([]CaptureUser(nil), cfg.CaptureUsers...), CaptureMaxRecords: cfg.CaptureMaxRecords, ConfigVersion: cfg.ConfigVersion,
 		UpdatedAt: cfg.UpdatedAt, UpdatedBy: cfg.UpdatedBy, ChangeSummary: cfg.ChangeSummary,
 	}
 }
@@ -518,7 +536,7 @@ func ActiveFromStorage(cfg storageConfig, riskControlEnabled bool, encryptor Sec
 		BlockingLatestTurnOnly: cfg.BlockingLatestTurnOnly,
 		StorePassEvents:        cfg.StorePassEvents, Strategy: cfg.Strategy, WorkerCount: cfg.WorkerCount,
 		QueueCapacity: cfg.QueueCapacity, Scanners: append([]string(nil), cfg.Scanners...), AllGroups: cfg.AllGroups,
-		GroupIDs: append([]int64(nil), cfg.GroupIDs...), CaptureUsers: append([]CaptureUser(nil), cfg.CaptureUsers...), CaptureMaxRecords: cfg.CaptureMaxRecords, ConfigVersion: cfg.ConfigVersion,
+		SelectedAccounts: cfg.SelectedAccounts, AccountIDs: append([]int64(nil), cfg.AccountIDs...), GroupIDs: append([]int64(nil), cfg.GroupIDs...), CaptureUsers: append([]CaptureUser(nil), cfg.CaptureUsers...), CaptureMaxRecords: cfg.CaptureMaxRecords, ConfigVersion: cfg.ConfigVersion,
 		UpdatedAt: cfg.UpdatedAt, UpdatedBy: cfg.UpdatedBy, ChangeSummary: cfg.ChangeSummary,
 		Endpoints: make([]ActiveEndpoint, 0, len(cfg.Endpoints)),
 	}
@@ -552,20 +570,22 @@ func ActiveFromStorage(cfg storageConfig, riskControlEnabled bool, encryptor Sec
 
 func changeSummary(cfg storageConfig) string {
 	summary := struct {
-		Enabled                   bool   `json:"enabled"`
-		BlockingEnabled           bool   `json:"blocking_enabled"`
-		BlockingLatestTurnOnly    bool   `json:"blocking_latest_turn_only"`
-		StorePassEvents           bool   `json:"store_pass_events"`
-		EndpointCount             int    `json:"endpoint_count"`
-		ScannerCount              int    `json:"scanner_count"`
-		AllGroups                 bool   `json:"all_groups"`
-		GroupCount                int    `json:"group_count"`
-		GroupHash                 string `json:"group_hash"`
-		CaptureUserCount          int    `json:"capture_user_count"`
-		CaptureMaxRecords         int    `json:"capture_max_records"`
-		MediumRiskAllowsNextStage bool   `json:"medium_risk_allows_next_stage"`
-		HighRiskAllowsNextStage   bool   `json:"high_risk_allows_next_stage"`
-	}{cfg.Enabled, cfg.BlockingEnabled, cfg.BlockingLatestTurnOnly, cfg.StorePassEvents, len(cfg.Endpoints), len(cfg.Scanners), cfg.AllGroups, len(cfg.GroupIDs), "", len(cfg.CaptureUsers), cfg.CaptureMaxRecords, cfg.MediumRiskAllowsNextStage, cfg.HighRiskAllowsNextStage}
+		SelectedAccounts          bool    `json:"selected_accounts"`
+		AccountIDs                []int64 `json:"account_ids"`
+		Enabled                   bool    `json:"enabled"`
+		BlockingEnabled           bool    `json:"blocking_enabled"`
+		BlockingLatestTurnOnly    bool    `json:"blocking_latest_turn_only"`
+		StorePassEvents           bool    `json:"store_pass_events"`
+		EndpointCount             int     `json:"endpoint_count"`
+		ScannerCount              int     `json:"scanner_count"`
+		AllGroups                 bool    `json:"all_groups"`
+		GroupCount                int     `json:"group_count"`
+		GroupHash                 string  `json:"group_hash"`
+		CaptureUserCount          int     `json:"capture_user_count"`
+		CaptureMaxRecords         int     `json:"capture_max_records"`
+		MediumRiskAllowsNextStage bool    `json:"medium_risk_allows_next_stage"`
+		HighRiskAllowsNextStage   bool    `json:"high_risk_allows_next_stage"`
+	}{cfg.SelectedAccounts, cfg.AccountIDs, cfg.Enabled, cfg.BlockingEnabled, cfg.BlockingLatestTurnOnly, cfg.StorePassEvents, len(cfg.Endpoints), len(cfg.Scanners), cfg.AllGroups, len(cfg.GroupIDs), "", len(cfg.CaptureUsers), cfg.CaptureMaxRecords, cfg.MediumRiskAllowsNextStage, cfg.HighRiskAllowsNextStage}
 	rawGroups, _ := json.Marshal(cfg.GroupIDs)
 	digest := sha256.Sum256(rawGroups)
 	summary.GroupHash = hex.EncodeToString(digest[:])
@@ -605,4 +625,31 @@ func canonicalScannerIDs(values []string) []string {
 		}
 	}
 	return result
+}
+
+func validateAccountScope(selected bool, ids []int64) error {
+	if selected && len(ids) == 0 {
+		return infraerrors.BadRequest("prompt_audit_accounts_required", "指定账号模式至少需要选择一个 OpenAI OAuth 账号")
+	}
+	for _, id := range ids {
+		if id <= 0 {
+			return infraerrors.BadRequest("prompt_audit_invalid_account", "提示词审计账号 ID 无效")
+		}
+	}
+	return nil
+}
+
+func (cfg ActiveConfig) IncludesAccount(req Request) bool {
+	if !cfg.SelectedAccounts {
+		return true
+	}
+	if req.AccountPlatform != "openai" || req.AccountType != "oauth" {
+		return false
+	}
+	for _, id := range cfg.AccountIDs {
+		if id == req.AccountID {
+			return true
+		}
+	}
+	return false
 }

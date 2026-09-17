@@ -12,6 +12,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const securityAuditInternalRequestContextKey = "sub2api.security_audit.internal_request"
+
 const securityAuditCompletedContextKey = "sub2api.security_audit.completed"
 const securityAuditWSTurnContextKey = "sub2api.security_audit.ws_turn"
 const securityAuditWSDedupeContextKey = "sub2api.security_audit.ws_dedupe"
@@ -71,6 +73,7 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 	}
 	cacheCompletion := cachesSecurityAuditCompletion(stage)
 	if legacy != nil && legacy.IsInternalSemanticReviewRequest(c.Request) {
+		c.Set(securityAuditInternalRequestContextKey, true)
 		// A custom semantic reviewer may call this same gateway. Bypass the full
 		// security-audit coordinator for that authenticated internal hop to avoid
 		// recursively auditing the reviewer prompt itself.
@@ -256,4 +259,16 @@ func cloneSecurityAuditGroupID(value *int64) *int64 {
 	}
 	cloned := *value
 	return &cloned
+}
+
+func runSelectedAccountPromptAudit(c *gin.Context, coordinator *securityaudit.Coordinator, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol, model string, body []byte, stage string, account *service.Account) *securityaudit.Decision {
+	if c == nil || c.Request == nil || account == nil {
+		return nil
+	}
+	if internal, _ := c.Get(securityAuditInternalRequestContextKey); internal == true {
+		return nil
+	}
+	request := buildSecurityAuditRequest(c, apiKey, subject, protocol, model, body, stage)
+	request.AccountID, request.AccountPlatform, request.AccountType = account.ID, account.Platform, account.Type
+	return coordinator.CheckSelectedAccount(c.Request.Context(), request)
 }

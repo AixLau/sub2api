@@ -1,6 +1,8 @@
+import { list as listAdminAccounts } from '@/api/admin/accounts'
 import { apiClient } from '@/api/client'
 import type {
   PromptAuditConfig,
+  PromptAuditAccount,
   PromptAuditEvent,
   PromptAuditGroup,
   PromptAuditRuntime,
@@ -104,7 +106,17 @@ export async function listGroups(): Promise<PromptAuditGroup[]> {
   return data
 }
 
+export async function listAccounts(): Promise<PromptAuditAccount[]> {
+  const accounts: PromptAuditAccount[] = []
+  for (let page = 1; ; page++) {
+    const result = await listAdminAccounts(page, 100, { platform: 'openai', type: 'oauth', lite: 'true' })
+    accounts.push(...result.items.filter((account) => account.platform === 'openai' && account.type === 'oauth'))
+    if (page >= result.pages || result.items.length === 0) return accounts
+  }
+}
+
 export const promptAuditAPI = {
+  listAccounts,
   getConfig,
   updateConfig,
   probeEndpoint,

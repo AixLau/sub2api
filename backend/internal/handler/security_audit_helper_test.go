@@ -437,3 +437,42 @@ func (e *blockingRecordingPromptEngine) Evaluate(_ context.Context, request secu
 	e.requests <- request
 	return &securityaudit.PromptDecision{Kind: securityaudit.DecisionBlock}, nil
 }
+
+// Selected-account checks deliberately ignore the pre-routing completion cache:
+// failover may change the account and WebSocket turns reuse the same Gin context.
+type selectedAccountPromptEngine struct{ requests []securityaudit.Request }
+
+func (*selectedAccountPromptEngine) RequiresSelectedAccount() bool { return true }
+func (*selectedAccountPromptEngine) EffectiveMode() securityaudit.Mode {
+	return securityaudit.ModeBlocking
+}
+func (*selectedAccountPromptEngine) Enqueue(context.Context, securityaudit.Request) error { return nil }
+func (e *selectedAccountPromptEngine) Evaluate(_ context.Context, req securityaudit.Request) (*securityaudit.PromptDecision, error) {
+	e.requests = append(e.requests, req)
+	if req.AccountID == 7 {
+		return &securityaudit.PromptDecision{Kind: securityaudit.DecisionBlock}, nil
+	}
+	return &securityaudit.PromptDecision{Kind: securityaudit.DecisionAllow, AllowNextStage: true}, nil
+}
+func TestSelectedAccountPromptAuditChecksFailoverAndWebSocketTurns(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Set(securityAuditCompletedContextKey, true)
+	engine := &selectedAccountPromptEngine{}
+	coordinator := securityaudit.NewCoordinator(nil, engine)
+	for _, stage := range []string{"http", "first_turn", "subsequent_turn"} {
+		for _, id := range []int64{8, 7} {
+			result := runSelectedAccountPromptAudit(c, coordinator, nil, middleware2.AuthSubject{}, "openai_responses", "gpt-test", []byte(`{"input":"hello"}`), stage, &service.Account{ID: id, Platform: "openai", Type: "oauth"})
+			require.NotNil(t, result)
+			require.Equal(t, id == 8, result.AllowNextStage)
+			require.Equal(t, id, engine.requests[len(engine.requests)-1].AccountID)
+			require.Equal(t, "openai", engine.requests[len(engine.requests)-1].AccountPlatform)
+			require.Equal(t, "oauth", engine.requests[len(engine.requests)-1].AccountType)
+			require.Equal(t, stage, engine.requests[len(engine.requests)-1].Stage)
+		}
+	}
+	require.Len(t, engine.requests, 6)
+	c.Set(securityAuditInternalRequestContextKey, true)
+	require.Nil(t, runSelectedAccountPromptAudit(c, coordinator, nil, middleware2.AuthSubject{}, "openai_responses", "gpt-test", nil, "http", &service.Account{ID: 7}))
+	require.Len(t, engine.requests, 6)
+}

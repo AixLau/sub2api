@@ -291,6 +291,17 @@ func (m *ConfigManager) Save(ctx context.Context, req UpdateConfigRequest, actor
 	if err != nil {
 		return PublicConfig{}, err
 	}
+	if next.SelectedAccounts {
+		for _, id := range next.AccountIDs {
+			var valid bool
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM accounts WHERE id=$1 AND platform='openai' AND type='oauth' AND deleted_at IS NULL)`, id).Scan(&valid); err != nil {
+				return PublicConfig{}, err
+			}
+			if !valid {
+				return PublicConfig{}, infraerrors.BadRequest("prompt_audit_invalid_account", fmt.Sprintf("只能选择存在的 OpenAI OAuth 账号: %d", id))
+			}
+		}
+	}
 	next.ConfigVersion = current.ConfigVersion + 1
 	next.UpdatedAt = m.clock.Now()
 	next.UpdatedBy = actorID
@@ -352,7 +363,7 @@ func (m *ConfigManager) buildNextStorage(current storageConfig, req UpdateConfig
 		Enabled: req.Enabled, BlockingEnabled: req.BlockingEnabled, MediumRiskAllowsNextStage: req.MediumRiskAllowsNextStage, HighRiskAllowsNextStage: req.HighRiskAllowsNextStage, MaxAttempts: req.MaxAttempts, BlockingLatestTurnOnly: req.BlockingLatestTurnOnly, StorePassEvents: req.StorePassEvents,
 		Strategy: strings.TrimSpace(req.Strategy), WorkerCount: req.WorkerCount,
 		QueueCapacity: req.QueueCapacity, Scanners: append([]string(nil), req.Scanners...),
-		AllGroups: req.AllGroups, GroupIDs: append([]int64(nil), req.GroupIDs...),
+		SelectedAccounts: req.SelectedAccounts, AccountIDs: append([]int64(nil), req.AccountIDs...), AllGroups: req.AllGroups, GroupIDs: append([]int64(nil), req.GroupIDs...),
 		CaptureUsers: append([]CaptureUser(nil), req.CaptureUsers...), CaptureMaxRecords: req.CaptureMaxRecords,
 		ConfigVersion: current.ConfigVersion, UpdatedBy: actorID,
 		Endpoints: make([]StorageEndpoint, 0, len(req.Endpoints)),
@@ -522,6 +533,7 @@ func (m *ConfigManager) clearLoadError() bool {
 func cloneStorageConfig(cfg storageConfig) storageConfig {
 	cfg.Scanners = append([]string(nil), cfg.Scanners...)
 	cfg.GroupIDs = append([]int64(nil), cfg.GroupIDs...)
+	cfg.AccountIDs = append([]int64(nil), cfg.AccountIDs...)
 	cfg.Endpoints = append([]StorageEndpoint(nil), cfg.Endpoints...)
 	return cfg
 }
@@ -529,6 +541,7 @@ func cloneStorageConfig(cfg storageConfig) storageConfig {
 func cloneActiveConfig(cfg ActiveConfig) ActiveConfig {
 	cfg.Scanners = append([]string(nil), cfg.Scanners...)
 	cfg.GroupIDs = append([]int64(nil), cfg.GroupIDs...)
+	cfg.AccountIDs = append([]int64(nil), cfg.AccountIDs...)
 	cfg.Endpoints = append([]ActiveEndpoint(nil), cfg.Endpoints...)
 	return cfg
 }
