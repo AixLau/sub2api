@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
@@ -454,18 +455,46 @@ func rewriteCodexTurnMetadataFields(h http.Header, fields map[string]any) {
 	if raw == "" {
 		return
 	}
-	var metadata map[string]any
+	if rebuilt, changed := rewriteCodexMetadataJSONFields(raw, fields); changed {
+		h.Set("x-codex-turn-metadata", rebuilt)
+	}
+}
+
+// rewriteCodexMetadataJSONFields updates only the requested JSON object fields.
+// RawMessage preserves unrelated values without converting numbers to float64.
+func rewriteCodexMetadataJSONFields(raw string, fields map[string]any) (string, bool) {
+	var metadata map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &metadata); err != nil || metadata == nil {
-		metadata = make(map[string]any, len(fields))
+		metadata = make(map[string]json.RawMessage, len(fields))
 	}
-	for k, v := range fields {
-		metadata[k] = v
+
+	changed := false
+	for key, value := range fields {
+		if desired, ok := value.(string); ok {
+			var current *string
+			if err := json.Unmarshal(metadata[key], &current); err == nil && current != nil && *current == desired {
+				continue
+			}
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return raw, false
+		}
+		if bytes.Equal(metadata[key], encoded) {
+			continue
+		}
+		metadata[key] = encoded
+		changed = true
 	}
+	if !changed {
+		return raw, false
+	}
+
 	rebuilt, err := json.Marshal(metadata)
 	if err != nil {
-		return
+		return raw, false
 	}
-	h.Set("x-codex-turn-metadata", string(rebuilt))
+	return string(rebuilt), true
 }
 
 // applyCodexFingerprintClientMetadata 按预计算的收敛 ID 改写请求体中的 client_metadata。
@@ -476,7 +505,7 @@ func applyCodexFingerprintClientMetadata(reqBody map[string]any, ids *codexFinge
 	}
 
 	captureCodexFingerprintOriginalBodySessionID(ids, reqBody["client_metadata"])
-	existing, _ := reqBody["client_metadata"].(map[string]any)
+	existing := codexIdentityMetadataMap(reqBody["client_metadata"])
 	if existing == nil {
 		existing = make(map[string]any)
 	}
@@ -523,28 +552,29 @@ func applyCodexFingerprintToClientMetadataMap(existing map[string]any, ids *code
 		}
 	}
 	if ids.installationID != "" {
-		existing["x-codex-installation-id"] = ids.installationID
-		modified = true
+		modified = setCodexFingerprintMetadataField(existing, "x-codex-installation-id", ids.installationID) || modified
 	}
 
 	if ids.mode == codexFingerprintDevice {
-		rewriteClientMetadataEmbeddedTurnMetadata(existing, map[string]any{
+		if rewriteClientMetadataEmbeddedTurnMetadata(existing, map[string]any{
 			"installation_id": ids.installationID,
-		})
+		}) {
+			modified = true
+		}
 		return modified
 	}
 
 	// session / full 模式
-	existing["session_id"] = ids.sessionID
+	modified = setCodexFingerprintMetadataField(existing, "session_id", ids.sessionID) || modified
 	if parentReferencePresent {
 		if threadID, ok := existing["thread_id"].(string); ok && strings.TrimSpace(threadID) != "" {
 			ids.threadID = strings.TrimSpace(threadID)
 		}
 	} else {
-		existing["thread_id"] = ids.threadID
+		modified = setCodexFingerprintMetadataField(existing, "thread_id", ids.threadID) || modified
 	}
-	existing["turn_id"] = ids.turnID
-	existing["x-codex-window-id"] = ids.windowID
+	modified = setCodexFingerprintMetadataField(existing, "turn_id", ids.turnID) || modified
+	modified = setCodexFingerprintMetadataField(existing, "x-codex-window-id", ids.windowID) || modified
 
 	fields := map[string]any{
 		"installation_id":         ids.installationID,
@@ -554,7 +584,17 @@ func applyCodexFingerprintToClientMetadataMap(existing map[string]any, ids *code
 		"window_id":               ids.windowID,
 		"turn_started_at_unix_ms": ids.turnStartedAtUnixMs,
 	}
-	rewriteClientMetadataEmbeddedTurnMetadata(existing, fields)
+	if rewriteClientMetadataEmbeddedTurnMetadata(existing, fields) {
+		modified = true
+	}
+	return modified
+}
+
+func setCodexFingerprintMetadataField(metadata map[string]any, key, value string) bool {
+	if current, ok := metadata[key].(string); ok && current == value {
+		return false
+	}
+	metadata[key] = value
 	return true
 }
 
@@ -572,7 +612,7 @@ func codexFingerprintParentReferencePresent(values map[string]any) bool {
 		return false
 	}
 	metadata := map[string]any{}
-	if err := json.Unmarshal([]byte(raw), &metadata); err != nil || metadata == nil {
+	if err := decodeOpenAIJSONUseNumber([]byte(raw), &metadata); err != nil || metadata == nil {
 		return false
 	}
 	parent, _ := metadata["parent_thread_id"].(string)
@@ -654,7 +694,7 @@ func applyCodexFingerprintClientMetadataRaw(body []byte, ids *codexFingerprintID
 	existing := map[string]any{}
 	if cm := gjson.GetBytes(body, "client_metadata"); cm.IsObject() {
 		captureCodexFingerprintOriginalBodySessionIDRaw(ids, gjson.GetBytes(body, "client_metadata.session_id"))
-		if err := json.Unmarshal([]byte(cm.Raw), &existing); err != nil {
+		if err := decodeOpenAIJSONUseNumber([]byte(cm.Raw), &existing); err != nil {
 			return body, false, fmt.Errorf("decode client_metadata for fingerprint: %w", err)
 		}
 	} else {
@@ -676,7 +716,7 @@ func applyCodexFingerprintClientMetadataRaw(body []byte, ids *codexFingerprintID
 		modified = true
 	}
 	promptCacheKey := gjson.GetBytes(body, "prompt_cache_key")
-	if promptCacheKey.Exists() && promptCacheKey.Type == gjson.String && strings.TrimSpace(promptCacheKey.String()) != "" && shouldRewriteCodexFingerprintPromptCacheKey(ids, promptCacheKey.String()) {
+	if promptCacheKey.Exists() && promptCacheKey.Type == gjson.String && promptCacheKey.String() != ids.sessionID && strings.TrimSpace(promptCacheKey.String()) != "" && shouldRewriteCodexFingerprintPromptCacheKey(ids, promptCacheKey.String()) {
 		rewritten, err := sjson.SetBytes(next, "prompt_cache_key", ids.sessionID)
 		if err != nil {
 			return body, false, fmt.Errorf("splice converged prompt_cache_key: %w", err)
@@ -690,19 +730,14 @@ func applyCodexFingerprintClientMetadataRaw(body []byte, ids *codexFingerprintID
 // rewriteClientMetadataEmbeddedTurnMetadata 改写 client_metadata 中内嵌的
 // x-codex-turn-metadata JSON 字符串里的指定字段。非法/非对象值会重建，
 // 避免 flat client_metadata 与 embedded metadata 暴露两套身份。
-func rewriteClientMetadataEmbeddedTurnMetadata(clientMetadata map[string]any, fields map[string]any) {
+func rewriteClientMetadataEmbeddedTurnMetadata(clientMetadata map[string]any, fields map[string]any) bool {
 	raw, ok := clientMetadata["x-codex-turn-metadata"].(string)
 	if !ok || raw == "" {
-		return
+		return false
 	}
-	var metadata map[string]any
-	if err := json.Unmarshal([]byte(raw), &metadata); err != nil || metadata == nil {
-		metadata = make(map[string]any, len(fields))
+	if rebuilt, changed := rewriteCodexMetadataJSONFields(raw, fields); changed {
+		clientMetadata["x-codex-turn-metadata"] = rebuilt
+		return true
 	}
-	for k, v := range fields {
-		metadata[k] = v
-	}
-	if rebuilt, err := json.Marshal(metadata); err == nil {
-		clientMetadata["x-codex-turn-metadata"] = string(rebuilt)
-	}
+	return false
 }

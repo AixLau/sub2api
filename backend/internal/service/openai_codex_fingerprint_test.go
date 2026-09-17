@@ -444,6 +444,228 @@ func TestApplyCodexFingerprintClientMetadata_DeviceMode(t *testing.T) {
 	assert.Equal(t, "seccomp", meta["sandbox"], "非指纹字段保留原样")
 }
 
+func TestCodexFingerprintMetadataRewrite_PreservesUnrelatedValues(t *testing.T) {
+	for name, extension := range map[string]string{
+		"large integer":  `9007199254740993`,
+		"large exponent": `1e400`,
+		"decimal":        `1.234567890123456789012345678900`,
+		"nested":         `{"counter":9007199254740993,"values":[1e400,1e-400,null,true,"keep"]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			original := `{"installation_id":"old","session_id":"S","thread_id":"T","window_id":"W","extra":` + extension + `}`
+			var want map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal([]byte(original), &want))
+			want["installation_id"] = json.RawMessage(`"test-installation"`)
+
+			for _, path := range []string{"header", "map", "raw"} {
+				t.Run(path, func(t *testing.T) {
+					ids := &codexFingerprintIDs{mode: codexFingerprintDevice, installationID: "test-installation"}
+					var rewritten string
+					switch path {
+					case "header":
+						header := make(http.Header)
+						header.Set("x-codex-turn-metadata", original)
+						applyCodexFingerprintHeaders(header, ids)
+						rewritten = header.Get("x-codex-turn-metadata")
+					case "map":
+						body := map[string]any{"client_metadata": map[string]any{"x-codex-turn-metadata": original}}
+						require.True(t, applyCodexFingerprintClientMetadata(body, ids))
+						rewritten = body["client_metadata"].(map[string]any)["x-codex-turn-metadata"].(string)
+					case "raw":
+						body, err := json.Marshal(map[string]any{"client_metadata": map[string]any{"x-codex-turn-metadata": original}})
+						require.NoError(t, err)
+						out, changed, err := applyCodexFingerprintClientMetadataRaw(body, ids)
+						require.NoError(t, err)
+						require.True(t, changed)
+						var decoded struct {
+							ClientMetadata map[string]string `json:"client_metadata"`
+						}
+						require.NoError(t, json.Unmarshal(out, &decoded))
+						rewritten = decoded.ClientMetadata["x-codex-turn-metadata"]
+					}
+					var got map[string]json.RawMessage
+					require.NoError(t, json.Unmarshal([]byte(rewritten), &got))
+					assert.Equal(t, want, got)
+				})
+			}
+		})
+	}
+}
+
+func TestApplyCodexFingerprintClientMetadata_MapStringStringPreservesFields(t *testing.T) {
+	ids := &codexFingerprintIDs{
+		mode:           codexFingerprintDevice,
+		installationID: "test-installation",
+	}
+	reqBody := map[string]any{
+		"client_metadata": map[string]string{
+			"session_id":            "S",
+			"trace":                 "keep",
+			"x-codex-turn-metadata": `{"thread_id":"T"}`,
+		},
+	}
+
+	require.True(t, applyCodexFingerprintClientMetadata(reqBody, ids))
+	clientMetadata, ok := reqBody["client_metadata"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "S", clientMetadata["session_id"])
+	assert.Equal(t, "keep", clientMetadata["trace"])
+	assert.Equal(t, "S", ids.originalBodySessionID)
+	assert.Equal(t, "test-installation", clientMetadata["x-codex-installation-id"])
+
+	embeddedRaw, ok := clientMetadata["x-codex-turn-metadata"].(string)
+	require.True(t, ok)
+	var embedded map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(embeddedRaw), &embedded))
+	assert.Equal(t, `"test-installation"`, string(embedded["installation_id"]))
+	assert.Equal(t, `"T"`, string(embedded["thread_id"]))
+}
+
+func TestApplyCodexFingerprintClientMetadata_NoOpReportsUnmodified(t *testing.T) {
+	for _, embedded := range []string{
+		"",
+		`{ "installation_id" : "test-installation", "session_id" : "S", "extra" : 1e400 }`,
+		`{ "installation_id" : "\u0074est-installation", "session_id" : "S", "extra" : 9007199254740993 }`,
+	} {
+		t.Run(embedded, func(t *testing.T) {
+			metadata := map[string]string{"x-codex-installation-id": "test-installation", "session_id": "S"}
+			if embedded != "" {
+				metadata["x-codex-turn-metadata"] = embedded
+			}
+			body := map[string]any{"client_metadata": metadata}
+			rawBody, err := json.Marshal(body)
+			require.NoError(t, err)
+
+			for _, value := range []any{metadata, codexIdentityMetadataMap(metadata)} {
+				body["client_metadata"] = value
+				require.False(t, applyCodexFingerprintClientMetadata(body, &codexFingerprintIDs{
+					mode: codexFingerprintDevice, installationID: "test-installation",
+				}))
+				assert.Equal(t, value, body["client_metadata"])
+				after, err := json.Marshal(body)
+				require.NoError(t, err)
+				assert.Equal(t, rawBody, after)
+			}
+
+			rawOut, changed, err := applyCodexFingerprintClientMetadataRaw(rawBody, &codexFingerprintIDs{
+				mode: codexFingerprintDevice, installationID: "test-installation",
+			})
+			require.NoError(t, err)
+			assert.False(t, changed)
+			assert.Equal(t, rawBody, rawOut)
+
+			if embedded != "" {
+				header := make(http.Header)
+				header.Set("x-codex-turn-metadata", embedded)
+				applyCodexFingerprintHeaders(header, &codexFingerprintIDs{
+					mode: codexFingerprintDevice, installationID: "test-installation",
+				})
+				assert.Equal(t, embedded, header.Get("x-codex-turn-metadata"))
+			}
+		})
+	}
+}
+
+func TestApplyCodexFingerprintClientMetadata_EmbeddedOnlyChange(t *testing.T) {
+	for _, embedded := range []string{
+		`{ "installation_id": "old", "session_id": "S" }`,
+		`{"session_id":"S"}`,
+		`{malformed`,
+		`[]`,
+		`null`,
+	} {
+		t.Run(embedded, func(t *testing.T) {
+			body := map[string]any{"client_metadata": map[string]any{
+				"x-codex-installation-id": "test-installation",
+				"session_id":              "S",
+				"x-codex-turn-metadata":   embedded,
+			}}
+			rawBody, err := json.Marshal(body)
+			require.NoError(t, err)
+			ids := &codexFingerprintIDs{mode: codexFingerprintDevice, installationID: "test-installation"}
+			require.True(t, applyCodexFingerprintClientMetadata(body, ids))
+			require.False(t, applyCodexFingerprintClientMetadata(body, ids))
+
+			rawIDs := &codexFingerprintIDs{mode: codexFingerprintDevice, installationID: "test-installation"}
+			out, changed, err := applyCodexFingerprintClientMetadataRaw(rawBody, rawIDs)
+			require.NoError(t, err)
+			require.True(t, changed, "embedded-only changes must be spliced back into the raw body")
+			var decoded map[string]any
+			require.NoError(t, json.Unmarshal(out, &decoded))
+			require.Equal(t, body, decoded)
+			var turnMetadata map[string]string
+			require.NoError(t, json.Unmarshal([]byte(decoded["client_metadata"].(map[string]any)["x-codex-turn-metadata"].(string)), &turnMetadata))
+			require.Equal(t, "test-installation", turnMetadata["installation_id"])
+			again, changed, err := applyCodexFingerprintClientMetadataRaw(out, rawIDs)
+			require.NoError(t, err)
+			assert.False(t, changed)
+			assert.Equal(t, out, again)
+		})
+	}
+}
+
+func TestApplyCodexFingerprintClientMetadata_RepeatedSnapshotIsUnmodified(t *testing.T) {
+	for _, mode := range []codexFingerprintMode{codexFingerprintDevice, codexFingerprintSession, codexFingerprintFull} {
+		t.Run(string(mode), func(t *testing.T) {
+			// An existing UUIDv7 session remains unchanged, including its default
+			// cache key. Only the first application of this snapshot changes metadata.
+			sessionID := uuid.Must(uuid.NewV7()).String()
+			account := newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: string(mode)})
+			mapIDs := resolveCodexFingerprintIDs(account, sessionID, mode)
+			rawIDs := cloneCodexFingerprintIDsForTest(mapIDs)
+			body := map[string]any{
+				"prompt_cache_key": sessionID,
+				"client_metadata": map[string]string{
+					"session_id": sessionID, "x-codex-turn-metadata": `{"installation_id":"old"}`,
+				},
+			}
+			rawBody, err := json.Marshal(body)
+			require.NoError(t, err)
+			require.True(t, applyCodexFingerprintClientMetadata(body, mapIDs))
+			want, err := json.Marshal(body)
+			require.NoError(t, err)
+			require.False(t, applyCodexFingerprintClientMetadata(body, mapIDs))
+			again, err := json.Marshal(body)
+			require.NoError(t, err)
+			assert.Equal(t, want, again)
+
+			out, changed, err := applyCodexFingerprintClientMetadataRaw(rawBody, rawIDs)
+			require.NoError(t, err)
+			require.True(t, changed)
+			require.JSONEq(t, string(want), string(out))
+			again, changed, err = applyCodexFingerprintClientMetadataRaw(out, rawIDs)
+			require.NoError(t, err)
+			assert.False(t, changed)
+			assert.Equal(t, out, again)
+		})
+	}
+}
+
+func TestApplyCodexFingerprintClientMetadataRaw_PreservesMetadataNumbers(t *testing.T) {
+	const rawBody = `{"input": [ 1, 2 ], "client_metadata":{"session_id":"S","extra_counter":9007199254740993,"extra_exponent":1e400,"extra_nested":{"values":[1.234567890123456789,1e-400]}}}`
+	ids := &codexFingerprintIDs{mode: codexFingerprintDevice, installationID: "test-installation"}
+	out, changed, err := applyCodexFingerprintClientMetadataRaw([]byte(rawBody), ids)
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	var decoded struct {
+		ClientMetadata map[string]json.RawMessage `json:"client_metadata"`
+	}
+	require.NoError(t, json.Unmarshal(out, &decoded))
+	assert.Equal(t, `"test-installation"`, string(decoded.ClientMetadata["x-codex-installation-id"]))
+	assert.Equal(t, `"S"`, string(decoded.ClientMetadata["session_id"]))
+	assert.Equal(t, `9007199254740993`, string(decoded.ClientMetadata["extra_counter"]))
+	assert.Equal(t, `1e400`, string(decoded.ClientMetadata["extra_exponent"]))
+	assert.Equal(t, `{"values":[1.234567890123456789,1e-400]}`, string(decoded.ClientMetadata["extra_nested"]))
+	assert.Contains(t, string(out), `"input": [ 1, 2 ]`)
+}
+
+func TestCodexFingerprintParentReferencePresent_LargeNumber(t *testing.T) {
+	assert.True(t, codexFingerprintParentReferencePresent(map[string]any{
+		"x-codex-turn-metadata": `{"extra":1e400,"parent_thread_id":"P"}`,
+	}))
+}
+
 func TestApplyCodexFingerprintClientMetadata_SessionMode(t *testing.T) {
 	account := newTestOAuthAccount(1, map[string]any{
 		codexFingerprintModeExtraKey: "session",
