@@ -359,6 +359,9 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 	defer cancel()
 
 	result, err := repo.Apply(billingCtx, cmd)
+	if _, grouped := CredentialBillingLeaseID(requestID); grouped && errors.Is(err, ErrUsageBillingRequestConflict) {
+		return false, err
+	}
 	if errors.Is(err, ErrUsageBillingRequestConflict) {
 		originalRequestID := cmd.RequestID
 		conflictRequestID := buildUsageBillingConflictRequestID(cmd.RequestID, cmd.RequestFingerprint)

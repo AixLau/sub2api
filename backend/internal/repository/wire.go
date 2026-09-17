@@ -70,6 +70,8 @@ var ProviderSet = wire.NewSet(
 	NewCredentialRouteStore,
 	NewCredentialRefreshStore,
 	NewCredentialOperations,
+	NewCredentialInstanceLifecycle,
+	NewCredentialMigrationStore,
 	NewCredentialImportRepository,
 	NewCredentialPrincipalCreator,
 	NewUserRepository,

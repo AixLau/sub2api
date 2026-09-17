@@ -2,12 +2,13 @@ package admin
 
 import (
 	"errors"
+	"net/http"
+	"strconv"
+
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
-	"net/http"
-	"strconv"
 )
 
 type CredentialImportHandler struct {
@@ -29,12 +30,13 @@ func (h *CredentialImportHandler) Import(c *gin.Context) {
 	var input struct {
 		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
+		ClientID     string `json:"client_id"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, "Invalid credential import")
 		return
 	}
-	view, err := h.imports.Import(c.Request.Context(), owner.UserID, c.GetHeader("Idempotency-Key"), service.CredentialSecret{AccessToken: input.AccessToken, RefreshToken: input.RefreshToken})
+	view, err := h.imports.Import(c.Request.Context(), owner.UserID, c.GetHeader("Idempotency-Key"), service.CredentialSecret{AccessToken: input.AccessToken, RefreshToken: input.RefreshToken, ClientID: input.ClientID})
 	if err != nil {
 		credentialImportError(c, err)
 		return

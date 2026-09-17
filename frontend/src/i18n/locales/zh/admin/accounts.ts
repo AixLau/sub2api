@@ -1,5 +1,27 @@
 export default {
     accounts: {
+      credentials: {
+  "title": "凭证实例",
+  "notice": "预览功能：启用前必须验证上游主体。安装标识是本地身份记录，不代表上游实际设备数量。",
+  "import": "导入凭证",
+  "verify": "提交验证",
+  "empty": "尚无凭证主体。",
+  "capacity": "占用 / 容量",
+  "overhang": "排空中：比目标上限多 {count} 个占用",
+  "reserved": "已预留",
+  "running": "执行中",
+  "orphaned": "未确认结束",
+  "queued": "排队",
+  "mismatch": "账本不一致：必须保持准入关闭。",
+  "limit": "主体总并发上限",
+  "instance": "实例",
+  "weight": "权重",
+  "identity": "安装标识来源",
+  "loadError": "无法读取凭证状态。",
+  "importError": "导入不可用，请检查专用加密密钥与凭证配置。",
+  "confirmLimit": "将总并发调整为 {limit}？当前占用 {occupied}，已有工作会自然排空。",
+  "updateError": "修改被拒绝，请刷新配置并完成所需验证。"
+},
       title: '账号管理',
       description: '管理 AI 平台账号和 Cookie',
       createAccount: '添加账号',

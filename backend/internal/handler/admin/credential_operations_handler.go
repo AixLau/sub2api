@@ -1,23 +1,25 @@
 package admin
 
 import (
+	"net/http"
+	"strconv"
+	"strings"
+
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
-	"net/http"
-	"strconv"
-	"strings"
 )
 
 type CredentialOperationsHandler struct {
-	ops     service.CredentialOperations
-	enabled bool
+	lifecycle service.CredentialInstanceLifecycle
+	ops       service.CredentialOperations
+	enabled   bool
 }
 
-func NewCredentialOperationsHandler(ops service.CredentialOperations, cfg *config.Config) *CredentialOperationsHandler {
-	return &CredentialOperationsHandler{ops: ops, enabled: cfg.Gateway.MultiCredentialHTTPEnabled}
+func NewCredentialOperationsHandler(ops service.CredentialOperations, cfg *config.Config, lifecycle service.CredentialInstanceLifecycle) *CredentialOperationsHandler {
+	return &CredentialOperationsHandler{ops: ops, enabled: cfg.Gateway.MultiCredentialHTTPEnabled, lifecycle: lifecycle}
 }
 func credentialControlParams(c *gin.Context) (int64, int64, int64, bool) {
 	subject, ok := middleware.GetAuthSubjectFromContext(c)
@@ -54,6 +56,7 @@ func (h *CredentialOperationsHandler) Principal(c *gin.Context) {
 	if !ok {
 		return
 	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32<<10)
 	var in service.PrincipalControlUpdate
 	if c.ShouldBindJSON(&in) != nil {
 		response.BadRequest(c, "Invalid configuration")
@@ -77,6 +80,7 @@ func (h *CredentialOperationsHandler) Instance(c *gin.Context) {
 	if !ok {
 		return
 	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32<<10)
 	var in service.InstanceControlUpdate
 	if c.ShouldBindJSON(&in) != nil {
 		response.BadRequest(c, "Invalid configuration")
@@ -109,6 +113,7 @@ func (h *CredentialOperationsHandler) Resolve(c *gin.Context) {
 		response.Unauthorized(c, "Authorization required")
 		return
 	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<10)
 	var in service.CredentialResolveInput
 	if c.ShouldBindJSON(&in) != nil {
 		response.BadRequest(c, "Invalid resolution")
@@ -119,4 +124,23 @@ func (h *CredentialOperationsHandler) Resolve(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"state": "RELEASED", "accepted_unknown_risk": in.AcceptUnknownRisk})
+}
+
+func (h *CredentialOperationsHandler) Add(c *gin.Context) {
+	actor, principal, version, ok := credentialControlParams(c)
+	if !ok {
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32<<10)
+	var in service.CredentialInstanceAddInput
+	if c.ShouldBindJSON(&in) != nil {
+		response.BadRequest(c, "Invalid instance")
+		return
+	}
+	id, err := h.lifecycle.AddCredentialInstance(c.Request.Context(), actor, principal, version, c.GetHeader("Idempotency-Key"), in)
+	if err != nil {
+		credentialControlErrorResponse(c, err)
+		return
+	}
+	response.Created(c, gin.H{"instance_id": id, "admin_state": "PAUSED"})
 }

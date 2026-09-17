@@ -144,7 +144,12 @@ func provideCleanup(
 
 		// 应用层清理步骤可并行执行，基础设施资源（Redis/Ent）最后按顺序关闭。
 		parallelSteps := []cleanupStep{
-			{name: "CredentialReconciler", fn: func() error { credentialReconciler.Stop(); return nil }},
+			{name: "CredentialReconciler", fn: func() error {
+				if credentialReconciler != nil {
+					credentialReconciler.Stop()
+				}
+				return nil
+			}},
 			{"PluginManager", func() error {
 				if pluginManager != nil {
 					pluginManager.Stop()

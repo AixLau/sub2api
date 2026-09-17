@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
+
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -47,4 +49,24 @@ func (s *credentialRouteStore) IsControlledCredentialAccount(ctx context.Context
 	var found bool
 	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM credential_instances WHERE account_id=$1)`, id).Scan(&found)
 	return found, err
+}
+
+func (s *credentialRouteStore) CheckCredentialRuntime(ctx context.Context, enabled bool) error {
+	var count int
+	err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM upstream_principals WHERE routing_mode='GROUPED'`).Scan(&count)
+	if err != nil {
+		return err
+	}
+	if count > 0 && !enabled {
+		return errors.New("grouped principals require multi_credential_http_enabled; pause and drain before rollback")
+	}
+	return nil
+}
+
+func (s *credentialRouteStore) CredentialProbeRoute(ctx context.Context, account int64) (service.CredentialRouteCandidate, int64, error) {
+	var route service.CredentialRouteCandidate
+	var actor int64
+	err := s.db.QueryRowContext(ctx, `SELECT p.id,i.id,i.account_id,COALESCE((SELECT actor_id FROM credential_audit_outbox WHERE principal_id=p.id AND event_type='PRINCIPAL_CREATED' ORDER BY created_at LIMIT 1),0)
+ FROM credential_instances i JOIN upstream_principals p ON p.id=i.principal_id WHERE i.account_id=$1 AND p.routing_mode='GROUPED'`, account).Scan(&route.PrincipalID, &route.InstanceID, &route.AccountID, &actor)
+	return route, actor, err
 }

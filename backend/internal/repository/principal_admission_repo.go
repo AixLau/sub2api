@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -20,7 +21,9 @@ func NewPrincipalAdmissionStore(db *sql.DB) service.PrincipalAdmissionStore {
 func admissionReject(reason string) service.AdmissionDecision {
 	return service.AdmissionDecision{Code: service.AdmissionRejected, Reason: reason}
 }
-func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.AdmissionInput) (service.AdmissionDecision, error) {
+func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.AdmissionInput) (decision service.AdmissionDecision, admissionErr error) {
+	started := time.Now()
+	defer func() { service.ObserveCredentialAdmission(time.Since(started).Seconds(), decision.Code) }()
 	rejected := admissionReject("ADMISSION_STORE_UNAVAILABLE")
 	if _, err := uuid.Parse(in.RequestID); err != nil {
 		return admissionReject("INVALID_REQUEST_ID"), nil
@@ -90,16 +93,47 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	if in.Deadline.IsZero() || !in.Deadline.After(now) {
 		return admissionReject("ADMISSION_QUEUE_TIMEOUT"), nil
 	}
-	// Authoritative key/user revocation and group membership, not a cache boolean.
 	var groupID int64
-	err = tx.QueryRowContext(ctx, `SELECT k.group_id FROM api_keys k JOIN users u ON u.id=k.user_id
+	var allowlistJSON []byte
+	if in.Maintenance {
+		if in.Endpoint != "probe" && in.Endpoint != "compact" {
+			return admissionReject("GROUPED_TRANSPORT_UNSUPPORTED"), nil
+		}
+		var admin bool
+		err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND role='admin' AND status='active' AND deleted_at IS NULL)`, in.UserID).Scan(&admin)
+		if err != nil {
+			return rejected, err
+		}
+		if !admin {
+			return admissionReject("AUTHORIZATION_REVOKED"), nil
+		}
+		var probes int
+		err = tx.QueryRowContext(ctx, `SELECT count(*) FROM request_leases l JOIN logical_requests r ON r.id=l.request_id WHERE l.principal_id=$1 AND r.api_key_id IS NULL AND l.state<>'RELEASED'`, in.PrincipalID).Scan(&probes)
+		if err != nil {
+			return rejected, err
+		}
+		if probes > 0 {
+			return admissionReject("MAINTENANCE_BUDGET_EXHAUSTED"), nil
+		}
+	} else {
+		// Authoritative key/user revocation and group membership, not a cache boolean.
+		err = tx.QueryRowContext(ctx, `SELECT k.group_id,g.model_allowlist FROM api_keys k JOIN users u ON u.id=k.user_id JOIN groups g ON g.id=k.group_id
  WHERE k.id=$1 AND k.user_id=$2 AND k.status='active' AND k.deleted_at IS NULL
- AND u.status='active' AND u.deleted_at IS NULL AND (k.expires_at IS NULL OR k.expires_at>CURRENT_TIMESTAMP)`, in.APIKeyID, in.UserID).Scan(&groupID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return admissionReject("AUTHORIZATION_REVOKED"), nil
-	}
-	if err != nil {
-		return rejected, err
+ AND u.status='active' AND u.deleted_at IS NULL AND (k.expires_at IS NULL OR k.expires_at>CURRENT_TIMESTAMP)
+ AND g.status='active' AND g.deleted_at IS NULL AND (g.subscription_type='subscription' OR (NOT g.is_exclusive AND NOT u.restrict_public_groups) OR EXISTS(SELECT 1 FROM user_allowed_groups ag WHERE ag.user_id=u.id AND ag.group_id=g.id))`, in.APIKeyID, in.UserID).Scan(&groupID, &allowlistJSON)
+		if errors.Is(err, sql.ErrNoRows) {
+			return admissionReject("AUTHORIZATION_REVOKED"), nil
+		}
+		if err != nil {
+			return rejected, err
+		}
+		var allowlist service.GroupModelAllowlist
+		if err = json.Unmarshal(allowlistJSON, &allowlist); err != nil {
+			return rejected, err
+		}
+		if !allowlist.Allows(in.Model) {
+			return admissionReject("MODEL_NOT_ALLOWED"), nil
+		}
 	}
 	scope := service.CredentialScopeHash(in.UserID, in.APIKeyID)
 	key := in.IdempotencyKey
@@ -108,7 +142,8 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	}
 	key = service.CredentialDigest([]byte(key))
 	var requestID, payload, status, ownerNode string
-	err = tx.QueryRowContext(ctx, `SELECT id,payload_digest,status,owner_node FROM logical_requests WHERE principal_id=$1 AND caller_scope_hash=$2 AND endpoint=$3 AND idempotency_hash=$4`, in.PrincipalID, scope, in.Endpoint, key).Scan(&requestID, &payload, &status, &ownerNode)
+	var requestPrincipal int64
+	err = tx.QueryRowContext(ctx, `SELECT id,payload_digest,status,owner_node,principal_id FROM logical_requests WHERE caller_scope_hash=$1 AND endpoint=$2 AND idempotency_hash=$3`, scope, in.Endpoint, key).Scan(&requestID, &payload, &status, &ownerNode, &requestPrincipal)
 	if err == nil {
 		if payload != in.PayloadDigest {
 			return admissionReject("IDEMPOTENCY_PAYLOAD_MISMATCH"), nil
@@ -117,7 +152,7 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 			return service.AdmissionDecision{Code: service.AdmissionAlreadyRunning, Reason: "REQUEST_ALREADY_RUNNING"}, nil
 		}
 		// Re-poll uses the original owner; another node cannot adopt a queued body.
-		if requestID != in.RequestID || ownerNode != in.Node {
+		if requestID != in.RequestID || ownerNode != in.Node || requestPrincipal != in.PrincipalID {
 			return service.AdmissionDecision{Code: service.AdmissionAlreadyRunning, Reason: "REQUEST_ALREADY_RUNNING"}, nil
 		}
 	} else if !errors.Is(err, sql.ErrNoRows) {
@@ -171,8 +206,8 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	rows, err := tx.QueryContext(ctx, `SELECT i.id,i.account_id,i.identity_generation,i.credential_version,i.admin_state,i.credential_state,i.transport_state,i.hard_max,i.health_capacity,i.occupied,i.weight,i.drain_deadline,i.cooldown_until
  FROM credential_instances i JOIN accounts a ON a.id=i.account_id
  WHERE i.principal_id=$1 AND i.id=ANY($2) AND a.deleted_at IS NULL
- AND EXISTS(SELECT 1 FROM account_groups g WHERE g.account_id=a.id AND g.group_id=$3)
- AND $4=ANY(i.capabilities) ORDER BY i.id FOR UPDATE OF i`, in.PrincipalID, pq.Array(in.CandidateIDs), groupID, in.Endpoint)
+ AND ($5 OR EXISTS(SELECT 1 FROM account_groups g WHERE g.account_id=a.id AND g.group_id=$3))
+ AND $4=ANY(i.capabilities) ORDER BY i.id FOR UPDATE OF i`, in.PrincipalID, pq.Array(in.CandidateIDs), groupID, in.Endpoint, in.Maintenance)
 	if err != nil {
 		return rejected, err
 	}
@@ -253,12 +288,12 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	// Persist a logical request only after authenticating its scope.
 	if requestID == "" {
 		_, err = tx.ExecContext(ctx, `INSERT INTO logical_requests(id,principal_id,user_id,api_key_id,caller_scope_hash,idempotency_hash,payload_digest,endpoint,model,owner_node,deadline)
- VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, in.RequestID, in.PrincipalID, in.UserID, in.APIKeyID, scope, key, in.PayloadDigest, in.Endpoint, in.Model, in.Node, in.Deadline)
+ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, in.RequestID, in.PrincipalID, in.UserID, nullablePositive(in.APIKeyID), scope, key, in.PayloadDigest, in.Endpoint, in.Model, in.Node, in.Deadline)
 		if err != nil {
 			return rejected, err
 		}
 	}
-	if fairWait || selected == nil || occupied >= limit || (userLimit.Valid && userOccupied >= int(userLimit.Int64)) || (protected.Valid && protected.Time.After(now)) {
+	if fairWait || selected == nil || occupied >= limit || (userLimit.Valid && userOccupied >= int(userLimit.Int64)) || (protected.Valid && (protected.Time.After(now) || occupied > 0)) {
 		if fairWait {
 			waitReason = "FAIRNESS_WAIT"
 		}
@@ -268,7 +303,7 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 		if userLimit.Valid && userOccupied >= int(userLimit.Int64) {
 			waitReason = "USER_CONCURRENCY_EXCEEDED"
 		}
-		if protected.Valid && protected.Time.After(now) {
+		if protected.Valid && (protected.Time.After(now) || occupied > 0) {
 			waitReason = "COOLDOWN"
 		}
 		var queued int
@@ -299,14 +334,17 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 		return rejected, err
 	}
 	snap := &service.CredentialExecutionSnapshot{Lease: service.LeaseRef{ID: uuid.NewString(), RequestID: in.RequestID, PrincipalID: in.PrincipalID, InstanceID: selected.id, Generation: selected.generation, UserID: in.UserID, OwnerNonce: in.OwnerNonce, Epoch: epoch}, AccountID: selected.account, CredentialVersion: selected.credential, ConfigVersion: version, Endpoint: in.Endpoint, CallerScope: scope, Deadline: in.Deadline}
-	err = tx.QueryRowContext(ctx, `SELECT p.installation_id,p.source,s.secret_ciphertext,s.secret_aad,a.proxy_id
+	err = tx.QueryRowContext(ctx, `SELECT p.installation_id,p.source,s.secret_ciphertext,s.secret_aad,a.proxy_id,a.updated_at
  FROM credential_identity_profiles p JOIN credential_secrets s ON s.instance_id=p.instance_id AND s.credential_version=$2
  JOIN credential_instances i ON i.id=p.instance_id JOIN accounts a ON a.id=i.account_id
- WHERE p.instance_id=$1 AND p.generation=$3 AND s.expires_at>CURRENT_TIMESTAMP+INTERVAL '30 seconds'`, selected.id, selected.credential, selected.generation).Scan(&snap.InstallationID, &snap.IdentitySource, &snap.SecretCiphertext, &snap.SecretAAD, &snap.ProxyID)
+ WHERE p.instance_id=$1 AND p.generation=$3 AND s.expires_at>CURRENT_TIMESTAMP+INTERVAL '30 seconds'`, selected.id, selected.credential, selected.generation).Scan(&snap.InstallationID, &snap.IdentitySource, &snap.SecretCiphertext, &snap.SecretAAD, &snap.ProxyID, &snap.AccountUpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return admissionReject("CREDENTIAL_REAUTH_REQUIRED"), nil
 	}
 	if err != nil {
+		return rejected, err
+	}
+	if err = loadCredentialSnapshotProxy(ctx, tx, snap); err != nil {
 		return rejected, err
 	}
 	if bindingID == "" && in.OriginalSession != "" {
@@ -316,8 +354,8 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 			return rejected, err
 		}
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO request_leases(id,request_id,attempt_no,principal_id,instance_id,generation,user_id,owner_nonce,epoch,credential_version,config_version,binding_id,state,deadline)
- VALUES($1,$2,1,$3,$4,$5,$6,$7,$8,$9,$10,$11,'RESERVED',$12)`, snap.Lease.ID, in.RequestID, in.PrincipalID, selected.id, selected.generation, in.UserID, in.OwnerNonce, epoch, selected.credential, version, nullableString(bindingID), in.Deadline)
+	_, err = tx.ExecContext(ctx, `INSERT INTO request_leases(id,request_id,attempt_no,principal_id,instance_id,generation,user_id,owner_nonce,epoch,credential_version,config_version,binding_id,state,deadline,account_updated_at,proxy_id,proxy_updated_at)
+ VALUES($1,$2,1,$3,$4,$5,$6,$7,$8,$9,$10,$11,'RESERVED',$12,$13,$14,$15)`, snap.Lease.ID, in.RequestID, in.PrincipalID, selected.id, selected.generation, in.UserID, in.OwnerNonce, epoch, selected.credential, version, nullableString(bindingID), in.Deadline, snap.AccountUpdatedAt, snap.ProxyID, snap.ProxyUpdatedAt)
 	if err != nil {
 		return rejected, err
 	}
@@ -394,15 +432,24 @@ func (s *principalAdmissionStore) BeginDispatch(ctx context.Context, ref service
 		return service.ErrAdmissionOwnership
 	}
 	var allowed bool
+	var requestModel string
+	var currentAllowlist []byte
 	err = tx.QueryRowContext(ctx, `SELECT p.admission_epoch=l.epoch AND p.admin_state IN ('ACTIVE','DRAINING') AND p.routing_mode='GROUPED'
  AND i.admin_state IN ('ACTIVE','DRAINING') AND i.identity_generation=l.generation AND l.deadline>CURRENT_TIMESTAMP
- AND k.status='active' AND k.deleted_at IS NULL AND u.status='active' AND u.deleted_at IS NULL
+ AND EXISTS(SELECT 1 FROM accounts a WHERE a.id=i.account_id AND a.updated_at=l.account_updated_at AND a.proxy_id IS NOT DISTINCT FROM l.proxy_id)
+ AND (l.proxy_id IS NULL OR EXISTS(SELECT 1 FROM proxies x WHERE x.id=l.proxy_id AND x.updated_at=l.proxy_updated_at AND x.status='active' AND x.deleted_at IS NULL))
+ AND u.status='active' AND u.deleted_at IS NULL AND ((r.api_key_id IS NULL AND u.role='admin') OR (k.status='active' AND k.deleted_at IS NULL
  AND (k.expires_at IS NULL OR k.expires_at>CURRENT_TIMESTAMP)
- AND EXISTS(SELECT 1 FROM account_groups g WHERE g.account_id=i.account_id AND g.group_id=k.group_id)
+ AND gr.status='active' AND gr.deleted_at IS NULL AND (gr.subscription_type='subscription' OR (NOT gr.is_exclusive AND NOT u.restrict_public_groups) OR EXISTS(SELECT 1 FROM user_allowed_groups ag WHERE ag.user_id=u.id AND ag.group_id=gr.id))
+ AND EXISTS(SELECT 1 FROM account_groups g WHERE g.account_id=i.account_id AND g.group_id=k.group_id))),r.model,COALESCE(gr.model_allowlist,'{}'::jsonb)
  FROM request_leases l JOIN upstream_principals p ON p.id=l.principal_id JOIN credential_instances i ON i.id=l.instance_id
- JOIN logical_requests r ON r.id=l.request_id JOIN api_keys k ON k.id=r.api_key_id JOIN users u ON u.id=r.user_id WHERE l.id=$1`, ref.ID).Scan(&allowed)
+ JOIN logical_requests r ON r.id=l.request_id LEFT JOIN api_keys k ON k.id=r.api_key_id JOIN users u ON u.id=r.user_id LEFT JOIN groups gr ON gr.id=k.group_id WHERE l.id=$1`, ref.ID).Scan(&allowed, &requestModel, &currentAllowlist)
 	if err != nil {
 		return err
+	}
+	var allowlist service.GroupModelAllowlist
+	if json.Unmarshal(currentAllowlist, &allowlist) != nil || !allowlist.Allows(requestModel) {
+		return service.ErrAdmissionOwnership
 	}
 	if !allowed {
 		return service.ErrAdmissionOwnership
@@ -457,6 +504,10 @@ func (s *principalAdmissionStore) Finish(ctx context.Context, in service.FinishA
 		if err != nil {
 			return err
 		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO credential_usage_events(event_id,lease_id,outcome,usage_state) VALUES($1,$2,'UNKNOWN','UNKNOWN') ON CONFLICT(lease_id) DO NOTHING`, uuid.NewString(), in.Lease.ID)
+		if err != nil {
+			return err
+		}
 		if err = admissionAudit(ctx, tx, in.Lease, "LEASE_ORPHANED"); err != nil {
 			return err
 		}
@@ -469,6 +520,12 @@ func (s *principalAdmissionStore) Finish(ctx context.Context, in service.FinishA
 	if outcome != "NOT_SENT" && outcome != "COMPLETED" && outcome != "FAILED" && outcome != "CANCELLED" {
 		return fmt.Errorf("invalid terminal outcome")
 	}
+	if outcome == "COMPLETED" {
+		_, err = tx.ExecContext(ctx, `UPDATE upstream_principals SET protected_until=NULL WHERE id=$1 AND protected_until<=CURRENT_TIMESTAMP`, in.Lease.PrincipalID)
+		if err != nil {
+			return err
+		}
+	}
 	if err = releaseAdmission(ctx, tx, in.Lease, outcome); err != nil {
 		return err
 	}
@@ -476,7 +533,7 @@ func (s *principalAdmissionStore) Finish(ctx context.Context, in service.FinishA
 	if in.InputTokens != nil && in.OutputTokens != nil {
 		usageState = "KNOWN"
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO credential_usage_events(event_id,lease_id,outcome,usage_state,input_tokens,output_tokens,upstream_request_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(lease_id) DO NOTHING`, uuid.NewString(), in.Lease.ID, outcome, usageState, in.InputTokens, in.OutputTokens, nullableString(in.UpstreamRequestID))
+	_, err = tx.ExecContext(ctx, `INSERT INTO credential_usage_events(event_id,lease_id,outcome,usage_state,input_tokens,output_tokens,upstream_request_id) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(lease_id) DO UPDATE SET outcome=EXCLUDED.outcome,usage_state=EXCLUDED.usage_state,input_tokens=EXCLUDED.input_tokens,output_tokens=EXCLUDED.output_tokens,upstream_request_id=EXCLUDED.upstream_request_id WHERE credential_usage_events.settled_at IS NULL`, uuid.NewString(), in.Lease.ID, outcome, usageState, in.InputTokens, in.OutputTokens, nullableString(in.UpstreamRequestID))
 	if err != nil {
 		return err
 	}
@@ -524,19 +581,41 @@ func (s *principalAdmissionStore) Cancel(ctx context.Context, ref service.LeaseR
 func (s *principalAdmissionStore) RecoverReserved(ctx context.Context, in service.AdmissionInput) (*service.CredentialExecutionSnapshot, error) {
 	var snap service.CredentialExecutionSnapshot
 	err := s.db.QueryRowContext(ctx, `SELECT l.id,l.request_id,l.principal_id,l.instance_id,l.generation,l.user_id,l.owner_nonce,l.epoch,
- i.account_id,l.credential_version,l.config_version,p.installation_id,p.source,s.secret_ciphertext,s.secret_aad,a.proxy_id,r.endpoint,r.caller_scope_hash,l.deadline
+ i.account_id,l.credential_version,l.config_version,p.installation_id,p.source,s.secret_ciphertext,s.secret_aad,l.proxy_id,r.endpoint,r.caller_scope_hash,l.deadline,l.account_updated_at,l.proxy_updated_at
  FROM request_leases l JOIN logical_requests r ON r.id=l.request_id JOIN credential_instances i ON i.id=l.instance_id
  JOIN credential_identity_profiles p ON p.instance_id=i.id AND p.generation=l.generation
  JOIN credential_secrets s ON s.instance_id=i.id AND s.credential_version=l.credential_version JOIN accounts a ON a.id=i.account_id
  WHERE l.request_id=$1 AND l.owner_nonce=$2 AND r.owner_node=$3 AND r.payload_digest=$4 AND l.state='RESERVED'
- AND r.user_id=$5 AND r.api_key_id=$6 AND l.principal_id=$7`, in.RequestID, in.OwnerNonce, in.Node, in.PayloadDigest, in.UserID, in.APIKeyID, in.PrincipalID).Scan(
+ AND r.user_id=$5 AND r.api_key_id IS NOT DISTINCT FROM $6 AND l.principal_id=$7`, in.RequestID, in.OwnerNonce, in.Node, in.PayloadDigest, in.UserID, nullablePositive(in.APIKeyID), in.PrincipalID).Scan(
 		&snap.Lease.ID, &snap.Lease.RequestID, &snap.Lease.PrincipalID, &snap.Lease.InstanceID, &snap.Lease.Generation, &snap.Lease.UserID, &snap.Lease.OwnerNonce, &snap.Lease.Epoch,
-		&snap.AccountID, &snap.CredentialVersion, &snap.ConfigVersion, &snap.InstallationID, &snap.IdentitySource, &snap.SecretCiphertext, &snap.SecretAAD, &snap.ProxyID, &snap.Endpoint, &snap.CallerScope, &snap.Deadline)
+		&snap.AccountID, &snap.CredentialVersion, &snap.ConfigVersion, &snap.InstallationID, &snap.IdentitySource, &snap.SecretCiphertext, &snap.SecretAAD, &snap.ProxyID, &snap.Endpoint, &snap.CallerScope, &snap.Deadline, &snap.AccountUpdatedAt, &snap.ProxyUpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, service.ErrAdmissionOwnership
 	}
 	if err != nil {
 		return nil, service.ErrAdmissionStoreUnavailable
 	}
+	if err = loadCredentialSnapshotProxy(ctx, s.db, &snap); err != nil {
+		return nil, service.ErrAdmissionOwnership
+	}
 	return &snap, nil
+}
+
+func loadCredentialSnapshotProxy(ctx context.Context, db interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, snap *service.CredentialExecutionSnapshot) error {
+	if snap.ProxyID == nil {
+		return nil
+	}
+	p := &service.Proxy{ID: *snap.ProxyID}
+	err := db.QueryRowContext(ctx, `SELECT name,protocol,host,port,COALESCE(username,''),COALESCE(password,''),status,updated_at FROM proxies WHERE id=$1 AND deleted_at IS NULL AND status='active'`, p.ID).Scan(&p.Name, &p.Protocol, &p.Host, &p.Port, &p.Username, &p.Password, &p.Status, &p.UpdatedAt)
+	if err != nil {
+		return err
+	}
+	if snap.ProxyUpdatedAt != nil && !snap.ProxyUpdatedAt.Equal(p.UpdatedAt) {
+		return service.ErrAdmissionOwnership
+	}
+	snap.ProxyUpdatedAt = &p.UpdatedAt
+	snap.Proxy = p
+	return nil
 }

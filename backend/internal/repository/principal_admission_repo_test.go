@@ -3,11 +3,12 @@ package repository
 import (
 	"context"
 	"errors"
+	"testing"
+
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestPrincipalAdmissionDatabaseUnavailable(t *testing.T) {

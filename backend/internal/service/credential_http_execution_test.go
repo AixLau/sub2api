@@ -120,3 +120,22 @@ func TestCredentialHTTPAmbiguousCarriersRejected(t *testing.T) {
 	require.Error(t, validateCredentialHTTPInput(http.Header{"Session-Id": []string{"a", "b"}}, []byte(`{}`)))
 	require.NoError(t, validateCredentialHTTPInput(nil, []byte(`{"number":9007199254740993,"null":null}`)))
 }
+
+func TestCredentialHTTPRejectsWebSocketSnapshot(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("GET", "/v1/responses", nil)
+	SetOpenAIClientTransport(c, OpenAIClientTransportWS)
+	store := &credentialAdmissionRecorder{}
+	_, err := (&OpenAIGatewayService{}).ForwardCredentialHTTP(context.Background(), c, &Account{ID: 1}, []byte(`{}`), CredentialExecutionSnapshot{AccountID: 1, Endpoint: "responses"}, nil, store)
+	require.ErrorContains(t, err, "GROUPED_TRANSPORT_UNSUPPORTED")
+	require.Zero(t, store.begins)
+}
+
+func TestCredentialHTTPStreamFailureIsTerminalButNotSuccess(t *testing.T) {
+	e := &credentialHTTPExecution{}
+	body := &credentialTerminalBody{ReadCloser: io.NopCloser(strings.NewReader("data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\"}}\n\n")), execution: e, sse: true}
+	_, err := io.ReadAll(body)
+	require.NoError(t, err)
+	require.True(t, e.terminal)
+	require.Equal(t, "FAILED", e.terminalOutcome)
+}

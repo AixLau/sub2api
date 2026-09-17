@@ -108,45 +108,11 @@ func (r *credentialImportRepository) CreateCredentialPrincipal(ctx context.Conte
 		return 0, credentialControlError(err)
 	}
 	for _, imp := range imports {
-		generation := uuid.NewString()
-		installation := uuid.NewString()
-		var accountID, instanceID int64
-		// Empty credential carrier: no token is duplicated into legacy JSONB/cache.
-		// It is unschedulable and has no group grants until controlled activation.
-		err = tx.QueryRowContext(ctx, `INSERT INTO accounts(name,platform,type,credentials,extra,status,schedulable,concurrency)
- VALUES($1,'openai','oauth','{}','{}','inactive',false,0) RETURNING id`, imp.input.Name).Scan(&accountID)
-		if err != nil {
-			return 0, err
-		}
-		err = tx.QueryRowContext(ctx, `INSERT INTO credential_instances(principal_id,account_id,name,identity_generation,weight,hard_max,credential_state,capabilities)
- VALUES($1,$2,$3,$4,$5,$6,'VALID',$7) RETURNING id`, id, accountID, imp.input.Name, generation, imp.input.Weight, imp.input.HardMax, pq.Array(imp.record.Capabilities)).Scan(&instanceID)
-		if err != nil {
-			return 0, err
-		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO credential_identity_profiles(instance_id,principal_id,generation,installation_id,source)
- VALUES($1,$2,$3,$4,'LOCAL_LOGICAL')`, instanceID, id, generation, installation)
-		if err != nil {
-			return 0, err
-		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO credential_secrets(instance_id,credential_version,secret_ciphertext,secret_aad,expires_at,refresh_family,can_refresh)
- VALUES($1,1,$2,$3,$4,NULLIF($5,''),$6)`, instanceID, imp.record.Ciphertext, imp.record.ID, imp.record.TokenExpiresAt, imp.record.Family, imp.record.RefreshFingerprint != "")
-		if err != nil {
-			return 0, err
-		}
-		for _, fp := range []struct{ kind, value string }{{"ACCESS", imp.record.AccessFingerprint}, {"REFRESH", imp.record.RefreshFingerprint}, {"FAMILY", imp.record.Family}} {
-			if fp.value == "" {
-				continue
-			}
-			_, err = tx.ExecContext(ctx, `INSERT INTO credential_fingerprints(fingerprint,instance_id,kind) VALUES($1,$2,$3)`, fp.value, instanceID, fp.kind)
-			if err != nil {
-				return 0, credentialControlError(err)
-			}
-		}
-		_, err = tx.ExecContext(ctx, `UPDATE credential_imports SET verification_state='CONSUMED',secret_ciphertext=''::bytea WHERE id=$1`, imp.record.ID)
-		if err != nil {
+		if _, err = createCredentialInstance(ctx, tx, id, imp.input, imp.record); err != nil {
 			return 0, err
 		}
 	}
+
 	audit, _ := json.Marshal(map[string]string{"payload_hash": payloadHash})
 	_, err = tx.ExecContext(ctx, `INSERT INTO credential_audit_outbox(event_id,principal_id,actor_id,version,event_type,safe_payload)
  VALUES($1,$2,$3,1,'PRINCIPAL_CREATED',$4)`, uuid.NewString(), id, owner, string(audit))
@@ -164,4 +130,47 @@ func credentialControlError(err error) error {
 		return service.ErrCredentialDuplicate
 	}
 	return err
+}
+
+func createCredentialInstance(ctx context.Context, tx *sql.Tx, principal int64, input service.CreateCredentialInstanceInput, record service.CredentialImportRecord) (int64, error) {
+	var err error
+	generation := uuid.NewString()
+	installation := uuid.NewString()
+	var accountID, instanceID int64
+	// Empty credential carrier: no token is duplicated into legacy JSONB/cache.
+	// It is unschedulable and has no group grants until controlled activation.
+	err = tx.QueryRowContext(ctx, `INSERT INTO accounts(name,platform,type,credentials,extra,status,schedulable,concurrency)
+ VALUES($1,'openai','oauth','{}','{}','inactive',false,0) RETURNING id`, input.Name).Scan(&accountID)
+	if err != nil {
+		return 0, err
+	}
+	err = tx.QueryRowContext(ctx, `INSERT INTO credential_instances(principal_id,account_id,name,identity_generation,weight,hard_max,credential_state,capabilities)
+ VALUES($1,$2,$3,$4,$5,$6,'VALID',$7) RETURNING id`, principal, accountID, input.Name, generation, input.Weight, input.HardMax, pq.Array(record.Capabilities)).Scan(&instanceID)
+	if err != nil {
+		return 0, err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO credential_identity_profiles(instance_id,principal_id,generation,installation_id,source)
+ VALUES($1,$2,$3,$4,'LOCAL_LOGICAL')`, instanceID, principal, generation, installation)
+	if err != nil {
+		return 0, err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO credential_secrets(instance_id,credential_version,secret_ciphertext,secret_aad,expires_at,refresh_family,can_refresh)
+ VALUES($1,1,$2,$3,$4,NULLIF($5,''),$6)`, instanceID, record.Ciphertext, record.ID, record.TokenExpiresAt, record.Family, record.RefreshFingerprint != "")
+	if err != nil {
+		return 0, err
+	}
+	for _, fp := range []struct{ kind, value string }{{"ACCESS", record.AccessFingerprint}, {"REFRESH", record.RefreshFingerprint}, {"FAMILY", record.Family}} {
+		if fp.value == "" {
+			continue
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO credential_fingerprints(fingerprint,instance_id,kind) VALUES($1,$2,$3)`, fp.value, instanceID, fp.kind)
+		if err != nil {
+			return 0, credentialControlError(err)
+		}
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE credential_imports SET verification_state='CONSUMED',secret_ciphertext=''::bytea WHERE id=$1`, record.ID)
+	if err != nil {
+		return 0, err
+	}
+	return instanceID, nil
 }

@@ -3,9 +3,10 @@ package service
 import (
 	"context"
 	"errors"
-	"golang.org/x/sync/singleflight"
 	"strconv"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 type CredentialRefreshOperation struct {

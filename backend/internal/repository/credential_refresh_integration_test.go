@@ -4,13 +4,14 @@ package repository
 
 import (
 	"context"
+	"sync"
+	"testing"
+	"time"
+
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
-	"sync"
-	"testing"
-	"time"
 )
 
 func TestCredentialRefreshFamilyVersionIdentityAT05AT28AT29(t *testing.T) {

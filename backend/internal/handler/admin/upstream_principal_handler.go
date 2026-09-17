@@ -52,5 +52,6 @@ func (h *UpstreamPrincipalHandler) Get(c *gin.Context) {
 		return
 	}
 	p.ComputeCapacityView(h.enabled)
+	c.Header("ETag", `"v`+strconv.FormatInt(p.ConfigVersion, 10)+`"`)
 	response.Success(c, p)
 }

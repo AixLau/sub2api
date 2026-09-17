@@ -3,10 +3,11 @@ package repository
 import (
 	"database/sql"
 	"errors"
+	"net/http"
+
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"net/http"
 )
 
 type credentialGuardedHTTPUpstream struct {
@@ -15,6 +16,9 @@ type credentialGuardedHTTPUpstream struct {
 }
 
 func ProvideCredentialGuardedHTTPUpstream(cfg *config.Config, db *sql.DB) service.HTTPUpstream {
+	if !cfg.Gateway.MultiCredentialHTTPEnabled {
+		return NewHTTPUpstream(cfg)
+	}
 	return &credentialGuardedHTTPUpstream{delegate: NewHTTPUpstream(cfg), routes: NewCredentialRouteStore(db)}
 }
 func (g *credentialGuardedHTTPUpstream) check(req *http.Request, account int64) error {

@@ -23,6 +23,7 @@ type credentialHTTPExecution struct {
 	mu                   sync.Mutex
 	dispatched, terminal bool
 	status               int
+	terminalOutcome      string
 	headers              http.Header
 	originalBody         []byte
 }
@@ -50,6 +51,9 @@ func (s *OpenAIGatewayService) ForwardCredentialHTTP(ctx context.Context, c *gin
 	}
 	if err := validateCredentialHTTPInput(c.Request.Header, body); err != nil {
 		return nil, err
+	}
+	if !snapshot.AccountUpdatedAt.IsZero() && !account.UpdatedAt.Equal(snapshot.AccountUpdatedAt) {
+		return nil, errors.New("CONFIG_STALE")
 	}
 	secret, err := vault.Open(snapshot.SecretAAD, snapshot.SecretCiphertext)
 	if err != nil {
@@ -87,6 +91,12 @@ func (s *OpenAIGatewayService) ForwardCredentialHTTP(ctx context.Context, c *gin
 		copyAccount.Extra["codex_fingerprint_seed"] = snapshot.Lease.Generation
 	}
 	copyAccount.ProxyID = snapshot.ProxyID
+	if snapshot.Proxy != nil {
+		proxy := *snapshot.Proxy
+		copyAccount.Proxy = &proxy
+	} else {
+		copyAccount.Proxy = nil
+	}
 	execution := &credentialHTTPExecution{store: store, snapshot: snapshot, originalBody: append([]byte(nil), body...)}
 	ctx = context.WithValue(ctx, credentialHTTPExecutionKey{}, execution)
 	if !snapshot.Deadline.IsZero() {
@@ -123,6 +133,7 @@ func (s *OpenAIGatewayService) ForwardCredentialHTTP(ctx context.Context, c *gin
 	defer func() {
 		execution.mu.Lock()
 		terminal, status := execution.terminal, execution.status
+		terminalOutcome := execution.terminalOutcome
 		headers := execution.headers.Clone()
 		execution.mu.Unlock()
 		if observer, ok := store.(interface {
@@ -135,6 +146,9 @@ func (s *OpenAIGatewayService) ForwardCredentialHTTP(ctx context.Context, c *gin
 		outcome := "FAILED"
 		if terminal && status >= 200 && status < 300 {
 			outcome = "COMPLETED"
+			if terminalOutcome != "" {
+				outcome = terminalOutcome
+			}
 		}
 		finish := FinishAdmissionInput{Lease: snapshot.Lease, Complete: terminal, Outcome: outcome}
 		if result != nil && terminal && result.Usage.HasBillableUsage() {
@@ -185,26 +199,36 @@ func (e *credentialHTTPExecution) roundTrip(req *http.Request, accountID int64, 
 	if err := e.store.BeginDispatch(req.Context(), e.snapshot.Lease); err != nil {
 		return nil, err
 	}
+	// Preserve protocol/profile context values while connecting detached request
+	// cancellation to the owning execution. Do not replace UA/TLS context.
+	cancelTransport := func() {}
 	if e.transportContext != nil {
-		req = req.WithContext(e.transportContext)
+		transportCtx, cancel := context.WithCancel(req.Context())
+		stop := context.AfterFunc(e.transportContext, cancel)
+		cancelTransport = func() { stop(); cancel() }
+		req = req.WithContext(transportCtx)
 	}
 	// The existing adapter may detach its context for usage draining. Grouped
 	// ownership cancellation must still stop the actual transport.
+	req.Header.Del("Idempotency-Key")
+	req.Header.Del("X-Idempotency-Key")
 	resp, err := send(req)
 	if err != nil {
+		cancelTransport()
 		return resp, err
 	}
 	e.mu.Lock()
 	e.status = resp.StatusCode
 	e.headers = resp.Header.Clone()
 	e.mu.Unlock()
-	resp.Body = &credentialTerminalBody{ReadCloser: resp.Body, execution: e, sse: strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream")}
+	resp.Body = &credentialTerminalBody{ReadCloser: resp.Body, execution: e, cleanup: cancelTransport, sse: strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream")}
 	return resp, nil
 }
 
 // A transport EOF alone does not complete a stream; require a protocol terminal
 // event. Preserve bytes as observed and bound the parser buffer independently.
 type credentialTerminalBody struct {
+	cleanup func()
 	io.ReadCloser
 	execution *credentialHTTPExecution
 	sse       bool
@@ -255,6 +279,19 @@ func (b *credentialTerminalBody) observe(line []byte) {
 	case "response.completed", "response.failed", "response.incomplete":
 		b.execution.mu.Lock()
 		b.execution.terminal = true
+		if event.Type == "response.completed" {
+			b.execution.terminalOutcome = "COMPLETED"
+		} else {
+			b.execution.terminalOutcome = "FAILED"
+		}
 		b.execution.mu.Unlock()
 	}
+}
+
+func (b *credentialTerminalBody) Close() error {
+	err := b.ReadCloser.Close()
+	if b.cleanup != nil {
+		b.cleanup()
+	}
+	return err
 }

@@ -45,8 +45,14 @@ func RegisterAdminRoutes(
 
 		// 账号管理
 		registerAccountRoutes(admin, h, stepUpAuth)
+		if h.Admin.CredentialMigration != nil {
+			admin.POST("/credential-migration/preview", h.Admin.CredentialMigration.Preview)
+			admin.GET("/upstream-principals/:id/shadow", h.Admin.CredentialMigration.Shadow)
+			admin.POST("/upstream-principals/:id/rollback", gin.HandlerFunc(stepUpAuth), h.Admin.CredentialMigration.Rollback)
+		}
 		if h.Admin.CredentialOperations != nil {
 			admin.PATCH("/upstream-principals/:id", gin.HandlerFunc(stepUpAuth), h.Admin.CredentialOperations.Principal)
+			admin.POST("/upstream-principals/:id/instances", gin.HandlerFunc(stepUpAuth), h.Admin.CredentialOperations.Add)
 			admin.PATCH("/credential-instances/:id", gin.HandlerFunc(stepUpAuth), h.Admin.CredentialOperations.Instance)
 			admin.GET("/upstream-principals/:id/runtime", h.Admin.CredentialOperations.Runtime)
 			admin.POST("/request-leases/:id/resolve", gin.HandlerFunc(stepUpAuth), h.Admin.CredentialOperations.Resolve)

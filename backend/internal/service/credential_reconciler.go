@@ -8,10 +8,11 @@ import (
 )
 
 type CredentialReconciler struct {
-	ops  CredentialOperations
-	stop chan struct{}
-	done chan struct{}
-	once sync.Once
+	refresh *CredentialRefreshCoordinator
+	ops     CredentialOperations
+	stop    chan struct{}
+	done    chan struct{}
+	once    sync.Once
 }
 
 func NewCredentialReconciler(ops CredentialOperations) *CredentialReconciler {
@@ -34,6 +35,18 @@ func (r *CredentialReconciler) Start() {
 					slog.Error("credential_ledger_reconcile_failed", "action", "stop_dispatch_until_store_recovers")
 				} else if count > 0 {
 					slog.Warn("credential_ledger_lost_owners", "leases", count, "action", "inspect_orphaned_capacity")
+				}
+				if r.refresh != nil {
+					lookup, stop := context.WithTimeout(context.Background(), 3*time.Second)
+					ids, err := r.ops.DueCredentialRefreshes(lookup)
+					stop()
+					if err == nil {
+						for _, id := range ids {
+							work, done := context.WithTimeout(context.Background(), 15*time.Second)
+							_ = r.refresh.Refresh(work, id)
+							done()
+						}
+					}
 				}
 			}
 		}

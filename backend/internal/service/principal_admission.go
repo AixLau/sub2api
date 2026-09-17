@@ -23,6 +23,7 @@ var ErrAdmissionStoreUnavailable = errors.New("ADMISSION_STORE_UNAVAILABLE")
 var ErrAdmissionOwnership = errors.New("ADMISSION_OWNERSHIP_LOST")
 
 type AdmissionInput struct {
+	Maintenance                                                bool
 	RequestID, IdempotencyKey, PayloadDigest, Node, OwnerNonce string
 	PrincipalID, UserID, APIKeyID                              int64
 	// IDs are authorized candidate hints; the transaction rechecks group grants.
@@ -41,6 +42,9 @@ type AdmissionDecision struct {
 // Value fields and cloned ciphertext ensure one attempt cannot see a credential
 // or identity mutate underneath it. HTTP adapters never choose another account.
 type CredentialExecutionSnapshot struct {
+	AccountUpdatedAt                            time.Time
+	Proxy                                       *Proxy
+	ProxyUpdatedAt                              *time.Time
 	Lease                                       LeaseRef
 	AccountID, CredentialVersion, ConfigVersion int64
 	InstallationID, IdentitySource, SecretAAD   string

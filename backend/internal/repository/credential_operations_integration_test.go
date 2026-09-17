@@ -4,10 +4,11 @@ package repository
 
 import (
 	"context"
-	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCredentialOperationsOrphansCASDrainAT26AT35AT38(t *testing.T) {
@@ -43,4 +44,44 @@ func TestCredentialOperationsOrphansCASDrainAT26AT35AT38(t *testing.T) {
 	deadline := time.Now().Add(time.Minute)
 	_, err = ops.UpdateInstance(ctx, f.user, f.instances[0], 2, service.InstanceControlUpdate{AdminState: "DRAINING", DrainDeadline: &deadline})
 	require.NoError(t, err)
+}
+
+func TestCredentialOperationsMismatchFailsClosed(t *testing.T) {
+	f := newAdmissionFixture(t, 10)
+	ctx := context.Background()
+	_, err := integrationDB.Exec(`UPDATE upstream_principals SET occupied=1 WHERE id=$1`, f.principal)
+	require.NoError(t, err)
+	store := NewPrincipalAdmissionStore(integrationDB)
+	d, err := store.TryAdmit(ctx, f.input())
+	require.NoError(t, err)
+	require.Equal(t, "LEDGER_MISMATCH_FROZEN", d.Reason)
+	ops := &credentialOperations{db: integrationDB}
+	_, err = ops.ReconcileCredentialLeases(ctx)
+	require.NoError(t, err)
+	var state string
+	require.NoError(t, integrationDB.QueryRow(`SELECT admin_state FROM upstream_principals WHERE id=$1`, f.principal).Scan(&state))
+	require.Equal(t, "DISABLED", state)
+}
+
+func TestCredentialMaintenanceUnknownRefreshAndImportExpiry(t *testing.T) {
+	f := newAdmissionFixture(t, 10)
+	ctx := context.Background()
+	ops := &credentialOperations{db: integrationDB}
+	refresh := &credentialRefreshStore{db: integrationDB}
+	_, err := integrationDB.Exec(`UPDATE credential_secrets SET can_refresh=true,refresh_family='maintenance-family',expires_at=CURRENT_TIMESTAMP+INTERVAL '1 minute' WHERE instance_id=$1`, f.instances[0])
+	require.NoError(t, err)
+	ids, err := ops.DueCredentialRefreshes(ctx)
+	require.NoError(t, err)
+	require.Contains(t, ids, f.instances[0])
+	operation, err := refresh.BeginCredentialRefresh(ctx, f.instances[0])
+	require.NoError(t, err)
+	_, err = integrationDB.Exec(`UPDATE credential_refresh_ops SET started_at=CURRENT_TIMESTAMP-INTERVAL '2 minutes' WHERE id=$1`, operation.ID)
+	require.NoError(t, err)
+	_, err = ops.ReconcileCredentialLeases(ctx)
+	require.NoError(t, err)
+	var state string
+	require.NoError(t, integrationDB.QueryRow(`SELECT credential_state FROM credential_instances WHERE id=$1`, f.instances[0]).Scan(&state))
+	require.Equal(t, "REFRESH_UNKNOWN", state)
+	_, err = refresh.BeginCredentialRefresh(ctx, f.instances[0])
+	require.Error(t, err)
 }

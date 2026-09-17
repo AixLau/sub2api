@@ -151,6 +151,9 @@ func (s *CredentialImportService) Import(ctx context.Context, owner int64, opera
 	if s.vault == nil {
 		return CredentialImportView{}, ErrCredentialVaultUnavailable
 	}
+	if len(secret.ClientID) > 256 {
+		return CredentialImportView{}, errors.New("INVALID_CLIENT_ID")
+	}
 	if owner <= 0 || len(operation) < 1 || len(operation) > 128 || len(secret.AccessToken) < 1 || len(secret.AccessToken) > 32768 || len(secret.RefreshToken) > 32768 {
 		return CredentialImportView{}, errors.New("INVALID_CREDENTIAL_IMPORT")
 	}

@@ -1212,6 +1212,8 @@ const (
 )
 
 type OpenAIHTTPForwardStage struct {
+	CredentialSnapshot      *service.CredentialExecutionSnapshot
+	CredentialRuntime       *service.CredentialHTTPRuntime
 	GatewayService          *service.OpenAIGatewayService
 	Kind                    OpenAIHTTPForwardKind
 	RequestContext          context.Context
@@ -1266,7 +1268,11 @@ func (s OpenAIHTTPForwardStage) RunForward(c *gin.Context) ExecutableStageResult
 	case OpenAIHTTPForwardAlphaSearch:
 		result, err = s.GatewayService.ForwardAlphaSearch(ctx, c, s.Account, s.Body)
 	default:
-		result, err = s.GatewayService.Forward(ctx, c, s.Account, s.Body)
+		if s.CredentialSnapshot != nil && s.CredentialRuntime != nil {
+			result, err = s.GatewayService.ForwardCredentialHTTP(ctx, c, s.Account, s.Body, *s.CredentialSnapshot, s.CredentialRuntime.Vault, s.CredentialRuntime.Store)
+		} else {
+			result, err = s.GatewayService.Forward(ctx, c, s.Account, s.Body)
+		}
 	}
 	if s.Result != nil {
 		*s.Result = result

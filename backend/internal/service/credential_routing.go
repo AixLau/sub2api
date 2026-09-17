@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"errors"
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	"sort"
+	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
 )
 
 type CredentialRouteCandidate struct{ PrincipalID, InstanceID, AccountID int64 }
@@ -12,17 +14,26 @@ type CredentialRouteStore interface {
 	CredentialRoutes(context.Context, int64) ([]CredentialRouteCandidate, bool, error)
 	BoundCredentialPrincipal(context.Context, string, string) (int64, error)
 	IsControlledCredentialAccount(context.Context, int64) (bool, error)
+	CheckCredentialRuntime(context.Context, bool) error
+	CredentialProbeRoute(context.Context, int64) (CredentialRouteCandidate, int64, error)
 }
 type CredentialHTTPRuntime struct {
-	Store   PrincipalAdmissionStore
-	Routes  CredentialRouteStore
-	Vault   *CredentialVault
-	Enabled bool
+	QueueBudget CredentialQueueBudget
+	Store       PrincipalAdmissionStore
+	Routes      CredentialRouteStore
+	Vault       *CredentialVault
+	Enabled     bool
 }
 
-func NewCredentialHTTPRuntime(store PrincipalAdmissionStore, routes CredentialRouteStore, cfg *config.Config) *CredentialHTTPRuntime {
+func NewCredentialHTTPRuntime(store PrincipalAdmissionStore, routes CredentialRouteStore, cfg *config.Config) (*CredentialHTTPRuntime, error) {
+	RegisterCredentialMetrics()
 	vault, _ := NewCredentialVault(cfg.Gateway.CredentialVaultKey)
-	return &CredentialHTTPRuntime{Store: store, Routes: routes, Vault: vault, Enabled: cfg.Gateway.MultiCredentialHTTPEnabled}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := routes.CheckCredentialRuntime(ctx, cfg.Gateway.MultiCredentialHTTPEnabled); err != nil {
+		return nil, err
+	}
+	return &CredentialHTTPRuntime{Store: store, Routes: routes, Vault: vault, Enabled: cfg.Gateway.MultiCredentialHTTPEnabled}, nil
 }
 
 // BuildCredentialRoute preserves existing model, Codex-client, channel and

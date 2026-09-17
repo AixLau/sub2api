@@ -3,8 +3,9 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"github.com/Wei-Shaw/sub2api/internal/service"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
 // Called under the principal lock. A ticket is an eligibility hint; only the
@@ -104,7 +105,7 @@ func (s *principalAdmissionStore) CancelQueued(ctx context.Context, in service.A
 		return err
 	}
 	var status string
-	err = tx.QueryRowContext(ctx, `SELECT status FROM logical_requests WHERE id=$1 AND user_id=$2 AND api_key_id=$3 AND owner_node=$4 FOR UPDATE`, in.RequestID, in.UserID, in.APIKeyID, in.Node).Scan(&status)
+	err = tx.QueryRowContext(ctx, `SELECT status FROM logical_requests WHERE id=$1 AND user_id=$2 AND api_key_id IS NOT DISTINCT FROM $3 AND owner_node=$4 FOR UPDATE`, in.RequestID, in.UserID, nullablePositive(in.APIKeyID), in.Node).Scan(&status)
 	if err != nil {
 		return err
 	}

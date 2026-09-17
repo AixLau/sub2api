@@ -282,6 +282,7 @@ func ProvideAccountUsageService(
 }
 
 func ProvideAccountTestService(
+	credentialHTTP *CredentialHTTPRuntime,
 	accountRepo AccountRepository,
 	geminiTokenProvider *GeminiTokenProvider,
 	claudeTokenProvider *ClaudeTokenProvider,
@@ -312,6 +313,7 @@ func ProvideAccountTestService(
 		tlsFPProfileService,
 	)
 	service.agentIdentityWS = openAIGatewayService
+	service.credentialHTTP = credentialHTTP
 	service.SetProxyExitInfoProber(proxyProber)
 	service.SetOpenAIGatewayService(openAIGatewayService)
 	service.SetSettingService(settingService)
@@ -911,8 +913,9 @@ func ProvideRedeemService(
 }
 
 // ProviderSet is the Wire provider set for all services
-func ProvideCredentialReconciler(ops CredentialOperations) *CredentialReconciler {
+func ProvideCredentialReconciler(ops CredentialOperations, refresh *CredentialRefreshCoordinator) *CredentialReconciler {
 	r := NewCredentialReconciler(ops)
+	r.refresh = refresh
 	r.Start()
 	return r
 }

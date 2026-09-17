@@ -5,12 +5,13 @@ package repository
 import (
 	"context"
 	"fmt"
-	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
 )
 
 type mockCredentialVerifier struct{}

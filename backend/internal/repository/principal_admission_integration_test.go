@@ -283,3 +283,162 @@ func TestCredentialQueueNoHeadBlockingAT14AT17AT18AT22AT23(t *testing.T) {
 	require.Equal(t, "SESSION_BINDING_EXPIRED", q.Reason)
 	assertAdmissionLedger(t, f, 1)
 }
+
+func TestPrincipalAdmissionConcurrentDistinctUsersAndSession(t *testing.T) {
+	f := newAdmissionFixture(t, 10)
+	ctx := context.Background()
+	var group int64
+	require.NoError(t, integrationDB.QueryRow(`SELECT group_id FROM api_keys WHERE id=$1`, f.key).Scan(&group))
+	inputs := []service.AdmissionInput{f.input(), f.input(), f.input()}
+	for i := 1; i < 3; i++ {
+		require.NoError(t, integrationDB.QueryRow(`INSERT INTO users(email,password_hash) VALUES($1,'fixture') RETURNING id`, uuid.NewString()+"@example.test").Scan(&inputs[i].UserID))
+		require.NoError(t, integrationDB.QueryRow(`INSERT INTO api_keys(user_id,key,name,group_id) VALUES($1,$2,'fixture',$3) RETURNING id`, inputs[i].UserID, uuid.NewString(), group).Scan(&inputs[i].APIKeyID))
+	}
+	var wg sync.WaitGroup
+	results := make(chan service.AdmissionDecision, 3)
+	errs := make(chan error, 3)
+	for _, in := range inputs {
+		in.OriginalSession = "same-string"
+		wg.Add(1)
+		go func(in service.AdmissionInput) {
+			defer wg.Done()
+			d, e := NewPrincipalAdmissionStore(integrationDB).TryAdmit(ctx, in)
+			results <- d
+			errs <- e
+		}(in)
+	}
+	wg.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+	for d := range results {
+		require.Equal(t, service.AdmissionAdmitted, d.Code)
+	}
+	var bindings int
+	require.NoError(t, integrationDB.QueryRow(`SELECT count(*) FROM session_bindings WHERE principal_id=$1`, f.principal).Scan(&bindings))
+	require.Equal(t, 3, bindings)
+	assertAdmissionLedger(t, f, 3)
+}
+
+func TestPrincipalAdmissionGroupRevocationAtDispatch(t *testing.T) {
+	f := newAdmissionFixture(t, 10)
+	ctx := context.Background()
+	store := NewPrincipalAdmissionStore(integrationDB)
+	d, err := store.TryAdmit(ctx, f.input())
+	require.NoError(t, err)
+	require.Equal(t, service.AdmissionAdmitted, d.Code)
+	_, err = integrationDB.Exec(`UPDATE users SET restrict_public_groups=true WHERE id=$1`, f.user)
+	require.NoError(t, err)
+	require.ErrorIs(t, store.BeginDispatch(ctx, d.Snapshot.Lease), service.ErrAdmissionOwnership)
+	denied, err := store.TryAdmit(ctx, f.input())
+	require.NoError(t, err)
+	require.Equal(t, "AUTHORIZATION_REVOKED", denied.Reason)
+	require.NoError(t, store.Cancel(ctx, d.Snapshot.Lease))
+	assertAdmissionLedger(t, f, 0)
+}
+
+func TestPrincipalAdmissionConfigVersionAndProxyChange(t *testing.T) {
+	f := newAdmissionFixture(t, 2)
+	ctx := context.Background()
+	store := NewPrincipalAdmissionStore(integrationDB)
+	d, err := store.TryAdmit(ctx, f.input())
+	require.NoError(t, err)
+	require.Equal(t, service.AdmissionAdmitted, d.Code)
+	tx, err := integrationDB.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	_, err = tx.Exec(`SET LOCAL sub2api.credential_control='on'`)
+	require.NoError(t, err)
+	_, err = tx.Exec(`UPDATE accounts SET updated_at=updated_at+INTERVAL '1 second' WHERE id=$1`, d.Snapshot.AccountID)
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit())
+	require.ErrorIs(t, store.BeginDispatch(ctx, d.Snapshot.Lease), service.ErrAdmissionOwnership)
+	require.NoError(t, store.Cancel(ctx, d.Snapshot.Lease))
+	assertAdmissionLedger(t, f, 0)
+	stale := f.input()
+	stale.ExpectedConfigVersion = 99
+	d, err = store.TryAdmit(ctx, stale)
+	require.NoError(t, err)
+	require.Equal(t, service.AdmissionConfigStale, d.Code)
+}
+
+func TestCredentialMaintenanceSharesTotalAndOneProbeBudget(t *testing.T) {
+	f := newAdmissionFixture(t, 2)
+	ctx := context.Background()
+	store := NewPrincipalAdmissionStore(integrationDB)
+	_, err := integrationDB.Exec(`UPDATE users SET role='admin' WHERE id=$1`, f.user)
+	require.NoError(t, err)
+	user, err := store.TryAdmit(ctx, f.input())
+	require.NoError(t, err)
+	require.Equal(t, service.AdmissionAdmitted, user.Code)
+	input := f.input()
+	input.APIKeyID = 0
+	input.Maintenance = true
+	input.Endpoint = "probe"
+	probe, err := store.TryAdmit(ctx, input)
+	require.NoError(t, err)
+	require.Equal(t, service.AdmissionAdmitted, probe.Code)
+	assertAdmissionLedger(t, f, 2)
+	require.NoError(t, store.BeginDispatch(ctx, probe.Snapshot.Lease))
+	input.RequestID = uuid.NewString()
+	again, err := store.TryAdmit(ctx, input)
+	require.NoError(t, err)
+	require.Equal(t, "MAINTENANCE_BUDGET_EXHAUSTED", again.Reason)
+	require.NoError(t, store.Finish(ctx, service.FinishAdmissionInput{Lease: probe.Snapshot.Lease, Complete: true, Outcome: "COMPLETED"}))
+	require.NoError(t, store.Cancel(ctx, user.Snapshot.Lease))
+	assertAdmissionLedger(t, f, 0)
+}
+
+func TestCredentialIdempotencySurvivesPrincipalReselection(t *testing.T) {
+	first := newAdmissionFixture(t, 10)
+	second := newAdmissionFixture(t, 10)
+	ctx := context.Background()
+	store := NewPrincipalAdmissionStore(integrationDB)
+	var group int64
+	require.NoError(t, integrationDB.QueryRow(`SELECT group_id FROM api_keys WHERE id=$1`, first.key).Scan(&group))
+	tx, err := integrationDB.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	_, err = tx.Exec(`SET LOCAL sub2api.credential_control='on'`)
+	require.NoError(t, err)
+	_, err = tx.Exec(`INSERT INTO account_groups(account_id,group_id) SELECT account_id,$2 FROM credential_instances WHERE principal_id=$1`, second.principal, group)
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit())
+	in := first.input()
+	in.IdempotencyKey = "logical-operation"
+	d, err := store.TryAdmit(ctx, in)
+	require.NoError(t, err)
+	require.Equal(t, service.AdmissionAdmitted, d.Code)
+	in.PrincipalID = second.principal
+	in.CandidateIDs = second.instances
+	in.RequestID = uuid.NewString()
+	next, err := store.TryAdmit(ctx, in)
+	require.NoError(t, err)
+	require.Equal(t, service.AdmissionAlreadyRunning, next.Code)
+	assertAdmissionLedger(t, first, 1)
+	assertAdmissionLedger(t, second, 0)
+}
+
+func extendAdmissionFixture(t *testing.T, f *admissionFixture, count int) {
+	t.Helper()
+	ctx := context.Background()
+	tx, err := integrationDB.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	defer tx.Rollback()
+	var group int64
+	require.NoError(t, tx.QueryRow(`SELECT group_id FROM api_keys WHERE id=$1`, f.key).Scan(&group))
+	for len(f.instances) < count {
+		var account, instance int64
+		generation := uuid.NewString()
+		require.NoError(t, tx.QueryRow(`INSERT INTO accounts(name,platform,type,status,schedulable) VALUES('fixture','openai','oauth','inactive',false) RETURNING id`).Scan(&account))
+		_, err = tx.Exec(`INSERT INTO account_groups(account_id,group_id) VALUES($1,$2)`, account, group)
+		require.NoError(t, err)
+		require.NoError(t, tx.QueryRow(`INSERT INTO credential_instances(principal_id,account_id,name,identity_generation,admin_state,credential_state,capabilities) VALUES($1,$2,'fixture',$3,'ACTIVE','VALID',ARRAY['responses','passthrough','compact','probe']) RETURNING id`, f.principal, account, generation).Scan(&instance))
+		_, err = tx.Exec(`INSERT INTO credential_identity_profiles(instance_id,principal_id,generation,installation_id,source) VALUES($1,$2,$3,$4,'LOCAL_LOGICAL')`, instance, f.principal, generation, uuid.NewString())
+		require.NoError(t, err)
+		_, err = tx.Exec(`INSERT INTO credential_secrets(instance_id,credential_version,secret_ciphertext,secret_aad,expires_at) VALUES($1,1,'mock','fixture',CURRENT_TIMESTAMP+INTERVAL '1 hour')`, instance)
+		require.NoError(t, err)
+		f.instances = append(f.instances, instance)
+	}
+	require.NoError(t, tx.Commit())
+}

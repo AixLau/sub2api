@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/google/uuid"
 )
@@ -34,7 +35,7 @@ func (s *credentialRefreshStore) BeginCredentialRefresh(ctx context.Context, ins
 	if err != nil {
 		return op, err
 	}
-	if state != "VALID" || (admin != "ACTIVE" && admin != "DRAINING" && admin != "PAUSED") {
+	if (state != "VALID" && state != "NEEDS_REAUTH") || (admin != "ACTIVE" && admin != "DRAINING" && admin != "PAUSED") {
 		return op, errors.New("CREDENTIAL_REFRESH_UNAVAILABLE")
 	}
 	err = tx.QueryRowContext(ctx, `SELECT COALESCE(s.refresh_family,''),s.secret_aad,s.secret_ciphertext,a.proxy_id FROM credential_secrets s JOIN credential_instances i ON i.id=s.instance_id JOIN accounts a ON a.id=i.account_id WHERE s.instance_id=$1 AND s.credential_version=$2 AND s.can_refresh=true`, instance, op.ExpectedVersion).Scan(&op.Family, &op.SecretAAD, &op.Ciphertext, &op.ProxyID)

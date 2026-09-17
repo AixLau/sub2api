@@ -3,10 +3,11 @@ package service
 import (
 	"context"
 	"errors"
-	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 type credentialImportMemory struct{ record CredentialImportRecord }

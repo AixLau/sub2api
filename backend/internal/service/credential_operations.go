@@ -46,4 +46,5 @@ type CredentialOperations interface {
 	CredentialRuntime(context.Context, int64) (CredentialRuntimeView, error)
 	ResolveCredentialLease(context.Context, int64, string, CredentialResolveInput) error
 	ReconcileCredentialLeases(context.Context) (int, error)
+	DueCredentialRefreshes(context.Context) ([]int64, error)
 }

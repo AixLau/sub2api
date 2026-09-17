@@ -1,5 +1,27 @@
 export default {
     accounts: {
+      credentials: {
+  "title": "Credential instances",
+  "notice": "Preview: verified provider identity is required before activation. Installation identifiers are local identity records, not a count of upstream devices.",
+  "import": "Import a credential",
+  "verify": "Submit for verification",
+  "empty": "No credential principals yet.",
+  "capacity": "Occupied / capacity",
+  "overhang": "Draining: {count} above the requested limit",
+  "reserved": "Reserved",
+  "running": "Executing",
+  "orphaned": "Unconfirmed",
+  "queued": "Queued",
+  "mismatch": "Ledger mismatch: admission must remain disabled.",
+  "limit": "Principal concurrency limit",
+  "instance": "Instance",
+  "weight": "Weight",
+  "identity": "Installation source",
+  "loadError": "Unable to load credential state.",
+  "importError": "Import unavailable. Check the dedicated encryption key and credential configuration.",
+  "confirmLimit": "Set total capacity to {limit}? Current occupancy is {occupied}; existing work will drain naturally.",
+  "updateError": "Update rejected. Reload the current configuration and complete any required verification."
+},
       title: 'Account Management',
       description: 'Manage AI platform accounts and credentials',
       createAccount: 'Create Account',

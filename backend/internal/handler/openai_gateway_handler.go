@@ -540,7 +540,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	routingStart := time.Now()
 
-	if h.tryCredentialHTTP(c, apiKey, subject, subscription, body, forwardBody, forwardModel, legacyCompact, reqLog, streamStarted) {
+	if h.tryCredentialHTTP(c, apiKey, subject, subscription, body, forwardBody, sessionHashBody, forwardModel, legacyCompact, reqLog, streamStarted) {
 		return
 	}
 

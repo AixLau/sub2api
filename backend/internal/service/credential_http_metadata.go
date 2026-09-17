@@ -57,6 +57,9 @@ func validateCredentialHTTPInput(header http.Header, body []byte) error {
 		_, err = decoder.Token()
 		return err
 	}
+	if root := gjson.ParseBytes(body); !root.IsObject() {
+		return errors.New("INVALID_JSON_OBJECT")
+	}
 	if err := read(0); err != nil {
 		return err
 	}

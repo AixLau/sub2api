@@ -5,10 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/google/uuid"
 	"math"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/google/uuid"
 )
 
 var errCredentialConfigConflict = errors.New("CONFIG_VERSION_CONFLICT")
@@ -165,6 +166,22 @@ func (s *credentialOperations) leaseRef(ctx context.Context, id string) (service
 	return ref, err
 }
 func (s *credentialOperations) ReconcileCredentialLeases(ctx context.Context) (int, error) {
+	if err := s.deliverCredentialAudit(ctx); err != nil {
+		return 0, err
+	}
+	if err := s.replayCredentialBilling(ctx); err != nil {
+		return 0, err
+	}
+	if err := s.cancelExpiredCredentialTickets(ctx); err != nil {
+		return 0, err
+	}
+	// Destroy expired import ciphertext, retain only opaque audit/dedup metadata.
+	if _, err := s.db.ExecContext(ctx, `UPDATE credential_imports SET secret_ciphertext=''::bytea,secret_erased_at=CURRENT_TIMESTAMP WHERE expires_at<=CURRENT_TIMESTAMP AND secret_erased_at IS NULL`); err != nil {
+		return 0, err
+	}
+	if err := s.reconcileUnknownRefresh(ctx); err != nil {
+		return 0, err
+	}
 	if err := s.freezeLedgerMismatches(ctx); err != nil {
 		return 0, err
 	}
@@ -282,4 +299,110 @@ func (s *credentialOperations) freezeLedgerMismatches(ctx context.Context) error
 		}
 	}
 	return nil
+}
+
+func (s *credentialOperations) DueCredentialRefreshes(ctx context.Context) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT i.id FROM credential_instances i JOIN credential_secrets c ON c.instance_id=i.id AND c.credential_version=i.credential_version
+ JOIN upstream_principals p ON p.id=i.principal_id WHERE p.routing_mode='GROUPED' AND p.admin_state IN ('ACTIVE','DRAINING')
+ AND i.admin_state IN ('ACTIVE','DRAINING') AND i.credential_state IN ('VALID','NEEDS_REAUTH') AND c.can_refresh AND c.refresh_family IS NOT NULL
+ AND (c.expires_at<CURRENT_TIMESTAMP+INTERVAL '5 minutes' OR i.credential_state='NEEDS_REAUTH')
+ AND NOT EXISTS(SELECT 1 FROM credential_refresh_ops o WHERE o.family_key=c.refresh_family AND o.state IN ('SENDING','REFRESH_RESULT_UNKNOWN')) ORDER BY c.expires_at LIMIT 2`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err = rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func (s *credentialOperations) reconcileUnknownRefresh(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT id,instance_id,generation,family_key,expected_version,owner_nonce FROM credential_refresh_ops WHERE state='SENDING' AND started_at<CURRENT_TIMESTAMP-INTERVAL '60 seconds' ORDER BY started_at LIMIT 100`)
+	if err != nil {
+		return err
+	}
+	var ops []service.CredentialRefreshOperation
+	for rows.Next() {
+		var op service.CredentialRefreshOperation
+		if err = rows.Scan(&op.ID, &op.InstanceID, &op.Generation, &op.Family, &op.ExpectedVersion, &op.OwnerNonce); err != nil {
+			rows.Close()
+			return err
+		}
+		ops = append(ops, op)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	store := &credentialRefreshStore{db: s.db}
+	for _, op := range ops {
+		if err = s.db.QueryRowContext(ctx, `SELECT principal_id FROM credential_instances WHERE id=$1`, op.InstanceID).Scan(&op.PrincipalID); err != nil {
+			return err
+		}
+		if err = store.MarkCredentialRefreshUnknown(ctx, op, nil); err != nil && err != service.ErrAdmissionOwnership {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *credentialOperations) cancelExpiredCredentialTickets(ctx context.Context) error {
+	// Tickets have no execution resource. A single SQL statement safely expires
+	// only queued records; admitted tickets and their leases cannot be affected.
+	_, err := s.db.ExecContext(ctx, `WITH expired AS (
+ UPDATE admission_tickets SET state='EXPIRED' WHERE state='QUEUED' AND deadline<=CURRENT_TIMESTAMP RETURNING request_id
+ ) UPDATE logical_requests r SET status='CANCELLED' FROM expired e WHERE r.id=e.request_id AND r.status='QUEUED'`)
+	return err
+}
+
+func (s *credentialOperations) deliverCredentialAudit(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT event_id,principal_id,instance_id,actor_id,version,event_type FROM credential_audit_outbox WHERE delivered_at IS NULL ORDER BY created_at LIMIT 100 FOR UPDATE SKIP LOCKED`)
+	if err != nil {
+		return err
+	}
+	type event struct {
+		id, kind                   string
+		principal, instance, actor sql.NullInt64
+		version                    int64
+	}
+	var events []event
+	for rows.Next() {
+		var e event
+		if err = rows.Scan(&e.id, &e.principal, &e.instance, &e.actor, &e.version, &e.kind); err != nil {
+			rows.Close()
+			return err
+		}
+		events = append(events, e)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, e := range events {
+		// Public audit contains only typed internal identifiers; free-text evidence
+		// remains in the access-controlled ledger and is not copied into log sinks.
+		_, err = tx.ExecContext(ctx, `INSERT INTO audit_logs(actor_user_id,actor_role,auth_method,action,request_id,status_code,extra)
+ VALUES($1,'admin','credential_control',$2,$3,200,jsonb_build_object('principal_id',$4::bigint,'instance_id',$5::bigint,'version',$6::bigint))`, e.actor, "credential."+e.kind, e.id, e.principal, e.instance, e.version)
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE credential_audit_outbox SET delivered_at=CURRENT_TIMESTAMP WHERE event_id=$1`, e.id)
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

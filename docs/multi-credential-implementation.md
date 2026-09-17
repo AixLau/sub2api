@@ -89,11 +89,11 @@
 ### PR-05：HTTP 快照与刷新/错误控制组件
 
 修改：Responses handler 在旧 user 槽位前分流，新的 route query 只读取已 GROUPED 的主体；新旧账号混组拒绝。实例候选复用组/模型/Codex/channel/profit 过滤，主体只用一个代表排序。PostgreSQL 准入后非阻塞获取原 Redis user slot，失败撤销 RESERVED；不取旧 Account slot。HTTPUpstream DI 包装器拒绝未携快照的受控账号，覆盖直接 HTTP 探测旁路。普通、透传和 compact 复用现有请求构造，版本与 profile 固定；适配器内第二次发送拒绝，流式终结事件才释放。
-新增 family 唯一刷新记录、版本 CAS、REFRESH_UNKNOWN 与加密结果补偿；401 按 generation/version 更新，UNKNOWN 429 保护主体，已知 quota domain 可传播阻断。刷新 provider 复用现有固定地址 OAuth client，保存 proxy 引用并使用已导入 client-id；新增管理员 refresh 入口经过 step-up。后台与 401 自动 refresh 仍未完整接线；不调用生产 token 验证。
+新增 family 唯一刷新记录、版本 CAS、REFRESH_UNKNOWN 与加密结果补偿；401 按 generation/version 更新，UNKNOWN 429 保护主体，已知 quota domain 可传播阻断。刷新 provider 复用现有固定地址 OAuth client，保存 proxy 引用并使用已导入 client-id；新增管理员 refresh 入口经过 step-up。后台维护 worker 已通过同一 coordinator 处理近过期/401标记；不重放被401拒绝的原请求，旧 Account 按钮仍拒绝密文实例而不解密旁路；不调用生产 token 验证。
 
 实际测试：三类端点末端请求的 token/安装标识/大整数、partial stream 未完成、二次发送拒绝、Retry-After、重复 JSON/header 拒绝测试通过；真实 PostgreSQL 同 family 三竞争仅一赢家，refresh 后 profile/generation 不变、旧 CAS 拒绝、未知结果保留密文与锁，旧版本401不失效新版本、共享 quota 保护测试通过。
 发现并修正：现有共享 identity helper 仍在某些后续转换损失大整数；仅在 grouped HTTP 边界恢复非身份字段 RawMessage，未改变 WS/session/full。原始 profile namespace 保留，新增 provider subject 字段随 token 密文存储，导入请求不能指定验证主体。
-未验证/未完成：完整 handler 端到端权限/结算验收，grouped 后台探测目前明确拒绝而非联合准入执行；手动/401/定时 refresh 生产接线尚未完成；代理切换快照一致性和底层自动重试的全链验证；compact 真实契约；完整前端。PR-05 目前为阶段实现，不能宣称满足合并/上线门槛。
+未验证/未完成：完整 handler 端到端权限/结算验收，grouped AccountTestService 已走维护身份联合准入，其他直接HTTP旁路拒绝；手动/401/定时刷新均使用同一 coordinator 的新入口，旧按钮未做代理；完整 proxy/client-id provider mock 验证仍缺；compact 真实契约；完整前端。PR-05 目前为阶段实现，不能宣称满足合并/上线门槛。
 迁移影响：250 新增 refresh/quota 证据表；未更新旧 credentials 或身份。
 回滚：停止 grouped 准入，等待/核实在途，保留新 token、未知刷新及 ORPHANED 占用；不能把加密凭证导回独立旧账号旁路。
 
@@ -103,8 +103,24 @@
 
 修改：principal/instance PATCH 用 If-Match CAS；缩容返回 overhang/202；drain deadline、revoke 与 binding 失效；运行时接口从主库展示 RESERVED/DISPATCHING/RUNNING/CANCELLING/ORPHANED 和 ledger 差异。10秒 reconciler 不清空计数，已发送失联转 ORPHANED，RESERVED 通过同锁顺序释放；告警写结构化日志。人工 resolve 使用 step-up + confirm + evidence/reason，审计记录接受风险字段。准入发现 ledger/计数差异立即拒绝。
 实际测试：真实 PostgreSQL `TestCredentialOperationsOrphansCASDrainAT26AT35AT38` 通过：失联不释放、运行视图、缩容 overhang、过期版本拒绝、无确认不能解孤儿、带证据处理、实例 drain。Wire 初次 cleanup 函数签名错误已修复并重新生成成功。
-未验证：Prometheus 完整指标/告警联动、审计消费者投递、使用量幂等结算消费、刷新 SENDING 失联处理与自动到期秘密清理、完整停机排空、权限热变更与多进程故障。运维 API 不是完整前端。
+未验证：Prometheus 完整指标/告警联动、完整停机排空、权限热变更的完整策略矩阵；审计/计费重复消费与三测试进程 SIGKILL 已补验证。运维 API 不是完整前端。
 迁移影响：使用已有 ledger，无新秘密回填。
 回滚：暂停主体、取消未准入票据，保留在途/孤儿和新刷新结果；必须人工证据处理未知容量，不能把计数设零。控制 API 回退不删除记录。
 
-PR-07 尚未交付，不宣称完成。
+### PR-07：迁移预览、安全回滚与验收账本
+
+修改：只读迁移预览按凭证源识别影子别名，未知主体只出人工清单；不会把旧账号并发相加。安全回滚先 PAUSED，存在活跃 binding/lease/未知 refresh 时保持 GROUPED，不恢复旧槽位；只读 shadow 数据入口不创建 lease、不刷新、不发请求。新增管理预览页（只写 import、主体/实例状态、容量版本调整）、中英文与 API 契约测试。
+实际测试：`TestCredentialMigrationPreviewAndRollbackAT37AT38` 验证 Account 完整行不变、ORPHANED 回滚保留占用；新增 `TestPrincipalAdmissionConcurrentDistinctUsersAndSession` 真实 PostgreSQL 三用户相同 session 字符串得到三个隔离绑定；新增测试整组通过，Go race 通过；前端 typecheck/lint 和 API+i18n 5项通过。完整结果与未验证项见 `docs/multi-credential-acceptance.md`。
+未完成：正式旧账号迁移执行、旧进程能力 fencing、灰度激活工具、完整 shadow 对比事件、所有 AT/压测/故障演练、完整管理操作页面。生产 verifier 根据用户确认缺失，保留 UNVERIFIED，禁止上线；本 PR 不是“全部验收通过”的发布提交。
+迁移影响：新接口不自动迁移，不触碰旧 credentials、seed、权限、计费。
+回滚：PATCH PAUSED → 等待/证据处理在途 → 归档 ledger/binding → 单实例旧路径额度验证 → 切换；目前工具只落实前两步安全暂停，不自动执行未验证的旧路径恢复。保留密文新版 token 和 profile，禁止恢复旧数据库快照覆盖。
+
+## 当前交付边界
+
+七个阶段均有代码及独立提交，但 PR-05～PR-07 合并门槛未满足；不能把“按顺序实施”理解成规格全部完成。功能默认关闭，未部署或推送。所有剩余开发和测试以验收账本为准。
+
+最终复查补充：251 保存 account/proxy 更新时间，BeginDispatch 拒绝快照后配置变化；凭证快照携带代理值拷贝。主库 user/group 权限在准入和发送前复核，新增撤销测试通过。后台维护使用同一 refresh coordinator，SENDING 超时转 REFRESH_UNKNOWN，未消费 import 过期清除密文。UNKNOWN usage 有持久事件；无 usage 证据不标 KNOWN=0。浏览器以 mock API 在1440×1000和390×844完成布局检查，无溢出/页面脚本错误，截图位于 `/tmp/sub2api-credential-{desktop,mobile}.png`。此检查不覆盖真实管理员认证/step-up。
+
+补充阶段实现与验证（收敛修复）：252 新增/替换实例事务（旧实例 drain，新实例新世代；旧 profile 不动）通过；253 维护探测在同总额下单实例预算通过；254 调用者+端点幂等唯一索引，主体重选不重复执行；255 计费 outbox 复用原有计费器，重复消费只扣一次，审计 outbox 同事务投递仅一次。三独立测试进程+mock 上游 SIGKILL 测试通过：发送后死进程继续占用、无自动重放。150步随机操作账本守恒通过。新增每进程64MiB/100请求/用户10请求/单体8MiB队列预算（不替代已有更严入口限制）；跨部署全局体积限额尚未实现。
+
+负载冒烟：本地 OrbStack 4GB、PostgreSQL实际18.4、三 worker，每组合5秒。C10/I3 p95=37.89ms，C10/I16=32.32ms，C50/I3=28.04ms，C50/I16=30.64ms，C200/I3=30.28ms，C200/I16=30.83ms；无测试发现的漏释放。**未达到20ms目标，未运行每组10分钟矩阵，不可宣称性能验收通过。** 日志 `/tmp/sub2api-credential-load-smoke.log`。数据库在Docker VM、SQL往返多且主体串行锁，需进一步按事务阶段剖析，不据此改变权威账本选型。

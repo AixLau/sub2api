@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"go.uber.org/zap"
 	"net/http"
 	"time"
 
@@ -10,12 +11,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
-	"go.uber.org/zap"
 )
 
 // Returns handled only when a group has explicitly switched to grouped routing,
 // or its authoritative route lookup failed. No legacy slot has been acquired.
-func (h *OpenAIGatewayHandler) tryCredentialHTTP(c *gin.Context, apiKey *service.APIKey, subject middleware2.AuthSubject, subscription *service.UserSubscription, body, forwardBody []byte, model string, compact bool, log *zap.Logger, streamStarted bool) bool {
+func (h *OpenAIGatewayHandler) tryCredentialHTTP(c *gin.Context, apiKey *service.APIKey, subject middleware2.AuthSubject, subscription *service.UserSubscription, body, forwardBody, originalBody []byte, model string, compact bool, log *zap.Logger, streamStarted bool) bool {
 	runtime := h.credentialHTTP
 	if runtime == nil || !runtime.Enabled || apiKey.GroupID == nil {
 		return false
@@ -33,6 +33,16 @@ func (h *OpenAIGatewayHandler) tryCredentialHTTP(c *gin.Context, apiKey *service
 		fail("GROUPED_ROUTE_MIXED_UNSUPPORTED")
 		return true
 	}
+	if gjson.GetBytes(body, "previous_response_id").Exists() {
+		h.errorResponse(c, 400, "GROUPED_CONTINUATION_UNSUPPORTED", "State continuation requires a verified endpoint contract")
+		return true
+	}
+	memoryRelease, withinBudget := runtime.QueueBudget.TryReserve(subject.UserID, int64(len(body)+len(forwardBody)))
+	if !withinBudget {
+		fail("ADMISSION_QUEUE_FULL")
+		return true
+	}
+	defer memoryRelease()
 	if runtime.Vault == nil {
 		fail("CREDENTIAL_VAULT_UNAVAILABLE")
 		return true
@@ -42,7 +52,7 @@ func (h *OpenAIGatewayHandler) tryCredentialHTTP(c *gin.Context, apiKey *service
 	}
 	ctx := service.WithCodexRestrictionRequest(c.Request.Context(), c, body)
 	ctx, _ = h.gatewayService.WithOpenAIRequestPricingContext(ctx, apiKey.GroupID)
-	session := h.gatewayService.ExtractSessionID(c, body)
+	session := h.gatewayService.ExtractSessionID(c, originalBody)
 	bound := int64(0)
 	if session != "" {
 		bound, err = runtime.Routes.BoundCredentialPrincipal(ctx, service.CredentialScopeHash(subject.UserID, apiKey.ID), service.CredentialDigest([]byte(session)))
@@ -64,7 +74,7 @@ func (h *OpenAIGatewayHandler) tryCredentialHTTP(c *gin.Context, apiKey *service
 	if clientDeadline, ok := ctx.Deadline(); ok && clientDeadline.Before(deadline) {
 		deadline = clientDeadline
 	}
-	input := service.AdmissionInput{RequestID: uuid.NewString(), OwnerNonce: uuid.NewString(), Node: service.RequestIDPrefix(), IdempotencyKey: c.GetHeader("Idempotency-Key"), PayloadDigest: service.CredentialDigest(body), PrincipalID: principal, UserID: subject.UserID, APIKeyID: apiKey.ID, CandidateIDs: candidates, OriginalSession: session, Endpoint: endpoint, Model: model, HasState: gjson.GetBytes(body, "previous_response_id").Exists() || gjson.GetBytes(body, "conversation").Exists(), Deadline: deadline}
+	input := service.AdmissionInput{RequestID: uuid.NewString(), OwnerNonce: uuid.NewString(), Node: service.RequestIDPrefix(), IdempotencyKey: c.GetHeader("Idempotency-Key"), PayloadDigest: service.CredentialDigest(originalBody), PrincipalID: principal, UserID: subject.UserID, APIKeyID: apiKey.ID, CandidateIDs: candidates, OriginalSession: session, Endpoint: endpoint, Model: gjson.GetBytes(originalBody, "model").String(), HasState: gjson.GetBytes(body, "previous_response_id").Exists() || gjson.GetBytes(body, "conversation").Exists(), Deadline: deadline}
 	queueDeadline := time.Now().Add(15 * time.Second)
 	var snap *service.CredentialExecutionSnapshot
 	cancelQueue := func() {
@@ -112,6 +122,7 @@ func (h *OpenAIGatewayHandler) tryCredentialHTTP(c *gin.Context, apiKey *service
 		case <-timer.C:
 		}
 	}
+	memoryRelease()
 	// Existing global user authority remains Redis for every provider. This gate
 	// never waits while holding a PostgreSQL reservation; failure cancels it.
 	release, acquired, err := h.concurrencyHelper.TryAcquireUserSlotForAPIKey(ctx, subject.UserID, subject.Concurrency, apiKey.ID)
@@ -130,8 +141,18 @@ func (h *OpenAIGatewayHandler) tryCredentialHTTP(c *gin.Context, apiKey *service
 		return true
 	}
 	account := accounts[snap.AccountID]
-	result, forwardErr := h.gatewayService.ForwardCredentialHTTP(ctx, c, account, forwardBody, *snap, runtime.Vault, runtime.Store)
+	// Recheck billing after waiting, before crossing the dispatch boundary.
+	if billing := h.runOpenAIHTTPBillingStage(c, OpenAIHTTPBillingStage{Handler: h, ReqLog: log, APIKey: apiKey, Subscription: subscription, StreamStarted: streamStarted}); billing.Stop {
+		cleanup, end := context.WithTimeout(context.Background(), 3*time.Second)
+		defer end()
+		_ = runtime.Store.Cancel(cleanup, snap.Lease)
+		return true
+	}
+	var result *service.OpenAIForwardResult
+	stage := h.runOpenAIHTTPForwardStage(c, OpenAIHTTPForwardStage{GatewayService: h.gatewayService, Kind: OpenAIHTTPForwardResponses, RequestContext: ctx, Account: account, Body: forwardBody, Result: &result, CredentialSnapshot: snap, CredentialRuntime: runtime})
+	forwardErr := stage.Err
 	if result != nil {
+		result.RequestID = service.CredentialBillingRequestID(snap.Lease.ID)
 		// Existing billing authorization and settlement implementation remains intact;
 		// the lease outbox separately records unknown usage and deduplicates attempts.
 		_ = h.runOpenAIHTTPUsageStage(c, OpenAIHTTPUsageStage{Handler: h, RequestContext: ctx, Result: result, APIKey: apiKey, Account: account, Subscription: subscription, InboundEndpoint: GetInboundEndpoint(c), UpstreamEndpoint: resolveOpenAIUpstreamEndpoint(c, account, result), RequestPayloadHash: service.HashUsageRequestPayload(body), RequestBody: body, ForwardErrored: forwardErr != nil, Mandatory: true})

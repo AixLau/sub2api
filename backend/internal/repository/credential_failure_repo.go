@@ -3,9 +3,10 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"time"
+
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/google/uuid"
-	"time"
 )
 
 func (s *principalAdmissionStore) ObserveCredentialFailure(ctx context.Context, o service.CredentialFailureObservation) error {
