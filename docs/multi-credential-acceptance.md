@@ -38,6 +38,8 @@
 - `go test -race ./internal/service ./internal/handler/admin -run '^TestCredential|^TestPrincipal|^TestUpstreamPrincipal' -count=1` 通过。
 - `TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -tags=integration ./internal/repository -run '^TestMultiCredential|^TestCredential|^TestPrincipalAdmission' -count=1 -v` 通过；日志 `/tmp/sub2api-credential-final-integration.log`。数据库实际 18.4，测试环境 OrbStack 4GB。
 - `go test ./cmd/server ... -run ... '^TestProvideCleanup'` 通过（Wire cleanup 测试签名已更新）。
+- `go test ./... -run '^$'` 通过：全仓后端测试编译成功。
+- `go test ./...` 已实际运行，退出 1；失败项为既有 WS/流错误/模型列表/安全审计等测试，代表性 WS 与流错误失败在基线 fde7e8ec4 独立 worktree 复现；完整后端测试不能宣称通过。
 - 广泛 OpenAI 回归失败：三项代表性失败在开发起点 `fde7e8ec4` 独立 worktree 复现；不能宣称全套绿色。
 - `GOTOOLCHAIN=go1.27.0 go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...` 完成并报告 5 个现有可达漏洞，退出 3。见实施记录。
 - 前端 `typecheck`、`lint:check` 通过；API 与 i18n Vitest 5 项通过。浏览器 mock 管理 API 在 1440×1000 与 390×844 检查，通过无横向溢出/页面脚本错误；不覆盖真实鉴权。
