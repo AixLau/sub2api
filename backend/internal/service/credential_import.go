@@ -27,8 +27,11 @@ var (
 
 // CredentialSecret is never a public DTO or an audit payload.
 type CredentialSecret struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token,omitempty"`
+	ClientID       string `json:"client_id,omitempty"`
+	AccessToken    string `json:"access_token"`
+	RefreshToken   string `json:"refresh_token,omitempty"`
+	AccountSubject string `json:"account_subject,omitempty"`
+	UserSubject    string `json:"user_subject,omitempty"`
 }
 
 type CredentialVault struct {
@@ -166,6 +169,10 @@ func (s *CredentialImportService) Import(ctx context.Context, owner int64, opera
 		return CredentialImportView{}, ErrCredentialUnverified
 	}
 	id := uuid.NewString()
+	// Provider identity is encrypted with the versioned token; caller-supplied
+	// subject fields are ignored. This preserves the established session namespace.
+	secret.AccountSubject = verification.AccountSubject
+	secret.UserSubject = verification.UserSubject
 	sealed, err := s.vault.Seal(id, secret)
 	if err != nil {
 		return CredentialImportView{}, err

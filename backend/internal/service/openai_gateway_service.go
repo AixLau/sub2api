@@ -1235,6 +1235,12 @@ func hashSensitiveValueForLog(raw string) string {
 
 // GetAccessToken gets the access token for an OpenAI account
 func (s *OpenAIGatewayService) GetAccessToken(ctx context.Context, account *Account) (string, string, error) {
+	if execution := credentialExecutionFromContext(ctx); execution != nil {
+		if account == nil || account.ID != execution.snapshot.AccountID {
+			return "", "", ErrAdmissionOwnership
+		}
+		return account.GetOpenAIAccessToken(), "oauth", nil
+	}
 	if account.IsShadow() {
 		credAccount, err := resolveCredentialAccount(ctx, s.accountRepo, account)
 		if err != nil {

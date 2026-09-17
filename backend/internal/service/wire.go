@@ -911,6 +911,11 @@ func ProvideRedeemService(
 }
 
 // ProviderSet is the Wire provider set for all services
+func ProvideCredentialRefreshCoordinator(store CredentialRefreshStore, cfg *config.Config, client OpenAIOAuthClient, proxies ProxyRepository) *CredentialRefreshCoordinator {
+	vault, _ := NewCredentialVault(cfg.Gateway.CredentialVaultKey)
+	return NewCredentialRefreshCoordinator(store, vault, &openAICredentialRefreshProvider{client: client, proxies: proxies})
+}
+
 func ProvideCredentialImportService(store CredentialImportStore, cfg *config.Config) *CredentialImportService {
 	// Missing/invalid key disables only import. No provider verifier is configured:
 	// real imports stay UNVERIFIED until an authenticated contract is implemented.
@@ -920,6 +925,8 @@ func ProvideCredentialImportService(store CredentialImportStore, cfg *config.Con
 
 var ProviderSet = wire.NewSet(
 	ProvideCredentialImportService,
+	ProvideCredentialRefreshCoordinator,
+	NewCredentialHTTPRuntime,
 	NewMerchantSSOAPIService,
 	// Core services
 	ProvideAuthService,

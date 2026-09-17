@@ -86,4 +86,17 @@
 迁移影响：249 增加调度提示字段；无占用重算。
 回滚：停止新票据，取消未准入请求；已绑定工作仍按原世代处理，不能因回退算法重绑；保留 tombstone 和 ledger。
 
-PR-05～PR-07 尚未交付，不宣称完成。
+### PR-05：HTTP 快照与刷新/错误控制组件
+
+修改：Responses handler 在旧 user 槽位前分流，新的 route query 只读取已 GROUPED 的主体；新旧账号混组拒绝。实例候选复用组/模型/Codex/channel/profit 过滤，主体只用一个代表排序。PostgreSQL 准入后非阻塞获取原 Redis user slot，失败撤销 RESERVED；不取旧 Account slot。HTTPUpstream DI 包装器拒绝未携快照的受控账号，覆盖直接 HTTP 探测旁路。普通、透传和 compact 复用现有请求构造，版本与 profile 固定；适配器内第二次发送拒绝，流式终结事件才释放。
+新增 family 唯一刷新记录、版本 CAS、REFRESH_UNKNOWN 与加密结果补偿；401 按 generation/version 更新，UNKNOWN 429 保护主体，已知 quota domain 可传播阻断。刷新 provider 尚无完整代理/client-id 契约，生产不注入，不能通过旧按钮取得密文；不调用生产 token 验证。
+
+实际测试：三类端点末端请求的 token/安装标识/大整数、partial stream 未完成、二次发送拒绝、Retry-After、重复 JSON/header 拒绝测试通过；真实 PostgreSQL 同 family 三竞争仅一赢家，refresh 后 profile/generation 不变、旧 CAS 拒绝、未知结果保留密文与锁，旧版本401不失效新版本、共享 quota 保护测试通过。
+发现并修正：现有共享 identity helper 仍在某些后续转换损失大整数；仅在 grouped HTTP 边界恢复非身份字段 RawMessage，未改变 WS/session/full。原始 profile namespace 保留，新增 provider subject 字段随 token 密文存储，导入请求不能指定验证主体。
+未验证/未完成：完整 handler 端到端权限/结算验收，grouped 后台探测目前明确拒绝而非联合准入执行；手动/401/定时 refresh 生产接线尚未完成；代理切换快照一致性和底层自动重试的全链验证；compact 真实契约；完整前端。PR-05 目前为阶段实现，不能宣称满足合并/上线门槛。
+迁移影响：250 新增 refresh/quota 证据表；未更新旧 credentials 或身份。
+回滚：停止 grouped 准入，等待/核实在途，保留新 token、未知刷新及 ORPHANED 占用；不能把加密凭证导回独立旧账号旁路。
+
+回归补充：较广 `go test -tags=unit ./internal/service ./internal/handler -run '^TestOpenAI.*(Fingerprint|HTTP|Responses|Compact)' -count=1` 失败，涉及 WS execution scope/moderation 与既有 response.failed sequence_number 断言；已建立起点 fde7e8ec4 独立 worktree 对照，结果待填。不能把过滤后的新测试通过替代全链回归。
+
+PR-06～PR-07 尚未交付，不宣称完成。

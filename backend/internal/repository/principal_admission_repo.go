@@ -69,6 +69,15 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	if mode != "GROUPED" || verified != "VERIFIED" || (admin != "ACTIVE" && admin != "DRAINING") {
 		return admissionReject("PRINCIPAL_PAUSED"), nil
 	}
+	var quotaBlocked bool
+	err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM upstream_principal_quota_domains p JOIN upstream_quota_domains q ON q.id=p.quota_domain_id
+        WHERE p.principal_id=$1 AND (q.requires_admin_reset OR q.blocked_until>CURRENT_TIMESTAMP))`, in.PrincipalID).Scan(&quotaBlocked)
+	if err != nil {
+		return rejected, err
+	}
+	if quotaBlocked {
+		return admissionReject("SHARED_QUOTA_PROTECTED"), nil
+	}
 	if in.Deadline.IsZero() || !in.Deadline.After(now) {
 		return admissionReject("ADMISSION_QUEUE_TIMEOUT"), nil
 	}

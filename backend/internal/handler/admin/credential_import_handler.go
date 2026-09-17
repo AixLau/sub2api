@@ -7,15 +7,17 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"net/http"
+	"strconv"
 )
 
 type CredentialImportHandler struct {
+	refresh *service.CredentialRefreshCoordinator
 	imports *service.CredentialImportService
 	creator service.CredentialPrincipalCreator
 }
 
-func NewCredentialImportHandler(imports *service.CredentialImportService, creator service.CredentialPrincipalCreator) *CredentialImportHandler {
-	return &CredentialImportHandler{imports: imports, creator: creator}
+func NewCredentialImportHandler(imports *service.CredentialImportService, creator service.CredentialPrincipalCreator, refresh *service.CredentialRefreshCoordinator) *CredentialImportHandler {
+	return &CredentialImportHandler{imports: imports, creator: creator, refresh: refresh}
 }
 func (h *CredentialImportHandler) Import(c *gin.Context) {
 	owner, ok := middleware.GetAuthSubjectFromContext(c)
@@ -24,12 +26,15 @@ func (h *CredentialImportHandler) Import(c *gin.Context) {
 		return
 	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 70<<10)
-	var secret service.CredentialSecret
-	if err := c.ShouldBindJSON(&secret); err != nil {
+	var input struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, "Invalid credential import")
 		return
 	}
-	view, err := h.imports.Import(c.Request.Context(), owner.UserID, c.GetHeader("Idempotency-Key"), secret)
+	view, err := h.imports.Import(c.Request.Context(), owner.UserID, c.GetHeader("Idempotency-Key"), service.CredentialSecret{AccessToken: input.AccessToken, RefreshToken: input.RefreshToken})
 	if err != nil {
 		credentialImportError(c, err)
 		return
@@ -85,4 +90,17 @@ func credentialImportError(c *gin.Context, err error) {
 		reason = "CREDENTIAL_VAULT_UNAVAILABLE"
 	}
 	response.ErrorWithDetails(c, status, "Credential operation unavailable", reason, nil)
+}
+
+func (h *CredentialImportHandler) Refresh(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "Invalid instance ID")
+		return
+	}
+	if err = h.refresh.Refresh(c.Request.Context(), id); err != nil {
+		credentialImportError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"state": "REFRESHED"})
 }
