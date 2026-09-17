@@ -68,6 +68,14 @@
 迁移影响：247 新增秘密/导入/指纹/审计表和旧写入口数据库 gate；旧未分组账号不受影响。
 回滚：保持主体 OFF/PAUSED；新账号无组、无明文 token、不可调度；回退代码保留 246/247 表及保护 trigger。不得解密导出到旧 Account 或恢复旧 token。
 
-补充实际验证：`go test ./internal/service ./internal/handler/admin ./internal/config ./internal/server/middleware -run 'TestCredential|TestAudit.*|TestUpstreamPrincipal' -count=1` 通过（config/middleware 无匹配项）；错误/秘密不回显与 owner 参数来自认证上下文通过。首次 govulncheck 因自动工具链选用 1.26 而无法加载 go1.27 项目，不属于扫描通过；正用指定 go1.27 重试。
+补充实际验证：`go test ./internal/service ./internal/handler/admin ./internal/config ./internal/server/middleware -run 'TestCredential|TestAudit.*|TestUpstreamPrincipal' -count=1` 通过（config/middleware 无匹配项）；错误/秘密不回显与 owner 参数来自认证上下文通过。首次 govulncheck 因自动工具链选用 1.26 而无法加载 go1.27 项目，不属于扫描通过；指定 go1.27 重试已完成，退出 3：发现现有 grpc v1.82.1 与 x/image v0.41.0 中 5 个可达漏洞（GO-2026-6443/6348/6222/5061/4961），相关模块未在本任务升级；这不属于安全扫描通过。
 
-PR-03～PR-07 尚未交付，不宣称完成。
+### PR-03：PostgreSQL 联合准入和租约
+
+修改：248 建立逻辑请求、票据、会话绑定、三层容量、lease 与 usage event 表；锁顺序 user → principal → instance → ledger；排队无 lease；幂等内容冲突拒绝。BeginDispatch 校验 owner/epoch/generation 与授权；双释放幂等，未知执行保持 ORPHANED 占用。同 ID/owner 可恢复 RESERVED 提交结果，DISPATCHING 不可重放。
+实际测试：真实 PostgreSQL + httptest mock 上游的 3 个 store 竞争最后槽位仅一条获准；8/2/0 动态借用、总额满等待、缩容不杀旧工作、未知执行保留占用、重复 release/旧 nonce、同 session 粘性、幂等冲突和发送前 API key 撤销测试通过。后补 DB 断连单元测试、恢复/零限额真实 PostgreSQL 测试均通过。
+未验证：三 OS 网关进程（当前为 3 个 store 并发，不宣称三进程故障测试）、DB HA/提交网络丢包/进程 SIGKILL、全局 Redis user cap 接入、完整权限模型重查、HTTP 生产入口。当前模块尚未接管真实流量，功能保持关闭。
+迁移影响：仅新增 ledger 与控制列，不回填占用。
+回滚：停止新准入，保留 RESERVED/ORPHANED 账本；只有未发送预留可取消释放；不清空计数、不删除表、不恢复旧 token。尚未接管流量的当前阶段可回退代码并保留 schema。
+
+PR-04～PR-07 尚未交付，不宣称完成。
