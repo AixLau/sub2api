@@ -115,8 +115,28 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return rejected, err
 		}
-		if bindingID != "" && (bindingState == "REVOKED" || bindingState == "EXPIRED") {
-			return admissionReject("SESSION_BINDING_EXPIRED"), nil
+		if bindingID != "" {
+			var busy bool
+			err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM request_leases WHERE binding_id=$1 AND state<>'RELEASED')
+                OR EXISTS(SELECT 1 FROM admission_tickets WHERE binding_id=$1 AND state='QUEUED' AND deadline>CURRENT_TIMESTAMP)`, bindingID).Scan(&busy)
+			if err != nil {
+				return rejected, err
+			}
+			if bindingState == "REVOKED" {
+				return admissionReject("SESSION_BINDING_EXPIRED"), nil
+			}
+			if bindingState == "EXPIRED" || (!bindingExpiry.After(now) && !busy) {
+				if in.HasState {
+					return admissionReject("SESSION_BINDING_EXPIRED"), nil
+				}
+				_, err = tx.ExecContext(ctx, `UPDATE session_bindings SET state='EXPIRED',tombstone_until=CURRENT_TIMESTAMP+INTERVAL '7 days' WHERE id=$1`, bindingID)
+				if err != nil {
+					return rejected, err
+				}
+				bindingID = ""
+				boundInstance = 0
+				bindingGeneration = ""
+			}
 		}
 	}
 	if admin == "DRAINING" && (bindingID == "" || !drain.Valid || !drain.Time.After(now)) {
@@ -192,6 +212,26 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 			selected = v
 		}
 	}
+	// Ignore expired tickets for admission, but preserve their terminal history.
+	_, err = tx.ExecContext(ctx, `UPDATE admission_tickets SET state='EXPIRED' WHERE principal_id=$1 AND state='QUEUED' AND deadline<=CURRENT_TIMESTAMP`, in.PrincipalID)
+	if err != nil {
+		return rejected, err
+	}
+	var priorTicketState string
+	err = tx.QueryRowContext(ctx, `SELECT state FROM admission_tickets WHERE request_id=$1`, in.RequestID).Scan(&priorTicketState)
+	if err == nil && priorTicketState != "QUEUED" {
+		return admissionReject("ADMISSION_QUEUE_TIMEOUT"), nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return rejected, err
+	}
+	fairWait := false
+	if selected != nil {
+		fairWait, err = credentialQueuePrecedes(ctx, tx, in.PrincipalID, in.UserID, in.RequestID, selected.id, limit, now)
+		if err != nil {
+			return rejected, err
+		}
+	}
 	// Persist a logical request only after authenticating its scope.
 	if requestID == "" {
 		_, err = tx.ExecContext(ctx, `INSERT INTO logical_requests(id,principal_id,user_id,api_key_id,caller_scope_hash,idempotency_hash,payload_digest,endpoint,model,owner_node,deadline)
@@ -200,7 +240,10 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 			return rejected, err
 		}
 	}
-	if selected == nil || occupied >= limit || (userLimit.Valid && userOccupied >= int(userLimit.Int64)) || (protected.Valid && protected.Time.After(now)) {
+	if fairWait || selected == nil || occupied >= limit || (userLimit.Valid && userOccupied >= int(userLimit.Int64)) || (protected.Valid && protected.Time.After(now)) {
+		if fairWait {
+			waitReason = "FAIRNESS_WAIT"
+		}
 		if occupied >= limit {
 			waitReason = "PRINCIPAL_CONCURRENCY_EXCEEDED"
 		}
@@ -211,15 +254,15 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 			waitReason = "COOLDOWN"
 		}
 		var queued int
-		err = tx.QueryRowContext(ctx, `SELECT count(*) FROM admission_tickets WHERE principal_id=$1 AND state='QUEUED' AND deadline>CURRENT_TIMESTAMP`, in.PrincipalID).Scan(&queued)
+		err = tx.QueryRowContext(ctx, `SELECT count(*) FROM admission_tickets WHERE principal_id=$1 AND state='QUEUED' AND deadline>CURRENT_TIMESTAMP AND request_id<>$2`, in.PrincipalID, in.RequestID).Scan(&queued)
 		if err != nil {
 			return rejected, err
 		}
 		if queued >= queueLimit {
 			return admissionReject("ADMISSION_QUEUE_FULL"), nil
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO admission_tickets(id,request_id,principal_id,binding_id,user_id,instance_id,owner_node,reason,deadline)
- VALUES($1,$2,$3,$4,$5,$6,$7,$8,LEAST($9,CURRENT_TIMESTAMP+INTERVAL '15 seconds')) ON CONFLICT(request_id) DO UPDATE SET reason=EXCLUDED.reason`, uuid.NewString(), in.RequestID, in.PrincipalID, nullableString(bindingID), in.UserID, nullablePositive(boundInstance), in.Node, waitReason, in.Deadline)
+		_, err = tx.ExecContext(ctx, `INSERT INTO admission_tickets(id,request_id,principal_id,binding_id,user_id,instance_id,owner_node,reason,deadline,candidate_ids,session_hash)
+ VALUES($1,$2,$3,$4,$5,$6,$7,$8,LEAST($9,CURRENT_TIMESTAMP+INTERVAL '15 seconds'),$10,$11) ON CONFLICT(request_id) DO UPDATE SET reason=EXCLUDED.reason`, uuid.NewString(), in.RequestID, in.PrincipalID, nullableString(bindingID), in.UserID, nullablePositive(boundInstance), in.Node, waitReason, in.Deadline, pq.Array(in.CandidateIDs), nullableString(sessionHash))
 		if err != nil {
 			return rejected, err
 		}
@@ -264,7 +307,7 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 		sql  string
 		args []any
 	}{
-		{`UPDATE principal_user_capacity SET occupied=occupied+1 WHERE user_id=$1 AND principal_id=$2`, []any{in.UserID, in.PrincipalID}},
+		{`UPDATE principal_user_capacity SET occupied=occupied+1,last_admitted_at=CURRENT_TIMESTAMP WHERE user_id=$1 AND principal_id=$2`, []any{in.UserID, in.PrincipalID}},
 		{`UPDATE upstream_principals SET occupied=occupied+1,last_instance_id=$2 WHERE id=$1`, []any{in.PrincipalID, selected.id}},
 		{`UPDATE credential_instances SET occupied=occupied+1 WHERE id=$1`, []any{selected.id}},
 		{`UPDATE logical_requests SET status='EXECUTING' WHERE id=$1`, []any{in.RequestID}},

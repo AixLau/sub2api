@@ -232,3 +232,54 @@ func TestPrincipalAdmissionRecoveryAndZeroAT11AT24(t *testing.T) {
 	require.Equal(t, service.AdmissionWait, d.Code)
 	assertAdmissionLedger(t, f0, 0)
 }
+
+func TestCredentialQueueNoHeadBlockingAT14AT17AT18AT22AT23(t *testing.T) {
+	f := newAdmissionFixture(t, 2)
+	ctx := context.Background()
+	store := &principalAdmissionStore{db: integrationDB}
+	_, err := integrationDB.Exec(`UPDATE credential_instances SET hard_max=1 WHERE id=$1`, f.instances[0])
+	require.NoError(t, err)
+	first := f.input()
+	first.CandidateIDs = f.instances[:1]
+	first.OriginalSession = "busy"
+	d, err := store.TryAdmit(ctx, first)
+	require.NoError(t, err)
+	require.Equal(t, service.AdmissionAdmitted, d.Code)
+	waiting := f.input()
+	waiting.OriginalSession = "busy"
+	q, err := store.TryAdmit(ctx, waiting)
+	require.NoError(t, err)
+	require.Equal(t, service.AdmissionWait, q.Code)
+	assertAdmissionLedger(t, f, 1)
+	// A busy bound instance cannot block a ready new session on another instance.
+	fresh := f.input()
+	fresh.OriginalSession = "new"
+	fresh.CandidateIDs = f.instances[1:]
+	next, err := store.TryAdmit(ctx, fresh)
+	require.NoError(t, err)
+	require.Equal(t, service.AdmissionAdmitted, next.Code)
+	require.NotEqual(t, d.Snapshot.Lease.InstanceID, next.Snapshot.Lease.InstanceID)
+	require.NoError(t, store.CancelQueued(ctx, waiting))
+	require.NoError(t, store.CancelQueued(ctx, waiting))
+	cancelled, err := store.TryAdmit(ctx, waiting)
+	require.NoError(t, err)
+	require.Equal(t, service.AdmissionAlreadyRunning, cancelled.Code)
+	// An active lease protects an otherwise idle-expired binding.
+	_, err = integrationDB.Exec(`UPDATE session_bindings SET idle_expires_at=CURRENT_TIMESTAMP-INTERVAL '1 second' WHERE principal_id=$1`, f.principal)
+	require.NoError(t, err)
+	active := f.input()
+	active.OriginalSession = "busy"
+	active.HasState = true
+	q, err = store.TryAdmit(ctx, active)
+	require.NoError(t, err)
+	require.Equal(t, service.AdmissionWait, q.Code)
+	require.NoError(t, store.CancelQueued(ctx, active))
+	require.NoError(t, store.Cancel(ctx, d.Snapshot.Lease))
+	expired := f.input()
+	expired.OriginalSession = "busy"
+	expired.HasState = true
+	q, err = store.TryAdmit(ctx, expired)
+	require.NoError(t, err)
+	require.Equal(t, "SESSION_BINDING_EXPIRED", q.Reason)
+	assertAdmissionLedger(t, f, 1)
+}

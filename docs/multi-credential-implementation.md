@@ -78,4 +78,12 @@
 迁移影响：仅新增 ledger 与控制列，不回填占用。
 回滚：停止新准入，保留 RESERVED/ORPHANED 账本；只有未发送预留可取消释放；不清空计数、不删除表、不恢复旧 token。尚未接管流量的当前阶段可回退代码并保留 schema。
 
-PR-04～PR-07 尚未交付，不宣称完成。
+### PR-04：硬绑定、队列、需求权重
+
+修改：有需求水位目标；数据库事务中对可执行队列按低于目标份额、用户最近获准时间和到达时间排序；绑定实例满不会迁移；队头不具备容量/健康/权限时跳过。队列取消幂等，与已准入竞态返回 ownership 冲突由执行器处理。活跃 lease/就绪票据保护 TTL，旧状态过期明确拒绝；无状态新请求可建新 binding。
+实际测试：`go test ./internal/service -run '^TestCredentialTargets' -count=1` 通过（5/2/5、1/1/1、空闲借用、零硬上限）；`TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -tags=integration ./internal/repository -run '^TestCredentialQueue|^TestPrincipalAdmission' -count=1 -v` 通过，覆盖满绑定实例与空闲其他实例、无队头阻塞、取消重入、活跃 lease 保护、旧状态拒绝。
+未验证：长时间多用户无饥饿性质测试、生产节点有界 body 内存、全局/用户队列条数和体积预算、目标平滑与通知丢失。当前只有主体票据上限，未声称完整队列验收。
+迁移影响：249 增加调度提示字段；无占用重算。
+回滚：停止新票据，取消未准入请求；已绑定工作仍按原世代处理，不能因回退算法重绑；保留 tombstone 和 ledger。
+
+PR-05～PR-07 尚未交付，不宣称完成。
