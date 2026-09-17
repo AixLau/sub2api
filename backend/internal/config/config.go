@@ -998,6 +998,8 @@ type GatewayConfig struct {
 	// MultiCredentialHTTPEnabled gates grouped HTTP admission. Default false;
 	// enabling this flag alone does not activate unverified principals.
 	MultiCredentialHTTPEnabled bool `mapstructure:"multi_credential_http_enabled"`
+	// Dedicated 32-byte hex key; never stored in the database or admin export.
+	CredentialVaultKey string `mapstructure:"credential_vault_key"`
 	// 等待上游响应头的超时时间（秒），0表示无超时
 	// 注意：这不影响流式数据传输，只控制等待响应头的时间
 	ResponseHeaderTimeout int `mapstructure:"response_header_timeout"`
@@ -2517,6 +2519,7 @@ func setDefaults() {
 
 	// Gateway
 	viper.SetDefault("gateway.multi_credential_http_enabled", false)
+	viper.SetDefault("gateway.credential_vault_key", "")
 	viper.SetDefault("gateway.response_header_timeout", 600) // 600秒(10分钟)等待上游响应头，LLM高负载时可能排队较久
 	viper.SetDefault("gateway.openai_response_header_timeout", 0)
 	viper.SetDefault("gateway.grok_response_header_timeout", 120)
@@ -2807,6 +2810,12 @@ func setEnvReachableDefaults() {
 }
 
 func (c *Config) Validate() error {
+	if c.Gateway.CredentialVaultKey != "" {
+		key, err := hex.DecodeString(c.Gateway.CredentialVaultKey)
+		if err != nil || len(key) != 32 {
+			return fmt.Errorf("gateway.credential_vault_key must be a 32-byte hex key")
+		}
+	}
 	forwardedClientIPHeaders, err := NormalizeForwardedClientIPHeaders(c.Security.ForwardedClientIPHeaders)
 	if err != nil {
 		return fmt.Errorf("security.forwarded_client_ip_headers: %w", err)

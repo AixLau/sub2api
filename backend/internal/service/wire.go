@@ -911,7 +911,15 @@ func ProvideRedeemService(
 }
 
 // ProviderSet is the Wire provider set for all services
+func ProvideCredentialImportService(store CredentialImportStore, cfg *config.Config) *CredentialImportService {
+	// Missing/invalid key disables only import. No provider verifier is configured:
+	// real imports stay UNVERIFIED until an authenticated contract is implemented.
+	vault, _ := NewCredentialVault(cfg.Gateway.CredentialVaultKey)
+	return NewCredentialImportService(store, vault, nil)
+}
+
 var ProviderSet = wire.NewSet(
+	ProvideCredentialImportService,
 	NewMerchantSSOAPIService,
 	// Core services
 	ProvideAuthService,

@@ -45,6 +45,11 @@ func RegisterAdminRoutes(
 
 		// 账号管理
 		registerAccountRoutes(admin, h, stepUpAuth)
+		if h.Admin.CredentialImport != nil {
+			admin.POST("/credential-imports", h.Admin.CredentialImport.Import)
+			admin.GET("/credential-imports/:id", h.Admin.CredentialImport.Get)
+			admin.POST("/upstream-principals", h.Admin.CredentialImport.CreatePrincipal)
+		}
 		if h.Admin.UpstreamPrincipal != nil {
 			admin.GET("/upstream-principals", h.Admin.UpstreamPrincipal.List)
 			admin.GET("/upstream-principals/:id", h.Admin.UpstreamPrincipal.Get)

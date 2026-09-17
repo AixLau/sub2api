@@ -57,4 +57,17 @@
 迁移影响：新增表、索引、两个约束 trigger；不改写 accounts、credentials、extra、group 或计费。
 回滚：关闭新功能，回退本阶段二进制，保留新增表；无 grouped 工作可创建，旧表不受影响。事务失败整体 rollback；不 DROP 审计/身份表，不用旧快照覆盖 refresh token。
 
-PR-02～PR-07 尚未交付，不宣称完成。
+### PR-02：秘密导入与受控实例创建
+
+修改：credential import 只写接口、owner 隔离、幂等摘要、token/family HMAC 查重、专用 AES-256-GCM vault（record ID 作为 AAD）；全部验证后单事务创建 inactive Account + 实例 + 不可变 LOCAL_LOGICAL profile，默认无组权限且 routing OFF。旧 Account/group 写入通过数据库 trigger 拒绝，秘密导入 body 不入通用审计。
+用户已确认没有 provider 验证契约：生产 Wire 明确传入 nil verifier，导入保持 UNVERIFIED，不能创建可执行主体。mock verifier 只在测试代码存在。
+配置：`gateway.credential_vault_key` 必须由部署秘密管理提供 32 字节 hex；缺失关闭导入，不复用 TOTP 密钥，不自动生成持久密钥。
+
+实际测试：`go test ./internal/service ./internal/handler/admin -run '^TestCredential' -count=1` 通过（当时 admin 无匹配测试，后补秘密不回显测试单独执行）；`TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -tags=integration ./internal/repository -run '^TestCredentialImport' -count=1 -v` 两项通过，覆盖三实例创建、重复 token、操作重放、异 payload、不同 user、越权读取、部分失败无写入、UNVERIFIED 拒绝、旧 Account 更新拒绝。AES-GCM AAD/篡改测试通过。
+未验证：真实 provider、完整前端、自动秘密过期清理、密钥轮换、跨部署/多租户（仓库无该权限模型），故 AT-36 不能宣布全部完成。生产不得启用 grouped。
+迁移影响：247 新增秘密/导入/指纹/审计表和旧写入口数据库 gate；旧未分组账号不受影响。
+回滚：保持主体 OFF/PAUSED；新账号无组、无明文 token、不可调度；回退代码保留 246/247 表及保护 trigger。不得解密导出到旧 Account 或恢复旧 token。
+
+补充实际验证：`go test ./internal/service ./internal/handler/admin ./internal/config ./internal/server/middleware -run 'TestCredential|TestAudit.*|TestUpstreamPrincipal' -count=1` 通过（config/middleware 无匹配项）；错误/秘密不回显与 owner 参数来自认证上下文通过。首次 govulncheck 因自动工具链选用 1.26 而无法加载 go1.27 项目，不属于扫描通过；正用指定 go1.27 重试。
+
+PR-03～PR-07 尚未交付，不宣称完成。
