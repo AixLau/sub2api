@@ -911,6 +911,12 @@ func ProvideRedeemService(
 }
 
 // ProviderSet is the Wire provider set for all services
+func ProvideCredentialReconciler(ops CredentialOperations) *CredentialReconciler {
+	r := NewCredentialReconciler(ops)
+	r.Start()
+	return r
+}
+
 func ProvideCredentialRefreshCoordinator(store CredentialRefreshStore, cfg *config.Config, client OpenAIOAuthClient, proxies ProxyRepository) *CredentialRefreshCoordinator {
 	vault, _ := NewCredentialVault(cfg.Gateway.CredentialVaultKey)
 	return NewCredentialRefreshCoordinator(store, vault, &openAICredentialRefreshProvider{client: client, proxies: proxies})
@@ -926,6 +932,7 @@ func ProvideCredentialImportService(store CredentialImportStore, cfg *config.Con
 var ProviderSet = wire.NewSet(
 	ProvideCredentialImportService,
 	ProvideCredentialRefreshCoordinator,
+	ProvideCredentialReconciler,
 	NewCredentialHTTPRuntime,
 	NewMerchantSSOAPIService,
 	// Core services

@@ -63,6 +63,15 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	if err != nil {
 		return rejected, err
 	}
+	var ledgerCount, instanceCount int
+	err = tx.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM request_leases WHERE principal_id=$1 AND state<>'RELEASED'),
+        (SELECT COALESCE(sum(occupied),0) FROM credential_instances WHERE principal_id=$1)`, in.PrincipalID).Scan(&ledgerCount, &instanceCount)
+	if err != nil {
+		return rejected, err
+	}
+	if occupied != ledgerCount || occupied != instanceCount {
+		return admissionReject("LEDGER_MISMATCH_FROZEN"), nil
+	}
 	if in.ExpectedConfigVersion != 0 && in.ExpectedConfigVersion != version {
 		return service.AdmissionDecision{Code: service.AdmissionConfigStale, Reason: "CONFIG_STALE"}, nil
 	}

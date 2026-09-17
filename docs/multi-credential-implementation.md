@@ -89,7 +89,7 @@
 ### PR-05：HTTP 快照与刷新/错误控制组件
 
 修改：Responses handler 在旧 user 槽位前分流，新的 route query 只读取已 GROUPED 的主体；新旧账号混组拒绝。实例候选复用组/模型/Codex/channel/profit 过滤，主体只用一个代表排序。PostgreSQL 准入后非阻塞获取原 Redis user slot，失败撤销 RESERVED；不取旧 Account slot。HTTPUpstream DI 包装器拒绝未携快照的受控账号，覆盖直接 HTTP 探测旁路。普通、透传和 compact 复用现有请求构造，版本与 profile 固定；适配器内第二次发送拒绝，流式终结事件才释放。
-新增 family 唯一刷新记录、版本 CAS、REFRESH_UNKNOWN 与加密结果补偿；401 按 generation/version 更新，UNKNOWN 429 保护主体，已知 quota domain 可传播阻断。刷新 provider 尚无完整代理/client-id 契约，生产不注入，不能通过旧按钮取得密文；不调用生产 token 验证。
+新增 family 唯一刷新记录、版本 CAS、REFRESH_UNKNOWN 与加密结果补偿；401 按 generation/version 更新，UNKNOWN 429 保护主体，已知 quota domain 可传播阻断。刷新 provider 复用现有固定地址 OAuth client，保存 proxy 引用并使用已导入 client-id；新增管理员 refresh 入口经过 step-up。后台与 401 自动 refresh 仍未完整接线；不调用生产 token 验证。
 
 实际测试：三类端点末端请求的 token/安装标识/大整数、partial stream 未完成、二次发送拒绝、Retry-After、重复 JSON/header 拒绝测试通过；真实 PostgreSQL 同 family 三竞争仅一赢家，refresh 后 profile/generation 不变、旧 CAS 拒绝、未知结果保留密文与锁，旧版本401不失效新版本、共享 quota 保护测试通过。
 发现并修正：现有共享 identity helper 仍在某些后续转换损失大整数；仅在 grouped HTTP 边界恢复非身份字段 RawMessage，未改变 WS/session/full。原始 profile namespace 保留，新增 provider subject 字段随 token 密文存储，导入请求不能指定验证主体。
@@ -97,6 +97,14 @@
 迁移影响：250 新增 refresh/quota 证据表；未更新旧 credentials 或身份。
 回滚：停止 grouped 准入，等待/核实在途，保留新 token、未知刷新及 ORPHANED 占用；不能把加密凭证导回独立旧账号旁路。
 
-回归补充：较广 `go test -tags=unit ./internal/service ./internal/handler -run '^TestOpenAI.*(Fingerprint|HTTP|Responses|Compact)' -count=1` 失败，涉及 WS execution scope/moderation 与既有 response.failed sequence_number 断言；已建立起点 fde7e8ec4 独立 worktree 对照，结果待填。不能把过滤后的新测试通过替代全链回归。
+回归补充：较广 `go test -tags=unit ./internal/service ./internal/handler -run '^TestOpenAI.*(Fingerprint|HTTP|Responses|Compact)' -count=1` 失败，涉及 WS execution scope/moderation 与既有 response.failed sequence_number 断言；已建立起点 fde7e8ec4 独立 worktree 对照，三项在起点独立 worktree 均复现，日志 `/tmp/sub2api-credential-baseline-regression.log`。不能把过滤后的新测试通过替代全链回归。
 
-PR-06～PR-07 尚未交付，不宣称完成。
+### PR-06：控制版本与孤儿运维
+
+修改：principal/instance PATCH 用 If-Match CAS；缩容返回 overhang/202；drain deadline、revoke 与 binding 失效；运行时接口从主库展示 RESERVED/DISPATCHING/RUNNING/CANCELLING/ORPHANED 和 ledger 差异。10秒 reconciler 不清空计数，已发送失联转 ORPHANED，RESERVED 通过同锁顺序释放；告警写结构化日志。人工 resolve 使用 step-up + confirm + evidence/reason，审计记录接受风险字段。准入发现 ledger/计数差异立即拒绝。
+实际测试：真实 PostgreSQL `TestCredentialOperationsOrphansCASDrainAT26AT35AT38` 通过：失联不释放、运行视图、缩容 overhang、过期版本拒绝、无确认不能解孤儿、带证据处理、实例 drain。Wire 初次 cleanup 函数签名错误已修复并重新生成成功。
+未验证：Prometheus 完整指标/告警联动、审计消费者投递、使用量幂等结算消费、刷新 SENDING 失联处理与自动到期秘密清理、完整停机排空、权限热变更与多进程故障。运维 API 不是完整前端。
+迁移影响：使用已有 ledger，无新秘密回填。
+回滚：暂停主体、取消未准入票据，保留在途/孤儿和新刷新结果；必须人工证据处理未知容量，不能把计数设零。控制 API 回退不删除记录。
+
+PR-07 尚未交付，不宣称完成。

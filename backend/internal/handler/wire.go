@@ -12,6 +12,7 @@ import (
 
 // ProvideAdminHandlers creates the AdminHandlers struct
 func ProvideAdminHandlers(
+	credentialOperationsHandler *admin.CredentialOperationsHandler,
 	credentialImportHandler *admin.CredentialImportHandler,
 	upstreamPrincipalHandler *admin.UpstreamPrincipalHandler,
 	dashboardHandler *admin.DashboardHandler,
@@ -57,6 +58,7 @@ func ProvideAdminHandlers(
 	accountHandler.SetUpstreamBillingProbeService(upstreamBillingProbe)
 	accountHandler.SetOllamaCloudUsageService(ollamaCloudUsage)
 	return &AdminHandlers{
+		CredentialOperations:   credentialOperationsHandler,
 		CredentialImport:       credentialImportHandler,
 		UpstreamPrincipal:      upstreamPrincipalHandler,
 		Dashboard:              dashboardHandler,
@@ -293,6 +295,7 @@ var ProviderSet = wire.NewSet(
 	// Admin handlers
 	admin.NewUpstreamPrincipalHandler,
 	admin.NewCredentialImportHandler,
+	admin.NewCredentialOperationsHandler,
 	admin.NewDashboardHandler,
 	admin.NewUserHandler,
 	admin.NewGroupHandlerWithConfig,
