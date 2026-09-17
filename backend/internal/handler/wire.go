@@ -12,6 +12,7 @@ import (
 
 // ProvideAdminHandlers creates the AdminHandlers struct
 func ProvideAdminHandlers(
+	upstreamPrincipalHandler *admin.UpstreamPrincipalHandler,
 	dashboardHandler *admin.DashboardHandler,
 	userHandler *admin.UserHandler,
 	groupHandler *admin.GroupHandler,
@@ -55,6 +56,7 @@ func ProvideAdminHandlers(
 	accountHandler.SetUpstreamBillingProbeService(upstreamBillingProbe)
 	accountHandler.SetOllamaCloudUsageService(ollamaCloudUsage)
 	return &AdminHandlers{
+		UpstreamPrincipal:      upstreamPrincipalHandler,
 		Dashboard:              dashboardHandler,
 		User:                   userHandler,
 		Group:                  groupHandler,
@@ -285,6 +287,7 @@ var ProviderSet = wire.NewSet(
 	NewMerchantSSOAPIHandler,
 
 	// Admin handlers
+	admin.NewUpstreamPrincipalHandler,
 	admin.NewDashboardHandler,
 	admin.NewUserHandler,
 	admin.NewGroupHandlerWithConfig,

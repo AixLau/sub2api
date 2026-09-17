@@ -45,6 +45,10 @@ func RegisterAdminRoutes(
 
 		// 账号管理
 		registerAccountRoutes(admin, h, stepUpAuth)
+		if h.Admin.UpstreamPrincipal != nil {
+			admin.GET("/upstream-principals", h.Admin.UpstreamPrincipal.List)
+			admin.GET("/upstream-principals/:id", h.Admin.UpstreamPrincipal.Get)
+		}
 
 		// 公告管理
 		registerAnnouncementRoutes(admin, h)

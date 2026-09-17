@@ -995,6 +995,9 @@ const (
 
 // GatewayConfig API网关相关配置
 type GatewayConfig struct {
+	// MultiCredentialHTTPEnabled gates grouped HTTP admission. Default false;
+	// enabling this flag alone does not activate unverified principals.
+	MultiCredentialHTTPEnabled bool `mapstructure:"multi_credential_http_enabled"`
 	// 等待上游响应头的超时时间（秒），0表示无超时
 	// 注意：这不影响流式数据传输，只控制等待响应头的时间
 	ResponseHeaderTimeout int `mapstructure:"response_header_timeout"`
@@ -2513,6 +2516,7 @@ func setDefaults() {
 	viper.SetDefault("moderation.allowed_hosts", []string{"api.openai.com", "open.bigmodel.cn"})
 
 	// Gateway
+	viper.SetDefault("gateway.multi_credential_http_enabled", false)
 	viper.SetDefault("gateway.response_header_timeout", 600) // 600秒(10分钟)等待上游响应头，LLM高负载时可能排队较久
 	viper.SetDefault("gateway.openai_response_header_timeout", 0)
 	viper.SetDefault("gateway.grok_response_header_timeout", 120)
