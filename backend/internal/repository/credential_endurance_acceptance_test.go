@@ -66,6 +66,9 @@ func (m *enduranceMeasurements) call(operation, result string, trace *admissionT
 	defer m.mu.Unlock()
 	prefix := operation + "." + result
 	m.durations[prefix+".call"] = append(m.durations[prefix+".call"], elapsed)
+	if trace.txStarted.IsZero() {
+		m.durations[prefix+".connection_acquire_failed"] = append(m.durations[prefix+".connection_acquire_failed"], elapsed)
+	}
 	rounds := 0
 	for phase, d := range trace.values {
 		m.durations[prefix+"."+phase] = append(m.durations[prefix+"."+phase], d)
@@ -193,9 +196,13 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 				begun := time.Now()
 				until := begun.Add(duration)
 				var wg sync.WaitGroup
-				execute := func(worker int, arrival time.Time) {
+				execute := func(worker int, arrival time.Time, burst bool) {
 					requests.Add(1)
-					m.duration("arrival_jitter", time.Since(arrival))
+					if burst {
+						m.duration("burst_arrival_jitter", time.Since(arrival))
+					} else {
+						m.duration("steady_arrival_jitter", time.Since(arrival))
+					}
 					store := stores[worker%3]
 					in := f.input()
 					in.Node = "endurance-" + strconv.Itoa(worker%3)
@@ -203,6 +210,7 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 					ctx, cancel := context.WithDeadline(context.Background(), in.Deadline)
 					defer cancel()
 					requestStarted := time.Now()
+					var firstWait time.Time
 					for {
 						callCtx, trace := newAdmissionTrace(ctx)
 						d, err := store.TryAdmit(callCtx, in)
@@ -229,7 +237,10 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 								return
 							}
 							ref := d.Snapshot.Lease
-							m.duration("queue_to_admit", time.Since(requestStarted))
+							m.duration("arrival_to_admit", time.Since(requestStarted))
+							if !firstWait.IsZero() {
+								m.duration("first_wait_to_admit", time.Since(firstWait))
+							}
 							dispatchCtx, dispatchTrace := newAdmissionTrace(ctx)
 							err = store.BeginDispatch(dispatchCtx, ref)
 							result = "OK"
@@ -286,7 +297,7 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 							}
 							close(heartbeatDone)
 							<-heartbeatStopped
-							cleanup, end := context.WithTimeout(context.Background(), 30*time.Second)
+							cleanup, end := context.WithTimeout(context.Background(), 5*time.Second)
 							finishCtx, finishTrace := newAdmissionTrace(cleanup)
 							finishErr := store.Finish(finishCtx, service.FinishAdmissionInput{Lease: ref, Complete: complete, Outcome: "COMPLETED"})
 							end()
@@ -303,6 +314,9 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 								m.failure("finish", finishErr)
 							}
 							return
+						}
+						if firstWait.IsZero() {
+							firstWait = time.Now()
 						}
 						if time.Now().After(until) || ctx.Err() != nil {
 							cleanup, end := context.WithTimeout(context.Background(), 30*time.Second)
@@ -329,7 +343,7 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 						defer wg.Done()
 						<-start
 						for time.Now().Before(until) {
-							execute(worker, time.Now())
+							execute(worker, time.Now(), false)
 						}
 					}(worker)
 				}
@@ -342,15 +356,23 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 					gate := make(chan struct{})
 					for worker := range capacity + 3 {
 						wg.Add(1)
-						go func(worker int, arrival time.Time) { defer wg.Done(); <-gate; execute(worker, arrival) }(worker, at)
+						go func(worker int, arrival time.Time) { defer wg.Done(); <-gate; execute(worker, arrival, true) }(worker, at)
 					}
 					close(gate)
+					var waits int64
+					for _, store := range stores {
+						waits += store.db.Stats().WaitCount
+					}
+					t.Logf("BURST case=%s scheduled_s=%.0f released_s=%.3f batch=%d dispatches=%d active_mock=%d peak_mock=%d pool_waits=%d", name, at.Sub(begun).Seconds(), time.Since(begun).Seconds(), capacity+3, starts.Load(), active.Load(), peak.Load(), waits)
 				}
 				wg.Wait()
 				elapsed := time.Since(begun)
 				stopSampling()
 				<-sampled
 				summary := map[string]enduranceDistribution{}
+				for _, outcome := range []string{"ADMITTED", "WAIT", "REJECTED", "ERROR"} {
+					summary["admit."+outcome+".call"] = enduranceDistribution{}
+				}
 				for k, v := range m.durations {
 					summary[k] = enduranceSummary(v)
 				}
@@ -359,7 +381,18 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 					v := store.db.Stats()
 					poolStats = append(poolStats, map[string]any{"max_open": v.MaxOpenConnections, "wait_count": v.WaitCount, "wait_ms": float64(v.WaitDuration) / 1e6, "open": v.OpenConnections, "idle": v.Idle})
 				}
-				report := map[string]any{"case": name, "scheduled_seconds": duration.Seconds(), "elapsed_seconds": elapsed.Seconds(), "requests": requests.Load(), "dispatches": starts.Load(), "dispatch_per_second": float64(starts.Load()) / elapsed.Seconds(), "timeout_count": timeouts.Load(), "timeout_rate": float64(timeouts.Load()) / float64(requests.Load()), "peak_mock": peak.Load(), "mock_utilization": float64(serviceNanos.Load()) / float64(elapsed) / float64(capacity), "duplicates": duplicates.Load(), "over": over.Load(), "pool_stats": poolStats, "pg_wait_backend_samples_50ms": pgWait, "sql_calls": m.sqlCalls, "durations": summary, "errors": m.failures, "admitted_transaction_p95_target_20ms_met": summary["admit.ADMITTED.transaction"].P95MS <= 20}
+				states := map[string]int{}
+				rows, err := integrationDB.Query(`SELECT state,count(*) FROM request_leases WHERE principal_id=$1 GROUP BY state`, f.principal)
+				require.NoError(t, err)
+				for rows.Next() {
+					var state string
+					var count int
+					require.NoError(t, rows.Scan(&state, &count))
+					states[state] = count
+				}
+				require.NoError(t, rows.Err())
+				rows.Close()
+				report := map[string]any{"final_lease_states": states, "case": name, "scheduled_seconds": duration.Seconds(), "elapsed_seconds": elapsed.Seconds(), "requests": requests.Load(), "dispatches": starts.Load(), "dispatch_per_second": float64(starts.Load()) / elapsed.Seconds(), "timeout_count": timeouts.Load(), "timeout_rate": float64(timeouts.Load()) / float64(requests.Load()), "peak_mock": peak.Load(), "mock_utilization": float64(serviceNanos.Load()) / float64(elapsed) / float64(capacity), "duplicates": duplicates.Load(), "over": over.Load(), "pool_stats": poolStats, "pg_wait_backend_samples_50ms": pgWait, "sql_calls": m.sqlCalls, "durations": summary, "errors": m.failures, "admitted_transaction_p95_target_20ms_met": summary["admit.ADMITTED.transaction"].P95MS <= 20}
 				data, err := json.Marshal(report)
 				require.NoError(t, err)
 				t.Logf("MEASUREMENTS %s", data)

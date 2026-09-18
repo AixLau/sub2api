@@ -72,3 +72,11 @@ TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=30s SUB2A
 补充真实handler测试：BeginDispatch已经提交但模拟丢失提交应答时，零HTTP发送仍保守进入ORPHANED/UNKNOWN，PG与Redis占用各保留1；不冒充已知未发送。提交明确返回成功、执行context已到期且尚未进入transport时，则凭本地确定证据释放为NOT_SENT，PG和Redis同时归零。二者没有混为一类。
 
 `TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -tags=integration ./internal/repository -run '^(TestCredentialGatewayTime|TestPrincipalAdmissionTime)' -count=1 -v` 通过（`long-wait-and-commit.log`，42.378s）。心跳回归实际持锁等待31秒，跨过30秒陈旧阈值，提交后的heartbeat仍不早于释放锁的时刻；这里只在仓储测试提供长context，产品执行器3秒心跳预算不变。提交丢应答由装饰器注入，未声称真实网络丢包。
+
+### 持续矩阵的固定口径
+
+发生器记录ADMITTED/WAIT/REJECTED/ERROR各自call/transaction/连接取得前阶段/SQL阶段/commit分布；零样本明确count=0。连接池超时尚未进入driver.BeginTx时记`connection_acquire_failed`；SQL阶段时间包含往返和执行，不能等同纯锁等待。`lock_held_lower_bound`从用户锁SQL返回算起，仅是持锁下界，不替代事务时间。DB活动每50ms采样，以backend样本计数展示wait_event，不换算为精确锁等待毫秒。
+
+真实HTTP mock记录开始/结束、峰值和累计service时间，报告吞吐和平均容量利用率。`arrival_to_admit`包含首次准入；`first_wait_to_admit`只统计曾WAIT的请求，自首次WAIT响应（票据已提交）至获准，不包括首次准入调用。minute barrier释放独立有限批次，`burst_arrival_jitter`单独统计计划到达到实际调用的偏差。业务和context均2分钟；心跳10秒/3秒，Finish使用与执行器一致的5秒预算。短P0/P1/P3诊断的Finish原为30秒，因此它们的成功结果不能证明5秒Finish预算已满足；最终持续矩阵不扩大预算。
+
+`TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=2s SUB2API_CREDENTIAL_MATRIX_CASE=C10_I3 go test -race -tags=integration ./internal/repository -run '^(TestCredential(GatewayTime|AdmissionCapacityWrite|AdmissionCompeting|AcceptanceEndurance))' -count=1 -v` 通过（`race-targeted.log`，17.554s）。仅证明这些回归和测量包装器未报告数据竞争；race下2秒样本不参与性能对照，分钟突发未在此运行。
