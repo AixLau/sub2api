@@ -28,9 +28,16 @@ type CredentialHTTPRuntime struct {
 
 func NewCredentialHTTPRuntime(store PrincipalAdmissionStore, routes CredentialRouteStore, cfg *config.Config, globalUserSlots CredentialGlobalUserSlots) (*CredentialHTTPRuntime, error) {
 	RegisterCredentialMetrics()
-	vault, _ := NewCredentialVault(cfg.Gateway.CredentialVaultKey)
+	vault, _ := NewCredentialVaultWithFingerprintKey(cfg.Gateway.CredentialVaultKey, cfg.Gateway.CredentialFingerprintKey)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	if checker, ok := routes.(interface {
+		CheckCredentialVaultKeys(context.Context, string, string) error
+	}); ok {
+		if err := checker.CheckCredentialVaultKeys(ctx, vault.EncryptionKeyID(), vault.FingerprintKeyID()); err != nil {
+			return nil, err
+		}
+	}
 	if err := routes.CheckCredentialRuntime(ctx, cfg.Gateway.MultiCredentialHTTPEnabled); err != nil {
 		return nil, err
 	}

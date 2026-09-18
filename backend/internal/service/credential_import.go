@@ -35,11 +35,18 @@ type CredentialSecret struct {
 }
 
 type CredentialVault struct {
-	aead    cipher.AEAD
-	hmacKey []byte
+	aead            cipher.AEAD
+	hmacKey         []byte
+	encryptionKeyID string
 }
 
 func NewCredentialVault(keyHex string) (*CredentialVault, error) {
+	return NewCredentialVaultWithFingerprintKey(keyHex, "")
+}
+
+// Fingerprint keys stay stable when the encryption key rotates: historical
+// token/family aliases and verified subject identifiers must not change.
+func NewCredentialVaultWithFingerprintKey(keyHex, fingerprintKeyHex string) (*CredentialVault, error) {
 	key, err := hex.DecodeString(strings.TrimSpace(keyHex))
 	if err != nil || len(key) != 32 {
 		return nil, ErrCredentialVaultUnavailable
@@ -54,7 +61,15 @@ func NewCredentialVault(keyHex string) (*CredentialVault, error) {
 	}
 	mac := hmac.New(sha256.New, key)
 	mac.Write([]byte("sub2api:credential-fingerprints:v1"))
-	return &CredentialVault{aead: aead, hmacKey: mac.Sum(nil)}, nil
+	fingerprintKey := mac.Sum(nil)
+	if fingerprintKeyHex != "" {
+		fingerprintKey, err = hex.DecodeString(strings.TrimSpace(fingerprintKeyHex))
+		if err != nil || len(fingerprintKey) != 32 {
+			return nil, ErrCredentialVaultUnavailable
+		}
+	}
+	id := sha256.Sum256(append([]byte("sub2api:credential-encryption-key:v1:"), key...))
+	return &CredentialVault{aead: aead, hmacKey: fingerprintKey, encryptionKeyID: hex.EncodeToString(id[:])}, nil
 }
 func (v *CredentialVault) Seal(aad string, secret CredentialSecret) ([]byte, error) {
 	if v == nil {
@@ -242,4 +257,20 @@ func (v *CredentialVault) OpenData(aad string, sealed []byte) ([]byte, error) {
 		return nil, errors.New("invalid ciphertext")
 	}
 	return v.aead.Open(nil, sealed[:n], sealed[n:], []byte(aad))
+}
+
+// FingerprintKeyHex is for the offline rotation command's mode-0600 key bundle.
+// It must never be included in admin DTOs, audit records or diagnostic output.
+func (v *CredentialVault) FingerprintKeyHex() string { return hex.EncodeToString(v.hmacKey) }
+func (v *CredentialVault) EncryptionKeyID() string {
+	if v == nil {
+		return ""
+	}
+	return v.encryptionKeyID
+}
+func (v *CredentialVault) FingerprintKeyID() string {
+	if v == nil {
+		return ""
+	}
+	return v.Fingerprint("key-check", "v1")
 }

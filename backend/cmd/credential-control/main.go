@@ -48,8 +48,11 @@ func main() {
 		_ = json.NewEncoder(os.Stdout).Encode(v)
 		return
 	}
-	vault, err := service.NewCredentialVault(os.Getenv("SUB2API_CREDENTIAL_VAULT_KEY"))
+	vault, err := service.NewCredentialVaultWithFingerprintKey(os.Getenv("SUB2API_CREDENTIAL_VAULT_KEY"), os.Getenv("SUB2API_CREDENTIAL_FINGERPRINT_KEY"))
 	if err != nil {
+		fail()
+	}
+	if repository.CheckCredentialVaultKeys(ctx, db, vault.EncryptionKeyID(), vault.FingerprintKeyID()) != nil {
 		fail()
 	}
 	rollout := repository.NewCredentialRollout(db, vault, credentialfence.Docker{Project: *project, Service: *gateway})

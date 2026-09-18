@@ -929,14 +929,14 @@ func ProvideCredentialReconciler(ops CredentialOperations, refresh *CredentialRe
 }
 
 func ProvideCredentialRefreshCoordinator(store CredentialRefreshStore, cfg *config.Config, client OpenAIOAuthClient, proxies ProxyRepository) *CredentialRefreshCoordinator {
-	vault, _ := NewCredentialVault(cfg.Gateway.CredentialVaultKey)
+	vault, _ := NewCredentialVaultWithFingerprintKey(cfg.Gateway.CredentialVaultKey, cfg.Gateway.CredentialFingerprintKey)
 	return NewCredentialRefreshCoordinator(store, vault, &openAICredentialRefreshProvider{client: client, proxies: proxies})
 }
 
 func ProvideCredentialImportService(store CredentialImportStore, cfg *config.Config) *CredentialImportService {
 	// Missing/invalid key disables only import. No provider verifier is configured:
 	// real imports stay UNVERIFIED until an authenticated contract is implemented.
-	vault, _ := NewCredentialVault(cfg.Gateway.CredentialVaultKey)
+	vault, _ := NewCredentialVaultWithFingerprintKey(cfg.Gateway.CredentialVaultKey, cfg.Gateway.CredentialFingerprintKey)
 	return NewCredentialImportService(store, vault, nil)
 }
 
