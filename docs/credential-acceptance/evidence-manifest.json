@@ -34,7 +34,9 @@
     "heartbeat_timeout_seconds": 3,
     "finish_timeout_seconds": 5,
     "queue_poll_seconds": 0.1,
-    "pg_activity_sample_seconds": 0.05
+    "pg_activity_sample_seconds": 0.05,
+    "go_target": "darwin/arm64",
+    "postgres_image_target": "linux/amd64"
   },
   "artifacts": [
     {
@@ -96,6 +98,26 @@
       "path": "/tmp/sub2api-admission-time-performance/profile-batch-C200_I16.log",
       "sha256": "d8a23f06f30d376ffd4c6ef16f44ced46c41adac911845bd61e81b851093cf66",
       "bytes": 35121
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/endurance-six-sequential.log",
+      "sha256": "77499f824bd19154d846ece9e08b976445436ae9667d2980e5d7323e119e931e",
+      "bytes": 156947
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/C50_I3-live-at-360s.txt",
+      "sha256": "ccb9141fc8876676b6a10b9a4b3f997cd0864a9ffad649a5d0d866dd4bee6046",
+      "bytes": 1053
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/C50_I3-live-queue-reasons.txt",
+      "sha256": "a777f2f214fe7d6def9b0126b25abb524a748079e9c3f335c29b1618ec9aa475",
+      "bytes": 847
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/C200_I3-live-after-first-burst.txt",
+      "sha256": "821ac8f8b00d8d71b15952d10e3a886a2fe3ae91f5d1af59f1260d5064316d78",
+      "bytes": 613
     }
   ],
   "runs": [
@@ -117,10 +139,20 @@
       "run_id": "E2",
       "tested_code_sha": "c594d92e3d6580cb9069a7c788deec1380eb22ea",
       "benchmark_code_sha": "c594d92e3d6580cb9069a7c788deec1380eb22ea",
-      "status": "RUNNING",
+      "status": "FAIL",
       "command": "TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=10m go test -tags=integration ./internal/repository -run '^TestCredentialAcceptanceEndurance$' -count=1 -timeout=85m -v",
       "working_directory": "backend",
-      "artifact": "/tmp/sub2api-admission-time-performance/endurance-six-sequential.log"
+      "artifact": "/tmp/sub2api-admission-time-performance/endurance-six-sequential.log",
+      "performance_status": "PARTIAL",
+      "execution_cases": {
+        "C10_I3": "PASS",
+        "C10_I16": "PASS",
+        "C50_I3": "FAIL",
+        "C50_I16": "PASS",
+        "C200_I3": "FAIL",
+        "C200_I16": "FAIL"
+      },
+      "summary_artifact": "admission-endurance-results.json"
     }
   ],
   "notes": [
@@ -128,6 +160,7 @@
     "旧8c1bfcbff到5effa833只有文档变化，backend/frontend diff为空；不因文档变更无限重跑。",
     "SQL阶段wall time不等于纯lock wait；pg_stat_activity计数是backend样本。",
     "receipt之前没有恢复所需usage事实，UNKNOWN/人工核对而非自动重建。",
-    "mock不证明真实provider身份或compact契约。"
+    "mock不证明真实provider身份或compact契约。",
+    "本轮为Apple M2上的darwin/arm64 Go进程与linux/amd64 PostgreSQL镜像；不能外推原生Linux硬件SLO，也未以跨架构推断所有慢查询/竞争都属环境问题。"
   ]
 }

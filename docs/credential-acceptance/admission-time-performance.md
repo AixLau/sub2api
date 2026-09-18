@@ -25,7 +25,23 @@ HTTP 修复：在数据库 dispatch 等待前连接执行 context 和 snapshot d
 
 ## 性能证据
 
-待本专项测量和持续矩阵完成后补充。20ms 目标不变，旧混合结果 p95 不代表成功准入事务 p95；不把 30 秒与两分钟请求预算的差异单独归因为发生器或实现问题。
+专项持续矩阵 E2 已完成六组合、每组10分钟，使用固定 `tested_code_sha= c594d92e3d6580cb9069a7c788deec1380eb22ea` 和 `benchmark_code_sha= c594d92e3d6580cb9069a7c788deec1380eb22ea`。命令实际退出1，因为 C50/I3、C200/I3、C200/I16 的测试断言发现生命周期错误/残留占用；各组仍保留原始结果。E2 不是系统验收PASS。
+
+| 场景 | 执行断言 | ADMITTED call p95 | ADMITTED transaction p95 | WAIT call p95 | dispatch/s | mock利用率 | 队列超时 | 最终保留占用 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| C10/I3 | PASS | 24.11ms | 24.10ms | 51.98ms | 9.34 | 89.54% | 0 | 0 |
+| C10/I16 | PASS | 23.78ms | 23.78ms | 59.66ms | 9.38 | 89.82% | 0 | 0 |
+| C50/I3 | FAIL | 1186.49ms | 259.79ms | 1368.32ms | 3.27 | 6.25% | 758 | 1 |
+| C50/I16 | PASS（执行断言） | 1621.55ms | 343.12ms | 1678.89ms | 2.58 | 4.92% | 967 | 0 |
+| C200/I3 | FAIL | 3875.58ms | 253.12ms | 5109.73ms | 5.01 | 2.40% | 3259 | 101 |
+| C200/I16 | FAIL | 4246.48ms | 264.90ms | 5243.94ms | 4.81 | 2.30% | 3287 | 90 |
+
+这里的 `PASS（执行断言）` 只表示该子场景结束时没有残留 lease、重复发送或超限；它仍远高于20ms且有967次明确队列超时，所以性能验收是 PARTIAL。C50/I3 的1条、C200/I3的101条、C200/I16的90条 `DISPATCHING` lease 来自 Finish在5秒连接获取/锁等待预算内未完成；C200两组还分别有8/12次3秒Heartbeat错误。它们被保留在账本中，测试没有直接清零。
+
+六组均使用203或13个worker、三独立8连接pool、2分钟业务/context deadline、100ms轮询、10秒心跳/3秒心跳预算、5秒Finish预算和明确分钟barrier。C10两组连接池等待为0但成功准入仍超过20ms；C50/C200在公平等待和相同用户行锁竞争下出现累计pool等待与低上游利用率。E2证明了当前实现的性能和生命周期缺口，不能用更长deadline或删权威查询绕过。
+
+原始逐组 JSON/环境/SQL计划/等待样本见 [`admission-endurance-results.json`](admission-endurance-results.json)、[`admission-profile-results.json`](admission-profile-results.json) 和 [`evidence-manifest.json`](evidence-manifest.json)。旧 E0/E1 仍是历史记录；不以代表性重现推断所有旧失败均属基线，也不以 C10 子场景通过推断全部矩阵通过。
+
 
 ### 优化前测量 P0（30秒诊断，不是持续验收）
 
@@ -84,3 +100,13 @@ TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=30s SUB2A
 测量与旧E1的可比性限制：P0/P1/P3/E2统一设置MaxIdleConns=8（旧发生器沿用database/sql默认2），MaxOpenConns始终8；P0与后续优化对照使用同一设置，不能把P0/E2和旧E1的差异全部归于执行代码优化。事务追踪包装器只在integration测试编译，产品指标仅增加固定decision维度、ERROR区分和正确的call定义。
 
 `timeout_count/timeout_rate`原始字段仅计明确返回ADMISSION_QUEUE_TIMEOUT的请求；Heartbeat/Finish/HTTP错误通过各自ERROR计数及错误列表披露，不能把该字段误读为全部端到端超时率。未记录精确逐请求跨阶段关联，无法从聚合值推导去重后的全生命周期超时率。连接池和阶段ERROR样本仍完整保留，生产总超时率需另行接入网关请求结果指标。
+
+### E2运行中的C50/I3现场证据
+
+只读查询本次testcontainers PostgreSQL（`c00d9e6e8d0b/sub2api_test`），未查询或修改生产库。`C50_I3-live-at-360s.txt`记录：总额50、占用3、96张未过期票据、没有ORPHANED；24个benchmark后端里22个等tuple lock、1个等transactionid lock。后续 `C50_I3-live-queue-reasons.txt` 在数据库时间08:43:21.591255记录43张就绪票据全部FAIRNESS_WAIT。此现场证据排除了该时刻“容量已满/孤儿占满”的解释。
+
+该组结束时有54,194次WAIT调用（869,763次SQL调用），相对于1,997次成功准入（39,666次SQL调用）。WAIT SQL用户锁均值223.58ms、公平队列SQL均值1.905ms、过期清理0.479ms；成功准入持锁下界p95仅14.07ms，而事务p95达259.79ms。三个pool累计等待约6341.61/6386.99/5580.70秒。一次Finish.ERROR在driver.BeginTx之前等待5000.05ms，最终1条DISPATCHING占用保留；完整HTTP mock已结束，但此发生器不含usage receipt/reconciler恢复链，不能直接推断生产计费链会永久丢失释放，也不能把该测试标PASS。
+
+源码与测量共同指向：严格等待较早票据的owner再次进入完整准入事务，其他候选仍反复持锁查询并返回WAIT；这能在有大量空闲执行容量时维持DB/pool竞争。属于当前队列协议与轮询的组合问题。本轮未做禁用公平检查或改变100ms间隔的A/B实验，不能单独量化二者各自的因果贡献。20ms以及生命周期预算仍不满足，不能以删检查/放宽上限/延长预算放行。
+
+环境补核：`go env GOOS GOARCH`为darwin/arm64，`docker image inspect postgres:18.1-alpine3.23 --format '{{.Architecture}} {{.Os}}'`为amd64/linux，镜像内数据库实际18.4。宿主Apple M2/8GiB，OrbStack分配约3.89GiB/8CPU。属于跨架构镜像运行，不能直接发布为原生Linux/amd64生产硬件SLO；未做原生硬件A/B，不能将全部退化归因于模拟执行。P0/P1/P3和E2使用同一宿主与镜像，架构事实保留在证据清单。

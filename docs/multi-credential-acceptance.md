@@ -64,12 +64,13 @@
 - E0历史30秒请求预算运行有两组ownership loss，根因时间线未证明；不推断全部为发生器问题。E1已完成两分钟预算的六个并行10分钟运行，无测试观察到的超限/重复/残留，mixed call p95为0.49～9.79s，仍超20ms。它补充E0，旧“尚未重跑/两组当前失败”结论不再代表最新矩阵。
 - 本专项P0/P1/P3分别测量pool和SQL阶段；P3短测虽减少SQL往返和持锁时间，但出现一次3秒heartbeat pool超时，整条命令FAIL，未掩盖。E2六组合串行10分钟的结果和SHA另见 [专项报告](credential-acceptance/admission-time-performance.md)；性能20ms目标保持。
 - 本轮时间正确性T2：`TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -tags=integration ./internal/repository -run '^(TestCredentialGatewayTime|TestPrincipalAdmissionTime)' -count=1 -v`，PASS，实际31秒心跳锁等待及完整handler提交边界。日志 `long-wait-and-commit.log`。扩大网关/usage/容量/队列回归结果见专项P3记录，不把包含失败压测的整条命令写成PASS。
+- E2最终矩阵：C10/I3 PASS（执行断言，准入p95=24.11ms）；C10/I16 PASS（23.78ms）；C50/I3 FAIL（1条DISPATCHING）；C50/I16 PASS（执行断言但967次队列超时、p95=1.62s）；C200/I3 FAIL（101条DISPATCHING、8次Heartbeat错误）；C200/I16 FAIL（90条DISPATCHING、12次Heartbeat错误）。E2命令实际退出1；这些子场景结果不能外推为系统验收PASS，完整表格和SHA见专项报告/`admission-endurance-results.json`。
 - 旧 binary fence、离线迁移/canary/rollback 证据见 [`rollout.md`](credential-acceptance/rollout.md)。
 - 五个扫描漏洞逐项调用路径和处置见 [`vulnerabilities.md`](credential-acceptance/vulnerabilities.md)。扫描结果未被忽略；grpc/x/image 未在本任务升级，生产仍受漏洞处置门槛约束。
 
 ## 三个最终结论
 
-**代码实现状态：** 多实例模型、PostgreSQL准入/lease、硬粘性、动态借用、HTTP三端点快照、refresh CAS/unknown、全局 Redis user hold fencing、usage receipt/billing outbox、审计、迁移预览和单主机离线 fencing/rollback 已实现并有受控测试。WS、session/full、UA/TLS 与既有隐私清理未修改。另有原有未跟踪 `zz_debug_test.go` 不在提交中。
+**代码实现状态：** 多实例模型、PostgreSQL准入/lease、硬粘性、动态借用、HTTP三端点快照、refresh CAS/unknown、全局 Redis user hold fencing、usage receipt/billing outbox、审计、迁移预览和单主机离线 fencing/rollback 已实现并有受控测试；本专项修复了锁等待后的时间语义和发送前取消边界，并加入阶段测量、258活跃lease索引、无竞争票据短路及锁内批量计数写入。E2仍暴露高并发Finish/Heartbeat连接等待和公平队列退化，尚未修复。WS、session/full、UA/TLS 与既有隐私清理未修改。另有原有未跟踪 `zz_debug_test.go` 不在提交中。
 
 **系统验收状态：** PARTIAL。真实身份与compact契约继续BLOCKED；声明支持拓扑的完整演练、各I类缺口、准入性能和生命周期超时、全仓失败归因、安全漏洞处置仍未闭合。E0已由后续运行补充，HA/跨地域属于不支持范围。receipt前UNKNOWN人工处置是允许的安全边界，不能承诺自动恢复。不能宣称七阶段全部完成或远端Exactly Once。
 
