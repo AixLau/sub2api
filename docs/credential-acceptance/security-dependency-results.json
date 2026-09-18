@@ -1,0 +1,196 @@
+{
+  "report_revision": "security-dependencies-924819-r1",
+  "acceptance_baseline_sha": "924819c5d04a550801fb4e85441059389dc00caa",
+  "security_code_sha": "6f8dc9b36e73fff4b86616a251e926eae3d52a61",
+  "tested_code_sha": null,
+  "benchmark_code_sha": null,
+  "snapshot_limitation": "These targeted development runs used the shared worktree while other agents had unrelated uncommitted work. The security files and dependency versions match security_code_sha, but there was no immutable full-source tested snapshot. Final release candidate validation must rerun the tests and scan on its pinned snapshot. This report does not claim clean-candidate system acceptance.",
+  "binary_sha256": null,
+  "binary_note": "go test and source-mode govulncheck created ephemeral binaries; no retained test binary was hashed for these development runs.",
+  "environment": {
+    "go": "go1.27.0",
+    "goos": "darwin",
+    "goarch": "arm64",
+    "scope": "local only; no production actions"
+  },
+  "selected_versions": {
+    "google.golang.org/grpc": "v1.83.2",
+    "golang.org/x/image": "v0.45.0"
+  },
+  "dependency_files": {
+    "backend/go.mod": "2cf1efc24591705c5b75aa1f66921a9b99ec70acb1919ba71aa3f2a7be5c4999",
+    "backend/go.sum": "16a9909f10683778b571ed67e965a5788cd233a1601b499801025390d9098adf"
+  },
+  "resolved_original_ids": [
+    "GO-2026-6443",
+    "GO-2026-6348",
+    "GO-2026-6222",
+    "GO-2026-5061",
+    "GO-2026-4961"
+  ],
+  "remaining_module_only": [
+    {
+      "id": "GO-2026-6355",
+      "package": "golang.org/x/crypto/ssh",
+      "found": "v0.55.0",
+      "fixed": "v0.56.0",
+      "status": "MODULE_ONLY_NOT_IMPORTED_OR_REACHABLE_IN_THIS_SCAN",
+      "source": "https://pkg.go.dev/vuln/GO-2026-6355"
+    },
+    {
+      "id": "GO-2026-6354",
+      "package": "golang.org/x/crypto/ssh",
+      "found": "v0.55.0",
+      "fixed": "v0.56.0",
+      "status": "MODULE_ONLY_NOT_IMPORTED_OR_REACHABLE_IN_THIS_SCAN",
+      "source": "https://pkg.go.dev/vuln/GO-2026-6354"
+    },
+    {
+      "id": "GO-2026-6180",
+      "package": "golang.org/x/mod/sumdb",
+      "found": "v0.38.0",
+      "fixed": "v0.40.0",
+      "status": "MODULE_ONLY_NOT_IMPORTED_OR_REACHABLE_IN_THIS_SCAN",
+      "source": "https://pkg.go.dev/vuln/GO-2026-6180"
+    },
+    {
+      "id": "GO-2026-6179",
+      "package": "golang.org/x/mod/sumdb/tlog",
+      "found": "v0.38.0",
+      "fixed": "v0.40.0",
+      "status": "MODULE_ONLY_NOT_IMPORTED_OR_REACHABLE_IN_THIS_SCAN",
+      "source": "https://pkg.go.dev/vuln/GO-2026-6179"
+    },
+    {
+      "id": "GO-2026-5932",
+      "package": "golang.org/x/crypto/openpgp",
+      "found": "v0.55.0",
+      "fixed": null,
+      "status": "MODULE_ONLY_NOT_IMPORTED_OR_REACHABLE_IN_THIS_SCAN",
+      "source": "https://pkg.go.dev/vuln/GO-2026-5932"
+    },
+    {
+      "id": "GO-2026-5841",
+      "package": "github.com/klauspost/compress/s2",
+      "found": "v1.18.2",
+      "fixed": "v1.18.7",
+      "status": "MODULE_ONLY_NOT_IMPORTED_OR_REACHABLE_IN_THIS_SCAN",
+      "source": "https://pkg.go.dev/vuln/GO-2026-5841"
+    }
+  ],
+  "runs": [
+    {
+      "command": "GOCACHE=/tmp/sub2api-queue-progress/go-cache GOFLAGS=-p=2 go test -p 2 ./internal/service ./internal/handler/admin ./pkg/pluginapi/v1 -run '^(TestPlugin|TestBuiltInOpenAITransport|TestUpdateProfile.*Avatar|TestUpdateProfileWebP|TestRewardSkinUpload)' -count=1 -v",
+      "working_directory": "/Users/lushiwu/dev/sub2api/backend",
+      "exit_code": 1,
+      "artifact": "/tmp/sub2api-release-security/focused-initial.log",
+      "sha256": "9f4fa688e99f54c22350f11ceb59b43b3cd22436d94ae4ed0c2145207125612f",
+      "bytes": 1483,
+      "completed_utc": "2026-09-18T19:09:16.059354+00:00",
+      "summary": "Test draft failed to compile because mockUserRepo belongs to unit-tagged tests; corrected by adding the unit tag to the new avatar test. Skin regressions passed, plugin tests did not run.",
+      "passed_root_tests": [
+        "TestRewardSkinUploadImageDecoderRegression"
+      ],
+      "skipped_root_tests": []
+    },
+    {
+      "command": "GOCACHE=/tmp/sub2api-queue-progress/go-cache GOFLAGS=-p=2 go test -p 2 -tags=unit ./internal/service ./internal/handler/admin ./pkg/pluginapi/v1 -run '^(TestPlugin|TestBuiltInOpenAITransport|TestUpdateProfile.*Avatar|TestUpdateProfileWebP|TestRewardSkinUpload|TestManifest)' -count=1 -v",
+      "working_directory": "/Users/lushiwu/dev/sub2api/backend",
+      "exit_code": 0,
+      "artifact": "/tmp/sub2api-release-security/focused-unit.log",
+      "sha256": "4d32edfd20615eb50dee5f436860998d9fabd7985c51b0d93fce3bb739e52587",
+      "bytes": 6133,
+      "completed_utc": "2026-09-18T19:11:48.943583+00:00",
+      "summary": "Targeted compatibility tests passed. External signed-package TestPluginRuntimeIntegration skipped; self-contained actual subprocess TestPluginRuntimeGRPCSubprocess passed.",
+      "passed_root_tests": [
+        "TestPluginManagerRoutingDoesNotTouchAPIKeyOrOtherProviders",
+        "TestPluginManagerRoutingKeepsOAuthOnLegacyPathWithoutEnabledBinding",
+        "TestPluginManagerRoutingSelectsOnlyEligibleOpenAIOAuthAccounts",
+        "TestPluginPackageInstallerInstallUnsignedDevelopmentPackage",
+        "TestPluginPackageInstallerAllowsRepeatedIdenticalUpload",
+        "TestPluginPackageInstallerRejectsUnsignedPackageByDefault",
+        "TestPluginPackageInstallerVerifiesTrustedSignature",
+        "TestBuiltInOpenAITransportPublisherDoesNotRequireConfiguration",
+        "TestPluginPackageInstallerRejectsPathTraversal",
+        "TestPluginPackageInstallerKeepsHostVersionMismatchDisabled",
+        "TestPluginPackageInstallerRejectsHashMismatch",
+        "TestPluginPackageInstallerEnforcesActualExtractionLimit",
+        "TestPluginRuntimeGRPCSubprocess",
+        "TestPluginUIAssetTokenCanBeResolvedByAnotherInstance",
+        "TestPluginUIAssetTokenRejectsOtherEncryptedPayloads",
+        "TestPluginReconcileFailsClosedWhenDesiredStateCannotBeRead",
+        "TestPluginRuntimeReturnsAndAppliesNormalizedConfig",
+        "TestPluginRuntimeRejectsInvalidNormalizedConfig",
+        "TestPluginManagerPersistsPluginNormalizedConfig",
+        "TestPluginRequestSentErrorDoesNotFailOver",
+        "TestPluginRPCAmbiguityPreventsReplayAfterMetadataDelivery",
+        "TestPluginRPCFailureBeforeStreamCreationAllowsFailover",
+        "TestPluginStartingStateUsesBoundedCrashRecoveryWindow",
+        "TestUpdateProfileWebPDecoderRegression",
+        "TestUpdateProfile_StoresInlineAvatarWithinLimit",
+        "TestUpdateProfile_CompressesInlineAvatarToTwentyKilobytes",
+        "TestUpdateProfile_RejectsInlineAvatarOverLimit",
+        "TestUpdateProfile_StoresRemoteAvatarURL",
+        "TestUpdateProfile_DeletesAvatarOnEmptyString",
+        "TestUpdateProfile_RollsBackAvatarMutationWhenUserUpdateFails",
+        "TestUpdateProfile_AvatarOnlySkipsUserRowWrite",
+        "TestRewardSkinUploadImageDecoderRegression",
+        "TestManifestSchemaIsValidJSON"
+      ],
+      "skipped_root_tests": [
+        "TestPluginRuntimeIntegration"
+      ]
+    },
+    {
+      "command": "GOCACHE=/tmp/sub2api-queue-progress/go-cache GOFLAGS=-p=2 GOTOOLCHAIN=go1.27.0 go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...",
+      "working_directory": "/Users/lushiwu/dev/sub2api/backend",
+      "exit_code": 0,
+      "artifact": "/tmp/sub2api-release-security/govulncheck.txt",
+      "sha256": "23b5d226d72590bd676726efef5ca9fbc620c69dcc716c3ba54b756509d1b4f8",
+      "bytes": 301,
+      "completed_utc": "2026-09-18T19:13:33.009133+00:00",
+      "summary": "0 reachable symbol vulnerabilities; 0 imported-package vulnerabilities; 6 module-only findings, listed below.",
+      "passed_root_tests": [],
+      "skipped_root_tests": []
+    },
+    {
+      "command": "GOCACHE=/tmp/sub2api-queue-progress/go-cache GOFLAGS=-p=2 GOTOOLCHAIN=go1.27.0 go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -show verbose ./...",
+      "working_directory": "/Users/lushiwu/dev/sub2api/backend",
+      "exit_code": 0,
+      "artifact": "/tmp/sub2api-release-security/govulncheck-verbose.txt",
+      "sha256": "410dea70b554ad5de426c88e3ddaf8b9c7ada1266b73b7bd9d6ecd2778b8f71a",
+      "bytes": 14997,
+      "completed_utc": "2026-09-18T19:14:20.223001+00:00",
+      "summary": "Same result, with all remaining module-only findings enumerated.",
+      "passed_root_tests": [],
+      "skipped_root_tests": []
+    }
+  ],
+  "official_advisories": {
+    "GO-2026-6222": {
+      "source": "https://vuln.go.dev/ID/GO-2026-6222.json",
+      "artifact": "/tmp/sub2api-release-security/GO-2026-6222.json",
+      "sha256": "56734ee63c1f641659af5846360f2c33d8cc99052ba395d64dbc3e9977f65862"
+    },
+    "GO-2026-6443": {
+      "source": "https://vuln.go.dev/ID/GO-2026-6443.json",
+      "artifact": "/tmp/sub2api-release-security/GO-2026-6443.json",
+      "sha256": "9c0649467a4fab7755be028d300a9b577f39cd61b562fd461e96584df6fd3fde"
+    },
+    "GO-2026-4961": {
+      "source": "https://vuln.go.dev/ID/GO-2026-4961.json",
+      "artifact": "/tmp/sub2api-release-security/GO-2026-4961.json",
+      "sha256": "90a564711e1734e3d9431889529600387429707918942811cf9e5e0db37351c9"
+    },
+    "GO-2026-5061": {
+      "source": "https://vuln.go.dev/ID/GO-2026-5061.json",
+      "artifact": "/tmp/sub2api-release-security/GO-2026-5061.json",
+      "sha256": "34802b9c79203d833a176600bda24a96be4524a4eefcdb95bff66a80a7ff70e4"
+    },
+    "GO-2026-6348": {
+      "source": "https://vuln.go.dev/ID/GO-2026-6348.json",
+      "artifact": "/tmp/sub2api-release-security/GO-2026-6348.json",
+      "sha256": "791b166b47c9017ef5340408bd609131a8dad3e57dfb38c2cb0dbe7b85825636"
+    }
+  }
+}
