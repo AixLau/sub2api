@@ -80,3 +80,33 @@ func TestCredentialAdmissionCapacityWriteFailureRollsBack(t *testing.T) {
 	require.NoError(t, store.Cancel(ctx, d.Snapshot.Lease))
 	assertAdmissionLedger(t, f, 0)
 }
+
+func TestCredentialAdmissionAuditFailureRollsBackReservation(t *testing.T) {
+	f := newAdmissionFixture(t, 1)
+	ctx := context.Background()
+	store := NewPrincipalAdmissionStore(integrationDB)
+	name := fmt.Sprintf("admission_audit_failure_%d", f.principal)
+	_, err := integrationDB.Exec(fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $$
+ BEGIN RAISE EXCEPTION 'injected admission audit failure'; END $$;
+ CREATE TRIGGER %s BEFORE INSERT ON credential_audit_outbox FOR EACH ROW
+ WHEN (NEW.principal_id=%d AND NEW.event_type='LEASE_RESERVED') EXECUTE FUNCTION %s()`, name, name, f.principal, name))
+	require.NoError(t, err)
+	defer integrationDB.Exec(fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON credential_audit_outbox; DROP FUNCTION IF EXISTS %s()`, name, name))
+	in := f.input()
+	d, err := store.TryAdmit(ctx, in)
+	require.ErrorContains(t, err, "injected admission audit failure")
+	require.NotEqual(t, service.AdmissionAdmitted, d.Code)
+	assertAdmissionLedger(t, f, 0)
+	var count int
+	require.NoError(t, integrationDB.QueryRow(`SELECT count(*) FROM logical_requests WHERE id=$1`, in.RequestID).Scan(&count))
+	require.Zero(t, count)
+	_, err = integrationDB.Exec(fmt.Sprintf(`ALTER TABLE credential_audit_outbox DISABLE TRIGGER %s`, name))
+	require.NoError(t, err)
+	d, err = store.TryAdmit(ctx, in)
+	require.NoError(t, err)
+	require.Equal(t, service.AdmissionAdmitted, d.Code)
+	require.NoError(t, integrationDB.QueryRow(`SELECT count(*) FROM credential_audit_outbox WHERE principal_id=$1 AND event_type='LEASE_RESERVED'`, f.principal).Scan(&count))
+	require.Equal(t, 1, count)
+	require.NoError(t, store.Cancel(ctx, d.Snapshot.Lease))
+	assertAdmissionLedger(t, f, 0)
+}

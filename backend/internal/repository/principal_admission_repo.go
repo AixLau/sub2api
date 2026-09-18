@@ -121,10 +121,12 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	// Read wall time in a separate statement AFTER the principal lock. Even a
 	// clock_timestamp() expression in a locking SELECT can run before its wait.
 	var ledgerCount, instanceCount int
-	var competingTicket bool
+	var competingTicket, quotaBlocked bool
 	err = tx.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM request_leases WHERE principal_id=$1 AND state<>'RELEASED'),
         (SELECT COALESCE(sum(occupied),0) FROM credential_instances WHERE principal_id=$1),clock_timestamp(),
-        EXISTS(SELECT 1 FROM admission_tickets WHERE principal_id=$1 AND state='QUEUED' AND request_id<>$2)`, in.PrincipalID, in.RequestID).Scan(&ledgerCount, &instanceCount, &now, &competingTicket)
+        EXISTS(SELECT 1 FROM admission_tickets WHERE principal_id=$1 AND state='QUEUED' AND request_id<>$2),
+        EXISTS(SELECT 1 FROM upstream_principal_quota_domains p JOIN upstream_quota_domains q ON q.id=p.quota_domain_id
+          WHERE p.principal_id=$1 AND (q.requires_admin_reset OR q.blocked_until>clock_timestamp()))`, in.PrincipalID, in.RequestID).Scan(&ledgerCount, &instanceCount, &now, &competingTicket, &quotaBlocked)
 	if err != nil {
 		return rejected, err
 	}
@@ -137,12 +139,9 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	if mode != "GROUPED" || verified != "VERIFIED" || (admin != "ACTIVE" && admin != "DRAINING") {
 		return admissionReject("PRINCIPAL_PAUSED"), nil
 	}
-	var quotaBlocked bool
-	err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM upstream_principal_quota_domains p JOIN upstream_quota_domains q ON q.id=p.quota_domain_id
-        WHERE p.principal_id=$1 AND (q.requires_admin_reset OR q.blocked_until>clock_timestamp()))`, in.PrincipalID).Scan(&quotaBlocked)
-	if err != nil {
-		return rejected, err
-	}
+	// Shared quota writers lock every linked principal before changing the
+	// domain. This read is still after that same principal lock, alongside the
+	// ledger check, and retains the real-time expiry predicate.
 	if quotaBlocked {
 		return admissionReject("SHARED_QUOTA_PROTECTED"), nil
 	}
@@ -444,8 +443,11 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
  UPDATE credential_instances SET occupied=occupied+1 WHERE id=$3
 ), request_state AS (
  UPDATE logical_requests SET status='EXECUTING' WHERE id=$4
+), audit AS (
+ INSERT INTO credential_audit_outbox(event_id,principal_id,instance_id,version,event_type,safe_payload)
+ VALUES($5,$2,$3,$6,'LEASE_RESERVED',jsonb_build_object('lease_id',$7::text))
 )
- UPDATE admission_tickets SET state='ADMITTED' WHERE request_id=$4`, in.UserID, in.PrincipalID, selected.id, in.RequestID)
+ UPDATE admission_tickets SET state='ADMITTED' WHERE request_id=$4`, in.UserID, in.PrincipalID, selected.id, in.RequestID, uuid.NewString(), snap.Lease.Epoch, snap.Lease.ID)
 	if err != nil {
 		return rejected, err
 	}
@@ -457,9 +459,6 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	}
 	if !stillLive {
 		return admissionReject("ADMISSION_QUEUE_TIMEOUT"), nil
-	}
-	if err = admissionAudit(ctx, tx, snap.Lease, "LEASE_RESERVED"); err != nil {
-		return rejected, err
 	}
 	if err = tx.Commit(); err != nil {
 		return rejected, service.ErrAdmissionStoreUnavailable
