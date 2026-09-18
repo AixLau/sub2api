@@ -110,3 +110,12 @@ TESTCONTAINERS_RYUK_DISABLED=true CI=true SUB2API_CREDENTIAL_ENDURANCE=30s SUB2A
 源码与测量共同指向：严格等待较早票据的owner再次进入完整准入事务，其他候选仍反复持锁查询并返回WAIT；这能在有大量空闲执行容量时维持DB/pool竞争。属于当前队列协议与轮询的组合问题。本轮未做禁用公平检查或改变100ms间隔的A/B实验，不能单独量化二者各自的因果贡献。20ms以及生命周期预算仍不满足，不能以删检查/放宽上限/延长预算放行。
 
 环境补核：`go env GOOS GOARCH`为darwin/arm64，`docker image inspect postgres:18.1-alpine3.23 --format '{{.Architecture}} {{.Os}}'`为amd64/linux，镜像内数据库实际18.4。宿主Apple M2/8GiB，OrbStack分配约3.89GiB/8CPU。属于跨架构镜像运行，不能直接发布为原生Linux/amd64生产硬件SLO；未做原生硬件A/B，不能将全部退化归因于模拟执行。P0/P1/P3和E2使用同一宿主与镜像，架构事实保留在证据清单。
+
+
+当前 HEAD 定向联测（不含持续压测发生器）也通过：
+
+```sh
+TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -tags=integration ./internal/repository -run '^(TestCredentialGatewayGlobalUserLimitAndBilling|TestCredentialGatewayLegacyAndGroupedShareUserCapacity|TestCredentialGatewayTime|TestCredentialAdmissionCapacityWriteFailureRollsBack|TestCredentialAdmissionCompetingTicketsKeepOrder|TestCredentialUsageCrashWindowsRecoverWithoutReplay|TestCredentialQueueNoHeadBlockingAT14AT17AT18AT22AT23|TestCredentialLedgerRandomTransitions|TestPrincipalAdmission(ThreeNodesLastSlotAT08AT25|BorrowShrinkUnknownAT09AT12AT26|BindingAndReplayAT15AT16AT31|RecoveryAndZeroAT11AT24|ConcurrentDistinctUsersAndSession|GroupRevocationAtDispatch|ConfigVersionAndProxyChange|TimeDispatchDeadlineAfterLockWait|TimeAdmitDeadlineAfterLockWait|TimeHeartbeatAfterLockWait|TimePoolCancellation))$' -count=1 -v
+```
+
+退出0，覆盖完整网关的跨主体/旧路径用户容量、准入失败补偿、usage恢复六窗口、随机账本、绑定/配置重查和本专项时间边界；日志 `/tmp/sub2api-admission-time-performance/gateway-ledger-usage-focused.log`。它是定向正确性证据，不能抵消E2持续矩阵的性能/生命周期失败。

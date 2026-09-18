@@ -133,6 +133,11 @@
       "path": "/tmp/sub2api-admission-time-performance/rollout-fencing-current.log",
       "sha256": "9f8ed9746ce932ee60b4fc21a8a12604711b9f77acadf618a95b7c651f6c0dd5",
       "bytes": 2473
+    },
+    {
+      "path": "/tmp/sub2api-admission-time-performance/gateway-ledger-usage-focused.log",
+      "sha256": "7ca6cce299de73434fe7ad36dee562e3fc57032b227cf6c6c3ab20e846ab833e",
+      "bytes": 13712
     }
   ],
   "runs": [
