@@ -586,7 +586,6 @@ func TestSetOpenAIFastPolicySettings_Validation(t *testing.T) {
 	require.Len(t, got.Rules, 2)
 	require.Equal(t, OpenAIFastTierPriority, got.Rules[0].ServiceTier)
 	require.Equal(t, OpenAIFastTierUltrafast, got.Rules[1].ServiceTier)
-	require.Equal(t, OpenAIFastTierMissing, got.Rules[2].ServiceTier)
 	require.Equal(t, OpenAIFastPolicyActionForcePriority, got.Rules[0].Action)
 	require.Equal(t, []int64{42, 43}, got.Rules[0].UserIDs)
 	require.Equal(t, OpenAIFastTierUltrafast, got.Rules[1].ServiceTier)

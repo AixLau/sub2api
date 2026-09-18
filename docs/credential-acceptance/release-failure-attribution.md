@@ -38,6 +38,14 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
 
 上述文件在准备时与 `924819c5` 的对应文件没有源码差异；这只能帮助排除本轮直接编辑，不能取代本轮实际运行，也不能排除新依赖造成间接影响。
 
+## 测试自身越界的最小修复
+
+`TestSetOpenAIFastPolicySettings_Validation` 的有效输入、长度断言和其余字段断言均只描述 priority、ultrafast 两条规则。本轮仅移除 `got.Rules[2]` 的矛盾断言，不增加 fixture 规则，不修改业务实现、两条规则的期望或其他失败测试。修复目的是允许 service 包继续执行后续测试，不能据此宣布它们通过。
+
+现有 `TestApplyOpenAIFastPolicyToBody_ForcePriorityInjectsMissingTier` 明确配置 `OpenAIFastTierMissing`，分别检查匹配用户注入 priority、不匹配用户保持缺失；`TestApplyOpenAIFastPolicyToBody_LegacyAllRuleDoesNotInjectMissingTier` 和 `TestApplyOpenAIFastPolicyToBody_MissingTierIgnoresNonForceRule` 继续覆盖缺失 tier 的其他边界。这里记录的是已存在的测试代码覆盖，尚未重新执行，不将其写成新增或已通过的验收证据。
+
+本修复尚待最终候选快照的定向及完整 suite 运行。历史 panic 与 141 个未终结测试记录不会被覆盖；基线 `924819c5` 保持原样运行并单独保留 panic。
+
 ## 最终候选执行时的处理
 
 先保留不跳过测试的完整非 integration 命令及退出码。若旧 panic 仍导致包中断，对失败与 `INCOMPLETE` 根测试并集作独立有界重跑，逐条记录命令、退出码和子测试结果；独立重跑 PASS 不能覆盖原整套 INCOMPLETE。任何修复之后重新冻结受测代码 SHA；文档变更不要求机械重跑。
