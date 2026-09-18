@@ -215,7 +215,7 @@ func (s *credentialOperations) ReconcileCredentialLeases(ctx context.Context) (i
 			return count, err
 		}
 		var stale bool
-		err = tx.QueryRowContext(ctx, `SELECT heartbeat_at<CURRENT_TIMESTAMP-INTERVAL '30 seconds' FROM request_leases WHERE id=$1`, id).Scan(&stale)
+		err = tx.QueryRowContext(ctx, `SELECT heartbeat_at<clock_timestamp()-INTERVAL '30 seconds' FROM request_leases WHERE id=$1`, id).Scan(&stale)
 		if err != nil {
 			tx.Rollback()
 			return count, err

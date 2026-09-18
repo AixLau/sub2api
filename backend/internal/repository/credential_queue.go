@@ -14,9 +14,9 @@ func credentialQueuePrecedes(ctx context.Context, tx *sql.Tx, principal, user in
 	rows, err := tx.QueryContext(ctx, `SELECT i.id,i.weight,i.occupied,
  LEAST($2,COALESCE(i.hard_max,$2),COALESCE(i.health_capacity,$2)),
  (SELECT count(*) FROM admission_tickets t WHERE t.principal_id=i.principal_id AND t.state='QUEUED'
- AND t.deadline>CURRENT_TIMESTAMP AND t.ready_at<=CURRENT_TIMESTAMP AND t.instance_id=i.id)
+ AND t.deadline>statement_timestamp() AND t.ready_at<=statement_timestamp() AND t.instance_id=i.id)
  FROM credential_instances i WHERE i.principal_id=$1 AND i.admin_state IN ('ACTIVE','DRAINING') AND i.credential_state='VALID'
- AND i.transport_state IN ('HEALTHY','DEGRADED','HALF_OPEN') AND (i.cooldown_until IS NULL OR i.cooldown_until<=CURRENT_TIMESTAMP)`, principal, total)
+ AND i.transport_state IN ('HEALTHY','DEGRADED','HALF_OPEN') AND (i.cooldown_until IS NULL OR i.cooldown_until<=statement_timestamp())`, principal, total)
 	if err != nil {
 		return false, err
 	}
@@ -52,13 +52,13 @@ func credentialQueuePrecedes(ctx context.Context, tx *sql.Tx, principal, user in
  FROM admission_tickets t JOIN logical_requests r ON r.id=t.request_id JOIN api_keys k ON k.id=r.api_key_id
  JOIN principal_user_capacity c ON c.principal_id=t.principal_id AND c.user_id=t.user_id
  JOIN upstream_principals p ON p.id=t.principal_id
- WHERE t.principal_id=$1 AND t.request_id<>$2 AND t.state='QUEUED' AND t.deadline>CURRENT_TIMESTAMP AND t.ready_at<=CURRENT_TIMESTAMP
+ WHERE t.principal_id=$1 AND t.request_id<>$2 AND t.state='QUEUED' AND t.deadline>statement_timestamp() AND t.ready_at<=statement_timestamp()
  AND k.status='active' AND k.deleted_at IS NULL AND (p.user_concurrency_limit IS NULL OR c.occupied<p.user_concurrency_limit)
  AND EXISTS(SELECT 1 FROM credential_instances i JOIN account_groups g ON g.account_id=i.account_id
  WHERE i.principal_id=t.principal_id AND g.group_id=k.group_id AND i.id=ANY(t.candidate_ids)
  AND (t.instance_id IS NULL OR t.instance_id=i.id) AND r.endpoint=ANY(i.capabilities)
  AND i.admin_state='ACTIVE' AND i.credential_state='VALID' AND i.occupied<LEAST(p.requested_limit,COALESCE(i.hard_max,p.requested_limit),COALESCE(i.health_capacity,p.requested_limit))
- AND i.transport_state IN ('HEALTHY','DEGRADED','HALF_OPEN') AND (i.cooldown_until IS NULL OR i.cooldown_until<=CURRENT_TIMESTAMP))
+ AND i.transport_state IN ('HEALTHY','DEGRADED','HALF_OPEN') AND (i.cooldown_until IS NULL OR i.cooldown_until<=statement_timestamp()))
  ORDER BY c.last_admitted_at NULLS FIRST,t.created_at,t.id`, principal, request)
 	if err != nil {
 		return false, err

@@ -61,14 +61,16 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	var userLimit sql.NullInt64
 	var protected, drain sql.NullTime
 	var now time.Time
-	err = tx.QueryRowContext(ctx, `SELECT requested_limit,occupied,config_version,admission_epoch,admin_state,routing_mode,verification_state,user_concurrency_limit,queue_limit,last_instance_id,protected_until,drain_deadline,CURRENT_TIMESTAMP
- FROM upstream_principals WHERE id=$1 AND tenant_id=1 FOR NO KEY UPDATE`, in.PrincipalID).Scan(&limit, &occupied, &version, &epoch, &admin, &mode, &verified, &userLimit, &queueLimit, &lastInstance, &protected, &drain, &now)
+	err = tx.QueryRowContext(ctx, `SELECT requested_limit,occupied,config_version,admission_epoch,admin_state,routing_mode,verification_state,user_concurrency_limit,queue_limit,last_instance_id,protected_until,drain_deadline
+ FROM upstream_principals WHERE id=$1 AND tenant_id=1 FOR NO KEY UPDATE`, in.PrincipalID).Scan(&limit, &occupied, &version, &epoch, &admin, &mode, &verified, &userLimit, &queueLimit, &lastInstance, &protected, &drain)
 	if err != nil {
 		return rejected, err
 	}
+	// Read wall time in a separate statement AFTER the principal lock. Even a
+	// clock_timestamp() expression in a locking SELECT can run before its wait.
 	var ledgerCount, instanceCount int
 	err = tx.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM request_leases WHERE principal_id=$1 AND state<>'RELEASED'),
-        (SELECT COALESCE(sum(occupied),0) FROM credential_instances WHERE principal_id=$1)`, in.PrincipalID).Scan(&ledgerCount, &instanceCount)
+        (SELECT COALESCE(sum(occupied),0) FROM credential_instances WHERE principal_id=$1),clock_timestamp()`, in.PrincipalID).Scan(&ledgerCount, &instanceCount, &now)
 	if err != nil {
 		return rejected, err
 	}
@@ -83,7 +85,7 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	}
 	var quotaBlocked bool
 	err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM upstream_principal_quota_domains p JOIN upstream_quota_domains q ON q.id=p.quota_domain_id
-        WHERE p.principal_id=$1 AND (q.requires_admin_reset OR q.blocked_until>CURRENT_TIMESTAMP))`, in.PrincipalID).Scan(&quotaBlocked)
+        WHERE p.principal_id=$1 AND (q.requires_admin_reset OR q.blocked_until>clock_timestamp()))`, in.PrincipalID).Scan(&quotaBlocked)
 	if err != nil {
 		return rejected, err
 	}
@@ -119,7 +121,7 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 		// Authoritative key/user revocation and group membership, not a cache boolean.
 		err = tx.QueryRowContext(ctx, `SELECT k.group_id,g.model_allowlist FROM api_keys k JOIN users u ON u.id=k.user_id JOIN groups g ON g.id=k.group_id
  WHERE k.id=$1 AND k.user_id=$2 AND k.status='active' AND k.deleted_at IS NULL
- AND u.status='active' AND u.deleted_at IS NULL AND (k.expires_at IS NULL OR k.expires_at>CURRENT_TIMESTAMP)
+ AND u.status='active' AND u.deleted_at IS NULL AND (k.expires_at IS NULL OR k.expires_at>clock_timestamp())
  AND g.status='active' AND g.deleted_at IS NULL AND (g.subscription_type='subscription' OR (NOT g.is_exclusive AND NOT u.restrict_public_groups) OR EXISTS(SELECT 1 FROM user_allowed_groups ag WHERE ag.user_id=u.id AND ag.group_id=g.id))`, in.APIKeyID, in.UserID).Scan(&groupID, &allowlistJSON)
 		if errors.Is(err, sql.ErrNoRows) {
 			return admissionReject("AUTHORIZATION_REVOKED"), nil
@@ -171,7 +173,7 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 		if bindingID != "" {
 			var busy bool
 			err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM request_leases WHERE binding_id=$1 AND state<>'RELEASED')
-                OR EXISTS(SELECT 1 FROM admission_tickets WHERE binding_id=$1 AND state='QUEUED' AND deadline>CURRENT_TIMESTAMP)`, bindingID).Scan(&busy)
+                OR EXISTS(SELECT 1 FROM admission_tickets WHERE binding_id=$1 AND state='QUEUED' AND deadline>clock_timestamp())`, bindingID).Scan(&busy)
 			if err != nil {
 				return rejected, err
 			}
@@ -182,7 +184,7 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 				if in.HasState {
 					return admissionReject("SESSION_BINDING_EXPIRED"), nil
 				}
-				_, err = tx.ExecContext(ctx, `UPDATE session_bindings SET state='EXPIRED',tombstone_until=CURRENT_TIMESTAMP+INTERVAL '7 days' WHERE id=$1`, bindingID)
+				_, err = tx.ExecContext(ctx, `UPDATE session_bindings SET state='EXPIRED',tombstone_until=clock_timestamp()+INTERVAL '7 days' WHERE id=$1`, bindingID)
 				if err != nil {
 					return rejected, err
 				}
@@ -225,6 +227,17 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	if err != nil {
 		return rejected, err
 	}
+	// Candidate row locks can also wait. Re-evaluate live limits after acquiring
+	// them, rather than carrying the principal-lock timestamp into dispatch.
+	if err = tx.QueryRowContext(ctx, `SELECT clock_timestamp()`).Scan(&now); err != nil {
+		return rejected, err
+	}
+	if !in.Deadline.After(now) {
+		return admissionReject("ADMISSION_QUEUE_TIMEOUT"), nil
+	}
+	if admin == "DRAINING" && (!drain.Valid || !drain.Time.After(now)) {
+		return admissionReject("PRINCIPAL_DRAINING"), nil
+	}
 	var selected *instance
 	waitReason := "INSTANCE_UNAVAILABLE"
 	for i := range candidates {
@@ -266,7 +279,7 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 		}
 	}
 	// Ignore expired tickets for admission, but preserve their terminal history.
-	_, err = tx.ExecContext(ctx, `UPDATE admission_tickets SET state='EXPIRED' WHERE principal_id=$1 AND state='QUEUED' AND deadline<=CURRENT_TIMESTAMP`, in.PrincipalID)
+	_, err = tx.ExecContext(ctx, `UPDATE admission_tickets SET state='EXPIRED' WHERE principal_id=$1 AND state='QUEUED' AND deadline<=clock_timestamp()`, in.PrincipalID)
 	if err != nil {
 		return rejected, err
 	}
@@ -307,7 +320,7 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 			waitReason = "COOLDOWN"
 		}
 		var queued int
-		err = tx.QueryRowContext(ctx, `SELECT count(*) FROM admission_tickets WHERE principal_id=$1 AND state='QUEUED' AND deadline>CURRENT_TIMESTAMP AND request_id<>$2`, in.PrincipalID, in.RequestID).Scan(&queued)
+		err = tx.QueryRowContext(ctx, `SELECT count(*) FROM admission_tickets WHERE principal_id=$1 AND state='QUEUED' AND deadline>clock_timestamp() AND request_id<>$2`, in.PrincipalID, in.RequestID).Scan(&queued)
 		if err != nil {
 			return rejected, err
 		}
@@ -315,7 +328,7 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 			return admissionReject("ADMISSION_QUEUE_FULL"), nil
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO admission_tickets(id,request_id,principal_id,binding_id,user_id,instance_id,owner_node,reason,deadline,candidate_ids,session_hash)
- VALUES($1,$2,$3,$4,$5,$6,$7,$8,LEAST($9,CURRENT_TIMESTAMP+INTERVAL '15 seconds'),$10,$11) ON CONFLICT(request_id) DO UPDATE SET reason=EXCLUDED.reason`, uuid.NewString(), in.RequestID, in.PrincipalID, nullableString(bindingID), in.UserID, nullablePositive(boundInstance), in.Node, waitReason, in.Deadline, pq.Array(in.CandidateIDs), nullableString(sessionHash))
+ VALUES($1,$2,$3,$4,$5,$6,$7,$8,LEAST($9,clock_timestamp()+INTERVAL '15 seconds'),$10,$11) ON CONFLICT(request_id) DO UPDATE SET reason=EXCLUDED.reason`, uuid.NewString(), in.RequestID, in.PrincipalID, nullableString(bindingID), in.UserID, nullablePositive(boundInstance), in.Node, waitReason, in.Deadline, pq.Array(in.CandidateIDs), nullableString(sessionHash))
 		if err != nil {
 			return rejected, err
 		}
@@ -337,7 +350,7 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	err = tx.QueryRowContext(ctx, `SELECT p.installation_id,p.source,s.secret_ciphertext,s.secret_aad,a.proxy_id,a.updated_at
  FROM credential_identity_profiles p JOIN credential_secrets s ON s.instance_id=p.instance_id AND s.credential_version=$2
  JOIN credential_instances i ON i.id=p.instance_id JOIN accounts a ON a.id=i.account_id
- WHERE p.instance_id=$1 AND p.generation=$3 AND s.expires_at>CURRENT_TIMESTAMP+INTERVAL '30 seconds'`, selected.id, selected.credential, selected.generation).Scan(&snap.InstallationID, &snap.IdentitySource, &snap.SecretCiphertext, &snap.SecretAAD, &snap.ProxyID, &snap.AccountUpdatedAt)
+ WHERE p.instance_id=$1 AND p.generation=$3 AND s.expires_at>clock_timestamp()+INTERVAL '30 seconds'`, selected.id, selected.credential, selected.generation).Scan(&snap.InstallationID, &snap.IdentitySource, &snap.SecretCiphertext, &snap.SecretAAD, &snap.ProxyID, &snap.AccountUpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return admissionReject("CREDENTIAL_REAUTH_REQUIRED"), nil
 	}
@@ -349,13 +362,13 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 	}
 	if bindingID == "" && in.OriginalSession != "" {
 		bindingID = uuid.NewString()
-		_, err = tx.ExecContext(ctx, `INSERT INTO session_bindings(id,principal_id,caller_scope_hash,session_hash,instance_id,generation) VALUES($1,$2,$3,$4,$5,$6)`, bindingID, in.PrincipalID, scope, sessionHash, selected.id, selected.generation)
+		_, err = tx.ExecContext(ctx, `INSERT INTO session_bindings(id,principal_id,caller_scope_hash,session_hash,instance_id,generation,last_used_at,idle_expires_at) VALUES($1,$2,$3,$4,$5,$6,clock_timestamp(),clock_timestamp()+INTERVAL '24 hours')`, bindingID, in.PrincipalID, scope, sessionHash, selected.id, selected.generation)
 		if err != nil {
 			return rejected, err
 		}
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO request_leases(id,request_id,attempt_no,principal_id,instance_id,generation,user_id,owner_nonce,epoch,credential_version,config_version,binding_id,state,deadline,account_updated_at,proxy_id,proxy_updated_at)
- VALUES($1,$2,1,$3,$4,$5,$6,$7,$8,$9,$10,$11,'RESERVED',$12,$13,$14,$15)`, snap.Lease.ID, in.RequestID, in.PrincipalID, selected.id, selected.generation, in.UserID, in.OwnerNonce, epoch, selected.credential, version, nullableString(bindingID), in.Deadline, snap.AccountUpdatedAt, snap.ProxyID, snap.ProxyUpdatedAt)
+	_, err = tx.ExecContext(ctx, `INSERT INTO request_leases(id,request_id,attempt_no,principal_id,instance_id,generation,user_id,owner_nonce,epoch,credential_version,config_version,binding_id,state,deadline,account_updated_at,proxy_id,proxy_updated_at,heartbeat_at)
+ VALUES($1,$2,1,$3,$4,$5,$6,$7,$8,$9,$10,$11,'RESERVED',$12,$13,$14,$15,clock_timestamp())`, snap.Lease.ID, in.RequestID, in.PrincipalID, selected.id, selected.generation, in.UserID, in.OwnerNonce, epoch, selected.credential, version, nullableString(bindingID), in.Deadline, snap.AccountUpdatedAt, snap.ProxyID, snap.ProxyUpdatedAt)
 	if err != nil {
 		return rejected, err
 	}
@@ -372,6 +385,14 @@ func (s *principalAdmissionStore) TryAdmit(ctx context.Context, in service.Admis
 		if _, err = tx.ExecContext(ctx, q.sql, q.args...); err != nil {
 			return rejected, err
 		}
+	}
+	var stillLive bool
+	err = tx.QueryRowContext(ctx, `SELECT clock_timestamp()<$1 AND ($2::timestamptz IS NULL OR clock_timestamp()<$2)`, in.Deadline, nullableAdmissionTime(ticketDeadline)).Scan(&stillLive)
+	if err != nil {
+		return rejected, err
+	}
+	if !stillLive {
+		return admissionReject("ADMISSION_QUEUE_TIMEOUT"), nil
 	}
 	if err = admissionAudit(ctx, tx, snap.Lease, "LEASE_RESERVED"); err != nil {
 		return rejected, err
@@ -435,11 +456,11 @@ func (s *principalAdmissionStore) BeginDispatch(ctx context.Context, ref service
 	var requestModel string
 	var currentAllowlist []byte
 	err = tx.QueryRowContext(ctx, `SELECT p.admission_epoch=l.epoch AND p.admin_state IN ('ACTIVE','DRAINING') AND p.routing_mode='GROUPED'
- AND i.admin_state IN ('ACTIVE','DRAINING') AND i.identity_generation=l.generation AND l.deadline>CURRENT_TIMESTAMP
+ AND i.admin_state IN ('ACTIVE','DRAINING') AND i.identity_generation=l.generation AND l.deadline>clock_timestamp()
  AND EXISTS(SELECT 1 FROM accounts a WHERE a.id=i.account_id AND a.updated_at=l.account_updated_at AND a.proxy_id IS NOT DISTINCT FROM l.proxy_id)
  AND (l.proxy_id IS NULL OR EXISTS(SELECT 1 FROM proxies x WHERE x.id=l.proxy_id AND x.updated_at=l.proxy_updated_at AND x.status='active' AND x.deleted_at IS NULL))
  AND u.status='active' AND u.deleted_at IS NULL AND ((r.api_key_id IS NULL AND u.role='admin') OR (k.status='active' AND k.deleted_at IS NULL
- AND (k.expires_at IS NULL OR k.expires_at>CURRENT_TIMESTAMP)
+ AND (k.expires_at IS NULL OR k.expires_at>clock_timestamp())
  AND gr.status='active' AND gr.deleted_at IS NULL AND (gr.subscription_type='subscription' OR (NOT gr.is_exclusive AND NOT u.restrict_public_groups) OR EXISTS(SELECT 1 FROM user_allowed_groups ag WHERE ag.user_id=u.id AND ag.group_id=gr.id))
  AND EXISTS(SELECT 1 FROM account_groups g WHERE g.account_id=i.account_id AND g.group_id=k.group_id))),r.model,COALESCE(gr.model_allowlist,'{}'::jsonb)
  FROM request_leases l JOIN upstream_principals p ON p.id=l.principal_id JOIN credential_instances i ON i.id=l.instance_id
@@ -454,11 +475,11 @@ func (s *principalAdmissionStore) BeginDispatch(ctx context.Context, ref service
 	if !allowed {
 		return service.ErrAdmissionOwnership
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE request_leases SET state='DISPATCHING',heartbeat_at=CURRENT_TIMESTAMP WHERE id=$1`, ref.ID)
+	_, err = tx.ExecContext(ctx, `UPDATE request_leases SET state='DISPATCHING',heartbeat_at=clock_timestamp() WHERE id=$1`, ref.ID)
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE session_bindings SET last_used_at=CURRENT_TIMESTAMP,idle_expires_at=CURRENT_TIMESTAMP+INTERVAL '24 hours' WHERE id=(SELECT binding_id FROM request_leases WHERE id=$1)`, ref.ID)
+	_, err = tx.ExecContext(ctx, `UPDATE session_bindings SET last_used_at=clock_timestamp(),idle_expires_at=clock_timestamp()+INTERVAL '24 hours' WHERE id=(SELECT binding_id FROM request_leases WHERE id=$1)`, ref.ID)
 	if err != nil {
 		return err
 	}
@@ -473,7 +494,7 @@ func (s *principalAdmissionStore) Heartbeat(ctx context.Context, ref service.Lea
 	if state == "RELEASED" || state == "ORPHANED" {
 		return service.ErrAdmissionOwnership
 	}
-	result, err := tx.ExecContext(ctx, `UPDATE request_leases SET heartbeat_at=CURRENT_TIMESTAMP WHERE id=$1 AND epoch=(SELECT admission_epoch FROM upstream_principals WHERE id=$2)`, ref.ID, ref.PrincipalID)
+	result, err := tx.ExecContext(ctx, `UPDATE request_leases SET heartbeat_at=clock_timestamp() WHERE id=$1 AND epoch=(SELECT admission_epoch FROM upstream_principals WHERE id=$2)`, ref.ID, ref.PrincipalID)
 	if err != nil {
 		return err
 	}
@@ -521,7 +542,7 @@ func (s *principalAdmissionStore) Finish(ctx context.Context, in service.FinishA
 		return fmt.Errorf("invalid terminal outcome")
 	}
 	if outcome == "COMPLETED" {
-		_, err = tx.ExecContext(ctx, `UPDATE upstream_principals SET protected_until=NULL WHERE id=$1 AND protected_until<=CURRENT_TIMESTAMP`, in.Lease.PrincipalID)
+		_, err = tx.ExecContext(ctx, `UPDATE upstream_principals SET protected_until=NULL WHERE id=$1 AND protected_until<=clock_timestamp()`, in.Lease.PrincipalID)
 		if err != nil {
 			return err
 		}
@@ -618,4 +639,11 @@ func loadCredentialSnapshotProxy(ctx context.Context, db interface {
 	snap.ProxyUpdatedAt = &p.UpdatedAt
 	snap.Proxy = p
 	return nil
+}
+
+func nullableAdmissionTime(v time.Time) any {
+	if v.IsZero() {
+		return nil
+	}
+	return v
 }
