@@ -1,54 +1,52 @@
-# 多凭证验收账本（开发中，禁止上线）
+# 多凭证系统验收账本
 
-本表不是全部验收通过报告。组件测试在本地 mock 与 PostgreSQL 上执行；没有使用生产凭证。
-真实导入按用户确认保持 UNVERIFIED。默认功能关闭，无生产迁移/灰度/部署。
+验收起点与八个提交见 [baseline](credential-acceptance/baseline.md)。本表覆盖 AT-01～AT-40，每行独立结论。
 
-| AT | 当前证据 | 尚缺的完整验收 |
-|---|---|---|
-| 01–04 | mock verifier + PG 三实例、重复 token、不同 user、部分失败/重放通过 | 真实 verifier（用户确认暂无）、已知历史 family 导入/完整跨权限 |
-| 05 | PG refresh CAS 保持安装标识/世代通过 | 进程重启/密钥轮换 |
-| 06–07 | DB不可变profile、replace新实例/世代与旧身份不变测试通过 | 重启活跃绑定、完整替换UI |
-| 08 | 三独立测试进程各自SQL pool竞争最后槽位+mock start/end通过 | 完整网关进程/路由全链 |
-| 09–12 | 8/2/0、5/2/5、0、缩容 overhang 通过 | 长时动态负载 |
-| 13 | 配置 CAS/健康容量代码 | 综合并发调整性质测试 |
-| 14–15 | 满绑定与新会话、同 session 粘性通过 | 同新 session 三进程竞争 |
-| 16 | PG三用户同 session 字符串产生三个独立 binding 通过 | 完整下游结果/权限隔离端到端 |
-| 17–18 | 活跃 lease 保护过期、状态续接拒绝通过 | tombstone 清理/恢复窗口 |
-| 19 | 有状态且无 session 准入拒绝代码 | 全种工具续接解析矩阵 |
-| 20 | 三端点PG+真实HTTP mock最终token/profile/数值保真通过，维护probe共享总額通过 | 完整handler+PG+Redis+结算端到端 |
-| 21 | HTTP guard 拒绝无快照受控请求、快照拒绝 WS 通过 | 所有非 HTTP dialer/插件入口覆盖 |
-| 22–23 | 单票据、排队无槽、无队头阻塞、取消幂等通过 | 取消/准入并发随机序列、全局内存/用户队列预算 |
-| 24 | 相同 request/owner 恢复 RESERVED 通过 | COMMIT 响应真实网络丢失注入 |
-| 25 | 双释放/旧 owner 拒绝通过 | 随机旧 epoch 回包 |
-| 26–27 | PG ORPHANED 不释放、半流不终结/不二次发通过 | 三测试进程SIGKILL已通过；节点时钟偏移/HA/超时矩阵未完成 |
-| 28–29 | 旧版本401不失效新版本、同族互斥、CAS/未知补偿通过 | 后台/401进入 coordinator（未重放原请求），仍缺完整入口 mock；远端成功本地全存储失效恢复 |
-| 30 | Retry-After、主体保护/共享 domain 阻断通过 | 多主体传播端到端、provider 归因契约 |
-| 31 | 同键同内容不再执行、异内容拒绝通过 | 跨主体重选测试通过，仍缺并发主体验证 |
-| 32 | 稳定lease键+定价命令outbox重复提交/消费只扣一次PG测试通过；审计投递一次通过 | 返回usage到定价命令持久化之间的进程故障仍需恢复闭环 |
-| 33–34 | ledger 不依赖 Redis、DB begin 断连拒绝通过 | Redis清空、PG主从切换/旧节点 fencing 实验 |
-| 35 | 主库读配置、过期 If-Match 拒绝通过 | 通知丢失真实实验 |
-| 36 | AES-GCM AAD/篡改、秘密不回显、owner隔离通过 | 完整日志/APM扫描；tenant 无现有模型；密钥轮换/终结 ledger 保留清理 |
-| 37 | 只读迁移预览保留完整 accounts 行通过 | 原地单账号正式迁移、旧绑定导入/排空、旧节点 gate |
-| 38 | 有孤儿回滚仅 PAUSED，保持 GROUPED/占用通过 | 正式灰度、完整切换单实例旧计数路径 |
-| 39 | 最终三端点大整数/未知值、重复 JSON/header 拒绝通过 | 所有 header/body 嵌入歧义、压缩/多种 map 的金样 |
-| 40 | DB拒绝旧Account改写 + HTTP guard通过 | 所有后台/导入导出/插件旁路审计 |
+状态口径：PASS=指定拓扑中完整场景有实际证据；PARTIAL=组件或部分系统场景通过，仍有缺口/失败；BLOCKED=缺外部契约或执行前提，不能绕过；NOT_RUN=本轮尚未运行。测试函数名称不代表整项通过。
 
-## 实际执行命令
+本轮初始审计：旧记录仅有组件/部分链路证据，全部暂列 PARTIAL；真实 provider/compact 为 BLOCKED。后续按实际结果更新，不沿用“代表性复现证明所有基线失败”的结论。
 
-- `go test -race ./internal/service ./internal/handler/admin -run '^TestCredential|^TestPrincipal|^TestUpstreamPrincipal' -count=1` 通过。
-- `TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -tags=integration ./internal/repository -run '^TestMultiCredential|^TestCredential|^TestPrincipalAdmission' -count=1 -v` 通过；日志 `/tmp/sub2api-credential-final-integration.log`。数据库实际 18.4，测试环境 OrbStack 4GB。
-- `go test ./cmd/server ... -run ... '^TestProvideCleanup'` 通过（Wire cleanup 测试签名已更新）。
-- `go test ./... -run '^$'` 通过：全仓后端测试编译成功。
-- `go test ./...` 已实际运行，退出 1；失败项为既有 WS/流错误/模型列表/安全审计等测试，代表性 WS 与流错误失败在基线 fde7e8ec4 独立 worktree 复现；完整后端测试不能宣称通过。
-- 广泛 OpenAI 回归失败：三项代表性失败在开发起点 `fde7e8ec4` 独立 worktree 复现；不能宣称全套绿色。
-- `GOTOOLCHAIN=go1.27.0 go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...` 完成并报告 5 个现有可达漏洞，退出 3。见实施记录。
-- 前端 `typecheck`、`lint:check` 通过；API 与 i18n Vitest 5 项通过。浏览器 mock 管理 API 在 1440×1000 与 390×844 检查，通过无横向溢出/页面脚本错误；不覆盖真实鉴权。
+| AT | 状态 | 场景及必须结果 | 证据/实际命令 | 缺口 |
+|---|---|---|---|---|
+| AT-01 | BLOCKED | 同主体导入三次独立授权；三实例、一主体，独立版本 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 真实provider身份/compact契约缺失；仅mock可测 |
+| AT-02 | PARTIAL | 同 token / 已知同 refresh family 重复导入；拒绝重复实例，不建立第二刷新器 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-03 | PARTIAL | 同工作区不同用户导入；不自动合并个人主体 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-04 | PARTIAL | 导入验证部分失败/提交重放；不部分激活、不重复创建 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-05 | PARTIAL | token refresh；installation/profile 不变 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-06 | PARTIAL | 进程重启、普通配置更新；实例身份和活跃绑定不变 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-07 | PARTIAL | 替换授权；新世代；旧绑定不使用新凭证 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-08 | PARTIAL | 三节点同时抢最后一个总槽位；仅一条新 lease 获批 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-09 | PARTIAL | C=10、实例上限均为8；允许8/2/0，不允许合计11 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-10 | PARTIAL | C=12、权重1:2:1、需求10:2:10；可达到5:2:5且不保留空槽 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-11 | PARTIAL | C=0或实例hard_max=0；不准入相应工作；不解释为无限 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-12 | PARTIAL | C从10降5、已有8占用；不杀请求；明确overhang；禁止新准入 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-13 | PARTIAL | 扩容/降实例健康容量；新准入遵循新版本，旧请求非抢占 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-14 | PARTIAL | 满绑定实例与空闲其他实例；老会话等待，新会话可用其他实例 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-15 | PARTIAL | 同新session多节点并发；只有一个有效实例绑定 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-16 | PARTIAL | 不同用户相同session字符串；不串绑定、权限或结果 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-17 | PARTIAL | TTL到期但存在活跃lease；绑定不被驱逐 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-18 | PARTIAL | 过期旧状态恢复；明确拒绝/显式迁移，不静默换实例 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-19 | PARTIAL | 无session但有状态续接；不随机路由，返回兼容错误 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-20 | BLOCKED | 普通、透传、compact；均受同一总额和选中凭证约束 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 真实provider身份/compact契约缺失；仅mock可测 |
+| AT-21 | PARTIAL | 分组账号进入WS/不支持路径；不落入绕过总额的旧路径 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-22 | PARTIAL | 队列等待和队头实例冷却；不占执行槽，其他就绪请求可前进 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-23 | PARTIAL | 入队与取消竞态；只出现取消或有效执行之一，无幽灵票据 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-24 | PARTIAL | acquire提交响应丢失；同ID查询恢复，不重复批准 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-25 | PARTIAL | 双release/迟到旧owner释放；计数不负、不影响新lease | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-26 | PARTIAL | 运行时节点失联/心跳过期；ORPHANED仍计占用，发出告警 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-27 | PARTIAL | 流式首token/半途断流；首token不释放；未知结果不重放 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-28 | PARTIAL | 旧token 401到达新版本之后；不停用新版本凭证 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-29 | PARTIAL | 并发refresh/远端成功本地失败；单刷新族互斥；未知结果停止盲重试 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-30 | PARTIAL | 429含Retry-After/共享额度耗尽；等待不截短，不换凭证规避 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-31 | PARTIAL | 同幂等键同内容/异内容；不重复执行；异内容409 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-32 | PARTIAL | usage/outbox重复消费；不重复本地结算；未知非零化 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-33 | PARTIAL | Redis缓存全部丢失；软状态重建；总并发不失守 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-34 | PARTIAL | 数据库不可达/切换/旧节点恢复；fail closed；不旁路新dispatch | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-35 | PARTIAL | 配置通知丢失/并发修改；准入读权威；旧If-Match冲突 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-36 | PARTIAL | secret日志扫描/越权管理；不泄漏token；tenant边界有效 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-37 | BLOCKED | 旧单账号迁移；保留凭证、seed、组权限和计费配置 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 真实provider身份/compact契约缺失；仅mock可测 |
+| AT-38 | PARTIAL | drain及回滚；旧绑定可追踪，不留下混用计数 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-39 | PARTIAL | 大整数/未知JSON/map类型/重复header；非目标字段保真；歧义有确定处理 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
+| AT-40 | PARTIAL | 直接调用旧Account API/任务入口；不能绕过新总额或改写受控实例字段 | [旧阶段记录](multi-credential-implementation.md)，本轮待复核 | 尚无本轮完整系统证据 |
 
-## 发布门槛
-
-未运行 C=10/50/200、实例3/16各10分钟压测；未达到 p95<=20ms 的可发布证据；三测试进程SIGKILL已通过，未运行完整网关/HA故障矩阵；完整 UI 仍缺新增组、替换、drain/revoke/resolve 影响预览。
-不得把安装 ID 数量当设备数，不得把组件测试通过写成 AT-01～40 全部完成。
-
-## 实测性能（未达标）
-
-每组5秒、三worker、C=10/50/200、实例3/16，准入p95依次37.89/32.32/28.04/30.64/30.28/30.83ms。仅冒烟，无10分钟持续/突发压测与延迟分布上游模拟。20ms目标未达到。不能发布性能达标结论。
+代码实现、系统验收和生产启用是三个不同结论。当前系统验收未完成，生产禁止启用。
