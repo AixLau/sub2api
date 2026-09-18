@@ -3,7 +3,7 @@
 本账本逐项记录 AT-01～AT-40。组件测试通过不等于整项系统验收通过。
 
 验收分支：`feat/multi-credential-http`。
-当前最终 HEAD：`8c1bfcbff`；完整最终 suite 日志 `/tmp/sub2api-acceptance-closure/head-final2-full.jsonl`；验收收尾提交包括 `5f335e11b`、`515b23bc9`、`393655edd`、`039ef1cf2`、`85c47db9f`、`b80c9b9a0`、`53164d062`、`8434b6748`。
+当前最终 HEAD：`01fbfcd6c`；完整最终 suite 日志 `/tmp/sub2api-acceptance-closure/head-final2-full.jsonl`；验收收尾提交包括 `5f335e11b`、`515b23bc9`、`393655edd`、`039ef1cf2`、`85c47db9f`、`b80c9b9a0`、`53164d062`、`8434b6748`。
 规格基线：`9bdb388b83f05e678e83990d9b19afbc3f088a8f`；代码对照基线：`fde7e8ec4ff9af1b2645661d6a28cec19f6b347f`。
 
 状态定义：PASS 表示本项在声明拓扑和测试契约内完整通过；PARTIAL 表示部分系统/组件证据通过但仍有缺口；BLOCKED 表示缺少外部契约或前置条件；NOT_RUN 表示本轮未执行。
@@ -54,7 +54,7 @@
 ## 完整测试和性能证据
 
 - `go test ./... -run '^$'`：当前最终代码全仓编译通过。
-- `go test ./...`：当前最终 HEAD `8c1bfcbff` 实际退出 1。基线 `fde7e8ec4` 与当前最终 HEAD 各自完整运行均记录 78 个失败事件、141 个父测试中断/未完成事件；完整最终 HEAD 逐测试对照见 [`full-suite-comparison-final.json`](credential-acceptance/full-suite-comparison-final.json)；原始日志 `/tmp/sub2api-acceptance-closure/head-final2-full.jsonl`，逐项复跑证据见 [`failure-comparison.md`](credential-acceptance/failure-comparison.md)。相同结果不能自动归因基线；WS/流错误代表性失败已单测复跑，仍有其他范围外失败需要单独归因。
+- `go test ./...`：当前最终 HEAD `01fbfcd6c` 实际退出 1。基线 `fde7e8ec4` 与当前最终 HEAD 各自完整运行均记录 78 个失败事件、141 个父测试中断/未完成事件；完整最终 HEAD 逐测试对照见 [`full-suite-comparison-final.json`](credential-acceptance/full-suite-comparison-final.json)；原始日志 `/tmp/sub2api-acceptance-closure/head-final2-full.jsonl`，逐项复跑证据见 [`failure-comparison.md`](credential-acceptance/failure-comparison.md)。相同结果不能自动归因基线；WS/流错误代表性失败已单测复跑，仍有其他范围外失败需要单独归因。
 - `go test -race ./internal/service ./internal/handler ./internal/repository ./internal/handler/admin -run '^TestCredential|^TestPrincipal|^TestUpstreamPrincipal' -count=1`：通过。
 - PostgreSQL/Redis/HTTP mock 集成命令和真实 Gin handler 命令见 [`gateway.md`](credential-acceptance/gateway.md)、[`usage-recovery.md`](credential-acceptance/usage-recovery.md)。
 - 10 分钟 endurance：C10/I3、C10/I16 通过；C50/I16 通过；C50/I3 和 C200/I3 出现 `ADMISSION_OWNERSHIP_LOST`；C200/I16 无超限但 admission p95 约 4.34s。后续 corrected 5s smoke 使用 2 分钟 request deadline，六组未作为 10 分钟证据。结论：持续压测整体 PARTIAL，未达到 p95≤20ms。

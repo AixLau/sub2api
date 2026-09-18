@@ -1,6 +1,6 @@
 # 验收起点
 
-验收收尾当前 HEAD：`980c19c53`（commit written after the final full-suite run documentation update）。分支 `feat/multi-credential-http`。
+验收收尾当前 HEAD：`01fbfcd6c`（commit written after the final full-suite run documentation update）。分支 `feat/multi-credential-http`。
 
 对照基线：`fde7e8ec4ff9af1b2645661d6a28cec19f6b347f`；规格基线：`9bdb388b83f05e678e83990d9b19afbc3f088a8f`。
 
@@ -35,4 +35,4 @@
 - `b80c9b9a031854f363b327cac18c2b5ac5365cb3`：最终 HEAD 失败对照
 - `53164d062b3c88f6f2f4f7cb16d8483cc6392c5f`：修正持续压测发生器
 - `8434b67482b89a70b7a8a310ea94bd9843e3e108`：旧二进制 fencing 测试
-- `980c19c53`：逐项 AT 矩阵和生产条件
+- `01fbfcd6c`：逐项 AT 矩阵和生产条件
