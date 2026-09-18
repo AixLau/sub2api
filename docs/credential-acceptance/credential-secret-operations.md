@@ -26,6 +26,12 @@ This report tracks B5 / AT-36 / AT-40 separately from provider verification. It 
 | Account/group admin writes | Database `guard_controlled_credential_account/groups` trigger requires the audited control transaction | Existing integration regression retained |
 | Audit/log/APM/debug | Credential import audit body omitted. Outbox payloads are IDs/counts/codes. Panic/fmt/slog/zap canary tests exercise in-repo diagnostic boundaries | No external APM SDK was found by source search; external capture agents are not validated by these tests |
 
+### Remaining internal defect: concurrent legacy/control admission
+
+Static control-flow inspection identifies an actual TOCTOU gap, not merely an unrun test: the legacy guard's SELECT and the later `accountRepo.Create/Update` (admin import/edit/bulk and CRS sync), or the raw OAuth network call, do not share a lock/transaction with `PutImport` and controlled activation. A legacy caller can observe no alias, a concurrent controlled import can then register it, and the legacy write/call can subsequently proceed. The deterministic tests prove rejection of **already committed** known aliases; they do not close concurrent cross-entry registration. AT-40 remains PARTIAL. No whole-account repository transaction redesign was included in this targeted change.
+
+A second conditional static gap remains: unknown refresh compensation inserts new fingerprints with `ON CONFLICT DO NOTHING` to preserve an existing owner and encrypted result. The legacy guard intentionally excludes retired-to-legacy instances for drained rollback. If a new active instance's unknown result collides with a historical alias owned by a retired instance, that alias still belongs to the retired owner and may be omitted by the guard. This cross-retired collision case has not been run; the passing rotation/alias test covers old/latest/pending aliases belonging to the same controlled instance. Do not generalize it to every possible provider token collision.
+
 The legacy alias guard is a check of records already durably registered at lookup time. It is not a general proof that independently imported legacy tokens belong to a different provider family, and it does not add a cross-system atomic transaction over arbitrary legacy authorization/import operations. Unknown family relationships remain an external-contract limitation, not permission to mark an import `VERIFIED`.
 
 ## Local validation
