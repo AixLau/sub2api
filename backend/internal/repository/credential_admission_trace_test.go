@@ -16,10 +16,10 @@ import (
 // pg_stat_activity sampling below separately identifies database wait events.
 type admissionTraceKey struct{}
 type admissionTrace struct {
-	mu                         sync.Mutex
-	started, txStarted, locked time.Time
-	values                     map[string]time.Duration
-	counts                     map[string]int
+	mu                                          sync.Mutex
+	started, txStarted, locked, principalLocked time.Time
+	values                                      map[string]time.Duration
+	counts                                      map[string]int
 }
 
 func newAdmissionTrace(ctx context.Context) (context.Context, *admissionTrace) {
@@ -37,21 +37,32 @@ func (t *admissionTrace) add(phase string, elapsed time.Duration) {
 	if phase == "sql.user_lock" && t.locked.IsZero() {
 		t.locked = time.Now()
 	}
+	if phase == "sql.principal_lock" && t.principalLocked.IsZero() {
+		t.principalLocked = time.Now()
+	}
 }
-func (t *admissionTrace) end() {
+func (t *admissionTrace) end(started time.Time, outcome string) {
 	if t == nil {
 		return
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.values["transaction"] = time.Since(t.txStarted)
+	elapsed := time.Since(started)
+	t.values["transaction"] = elapsed
+	t.values["all_transaction_attempts"] += elapsed
+	t.counts["transaction."+outcome]++
 	if !t.locked.IsZero() {
 		t.values["lock_held_lower_bound"] = time.Since(t.locked)
+	}
+	if !t.principalLocked.IsZero() {
+		t.values["principal_held_lower_bound"] = time.Since(t.principalLocked)
 	}
 }
 func admissionSQLPhase(query string) string {
 	q := strings.Join(strings.Fields(query), " ")
 	switch {
+	case strings.Contains(q, "pg_try_advisory_xact_lock"):
+		return "sql.try_advisory_lock"
 	case strings.HasPrefix(q, "WITH user_capacity AS"):
 		return "sql.capacity_batch"
 	case strings.HasPrefix(q, "INSERT INTO principal_user_capacity"):
@@ -100,8 +111,49 @@ func admissionSQLPhase(query string) string {
 }
 
 type admissionSQLCounts struct {
-	mu                sync.Mutex
-	calls, queueCalls int64
+	mu                                                  sync.Mutex
+	calls, queueCalls                                   int64
+	tryLocks, tryLockAcquired, tryLockMisses            int64
+	transactions, commits, rollbacks, transactionErrors int64
+	txWall, backgroundSQLWall                           time.Duration
+}
+
+func (c *admissionSQLCounts) advisory(acquired bool) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.tryLocks++
+	if acquired {
+		c.tryLockAcquired++
+	} else {
+		c.tryLockMisses++
+	}
+}
+func (c *admissionSQLCounts) sqlTime(background bool, elapsed time.Duration) {
+	if c == nil || !background {
+		return
+	}
+	c.mu.Lock()
+	c.backgroundSQLWall += elapsed
+	c.mu.Unlock()
+}
+func (c *admissionSQLCounts) finishTransaction(elapsed time.Duration, commit bool, err error) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.transactions++
+	c.txWall += elapsed
+	if err != nil {
+		c.transactionErrors++
+	} else if commit {
+		c.commits++
+	} else {
+		c.rollbacks++
+	}
 }
 
 func (c *admissionSQLCounts) add(ctx context.Context) {
@@ -140,6 +192,8 @@ func (c *admissionTraceConn) BeginTx(ctx context.Context, opts driver.TxOptions)
 	if trace != nil {
 		trace.mu.Lock()
 		trace.txStarted = started
+		trace.locked = time.Time{}
+		trace.principalLocked = time.Time{}
 		trace.values["connection_acquire"] = started.Sub(trace.started)
 		trace.mu.Unlock()
 	}
@@ -148,7 +202,7 @@ func (c *admissionTraceConn) BeginTx(ctx context.Context, opts driver.TxOptions)
 	if err != nil {
 		return nil, err
 	}
-	return &admissionTraceTx{Tx: tx, trace: trace}, nil
+	return &admissionTraceTx{Tx: tx, trace: trace, totals: c.totals, started: started}, nil
 }
 func (c *admissionTraceConn) ExecContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Result, error) {
 	c.totals.add(ctx)
@@ -156,6 +210,7 @@ func (c *admissionTraceConn) ExecContext(ctx context.Context, q string, args []d
 	started := time.Now()
 	r, err := c.Conn.(driver.ExecerContext).ExecContext(ctx, q, args)
 	trace.add(admissionSQLPhase(q), time.Since(started))
+	c.totals.sqlTime(trace == nil, time.Since(started))
 	return r, err
 }
 func (c *admissionTraceConn) QueryContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
@@ -165,9 +220,10 @@ func (c *admissionTraceConn) QueryContext(ctx context.Context, q string, args []
 	r, err := c.Conn.(driver.QueryerContext).QueryContext(ctx, q, args)
 	if err != nil {
 		trace.add(admissionSQLPhase(q), time.Since(started))
+		c.totals.sqlTime(trace == nil, time.Since(started))
 		return nil, err
 	}
-	return &admissionTraceRows{Rows: r, trace: trace, phase: admissionSQLPhase(q), started: started}, nil
+	return &admissionTraceRows{Rows: r, trace: trace, phase: admissionSQLPhase(q), started: started, totals: c.totals}, nil
 }
 
 // Preserve the driver's optional connection validation/session reset behavior.
@@ -187,34 +243,72 @@ func (c *admissionTraceConn) IsValid() bool {
 
 type admissionTraceRows struct {
 	driver.Rows
-	trace   *admissionTrace
-	phase   string
-	started time.Time
-	once    sync.Once
+	trace      *admissionTrace
+	phase      string
+	started    time.Time
+	once       sync.Once
+	resultOnce sync.Once
+	totals     *admissionSQLCounts
+}
+
+func (r *admissionTraceRows) Next(values []driver.Value) error {
+	err := r.Rows.Next(values)
+	if err == nil && r.phase == "sql.try_advisory_lock" && len(values) > 0 {
+		if acquired, ok := values[0].(bool); ok {
+			r.resultOnce.Do(func() {
+				r.totals.advisory(acquired)
+				if r.trace != nil {
+					r.trace.mu.Lock()
+					if acquired {
+						r.trace.counts["try_lock.acquired"]++
+					} else {
+						r.trace.counts["try_lock.missed"]++
+					}
+					r.trace.mu.Unlock()
+				}
+			})
+		}
+	}
+	return err
 }
 
 func (r *admissionTraceRows) Close() error {
 	err := r.Rows.Close()
-	r.once.Do(func() { r.trace.add(r.phase, time.Since(r.started)) })
+	r.once.Do(func() {
+		r.trace.add(r.phase, time.Since(r.started))
+		r.totals.sqlTime(r.trace == nil, time.Since(r.started))
+	})
 	return err
 }
 
 type admissionTraceTx struct {
 	driver.Tx
-	trace *admissionTrace
+	trace   *admissionTrace
+	totals  *admissionSQLCounts
+	started time.Time
 }
 
 func (t *admissionTraceTx) Commit() error {
 	started := time.Now()
 	err := t.Tx.Commit()
 	t.trace.add("commit", time.Since(started))
-	t.trace.end()
+	outcome := "committed"
+	if err != nil {
+		outcome = "commit_error"
+	}
+	t.trace.end(t.started, outcome)
+	t.totals.finishTransaction(time.Since(t.started), true, err)
 	return err
 }
 func (t *admissionTraceTx) Rollback() error {
 	started := time.Now()
 	err := t.Tx.Rollback()
 	t.trace.add("rollback", time.Since(started))
-	t.trace.end()
+	outcome := "rolled_back"
+	if err != nil {
+		outcome = "rollback_error"
+	}
+	t.trace.end(t.started, outcome)
+	t.totals.finishTransaction(time.Since(t.started), false, err)
 	return err
 }

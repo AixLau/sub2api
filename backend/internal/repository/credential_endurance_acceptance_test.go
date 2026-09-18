@@ -50,6 +50,7 @@ type enduranceMeasurements struct {
 	mu        sync.Mutex
 	durations map[string][]time.Duration
 	sqlCalls  map[string]int
+	counts    map[string]int
 	failures  []string
 }
 
@@ -80,6 +81,11 @@ func (m *enduranceMeasurements) call(operation, result string, trace *admissionT
 		}
 	}
 	m.sqlCalls[prefix] += rounds
+	for name, count := range trace.counts {
+		if !strings.HasPrefix(name, "sql.") {
+			m.counts[prefix+"."+name] += count
+		}
+	}
 }
 func (m *enduranceMeasurements) failure(stage string, err error) {
 	m.mu.Lock()
@@ -106,7 +112,7 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				f := newAdmissionFixture(t, capacity)
 				extendAdmissionFixture(t, &f, instances)
-				m := &enduranceMeasurements{durations: map[string][]time.Duration{}, sqlCalls: map[string]int{}}
+				m := &enduranceMeasurements{durations: map[string][]time.Duration{}, sqlCalls: map[string]int{}, counts: map[string]int{}}
 				var active, peak, starts, ends, duplicates, over, serviceNanos, timeouts, requests atomic.Int64
 				seen := sync.Map{}
 				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -208,9 +214,15 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 								allSamples++
 								var pending int
 								for _, store := range stores {
+									store.principalTurns.mu.Lock()
+									activeCalls := store.principalTurns.active
+									store.principalTurns.mu.Unlock()
 									store.admissionGate.mu.Lock()
-									pending += len(store.admissionGate.offered) + len(store.admissionGate.fresh)
+									if store.admissionGate.busy && activeCalls > 0 {
+										activeCalls--
+									}
 									store.admissionGate.mu.Unlock()
+									pending += activeCalls
 								}
 								if hasCapacity && pending > 0 {
 									idleApplicationSamples++
@@ -429,8 +441,19 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 				rows.Close()
 				totals.mu.Lock()
 				allSQL, queueSQL := totals.calls, totals.queueCalls
+				transactionStats := map[string]any{
+					"attempts": totals.transactions, "commits": totals.commits, "rollbacks": totals.rollbacks, "errors": totals.transactionErrors,
+					"try_lock_attempts": totals.tryLocks, "try_lock_acquired": totals.tryLockAcquired, "try_lock_misses": totals.tryLockMisses,
+					"all_attempt_mean_wall_ms": float64(totals.txWall) / float64(max(totals.transactions, 1)) / 1e6,
+					"background_sql_wall_ms":   float64(totals.backgroundSQLWall) / 1e6,
+				}
 				totals.mu.Unlock()
 				report := map[string]any{"idle_capacity_with_application_waiters_sample_seconds": float64(idleApplicationSamples) * 0.05, "idle_capacity_with_live_offer_samples": idleOfferSamples, "capacity_samples": allSamples, "idle_capacity_with_live_offer_sample_seconds": float64(idleOfferSamples) * 0.05, "all_store_sql_calls": allSQL, "queue_control_sql_calls": queueSQL, "queue_sql_per_dispatch": float64(queueSQL+int64(m.sqlCalls["admit.WAIT"])) / float64(max(starts.Load(), 1)), "final_lease_states": states, "case": name, "scheduled_seconds": duration.Seconds(), "elapsed_seconds": elapsed.Seconds(), "requests": requests.Load(), "dispatches": starts.Load(), "dispatch_per_second": float64(starts.Load()) / elapsed.Seconds(), "timeout_count": timeouts.Load(), "timeout_rate": float64(timeouts.Load()) / float64(requests.Load()), "peak_mock": peak.Load(), "mock_utilization": float64(serviceNanos.Load()) / float64(elapsed) / float64(capacity), "duplicates": duplicates.Load(), "over": over.Load(), "pool_stats": poolStats, "pg_wait_backend_samples_50ms": pgWait, "sql_calls": m.sqlCalls, "durations": summary, "errors": m.failures, "admitted_transaction_p95_target_20ms_met": summary["admit.ADMITTED.transaction"].P95MS <= 20}
+				report["transaction_activity"] = transactionStats
+				report["operation_counts"] = m.counts
+				admitted := summary["admit.ADMITTED.call"].Count
+				report["effective_admission_commits_per_second"] = float64(admitted) / elapsed.Seconds()
+				report["successful_admissions_per_advisory_attempt"] = float64(admitted) / float64(max(m.counts["admit.ADMITTED.try_lock.acquired"]+m.counts["admit.ADMITTED.try_lock.missed"]+m.counts["admit.WAIT.try_lock.acquired"]+m.counts["admit.WAIT.try_lock.missed"]+m.counts["admit.REJECTED.try_lock.acquired"]+m.counts["admit.REJECTED.try_lock.missed"], 1))
 				data, err := json.Marshal(report)
 				require.NoError(t, err)
 				t.Logf("MEASUREMENTS %s", data)

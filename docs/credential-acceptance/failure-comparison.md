@@ -221,7 +221,7 @@
 ## 压测运行历史与当前证据
 
 - E0：30秒请求deadline的旧六组合运行；C50/I3、C200/I3出现ownership loss。旧文档将其直接归因为“BeginDispatch按设计拒绝过期lease/发生器问题”，证据不足，撤回该归因。没有完整事件时间线，不能用本次独立发现的时间缺陷倒推它就是E0根因。
-- E1：请求deadline为两分钟、调用context为Background的六个并行10分钟运行，已完成（`endurance-corrected-C*.log`）。这是对E0的补充，**“完整六组合尚未重跑”已不是当前事实**。E1无测试观察到的超限/重复/残留，但mixed TryAdmit call p95全部超过20ms，且不是同步突发证据。
+- E1：请求deadline为两分钟、调用context为Background的六个并行10分钟运行，已完成（`endurance-corrected-C*.log`）。这是对E0的补充，**“完整六组合尚未重跑”已不是当前事实**。E1无测试观察到的超限/重复/残留，但mixed TryAdmit call p95不是原20ms事务目标的可比指标，且不是同步突发证据。
 - P0/P1/P3及E2：本专项改为分结果、分连接/SQL阶段测量，独立短deadline回归，显式分钟到达barrier，最终六组合串行。具体SHA、命令、失败及性能结果以 [专项报告](admission-time-performance.md) 和 [证据清单](evidence-manifest.json) 为准。
 
 E0、E1均保留，不相互抹去；不把更长deadline的PASS当作时间正确性证明，也不以文档提交变化为由无限重跑旧全套。
@@ -239,3 +239,6 @@ go test ./... -count=1 -json > /tmp/sub2api-admission-time-performance/current-h
 命令退出1。逐测试机器对照文件为 [`current-failure-comparison.json`](current-failure-comparison.json)，基线使用 `fde7e8ec4ff9af1b2645661d6a28cec19f6b347f` 的 `/tmp/sub2api-acceptance-closure/baseline-full.jsonl`；当前日志和摘要的SHA在 [`evidence-manifest.json`](evidence-manifest.json)。两次日志各记录81个失败事件，失败并集81：`FAIL_BOTH=81`、`BASELINE_ONLY=0`、`CURRENT_ONLY=0`。这表示本轮逐项对照中没有出现只在当前HEAD新增的失败，也不表示这些失败全部属于基线；它们仍然是当前HEAD实际失败，且每一项需要结合调用路径。口径更正：81包含78个测试失败事件和3个包级失败事件；旧文档的78排除了包级事件，两者并非新增了3个失败测试。本专项不因文档修订重复全套运行。
 
 F3覆盖了当前完整非integration suite；WS、streaming、moderation、model catalogue 等范围外失败仍被记录为当前失败。没有因为对照结果相同就修改这些无关路径，也没有把对照结果当作多凭证系统验收通过。
+
+
+本地准入隔离专项口径更正：20ms来自规格21.2的权威admission事务p95首轮目标，不是任意负载下call/排队总耗时上限。E3范围内生命周期超时/残留问题已不复现；本轮剩余问题是跨主体隔离、有界公平和单主体吞吐，不能继续统称旧生命周期饥饿未解决。
