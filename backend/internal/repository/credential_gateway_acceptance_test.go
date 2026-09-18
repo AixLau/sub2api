@@ -23,6 +23,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
 
@@ -68,7 +69,11 @@ func acceptanceGateway(t *testing.T, upstream service.HTTPUpstream, store servic
 	keys := NewAPIKeyRepository(integrationEntClient, integrationDB)
 	subs := NewUserSubscriptionRepository(integrationEntClient)
 	rates := NewUserGroupRateRepository(integrationDB)
-	cc := service.NewConcurrencyService(NewConcurrencyCache(integrationRedis, 15, 15))
+	cache := NewConcurrencyCache(integrationRedis, 15, 15)
+	guard, err := newCredentialGlobalUserSlots(integrationDB, integrationRedis, cache)
+	require.NoError(t, err)
+	cache.(*concurrencyCache).credentialUserEpoch = guard.epoch
+	cc := service.NewConcurrencyService(cache)
 	bc := service.NewBillingCacheService(NewBillingCache(integrationRedis), users, subs, keys, nil, rates, cfg, nil)
 	t.Cleanup(bc.Stop)
 	billing := service.NewBillingService(cfg, nil)
@@ -78,7 +83,7 @@ func acceptanceGateway(t *testing.T, upstream service.HTTPUpstream, store servic
 	require.NoError(t, settings.Set(context.Background(), service.SettingKeyRiskControlEnabled, "false"))
 	moderation := service.NewContentModerationService(settings, NewContentModerationRepository(integrationDB), nil, groups, users, nil, nil)
 	keyService := service.NewAPIKeyService(keys, users, groups, subs, rates, nil, cfg)
-	runtime, err := service.NewCredentialHTTPRuntime(store, NewCredentialRouteStore(integrationDB), cfg)
+	runtime, err := service.NewCredentialHTTPRuntime(store, NewCredentialRouteStore(integrationDB), cfg, guard)
 	require.NoError(t, err)
 	h := handler.ProvideOpenAIGatewayHandler(runtime, gateway, cc, bc, keyService, nil, nil, moderation, nil, nil, cfg, nil)
 	router := gin.New()
@@ -305,4 +310,85 @@ func TestCredentialGatewayBeforeDispatchCompensation(t *testing.T) {
 	var bills int
 	require.NoError(t, integrationDB.QueryRow(`SELECT count(*) FROM credential_billing_outbox b JOIN request_leases l ON l.id=b.lease_id WHERE l.principal_id=$1`, f.principal).Scan(&bills))
 	require.Zero(t, bills)
+}
+
+func TestCredentialGlobalUserOrphanAndRedisLossFailClosed(t *testing.T) {
+	f := newAdmissionFixture(t, 10)
+	second := newAdmissionFixture(t, 10)
+	prepareAcceptanceIdentity(t, f, f.user)
+	prepareAcceptanceIdentity(t, second, f.user)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"fixture\"}\n\n")
+	}))
+	defer upstream.Close()
+	server := acceptanceGateway(t, &acceptanceUpstream{url: upstream.URL}, NewPrincipalAdmissionStore(integrationDB))
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	_, _, err := acceptanceRequest(ctx, server.URL+"/v1/responses", acceptanceKey(t, f.key), "orphan")
+	require.NoError(t, err)
+	assertAdmissionLedger(t, f, 1)
+	require.Equal(t, int64(1), integrationRedis.ZCard(ctx, fmt.Sprintf("concurrency:user:%d", f.user)).Val(), "unknown attempt retains the global user hold")
+	status, body, err := acceptanceRequest(ctx, server.URL+"/v1/responses", acceptanceKey(t, second.key), "new")
+	require.NoError(t, err)
+	require.Equal(t, 503, status, body)
+	assertAdmissionLedger(t, second, 0)
+	cache := NewConcurrencyCache(integrationRedis, 15, 15)
+	guard, err := newCredentialGlobalUserSlots(integrationDB, integrationRedis, cache)
+	require.NoError(t, err)
+	cache.(*concurrencyCache).credentialUserEpoch = guard.epoch
+	// Accelerate the held member's age, then the reconciler renews from ledger.
+	members := integrationRedis.ZRange(ctx, fmt.Sprintf("concurrency:user:%d", f.user), 0, -1).Val()
+	require.Len(t, members, 1)
+	require.NoError(t, integrationRedis.ZAdd(ctx, fmt.Sprintf("concurrency:user:%d", f.user), redis.Z{Score: 1, Member: members[0]}).Err())
+	require.NoError(t, guard.Reconcile(ctx))
+	acquired, err := cache.AcquireUserSlot(ctx, f.user, 1, "legacy-competing")
+	require.NoError(t, err)
+	require.False(t, acquired)
+	// This is the isolated test Redis, never a deployment connection. Complete
+	// cache loss must fail closed in the same legacy user script.
+	saved := guard.epoch
+	require.NoError(t, integrationRedis.FlushDB(ctx).Err())
+	t.Cleanup(func() {
+		_ = integrationRedis.Set(context.Background(), credentialRedisEpochKey, saved, 2*time.Minute).Err()
+	})
+	acquired, err = cache.AcquireUserSlot(ctx, f.user, 1, "legacy-after-loss")
+	require.ErrorIs(t, err, errCredentialRedisEpoch)
+	require.False(t, acquired)
+	status, body, err = acceptanceRequest(ctx, server.URL+"/v1/responses", acceptanceKey(t, second.key), "after-loss")
+	require.NoError(t, err)
+	require.Equal(t, 503, status, body)
+	assertAdmissionLedger(t, second, 0)
+	assertAdmissionLedger(t, f, 1)
+}
+
+type acceptanceLostCommit struct {
+	*principalAdmissionStore
+	lost atomic.Bool
+}
+
+func (s *acceptanceLostCommit) TryAdmit(ctx context.Context, in service.AdmissionInput) (service.AdmissionDecision, error) {
+	d, err := s.principalAdmissionStore.TryAdmit(ctx, in)
+	if err == nil && d.Code == service.AdmissionAdmitted && !s.lost.Swap(true) {
+		return service.AdmissionDecision{}, service.ErrAdmissionStoreUnavailable
+	}
+	return d, err
+}
+func TestCredentialGatewayLostAdmissionResponseRecoversSameLease(t *testing.T) {
+	f := newAdmissionFixture(t, 10)
+	prepareAcceptanceIdentity(t, f, f.user)
+	var starts atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { starts.Add(1); acceptanceTerminal(w) }))
+	defer upstream.Close()
+	store := &acceptanceLostCommit{principalAdmissionStore: &principalAdmissionStore{db: integrationDB}}
+	server := acceptanceGateway(t, &acceptanceUpstream{url: upstream.URL}, store)
+	status, body, err := acceptanceRequest(context.Background(), server.URL+"/v1/responses", acceptanceKey(t, f.key), "lost-commit")
+	require.NoError(t, err)
+	require.Equal(t, 200, status, body)
+	require.Equal(t, int64(1), starts.Load())
+	assertAdmissionLedger(t, f, 0)
+	var count int
+	require.NoError(t, integrationDB.QueryRow(`SELECT count(*) FROM request_leases WHERE principal_id=$1`, f.principal).Scan(&count))
+	require.Equal(t, 1, count)
+	require.Zero(t, integrationRedis.ZCard(context.Background(), fmt.Sprintf("concurrency:user:%d", f.user)).Val())
 }

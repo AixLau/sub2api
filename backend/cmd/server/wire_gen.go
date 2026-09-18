@@ -72,7 +72,10 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	serviceUserPlatformQuotaRepository := repository.NewUserPlatformQuotaServiceAdapter(userPlatformQuotaRepository)
 	billingCacheService := service.ProvideBillingCacheService(billingCache, userRepository, userSubscriptionRepository, apiKeyRepository, userRPMCache, userGroupRateRepository, configConfig, serviceUserPlatformQuotaRepository)
 	apiKeyCache := repository.NewAPIKeyCache(redisClient)
-	concurrencyCache := repository.ProvideConcurrencyCache(redisClient, configConfig)
+	concurrencyCache, err := repository.ProvideConcurrencyCache(redisClient, configConfig, db)
+	if err != nil {
+		return nil, err
+	}
 	schedulerCache := repository.ProvideSchedulerCache(redisClient, configConfig)
 	accountRepository := repository.NewAccountRepository(client, db, schedulerCache)
 	concurrencyService := service.ProvideConcurrencyService(concurrencyCache, accountRepository, configConfig)
@@ -223,7 +226,11 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	usageCache := service.NewUsageCache()
 	principalAdmissionStore := repository.NewPrincipalAdmissionStore(db)
 	credentialRouteStore := repository.NewCredentialRouteStore(db)
-	credentialHTTPRuntime, err := service.NewCredentialHTTPRuntime(principalAdmissionStore, credentialRouteStore, configConfig)
+	credentialGlobalUserSlots, err := repository.ProvideCredentialGlobalUserSlots(db, redisClient, configConfig, concurrencyCache)
+	if err != nil {
+		return nil, err
+	}
+	credentialHTTPRuntime, err := service.NewCredentialHTTPRuntime(principalAdmissionStore, credentialRouteStore, configConfig, credentialGlobalUserSlots)
 	if err != nil {
 		return nil, err
 	}
@@ -365,7 +372,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	pluginRepository := repository.NewPluginRepository(db)
 	pluginHostInfo := providePluginHostInfo(buildInfo)
 	pluginManager := service.NewPluginManager(pluginRepository, secretEncryptor, configConfig, pluginHostInfo)
-	credentialReconciler := service.ProvideCredentialReconciler(credentialOperations, credentialRefreshCoordinator, principalAdmissionStore, openAIGatewayService, apiKeyRepository, apiKeyService)
+	credentialReconciler := service.ProvideCredentialReconciler(credentialOperations, credentialRefreshCoordinator, principalAdmissionStore, openAIGatewayService, apiKeyRepository, apiKeyService, credentialGlobalUserSlots)
 	opsMetricsCollector := service.ProvideOpsMetricsCollector(opsRepository, settingRepository, accountRepository, concurrencyService, db, redisClient, configConfig)
 	opsAggregationService := service.ProvideOpsAggregationService(opsRepository, settingRepository, db, redisClient, configConfig)
 	opsAlertEvaluatorService := service.ProvideOpsAlertEvaluatorService(opsService, opsRepository, emailService, redisClient, configConfig, proxyRepository)

@@ -125,16 +125,23 @@ func (h *OpenAIGatewayHandler) tryCredentialHTTP(c *gin.Context, apiKey *service
 	memoryRelease()
 	// Existing global user authority remains Redis for every provider. This gate
 	// never waits while holding a PostgreSQL reservation; failure cancels it.
-	release, acquired, err := h.concurrencyHelper.TryAcquireUserSlotForAPIKey(ctx, subject.UserID, subject.Concurrency, apiKey.ID)
+	if runtime.GlobalUserSlots == nil {
+		_ = runtime.Store.Cancel(ctx, snap.Lease)
+		fail("GLOBAL_USER_STORE_UNAVAILABLE")
+		return true
+	}
+	acquired, err := runtime.GlobalUserSlots.Acquire(ctx, snap.Lease, subject.Concurrency)
+	defer func() {
+		cleanup, end := context.WithTimeout(context.Background(), 5*time.Second)
+		defer end()
+		_ = runtime.GlobalUserSlots.Release(cleanup, snap.Lease)
+	}()
 	if err != nil || !acquired {
 		cleanup, end := context.WithTimeout(context.Background(), 3*time.Second)
 		defer end()
 		_ = runtime.Store.Cancel(cleanup, snap.Lease)
 		fail("USER_CONCURRENCY_EXCEEDED")
 		return true
-	}
-	if release != nil {
-		defer release()
 	}
 	if c.Request.Context().Err() != nil {
 		_ = runtime.Store.Cancel(context.Background(), snap.Lease)

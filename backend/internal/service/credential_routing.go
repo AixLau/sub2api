@@ -18,14 +18,15 @@ type CredentialRouteStore interface {
 	CredentialProbeRoute(context.Context, int64) (CredentialRouteCandidate, int64, error)
 }
 type CredentialHTTPRuntime struct {
-	QueueBudget CredentialQueueBudget
-	Store       PrincipalAdmissionStore
-	Routes      CredentialRouteStore
-	Vault       *CredentialVault
-	Enabled     bool
+	GlobalUserSlots CredentialGlobalUserSlots
+	QueueBudget     CredentialQueueBudget
+	Store           PrincipalAdmissionStore
+	Routes          CredentialRouteStore
+	Vault           *CredentialVault
+	Enabled         bool
 }
 
-func NewCredentialHTTPRuntime(store PrincipalAdmissionStore, routes CredentialRouteStore, cfg *config.Config) (*CredentialHTTPRuntime, error) {
+func NewCredentialHTTPRuntime(store PrincipalAdmissionStore, routes CredentialRouteStore, cfg *config.Config, globalUserSlots CredentialGlobalUserSlots) (*CredentialHTTPRuntime, error) {
 	RegisterCredentialMetrics()
 	vault, _ := NewCredentialVault(cfg.Gateway.CredentialVaultKey)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -33,7 +34,7 @@ func NewCredentialHTTPRuntime(store PrincipalAdmissionStore, routes CredentialRo
 	if err := routes.CheckCredentialRuntime(ctx, cfg.Gateway.MultiCredentialHTTPEnabled); err != nil {
 		return nil, err
 	}
-	return &CredentialHTTPRuntime{Store: store, Routes: routes, Vault: vault, Enabled: cfg.Gateway.MultiCredentialHTTPEnabled}, nil
+	return &CredentialHTTPRuntime{Store: store, Routes: routes, Vault: vault, GlobalUserSlots: globalUserSlots, Enabled: cfg.Gateway.MultiCredentialHTTPEnabled}, nil
 }
 
 // BuildCredentialRoute preserves existing model, Codex-client, channel and

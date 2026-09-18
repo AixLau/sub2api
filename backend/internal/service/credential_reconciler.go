@@ -8,15 +8,16 @@ import (
 )
 
 type CredentialReconciler struct {
-	usageStore CredentialUsageReceiptStore
-	gateway    *OpenAIGatewayService
-	keys       APIKeyRepository
-	updater    APIKeyQuotaUpdater
-	refresh    *CredentialRefreshCoordinator
-	ops        CredentialOperations
-	stop       chan struct{}
-	done       chan struct{}
-	once       sync.Once
+	globalUserSlots CredentialGlobalUserSlots
+	usageStore      CredentialUsageReceiptStore
+	gateway         *OpenAIGatewayService
+	keys            APIKeyRepository
+	updater         APIKeyQuotaUpdater
+	refresh         *CredentialRefreshCoordinator
+	ops             CredentialOperations
+	stop            chan struct{}
+	done            chan struct{}
+	once            sync.Once
 }
 
 func NewCredentialReconciler(ops CredentialOperations) *CredentialReconciler {
@@ -33,6 +34,11 @@ func (r *CredentialReconciler) Start() {
 				return
 			case <-ticker.C:
 				ctx, end := context.WithTimeout(context.Background(), 8*time.Second)
+				if r.globalUserSlots != nil {
+					if err := r.globalUserSlots.Reconcile(ctx); err != nil {
+						slog.Error("credential_global_user_slots_unavailable")
+					}
+				}
 				count, err := r.ops.ReconcileCredentialLeases(ctx)
 				end()
 				if err != nil {

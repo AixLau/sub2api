@@ -15,7 +15,7 @@ import (
 
 // ProvideConcurrencyCache 创建并发控制缓存，从配置读取 TTL 参数
 // 性能优化：TTL 可配置，支持长时间运行的 LLM 请求场景
-func ProvideConcurrencyCache(rdb *redis.Client, cfg *config.Config) service.ConcurrencyCache {
+func ProvideConcurrencyCache(rdb *redis.Client, cfg *config.Config, db *sql.DB) (service.ConcurrencyCache, error) {
 	waitTTLSeconds := int(cfg.Gateway.Scheduling.StickySessionWaitTimeout.Seconds())
 	if cfg.Gateway.Scheduling.FallbackWaitTimeout > cfg.Gateway.Scheduling.StickySessionWaitTimeout {
 		waitTTLSeconds = int(cfg.Gateway.Scheduling.FallbackWaitTimeout.Seconds())
@@ -23,7 +23,16 @@ func ProvideConcurrencyCache(rdb *redis.Client, cfg *config.Config) service.Conc
 	if waitTTLSeconds <= 0 {
 		waitTTLSeconds = cfg.Gateway.ConcurrencySlotTTLMinutes * 60
 	}
-	return NewConcurrencyCache(rdb, cfg.Gateway.ConcurrencySlotTTLMinutes, waitTTLSeconds)
+	cache := NewConcurrencyCache(rdb, cfg.Gateway.ConcurrencySlotTTLMinutes, waitTTLSeconds)
+	if !cfg.Gateway.MultiCredentialHTTPEnabled {
+		return cache, nil
+	}
+	guard, err := newCredentialGlobalUserSlots(db, rdb, cache)
+	if err != nil {
+		return nil, err
+	}
+	cache.(*concurrencyCache).credentialUserEpoch = guard.epoch
+	return cache, nil
 }
 
 // ProvideGitHubReleaseClient 创建 GitHub Release 客户端
@@ -68,6 +77,7 @@ var ProviderSet = wire.NewSet(
 	NewUpstreamPrincipalReader,
 	NewPrincipalAdmissionStore,
 	NewCredentialRouteStore,
+	ProvideCredentialGlobalUserSlots,
 	NewCredentialRefreshStore,
 	NewCredentialOperations,
 	NewCredentialInstanceLifecycle,
@@ -243,4 +253,16 @@ func ProvideSQLDB(client *ent.Client) (*sql.DB, error) {
 // 提供：*redis.Client
 func ProvideRedis(cfg *config.Config) *redis.Client {
 	return InitRedis(cfg)
+}
+
+func ProvideCredentialGlobalUserSlots(db *sql.DB, rdb *redis.Client, cfg *config.Config, cache service.ConcurrencyCache) (service.CredentialGlobalUserSlots, error) {
+	if !cfg.Gateway.MultiCredentialHTTPEnabled {
+		return nil, nil
+	}
+
+	guard, err := newCredentialGlobalUserSlots(db, rdb, cache)
+	if err == nil {
+		cache.(*concurrencyCache).credentialUserEpoch = guard.epoch
+	}
+	return guard, err
 }
