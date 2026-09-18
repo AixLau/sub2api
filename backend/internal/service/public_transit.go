@@ -8,10 +8,11 @@ import (
 )
 
 const (
-	PublicTransitSchemaVersion = "ai-transit.v1"
-	PublicTransitSystem        = "sub2api"
-	PublicTransitWellKnownPath = "/.well-known/ai-transit.json"
-	PublicTransitSnapshotPath  = "/api/public/transit/v1/snapshot"
+	PublicTransitSchemaVersion  = "ai-transit.v1"
+	PublicTransitSystem         = "sub2api"
+	PublicTransitWellKnownPath  = "/.well-known/ai-transit.json"
+	PublicTransitSnapshotPath   = "/api/public/transit/v1/snapshot"
+	publicTransitMaxTrendPoints = 512
 )
 
 type PublicTransitDiscovery struct {
@@ -147,6 +148,15 @@ func (s *PublicTransitService) Snapshot(ctx context.Context, rangeValue string) 
 	filter, err := s.monitor.ParseFilter(rangeValue, nil, nil, nil)
 	if err != nil {
 		return nil, err
+	}
+	if filter.Range == "7d" {
+		// Aggregate whole minutes rather than sampling already-computed rates or
+		// percentiles. Rounding up yields 20-minute buckets (504 points in 7d).
+		const window = 7 * 24 * time.Hour
+		minutes := (int(window/time.Minute) + publicTransitMaxTrendPoints - 1) / publicTransitMaxTrendPoints
+		filter.Bucket = time.Duration(minutes) * time.Minute
+		filter.End = time.Now().UTC().Truncate(filter.Bucket).Add(filter.Bucket)
+		filter.Start = filter.End.Add(-window)
 	}
 	groups, err := s.groups.ListActive(ctx)
 	if err != nil {
