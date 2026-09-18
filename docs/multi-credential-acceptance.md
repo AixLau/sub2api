@@ -13,11 +13,11 @@
 | AT-01 | BLOCKED | mock verifier 三实例测试通过：`TestCredentialImportControlAT01To04` | 真实 provider account+user verifier 不存在；真实导入保持 UNVERIFIED |
 | AT-02 | PARTIAL | 重复 token/family 的 PostgreSQL 查重通过 | 无真实 refresh-family 契约 |
 | AT-03 | PARTIAL | mock 不同 user 不合并通过；三用户相同 session binding 通过 | 无真实 provider 身份证明 |
-| AT-04 | PASS | 部分失败、操作重放、异 payload 均无部分激活 | 仅 mock provider |
-| AT-05 | PASS | `TestCredentialRefreshFamilyVersionIdentityAT05AT28AT29`：refresh 后 profile/generation 不变 | 真实 OAuth 轮换未验证 |
+| AT-04 | PARTIAL | 部分失败、操作重放、异 payload 均无部分激活 | 仅 mock provider |
+| AT-05 | PARTIAL | `TestCredentialRefreshFamilyVersionIdentityAT05AT28AT29`：refresh 后 profile/generation 不变 | 真实 OAuth 轮换未验证 |
 | AT-06 | PARTIAL | profile trigger、配置 CAS 和快照版本检查通过 | 真实进程重启活跃绑定未完成 |
-| AT-07 | PASS | replacement integration：新实例/新 generation，旧 profile 不变 | 完整 UI replace 流程未验收 |
-| AT-08 | PASS | 三独立测试进程+独立 SQL pool 抢最后槽位，仅一 lease；SIGKILL 后 ORPHANED | 完整旧/新网关混合拓扑未演练 |
+| AT-07 | PARTIAL | replacement integration：新实例/新 generation，旧 profile 不变 | 完整 UI replace 流程未验收 |
+| AT-08 | PARTIAL | 三独立测试进程+独立 SQL pool 抢最后槽位，仅一 lease；SIGKILL 后 ORPHANED | 完整旧/新网关混合拓扑未演练 |
 | AT-09 | PASS | 8/2/0、总额约束 PostgreSQL ledger 测试 | 长时动态负载另见 AT-10/13 |
 | AT-10 | PASS | 权重水位 `5/2/5` 单测和随机 ledger 测试 | 线上需求分布未测 |
 | AT-11 | PASS | C=0、hard_max=0、Redis/PG fail closed 测试 | 无生产配置验证 |
@@ -25,26 +25,26 @@
 | AT-13 | PARTIAL | config CAS、health capacity 字段和旧请求非抢占代码 | 健康探测完整接线/通知丢失未验收 |
 | AT-14 | PASS | 满 binding 实例不会阻塞空闲实例新会话 | 全下游结果端到端未测 |
 | AT-15 | PARTIAL | 同 session 粘性、唯一 binding、三进程竞争通过 | 同一新 session 的完整 handler 竞态未覆盖 |
-| AT-16 | PASS | 三用户相同 session 字符串得到独立 binding；caller scope hash 含 user/API key | 完整权限结果隔离未测 |
+| AT-16 | PARTIAL | 三用户相同 session 字符串得到独立 binding；caller scope hash 含 user/API key | 完整权限结果隔离未测 |
 | AT-17 | PASS | 活跃 lease 保护 binding TTL | tombstone 清理周期未测 |
 | AT-18 | PASS | EXPIRED/世代不匹配明确拒绝，不静默迁移 | 正式管理员迁移 API 未完整 |
 | AT-19 | PARTIAL | previous_response/状态无可信 session 时拒绝代码 | 所有工具续接形态未建立金样 |
-| AT-20 | PASS | `TestCredentialHTTPWithPostgresLedgerAndMockUpstream` 的 Responses/透传/compact 三子测试通过；Gin+PG+Redis+mock 联测 `TestCredentialGateway*` 通过 | compact 真实契约未确认，真实 provider BLOCKED |
+| AT-20 | PARTIAL | `TestCredentialHTTPWithPostgresLedgerAndMockUpstream` 的 Responses/透传/compact 三子测试通过；Gin+PG+Redis+mock 联测 `TestCredentialGateway*` 通过 | compact 真实契约未确认，真实 provider BLOCKED |
 | AT-21 | PARTIAL | HTTP guard 拒绝无快照受控账号；WS snapshot 明确拒绝；旧二进制 fencing 通过 | 完整旧路由所有旁路未穷举 |
 | AT-22 | PASS | 无队头阻塞、ticket 不占 lease、队列预算测试通过 | 跨节点可靠通知未测 |
 | AT-23 | PARTIAL | 取消/准入竞态和随机序列通过 | 长时客户端断连矩阵未完成 |
 | AT-24 | PASS | 相同 request/owner 恢复 RESERVED，不生成第二 lease；handler lost-commit 测试通过 | 真实网络 commit response 丢失注入仍有限 |
 | AT-25 | PASS | 双 release、旧 owner/epoch、旧 nonce 均幂等/拒绝 | 极端时钟偏移未测 |
-| AT-26 | PASS | 三独立进程 SIGKILL，发送后变 ORPHANED 且占用不减 | 多地域 HA 未测 |
-| AT-27 | PASS | partial SSE 无终结事件不释放、不重放；failure terminal 不是 success | 各 provider 流协议事件未全覆盖 |
-| AT-28 | PASS | 旧 version 401 不停用新 version；generation/version CAS 通过 | 真实 provider 401 分类未验证 |
-| AT-29 | PASS | refresh family singleflight/CAS/unknown 补偿；六个 usage/settlement 崩溃窗口通过 | 真实远端成功本地全存储失败不能自动恢复，转人工 |
-| AT-30 | PASS | Retry-After、共享 quota domain 主体保护、维护探测 budget 通过 | provider 归因契约未确认 |
-| AT-31 | PASS | 同幂等同内容不重复，异内容冲突；跨主体重新选择仍不重复 | 更复杂并发路由矩阵未测 |
+| AT-26 | PARTIAL | 三独立进程 SIGKILL，发送后变 ORPHANED 且占用不减 | 多地域 HA 未测 |
+| AT-27 | PARTIAL | partial SSE 无终结事件不释放、不重放；failure terminal 不是 success | 各 provider 流协议事件未全覆盖 |
+| AT-28 | PARTIAL | 旧 version 401 不停用新 version；generation/version CAS 通过 | 真实 provider 401 分类未验证 |
+| AT-29 | PARTIAL | refresh family singleflight/CAS/unknown 补偿；六个 usage/settlement 崩溃窗口通过 | 真实远端成功本地全存储失败不能自动恢复，转人工 |
+| AT-30 | PARTIAL | Retry-After、共享 quota domain 主体保护、维护探测 budget 通过 | provider 归因契约未确认 |
+| AT-31 | PARTIAL | 同幂等同内容不重复，异内容冲突；跨主体重新选择仍不重复 | 更复杂并发路由矩阵未测 |
 | AT-32 | PASS | usage receipt + billing outbox + audit outbox 重复消费只一次；六窗口恢复测试通过 | 全部异步消费者重启演练未完成 |
 | AT-33 | PARTIAL | Redis epoch 丢失后 grouped 和旧共享用户申请均 fail closed | Redis Cluster/HA 恢复未验收；不会自动“重建放行” |
 | AT-34 | PARTIAL | DB断连 fail closed；旧 linux/amd64 binary Docker fence 通过 | PostgreSQL主从切换、旧节点 fencing 的真实完整部署未完成 |
-| AT-35 | PASS | If-Match/CAS、主库权限重查、配置丢失不绕过准入测试通过 | 管理通知丢失实验未完成 |
+| AT-35 | PARTIAL | If-Match/CAS、主库权限重查、配置丢失不绕过准入测试通过 | 管理通知丢失实验未完成 |
 | AT-36 | PARTIAL | AES-GCM、owner隔离、秘密不回显、日志 outbox 无秘密通过 | 全量 APM/panic/debug hook 扫描、tenant 模型、密钥轮换未完成 |
 | AT-37 | PARTIAL | 只读迁移预览保留旧 Account 行；旧 fde7e8ec4 binary HTTP fence 通过；离线迁移工具存在 | 真实 provider verifier 缺失，正式迁移不能启用；影子 alias/旧 binding 需人工 |
 | AT-38 | PARTIAL | Compose fence、canary、rollback（保留最新 rotated token）测试通过 | 合成/单主机拓扑；完整旧网关多节点灰度未完成 |
