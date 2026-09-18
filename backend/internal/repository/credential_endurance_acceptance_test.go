@@ -453,7 +453,15 @@ func TestCredentialAcceptanceEndurance(t *testing.T) {
 				report["operation_counts"] = m.counts
 				admitted := summary["admit.ADMITTED.call"].Count
 				report["effective_admission_commits_per_second"] = float64(admitted) / elapsed.Seconds()
-				report["successful_admissions_per_advisory_attempt"] = float64(admitted) / float64(max(m.counts["admit.ADMITTED.try_lock.acquired"]+m.counts["admit.ADMITTED.try_lock.missed"]+m.counts["admit.WAIT.try_lock.acquired"]+m.counts["admit.WAIT.try_lock.missed"]+m.counts["admit.REJECTED.try_lock.acquired"]+m.counts["admit.REJECTED.try_lock.missed"], 1))
+				// A failed call may already have made several advisory attempts.
+				// Include ERROR/CONFIG_STALE/ALREADY_RUNNING as well as grants.
+				admissionAttempts := 0
+				for key, count := range m.counts {
+					if strings.HasPrefix(key, "admit.") && (strings.HasSuffix(key, ".try_lock.acquired") || strings.HasSuffix(key, ".try_lock.missed")) {
+						admissionAttempts += count
+					}
+				}
+				report["successful_admissions_per_advisory_attempt"] = float64(admitted) / float64(max(admissionAttempts, 1))
 				data, err := json.Marshal(report)
 				require.NoError(t, err)
 				t.Logf("MEASUREMENTS %s", data)
