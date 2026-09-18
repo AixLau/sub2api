@@ -232,7 +232,10 @@ func (s *credentialOperations) ReconcileCredentialLeases(ctx context.Context) (i
 				_, err = tx.ExecContext(ctx, `UPDATE logical_requests SET status='UNKNOWN' WHERE id=$1`, ref.RequestID)
 			}
 			if err == nil {
-				err = admissionAudit(ctx, tx, ref, "LEASE_ORPHANED")
+				_, err = tx.ExecContext(ctx, `INSERT INTO credential_usage_events(event_id,lease_id,outcome,usage_state) VALUES($1,$2,'UNKNOWN','UNKNOWN') ON CONFLICT(lease_id) DO NOTHING`, uuid.NewString(), ref.ID)
+				if err == nil {
+					err = admissionAudit(ctx, tx, ref, "LEASE_ORPHANED")
+				}
 			}
 		}
 		if err != nil {

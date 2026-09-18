@@ -48,7 +48,15 @@ func (u *acceptanceUpstream) Do(req *http.Request, _ string, id int64, _ int) (*
 func (u *acceptanceUpstream) DoWithTLS(req *http.Request, p string, id int64, n int, _ *tlsfingerprint.Profile) (*http.Response, error) {
 	return u.Do(req, p, id, n)
 }
-func acceptanceGateway(t *testing.T, upstream service.HTTPUpstream, store service.PrincipalAdmissionStore) *httptest.Server {
+
+type acceptanceGatewayFixture struct {
+	*httptest.Server
+	gateway    *service.OpenAIGatewayService
+	keys       service.APIKeyRepository
+	keyService *service.APIKeyService
+}
+
+func acceptanceGateway(t *testing.T, upstream service.HTTPUpstream, store service.PrincipalAdmissionStore) *acceptanceGatewayFixture {
 	t.Helper()
 	cfg := &config.Config{RunMode: config.RunModeStandard}
 	cfg.Default.RateMultiplier = 1
@@ -87,7 +95,7 @@ func acceptanceGateway(t *testing.T, upstream service.HTTPUpstream, store servic
 	}
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
-	return server
+	return &acceptanceGatewayFixture{Server: server, gateway: gateway, keys: keys, keyService: keyService}
 }
 func prepareAcceptanceIdentity(t *testing.T, f admissionFixture, user int64) {
 	t.Helper()

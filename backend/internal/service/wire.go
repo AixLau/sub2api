@@ -913,9 +913,13 @@ func ProvideRedeemService(
 }
 
 // ProviderSet is the Wire provider set for all services
-func ProvideCredentialReconciler(ops CredentialOperations, refresh *CredentialRefreshCoordinator) *CredentialReconciler {
+func ProvideCredentialReconciler(ops CredentialOperations, refresh *CredentialRefreshCoordinator, store PrincipalAdmissionStore, gateway *OpenAIGatewayService, keys APIKeyRepository, updater *APIKeyService) *CredentialReconciler {
 	r := NewCredentialReconciler(ops)
 	r.refresh = refresh
+	r.usageStore, _ = store.(CredentialUsageReceiptStore)
+	r.gateway = gateway
+	r.keys = keys
+	r.updater = updater
 	r.Start()
 	return r
 }

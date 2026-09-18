@@ -150,6 +150,15 @@ func (s *OpenAIGatewayService) ForwardCredentialHTTP(ctx context.Context, c *gin
 				outcome = terminalOutcome
 			}
 		}
+		// Journal terminal usage before releasing the lease or scheduling billing.
+		// If persistence fails, keep the attempt unknown/occupied; never free it
+		// and silently lose the only observed usage facts.
+		if result != nil {
+			if err := s.persistCredentialUsage(ctx, result, store, snapshot.Lease, terminal, outcome); err != nil {
+				terminal = false
+				retErr = err
+			}
+		}
 		finish := FinishAdmissionInput{Lease: snapshot.Lease, Complete: terminal, Outcome: outcome}
 		if result != nil && terminal && result.Usage.HasBillableUsage() {
 			input, output := int64(result.Usage.InputTokens), int64(result.Usage.OutputTokens)

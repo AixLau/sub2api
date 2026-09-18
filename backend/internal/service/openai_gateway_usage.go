@@ -515,6 +515,17 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 		return billingErr
 	}
+	if lease, grouped := CredentialBillingLeaseID(requestID); grouped {
+		if _, err := s.usageLogRepo.Create(ctx, usageLog); err != nil {
+			return err
+		}
+		if store, ok := s.usageBillingRepo.(interface {
+			CompleteCredentialUsageReceipt(context.Context, string, string, string) error
+		}); ok {
+			return store.CompleteCredentialUsageReceipt(ctx, lease, "RECORDED", "")
+		}
+		return nil
+	}
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 
 	return nil

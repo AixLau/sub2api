@@ -148,10 +148,11 @@ func (h *OpenAIGatewayHandler) tryCredentialHTTP(c *gin.Context, apiKey *service
 		_ = runtime.Store.Cancel(cleanup, snap.Lease)
 		return true
 	}
+	ctx = h.gatewayService.CredentialUsageContext(ctx, apiKey, account, subscription, snap.Lease.ID, body)
 	var result *service.OpenAIForwardResult
 	stage := h.runOpenAIHTTPForwardStage(c, OpenAIHTTPForwardStage{GatewayService: h.gatewayService, Kind: OpenAIHTTPForwardResponses, RequestContext: ctx, Account: account, Body: forwardBody, Result: &result, CredentialSnapshot: snap, CredentialRuntime: runtime})
 	forwardErr := stage.Err
-	if result != nil {
+	if result != nil && result.HasBillableUsage() {
 		result.RequestID = service.CredentialBillingRequestID(snap.Lease.ID)
 		// Existing billing authorization and settlement implementation remains intact;
 		// the lease outbox separately records unknown usage and deduplicates attempts.
