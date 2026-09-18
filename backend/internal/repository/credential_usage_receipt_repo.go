@@ -44,7 +44,8 @@ func (s *principalAdmissionStore) SaveCredentialUsageReceipt(ctx context.Context
 	return nil
 }
 func (s *principalAdmissionStore) PendingCredentialUsageReceipts(ctx context.Context) ([]service.CredentialUsageReceipt, error) {
-	rows, err := s.criticalDB().QueryContext(ctx, `SELECT receipt FROM credential_usage_receipts WHERE state='PENDING' ORDER BY created_at LIMIT 20`)
+	rows, err := s.criticalDB().QueryContext(ctx, `SELECT c.receipt,c.state<>'PENDING' FROM credential_usage_receipts c JOIN request_leases l ON l.id=c.lease_id
+ WHERE c.state='PENDING' OR (l.state<>'RELEASED' AND (c.receipt->>'Complete')::boolean IS TRUE) ORDER BY c.created_at LIMIT 20`)
 	if err != nil {
 		return nil, err
 	}
@@ -53,12 +54,14 @@ func (s *principalAdmissionStore) PendingCredentialUsageReceipts(ctx context.Con
 	for rows.Next() {
 		var data []byte
 		var r service.CredentialUsageReceipt
-		if err = rows.Scan(&data); err != nil {
+		var skipSettlement bool
+		if err = rows.Scan(&data, &skipSettlement); err != nil {
 			return nil, err
 		}
 		if err = json.Unmarshal(data, &r); err != nil {
 			return nil, err
 		}
+		r.SkipSettlement = skipSettlement
 		out = append(out, r)
 	}
 	return out, rows.Err()

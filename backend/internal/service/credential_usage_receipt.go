@@ -10,6 +10,9 @@ import (
 // Only usage facts and internal IDs are durable here. No headers, Account maps,
 // API key, prompt, output, session ID or token is serialized.
 type CredentialUsageReceipt struct {
+	// Set by the recovery query; billing acknowledgement and lease completion
+	// are independent. This flag is never part of the durable receipt.
+	SkipSettlement                   bool `json:"-"`
 	GroupBillingDigest               string
 	Lease                            LeaseRef
 	Complete                         bool
@@ -113,6 +116,9 @@ func (s *OpenAIGatewayService) RecoverCredentialUsage(ctx context.Context, store
 			if err = admission.Finish(ctx, finish); err != nil {
 				return err
 			}
+		}
+		if receipt.SkipSettlement {
+			continue
 		}
 		key, err := keys.GetByID(ctx, receipt.APIKeyID)
 		if err != nil {

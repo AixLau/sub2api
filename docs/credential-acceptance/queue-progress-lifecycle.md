@@ -26,4 +26,12 @@
 
 ## Q3：可靠终结事实的独立恢复
 
-待补充复现与修复结果。结果无证据仍保留UNKNOWN/占用，不按超时释放，不重放上游。
+真实handler复现：完整终结响应已写receipt，但Finish被数据库锁阻塞直到原5秒预算超时；前台计费随后成功，把receipt标RECORDED。旧恢复查询仅取PENDING，故恢复后仍剩2条占用（1条应释放+1条真正UNKNOWN），`recovery-before.log`失败。
+
+修复查询同时读取“已可靠终结但lease仍未释放”的receipt，无论计费为PENDING/RECORDED/REVIEW_REQUIRED；先按原lease与证据幂等Finish，非PENDING只恢复容量，不重新结算或把未知usage记零。无可靠终结事实的UNKNOWN不进入此分支。
+
+`GOCACHE=/tmp/sub2api-queue-progress/go-cache TESTCONTAINERS_RYUK_DISABLED=true CI=true go test -p 2 -tags=integration ./internal/repository -run '^TestCredential(OverloadRecovery|UsageCrashWindows)' -count=1 -v`通过（`recovery-after-isolated.log`）；原六窗口均通过。本专项专用GOCACHE用于避开共享cache文件缺失，并非产品依赖变化。
+
+进一步 `-run '^TestCredentialOverloadRecoveryTerminalAndUnknown$'` 使用实际`ProvideCredentialReconciler`接线：停止新增压力后20.159秒内（定义预算25秒，默认10秒周期不变）完成PG释放与Redis用户槽释放。真正未知lease仍ORPHANED，占用1；上游仅调用1次，usage和扣费各1条，重复恢复幂等。日志`recovery-reconciler.log`。这是完整handler+receipt+reconciler+计费证据，与持续发生器不含receipt恢复的边界分开。
+
+无schema变化；回滚必须先消化可靠receipt的待完成lease，保留UNKNOWN，不恢复旧数据库快照。
