@@ -68,7 +68,13 @@ func (m *enduranceMeasurements) call(operation, result string, trace *admissionT
 	prefix := operation + "." + result
 	m.durations[prefix+".call"] = append(m.durations[prefix+".call"], elapsed)
 	if trace.txStarted.IsZero() {
-		m.durations[prefix+".connection_acquire_failed"] = append(m.durations[prefix+".connection_acquire_failed"], elapsed)
+		phase := "connection_acquire_failed"
+		if operation == "admit" {
+			// Admission can time out in a local queue before asking sql.DB
+			// for any connection. Do not mislabel that as pool exhaustion.
+			phase = "pre_transaction_wait_failed"
+		}
+		m.durations[prefix+"."+phase] = append(m.durations[prefix+"."+phase], elapsed)
 	}
 	rounds := 0
 	for phase, d := range trace.values {
