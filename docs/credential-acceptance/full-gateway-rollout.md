@@ -19,6 +19,8 @@ go test -p 2 -tags=integration ./internal/repository \
   -run '^TestCredentialFullGatewayOfflineRollout$' -count=1 -v
 ```
 
+此用例须单独运行测试进程，使用TestMain新建的空PG/Redis。广泛integration可以先用 `-test.skip=^TestCredentialFullGatewayOfflineRollout$`，随后同二进制单独运行本项；其他测试遗留的GROUPED主体会使旧配置节点按设计拒绝启动。直接执行测试二进制时cwd应为 `backend/internal/repository`，保持与go test包目录一致以解析价格夹具。
+
 没有指定两个二进制路径时测试明确 SKIP，不能将默认 integration 套件中的 SKIP 记为本项通过。日志打印实际二进制 SHA-256，并在 secret 扫描通过后保存各完整网关日志及摘要。配置、私钥和 mock token 只存于临时 fixture，不提交到仓库。
 
 ## 检查内容与边界
@@ -50,6 +52,10 @@ go test -p 2 -tags=integration ./internal/repository \
 在全部网关被 UNKNOWN rollback fence 后，测试新增：Redis 显式 `SAVE` 后重启同一容器，核对原 epoch 与 UNKNOWN 用户 hold 分数原样存在；重启同一 PostgreSQL 主库，核对账本、profile、binding 保持，再启动三个完整网关观察实际 reconciler 续期。没有初始化丢失 epoch，没有导入快照，也没有恢复旧 token。该窗口覆盖正常持久数据保留后的受控 restart，不覆盖存储丢失、备份还原或 HA。
 
 这段测试在 `22bc1ac77` 的初次 PASS **之后新增，目前 NOT_RUN**。`full-gateway-rollout-results.json` 仍描述旧 test source SHA256 的原结果，不能将其作为新窗口的通过证据；最终候选必须重建后执行完整测试并补结果。AT-33/34 不因此提前从 PARTIAL 改为 PASS。
+
+最终候选第一次运行新增窗口时，Redis restart 之后测试客户端继续访问原宿主机映射端口，Ping 失败；该失败记录在候选 `final-logs/candidate-full-gateways.stdout/stderr`，未被初次结果覆盖。仅修改验收 fixture：restart 后重新 inspect Redis／PostgreSQL 当前 HostPort，重新连接同一容器的持久服务，并重建保留 SQL 句柄的 rollout 与 Ent 对象。网关内部地址始终为 `redis:6379`／`database:5432`，产品配置、epoch、TTL 和持久内容不变。下一次执行会记录端口 before/after/changed，以实际证据确定是否重分配；修正后的窗口此时仍 **NOT_RUN**，不预先断言上次失败唯一原因。
+
+此测试要求单独测试进程的新 PostgreSQL／Redis，不能接在会遗留 GROUPED 主体或未知租约的广泛 integration 套件后共享 TestMain 数据。否则旧路径 `enabled=false` 网关会因现有 GROUPED 正确拒绝启动。直接运行保存的测试二进制时 cwd 必须为 `backend/internal/repository`，以正确解析定价 fixture 路径。
 
 ## 迁移影响与回滚
 

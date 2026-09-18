@@ -26,9 +26,13 @@ import (
 	"testing"
 	"time"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
+	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/credentialfence"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/google/uuid"
+	redisclient "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
 
@@ -159,7 +163,7 @@ func TestCredentialFullGatewayOfflineRollout(t *testing.T) {
 	// reconstruct a missing epoch. Loss must remain fail-closed.
 	require.NoError(t, integrationRedis.Save(ctx).Err())
 	fixture.docker("restart", "--time", "2", fixture.redisID)
-	require.Eventually(t, func() bool { return integrationRedis.Ping(ctx).Err() == nil }, 10*time.Second, 50*time.Millisecond)
+	fixture.reconnectRedis()
 	epochAfter, err := integrationRedis.Get(ctx, credentialRedisEpochKey).Result()
 	require.NoError(t, err)
 	require.Equal(t, epochBefore, epochAfter)
@@ -167,7 +171,11 @@ func TestCredentialFullGatewayOfflineRollout(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, slotBefore, slotAfter)
 	fixture.docker("restart", "--time", "2", fixture.postgresID)
-	require.Eventually(t, func() bool { return integrationDB.PingContext(ctx) == nil }, 15*time.Second, 50*time.Millisecond)
+	fixture.reconnectPostgres()
+	// Control objects retain their SQL handle. Rebuild them after the harness
+	// reconnects to a potentially remapped host port; internal gateway addresses
+	// remain database:5432 and redis:6379 throughout the restart.
+	rollout = NewCredentialRollout(integrationDB, vault, fence)
 	require.Equal(t, int64(1), fixture.scalar(`SELECT occupied FROM upstream_principals WHERE id=$1 AND admin_state='PAUSED'`, pb))
 	identityUnknownAfter, bindingsUnknownAfter := fixture.identityAndBindings(pb)
 	require.JSONEq(t, identityUnknownBefore, identityUnknownAfter)
@@ -318,6 +326,50 @@ func (f *fullGatewayRollout) stop() {
 func (f *fullGatewayRollout) address(id, port string) string {
 	value := f.docker("inspect", "--format", `{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}`, id)
 	return "http://" + net.JoinHostPort(value, port)
+}
+
+func (f *fullGatewayRollout) hostPort(id, port string) string {
+	f.t.Helper()
+	var ports map[string][]struct{ HostPort string }
+	require.NoError(f.t, json.Unmarshal([]byte(f.docker("inspect", "--format", "{{json .NetworkSettings.Ports}}", id)), &ports))
+	require.NotEmpty(f.t, ports[port], "restarted fixture must retain its published port")
+	value := ports[port][0].HostPort
+	require.NotEmpty(f.t, value)
+	return value
+}
+
+func (f *fullGatewayRollout) reconnectRedis() {
+	f.t.Helper()
+	old := integrationRedis
+	options := *old.Options()
+	host, oldPort, err := net.SplitHostPort(options.Addr)
+	require.NoError(f.t, err)
+	newPort := f.hostPort(f.redisID, "6379/tcp")
+	f.t.Logf("fixture_restart_host_port service=redis before=%s after=%s changed=%t internal=redis:6379", oldPort, newPort, oldPort != newPort)
+	options.Addr = net.JoinHostPort(host, newPort)
+	reconnected := redisclient.NewClient(&options)
+	require.Eventually(f.t, func() bool { return reconnected.Ping(f.ctx).Err() == nil }, 10*time.Second, 50*time.Millisecond)
+	policy, err := reconnected.ConfigGet(f.ctx, "maxmemory-policy").Result()
+	require.NoError(f.t, err)
+	require.Equal(f.t, "noeviction", policy["maxmemory-policy"])
+	integrationRedis = reconnected
+	require.NoError(f.t, old.Close())
+}
+
+func (f *fullGatewayRollout) reconnectPostgres() {
+	f.t.Helper()
+	dsn, err := url.Parse(integrationDSN)
+	require.NoError(f.t, err)
+	oldPort := dsn.Port()
+	newPort := f.hostPort(f.postgresID, "5432/tcp")
+	f.t.Logf("fixture_restart_host_port service=postgres before=%s after=%s changed=%t internal=database:5432", oldPort, newPort, oldPort != newPort)
+	dsn.Host = net.JoinHostPort(dsn.Hostname(), newPort)
+	reconnected, err := openSQLWithRetry(f.ctx, dsn.String(), 15*time.Second)
+	require.NoError(f.t, err)
+	require.NoError(f.t, integrationEntClient.Close())
+	integrationDB = reconnected
+	integrationDSN = dsn.String()
+	integrationEntClient = dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, reconnected)))
 }
 func (f *fullGatewayRollout) startNodes(enabled bool) []fullRolloutNode {
 	f.t.Helper()
